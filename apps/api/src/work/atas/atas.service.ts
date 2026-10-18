@@ -1,6 +1,7 @@
 import {
   BadRequestException,
   ConflictException,
+  ForbiddenException,
   Inject,
   Injectable,
   Logger,
@@ -26,7 +27,9 @@ import {
   type TrabAtaSugestaoEstado,
 } from '@mktos/shared';
 
+import { temPapelDeMaquina } from '../../approvals/alcada';
 import { AuditService } from '../../audit/audit.service';
+import { lerAprovador } from '../../auth/aprovador';
 import { LLM_PROVIDER, type LlmProvider } from '../../llm/llm.provider';
 import { MemoriaService } from '../../memory/memoria.service';
 import { normalizarParaBusca } from '../../onboarding/trilho/leitor-de-ata';
@@ -36,6 +39,7 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { WorkService } from '../work.service';
 import {
   SugestoesIlegiveisError,
+  dataIsoValida,
   interpretarSugestoes,
   metadadosDaAta,
   promptDasSugestoes,
@@ -63,6 +67,18 @@ import {
  * mesmo `criarTarefa` do botão da tela, com auditoria `work.task.create`);
  * dois cliques criam UMA tarefa porque a sugestão é tomada por escrita
  * condicionada ao estado lido antes de a tarefa nascer.
+ *
+ * O QUE A REVISÃO DE 18/10/2026 FECHOU (laudo `homolog/revisao/painel-20261018.md`):
+ *   · PA-2, o banco de atas NÃO ALARGA ACESSO. A ata do vault só aparece, abre,
+ *     é lida pelo agente ou vira tarefa para quem lê o vault (`obsidian.ver`,
+ *     o `acesso.vault` que o controller passa). Sem ela, a lista traz só as
+ *     coladas e diz por quê. Colar escreve na memória e pede, no controller, a
+ *     mesma permissão do `POST /memoria` (`obsidian.editar`);
+ *   · PA-3, "nunca cria task sozinho" vale AQUI: conta de máquina (`ia_servico`,
+ *     `ia_acao`) não cola, não pede leitura, não aceita nem descarta. A recusa
+ *     é pelo token (guarda no controller) e de novo pelo banco (`exigirGente`);
+ *   · PA-5, a ata do vault passa pela mesma varredura de segredos da colada
+ *     antes de ir à tela, ao modelo, ao trecho guardado e à tarefa.
  */
 
 /** Teto de atas do vault lidas por listagem. A tela pagina pelo mais novo. */
@@ -70,9 +86,21 @@ const MAX_DO_VAULT = 200;
 const MAX_COLADAS = 200;
 const SAIDA_DA_LEITURA = 4000;
 
+/** Quem age: o id e os papéis do token (relidos no banco antes de escrever). */
 export interface QuemDecide {
   id: string;
+  papeis: readonly string[];
 }
+
+/** O que quem pediu pode ler além do Trabalho. `vault` = tem `obsidian.ver`. */
+export interface AcessoAsAtas {
+  vault: boolean;
+}
+
+export const RECUSA_DE_MAQUINA_NAS_ATAS =
+  'Ata é decisão de gente: conta de serviço (IA) não cola ata, não pede a leitura e não aceita nem descarta sugestão.';
+export const RECUSA_DO_VAULT_NAS_ATAS =
+  'Esta ata é do vault, e ler o vault pede a permissão "obsidian.ver". Peça a quem administra, ou use uma ata colada.';
 
 type LinhaDaSugestao = Prisma.AtaSugestaoGetPayload<Record<string, never>>;
 
@@ -125,15 +153,18 @@ export class AtasService {
     };
   }
 
-  async listar(orgId: string): Promise<TrabAtaLista> {
+  async listar(orgId: string, acesso: AcessoAsAtas): Promise<TrabAtaLista> {
     const pasta = await this.pasta(orgId);
     const [doVault, coladas, notasDoVault, contagens] = await Promise.all([
-      this.prisma.knowledgeNote.findMany({
-        where: { orgId, ...this.filtroDaPasta(pasta) },
-        orderBy: { fileTime: 'desc' },
-        take: MAX_DO_VAULT,
-        select: { id: true, path: true, title: true, content: true, fileTime: true },
-      }),
+      // Sem `obsidian.ver`, o vault nem é consultado (PA-2).
+      acesso.vault
+        ? this.prisma.knowledgeNote.findMany({
+            where: { orgId, ...this.filtroDaPasta(pasta) },
+            orderBy: { fileTime: 'desc' },
+            take: MAX_DO_VAULT,
+            select: { id: true, path: true, title: true, content: true, fileTime: true },
+          })
+        : Promise.resolve([]),
       this.prisma.contextItem.findMany({
         where: { orgId, chave: { startsWith: ATA_PREFIXO_DA_CHAVE }, arquivadoEm: null },
         orderBy: { atualizadoEm: 'desc' },
@@ -147,7 +178,7 @@ export class AtasService {
     const atas: TrabAtaResumo[] = [
       ...doVault.map((n) =>
         this.resumo(
-          { ref: refDaAta('vault', n.id), fonte: 'vault', titulo: n.title, texto: n.content, caminho: n.path, procedencia: '', atualizadaEm: n.fileTime },
+          { ref: refDaAta('vault', n.id), fonte: 'vault', titulo: n.title, texto: varrerSegredos(n.content).texto, caminho: n.path, procedencia: '', atualizadaEm: n.fileTime },
           contagens,
         ),
       ),
@@ -160,11 +191,11 @@ export class AtasService {
     ];
     // A mais nova primeiro: pela data da reunião, e sem ela pela do arquivo.
     atas.sort((a, b) => (b.data ?? b.atualizadaEm.slice(0, 10)).localeCompare(a.data ?? a.atualizadaEm.slice(0, 10)) || b.atualizadaEm.localeCompare(a.atualizadaEm));
-    return { atas, pasta, notasDoVault, iaConfigurada: this.llm.configured };
+    return { atas, pasta, notasDoVault, vaultVisivel: acesso.vault, iaConfigurada: this.llm.configured };
   }
 
-  async ler(orgId: string, ref: string): Promise<TrabAtaDetalhe> {
-    const ata = await this.exigirAta(orgId, ref);
+  async ler(orgId: string, ref: string, acesso: AcessoAsAtas): Promise<TrabAtaDetalhe> {
+    const ata = await this.exigirAta(orgId, ref, acesso);
     const linhas = await this.prisma.ataSugestao.findMany({
       where: { orgId, ataRef: ata.ref },
       orderBy: { criadaEm: 'asc' },
@@ -174,10 +205,20 @@ export class AtasService {
     return { ...this.resumo(ata, contagens), texto: ata.texto, procedencia: ata.procedencia, sugestoesDaAta: dtos };
   }
 
-  async sugestoes(orgId: string, filtro: { ata?: string; estado?: string } = {}): Promise<TrabAtaSugestaoDto[]> {
+  async sugestoes(
+    orgId: string,
+    filtro: { ata?: string; estado?: string },
+    acesso: AcessoAsAtas,
+  ): Promise<TrabAtaSugestaoDto[]> {
     const estado = filtro.estado && ['rascunho', 'aceita', 'descartada'].includes(filtro.estado) ? filtro.estado : undefined;
     const linhas = await this.prisma.ataSugestao.findMany({
-      where: { orgId, ...(filtro.ata ? { ataRef: filtro.ata } : {}), ...(estado ? { estado } : {}) },
+      where: {
+        orgId,
+        ...(filtro.ata ? { ataRef: filtro.ata } : {}),
+        ...(estado ? { estado } : {}),
+        // O trecho da sugestão é texto do vault: sem `obsidian.ver`, as do vault ficam de fora.
+        ...(acesso.vault ? {} : { NOT: { ataRef: { startsWith: 'vault:' } } }),
+      },
       orderBy: { criadaEm: 'desc' },
       take: 500,
     });
@@ -188,7 +229,9 @@ export class AtasService {
   // COLAR — a ata avulsa vira nota da memória (ADR-011)
   // ==========================================================================
 
-  async colar(orgId: string, actorId: string, input: TrabAtaColarInput): Promise<TrabAtaDetalhe> {
+  async colar(orgId: string, quem: QuemDecide, input: TrabAtaColarInput): Promise<TrabAtaDetalhe> {
+    await this.exigirGente(orgId, quem);
+    const actorId = quem.id;
     const titulo = input.titulo.replace(/\s+/g, ' ').trim();
     const varredura = varrerSegredos(String(input.texto ?? '').replace(/\r\n/g, '\n').trim());
     const texto = varredura.texto;
@@ -234,19 +277,21 @@ export class AtasService {
       entityId: nota.id,
       after: { chave: nota.chave, versao: nota.versao, caracteres: Array.from(corpo).length, segredosMascarados: varredura.removidos },
     });
-    return this.ler(orgId, refDaAta('colada', nota.id));
+    return this.ler(orgId, refDaAta('colada', nota.id), { vault: false });
   }
 
   // ==========================================================================
   // GERAR — o leitor propõe, o parser confere
   // ==========================================================================
 
-  gerar(orgId: string, actorId: string, ref: string): Promise<TrabAtaGeracao> {
-    return umaPorVez(`trabalho-atas:${orgId}:${ref}`, 'A leitura desta ata', () => this.gerarAgora(orgId, actorId, ref));
+  async gerar(orgId: string, quem: QuemDecide, ref: string, acesso: AcessoAsAtas): Promise<TrabAtaGeracao> {
+    // Antes do `umaPorVez` e do modelo: conta de máquina não gasta IA nem ocupa a vez (PA-3).
+    await this.exigirGente(orgId, quem);
+    return umaPorVez(`trabalho-atas:${orgId}:${ref}`, 'A leitura desta ata', () => this.gerarAgora(orgId, quem.id, ref, acesso));
   }
 
-  private async gerarAgora(orgId: string, actorId: string, ref: string): Promise<TrabAtaGeracao> {
-    const ata = await this.exigirAta(orgId, ref);
+  private async gerarAgora(orgId: string, actorId: string, ref: string, acesso: AcessoAsAtas): Promise<TrabAtaGeracao> {
+    const ata = await this.exigirAta(orgId, ref, acesso);
     if (!this.llm.configured) {
       throw new ServiceUnavailableException(`IA não configurada: falta a credencial do provider "${this.llm.name}".`);
     }
@@ -273,7 +318,9 @@ export class AtasService {
 
     let leitura: ReturnType<typeof interpretarSugestoes>;
     try {
-      leitura = interpretarSugestoes(saida, { ata: ata.texto, listas, pessoas });
+      // O dia da reunião resolve o ano da data sem ano; sem ele, o dia do arquivo.
+      const referencia = meta.data ?? ata.atualizadaEm.toISOString().slice(0, 10);
+      leitura = interpretarSugestoes(saida, { ata: ata.texto, listas, pessoas, referencia });
     } catch (e) {
       if (e instanceof SugestoesIlegiveisError) throw new ServiceUnavailableException(e.message);
       throw e;
@@ -296,11 +343,12 @@ export class AtasService {
               data: {
                 orgId,
                 ataRef: ata.ref,
-                titulo: s.titulo,
+                // A ata já entrou varrida; varrer de novo o que se grava é a segunda tranca (PA-5).
+                titulo: varrerSegredos(s.titulo).texto,
                 listaId: s.listaId,
                 donoSugerido: s.donoSugerido,
                 vencimento: s.vencimento ? new Date(`${s.vencimento}T12:00:00.000Z`) : null,
-                trecho: s.trecho,
+                trecho: varrerSegredos(s.trecho).texto,
                 estado: 'rascunho',
                 criadaPor: actorId,
               },
@@ -319,7 +367,7 @@ export class AtasService {
       after: {
         criadas: criadas.length,
         repetidas,
-        descartadasPeloParser: leitura.avisos.filter((a) => a.includes('descartada')).length,
+        descartadasPeloParser: leitura.descartadas,
         provider: this.llm.name,
         model: this.llm.model,
       },
@@ -331,10 +379,29 @@ export class AtasService {
   // DECIDIR — aceitar cria a tarefa pelo Trabalho; descartar fica registrado
   // ==========================================================================
 
-  async aceitar(orgId: string, actorId: string, id: string, input: TrabAtaAceitarInput): Promise<TrabAtaSugestaoDto> {
+  async aceitar(
+    orgId: string,
+    quem: QuemDecide,
+    id: string,
+    input: TrabAtaAceitarInput,
+    acesso: AcessoAsAtas,
+  ): Promise<TrabAtaSugestaoDto> {
+    await this.exigirGente(orgId, quem);
+    const actorId = quem.id;
     const s = await this.prisma.ataSugestao.findFirst({ where: { id, orgId } });
     if (!s) throw new NotFoundException('Sugestão não encontrada.');
+    this.exigirAcessoAFonte(s.ataRef, acesso);
     if (s.estado !== 'rascunho') throw this.jaDecidida(s.estado);
+    // O dono e o vencimento são os que a pessoa confirmou na tela (PA-4); ausentes, os da sugestão.
+    const dono = input.dono === undefined ? s.donoSugerido : input.dono?.trim() || null;
+    let vencimento: string | null = s.vencimento ? s.vencimento.toISOString().slice(0, 10) : null;
+    if (input.vencimento !== undefined) {
+      if (input.vencimento === null) vencimento = null;
+      else {
+        vencimento = dataIsoValida(input.vencimento);
+        if (!vencimento) throw new BadRequestException('O vencimento escolhido não é uma data que existe.');
+      }
+    }
     const listId = input.listaId ?? s.listaId;
     if (!listId) throw new BadRequestException('Escolha a lista da tarefa antes de aceitar.');
     const lista = await this.prisma.workList.findFirst({ where: { id: listId, orgId }, select: { id: true } });
@@ -350,15 +417,15 @@ export class AtasService {
       throw this.jaDecidida(agora?.estado ?? 'aceita');
     }
 
-    const ata = await this.resumoDaAtaParaTarefa(orgId, s.ataRef);
+    const ata = await this.resumoDaAtaParaTarefa(orgId, s.ataRef, acesso);
     let tarefaId: string;
     try {
       const tarefa = await this.work.criarTarefa(orgId, actorId, {
         listId,
         title: s.titulo,
         description: this.descricaoDaTarefa(s, ata),
-        assignee: s.donoSugerido ?? null,
-        dueDate: s.vencimento ? s.vencimento.toISOString() : null,
+        assignee: dono,
+        dueDate: vencimento ? new Date(`${vencimento}T12:00:00.000Z`).toISOString() : null,
       });
       tarefaId = tarefa.id;
     } catch (e) {
@@ -370,21 +437,34 @@ export class AtasService {
       throw e;
     }
 
-    const final = await this.prisma.ataSugestao.update({ where: { id }, data: { workTaskId: tarefaId } });
+    // Com a empresa no `where`, como toda escrita deste serviço.
+    await this.prisma.ataSugestao.updateMany({ where: { id, orgId, estado: 'aceita' }, data: { workTaskId: tarefaId } });
+    const final = await this.prisma.ataSugestao.findFirstOrThrow({ where: { id, orgId } });
+    const vencimentoSugerido = s.vencimento ? s.vencimento.toISOString().slice(0, 10) : null;
     await this.audit.log({
       orgId,
       actorId,
       action: 'trabalho.ata.sugestao_aceita',
       entityType: 'ata_sugestao',
       entityId: id,
-      after: { ataRef: s.ataRef, workTaskId: tarefaId, listaId: listId },
+      // Só a forma: se a pessoa corrigiu, não o quê (o nome e a data ficam na tarefa).
+      after: {
+        ataRef: s.ataRef,
+        workTaskId: tarefaId,
+        listaId: listId,
+        donoCorrigido: dono !== (s.donoSugerido ?? null),
+        vencimentoCorrigido: vencimento !== vencimentoSugerido,
+      },
     });
     return (await this.paraDtos(orgId, [final]))[0];
   }
 
-  async descartar(orgId: string, actorId: string, id: string): Promise<TrabAtaSugestaoDto> {
+  async descartar(orgId: string, quem: QuemDecide, id: string, acesso: AcessoAsAtas): Promise<TrabAtaSugestaoDto> {
+    await this.exigirGente(orgId, quem);
+    const actorId = quem.id;
     const s = await this.prisma.ataSugestao.findFirst({ where: { id, orgId } });
     if (!s) throw new NotFoundException('Sugestão não encontrada.');
+    this.exigirAcessoAFonte(s.ataRef, acesso);
     const r = await this.prisma.ataSugestao.updateMany({
       where: { id, orgId, estado: 'rascunho' },
       data: { estado: 'descartada', decididaPor: actorId, decididaEm: new Date() },
@@ -409,16 +489,34 @@ export class AtasService {
   // Por dentro
   // ==========================================================================
 
+  /**
+   * Gente de verdade, relida no banco: usuário ativo desta empresa e sem papel
+   * de máquina. O guarda do controller recusa pelo token; esta é a segunda
+   * tranca, contra o token antigo de quem virou conta de serviço (PA-3).
+   */
+  private async exigirGente(orgId: string, quem: QuemDecide): Promise<void> {
+    if (temPapelDeMaquina(quem.papeis)) throw new ForbiddenException(RECUSA_DE_MAQUINA_NAS_ATAS);
+    const doBanco = await lerAprovador(this.prisma, quem.id, orgId);
+    if (!doBanco || !doBanco.ativo) throw new ForbiddenException('Quem decide uma ata precisa ser um usuário ativo desta empresa.');
+    if (temPapelDeMaquina(doBanco.papeis)) throw new ForbiddenException(RECUSA_DE_MAQUINA_NAS_ATAS);
+  }
+
+  /** A sugestão de uma ata do vault só se decide com `obsidian.ver` (o trecho É o vault). */
+  private exigirAcessoAFonte(ataRef: string, acesso: AcessoAsAtas): void {
+    if (!acesso.vault && lerRefDaAta(ataRef)?.fonte === 'vault') throw new ForbiddenException(RECUSA_DO_VAULT_NAS_ATAS);
+  }
+
   private jaDecidida(estado: string): ConflictException {
     return new ConflictException(
       estado === 'descartada' ? 'Esta sugestão já foi descartada.' : 'Esta sugestão já foi aceita: a tarefa já existe.',
     );
   }
 
-  private async exigirAta(orgId: string, ref: string): Promise<AtaLida> {
+  private async exigirAta(orgId: string, ref: string, acesso: AcessoAsAtas): Promise<AtaLida> {
     const lida = lerRefDaAta(ref);
     if (!lida) throw new NotFoundException('Ata não encontrada.');
     if (lida.fonte === 'vault') {
+      if (!acesso.vault) throw new ForbiddenException(RECUSA_DO_VAULT_NAS_ATAS);
       const pasta = await this.pasta(orgId);
       const n = await this.prisma.knowledgeNote.findFirst({
         where: { id: lida.id, orgId, ...this.filtroDaPasta(pasta) },
@@ -429,7 +527,8 @@ export class AtasService {
         ref: refDaAta('vault', n.id),
         fonte: 'vault',
         titulo: n.title,
-        texto: n.content,
+        // A mesma varredura da colada, antes da tela, do modelo e do trecho (PA-5).
+        texto: varrerSegredos(n.content).texto,
         caminho: n.path,
         procedencia: `vault: ${n.path}`,
         atualizadaEm: n.fileTime,
@@ -513,9 +612,13 @@ export class AtasService {
     return gente.map((g) => g.name).filter(Boolean);
   }
 
-  private async resumoDaAtaParaTarefa(orgId: string, ref: string): Promise<{ titulo: string; data: string | null } | null> {
+  private async resumoDaAtaParaTarefa(
+    orgId: string,
+    ref: string,
+    acesso: AcessoAsAtas,
+  ): Promise<{ titulo: string; data: string | null } | null> {
     try {
-      const a = await this.exigirAta(orgId, ref);
+      const a = await this.exigirAta(orgId, ref, acesso);
       return { titulo: a.titulo, data: metadadosDaAta(a.texto, a.caminho).data };
     } catch {
       return null;

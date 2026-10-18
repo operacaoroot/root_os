@@ -171,13 +171,19 @@ async function semearAtaDeExemplo(orgId: string, atorId: string | null): Promise
     console.log(`seed-comercial: Atas · a ata de exemplo já existia (memoria:${ja.id}).`);
     return;
   }
+  // Colar é decisão de gente (revisão PA-3): o serviço relê no banco quem cola,
+  // e sem uma pessoa da casa para assinar a ata de exemplo não é semeada.
+  if (!atorId) {
+    console.log('seed-comercial: Atas · a empresa não tem uma pessoa para assinar a ata de exemplo; ela não foi semeada.');
+    return;
+  }
   const p = prisma as unknown as PrismaService;
   const memoria = new MemoriaService(p, new EventLogService(p));
   // Só `colar` é usado: o Trabalho, a auditoria e o modelo não entram nesta semente.
   const atas = new AtasService(p, memoria, null as never, { log: async () => undefined } as never, null as never);
   const ata = await comContexto(
     { orgId, actorType: ActorType.user, actorId: atorId, correlationId: 'seed-comercial:ata-de-exemplo', origem: 'script' },
-    () => atas.colar(orgId, atorId ?? 'seed-comercial', { titulo: TITULO_DA_ATA_DE_EXEMPLO, texto: readFileSync(arquivo, 'utf8') }),
+    () => atas.colar(orgId, { id: atorId, papeis: [] }, { titulo: TITULO_DA_ATA_DE_EXEMPLO, texto: readFileSync(arquivo, 'utf8') }),
   );
   console.log(`seed-comercial: Atas · ata de exemplo semeada pela memória (${ata.id}); "Sugerir tarefas" nela responde pelo stub (homolog/fixtures/stub/trabalho.ata.sugestoes.json).`);
 }

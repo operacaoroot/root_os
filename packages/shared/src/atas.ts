@@ -68,6 +68,11 @@ export interface TrabAtaLista {
   pasta: string;
   /** Quantas notas do vault esta empresa tem indexadas (zero = só as coladas aparecem). */
   notasDoVault: number;
+  /**
+   * Quem pediu pode ler o vault (`obsidian.ver`)? Sem essa permissão a lista
+   * traz só as coladas: o banco de atas não alarga o acesso ao vault.
+   */
+  vaultVisivel: boolean;
   iaConfigurada: boolean;
 }
 
@@ -108,6 +113,12 @@ export type TrabAtaColarInput = z.infer<typeof TrabAtaColarSchema>;
 export const TrabAtaAceitarSchema = z.object({
   /** A lista escolhida na tela; sem ela vale a da sugestão. */
   listaId: z.string().uuid().optional(),
+  /**
+   * O dono e o vencimento que a pessoa confirmou ou corrigiu na tela. Ausente
+   * vale o da sugestão; `null` (ou dono vazio) tira. Quem aceita é quem decide.
+   */
+  dono: z.string().trim().max(120).nullish(),
+  vencimento: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'vencimento no formato AAAA-MM-DD').nullish(),
 });
 export type TrabAtaAceitarInput = z.infer<typeof TrabAtaAceitarSchema>;
 
