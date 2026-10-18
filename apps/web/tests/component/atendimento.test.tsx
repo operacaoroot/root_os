@@ -165,12 +165,23 @@ beforeEach(() => {
   apiPost.mockReset();
 });
 
+/*
+ * Desde a rodada do painel P4 o item nasce FECHADO, numa linha só, e o
+ * conteúdo exato (com o botão de assinar) mora no item aberto. Os casos abaixo
+ * abrem o item antes de ler, como a pessoa faz; o que eles provam não mudou.
+ */
+async function abrir(id: string) {
+  await userEvent.click(await screen.findByTestId(`aprov-expandir-${id}`));
+  return screen.findByTestId(`item-${id}`);
+}
+
 /* ------------------------------------------------------- o que a fila mostra */
 
 describe('a fila mostra o que quem assina precisa ler', () => {
   it('desenha o CONTEÚDO EXATO que vai ser executado, não só o resumo', async () => {
     apiGet.mockResolvedValue(fila([DO_AGENTE]));
     render(<AtendimentoPage />);
+    await abrir('ap-agente');
 
     // o corpo da mensagem, literal — é o que a pessoa está assinando
     expect(await screen.findByText('Bom dia — a pauta de hoje saiu às 8h.')).toBeInTheDocument();
@@ -190,7 +201,7 @@ describe('a fila mostra o que quem assina precisa ler', () => {
     apiGet.mockResolvedValue(fila([DO_AGENTE]));
     render(<AtendimentoPage />);
 
-    await screen.findByTestId('item-ap-agente');
+    await abrir('ap-agente');
     expect(screen.getByText(/não conferido aqui/i)).toBeInTheDocument();
     expect(screen.queryByText(/assinatura do conteúdo/i)).not.toBeInTheDocument();
   });
@@ -198,7 +209,7 @@ describe('a fila mostra o que quem assina precisa ler', () => {
   it('pede a fila ao servidor, e só a ele', async () => {
     apiGet.mockResolvedValue(fila([DO_AGENTE]));
     render(<AtendimentoPage />);
-    await screen.findByTestId('item-ap-agente');
+    await screen.findByTestId('aprov-item-ap-agente');
     expect(apiGet).toHaveBeenCalledWith('/approvals/fila', 'tok');
   });
 
@@ -209,6 +220,7 @@ describe('a fila mostra o que quem assina precisa ler', () => {
     render(<AtendimentoPage />);
 
     expect(await screen.findByTestId('nivel-ap-agente')).toHaveTextContent('R3');
+    await abrir('ap-agente');
     expect(screen.getByTestId('gatilho-destinatario_novo')).toBeInTheDocument();
     expect(screen.getByTestId('gatilho-fora_da_janela')).toBeInTheDocument();
     // o degrau subiu: o efeito dava R2
@@ -219,6 +231,9 @@ describe('a fila mostra o que quem assina precisa ler', () => {
     apiGet.mockResolvedValue(fila([QUE_EU_PROPUS]));
     render(<AtendimentoPage />);
 
+    // fechado, a linha já diz quem pode assinar
+    expect(await screen.findByTestId('aprov-espera-ap-meu')).toHaveTextContent('Pode assinar: Lucas');
+    await abrir('ap-meu');
     const lista = await screen.findByTestId('aprovadores-ap-meu');
     expect(within(lista).getByText('Lucas')).toBeInTheDocument();
     expect(within(lista).getByText('· responsavel')).toBeInTheDocument();
@@ -230,8 +245,15 @@ describe('a fila mostra o que quem assina precisa ler', () => {
     );
     render(<AtendimentoPage />);
 
-    expect(await screen.findByText(/Esperando decisão/)).toBeInTheDocument();
-    expect(screen.getByText(/^Recusada/)).toBeInTheDocument();
+    const voce = await screen.findByTestId('aprov-grupo-voce');
+    expect(within(voce).getByTestId('aprov-item-ap-agente')).toBeInTheDocument();
+    const historico = screen.getByTestId('aprov-grupo-historico');
+    // o histórico nasce recolhido; mostrar abre a linha da recusa
+    expect(within(historico).queryByTestId('aprov-item-ap-no')).not.toBeInTheDocument();
+    await userEvent.click(within(historico).getByTestId('aprov-historico-alternar'));
+    expect(within(historico).getByTestId('aprov-item-ap-no')).toHaveTextContent(/recusada/);
+    await abrir('ap-no');
+    expect(screen.getByText(/^Recusada\./)).toBeInTheDocument();
   });
 });
 
@@ -242,8 +264,13 @@ describe('a tela não oferece botão que a API vai recusar', () => {
     apiGet.mockResolvedValue(fila([QUE_EU_PROPUS]));
     render(<AtendimentoPage />);
 
-    await screen.findByTestId('item-ap-meu');
-    expect(screen.queryByRole('button', { name: /aprovar e executar/i })).not.toBeInTheDocument();
+    // nem fechado (o "Ler e confirmar") nem aberto há botão de assinar
+    await screen.findByTestId('aprov-item-ap-meu');
+    expect(screen.queryByTestId('aprov-acao-ap-meu')).not.toBeInTheDocument();
+    expect(within(screen.getByTestId('aprov-grupo-outra')).getByTestId('aprov-item-ap-meu')).toBeInTheDocument();
+    await abrir('ap-meu');
+    expect(screen.queryByTestId('aprov-acao-ap-meu')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /^(confirmar|assinar como titular)$/i })).not.toBeInTheDocument();
     expect(screen.getByTestId('porque-nao-ap-meu')).toHaveTextContent(/quem propõe não assina/i);
   });
 
@@ -263,10 +290,12 @@ describe('a tela não oferece botão que a API vai recusar', () => {
     apiGet.mockResolvedValue(fila([SEM_NINGUEM]));
     render(<AtendimentoPage />);
 
+    expect(await screen.findByTestId('aprov-espera-ap-orfa')).toHaveTextContent('Ninguém pode assinar hoje');
+    await abrir('ap-orfa');
     const caixa = await screen.findByTestId('sem-aprovador-ap-orfa');
     expect(caixa).toHaveTextContent(/Ninguém desta empresa pode assinar/i);
     expect(caixa).toHaveTextContent(/titular/);
-    expect(screen.queryByRole('button', { name: /aprovar e executar/i })).not.toBeInTheDocument();
+    expect(screen.queryByTestId('aprov-acao-ap-orfa')).not.toBeInTheDocument();
   });
 
   it('e avisa, no topo, que a empresa tem uma pessoa só com alçada', async () => {
@@ -282,7 +311,7 @@ describe('a tela não oferece botão que a API vai recusar', () => {
     apiGet.mockResolvedValue(fila([DO_AGENTE], { titular: 1, responsavel: 1, operador: 0 }));
     render(<AtendimentoPage />);
 
-    await screen.findByTestId('item-ap-agente');
+    await screen.findByTestId('aprov-item-ap-agente');
     expect(screen.queryByTestId('censo-alerta')).not.toBeInTheDocument();
   });
 });
@@ -299,7 +328,13 @@ describe('aprovar executa e fecha o evento', () => {
     });
     render(<AtendimentoPage />);
 
-    await userEvent.click(await screen.findByRole('button', { name: /aprovar e executar/i }));
+    // fechado, o passo só abre: assinar é assinar o que se leu
+    const passo = await screen.findByTestId('aprov-acao-ap-agente');
+    expect(passo).toHaveTextContent('Ler e confirmar');
+    await userEvent.click(passo);
+    expect(apiPost).not.toHaveBeenCalled();
+    expect(screen.getByText('Bom dia — a pauta de hoje saiu às 8h.')).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'Confirmar' }));
 
     // corpo VAZIO: R3 não exige motivo nem reautenticação, e o schema do corpo
     // é `.strict()` — mandar campo a mais é 400.
@@ -321,10 +356,20 @@ describe('aprovar executa e fecha o evento', () => {
     apiPost.mockResolvedValue({ ok: true, summary: 'x', execucao: { status: 'executado', resultado: 1 } });
     render(<AtendimentoPage />);
 
-    await screen.findByTestId('item-ap-r4');
+    // as condições aparecem ANTES do clique: na linha fechada e no item aberto
+    const linha = await screen.findByTestId('aprov-item-ap-r4');
+    expect(linha).toHaveTextContent('pede senha');
+    expect(linha).toHaveTextContent('pede motivo escrito');
+    expect(linha).toHaveTextContent('R4: pede a titular, com senha');
+    await abrir('ap-r4');
+    const condicoes = screen.getByTestId('aprov-condicoes-ap-r4');
+    expect(condicoes).toHaveTextContent('Alçada responsavel ou acima');
+    expect(condicoes).toHaveTextContent('Outra pessoa que não quem pediu (curador)');
+    expect(condicoes).toHaveTextContent('Sua senha de novo');
+    expect(condicoes).toHaveTextContent('Um motivo escrito (R4 exige)');
     await userEvent.type(screen.getByRole('textbox'), 'cliente confirmou por telefone');
     await userEvent.type(document.querySelector('input[type="password"]')!, 'senha-secreta');
-    await userEvent.click(screen.getByRole('button', { name: /aprovar e executar/i }));
+    await userEvent.click(screen.getByTestId('aprov-acao-ap-r4'));
 
     await waitFor(() =>
       expect(apiPost).toHaveBeenCalledWith(
@@ -344,7 +389,8 @@ describe('aprovar executa e fecha o evento', () => {
     });
     render(<AtendimentoPage />);
 
-    await userEvent.click(await screen.findByRole('button', { name: /aprovar e executar/i }));
+    await abrir('ap-agente');
+    await userEvent.click(screen.getByTestId('aprov-acao-ap-agente'));
     expect(await screen.findByText(/NÃO executada/)).toBeInTheDocument();
   });
 });
@@ -363,7 +409,8 @@ describe('a recusa por conector desligado é reconhecida pelo CÓDIGO', () => {
     );
     render(<AtendimentoPage />);
 
-    await userEvent.click(await screen.findByRole('button', { name: /aprovar e executar/i }));
+    await abrir('ap-agente');
+    await userEvent.click(screen.getByTestId('aprov-acao-ap-agente'));
 
     expect(await screen.findByText(/está desligado para esta empresa/)).toBeInTheDocument();
     const link = screen.getByRole('link', { name: /religar em Conexões/i });
@@ -380,7 +427,8 @@ describe('a recusa por conector desligado é reconhecida pelo CÓDIGO', () => {
     );
     render(<AtendimentoPage />);
 
-    await userEvent.click(await screen.findByRole('button', { name: /aprovar e executar/i }));
+    await abrir('ap-agente');
+    await userEvent.click(screen.getByTestId('aprov-acao-ap-agente'));
 
     expect(await screen.findByText(/Alçada insuficiente/)).toBeInTheDocument();
     expect(screen.queryByRole('link', { name: /religar em Conexões/i })).not.toBeInTheDocument();
@@ -414,6 +462,9 @@ describe('o conteúdo exato só aparece para quem pode decidir', () => {
 
     // a fila continua inteira: nível, gatilhos, prazo, quem assina
     expect(await screen.findByTestId('nivel-ap-agente')).toHaveTextContent('R3');
+    // sem os argumentos, a frase fica no verbo: nada do conteúdo vaza pela linha
+    expect(screen.getByTestId('aprov-frase-ap-agente')).toHaveTextContent(/^Enviar WhatsApp$/);
+    await abrir('ap-agente');
     expect(screen.getByTestId('gatilho-destinatario_novo')).toBeInTheDocument();
 
     // o texto, não
@@ -429,6 +480,7 @@ describe('o conteúdo exato só aparece para quem pode decidir', () => {
     const semArgumento = { ...DO_AGENTE, conteudo: {}, conteudoOculto: false };
     apiGet.mockResolvedValue(fila([semArgumento]));
     render(<AtendimentoPage />);
+    await abrir('ap-agente');
 
     expect(await screen.findByText(/não leva argumento nenhum/i)).toBeInTheDocument();
     expect(screen.queryByTestId('conteudo-oculto')).not.toBeInTheDocument();
@@ -461,10 +513,15 @@ describe('impedimento: a tela explica em vez de oferecer botão', () => {
     apiGet.mockResolvedValue(fila([IMPEDIDO]));
     render(<AtendimentoPage />);
 
+    // depende de você porque só a sua recusa tira da fila; assinar, não há
+    const voce = await screen.findByTestId('aprov-grupo-voce');
+    expect(within(voce).getByTestId('aprov-item-ap-impedido')).toBeInTheDocument();
+    expect(screen.queryByTestId('aprov-acao-ap-impedido')).not.toBeInTheDocument();
+    await abrir('ap-impedido');
     expect(await screen.findByTestId('impedimento-ap-impedido')).toHaveTextContent(
       /não casam mais com o formato/i,
     );
-    expect(screen.queryByRole('button', { name: /aprovar e executar/i })).not.toBeInTheDocument();
+    expect(screen.queryByTestId('aprov-acao-ap-impedido')).not.toBeInTheDocument();
     expect(screen.getByTestId('porque-nao-ap-impedido')).toHaveTextContent(
       /não casam mais com o formato/i,
     );
@@ -477,7 +534,8 @@ describe('impedimento: a tela explica em vez de oferecer botão', () => {
     apiPost.mockResolvedValue({ ok: true });
     render(<AtendimentoPage />);
 
-    await userEvent.click(await screen.findByTestId('recusar-ap-impedido'));
+    await abrir('ap-impedido');
+    await userEvent.click(await screen.findByTestId('aprov-recusar-ap-impedido'));
     await waitFor(() =>
       expect(apiPost).toHaveBeenCalledWith('/approvals/ap-impedido/reject', {}, 'tok'),
     );
@@ -509,7 +567,8 @@ describe('a gaveta "confirmada, aguardando execução" não é beco sem saída',
     apiPost.mockResolvedValue({ ok: true });
     render(<AtendimentoPage />);
 
-    const botao = await screen.findByTestId('recusar-ap-limbo');
+    // fechado, o passo já está na linha
+    const botao = await screen.findByTestId('aprov-recusar-ap-limbo');
     expect(botao).toHaveTextContent(/recusar e tirar da fila/i);
     await userEvent.click(botao);
     await waitFor(() =>
@@ -523,6 +582,7 @@ describe('a gaveta "confirmada, aguardando execução" não é beco sem saída',
     // provável de ter posto o item ali.
     apiGet.mockResolvedValue(fila([NO_LIMBO]));
     render(<AtendimentoPage />);
+    await abrir('ap-limbo');
 
     const texto = (await screen.findByText(/Quatro coisas param uma ação já confirmada/i))
       .textContent!;
@@ -538,7 +598,7 @@ describe('a gaveta "confirmada, aguardando execução" não é beco sem saída',
     apiGet.mockResolvedValue(fila([{ ...NO_LIMBO, aprovadores: [] }]));
     render(<AtendimentoPage />);
 
-    await screen.findByTestId('item-ap-limbo');
+    await abrir('ap-limbo');
     expect(screen.queryByText('Quem pode aprovar')).not.toBeInTheDocument();
     expect(screen.queryByTestId('sem-aprovador-ap-limbo')).not.toBeInTheDocument();
   });
@@ -563,7 +623,7 @@ describe('o teto da fila se anuncia', () => {
     apiGet.mockResolvedValue(fila([DO_AGENTE]));
     render(<AtendimentoPage />);
 
-    await screen.findByTestId('item-ap-agente');
+    await screen.findByTestId('aprov-item-ap-agente');
     expect(screen.queryByTestId('corte-alerta')).not.toBeInTheDocument();
   });
 });

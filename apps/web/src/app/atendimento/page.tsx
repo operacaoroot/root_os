@@ -4,8 +4,8 @@ import { useCallback, useEffect, useState } from 'react';
 import { CODIGO_CONECTOR_DESLIGADO, apiGet, apiPost } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 import { Item } from './Item';
-import { EXPLICACAO_DA_GAVETA, TITULO_DA_GAVETA } from './ui';
-import type { Confirmacao, Fila, Gaveta, ItemDaFila } from './tipos';
+import { ROTULO_DO_TIPO, TIPOS, filtroDaQuery, organizarFila, type Filtro, type Grupo } from './organizar-fila';
+import type { Confirmacao, Fila, ItemDaFila } from './tipos';
 
 /*
  * A FILA DE APROVAÇÃO — RF-A-05, fatia 3.10.
@@ -54,7 +54,32 @@ import type { Confirmacao, Fila, Gaveta, ItemDaFila } from './tipos';
  * a tela diz isso com todas as letras em vez de mostrar uma fila que não anda.
  */
 
-const ORDEM: Gaveta[] = ['esperando', 'confirmada', 'expirou', 'recusada'];
+/*
+ * OS TRÊS GRUPOS (rodada do painel P4, 18/10/2026): o que depende de você, o
+ * que espera outra pessoa e o histórico. Quem põe cada item em cada grupo é
+ * `organizar-fila.ts`, só com o que o servidor já decidiu.
+ */
+const GRUPOS: Array<{ chave: Grupo; titulo: string; explica: string; vazio: string }> = [
+  {
+    chave: 'voce',
+    titulo: 'Depende de você',
+    explica: 'O que você pode assinar agora, e o que só sai da fila com a sua recusa.',
+    vazio: 'Nada esperando por você.',
+  },
+  {
+    chave: 'outra',
+    titulo: 'Aguardando outra pessoa',
+    explica:
+      'O que você pediu (quem pede não assina), o que pede uma alçada que você não tem e o que espera a titular. Você ainda pode recusar o que pediu.',
+    vazio: 'Nada esperando outra pessoa.',
+  },
+  {
+    chave: 'historico',
+    titulo: 'Decididas e vencidas',
+    explica: 'Recusadas e vencidas sem decisão. Nada daqui saiu da casa.',
+    vazio: 'Nenhuma decisão recente.',
+  },
+];
 
 /** O que a caixa de erro precisa saber: a frase, e se há caminho de conserto. */
 interface Erro {
@@ -147,22 +172,72 @@ export default function AtendimentoPage() {
     }
   };
 
-  const porGaveta = (g: Gaveta): ItemDaFila[] => fila?.itens.filter((i) => i.gaveta === g) ?? [];
-  const esperando = porGaveta('esperando');
+  /*
+   * O FILTRO MORA NA QUERY (`?tipo=whatsapp`), por `history.replaceState`, como
+   * a caixa e o painel do comercial: o endereço copiado abre no mesmo filtro, e
+   * trocar não empilha histórico do navegador. Lido depois de montar, para o
+   * HTML do servidor e o do navegador começarem iguais.
+   */
+  const [filtro, setFiltro] = useState<Filtro>('todos');
+  const [historicoAberto, setHistoricoAberto] = useState(false);
+  useEffect(() => {
+    if (typeof window !== 'undefined') setFiltro(filtroDaQuery(window.location.search));
+  }, []);
+  const trocarFiltro = (novo: Filtro) => {
+    setFiltro(novo);
+    try {
+      const url = new URL(window.location.href);
+      if (novo === 'todos') url.searchParams.delete('tipo');
+      else url.searchParams.set('tipo', novo);
+      window.history.replaceState(window.history.state, '', url.toString());
+    } catch {
+      /* fora do navegador (teste): o filtro troca do mesmo jeito */
+    }
+  };
+
+  const org = fila ? organizarFila(fila, filtro) : null;
+
+  const desenhar = (i: ItemDaFila) =>
+    fila ? (
+      <Item
+        key={i.id}
+        item={i}
+        // `decideNestaSessao`, não `decide`: a trava da rota lê a
+        // permissão do TOKEN, que dura horas. Quem foi promovido no
+        // meio da sessão já decide segundo o banco e ainda levaria
+        // "Permissão insuficiente" — o botão viria com recusa dentro.
+        euDecido={fila.eu.decideNestaSessao}
+        souOProponente={i.proponente.id === fila.eu.id}
+        eu={{ id: fila.eu.id, alcada: fila.eu.alcada }}
+        agora={fila.agora}
+        ocupado={ocupado}
+        aoAprovar={(id, motivo, senha) => void aprovar(id, motivo, senha)}
+        aoRecusar={(id) => void recusar(id)}
+      />
+    ) : null;
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-5">
       <header className="flex flex-wrap items-start justify-between gap-3">
-        <div>
+        <div className="min-w-0">
           <p className="text-sm text-muted">
-            O que o sistema preparou e não executou sozinho. Cada item mostra o conteúdo exato que
-            vai sair, o degrau em que parou e quem pode assinar. Aprovar aqui executa a ação.
+            O que o sistema preparou e não executou sozinho. Abra um pedido para ler o conteúdo exato que vai sair
+            antes de assinar. Assinar aqui executa a ação.
           </p>
           {fila && (
-            <p className="mt-1 text-xs text-muted">
-              {esperando.length} esperando · sua alçada: {fila.eu.alcada}
-              {fila.eu.decide ? '' : ' · seu perfil não decide nesta fila'}
-              {fila.eu.veConteudo ? '' : ' · sem o conteúdo das ações (só quem decide o vê)'}
+            <p className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-sm">
+              <span data-testid="aprov-contador-voce">
+                aguardando você{' '}
+                <span className="font-mono font-medium text-brand">{org!.contadores.voce}</span>
+              </span>
+              <span data-testid="aprov-contador-hoje">
+                vencendo hoje <span className="font-mono font-medium text-text">{org!.contadores.vencendoHoje}</span>
+              </span>
+              <span className="text-xs text-muted">
+                sua alçada: <span className="font-mono">{fila.eu.alcada}</span>
+                {fila.eu.decide ? '' : ' · seu perfil não decide nesta fila'}
+                {fila.eu.veConteudo ? '' : ' · sem o conteúdo das ações (só quem decide o vê)'}
+              </span>
             </p>
           )}
         </div>
@@ -179,7 +254,7 @@ export default function AtendimentoPage() {
       {fila && <Corte fila={fila} />}
 
       {aviso && (
-        <div className="rounded-lg border border-good/40 bg-good/10 px-3 py-2 text-sm text-good">
+        <div className="rounded-lg border border-good/40 bg-good/10 px-3 py-2 text-sm text-good" role="status">
           {aviso}
         </div>
       )}
@@ -201,43 +276,68 @@ export default function AtendimentoPage() {
 
       {!fila && !erro && <p className="text-sm text-muted">Carregando a fila…</p>}
 
-      {fila &&
-        ORDEM.map((g) => {
-          const itens = porGaveta(g);
-          if (!itens.length && g !== 'esperando') return null;
-          return (
-            <section key={g} className="space-y-3">
-              <div>
-                <h2 className="text-sm font-medium">
-                  {TITULO_DA_GAVETA[g]}{' '}
-                  <span className="text-muted">({itens.length})</span>
-                </h2>
-                <p className="text-xs text-muted">{EXPLICACAO_DA_GAVETA[g]}</p>
-              </div>
-              {itens.length ? (
-                itens.map((i) => (
-                  <Item
-                    key={i.id}
-                    item={i}
-                    // `decideNestaSessao`, não `decide`: a trava da rota lê a
-                    // permissão do TOKEN, que dura horas. Quem foi promovido no
-                    // meio da sessão já decide segundo o banco e ainda levaria
-                    // "Permissão insuficiente" — o botão viria com recusa dentro.
-                    euDecido={fila.eu.decideNestaSessao}
-                    souOProponente={i.proponente.id === fila.eu.id}
-                    ocupado={ocupado}
-                    aoAprovar={(id, motivo, senha) => void aprovar(id, motivo, senha)}
-                    aoRecusar={(id) => void recusar(id)}
-                  />
-                ))
-              ) : (
-                <p className="rounded-xl border border-border bg-surface p-5 text-sm text-muted">
-                  Nada esperando gente. Toda ação que a régua reteve já foi decidida.
-                </p>
-              )}
-            </section>
-          );
-        })}
+      {fila && org && (
+        <>
+          <div role="group" aria-label="Filtrar por tipo" className="flex flex-wrap gap-1.5">
+            {(['todos', ...TIPOS] as Filtro[]).map((t) => (
+              <button
+                key={t}
+                type="button"
+                aria-pressed={filtro === t}
+                onClick={() => trocarFiltro(t)}
+                className={`rounded-md border px-2.5 py-1 text-xs ${
+                  filtro === t
+                    ? 'border-brand bg-brand/15 text-text'
+                    : `border-border text-muted hover:text-text ${org.contadores.porTipo[t] ? '' : 'opacity-60'}`
+                }`}
+                data-testid={`aprov-filtro-${t}`}
+              >
+                {ROTULO_DO_TIPO[t]} <span className="font-mono">{org.contadores.porTipo[t]}</span>
+              </button>
+            ))}
+          </div>
+
+          {GRUPOS.map((g) => {
+            const itens = org.grupos[g.chave];
+            const recolhivel = g.chave === 'historico';
+            const mostra = !recolhivel || historicoAberto;
+            return (
+              <section key={g.chave} className="space-y-2" data-testid={`aprov-grupo-${g.chave}`} aria-label={g.titulo}>
+                <div className="flex flex-wrap items-baseline justify-between gap-2">
+                  <div className="min-w-0">
+                    <h2 className="text-sm font-medium">
+                      {g.titulo} <span className="font-mono text-muted">{itens.length}</span>
+                    </h2>
+                    <p className="text-xs text-muted">{g.explica}</p>
+                  </div>
+                  {recolhivel && (
+                    <button
+                      type="button"
+                      aria-expanded={historicoAberto}
+                      onClick={() => setHistoricoAberto((v) => !v)}
+                      className="rounded-md border border-border px-2.5 py-1 text-xs text-muted hover:text-text"
+                      data-testid="aprov-historico-alternar"
+                    >
+                      {historicoAberto ? 'Recolher' : 'Mostrar'}
+                    </button>
+                  )}
+                </div>
+                {mostra &&
+                  (itens.length ? (
+                    <div className="space-y-2">{itens.map(desenhar)}</div>
+                  ) : (
+                    <p
+                      className="rounded-lg border border-dashed border-border px-4 py-3 text-sm text-muted"
+                      data-testid={`aprov-vazio-${g.chave}`}
+                    >
+                      {filtro === 'todos' ? g.vazio : `${g.vazio.replace(/\.$/, '')} em ${ROTULO_DO_TIPO[filtro]}.`}
+                    </p>
+                  ))}
+              </section>
+            );
+          })}
+        </>
+      )}
     </div>
   );
 }

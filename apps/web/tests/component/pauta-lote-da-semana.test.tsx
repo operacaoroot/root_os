@@ -290,9 +290,16 @@ describe('MD8: o lote da semana em /atendimento', () => {
       url.startsWith('/pauta/lotes/') ? new Promise((ok) => (soltar = ok)) : Promise.resolve(FILA),
     );
     render(<AtendimentoPage />);
+    // Desde a P4 o item nasce fechado; o passo da linha ("Ler e assinar como titular") só abre.
+    const passo = await screen.findByTestId('aprov-acao-ap-lote', {}, { timeout: 4000 });
+    expect(passo).toHaveTextContent('Ler e assinar como titular');
+    expect(apiGet).not.toHaveBeenCalledWith('/pauta/lotes/lote-1/conteudo', 'tok');
+    await userEvent.click(passo);
     await screen.findByTestId('item-ap-lote', {}, { timeout: 4000 });
     expect(screen.getByTestId('lote-esperando-ap-lote')).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'Aprovar e executar' })).toBeNull();
+    // aberto e com o cartão carregando: nenhum botão de assinar, em lugar nenhum
+    expect(screen.queryByTestId('aprov-acao-ap-lote')).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Assinar como titular' })).toBeNull();
 
     await waitFor(() => expect(apiGet).toHaveBeenCalledWith('/pauta/lotes/lote-1/conteudo', 'tok'));
     soltar(CONTEUDO);
@@ -307,7 +314,7 @@ describe('MD8: o lote da semana em /atendimento', () => {
     expect(within(cartao).getByTestId('item-do-lote-i2')).toHaveTextContent('mp4 42 s');
     expect(within(cartao).getByTestId('divergente-i2')).toHaveTextContent('mudou depois');
     expect(cartao).toHaveTextContent('1 post(s) mudaram depois de o lote ser montado e NÃO saem');
-    expect(await screen.findByRole('button', { name: 'Aprovar e executar' }, { timeout: 4000 })).toBeInTheDocument();
+    expect(await screen.findByRole('button', { name: 'Assinar como titular' }, { timeout: 4000 })).toBeInTheDocument();
     // R4: senha e motivo.
     expect(screen.getByText(/R4 exige motivo escrito/)).toBeInTheDocument();
     expect(screen.getByText(/R4 exige que você prove de novo/)).toBeInTheDocument();
@@ -325,6 +332,7 @@ describe('MD8: o lote da semana em /atendimento', () => {
     apiBlob.mockResolvedValue(new Blob(['x']));
     try {
       render(<AtendimentoPage />);
+      await userEvent.click(await screen.findByTestId('aprov-expandir-ap-lote', {}, { timeout: 4000 }));
       const carrossel = await screen.findByTestId('item-do-lote-i1');
       const faixa = within(carrossel).getByLabelText('Os 3 slide(s) do post');
       await waitFor(() => expect(within(faixa).getAllByRole('img')).toHaveLength(3));
@@ -349,11 +357,13 @@ describe('MD8: o lote da semana em /atendimento', () => {
   it('se o conteúdo do lote não carrega, não há botão de aprovar: sem ler, não se assina', async () => {
     apiGet.mockImplementation((url: string) => (url.startsWith('/pauta/lotes/') ? Promise.reject(new Error('403')) : Promise.resolve(FILA)));
     render(<AtendimentoPage />);
+    await userEvent.click(await screen.findByTestId('aprov-expandir-ap-lote', {}, { timeout: 4000 }));
     expect(await screen.findByTestId('lote-sem-conteudo')).toHaveTextContent('não assine');
-    expect(screen.queryByRole('button', { name: 'Aprovar e executar' })).toBeNull();
+    expect(screen.queryByTestId('aprov-acao-ap-lote')).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Assinar como titular' })).toBeNull();
     // Recusar segue ao alcance: o pedido não precisa esperar 10 min na fila.
     apiPost.mockResolvedValue({});
-    await userEvent.click(screen.getByTestId('recusar-lote-ap-lote'));
+    await userEvent.click(within(screen.getByTestId('item-ap-lote')).getByTestId('aprov-recusar-ap-lote'));
     await waitFor(() => expect(apiPost).toHaveBeenCalledWith('/approvals/ap-lote/reject', {}, 'tok'));
   });
 });

@@ -194,6 +194,8 @@ describe('MD11: a regra da DM no cartão do lote, em /atendimento', () => {
   it('a titular lê o texto exato que estranhos vão receber, o destino do link, os posts, o teto e a janela', async () => {
     apiGet.mockImplementation((url: string) => Promise.resolve(url.startsWith('/pauta/lotes/') ? CONTEUDO : FILA));
     render(<AtendimentoPage />);
+    // Desde a P4 o item nasce fechado: o passo da linha abre o lote para ler.
+    await userEvent.click(await screen.findByTestId('aprov-acao-ap-lote', {}, { timeout: 4000 }));
     const cartao = await screen.findByTestId('cartao-do-lote', {}, { timeout: 4000 });
     const dm = within(cartao).getByTestId('item-da-dm-dm1');
     expect(dm).toHaveTextContent('DM automática · quem comentar AGENTES · ep-04 m1');
@@ -204,7 +206,7 @@ describe('MD11: a regra da DM no cartão do lote, em /atendimento', () => {
     expect(dm).toHaveTextContent('150 de 1000 bytes');
     // A janela é a da política, que a MD3 deixa configurar: a titular lê a que vale.
     expect(dm).toHaveTextContent('das 08:00–20:00 (America/Sao_Paulo)');
-    expect(await screen.findByRole('button', { name: 'Aprovar e executar' }, { timeout: 4000 })).toBeInTheDocument();
+    expect(await screen.findByRole('button', { name: 'Assinar como titular' }, { timeout: 4000 })).toBeInTheDocument();
   });
 });
 

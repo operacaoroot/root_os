@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { render, screen, within } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 
 /*
  * REVISÃO E-7: quem libera o R3 da proposta do comercial lê o conteúdo que o
@@ -56,20 +57,26 @@ describe('revisão E-7: o cartão da proposta em /atendimento', () => {
   it('mostra desconto, validade, quadro, o que ouvimos e a frase; o botão aparece com o hash conferido', async () => {
     apiGet.mockResolvedValue(conteudo(true));
     render(<Item item={item()} {...props} />);
+    // Desde a P4 o item nasce fechado: o cartão só carrega com ele aberto.
+    expect(apiGet).not.toHaveBeenCalled();
+    await userEvent.click(screen.getByTestId('aprov-acao-ap1'));
     const cartao = await screen.findByTestId('cartao-da-proposta');
     expect(apiGet).toHaveBeenCalledWith(`/comercial/lead/lead-1/proposta/v/1/conteudo?hash=${HASH}`, 'tok');
     expect(cartao).toHaveTextContent('10%');
     expect(cartao).toHaveTextContent('VALORES DE EXEMPLO');
     expect(cartao).toHaveTextContent('fechamento leva 12 dias');
     expect(cartao).toHaveTextContent('A conta fecha no dia útil seguinte.');
-    expect(await screen.findByRole('button', { name: 'Aprovar e executar' })).toBeInTheDocument();
+    expect(await screen.findByRole('button', { name: 'Confirmar' })).toBeInTheDocument();
   });
 
   it('com o hash de agora diferente do assinado, diz que não sai e não oferece aprovar', async () => {
     apiGet.mockResolvedValue(conteudo(false));
     render(<Item item={item()} {...props} />);
+    await userEvent.click(screen.getByTestId('aprov-expandir-ap1'));
     expect(await screen.findByTestId('proposta-divergente')).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'Aprovar e executar' })).toBeNull();
-    expect(screen.getByTestId('recusar-proposta-ap1')).toBeInTheDocument();
+    expect(screen.queryByTestId('aprov-acao-ap1')).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Confirmar' })).toBeNull();
+    expect(screen.getByTestId('proposta-esperando-ap1')).toBeInTheDocument();
+    expect(within(screen.getByTestId('item-ap1')).getByTestId('aprov-recusar-ap1')).toBeInTheDocument();
   });
 });

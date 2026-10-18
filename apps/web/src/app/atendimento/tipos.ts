@@ -31,6 +31,12 @@ export interface ItemDaFila {
   capacidade: string | null;
   canal: string | null;
   recurso: { tipo: string; id: string };
+  /**
+   * O nome do lead a que a ação se refere (rodada do painel P4), para a frase
+   * "Enviar WhatsApp para Marina Duarte". Mesma régua do conteúdo: só para quem
+   * decide. Opcional porque resposta antiga não o traz.
+   */
+  alvo?: string | null;
   agente: string | null;
   correlationId: string | null;
   /**
