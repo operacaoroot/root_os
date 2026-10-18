@@ -11,15 +11,15 @@ import {
 import { apiGet, apiPost } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 import { Ajustes } from './Ajustes';
+import { BarraDividida, COR_DO_TOM, Colunas, Numero, Quadro, brl, curto, type Tom } from '@/components/painel';
 import { EVENTO_FICHA_MUDOU, abrirFicha } from '@/lib/ficha';
 
-const brl = (n: number) => n.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL', maximumFractionDigits: 0 });
-const curto = (n: number) =>
-  n >= 1000 ? `${(n / 1000).toLocaleString('pt-BR', { maximumFractionDigits: 1 })} mil` : n.toLocaleString('pt-BR');
 const MES = ['jan', 'fev', 'mar', 'abr', 'mai', 'jun', 'jul', 'ago', 'set', 'out', 'nov', 'dez'];
 const nomeDoMes = (aaaaMm: string) => MES[Number(aaaaMm.slice(5, 7)) - 1];
 const mesPorExtenso = (p: string) => (p.length === 4 ? p : `${nomeDoMes(p)}/${p.slice(0, 4)}`);
 const pct = (a: number, b: number) => (b ? `${Math.round((a / b) * 100)}%` : '—');
+/** Ganho em lima cheio, aberto em lima claro, perda em cinza: um acento só. */
+const TOM_DO_RESULTADO: Record<'aberta' | 'ganho' | 'perdido', Tom> = { ganho: 'forte', aberta: 'medio', perdido: 'fraco' };
 const negocios = (n: number) => `${n} ${n === 1 ? 'negócio' : 'negócios'}`;
 
 /*
@@ -202,26 +202,26 @@ function Painel({ p, abrir, ajustes }: { p: PainelComercial; abrir: (f: Filtro) 
 
       <div className="grid gap-6 lg:grid-cols-2">
         <Quadro titulo="Funil geral" nota="negócios em cada etapa · clique numa etapa">
-          <Colunas
+          <Colunas chamada="clique para ver os negócios"
             itens={p.etapas.map((e) => ({
               chave: e.nome,
               rotulo: e.nome,
               v: e.qtd,
               mostra: String(e.qtd),
-              tom: e.resultado,
+              tom: TOM_DO_RESULTADO[e.resultado],
               dica: [e.nome, negocios(e.qtd), e.valor ? brl(e.valor) : 'sem valor'],
               onClick: () => abrir({ etapa: e.nome }),
             }))}
           />
         </Quadro>
         <Quadro titulo="Valor por fase do funil" nota="soma do valor da proposta em cada etapa">
-          <Colunas
+          <Colunas chamada="clique para ver os negócios"
             itens={p.etapas.map((e) => ({
               chave: e.nome,
               rotulo: e.nome,
               v: e.valor,
               mostra: curto(e.valor),
-              tom: e.resultado,
+              tom: TOM_DO_RESULTADO[e.resultado],
               dica: [e.nome, e.valor ? brl(e.valor) : 'sem valor', negocios(e.qtd)],
               onClick: () => abrir({ etapa: e.nome }),
             }))}
@@ -263,52 +263,24 @@ function Destaque({ p, abrir }: { p: PainelComercial; abrir: (f: Filtro) => void
   const ano = String(p.ano);
   const fechado = p.totais.valorGanhoNoAno;
   const aberto = p.totais.emNegociacao;
-  const potencial = fechado + aberto;
-  const parte = (v: number) => (potencial ? `${Math.max(v ? 4 : 0, (v / potencial) * 100)}%` : '0%');
+  const verFechados = () => abrir({ situacao: 'ganho', fechado: ano });
+  const verAbertos = () => abrir({ situacao: 'aberta' });
   return (
     <section className="grid gap-5 rounded-md border border-border bg-surface p-5 lg:grid-cols-[1fr_15rem]">
       <div>
         <div className="grid gap-4 sm:grid-cols-2">
-          <Numero
-            rotulo={`Fechado em ${p.ano}`}
-            valor={brl(fechado)}
-            nota={`${p.totais.ganhosNoAno} contrato(s)`}
-            cor="bg-brand"
-            onClick={() => abrir({ situacao: 'ganho', fechado: ano })}
-          />
-          <Numero
-            rotulo="Em negociação"
-            valor={brl(aberto)}
-            nota={`${p.totais.abertos} aberto(s)`}
-            cor="bg-brand/40"
-            onClick={() => abrir({ situacao: 'aberta' })}
-          />
+          <Numero rotulo={`Fechado em ${p.ano}`} valor={brl(fechado)} nota={`${p.totais.ganhosNoAno} contrato(s)`} cor={COR_DO_TOM.forte} onClick={verFechados} />
+          <Numero rotulo="Em negociação" valor={brl(aberto)} nota={`${p.totais.abertos} aberto(s)`} cor={COR_DO_TOM.medio} onClick={verAbertos} />
         </div>
-        <div className="mt-5 flex h-5 w-full gap-0.5 overflow-visible rounded-sm bg-surface-2">
-          {fechado > 0 && (
-            <button
-              onClick={() => abrir({ situacao: 'ganho', fechado: ano })}
-              className="group relative h-full rounded-l-sm bg-brand hover:brightness-110"
-              style={{ width: parte(fechado) }}
-              aria-label={`Fechado: ${brl(fechado)}`}
-            >
-              <Dica linhas={[`Fechado em ${p.ano}`, brl(fechado), negocios(p.totais.ganhosNoAno)]} />
-            </button>
-          )}
-          {aberto > 0 && (
-            <button
-              onClick={() => abrir({ situacao: 'aberta' })}
-              className="group relative h-full rounded-r-sm bg-brand/40 hover:bg-brand/55"
-              style={{ width: parte(aberto) }}
-              aria-label={`Em negociação: ${brl(aberto)}`}
-            >
-              <Dica linhas={['Em negociação', brl(aberto), negocios(p.totais.abertos)]} />
-            </button>
-          )}
-        </div>
-        <div className="mt-2 flex justify-between">
-          <span className="com-rotulo">Potencial de {p.ano}</span>
-          <span className="com-num text-sm">{brl(potencial)}</span>
+        <div className="mt-5">
+          <BarraDividida
+            rotuloDoTotal={`Potencial de ${p.ano}`}
+            chamada="clique para ver os negócios"
+            partes={[
+              { chave: 'fechado', valor: fechado, tom: 'forte', dica: [`Fechado em ${p.ano}`, brl(fechado), negocios(p.totais.ganhosNoAno)], onClick: verFechados },
+              { chave: 'aberto', valor: aberto, tom: 'medio', dica: ['Em negociação', brl(aberto), negocios(p.totais.abertos)], onClick: verAbertos },
+            ]}
+          />
         </div>
       </div>
       <div className="grid grid-cols-2 gap-4 border-border lg:grid-cols-1 lg:border-l lg:pl-5">
@@ -316,33 +288,18 @@ function Destaque({ p, abrir }: { p: PainelComercial; abrir: (f: Filtro) => void
           rotulo="Conversão no ano"
           valor={p.totais.conversao == null ? '—' : `${p.totais.conversao}%`}
           nota={`${p.totais.ganhosNoAno} ganho(s), ${p.totais.perdidosNoAno} perdido(s)`}
-          pequeno
+          tamanho="medio"
           onClick={() => abrir({ fechado: ano })}
         />
         <Numero
           rotulo="Ticket médio"
           valor={p.totais.ticketMedio == null ? '—' : brl(p.totais.ticketMedio)}
           nota="dos contratos do ano"
-          pequeno
-          onClick={() => abrir({ situacao: 'ganho', fechado: ano })}
+          tamanho="medio"
+          onClick={verFechados}
         />
       </div>
     </section>
-  );
-}
-
-function Numero(props: { rotulo: string; valor: string; nota: string; cor?: string; pequeno?: boolean; onClick: () => void }) {
-  return (
-    <button onClick={props.onClick} className="group rounded-md p-1 text-left hover:bg-surface-2">
-      <div className="com-rotulo flex items-center gap-2">
-        {props.cor && <span className={`inline-block h-2.5 w-2.5 rounded-sm ${props.cor}`} />}
-        {props.rotulo}
-      </div>
-      <div className={`com-num mt-1.5 font-bold leading-none ${props.pequeno ? 'text-[1.5rem]' : 'text-[2.4rem]'}`}>{props.valor}</div>
-      <div className="mt-1.5 text-sm text-muted">
-        {props.nota} <span className="opacity-0 transition group-hover:opacity-100">· ver →</span>
-      </div>
-    </button>
   );
 }
 
@@ -354,89 +311,22 @@ function Gerenciar({ onClick, o }: { onClick: () => void; o: string }) {
   );
 }
 
-function Quadro({ titulo, nota, acao, children }: { titulo: string; nota?: string; acao?: React.ReactNode; children: React.ReactNode }) {
-  return (
-    <section className="rounded-md border border-border bg-surface px-5 py-4">
-      <div className="flex items-baseline justify-between gap-3">
-        <h2 className="text-[1.05rem] font-semibold">{titulo}</h2>
-        {acao}
-      </div>
-      {nota && <p className="text-sm text-muted">{nota}</p>}
-      <div className="mt-4">{children}</div>
-    </section>
-  );
-}
 
-/** A dica que aparece sobre a coluna ao passar o mouse (ou focar pelo teclado). */
-function Dica({ linhas }: { linhas: string[] }) {
-  return (
-    <span className="pointer-events-none absolute bottom-full left-1/2 z-20 mb-2 hidden -translate-x-1/2 whitespace-nowrap rounded-md border border-border bg-surface-3 px-3 py-2 text-left text-xs shadow-lg group-hover:block group-focus-visible:block">
-      <span className="block font-semibold text-text">{linhas[0]}</span>
-      {linhas.slice(1).map((l) => (
-        <span key={l} className="com-num block text-muted">{l}</span>
-      ))}
-      <span className="mt-1 block text-brand">clique para ver os negócios</span>
-    </span>
-  );
-}
 
-interface Coluna {
-  chave: string;
-  rotulo: string;
-  v: number;
-  mostra: string;
-  tom: 'aberta' | 'ganho' | 'perdido';
-  dica: string[];
-  onClick: () => void;
-}
 
-// Colunas na ordem do funil. Aberta em lima claro, fechada em lima cheio,
-// perda em cinza: um acento só.
-function Colunas({ itens }: { itens: Coluna[] }) {
-  const max = Math.max(1, ...itens.map((i) => i.v));
-  const cor = (t: string) => (t === 'ganho' ? 'bg-brand' : t === 'perdido' ? 'bg-muted/40' : 'bg-brand/45');
-  return (
-    <div>
-      <div className="flex h-44 items-end gap-2">
-        {itens.map((i) => (
-          <button
-            key={i.chave}
-            onClick={i.onClick}
-            aria-label={i.dica.join(', ')}
-            className="group relative flex h-full min-w-0 flex-1 flex-col items-center justify-end gap-1 rounded-sm hover:bg-surface-2"
-          >
-            <Dica linhas={i.dica} />
-            {i.v > 0 && <span className="com-num text-[0.72rem]">{i.mostra}</span>}
-            <span
-              className={`block w-full rounded-t-sm ${cor(i.tom)} transition group-hover:brightness-110 group-hover:ring-2 group-hover:ring-brand/50`}
-              style={{ height: i.v ? `${Math.max(3, (i.v / max) * 100)}%` : '1px' }}
-            />
-          </button>
-        ))}
-      </div>
-      <div className="mt-1.5 flex gap-2 border-t border-border pt-1.5">
-        {itens.map((i) => (
-          <span key={i.chave} className="min-w-0 flex-1 text-center text-[0.72rem] leading-tight text-muted [overflow-wrap:anywhere]">
-            {i.rotulo}
-          </span>
-        ))}
-      </div>
-    </div>
-  );
-}
 
 function Meses(props: { meses: PainelComercialMes[]; medida: 'valor' | 'qtd'; verbo: string; onClick: (mes: string) => void }) {
   const { meses, medida } = props;
   const vazio = meses.every((m) => m[medida] === 0);
   return (
     <div>
-      <Colunas
+      <Colunas chamada="clique para ver os negócios"
         itens={meses.map((m) => ({
           chave: m.mes,
           rotulo: nomeDoMes(m.mes),
           v: m[medida],
           mostra: medida === 'valor' ? curto(m.valor) : String(m.qtd),
-          tom: 'ganho',
+          tom: 'forte',
           dica: [mesPorExtenso(m.mes), `${negocios(m.qtd)} ${props.verbo}`, ...(m.valor ? [brl(m.valor)] : [])],
           onClick: () => props.onClick(m.mes),
         }))}

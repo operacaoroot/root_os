@@ -5,6 +5,7 @@ import type { PainelComercial, PainelComercialNegocio, TrabEstrutura } from '@mk
 import { ErroDaApi, apiGet, apiPost } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 import { EVENTO_FICHA_MUDOU, abrirFicha } from '@/lib/ficha';
+import { Numero, Quadro, brl } from '@/components/painel';
 import {
   ETAPAS,
   quando,
@@ -33,7 +34,6 @@ import {
  */
 
 const BASE = '/tenants/plataforma/propostas';
-const brl = (n: number) => n.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL', maximumFractionDigits: 0 });
 /** Etapa do leitor: 0 enviada · 1 abriu · 2 leu o investimento · 3 clicou em pagar. */
 const COR_DA_ETAPA = ['bg-muted/40', 'bg-brand/35', 'bg-brand/65', 'bg-brand'];
 
@@ -312,18 +312,6 @@ function Funil(props: {
   );
 }
 
-function Quadro({ titulo, nota, acao, children }: { titulo: string; nota?: string; acao?: React.ReactNode; children: React.ReactNode }) {
-  return (
-    <section className="rounded-md border border-border bg-surface px-5 py-4">
-      <div className="flex items-baseline justify-between gap-3">
-        <h2 className="text-[1.05rem] font-semibold">{titulo}</h2>
-        {acao}
-      </div>
-      {nota && <p className="text-sm text-muted">{nota}</p>}
-      <div className="mt-4">{children}</div>
-    </section>
-  );
-}
 
 function Detalhe({ proposta, detalhe, lead }: { proposta: PropostaNaLista; detalhe: DetalheDaProposta | null; lead?: PainelComercialNegocio }) {
   const [copiado, setCopiado] = useState(false);
@@ -380,10 +368,10 @@ function Detalhe({ proposta, detalhe, lead }: { proposta: PropostaNaLista; detal
       ) : (
         <>
           <div className="mt-5 grid grid-cols-2 gap-4 md:grid-cols-4">
-            <Numero rotulo="Aberturas" valor={String(detalhe.aberturas)} />
-            <Numero rotulo="Pessoas" valor={String(detalhe.pessoas)} />
-            <Numero rotulo="Tempo de leitura" valor={detalhe.aberturas ? tempo(detalhe.tempoTotalMs) : '–'} />
-            <Numero rotulo="Parte mais vista" valor={detalhe.maisVista ?? '–'} texto />
+            <Numero rotulo="Aberturas" valor={String(detalhe.aberturas)} tamanho="medio" />
+            <Numero rotulo="Pessoas" valor={String(detalhe.pessoas)} tamanho="medio" />
+            <Numero rotulo="Tempo de leitura" valor={detalhe.aberturas ? tempo(detalhe.tempoTotalMs) : '–'} tamanho="medio" />
+            <Numero rotulo="Parte mais vista" valor={detalhe.maisVista ?? '–'} tamanho="texto" />
           </div>
 
           <div className="mt-6 grid gap-6 lg:grid-cols-2">
@@ -449,11 +437,3 @@ function Detalhe({ proposta, detalhe, lead }: { proposta: PropostaNaLista; detal
   );
 }
 
-function Numero({ rotulo, valor, texto }: { rotulo: string; valor: string; texto?: boolean }) {
-  return (
-    <div>
-      <div className="com-rotulo">{rotulo}</div>
-      <div className={`mt-1.5 font-bold leading-tight ${texto ? 'text-[1.1rem]' : 'com-num text-[1.5rem]'}`}>{valor}</div>
-    </div>
-  );
-}
