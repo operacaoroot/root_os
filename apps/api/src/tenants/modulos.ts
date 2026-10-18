@@ -94,6 +94,8 @@ export const MODULO_POR_PREFIXO: Readonly<Record<string, ModuloKey>> = {
   reports: 'relatorios',
   leads: 'leads',
   funnel: 'leads',
+  // O painel do comercial lê a lista "Gestão de Leads" do Trabalho, mas é a leitura do funil de vendas.
+  comercial: 'leads',
   campaigns: 'campanhas',
   events: 'pixels',
   content: 'conteudo',

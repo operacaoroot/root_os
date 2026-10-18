@@ -201,8 +201,9 @@ describe('NAV — estrutura', () => {
     expect(hrefsEsperados.size).toBe(33);
     const rotasMK = ['/contexto/marca', '/marketing', '/marketing/ideias',
       '/marketing/estrategia', '/marketing/performance', '/marketing/relatorio'];
-    expect(NAV).toHaveLength(39);
-    expect(new Set(NAV.map((n) => n.href))).toEqual(new Set([...hrefsEsperados, ...rotasMK]));
+    // 18/10/2026: + /comercial, o painel do Motor Comercial (lê a lista Gestão de Leads).
+    expect(NAV).toHaveLength(40);
+    expect(new Set(NAV.map((n) => n.href))).toEqual(new Set([...hrefsEsperados, ...rotasMK, '/comercial']));
   });
 
   it('não repete chave nem rota', () => {
@@ -231,7 +232,7 @@ describe('NAV — estrutura', () => {
     const modulosEsperados = new Map([
       ['tarefas', 'trabalho'], ['trabalho', 'trabalho'], ['onboarding', 'trabalho'],
       ['conteudo', 'conteudo'], ['pauta', 'pauta'], ['referencias', 'pauta'],
-      ['instagram', 'instagram'], ['bio', 'bio'], ['leads', 'leads'],
+      ['instagram', 'instagram'], ['bio', 'bio'], ['comercial-painel', 'leads'], ['leads', 'leads'],
       ['funil', 'leads'], ['campanhas', 'campanhas'], ['pixels', 'pixels'],
       ['relatorios', 'relatorios'], ['metas', 'metas'], ['financeiro', 'financeiro'],
       ['marca', 'pauta'], ['marketing', 'pauta'], ['marketing-ideias', 'pauta'],
@@ -283,7 +284,7 @@ describe('navPorSecao', () => {
     const grupos = navPorSecao(new Set(['leads.ver']));
     expect(grupos).toHaveLength(1);
     expect(grupos[0].secao.key).toBe('comercial');
-    expect(grupos[0].itens.map((i) => i.key)).toEqual(['leads']);
+    expect(grupos[0].itens.map((i) => i.key)).toEqual(['comercial-painel', 'leads']);
   });
 
   it('módulo desligado sai do menu; a espinha nunca sai', () => {
@@ -499,7 +500,7 @@ describe('organização da navegação (ROOT-07)', () => {
     conteudo: 'dashboard.ver', pauta: 'pauta.ver', referencias: 'pauta.ver', marketing: 'pauta.ver',
     'marketing-ideias': 'pauta.ver', 'marketing-estrategia': 'pauta.ver', 'marketing-performance': 'pauta.ver',
     'marketing-relatorio': 'pauta.ver', instagram: 'instagram.ver', bio: 'bio.ver',
-    leads: 'leads.ver', funil: 'dashboard.ver', campanhas: 'campanhas.ver', pixels: 'dashboard.ver',
+    'comercial-painel': 'leads.ver', leads: 'leads.ver', funil: 'dashboard.ver', campanhas: 'campanhas.ver', pixels: 'dashboard.ver',
     relatorios: 'relatorios.ver', metas: 'dashboard.ver', financeiro: 'financeiro.ver', 'custo-ia': 'dashboard.ver',
     agentes: 'mcp.ver', rotinas: 'automacoes.ver', sessoes: 'mcp.ver', fluxos: 'automacoes.ver',
     ferramentas: 'mcp.ver', conexoes: 'dashboard.ver', regua: 'mcp.ver', rastro: 'auditoria.ver',
@@ -514,7 +515,7 @@ describe('organização da navegação (ROOT-07)', () => {
     conteudo: 'Temas do ClickUp', pauta: 'Produção de conteúdo', referencias: 'Referências', marketing: 'Marketing',
     'marketing-ideias': 'Banco de ideias', 'marketing-estrategia': 'Estratégia do mês',
     'marketing-performance': 'Performance', 'marketing-relatorio': 'Relatório do mês',
-    instagram: 'Instagram', bio: 'Página de links', leads: 'Leads', funil: 'Funil de vendas',
+    instagram: 'Instagram', bio: 'Página de links', 'comercial-painel': 'Comercial', leads: 'Leads', funil: 'Funil de vendas',
     campanhas: 'Campanhas', pixels: 'Eventos do site', relatorios: 'Relatórios', metas: 'Metas',
     financeiro: 'Financeiro', 'custo-ia': 'Custos de IA', agentes: 'Agentes de IA',
     rotinas: 'Rotinas automáticas', sessoes: 'Sessões de IA', fluxos: 'Processos',
@@ -533,7 +534,7 @@ describe('organização da navegação (ROOT-07)', () => {
     '/pauta': 'conteudo', '/referencias': 'conteudo', '/marketing': 'conteudo',
     '/marketing/performance': 'conteudo', '/marketing/relatorio': 'conteudo',
     '/instagram': 'conteudo', '/bio': 'conteudo', '/campanhas': 'conteudo', '/pixels': 'conteudo',
-    '/leads': 'comercial', '/funil': 'comercial',
+    '/comercial': 'comercial', '/leads': 'comercial', '/funil': 'comercial',
     '/relatorios': 'resultados', '/metas': 'resultados',
     '/financeiro': 'financeiro',
     '/painel/custo-ia': 'automacoes', '/agentes': 'automacoes', '/rotinas': 'automacoes',
@@ -544,9 +545,9 @@ describe('organização da navegação (ROOT-07)', () => {
     '/config': 'conta',
   };
 
-  it('os 39 destinos mantêm chave, rótulo e permissão da base', () => {
-    expect(NAV).toHaveLength(39);
-    expect(Object.keys(PERMISSAO_DA_BASE)).toHaveLength(39);
+  it('os 40 destinos mantêm chave, rótulo e permissão da base', () => {
+    expect(NAV).toHaveLength(40);
+    expect(Object.keys(PERMISSAO_DA_BASE)).toHaveLength(40);
     for (const n of NAV) {
       expect(n.permission, `${n.key}: permissão mudou`).toBe(PERMISSAO_DA_BASE[n.key]);
       expect(n.label, `${n.key}: rótulo fora da tabela da ROOT-08`).toBe(ROTULOS_DA_ROOT_08[n.key] ?? ROTULO_DA_BASE[n.key]);
@@ -581,7 +582,7 @@ describe('organização da navegação (ROOT-07)', () => {
     expect(SECOES.find((s) => s.key === 'trabalho')?.hint).toBe('tarefas, quadro, ideias e implantação');
   });
 
-  it('cada destino cai na seção da matriz, e a matriz cobre exatamente os 39 href', () => {
+  it('cada destino cai na seção da matriz, e a matriz cobre exatamente os 40 href', () => {
     expect(new Set(Object.keys(SECAO_DA_MATRIZ))).toEqual(new Set(NAV.map((n) => n.href)));
     for (const n of NAV) expect(n.secao, `${n.key} (${n.href})`).toBe(SECAO_DA_MATRIZ[n.href]);
   });

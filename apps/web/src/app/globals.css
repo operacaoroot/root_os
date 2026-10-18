@@ -296,3 +296,22 @@ body {
 ::-webkit-scrollbar-track {
   background: transparent;
 }
+
+/* Comercial: a paleta vem do tema global (o claro é o da Máquina de Conteúdo);
+   aqui só o ritmo da tela e a regra de mono só em rótulo e número. */
+.com-tema {
+  font-size: 15px;
+  line-height: 1.55;
+}
+.com-tema .com-rotulo {
+  font-family: var(--os-mono);
+  font-size: 0.66rem;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: rgb(var(--os-tx3));
+}
+.com-tema .com-num {
+  font-family: var(--os-mono);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.02em;
+}
