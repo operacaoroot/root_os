@@ -15,6 +15,8 @@ type IconName = keyof typeof Icons;
 export type TemaOs = 'dark' | 'light' | 'mono';
 
 export const CHAVE_TEMA = 'root-os:tema';
+// Menu lateral recolhido no desktop (só ícones). Preferência deste navegador.
+const CHAVE_RECOLHIDO = 'root-os:menu-recolhido';
 
 // Mantida para não quebrar importações; o menu por áreas não usa o estado antigo.
 export const CHAVE_MENU = 'root-os:menu-fechado';
@@ -22,7 +24,7 @@ export const CHAVE_MENU = 'root-os:menu-fechado';
 const TEMAS: { id: TemaOs; rotulo: string }[] = [
   { id: 'dark', rotulo: 'escuro' },
   { id: 'light', rotulo: 'papel' },
-  { id: 'mono', rotulo: 'mono' },
+  { id: 'mono', rotulo: 'claro' },
 ];
 
 export function lerTema(): TemaOs {
@@ -42,6 +44,7 @@ export function Sidebar() {
   const pathname = usePathname();
   const [tema, setTema] = useState<TemaOs>('dark');
   const [abertaNoMovel, setAbertaNoMovel] = useState(false);
+  const [recolhida, setRecolhida] = useState(false);
   const botaoAbrir = useRef<HTMLButtonElement>(null);
   const botaoFechar = useRef<HTMLButtonElement>(null);
   // O primeiro efeito de tema roda com o estado inicial 'dark', antes do
@@ -56,6 +59,17 @@ export function Sidebar() {
   const seloDaCaixa = { texto: textoDoSelo(caixa), titulo: tituloDoSelo(caixa) };
 
   useEffect(() => { setTema(lerTema()); }, []);
+  useEffect(() => {
+    try { setRecolhida(localStorage.getItem(CHAVE_RECOLHIDO) === '1'); } catch { /* sem persistência */ }
+  }, []);
+  function alternarRecolhida() {
+    setRecolhida((r) => {
+      try { localStorage.setItem(CHAVE_RECOLHIDO, r ? '0' : '1'); } catch { /* sem persistência */ }
+      return !r;
+    });
+  }
+  // No celular a barra abre inteira; recolher só vale de 820px para cima.
+  const compacta = recolhida && !abertaNoMovel;
 
   useEffect(() => {
     setAbertaNoMovel(false);
@@ -167,7 +181,8 @@ export function Sidebar() {
         aria-modal={abertaNoMovel ? true : undefined}
         aria-label="Navegação do ROOT OS"
         className={[
-          'fixed inset-y-0 left-0 z-50 flex h-dvh w-[min(288px,calc(100vw-48px))] flex-col border-r border-border bg-bg2 font-os-mono transition-transform duration-200 min-[820px]:sticky min-[820px]:h-screen min-[820px]:w-[252px] min-[820px]:shrink-0 min-[820px]:translate-x-0',
+          'fixed inset-y-0 left-0 z-50 flex h-dvh w-[min(288px,calc(100vw-48px))] flex-col border-r border-border bg-bg2 font-os-mono transition-transform duration-200 min-[820px]:sticky min-[820px]:h-screen min-[820px]:shrink-0 min-[820px]:translate-x-0 min-[820px]:transition-[width]',
+          compacta ? 'min-[820px]:w-[64px]' : 'min-[820px]:w-[252px]',
           abertaNoMovel ? 'translate-x-0 visible' : '-translate-x-full invisible min-[820px]:visible',
         ].join(' ')}
       >
@@ -180,7 +195,7 @@ export function Sidebar() {
         >
           R
         </span>
-        <span className="min-w-0 flex-1 leading-[1.25]">
+        <span className={`min-w-0 flex-1 leading-[1.25] ${compacta ? 'min-[820px]:hidden' : ''}`}>
           <span className="block text-[12px] font-bold tracking-[-0.02em] text-text">
             ROOT OS
           </span>
@@ -188,22 +203,33 @@ export function Sidebar() {
             operação root
           </span>
         </span>
+        <button
+          type="button"
+          onClick={alternarRecolhida}
+          aria-label={compacta ? 'Expandir menu' : 'Recolher menu'}
+          aria-pressed={compacta}
+          title={compacta ? 'Expandir menu' : 'Recolher menu'}
+          className="hidden h-8 w-8 shrink-0 place-items-center text-muted hover:text-text focus-visible:outline focus-visible:outline-2 focus-visible:outline-brand min-[820px]:grid"
+        >
+          {compacta ? <Icons.ChevronsRight size={16} aria-hidden /> : <Icons.ChevronsLeft size={16} aria-hidden />}
+        </button>
         <button ref={botaoFechar} type="button" aria-label="Fechar navegação" onClick={() => { setAbertaNoMovel(false); botaoAbrir.current?.focus(); }} className="grid h-11 w-11 place-items-center text-muted focus-visible:outline focus-visible:outline-2 focus-visible:outline-brand min-[820px]:hidden"><Icons.X size={18} aria-hidden /></button>
       </div>
 
       <nav aria-label="Destinos" className="min-h-0 flex-1 overflow-y-auto px-2 py-4">
-        <p className="px-3 pb-3 text-[10px] uppercase tracking-[0.14em] text-muted">Áreas da empresa</p>
+        <p className={`px-3 pb-3 text-[10px] uppercase tracking-[0.14em] text-muted ${compacta ? 'min-[820px]:sr-only' : ''}`}>Áreas da empresa</p>
         {areas.map((area) => {
           const Icon = (Icons[area.icon as IconName] ?? Icons.Circle) as React.ElementType;
           const ativo = area.key === areaAtiva;
           return <Link key={area.key} href={area.entrada.href} onClick={aoNavegar}
             aria-current={ativo ? 'true' : undefined}
+            title={compacta ? area.label : undefined}
             className={`relative mb-1 flex min-h-11 items-center gap-3 rounded-root px-3 py-3 text-[12px] transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-brand ${ativo ? 'bg-brand/10 font-semibold text-brand' : 'text-muted hover:bg-surface-2 hover:text-text'}`}>
             <Icon size={18} aria-hidden className="shrink-0" />
-            <span className="flex-1">{area.label}</span>
+            <span className={`flex-1 ${compacta ? 'min-[820px]:sr-only' : ''}`}>{area.label}</span>
             {area.key === 'dia' && area.itens.some((item) => item.key === 'caixa') && seloDaCaixa.texto &&
               <span aria-label={seloDaCaixa.titulo} title={seloDaCaixa.titulo} className="bg-brand px-1.5 py-0.5 text-[10px] font-bold text-ink">{seloDaCaixa.texto}</span>}
-            {ativo && <Icons.ChevronRight size={14} aria-hidden />}
+            {ativo && !compacta && <Icons.ChevronRight size={14} aria-hidden />}
           </Link>;
         })}
       </nav>
@@ -212,7 +238,7 @@ export function Sidebar() {
       <div
         role="group"
         aria-label="Tema da interface"
-        className="flex flex-row items-center gap-[6px] border-t border-border px-3 py-[9px]"
+        className={`flex flex-row items-center gap-[6px] border-t border-border px-3 py-[9px] ${compacta ? 'min-[820px]:hidden' : ''}`}
       >
         {TEMAS.map((t) => {
           const on = tema === t.id;

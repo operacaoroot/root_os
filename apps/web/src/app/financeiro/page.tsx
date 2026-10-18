@@ -30,7 +30,8 @@ import { NovaInscricaoFinanceira } from './inscricoes/NovaInscricaoFinanceira';
 
 const brl = (n: number) =>
   n.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
-const dateBR = (iso: string | null) => (iso ? new Date(iso).toLocaleDateString('pt-BR') : '—');
+// Vencimento e competência são dia, gravados em UTC: mostrar em UTC evita o "um dia antes".
+const dateBR = (iso: string | null) => (iso ? new Date(iso).toLocaleDateString('pt-BR', { timeZone: 'UTC' }) : '—');
 const today = () => new Date().toISOString().slice(0, 10);
 
 const STATUS_CLS: Record<string, string> = {
@@ -216,7 +217,7 @@ function FinanceiroSessao() {
       {error && <div className="rounded-lg border border-bad/30 bg-bad/10 px-4 py-2 text-sm text-bad">{error}</div>}
       {msg && <div className="rounded-lg border border-good/30 bg-good/10 px-4 py-2 text-sm text-good">{msg}</div>}
 
-      {tab === 'visao' && <Visao summary={summary} kpis={kpis} cashflow={cashflow} />}
+      {tab === 'visao' && <Visao summary={summary} kpis={kpis} cashflow={cashflow} txs={txs} payables={payables} />}
       {tab === 'dre' && <DreView dre={dre} month={dreMonth} setMonth={setDreMonth} />}
       {tab === 'apar' && (
         <ApAr
@@ -283,38 +284,123 @@ function Card({ label, value, tone }: { label: string; value: string; tone?: 'go
   );
 }
 
-function CashflowChart({ cashflow }: { cashflow: Cashflow | null }) {
+// Fluxo de caixa projetado: linha do saldo dia a dia, com datas no eixo.
+// Passar o mouse mostra o dia; clicar abre o que entra e sai naquele dia
+// (realizados pelo extrato, previstos pelo vencimento).
+const diaCurto = (d: string) => `${d.slice(8, 10)}/${d.slice(5, 7)}`;
+
+function CashflowChart({ cashflow, txs, payables }: {
+  cashflow: Cashflow | null;
+  txs: FinanceTransactionList | null;
+  payables: Payables | null;
+}) {
+  const [foco, setFoco] = useState<number | null>(null);
+  const [dia, setDia] = useState<string | null>(null);
   if (!cashflow || cashflow.days.length === 0) return null;
-  const vals = cashflow.days.map((d) => d.acumulado);
+  const days = cashflow.days;
+  const vals = days.map((d) => d.acumulado);
   const min = Math.min(0, ...vals);
   const max = Math.max(0, ...vals);
   const range = max - min || 1;
   const W = 100, H = 34;
-  const pts = cashflow.days.map((d, i) => {
-    const x = (i / Math.max(cashflow.days.length - 1, 1)) * W;
-    const y = H - ((d.acumulado - min) / range) * H;
-    return `${x.toFixed(1)},${y.toFixed(1)}`;
-  }).join(' ');
-  const zeroY = H - ((0 - min) / range) * H;
+  const x = (i: number) => (i / Math.max(days.length - 1, 1)) * W;
+  const y = (v: number) => H - ((v - min) / range) * H;
+  const pts = days.map((d, i) => `${x(i).toFixed(2)},${y(d.acumulado).toFixed(2)}`).join(' ');
+  const zeroY = y(0);
   const last = vals[vals.length - 1];
+  const passo = Math.max(1, Math.round(days.length / 6));
+  const marcas = days.map((d, i) => ({ d, i })).filter(({ i }) => i % passo === 0 || i === days.length - 1);
+  const atual = foco !== null ? days[foco] : null;
+
+  const indiceDoMouse = (e: React.MouseEvent<HTMLDivElement>) => {
+    const r = e.currentTarget.getBoundingClientRect();
+    const t = Math.min(Math.max((e.clientX - r.left) / r.width, 0), 1);
+    return Math.round(t * (days.length - 1));
+  };
+
+  const doDia = (d: string) => [
+    ...(txs?.items ?? [])
+      .filter((t) => t.status !== 'previsto' && t.date.slice(0, 10) === d)
+      .map((t) => ({ id: t.id, tipo: t.type, desc: t.description, quem: t.counterparty, valor: t.amount, previsto: false })),
+    ...(payables?.items ?? [])
+      .filter((p) => p.dueDate?.slice(0, 10) === d)
+      .map((p) => ({ id: p.id, tipo: p.tipo, desc: p.description, quem: p.partnerName, valor: p.amount, previsto: true })),
+  ];
+  const itens = dia ? doDia(dia) : [];
+  const diaSel = dia ? days.find((d) => d.date === dia) : null;
+
   return (
     <div className="rounded-xl border border-border bg-surface p-4">
       <div className="mb-1 flex items-center justify-between">
         <h2 className="font-os-mono text-[10px] uppercase tracking-[0.16em] font-medium text-muted">Fluxo de caixa projetado (30 dias)</h2>
-        <span className={`text-sm font-semibold ${last >= 0 ? 'text-good' : 'text-bad'}`}>{brl(last)}</span>
+        <span className={`text-sm font-semibold ${last >= 0 ? 'text-good' : 'text-bad'}`}>{brl(last)} em {diaCurto(cashflow.window.to)}</span>
       </div>
-      <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" className="h-24 w-full">
-        <line x1="0" y1={zeroY} x2={W} y2={zeroY} stroke="currentColor" strokeWidth="0.3" className="text-border" />
-        <polyline points={pts} fill="none" stroke="currentColor" strokeWidth="0.8" className={last >= 0 ? 'text-good' : 'text-bad'} vectorEffect="non-scaling-stroke" />
-      </svg>
-      <div className="flex justify-between text-[10px] text-muted">
-        <span>{cashflow.window.from}</span><span>abertura {brl(cashflow.openingBalance)}</span><span>{cashflow.window.to}</span>
+      <div className="mb-2 h-5 text-[12px] text-muted">
+        {atual ? (
+          <>
+            <b className="text-text">{diaCurto(atual.date)}</b> · saldo {brl(atual.acumulado)}
+            {atual.entradas > 0 && <> · <span className="text-good">entra {brl(atual.entradas)}</span></>}
+            {atual.saidas > 0 && <> · <span className="text-bad">sai {brl(atual.saidas)}</span></>}
+            {(atual.entradas > 0 || atual.saidas > 0) && <> · clique para ver</>}
+          </>
+        ) : 'Passe o mouse para ver cada dia; clique num dia com movimento para abrir.'}
       </div>
+      <div
+        className="relative cursor-crosshair"
+        onMouseMove={(e) => setFoco(indiceDoMouse(e))}
+        onMouseLeave={() => setFoco(null)}
+        onClick={(e) => { const d = days[indiceDoMouse(e)].date; setDia(dia === d ? null : d); }}
+      >
+        <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" className="h-28 w-full" aria-label="Saldo projetado por dia">
+          <line x1="0" y1={zeroY} x2={W} y2={zeroY} stroke="currentColor" strokeWidth="0.3" className="text-border" vectorEffect="non-scaling-stroke" />
+          {days.map((d, i) => (d.entradas > 0 || d.saidas > 0) && (
+            <line key={d.date} x1={x(i)} x2={x(i)} y1={H} y2={H - 2.5} stroke="currentColor" className={d.saidas > d.entradas ? 'text-bad' : 'text-good'} strokeWidth="1.5" vectorEffect="non-scaling-stroke" />
+          ))}
+          <polyline points={pts} fill="none" stroke="currentColor" strokeWidth="1.5" className={last >= 0 ? 'text-good' : 'text-bad'} vectorEffect="non-scaling-stroke" />
+          {foco !== null && (
+            <line x1={x(foco)} x2={x(foco)} y1="0" y2={H} stroke="currentColor" strokeWidth="1" className="text-muted" vectorEffect="non-scaling-stroke" />
+          )}
+          {dia && days.findIndex((d) => d.date === dia) >= 0 && (
+            <line x1={x(days.findIndex((d) => d.date === dia))} x2={x(days.findIndex((d) => d.date === dia))} y1="0" y2={H} stroke="currentColor" strokeWidth="1.5" className="text-brand" vectorEffect="non-scaling-stroke" />
+          )}
+        </svg>
+      </div>
+      <div className="relative mt-1 h-4 text-[10px] text-muted">
+        {marcas.map(({ d, i }) => (
+          <span key={d.date} className="absolute -translate-x-1/2 whitespace-nowrap first:translate-x-0 last:-translate-x-full" style={{ left: `${x(i)}%` }}>{diaCurto(d.date)}</span>
+        ))}
+      </div>
+
+      {dia && (
+        <div className="mt-4 border-t border-border pt-3">
+          <div className="mb-2 flex items-center justify-between text-sm">
+            <span><b>{dateBR(dia)}</b>{diaSel && <span className="text-muted"> · saldo no fim do dia {brl(diaSel.acumulado)}</span>}</span>
+            <button className="text-muted hover:text-text" onClick={() => setDia(null)}>fechar</button>
+          </div>
+          {itens.length === 0 ? (
+            <p className="text-sm text-muted">Nenhum movimento neste dia.</p>
+          ) : (
+            <ul className="divide-y divide-border text-sm">
+              {itens.map((m) => (
+                <li key={m.id} className="flex items-center gap-3 py-2">
+                  <span className={`w-14 shrink-0 text-[11px] uppercase ${m.tipo === 'entrada' ? 'text-good' : 'text-bad'}`}>{m.tipo === 'entrada' ? 'entra' : 'sai'}</span>
+                  <span className="min-w-0 flex-1 truncate">{m.desc}{m.quem && <span className="ml-2 text-muted">{m.quem}</span>}</span>
+                  {m.previsto && <span className="shrink-0 rounded bg-surface-2 px-1.5 py-0.5 text-[11px] text-muted">previsto</span>}
+                  <span className="w-28 shrink-0 text-right tabular-nums">{brl(m.valor)}</span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
     </div>
   );
 }
 
-function Visao({ summary, kpis, cashflow }: { summary: FinanceSummary | null; kpis: Kpis | null; cashflow: Cashflow | null }) {
+function Visao({ summary, kpis, cashflow, txs, payables }: {
+  summary: FinanceSummary | null; kpis: Kpis | null; cashflow: Cashflow | null;
+  txs: FinanceTransactionList | null; payables: Payables | null;
+}) {
   if (!summary) return <p className="text-sm text-muted">Carregando…</p>;
   return (
     <div className="space-y-6">
@@ -327,7 +413,7 @@ function Visao({ summary, kpis, cashflow }: { summary: FinanceSummary | null; kp
             <KpiCard label="Inadimplência" value={`${kpis.inadimplencia.toFixed(1)}%`} hint={`${brl(kpis.aReceberVencido)} vencido`} tone={kpis.inadimplencia > 0 ? 'warn' : 'good'} />
             <KpiCard label="Índice de acurácia" value={`${kpis.acuracidade.toFixed(0)}%`} hint={`${kpis.bankConciliado}/${kpis.bankTotal} conciliados`} tone={kpis.acuracidade >= 90 ? 'good' : 'warn'} />
           </div>
-          <CashflowChart cashflow={cashflow} />
+          <CashflowChart cashflow={cashflow} txs={txs} payables={payables} />
         </>
       )}
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
