@@ -343,6 +343,37 @@ export class ApprovalsController {
     const tokenDecide = (user.permissions ?? []).includes(DECIDIR);
     const decideAgora = (eu?.decide ?? false) && tokenDecide;
 
+    /*
+     * O NOME DO LEAD, para a fila escrever "Enviar WhatsApp para Marina Duarte"
+     * em vez de um id (rodada do painel P4, 18/10/2026). Só LEITURA, e com a
+     * mesma visibilidade do conteúdo: quem não decide não recebe os argumentos,
+     * então também não recebe o nome tirado deles. O id vem do recurso `lead`
+     * (o pedido de mover do funil, a superfície antiga) ou de `args.leadId` (as
+     * capacidades do comercial). Consulta por empresa, como as outras seis: um
+     * `leadId` de outra empresa gravado nos argumentos não acha nada.
+     */
+    const leadDaLinha = (ap: (typeof linhas)[number]): string | null => {
+      if (ap.resourceType === 'lead') return ap.resourceId;
+      const args = ap.toolCallId ? porChamada.get(ap.toolCallId)?.args : undefined;
+      const id = args && typeof args === 'object' ? (args as Record<string, unknown>).leadId : undefined;
+      return typeof id === 'string' && id ? id : null;
+    };
+    const idsDeLead = decideAgora
+      ? [...new Set(linhas.map(leadDaLinha).filter((v): v is string => !!v))]
+      : [];
+    const [leads, fichas] = idsDeLead.length
+      ? await Promise.all([
+          this.prisma.lead.findMany({ where: { orgId, id: { in: idsDeLead } }, select: { id: true, name: true } }),
+          this.prisma.comercialFicha.findMany({
+            where: { orgId, leadId: { in: idsDeLead } },
+            select: { leadId: true, empresa: true },
+          }),
+        ])
+      : [[], []];
+    const nomeDoLead = new Map<string, string>();
+    for (const l of leads) if (l.name) nomeDoLead.set(l.id, l.name);
+    for (const f of fichas) if (f.empresa && nomeDoLead.has(f.leadId)) nomeDoLead.set(f.leadId, f.empresa);
+
     const itens = linhas.map((ap) => {
       const chamada = ap.toolCallId ? porChamada.get(ap.toolCallId) : undefined;
       const decisao = ap.decisionId ? porDecisao.get(ap.decisionId) : undefined;
@@ -394,6 +425,8 @@ export class ApprovalsController {
         capacidade: ap.capabilityId,
         canal: ap.canal,
         recurso: { tipo: ap.resourceType, id: ap.resourceId },
+        /** O nome do lead a que a ação se refere, só para quem decide; `null` sem lead ou sem permissão. */
+        alvo: decideAgora ? (nomeDoLead.get(leadDaLinha(ap) ?? '') ?? null) : null,
         agente: chamada?.agentSlug ?? null,
         correlationId: chamada?.correlationId ?? null,
         /*
