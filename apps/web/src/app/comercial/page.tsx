@@ -71,12 +71,17 @@ export default function ComercialPage() {
             <Bloco rotulo="Ticket médio" valor={p.totais.ticketMedio == null ? '—' : brl(p.totais.ticketMedio)} nota="dos contratos do ano" />
           </div>
 
-          <Painel titulo="Funil" nota="quantos negócios e quanto valem, por etapa">
-            <Funil etapas={p.etapas} />
-          </Painel>
+          <div className="grid gap-6 lg:grid-cols-2">
+            <Painel titulo="Funil geral" nota="negócios em cada etapa">
+              <Funil etapas={p.etapas} medida="qtd" />
+            </Painel>
+            <Painel titulo="Valor por fase do funil" nota="soma do valor da proposta em cada etapa">
+              <Funil etapas={p.etapas} medida="valor" />
+            </Painel>
+          </div>
 
           <div className="grid gap-6 lg:grid-cols-2">
-            <Painel titulo={`Contratos fechados por mês · ${p.ano}`} nota="valor dos negócios que foram para fechado">
+            <Painel titulo={`Contratos fechados por mês · ${p.ano}`} nota="valor da proposta dos negócios fechados">
               <Barras meses={p.fechadosPorMes} medida="valor" />
             </Painel>
             <Painel titulo="Oportunidades geradas por mês" nota="leads que entraram no CRM, últimos 12 meses">
@@ -118,8 +123,8 @@ export default function ComercialPage() {
           </Painel>
 
           <p className="text-sm text-muted">
-            Lido da lista {p.lista.nome}. Etapa &quot;fechado&quot; conta como contrato; perdido e geladeira contam como perda.
-            O mês do fechamento é quando o cartão foi para a etapa fechada.
+            Lido da lista {p.lista.nome} do Quadro interno. &quot;Negócio fechado&quot; conta como contrato; Perdido e
+            Desqualificado contam como perda. O mês do fechamento é quando o cartão foi para a etapa fechada.
           </p>
         </>
       )}
@@ -147,25 +152,31 @@ function Painel({ titulo, nota, children }: { titulo: string; nota?: string; chi
   );
 }
 
-function Funil({ etapas }: { etapas: PainelComercial['etapas'] }) {
-  const max = Math.max(1, ...etapas.map((e) => e.qtd));
+// Colunas por etapa, na ordem do funil (como o painel do ClickUp). Aberta em
+// lima claro, fechada em lima cheio, perda em cinza: um acento só.
+function Funil({ etapas, medida }: { etapas: PainelComercial['etapas']; medida: 'qtd' | 'valor' }) {
+  const max = Math.max(1, ...etapas.map((e) => e[medida]));
+  const cor = (r: string) => (r === 'ganho' ? 'bg-brand' : r === 'perdido' ? 'bg-muted/40' : 'bg-brand/45');
   return (
-    <div className="space-y-2">
-      {etapas.map((e) => (
-        <div key={e.nome} className="grid grid-cols-[minmax(0,9rem)_1fr_auto] items-center gap-3 sm:grid-cols-[11rem_1fr_7rem]">
-          <span className={`truncate text-sm ${e.resultado === 'aberta' ? 'text-text' : 'text-muted'}`}>{e.nome}</span>
-          <div className="flex items-center gap-2">
-            <div
-              className={`h-6 rounded-sm ${
-                e.resultado === 'ganho' ? 'bg-brand' : e.resultado === 'perdido' ? 'bg-surface-2' : 'bg-brand/45'
-              }`}
-              style={{ width: `${e.qtd ? Math.max(3, (e.qtd / max) * 100) : 0}%` }}
-            />
-            <span className="com-num text-sm">{e.qtd}</span>
-          </div>
-          <span className="com-num text-right text-sm text-muted">{e.valor ? brl(e.valor) : '—'}</span>
-        </div>
-      ))}
+    <div>
+      <div className="flex h-44 items-end gap-2">
+        {etapas.map((e) => {
+          const v = e[medida];
+          return (
+            <div key={e.nome} className="flex h-full min-w-0 flex-1 flex-col items-center justify-end gap-1" title={`${e.nome}: ${e.qtd} · ${brl(e.valor)}`}>
+              {v > 0 && <span className="com-num text-[0.72rem]">{medida === 'valor' ? curto(v) : v}</span>}
+              <div className={`w-full rounded-t-sm ${cor(e.resultado)}`} style={{ height: v ? `${Math.max(3, (v / max) * 100)}%` : '1px' }} />
+            </div>
+          );
+        })}
+      </div>
+      <div className="mt-1.5 flex gap-2 border-t border-border pt-1.5">
+        {etapas.map((e) => (
+          <span key={e.nome} className="min-w-0 flex-1 text-center text-[0.72rem] leading-tight text-muted [overflow-wrap:anywhere]">
+            {e.nome}
+          </span>
+        ))}
+      </div>
     </div>
   );
 }

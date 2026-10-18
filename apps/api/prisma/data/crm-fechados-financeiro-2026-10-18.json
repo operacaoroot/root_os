@@ -1,0 +1,46 @@
+{
+  "fonte": "Root/20-empresa/financeiro/financeiro-root-2026-10-18.xlsx (abas Lançamentos Asaas e A receber), a mesma planilha que alimentou o financeiro da homologação v2. Só os negócios fechados; o resto do funil o Lucas lança no quadro.",
+  "espaco": { "id": "crm-root", "nome": "Comercial" },
+  "pastas": [{ "id": "crm-root-pasta", "nome": "CRM" }],
+  "lista": { "id": "crm-root-lista", "nome": "Gestão de Leads", "pasta": "crm-root-pasta" },
+  "etapas": [
+    { "nome": "Validar", "tipo": "open", "cor": "#8b8d98" },
+    { "nome": "Oportunidade", "tipo": "custom", "cor": "#a18072" },
+    { "nome": "Marcar reunião", "tipo": "custom", "cor": "#0091ff" },
+    { "nome": "Reunião agendada", "tipo": "custom", "cor": "#30a46c" },
+    { "nome": "Followup", "tipo": "custom", "cor": "#3e63dd" },
+    { "nome": "Negócio fechado", "tipo": "closed", "cor": "#008844" },
+    { "nome": "Perdido", "tipo": "closed", "cor": "#e5484d" },
+    { "nome": "Desqualificado", "tipo": "closed", "cor": "#6b6b6b" }
+  ],
+  "campos": [
+    { "nome": "Canal de aquisição", "tipo": "drop_down", "opcoes": [["BNI", "#e5484d"], ["Cold Call", "#3e63dd"], ["Mensagem direta", "#ffc53d"], ["Indicação", "#30a46c"], ["Site", "#b6b6ff"], ["Instagram", "#f76808"], ["Parcerias", "#ab4aba"]] },
+    { "nome": "Vendedor", "tipo": "drop_down", "opcoes": [["Lucas", "#8d8d8d"], ["Pedro", "#8d8d8d"], ["Rodrigo", "#8d8d8d"]] },
+    { "nome": "Valor da proposta", "tipo": "moeda", "opcoes": [] },
+    { "nome": "Data de Cadastro do Lead", "tipo": "data", "opcoes": [] },
+    { "nome": "Produto", "tipo": "drop_down", "opcoes": [["Imersão", "#8d8d8d"], ["Implantação ROOT OS", "#8d8d8d"], ["Operação ROOT", "#8d8d8d"], ["Outros", "#cecece"]] },
+    { "nome": "Motivo da perda", "tipo": "drop_down", "opcoes": [["Sem interesse", "#8d8d8d"], ["Orçamento insuficiente", "#8d8d8d"], ["Desqualificado", "#8d8d8d"], ["Falta de retorno", "#8d8d8d"], ["Outro", "#8d8d8d"]] }
+  ],
+  "leads": [
+    { "id": "fin-curral-implantacao", "titulo": "Curral (Marcelo Alves Meroto) | Implantação", "etapa": "Negócio fechado",
+      "criadoEm": "2026-07-07T12:00:00-03:00", "etapaDesde": "2026-07-07T12:00:00-03:00",
+      "nota": "2 parcelas de R$ 3.850 (entraram R$ 3.501 em 07/07 e R$ 4.200 em 09/09). A mensalidade de manutenção (R$ 190) não entra aqui: é recorrência, não venda nova.",
+      "campos": { "Valor da proposta": "7700", "Produto": "Implantação ROOT OS" } },
+    { "id": "fin-promedical-implantacao", "titulo": "ProMedical | Implantação ROOT OS", "etapa": "Negócio fechado",
+      "criadoEm": "2026-08-28T12:00:00-03:00", "etapaDesde": "2026-08-28T12:00:00-03:00",
+      "nota": "Contrato ProMedical x Root 08/2026: 2 parcelas de R$ 6.000 (pagas 11/09 e 16/10).",
+      "campos": { "Valor da proposta": "12000", "Produto": "Implantação ROOT OS" } },
+    { "id": "fin-lucas-moreira-imersao", "titulo": "Lucas Martins da Costa Moreira | Imersão", "etapa": "Negócio fechado",
+      "criadoEm": "2026-09-28T12:00:00-03:00", "etapaDesde": "2026-09-28T12:00:00-03:00",
+      "nota": "Imersão de R$ 2.997 em 3x no cartão (1ª parcela 28/09).",
+      "campos": { "Valor da proposta": "2997", "Produto": "Imersão" } },
+    { "id": "fin-custeio-operacao", "titulo": "Custeio | Operação ROOT (upsell)", "etapa": "Negócio fechado",
+      "criadoEm": "2026-10-18T12:00:00-03:00", "etapaDesde": "2026-10-18T12:00:00-03:00",
+      "nota": "Entrada de R$ 6.000 em 20/10 e 6 parcelas de R$ 1.000 (20/11 a 20/04). Lançado pelo Lucas em 18/10.",
+      "campos": { "Valor da proposta": "12000", "Produto": "Operação ROOT" } },
+    { "id": "fin-affari-imersao", "titulo": "Affari | Imersão", "etapa": "Negócio fechado",
+      "criadoEm": "2026-10-18T12:00:00-03:00", "etapaDesde": "2026-10-18T12:00:00-03:00",
+      "nota": "Imersão de R$ 3.970, cobrança ainda a gerar no Asaas (18/10).",
+      "campos": { "Valor da proposta": "3970", "Produto": "Imersão" } }
+  ]
+}

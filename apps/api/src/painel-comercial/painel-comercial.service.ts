@@ -8,8 +8,8 @@ import type {
 } from '@mktos/shared';
 import { PrismaService } from '../prisma/prisma.service';
 
-/** Id da lista "Gestão de Leads" no ClickUp da Root; o nome é o plano B. */
-export const LISTA_DO_CRM_EXTERNA = '901327741150';
+/** Chave da lista criada por `db:seed:crm`; o nome é o plano B (lista criada à mão no quadro). */
+export const LISTA_DO_CRM_EXTERNA = 'crm-root-lista';
 export const NOME_DA_LISTA_DO_CRM = 'Gestão de Leads';
 
 const FUSO = 'America/Sao_Paulo';

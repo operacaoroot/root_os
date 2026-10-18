@@ -1,6 +1,7 @@
-// Seed CRM — leva a lista "Gestão de Leads" do ClickUp para o Trabalho nativo,
-// que é de onde o painel do comercial (/comercial) lê. Idempotente: a chave de
-// cada coisa é o id do ClickUp (`externalId`), então rodar de novo atualiza em
+// Seed CRM — cria a lista "Gestão de Leads" no Trabalho nativo (etapas do funil,
+// canal, vendedor, valor da proposta) e carrega os negócios do arquivo, que é de
+// onde o painel do comercial (/comercial) lê. Idempotente: a chave de cada
+// cartão é o `id` do arquivo (`externalId`), então rodar de novo atualiza em
 // vez de duplicar. Não apaga nada que já esteja na lista.
 //   pnpm --filter @mktos/api db:seed:crm [arquivo.json]
 import { readFileSync } from 'node:fs';
@@ -20,7 +21,8 @@ interface Snapshot {
     titulo: string;
     etapa: string;
     responsavel?: string;
-    criadoEm: number;
+    criadoEm: number | string;
+    nota?: string;
     etapaDesde?: number | string;
     prazo?: number;
     campos: Record<string, string | number>;
@@ -31,7 +33,7 @@ const dia = (ms: number) =>
   new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Sao_Paulo' }).format(new Date(ms));
 
 async function main() {
-  const arquivo = process.argv[2] ?? join(__dirname, 'data', 'crm-gestao-de-leads-2026-10-18.json');
+  const arquivo = process.argv[2] ?? join(__dirname, 'data', 'crm-fechados-financeiro-2026-10-18.json');
   const s: Snapshot = JSON.parse(readFileSync(arquivo, 'utf8'));
   const org = await prisma.org.findUnique({ where: { slug: 'root' } });
   if (!org) throw new Error('org root não encontrada; rode o seed base antes');
@@ -88,9 +90,11 @@ async function main() {
       listId: lista.id,
       statusId,
       title: l.titulo,
+      description: l.nota ?? null,
       assignee: l.responsavel ?? null,
       dueDate: l.prazo ? new Date(l.prazo) : null,
-      externalUrl: `https://app.clickup.com/t/${l.id}`,
+      // Só o que veio do ClickUp (id numérico/alfanumérico curto) ganha link de volta.
+      externalUrl: /^[0-9a-z]{9,11}$/.test(l.id) ? `https://app.clickup.com/t/${l.id}` : null,
       order: i,
     };
     const existente = await prisma.workTask.findFirst({ where: { orgId, externalId: l.id } });

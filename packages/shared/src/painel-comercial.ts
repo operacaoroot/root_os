@@ -1,13 +1,13 @@
 /*
  * PAINEL DO COMERCIAL (homologação, 18/10/2026).
  *
- * O CRM da casa é a lista de Trabalho "Gestão de Leads" (a mesma forma do
- * ClickUp: etapas, campos Canal de aquisição, Vendedor, Valor em negociação e
+ * O CRM da casa é a lista de Trabalho "Gestão de Leads" (etapas Validar →
+ * Negócio fechado, campos Canal de aquisição, Vendedor, Valor da proposta e
  * Data de Cadastro do Lead). O painel só LÊ essa lista; mover o cartão no
  * quadro é o que muda os números.
  *
  * Etapa fechada que se chama "fechado", "ganho", "contrato" ou "negócio
- * fechado" conta como venda; as demais fechadas (perdido, geladeira) contam como
+ * fechado" conta como venda; as demais fechadas (Perdido, Desqualificado) contam como
  * perda. Etapas abertas são o que está em negociação.
  */
 export type ResultadoDaEtapa = 'aberta' | 'ganho' | 'perdido';
