@@ -178,7 +178,18 @@ export class AnaliseService {
   }
 
   // ---------------- leitura da IA ----------------
-  async leitura(orgId: string, refazer = false) {
+  // Pedido em andamento por empresa: quem chega enquanto a IA ainda escreve espera a mesma resposta.
+  private emAndamento = new Map<string, Promise<{ texto: string; geradaEm: string; guardada: boolean }>>();
+
+  leitura(orgId: string, refazer = false) {
+    const atual = this.emAndamento.get(orgId);
+    if (atual) return atual;
+    const p = this.lerAgora(orgId, refazer).finally(() => this.emAndamento.delete(orgId));
+    this.emAndamento.set(orgId, p);
+    return p;
+  }
+
+  private async lerAgora(orgId: string, refazer: boolean) {
     const r = await this.resumo(orgId);
     // Números que a IA vê: sem ids e sem o carimbo de hora (senão o hash muda a cada abertura).
     const base = {
@@ -201,7 +212,12 @@ export class AnaliseService {
     }
     // 6000: o modelo pode raciocinar antes de escrever, e o raciocínio conta nesse teto.
     const texto = (await this.llm.complete({ system: SISTEMA, user: `Números de hoje (${dia}):\n${json}`, orgId, maxTokens: 6000 })).trim();
-    const salva = await this.prisma.analiseLeitura.create({ data: { orgId, dia, hash, texto } });
+    // upsert: dois pedidos simultâneos (duas abas, duplo clique) não quebram na chave única.
+    const salva = await this.prisma.analiseLeitura.upsert({
+      where: { orgId_dia_hash: { orgId, dia, hash } },
+      create: { orgId, dia, hash, texto },
+      update: { texto },
+    });
     return { texto, geradaEm: salva.createdAt.toISOString(), guardada: false };
   }
 }
