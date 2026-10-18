@@ -118,6 +118,7 @@ export const FONTE_DO_EVENTO: Record<ComercialEvento, ComercialFonte> = {
   'decisao.expirada': 'relogio',
   'veto.registrado': 'pessoa',
   'etapa.mudou': 'sistema',
+  'etapa.movida_com_pendencia': 'pessoa',
   'saida.registrada': 'pessoa',
   'vigia.premissa': 'relogio',
 };
@@ -171,6 +172,8 @@ export interface PayloadsComerciais {
   'decisao.expirada': { decisaoId: string; tipo: string; padraoAplicado: string };
   'veto.registrado': { sobre: string; por: string | null; canal: string };
   'etapa.mudou': { de: string; para: string; motivo: string; eventoGatilho?: string | null };
+  /** P5: uma pessoa moveu o cartão com portão em aberto. `pendencias` é a lista exata do momento; `atravessadas`, as etapas cujo portão ficou para trás. */
+  'etapa.movida_com_pendencia': { de: string; para: string; pendencias: string[]; atravessadas: string[]; por: string | null; porId: string | null };
   'saida.registrada': { saida: string; motivo: string; detalhe?: string | null; voltaEm?: string | null; parceiro?: string | null; por: string | null };
   'vigia.premissa': { automacao: string; premissa: string; ok: boolean; detalhe?: string | null };
 }
@@ -326,6 +329,10 @@ export function resumoDoEvento(type: string, payload: unknown): { fonte: Comerci
       return { fonte, resumo: `VETO sobre ${String(p.sobre)}` };
     case 'etapa.mudou':
       return { fonte, resumo: `${String(p.de)} → ${String(p.para)} · ${curto(p.motivo, 60)}` };
+    case 'etapa.movida_com_pendencia': {
+      const lista = Array.isArray(p.pendencias) ? p.pendencias.map(String) : [];
+      return { fonte, resumo: `movido à mão ${String(p.de)} → ${String(p.para)}${p.por ? ` por ${String(p.por)}` : ''} · com pendências: ${curto(lista.join('; '), 120)}` };
+    }
     case 'saida.registrada':
       return { fonte, resumo: `saída: ${String(p.saida)} · ${String(p.motivo)}` };
     case 'vigia.premissa':

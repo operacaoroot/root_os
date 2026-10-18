@@ -39,8 +39,12 @@ export type ResourceType = 'lead' | 'task' | 'campaign' | 'content';
 
 // Chaves que entram no hash de cada recurso legado. Para as capacidades novas,
 // quem manda são as hashKeys do catálogo.
+//
+// `para` (lead) entrou na rodada do painel P5 (18/10/2026): é o destino do mover
+// do funil (`POST /comercial/lead/:id/mover`, mesma proteção do PATCH). Chave a
+// mais só PRENDE mais: corpo sem `para` gera o mesmo hash de antes.
 const ALLOWED_KEYS: Record<ResourceType, string[]> = {
-  lead: ['status', 'nextAction'],
+  lead: ['status', 'nextAction', 'para'],
   task: ['status'],
   campaign: ['status'],
   content: ['status'],

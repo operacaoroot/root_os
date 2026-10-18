@@ -1,6 +1,8 @@
-import { BadRequestException, Body, Controller, Get, Ip, Param, Post, Put, Query, UseGuards } from '@nestjs/common';
+import { BadRequestException, Body, Controller, Get, Headers, HttpCode, Ip, Param, Post, Put, Query, UseGuards } from '@nestjs/common';
 import { COMERCIAL_ESTADOS_DE_DECISAO, ComercialDecisaoRespostaSchema, type ComercialEstadoDeDecisao } from '@mktos/shared';
 
+import { ApprovalGuard } from '../approvals/approval.guard';
+import { SensitiveWrite } from '../approvals/sensitive-write.decorator';
 import { CurrentUser, type JwtUser } from '../auth/current-user.decorator';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RequirePermissions } from '../auth/permissions.decorator';
@@ -8,6 +10,7 @@ import { PermissionsGuard } from '../auth/permissions.guard';
 import { ConfigComercialService } from './config.service';
 import { DecisoesService } from './decisoes.service';
 import { FichaService } from './ficha.service';
+import { MoverService, SoGenteGuard } from './mover.service';
 import { RelogioDaEspinha } from './relogio-da-espinha';
 
 /*
@@ -16,9 +19,11 @@ import { RelogioDaEspinha } from './relogio-da-espinha';
  * Permissões: `leads.ver` lê, `leads.editar` escreve; responder decisão pede
  * também `aprovacoes.decidir` (é a fila de quem decide, como `/atendimento`).
  * A etapa NUNCA se escreve por aqui: não há PATCH de etapa. Quem move é a
- * reação a um evento, e o portão recusa com a lista do que falta (tela 04:
- * arrastar o cartão é bloqueado). A saída é um FATO com motivo (`saida.registrada`),
- * conferido por `podeSair` antes de entrar no fio.
+ * reação a um evento, e o portão recusa com a lista do que falta. A saída é um
+ * FATO com motivo (`saida.registrada`), conferido por `podeSair` antes de entrar
+ * no fio. A exceção, desde a rodada do painel (P5, 18/10/2026), é a PESSOA que
+ * move o cartão adiante: pedido → assinatura de OUTRA pessoa → mover com o
+ * token, com a mesma proteção do `PATCH /leads/:id` (ver `mover.service.ts`).
  */
 @UseGuards(JwtAuthGuard, PermissionsGuard)
 @Controller('comercial')
@@ -28,6 +33,7 @@ export class ComercialController {
     private readonly decisoesSvc: DecisoesService,
     private readonly configSvc: ConfigComercialService,
     private readonly relogio: RelogioDaEspinha,
+    private readonly moverSvc: MoverService,
   ) {}
 
   /** Tela 03: a fila de decisões, o que rodou sozinho hoje e os contadores. */
@@ -79,6 +85,35 @@ export class ComercialController {
   @RequirePermissions('leads.editar')
   saida(@CurrentUser() user: JwtUser, @Param('id') id: string, @Body() body: unknown) {
     return this.fichas.registrarSaida(user.orgId, id, body, { id: user.sub, nome: user.name });
+  }
+
+  /**
+   * P5 · o PEDIDO de mover o cartão: confere o destino, diz o que fica pendente
+   * e cria a aprovação retida do recurso `lead` (outra pessoa assina em
+   * /atendimento). Não muda nada. Só gente: conta de máquina é recusada.
+   */
+  @Post('lead/:id/mover/pedido')
+  @HttpCode(200)
+  @RequirePermissions('leads.editar')
+  @UseGuards(SoGenteGuard)
+  pedirMover(@CurrentUser() user: JwtUser, @Param('id') id: string, @Body() body: unknown) {
+    return this.moverSvc.pedir(user.orgId, id, body, { id: user.sub, nome: user.name ?? null, papeis: user.roles ?? [] });
+  }
+
+  /**
+   * P5 · MOVER, com a mesma proteção da mudança manual de etapa que já existia
+   * (`PATCH /leads/:id`): `leads.editar` + escrita sensível do recurso `lead` +
+   * `x-approval-token` confirmado por outra pessoa, preso ao `para`. O
+   * `SoGenteGuard` vem ANTES do `ApprovalGuard`: conta de máquina é recusada sem
+   * queimar a aprovação. Com pendência de portão, executa e grava o aviso.
+   */
+  @Post('lead/:id/mover')
+  @HttpCode(200)
+  @RequirePermissions('leads.editar')
+  @SensitiveWrite('lead')
+  @UseGuards(SoGenteGuard, ApprovalGuard)
+  mover(@CurrentUser() user: JwtUser, @Param('id') id: string, @Body() body: unknown, @Headers('x-approval-token') token: string) {
+    return this.moverSvc.mover(user.orgId, id, body, { id: user.sub, nome: user.name ?? null, papeis: user.roles ?? [] }, token);
   }
 
   /** A fila de decisões (abertas, tomadas, expiradas). */

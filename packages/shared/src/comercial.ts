@@ -126,6 +126,96 @@ export function proximaEtapa(etapa: ComercialEtapa): ComercialEtapaAtiva | null 
 }
 
 // ---------------------------------------------------------------------------
+// Mover o cartão pela tela (rodada do painel P5, 18/10/2026)
+// ---------------------------------------------------------------------------
+
+/**
+ * As etapas em que o lead ENTRA por efeito de sistema, e por isso não aceitam
+ * arrasto. O texto é o porquê que o menu "Mover para" mostra:
+ *   · E8 nasce do aceite do cliente na sala (`proposta.aceita`), que traz
+ *     valor, parcelas e forma: sem ele não há o que levar ao contrato;
+ *   · E9 nasce do fechamento (`cliente.ativo`), proposto à porta quando a 1ª
+ *     parcela está paga e o contrato está assinado pelos dois, e assinado pela
+ *     titular em /atendimento (R4).
+ */
+export const COMERCIAL_ETAPAS_DE_SISTEMA: Readonly<Partial<Record<ComercialEtapa, string>>> = {
+  contrato: 'entra sozinho quando o cliente aceita a proposta na sala: o aceite traz valor, parcelas e forma do contrato',
+  fechado: 'fecha sozinho quando a 1ª parcela é paga, o contrato está assinado pelos dois e a titular assina o fechamento em /atendimento',
+};
+
+/** O que uma PESSOA pode fazer ao soltar o cartão em `para`. `caminho: 'saida'` vai ao registro de saída, com motivo. */
+export interface ComercialDestinoDoMover {
+  para: ComercialEtapa;
+  permitido: boolean;
+  caminho: 'mover' | 'saida' | null;
+  /** Por que não pode (permitido = falso). Nulo quando pode. */
+  motivo: string | null;
+}
+
+/**
+ * Para onde uma pessoa pode mover o cartão. Puro: a API decide com esta mesma
+ * conta, e a tela a usa para desligar as opções do menu com o porquê.
+ *
+ * Avançar para qualquer etapa adiante é permitido (com pendência, avisa; não
+ * trava). Voltar não: quem volta é a saída com motivo. Saída leva ao registro
+ * de saída. A geladeira só volta para a etapa em que estava. As etapas de
+ * sistema (`COMERCIAL_ETAPAS_DE_SISTEMA`) não aceitam arrasto. Isto vale só
+ * para gente: o agente continua passando pelos portões.
+ */
+export function destinoDoMover(de: ComercialEtapa, para: ComercialEtapa, voltaPara?: ComercialEtapaAtiva | null): ComercialDestinoDoMover {
+  const nao = (motivo: string): ComercialDestinoDoMover => ({ para, permitido: false, caminho: null, motivo });
+  if (de === para) return nao('o lead já está nesta etapa');
+  if (de === 'fechado') return nao('negócio fechado é etapa final: quem encerra é o contrato vivo');
+  if (ehSaida(para)) {
+    if (ehSaida(de) && de !== 'geladeira') return nao(`o lead já está em ${COMERCIAL_ROTULO_DA_ETAPA[de]}`);
+    return { para, permitido: true, caminho: 'saida', motivo: null };
+  }
+  const sistema = COMERCIAL_ETAPAS_DE_SISTEMA[para];
+  if (sistema) return nao(sistema);
+  if (de === 'geladeira') {
+    const volta = voltaPara ?? 'qualificacao';
+    return volta === para ? { para, permitido: true, caminho: 'mover', motivo: null } : nao(`da geladeira o lead volta para ${COMERCIAL_ROTULO_DA_ETAPA[volta]}`);
+  }
+  if (ehSaida(de)) return nao(`lead em ${COMERCIAL_ROTULO_DA_ETAPA[de]} não volta pelo funil`);
+  if ((ordemDaEtapa(para) ?? 0) < (ordemDaEtapa(de) ?? 0)) {
+    return nao(`voltar de ${COMERCIAL_ROTULO_DA_ETAPA[de]} para ${COMERCIAL_ROTULO_DA_ETAPA[para]} não é avanço: registre uma saída com motivo`);
+  }
+  return { para, permitido: true, caminho: 'mover', motivo: null };
+}
+
+/** O corpo de `POST /comercial/lead/:id/mover` e do pedido. Saída não entra aqui: vai por `/saida`, com motivo. */
+export const ComercialMoverSchema = z.object({ para: z.enum(COMERCIAL_ETAPAS) }).strict();
+export type ComercialMoverInput = z.infer<typeof ComercialMoverSchema>;
+
+/** O pedido de mudança: a aprovação retida (a mudança de etapa pela tela é escrita sensível, como o PATCH de `/leads/:id`). */
+export interface ComercialPedidoDeMover {
+  approvalId: string;
+  /** O token de uso único: só vale depois que OUTRA pessoa confirmar em /atendimento. */
+  token: string;
+  expiraEm: string;
+  de: ComercialEtapa;
+  para: ComercialEtapaAtiva;
+  /** O que o portão ainda pede. Vazio = sem pendência. */
+  pendencias: string[];
+  resumo: string;
+}
+
+/** O balão do cartão movido com pendência: some quando a lista zera. */
+export interface ComercialBalaoDoMover {
+  pendencias: string[];
+  movidoPor: string | null;
+  em: string;
+}
+
+export interface ComercialResultadoDoMover {
+  ok: boolean;
+  mudou: boolean;
+  de: ComercialEtapa;
+  para: ComercialEtapa;
+  balao: ComercialBalaoDoMover | null;
+}
+
+// ---------------------------------------------------------------------------
 // Campos do lead (C07)
 // ---------------------------------------------------------------------------
 
@@ -265,6 +355,8 @@ export const COMERCIAL_EVENTOS = [
   'decisao.expirada',
   'veto.registrado',
   'etapa.mudou',
+  // Rodada do painel P5 (18/10): uma PESSOA moveu o cartão com portão em aberto; a lista exata vai no fato.
+  'etapa.movida_com_pendencia',
   'saida.registrada',
   'vigia.premissa',
 ] as const;
@@ -562,6 +654,8 @@ export interface FichaDoLead {
   portao: { proxima: ComercialEtapaAtiva | null; faltando: string[]; itens: ComercialPortaoNaTela[] };
   ligadoA: { sala: string | null; ata: boolean; proposta: number | null; contrato: string | null; cobranca: string | null };
   fio: LinhaDoFio[];
+  /** P5: o balão de quem moveu o cartão com pendência (o mesmo do funil). */
+  balao?: ComercialBalaoDoMover | null;
 }
 
 export interface LinhaDoFio {
@@ -667,6 +761,39 @@ export interface FunilVivo {
    */
   total?: number;
   aviso?: string | null;
+  /** P5: o filtro que a API aplicou, com a mesma explicação que a etiqueta mostra. */
+  filtro?: ComercialFiltroDoFunil | null;
+}
+
+/**
+ * As etiquetas de filtro do funil (tela 04), com o que cada uma CALCULA. O
+ * texto descreve a conta de `FichaService.funil` (`passa` e `parado`), não uma
+ * intenção: mudou a conta, muda aqui. A tela mostra a explicação ao parar o
+ * mouse e no foco; a API devolve a do filtro aplicado.
+ */
+export interface ComercialFiltroDoFunil {
+  chave: string;
+  rotulo: string;
+  explicacao: string;
+}
+
+export const COMERCIAL_FILTROS_DO_FUNIL: readonly ComercialFiltroDoFunil[] = [
+  { chave: 'todos', rotulo: 'todos', explicacao: 'Todos os leads da empresa, nas etapas e nas saídas.' },
+  {
+    chave: 'parados',
+    rotulo: 'parados',
+    explicacao: 'Leads há mais dias na mesma etapa do que o limite de "lead parado" da configuração do comercial. Sem limite configurado, ninguém aparece. Saídas e negócio fechado não contam.',
+  },
+  { chave: 'decisao', rotulo: 'decisão sua', explicacao: 'Leads com pelo menos uma decisão aberta na fila de decisões do comercial, esperando resposta da mesa.' },
+  { chave: 'P1', rotulo: 'P1', explicacao: 'Perfil P1 na pontuação: chegou por conteúdo, comunidade ou site ("conhece o ChatGPT").' },
+  { chave: 'P2', rotulo: 'P2', explicacao: 'Perfil P2 na pontuação: chegou por ERP parceiro ("tem sistema com base organizada").' },
+  { chave: 'P3', rotulo: 'P3', explicacao: 'Perfil P3 na pontuação: chegou por indicação ou evento ("tem muito dado e não cruza").' },
+  { chave: 'operacao', rotulo: 'Operação', explicacao: 'Produto-alvo Operação ROOT na ficha (proposto na qualificação, no diagnóstico, na proposta ou no aceite).' },
+  { chave: 'imersao', rotulo: 'Imersão', explicacao: 'Produto-alvo Imersão na ficha (proposto na qualificação, no diagnóstico, na proposta ou no aceite).' },
+];
+
+export function filtroDoFunil(chave: string | null | undefined): ComercialFiltroDoFunil | null {
+  return COMERCIAL_FILTROS_DO_FUNIL.find((f) => f.chave === (chave || 'todos')) ?? null;
 }
 
 export interface CartaoDoFunil {
@@ -683,6 +810,10 @@ export interface CartaoDoFunil {
   voltaEm: string | null;
   perfil: ComercialPerfil | null;
   produto: ComercialProduto | null;
+  /** P5: para onde a geladeira volta (a etapa gravada na saída). Nulo fora da geladeira. */
+  voltaPara?: ComercialEtapaAtiva | null;
+  /** P5: o balão persistente de quem moveu com pendência. Nulo quando não há pendência aberta. */
+  balao?: ComercialBalaoDoMover | null;
 }
 
 /** O fechamento (tela 10): as cinco escritas com chave. */

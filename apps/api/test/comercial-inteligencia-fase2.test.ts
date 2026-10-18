@@ -133,7 +133,7 @@ describe.skipIf(!URL)('a inteligência do cockpit, fase 2, contra o banco', { ti
     relatorios = new RelatorioDaSemanaService(p, mem, tarefas, llm);
     relatorios.inscrever();
     torre = new TorreService(p, config, vigia, undefined, llm, relatorios);
-    controller = new ComercialController(fichas, decisoes, config, relogio);
+    controller = new ComercialController(fichas, decisoes, config, relogio, undefined as never); // P5: o mover não é exercido aqui
   });
 
   afterAll(async () => {

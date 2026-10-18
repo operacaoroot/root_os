@@ -13,6 +13,7 @@ import { RelogioComercialRegistry } from './relogio.registry';
 import { ConfigComercialService } from './config.service';
 import { DecisoesRegistry, DecisoesService } from './decisoes.service';
 import { FichaService } from './ficha.service';
+import { MoverService, SoGenteGuard } from './mover.service';
 import { ReacoesDaEspinha } from './reacoes-da-espinha';
 import { RelogioDaEspinha } from './relogio-da-espinha';
 import { DinheiroController, WebhooksDoDinheiroController } from './dinheiro.controller';
@@ -67,6 +68,9 @@ import { FechamentoService } from './fechamento.service';
     FichaService,
     RelogioDaEspinha,
     ReacoesDaEspinha,
+    // --- rodada do painel P5 (mover o cartão pela tela, pela aprovação) ---
+    MoverService,
+    SoGenteGuard,
     // --- lane B (sala, WhatsApp por porta, simulador) ---
     SalaService,
     WhatsappComercialService,

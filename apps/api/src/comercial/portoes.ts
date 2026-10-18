@@ -19,8 +19,10 @@ import {
  * coluna "obrigatório a partir de" da seção C07 do mapa.
  *
  * Quem move a etapa é a REAÇÃO a um evento (`reacoes.service.ts`), nunca um
- * PATCH de tela: arrastar o cartão no funil é bloqueado (tela 04). Este arquivo
- * só responde "pode?" e "o que falta?". Ele não conhece banco nem Nest.
+ * PATCH de tela. Desde a rodada do painel (P5, 18/10/2026) uma PESSOA pode
+ * mover o cartão adiante com pendência, pela mudança de etapa aprovada (ver o
+ * fim do arquivo): executa e avisa, para gente; o agente segue recusado aqui.
+ * Este arquivo só responde "pode?" e "o que falta?". Ele não conhece banco nem Nest.
  *
  * LIÇÃO DO ESCRITÓRIO, escrita na C07: "a trava funciona quando o sistema
  * recusa, e falha quando só lembra". Por isso `avancar()` recusa; não avisa.
@@ -205,4 +207,64 @@ export function podeSair(de: ComercialEtapa, saida: ComercialEtapa): { ok: boole
 export function etapaDeVolta(etapaAntesDaSaida: string | null | undefined): ComercialEtapaAtiva {
   const e = String(etapaAntesDaSaida ?? '');
   return (COMERCIAL_ETAPAS as readonly string[]).includes(e) ? (e as ComercialEtapaAtiva) : 'qualificacao';
+}
+
+/* ==========================================================================
+ * MOVER COM PENDÊNCIA (rodada do painel P5, 18/10/2026) — só para GENTE
+ * ==========================================================================
+ *
+ * Uma pessoa pode mover o cartão adiante com portão em aberto: a mudança
+ * EXECUTA e o cartão ganha um balão com a lista exata do que falta. O agente
+ * não passa por aqui: as reações continuam em `avancar`, que recusa. Quem
+ * decide se o destino é possível é `destinoDoMover` (shared); este arquivo só
+ * diz O QUE FICOU PARA TRÁS.
+ */
+
+/** O rótulo curto da etapa ("E2") para a linha da pendência. */
+const curtoDaEtapa = (e: ComercialEtapa): string => COMERCIAL_ROTULO_DA_ETAPA[e].split(' · ')[0];
+
+/**
+ * As etapas cujo portão de saída a pessoa atravessa indo de `de` a `para`: de
+ * `de` (inclusive) até a anterior a `para`. Com a rota de proposta direta, o
+ * diagnóstico não é etapa do caminho e fica de fora (C04, E4).
+ */
+export function etapasAtravessadas(e: EstadoParaPortao, de: ComercialEtapa, para: ComercialEtapa): ComercialEtapaAtiva[] {
+  const ordemDe = ordemDaEtapa(de);
+  const ordemPara = ordemDaEtapa(para);
+  if (!ordemDe || !ordemPara || ordemPara <= ordemDe) return [];
+  return COMERCIAL_ETAPAS.slice(ordemDe - 1, ordemPara - 1).filter((s) => !(s === 'diagnostico' && s !== de && e.rota === 'proposta_direta'));
+}
+
+/** O que falta, hoje, nos portões das etapas `atravessadas`, escrito para a tela ("sistema ou ERP em uso (E2)"). Sem repetição. */
+export function pendenciasDasEtapas(e: EstadoParaPortao, atravessadas: readonly ComercialEtapa[]): string[] {
+  const linhas: string[] = [];
+  for (const s of atravessadas) {
+    if (ehSaida(s) || s === 'fechado') continue;
+    for (const p of PORTOES_DA_ETAPA[s]) {
+      if (p.cumprido({ ...e, etapa: s })) continue;
+      const linha = `${p.rotulo} (${curtoDaEtapa(s)})`;
+      if (!linhas.includes(linha)) linhas.push(linha);
+    }
+  }
+  return linhas;
+}
+
+/** O mover de uma pessoa: as etapas atravessadas e o que falta nelas agora. Lista vazia = sem balão. */
+export function pendenciasDoMover(e: EstadoParaPortao, de: ComercialEtapa, para: ComercialEtapa): { atravessadas: ComercialEtapaAtiva[]; pendencias: string[] } {
+  const atravessadas = etapasAtravessadas(e, de, para);
+  return { atravessadas, pendencias: pendenciasDasEtapas(e, atravessadas) };
+}
+
+/**
+ * O BALÃO, calculado ao projetar: das etapas que alguma pessoa atravessou com
+ * pendência, as que ainda estão ATRÁS da etapa atual, e o que os portões delas
+ * pedem hoje. Sanou, a linha some; zerou, o balão some. Lead em saída ou
+ * fechado não tem balão (saiu do funil ativo; o fechamento tem as próprias
+ * pré-condições).
+ */
+export function pendenciasQueRestam(e: EstadoParaPortao, atravessadasPorPessoas: readonly string[]): string[] {
+  if (ehSaida(e.etapa) || e.etapa === 'fechado') return [];
+  const atual = ordemDaEtapa(e.etapa) ?? 0;
+  const atras = COMERCIAL_ETAPAS.filter((s) => atravessadasPorPessoas.includes(s) && (ordemDaEtapa(s) ?? 0) < atual);
+  return pendenciasDasEtapas(e, atras);
 }
