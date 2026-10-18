@@ -7,10 +7,17 @@ import { exigirAcessoAtual } from '../memory/acesso-memoria';
 import { travarFinanceiro, travarLancamentoFinanceiro, exigirNaoExercicio } from './financeiro-exercicio.service';
 
 // Conciliação bancária por SCORE (enxerto do FinOps5.0 — executar_conciliacao_auto).
-// Movimento = lançamento de origem bancária (ofx/pluggy, status realizado, ainda não
-// conciliado). Título = lançamento previsto (conta a pagar/receber). O match casa os
+// Movimento = lançamento de origem bancária (ofx/pluggy/asaas, status realizado, ainda
+// não conciliado). Título = lançamento previsto (conta a pagar/receber). O match casa os
 // dois por valor (50%) + data (30%) + tipo (20%); ≥0.85 auto, 0.50–0.84 sugestão.
+// Conciliar passa para o movimento a classificação E o contrato do título: é assim que
+// o pagamento de uma conta recorrente fica preso ao contrato dela.
 const num = (d: Prisma.Decimal | number | null | undefined): number => (d == null ? 0 : Number(d));
+
+// O extrato do Asaas é movimento como o de OFX/Pluggy. As cobranças em aberto que o
+// próprio sync do Asaas grava (source 'asaas', previsto) NÃO são título: o sync já as
+// apaga quando saem do aberto, e consumi-las aqui faria o sync recriá-las.
+const ORIGENS_DE_MOVIMENTO = ['ofx', 'pluggy', 'asaas'];
 
 // pesos e limiares (defaults do FinOps; configuráveis por env)
 const W_VALOR = 0.5;
@@ -54,11 +61,11 @@ export class ConciliacaoService {
     const idsExercicio = inscritos.map(o => o.transactionId);
     const [movRows, titRows] = await Promise.all([
       this.prisma.financeTransaction.findMany({
-        where: { orgId, ...accFilter, source: { in: ['ofx', 'pluggy'] }, status: 'realizado', matchType: null },
+        where: { orgId, ...accFilter, source: { in: ORIGENS_DE_MOVIMENTO }, status: 'realizado', matchType: null },
         orderBy: [{ date: 'desc' }], take: 500,
       }),
       this.prisma.financeTransaction.findMany({
-        where: { orgId, ...accFilter, status: 'previsto', approvalStatus: { in: ['nao_requer', 'aprovado'] }, id: { notIn: idsExercicio } },
+        where: { orgId, ...accFilter, status: 'previsto', source: { not: 'asaas' }, approvalStatus: { in: ['nao_requer', 'aprovado'] }, id: { notIn: idsExercicio } },
         include: { partner: { select: { razaoSocial: true } } },
         orderBy: [{ dueDate: 'asc' }], take: 500,
       }),
@@ -145,14 +152,15 @@ export class ConciliacaoService {
         db.financeTransaction.findFirst({ where: { id: titId, orgId } }),
       ]);
       if (!mov || !tit) throw new NotFoundException('Movimento ou título não encontrado');
-      if (movId === titId || mov.matchType || mov.status !== 'realizado' || !['ofx', 'pluggy'].includes(mov.source) ||
-          tit.status !== 'previsto' || !['nao_requer', 'aprovado'].includes(tit.approvalStatus))
+      if (movId === titId || mov.matchType || mov.status !== 'realizado' || !ORIGENS_DE_MOVIMENTO.includes(mov.source) ||
+          tit.status !== 'previsto' || tit.source === 'asaas' || !['nao_requer', 'aprovado'].includes(tit.approvalStatus))
         throw new BadRequestException('Movimento ou título não está disponível para conciliação.');
       await db.financeTransaction.update({ where: { id: movId }, data: {
         status: 'conciliado', matchScore: Math.round(score * 100) / 100, matchType: tipo, reconciledAt: new Date(),
         chartAccountId: mov.chartAccountId ?? tit.chartAccountId, categoryId: mov.categoryId ?? tit.categoryId,
         partnerId: mov.partnerId ?? tit.partnerId, departamentoId: mov.departamentoId ?? tit.departamentoId,
         projetoId: mov.projetoId ?? tit.projetoId, documentNumber: mov.documentNumber ?? tit.documentNumber,
+        contractId: mov.contractId ?? tit.contractId,
       } });
       await db.financeTransaction.delete({ where: { id: titId } });
       await this.audit.log({

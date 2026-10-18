@@ -947,6 +947,9 @@ model ChartAccount {
   dreLineId         String?
   dreLine           DreLine?       @relation(fields: [dreLineId], references: [id])
   ativo             Boolean        @default(true)
+  /// Gasto que vem todo mês, venda ou não venda (aluguel, software, folha). Separa
+  /// custo fixo de variável na Análise; vale para as filhas da conta também.
+  custoFixo         Boolean        @default(false)
   createdAt         DateTime       @default(now())
   updatedAt         DateTime       @updatedAt
 

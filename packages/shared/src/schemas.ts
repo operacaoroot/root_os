@@ -707,6 +707,7 @@ export const ChartAccountSchema = z.object({
   dreLineId: z.string().nullable(),
   dreCodigo: z.string().nullable(),
   ativo: z.boolean(),
+  custoFixo: z.boolean(),
 });
 export type ChartAccount = z.infer<typeof ChartAccountSchema>;
 
@@ -727,6 +728,10 @@ export const CreateChartAccountSchema = z.object({
   dreCodigo: z.string().nullable().optional(),
 });
 export type CreateChartAccountInput = z.infer<typeof CreateChartAccountSchema>;
+
+// Por ora só o que a Análise edita: se a conta é custo fixo.
+export const UpdateChartAccountSchema = z.object({ custoFixo: z.boolean() });
+export type UpdateChartAccountInput = z.infer<typeof UpdateChartAccountSchema>;
 
 // --- FinOps: DRE (Demonstrativo de Resultado — "Motor Vortex") ---
 export const DreLineResultSchema = z.object({

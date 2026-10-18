@@ -8,6 +8,7 @@ import {
   RegisterPluggyItemSchema,
   PluggyConnectTokenSchema,
   CreateChartAccountSchema,
+  UpdateChartAccountSchema,
   CreatePartnerSchema,
   CreateDimensionSchema,
   CreateContractSchema,
@@ -154,6 +155,13 @@ export class FinanceController {
   createChartAccount(@CurrentUser() user: JwtUser, @Body() body: unknown) {
     const input = CreateChartAccountSchema.parse(body);
     return this.finops.createChartAccount(user.orgId, input, user.sub);
+  }
+
+  @Patch('chart-accounts/:id')
+  @RequirePermissions('financeiro.editar')
+  updateChartAccount(@CurrentUser() user: JwtUser, @Param('id') id: string, @Body() body: unknown) {
+    const input = UpdateChartAccountSchema.parse(body);
+    return this.finops.updateChartAccount(user.orgId, id, input, user.sub);
   }
 
   // --- Visão geral / fluxo de caixa ---

@@ -6,12 +6,13 @@ import { PrismaService } from '../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
 import { LLM_PROVIDER, type LlmProvider } from '../llm/llm.provider';
 import { FinanceService } from './finance.service';
+import { contaFixa, grupoDaSaida, mesAMes, mesDe, mesesAte, partesDaSaida, type ContaDoPlano, type Movimento } from './mes-a-mes';
 
 /*
  * ANÁLISE DO FINANCEIRO
  *
  * Junta, numa leitura só, o que o financeiro sabe (caixa, previstos, contratos
- * recorrentes) com o que ele não sabe sozinho: os ACORDOS comerciais. Um
+ * recorrentes, para onde foi o dinheiro mês a mês) com o que ele não sabe sozinho: os ACORDOS comerciais. Um
  * acordo diz quanto foi vendido ou entregue a um cliente e de que tipo é
  * (pagante, permuta, repasse, parceria). É a única forma de mostrar "quanto
  * deveria ter entrado" ao lado de "quanto entrou".
@@ -46,7 +47,8 @@ Quem lê não é do financeiro: escreva em português do Brasil simples, sem jar
 Recebe um JSON com os números do momento. Devolva de 3 a 5 observações, cada uma numa linha começando com "- ".
 Cada observação: um fato com número (em R$ ou meses) e, quando couber, uma ação concreta em seguida, depois de " → ".
 Priorize: caixa e fôlego, o que deveria ter entrado e não entrou, peso das parcerias/permutas sobre o que foi entregue,
-dependência de um cliente só, contas recorrentes contra receita recorrente, pendências de dado que distorcem a leitura.
+dependência de um cliente só, contas recorrentes contra receita recorrente, o peso do custo fixo, do variável e do investimento
+nos últimos meses (em mesAMes; o mês atual ainda não fechou), pendências de dado que distorcem a leitura.
 Não invente número que não está no JSON. Não repita o mesmo ponto. Sem introdução e sem conclusão.`;
 
 @Injectable()
@@ -91,7 +93,10 @@ export class AnaliseService {
   // ---------------- resumo ----------------
   async resumo(orgId: string) {
     const agora = Date.now();
-    const [summary, acordos, entradas, contratos, semConta] = await Promise.all([
+    const meses = mesesAte(new Date(agora), 4);
+    const mesAtual = meses[meses.length - 1];
+    const inicioJanela = new Date(`${meses[0]}-01T00:00:00.000Z`);
+    const [summary, acordos, entradas, contratos, semConta, contas, movsJanela] = await Promise.all([
       this.fin.summary(orgId),
       this.listAcordos(orgId),
       this.prisma.financeTransaction.findMany({
@@ -100,7 +105,18 @@ export class AnaliseService {
       }),
       this.prisma.contract.findMany({ where: { orgId, status: 'ativo' }, select: { id: true, tipo: true, descricao: true, valor: true, periodicidade: true, diaVencimento: true, partner: { select: { razaoSocial: true } } } }),
       this.prisma.financeTransaction.count({ where: { orgId, status: { not: 'previsto' }, chartAccountId: null, temRateio: false } }),
+      this.prisma.chartAccount.findMany({ where: { orgId }, select: { id: true, codigo: true, nome: true, parentId: true, custoFixo: true } }),
+      this.prisma.financeTransaction.findMany({
+        where: { orgId, status: { in: ['realizado', 'conciliado'] }, date: { gte: inicioJanela } },
+        select: { type: true, amount: true, date: true, chartAccountId: true, contractId: true, splits: { select: { chartAccountId: true, valor: true } } },
+      }),
     ]);
+    const doContrato = contratos.length
+      ? await this.prisma.financeTransaction.findMany({
+          where: { orgId, contractId: { in: contratos.map((c) => c.id) } },
+          select: { contractId: true, status: true, amount: true, date: true, dueDate: true },
+        })
+      : [];
     const previstos = await this.prisma.financeTransaction.findMany({
       where: { orgId, status: 'previsto' },
       select: { type: true, amount: true, dueDate: true, date: true },
@@ -131,9 +147,18 @@ export class AnaliseService {
     const entregue = r2(porTipo.reduce((s, t) => s + t.valor, 0));
     const pagante = porTipo.find((t) => t.tipo === 'pagante')!;
 
-    // recorrentes
+    // recorrentes, com o que aconteceu com cada um no mês atual. O pagamento fica preso
+    // ao contrato quando é conciliado com o previsto que o contrato gerou.
     const mensal = (c: (typeof contratos)[number]) => r2(num(c.valor) * (POR_MES[c.periodicidade] ?? 1));
-    const recorrentes = contratos.map((c) => ({ id: c.id, tipo: c.tipo, descricao: c.descricao, quem: c.partner?.razaoSocial ?? null, valor: num(c.valor), periodicidade: c.periodicidade, dia: c.diaVencimento, porMes: mensal(c) }));
+    const noMes = (contratoId: string) => {
+      const doMes = doContrato.filter((t) => t.contractId === contratoId);
+      const pago = r2(doMes.filter((t) => efetivo(t.status) && mesDe(t.date) === mesAtual).reduce((s, t) => s + num(t.amount), 0));
+      const aberto = doMes
+        .filter((t) => t.status === 'previsto' && mesDe(t.dueDate ?? t.date) === mesAtual)
+        .sort((a, b) => (a.dueDate ?? a.date).getTime() - (b.dueDate ?? b.date).getTime())[0];
+      return { pago, previsto: aberto ? num(aberto.amount) : 0, vence: aberto ? (aberto.dueDate ?? aberto.date).toISOString().slice(0, 10) : null };
+    };
+    const recorrentes = contratos.map((c) => ({ id: c.id, tipo: c.tipo, descricao: c.descricao, quem: c.partner?.razaoSocial ?? null, valor: num(c.valor), periodicidade: c.periodicidade, dia: c.diaVencimento, porMes: mensal(c), noMes: noMes(c.id) }));
     const custoMensal = r2(recorrentes.filter((c) => c.tipo === 'saida').reduce((s, c) => s + c.porMes, 0));
     const receitaMensal = r2(recorrentes.filter((c) => c.tipo === 'entrada').reduce((s, c) => s + c.porMes, 0));
 
@@ -154,6 +179,30 @@ export class AnaliseService {
     const totalRecebido90 = [...porPagador.values()].reduce((s, v) => s + v, 0);
     const topo = [...porPagador.entries()].sort((a, b) => b[1] - a[1])[0];
 
+    // para onde foi o dinheiro, mês a mês
+    const movs: Movimento[] = movsJanela.map((t) => ({
+      type: t.type, amount: num(t.amount), date: t.date, chartAccountId: t.chartAccountId, contractId: t.contractId,
+      splits: t.splits.map((s) => ({ chartAccountId: s.chartAccountId, valor: num(s.valor) })),
+    }));
+    const plano: ContaDoPlano[] = contas;
+    const porId = new Map(plano.map((c) => [c.id, c]));
+    // As contas que pesaram como fixo ou variável na janela: é nelas que marcar "fixa" muda a tabela.
+    const usadas = new Map<string, number>();
+    for (const m of movs) {
+      if (m.type !== 'saida') continue;
+      for (const p of partesDaSaida(m)) {
+        if (!p.chartAccountId) continue;
+        const g = grupoDaSaida(porId, p.chartAccountId, false);
+        if (g === 'fixo' || g === 'variavel') usadas.set(p.chartAccountId, (usadas.get(p.chartAccountId) ?? 0) + p.valor);
+      }
+    }
+    const contasDaJanela = [...usadas.entries()]
+      .map(([id, total]) => {
+        const c = contas.find((x) => x.id === id)!;
+        return { id, codigo: c.codigo, nome: c.nome, custoFixo: c.custoFixo, herdaFixo: !c.custoFixo && contaFixa(porId, id), total: r2(total) };
+      })
+      .sort((a, b) => b.total - a.total);
+
     return {
       geradoEm: new Date().toISOString(),
       caixa: {
@@ -171,6 +220,7 @@ export class AnaliseService {
         semRastro: r2(linhas.reduce((s, l) => s + l.semRastro, 0)),
       },
       recorrentes: { linhas: recorrentes, custoMensal, receitaMensal, coberturaPct: custoMensal > 0 ? r2((receitaMensal / custoMensal) * 100) : null },
+      mesAMes: { linhas: mesAMes(movs, plano, meses), mesAtual, contas: contasDaJanela },
       proximos,
       dependencia: topo ? { pagador: topo[0], valor: r2(topo[1]), pct: totalRecebido90 > 0 ? r2((topo[1] / totalRecebido90) * 100) : 0, total90: r2(totalRecebido90) } : null,
       pendencias: { semClassificacao: semConta, vencidoReceber: summary.aReceberVencido, vencidoPagar: summary.aPagarVencido },
@@ -196,6 +246,7 @@ export class AnaliseService {
       caixa: r.caixa,
       acordos: { ...r.acordos, linhas: r.acordos.linhas.map(({ id, apelidos, ...l }) => l) },
       recorrentes: { ...r.recorrentes, linhas: r.recorrentes.linhas.map(({ id, ...l }) => l) },
+      mesAMes: { mesAtual: r.mesAMes.mesAtual, linhas: r.mesAMes.linhas },
       proximos: r.proximos,
       dependencia: r.dependencia,
       pendencias: r.pendencias,
