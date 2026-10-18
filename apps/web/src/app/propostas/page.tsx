@@ -105,7 +105,8 @@ export default function Propostas() {
       setAutorizado(true);
       const d = await apiGet<ListaDePropostas>(BASE, token);
       setDados(d);
-      setSelecionada((atual) => d.propostas.find((p) => p.chave === atual?.chave) ?? d.propostas[0] ?? null);
+      // Nada abre sozinho: o detalhe é janela, e só aparece quando a proposta é clicada.
+      setSelecionada((atual) => d.propostas.find((p) => p.chave === atual?.chave) ?? null);
     } catch (e) {
       if (e instanceof ErroDaApi && e.status === 403) setAutorizado(false);
       else setErro((e as Error).message);
@@ -156,7 +157,7 @@ export default function Propostas() {
 
       <Quadro
         titulo={chegou == null ? 'Propostas' : `Propostas que chegaram em "${ETAPAS[chegou]}"`}
-        nota={`${visiveis.length} de ${propostas.length} · clique na proposta para ver o detalhe, no lead para abrir a ficha`}
+        nota={`${visiveis.length} de ${propostas.length} · clique na proposta para abrir o detalhe, no lead para abrir a ficha`}
         acao={
           <div className="flex items-center gap-4">
             {chegou != null && (
@@ -204,7 +205,7 @@ export default function Propostas() {
                               <span className="inline-block h-2 w-2 rounded-full" style={{ background: lead.etapaCor }} />
                               {lead.etapa}
                             </span>
-                            <span className="com-num text-xs text-muted">{lead.valor != null ? brl(lead.valor) : 'sem valor'} · ficha →</span>
+                            <span className="com-num whitespace-nowrap text-xs text-muted">{lead.valor != null ? brl(lead.valor) : 'sem valor'} · ficha →</span>
                           </button>
                         ) : crm?.lista ? (
                           <button onClick={() => void criarLead(p)} className="rounded-md border border-brand px-2.5 py-1 text-xs text-brand hover:bg-brand/10">
@@ -226,7 +227,11 @@ export default function Propostas() {
         )}
       </Quadro>
 
-      {selecionada && <Detalhe proposta={selecionada} detalhe={detalhe} lead={leadDaProposta(selecionada, negocios)} />}
+      {selecionada && (
+        <Janela fechar={() => setSelecionada(null)}>
+          <Detalhe proposta={selecionada} detalhe={detalhe} lead={leadDaProposta(selecionada, negocios)} fechar={() => setSelecionada(null)} />
+        </Janela>
+      )}
 
       {dados && (
         <details className="rounded-md border border-border bg-surface px-5 py-3">
@@ -313,7 +318,34 @@ function Funil(props: {
 }
 
 
-function Detalhe({ proposta, detalhe, lead }: { proposta: PropostaNaLista; detalhe: DetalheDaProposta | null; lead?: PainelComercialNegocio }) {
+/**
+ * O detalhe abre por cima da lista, como a ficha: centralizado, fechar no canto
+ * superior direito, Esc e clique fora fecham, e a lista fica onde estava.
+ */
+function Janela({ fechar, children }: { fechar: () => void; children: React.ReactNode }) {
+  useEffect(() => {
+    const esc = (e: KeyboardEvent) => {
+      // Com a ficha do lead aberta por cima, o Esc é dela.
+      if (e.key === 'Escape' && !document.querySelector('[aria-label="Ficha do cliente"]')) fechar();
+    };
+    const antes = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    window.addEventListener('keydown', esc);
+    return () => {
+      document.body.style.overflow = antes;
+      window.removeEventListener('keydown', esc);
+    };
+  }, [fechar]);
+  return (
+    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 p-3 min-[820px]:p-8" onClick={fechar}>
+      <div role="dialog" aria-modal="true" aria-label="Detalhe da proposta" className="com-tema max-h-full w-full max-w-[1000px] overflow-y-auto rounded-lg text-text shadow-2xl" onClick={(e) => e.stopPropagation()}>
+        {children}
+      </div>
+    </div>
+  );
+}
+
+function Detalhe({ proposta, detalhe, lead, fechar }: { proposta: PropostaNaLista; detalhe: DetalheDaProposta | null; lead?: PainelComercialNegocio; fechar: () => void }) {
   const [copiado, setCopiado] = useState(false);
   const copiar = () => {
     void navigator.clipboard
@@ -343,6 +375,14 @@ function Detalhe({ proposta, detalhe, lead }: { proposta: PropostaNaLista; detal
           )}
           <button onClick={copiar} className={botao}>{copiado ? 'link copiado' : 'copiar link'}</button>
           <a href={`${proposta.link}?equipe=1`} target="_blank" rel="noopener noreferrer" className={botao}>abrir proposta</a>
+          <button
+            onClick={fechar}
+            aria-label="Fechar o detalhe"
+            title="Fechar (Esc)"
+            className="flex h-9 w-9 items-center justify-center rounded-md border border-border text-xl leading-none text-muted hover:border-brand hover:text-text"
+          >
+            ×
+          </button>
         </div>
       </div>
 
