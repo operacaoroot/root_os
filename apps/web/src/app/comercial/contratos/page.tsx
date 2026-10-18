@@ -22,15 +22,15 @@ export default function ContratosPage() {
       <Erro erro={erro} aoTentar={() => void recarregar()} />
       {carregando && !dados && !erro && <Carregando linhas={2} altura="h-28" />}
       {dados && dados.length === 0 && <Aviso>Nenhum contrato vivo ainda. Ele nasce quando o fechamento conclui.</Aviso>}
-      <ul className="grid gap-3 md:grid-cols-2">
+      <ul className="grid grid-cols-[minmax(0,1fr)] gap-3 md:grid-cols-[repeat(2,minmax(0,1fr))]">
         {(dados ?? []).map((c) => {
           const p = contarParcelas(c.parcelas);
           const proxima = c.parcelas.find((x) => x.estado !== 'paga');
           return (
-            <li key={c.leadId}>
+            <li key={c.leadId} className="min-w-0">
               <LinkDoLead leadId={c.leadId} aba="dinheiro" className={`block ${CARTAO} transition hover:border-brand ${FOCO}`}>
                 <div className="flex flex-wrap items-center gap-2">
-                  <p className="min-w-0 flex-1 truncate text-[14.5px] font-semibold">{c.cliente}</p>
+                  <p className="min-w-0 flex-1 truncate text-[14.5px] font-semibold" title={c.cliente}>{c.cliente}</p>
                   {p.atrasadas > 0 && <Chip tom="ruim">{p.atrasadas} atrasada{p.atrasadas > 1 ? 's' : ''}</Chip>}
                 </div>
                 <p className="mt-1 text-[12.5px] text-muted">

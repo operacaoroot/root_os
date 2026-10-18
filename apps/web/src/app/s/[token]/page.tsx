@@ -113,11 +113,11 @@ type Agir = (chave: string, caminho: string, corpo: unknown) => Promise<boolean>
 
 function Estagios({ estado }: { estado: EstadoDaSala }) {
   return (
-    <ol className="grid grid-cols-5 gap-1.5" aria-label="estágios">
+    <ol className="grid grid-cols-[repeat(5,minmax(0,1fr))] gap-1.5" aria-label="estágios">
       {estado.estagios.map((e) => (
         <li key={e.chave} className="min-w-0" aria-current={e.estado === 'atual' ? 'step' : undefined}>
           <div className={`h-[3px] rounded-full ${e.estado === 'atual' ? 'bg-brand' : e.estado === 'passou' ? 'bg-brand/40' : 'bg-surface-3'}`} />
-          <div className={`mt-1 truncate text-[11px] ${e.estado === 'vem' ? 'text-dim' : 'font-semibold'}`}>{e.rotulo}</div>
+          <div title={e.rotulo} className={`mt-1 truncate text-[11px] ${e.estado === 'vem' ? 'text-dim' : 'font-semibold'}`}>{e.rotulo}</div>
         </li>
       ))}
     </ol>
@@ -173,7 +173,7 @@ function Conversa({
       ) : respondeu && c.horariosOferecidos.length ? (
         <div className="mt-2">
           <p className="text-[13.5px]">Escolha um horário com um dos sócios ({c.duracaoMin} minutos):</p>
-          <div className="mt-2 grid grid-cols-2 gap-2">
+          <div className="mt-2 grid grid-cols-[repeat(auto-fit,minmax(9rem,1fr))] gap-2">
             {c.horariosOferecidos.map((h) => (
               <button key={h} type="button" disabled={ocupado === 'agenda'} onClick={() => agir('agenda', 'agenda', { horario: h })} className={BOTAO}>
                 {rotuloDoHorario(h)}
@@ -222,9 +222,9 @@ function Formulario({ agir, ocupado, erro }: { agir: Agir; ocupado: string | nul
       </label>
       <fieldset className="text-[13px]">
         <legend>A base de dados está organizada?</legend>
-        <div className="mt-1 flex gap-2">
+        <div className="mt-1 flex flex-wrap gap-2">
           {(['sim', 'nao'] as const).map((v) => (
-            <button key={v} type="button" aria-pressed={base === v} onClick={() => setBase(v)} className={`${BOTAO} flex-1 py-2 ${base === v ? 'border-brand bg-brand/10' : ''}`}>
+            <button key={v} type="button" aria-pressed={base === v} onClick={() => setBase(v)} className={`${BOTAO} min-w-[6rem] flex-1 py-2 ${base === v ? 'border-brand bg-brand/10' : ''}`}>
               {v === 'sim' ? 'sim' : 'ainda não'}
             </button>
           ))}
@@ -368,7 +368,7 @@ function Proposta({ estado, base, agir, ocupado, erroDe }: { estado: EstadoDaSal
           <p className="font-os-mono text-[10px] text-muted">versão {p.versao}</p>
         </div>
         {!aceitando && (
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2">
             <button type="button" className={`${BOTAO} py-2 text-[13px]`} aria-expanded={aberto === 'duvida'} onClick={() => setAberto(aberto === 'duvida' ? null : 'duvida')}>tirar uma dúvida</button>
             <button type="button" className={`${BOTAO} py-2 text-[13px]`} aria-expanded={aberto === 'ajuste'} onClick={() => setAberto(aberto === 'ajuste' ? null : 'ajuste')}>pedir ajuste</button>
           </div>
@@ -534,17 +534,17 @@ function Aceite({ estado, agir, ocupado, erroDe }: { estado: EstadoDaSala; agir:
         ) : (
           <div className="mt-2 space-y-2">
             {ofertas.length > 1 && (
-              <div className="flex gap-2">
+              <div className="flex flex-wrap gap-2">
                 {ofertas.map((o) => (
-                  <button key={o.produto} type="button" aria-pressed={produto === o.produto} onClick={() => { setProduto(o.produto); setForma(o.formas[0] ?? ''); }} className={`${BOTAO} flex-1 py-2 text-[13px] ${produto === o.produto ? 'border-brand bg-brand/10' : ''}`}>
+                  <button key={o.produto} type="button" aria-pressed={produto === o.produto} onClick={() => { setProduto(o.produto); setForma(o.formas[0] ?? ''); }} className={`${BOTAO} min-w-[7rem] flex-1 py-2 text-[13px] ${produto === o.produto ? 'border-brand bg-brand/10' : ''}`}>
                     {o.rotulo}
                   </button>
                 ))}
               </div>
             )}
-            <div className="flex gap-2">
+            <div className="flex flex-wrap gap-2">
               {oferta.formas.map((f) => (
-                <button key={f} type="button" aria-pressed={forma === f} onClick={() => setForma(f)} className={`${BOTAO} flex-1 py-2 text-[13px] ${forma === f ? 'border-brand bg-brand/10' : ''}`}>
+                <button key={f} type="button" aria-pressed={forma === f} onClick={() => setForma(f)} className={`${BOTAO} min-w-[7rem] flex-1 py-2 text-[13px] ${forma === f ? 'border-brand bg-brand/10' : ''}`}>
                   {ROTULO_DA_FORMA[f] ?? f}
                 </button>
               ))}
@@ -615,10 +615,15 @@ function Comeco({ estado, agir, ocupado, erro }: { estado: EstadoDaSala; agir: A
 
 // ---------------------------------------------------------------------------
 
+/*
+ * Lane P6: a coluna acompanha a tela (448 px no celular, até 672 px no
+ * desktop) e quebra palavra comprida em qualquer ponto: nome de empresa,
+ * e-mail, link e Pix copia e cola ficam dentro do cartão.
+ */
 function Casca({ children }: { children: React.ReactNode }) {
   return (
-    <div data-os-app className="min-h-screen bg-bg p-4 text-text">
-      <div className="mx-auto w-full max-w-md py-6">{children}</div>
+    <div data-os-app className="min-h-screen bg-bg p-4 text-text [overflow-wrap:anywhere]">
+      <div className="mx-auto w-full min-w-0 max-w-md py-6 md:max-w-xl lg:max-w-2xl">{children}</div>
     </div>
   );
 }

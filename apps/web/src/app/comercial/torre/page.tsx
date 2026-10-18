@@ -14,6 +14,9 @@ import { LinkDoLead, useMudouNoPainel } from '../_painel/provedor';
  * rodou sem erro em 30 dias e a premissa conferida pelo vigia, com a lista do
  * que quebrou. Só lê. Erro da API aparece na caixa de erro, sem número.
  */
+// As colunas da tabela acompanham a largura (piso e fração), em vez de 170/110/90/110 px fixos.
+const COLUNAS_DA_TORRE = 'md:grid-cols-[minmax(8rem,1.3fr)_minmax(6.5rem,0.8fr)_minmax(5.5rem,0.7fr)_minmax(6.5rem,0.8fr)_minmax(0,2fr)]';
+
 export default function TorrePage() {
   const { dados: t, erro, carregando, recarregar } = useCarregar<TorreDasAutomacoes>('/comercial/torre', 60_000);
   useMudouNoPainel(recarregar);
@@ -28,7 +31,7 @@ export default function TorrePage() {
       {t && (
         <>
           <PremissasQuebradas premissas={t.vigia.premissas} quebradas={t.vigia.premissasQuebradas} />
-          <section aria-label="vigia" className="grid grid-cols-2 gap-3 md:grid-cols-4">
+          <section aria-label="vigia" className="grid grid-cols-[repeat(2,minmax(0,1fr))] gap-3 md:grid-cols-[repeat(4,minmax(0,1fr))]">
             <Numero valor={t.vigia.ultimaPassagemEm ? horaSP(t.vigia.ultimaPassagemEm) : 'ausente'} legenda={t.vigia.ultimaPassagemEm ? `última passagem do vigia · ${diaSemanaSP(t.vigia.ultimaPassagemEm)}` : 'o vigia ainda não passou'} />
             <Numero valor={String(t.vigia.premissasConferidas)} legenda="premissas conferidas" />
             <Numero valor={String(t.vigia.premissasQuebradas)} legenda="premissas quebradas" tom={t.vigia.premissasQuebradas ? 'ruim' : undefined} />
@@ -37,13 +40,13 @@ export default function TorrePage() {
 
           <section className={CARTAO} aria-label="automações">
             <Rotulo>automações</Rotulo>
-            <div className="mt-2 hidden grid-cols-[170px_110px_90px_110px_minmax(0,1fr)] gap-3 border-b border-border pb-1.5 font-os-mono text-[10px] uppercase tracking-[0.12em] text-dim md:grid">
+            <div className={`mt-2 hidden gap-3 border-b border-border pb-1.5 font-os-mono text-[10px] uppercase tracking-[0.12em] text-dim md:grid ${COLUNAS_DA_TORRE}`}>
               <span>automação</span><span>autonomia</span><span>última vez</span><span>rodou sem erro 30 d</span><span>premissa conferida hoje</span>
             </div>
             <ul className="divide-y divide-border">
               {t.automacoes.map((a) => (
-                <li key={a.chave} className="grid grid-cols-2 gap-x-3 gap-y-1 py-2 text-[13px] md:grid-cols-[170px_110px_90px_110px_minmax(0,1fr)]">
-                  <span className="col-span-2 font-semibold md:col-span-1">{a.rotulo || COMERCIAL_ROTULO_DA_AUTOMACAO[a.chave]}</span>
+                <li key={a.chave} className={`grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)] gap-x-3 gap-y-1 py-2 text-[13px] ${COLUNAS_DA_TORRE}`}>
+                  <span className="col-span-2 min-w-0 font-semibold md:col-span-1">{a.rotulo || COMERCIAL_ROTULO_DA_AUTOMACAO[a.chave]}</span>
                   <span className="flex flex-wrap items-center gap-1">
                     <Chip tom={a.autonomia === 'A0' ? 'neutro' : 'brand'} title={a.autonomiaGravada === false ? 'sem nível gravado: vale o degrau da régua' : undefined}>{a.autonomia}</Chip>
                     {a.autonomiaGravada === false && <span className="text-[11px] text-dim">da régua</span>}
@@ -56,9 +59,9 @@ export default function TorrePage() {
                     <span className="md:hidden text-muted">rodou sem erro </span>
                     {percentual(a.acerto30Dias)}
                   </span>
-                  <span className="col-span-2 flex gap-2 md:col-span-1">
+                  <span className="col-span-2 flex min-w-0 gap-2 md:col-span-1">
                     <span aria-hidden className={a.premissaOk == null ? 'text-dim' : a.premissaOk ? 'text-good' : 'text-bad'}>{a.premissaOk == null ? '○' : '●'}</span>
-                    <span className={a.premissaOk === false ? 'text-bad' : ''}>{a.premissa}</span>
+                    <span className={`min-w-0 ${a.premissaOk === false ? 'text-bad' : ''}`}>{a.premissa}</span>
                     <span className="sr-only">{a.premissaOk == null ? 'não conferida' : a.premissaOk ? 'ok' : 'quebrada'}</span>
                   </span>
                 </li>

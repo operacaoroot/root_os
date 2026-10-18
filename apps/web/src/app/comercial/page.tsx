@@ -61,15 +61,15 @@ export default function FilaDeDecisoesPage() {
 
       {dados && (
         <>
-          <section aria-label="resumo" className="grid grid-cols-2 gap-3 md:grid-cols-4">
+          <section aria-label="resumo" className="grid grid-cols-[repeat(2,minmax(0,1fr))] gap-3 md:grid-cols-[repeat(4,minmax(0,1fr))]">
             <Numero valor={String(dados.resumo.decisoes)} legenda={dados.resumo.decisoes === 1 ? 'decisão na fila' : 'decisões na fila'} tom="brand" />
             <Numero valor={String(dados.resumo.acoesAutomaticasHoje)} legenda="ações automáticas hoje" />
             <Numero valor={String(dados.resumo.leadsVivos)} legenda="leads vivos" />
             <Numero valor={String(dados.resumo.automacoesComErro)} legenda="automações com erro" tom={dados.resumo.automacoesComErro ? 'ruim' : undefined} />
           </section>
 
-          <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_320px]">
-            <section aria-label="decisões" className="space-y-3">
+          <div className="grid grid-cols-[minmax(0,1fr)] gap-5 lg:grid-cols-[minmax(0,1fr)_minmax(16rem,22rem)]">
+            <section aria-label="decisões" className="min-w-0 space-y-3">
               <Rotulo>decisões abertas</Rotulo>
               {decisoes.length === 0 && (
                 <Aviso>
@@ -89,7 +89,7 @@ export default function FilaDeDecisoesPage() {
               ))}
             </section>
 
-            <section aria-label="rodou sozinho hoje" className={`${CARTAO} h-fit`}>
+            <section aria-label="rodou sozinho hoje" className={`${CARTAO} h-fit min-w-0`}>
               <Rotulo>rodou sozinho hoje</Rotulo>
               {dados.rodouSozinhoHoje.length === 0 && <p className="mt-2 text-[12.5px] text-muted">Nada rodou sozinho hoje.</p>}
               <ul className="mt-2 divide-y divide-border">

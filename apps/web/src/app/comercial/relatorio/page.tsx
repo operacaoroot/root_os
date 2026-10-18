@@ -69,14 +69,14 @@ export default function RelatorioPage() {
 
       {r && (
         <>
-          <section aria-label="resumo" className="grid grid-cols-2 gap-3 md:grid-cols-4">
+          <section aria-label="resumo" className="grid grid-cols-[repeat(2,minmax(0,1fr))] gap-3 md:grid-cols-[repeat(4,minmax(0,1fr))]">
             <Numero valor={String(r.leads)} legenda={`leads em ${r.periodoDias} dias`} tom="brand" />
             <Numero valor={String(r.fechados)} legenda="fechados" />
             <Numero valor={numeroOuAusente(r.medianaDiasDoOiAoPix)} legenda="dias do 1º oi ao Pix (mediana)" />
             <Numero valor={`${r.acoes.automaticas} · ${r.acoes.humanas}`} legenda="ações automáticas · humanas" />
           </section>
 
-          <div className="grid gap-4 md:grid-cols-2">
+          <div className="grid grid-cols-[minmax(0,1fr)] gap-4 md:grid-cols-[repeat(2,minmax(0,1fr))]">
             <section className={CARTAO} aria-label="funil no período">
               <Rotulo>funil em {r.periodoDias} dias</Rotulo>
               <ul className="mt-2 space-y-1.5 text-[13px]">
@@ -100,8 +100,8 @@ export default function RelatorioPage() {
               <ul className="mt-2 space-y-1 text-[13px]">
                 {r.perdasPorMotivo.map((p) => (
                   <li key={p.motivo} className="flex justify-between gap-2">
-                    <span>{ROTULO_DO_MOTIVO[p.motivo] ?? p.motivo}</span>
-                    <span className="font-os-mono tabular-nums">{p.n}</span>
+                    <span className="min-w-0">{ROTULO_DO_MOTIVO[p.motivo] ?? p.motivo}</span>
+                    <span className="shrink-0 font-os-mono tabular-nums">{p.n}</span>
                   </li>
                 ))}
                 {r.perdasPorMotivo.length === 0 && <li className="text-muted">Nenhuma perda no período.</li>}
@@ -118,7 +118,7 @@ export default function RelatorioPage() {
                   <ul className="mt-2 space-y-1 text-[13px]">
                     {r.propostasVencendo.map((p) => (
                       <li key={p.leadId} className="flex justify-between gap-2">
-                        <LinkDoLead leadId={p.leadId} aba="sessao" className={`min-w-0 truncate hover:text-brand ${FOCO}`}>{p.nome}</LinkDoLead>
+                        <LinkDoLead leadId={p.leadId} aba="sessao" className={`min-w-0 truncate hover:text-brand ${FOCO}`} title={p.nome}>{p.nome}</LinkDoLead>
                         <span className="shrink-0 font-os-mono text-muted">vence {diaSP(p.validade)}</span>
                       </li>
                     ))}
