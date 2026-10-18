@@ -5,6 +5,7 @@ import Link from 'next/link';
 import type { PainelComercial, PainelComercialNegocio } from '@mktos/shared';
 import { apiGet, apiPatch } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
+import { EVENTO_FICHA_MUDOU, abrirFicha } from '@/lib/ficha';
 
 /*
  * FUNIL DE VENDAS: o CRM (lista "Gestão de Leads") como quadro. Uma coluna por
@@ -28,7 +29,10 @@ export default function FunilPage() {
   }, [token]);
 
   useEffect(() => {
-    if (ready && token) carregar();
+    if (!ready || !token) return;
+    carregar();
+    window.addEventListener(EVENTO_FICHA_MUDOU, carregar);
+    return () => window.removeEventListener(EVENTO_FICHA_MUDOU, carregar);
   }, [ready, token, carregar]);
 
   const mover = async (n: PainelComercialNegocio, statusId: string) => {
@@ -80,13 +84,16 @@ export default function FunilPage() {
               </div>
               <div className="flex min-h-[8rem] flex-col gap-2 p-2">
                 {cartoes.map((n) => (
-                  <Link
+                  <div
                     key={n.id}
-                    href={`/comercial/lead/${n.id}`}
+                    role="button"
+                    tabIndex={0}
+                    onClick={() => abrirFicha(n.id)}
+                    onKeyDown={(ev) => ev.key === 'Enter' && abrirFicha(n.id)}
                     draggable={pode}
                     onDragStart={() => setArrastando(n)}
                     onDragEnd={() => { setArrastando(null); setSobre(null); }}
-                    className="block rounded-md border border-border bg-surface-2 px-3 py-2 hover:border-brand/60"
+                    className="block cursor-pointer rounded-md border border-border bg-surface-2 px-3 py-2 hover:border-brand/60"
                   >
                     <div className="text-sm font-medium leading-snug">{n.titulo}</div>
                     {n.contato && <div className="mt-0.5 text-xs text-muted">{n.contato}</div>}
@@ -97,7 +104,7 @@ export default function FunilPage() {
                       </span>
                       <span className="com-num text-sm text-text">{n.valor != null ? brl(n.valor) : '—'}</span>
                     </div>
-                  </Link>
+                  </div>
                 ))}
               </div>
             </div>

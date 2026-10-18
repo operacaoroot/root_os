@@ -1,0 +1,376 @@
+{
+  "fonte": "Clientes fechados no comercial (crm-fechados-financeiro-2026-10-18.json) distribuídos entre onboarding e sucesso do cliente em 18/10/2026. A etapa de cada um é o melhor palpite a partir do financeiro e das pastas do Drive; conferir.",
+  "listas": [
+    {
+      "espaco": {
+        "id": "crm-root",
+        "nome": "Comercial"
+      },
+      "pastas": [
+        {
+          "id": "crm-root-clientes",
+          "nome": "Clientes"
+        }
+      ],
+      "lista": {
+        "id": "crm-root-onboarding",
+        "nome": "Onboarding de clientes",
+        "pasta": "crm-root-clientes"
+      },
+      "etapas": [
+        {
+          "nome": "Kickoff",
+          "tipo": "open",
+          "cor": "#8b8d98"
+        },
+        {
+          "nome": "Diagnóstico",
+          "tipo": "custom",
+          "cor": "#4194f6"
+        },
+        {
+          "nome": "Implantação",
+          "tipo": "custom",
+          "cor": "#ff7800"
+        },
+        {
+          "nome": "Treinamento",
+          "tipo": "custom",
+          "cor": "#a875ff"
+        },
+        {
+          "nome": "Entregue",
+          "tipo": "closed",
+          "cor": "#008844"
+        },
+        {
+          "nome": "Cancelado",
+          "tipo": "closed",
+          "cor": "#6b6b6b"
+        }
+      ],
+      "campos": [
+        {
+          "nome": "Empresa",
+          "tipo": "texto",
+          "opcoes": []
+        },
+        {
+          "nome": "Contato",
+          "tipo": "texto",
+          "opcoes": []
+        },
+        {
+          "nome": "Telefone",
+          "tipo": "texto",
+          "opcoes": []
+        },
+        {
+          "nome": "E-mail",
+          "tipo": "texto",
+          "opcoes": []
+        },
+        {
+          "nome": "Cidade",
+          "tipo": "texto",
+          "opcoes": []
+        },
+        {
+          "nome": "Site",
+          "tipo": "url",
+          "opcoes": []
+        },
+        {
+          "nome": "Produto",
+          "tipo": "drop_down",
+          "opcoes": [
+            [
+              "Imersão",
+              "#8d8d8d"
+            ],
+            [
+              "Implantação ROOT OS",
+              "#8d8d8d"
+            ],
+            [
+              "Operação ROOT",
+              "#8d8d8d"
+            ],
+            [
+              "Outros",
+              "#cecece"
+            ]
+          ]
+        },
+        {
+          "nome": "Responsável",
+          "tipo": "drop_down",
+          "opcoes": [
+            [
+              "Lucas",
+              "#8d8d8d"
+            ],
+            [
+              "Pedro",
+              "#8d8d8d"
+            ],
+            [
+              "Rodrigo",
+              "#8d8d8d"
+            ]
+          ]
+        },
+        {
+          "nome": "Valor do contrato",
+          "tipo": "moeda",
+          "opcoes": []
+        },
+        {
+          "nome": "Início",
+          "tipo": "data",
+          "opcoes": []
+        },
+        {
+          "nome": "Entrega prevista",
+          "tipo": "data",
+          "opcoes": []
+        }
+      ],
+      "leads": [
+        {
+          "id": "onb-promedical",
+          "titulo": "ProMedical | Implantação ROOT OS",
+          "etapa": "Implantação",
+          "criadoEm": "2026-08-28T12:00:00-03:00",
+          "etapaDesde": "2026-09-30T12:00:00-03:00",
+          "nota": "Escopo fechado em 28/08: central com contexto, carga do Painel de Vendas, régua R0–R5 e Agente Comercial, em 45 dias. Retomada em 30/09 (pasta 06 - Retomada 30-09).",
+          "campos": {
+            "Empresa": "Promedical Equipamentos Médicos",
+            "Contato": "Alexandre Tostes",
+            "Cidade": "Juiz de Fora/MG",
+            "Produto": "Implantação ROOT OS",
+            "Valor do contrato": "12000",
+            "Início": "2026-08-28",
+            "Entrega prevista": "2026-10-12"
+          },
+          "reunioes": [
+            {
+              "titulo": "Retomada: entregas",
+              "em": "2026-10-02",
+              "arquivo": "promedical/06 - Retomada 30-09/reuniao-2026-10-02-entregas.md"
+            },
+            {
+              "titulo": "Reunião de 13/10 (transcrição)",
+              "em": "2026-10-13",
+              "arquivo": "promedical/06 - Retomada 30-09/reuniao-2026-10-13-transcricao.txt"
+            }
+          ]
+        },
+        {
+          "id": "onb-custeio-implantacao",
+          "titulo": "Custeio | Implantação (upsell)",
+          "etapa": "Kickoff",
+          "criadoEm": "2026-10-18T12:00:00-03:00",
+          "etapaDesde": "2026-10-18T12:00:00-03:00",
+          "nota": "Upsell da Imersão (agosto). Entrada de R$ 6.000 em 20/10 e 6 parcelas de R$ 1.000.",
+          "campos": {
+            "Empresa": "Custeio",
+            "Contato": "Lucas Martins da Costa Moreira",
+            "Produto": "Implantação ROOT OS",
+            "Valor do contrato": "12000",
+            "Início": "2026-10-20"
+          }
+        },
+        {
+          "id": "onb-affari-imersao",
+          "titulo": "Affari | Imersão",
+          "etapa": "Kickoff",
+          "criadoEm": "2026-10-18T12:00:00-03:00",
+          "etapaDesde": "2026-10-18T12:00:00-03:00",
+          "nota": "Imersão de R$ 3.970; a cobrança ainda vai ser gerada no Asaas (18/10).",
+          "campos": {
+            "Empresa": "Affari",
+            "Contato": "Antonio Fernandes",
+            "Produto": "Imersão",
+            "Valor do contrato": "3970"
+          }
+        }
+      ]
+    },
+    {
+      "espaco": {
+        "id": "crm-root",
+        "nome": "Comercial"
+      },
+      "pastas": [
+        {
+          "id": "crm-root-clientes",
+          "nome": "Clientes"
+        }
+      ],
+      "lista": {
+        "id": "crm-root-sucesso",
+        "nome": "Sucesso do cliente",
+        "pasta": "crm-root-clientes"
+      },
+      "etapas": [
+        {
+          "nome": "Ativo",
+          "tipo": "open",
+          "cor": "#30a46c"
+        },
+        {
+          "nome": "Acompanhamento",
+          "tipo": "custom",
+          "cor": "#4194f6"
+        },
+        {
+          "nome": "Em risco",
+          "tipo": "custom",
+          "cor": "#e5484d"
+        },
+        {
+          "nome": "Renovação",
+          "tipo": "custom",
+          "cor": "#f9d900"
+        },
+        {
+          "nome": "Expansão",
+          "tipo": "custom",
+          "cor": "#a875ff"
+        },
+        {
+          "nome": "Encerrado",
+          "tipo": "closed",
+          "cor": "#6b6b6b"
+        }
+      ],
+      "campos": [
+        {
+          "nome": "Empresa",
+          "tipo": "texto",
+          "opcoes": []
+        },
+        {
+          "nome": "Contato",
+          "tipo": "texto",
+          "opcoes": []
+        },
+        {
+          "nome": "Telefone",
+          "tipo": "texto",
+          "opcoes": []
+        },
+        {
+          "nome": "E-mail",
+          "tipo": "texto",
+          "opcoes": []
+        },
+        {
+          "nome": "Cidade",
+          "tipo": "texto",
+          "opcoes": []
+        },
+        {
+          "nome": "Site",
+          "tipo": "url",
+          "opcoes": []
+        },
+        {
+          "nome": "Produto",
+          "tipo": "drop_down",
+          "opcoes": [
+            [
+              "Imersão",
+              "#8d8d8d"
+            ],
+            [
+              "Implantação ROOT OS",
+              "#8d8d8d"
+            ],
+            [
+              "Operação ROOT",
+              "#8d8d8d"
+            ],
+            [
+              "Manutenção e suporte",
+              "#8d8d8d"
+            ],
+            [
+              "Outros",
+              "#cecece"
+            ]
+          ]
+        },
+        {
+          "nome": "Saúde",
+          "tipo": "drop_down",
+          "opcoes": [
+            [
+              "Saudável",
+              "#30a46c"
+            ],
+            [
+              "Atenção",
+              "#f9d900"
+            ],
+            [
+              "Em risco",
+              "#e5484d"
+            ]
+          ]
+        },
+        {
+          "nome": "Responsável",
+          "tipo": "drop_down",
+          "opcoes": [
+            [
+              "Lucas",
+              "#8d8d8d"
+            ],
+            [
+              "Pedro",
+              "#8d8d8d"
+            ],
+            [
+              "Rodrigo",
+              "#8d8d8d"
+            ]
+          ]
+        },
+        {
+          "nome": "Mensalidade",
+          "tipo": "moeda",
+          "opcoes": []
+        },
+        {
+          "nome": "Cliente desde",
+          "tipo": "data",
+          "opcoes": []
+        },
+        {
+          "nome": "Próxima revisão",
+          "tipo": "data",
+          "opcoes": []
+        }
+      ],
+      "leads": [
+        {
+          "id": "cs-curral",
+          "titulo": "Curral | Manutenção e suporte",
+          "etapa": "Ativo",
+          "criadoEm": "2026-10-06T12:00:00-03:00",
+          "etapaDesde": "2026-10-06T12:00:00-03:00",
+          "nota": "Implantação paga em julho e setembro. Mensalidade de manutenção e suporte de R$ 190 desde outubro (12 previstas até 06/10/2027; conferir o prazo no contrato e a migração do CNPJ da FullBPO para o da ROOT).",
+          "campos": {
+            "Empresa": "Curral",
+            "Contato": "Marcelo Alves Meroto",
+            "Produto": "Manutenção e suporte",
+            "Mensalidade": "190",
+            "Cliente desde": "2026-07-07"
+          }
+        }
+      ]
+    }
+  ]
+}

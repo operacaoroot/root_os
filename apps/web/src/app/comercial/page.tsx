@@ -1,8 +1,6 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import Link from 'next/link';
-import { useRouter } from 'next/navigation';
 import {
   SEM_INFORMACAO,
   type PainelComercial,
@@ -13,6 +11,7 @@ import {
 import { apiGet, apiPost } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 import { Ajustes } from './Ajustes';
+import { EVENTO_FICHA_MUDOU, abrirFicha } from '@/lib/ficha';
 
 const brl = (n: number) => n.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL', maximumFractionDigits: 0 });
 const curto = (n: number) =>
@@ -86,7 +85,6 @@ function rotuloDoFiltro(k: keyof Filtro, v: string) {
 
 export default function ComercialPage() {
   const { token, ready, can } = useAuth();
-  const router = useRouter();
   const [p, setP] = useState<PainelComercial | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [ver, setVer] = useState<Aba>('painel');
@@ -106,7 +104,11 @@ export default function ComercialPage() {
 
   useEffect(() => {
     if (!ready || !token) return;
-    apiGet<PainelComercial>('/comercial/painel', token).then(setP).catch((e) => setError(e.message));
+    const ler = () => apiGet<PainelComercial>('/comercial/painel', token).then(setP).catch((e) => setError(e.message));
+    ler();
+    // A ficha em janela gravou: os números de baixo acompanham.
+    window.addEventListener(EVENTO_FICHA_MUDOU, ler);
+    return () => window.removeEventListener(EVENTO_FICHA_MUDOU, ler);
   }, [ready, token]);
 
   const abrir = useCallback((f: Filtro) => {
@@ -133,7 +135,9 @@ export default function ComercialPage() {
     setCriando(true);
     try {
       const t = await apiPost<{ id: string }>('/trabalho/tarefas', { listId: p.lista.id, title: titulo.trim() }, token);
-      router.push(`/comercial/lead/${t.id}`);
+      setCriando(false);
+      abrirFicha(t.id);
+      apiGet<PainelComercial>('/comercial/painel', token).then(setP).catch(() => {});
     } catch (e) {
       setError((e as Error).message);
       setCriando(false);
@@ -181,7 +185,7 @@ export default function ComercialPage() {
         </div>
       )}
 
-      {p?.lista && ver === 'painel' && <Painel p={p} abrir={abrir} />}
+      {p?.lista && ver === 'painel' && <Painel p={p} abrir={abrir} ajustes={() => trocarAba('ajustes')} />}
       {p?.lista && ver === 'negocios' && <Negocios p={p} filtro={filtro} tirar={tirar} limpar={() => abrir({})} />}
       {p?.lista && ver === 'ajustes' && <Ajustes listaId={p.lista.id} />}
     </div>
@@ -190,7 +194,7 @@ export default function ComercialPage() {
 
 // ---------------- Painel ----------------
 
-function Painel({ p, abrir }: { p: PainelComercial; abrir: (f: Filtro) => void }) {
+function Painel({ p, abrir, ajustes }: { p: PainelComercial; abrir: (f: Filtro) => void; ajustes: () => void }) {
   const ano = String(p.ano);
   return (
     <>
@@ -235,10 +239,10 @@ function Painel({ p, abrir }: { p: PainelComercial; abrir: (f: Filtro) => void }
       </div>
 
       <div className="grid gap-6 lg:grid-cols-2">
-        <Quadro titulo="Por canal de aquisição" nota="de onde vem o lead e de onde vem o contrato">
+        <Quadro titulo="Por canal de aquisição" nota="de onde vem o lead e de onde vem o contrato" acao={<Gerenciar onClick={ajustes} o="canais" />}>
           <Grupos grupos={p.canais} primeira="Canal" abrir={(nome, extra) => abrir({ canal: nome, ...extra })} />
         </Quadro>
-        <Quadro titulo="Por vendedor" nota="quem carrega o quê">
+        <Quadro titulo="Por vendedor" nota="quem carrega o quê" acao={<Gerenciar onClick={ajustes} o="vendedores" />}>
           <Grupos grupos={p.vendedores} primeira="Vendedor" abrir={(nome, extra) => abrir({ vendedor: nome, ...extra })} />
         </Quadro>
       </div>
@@ -342,10 +346,21 @@ function Numero(props: { rotulo: string; valor: string; nota: string; cor?: stri
   );
 }
 
-function Quadro({ titulo, nota, children }: { titulo: string; nota?: string; children: React.ReactNode }) {
+function Gerenciar({ onClick, o }: { onClick: () => void; o: string }) {
+  return (
+    <button onClick={onClick} className="text-sm text-muted underline hover:text-brand">
+      gerenciar {o}
+    </button>
+  );
+}
+
+function Quadro({ titulo, nota, acao, children }: { titulo: string; nota?: string; acao?: React.ReactNode; children: React.ReactNode }) {
   return (
     <section className="rounded-md border border-border bg-surface px-5 py-4">
-      <h2 className="text-[1.05rem] font-semibold">{titulo}</h2>
+      <div className="flex items-baseline justify-between gap-3">
+        <h2 className="text-[1.05rem] font-semibold">{titulo}</h2>
+        {acao}
+      </div>
       {nota && <p className="text-sm text-muted">{nota}</p>}
       <div className="mt-4">{children}</div>
     </section>
@@ -520,7 +535,7 @@ function ListaDeNegocios({ itens, vazio, completa }: { itens: PainelComercialNeg
   return (
     <div className="divide-y divide-border">
       {itens.map((n) => (
-        <Link key={n.id} href={`/comercial/lead/${n.id}`} className="group flex flex-wrap items-baseline gap-x-4 gap-y-1 py-2.5 hover:bg-surface-2">
+        <button key={n.id} onClick={() => abrirFicha(n.id)} className="group flex w-full flex-wrap items-baseline gap-x-4 gap-y-1 py-2.5 text-left hover:bg-surface-2">
           <span className="min-w-0 flex-1 font-medium group-hover:text-brand">{n.titulo}</span>
           <span className="flex items-center gap-1.5 text-sm text-muted">
             <span className="inline-block h-2 w-2 rounded-full" style={{ background: n.etapaCor }} />
@@ -534,7 +549,7 @@ function ListaDeNegocios({ itens, vazio, completa }: { itens: PainelComercialNeg
             </span>
           )}
           <span className="com-num w-28 text-right">{n.valor == null ? '—' : brl(n.valor)}</span>
-        </Link>
+        </button>
       ))}
     </div>
   );

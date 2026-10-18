@@ -2,12 +2,16 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import {
   MOEDA_PADRAO,
   ehValorMonetarioCanonico,
   formatarValorMonetario,
   lerValorDigitadoPtBr,
   paraDigitarPtBr,
+  JORNADA_DO_CLIENTE,
+  faseDaLista,
+  type JornadaDoCliente,
   type ReuniaoCompleta,
   type ReuniaoResumo,
   type TrabCampoDto,
@@ -17,6 +21,7 @@ import {
 } from '@mktos/shared';
 import { apiDelete, apiGet, apiPatch, apiPost } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
+import { abrirFicha, avisarQueAFichaMudou, fecharFicha } from '@/lib/ficha';
 
 /*
  * FICHA DO CLIENTE. Um cartão do Trabalho visto como cliente:
@@ -81,14 +86,25 @@ function linhaDoTempo(t: TrabTarefaDetalhe, campos: TrabCampoDto[], reunioes: Re
   return ev.sort((a, b) => b.em.localeCompare(a.em));
 }
 
-export function FichaDoCliente(props: { taskId: string; rotulo: string; voltar: { href: string; texto: string } }) {
+export function FichaDoCliente(props: {
+  taskId: string;
+  rotulo: string;
+  /** Página inteira: o link de volta. Em janela: ausente, e o fechar substitui. */
+  voltar?: { href: string; texto: string };
+  emJanela?: boolean;
+}) {
   const { taskId } = props;
   const { token, ready, can } = useAuth();
+  const router = useRouter();
   const podeEditar = can('tarefas.editar');
   const [t, setT] = useState<TrabTarefaDetalhe | null>(null);
   const [lista, setLista] = useState<TrabListaDto | null>(null);
   const [campos, setCampos] = useState<TrabCampoDto[]>([]);
-  const [reunioes, setReunioes] = useState<ReuniaoResumo[]>([]);
+  const [proprias, setProprias] = useState<ReuniaoResumo[]>([]);
+  const [jornada, setJornada] = useState<JornadaDoCliente | null>(null);
+  const [passando, setPassando] = useState(false);
+  // Reuniões da jornada inteira (lead, onboarding, sucesso); fora da jornada, só as do cartão.
+  const reunioes: (ReuniaoResumo & { fase?: string })[] = jornada?.passos.length ? jornada.reunioes : proprias;
   const [erro, setErro] = useState<string | null>(null);
   const [aviso, setAviso] = useState<string | null>(null);
   const [salvando, setSalvando] = useState(false);
@@ -104,17 +120,19 @@ export function FichaDoCliente(props: { taskId: string; rotulo: string; voltar: 
   const carregar = useCallback(async () => {
     if (!token) return;
     try {
-      const [tarefa, estrutura, rs] = await Promise.all([
+      const [tarefa, estrutura, rs, jr] = await Promise.all([
         apiGet<TrabTarefaDetalhe>(`/trabalho/tarefas/${taskId}`, token),
         apiGet<TrabEstrutura>('/trabalho/estrutura', token),
         apiGet<ReuniaoResumo[]>(`/trabalho/fichas/${taskId}/reunioes`, token),
+        apiGet<JornadaDoCliente>(`/trabalho/fichas/${taskId}/jornada`, token).catch(() => null),
       ]);
+      setJornada(jr);
       const l = acharLista(estrutura, tarefa.listId) ?? null;
       const cs = [...(l?.fields ?? []), ...estrutura.camposGlobais].sort((a, b) => a.order - b.order);
       setT(tarefa);
       setLista(l);
       setCampos(cs);
-      setReunioes(rs);
+      setProprias(rs);
       setTitulo(tarefa.title);
       setStatusId(tarefa.statusId);
       setResumo(tarefa.description ?? '');
@@ -162,6 +180,7 @@ export function FichaDoCliente(props: { taskId: string; rotulo: string; voltar: 
     try {
       await apiPatch(`/trabalho/tarefas/${t.id}`, corpo, token);
       await carregar();
+      avisarQueAFichaMudou();
       flash('Salvo.');
     } catch (e) {
       setErro((e as Error).message);
@@ -176,8 +195,42 @@ export function FichaDoCliente(props: { taskId: string; rotulo: string; voltar: 
       await apiPost(`/trabalho/tarefas/${t.id}/comentarios`, { text: nota.trim() }, token);
       setNota('');
       await carregar();
+      avisarQueAFichaMudou();
     } catch (e) {
       setErro((e as Error).message);
+    }
+  };
+
+  /** "+ adicionar novo" no seletor: cria a opção no campo (canal, vendedor…) e já a escolhe. */
+  const novaOpcao = async (f: TrabCampoDto) => {
+    if (!token) return;
+    const nome = window.prompt(`Novo em ${f.name}:`)?.trim();
+    if (!nome) return;
+    try {
+      const o = await apiPost<{ id: string }>(`/trabalho/campos/${f.id}/opcoes`, { name: nome }, token);
+      const e = await apiGet<TrabEstrutura>('/trabalho/estrutura', token);
+      const l = t ? acharLista(e, t.listId) : undefined;
+      if (l) setCampos([...l.fields, ...e.camposGlobais].sort((a, b) => a.order - b.order));
+      setForm((atual) => ({ ...atual, [f.id]: o.id }));
+      flash(`"${nome}" entrou em ${f.name}. Salve a ficha para gravar no lead.`);
+    } catch (err) {
+      setErro((err as Error).message);
+    }
+  };
+
+  /** Passa o cliente para a próxima fase da jornada e abre a ficha nova. */
+  const passar = async (destino: string) => {
+    if (!token) return;
+    setPassando(true);
+    try {
+      const r = await apiPost<{ id: string; rota: string }>(`/trabalho/fichas/${taskId}/passar`, { destino }, token);
+      avisarQueAFichaMudou();
+      if (props.emJanela) abrirFicha(r.id);
+      else router.push(r.rota);
+    } catch (err) {
+      setErro((err as Error).message);
+    } finally {
+      setPassando(false);
     }
   };
 
@@ -205,11 +258,12 @@ export function FichaDoCliente(props: { taskId: string; rotulo: string; voltar: 
     <label key={f.id} className="block">
       <span className="com-rotulo">{f.name}</span>
       {f.type === 'drop_down' ? (
-        <select className={`${input} mt-1`} value={form[f.id] ?? ''} disabled={!podeEditar} onChange={(e) => setForm({ ...form, [f.id]: e.target.value })}>
+        <select className={`${input} mt-1`} value={form[f.id] ?? ''} disabled={!podeEditar} onChange={(e) => (e.target.value === '__novo__' ? novaOpcao(f) : setForm({ ...form, [f.id]: e.target.value }))}>
           <option value="">—</option>
           {f.options.map((o) => (
             <option key={o.id} value={o.id}>{o.name}</option>
           ))}
+          {podeEditar && <option value="__novo__">+ adicionar novo…</option>}
         </select>
       ) : (
         <input
@@ -228,7 +282,16 @@ export function FichaDoCliente(props: { taskId: string; rotulo: string; voltar: 
   return (
     <div className="com-tema mx-auto max-w-[1180px] space-y-5 text-text">
       <div>
-        <Link href={props.voltar.href} className="text-sm text-muted hover:text-text">← {props.voltar.texto}</Link>
+        {props.emJanela ? (
+          <div className="flex items-center justify-between gap-3">
+            <button onClick={fecharFicha} className="rounded-md border border-border px-3 py-1 text-sm text-muted hover:border-brand hover:text-text">
+              × Fechar
+            </button>
+            <Link href={`${faseDaLista(lista?.externalId)?.rota ?? '/comercial/lead/'}${t.id}`} className="text-sm text-muted underline hover:text-text">abrir em página inteira</Link>
+          </div>
+        ) : (
+          props.voltar && <Link href={props.voltar.href} className="text-sm text-muted hover:text-text">← {props.voltar.texto}</Link>
+        )}
         <div className="mt-2 flex flex-wrap items-end justify-between gap-3">
           <div>
             <div className="com-rotulo">{props.rotulo}</div>
@@ -273,6 +336,55 @@ export function FichaDoCliente(props: { taskId: string; rotulo: string; voltar: 
             );
           })}
           {statusId !== t.statusId && <span className="text-sm text-brand">salve para mover</span>}
+        </div>
+      )}
+
+      {/* A jornada: o mesmo cliente no comercial, no onboarding e no sucesso. */}
+      {lista?.externalId && faseDaLista(lista.externalId) && (
+        <div className="flex flex-wrap items-center gap-2 rounded-md border border-border bg-surface px-3 py-2.5">
+          <span className="com-rotulo mr-1">Jornada{jornada ? ` · ${jornada.cliente}` : ''}</span>
+          {JORNADA_DO_CLIENTE.map((f, i) => {
+            const passos = jornada?.passos.filter((p) => p.chave === f.chave) ?? [];
+            return (
+              <span key={f.chave} className="flex items-center gap-2">
+                {i > 0 && <span className="text-muted">→</span>}
+                {passos.length === 0 ? (
+                  <span className="rounded-md border border-dashed border-border px-2.5 py-1 text-sm text-muted">{f.fase}</span>
+                ) : (
+                  passos.map((p) => (
+                    <button
+                      key={p.id}
+                      onClick={() => p.id !== t.id && abrirFicha(p.id)}
+                      className={`rounded-md border px-2.5 py-1 text-sm ${p.id === t.id ? 'border-brand bg-brand/15' : 'border-border hover:border-brand/60'}`}
+                      title={p.id === t.id ? 'Esta ficha' : `Abrir a ficha de ${f.fase}`}
+                    >
+                      <span className="font-medium">{f.fase}</span>
+                      <span className="ml-1.5 inline-flex items-center gap-1 text-muted">
+                        <span className="inline-block h-2 w-2 rounded-full" style={{ background: p.etapaCor }} />
+                        {p.etapa}
+                      </span>
+                    </button>
+                  ))
+                )}
+              </span>
+            );
+          })}
+          {(() => {
+            const prox = faseDaLista(lista.externalId)?.proxima;
+            const fase = prox ? faseDaLista(prox) : null;
+            const ja = jornada?.passos.some((p) => p.chave === prox);
+            if (!fase || ja || !podeEditar) return null;
+            return (
+              <button
+                onClick={() => passar(fase.chave)}
+                disabled={passando}
+                className="ml-auto rounded-md border border-brand px-3 py-1 text-sm text-brand hover:bg-brand/10 disabled:opacity-50"
+                title={`Cria a ficha em ${fase.fase} com os dados deste cliente`}
+              >
+                {passando ? 'Passando…' : `Passar para ${fase.fase} →`}
+              </button>
+            );
+          })()}
         </div>
       )}
 
@@ -380,7 +492,7 @@ export function FichaDoCliente(props: { taskId: string; rotulo: string; voltar: 
               reunioes={reunioes}
               podeEditar={podeEditar}
               abrir={abrirReuniao}
-              mudou={carregar}
+              mudou={async () => { await carregar(); avisarQueAFichaMudou(); }}
               erro={setErro}
             />
           )}
@@ -394,7 +506,7 @@ export function FichaDoCliente(props: { taskId: string; rotulo: string; voltar: 
 
 function Reunioes(props: {
   taskId: string;
-  reunioes: ReuniaoResumo[];
+  reunioes: (ReuniaoResumo & { fase?: string })[];
   podeEditar: boolean;
   abrir: (id: string) => void;
   mudou: () => Promise<void>;
@@ -479,7 +591,7 @@ function Reunioes(props: {
           <li key={r.id} className="group rounded-md border border-border p-3 hover:border-brand/50">
             <div className="flex items-baseline justify-between gap-3">
               <button onClick={() => props.abrir(r.id)} className="text-left font-medium hover:text-brand">{r.titulo}</button>
-              <span className="shrink-0 text-xs text-muted">{dia(r.em)} · {r.fonte === 'granola' ? 'Granola' : r.fonte === 'arquivo' ? 'arquivo' : r.fonte}</span>
+              <span className="shrink-0 text-xs text-muted">{dia(r.em)} · {r.fonte === 'granola' ? 'Granola' : r.fonte === 'arquivo' ? 'arquivo' : r.fonte}{r.fase ? ` · ${r.fase}` : ''}</span>
             </div>
             <p className="mt-1 line-clamp-3 text-sm text-muted">{r.trecho}</p>
             <div className="mt-2 flex gap-4 text-sm">
@@ -504,7 +616,7 @@ function Transcricao({ r, fechar }: { r: ReuniaoCompleta; fechar: () => void }) 
     return r.transcricao.split(re);
   }, [busca, r.transcricao]);
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={fechar}>
+    <div data-transcricao className="fixed inset-0 z-[80] flex items-center justify-center bg-black/50 p-4" onClick={fechar}>
       <div className="com-tema flex max-h-[90vh] w-full max-w-3xl flex-col rounded-md border border-border bg-surface" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-start justify-between gap-3 border-b border-border px-5 py-3">
           <div>

@@ -155,6 +155,8 @@ export const NAV: NavItem[] = [
   { key: 'comercial-painel', label: 'Comercial', href: '/comercial', icon: 'TrendingUp', permission: 'leads.ver', secao: 'comercial', modulo: 'leads' },
   { key: 'leads', label: 'Leads', href: '/leads', icon: 'UserPlus', permission: 'leads.ver', secao: 'comercial', modulo: 'leads' },
   { key: 'funil', label: 'Funil de vendas', href: '/funil', icon: 'Filter', permission: 'dashboard.ver', secao: 'comercial', modulo: 'leads', pai: 'leads' },
+  // Depois do fechamento: onboarding e sucesso do cliente, com a mesma ficha do lead.
+  { key: 'clientes', label: 'Clientes', href: '/clientes', icon: 'HeartHandshake', permission: 'tarefas.ver', secao: 'comercial', modulo: 'trabalho' },
 
   { key: 'financeiro', label: 'Financeiro', href: '/financeiro', icon: 'Wallet', permission: 'financeiro.ver', secao: 'financeiro', modulo: 'financeiro' },
 

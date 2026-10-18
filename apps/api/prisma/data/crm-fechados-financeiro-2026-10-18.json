@@ -232,19 +232,7 @@
         "Empresa": "Promedical Equipamentos Médicos",
         "Contato": "Alexandre Tostes",
         "Cidade": "Juiz de Fora/MG"
-      },
-      "reunioes": [
-        {
-          "titulo": "Retomada: entregas",
-          "em": "2026-10-02",
-          "arquivo": "promedical/06 - Retomada 30-09/reuniao-2026-10-02-entregas.md"
-        },
-        {
-          "titulo": "Reunião de 13/10 (transcrição)",
-          "em": "2026-10-13",
-          "arquivo": "promedical/06 - Retomada 30-09/reuniao-2026-10-13-transcricao.txt"
-        }
-      ]
+      }
     },
     {
       "id": "fin-custeio-imersao",

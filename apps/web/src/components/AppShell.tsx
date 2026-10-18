@@ -11,6 +11,7 @@ import { NavegacaoDoModulo } from './NavegacaoDoModulo';
 import { ChatFlutuante } from './ChatFlutuante';
 import { ModulosProvider, useModulos } from './modulos';
 import { CaixaProvider } from './caixa';
+import { FichaEmJanela } from './ficha/FichaEmJanela';
 
 // Superfícies que NÃO passam pelo shell autenticado: o login e tudo que é
 // público por natureza (página da bio, a Central da comunidade e os textos
@@ -89,6 +90,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           {/* Conversar acontece aqui; o REGISTRO do que foi conversado é /sessoes.
               Nunca nas superfícies públicas — o AppShell devolve os filhos crus lá. */}
           <ChatFlutuante />
+          {/* A ficha do cliente abre por cima de qualquer tela (?ficha=<id>). */}
+          <FichaEmJanela />
         </div>
       </CaixaProvider>
     </ModulosProvider>

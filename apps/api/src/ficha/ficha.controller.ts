@@ -1,6 +1,7 @@
-import { Body, Controller, Delete, Get, Param, Post, UseGuards } from '@nestjs/common';
-import { NovaReuniaoSchema } from '@mktos/shared';
+import { Body, Controller, Delete, Get, Param, Post, Query, UseGuards } from '@nestjs/common';
+import { NovaReuniaoSchema, PassarNaJornadaSchema } from '@mktos/shared';
 import { FichaService } from './ficha.service';
+import { JornadaService } from './jornada.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { PermissionsGuard } from '../auth/permissions.guard';
 import { RequirePermissions } from '../auth/permissions.decorator';
@@ -10,7 +11,29 @@ import { CurrentUser, JwtUser } from '../auth/current-user.decorator';
 @UseGuards(JwtAuthGuard, PermissionsGuard)
 @Controller('trabalho/fichas')
 export class FichaController {
-  constructor(private readonly svc: FichaService) {}
+  constructor(
+    private readonly svc: FichaService,
+    private readonly jornadas: JornadaService,
+  ) {}
+
+  /** O quadro de uma lista da jornada (`?lista=crm-root-onboarding`). */
+  @Get('quadro')
+  @RequirePermissions('tarefas.ver')
+  quadro(@CurrentUser() u: JwtUser, @Query('lista') lista: string) {
+    return this.jornadas.quadro(u.orgId, String(lista ?? ''));
+  }
+
+  @Get(':taskId/jornada')
+  @RequirePermissions('tarefas.ver')
+  jornada(@CurrentUser() u: JwtUser, @Param('taskId') taskId: string) {
+    return this.jornadas.jornada(u.orgId, taskId);
+  }
+
+  @Post(':taskId/passar')
+  @RequirePermissions('tarefas.editar')
+  passar(@CurrentUser() u: JwtUser, @Param('taskId') taskId: string, @Body() body: unknown) {
+    return this.jornadas.passar(u.orgId, taskId, PassarNaJornadaSchema.parse(body).destino);
+  }
 
   @Get(':taskId/reunioes')
   @RequirePermissions('tarefas.ver')

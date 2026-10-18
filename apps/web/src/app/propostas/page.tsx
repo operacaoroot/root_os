@@ -1,11 +1,10 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import Link from 'next/link';
-import { useRouter } from 'next/navigation';
 import type { PainelComercial, PainelComercialNegocio, TrabEstrutura } from '@mktos/shared';
 import { ErroDaApi, apiGet, apiPost } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
+import { EVENTO_FICHA_MUDOU, abrirFicha } from '@/lib/ficha';
 import { Botao, Card, Chip, Kpi } from '../referencias/ui';
 import {
   ETAPAS,
@@ -61,11 +60,13 @@ export default function Propostas() {
   const [carregando, setCarregando] = useState(true);
   const [crm, setCrm] = useState<PainelComercial | null>(null);
   const [criando, setCriando] = useState<string | null>(null);
-  const router = useRouter();
 
   useEffect(() => {
     if (!ready || !token) return;
-    apiGet<PainelComercial>('/comercial/painel', token).then(setCrm).catch(() => setCrm(null));
+    const ler = () => apiGet<PainelComercial>('/comercial/painel', token).then(setCrm).catch(() => setCrm(null));
+    ler();
+    window.addEventListener(EVENTO_FICHA_MUDOU, ler);
+    return () => window.removeEventListener(EVENTO_FICHA_MUDOU, ler);
   }, [ready, token]);
   const negocios = useMemo(() => crm?.negocios ?? [], [crm]);
 
@@ -82,7 +83,9 @@ export default function Propostas() {
         { listId: crm.lista.id, title: p.titulo, campos: campo ? { [campo.id]: { value: p.link } } : undefined },
         token,
       );
-      router.push(`/comercial/lead/${t.id}`);
+      setCriando(null);
+      abrirFicha(t.id);
+      apiGet<PainelComercial>('/comercial/painel', token).then(setCrm).catch(() => {});
     } catch (e) {
       setErro((e as Error).message);
       setCriando(null);
@@ -209,7 +212,7 @@ export default function Propostas() {
                           const lead = leadDaProposta(p, negocios);
                           if (lead) {
                             return (
-                              <Link href={`/comercial/lead/${lead.id}`} className="group block">
+                              <button onClick={() => abrirFicha(lead.id)} className="group block text-left">
                                 <span className="flex items-center gap-1.5 text-text group-hover:text-brand">
                                   <span className="inline-block h-2 w-2 rounded-full" style={{ background: lead.etapaCor }} />
                                   {lead.etapa}
@@ -217,7 +220,7 @@ export default function Propostas() {
                                 <span className="font-os-mono text-[10.5px] text-muted">
                                   {lead.valor != null ? brl(lead.valor) : 'sem valor'} · ficha →
                                 </span>
-                              </Link>
+                              </button>
                             );
                           }
                           if (!crm?.lista) return <span className="text-muted">–</span>;

@@ -36,12 +36,21 @@ interface Snapshot {
 const dia = (ms: number) =>
   new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Sao_Paulo' }).format(new Date(ms));
 
+// Sem argumento, carrega os três quadros do cliente: comercial, onboarding e sucesso.
+const PADRAO = ['crm-fechados-financeiro-2026-10-18.json', 'crm-clientes-2026-10-18.json'];
+
 async function main() {
-  const arquivo = process.argv[2] ?? join(__dirname, 'data', 'crm-fechados-financeiro-2026-10-18.json');
-  const s: Snapshot = JSON.parse(readFileSync(arquivo, 'utf8'));
+  const arquivos = process.argv[2] ? [process.argv[2]] : PADRAO.map((a) => join(__dirname, 'data', a));
   const org = await prisma.org.findUnique({ where: { slug: 'root' } });
   if (!org) throw new Error('org root não encontrada; rode o seed base antes');
-  const orgId = org.id;
+  for (const arquivo of arquivos) {
+    const bruto = JSON.parse(readFileSync(arquivo, 'utf8').replace(/^\uFEFF/, ''));
+    // Um arquivo traz uma lista (o formato do CRM) ou várias em `listas`.
+    for (const s of (bruto.listas ?? [bruto]) as Snapshot[]) await carregar(s, org.id);
+  }
+}
+
+async function carregar(s: Snapshot, orgId: string) {
 
   const espaco =
     (await prisma.workSpace.findFirst({ where: { orgId, OR: [{ externalId: s.espaco.id }, { name: s.espaco.nome }] } })) ??
