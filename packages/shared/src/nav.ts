@@ -148,6 +148,9 @@ export const NAV: NavItem[] = [
   { key: 'tarefas', label: 'Lista de tarefas', href: '/tarefas', icon: 'CheckSquare', permission: 'tarefas.ver', secao: 'trabalho', modulo: 'trabalho', oculto: true },
   { key: 'trabalho', label: 'Tarefas', href: '/trabalho', icon: 'KanbanSquare', permission: 'tarefas.ver', secao: 'trabalho', modulo: 'trabalho' },
   { key: 'onboarding', label: 'Implantação de clientes', href: '/onboarding', icon: 'DoorOpen', permission: 'tarefas.ver', secao: 'trabalho', modulo: 'trabalho', pai: 'trabalho' },
+  // 18/10/2026 (rodada do painel P3): o banco de atas da operação, pendurado no Trabalho.
+  // As atas do vault e as coladas na tela, e as sugestões de tarefa que cada uma rende.
+  { key: 'trabalho-atas', label: 'Atas', href: '/trabalho/atas', icon: 'NotebookText', permission: 'tarefas.ver', secao: 'trabalho', modulo: 'trabalho', pai: 'trabalho' },
   { key: 'conteudo', label: 'Temas do ClickUp', href: '/conteudo', icon: 'FileText', permission: 'dashboard.ver', secao: 'trabalho', modulo: 'conteudo', oculto: true },
   { key: 'marketing-ideias', label: 'Banco de ideias', href: '/marketing/ideias', icon: 'Lightbulb', permission: 'pauta.ver', secao: 'trabalho', modulo: 'pauta', oculto: true },
   { key: 'marketing-estrategia', label: 'Estratégia do mês', href: '/marketing/estrategia', icon: 'Compass', permission: 'pauta.ver', secao: 'trabalho', modulo: 'pauta', oculto: true },

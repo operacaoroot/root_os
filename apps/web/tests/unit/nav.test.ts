@@ -206,6 +206,17 @@ const COCKPIT: Record<string, { href: string; permission: string; label: string 
 const N_COCKPIT = Object.keys(COCKPIT).length;
 const HREFS_DO_COCKPIT = Object.values(COCKPIT).map((c) => c.href);
 
+/*
+ * A RODADA DO PAINEL (18/10/2026): os destinos NOVOS que ela acrescenta, fora do
+ * comercial. Somam às contagens como os do cockpit somaram. P3: o banco de atas,
+ * pendurado no Trabalho, governado pelo módulo `trabalho`.
+ */
+const DA_RODADA_PAINEL: Record<string, { href: string; permission: string; label: string; secao: string; modulo: string; pai: string }> = {
+  'trabalho-atas': { href: '/trabalho/atas', permission: 'tarefas.ver', label: 'Atas', secao: 'trabalho', modulo: 'trabalho', pai: 'trabalho' },
+};
+const N_DA_RODADA = Object.keys(DA_RODADA_PAINEL).length;
+const HREFS_DA_RODADA = Object.values(DA_RODADA_PAINEL).map((c) => c.href);
+
 describe('NAV — estrutura', () => {
   it('preserva as 33 rotas e acrescenta somente os seis destinos da frente MK', () => {
     const hrefsEsperados = new Set([
@@ -222,8 +233,8 @@ describe('NAV — estrutura', () => {
     expect(hrefsEsperados.size).toBe(33);
     const rotasMK = ['/contexto/marca', '/marketing', '/marketing/ideias',
       '/marketing/estrategia', '/marketing/performance', '/marketing/relatorio'];
-    expect(NAV).toHaveLength(39 + N_COCKPIT);
-    expect(new Set(NAV.map((n) => n.href))).toEqual(new Set([...hrefsEsperados, ...rotasMK, ...HREFS_DO_COCKPIT]));
+    expect(NAV).toHaveLength(39 + N_COCKPIT + N_DA_RODADA);
+    expect(new Set(NAV.map((n) => n.href))).toEqual(new Set([...hrefsEsperados, ...rotasMK, ...HREFS_DO_COCKPIT, ...HREFS_DA_RODADA]));
   });
 
   it('não repete chave nem rota', () => {
@@ -258,6 +269,7 @@ describe('NAV — estrutura', () => {
       ['marca', 'pauta'], ['marketing', 'pauta'], ['marketing-ideias', 'pauta'],
       ['marketing-estrategia', 'pauta'], ['marketing-performance', 'pauta'], ['marketing-relatorio', 'pauta'],
       ...Object.keys(COCKPIT).map((k) => [k, 'leads'] as [string, string]),
+      ...Object.entries(DA_RODADA_PAINEL).map(([k, v]) => [k, v.modulo] as [string, string]),
     ]);
     for (const n of NAV) expect(n.modulo).toBe(modulosEsperados.get(n.key));
   });
@@ -569,11 +581,15 @@ describe('organização da navegação (ROOT-07)', () => {
   };
 
   it('os 39 destinos mantêm chave, rótulo e permissão da base', () => {
-    expect(NAV).toHaveLength(39 + N_COCKPIT);
+    expect(NAV).toHaveLength(39 + N_COCKPIT + N_DA_RODADA);
     expect(Object.keys(PERMISSAO_DA_BASE)).toHaveLength(39);
     for (const n of NAV) {
       if (COCKPIT[n.key]) {
         expect(n).toMatchObject({ href: COCKPIT[n.key].href, permission: COCKPIT[n.key].permission, label: COCKPIT[n.key].label, secao: 'comercial', modulo: 'leads' });
+        continue;
+      }
+      if (DA_RODADA_PAINEL[n.key]) {
+        expect(n).toMatchObject(DA_RODADA_PAINEL[n.key]);
         continue;
       }
       expect(n.permission, `${n.key}: permissão mudou`).toBe(PERMISSAO_DA_BASE[n.key]);
@@ -620,8 +636,9 @@ describe('organização da navegação (ROOT-07)', () => {
   });
 
   it('cada destino cai na seção da matriz, e a matriz cobre exatamente os 39 href', () => {
-    expect(new Set([...Object.keys(SECAO_DA_MATRIZ), ...HREFS_DO_COCKPIT])).toEqual(new Set(NAV.map((n) => n.href)));
-    for (const n of NAV) expect(n.secao, `${n.key} (${n.href})`).toBe(SECAO_DA_MATRIZ[n.href] ?? (HREFS_DO_COCKPIT.includes(n.href) ? 'comercial' : undefined));
+    expect(new Set([...Object.keys(SECAO_DA_MATRIZ), ...HREFS_DO_COCKPIT, ...HREFS_DA_RODADA])).toEqual(new Set(NAV.map((n) => n.href)));
+    const secaoDaRodada = (href: string) => Object.values(DA_RODADA_PAINEL).find((c) => c.href === href)?.secao;
+    for (const n of NAV) expect(n.secao, `${n.key} (${n.href})`).toBe(SECAO_DA_MATRIZ[n.href] ?? (HREFS_DO_COCKPIT.includes(n.href) ? 'comercial' : secaoDaRodada(n.href)));
   });
 
   // Ordem de 18/10/2026 (rodada do painel P0): Contexto desce para depois do Motor de IA.
@@ -692,9 +709,26 @@ describe('organização da navegação (ROOT-07)', () => {
     const todas = new Set(NAV.map((n) => n.permission));
     const trabalho = navEmArvore(todas).find((g) => g.secao.key === 'trabalho')!;
     const raiz = trabalho.itens.find((no) => no.item.key === 'trabalho')!;
-    expect(raiz.filhos.map((f) => f.key)).toEqual(['onboarding']);
+    // Rodada do painel P3: as Atas também ficam penduradas no Trabalho, depois da Implantação.
+    expect(raiz.filhos.map((f) => f.key)).toEqual(['onboarding', 'trabalho-atas']);
     expect(navPorSecao(todas).flatMap((g) => g.itens.map((i) => i.key))).not.toContain('tarefas');
     expect(moduloDaRotaDoWeb('/tarefas')).toBe('trabalho');
+  });
+
+  /*
+   * Rodada do painel P3 (18/10/2026): o banco de atas da operação mora no Trabalho,
+   * pendurado no item Tarefas, com a permissão de ler o quadro. É item vivo, não
+   * oculto, e a rota resolve para o módulo `trabalho` (o gate de módulos da API
+   * confere o mesmo primeiro segmento).
+   */
+  it('as Atas ficam no Trabalho, sob Tarefas, com tarefas.ver e o módulo trabalho', () => {
+    const atas = NAV.find((n) => n.key === 'trabalho-atas')!;
+    expect(atas).toMatchObject({ label: 'Atas', href: '/trabalho/atas', icon: 'NotebookText', permission: 'tarefas.ver', secao: 'trabalho', modulo: 'trabalho', pai: 'trabalho' });
+    expect(atas.oculto).toBeFalsy();
+    expect(moduloDaRotaDoWeb('/trabalho/atas')).toBe('trabalho');
+    const soVer = navEmArvore(new Set(['tarefas.ver'])).find((g) => g.secao.key === 'trabalho')!;
+    expect(soVer.itens.find((no) => no.item.key === 'trabalho')!.filhos.map((f) => f.key)).toContain('trabalho-atas');
+    expect(navPorSecao(new Set(['dashboard.ver'])).flatMap((g) => g.itens.map((i) => i.key))).not.toContain('trabalho-atas');
   });
 
   it('/assinatura sai da barra e da busca por marca, e continua no NAV', () => {
