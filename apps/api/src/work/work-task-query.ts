@@ -14,6 +14,8 @@ export interface WorkTaskQuery {
   /** T4: o id do cliente, ou `sem` para as tarefas antigas sem cliente. */
   cliente?: string;
   arquivadas?: boolean;
+  /** "Todas as tarefas" (versão final): só tarefas de verdade, de todas as listas, sem card repetido. */
+  todas?: boolean;
   dueFrom?: Date;
   dueTo?: Date;
   page?: number;
@@ -102,6 +104,7 @@ export function parseWorkTaskQuery(raw: Record<string, unknown>): WorkTaskQuery 
     statusId: texto(raw, 'statusId'), assignee, assigneeUserId, semResponsavel,
     tagId: texto(raw, 'tagId'), q: texto(raw, 'q'), opcao: texto(raw, 'opcao'), cliente: cliente(raw),
     arquivadas: raw.arquivadas === '1' || raw.arquivadas === 'true',
+    todas: raw.todas === '1',
     dueFrom, dueTo, page, limit,
   };
 }

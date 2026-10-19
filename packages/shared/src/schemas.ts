@@ -1,6 +1,7 @@
 import type { M05EscopoDto, M05FonteAutorizadaDto } from './fonte-autorizada.js';
 import { z } from 'zod';
 import { IndiceEscopoHumanoSchema, EspelhoOnboardingFonteSchema } from './onboarding-indice.js';
+import { RecorrenciaSchema, type RecorrenciaDaTarefa } from './tarefas-do-dia.js';
 
 // --- Auth ---
 export const LoginSchema = z.object({
@@ -5292,6 +5293,13 @@ export const TrabTarefaUpdateSchema = z.object({
   campos: z.record(z.string().uuid(), TrabCampoValorSchema).optional(),
   /** Trocar o cliente. Nulo não é aceito: tirar o cliente de uma tarefa iria contra a regra. */
   clienteId: TrabClienteIdSchema.optional(),
+  /**
+   * VÁRIOS RESPONSÁVEIS (versão final, 19/10/2026, trazido do Lucas): o principal
+   * continua em `assigneeUserId`; os demais, aqui. Lista vazia tira os demais.
+   */
+  outrosResponsaveisIds: z.array(z.string().uuid()).max(20).optional(),
+  /** A regra de repetição; nulo tira. Concluir a tarefa cria a próxima ocorrência. */
+  recorrencia: RecorrenciaSchema.nullable().optional(),
 });
 // HTTP e escritores de WorkTask usam o schema com versão obrigatória; o schema-base permanece exportado.
 export const TrabTarefaUpdateHttpSchema = TrabTarefaUpdateSchema.extend({
@@ -5302,6 +5310,18 @@ export const TrabTarefaArchiveHttpSchema = z.object({
 }).strict();
 export type TrabTarefaUpdateHttpInput = z.infer<typeof TrabTarefaUpdateHttpSchema>;
 export type TrabTarefaArchiveHttpInput = z.infer<typeof TrabTarefaArchiveHttpSchema>;
+
+/**
+ * ORDEM MANUAL (versão final, 19/10/2026): a sequência de uma coluna ou da lista,
+ * cada tarefa com a versão lida. Uma versão vencida derruba a sequência inteira (409).
+ */
+export const TrabTarefasOrdemSchema = z.object({
+  itens: z.array(z.object({
+    id: z.string().uuid(),
+    expectedUpdatedAt: z.string().datetime({ offset: true }),
+  }).strict()).min(1).max(500),
+}).strict();
+export type TrabTarefasOrdemInput = z.infer<typeof TrabTarefasOrdemSchema>;
 
 export type TrabTarefaCreateInput = z.infer<typeof TrabTarefaCreateSchema>;
 export type TrabTarefaUpdateInput = z.infer<typeof TrabTarefaUpdateSchema>;
@@ -5592,6 +5612,12 @@ export interface TrabTarefaResumo {
   tags: TrabTagDto[]; values: TrabValorDto[];
   /** O cliente (T4). Nulo = tarefa antiga sem cliente: a tela mostra o selo "sem cliente". */
   clienteId: string | null; clienteNome: string | null;
+  /** Os demais responsáveis por conta (o principal é `assigneeUserId`). */
+  outrosResponsaveisIds?: string[];
+  /** A regra de repetição; nulo = não repete. */
+  recorrencia?: RecorrenciaDaTarefa | null;
+  /** O nome da lista, para a visão "Todas" (tarefas de várias listas juntas). */
+  listName?: string;
 }
 /* ----------------------------------------------------------------------------
  * O MOVIMENTO DO CARTÃO no quadro denso (rodada da implantação I2, 18/10/2026)
@@ -5662,6 +5688,8 @@ export interface TrabTarefaDetalhe extends TrabTarefaResumo {
   /** Soma por etapa, na ordem em que as etapas apareceram pela primeira vez. Cobre TODOS os lançamentos, não só os 200 listados. */
   minutosPorEtapa: Array<{ etapa: string; minutos: number }>;
   filhos: Array<{ id: string; title: string; statusName: string; statusColor: string }>;
+  /** Devolvido pela edição que concluiu uma tarefa que se repete: a próxima ocorrência. */
+  proxima?: { id: string; dueDate: string | null } | null;
 }
 export interface TrabTarefaLista {
   items: TrabTarefaResumo[]; total: number;
