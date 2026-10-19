@@ -196,6 +196,45 @@ describe('F4: o pop-up', () => {
   });
 });
 
+describe('F4: os links da Visão geral do Dia a dia', () => {
+  it.each([
+    ['prazo=hoje', [T1]],
+    ['prazo=proximos7', []],
+    ['prazo=proximos_7', []],
+    ['prazo=semprazo', [T2]],
+    ['prazo=sem_prazo', [T2]],
+    ['prazo=emdia', [T1]],
+    ['overdue=1', []],
+    ['concluidas=1', [T1, T2, T3]],
+  ])('/trabalho?pasta=todas&visao=lista&%s mostra o recorte certo', async (filtro, ids) => {
+    tarefas[0] = { ...tarefas[0], dueDate: new Date(`${hojeEmBrasilia()}T15:00:00.000Z`).toISOString() };
+    window.history.replaceState({}, '', `/trabalho?pasta=todas&visao=lista&${filtro}`);
+    render(<TrabalhoPage />);
+    await waitFor(() => expect(consultas().some((r) => r.includes('todas=1'))).toBe(true));
+    await screen.findByRole('heading', { name: 'Todas as tarefas' });
+    await waitFor(() => expect([...document.querySelectorAll('tr[data-work-task-id]')].map((e) => e.getAttribute('data-work-task-id'))).toEqual(ids));
+    if (filtro.startsWith('prazo')) expect(screen.getByTestId('trabalho-recorte-prazo')).toBeInTheDocument();
+  });
+
+  it('a pessoa e o sem responsável vão à consulta de "Todas"', async () => {
+    window.history.replaceState({}, '', `/trabalho?pasta=todas&visao=lista&assigneeUserId=${EU}`);
+    render(<TrabalhoPage />);
+    await waitFor(() => expect(consultas().some((r) => r.includes('todas=1') && r.includes(`assigneeUserId=${EU}`))).toBe(true));
+    cleanup();
+    get.mockClear();
+    window.history.replaceState({}, '', '/trabalho?pasta=todas&visao=lista&semResponsavel=1');
+    render(<TrabalhoPage />);
+    await waitFor(() => expect(consultas().some((r) => r.includes('todas=1') && r.includes('semResponsavel=1'))).toBe(true));
+  });
+
+  it('"Todas" com uma lista no link abre aquela lista', async () => {
+    window.history.replaceState({}, '', '/trabalho?pasta=todas&lista=l-b&visao=lista');
+    render(<TrabalhoPage />);
+    expect(await screen.findByRole('heading', { name: 'Gestão' })).toBeInTheDocument();
+    await waitFor(() => expect(consultas().some((r) => r.includes('listId=l-b'))).toBe(true));
+  });
+});
+
 describe('F4: agrupamento, concluídas e "meus"', () => {
   it('a régua de prazo agrupa a lista: Atrasadas · Concluídas', async () => {
     tarefas[0] = { ...tarefas[0], dueDate: '2020-01-01T15:00:00.000Z' };

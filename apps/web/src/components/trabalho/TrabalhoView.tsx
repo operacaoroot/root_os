@@ -7,11 +7,12 @@ import {
   MODELOS_DE_LISTA, MOEDA_PADRAO, ehValorMonetarioCanonico, formatarValorMonetario, lerValorDigitadoPtBr,
   listaDaImplantacao, moedaDoValor, paraDigitarPtBr, LISTA_DA_IMPLANTACAO, PASTA_DA_IMPLANTACAO, PORTA_DA_IMPLANTACAO,
   DICA_DO_NOME_DA_TAREFA, AGRUPAMENTOS, ROTULO_DO_AGRUPAMENTO, agruparTarefas, descreverRecorrencia,
+  ROTULO_DA_REGUA_DE_PRAZO, reguaDePrazo,
 } from '@mktos/shared';
 import type {
   VistaQuadro, TrabClienteDto, TrabAgenteDto, TrabEstrutura, TrabListaDto, TrabTarefaLista, TrabTarefaResumo,
   TrabTarefaDetalhe, TrabEstruturaSugeridaResultado, TrabMovimentoDoCartao, TrabMovimentoDoQuadro,
-  Agrupamento, RecorrenciaDaTarefa,
+  Agrupamento, RecorrenciaDaTarefa, SituacaoDoPrazo,
 } from '@mktos/shared';
 import { apiBlob, apiDelete, apiGet, apiPatch, apiPost } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
@@ -25,7 +26,7 @@ import { EditorialTaskLink } from './EditorialTaskLink';
 import { OrigemComercialDaTarefa } from '@/app/leads/OrigemComercialDaTarefa';
 import { FontesDaTarefa } from './FontesDaTarefa';
 import { OutrosResponsaveis, ResponsavelDaTarefa, SeletorOutrosResponsaveis, SeletorResponsavel, rotuloDaPessoa } from './ResponsavelDaTarefa';
-import { CalendarioDeTarefas, prazoDoDia } from './CalendarioDeTarefas';
+import { CalendarioDeTarefas, diaDoPrazo, prazoDoDia } from './CalendarioDeTarefas';
 import { diasDesde, formatarHoras, hojeEmBrasilia, minutosDeTexto } from '@/lib/horas';
 import {
   CHAVE_DA_DENSIDADE, DENSIDADES, DIAS_DE_ALERTA_NA_ETAPA, ESCOPOS, LARGURA_DA_COLUNA,
@@ -68,6 +69,22 @@ function nomeDoAgente(t: {
   return t.agenteNome ?? 'outro agente';
 }
 const paraInputDate = (iso: string | null) => (iso ? iso.slice(0, 10) : '');
+
+/**
+ * ATRASADA É POR DIA (versão final, F4): a régua de prazo do Lucas diz "Hoje" para o
+ * que vence hoje, e a tela não pode pintar de vermelho o mesmo cartão. O `overdue` da
+ * API compara o instante (o prazo importado do ClickUp é meia-noite de São Paulo e vira
+ * "vencido" às 00:01); aqui ele só vale quando o DIA do prazo já passou.
+ */
+function cabeNoRecorte(recorte: RecorteDePrazo, situacao: SituacaoDoPrazo): boolean {
+  return recorte === 'emdia' ? situacao === 'hoje' || situacao === 'proximos_7' || situacao === 'mais_tarde' : recorte === situacao;
+}
+
+function atrasada(t: Pick<TrabTarefaResumo, 'overdue' | 'dueDate'>): boolean {
+  if (!t.overdue) return false;
+  const dia = diaDoPrazo(t.dueDate);
+  return !dia || dia < hojeEmBrasilia();
+}
 const deInputDate = (v: string) => (v ? new Date(`${v}T12:00:00`).toISOString() : null);
 
 /**
@@ -133,6 +150,23 @@ export const PASTA_SEM_PASTA = 'sem-pasta';
  * da etapa (a fazer, em andamento, concluída), porque cada lista tem as suas etapas.
  */
 export const PASTA_TODAS = 'todas';
+
+/**
+ * `?prazo=` (versão final, F4): o recorte da RÉGUA DE PRAZO do Lucas, que a Visão geral
+ * do Dia a dia manda ao abrir o Trabalho filtrado. Vale a grafia da régua (`proximos_7`,
+ * `sem_prazo`) e a curta (`proximos7`, `semprazo`); `emdia` junta hoje, próximos 7 dias
+ * e mais tarde (o "em dia" do resumo por pessoa). O "atrasadas" continua `overdue=1`.
+ */
+export type RecorteDePrazo = SituacaoDoPrazo | 'emdia';
+export function recorteDePrazo(v: string | null): RecorteDePrazo | '' {
+  const x = (v ?? '').replace(/_/g, '').toLowerCase();
+  const mapa: Record<string, RecorteDePrazo> = {
+    atrasada: 'atrasada', atrasadas: 'atrasada', hoje: 'hoje', proximos7: 'proximos_7', maistarde: 'mais_tarde',
+    semprazo: 'sem_prazo', feita: 'feita', concluidas: 'feita', emdia: 'emdia',
+  };
+  return mapa[x] ?? '';
+}
+const ROTULO_DO_RECORTE = (r: RecorteDePrazo) => (r === 'emdia' ? 'Em dia' : ROTULO_DA_REGUA_DE_PRAZO[r]);
 
 /** As colunas do quadro de "Todas": o tipo da etapa, com o id virtual `tipo:<tipo>`. */
 const COLUNAS_POR_TIPO = [
@@ -220,6 +254,7 @@ function TrabalhoConteudo({ visaoInicial, modo }: { visaoInicial: Visao; modo: M
   const [fArquivadas, setFArquivadas] = useState(false);
   const [fConcluidas, setFConcluidas] = useState<'mostrar' | 'ocultar'>('mostrar');
   const [fAgrupar, setFAgrupar] = useState<Agrupamento>('nenhum');
+  const [fPrazo, setFPrazo] = useState<RecorteDePrazo | ''>('');
   // Seleção em lote da Lista (versão final, F4): cada escrita sai com a versão lida.
   const [selecionadas, setSelecionadas] = useState<Set<string>>(new Set());
   const [avisoDoLote, setAvisoDoLote] = useState<string | null>(null);
@@ -249,7 +284,9 @@ function TrabalhoConteudo({ visaoInicial, modo }: { visaoInicial: Visao; modo: M
       setTodasListas(p.get('escopo') === 'pessoal' && !!p.get('assigneeUserId'));
       setFOpcao(p.get('opcao') ?? ''); setFAgente(p.get('agente') ?? '');
       setFStatus(p.get('statusId') ?? ''); setFArquivadas(p.get('arquivadas') === '1'); setFCliente(p.get('cliente') ?? '');
+      // `concluidas=1` (o link da Visão geral) e a ausência da chave mostram; `ocultar` esconde.
       setFConcluidas(p.get('concluidas') === 'ocultar' ? 'ocultar' : 'mostrar');
+      setFPrazo(recorteDePrazo(p.get('prazo')));
       const agrupar = p.get('agrupar');
       setFAgrupar((AGRUPAMENTOS as readonly string[]).includes(agrupar ?? '') ? agrupar as Agrupamento : 'nenhum');
       setSelecionadas(new Set());
@@ -265,7 +302,8 @@ function TrabalhoConteudo({ visaoInicial, modo }: { visaoInicial: Visao; modo: M
       const pessoal = escopo === 'pessoal' && !!p.get('assigneeUserId');
       setFEscopo(escopo && escopo !== 'pessoal' ? lerEscopo(escopo) : p.get('overdue') === '1' ? 'atrasados' : 'todos');
       setVisao(pessoal ? 'tabela' : visaoDoEndereco(p.get('visao')) ?? visaoInicial);
-      setFPasta(p.get('pasta') ?? '');
+      // "Todas" com uma lista no link (o clique numa lista da Visão geral) é aquela lista.
+      setFPasta(p.get('pasta') === PASTA_TODAS && p.get('lista') ? '' : p.get('pasta') ?? '');
       listaAtual.current = null; setListaId(null); setUrlPronta(true);
       setBump((b) => b + 1);
     };
@@ -332,7 +370,7 @@ function TrabalhoConteudo({ visaoInicial, modo }: { visaoInicial: Visao; modo: M
           const achada = listaDaImplantacao(e.folders);
           setSemImplantacao(!achada);
           if (achada) trocarLista(achada.listaId);
-        } else if (!listaAtual.current && new URLSearchParams(window.location.search).get('pasta') !== PASTA_TODAS) {
+        } else if (!listaAtual.current && !(new URLSearchParams(window.location.search).get('pasta') === PASTA_TODAS && !new URLSearchParams(window.location.search).get('lista'))) {
           const todas = [...e.folders.flatMap((f) => f.lists), ...e.listasSoltas];
           const endereco = new URLSearchParams(window.location.search);
           const solicitada = endereco.get('lista');
@@ -361,7 +399,7 @@ function TrabalhoConteudo({ visaoInicial, modo }: { visaoInicial: Visao; modo: M
         if (!ativa || new URLSearchParams(window.location.search).get('tarefa') !== tarefaId) return;
         setListaDoLinkAusente(false);
         // Em "Todas as tarefas" o pop-up abre por cima da visão geral: nenhuma lista é escolhida.
-        if (implantacao || new URLSearchParams(window.location.search).get('pasta') === PASTA_TODAS) return;
+        if (implantacao || (new URLSearchParams(window.location.search).get('pasta') === PASTA_TODAS && !new URLSearchParams(window.location.search).get('lista'))) return;
         trocarLista(t.listId, listaAtual.current ?? new URLSearchParams(window.location.search).get('lista'));
         mudarEndereco(t.listId, t.id);
       })
@@ -528,15 +566,17 @@ function TrabalhoConteudo({ visaoInicial, modo }: { visaoInicial: Visao; modo: M
    */
   const visiveis = useMemo(() => {
     const itens = tarefas?.items ?? [];
+    const agora = new Date();
     // Vários responsáveis (versão final): "meus" é ser a principal OU uma das demais, sempre pela conta.
     const meu = (t: TrabTarefaResumo) => (t.assigneeUserId || t.outrosResponsaveisIds?.length
       ? t.assigneeUserId === user?.id || !!user?.id && !!t.outrosResponsaveisIds?.includes(user.id)
       : ehMeu(t.assignee, user?.name));
-    return itens.filter((t) => (fEscopo !== 'atrasados' || t.overdue) &&
+    return itens.filter((t) => (fEscopo !== 'atrasados' || atrasada(t)) &&
       (fEscopo !== 'meus' || meu(t)) &&
       (fConcluidas !== 'ocultar' || t.statusType !== 'closed') &&
+      (!fPrazo || cabeNoRecorte(fPrazo, reguaDePrazo(t.dueDate, t.statusType, agora))) &&
       (!fAgente || (fAgente === 'livres' ? !t.agenteId : t.agenteSlug === fAgente)));
-  }, [tarefas, fAgente, fEscopo, fConcluidas, user?.id, user?.name]);
+  }, [tarefas, fAgente, fEscopo, fConcluidas, fPrazo, user?.id, user?.name]);
   const geral = fPasta === PASTA_TODAS;
   // Sem uma lista aberta: "Todas as tarefas" ou o "todas as listas" da pessoa.
   const semLista = geral || todasListas;
@@ -624,6 +664,10 @@ function TrabalhoConteudo({ visaoInicial, modo }: { visaoInicial: Visao; modo: M
   const quadroEditavel = editable && !conflitoEtapa && !salvandoEtapa;
 
   const semListas = estrutura !== null && estrutura.folders.every((f) => f.lists.length === 0) && estrutura.listasSoltas.length === 0;
+  // A árvore ao lado (a partir de 1024 px) rola sozinha até o fim da janela, como o quadro:
+  // com muitas listas ela esticava a página e escondia a rolagem lateral do quadro.
+  const arvore = useRef<HTMLElement>(null);
+  const alturaDaArvore = useAlturaAteOFim(arvore, 24, 1024);
 
   if (ready && !readable) return <p className="text-muted">Sem permissão para ver tarefas.</p>;
 
@@ -632,7 +676,7 @@ function TrabalhoConteudo({ visaoInicial, modo }: { visaoInicial: Visao; modo: M
   const pastaDaLista = lista && estrutura ? estrutura.folders.find((f) => f.lists.some((l) => l.id === lista.id))?.id ?? '' : '';
 
   return (
-    <div className="flex h-full min-w-0 flex-col gap-3">
+    <div className="flex min-w-0 flex-col gap-3">
       {estrutura && !implantacao && (
         <BarraDePastas
           pastas={pastasDeTopo} temSoltas={estrutura.listasSoltas.length > 0} atual={fPasta}
@@ -643,7 +687,7 @@ function TrabalhoConteudo({ visaoInicial, modo }: { visaoInicial: Visao; modo: M
       <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-4 lg:flex-row">
       {/* árvore: pastas → listas (só as da pasta escolhida no topo) */}
       {!implantacao && (
-      <aside className="max-h-44 w-full shrink-0 space-y-3 overflow-y-auto border-b border-border pb-2 pr-1 lg:max-h-none lg:w-52 lg:border-b-0 lg:pb-0">
+      <aside ref={arvore} style={alturaDaArvore ? { maxHeight: alturaDaArvore } : undefined} className="max-h-44 w-full shrink-0 space-y-3 overflow-y-auto border-b border-border pb-2 pr-1 lg:max-h-none lg:w-52 lg:border-b-0 lg:pb-0">
         {pastasVisiveis.map((f) => (
           <div key={f.id}>
             <div title={f.name} className="break-words px-1 text-[11px] font-semibold uppercase tracking-wide text-muted">{f.name}</div>
@@ -802,7 +846,7 @@ function TrabalhoConteudo({ visaoInicial, modo }: { visaoInicial: Visao; modo: M
             {/* T3: a vista salva do quadro (filtros, densidade e visão), por pessoa, no servidor. */}
             <VistasDoQuadro
               token={token}
-              enderecoTemFiltro={['assignee', 'assigneeUserId', 'semResponsavel', 'q', 'opcao', 'agente', 'statusId', 'escopo', 'overdue', 'cliente', 'visao'].some((k) => typeof window !== 'undefined' && new URLSearchParams(window.location.search).has(k))}
+              enderecoTemFiltro={['assignee', 'assigneeUserId', 'semResponsavel', 'q', 'opcao', 'agente', 'statusId', 'escopo', 'overdue', 'cliente', 'visao', 'prazo', 'concluidas', 'agrupar'].some((k) => typeof window !== 'undefined' && new URLSearchParams(window.location.search).has(k))}
               // Agrupamento e concluídas só entram quando fogem do padrão: a vista salva antes deles continua igual.
               atual={{ densidade, visao, filtros: { assignee: fAssignee, agente: fAgente, statusId: fStatus, cliente: fCliente, escopo: fEscopo, q: fBusca },
                 ...(fAgrupar !== 'nenhum' ? { agrupamento: fAgrupar } : {}), ...(fConcluidas === 'ocultar' ? { concluidas: 'ocultar' as const } : {}) }}
@@ -904,6 +948,12 @@ function TrabalhoConteudo({ visaoInicial, modo }: { visaoInicial: Visao; modo: M
           <p className="mt-2 text-muted">Abra uma tarefa e escolha “Abrir material e Produção”. Ali você vincula o material, confere a versão e segue as decisões permitidas à sua conta. Após a aprovação, “Preparar conta e horário” leva ao Marketing.</p>
           {can('obsidian.ver') && <a href="/contexto" className="mt-2 inline-block text-brand underline">Criar tarefa usando uma fonte do Contexto</a>}
         </details>}
+        {fPrazo && (
+          <p role="status" data-testid="trabalho-recorte-prazo" className="flex w-fit items-center gap-2 rounded-full border border-brand-dim bg-brand/10 px-3 py-1 text-[12px]">
+            Prazo: {ROTULO_DO_RECORTE(fPrazo)}
+            <button type="button" aria-label="Tirar o recorte de prazo" onClick={() => { setFPrazo(''); filtroNoEndereco('prazo', ''); }}><X size={12} /></button>
+          </p>
+        )}
         {listaDoLinkAusente && <p role="status" className="rounded-lg border border-border bg-surface p-3 text-sm text-muted">A lista deste link ainda não está disponível no seu quadro. Escolha uma das listas disponíveis.</p>}
         {erro && (
           <div className="flex items-center justify-between rounded-lg border border-bad/40 bg-bad/10 px-3 py-2 text-sm text-bad">
@@ -932,7 +982,8 @@ function TrabalhoConteudo({ visaoInicial, modo }: { visaoInicial: Visao; modo: M
           <Board
             lista={fConcluidas === 'ocultar' ? { ...listaGeral, statuses: listaGeral.statuses.filter((st) => st.type !== 'closed') } : listaGeral}
             tarefas={visiveisNoQuadroGeral} editable={quadroEditavel} podeCriar={false} token={token}
-            agentes={estrutura?.agentes ?? []} pessoas={estrutura?.pessoas ?? []} trilhos={trilhos} movimento={movimento} densidade={densidade}
+            agentes={estrutura?.agentes ?? []} pessoas={estrutura?.pessoas ?? []} trilhos={trilhos} movimento={new Map()} densidade={densidade}
+            semMovimento
             onAbrir={abrirTarefa} onMudou={refresh} onErro={setErro} onMoverEtapa={moverPorTipo} onReordenar={reordenar}
           />
         )}
@@ -1049,7 +1100,7 @@ function ContagemDaEtapa({ quantas, limite }: { quantas: number; limite: number 
  *    da caixa de entrada (`GET /trabalho/quadro/movimento`). Falhar ali só tira
  *    o rodapé.
  */
-function Board({ lista, tarefas, editable, podeCriar, token, agentes, pessoas = [], trilhos, movimento, densidade, onAbrir, onMudou, onErro, onMoverEtapa, onReordenar }: {
+function Board({ lista, tarefas, editable, podeCriar, token, agentes, pessoas = [], trilhos, movimento, densidade, onAbrir, onMudou, onErro, onMoverEtapa, onReordenar, semMovimento = false }: {
   lista: TrabListaDto; tarefas: TrabTarefaResumo[]; editable: boolean; podeCriar: boolean; token: string | null;
   agentes: TrabAgenteDto[]; pessoas?: PessoaDaEstrutura[]; trilhos: Map<string, TrilhoDoCartao>;
   movimento: Map<string, TrabMovimentoDoCartao>; densidade: Densidade;
@@ -1058,6 +1109,8 @@ function Board({ lista, tarefas, editable, podeCriar, token, agentes, pessoas = 
   onMoverEtapa: (t: TrabTarefaResumo, statusId: string) => Promise<void>;
   /** Ordem manual: soltar um cartão sobre outro da MESMA coluna grava a sequência da coluna. */
   onReordenar?: (ids: string[]) => Promise<void>;
+  /** "Todas as tarefas": o movimento não foi lido, então o cartão não diz "sem movimento". */
+  semMovimento?: boolean;
 }) {
   /*
    * ARRASTAR E SOLTAR com a API nativa do HTML5, sem biblioteca: dependência
@@ -1104,7 +1157,7 @@ function Board({ lista, tarefas, editable, podeCriar, token, agentes, pessoas = 
     alvo?.scrollIntoView({ behavior: 'smooth', inline: 'start', block: 'nearest' });
   };
   return (
-    <div ref={caixaDoQuadro} data-testid="trabalho-quadro-caixa" className="flex min-h-0 min-w-0 flex-1 flex-col gap-1.5" style={altura ? { height: altura } : undefined}>
+    <div ref={caixaDoQuadro} data-testid="trabalho-quadro-caixa" className="flex min-h-0 min-w-0 flex-1 flex-col gap-1.5" style={altura ? { height: altura, flex: 'none' } : undefined}>
     <nav aria-label="Ir para a etapa" data-testid="trabalho-chips-de-etapa" className="flex shrink-0 gap-1 overflow-x-auto pb-0.5">
       {lista.statuses.map((st) => (
         <button
@@ -1151,7 +1204,7 @@ function Board({ lista, tarefas, editable, podeCriar, token, agentes, pessoas = 
             <div className="min-h-0 flex-1 space-y-1.5 overflow-y-auto p-1.5" data-rolagem-da-coluna>
               {itens.map((t) => (
                 <Cartao
-                  key={t.id} t={t} lista={lista} editable={editable} token={token} agentes={agentes} pessoas={pessoas}
+                  key={t.id} t={t} lista={lista} editable={editable} token={token} agentes={agentes} pessoas={pessoas} semMovimento={semMovimento}
                   onSoltarSobre={editable ? (e) => soltarSobre(t, e) : undefined}
                   trilho={trilhos.get(t.id) ?? null} mov={movimento.get(t.id) ?? null} densidade={densidade}
                   balaoAberto={balao?.id === t.id}
@@ -1185,12 +1238,12 @@ const ATRASO_DO_BALAO_MS = 350;
  * remede ao redimensionar e quando a página muda de tamanho (menu recolhido, filtros).
  * No celular (abaixo de 768 px) as colunas são uma faixa com encaixe e a altura é livre.
  */
-function useAlturaAteOFim(ref: React.RefObject<HTMLElement | null>, folga = 24) {
+function useAlturaAteOFim(ref: React.RefObject<HTMLElement | null>, folga = 24, larguraMinima = 768) {
   const [altura, setAltura] = useState<number | null>(null);
   useLayoutEffect(() => {
     const medir = () => {
       const el = ref.current;
-      if (!el || window.innerWidth < 768) { setAltura(null); return; }
+      if (!el || window.innerWidth < larguraMinima) { setAltura(null); return; }
       const nova = Math.max(340, Math.floor(window.innerHeight - el.getBoundingClientRect().top - folga));
       setAltura((antes) => (antes === nova ? antes : nova));
     };
@@ -1201,12 +1254,12 @@ function useAlturaAteOFim(ref: React.RefObject<HTMLElement | null>, folga = 24) 
     const pai = ref.current?.parentElement;
     if (pai) observador?.observe(pai);
     return () => { window.removeEventListener('resize', medir); observador?.disconnect(); };
-  }, [ref, folga]);
+  }, [ref, folga, larguraMinima]);
   return altura;
 }
 
-function Cartao({ t, lista, editable, token, agentes, pessoas = [], onSoltarSobre, trilho, mov, densidade, balaoAberto, onBalao, onAbrir, onMudou, onErro, onMoverEtapa }: {
-  t: TrabTarefaResumo; lista: TrabListaDto; editable: boolean; token: string | null;
+function Cartao({ t, lista, editable, token, agentes, pessoas = [], onSoltarSobre, semMovimento = false, trilho, mov, densidade, balaoAberto, onBalao, onAbrir, onMudou, onErro, onMoverEtapa }: {
+  t: TrabTarefaResumo; lista: TrabListaDto; editable: boolean; token: string | null; semMovimento?: boolean;
   agentes: TrabAgenteDto[]; pessoas?: PessoaDaEstrutura[]; onSoltarSobre?: (e: React.DragEvent) => void;
   trilho: TrilhoDoCartao | null; mov: TrabMovimentoDoCartao | null; densidade: Densidade;
   balaoAberto: boolean; onBalao: (ancora: DOMRect | null) => void;
@@ -1270,10 +1323,14 @@ function Cartao({ t, lista, editable, token, agentes, pessoas = [], onSoltarSobr
           )}
         </span>
       </div>
+      {semMovimento ? (
+        <p className="mt-0.5 truncate text-[11.5px] text-muted" title={t.listName}>{t.listName ?? ''}</p>
+      ) : (
       <p className={`mt-0.5 truncate text-[11.5px] ${mov?.proximaAcao ? 'text-text' : 'text-muted'}`} title={mov?.proximaAcao?.texto ?? undefined}>
         {mov?.proximaAcao ? mov.proximaAcao.texto : 'sem próxima ação'}
         {mov?.proximaAcao?.quando && <span className="text-muted"> · {dataBR(mov.proximaAcao.quando)}</span>}
       </p>
+      )}
       {!compacto && (
         <>
           {(t.values.some((v) => v.optionName) || t.tags.length > 0) && (
@@ -1301,7 +1358,7 @@ function Cartao({ t, lista, editable, token, agentes, pessoas = [], onSoltarSobr
             <ResponsavelDaTarefa tarefa={t} />
             <OutrosResponsaveis ids={t.outrosResponsaveisIds ?? []} pessoas={pessoas} />
             {t.recorrencia && <span title={descreverRecorrencia(t.recorrencia)} className="flex items-center"><Repeat size={10} /><span className="sr-only">{descreverRecorrencia(t.recorrencia)}</span></span>}
-            {t.dueDate && <span className={t.overdue ? 'text-bad' : ''}>{dataBR(t.dueDate)}</span>}
+            {t.dueDate && <span className={atrasada(t) ? 'text-bad' : ''}>{dataBR(t.dueDate)}</span>}
             {t.comments > 0 && <span className="flex items-center gap-0.5"><MessageSquare size={10} />{t.comments}</span>}
             {t.subtasks > 0 && <span>{t.subtasks} sub</span>}
             {minutos > 0 && (
@@ -1324,13 +1381,13 @@ function Cartao({ t, lista, editable, token, agentes, pessoas = [], onSoltarSobr
         </>
       )}
       {compacto && mov?.procedencia && <span className="sr-only">{mov.procedencia.rotulo}</span>}
-      <p
+      {!semMovimento && <p
         className="mt-0.5 truncate font-os-mono text-[10px] text-muted"
         data-testid={`trabalho-rodape-${t.id}`}
         title={ultimo ? `${ultimo.quem} · ${ultimo.frase} · ${dataHoraBR(ultimo.em)}` : undefined}
       >
         {ultimo ? `${ultimo.quem} · ${ultimo.frase} · ${haCurto(ultimo.em)}` : 'sem movimento registrado'}
-      </p>
+      </p>}
       {/*
         QUEM ESTÁ COM A TAREFA (fatia A4) aparece em TODA densidade: travada
         por agente é o que responde "isto está parado?", e esconder no compacto
@@ -1657,7 +1714,7 @@ function Tabela({ tarefas, campos, trilhos, onAbrir, mostrarLista = false, pesso
                 <td className="px-3 py-2" title={t.agenteId ? `Assumida em ${dataHoraBR(t.agenteEm)}` : undefined}>
                   {nomeDoAgente(t) ?? '—'}
                 </td>
-                <td className={`px-3 py-2 ${t.overdue ? 'text-bad' : ''}`}>{dataBR(t.dueDate)}</td>
+                <td className={`px-3 py-2 ${atrasada(t) ? 'text-bad' : ''}`}>{dataBR(t.dueDate)}</td>
                 {campos.map((c) => {
                   const v = t.values.find((x) => x.fieldName === c);
                   const valor = v?.type === 'moeda' && v.value ? formatarValorMonetario(v.value) : v?.value;

@@ -45,7 +45,7 @@ export default function ImplantacaoPage() {
 
   const naRodada = aba === 'rodada' && ehRoot;
   return (
-    <div className="flex h-full min-w-0 flex-col gap-3">
+    <div className="flex min-w-0 flex-col gap-3">
       {ehRoot && (
         <div role="tablist" aria-label="Implantação" className="flex shrink-0 gap-1 border-b border-border">
           {([['implantacao', 'Implantação de clientes'], ['rodada', 'Rodada da semana']] as const).map(([chave, nome]) => (

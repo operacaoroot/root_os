@@ -251,7 +251,7 @@ export function TarefasDoDia({ area: nomeDaArea }: { area?: string } = {}) {
         <div className="mb-2 flex items-center gap-5">
           {p && (
             <>
-              {nomeDaArea && <Link href="/dia-a-dia" className="text-sm text-muted hover:text-brand">todas as áreas →</Link>}
+              {nomeDaArea && <Link href="/trabalho?pasta=todas&visao=lista" className="text-sm text-muted hover:text-brand">todas as áreas →</Link>}
               <span className="text-sm text-muted">Abertas: <b className="com-num text-text">{daTela.filter((t) => t.situacao !== 'feita').length}</b></span>
               <span className="text-sm text-muted">Atrasadas: <b className="com-num text-bad">{daTela.filter((t) => t.situacao === 'atrasada').length}</b></span>
             </>
@@ -269,7 +269,7 @@ export function TarefasDoDia({ area: nomeDaArea }: { area?: string } = {}) {
 
       {faltaArea && (
         <p className="rounded-md border border-border bg-surface px-4 py-3 text-muted">
-          A área {nomeDaArea} ainda não existe nesta empresa. Crie numa tarefa em <Link href="/dia-a-dia" className="text-brand">Dia a dia › Tarefas</Link>.
+          A área {nomeDaArea} ainda não existe nesta empresa. Crie numa tarefa em <Link href="/trabalho?pasta=todas&visao=lista" className="text-brand">Dia a dia › Tarefas</Link>.
         </p>
       )}
       {p && !faltaArea && <Filtros p={p} filtro={filtro} mudar={mudarFiltro} areaFixa={!!areaFixa} />}
