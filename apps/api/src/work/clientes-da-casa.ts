@@ -21,6 +21,17 @@ type Db = PrismaClient | Prisma.TransactionClient;
 
 const SUFIXO_INTERNO = ' (interno)';
 
+/**
+ * O nome do cliente da casa: "Root (interno)" na Root (o roteiro da rodada); nas
+ * outras empresas, o nome dela sem o apelido entre parênteses do fim.
+ */
+export function nomeDoClienteInterno(org: { name: string; slug: string } | null): string {
+  if (!org) return `A casa${SUFIXO_INTERNO}`;
+  if (org.slug === 'root') return `Root${SUFIXO_INTERNO}`;
+  const base = org.name.replace(/\s*\([^)]*\)\s*$/, '').trim() || org.name.trim();
+  return `${base}${SUFIXO_INTERNO}`;
+}
+
 function nomeDoPartner(p: { razaoSocial: string; nomeFantasia: string | null }): string {
   return (p.nomeFantasia?.trim() || p.razaoSocial).trim();
 }
@@ -40,8 +51,8 @@ export async function nomesDosClientes(db: Db, orgId: string, ids: (string | nul
 export async function clienteInterno(db: Db, orgId: string): Promise<{ id: string; nome: string }> {
   const ja = await db.partner.findFirst({ where: { orgId, interno: true }, select: { id: true, razaoSocial: true, nomeFantasia: true } });
   if (ja) return { id: ja.id, nome: nomeDoPartner(ja) };
-  const org = await db.org.findFirst({ where: { id: orgId }, select: { name: true } });
-  const razaoSocial = `${(org?.name ?? 'A casa').trim()}${SUFIXO_INTERNO}`;
+  const org = await db.org.findFirst({ where: { id: orgId }, select: { name: true, slug: true } });
+  const razaoSocial = nomeDoClienteInterno(org);
   try {
     const p = await db.partner.create({ data: { orgId, isCliente: true, interno: true, razaoSocial } });
     return { id: p.id, nome: razaoSocial };
@@ -86,8 +97,8 @@ export async function listarClientes(db: Db, orgId: string, q?: string, limite =
     take: Math.min(Math.max(limite, 1), 200),
   });
   const interno = await db.partner.findFirst({ where: { orgId, interno: true }, select: { id: true, razaoSocial: true, nomeFantasia: true } });
-  const org = interno ? null : await db.org.findFirst({ where: { id: orgId }, select: { name: true } });
-  const nomeInterno = interno ? nomeDoPartner(interno) : `${(org?.name ?? 'A casa').trim()}${SUFIXO_INTERNO}`;
+  const org = interno ? null : await db.org.findFirst({ where: { id: orgId }, select: { name: true, slug: true } });
+  const nomeInterno = interno ? nomeDoPartner(interno) : nomeDoClienteInterno(org);
   const casa: TrabClienteDto = { id: interno?.id ?? TRAB_CLIENTE_INTERNO, nome: nomeInterno, cnpj: null, interno: true };
   const casaNaBusca = !busca || nomeInterno.toLocaleLowerCase('pt-BR').includes(busca.toLocaleLowerCase('pt-BR')) || 'interno'.includes(busca.toLocaleLowerCase('pt-BR'));
   return [

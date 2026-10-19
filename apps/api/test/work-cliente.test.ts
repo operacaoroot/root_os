@@ -7,6 +7,7 @@ import { EventLogService } from '../src/gateway/event-log.service';
 import { CheckoutDeTarefaService } from '../src/work/checkout-de-tarefa.service';
 import { WorkService } from '../src/work/work.service';
 import { parseWorkTaskQuery } from '../src/work/work-task-query';
+import { nomeDoClienteInterno } from '../src/work/clientes-da-casa';
 import type { PrismaService } from '../src/prisma/prisma.service';
 import { exigirBancoDescartavel } from './banco-de-teste';
 
@@ -33,6 +34,14 @@ const EU = 'u-cliente-casa';
 async function status(chamada: Promise<unknown>): Promise<number | string> {
   try { await chamada; return 'ok'; } catch (e) { return e instanceof HttpException ? e.getStatus() : String((e as { code?: string }).code ?? (e as Error).message); }
 }
+
+describe('o nome do cliente da casa', () => {
+  it('na Root é "Root (interno)"; nas outras, o nome sem o apelido entre parênteses', () => {
+    expect(nomeDoClienteInterno({ name: 'Marketing OS (root)', slug: 'root' })).toBe('Root (interno)');
+    expect(nomeDoClienteInterno({ name: 'Cardozo & Saggioro (cssa)', slug: 'cssa' })).toBe('Cardozo & Saggioro (interno)');
+    expect(nomeDoClienteInterno(null)).toBe('A casa (interno)');
+  });
+});
 
 exigirBancoDescartavel(URL ?? '', 'ESCREVE nele (duas empresas, clientes, listas e tarefas)');
 
