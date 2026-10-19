@@ -53,7 +53,18 @@ describe.skipIf(!URL)('trabalho: o cliente da tarefa', () => {
   let alicerce: string;
   let daVizinha: string;
 
-  async function limpar() {
+  // Com as outras suítes rodando juntas no mesmo banco, a limpeza pode cair num deadlock
+  // (40P01) com o gatilho de outra tabela: tenta de novo, em vez de reprovar por concorrência.
+  async function limpar(tentativa = 1): Promise<void> {
+    try {
+      await limparUmaVez();
+    } catch (e) {
+      if (tentativa < 4 && /40P01|deadlock/.test(String((e as Error).message))) return limpar(tentativa + 1);
+      throw e;
+    }
+  }
+
+  async function limparUmaVez() {
     await prisma.workTask.deleteMany({ where: { orgId: { in: EMPRESAS } } });
     await prisma.workStatus.deleteMany({ where: { orgId: { in: EMPRESAS } } });
     await prisma.workList.deleteMany({ where: { orgId: { in: EMPRESAS } } });
