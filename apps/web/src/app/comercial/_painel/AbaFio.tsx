@@ -32,6 +32,7 @@ import {
 } from '@/lib/cockpit';
 
 import { BOTAO, BOTAO_PRIMARIO, CARTAO, Carregando, Chip, ErroDaAcao, INPUT, Rotulo } from '../_ui';
+import { LeituraEIdeias } from './LeituraEIdeias';
 import { usePainel } from './provedor';
 
 export function AbaFio({ leadId, ficha: f, carregando, aoMudar }: { leadId: string; ficha: FichaDoLead | null; carregando: boolean; aoMudar: () => Promise<void> }) {
@@ -112,6 +113,9 @@ export function AbaFio({ leadId, ficha: f, carregando, aoMudar }: { leadId: stri
           <button type="button" className={BOTAO} onClick={() => painel.trocarAba('dinheiro')}>ver as assinaturas em Dinheiro</button>
         </p>
       )}
+
+      {/* I4: o que o cliente leu na página da proposta e o que anotou nela (só com proposta publicada). */}
+      {f.ligadoA.proposta ? <LeituraEIdeias leadId={leadId} /> : null}
 
       <section aria-label="o fio" className={CARTAO}>
         <Rotulo>o fio · do mais recente ao primeiro contato</Rotulo>

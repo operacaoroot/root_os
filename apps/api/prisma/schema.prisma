@@ -96,6 +96,7 @@ model Org {
   comercialCobrancas   ComercialCobranca[]
   comercialDocumentos  ComercialDocumento[]
   salasDoCliente       SalaDoCliente[]
+  leadReacoes          LeadReacao[]
 
   // A régua e a porta (ver "Régua, porta e rastro" no fim do arquivo)
   policyVersions  PolicyVersion[]
@@ -395,14 +396,16 @@ model Lead {
   events LeadEvent[]
 
   // O cockpit do lead (módulo comercial): a ficha 1:1, a sala e os filhos do fio.
-  ficha       ComercialFicha?
-  sala        SalaDoCliente?
-  decisoes    ComercialDecisao[]
-  mensagens   ComercialMensagem[]
-  reacoes     ComercialReacao[]
-  fechamentos ComercialFechamento[]
-  cobrancas   ComercialCobranca[]
-  documentos  ComercialDocumento[]
+  ficha             ComercialFicha?
+  sala              SalaDoCliente?
+  decisoes          ComercialDecisao[]
+  mensagens         ComercialMensagem[]
+  reacoes           ComercialReacao[]
+  fechamentos       ComercialFechamento[]
+  cobrancas         ComercialCobranca[]
+  documentos        ComercialDocumento[]
+  // Rodada da implantação I4: leitura e reação na página da proposta.
+  reacoesDaProposta LeadReacao[]
 
   @@index([orgId, enteredAt])
   @@index([orgId, campaignId])
@@ -4775,4 +4778,36 @@ model ComercialDocumento {
 
   @@unique([provedor, externoId])
   @@index([orgId, leadId])
+}
+
+/// A reação do cliente na página da proposta (rodada da implantação I4). Filha
+/// de Lead: a empresa vem do gatilho `LeadReacao_orgId_do_pai`. Quatro tipos:
+/// `leitura` (o tempo visível de uma seção, UMA linha por versão, seção e
+/// visita, com `segundos` somado até um teto; o id é derivado dessa chave),
+/// `faz_sentido` (um por versão, seção e visita, também id derivado), e
+/// `duvida`/`ideia` (uma linha por envio, texto mascarado, até 1.000). O texto é
+/// dado do cliente: nunca vai a prompt por aqui. `respondidaEm` e `tarefaId` são
+/// da lane I5 (responder e virar tarefa).
+model LeadReacao {
+  id           String    @id
+  /// Sentinela + gatilho `LeadReacao_orgId_do_pai`.
+  orgId        String    @default("")
+  org          Org       @relation(fields: [orgId], references: [id])
+  leadId       String
+  lead         Lead      @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  versao       Int
+  secao        String
+  tipo         String
+  texto        String?
+  segundos     Int?
+  /// O número da visita (`SalaDoCliente.acessos` no momento da gravação).
+  acesso       Int
+  respondidaEm DateTime?
+  /// A `WorkTask` criada de uma ideia (lane I5).
+  tarefaId     String?
+  criadoEm     DateTime  @default(now())
+  atualizadoEm DateTime  @updatedAt
+
+  @@index([orgId, criadoEm])
+  @@index([leadId, criadoEm])
 }

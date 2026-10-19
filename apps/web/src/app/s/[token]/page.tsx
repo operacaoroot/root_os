@@ -5,7 +5,7 @@ import { useParams } from 'next/navigation';
 import type { EstadoDaSala, OfertaNaSala, SalaBlocoDaProposta } from '@mktos/shared';
 
 import { apiPost, apiUpload } from '@/lib/api';
-import { abrirSala, dataCurta, localSPParaIso, reais, ROTULO_DA_FORMA, rotuloDoHorario, soDigitos } from '@/lib/sala-do-cliente';
+import { abrirSalaMarcando, dataCurta, localSPParaIso, reais, ROTULO_DA_FORMA, rotuloDoHorario, soDigitos } from '@/lib/sala-do-cliente';
 
 /*
  * A SALA DO CLIENTE — `/s/<token>`, telas 02, 07 e 08 do desenho (Lane B, 13/10/2026).
@@ -37,7 +37,8 @@ export default function SalaPage() {
 
   // B-11: abrir a página é a visita (POST, uma vez); o GET da sala só lê.
   useEffect(() => {
-    abrirSala<EstadoDaSala>(base, (caminho, corpo) => apiPost<EstadoDaSala>(caminho, corpo))
+    // I4: a sala marca a visita na aba, para a página da proposta não contar a mesma visita de novo.
+    abrirSalaMarcando<EstadoDaSala>(base, (caminho, corpo) => apiPost<EstadoDaSala>(caminho, corpo))
       .then(setEstado)
       .catch((e: Error & { status?: number }) => setErro(e.status === 404 || /não encontrada/.test(e.message) ? 'Esta sala não existe ou já expirou. Fale com a Root pelo WhatsApp.' : e.message));
   }, [base]);
@@ -94,7 +95,7 @@ export default function SalaPage() {
       <div className="mt-5 space-y-4">
         {estado.estagio === 'comeco' && <Comeco estado={estado} agir={agir} ocupado={ocupado} erro={erroDe.kickoff} />}
         {chegou('contrato') && estado.proposta && <Aceite estado={estado} agir={agir} ocupado={ocupado} erroDe={erroDe} />}
-        {chegou('proposta') && estado.proposta && <Proposta estado={estado} base={base} agir={agir} ocupado={ocupado} erroDe={erroDe} />}
+        {chegou('proposta') && estado.proposta && <Proposta estado={estado} base={base} token={token} agir={agir} ocupado={ocupado} erroDe={erroDe} />}
         {estado.diagnostico && <Diagnostico estado={estado} />}
         <Conversa estado={estado} agir={agir} ocupado={ocupado} erroDe={erroDe} base={base} aoEnviarArquivo={setEstado} />
         <Plano estado={estado} />
@@ -331,7 +332,7 @@ function useLeitura(base: string, versao: number) {
   );
 }
 
-function Proposta({ estado, base, agir, ocupado, erroDe }: { estado: EstadoDaSala; base: string; agir: Agir; ocupado: string | null; erroDe: Record<string, string> }) {
+function Proposta({ estado, base, token, agir, ocupado, erroDe }: { estado: EstadoDaSala; base: string; token: string; agir: Agir; ocupado: string | null; erroDe: Record<string, string> }) {
   const p = estado.proposta!;
   const ler = useLeitura(base, p.versao);
   const [aberto, setAberto] = useState<'duvida' | 'ajuste' | null>(null);
@@ -340,6 +341,11 @@ function Proposta({ estado, base, agir, ocupado, erroDe }: { estado: EstadoDaSal
   const aceitando = estado.estagio !== 'proposta';
   return (
     <section className={`space-y-3 ${estado.estagio === 'proposta' ? '' : 'opacity-90'}`}>
+      {/* I4: a proposta inteira, por seção, com a barra de reação (`/s/<token>/proposta`). */}
+      <a href={`/s/${encodeURIComponent(token)}/proposta`} data-testid="abrir-proposta-completa" className={`${CARTAO} flex min-h-[44px] items-center justify-between gap-3 border-brand/50 text-[14px] font-semibold transition hover:border-brand ${FOCO}`}>
+        <span>abrir a proposta completa</span>
+        <span aria-hidden className="font-os-mono text-[12px] text-brand">→</span>
+      </a>
       <div ref={ler('ouvimos')} className={CARTAO}>
         <h2 className={ROTULO}>o que ouvimos de você</h2>
         <p className="mt-1 text-[13.5px]">{p.ouvimos.join(' · ')}</p>

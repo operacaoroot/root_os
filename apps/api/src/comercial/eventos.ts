@@ -96,6 +96,8 @@ export const FONTE_DO_EVENTO: Record<ComercialEvento, ComercialFonte> = {
   'proposta.duvida': 'sala',
   'proposta.ajuste_pedido': 'sala',
   'proposta.aceita': 'sala',
+  'proposta.reagida': 'sala',
+  'proposta.ideia': 'sala',
   'followup.enviado': 'whats',
   'aceite.dados': 'sala',
   'cobranca.criada': 'asaas',
@@ -145,10 +147,16 @@ export interface PayloadsComerciais {
   'diagnostico.pronto': { dores: { n: number; texto: string; minuto: string | null; trecho?: string | null }[]; objecoes: string[]; produtoSugerido: string | null; modelo: string; custoUsd: number; custoDesconhecido: boolean; aprovadoEm?: string | null; aprovadoPor?: string | null };
   /** `quadroDeCustos`: o quadro de custos de terceiros (portão de E6). Sem ele o portão recusa. Acréscimo da lane A. */
   'proposta.publicada': { versao: number; produto: string; valorCentavos: number; parcelas: number; parcelaCentavos: number; formas: string[]; validaAte: string | null; dentroDaTabela: boolean; laudo: { ok: boolean; apontamentos: string[] }; descontoPct?: number | null; hash: string; quadroDeCustos?: { mesNormalCentavos: number | null; piorMesCentavos: number | null } | null };
-  'proposta.lida': { versao: number; bloco: string; visita: number };
-  'proposta.duvida': { versao: number; pergunta: string; resposta?: string | null };
+  /** `secao`: a seção da página da proposta (I4) que registrou a leitura do bloco; ausente quando veio da sala. */
+  'proposta.lida': { versao: number; bloco: string; visita: number; secao?: string | null };
+  /** `secao`: quando a dúvida veio da barra de reação da página da proposta (I4). */
+  'proposta.duvida': { versao: number; pergunta: string; resposta?: string | null; secao?: string | null };
   'proposta.ajuste_pedido': { versao: number; pedido: string; descontoPct?: number | null; decisaoId?: string | null };
   'proposta.aceita': { versao: number; produto: string; valorCentavos: number; parcelas: number; forma: string; hash: string };
+  /** I4: "faz sentido" numa seção, um por visita. Só a seção e a visita: o fato não carrega texto. */
+  'proposta.reagida': { versao: number; secao: string; reacao: 'faz_sentido'; visita: number; reacaoId: string };
+  /** I4: a ideia anotada pelo cliente, já mascarada. Texto de cliente: dado, nunca instrução. */
+  'proposta.ideia': { versao: number; secao: string; texto: string; visita: number; reacaoId: string };
   'followup.enviado': { qual: 'M5' | 'M6'; versao: number; mensagemDbId?: string | null };
   'aceite.dados': { cnpj: string; razaoSocial: string; endereco: string; quemAssina: string; email: string };
   'cobranca.criada': { provedor: string; externoId: string; parcelas: number; forma: string; valorCentavos: number; primeiraVence: string };
@@ -280,9 +288,13 @@ export function resumoDoEvento(type: string, payload: unknown): { fonte: Comerci
     case 'proposta.publicada':
       return { fonte, resumo: `proposta v${String(p.versao)} publicada na sala (${p.dentroDaTabela ? 'dentro' : 'fora'} da tabela) · ${reais(Number(p.valorCentavos ?? 0))}` };
     case 'proposta.lida':
-      return { fonte, resumo: `proposta v${String(p.versao)} lida · bloco ${String(p.bloco)}` };
+      return { fonte, resumo: `proposta v${String(p.versao)} lida · bloco ${String(p.bloco)}${p.secao ? ` · seção ${String(p.secao)}` : ''}` };
     case 'proposta.duvida':
-      return { fonte, resumo: `dúvida: “${curto(p.pergunta, 60)}”` };
+      return { fonte, resumo: `dúvida${p.secao ? ` em ${String(p.secao)}` : ''}: “${curto(p.pergunta, 60)}”` };
+    case 'proposta.reagida':
+      return { fonte, resumo: `proposta v${String(p.versao)} · “faz sentido” em ${String(p.secao)}` };
+    case 'proposta.ideia':
+      return { fonte, resumo: `ideia em ${String(p.secao)}: “${curto(p.texto, 60)}”` };
     case 'proposta.ajuste_pedido':
       return { fonte, resumo: `pediu ajuste${p.descontoPct ? ` (${String(p.descontoPct)}%)` : ''} → fila de decisões` };
     case 'proposta.aceita':

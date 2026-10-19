@@ -604,10 +604,12 @@ export class WhatsappComercialService implements OnModuleInit {
       const p = (pub.payload ?? {}) as P;
       const versao = Number(p.versao ?? 1);
       const depois = await this.prisma.leadEvent.findMany({
-        where: { leadId: pub.leadId, occurredAt: { gte: pub.occurredAt }, type: { in: ['proposta.lida', 'proposta.aceita', 'proposta.duvida', 'proposta.ajuste_pedido', 'whats.recebida', 'saida.registrada'] } },
+        where: { leadId: pub.leadId, occurredAt: { gte: pub.occurredAt }, type: { in: ['proposta.lida', 'proposta.aceita', 'proposta.duvida', 'proposta.ideia', 'proposta.ajuste_pedido', 'whats.recebida', 'saida.registrada'] } },
         orderBy: { occurredAt: 'asc' },
         select: { type: true, occurredAt: true, payload: true },
       });
+      // I4: a ideia deixada na proposta é o cliente falando (conta como resposta, como a dúvida).
+      // O "faz sentido" fica fora de propósito: é sinal de leitura, não pede nada à mesa.
       const respondeu = depois.some((d) => d.type !== 'proposta.lida');
       if (respondeu) continue;
       const primeiraLeitura = depois.find((d) => d.type === 'proposta.lida' && Number(((d.payload ?? {}) as P).versao) === versao);

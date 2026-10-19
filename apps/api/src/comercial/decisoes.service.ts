@@ -73,6 +73,9 @@ export const FATOS_QUE_NAO_SAO_AUTOMACAO: readonly ComercialEvento[] = [
   'proposta.duvida',
   'proposta.ajuste_pedido',
   'proposta.aceita',
+  // I4: a reação e a ideia na página da proposta são o cliente agindo, não automação.
+  'proposta.reagida',
+  'proposta.ideia',
   'aceite.dados',
   'kickoff.marcado',
   'pix.pago',

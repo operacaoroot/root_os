@@ -11,6 +11,7 @@ import { ConfigComercialService } from './config.service';
 import { DecisoesService } from './decisoes.service';
 import { FichaService } from './ficha.service';
 import { MoverService, SoGenteGuard } from './mover.service';
+import { ReacoesDaPropostaService } from './reacoes-da-proposta.service';
 import { RelogioDaEspinha } from './relogio-da-espinha';
 
 /*
@@ -34,6 +35,7 @@ export class ComercialController {
     private readonly configSvc: ConfigComercialService,
     private readonly relogio: RelogioDaEspinha,
     private readonly moverSvc: MoverService,
+    private readonly reacoesSvc: ReacoesDaPropostaService,
   ) {}
 
   /** Tela 03: a fila de decisões, o que rodou sozinho hoje e os contadores. */
@@ -63,6 +65,17 @@ export class ComercialController {
   async fio(@CurrentUser() user: JwtUser, @Param('id') id: string) {
     const f = await this.fichas.projecao(user.orgId, id);
     return { leadId: id, fio: f.fio };
+  }
+
+  /**
+   * I4: o que o cliente leu na proposta e o que anotou nela (leitura agregada por
+   * seção, "faz sentido", dúvidas e ideias com o texto já mascarado). Só lê, na
+   * empresa do token: lead de outra empresa é 404.
+   */
+  @Get('lead/:id/reacoes')
+  @RequirePermissions('leads.ver')
+  reacoes(@CurrentUser() user: JwtUser, @Param('id') id: string) {
+    return this.reacoesSvc.doLead(user.orgId, id);
   }
 
   /** E1: o lead entra pelo WhatsApp (simulador ou provedor). Idempotente pelo telefone e pela mensagem. */

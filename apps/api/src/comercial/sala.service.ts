@@ -20,6 +20,7 @@ import {
   SalaKickoffSchema,
   SalaPropostaLidaSchema,
   type EstadoDaSala,
+  type SalaBlocoDaProposta,
   type SalaFormInput,
 } from '@mktos/shared';
 import { Prisma } from '@prisma/client';
@@ -341,8 +342,24 @@ export class SalaService implements OnModuleInit {
     return this.naSala(token, async (r) => {
       await this.exigirVersaoVigente(r.leadId, versao);
       const sala = await this.prisma.salaDoCliente.findUniqueOrThrow({ where: { id: r.salaId }, select: { acessos: true } });
-      await this.fio.registrar(r.orgId, r.leadId, 'proposta.lida', `${versao}:${bloco}:${sala.acessos}`, { versao, bloco, visita: sala.acessos });
+      await this.registrarBlocoLido(r.orgId, r.leadId, versao, bloco, sala.acessos);
     });
+  }
+
+  /**
+   * O fato `proposta.lida` de um bloco, uma vez por visita (a chave). A sala e
+   * a página da proposta (I4) gravam pelo MESMO caminho: o termômetro, a ficha
+   * (primeira leitura) e o follow-up não sabem de onde a leitura veio. `secao`
+   * só vai ao fato quando a página da proposta é quem registra; se a sala já
+   * registrou o bloco nesta visita, o fato é o mesmo e nada muda.
+   */
+  async registrarBlocoLido(orgId: string, leadId: string, versao: number, bloco: SalaBlocoDaProposta, visita: number, secao?: string): Promise<void> {
+    await this.fio.registrar(orgId, leadId, 'proposta.lida', `${versao}:${bloco}:${visita}`, { versao, bloco, visita, ...(secao ? { secao } : {}) });
+  }
+
+  /** A versão vigente da proposta do lead (a página da proposta, I4, confere contra ela). 409 sem proposta. */
+  async versaoVigenteDaProposta(leadId: string): Promise<number> {
+    return (await this.propostaVigente(leadId)).versao;
   }
 
   /**

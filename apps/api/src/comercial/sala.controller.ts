@@ -15,6 +15,8 @@ import {
 import { FileInterceptor } from '@nestjs/platform-express';
 
 import { enderecoDeOrigem, type RequisicaoComEndereco } from '../auth/endereco-de-origem';
+import { ReacoesDaPropostaService } from './reacoes-da-proposta.service';
+import { hashDoTokenDaSala, tokenDaSalaBemFormado } from './sala-token';
 import { SalaService } from './sala.service';
 
 /*
@@ -33,6 +35,17 @@ import { SalaService } from './sala.service';
 /** Por origem e por hora. Ler o estado é barato; o arquivo é o caro. */
 export const SALA_TETO_POR_HORA = 600;
 export const SALA_TETO_DE_ARQUIVO_POR_HORA = 30;
+/*
+ * I4 (18/10/2026): a página da proposta escreve com frequência (uma batida de
+ * leitura a cada 15 s por seção visível) e aceita texto do cliente. Além do teto
+ * por origem, um teto POR TOKEN, como a regra dura da rodada pede: o mesmo link
+ * aberto em várias redes não multiplica a cota. A chave é o HASH do token (o
+ * mesmo que o banco guarda); o token cru não fica nem na memória do balde.
+ * Reação é rara (60 por hora cobre quem anota muito); leitura com três seções
+ * visíveis a cada 15 s dá 720 por hora, e o teto deixa folga para isso.
+ */
+export const SALA_TETO_DE_REACAO_POR_TOKEN_POR_HORA = 60;
+export const SALA_TETO_DE_LEITURA_POR_TOKEN_POR_HORA = 900;
 const HORA_MS = 3_600_000;
 
 export class TetoPorOrigem {
@@ -56,8 +69,28 @@ export class SalaController {
   private readonly log = new Logger('ComercialSalaLink');
   private readonly teto = new TetoPorOrigem();
   private readonly tetoDeArquivo = new TetoPorOrigem();
+  private readonly tetoDeReacaoPorToken = new TetoPorOrigem();
+  private readonly tetoDeLeituraPorToken = new TetoPorOrigem();
+  /** Os tetos por token desta instância. A suíte os abaixa para medir o 429 sem mandar 60 pedidos. */
+  readonly tetosPorToken = { reacao: SALA_TETO_DE_REACAO_POR_TOKEN_POR_HORA, leitura: SALA_TETO_DE_LEITURA_POR_TOKEN_POR_HORA };
 
-  constructor(private readonly svc: SalaService) {}
+  constructor(
+    private readonly svc: SalaService,
+    private readonly reacoes: ReacoesDaPropostaService,
+  ) {}
+
+  /**
+   * O teto por token. Token malformado não conta (vai dar o 404 de sempre): o
+   * balde só existe para link que pode ser de verdade.
+   */
+  private conferirTetoDoToken(token: string, qual: 'reacao' | 'leitura'): void {
+    if (!tokenDaSalaBemFormado(token)) return;
+    const balde = qual === 'reacao' ? this.tetoDeReacaoPorToken : this.tetoDeLeituraPorToken;
+    if (!balde.registrar(hashDoTokenDaSala(token), this.tetosPorToken[qual])) {
+      this.log.warn(`sala: teto por token (${qual}) estourado`);
+      throw new HttpException({ statusCode: HttpStatus.TOO_MANY_REQUESTS, message: 'Muitas tentativas. Espere alguns minutos.' }, HttpStatus.TOO_MANY_REQUESTS);
+    }
+  }
 
   private conferirTeto(req: RequisicaoComEndereco | undefined, arquivo = false): void {
     const origem = enderecoDeOrigem(req) ?? null;
@@ -124,6 +157,32 @@ export class SalaController {
   duvida(@Param('token') token: string, @Body() body: unknown, @Req() req?: RequisicaoComEndereco) {
     this.conferirTeto(req);
     return this.svc.duvida(token, body);
+  }
+
+  /** I4: as reações do próprio cliente na versão vigente (as anotações enviadas e o contador). Só lê. */
+  @Get(':token/proposta/reacoes')
+  @Header('Cache-Control', 'no-store')
+  reacoesDaProposta(@Param('token') token: string, @Req() req?: RequisicaoComEndereco) {
+    this.conferirTeto(req);
+    return this.reacoes.daPagina(token);
+  }
+
+  /** I4: "faz sentido", "tenho uma dúvida" ou "anotar uma ideia" numa seção da proposta. Só grava. */
+  @Post(':token/proposta/reacao')
+  @Header('Cache-Control', 'no-store')
+  reacao(@Param('token') token: string, @Body() body: unknown, @Req() req?: RequisicaoComEndereco) {
+    this.conferirTeto(req);
+    this.conferirTetoDoToken(token, 'reacao');
+    return this.reacoes.reagir(token, body);
+  }
+
+  /** I4: uma batida de leitura (seção, segundos visíveis desde a última, versão). Só grava. */
+  @Post(':token/proposta/leitura')
+  @Header('Cache-Control', 'no-store')
+  leitura(@Param('token') token: string, @Body() body: unknown, @Req() req?: RequisicaoComEndereco) {
+    this.conferirTeto(req);
+    this.conferirTetoDoToken(token, 'leitura');
+    return this.reacoes.ler(token, body);
   }
 
   /** "Pedir ajuste": grava o fato; a decisão na fila é aberta pela espinha. */

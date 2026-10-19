@@ -104,3 +104,53 @@ export function abrirSala<T>(base: string, post: (caminho: string, corpo: unknow
   aberturasEmCurso.set(base, pedido);
   return pedido;
 }
+
+/*
+ * I4 (18/10/2026): a página da proposta (`/s/<token>/proposta`) também é uma
+ * visita, mas quem chega a ela pela sala já foi contado ao abrir a sala. A
+ * marca na sessão do navegador (por aba, some ao fechar) evita contar duas
+ * vezes o mesmo passeio: a sala marca ao abrir; a proposta só conta a visita
+ * quando a marca não existe (o link aberto direto, de um favorito ou da
+ * mensagem). O número da visita é o que agrega a leitura por acesso.
+ */
+const MARCA_DA_VISITA = 'sala-visita:';
+
+function marcarVisita(base: string): void {
+  try {
+    window.sessionStorage.setItem(`${MARCA_DA_VISITA}${base}`, '1');
+  } catch {
+    // Navegador sem armazenamento (modo privado antigo): a próxima abertura conta de novo, e só.
+  }
+}
+
+export function visitaJaContada(base: string): boolean {
+  try {
+    return window.sessionStorage.getItem(`${MARCA_DA_VISITA}${base}`) === '1';
+  } catch {
+    return false;
+  }
+}
+
+/** A sala aberta conta a visita (B-11) e deixa a marca para a página da proposta não contar de novo. */
+export function abrirSalaMarcando<T>(base: string, post: (caminho: string, corpo: unknown) => Promise<T>): Promise<T> {
+  return abrirSala(base, post).then((r) => {
+    marcarVisita(base);
+    return r;
+  });
+}
+
+/**
+ * A página da proposta: conta a visita só se a sala ainda não contou nesta
+ * aba; senão só lê o estado (GET, que não conta nada).
+ */
+export function abrirPropostaDaSala<T>(base: string, post: (caminho: string, corpo: unknown) => Promise<T>, get: (caminho: string) => Promise<T>): Promise<T> {
+  if (visitaJaContada(base)) return get(base);
+  return abrirSalaMarcando(base, post);
+}
+
+/** "21:48", em São Paulo. */
+export function horaCurta(iso: string | null | undefined): string {
+  if (!iso) return '';
+  const p = partesSP(iso);
+  return p ? `${dd(p.hora)}:${dd(p.minuto)}` : '';
+}

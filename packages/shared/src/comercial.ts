@@ -330,6 +330,10 @@ export const COMERCIAL_EVENTOS = [
   'proposta.duvida',
   'proposta.ajuste_pedido',
   'proposta.aceita',
+  // Rodada da implantação I4 (18/10): a página da proposta colhe reação por seção.
+  // `faz sentido` vira `proposta.reagida`; a ideia, `proposta.ideia`; a dúvida segue `proposta.duvida`.
+  'proposta.reagida',
+  'proposta.ideia',
   'followup.enviado',
   // aceite, dinheiro e contrato
   'aceite.dados',
@@ -501,6 +505,122 @@ export type SalaAceitePagamentoInput = z.infer<typeof SalaAceitePagamentoSchema>
 
 export const SalaKickoffSchema = z.object({ horario: z.string().datetime({ offset: true }) }).strict();
 export type SalaKickoffInput = z.infer<typeof SalaKickoffSchema>;
+
+// ---------------------------------------------------------------------------
+// A página da proposta (rodada da implantação I4, prancheta 4)
+// ---------------------------------------------------------------------------
+
+/**
+ * As três seções da página `/s/<token>/proposta`. Cada uma cobre blocos do
+ * termômetro de antes (`SALA_BLOCOS_DA_PROPOSTA`): ver a seção grava também o
+ * `proposta.lida` desses blocos, pelo mesmo caminho da sala, e o follow-up e a
+ * ficha (`blocosLidos`, primeira leitura) seguem valendo sem mudar nada.
+ *
+ * "O que vamos montar" mostra o que ouvimos e a oferta recomendada; "como
+ * funciona" mostra parcelas, formas, validade e a outra opção; "investimento"
+ * mostra o preço e o quadro de custos de terceiros.
+ */
+export const PROPOSTA_SECOES = ['montar', 'funciona', 'investimento'] as const;
+export type PropostaSecao = (typeof PROPOSTA_SECOES)[number];
+
+export const PROPOSTA_BLOCOS_DA_SECAO: Record<PropostaSecao, readonly SalaBlocoDaProposta[]> = {
+  montar: ['ouvimos', 'recomendada'],
+  funciona: ['alternativa', 'validade'],
+  investimento: ['custos'],
+};
+
+export const PROPOSTA_ROTULO_DA_SECAO: Record<PropostaSecao, string> = {
+  montar: 'O QUE VAMOS MONTAR',
+  funciona: 'COMO FUNCIONA',
+  investimento: 'INVESTIMENTO',
+};
+
+/** O que o cliente pode deixar numa seção. A leitura (`leitura`) é tipo do banco, nunca do corpo. */
+export const PROPOSTA_TIPOS_DE_REACAO = ['faz_sentido', 'duvida', 'ideia'] as const;
+export type PropostaTipoDeReacao = (typeof PROPOSTA_TIPOS_DE_REACAO)[number];
+
+/** O teto da anotação do cliente (regra dura da rodada). */
+export const PROPOSTA_TEXTO_MAX = 1000;
+/** Uma batida de leitura carrega de 1 a 60 segundos visíveis. */
+export const PROPOSTA_SEGUNDOS_POR_BATIDA_MAX = 60;
+
+/**
+ * A reação do cliente numa seção. O texto é DADO NÃO CONFIÁVEL: limitado,
+ * aparado, varrido de segredo antes de gravar, e nunca vira instrução.
+ * "faz sentido" não leva texto; dúvida e ideia não aceitam texto vazio.
+ */
+export const SalaPropostaReacaoSchema = z
+  .object({
+    secao: z.enum(PROPOSTA_SECOES),
+    tipo: z.enum(PROPOSTA_TIPOS_DE_REACAO),
+    texto: z.string().trim().max(PROPOSTA_TEXTO_MAX).optional(),
+    versao: z.number().int().min(1),
+  })
+  .strict()
+  .superRefine((v, ctx) => {
+    if (v.tipo === 'faz_sentido' && v.texto) ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['texto'], message: '"faz sentido" não leva texto' });
+    if (v.tipo !== 'faz_sentido' && !v.texto) ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['texto'], message: 'escreva a sua anotação antes de enviar' });
+  });
+export type SalaPropostaReacaoInput = z.infer<typeof SalaPropostaReacaoSchema>;
+
+/** Uma batida de leitura: a seção, quantos segundos ela ficou visível desde a última, a versão lida. */
+export const SalaPropostaLeituraSchema = z
+  .object({
+    secao: z.enum(PROPOSTA_SECOES),
+    segundos: z.number().int().min(1).max(PROPOSTA_SEGUNDOS_POR_BATIDA_MAX),
+    versao: z.number().int().min(1),
+  })
+  .strict();
+export type SalaPropostaLeituraInput = z.infer<typeof SalaPropostaLeituraSchema>;
+
+/** Uma anotação do cliente como a página dele a mostra (o texto já mascarado). */
+export interface AnotacaoNaProposta {
+  id: string;
+  secao: PropostaSecao;
+  tipo: 'duvida' | 'ideia';
+  texto: string;
+  em: string;
+}
+
+/** O que a página da proposta mostra das reações do próprio cliente, na versão vigente. */
+export interface ReacoesNaPaginaDaProposta {
+  versao: number;
+  /** O número da visita de agora (`SalaDoCliente.acessos`). */
+  acesso: number;
+  /** As seções em que o cliente marcou "faz sentido" nesta visita. */
+  fazSentido: PropostaSecao[];
+  anotacoes: AnotacaoNaProposta[];
+  contagem: { anotacoes: number; duvidas: number };
+}
+
+/** A leitura de uma seção, agregada: quantas visitas a viram e o tempo somado. */
+export interface LeituraDaSecao {
+  versao: number;
+  secao: PropostaSecao;
+  acessos: number;
+  segundos: number;
+  ultimaEm: string;
+}
+
+/** Ideia ou dúvida deixada na proposta, como a bancada lê (a lane I5 reaproveita). */
+export interface AnotacaoDoLead extends AnotacaoNaProposta {
+  versao: number;
+  acesso: number;
+  respondidaEm: string | null;
+  tarefaId: string | null;
+}
+
+/** `GET /comercial/lead/:id/reacoes`: a leitura e as reações da proposta do lead. */
+export interface ReacoesDaPropostaDoLead {
+  leadId: string;
+  /** A versão vigente (a última publicada), ou `null` sem proposta. */
+  versaoVigente: number | null;
+  acessosDaSala: number;
+  ultimoAcessoEm: string | null;
+  leitura: LeituraDaSecao[];
+  fazSentido: { versao: number; secao: PropostaSecao; acesso: number; em: string }[];
+  anotacoes: AnotacaoDoLead[];
+}
 
 // ---------------------------------------------------------------------------
 // Rotas internas

@@ -216,7 +216,7 @@ describe('o teto na rota anônima da sala', () => {
   it('a 601ª leitura da mesma origem na hora é 429; outra origem segue; o arquivo tem teto próprio', async () => {
     const { SalaController, SALA_TETO_POR_HORA, SALA_TETO_DE_ARQUIVO_POR_HORA } = await import('../src/comercial/sala.controller');
     const svc = { estado: async () => ({ ok: true }), arquivo: async () => ({ ok: true }) };
-    const c = new SalaController(svc as never);
+    const c = new SalaController(svc as never, undefined as never); // I4: as reações da proposta não são exercidas aqui
     const req = { ip: '10.0.0.1' };
     for (let i = 0; i < SALA_TETO_POR_HORA; i++) await c.estado('t', req);
     expect(() => c.estado('t', req)).toThrow(expect.objectContaining({ status: 429 }));
@@ -239,7 +239,7 @@ describe('o teto na rota anônima da sala', () => {
       estado: async (...args: unknown[]) => (chamadas.push({ metodo: 'estado', args }), { ok: true }),
       visita: async (...args: unknown[]) => (chamadas.push({ metodo: 'visita', args }), { ok: true }),
     };
-    const c = new SalaController(svc as never);
+    const c = new SalaController(svc as never, undefined as never); // I4: as reações da proposta não são exercidas aqui
     const req = { ip: '10.0.0.9', headers: { 'user-agent': 'WhatsApp/2.23' } };
     await c.estado('t', req);
     await c.visita('t', req);

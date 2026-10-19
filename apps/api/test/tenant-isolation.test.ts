@@ -412,6 +412,7 @@ const ALVOS: Alvo[] = [
   { tabela: 'ComercialFechamento', escopo: 'filho', chaveSql: '"id"', nota: 'O fechamento com chave fech-<lead>-v<n> e as cinco escritas. ESCREVER estado para concluido na linha alheia faz a conta do mês da outra empresa contar um cliente que não existe.' },
   { tabela: 'ComercialCobranca', escopo: 'filho', chaveSql: '"id"', nota: 'Espelho das parcelas no provedor de cobrança: valor, vencimento, estado, link de pagamento e Pix copia-e-cola. LER a da outra é o extrato a receber dela; ESCREVER estado para paga quita uma parcela que ninguém pagou.' },
   { tabela: 'ComercialDocumento', escopo: 'filho', chaveSql: '"id"', nota: 'Espelho do contrato no provedor de assinatura, com os links de assinar. LER a da outra entrega o link que assina o contrato alheio.' },
+  { tabela: 'LeadReacao', escopo: 'filho', chaveSql: '"id"', nota: 'O que o cliente leu na proposta e o que anotou nela (rodada da implantação I4): seção, tempo por visita, "faz sentido", dúvida e ideia com o texto dele. LER a da outra é ler como o cliente alheio reagiu à proposta e o que ele pensa dela; ESCREVER é pôr palavra na boca do cliente de outra casa ou apagar o termômetro dela. A rota anônima escreve aqui só DEPOIS de achar a empresa pelo hash na sala, então a leitura NÃO aceita a sentinela pública.' },
 
   // ---- trabalho ---------------------------------------------------------
   { tabela: 'WorkSpace', escopo: 'tenant', chaveSql: '"id"', nota: 'Topo da árvore espaço → pastas → listas (ROOT-16). O nome do espaço diz como a outra empresa organiza o trabalho dela; escrever nele é renomear ou esvaziar a árvore alheia. É raiz da empresa: o orgId vem do insert, e as pastas e listas penduradas nele conferem a empresa pela chave composta.' },
@@ -1292,6 +1293,11 @@ async function semear(c: PoolClient, rotulo: 'A' | 'B', vec: string): Promise<vo
   reg('ComercialDocumento', await ins(c, 'ComercialDocumento', {
     id: crypto.randomUUID(), orgId, leadId, provedor: 'zapsign', externoId: `doc_${rotulo}_${suf}`, estado: 'criado',
     hashConteudo: `h_${rotulo}_${suf}`, atualizadoEm: agora,
+  }));
+  // A reação na página da proposta (I4): uma ideia com texto, que é o que não pode vazar.
+  reg('LeadReacao', await ins(c, 'LeadReacao', {
+    id: crypto.randomUUID(), orgId, leadId, versao: 1, secao: 'investimento', tipo: 'ideia',
+    texto: `Ideia privada do cliente da org ${rotulo}`, acesso: 1, atualizadoEm: agora,
   }));
 
   await c.query('INSERT INTO "_WorkTaskTags" ("A", "B") VALUES ($1, $2)', [tagId, tarefaId]);
@@ -3076,6 +3082,9 @@ const LINHA_DE_FILHO: Record<string, (c: PoolClient) => Promise<Record<string, u
     id: crypto.randomUUID(), leadId: sementes.A.ref.leadId, provedor: 'zapsign', externoId: `doc_gatilho_${crypto.randomUUID()}`,
     hashConteudo: 'gatilho', atualizadoEm: new Date(),
   }),
+  LeadReacao: async () => ({
+    id: crypto.randomUUID(), leadId: sementes.A.ref.leadId, versao: 1, secao: 'montar', tipo: 'faz_sentido', acesso: 1, atualizadoEm: new Date(),
+  }),
   IntegrationHealth: async (c) => {
     // accountId é @unique: precisa de uma conta nova, senão colide com a semente.
     const conta = await ins(c, 'IntegrationAccount', {
@@ -3216,9 +3225,10 @@ describe('orgId em todo filho de tenant (RF-T-01)', () => {
     // + `PautaEpisodio` (MC7, 23/09/2026) + `PautaPublicacao` (MD6, 24/09/2026)
     // + `ItemDoLote` (MD7, 24/09/2026) + `ComentarioComPalavra` (MD9, 25/09/2026)
     // + `EnvioAoYoutube` (MD10, 25/09/2026) + `EnvioDeResposta` (MD11, 25/09/2026)
-    // + os 8 filhos de Lead do cockpit comercial (13/10/2026).
+    // + os 8 filhos de Lead do cockpit comercial (13/10/2026)
+    // + `LeadReacao` (rodada da implantação I4, 18/10/2026).
     // Filho novo sobe este número no mesmo commit.
-    expect(declarados.length).toBe(29);
+    expect(declarados.length).toBe(30);
   });
 
   it.each(FILHOS_COM_ORGID_REDUNDANTE.map((f) => [f.modelo, f] as const))(
