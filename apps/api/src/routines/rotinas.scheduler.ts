@@ -4,6 +4,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { comContexto, novaCorrelacao } from '../common/contexto-execucao';
 import { combina, parseCron } from '../pauta/cron';
 import { AssinaturaService } from '../billing/assinatura.service';
+import { LimpezaDasVencidasService } from '../approvals/limpeza-das-vencidas';
 import { acessoBloqueado } from '../billing/assinatura';
 import { RotinasService } from './rotinas.service';
 import { ESTADOS_QUE_DISPARAM, LIVRE, TIPOS_DA_PAUTA, type EstadoDoAgendador } from './rotina.tipos';
@@ -118,6 +119,13 @@ export class RotinasScheduler implements OnModuleInit {
      * DERRUBA A API — não a assinatura do construtor.
      */
     @Optional() private readonly assinaturas?: AssinaturaService,
+    /*
+     * T7 (rodada do trabalho): a limpeza diária das aprovações vencidas é semeada
+     * por aqui, em toda empresa que o tique varre. Opcional como o de cima: as
+     * suítes que montam o agendador à mão não semeiam (e as empresas de teste
+     * que elas apagam não ganham uma rotina presa a elas).
+     */
+    @Optional() private readonly limpezaDasVencidas?: LimpezaDasVencidasService,
   ) {}
 
   onModuleInit(): void {
@@ -310,6 +318,7 @@ export class RotinasScheduler implements OnModuleInit {
         },
         async () => {
           await this.rotinas.reconciliarPauta(orgId);
+          await this.limpezaDasVencidas?.garantir(orgId);
 
           /*
            * EMPRESA SUSPENSA NÃO DISPARA ROTINA — RF-O-03.

@@ -1,8 +1,12 @@
 import {
   Body,
+  ConflictException,
   Controller,
   ForbiddenException,
   Get,
+  HttpCode,
+  NotFoundException,
+  Optional,
   Param,
   Post,
   Query,
@@ -22,8 +26,10 @@ import { corpoDaRecusa } from '../integrations/conectores';
 import { exigirTenant } from '../common/contexto-execucao';
 import { PrismaService } from '../prisma/prisma.service';
 import { ToolGateway } from '../gateway/tool-gateway.service';
-import { alcadaDe, atendeAlcada, descreverAlcada, exigeMotivo } from './alcada';
+import { alcadaDe, atendeAlcada, descreverAlcada, exigeMotivo, temPapelDeMaquina } from './alcada';
 import { conferirPedidoDeMover } from './destino-do-mover';
+import { LimpezaDasVencidasService } from './limpeza-das-vencidas';
+import { RepedidosRegistry, chaveDoPedido } from './repedidos.registry';
 
 const CreateApprovalSchema = z.object({
   resourceType: z.enum(['lead', 'task', 'campaign', 'content']),
@@ -145,7 +151,18 @@ export class ApprovalsController {
      * estrangulamento (`AcoesService.executarAprovada`), que é onde os argumentos
      * são lidos e entregues ao efeito. Ver `impedimentoDeExecucao`.
      */
+    /*
+     * T7 (rodada do trabalho): o registro do "pedir de novo" e a limpeza das
+     * vencidas. Opcionais pelo mesmo motivo de sempre: as suítes montam este
+     * controlador à mão. Sem o registro, nenhuma vencida ganha o botão (falha
+     * fechada); sem a limpeza, a fila não semeia a rotina.
+     */
+    @Optional() private readonly repedidos?: RepedidosRegistry,
+    @Optional() private readonly limpeza?: LimpezaDasVencidasService,
   ) {}
+
+  /** Os "pedir de novo" em curso neste processo: dois cliques não fazem dois pedidos. */
+  private readonly repedindo = new Set<string>();
 
   /*
    * A FILA. Existia proposta, confirmação e consulta por id, mas não existia
@@ -247,6 +264,8 @@ export class ApprovalsController {
     // Um token sem `orgId` é erro, nunca "todas as empresas".
     const orgId = exigirTenant(user.orgId, 'ApprovalsController.fila');
     const agora = new Date();
+    // T7: quem abre a fila garante a rotina que limpa as vencidas (uma vez por processo; nunca lança).
+    void this.limpeza?.garantir(orgId);
 
     const vivasEm = { orgId, status: { in: [ApprovalState.pendente, ApprovalState.confirmada] } };
     const fechadasEm = { orgId, status: { in: [ApprovalState.expirada, ApprovalState.rejeitada] } };
@@ -311,6 +330,11 @@ export class ApprovalsController {
 
     const vivas = [...valendo, ...vencidasVivas].slice(0, TETO_VIVAS);
     const linhas = [...vivas, ...fechadas];
+    const pedidosVivos = await this.pedidosVivos(
+      orgId,
+      linhas.filter((a) => this.vencida(a, agora)),
+      agora,
+    );
     const toolCallIds = linhas.map((a) => a.toolCallId).filter((v): v is string => !!v);
     const decisionIds = linhas.map((a) => a.decisionId).filter((v): v is string => !!v);
     /*
@@ -544,6 +568,12 @@ export class ApprovalsController {
           alcada: descreverAlcada(p.alcada),
         })),
         euPossoAprovar: posso,
+        /**
+         * T7: a vencida não se aprova; ela se PEDE DE NOVO, pelo caminho do
+         * domínio, com o conteúdo de agora. `null` fora da gaveta "expirou".
+         * Quem clica vira o proponente e não assina o pedido novo.
+         */
+        pedirDeNovo: gaveta === 'expirou' ? this.podePedirDeNovo(ap, user, pedidosVivos) : null,
         porQueNao: posso
           ? null
           : this.porQueNao({
@@ -606,6 +636,157 @@ export class ApprovalsController {
       truncado: quantasVivas > vivas.length || quantasFechadas > fechadas.length,
       tetos: { vivas: TETO_VIVAS, fechadas: TETO_FECHADAS, pessoas: TETO_PESSOAS },
     };
+  }
+
+  /* ------------------------------------------------------------------------
+   * PEDIR DE NOVO (rodada do trabalho T7, 19/10/2026)
+   * --------------------------------------------------------------------------
+   * A vencida não se aprova: o prazo protege contra decisão velha. O que se faz
+   * com ela é PEDIR DE NOVO, e o pedido novo nasce pelo caminho do domínio que
+   * criou o original (`RepedidosRegistry`), que relê o conteúdo de agora. Nada
+   * da vencida é reaproveitado: nem token, nem prazo, nem assinatura. Quem
+   * clica vira o proponente e, pela invariante 7, não assina o pedido novo.
+   * ------------------------------------------------------------------------ */
+
+  /** Vencida = o prazo passou sem execução: `expirada`, ou `pendente`/`confirmada` do token com prazo vencido. */
+  private vencida(ap: { status: ApprovalState; expiraEm: Date; capabilityId: string | null }, agora: Date): boolean {
+    if (ap.status === ApprovalState.expirada) return true;
+    if (ap.expiraEm > agora) return false;
+    return ap.status === ApprovalState.pendente || (ap.status === ApprovalState.confirmada && !ap.capabilityId);
+  }
+
+  /** A chave de um recurso, para casar a vencida com um pedido vivo do mesmo recurso. */
+  private chaveDoRecurso(ap: { capabilityId: string | null; resourceType: string; resourceId: string }): string {
+    return `${chaveDoPedido(ap.capabilityId, ap.resourceType)}|${ap.resourceType}|${ap.resourceId}`;
+  }
+
+  /** Os recursos destas vencidas que já têm um pedido VIVO (esperando dentro do prazo, ou confirmado). */
+  private async pedidosVivos(
+    orgId: string,
+    vencidas: Array<{ capabilityId: string | null; resourceType: string; resourceId: string }>,
+    agora: Date,
+  ): Promise<Set<string>> {
+    if (!vencidas.length) return new Set();
+    const vivos = await this.prisma.approval.findMany({
+      where: {
+        orgId,
+        resourceId: { in: [...new Set(vencidas.map((v) => v.resourceId))] },
+        OR: [
+          { status: ApprovalState.pendente, expiraEm: { gt: agora } },
+          { status: ApprovalState.confirmada, capabilityId: { not: null } },
+          { status: ApprovalState.confirmada, capabilityId: null, expiraEm: { gt: agora } },
+        ],
+      },
+      select: { capabilityId: true, resourceType: true, resourceId: true },
+    });
+    return new Set(vivos.map((v) => this.chaveDoRecurso(v)));
+  }
+
+  /** Se quem olha pode pedir esta vencida de novo, e o porquê quando não pode. */
+  private podePedirDeNovo(
+    ap: { capabilityId: string | null; resourceType: string; resourceId: string },
+    user: JwtUser,
+    vivos: Set<string>,
+  ): { pode: boolean; porQueNao: string | null } {
+    const chave = chaveDoPedido(ap.capabilityId, ap.resourceType);
+    const semCaminho = this.repedidos ? this.repedidos.porQueNao(chave) : 'Pedir de novo não está ligado nesta versão.';
+    if (semCaminho) return { pode: false, porQueNao: semCaminho };
+    if (temPapelDeMaquina(user.roles ?? [])) return { pode: false, porQueNao: 'Conta de máquina não pede de novo: quem pede é gente.' };
+    const faltam = this.repedidos!.de(chave)!.permissoes.filter((p) => !(user.permissions ?? []).includes(p));
+    if (faltam.length) {
+      return { pode: false, porQueNao: `Pedir de novo exige ${faltam.join(', ')}, a mesma permissão de quem pede pela tela de origem.` };
+    }
+    if (vivos.has(this.chaveDoRecurso(ap))) return { pode: false, porQueNao: 'Já há um pedido vivo para isto na fila.' };
+    return { pode: true, porQueNao: null };
+  }
+
+  /**
+   * `POST /approvals/:id/pedir-de-novo` — recria o pedido vencido com o conteúdo
+   * de agora, pelo caminho do domínio, em nome de quem clicou.
+   *
+   * Ordem das recusas: a aprovação existe nesta empresa; está VENCIDA (a viva se
+   * decide, a recusada foi um "não" de gente e não volta por aqui); há caminho
+   * inscrito; quem clica é gente e tem a permissão da rota de origem; não há
+   * pedido vivo para o mesmo recurso; ninguém está pedindo a mesma agora. A
+   * pendente vencida é marcada `expirada` antes (a mesma escrita que `confirm`
+   * faz ao tropeçar nela): ela nunca mais é confirmada.
+   */
+  @Post(':id/pedir-de-novo')
+  @HttpCode(200)
+  @RequirePermissions(VER)
+  async pedirDeNovo(@CurrentUser() user: JwtUser, @Param('id') id: string) {
+    const orgId = exigirTenant(user.orgId, 'ApprovalsController.pedirDeNovo');
+    const agora = new Date();
+    const ap = await this.prisma.approval.findFirst({ where: { id, orgId } });
+    if (!ap) throw new NotFoundException('Aprovação não encontrada');
+    if (ap.status === ApprovalState.rejeitada) {
+      throw new ConflictException('Esta foi recusada por uma pessoa: um não de gente não volta à fila por aqui.');
+    }
+    if (!this.vencida(ap, agora)) {
+      throw new ConflictException(
+        ap.status === ApprovalState.consumida ? 'Este pedido já foi executado.' : 'Este pedido ainda vale: decida na fila, não peça de novo.',
+      );
+    }
+    const vivos = await this.pedidosVivos(orgId, [ap], agora);
+    const pode = this.podePedirDeNovo(ap, user, vivos);
+    if (!pode.pode) {
+      if (vivos.size) throw new ConflictException(pode.porQueNao);
+      throw new ForbiddenException(pode.porQueNao);
+    }
+    const trava = `${orgId}:${this.chaveDoRecurso(ap)}`;
+    if (this.repedindo.has(trava)) throw new ConflictException('Alguém já está pedindo isto de novo agora. Atualize a fila.');
+    this.repedindo.add(trava);
+    try {
+      if (ap.status === ApprovalState.pendente) {
+        await this.prisma.approval.updateMany({
+          where: { id, orgId, status: ApprovalState.pendente, expiraEm: { lte: agora } },
+          data: { status: ApprovalState.expirada },
+        });
+      }
+      const chamada = ap.toolCallId
+        ? await this.prisma.toolCall.findFirst({ where: { id: ap.toolCallId, orgId }, select: { args: true } })
+        : null;
+      const receita = this.repedidos!.de(chaveDoPedido(ap.capabilityId, ap.resourceType))!;
+      // Um segundo de folga: o relógio do banco e o do processo não são o mesmo.
+      const inicio = new Date(Date.now() - 1000);
+      const r = await receita.repedir({
+        orgId,
+        approvalId: ap.id,
+        capabilityId: ap.capabilityId,
+        resourceType: ap.resourceType,
+        resourceId: ap.resourceId,
+        contentHash: ap.contentHash,
+        args: (chamada?.args ?? null) as Record<string, unknown> | null,
+        quem: { id: user.sub, nome: user.name ?? null, papeis: user.roles ?? [] },
+      });
+      if (!r.approvalId) {
+        await this.approvals.registrarPedidoDeNovo(orgId, user.sub, { de: ap.id, para: null, resourceType: ap.resourceType, resourceId: ap.resourceId });
+        return {
+          ok: true as const,
+          anterior: ap.id,
+          approvalId: null,
+          expiraEm: null,
+          mensagem: r.aviso ?? 'A régua de hoje deixou sair sem assinatura: a ação já foi feita.',
+        };
+      }
+      const nova = await this.prisma.approval.findFirst({
+        where: { id: r.approvalId, orgId, criadoEm: { gte: inicio } },
+        select: { id: true, expiraEm: true },
+      });
+      if (!nova) throw new ConflictException('Já havia um pedido vivo para isto: ele está na fila, decida por lá.');
+      await this.approvals.registrarPedidoDeNovo(orgId, user.sub, { de: ap.id, para: nova.id, resourceType: ap.resourceType, resourceId: ap.resourceId });
+      return {
+        ok: true as const,
+        anterior: ap.id,
+        approvalId: nova.id,
+        expiraEm: nova.expiraEm.toISOString(),
+        mensagem:
+          r.aviso ?? 'Pedido de novo, com o conteúdo de agora. Você pediu, então não assina: outra pessoa com alçada aprova na fila.',
+        ...(r.paraQuemPediu ? { paraQuemPediu: r.paraQuemPediu } : {}),
+      };
+    } finally {
+      this.repedindo.delete(trava);
+    }
   }
 
   /**
@@ -769,7 +950,7 @@ export class ApprovalsController {
       return 'Foi confirmada, mas o prazo venceu antes de quem pediu concluir: nada mudou. Para mudar, peça de novo.';
     }
     if (gaveta === 'expirou' && peloToken) return 'O prazo deste pedido venceu sem assinatura: nada mudou. Para mudar, peça de novo.';
-    if (gaveta === 'expirou') return 'O prazo desta aprovação venceu. Peça ao agente para propor de novo.';
+    if (gaveta === 'expirou') return 'O prazo desta aprovação venceu: ela não se aprova mais. Peça de novo, com o conteúdo de agora.';
     if (gaveta === 'recusada') return 'Esta ação já foi recusada.';
     if (gaveta === 'confirmada' && peloToken) {
       return (

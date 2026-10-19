@@ -326,6 +326,22 @@ export class WhatsappComercialService implements OnModuleInit {
     return this.submeter(m, new Date(), quem);
   }
 
+  /**
+   * PEDIR DE NOVO o envio cuja aprovação venceu (rodada do trabalho T7, a partir
+   * de /atendimento). Relê a mensagem guardada: o texto que vai à porta é o da
+   * linha AGORA (o efeito confere o mesmo texto na hora de enviar) e o destino é
+   * relido do lead. Presa na fila pela aprovação vencida, vai à porta de novo em
+   * nome de quem clicou; em rascunho ou falha, segue o caminho de `pedirEnvio`.
+   * Enviada, vetada ou presa a outro pedido não volta por aqui.
+   */
+  async repedirEnvio(orgId: string, mensagemId: string, vencidaId: string, quem: { id: string }): Promise<MensagemPreparada> {
+    const m = await this.prisma.comercialMensagem.findFirst({ where: { id: mensagemId, orgId, direcao: 'saida' } });
+    if (!m) throw new NotFoundException('mensagem não encontrada');
+    if (m.estado === 'na_fila' && m.approvalId === vencidaId) return this.submeter(m, new Date(), quem);
+    if (m.estado === 'rascunho' || m.estado === 'falhou') return this.pedirEnvio(orgId, mensagemId, quem);
+    throw new BadRequestException(`a mensagem está ${m.estado}: não volta à fila por aqui`);
+  }
+
   /** VETO na janela: a mensagem não sai. Só vale enquanto ela está `em_veto`. */
   async vetar(orgId: string, mensagemId: string): Promise<boolean> {
     const r = await this.prisma.comercialMensagem.updateMany({ where: { id: mensagemId, orgId, estado: 'em_veto' }, data: { estado: 'vetada' } });

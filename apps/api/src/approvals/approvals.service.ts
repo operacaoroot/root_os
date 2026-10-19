@@ -937,4 +937,65 @@ export class ApprovalsService {
     });
     return count;
   }
+
+  /**
+   * "PEDIR DE NOVO" NO REGISTRO (rodada do trabalho T7): liga a vencida ao pedido
+   * novo. O pedido novo já tem o próprio `approval.propose` (quem o criou foi o
+   * caminho do domínio); esta linha só diz de onde ele veio e quem clicou.
+   */
+  async registrarPedidoDeNovo(
+    orgId: string,
+    quemId: string,
+    o: { de: string; para: string | null; resourceType: string; resourceId: string },
+  ): Promise<void> {
+    try {
+      await this.audit.log({
+        orgId,
+        actorType: ActorType.user,
+        actorId: quemId,
+        action: 'approval.pedida-de-novo',
+        entityType: o.resourceType,
+        entityId: o.resourceId,
+        after: { vencida: o.de, nova: o.para },
+      });
+    } catch (e) {
+      this.log.warn(`pedido de novo ${o.de} → ${o.para ?? 'executado'} ficou sem linha de auditoria: ${(e as Error).message}`);
+    }
+  }
+
+  /**
+   * A MESMA REGRA, POR EMPRESA E COM OS IDS (rodada do trabalho T7): a rotina
+   * diária roda dentro do contexto de cada empresa (o isolamento por linha não
+   * deixa varrer todas de uma vez) e o RASTRO precisa dizer QUAIS ela marcou.
+   *
+   * Só `pendente` com `expiraEm` antes de `agora`, como `expirarVencidas`. A
+   * escrita repete o filtro de estado e de prazo: se alguém decidiu a linha entre
+   * a leitura e a escrita, ela não é tocada. `sobra` diz se o teto cortou.
+   */
+  async expirarVencidasDaEmpresa(
+    orgId: string,
+    agora: Date = new Date(),
+    teto = 500,
+  ): Promise<{ ids: string[]; sobra: boolean }> {
+    exigirTenant(orgId, 'ApprovalsService.expirarVencidasDaEmpresa');
+    const onde = { orgId, status: ApprovalState.pendente, expiraEm: { lt: agora } };
+    const linhas = await this.prisma.approval.findMany({
+      where: onde,
+      orderBy: { expiraEm: 'asc' },
+      take: teto + 1,
+      select: { id: true },
+    });
+    const alvo = linhas.slice(0, teto).map((l) => l.id);
+    if (!alvo.length) return { ids: [], sobra: false };
+    await this.prisma.approval.updateMany({
+      where: { ...onde, id: { in: alvo } },
+      data: { status: ApprovalState.expirada },
+    });
+    // Relê o que de fato virou `expirada` agora: a contagem do RASTRO é a do banco.
+    const feitas = await this.prisma.approval.findMany({
+      where: { orgId, id: { in: alvo }, status: ApprovalState.expirada },
+      select: { id: true },
+    });
+    return { ids: feitas.map((f) => f.id), sobra: linhas.length > teto };
+  }
 }

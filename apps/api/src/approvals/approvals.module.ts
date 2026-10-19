@@ -7,6 +7,8 @@ import { AssinaturaDeLoteService } from './assinatura-de-lote.service';
 import { LotesController } from './lotes.controller';
 import { AuthModule } from '../auth/auth.module';
 import { CanaisModule } from '../gateway/canais/canais.module';
+import { LimpezaDasVencidasService } from './limpeza-das-vencidas';
+import { RepedidosRegistry } from './repedidos.registry';
 
 // @Global: o ApprovalGuard/ApprovalsService ficam disponíveis para qualquer
 // controller de escrita sensível sem precisar importar o módulo em cada um.
@@ -37,7 +39,11 @@ import { CanaisModule } from '../gateway/canais/canais.module';
   // injeta para o consumo contado); `AssinaturaDeLoteService` fala com a porta
   // e inscreve o efeito que ativa o lote. Os dois globais daqui e do
   // GatewayModule se enxergam sem import de módulo, e sem ciclo de provider.
-  providers: [ApprovalsService, ApprovalGuard, LotesService, AssinaturaDeLoteService],
-  exports: [ApprovalsService, ApprovalGuard, LotesService],
+  //
+  // T7 (rodada do trabalho): o registro do "pedir de novo" (os domínios se
+  // inscrevem, a fila pergunta) e a limpeza diária das vencidas (o executor da
+  // rotina mora em `routines/executores`, e o agendador semeia por aqui).
+  providers: [ApprovalsService, ApprovalGuard, LotesService, AssinaturaDeLoteService, RepedidosRegistry, LimpezaDasVencidasService],
+  exports: [ApprovalsService, ApprovalGuard, LotesService, RepedidosRegistry, LimpezaDasVencidasService],
 })
 export class ApprovalsModule {}

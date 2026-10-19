@@ -8,6 +8,7 @@ import { ExecutorDoRelatorioDaPauta } from './executores/pauta-relatorio.executo
 import { ExecutorDeEncadeamentoDaPauta } from './executores/pauta-encadear.executor';
 import { ExecutorDePublicacaoDaPauta } from './executores/pauta-publicar.executor';
 import { ExecutorDeComentariosDaPauta } from './executores/pauta-comentarios.executor';
+import { ExecutorDaLimpezaDasVencidas } from './executores/aprovacoes-vencidas.executor';
 import { RotinasController } from './rotinas.controller';
 import { RotinasScheduler } from './rotinas.scheduler';
 import { RotinasService } from './rotinas.service';
@@ -54,6 +55,8 @@ import { RotinasService } from './rotinas.service';
     ExecutorDeComentariosDaPauta,
     // MK6: o fechamento mensal. Nasce desligado, como toda automação da casa.
     ExecutorDoRelatorioDaPauta,
+    // T7: a limpeza diária das aprovações vencidas (o serviço vem do ApprovalsModule, global).
+    ExecutorDaLimpezaDasVencidas,
     RotinasService,
     RotinasScheduler,
   ],

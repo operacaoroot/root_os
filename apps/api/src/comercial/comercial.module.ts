@@ -14,6 +14,7 @@ import { ConfigComercialService } from './config.service';
 import { DecisoesRegistry, DecisoesService } from './decisoes.service';
 import { FichaService } from './ficha.service';
 import { MoverService, SoGenteGuard } from './mover.service';
+import { RepedidosDoComercial } from './repedidos-do-comercial';
 import { ReacoesDaEspinha } from './reacoes-da-espinha';
 import { RelogioDaEspinha } from './relogio-da-espinha';
 import { DinheiroController, WebhooksDoDinheiroController } from './dinheiro.controller';
@@ -74,6 +75,8 @@ import { FechamentoService } from './fechamento.service';
     // --- rodada do painel P5 (mover o cartão pela tela, pela aprovação) ---
     MoverService,
     SoGenteGuard,
+    // --- rodada do trabalho T7 ("pedir de novo" a vencida em /atendimento, pelo caminho de cada pedido) ---
+    RepedidosDoComercial,
     // --- lane B (sala, WhatsApp por porta, simulador) ---
     SalaService,
     WhatsappComercialService,

@@ -3,7 +3,7 @@ import {
   SalaRascunhoSchema, type ConteudoDaSalaPublicada, type PassoDaSalaPublicada, type SalaRascunhoInput,
   type SalaVersaoPublica, type VersoesDaSala,
 } from '@mktos/shared';
-import { ActorType, Prisma } from '@prisma/client';
+import { ActorType, ApprovalState, Prisma } from '@prisma/client';
 
 import { EfeitosRegistry, type ContextoDoEfeito } from '../gateway/efeitos.registry';
 import { PortaDoOperador } from '../gateway/porta-do-operador.service';
@@ -172,8 +172,22 @@ export class SalaVersaoService implements OnModuleInit {
     const sala = await this.prisma.salaDoCliente.findFirst({ where: { leadId, orgId }, select: { id: true } });
     if (!sala) throw new ConflictException('Este lead ainda não tem sala: o link nasce no primeiro contato.');
     const atual = await this.versoes(orgId, leadId, agora);
+    /*
+     * T7 (rodada do trabalho): a versão na porta só volta "como está" se a
+     * aprovação dela ainda VALE. Vencida (ou recusada), ela prendia a sala em
+     * `na_porta` para sempre: publicar devolvia o pedido morto. Agora segue
+     * adiante, remonta a versão aberta com o derivado de agora e pede de novo.
+     */
     if (atual.rascunho.estado === 'na_porta' && atual.rascunho.approvalId) {
-      return { ...atual, approvalId: atual.rascunho.approvalId, estado: 'na_porta' };
+      const viva = await this.prisma.approval.findFirst({
+        where: {
+          id: atual.rascunho.approvalId,
+          orgId,
+          OR: [{ status: ApprovalState.pendente, expiraEm: { gt: new Date() } }, { status: ApprovalState.confirmada }],
+        },
+        select: { id: true },
+      });
+      if (viva) return { ...atual, approvalId: atual.rascunho.approvalId, estado: 'na_porta' };
     }
     const escrito = escritoDoConteudo(atual.rascunho.conteudo);
     const conteudo = await this.montar(orgId, leadId, escrito, agora);

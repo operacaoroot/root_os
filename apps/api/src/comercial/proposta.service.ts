@@ -508,6 +508,31 @@ export class PropostaService implements OnModuleInit {
     return this.encaminhar(orgId, leadId, r.versao, { automatico: false, quem });
   }
 
+  /**
+   * PEDIR DE NOVO a liberação que venceu (rodada do trabalho T7, a partir de
+   * /atendimento). Relê a versão VIGENTE: se a vencida era de uma versão que já
+   * não é a última, recusa (a vigente se pede no painel do lead). Na porta com a
+   * aprovação vencida, vai à porta de novo em nome de quem clicou, com o hash e
+   * o conteúdo gravados nesta versão; parada (pronta, agendada, segurada), segue
+   * o caminho do botão "liberar".
+   */
+  async repedirLiberacao(orgId: string, leadId: string, versao: number, vencidaId: string, quem: { id: string }): Promise<Rascunho> {
+    const r = await this.ultimo(orgId, leadId);
+    if (!r) throw new NotFoundException('O lead não tem proposta.');
+    if (r.versao !== versao) {
+      throw new ConflictException(`A v${versao} não é mais a vigente: a vigente é a v${r.versao}. Peça a liberação dela no painel do lead.`);
+    }
+    if (r.estado === 'na_porta') {
+      if (r.approvalId && r.approvalId !== vencidaId) {
+        throw new ConflictException(`A v${versao} está na fila com outro pedido (${r.approvalId}).`);
+      }
+      return this.proporAPorta(orgId, leadId, versao, quem, ['na_porta']);
+    }
+    if (r.estado === 'publicada') throw new ConflictException(`A v${versao} já foi publicada.`);
+    if (r.estado === 'na_fila') throw new ConflictException(`A v${versao} espera uma decisão em Pendências.`);
+    return this.liberar(orgId, leadId, quem);
+  }
+
   /** Refazer pela rota: monta de novo e encaminha (sem agenda: quem pediu é gente). */
   async refazer(orgId: string, leadId: string, quem: { id: string }, corpo: unknown): Promise<Rascunho> {
     const produto = corpo && typeof corpo === 'object' ? (corpo as P).produto : undefined;
