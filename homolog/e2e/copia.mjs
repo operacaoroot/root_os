@@ -196,14 +196,14 @@ function listasDasContagens(c) {
   return null;
 }
 function totalDasContagens(c) {
-  for (const v of [c.total, c.totalTarefas, c.tarefas, c.destino?.tarefas, c.destino?.total]) {
+  for (const v of [c.tarefasTotal, c.total, c.totalTarefas, c.tarefas, c.destino?.tarefas, c.destino?.total]) {
     const n = typeof v === 'number' ? v : v && typeof v === 'object' && !Array.isArray(v) && typeof v.total === 'number' ? v.total : null;
     if (n !== null) return n;
   }
   return null;
 }
 function leadsDasContagens(c) {
-  for (const v of [c.leads, c.funil, c.destino?.leads, c.porDestino?.lead, c.porDestino?.leads, c.porTipo?.lead]) {
+  for (const v of [c.leadsTotal, c.leads, c.funil, c.destino?.leads, c.porDestino?.lead, c.porDestino?.leads, c.porTipo?.lead]) {
     const n = numeroDe(v);
     if (n !== null) return n;
   }
@@ -358,10 +358,16 @@ async function main() {
       await ctx.close();
       prova.implantacao = { naLista: daLista.length, naTela: ids.size, daPartner, semCliente };
       if (daLista.length === 0) {
-        prova.avisos.push('A lista Onboarding de cliente está vazia no destino: a Implantação passou sem card para conferir (os contratos foram para a Execução?).');
+        // Não se mascara: lista vazia com cartões pedidos para ela é o importador (ou a
+        // porta da implantação) dizendo que não deu, e a prova diz isso.
+        const c = existsSync(CONTAGENS) ? JSON.parse(readFileSync(CONTAGENS, 'utf8')) : {};
+        const desviados = Number(c.tarefasRedirecionadasDaImplantacao ?? 0);
+        conferir(desviados === 0, `a Implantação está vazia: ${desviados} cartão(ões) pedidos para Onboarding de cliente foram à Execução (a porta da implantação recusa cartão solto; "Registrar cliente já fechado" precisa do storage que a stack não tem)`);
+        prova.avisos.push('A lista Onboarding de cliente está vazia e nenhum cartão foi pedido para ela: a Implantação passou sem card para conferir.');
       }
       conferir(faltando === 0 && sobrando === 0, `${daLista.length} na lista, ${ids.size} na tela (${faltando} faltando, ${sobrando} sobrando)`);
       conferir(semCliente === 0, `${semCliente} card(s) sem cliente na tela`);
+      conferir(daPartner === daLista.length, `${daLista.length - daPartner} card(s) da Implantação sem cliente Partner`);
       return `${ids.size} cards na tela = ${daLista.length} na lista · ${daPartner} de cliente Partner`;
     });
 
@@ -385,9 +391,21 @@ async function main() {
       const faltando = [...idsApi].filter((id) => !idsTela.has(id)).length;
       conferir(faltando === 0 && idsTela.size === idsApi.size, `${idsApi.size} leads na API, ${idsTela.size} na tela (${faltando} faltando)`);
       let esperado = null;
-      if (existsSync(CONTAGENS)) esperado = leadsDasContagens(JSON.parse(readFileSync(CONTAGENS, 'utf8')));
+      const c = existsSync(CONTAGENS) ? JSON.parse(readFileSync(CONTAGENS, 'utf8')) : {};
+      esperado = leadsDasContagens(c);
       if (esperado !== null) conferir(idsApi.size === esperado, `o contagens.json diz ${esperado} leads; o funil tem ${idsApi.size}`);
-      else prova.avisos.push('O contagens.json não traz o número de leads: o funil foi conferido só contra a API.');
+      if (c.leadsPorEtapa && typeof c.leadsPorEtapa === 'object') {
+        // As saídas (desqualificado, geladeira, perdido, parceiro) moram numa coluna só.
+        const colunas = new Set(funil.colunas.map((x) => x.etapa));
+        const porColuna = {};
+        for (const [etapa, n] of Object.entries(c.leadsPorEtapa)) {
+          const col = colunas.has(etapa) ? etapa : 'saidas';
+          porColuna[col] = (porColuna[col] ?? 0) + n;
+        }
+        const erradas = Object.keys({ ...porColuna, ...porEtapa }).filter((k) => (porColuna[k] ?? 0) !== (porEtapa[k] ?? 0));
+        conferir(erradas.length === 0, `etapa(s) com contagem diferente do contagens.json: ${erradas.map((k) => `${k} ${porEtapa[k] ?? 0}≠${porColuna[k] ?? 0}`).join(', ')}`);
+      }
+      if (esperado === null) prova.avisos.push('O contagens.json não traz o número de leads: o funil foi conferido só contra a API.');
       conferir(idsApi.size > 0, 'o funil está vazio: nenhum lead copiado');
       return `${idsTela.size} leads na tela = ${idsApi.size} na API${esperado !== null ? ` = ${esperado} no contagens.json` : ''} · ${Object.entries(porEtapa).filter(([, n]) => n).map(([e, n]) => `${e} ${n}`).join(', ')}`;
     });
@@ -412,7 +430,9 @@ async function main() {
       conferir(new URL(p.url()).searchParams.get('tarefa') === d.id, 'o endereço perdeu o ?tarefa=');
       const texto = await pop.innerText();
       conferir(texto.includes(PROCEDENCIA), 'o pop-up não mostra o comentário de procedência');
-      conferir(d.clienteNome && texto.includes(d.clienteNome), 'o pop-up não mostra o nome do cliente Partner');
+      // O cliente mora no seletor (um input): o valor dele, não o innerText.
+      const noSeletor = await tid(pop, 'tarefa-cliente').locator('input[role="combobox"]').inputValue().catch(() => '');
+      conferir(d.clienteNome && noSeletor === d.clienteNome, 'o seletor de cliente do pop-up não mostra o cliente Partner da tarefa');
       const n = Number(/Comentários \((\d+)\)/i.exec(texto)?.[1] ?? NaN);
       conferir(n === d.comentarios.length && n >= 1, `o pop-up conta ${n} comentário(s); a API, ${d.comentarios.length}`);
       await foto(p, 'popup-escuro');
