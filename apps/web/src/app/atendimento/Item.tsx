@@ -8,6 +8,7 @@ import { Conteudo } from './Conteudo';
 import { CartaoDoLote } from './CartaoDoLote';
 import { CAPACIDADE_DA_PROPOSTA, CartaoDaProposta } from './CartaoDaProposta';
 import { CAPACIDADE_DA_SALA, CartaoDaSala, useConferenciaDaSala } from './CartaoDaSala';
+import { CAPACIDADE_DO_FECHAMENTO, CartaoDoFechamento, leadDoFechamento } from './CartaoDoFechamento';
 import { fraseDoPedido } from './frase-do-pedido';
 import {
   FRASE_DO_PEDIR_DE_NOVO,
@@ -125,7 +126,16 @@ export function Item({ item, euDecido, souOProponente, ocupado, aoAprovar, aoRec
   const ehSala = item.capacidade === CAPACIDADE_DA_SALA;
   const [salaLida, setSalaLida] = useState(false);
   const aoLerSala = useCallback((ok: boolean) => setSalaLida(ok), []);
-  const podeAprovarAgora = item.euPossoAprovar && (!ehLote || loteLido) && (!ehProposta || propostaLida) && (!ehSala || salaLida);
+  /*
+   * T1b (revisão P2-1): o fechamento guarda só lead, chave e hash. Para quem fechou fora, este R4 é a
+   * única conferência dos dados declarados e do PDF: o botão só acende com o cartão carregado e conferindo.
+   */
+  const ehFechamento = item.capacidade === CAPACIDADE_DO_FECHAMENTO;
+  const [fechamentoLido, setFechamentoLido] = useState(false);
+  const aoLerFechamento = useCallback((ok: boolean) => setFechamentoLido(ok), []);
+  const hashDoFechamento = typeof item.conteudo?.propostaHash === 'string' ? item.conteudo.propostaHash : null;
+  const podeAprovarAgora =
+    item.euPossoAprovar && (!ehLote || loteLido) && (!ehProposta || propostaLida) && (!ehSala || salaLida) && (!ehFechamento || fechamentoLido);
 
   /*
    * T7 · DECIDIR SEM TROCAR DE TELA. O conteúdo que cabe na linha (o mover com
@@ -437,6 +447,11 @@ export function Item({ item, euDecido, souOProponente, ocupado, aoAprovar, aoRec
                 <CartaoDaSala recursoId={item.recurso.id} hashAssinado={hashDaProposta} onPronto={aoLerSala} />
               </div>
             )}
+            {ehFechamento && !item.conteudoOculto && (
+              <div className="mt-3">
+                <CartaoDoFechamento leadId={leadDoFechamento(item.conteudo, item.recurso.id)} hashAssinado={hashDoFechamento} onPronto={aoLerFechamento} />
+              </div>
+            )}
             {/*
               "hash gravado", e não "assinatura do conteúdo": ninguém recalcula o
               hash sobre o texto acima, nem aqui nem na rota que alimenta a fila.
@@ -493,6 +508,14 @@ export function Item({ item, euDecido, souOProponente, ocupado, aoAprovar, aoRec
               <p className="text-xs text-muted" data-testid={`proposta-esperando-${item.id}`}>
                 O botão de assinar aparece quando a proposta inteira estiver na tela e conferir com o hash da
                 aprovação.
+              </p>
+              {passo.recusar && botaoRecusar('Recusar')}
+            </div>
+          )}
+          {item.euPossoAprovar && ehFechamento && !fechamentoLido && (
+            <div className="mt-4 space-y-2 border-t border-border pt-4">
+              <p className="text-xs text-muted" data-testid={`fechamento-esperando-${item.id}`}>
+                O botão de assinar aparece quando o conteúdo do fechamento estiver na tela e conferir com o hash da aprovação.
               </p>
               {passo.recusar && botaoRecusar('Recusar')}
             </div>
