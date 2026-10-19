@@ -2,15 +2,16 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import * as Dialog from '@radix-ui/react-dialog';
-import { Archive, Bot, Clock, DoorOpen, ExternalLink, Flag, Hourglass, MessageSquare, Plus, Settings2, Unlock, X } from 'lucide-react';
+import { Archive, Bot, Clock, DoorOpen, ExternalLink, Flag, Hourglass, MessageSquare, Plus, Repeat, Settings2, Unlock, X } from 'lucide-react';
 import {
   MODELOS_DE_LISTA, MOEDA_PADRAO, ehValorMonetarioCanonico, formatarValorMonetario, lerValorDigitadoPtBr,
   listaDaImplantacao, moedaDoValor, paraDigitarPtBr, LISTA_DA_IMPLANTACAO, PASTA_DA_IMPLANTACAO, PORTA_DA_IMPLANTACAO,
-  DICA_DO_NOME_DA_TAREFA,
+  DICA_DO_NOME_DA_TAREFA, AGRUPAMENTOS, ROTULO_DO_AGRUPAMENTO, agruparTarefas, descreverRecorrencia,
 } from '@mktos/shared';
 import type {
   VistaQuadro, TrabClienteDto, TrabAgenteDto, TrabEstrutura, TrabListaDto, TrabTarefaLista, TrabTarefaResumo,
   TrabTarefaDetalhe, TrabEstruturaSugeridaResultado, TrabMovimentoDoCartao, TrabMovimentoDoQuadro,
+  Agrupamento, RecorrenciaDaTarefa,
 } from '@mktos/shared';
 import { apiBlob, apiDelete, apiGet, apiPatch, apiPost } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
@@ -23,7 +24,8 @@ import { AtividadeDaTarefa } from './AtividadeDaTarefa';
 import { EditorialTaskLink } from './EditorialTaskLink';
 import { OrigemComercialDaTarefa } from '@/app/leads/OrigemComercialDaTarefa';
 import { FontesDaTarefa } from './FontesDaTarefa';
-import { ResponsavelDaTarefa, SeletorResponsavel, rotuloDaPessoa } from './ResponsavelDaTarefa';
+import { OutrosResponsaveis, ResponsavelDaTarefa, SeletorOutrosResponsaveis, SeletorResponsavel, rotuloDaPessoa } from './ResponsavelDaTarefa';
+import { CalendarioDeTarefas, prazoDoDia } from './CalendarioDeTarefas';
 import { diasDesde, formatarHoras, hojeEmBrasilia, minutosDeTexto } from '@/lib/horas';
 import {
   CHAVE_DA_DENSIDADE, DENSIDADES, DIAS_DE_ALERTA_NA_ETAPA, ESCOPOS, LARGURA_DA_COLUNA,
@@ -109,18 +111,41 @@ function mudarEndereco(listaId: string | null, tarefaId: string | null) {
  * a visão de lista continua se chamando `tabela`, e `?visao=tabela` segue valendo
  * para não quebrar link antigo; o que a tela escreve agora é `?visao=lista`.
  */
-type Visao = 'board' | 'tabela';
+type Visao = 'board' | 'tabela' | 'calendario';
 export type VisaoDoTrabalho = Visao | 'lista' | 'quadro';
 
 /** `?visao=` do endereço → a visão. Valor desconhecido devolve `null` (vale a inicial). */
 export function visaoDoEndereco(v: string | null): Visao | null {
   if (v === 'board' || v === 'quadro') return 'board';
   if (v === 'tabela' || v === 'lista') return 'tabela';
+  // O calendário do Lucas (versão final, F4): arrastar muda o prazo, com versão.
+  if (v === 'calendario') return 'calendario';
   return null;
 }
 
-/** `?pasta=`: vazio = todas; `sem-pasta` = só as listas soltas; senão o id da pasta de topo. */
+/** `?pasta=`: vazio = a árvore inteira; `sem-pasta` = só as listas soltas; senão o id da pasta de topo. */
 export const PASTA_SEM_PASTA = 'sem-pasta';
+
+/**
+ * `?pasta=todas` (versão final, F4): "Todas as tarefas", o Everything do ClickUp. As
+ * tarefas de todas as pastas e listas numa visão só, sem card repetido e sem cadastro
+ * como tarefa (a API aplica as regras com `todas=1`). No quadro, as colunas são o TIPO
+ * da etapa (a fazer, em andamento, concluída), porque cada lista tem as suas etapas.
+ */
+export const PASTA_TODAS = 'todas';
+
+/** As colunas do quadro de "Todas": o tipo da etapa, com o id virtual `tipo:<tipo>`. */
+const COLUNAS_POR_TIPO = [
+  { id: 'tipo:open', name: 'A fazer', type: 'open', color: '#87909e' },
+  { id: 'tipo:custom', name: 'Em andamento', type: 'custom', color: '#f9a400' },
+  { id: 'tipo:closed', name: 'Concluídas', type: 'closed', color: '#30a46c' },
+] as const;
+
+/** A primeira etapa da lista com o tipo pedido (a mesma regra do lote e do quadro de "Todas"). */
+function etapaDoTipo(listas: TrabListaDto[], listId: string, tipo: string): string | null {
+  const l = listas.find((x) => x.id === listId);
+  return l?.statuses.find((st) => st.type === tipo)?.id ?? null;
+}
 
 /** A pasta e todas as que estão dentro dela, em qualquer nível. */
 function pastaEDescendentes(folders: TrabEstrutura['folders'], raiz: string): Set<string> {
@@ -193,6 +218,11 @@ function TrabalhoConteudo({ visaoInicial, modo }: { visaoInicial: Visao; modo: M
   const [fCliente, setFCliente] = useState('');
   const [clientes, setClientes] = useState<TrabClienteDto[]>([]);
   const [fArquivadas, setFArquivadas] = useState(false);
+  const [fConcluidas, setFConcluidas] = useState<'mostrar' | 'ocultar'>('mostrar');
+  const [fAgrupar, setFAgrupar] = useState<Agrupamento>('nenhum');
+  // Seleção em lote da Lista (versão final, F4): cada escrita sai com a versão lida.
+  const [selecionadas, setSelecionadas] = useState<Set<string>>(new Set());
+  const [avisoDoLote, setAvisoDoLote] = useState<string | null>(null);
   const [fEscopo, setFEscopo] = useState<Escopo>('todos');
   const [densidade, setDensidade] = useState<Densidade>('compacto');
   const [movimento, setMovimento] = useState<Map<string, TrabMovimentoDoCartao>>(new Map());
@@ -219,6 +249,10 @@ function TrabalhoConteudo({ visaoInicial, modo }: { visaoInicial: Visao; modo: M
       setTodasListas(p.get('escopo') === 'pessoal' && !!p.get('assigneeUserId'));
       setFOpcao(p.get('opcao') ?? ''); setFAgente(p.get('agente') ?? '');
       setFStatus(p.get('statusId') ?? ''); setFArquivadas(p.get('arquivadas') === '1'); setFCliente(p.get('cliente') ?? '');
+      setFConcluidas(p.get('concluidas') === 'ocultar' ? 'ocultar' : 'mostrar');
+      const agrupar = p.get('agrupar');
+      setFAgrupar((AGRUPAMENTOS as readonly string[]).includes(agrupar ?? '') ? agrupar as Agrupamento : 'nenhum');
+      setSelecionadas(new Set());
       /*
        * DOIS ESCOPOS NA MESMA CHAVE, SEM SE PISAR. `escopo=todos|meus|atrasados`
        * é o recorte do quadro (rodada I2); `escopo=pessoal&assigneeUserId=` é o
@@ -298,7 +332,7 @@ function TrabalhoConteudo({ visaoInicial, modo }: { visaoInicial: Visao; modo: M
           const achada = listaDaImplantacao(e.folders);
           setSemImplantacao(!achada);
           if (achada) trocarLista(achada.listaId);
-        } else if (!listaAtual.current) {
+        } else if (!listaAtual.current && new URLSearchParams(window.location.search).get('pasta') !== PASTA_TODAS) {
           const todas = [...e.folders.flatMap((f) => f.lists), ...e.listasSoltas];
           const endereco = new URLSearchParams(window.location.search);
           const solicitada = endereco.get('lista');
@@ -326,7 +360,8 @@ function TrabalhoConteudo({ visaoInicial, modo }: { visaoInicial: Visao; modo: M
       .then((t) => {
         if (!ativa || new URLSearchParams(window.location.search).get('tarefa') !== tarefaId) return;
         setListaDoLinkAusente(false);
-        if (implantacao) return;
+        // Em "Todas as tarefas" o pop-up abre por cima da visão geral: nenhuma lista é escolhida.
+        if (implantacao || new URLSearchParams(window.location.search).get('pasta') === PASTA_TODAS) return;
         trocarLista(t.listId, listaAtual.current ?? new URLSearchParams(window.location.search).get('lista'));
         mudarEndereco(t.listId, t.id);
       })
@@ -380,6 +415,9 @@ function TrabalhoConteudo({ visaoInicial, modo }: { visaoInicial: Visao; modo: M
 
   const selecionarLista = (id: string) => {
     sairDoPessoal();
+    // Escolher uma lista na árvore sai de "Todas as tarefas" e volta à árvore inteira.
+    if (fPasta === PASTA_TODAS) { setFPasta(''); filtroNoEndereco('pasta', ''); }
+    setSelecionadas(new Set());
     setListaDoLinkAusente(false); trocarLista(id); mudarEndereco(id, null);
   };
 
@@ -399,6 +437,12 @@ function TrabalhoConteudo({ visaoInicial, modo }: { visaoInicial: Visao; modo: M
   /** Trocar de pasta mantém a lista aberta se ela é da pasta; senão abre a primeira da pasta. */
   const selecionarPasta = (pasta: string) => {
     setFPasta(pasta); filtroNoEndereco('pasta', pasta);
+    setSelecionadas(new Set());
+    if (pasta === PASTA_TODAS) {
+      sairDoPessoal();
+      listaAtual.current = null; setListaId(null); mudarEndereco(null, null);
+      return;
+    }
     if (!estrutura) return;
     const daPasta = listasDaPasta(estrutura, pasta);
     if (listaId && daPasta.some((l) => l.id === listaId)) return;
@@ -413,7 +457,7 @@ function TrabalhoConteudo({ visaoInicial, modo }: { visaoInicial: Visao; modo: M
    */
   const abrirTarefa = (id: string, aba?: AbaDaTarefa) => {
     const registro = tarefas?.items.find((tarefa) => tarefa.id === id);
-    if (registro && registro.listId !== listaAtual.current) {
+    if (registro && registro.listId !== listaAtual.current && fPasta !== PASTA_TODAS) {
       trocarLista(registro.listId);
       const url = new URL(window.location.href);
       url.searchParams.set('lista', registro.listId);
@@ -431,17 +475,18 @@ function TrabalhoConteudo({ visaoInicial, modo }: { visaoInicial: Visao; modo: M
   // Resposta antiga nunca publica itens nem erros na consulta seguinte.
   useEffect(() => {
     setTarefas(null);
-    if (!ready || !token || !readable || (!listaId && !todasListas) || !urlPronta) return;
+    const geral = fPasta === PASTA_TODAS;
+    if (!ready || !token || !readable || (!listaId && !todasListas && !geral) || !urlPronta) return;
     let ativa = true;
     setErro(null);
-    const p = new URLSearchParams(todasListas ? {} : { listId: listaId! });
+    const p = new URLSearchParams(geral ? { todas: '1' } : todasListas ? {} : { listId: listaId! });
     if (fAssignee) p.set('assignee', fAssignee);
     if (fPessoa === 'sem-vinculo') p.set('semResponsavel', '1');
     else if (fPessoa) p.set('assigneeUserId', fPessoa);
     if (fBusca) p.set('q', fBusca);
     // Etapa e opção são da lista: em "todas as listas" não valem.
-    if (fOpcao && !todasListas) p.set('opcao', fOpcao);
-    if (fStatus && !todasListas) p.set('statusId', fStatus);
+    if (fOpcao && !todasListas && !geral) p.set('opcao', fOpcao);
+    if (fStatus && !todasListas && !geral) p.set('statusId', fStatus);
     if (fCliente) p.set('cliente', fCliente);
     if (fArquivadas) p.set('arquivadas', '1');
     tarefasDeTrabalho(token, p, () => ativa)
@@ -451,7 +496,7 @@ function TrabalhoConteudo({ visaoInicial, modo }: { visaoInicial: Visao; modo: M
       } })
       .catch((e) => { if (ativa) setErro(e.message); });
     return () => { ativa = false; };
-  }, [ready, token, readable, urlPronta, listaId, todasListas, fAssignee, fPessoa, fBusca, fOpcao, fStatus, fCliente, fArquivadas, bump]);
+  }, [ready, token, readable, urlPronta, listaId, todasListas, fPasta, fAssignee, fPessoa, fBusca, fOpcao, fStatus, fCliente, fArquivadas, bump]);
 
   /*
    * O MOVIMENTO DOS CARTÕES (I2): rodapé, balão, próxima ação e selo. Uma
@@ -483,11 +528,98 @@ function TrabalhoConteudo({ visaoInicial, modo }: { visaoInicial: Visao; modo: M
    */
   const visiveis = useMemo(() => {
     const itens = tarefas?.items ?? [];
-    const meu = (t: TrabTarefaResumo) => (t.assigneeUserId ? t.assigneeUserId === user?.id : ehMeu(t.assignee, user?.name));
+    // Vários responsáveis (versão final): "meus" é ser a principal OU uma das demais, sempre pela conta.
+    const meu = (t: TrabTarefaResumo) => (t.assigneeUserId || t.outrosResponsaveisIds?.length
+      ? t.assigneeUserId === user?.id || !!user?.id && !!t.outrosResponsaveisIds?.includes(user.id)
+      : ehMeu(t.assignee, user?.name));
     return itens.filter((t) => (fEscopo !== 'atrasados' || t.overdue) &&
       (fEscopo !== 'meus' || meu(t)) &&
+      (fConcluidas !== 'ocultar' || t.statusType !== 'closed') &&
       (!fAgente || (fAgente === 'livres' ? !t.agenteId : t.agenteSlug === fAgente)));
-  }, [tarefas, fAgente, fEscopo, user?.id, user?.name]);
+  }, [tarefas, fAgente, fEscopo, fConcluidas, user?.id, user?.name]);
+  const geral = fPasta === PASTA_TODAS;
+  // Sem uma lista aberta: "Todas as tarefas" ou o "todas as listas" da pessoa.
+  const semLista = geral || todasListas;
+  const todasAsListas = useMemo(() => (estrutura ? [...estrutura.folders.flatMap((f) => f.lists), ...estrutura.listasSoltas] : []), [estrutura]);
+  /** A lista virtual do quadro de "Todas": colunas pelo tipo da etapa. */
+  const listaGeral: TrabListaDto = useMemo(() => ({
+    id: PASTA_TODAS, name: 'Todas as tarefas', total: visiveis.length, order: 0, externalId: null, fields: [],
+    statuses: COLUNAS_POR_TIPO.map((c, i) => ({ id: c.id, name: c.name, type: c.type, color: c.color, order: i, total: 0, limite: null })),
+  }) as unknown as TrabListaDto, [visiveis.length]);
+  const visiveisNoQuadroGeral = useMemo(
+    () => visiveis.map((t) => ({ ...t, statusId: `tipo:${t.statusType}` })),
+    [visiveis],
+  );
+
+  /** No quadro de "Todas", soltar numa coluna é ir à primeira etapa daquele tipo na lista da tarefa. */
+  const moverPorTipo = async (t: TrabTarefaResumo, colunaId: string) => {
+    const real = tarefas?.items.find((x) => x.id === t.id);
+    if (!real) return;
+    const destino = etapaDoTipo(todasAsListas, real.listId, colunaId.replace(/^tipo:/, ''));
+    if (!destino) { setErro(`A lista ${real.listName ?? 'da tarefa'} não tem uma etapa desse tipo.`); return; }
+    await moverEtapa(real, destino);
+  };
+
+  /**
+   * ORDEM MANUAL (versão final, F4): a sequência da coluna ou da lista vai inteira,
+   * cada tarefa com a versão lida. Uma versão vencida derruba tudo (409) e a tela pede
+   * para recarregar; nada é gravado pela metade.
+   */
+  const reordenar = async (ids: string[]) => {
+    if (!editable) return;
+    const itens = ids.map((id) => tarefas?.items.find((t) => t.id === id)).filter((t): t is TrabTarefaResumo => !!t);
+    if (itens.length !== ids.length || itens.some((t) => !t.updatedAt)) { setErro('Recarregue a lista antes de reordenar: a versão de alguma tarefa não está disponível.'); return; }
+    try {
+      await apiPost('/trabalho/tarefas/ordem', { itens: itens.map((t) => ({ id: t.id, expectedUpdatedAt: t.updatedAt })) }, token);
+      refresh();
+    } catch (e) {
+      setErro((e as { status?: number }).status === 409 ? 'Alguma tarefa mudou desde que a lista foi lida. Recarregue antes de reordenar.' : (e as Error).message);
+    }
+  };
+
+  /** O prazo pelo calendário: um PATCH com a versão lida, como o campo Prazo do pop-up. */
+  const mudarPrazo = async (id: string, dia: string) => {
+    const t = tarefas?.items.find((x) => x.id === id);
+    if (!editable || !t) return;
+    if (!t.updatedAt) { setErro('Recarregue a lista antes de alterar esta tarefa: a versão não está disponível.'); return; }
+    try {
+      await apiPatch(`/trabalho/tarefas/${t.id}`, { dueDate: prazoDoDia(dia), expectedUpdatedAt: t.updatedAt }, token);
+      refresh();
+    } catch (e) {
+      setErro((e as { status?: number }).status === 409 ? `A tarefa "${t.title}" mudou desde que a lista foi lida. O prazo não foi gravado; recarregue a lista.` : (e as Error).message);
+    }
+  };
+
+  /**
+   * O LOTE (versão final, F4): uma escrita por tarefa, em sequência, cada uma com a
+   * versão lida e pelas regras de sempre (cliente, porta da implantação, auditoria).
+   * Conflito numa não desfaz as outras: a tela diz quantas foram e quantas pedem recarga.
+   */
+  const aplicarLote = async (mudanca: (t: TrabTarefaResumo) => Record<string, unknown> | string, oQue: string) => {
+    if (!editable || !tarefas) return;
+    const alvo = tarefas.items.filter((t) => selecionadas.has(t.id));
+    let ok = 0, conflito = 0;
+    const erros: string[] = [];
+    setAvisoDoLote('Aplicando…');
+    for (const t of alvo) {
+      const m = mudanca(t);
+      if (typeof m === 'string') { erros.push(`${t.title}: ${m}`); continue; }
+      if (!t.updatedAt) { erros.push(`${t.title}: a versão não está disponível`); continue; }
+      try {
+        await apiPatch(`/trabalho/tarefas/${t.id}`, { ...m, expectedUpdatedAt: t.updatedAt }, token);
+        ok += 1;
+      } catch (e) {
+        if ((e as { status?: number }).status === 409) conflito += 1;
+        else erros.push(`${t.title}: ${(e as Error).message}`);
+      }
+    }
+    const partes = [`${oQue}: ${ok} ${ok === 1 ? 'tarefa alterada' : 'tarefas alteradas'}.`];
+    if (conflito) partes.push(`${conflito} ${conflito === 1 ? 'mudou' : 'mudaram'} desde a leitura e não ${conflito === 1 ? 'foi gravada' : 'foram gravadas'}; recarregue e tente de novo.`);
+    if (erros.length) partes.push(erros.join(' · '));
+    setAvisoDoLote(partes.join(' '));
+    setSelecionadas(new Set());
+    refresh();
+  };
   // Com conflito de versão aberto ou etapa gravando, o quadro não aceita outra escrita.
   const quadroEditavel = editable && !conflitoEtapa && !salvandoEtapa;
 
@@ -500,7 +632,7 @@ function TrabalhoConteudo({ visaoInicial, modo }: { visaoInicial: Visao; modo: M
   const pastaDaLista = lista && estrutura ? estrutura.folders.find((f) => f.lists.some((l) => l.id === lista.id))?.id ?? '' : '';
 
   return (
-    <div className={`flex h-full min-w-0 flex-col gap-3 ${visao === 'board' && lista ? 'md:h-[calc(100dvh-52px-2rem)] min-[820px]:h-[calc(100dvh-46px-3rem)]' : ''}`}>
+    <div className={`flex h-full min-w-0 flex-col gap-3 ${visao === 'board' && (lista || geral) ? 'md:h-[calc(100dvh-52px-2rem)] min-[820px]:h-[calc(100dvh-46px-3rem)]' : ''}`}>
       {estrutura && !implantacao && (
         <BarraDePastas
           pastas={pastasDeTopo} temSoltas={estrutura.listasSoltas.length > 0} atual={fPasta}
@@ -572,13 +704,14 @@ function TrabalhoConteudo({ visaoInicial, modo }: { visaoInicial: Visao; modo: M
       )}
 
       {/* miolo: no quadro ele é coluna flexível, para as colunas terem a altura da janela e rolarem cada uma */}
-      <div className={`min-w-0 flex-1 ${visao === 'board' && lista ? 'flex min-h-0 flex-col gap-3' : 'space-y-4'}`}>
+      <div className={`min-w-0 flex-1 ${visao === 'board' && (lista || geral) ? 'flex min-h-0 flex-col gap-3' : 'space-y-4'}`}>
         <div className="flex flex-wrap items-end justify-between gap-3">
           <div>
-            <h1 className="text-xl font-semibold">{implantacao ? 'Implantação de clientes' : todasListas ? 'Tarefas da pessoa em todas as listas' : lista?.name ?? 'Trabalho'}</h1>
+            <h1 className="text-xl font-semibold">{implantacao ? 'Implantação de clientes' : geral ? 'Todas as tarefas' : todasListas ? 'Tarefas da pessoa em todas as listas' : lista?.name ?? 'Trabalho'}</h1>
             <p className="text-sm text-muted">
               {implantacao && lista ? `${PASTA_DA_IMPLANTACAO} · ${lista.name} · ` : ''}
-              {!listaId && !todasListas && estrutura ? 'Selecione uma lista para ver as tarefas.' : tarefas ? `${visiveis.length} ${visiveis.length === 1 ? 'tarefa' : 'tarefas'}${visiveis.length !== tarefas.total ? ` de ${tarefas.total} na consulta` : ''}` : erro ? 'Consulta indisponível' : 'Carregando…'}
+              {geral ? 'Todas as pastas e listas, sem card repetido e sem cadastro como tarefa · ' : ''}
+              {!listaId && !semLista && estrutura ? 'Selecione uma lista para ver as tarefas.' : tarefas ? `${visiveis.length} ${visiveis.length === 1 ? 'tarefa' : 'tarefas'}${visiveis.length !== tarefas.total ? ` de ${tarefas.total} na consulta` : ''}` : erro ? 'Consulta indisponível' : 'Carregando…'}
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
@@ -618,7 +751,7 @@ function TrabalhoConteudo({ visaoInicial, modo }: { visaoInicial: Visao; modo: M
                 </option>
               ))}
             </select>
-            {!todasListas && camposDaLista.filter((c) => c.type === 'drop_down' && c.options.length > 0).map((c) => (
+            {!semLista && camposDaLista.filter((c) => c.type === 'drop_down' && c.options.length > 0).map((c) => (
               <select
                 key={c.id}
                 aria-label={`Filtrar por ${c.name}`}
@@ -635,12 +768,22 @@ function TrabalhoConteudo({ visaoInicial, modo }: { visaoInicial: Visao; modo: M
               <option value="sem">Sem cliente (para limpar)</option>
               {clientes.filter((c) => c.id !== 'interno').map((c) => <option key={c.id} value={c.id}>{c.nome}</option>)}
             </select>
-            <select disabled={todasListas} aria-label="Filtrar por status" value={fStatus} onChange={(e) => { setFStatus(e.target.value); filtroNoEndereco('statusId', e.target.value); }} className="rounded-lg border border-border bg-surface px-2 py-1.5 text-sm">
+            <select disabled={semLista} aria-label="Filtrar por status" value={fStatus} onChange={(e) => { setFStatus(e.target.value); filtroNoEndereco('statusId', e.target.value); }} className="rounded-lg border border-border bg-surface px-2 py-1.5 text-sm">
 
               <option value="">Todos os status</option>
               {lista?.statuses.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
             </select>
             <label className="text-sm text-muted"><input type="checkbox" checked={fArquivadas} onChange={(e) => { setFArquivadas(e.target.checked); filtroNoEndereco('arquivadas', e.target.checked ? '1' : ''); }} /> Incluir arquivadas</label>
+            {/* Concluídas: mostrar ou ocultar (versão final, F4), em todas as visões. */}
+            <button
+              type="button"
+              data-testid="trabalho-concluidas"
+              aria-pressed={fConcluidas === 'ocultar'}
+              onClick={() => { const v = fConcluidas === 'ocultar' ? 'mostrar' : 'ocultar'; setFConcluidas(v); filtroNoEndereco('concluidas', v === 'ocultar' ? 'ocultar' : ''); }}
+              className={`rounded-lg border border-border px-2.5 py-1.5 text-sm max-md:min-h-[44px] ${fConcluidas === 'ocultar' ? 'bg-brand/15 text-text' : 'bg-surface text-muted hover:text-text'}`}
+            >
+              {fConcluidas === 'ocultar' ? 'Mostrar concluídas' : 'Ocultar concluídas'}
+            </button>
             <div className="flex overflow-hidden rounded-lg border border-border" role="group" aria-label="Quais tarefas">
               {ESCOPOS.map((e) => (
                 <button
@@ -660,15 +803,19 @@ function TrabalhoConteudo({ visaoInicial, modo }: { visaoInicial: Visao; modo: M
             <VistasDoQuadro
               token={token}
               enderecoTemFiltro={['assignee', 'assigneeUserId', 'semResponsavel', 'q', 'opcao', 'agente', 'statusId', 'escopo', 'overdue', 'cliente', 'visao'].some((k) => typeof window !== 'undefined' && new URLSearchParams(window.location.search).has(k))}
-              atual={{ densidade, visao, filtros: { assignee: fAssignee, agente: fAgente, statusId: fStatus, cliente: fCliente, escopo: fEscopo, q: fBusca } }}
+              // Agrupamento e concluídas só entram quando fogem do padrão: a vista salva antes deles continua igual.
+              atual={{ densidade, visao, filtros: { assignee: fAssignee, agente: fAgente, statusId: fStatus, cliente: fCliente, escopo: fEscopo, q: fBusca },
+                ...(fAgrupar !== 'nenhum' ? { agrupamento: fAgrupar } : {}), ...(fConcluidas === 'ocultar' ? { concluidas: 'ocultar' as const } : {}) }}
               aplicar={(v: VistaQuadro) => {
                 // A vista grava o recorte do quadro na chave `escopo`: sai do "todas as listas".
                 setTodasListas(false);
                 escolherDensidade(v.densidade); setVisao(v.visao);
                 setFAssignee(v.filtros.assignee); setFAgente(v.filtros.agente); setFStatus(v.filtros.statusId);
                 setFCliente(v.filtros.cliente); setFEscopo(v.filtros.escopo); setFBusca(v.filtros.q);
+                setFAgrupar(v.agrupamento ?? 'nenhum'); setFConcluidas(v.concluidas ?? 'mostrar');
                 const url = new URL(window.location.href);
-                for (const [k, val] of [['assignee', v.filtros.assignee], ['agente', v.filtros.agente], ['statusId', v.filtros.statusId], ['cliente', v.filtros.cliente], ['escopo', v.filtros.escopo === 'todos' ? '' : v.filtros.escopo], ['q', v.filtros.q], ['visao', v.visao === 'board' ? '' : 'lista']] as const) {
+                for (const [k, val] of [['assignee', v.filtros.assignee], ['agente', v.filtros.agente], ['statusId', v.filtros.statusId], ['cliente', v.filtros.cliente], ['escopo', v.filtros.escopo === 'todos' ? '' : v.filtros.escopo], ['q', v.filtros.q], ['visao', v.visao === 'board' ? '' : v.visao === 'calendario' ? 'calendario' : 'lista'],
+                  ['agrupar', v.agrupamento && v.agrupamento !== 'nenhum' ? v.agrupamento : ''], ['concluidas', v.concluidas === 'ocultar' ? 'ocultar' : '']] as const) {
                   if (val) url.searchParams.set(k, val); else url.searchParams.delete(k);
                 }
                 window.history.replaceState(window.history.state, '', `${url.pathname}${url.search}${url.hash}`);
@@ -676,19 +823,30 @@ function TrabalhoConteudo({ visaoInicial, modo }: { visaoInicial: Visao; modo: M
             />
             {/* Quadro e Lista: a mesma fonte (WorkTask), duas formas de ver. */}
             <div className="flex overflow-hidden rounded-lg border border-border" role="group" aria-label="Visão das tarefas">
-              {(['board', 'tabela'] as const).map((v) => (
+              {(['board', 'tabela', 'calendario'] as const).map((v) => (
                 <button
                   key={v}
-                  data-testid={v === 'board' ? 'trabalho-visao-quadro' : 'trabalho-visao-lista'}
-                  // O quadro é de uma lista: "todas as listas" só existe na Lista.
-                  onClick={() => { if (v === 'board') sairDoPessoal(); setVisao(v); filtroNoEndereco('visao', v === 'board' ? 'board' : 'lista'); }}
+                  data-testid={v === 'board' ? 'trabalho-visao-quadro' : v === 'tabela' ? 'trabalho-visao-lista' : 'trabalho-visao-calendario'}
+                  // O quadro da pessoa em todas as listas não existe: escolher Quadro sai dele.
+                  onClick={() => { if (v === 'board') sairDoPessoal(); setVisao(v); setSelecionadas(new Set()); filtroNoEndereco('visao', v === 'board' ? 'board' : v === 'tabela' ? 'lista' : 'calendario'); }}
                   aria-pressed={visao === v}
                   className={`px-3 py-1.5 text-sm ${visao === v ? 'bg-brand/15 text-text' : 'bg-surface text-muted hover:text-text'}`}
                 >
-                  {v === 'board' ? 'Quadro' : 'Lista'}
+                  {v === 'board' ? 'Quadro' : v === 'tabela' ? 'Lista' : 'Calendário'}
                 </button>
               ))}
             </div>
+            {visao === 'tabela' && (
+              <select
+                aria-label="Agrupar a lista"
+                data-testid="trabalho-agrupar"
+                value={fAgrupar}
+                onChange={(e) => { const a = e.target.value as Agrupamento; setFAgrupar(a); filtroNoEndereco('agrupar', a === 'nenhum' ? '' : a); }}
+                className="rounded-lg border border-border bg-surface px-2 py-1.5 text-sm outline-none"
+              >
+                {AGRUPAMENTOS.map((a) => <option key={a} value={a}>{a === 'nenhum' ? 'Sem grupos' : `Agrupar: ${ROTULO_DO_AGRUPAMENTO[a]}`}</option>)}
+              </select>
+            )}
             {visao === 'board' && (
               <div className="flex overflow-hidden rounded-lg border border-border" role="group" aria-label="Densidade do quadro">
                 {DENSIDADES.map((d) => (
@@ -761,16 +919,66 @@ function TrabalhoConteudo({ visaoInicial, modo }: { visaoInicial: Visao; modo: M
           <dl className="text-xs"><dt>Tarefa</dt><dd>{conflitoEtapa.titulo}</dd><dt>Etapa</dt><dd>{conflitoEtapa.etapa}</dd></dl>
           <button className="underline" onClick={() => { recargaEtapa.current = bump + 1; refresh(); }}>Recarregar lista</button>
         </div>}
-        {lista && tarefas && visao === 'board' && (
+        {lista && !geral && tarefas && visao === 'board' && (
           <Board
-            lista={lista} tarefas={visiveis} editable={quadroEditavel} podeCriar={quadroEditavel && !listaEhImplantacao} token={token}
-            agentes={estrutura?.agentes ?? []} trilhos={trilhos} movimento={movimento} densidade={densidade}
-            onAbrir={abrirTarefa} onMudou={refresh} onErro={setErro} onMoverEtapa={moverEtapa}
+            lista={fConcluidas === 'ocultar' ? { ...lista, statuses: lista.statuses.filter((st) => st.type !== 'closed') } : lista}
+            tarefas={visiveis} editable={quadroEditavel} podeCriar={quadroEditavel && !listaEhImplantacao} token={token}
+            agentes={estrutura?.agentes ?? []} pessoas={estrutura?.pessoas ?? []} trilhos={trilhos} movimento={movimento} densidade={densidade}
+            onAbrir={abrirTarefa} onMudou={refresh} onErro={setErro} onMoverEtapa={moverEtapa} onReordenar={reordenar}
           />
         )}
-        {/* A Lista também serve o "todas as listas" (escopo pessoal), sem lista aberta e sem campos de uma lista só. */}
-        {(lista || todasListas) && tarefas && visao === 'tabela' && (
-          <Tabela tarefas={visiveis} campos={todasListas ? [] : camposDaLista.map((c) => c.name)} trilhos={trilhos} onAbrir={abrirTarefa} />
+        {/* "Todas as tarefas" no quadro: colunas pelo tipo da etapa; soltar leva à primeira etapa do tipo na lista da tarefa. */}
+        {geral && tarefas && visao === 'board' && (
+          <Board
+            lista={fConcluidas === 'ocultar' ? { ...listaGeral, statuses: listaGeral.statuses.filter((st) => st.type !== 'closed') } : listaGeral}
+            tarefas={visiveisNoQuadroGeral} editable={quadroEditavel} podeCriar={false} token={token}
+            agentes={estrutura?.agentes ?? []} pessoas={estrutura?.pessoas ?? []} trilhos={trilhos} movimento={movimento} densidade={densidade}
+            onAbrir={abrirTarefa} onMudou={refresh} onErro={setErro} onMoverEtapa={moverPorTipo} onReordenar={reordenar}
+          />
+        )}
+        {/* A Lista também serve "Todas" e o "todas as listas" da pessoa, sem lista aberta e sem campos de uma lista só. */}
+        {(lista || semLista) && tarefas && visao === 'tabela' && (
+          <>
+            {avisoDoLote && (
+              <p role="status" data-testid="trabalho-lote-aviso" className="flex items-center justify-between gap-2 rounded-lg border border-border bg-surface px-3 py-2 text-sm">
+                <span>{avisoDoLote}</span>
+                <button type="button" aria-label="Fechar aviso" onClick={() => setAvisoDoLote(null)}><X size={14} /></button>
+              </p>
+            )}
+            {editable && selecionadas.size > 0 && estrutura && (
+              <BarraDoLote
+                quantas={selecionadas.size} pessoas={estrutura.pessoas ?? []}
+                etapas={semLista ? null : lista?.statuses ?? null}
+                onLimpar={() => setSelecionadas(new Set())}
+                onEtapa={(destino) => void aplicarLote((t) => {
+                  if (!destino.startsWith('tipo:')) return { statusId: destino };
+                  return etapaDoTipo(todasAsListas, t.listId, destino.slice(5)) ?? 'a lista não tem uma etapa desse tipo';
+                }, 'Etapa')}
+                onConcluir={() => void aplicarLote((t) => {
+                  const fechada = etapaDoTipo(todasAsListas, t.listId, 'closed');
+                  return fechada ? { statusId: fechada } : 'a lista não tem etapa de concluída';
+                }, 'Concluir')}
+                onResponsavel={(id) => void aplicarLote(() => ({ assigneeUserId: id }), 'Responsável')}
+                onPrazo={(dia) => void aplicarLote(() => ({ dueDate: dia ? prazoDoDia(dia) : null }), 'Prazo')}
+              />
+            )}
+            <Tabela
+              tarefas={visiveis} campos={semLista ? [] : camposDaLista.map((c) => c.name)} trilhos={trilhos} onAbrir={abrirTarefa}
+              mostrarLista={semLista} pessoas={estrutura?.pessoas ?? []} agrupamento={fAgrupar}
+              selecao={editable ? { marcadas: selecionadas, mudar: setSelecionadas } : null}
+              onReordenar={editable && !conflitoEtapa ? reordenar : null}
+            />
+          </>
+        )}
+        {(lista || semLista) && tarefas && visao === 'calendario' && (
+          <CalendarioDeTarefas
+            itens={visiveis.map((t) => ({
+              id: t.id, titulo: t.title, prazo: t.dueDate, concluida: t.statusType === 'closed',
+              detalhe: [t.clienteNome, t.assigneeUserName, semLista ? t.listName : null].filter(Boolean).join(' · '),
+            }))}
+            podeEditar={quadroEditavel} onAbrir={(id) => abrirTarefa(id)} onMudarPrazo={mudarPrazo}
+            testid="trabalho-calendario"
+          />
         )}
       </div>
       </div>
@@ -778,8 +986,8 @@ function TrabalhoConteudo({ visaoInicial, modo }: { visaoInicial: Visao; modo: M
       {painelId && estrutura && (
         <PainelTarefa
           key={`${user?.id ?? ''}:${token}:${painelId}`} id={painelId} estrutura={estrutura} editable={editable && !conflitoEtapa} token={token} usuarioId={user?.id ?? null}
-          aba={tarefaUrl.aba} onTrocarAba={tarefaUrl.trocarAba}
-          onFechar={fecharTarefa} onMoverLista={(id) => { trocarLista(id); mudarEndereco(id, painelId); }}
+          aba={tarefaUrl.aba} onTrocarAba={tarefaUrl.trocarAba} onAbrirOutra={(outra) => abrirTarefa(outra)}
+          onFechar={fecharTarefa} onMoverLista={(id) => { if (geral) { refresh(); return; } trocarLista(id); mudarEndereco(id, painelId); }}
           onMudou={refresh} onErro={setErro}
         />
       )}
@@ -841,13 +1049,15 @@ function ContagemDaEtapa({ quantas, limite }: { quantas: number; limite: number 
  *    da caixa de entrada (`GET /trabalho/quadro/movimento`). Falhar ali só tira
  *    o rodapé.
  */
-function Board({ lista, tarefas, editable, podeCriar, token, agentes, trilhos, movimento, densidade, onAbrir, onMudou, onErro, onMoverEtapa }: {
+function Board({ lista, tarefas, editable, podeCriar, token, agentes, pessoas = [], trilhos, movimento, densidade, onAbrir, onMudou, onErro, onMoverEtapa, onReordenar }: {
   lista: TrabListaDto; tarefas: TrabTarefaResumo[]; editable: boolean; podeCriar: boolean; token: string | null;
-  agentes: TrabAgenteDto[]; trilhos: Map<string, TrilhoDoCartao>;
+  agentes: TrabAgenteDto[]; pessoas?: PessoaDaEstrutura[]; trilhos: Map<string, TrilhoDoCartao>;
   movimento: Map<string, TrabMovimentoDoCartao>; densidade: Densidade;
   onAbrir: (id: string, aba?: AbaDaTarefa) => void; onMudou: () => void; onErro: (m: string) => void;
   /** Toda troca de etapa (arraste e seletor) passa pela versão lida (`expectedUpdatedAt`). */
   onMoverEtapa: (t: TrabTarefaResumo, statusId: string) => Promise<void>;
+  /** Ordem manual: soltar um cartão sobre outro da MESMA coluna grava a sequência da coluna. */
+  onReordenar?: (ids: string[]) => Promise<void>;
 }) {
   /*
    * ARRASTAR E SOLTAR com a API nativa do HTML5, sem biblioteca: dependência
@@ -865,6 +1075,17 @@ function Board({ lista, tarefas, editable, podeCriar, token, agentes, trilhos, m
     const t = tarefas.find((x) => x.id === id);
     if (!t || t.statusId === statusId) return;
     void onMoverEtapa(t, statusId);
+  };
+  /** Soltar sobre um cartão da mesma coluna: o arrastado entra antes dele (a ordem manual). */
+  const soltarSobre = (alvo: TrabTarefaResumo, e: React.DragEvent) => {
+    const id = e.dataTransfer.getData('text/plain');
+    const t = tarefas.find((x) => x.id === id);
+    if (!t || t.statusId !== alvo.statusId) return; // outra coluna: a coluna trata (troca de etapa)
+    e.preventDefault(); e.stopPropagation(); setSobre(null);
+    if (t.id === alvo.id || !onReordenar) return;
+    const seq = tarefas.filter((x) => x.statusId === alvo.statusId && x.id !== t.id).map((x) => x.id);
+    seq.splice(Math.max(0, seq.indexOf(alvo.id)), 0, t.id);
+    void onReordenar(seq);
   };
   useEffect(() => {
     if (!balao) return;
@@ -928,7 +1149,8 @@ function Board({ lista, tarefas, editable, podeCriar, token, agentes, trilhos, m
             <div className="min-h-0 flex-1 space-y-1.5 overflow-y-auto p-1.5" data-rolagem-da-coluna>
               {itens.map((t) => (
                 <Cartao
-                  key={t.id} t={t} lista={lista} editable={editable} token={token} agentes={agentes}
+                  key={t.id} t={t} lista={lista} editable={editable} token={token} agentes={agentes} pessoas={pessoas}
+                  onSoltarSobre={editable ? (e) => soltarSobre(t, e) : undefined}
                   trilho={trilhos.get(t.id) ?? null} mov={movimento.get(t.id) ?? null} densidade={densidade}
                   balaoAberto={balao?.id === t.id}
                   onBalao={(ancora) => setBalao(ancora ? { id: t.id, ancora } : null)}
@@ -952,9 +1174,10 @@ function Board({ lista, tarefas, editable, podeCriar, token, agentes, trilhos, m
 
 const ATRASO_DO_BALAO_MS = 350;
 
-function Cartao({ t, lista, editable, token, agentes, trilho, mov, densidade, balaoAberto, onBalao, onAbrir, onMudou, onErro, onMoverEtapa }: {
+function Cartao({ t, lista, editable, token, agentes, pessoas = [], onSoltarSobre, trilho, mov, densidade, balaoAberto, onBalao, onAbrir, onMudou, onErro, onMoverEtapa }: {
   t: TrabTarefaResumo; lista: TrabListaDto; editable: boolean; token: string | null;
-  agentes: TrabAgenteDto[]; trilho: TrilhoDoCartao | null; mov: TrabMovimentoDoCartao | null; densidade: Densidade;
+  agentes: TrabAgenteDto[]; pessoas?: PessoaDaEstrutura[]; onSoltarSobre?: (e: React.DragEvent) => void;
+  trilho: TrilhoDoCartao | null; mov: TrabMovimentoDoCartao | null; densidade: Densidade;
   balaoAberto: boolean; onBalao: (ancora: DOMRect | null) => void;
   onAbrir: (id: string, aba?: AbaDaTarefa) => void; onMudou: () => void; onErro: (m: string) => void;
   onMoverEtapa: (t: TrabTarefaResumo, statusId: string) => Promise<void>;
@@ -984,6 +1207,7 @@ function Cartao({ t, lista, editable, token, agentes, trilho, mov, densidade, ba
       data-densidade={densidade}
       draggable={editable}
       onDragStart={editable ? (e) => { esconder(); e.dataTransfer.setData('text/plain', t.id); e.dataTransfer.effectAllowed = 'move'; } : undefined}
+      onDrop={onSoltarSobre}
       onMouseEnter={() => mostrar(ATRASO_DO_BALAO_MS)}
       onMouseLeave={esconder}
     >
@@ -1044,6 +1268,8 @@ function Cartao({ t, lista, editable, token, agentes, trilho, mov, densidade, ba
             {t.priority !== 'normal' && pr && <Flag size={11} style={{ color: pr.cor }} />}
             {/* O responsável é a CONTA (produção, 14/10); o nome antigo em texto fica só no painel. */}
             <ResponsavelDaTarefa tarefa={t} />
+            <OutrosResponsaveis ids={t.outrosResponsaveisIds ?? []} pessoas={pessoas} />
+            {t.recorrencia && <span title={descreverRecorrencia(t.recorrencia)} className="flex items-center"><Repeat size={10} /><span className="sr-only">{descreverRecorrencia(t.recorrencia)}</span></span>}
             {t.dueDate && <span className={t.overdue ? 'text-bad' : ''}>{dataBR(t.dueDate)}</span>}
             {t.comments > 0 && <span className="flex items-center gap-0.5"><MessageSquare size={10} />{t.comments}</span>}
             {t.subtasks > 0 && <span>{t.subtasks} sub</span>}
@@ -1291,17 +1517,61 @@ function QuickAdd({ listaId, statusId, token, clienteInicial, onCliente, onDone,
 
 // ---------- visão tabela ----------
 
-// Sem `lista`: a mesma tabela serve uma lista e o "todas as listas" do escopo pessoal.
-function Tabela({ tarefas, campos, trilhos, onAbrir }: {
+type PessoaDaEstrutura = NonNullable<TrabEstrutura['pessoas']>[number];
+
+/*
+ * A LISTA (tabela). Serve uma lista, "Todas as tarefas" e o "todas as listas" da
+ * pessoa. Versão final, F4: seleção em lote (a caixa de cada linha e a do cabeçalho),
+ * agrupamento das vistas (inclusive a régua de prazo do Lucas) e ordem manual
+ * (arrastar a linha sobre outra grava a sequência da lista, ou do grupo).
+ */
+function Tabela({ tarefas, campos, trilhos, onAbrir, mostrarLista = false, pessoas = [], agrupamento = 'nenhum', selecao = null, onReordenar = null }: {
   tarefas: TrabTarefaResumo[]; campos: string[]; trilhos: Map<string, TrilhoDoCartao>;
   onAbrir: (id: string, aba?: AbaDaTarefa) => void;
+  mostrarLista?: boolean; pessoas?: PessoaDaEstrutura[]; agrupamento?: Agrupamento;
+  selecao?: { marcadas: Set<string>; mudar: (s: Set<string>) => void } | null;
+  onReordenar?: ((ids: string[]) => Promise<void>) | null;
 }) {
+  const [arrastando, setArrastando] = useState<string | null>(null);
+  const grupos = useMemo(() => {
+    const vista = tarefas.map((t) => ({
+      t, titulo: t.title, status: t.statusName, statusTipo: t.statusType, lista: t.listName ?? '',
+      cliente: t.clienteNome, prioridade: t.priority, prazo: t.dueDate, criadaEm: '',
+    }));
+    return agruparTarefas(vista, agrupamento, new Date()).map((g) => ({ ...g, itens: g.itens.map((x) => x.t) }));
+  }, [tarefas, agrupamento]);
+  const colunas = 7 + campos.length + (mostrarLista ? 1 : 0) + (selecao ? 1 : 0);
+  const todasMarcadas = !!selecao && tarefas.length > 0 && tarefas.every((t) => selecao.marcadas.has(t.id));
+  const marcar = (id: string, sim: boolean) => {
+    if (!selecao) return;
+    const n = new Set(selecao.marcadas);
+    if (sim) n.add(id); else n.delete(id);
+    selecao.mudar(n);
+  };
+  const soltar = (grupo: TrabTarefaResumo[], alvo: string) => {
+    const id = arrastando;
+    setArrastando(null);
+    if (!id || id === alvo || !onReordenar || !grupo.some((t) => t.id === id)) return;
+    const seq = grupo.map((t) => t.id).filter((x) => x !== id);
+    seq.splice(Math.max(0, seq.indexOf(alvo)), 0, id);
+    void onReordenar(seq);
+  };
   return (
     <div className="overflow-x-auto rounded-xl border border-border">
       <table className="w-full min-w-[720px] text-sm">
         <thead>
           <tr className="border-b border-border bg-surface text-left text-[11px] uppercase tracking-wide text-muted">
+            {selecao && (
+              <th className="w-8 px-2 py-2">
+                <input
+                  type="checkbox" aria-label="Selecionar todas as tarefas visíveis" data-testid="trabalho-selecionar-todas"
+                  checked={todasMarcadas}
+                  onChange={(e) => selecao.mudar(e.target.checked ? new Set(tarefas.map((t) => t.id)) : new Set())}
+                />
+              </th>
+            )}
             <th className="px-3 py-2">Tarefa</th>
+            {mostrarLista && <th className="px-3 py-2">Lista</th>}
             <th className="px-3 py-2">Cliente</th>
             <th className="px-3 py-2">Status</th>
             <th className="px-3 py-2">Prioridade</th>
@@ -1312,37 +1582,99 @@ function Tabela({ tarefas, campos, trilhos, onAbrir }: {
             {campos.map((c) => <th key={c} className="px-3 py-2">{c}</th>)}
           </tr>
         </thead>
-        <tbody>
-          {tarefas.map((t) => (
-            <tr key={t.id} data-work-task-id={t.id} onClick={() => onAbrir(t.id)} className="cursor-pointer border-b border-border/50 hover:bg-surface-2/50">
-              <td className="px-3 py-2">
-                <button onClick={(e) => { e.stopPropagation(); onAbrir(t.id); }} className="text-left hover:text-brand focus-visible:outline-brand">{t.title}</button>
-                {trilhos.get(t.id) && <AtalhoDoTrilho trilho={trilhos.get(t.id)!} onAbrir={() => onAbrir(t.id, 'trilho')} />}
-              </td>
-              <td className="px-3 py-2">{t.clienteNome ?? <span className="font-os-mono text-[10px] text-warn">sem cliente</span>}</td>
-              <td className="px-3 py-2">
-                <span className="rounded px-1.5 py-0.5 text-[11px] capitalize" style={{ background: `${t.statusColor}26`, color: t.statusColor }}>
-                  {t.statusName}
-                </span>
-              </td>
-              <td className="px-3 py-2 capitalize">{t.priority}</td>
-              <td className="px-3 py-2"><ResponsavelDaTarefa tarefa={t} /></td>
-              <td className="px-3 py-2" title={t.agenteId ? `Assumida em ${dataHoraBR(t.agenteEm)}` : undefined}>
-                {nomeDoAgente(t) ?? '—'}
-              </td>
-              <td className={`px-3 py-2 ${t.overdue ? 'text-bad' : ''}`}>{dataBR(t.dueDate)}</td>
-              {campos.map((c) => {
-                const v = t.values.find((x) => x.fieldName === c);
-                const valor = v?.type === 'moeda' && v.value ? formatarValorMonetario(v.value) : v?.value;
-                return <td key={c} className="px-3 py-2 text-muted">{v?.optionName ?? valor ?? '—'}</td>;
-              })}
-            </tr>
-          ))}
-          {tarefas.length === 0 && (
-            <tr><td colSpan={7 + campos.length} className="px-3 py-6 text-center text-muted">Nada por aqui.</td></tr>
-          )}
-        </tbody>
+        {grupos.map((g) => (
+          <tbody key={g.chave} data-grupo={g.chave}>
+            {agrupamento !== 'nenhum' && (
+              <tr className="border-b border-border bg-surface-2/60">
+                <th colSpan={colunas} scope="colgroup" className="px-3 py-1.5 text-left font-os-mono text-[11px] uppercase tracking-wide text-muted">
+                  {g.rotulo} · {g.itens.length}
+                </th>
+              </tr>
+            )}
+            {g.itens.map((t) => (
+              <tr
+                key={t.id} data-work-task-id={t.id} onClick={() => onAbrir(t.id)}
+                draggable={!!onReordenar}
+                onDragStart={onReordenar ? (e) => { setArrastando(t.id); e.dataTransfer.setData('text/plain', t.id); e.dataTransfer.effectAllowed = 'move'; } : undefined}
+                onDragEnd={() => setArrastando(null)}
+                onDragOver={onReordenar ? (e) => { if (arrastando) e.preventDefault(); } : undefined}
+                onDrop={onReordenar ? (e) => { e.preventDefault(); soltar(g.itens, t.id); } : undefined}
+                className={`cursor-pointer border-b border-border/50 hover:bg-surface-2/50 ${arrastando === t.id ? 'opacity-50' : ''}`}
+              >
+                {selecao && (
+                  <td className="px-2 py-2" onClick={(e) => e.stopPropagation()}>
+                    <input
+                      type="checkbox" aria-label={`Selecionar ${t.title}`} data-testid={`trabalho-selecionar-${t.id}`}
+                      checked={selecao.marcadas.has(t.id)} onChange={(e) => marcar(t.id, e.target.checked)}
+                    />
+                  </td>
+                )}
+                <td className="px-3 py-2">
+                  <button onClick={(e) => { e.stopPropagation(); onAbrir(t.id); }} className="text-left hover:text-brand focus-visible:outline-brand">{t.title}</button>
+                  {t.recorrencia && <span title={descreverRecorrencia(t.recorrencia)} className="ml-1 inline-flex align-middle text-muted"><Repeat size={11} /><span className="sr-only">{descreverRecorrencia(t.recorrencia)}</span></span>}
+                  {trilhos.get(t.id) && <AtalhoDoTrilho trilho={trilhos.get(t.id)!} onAbrir={() => onAbrir(t.id, 'trilho')} />}
+                </td>
+                {mostrarLista && <td className="px-3 py-2 text-muted">{t.listName ?? '—'}</td>}
+                <td className="px-3 py-2">{t.clienteNome ?? <span className="font-os-mono text-[10px] text-warn">sem cliente</span>}</td>
+                <td className="px-3 py-2">
+                  <span className="rounded px-1.5 py-0.5 text-[11px] capitalize" style={{ background: `${t.statusColor}26`, color: t.statusColor }}>
+                    {t.statusName}
+                  </span>
+                </td>
+                <td className="px-3 py-2 capitalize">{t.priority}</td>
+                <td className="px-3 py-2"><ResponsavelDaTarefa tarefa={t} /> <OutrosResponsaveis ids={t.outrosResponsaveisIds ?? []} pessoas={pessoas} /></td>
+                <td className="px-3 py-2" title={t.agenteId ? `Assumida em ${dataHoraBR(t.agenteEm)}` : undefined}>
+                  {nomeDoAgente(t) ?? '—'}
+                </td>
+                <td className={`px-3 py-2 ${t.overdue ? 'text-bad' : ''}`}>{dataBR(t.dueDate)}</td>
+                {campos.map((c) => {
+                  const v = t.values.find((x) => x.fieldName === c);
+                  const valor = v?.type === 'moeda' && v.value ? formatarValorMonetario(v.value) : v?.value;
+                  return <td key={c} className="px-3 py-2 text-muted">{v?.optionName ?? valor ?? '—'}</td>;
+                })}
+              </tr>
+            ))}
+          </tbody>
+        ))}
+        {tarefas.length === 0 && (
+          <tbody><tr><td colSpan={colunas} className="px-3 py-6 text-center text-muted">Nada por aqui.</td></tr></tbody>
+        )}
       </table>
+    </div>
+  );
+}
+
+/*
+ * A BARRA DO LOTE (versão final, F4): etapa, responsável, prazo e concluir para as
+ * tarefas marcadas. Numa lista, as etapas são as dela; em "Todas" (várias listas), o
+ * tipo da etapa, que cada tarefa traduz para a primeira etapa daquele tipo na lista dela.
+ */
+function BarraDoLote({ quantas, pessoas, etapas, onLimpar, onEtapa, onConcluir, onResponsavel, onPrazo }: {
+  quantas: number; pessoas: PessoaDaEstrutura[]; etapas: TrabListaDto['statuses'] | null;
+  onLimpar: () => void; onEtapa: (statusId: string) => void; onConcluir: () => void;
+  onResponsavel: (id: string | null) => void; onPrazo: (dia: string | null) => void;
+}) {
+  const [dia, setDia] = useState('');
+  const campo = 'rounded-md border border-border bg-surface px-2 py-1 text-sm outline-none focus:border-brand-dim';
+  return (
+    <div role="group" aria-label="Alterar as tarefas selecionadas" data-testid="trabalho-lote" className="sticky top-2 z-30 flex flex-wrap items-center gap-2 rounded-lg border border-brand-dim bg-surface px-3 py-2">
+      <span className="text-sm"><b className="font-os-mono">{quantas}</b> {quantas === 1 ? 'selecionada' : 'selecionadas'}</span>
+      <select aria-label="Mover as selecionadas de etapa" value="" onChange={(e) => e.target.value && onEtapa(e.target.value)} className={campo}>
+        <option value="">Etapa…</option>
+        {(etapas ?? COLUNAS_POR_TIPO).map((st) => <option key={st.id} value={st.id}>{st.name}</option>)}
+      </select>
+      <select aria-label="Responsável das selecionadas" value="" onChange={(e) => e.target.value && onResponsavel(e.target.value === 'sem-vinculo' ? null : e.target.value)} className={campo}>
+        <option value="">Responsável…</option>
+        {pessoas.filter((p) => p.isActive).map((p) => <option key={p.id} value={p.id}>{rotuloDaPessoa(p)}</option>)}
+        <option value="sem-vinculo">Sem vínculo de pessoa</option>
+      </select>
+      <label className="flex items-center gap-1.5 text-sm text-muted">
+        Prazo
+        <input type="date" aria-label="Prazo das selecionadas" value={dia} onChange={(e) => setDia(e.target.value)} className={campo} />
+        <button type="button" disabled={!dia} onClick={() => { onPrazo(dia); setDia(''); }} className="rounded-md border border-border px-2 py-1 text-sm hover:border-brand-dim disabled:opacity-50">Aplicar</button>
+      </label>
+      <button type="button" data-testid="trabalho-lote-concluir" onClick={onConcluir} className="rounded-md bg-brand/15 px-3 py-1 text-sm text-brand hover:bg-brand/25">Concluir</button>
+      <button type="button" onClick={onLimpar} className="ml-auto text-sm text-muted hover:text-text">Limpar seleção</button>
     </div>
   );
 }
@@ -1416,7 +1748,7 @@ export function TarefaFlutuante({ tarefa, onMudou }: { tarefa: ReturnType<typeof
       {estrutura && (
         <PainelTarefa
           key={`${user?.id ?? ''}:${token}:${tarefa.tarefaId}`} id={tarefa.tarefaId} estrutura={estrutura} editable={can('tarefas.editar')}
-          token={token} usuarioId={user?.id ?? null} aba={tarefa.aba} onTrocarAba={tarefa.trocarAba}
+          token={token} usuarioId={user?.id ?? null} aba={tarefa.aba} onTrocarAba={tarefa.trocarAba} onAbrirOutra={(outra) => tarefa.abrir(outra)}
           onFechar={tarefa.fechar} onMoverLista={() => mudou()} onMudou={mudou} onErro={setErro}
         />
       )}
@@ -1433,9 +1765,11 @@ export function TarefaFlutuante({ tarefa, onMudou }: { tarefa: ReturnType<typeof
  * trilho de onboarding ligado (`OnboardingTrilho.cardId`), a bancada do trilho
  * é a aba "Trilho" (T1: a bancada antiga deixou de ser porta).
  */
-function PainelTarefa({ id, estrutura, editable, token, usuarioId, aba = 'tarefa', onTrocarAba, onFechar, onMoverLista, onMudou, onErro }: {
+function PainelTarefa({ id, estrutura, editable, token, usuarioId, aba = 'tarefa', onTrocarAba, onFechar, onMoverLista, onMudou, onErro, onAbrirOutra }: {
   id: string; estrutura: TrabEstrutura; editable: boolean; token: string | null;
   aba?: AbaDaTarefa; onTrocarAba?: (aba: AbaDaTarefa) => void;
+  /** Abre outra tarefa no mesmo pop-up (a próxima ocorrência). */
+  onAbrirOutra?: (id: string) => void;
   /** Quem está logado — só o autor de um lançamento de horas vê o botão de apagar. */
   usuarioId: string | null;
   onFechar: () => void; onMoverLista: (id: string) => void;
@@ -1456,6 +1790,8 @@ function PainelTarefa({ id, estrutura, editable, token, usuarioId, aba = 'tarefa
   }, [id, token]);
   const [descricaoRascunho, setDescricaoRascunho] = useState('');
   const [salvando, setSalvando] = useState(false);
+  // A próxima ocorrência que a conclusão de uma tarefa que se repete criou (versão final, F4).
+  const [proxima, setProxima] = useState<{ id: string; dueDate: string | null } | null>(null);
   const escrita = useRef(false);
   const [conflito, setConflito] = useState<{ mudanca: Record<string, unknown>; recarregado: boolean; gravado?: boolean; indeterminado?: boolean } | null>(null);
   const focoAnterior = useRef<HTMLElement | null>(null);
@@ -1495,8 +1831,9 @@ function PainelTarefa({ id, estrutura, editable, token, usuarioId, aba = 'tarefa
     const epoch = ++operacao.current;
     escrita.current = true; setSalvando(true);
     try {
-      await apiPatch(`/trabalho/tarefas/${id}`, { ...mudanca, expectedUpdatedAt: t.updatedAt }, token);
+      const gravada = await apiPatch<TrabTarefaDetalhe | null>(`/trabalho/tarefas/${id}`, { ...mudanca, expectedUpdatedAt: t.updatedAt }, token);
       if (!vigente(epoch)) return false;
+      if (gravada?.proxima) setProxima(gravada.proxima);
       const atual = await recarregar(epoch);
       if (!vigente(epoch)) return false;
       if (!atual) { setConflito({ mudanca, recarregado: false, gravado: true }); onMudou(); return false; }
@@ -1565,12 +1902,14 @@ function PainelTarefa({ id, estrutura, editable, token, usuarioId, aba = 'tarefa
   ]);
 
   const rascunho = conflito ? Object.entries(conflito.mudanca).map(([campo, valor]) => {
-    const rotulos: Record<string, string> = { title: 'Título', description: 'Descrição', statusId: 'Etapa', listId: 'Lista', assigneeUserId: 'Responsável', priority: 'Prioridade', dueDate: 'Prazo', startDate: 'Início', tagIds: 'Etiquetas', campos: 'Campos da tarefa', archived: 'Arquivamento', clienteId: 'Cliente' };
+    const rotulos: Record<string, string> = { title: 'Título', description: 'Descrição', statusId: 'Etapa', listId: 'Lista', assigneeUserId: 'Responsável', priority: 'Prioridade', dueDate: 'Prazo', startDate: 'Início', tagIds: 'Etiquetas', campos: 'Campos da tarefa', archived: 'Arquivamento', clienteId: 'Cliente', outrosResponsaveisIds: 'Outros responsáveis', recorrencia: 'Repetir' };
     let texto = campo === 'archived' ? valor ? 'Arquivar tarefa' : 'Restaurar tarefa' : valor == null ? 'Sem valor' : String(valor);
     if (campo === 'assigneeUserId') { const pessoa = estrutura.pessoas?.find((p) => p.id === valor); texto = valor == null ? 'Sem vínculo de pessoa' : pessoa ? rotuloDaPessoa(pessoa) : 'Pessoa indisponível'; }
     if (campo === 'statusId') texto = lista?.statuses.find((st) => st.id === valor)?.name ?? 'Etapa indisponível';
     if (campo === 'listId') texto = nomesListas.get(String(valor)) ?? 'Lista indisponível';
     if (campo === 'clienteId') texto = valor === t.clienteId ? t.clienteNome ?? 'Cliente atual' : 'Outro cliente escolhido';
+    if (campo === 'outrosResponsaveisIds' && Array.isArray(valor)) texto = valor.map((u) => { const pessoa = estrutura.pessoas?.find((x) => x.id === u); return pessoa ? rotuloDaPessoa(pessoa) : 'Pessoa indisponível'; }).join(', ') || 'Ninguém além do principal';
+    if (campo === 'recorrencia') texto = valor ? descreverRecorrencia(valor as RecorrenciaDaTarefa) : 'Não repete';
     if (campo === 'tagIds' && Array.isArray(valor)) texto = valor.map((tag) => estrutura.tags.find((tg) => tg.id === tag)?.name ?? 'Etiqueta indisponível').join(', ') || 'Sem etiquetas';
     if (campo === 'campos' && valor && typeof valor === 'object' && !Array.isArray(valor)) texto = Object.entries(valor).map(([fieldId, dado]) => {
       const field = campos.find((c) => c.id === fieldId);
@@ -1697,6 +2036,13 @@ function PainelTarefa({ id, estrutura, editable, token, usuarioId, aba = 'tarefa
           <Campo rotulo="Responsável (pessoa)">
             <SeletorResponsavel tarefa={t} pessoas={estrutura.pessoas ?? []} disabled={ro} onChange={(assigneeUserId) => salvar({ assigneeUserId })} />
           </Campo>
+          {/* Vários responsáveis (versão final, F4): o primeiro é o principal, acima; os demais aqui. */}
+          <Campo rotulo="Outros responsáveis">
+            <SeletorOutrosResponsaveis
+              principal={t.assigneeUserId ?? null} ids={t.outrosResponsaveisIds ?? []} pessoas={estrutura.pessoas ?? []}
+              disabled={ro} onChange={(outrosResponsaveisIds) => salvar({ outrosResponsaveisIds })}
+            />
+          </Campo>
           <Campo rotulo="Responsável antigo (texto)">
             <p className="text-[13px] text-muted">{t.assignee ?? 'Sem registro antigo'}</p>
           </Campo>
@@ -1725,6 +2071,13 @@ function PainelTarefa({ id, estrutura, editable, token, usuarioId, aba = 'tarefa
             <input type="date" disabled={ro} defaultValue={paraInputDate(t.dueDate)} onBlur={(e) => e.target.value !== paraInputDate(t.dueDate) && salvar({ dueDate: deInputDate(e.target.value) })} className={INP} />
           </Campo>
         </div>
+        <RepetirTarefa regra={t.recorrencia ?? null} prazo={t.dueDate} disabled={ro} onChange={(recorrencia) => salvar({ recorrencia })} />
+        {proxima && (
+          <p role="status" data-testid="tarefa-proxima" className="rounded-lg border border-border bg-surface-2 px-3 py-2 text-[12px]">
+            Próxima ocorrência criada para {dataBR(proxima.dueDate)}.{' '}
+            <button type="button" className="text-brand underline" onClick={() => onAbrirOutra?.(proxima.id)}>Abrir</button>
+          </p>
+        )}
 
         {/* campos personalizados (as 4 colunas reais da Gestão de Temas + os que criarem) */}
         {campos.length > 0 && (
@@ -2091,6 +2444,85 @@ function HorasDaTarefa({ t, editable, token, usuarioId, onMudou, onErro }: {
   );
 }
 
+/*
+ * REPETIR (versão final, F4, no molde do Dia a dia do Lucas): a regra mora na tarefa;
+ * ao concluí-la (por qualquer caminho), a API cria a próxima ocorrência com o prazo
+ * seguinte. Gravar a regra é um PATCH com a versão lida, como todo campo do pop-up.
+ */
+function RepetirTarefa({ regra, prazo, disabled, onChange }: {
+  regra: RecorrenciaDaTarefa | null; prazo: string | null; disabled: boolean;
+  onChange: (r: RecorrenciaDaTarefa | null) => Promise<unknown>;
+}) {
+  const modo = !regra ? '' : regra.tipo === 'semanal' && [...regra.dias].sort().join() === '1,2,3,4,5' ? 'uteis' : regra.tipo;
+  const dia = paraInputDate(prazo);
+  const diaDoMes = dia ? Number(dia.slice(8)) : 1;
+  const diaDaSemana = dia ? new Date(`${dia}T12:00:00Z`).getUTCDay() : 1;
+  const mudarModo = (m: string) => {
+    if (!m) return void onChange(null);
+    if (m === 'diaria') return void onChange({ tipo: 'diaria' });
+    if (m === 'uteis') return void onChange({ tipo: 'semanal', dias: [1, 2, 3, 4, 5] });
+    if (m === 'semanal') return void onChange({ tipo: 'semanal', dias: [diaDaSemana] });
+    if (m === 'mensal') return void onChange({ tipo: 'mensal', dia: diaDoMes });
+    if (m === 'intervalo') return void onChange({ tipo: 'intervalo', dias: 2 });
+  };
+  const LETRAS = ['D', 'S', 'T', 'Q', 'Q', 'S', 'S'];
+  const NOMES = ['domingo', 'segunda', 'terça', 'quarta', 'quinta', 'sexta', 'sábado'];
+  return (
+    <div data-testid="tarefa-repetir">
+      <Campo rotulo="Repetir">
+        <div className="flex flex-wrap items-center gap-2">
+          <select aria-label="Repetir a tarefa" disabled={disabled} value={modo} onChange={(e) => mudarModo(e.target.value)} className={`${INP} w-auto`}>
+            <option value="">Não repete</option>
+            <option value="diaria">Todo dia</option>
+            <option value="uteis">Dias úteis (segunda a sexta)</option>
+            <option value="semanal">Toda semana…</option>
+            <option value="mensal">Todo mês…</option>
+            <option value="intervalo">A cada N dias…</option>
+          </select>
+          {regra?.tipo === 'semanal' && modo === 'semanal' && (
+            <span className="flex gap-1">
+              {LETRAS.map((l, i) => {
+                const marcado = regra.dias.includes(i);
+                return (
+                  <button
+                    key={i} type="button" disabled={disabled} title={NOMES[i]} aria-label={NOMES[i]} aria-pressed={marcado}
+                    onClick={() => { const dias = marcado ? regra.dias.filter((x) => x !== i) : [...regra.dias, i]; if (dias.length) void onChange({ tipo: 'semanal', dias }); }}
+                    className={`h-7 w-7 rounded-full text-xs ${marcado ? 'bg-brand/25 text-text' : 'border border-border text-muted hover:border-brand-dim'}`}
+                  >
+                    {l}
+                  </button>
+                );
+              })}
+            </span>
+          )}
+          {regra?.tipo === 'mensal' && (
+            <label className="flex items-center gap-1.5 text-[12px] text-muted">
+              no dia
+              <input type="number" min={1} max={31} disabled={disabled} defaultValue={regra.dia} aria-label="Dia do mês"
+                onBlur={(e) => { const n = Number(e.target.value); if (n >= 1 && n <= 31 && n !== regra.dia) void onChange({ tipo: 'mensal', dia: n }); }}
+                className={`${INP} w-16`} />
+            </label>
+          )}
+          {regra?.tipo === 'intervalo' && (
+            <label className="flex items-center gap-1.5 text-[12px] text-muted">
+              a cada
+              <input type="number" min={1} max={365} disabled={disabled} defaultValue={regra.dias} aria-label="Intervalo em dias"
+                onBlur={(e) => { const n = Number(e.target.value); if (n >= 1 && n <= 365 && n !== regra.dias) void onChange({ tipo: 'intervalo', dias: n }); }}
+                className={`${INP} w-16`} />
+              dias
+            </label>
+          )}
+        </div>
+      </Campo>
+      {regra && (
+        <p className="mt-1 text-[11px] text-muted">
+          {descreverRecorrencia(regra)}. Ao concluir, a próxima nasce sozinha{prazo ? '' : ' (sem prazo, conta a partir do dia em que for concluída)'}.
+        </p>
+      )}
+    </div>
+  );
+}
+
 function Campo({ rotulo, children }: { rotulo: string; children: React.ReactNode }) {
   return (
     <label className="block">
@@ -2398,7 +2830,8 @@ function BarraDePastas({ pastas, temSoltas, atual, semPastas, editable, token, o
   const [ocupado, setOcupado] = useState(false);
   const [aviso, setAviso] = useState<string | null>(null);
   const existe = (id: string) => pastas.some((p) => p.id === id);
-  const ativa = atual === PASTA_SEM_PASTA ? PASTA_SEM_PASTA : existe(atual) ? atual : '';
+  // Sem pasta escolhida, a árvore mostra tudo e uma lista fica aberta: nenhum chip marcado.
+  const ativa = atual === PASTA_SEM_PASTA || atual === PASTA_TODAS ? atual : existe(atual) ? atual : '';
 
   const chip = (chave: string, rotulo: string, testid: string) => (
     <button
@@ -2445,7 +2878,8 @@ function BarraDePastas({ pastas, temSoltas, atual, semPastas, editable, token, o
     <div className="space-y-2">
       <div className="flex flex-wrap items-center gap-1.5" role="group" aria-label="Pastas">
         <span className="mr-1 font-os-mono text-[10px] uppercase tracking-[0.16em] text-muted">Pastas</span>
-        {chip('', 'Todas', 'trabalho-pasta-todas')}
+        {/* "Todas" (versão final, F4): as tarefas de todas as pastas e listas numa visão só. */}
+        {chip(PASTA_TODAS, 'Todas', 'trabalho-pasta-todas')}
         {pastas.map((p) => chip(p.id, p.name, `trabalho-pasta-${p.id}`))}
         {(temSoltas || ativa === PASTA_SEM_PASTA) && chip(PASTA_SEM_PASTA, 'Sem pasta', 'trabalho-pasta-sem-pasta')}
         {editable && !criando && (

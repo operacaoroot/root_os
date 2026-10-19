@@ -869,7 +869,8 @@ export class WorkService {
     if (aberta) return { id: aberta.id, dueDate: aberta.dueDate?.toISOString() ?? null };
     const dia = (d: Date) => d.toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' });
     const prazo = proximaOcorrencia(regra, t.dueDate ? dia(t.dueDate) : null, hojeEmBrasilia());
-    const vence = new Date(`${prazo}T03:00:00.000Z`).toISOString();
+    // Meio-dia de São Paulo: o mesmo instante que o campo Prazo e o calendário gravam.
+    const vence = new Date(`${prazo}T15:00:00.000Z`).toISOString();
     const statuses = await this.prisma.workStatus.findMany({ where: { listId: t.listId, orgId }, orderBy: { order: 'asc' } });
     const aFazer = statuses.find((st) => st.type !== WorkStatusType.closed);
     if (!aFazer) throw new BadRequestException('A lista da tarefa não tem etapa aberta para a próxima ocorrência.');

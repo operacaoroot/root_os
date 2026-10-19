@@ -147,7 +147,7 @@ describe.skipIf(!URL)('Trabalho F4: responsáveis, repetição, ordem e "Todas"'
     expect(comRegra.recorrencia).toEqual({ tipo: 'semanal', dias: [1] });
     const concluida = await svc.editarTarefa(CASA, EU, t.id, { statusId: feito, expectedUpdatedAt: comRegra.updatedAt });
     expect(concluida.statusType).toBe('closed');
-    expect(concluida.proxima?.dueDate).toBe('2099-01-12T03:00:00.000Z');
+    expect(concluida.proxima?.dueDate).toBe('2099-01-12T15:00:00.000Z');
     const proxima = await svc.tarefa(CASA, concluida.proxima!.id);
     expect(proxima).toMatchObject({
       title: 'Enviar o relatório', listId: lista, statusId: aberto, clienteId: cliente, assigneeUserId: EU,
