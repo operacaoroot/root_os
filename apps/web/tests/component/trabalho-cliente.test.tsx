@@ -104,7 +104,7 @@ describe('T4: o cliente da tarefa na tela', () => {
     expect(await screen.findByText(/Sem cliente. Toda tarefa nova tem/)).toBeTruthy();
     fireEvent.focus(within(screen.getByTestId('tarefa-cliente')).getByRole('combobox'));
     fireEvent.mouseDown(await screen.findByTestId('opcao-cliente-interno'));
-    await waitFor(() => expect(apiPatch).toHaveBeenCalledWith(`/trabalho/tarefas/${SEM.id}`, { clienteId: 'interno' }, 'tok'));
+    await waitFor(() => expect(apiPatch).toHaveBeenCalledWith(`/trabalho/tarefas/${SEM.id}`, { clienteId: 'interno', expectedUpdatedAt: '2026-10-17T10:00:00.000Z' }, 'tok'));
   });
 
   it('o filtro "sem cliente" vai na consulta', async () => {
