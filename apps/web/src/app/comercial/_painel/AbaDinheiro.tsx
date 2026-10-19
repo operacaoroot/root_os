@@ -12,14 +12,19 @@ import { useState } from 'react';
 import type { ContratoVivo, EscritaDoFechamento, FechamentoDoLead, FichaDoLead } from '@mktos/shared';
 import { COMERCIAL_FATOS_DA_PRIMEIRA_PAGA, ehSaida } from '@mktos/shared';
 
-import { apiPost } from '@/lib/api';
+import { apiBlob, apiPost } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 import { AUSENTE, ROTULO_DO_PRODUTO, contarParcelas, dataDoDia, ficouRetida, numeroOuAusente, quandoCurtoSP, reaisOuAusente, segundos } from '@/lib/cockpit';
 
 import { AguardandoAprovacao, Aviso, BOTAO, BOTAO_PRIMARIO, CARTAO, Carregando, Chip, Erro, ErroDaAcao, INPUT, Rotulo, useCarregar } from '../_ui';
 import { usePainel } from './provedor';
 
-type Fechamento = FechamentoDoLead & { aprovacao: { id: string; status: string } | null; vetado: boolean };
+/** T1b: `contratoAnexado` só vem para quem fechou fora do sistema (o PDF assinado, registrado à mão). */
+type Fechamento = FechamentoDoLead & {
+  aprovacao: { id: string; status: string } | null;
+  vetado: boolean;
+  contratoAnexado?: { nome: string; bytes: number; sha256: string; assinadoEm: string; por: string | null } | null;
+};
 
 const ROTULO_DA_ESCRITA: Record<EscritaDoFechamento['escrita'], string> = {
   cliente: 'cliente',
@@ -340,12 +345,13 @@ function Fechamento({ leadId, f, erro, aoTentar, aoMudar }: { leadId: string; f:
         {f.chave && <span className="ml-auto font-os-mono text-[11px] text-dim">chave {f.chave}</span>}
       </div>
       {retida && f.estado !== 'concluido' && <AguardandoAprovacao approvalId={retida} oQue="O fechamento (R4) espera a assinatura da titular." />}
+      {f.contratoAnexado && <ContratoAnexado leadId={leadId} anexo={f.contratoAnexado} />}
       <ul className="divide-y divide-border">
         {f.escritas.map((e) => (
           <li key={e.escrita} className="grid gap-1 py-2 text-[13px] sm:grid-cols-[96px_minmax(0,1fr)_64px] sm:gap-3">
             <span className="font-semibold">{ROTULO_DA_ESCRITA[e.escrita] ?? e.escrita}</span>
             <span className="min-w-0 break-words">
-              <Chip tom={e.estado === 'erro' ? 'ruim' : e.estado === 'pendente' ? 'neutro' : 'bom'}>{e.estado}</Chip>
+              <Chip tom={e.estado === 'erro' ? 'ruim' : e.estado === 'pendente' || e.estado === 'pulado' ? 'neutro' : 'bom'}>{e.estado}</Chip>
               <span className="ml-1.5 text-muted">{e.onde}</span>
               {e.detalhe && <span className="ml-1.5 text-muted">· {e.detalhe}</span>}
               <span className="block text-[11.5px] text-dim">se rodar de novo: {e.seRodarDeNovo}</span>
@@ -361,7 +367,9 @@ function Fechamento({ leadId, f, erro, aoTentar, aoMudar }: { leadId: string; f:
       {f.estado !== 'concluido' && (
         <div className="space-y-2">
           <p className="text-[12px] text-dim">
-            O fechamento é proposto sozinho quando a primeira parcela está paga e as duas assinaturas estão no fio. Se a aprovação venceu, proponha de novo: a chave impede duplicar, e quem propõe não assina.
+            {f.contratoAnexado
+              ? 'Cliente fechado fora do sistema: o fechamento vai à fila quando o registro é feito, e quem registrou não assina. Se a aprovação venceu, proponha de novo: a chave impede duplicar.'
+              : 'O fechamento é proposto sozinho quando a primeira parcela está paga e as duas assinaturas estão no fio. Se a aprovação venceu, proponha de novo: a chave impede duplicar, e quem propõe não assina.'}
           </p>
           <button type="button" className={BOTAO} disabled={ocupado} onClick={() => void rodar()}>
             {ocupado ? 'Propondo…' : 'Propor o fechamento de novo'}
@@ -371,5 +379,36 @@ function Fechamento({ leadId, f, erro, aoTentar, aoMudar }: { leadId: string; f:
       )}
       {f.estado === 'concluido' && <Aviso tom="bom">Fechado: as cinco escritas terminaram e o cliente está ativo.</Aviso>}
     </>
+  );
+}
+
+/** T1b: o contrato assinado fora do sistema, para baixar e conferir antes de assinar o fechamento. */
+function ContratoAnexado({ leadId, anexo }: { leadId: string; anexo: NonNullable<Fechamento['contratoAnexado']> }) {
+  const { token } = useAuth();
+  const [erro, setErro] = useState<unknown>(null);
+  async function baixar() {
+    setErro(null);
+    try {
+      const blob = await apiBlob(`/comercial/lead/${leadId}/contrato-anexado`, token);
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = anexo.nome;
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(url), 10_000);
+    } catch (e) {
+      setErro(e);
+    }
+  }
+  return (
+    <div className="space-y-1 rounded border border-border px-3 py-2 text-[12.5px]" data-testid="contrato-anexado">
+      <p>
+        Contrato assinado fora do sistema{anexo.assinadoEm ? ` em ${dataDoDia(anexo.assinadoEm)}` : ''}, registrado à mão{anexo.por ? ` por ${anexo.por}` : ''}.{' '}
+        <button type="button" className="underline decoration-dotted hover:text-brand" onClick={() => void baixar()}>
+          baixar o PDF ({anexo.nome})
+        </button>
+      </p>
+      <ErroDaAcao erro={erro} />
+    </div>
   );
 }

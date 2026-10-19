@@ -99,6 +99,15 @@ export const EQUIPE_A_DECIDIR = '[a decidir: quem entra no grupo]';
 
 type P = Record<string, unknown>;
 
+/** T1b: o PDF do contrato assinado fora, como a tela do fechamento mostra. */
+export interface ContratoAnexadoNaTela {
+  nome: string;
+  bytes: number;
+  sha256: string;
+  assinadoEm: string;
+  por: string | null;
+}
+
 export function chaveDoFechamento(leadId: string, versao: number): string {
   return `fech-${leadId}-v${versao}`;
 }
@@ -728,9 +737,10 @@ export class FechamentoService implements OnModuleInit {
     };
   }
 
-  async doLead(orgId: string, leadId: string): Promise<FechamentoDoLead & { aprovacao: { id: string; status: string } | null; vetado: boolean }> {
+  async doLead(orgId: string, leadId: string): Promise<FechamentoDoLead & { aprovacao: { id: string; status: string } | null; vetado: boolean; contratoAnexado: ContratoAnexadoNaTela | null }> {
     const lead = await this.prisma.lead.findFirst({ where: { id: leadId, orgId }, select: { id: true } });
     if (!lead) throw new NotFoundException('Lead não encontrado.');
+    const contratoAnexado = await this.contratoAnexado(orgId, leadId);
     const linha = await this.prisma.comercialFechamento.findFirst({ where: { leadId, orgId }, orderBy: { criadoEm: 'desc' } });
     if (!linha) {
       const a = await this.aceiteParaFechar(orgId, leadId);
@@ -744,9 +754,18 @@ export class FechamentoService implements OnModuleInit {
         copiadoSemRedigitar: [],
         aprovacao: null,
         vetado: false,
+        contratoAnexado,
       };
     }
     const viva = await this.dinheiro.aprovacaoViva(orgId, CAP_FECHAMENTO, linha.chave);
-    return { ...this.projetar(linha), aprovacao: viva ? { id: viva.id, status: viva.status } : null, vetado: !!linha.vetadoEm };
+    return { ...this.projetar(linha), aprovacao: viva ? { id: viva.id, status: viva.status } : null, vetado: !!linha.vetadoEm, contratoAnexado };
+  }
+
+  /** T1b: o contrato assinado fora, anexado (para quem confere o fechamento baixar o PDF antes de assinar). */
+  private async contratoAnexado(orgId: string, leadId: string): Promise<ContratoAnexadoNaTela | null> {
+    const fato = await this.prisma.leadEvent.findFirst({ where: { leadId, orgId, type: 'contrato.anexado' }, orderBy: { occurredAt: 'desc' }, select: { payload: true } });
+    if (!fato) return null;
+    const p = (fato.payload ?? {}) as P;
+    return { nome: String(p.nome ?? 'contrato.pdf'), bytes: Number(p.bytes ?? 0), sha256: String(p.sha256 ?? ''), assinadoEm: String(p.assinadoEm ?? ''), por: typeof p.por === 'string' ? p.por : null };
   }
 }

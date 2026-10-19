@@ -29,6 +29,7 @@ import {
   voltaEmDoDia,
   type EstadoDoPedido,
 } from '../_funil/mover';
+import { RegistrarFechadoFora } from '../_funil/RegistrarFechadoFora';
 
 /*
  * TELA 04 · O FUNIL VIVO (lane C; painel na lane UX; mover na rodada do painel, P5).
@@ -46,8 +47,10 @@ import {
 type Coluna = FunilVivo['colunas'][number];
 
 export default function FunilVivoPage() {
-  const { token } = useAuth();
+  const { token, can } = useAuth();
   const [filtro, setFiltro] = useState('todos');
+  // T1b: a porta única de quem fechou fora do sistema (a implantação não tem mais "+ adicionar").
+  const [registrando, setRegistrando] = useState(false);
   const { dados, erro, carregando, recarregar } = useCarregar<FunilVivo>(`/comercial/funil?filtro=${encodeURIComponent(filtro)}`, 30_000);
   useMudouNoPainel(recarregar);
   const [pedidos, setPedidos] = useState<Record<string, ComercialPedidoDeMover>>({});
@@ -198,11 +201,23 @@ export default function FunilVivoPage() {
               </span>
             </span>
           ))}
-          <Link href="/caixa?aba=decisoes" className={`ml-auto ${BOTAO}`}>decisões em Pendências</Link>
+          {can('leads.editar') && (
+            <button
+              type="button"
+              data-testid="funil-registrar-fechado-fora"
+              aria-expanded={registrando}
+              onClick={() => setRegistrando((v) => !v)}
+              className={`ml-auto ${BOTAO}`}
+            >
+              Registrar cliente já fechado
+            </button>
+          )}
+          <Link href="/caixa?aba=decisoes" className={`${can('leads.editar') ? '' : 'ml-auto '}${BOTAO}`}>decisões em Pendências</Link>
         </div>
         <p className="text-[12.5px] text-muted">
           O cartão anda sozinho com os fatos. Para mover à mão, arraste para outra coluna ou use &quot;mover&quot;: outra pessoa assina o pedido em /atendimento e você conclui aqui. Com etapa pendente, o cartão muda e fica marcado com o que falta. Setas do teclado andam entre os cartões, Enter abre o lead.
         </p>
+        {registrando && <RegistrarFechadoFora aoFechar={() => setRegistrando(false)} aoRegistrar={() => void recarregar()} />}
         <Erro erro={erro} aoTentar={() => void recarregar()} />
         {/* C-20: acima do teto de leitura a API corta os mais antigos na etapa e diz quantos ficaram de fora. */}
         {dados?.aviso && <Aviso>{dados.aviso}</Aviso>}
