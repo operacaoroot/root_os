@@ -27,7 +27,7 @@ function servir(path: string) {
   if (path === `/trabalho/tarefas/${ID}`) return Promise.resolve({ ...tarefa });
   return Promise.resolve(null);
 }
-beforeEach(() => { window.history.replaceState({}, '', '/trabalho'); permissions = ['tarefas.ver', 'tarefas.editar']; tarefa = { ...original }; get.mockReset(); patch.mockReset(); get.mockImplementation(servir); patch.mockResolvedValue({}); });
+beforeEach(() => { window.localStorage.clear(); window.localStorage.setItem('root-os:trabalho:densidade', 'cheio'); window.history.replaceState({}, '', '/trabalho'); permissions = ['tarefas.ver', 'tarefas.editar']; tarefa = { ...original }; get.mockReset(); patch.mockReset(); get.mockImplementation(servir); patch.mockResolvedValue({}); });
 afterEach(cleanup);
 
 describe('responsável por conta, sem associação por texto', () => {
@@ -110,11 +110,11 @@ describe('responsável por conta, sem associação por texto', () => {
   });
   it('409 preserva campo personalizado com rótulo e valor legíveis', async () => {
     patch.mockRejectedValue(Object.assign(new Error('Conflito QA'), { status: 409 }));
-    get.mockImplementation((path: string) => path === '/trabalho/estrutura' ? Promise.resolve({ ...estrutura, camposGlobais: [{ id: 'qa-campo', name: 'Cliente', type: 'texto', order: 0, options: [] }] }) : servir(path));
+    get.mockImplementation((path: string) => path === '/trabalho/estrutura' ? Promise.resolve({ ...estrutura, camposGlobais: [{ id: 'qa-campo', name: 'Contato QA', type: 'texto', order: 0, options: [] }] }) : servir(path));
     render(<TrabalhoPage />); fireEvent.click(await screen.findByRole('button', { name: 'Entrega QA' }));
-    const input = await screen.findByLabelText('Cliente'); fireEvent.change(input, { target: { value: 'Novo cliente QA' } }); fireEvent.blur(input);
+    const input = await screen.findByLabelText('Contato QA'); fireEvent.change(input, { target: { value: 'Novo cliente QA' } }); fireEvent.blur(input);
     const alerta = await screen.findByRole('alert');
-    expect(within(alerta).getByText('Cliente: Novo cliente QA')).toBeInTheDocument();
+    expect(within(alerta).getByText('Contato QA: Novo cliente QA')).toBeInTheDocument();
     expect(alerta).not.toHaveTextContent('[object Object]');
     expect(patch).toHaveBeenCalledWith(`/trabalho/tarefas/${ID}`, { campos: { 'qa-campo': { value: 'Novo cliente QA' } }, expectedUpdatedAt: versao }, 'qa-token');
   });

@@ -229,7 +229,8 @@ export function Sidebar() {
             <span className={`flex-1 ${compacta ? 'min-[820px]:sr-only' : ''}`}>{area.label}</span>
             {/* O selo do que espera por você fica no Dia a dia mesmo com a aba Pendências fora do menu (19/10/2026). */}
             {area.key === 'dia' && seloDaCaixa.texto &&
-              <span aria-label={seloDaCaixa.titulo} title={seloDaCaixa.titulo} className="bg-brand px-1.5 py-0.5 text-[10px] font-bold text-ink">{seloDaCaixa.texto}</span>}
+              // Recolhido (só ícones, 64 px), o selo sobe para o canto do ícone em vez de empurrar para fora da barra.
+              <span aria-label={seloDaCaixa.titulo} title={seloDaCaixa.titulo} className={`bg-brand px-1.5 py-0.5 text-[10px] font-bold text-ink ${compacta ? 'min-[820px]:absolute min-[820px]:right-1 min-[820px]:top-1 min-[820px]:px-1 min-[820px]:py-0 min-[820px]:text-[9px]' : ''}`}>{seloDaCaixa.texto}</span>}
             {ativo && !compacta && <Icons.ChevronRight size={14} aria-hidden />}
           </Link>;
         })}

@@ -8,6 +8,7 @@ import {
   TrabOpcaoCreateSchema, TrabOpcaoUpdateSchema, TrabTagCreateSchema, TrabTagUpdateSchema,
   TrabTarefaCreateSchema, TrabTarefaUpdateHttpSchema, TrabTarefaArchiveHttpSchema, TrabComentarioSchema,
   TrabAssumirSchema, TrabSoltarSchema, TrabApontamentoCreateSchema, TrabListaDoModeloSchema,
+  TrabTarefasOrdemSchema,
 } from '@mktos/shared';
 import { WorkService } from './work.service';
 import { CheckoutDeTarefaService } from './checkout-de-tarefa.service';
@@ -260,6 +261,14 @@ export class WorkController {
   criarTarefa(@CurrentUser() u: JwtUser, @Body() body: unknown) {
     // T4: a tarefa criada pela tela sempre tem cliente (subtarefa herda o da mãe).
     return this.svc.criarTarefa(u.orgId, u.sub, TrabTarefaCreateSchema.parse(body), { exigirCliente: true });
+  }
+
+  /** Ordem manual (versão final, F4): arrastar na lista ou na coluna grava `order`, com versão. */
+  @Post('tarefas/ordem')
+  @UseGuards(AcessoAtualGuard)
+  @RequirePermissions('tarefas.editar')
+  reordenarTarefas(@CurrentUser() u: JwtUser, @Body() body: unknown) {
+    return this.svc.reordenar(u.orgId, u.sub, TrabTarefasOrdemSchema.parse(body));
   }
 
   @Patch('tarefas/:id')

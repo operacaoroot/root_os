@@ -97,7 +97,8 @@ describe.skipIf(!URL)('movimento do cartão: contra o Postgres', () => {
     const lista = await prisma.workList.findFirstOrThrow({ where: { orgId: ORG, name: 'Onboarding de cliente' }, include: { statuses: { orderBy: { order: 'asc' } } } });
     // Rodada do trabalho T1: a lista da implantação não recebe cartão solto pela rota; o card nasce como o fechamento o abre.
     const t = await prisma.workTask.create({ data: { orgId: ORG, listId: lista.id, statusId: lista.statuses[0].id, title: 'Studio Lume' } });
-    for (const i of [1, 2, 3]) await work.editarTarefa(ORG, EU, t.id, { statusId: lista.statuses[i].id } as never);
+    let versao = t.updatedAt.toISOString();
+    for (const i of [1, 2, 3]) versao = (await work.editarTarefa(ORG, EU, t.id, { statusId: lista.statuses[i].id, expectedUpdatedAt: versao })).updatedAt;
     const r1 = await svc.daLista(ORG, lista.id);
     const c1 = r1.itens.find((x) => x.tarefaId === t.id)!;
     expect(c1.passos.map((p) => p.frase)).toEqual(['moveu para Contexto carregado', 'moveu para Kit montado', 'moveu para Kickoff marcado']);

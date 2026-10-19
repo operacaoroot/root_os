@@ -136,7 +136,10 @@ export class AtasService {
 
   /** A pasta do vault que vale para esta empresa. */
   async pasta(orgId: string): Promise<string> {
-    const nota = await this.memoria.porChave(orgId, ATA_CHAVE_DA_PASTA).catch(() => null);
+    // Nota de configuração da casa: lida como fonte ABERTA (leitor nulo), que é o que a
+    // regra da memória dá a quem não declara identidade. Quem cola ou lista atas tem
+    // `tarefas.*`, não precisa de `obsidian.ver`, e nota restrita não vale como configuração.
+    const nota = await this.memoria.porChave(orgId, ATA_CHAVE_DA_PASTA, null).catch(() => null);
     const linha = nota && !nota.arquivadoEm ? nota.body.split(/\r?\n/).map((l) => l.trim()).find(Boolean) : null;
     const limpa = (linha ?? '').replace(/^\/+|\/+$/g, '');
     return limpa && limpa.length <= 200 && !limpa.includes('..') ? limpa : ATA_PASTA_PADRAO;

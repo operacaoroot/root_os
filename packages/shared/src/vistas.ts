@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { situacaoDoPrazo, type SituacaoDoPrazo } from './tarefas-do-dia.js';
 
 /*
  * AS VISTAS SALVAS (rodada do trabalho T3, 19/10/2026).
@@ -24,10 +25,15 @@ export const ROTULO_DO_CAMPO_DE_ORDEM: Record<CampoDeOrdem, string> = {
   prioridade: 'Prioridade', criadaEm: 'Criada em', titulo: 'Nome',
 };
 
-export const AGRUPAMENTOS = ['nenhum', 'vencimento', 'status', 'cliente', 'lista'] as const;
+/*
+ * `prazo` é a RÉGUA DE PRAZO do Lucas (versão final, 19/10/2026): Atrasadas · Hoje ·
+ * Próximos 7 dias · Mais tarde · Sem prazo · Concluídas, a mesma `situacaoDoPrazo` do
+ * Dia a dia. Entrou NO FIM da lista: as vistas salvas antes continuam valendo como estão.
+ */
+export const AGRUPAMENTOS = ['nenhum', 'vencimento', 'status', 'cliente', 'lista', 'prazo'] as const;
 export type Agrupamento = (typeof AGRUPAMENTOS)[number];
 export const ROTULO_DO_AGRUPAMENTO: Record<Agrupamento, string> = {
-  nenhum: 'Sem grupos', vencimento: 'Vencimento', status: 'Status', cliente: 'Cliente', lista: 'Lista',
+  nenhum: 'Sem grupos', vencimento: 'Vencimento', status: 'Status', cliente: 'Cliente', lista: 'Lista', prazo: 'Régua de prazo',
 };
 
 export const COLUNAS_DE_MINHAS_TAREFAS = ['cliente', 'lista', 'status', 'vencimento', 'prioridade', 'responsaveis', 'criadaEm', 'comentarios'] as const;
@@ -59,7 +65,11 @@ export const VISTA_PADRAO_DE_MINHAS_TAREFAS: VistaMinhasTarefas = {
 
 export const VistaQuadroSchema = z.object({
   densidade: z.enum(['compacto', 'medio', 'cheio']),
-  visao: z.enum(['board', 'tabela']),
+  visao: z.enum(['board', 'tabela', 'calendario']),
+  /** Agrupamento da Lista (versão final). Opcional: a vista salva antes não tem e vale "sem grupos". */
+  agrupamento: z.enum(AGRUPAMENTOS).optional(),
+  /** Mostrar ou ocultar as concluídas (versão final). Opcional: sem a chave, mostra. */
+  concluidas: z.enum(['mostrar', 'ocultar']).optional(),
   filtros: z.object({
     assignee: z.string().max(120),
     agente: z.string().max(80),
@@ -184,11 +194,31 @@ export function grupoDeVencimento(prazo: string | null, agora: Date): GrupoDeVen
   return dia <= domingo ? 'semana' : 'depois';
 }
 
+export const GRUPOS_DA_REGUA_DE_PRAZO: readonly SituacaoDoPrazo[] = ['atrasada', 'hoje', 'proximos_7', 'mais_tarde', 'sem_prazo', 'feita'];
+export const ROTULO_DA_REGUA_DE_PRAZO: Record<SituacaoDoPrazo, string> = {
+  atrasada: 'Atrasadas', hoje: 'Hoje', proximos_7: 'Próximos 7 dias', mais_tarde: 'Mais tarde', sem_prazo: 'Sem prazo', feita: 'Concluídas',
+};
+
+/** A régua de prazo de uma tarefa da vista: o dia do prazo no relógio de São Paulo, concluída pelo tipo do status. */
+export function reguaDePrazo(prazo: string | null, statusTipo: string | undefined, agora: Date): SituacaoDoPrazo {
+  const p = prazo ? new Date(prazo) : null;
+  const dia = p && !Number.isNaN(p.getTime()) ? diaEmSaoPaulo(p) : null;
+  return situacaoDoPrazo(dia, diaEmSaoPaulo(agora), statusTipo === 'closed');
+}
+
 export interface GrupoDeTarefas<T> { chave: string; rotulo: string; itens: T[] }
 
 /** Agrupa preservando a ordem de dentro de cada grupo. Vencimento segue a ordem fixa; os outros, a alfabética, com o vazio no fim. */
 export function agruparTarefas<T extends TarefaParaVista>(itens: readonly T[], agrupamento: Agrupamento, agora: Date): GrupoDeTarefas<T>[] {
   if (agrupamento === 'nenhum') return [{ chave: 'todas', rotulo: 'Todas', itens: [...itens] }];
+  if (agrupamento === 'prazo') {
+    const por = new Map<SituacaoDoPrazo, T[]>();
+    for (const t of itens) {
+      const g = reguaDePrazo(t.prazo, t.statusTipo, agora);
+      por.set(g, [...(por.get(g) ?? []), t]);
+    }
+    return GRUPOS_DA_REGUA_DE_PRAZO.filter((g) => por.has(g)).map((g) => ({ chave: g, rotulo: ROTULO_DA_REGUA_DE_PRAZO[g], itens: por.get(g)! }));
+  }
   if (agrupamento === 'vencimento') {
     const por = new Map<GrupoDeVencimento, T[]>();
     for (const t of itens) {

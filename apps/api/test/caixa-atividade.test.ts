@@ -451,29 +451,35 @@ describe.skipIf(!URL_DO_BANCO)('P1: a caixa de entrada contra o Postgres', () =>
       listId: status[`${ORG}:lista`],
       title: 'Minha tarefa',
       assignee: 'pedro caixa',
+      // A identidade é a CONTA (regra da produção, 14/10); o texto antigo fica só como registro.
+      assigneeUserId: EU,
     });
     tarefa.minha = minha.id;
     const doLucas = await work.criarTarefa(ORG, OUTRO, {
       listId: status[`${ORG}:lista`],
       title: 'Tarefa do Lucas',
       assignee: 'Lucas Caixa',
+      assigneeUserId: OUTRO,
     });
     tarefa.doLucas = doLucas.id;
     const daVizinha = await work.criarTarefa(VIZINHA, DA_VIZINHA, {
       listId: status[`${VIZINHA}:lista`],
       title: 'Tarefa da vizinha',
       assignee: 'Pedro Caixa',
+      assigneeUserId: DA_VIZINHA,
     });
     tarefa.daVizinha = daVizinha.id;
 
+    // A versão lida é obrigatória em toda edição (regra da produção, 14/10).
     await work.editarTarefa(ORG, OUTRO, tarefa.minha, {
+      expectedUpdatedAt: minha.updatedAt,
       statusId: status[`${ORG}:feito`],
       dueDate: '2026-10-25T12:00:00.000Z',
     });
     await work.comentar(ORG, TERCEIRO, tarefa.minha, 'Ana passando: precisa do anexo');
     await work.comentar(ORG, EU, tarefa.minha, 'meu próprio comentário');
     // Na tarefa que não é minha: não pode chegar à minha caixa.
-    await work.editarTarefa(ORG, EU, tarefa.doLucas, { statusId: status[`${ORG}:feito`] });
+    await work.editarTarefa(ORG, EU, tarefa.doLucas, { statusId: status[`${ORG}:feito`], expectedUpdatedAt: doLucas.updatedAt });
     await work.comentar(ORG, OUTRO, tarefa.doLucas, 'comentário na tarefa do Lucas');
     // Na vizinha, com o meu nome: não pode atravessar.
     await work.comentar(VIZINHA, DA_VIZINHA, tarefa.daVizinha, 'recado da vizinha');

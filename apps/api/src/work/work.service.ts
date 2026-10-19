@@ -2,6 +2,7 @@ import { BadRequestException, ConflictException, ForbiddenException, Injectable,
 import {
   MODELOS_DE_LISTA, TRAB_LISTA_COM_DOIS_PAIS, TRAB_PASTA_COM_DOIS_PAIS, ehValorMonetarioCanonico, TrabTarefaUpdateHttpSchema,
   listaDaImplantacao, LISTA_DA_IMPLANTACAO, PASTA_DA_IMPLANTACAO, PORTA_DA_IMPLANTACAO,
+  CARTOES_QUE_NAO_SAO_TAREFA, RecorrenciaSchema, proximaOcorrencia, type RecorrenciaDaTarefa, type TrabTarefasOrdemInput,
 } from '@mktos/shared';
 import type {
   TrabEstrutura, TrabListaDto, TrabCampoDto, TrabTarefaLista, TrabTarefaResumo,
@@ -39,6 +40,7 @@ import { activityCursor, activityDto, activityNames, activityPoint, activityWher
  */
 const TASK_INCLUDE = {
   status: true,
+  list: { select: { name: true } },
   assigneeUser: { select: { id: true, name: true, email: true, isActive: true } },
   tags: true,
   values: { include: { field: true, option: true } },
@@ -460,6 +462,9 @@ export class WorkService {
       // O nome vem de `nomesDosClientes` (escopado por empresa); ponteiro que não resolve = sem cliente.
       clienteId: t.clienteId && clientes.has(t.clienteId) ? t.clienteId : null,
       clienteNome: t.clienteId ? clientes.get(t.clienteId) ?? null : null,
+      outrosResponsaveisIds: t.outrosResponsaveisIds ?? [],
+      recorrencia: regraDeRepeticao(t.recorrencia),
+      listName: t.list?.name,
     };
   }
 
@@ -475,8 +480,24 @@ export class WorkService {
     if (f.listExternalIds) where.list = { orgId, externalId: { in: f.listExternalIds } };
     if (f.statusId) where.statusId = f.statusId;
     if (f.assignee) where.assignee = f.assignee;
-    if (f.assigneeUserId) where.assigneeUserId = f.assigneeUserId;
+    // Vários responsáveis (versão final): a pessoa é responsável pela tarefa sendo a
+    // principal ou uma das demais. A identidade continua sendo a CONTA, nunca o nome.
+    if (f.assigneeUserId) where.OR = [{ assigneeUserId: f.assigneeUserId }, { outrosResponsaveisIds: { has: f.assigneeUserId } }];
     if (f.semResponsavel) where.assigneeUserId = null;
+    /*
+     * "TODAS AS TAREFAS" (versão final, F4): o Everything do ClickUp no Trabalho. As
+     * mesmas regras da visão do Lucas para não haver card repetido nem cadastro como
+     * tarefa: só listas de natureza `tarefas`; subtarefa fica dentro da tarefa (sobe só
+     * a que pende de um CADASTRO, a feita pela ficha do cliente); o cartão-depósito do
+     * Granola não entra. O `externalId` nulo tem ramo próprio (NULL NOT IN é desconhecido).
+     */
+    if (f.todas) {
+      where.list = { ...(where.list as Prisma.WorkListWhereInput | undefined), natureza: 'tarefas' };
+      where.AND = [
+        { OR: [{ parentId: null }, { parent: { list: { natureza: 'cadastro' } } }] },
+        { OR: [{ externalId: null }, { externalId: { notIn: [...CARTOES_QUE_NAO_SAO_TAREFA] } }] },
+      ];
+    }
     if (f.tagId) where.tags = { some: { id: f.tagId } };
     if (f.q) where.title = { contains: f.q, mode: 'insensitive' };
     if (f.opcao) where.values = { some: { optionId: f.opcao } }; // filtro por opção de campo
@@ -719,6 +740,13 @@ export class WorkService {
     await this.conferirResponsavel(orgId, input.assigneeUserId, antes.assigneeUserId);
     const campos = input.campos ? await this.conferirCampos(orgId, listId, input.campos) : [];
     const clienteId = input.clienteId ? await resolverCliente(this.prisma, orgId, input.clienteId) : undefined;
+    const principal = input.assigneeUserId === undefined ? antes.assigneeUserId : input.assigneeUserId;
+    const outrosResponsaveisIds = await this.conferirOutrosResponsaveis(orgId, input.outrosResponsaveisIds, principal, antes.outrosResponsaveisIds);
+    // A tarefa que se repete gera cartões novos: o cartão da implantação continua com porta única.
+    if (input.recorrencia && !paiDepois && (await this.ehListaDaImplantacao(orgId, listId))) {
+      throw new BadRequestException(PORTA_DA_IMPLANTACAO);
+    }
+    const repeticaoMuda = input.recorrencia !== undefined;
     const updatedAt = new Date(Math.max(Date.now(), antes.updatedAt.getTime() + 1));
 
     await this.prisma.$transaction(async (tx) => {
@@ -737,6 +765,11 @@ export class WorkService {
           parentId: input.parentId === undefined ? undefined : input.parentId,
           clienteId,
           archived: input.archived, order: input.order, updatedAt,
+          outrosResponsaveisIds,
+          ...(repeticaoMuda ? {
+            recorrencia: input.recorrencia ?? Prisma.DbNull,
+            ...(input.recorrencia && !antes.serieId ? { serieId: id } : {}),
+          } : {}),
         },
       });
       if (claim.count !== 1) throw conflito();
@@ -760,6 +793,8 @@ export class WorkService {
           assigneeUserId: antes.assigneeUserId, priority: antes.priority,
           dueDate: antes.dueDate?.toISOString() ?? null,
           ...(clienteId !== undefined ? { clienteId: antes.clienteId } : {}),
+          ...(outrosResponsaveisIds !== undefined ? { outrosResponsaveisIds: antes.outrosResponsaveisIds } : {}),
+          ...(repeticaoMuda ? { recorrencia: antes.recorrencia ?? null } : {}),
           ...(camposAntes ? { campos: camposAntes } : {}),
         },
         after: {
@@ -767,14 +802,122 @@ export class WorkService {
           assigneeUserId: depois.assigneeUserId, priority: depois.priority,
           dueDate: depois.dueDate?.toISOString() ?? null,
           ...(clienteId !== undefined ? { clienteId: depois.clienteId } : {}),
+          ...(outrosResponsaveisIds !== undefined ? { outrosResponsaveisIds: depois.outrosResponsaveisIds } : {}),
+          ...(repeticaoMuda ? { recorrencia: depois.recorrencia ?? null } : {}),
           ...(camposDepois ? { campos: camposDepois } : {}),
         },
       }, tx);
       if (acessoHttp) await exigirAcessoAtual(tx, orgId, actorId, ['tarefas.editar']);
     });
+    /*
+     * CONCLUIR UMA TAREFA QUE SE REPETE CRIA A PRÓXIMA (versão final, trazido do Lucas):
+     * vale para qualquer caminho que leve a tarefa a uma etapa fechada (pop-up, arraste
+     * no quadro, seleção em lote). A série nunca tem duas abertas, então concluir, reabrir
+     * e concluir de novo devolve a que já existe em vez de criar outra.
+     */
+    let proxima: { id: string; dueDate: string | null } | null = null;
+    if (statusId && antes.status.type !== WorkStatusType.closed && !input.archived && !antes.archived) {
+      const novo = await this.prisma.workStatus.findFirst({ where: { id: statusId, orgId }, select: { type: true } });
+      const regra = repeticaoMuda ? input.recorrencia ?? null : regraDeRepeticao(antes.recorrencia);
+      if (novo?.type === WorkStatusType.closed && regra) proxima = await this.criarProximaOcorrencia(orgId, actorId, id, regra);
+    }
     const detail = await this.tarefa(orgId, id);
     if (acessoHttp) await exigirAcessoAtual(this.prisma, orgId, actorId, ['tarefas.editar']);
-    return detail;
+    return proxima ? { ...detail, proxima } : detail;
+  }
+
+  /**
+   * Os DEMAIS responsáveis: sem repetir e sem o principal. Quem entra agora é conta
+   * ativa desta empresa; quem já estava pode continuar mesmo inativo (a regra do
+   * principal). Sem a chave no pedido, a lista só perde o principal novo, se ele estava nela.
+   */
+  private async conferirOutrosResponsaveis(
+    orgId: string, pedido: string[] | undefined, principal: string | null, atuais: string[],
+  ): Promise<string[] | undefined> {
+    if (pedido === undefined) {
+      return principal && atuais.includes(principal) ? atuais.filter((u) => u !== principal) : undefined;
+    }
+    const lista = [...new Set(pedido)].filter((u) => u !== principal);
+    const novos = lista.filter((u) => !atuais.includes(u));
+    if (novos.length) {
+      const ativos = await this.prisma.user.count({ where: { orgId, isActive: true, id: { in: novos } } });
+      if (ativos !== novos.length) throw new BadRequestException('Algum responsável não é uma pessoa ativa desta empresa.');
+    }
+    return lista;
+  }
+
+  /**
+   * A próxima ocorrência: mesma lista, pai, título, descrição, prioridade, etiquetas,
+   * cliente, área, responsáveis e regra; prazo seguinte; na primeira etapa aberta.
+   * Nasce pelo `criarTarefa` (auditoria e porta da implantação de sempre).
+   */
+  private async criarProximaOcorrencia(
+    orgId: string, actorId: string, id: string, regra: RecorrenciaDaTarefa,
+  ): Promise<{ id: string; dueDate: string | null }> {
+    const t = await this.prisma.workTask.findFirst({
+      where: { id, orgId },
+      include: { tags: { select: { id: true } }, assigneeUser: { select: { isActive: true } } },
+    });
+    if (!t) throw new NotFoundException('Tarefa não encontrada');
+    const serie = t.serieId ?? t.id;
+    // Carimbar a série não é edição: a versão (`updatedAt`) fica a mesma.
+    if (!t.serieId) await this.prisma.workTask.updateMany({ where: { id, orgId }, data: { serieId: serie, updatedAt: t.updatedAt } });
+    const aberta = await this.prisma.workTask.findFirst({
+      where: { orgId, serieId: serie, archived: false, id: { not: t.id }, status: { type: { not: WorkStatusType.closed } } },
+      select: { id: true, dueDate: true },
+    });
+    if (aberta) return { id: aberta.id, dueDate: aberta.dueDate?.toISOString() ?? null };
+    const dia = (d: Date) => d.toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' });
+    const prazo = proximaOcorrencia(regra, t.dueDate ? dia(t.dueDate) : null, hojeEmBrasilia());
+    // Meio-dia de São Paulo: o mesmo instante que o campo Prazo e o calendário gravam.
+    const vence = new Date(`${prazo}T15:00:00.000Z`).toISOString();
+    const statuses = await this.prisma.workStatus.findMany({ where: { listId: t.listId, orgId }, orderBy: { order: 'asc' } });
+    const aFazer = statuses.find((st) => st.type !== WorkStatusType.closed);
+    if (!aFazer) throw new BadRequestException('A lista da tarefa não tem etapa aberta para a próxima ocorrência.');
+    const nova = await this.criarTarefa(orgId, actorId, {
+      listId: t.listId, statusId: aFazer.id, title: t.title, description: t.description,
+      priority: t.priority, parentId: t.parentId,
+      assigneeUserId: t.assigneeUserId && t.assigneeUser?.isActive ? t.assigneeUserId : null,
+      dueDate: vence,
+      tagIds: t.tags.map((tg) => tg.id),
+    });
+    // O cliente vai direto (já conferido na tarefa de origem), com área, demais responsáveis e a regra.
+    await this.prisma.workTask.updateMany({
+      where: { id: nova.id, orgId },
+      data: {
+        clienteId: t.clienteId, areaId: t.areaId, serieId: serie,
+        outrosResponsaveisIds: t.outrosResponsaveisIds, recorrencia: t.recorrencia ?? Prisma.DbNull,
+      },
+    });
+    return { id: nova.id, dueDate: vence };
+  }
+
+  /**
+   * ORDEM MANUAL (versão final, F4): a sequência que a tela mandou (uma coluna, a
+   * lista) vira as posições 10, 20, 30… Só a posição muda. Cada tarefa vai com a
+   * versão lida; uma vencida derruba a sequência inteira (409), sem gravar metade.
+   */
+  async reordenar(orgId: string, actorId: string, input: TrabTarefasOrdemInput): Promise<{ ok: true }> {
+    await exigirAcessoAtual(this.prisma, orgId, actorId, ['tarefas.editar']);
+    const ids = input.itens.map((i) => i.id);
+    if (new Set(ids).size !== ids.length) throw new BadRequestException('A sequência repete uma tarefa.');
+    await this.prisma.$transaction(async (tx) => {
+      for (const [i, item] of input.itens.entries()) {
+        const r = await tx.workTask.updateMany({
+          where: { id: item.id, orgId, updatedAt: new Date(item.expectedUpdatedAt) },
+          data: { order: (i + 1) * 10 },
+        });
+        if (r.count !== 1) {
+          throw new ConflictException({
+            error: 'work_task_conflict', code: 'work_task_conflict',
+            message: 'Alguma tarefa mudou desde que a lista foi lida. Recarregue antes de reordenar.',
+          });
+        }
+      }
+      await this.audit.log({ orgId, actorId, action: 'work.task.reorder', entityType: 'work_task', entityId: ids[0], after: { ids } }, tx);
+      await exigirAcessoAtual(tx, orgId, actorId, ['tarefas.editar']);
+    });
+    return { ok: true };
   }
 
   /** Um vínculo existente inativo pode permanecer; uma nova atribuição exige conta ativa desta empresa. */
@@ -1058,4 +1201,11 @@ export class WorkService {
     });
     return res;
   }
+}
+
+/** A regra de repetição gravada, conferida: JSON que não é regra válida vale como "não repete". */
+export function regraDeRepeticao(valor: Prisma.JsonValue | null | undefined): RecorrenciaDaTarefa | null {
+  if (valor == null) return null;
+  const r = RecorrenciaSchema.safeParse(valor);
+  return r.success ? r.data : null;
 }

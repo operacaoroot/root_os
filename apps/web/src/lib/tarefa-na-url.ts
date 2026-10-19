@@ -43,19 +43,18 @@ export function useTarefaNaUrl(): TarefaNaUrl {
   const [estado, setEstado] = useState<{ tarefaId: string | null; aba: AbaDaTarefa }>({ tarefaId: null, aba: 'tarefa' });
   // A entrada do histórico é nossa (abrimos por clique): fechar volta em vez de reescrever.
   const empilhou = useRef(false);
+  /*
+   * O `history.back()` é ASSÍNCRONO: o navegador só volta numa tarefa seguinte, e a
+   * volta é contada a partir da entrada em que estiver NAQUELE momento. Abrir outra
+   * tarefa logo depois de fechar empilhava a entrada nova e a volta pendente a tirava,
+   * fechando a tarefa recém-aberta. Enquanto a volta não chega, quem pede para abrir
+   * fica guardado aqui e a entrada nova só é empilhada depois do `popstate`.
+   */
+  const voltando = useRef(false);
+  const pendente = useRef<{ tarefaId: string; aba: AbaDaTarefa } | null>(null);
+  const reserva = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  useEffect(() => {
-    const ler = () => {
-      const lido = lerTarefaDaUrl(window.location.search);
-      if (!lido.tarefaId) empilhou.current = false;
-      setEstado((antes) => (antes.tarefaId === lido.tarefaId && antes.aba === lido.aba ? antes : lido));
-    };
-    ler();
-    window.addEventListener('popstate', ler);
-    return () => window.removeEventListener('popstate', ler);
-  }, []);
-
-  const abrir = useCallback((id: string, aba: AbaDaTarefa = 'tarefa') => {
+  const empilhar = useCallback((id: string, aba: AbaDaTarefa) => {
     const url = urlComTarefa(window.location.href, id, aba);
     if (lerTarefaDaUrl(window.location.search).tarefaId) {
       window.history.replaceState(window.history.state, '', url);
@@ -63,10 +62,52 @@ export function useTarefaNaUrl(): TarefaNaUrl {
       window.history.pushState(window.history.state, '', url);
       empilhou.current = true;
     }
-    setEstado({ tarefaId: id, aba });
   }, []);
 
+  const terminarVolta = useCallback(() => {
+    voltando.current = false;
+    if (reserva.current) clearTimeout(reserva.current);
+    reserva.current = null;
+    const p = pendente.current;
+    pendente.current = null;
+    if (p) {
+      empilhar(p.tarefaId, p.aba);
+      setEstado(p);
+      return true;
+    }
+    return false;
+  }, [empilhar]);
+
+  useEffect(() => {
+    const ler = () => {
+      if (voltando.current && terminarVolta()) return;
+      const lido = lerTarefaDaUrl(window.location.search);
+      if (!lido.tarefaId) empilhou.current = false;
+      setEstado((antes) => (antes.tarefaId === lido.tarefaId && antes.aba === lido.aba ? antes : lido));
+    };
+    ler();
+    window.addEventListener('popstate', ler);
+    return () => {
+      window.removeEventListener('popstate', ler);
+      if (reserva.current) clearTimeout(reserva.current);
+    };
+  }, [terminarVolta]);
+
+  const abrir = useCallback((id: string, aba: AbaDaTarefa = 'tarefa') => {
+    setEstado({ tarefaId: id, aba });
+    if (voltando.current) {
+      pendente.current = { tarefaId: id, aba };
+      return;
+    }
+    empilhar(id, aba);
+  }, [empilhar]);
+
   const trocarAba = useCallback((aba: AbaDaTarefa) => {
+    if (voltando.current && pendente.current) {
+      pendente.current = { ...pendente.current, aba };
+      setEstado(pendente.current);
+      return;
+    }
     const atual = lerTarefaDaUrl(window.location.search).tarefaId;
     if (!atual) return;
     window.history.replaceState(window.history.state, '', urlComTarefa(window.location.href, atual, aba));
@@ -75,13 +116,18 @@ export function useTarefaNaUrl(): TarefaNaUrl {
 
   const fechar = useCallback(() => {
     setEstado({ tarefaId: null, aba: 'tarefa' });
+    pendente.current = null;
+    if (voltando.current) return;
+    // O endereço fica certo na hora; a volta só devolve a entrada que empilhamos.
+    window.history.replaceState(window.history.state, '', urlComTarefa(window.location.href, null));
     if (empilhou.current) {
       empilhou.current = false;
+      voltando.current = true;
       window.history.back();
-      return;
+      // Se o navegador não devolver o `popstate` (aba sem a entrada), a espera não trava a tela.
+      reserva.current = setTimeout(() => { if (voltando.current) terminarVolta(); }, 1000);
     }
-    window.history.replaceState(window.history.state, '', urlComTarefa(window.location.href, null));
-  }, []);
+  }, [terminarVolta]);
 
   return { ...estado, abrir, trocarAba, fechar };
 }

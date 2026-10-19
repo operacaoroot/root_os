@@ -80,8 +80,10 @@ describe('Trabalho: o seletor de pasta no topo', () => {
     const chips = within(screen.getByRole('group', { name: 'Pastas' })).getAllByRole('button').map((b) => b.textContent?.trim());
     expect(chips).toEqual(['Todas', 'Administrativa', 'Clientes', 'Sem pasta', 'Nova pasta']);
     expect(screen.queryByTestId(`trabalho-pasta-${SUB}`)).toBeNull();
-    expect(screen.getByTestId('trabalho-pasta-todas')).toHaveAttribute('aria-pressed', 'true');
-    // Todas: a árvore mostra tudo
+    // Versão final (F4): "Todas" é a visão de todas as tarefas (`?pasta=todas`); sem pasta
+    // escolhida, a árvore mostra tudo com uma lista aberta e nenhum chip marcado.
+    expect(screen.getByTestId('trabalho-pasta-todas')).toHaveAttribute('aria-pressed', 'false');
+    // Sem pasta escolhida: a árvore mostra tudo
     for (const n of ['Contas a pagar', 'Esteira de clientes', 'Encerrados', 'Avulsa']) expect(within(arvore()).getByText(n)).toBeInTheDocument();
   });
 

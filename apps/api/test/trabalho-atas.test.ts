@@ -381,10 +381,21 @@ describe.skipIf(!URL)('o banco de atas contra o Postgres', () => {
     for (const id of [ORG, VIZINHA]) {
       await prisma.org.upsert({ where: { id }, create: { id, name: id, slug: id }, update: {} });
     }
+    // A memória confere a pessoa NO BANCO a cada leitura (regra do Pedro, 14/10: `exigirAcessoAtual`
+    // com `obsidian.ver`): quem cola uma ata tem o papel que a rota pede, não só o token.
+    const chaves = ['tarefas.ver', 'tarefas.editar', 'obsidian.ver', 'obsidian.editar'];
+    const permissoes = [];
+    for (const key of chaves) permissoes.push(await prisma.permission.upsert({ where: { key }, create: { key }, update: {}, select: { id: true } }));
+    const analista = await prisma.role.upsert({
+      where: { orgId_key: { orgId: ORG, key: 'analista' } },
+      create: { orgId: ORG, key: 'analista', name: 'Analista', permissions: { connect: permissoes } },
+      update: { permissions: { connect: permissoes } },
+      select: { id: true },
+    });
     await prisma.user.upsert({
       where: { id: EU },
-      create: { id: EU, orgId: ORG, name: 'Rodrigo Teste', email: `${EU}@teste.local`, passwordHash: 'x' },
-      update: {},
+      create: { id: EU, orgId: ORG, name: 'Rodrigo Teste', email: `${EU}@teste.local`, passwordHash: 'x', roles: { connect: { id: analista.id } } },
+      update: { roles: { connect: { id: analista.id } } },
     });
     await prisma.user.upsert({
       where: { id: DA_VIZINHA },
