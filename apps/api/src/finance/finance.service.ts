@@ -339,6 +339,7 @@ export class FinanceService implements OnModuleInit {
       if (input.paidAt !== undefined) data.paidAt = input.paidAt ? parseDate(input.paidAt) : null;
       if (input.counterparty !== undefined) data.counterparty = input.counterparty;
       if (input.notes !== undefined) data.notes = input.notes;
+      if (input.mesesDeUso !== undefined) data.mesesDeUso = input.mesesDeUso;
       // classificação (plano de contas, parceiro, rateio) — também em lançamento importado
       const splits = input.splits;
       await conferirReferencias(this.prisma, orgId, {

@@ -6,7 +6,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
 import { LLM_PROVIDER, type LlmProvider } from '../llm/llm.provider';
 import { FinanceService } from './finance.service';
-import { contaFixa, ehReceita, grupoDaSaida, mesAMes, mesDe, mesesAte, partesDaSaida, type ContaDoPlano, type Movimento } from './mes-a-mes';
+import { contaFixa, ehReceita, grupoDaSaida, mesAMes, mesDe, mesesAte, naturezaDaConta, partesDaSaida, partesDoMes, type ContaDoPlano, type Movimento } from './mes-a-mes';
 
 /*
  * ANÁLISE DO FINANCEIRO
@@ -105,10 +105,11 @@ export class AnaliseService {
       }),
       this.prisma.contract.findMany({ where: { orgId, status: 'ativo' }, select: { id: true, tipo: true, descricao: true, valor: true, periodicidade: true, diaVencimento: true, partner: { select: { razaoSocial: true } } } }),
       this.prisma.financeTransaction.count({ where: { orgId, status: { not: 'previsto' }, chartAccountId: null, temRateio: false } }),
-      this.prisma.chartAccount.findMany({ where: { orgId }, select: { id: true, codigo: true, nome: true, parentId: true, custoFixo: true } }),
+      this.prisma.chartAccount.findMany({ where: { orgId }, select: { id: true, codigo: true, nome: true, parentId: true, custoFixo: true, natureza: true } }),
       this.prisma.financeTransaction.findMany({
         where: { orgId, status: { in: ['realizado', 'conciliado'] }, date: { gte: inicioJanela } },
-        select: { type: true, amount: true, date: true, chartAccountId: true, contractId: true, splits: { select: { chartAccountId: true, valor: true } } },
+        select: { id: true, type: true, amount: true, date: true, description: true, counterparty: true, notes: true, mesesDeUso: true, chartAccountId: true, contractId: true, splits: { select: { chartAccountId: true, valor: true } } },
+        orderBy: { date: 'asc' },
       }),
     ]);
     const doContrato = contratos.length
@@ -184,6 +185,7 @@ export class AnaliseService {
 
     // para onde foi o dinheiro, mês a mês
     const movs: Movimento[] = movsJanela.map((t) => ({
+      id: t.id, mesesDeUso: t.mesesDeUso,
       type: t.type, amount: num(t.amount), date: t.date, chartAccountId: t.chartAccountId, contractId: t.contractId,
       splits: t.splits.map((s) => ({ chartAccountId: s.chartAccountId, valor: num(s.valor) })),
     }));
@@ -194,13 +196,21 @@ export class AnaliseService {
         if (!p.chartAccountId || (m.type === 'entrada' && ehReceita(porId, p.chartAccountId))) continue;
         const g = grupoDaSaida(porId, p.chartAccountId, false);
         const v = m.type === 'saida' ? p.valor : -p.valor;
-        if (g === 'fixo' || g === 'variavel') usadas.set(p.chartAccountId, (usadas.get(p.chartAccountId) ?? 0) + v);
+        if (g === 'fixo' || g === 'variavel' || g === 'eventual' || (g === 'impostos' && !naturezaDaConta(porId, p.chartAccountId))) {
+          usadas.set(p.chartAccountId, (usadas.get(p.chartAccountId) ?? 0) + v);
+        }
       }
     }
     const contasDaJanela = [...usadas.entries()]
       .map(([id, total]) => {
         const c = contas.find((x) => x.id === id)!;
-        return { id, codigo: c.codigo, nome: c.nome, custoFixo: c.custoFixo, herdaFixo: !c.custoFixo && contaFixa(porId, id), total: r2(total) };
+        // A natureza em uso: a escolhida (nesta conta ou numa conta-mãe), ou a que a regra dá hoje.
+        const herdada = !c.natureza ? naturezaDaConta(porId, id) : null;
+        const grupo = grupoDaSaida(porId, id, false);
+        return {
+          id, codigo: c.codigo, nome: c.nome, custoFixo: c.custoFixo, herdaFixo: !c.custoFixo && contaFixa(porId, id),
+          natureza: c.natureza ?? null, naturezaHerdada: herdada, grupo, total: r2(total),
+        };
       })
       .sort((a, b) => b.total - a.total);
 
@@ -221,7 +231,20 @@ export class AnaliseService {
         semRastro: r2(linhas.reduce((s, l) => s + l.semRastro, 0)),
       },
       recorrentes: { linhas: recorrentes, custoMensal, receitaMensal, coberturaPct: custoMensal > 0 ? r2((receitaMensal / custoMensal) * 100) : null },
-      mesAMes: { linhas: mesAMes(movs, plano, meses), mesAtual, contas: contasDaJanela },
+      mesAMes: {
+        linhas: mesAMes(movs, plano, meses), mesAtual, contas: contasDaJanela,
+        // o que está dentro de cada célula da tabela (mês × grupo): o clique abre esta lista
+        detalhe: partesDoMes(movs, plano, meses).map((pt) => {
+          const t = movsJanela[pt.indice];
+          const conta = pt.chartAccountId ? porId.get(pt.chartAccountId) : undefined;
+          return {
+            mes: pt.mes, grupo: pt.grupo, id: t.id, data: t.date.toISOString().slice(0, 10),
+            descricao: t.notes?.split(' — ')[0] || t.description, extrato: t.description, quem: t.counterparty,
+            conta: conta ? `${conta.codigo} ${contas.find((x) => x.id === conta.id)?.nome ?? ''}`.trim() : null,
+            valor: r2(pt.valor), rateio: t.splits.length > 0, mesesDeUso: t.mesesDeUso ?? null,
+          };
+        }),
+      },
       proximos,
       dependencia: topo ? { pagador: topo[0], valor: r2(topo[1]), pct: totalRecebido90 > 0 ? r2((topo[1] / totalRecebido90) * 100) : 0, total90: r2(totalRecebido90) } : null,
       pendencias: { semClassificacao: semConta, vencidoReceber: summary.aReceberVencido, vencidoPagar: summary.aPagarVencido },
@@ -247,7 +270,7 @@ export class AnaliseService {
       caixa: r.caixa,
       acordos: { ...r.acordos, linhas: r.acordos.linhas.map(({ id, apelidos, ...l }) => l) },
       recorrentes: { ...r.recorrentes, linhas: r.recorrentes.linhas.map(({ id, ...l }) => l) },
-      mesAMes: { mesAtual: r.mesAMes.mesAtual, linhas: r.mesAMes.linhas },
+      mesAMes: { mesAtual: r.mesAMes.mesAtual, linhas: r.mesAMes.linhas },  // sem o detalhe: a IA lê os totais
       proximos: r.proximos,
       dependencia: r.dependencia,
       pendencias: r.pendencias,

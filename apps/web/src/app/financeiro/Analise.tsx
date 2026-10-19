@@ -17,13 +17,16 @@ type Recorrente = {
   id: string; tipo: 'entrada' | 'saida'; descricao: string; quem: string | null; valor: number; periodicidade: string; dia: number; porMes: number;
   noMes: { pago: number; previsto: number; vence: string | null };
 };
-type Mes = { mes: string; receita: number; impostos: number; fixo: number; variavel: number; investimento: number; retirada: number; saiu: number; sobra: number };
-type ContaDaJanela = { id: string; codigo: string; nome: string; custoFixo: boolean; herdaFixo: boolean; total: number };
+type Mes = { mes: string; receita: number; impostos: number; fixo: number; fixoPorMes: number; variavel: number; eventual: number; investimento: number; retirada: number; saiu: number; sobra: number };
+type Grupo = 'receita' | 'impostos' | 'fixo' | 'variavel' | 'eventual' | 'investimento' | 'retirada';
+type Natureza = 'fixo' | 'variavel' | 'eventual';
+type Parte = { mes: string; grupo: Grupo; id: string; data: string; descricao: string; extrato: string; quem: string | null; conta: string | null; valor: number; rateio: boolean; mesesDeUso: number | null };
+type ContaDaJanela = { id: string; codigo: string; nome: string; custoFixo: boolean; herdaFixo: boolean; natureza: Natureza | null; naturezaHerdada: Natureza | null; grupo: string; total: number };
 type Resumo = {
   caixa: { saldo: number; aReceber: number; aPagar: number; folegoMeses: number | null };
   acordos: { linhas: Linha[]; porTipo: { tipo: Tipo; acordos: number; valor: number; recebido: number; aReceber: number }[]; entregue: number; viraCaixa: number; semCaixaPct: number; semRastro: number };
   recorrentes: { linhas: Recorrente[]; custoMensal: number; receitaMensal: number; coberturaPct: number | null };
-  mesAMes: { linhas: Mes[]; mesAtual: string; contas: ContaDaJanela[] };
+  mesAMes: { linhas: Mes[]; mesAtual: string; contas: ContaDaJanela[]; detalhe: Parte[] };
   proximos: { dias: number; entra: number; sai: number }[];
   dependencia: { pagador: string; valor: number; pct: number; total90: number } | null;
   pendencias: { semClassificacao: number; vencidoReceber: number; vencidoPagar: number };
@@ -43,16 +46,23 @@ const MESES = ['jan', 'fev', 'mar', 'abr', 'mai', 'jun', 'jul', 'ago', 'set', 'o
 const nomeDoMes = (m: string) => `${MESES[Number(m.slice(5, 7)) - 1]}/${m.slice(2, 4)}`;
 const diaMes = (d: string) => `${d.slice(8, 10)}/${d.slice(5, 7)}`;
 // Linhas da tabela "Para onde foi o dinheiro", na ordem em que aparecem.
-const LINHAS_DO_MES: { k: keyof Omit<Mes, 'mes'>; rotulo: string; dica: string; forte?: boolean; opcional?: boolean }[] = [
-  { k: 'receita', rotulo: 'Entrou', dica: 'tudo o que entrou no mês', forte: true },
-  { k: 'impostos', rotulo: 'Impostos', dica: 'contas 2.x do plano (DAS, impostos sobre venda)' },
-  { k: 'fixo', rotulo: 'Custo fixo', dica: 'contas marcadas como fixas e pagamentos presos a contrato' },
-  { k: 'variavel', rotulo: 'Custo variável', dica: 'o resto das despesas, inclusive sem conta do plano' },
-  { k: 'sobra', rotulo: 'Sobra da operação', dica: 'entrou − impostos − fixo − variável', forte: true },
-  { k: 'investimento', rotulo: 'Investimento', dica: 'contas 5.x (equipamentos, móveis, instalações)' },
-  { k: 'retirada', rotulo: 'Retirada dos sócios', dica: 'contas 4.6.x (pró-labore, dividendos)', opcional: true },
+// `grupo`: a linha é uma soma de lançamentos e o clique na célula abre a lista.
+const LINHAS_DO_MES: { k: keyof Omit<Mes, 'mes'>; rotulo: string; dica: string; grupo?: Grupo; forte?: boolean; opcional?: boolean; sub?: boolean }[] = [
+  { k: 'receita', rotulo: 'Entrou', dica: 'tudo o que entrou no mês', grupo: 'receita', forte: true },
+  { k: 'impostos', rotulo: 'Impostos', dica: 'contas 2.x do plano que não foram marcadas como fixas', grupo: 'impostos', opcional: true },
+  { k: 'fixo', rotulo: 'Custo fixo', dica: 'vem todo mês, vendendo ou não: contas marcadas como fixas e pagamentos presos a contrato', grupo: 'fixo' },
+  { k: 'fixoPorMes', rotulo: 'fixo por mês', dica: 'o que foi pago de uma vez para vários meses de uso (plano anual) dividido pelos meses: o custo de manter a empresa', sub: true },
+  { k: 'variavel', rotulo: 'Custo variável', dica: 'sobe e desce com as vendas (taxas, freelancer por projeto, comissão)', grupo: 'variavel' },
+  { k: 'eventual', rotulo: 'Eventual', dica: 'gasto pontual, por decisão (evento, confraternização, uniforme, presente)', grupo: 'eventual', opcional: true },
+  { k: 'sobra', rotulo: 'Sobra da operação', dica: 'entrou − impostos − fixo − variável − eventual', forte: true },
+  { k: 'investimento', rotulo: 'Investimento', dica: 'contas 5.x (equipamentos, móveis, instalações)', grupo: 'investimento' },
+  { k: 'retirada', rotulo: 'Retirada dos sócios', dica: 'contas 4.6.x (pró-labore, dividendos)', grupo: 'retirada', opcional: true },
   { k: 'saiu', rotulo: 'Saiu no total', dica: 'tudo o que saiu no mês' },
 ];
+const ROTULO_DO_GRUPO: Record<Grupo, string> = {
+  receita: 'Entrou', impostos: 'Impostos', fixo: 'Custo fixo', variavel: 'Custo variável', eventual: 'Eventual', investimento: 'Investimento', retirada: 'Retirada dos sócios',
+};
+const ROTULO_NATUREZA: Record<Natureza, string> = { fixo: 'Fixo', variavel: 'Variável', eventual: 'Eventual' };
 const inputCls = 'rounded-lg border border-border bg-surface-2 px-3 py-2 text-sm outline-none focus:border-brand-dim';
 const Rotulo = ({ children }: { children: React.ReactNode }) => (
   <h2 className="mb-3 font-os-mono text-[10px] uppercase tracking-[0.16em] font-medium text-muted">{children}</h2>
@@ -66,6 +76,8 @@ export function AnaliseView({ token, canEdit, onError }: { token: string | null;
   const [form, setForm] = useState({ cliente: '', produto: '', valor: '', tipo: 'pagante' as Tipo, observacao: '', apelidos: '' });
   const [aberto, setAberto] = useState(false);
   const [contasAbertas, setContasAbertas] = useState(false);
+  const [celula, setCelula] = useState<{ mes: string; grupo: Grupo } | null>(null);
+  const [mediaMensal, setMediaMensal] = useState(false);
 
   const carregar = useCallback(() => {
     if (!token) return;
@@ -94,12 +106,17 @@ export function AnaliseView({ token, canEdit, onError }: { token: string | null;
       .catch(onError);
   };
   const apagar = (id: string) => apiDelete(`/finance/analise/acordos/${id}`, token).then(carregar).catch(onError);
-  const marcarFixa = (id: string, custoFixo: boolean) =>
-    apiPatch(`/finance/chart-accounts/${id}`, { custoFixo }, token).then(carregar).catch(onError);
+  const mudarNatureza = (id: string, natureza: Natureza | null) =>
+    apiPatch(`/finance/chart-accounts/${id}`, { natureza }, token).then(carregar).catch(onError);
+  const mudarMesesDeUso = (id: string, mesesDeUso: number | null) =>
+    apiPatch(`/finance/transactions/${id}`, { mesesDeUso }, token).then(carregar).catch(onError);
 
   if (!r) return <p className="text-sm text-muted">Carregando…</p>;
   const max = Math.max(1, ...r.acordos.porTipo.map((t) => t.valor));
-  const linhasDoMes = LINHAS_DO_MES.filter((l) => !l.opcional || r.mesAMes.linhas.some((m) => m[l.k] !== 0));
+  const linhasDoMes = LINHAS_DO_MES.filter((l) =>
+    l.k === 'fixoPorMes' ? r.mesAMes.linhas.some((m) => m.fixoPorMes !== m.fixo) : !l.opcional || r.mesAMes.linhas.some((m) => m[l.k] !== 0));
+  const partes = celula ? r.mesAMes.detalhe.filter((d) => d.mes === celula.mes && d.grupo === celula.grupo) : [];
+  const nMeses = r.mesAMes.linhas.length;
 
   return (
     <div className="space-y-6">
@@ -132,42 +149,106 @@ export function AnaliseView({ token, canEdit, onError }: { token: string | null;
             </thead>
             <tbody>
               {linhasDoMes.map((l) => (
-                <tr key={l.k} className={`border-t border-border ${l.forte ? 'font-medium' : ''}`}>
-                  <td className="py-2 pr-3" title={l.dica}>{l.rotulo}</td>
-                  {r.mesAMes.linhas.map((m) => (
-                    <td key={m.mes} className={`py-2 pr-3 text-right tabular-nums ${m[l.k] === 0 ? 'text-muted' : l.k === 'sobra' && m.sobra < 0 ? 'text-bad' : ''}`}>
-                      {m[l.k] === 0 ? '—' : brl(m[l.k])}
-                    </td>
-                  ))}
+                <tr key={l.k} className={`${l.sub ? 'text-[12px] italic text-muted' : 'border-t border-border'} ${l.forte ? 'font-medium' : ''}`}>
+                  <td className={`py-2 pr-3 ${l.sub ? 'pl-3 pt-0' : ''}`} title={l.dica}>{l.rotulo}</td>
+                  {r.mesAMes.linhas.map((m) => {
+                    const v = m[l.k];
+                    const aberta = !!l.grupo && celula?.mes === m.mes && celula.grupo === l.grupo;
+                    const cls = `tabular-nums ${v === 0 ? 'text-muted' : l.k === 'sobra' && m.sobra < 0 ? 'text-bad' : ''}`;
+                    return (
+                      <td key={m.mes} className={`py-2 pr-3 text-right ${l.sub ? 'pt-0' : ''}`}>
+                        {l.grupo && v !== 0 ? (
+                          <button
+                            type="button"
+                            onClick={() => setCelula(aberta ? null : { mes: m.mes, grupo: l.grupo! })}
+                            aria-expanded={aberta}
+                            title={`Ver o que compõe ${ROTULO_DO_GRUPO[l.grupo]} em ${nomeDoMes(m.mes)}`}
+                            className={`${cls} rounded px-1 underline decoration-dotted underline-offset-4 hover:bg-surface-2 ${aberta ? 'bg-brand/10 text-brand' : ''}`}
+                          >
+                            {brl(v)}
+                          </button>
+                        ) : (
+                          <span className={cls}>{v === 0 ? '—' : brl(v)}</span>
+                        )}
+                      </td>
+                    );
+                  })}
                 </tr>
               ))}
             </tbody>
           </table>
         </div>
+        {celula && (
+          <div className="mt-3 rounded-lg border border-brand/30 bg-surface-2/40 p-3">
+            <div className="mb-2 flex items-center justify-between text-sm">
+              <span><b>{ROTULO_DO_GRUPO[celula.grupo]}</b> em {nomeDoMes(celula.mes)} · {partes.length} {partes.length === 1 ? 'lançamento' : 'lançamentos'} · {brl(partes.reduce((s, p) => s + p.valor, 0))}</span>
+              <button onClick={() => setCelula(null)} className="text-muted hover:text-text">fechar</button>
+            </div>
+            <ul className="divide-y divide-border text-sm">
+              {partes.map((p, i) => (
+                <li key={`${p.id}-${i}`} className="flex flex-wrap items-center gap-x-3 gap-y-1 py-1.5">
+                  <span className="w-12 shrink-0 tabular-nums text-muted">{diaMes(p.data)}</span>
+                  <span className="min-w-0 flex-1" title={p.extrato}>
+                    {p.descricao}
+                    {p.quem && <span className="ml-2 text-[12px] text-muted">{p.quem}</span>}
+                    {p.rateio && <span className="ml-2 text-[11px] text-muted">(parte de um rateio)</span>}
+                  </span>
+                  {p.conta && <span className="shrink-0 text-[12px] text-muted">{p.conta}</span>}
+                  {celula.grupo === 'fixo' && canEdit && !p.rateio && (
+                    <label className="flex shrink-0 items-center gap-1 text-[12px] text-muted" title="Pago de uma vez para 12 meses de uso: no fixo por mês entra 1/12 em cada mês">
+                      <input type="checkbox" checked={(p.mesesDeUso ?? 1) === 12} onChange={(e) => mudarMesesDeUso(p.id, e.target.checked ? 12 : null)} />
+                      anual
+                    </label>
+                  )}
+                  <span className={`w-28 shrink-0 text-right tabular-nums ${p.valor < 0 ? 'text-good' : ''}`}>{brl(p.valor)}</span>
+                </li>
+              ))}
+            </ul>
+            {celula.grupo !== 'receita' && (
+              <p className="mt-2 text-[12px] text-muted">Valor negativo é estorno abatendo o gasto. Para mudar a faixa de uma conta, use "Como cada conta conta" abaixo.</p>
+            )}
+          </div>
+        )}
         <p className="mt-2 text-[12px] text-muted">
-          Fixo é o que vem todo mês, venda ou não venda: as contas marcadas como fixas e os pagamentos conciliados com um contrato. Investimento e retirada ficam fora da sobra.
+          Clique num valor para ver os lançamentos. Fixo vem todo mês, vendendo ou não; variável acompanha as vendas; eventual é gasto pontual, por decisão. Investimento e retirada ficam fora da sobra.
         </p>
         {r.mesAMes.contas.length > 0 && (
           <div className="mt-3">
-            <button onClick={() => setContasAbertas(!contasAbertas)} className="text-[12px] text-muted hover:text-text">
-              {contasAbertas ? '▾' : '▸'} Quais contas contam como fixas
-            </button>
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <button onClick={() => setContasAbertas(!contasAbertas)} className="text-[12px] text-muted hover:text-text">
+                {contasAbertas ? '▾' : '▸'} Como cada conta conta (fixo, variável ou eventual)
+              </button>
+              {contasAbertas && (
+                <div className="flex rounded border border-border text-[12px]" role="group" aria-label="Valor mostrado">
+                  <button onClick={() => setMediaMensal(false)} aria-pressed={!mediaMensal} className={`px-2 py-0.5 ${!mediaMensal ? 'bg-brand/10 text-brand' : 'text-muted'}`}>total do período</button>
+                  <button onClick={() => setMediaMensal(true)} aria-pressed={mediaMensal} className={`px-2 py-0.5 ${mediaMensal ? 'bg-brand/10 text-brand' : 'text-muted'}`}>média por mês</button>
+                </div>
+              )}
+            </div>
             {contasAbertas && (
               <ul className="mt-2 divide-y divide-border text-sm">
+                {mediaMensal && (
+                  <li className="py-1.5 text-[12px] text-muted">Média dos {nMeses} meses da tabela ({nomeDoMes(r.mesAMes.linhas[0].mes)} a {nomeDoMes(r.mesAMes.mesAtual)}, o atual ainda aberto).</li>
+                )}
                 {r.mesAMes.contas.map((c) => (
                   <li key={c.id} className="flex items-center gap-3 py-1.5">
-                    <label className="flex min-w-0 flex-1 items-center gap-2">
-                      <input
-                        type="checkbox"
-                        checked={c.custoFixo || c.herdaFixo}
-                        disabled={!canEdit || c.herdaFixo}
-                        onChange={(e) => marcarFixa(c.id, e.target.checked)}
-                      />
-                      <span className="w-14 shrink-0 font-os-mono text-[12px] text-muted">{c.codigo}</span>
-                      <span className="truncate">{c.nome}</span>
-                      {c.herdaFixo && <span className="text-[11px] text-muted">(fixa pela conta-mãe)</span>}
-                    </label>
-                    <span className="w-28 shrink-0 text-right tabular-nums text-muted">{brl(c.total)}</span>
+                    <span className="w-14 shrink-0 font-os-mono text-[12px] text-muted">{c.codigo}</span>
+                    <span className="min-w-0 flex-1 truncate">{c.nome}</span>
+                    <select
+                      aria-label={`Faixa da conta ${c.nome}`}
+                      disabled={!canEdit}
+                      value={c.natureza ?? ''}
+                      onChange={(e) => mudarNatureza(c.id, (e.target.value || null) as Natureza | null)}
+                      className="rounded border border-border bg-surface px-1.5 py-0.5 text-[12px]"
+                    >
+                      <option value="">{`automático (${c.naturezaHerdada ? ROTULO_NATUREZA[c.naturezaHerdada] : c.grupo === 'impostos' ? 'Impostos' : c.grupo === 'fixo' ? 'Fixo' : 'Variável'})`}</option>
+                      <option value="fixo">Fixo</option>
+                      <option value="variavel">Variável</option>
+                      <option value="eventual">Eventual</option>
+                    </select>
+                    <span className="w-32 shrink-0 text-right tabular-nums text-muted">
+                      {brl(mediaMensal ? c.total / nMeses : c.total)}{mediaMensal && <span className="text-[11px]">/mês</span>}
+                    </span>
                   </li>
                 ))}
               </ul>

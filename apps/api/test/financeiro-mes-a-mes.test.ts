@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { contaFixa, grupoDaSaida, mesAMes, mesesAte, type ContaDoPlano, type Movimento } from '../src/finance/mes-a-mes';
+import { contaFixa, grupoDaSaida, mesAMes, mesesAte, partesDoMes, type ContaDoPlano, type Movimento } from '../src/finance/mes-a-mes';
 
 // Plano mínimo com a mesma forma do padrão: grupo → subgrupo → conta.
 const plano: ContaDoPlano[] = [
@@ -54,7 +54,7 @@ describe('mês a mês do financeiro', () => {
     ];
     const [set, out] = mesAMes(movs, plano, ['2026-09', '2026-10']);
     expect(set).toEqual({
-      mes: '2026-09', receita: 5000, impostos: 86.05, fixo: 250, variavel: 200, investimento: 2519.94, retirada: 0,
+      mes: '2026-09', receita: 5000, impostos: 86.05, fixo: 250, fixoPorMes: 250, variavel: 200, eventual: 0, investimento: 2519.94, retirada: 0,
       saiu: 3055.99, sobra: 4463.95,
     });
     expect(out.fixo).toBe(49.9);
@@ -74,5 +74,43 @@ describe('mês a mês do financeiro', () => {
     expect(set.variavel).toBe(200);
     expect(set.saiu).toBe(200);
     expect(set.sobra).toBe(800);
+  });
+
+  it('a natureza escolhida na conta vence imposto e a marca de fixo; eventual sai da sobra', () => {
+    const escolhido = plano.map((c) =>
+      c.id === 'das' ? { ...c, natureza: 'fixo' } : c.id === 'pessoal' ? { ...c, natureza: 'eventual' } : c);
+    const ids = new Map(escolhido.map((c) => [c.id, c]));
+    expect(grupoDaSaida(ids, 'das', true)).toBe('fixo'); // DAS do MEI: valor fixo todo mês
+    expect(grupoDaSaida(ids, 'pessoal', false)).toBe('eventual'); // escolha da conta vence a marca do 4.2
+    expect(grupoDaSaida(ids, 'equip', false)).toBe('investimento');
+    const [set] = mesAMes([
+      { type: 'entrada', amount: 1000, date: dia('2026-09-10'), chartAccountId: null, contractId: null, splits: [] },
+      saida('2026-09-15', 86.05, 'das'),
+      saida('2026-09-20', 189.8, 'pessoal'),
+    ], escolhido, ['2026-09']);
+    expect(set).toMatchObject({ impostos: 0, fixo: 86.05, eventual: 189.8, sobra: 724.15 });
+  });
+
+  it('pago de uma vez para 12 meses: o caixa mostra no mês, o fixo por mês divide', () => {
+    const [set, out, nov] = mesAMes([
+      saida('2026-09-15', 599.88, 'software', { mesesDeUso: 12 }),
+      saida('2026-10-15', 350, 'software'),
+    ], plano, ['2026-09', '2026-10', '2026-11']);
+    expect([set.fixo, set.fixoPorMes]).toEqual([599.88, 49.99]);
+    expect([out.fixo, out.fixoPorMes]).toEqual([350, 399.99]);
+    expect([nov.fixo, nov.fixoPorMes]).toEqual([0, 49.99]);
+  });
+
+  it('cada célula da tabela é a soma das partes que o clique abre', () => {
+    const movs: Movimento[] = [
+      { type: 'entrada', amount: 5000, date: dia('2026-09-10'), chartAccountId: null, contractId: null, splits: [] },
+      saida('2026-09-22', 300, null, { splits: [{ chartAccountId: 'software', valor: 100 }, { chartAccountId: 'marketing', valor: 200 }] }),
+      saida('2026-09-05', 150, 'aluguel'),
+    ];
+    const partes = partesDoMes(movs, plano, ['2026-09']);
+    const [set] = mesAMes(movs, plano, ['2026-09']);
+    const soma = (g: string) => partes.filter((p) => p.grupo === g).reduce((s, p) => s + p.valor, 0);
+    expect([soma('receita'), soma('fixo'), soma('variavel')]).toEqual([set.receita, set.fixo, set.variavel]);
+    expect(partes.filter((p) => p.indice === 1).map((p) => p.grupo)).toEqual(['fixo', 'variavel']);
   });
 });

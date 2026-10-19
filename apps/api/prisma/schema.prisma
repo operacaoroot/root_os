@@ -780,6 +780,8 @@ model FinanceTransaction {
   counterparty   String? // favorecido / pagador
   documentNumber String?
   notes          String?
+  /// pago de uma vez para N meses de uso (plano anual = 12); nulo = 1 mês
+  mesesDeUso     Int?
   source         String             @default("manual") // manual | ofx | pluggy
   externalId     String? // id no extrato/provedor (dedup)
   chartAccountId String? // conta do plano de contas (p/ DRE)
@@ -950,6 +952,8 @@ model ChartAccount {
   /// Gasto que vem todo mês, venda ou não venda (aluguel, software, folha). Separa
   /// custo fixo de variável na Análise; vale para as filhas da conta também.
   custoFixo         Boolean        @default(false)
+  /// fixo | variavel | eventual, escolhido na Análise. Nulo: regra pelo código e custoFixo.
+  natureza          String?
   createdAt         DateTime       @default(now())
   updatedAt         DateTime       @updatedAt
 

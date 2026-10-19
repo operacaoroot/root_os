@@ -671,6 +671,8 @@ export const UpdateFinanceTransactionSchema = z
     partnerId: z.string().nullable().optional(),
     notes: z.string().max(500).nullable().optional(),
     splits: z.array(RateioSplitInputSchema).optional(), // [] remove o rateio; soma = amount
+    // pago de uma vez para N meses de uso (plano anual = 12); null volta a 1 mês
+    mesesDeUso: z.number().int().min(1).max(36).nullable().optional(),
   })
   .refine((v) => Object.values(v).some((x) => x !== undefined), { message: 'Nada para atualizar' });
 export type UpdateFinanceTransactionInput = z.infer<typeof UpdateFinanceTransactionSchema>;
@@ -708,6 +710,7 @@ export const ChartAccountSchema = z.object({
   dreCodigo: z.string().nullable(),
   ativo: z.boolean(),
   custoFixo: z.boolean(),
+  natureza: z.string().nullable(),
 });
 export type ChartAccount = z.infer<typeof ChartAccountSchema>;
 
@@ -730,7 +733,10 @@ export const CreateChartAccountSchema = z.object({
 export type CreateChartAccountInput = z.infer<typeof CreateChartAccountSchema>;
 
 // Por ora só o que a Análise edita: se a conta é custo fixo.
-export const UpdateChartAccountSchema = z.object({ custoFixo: z.boolean() });
+export const NaturezaDaContaSchema = z.enum(['fixo', 'variavel', 'eventual']);
+export const UpdateChartAccountSchema = z
+  .object({ custoFixo: z.boolean().optional(), natureza: NaturezaDaContaSchema.nullable().optional() })
+  .refine((v) => v.custoFixo !== undefined || v.natureza !== undefined, { message: 'Nada para atualizar' });
 export type UpdateChartAccountInput = z.infer<typeof UpdateChartAccountSchema>;
 
 // --- FinOps: DRE (Demonstrativo de Resultado — "Motor Vortex") ---
