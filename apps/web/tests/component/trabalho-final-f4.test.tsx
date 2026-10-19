@@ -109,6 +109,14 @@ describe('F4: "Todas as tarefas"', () => {
     fireEvent.drop(concluidas, arrasto(T2));
     await waitFor(() => expect(patch).toHaveBeenCalledWith(`/trabalho/tarefas/${T2}`, { statusId: 'b-feita', expectedUpdatedAt: V2 }, 'tok'));
   });
+
+  it('o quadro mede onde começa e ocupa até o fim da janela (a rolagem lateral fica visível com o menu recolhido ou não)', async () => {
+    window.history.replaceState({}, '', '/trabalho?pasta=todas');
+    render(<TrabalhoPage />);
+    const caixa = await screen.findByTestId('trabalho-quadro-caixa');
+    // No jsdom o topo é 0: a altura é a janela menos a folga de baixo.
+    expect(caixa.style.height).toBe(`${window.innerHeight - 24}px`);
+  });
 });
 
 describe('F4: seleção em lote na Lista', () => {

@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import * as Dialog from '@radix-ui/react-dialog';
 import { Archive, Bot, Clock, DoorOpen, ExternalLink, Flag, Hourglass, MessageSquare, Plus, Repeat, Settings2, Unlock, X } from 'lucide-react';
 import {
@@ -632,7 +632,7 @@ function TrabalhoConteudo({ visaoInicial, modo }: { visaoInicial: Visao; modo: M
   const pastaDaLista = lista && estrutura ? estrutura.folders.find((f) => f.lists.some((l) => l.id === lista.id))?.id ?? '' : '';
 
   return (
-    <div className={`flex h-full min-w-0 flex-col gap-3 ${visao === 'board' && (lista || geral) ? 'md:h-[calc(100dvh-52px-2rem)] min-[820px]:h-[calc(100dvh-46px-3rem)]' : ''}`}>
+    <div className="flex h-full min-w-0 flex-col gap-3">
       {estrutura && !implantacao && (
         <BarraDePastas
           pastas={pastasDeTopo} temSoltas={estrutura.listasSoltas.length > 0} atual={fPasta}
@@ -1097,12 +1097,14 @@ function Board({ lista, tarefas, editable, podeCriar, token, agentes, pessoas = 
   }, [balao]);
   const tarefaDoBalao = balao ? tarefas.find((t) => t.id === balao.id) ?? null : null;
   const rolagem = useRef<HTMLDivElement>(null);
+  const caixaDoQuadro = useRef<HTMLDivElement>(null);
+  const altura = useAlturaAteOFim(caixaDoQuadro);
   const irParaColuna = (statusId: string) => {
     const alvo = rolagem.current?.querySelector<HTMLElement>(`[data-coluna="${statusId}"]`);
     alvo?.scrollIntoView({ behavior: 'smooth', inline: 'start', block: 'nearest' });
   };
   return (
-    <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-1.5">
+    <div ref={caixaDoQuadro} data-testid="trabalho-quadro-caixa" className="flex min-h-0 min-w-0 flex-1 flex-col gap-1.5" style={altura ? { height: altura } : undefined}>
     <nav aria-label="Ir para a etapa" data-testid="trabalho-chips-de-etapa" className="flex shrink-0 gap-1 overflow-x-auto pb-0.5">
       {lista.statuses.map((st) => (
         <button
@@ -1173,6 +1175,35 @@ function Board({ lista, tarefas, editable, podeCriar, token, agentes, pessoas = 
 }
 
 const ATRASO_DO_BALAO_MS = 350;
+
+/*
+ * A ALTURA DO QUADRO ATÉ O FIM DA JANELA (versão final, F4). A conta fixa de antes
+ * (`100dvh - topo - margem`) não sabia das abas do módulo, da aba da Rodada na
+ * Implantação nem da barra de filtros que quebra linha quando o menu lateral recolhe
+ * ou expande: a página ganhava rolagem própria e a barra de rolagem LATERAL do quadro
+ * ficava abaixo da dobra. Agora o quadro mede onde começa e ocupa o resto da janela;
+ * remede ao redimensionar e quando a página muda de tamanho (menu recolhido, filtros).
+ * No celular (abaixo de 768 px) as colunas são uma faixa com encaixe e a altura é livre.
+ */
+function useAlturaAteOFim(ref: React.RefObject<HTMLElement | null>, folga = 24) {
+  const [altura, setAltura] = useState<number | null>(null);
+  useLayoutEffect(() => {
+    const medir = () => {
+      const el = ref.current;
+      if (!el || window.innerWidth < 768) { setAltura(null); return; }
+      const nova = Math.max(340, Math.floor(window.innerHeight - el.getBoundingClientRect().top - folga));
+      setAltura((antes) => (antes === nova ? antes : nova));
+    };
+    medir();
+    window.addEventListener('resize', medir);
+    const observador = typeof ResizeObserver === 'function' ? new ResizeObserver(medir) : null;
+    observador?.observe(document.body);
+    const pai = ref.current?.parentElement;
+    if (pai) observador?.observe(pai);
+    return () => { window.removeEventListener('resize', medir); observador?.disconnect(); };
+  }, [ref, folga]);
+  return altura;
+}
 
 function Cartao({ t, lista, editable, token, agentes, pessoas = [], onSoltarSobre, trilho, mov, densidade, balaoAberto, onBalao, onAbrir, onMudou, onErro, onMoverEtapa }: {
   t: TrabTarefaResumo; lista: TrabListaDto; editable: boolean; token: string | null;
