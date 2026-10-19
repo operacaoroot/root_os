@@ -160,6 +160,19 @@ export function camposDoEvento(type: string, payload: unknown, em: Date, ficha: 
       if (cadastro.razaoSocial && !ficha.empresa) c.empresa = cadastro.razaoSocial;
       return c;
     }
+    case 'aceite.declarado': {
+      // T1b: o aceite que uma pessoa declarou (fechado fora do sistema). As condições e o cadastro vão à
+      // ficha; `propostaAceitaEm` NÃO, porque o cliente não aceitou nada na sala.
+      const cadastro = { cnpj: str(p.cnpj), razaoSocial: str(p.razaoSocial), endereco: str(p.endereco), quemAssina: str(p.quemAssina), email: str(p.email) };
+      const c: CamposDaFicha = { cadastro: cadastro as Prisma.InputJsonValue };
+      if (cadastro.cnpj) c.cnpj = cadastro.cnpj;
+      if (cadastro.razaoSocial) c.empresa = cadastro.razaoSocial;
+      if (str(p.produto) && PRODUTOS.includes(str(p.produto)!)) c.produto = str(p.produto);
+      if (num(p.valorCentavos) !== null) c.valorCentavos = num(p.valorCentavos);
+      if (num(p.parcelas) !== null) c.parcelas = num(p.parcelas);
+      if (str(p.forma)) c.forma = str(p.forma);
+      return c;
+    }
     case 'cobranca.criada': {
       const c: CamposDaFicha = { cobrancaCriadaEm: ficha.cobrancaCriadaEm ?? em };
       if (str(p.forma) && !ficha.forma) c.forma = str(p.forma);
@@ -369,6 +382,12 @@ export class FichaService {
        * `pessoa` (reações, relógio, agente), o portão recusa como sempre.
        */
       pessoa?: QuemFez;
+      /**
+       * T1b: o cliente que fechou FORA do sistema vai a E9 quando o fechamento conclui
+       * (`cliente.ativo`), sem percorrer o funil. Só vale para `fechado`, nunca a partir de uma
+       * saída, e o motivo escrito vai no `etapa.mudou`. Quem chama confere o registro e o fato.
+       */
+      fechadoForaDoSistema?: boolean;
     },
   ): Promise<ResultadoDaMudanca> {
     const { ficha, estado } = await this.estado(orgId, leadId);
@@ -377,7 +396,9 @@ export class FichaService {
 
     let veredicto: Veredicto;
     let comPendencia: { atravessadas: string[]; pendencias: string[] } | null = null;
-    if (opcoes.pessoa) {
+    if (opcoes.fechadoForaDoSistema) {
+      veredicto = para === 'fechado' && !ehSaida(de) ? { ok: true, de, para, faltando: [] } : { ok: false, de, para, faltando: ['o registro de cliente fechado fora só leva a Negócio fechado, e nunca a partir de uma saída'] };
+    } else if (opcoes.pessoa) {
       const destino = destinoDoMover(de, para, (ficha.etapaAntesDaSaida as ComercialEtapaAtiva | null) ?? null);
       if (!destino.permitido || destino.caminho !== 'mover') {
         const motivo = destino.motivo ?? 'saída vai pelo registro de saída, com motivo';

@@ -66,6 +66,8 @@ export const EVENTOS_QUE_PROJETAM: readonly ComercialEvento[] = [
   'proposta.lida',
   'proposta.aceita',
   'aceite.dados',
+  // T1b: o aceite declarado à mão (cliente que fechou fora) também projeta as condições e o cadastro.
+  'aceite.declarado',
   'cobranca.criada',
   'pix.pago',
   'boleto.pago',

@@ -9,9 +9,10 @@ import { TrilhoService } from '../onboarding/trilho/trilho.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { ConfigComercialService } from './config.service';
 import { DecisoesRegistry, DecisoesService, type DecisaoResolvida } from './decisoes.service';
-import { DinheiroService, type AceiteDoLead } from './dinheiro.service';
+import { DinheiroService, hojeEmSP, venceComoData, type AceiteDoLead } from './dinheiro.service';
 import { abrirCardDaImplantacao } from './card-da-implantacao';
 import { eventoIdComercial, uuidDe } from './eventos';
+import { aceiteDaDeclaracao, chaveDoAnexo, parcelasDoContratoFora } from './fechado-fora';
 import { FioService, ReacoesRegistry } from './fio.service';
 import { RelogioComercialRegistry } from './relogio.registry';
 import { WhatsappComercialService } from './whatsapp.service';
@@ -55,6 +56,17 @@ import { WhatsappComercialService } from './whatsapp.service';
  * R3) e vai à fila como toda mensagem; ela precisa do horário do kickoff, que
  * o cliente escolhe na sala depois do fechamento, então nasce na reação a
  * `kickoff.marcado`. Quem entra no grupo é [a decidir] pela mesa.
+ *
+ * QUEM FECHOU FORA DO SISTEMA (rodada do trabalho T1b, 19/10/2026). Sem aceite
+ * na sala, o fechamento lê o aceite DECLARADO (`aceite.declarado`, com o PDF do
+ * contrato assinado em `contrato.anexado`; ver `fechado-fora.ts`). A chave, a
+ * capacidade (R4), a porta e as seis escritas são as mesmas. Muda: a prontidão
+ * é o aceite declarado com o PDF anexado (não há Pix nem ZapSign a esperar); o
+ * sistema nunca propõe sozinho (os fatos foram declarados por uma pessoa); quem
+ * registrou não assina o próprio registro, nem pela fila; a cobrança só nasce
+ * com a pessoa marcando (sem marcar, a escrita fica `pulado` com o motivo); e o
+ * contrato do Financeiro conta as parcelas do 1º vencimento declarado e guarda
+ * o PDF anexado como o documento assinado.
  */
 
 export const CAP_FECHAMENTO = 'comercial.fechamento.executar';
@@ -237,6 +249,7 @@ export class FechamentoService implements OnModuleInit {
    * resposta diz o que falta.
    */
   async prontidao(orgId: string, leadId: string, a: AceiteDoLead | null): Promise<{ pronto: boolean; falta: string[] }> {
+    if (a?.fora) return this.prontidaoFora(orgId, leadId, a);
     const base = prontoParaFechar(await this.tiposNoFio(orgId, leadId));
     if (!base.pronto) return base;
     if (!a) return { pronto: false, falta: ['aceite com dados'] };
@@ -256,6 +269,25 @@ export class FechamentoService implements OnModuleInit {
     const aprovado = cobrancaDaVersao ? await this.dinheiro.aceiteDaCobrancaAprovada(orgId, leadId, a) : null;
     if (aprovado) hashes.push(this.dinheiro.contratoDoAceite(aprovado).hash);
     const falta = faltaDaVersao({ versao: a.versao, hashesDoContrato: hashes, documentos, cobrancaDaVersao, haCobranca: haCobranca > 0 });
+    return { pronto: falta.length === 0, falta };
+  }
+
+  /**
+   * T1b: o aceite que o fechamento lê. O da sala, quando existe; sem ele, o
+   * último aceite DECLARADO à mão (cliente que fechou fora do sistema).
+   */
+  async aceiteParaFechar(orgId: string, leadId: string): Promise<AceiteDoLead | null> {
+    const daSala = await this.dinheiro.aceiteDoLead(orgId, leadId);
+    if (daSala) return daSala;
+    const d = await this.prisma.leadEvent.findFirst({ where: { leadId, orgId, type: 'aceite.declarado' }, orderBy: { occurredAt: 'desc' }, select: { payload: true, occurredAt: true } });
+    return d ? aceiteDaDeclaracao(d.payload, d.occurredAt) : null;
+  }
+
+  /** T1b: pronto quando o PDF que a declaração cita está anexado no fio (o contrato já veio assinado). */
+  private async prontidaoFora(orgId: string, leadId: string, a: AceiteDoLead): Promise<{ pronto: boolean; falta: string[] }> {
+    const sha = a.fora?.arquivoSha256 ?? '';
+    const anexo = sha ? await this.prisma.leadEvent.findUnique({ where: { id: eventoIdComercial(orgId, leadId, 'contrato.anexado', sha) }, select: { leadId: true } }) : null;
+    const falta = anexo && anexo.leadId === leadId ? [] : ['o contrato assinado anexado (PDF)'];
     return { pronto: falta.length === 0, falta };
   }
 
@@ -324,8 +356,10 @@ export class FechamentoService implements OnModuleInit {
    * reação; na rota "rodar de novo", a pessoa que clicou.
    */
   async propor(orgId: string, leadId: string, ator: { id: string; tipo: ActorType }, agora: Date = new Date()): Promise<{ estado: string; approvalId?: string; chave: string } | { pulado: string }> {
-    const a = await this.dinheiro.aceiteDoLead(orgId, leadId);
+    const a = await this.aceiteParaFechar(orgId, leadId);
     if (!a) return { pulado: 'sem aceite com dados' };
+    // T1b: os fatos de quem fechou fora foram DECLARADOS por uma pessoa; a máquina não propõe em nome de ninguém.
+    if (a.fora && ator.tipo !== ActorType.user) return { pulado: 'cliente fechado fora do sistema: só uma pessoa propõe este fechamento' };
     const linha = await this.garantirLinha(orgId, leadId, a);
     if (linha.estado === 'concluido') return { estado: 'concluido', chave: linha.chave };
     // Nem a pessoa pede fechamento antes da hora: sem a 1ª parcela paga e as duas assinaturas, nada vai à fila.
@@ -352,11 +386,16 @@ export class FechamentoService implements OnModuleInit {
   // O efeito: as cinco escritas (só a porta chama)
   // -------------------------------------------------------------------------
 
-  private async efeitoDoFechamento(args: P, orgId: string, _ctx: ContextoDoEfeito): Promise<unknown> {
+  private async efeitoDoFechamento(args: P, orgId: string, ctx: ContextoDoEfeito): Promise<unknown> {
     const leadId = String(args.leadId ?? '');
     const chave = String(args.chave ?? '');
-    const a = await this.dinheiro.aceiteDoLead(orgId, leadId);
+    const a = await this.aceiteParaFechar(orgId, leadId);
     if (!a) throw new Error('o lead não tem aceite com dados: nada foi feito');
+    if (a.fora) {
+      // T1b: o registro à mão só fecha pela fila, e quem o registrou não assina o próprio registro.
+      if (!ctx?.approvalId) throw new Error('o fechamento de cliente fechado fora do sistema só roda pela fila de aprovação: nada foi feito');
+      if (!ctx.actorId || ctx.actorId === a.fora.porId) throw new Error('quem registrou o cliente fechado fora não assina o próprio registro: outra pessoa aprova. Nada foi feito');
+    }
     if (a.hash !== String(args.propostaHash)) throw new Error('a proposta aceita mudou depois do pedido: nada foi feito');
     if (chave !== chaveDoFechamento(leadId, a.versao)) throw new Error('a chave do fechamento não é a da versão aceita: nada foi feito');
     const pronto = await this.prontidao(orgId, leadId, a);
@@ -389,20 +428,23 @@ export class FechamentoService implements OnModuleInit {
     // D-2: o devedor é o da cobrança que a titular aprovou (gravado no `cobranca.criada`), nunca o aceite
     // mais novo: o cliente da sala não troca o CNPJ do Partner depois da assinatura. Sem cobrança aprovada,
     // nem o cliente nem a cobrança são escritos aqui.
-    const aprovado = await this.dinheiro.aceiteDaCobrancaAprovada(orgId, leadId, aceiteDeAgora);
+    // T1b: de quem fechou fora, o devedor é o da DECLARAÇÃO, que está no hash que a titular assinou
+    // (o efeito recalcula o hash antes de chegar aqui); não há cobrança aprovada antes do fechamento.
+    const fora = aceiteDeAgora.fora ?? null;
+    const aprovado = fora ? aceiteDeAgora : await this.dinheiro.aceiteDaCobrancaAprovada(orgId, leadId, aceiteDeAgora);
     const a = aprovado ?? aceiteDeAgora;
     const SEM_COBRANCA_APROVADA = 'a cobrança aprovada pela titular ainda não existe: o fechamento não escreve cliente nem cobrança com dados que ela não viu';
     const escritas: EscritaDoFechamento[] = [];
     const refs: Partial<Record<EscritaDoFechamento['escrita'], string | null>> = {};
 
-    const rodar = async (escrita: EscritaDoFechamento['escrita'], fn: () => Promise<{ estado: 'criado' | 'reaproveitado'; detalhe: string; ref: string | null }>) => {
+    const rodar = async (escrita: EscritaDoFechamento['escrita'], fn: () => Promise<{ estado: 'criado' | 'reaproveitado' | 'pulado'; detalhe: string; ref: string | null }>) => {
       const antes = anteriores.get(escrita);
       const comecou = Date.now();
       let e: EscritaDoFechamento;
       try {
         const r = await fn();
         // Já estava pronta numa passada anterior: conta como reaproveitada, com o tempo de agora.
-        const estado = antes && (antes.estado === 'criado' || antes.estado === 'reaproveitado') ? 'reaproveitado' : r.estado;
+        const estado = r.estado !== 'pulado' && antes && (antes.estado === 'criado' || antes.estado === 'reaproveitado') ? 'reaproveitado' : r.estado;
         e = { escrita, onde: ONDE[escrita], estado, detalhe: r.detalhe, ms: Date.now() - comecou, seRodarDeNovo: SE_RODAR_DE_NOVO[escrita], ref: r.ref };
       } catch (erro) {
         e = { escrita, onde: ONDE[escrita], estado: 'erro', detalhe: (erro instanceof Error ? erro.message : String(erro)).slice(0, 400), ms: Date.now() - comecou, seRodarDeNovo: SE_RODAR_DE_NOVO[escrita], ref: antes?.ref ?? null };
@@ -433,6 +475,10 @@ export class FechamentoService implements OnModuleInit {
     // 2. cobrança: a que a aprovação de `comercial.cobranca.criar` criou, reaproveitada; nunca uma cobrança com outro devedor.
     await rodar('cobranca', async () => {
       if (!aprovado) throw new Error(SEM_COBRANCA_APROVADA);
+      // T1b: o padrão seguro de quem fechou fora é NÃO criar cobrança nova; o motivo escrito fica na escrita.
+      if (fora && !fora.criarCobranca) {
+        return { estado: 'pulado', detalhe: `nenhuma cobrança nova no Asaas: ${fora.motivoSemCobranca ?? '[a decidir]'}`.slice(0, 400), ref: null };
+      }
       const r = await this.dinheiro.criarCobrancaDoAceite(orgId, leadId, aprovado);
       const linhas = await this.prisma.comercialCobranca.findMany({ where: { leadId, orgId }, select: { estado: true } });
       const pagas = linhas.filter((l) => l.estado === 'paga').length;
@@ -446,6 +492,30 @@ export class FechamentoService implements OnModuleInit {
       if (ja) return { estado: 'reaproveitado', detalhe: 'contrato já registrado no Financeiro', ref: id };
       const partnerId = refs.cliente ?? null;
       if (!partnerId) throw new Error('sem cliente: o contrato do Financeiro espera a escrita do cliente');
+      // T1b: o contrato já veio assinado; o PDF anexado é o documento assinado (nada vai à ZapSign).
+      if (fora) await this.documentoAnexado(orgId, leadId, fora.arquivoSha256, fora.assinadoEm);
+      if (fora && !fora.criarCobranca) {
+        const p = parcelasDoContratoFora(a.valorCentavos, a.parcelas, fora.primeiroVencimento, hojeEmSP());
+        const rotulo = TABELA_DE_PRECO[a.produto]?.rotulo ?? a.produto;
+        const aUltima = p.ultimaParcelaCentavos !== p.parcelaCentavos ? ` (a última de ${formatarReais(p.ultimaParcelaCentavos)})` : '';
+        await this.prisma.contract.create({
+          data: {
+            id,
+            orgId,
+            tipo: FinanceTxType.entrada,
+            partnerId,
+            descricao: `${rotulo} · ${a.dados.razaoSocial} · ${a.parcelas}× ${formatarReais(p.parcelaCentavos)}${aUltima} · ${linha.chave} · assinado fora do sistema, sem cobrança no Asaas`,
+            valor: new Prisma.Decimal((p.parcelaCentavos / 100).toFixed(2)),
+            diaVencimento: Number(fora.primeiroVencimento.slice(8, 10)),
+            periodicidade: 'mensal',
+            dataInicio: venceComoData(p.vencimentos[0]),
+            dataFim: venceComoData(p.vencimentos[p.vencimentos.length - 1]),
+            proximoVencimento: venceComoData(p.proximo),
+          },
+        });
+        await this.prisma.comercialFicha.updateMany({ where: { leadId, orgId }, data: { contractId: id } });
+        return { estado: 'criado', detalhe: `${a.parcelas}× ${formatarReais(p.parcelaCentavos)}${aUltima}, mensal, desde ${fora.primeiroVencimento} · contrato assinado fora, PDF anexado`, ref: id };
+      }
       const parcelas = await this.prisma.comercialCobranca.findMany({ where: { leadId, orgId }, orderBy: { parcela: 'asc' } });
       if (!parcelas.length) throw new Error('sem parcelas: o contrato do Financeiro espera a cobrança');
       const primeira = parcelas[0];
@@ -578,6 +648,31 @@ export class FechamentoService implements OnModuleInit {
     return this.projetar(atual);
   }
 
+  /**
+   * T1b: o PDF anexado vira o `ComercialDocumento` do lead (provedor `anexo`), com as duas assinaturas na
+   * data que a pessoa declarou, para quem lê o documento saber que o contrato está assinado e por onde veio.
+   * O id e o `externoId` derivam do lead e do arquivo: rodar de novo não cria outro.
+   */
+  private async documentoAnexado(orgId: string, leadId: string, sha256: string, assinadoEm: string): Promise<void> {
+    const quando = venceComoData(assinadoEm);
+    await this.prisma.comercialDocumento.createMany({
+      data: [
+        {
+          id: uuidDe([orgId, 'comercial-documento', 'anexo', leadId, sha256]),
+          leadId,
+          provedor: 'anexo',
+          externoId: `${leadId}:${sha256}`,
+          estado: 'assinado',
+          hashConteudo: sha256,
+          assinadoClienteEm: quando,
+          assinadoRootEm: quando,
+          pdfUrl: chaveDoAnexo(leadId, sha256),
+        },
+      ],
+      skipDuplicates: true,
+    });
+  }
+
   /** O manifesto do kit: o que o comercial sabe, copiado (nada redigitado). */
   private async manifesto(orgId: string, leadId: string, a: AceiteDoLead): Promise<string> {
     const ficha = await this.prisma.comercialFicha.findFirst({ where: { leadId, orgId }, select: { ataHash: true, diagnostico: true, sistemaErp: true } });
@@ -585,8 +680,16 @@ export class FechamentoService implements OnModuleInit {
     const linhas = [
       `Fechamento comercial ${chaveDoFechamento(leadId, a.versao)}.`,
       `Contratante: ${a.dados.razaoSocial} (${a.dados.cnpj}), ${a.dados.endereco}. Quem assina: ${a.dados.quemAssina} (${a.dados.email}).`,
-      `Produto: ${rotulo}, ${formatarReais(a.valorCentavos)} em ${a.parcelas}x por ${a.forma}. Proposta v${a.versao}, hash ${a.hash.slice(0, 12)}.`,
+      a.fora
+        ? `Produto: ${rotulo}, ${formatarReais(a.valorCentavos)} em ${a.parcelas}x por ${a.forma}. Registro à mão v${a.versao}, hash ${a.hash.slice(0, 12)}.`
+        : `Produto: ${rotulo}, ${formatarReais(a.valorCentavos)} em ${a.parcelas}x por ${a.forma}. Proposta v${a.versao}, hash ${a.hash.slice(0, 12)}.`,
     ];
+    if (a.fora) {
+      linhas.push(
+        `Fechado fora do sistema: contrato assinado em ${a.fora.assinadoEm}, PDF anexado (sha ${a.fora.arquivoSha256.slice(0, 12)}). Registrado à mão${a.fora.por ? ` por ${a.fora.por}` : ''}.`,
+        a.fora.criarCobranca ? 'Cobrança nova no Asaas pedida no registro.' : `Sem cobrança nova no Asaas: ${a.fora.motivoSemCobranca ?? '[a decidir]'}.`,
+      );
+    }
     if (ficha?.sistemaErp) linhas.push(`Sistema: ${ficha.sistemaErp}.`);
     if (ficha?.ataHash) linhas.push(`Ata da sessão: hash ${ficha.ataHash.slice(0, 12)}.`);
     const dores = ((ficha?.diagnostico ?? null) as P | null)?.dores;
@@ -630,7 +733,7 @@ export class FechamentoService implements OnModuleInit {
     if (!lead) throw new NotFoundException('Lead não encontrado.');
     const linha = await this.prisma.comercialFechamento.findFirst({ where: { leadId, orgId }, orderBy: { criadoEm: 'desc' } });
     if (!linha) {
-      const a = await this.dinheiro.aceiteDoLead(orgId, leadId);
+      const a = await this.aceiteParaFechar(orgId, leadId);
       return {
         chave: a ? chaveDoFechamento(leadId, a.versao) : '',
         versao: a?.versao ?? 0,

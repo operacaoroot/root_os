@@ -12,6 +12,7 @@ import { PortaDoOperador } from '../gateway/porta-do-operador.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { hashDoContrato, lacunasDoContrato, montarContrato } from './contrato-modelo';
 import { uuidDe, type PayloadDe } from './eventos';
+import type { DeclaracaoDoFechadoFora } from './fechado-fora';
 import { FioService, ReacoesRegistry } from './fio.service';
 import { cifrarLinkDaRoot, decifrarLinkDaRoot } from './link-da-root';
 import { parcelasDoValor } from './proposta-construtor';
@@ -81,6 +82,11 @@ export interface AceiteDoLead {
   hash: string;
   em: Date;
   dados: DadosDoAceite;
+  /**
+   * T1b: presente quando o aceite foi DECLARADO por uma pessoa (cliente que fechou fora do
+   * sistema, `aceite.declarado`), nunca no aceite da sala. Ver `fechado-fora.ts`.
+   */
+  fora?: DeclaracaoDoFechadoFora;
 }
 
 /**

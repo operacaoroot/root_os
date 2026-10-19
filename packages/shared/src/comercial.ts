@@ -348,6 +348,10 @@ export const COMERCIAL_EVENTOS = [
   'contrato.gerado',
   'contrato.assinado_cliente',
   'contrato.assinado_root',
+  // Rodada do trabalho T1b (19/10): cliente que fechou FORA do sistema. O aceite que uma pessoa
+  // declarou (nunca como aceite na sala) e o contrato já assinado, anexado em PDF.
+  'aceite.declarado',
+  'contrato.anexado',
   // fechamento e contrato vivo
   'fechamento.escrita',
   'cliente.ativo',
@@ -955,7 +959,8 @@ export interface CartaoDoFunil {
 export interface EscritaDoFechamento {
   escrita: 'cliente' | 'contrato' | 'cobranca' | 'kit_e_trilho' | 'card' | 'grupo';
   onde: string;
-  estado: 'pendente' | 'criado' | 'reaproveitado' | 'erro';
+  /** `pulado` (T1b): a escrita não se aplica e o motivo está no detalhe (a cobrança de quem já paga fora). */
+  estado: 'pendente' | 'criado' | 'reaproveitado' | 'pulado' | 'erro';
   detalhe: string;
   ms: number | null;
   seRodarDeNovo: string;

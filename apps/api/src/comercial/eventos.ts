@@ -108,6 +108,8 @@ export const FONTE_DO_EVENTO: Record<ComercialEvento, ComercialFonte> = {
   'contrato.gerado': 'zapsign',
   'contrato.assinado_cliente': 'zapsign',
   'contrato.assinado_root': 'zapsign',
+  'aceite.declarado': 'pessoa',
+  'contrato.anexado': 'pessoa',
   'fechamento.escrita': 'sistema',
   'cliente.ativo': 'sistema',
   'implantacao.card_criado': 'sistema',
@@ -171,6 +173,33 @@ export interface PayloadsComerciais {
   'contrato.gerado': { provedor: string; externoId: string; hash: string };
   'contrato.assinado_cliente': { provedor: string; externoId: string; em: string };
   'contrato.assinado_root': { provedor: string; externoId: string; em: string; por?: string | null };
+  /**
+   * T1b: o aceite que uma PESSOA declarou para quem fechou fora do sistema. Nunca é o aceite do cliente
+   * na sala: a procedência vai escrita. `hash` cobre tudo isto e o PDF anexado (é o que a titular assina).
+   */
+  'aceite.declarado': {
+    versao: number;
+    hash: string;
+    produto: string;
+    valorCentavos: number;
+    parcelas: number;
+    forma: string;
+    cnpj: string;
+    razaoSocial: string;
+    endereco: string;
+    quemAssina: string;
+    email: string;
+    assinadoEm: string;
+    primeiroVencimento: string;
+    criarCobranca: boolean;
+    motivoSemCobranca: string | null;
+    arquivoSha256: string;
+    procedencia: string;
+    por: string | null;
+    porId: string;
+  };
+  /** T1b: o contrato já assinado, anexado em PDF (guardado no storage pela chave, nunca o conteúdo no fio). */
+  'contrato.anexado': { nome: string; bytes: number; tipo: string; sha256: string; chave: string; assinadoEm: string; procedencia: string; por: string | null };
   'fechamento.escrita': { chave: string; escrita: string; estado: string; ref?: string | null; ms?: number | null };
   'cliente.ativo': { chave: string; partnerId?: string | null; contractId?: string | null; trilhoId?: string | null };
   'implantacao.card_criado': { chave: string; cardId: string; listId: string; lista: string; etapa: string };
@@ -325,6 +354,10 @@ export function resumoDoEvento(type: string, payload: unknown): { fonte: Comerci
       return { fonte, resumo: 'cliente assinou' };
     case 'contrato.assinado_root':
       return { fonte, resumo: `Root assinou${p.por ? ` (${String(p.por)})` : ''}` };
+    case 'aceite.declarado':
+      return { fonte, resumo: `fechado fora do sistema, registrado à mão${p.por ? ` por ${String(p.por)}` : ''} · ${reais(Number(p.valorCentavos ?? 0))} em ${String(p.parcelas)}× · ${p.criarCobranca ? 'cobrança nova pedida' : 'sem cobrança nova'}` };
+    case 'contrato.anexado':
+      return { fonte, resumo: `contrato assinado fora anexado · ${curto(p.nome, 40)}` };
     case 'fechamento.escrita':
       return { fonte, resumo: `fechamento · ${String(p.escrita)}: ${String(p.estado)}` };
     case 'cliente.ativo':

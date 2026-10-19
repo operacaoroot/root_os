@@ -38,6 +38,8 @@ import { WhatsappComercialService } from './whatsapp.service';
 import { ZapsignModule } from './conectores/zapsign.module';
 import { ContratoVivoService } from './contrato-vivo.service';
 import { DinheiroService } from './dinheiro.service';
+import { FechadoForaController } from './fechado-fora.controller';
+import { FechadoForaService } from './fechado-fora.service';
 import { FechamentoService } from './fechamento.service';
 
 /*
@@ -59,7 +61,7 @@ import { FechamentoService } from './fechamento.service';
  */
 @Module({
   imports: [TenantsModule, AuthModule, LeadsModule, OnboardingModule, FinanceModule, RoutinesModule, ZapsignModule, MemoryModule],
-  controllers: [ComercialController, SalaController, SimuladorController, MensagensController, DinheiroController, WebhooksDoDinheiroController, InteligenciaController],
+  controllers: [ComercialController, SalaController, SimuladorController, MensagensController, DinheiroController, WebhooksDoDinheiroController, InteligenciaController, FechadoForaController],
   providers: [
     // --- orquestrador: o fio (único caminho de escrita de fato) e o registro de reações ---
     ReacoesRegistry,
@@ -91,6 +93,8 @@ import { FechamentoService } from './fechamento.service';
     DinheiroService,
     FechamentoService,
     ContratoVivoService,
+    // --- rodada do trabalho T1b (registrar cliente já fechado fora do sistema: a mesma transação de fechamento) ---
+    FechadoForaService,
     // --- lane E (inteligência: stub/ponte, diagnóstico, proposta, relator, vigia) ---
     // O provider (stub/ponte) é escolhido em `llm/llm.module.ts`; aqui, o leitor de ata, o
     // construtor e revisor de proposta e o assistente da dúvida (fase mínima).
