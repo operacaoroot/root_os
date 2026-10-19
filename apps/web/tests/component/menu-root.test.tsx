@@ -72,13 +72,12 @@ describe('grupo ROOT do menu', () => {
     expect(screen.getByRole('link', { name: 'Propostas' }).getAttribute('aria-current')).toBe('page');
   });
 
-  it('em /operacao a sessão da plataforma vê a Operação da Root em Dia a dia, marcada e na busca', () => {
+  // 19/10/2026: a Operação da Root virou a "Rodada da semana" dentro de Dia a dia › Operação.
+  it('a rodada da ROOT não é mais item próprio: nem no menu, nem na busca', () => {
     EH_PLATAFORMA = true;
     CAMINHO = '/operacao';
     render(<><Sidebar /><NavegacaoDoModulo /><Paleta aberto fechar={() => {}} /></>);
-    const link = screen.getByRole('link', { name: 'Operação da Root' });
-    expect(link).toHaveAttribute('href', '/operacao');
-    expect(link.getAttribute('aria-current')).toBe('page');
-    expect(screen.getByRole('button', { name: /Operação da Root.*Dia a dia/ })).toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'Operação da Root' })).toBeNull();
+    expect(screen.queryByRole('button', { name: /Operação da Root/ })).toBeNull();
   });
 });

@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { apiGet, apiPost } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 import { Botao, Card, Chip, Kpi, inputCls } from '../referencias/ui';
+import RodadaDaSemana from '../operacao/page';
 import {
   ORDEM_DAS_FASES,
   ROTULO_DA_FASE,
@@ -22,7 +23,7 @@ import {
  * existe, a reunião está marcada, e o link da triagem pode sair.
  */
 
-export default function OnboardingPage() {
+function Implantacao() {
   const { token, ready, can } = useAuth();
   const editavel = can('tarefas.editar');
   const [trilhos, setTrilhos] = useState<TrilhoResumo[] | null>(null);
@@ -81,14 +82,6 @@ export default function OnboardingPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-wrap items-end justify-between gap-3">
-        <div>
-          <h1 className="text-xl font-semibold">Implantação de clientes</h1>
-          <p className="text-sm text-muted">A esteira de entrega em cinco fases, com portão entre elas. O trilho não deixa avançar sem o portão cumprido.</p>
-        </div>
-        <Link href="/trabalho" className="text-sm text-muted underline underline-offset-2 hover:text-text">esteira de clientes (Trabalho)</Link>
-      </div>
-
       {erro && <p className="text-sm text-bad">{erro}</p>}
 
       <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
@@ -124,7 +117,6 @@ export default function OnboardingPage() {
               <Botao type="submit" tone="brand" disabled={criando}>{criando ? '…' : 'Criar'}</Botao>
             </div>
           </form>
-          <p className="mt-2 text-[11px] text-muted">Ao criar, gere o link da triagem (bloco A) na página do trilho e mande no WhatsApp com prazo D-3 da reunião.</p>
         </Card>
       )}
 
@@ -184,5 +176,39 @@ function LinhaDoTrilho({ t }: { t: TrilhoResumo }) {
         </div>
       )}
     </li>
+  );
+}
+
+/*
+ * DIA A DIA › OPERAÇÃO (19/10/2026): o que era a área Trabalho, cortado ao que
+ * se usa. A implantação de clientes (fases com portão) é a aba de todos; a
+ * rodada semanal da Operação da Root só aparece para a ROOT (a rota /operacao
+ * segue viva, e é a mesma tela).
+ */
+export default function OperacaoPage() {
+  const { token, ready } = useAuth();
+  const [ehRoot, setEhRoot] = useState(false);
+  const [ver, setVer] = useState<'implantacao' | 'rodada'>('implantacao');
+  useEffect(() => {
+    if (!ready || !token) return;
+    apiGet('/tenants/plataforma/quem-sou', token).then(() => setEhRoot(true)).catch(() => setEhRoot(false));
+  }, [ready, token]);
+  return (
+    <div className="com-tema space-y-5 text-text">
+      {ehRoot && (
+        <div className="flex gap-1 border-b border-border">
+          {([['implantacao', 'Implantação de clientes'], ['rodada', 'Rodada da semana']] as const).map(([v, nome]) => (
+            <button
+              key={v}
+              onClick={() => setVer(v)}
+              className={`-mb-px border-b-2 px-3 py-2.5 text-[0.95rem] ${ver === v ? 'border-brand font-medium text-text' : 'border-transparent text-muted hover:text-text'}`}
+            >
+              {nome}
+            </button>
+          ))}
+        </div>
+      )}
+      {ver === 'rodada' && ehRoot ? <RodadaDaSemana /> : <Implantacao />}
+    </div>
   );
 }

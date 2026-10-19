@@ -1,0 +1,782 @@
+{
+  "fonte": "ClickUp, espaço Root (901313864063), listas de demandas; fotografia de 19/10/2026. Leads, contratos e posts ficaram de fora (são cadastro). Lucas Creator fica de fora por enquanto (pedido de 19/10).",
+  "tarefas": [
+    {
+      "id": "86akgx94u",
+      "titulo": "Atualizar tarefas pessoais",
+      "area": "Operação",
+      "responsaveis": [
+        "Lucas Fernandes"
+      ],
+      "prazo": "2026-10-19",
+      "status": "aberta",
+      "cliente": null,
+      "origem": "ClickUp › Demandas do dia a dia",
+      "url": "https://app.clickup.com/t/86akgx94u",
+      "nota": null
+    },
+    {
+      "id": "86akgwh7p",
+      "titulo": "Registro de marca | Root",
+      "area": "Administrativo",
+      "responsaveis": [
+        "Lucas Fernandes"
+      ],
+      "prazo": "2026-10-16",
+      "status": "aberta",
+      "cliente": null,
+      "origem": "ClickUp › Demandas do dia a dia",
+      "url": "https://app.clickup.com/t/86akgwh7p",
+      "nota": null
+    },
+    {
+      "id": "86ake4e4e",
+      "titulo": "Métricas",
+      "area": "Operação",
+      "responsaveis": [
+        "Lucas Fernandes"
+      ],
+      "prazo": "2026-10-16",
+      "status": "aberta",
+      "cliente": null,
+      "origem": "ClickUp › Demandas do dia a dia",
+      "url": "https://app.clickup.com/t/86ake4e4e",
+      "nota": null
+    },
+    {
+      "id": "17tkhj50wxb",
+      "titulo": "Estrutura e usabilidade do MCP",
+      "area": "Operação",
+      "responsaveis": [
+        "Lucas Fernandes"
+      ],
+      "prazo": "2026-10-16",
+      "status": "aberta",
+      "cliente": null,
+      "origem": "ClickUp › Demandas do dia a dia",
+      "url": "https://app.clickup.com/t/17tkhj50wxb",
+      "nota": null
+    },
+    {
+      "id": "17tkhj50wx9",
+      "titulo": "Definir responsáveis por cada tarefa",
+      "area": "Operação",
+      "responsaveis": [
+        "Lucas Fernandes"
+      ],
+      "prazo": "2026-10-16",
+      "status": "aberta",
+      "cliente": null,
+      "origem": "ClickUp › Demandas do dia a dia",
+      "url": "https://app.clickup.com/t/17tkhj50wx9",
+      "nota": null
+    },
+    {
+      "id": "17tkhj50ww4",
+      "titulo": "Fluxo de onboarding",
+      "area": "Operação",
+      "responsaveis": [
+        "Lucas Fernandes"
+      ],
+      "prazo": "2026-10-16",
+      "status": "fazendo",
+      "cliente": null,
+      "origem": "ClickUp › Demandas do dia a dia",
+      "url": "https://app.clickup.com/t/17tkhj50ww4",
+      "nota": null
+    },
+    {
+      "id": "17tkhj50wvw",
+      "titulo": "Criar evolution do Juliano",
+      "area": "Operação",
+      "responsaveis": [
+        "Lucas Fernandes"
+      ],
+      "prazo": "2026-10-16",
+      "status": "aberta",
+      "cliente": null,
+      "origem": "ClickUp › Demandas do dia a dia",
+      "url": "https://app.clickup.com/t/17tkhj50wvw",
+      "nota": null
+    },
+    {
+      "id": "17tkhj50wuv",
+      "titulo": "Reativar Hermes da Root",
+      "area": "Operação",
+      "responsaveis": [
+        "Lucas Fernandes"
+      ],
+      "prazo": "2026-10-16",
+      "status": "aberta",
+      "cliente": null,
+      "origem": "ClickUp › Demandas do dia a dia",
+      "url": "https://app.clickup.com/t/17tkhj50wuv",
+      "nota": null
+    },
+    {
+      "id": "17tkhj50ubu",
+      "titulo": "Definir produtos para Permuta (DIY)",
+      "area": "Operação",
+      "responsaveis": [
+        "Lucas Fernandes"
+      ],
+      "prazo": "2026-10-16",
+      "status": "aberta",
+      "cliente": null,
+      "origem": "ClickUp › Demandas do dia a dia",
+      "url": "https://app.clickup.com/t/17tkhj50ubu",
+      "nota": null
+    },
+    {
+      "id": "17tkhj50ubt",
+      "titulo": "JEV nas raspagens e avaliações",
+      "area": "Operação",
+      "responsaveis": [
+        "Lucas Fernandes"
+      ],
+      "prazo": "2026-10-16",
+      "status": "aberta",
+      "cliente": null,
+      "origem": "ClickUp › Demandas do dia a dia",
+      "url": "https://app.clickup.com/t/17tkhj50ubt",
+      "nota": null
+    },
+    {
+      "id": "17tkhj50ubr",
+      "titulo": "Projeto LEGO",
+      "area": "Operação",
+      "responsaveis": [
+        "Lucas Fernandes"
+      ],
+      "prazo": "2026-10-16",
+      "status": "aberta",
+      "cliente": null,
+      "origem": "ClickUp › Demandas do dia a dia",
+      "url": "https://app.clickup.com/t/17tkhj50ubr",
+      "nota": null
+    },
+    {
+      "id": "17tkhj50ubm",
+      "titulo": "System Design",
+      "area": "Operação",
+      "responsaveis": [
+        "Lucas Fernandes"
+      ],
+      "prazo": "2026-10-16",
+      "status": "aberta",
+      "cliente": null,
+      "origem": "ClickUp › Demandas do dia a dia",
+      "url": "https://app.clickup.com/t/17tkhj50ubm",
+      "nota": null
+    },
+    {
+      "id": "17tkhj52x2r",
+      "titulo": "Grupo do WhatsApp",
+      "area": "Operação",
+      "responsaveis": [
+        "Lucas Fernandes"
+      ],
+      "prazo": null,
+      "status": "aberta",
+      "cliente": null,
+      "origem": "ClickUp › Demandas do dia a dia",
+      "url": "https://app.clickup.com/t/17tkhj52x2r",
+      "nota": null
+    },
+    {
+      "id": "17tkhj52x2q",
+      "titulo": "Criar no OS o que eu preciso para trabalhar (CRM + Comercial, Tarefas, Marketing)",
+      "area": "Operação",
+      "responsaveis": [
+        "Lucas Fernandes"
+      ],
+      "prazo": null,
+      "status": "aberta",
+      "cliente": null,
+      "origem": "ClickUp › Demandas do dia a dia",
+      "url": "https://app.clickup.com/t/17tkhj52x2q",
+      "nota": null
+    },
+    {
+      "id": "17tkhj52x2g",
+      "titulo": "Estudar mapa da operação Root",
+      "area": "Operação",
+      "responsaveis": [
+        "Lucas Fernandes"
+      ],
+      "prazo": null,
+      "status": "aberta",
+      "cliente": null,
+      "origem": "ClickUp › Demandas do dia a dia",
+      "url": "https://app.clickup.com/t/17tkhj52x2g",
+      "nota": null
+    },
+    {
+      "id": "17tkhj50ubn",
+      "titulo": "Finalizar o OS, Bitrix e WhatsApp",
+      "area": "Operação",
+      "responsaveis": [
+        "Lucas Fernandes",
+        "Pedro Magnago"
+      ],
+      "prazo": null,
+      "status": "aberta",
+      "cliente": {
+        "chave": "fin-promedical-implantacao"
+      },
+      "origem": "ClickUp › Demandas do dia a dia",
+      "url": "https://app.clickup.com/t/17tkhj50ubn",
+      "nota": null
+    },
+    {
+      "id": "17tkhj50wu3",
+      "titulo": "Contrato de prestação de serviço",
+      "area": "Operação",
+      "responsaveis": [],
+      "prazo": null,
+      "status": "fazendo",
+      "cliente": null,
+      "origem": "ClickUp › Demandas do dia a dia",
+      "url": "https://app.clickup.com/t/17tkhj50wu3",
+      "nota": null
+    },
+    {
+      "id": "86ak1nuzc",
+      "titulo": "Organograma estrutural",
+      "area": "Administrativo",
+      "responsaveis": [
+        "Lucas Fernandes"
+      ],
+      "prazo": "2026-10-16",
+      "status": "aberta",
+      "cliente": null,
+      "origem": "ClickUp › Atribuições",
+      "url": "https://app.clickup.com/t/86ak1nuzc",
+      "nota": null
+    },
+    {
+      "id": "17tkhj52x7f",
+      "titulo": "Ajeitar e limpar sala",
+      "area": "Administrativo",
+      "responsaveis": [
+        "Lucas Fernandes"
+      ],
+      "prazo": null,
+      "status": "aberta",
+      "cliente": null,
+      "origem": "ClickUp › Demandas administrativas",
+      "url": "https://app.clickup.com/t/17tkhj52x7f",
+      "nota": null
+    },
+    {
+      "id": "17tkhj52x2p",
+      "titulo": "Copiar assinatura - Gaio",
+      "area": "Administrativo",
+      "responsaveis": [
+        "Lucas Fernandes"
+      ],
+      "prazo": null,
+      "status": "aberta",
+      "cliente": null,
+      "origem": "ClickUp › Demandas administrativas",
+      "url": "https://app.clickup.com/t/17tkhj52x2p",
+      "nota": null
+    },
+    {
+      "id": "17tkhj52x2m",
+      "titulo": "Gestão de custos - ROOT",
+      "area": "Financeiro",
+      "responsaveis": [
+        "Lucas Fernandes"
+      ],
+      "prazo": null,
+      "status": "aberta",
+      "cliente": null,
+      "origem": "ClickUp › Demandas administrativas",
+      "url": "https://app.clickup.com/t/17tkhj52x2m",
+      "nota": null
+    },
+    {
+      "id": "17tkhj52x2k",
+      "titulo": "Fechamento financeiro e balanço de caixa - ROOT",
+      "area": "Financeiro",
+      "responsaveis": [
+        "Lucas Fernandes"
+      ],
+      "prazo": null,
+      "status": "aberta",
+      "cliente": null,
+      "origem": "ClickUp › Demandas administrativas",
+      "url": "https://app.clickup.com/t/17tkhj52x2k",
+      "nota": null
+    },
+    {
+      "id": "17tkhj52x2h",
+      "titulo": "Instalar filtro de linha",
+      "area": "Administrativo",
+      "responsaveis": [
+        "Lucas Fernandes"
+      ],
+      "prazo": null,
+      "status": "aberta",
+      "cliente": null,
+      "origem": "ClickUp › Demandas administrativas",
+      "url": "https://app.clickup.com/t/17tkhj52x2h",
+      "nota": null
+    },
+    {
+      "id": "17tkhj52x2j",
+      "titulo": "Contrato e cobrança",
+      "area": "Financeiro",
+      "responsaveis": [
+        "Lucas Fernandes"
+      ],
+      "prazo": "2026-10-22",
+      "status": "aberta",
+      "cliente": {
+        "chave": "fin-custeio-operacao"
+      },
+      "origem": "ClickUp › Gestão de contratos",
+      "url": "https://app.clickup.com/t/17tkhj52x2j",
+      "nota": null
+    },
+    {
+      "id": "17tkhj50wuk",
+      "titulo": "FUP",
+      "area": "Administrativo",
+      "responsaveis": [
+        "Lucas Fernandes"
+      ],
+      "prazo": "2026-10-16",
+      "status": "aberta",
+      "cliente": null,
+      "origem": "ClickUp › Gestão de contratos",
+      "url": "https://app.clickup.com/t/17tkhj50wuk",
+      "nota": "Sem objeto: FUP de quem?"
+    },
+    {
+      "id": "17tkhj50ubc",
+      "titulo": "Colher feedback dos clientes atuais",
+      "area": "Comercial",
+      "responsaveis": [
+        "Lucas Fernandes"
+      ],
+      "prazo": "2026-10-16",
+      "status": "aberta",
+      "cliente": null,
+      "origem": "ClickUp › Demandas comerciais",
+      "url": "https://app.clickup.com/t/17tkhj50ubc",
+      "nota": null
+    },
+    {
+      "id": "17tkhj50uba",
+      "titulo": "Thamires — Marcar onboarding com a Tamires",
+      "area": "Comercial",
+      "responsaveis": [
+        "Lucas Fernandes"
+      ],
+      "prazo": "2026-10-16",
+      "status": "aberta",
+      "cliente": {
+        "nome": "Thamires"
+      },
+      "origem": "ClickUp › Demandas comerciais",
+      "url": "https://app.clickup.com/t/17tkhj50uba",
+      "nota": null
+    },
+    {
+      "id": "17tkhj50ub9",
+      "titulo": "Lucas Rezende — Cobrar preenchimento e marcar nova conversa",
+      "area": "Comercial",
+      "responsaveis": [
+        "Lucas Fernandes"
+      ],
+      "prazo": "2026-10-16",
+      "status": "aberta",
+      "cliente": {
+        "nome": "Lucas Rezende"
+      },
+      "origem": "ClickUp › Demandas comerciais",
+      "url": "https://app.clickup.com/t/17tkhj50ub9",
+      "nota": null
+    },
+    {
+      "id": "17tkhj50ub8",
+      "titulo": "Indicação do Jorge",
+      "area": "Comercial",
+      "responsaveis": [
+        "Lucas Fernandes"
+      ],
+      "prazo": "2026-10-16",
+      "status": "aberta",
+      "cliente": {
+        "chave": "cliente-cartorio-descoberto"
+      },
+      "origem": "ClickUp › Demandas comerciais",
+      "url": "https://app.clickup.com/t/17tkhj50ub8",
+      "nota": null
+    },
+    {
+      "id": "17tkhj50ub6",
+      "titulo": "Ida na Dispropan",
+      "area": "Comercial",
+      "responsaveis": [
+        "Lucas Fernandes"
+      ],
+      "prazo": "2026-10-16",
+      "status": "aberta",
+      "cliente": {
+        "chave": "prop-dispropan-ia-televendas"
+      },
+      "origem": "ClickUp › Demandas comerciais",
+      "url": "https://app.clickup.com/t/17tkhj50ub6",
+      "nota": null
+    },
+    {
+      "id": "17tkhj50ub5",
+      "titulo": "Proposta Campo Bom",
+      "area": "Comercial",
+      "responsaveis": [
+        "Lucas Fernandes"
+      ],
+      "prazo": "2026-10-16",
+      "status": "aberta",
+      "cliente": {
+        "nome": "Campo Bom"
+      },
+      "origem": "ClickUp › Demandas comerciais",
+      "url": "https://app.clickup.com/t/17tkhj50ub5",
+      "nota": null
+    },
+    {
+      "id": "17tkhj50ub4",
+      "titulo": "Proposta EasyDoctor",
+      "area": "Comercial",
+      "responsaveis": [
+        "Lucas Fernandes"
+      ],
+      "prazo": "2026-10-16",
+      "status": "aberta",
+      "cliente": {
+        "chave": "prop-easydr-imersao"
+      },
+      "origem": "ClickUp › Demandas comerciais",
+      "url": "https://app.clickup.com/t/17tkhj50ub4",
+      "nota": null
+    },
+    {
+      "id": "17tkhj50ub3",
+      "titulo": "Proposta Clube de Permuta e instalação do OS",
+      "area": "Comercial",
+      "responsaveis": [
+        "Lucas Fernandes"
+      ],
+      "prazo": "2026-10-16",
+      "status": "aberta",
+      "cliente": {
+        "nome": "Clube de Permuta"
+      },
+      "origem": "ClickUp › Demandas comerciais",
+      "url": "https://app.clickup.com/t/17tkhj50ub3",
+      "nota": null
+    },
+    {
+      "id": "17tkhj50ub2",
+      "titulo": "Proposta Juma — fazer FUP",
+      "area": "Comercial",
+      "responsaveis": [
+        "Lucas Fernandes"
+      ],
+      "prazo": "2026-10-16",
+      "status": "aberta",
+      "cliente": {
+        "nome": "Juma"
+      },
+      "origem": "ClickUp › Demandas comerciais",
+      "url": "https://app.clickup.com/t/17tkhj50ub2",
+      "nota": null
+    },
+    {
+      "id": "17tkhj50ub1",
+      "titulo": "Acionar indicação do Alexandre",
+      "area": "Comercial",
+      "responsaveis": [
+        "Lucas Fernandes"
+      ],
+      "prazo": "2026-10-16",
+      "status": "aberta",
+      "cliente": {
+        "chave": "fin-promedical-implantacao"
+      },
+      "origem": "ClickUp › Demandas comerciais",
+      "url": "https://app.clickup.com/t/17tkhj50ub1",
+      "nota": null
+    },
+    {
+      "id": "17tkhj52x2u",
+      "titulo": "Entrada no BNI",
+      "area": "Comercial",
+      "responsaveis": [
+        "Lucas Fernandes"
+      ],
+      "prazo": null,
+      "status": "aberta",
+      "cliente": null,
+      "origem": "ClickUp › Demandas comerciais",
+      "url": "https://app.clickup.com/t/17tkhj52x2u",
+      "nota": null
+    },
+    {
+      "id": "17tkhj52x2t",
+      "titulo": "Confirmar reunião com o Lucas na sexta",
+      "area": "Comercial",
+      "responsaveis": [
+        "Lucas Fernandes"
+      ],
+      "prazo": "2026-10-16",
+      "status": "aberta",
+      "cliente": null,
+      "origem": "ClickUp › Demandas comerciais",
+      "url": "https://app.clickup.com/t/17tkhj52x2t",
+      "nota": null
+    },
+    {
+      "id": "17tkhj52x2f",
+      "titulo": "Atualizar pipe",
+      "area": "Comercial",
+      "responsaveis": [
+        "Lucas Fernandes"
+      ],
+      "prazo": null,
+      "status": "aberta",
+      "cliente": null,
+      "origem": "ClickUp › Demandas comerciais",
+      "url": "https://app.clickup.com/t/17tkhj52x2f",
+      "nota": null
+    },
+    {
+      "id": "17tkhj50ubd",
+      "titulo": "Estudar rede de contatos e abastecer pipeline",
+      "area": "Comercial",
+      "responsaveis": [
+        "Lucas Fernandes"
+      ],
+      "prazo": "2026-10-16",
+      "status": "aberta",
+      "cliente": null,
+      "origem": "ClickUp › Gestão de Leads",
+      "url": "https://app.clickup.com/t/17tkhj50ubd",
+      "nota": "Estava no meio dos leads; é tarefa."
+    },
+    {
+      "id": "17tkhj52x2v",
+      "titulo": "Revisar site e adicionar empresas atendidas",
+      "area": "Marketing",
+      "responsaveis": [
+        "Lucas Fernandes"
+      ],
+      "prazo": null,
+      "status": "aberta",
+      "cliente": null,
+      "origem": "ClickUp › Demandas gerais",
+      "url": "https://app.clickup.com/t/17tkhj52x2v",
+      "nota": null
+    },
+    {
+      "id": "17tkhj50ucj",
+      "titulo": "Começar o perfil do Instagram da Root",
+      "area": "Marketing",
+      "responsaveis": [
+        "Lucas Fernandes"
+      ],
+      "prazo": null,
+      "status": "aberta",
+      "cliente": null,
+      "origem": "ClickUp › Demandas gerais",
+      "url": "https://app.clickup.com/t/17tkhj50ucj",
+      "nota": null
+    },
+    {
+      "id": "17tkhj50ubz",
+      "titulo": "Avaliar estudo de personas para o ICP Root",
+      "area": "Marketing",
+      "responsaveis": [
+        "Lucas Fernandes"
+      ],
+      "prazo": null,
+      "status": "aberta",
+      "cliente": null,
+      "origem": "ClickUp › Demandas gerais",
+      "url": "https://app.clickup.com/t/17tkhj50ubz",
+      "nota": null
+    },
+    {
+      "id": "17tkhj50uby",
+      "titulo": "Testar nova máquina de conteúdo no OS",
+      "area": "Marketing",
+      "responsaveis": [
+        "Lucas Fernandes"
+      ],
+      "prazo": null,
+      "status": "aberta",
+      "cliente": null,
+      "origem": "ClickUp › Demandas gerais",
+      "url": "https://app.clickup.com/t/17tkhj50uby",
+      "nota": null
+    },
+    {
+      "id": "17tkhj50ubx",
+      "titulo": "Fazer página de vendas",
+      "area": "Marketing",
+      "responsaveis": [
+        "Rodrigo Saggioro"
+      ],
+      "prazo": null,
+      "status": "aberta",
+      "cliente": null,
+      "origem": "ClickUp › Demandas gerais",
+      "url": "https://app.clickup.com/t/17tkhj50ubx",
+      "nota": null
+    },
+    {
+      "id": "clickup-custeio-implantacao",
+      "titulo": "Implantação Custeio",
+      "area": "Operação",
+      "responsaveis": [],
+      "prazo": null,
+      "status": "fazendo",
+      "cliente": {
+        "chave": "fin-custeio-operacao"
+      },
+      "origem": "ClickUp › Projeto (Clientes › Custeio)",
+      "url": null,
+      "nota": "Eram 31 cards. Virou 1 com checklist.",
+      "passos": [
+        {
+          "titulo": "01. Fechamento de contrato",
+          "fase": "Onboarding"
+        },
+        {
+          "titulo": "02. Fechamento do financeiro",
+          "fase": "Onboarding"
+        },
+        {
+          "titulo": "03. Criação do grupo do WhatsApp",
+          "fase": "Onboarding"
+        },
+        {
+          "titulo": "04. Mensagem de boas-vindas",
+          "fase": "Onboarding"
+        },
+        {
+          "titulo": "05. Envio dos próximos passos com datas",
+          "fase": "Onboarding"
+        },
+        {
+          "titulo": "06. Envio de forms",
+          "fase": "Onboarding"
+        },
+        {
+          "titulo": "07. Envio de kit de instalação",
+          "fase": "Onboarding"
+        },
+        {
+          "titulo": "08. Envio das perguntas essenciais",
+          "fase": "Onboarding"
+        },
+        {
+          "titulo": "09. Criação do material personalizado",
+          "fase": "Onboarding"
+        },
+        {
+          "titulo": "10. Envio do material de acompanhamento para o cliente",
+          "fase": "Onboarding"
+        },
+        {
+          "titulo": "11. Desenho do projeto do cliente (sequência e entregáveis)",
+          "fase": "Onboarding"
+        },
+        {
+          "titulo": "12. MVP visual do OS do cliente + envio para crítica",
+          "fase": "Onboarding"
+        },
+        {
+          "titulo": "13. Pacote de skills padrão (montar repositório)",
+          "fase": "Onboarding"
+        },
+        {
+          "titulo": "14. Prompts de contexto do Obsidian (padronizar)",
+          "fase": "Onboarding"
+        },
+        {
+          "titulo": "15. Confirmação de ambiente (D-1)",
+          "fase": "Onboarding"
+        },
+        {
+          "titulo": "21. Abertura: rapport e escuta do negócio",
+          "fase": "Durante a reunião"
+        },
+        {
+          "titulo": "22. Set de aprendizado do Claude + dicionário de termos",
+          "fase": "Durante a reunião"
+        },
+        {
+          "titulo": "23. Instalação do ambiente e do pacote de skills",
+          "fase": "Durante a reunião"
+        },
+        {
+          "titulo": "24. Memória persistente no Obsidian + retroalimentação",
+          "fase": "Durante a reunião"
+        },
+        {
+          "titulo": "25. Provisionamento e configuração da VPS",
+          "fase": "Durante a reunião"
+        },
+        {
+          "titulo": "26. Ponte SSH entre a VPS e a máquina do cliente",
+          "fase": "Durante a reunião"
+        },
+        {
+          "titulo": "27. Claude via terminal na VPS (treinar o cliente)",
+          "fase": "Durante a reunião"
+        },
+        {
+          "titulo": "28. Captura ao vivo de dúvidas, objeções e desejos",
+          "fase": "Durante a reunião"
+        },
+        {
+          "titulo": "29. Fechamento do encontro e prévia do próximo passo",
+          "fase": "Durante a reunião"
+        },
+        {
+          "titulo": "31. Resumo personalizado em HTML do encontro",
+          "fase": "Pós-reunião"
+        },
+        {
+          "titulo": "32. Subir os áudios e transcrever as conversas",
+          "fase": "Pós-reunião"
+        },
+        {
+          "titulo": "33. Definir e entregar o overdelivery",
+          "fase": "Pós-reunião"
+        },
+        {
+          "titulo": "34. Glossário atualizado com as dúvidas reais",
+          "fase": "Pós-reunião"
+        },
+        {
+          "titulo": "35. Rotina de acompanhamento do cliente",
+          "fase": "Pós-reunião"
+        },
+        {
+          "titulo": "36. Grupo aberto: rotina de suporte e dúvidas",
+          "fase": "Pós-reunião"
+        },
+        {
+          "titulo": "37. Retrospectiva interna do onboarding",
+          "fase": "Pós-reunião"
+        }
+      ]
+    }
+  ]
+}

@@ -203,8 +203,9 @@ describe('NAV — estrutura', () => {
       '/marketing/estrategia', '/marketing/performance', '/marketing/relatorio'];
     // 18/10/2026: + /comercial, o painel do Motor Comercial (lê a lista Gestão de Leads).
     // 19/10/2026: + /cofre, o cofre da empresa (senhas, dados e documentos dos sócios).
-    expect(NAV).toHaveLength(42);
-    expect(new Set(NAV.map((n) => n.href))).toEqual(new Set([...hrefsEsperados, ...rotasMK, '/comercial', '/clientes', '/cofre']));
+    // 19/10/2026: + /dia-a-dia, todas as tarefas de todas as áreas (Dia a dia › Tarefas).
+    expect(NAV).toHaveLength(43);
+    expect(new Set(NAV.map((n) => n.href))).toEqual(new Set([...hrefsEsperados, ...rotasMK, '/comercial', '/clientes', '/cofre', '/dia-a-dia']));
   });
 
   it('não repete chave nem rota', () => {
@@ -233,7 +234,7 @@ describe('NAV — estrutura', () => {
     const modulosEsperados = new Map([
       ['tarefas', 'trabalho'], ['trabalho', 'trabalho'], ['onboarding', 'trabalho'],
       ['conteudo', 'conteudo'], ['pauta', 'pauta'], ['referencias', 'pauta'],
-      ['instagram', 'instagram'], ['bio', 'bio'], ['comercial-painel', 'leads'], ['clientes', 'trabalho'], ['leads', 'leads'],
+      ['instagram', 'instagram'], ['bio', 'bio'], ['comercial-painel', 'leads'], ['clientes', 'trabalho'], ['tarefas-todas', 'trabalho'], ['leads', 'leads'],
       ['funil', 'leads'], ['campanhas', 'campanhas'], ['pixels', 'pixels'],
       ['relatorios', 'relatorios'], ['metas', 'metas'], ['financeiro', 'financeiro'],
       ['marca', 'pauta'], ['marketing', 'pauta'], ['marketing-ideias', 'pauta'],
@@ -273,8 +274,10 @@ describe('navPorSecao', () => {
 
   it('destinos de apoio vêm depois dos grupos principais', () => {
     const tipos = navPorSecao(todas).map((g) => g.secao.tipo);
-    expect(tipos.slice(0, 8)).toEqual(Array(8).fill('principal'));
-    expect(tipos.slice(8)).toEqual(['apoio', 'apoio', 'apoio']);
+    // 19/10/2026: o Trabalho foi absorvido pelo Dia a dia e pelo Marketing; a seção
+    // segue declarada (rotas vivas fora do menu), mas não tem item visível.
+    expect(tipos.slice(0, 7)).toEqual(Array(7).fill('principal'));
+    expect(tipos.slice(7)).toEqual(['apoio', 'apoio', 'apoio']);
   });
 
   it('sem permissão nenhuma não devolve seção nenhuma', () => {
@@ -425,7 +428,7 @@ describe('o bloco Marketing (MK7)', () => {
     expect(m!.pai, 'o bloco é raiz, não filho da Pauta').toBeUndefined();
   });
 
-  it('Performance e Relatório do mês penduram no bloco; Ideias e Estratégia moram em Trabalho', () => {
+  it('Performance e Relatório do mês penduram no bloco; Ideias e Estratégia moram no Marketing', () => {
     for (const k of ['marketing-performance', 'marketing-relatorio']) {
       const n = item(k);
       expect(n, `${k} sumiu do menu`).toBeDefined();
@@ -436,7 +439,8 @@ describe('o bloco Marketing (MK7)', () => {
     for (const k of ['marketing-ideias', 'marketing-estrategia']) {
       const n = item(k);
       expect(n, `${k} sumiu do menu`).toBeDefined();
-      expect(n!.secao, `${k}: documento 38 manda para Trabalho`).toBe('trabalho');
+      // 19/10/2026: o Trabalho foi absorvido; ideias e estratégia são de conteúdo.
+      expect(n!.secao, `${k}: mora no Marketing`).toBe('conteudo');
       expect(n!.pai, `${k}: o pai estaria em outra seção`).toBeUndefined();
       expect(n!.permission).toBe('pauta.ver');
       expect(n!.modulo).toBe('pauta');
@@ -470,8 +474,7 @@ describe('o bloco Marketing (MK7)', () => {
       'marketing-performance',
       'marketing-relatorio',
     ]);
-    const trabalho = comModulo.find((g) => g.secao.key === 'trabalho');
-    expect(trabalho?.itens.map((i) => i.item.key)).toEqual(
+    expect(conteudo?.itens.map((i) => i.item.key)).toEqual(
       expect.arrayContaining(['marketing-ideias', 'marketing-estrategia']),
     );
 
@@ -501,7 +504,7 @@ describe('organização da navegação (ROOT-07)', () => {
     conteudo: 'dashboard.ver', pauta: 'pauta.ver', referencias: 'pauta.ver', marketing: 'pauta.ver',
     'marketing-ideias': 'pauta.ver', 'marketing-estrategia': 'pauta.ver', 'marketing-performance': 'pauta.ver',
     'marketing-relatorio': 'pauta.ver', instagram: 'instagram.ver', bio: 'bio.ver',
-    'comercial-painel': 'leads.ver', clientes: 'tarefas.ver', leads: 'leads.ver', funil: 'dashboard.ver', campanhas: 'campanhas.ver', pixels: 'dashboard.ver',
+    'comercial-painel': 'leads.ver', clientes: 'tarefas.ver', 'tarefas-todas': 'tarefas.ver', leads: 'leads.ver', funil: 'dashboard.ver', campanhas: 'campanhas.ver', pixels: 'dashboard.ver',
     relatorios: 'relatorios.ver', metas: 'dashboard.ver', financeiro: 'financeiro.ver', 'custo-ia': 'dashboard.ver',
     agentes: 'mcp.ver', rotinas: 'automacoes.ver', sessoes: 'mcp.ver', fluxos: 'automacoes.ver',
     ferramentas: 'mcp.ver', conexoes: 'dashboard.ver', regua: 'mcp.ver', cofre: 'cofre.ver', rastro: 'auditoria.ver',
@@ -512,11 +515,12 @@ describe('organização da navegação (ROOT-07)', () => {
   const ROTULO_DA_BASE: Record<string, string> = {
     caixa: 'Pendências', atendimento: 'Aprovações', agenda: 'Agenda', console: 'Visão geral',
     contexto: 'Conhecimento da empresa', marca: 'Marca e pilares', organograma: 'Equipe',
-    tarefas: 'Lista de tarefas', trabalho: 'Quadro interno', onboarding: 'Implantação de clientes',
+    // 19/10/2026: a implantação de clientes virou a aba Operação do Dia a dia.
+    tarefas: 'Lista de tarefas', trabalho: 'Quadro interno', onboarding: 'Operação',
     conteudo: 'Temas do ClickUp', pauta: 'Produção de conteúdo', referencias: 'Referências', marketing: 'Marketing',
     'marketing-ideias': 'Banco de ideias', 'marketing-estrategia': 'Estratégia do mês',
     'marketing-performance': 'Performance', 'marketing-relatorio': 'Relatório do mês',
-    instagram: 'Instagram', bio: 'Página de links', 'comercial-painel': 'Painel geral', clientes: 'Clientes', leads: 'Leads', funil: 'Funil de vendas',
+    instagram: 'Instagram', bio: 'Página de links', 'comercial-painel': 'Painel geral', clientes: 'Clientes', 'tarefas-todas': 'Tarefas', leads: 'Leads', funil: 'Funil de vendas',
     campanhas: 'Campanhas', pixels: 'Eventos do site', relatorios: 'Relatórios', metas: 'Metas',
     financeiro: 'Financeiro', 'custo-ia': 'Custos de IA', agentes: 'Agentes de IA',
     rotinas: 'Rotinas automáticas', sessoes: 'Sessões de IA', fluxos: 'Processos',
@@ -530,12 +534,13 @@ describe('organização da navegação (ROOT-07)', () => {
     '/caixa': 'dia', '/atendimento': 'dia', '/agenda': 'dia', '/painel': 'dia',
     '/contexto': 'empresa', '/contexto/marca': 'empresa',
     '/organograma': 'controle',
-    '/tarefas': 'trabalho', '/trabalho': 'trabalho', '/onboarding': 'trabalho', '/conteudo': 'trabalho',
-    '/marketing/ideias': 'trabalho', '/marketing/estrategia': 'trabalho',
+    // 19/10/2026: o Trabalho foi absorvido. Lista, quadro e temas seguem na seção, ocultos.
+    '/tarefas': 'trabalho', '/trabalho': 'trabalho', '/onboarding': 'dia', '/conteudo': 'trabalho',
+    '/marketing/ideias': 'conteudo', '/marketing/estrategia': 'conteudo',
     '/pauta': 'conteudo', '/referencias': 'conteudo', '/marketing': 'conteudo',
     '/marketing/performance': 'conteudo', '/marketing/relatorio': 'conteudo',
     '/instagram': 'conteudo', '/bio': 'conteudo', '/campanhas': 'conteudo', '/pixels': 'conteudo',
-    '/comercial': 'comercial', '/clientes': 'comercial', '/leads': 'comercial', '/funil': 'comercial',
+    '/comercial': 'comercial', '/clientes': 'comercial', '/dia-a-dia': 'dia', '/leads': 'comercial', '/funil': 'comercial',
     '/relatorios': 'resultados', '/metas': 'resultados',
     '/financeiro': 'financeiro',
     '/painel/custo-ia': 'automacoes', '/agentes': 'automacoes', '/rotinas': 'automacoes',
@@ -546,9 +551,9 @@ describe('organização da navegação (ROOT-07)', () => {
     '/config': 'conta',
   };
 
-  it('os 42 destinos mantêm chave, rótulo e permissão da base', () => {
-    expect(NAV).toHaveLength(42);
-    expect(Object.keys(PERMISSAO_DA_BASE)).toHaveLength(42);
+  it('os 43 destinos mantêm chave, rótulo e permissão da base', () => {
+    expect(NAV).toHaveLength(43);
+    expect(Object.keys(PERMISSAO_DA_BASE)).toHaveLength(43);
     for (const n of NAV) {
       expect(n.permission, `${n.key}: permissão mudou`).toBe(PERMISSAO_DA_BASE[n.key]);
       expect(n.label, `${n.key}: rótulo fora da tabela da ROOT-08`).toBe(ROTULOS_DA_ROOT_08[n.key] ?? ROTULO_DA_BASE[n.key]);
@@ -583,7 +588,7 @@ describe('organização da navegação (ROOT-07)', () => {
     expect(SECOES.find((s) => s.key === 'trabalho')?.hint).toBe('tarefas, quadro, ideias e implantação');
   });
 
-  it('cada destino cai na seção da matriz, e a matriz cobre exatamente os 42 href', () => {
+  it('cada destino cai na seção da matriz, e a matriz cobre exatamente os 43 href', () => {
     expect(new Set(Object.keys(SECAO_DA_MATRIZ))).toEqual(new Set(NAV.map((n) => n.href)));
     for (const n of NAV) expect(n.secao, `${n.key} (${n.href})`).toBe(SECAO_DA_MATRIZ[n.href]);
   });
@@ -611,8 +616,8 @@ describe('organização da navegação (ROOT-07)', () => {
     for (const n of NAV.filter((i) => i.pai)) {
       expect(NAV.find((i) => i.key === n.pai)?.secao, n.key).toBe(n.secao);
     }
-    const trabalho = navEmArvore(new Set(NAV.map((n) => n.permission))).find((g) => g.secao.key === 'trabalho')!;
-    expect(trabalho.itens.map((no) => no.item.key)).toEqual(
+    const conteudo = navEmArvore(new Set(NAV.map((n) => n.permission))).find((g) => g.secao.key === 'conteudo')!;
+    expect(conteudo.itens.map((no) => no.item.key)).toEqual(
       expect.arrayContaining(['marketing-ideias', 'marketing-estrategia']),
     );
   });
@@ -620,7 +625,9 @@ describe('organização da navegação (ROOT-07)', () => {
   it('/assinatura sai da barra e da busca por marca, e continua no NAV', () => {
     const a = NAV.find((n) => n.key === 'assinatura')!;
     expect(a.oculto).toBe(true);
-    expect(NAV.filter((n) => n.oculto).map((n) => n.key)).toEqual(['assinatura']);
+    // 19/10/2026: Pendências, Lista de tarefas, Quadro interno e Temas do ClickUp saíram
+    // do menu e seguem vivas (Dia a dia › Tarefas as substitui; o quadro abre o detalhe).
+    expect(NAV.filter((n) => n.oculto).map((n) => n.key)).toEqual(['caixa', 'tarefas', 'trabalho', 'conteudo', 'assinatura']);
     const todas = new Set(NAV.map((n) => n.permission));
     expect(navPorSecao(todas).flatMap((g) => g.itens.map((i) => i.key))).not.toContain('assinatura');
     expect(

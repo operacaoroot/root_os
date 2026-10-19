@@ -121,6 +121,7 @@ model Org {
   transactionSplits   TransactionSplit[]
 
   workSpaces  WorkSpace[]
+  workAreas   WorkArea[]
   workFolders WorkFolder[]
   workLists   WorkList[]
   workTags    WorkTag[]
@@ -1935,6 +1936,16 @@ enum WorkPriority {
   baixa
 }
 
+/// O que uma lista guarda. `tarefas`: cada card é algo que alguém faz e marca
+/// como feito. `cadastro`: cada card é um registro com vida própria (lead,
+/// cliente, contrato, peça de conteúdo, etapa de esteira) e NUNCA aparece como
+/// tarefa. É esta marca que impede o card de cliente do Comercial de aparecer
+/// de novo na visão de todas as tarefas.
+enum WorkListaNatureza {
+  tarefas
+  cadastro
+}
+
 enum WorkFieldType {
   drop_down
   texto
@@ -2024,8 +2035,13 @@ model WorkList {
   statuses WorkStatus[]
   fields   WorkField[]
   tasks    WorkTask[]
+  natureza WorkListaNatureza @default(tarefas)
+  /// Área que a tarefa recebe ao nascer nesta lista; a tarefa guarda a sua.
+  areaPadraoId String?
+  areaPadrao   WorkArea? @relation("AreaPadraoDaLista", fields: [areaPadraoId, orgId], references: [id, orgId], onDelete: Restrict, onUpdate: Restrict)
 
   @@unique([orgId, externalId])
+  @@unique([id, orgId])
   @@index([orgId, folderId])
 }
 
@@ -2187,6 +2203,14 @@ model WorkTask {
   onboardingTrilhos OnboardingTrilho[] @relation("OnboardingDoCartao")
   /// As reuniões da ficha do cliente (transcrição do Granola, link ou texto).
   reunioes ReuniaoDoCartao[]
+  /// ÁREA da tarefa — UMA só (Comercial, Marketing…). Cliente não é área.
+  areaId   String?
+  area     WorkArea? @relation("AreaDaTarefa", fields: [areaId, orgId], references: [id, orgId], onDelete: Restrict, onUpdate: Restrict)
+  /// O card do cliente (lista de cadastro do CRM) a que a tarefa se refere.
+  /// Aponta, não copia: o cliente continua um card só, no Comercial.
+  clienteId String?
+  cliente   WorkTask?  @relation("TarefasDoCliente", fields: [clienteId, orgId], references: [id, orgId], onDelete: Restrict, onUpdate: Restrict)
+  tarefasDoCliente WorkTask[] @relation("TarefasDoCliente")
 
   @@unique([id, orgId])
   @@unique([orgId, externalId])
@@ -2197,6 +2221,27 @@ model WorkTask {
   /// duas perguntas da tela de A4, e a de soltar tudo quando o agente é pausado
   /// ou encerrado. `orgId` à frente porque é tabela de tenant.
   @@index([orgId, agenteId, agenteEm])
+  @@index([orgId, areaId, archived])
+  @@index([orgId, clienteId])
+}
+
+/// As áreas da empresa para separar tarefas (Comercial, Marketing, Operação…).
+/// Editáveis pela tela ("+ adicionar nova área"); a ordem é a das colunas.
+model WorkArea {
+  id        String   @id @default(uuid())
+  orgId     String
+  org       Org      @relation(fields: [orgId], references: [id])
+  nome      String
+  cor       String   @default("#8b8d98")
+  ordem     Int      @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  tarefas      WorkTask[] @relation("AreaDaTarefa")
+  listasPadrao WorkList[] @relation("AreaPadraoDaLista")
+
+  @@unique([orgId, nome])
+  @@unique([id, orgId])
 }
 
 /// Dois pais obrigatórios (WorkTask e WorkField). Aqui o gatilho é DOIS: o

@@ -81,7 +81,7 @@ describe('a barra lateral', () => {
     expect(abrir).toHaveAttribute('aria-expanded', 'true');
     const gaveta = screen.getByRole('dialog', { name: 'Navegação do ROOT OS' });
     expect(gaveta).toHaveTextContent('Dia a dia');
-    expect(gaveta).toHaveTextContent('Trabalho');
+    expect(gaveta).toHaveTextContent('Marketing');
 
     await user.keyboard('{Escape}');
     expect(abrir).toHaveAttribute('aria-expanded', 'false');
@@ -118,12 +118,13 @@ describe('a barra lateral', () => {
     }
   });
 
-  it('mostra nove áreas em vez de todos os destinos na lateral', () => {
+  // 19/10/2026: o Trabalho foi absorvido pelo Dia a dia e pelo Marketing — oito áreas.
+  it('mostra oito áreas em vez de todos os destinos na lateral', () => {
     PERMISSOES = TODAS_DO_NAV;
     render(<Sidebar />);
     const destinos = within(screen.getByRole('navigation', { name: 'Destinos' }));
     expect(destinos.getAllByRole('link').map((el) => el.textContent)).toEqual([
-      'Dia a dia', 'Contexto', 'Trabalho', 'Marketing', 'Comercial', 'Financeiro',
+      'Dia a dia', 'Contexto', 'Marketing', 'Comercial', 'Financeiro',
       'IA e automações', 'Resultados', 'Configurações',
     ]);
     expect(link('/contexto/marca')).toBeNull();
@@ -197,7 +198,7 @@ describe('a barra lateral', () => {
   it('as preferências antigas não escondem áreas nem causam erro', () => {
     localStorage.setItem(CHAVE_MENU, '{não é json');
     render(<Sidebar />);
-    expect(screen.getByRole('link', { name: 'Trabalho' })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Marketing' })).toBeInTheDocument();
   });
 
   it('/assinatura permanece fora da lateral e das abas', () => {
@@ -235,7 +236,7 @@ describe('a barra lateral', () => {
     MODULOS_LIGADOS = ['trabalho'];
     render(<Paleta aberto fechar={() => {}} />);
     const dialogo = screen.getByRole('dialog', { name: 'Ir para' });
-    expect(dialogo).toHaveTextContent('Quadro interno');
+    expect(dialogo).toHaveTextContent('Tarefas');
     const oferecidas = screen.getAllByRole('button').map((b) => b.querySelector('span')?.textContent);
     for (const n of NAV.filter((i) => i.modulo && i.modulo !== 'trabalho')) {
       expect(oferecidas, n.key).not.toContain(n.label);

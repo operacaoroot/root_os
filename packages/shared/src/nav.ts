@@ -124,7 +124,10 @@ export interface NavItem {
 
 export const NAV: NavItem[] = [
   // O trabalho do dia: /caixa continua lendo o quadro interno e não vira a entrada padrão.
-  { key: 'caixa', label: 'Pendências', href: '/caixa', icon: 'Inbox', permission: 'dashboard.ver', secao: 'dia' },
+  // Todas as tarefas de todas as áreas, separadas por pessoa e área (19/10/2026).
+  { key: 'tarefas-todas', label: 'Tarefas', href: '/dia-a-dia', icon: 'CheckSquare', permission: 'tarefas.ver', secao: 'dia', modulo: 'trabalho' },
+  // 19/10/2026: Pendências sai do menu — as tarefas estão em Tarefas, as aprovações na aba delas.
+  { key: 'caixa', label: 'Pendências', href: '/caixa', icon: 'Inbox', permission: 'dashboard.ver', secao: 'dia', oculto: true },
   { key: 'atendimento', label: 'Aprovações', href: '/atendimento', icon: 'MessagesSquare', permission: 'aprovacoes.ver', secao: 'dia', estado: 'parcial', parcial: 'a fila de aprovação funciona; a caixa de entrada por WhatsApp ainda não está disponível' },
   { key: 'agenda', label: 'Agenda', href: '/agenda', icon: 'CalendarDays', permission: 'dashboard.ver', secao: 'dia' },
   { key: 'console', label: 'Visão geral da empresa', href: '/painel', icon: 'SquareTerminal', permission: 'dashboard.ver', secao: 'dia' },
@@ -134,12 +137,15 @@ export const NAV: NavItem[] = [
 
   // As duas listas têm fontes e ações próprias; nenhuma é submenu da outra.
   // Ideias e Estratégia do mês entram aqui e abrem os editores atuais (documento 38).
-  { key: 'tarefas', label: 'Lista de tarefas', href: '/tarefas', icon: 'CheckSquare', permission: 'tarefas.ver', secao: 'trabalho', modulo: 'trabalho' },
-  { key: 'trabalho', label: 'Quadro interno', href: '/trabalho', icon: 'KanbanSquare', permission: 'tarefas.ver', secao: 'trabalho', modulo: 'trabalho' },
-  { key: 'onboarding', label: 'Implantação de clientes', href: '/onboarding', icon: 'DoorOpen', permission: 'tarefas.ver', secao: 'trabalho', modulo: 'trabalho' },
-  { key: 'conteudo', label: 'Temas do ClickUp', href: '/conteudo', icon: 'FileText', permission: 'dashboard.ver', secao: 'trabalho', modulo: 'conteudo' },
-  { key: 'marketing-ideias', label: 'Banco de ideias', href: '/marketing/ideias', icon: 'Lightbulb', permission: 'pauta.ver', secao: 'trabalho', modulo: 'pauta' },
-  { key: 'marketing-estrategia', label: 'Estratégia do mês', href: '/marketing/estrategia', icon: 'Compass', permission: 'pauta.ver', secao: 'trabalho', modulo: 'pauta' },
+  // 19/10/2026: o Trabalho foi absorvido. Lista e Quadro interno viraram Dia a dia › Tarefas
+  // (seguem vivos fora do menu: o quadro abre descrição, comentários e subtarefas);
+  // Implantação virou Dia a dia › Operação; Ideias e Estratégia foram para Marketing.
+  { key: 'tarefas', label: 'Lista de tarefas', href: '/tarefas', icon: 'CheckSquare', permission: 'tarefas.ver', secao: 'trabalho', modulo: 'trabalho', oculto: true },
+  { key: 'trabalho', label: 'Quadro interno', href: '/trabalho', icon: 'KanbanSquare', permission: 'tarefas.ver', secao: 'trabalho', modulo: 'trabalho', oculto: true },
+  { key: 'onboarding', label: 'Operação', href: '/onboarding', icon: 'DoorOpen', permission: 'tarefas.ver', secao: 'dia', modulo: 'trabalho' },
+  { key: 'conteudo', label: 'Temas do ClickUp', href: '/conteudo', icon: 'FileText', permission: 'dashboard.ver', secao: 'trabalho', modulo: 'conteudo', oculto: true },
+  { key: 'marketing-ideias', label: 'Banco de ideias', href: '/marketing/ideias', icon: 'Lightbulb', permission: 'pauta.ver', secao: 'conteudo', modulo: 'pauta' },
+  { key: 'marketing-estrategia', label: 'Estratégia do mês', href: '/marketing/estrategia', icon: 'Compass', permission: 'pauta.ver', secao: 'conteudo', modulo: 'pauta' },
 
   { key: 'pauta', label: 'Produção de conteúdo', href: '/pauta', icon: 'CalendarClock', permission: 'pauta.ver', secao: 'conteudo', modulo: 'pauta' },
   { key: 'referencias', label: 'Referências', href: '/referencias', icon: 'Library', permission: 'pauta.ver', secao: 'conteudo', modulo: 'pauta', pai: 'pauta' },

@@ -35,14 +35,16 @@ describe('projeção do NAV em módulos', () => {
     expect(destinoDaRota('/propostas')).toBeUndefined();
     expect(areaDoDestino(destinoDaRota('/propostas', true)!)?.key).toBe('comercial');
   });
-  it('Operação da Root depende da confirmação da plataforma e mora em Dia a dia sem tomar a entrada', () => {
-    expect(modulosDeNavegacao(permissoes).flatMap((area) => area.itens).some((i) => i.key === 'operacao')).toBe(false);
-    const semPlataforma = modulosDeNavegacao(permissoes).find((area) => area.key === 'dia');
-    expect(semPlataforma?.itens.some((item) => item.key === 'operacao')).toBe(false);
-    const dia = modulosDeNavegacao(permissoes, undefined, true).find((area) => area.key === 'dia');
-    expect(dia?.entrada?.key).toBe('caixa');
-    expect(dia?.itens.at(-1)?.key).toBe('operacao');
-    expect(destinoDaRota('/operacao')).toBeUndefined();
-    expect(areaDoDestino(destinoDaRota('/operacao?rodada=2026-10-14', true)!)?.key).toBe('dia');
+  // 19/10/2026: Dia a dia abre em Tarefas e termina em Operação (a implantação, com a
+  // rodada semanal da ROOT dentro). /operacao segue viva, mas não é mais item de menu.
+  it('Dia a dia abre em Tarefas e termina em Operação; a rodada da ROOT não vira item próprio', () => {
+    for (const plataforma of [false, true]) {
+      const dia = modulosDeNavegacao(permissoes, undefined, plataforma).find((area) => area.key === 'dia');
+      expect(dia?.entrada?.key).toBe('tarefas-todas');
+      expect(dia?.itens.at(-1)?.key).toBe('onboarding');
+      expect(dia?.itens.some((item) => item.key === 'operacao' || item.key === 'caixa')).toBe(false);
+    }
+    expect(destinoDaRota('/operacao', true)).toBeUndefined();
+    expect(areaDoDestino(destinoDaRota('/onboarding')!)?.key).toBe('dia');
   });
 });

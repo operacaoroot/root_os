@@ -2,7 +2,7 @@ import { NAV, navPorSecao, type NavItem } from '@mktos/shared';
 
 /** Somente apresentação: permissões, módulos e URLs continuam no NAV. */
 export const AREAS_DE_NAVEGACAO = [
-  { key: 'dia', label: 'Dia a dia', icon: 'Inbox', secoes: ['dia'], principal: 'caixa' },
+  { key: 'dia', label: 'Dia a dia', icon: 'Inbox', secoes: ['dia'], principal: 'tarefas-todas' },
   { key: 'empresa', label: 'Contexto', icon: 'Network', secoes: ['empresa'], principal: 'contexto' },
   { key: 'trabalho', label: 'Trabalho', icon: 'KanbanSquare', secoes: ['trabalho'], principal: 'trabalho' },
   { key: 'conteudo', label: 'Marketing', icon: 'Megaphone', secoes: ['conteudo'], principal: 'marketing' },
@@ -21,8 +21,12 @@ export const OPERACAO_DA_ROOT: NavItem = {
   key: 'operacao', label: 'Operação da Root', href: '/operacao', icon: 'Radar',
   permission: 'dashboard.ver', secao: 'dia',
 };
-/** Telas da ROOT: fora do NAV, porque o NAV filtra por permissão e não por "ser a plataforma". */
-export const ITENS_DA_ROOT: readonly NavItem[] = [PROPOSTAS_DA_ROOT, OPERACAO_DA_ROOT];
+/**
+ * Telas da ROOT: fora do NAV, porque o NAV filtra por permissão e não por "ser a plataforma".
+ * A Operação da Root (rodada semanal) mora dentro de Dia a dia › Operação desde 19/10/2026;
+ * a rota /operacao segue viva.
+ */
+export const ITENS_DA_ROOT: readonly NavItem[] = [PROPOSTAS_DA_ROOT];
 export function rotuloDoDestino(item: NavItem): string {
   if (item.key === 'contexto') return 'Mapa da empresa';
   if (item.key === 'marca') return 'Marca e brandbook';
