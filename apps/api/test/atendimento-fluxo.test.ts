@@ -567,6 +567,17 @@ describe('atendimento — lidas, responsável, cliente e encerramento', () => {
     expect((await m.svc.conversa(ORG, conversa)).encerrada).toBe(true);
   });
 
+  it('mensagens do mesmo segundo ficam na ordem em que chegaram (achado na v2)', async () => {
+    const mesmoSegundo = 1_760_000_000;
+    for (const [id, t] of [['S1', 'primeira'], ['S2', 'segunda'], ['S3', 'terceira']]) {
+      await m.entrada.ouvir(ORG, upsert({ key: { id, remoteJid: CLIENTE }, message: { conversation: t }, messageTimestamp: mesmoSegundo }));
+      await new Promise((r) => setTimeout(r, 2));
+    }
+    const h = await m.svc.mensagens(ORG, conversa, undefined);
+    const doSegundo = h.mensagens.filter((x) => ['primeira', 'segunda', 'terceira'].includes(String(x.texto)));
+    expect(doSegundo.map((x) => x.texto)).toEqual(['primeira', 'segunda', 'terceira']);
+  });
+
   it('busca de mensagens não atravessa empresa', async () => {
     await m.ligar(OUTRA);
     await m.entrada.ouvir(OUTRA, texto('Z1', 'dois também'));

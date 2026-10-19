@@ -195,6 +195,7 @@ function Conversa({ resumo, token, apoio, podeResponder, podeTarefa, voltar, mud
   const [retida, setRetida] = useState<Retida>(null);
   const [erro, setErro] = useState<string | null>(null);
   const [tarefaDe, setTarefaDe] = useState<MensagemDaConversa | null>(null);
+  const [tarefaFeita, setTarefaFeita] = useState<{ id: string; area: string; nova: boolean } | null>(null);
   const fim = useRef<HTMLDivElement>(null);
 
   const carregar = useCallback(async () => {
@@ -253,8 +254,10 @@ function Conversa({ resumo, token, apoio, podeResponder, podeTarefa, voltar, mud
 
   const problema = h ? envioComProblema(h.mensagens) : false;
 
+  // A altura deixa livre o canto de baixo, onde fica o botão do assistente
+  // (ChatFlutuante, fixo em bottom-5): sem isso ele cobria o "Pedir envio".
   return (
-    <div className="flex h-[calc(100vh-11rem)] min-h-[480px] flex-col rounded-xl border border-border bg-surface">
+    <div className="flex h-[calc(100vh-15.5rem)] min-h-[420px] flex-col rounded-xl border border-border bg-surface">
       <header className="space-y-2 border-b border-border p-3">
         <div className="flex items-center justify-between gap-2">
           <div className="flex min-w-0 items-center gap-2">
@@ -302,6 +305,13 @@ function Conversa({ resumo, token, apoio, podeResponder, podeTarefa, voltar, mud
         <div ref={fim} />
       </div>
 
+      {tarefaFeita && (
+        <div className="border-t border-border bg-surface-2 px-3 py-2 text-sm">
+          {tarefaFeita.nova ? "Tarefa criada" : "Esta mensagem já tinha tarefa"} em Dia a dia › Tarefas, área {tarefaFeita.area}.{" "}
+          <Link href={`/dia-a-dia?tarefa=${tarefaFeita.id}`} className="text-brand underline">abrir em Tarefas</Link>{" "}
+          <button className="text-muted underline" onClick={() => setTarefaFeita(null)}>ok</button>
+        </div>
+      )}
       {retida && (
         <div className="border-t border-border bg-surface-2 px-3 py-2 text-sm">
           A resposta foi para <Link href={retida.fila} className="text-brand underline">Aprovações</Link> e sai quando outra pessoa assinar.
@@ -331,7 +341,7 @@ function Conversa({ resumo, token, apoio, podeResponder, podeTarefa, voltar, mud
       )}
 
       {tarefaDe && apoio && (
-        <VirarTarefa m={tarefaDe} token={token} apoio={apoio} fechar={() => setTarefaDe(null)} pronto={() => { setTarefaDe(null); carregar(); }} />
+        <VirarTarefa m={tarefaDe} token={token} apoio={apoio} fechar={() => setTarefaDe(null)} pronto={(t) => { setTarefaDe(null); setTarefaFeita(t); carregar(); }} />
       )}
     </div>
   );
@@ -417,7 +427,8 @@ function Anexo({ m, token }: { m: MensagemDaConversa; token: string }) {
 }
 
 function VirarTarefa({ m, token, apoio, fechar, pronto }: {
-  m: MensagemDaConversa; token: string; apoio: Apoio; fechar: () => void; pronto: () => void;
+  m: MensagemDaConversa; token: string; apoio: Apoio; fechar: () => void;
+  pronto: (t: { id: string; area: string; nova: boolean }) => void;
 }) {
   const [titulo, setTitulo] = useState((m.texto ?? '').split('\n')[0].slice(0, 120));
   const [areaId, setAreaId] = useState(apoio.areas[0]?.id ?? '');
@@ -435,7 +446,7 @@ function VirarTarefa({ m, token, apoio, fechar, pronto }: {
         { titulo, areaId, pessoaId: pessoaId || null, prazo: prazo || null, ...(confirmar ? { confirmar: true } : {}) },
         token,
       );
-      if (r.tarefaId) pronto();
+      if (r.tarefaId) pronto({ id: r.tarefaId, area: apoio.areas.find((a) => a.id === areaId)?.nome ?? "", nova: r.criada });
       else setAviso(r.aviso);
     } catch (e) { setErro((e as Error).message); }
     finally { setIndo(false); }

@@ -288,7 +288,9 @@ export class AtendimentoService implements OnModuleInit {
     if (cursor && Number.isNaN(cursor.getTime())) throw new BadRequestException('Cursor inválido');
     const linhas = await this.prisma.atendimentoMensagem.findMany({
       where: { orgId, contatoId, ...(cursor ? { momento: { lt: cursor } } : {}) },
-      orderBy: [{ momento: 'desc' }, { id: 'desc' }],
+      // Mensagens do mesmo segundo (comum quando o cliente manda várias seguidas)
+      // ficam na ordem em que chegaram, e não na de um id aleatório.
+      orderBy: [{ momento: 'desc' }, { criadoEm: 'desc' }, { id: 'desc' }],
       take: MENSAGENS_POR_PAGINA + 1,
       include: { tarefa: { select: { tarefaId: true } } },
     });
@@ -306,7 +308,7 @@ export class AtendimentoService implements OnModuleInit {
       })).map((u) => [u.id, u.name]),
     );
     const mapa: MensagemDaConversa[] = atualizadas
-      .sort((a, b) => a.momento.getTime() - b.momento.getTime() || a.id.localeCompare(b.id))
+      .sort((a, b) => a.momento.getTime() - b.momento.getTime() || a.criadoEm.getTime() - b.criadoEm.getTime() || a.id.localeCompare(b.id))
       .map((l) => ({
         id: l.id,
         direcao: l.direcao,
