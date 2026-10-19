@@ -54,6 +54,27 @@ describe('vistas: as regras puras', () => {
     expect(VistaCriarSchema.safeParse({ tela: 'outra', nome: 'Minha', config: {} }).success).toBe(false);
     expect(VistaCriarSchema.safeParse({ tela: 'minhas-tarefas', nome: ' ', config: VISTA_PADRAO_DE_MINHAS_TAREFAS }).success).toBe(false);
   });
+
+  // Versão final (F4): a régua de prazo do Lucas entra como agrupamento, sem invalidar o que já foi salvo.
+  it('a régua de prazo agrupa Atrasadas · Hoje · Próximos 7 dias · Mais tarde · Sem prazo · Concluídas, no dia de São Paulo', () => {
+    const base = { titulo: 't', status: 's', lista: 'l', cliente: null, prioridade: 'normal', criadaEm: agora.toISOString() };
+    const itens = [
+      { ...base, titulo: 'feita', prazo: '2026-10-01T15:00:00.000Z', statusTipo: 'closed' },
+      { ...base, titulo: 'sem', prazo: null, statusTipo: 'open' },
+      { ...base, titulo: 'longe', prazo: '2026-11-30T15:00:00.000Z', statusTipo: 'open' },
+      { ...base, titulo: 'semana', prazo: '2026-10-24T15:00:00.000Z', statusTipo: 'custom' },
+      { ...base, titulo: 'hoje', prazo: '2026-10-19T03:00:00.000Z', statusTipo: 'open' }, // meia-noite em SP: ainda é hoje
+      { ...base, titulo: 'ontem', prazo: '2026-10-19T02:00:00.000Z', statusTipo: 'open' }, // 18/10 23h em SP
+    ];
+    expect(agruparTarefas(itens, 'prazo', agora).map((g) => [g.rotulo, g.itens.map((t) => t.titulo)])).toEqual([
+      ['Atrasadas', ['ontem']], ['Hoje', ['hoje']], ['Próximos 7 dias', ['semana']], ['Mais tarde', ['longe']], ['Sem prazo', ['sem']], ['Concluídas', ['feita']],
+    ]);
+    // A vista do quadro salva antes (sem agrupamento nem concluídas) continua valendo; as chaves novas são aceitas.
+    const antiga = { densidade: 'compacto', visao: 'board', filtros: { assignee: '', agente: '', statusId: '', cliente: '', escopo: 'todos', q: '' } };
+    expect(VistaCriarSchema.safeParse({ tela: 'quadro', nome: 'Antiga', config: antiga }).success).toBe(true);
+    expect(VistaCriarSchema.safeParse({ tela: 'quadro', nome: 'Nova', config: { ...antiga, visao: 'calendario', agrupamento: 'prazo', concluidas: 'ocultar' } }).success).toBe(true);
+    expect(VistaCriarSchema.safeParse({ tela: 'minhas-tarefas', nome: 'Régua', config: { ...VISTA_PADRAO_DE_MINHAS_TAREFAS, agrupamento: 'prazo' } }).success).toBe(true);
+  });
 });
 
 const URL = process.env.TEST_DATABASE_URL;
