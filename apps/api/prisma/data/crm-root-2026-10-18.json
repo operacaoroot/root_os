@@ -544,6 +544,19 @@
           "arquivo": "douglas-costa/_fonte/2026-09-30-reuniao-transcricao.md"
         }
       ]
+    },
+    {
+      "id": "cliente-cartorio-descoberto",
+      "titulo": "Cartório de Descoberto (Jorge)",
+      "etapa": "Depoimento e indicação",
+      "criadoEm": "2026-08-21T19:00:00-03:00",
+      "nota": "Cliente que entrou por parceria (Lucas, 19/10/2026). As notas dão o caso como entregue: minuta de escritura, orçamento e dossiê. O Jorge gravou um depoimento em áudio, usado nas propostas do Douglas Costa e do Lucas Rezende, e havia a tarefa Indicação Jorge com prazo em 30/09. FALTA: valor, data do fechamento e escopo do contrato (registrar em Contratos quando souber).",
+      "campos": {
+        "Canal de aquisição": "Parcerias",
+        "Vendedor": "Pedro",
+        "Empresa": "Cartório de Descoberto",
+        "Contato": "Jorge"
+      }
     }
   ],
   "removidos": [
