@@ -45,6 +45,48 @@ export interface ReuniaoCompleta extends ReuniaoResumo {
 }
 
 /*
+ * GRANOLA → OS (19/10/2026). O Zap "Note Added to Granola Folder" chama
+ * `POST /api/trabalho/granola/:orgId` com o segredo no cabeçalho
+ * `x-root-segredo`. O corpo é o que o Zap mapear; aceitamos os nomes do Granola
+ * (title, transcript, attendees, link, start_time…) e os nossos em português.
+ * O OS acha o card pelo e-mail ou pelo nome do cliente e grava a reunião nele;
+ * sem cliente reconhecido, ela espera em "Reuniões do Granola sem cliente".
+ */
+export const CABECALHO_DO_SEGREDO_GRANOLA = 'x-root-segredo';
+
+const textoOuLista = z.union([z.string(), z.array(z.unknown())]).nullish();
+export const ReuniaoDoGranolaSchema = z
+  .object({
+    titulo: z.string().nullish(), title: z.string().nullish(),
+    transcricao: z.string().nullish(), transcript: z.string().nullish(),
+    notas: z.string().nullish(), my_notes: z.string().nullish(), notes: z.string().nullish(), summary: z.string().nullish(),
+    participantes: textoOuLista, attendees: textoOuLista,
+    link: z.string().nullish(), share_link: z.string().nullish(), url: z.string().nullish(),
+    inicio: z.string().nullish(), start_time: z.string().nullish(), start: z.string().nullish(), data: z.string().nullish(), date: z.string().nullish(),
+    criador: z.string().nullish(), creator: z.string().nullish(),
+    /** Força o card (id do Trabalho), quando o Zap souber. */
+    cardId: z.string().uuid().nullish(),
+  })
+  .passthrough();
+export type ReuniaoDoGranola = z.infer<typeof ReuniaoDoGranolaSchema>;
+
+export interface ResultadoDoGranola {
+  ok: true;
+  /** Reunião nova gravada, ou já existia (o Zap reenviou). */
+  duplicada: boolean;
+  /** Nome do card em que entrou; nulo quando foi para "sem cliente". */
+  cliente: string | null;
+  /** Por que esse card: e-mail, domínio ou nome. */
+  porque: 'card' | 'email' | 'dominio' | 'nome' | null;
+}
+
+export interface ReuniaoSemCliente extends ReuniaoResumo {
+  participantes: string | null;
+}
+
+export const VincularReuniaoSchema = z.object({ taskId: z.string().uuid() });
+
+/*
  * A JORNADA DO CLIENTE (18/10/2026): UM CARD POR LEAD/CLIENTE, da primeira
  * conversa ao pós-venda. A lista é uma só ("Gestão de Leads", chave
  * `crm-root-lista`), e a jornada mora nas ETAPAS, agrupadas em três fases.

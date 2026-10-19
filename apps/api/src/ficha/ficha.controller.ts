@@ -1,10 +1,11 @@
 import { Body, Controller, Delete, Get, Param, Post, Query, UseGuards } from '@nestjs/common';
-import { NovaReuniaoSchema, NovaTarefaDoClienteSchema, NovoContratoSchema } from '@mktos/shared';
+import { NovaReuniaoSchema, NovaTarefaDoClienteSchema, NovoContratoSchema, VincularReuniaoSchema } from '@mktos/shared';
 import { z } from 'zod';
 import { FichaService } from './ficha.service';
 import { JornadaService } from './jornada.service';
 import { TarefasDoClienteService } from './tarefas-do-cliente.service';
 import { ContratosDoClienteService } from './contratos-do-cliente.service';
+import { GranolaService } from './granola.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { PermissionsGuard } from '../auth/permissions.guard';
 import { RequirePermissions } from '../auth/permissions.decorator';
@@ -22,7 +23,21 @@ export class FichaController {
     private readonly jornadas: JornadaService,
     private readonly tarefas: TarefasDoClienteService,
     private readonly contratos: ContratosDoClienteService,
+    private readonly granola: GranolaService,
   ) {}
+
+  // ---- reuniões do Granola que chegaram sem cliente reconhecido ----
+  @Get('granola/sem-cliente')
+  @RequirePermissions('tarefas.ver')
+  granolaSemCliente(@CurrentUser() u: JwtUser) {
+    return this.granola.semCliente(u.orgId);
+  }
+
+  @Post('reunioes/:id/vincular')
+  @RequirePermissions('tarefas.editar')
+  vincular(@CurrentUser() u: JwtUser, @Param('id') id: string, @Body() body: unknown) {
+    return this.granola.vincular(u.orgId, id, VincularReuniaoSchema.parse(body).taskId);
+  }
 
   /** O quadro do CRM (`?lista=crm-root-lista`): as abas filtram pela fase da etapa. */
   @Get('quadro')

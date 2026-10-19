@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
-import type { LeadList, QuadroDaLista, TrabEstrutura } from '@mktos/shared';
+import type { LeadList, QuadroDaLista, ReuniaoSemCliente, TrabEstrutura } from '@mktos/shared';
 import { apiGet, apiPost } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 import { EVENTO_FICHA_MUDOU, abrirFicha } from '@/lib/ficha';
@@ -25,6 +25,7 @@ const semAcento = (s: string) => s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLo
 export default function LeadsPage() {
   return (
     <div className="com-tema space-y-6 text-text">
+      <ReunioesSemCliente />
       <VisoesDaLista chave={CRM} item="lead" rotuloAbertos="Cards" rotuloDoValor="No funil" novo="+ Novo lead" visaoInicial="lista" />
       <EntradasDoSite />
     </div>
@@ -148,5 +149,84 @@ function EntradasDoSite() {
         <NovaOportunidadeExercicio />
       </div>
     </details>
+  );
+}
+
+/**
+ * As reuniões que o Granola mandou e o OS não reconheceu o cliente (nem por
+ * e-mail, nem por domínio, nem por nome). Aparece só quando há alguma: escolher
+ * o card e vincular leva a reunião para a ficha dele.
+ */
+function ReunioesSemCliente() {
+  const { token, ready, can } = useAuth();
+  const [rs, setRs] = useState<ReuniaoSemCliente[]>([]);
+  const [crm, setCrm] = useState<QuadroDaLista | null>(null);
+  const [escolha, setEscolha] = useState<Record<string, string>>({});
+  const [erro, setErro] = useState<string | null>(null);
+
+  const carregar = useCallback(() => {
+    if (!token) return;
+    apiGet<ReuniaoSemCliente[]>('/trabalho/fichas/granola/sem-cliente', token).then(setRs).catch(() => setRs([]));
+    apiGet<QuadroDaLista>(`/trabalho/fichas/quadro?lista=${CRM}`, token).then(setCrm).catch(() => setCrm(null));
+  }, [token]);
+
+  useEffect(() => {
+    if (ready && token) carregar();
+  }, [ready, token, carregar]);
+
+  if (!rs.length) return null;
+  const cards = [...(crm?.cartoes ?? [])].sort((a, b) => a.titulo.localeCompare(b.titulo));
+
+  const vincular = async (r: ReuniaoSemCliente) => {
+    const taskId = escolha[r.id];
+    if (!token || !taskId) return;
+    try {
+      await apiPost(`/trabalho/fichas/reunioes/${r.id}/vincular`, { taskId }, token);
+      carregar();
+      abrirFicha(taskId);
+    } catch (e) {
+      setErro((e as Error).message);
+    }
+  };
+
+  return (
+    <section className="rounded-md border border-brand/50 bg-surface px-5 py-4">
+      <h2 className="text-[1.05rem] font-semibold">Reuniões do Granola sem cliente ({rs.length})</h2>
+      <p className="text-sm text-muted">O OS não reconheceu o cliente pelo e-mail nem pelo nome. Escolha o card e vincule.</p>
+      {erro && <div className="mt-2 rounded-lg border border-bad/30 bg-bad/10 px-4 py-2 text-sm text-bad">{erro}</div>}
+      <ul className="mt-3 divide-y divide-border">
+        {rs.map((r) => (
+          <li key={r.id} className="flex flex-wrap items-center gap-3 py-2.5">
+            <div className="min-w-0 flex-1">
+              <div className="font-medium">{r.titulo}</div>
+              <div className="text-xs text-muted">
+                {new Date(r.em).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}
+                {r.participantes && ` · ${r.participantes}`}
+              </div>
+            </div>
+            {can('tarefas.editar') && (
+              <>
+                <select
+                  value={escolha[r.id] ?? ''}
+                  onChange={(e) => setEscolha({ ...escolha, [r.id]: e.target.value })}
+                  className="rounded-md border border-border bg-surface-2 px-2 py-1.5 text-sm outline-none focus:border-brand"
+                  aria-label="Card do cliente"
+                >
+                  <option value="">escolha o cliente…</option>
+                  {cards.map((c) => <option key={c.id} value={c.id}>{c.titulo}</option>)}
+                </select>
+                <button
+                  onClick={() => void vincular(r)}
+                  disabled={!escolha[r.id]}
+                  className="rounded-md bg-brand px-3 py-1.5 text-sm font-medium text-ink hover:opacity-90 disabled:opacity-40"
+                >
+                  vincular
+                </button>
+              </>
+            )}
+          </li>
+        ))}
+      </ul>
+    </section>
   );
 }
