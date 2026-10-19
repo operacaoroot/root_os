@@ -598,6 +598,11 @@ describe('a instrumentação — antes de medir defesa, medir o medidor', () => 
       // o modelo escolhe, ficam FORA da cerca; o pedido de quem clica em "Sugerir tarefas" não é
       // texto livre e nunca passa por ela.
       'src/work/atas/leitor-de-atas.ts': 1,
+      // O SÉTIMO, da produção (entrega do Pedro de 14/10, entrou na versão final pelo merge de
+      // 19/10/2026): `sintese-local.ts` cerca o que a ferramenta local do agente devolve antes
+      // de pedir a síntese ao modelo. É dado de ferramenta, nunca ordem; a cerca acrescenta
+      // defesa e não tira nenhuma.
+      'src/agents/sintese-local.ts': 1,
     };
 
     const porArquivo: Record<string, number> = {};

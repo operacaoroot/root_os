@@ -266,7 +266,7 @@ A produção tem 85 migrations. A versão final traz 12 que ela ainda não tem:
 | `20261013300000_comercial_geladeira_volta` | uma coluna anulável em `ComercialConfig` |
 | `20261018100000_caixa_visto` | tabela da marca pessoal de "limpei isto" das Pendências, com RLS |
 | `20261018130000_ata_sugestao` | tabela `AtaSugestao` (sugestões de tarefa das atas), com RLS |
-| `20261018220000_implantacao_card` | coluna `ComercialFicha.cardId` (o card que nasce do fechamento) |
+| `20261018221000_implantacao_card` | coluna `ComercialFicha.cardId` (o card que nasce do fechamento) |
 | `20261018230000_lead_reacao` | tabela `LeadReacao` (leitura e reações da proposta), filha de `Lead`, com RLS |
 | `20261018240000_sala_versao` | tabela `SalaVersao` (sala publicada por versão), filha de `Lead`, com RLS |
 | `20261019100000_tarefa_do_cliente` | `Partner.interno` e o cliente da tarefa. Na versão final ela só garante `Partner.interno`, idempotente; a coluna do cliente fica com a conciliação |
