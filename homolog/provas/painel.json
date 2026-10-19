@@ -1,98 +1,98 @@
 {
-  "inicio": "2026-10-18T22:45:38.307Z",
+  "inicio": "2026-10-19T01:29:48.089Z",
   "web": "http://127.0.0.1:3010",
-  "sufixo": "224538",
+  "sufixo": "012948",
   "passos": [
     {
       "n": 1,
       "nome": "mesa, sócio e admin entraram pela API",
-      "ms": 268,
+      "ms": 246,
       "detalhe": "Mesa · responsável (homologação) · Sócio titular (homologação) · Admin Root"
     },
     {
       "n": 2,
       "nome": "preparou: tarefa da mesa comentada pelo admin, lista solta e um lead novo em E1",
-      "ms": 609,
-      "tarefaId": "3ee6552a-ad09-40ab-b1f3-aeb4c174a087",
-      "listaId": "82274f51-47d2-4bc1-abd6-f03af920273c",
-      "leadId": "425ed8a1-d7b6-5ffa-91b7-3c1b0a193b80"
+      "ms": 529,
+      "tarefaId": "aa618f2c-f70f-4e20-87e8-e688c6132432",
+      "listaId": "8d3a8ee8-ff76-413b-a79d-727b388d1d33",
+      "leadId": "d81eaae8-c9a1-534a-8020-ba80879773b2"
     },
     {
       "n": 3,
       "nome": "na caixa da mesa, Atividade mostra o comentário do admin",
-      "ms": 3299,
-      "detalhe": "comentario:6483cefb-f888-472a-9101-dd6e7360330e"
+      "ms": 1439,
+      "detalhe": "comentario:051a5084-b01f-479a-bf7d-a61051b4ebe4"
     },
     {
       "n": 4,
       "nome": "\"Limpar\" tirou o item da caixa e ele continua no histórico",
-      "ms": 3489
+      "ms": 1528
     },
     {
       "n": 5,
       "nome": "Minhas tarefas mostra a tarefa e os comentários abrem no lugar",
-      "ms": 3629
+      "ms": 1669
     },
     {
       "n": 6,
       "nome": "pasta criada pela tela",
-      "ms": 4468,
-      "detalhe": "Pasta da prova 224538"
+      "ms": 2843,
+      "detalhe": "Pasta da prova 012948"
     },
     {
       "n": 7,
       "nome": "a lista foi movida para a pasta pelo seletor e o chip da pasta a mostra",
-      "ms": 5587
+      "ms": 3960
     },
     {
       "n": 8,
       "nome": "Quadro e Lista alternam sobre a mesma lista",
-      "ms": 5648
+      "ms": 4021
     },
     {
       "n": 9,
       "nome": "ata colada pela tela entrou no banco de atas (pela memória)",
-      "ms": 7034,
-      "detalhe": "memoria:4cfec21a-02ba-4a1b-ac48-6ec57400d1ad"
+      "ms": 5370,
+      "detalhe": "memoria:8a20a61b-1934-4d52-b58b-e1a0325dff9b"
     },
     {
       "n": 10,
       "nome": "\"Sugerir tarefas\" trouxe rascunhos conferidos contra a ata",
-      "ms": 7194,
+      "ms": 5520,
       "detalhe": "3 rascunho(s)"
     },
     {
       "n": 11,
       "nome": "aceitar com um clique criou a tarefa no Trabalho",
-      "ms": 7660,
+      "ms": 5987,
       "detalhe": "Enviar o relatório mensal da Padaria Exemplo"
     },
     {
       "n": 12,
       "nome": "o admin pediu para mover o lead novo de E1 para E3 pelo menu do cartão",
-      "ms": 8594
+      "ms": 6963
     },
     {
       "n": 13,
       "nome": "a mesa encontrou o pedido em \"Depende de você\", em português",
-      "ms": 9248,
-      "detalhe": "Mover Prova Painel 224538 para Reunião agendada"
+      "ms": 7616,
+      "detalhe": "Mover Prova Painel 012948 para Reunião agendada"
     },
     {
       "n": 14,
       "nome": "a mesa confirmou pela tela nova (as condições apareceram antes do clique)",
-      "ms": 9873
+      "ms": 8247
     },
     {
       "n": 15,
       "nome": "o admin concluiu: o cartão está em E3 com o balão de pendências",
-      "ms": 9994,
+      "ms": 8369,
       "detalhe": "MOVIDO COM PENDÊNCIAS sistema ou ERP em uso (E2); base de dados: sim ou não (E2); produto-alvo proposto (E2) por Admin Root · 18/10 · some quando o que falta ch"
     },
     {
       "n": 16,
       "nome": "fotografou as telas mexidas em escuro, claro e 390 px; nenhuma rola na horizontal no celular",
-      "ms": 36625,
+      "ms": 35017,
       "detalhe": "25 fotos"
     }
   ],
@@ -166,6 +166,6 @@
     }
   ],
   "ok": true,
-  "fim": "2026-10-18T22:46:15.010Z",
-  "duracaoMs": 36703
+  "fim": "2026-10-19T01:30:23.179Z",
+  "duracaoMs": 35090
 }

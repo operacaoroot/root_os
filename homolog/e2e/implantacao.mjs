@@ -259,7 +259,7 @@ async function main() {
     const ctxQuemLibera = await contexto(navegador, (await api('GET', '/approvals?status=pendente', undefined, pessoas.mesa.token)).items.find((a) => a.id === v2.approvalId)?.alcadaMinima === 'titular' ? pessoas.socio : pessoas.mesa, 'dark');
     const pa = await ctxQuemLibera.newPage();
     await pa.goto(`${WEB}/atendimento`, { waitUntil: 'networkidle' });
-    const abrirItem = pa.locator(`[data-testid="aprov-abrir-${v2.approvalId}"]`);
+    const abrirItem = pa.locator(`[data-testid="aprov-expandir-${v2.approvalId}"]`);
     if (await abrirItem.count()) {
       await abrirItem.click();
       await tid(pa, 'cartao-da-sala').waitFor({ timeout: 15_000 });
@@ -303,7 +303,7 @@ async function main() {
       { nome: 'painel-sala', sessao: pessoas.mesa, url: `/comercial/funil?lead=${leadId}&aba=sala`, pronto: '[data-testid="aba-sala"]' },
       { nome: 'relatorio', sessao: pessoas.mesa, url: '/comercial/relatorio', pronto: '[data-testid="bloco-leitura"] [data-testid="leitura-tiles"]', rolar: '[data-testid="bloco-leitura"]' },
       { nome: 'sala-publicada', sessao: null, url: `/s/${token}`, pronto: '[data-testid="sala-publicada"]' },
-      { nome: 'proposta', sessao: null, url: `/s/${token}/proposta`, pronto: 'text=// 03 · INVESTIMENTO', rolar: 'text=// 03 · INVESTIMENTO' },
+      { nome: 'proposta', sessao: null, url: `/s/${token}/proposta`, pronto: 'text="// 03 · INVESTIMENTO"', rolar: 'text="// 03 · INVESTIMENTO"' },
     ];
     for (const tema of ['dark', 'light']) {
       for (const [tamanho, viewport] of [['desktop', { width: 1440, height: 900 }], ['celular', { width: 390, height: 844 }]]) {

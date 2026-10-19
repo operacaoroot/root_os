@@ -1,80 +1,80 @@
 {
-  "inicio": "2026-10-18T22:48:18.779Z",
+  "inicio": "2026-10-19T01:30:23.477Z",
   "web": "http://127.0.0.1:3010",
   "passos": [
     {
       "n": 1,
       "nome": "mesa entrou pela API",
-      "ms": 84,
+      "ms": 92,
       "detalhe": "mesa@root.homolog"
     },
     {
       "n": 2,
       "nome": "a Alicerce pediu 8% pela sala e a decisão abriu",
-      "ms": 195,
+      "ms": 205,
       "detalhe": "Marina Duarte pediu 8% de desconto na Operação ROOT",
       "leadId": "edea2274-6852-5adf-8b34-2286a2c10f5d",
-      "decisaoId": "2531593f-81d4-5191-a657-8b747842adb3"
+      "decisaoId": "0c8481ac-1ad3-5c70-8830-e2c59977ca74"
     },
     {
       "n": 3,
       "nome": "da fila, \"ver o lead\" abriu o painel na aba Decisões; só a query mudou",
-      "ms": 1193,
+      "ms": 1194,
       "detalhe": "?lead=edea2274-6852-5adf-8b34-2286a2c10f5d&aba=decisoes"
     },
     {
       "n": 4,
       "nome": "decidiu \"manter o preço\" dentro do painel; o aviso no canto disse o que aconteceu",
-      "ms": 1659
+      "ms": 1741
     },
     {
       "n": 5,
       "nome": "o cartão da decisão saiu da fila de trás sem recarregar",
-      "ms": 1747
+      "ms": 1743
     },
     {
       "n": 6,
       "nome": "o fio ganhou a linha da decisão; a URL mudou só na query",
-      "ms": 1797,
+      "ms": 1807,
       "detalhe": "?lead=edea2274-6852-5adf-8b34-2286a2c10f5d&aba=fio"
     },
     {
       "n": 7,
       "nome": "Esc fechou o painel, a URL voltou à da fila e o foco voltou à tela de trás",
-      "ms": 1808
+      "ms": 1819
     },
     {
       "n": 8,
       "nome": "no funil, as setas andaram até a Alicerce e Enter abriu o painel na aba Fio",
-      "ms": 2583,
+      "ms": 2582,
       "detalhe": "?lead=edea2274-6852-5adf-8b34-2286a2c10f5d&aba=fio"
     },
     {
       "n": 9,
       "nome": "a linha da lista de contratos abriu o painel na aba Dinheiro",
-      "ms": 6947
+      "ms": 7043
     },
     {
       "n": 10,
       "nome": "a rota antiga /comercial/lead/<id> redirecionou para o funil com o painel na aba Fio",
-      "ms": 7660
+      "ms": 7760
     },
     {
       "n": 11,
       "nome": "a rota antiga /sessao abriu a aba Sessão",
-      "ms": 8355
+      "ms": 8491
     },
     {
       "n": 12,
       "nome": "a raiz / abriu o login (NEXT_PUBLIC_RAIZ=login)",
-      "ms": 8515,
+      "ms": 8648,
       "detalhe": "/login"
     },
     {
       "n": 13,
       "nome": "no celular (390 px) a folha abriu na tela inteira e fechou; sem rolagem horizontal; fechar com 44 px",
-      "ms": 9849,
-      "detalhe": "390x844"
+      "ms": 10002,
+      "detalhe": "390x844.0000267028809"
     }
   ],
   "screenshots": [
@@ -92,6 +92,6 @@
     "ux-celular-folha-claro.png"
   ],
   "ok": true,
-  "fim": "2026-10-18T22:48:37.890Z",
-  "duracaoMs": 19111
+  "fim": "2026-10-19T01:30:42.722Z",
+  "duracaoMs": 19245
 }
