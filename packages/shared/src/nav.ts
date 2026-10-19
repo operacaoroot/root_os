@@ -124,13 +124,14 @@ export interface NavItem {
 
 export const NAV: NavItem[] = [
   // O trabalho do dia: /caixa continua lendo o quadro interno e não vira a entrada padrão.
+  // 19/10/2026: a Visão geral (resumo das tarefas) é a primeira aba e a entrada do Dia a dia.
+  { key: 'console', label: 'Visão geral da empresa', href: '/painel', icon: 'SquareTerminal', permission: 'dashboard.ver', secao: 'dia' },
   // Todas as tarefas de todas as áreas, separadas por pessoa e área (19/10/2026).
   { key: 'tarefas-todas', label: 'Tarefas', href: '/dia-a-dia', icon: 'CheckSquare', permission: 'tarefas.ver', secao: 'dia', modulo: 'trabalho' },
   // 19/10/2026: Pendências sai do menu — as tarefas estão em Tarefas, as aprovações na aba delas.
   { key: 'caixa', label: 'Pendências', href: '/caixa', icon: 'Inbox', permission: 'dashboard.ver', secao: 'dia', oculto: true },
   { key: 'atendimento', label: 'Aprovações', href: '/atendimento', icon: 'MessagesSquare', permission: 'aprovacoes.ver', secao: 'dia', estado: 'parcial', parcial: 'a fila de aprovação funciona; a caixa de entrada por WhatsApp ainda não está disponível' },
   { key: 'agenda', label: 'Agenda', href: '/agenda', icon: 'CalendarDays', permission: 'dashboard.ver', secao: 'dia' },
-  { key: 'console', label: 'Visão geral da empresa', href: '/painel', icon: 'SquareTerminal', permission: 'dashboard.ver', secao: 'dia' },
 
   { key: 'contexto', label: 'Conhecimento da empresa', href: '/contexto', icon: 'Network', permission: 'obsidian.ver', secao: 'empresa', estado: 'parcial', parcial: 'o mapa e a página de Marca estão disponíveis; a aba Identidade ainda não está disponível' },
   { key: 'marca', label: 'Marca e pilares', href: '/contexto/marca', icon: 'Fingerprint', permission: 'pauta.ver', secao: 'empresa', modulo: 'pauta', pai: 'contexto' },

@@ -2,7 +2,7 @@ import { NAV, navPorSecao, type NavItem } from '@mktos/shared';
 
 /** Somente apresentação: permissões, módulos e URLs continuam no NAV. */
 export const AREAS_DE_NAVEGACAO = [
-  { key: 'dia', label: 'Dia a dia', icon: 'Inbox', secoes: ['dia'], principal: 'tarefas-todas' },
+  { key: 'dia', label: 'Dia a dia', icon: 'Inbox', secoes: ['dia'], principal: 'console' },
   { key: 'empresa', label: 'Contexto', icon: 'Network', secoes: ['empresa'], principal: 'contexto' },
   { key: 'trabalho', label: 'Trabalho', icon: 'KanbanSquare', secoes: ['trabalho'], principal: 'trabalho' },
   { key: 'conteudo', label: 'Marketing', icon: 'Megaphone', secoes: ['conteudo'], principal: 'marketing' },

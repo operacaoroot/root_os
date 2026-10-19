@@ -79,8 +79,8 @@ vi.mock('next/link', () => ({
 // eslint-disable-next-line import/first
 import { Sidebar } from '@/components/Sidebar';
 
-// 19/10/2026: o Dia a dia abre em Tarefas (/dia-a-dia); o selo continua no item da área.
-const itemDaCaixa = () => document.querySelector('a[href="/dia-a-dia"]');
+// 19/10/2026: o Dia a dia abre na Visão geral (/painel); o selo continua no item da área.
+const itemDaCaixa = () => document.querySelector('a[href="/painel"]');
 
 describe('A7: o selo mora no item da Caixa, e explica o que é', () => {
   it('o número medido aparece dentro do item da Caixa', () => {
@@ -99,7 +99,7 @@ describe('A7: o selo mora no item da Caixa, e explica o que é', () => {
   it('nenhum outro item do menu ganha selo', () => {
     render(<Sidebar />);
     const outros = [...document.querySelectorAll('a[href]')].filter(
-      (a) => a.getAttribute('href') !== '/dia-a-dia',
+      (a) => a.getAttribute('href') !== '/painel',
     );
     for (const a of outros) {
       expect(a.querySelector('[aria-label]'), `${a.getAttribute('href')} ganhou selo`).toBeNull();

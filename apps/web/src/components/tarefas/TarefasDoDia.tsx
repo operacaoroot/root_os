@@ -14,14 +14,14 @@ import { Barras, type Fatia } from './graficos';
 /*
  * DIA A DIA › TAREFAS: todas as tarefas de todas as áreas num lugar (19/10/2026).
  *
- * Uma lista só, vista de dois jeitos (Quadro, Lista) — as abas nunca copiam a
- * tarefa, só mudam o desenho. O resumo em gráfico mora em Visão geral da
+ * Uma lista só, vista de três jeitos (Quadro, Lista, Calendário) — as abas nunca
+ * copiam a tarefa, só mudam o desenho. O resumo em gráfico mora em Visão geral da
  * empresa (`ResumoDeTarefas`, abaixo), e cada clique dele abre esta lista filtrada. Filtros na URL (?pessoa=…&area=…), para
  * o voltar do navegador desfazer o clique e o link poder ser mandado a alguém.
  * O detalhe abre por cima (?tarefa=id), com × e Esc, como a ficha do cliente.
  */
 
-type Ver = 'quadro' | 'lista';
+type Ver = 'quadro' | 'lista' | 'calendario';
 type Agrupar = 'pessoa' | 'area' | 'situacao';
 type Recorte = 'atrasada' | 'emdia' | 'sem_prazo' | 'hoje' | 'semana' | 'depois' | 'feita';
 interface Filtro { pessoa?: string; area?: string; cliente?: string; situacao?: Recorte; q?: string }
@@ -52,7 +52,7 @@ function lerUrl() {
   const v = q.get('ver');
   const a = q.get('agrupar');
   return {
-    ver: (v === 'lista' ? 'lista' : 'quadro') as Ver,
+    ver: (v === 'lista' || v === 'calendario' ? v : 'quadro') as Ver,
     agrupar: (a === 'area' || a === 'situacao' ? a : 'pessoa') as Agrupar,
     filtro: f,
     tarefa: q.get('tarefa'),
@@ -158,13 +158,13 @@ export function TarefasDoDia() {
     <div className="com-tema mx-auto max-w-[1240px] space-y-5 text-text">
       <div className="flex flex-wrap items-end justify-between gap-3 border-b border-border">
         <div className="flex gap-1">
-          {(['quadro', 'lista'] as Ver[]).map((v) => (
+          {(['quadro', 'lista', 'calendario'] as Ver[]).map((v) => (
             <button
               key={v}
               onClick={() => ir(v)}
               className={`-mb-px border-b-2 px-3 py-2.5 text-[0.95rem] ${ver === v ? 'border-brand font-medium text-text' : 'border-transparent text-muted hover:text-text'}`}
             >
-              {v === 'quadro' ? 'Quadro' : `Lista (${lista.length})`}
+              {v === 'quadro' ? 'Quadro' : v === 'lista' ? `Lista (${lista.length})` : 'Calendário'}
             </button>
           ))}
         </div>
@@ -195,6 +195,9 @@ export function TarefasDoDia() {
         />
       )}
       {p && ver === 'lista' && <ListaDeTarefas tarefas={lista} abrir={abrirTarefa} alternar={alternarFeita} podeEditar={podeEditar} />}
+      {p && ver === 'calendario' && (
+        <CalendarioDeTarefas tarefas={lista} hoje={p.hoje} podeEditar={podeEditar} abrir={abrirTarefa} mudarPrazo={(t, prazo) => editar(t, { prazo })} />
+      )}
 
       {p && tarefaAberta && (
         <JanelaDaTarefa
@@ -554,6 +557,114 @@ function ListaDeTarefas({ tarefas, abrir, alternar, podeEditar }: { tarefas: Tar
         </tbody>
       </table>
       {linhas.length === 0 && <p className="py-3 text-muted">Nada com esses filtros.</p>}
+    </div>
+  );
+}
+
+// ---------------- Calendário ----------------
+
+const MESES = ['janeiro', 'fevereiro', 'março', 'abril', 'maio', 'junho', 'julho', 'agosto', 'setembro', 'outubro', 'novembro', 'dezembro'];
+/** Soma dias a um AAAA-MM-DD sem passar pelo fuso local (o dia não escorrega). */
+const somaDias = (dia: string, n: number) => {
+  const d = new Date(`${dia}T12:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + n);
+  return d.toISOString().slice(0, 10);
+};
+
+/**
+ * As tarefas no dia do prazo, mês a mês (o mesmo molde do calendário do Funil).
+ * Arrastar para outro dia muda o prazo; as sem prazo ficam numa faixa embaixo e
+ * também podem ser arrastadas para um dia. A tarefa continua uma só.
+ */
+function CalendarioDeTarefas({ tarefas, hoje, podeEditar, abrir, mudarPrazo }: {
+  tarefas: TarefaDoDia[]; hoje: string; podeEditar: boolean;
+  abrir: (id: string) => void; mudarPrazo: (t: TarefaDoDia, prazo: string) => void;
+}) {
+  const [mes, setMes] = useState(hoje.slice(0, 7));
+  const [arrastando, setArrastando] = useState<TarefaDoDia | null>(null);
+  const [sobre, setSobre] = useState<string | null>(null);
+  const [ano, m] = mes.split('-').map(Number);
+  const primeiroDia = `${mes}-01`;
+  const diaDaSemana = new Date(`${primeiroDia}T12:00:00Z`).getUTCDay();
+  const inicio = somaDias(primeiroDia, -((diaDaSemana + 6) % 7)); // a grade começa na segunda
+  const dias = Array.from({ length: 42 }, (_, i) => somaDias(inicio, i));
+  const porDia = new Map<string, TarefaDoDia[]>();
+  for (const t of tarefas) if (t.prazo) porDia.set(t.prazo, [...(porDia.get(t.prazo) ?? []), t]);
+  const semPrazo = tarefas.filter((t) => !t.prazo);
+  const irMes = (n: number) => {
+    const d = new Date(Date.UTC(ano, m - 1 + n, 1));
+    setMes(d.toISOString().slice(0, 7));
+  };
+  const soltar = (dia: string) => {
+    const t = arrastando;
+    setArrastando(null);
+    setSobre(null);
+    if (t && t.prazo !== dia) mudarPrazo(t, dia);
+  };
+  const botao = 'rounded-md border border-border px-2.5 py-1 text-sm hover:border-brand';
+  const arrastavel = (t: TarefaDoDia) => ({
+    draggable: podeEditar,
+    onDragStart: () => setArrastando(t),
+    onDragEnd: () => { setArrastando(null); setSobre(null); },
+    onClick: () => abrir(t.id),
+  });
+  return (
+    <div className="space-y-3">
+      <div className="flex flex-wrap items-center gap-3">
+        <div className="flex items-center gap-1">
+          <button onClick={() => irMes(-1)} className={botao} aria-label="Mês anterior">‹</button>
+          <button onClick={() => setMes(hoje.slice(0, 7))} className={botao}>hoje</button>
+          <button onClick={() => irMes(1)} className={botao} aria-label="Próximo mês">›</button>
+        </div>
+        <span className="text-[1.05rem] font-semibold">{MESES[m - 1]} {ano}</span>
+        {podeEditar && <span className="ml-auto text-sm text-muted">arraste uma tarefa para mudar o prazo</span>}
+      </div>
+      <div className="grid grid-cols-7 overflow-hidden rounded-md border border-border bg-surface">
+        {['seg', 'ter', 'qua', 'qui', 'sex', 'sáb', 'dom'].map((d) => (
+          <div key={d} className="com-rotulo border-b border-border px-2 py-1.5">{d}</div>
+        ))}
+        {dias.map((dia) => {
+          const doDia = porDia.get(dia) ?? [];
+          const foraDoMes = dia.slice(0, 7) !== mes;
+          return (
+            <div
+              key={dia}
+              onDragOver={(e) => { if (arrastando) { e.preventDefault(); setSobre(dia); } }}
+              onDragLeave={() => setSobre((x) => (x === dia ? null : x))}
+              onDrop={() => soltar(dia)}
+              className={`min-h-[6.5rem] border-b border-r border-border p-1.5 ${foraDoMes ? 'bg-surface-2/40' : ''} ${sobre === dia ? 'bg-brand/10' : ''}`}
+            >
+              <span className={`com-num text-xs ${dia === hoje ? 'rounded-full bg-brand px-1.5 text-ink' : foraDoMes ? 'text-muted/60' : 'text-muted'}`}>
+                {Number(dia.slice(8))}
+              </span>
+              <div className="mt-1 max-h-28 space-y-1 overflow-y-auto">
+                {doDia.map((t) => (
+                  <div
+                    key={t.id}
+                    {...arrastavel(t)}
+                    title={[t.titulo, t.pessoa ? primeiro(t.pessoa.nome) : null, t.area?.nome].filter(Boolean).join(' · ')}
+                    className={`cursor-pointer truncate rounded border-l-2 bg-surface-2 px-1.5 py-0.5 text-xs hover:bg-brand/15 ${t.situacao === 'atrasada' ? 'border-bad text-bad' : t.situacao === 'feita' ? 'border-border text-muted line-through' : 'border-brand'}`}
+                  >
+                    {t.titulo}
+                  </div>
+                ))}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+      {semPrazo.length > 0 && (
+        <div className="rounded-md border border-border bg-surface px-4 py-3">
+          <div className="com-rotulo mb-2">Sem prazo · {semPrazo.length}{podeEditar ? ' · arraste para um dia' : ''}</div>
+          <div className="flex flex-wrap gap-2">
+            {semPrazo.map((t) => (
+              <div key={t.id} {...arrastavel(t)} className="cursor-pointer rounded-md border border-border bg-surface-2 px-2.5 py-1 text-sm hover:border-brand/60">
+                {t.titulo}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
