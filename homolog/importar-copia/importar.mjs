@@ -170,7 +170,9 @@ async function main() {
       const p = existentes.find((x) => digitos(x.cnpjCpf) === d);
       if (p) return p;
     }
-    const n = normalizar(c.nome);
+    // O nome comparado é o que a API grava (razaoSocial até 160), senão o nome longo
+    // nunca casaria com o que a passada anterior gravou.
+    const n = normalizar(String(c.nome).slice(0, 160));
     return existentes.find((x) => normalizar(x.razaoSocial) === n || normalizar(x.nomeFantasia) === n) ?? null;
   };
   for (const chave of precisaPartner) {
@@ -191,7 +193,7 @@ async function main() {
     }
     const r = await api('POST', '/finance/partners', { razaoSocial: String(c.nome).slice(0, 160), cnpjCpf: digitos(c.cnpj) || null, isCliente: true }, tokImp);
     partnerDaChave.set(chave, r.id);
-    existentes.push({ id: r.id, razaoSocial: c.nome, nomeFantasia: null, cnpjCpf: digitos(c.cnpj) || null });
+    existentes.push({ id: r.id, razaoSocial: String(c.nome).slice(0, 160), nomeFantasia: null, cnpjCpf: digitos(c.cnpj) || null });
     contagem.clientes.criados++;
   }
   contagem.clientes.partners = new Set([...partnerDaChave.values()]).size;
@@ -325,7 +327,7 @@ async function main() {
       } catch (e) {
         contagem.tarefas.recusadas++;
         avisar(`reconciliação recusada (${e.status ?? 'erro'})`);
-        linha.motivo += ` · RECONCILIAÇÃO RECUSADA: ${String(e.message).slice(0, 200)}`;
+        linha.motivo += ` · RECONCILIAÇÃO RECUSADA: ${String(e.detalhe ?? e.message).slice(0, 300)}`;
       }
       contagem.tarefas.jaExistiam++;
       contagem.tarefas.porLista[chaveLista] = (contagem.tarefas.porLista[chaveLista] ?? 0) + 1;
@@ -367,7 +369,17 @@ async function main() {
         ...(tagId ? { tagIds: [tagId] } : {}),
         ...(clienteId ? { clienteId } : {}),
       };
-      const criada = await api('POST', '/trabalho/tarefas', corpo, tokImp);
+      // ÓRFÃ DE UMA PASSADA INTERROMPIDA: se o processo caiu entre o POST e o UPDATE do
+      // externalId, a tarefa existe sem a chave. Antes de criar, procura (só leitura) a
+      // tarefa sem externalId com o mesmo título e a mesma lista que o IMPORTADOR criou
+      // (auditoria work.task.create com o ator dele) e a adota, em vez de duplicar.
+      const orfa = sqlDestino(`select t.id from "WorkTask" t
+          join "AuditLog" a on a."entityId" = t.id and a.action = 'work.task.create' and a."orgId" = t."orgId"
+          join "User" u on u.id = a."actorId" and lower(u.email) = 'importador@copia.homolog'
+        where t."orgId" = ${lit(orgId)} and t."listId" = ${lit(l.id)} and t."externalId" is null and t.title = ${lit(corpo.title)}
+        order by t."createdAt" limit 1`)[0];
+      const criada = UUID.test(orfa ?? '') ? { id: orfa } : await api('POST', '/trabalho/tarefas', corpo, tokImp);
+      if (orfa) contagem.tarefas.orfasAdotadas = (contagem.tarefas.orfasAdotadas ?? 0) + 1;
       // SQL DIRETO (EXCECOES.md, item T): a rota de criação não aceita `externalId`
       // (a chave da idempotência) nem `createdAt` (a data original da produção).
       // Gravados logo depois do POST, na mesma linha, filtrando pela empresa.
@@ -393,7 +405,7 @@ async function main() {
         // o comentário da produção mantém o autor (quando ele existe no destino) e a data original.
         sqlDestino(`update "WorkComment" set "createdAt" = ${lit(utc(c.createdAt))}
           ${autor ? `, "authorId" = ${lit(autor.id)}, "authorName" = ${lit(autor.name)}` : ''}
-          where id = ${lit(r.id)} and "taskId" = ${lit(criada.id)}`);
+          where id = ${lit(r.id)} and "taskId" = ${lit(criada.id)} and "orgId" = ${lit(orgId)}`);
         contagem.comentarios.daProducao++;
       }
       contagem.tarefas.criadas++;
@@ -403,7 +415,7 @@ async function main() {
     } catch (e) {
       contagem.tarefas.recusadas++;
       avisar(`tarefa recusada (${e.status ?? 'erro'})`);
-      linha.motivo += ` · RECUSADA: ${String(e.message).slice(0, 200)}`;
+      linha.motivo += ` · RECUSADA: ${String(e.detalhe ?? e.message).slice(0, 300)}`;
     }
   }
 
@@ -467,7 +479,7 @@ async function main() {
     } catch (e) {
       contagem.leads.recusados++;
       avisar(`lead recusado (${e.status ?? 'erro'})`);
-      linha.motivo += ` · RECUSADO: ${String(e.message).slice(0, 200)}`;
+      linha.motivo += ` · RECUSADO: ${String(e.detalhe ?? e.message).slice(0, 300)}`;
     }
   }
 

@@ -43,7 +43,12 @@ export function lerStaging(sql) {
   const env = lerEnv();
   const saida = psql('rootos_copia_staging', env.STAGING_USER || 'staging', 'producao_staging', `BEGIN READ ONLY; ${sql}; COMMIT;`);
   const linhas = saida.split('\n').filter((l) => l && l !== 'BEGIN' && l !== 'COMMIT');
-  return JSON.parse(linhas.join('\n') || 'null');
+  try {
+    return JSON.parse(linhas.join('\n') || 'null');
+  } catch {
+    // Não cita a saída: ela é dado de produção.
+    throw new Error('lerStaging: a consulta não devolveu um JSON válido');
+  }
 }
 
 /** SQL no destino. Só para o que a API não expõe (ver o cabeçalho). Devolve as linhas cruas. */
@@ -81,9 +86,15 @@ export function apiDe(base) {
       json = texto;
     }
     if (!r.ok) {
+      // O console não leva texto de cliente: só o status e o CÓDIGO da mensagem (as
+      // primeiras palavras da frase da API, nunca o valor enviado). A mensagem inteira
+      // fica em e.detalhe, para quem escreve em homolog/copia/ (fora do git).
       const msg = typeof json === 'string' ? json : (json?.message ?? JSON.stringify(json));
-      const e = new Error(`${metodo} ${caminho.replace(/[0-9a-f-]{36}/g, ':id')} → ${r.status}: ${String(msg).slice(0, 300)}`);
+      const texto = Array.isArray(msg) ? msg.join('; ') : String(msg);
+      const codigo = (json && typeof json === 'object' && (json.code ?? json.error)) || texto.split(/[.:"«(]/)[0].slice(0, 60);
+      const e = new Error(`${metodo} ${caminho.replace(/[0-9a-f-]{36}/g, ':id')} → ${r.status}: ${codigo}`);
       e.status = r.status;
+      e.detalhe = texto.slice(0, 300);
       throw e;
     }
     return json;

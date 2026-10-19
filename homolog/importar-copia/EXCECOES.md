@@ -20,6 +20,33 @@ cliente aqui.
   escreveu nada. Os comentários de procedência e de "Também com" são do importador, pela API,
   sem SQL.
 
+- **W · `WorkComment` filtrado pela empresa.** O `UPDATE` do item C confere `id`, `taskId` e
+  `orgId`, como o do item T.
+
+## Escrita por Prisma, fora da API (C1, `preparar-destino.mjs`)
+
+- O destino nasceu sem a semente de demonstração: `preparar-destino.mjs` repete os passos 1 a
+  4 do `apps/api/prisma/seed.ts` (empresa root, permissões, papéis) pelo Prisma, com as mesmas
+  fontes do shared, e grava as contas: as oito da produção (nome, e-mail, telefone, ativo,
+  papel; senha nunca da produção: hash de segredo descartado, menos o login do Rodrigo) e as
+  duas da importação. Não há rota de API para criar empresa, papel ou usuário com papel antes
+  de existir quem faça login; é o mesmo caminho do `db:seed`. `--desativar` desliga as contas
+  da importação no fim, também pelo Prisma.
+
+## Risco tratado: queda entre o POST da tarefa e o UPDATE do externalId
+
+Se o processo cair depois de `POST /trabalho/tarefas` e antes do `UPDATE` do item T, a tarefa
+fica sem `externalId`. Antes de criar, o importador procura (só leitura) tarefa da mesma lista,
+com o mesmo título, sem `externalId`, cuja auditoria `work.task.create` tem o importador como
+ator, e a adota em vez de criar outra (`orfasAdotadas` na contagem). Os comentários só são
+gravados depois do `UPDATE`, então a órfã não tem comentário duplicado.
+
+## Mensagens de erro
+
+O console leva só o status e o código da mensagem da API (as primeiras palavras da frase, sem o
+valor enviado); a frase inteira vai só ao `homolog/copia/mapa-das-tarefas.md`, fora do git. O
+erro de leitura do staging não cita a saída do banco.
+
 ## SQL direto no destino (só leitura)
 
 - **L · leituras.** A API não lista usuários com e-mail, nem tarefa por `externalId`, nem as
