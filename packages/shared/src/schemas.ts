@@ -5201,6 +5201,7 @@ export const TrabClienteIdSchema = z.union([z.literal(TRAB_CLIENTE_INTERNO), z.s
 export interface TrabClienteDto {
   id: string;
   nome: string;
+  /** Só o final do documento ("…0190"): o cadastro inteiro é do Financeiro. */
   cnpj: string | null;
   interno: boolean;
 }

@@ -207,9 +207,14 @@ export class WorkService {
    * cada um na sua conferência e fechariam o ciclo juntos.
    */
   async editarPasta(orgId: string, actorId: string, id: string, input: TrabPastaUpdateInput) {
-    const antes = await this.prisma.workFolder.findFirst({ where: { id, orgId }, select: { spaceId: true, parentId: true } });
+    const antes = await this.prisma.workFolder.findFirst({ where: { id, orgId }, select: { spaceId: true, parentId: true, name: true, lists: { select: { id: true, name: true } } } });
     if (!antes) throw new NotFoundException('Pasta não encontrada');
     const move = input.spaceId !== undefined || input.parentId !== undefined;
+    // A pasta Clientes que guarda a lista da implantação não muda de nome nem desce de nível (T1, revisão P2-4).
+    const guardaAImplantacao = !!listaDaImplantacao([{ id, name: antes.name, parentId: antes.parentId, lists: antes.lists }]);
+    if (guardaAImplantacao && ((input.name !== undefined && input.name !== antes.name) || (input.parentId !== undefined && input.parentId !== null))) {
+      throw new BadRequestException(`A pasta ${PASTA_DA_IMPLANTACAO} guarda a lista ${LISTA_DA_IMPLANTACAO}, a porta da implantação de clientes: ela fica no primeiro nível, com este nome.`);
+    }
     const pai = move ? await this.paiDaPasta(orgId, input) : null;
     const data = { name: input.name, order: input.order, ...pai };
     return this.logado(orgId, actorId, 'work.folder.update', 'work_folder', id, () =>
@@ -222,7 +227,7 @@ export class WorkService {
           return tx.workFolder.update({ where: { id }, data });
         });
       }),
-      pai ? { before: antes, after: pai } : undefined,
+      pai ? { before: { spaceId: antes.spaceId, parentId: antes.parentId }, after: pai } : undefined,
     );
   }
 
@@ -627,12 +632,28 @@ export class WorkService {
     });
   }
 
+  /** A lista é a da implantação (Onboarding de cliente na pasta Clientes)? Porta única do T1. */
+  private async ehListaDaImplantacao(orgId: string, listId: string): Promise<boolean> {
+    const l = await this.prisma.workList.findFirst({ where: { id: listId, orgId }, select: { id: true, name: true, folderId: true } });
+    if (!l?.folderId) return false;
+    const pasta = await this.prisma.workFolder.findFirst({ where: { id: l.folderId, orgId }, select: { id: true, name: true, parentId: true } });
+    return !!pasta && !!listaDaImplantacao([{ ...pasta, lists: [{ id: l.id, name: l.name }] }]);
+  }
+
   async editarTarefa(orgId: string, actorId: string, id: string, input: TrabTarefaUpdateInput) {
     const antes = await this.prisma.workTask.findFirst({ where: { id, orgId }, include: { status: true, tags: true } });
     if (!antes) throw new NotFoundException('Tarefa não encontrada');
 
     if (input.listId) await this.achar(this.prisma.workList, orgId, input.listId, 'Lista');
     const listId = input.listId ?? antes.listId;
+    // Porta única da implantação (T1, revisão P2-4): nenhum cartão novo entra pela edição. Mover uma
+    // tarefa solta para a lista, ou promover uma subtarefa de lá a cartão, é abrir cliente pelo lado.
+    const paiDepois = input.parentId === undefined ? antes.parentId : input.parentId;
+    const entraNaLista = !!input.listId && input.listId !== antes.listId;
+    const viraCartao = antes.parentId !== null && paiDepois === null;
+    if (!paiDepois && (entraNaLista || viraCartao) && (await this.ehListaDaImplantacao(orgId, listId))) {
+      throw new BadRequestException(PORTA_DA_IMPLANTACAO);
+    }
     let statusId = input.statusId;
     if (input.listId && input.listId !== antes.listId && !statusId) {
       // mover de lista sem status novo → cai no primeiro status da lista destino

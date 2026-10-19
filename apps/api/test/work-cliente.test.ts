@@ -156,6 +156,8 @@ describe.skipIf(!URL)('trabalho: o cliente da tarefa', () => {
     expect(todos.map((c) => [c.nome, c.interno])).toEqual([['Root (interno)', true], ['Construtora Alicerce', false]]);
     expect(todos[0].id).toBe('interno');
     expect((await svc.clientes(CASA, '12345678')).map((c) => c.nome)).toEqual(['Construtora Alicerce']);
+    // Revisão P2-5: o seletor não devolve o documento inteiro, só o final.
+    expect(todos[1].cnpj).toBe('…0190');
     expect((await svc.clientes(CASA, 'vizinha')).length).toBe(0);
   });
 
@@ -165,6 +167,21 @@ describe.skipIf(!URL)('trabalho: o cliente da tarefa', () => {
     const card = await prisma.workTask.create({ data: { orgId: CASA, listId: onb, statusId: st.id, title: 'Construtora Alicerce', clienteId: alicerce } });
     const sub = await svc.criarTarefa(CASA, EU, { listId: onb, title: 'Marcar kickoff', parentId: card.id }, { exigirCliente: true });
     expect(sub.clienteId).toBe(alicerce);
+  });
+
+  it('revisão P2-4: nem mover tarefa solta para a implantação, nem promover subtarefa de lá, nem mexer na pasta Clientes', async () => {
+    const st = await prisma.workStatus.findFirstOrThrow({ where: { listId: onb } });
+    const solta = await svc.criarTarefa(CASA, EU, { listId: lista, title: 'Cliente pelo lado', clienteId: alicerce }, { exigirCliente: true });
+    await expect(svc.editarTarefa(CASA, EU, solta.id, { listId: onb })).rejects.toThrow(PORTA_DA_IMPLANTACAO);
+    const card = await prisma.workTask.create({ data: { orgId: CASA, listId: onb, statusId: st.id, title: 'Construtora Alicerce', clienteId: alicerce } });
+    const sub = await svc.criarTarefa(CASA, EU, { listId: onb, title: 'Marcar kickoff', parentId: card.id }, { exigirCliente: true });
+    await expect(svc.editarTarefa(CASA, EU, sub.id, { parentId: null })).rejects.toThrow(PORTA_DA_IMPLANTACAO);
+    // Editar o cartão que já está lá continua normal.
+    await svc.editarTarefa(CASA, EU, card.id, { title: 'Construtora Alicerce Ltda' });
+    const pasta = await prisma.workFolder.findFirstOrThrow({ where: { orgId: CASA, name: 'Clientes' } });
+    await expect(svc.editarPasta(CASA, EU, pasta.id, { name: 'Clientes antigos' })).rejects.toThrow(/porta da implantação/);
+    const outra = await prisma.workFolder.create({ data: { orgId: CASA, name: 'Arquivo' } });
+    await expect(svc.editarPasta(CASA, EU, pasta.id, { parentId: outra.id })).rejects.toThrow(/porta da implantação/);
   });
 
   it('a lista da implantação não sai da pasta Clientes nem muda de nome; outras listas mudam', async () => {

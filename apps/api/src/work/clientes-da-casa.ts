@@ -32,6 +32,12 @@ export function nomeDoClienteInterno(org: { name: string; slug: string } | null)
   return `${base}${SUFIXO_INTERNO}`;
 }
 
+/** "…0190": os quatro últimos dígitos do CNPJ ou CPF, ou nulo. */
+export function finalDoDocumento(doc: string | null): string | null {
+  const d = (doc ?? '').replace(/[^0-9]/g, '');
+  return d.length >= 4 ? `…${d.slice(-4)}` : null;
+}
+
 function nomeDoPartner(p: { razaoSocial: string; nomeFantasia: string | null }): string {
   return (p.nomeFantasia?.trim() || p.razaoSocial).trim();
 }
@@ -103,6 +109,8 @@ export async function listarClientes(db: Db, orgId: string, q?: string, limite =
   const casaNaBusca = !busca || nomeInterno.toLocaleLowerCase('pt-BR').includes(busca.toLocaleLowerCase('pt-BR')) || 'interno'.includes(busca.toLocaleLowerCase('pt-BR'));
   return [
     ...(casaNaBusca ? [casa] : []),
-    ...rows.map((p) => ({ id: p.id, nome: nomeDoPartner(p), cnpj: p.cnpjCpf, interno: false })),
+    // Revisão P2-5: quem só lê tarefas não recebe o documento inteiro (o cadastro é do Financeiro);
+    // o seletor mostra só o final, para distinguir homônimos. A busca pelo número segue aqui no servidor.
+    ...rows.map((p) => ({ id: p.id, nome: nomeDoPartner(p), cnpj: finalDoDocumento(p.cnpjCpf), interno: false })),
   ];
 }

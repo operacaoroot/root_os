@@ -8,6 +8,7 @@ import { ActorType, Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { uuidDe } from './eventos';
 import { clienteInterno } from '../work/clientes-da-casa';
+import { LISTA_DA_IMPLANTACAO, PASTA_DA_IMPLANTACAO, PORTA_DA_IMPLANTACAO } from '@mktos/shared';
 
 /*
  * O RELATÓRIO DO COMERCIAL · LEITURA E REAÇÃO (rodada da implantação I5, 18/10/2026).
@@ -227,13 +228,20 @@ export class LeituraEReacaoService {
 
   /** A lista pedida (da empresa) ou a Esteira de clientes da pasta Clientes, ou a primeira lista da empresa. */
   private async listaDestino(orgId: string, listId: string | null): Promise<{ id: string; nome: string; statusId: string }> {
+    // A lista da implantação tem porta única (rodada do trabalho T1, revisão P2-4): a ideia não vira cartão lá.
+    const naoEhImplantacao: Prisma.WorkListWhereInput = {
+      NOT: { name: { equals: LISTA_DA_IMPLANTACAO, mode: 'insensitive' }, folder: { name: { equals: PASTA_DA_IMPLANTACAO, mode: 'insensitive' }, parentId: null } },
+    };
     const comEtapa = async (where: Prisma.WorkListWhereInput) => {
-      const l = await this.prisma.workList.findFirst({ where: { ...where, orgId }, orderBy: { order: 'asc' }, select: { id: true, name: true, statuses: { orderBy: { order: 'asc' }, take: 1, select: { id: true } } } });
+      const l = await this.prisma.workList.findFirst({ where: { AND: [where, naoEhImplantacao], orgId }, orderBy: { order: 'asc' }, select: { id: true, name: true, statuses: { orderBy: { order: 'asc' }, take: 1, select: { id: true } } } });
       return l && l.statuses[0] ? { id: l.id, nome: l.name, statusId: l.statuses[0].id } : null;
     };
     if (listId) {
       const l = await comEtapa({ id: listId });
-      if (!l) throw new NotFoundException('Lista não encontrada (ou sem etapa).');
+      if (!l) {
+        const existe = await this.prisma.workList.findFirst({ where: { id: listId, orgId }, select: { id: true } });
+        throw existe ? new BadRequestException(PORTA_DA_IMPLANTACAO) : new NotFoundException('Lista não encontrada (ou sem etapa).');
+      }
       return l;
     }
     const esteira = await comEtapa({ name: { equals: 'Esteira de clientes', mode: 'insensitive' }, folder: { name: { equals: 'Clientes', mode: 'insensitive' } } });
