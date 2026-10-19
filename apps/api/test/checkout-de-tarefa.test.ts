@@ -126,6 +126,7 @@ describe('A4: o checkout é UMA instrução condicional', () => {
           slug: 'analista',
           nome: 'Analista',
           estado: EstadoDeAgente.ativo,
+          ativo: true,
         }),
         findMany: async () => [
           {
@@ -164,6 +165,10 @@ describe('A4: o checkout é UMA instrução condicional', () => {
       },
       workStatus: { findFirst: async () => ({ id: 's-1' }) },
       auditLog: { create: async () => ({}) },
+      // O checkout trava Agente e Tarefa na mesma transação (produção, 14/10):
+      // o dublê roda o corpo com ele mesmo e os `FOR UPDATE` não devolvem nada.
+      $queryRaw: async () => [],
+      $transaction: async (corpo: (tx: unknown) => unknown) => corpo(prisma),
     } as unknown as PrismaService;
 
     const svc = new CheckoutDeTarefaService(prisma, {

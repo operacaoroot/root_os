@@ -139,13 +139,13 @@ describe.skipIf(!URL)('trabalho: o cliente da tarefa', () => {
     const st = await prisma.workStatus.findFirstOrThrow({ where: { listId: lista } });
     const antiga = await prisma.workTask.create({ data: { orgId: CASA, listId: lista, statusId: st.id, title: 'Tarefa do ClickUp' } });
     await svc.criarTarefa(CASA, EU, { listId: lista, title: 'Marcar kickoff', clienteId: alicerce }, { exigirCliente: true });
-    const editada = await svc.editarTarefa(CASA, EU, antiga.id, { title: 'Revisar a tarefa do ClickUp' });
+    const editada = await svc.editarTarefa(CASA, EU, antiga.id, { title: 'Revisar a tarefa do ClickUp', expectedUpdatedAt: antiga.updatedAt.toISOString() });
     expect(editada.clienteId).toBeNull();
     const sem = await svc.tarefas(CASA, parseWorkTaskQuery({ listId: lista, cliente: 'sem' }));
     expect(sem.items.map((t) => t.id)).toEqual([antiga.id]);
     const daAlicerce = await svc.tarefas(CASA, parseWorkTaskQuery({ listId: lista, cliente: alicerce }));
     expect(daAlicerce.items.map((t) => t.title)).toEqual(['Marcar kickoff']);
-    await svc.editarTarefa(CASA, EU, antiga.id, { clienteId: alicerce });
+    await svc.editarTarefa(CASA, EU, antiga.id, { clienteId: alicerce, expectedUpdatedAt: editada.updatedAt });
     const linha = await prisma.auditLog.findFirstOrThrow({ where: { orgId: CASA, entityId: antiga.id, action: 'work.task.update' }, orderBy: { createdAt: 'desc' } });
     expect((linha.after as { clienteId?: string }).clienteId).toBe(alicerce);
     expect(() => parseWorkTaskQuery({ cliente: 'abc' })).toThrow(/cliente/);
@@ -172,12 +172,12 @@ describe.skipIf(!URL)('trabalho: o cliente da tarefa', () => {
   it('revisão P2-4: nem mover tarefa solta para a implantação, nem promover subtarefa de lá, nem mexer na pasta Clientes', async () => {
     const st = await prisma.workStatus.findFirstOrThrow({ where: { listId: onb } });
     const solta = await svc.criarTarefa(CASA, EU, { listId: lista, title: 'Cliente pelo lado', clienteId: alicerce }, { exigirCliente: true });
-    await expect(svc.editarTarefa(CASA, EU, solta.id, { listId: onb })).rejects.toThrow(PORTA_DA_IMPLANTACAO);
+    await expect(svc.editarTarefa(CASA, EU, solta.id, { listId: onb, expectedUpdatedAt: solta.updatedAt })).rejects.toThrow(PORTA_DA_IMPLANTACAO);
     const card = await prisma.workTask.create({ data: { orgId: CASA, listId: onb, statusId: st.id, title: 'Construtora Alicerce', clienteId: alicerce } });
     const sub = await svc.criarTarefa(CASA, EU, { listId: onb, title: 'Marcar kickoff', parentId: card.id }, { exigirCliente: true });
-    await expect(svc.editarTarefa(CASA, EU, sub.id, { parentId: null })).rejects.toThrow(PORTA_DA_IMPLANTACAO);
+    await expect(svc.editarTarefa(CASA, EU, sub.id, { parentId: null, expectedUpdatedAt: sub.updatedAt })).rejects.toThrow(PORTA_DA_IMPLANTACAO);
     // Editar o cartão que já está lá continua normal.
-    await svc.editarTarefa(CASA, EU, card.id, { title: 'Construtora Alicerce Ltda' });
+    await svc.editarTarefa(CASA, EU, card.id, { title: 'Construtora Alicerce Ltda', expectedUpdatedAt: card.updatedAt.toISOString() });
     const pasta = await prisma.workFolder.findFirstOrThrow({ where: { orgId: CASA, name: 'Clientes' } });
     await expect(svc.editarPasta(CASA, EU, pasta.id, { name: 'Clientes antigos' })).rejects.toThrow(/porta da implantação/);
     const outra = await prisma.workFolder.create({ data: { orgId: CASA, name: 'Arquivo' } });
