@@ -4536,6 +4536,11 @@ model ComercialFicha {
   contractId                    String?
   trilhoId                      String?
   grupoJid                      String?
+  /// O card da implantação (`WorkTask` na lista "Onboarding de cliente") que a
+  /// sexta escrita do fechamento abriu (rodada da implantação I1, 18/10/2026).
+  /// Sem chave estrangeira, como `trilhoId`: o card é do Trabalho e pode ser
+  /// arquivado lá sem a ficha saber; a leitura confere a empresa.
+  cardId                        String?
 
   criadoEm     DateTime @default(now())
   atualizadoEm DateTime @updatedAt

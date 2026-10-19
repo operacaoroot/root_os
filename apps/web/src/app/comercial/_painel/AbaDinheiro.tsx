@@ -26,6 +26,7 @@ const ROTULO_DA_ESCRITA: Record<EscritaDoFechamento['escrita'], string> = {
   contrato: 'contrato',
   cobranca: 'cobrança',
   kit_e_trilho: 'kit e trilho',
+  card: 'card da implantação',
   grupo: 'grupo',
 };
 

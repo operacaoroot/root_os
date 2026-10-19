@@ -10,6 +10,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { ConfigComercialService } from './config.service';
 import { DecisoesRegistry, DecisoesService, type DecisaoResolvida } from './decisoes.service';
 import { DinheiroService, type AceiteDoLead } from './dinheiro.service';
+import { abrirCardDaImplantacao } from './card-da-implantacao';
 import { eventoIdComercial, uuidDe } from './eventos';
 import { FioService, ReacoesRegistry } from './fio.service';
 import { RelogioComercialRegistry } from './relogio.registry';
@@ -42,6 +43,12 @@ import { WhatsappComercialService } from './whatsapp.service';
  *     A assinatura R4 da titular CONTINUA exigida depois da janela: o
  *     interruptor dá à mesa o aviso e o veto da tela 09, não tira a régua.
  *
+ * O CARD DA IMPLANTAÇÃO (rodada da implantação I1, 18/10/2026) é a sexta
+ * escrita: depois do trilho, o card do cliente nasce na lista "Onboarding de
+ * cliente" (pasta Clientes) com os dados copiados e os retrolinks card ↔ lead
+ * ↔ trilho. Regra em `card-da-implantacao.ts`; o fato `implantacao.card_criado`
+ * vai ao fio. Rodar de novo acha o card pelo id derivado do lead.
+ *
  * O GRUPO E A M8. O grupo é criado pela porta do WhatsApp (no simulado, um
  * jid local), depois de perguntar ao interruptor do conector `whatsapp` (D-6):
  * desligado em Conexões, a escrita do grupo fica em erro com o motivo. A boas-vindas (M8) é outra capacidade (`comercial.whatsapp.enviar`,
@@ -52,12 +59,13 @@ import { WhatsappComercialService } from './whatsapp.service';
 
 export const CAP_FECHAMENTO = 'comercial.fechamento.executar';
 const ATOR = 'comercial';
-const ESCRITAS: EscritaDoFechamento['escrita'][] = ['cliente', 'contrato', 'cobranca', 'kit_e_trilho', 'grupo'];
+const ESCRITAS: EscritaDoFechamento['escrita'][] = ['cliente', 'contrato', 'cobranca', 'kit_e_trilho', 'card', 'grupo'];
 const ONDE: Record<EscritaDoFechamento['escrita'], string> = {
   cliente: 'CRM do OS',
   contrato: 'Financeiro do OS',
   cobranca: 'Asaas',
   kit_e_trilho: 'Implantação',
+  card: 'Trabalho',
   grupo: 'WhatsApp',
 };
 const SE_RODAR_DE_NOVO: Record<EscritaDoFechamento['escrita'], string> = {
@@ -65,6 +73,7 @@ const SE_RODAR_DE_NOVO: Record<EscritaDoFechamento['escrita'], string> = {
   contrato: 'reaproveita pela chave',
   cobranca: 'não cria outra',
   kit_e_trilho: 'reaproveita',
+  card: 'acha o mesmo card',
   grupo: 'não cria outro',
 };
 const FASES_DO_TRILHO = ['qualificar', 'diagnostico', 'contrato', 'imersao', 'operacao'];
@@ -501,7 +510,34 @@ export class FechamentoService implements OnModuleInit {
       return { estado: 'criado', detalhe: detalhe.slice(0, 400), ref: t.id };
     });
 
-    // 5. grupo do cliente no WhatsApp (a M8 sai quando o kickoff for marcado).
+    // 5. o card da implantação, na lista "Onboarding de cliente" (I1): dados copiados, retrolinks, procedência.
+    await rodar('card', async () => {
+      const trilhoId = refs.kit_e_trilho ?? ficha?.trilhoId ?? null;
+      const dono = ficha?.donoId ? await this.prisma.user.findFirst({ where: { id: ficha.donoId, orgId }, select: { name: true } }) : null;
+      const r = await this.prisma.$transaction((tx) =>
+        abrirCardDaImplantacao(tx, orgId, {
+          leadId,
+          empresa: a.dados.razaoSocial || lead.name,
+          cnpj: a.dados.cnpj,
+          contato: a.dados.quemAssina,
+          telefone: lead.phone ?? null,
+          email: a.dados.email || lead.email || null,
+          produto: TABELA_DE_PRECO[a.produto]?.rotulo ?? a.produto,
+          valor: formatarReais(a.valorCentavos),
+          parcelas: a.parcelas,
+          forma: a.forma,
+          chave: linha.chave,
+          trilhoId,
+          responsavel: dono?.name ?? null,
+        }),
+      );
+      if (r.estado === 'criado') {
+        await this.fio.registrar(orgId, leadId, 'implantacao.card_criado', r.cardId, { chave: linha.chave, cardId: r.cardId, listId: r.listId, lista: r.lista, etapa: r.etapa });
+      }
+      return { estado: r.estado, detalhe: r.detalhe, ref: r.cardId };
+    });
+
+    // 6. grupo do cliente no WhatsApp (a M8 sai quando o kickoff for marcado).
     await rodar('grupo', async () => {
       const jidAntes = ficha?.grupoJid ?? anteriores.get('grupo')?.ref ?? null;
       if (jidAntes) return { estado: 'reaproveitado', detalhe: 'grupo já existia', ref: jidAntes };

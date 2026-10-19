@@ -107,6 +107,7 @@ export const FONTE_DO_EVENTO: Record<ComercialEvento, ComercialFonte> = {
   'contrato.assinado_root': 'zapsign',
   'fechamento.escrita': 'sistema',
   'cliente.ativo': 'sistema',
+  'implantacao.card_criado': 'sistema',
   'kickoff.marcado': 'sala',
   'parcela.vence': 'relogio',
   'parcela.paga': 'asaas',
@@ -160,6 +161,7 @@ export interface PayloadsComerciais {
   'contrato.assinado_root': { provedor: string; externoId: string; em: string; por?: string | null };
   'fechamento.escrita': { chave: string; escrita: string; estado: string; ref?: string | null; ms?: number | null };
   'cliente.ativo': { chave: string; partnerId?: string | null; contractId?: string | null; trilhoId?: string | null };
+  'implantacao.card_criado': { chave: string; cardId: string; listId: string; lista: string; etapa: string };
   'kickoff.marcado': { horario: string };
   'parcela.vence': { parcela: number; vence: string; aviso: 'D-3' | 'D0' | 'D+1' | 'D+5' | 'D+10' };
   'parcela.paga': { parcela: number; pagoEm: string; valorCentavos: number };
@@ -307,6 +309,8 @@ export function resumoDoEvento(type: string, payload: unknown): { fonte: Comerci
       return { fonte, resumo: `fechamento · ${String(p.escrita)}: ${String(p.estado)}` };
     case 'cliente.ativo':
       return { fonte, resumo: 'cliente ativo · fechamento concluído' };
+    case 'implantacao.card_criado':
+      return { fonte, resumo: `card da implantação aberto · ${curto(p.lista, 40)} · ${curto(p.etapa, 30)}` };
     case 'kickoff.marcado':
       return { fonte, resumo: `kickoff marcado · ${horarioLegivel(p.horario)}` };
     case 'parcela.vence':

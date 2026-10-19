@@ -121,6 +121,13 @@ describe('revisão P3 do dinheiro', () => {
     await prisma.comercialFicha.deleteMany({ where: { leadId: { in: ids } } });
     await prisma.leadEvent.deleteMany({ where: { leadId: { in: ids } } });
     await prisma.lead.deleteMany({ where: { orgId: ORG } });
+    // I1: o card da implantação, a estrutura sugerida e a auditoria que a sexta escrita criou.
+    await prisma.workComment.deleteMany({ where: { orgId: ORG } });
+    await prisma.workTask.deleteMany({ where: { orgId: ORG } });
+    await prisma.workStatus.deleteMany({ where: { orgId: ORG } });
+    await prisma.workList.deleteMany({ where: { orgId: ORG } });
+    await prisma.workFolder.deleteMany({ where: { orgId: ORG } });
+    await prisma.auditLog.deleteMany({ where: { orgId: ORG } });
     await prisma.org.deleteMany({ where: { id: ORG } });
     await prisma.$disconnect();
   });

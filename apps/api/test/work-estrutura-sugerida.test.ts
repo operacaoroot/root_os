@@ -51,10 +51,10 @@ describe('estrutura sugerida: o dado e a permissão (sem banco)', () => {
     ]);
   });
 
-  it('o modelo do onboarding são as cinco fases do trilho e a saída, sem regra inventada', () => {
+  it('o modelo do onboarding são as etapas do mockup aprovado (rodada da implantação I1), sem regra inventada', () => {
     const m = MODELOS_DE_LISTA['onboarding-de-cliente'];
     expect(m.etapas.map((e) => e.name)).toEqual([
-      'Qualificar', 'Diagnóstico', 'Contrato e onboarding', 'Imersão', 'Operação assistida', 'Encerrado',
+      'Fechado no comercial', 'Kickoff marcado', 'Kit montado', 'Contexto carregado', 'Imersão', 'Operação assistida', 'Encerrado',
     ]);
     expect(m.etapas[0].type).toBe('open');
     expect(m.etapas.filter((e) => e.type === 'closed').map((e) => e.name)).toEqual(['Encerrado']);
@@ -160,7 +160,7 @@ describe.skipIf(!URL)('estrutura sugerida: contra o Postgres', () => {
     expect(r.jaExistiam.pastas).toEqual(['Administrativa', 'Gestão', 'Clientes']);
     expect(r.jaExistiam.listas).toHaveLength(3);
     expect({ pastas: await prisma.workFolder.count({ where: { orgId: ORG } }), listas: await prisma.workList.count({ where: { orgId: ORG } }), etapas: await prisma.workStatus.count({ where: { orgId: ORG } }) }).toEqual(antes);
-    expect(antes).toEqual({ pastas: 3, listas: 3, etapas: 7 + 6 + 3 });
+    expect(antes).toEqual({ pastas: 3, listas: 3, etapas: 7 + 7 + 3 });
   });
 
   it('duas chamadas ao mesmo tempo criam uma estrutura só (cadeado da árvore)', async () => {

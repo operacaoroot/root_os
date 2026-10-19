@@ -251,6 +251,12 @@ describe('do aceite ao cliente ativo, pela porta e pelos dublês', { timeout: 30
     const trilhos = (await prisma.onboardingTrilho.findMany({ where: { orgId: ORG }, select: { id: true } })).map((t) => t.id);
     await prisma.onboardingMarco.deleteMany({ where: { trilhoId: { in: trilhos } } });
     await prisma.onboardingTrilho.deleteMany({ where: { orgId: ORG } });
+    // I1: o card da implantação e a estrutura sugerida que o fechamento criou.
+    await prisma.workComment.deleteMany({ where: { orgId: ORG } });
+    await prisma.workTask.deleteMany({ where: { orgId: ORG } });
+    await prisma.workStatus.deleteMany({ where: { orgId: ORG } });
+    await prisma.workList.deleteMany({ where: { orgId: ORG } });
+    await prisma.workFolder.deleteMany({ where: { orgId: ORG } });
     await prisma.contract.deleteMany({ where: { orgId: ORG } });
     await prisma.partner.deleteMany({ where: { orgId: ORG } });
     await prisma.comercialFechamento.deleteMany({ where: { leadId: { in: ids } } });
@@ -455,7 +461,7 @@ describe('do aceite ao cliente ativo, pela porta e pelos dublês', { timeout: 30
     expect(f.resourceId).toBe(`fech-${leadId}-v1`);
   });
 
-  it('a titular assina o fechamento: cinco escritas, cliente ativo; rodar de novo não duplica nada', async () => {
+  it('a titular assina o fechamento: seis escritas (com o card da implantação), cliente ativo; rodar de novo não duplica nada', async () => {
     // D-2: um aceite.dados com outro CNPJ chega ao fio depois da cobrança aprovada (por fora da sala, que já
     // recusa). O fechamento cria o cliente com o devedor da cobrança aprovada, nunca com o aceite mais novo.
     await naEmpresa(() =>
@@ -471,9 +477,21 @@ describe('do aceite ao cliente ativo, pela porta e pelos dublês', { timeout: 30
       ['contrato', 'criado'],
       ['cobranca', 'reaproveitado'],
       ['kit_e_trilho', 'criado'],
+      ['card', 'criado'],
       ['grupo', 'criado'],
     ]);
     expect(await prisma.leadEvent.count({ where: { leadId, type: 'cliente.ativo' } })).toBe(1);
+    // I1: o card nasce na lista "Onboarding de cliente" da pasta Clientes, na primeira etapa, com retrolinks e procedência.
+    const fichaDoCard = await prisma.comercialFicha.findUniqueOrThrow({ where: { leadId } });
+    expect(fichaDoCard.cardId).toBeTruthy();
+    const card = await prisma.workTask.findUniqueOrThrow({ where: { id: fichaDoCard.cardId! }, include: { list: { include: { folder: true } }, status: true, comments: true } });
+    expect([card.list.folder?.name, card.list.name, card.status.name]).toEqual(['Clientes', 'Onboarding de cliente', 'Fechado no comercial']);
+    expect(card.description).toContain(`/comercial/lead/${leadId}`);
+    expect(card.description).toMatch(/Procedência: criado pelo fechamento · \d{2}\/\d{2}\/\d{4}/);
+    expect(card.comments.map((c) => c.authorName)).toEqual(['Fechamento comercial']);
+    expect((await prisma.onboardingTrilho.findUniqueOrThrow({ where: { id: fichaDoCard.trilhoId! } })).cardId).toBe(card.id);
+    expect(card.description).toContain(`/onboarding/${fichaDoCard.trilhoId}`);
+    expect(await prisma.leadEvent.count({ where: { leadId, type: 'implantacao.card_criado' } })).toBe(1);
     const trilho = tela.escritas.find((e) => e.escrita === 'kit_e_trilho')!;
     expect(trilho.detalhe).toMatch(/^trilho aberto na fase \d de 5\. Lacunas \[a decidir\]/);
     console.info(`[lane D] kit e trilho: ${trilho.detalhe}`);
@@ -488,9 +506,12 @@ describe('do aceite ao cliente ativo, pela porta e pelos dublês', { timeout: 30
       trilhos: await prisma.onboardingTrilho.count({ where: { orgId: ORG } }),
       grupo: (await prisma.comercialFicha.findUniqueOrThrow({ where: { leadId } })).grupoJid,
       ativos: await prisma.leadEvent.count({ where: { leadId, type: 'cliente.ativo' } }),
+      cards: await prisma.workTask.count({ where: { orgId: ORG, list: { name: 'Onboarding de cliente' } } }),
+      listas: await prisma.workList.count({ where: { orgId: ORG } }),
+      cardsNoFio: await prisma.leadEvent.count({ where: { leadId, type: 'implantacao.card_criado' } }),
     });
     const antes = await contar();
-    expect(antes).toMatchObject({ partners: 1, contratos: 1, cobrancas: 3, noAsaas: 3, trilhos: 1, ativos: 1 });
+    expect(antes).toMatchObject({ partners: 1, contratos: 1, cobrancas: 3, noAsaas: 3, trilhos: 1, ativos: 1, cards: 1, cardsNoFio: 1 });
 
     // Segunda passada com a linha "caída no meio" (estado e escritas apagados): reaproveita tudo.
     await prisma.comercialFechamento.updateMany({ where: { leadId }, data: { estado: 'erro', escritas: [] } });

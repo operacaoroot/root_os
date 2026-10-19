@@ -5320,11 +5320,15 @@ export const MODELOS_DE_LISTA = {
   'onboarding-de-cliente': {
     chave: 'onboarding-de-cliente',
     nome: 'Onboarding de cliente',
-    descricao: 'As cinco fases do trilho de onboarding, uma por coluna, para acompanhar cada cliente até a operação assistida.',
+    // Rodada da implantação I1 (18/10/2026): as etapas do mockup aprovado. O card nasce em
+    // "Fechado no comercial" pela sexta escrita do fechamento; a lista criada antes desta data
+    // migra pelo caminho normal de edição de etapa (`homolog/migrar-etapas-onboarding.mjs`), sem apagar tarefa.
+    descricao: 'A implantação de cada cliente, do fechamento no comercial à operação assistida. O card nasce sozinho quando o contrato fecha.',
     etapas: [
-      { name: 'Qualificar', type: 'open', color: '#87909e', limite: null },
-      { name: 'Diagnóstico', type: 'custom', color: '#4194f6', limite: null },
-      { name: 'Contrato e onboarding', type: 'custom', color: '#a875ff', limite: null },
+      { name: 'Fechado no comercial', type: 'open', color: '#87909e', limite: null },
+      { name: 'Kickoff marcado', type: 'custom', color: '#4194f6', limite: null },
+      { name: 'Kit montado', type: 'custom', color: '#a875ff', limite: null },
+      { name: 'Contexto carregado', type: 'custom', color: '#f08a24', limite: null },
       { name: 'Imersão', type: 'custom', color: '#f9d900', limite: null },
       { name: 'Operação assistida', type: 'custom', color: '#1bbc9c', limite: null },
       { name: 'Encerrado', type: 'closed', color: '#6b7280', limite: null },

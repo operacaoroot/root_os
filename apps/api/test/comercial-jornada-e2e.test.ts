@@ -340,6 +340,12 @@ describe.skipIf(!URL)('a jornada do cockpit de ponta a ponta, contando os toques
       const trilhos = (await prisma.onboardingTrilho.findMany({ where: { orgId: ORG }, select: { id: true } })).map((t) => t.id);
       await prisma.onboardingMarco.deleteMany({ where: { trilhoId: { in: trilhos } } });
       await prisma.onboardingTrilho.deleteMany({ where: { orgId: ORG } });
+      // I1: o card da implantação e a estrutura sugerida que o fechamento criou.
+      await prisma.workComment.deleteMany({ where: { orgId: ORG } });
+      await prisma.workTask.deleteMany({ where: { orgId: ORG } });
+      await prisma.workStatus.deleteMany({ where: { orgId: ORG } });
+      await prisma.workList.deleteMany({ where: { orgId: ORG } });
+      await prisma.workFolder.deleteMany({ where: { orgId: ORG } });
       await prisma.contract.deleteMany({ where: { orgId: ORG } });
       await prisma.partner.deleteMany({ where: { orgId: ORG } });
       await prisma.comercialFechamento.deleteMany({ where: { leadId: { in: ids } } });
@@ -499,7 +505,7 @@ describe.skipIf(!URL)('a jornada do cockpit de ponta a ponta, contando os toques
     await confirmar('fechamento', f.id, 'o fechamento cria cliente, contrato, cobrança, trilho e grupo (R4)');
     const tela = await naEmpresa(() => fechamento.doLead(ORG, leadId));
     expect(tela.estado, JSON.stringify(tela.escritas)).toBe('concluido');
-    expect(tela.escritas).toHaveLength(5);
+    expect(tela.escritas).toHaveLength(6);
     expect(await etapa()).toBe('fechado');
   });
 

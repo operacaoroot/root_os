@@ -343,6 +343,8 @@ export const COMERCIAL_EVENTOS = [
   // fechamento e contrato vivo
   'fechamento.escrita',
   'cliente.ativo',
+  // Rodada da implantação I1 (18/10): a sexta escrita do fechamento abriu o card na lista "Onboarding de cliente".
+  'implantacao.card_criado',
   'kickoff.marcado',
   'parcela.vence',
   'parcela.paga',
@@ -818,7 +820,7 @@ export interface CartaoDoFunil {
 
 /** O fechamento (tela 10): as cinco escritas com chave. */
 export interface EscritaDoFechamento {
-  escrita: 'cliente' | 'contrato' | 'cobranca' | 'kit_e_trilho' | 'grupo';
+  escrita: 'cliente' | 'contrato' | 'cobranca' | 'kit_e_trilho' | 'card' | 'grupo';
   onde: string;
   estado: 'pendente' | 'criado' | 'reaproveitado' | 'erro';
   detalhe: string;
