@@ -84,7 +84,7 @@ function escreverUrl(ver: Ver, agrupar: Agrupar, filtro: Filtro, tarefa: string 
 }
 
 function passa(t: TarefaDoDia, f: Filtro) {
-  if (f.pessoa && (f.pessoa === SEM ? !!t.pessoa : t.pessoa?.id !== f.pessoa)) return false;
+  if (f.pessoa && (f.pessoa === SEM ? !!t.pessoa : !t.pessoas.some((x) => x.id === f.pessoa))) return false;
   if (f.area && (f.area === SEM ? !!t.area : t.area?.id !== f.area)) return false;
   if (f.cliente && t.cliente?.id !== f.cliente) return false;
   if (f.situacao === 'todas') {
@@ -419,7 +419,7 @@ export function ResumoDeTarefas() {
   const atrasadasDe = (lista: TarefaDoDia[]) => `${lista.filter((t) => t.situacao === 'atrasada').length} atrasadas`;
   const porPessoa: Fatia[] = [
     ...p.pessoas.map((pe) => {
-      const delas = abertas.filter((t) => t.pessoa?.id === pe.id);
+      const delas = abertas.filter((t) => t.pessoas.some((x) => x.id === pe.id));
       return { chave: pe.id, rotulo: primeiro(pe.nome), valor: delas.length, cor: FORTE, dica: atrasadasDe(delas), onClick: () => abrirLista({ pessoa: pe.id }) };
     }),
     ...(semDono ? [{ chave: SEM, rotulo: 'Sem responsável', valor: semDono, cor: FRACO, onClick: () => abrirLista({ pessoa: SEM }) }] : []),
@@ -581,7 +581,8 @@ function Meta({ t, mostrarArea, mostrarPessoa }: { t: TarefaDoDia; mostrarArea: 
           {t.cliente.titulo}
         </span>
       )}
-      {mostrarPessoa && <span>{t.pessoa ? primeiro(t.pessoa.nome) : t.responsavelTexto ?? 'sem responsável'}</span>}
+      {mostrarPessoa && <span>{t.pessoas.length ? t.pessoas.map((x) => primeiro(x.nome)).join(', ') : t.responsavelTexto ?? 'sem responsável'}</span>}
+      {!mostrarPessoa && t.pessoas.length > 1 && <span title="Também responsáveis">com {t.pessoas.slice(1).map((x) => primeiro(x.nome)).join(', ')}</span>}
       {t.recorrencia && <span title={descreverRecorrencia(t.recorrencia)} aria-label={`Repete: ${descreverRecorrencia(t.recorrencia)}`}>↻</span>}
       {t.prazo && <span className={`com-num ${t.situacao === 'atrasada' ? 'font-semibold text-bad' : ''}`}>{dd(t.prazo)}</span>}
     </div>
@@ -635,7 +636,9 @@ function QuadroDeTarefas(props: {
 
   /** Muda a coluna (pessoa ou área) quando a tarefa foi parar em outra. */
   const mudarColuna = (t: TarefaDoDia, chave: string) => {
-    if (agrupar === 'pessoa' && (t.pessoa?.id ?? SEM) !== chave) props.editar(t, { pessoaId: chave === SEM ? null : chave });
+    if (agrupar === 'pessoa' && (t.pessoa?.id ?? SEM) !== chave) {
+      props.editar(t, { pessoasIds: chave === SEM ? [] : [chave, ...t.pessoas.map((x) => x.id).filter((x) => x !== chave && x !== t.pessoa?.id)] });
+    }
     if (agrupar === 'area' && (t.area?.id ?? SEM) !== chave && chave !== SEM) props.editar(t, { areaId: chave });
   };
   /** Soltar sobre um card: a tarefa entra antes dele (e muda de coluna, se for o caso). */
@@ -659,7 +662,9 @@ function QuadroDeTarefas(props: {
     const coluna = visiveis.find((c) => c.chave === chave);
     if (coluna && (agrupar !== 'situacao' || t.situacao === chave)) props.reordenar([...coluna.itens.filter((x) => x.id !== t.id).map((x) => x.id), t.id]);
     if (agrupar === 'situacao') return;
-    if (agrupar === 'pessoa' && (t.pessoa?.id ?? SEM) !== chave) props.editar(t, { pessoaId: chave === SEM ? null : chave });
+    if (agrupar === 'pessoa' && (t.pessoa?.id ?? SEM) !== chave) {
+      props.editar(t, { pessoasIds: chave === SEM ? [] : [chave, ...t.pessoas.map((x) => x.id).filter((x) => x !== chave && x !== t.pessoa?.id)] });
+    }
     if (agrupar === 'area' && (t.area?.id ?? SEM) !== chave && chave !== SEM) props.editar(t, { areaId: chave });
   };
 
@@ -842,10 +847,14 @@ function ListaDeTarefas({ p, tarefas, abrir, podeEditar, mostrarArea = true, sel
                 </select>
               </td>
               <td className="py-1.5 pr-2" onClick={parar}>
-                <select disabled={!podeEditar} value={t.pessoa?.id ?? ''} onChange={(e) => editar(t, { pessoaId: e.target.value || null })} className={celula} aria-label="Responsável">
-                  <option value="">{t.responsavelTexto ? `${t.responsavelTexto} (sem conta)` : '—'}</option>
-                  {p.pessoas.map((pe) => <option key={pe.id} value={pe.id}>{pe.nome}</option>)}
-                </select>
+                <details className="relative">
+                  <summary className={`${celula} list-none`} aria-label="Responsáveis">
+                    {t.pessoas.length ? t.pessoas.map((x) => primeiro(x.nome)).join(', ') : t.responsavelTexto ? `${t.responsavelTexto} (sem conta)` : '—'}
+                  </summary>
+                  <div className="absolute left-0 z-20 mt-1 w-56 rounded-md border border-border bg-surface p-2 shadow-lg">
+                    <SeletorDePessoas t={t} p={p} podeEditar={podeEditar} editar={(m) => editar(t, m)} />
+                  </div>
+                </details>
               </td>
               <td className="py-1.5 pr-2" onClick={parar}>
                 <input
@@ -1096,6 +1105,31 @@ function Campo({ rotulo, children }: { rotulo: string; children: React.ReactNode
     </label>
   );
 }
+/**
+ * Vários responsáveis, como no ClickUp: clicar liga ou desliga a pessoa. O
+ * primeiro marcado é o principal (é a coluna dele no quadro por pessoa).
+ */
+function SeletorDePessoas({ t, p, podeEditar, editar }: { t: TarefaDoDia; p: PainelDeTarefas; podeEditar: boolean; editar: (m: Record<string, unknown>) => void }) {
+  const ids = t.pessoas.map((x) => x.id);
+  const alternar = (id: string) => editar({ pessoasIds: ids.includes(id) ? ids.filter((x) => x !== id) : [...ids, id] });
+  return (
+    <div className="flex flex-wrap gap-1.5">
+      {p.pessoas.map((pe) => {
+        const on = ids.includes(pe.id);
+        return (
+          <button
+            key={pe.id} type="button" disabled={!podeEditar} aria-pressed={on} onClick={() => alternar(pe.id)}
+            className={`rounded-full px-2.5 py-1 text-xs font-medium ${on ? 'bg-brand text-ink' : 'border border-border text-muted hover:border-brand hover:text-text'}`}
+          >
+            {on ? '✓ ' : '+ '}{primeiro(pe.nome)}
+          </button>
+        );
+      })}
+      {!ids.length && t.responsavelTexto && <span className="self-center text-xs text-muted">{t.responsavelTexto} (sem conta)</span>}
+    </div>
+  );
+}
+
 /** Os cards do CRM em dois grupos, para não confundir quem já é cliente com quem ainda é lead. */
 function OpcoesDeCliente({ clientes }: { clientes: { id: string; titulo: string; fase?: 'lead' | 'cliente' }[] }) {
   const ativos = clientes.filter((c) => c.fase !== 'lead');
@@ -1152,11 +1186,8 @@ function JanelaDaTarefa({ t, p, podeEditar, fechar, alternar, editar, criarArea,
             <option value="__nova">+ adicionar nova área…</option>
           </select>
         </Campo>
-        <Campo rotulo="Responsável">
-          <select disabled={!podeEditar} value={t.pessoa?.id ?? ''} className={ENTRADA} onChange={(e) => editar({ pessoaId: e.target.value || null })}>
-            <option value="">{t.responsavelTexto ? `${t.responsavelTexto} (sem conta)` : '— ninguém —'}</option>
-            {p.pessoas.map((pe) => <option key={pe.id} value={pe.id}>{pe.nome}</option>)}
-          </select>
+        <Campo rotulo="Responsáveis">
+          <SeletorDePessoas t={t} p={p} podeEditar={podeEditar} editar={editar} />
         </Campo>
         <Campo rotulo="Prazo">
           <input type="date" disabled={!podeEditar} value={t.prazo ?? ''} className={ENTRADA} onChange={(e) => editar({ prazo: e.target.value || null })} />

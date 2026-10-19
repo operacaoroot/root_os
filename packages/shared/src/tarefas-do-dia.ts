@@ -126,6 +126,8 @@ export const TarefaDoDiaEditarSchema = z.object({
   recorrencia: z.lazy(() => RecorrenciaSchema).nullable().optional(),
   areaId: z.string().uuid().nullable().optional(),
   pessoaId: z.string().uuid().nullable().optional(),
+  /** Todos os responsáveis, o primeiro é o principal. Lista vazia = ninguém. */
+  pessoasIds: z.array(z.string().uuid()).max(20).optional(),
   prazo: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable().optional(),
   clienteId: z.string().uuid().nullable().optional(),
 }).strict();
@@ -150,6 +152,8 @@ export interface TarefaDoDia {
   area: { id: string; nome: string; cor: string } | null;
   cliente: { id: string; titulo: string } | null;
   pessoa: { id: string; nome: string } | null;
+  /** Todos os responsáveis (o primeiro é `pessoa`). */
+  pessoas: { id: string; nome: string }[];
   /** Responsável que veio só como texto (ClickUp) e ainda não é uma conta. */
   responsavelTexto: string | null;
   prazo: string | null;

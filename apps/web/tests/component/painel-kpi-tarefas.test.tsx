@@ -28,7 +28,7 @@ vi.mock('@/lib/auth', () => ({
 import VisaoGeralPage from '@/app/painel/page';
 
 const tarefa = (id: string, situacao: TarefaDoDia['situacao'], pessoa: TarefaDoDia['pessoa']): TarefaDoDia => ({
-  id, titulo: `Tarefa ${id}`, area: { id: 'a1', nome: 'Comercial', cor: '#000' }, cliente: null, pessoa,
+  id, titulo: `Tarefa ${id}`, area: { id: 'a1', nome: 'Comercial', cor: '#000' }, cliente: null, pessoa, pessoas: pessoa ? [pessoa] : [],
   responsavelTexto: null, prazo: situacao === 'atrasada' ? '2026-10-10' : null, situacao,
   status: { nome: 'A fazer', cor: '#888', tipo: 'aberta' }, lista: { id: 'l1', nome: 'Comercial' }, externalUrl: null, descricao: null, recorrencia: null, ordem: 0, updatedAt: '2026-10-19T12:00:00Z',
 });

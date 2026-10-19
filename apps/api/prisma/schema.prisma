@@ -2216,6 +2216,9 @@ model WorkTask {
   recorrencia Json?
   /// A série de uma tarefa que se repete: o id da primeira. Uma série nunca tem duas abertas.
   serieId     String?
+  /// RESPONSÁVEIS ALÉM DO PRIMEIRO (vários, como no ClickUp). O primeiro continua em
+  /// assigneeUserId, que o resto do OS lê; aqui ficam os demais, ids de User da empresa.
+  outrosResponsaveisIds String[] @default([])
 
   @@unique([id, orgId])
   @@unique([orgId, externalId])

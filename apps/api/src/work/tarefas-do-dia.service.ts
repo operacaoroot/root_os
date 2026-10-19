@@ -152,6 +152,8 @@ export class TarefasDoDiaService {
       area: t.area ? { id: t.area.id, nome: t.area.nome, cor: t.area.cor } : null,
       cliente: cliente ? { id: cliente.id, titulo: cliente.title } : null,
       pessoa: idDaPessoa ? { id: idDaPessoa, nome: equipe.nomeDe.get(idDaPessoa)! } : null,
+      pessoas: [...new Set([idDaPessoa, ...t.outrosResponsaveisIds.map((u) => equipe.canonica.get(u))].filter((x): x is string => !!x))]
+        .map((id) => ({ id, nome: equipe.nomeDe.get(id)! })),
       responsavelTexto: idDaPessoa ? null : (t.assigneeUser?.name ?? t.assignee),
       prazo,
       situacao: situacaoDoPrazo(prazo, hoje, feita),
@@ -206,7 +208,8 @@ export class TarefasDoDiaService {
   private resumir(tarefas: TarefaDoDia[], pessoas: { id: string; nome: string }[]): ResumoDaPessoa[] {
     const seteDiasAtras = new Date(Date.now() - 7 * 86400e3).toISOString();
     const linha = (pessoa: { id: string; nome: string } | null): ResumoDaPessoa => {
-      const dela = tarefas.filter((t) => (pessoa ? t.pessoa?.id === pessoa.id : !t.pessoa));
+      // Tarefa de várias pessoas conta para cada uma delas.
+      const dela = tarefas.filter((t) => (pessoa ? t.pessoas.some((x) => x.id === pessoa.id) : !t.pessoa));
       return {
         pessoa,
         atrasadas: dela.filter((t) => t.situacao === 'atrasada').length,
@@ -312,18 +315,26 @@ export class TarefasDoDiaService {
       ...(statusId ? { statusId } : {}),
       ...(input.descricao !== undefined ? { description: input.descricao?.trim() ? input.descricao : null } : {}),
       ...(input.pessoaId !== undefined ? { assigneeUserId: input.pessoaId } : {}),
+      ...(input.pessoasIds !== undefined ? { assigneeUserId: input.pessoasIds[0] ?? null } : {}),
       ...(input.prazo !== undefined ? { dueDate: input.prazo ? instanteDoDia(input.prazo) : null } : {}),
     };
     if (Object.keys(doTrabalho).length) {
       const d = await this.trabalho.editarTarefaHttp(orgId, actorId, id, { ...doTrabalho, expectedUpdatedAt: versao });
       versao = d.updatedAt;
     }
-    if (input.areaId !== undefined || input.clienteId !== undefined || input.recorrencia !== undefined) {
+    const outros = input.pessoasIds !== undefined ? [...new Set(input.pessoasIds.slice(1))].filter((u) => u !== input.pessoasIds![0])
+      : input.pessoaId !== undefined ? [] : undefined;
+    if (outros?.length) {
+      const validas = await this.prisma.user.count({ where: { orgId, isActive: true, id: { in: outros } } });
+      if (validas !== outros.length) throw new BadRequestException('Algum responsável não é uma pessoa ativa desta empresa.');
+    }
+    if (input.areaId !== undefined || input.clienteId !== undefined || input.recorrencia !== undefined || outros !== undefined) {
       const r = await this.prisma.workTask.updateMany({
         where: { id, orgId, updatedAt: new Date(versao) },
         data: {
           ...(input.areaId !== undefined ? { areaId: input.areaId } : {}),
           ...(input.clienteId !== undefined ? { clienteId: input.clienteId } : {}),
+          ...(outros !== undefined ? { outrosResponsaveisIds: outros } : {}),
           ...(input.recorrencia !== undefined
             ? { recorrencia: input.recorrencia ?? Prisma.DbNull, ...(input.recorrencia && !antes.serieId ? { serieId: id } : {}) }
             : {}),
@@ -379,7 +390,7 @@ export class TarefasDoDiaService {
    */
   private async criarProxima(
     orgId: string, actorId: string,
-    t: { id: string; serieId: string | null; listId: string; title: string; description: string | null; areaId: string | null; clienteId: string | null; assigneeUserId: string | null; dueDate: Date | null; recorrencia: Prisma.JsonValue },
+    t: { id: string; serieId: string | null; listId: string; title: string; description: string | null; areaId: string | null; clienteId: string | null; assigneeUserId: string | null; outrosResponsaveisIds: string[]; dueDate: Date | null; recorrencia: Prisma.JsonValue },
     regra: RecorrenciaDaTarefa,
   ): Promise<{ id: string; prazo: string }> {
     const serie = t.serieId ?? t.id;
@@ -399,7 +410,7 @@ export class TarefasDoDiaService {
     });
     await this.prisma.workTask.update({
       where: { id: nova.id },
-      data: { areaId: t.areaId, clienteId: t.clienteId, recorrencia: t.recorrencia ?? Prisma.DbNull, serieId: serie },
+      data: { areaId: t.areaId, clienteId: t.clienteId, outrosResponsaveisIds: t.outrosResponsaveisIds, recorrencia: t.recorrencia ?? Prisma.DbNull, serieId: serie },
     });
     return { id: nova.id, prazo };
   }
