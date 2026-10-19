@@ -1,5 +1,5 @@
 {
-  "inicio": "2026-10-19T01:30:23.477Z",
+  "inicio": "2026-10-19T17:40:06.088Z",
   "web": "http://127.0.0.1:3010",
   "passos": [
     {
@@ -11,70 +11,70 @@
     {
       "n": 2,
       "nome": "a Alicerce pediu 8% pela sala e a decisão abriu",
-      "ms": 205,
+      "ms": 200,
       "detalhe": "Marina Duarte pediu 8% de desconto na Operação ROOT",
       "leadId": "edea2274-6852-5adf-8b34-2286a2c10f5d",
-      "decisaoId": "0c8481ac-1ad3-5c70-8830-e2c59977ca74"
+      "decisaoId": "83d9f655-609c-5ca7-beda-875b85649281"
     },
     {
       "n": 3,
       "nome": "da fila, \"ver o lead\" abriu o painel na aba Decisões; só a query mudou",
-      "ms": 1194,
+      "ms": 1220,
       "detalhe": "?lead=edea2274-6852-5adf-8b34-2286a2c10f5d&aba=decisoes"
     },
     {
       "n": 4,
       "nome": "decidiu \"manter o preço\" dentro do painel; o aviso no canto disse o que aconteceu",
-      "ms": 1741
+      "ms": 1773
     },
     {
       "n": 5,
       "nome": "o cartão da decisão saiu da fila de trás sem recarregar",
-      "ms": 1743
+      "ms": 1775
     },
     {
       "n": 6,
       "nome": "o fio ganhou a linha da decisão; a URL mudou só na query",
-      "ms": 1807,
+      "ms": 1848,
       "detalhe": "?lead=edea2274-6852-5adf-8b34-2286a2c10f5d&aba=fio"
     },
     {
       "n": 7,
       "nome": "Esc fechou o painel, a URL voltou à da fila e o foco voltou à tela de trás",
-      "ms": 1819
+      "ms": 1859
     },
     {
       "n": 8,
       "nome": "no funil, as setas andaram até a Alicerce e Enter abriu o painel na aba Fio",
-      "ms": 2582,
+      "ms": 2620,
       "detalhe": "?lead=edea2274-6852-5adf-8b34-2286a2c10f5d&aba=fio"
     },
     {
       "n": 9,
       "nome": "a linha da lista de contratos abriu o painel na aba Dinheiro",
-      "ms": 7043
+      "ms": 7066
     },
     {
       "n": 10,
       "nome": "a rota antiga /comercial/lead/<id> redirecionou para o funil com o painel na aba Fio",
-      "ms": 7760
+      "ms": 7812
     },
     {
       "n": 11,
       "nome": "a rota antiga /sessao abriu a aba Sessão",
-      "ms": 8491
+      "ms": 8525
     },
     {
       "n": 12,
       "nome": "a raiz / abriu o login (NEXT_PUBLIC_RAIZ=login)",
-      "ms": 8648,
+      "ms": 8683,
       "detalhe": "/login"
     },
     {
       "n": 13,
       "nome": "no celular (390 px) a folha abriu na tela inteira e fechou; sem rolagem horizontal; fechar com 44 px",
-      "ms": 10002,
-      "detalhe": "390x844.0000267028809"
+      "ms": 10021,
+      "detalhe": "390x843.9999809265137"
     }
   ],
   "screenshots": [
@@ -92,6 +92,6 @@
     "ux-celular-folha-claro.png"
   ],
   "ok": true,
-  "fim": "2026-10-19T01:30:42.722Z",
-  "duracaoMs": 19245
+  "fim": "2026-10-19T17:40:25.539Z",
+  "duracaoMs": 19451
 }

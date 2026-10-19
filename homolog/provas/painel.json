@@ -1,98 +1,98 @@
 {
-  "inicio": "2026-10-19T01:29:48.089Z",
+  "inicio": "2026-10-19T17:39:30.750Z",
   "web": "http://127.0.0.1:3010",
-  "sufixo": "012948",
+  "sufixo": "173930",
   "passos": [
     {
       "n": 1,
       "nome": "mesa, sócio e admin entraram pela API",
-      "ms": 246,
+      "ms": 236,
       "detalhe": "Mesa · responsável (homologação) · Sócio titular (homologação) · Admin Root"
     },
     {
       "n": 2,
       "nome": "preparou: tarefa da mesa comentada pelo admin, lista solta e um lead novo em E1",
-      "ms": 529,
-      "tarefaId": "aa618f2c-f70f-4e20-87e8-e688c6132432",
-      "listaId": "8d3a8ee8-ff76-413b-a79d-727b388d1d33",
-      "leadId": "d81eaae8-c9a1-534a-8020-ba80879773b2"
+      "ms": 477,
+      "tarefaId": "8ca398a3-83b3-4d0e-8c5c-7641bdf01e78",
+      "listaId": "1d7dd127-381e-4b0e-93a9-eec040a0e0bf",
+      "leadId": "25743d35-62f2-5919-b7d7-07466a399c50"
     },
     {
       "n": 3,
       "nome": "na caixa da mesa, Atividade mostra o comentário do admin",
-      "ms": 1439,
-      "detalhe": "comentario:051a5084-b01f-479a-bf7d-a61051b4ebe4"
+      "ms": 1435,
+      "detalhe": "comentario:03cb0f44-0a2a-4750-a5e2-1078b3e82991"
     },
     {
       "n": 4,
       "nome": "\"Limpar\" tirou o item da caixa e ele continua no histórico",
-      "ms": 1528
+      "ms": 1514
     },
     {
       "n": 5,
       "nome": "Minhas tarefas mostra a tarefa e os comentários abrem no lugar",
-      "ms": 1669
+      "ms": 1689
     },
     {
       "n": 6,
       "nome": "pasta criada pela tela",
-      "ms": 2843,
-      "detalhe": "Pasta da prova 012948"
+      "ms": 2440,
+      "detalhe": "Pasta da prova 173930"
     },
     {
       "n": 7,
       "nome": "a lista foi movida para a pasta pelo seletor e o chip da pasta a mostra",
-      "ms": 3960
+      "ms": 3562
     },
     {
       "n": 8,
       "nome": "Quadro e Lista alternam sobre a mesma lista",
-      "ms": 4021
+      "ms": 3625
     },
     {
       "n": 9,
       "nome": "ata colada pela tela entrou no banco de atas (pela memória)",
-      "ms": 5370,
-      "detalhe": "memoria:8a20a61b-1934-4d52-b58b-e1a0325dff9b"
+      "ms": 4568,
+      "detalhe": "memoria:9eab7357-98a5-4511-9f8b-6ec99d7a9568"
     },
     {
       "n": 10,
       "nome": "\"Sugerir tarefas\" trouxe rascunhos conferidos contra a ata",
-      "ms": 5520,
+      "ms": 4812,
       "detalhe": "3 rascunho(s)"
     },
     {
       "n": 11,
       "nome": "aceitar com um clique criou a tarefa no Trabalho",
-      "ms": 5987,
+      "ms": 5533,
       "detalhe": "Enviar o relatório mensal da Padaria Exemplo"
     },
     {
       "n": 12,
       "nome": "o admin pediu para mover o lead novo de E1 para E3 pelo menu do cartão",
-      "ms": 6963
+      "ms": 6457
     },
     {
       "n": 13,
       "nome": "a mesa encontrou o pedido em \"Depende de você\", em português",
-      "ms": 7616,
-      "detalhe": "Mover Prova Painel 012948 para Reunião agendada"
+      "ms": 7098,
+      "detalhe": "Mover Prova Painel 173930 para Reunião agendada"
     },
     {
       "n": 14,
       "nome": "a mesa confirmou pela tela nova (as condições apareceram antes do clique)",
-      "ms": 8247
+      "ms": 7716
     },
     {
       "n": 15,
       "nome": "o admin concluiu: o cartão está em E3 com o balão de pendências",
-      "ms": 8369,
-      "detalhe": "MOVIDO COM PENDÊNCIAS sistema ou ERP em uso (E2); base de dados: sim ou não (E2); produto-alvo proposto (E2) por Admin Root · 18/10 · some quando o que falta ch"
+      "ms": 7835,
+      "detalhe": "MOVIDO COM PENDÊNCIAS sistema ou ERP em uso (E2); base de dados: sim ou não (E2); produto-alvo proposto (E2) por Admin Root · 19/10 · some quando o que falta ch"
     },
     {
       "n": 16,
       "nome": "fotografou as telas mexidas em escuro, claro e 390 px; nenhuma rola na horizontal no celular",
-      "ms": 35017,
+      "ms": 34952,
       "detalhe": "25 fotos"
     }
   ],
@@ -166,6 +166,6 @@
     }
   ],
   "ok": true,
-  "fim": "2026-10-19T01:30:23.179Z",
-  "duracaoMs": 35090
+  "fim": "2026-10-19T17:40:05.753Z",
+  "duracaoMs": 35003
 }

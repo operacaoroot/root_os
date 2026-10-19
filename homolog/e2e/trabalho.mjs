@@ -433,7 +433,12 @@ async function main() {
   if (existsSync(join(RAIZ, 'homolog/e2e/trabalho-t1b.mjs'))) {
     const t1b = rodarScript('trabalho-t1b.mjs');
     conferir(t1b.ok, `trabalho-t1b.mjs falhou: ${t1b.saida.split(/\r?\n/).filter((l) => /FALHOU|OK/.test(l)).slice(-2).join(' | ')}`);
-    passo('T1b: trabalho-t1b.mjs passou (registrar cliente já fechado pelo Funil vivo e o card na implantação)');
+    if (/sem storage/.test(t1b.saida)) {
+      passo('T1b: trabalho-t1b.mjs passou SEM storage: o formulário do Funil vivo preenchido, o registro recusou antes de gravar e nenhum lead nasceu');
+      prova.avisos.push('T1b: a homologação não tem storage (MinIO sem imagem nesta máquina); o caminho completo (fechamento R4 assinado, card na implantação, contrato vivo) está provado na suíte da API comercial-fechado-fora.');
+    } else {
+      passo('T1b: trabalho-t1b.mjs passou (registrar cliente já fechado pelo Funil vivo, a titular assina e o card nasce na implantação)');
+    }
   } else {
     prova.avisos.push('trabalho-t1b.mjs ainda não existe: o registrar cliente já fechado ficou sem prova no navegador.');
   }

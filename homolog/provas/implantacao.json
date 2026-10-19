@@ -1,84 +1,84 @@
 {
-  "inicio": "2026-10-19T01:28:22.770Z",
+  "inicio": "2026-10-19T17:38:57.344Z",
   "web": "http://127.0.0.1:3010",
-  "sufixo": "012822",
+  "sufixo": "173857",
   "passos": [
     {
       "n": 1,
       "nome": "mesa, sócio e admin entraram pela API",
-      "ms": 227
+      "ms": 263
     },
     {
       "n": 2,
       "nome": "a jornada fechou um lead de teste pelos dublês (Pix, assinatura, fechamento R4)",
-      "ms": 44409,
-      "leadId": "65d7a993-cf73-5cec-aa7b-c11bca1e8586"
+      "ms": 9281,
+      "leadId": "04ca4cff-4519-5aeb-b1c8-f3cd9841b003"
     },
     {
       "n": 3,
       "nome": "I1: o card nasceu em Onboarding de cliente · Fechado no comercial, com procedência e retrolinks card ↔ lead ↔ trilho",
-      "ms": 44478,
-      "cardId": "be783fd6-c19b-5c76-8ab3-60d989121e2a",
+      "ms": 9352,
+      "cardId": "99cc0f14-fd51-5377-adde-75ddc9813bbd",
       "lista": "Onboarding de cliente",
       "etapa": "Fechado no comercial"
     },
     {
       "n": 4,
       "nome": "I1: rodar o fechamento de novo não duplica o card",
-      "ms": 44493,
-      "detalhe": "1 card \"Construtora Alicerce Homolog 3035 Ltda\""
+      "ms": 9369,
+      "detalhe": "1 card \"Construtora Alicerce Homolog 7645 Ltda\""
     },
     {
       "n": 5,
-      "nome": "I2: o card no quadro compacto (~64 px), 7 colunas em 1440 px sem rolar a página, rodapé com a última movimentação",
-      "ms": 45454,
+      "nome": "I2: o card no quadro compacto (~64 px), 7 colunas numa linha sem rolar a página, rodapé com a última movimentação",
+      "ms": 10394,
       "detalhe": "Fechamento comercial · abriu o card · agora · 68 px"
     },
     {
       "n": 6,
       "nome": "I2: parar o mouse e focar mostram o balão (3 passos, comentário), dentro da tela; Esc fecha",
-      "ms": 46800
+      "ms": 11798
     },
     {
       "n": 7,
       "nome": "I2: mover de coluna funciona e o rodapé passa a dizer \"moveu para Kickoff marcado\"",
-      "ms": 46987
+      "ms": 11978
     },
     {
       "n": 8,
       "nome": "I2: o clique no cartão abre o painel",
-      "ms": 47083
+      "ms": 12076
     },
     {
       "n": 9,
-      "nome": "I3: a sala v1 pedida pelo admin, liberada por outra pessoa (R4, socio@root.homolog)",
-      "ms": 47332
+      "nome": "I3: a sala v1 pedida pelo admin, liberada por outra pessoa (R3, mesa@root.homolog)",
+      "ms": 12271
     },
     {
       "n": 10,
       "nome": "I3: em /atendimento, o cartão mostra a versão inteira da sala antes de assinar",
-      "ms": 48799
+      "ms": 13729
     },
     {
       "n": 11,
       "nome": "I3: v2 editada, pedida e liberada (R4); o cliente vê só a v2",
-      "ms": 48957
+      "ms": 13873
     },
     {
       "n": 12,
       "nome": "I4: \"faz sentido\" e uma ideia pela rota pública chegam ao fio, à bancada e ao relatório",
-      "ms": 49070
+      "ms": 13982
     },
     {
       "n": 13,
       "nome": "I5: a ideia vira UMA tarefa (dois cliques) com a procedência e o trecho",
-      "ms": 49131,
-      "tarefa": "Ideia de Construtora Alicerce Homolog 3035: Dá para começar pelo fechamento de outubro? (prova 012822)"
+      "ms": 14038,
+      "tarefa": "Responder a ideia: Dá para começar pelo fechamento de outubro? (prova 173857)"
     },
     {
       "n": 14,
       "nome": "fotografou o quadro, a aba Sala, o relatório, a sala publicada e a proposta em escuro, claro e 390 px; nada rola na horizontal no celular",
-      "ms": 67941,
+      "ms": 33069,
       "detalhe": "17 fotos"
     }
   ],
@@ -129,8 +129,8 @@
     }
   ],
   "ok": true,
-  "leadId": "65d7a993-cf73-5cec-aa7b-c11bca1e8586",
-  "cardId": "be783fd6-c19b-5c76-8ab3-60d989121e2a",
-  "fim": "2026-10-19T01:29:30.778Z",
-  "duracaoMs": 68008
+  "leadId": "04ca4cff-4519-5aeb-b1c8-f3cd9841b003",
+  "cardId": "99cc0f14-fd51-5377-adde-75ddc9813bbd",
+  "fim": "2026-10-19T17:39:30.463Z",
+  "duracaoMs": 33119
 }
