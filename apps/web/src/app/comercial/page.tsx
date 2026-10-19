@@ -1,34 +1,45 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import {
+  COMERCIAL_ROTULO_DA_ETAPA,
   SEM_INFORMACAO,
+  type ComercialEtapa,
   type PainelComercial,
   type PainelComercialGrupo,
   type PainelComercialMes,
   type PainelComercialNegocio,
+  type ResultadoDaEtapa,
 } from '@mktos/shared';
 import { apiGet, apiPost } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
-import { Ajustes } from './Ajustes';
 import { BarraDividida, COR_DO_TOM, Colunas, Numero, Quadro, brl, curto, type Tom } from '@/components/painel';
-import { EVENTO_FICHA_MUDOU, abrirFicha } from '@/lib/ficha';
+
+/*
+ * PAINEL GERAL DO COMERCIAL (versão final, 19/10/2026): o desenho do Lucas,
+ * lendo os dados do cockpit (lead, ficha, fechamentos e contratos vivos). Nada
+ * vem mais da lista "Gestão de Leads" do Trabalho.
+ *
+ * Todo número do painel é clicável e vira um filtro da aba Negócios; cada
+ * negócio abre o painel do lead (`/comercial/lead/<id>`), onde a etapa anda.
+ * O filtro mora na URL (?ver=negocios&canal=Indicação…) para o voltar do
+ * navegador desfazer o clique e o link poder ser mandado a alguém.
+ */
 
 const MES = ['jan', 'fev', 'mar', 'abr', 'mai', 'jun', 'jul', 'ago', 'set', 'out', 'nov', 'dez'];
 const nomeDoMes = (aaaaMm: string) => MES[Number(aaaaMm.slice(5, 7)) - 1];
 const mesPorExtenso = (p: string) => (p.length === 4 ? p : `${nomeDoMes(p)}/${p.slice(0, 4)}`);
 const pct = (a: number, b: number) => (b ? `${Math.round((a / b) * 100)}%` : '—');
-/** Ganho em lima cheio, aberto em lima claro, perda em cinza: um acento só. */
-const TOM_DO_RESULTADO: Record<'aberta' | 'ganho' | 'perdido', Tom> = { ganho: 'forte', aberta: 'medio', perdido: 'fraco' };
+/** Ganho em lima cheio, aberto em lima claro, perda e geladeira em cinza: um acento só. */
+const TOM_DO_RESULTADO: Record<ResultadoDaEtapa, Tom> = { ganho: 'forte', aberta: 'medio', perdido: 'fraco', pausa: 'fraco' };
 const negocios = (n: number) => `${n} ${n === 1 ? 'negócio' : 'negócios'}`;
+const linkDoLead = (id: string) => `/comercial/lead/${id}`;
 
-/*
- * O FILTRO é o elo entre o painel e a lista: todo número do painel é clicável e
- * vira um filtro da aba Negócios. Mora na URL (?ver=negocios&canal=BNI…) para o
- * voltar do navegador desfazer o clique e o link poder ser mandado a alguém.
- */
-type Situacao = 'aberta' | 'ganho' | 'perdido';
+type Situacao = ResultadoDaEtapa;
 interface Filtro {
+  /** A etapa do cockpit (`ComercialEtapa`). */
   etapa?: string;
   canal?: string;
   vendedor?: string;
@@ -39,9 +50,8 @@ interface Filtro {
   entrada?: string;
 }
 const CHAVES: (keyof Filtro)[] = ['etapa', 'canal', 'vendedor', 'situacao', 'fechado', 'entrada'];
-type Aba = 'painel' | 'negocios' | 'ajustes';
-const ABAS: Aba[] = ['painel', 'negocios', 'ajustes'];
-const SITUACAO: Record<Situacao, string> = { aberta: 'Em negociação', ganho: 'Fechados', perdido: 'Perdidos' };
+type Aba = 'painel' | 'negocios';
+const SITUACAO: Record<Situacao, string> = { aberta: 'Em negociação', ganho: 'Fechados', perdido: 'Perdidos', pausa: 'Na geladeira' };
 
 function lerUrl(): { ver: Aba; filtro: Filtro } {
   if (typeof window === 'undefined') return { ver: 'painel', filtro: {} };
@@ -51,8 +61,7 @@ function lerUrl(): { ver: Aba; filtro: Filtro } {
     const v = q.get(k);
     if (v) (filtro as Record<string, string>)[k] = v;
   }
-  const v = q.get('ver');
-  return { ver: v === 'negocios' || v === 'ajustes' ? v : 'painel', filtro };
+  return { ver: q.get('ver') === 'negocios' ? 'negocios' : 'painel', filtro };
 }
 
 function escreverUrl(ver: Aba, filtro: Filtro, empilhar: boolean) {
@@ -65,11 +74,10 @@ function escreverUrl(ver: Aba, filtro: Filtro, empilhar: boolean) {
 }
 
 function passa(n: PainelComercialNegocio, f: Filtro) {
-  if (f.etapa && n.etapa !== f.etapa) return false;
+  if (f.etapa && n.etapaChave !== f.etapa) return false;
   if (f.canal && (n.canal ?? SEM_INFORMACAO) !== f.canal) return false;
   if (f.vendedor && (n.vendedor ?? SEM_INFORMACAO) !== f.vendedor) return false;
   if (f.situacao && n.resultado !== f.situacao) return false;
-  // Um cliente pode ter fechado mais de uma vez: basta um dos contratos cair no período.
   if (f.fechado && !n.mesesFechados.some((m) => m.startsWith(f.fechado!)) && !(n.mesFechado ?? '').startsWith(f.fechado)) return false;
   if (f.entrada && !n.mesEntrada.startsWith(f.entrada)) return false;
   return true;
@@ -79,13 +87,14 @@ function rotuloDoFiltro(k: keyof Filtro, v: string) {
   if (k === 'situacao') return SITUACAO[v as Situacao] ?? v;
   if (k === 'fechado') return `Fechado em ${mesPorExtenso(v)}`;
   if (k === 'entrada') return `Entrou em ${mesPorExtenso(v)}`;
-  if (k === 'etapa') return `Etapa: ${v}`;
+  if (k === 'etapa') return `Etapa: ${COMERCIAL_ROTULO_DA_ETAPA[v as ComercialEtapa] ?? v}`;
   if (k === 'canal') return `Canal: ${v}`;
   return `Vendedor: ${v}`;
 }
 
 export default function ComercialPage() {
   const { token, ready, can } = useAuth();
+  const router = useRouter();
   const [p, setP] = useState<PainelComercial | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [ver, setVer] = useState<Aba>('painel');
@@ -105,11 +114,7 @@ export default function ComercialPage() {
 
   useEffect(() => {
     if (!ready || !token) return;
-    const ler = () => apiGet<PainelComercial>('/comercial/painel', token).then(setP).catch((e) => setError(e.message));
-    ler();
-    // A ficha em janela gravou: os números de baixo acompanham.
-    window.addEventListener(EVENTO_FICHA_MUDOU, ler);
-    return () => window.removeEventListener(EVENTO_FICHA_MUDOU, ler);
+    apiGet<PainelComercial>('/comercial/painel', token).then(setP).catch((e) => setError(e.message));
   }, [ready, token]);
 
   const abrir = useCallback((f: Filtro) => {
@@ -129,16 +134,16 @@ export default function ComercialPage() {
     escreverUrl(ver, f, false);
   };
 
+  /** O lead novo entra pela entrada idempotente do cockpit (origem manual) e abre no painel dele. */
   const novoLead = async () => {
-    if (!token || !p?.lista) return;
-    const titulo = window.prompt('Nome do lead (empresa | contato):');
-    if (!titulo?.trim()) return;
+    if (!token) return;
+    const nome = window.prompt('Nome do lead:');
+    if (!nome?.trim()) return;
     setCriando(true);
     try {
-      const t = await apiPost<{ id: string }>('/trabalho/tarefas', { listId: p.lista.id, title: titulo.trim() }, token);
-      setCriando(false);
-      abrirFicha(t.id);
-      apiGet<PainelComercial>('/comercial/painel', token).then(setP).catch(() => {});
+      const ref = `painel-geral:${typeof crypto !== 'undefined' && 'randomUUID' in crypto ? crypto.randomUUID() : Date.now().toString(36)}`;
+      const l = await apiPost<{ id: string }>('/leads/entrada', { origem: { tipo: 'manual', ref }, nome: nome.trim() }, token);
+      router.push(linkDoLead(l.id));
     } catch (e) {
       setError((e as Error).message);
       setCriando(false);
@@ -147,84 +152,82 @@ export default function ComercialPage() {
 
   return (
     <div className="com-tema mx-auto max-w-[1180px] space-y-6 text-text">
-      {p?.lista && (
-        <div className="flex flex-wrap items-end justify-between gap-3 border-b border-border">
-          <div className="flex gap-1">
-            {ABAS.map((v) => (
-              <button
-                key={v}
-                onClick={() => trocarAba(v)}
-                className={`-mb-px border-b-2 px-3 py-2.5 text-[0.95rem] ${
-                  ver === v ? 'border-brand font-medium text-text' : 'border-transparent text-muted hover:text-text'
-                }`}
-              >
-                {v === 'painel' ? 'Painel' : v === 'negocios' ? `Negócios (${p.negocios.length})` : 'Ajustes'}
-              </button>
-            ))}
-          </div>
-          {can('tarefas.editar') && (
+      <div className="flex flex-wrap items-end justify-between gap-3 border-b border-border">
+        <div className="flex gap-1">
+          {(['painel', 'negocios'] as Aba[]).map((v) => (
+            <button
+              key={v}
+              onClick={() => trocarAba(v)}
+              className={`-mb-px border-b-2 px-3 py-2.5 text-[0.95rem] ${
+                ver === v ? 'border-brand font-medium text-text' : 'border-transparent text-muted hover:text-text'
+              }`}
+            >
+              {v === 'painel' ? 'Painel' : `Negócios${p ? ` (${p.negocios.length})` : ''}`}
+            </button>
+          ))}
+        </div>
+        <div className="mb-2 flex items-center gap-3">
+          <Link href="/comercial/funil" className="text-sm text-muted underline hover:text-brand">abrir o Funil vivo</Link>
+          {can('leads.editar') && (
             <button
               onClick={novoLead}
               disabled={criando}
-              className="mb-2 rounded-md bg-brand px-4 py-2 text-sm font-medium text-ink hover:opacity-90 disabled:opacity-50"
+              className="rounded-md bg-brand px-4 py-2 text-sm font-medium text-ink hover:opacity-90 disabled:opacity-50"
             >
               + Novo lead
             </button>
           )}
         </div>
-      )}
+      </div>
 
       {error && <div className="rounded-lg border border-bad/30 bg-bad/10 px-4 py-2 text-sm text-bad">{error}</div>}
       {!p && !error && <p className="text-muted">Carregando…</p>}
-
-      {p && !p.lista && (
+      {p && p.foraDoTeto > 0 && (
+        <p className="text-sm text-muted">O painel leu os leads mais recentes; {p.foraDoTeto} mais antigos ficaram de fora da conta.</p>
+      )}
+      {p && p.negocios.length === 0 && (
         <div className="rounded-md border border-border bg-surface px-5 py-4">
-          <p>
-            Ainda não existe a lista <b>Gestão de Leads</b> no Trabalho. O painel lê dela: etapas, canal de aquisição,
-            vendedor e valor da proposta.
-          </p>
+          <p>Ainda não há leads no funil. O lead entra pelo WhatsApp, pela sala ou pelo botão de novo lead.</p>
         </div>
       )}
 
-      {p?.lista && ver === 'painel' && <Painel p={p} abrir={abrir} ajustes={() => trocarAba('ajustes')} />}
-      {p?.lista && ver === 'negocios' && <Negocios p={p} filtro={filtro} tirar={tirar} limpar={() => abrir({})} />}
-      {p?.lista && ver === 'ajustes' && <Ajustes listaId={p.lista.id} />}
+      {p && p.negocios.length > 0 && ver === 'painel' && <Painel p={p} abrir={abrir} />}
+      {p && ver === 'negocios' && <Negocios p={p} filtro={filtro} tirar={tirar} limpar={() => abrir({})} />}
     </div>
   );
 }
 
 // ---------------- Painel ----------------
 
-function Painel({ p, abrir, ajustes }: { p: PainelComercial; abrir: (f: Filtro) => void; ajustes: () => void }) {
-  const ano = String(p.ano);
+function Painel({ p, abrir }: { p: PainelComercial; abrir: (f: Filtro) => void }) {
   return (
     <>
       <Destaque p={p} abrir={abrir} />
 
       <div className="grid gap-6 lg:grid-cols-2">
-        <Quadro titulo="Funil geral" nota="negócios em cada etapa · clique numa etapa">
+        <Quadro titulo="Funil geral" nota="negócios em cada etapa · clique numa etapa" acao={<Link href="/comercial/funil" className="text-sm text-muted underline hover:text-brand">Funil vivo</Link>}>
           <Colunas chamada="clique para ver os negócios"
             itens={p.etapas.map((e) => ({
-              chave: e.nome,
+              chave: e.id,
               rotulo: e.nome,
               v: e.qtd,
               mostra: String(e.qtd),
               tom: TOM_DO_RESULTADO[e.resultado],
               dica: [e.nome, negocios(e.qtd), e.valor ? brl(e.valor) : 'sem valor'],
-              onClick: () => abrir(e.id === '__clientes' ? { situacao: 'ganho' } : { etapa: e.nome }),
+              onClick: () => abrir({ etapa: e.id }),
             }))}
           />
         </Quadro>
         <Quadro titulo="Valor por fase do funil" nota="soma do valor da proposta em cada etapa">
           <Colunas chamada="clique para ver os negócios"
             itens={p.etapas.map((e) => ({
-              chave: e.nome,
+              chave: e.id,
               rotulo: e.nome,
               v: e.valor,
               mostra: curto(e.valor),
               tom: TOM_DO_RESULTADO[e.resultado],
               dica: [e.nome, e.valor ? brl(e.valor) : 'sem valor', negocios(e.qtd)],
-              onClick: () => abrir(e.id === '__clientes' ? { situacao: 'ganho' } : { etapa: e.nome }),
+              onClick: () => abrir({ etapa: e.id }),
             }))}
           />
         </Quadro>
@@ -234,21 +237,21 @@ function Painel({ p, abrir, ajustes }: { p: PainelComercial; abrir: (f: Filtro) 
         <Quadro titulo={`Contratos fechados por mês · ${p.ano}`} nota="valor da proposta dos negócios fechados · clique num mês">
           <Meses meses={p.fechadosPorMes} medida="valor" onClick={(m) => abrir({ situacao: 'ganho', fechado: m })} verbo="fechados" />
         </Quadro>
-        <Quadro titulo="Oportunidades geradas por mês" nota="leads que entraram no CRM, últimos 12 meses">
+        <Quadro titulo="Oportunidades geradas por mês" nota="leads que entraram, últimos 12 meses">
           <Meses meses={p.entradasPorMes} medida="qtd" onClick={(m) => abrir({ entrada: m })} verbo="entraram" />
         </Quadro>
       </div>
 
       <div className="grid gap-6 lg:grid-cols-2">
-        <Quadro titulo="Por canal de aquisição" nota="de onde vem o lead e de onde vem o contrato" acao={<Gerenciar onClick={ajustes} o="canais" />}>
+        <Quadro titulo="Por canal de aquisição" nota="de onde vem o lead e de onde vem o contrato">
           <Grupos grupos={p.canais} primeira="Canal" abrir={(nome, extra) => abrir({ canal: nome, ...extra })} />
         </Quadro>
-        <Quadro titulo="Por vendedor" nota="quem carrega o quê" acao={<Gerenciar onClick={ajustes} o="vendedores" />}>
+        <Quadro titulo="Por vendedor" nota="o dono do lead · quem carrega o quê">
           <Grupos grupos={p.vendedores} primeira="Vendedor" abrir={(nome, extra) => abrir({ vendedor: nome, ...extra })} />
         </Quadro>
       </div>
 
-      <Quadro titulo="Em negociação agora" nota="do maior valor para o menor">
+      <Quadro titulo="Em negociação agora" nota="do maior valor para o menor · clique para abrir o lead">
         <ListaDeNegocios itens={p.negocios.filter((n) => n.resultado === 'aberta')} vazio="Nenhum negócio aberto." />
       </Quadro>
     </>
@@ -283,6 +286,15 @@ function Destaque({ p, abrir }: { p: PainelComercial; abrir: (f: Filtro) => void
             ]}
           />
         </div>
+        <div className="mt-5 grid gap-4 border-t border-border pt-4 sm:grid-cols-3">
+          <Numero rotulo="Clientes ativos" valor={String(p.totais.clientesAtivos)} nota="fecharam e seguem com contrato" tamanho="medio" onClick={() => abrir({ situacao: 'ganho' })} />
+          <Link href="/comercial/contratos" className="group rounded-md p-1 hover:bg-surface-2">
+            <div className="com-rotulo">Contratos vivos</div>
+            <div className="com-num mt-1.5 text-[1.5rem] font-bold leading-none">{p.totais.contratosVivos}</div>
+            <div className="mt-1.5 text-sm text-muted">em acompanhamento<span className="opacity-0 transition group-hover:opacity-100"> · ver →</span></div>
+          </Link>
+          <Numero rotulo="Na geladeira" valor={String(p.totais.naGeladeira)} nota="voltam com data" tamanho="medio" onClick={() => abrir({ situacao: 'pausa' })} />
+        </div>
       </div>
       <div className="grid grid-cols-2 gap-4 border-border lg:grid-cols-1 lg:border-l lg:pl-5">
         <Numero
@@ -295,7 +307,7 @@ function Destaque({ p, abrir }: { p: PainelComercial; abrir: (f: Filtro) => void
         <Numero
           rotulo="Ticket médio"
           valor={p.totais.ticketMedio == null ? '—' : brl(p.totais.ticketMedio)}
-          nota="dos contratos do ano"
+          nota={p.totais.ganhosSemValor ? `dos contratos do ano com valor · ${p.totais.ganhosSemValor} sem valor na ficha` : 'dos contratos do ano'}
           tamanho="medio"
           onClick={verFechados}
         />
@@ -303,18 +315,6 @@ function Destaque({ p, abrir }: { p: PainelComercial; abrir: (f: Filtro) => void
     </section>
   );
 }
-
-function Gerenciar({ onClick, o }: { onClick: () => void; o: string }) {
-  return (
-    <button onClick={onClick} className="text-sm text-muted underline hover:text-brand">
-      gerenciar {o}
-    </button>
-  );
-}
-
-
-
-
 
 function Meses(props: { meses: PainelComercialMes[]; medida: 'valor' | 'qtd'; verbo: string; onClick: (mes: string) => void }) {
   const { meses, medida } = props;
@@ -410,6 +410,9 @@ function Negocios(props: { p: PainelComercial; filtro: Filtro; tirar: (k: keyof 
         {ativos.length > 0 && (
           <button onClick={props.limpar} className="text-sm text-muted underline hover:text-text">limpar</button>
         )}
+        {filtro.etapa && (
+          <Link href="/comercial/funil" className="text-sm text-muted underline hover:text-brand">ver no Funil vivo</Link>
+        )}
         <span className="ml-auto text-sm text-muted">
           {negocios(itens.length)} · <span className="com-num text-text">{brl(total)}</span>
         </span>
@@ -426,7 +429,7 @@ function ListaDeNegocios({ itens, vazio, completa }: { itens: PainelComercialNeg
   return (
     <div className="divide-y divide-border">
       {itens.map((n) => (
-        <button key={n.id} onClick={() => abrirFicha(n.id)} className="group flex w-full flex-wrap items-baseline gap-x-4 gap-y-1 py-2.5 text-left hover:bg-surface-2">
+        <Link key={n.id} href={linkDoLead(n.id)} className="group flex w-full flex-wrap items-baseline gap-x-4 gap-y-1 py-2.5 text-left hover:bg-surface-2">
           <span className="min-w-0 flex-1 font-medium group-hover:text-brand">{n.titulo}</span>
           <span className="flex items-center gap-1.5 text-sm text-muted">
             <span className="inline-block h-2 w-2 rounded-full" style={{ background: n.etapaCor }} />
@@ -440,7 +443,7 @@ function ListaDeNegocios({ itens, vazio, completa }: { itens: PainelComercialNeg
             </span>
           )}
           <span className="com-num w-28 text-right">{n.valor == null ? '—' : brl(n.valor)}</span>
-        </button>
+        </Link>
       ))}
     </div>
   );

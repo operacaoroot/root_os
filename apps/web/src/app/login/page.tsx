@@ -61,8 +61,13 @@ export default function LoginPage() {
       .catch(() => setGoogleOn(false));
   }, []);
 
+  // A entrada é a da primeira área do menu: Dia a dia › Visão geral (versão final,
+  // 19/10/2026; o Contexto desceu para depois do Motor de IA em 18/10). Quem não vê
+  // tarefas segue o caminho de antes: Contexto, Marca ou o Painel geral da empresa.
   useEffect(() => {
-    if (ready && user) router.replace(user.permissions.includes('obsidian.ver') ? '/contexto' : user.permissions.includes('pauta.ver') ? '/contexto/marca' : '/painel');
+    if (!ready || !user) return;
+    const p = user.permissions;
+    router.replace(p.includes('tarefas.ver') ? '/dia-a-dia' : p.includes('obsidian.ver') ? '/contexto' : p.includes('pauta.ver') ? '/contexto/marca' : '/painel');
   }, [ready, user, router]);
 
   async function submit(e: FormEvent) {
