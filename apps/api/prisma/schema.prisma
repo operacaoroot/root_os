@@ -82,6 +82,8 @@ model Org {
   cofreSenhas CofreSenha[]
   cofreSessoes CofreSessao[]
   cofreItens CofreItem[]
+  atendimentoAjuste AtendimentoAjuste?
+  atendimentoContatos AtendimentoContato[]
   acordosComerciais AcordoComercial[]
   analiseLeituras AnaliseLeitura[]
   reunioesDeCartao ReuniaoDoCartao[]
@@ -253,6 +255,7 @@ model User {
   roles      Role[] @relation("UserRoles")
   ownedLeads Lead[] @relation("LeadOwner")
   workTasksResponsavel WorkTask[] @relation("WorkTaskResponsavel")
+  conversasDeAtendimento AtendimentoContato[] @relation("ConversasDoResponsavel")
   demoInstallations DemoInstallation[]
 
   agentesQueDono Agent[]           @relation("AgentDono")
@@ -2219,6 +2222,10 @@ model WorkTask {
   /// RESPONSÁVEIS ALÉM DO PRIMEIRO (vários, como no ClickUp). O primeiro continua em
   /// assigneeUserId, que o resto do OS lê; aqui ficam os demais, ids de User da empresa.
   outrosResponsaveisIds String[] @default([])
+  /// Conversas de WhatsApp ligadas a este card do CRM (Dia a dia › Conversas).
+  conversasDoCliente AtendimentoContato[] @relation("ConversasDoCliente")
+  /// A mensagem que deu origem a esta tarefa, quando ela nasceu de uma conversa.
+  mensagemDeOrigem AtendimentoTarefa[] @relation("TarefaDaMensagem")
 
   @@unique([id, orgId])
   @@unique([orgId, externalId])
@@ -5301,5 +5308,136 @@ model CofreItem {
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 
+  @@index([orgId])
+}
+
+// ============================================================================
+// ATENDIMENTO POR WHATSAPP — Dia a dia › Conversas (19/10/2026)
+//
+// Adaptado do inbox do FinOps (`chat_contacts`/`chat_messages`). A caixa ESCUTA
+// o webhook único da Evolution (`approvals/canal/whatsapp/:orgId`) sem tirar
+// nada dos consumidores que já estavam lá, e só guarda mensagem da empresa que
+// ligou a caixa (`AtendimentoAjuste.ativo`). Ver docs/ATENDIMENTO-FINOPS.md.
+// ============================================================================
+
+/// A caixa de atendimento desta empresa está ligada? Sem linha = desligada.
+model AtendimentoAjuste {
+  orgId        String   @id
+  org          Org      @relation(fields: [orgId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  ativo        Boolean  @default(false)
+  alteradoPor  String?
+  criadoEm     DateTime @default(now())
+  atualizadoEm DateTime @updatedAt
+}
+
+/// Uma conversa: um número (conversa direta) ou um grupo, por empresa.
+model AtendimentoContato {
+  id               String                @id @default(uuid())
+  orgId            String
+  org              Org                   @relation(fields: [orgId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  /// O JID canônico da conversa: `5511…@s.whatsapp.net` ou `…@g.us`. É o
+  /// destino de toda resposta — a tela nunca manda número.
+  jid              String
+  /// Só dígitos, para conversa direta. Nulo em grupo.
+  telefone         String?
+  grupo            Boolean               @default(false)
+  nome             String?
+  /// O card do cliente no CRM (lista de cadastro). Aponta, não copia.
+  clienteId        String?
+  cliente          WorkTask?             @relation("ConversasDoCliente", fields: [clienteId, orgId], references: [id, orgId], onDelete: Restrict, onUpdate: Restrict)
+  responsavelId    String?
+  responsavel      User?                 @relation("ConversasDoResponsavel", fields: [responsavelId, orgId], references: [id, orgId], onDelete: Restrict, onUpdate: Restrict)
+  ultimaMensagemEm DateTime?
+  /// Encerrada pela equipe. A próxima mensagem do cliente reabre sozinha.
+  encerradaEm      DateTime?
+  encerradaPor     String?
+  /// Sobe a cada encerrar/reabrir: quem encerra manda a versão que viu.
+  versao           Int                   @default(0)
+  criadoEm         DateTime              @default(now())
+  atualizadoEm     DateTime              @updatedAt
+  mensagens        AtendimentoMensagem[]
+
+  @@unique([orgId, jid])
+  @@unique([id, orgId])
+  @@index([orgId, ultimaMensagemEm])
+}
+
+enum AtendimentoDirecao {
+  entrada
+  saida
+}
+
+/// O caminho de uma resposta. Só sobe: um aviso atrasado de "aceita" nunca
+/// rebaixa uma mensagem que já foi lida.
+enum AtendimentoStatusEnvio {
+  /// Retida na porta (R3): espera outra pessoa assinar em Aprovações.
+  aguardando_assinatura
+  /// Assinada, falando com a Evolution agora.
+  enviando
+  /// A Evolution aceitou e devolveu o id. NÃO quer dizer que chegou.
+  aceita
+  /// O aparelho do cliente recebeu (DELIVERY_ACK).
+  entregue
+  /// O cliente abriu (READ/PLAYED).
+  lida
+  erro
+}
+
+model AtendimentoMensagem {
+  id                String                  @id @default(uuid())
+  orgId             String
+  contatoId         String
+  contato           AtendimentoContato      @relation(fields: [contatoId, orgId], references: [id, orgId], onDelete: Restrict, onUpdate: Restrict)
+  direcao           AtendimentoDirecao
+  /// `key.id` da Evolution. Único por empresa: evento repetido não duplica.
+  evolutionId       String?
+  /// Id que a tela gera ao responder: clicar duas vezes não manda duas.
+  clienteMensagemId String?
+  /// texto | imagem | audio | video | documento | figurinha | outro
+  tipo              String
+  texto             String?
+  remetenteJid      String?
+  remetenteNome     String?
+  /// Quem da equipe escreveu a resposta.
+  autorId           String?
+  anexoChave        String?
+  anexoTipo         String?
+  anexoNome         String?
+  anexoTamanho      Int?
+  /// pendente | guardado | recusado | falhou
+  anexoSituacao     String?
+  statusEnvio       AtendimentoStatusEnvio?
+  erroEnvio         String?
+  approvalId        String?
+  aceitaEm          DateTime?
+  entregueEm        DateTime?
+  lidaPeloClienteEm DateTime?
+  /// Lida pela equipe (só mensagem de entrada).
+  lidaEm            DateTime?
+  apagadaEm         DateTime?
+  /// Hora da mensagem no WhatsApp (entrada) ou da proposta (saída).
+  momento           DateTime
+  criadoEm          DateTime                @default(now())
+  atualizadoEm      DateTime                @updatedAt
+  tarefa            AtendimentoTarefa?
+
+  @@unique([orgId, evolutionId])
+  @@unique([orgId, clienteMensagemId])
+  @@unique([id, orgId])
+  @@index([orgId, contatoId, momento])
+}
+
+/// Mensagem → tarefa. A chave é a mensagem: no máximo UMA tarefa por mensagem,
+/// garantido pelo banco (no FinOps a trava era só o botão sumir).
+model AtendimentoTarefa {
+  mensagemId String              @id
+  orgId      String
+  mensagem   AtendimentoMensagem @relation(fields: [mensagemId, orgId], references: [id, orgId], onDelete: Restrict, onUpdate: Restrict)
+  tarefaId   String?
+  tarefa     WorkTask?           @relation("TarefaDaMensagem", fields: [tarefaId, orgId], references: [id, orgId], onDelete: Restrict, onUpdate: Restrict)
+  criadoPor  String
+  criadoEm   DateTime            @default(now())
+
+  @@unique([mensagemId, orgId])
   @@index([orgId])
 }

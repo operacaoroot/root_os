@@ -1168,6 +1168,53 @@
       }
     },
     {
+      "id": "atendimento.whatsapp.responder",
+      "rota": "POST /atendimento/conversas/:id/responder",
+      "descricao": "Responde a uma conversa da caixa de atendimento pelo WhatsApp (Evolution). O destino sai da conversa, nunca do pedido. Não existe desenviar.",
+      "nivel": "R3",
+      "argsSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "conversaId",
+          "mensagemId",
+          "texto"
+        ],
+        "properties": {
+          "conversaId": {
+            "type": "string",
+            "minLength": 1,
+            "description": "a conversa (o destino é o número ou grupo dela)"
+          },
+          "mensagemId": {
+            "type": "string",
+            "minLength": 1,
+            "description": "a resposta guardada na caixa, que muda de estado quando sair"
+          },
+          "destino": {
+            "type": "string",
+            "description": "para quem vai, só para quem assina ler; o envio recalcula da conversa"
+          },
+          "texto": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 4096,
+            "description": "o texto exato que vai para o cliente"
+          }
+        }
+      },
+      "efeito": {
+        "escreveForaDoOS": true,
+        "produzArtefato": false,
+        "reversibilidade": "nenhuma",
+        "exposicaoExterna": true,
+        "impactoFinanceiro": "nenhum",
+        "sensibilidade": "confidencial",
+        "destruicao": false,
+        "obrigacaoLegal": false
+      }
+    },
+    {
       "id": "instagram.post.publicar",
       "rota": "POST /pauta/pecas/:id/publicar-instagram",
       "descricao": "Publica a peça aprovada da semana (carrossel, story ou corte) na conta de publicação do Instagram da empresa, pela Graph: cria os containers com a mídia do OS numa URL assinada e publica. Não existe despublicar pela API; apagar o post é à mão, no Instagram.",

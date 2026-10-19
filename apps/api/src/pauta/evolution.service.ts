@@ -8,6 +8,7 @@ import {
 import { EfeitosRegistry, type ContextoDoEfeito } from '../gateway/efeitos.registry';
 import { ConectoresConfiguradosRegistry } from '../gateway/conectores-configurados.registry';
 import { TransporteDeCanalRegistry } from '../gateway/canais/transporte.registry';
+import { WhatsappDoAtendimentoRegistry } from '../gateway/canais/whatsapp-do-atendimento.registry';
 import {
   PRAZO_DA_CHAMADA_DE_SONDA_MS,
   RegistroDeConectores,
@@ -66,6 +67,11 @@ export class EvolutionService implements OnModuleInit {
      * padrão, não uma falha.
      */
     @Optional() private readonly canais?: TransporteDeCanalRegistry,
+    /*
+     * A caixa de atendimento (Dia a dia › Conversas, 19/10/2026). Opcional pelo
+     * mesmo motivo do `canais`: a suíte do contrato monta o serviço à mão.
+     */
+    @Optional() private readonly atendimento?: WhatsappDoAtendimentoRegistry,
   ) {}
 
   get configured(): boolean {
@@ -185,6 +191,25 @@ export class EvolutionService implements OnModuleInit {
         'whatsapp',
         async (destino, texto) => {
           await this.enviarTexto(this.jidDireto(destino), texto);
+        },
+        'EvolutionService',
+      );
+    }
+
+    /*
+     * O WhatsApp da caixa de atendimento. A resposta ao cliente só chega aqui
+     * por dentro do efeito `atendimento.whatsapp.responder` (R3, assinado por
+     * outra pessoa, conector ligado). O destino vem da conversa já guardada, e
+     * vazio é recusado: nunca cai no grupo padrão como o `enviarTexto` faz.
+     */
+    if (this.atendimento) {
+      this.atendimento.registrar(
+        {
+          enviarTexto: async (jid, texto) => {
+            if (!jid.trim()) throw new Error('conversa sem destino: nada foi enviado');
+            return this.enviarTexto(jid.trim(), texto);
+          },
+          baixarMidia: (chave) => this.baixarMidia(chave),
         },
         'EvolutionService',
       );
@@ -340,5 +365,24 @@ export class EvolutionService implements OnModuleInit {
       text: texto,
     });
     return { id: r.key?.id ?? null };
+  }
+
+  /**
+   * O arquivo de uma mensagem recebida, em base64. A Evolution guarda a mídia
+   * por pouco tempo (cerca de 72 h no FinOps): depois disso devolve erro, e a
+   * caixa marca o anexo como "falhou" em vez de tentar para sempre.
+   */
+  async baixarMidia(chave: {
+    id: string;
+    remoteJid: string;
+    fromMe: boolean;
+  }): Promise<{ base64: string; mimetype: string | null } | null> {
+    this.assert();
+    const r = await this.chamar<{ base64?: string; mimetype?: string }>(
+      `/chat/getBase64FromMediaMessage/${this.instancia}`,
+      { message: { key: { id: chave.id, remoteJid: chave.remoteJid, fromMe: chave.fromMe } }, convertToMp4: false },
+    );
+    if (typeof r.base64 !== 'string' || r.base64 === '') return null;
+    return { base64: r.base64, mimetype: typeof r.mimetype === 'string' ? r.mimetype : null };
   }
 }

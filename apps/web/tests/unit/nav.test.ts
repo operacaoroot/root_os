@@ -206,8 +206,9 @@ describe('NAV — estrutura', () => {
     // 19/10/2026: + /dia-a-dia, todas as tarefas de todas as áreas (Dia a dia › Tarefas).
     // 19/10/2026: + a aba Tarefas de Comercial, Marketing e Financeiro (Dia a dia › Tarefas filtrada pela área).
     const abasDeTarefas = ['/comercial/tarefas', '/marketing/tarefas', '/financeiro/tarefas'];
-    expect(NAV).toHaveLength(46);
-    expect(new Set(NAV.map((n) => n.href))).toEqual(new Set([...hrefsEsperados, ...rotasMK, '/comercial', '/clientes', '/cofre', '/dia-a-dia', ...abasDeTarefas]));
+    // 19/10/2026: + /conversas, a caixa de atendimento por WhatsApp (Dia a dia › Conversas).
+    expect(NAV).toHaveLength(47);
+    expect(new Set(NAV.map((n) => n.href))).toEqual(new Set([...hrefsEsperados, ...rotasMK, '/comercial', '/clientes', '/cofre', '/dia-a-dia', '/conversas', ...abasDeTarefas]));
   });
 
   it('não repete chave nem rota', () => {
@@ -511,7 +512,7 @@ describe('organização da navegação (ROOT-07)', () => {
     'comercial-tarefas': 'tarefas.ver', 'marketing-tarefas': 'tarefas.ver', 'financeiro-tarefas': 'tarefas.ver', funil: 'dashboard.ver', campanhas: 'campanhas.ver', pixels: 'dashboard.ver',
     relatorios: 'relatorios.ver', metas: 'dashboard.ver', financeiro: 'financeiro.ver', 'custo-ia': 'dashboard.ver',
     agentes: 'mcp.ver', rotinas: 'automacoes.ver', sessoes: 'mcp.ver', fluxos: 'automacoes.ver',
-    ferramentas: 'mcp.ver', conexoes: 'dashboard.ver', regua: 'mcp.ver', cofre: 'cofre.ver', rastro: 'auditoria.ver',
+    ferramentas: 'mcp.ver', conexoes: 'dashboard.ver', regua: 'mcp.ver', cofre: 'cofre.ver', rastro: 'auditoria.ver', conversas: 'atendimento.ver',
     'linha-do-tempo': 'auditoria.ver', assinatura: 'dashboard.ver', config: 'dashboard.ver',
   };
 
@@ -530,14 +531,14 @@ describe('organização da navegação (ROOT-07)', () => {
     campanhas: 'Campanhas', pixels: 'Eventos do site', relatorios: 'Relatórios', metas: 'Metas',
     financeiro: 'Financeiro', 'custo-ia': 'Custos de IA', agentes: 'Agentes de IA',
     rotinas: 'Rotinas automáticas', sessoes: 'Sessões de IA', fluxos: 'Processos',
-    ferramentas: 'Ferramentas disponíveis', conexoes: 'Integrações', regua: 'Regras e permissões', cofre: 'Cofre',
+    ferramentas: 'Ferramentas disponíveis', conexoes: 'Integrações', regua: 'Regras e permissões', cofre: 'Cofre', conversas: 'Conversas',
     rastro: 'Registro de ações', 'linha-do-tempo': 'Atividade', assinatura: 'Plano e assinatura',
     config: 'Configurações da conta',
   };
 
   /** matriz-nav-empresa.json: href → grupo proposto, traduzido para a chave da seção. */
   const SECAO_DA_MATRIZ: Record<string, string> = {
-    '/caixa': 'dia', '/atendimento': 'dia', '/agenda': 'dia', '/painel': 'dia',
+    '/caixa': 'dia', '/atendimento': 'dia', '/conversas': 'dia', '/agenda': 'dia', '/painel': 'dia',
     '/contexto': 'empresa', '/contexto/marca': 'empresa',
     '/organograma': 'controle',
     // 19/10/2026: o Trabalho foi absorvido. Lista, quadro e temas seguem na seção, ocultos.
@@ -558,9 +559,9 @@ describe('organização da navegação (ROOT-07)', () => {
     '/config': 'conta',
   };
 
-  it('os 46 destinos mantêm chave, rótulo e permissão da base', () => {
-    expect(NAV).toHaveLength(46);
-    expect(Object.keys(PERMISSAO_DA_BASE)).toHaveLength(46);
+  it('os 47 destinos mantêm chave, rótulo e permissão da base', () => {
+    expect(NAV).toHaveLength(47);
+    expect(Object.keys(PERMISSAO_DA_BASE)).toHaveLength(47);
     for (const n of NAV) {
       expect(n.permission, `${n.key}: permissão mudou`).toBe(PERMISSAO_DA_BASE[n.key]);
       expect(n.label, `${n.key}: rótulo fora da tabela da ROOT-08`).toBe(ROTULOS_DA_ROOT_08[n.key] ?? ROTULO_DA_BASE[n.key]);
@@ -595,7 +596,7 @@ describe('organização da navegação (ROOT-07)', () => {
     expect(SECOES.find((s) => s.key === 'trabalho')?.hint).toBe('tarefas, quadro, ideias e implantação');
   });
 
-  it('cada destino cai na seção da matriz, e a matriz cobre exatamente os 46 href', () => {
+  it('cada destino cai na seção da matriz, e a matriz cobre exatamente os 47 href', () => {
     expect(new Set(Object.keys(SECAO_DA_MATRIZ))).toEqual(new Set(NAV.map((n) => n.href)));
     for (const n of NAV) expect(n.secao, `${n.key} (${n.href})`).toBe(SECAO_DA_MATRIZ[n.href]);
   });

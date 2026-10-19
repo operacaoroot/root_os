@@ -32,6 +32,7 @@ import { ObsidianModule } from './obsidian/obsidian.module';
 import { GoogleModule } from './google/google.module';
 import { FinanceModule } from './finance/finance.module';
 import { CofreDaEmpresaModule } from './cofre-da-empresa/cofre-da-empresa.module';
+import { AtendimentoModule } from './atendimento/atendimento.module';
 import { MetaModule } from './meta/meta.module';
 import { GoalsModule } from './goals/goals.module';
 import { BioModule } from './bio/bio.module';
@@ -128,6 +129,10 @@ import { CaixaModule } from './caixa/caixa.module';
     GoogleModule,
     FinanceModule,
     CofreDaEmpresaModule,
+    // Dia a dia › Conversas (atendimento por WhatsApp, 19/10/2026). Depois do
+    // GatewayModule e do PautaModule: ouve o webhook do canal e recebe o
+    // WhatsApp pelo registro que o EvolutionService preenche.
+    AtendimentoModule,
     MetaModule,
     GoalsModule,
     BioModule,

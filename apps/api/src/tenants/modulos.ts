@@ -187,6 +187,9 @@ export const MODULO_POR_PREFIXO: Readonly<Record<string, ModuloKey>> = {
 export const PREFIXOS_DA_ESPINHA: readonly string[] = [
   'agents',
   'approvals',
+  // Dia a dia › Conversas (19/10/2026): atender o cliente é como o OS conversa, não
+  // produto contratado à parte — mesma razão de `google` e `caixa` estarem aqui.
+  'atendimento',
   'assinatura',
   'audit',
   'auth',

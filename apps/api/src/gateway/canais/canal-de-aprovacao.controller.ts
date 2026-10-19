@@ -14,6 +14,7 @@ import { comTenantPublico } from '../../common/tenant-publico';
 import { CABECALHO_DO_SEGREDO, segredoDoCanal } from './configuracao-do-canal';
 import { CanalDeAprovacaoService } from './canal-de-aprovacao.service';
 import { EntradaDeGrupoRegistry } from './entrada-de-grupo.registry';
+import { OuvintesDoWebhookRegistry } from './ouvintes-do-webhook.registry';
 
 /*
  * ============================================================================
@@ -118,6 +119,11 @@ export class CanalDeAprovacaoController {
      * tudo, como antes do MC1.
      */
     @Optional() private readonly grupos?: EntradaDeGrupoRegistry,
+    /*
+     * Quem só OUVE (hoje, a caixa de atendimento). Roda depois do caminho de
+     * sempre e não muda o desfecho dele — ver `ouvintes-do-webhook.registry.ts`.
+     */
+    @Optional() private readonly ouvintes?: OuvintesDoWebhookRegistry,
   ) {}
 
   @Post('whatsapp/:orgId')
@@ -156,9 +162,17 @@ export class CanalDeAprovacaoController {
    */
   private emSegundoPlano(orgId: string, corpo: unknown): Promise<void> {
     return comTenantPublico(orgId, async () => {
-      const doGrupo = await this.grupos?.despachar(orgId, corpo);
-      if (doGrupo != null) return { desfecho: `grupo:${doGrupo}` };
-      return this.canal.receber(orgId, corpo);
+      try {
+        const doGrupo = await this.grupos?.despachar(orgId, corpo);
+        if (doGrupo != null) return { desfecho: `grupo:${doGrupo}` };
+        return await this.canal.receber(orgId, corpo);
+      } finally {
+        // Depois do caminho de sempre, com sucesso ou falha dele. Nunca lança.
+        if (this.ouvintes?.quantos) {
+          const ouvidos = await this.ouvintes.avisar(orgId, corpo);
+          this.log.debug(`ouvintes do webhook (${orgId}): ${ouvidos.join(', ')}`);
+        }
+      }
     })
       .then(({ desfecho }) => {
         // O desfecho vai para o log do servidor, nunca para a resposta.

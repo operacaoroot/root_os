@@ -113,6 +113,15 @@ export const PERMISSIONS = [
    */
   'cofre.ver',
   'cofre.editar',
+  /*
+   * Dia a dia › Conversas (atendimento por WhatsApp, 19/10/2026). Só o Admin
+   * Master recebe, pelo `[...PERMISSIONS]`; a migration 20261019230000 soma o
+   * vínculo no banco. Responder não basta para sair: a resposta é R3 e espera
+   * a assinatura de OUTRA pessoa em Aprovações.
+   */
+  'atendimento.ver',
+  'atendimento.responder',
+  'atendimento.configurar',
 ] as const;
 
 export type Permission = (typeof PERMISSIONS)[number];

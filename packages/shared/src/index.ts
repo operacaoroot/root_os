@@ -72,3 +72,7 @@ export * from './ficha-do-cliente.js';
 // Tarefas de todas as áreas (Dia a dia › Tarefas): o que é a MESMA tarefa, o que
 // não parece tarefa e a régua do prazo — a tela e a API leem a mesma regra.
 export * from './tarefas-do-dia.js';
+
+// Atendimento por WhatsApp (Dia a dia › Conversas): leitura do webhook da
+// Evolution, estados de envio que só sobem e os contratos da caixa.
+export * from './atendimento.js';

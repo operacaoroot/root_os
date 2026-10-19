@@ -243,6 +243,9 @@ export const CONECTOR_DA_CAPACIDADE: Readonly<Record<string, string | null>> = {
 
   // WhatsApp pela Evolution (instância e número dedicados do root).
   'whatsapp.mensagem.enviar': 'whatsapp',
+  // Resposta da caixa de atendimento (Dia a dia › Conversas): mesma instância, e
+  // desligar o WhatsApp em /conexoes segura também a resposta já assinada.
+  'atendimento.whatsapp.responder': 'whatsapp',
 
   // Daqui para baixo: nada sai da casa.
   'numeros.painel.ler': null,

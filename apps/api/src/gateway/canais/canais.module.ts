@@ -2,6 +2,8 @@ import { Global, Module } from '@nestjs/common';
 
 import { TransporteDeCanalRegistry } from './transporte.registry';
 import { EntradaDeGrupoRegistry } from './entrada-de-grupo.registry';
+import { OuvintesDoWebhookRegistry } from './ouvintes-do-webhook.registry';
+import { WhatsappDoAtendimentoRegistry } from './whatsapp-do-atendimento.registry';
 import { EnvioDeAprovacaoService } from './envio-de-aprovacao.service';
 import { CanalDeAprovacaoService } from './canal-de-aprovacao.service';
 import { CanalDeAprovacaoController } from './canal-de-aprovacao.controller';
@@ -58,9 +60,17 @@ import { CanalDeAprovacaoController } from './canal-de-aprovacao.controller';
   providers: [
     TransporteDeCanalRegistry,
     EntradaDeGrupoRegistry,
+    OuvintesDoWebhookRegistry,
+    WhatsappDoAtendimentoRegistry,
     EnvioDeAprovacaoService,
     CanalDeAprovacaoService,
   ],
-  exports: [TransporteDeCanalRegistry, EntradaDeGrupoRegistry, EnvioDeAprovacaoService],
+  exports: [
+    TransporteDeCanalRegistry,
+    EntradaDeGrupoRegistry,
+    OuvintesDoWebhookRegistry,
+    WhatsappDoAtendimentoRegistry,
+    EnvioDeAprovacaoService,
+  ],
 })
 export class CanaisModule {}

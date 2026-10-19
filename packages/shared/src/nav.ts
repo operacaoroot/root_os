@@ -130,7 +130,10 @@ export const NAV: NavItem[] = [
   { key: 'tarefas-todas', label: 'Tarefas', href: '/dia-a-dia', icon: 'CheckSquare', permission: 'tarefas.ver', secao: 'dia', modulo: 'trabalho' },
   // 19/10/2026: Pendências sai do menu — as tarefas estão em Tarefas, as aprovações na aba delas.
   { key: 'caixa', label: 'Pendências', href: '/caixa', icon: 'Inbox', permission: 'dashboard.ver', secao: 'dia', oculto: true },
-  { key: 'atendimento', label: 'Aprovações', href: '/atendimento', icon: 'MessagesSquare', permission: 'aprovacoes.ver', secao: 'dia', estado: 'parcial', parcial: 'a fila de aprovação funciona; a caixa de entrada por WhatsApp ainda não está disponível' },
+  { key: 'atendimento', label: 'Aprovações', href: '/atendimento', icon: 'MessagesSquare', permission: 'aprovacoes.ver', secao: 'dia' },
+  // 19/10/2026: a caixa de entrada por WhatsApp (adaptada do FinOps). Responder é R3:
+  // cada resposta espera a assinatura de outra pessoa na aba Aprovações, logo acima.
+  { key: 'conversas', label: 'Conversas', href: '/conversas', icon: 'MessageCircle', permission: 'atendimento.ver', secao: 'dia' },
   { key: 'agenda', label: 'Agenda', href: '/agenda', icon: 'CalendarDays', permission: 'dashboard.ver', secao: 'dia' },
 
   { key: 'contexto', label: 'Conhecimento da empresa', href: '/contexto', icon: 'Network', permission: 'obsidian.ver', secao: 'empresa', estado: 'parcial', parcial: 'o mapa e a página de Marca estão disponíveis; a aba Identidade ainda não está disponível' },

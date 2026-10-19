@@ -31,6 +31,6 @@ import { TarefasDoDiaService } from './tarefas-do-dia.service';
   imports: [AuditModule, MemoryModule],
   controllers: [WorkController, WorkFilesController, TarefasDoDiaController],
   providers: [WorkService, CheckoutDeTarefaService, WorkFilesService, TarefasDoDiaService],
-  exports: [CheckoutDeTarefaService, WorkService],
+  exports: [CheckoutDeTarefaService, WorkService, TarefasDoDiaService],
 })
 export class WorkModule {}

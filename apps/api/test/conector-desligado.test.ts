@@ -128,7 +128,7 @@ describe('o mapa capacidade → conector', () => {
    * conector que o desligamento não reconhece e que segue mandando coisa para
    * fora depois de alguém ter mandado parar.
    */
-  it('a união do catálogo é o que a catraca mede — 16 da base + 63 do delta, 8 repetidos', () => {
+  it('a união do catálogo é o que a catraca mede — 16 da base + 64 do delta, 8 repetidos', () => {
     /*
      * Trava a FONTE, não só o resultado: se alguém voltar a ler só o delta, o
      * número cai para o do delta e este caso avisa antes de as oito sumirem
@@ -154,10 +154,13 @@ describe('o mapa capacidade → conector', () => {
      * `youtube.video.enviar` e `youtube.video.publicar`, e a MD11
      * `instagram.resposta_privada.enviar` e `instagram.regra_de_resposta.pausar`.
      * Com a agenda: 63 no delta e 71 na união.
+     *
+     * A caixa de atendimento (19/10/2026) somou `atendimento.whatsapp.responder`,
+     * sem repetido: 64 no delta e 72 na união.
      */
     expect(lerCatalogo('politica-root.json')).toHaveLength(16);
-    expect(lerCatalogo('politica-marketing-os.json')).toHaveLength(63);
-    expect(capacidadesDoCatalogo()).toHaveLength(71);
+    expect(lerCatalogo('politica-marketing-os.json')).toHaveLength(64);
+    expect(capacidadesDoCatalogo()).toHaveLength(72);
     const soNaBase = lerCatalogo('politica-root.json')
       .map((c) => c.id)
       .filter((id) => !lerCatalogo('politica-marketing-os.json').some((d) => d.id === id));
@@ -198,7 +201,7 @@ describe('o mapa capacidade → conector', () => {
     expect(nasDuas, `declaradas duas vezes: ${nasDuas.join(', ')}`).toEqual([]);
   });
 
-  it('o ALCANCE do interruptor é medido, não estimado — 24 capacidades saem da casa', () => {
+  it('o ALCANCE do interruptor é medido, não estimado — 25 capacidades saem da casa', () => {
     /*
      * QUANTAS CAPACIDADES O INTERRUPTOR DE FATO ALCANÇA.
      *
@@ -220,7 +223,8 @@ describe('o mapa capacidade → conector', () => {
     // `instagram.resposta_privada.enviar` respondem pela chave `instagram`;
     // `youtube.video.enviar` e `youtube.video.publicar`, pela `youtube`.
     // Pausar a regra da DM e aprovar a semana ficam dentro do OS (null).
-    expect(comConector).toHaveLength(24);
+    // A caixa de atendimento somou `atendimento.whatsapp.responder`, pela `whatsapp`.
+    expect(comConector).toHaveLength(25);
     expect(CONECTOR_DA_CAPACIDADE['instagram.post.publicar']).toBe('instagram');
     expect(CONECTOR_DA_CAPACIDADE['instagram.comentario.ler']).toBe('instagram');
     expect(CONECTOR_DA_CAPACIDADE['instagram.resposta_privada.enviar']).toBe('instagram');
@@ -228,7 +232,7 @@ describe('o mapa capacidade → conector', () => {
     expect(CONECTOR_DA_CAPACIDADE['youtube.video.enviar']).toBe('youtube');
     expect(CONECTOR_DA_CAPACIDADE['youtube.video.publicar']).toBe('youtube');
     expect(CONECTOR_DA_CAPACIDADE['pauta.semana.aprovar']).toBeNull();
-    expect(capacidadesDoCatalogo()).toHaveLength(71);
+    expect(capacidadesDoCatalogo()).toHaveLength(72);
 
     // E `conectorDaCapacidade` concorda com o mapa, para os dois lados: o que
     // está declarado `null` e o que está em `SEM_INTERRUPTOR` devolve `null`.
