@@ -6,8 +6,11 @@
 # Dois bancos em DOIS containers, de propósito:
 #   db       o destino, no NOSSO esquema, o único que a API lê;
 #   staging  o dump de produção restaurado (dado real de cliente), numa rede
-#            só dele, sem rota a partir da API; quem o lê é o importador no host
-#            (homolog/importar-copia/), pela porta de loopback.
+#            só dele (internal, sem saída), SEM porta publicada: no Docker
+#            Desktop uma porta do host, mesmo em loopback, é alcançável de
+#            qualquer container por host.docker.internal (achado da revisão,
+#            homolog/revisao/copia-revisao.md). Quem o lê é o importador no host
+#            (homolog/importar-copia/comum.mjs), por `docker exec ... psql`.
 #
 # Subir:
 #   docker compose -p rootos-copia -f homolog/docker-compose.copia.yml --env-file homolog/.env.copia up -d
@@ -35,7 +38,7 @@ services:
       timeout: 5s
       retries: 5
 
-  # O dump de produção. Rede própria, sem a API; só loopback do host.
+  # O dump de produção. Rede própria e interna, sem a API e sem porta no host.
   staging:
     image: pgvector/pgvector:pg16
     container_name: rootos_copia_staging
@@ -44,8 +47,6 @@ services:
       POSTGRES_USER: ${STAGING_USER:-staging}
       POSTGRES_PASSWORD: ${STAGING_PASSWORD:?defina STAGING_PASSWORD em homolog/.env.copia}
       POSTGRES_DB: producao_staging
-    ports:
-      - "127.0.0.1:${STAGING_PORT:-5442}:5432"
     volumes:
       - rootos_copia_staging:/var/lib/postgresql/data
     networks: [rootos-copia-staging-net]
@@ -168,3 +169,4 @@ networks:
     name: rootos-copia-net
   rootos-copia-staging-net:
     name: rootos-copia-staging-net
+    internal: true
