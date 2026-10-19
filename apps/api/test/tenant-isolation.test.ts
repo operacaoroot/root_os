@@ -133,6 +133,7 @@
  * AVISO: a suíte ESCREVE no banco. Nunca aponte para produção.
  */
 
+import { createHash } from 'node:crypto';
 import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import path from 'node:path';
 
@@ -229,6 +230,26 @@ async function ins(
     `VALUES (${vals.join(', ')}) RETURNING "id"`;
   const r = await c.query(sql, Object.values(dados));
   return r.rows[0].id as string;
+}
+
+/** sha256 em hexadecimal — o formato que os CHECKs `~ '^[a-f0-9]{64}$'` cobram. */
+function hex64(texto: string): string {
+  return createHash('sha256').update(texto).digest('hex');
+}
+
+/**
+ * O hash que o BANCO calcula de um JSON (`app_json_canonico` + sha256).
+ *
+ * Pedido ao próprio Postgres, e não reimplementado aqui: os recibos locais e a
+ * agenda conferem esse hash por CHECK e no COMMIT, e uma segunda implementação
+ * da forma canônica em TypeScript divergiria em algum detalhe de escape.
+ */
+async function hashCanonico(c: PoolClient, valor: unknown): Promise<string> {
+  const r = await c.query<{ h: string }>(
+    "SELECT encode(sha256(convert_to(app_json_canonico($1::jsonb), 'UTF8')), 'hex') AS h",
+    [JSON.stringify(valor)],
+  );
+  return r.rows[0].h;
 }
 
 /** Vetor de 1536 dimensões, esparso e determinístico (sem chamar a OpenAI). */
@@ -439,6 +460,58 @@ const ALVOS: Alvo[] = [
   { tabela: 'OnboardingAta', escopo: 'filho', chaveSql: '"id"', nota: 'O registro da leitura da ata: hash, tamanho, quantos segredos foram mascarados, custo. Não guarda a transcrição — mas diz que houve reunião, quando e quanto custou.' },
   { tabela: 'OnboardingMarco', escopo: 'filho', chaveSql: '"id"', nota: 'A linha do tempo do trilho, com as mensagens prontas de lembrete (o link dentro). Ler a alheia é ler o link do cliente da outra.' },
 
+  // ---- entregas da produção que vieram no merge de 19/10/2026 ------------
+  // As 33 abaixo chegaram com RLS + FORCE e policy no banco, mas sem semente
+  // aqui: a catraca do catálogo reprovou, e é ela que manda medir. Várias são
+  // HISTÓRIA IMUTÁVEL por gatilho (recibo, protocolo de movimento, exercício):
+  // a semente monta a linha pelo mesmo contrato que o banco cobra da aplicação
+  // (CHECK, chave composta com orgId, gatilho de amarração e de consistência
+  // no COMMIT), e a limpeza delas é a única que pula gatilho — ver
+  // `HISTORIA_IMUTAVEL` no `afterAll`.
+
+  // procedimento local do agente (agenda e ferramenta local)
+  { tabela: 'AgentLocalAgenda', escopo: 'tenant', chaveSql: '"id"', nota: 'A agenda local de um agente: quem a criou e por qual pedido. É append-only; LER a da outra empresa revela que agente ela programou e quem programou. A policy só tem leitura e inserção — inserir com o orgId alheio seria plantar agenda no agente de outra casa.' },
+  { tabela: 'AgentLocalAgendaRevision', escopo: 'tenant', chaveSql: '"id"', nota: 'Cada versão da agenda, com o SNAPSHOT inteiro da configuração: o pedido em texto, a nota da memória escolhida (id, versão, hash, título), o procedimento e o responsável. Ler a da outra é ler o que o agente dela vai perguntar e a que fonte.' },
+  { tabela: 'AgentLocalAgendaDispatch', escopo: 'tenant', chaveSql: '"id"', nota: 'Cada disparo manual da agenda: quem disparou, de qual revisão e em qual sessão. Ler o da outra empresa é ver quando e por quem o agente dela rodou.' },
+  { tabela: 'AgentLocalOperation', escopo: 'tenant', chaveSql: '"id"', nota: 'O recibo de cada operação local (criar, editar, mudar estado e disparar agenda; estado do agente), com os ids da auditoria e um retrato dos eventos do RASTRO dentro do corpo. Vazar o recibo é vazar pedaço do rastro alheio sem passar pela policy do EventLog.' },
+  { tabela: 'AgentLocalToolReceipt', escopo: 'tenant', chaveSql: '"id"', nota: 'O recibo da ferramenta local (busca literal na memória): a pergunta, o pedido em texto, a nota escolhida, o procedimento e o resultado. Ler o da outra empresa é ler a consulta e o trecho da memória dela que o agente viu.' },
+
+  // memória: movimento de nota no vault e coleções capturadas
+  { tabela: 'ContextKeyClaim', escopo: 'tenant', chaveSql: '"id"', nota: 'Quem é dono de cada chave `vault:` da memória — o índice de nomes das notas. LER o da outra é listar o vault dela; ESCREVER é reservar uma chave alheia, e o movimento de nota da outra empresa trava no COMMIT.' },
+  { tabela: 'ContextCollectionSelection', escopo: 'tenant', chaveSql: '"id"', nota: 'A captura de uma coleção do vault (geração, marca antes e depois, digest dos membros). Ler a da outra é saber quando e o que ela sincronizou; é a âncora que o movimento e a ferramenta local conferem.' },
+  { tabela: 'ContextCollectionMember', escopo: 'tenant', chaveSql: '"id"', nota: 'Cada arquivo de uma captura do vault: o CAMINHO em bytes, os hashes e os metadados (título, tipo, etiquetas). Ler o da outra empresa é ler a árvore de pastas e os títulos do vault dela.' },
+  { tabela: 'ContextMovementIntent', escopo: 'tenant', chaveSql: '"id"', nota: 'A intenção de mover uma nota no vault: de onde, para onde, o motivo escrito e as versões envolvidas. Ler a da outra é ler a reorganização que ela está fazendo e por quê.' },
+  { tabela: 'ContextMovementCandidate', escopo: 'tenant', chaveSql: '"id"', nota: 'A captura candidata que prova o movimento: a seleção nova, a marca e o digest. Linha alheia visível deixaria um movimento de uma empresa casar com a captura da outra.' },
+  { tabela: 'ContextMovementReceipt', escopo: 'tenant', chaveSql: '"id"', nota: 'O recibo do movimento confirmado ou cancelado, com a versão nova, o alias e o evento do RASTRO. Ler o da outra é ler o histórico de reorganização da memória dela.' },
+  { tabela: 'ContextAlias', escopo: 'tenant', chaveSql: '"id"', nota: 'O endereço antigo de uma nota movida, com o caminho em bytes. É o que mantém link velho funcionando — e o que revela onde a nota da outra empresa morava.' },
+  { tabela: 'DemoInstallation', escopo: 'tenant', chaveSql: '"id"', nota: 'O recibo da instalação do conjunto de demonstração: quem instalou, os hashes do manifesto e da fonte e os objetos criados. Escrever na da outra faria a instalação alheia parecer feita (é por ela que a reinstalação é recusada).' },
+
+  // comercial e financeiro: o exercício que vira obrigação
+  { tabela: 'AcordoComercial', escopo: 'tenant', chaveSql: '"id"', nota: 'Os acordos comerciais da casa: cliente, produto, VALOR e se é pagante, permuta, repasse ou parceria. Ler o da outra é ler quanto cada cliente dela paga e quem não paga; escrever é reescrever a carteira alheia.' },
+  { tabela: 'CommercialExerciseProject', escopo: 'tenant', chaveSql: '"id"', nota: 'O projeto que nasce do aceite da proposta: o lead, o evento do aceite, a proposta, os hashes do documento e das condições e a tarefa. É o contrato fechado da outra empresa, em ponteiros.' },
+  { tabela: 'CommercialExerciseObligation', escopo: 'tenant', chaveSql: '"id"', nota: 'A obrigação financeira do projeto, presa à transação e ao retrato das condições. Ler a da outra é ver o que ela vai cobrar de quem.' },
+  { tabela: 'CommercialExerciseRequest', escopo: 'tenant', chaveSql: '"id"', nota: 'O diário de idempotência da ponte comercial: quem pediu o quê e a RESPOSTA guardada. Linha alheia visível faria o pedido de uma empresa receber, como repetição, a resposta da outra.' },
+  { tabela: 'CommercialExerciseDecision', escopo: 'tenant', chaveSql: '"id"', nota: 'A decisão sobre a obrigação comercial: aprovar ou recusar, o motivo escrito e a alçada. Ler a da outra é ler a negociação dela; inserir com o orgId alheio seria decidir por ela.' },
+  { tabela: 'FinanceExerciseObligation', escopo: 'tenant', chaveSql: '"id"', nota: 'A obrigação do exercício financeiro: a transação prevista, o contrato e o retrato do que foi conferido. Ler a da outra é ler as contas a pagar e receber dela antes de virarem lançamento.' },
+  { tabela: 'FinanceExerciseDecision', escopo: 'tenant', chaveSql: '"id"', nota: 'A decisão do exercício financeiro (aprovar ou recusar, motivo, alçada). Inserir com o orgId alheio seria aprovar despesa de outra empresa.' },
+
+  // editorial e marketing
+  { tabela: 'EditorialMaterial', escopo: 'tenant', chaveSql: '"id"', nota: 'O material editorial preso a uma tarefa, com a etapa de liberação e a versão escolhida. Ler o da outra é ver o que ela está produzindo.' },
+  { tabela: 'EditorialVersion', escopo: 'tenant', chaveSql: '"id"', nota: 'Cada versão do texto editorial: título, corpo e arquivos. É o conteúdo da outra empresa ANTES de sair, que é o que mais dói vazar.' },
+  { tabela: 'EditorialDecision', escopo: 'tenant', chaveSql: '"id"', nota: 'A aprovação ou recusa editorial de uma versão, com o motivo e a alçada. Escrever na da outra é aprovar texto alheio para publicação.' },
+  { tabela: 'EditorialProduction', escopo: 'tenant', chaveSql: '"id"', nota: 'A produção final: o texto aprovado copiado para sair, com título, corpo e arquivos. Ler a da outra é ler a peça pronta dela antes da publicação.' },
+  { tabela: 'MarketingAccountConfig', escopo: 'tenant', chaveSql: '"id"', nota: 'A conta de publicação configurada: a conexão, o @, o dono e quem opera. Escrever na da outra troca quem publica pela empresa alheia.' },
+  { tabela: 'MarketingPreparation', escopo: 'tenant', chaveSql: '"id"', nota: 'A peça preparada para publicar: conta, horário, versão e decisão editorial. Ler a da outra é saber o que ela vai postar e quando.' },
+
+  // trabalho e casa
+  { tabela: 'WorkArea', escopo: 'tenant', chaveSql: '"id"', nota: 'As áreas do Trabalho (nome, cor, ordem). Diz como a outra empresa divide o trabalho dela; escrever é renomear ou reordenar a árvore alheia.' },
+  { tabela: 'WorkContextSource', escopo: 'tenant', chaveSql: '"id"', nota: 'A nota da memória ligada a uma tarefa como fonte (chave, versão, hash, título). Ler a da outra é ler que contexto ela deu para cada tarefa.' },
+  { tabela: 'ReuniaoDoCartao', escopo: 'tenant', chaveSql: '"id"', nota: 'A reunião anexada ao cartão: título, data, fonte e a TRANSCRIÇÃO inteira (até 2 MB de fala). É a conversa da outra empresa com o cliente dela. O orgId vem do insert e o gatilho `ReuniaoDoCartao_orgId_do_cartao` confere que o cartão é da mesma empresa.' },
+  { tabela: 'AnaliseLeitura', escopo: 'tenant', chaveSql: '"id"', nota: 'O texto da leitura do dia gerada para a empresa. Ler a da outra é ler a análise que ela recebeu sobre o próprio negócio.' },
+  { tabela: 'CofreItem', escopo: 'tenant', chaveSql: '"id"', nota: 'O COFRE da casa: título, onde, usuário, segredo e notas cifrados, e o documento guardado. O valor é cifrado, mas ler já entrega o mapa de que acessos a outra empresa guarda e onde; apagar é sumir com a senha dela.' },
+  { tabela: 'CofreSenha', escopo: 'tenant', chaveSql: '"id"', nota: 'O hash da senha-mestra do cofre de cada pessoa, com tentativas e bloqueio. Ler o da outra entrega o hash para ataque fora do sistema; escrever zera o bloqueio ou troca a senha-mestra de alguém de outra casa.' },
+  { tabela: 'CofreSessao', escopo: 'tenant', chaveSql: '"id"', nota: 'A sessão aberta do cofre (hash do token e validade). Escrever na da outra estende ou abre a sessão de cofre de alguém de outra casa.' },
+
   // ---- junções implícitas do Prisma (não têm id) ------------------------
   { tabela: '_UserRoles', escopo: 'juncao', chaveSql: `"A" || '|' || "B"`, nota: 'A=Role.id, B=User.id. Sem policy dá para conceder Role de outra org — escalação cross-tenant.' },
   { tabela: '_RolePermissions', escopo: 'juncao', chaveSql: `"A" || '|' || "B"`, nota: 'A=Permission.id (GLOBAL), B=Role.id (TENANT). A policy vai em B, nunca em A.' },
@@ -615,12 +688,23 @@ async function semear(c: PoolClient, rotulo: 'A' | 'B', vec: string): Promise<vo
   reg('Agent', agentId);
   s.ref.agentId = agentId;
 
-  reg('Sop', await ins(c, 'Sop', {
-    id: crypto.randomUUID(), orgId, agentId,
+  // `ferramentaLocal` é o perfil da ferramenta local (merge de 19/10/2026): o
+  // recibo e a agenda locais, semeados no fim de `semear`, conferem no COMMIT
+  // o retrato deste procedimento — por isso os campos ficam em constantes.
+  const sop = {
     proposito: `Procedimento operacional da org ${rotulo}`, gatilho: 'manual',
     passos: [`passo exclusivo da org ${rotulo}`], definicaoDePronto: 'entregue ao cliente',
-    atualizadoEm: agora,
-  }, { passos: 'text[]' }));
+    ferramentaLocal: {
+      schemaVersion: 1, capacidade: 'contexto.memoria.buscar', modo: 'literal_versao_escolhida_v1',
+      consulta: 'pedido.q', limit: 3, maxFonteBytes: 262144, maxTrechoPontos: 300,
+    },
+  };
+  const sopId = await ins(c, 'Sop', {
+    id: crypto.randomUUID(), orgId, agentId,
+    proposito: sop.proposito, gatilho: sop.gatilho, passos: sop.passos, definicaoDePronto: sop.definicaoDePronto,
+    ferramentaLocal: JSON.stringify(sop.ferramentaLocal), atualizadoEm: agora,
+  }, { passos: 'text[]', ferramentaLocal: 'jsonb' });
+  reg('Sop', sopId);
 
   const sessionId = await ins(c, 'Session', {
     id: crypto.randomUUID(), orgId, agentId, canal: 'web',
@@ -759,10 +843,11 @@ async function semear(c: PoolClient, rotulo: 'A' | 'B', vec: string): Promise<vo
   reg('Lead', leadId);
   s.ref.leadId = leadId;
 
-  reg('LeadEvent', await ins(c, 'LeadEvent', {
+  const leadEventId = await ins(c, 'LeadEvent', {
     id: crypto.randomUUID(), orgId, leadId, type: 'formulario',
     payload: JSON.stringify({ cpf: `000.000.000-${rotulo === 'A' ? '01' : '02'}` }),
-  }));
+  });
+  reg('LeadEvent', leadEventId);
 
   reg('PixelEvent', await ins(c, 'PixelEvent', {
     id: crypto.randomUUID(), orgId, eventId: `evt_${suf}`, sessionId: `sess_${suf}`,
@@ -828,13 +913,14 @@ async function semear(c: PoolClient, rotulo: 'A' | 'B', vec: string): Promise<vo
   reg('ContextItem', contextoId);
   s.ref.contextoId = contextoId;
 
-  reg('ContextItemVersion', await ins(c, 'ContextItemVersion', {
+  const contextoVersaoId = await ins(c, 'ContextItemVersion', {
     id: crypto.randomUUID(), orgId, itemId: contextoId, versao: 1, mudanca: 'criacao',
     kind: 'regra', title: `Regra da casa ${rotulo}`,
     body: `Regra secreta da org ${rotulo} (${MARCA}): desconto máximo, alçada e exceções.`,
     sourceType: 'vault', sourceRef: `regras/${suf}.md`, contentHash: `hash_${suf}`,
     motivo: `semente de isolamento ${rotulo}`, autorTipo: 'user', autorId: userId,
-  }));
+  });
+  reg('ContextItemVersion', contextoVersaoId);
 
   reg('ContentItem', await ins(c, 'ContentItem', {
     id: crypto.randomUUID(), orgId, source: 'clickup', externalId: `ci_${suf}`,
@@ -1342,6 +1428,516 @@ async function semear(c: PoolClient, rotulo: 'A' | 'B', vec: string): Promise<vo
     chamadas: rotulo === 'A' ? 3 : 40, chamadasSemPreco: 0, cortes: 0,
     criadoEm: agora, atualizadoEm: agora,
   }));
+
+  await semearEntregasDoMerge(c, rotulo, {
+    orgId, suf, userId, agentId, sopId, sop, leadId, leadEventId, contextoId, contextoVersaoId,
+    contaId, contratoId, lancId, tarefaId, statusId, conexaoId,
+  });
+}
+
+/**
+ * As 33 tabelas que chegaram no merge de 19/10/2026 (produção: entregas do
+ * Pedro de 14/10 e do Lucas até 19/10), uma linha por empresa.
+ *
+ * Fica separado de `semear` porque metade delas não aceita linha avulsa: são
+ * PROTOCOLOS, e o banco confere o protocolo inteiro — por CHECK, por chave
+ * composta com orgId e por gatilho de consistência que só roda no COMMIT. Uma
+ * linha que o banco aceitasse fora do protocolo seria prova de outra coisa.
+ * Então a semente percorre o caminho que a aplicação percorre:
+ *
+ *  · ferramenta local: sessão com os dois passos fixos, auditoria da ação e o
+ *    recibo com a entrada canônica e o hash dela;
+ *  · agenda local: criar (revisão 1, pausada) → habilitar (revisão 2) →
+ *    disparar, cada passo com o recibo da operação que o causou;
+ *  · movimento de nota no vault: captura projetada → intenção pendente com a
+ *    reserva do destino → captura nova → candidata → confirmação (a chave antiga
+ *    vira alias, a reserva vira canônica, a nota troca de chave) → recibo.
+ *
+ * A ORDEM DOS `reg` é a ordem inversa da limpeza, e respeita as chaves
+ * estrangeiras na escala de tabela, menos dentro do protocolo do movimento
+ * (seleção ↔ intenção se referenciam): ali a limpeza roda sem gatilho nenhum,
+ * ver `HISTORIA_IMUTAVEL`.
+ */
+async function semearEntregasDoMerge(
+  c: PoolClient,
+  rotulo: 'A' | 'B',
+  p: {
+    orgId: string; suf: string; userId: string; agentId: string;
+    sopId: string; sop: { proposito: string; gatilho: string; passos: string[]; definicaoDePronto: string; ferramentaLocal: Record<string, unknown> };
+    leadId: string; leadEventId: string; contextoId: string; contextoVersaoId: string;
+    contaId: string; contratoId: string; lancId: string; tarefaId: string; statusId: string; conexaoId: string;
+  },
+): Promise<void> {
+  const s = sementes[rotulo];
+  const reg = (t: string, k: string) => registra(s, t, k);
+  const { orgId, suf, userId, agentId, sopId, sop } = p;
+  const agentSlug = `agente_${suf}`;
+  const agora = new Date();
+  // Instante fixo, em UTC e sem fuso: as colunas são `timestamp` sem zona e os
+  // recibos conferem `to_char(criadaEm, 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')`. Um
+  // `Date` iria pelo fuso da máquina e o recibo divergiria por três horas.
+  const isoZ = new Date(Math.floor(Date.now())).toISOString();
+  const ts = isoZ.slice(0, -1);
+  const jsonb = (v: unknown) => JSON.stringify(v);
+
+  // --- apoio: a auditoria e o evento do RASTRO que os recibos citam ---------
+  const sessaoFerramentaId = crypto.randomUUID();
+  const auditoriaLocalId = await ins(c, 'AuditLog', {
+    id: crypto.randomUUID(), orgId, actorType: 'user', actorId: userId,
+    action: 'agent.procedimento_ferramenta_local', entityType: 'session', entityId: sessaoFerramentaId,
+    after: jsonb({ marca: MARCA, org: rotulo }),
+  });
+  reg('AuditLog', auditoriaLocalId);
+  const auditIds = [auditoriaLocalId];
+
+  const eventoLocal = { id: crypto.randomUUID(), seq: 2, hash: hex64(`evento_${suf}`), tipo: 'isolamento.procedimento_local', ocorreuEm: isoZ };
+  reg('EventLog', await ins(c, 'EventLog', {
+    id: eventoLocal.id, orgId, seq: eventoLocal.seq, tipo: eventoLocal.tipo, actorType: 'user', actorId: userId,
+    hash: eventoLocal.hash, ocorreuEm: ts, retencaoAte: new Date(Date.now() + 86_400_000),
+    payload: jsonb({ marca: MARCA, org: rotulo }),
+  }));
+  const eventSnapshot = [eventoLocal];
+
+  // --- a nota que a ferramenta e a agenda locais leem -----------------------
+  // De OPERADOR e não do vault: a origem `vault` da ferramenta local só vale na
+  // empresa de slug `root` (gatilho `tool_local_origin_commit`).
+  const notaLocal = {
+    titulo: `Nota local da org ${rotulo}`, corpo: `Regra que o agente da org ${rotulo} consulta (${MARCA}).`,
+    hash: hex64(`nota_local_${suf}`), chave: `nota:local-${suf}`,
+  };
+  const notaLocalId = await ins(c, 'ContextItem', {
+    id: crypto.randomUUID(), orgId, chave: notaLocal.chave, kind: 'nota', title: notaLocal.titulo, body: notaLocal.corpo,
+    sourceType: 'operador', contentHash: notaLocal.hash, versao: 1, atualizadoEm: agora,
+  });
+  reg('ContextItem', notaLocalId);
+  const notaLocalVersaoId = await ins(c, 'ContextItemVersion', {
+    id: crypto.randomUUID(), orgId, itemId: notaLocalId, versao: 1, mudanca: 'criacao', kind: 'nota',
+    title: notaLocal.titulo, body: notaLocal.corpo, sourceType: 'operador', contentHash: notaLocal.hash,
+    autorTipo: 'user', autorId: userId,
+  });
+  reg('ContextItemVersion', notaLocalVersaoId);
+
+  const configLocal = await c.query<{ h: string }>(
+    "SELECT encode(sha256(convert_to(tool_local_config_text($1::jsonb), 'UTF8')), 'hex') AS h",
+    [jsonb(sop.ferramentaLocal)],
+  );
+  const toolConfigHash = configLocal.rows[0].h;
+  const sopSnapshot = {
+    id: sopId, versao: 1, proposito: sop.proposito, gatilho: sop.gatilho, passos: sop.passos,
+    definicaoDePronto: sop.definicaoDePronto, observacoes: null, ferramentaLocal: sop.ferramentaLocal, configHash: toolConfigHash,
+  };
+
+  // --- ferramenta local: sessão, dois passos e o recibo ---------------------
+  // `recusada` (agente ainda `planejado`): é o ramo do recibo sem resultado, e o
+  // que importa medir aqui é a LINHA, não o resultado da busca.
+  const pedidoFerramenta = crypto.randomUUID();
+  const reciboFerramentaId = crypto.randomUUID();
+  const passoPedidoId = crypto.randomUUID();
+  const passoFinalId = crypto.randomUUID();
+  reg('Session', await ins(c, 'Session', {
+    id: sessaoFerramentaId, orgId, agentId, canal: 'web', canalRef: `procedimento-local:${pedidoFerramenta}`,
+    solicitanteId: userId, solicitanteRotulo: `Usuário ${rotulo}`,
+    pedido: 'Busca local literal em versão escolhida', resposta: 'Resultado disponível no procedimento de ferramenta local.',
+    status: 'recusada', passos: 2,
+  }));
+  const entrada = {
+    requestId: pedidoFerramenta, pedido: `Pedido privado da org ${rotulo}`, q: 'regra', limit: 3,
+    itemId: notaLocalId, versionId: notaLocalVersaoId, contentHash: notaLocal.hash,
+    expectedItemVersion: 1, expectedSopVersion: 1, expectedToolConfigHash: toolConfigHash,
+  };
+  const inputFerramenta = JSON.stringify({
+    contrato: 3, orgId, actorId: userId, agentId, slug: agentSlug,
+    capacidade: 'contexto.memoria.buscar', modo: 'literal_versao_escolhida_v1', input: entrada,
+  });
+  const fpFerramenta = hex64(inputFerramenta);
+  reg('SessionStep', await ins(c, 'SessionStep', {
+    id: passoPedidoId, orgId, sessionId: sessaoFerramentaId, ordem: 1, tipo: 'pedido',
+    payload: jsonb({ tipo: 'procedimento_ferramenta_local', entradaContrato: 3, receiptId: reciboFerramentaId, requestId: pedidoFerramenta, inputFingerprint: fpFerramenta }),
+  }));
+  reg('SessionStep', await ins(c, 'SessionStep', {
+    id: passoFinalId, orgId, sessionId: sessaoFerramentaId, ordem: 2, tipo: 'resultado',
+    argsResumo: 'Consulta literal local', resultadoResumo: 'Recibo disponível no procedimento de ferramenta local.',
+    payload: jsonb({ receiptId: reciboFerramentaId, resultado: null }), args: jsonb(entrada),
+  }));
+  const fonteEscolhida = {
+    itemId: notaLocalId, versionId: notaLocalVersaoId, versao: 1, contentHash: notaLocal.hash, chave: notaLocal.chave,
+    colecao: 'manual_local', title: notaLocal.titulo, sourceType: 'operador', sourceRef: null,
+  };
+  const reciboFerramenta = {
+    schemaVersion: 1, tipo: 'procedimento_ferramenta_local', entradaContrato: 3, id: reciboFerramentaId,
+    escopo: { orgId, actorId: userId, agentId, agentSlug }, requestId: pedidoFerramenta, sessionId: sessaoFerramentaId,
+    status: 'recusada', entrada, inputCanonico: inputFerramenta, inputFingerprint: fpFerramenta,
+    sop: sopSnapshot, fonteEscolhida, passoPedidoId, passoFinalId, auditIds, resultado: null, resultHash: null,
+    consumoModelo: { origem: 'nenhuma_chamada_de_modelo', provider: null, modeloUsado: null, tokensIn: null, tokensOut: null, custoExternoUsd: 0, custoMaquinaMedido: false },
+    ferramentaChamada: false, fonteConsumida: null, motivoCode: 'agente_nao_ativo', criadaEm: isoZ, encerradaEm: isoZ,
+  };
+  const reciboFerramentaTexto = JSON.stringify(reciboFerramenta);
+  reg('AgentLocalToolReceipt', await ins(c, 'AgentLocalToolReceipt', {
+    id: reciboFerramentaId, orgId, actorId: userId, agentId, agentSlug, requestId: pedidoFerramenta, sessionId: sessaoFerramentaId,
+    capacidade: 'contexto.memoria.buscar', modo: 'literal_versao_escolhida_v1', status: 'recusada',
+    inputCanonico: inputFerramenta, entrada: jsonb(entrada), inputFingerprint: fpFerramenta,
+    sopId, sopVersion: 1, sopSnapshot: jsonb(sopSnapshot), toolConfigHash,
+    itemId: notaLocalId, versionId: notaLocalVersaoId, versionNo: 1, contentHash: notaLocal.hash, sourceSnapshot: jsonb(fonteEscolhida),
+    passoPedidoId, passoFinalId, auditIds, receiptCanonico: reciboFerramentaTexto, receipt: reciboFerramentaTexto,
+    receiptHash: hex64(reciboFerramentaTexto), criadaEm: ts, encerradaEm: ts,
+  }, { auditIds: 'text[]' }));
+
+  // --- agenda local: criar → habilitar → disparar --------------------------
+  const agendaId = crypto.randomUUID();
+  const configuracao = {
+    schemaVersion: 1, automatico: false, ferramenta: 'contexto.memoria.buscar', orgId, agentId, agendaId,
+    nome: `Agenda ${rotulo}`, responsavelId: userId, modeloConfigurado: null,
+    pedido: {
+      pedido: `Pedido agendado privado da org ${rotulo}`, itemId: notaLocalId, versionId: notaLocalVersaoId,
+      contentHash: notaLocal.hash, expectedItemVersion: 1, expectedSopVersion: 1,
+    },
+    procedimento: { id: sopId, versao: 1 },
+    fonte: {
+      itemId: notaLocalId, versionId: notaLocalVersaoId, versao: 1, contentHash: notaLocal.hash, expectedItemVersion: 1,
+      title: notaLocal.titulo, sourceType: 'operador', sourceRef: null,
+    },
+  };
+  const snapshotHash = await hashCanonico(c, configuracao);
+  const operacao = async (o: {
+    tipo: 'agenda_criar' | 'agenda_estado' | 'agenda_disparar'; requestId: string; fingerprint: string;
+    revisionId: string; extra: Record<string, unknown>; sessionId?: string; dispatchId?: string;
+  }) => {
+    const id = crypto.randomUUID();
+    const receipt = {
+      schemaVersion: 1, operationId: id, requestId: o.requestId, tipo: o.tipo,
+      escopo: { orgId, actorId: userId, agentId }, auditIds, eventSnapshot, confirmadoEm: isoZ, ...o.extra,
+    };
+    reg('AgentLocalOperation', await ins(c, 'AgentLocalOperation', {
+      id, orgId, actorId: userId, agentId, requestId: o.requestId, tipo: o.tipo, inputFingerprint: o.fingerprint,
+      agendaId, revisionId: o.revisionId, sessionId: o.sessionId ?? null, dispatchId: o.dispatchId ?? null,
+      receipt: jsonb(receipt), receiptHash: await hashCanonico(c, receipt), auditIds, eventSnapshot: jsonb(eventSnapshot),
+      criadaEm: ts,
+    }, { auditIds: 'text[]' }));
+  };
+  const revisao = async (r: { numero: number; tipo: string; estado: string; requestId: string; fingerprint: string }) => {
+    const id = crypto.randomUUID();
+    reg('AgentLocalAgendaRevision', await ins(c, 'AgentLocalAgendaRevision', {
+      id, orgId, agendaId, agentId, numero: r.numero, estado: r.estado, tipo: r.tipo, nome: configuracao.nome,
+      pedido: configuracao.pedido.pedido, itemId: notaLocalId, versionId: notaLocalVersaoId, sourceVersionNumber: 1,
+      sourceHash: notaLocal.hash, expectedItemVersion: 1, sopId, sopVersion: 1, responsavelId: userId,
+      configuracaoSnapshot: jsonb(configuracao), snapshotHash, actorId: userId, requestId: r.requestId,
+      inputFingerprint: r.fingerprint, criadaEm: ts,
+    }));
+    return id;
+  };
+  const resumoDaRevisao = (id: string, numero: number, estado: string) => ({
+    agendaId, revisionId: id, numero, estado, snapshotHash, configuracao, motivo: null, criadaEm: isoZ,
+  });
+
+  const pedidoCriar = crypto.randomUUID();
+  const fpCriar = hex64(`agenda_criar_${suf}`);
+  reg('AgentLocalAgenda', await ins(c, 'AgentLocalAgenda', {
+    id: agendaId, orgId, agentId, criadaPorId: userId, criacaoRequestId: pedidoCriar, criacaoFingerprint: fpCriar, criadaEm: ts,
+  }));
+  const revisao1 = await revisao({ numero: 1, tipo: 'agenda_criar', estado: 'pausada', requestId: pedidoCriar, fingerprint: fpCriar });
+  await operacao({
+    tipo: 'agenda_criar', requestId: pedidoCriar, fingerprint: fpCriar, revisionId: revisao1,
+    extra: { revisao: resumoDaRevisao(revisao1, 1, 'pausada'), anterior: null },
+  });
+
+  const pedidoHabilitar = crypto.randomUUID();
+  const fpHabilitar = hex64(`agenda_estado_${suf}`);
+  const revisao2 = await revisao({ numero: 2, tipo: 'agenda_estado', estado: 'habilitada_manual', requestId: pedidoHabilitar, fingerprint: fpHabilitar });
+  await operacao({
+    tipo: 'agenda_estado', requestId: pedidoHabilitar, fingerprint: fpHabilitar, revisionId: revisao2,
+    extra: { revisao: resumoDaRevisao(revisao2, 2, 'habilitada_manual'), anterior: { revisionId: revisao1, numero: 1, estado: 'pausada' } },
+  });
+
+  const pedidoDisparo = crypto.randomUUID();
+  const fpDisparo = hex64(`agenda_disparar_${suf}`);
+  const sessaoDisparoId = await ins(c, 'Session', {
+    id: crypto.randomUUID(), orgId, agentId, canal: 'web', canalRef: `procedimento-local:${pedidoDisparo}`,
+    solicitanteId: userId, solicitanteRotulo: `Usuário ${rotulo}`, pedido: configuracao.pedido.pedido,
+  });
+  reg('Session', sessaoDisparoId);
+  const disparoId = crypto.randomUUID();
+  reg('AgentLocalAgendaDispatch', await ins(c, 'AgentLocalAgendaDispatch', {
+    id: disparoId, orgId, agendaId, agentId, revisionId: revisao2, actorId: userId, requestId: pedidoDisparo,
+    inputFingerprint: fpDisparo, sessionId: sessaoDisparoId, criadaEm: ts,
+  }));
+  await operacao({
+    tipo: 'agenda_disparar', requestId: pedidoDisparo, fingerprint: fpDisparo, revisionId: revisao2,
+    sessionId: sessaoDisparoId, dispatchId: disparoId,
+    extra: {
+      agendaId, revisionId: revisao2, agendaVersion: 2, snapshotHash, dispatchId: disparoId, sessionId: sessaoDisparoId,
+      entradaConfirmada: { ...configuracao.pedido, requestId: pedidoDisparo }, estadoNoCompromisso: 'rodando',
+    },
+  });
+
+  // --- movimento de nota no vault, confirmado -------------------------------
+  const colecao = `vault:iso-${suf}`;
+  const origemRef = `mov/${suf}/origem.md`;
+  const destinoRef = `mov/${suf}/destino.md`;
+  const origemChave = `vault:${origemRef}`;
+  const destinoChave = `vault:${destinoRef}`;
+  const notaMovida = { titulo: `Nota movida da org ${rotulo}`, corpo: `Conteúdo da nota movida da org ${rotulo} (${MARCA}).`, hash: hex64(`nota_movida_${suf}`) };
+  const membroMeta = { sourceRef: origemRef, title: notaMovida.titulo, kind: 'nota', tags: [] };
+
+  // Nota de chave `vault:` ganha a reivindicação canônica pelo gatilho
+  // `context_movement_item_claim` — a de `contextoId`, semeada lá em cima, também.
+  const notaMovidaId = await ins(c, 'ContextItem', {
+    id: crypto.randomUUID(), orgId, chave: origemChave, kind: 'nota', title: notaMovida.titulo, body: notaMovida.corpo,
+    sourceType: 'vault', sourceRef: origemRef, contentHash: notaMovida.hash, versao: 1, atualizadoEm: agora,
+  });
+  reg('ContextItem', notaMovidaId);
+  const versao1Id = await ins(c, 'ContextItemVersion', {
+    id: crypto.randomUUID(), orgId, itemId: notaMovidaId, versao: 1, mudanca: 'criacao', kind: 'nota',
+    title: notaMovida.titulo, body: notaMovida.corpo, sourceType: 'vault', sourceRef: origemRef,
+    contentHash: notaMovida.hash, autorTipo: 'user', autorId: userId,
+  });
+  reg('ContextItemVersion', versao1Id);
+
+  // A captura de onde a nota sai: classificada, associada e projetada.
+  const marcaAntiga = { marca: `antes_${suf}_1` };
+  const digestAntigo = hex64(`digest_${suf}_1`);
+  const selecaoAntigaId = await ins(c, 'ContextCollectionSelection', {
+    id: crypto.randomUUID(), orgId, collectionId: colecao, generation: 1, marcaAntes: jsonb(marcaAntiga),
+    estado: 'classificado', membershipDigest: digestAntigo,
+  });
+  reg('ContextCollectionSelection', selecaoAntigaId);
+  const membroAntigoId = await ins(c, 'ContextCollectionMember', {
+    id: crypto.randomUUID(), orgId, selectionId: selecaoAntigaId, chave: origemChave, caminhoBytes: Buffer.from(origemRef, 'utf8'),
+    blobGit: hex64(`blob_${suf}_1`).slice(0, 40), hashArquivo: hex64(`arquivo_${suf}_1`), contentHash: notaMovida.hash,
+    metadataHash: hex64(`meta_${suf}_1`), metadata: jsonb(membroMeta), estado: 'classificado',
+  });
+  reg('ContextCollectionMember', membroAntigoId);
+  await c.query(
+    `UPDATE "ContextCollectionMember" SET estado = 'projetado', "itemId" = $2, "versionId" = $3, versao = 1 WHERE id = $1`,
+    [membroAntigoId, notaMovidaId, versao1Id],
+  );
+  await c.query(
+    `UPDATE "ContextCollectionSelection" SET estado = 'projetado', "marcaDepois" = "marcaAntes", "verificadaEm" = $2 WHERE id = $1`,
+    [selecaoAntigaId, ts],
+  );
+
+  // A intenção, com a reserva do destino.
+  const pedidoMovimento = crypto.randomUUID();
+  const intencaoId = await ins(c, 'ContextMovementIntent', {
+    id: crypto.randomUUID(), orgId, actorId: userId, itemId: notaMovidaId, collectionId: colecao, requestId: pedidoMovimento,
+    inputFingerprint: hex64(`mov_input_${suf}`), serverMarkHash: hex64(`mov_server_${suf}`), intentMarkHash: hex64(`mov_intent_${suf}`),
+    currentVersionId: versao1Id, currentVersionNo: 1, expectedItemVersion: 1, currentContentHash: notaMovida.hash,
+    selectedVersionId: versao1Id, selectedVersionNo: 1, selectedContentHash: notaMovida.hash,
+    oldSelectionId: selecaoAntigaId, oldMemberId: membroAntigoId, oldGeneration: 1, oldMembershipDigest: digestAntigo,
+    oldMarca: jsonb(marcaAntiga), originKey: origemChave, originPathBytes: Buffer.from(origemRef, 'utf8'), originSourceRef: origemRef,
+    destinationKey: destinoChave, destinationPathBytes: Buffer.from(destinoRef, 'utf8'), destinationSourceRef: destinoRef,
+    motivo: `Reorganização privada da org ${rotulo}`, creationAuditIds: auditIds, estado: 'pendente', revision: 1,
+  }, { creationAuditIds: 'text[]' });
+  reg('ContextMovementIntent', intencaoId);
+
+  // As reivindicações entram no registro DEPOIS da intenção: a de alias aponta
+  // para ela, e a limpeza percorre o registro de trás para frente.
+  const reivindicacoes = await c.query<{ id: string }>(
+    'SELECT id FROM "ContextKeyClaim" WHERE "orgId" = $1 AND "itemId" = ANY($2::text[])',
+    [orgId, [p.contextoId, notaMovidaId]],
+  );
+  for (const r of reivindicacoes.rows) reg('ContextKeyClaim', r.id);
+  const reivindicacaoOrigemId = (await c.query<{ id: string }>(
+    'SELECT id FROM "ContextKeyClaim" WHERE "orgId" = $1 AND key = $2', [orgId, origemChave],
+  )).rows[0].id;
+  const reservaDestinoId = await ins(c, 'ContextKeyClaim', {
+    id: crypto.randomUUID(), orgId, key: destinoChave, itemId: notaMovidaId, tipo: 'reserved_target', intentId: intencaoId,
+  });
+  reg('ContextKeyClaim', reservaDestinoId);
+
+  // A captura nova, presa à intenção, e a candidata que a prova.
+  const marcaNova = { marca: `antes_${suf}_2` };
+  const digestNovo = hex64(`digest_${suf}_2`);
+  const selecaoNovaId = await ins(c, 'ContextCollectionSelection', {
+    id: crypto.randomUUID(), orgId, collectionId: colecao, generation: 2, marcaAntes: jsonb(marcaNova),
+    estado: 'classificado', membershipDigest: digestNovo, movementIntentId: intencaoId,
+  });
+  reg('ContextCollectionSelection', selecaoNovaId);
+  const membroNovoId = await ins(c, 'ContextCollectionMember', {
+    id: crypto.randomUUID(), orgId, selectionId: selecaoNovaId, chave: destinoChave, caminhoBytes: Buffer.from(destinoRef, 'utf8'),
+    blobGit: hex64(`blob_${suf}_2`).slice(0, 40), hashArquivo: hex64(`arquivo_${suf}_2`), contentHash: notaMovida.hash,
+    metadataHash: hex64(`meta_${suf}_2`), metadata: jsonb({ ...membroMeta, sourceRef: destinoRef }), estado: 'classificado',
+  });
+  reg('ContextCollectionMember', membroNovoId);
+  const candidataId = await ins(c, 'ContextMovementCandidate', {
+    id: crypto.randomUUID(), orgId, intentId: intencaoId, actorId: userId, itemId: notaMovidaId, collectionId: colecao,
+    selectionId: selecaoNovaId, purpose: 'movimento', captureFingerprint: hex64(`captura_${suf}`),
+    captureMarkHash: hex64(`marca_captura_${suf}`), membershipDigest: digestNovo, marca: jsonb(marcaNova), auditIds,
+  }, { auditIds: 'text[]' });
+  reg('ContextMovementCandidate', candidataId);
+
+  // A confirmação: a chave antiga vira alias, a reserva vira canônica, a nota
+  // troca de chave numa versão nova e a captura nova é projetada.
+  await c.query(`UPDATE "ContextKeyClaim" SET tipo = 'alias', "intentId" = $2 WHERE id = $1`, [reivindicacaoOrigemId, intencaoId]);
+  const aliasId = await ins(c, 'ContextAlias', {
+    id: crypto.randomUUID(), orgId, collectionId: colecao, aliasKey: origemChave, aliasPathBytes: Buffer.from(origemRef, 'utf8'),
+    itemId: notaMovidaId, claimId: reivindicacaoOrigemId, intentId: intencaoId,
+  });
+  reg('ContextAlias', aliasId);
+  await c.query(`UPDATE "ContextKeyClaim" SET tipo = 'canonical', "intentId" = NULL WHERE id = $1`, [reservaDestinoId]);
+  const versao2Id = await ins(c, 'ContextItemVersion', {
+    id: crypto.randomUUID(), orgId, itemId: notaMovidaId, versao: 2, mudanca: 'alteracao', kind: 'nota',
+    title: notaMovida.titulo, body: notaMovida.corpo, sourceType: 'vault', sourceRef: destinoRef,
+    contentHash: notaMovida.hash, autorTipo: 'user', autorId: userId,
+  });
+  reg('ContextItemVersion', versao2Id);
+  await c.query(
+    `UPDATE "ContextItem" SET chave = $2, "sourceRef" = $3, versao = 2 WHERE id = $1`,
+    [notaMovidaId, destinoChave, destinoRef],
+  );
+  await c.query(
+    `UPDATE "ContextCollectionMember" SET estado = 'projetado', "itemId" = $2, "versionId" = $3, versao = 2 WHERE id = $1`,
+    [membroNovoId, notaMovidaId, versao2Id],
+  );
+  await c.query(
+    `UPDATE "ContextCollectionSelection" SET estado = 'projetado', "marcaDepois" = "marcaAntes", "verificadaEm" = $2 WHERE id = $1`,
+    [selecaoNovaId, ts],
+  );
+  const reciboMovimentoId = crypto.randomUUID();
+  reg('ContextMovementReceipt', await ins(c, 'ContextMovementReceipt', {
+    id: reciboMovimentoId, orgId, actorId: userId, itemId: notaMovidaId, intentId: intencaoId, requestId: pedidoMovimento,
+    tipo: 'confirmado', inputFingerprint: hex64(`mov_input_${suf}`), commitFingerprint: hex64(`mov_commit_${suf}`),
+    candidateId: candidataId, newSelectionId: selecaoNovaId, newMemberId: membroNovoId, newVersionId: versao2Id, newVersionNo: 2,
+    aliasId, eventSnapshot: jsonb({ id: eventoLocal.id, seq: String(eventoLocal.seq), hash: eventoLocal.hash }), auditIds,
+    receipt: jsonb({ schemaVersion: 1, id: reciboMovimentoId, orgId, actorId: userId, itemId: notaMovidaId, intentId: intencaoId, requestId: pedidoMovimento, tipo: 'confirmado' }),
+    receiptHash: hex64(`mov_recibo_${suf}`),
+  }, { auditIds: 'text[]' }));
+  await c.query(
+    `UPDATE "ContextMovementIntent" SET estado = 'confirmado', revision = 2, "terminalReceiptId" = $2, "encerradoEm" = $3 WHERE id = $1`,
+    [intencaoId, reciboMovimentoId, ts],
+  );
+
+  // --- instalação de demonstração (recibo sobre a captura antiga) ----------
+  const instalacaoId = crypto.randomUUID();
+  const instalacao = {
+    dataset: 'rootos-v2-demo-2026-10-v1', requestId: crypto.randomUUID(), manifestHash: hex64(`manifesto_${suf}`),
+    sourceHash: hex64(`fonte_${suf}`), inputFingerprint: hex64(`demo_input_${suf}`), destino: hex64(`destino_${suf}`),
+  };
+  reg('DemoInstallation', await ins(c, 'DemoInstallation', {
+    id: instalacaoId, orgId, actorId: userId, dataset: instalacao.dataset, requestId: instalacao.requestId,
+    manifestHash: instalacao.manifestHash, sourceHash: instalacao.sourceHash, inputFingerprint: instalacao.inputFingerprint,
+    destinationSignatureHash: instalacao.destino, selectionId: selecaoAntigaId, receiptHash: hex64(`demo_recibo_${suf}`),
+    receipt: jsonb({
+      schemaVersion: 1, tipo: 'demo_installation_v1', sintetico: true, installationId: instalacaoId, orgId, actorId: userId,
+      dataset: instalacao.dataset, requestId: instalacao.requestId, manifestHash: instalacao.manifestHash,
+      sourceHash: instalacao.sourceHash, inputFingerprint: instalacao.inputFingerprint,
+      destinationSignatureHashDaCriacao: instalacao.destino, selectionId: selecaoAntigaId,
+      objects: Array.from({ length: 13 }, (_, i) => ({ n: i + 1 })), auditIds: [],
+      sourceBindings: { orgId, dataset: instalacao.dataset, selectionId: selecaoAntigaId },
+      effects: { cron: false, modelo: false, cobranca: false, provider: false, F08gerado: false, aprovacao: false, publicacao: false },
+    }),
+  }));
+
+  // --- exercício comercial: projeto → obrigação → pedido → decisão ---------
+  const propostaEventoId = await ins(c, 'LeadEvent', {
+    id: crypto.randomUUID(), orgId, leadId: p.leadId, type: 'proposta', payload: jsonb({ versao: 1 }),
+  });
+  reg('LeadEvent', propostaEventoId);
+  const projetoId = await ins(c, 'CommercialExerciseProject', {
+    id: crypto.randomUUID(), orgId, leadId: p.leadId, aceiteId: p.leadEventId, propostaId: propostaEventoId, propostaVersao: 1,
+    documentoHash: hex64(`documento_${suf}`), condicoesHash: hex64(`condicoes_${suf}`), taskId: p.tarefaId,
+    configuration: jsonb({ privado: `projeto da org ${rotulo}` }), creationFingerprint: hex64(`projeto_${suf}`), createdById: userId,
+  });
+  reg('CommercialExerciseProject', projetoId);
+  const obrigacaoComercial = { versionId: `versao_comercial_${suf}`, contentHash: hex64(`obrigacao_comercial_${suf}`) };
+  const obrigacaoComercialId = await ins(c, 'CommercialExerciseObligation', {
+    id: crypto.randomUUID(), orgId, projectId: projetoId, transactionId: p.lancId, versionId: obrigacaoComercial.versionId,
+    contentHash: obrigacaoComercial.contentHash, snapshot: jsonb({ valor: rotulo === 'A' ? 3500 : 9900 }),
+    creationFingerprint: hex64(`obrigacao_${suf}`), createdById: userId,
+  });
+  reg('CommercialExerciseObligation', obrigacaoComercialId);
+  reg('CommercialExerciseRequest', await ins(c, 'CommercialExerciseRequest', {
+    id: crypto.randomUUID(), orgId, requestId: crypto.randomUUID(), actorId: userId, action: 'projeto', entityId: projetoId,
+    fingerprint: hex64(`pedido_comercial_${suf}`), response: jsonb({ privado: `resposta da org ${rotulo}` }),
+  }));
+  reg('CommercialExerciseDecision', await ins(c, 'CommercialExerciseDecision', {
+    id: crypto.randomUUID(), orgId, obligationId: obrigacaoComercialId, requestId: crypto.randomUUID(), actorId: userId,
+    fingerprint: hex64(`decisao_comercial_${suf}`), versionId: obrigacaoComercial.versionId, contentHash: obrigacaoComercial.contentHash,
+    expectedUpdatedAt: agora, aprovar: true, motivo: `Motivo privado da org ${rotulo}`, alcada: 'titular', response: jsonb({}),
+  }));
+
+  // --- exercício financeiro: a obrigação exige transação PREVISTA do contrato
+  const previstaId = await ins(c, 'FinanceTransaction', {
+    id: crypto.randomUUID(), orgId, accountId: p.contaId, type: 'entrada', status: 'previsto', approvalStatus: 'aguardando',
+    description: `Parcela prevista ${rotulo} ${MARCA}`, amount: '3500.00', date: agora, contractId: p.contratoId, updatedAt: agora,
+  });
+  reg('FinanceTransaction', previstaId);
+  const obrigacaoFinanceira = { versionId: `versao_financeira_${suf}`, contentHash: hex64(`obrigacao_financeira_${suf}`) };
+  const obrigacaoFinanceiraId = await ins(c, 'FinanceExerciseObligation', {
+    id: crypto.randomUUID(), orgId, transactionId: previstaId, contractId: p.contratoId, versionId: obrigacaoFinanceira.versionId,
+    contentHash: obrigacaoFinanceira.contentHash, snapshot: jsonb({ valor: '3500.00' }), createdById: userId,
+  });
+  reg('FinanceExerciseObligation', obrigacaoFinanceiraId);
+  reg('FinanceExerciseDecision', await ins(c, 'FinanceExerciseDecision', {
+    id: crypto.randomUUID(), orgId, obligationId: obrigacaoFinanceiraId, requestId: crypto.randomUUID(), actorId: userId,
+    fingerprint: hex64(`decisao_financeira_${suf}`), versionId: obrigacaoFinanceira.versionId, contentHash: obrigacaoFinanceira.contentHash,
+    aprovar: false, motivo: `Recusa privada da org ${rotulo}`, alcada: 'responsavel', expectedUpdatedAt: agora, response: jsonb({}),
+  }));
+
+  // --- editorial e marketing ------------------------------------------------
+  const materialId = await ins(c, 'EditorialMaterial', {
+    id: crypto.randomUUID(), orgId, taskId: p.tarefaId, title: `Material ${rotulo} ${MARCA}`, releaseStatusId: p.statusId,
+    requestId: crypto.randomUUID(), actorId: userId, fingerprint: hex64(`material_${suf}`),
+  });
+  reg('EditorialMaterial', materialId);
+  const texto = { title: `Texto editorial ${rotulo}`, body: `Corpo privado do texto da org ${rotulo} (${MARCA}).`, files: '[]', sourceRef: `editorial/${suf}`, contentHash: hex64(`editorial_${suf}`) };
+  const versaoEditorialId = await ins(c, 'EditorialVersion', {
+    id: crypto.randomUUID(), orgId, materialId, number: 1, ...texto,
+    requestId: crypto.randomUUID(), actorId: userId, fingerprint: hex64(`versao_editorial_${suf}`),
+  });
+  reg('EditorialVersion', versaoEditorialId);
+  const decisaoEditorialId = await ins(c, 'EditorialDecision', {
+    id: crypto.randomUUID(), orgId, versionId: versaoEditorialId, state: 'approved', reason: `Aprovado pela org ${rotulo}`,
+    authority: 'titular', requestId: crypto.randomUUID(), actorId: userId, fingerprint: hex64(`decisao_editorial_${suf}`),
+  });
+  reg('EditorialDecision', decisaoEditorialId);
+  reg('EditorialProduction', await ins(c, 'EditorialProduction', {
+    id: crypto.randomUUID(), orgId, taskId: p.tarefaId, materialId, versionId: versaoEditorialId, decisionId: decisaoEditorialId,
+    ...texto, requestId: crypto.randomUUID(), actorId: userId, fingerprint: hex64(`producao_${suf}`),
+  }));
+  const contaMarketingId = await ins(c, 'MarketingAccountConfig', {
+    id: crypto.randomUUID(), orgId, connectionId: p.conexaoId, externalId: `ig_${suf}`, handle: `@${suf}`, ownerId: userId,
+    requestId: crypto.randomUUID(), actorId: userId, fingerprint: hex64(`conta_marketing_${suf}`),
+  });
+  reg('MarketingAccountConfig', contaMarketingId);
+  reg('MarketingPreparation', await ins(c, 'MarketingPreparation', {
+    id: crypto.randomUUID(), orgId, accountId: contaMarketingId, accountRevision: 1, connectionId: p.conexaoId,
+    externalId: `ig_${suf}`, handle: `@${suf}`, taskId: p.tarefaId, versionId: versaoEditorialId, decisionId: decisaoEditorialId,
+    contentHash: texto.contentHash, scheduledAt: new Date(Date.now() + 86_400_000), timezone: 'America/Sao_Paulo',
+    requestId: crypto.randomUUID(), actorId: userId, fingerprint: hex64(`preparacao_${suf}`),
+  }));
+
+  // --- trabalho e casa ------------------------------------------------------
+  reg('WorkContextSource', await ins(c, 'WorkContextSource', {
+    id: crypto.randomUUID(), orgId, taskId: p.tarefaId, itemId: p.contextoId, versionId: p.contextoVersaoId,
+    requestId: crypto.randomUUID(), fingerprint: hex64(`fonte_tarefa_${suf}`), actorId: userId,
+    chave: `vault:regras/${suf}.md`, versao: 1, contentHash: `hash_${suf}`, sourceType: 'vault',
+    title: `Regra da casa ${rotulo}`, sourceRef: `regras/${suf}.md`,
+  }));
+  reg('ReuniaoDoCartao', await ins(c, 'ReuniaoDoCartao', {
+    id: crypto.randomUUID(), orgId, taskId: p.tarefaId, titulo: `Reunião ${rotulo} ${MARCA}`, em: agora, fonte: 'texto',
+    transcricao: `Transcrição privada da reunião da org ${rotulo}.`, autorId: userId,
+  }));
+  reg('WorkArea', await ins(c, 'WorkArea', {
+    id: crypto.randomUUID(), orgId, nome: `Área ${rotulo} ${MARCA}`, updatedAt: agora,
+  }));
+  reg('AcordoComercial', await ins(c, 'AcordoComercial', {
+    id: crypto.randomUUID(), orgId, cliente: `Cliente ${rotulo} ${MARCA}`, produto: 'operacao',
+    valor: rotulo === 'A' ? '1500.00' : '9900.00', tipo: rotulo === 'A' ? 'pagante' : 'permuta', updatedAt: agora,
+  }));
+  reg('AnaliseLeitura', await ins(c, 'AnaliseLeitura', {
+    id: crypto.randomUUID(), orgId, dia: '2026-10-19', hash: hex64(`leitura_${suf}`),
+    texto: `Leitura privada do dia da org ${rotulo} (${MARCA}).`,
+  }));
+  reg('CofreItem', await ins(c, 'CofreItem', {
+    id: crypto.randomUUID(), orgId, tipo: 'senha', titulo: `Acesso ${rotulo} ${MARCA}`, onde: `https://${suf}.exemplo.com`,
+    segredoCifrado: `NAO-E-CRIPTOGRAMA.${rotulo}.${MARCA}`, criadoPor: userId, updatedAt: agora,
+  }));
+  reg('CofreSenha', await ins(c, 'CofreSenha', {
+    id: crypto.randomUUID(), orgId, userId, hash: `nao-e-hash-real-${suf}`, updatedAt: agora,
+  }));
+  reg('CofreSessao', await ins(c, 'CofreSessao', {
+    id: crypto.randomUUID(), orgId, userId, tokenHash: hex64(`sessao_cofre_${suf}`), expiraEm: new Date(Date.now() + 3_600_000),
+  }));
 }
 
 // ---------------------------------------------------------------------------
@@ -1609,6 +2205,20 @@ beforeAll(async () => {
   }
 }, 120_000);
 
+/**
+ * As tabelas cuja linha o banco recusa apagar por gatilho — história que, em
+ * produção, não se apaga. A limpeza delas roda sem gatilho; ver o `afterAll`.
+ * `ContextItem` entra pela nota de chave `vault:`, que o gatilho
+ * `context_movement_item_namespace` protege do DELETE.
+ */
+const HISTORIA_IMUTAVEL = new Set([
+  'AgentLocalAgenda', 'AgentLocalAgendaDispatch', 'AgentLocalAgendaRevision', 'AgentLocalOperation', 'AgentLocalToolReceipt',
+  'CommercialExerciseDecision', 'CommercialExerciseObligation', 'CommercialExerciseProject', 'CommercialExerciseRequest',
+  'FinanceExerciseDecision', 'FinanceExerciseObligation', 'DemoInstallation',
+  'ContextAlias', 'ContextCollectionMember', 'ContextCollectionSelection', 'ContextKeyClaim',
+  'ContextMovementCandidate', 'ContextMovementIntent', 'ContextMovementReceipt', 'ContextItem',
+]);
+
 afterAll(async () => {
   // Limpeza cirúrgica: só as chaves que esta rodada criou, na ordem inversa da
   // inserção. Nunca um DELETE por prefixo, nunca um TRUNCATE.
@@ -1649,6 +2259,30 @@ afterAll(async () => {
         } finally {
           await c.query('ALTER TABLE "EventLog" ENABLE RULE eventlog_sem_delete');
         }
+        continue;
+      }
+      if (HISTORIA_IMUTAVEL.has(tabela)) {
+        /*
+         * HISTÓRIA IMUTÁVEL POR GATILHO (merge de 19/10/2026) — mesmo caso do
+         * RASTRO acima, com outra mecânica: recibos, protocolo de movimento de
+         * nota, exercício comercial e financeiro e instalação de demonstração
+         * recusam DELETE por gatilho, e a nota de chave `vault:` também
+         * ("Vault identity cannot be deleted"). Sem isto a limpeza abortava e
+         * cada rodada deixava as duas empresas no banco.
+         *
+         * `session_replication_role = replica` cala os gatilhos de usuário E as
+         * chaves estrangeiras SÓ neste DELETE (exige superusuário, que é a
+         * conexão ADMIN de um banco descartável). As chaves estrangeiras vão
+         * junto de propósito: seleção ↔ intenção do movimento se referenciam,
+         * e nenhuma ordem de tabela apaga as duas com elas ligadas. O `origin`
+         * volta logo depois, então o resto da limpeza — e o DELETE da `Org`
+         * no fim, que acusa qualquer linha esquecida — segue com tudo valendo.
+         * O papel da aplicação nunca pode isto; quem mede o lado dele são os
+         * casos de leitura e escrita acima.
+         */
+        await c.query('SET LOCAL session_replication_role = replica');
+        await c.query(`DELETE FROM "${tabela}" WHERE "id" = ANY($1::text[])`, [chaves]);
+        await c.query('SET LOCAL session_replication_role = origin');
         continue;
       }
       if (tabela.startsWith('_')) {
