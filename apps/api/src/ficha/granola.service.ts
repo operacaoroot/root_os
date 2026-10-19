@@ -182,7 +182,7 @@ export class GranolaService implements OnModuleInit {
   async gerarSenha(orgId: string, actorId: string | null): Promise<SenhaDoGranola> {
     const senha = randomBytes(24).toString('base64url');
     await this.cofre.guardar({
-      orgId, conector: CONECTOR_GRANOLA, nome: NOME_DA_SENHA_GRANOLA, valor: senha, origem: 'Conexões (senha do Zap)', actorId,
+      orgId, conector: CONECTOR_GRANOLA, nome: NOME_DA_SENHA_GRANOLA, valor: senha, origem: 'Integrações (senha do Zap)', actorId,
     });
     return { senha, caminho: caminhoDoGranola(orgId), cabecalho: CABECALHO_DO_SEGREDO_GRANOLA };
   }
@@ -252,7 +252,7 @@ export class GranolaService implements OnModuleInit {
       autorizar: async () => ({
         tipo: 'manual',
         instrucao:
-          'Gere a senha do Zap no painel do Granola, no topo de Conexões, e cole no cabeçalho x-root-segredo do passo Webhooks by Zapier.',
+          'Gere a senha do Zap no painel do Granola, no topo de Configurações → Integrações, e cole no cabeçalho x-root-segredo do passo Webhooks by Zapier.',
       }),
       sincronizar: async () => ({
         tipo: 'nao_se_aplica',
@@ -261,7 +261,7 @@ export class GranolaService implements OnModuleInit {
       saude: async (ctx: ContextoDoVerbo): Promise<SaudeDeConector> => {
         const comecou = Date.now();
         const c = await this.conexao(ctx.orgId);
-        if (!c.senha.ativa) return naoConfigurado('Sem senha do Zap. Gere no painel do Granola, em Conexões, e cole no Zap.');
+        if (!c.senha.ativa) return naoConfigurado('Sem senha do Zap. Gere no painel do Granola, em Configurações → Integrações, e cole no Zap.');
         const ultima = c.ultimas[0]?.recebidaEm;
         const quando = ultima ? new Date(ultima).toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' }) : null;
         return conectado(
