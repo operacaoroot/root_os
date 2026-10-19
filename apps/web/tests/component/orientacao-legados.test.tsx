@@ -55,6 +55,7 @@ const tarefa = {
 
 describe('texto de orientação das telas legadas', () => {
   beforeEach(() => {
+    window.localStorage.removeItem('root-os:trabalho:densidade');
     window.history.replaceState({}, '', '/');
     apiGet.mockReset();
     apiPatch.mockReset();
@@ -119,6 +120,8 @@ describe('texto de orientação das telas legadas', () => {
     expect(conteudo.container.textContent?.toLowerCase()).not.toContain('somente leitura');
     conteudo.unmount();
     window.history.replaceState({}, '', '/trabalho?visao=lista');
+    // Rodada da implantação I2: o seletor de etapa no cartão é da densidade cheia (no compacto, o cartão abre o painel).
+    window.localStorage.setItem('root-os:trabalho:densidade', 'cheio');
     render(<TrabalhoPage />);
     await screen.findByRole('columnheader', { name: 'Status' });
     fireEvent.click(screen.getByRole('button', { name: 'Quadro' }));

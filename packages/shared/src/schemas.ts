@@ -5500,6 +5500,40 @@ export interface TrabTarefaResumo {
   externalId: string | null; externalUrl: string | null; archived: boolean; order: number;
   tags: TrabTagDto[]; values: TrabValorDto[];
 }
+/* ----------------------------------------------------------------------------
+ * O MOVIMENTO DO CARTÃO no quadro denso (rodada da implantação I2, 18/10/2026)
+ *
+ * O rodapé do cartão ("Pedro · moveu para Kit montado · há 2h") e o balão dos
+ * três últimos passos LEEM a mesma auditoria (`work.task.create`/`update`) e os
+ * mesmos `WorkComment` que a caixa de entrada consome: nenhuma segunda fonte.
+ * `em` vai em ISO; o "há 2h" é conta da tela.
+ * -------------------------------------------------------------------------- */
+export type TrabTipoDoPasso = 'criacao' | 'status' | 'atribuicao' | 'vencimento' | 'edicao' | 'comentario';
+export interface TrabPassoDoCartao {
+  tipo: TrabTipoDoPasso;
+  quem: string;
+  /** "moveu para Kit montado", "abriu o card", ou o trecho do comentário entre aspas. */
+  frase: string;
+  em: string;
+}
+export interface TrabMovimentoDoCartao {
+  tarefaId: string;
+  /** O mais novo entre a última movimentação e o último comentário: o rodapé. */
+  ultimo: TrabPassoDoCartao | null;
+  /** As três últimas movimentações (sem comentário), da mais nova para a mais velha: o balão. */
+  passos: TrabPassoDoCartao[];
+  ultimoComentario: TrabPassoDoCartao | null;
+  /**
+   * A próxima ação da linha 2 do cartão, só de fonte real: o próximo passo do
+   * trilho ligado ao card, a primeira subtarefa aberta, ou (card que nasceu do
+   * fechamento e ainda sem kickoff) "marcar o kickoff". Sem fonte, nulo.
+   */
+  proximaAcao: { texto: string; dono: string | null; quando: string | null; fonte: 'trilho' | 'subtarefa' | 'implantacao' } | null;
+  /** O selo de procedência do card aberto pelo fechamento do comercial (I1). */
+  procedencia: { tipo: 'fechamento'; leadId: string; rotulo: string } | null;
+}
+export interface TrabMovimentoDoQuadro { itens: TrabMovimentoDoCartao[] }
+
 export interface TrabComentarioDto {
   id: string; authorId: string | null; authorName: string; text: string; createdAt: string;
 }

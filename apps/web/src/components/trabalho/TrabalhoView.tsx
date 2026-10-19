@@ -9,12 +9,16 @@ import {
 } from '@mktos/shared';
 import type {
   TrabAgenteDto, TrabEstrutura, TrabListaDto, TrabTarefaLista, TrabTarefaResumo,
-  TrabTarefaDetalhe, TrabEstruturaSugeridaResultado,
+  TrabTarefaDetalhe, TrabEstruturaSugeridaResultado, TrabMovimentoDoCartao, TrabMovimentoDoQuadro,
 } from '@mktos/shared';
 import { apiBlob, apiDelete, apiGet, apiPatch, apiPost } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 import { tarefasDeTrabalho } from '@/lib/work-projection';
 import { diasDesde, formatarHoras, hojeEmBrasilia, minutosDeTexto } from '@/lib/horas';
+import {
+  CHAVE_DA_DENSIDADE, DENSIDADES, DIAS_DE_ALERTA_NA_ETAPA, ESCOPOS, LARGURA_MINIMA_DA_COLUNA,
+  ehMeu, haCurto, lerDensidade, lerEscopo, posicaoDoBalao, type Densidade, type Escopo,
+} from '@/lib/quadro-denso';
 
 // Trabalho — gestão de tarefas estilo ClickUp, nativa do mkt-os.
 // Réplica de usabilidade do espaço `root` (fotografia 25/07/2026): pastas →
@@ -153,7 +157,9 @@ function TrabalhoConteudo({ visaoInicial }: { visaoInicial: Visao }) {
   const [fOpcao, setFOpcao] = useState('');
   const [fStatus, setFStatus] = useState('');
   const [fArquivadas, setFArquivadas] = useState(false);
-  const [fAtrasadas, setFAtrasadas] = useState(false);
+  const [fEscopo, setFEscopo] = useState<Escopo>('todos');
+  const [densidade, setDensidade] = useState<Densidade>('compacto');
+  const [movimento, setMovimento] = useState<Map<string, TrabMovimentoDoCartao>>(new Map());
   const [urlPronta, setUrlPronta] = useState(false);
   const listaAtual = useRef(listaId);
   listaAtual.current = listaId;
@@ -167,7 +173,8 @@ function TrabalhoConteudo({ visaoInicial }: { visaoInicial: Visao }) {
       setFAssignee(p.get('assignee') ?? ''); setFBusca(p.get('q') ?? '');
       setFOpcao(p.get('opcao') ?? ''); setFAgente(p.get('agente') ?? '');
       setFStatus(p.get('statusId') ?? ''); setFArquivadas(p.get('arquivadas') === '1');
-      setFAtrasadas(p.get('overdue') === '1');
+      // `overdue=1` (o link antigo do "só atrasadas") continua valendo como o escopo "atrasados".
+      setFEscopo(p.get('escopo') ? lerEscopo(p.get('escopo')) : p.get('overdue') === '1' ? 'atrasados' : 'todos');
       setVisao(visaoDoEndereco(p.get('visao')) ?? visaoInicial);
       setFPasta(p.get('pasta') ?? '');
       listaAtual.current = null; setListaId(null); setPainelId(null); setUrlPronta(true);
@@ -176,6 +183,15 @@ function TrabalhoConteudo({ visaoInicial }: { visaoInicial: Visao }) {
     ler(); window.addEventListener('popstate', ler);
     return () => window.removeEventListener('popstate', ler);
   }, [visaoInicial]);
+
+  // A densidade é preferência da pessoa neste navegador (I2), não do link.
+  useEffect(() => {
+    try { setDensidade(lerDensidade(window.localStorage.getItem(CHAVE_DA_DENSIDADE))); } catch { /* sem armazenamento: padrão */ }
+  }, []);
+  const escolherDensidade = (d: Densidade) => {
+    setDensidade(d);
+    try { window.localStorage.setItem(CHAVE_DA_DENSIDADE, d); } catch { /* sem armazenamento: vale só nesta visita */ }
+  };
 
   const filtroNoEndereco = (chave: string, valor: string) => {
     const url = new URL(window.location.href);
@@ -308,24 +324,42 @@ function TrabalhoConteudo({ visaoInicial }: { visaoInicial: Visao }) {
     return () => { ativa = false; };
   }, [ready, token, readable, urlPronta, listaId, fAssignee, fBusca, fOpcao, fStatus, fArquivadas, bump]);
 
+  /*
+   * O MOVIMENTO DOS CARTÕES (I2): rodapé, balão, próxima ação e selo. Uma
+   * leitura por lista aberta no quadro; falhar só tira o rodapé.
+   */
+  useEffect(() => {
+    if (!ready || !token || !readable || !listaId || !urlPronta || visao !== 'board') return;
+    let ativa = true;
+    apiGet<TrabMovimentoDoQuadro>(`/trabalho/quadro/movimento?listId=${encodeURIComponent(listaId)}`, token)
+      .then((r) => {
+        if (!ativa) return;
+        const itens = Array.isArray(r?.itens) ? r.itens : [];
+        setMovimento(new Map(itens.map((i) => [i.tarefaId, i])));
+      })
+      .catch(() => { if (ativa) setMovimento(new Map()); });
+    return () => { ativa = false; };
+  }, [ready, token, readable, urlPronta, listaId, visao, bump]);
+
   const camposDaLista = useMemo(
     () => [...(lista?.fields ?? []), ...(estrutura?.camposGlobais ?? [])],
     [lista, estrutura],
   );
 
-  // Agente e atraso filtram a coleção completa, após a última página.
+  // Agente, atraso e "meus" filtram a coleção completa, após a última página.
   const visiveis = useMemo(() => {
     const itens = tarefas?.items ?? [];
-    return itens.filter((t) => (!fAtrasadas || t.overdue) &&
+    return itens.filter((t) => (fEscopo !== 'atrasados' || t.overdue) &&
+      (fEscopo !== 'meus' || ehMeu(t.assignee, user?.name)) &&
       (!fAgente || (fAgente === 'livres' ? !t.agenteId : t.agenteSlug === fAgente)));
-  }, [tarefas, fAgente, fAtrasadas]);
+  }, [tarefas, fAgente, fEscopo, user?.name]);
 
   if (ready && !readable) return <p className="text-muted">Sem permissão para ver tarefas.</p>;
 
   const pastaDaLista = lista && estrutura ? estrutura.folders.find((f) => f.lists.some((l) => l.id === lista.id))?.id ?? '' : '';
 
   return (
-    <div className="flex h-full min-w-0 flex-col gap-3">
+    <div className={`flex h-full min-w-0 flex-col gap-3 ${visao === 'board' && lista ? 'md:h-[calc(100dvh-52px-2rem)] min-[820px]:h-[calc(100dvh-46px-3rem)]' : ''}`}>
       {estrutura && (
         <BarraDePastas
           pastas={pastasDeTopo} temSoltas={estrutura.listasSoltas.length > 0} atual={fPasta}
@@ -393,8 +427,8 @@ function TrabalhoConteudo({ visaoInicial }: { visaoInicial: Visao }) {
         )}
       </aside>
 
-      {/* miolo */}
-      <div className="min-w-0 flex-1 space-y-4">
+      {/* miolo: no quadro ele é coluna flexível, para as colunas terem a altura da janela e rolarem cada uma */}
+      <div className={`min-w-0 flex-1 ${visao === 'board' && lista ? 'flex min-h-0 flex-col gap-3' : 'space-y-4'}`}>
         <div className="flex flex-wrap items-end justify-between gap-3">
           <div>
             <h1 className="text-xl font-semibold">{lista?.name ?? 'Trabalho'}</h1>
@@ -407,7 +441,7 @@ function TrabalhoConteudo({ visaoInicial }: { visaoInicial: Visao }) {
               aria-label="Buscar tarefas"
               value={fBusca}
               onChange={(e) => { setFBusca(e.target.value); filtroNoEndereco('q', e.target.value); }}
-              placeholder="Buscar…"
+              placeholder="Buscar cliente…"
               className="w-40 rounded-lg border border-border bg-surface px-3 py-1.5 text-sm outline-none focus:border-brand-dim"
             />
             <select aria-label="Filtrar por responsável" value={fAssignee} onChange={(e) => { setFAssignee(e.target.value); filtroNoEndereco('assignee', e.target.value); }} className="rounded-lg border border-border bg-surface px-2 py-1.5 text-sm outline-none">
@@ -446,7 +480,20 @@ function TrabalhoConteudo({ visaoInicial }: { visaoInicial: Visao }) {
               {lista?.statuses.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
             </select>
             <label className="text-sm text-muted"><input type="checkbox" checked={fArquivadas} onChange={(e) => { setFArquivadas(e.target.checked); filtroNoEndereco('arquivadas', e.target.checked ? '1' : ''); }} /> Incluir arquivadas</label>
-            <label className="text-sm text-muted"><input type="checkbox" checked={fAtrasadas} onChange={(e) => { setFAtrasadas(e.target.checked); filtroNoEndereco('overdue', e.target.checked ? '1' : ''); }} /> Só atrasadas</label>
+            <div className="flex overflow-hidden rounded-lg border border-border" role="group" aria-label="Quais tarefas">
+              {ESCOPOS.map((e) => (
+                <button
+                  key={e.chave}
+                  type="button"
+                  data-testid={`trabalho-escopo-${e.chave}`}
+                  aria-pressed={fEscopo === e.chave}
+                  onClick={() => { setFEscopo(e.chave); filtroNoEndereco('escopo', e.chave === 'todos' ? '' : e.chave); filtroNoEndereco('overdue', ''); }}
+                  className={`px-2.5 py-1.5 text-sm max-md:min-h-[44px] ${fEscopo === e.chave ? 'bg-brand/15 text-text' : 'bg-surface text-muted hover:text-text'}`}
+                >
+                  {e.rotulo}
+                </button>
+              ))}
+            </div>
             {/* Quadro e Lista: a mesma fonte (WorkTask), duas formas de ver. */}
             <div className="flex overflow-hidden rounded-lg border border-border" role="group" aria-label="Visão das tarefas">
               {(['board', 'tabela'] as const).map((v) => (
@@ -461,6 +508,22 @@ function TrabalhoConteudo({ visaoInicial }: { visaoInicial: Visao }) {
                 </button>
               ))}
             </div>
+            {visao === 'board' && (
+              <div className="flex overflow-hidden rounded-lg border border-border" role="group" aria-label="Densidade do quadro">
+                {DENSIDADES.map((d) => (
+                  <button
+                    key={d.chave}
+                    type="button"
+                    data-testid={`trabalho-densidade-${d.chave}`}
+                    aria-pressed={densidade === d.chave}
+                    onClick={() => escolherDensidade(d.chave)}
+                    className={`px-2.5 py-1.5 font-os-mono text-[11px] max-md:min-h-[44px] ${densidade === d.chave ? 'bg-brand/15 text-text' : 'bg-surface text-muted hover:text-text'}`}
+                  >
+                    {d.rotulo}
+                  </button>
+                ))}
+              </div>
+            )}
             {editable && lista && estrutura && (
               <SeletorDePastaDaLista
                 valor={pastaDaLista}
@@ -494,7 +557,7 @@ function TrabalhoConteudo({ visaoInicial }: { visaoInicial: Visao }) {
         {lista && tarefas && visao === 'board' && (
           <Board
             lista={lista} tarefas={visiveis} editable={editable} token={token}
-            agentes={estrutura?.agentes ?? []} trilhos={trilhos}
+            agentes={estrutura?.agentes ?? []} trilhos={trilhos} movimento={movimento} densidade={densidade}
             onAbrir={abrirTarefa} onMudou={refresh} onErro={setErro}
           />
         )}
@@ -545,17 +608,41 @@ function ContagemDaEtapa({ quantas, limite }: { quantas: number; limite: number 
   );
 }
 
-function Board({ lista, tarefas, editable, token, agentes, trilhos, onAbrir, onMudou, onErro }: {
+/*
+ * O QUADRO DENSO (rodada da implantação I2, 18/10/2026). Vale para a visão
+ * Quadro do Trabalho inteira; a Implantação é o caso de prova.
+ *
+ *  · COLUNAS ESTREITAS em grade de larguras iguais (no compacto, sete etapas
+ *    cabem em 1440 px com a árvore aberta); a coluna de saída (etapa fechada)
+ *    fica esmaecida.
+ *  · ROLAGEM POR COLUNA: cada uma tem o próprio `overflow-y` e a altura da
+ *    janela; a página não rola inteira (o mesmo arranjo do funil do comercial).
+ *    No celular as colunas viram uma faixa com encaixe, uma por vez.
+ *  · O CARTÃO INTEIRO ABRE: o título é um botão cujo `::after` cobre o cartão
+ *    (o "link esticado"). O nome acessível continua sendo o título, o Tab para
+ *    nele e o Enter abre; o que é ação dentro do cartão fica acima da capa
+ *    (`relative z-10`) e não abre o painel.
+ *  · PARAR O MOUSE OU FOCAR mostra o balão com os três últimos passos e o
+ *    último comentário, posicionado sem sair da tela, ligado por
+ *    `aria-describedby` e fechado com Esc.
+ *  · O RODAPÉ é a última movimentação ou o último comentário, da MESMA leitura
+ *    da caixa de entrada (`GET /trabalho/quadro/movimento`). Falhar ali só tira
+ *    o rodapé.
+ */
+function Board({ lista, tarefas, editable, token, agentes, trilhos, movimento, densidade, onAbrir, onMudou, onErro }: {
   lista: TrabListaDto; tarefas: TrabTarefaResumo[]; editable: boolean; token: string | null;
   agentes: TrabAgenteDto[]; trilhos: Map<string, TrilhoDoCartao>;
+  movimento: Map<string, TrabMovimentoDoCartao>; densidade: Densidade;
   onAbrir: (id: string) => void; onMudou: () => void; onErro: (m: string) => void;
 }) {
   /*
    * ARRASTAR E SOLTAR com a API nativa do HTML5, sem biblioteca: dependência
    * nova é decisão humana (02-CONSTRAINTS). O `<select>` "Mover etapa" do cartão
-   * continua lá — é o caminho do teclado e do celular, onde arrastar não existe.
+   * (densidade cheia) e o do painel continuam sendo o caminho do teclado e do
+   * celular, onde arrastar não existe.
    */
   const [sobre, setSobre] = useState<string | null>(null);
+  const [balao, setBalao] = useState<{ id: string; ancora: DOMRect } | null>(null);
   const soltar = (statusId: string, e: React.DragEvent) => {
     e.preventDefault();
     setSobre(null);
@@ -564,43 +651,71 @@ function Board({ lista, tarefas, editable, token, agentes, trilhos, onAbrir, onM
     if (!t || t.statusId === statusId) return;
     apiPatch(`/trabalho/tarefas/${id}`, { statusId }, token).then(onMudou).catch((er) => onErro(er.message));
   };
+  useEffect(() => {
+    if (!balao) return;
+    const fechar = (e: KeyboardEvent) => { if (e.key === 'Escape') setBalao(null); };
+    const sumir = () => setBalao(null);
+    document.addEventListener('keydown', fechar);
+    window.addEventListener('scroll', sumir, true);
+    return () => { document.removeEventListener('keydown', fechar); window.removeEventListener('scroll', sumir, true); };
+  }, [balao]);
+  const tarefaDoBalao = balao ? tarefas.find((t) => t.id === balao.id) ?? null : null;
   return (
-    <div className="flex gap-4 overflow-x-auto pb-2">
+    <div
+      data-testid="trabalho-quadro"
+      data-densidade={densidade}
+      className="flex min-h-0 flex-1 snap-x snap-mandatory gap-2 overflow-x-auto pb-1 md:grid md:snap-none md:[grid-template-columns:repeat(var(--colunas),minmax(var(--min-col),1fr))]"
+      style={{ '--colunas': String(Math.max(1, lista.statuses.length)), '--min-col': `${LARGURA_MINIMA_DA_COLUNA[densidade]}px` } as React.CSSProperties}
+    >
       {lista.statuses.map((st) => {
         const itens = tarefas.filter((t) => t.statusId === st.id);
+        const saida = st.type === 'closed';
         return (
-          <div
+          <section
             key={st.id}
             data-coluna={st.id}
-            className={`w-72 shrink-0 rounded-lg transition ${sobre === st.id ? 'bg-brand/5 outline outline-1 outline-brand-dim' : ''}`}
+            aria-label={`${st.name}: ${itens.length} ${itens.length === 1 ? 'tarefa' : 'tarefas'}`}
+            className={`flex w-[86%] min-w-0 shrink-0 snap-start flex-col rounded border bg-bg2 max-md:max-h-[72dvh] md:w-auto md:min-h-0 ${sobre === st.id ? 'border-brand' : 'border-border'} ${saida ? 'opacity-60 focus-within:opacity-100 hover:opacity-100' : ''}`}
             onDragOver={editable ? (e) => { e.preventDefault(); if (sobre !== st.id) setSobre(st.id); } : undefined}
             onDragLeave={editable ? (e) => { if (!e.currentTarget.contains(e.relatedTarget as Node)) setSobre(null); } : undefined}
             onDrop={editable ? (e) => soltar(st.id, e) : undefined}
           >
-            <div className="mb-2 flex items-center justify-between">
-              <span className="flex items-center gap-1.5 text-sm font-medium capitalize">
-                <span className="h-2.5 w-2.5 rounded-full" style={{ background: st.color }} />
-                {st.name}
+            <header className="flex shrink-0 items-center justify-between gap-1 border-b border-border px-2 py-1.5">
+              <span className="flex min-w-0 items-center gap-1.5 font-os-mono text-[11px] uppercase tracking-wide">
+                <span aria-hidden className="h-2 w-2 shrink-0 rounded-full" style={{ background: st.color }} />
+                <span className="truncate" title={st.name}>{st.name}</span>
               </span>
-              <ContagemDaEtapa quantas={itens.length} limite={st.limite} />
-            </div>
-            <div className="space-y-2">
+              <span className="font-os-mono"><ContagemDaEtapa quantas={itens.length} limite={st.limite} /></span>
+            </header>
+            <div className="min-h-0 flex-1 space-y-1.5 overflow-y-auto p-1.5" data-rolagem-da-coluna>
               {itens.map((t) => (
-                <Cartao key={t.id} t={t} lista={lista} editable={editable} token={token} agentes={agentes} trilho={trilhos.get(t.id) ?? null} onAbrir={onAbrir} onMudou={onMudou} onErro={onErro} />
+                <Cartao
+                  key={t.id} t={t} lista={lista} editable={editable} token={token} agentes={agentes}
+                  trilho={trilhos.get(t.id) ?? null} mov={movimento.get(t.id) ?? null} densidade={densidade}
+                  balaoAberto={balao?.id === t.id}
+                  onBalao={(ancora) => setBalao(ancora ? { id: t.id, ancora } : null)}
+                  onAbrir={(id) => { setBalao(null); onAbrir(id); }} onMudou={onMudou} onErro={onErro}
+                />
               ))}
               {editable && <QuickAdd listaId={lista.id} statusId={st.id} token={token} onDone={onMudou} onErro={onErro} />}
-              {itens.length === 0 && !editable && <p className="px-1 text-xs text-muted">—</p>}
+              {itens.length === 0 && !editable && <p className="px-1 text-xs text-muted">Nada nesta etapa.</p>}
             </div>
-          </div>
+          </section>
         );
       })}
+      {balao && tarefaDoBalao && (
+        <BalaoDoCartao t={tarefaDoBalao} mov={movimento.get(balao.id) ?? null} ancora={balao.ancora} />
+      )}
     </div>
   );
 }
 
-function Cartao({ t, lista, editable, token, agentes, trilho, onAbrir, onMudou, onErro }: {
+const ATRASO_DO_BALAO_MS = 350;
+
+function Cartao({ t, lista, editable, token, agentes, trilho, mov, densidade, balaoAberto, onBalao, onAbrir, onMudou, onErro }: {
   t: TrabTarefaResumo; lista: TrabListaDto; editable: boolean; token: string | null;
-  agentes: TrabAgenteDto[]; trilho: TrilhoDoCartao | null;
+  agentes: TrabAgenteDto[]; trilho: TrilhoDoCartao | null; mov: TrabMovimentoDoCartao | null; densidade: Densidade;
+  balaoAberto: boolean; onBalao: (ancora: DOMRect | null) => void;
   onAbrir: (id: string) => void; onMudou: () => void; onErro: (m: string) => void;
 }) {
   const pr = PRIORIDADES.find((p) => p.key === t.priority);
@@ -608,72 +723,111 @@ function Cartao({ t, lista, editable, token, agentes, trilho, onAbrir, onMudou, 
   // Etapa fechada não envelhece: cliente encerrado não está "parado".
   const dias = t.statusType === 'closed' ? null : diasDesde(t.statusDesde);
   const minutos = t.minutos ?? 0;
+  const ref = useRef<HTMLDivElement>(null);
+  const espera = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const cancelar = () => { if (espera.current) { clearTimeout(espera.current); espera.current = null; } };
+  const mostrar = (atraso: number) => {
+    cancelar();
+    espera.current = setTimeout(() => { if (ref.current) onBalao(ref.current.getBoundingClientRect()); }, atraso);
+  };
+  const esconder = () => { cancelar(); if (balaoAberto) onBalao(null); };
+  useEffect(() => cancelar, []);
+  const compacto = densidade === 'compacto';
+  const cheio = densidade === 'cheio';
+  const ultimo = mov?.ultimo ?? null;
   return (
     <div
-      className="rounded-lg border border-border bg-surface p-3"
+      ref={ref}
+      className={`group relative rounded-lg border bg-surface px-2 py-1.5 transition focus-within:border-brand hover:border-brand-dim ${mov?.procedencia ? 'border-border border-l-2 border-l-brand' : 'border-border'}`}
       data-work-task-id={t.id}
+      data-densidade={densidade}
       draggable={editable}
-      onDragStart={editable ? (e) => { e.dataTransfer.setData('text/plain', t.id); e.dataTransfer.effectAllowed = 'move'; } : undefined}
+      onDragStart={editable ? (e) => { esconder(); e.dataTransfer.setData('text/plain', t.id); e.dataTransfer.effectAllowed = 'move'; } : undefined}
+      onMouseEnter={() => mostrar(ATRASO_DO_BALAO_MS)}
+      onMouseLeave={esconder}
     >
-      <div className="flex items-start justify-between gap-2">
-        <button onClick={() => onAbrir(t.id)} className="text-left text-sm hover:text-brand">{t.title}</button>
-        {t.externalUrl && (
-          <a href={t.externalUrl} target="_blank" rel="noreferrer" title="Abrir no ClickUp" className="shrink-0 text-muted hover:text-brand">
-            <ExternalLink size={13} />
-          </a>
-        )}
-      </div>
-      <div className="mt-2 flex flex-wrap gap-1">
-        {t.values.filter((v) => v.optionName).map((v) => (
-          <span key={v.fieldId} title={v.fieldName} className="rounded px-1.5 py-0.5 text-[10px]" style={{ background: `${v.optionColor}26`, color: v.optionColor ?? undefined }}>
-            {v.optionName}
-          </span>
-        ))}
-        {t.tags.map((tg) => (
-          <span key={tg.id} className="rounded px-1.5 py-0.5 text-[10px]" style={{ background: `${tg.color}26`, color: tg.color }}>
-            {tg.name}
-          </span>
-        ))}
-      </div>
-      <div className="mt-1.5 flex items-center gap-2 text-[11px] text-muted">
-        {t.priority !== 'normal' && pr && <Flag size={11} style={{ color: pr.cor }} />}
-        {t.assignee && <span>{t.assignee}</span>}
-        {t.dueDate && <span className={t.overdue ? 'text-bad' : ''}>{dataBR(t.dueDate)}</span>}
-        {t.comments > 0 && <span className="flex items-center gap-0.5"><MessageSquare size={10} />{t.comments}</span>}
-        {t.subtasks > 0 && <span>{t.subtasks} sub</span>}
-      </div>
-      {trilho && <AtalhoDoTrilho trilho={trilho} />}
-      {/*
-        IDADE NA ETAPA E HORAS (esteira de clientes). A idade só aparece quando a
-        data existe — tarefa anterior à esteira não tem, e "0d" seria mentira. Com
-        14 dias ou mais na mesma etapa, o selo fica amarelo: é a pergunta "isto
-        está parado?" respondida sem abrir a gaveta.
-      */}
-      {(dias !== null || minutos > 0) && (
-        <div className="mt-1.5 flex items-center gap-2 text-[11px]">
+      <div className="flex items-start justify-between gap-1.5">
+        <button
+          type="button"
+          onClick={() => onAbrir(t.id)}
+          onFocus={() => mostrar(0)}
+          onBlur={esconder}
+          aria-describedby={balaoAberto ? `balao-do-cartao-${t.id}` : undefined}
+          className={`min-w-0 text-left text-[13px] font-semibold leading-snug outline-none after:absolute after:inset-0 after:rounded-lg after:content-[''] focus-visible:after:ring-2 focus-visible:after:ring-brand ${compacto ? 'truncate' : 'break-words'}`}
+        >
+          {t.title}
+        </button>
+        <span className="flex shrink-0 items-center gap-1">
           {dias !== null && (
             <span
               data-idade-dias={dias}
               title={`Nesta etapa desde ${dataHoraBR(t.statusDesde)}`}
-              className={`flex items-center gap-0.5 ${dias >= 14 ? 'text-warn' : 'text-muted'}`}
+              className={`font-os-mono text-[10px] tabular-nums ${dias > DIAS_DE_ALERTA_NA_ETAPA ? 'text-mag' : 'text-muted'}`}
             >
-              <Hourglass size={10} />{dias}d na etapa
+              {compacto ? <>{dias}d<span className="sr-only"> na etapa</span></> : `${dias}d na etapa`}
             </span>
           )}
-          {minutos > 0 && (
-            <span title="Horas apontadas nesta tarefa" className="flex items-center gap-0.5 text-muted">
-              <Clock size={10} />{formatarHoras(minutos)}
-            </span>
+          {t.externalUrl && !compacto && (
+            <a href={t.externalUrl} target="_blank" rel="noreferrer" title="Abrir no ClickUp" className="relative z-10 text-muted hover:text-brand">
+              <ExternalLink size={12} />
+            </a>
           )}
-        </div>
+        </span>
+      </div>
+      <p className={`mt-0.5 truncate text-[11.5px] ${mov?.proximaAcao ? 'text-text' : 'text-muted'}`} title={mov?.proximaAcao?.texto ?? undefined}>
+        {mov?.proximaAcao ? mov.proximaAcao.texto : 'sem próxima ação'}
+        {mov?.proximaAcao?.quando && <span className="text-muted"> · {dataBR(mov.proximaAcao.quando)}</span>}
+      </p>
+      {!compacto && (
+        <>
+          {(t.values.some((v) => v.optionName) || t.tags.length > 0) && (
+            <div className="mt-1 flex flex-wrap gap-1">
+              {t.values.filter((v) => v.optionName).map((v) => (
+                <span key={v.fieldId} title={v.fieldName} className="rounded px-1.5 py-0.5 text-[10px]" style={{ background: `${v.optionColor}26`, color: v.optionColor ?? undefined }}>
+                  {v.optionName}
+                </span>
+              ))}
+              {t.tags.map((tg) => (
+                <span key={tg.id} className="rounded px-1.5 py-0.5 text-[10px]" style={{ background: `${tg.color}26`, color: tg.color }}>
+                  {tg.name}
+                </span>
+              ))}
+            </div>
+          )}
+          <div className="mt-1 flex flex-wrap items-center gap-2 text-[11px] text-muted">
+            {t.priority !== 'normal' && pr && <Flag size={11} style={{ color: pr.cor }} />}
+            {t.assignee && <span>{t.assignee}</span>}
+            {t.dueDate && <span className={t.overdue ? 'text-bad' : ''}>{dataBR(t.dueDate)}</span>}
+            {t.comments > 0 && <span className="flex items-center gap-0.5"><MessageSquare size={10} />{t.comments}</span>}
+            {t.subtasks > 0 && <span>{t.subtasks} sub</span>}
+            {minutos > 0 && (
+              <span title="Horas apontadas nesta tarefa" className="flex items-center gap-0.5">
+                <Clock size={10} />{formatarHoras(minutos)}
+              </span>
+            )}
+          </div>
+          {mov?.procedencia && (
+            <a
+              href={`/comercial/lead/${mov.procedencia.leadId}`}
+              data-testid={`trabalho-procedencia-${t.id}`}
+              className="relative z-10 mt-1 inline-flex items-center gap-1 rounded border border-brand/40 px-1.5 py-0.5 font-os-mono text-[10px] text-brand hover:bg-brand/10"
+              title="Abrir o lead no comercial"
+            >
+              {mov.procedencia.rotulo}
+            </a>
+          )}
+          {trilho && <div className="relative z-10"><AtalhoDoTrilho trilho={trilho} /></div>}
+        </>
       )}
-      {/*
-        QUEM ESTÁ COM A TAREFA, no cartão (fatia A4).
-        O selo aparece só quando há agente: uma linha "sem agente" em toda
-        tarefa livre seria ruído em cima do caso normal. O `title` diz desde
-        quando — é o que responde "isto está parado?" sem abrir a gaveta.
-      */}
-      {agente && (
+      {compacto && mov?.procedencia && <span className="sr-only">{mov.procedencia.rotulo}</span>}
+      <p
+        className="mt-0.5 truncate font-os-mono text-[10px] text-muted"
+        data-testid={`trabalho-rodape-${t.id}`}
+        title={ultimo ? `${ultimo.quem} · ${ultimo.frase} · ${dataHoraBR(ultimo.em)}` : undefined}
+      >
+        {ultimo ? `${ultimo.quem} · ${ultimo.frase} · ${haCurto(ultimo.em)}` : 'sem movimento registrado'}
+      </p>
+      {cheio && agente && (
         <div
           className="mt-1.5 flex items-center gap-1 rounded bg-brand/10 px-1.5 py-0.5 text-[11px] text-brand"
           title={`Assumida por ${agente} em ${dataHoraBR(t.agenteEm)}`}
@@ -682,21 +836,63 @@ function Cartao({ t, lista, editable, token, agentes, trilho, onAbrir, onMudou, 
           <span className="truncate">{agente}</span>
         </div>
       )}
-      {editable && (
-        <ControleDoAgente t={t} agentes={agentes} token={token} onMudou={onMudou} onErro={onErro} />
+      {cheio && editable && (
+        <div className="relative z-10">
+          <ControleDoAgente t={t} agentes={agentes} token={token} onMudou={onMudou} onErro={onErro} />
+          <select
+            value={t.statusId}
+            onChange={(e) =>
+              apiPatch(`/trabalho/tarefas/${t.id}`, { statusId: e.target.value }, token).then(onMudou).catch((er) => onErro(er.message))
+            }
+            title="Mover etapa"
+            aria-label={`Mover ${t.title} de etapa`}
+            className="mt-1.5 w-full rounded border border-border bg-surface-2 px-1.5 py-1 text-[11px] outline-none focus:border-brand-dim"
+          >
+            {lista.statuses.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+          </select>
+        </div>
       )}
-      {editable && (
-        <select
-          value={t.statusId}
-          onChange={(e) =>
-            apiPatch(`/trabalho/tarefas/${t.id}`, { statusId: e.target.value }, token).then(onMudou).catch((er) => onErro(er.message))
-          }
-          title="Mover etapa"
-          className="mt-2 w-full rounded border border-border bg-surface-2 px-1.5 py-1 text-[11px] outline-none focus:border-brand-dim"
-        >
-          {lista.statuses.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
-        </select>
+    </div>
+  );
+}
+
+/** O balão: os três últimos passos e o último comentário, sem sair da tela. Não recebe foco nem clique. */
+function BalaoDoCartao({ t, mov, ancora }: { t: TrabTarefaResumo; mov: TrabMovimentoDoCartao | null; ancora: DOMRect }) {
+  const ref = useRef<HTMLDivElement>(null);
+  const [pos, setPos] = useState<{ top: number; left: number } | null>(null);
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    setPos(posicaoDoBalao(ancora, { largura: window.innerWidth, altura: window.innerHeight }, { largura: el.offsetWidth, altura: el.offsetHeight }));
+  }, [ancora, mov]);
+  const passos = mov?.passos ?? [];
+  return (
+    <div
+      ref={ref}
+      id={`balao-do-cartao-${t.id}`}
+      role="tooltip"
+      data-testid="trabalho-balao"
+      className="pointer-events-none fixed z-50 w-72 max-w-[calc(100vw-16px)] rounded border border-border bg-surface-2 p-2.5 text-[11.5px] leading-snug shadow-lg"
+      style={{ top: pos?.top ?? -9999, left: pos?.left ?? -9999 }}
+    >
+      <p className="truncate font-semibold">{t.title}</p>
+      <p className="mt-1.5 font-os-mono text-[10px] uppercase tracking-[0.14em] text-muted">últimos passos</p>
+      {passos.length === 0 ? (
+        <p className="mt-0.5 text-muted">Nenhum movimento registrado.</p>
+      ) : (
+        <ol className="mt-0.5 space-y-0.5">
+          {passos.map((p, i) => (
+            <li key={`${p.em}-${i}`}><span className="text-text">{p.quem}</span> <span className="text-muted">· {p.frase} · {haCurto(p.em)}</span></li>
+          ))}
+        </ol>
       )}
+      <p className="mt-1.5 font-os-mono text-[10px] uppercase tracking-[0.14em] text-muted">último comentário</p>
+      {mov?.ultimoComentario ? (
+        <p className="mt-0.5 break-words"><span className="text-text">{mov.ultimoComentario.quem}</span> <span className="text-muted">· {mov.ultimoComentario.frase} · {haCurto(mov.ultimoComentario.em)}</span></p>
+      ) : (
+        <p className="mt-0.5 text-muted">Sem comentário.</p>
+      )}
+      <p className="mt-2 border-t border-border pt-1.5 font-os-mono text-[10px] text-muted">clique abre o painel · Esc fecha</p>
     </div>
   );
 }

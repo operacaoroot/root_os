@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, Param, Patch, Post, Query, UseGuards } from '@nestjs/common';
+import { BadRequestException, Body, Controller, Delete, Get, Param, Patch, Post, Query, UseGuards } from '@nestjs/common';
 import {
   TrabEspacoCreateSchema, TrabEspacoUpdateSchema,
   TrabPastaCreateSchema, TrabPastaUpdateSchema, TrabListaCreateSchema, TrabListaUpdateSchema,
@@ -9,6 +9,7 @@ import {
 } from '@mktos/shared';
 import { WorkService } from './work.service';
 import { CheckoutDeTarefaService } from './checkout-de-tarefa.service';
+import { MovimentoDoQuadroService } from './movimento-do-quadro.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { PermissionsGuard } from '../auth/permissions.guard';
 import { RequirePermissions } from '../auth/permissions.decorator';
@@ -24,6 +25,7 @@ export class WorkController {
   constructor(
     private readonly svc: WorkService,
     private readonly checkout: CheckoutDeTarefaService,
+    private readonly movimento: MovimentoDoQuadroService,
   ) {}
 
   // ---- estrutura ----
@@ -43,6 +45,18 @@ export class WorkController {
   @RequirePermissions('tarefas.editar')
   criarEstruturaSugerida(@CurrentUser() u: JwtUser) {
     return this.svc.criarEstruturaSugerida(u.orgId, u.sub);
+  }
+
+  /*
+   * O quadro denso (rodada da implantação I2): a última movimentação, os três
+   * últimos passos, o último comentário, a próxima ação e o selo de procedência
+   * de cada cartão da lista. Só leitura, da mesma auditoria que a caixa lê.
+   */
+  @Get('quadro/movimento')
+  @RequirePermissions('tarefas.ver')
+  movimentoDoQuadro(@CurrentUser() u: JwtUser, @Query('listId') listId: string) {
+    if (!listId || !/^[0-9a-f-]{36}$/i.test(listId)) throw new BadRequestException('listId inválido');
+    return this.movimento.daLista(u.orgId, listId);
   }
 
   // ---- espaços ----

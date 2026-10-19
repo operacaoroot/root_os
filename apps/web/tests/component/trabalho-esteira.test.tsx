@@ -120,6 +120,7 @@ const coluna = (statusId: string) => document.querySelector(`[data-coluna="${sta
 const cartao = (titulo: string) => screen.getByText(titulo).closest('div.rounded-lg') as HTMLElement;
 
 beforeEach(() => {
+  window.localStorage.removeItem('root-os:trabalho:densidade');
   window.history.replaceState({}, '', '/trabalho');
   vi.clearAllMocks();
   apiPost.mockResolvedValue({ ok: true });
@@ -249,6 +250,8 @@ describe('esteira: o limite da etapa no cabeçalho da coluna', () => {
 
 describe('esteira: idade e horas no cartão', () => {
   it('mostra a idade na etapa e as horas apontadas', async () => {
+    // Rodada da implantação I2: as horas aparecem a partir da densidade média; no compacto só a idade.
+    window.localStorage.setItem('root-os:trabalho:densidade', 'medio');
     servir();
     render(<TrabalhoPage />);
     const c = await waitFor(() => cartao('ProMedical'));

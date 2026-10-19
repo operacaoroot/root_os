@@ -48,6 +48,7 @@ const tarefa = (id: string, listId: string, title: string) => ({
 
 let estrutura: typeof estruturaCheia = estruturaCheia;
 beforeEach(() => {
+  window.localStorage.removeItem('root-os:trabalho:densidade');
   window.history.replaceState({}, '', '/trabalho');
   permissions = ['tarefas.ver', 'tarefas.editar'];
   estrutura = estruturaCheia;
@@ -209,6 +210,8 @@ describe('Trabalho: mover lista de pasta', () => {
 
 describe('Trabalho: a implantação aglutinada', () => {
   it('só o cartão com trilho ligado (cardId) linka o trilho, no quadro e na lista', async () => {
+    // Rodada da implantação I2: o atalho do trilho no cartão aparece a partir da densidade média.
+    window.localStorage.setItem('root-os:trabalho:densidade', 'medio');
     render(<TrabalhoPage />);
     const atalho = await screen.findByTestId('trabalho-trilho-trilho-1');
     expect(atalho).toHaveAttribute('href', '/onboarding/trilho-1');
