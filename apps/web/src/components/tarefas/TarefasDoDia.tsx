@@ -27,25 +27,33 @@ import { Barras, type Fatia } from './graficos';
 
 type Ver = 'quadro' | 'lista' | 'calendario';
 type Agrupar = 'pessoa' | 'area' | 'situacao';
-/** As situações do prazo e mais 'emdia' (hoje + em dia), a coluna "Em dia" da tabela de cada pessoa. */
+/** As situações do prazo e mais 'emdia' (hoje + todo prazo futuro), a coluna "Em dia" da tabela de cada pessoa. */
 type Recorte = SituacaoDoPrazo | 'emdia';
 interface Filtro { pessoa?: string; area?: string; cliente?: string; situacao?: Recorte; q?: string }
 const CHAVES: (keyof Filtro)[] = ['pessoa', 'area', 'cliente', 'situacao', 'q'];
 const SEM = 'sem';
 
 const NOME_DA_SITUACAO: Record<SituacaoDoPrazo, string> = {
-  atrasada: 'Atrasadas', hoje: 'Hoje', em_dia: 'Em dia', sem_prazo: 'Sem prazo', feita: 'Feitas',
+  atrasada: 'Atrasadas', hoje: 'Hoje', proximos_7: 'Próximos 7 dias', mais_tarde: 'Mais tarde', sem_prazo: 'Sem prazo', feita: 'Feitas',
 };
-const NOME_DO_RECORTE: Record<Recorte, string> = { ...NOME_DA_SITUACAO, emdia: 'Hoje e em dia' };
+const NOME_DO_RECORTE: Record<Recorte, string> = { ...NOME_DA_SITUACAO, emdia: 'Em dia' };
 /** Um acento só (lima cheio, médio, fraco); vermelho só para o problema (atrasada). */
 const FORTE = 'rgb(var(--os-ac))';
 const MEDIO = 'rgb(var(--os-ac) / 0.45)';
 const FRACO = 'rgb(var(--os-tx2) / 0.3)';
 const VERMELHO = 'rgb(var(--os-err))';
 const COR_DA_SITUACAO: Record<SituacaoDoPrazo, string> = {
-  atrasada: VERMELHO, hoje: FORTE, em_dia: MEDIO, sem_prazo: FRACO, feita: FORTE,
+  atrasada: VERMELHO, hoje: FORTE, proximos_7: MEDIO, mais_tarde: MEDIO, sem_prazo: FRACO, feita: FORTE,
 };
-const ABERTAS: SituacaoDoPrazo[] = ['atrasada', 'hoje', 'em_dia', 'sem_prazo'];
+const ABERTAS: SituacaoDoPrazo[] = ['atrasada', 'hoje', 'proximos_7', 'sem_prazo'];
+/**
+ * As colunas do prazo. "Mais tarde" não é coluna fixa (o Lucas não quer "Mais
+ * adiante"): só entra quando há tarefa nela, para nenhuma sumir do quadro.
+ */
+const colunasDoPrazo = (tarefas: TarefaDoDia[]): SituacaoDoPrazo[] =>
+  tarefas.some((t) => t.situacao === 'mais_tarde') ? ['atrasada', 'hoje', 'proximos_7', 'mais_tarde', 'sem_prazo'] : ABERTAS;
+/** O nome na tela; "mais tarde" leva a data em que começa (hoje + 8). */
+const nomeDaSituacao = (s: Recorte, hoje: string) => (s === 'mais_tarde' ? `A partir de ${dd(somaDias(hoje, 8))}` : NOME_DO_RECORTE[s]);
 
 const dd = (s: string | null) => (s ? `${s.slice(8, 10)}/${s.slice(5, 7)}` : '');
 const primeiro = (nome: string) => nome.split(' ')[0];
@@ -79,7 +87,7 @@ function passa(t: TarefaDoDia, f: Filtro) {
   if (f.area && (f.area === SEM ? !!t.area : t.area?.id !== f.area)) return false;
   if (f.cliente && t.cliente?.id !== f.cliente) return false;
   if (f.situacao) {
-    if (f.situacao === 'emdia') { if (t.situacao !== 'hoje' && t.situacao !== 'em_dia') return false; }
+    if (f.situacao === 'emdia') { if (t.situacao !== 'hoje' && t.situacao !== 'proximos_7' && t.situacao !== 'mais_tarde') return false; }
     else if (t.situacao !== f.situacao) return false;
   } else if (t.situacao === 'feita') return false;
   if (f.q) {
@@ -267,8 +275,8 @@ export function ResumoDeTarefas() {
   const semDono = abertas.filter((t) => !t.pessoa).length;
   const feitas = p.tarefas.filter((t) => t.situacao === 'feita').length;
 
-  const porSituacao: Fatia[] = ABERTAS.map((s) => ({
-    chave: s, rotulo: NOME_DA_SITUACAO[s], valor: conta(s), cor: COR_DA_SITUACAO[s], onClick: () => abrirLista({ situacao: s }),
+  const porSituacao: Fatia[] = colunasDoPrazo(abertas).map((s) => ({
+    chave: s, rotulo: nomeDaSituacao(s, p.hoje), valor: conta(s), cor: COR_DA_SITUACAO[s], onClick: () => abrirLista({ situacao: s }),
   }));
   const atrasadasDe = (lista: TarefaDoDia[]) => `${lista.filter((t) => t.situacao === 'atrasada').length} atrasadas`;
   const porPessoa: Fatia[] = [
@@ -386,8 +394,9 @@ function Filtros({ p, filtro, mudar, areaFixa }: { p: PainelDeTarefas; filtro: F
       )}
       <select value={filtro.situacao ?? ''} onChange={(e) => set('situacao', e.target.value)} className={sel}>
         <option value="">Abertas</option>
-        {/* "Hoje e em dia" só aparece quando vem da tabela de cada pessoa; no select, as quatro situações e as feitas. */}
-        {([...ABERTAS, 'feita', ...(filtro.situacao === 'emdia' ? ['emdia'] : [])] as Recorte[]).map((s) => <option key={s} value={s}>{NOME_DO_RECORTE[s]}</option>)}
+        {/* As quatro situações e as feitas; "Em dia" e "A partir de" só quando vêm de um clique no resumo. */}
+        {([...ABERTAS, 'feita', ...(filtro.situacao === 'mais_tarde' || filtro.situacao === 'emdia' ? [filtro.situacao] : [])] as Recorte[])
+          .map((s) => <option key={s} value={s}>{nomeDaSituacao(s, p.hoje)}</option>)}
       </select>
       {p.clientes.length > 0 && (
         <select value={filtro.cliente ?? ''} onChange={(e) => set('cliente', e.target.value)} className={sel}>
@@ -463,7 +472,7 @@ function QuadroDeTarefas(props: {
         ...p.areas.map((a) => ({ chave: a.id, nome: a.nome, itens: tarefas.filter((t) => t.area?.id === a.id) })),
         { chave: SEM, nome: 'Sem área', itens: tarefas.filter((t) => !t.area) },
       ]
-      : ABERTAS.map((s) => ({ chave: s, nome: NOME_DA_SITUACAO[s], itens: tarefas.filter((t) => t.situacao === s) }));
+      : colunasDoPrazo(tarefas).map((s) => ({ chave: s, nome: nomeDaSituacao(s, p.hoje), itens: tarefas.filter((t) => t.situacao === s) }));
   const visiveis = colunas.filter((c) => c.chave !== SEM || c.itens.length > 0);
 
   const soltar = (chave: string) => {
@@ -823,7 +832,7 @@ function JanelaDaTarefa({ t, p, podeEditar, fechar, alternar, editar, criarArea 
         />
       </div>
       <div className="mt-1 pl-9 text-sm text-muted">
-        {feita ? 'Feita' : NOME_DA_SITUACAO[t.situacao]} · {t.status.nome}
+        {feita ? 'Feita' : nomeDaSituacao(t.situacao, p.hoje)} · {t.status.nome}
       </div>
 
       <div className="mt-5 grid gap-3 sm:grid-cols-2">

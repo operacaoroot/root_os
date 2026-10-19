@@ -31,13 +31,17 @@ describe('tarefas do dia — o que não é tarefa', () => {
 
 describe('tarefas do dia — a régua do prazo', () => {
   const hoje = '2026-10-19'; // segunda
-  it('separa atrasada, hoje, em dia e sem prazo', () => {
+  it('separa atrasada, hoje, próximos 7 dias, mais tarde e sem prazo', () => {
     expect(situacaoDoPrazo('2026-10-16', hoje, false)).toBe('atrasada');
     expect(situacaoDoPrazo('2026-10-19', hoje, false)).toBe('hoje');
-    expect(situacaoDoPrazo('2026-10-20', hoje, false)).toBe('em_dia');
-    expect(situacaoDoPrazo('2026-10-26', hoje, false)).toBe('em_dia');
-    expect(situacaoDoPrazo('2027-03-01', hoje, false)).toBe('em_dia');
+    for (const d of ['20', '21', '22', '23', '24', '25', '26']) expect(situacaoDoPrazo(`2026-10-${d}`, hoje, false)).toBe('proximos_7');
+    expect(situacaoDoPrazo('2026-10-27', hoje, false)).toBe('mais_tarde');
+    expect(situacaoDoPrazo('2027-03-01', hoje, false)).toBe('mais_tarde');
     expect(situacaoDoPrazo(null, hoje, false)).toBe('sem_prazo');
+  });
+  it('a janela de 7 dias é móvel e atravessa o mês', () => {
+    expect(situacaoDoPrazo('2026-11-04', '2026-10-28', false)).toBe('proximos_7');
+    expect(situacaoDoPrazo('2026-11-05', '2026-10-28', false)).toBe('mais_tarde');
   });
   it('feita vence o prazo vencido', () => {
     expect(situacaoDoPrazo('2026-10-01', hoje, true)).toBe('feita');

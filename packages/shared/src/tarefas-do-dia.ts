@@ -14,7 +14,7 @@ import { z } from 'zod';
  *   · `naoPareceTarefa`: título com cara de lead (`Empresa | Pessoa`) ou de post
  *     (`[ROOT-12]`, `Post 40`) — esses têm casa própria (CRM, Máquina de
  *     Conteúdo) e não viram card de tarefa sem alguém confirmar.
- *   · `situacaoDoPrazo`: atrasada, hoje, em dia, sem prazo — a
+ *   · `situacaoDoPrazo`: atrasada, hoje, próximos 7 dias, mais tarde, sem prazo — a
  *     mesma régua para o resumo por pessoa e para os grupos da tela.
  */
 
@@ -88,19 +88,21 @@ export function naoPareceTarefa(titulo: string): { tipo: 'post' | 'lead'; casa: 
   return null;
 }
 
-export type SituacaoDoPrazo = 'feita' | 'atrasada' | 'hoje' | 'em_dia' | 'sem_prazo';
+export type SituacaoDoPrazo = 'feita' | 'atrasada' | 'hoje' | 'proximos_7' | 'mais_tarde' | 'sem_prazo';
 
 /**
- * `prazo` e `hoje` em AAAA-MM-DD (dia de Brasília). "em_dia" é qualquer prazo
- * depois de hoje: a janela "até domingo / depois" saiu em 19/10/2026 (o Lucas
- * achou os dois cortes aleatórios).
+ * `prazo` e `hoje` em AAAA-MM-DD (dia de Brasília). "proximos_7" vai de amanhã
+ * até hoje + 7, janela móvel; "mais_tarde" é o que passa disso. O corte no
+ * domingo saiu em 19/10/2026 (o Lucas achou "Até domingo / Depois" aleatórios).
  */
 export function situacaoDoPrazo(prazo: string | null, hoje: string, feita: boolean): SituacaoDoPrazo {
   if (feita) return 'feita';
   if (!prazo) return 'sem_prazo';
   if (prazo < hoje) return 'atrasada';
   if (prazo === hoje) return 'hoje';
-  return 'em_dia';
+  const d = new Date(`${hoje}T12:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + 7);
+  return prazo <= d.toISOString().slice(0, 10) ? 'proximos_7' : 'mais_tarde';
 }
 
 export const TarefaDoDiaCriarSchema = z.object({
