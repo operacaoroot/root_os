@@ -9,7 +9,7 @@ import {
   DICA_DO_NOME_DA_TAREFA,
 } from '@mktos/shared';
 import type {
-  TrabClienteDto, TrabAgenteDto, TrabEstrutura, TrabListaDto, TrabTarefaLista, TrabTarefaResumo,
+  VistaQuadro, TrabClienteDto, TrabAgenteDto, TrabEstrutura, TrabListaDto, TrabTarefaLista, TrabTarefaResumo,
   TrabTarefaDetalhe, TrabEstruturaSugeridaResultado, TrabMovimentoDoCartao, TrabMovimentoDoQuadro,
 } from '@mktos/shared';
 import { apiBlob, apiDelete, apiGet, apiPatch, apiPost } from '@/lib/api';
@@ -18,6 +18,7 @@ import { tarefasDeTrabalho } from '@/lib/work-projection';
 import { useTarefaNaUrl, type AbaDaTarefa } from '@/lib/tarefa-na-url';
 import { BancadaDoTrilho } from '@/components/onboarding/BancadaDoTrilho';
 import { SeletorDeCliente, type ClienteEscolhido } from './SeletorDeCliente';
+import { VistasDoQuadro } from './VistasDoQuadro';
 import { diasDesde, formatarHoras, hojeEmBrasilia, minutosDeTexto } from '@/lib/horas';
 import {
   CHAVE_DA_DENSIDADE, DENSIDADES, DIAS_DE_ALERTA_NA_ETAPA, ESCOPOS, LARGURA_DA_COLUNA,
@@ -79,6 +80,13 @@ function diaDoCampoData(valor: string | null): string {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(dia) || dia.startsWith('0000')) return '';
   const t = Date.parse(dia);
   return !Number.isNaN(t) && new Date(t).toISOString().slice(0, 10) === dia ? dia : '';
+}
+
+/** O endereço sem a tarefa aberta: abrir e fechar o pop-up não é trocar de filtro. */
+function assinaturaSemTarefa(): string {
+  const p = new URLSearchParams(window.location.search);
+  p.delete('tarefa'); p.delete('tarefaAba');
+  return `${window.location.pathname}?${p.toString()}`;
 }
 
 function mudarEndereco(listaId: string | null, tarefaId: string | null) {
@@ -190,8 +198,7 @@ function TrabalhoConteudo({ visaoInicial, modo }: { visaoInicial: Visao; modo: M
     const ler = () => {
       const p = new URLSearchParams(window.location.search);
       // Abrir e fechar o pop-up mexe só em `tarefa`/`tarefaAba`: o quadro não recarrega.
-      const semTarefa = new URLSearchParams(p); semTarefa.delete('tarefa'); semTarefa.delete('tarefaAba');
-      const assinatura = `${window.location.pathname}?${semTarefa.toString()}`;
+      const assinatura = assinaturaSemTarefa();
       if (filtrosLidos.current === assinatura) return;
       filtrosLidos.current = assinatura;
       setFAssignee(p.get('assignee') ?? ''); setFBusca(p.get('q') ?? '');
@@ -337,7 +344,8 @@ function TrabalhoConteudo({ visaoInicial, modo }: { visaoInicial: Visao; modo: M
     if (daPasta[0]) { selecionarLista(daPasta[0].id); return; }
     listaAtual.current = null; setListaId(null); mudarEndereco(null, null);
   };
-  const abrirTarefa = (id: string, aba?: AbaDaTarefa) => tarefaUrl.abrir(id, aba);
+  // O endereço de quando o pop-up abriu: o voltar que o fecha cai nele e o quadro não recarrega.
+  const abrirTarefa = (id: string, aba?: AbaDaTarefa) => { filtrosLidos.current = assinaturaSemTarefa(); tarefaUrl.abrir(id, aba); };
   const fecharTarefa = tarefaUrl.fechar;
 
   const lista: TrabListaDto | null = useMemo(() => {
@@ -544,6 +552,22 @@ function TrabalhoConteudo({ visaoInicial, modo }: { visaoInicial: Visao; modo: M
                 </button>
               ))}
             </div>
+            {/* T3: a vista salva do quadro (filtros, densidade e visão), por pessoa, no servidor. */}
+            <VistasDoQuadro
+              token={token}
+              enderecoTemFiltro={['assignee', 'q', 'opcao', 'agente', 'statusId', 'escopo', 'overdue', 'cliente', 'visao'].some((k) => typeof window !== 'undefined' && new URLSearchParams(window.location.search).has(k))}
+              atual={{ densidade, visao, filtros: { assignee: fAssignee, agente: fAgente, statusId: fStatus, cliente: fCliente, escopo: fEscopo, q: fBusca } }}
+              aplicar={(v: VistaQuadro) => {
+                escolherDensidade(v.densidade); setVisao(v.visao);
+                setFAssignee(v.filtros.assignee); setFAgente(v.filtros.agente); setFStatus(v.filtros.statusId);
+                setFCliente(v.filtros.cliente); setFEscopo(v.filtros.escopo); setFBusca(v.filtros.q);
+                const url = new URL(window.location.href);
+                for (const [k, val] of [['assignee', v.filtros.assignee], ['agente', v.filtros.agente], ['statusId', v.filtros.statusId], ['cliente', v.filtros.cliente], ['escopo', v.filtros.escopo === 'todos' ? '' : v.filtros.escopo], ['q', v.filtros.q], ['visao', v.visao === 'board' ? '' : 'lista']] as const) {
+                  if (val) url.searchParams.set(k, val); else url.searchParams.delete(k);
+                }
+                window.history.replaceState(window.history.state, '', `${url.pathname}${url.search}${url.hash}`);
+              }}
+            />
             {/* Quadro e Lista: a mesma fonte (WorkTask), duas formas de ver. */}
             <div className="flex overflow-hidden rounded-lg border border-border" role="group" aria-label="Visão das tarefas">
               {(['board', 'tabela'] as const).map((v) => (

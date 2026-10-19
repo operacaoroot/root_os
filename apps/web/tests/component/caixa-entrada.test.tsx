@@ -113,6 +113,10 @@ const TAREFA: CaixaMinhaTarefa = {
   comentarios: 2,
   atualizadaEm: haMin(60),
   motivos: ['prazo_vencido'],
+  criadaEm: haMin(600),
+  prioridade: 'normal',
+  clienteId: 'c-ana',
+  cliente: 'Ana Consultoria',
 };
 
 function tarefas(itens: CaixaMinhaTarefa[]): CaixaTarefasResposta {
@@ -307,7 +311,9 @@ describe('P1: a aba Minhas tarefas', () => {
     expect(screen.getAllByRole('columnheader').map((c) => c.textContent)).toContain('Responsáveis');
     fireEvent.click(screen.getByTestId('caixa-coluna-responsaveis'));
     expect(screen.getAllByRole('columnheader').map((c) => c.textContent)).not.toContain('Responsáveis');
+    // Rodada do trabalho T3/T4: Cliente entrou nas colunas padrão.
     expect(JSON.parse(window.localStorage.getItem(CHAVE_DAS_COLUNAS) ?? '[]')).toEqual([
+      'cliente',
       'lista',
       'status',
       'vencimento',

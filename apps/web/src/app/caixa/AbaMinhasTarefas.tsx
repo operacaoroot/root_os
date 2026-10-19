@@ -11,7 +11,12 @@ import type {
   TrabTarefaDetalhe,
 } from '@mktos/shared';
 
-import { apiGet } from '@/lib/api';
+import {
+  AGRUPAMENTOS, CAMPOS_DE_ORDEM, COLUNAS_DE_MINHAS_TAREFAS, ROTULO_DO_AGRUPAMENTO, ROTULO_DO_CAMPO_DE_ORDEM,
+  VISTA_PADRAO_DE_MINHAS_TAREFAS, agruparTarefas, ordenarTarefas,
+  type Agrupamento, type CampoDeOrdem, type ColunaDeMinhasTarefas, type VistaMinhasTarefas, type VistaSalvaDto,
+} from '@mktos/shared';
+import { apiGet, apiPatch, apiPost } from '@/lib/api';
 import { useTarefaNaUrl } from '@/lib/tarefa-na-url';
 import { TarefaFlutuante } from '@/components/trabalho/TrabalhoView';
 import {
@@ -36,13 +41,17 @@ import {
  * dona (`GET /trabalho/tarefas/:id`). No celular a tabela vira lista de cartões.
  */
 
-export const COLUNAS = ['lista', 'status', 'vencimento', 'responsaveis', 'comentarios'] as const;
-export type Coluna = (typeof COLUNAS)[number];
+// Rodada do trabalho T3/T4: Cliente, Prioridade e Criada em entram; a ordem vem do shared.
+export const COLUNAS = COLUNAS_DE_MINHAS_TAREFAS;
+export type Coluna = ColunaDeMinhasTarefas;
 const ROTULO_DA_COLUNA: Record<Coluna, string> = {
+  cliente: 'Cliente',
   lista: 'Lista',
   status: 'Status',
   vencimento: 'Vencimento',
+  prioridade: 'Prioridade',
   responsaveis: 'Responsáveis',
+  criadaEm: 'Criada em',
   comentarios: 'Comentários',
 };
 export const CHAVE_DAS_COLUNAS = 'caixa.tarefas.colunas.v1';
@@ -62,22 +71,18 @@ const ROTULO_DO_VENCIMENTO: Record<CaixaFiltroDeVencimento, string> = {
 function lerColunas(): Set<Coluna> {
   try {
     const bruto = window.localStorage.getItem(CHAVE_DAS_COLUNAS);
-    if (!bruto) return new Set(COLUNAS);
+    if (!bruto) return new Set(VISTA_PADRAO_DE_MINHAS_TAREFAS.colunas);
     const lidas = (JSON.parse(bruto) as unknown[]).filter((c): c is Coluna =>
       (COLUNAS as readonly string[]).includes(c as string),
     );
     return new Set(lidas);
   } catch {
-    return new Set(COLUNAS);
+    return new Set(VISTA_PADRAO_DE_MINHAS_TAREFAS.colunas);
   }
 }
 
-interface Filtros {
-  lista: string; // '' | 'lista:<id>' | 'pasta:<id>'
-  status: string;
-  vencimento: '' | CaixaFiltroDeVencimento;
-  responsavel: 'eu' | 'qualquer';
-}
+/** Os filtros que vão à API; o de cliente filtra aqui, sobre o que chegou. */
+type Filtros = VistaMinhasTarefas['filtros'];
 
 function caminho(f: Filtros): string {
   const q = new URLSearchParams();
@@ -220,6 +225,19 @@ function BalaoDeComentarios({
  * A aba
  * ------------------------------------------------------------------------ */
 
+/*
+ * AS VISTAS (rodada do trabalho T3, 19/10/2026). A pessoa escolhe ordenação
+ * (qualquer coluna, crescente ou decrescente), agrupamento (vencimento no estilo
+ * ClickUp, status, cliente, lista), colunas e filtros, e SALVA como vista com
+ * nome, uma marcada como padrão, no servidor (`/trabalho/vistas`). A primeira
+ * vez, a preferência de colunas do navegador vira a vista padrão.
+ */
+const CHAVE_DA_MIGRACAO = 'caixa.tarefas.vistas.migrado.v1';
+
+function configInicial(): VistaMinhasTarefas {
+  return { ...VISTA_PADRAO_DE_MINHAS_TAREFAS, colunas: [...lerColunas()] };
+}
+
 export function AbaMinhasTarefas({ token }: { token: string }) {
   // A tarefa abre num pop-up por cima da tabela (rodada do trabalho T2): ninguém sai de Pendências.
   const popup = useTarefaNaUrl();
@@ -228,32 +246,106 @@ export function AbaMinhasTarefas({ token }: { token: string }) {
     e.preventDefault();
     popup.abrir(id);
   };
-  const [filtros, setFiltros] = useState<Filtros>({ lista: '', status: '', vencimento: '', responsavel: 'eu' });
-  const [colunas, setColunas] = useState<Set<Coluna>>(() => new Set(COLUNAS));
+  const [config, setConfig] = useState<VistaMinhasTarefas>(VISTA_PADRAO_DE_MINHAS_TAREFAS);
+  const [vistas, setVistas] = useState<VistaSalvaDto[]>([]);
+  const [vistaId, setVistaId] = useState<string>('');
+  const [avisoDaVista, setAvisoDaVista] = useState<string | null>(null);
   const [resposta, setResposta] = useState<CaixaTarefasResposta | null>(null);
   const [erro, setErro] = useState<string | null>(null);
   const [carregando, setCarregando] = useState(true);
   const [balao, setBalao] = useState<{ tarefa: CaixaMinhaTarefa; ancora: DOMRect | null; origem: HTMLElement | null } | null>(null);
   const origemDoBalao = useRef<HTMLElement | null>(null);
   const pedido = useRef(0);
+  const filtros = config.filtros;
+  const colunas = useMemo(() => new Set<Coluna>(config.colunas), [config.colunas]);
 
+  /*
+   * Ao abrir: a vista padrão vale; sem nenhuma vista e com a preferência antiga
+   * de colunas no navegador, ela vira a vista padrão (uma vez só).
+   */
   useEffect(() => {
-    setColunas(lerColunas());
-  }, []);
+    let vivo = true;
+    const inicial = configInicial();
+    setConfig(inicial);
+    apiGet<VistaSalvaDto[]>('/trabalho/vistas?tela=minhas-tarefas', token)
+      .then(async (lidas) => {
+        if (!vivo) return;
+        const lista = Array.isArray(lidas) ? lidas : [];
+        const padrao = lista.find((v) => v.padrao);
+        if (padrao) {
+          setVistas(lista); setVistaId(padrao.id); setConfig(padrao.config as VistaMinhasTarefas);
+          return;
+        }
+        let migrar = false;
+        try { migrar = lista.length === 0 && !!window.localStorage.getItem(CHAVE_DAS_COLUNAS) && !window.localStorage.getItem(CHAVE_DA_MIGRACAO); } catch { /* sem armazenamento */ }
+        if (migrar) {
+          const criada = await apiPost<VistaSalvaDto>('/trabalho/vistas', { tela: 'minhas-tarefas', nome: 'Minha vista', padrao: true, config: inicial }, token);
+          try { window.localStorage.setItem(CHAVE_DA_MIGRACAO, '1'); } catch { /* sem armazenamento */ }
+          if (vivo && criada?.id) { setVistas([criada]); setVistaId(criada.id); }
+          return;
+        }
+        setVistas(lista);
+      })
+      .catch(() => { /* sem vistas do servidor: vale a preferência deste navegador */ });
+    return () => { vivo = false; };
+  }, [token]);
+
+  const mudar = (m: Partial<VistaMinhasTarefas>) => setConfig((c) => ({ ...c, ...m }));
+  const mudarFiltro = (m: Partial<VistaMinhasTarefas['filtros']>) => setConfig((c) => ({ ...c, filtros: { ...c.filtros, ...m } }));
 
   function alternarColuna(c: Coluna) {
-    setColunas((atual) => {
-      const n = new Set(atual);
+    setConfig((atual) => {
+      const n = new Set(atual.colunas);
       if (n.has(c)) n.delete(c);
       else n.add(c);
+      const lista = COLUNAS.filter((x) => n.has(x));
       try {
-        window.localStorage.setItem(CHAVE_DAS_COLUNAS, JSON.stringify(COLUNAS.filter((x) => n.has(x))));
+        window.localStorage.setItem(CHAVE_DAS_COLUNAS, JSON.stringify(lista));
       } catch {
         /* sem localStorage (aba anônima com bloqueio): a escolha vale só nesta visita */
       }
-      return n;
+      return { ...atual, colunas: lista };
     });
   }
+
+  const escolherVista = (id: string) => {
+    setVistaId(id);
+    setAvisoDaVista(null);
+    const v = vistas.find((x) => x.id === id);
+    if (v) setConfig(v.config as VistaMinhasTarefas);
+  };
+
+  const salvarComo = async () => {
+    const nome = window.prompt('Nome da vista (por exemplo, "Por cliente" ou "Atrasadas primeiro")')?.trim();
+    if (!nome) return;
+    try {
+      const criada = await apiPost<VistaSalvaDto>('/trabalho/vistas', { tela: 'minhas-tarefas', nome, padrao: vistas.length === 0, config }, token);
+      setVistas((l) => [...l.filter((x) => x.id !== criada.id), criada]);
+      setVistaId(criada.id);
+      setAvisoDaVista(`Vista "${criada.nome}" salva.`);
+    } catch (e) { setAvisoDaVista((e as Error).message); }
+  };
+
+  const atualizarVista = async () => {
+    if (!vistaId) return;
+    try {
+      const nova = await apiPatch<VistaSalvaDto>(`/trabalho/vistas/${vistaId}`, { config }, token);
+      setVistas((l) => l.map((x) => (x.id === nova.id ? nova : x)));
+      setAvisoDaVista(`Vista "${nova.nome}" atualizada.`);
+    } catch (e) { setAvisoDaVista((e as Error).message); }
+  };
+
+  const marcarPadrao = async () => {
+    if (!vistaId) return;
+    try {
+      const nova = await apiPatch<VistaSalvaDto>(`/trabalho/vistas/${vistaId}`, { padrao: true }, token);
+      setVistas((l) => l.map((x) => (x.id === nova.id ? nova : { ...x, padrao: false })));
+      setAvisoDaVista(`"${nova.nome}" é a sua vista padrão.`);
+    } catch (e) { setAvisoDaVista((e as Error).message); }
+  };
+
+  const vistaAtual = vistas.find((v) => v.id === vistaId) ?? null;
+  const modificada = !!vistaAtual && JSON.stringify(vistaAtual.config) !== JSON.stringify(config);
 
   const buscar = useCallback(async () => {
     const n = ++pedido.current;
@@ -267,7 +359,9 @@ export function AbaMinhasTarefas({ token }: { token: string }) {
     } finally {
       if (n === pedido.current) setCarregando(false);
     }
-  }, [filtros, token]);
+    // A consulta só muda com os filtros que vão à API (o cliente filtra aqui).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filtros.lista, filtros.status, filtros.vencimento, filtros.responsavel, token]);
 
   useEffect(() => {
     void buscar();
@@ -278,6 +372,21 @@ export function AbaMinhasTarefas({ token }: { token: string }) {
     for (const l of resposta?.listas ?? []) if (l.pastaId && l.pasta) m.set(l.pastaId, l.pasta);
     return [...m.entries()];
   }, [resposta]);
+
+  const clientesNaLista = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const t of resposta?.itens ?? []) if (t.clienteId && t.cliente) m.set(t.clienteId, t.cliente);
+    return [...m.entries()].sort((a, b) => a[1].localeCompare(b[1], 'pt-BR'));
+  }, [resposta]);
+
+  const agora = resposta ? new Date(resposta.agora) : new Date();
+  const itensVisiveis = useMemo(() => {
+    const todos = resposta?.itens ?? [];
+    const f = filtros.cliente;
+    const filtrados = !f ? todos : f === 'sem' ? todos.filter((t) => !t.clienteId) : todos.filter((t) => t.clienteId === f);
+    return ordenarTarefas(filtrados, config.ordenacao);
+  }, [resposta, filtros.cliente, config.ordenacao]);
+  const grupos = useMemo(() => agruparTarefas(itensVisiveis, config.agrupamento, agora), [itensVisiveis, config.agrupamento, agora]);
 
   const fecharBalao = useCallback((devolverFoco: boolean) => {
     const origem = origemDoBalao.current;
@@ -293,9 +402,32 @@ export function AbaMinhasTarefas({ token }: { token: string }) {
     origemDoBalao.current = botao;
     setBalao({ tarefa: t, ancora: botao.getBoundingClientRect(), origem: botao });
   };
-  const agora = resposta ? new Date(resposta.agora) : new Date();
   const fraseDeEstado = resposta ? fraseDoQuadro(resposta.estado) : null;
   const ver = (c: Coluna) => colunas.has(c);
+
+  /** O cabeçalho ordena pela coluna; clicar de novo inverte. */
+  const ordenarPor = (campo: CampoDeOrdem) =>
+    mudar({ ordenacao: { campo, direcao: config.ordenacao.campo === campo && config.ordenacao.direcao === 'asc' ? 'desc' : 'asc' } });
+  const CAMPO_DA_COLUNA: Partial<Record<Coluna, CampoDeOrdem>> = {
+    cliente: 'cliente', lista: 'lista', status: 'status', vencimento: 'vencimento', prioridade: 'prioridade', criadaEm: 'criadaEm',
+  };
+  const cabecalho = (rotulo: string, campo: CampoDeOrdem | undefined, chave: string) => {
+    const ativo = campo && config.ordenacao.campo === campo;
+    return (
+      <th
+        key={chave}
+        scope="col"
+        aria-sort={ativo ? (config.ordenacao.direcao === 'asc' ? 'ascending' : 'descending') : undefined}
+        className={`${ROTULO} px-3 py-2 font-normal`}
+      >
+        {campo ? (
+          <button type="button" onClick={() => ordenarPor(campo)} data-testid={`caixa-ordenar-${chave}`} className={`uppercase hover:text-text ${FOCO}`}>
+            {rotulo}{ativo ? (config.ordenacao.direcao === 'asc' ? ' ↑' : ' ↓') : ''}
+          </button>
+        ) : rotulo}
+      </th>
+    );
+  };
 
   // Os ids de teste são únicos na página: a tabela e os cartões estão os dois
   // no DOM (um deles escondido por CSS), e um seletor que casasse com dois
@@ -317,9 +449,100 @@ export function AbaMinhasTarefas({ token }: { token: string }) {
   const prazo = (t: CaixaMinhaTarefa) => (
     <span className={t.motivos.includes('prazo_vencido') ? 'text-bad' : ''}>{dia(t.prazo)}</span>
   );
+  const nomeDoCliente = (t: CaixaMinhaTarefa) =>
+    t.cliente ?? <span className="font-os-mono text-[10.5px] text-warn">sem cliente</span>;
+  const colunasVisiveis = COLUNAS.filter(ver);
+
+  const linhaDaTabela = (t: CaixaMinhaTarefa) => (
+    <tr key={t.id} data-testid={`caixa-tarefa-${t.id}`} onClick={() => popup.abrir(t.id)} className="cursor-pointer align-top hover:bg-surface-2">
+      <td className="max-w-[320px] px-3 py-2">
+        <a
+          href={`?aba=tarefas&tarefa=${encodeURIComponent(t.id)}`}
+          onClick={(e) => { e.stopPropagation(); abrirNoClique(t.id)(e); }}
+          className={`break-words font-medium text-text hover:text-brand hover:underline ${FOCO}`}
+        >
+          {t.titulo}
+        </a>
+        {t.motivos.length > 0 && (
+          <span className="mt-0.5 block text-[11px] text-warn">
+            {t.motivos.map((m) => FRASE_DO_MOTIVO[m]).join(' · ')}
+          </span>
+        )}
+      </td>
+      {ver('cliente') && <td className="px-3 py-2">{nomeDoCliente(t)}</td>}
+      {ver('lista') && (
+        <td className="px-3 py-2 text-muted">
+          {t.pasta ? <span className="text-dim">{t.pasta} / </span> : null}
+          {t.lista}
+        </td>
+      )}
+      {ver('status') && (
+        <td className="px-3 py-2">
+          <span className="inline-flex items-center gap-1.5">
+            <span aria-hidden="true" className="inline-block h-2 w-2 rounded-full" style={{ backgroundColor: t.statusCor }} />
+            {t.status}
+          </span>
+        </td>
+      )}
+      {ver('vencimento') && <td className="whitespace-nowrap px-3 py-2">{prazo(t)}</td>}
+      {ver('prioridade') && <td className="px-3 py-2 capitalize text-muted">{t.prioridade}</td>}
+      {ver('responsaveis') && <td className="px-3 py-2 text-muted">{t.responsavel ?? 'ninguém'}</td>}
+      {ver('criadaEm') && <td className="whitespace-nowrap px-3 py-2 text-muted">{dia(t.criadaEm)}</td>}
+      {ver('comentarios') && <td className="px-3 py-2" onClick={(e) => e.stopPropagation()}>{botaoDeComentarios(t)}</td>}
+    </tr>
+  );
 
   return (
     <div className="space-y-3">
+      {/* -------------------------------------------------------- vista */}
+      <div className="flex flex-wrap items-end gap-2" data-testid="caixa-vistas">
+        <label className="flex flex-col gap-1">
+          <span className={ROTULO}>Vista</span>
+          <select data-testid="caixa-vista" value={vistaId} onChange={(e) => escolherVista(e.target.value)} className={SELECT}>
+            <option value="">{vistas.length ? 'Sem vista salva' : 'Nenhuma vista salva'}</option>
+            {vistas.map((v) => (
+              <option key={v.id} value={v.id}>{v.nome}{v.padrao ? ' (padrão)' : ''}</option>
+            ))}
+          </select>
+        </label>
+        <button type="button" data-testid="caixa-vista-salvar-como" onClick={() => void salvarComo()} className={BOTAO_PEQUENO}>Salvar como vista</button>
+        {vistaAtual && modificada && (
+          <button type="button" data-testid="caixa-vista-atualizar" onClick={() => void atualizarVista()} className={BOTAO_PEQUENO}>Atualizar "{vistaAtual.nome}"</button>
+        )}
+        {vistaAtual && !vistaAtual.padrao && (
+          <button type="button" data-testid="caixa-vista-padrao" onClick={() => void marcarPadrao()} className={BOTAO_PEQUENO}>Marcar como padrão</button>
+        )}
+        <label className="flex flex-col gap-1">
+          <span className={ROTULO}>Ordenar por</span>
+          <span className="flex gap-1">
+            <select
+              data-testid="caixa-ordem-campo"
+              value={config.ordenacao.campo}
+              onChange={(e) => mudar({ ordenacao: { ...config.ordenacao, campo: e.target.value as CampoDeOrdem } })}
+              className={SELECT}
+            >
+              {CAMPOS_DE_ORDEM.map((c) => <option key={c} value={c}>{ROTULO_DO_CAMPO_DE_ORDEM[c]}</option>)}
+            </select>
+            <button
+              type="button"
+              data-testid="caixa-ordem-direcao"
+              aria-label={config.ordenacao.direcao === 'asc' ? 'Crescente; trocar para decrescente' : 'Decrescente; trocar para crescente'}
+              onClick={() => mudar({ ordenacao: { ...config.ordenacao, direcao: config.ordenacao.direcao === 'asc' ? 'desc' : 'asc' } })}
+              className={BOTAO_PEQUENO}
+            >
+              {config.ordenacao.direcao === 'asc' ? 'crescente' : 'decrescente'}
+            </button>
+          </span>
+        </label>
+        <label className="flex flex-col gap-1">
+          <span className={ROTULO}>Agrupar por</span>
+          <select data-testid="caixa-agrupar" value={config.agrupamento} onChange={(e) => mudar({ agrupamento: e.target.value as Agrupamento })} className={SELECT}>
+            {AGRUPAMENTOS.map((a) => <option key={a} value={a}>{ROTULO_DO_AGRUPAMENTO[a]}</option>)}
+          </select>
+        </label>
+        {avisoDaVista && <p role="status" className="text-[12px] text-muted">{avisoDaVista}</p>}
+      </div>
+
       {/* -------------------------------------------------------- filtros */}
       <div className="flex flex-wrap items-end gap-2">
         <label className="flex flex-col gap-1">
@@ -327,7 +550,7 @@ export function AbaMinhasTarefas({ token }: { token: string }) {
           <select
             data-testid="caixa-filtro-lista"
             value={filtros.lista}
-            onChange={(e) => setFiltros((f) => ({ ...f, lista: e.target.value }))}
+            onChange={(e) => mudarFiltro({ lista: e.target.value })}
             className={SELECT}
           >
             <option value="">Todas</option>
@@ -354,7 +577,7 @@ export function AbaMinhasTarefas({ token }: { token: string }) {
           <select
             data-testid="caixa-filtro-status"
             value={filtros.status}
-            onChange={(e) => setFiltros((f) => ({ ...f, status: e.target.value }))}
+            onChange={(e) => mudarFiltro({ status: e.target.value })}
             className={SELECT}
           >
             <option value="">Abertos</option>
@@ -370,9 +593,7 @@ export function AbaMinhasTarefas({ token }: { token: string }) {
           <select
             data-testid="caixa-filtro-vencimento"
             value={filtros.vencimento}
-            onChange={(e) =>
-              setFiltros((f) => ({ ...f, vencimento: e.target.value as Filtros['vencimento'] }))
-            }
+            onChange={(e) => mudarFiltro({ vencimento: e.target.value as VistaMinhasTarefas['filtros']['vencimento'] })}
             className={SELECT}
           >
             <option value="">Qualquer</option>
@@ -388,13 +609,19 @@ export function AbaMinhasTarefas({ token }: { token: string }) {
           <select
             data-testid="caixa-filtro-responsavel"
             value={filtros.responsavel}
-            onChange={(e) =>
-              setFiltros((f) => ({ ...f, responsavel: e.target.value as Filtros['responsavel'] }))
-            }
+            onChange={(e) => mudarFiltro({ responsavel: e.target.value as VistaMinhasTarefas['filtros']['responsavel'] })}
             className={SELECT}
           >
             <option value="eu">Eu</option>
             <option value="qualquer">Qualquer pessoa</option>
+          </select>
+        </label>
+        <label className="flex flex-col gap-1">
+          <span className={ROTULO}>Cliente</span>
+          <select data-testid="caixa-filtro-cliente" value={filtros.cliente} onChange={(e) => mudarFiltro({ cliente: e.target.value })} className={SELECT}>
+            <option value="">Todos</option>
+            <option value="sem">Sem cliente</option>
+            {clientesNaLista.map(([id, nome]) => <option key={id} value={id}>{nome}</option>)}
           </select>
         </label>
         <details className="relative ml-auto">
@@ -426,9 +653,9 @@ export function AbaMinhasTarefas({ token }: { token: string }) {
         <Carregando texto="Lendo as suas tarefas..." />
       ) : fraseDeEstado ? (
         <Vazio>{fraseDeEstado}</Vazio>
-      ) : !resposta || resposta.itens.length === 0 ? (
+      ) : !resposta || itensVisiveis.length === 0 ? (
         <Vazio>
-          {filtros.lista || filtros.status || filtros.vencimento
+          {filtros.lista || filtros.status || filtros.vencimento || filtros.cliente
             ? 'Nenhuma tarefa com estes filtros.'
             : 'Nenhuma tarefa aberta com você como responsável.'}
         </Vazio>
@@ -439,109 +666,85 @@ export function AbaMinhasTarefas({ token }: { token: string }) {
             <table className="w-full text-left text-[12.5px]">
               <thead>
                 <tr className="border-b border-border">
-                  <th scope="col" className={`${ROTULO} px-3 py-2 font-normal`}>
-                    Nome
-                  </th>
-                  {COLUNAS.filter(ver).map((c) => (
-                    <th key={c} scope="col" className={`${ROTULO} px-3 py-2 font-normal`}>
-                      {ROTULO_DA_COLUNA[c]}
-                    </th>
-                  ))}
+                  {cabecalho('Nome', 'titulo', 'titulo')}
+                  {colunasVisiveis.map((c) => cabecalho(ROTULO_DA_COLUNA[c], CAMPO_DA_COLUNA[c], c))}
                 </tr>
               </thead>
-              <tbody className="divide-y divide-border">
-                {resposta.itens.map((t) => (
-                  <tr key={t.id} data-testid={`caixa-tarefa-${t.id}`} onClick={() => popup.abrir(t.id)} className="cursor-pointer align-top hover:bg-surface-2">
-                    <td className="max-w-[320px] px-3 py-2">
-                      <a
-                        href={`?aba=tarefas&tarefa=${encodeURIComponent(t.id)}`}
-                        onClick={(e) => { e.stopPropagation(); abrirNoClique(t.id)(e); }}
-                        className={`break-words font-medium text-text hover:text-brand hover:underline ${FOCO}`}
-                      >
-                        {t.titulo}
-                      </a>
-                      {t.motivos.length > 0 && (
-                        <span className="mt-0.5 block text-[11px] text-warn">
-                          {t.motivos.map((m) => FRASE_DO_MOTIVO[m]).join(' · ')}
-                        </span>
-                      )}
-                    </td>
-                    {ver('lista') && (
-                      <td className="px-3 py-2 text-muted">
-                        {t.pasta ? <span className="text-dim">{t.pasta} / </span> : null}
-                        {t.lista}
-                      </td>
-                    )}
-                    {ver('status') && (
-                      <td className="px-3 py-2">
-                        <span className="inline-flex items-center gap-1.5">
-                          <span
-                            aria-hidden="true"
-                            className="inline-block h-2 w-2 rounded-full"
-                            style={{ backgroundColor: t.statusCor }}
-                          />
-                          {t.status}
-                        </span>
-                      </td>
-                    )}
-                    {ver('vencimento') && <td className="whitespace-nowrap px-3 py-2">{prazo(t)}</td>}
-                    {ver('responsaveis') && (
-                      <td className="px-3 py-2 text-muted">{t.responsavel ?? 'ninguém'}</td>
-                    )}
-                    {ver('comentarios') && <td className="px-3 py-2" onClick={(e) => e.stopPropagation()}>{botaoDeComentarios(t)}</td>}
-                  </tr>
-                ))}
-              </tbody>
+              {grupos.map((g) => (
+                <tbody key={g.chave} className="divide-y divide-border" data-testid={`caixa-grupo-${g.chave}`}>
+                  {config.agrupamento !== 'nenhum' && (
+                    <tr className="bg-surface-2">
+                      <th scope="rowgroup" colSpan={1 + colunasVisiveis.length} className="px-3 py-1.5 text-left font-os-mono text-[10.5px] uppercase tracking-[0.14em] text-muted">
+                        {g.rotulo} <span className="tabular-nums">· {g.itens.length}</span>
+                      </th>
+                    </tr>
+                  )}
+                  {g.itens.map(linhaDaTabela)}
+                </tbody>
+              ))}
             </table>
           </div>
 
           {/* Celular: cartões */}
-          <ul className="space-y-2 md:hidden">
-            {resposta.itens.map((t) => (
-              <li key={t.id} data-testid={`caixa-tarefa-cartao-${t.id}`} className={`${CARTAO} relative space-y-1.5 p-3`}>
-                <a
-                  href={`?aba=tarefas&tarefa=${encodeURIComponent(t.id)}`}
-                  onClick={abrirNoClique(t.id)}
-                  className={`block break-words text-[13px] font-medium text-text after:absolute after:inset-0 after:content-[''] hover:text-brand ${FOCO}`}
-                >
-                  {t.titulo}
-                </a>
-                {t.motivos.length > 0 && (
-                  <p className="text-[11px] text-warn">{t.motivos.map((m) => FRASE_DO_MOTIVO[m]).join(' · ')}</p>
-                )}
-                <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-0.5 text-[12px]">
-                  {ver('lista') && (
-                    <>
-                      <dt className="text-muted">Lista</dt>
-                      <dd className="break-words">{t.pasta ? `${t.pasta} / ${t.lista}` : t.lista}</dd>
-                    </>
-                  )}
-                  {ver('status') && (
-                    <>
-                      <dt className="text-muted">Status</dt>
-                      <dd>{t.status}</dd>
-                    </>
-                  )}
-                  {ver('vencimento') && (
-                    <>
-                      <dt className="text-muted">Vencimento</dt>
-                      <dd>{prazo(t)}</dd>
-                    </>
-                  )}
-                  {ver('responsaveis') && (
-                    <>
-                      <dt className="text-muted">Responsáveis</dt>
-                      <dd className="break-words">{t.responsavel ?? 'ninguém'}</dd>
-                    </>
-                  )}
-                </dl>
-                {ver('comentarios') && <div className="relative z-10">{botaoDeComentarios(t, true)}</div>}
-              </li>
+          <div className="space-y-3 md:hidden">
+            {grupos.map((g) => (
+              <section key={g.chave} aria-label={config.agrupamento !== 'nenhum' ? g.rotulo : undefined}>
+                {config.agrupamento !== 'nenhum' && <p className={`${ROTULO} mb-1`}>{g.rotulo} · {g.itens.length}</p>}
+                <ul className="space-y-2">
+                  {g.itens.map((t) => (
+                    <li key={t.id} data-testid={`caixa-tarefa-cartao-${t.id}`} className={`${CARTAO} relative space-y-1.5 p-3`}>
+                      <a
+                        href={`?aba=tarefas&tarefa=${encodeURIComponent(t.id)}`}
+                        onClick={abrirNoClique(t.id)}
+                        className={`block break-words text-[13px] font-medium text-text after:absolute after:inset-0 after:content-[''] hover:text-brand ${FOCO}`}
+                      >
+                        {t.titulo}
+                      </a>
+                      {t.motivos.length > 0 && (
+                        <p className="text-[11px] text-warn">{t.motivos.map((m) => FRASE_DO_MOTIVO[m]).join(' · ')}</p>
+                      )}
+                      <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-0.5 text-[12px]">
+                        {ver('cliente') && (
+                          <>
+                            <dt className="text-muted">Cliente</dt>
+                            <dd className="break-words">{nomeDoCliente(t)}</dd>
+                          </>
+                        )}
+                        {ver('lista') && (
+                          <>
+                            <dt className="text-muted">Lista</dt>
+                            <dd className="break-words">{t.pasta ? `${t.pasta} / ${t.lista}` : t.lista}</dd>
+                          </>
+                        )}
+                        {ver('status') && (
+                          <>
+                            <dt className="text-muted">Status</dt>
+                            <dd>{t.status}</dd>
+                          </>
+                        )}
+                        {ver('vencimento') && (
+                          <>
+                            <dt className="text-muted">Vencimento</dt>
+                            <dd>{prazo(t)}</dd>
+                          </>
+                        )}
+                        {ver('responsaveis') && (
+                          <>
+                            <dt className="text-muted">Responsáveis</dt>
+                            <dd className="break-words">{t.responsavel ?? 'ninguém'}</dd>
+                          </>
+                        )}
+                      </dl>
+                      {ver('comentarios') && <div className="relative z-10">{botaoDeComentarios(t, true)}</div>}
+                    </li>
+                  ))}
+                </ul>
+              </section>
             ))}
-          </ul>
+          </div>
 
           <p className="text-xs text-muted">
-            {resposta.itens.length} tarefa(s)
+            {itensVisiveis.length} tarefa(s)
             {resposta.truncado && `, mostrando as ${resposta.teto} primeiras pelo prazo. Use os filtros para achar o resto`}
             . Atualizado {haQuanto(resposta.agora, agora)}.
           </p>
