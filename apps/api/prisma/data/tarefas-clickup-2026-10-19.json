@@ -1,5 +1,5 @@
 {
-  "fonte": "ClickUp, espaço Root (901313864063), listas de demandas; fotografia de 19/10/2026. Leads, contratos e posts ficaram de fora (são cadastro). Lucas Creator fica de fora por enquanto (pedido de 19/10).",
+  "fonte": "ClickUp, espaço Root (901313864063), listas de demandas; fotografia de 19/10/2026. Leads, contratos e posts ficaram de fora (são cadastro). Lucas Creator fica de fora por enquanto (pedido de 19/10). Descrições trazidas do ClickUp em 19/10 (21 de 44); o FUP é subtarefa do card Curral.",
   "tarefas": [
     {
       "id": "86akgx94u",
@@ -13,7 +13,8 @@
       "cliente": null,
       "origem": "ClickUp › Demandas do dia a dia",
       "url": "https://app.clickup.com/t/86akgx94u",
-      "nota": null
+      "nota": null,
+      "descricao": null
     },
     {
       "id": "86akgwh7p",
@@ -27,7 +28,8 @@
       "cliente": null,
       "origem": "ClickUp › Demandas do dia a dia",
       "url": "https://app.clickup.com/t/86akgwh7p",
-      "nota": null
+      "nota": null,
+      "descricao": null
     },
     {
       "id": "86ake4e4e",
@@ -41,7 +43,8 @@
       "cliente": null,
       "origem": "ClickUp › Demandas do dia a dia",
       "url": "https://app.clickup.com/t/86ake4e4e",
-      "nota": null
+      "nota": null,
+      "descricao": null
     },
     {
       "id": "17tkhj50wxb",
@@ -55,7 +58,8 @@
       "cliente": null,
       "origem": "ClickUp › Demandas do dia a dia",
       "url": "https://app.clickup.com/t/17tkhj50wxb",
-      "nota": null
+      "nota": null,
+      "descricao": null
     },
     {
       "id": "17tkhj50wx9",
@@ -69,7 +73,8 @@
       "cliente": null,
       "origem": "ClickUp › Demandas do dia a dia",
       "url": "https://app.clickup.com/t/17tkhj50wx9",
-      "nota": null
+      "nota": null,
+      "descricao": null
     },
     {
       "id": "17tkhj50ww4",
@@ -83,7 +88,8 @@
       "cliente": null,
       "origem": "ClickUp › Demandas do dia a dia",
       "url": "https://app.clickup.com/t/17tkhj50ww4",
-      "nota": null
+      "nota": null,
+      "descricao": "execucao do fluxo comercial e do onboparding - checar o que ja tem do rodrigo"
     },
     {
       "id": "17tkhj50wvw",
@@ -97,7 +103,8 @@
       "cliente": null,
       "origem": "ClickUp › Demandas do dia a dia",
       "url": "https://app.clickup.com/t/17tkhj50wvw",
-      "nota": null
+      "nota": null,
+      "descricao": null
     },
     {
       "id": "17tkhj50wuv",
@@ -111,7 +118,8 @@
       "cliente": null,
       "origem": "ClickUp › Demandas do dia a dia",
       "url": "https://app.clickup.com/t/17tkhj50wuv",
-      "nota": null
+      "nota": null,
+      "descricao": "fluxo de atualizacao e criacao de demandas\nlembretes\ncriacao de proposta comercial"
     },
     {
       "id": "17tkhj50ubu",
@@ -125,7 +133,8 @@
       "cliente": null,
       "origem": "ClickUp › Demandas do dia a dia",
       "url": "https://app.clickup.com/t/17tkhj50ubu",
-      "nota": null
+      "nota": null,
+      "descricao": "Responsável na ata: Time.\n\n_Origem: reunião Semana da Root — 29/09/2026._"
     },
     {
       "id": "17tkhj50ubt",
@@ -139,7 +148,8 @@
       "cliente": null,
       "origem": "ClickUp › Demandas do dia a dia",
       "url": "https://app.clickup.com/t/17tkhj50ubt",
-      "nota": null
+      "nota": null,
+      "descricao": "Frente de produto.\n\n_Origem: reunião Semana da Root — 29/09/2026._"
     },
     {
       "id": "17tkhj50ubr",
@@ -153,7 +163,8 @@
       "cliente": null,
       "origem": "ClickUp › Demandas do dia a dia",
       "url": "https://app.clickup.com/t/17tkhj50ubr",
-      "nota": null
+      "nota": null,
+      "descricao": "Frente de produto.\n\n_Origem: reunião Semana da Root — 29/09/2026._"
     },
     {
       "id": "17tkhj50ubm",
@@ -167,7 +178,8 @@
       "cliente": null,
       "origem": "ClickUp › Demandas do dia a dia",
       "url": "https://app.clickup.com/t/17tkhj50ubm",
-      "nota": null
+      "nota": null,
+      "descricao": "_Origem: reunião Semana da Root — 29/09/2026._"
     },
     {
       "id": "17tkhj52x2r",
@@ -181,7 +193,8 @@
       "cliente": null,
       "origem": "ClickUp › Demandas do dia a dia",
       "url": "https://app.clickup.com/t/17tkhj52x2r",
-      "nota": null
+      "nota": null,
+      "descricao": null
     },
     {
       "id": "17tkhj52x2q",
@@ -195,7 +208,8 @@
       "cliente": null,
       "origem": "ClickUp › Demandas do dia a dia",
       "url": "https://app.clickup.com/t/17tkhj52x2q",
-      "nota": null
+      "nota": null,
+      "descricao": null
     },
     {
       "id": "17tkhj52x2g",
@@ -209,7 +223,8 @@
       "cliente": null,
       "origem": "ClickUp › Demandas do dia a dia",
       "url": "https://app.clickup.com/t/17tkhj52x2g",
-      "nota": null
+      "nota": null,
+      "descricao": null
     },
     {
       "id": "17tkhj50ubn",
@@ -226,7 +241,8 @@
       },
       "origem": "ClickUp › Demandas do dia a dia",
       "url": "https://app.clickup.com/t/17tkhj50ubn",
-      "nota": null
+      "nota": null,
+      "descricao": "O que falta no projeto:\n\n*   Britix da equipe carregado\n*   OS finalizado medindo entradas e saídas\n*   Alterações e planos de mudança\n\n_Origem: reunião Semana da Root — 29/09/2026._"
     },
     {
       "id": "17tkhj50wu3",
@@ -238,7 +254,9 @@
       "cliente": null,
       "origem": "ClickUp › Demandas do dia a dia",
       "url": "https://app.clickup.com/t/17tkhj50wu3",
-      "nota": null
+      "nota": null,
+      "descricao": null,
+      "paiNoClickUp": "Politica de privacidade (Demandas do dia a dia)"
     },
     {
       "id": "86ak1nuzc",
@@ -252,7 +270,8 @@
       "cliente": null,
       "origem": "ClickUp › Atribuições",
       "url": "https://app.clickup.com/t/86ak1nuzc",
-      "nota": null
+      "nota": null,
+      "descricao": null
     },
     {
       "id": "17tkhj52x7f",
@@ -266,7 +285,8 @@
       "cliente": null,
       "origem": "ClickUp › Demandas administrativas",
       "url": "https://app.clickup.com/t/17tkhj52x7f",
-      "nota": null
+      "nota": null,
+      "descricao": null
     },
     {
       "id": "17tkhj52x2p",
@@ -280,7 +300,8 @@
       "cliente": null,
       "origem": "ClickUp › Demandas administrativas",
       "url": "https://app.clickup.com/t/17tkhj52x2p",
-      "nota": null
+      "nota": null,
+      "descricao": null
     },
     {
       "id": "17tkhj52x2m",
@@ -294,7 +315,8 @@
       "cliente": null,
       "origem": "ClickUp › Demandas administrativas",
       "url": "https://app.clickup.com/t/17tkhj52x2m",
-      "nota": null
+      "nota": null,
+      "descricao": null
     },
     {
       "id": "17tkhj52x2k",
@@ -308,7 +330,8 @@
       "cliente": null,
       "origem": "ClickUp › Demandas administrativas",
       "url": "https://app.clickup.com/t/17tkhj52x2k",
-      "nota": null
+      "nota": null,
+      "descricao": null
     },
     {
       "id": "17tkhj52x2h",
@@ -322,7 +345,8 @@
       "cliente": null,
       "origem": "ClickUp › Demandas administrativas",
       "url": "https://app.clickup.com/t/17tkhj52x2h",
-      "nota": null
+      "nota": null,
+      "descricao": null
     },
     {
       "id": "17tkhj52x2j",
@@ -338,21 +362,26 @@
       },
       "origem": "ClickUp › Gestão de contratos",
       "url": "https://app.clickup.com/t/17tkhj52x2j",
-      "nota": null
+      "nota": null,
+      "descricao": null
     },
     {
       "id": "17tkhj50wuk",
-      "titulo": "FUP",
-      "area": "Administrativo",
+      "titulo": "FUP com o Curral",
+      "area": "Comercial",
       "responsaveis": [
         "Lucas Fernandes"
       ],
       "prazo": "2026-10-16",
       "status": "aberta",
-      "cliente": null,
+      "cliente": {
+        "chave": "fin-curral-implantacao"
+      },
       "origem": "ClickUp › Gestão de contratos",
       "url": "https://app.clickup.com/t/17tkhj50wuk",
-      "nota": "Sem objeto: FUP de quem?"
+      "nota": null,
+      "descricao": "Mapear as demandas, precificar e mandar proposta\n\nNotificacoes pelo wpp\nela quer automatizar banco\n\nOS e overdelivery",
+      "paiNoClickUp": "Curral (Gestão de contratos)"
     },
     {
       "id": "17tkhj50ubc",
@@ -366,7 +395,8 @@
       "cliente": null,
       "origem": "ClickUp › Demandas comerciais",
       "url": "https://app.clickup.com/t/17tkhj50ubc",
-      "nota": null
+      "nota": null,
+      "descricao": "_Origem: reunião Semana da Root — 29/09/2026._"
     },
     {
       "id": "17tkhj50uba",
@@ -382,7 +412,8 @@
       },
       "origem": "ClickUp › Demandas comerciais",
       "url": "https://app.clickup.com/t/17tkhj50uba",
-      "nota": null
+      "nota": null,
+      "descricao": null
     },
     {
       "id": "17tkhj50ub9",
@@ -398,7 +429,8 @@
       },
       "origem": "ClickUp › Demandas comerciais",
       "url": "https://app.clickup.com/t/17tkhj50ub9",
-      "nota": null
+      "nota": null,
+      "descricao": "_Origem: reunião Semana da Root — 29/09/2026._"
     },
     {
       "id": "17tkhj50ub8",
@@ -414,7 +446,8 @@
       },
       "origem": "ClickUp › Demandas comerciais",
       "url": "https://app.clickup.com/t/17tkhj50ub8",
-      "nota": null
+      "nota": null,
+      "descricao": "Mesmo processo da Promedical"
     },
     {
       "id": "17tkhj50ub6",
@@ -430,7 +463,8 @@
       },
       "origem": "ClickUp › Demandas comerciais",
       "url": "https://app.clickup.com/t/17tkhj50ub6",
-      "nota": null
+      "nota": null,
+      "descricao": "Levantar bola da indicação com o Kaka e verificar necessidade de novos produtos.\n\n_Origem: reunião Semana da Root — 29/09/2026._"
     },
     {
       "id": "17tkhj50ub5",
@@ -446,7 +480,8 @@
       },
       "origem": "ClickUp › Demandas comerciais",
       "url": "https://app.clickup.com/t/17tkhj50ub5",
-      "nota": null
+      "nota": null,
+      "descricao": null
     },
     {
       "id": "17tkhj50ub4",
@@ -462,7 +497,8 @@
       },
       "origem": "ClickUp › Demandas comerciais",
       "url": "https://app.clickup.com/t/17tkhj50ub4",
-      "nota": null
+      "nota": null,
+      "descricao": "Pensar em algo fora da casinha.\n\n_Origem: reunião Semana da Root — 29/09/2026._\n\nAproveitar conteudo do danilo pra criar uma proposta de valor para ele"
     },
     {
       "id": "17tkhj50ub3",
@@ -478,7 +514,8 @@
       },
       "origem": "ClickUp › Demandas comerciais",
       "url": "https://app.clickup.com/t/17tkhj50ub3",
-      "nota": null
+      "nota": null,
+      "descricao": "Proposta do OS parcialmente executada. Falta apenas o prompt de construção.\n\n_Origem: reunião Semana da Root — 29/09/2026._"
     },
     {
       "id": "17tkhj50ub2",
@@ -494,7 +531,8 @@
       },
       "origem": "ClickUp › Demandas comerciais",
       "url": "https://app.clickup.com/t/17tkhj50ub2",
-      "nota": null
+      "nota": null,
+      "descricao": "_Origem: reunião Semana da Root — 29/09/2026._"
     },
     {
       "id": "17tkhj50ub1",
@@ -510,7 +548,8 @@
       },
       "origem": "ClickUp › Demandas comerciais",
       "url": "https://app.clickup.com/t/17tkhj50ub1",
-      "nota": null
+      "nota": null,
+      "descricao": "_Origem: reunião Semana da Root — 29/09/2026._\n\nIndicacao paga a continuidade do projeto, ele nao paga"
     },
     {
       "id": "17tkhj52x2u",
@@ -524,7 +563,8 @@
       "cliente": null,
       "origem": "ClickUp › Demandas comerciais",
       "url": "https://app.clickup.com/t/17tkhj52x2u",
-      "nota": null
+      "nota": null,
+      "descricao": null
     },
     {
       "id": "17tkhj52x2t",
@@ -538,7 +578,8 @@
       "cliente": null,
       "origem": "ClickUp › Demandas comerciais",
       "url": "https://app.clickup.com/t/17tkhj52x2t",
-      "nota": null
+      "nota": null,
+      "descricao": null
     },
     {
       "id": "17tkhj52x2f",
@@ -552,7 +593,8 @@
       "cliente": null,
       "origem": "ClickUp › Demandas comerciais",
       "url": "https://app.clickup.com/t/17tkhj52x2f",
-      "nota": null
+      "nota": null,
+      "descricao": null
     },
     {
       "id": "17tkhj50ubd",
@@ -566,7 +608,8 @@
       "cliente": null,
       "origem": "ClickUp › Gestão de Leads",
       "url": "https://app.clickup.com/t/17tkhj50ubd",
-      "nota": "Estava no meio dos leads; é tarefa."
+      "nota": "Estava no meio dos leads; é tarefa.",
+      "descricao": "Exportar nossas bases, fazer enriquecimento e criar proposta personalizada para convite de reunião.\n\n_Origem: reunião Semana da Root — 29/09/2026._"
     },
     {
       "id": "17tkhj52x2v",
@@ -580,7 +623,8 @@
       "cliente": null,
       "origem": "ClickUp › Demandas gerais",
       "url": "https://app.clickup.com/t/17tkhj52x2v",
-      "nota": null
+      "nota": null,
+      "descricao": null
     },
     {
       "id": "17tkhj50ucj",
@@ -594,7 +638,8 @@
       "cliente": null,
       "origem": "ClickUp › Demandas gerais",
       "url": "https://app.clickup.com/t/17tkhj50ucj",
-      "nota": null
+      "nota": null,
+      "descricao": "_Origem: reunião Semana da Root — 29/09/2026._"
     },
     {
       "id": "17tkhj50ubz",
@@ -608,7 +653,8 @@
       "cliente": null,
       "origem": "ClickUp › Demandas gerais",
       "url": "https://app.clickup.com/t/17tkhj50ubz",
-      "nota": null
+      "nota": null,
+      "descricao": "_Origem: reunião Semana da Root — 29/09/2026._"
     },
     {
       "id": "17tkhj50uby",
@@ -622,7 +668,8 @@
       "cliente": null,
       "origem": "ClickUp › Demandas gerais",
       "url": "https://app.clickup.com/t/17tkhj50uby",
-      "nota": null
+      "nota": null,
+      "descricao": "_Origem: reunião Semana da Root — 29/09/2026._"
     },
     {
       "id": "17tkhj50ubx",
@@ -636,7 +683,8 @@
       "cliente": null,
       "origem": "ClickUp › Demandas gerais",
       "url": "https://app.clickup.com/t/17tkhj50ubx",
-      "nota": null
+      "nota": null,
+      "descricao": "Verificar a página atual já desenhada pelo Rodrigo como ponto de partida.\n\n_Origem: reunião Semana da Root — 29/09/2026._"
     },
     {
       "id": "clickup-custeio-implantacao",

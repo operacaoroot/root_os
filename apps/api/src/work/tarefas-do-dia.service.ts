@@ -1,9 +1,10 @@
 import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma, WorkListaNatureza, WorkStatusType } from '@prisma/client';
 import {
-  AREAS_PADRAO, CARTOES_QUE_NAO_SAO_TAREFA, DOMINIO_DAS_CONTAS_DO_SISTEMA, equipeDasContas, mesmaTarefa, naoPareceTarefa, notaDeSemelhanca, situacaoDoPrazo,
+  AREAS_PADRAO, CARTOES_QUE_NAO_SAO_TAREFA, tituloNormalizado, faseDaEtapa, DOMINIO_DAS_CONTAS_DO_SISTEMA, equipeDasContas, mesmaTarefa, naoPareceTarefa, notaDeSemelhanca, situacaoDoPrazo,
   type AreaDeTarefa, type PainelDeTarefas, type ResultadoDeCriar, type ResumoDaPessoa, type TarefaDoDia,
   type TarefaDoDiaCriar, type TarefaDoDiaEditar,
+  RecorrenciaSchema, proximaOcorrencia, type RecorrenciaDaTarefa,
 } from '@mktos/shared';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
@@ -87,6 +88,27 @@ export class TarefasDoDiaService {
     return { id: a.id, nome: a.nome, cor: a.cor, ordem: a.ordem };
   }
 
+  // ---------- cliente novo (mora no CRM, não aqui) ----------
+
+  /**
+   * O cliente é um card da lista do CRM (crm-root-lista), a casa dele no
+   * Comercial. Criar pela tarefa não abre outra lista de clientes: entra lá,
+   * na primeira etapa do funil. Nome igual a um que já existe devolve o que
+   * existe, em vez de duplicar.
+   */
+  async criarCliente(orgId: string, actorId: string, nome: string): Promise<{ id: string; titulo: string; jaExistia: boolean }> {
+    const lista = await this.prisma.workList.findFirst({
+      where: { orgId, externalId: 'crm-root-lista' },
+      include: { statuses: { orderBy: { order: 'asc' } } },
+    });
+    if (!lista || !lista.statuses.length) throw new BadRequestException('A lista de clientes do Comercial ainda não existe nesta empresa.');
+    const cards = await this.prisma.workTask.findMany({ where: { orgId, listId: lista.id, parentId: null, archived: false }, select: { id: true, title: true } });
+    const igual = cards.find((c) => mesmaTarefa(c.title, nome) === 'igual' || tituloNormalizado(c.title).startsWith(tituloNormalizado(nome) + ' '));
+    if (igual) return { id: igual.id, titulo: igual.title, jaExistia: true };
+    const novo = await this.trabalho.criarTarefa(orgId, actorId, { listId: lista.id, statusId: lista.statuses[0].id, title: nome.trim() });
+    return { id: novo.id, titulo: nome.trim(), jaExistia: false };
+  }
+
   // ---------- leitura ----------
 
   private ondeSaoTarefas(orgId: string): Prisma.WorkTaskWhereInput {
@@ -133,42 +155,48 @@ export class TarefasDoDiaService {
       responsavelTexto: idDaPessoa ? null : (t.assigneeUser?.name ?? t.assignee),
       prazo,
       situacao: situacaoDoPrazo(prazo, hoje, feita),
-      status: { nome: t.status.name, cor: t.status.color },
+      status: {
+        nome: t.status.name, cor: t.status.color,
+        tipo: t.status.type === WorkStatusType.closed ? 'concluida' : t.status.type === WorkStatusType.custom ? 'andamento' : 'aberta',
+      },
       lista: { id: t.list.id, nome: t.list.name },
       externalUrl: t.externalUrl,
+      descricao: t.description,
+      recorrencia: regraDe(t.recorrencia),
+      ordem: t.order,
       updatedAt: t.updatedAt.toISOString(),
     };
   }
 
   async painel(orgId: string): Promise<PainelDeTarefas> {
     const hoje = hojeEmBrasilia();
-    const seteDiasAtras = new Date(Date.now() - 7 * 86400e3);
-    const [areas, linhas, equipe, clientes] = await Promise.all([
+    const [areas, abertas, concluidas, equipe, clientes] = await Promise.all([
       this.areas(orgId),
       this.prisma.workTask.findMany({
-        where: {
-          AND: [
-            this.ondeSaoTarefas(orgId),
-            // Abertas todas; feitas só as da última semana (para o "feitas na semana").
-            { OR: [{ status: { type: { not: WorkStatusType.closed } } }, { updatedAt: { gte: seteDiasAtras } }] },
-          ],
-        },
+        where: { AND: [this.ondeSaoTarefas(orgId), { status: { type: { not: WorkStatusType.closed } } }] },
         include: INCLUDE,
         orderBy: [{ dueDate: { sort: 'asc', nulls: 'last' } }, { createdAt: 'asc' }],
         take: 2000,
       }),
+      // As concluídas também vêm (filtro "Concluídas" e "Todas"): as 500 mais recentes.
+      this.prisma.workTask.findMany({
+        where: { AND: [this.ondeSaoTarefas(orgId), { status: { type: WorkStatusType.closed } }] },
+        include: INCLUDE,
+        orderBy: { updatedAt: 'desc' },
+        take: 500,
+      }),
       this.equipe(orgId),
       this.prisma.workTask.findMany({
         where: { orgId, archived: false, parentId: null, list: { natureza: WorkListaNatureza.cadastro, externalId: 'crm-root-lista' } },
-        select: { id: true, title: true }, orderBy: { title: 'asc' },
+        select: { id: true, title: true, status: { select: { name: true } } }, orderBy: { title: 'asc' },
       }),
     ]);
-    const tarefas = linhas.map((t) => this.mapear(t, hoje, equipe));
+    const tarefas = [...abertas, ...concluidas].map((t) => this.mapear(t, hoje, equipe));
     return {
       hoje,
       areas,
       pessoas: equipe.pessoas,
-      clientes: clientes.map((c) => ({ id: c.id, titulo: c.title })),
+      clientes: clientes.map((c) => ({ id: c.id, titulo: c.title, fase: faseDaEtapa(c.status.name) === 'comercial' ? 'lead' as const : 'cliente' as const })),
       resumo: this.resumir(tarefas, equipe.pessoas),
       tarefas,
     };
@@ -176,6 +204,7 @@ export class TarefasDoDiaService {
 
   /** Uma linha por pessoa ativa (mesmo zerada) e uma "sem dono" se houver. */
   private resumir(tarefas: TarefaDoDia[], pessoas: { id: string; nome: string }[]): ResumoDaPessoa[] {
+    const seteDiasAtras = new Date(Date.now() - 7 * 86400e3).toISOString();
     const linha = (pessoa: { id: string; nome: string } | null): ResumoDaPessoa => {
       const dela = tarefas.filter((t) => (pessoa ? t.pessoa?.id === pessoa.id : !t.pessoa));
       return {
@@ -183,7 +212,7 @@ export class TarefasDoDiaService {
         atrasadas: dela.filter((t) => t.situacao === 'atrasada').length,
         emDia: dela.filter((t) => t.situacao === 'hoje' || t.situacao === 'proximos_7' || t.situacao === 'mais_tarde').length,
         semPrazo: dela.filter((t) => t.situacao === 'sem_prazo').length,
-        feitasNaSemana: dela.filter((t) => t.situacao === 'feita').length,
+        feitasNaSemana: dela.filter((t) => t.situacao === 'feita' && t.updatedAt >= seteDiasAtras).length,
       };
     };
     const resumo = pessoas.map(linha);
@@ -270,9 +299,18 @@ export class TarefasDoDiaService {
       if (!a) throw new NotFoundException('Área não encontrada');
     }
     await this.conferirCliente(orgId, input.clienteId);
+    let statusId: string | undefined;
+    if (input.etapa) {
+      const tipo = input.etapa === 'concluida' ? WorkStatusType.closed : input.etapa === 'andamento' ? WorkStatusType.custom : WorkStatusType.open;
+      const st = await this.prisma.workStatus.findFirst({ where: { listId: antes.listId, orgId, type: tipo }, orderBy: { order: 'asc' } });
+      if (!st) throw new BadRequestException('A lista desta tarefa não tem esse status.');
+      statusId = st.id;
+    }
     let versao = input.expectedUpdatedAt;
     const doTrabalho = {
       ...(input.titulo !== undefined ? { title: input.titulo } : {}),
+      ...(statusId ? { statusId } : {}),
+      ...(input.descricao !== undefined ? { description: input.descricao?.trim() ? input.descricao : null } : {}),
       ...(input.pessoaId !== undefined ? { assigneeUserId: input.pessoaId } : {}),
       ...(input.prazo !== undefined ? { dueDate: input.prazo ? instanteDoDia(input.prazo) : null } : {}),
     };
@@ -280,12 +318,15 @@ export class TarefasDoDiaService {
       const d = await this.trabalho.editarTarefaHttp(orgId, actorId, id, { ...doTrabalho, expectedUpdatedAt: versao });
       versao = d.updatedAt;
     }
-    if (input.areaId !== undefined || input.clienteId !== undefined) {
+    if (input.areaId !== undefined || input.clienteId !== undefined || input.recorrencia !== undefined) {
       const r = await this.prisma.workTask.updateMany({
         where: { id, orgId, updatedAt: new Date(versao) },
         data: {
           ...(input.areaId !== undefined ? { areaId: input.areaId } : {}),
           ...(input.clienteId !== undefined ? { clienteId: input.clienteId } : {}),
+          ...(input.recorrencia !== undefined
+            ? { recorrencia: input.recorrencia ?? Prisma.DbNull, ...(input.recorrencia && !antes.serieId ? { serieId: id } : {}) }
+            : {}),
           updatedAt: new Date(Math.max(Date.now(), new Date(versao).getTime() + 1)),
         },
       });
@@ -300,7 +341,7 @@ export class TarefasDoDiaService {
   }
 
   /** Um clique: aberta → primeiro status fechado da lista; feita → primeiro aberto. */
-  async alternarFeita(orgId: string, actorId: string, id: string, expectedUpdatedAt: string): Promise<TarefaDoDia> {
+  async alternarFeita(orgId: string, actorId: string, id: string, expectedUpdatedAt: string): Promise<TarefaDoDia & { proxima?: { id: string; prazo: string } }> {
     const t = await this.prisma.workTask.findFirst({
       where: { ...this.ondeSaoTarefas(orgId), id },
       include: { status: true, list: { include: { statuses: { orderBy: { order: 'asc' } } } } },
@@ -312,6 +353,61 @@ export class TarefasDoDiaService {
       : t.list.statuses.find((s) => s.type === WorkStatusType.closed);
     if (!destino) throw new BadRequestException(feita ? 'A lista não tem status aberto.' : 'A lista não tem status de concluída.');
     await this.trabalho.editarTarefaHttp(orgId, actorId, id, { statusId: destino.id, expectedUpdatedAt });
-    return this.uma(orgId, id);
+    const regra = regraDe(t.recorrencia);
+    const proxima = !feita && regra ? await this.criarProxima(orgId, actorId, t, regra) : null;
+    return { ...(await this.uma(orgId, id)), ...(proxima ? { proxima } : {}) };
   }
+
+  /**
+   * Ordem manual: a sequência que a tela mandou (uma coluna, a lista, um dia)
+   * vira posições 10, 20, 30… Só a posição muda; nada mais da tarefa.
+   */
+  async reordenar(orgId: string, actorId: string, ids: string[]): Promise<{ ok: true }> {
+    const unicos = [...new Set(ids)];
+    const achadas = await this.prisma.workTask.count({ where: { ...this.ondeSaoTarefas(orgId), id: { in: unicos } } });
+    if (achadas !== unicos.length) throw new NotFoundException('Alguma tarefa da sequência não existe ou não é tarefa.');
+    await this.prisma.$transaction(unicos.map((id, i) => this.prisma.workTask.updateMany({ where: { id, orgId }, data: { order: (i + 1) * 10 } })));
+    await this.audit.log({ orgId, actorId, action: 'work.task.reorder', entityType: 'work_task', entityId: unicos[0], after: { ids: unicos } });
+    return { ok: true };
+  }
+
+  /**
+   * A próxima ocorrência de uma tarefa que se repete: mesma lista, título,
+   * descrição, área, responsável, cliente e regra; prazo seguinte; aberta.
+   * A série não ganha uma segunda aberta: concluir, reabrir e concluir de novo
+   * devolve a que já existe em vez de criar outra.
+   */
+  private async criarProxima(
+    orgId: string, actorId: string,
+    t: { id: string; serieId: string | null; listId: string; title: string; description: string | null; areaId: string | null; clienteId: string | null; assigneeUserId: string | null; dueDate: Date | null; recorrencia: Prisma.JsonValue },
+    regra: RecorrenciaDaTarefa,
+  ): Promise<{ id: string; prazo: string }> {
+    const serie = t.serieId ?? t.id;
+    if (!t.serieId) await this.prisma.workTask.update({ where: { id: t.id }, data: { serieId: serie } });
+    const aberta = await this.prisma.workTask.findFirst({
+      where: { orgId, serieId: serie, archived: false, id: { not: t.id }, status: { type: { not: WorkStatusType.closed } } },
+      select: { id: true, dueDate: true },
+    });
+    if (aberta) return { id: aberta.id, prazo: aberta.dueDate ? diaEmBrasilia(aberta.dueDate) : '' };
+    const prazo = proximaOcorrencia(regra, t.dueDate ? diaEmBrasilia(t.dueDate) : null, hojeEmBrasilia());
+    const lista = await this.prisma.workList.findFirst({ where: { id: t.listId, orgId }, include: { statuses: { orderBy: { order: 'asc' } } } });
+    const aFazer = lista?.statuses.find((s) => s.type === WorkStatusType.open) ?? lista?.statuses[0];
+    if (!lista || !aFazer) throw new BadRequestException('A lista da tarefa não tem status aberto para a próxima ocorrência.');
+    const nova = await this.trabalho.criarTarefa(orgId, actorId, {
+      listId: lista.id, statusId: aFazer.id, title: t.title, description: t.description,
+      assigneeUserId: t.assigneeUserId, dueDate: instanteDoDia(prazo),
+    });
+    await this.prisma.workTask.update({
+      where: { id: nova.id },
+      data: { areaId: t.areaId, clienteId: t.clienteId, recorrencia: t.recorrencia ?? Prisma.DbNull, serieId: serie },
+    });
+    return { id: nova.id, prazo };
+  }
+}
+
+/** A regra gravada, conferida (JSON que não é uma regra válida vale como "não repete"). */
+function regraDe(valor: Prisma.JsonValue | null | undefined): RecorrenciaDaTarefa | null {
+  if (valor == null) return null;
+  const r = RecorrenciaSchema.safeParse(valor);
+  return r.success ? r.data : null;
 }

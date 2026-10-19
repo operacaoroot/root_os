@@ -119,12 +119,23 @@ export type TarefaDoDiaCriar = z.infer<typeof TarefaDoDiaCriarSchema>;
 export const TarefaDoDiaEditarSchema = z.object({
   expectedUpdatedAt: z.string().datetime({ offset: true }),
   titulo: z.string().trim().min(1).max(300).optional(),
+  descricao: z.string().max(20000).nullable().optional(),
+  /** Troca o status pelo tipo: o primeiro status da lista da tarefa com esse tipo. */
+  etapa: z.enum(['aberta', 'andamento', 'concluida']).optional(),
+  /** A regra de repetição; null tira a repetição. */
+  recorrencia: z.lazy(() => RecorrenciaSchema).nullable().optional(),
   areaId: z.string().uuid().nullable().optional(),
   pessoaId: z.string().uuid().nullable().optional(),
   prazo: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable().optional(),
   clienteId: z.string().uuid().nullable().optional(),
 }).strict();
 export type TarefaDoDiaEditar = z.infer<typeof TarefaDoDiaEditarSchema>;
+
+/** A nova sequência de um pedaço da tela (uma coluna, a lista, um dia): ids na ordem em que ficam. */
+export const TarefasReordenarSchema = z.object({ ids: z.array(z.string().uuid()).min(1).max(500) }).strict();
+
+/** Cliente novo a partir da tarefa: vira card no CRM (Comercial), na primeira etapa. */
+export const ClienteDaTarefaCriarSchema = z.object({ nome: z.string().trim().min(2).max(300) }).strict();
 
 export const AreaDeTarefaCriarSchema = z.object({
   nome: z.string().trim().min(1).max(60),
@@ -143,11 +154,20 @@ export interface TarefaDoDia {
   responsavelTexto: string | null;
   prazo: string | null;
   situacao: SituacaoDoPrazo;
-  status: { nome: string; cor: string };
+  /** `tipo` diz o que o status quer dizer, seja qual for o nome dele na lista. */
+  status: { nome: string; cor: string; tipo: EtapaDaTarefa };
   lista: { id: string; nome: string };
   externalUrl: string | null;
+  /** A descrição própria da tarefa (escrita aqui, não no ClickUp). */
+  descricao: string | null;
+  /** A regra de repetição (null = não repete). */
+  recorrencia: RecorrenciaDaTarefa | null;
+  /** A posição manual (arrastar), a mesma em todas as visões; empate = pelo prazo. */
+  ordem: number;
   updatedAt: string;
 }
+
+export type EtapaDaTarefa = 'aberta' | 'andamento' | 'concluida';
 
 export interface ResumoDaPessoa {
   pessoa: { id: string; nome: string } | null;
@@ -161,7 +181,8 @@ export interface PainelDeTarefas {
   hoje: string;
   areas: AreaDeTarefa[];
   pessoas: { id: string; nome: string }[];
-  clientes: { id: string; titulo: string }[];
+  /** Os cards do CRM: `lead` ainda em negociação (fase comercial), `cliente` já fechou (implantação ou sucesso). */
+  clientes: { id: string; titulo: string; fase: 'lead' | 'cliente' }[];
   resumo: ResumoDaPessoa[];
   tarefas: TarefaDoDia[];
 }
@@ -198,4 +219,61 @@ export function equipeDasContas(
   }
   pessoas.sort((a, b) => a.nome.localeCompare(b.nome, 'pt'));
   return { pessoas, canonica };
+}
+
+/*
+ * TAREFAS QUE SE REPETEM (19/10/2026), no molde do ClickUp. A regra mora na
+ * tarefa; ao concluí-la nasce a próxima ocorrência, com o prazo seguinte e os
+ * mesmos título, área, responsável, cliente, descrição e regra. A concluída
+ * fica no histórico. `serieId` liga as ocorrências: uma série nunca tem duas
+ * abertas, então concluir de novo, reabrir e concluir não duplica a próxima.
+ */
+export const RecorrenciaSchema = z.discriminatedUnion('tipo', [
+  z.object({ tipo: z.literal('diaria') }),
+  /** dias da semana: 0 = domingo … 6 = sábado (pelo menos um). */
+  z.object({ tipo: z.literal('semanal'), dias: z.array(z.number().int().min(0).max(6)).min(1).max(7) }),
+  /** dia do mês (1–31); em mês mais curto, o último dia. */
+  z.object({ tipo: z.literal('mensal'), dia: z.number().int().min(1).max(31) }),
+  z.object({ tipo: z.literal('intervalo'), dias: z.number().int().min(1).max(365) }),
+]);
+export type RecorrenciaDaTarefa = z.infer<typeof RecorrenciaSchema>;
+
+const DIAS = ['domingo', 'segunda', 'terça', 'quarta', 'quinta', 'sexta', 'sábado'];
+
+export function descreverRecorrencia(r: RecorrenciaDaTarefa): string {
+  if (r.tipo === 'diaria') return 'Todo dia';
+  if (r.tipo === 'intervalo') return r.dias === 1 ? 'Todo dia' : `A cada ${r.dias} dias`;
+  if (r.tipo === 'mensal') return `Todo mês, dia ${r.dia}`;
+  const d = [...new Set(r.dias)].sort((a, b) => a - b);
+  if (d.length === 7) return 'Todo dia';
+  if (d.join() === '1,2,3,4,5') return 'Dias úteis';
+  return `Toda semana: ${d.map((x) => DIAS[x]).join(', ')}`;
+}
+
+/**
+ * O prazo da próxima ocorrência, sempre DEPOIS de `depoisDe` (AAAA-MM-DD). A
+ * base é o prazo da que foi concluída (ou hoje, se não tinha prazo, ou se o
+ * prazo já tinha passado — a próxima não nasce atrasada).
+ */
+export function proximaOcorrencia(r: RecorrenciaDaTarefa, prazoAtual: string | null, hoje: string): string {
+  const base = prazoAtual && prazoAtual > hoje ? prazoAtual : hoje;
+  const soma = (dia: string, n: number) => { const d = new Date(`${dia}T12:00:00Z`); d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0, 10); };
+  if (r.tipo === 'diaria') return soma(base, 1);
+  if (r.tipo === 'intervalo') return soma(base, r.dias);
+  if (r.tipo === 'semanal') {
+    for (let i = 1; i <= 7; i++) {
+      const dia = soma(base, i);
+      if (r.dias.includes(new Date(`${dia}T12:00:00Z`).getUTCDay())) return dia;
+    }
+    return soma(base, 7);
+  }
+  // mensal: o dia escolhido no mês seguinte ao da base (ou no mesmo mês, se ainda não passou)
+  const [a, m] = base.split('-').map(Number);
+  const noMes = (ano: number, mes: number) => {
+    const ultimo = new Date(Date.UTC(ano, mes, 0)).getUTCDate();
+    return `${ano}-${String(mes).padStart(2, '0')}-${String(Math.min(r.dia, ultimo)).padStart(2, '0')}`;
+  };
+  const esteMes = noMes(a, m);
+  if (esteMes > base) return esteMes;
+  return m === 12 ? noMes(a + 1, 1) : noMes(a, m + 1);
 }

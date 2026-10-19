@@ -28,6 +28,10 @@ interface Arquivo {
     origem: string;
     url: string | null;
     nota: string | null;
+    /** A descrição que a tarefa tinha no ClickUp (markdown). */
+    descricao?: string | null;
+    /** O card pai no ClickUp, quando a tarefa era subtarefa. */
+    paiNoClickUp?: string;
     passos?: { titulo: string; fase: string }[];
   }[];
 }
@@ -114,13 +118,15 @@ async function main() {
       assignee: dono ? null : t.responsaveis.join(', ') || null,
       dueDate: t.prazo ? instante(t.prazo) : null,
       externalUrl: t.url,
-      description: [t.origem, t.nota].filter(Boolean).join('\n') || null,
     };
-    const ja = await prisma.workTask.findFirst({ where: { orgId, externalId: t.id }, select: { id: true } });
+    const ja = await prisma.workTask.findFirst({ where: { orgId, externalId: t.id }, select: { id: true, description: true } });
+    const origem = t.paiNoClickUp ? `_No ClickUp era subtarefa de: ${t.paiNoClickUp}._` : null;
+    const descricao = [t.descricao, t.nota, origem].filter(Boolean).join('\n\n') || null;
     const tarefa = ja
-      ? await prisma.workTask.update({ where: { id: ja.id }, data: comum })
+      // Atualiza o que vem do ClickUp; a descrição só entra onde ainda está vazia (ela agora é escrita no OS).
+      ? await prisma.workTask.update({ where: { id: ja.id }, data: { ...comum, ...(ja.description ? {} : { description: descricao }) } })
       : await prisma.workTask.create({
-        data: { ...comum, orgId, listId: lista.id, statusId: t.status === 'fazendo' ? lista.fazendo : lista.aberta, externalId: t.id },
+        data: { ...comum, description: descricao, orgId, listId: lista.id, statusId: t.status === 'fazendo' ? lista.fazendo : lista.aberta, externalId: t.id },
       });
     if (ja) atualizadas++; else criadas++;
 

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { equipeDasContas, mesmaTarefa, naoPareceTarefa, situacaoDoPrazo, tituloNormalizado } from '@mktos/shared';
+import { descreverRecorrencia, equipeDasContas, mesmaTarefa, proximaOcorrencia, naoPareceTarefa, situacaoDoPrazo, tituloNormalizado } from '@mktos/shared';
 
 describe('tarefas do dia — o que é a mesma tarefa', () => {
   it('título igual com caixa, acento e pontuação diferentes é a MESMA tarefa', () => {
@@ -63,5 +63,30 @@ describe('tarefas do dia — quem é da equipe', () => {
     const { pessoas, canonica } = equipeDasContas([{ id: 'r', nome: 'Root', ultimoAcesso: null }], empresa);
     expect(pessoas).toEqual([]);
     expect(canonica.has('r')).toBe(false);
+  });
+});
+
+describe('tarefas que se repetem — o próximo prazo', () => {
+  const hoje = '2026-10-19'; // segunda
+  it('todo dia e a cada N dias contam a partir do prazo (ou de hoje, se o prazo passou)', () => {
+    expect(proximaOcorrencia({ tipo: 'diaria' }, '2026-10-22', hoje)).toBe('2026-10-23');
+    expect(proximaOcorrencia({ tipo: 'diaria' }, '2026-10-10', hoje)).toBe('2026-10-20');
+    expect(proximaOcorrencia({ tipo: 'intervalo', dias: 3 }, null, hoje)).toBe('2026-10-22');
+  });
+  it('toda semana vai para o próximo dia marcado', () => {
+    expect(proximaOcorrencia({ tipo: 'semanal', dias: [1, 3] }, '2026-10-19', hoje)).toBe('2026-10-21');
+    expect(proximaOcorrencia({ tipo: 'semanal', dias: [1] }, '2026-10-19', hoje)).toBe('2026-10-26');
+    expect(proximaOcorrencia({ tipo: 'semanal', dias: [1, 2, 3, 4, 5] }, '2026-10-23', hoje)).toBe('2026-10-26');
+  });
+  it('todo mês cai no dia escolhido, e no último dia quando o mês é curto', () => {
+    expect(proximaOcorrencia({ tipo: 'mensal', dia: 5 }, '2026-10-05', '2026-10-05')).toBe('2026-11-05');
+    expect(proximaOcorrencia({ tipo: 'mensal', dia: 25 }, '2026-10-19', hoje)).toBe('2026-10-25');
+    expect(proximaOcorrencia({ tipo: 'mensal', dia: 31 }, '2027-01-31', '2027-01-31')).toBe('2027-02-28');
+    expect(proximaOcorrencia({ tipo: 'mensal', dia: 10 }, '2026-12-10', '2026-12-10')).toBe('2027-01-10');
+  });
+  it('o nome da regra é o que a tela mostra', () => {
+    expect(descreverRecorrencia({ tipo: 'semanal', dias: [5, 1, 2, 3, 4] })).toBe('Dias úteis');
+    expect(descreverRecorrencia({ tipo: 'semanal', dias: [1, 4] })).toBe('Toda semana: segunda, quinta');
+    expect(descreverRecorrencia({ tipo: 'mensal', dia: 5 })).toBe('Todo mês, dia 5');
   });
 });

@@ -2211,6 +2211,11 @@ model WorkTask {
   clienteId String?
   cliente   WorkTask?  @relation("TarefasDoCliente", fields: [clienteId, orgId], references: [id, orgId], onDelete: Restrict, onUpdate: Restrict)
   tarefasDoCliente WorkTask[] @relation("TarefasDoCliente")
+  /// REPETIÇÃO (como no ClickUp): a regra (RecorrenciaDaTarefa em @mktos/shared). Ao concluir,
+  /// nasce a próxima ocorrência com o prazo seguinte; a concluída fica no histórico.
+  recorrencia Json?
+  /// A série de uma tarefa que se repete: o id da primeira. Uma série nunca tem duas abertas.
+  serieId     String?
 
   @@unique([id, orgId])
   @@unique([orgId, externalId])
@@ -2223,6 +2228,7 @@ model WorkTask {
   @@index([orgId, agenteId, agenteEm])
   @@index([orgId, areaId, archived])
   @@index([orgId, clienteId])
+  @@index([orgId, serieId])
 }
 
 /// As áreas da empresa para separar tarefas (Comercial, Marketing, Operação…).
