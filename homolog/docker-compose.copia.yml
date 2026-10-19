@@ -1,0 +1,170 @@
+# Ambiente da CÓPIA DOS CARTÕES DO LUCAS (rodada de 19/10/2026) no Predator.
+# Projeto próprio: nada aqui compartilha rede, volume ou porta com a homologação
+# (rootos-comercial, 3010/4010) nem com outro projeto da máquina. Roteiro:
+# docs/comercial/RODADA-COPIA-LUCAS-20261019.md.
+#
+# Dois bancos em DOIS containers, de propósito:
+#   db       o destino, no NOSSO esquema, o único que a API lê;
+#   staging  o dump de produção restaurado (dado real de cliente), numa rede
+#            só dele, sem rota a partir da API; quem o lê é o importador no host
+#            (homolog/importar-copia/), pela porta de loopback.
+#
+# Subir:
+#   docker compose -p rootos-copia -f homolog/docker-compose.copia.yml --env-file homolog/.env.copia up -d
+# A imagem do app é a da rodada do trabalho (tag trabalho-entrega-20261020), já
+# construída: este arquivo não constrói nada.
+name: rootos-copia
+
+services:
+  db:
+    image: pgvector/pgvector:pg16
+    container_name: rootos_copia_db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${DB_USER:-rootos}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?defina DB_PASSWORD em homolog/.env.copia}
+      POSTGRES_DB: ${DB_NAME:-rootos_copia}
+    ports:
+      - "127.0.0.1:${DB_PORT:-5441}:5432"
+    volumes:
+      - rootos_copia_db:/var/lib/postgresql/data
+    networks: [rootos-copia-net]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-rootos}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # O dump de produção. Rede própria, sem a API; só loopback do host.
+  staging:
+    image: pgvector/pgvector:pg16
+    container_name: rootos_copia_staging
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${STAGING_USER:-staging}
+      POSTGRES_PASSWORD: ${STAGING_PASSWORD:?defina STAGING_PASSWORD em homolog/.env.copia}
+      POSTGRES_DB: producao_staging
+    ports:
+      - "127.0.0.1:${STAGING_PORT:-5442}:5432"
+    volumes:
+      - rootos_copia_staging:/var/lib/postgresql/data
+    networks: [rootos-copia-staging-net]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${STAGING_USER:-staging}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: rootos_copia_redis
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:${REDIS_PORT:-6392}:6379"
+    networks: [rootos-copia-net]
+
+  # Dublês do dinheiro e da assinatura, só na rede interna (nada publica fora).
+  asaas-mock:
+    image: rootos-comercial-asaas-mock:latest
+    container_name: rootos_copia_asaas_mock
+    restart: unless-stopped
+    environment:
+      WEBHOOK_URL: http://api:4001/api/comercial/webhooks/asaas
+      WEBHOOK_TOKEN: ${ASAAS_WEBHOOK_TOKEN:?defina ASAAS_WEBHOOK_TOKEN em homolog/.env.copia}
+      PUBLIC_URL: http://127.0.0.1:4011
+    volumes:
+      - rootos_copia_asaas:/data
+    networks: [rootos-copia-net]
+
+  zapsign-mock:
+    image: rootos-comercial-zapsign-mock:latest
+    container_name: rootos_copia_zapsign_mock
+    restart: unless-stopped
+    environment:
+      WEBHOOK_URL: http://api:4001/api/comercial/webhooks/zapsign
+      WEBHOOK_TOKEN: ${ZAPSIGN_WEBHOOK_TOKEN:?defina ZAPSIGN_WEBHOOK_TOKEN em homolog/.env.copia}
+      PUBLIC_URL: http://127.0.0.1:4012
+    volumes:
+      - rootos_copia_zapsign:/data
+    networks: [rootos-copia-net]
+
+  api:
+    image: rootos-copia-app:trabalho-entrega-20261020
+    container_name: rootos_copia_api
+    restart: unless-stopped
+    working_dir: /app/apps/api
+    command: sh -c "pnpm exec prisma migrate deploy && node dist/main.js"
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: postgresql://${DB_USER:-rootos}:${DB_PASSWORD}@db:5432/${DB_NAME:-rootos_copia}
+      TENANT_MODO: ${TENANT_MODO:-observar}
+      API_PORT: "4001"
+      JWT_SECRET: ${JWT_SECRET:?defina JWT_SECRET}
+      AUTH_SECRET: ${AUTH_SECRET:?defina AUTH_SECRET}
+      ENCRYPTION_KEY: ${ENCRYPTION_KEY:?defina ENCRYPTION_KEY}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:?defina ADMIN_PASSWORD}
+      WEB_ORIGIN: ${WEB_ORIGIN:-http://100.95.41.124:3020}
+      PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:-http://100.95.41.124:3020}
+      GATEWAY_MODO: ${GATEWAY_MODO:-impor}
+      RASTRO_RETENCAO_DIAS: "1825"
+      POLITICA_FUSO_HORARIO: America/Sao_Paulo
+      # Nada que chame fora: o agendador inteiro desligado.
+      ROTINAS_CRON: "off"
+      PAUTA_CRON: "off"
+      ONBOARDING_ABERTO: "nao"
+      LLM_PROVIDER: stub
+      ANTHROPIC_API_KEY: ""
+      OPENAI_API_KEY: ""
+      ASAAS_API_KEY: ${ASAAS_API_KEY:-$$aact_hmlg_dublê}
+      ASAAS_BASE_URL: http://asaas-mock:4011/v3
+      ASAAS_WEBHOOK_TOKEN: ${ASAAS_WEBHOOK_TOKEN}
+      ZAPSIGN_API_TOKEN: dublê
+      ZAPSIGN_BASE_URL: http://zapsign-mock:4012/api/v1
+      ZAPSIGN_WEBHOOK_TOKEN: ${ZAPSIGN_WEBHOOK_TOKEN}
+      WHATSAPP_PROVEDOR: simulado
+      COMERCIAL_SEED_DEMONSTRACAO: "nao"
+      OBSIDIAN_VAULT_PATH: /vault
+      OBSIDIAN_FONTE: pasta
+    volumes:
+      - rootos_copia_vault:/vault
+    ports:
+      - "127.0.0.1:${API_PORT:-4020}:4001"
+      - "${TAILSCALE_IP:-100.95.41.124}:${API_PORT:-4020}:4001"
+    depends_on:
+      db: { condition: service_healthy }
+      redis: { condition: service_started }
+    networks: [rootos-copia-net]
+    healthcheck:
+      test: ["CMD-SHELL", "node -e \"fetch('http://127.0.0.1:4001/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))\""]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+
+  web:
+    image: rootos-copia-app:trabalho-entrega-20261020
+    container_name: rootos_copia_web
+    restart: unless-stopped
+    working_dir: /app/apps/web
+    command: sh -c "pnpm exec next start -p 4000"
+    environment:
+      NODE_ENV: production
+      API_PROXY_TARGET: http://api:4001
+    ports:
+      - "127.0.0.1:${WEB_PORT:-3020}:4000"
+      - "${TAILSCALE_IP:-100.95.41.124}:${WEB_PORT:-3020}:4000"
+    depends_on:
+      api: { condition: service_started }
+    networks: [rootos-copia-net]
+
+volumes:
+  rootos_copia_db:
+  rootos_copia_staging:
+  rootos_copia_asaas:
+  rootos_copia_zapsign:
+  rootos_copia_vault:
+
+networks:
+  rootos-copia-net:
+    name: rootos-copia-net
+  rootos-copia-staging-net:
+    name: rootos-copia-staging-net
