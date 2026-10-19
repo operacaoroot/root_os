@@ -12,7 +12,7 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { PrismaClient, WorkListaNatureza, WorkStatusType } from '@prisma/client';
-import { AREAS_PADRAO } from '@mktos/shared';
+import { AREAS_PADRAO, DOMINIO_DAS_CONTAS_DO_SISTEMA, equipeDasContas } from '@mktos/shared';
 
 const prisma = new PrismaClient();
 
@@ -81,8 +81,17 @@ async function main() {
     return r;
   }
 
-  // Pessoas pelo nome (Lucas Fernandes, Pedro Magnago…). Sem conta: fica como texto.
-  const usuarios = await prisma.user.findMany({ where: { orgId, isActive: true }, select: { id: true, name: true } });
+  // Pessoas pelo nome, na mesma régua da tela (uma pessoa por nome, na conta que
+  // entrou por último; sem a conta da empresa). Sem conta: fica como texto.
+  const contas = await prisma.user.findMany({
+    where: { orgId, isActive: true, NOT: { email: { endsWith: DOMINIO_DAS_CONTAS_DO_SISTEMA } } },
+    select: { id: true, name: true, lastLoginAt: true },
+  });
+  const { pessoas } = equipeDasContas(
+    contas.map((c) => ({ id: c.id, nome: c.name, ultimoAcesso: c.lastLoginAt?.toISOString() ?? null })),
+    { nome: org.name, slug: org.slug },
+  );
+  const usuarios = pessoas.map((p) => ({ id: p.id, name: p.nome }));
   const pessoa = (nome?: string) => {
     if (!nome) return null;
     const n = nome.toLowerCase();

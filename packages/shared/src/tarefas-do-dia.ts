@@ -166,3 +166,33 @@ export interface PainelDeTarefas {
 export type ResultadoDeCriar =
   | { criada: true; tarefa: TarefaDoDia }
   | { criada: false; aviso: { tipo: 'igual' | 'parecida'; tarefa: TarefaDoDia } | { tipo: 'nao_parece_tarefa'; casa: string; motivo: string } };
+
+/**
+ * Quem é da EQUIPE, a partir das contas ativas (19/10/2026, dados da produção):
+ *   · a mesma pessoa com duas contas (Pedro no gmail e na fullbpo) aparece UMA
+ *     vez, na conta que entrou por último; as outras apontam para ela;
+ *   · a conta com o nome da empresa (a conta "Root" de uso comum) não é gente
+ *     e não vira responsável.
+ * `canonica` leva o id de qualquer conta ao id da pessoa que aparece na tela.
+ */
+export function equipeDasContas(
+  contas: { id: string; nome: string; ultimoAcesso: string | null }[],
+  empresa: { nome: string; slug: string },
+): { pessoas: { id: string; nome: string }[]; canonica: Map<string, string> } {
+  const daEmpresa = new Set([tituloNormalizado(empresa.nome), tituloNormalizado(empresa.slug)]);
+  const porNome = new Map<string, typeof contas>();
+  for (const c of contas) {
+    const k = tituloNormalizado(c.nome);
+    if (!k || daEmpresa.has(k)) continue;
+    porNome.set(k, [...(porNome.get(k) ?? []), c]);
+  }
+  const pessoas: { id: string; nome: string }[] = [];
+  const canonica = new Map<string, string>();
+  for (const grupo of porNome.values()) {
+    const dona = [...grupo].sort((a, b) => (b.ultimoAcesso ?? '').localeCompare(a.ultimoAcesso ?? ''))[0];
+    pessoas.push({ id: dona.id, nome: dona.nome });
+    for (const c of grupo) canonica.set(c.id, dona.id);
+  }
+  pessoas.sort((a, b) => a.nome.localeCompare(b.nome, 'pt'));
+  return { pessoas, canonica };
+}

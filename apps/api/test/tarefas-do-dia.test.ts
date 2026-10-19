@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { mesmaTarefa, naoPareceTarefa, situacaoDoPrazo, tituloNormalizado } from '@mktos/shared';
+import { equipeDasContas, mesmaTarefa, naoPareceTarefa, situacaoDoPrazo, tituloNormalizado } from '@mktos/shared';
 
 describe('tarefas do dia — o que é a mesma tarefa', () => {
   it('título igual com caixa, acento e pontuação diferentes é a MESMA tarefa', () => {
@@ -43,5 +43,23 @@ describe('tarefas do dia — a régua do prazo', () => {
   });
   it('no domingo, "até domingo" é só o próprio dia', () => {
     expect(situacaoDoPrazo('2026-10-26', '2026-10-25', false)).toBe('depois');
+  });
+});
+
+describe('tarefas do dia — quem é da equipe', () => {
+  const empresa = { nome: 'Marketing OS (root)', slug: 'root' };
+  it('a mesma pessoa com duas contas aparece uma vez, na que entrou por último', () => {
+    const { pessoas, canonica } = equipeDasContas([
+      { id: 'pedro-fullbpo', nome: 'Pedro Magnago', ultimoAcesso: '2026-10-14T10:00:00Z' },
+      { id: 'pedro-gmail', nome: 'Pedro Magnago', ultimoAcesso: '2026-10-15T10:00:00Z' },
+      { id: 'lucas', nome: 'Lucas Fernandes', ultimoAcesso: '2026-10-19T10:00:00Z' },
+    ], empresa);
+    expect(pessoas).toEqual([{ id: 'lucas', nome: 'Lucas Fernandes' }, { id: 'pedro-gmail', nome: 'Pedro Magnago' }]);
+    expect(canonica.get('pedro-fullbpo')).toBe('pedro-gmail');
+  });
+  it('a conta com o nome da empresa não é gente', () => {
+    const { pessoas, canonica } = equipeDasContas([{ id: 'r', nome: 'Root', ultimoAcesso: null }], empresa);
+    expect(pessoas).toEqual([]);
+    expect(canonica.has('r')).toBe(false);
   });
 });

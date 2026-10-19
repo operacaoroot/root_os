@@ -1,7 +1,7 @@
 import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma, WorkListaNatureza, WorkStatusType } from '@prisma/client';
 import {
-  AREAS_PADRAO, CARTOES_QUE_NAO_SAO_TAREFA, DOMINIO_DAS_CONTAS_DO_SISTEMA, mesmaTarefa, naoPareceTarefa, notaDeSemelhanca, situacaoDoPrazo,
+  AREAS_PADRAO, CARTOES_QUE_NAO_SAO_TAREFA, DOMINIO_DAS_CONTAS_DO_SISTEMA, equipeDasContas, mesmaTarefa, naoPareceTarefa, notaDeSemelhanca, situacaoDoPrazo,
   type AreaDeTarefa, type PainelDeTarefas, type ResultadoDeCriar, type ResumoDaPessoa, type TarefaDoDia,
   type TarefaDoDiaCriar, type TarefaDoDiaEditar,
 } from '@mktos/shared';
@@ -34,6 +34,7 @@ const INCLUDE = {
   parent: { select: { id: true, title: true, list: { select: { natureza: true } } } },
 } satisfies Prisma.WorkTaskInclude;
 type Linha = Prisma.WorkTaskGetPayload<{ include: typeof INCLUDE }>;
+type Equipe = { pessoas: { id: string; nome: string }[]; canonica: Map<string, string>; nomeDe: Map<string, string> };
 
 const STATUS_DA_LISTA_DE_AREA = [
   { name: 'A fazer', type: WorkStatusType.open, color: '#87909e' },
@@ -100,18 +101,36 @@ export class TarefasDoDiaService {
     };
   }
 
-  private mapear(t: Linha, hoje: string): TarefaDoDia {
+  /** A equipe da empresa: uma pessoa por nome, sem as contas do sistema nem a da empresa. */
+  private async equipe(orgId: string): Promise<Equipe> {
+    const [org, contas] = await Promise.all([
+      this.prisma.org.findUnique({ where: { id: orgId }, select: { name: true, slug: true } }),
+      this.prisma.user.findMany({
+        where: { orgId, isActive: true, NOT: { email: { endsWith: DOMINIO_DAS_CONTAS_DO_SISTEMA } } },
+        select: { id: true, name: true, lastLoginAt: true },
+      }),
+    ]);
+    const { pessoas, canonica } = equipeDasContas(
+      contas.map((c) => ({ id: c.id, nome: c.name, ultimoAcesso: c.lastLoginAt?.toISOString() ?? null })),
+      { nome: org?.name ?? '', slug: org?.slug ?? '' },
+    );
+    return { pessoas, canonica, nomeDe: new Map(pessoas.map((p) => [p.id, p.nome])) };
+  }
+
+  private mapear(t: Linha, hoje: string, equipe: Equipe): TarefaDoDia {
     const feita = t.status.type === WorkStatusType.closed;
     const prazo = t.dueDate ? diaEmBrasilia(t.dueDate) : null;
     // Tarefa feita pela ficha aponta para o cliente pelo pai; as novas, por clienteId.
     const cliente = t.cliente ?? (t.parent && t.parent.list.natureza === WorkListaNatureza.cadastro ? t.parent : null);
+    // A conta vira a pessoa da equipe (Pedro com duas contas é um só); conta fora da equipe fica como texto.
+    const idDaPessoa = t.assigneeUserId ? equipe.canonica.get(t.assigneeUserId) : undefined;
     return {
       id: t.id,
       titulo: t.title,
       area: t.area ? { id: t.area.id, nome: t.area.nome, cor: t.area.cor } : null,
       cliente: cliente ? { id: cliente.id, titulo: cliente.title } : null,
-      pessoa: t.assigneeUser ? { id: t.assigneeUser.id, nome: t.assigneeUser.name } : null,
-      responsavelTexto: t.assigneeUser ? null : t.assignee,
+      pessoa: idDaPessoa ? { id: idDaPessoa, nome: equipe.nomeDe.get(idDaPessoa)! } : null,
+      responsavelTexto: idDaPessoa ? null : (t.assigneeUser?.name ?? t.assignee),
       prazo,
       situacao: situacaoDoPrazo(prazo, hoje, feita),
       status: { nome: t.status.name, cor: t.status.color },
@@ -124,7 +143,7 @@ export class TarefasDoDiaService {
   async painel(orgId: string): Promise<PainelDeTarefas> {
     const hoje = hojeEmBrasilia();
     const seteDiasAtras = new Date(Date.now() - 7 * 86400e3);
-    const [areas, linhas, pessoas, clientes] = await Promise.all([
+    const [areas, linhas, equipe, clientes] = await Promise.all([
       this.areas(orgId),
       this.prisma.workTask.findMany({
         where: {
@@ -138,22 +157,19 @@ export class TarefasDoDiaService {
         orderBy: [{ dueDate: { sort: 'asc', nulls: 'last' } }, { createdAt: 'asc' }],
         take: 2000,
       }),
-      this.prisma.user.findMany({
-        where: { orgId, isActive: true, NOT: { email: { endsWith: DOMINIO_DAS_CONTAS_DO_SISTEMA } } },
-        select: { id: true, name: true }, orderBy: { name: 'asc' },
-      }),
+      this.equipe(orgId),
       this.prisma.workTask.findMany({
         where: { orgId, archived: false, parentId: null, list: { natureza: WorkListaNatureza.cadastro, externalId: 'crm-root-lista' } },
         select: { id: true, title: true }, orderBy: { title: 'asc' },
       }),
     ]);
-    const tarefas = linhas.map((t) => this.mapear(t, hoje));
+    const tarefas = linhas.map((t) => this.mapear(t, hoje, equipe));
     return {
       hoje,
       areas,
-      pessoas: pessoas.map((p) => ({ id: p.id, nome: p.name })),
+      pessoas: equipe.pessoas,
       clientes: clientes.map((c) => ({ id: c.id, titulo: c.title })),
-      resumo: this.resumir(tarefas, pessoas.map((p) => ({ id: p.id, nome: p.name }))),
+      resumo: this.resumir(tarefas, equipe.pessoas),
       tarefas,
     };
   }
@@ -179,7 +195,7 @@ export class TarefasDoDiaService {
   private async uma(orgId: string, id: string): Promise<TarefaDoDia> {
     const t = await this.prisma.workTask.findFirst({ where: { ...this.ondeSaoTarefas(orgId), id }, include: INCLUDE });
     if (!t) throw new NotFoundException('Tarefa não encontrada');
-    return this.mapear(t, hojeEmBrasilia());
+    return this.mapear(t, hojeEmBrasilia(), await this.equipe(orgId));
   }
 
   // ---------- escrita ----------
@@ -226,14 +242,14 @@ export class TarefasDoDiaService {
     const doCliente = (t: Linha) => (t.clienteId ?? (t.parent?.list.natureza === WorkListaNatureza.cadastro ? t.parentId : null)) === (input.clienteId ?? null);
     const igual = abertas.find((t) => doCliente(t) && mesmaTarefa(t.title, input.titulo) === 'igual');
     // Igual e aberta: não cria nunca, nem confirmando. Devolve a que já existe.
-    if (igual) return { criada: false, aviso: { tipo: 'igual', tarefa: this.mapear(igual, hoje) } };
+    if (igual) return { criada: false, aviso: { tipo: 'igual', tarefa: this.mapear(igual, hoje, await this.equipe(orgId)) } };
     if (!input.confirmar) {
       const fora = naoPareceTarefa(input.titulo);
       if (fora) return { criada: false, aviso: { tipo: 'nao_parece_tarefa', casa: fora.casa, motivo: fora.motivo } };
       const parecida = abertas
         .filter((t) => mesmaTarefa(t.title, input.titulo) === 'parecida')
         .sort((a, b) => notaDeSemelhanca(b.title, input.titulo) - notaDeSemelhanca(a.title, input.titulo))[0];
-      if (parecida) return { criada: false, aviso: { tipo: 'parecida', tarefa: this.mapear(parecida, hoje) } };
+      if (parecida) return { criada: false, aviso: { tipo: 'parecida', tarefa: this.mapear(parecida, hoje, await this.equipe(orgId)) } };
     }
     const { area, lista } = await this.listaDaArea(orgId, actorId, input.areaId);
     const aberto = lista.statuses.find((s) => s.type !== WorkStatusType.closed) ?? lista.statuses[0];
