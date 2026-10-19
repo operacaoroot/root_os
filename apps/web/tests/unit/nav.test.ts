@@ -202,8 +202,9 @@ describe('NAV — estrutura', () => {
     const rotasMK = ['/contexto/marca', '/marketing', '/marketing/ideias',
       '/marketing/estrategia', '/marketing/performance', '/marketing/relatorio'];
     // 18/10/2026: + /comercial, o painel do Motor Comercial (lê a lista Gestão de Leads).
-    expect(NAV).toHaveLength(41);
-    expect(new Set(NAV.map((n) => n.href))).toEqual(new Set([...hrefsEsperados, ...rotasMK, '/comercial', '/clientes']));
+    // 19/10/2026: + /cofre, o cofre da empresa (senhas, dados e documentos dos sócios).
+    expect(NAV).toHaveLength(42);
+    expect(new Set(NAV.map((n) => n.href))).toEqual(new Set([...hrefsEsperados, ...rotasMK, '/comercial', '/clientes', '/cofre']));
   });
 
   it('não repete chave nem rota', () => {
@@ -503,7 +504,7 @@ describe('organização da navegação (ROOT-07)', () => {
     'comercial-painel': 'leads.ver', clientes: 'tarefas.ver', leads: 'leads.ver', funil: 'dashboard.ver', campanhas: 'campanhas.ver', pixels: 'dashboard.ver',
     relatorios: 'relatorios.ver', metas: 'dashboard.ver', financeiro: 'financeiro.ver', 'custo-ia': 'dashboard.ver',
     agentes: 'mcp.ver', rotinas: 'automacoes.ver', sessoes: 'mcp.ver', fluxos: 'automacoes.ver',
-    ferramentas: 'mcp.ver', conexoes: 'dashboard.ver', regua: 'mcp.ver', rastro: 'auditoria.ver',
+    ferramentas: 'mcp.ver', conexoes: 'dashboard.ver', regua: 'mcp.ver', cofre: 'cofre.ver', rastro: 'auditoria.ver',
     'linha-do-tempo': 'auditoria.ver', assinatura: 'dashboard.ver', config: 'dashboard.ver',
   };
 
@@ -519,7 +520,7 @@ describe('organização da navegação (ROOT-07)', () => {
     campanhas: 'Campanhas', pixels: 'Eventos do site', relatorios: 'Relatórios', metas: 'Metas',
     financeiro: 'Financeiro', 'custo-ia': 'Custos de IA', agentes: 'Agentes de IA',
     rotinas: 'Rotinas automáticas', sessoes: 'Sessões de IA', fluxos: 'Processos',
-    ferramentas: 'Ferramentas disponíveis', conexoes: 'Integrações', regua: 'Regras e permissões',
+    ferramentas: 'Ferramentas disponíveis', conexoes: 'Integrações', regua: 'Regras e permissões', cofre: 'Cofre',
     rastro: 'Registro de ações', 'linha-do-tempo': 'Atividade', assinatura: 'Plano e assinatura',
     config: 'Configurações da conta',
   };
@@ -539,15 +540,15 @@ describe('organização da navegação (ROOT-07)', () => {
     '/financeiro': 'financeiro',
     '/painel/custo-ia': 'automacoes', '/agentes': 'automacoes', '/rotinas': 'automacoes',
     '/sessoes': 'automacoes', '/fluxos': 'automacoes',
-    '/ferramentas': 'controle', '/conexoes': 'controle', '/regua': 'controle',
+    '/ferramentas': 'controle', '/conexoes': 'controle', '/regua': 'controle', '/cofre': 'controle',
     '/rastro': 'registros', '/linha-do-tempo': 'registros',
     '/assinatura': 'controle', // "Oculto na navegação interna": a seção é só a casa do dado
     '/config': 'conta',
   };
 
-  it('os 41 destinos mantêm chave, rótulo e permissão da base', () => {
-    expect(NAV).toHaveLength(41);
-    expect(Object.keys(PERMISSAO_DA_BASE)).toHaveLength(41);
+  it('os 42 destinos mantêm chave, rótulo e permissão da base', () => {
+    expect(NAV).toHaveLength(42);
+    expect(Object.keys(PERMISSAO_DA_BASE)).toHaveLength(42);
     for (const n of NAV) {
       expect(n.permission, `${n.key}: permissão mudou`).toBe(PERMISSAO_DA_BASE[n.key]);
       expect(n.label, `${n.key}: rótulo fora da tabela da ROOT-08`).toBe(ROTULOS_DA_ROOT_08[n.key] ?? ROTULO_DA_BASE[n.key]);
@@ -582,7 +583,7 @@ describe('organização da navegação (ROOT-07)', () => {
     expect(SECOES.find((s) => s.key === 'trabalho')?.hint).toBe('tarefas, quadro, ideias e implantação');
   });
 
-  it('cada destino cai na seção da matriz, e a matriz cobre exatamente os 41 href', () => {
+  it('cada destino cai na seção da matriz, e a matriz cobre exatamente os 42 href', () => {
     expect(new Set(Object.keys(SECAO_DA_MATRIZ))).toEqual(new Set(NAV.map((n) => n.href)));
     for (const n of NAV) expect(n.secao, `${n.key} (${n.href})`).toBe(SECAO_DA_MATRIZ[n.href]);
   });

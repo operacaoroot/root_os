@@ -106,6 +106,13 @@ export const PERMISSIONS = [
   'pauta.enviar_ao_youtube',
   'aprovacoes.ver',
   'aprovacoes.decidir',
+  /*
+   * Cofre da empresa (senhas, dados e documentos dos sócios). Só o Admin Master
+   * recebe, pelo `[...PERMISSIONS]`; a migration 20261019150000 soma o vínculo
+   * no banco sem passar pelo db:sync-permissions.
+   */
+  'cofre.ver',
+  'cofre.editar',
 ] as const;
 
 export type Permission = (typeof PERMISSIONS)[number];

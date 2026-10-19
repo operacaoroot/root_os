@@ -31,6 +31,7 @@ import { ContentModule } from './content/content.module';
 import { ObsidianModule } from './obsidian/obsidian.module';
 import { GoogleModule } from './google/google.module';
 import { FinanceModule } from './finance/finance.module';
+import { CofreDaEmpresaModule } from './cofre-da-empresa/cofre-da-empresa.module';
 import { MetaModule } from './meta/meta.module';
 import { GoalsModule } from './goals/goals.module';
 import { BioModule } from './bio/bio.module';
@@ -126,6 +127,7 @@ import { CaixaModule } from './caixa/caixa.module';
     ObsidianModule,
     GoogleModule,
     FinanceModule,
+    CofreDaEmpresaModule,
     MetaModule,
     GoalsModule,
     BioModule,

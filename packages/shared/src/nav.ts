@@ -173,6 +173,8 @@ export const NAV: NavItem[] = [
   { key: 'ferramentas', label: 'Ferramentas disponíveis', href: '/ferramentas', icon: 'Wrench', permission: 'mcp.ver', secao: 'controle', estado: 'parcial', parcial: 'o catálogo completo de ferramentas ainda não está disponível nesta tela' },
   { key: 'conexoes', label: 'Integrações', href: '/conexoes', icon: 'Cable', permission: 'dashboard.ver', secao: 'controle' },
   { key: 'regua', label: 'Regras e permissões', href: '/regua', icon: 'Shield', permission: 'mcp.ver', secao: 'controle' },
+  // Senhas, dados e documentos dos sócios, atrás de uma senha própria. Fora do alcance da IA.
+  { key: 'cofre', label: 'Cofre', href: '/cofre', icon: 'LockKeyhole', permission: 'cofre.ver', secao: 'controle' },
   { key: 'assinatura', label: 'Plano e assinatura', href: '/assinatura', icon: 'CreditCard', permission: 'dashboard.ver', secao: 'controle', oculto: true },
 
   { key: 'rastro', label: 'Registro de ações', href: '/rastro', icon: 'Footprints', permission: 'auditoria.ver', secao: 'registros' },

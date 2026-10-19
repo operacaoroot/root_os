@@ -79,6 +79,9 @@ model Org {
   auditLogs    AuditLog[]
   demoInstallations DemoInstallation[]
   operacaoRodadas OperacaoRodada[]
+  cofreSenhas CofreSenha[]
+  cofreSessoes CofreSessao[]
+  cofreItens CofreItem[]
   acordosComerciais AcordoComercial[]
   analiseLeituras AnaliseLeitura[]
   reunioesDeCartao ReuniaoDoCartao[]
@@ -5188,4 +5191,61 @@ model ReuniaoDoCartao {
   createdAt   DateTime @default(now())
 
   @@index([orgId, taskId, em])
+}
+
+// ---------- Cofre da empresa: senhas, dados e documentos dos sócios ----------
+// Não confundir com o cofre de conectores (SegredoDeConector): aquele guarda o
+// que o SISTEMA usa para falar com Gmail, ClickUp etc. Este é das PESSOAS.
+// Os campos sensíveis vão cifrados com a chave do servidor (common/crypto) e a
+// tela só abre depois da senha do cofre, que é de cada sócio e não é a do login.
+
+/// A senha do cofre de cada usuário (hash bcrypt) e o bloqueio por tentativas.
+model CofreSenha {
+  id            String    @id @default(uuid())
+  orgId         String
+  org           Org       @relation(fields: [orgId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  userId        String
+  hash          String
+  tentativas    Int       @default(0)
+  bloqueadoAte  DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  @@unique([orgId, userId])
+}
+
+/// Cofre destrancado: vale por alguns minutos e renova a cada uso. Guarda só o hash do token.
+model CofreSessao {
+  id        String   @id @default(uuid())
+  orgId     String
+  org       Org      @relation(fields: [orgId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  userId    String
+  tokenHash String   @unique
+  expiraEm  DateTime
+  createdAt DateTime @default(now())
+
+  @@index([orgId, userId])
+}
+
+/// Um item do cofre. tipo: senha | dado | documento. Título e "onde" aparecem na lista;
+/// usuário, segredo, notas e o arquivo ficam cifrados e só abrem um a um, com registro.
+model CofreItem {
+  id             String   @id
+  orgId          String
+  org            Org      @relation(fields: [orgId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  tipo           String
+  titulo         String
+  onde           String?
+  usuarioCifrado String?
+  segredoCifrado String?
+  notasCifradas  String?
+  arquivoChave   String?
+  arquivoNome    String?
+  arquivoTipo    String?
+  arquivoTamanho Int?
+  criadoPor      String
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@index([orgId])
 }
