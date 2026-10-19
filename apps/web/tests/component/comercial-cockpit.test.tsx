@@ -43,7 +43,7 @@ vi.mock('@/lib/api', async (original) => {
 
 import TorrePage from '@/app/comercial/torre/page';
 import RelatorioPage from '@/app/comercial/relatorio/page';
-import FilaPage from '@/app/comercial/page';
+import FilaPage from '@/app/comercial/decisoes/page';
 import { AbaSessao } from '@/app/comercial/_painel/AbaSessao';
 import FunilPage from '@/app/comercial/funil/page';
 import { AbaDinheiro } from '@/app/comercial/_painel/AbaDinheiro';

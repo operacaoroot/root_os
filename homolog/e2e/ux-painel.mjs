@@ -180,7 +180,7 @@ async function main() {
       const sufixo = tema === 'dark' ? 'escuro' : 'claro';
 
       // 2. Da fila, "ver o lead" abre o painel na aba Decisões.
-      await p.goto(`${WEB}/comercial`, { waitUntil: 'networkidle' });
+      await p.goto(`${WEB}/comercial/decisoes`, { waitUntil: 'networkidle' });
       await marcar(p);
       const cartaoNaFila = p.locator(`#dec-${decisao.id}`);
       if (tema === 'dark') {
@@ -189,7 +189,7 @@ async function main() {
         await link.click();
         await dialogo(p).waitFor();
         const url = new URL(p.url());
-        conferir(url.pathname === '/comercial', `a fila mudou de página: ${url.pathname}`);
+        conferir(url.pathname === '/comercial/decisoes', `a fila mudou de página: ${url.pathname}`);
         conferir(url.searchParams.get('lead') === leadId && url.searchParams.get('aba') === 'decisoes', `query errada: ${url.search}`);
         conferir(await aindaMarcado(p), 'a página recarregou ao abrir o painel');
         conferir((await dialogo(p).getAttribute('aria-modal')) === 'true', 'o painel não é modal');
@@ -212,20 +212,20 @@ async function main() {
           { timeout: 20_000 },
         );
         conferir(await aindaMarcado(p), 'a página recarregou durante a decisão');
-        conferir(new URL(p.url()).pathname === '/comercial', 'a decisão mudou de página');
+        conferir(new URL(p.url()).pathname === '/comercial/decisoes', 'a decisão mudou de página');
         passo('o fio ganhou a linha da decisão; a URL mudou só na query', { detalhe: new URL(p.url()).search });
 
         // 4. Esc fecha e o foco volta.
         await p.keyboard.press('Escape');
         await dialogo(p).waitFor({ state: 'detached' });
         const depois = new URL(p.url());
-        conferir(depois.pathname === '/comercial' && !depois.searchParams.has('lead'), `fechar deixou a URL errada: ${p.url()}`);
+        conferir(depois.pathname === '/comercial/decisoes' && !depois.searchParams.has('lead'), `fechar deixou a URL errada: ${p.url()}`);
         const focoNoMain = await p.evaluate(() => !!document.activeElement && document.getElementById('root-os-main')?.contains(document.activeElement));
         conferir(focoNoMain, 'o foco não voltou à tela de trás');
         conferir(await aindaMarcado(p), 'fechar recarregou a página');
         passo('Esc fechou o painel, a URL voltou à da fila e o foco voltou à tela de trás');
       } else {
-        await p.goto(`${WEB}/comercial?lead=${leadId}&aba=decisoes`, { waitUntil: 'networkidle' });
+        await p.goto(`${WEB}/comercial/decisoes?lead=${leadId}&aba=decisoes`, { waitUntil: 'networkidle' });
         await dialogo(p).waitFor();
         await p.waitForTimeout(800);
         await foto(p, `fila-painel-decisoes-${sufixo}`);

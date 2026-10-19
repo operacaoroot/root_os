@@ -699,7 +699,7 @@ function CelularDaMesaView({ mesa, token, agir }: { mesa: CelularDaMesa; token: 
         <div key={d.id} className="min-w-0 rounded border border-border bg-bg px-3 py-2 text-[13px]">
           <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
             <span className="min-w-0 flex-1 truncate font-os-mono text-[9.5px] uppercase tracking-[0.14em] text-muted" title={`decisão · ${d.leadNome}`}>decisão · {d.leadNome}</span>
-            <Link href={`/comercial?lead=${encodeURIComponent(d.leadId)}&aba=decisoes`} className={`shrink-0 text-[11.5px] text-muted underline underline-offset-2 hover:text-brand max-md:py-2 ${FOCO}`}>
+            <Link href={`/comercial/funil?lead=${encodeURIComponent(d.leadId)}&aba=decisoes`} className={`shrink-0 text-[11.5px] text-muted underline underline-offset-2 hover:text-brand max-md:py-2 ${FOCO}`}>
               abrir no cockpit
             </Link>
           </div>

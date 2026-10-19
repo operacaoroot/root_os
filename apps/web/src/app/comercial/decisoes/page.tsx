@@ -6,9 +6,9 @@ import type { FilaDeDecisoes } from '@mktos/shared';
 
 import { ROTULO_DA_FONTE, horaSP, instantesLegiveis } from '@/lib/cockpit';
 
-import { Aviso, BOTAO, CARTAO, Carregando, Erro, FOCO, Numero, Rotulo, useCarregar } from './_ui';
-import { CartaoDeDecisao } from './_decisao';
-import { LinkDoLead, useMudouNoPainel, usePainel } from './_painel/provedor';
+import { Aviso, BOTAO, CARTAO, Carregando, Erro, FOCO, Numero, Rotulo, useCarregar } from '../_ui';
+import { CartaoDeDecisao } from '../_decisao';
+import { LinkDoLead, useMudouNoPainel, usePainel } from '../_painel/provedor';
 
 /*
  * TELA 03 · A FILA DE DECISÕES (lane C; painel na lane UX). A tela principal
@@ -16,6 +16,11 @@ import { LinkDoLead, useMudouNoPainel, usePainel } from './_painel/provedor';
  * em um toque, o padrão escrito e o prazo. Se o prazo vencer, o relógio
  * aplica o padrão. O nome do lead abre o painel por cima da fila, na aba
  * Decisões; decidir tira o cartão da fila com uma transição curta.
+ *
+ * Rodada do trabalho T6 (19/10/2026): a fila saiu do menu. As decisões passaram
+ * à aba Decisões de Pendências (`/caixa?aba=decisoes`), com o mesmo cartão e a
+ * mesma rota da API. Esta tela segue viva aqui, em `/comercial/decisoes`, e
+ * `/comercial` redireciona para o Funil vivo.
  */
 export default function FilaDeDecisoesPage() {
   const { dados, erro, carregando, recarregar } = useCarregar<FilaDeDecisoes>('/comercial/fila', 30_000);
@@ -47,6 +52,7 @@ export default function FilaDeDecisoesPage() {
           Só o que precisa de alguém. Cada decisão tem o padrão escrito e o prazo; se ninguém responder, vale o padrão.
         </p>
         <nav aria-label="outras telas do comercial" className="flex flex-wrap gap-2 text-[12.5px]">
+          <Link href="/caixa?aba=decisoes" className={BOTAO}>decidir em Pendências</Link>
           <Link href="/comercial/funil" className={BOTAO}>funil vivo</Link>
           <Link href="/comercial/contratos" className={BOTAO}>contratos</Link>
           <Link href="/comercial/torre" className={BOTAO}>torre</Link>

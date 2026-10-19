@@ -195,13 +195,15 @@ describe('não se perdeu funcionalidade', () => {
  * comercial, governados pelo módulo `leads`. Cada lane da passagem acrescenta
  * o seu aqui, e as contagens abaixo somam esta lista aos 39 da base.
  */
-const COCKPIT: Record<string, { href: string; permission: string; label: string }> = {
-  'comercial-simulador': { href: '/comercial/simulador', permission: 'leads.ver', label: 'Simulador de WhatsApp' },
-  'comercial-decisoes': { href: '/comercial', permission: 'leads.ver', label: 'Decisões do comercial' },
+// Na ORDEM do menu (rodada do trabalho T6, 19/10/2026): cinco itens soltos e a
+// fila de decisões oculta no fim, ainda dona de `/comercial`.
+const COCKPIT: Record<string, { href: string; permission: string; label: string; oculto?: true }> = {
   'comercial-funil': { href: '/comercial/funil', permission: 'leads.ver', label: 'Funil vivo' },
   'comercial-contratos': { href: '/comercial/contratos', permission: 'leads.ver', label: 'Contratos vivos' },
+  'comercial-simulador': { href: '/comercial/simulador', permission: 'leads.ver', label: 'Simulador de WhatsApp' },
   'comercial-torre': { href: '/comercial/torre', permission: 'leads.ver', label: 'Torre das automações' },
   'comercial-relatorio': { href: '/comercial/relatorio', permission: 'leads.ver', label: 'Relatório da semana' },
+  'comercial-decisoes': { href: '/comercial', permission: 'leads.ver', label: 'Decisões do comercial', oculto: true },
 };
 const N_COCKPIT = Object.keys(COCKPIT).length;
 const HREFS_DO_COCKPIT = Object.values(COCKPIT).map((c) => c.href);
@@ -213,6 +215,8 @@ const HREFS_DO_COCKPIT = Object.values(COCKPIT).map((c) => c.href);
  */
 const DA_RODADA_PAINEL: Record<string, { href: string; permission: string; label: string; secao: string; modulo: string; pai: string }> = {
   'trabalho-atas': { href: '/trabalho/atas', permission: 'tarefas.ver', label: 'Atas', secao: 'trabalho', modulo: 'trabalho', pai: 'trabalho' },
+  // Rodada do trabalho T1 (19/10/2026): a implantação numa tela só, o kanban da lista Onboarding de cliente.
+  implantacao: { href: '/trabalho/implantacao', permission: 'tarefas.ver', label: 'Implantação de clientes', secao: 'trabalho', modulo: 'trabalho', pai: 'trabalho' },
 };
 const N_DA_RODADA = Object.keys(DA_RODADA_PAINEL).length;
 const HREFS_DA_RODADA = Object.values(DA_RODADA_PAINEL).map((c) => c.href);
@@ -318,7 +322,8 @@ describe('navPorSecao', () => {
     expect(grupos).toHaveLength(1);
     expect(grupos[0].secao.key).toBe('comercial');
     // `leads` está oculto desde 18/10/2026: o cockpit absorve o MVP.
-    expect(grupos[0].itens.map((i) => i.key)).toEqual(Object.keys(COCKPIT).filter((k) => COCKPIT[k].permission === 'leads.ver'));
+    // `comercial-decisoes` também, desde 19/10/2026: as decisões moram em Pendências.
+    expect(grupos[0].itens.map((i) => i.key)).toEqual(Object.keys(COCKPIT).filter((k) => COCKPIT[k].permission === 'leads.ver' && !COCKPIT[k].oculto));
   });
 
   it('módulo desligado sai do menu; a espinha nunca sai', () => {
@@ -586,6 +591,7 @@ describe('organização da navegação (ROOT-07)', () => {
     for (const n of NAV) {
       if (COCKPIT[n.key]) {
         expect(n).toMatchObject({ href: COCKPIT[n.key].href, permission: COCKPIT[n.key].permission, label: COCKPIT[n.key].label, secao: 'comercial', modulo: 'leads' });
+        expect(!!n.oculto, `${n.key}: oculto`).toBe(!!COCKPIT[n.key].oculto);
         continue;
       }
       if (DA_RODADA_PAINEL[n.key]) {
@@ -614,7 +620,7 @@ describe('organização da navegação (ROOT-07)', () => {
    * dizer só metade do que a tela faz; o rótulo virou "Tarefas". A chave e a rota
    * não mudam. "Lista de tarefas" (/tarefas) segue com o rótulo, oculta.
    */
-  const ROTULOS_DA_RODADA_PAINEL: Record<string, string> = { trabalho: 'Tarefas' };
+  const ROTULOS_DA_RODADA_PAINEL: Record<string, string> = { trabalho: 'Tarefas', onboarding: 'Bancada de onboarding' };
 
   it('rótulos conforme a matriz da ROOT-08: um item muda, o resto fica, nada promete função ausente', () => {
     expect(Object.keys(ROTULOS_DA_ROOT_08)).toEqual(['console']);
@@ -678,7 +684,8 @@ describe('organização da navegação (ROOT-07)', () => {
   it('os cortes de 18/10/2026 saem do menu, ficam no NAV e dizem para onde a função foi', () => {
     const cortes: Record<string, string> = {
       conteudo: '/trabalho', 'marketing-ideias': '/trabalho', 'marketing-estrategia': '/trabalho',
-      leads: '/comercial', funil: '/comercial/funil',
+      // 19/10/2026 (rodada do trabalho T6): /comercial deixou de ser a fila; o Funil vivo é a entrada.
+      leads: '/comercial/funil', funil: '/comercial/funil',
     };
     const todas = new Set(NAV.map((n) => n.permission));
     const noMenu = navPorSecao(todas).flatMap((g) => g.itens.map((i) => i.key));
@@ -692,25 +699,58 @@ describe('organização da navegação (ROOT-07)', () => {
   });
 
   /*
+   * Rodada do trabalho T6 (19/10/2026): o Motor Comercial são cinco itens soltos,
+   * nesta ordem, sem pai. A fila de decisões sai do menu oculta, absorvida por
+   * Pendências, e continua dona de `/comercial` (que redireciona para o Funil
+   * vivo): é ela que mantém `/comercial/decisoes` e `/comercial/lead/...` sob o
+   * módulo `leads`.
+   */
+  it('Motor Comercial sem Decisões: cinco itens soltos, decisões absorvidas por Pendências', () => {
+    const todas = new Set(NAV.map((n) => n.permission));
+    const comercial = navEmArvore(todas).find((g) => g.secao.key === 'comercial')!;
+    expect(comercial.itens.map((no) => no.item.label)).toEqual([
+      'Funil vivo', 'Contratos vivos', 'Simulador de WhatsApp', 'Torre das automações', 'Relatório da semana',
+    ]);
+    for (const no of comercial.itens) {
+      expect(no.item.pai, no.item.key).toBeUndefined();
+      expect(no.filhos, no.item.key).toEqual([]);
+    }
+    const decisoes = NAV.find((n) => n.key === 'comercial-decisoes')!;
+    expect(decisoes).toMatchObject({ href: '/comercial', oculto: true, modulo: 'leads', permission: 'leads.ver', secao: 'comercial' });
+    expect(NAV.filter((n) => n.pai === 'comercial-decisoes')).toEqual([]);
+    const absorvida = ROTAS_ABSORVIDAS.find((r) => r.href === '/comercial');
+    expect(absorvida?.destino).toBe('/caixa');
+    expect(absorvida?.porque).toMatch(/Pendências/);
+    expect(absorvida?.porque).toMatch(/segue viva/);
+    expect(moduloDaRotaDoWeb('/comercial')).toBe('leads');
+    expect(moduloDaRotaDoWeb('/comercial/decisoes')).toBe('leads');
+    expect(moduloDaRotaDoWeb('/comercial/lead/abc')).toBe('leads');
+    expect(navPorSecao(todas, ['trabalho']).flatMap((g) => g.itens.map((i) => i.key))).not.toContain('comercial-funil');
+  });
+
+  /*
    * Rodada do painel P2 (18/10/2026): a Lista de tarefas virou a visão Lista do
    * Trabalho. `/tarefas` sai do menu oculta, absorvida por /trabalho, e a página
    * redireciona (na página, não em rotas-antigas.mjs: item do NAV com redirect de
    * configuração reprova o teste de disputa de rota). A Implantação de clientes
    * fica pendurada no Trabalho, mesma seção.
    */
-  it('quadro e lista são uma tela só: /tarefas oculta e absorvida, Implantação sob o Trabalho', () => {
+  it('quadro e lista são uma tela só: /tarefas oculta e absorvida, Implantação sob o Trabalho abrindo o kanban', () => {
     const tarefas = NAV.find((n) => n.key === 'tarefas')!;
     expect(tarefas).toMatchObject({ href: '/tarefas', oculto: true, modulo: 'trabalho', permission: 'tarefas.ver' });
     const absorvida = ROTAS_ABSORVIDAS.find((r) => r.href === '/tarefas');
     expect(absorvida?.destino).toBe('/trabalho');
     expect(absorvida?.porque).toMatch(/uma tela só/);
     expect(NAV.find((n) => n.key === 'trabalho')).toMatchObject({ label: 'Tarefas', href: '/trabalho' });
-    expect(NAV.find((n) => n.key === 'onboarding')).toMatchObject({ pai: 'trabalho', secao: 'trabalho', href: '/onboarding' });
+    // Rodada do trabalho T1 (19/10/2026): a bancada antiga deixa de ser porta, oculta e absorvida pelo kanban.
+    expect(NAV.find((n) => n.key === 'onboarding')).toMatchObject({ pai: 'trabalho', secao: 'trabalho', href: '/onboarding', oculto: true });
+    expect(ROTAS_ABSORVIDAS.find((r) => r.href === '/onboarding')?.destino).toBe('/trabalho/implantacao');
+    expect(NAV.find((n) => n.key === 'implantacao')).toMatchObject({ pai: 'trabalho', secao: 'trabalho', href: '/trabalho/implantacao', label: 'Implantação de clientes' });
     const todas = new Set(NAV.map((n) => n.permission));
     const trabalho = navEmArvore(todas).find((g) => g.secao.key === 'trabalho')!;
     const raiz = trabalho.itens.find((no) => no.item.key === 'trabalho')!;
     // Rodada do painel P3: as Atas também ficam penduradas no Trabalho, depois da Implantação.
-    expect(raiz.filhos.map((f) => f.key)).toEqual(['onboarding', 'trabalho-atas']);
+    expect(raiz.filhos.map((f) => f.key)).toEqual(['implantacao', 'trabalho-atas']);
     expect(navPorSecao(todas).flatMap((g) => g.itens.map((i) => i.key))).not.toContain('tarefas');
     expect(moduloDaRotaDoWeb('/tarefas')).toBe('trabalho');
   });
@@ -735,7 +775,7 @@ describe('organização da navegação (ROOT-07)', () => {
     const a = NAV.find((n) => n.key === 'assinatura')!;
     expect(a.oculto).toBe(true);
     expect(NAV.filter((n) => n.oculto).map((n) => n.key).sort()).toEqual(
-      ['assinatura', 'conteudo', 'funil', 'leads', 'marketing-estrategia', 'marketing-ideias', 'tarefas'],
+      ['assinatura', 'comercial-decisoes', 'conteudo', 'funil', 'leads', 'marketing-estrategia', 'marketing-ideias', 'onboarding', 'tarefas'],
     );
     const todas = new Set(NAV.map((n) => n.permission));
     expect(navPorSecao(todas).flatMap((g) => g.itens.map((i) => i.key))).not.toContain('assinatura');

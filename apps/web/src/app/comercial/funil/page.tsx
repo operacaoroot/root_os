@@ -198,7 +198,7 @@ export default function FunilVivoPage() {
               </span>
             </span>
           ))}
-          <Link href="/comercial" className={`ml-auto ${BOTAO}`}>fila de decisões</Link>
+          <Link href="/caixa?aba=decisoes" className={`ml-auto ${BOTAO}`}>decisões em Pendências</Link>
         </div>
         <p className="text-[12.5px] text-muted">
           O cartão anda sozinho com os fatos. Para mover à mão, arraste para outra coluna ou use &quot;mover&quot;: outra pessoa assina o pedido em /atendimento e você conclui aqui. Com etapa pendente, o cartão muda e fica marcado com o que falta. Setas do teclado andam entre os cartões, Enter abre o lead.

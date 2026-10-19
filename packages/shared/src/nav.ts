@@ -147,7 +147,12 @@ export const NAV: NavItem[] = [
   // pendurada no Trabalho (só forma: mesma seção, mesma rota, mesmo módulo).
   { key: 'tarefas', label: 'Lista de tarefas', href: '/tarefas', icon: 'CheckSquare', permission: 'tarefas.ver', secao: 'trabalho', modulo: 'trabalho', oculto: true },
   { key: 'trabalho', label: 'Tarefas', href: '/trabalho', icon: 'KanbanSquare', permission: 'tarefas.ver', secao: 'trabalho', modulo: 'trabalho' },
-  { key: 'onboarding', label: 'Implantação de clientes', href: '/onboarding', icon: 'DoorOpen', permission: 'tarefas.ver', secao: 'trabalho', modulo: 'trabalho', pai: 'trabalho' },
+  // 19/10/2026 (rodada do trabalho T1): "Implantação de clientes" abre o kanban denso da
+  // lista "Onboarding de cliente" (pasta Clientes), com rolagem lateral. A bancada antiga
+  // `/onboarding` deixa de ser porta: o item fica oculto e a rota redireciona para o kanban;
+  // o trilho de cada cliente virou a aba "Trilho" do pop-up do cartão.
+  { key: 'implantacao', label: 'Implantação de clientes', href: '/trabalho/implantacao', icon: 'DoorOpen', permission: 'tarefas.ver', secao: 'trabalho', modulo: 'trabalho', pai: 'trabalho' },
+  { key: 'onboarding', label: 'Bancada de onboarding', href: '/onboarding', icon: 'DoorOpen', permission: 'tarefas.ver', secao: 'trabalho', modulo: 'trabalho', pai: 'trabalho', oculto: true },
   // 18/10/2026 (rodada do painel P3): o banco de atas da operação, pendurado no Trabalho.
   // As atas do vault e as coladas na tela, e as sugestões de tarefa que cada uma rende.
   { key: 'trabalho-atas', label: 'Atas', href: '/trabalho/atas', icon: 'NotebookText', permission: 'tarefas.ver', secao: 'trabalho', modulo: 'trabalho', pai: 'trabalho' },
@@ -169,14 +174,20 @@ export const NAV: NavItem[] = [
   // menu. Tudo passa pelo cockpit (Decisões do comercial e Funil vivo). Ocultos, vivos.
   { key: 'leads', label: 'Leads', href: '/leads', icon: 'UserPlus', permission: 'leads.ver', secao: 'comercial', modulo: 'leads', oculto: true },
   { key: 'funil', label: 'Funil de vendas', href: '/funil', icon: 'Filter', permission: 'dashboard.ver', secao: 'comercial', modulo: 'leads', pai: 'leads', oculto: true },
+  // Rodada do trabalho T6 (19/10/2026): o Motor Comercial são cinco itens soltos,
+  // sem pai, nesta ordem. O Funil vivo é a entrada (`/comercial` redireciona para
+  // ele); as decisões do comercial passaram a Pendências (`/caixa?aba=decisoes`).
+  { key: 'comercial-funil', label: 'Funil vivo', href: '/comercial/funil', icon: 'Columns3', permission: 'leads.ver', secao: 'comercial', modulo: 'leads' },
+  { key: 'comercial-contratos', label: 'Contratos vivos', href: '/comercial/contratos', icon: 'FileSignature', permission: 'leads.ver', secao: 'comercial', modulo: 'leads' },
   // Cockpit do lead (lane B, 13/10/2026): os celulares simulados do lead e da mesa, provedor `simulado`.
   { key: 'comercial-simulador', label: 'Simulador de WhatsApp', href: '/comercial/simulador', icon: 'Smartphone', permission: 'leads.ver', secao: 'comercial', modulo: 'leads' },
-  // Cockpit do lead (lane C, 13/10/2026): a fila de decisões é a tela principal (exceções); o resto pende dela.
-  { key: 'comercial-decisoes', label: 'Decisões do comercial', href: '/comercial', icon: 'Inbox', permission: 'leads.ver', secao: 'comercial', modulo: 'leads' },
-  { key: 'comercial-funil', label: 'Funil vivo', href: '/comercial/funil', icon: 'Columns3', permission: 'leads.ver', secao: 'comercial', modulo: 'leads', pai: 'comercial-decisoes' },
-  { key: 'comercial-contratos', label: 'Contratos vivos', href: '/comercial/contratos', icon: 'FileSignature', permission: 'leads.ver', secao: 'comercial', modulo: 'leads', pai: 'comercial-decisoes' },
-  { key: 'comercial-torre', label: 'Torre das automações', href: '/comercial/torre', icon: 'RadioTower', permission: 'leads.ver', secao: 'comercial', modulo: 'leads', pai: 'comercial-decisoes' },
-  { key: 'comercial-relatorio', label: 'Relatório da semana', href: '/comercial/relatorio', icon: 'FileBarChart', permission: 'leads.ver', secao: 'comercial', modulo: 'leads', pai: 'comercial-decisoes' },
+  { key: 'comercial-torre', label: 'Torre das automações', href: '/comercial/torre', icon: 'RadioTower', permission: 'leads.ver', secao: 'comercial', modulo: 'leads' },
+  { key: 'comercial-relatorio', label: 'Relatório da semana', href: '/comercial/relatorio', icon: 'FileBarChart', permission: 'leads.ver', secao: 'comercial', modulo: 'leads' },
+  // A fila de decisões (lane C, 13/10/2026) sai do menu em 19/10/2026: oculta, viva.
+  // O item segue dono de `/comercial` (que redireciona para o Funil vivo) e, pelo
+  // prefixo, de `/comercial/decisoes` (a tela antiga) e `/comercial/lead/...`: é
+  // ele que mantém essas rotas sob o módulo `leads`. A chave não muda.
+  { key: 'comercial-decisoes', label: 'Decisões do comercial', href: '/comercial', icon: 'Inbox', permission: 'leads.ver', secao: 'comercial', modulo: 'leads', oculto: true },
 
   { key: 'financeiro', label: 'Financeiro', href: '/financeiro', icon: 'Wallet', permission: 'financeiro.ver', secao: 'financeiro', modulo: 'financeiro' },
 
@@ -214,13 +225,19 @@ export const ROTAS_ABSORVIDAS: { href: string; destino: string; porque: string }
   { href: '/google', destino: '/conexoes', porque: 'gerencia o OAuth do Google — é uma conexão; segue viva como destino do callback' },
   // 18/10/2026, rodada do painel P0: itens OCULTOS do NAV (continuam donos da rota e
   // do módulo). Apagar de vez é decisão do Pedro (ROOT-10, MK7-telas-repetidas §3.1).
-  { href: '/leads', destino: '/comercial', porque: 'o cockpit absorve o MVP: a fila de decisões do comercial é a entrada dos leads; a tela segue viva' },
+  { href: '/leads', destino: '/comercial/funil', porque: 'o cockpit absorve o MVP: o Funil vivo é a entrada dos leads; a tela segue viva' },
   { href: '/funil', destino: '/comercial/funil', porque: 'o cockpit absorve o MVP: o Funil vivo substitui o funil de antes; a tela segue viva' },
   { href: '/conteudo', destino: '/trabalho', porque: 'cortada do menu por decisão de 18/10/2026; a tela (espelho dos Temas do ClickUp) segue viva' },
   { href: '/marketing/ideias', destino: '/trabalho', porque: 'cortada do menu por decisão de 18/10/2026; o editor do banco de ideias segue vivo' },
   { href: '/marketing/estrategia', destino: '/trabalho', porque: 'cortada do menu por decisão de 18/10/2026; o editor da estratégia do mês segue vivo' },
   // 18/10/2026, rodada do painel P2: a lista de tarefas virou a visão Lista do Trabalho.
   { href: '/tarefas', destino: '/trabalho', porque: 'quadro e lista viraram uma tela só em 18/10/2026; /tarefas abre a visão de lista' },
+  // 19/10/2026, rodada do trabalho T6: a fila de decisões do comercial virou a aba
+  // Decisões de Pendências. `/comercial` redireciona para o Funil vivo e a tela
+  // antiga mora em `/comercial/decisoes`.
+  { href: '/comercial', destino: '/caixa', porque: 'as decisões do comercial passaram a Pendências em 19/10/2026; a tela segue viva' },
+  // 19/10/2026, rodada do trabalho T1: a implantação numa tela só.
+  { href: '/onboarding', destino: '/trabalho/implantacao', porque: 'a implantação de clientes virou o kanban da lista Onboarding de cliente em 19/10/2026; /onboarding redireciona e o trilho é a aba do pop-up do cartão' },
 ];
 
 // Rotas de detalhe que NÃO entram no menu: herdam o módulo pai e são protegidas

@@ -28,7 +28,7 @@ def main() -> None:
     fechado = contratos[0]['leadId'] if contratos else alicerce
 
     telas = [
-        ('03', 'fila', '/comercial'),
+        ('03', 'fila', '/comercial/decisoes'),
         ('04', 'funil', '/comercial/funil'),
         ('05', 'fio', f'/comercial/lead/{alicerce}'),
         ('06', 'sessao', f'/comercial/lead/{fechado}/sessao'),
