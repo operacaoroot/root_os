@@ -181,7 +181,7 @@ export class TarefasDoDiaService {
       return {
         pessoa,
         atrasadas: dela.filter((t) => t.situacao === 'atrasada').length,
-        emDia: dela.filter((t) => t.situacao === 'hoje' || t.situacao === 'semana' || t.situacao === 'depois').length,
+        emDia: dela.filter((t) => t.situacao === 'hoje' || t.situacao === 'em_dia').length,
         semPrazo: dela.filter((t) => t.situacao === 'sem_prazo').length,
         feitasNaSemana: dela.filter((t) => t.situacao === 'feita').length,
       };

@@ -27,24 +27,25 @@ import { Barras, type Fatia } from './graficos';
 
 type Ver = 'quadro' | 'lista' | 'calendario';
 type Agrupar = 'pessoa' | 'area' | 'situacao';
-type Recorte = 'atrasada' | 'emdia' | 'sem_prazo' | 'hoje' | 'semana' | 'depois' | 'feita';
+/** As situações do prazo e mais 'emdia' (hoje + em dia), a coluna "Em dia" da tabela de cada pessoa. */
+type Recorte = SituacaoDoPrazo | 'emdia';
 interface Filtro { pessoa?: string; area?: string; cliente?: string; situacao?: Recorte; q?: string }
 const CHAVES: (keyof Filtro)[] = ['pessoa', 'area', 'cliente', 'situacao', 'q'];
 const SEM = 'sem';
 
 const NOME_DA_SITUACAO: Record<SituacaoDoPrazo, string> = {
-  atrasada: 'Atrasadas', hoje: 'Hoje', semana: 'Até domingo', depois: 'Depois', sem_prazo: 'Sem prazo', feita: 'Feitas',
+  atrasada: 'Atrasadas', hoje: 'Hoje', em_dia: 'Em dia', sem_prazo: 'Sem prazo', feita: 'Feitas',
 };
-const NOME_DO_RECORTE: Record<Recorte, string> = { ...NOME_DA_SITUACAO, emdia: 'Em dia' };
+const NOME_DO_RECORTE: Record<Recorte, string> = { ...NOME_DA_SITUACAO, emdia: 'Hoje e em dia' };
 /** Um acento só (lima cheio, médio, fraco); vermelho só para o problema (atrasada). */
 const FORTE = 'rgb(var(--os-ac))';
 const MEDIO = 'rgb(var(--os-ac) / 0.45)';
 const FRACO = 'rgb(var(--os-tx2) / 0.3)';
 const VERMELHO = 'rgb(var(--os-err))';
 const COR_DA_SITUACAO: Record<SituacaoDoPrazo, string> = {
-  atrasada: VERMELHO, hoje: FORTE, semana: MEDIO, depois: MEDIO, sem_prazo: FRACO, feita: FORTE,
+  atrasada: VERMELHO, hoje: FORTE, em_dia: MEDIO, sem_prazo: FRACO, feita: FORTE,
 };
-const ABERTAS: SituacaoDoPrazo[] = ['atrasada', 'hoje', 'semana', 'depois', 'sem_prazo'];
+const ABERTAS: SituacaoDoPrazo[] = ['atrasada', 'hoje', 'em_dia', 'sem_prazo'];
 
 const dd = (s: string | null) => (s ? `${s.slice(8, 10)}/${s.slice(5, 7)}` : '');
 const primeiro = (nome: string) => nome.split(' ')[0];
@@ -78,7 +79,7 @@ function passa(t: TarefaDoDia, f: Filtro) {
   if (f.area && (f.area === SEM ? !!t.area : t.area?.id !== f.area)) return false;
   if (f.cliente && t.cliente?.id !== f.cliente) return false;
   if (f.situacao) {
-    if (f.situacao === 'emdia') { if (!['hoje', 'semana', 'depois'].includes(t.situacao)) return false; }
+    if (f.situacao === 'emdia') { if (t.situacao !== 'hoje' && t.situacao !== 'em_dia') return false; }
     else if (t.situacao !== f.situacao) return false;
   } else if (t.situacao === 'feita') return false;
   if (f.q) {
@@ -385,7 +386,8 @@ function Filtros({ p, filtro, mudar, areaFixa }: { p: PainelDeTarefas; filtro: F
       )}
       <select value={filtro.situacao ?? ''} onChange={(e) => set('situacao', e.target.value)} className={sel}>
         <option value="">Abertas</option>
-        {(Object.keys(NOME_DO_RECORTE) as Recorte[]).map((s) => <option key={s} value={s}>{NOME_DO_RECORTE[s]}</option>)}
+        {/* "Hoje e em dia" só aparece quando vem da tabela de cada pessoa; no select, as quatro situações e as feitas. */}
+        {([...ABERTAS, 'feita', ...(filtro.situacao === 'emdia' ? ['emdia'] : [])] as Recorte[]).map((s) => <option key={s} value={s}>{NOME_DO_RECORTE[s]}</option>)}
       </select>
       {p.clientes.length > 0 && (
         <select value={filtro.cliente ?? ''} onChange={(e) => set('cliente', e.target.value)} className={sel}>

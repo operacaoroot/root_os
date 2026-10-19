@@ -31,18 +31,16 @@ describe('tarefas do dia — o que não é tarefa', () => {
 
 describe('tarefas do dia — a régua do prazo', () => {
   const hoje = '2026-10-19'; // segunda
-  it('separa atrasada, hoje, até domingo, depois e sem prazo', () => {
+  it('separa atrasada, hoje, em dia e sem prazo', () => {
     expect(situacaoDoPrazo('2026-10-16', hoje, false)).toBe('atrasada');
     expect(situacaoDoPrazo('2026-10-19', hoje, false)).toBe('hoje');
-    expect(situacaoDoPrazo('2026-10-25', hoje, false)).toBe('semana');
-    expect(situacaoDoPrazo('2026-10-26', hoje, false)).toBe('depois');
+    expect(situacaoDoPrazo('2026-10-20', hoje, false)).toBe('em_dia');
+    expect(situacaoDoPrazo('2026-10-26', hoje, false)).toBe('em_dia');
+    expect(situacaoDoPrazo('2027-03-01', hoje, false)).toBe('em_dia');
     expect(situacaoDoPrazo(null, hoje, false)).toBe('sem_prazo');
   });
   it('feita vence o prazo vencido', () => {
     expect(situacaoDoPrazo('2026-10-01', hoje, true)).toBe('feita');
-  });
-  it('no domingo, "até domingo" é só o próprio dia', () => {
-    expect(situacaoDoPrazo('2026-10-26', '2026-10-25', false)).toBe('depois');
   });
 });
 

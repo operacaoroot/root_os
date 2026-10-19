@@ -14,7 +14,7 @@ import { z } from 'zod';
  *   · `naoPareceTarefa`: título com cara de lead (`Empresa | Pessoa`) ou de post
  *     (`[ROOT-12]`, `Post 40`) — esses têm casa própria (CRM, Máquina de
  *     Conteúdo) e não viram card de tarefa sem alguém confirmar.
- *   · `situacaoDoPrazo`: atrasada, hoje, até domingo, depois, sem prazo — a
+ *   · `situacaoDoPrazo`: atrasada, hoje, em dia, sem prazo — a
  *     mesma régua para o resumo por pessoa e para os grupos da tela.
  */
 
@@ -88,18 +88,19 @@ export function naoPareceTarefa(titulo: string): { tipo: 'post' | 'lead'; casa: 
   return null;
 }
 
-export type SituacaoDoPrazo = 'feita' | 'atrasada' | 'hoje' | 'semana' | 'depois' | 'sem_prazo';
+export type SituacaoDoPrazo = 'feita' | 'atrasada' | 'hoje' | 'em_dia' | 'sem_prazo';
 
-/** `prazo` e `hoje` em AAAA-MM-DD (dia de Brasília). "semana" vai até o domingo. */
+/**
+ * `prazo` e `hoje` em AAAA-MM-DD (dia de Brasília). "em_dia" é qualquer prazo
+ * depois de hoje: a janela "até domingo / depois" saiu em 19/10/2026 (o Lucas
+ * achou os dois cortes aleatórios).
+ */
 export function situacaoDoPrazo(prazo: string | null, hoje: string, feita: boolean): SituacaoDoPrazo {
   if (feita) return 'feita';
   if (!prazo) return 'sem_prazo';
   if (prazo < hoje) return 'atrasada';
   if (prazo === hoje) return 'hoje';
-  const d = new Date(`${hoje}T12:00:00Z`);
-  const ateDomingo = (7 - d.getUTCDay()) % 7;
-  d.setUTCDate(d.getUTCDate() + ateDomingo);
-  return prazo <= d.toISOString().slice(0, 10) ? 'semana' : 'depois';
+  return 'em_dia';
 }
 
 export const TarefaDoDiaCriarSchema = z.object({
