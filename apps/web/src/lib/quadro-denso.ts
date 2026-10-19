@@ -22,8 +22,13 @@ export function lerDensidade(valor: string | null | undefined): Densidade {
   return valor === 'compacto' || valor === 'medio' || valor === 'cheio' ? valor : DENSIDADE_PADRAO;
 }
 
-/** A largura mínima da coluna por densidade: no compacto, 7 etapas cabem em 1440 px com a árvore aberta. */
-export const LARGURA_MINIMA_DA_COLUNA: Record<Densidade, number> = { compacto: 148, medio: 184, cheio: 232 };
+/**
+ * A largura mínima da coluna por densidade. Medido na homologação a 1440 px, com
+ * o menu do OS e a árvore de listas abertos, o quadro tem 916 px: no compacto,
+ * 7 × 120 + 6 vãos de 8 = 888 cabem sem rolar (o nome longo vira reticências e
+ * o balão mostra o resto). Médio e cheio rolam na horizontal, de propósito.
+ */
+export const LARGURA_MINIMA_DA_COLUNA: Record<Densidade, number> = { compacto: 120, medio: 168, cheio: 220 };
 
 export type Escopo = 'todos' | 'meus' | 'atrasados';
 export const ESCOPOS: readonly { chave: Escopo; rotulo: string }[] = [
