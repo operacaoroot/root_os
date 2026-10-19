@@ -1,13 +1,14 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ATA_MAX_CARACTERES, ATA_MIN_CARACTERES } from '@mktos/shared';
+import { ATA_MAX_CARACTERES, ATA_MIN_CARACTERES, DICA_DO_NOME_DA_TAREFA } from '@mktos/shared';
 import type {
   TrabAtaDetalhe, TrabAtaGeracao, TrabAtaLista, TrabAtaResumo, TrabAtaSugestaoDto, TrabEstrutura,
 } from '@mktos/shared';
 import { apiGet, apiPost } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 import { RoteiroMarkdown } from '@/app/pauta/roteiro-markdown';
+import { SeletorDeCliente, type ClienteEscolhido } from './SeletorDeCliente';
 
 /*
  * O BANCO DE ATAS DO TRABALHO (rodada do painel P3, 18/10/2026).
@@ -50,20 +51,6 @@ function escreverAtaNoEndereco(ref: string | null) {
   window.history.replaceState({}, '', `${u.pathname}${u.search}`);
 }
 
-interface OpcaoDeLista {
-  id: string;
-  rotulo: string;
-}
-
-function listasDaEstrutura(e: TrabEstrutura | null): OpcaoDeLista[] {
-  if (!e) return [];
-  const nomeDaPasta = new Map(e.folders.map((f) => [f.id, f.name]));
-  const daPasta = e.folders.flatMap((f) =>
-    f.lists.map((l) => ({ id: l.id, rotulo: `${f.parentId && nomeDaPasta.get(f.parentId) ? `${nomeDaPasta.get(f.parentId)} › ` : ''}${f.name} › ${l.name}` })),
-  );
-  return [...daPasta, ...e.listasSoltas.map((l) => ({ id: l.id, rotulo: l.name }))];
-}
-
 export function AtasView() {
   const { token, ready, can } = useAuth();
   const podeVer = can('tarefas.ver');
@@ -81,7 +68,8 @@ export function AtasView() {
   const [lendo, setLendo] = useState(false);
   const [decidindo, setDecidindo] = useState<string | null>(null);
   const [listaEscolhida, setListaEscolhida] = useState<Record<string, string>>({});
-  const [ajustes, setAjustes] = useState<Record<string, { dono?: string; vencimento?: string }>>({});
+  const [ajustes, setAjustes] = useState<Record<string, Ajuste>>({});
+  const [pessoas, setPessoas] = useState<{ id: string; nome: string }[]>([]);
   const [colando, setColando] = useState(false);
 
   const fecharColar = useCallback(() => {
@@ -105,6 +93,8 @@ export function AtasView() {
   useEffect(() => {
     if (!token || !podeEditar) return;
     apiGet<TrabEstrutura>('/trabalho/estrutura', token).then(setEstrutura).catch(() => setEstrutura(null));
+    // T5: o responsável sai dos perfis reais da empresa, não de texto livre.
+    apiGet<{ id: string; nome: string }[]>('/trabalho/pessoas', token).then((r) => setPessoas(Array.isArray(r) ? r : [])).catch(() => setPessoas([]));
   }, [token, podeEditar]);
 
   const abrir = useCallback((ref: string) => {
@@ -122,7 +112,6 @@ export function AtasView() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [refAberta]);
 
-  const opcoes = useMemo(() => listasDaEstrutura(estrutura), [estrutura]);
 
   const gerar = () => {
     if (!aberta || !token) return;
@@ -149,11 +138,19 @@ export function AtasView() {
     setDecidindo(s.id);
     setErro(null);
     const ajuste = ajustes[s.id] ?? {};
-    const dono = (ajuste.dono ?? s.donoSugerido ?? '').trim();
     const vencimento = ajuste.vencimento ?? s.vencimento ?? '';
-    // O aceite leva o dono e o vencimento que a pessoa confirmou ou corrigiu (vazio = sem).
+    const responsavelId = ajuste.responsavelId !== undefined ? ajuste.responsavelId : pessoaDoNome(pessoas, s.donoSugerido)?.id ?? '';
+    // T5: o aceite leva o que a pessoa confirmou ou corrigiu: título, o que será executado,
+    // responsável (perfil da empresa), cliente, lista e vencimento (vazio = sem).
     const corpo = como === 'aceitar'
-      ? { listaId: listaEscolhida[s.id] || s.listaId || undefined, dono: dono || null, vencimento: vencimento || null }
+      ? {
+        listaId: listaEscolhida[s.id] || s.listaId || undefined,
+        titulo: (ajuste.titulo ?? s.titulo).trim() || undefined,
+        descricao: (ajuste.descricao ?? s.trecho).trim() || null,
+        responsavelId: responsavelId || null,
+        clienteId: ajuste.cliente?.id,
+        vencimento: vencimento || null,
+      }
       : {};
     apiPost<TrabAtaSugestaoDto>(`/trabalho/atas/sugestoes/${s.id}/${como}`, corpo, token)
       .then(() => { abrir(aberta.id); carregarLista(); })
@@ -277,7 +274,7 @@ export function AtasView() {
                 <ul className="space-y-2">
                   {rascunhos.map((s) => (
                     <li key={s.id} data-testid={`ata-sugestao-${s.id}`} className="space-y-2 rounded-lg border border-border bg-surface-2 p-3">
-                      <p className="font-medium break-words">{s.titulo}</p>
+                      {!podeEditar && <p className="font-medium break-words">{s.titulo}</p>}
                       <blockquote className="border-l-2 border-brand-dim pl-2 text-[13px] text-muted break-words">{s.trecho}</blockquote>
                       {!podeEditar && (
                         <p className="text-[12px] text-muted break-words">
@@ -285,52 +282,21 @@ export function AtasView() {
                         </p>
                       )}
                       {podeEditar && (
-                        <div className="grid gap-2 sm:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
-                          <label className="space-y-1 text-[12px] text-muted">
-                            <span>Dono</span>
-                            <input
-                              data-testid={`ata-dono-${s.id}`}
-                              className={INP}
-                              value={ajustes[s.id]?.dono ?? s.donoSugerido ?? ''}
-                              placeholder="sem dono"
-                              maxLength={120}
-                              onChange={(e) => setAjustes((m) => ({ ...m, [s.id]: { ...m[s.id], dono: e.target.value } }))}
-                            />
-                          </label>
-                          <label className="space-y-1 text-[12px] text-muted">
-                            <span>Vence em</span>
-                            <input
-                              type="date"
-                              data-testid={`ata-vencimento-${s.id}`}
-                              className={INP}
-                              value={ajustes[s.id]?.vencimento ?? s.vencimento ?? ''}
-                              onChange={(e) => setAjustes((m) => ({ ...m, [s.id]: { ...m[s.id], vencimento: e.target.value } }))}
-                            />
-                          </label>
-                          <p className="text-[11px] text-muted sm:col-span-2">
-                            {s.donoSugerido || s.vencimento
-                              ? 'O leitor só propõe dono e vencimento que a ata escreve. Confira antes de aceitar.'
-                              : 'A ata não diz dono nem vencimento. Preencha se a reunião combinou.'}
-                          </p>
-                        </div>
+                        <FormularioDoAceite
+                          s={s} ajuste={ajustes[s.id] ?? {}} pessoas={pessoas} estrutura={estrutura} token={token}
+                          listaId={listaEscolhida[s.id] ?? s.listaId ?? ''}
+                          onLista={(id) => setListaEscolhida((m) => ({ ...m, [s.id]: id }))}
+                          onAjuste={(mudanca) => setAjustes((m) => ({ ...m, [s.id]: { ...m[s.id], ...mudanca } }))}
+                        />
                       )}
                       {podeEditar && (
                         <div className="flex flex-wrap items-center gap-2">
-                          <select
-                            aria-label={`Lista da tarefa "${s.titulo}"`}
-                            value={listaEscolhida[s.id] ?? s.listaId ?? ''}
-                            onChange={(e) => setListaEscolhida((m) => ({ ...m, [s.id]: e.target.value }))}
-                            className={`min-w-0 max-w-full flex-1 rounded-lg border border-border bg-surface px-2 py-1.5 text-sm outline-none ${ALVO}`}
-                          >
-                            <option value="">Escolha a lista…</option>
-                            {s.listaId && !opcoes.some((o) => o.id === s.listaId) && <option value={s.listaId}>{s.listaNome ?? 'lista sugerida'}</option>}
-                            {opcoes.map((o) => <option key={o.id} value={o.id}>{o.rotulo}</option>)}
-                          </select>
                           <button
                             type="button"
                             data-testid={`ata-aceitar-${s.id}`}
                             className={BTN_PRIMARIO}
-                            disabled={decidindo === s.id || !(listaEscolhida[s.id] || s.listaId)}
+                            disabled={decidindo === s.id || !(listaEscolhida[s.id] || s.listaId) || !ajustes[s.id]?.cliente}
+                            title={!ajustes[s.id]?.cliente ? 'Escolha o cliente antes de aceitar' : undefined}
                             onClick={() => decidir(s, 'aceitar')}
                           >
                             Aceitar
@@ -377,6 +343,124 @@ export function AtasView() {
           )}
         </section>
       </div>
+    </div>
+  );
+}
+
+/* --------------------------------------------------------------------------
+ * O ACEITE EDITÁVEL (rodada do trabalho T5, 19/10/2026): tudo se ajusta antes
+ * de criar. Título no imperativo (a IA propõe assim), o que será executado
+ * (pré-preenchido com o trecho, que continua guardado como procedência),
+ * responsável entre os perfis reais da empresa, cliente (T4, obrigatório),
+ * pasta e lista em dois níveis, vencimento. A IA só propõe; o clique é de gente.
+ * ------------------------------------------------------------------------ */
+interface Ajuste {
+  vencimento?: string;
+  titulo?: string;
+  descricao?: string;
+  responsavelId?: string;
+  cliente?: ClienteEscolhido;
+}
+
+const SOLTAS = '__soltas__';
+
+const semAcento = (t: string) => t.normalize('NFD').replace(/\p{M}/gu, '').trim().toLocaleLowerCase('pt-BR');
+
+/** O perfil cujo nome (ou primeiro nome) a ata escreveu. Sem casamento claro, nenhum. */
+function pessoaDoNome(pessoas: { id: string; nome: string }[], nome: string | null): { id: string; nome: string } | null {
+  if (!nome) return null;
+  const n = semAcento(nome);
+  const inteiro = pessoas.filter((p) => semAcento(p.nome) === n);
+  if (inteiro.length === 1) return inteiro[0];
+  const primeiro = pessoas.filter((p) => semAcento(p.nome).split(' ')[0] === n.split(' ')[0]);
+  return primeiro.length === 1 ? primeiro[0] : null;
+}
+
+function FormularioDoAceite({ s, ajuste, pessoas, estrutura, token, listaId, onLista, onAjuste }: {
+  s: TrabAtaSugestaoDto; ajuste: Ajuste; pessoas: { id: string; nome: string }[]; estrutura: TrabEstrutura | null;
+  token: string | null; listaId: string; onLista: (id: string) => void; onAjuste: (m: Ajuste) => void;
+}) {
+  const sugerido = pessoaDoNome(pessoas, s.donoSugerido);
+  const responsavelId = ajuste.responsavelId !== undefined ? ajuste.responsavelId : sugerido?.id ?? '';
+  const pastas = estrutura?.folders ?? [];
+  const pastaDaLista = pastas.find((f) => f.lists.some((l) => l.id === listaId))?.id
+    ?? (listaId && estrutura?.listasSoltas.some((l) => l.id === listaId) ? SOLTAS : '');
+  const [pasta, setPasta] = useState<string>(pastaDaLista);
+  useEffect(() => { if (pastaDaLista) setPasta(pastaDaLista); }, [pastaDaLista]);
+  const listasDaPasta = pasta === SOLTAS ? estrutura?.listasSoltas ?? [] : pastas.find((f) => f.id === pasta)?.lists ?? [];
+  const nomeDaPasta = new Map(pastas.map((f) => [f.id, f.name]));
+  return (
+    <div className="grid gap-2 sm:grid-cols-2" data-testid={`ata-formulario-${s.id}`}>
+      <label className="space-y-1 text-[12px] text-muted sm:col-span-2">
+        <span>Título</span>
+        <input
+          data-testid={`ata-titulo-${s.id}`}
+          className={INP}
+          value={ajuste.titulo ?? s.titulo}
+          maxLength={300}
+          title={DICA_DO_NOME_DA_TAREFA}
+          onChange={(e) => onAjuste({ titulo: e.target.value })}
+        />
+        <span className="block text-[11px]">{DICA_DO_NOME_DA_TAREFA}</span>
+      </label>
+      <label className="space-y-1 text-[12px] text-muted sm:col-span-2">
+        <span>O que será executado</span>
+        <textarea
+          data-testid={`ata-descricao-${s.id}`}
+          className={`${INP} min-h-[64px]`}
+          value={ajuste.descricao ?? s.trecho}
+          maxLength={4000}
+          onChange={(e) => onAjuste({ descricao: e.target.value })}
+        />
+        <span className="block text-[11px]">O trecho da ata continua guardado na tarefa como procedência.</span>
+      </label>
+      <label className="space-y-1 text-[12px] text-muted">
+        <span>Responsável</span>
+        <select data-testid={`ata-responsavel-${s.id}`} className={INP} value={responsavelId} onChange={(e) => onAjuste({ responsavelId: e.target.value })}>
+          <option value="">Sem responsável</option>
+          {pessoas.map((p) => <option key={p.id} value={p.id}>{p.nome}</option>)}
+        </select>
+        {s.donoSugerido && !sugerido && (
+          <span className="block text-[11px] text-warn">A ata diz {s.donoSugerido}, que não é um perfil desta empresa. Escolha quem responde.</span>
+        )}
+      </label>
+      <div className="space-y-1 text-[12px] text-muted">
+        <span>Cliente *</span>
+        <SeletorDeCliente valor={ajuste.cliente ?? null} token={token} obrigatorio onEscolher={(c) => onAjuste({ cliente: c })} testid={`ata-cliente-${s.id}`} />
+      </div>
+      <label className="space-y-1 text-[12px] text-muted">
+        <span>Pasta</span>
+        <select data-testid={`ata-pasta-${s.id}`} className={INP} value={pasta} onChange={(e) => { setPasta(e.target.value); onLista(''); }}>
+          <option value="">Escolha a pasta…</option>
+          {pastas.map((f) => (
+            <option key={f.id} value={f.id}>{f.parentId && nomeDaPasta.get(f.parentId) ? `${nomeDaPasta.get(f.parentId)} › ` : ''}{f.name}</option>
+          ))}
+          {(estrutura?.listasSoltas.length ?? 0) > 0 && <option value={SOLTAS}>Sem pasta</option>}
+        </select>
+      </label>
+      <label className="space-y-1 text-[12px] text-muted">
+        <span>Lista</span>
+        <select aria-label={`Lista da tarefa "${s.titulo}"`} data-testid={`ata-lista-${s.id}`} className={INP} value={listaId} onChange={(e) => onLista(e.target.value)}>
+          <option value="">Escolha a lista…</option>
+          {listaId && !listasDaPasta.some((l) => l.id === listaId) && <option value={listaId}>{s.listaNome ?? 'lista sugerida'}</option>}
+          {listasDaPasta.map((l) => <option key={l.id} value={l.id}>{l.name}</option>)}
+        </select>
+      </label>
+      <label className="space-y-1 text-[12px] text-muted">
+        <span>Vence em</span>
+        <input
+          type="date"
+          data-testid={`ata-vencimento-${s.id}`}
+          className={INP}
+          value={ajuste.vencimento ?? s.vencimento ?? ''}
+          onChange={(e) => onAjuste({ vencimento: e.target.value })}
+        />
+      </label>
+      <p className="text-[11px] text-muted sm:col-span-2">
+        {s.donoSugerido || s.vencimento
+          ? 'O leitor só propõe dono e vencimento que a ata escreve. Confira antes de aceitar.'
+          : 'A ata não diz dono nem vencimento. Preencha se a reunião combinou.'}
+      </p>
     </div>
   );
 }

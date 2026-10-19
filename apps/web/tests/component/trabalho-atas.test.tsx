@@ -35,6 +35,15 @@ const REF = 'memoria:ata-1';
 const REF_VAULT = 'vault:nota-9';
 const L_EXEC = '0a0a0a0a-0000-4000-8000-0000000000e1';
 const L_ONB = '0a0a0a0a-0000-4000-8000-0000000000e2';
+const PESSOA_MARINA = '0a0a0a0a-0000-4000-8000-0000000000f1';
+const PESSOA_RODRIGO = '0a0a0a0a-0000-4000-8000-0000000000f2';
+const CLIENTE = '0a0a0a0a-0000-4000-8000-0000000000c1';
+
+/** Escolhe o cliente no seletor da sugestão (T4: obrigatório). */
+async function escolherCliente(id: string, opcao = 'opcao-cliente-interno') {
+  fireEvent.focus(within(screen.getByTestId(`ata-cliente-${id}`)).getByRole('combobox'));
+  fireEvent.mouseDown(await screen.findByTestId(opcao));
+}
 
 const resumo = (id: string, titulo: string, extra: Record<string, unknown> = {}) => ({
   id, fonte: id.startsWith('vault') ? 'vault' : 'colada', titulo, data: '2026-10-16', participantes: ['Marina Alves', 'Paulo Rocha'],
@@ -76,6 +85,9 @@ beforeEach(() => {
     if (rota === `/trabalho/atas/${encodeURIComponent(REF)}`) return Promise.resolve(detalhe());
     if (rota === `/trabalho/atas/${encodeURIComponent(REF_VAULT)}`) return Promise.resolve({ ...resumo(REF_VAULT, 'Diretoria'), texto: 'Ata da diretoria.', procedencia: 'vault: 80-Reunioes/Diretoria.md', sugestoesDaAta: [] });
     if (rota === '/trabalho/estrutura') return Promise.resolve(estrutura);
+    // Rodada do trabalho T4/T5: perfis reais e clientes do seletor.
+    if (rota === '/trabalho/pessoas') return Promise.resolve([{ id: PESSOA_MARINA, nome: 'Marina Duarte' }, { id: PESSOA_RODRIGO, nome: 'Rodrigo Saggioro' }]);
+    if (rota.startsWith('/trabalho/clientes')) return Promise.resolve([{ id: 'interno', nome: 'Root (interno)', cnpj: null, interno: true }, { id: CLIENTE, nome: 'Construtora Alicerce', cnpj: null, interno: false }]);
     return Promise.resolve(null);
   });
 });
@@ -186,59 +198,85 @@ describe('Atas: sugestões', () => {
     await waitFor(() => expect(post).toHaveBeenCalledWith(`/trabalho/atas/${encodeURIComponent(REF)}/sugestoes`, {}, 'tok'));
     expect(await screen.findByText('1 sugestão nova em rascunho.')).toBeInTheDocument();
     expect(screen.getByText(/NÃO está na ata/)).toBeInTheDocument();
-    const s = await screen.findByTestId('ata-sugestao-s1');
-    expect(s).toHaveTextContent('Marina vai enviar o relatório mensal até 23/10.');
-    // Dono e vencimento chegam como campos, com o que o leitor propôs (PA-4).
-    expect(screen.getByTestId('ata-dono-s1')).toHaveValue('Marina');
+    await screen.findByTestId('ata-sugestao-s1');
+    // T5: tudo editável, pré-preenchido com o que o leitor propôs.
+    expect(screen.getByTestId('ata-titulo-s1')).toHaveValue('Enviar o relatório mensal');
+    expect(screen.getByTestId('ata-descricao-s1')).toHaveValue('Marina vai enviar o relatório mensal até 23/10.');
+    await waitFor(() => expect(screen.getByTestId('ata-responsavel-s1')).toHaveValue(PESSOA_MARINA));
     expect(screen.getByTestId('ata-vencimento-s1')).toHaveValue('2026-10-23');
+    expect(screen.getByTestId('ata-lista-s1')).toHaveValue(L_EXEC);
   });
 
-  it('PA-4: corrigir dono e vencimento antes de aceitar; o aceite leva o que a pessoa escolheu', async () => {
+  it('T5: sem cliente o aceite fica travado; editado, o aceite leva título, descrição, perfil, cliente, lista e vencimento', async () => {
     sugestoes = [sugestao('s1', 'Enviar o relatório mensal')];
     post.mockResolvedValueOnce({});
     render(<AtasPage />);
-    fireEvent.change(await screen.findByTestId('ata-dono-s1'), { target: { value: 'Paulo Rocha' } });
+    const aceitar = await screen.findByTestId('ata-aceitar-s1');
+    expect(aceitar).toBeDisabled();
+    fireEvent.change(screen.getByTestId('ata-titulo-s1'), { target: { value: 'Enviar o relatório de outubro' } });
+    fireEvent.change(screen.getByTestId('ata-descricao-s1'), { target: { value: 'Montar e mandar no grupo.' } });
+    await waitFor(() => expect(screen.getByTestId('ata-responsavel-s1')).toHaveValue(PESSOA_MARINA));
+    fireEvent.change(screen.getByTestId('ata-responsavel-s1'), { target: { value: PESSOA_RODRIGO } });
     fireEvent.change(screen.getByTestId('ata-vencimento-s1'), { target: { value: '2026-10-30' } });
-    fireEvent.click(screen.getByTestId('ata-aceitar-s1'));
-    await waitFor(() => expect(post).toHaveBeenCalledWith('/trabalho/atas/sugestoes/s1/aceitar', { listaId: L_EXEC, dono: 'Paulo Rocha', vencimento: '2026-10-30' }, 'tok'));
+    await escolherCliente('s1', `opcao-cliente-${CLIENTE}`);
+    expect(aceitar).toBeEnabled();
+    fireEvent.click(aceitar);
+    await waitFor(() => expect(post).toHaveBeenCalledWith('/trabalho/atas/sugestoes/s1/aceitar', {
+      listaId: L_EXEC, titulo: 'Enviar o relatório de outubro', descricao: 'Montar e mandar no grupo.',
+      responsavelId: PESSOA_RODRIGO, clienteId: CLIENTE, vencimento: '2026-10-30',
+    }, 'tok'));
   });
 
-  it('PA-4: limpar os dois campos aceita sem dono e sem vencimento', async () => {
+  it('PA-4: limpar responsável e vencimento aceita sem dono e sem vencimento', async () => {
     sugestoes = [sugestao('s1', 'Enviar o relatório mensal')];
     post.mockResolvedValueOnce({});
     render(<AtasPage />);
-    fireEvent.change(await screen.findByTestId('ata-dono-s1'), { target: { value: '  ' } });
+    await waitFor(() => expect(screen.getByTestId('ata-responsavel-s1')).toHaveValue(PESSOA_MARINA));
+    fireEvent.change(screen.getByTestId('ata-responsavel-s1'), { target: { value: '' } });
     fireEvent.change(screen.getByTestId('ata-vencimento-s1'), { target: { value: '' } });
+    await escolherCliente('s1');
     fireEvent.click(screen.getByTestId('ata-aceitar-s1'));
-    await waitFor(() => expect(post).toHaveBeenCalledWith('/trabalho/atas/sugestoes/s1/aceitar', { listaId: L_EXEC, dono: null, vencimento: null }, 'tok'));
+    await waitFor(() => expect(post).toHaveBeenCalledWith('/trabalho/atas/sugestoes/s1/aceitar', expect.objectContaining({ responsavelId: null, vencimento: null, clienteId: 'interno' }), 'tok'));
   });
 
-  it('aceitar é um clique, na lista sugerida', async () => {
+  it('aceitar leva a lista sugerida e mostra a tarefa criada', async () => {
     sugestoes = [sugestao('s1', 'Enviar o relatório mensal')];
     post.mockImplementationOnce(() => {
       sugestoes = [sugestao('s1', 'Enviar o relatório mensal', { estado: 'aceita', workTaskId: 'w1', decididaPor: 'Rodrigo' })];
       return Promise.resolve(sugestoes[0]);
     });
     render(<AtasPage />);
-    fireEvent.click(await screen.findByTestId('ata-aceitar-s1'));
-    await waitFor(() => expect(post).toHaveBeenCalledWith('/trabalho/atas/sugestoes/s1/aceitar', { listaId: L_EXEC, dono: 'Marina', vencimento: '2026-10-23' }, 'tok'));
+    await screen.findByTestId('ata-aceitar-s1');
+    await escolherCliente('s1');
+    fireEvent.click(screen.getByTestId('ata-aceitar-s1'));
+    await waitFor(() => expect(post).toHaveBeenCalledWith('/trabalho/atas/sugestoes/s1/aceitar', expect.objectContaining({ listaId: L_EXEC, clienteId: 'interno' }), 'tok'));
     expect(post).toHaveBeenCalledTimes(1);
     expect(await screen.findByText(/aceita em Execução por Rodrigo/)).toBeInTheDocument();
     expect(screen.queryByTestId('ata-aceitar-s1')).toBeNull();
     expect(screen.getByRole('link', { name: 'abrir a tarefa' })).toHaveAttribute('href', `/trabalho?lista=${L_EXEC}&tarefa=w1`);
   });
 
-  it('sem lista sugerida, aceitar espera a lista escolhida e a manda junto', async () => {
+  it('sem lista sugerida, a pasta e a lista se escolhem em dois níveis e vão junto', async () => {
     sugestoes = [sugestao('s2', 'Revisar o roteiro', { listaId: null, listaNome: null })];
     post.mockResolvedValueOnce({});
     render(<AtasPage />);
     const aceitar = await screen.findByTestId('ata-aceitar-s2');
+    await escolherCliente('s2');
     expect(aceitar).toBeDisabled();
-    await screen.findByRole('option', { name: 'Clientes › Onboarding de cliente' });
-    fireEvent.change(screen.getByLabelText('Lista da tarefa "Revisar o roteiro"'), { target: { value: L_ONB } });
+    await screen.findByRole('option', { name: 'Clientes' });
+    fireEvent.change(screen.getByTestId('ata-pasta-s2'), { target: { value: 'f-cli' } });
+    fireEvent.change(screen.getByLabelText('Lista da tarefa "Revisar o roteiro"'), { target: { value: L_EXEC } });
     expect(aceitar).toBeEnabled();
     fireEvent.click(aceitar);
-    await waitFor(() => expect(post).toHaveBeenCalledWith('/trabalho/atas/sugestoes/s2/aceitar', { listaId: L_ONB, dono: 'Marina', vencimento: '2026-10-23' }, 'tok'));
+    await waitFor(() => expect(post).toHaveBeenCalledWith('/trabalho/atas/sugestoes/s2/aceitar', expect.objectContaining({ listaId: L_EXEC }), 'tok'));
+  });
+
+  it('a ata que cita alguém que não é perfil da empresa avisa e deixa sem responsável', async () => {
+    sugestoes = [sugestao('s1', 'Enviar o relatório mensal', { donoSugerido: 'Paulo Rocha' })];
+    render(<AtasPage />);
+    await screen.findByTestId('ata-responsavel-s1');
+    expect(await screen.findByText(/A ata diz Paulo Rocha, que não é um perfil desta empresa/)).toBeInTheDocument();
+    expect(screen.getByTestId('ata-responsavel-s1')).toHaveValue('');
   });
 
   it('descartar é um clique e não cria tarefa', async () => {
@@ -258,7 +296,9 @@ describe('Atas: sugestões', () => {
     sugestoes = [sugestao('s1', 'Enviar o relatório mensal')];
     post.mockRejectedValueOnce(new Error('Esta sugestão já foi aceita: a tarefa já existe.'));
     render(<AtasPage />);
-    fireEvent.click(await screen.findByTestId('ata-aceitar-s1'));
+    await screen.findByTestId('ata-aceitar-s1');
+    await escolherCliente('s1');
+    fireEvent.click(screen.getByTestId('ata-aceitar-s1'));
     expect(await screen.findByRole('alert')).toHaveTextContent('Esta sugestão já foi aceita: a tarefa já existe.');
   });
 });
@@ -273,7 +313,7 @@ describe('Atas: só leitura', () => {
     expect(screen.queryByTestId(`ata-gerar-${REF}`)).toBeNull();
     expect(screen.queryByTestId('ata-aceitar-s1')).toBeNull();
     expect(screen.queryByTestId('ata-descartar-s1')).toBeNull();
-    expect(screen.queryByTestId('ata-dono-s1')).toBeNull();
+    expect(screen.queryByTestId('ata-titulo-s1')).toBeNull();
     // Quem só lê vê o que o leitor propôs, em texto.
     expect(screen.getByTestId('ata-sugestao-s1')).toHaveTextContent('dono sugerido: Marina · vence 23/10/2026');
     expect(get).not.toHaveBeenCalledWith('/trabalho/estrutura', 'tok');

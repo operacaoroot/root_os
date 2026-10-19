@@ -6,9 +6,10 @@ import { Archive, Bot, Clock, DoorOpen, ExternalLink, Flag, Hourglass, MessageSq
 import {
   MODELOS_DE_LISTA, MOEDA_PADRAO, ehValorMonetarioCanonico, formatarValorMonetario, lerValorDigitadoPtBr,
   listaDaImplantacao, moedaDoValor, paraDigitarPtBr, LISTA_DA_IMPLANTACAO, PASTA_DA_IMPLANTACAO, PORTA_DA_IMPLANTACAO,
+  DICA_DO_NOME_DA_TAREFA,
 } from '@mktos/shared';
 import type {
-  TrabAgenteDto, TrabEstrutura, TrabListaDto, TrabTarefaLista, TrabTarefaResumo,
+  TrabClienteDto, TrabAgenteDto, TrabEstrutura, TrabListaDto, TrabTarefaLista, TrabTarefaResumo,
   TrabTarefaDetalhe, TrabEstruturaSugeridaResultado, TrabMovimentoDoCartao, TrabMovimentoDoQuadro,
 } from '@mktos/shared';
 import { apiBlob, apiDelete, apiGet, apiPatch, apiPost } from '@/lib/api';
@@ -16,6 +17,7 @@ import { useAuth } from '@/lib/auth';
 import { tarefasDeTrabalho } from '@/lib/work-projection';
 import { useTarefaNaUrl, type AbaDaTarefa } from '@/lib/tarefa-na-url';
 import { BancadaDoTrilho } from '@/components/onboarding/BancadaDoTrilho';
+import { SeletorDeCliente, type ClienteEscolhido } from './SeletorDeCliente';
 import { diasDesde, formatarHoras, hojeEmBrasilia, minutosDeTexto } from '@/lib/horas';
 import {
   CHAVE_DA_DENSIDADE, DENSIDADES, DIAS_DE_ALERTA_NA_ETAPA, ESCOPOS, LARGURA_DA_COLUNA,
@@ -171,6 +173,8 @@ function TrabalhoConteudo({ visaoInicial, modo }: { visaoInicial: Visao; modo: M
   const [fBusca, setFBusca] = useState('');
   const [fOpcao, setFOpcao] = useState('');
   const [fStatus, setFStatus] = useState('');
+  const [fCliente, setFCliente] = useState('');
+  const [clientes, setClientes] = useState<TrabClienteDto[]>([]);
   const [fArquivadas, setFArquivadas] = useState(false);
   const [fEscopo, setFEscopo] = useState<Escopo>('todos');
   const [densidade, setDensidade] = useState<Densidade>('compacto');
@@ -192,7 +196,7 @@ function TrabalhoConteudo({ visaoInicial, modo }: { visaoInicial: Visao; modo: M
       filtrosLidos.current = assinatura;
       setFAssignee(p.get('assignee') ?? ''); setFBusca(p.get('q') ?? '');
       setFOpcao(p.get('opcao') ?? ''); setFAgente(p.get('agente') ?? '');
-      setFStatus(p.get('statusId') ?? ''); setFArquivadas(p.get('arquivadas') === '1');
+      setFStatus(p.get('statusId') ?? ''); setFArquivadas(p.get('arquivadas') === '1'); setFCliente(p.get('cliente') ?? '');
       // `overdue=1` (o link antigo do "só atrasadas") continua valendo como o escopo "atrasados".
       setFEscopo(p.get('escopo') ? lerEscopo(p.get('escopo')) : p.get('overdue') === '1' ? 'atrasados' : 'todos');
       setVisao(visaoDoEndereco(p.get('visao')) ?? visaoInicial);
@@ -297,6 +301,16 @@ function TrabalhoConteudo({ visaoInicial, modo }: { visaoInicial: Visao; modo: M
     return () => { ativa = false; };
   }, [ready, token, readable, urlPronta]);
 
+  // Os clientes do filtro (T4). Falhar só tira o filtro.
+  useEffect(() => {
+    if (!ready || !token || !readable) return;
+    let ativa = true;
+    apiGet<TrabClienteDto[]>('/trabalho/clientes', token)
+      .then((r) => { if (ativa && Array.isArray(r)) setClientes(r); })
+      .catch(() => { /* sem o filtro de cliente */ });
+    return () => { ativa = false; };
+  }, [ready, token, readable, bump]);
+
   const selecionarLista = (id: string) => {
     setListaDoLinkAusente(false); trocarLista(id); mudarEndereco(id, null);
   };
@@ -342,12 +356,13 @@ function TrabalhoConteudo({ visaoInicial, modo }: { visaoInicial: Visao; modo: M
     if (fBusca) p.set('q', fBusca);
     if (fOpcao) p.set('opcao', fOpcao);
     if (fStatus) p.set('statusId', fStatus);
+    if (fCliente) p.set('cliente', fCliente);
     if (fArquivadas) p.set('arquivadas', '1');
     tarefasDeTrabalho(token, p, () => ativa)
       .then((r) => { if (ativa) setTarefas(r); })
       .catch((e) => { if (ativa) setErro(e.message); });
     return () => { ativa = false; };
-  }, [ready, token, readable, urlPronta, listaId, fAssignee, fBusca, fOpcao, fStatus, fArquivadas, bump]);
+  }, [ready, token, readable, urlPronta, listaId, fAssignee, fBusca, fOpcao, fStatus, fCliente, fArquivadas, bump]);
 
   /*
    * O MOVIMENTO DOS CARTÕES (I2): rodapé, balão, próxima ação e selo. Uma
@@ -505,6 +520,11 @@ function TrabalhoConteudo({ visaoInicial, modo }: { visaoInicial: Visao; modo: M
                 {c.options.map((o) => <option key={o.id} value={o.id}>{o.name}</option>)}
               </select>
             ))}
+            <select aria-label="Filtrar por cliente" data-testid="trabalho-filtro-cliente" value={fCliente} onChange={(e) => { setFCliente(e.target.value); filtroNoEndereco('cliente', e.target.value); }} className="rounded-lg border border-border bg-surface px-2 py-1.5 text-sm outline-none">
+              <option value="">Todos os clientes</option>
+              <option value="sem">Sem cliente (para limpar)</option>
+              {clientes.filter((c) => c.id !== 'interno').map((c) => <option key={c.id} value={c.id}>{c.nome}</option>)}
+            </select>
             <select aria-label="Filtrar por status" value={fStatus} onChange={(e) => { setFStatus(e.target.value); filtroNoEndereco('statusId', e.target.value); }} className="rounded-lg border border-border bg-surface px-2 py-1.5 text-sm">
               <option value="">Todos os status</option>
               {lista?.statuses.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
@@ -685,6 +705,7 @@ function Board({ lista, tarefas, editable, podeCriar, token, agentes, trilhos, m
    */
   const [sobre, setSobre] = useState<string | null>(null);
   const [balao, setBalao] = useState<{ id: string; ancora: DOMRect } | null>(null);
+  const [ultimoCliente, setUltimoCliente] = useState<ClienteEscolhido | null>(null);
   const soltar = (statusId: string, e: React.DragEvent) => {
     e.preventDefault();
     setSobre(null);
@@ -762,7 +783,7 @@ function Board({ lista, tarefas, editable, podeCriar, token, agentes, trilhos, m
                   onAbrir={(id, aba) => { setBalao(null); onAbrir(id, aba); }} onMudou={onMudou} onErro={onErro}
                 />
               ))}
-              {podeCriar && <QuickAdd listaId={lista.id} statusId={st.id} token={token} onDone={onMudou} onErro={onErro} />}
+              {podeCriar && <QuickAdd listaId={lista.id} statusId={st.id} token={token} clienteInicial={ultimoCliente} onCliente={setUltimoCliente} onDone={onMudou} onErro={onErro} />}
               {itens.length === 0 && !editable && <p className="px-1 text-xs text-muted">Nada nesta etapa.</p>}
             </div>
           </section>
@@ -860,6 +881,11 @@ function Cartao({ t, lista, editable, token, agentes, trilho, mov, densidade, ba
               ))}
             </div>
           )}
+          <p className="mt-1 truncate text-[11px]" data-testid={`trabalho-cliente-${t.id}`}>
+            {t.clienteNome
+              ? <span className="text-text" title={`Cliente: ${t.clienteNome}`}>{t.clienteNome}</span>
+              : <span className="rounded border border-warn/50 px-1 font-os-mono text-[10px] text-warn">sem cliente</span>}
+          </p>
           <div className="mt-1 flex flex-wrap items-center gap-2 text-[11px] text-muted">
             {t.priority !== 'normal' && pr && <Flag size={11} style={{ color: pr.cor }} />}
             {t.assignee && <span>{t.assignee}</span>}
@@ -1064,26 +1090,48 @@ function ControleDoAgenteNaGaveta({ t, agentes, editable, token, onMudou, onErro
   );
 }
 
-function QuickAdd({ listaId, statusId, token, onDone, onErro }: {
-  listaId: string; statusId: string; token: string | null; onDone: () => void; onErro: (m: string) => void;
+/*
+ * NOVA TAREFA NA COLUNA (rodada do trabalho T4): o nome no padrão imperativo
+ * (verbo + objeto) e o CLIENTE obrigatório, escolhido no seletor. O último
+ * cliente escolhido fica marcado para a próxima, na mesma visita.
+ */
+function QuickAdd({ listaId, statusId, token, clienteInicial, onCliente, onDone, onErro }: {
+  listaId: string; statusId: string; token: string | null;
+  clienteInicial: ClienteEscolhido | null; onCliente: (c: ClienteEscolhido) => void;
+  onDone: () => void; onErro: (m: string) => void;
 }) {
   const [titulo, setTitulo] = useState('');
+  const [cliente, setCliente] = useState<ClienteEscolhido | null>(clienteInicial);
   const enviar = () => {
     if (!titulo.trim()) return;
-    apiPost('/trabalho/tarefas', { listId: listaId, statusId, title: titulo.trim() }, token)
+    if (!cliente) { onErro('Escolha o cliente da tarefa. O trabalho da própria empresa vai para o cliente interno.'); return; }
+    apiPost('/trabalho/tarefas', { listId: listaId, statusId, title: titulo.trim(), clienteId: cliente.id }, token)
       .then(() => { setTitulo(''); onDone(); })
       .catch((e) => onErro(e.message));
   };
   return (
-    <div className="flex items-center gap-1 rounded-lg border border-dashed border-border px-2 py-1.5">
-      <Plus size={12} className="shrink-0 text-muted" />
-      <input
-        value={titulo}
-        onChange={(e) => setTitulo(e.target.value)}
-        onKeyDown={(e) => e.key === 'Enter' && enviar()}
-        placeholder="Nova tarefa…"
-        className="w-full bg-transparent text-xs outline-none placeholder:text-muted"
-      />
+    <div className="space-y-1 rounded-lg border border-dashed border-border px-2 py-1.5" data-testid={`trabalho-nova-${statusId}`}>
+      <div className="flex items-center gap-1">
+        <Plus size={12} className="shrink-0 text-muted" />
+        <input
+          value={titulo}
+          aria-label="Nome da nova tarefa"
+          title={DICA_DO_NOME_DA_TAREFA}
+          onChange={(e) => setTitulo(e.target.value)}
+          onKeyDown={(e) => e.key === 'Enter' && enviar()}
+          placeholder="Nova tarefa…"
+          className="w-full bg-transparent text-xs outline-none placeholder:text-muted"
+        />
+      </div>
+      {titulo.trim() && (
+        <>
+          <p className="text-[10.5px] leading-snug text-muted">{DICA_DO_NOME_DA_TAREFA}</p>
+          <SeletorDeCliente valor={cliente} token={token} obrigatorio onEscolher={(c) => { setCliente(c); onCliente(c); }} testid={`trabalho-nova-cliente-${statusId}`} />
+          <button type="button" onClick={enviar} disabled={!cliente} className="w-full rounded bg-brand/15 px-2 py-1 text-[11px] text-brand hover:bg-brand/25 disabled:opacity-50">
+            Criar tarefa
+          </button>
+        </>
+      )}
     </div>
   );
 }
@@ -1100,6 +1148,7 @@ function Tabela({ lista, tarefas, campos, trilhos, onAbrir }: {
         <thead>
           <tr className="border-b border-border bg-surface text-left text-[11px] uppercase tracking-wide text-muted">
             <th className="px-3 py-2">Tarefa</th>
+            <th className="px-3 py-2">Cliente</th>
             <th className="px-3 py-2">Status</th>
             <th className="px-3 py-2">Prioridade</th>
             <th className="px-3 py-2">Responsável</th>
@@ -1116,6 +1165,7 @@ function Tabela({ lista, tarefas, campos, trilhos, onAbrir }: {
                 <button onClick={(e) => { e.stopPropagation(); onAbrir(t.id); }} className="text-left hover:text-brand focus-visible:outline-brand">{t.title}</button>
                 {trilhos.get(t.id) && <AtalhoDoTrilho trilho={trilhos.get(t.id)!} onAbrir={() => onAbrir(t.id, 'trilho')} />}
               </td>
+              <td className="px-3 py-2">{t.clienteNome ?? <span className="font-os-mono text-[10px] text-warn">sem cliente</span>}</td>
               <td className="px-3 py-2">
                 <span className="rounded px-1.5 py-0.5 text-[11px] capitalize" style={{ background: `${t.statusColor}26`, color: t.statusColor }}>
                   {t.statusName}
@@ -1135,7 +1185,7 @@ function Tabela({ lista, tarefas, campos, trilhos, onAbrir }: {
             </tr>
           ))}
           {tarefas.length === 0 && (
-            <tr><td colSpan={6 + campos.length} className="px-3 py-6 text-center text-muted">Nada por aqui.</td></tr>
+            <tr><td colSpan={7 + campos.length} className="px-3 py-6 text-center text-muted">Nada por aqui.</td></tr>
           )}
         </tbody>
       </table>
@@ -1399,6 +1449,16 @@ function PainelTarefa({ id, estrutura, editable, token, usuarioId, aba = 'tarefa
             <select disabled={ro} value={t.statusId} onChange={(e) => salvar({ statusId: e.target.value })} className={INP}>
               {(lista?.statuses ?? []).map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
             </select>
+          </Campo>
+          <Campo rotulo="Cliente">
+            <SeletorDeCliente
+              valor={t.clienteId ? { id: t.clienteId, nome: t.clienteNome ?? '' } : null}
+              token={token}
+              desabilitado={ro}
+              testid="tarefa-cliente"
+              onEscolher={(c) => { if (c.id !== t.clienteId) void salvar({ clienteId: c.id }); }}
+            />
+            {!t.clienteId && <p className="mt-1 text-[11px] text-warn">Sem cliente. Toda tarefa nova tem; escolha um para esta.</p>}
           </Campo>
           <Campo rotulo="Prioridade">
             <select disabled={ro} value={t.priority} onChange={(e) => salvar({ priority: e.target.value })} className={`${INP} capitalize`}>
