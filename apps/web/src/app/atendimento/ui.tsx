@@ -65,7 +65,7 @@ export const EXPLICACAO_DA_GAVETA: Record<Gaveta, string> = {
   esperando: 'A ação está retida. Ninguém a executou e nada saiu da casa.',
   confirmada:
     'Alguém assinou e a execução não concluiu. Quatro coisas param uma ação já confirmada: o conector do canal foi desligado, a capacidade saiu do catálogo da empresa, a régua de hoje deixou de permiti-la, ou os argumentos gravados não casam mais com o formato atual. A aprovação NÃO foi consumida e nada saiu, mas confirmar de novo não é possível. A saída é recusar aqui mesmo (e propor de novo depois de consertar a causa).',
-  expirou: 'O prazo venceu sem decisão. Nada saiu. Para retomar, o agente propõe de novo.',
+  expirou: 'O prazo venceu sem decisão. Nada saiu, e ela não se aprova mais: o caminho é pedir de novo, com o conteúdo de agora.',
   recusada: 'Uma pessoa disse não. Nada saiu, e a recusa está no rastro.',
 };
 

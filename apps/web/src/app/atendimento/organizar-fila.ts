@@ -100,6 +100,50 @@ export function passoDoItem(item: ItemDaFila, eu: Eu): Passo {
   return { assinar, recusar };
 }
 
+/* ---------------------------------------------- a forma da assinatura (T7) */
+
+/**
+ * ONDE SE ASSINA, sem trocar de tela (rodada do trabalho T7, 19/10/2026).
+ *
+ *   · `na-linha`: o conteúdo exato cabe na linha (o mover com o destino
+ *     conferido pelo hash, a sala versão N conferida) e o nível não pede senha
+ *     nem motivo: um clique aprova.
+ *   · `caixa-na-linha`: cabe na linha, mas a regra pede senha e/ou motivo (R4):
+ *     o clique abre a caixa ali mesmo, e "Aprovar" vai junto com a senha.
+ *   · `ler-e-aprovar`: o conteúdo é longo (WhatsApp, proposta, lote): o clique
+ *     abre o conteúdo no lugar, e o botão de aprovar fica ao lado dele.
+ *
+ * Só forma: quem decide se a assinatura vale continua sendo `confirm`, que
+ * confere o hash como sempre.
+ */
+export type FormaDaAssinatura = 'na-linha' | 'caixa-na-linha' | 'ler-e-aprovar';
+
+export const CAPACIDADE_DA_SALA_NA_FILA = 'comercial.sala.publicar';
+
+export function cabeNaLinha(item: Pick<ItemDaFila, 'capacidade' | 'recurso' | 'destinoConferido' | 'impedimento'>): boolean {
+  if (item.impedimento) return false;
+  if (!item.capacidade && item.recurso.tipo === 'lead' && item.destinoConferido) return true;
+  return item.capacidade === CAPACIDADE_DA_SALA_NA_FILA;
+}
+
+export function formaDaAssinatura(
+  item: Pick<ItemDaFila, 'capacidade' | 'recurso' | 'destinoConferido' | 'impedimento' | 'exigeReauth' | 'exigeMotivo' | 'nivel'>,
+): FormaDaAssinatura {
+  if (!cabeNaLinha(item)) return 'ler-e-aprovar';
+  if (item.exigeReauth || item.exigeMotivo) return 'caixa-na-linha';
+  return item.nivel === 'R2' || item.nivel === 'R3' ? 'na-linha' : 'caixa-na-linha';
+}
+
+/** O rótulo do botão da linha, pela forma. */
+export function rotuloNaLinha(forma: FormaDaAssinatura, titular: boolean): string {
+  if (forma === 'ler-e-aprovar') return titular ? 'Ler e assinar como titular' : 'Ler e confirmar';
+  return titular ? 'Aprovar como titular' : 'Aprovar';
+}
+
+/** A frase de quem pede de novo, dita antes do clique (invariante 7). */
+export const FRASE_DO_PEDIR_DE_NOVO =
+  'Você vira quem pede: o pedido novo leva o conteúdo de agora, e outra pessoa assina. Você não poderá assinar.';
+
 /* ---------------------------------------------------------------- o nível */
 
 const NIVEL_EM_PALAVRAS: Record<Nivel, string> = {

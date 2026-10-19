@@ -38,16 +38,28 @@ export function recursoDaSala(id: string): { leadId: string; versao: number } | 
 
 const diaCurto = (d: string) => (/^\d{4}-\d{2}-\d{2}$/.test(d) ? `${d.slice(8, 10)}/${d.slice(5, 7)}` : d);
 
-export function CartaoDaSala({ recursoId, hashAssinado, onPronto }: { recursoId: string; hashAssinado: string | null; onPronto: (ok: boolean) => void }) {
+/**
+ * A conferência da versão (o conteúdo inteiro, com o hash de agora). Usada pelo
+ * cartão e, na rodada do trabalho T7, pela LINHA da fila: "publicar a sala
+ * versão N" cabe na linha, mas o botão de um clique só acende com a versão
+ * carregada e conferida, como no cartão. `ativo: false` não busca nada.
+ */
+export function useConferenciaDaSala(
+  recursoId: string,
+  hashAssinado: string | null,
+  onPronto?: (ok: boolean) => void,
+  ativo = true,
+): { c: ConteudoDaSala | null; erro: string | null } {
   const { token } = useAuth();
   const [c, setC] = useState<ConteudoDaSala | null>(null);
   const [erro, setErro] = useState<string | null>(null);
-  const recurso = recursoDaSala(recursoId);
 
   useEffect(() => {
+    if (!ativo) return;
+    const recurso = recursoDaSala(recursoId);
     if (!recurso) {
       setErro('o recurso da aprovação não diz qual versão é');
-      onPronto(false);
+      onPronto?.(false);
       return;
     }
     let vivo = true;
@@ -56,17 +68,23 @@ export function CartaoDaSala({ recursoId, hashAssinado, onPronto }: { recursoId:
       .then((r) => {
         if (!vivo) return;
         setC(r);
-        onPronto(r.confere);
+        onPronto?.(r.confere);
       })
       .catch((e) => {
         if (!vivo) return;
         setErro((e as Error).message);
-        onPronto(false);
+        onPronto?.(false);
       });
     return () => {
       vivo = false;
     };
-  }, [recursoId, hashAssinado, token, onPronto]);
+  }, [recursoId, hashAssinado, token, onPronto, ativo]);
+
+  return { c, erro };
+}
+
+export function CartaoDaSala({ recursoId, hashAssinado, onPronto }: { recursoId: string; hashAssinado: string | null; onPronto: (ok: boolean) => void }) {
+  const { c, erro } = useConferenciaDaSala(recursoId, hashAssinado, onPronto);
 
   if (erro) {
     return (

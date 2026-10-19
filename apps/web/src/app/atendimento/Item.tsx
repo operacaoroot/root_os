@@ -7,17 +7,20 @@ import { diaHoraSP, prazoEmPalavras } from '@/lib/cockpit';
 import { Conteudo } from './Conteudo';
 import { CartaoDoLote } from './CartaoDoLote';
 import { CAPACIDADE_DA_PROPOSTA, CartaoDaProposta } from './CartaoDaProposta';
-import { CAPACIDADE_DA_SALA, CartaoDaSala } from './CartaoDaSala';
+import { CAPACIDADE_DA_SALA, CartaoDaSala, useConferenciaDaSala } from './CartaoDaSala';
 import { fraseDoPedido } from './frase-do-pedido';
 import {
+  FRASE_DO_PEDIR_DE_NOVO,
   concluiNoFunil,
   condicoesDeAssinatura,
+  formaDaAssinatura,
   grupoDoItem,
   linkDoCartao,
   motivoDaEspera,
   nivelEmPalavras,
   passoDoItem,
   quemPodeAssinar,
+  rotuloNaLinha,
 } from './organizar-fila';
 import { EXPLICACAO_DA_GAVETA, Etiqueta, Selo, TITULO_DA_GAVETA, esperaLegivel, horaLegivel, inputCls } from './ui';
 import type { ItemDaFila } from './tipos';
@@ -69,19 +72,26 @@ interface Props {
   ocupado: boolean;
   aoAprovar: (id: string, motivo: string, senha: string) => void;
   aoRecusar: (id: string) => void;
+  /** T7: pede de novo a vencida, pelo caminho do domínio. Sem ele, o botão não aparece. */
+  aoPedirDeNovo?: (id: string) => void;
   /** Quem olha, para dizer "falta a titular" e afins. Sem ele, a linha usa só o que o item traz. */
   eu?: { id: string; alcada: string };
   /** O relógio do servidor (`fila.agora`), para "vence em 10 min" não depender do navegador. */
   agora?: string;
 }
 
-export function Item({ item, euDecido, souOProponente, ocupado, aoAprovar, aoRecusar, eu, agora }: Props) {
+export function Item({ item, euDecido, souOProponente, ocupado, aoAprovar, aoRecusar, aoPedirDeNovo, eu, agora }: Props) {
   const [aberto, setAberto] = useState(false);
   const [focar, setFocar] = useState(false);
   const [motivo, setMotivo] = useState('');
   const [senha, setSenha] = useState('');
+  /** T7: a caixa de senha e motivo aberta NA LINHA (R4 de conteúdo curto). */
+  const [caixa, setCaixa] = useState(false);
   const detalhe = useRef<HTMLDivElement>(null);
+  const primeiroCampo = useRef<HTMLTextAreaElement & HTMLInputElement>(null);
+  const campoDaCaixa = useRef<HTMLTextAreaElement & HTMLInputElement>(null);
   const idDoDetalhe = useId();
+  const idDaCaixa = useId();
 
   const quem = {
     id: souOProponente ? item.proponente.id : (eu?.id ?? ''),
@@ -117,12 +127,27 @@ export function Item({ item, euDecido, souOProponente, ocupado, aoAprovar, aoRec
   const aoLerSala = useCallback((ok: boolean) => setSalaLida(ok), []);
   const podeAprovarAgora = item.euPossoAprovar && (!ehLote || loteLido) && (!ehProposta || propostaLida) && (!ehSala || salaLida);
 
+  /*
+   * T7 · DECIDIR SEM TROCAR DE TELA. O conteúdo que cabe na linha (o mover com
+   * o destino conferido pelo hash, a sala versão N) se aprova ali: um clique em
+   * R2/R3, a caixa de senha e motivo em R4. A sala só acende o botão com a
+   * versão carregada e o hash de agora conferindo, como no cartão. O conteúdo
+   * longo abre no lugar, com o botão ao lado dele.
+   */
+  const forma = formaDaAssinatura(item);
+  const naLinha = esperando && item.euPossoAprovar && forma !== 'ler-e-aprovar';
+  const titular = item.alcadaMinima === 'titular';
+  const salaNaLinha = useConferenciaDaSala(item.recurso.id, hashDaProposta, undefined, naLinha && ehSala && !aberto);
+  const conferidaNaLinha = !ehSala || salaNaLinha.c?.confere === true;
+  const faltaNaCaixa = (item.exigeMotivo && !motivo.trim()) || (item.exigeReauth && !senha);
+
   const alternar = () => {
     if (aberto) {
       setLoteLido(false);
       setPropostaLida(false);
       setSalaLida(false);
     }
+    setCaixa(false);
     setAberto(!aberto);
   };
   const abrirParaLer = () => {
@@ -131,10 +156,14 @@ export function Item({ item, euDecido, souOProponente, ocupado, aoAprovar, aoRec
   };
   useEffect(() => {
     if (aberto && focar) {
-      detalhe.current?.focus();
+      // R4: o foco vai direto ao primeiro campo que a assinatura pede (motivo ou senha), quando ele já está na tela.
+      (primeiroCampo.current ?? detalhe.current)?.focus();
       setFocar(false);
     }
   }, [aberto, focar]);
+  useEffect(() => {
+    if (caixa) campoDaCaixa.current?.focus();
+  }, [caixa]);
 
   const concluir = concluiNoFunil(item, quem);
   const quando = linhaDoTempo(item, agora, concluir);
@@ -197,10 +226,29 @@ export function Item({ item, euDecido, souOProponente, ocupado, aoAprovar, aoRec
                   {motivoDaEspera(item, quem)}
                 </span>
               )}
+              {naLinha && ehSala && !aberto && (
+                <span
+                  className={salaNaLinha.c && !salaNaLinha.c.confere ? 'text-bad' : 'text-muted'}
+                  data-testid={`aprov-sala-conferida-${item.id}`}
+                >
+                  {salaNaLinha.erro
+                    ? 'a versão não carregou: abra para ler'
+                    : !salaNaLinha.c
+                      ? 'conferindo a versão…'
+                      : salaNaLinha.c.confere
+                        ? `versão ${salaNaLinha.c.versao} conferida com o hash`
+                        : 'a versão mudou depois do pedido: não sai com esta assinatura'}
+                </span>
+              )}
+              {item.pedirDeNovo?.pode && aoPedirDeNovo && (
+                <span className="text-muted" data-testid={`aprov-pedir-de-novo-aviso-${item.id}`}>
+                  pedir de novo: você vira quem pede, e outra pessoa assina
+                </span>
+              )}
             </span>
           </span>
         </button>
-        {!aberto && (passo.assinar || passo.recusar || concluir) && (
+        {!aberto && (passo.assinar || passo.recusar || concluir || (item.pedirDeNovo?.pode && aoPedirDeNovo)) && (
           <div className="flex shrink-0 flex-wrap items-center gap-2 pl-5 sm:pl-0">
             {concluir && (
               <Link
@@ -211,21 +259,124 @@ export function Item({ item, euDecido, souOProponente, ocupado, aoAprovar, aoRec
                 Concluir no funil
               </Link>
             )}
-            {passo.assinar && (
+            {passo.assinar && naLinha && forma === 'na-linha' && (
+              <button
+                type="button"
+                disabled={ocupado || !conferidaNaLinha}
+                onClick={() => aoAprovar(item.id, '', '')}
+                title="Aprova o que a linha diz. O servidor confere o hash antes de executar."
+                className="rounded-md bg-brand px-3 py-1.5 text-sm font-medium text-ink hover:opacity-90 disabled:opacity-50 max-md:min-h-[44px]"
+                data-testid={`aprov-acao-${item.id}`}
+              >
+                {rotuloNaLinha(forma, titular)}
+              </button>
+            )}
+            {passo.assinar && naLinha && forma === 'caixa-na-linha' && (
+              <button
+                type="button"
+                disabled={ocupado || !conferidaNaLinha}
+                onClick={() => setCaixa((v) => !v)}
+                aria-expanded={caixa}
+                aria-controls={idDaCaixa}
+                title="A regra pede a sua senha e um motivo: a caixa abre aqui mesmo"
+                className="rounded-md bg-brand px-3 py-1.5 text-sm font-medium text-ink hover:opacity-90 disabled:opacity-50 max-md:min-h-[44px]"
+                data-testid={`aprov-acao-${item.id}`}
+              >
+                {rotuloNaLinha(forma, titular)}
+              </button>
+            )}
+            {passo.assinar && !naLinha && (
               <button
                 type="button"
                 onClick={abrirParaLer}
-                title="Abre o conteúdo exato: você assina depois de ler"
+                title="Abre o conteúdo exato aqui mesmo: você assina depois de ler"
                 className="rounded-md bg-brand px-3 py-1.5 text-sm font-medium text-ink hover:opacity-90 max-md:min-h-[44px]"
                 data-testid={`aprov-acao-${item.id}`}
               >
                 {passo.assinar.fechado}
               </button>
             )}
+            {item.pedirDeNovo?.pode && aoPedirDeNovo && (
+              <button
+                type="button"
+                disabled={ocupado}
+                onClick={() => aoPedirDeNovo(item.id)}
+                title={FRASE_DO_PEDIR_DE_NOVO}
+                className="rounded-md border border-brand px-3 py-1.5 text-sm font-medium text-text hover:bg-brand/10 disabled:opacity-50 max-md:min-h-[44px]"
+                data-testid={`aprov-pedir-de-novo-${item.id}`}
+              >
+                Pedir de novo
+              </button>
+            )}
             {passo.recusar && botaoRecusar(passo.recusar)}
           </div>
         )}
       </div>
+
+      {/* ------------------------------- T7: a caixa de senha e motivo, na linha */}
+      {caixa && !aberto && naLinha && (
+        <div
+          id={idDaCaixa}
+          className="space-y-3 border-t border-border px-4 py-3 sm:px-5"
+          data-testid={`aprov-caixa-${item.id}`}
+          role="group"
+          aria-label="Assinar este pedido"
+        >
+          <p className="text-xs text-muted">
+            {item.nivel} pede {[item.exigeMotivo && 'um motivo escrito', item.exigeReauth && 'a sua senha'].filter(Boolean).join(' e ')}
+            {titular ? ', e só a titular assina' : ''}. Aprovar executa: não há desfazer por esta tela.
+          </p>
+          {item.exigeMotivo && (
+            <label className="block text-xs text-muted">
+              Por que este pedido deve sair?
+              <textarea
+                ref={campoDaCaixa}
+                className={`${inputCls} mt-1`}
+                rows={2}
+                value={motivo}
+                onChange={(e) => setMotivo(e.target.value)}
+                placeholder="ex.: conferi a versão com o cliente por telefone"
+                data-testid={`aprov-motivo-${item.id}`}
+              />
+            </label>
+          )}
+          {item.exigeReauth && (
+            <label className="block text-xs text-muted">
+              Sua senha
+              <input
+                ref={item.exigeMotivo ? undefined : campoDaCaixa}
+                type="password"
+                autoComplete="current-password"
+                className={`${inputCls} mt-1`}
+                value={senha}
+                onChange={(e) => setSenha(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && !faltaNaCaixa && !ocupado) aoAprovar(item.id, motivo, senha);
+                }}
+                data-testid={`aprov-senha-${item.id}`}
+              />
+            </label>
+          )}
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="button"
+              disabled={ocupado || faltaNaCaixa || !conferidaNaLinha}
+              onClick={() => aoAprovar(item.id, motivo, senha)}
+              className="rounded-md bg-brand px-3 py-2 text-sm font-medium text-ink hover:opacity-90 disabled:opacity-50 max-md:min-h-[44px]"
+              data-testid={`aprov-enviar-${item.id}`}
+            >
+              {titular ? 'Aprovar como titular' : 'Aprovar'}
+            </button>
+            <button
+              type="button"
+              onClick={() => setCaixa(false)}
+              className="rounded-md border border-border px-3 py-1.5 text-sm text-muted hover:text-text max-md:min-h-[44px]"
+            >
+              Cancelar
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* ------------------------------------------------------ o item aberto */}
       {aberto && (
@@ -308,6 +459,127 @@ export function Item({ item, euDecido, souOProponente, ocupado, aoAprovar, aoRec
             </p>
           )}
 
+          {/* T7: a decisão logo depois do conteúdo, para o botão ficar ao lado do que se lê. */}
+          {/* ----------------------------------------------------------- a decisão */}
+          {item.decididoPor && (
+            <p className="mt-4 text-xs text-muted">
+              decidida por <span className="text-text">{item.decididoPor}</span>
+              {item.decididoEm ? ` em ${horaLegivel(item.decididoEm)}` : ''}
+              {item.motivo ? `: “${item.motivo}”` : ''}
+            </p>
+          )}
+
+          {/* Sem o cartão, não se assina; recusar continua ao alcance, para o pedido não ficar na fila até vencer. */}
+          {item.euPossoAprovar && ehLote && !loteLido && (
+            <div className="mt-4 space-y-2 border-t border-border pt-4">
+              <p className="text-xs text-muted" data-testid={`lote-esperando-${item.id}`}>
+                O botão de assinar aparece quando os posts do lote estiverem na tela: assinar é assinar o que você
+                leu.
+              </p>
+              {passo.recusar && botaoRecusar('Recusar')}
+            </div>
+          )}
+          {item.euPossoAprovar && ehSala && !salaLida && (
+            <div className="mt-4 space-y-2 border-t border-border pt-4">
+              <p className="text-xs text-muted" data-testid={`sala-esperando-${item.id}`}>
+                O botão de assinar aparece quando a versão inteira da sala estiver na tela e conferir com o hash da
+                aprovação.
+              </p>
+              {passo.recusar && botaoRecusar('Recusar')}
+            </div>
+          )}
+          {item.euPossoAprovar && ehProposta && !propostaLida && (
+            <div className="mt-4 space-y-2 border-t border-border pt-4">
+              <p className="text-xs text-muted" data-testid={`proposta-esperando-${item.id}`}>
+                O botão de assinar aparece quando a proposta inteira estiver na tela e conferir com o hash da
+                aprovação.
+              </p>
+              {passo.recusar && botaoRecusar('Recusar')}
+            </div>
+          )}
+          {podeAprovarAgora && passo.assinar ? (
+            <div className="mt-4 space-y-3 border-t border-border pt-4">
+              {item.exigeMotivo && (
+                <label className="block text-xs text-muted">
+                  Por que esta ação deve sair? ({item.nivel} exige motivo escrito)
+                  <textarea
+                    ref={primeiroCampo}
+                    className={`${inputCls} mt-1`}
+                    rows={2}
+                    value={motivo}
+                    onChange={(e) => setMotivo(e.target.value)}
+                    placeholder="ex.: o cliente confirmou por telefone às 14h"
+                  />
+                </label>
+              )}
+              {item.exigeReauth && (
+                <label className="block text-xs text-muted">
+                  Sua senha ({item.nivel} exige que você prove de novo que é você)
+                  <input
+                    ref={item.exigeMotivo ? undefined : primeiroCampo}
+                    type="password"
+                    autoComplete="current-password"
+                    className={`${inputCls} mt-1`}
+                    value={senha}
+                    onChange={(e) => setSenha(e.target.value)}
+                  />
+                </label>
+              )}
+              <div className="flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  disabled={ocupado}
+                  onClick={() => aoAprovar(item.id, motivo, senha)}
+                  className="rounded-md bg-brand px-3 py-2 text-sm font-medium text-ink hover:opacity-90 disabled:opacity-50 max-md:min-h-[44px]"
+                  data-testid={`aprov-acao-${item.id}`}
+                >
+                  {passo.assinar.aberto}
+                </button>
+                {passo.recusar && botaoRecusar('Recusar')}
+              </div>
+              <p className="text-[11px] text-muted">
+                {passo.assinar.aberto} EXECUTA a ação com o conteúdo acima e fecha o evento no rastro. Não há
+                desfazer por esta tela.
+              </p>
+            </div>
+          ) : item.euPossoAprovar ? null : (
+            <div className="mt-4 space-y-2 border-t border-border pt-4">
+              <p className="text-xs text-muted" data-testid={`porque-nao-${item.id}`}>
+                {item.porQueNao}
+              </p>
+              {item.pedirDeNovo && (
+                <div className="space-y-2 rounded-md bg-surface-2 px-3 py-2" data-testid={`aprov-repedido-${item.id}`}>
+                  {item.pedirDeNovo.pode && aoPedirDeNovo ? (
+                    <>
+                      <p className="text-xs text-text">{FRASE_DO_PEDIR_DE_NOVO}</p>
+                      <button
+                        type="button"
+                        disabled={ocupado}
+                        onClick={() => aoPedirDeNovo(item.id)}
+                        className="rounded-md border border-brand px-3 py-1.5 text-sm font-medium text-text hover:bg-brand/10 disabled:opacity-50 max-md:min-h-[44px]"
+                        data-testid={`aprov-pedir-de-novo-aberto-${item.id}`}
+                      >
+                        Pedir de novo
+                      </button>
+                    </>
+                  ) : (
+                    <p className="text-xs text-muted" data-testid={`aprov-sem-repedido-${item.id}`}>
+                      Sem pedir de novo por aqui: {item.pedirDeNovo.porQueNao}
+                    </p>
+                  )}
+                </div>
+              )}
+              {concluir && (
+                <Link
+                  href={linkDoCartao(item)}
+                  className="inline-flex items-center rounded-md bg-brand px-3 py-1.5 text-sm font-medium text-ink hover:opacity-90 max-md:min-h-[44px]"
+                >
+                  Concluir no funil
+                </Link>
+              )}
+              {passo.recusar && botaoRecusar(passo.recusar)}
+            </div>
+          )}
           {/* ------------------------------------------------ por que este degrau */}
           <section className="mt-4">
             <h4 className="text-xs font-medium uppercase tracking-wide text-muted">Por que parou em {item.nivel}</h4>
@@ -371,102 +643,6 @@ export function Item({ item, euDecido, souOProponente, ocupado, aoAprovar, aoRec
             </section>
           )}
 
-          {/* ----------------------------------------------------------- a decisão */}
-          {item.decididoPor && (
-            <p className="mt-4 text-xs text-muted">
-              decidida por <span className="text-text">{item.decididoPor}</span>
-              {item.decididoEm ? ` em ${horaLegivel(item.decididoEm)}` : ''}
-              {item.motivo ? `: “${item.motivo}”` : ''}
-            </p>
-          )}
-
-          {/* Sem o cartão, não se assina; recusar continua ao alcance, para o pedido não ficar na fila até vencer. */}
-          {item.euPossoAprovar && ehLote && !loteLido && (
-            <div className="mt-4 space-y-2 border-t border-border pt-4">
-              <p className="text-xs text-muted" data-testid={`lote-esperando-${item.id}`}>
-                O botão de assinar aparece quando os posts do lote estiverem na tela: assinar é assinar o que você
-                leu.
-              </p>
-              {passo.recusar && botaoRecusar('Recusar')}
-            </div>
-          )}
-          {item.euPossoAprovar && ehSala && !salaLida && (
-            <div className="mt-4 space-y-2 border-t border-border pt-4">
-              <p className="text-xs text-muted" data-testid={`sala-esperando-${item.id}`}>
-                O botão de assinar aparece quando a versão inteira da sala estiver na tela e conferir com o hash da
-                aprovação.
-              </p>
-              {passo.recusar && botaoRecusar('Recusar')}
-            </div>
-          )}
-          {item.euPossoAprovar && ehProposta && !propostaLida && (
-            <div className="mt-4 space-y-2 border-t border-border pt-4">
-              <p className="text-xs text-muted" data-testid={`proposta-esperando-${item.id}`}>
-                O botão de assinar aparece quando a proposta inteira estiver na tela e conferir com o hash da
-                aprovação.
-              </p>
-              {passo.recusar && botaoRecusar('Recusar')}
-            </div>
-          )}
-          {podeAprovarAgora && passo.assinar ? (
-            <div className="mt-4 space-y-3 border-t border-border pt-4">
-              {item.exigeMotivo && (
-                <label className="block text-xs text-muted">
-                  Por que esta ação deve sair? ({item.nivel} exige motivo escrito)
-                  <textarea
-                    className={`${inputCls} mt-1`}
-                    rows={2}
-                    value={motivo}
-                    onChange={(e) => setMotivo(e.target.value)}
-                    placeholder="ex.: o cliente confirmou por telefone às 14h"
-                  />
-                </label>
-              )}
-              {item.exigeReauth && (
-                <label className="block text-xs text-muted">
-                  Sua senha ({item.nivel} exige que você prove de novo que é você)
-                  <input
-                    type="password"
-                    autoComplete="current-password"
-                    className={`${inputCls} mt-1`}
-                    value={senha}
-                    onChange={(e) => setSenha(e.target.value)}
-                  />
-                </label>
-              )}
-              <div className="flex flex-wrap gap-2">
-                <button
-                  type="button"
-                  disabled={ocupado}
-                  onClick={() => aoAprovar(item.id, motivo, senha)}
-                  className="rounded-md bg-brand px-3 py-2 text-sm font-medium text-ink hover:opacity-90 disabled:opacity-50 max-md:min-h-[44px]"
-                  data-testid={`aprov-acao-${item.id}`}
-                >
-                  {passo.assinar.aberto}
-                </button>
-                {passo.recusar && botaoRecusar('Recusar')}
-              </div>
-              <p className="text-[11px] text-muted">
-                {passo.assinar.aberto} EXECUTA a ação com o conteúdo acima e fecha o evento no rastro. Não há
-                desfazer por esta tela.
-              </p>
-            </div>
-          ) : item.euPossoAprovar ? null : (
-            <div className="mt-4 space-y-2 border-t border-border pt-4">
-              <p className="text-xs text-muted" data-testid={`porque-nao-${item.id}`}>
-                {item.porQueNao}
-              </p>
-              {concluir && (
-                <Link
-                  href={linkDoCartao(item)}
-                  className="inline-flex items-center rounded-md bg-brand px-3 py-1.5 text-sm font-medium text-ink hover:opacity-90 max-md:min-h-[44px]"
-                >
-                  Concluir no funil
-                </Link>
-              )}
-              {passo.recusar && botaoRecusar(passo.recusar)}
-            </div>
-          )}
         </div>
       )}
     </article>

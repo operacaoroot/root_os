@@ -1,3 +1,5 @@
+import type { ComercialPedidoDeMover } from '@mktos/shared';
+
 /*
  * O contrato de `GET /api/approvals/fila` (fatia 3.10, RF-A-05).
  *
@@ -83,6 +85,13 @@ export interface ItemDaFila {
   motivo: string | null;
   aprovadores: Aprovador[];
   euPossoAprovar: boolean;
+  /**
+   * T7 (rodada do trabalho): a vencida não se aprova, se PEDE DE NOVO pelo
+   * caminho do domínio, com o conteúdo de agora. `null` fora da gaveta
+   * "expirou"; `pode: false` traz o porquê (tipo sem caminho seguro, falta de
+   * permissão, pedido vivo). Opcional porque resposta antiga não o traz.
+   */
+  pedirDeNovo?: { pode: boolean; porQueNao: string | null } | null;
   /** A frase que substitui o botão. Já vem na ordem das travas de `confirm`. */
   porQueNao: string | null;
 }
@@ -114,6 +123,17 @@ export interface Fila {
   mostrando: number;
   truncado: boolean;
   tetos: { vivas: number; fechadas: number; pessoas: number };
+}
+
+/** O que `POST /approvals/:id/pedir-de-novo` responde (T7). */
+export interface PedidoDeNovo {
+  ok: true;
+  anterior: string;
+  approvalId: string | null;
+  expiraEm: string | null;
+  mensagem: string;
+  /** Só do mover do funil: o pedido com o token de uso único, que mora nesta aba. */
+  paraQuemPediu?: { moverDoFunil?: { leadId: string; pedido: ComercialPedidoDeMover } };
 }
 
 /** O que `POST /approvals/:id/confirm` responde depois de executar. */

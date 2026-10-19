@@ -5,7 +5,8 @@ import { CODIGO_CONECTOR_DESLIGADO, apiGet, apiPost } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 import { Item } from './Item';
 import { ROTULO_DO_TIPO, TIPOS, filtroDaQuery, organizarFila, type Filtro, type Grupo } from './organizar-fila';
-import type { Confirmacao, Fila, ItemDaFila } from './tipos';
+import { guardarPedido, horaSP } from '@/app/comercial/_funil/mover';
+import type { Confirmacao, Fila, ItemDaFila, PedidoDeNovo } from './tipos';
 
 /*
  * A FILA DE APROVAÇÃO — RF-A-05, fatia 3.10.
@@ -173,6 +174,33 @@ export default function AtendimentoPage() {
   };
 
   /*
+   * PEDIR DE NOVO (rodada do trabalho T7): a vencida não se aprova; o servidor
+   * recria o pedido pelo caminho do domínio, com o conteúdo de agora, em nome
+   * de quem clicou. O token do mover do funil volta só nesta resposta e fica
+   * NESTA aba (como quando se pede pelo funil), para concluir depois da assinatura.
+   */
+  const pedirDeNovo = async (id: string) => {
+    setOcupado(true);
+    setErro(null);
+    setAviso(null);
+    try {
+      const r = await apiPost<PedidoDeNovo>(`/approvals/${id}/pedir-de-novo`, {}, token);
+      const mover = r.paraQuemPediu?.moverDoFunil;
+      if (mover) {
+        guardarPedido(mover.leadId, mover.pedido);
+        setAviso(`${r.mensagem} O pedido vale nesta aba até ${horaSP(mover.pedido.expiraEm)}.`);
+      } else {
+        setAviso(r.mensagem);
+      }
+    } catch (e) {
+      mostrarErro(e);
+    } finally {
+      setOcupado(false);
+      await carregar();
+    }
+  };
+
+  /*
    * O FILTRO MORA NA QUERY (`?tipo=whatsapp`), por `history.replaceState`, como
    * a caixa e o painel do comercial: o endereço copiado abre no mesmo filtro, e
    * trocar não empilha histórico do navegador. Lido depois de montar, para o
@@ -213,6 +241,7 @@ export default function AtendimentoPage() {
         ocupado={ocupado}
         aoAprovar={(id, motivo, senha) => void aprovar(id, motivo, senha)}
         aoRecusar={(id) => void recusar(id)}
+        aoPedirDeNovo={(id) => void pedirDeNovo(id)}
       />
     ) : null;
 
@@ -221,8 +250,8 @@ export default function AtendimentoPage() {
       <header className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0">
           <p className="text-sm text-muted">
-            O que o sistema preparou e não executou sozinho. Abra um pedido para ler o conteúdo exato que vai sair
-            antes de assinar. Assinar aqui executa a ação.
+            O que o sistema preparou e não executou sozinho. O que cabe na linha se aprova ali; o que é longo abre
+            no lugar, ao lado do botão. Aprovar aqui executa a ação. Vencida não se aprova: pede-se de novo.
           </p>
           {fila && (
             <p className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-sm">
@@ -300,6 +329,7 @@ export default function AtendimentoPage() {
           {GRUPOS.map((g) => {
             const itens = org.grupos[g.chave];
             const recolhivel = g.chave === 'historico';
+            const repedivel = recolhivel ? itens.filter((i) => i.pedirDeNovo?.pode).length : 0;
             const mostra = !recolhivel || historicoAberto;
             return (
               <section key={g.chave} className="space-y-2" data-testid={`aprov-grupo-${g.chave}`} aria-label={g.titulo}>
@@ -308,7 +338,15 @@ export default function AtendimentoPage() {
                     <h2 className="text-sm font-medium">
                       {g.titulo} <span className="font-mono text-muted">{itens.length}</span>
                     </h2>
-                    <p className="text-xs text-muted">{g.explica}</p>
+                    <p className="text-xs text-muted">
+                      {g.explica}
+                      {recolhivel && repedivel > 0 && (
+                        <span className="text-text" data-testid="aprov-repediveis">
+                          {' '}
+                          {repedivel === 1 ? '1 vencida pode ser pedida de novo.' : `${repedivel} vencidas podem ser pedidas de novo.`}
+                        </span>
+                      )}
+                    </p>
                   </div>
                   {recolhivel && (
                     <button
