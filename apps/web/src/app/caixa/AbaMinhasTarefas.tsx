@@ -18,7 +18,9 @@ import {
 } from '@mktos/shared';
 import { apiGet, apiPatch, apiPost } from '@/lib/api';
 import { useTarefaNaUrl } from '@/lib/tarefa-na-url';
+import { useAuth } from '@/lib/auth';
 import { TarefaFlutuante } from '@/components/trabalho/TrabalhoView';
+import { CalendarioDeTarefas, prazoDoDia } from '@/components/trabalho/CalendarioDeTarefas';
 import {
   BOTAO_PEQUENO,
   CARTAO,
@@ -234,6 +236,17 @@ function BalaoDeComentarios({
  */
 const CHAVE_DA_MIGRACAO = 'caixa.tarefas.vistas.migrado.v1';
 
+/*
+ * TABELA OU CALENDÁRIO (versão final, F4): o calendário do Lucas é uma das formas de
+ * ver Minhas tarefas, o MESMO componente do Trabalho. Arrastar muda o prazo por um
+ * PATCH com a versão lida (`atualizadaEm`); a preferência fica neste navegador.
+ */
+export const CHAVE_DA_FORMA = 'caixa.tarefas.forma.v1';
+type Forma = 'tabela' | 'calendario';
+function lerForma(): Forma {
+  try { return window.localStorage.getItem(CHAVE_DA_FORMA) === 'calendario' ? 'calendario' : 'tabela'; } catch { return 'tabela'; }
+}
+
 function configInicial(): VistaMinhasTarefas {
   return { ...VISTA_PADRAO_DE_MINHAS_TAREFAS, colunas: [...lerColunas()] };
 }
@@ -241,6 +254,14 @@ function configInicial(): VistaMinhasTarefas {
 export function AbaMinhasTarefas({ token }: { token: string }) {
   // A tarefa abre num pop-up por cima da tabela (rodada do trabalho T2): ninguém sai de Pendências.
   const popup = useTarefaNaUrl();
+  const { can } = useAuth();
+  const [forma, setForma] = useState<Forma>('tabela');
+  const [avisoDoPrazo, setAvisoDoPrazo] = useState<string | null>(null);
+  useEffect(() => { setForma(lerForma()); }, []);
+  const escolherForma = (f: Forma) => {
+    setForma(f);
+    try { window.localStorage.setItem(CHAVE_DA_FORMA, f); } catch { /* sem armazenamento: vale nesta visita */ }
+  };
   const abrirNoClique = (id: string) => (e: React.MouseEvent) => {
     if (e.metaKey || e.ctrlKey || e.shiftKey || e.button !== 0) return;
     e.preventDefault();
@@ -403,6 +424,21 @@ export function AbaMinhasTarefas({ token }: { token: string }) {
     setBalao({ tarefa: t, ancora: botao.getBoundingClientRect(), origem: botao });
   };
   const fraseDeEstado = resposta ? fraseDoQuadro(resposta.estado) : null;
+
+  /** O prazo pelo calendário: o mesmo PATCH do pop-up, com a versão lida da tarefa. */
+  const mudarPrazo = async (id: string, novoDia: string) => {
+    const t = resposta?.itens.find((x) => x.id === id);
+    if (!t) return;
+    setAvisoDoPrazo(null);
+    try {
+      await apiPatch(`/trabalho/tarefas/${encodeURIComponent(t.id)}`, { dueDate: prazoDoDia(novoDia), expectedUpdatedAt: t.atualizadaEm }, token);
+      await buscar();
+    } catch (e) {
+      setAvisoDoPrazo((e as { status?: number }).status === 409
+        ? `A tarefa "${t.titulo}" mudou desde a leitura. O prazo não foi gravado; atualize a lista e tente de novo.`
+        : (e as Error).message);
+    }
+  };
   const ver = (c: Coluna) => colunas.has(c);
 
   /** O cabeçalho ordena pela coluna; clicar de novo inverte. */
@@ -540,6 +576,20 @@ export function AbaMinhasTarefas({ token }: { token: string }) {
             {AGRUPAMENTOS.map((a) => <option key={a} value={a}>{ROTULO_DO_AGRUPAMENTO[a]}</option>)}
           </select>
         </label>
+        <div className="flex overflow-hidden rounded-lg border border-border" role="group" aria-label="Forma de ver as tarefas">
+          {(['tabela', 'calendario'] as const).map((f) => (
+            <button
+              key={f}
+              type="button"
+              data-testid={`caixa-forma-${f}`}
+              aria-pressed={forma === f}
+              onClick={() => escolherForma(f)}
+              className={`px-3 py-1.5 text-[12.5px] max-md:min-h-[44px] ${forma === f ? 'bg-brand/15 text-text' : 'bg-surface text-muted hover:text-text'} ${FOCO}`}
+            >
+              {f === 'tabela' ? 'Tabela' : 'Calendário'}
+            </button>
+          ))}
+        </div>
         {avisoDaVista && <p role="status" className="text-[12px] text-muted">{avisoDaVista}</p>}
       </div>
 
@@ -659,6 +709,20 @@ export function AbaMinhasTarefas({ token }: { token: string }) {
             ? 'Nenhuma tarefa com estes filtros.'
             : 'Nenhuma tarefa aberta com você como responsável.'}
         </Vazio>
+      ) : forma === 'calendario' ? (
+        <>
+          {avisoDoPrazo && <p role="alert" className="text-[12px] text-bad">{avisoDoPrazo}</p>}
+          <CalendarioDeTarefas
+            itens={itensVisiveis.map((t) => ({
+              id: t.id, titulo: t.titulo, prazo: t.prazo, concluida: t.statusTipo === 'closed',
+              detalhe: [t.cliente, t.pasta ? `${t.pasta} / ${t.lista}` : t.lista].filter(Boolean).join(' · '),
+            }))}
+            podeEditar={can('tarefas.editar')}
+            onAbrir={(id) => popup.abrir(id)}
+            onMudarPrazo={mudarPrazo}
+            testid="caixa-calendario"
+          />
+        </>
       ) : (
         <>
           {/* Desktop: tabela */}

@@ -131,3 +131,24 @@ describe('T3: vistas salvas em Minhas tarefas', () => {
     expect(within(screen.getByTestId('caixa-vista')).getByRole('option', { name: 'Por cliente (padrão)' })).toBeTruthy();
   });
 });
+
+describe('F4: o calendário é uma das formas de ver Minhas tarefas', () => {
+  it('troca para o calendário, guarda a escolha e arrastar grava o prazo com a versão lida', async () => {
+    apiPatch.mockResolvedValue({});
+    const { hojeEmBrasilia } = await import('@/lib/horas');
+    const mes = hojeEmBrasilia().slice(0, 7);
+    render(<AbaMinhasTarefas token="tok" />);
+    await screen.findAllByText('Pagar o contador');
+    fireEvent.click(screen.getByTestId('caixa-forma-calendario'));
+    expect(screen.getByTestId('caixa-forma-calendario')).toHaveAttribute('aria-pressed', 'true');
+    expect(window.localStorage.getItem('caixa.tarefas.forma.v1')).toBe('calendario');
+    const semPrazo = await screen.findByTestId('caixa-calendario-sem-prazo');
+    expect(semPrazo).toHaveTextContent('Pagar o contador');
+    const dt = { getData: () => 't-3', setData: () => undefined, effectAllowed: 'move' };
+    fireEvent.dragStart(screen.getByTestId('caixa-calendario-tarefa-t-3'), { dataTransfer: dt });
+    const dia = document.querySelector(`[data-dia="${mes}-15"]`)!;
+    fireEvent.dragOver(dia, { dataTransfer: dt });
+    fireEvent.drop(dia, { dataTransfer: dt });
+    await waitFor(() => expect(apiPatch).toHaveBeenCalledWith('/trabalho/tarefas/t-3', { dueDate: `${mes}-15T15:00:00.000Z`, expectedUpdatedAt: ITENS[2].atualizadaEm }, 'tok'));
+  });
+});
