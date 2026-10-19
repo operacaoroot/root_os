@@ -92,6 +92,7 @@ export function AnaliseView({ token, canEdit, onError }: { token: string | null;
   const [celula, setCelula] = useState<{ mes: string; grupo: Grupo } | null>(null);
   const [mediaMensal, setMediaMensal] = useState(false);
   const [porMes, setPorMes] = useState(false);
+  const [tipoFiltro, setTipoFiltro] = useState<Tipo | null>(null);
 
   const carregar = useCallback(() => {
     if (!token) return;
@@ -295,15 +296,31 @@ export function AnaliseView({ token, canEdit, onError }: { token: string | null;
           </span>
         </div>
         <div className="mt-2 space-y-2">
-          {r.acordos.porTipo.filter((t) => t.acordos > 0).map((t) => (
-            <div key={t.tipo} className="grid grid-cols-[110px_1fr_auto] items-center gap-3 text-sm">
-              <span>{ROTULO[t.tipo]} <span className="text-muted">({t.acordos})</span></span>
-              <span className="h-2.5 overflow-hidden rounded bg-surface-2" title={EXPLICA[t.tipo]}>
-                <span className={`block h-full ${COR[t.tipo]}`} style={{ width: `${(t.valor / max) * 100}%` }} />
-              </span>
-              <span className="w-28 text-right tabular-nums">{brl(t.valor)}</span>
-            </div>
-          ))}
+          {r.acordos.porTipo.filter((t) => t.acordos > 0).map((t) => {
+            const on = tipoFiltro === t.tipo;
+            const apagada = tipoFiltro !== null && !on;
+            return (
+              <button
+                key={t.tipo}
+                type="button"
+                onClick={() => setTipoFiltro(on ? null : t.tipo)}
+                aria-pressed={on}
+                title={`${ROTULO[t.tipo]}: ${EXPLICA[t.tipo]} · ${t.acordos} acordo(s) · ${brl(t.valor)}${t.recebido ? ` · entrou ${brl(t.recebido)}` : ''}${t.aReceber ? ` · a receber ${brl(t.aReceber)}` : ''} — clique para ${on ? 'ver todos' : 'ver só estes'}`}
+                className={`group grid w-full grid-cols-[110px_1fr_auto] items-center gap-3 rounded px-1 py-0.5 text-left text-sm transition-opacity hover:bg-surface-2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-brand ${apagada ? 'opacity-40' : ''} ${on ? 'bg-surface-2' : ''}`}
+              >
+                <span className={on ? 'font-medium' : ''}>{ROTULO[t.tipo]} <span className="text-muted">({t.acordos})</span></span>
+                <span className="h-2.5 overflow-hidden rounded bg-surface-2 group-hover:bg-border">
+                  <span className={`block h-full ${COR[t.tipo]}`} style={{ width: `${(t.valor / max) * 100}%` }} />
+                </span>
+                <span className="w-28 text-right tabular-nums">{brl(t.valor)}</span>
+              </button>
+            );
+          })}
+          {tipoFiltro && (
+            <p className="text-[12px] text-muted">
+              Mostrando só {ROTULO[tipoFiltro].toLowerCase()}. <button className="underline hover:text-text" onClick={() => setTipoFiltro(null)}>Ver todos</button>
+            </p>
+          )}
         </div>
 
         <div className="mt-5 overflow-x-auto">
@@ -317,7 +334,7 @@ export function AnaliseView({ token, canEdit, onError }: { token: string | null;
             </thead>
             <tbody>
               {r.acordos.linhas.length === 0 && <tr><td colSpan={8} className="py-4 text-center text-muted">Nenhum acordo cadastrado.</td></tr>}
-              {r.acordos.linhas.map((l) => (
+              {r.acordos.linhas.filter((l) => !tipoFiltro || l.tipo === tipoFiltro).map((l) => (
                 <tr key={l.id} className="border-t border-border">
                   <td className="py-2 pr-3">{l.cliente}</td>
                   <td className="py-2 pr-3 text-muted">{l.produto}{l.observacao && <span className="block text-[12px]">{l.observacao}</span>}</td>
