@@ -129,7 +129,11 @@ function rodarScript(arquivo, env = {}) {
 
 /** Abre o pop-up pelo clique num ponto do cartão FORA do título e confere que abriu sem sair da tela. */
 async function abrirPeloPonto(p, alvo, x, y, caminhoEsperado) {
-  await alvo.click({ position: { x, y } });
+  // Clique por coordenada, como o mouse de verdade: o que estiver por cima naquele
+  // ponto (o "link esticado" do título, no cartão) é quem recebe.
+  await alvo.scrollIntoViewIfNeeded();
+  const caixa = await alvo.boundingBox();
+  await p.mouse.click(caixa.x + x, caixa.y + y);
   await tid(p, 'tarefa-popup').waitFor({ timeout: 10_000 });
   const url = new URL(p.url());
   conferir(url.pathname === caminhoEsperado, `o pop-up levou para ${url.pathname} (devia ficar em ${caminhoEsperado})`);
@@ -184,7 +188,7 @@ async function main() {
     await p.goto(`${WEB}/caixa`, { waitUntil: 'networkidle' });
     await p.locator('nav a[title="Implantação de clientes"]').first().click();
     await p.waitForURL(/\/trabalho\/implantacao/, { timeout: 20_000 });
-    await p.getByRole('heading', { name: 'Implantação de clientes' }).waitFor({ timeout: 20_000 });
+    await p.locator('#root-os-main').getByRole('heading', { name: 'Implantação de clientes' }).waitFor({ timeout: 20_000 });
     await p.locator('[data-coluna]').first().waitFor({ timeout: 20_000 });
     conferir(await p.getByPlaceholder('Nova tarefa…').count() === 0, 'a implantação ainda tem "+ adicionar"');
     await p.goto(`${WEB}/onboarding`, { waitUntil: 'networkidle' });
@@ -255,7 +259,7 @@ async function main() {
     const linha = tid(p, `caixa-tarefa-${daProva.id}`);
     await linha.waitFor({ timeout: 20_000 });
     const lb = await linha.boundingBox();
-    await abrirPeloPonto(p, linha, lb.width - 40, lb.height / 2, '/caixa');
+    await abrirPeloPonto(p, linha, Math.round(lb.width * 0.45), lb.height / 2, "/caixa");
     await fecharPorEsc(p);
     passo('T2: em Minhas tarefas o clique na linha abre o pop-up sem sair de /caixa');
 
@@ -282,7 +286,7 @@ async function main() {
 
     // ---- T4: a tarefa nova exige cliente na tela ----
     await p.goto(`${WEB}/trabalho?lista=${execucao.id}`, { waitUntil: 'networkidle' });
-    const nova = p.locator('[data-testid^="trabalho-nova-"]').first();
+    const nova = p.locator('[data-coluna] [data-testid^="trabalho-nova-"]').first();
     await nova.waitFor({ timeout: 20_000 });
     const tituloNovo = `Enviar o resumo da prova ${SUFIXO}`;
     await nova.getByLabel('Nome da nova tarefa').fill(tituloNovo);
@@ -412,7 +416,16 @@ async function main() {
   }
 
   // ---- T7 e T1b: os roteiros das lanes ----
-  const t7 = rodarScript('trabalho-t7.mjs');
+  // A prova do R4 com senha precisa de um R4 pendente para a titular em qualquer horário:
+  // a jornada para no R4 da cobrança (JORNADA_PARAR_NO_R4) e o T7 o aprova na linha.
+  let envT7 = {};
+  if (!process.env.T7_R4_ID) {
+    const j = rodarScript('jornada-docker.mjs', { JORNADA_PARAR_NO_R4: '1' });
+    const id = /^R4 pendente: ([0-9a-f-]{36})\s*$/m.exec(j.saida)?.[1];
+    if (id) envT7 = { T7_R4_ID: id };
+    else prova.avisos.push(`A jornada não deixou um R4 pendente (${j.saida.split(/\r?\n/).filter((l) => /FALHOU/.test(l)).slice(0, 1).join('')}).`);
+  }
+  const t7 = rodarScript('trabalho-t7.mjs', envT7);
   conferir(t7.ok, `trabalho-t7.mjs falhou: ${t7.saida.split(/\r?\n/).filter((l) => /FALHOU|OK/.test(l)).slice(-2).join(' | ')}`);
   for (const l of t7.saida.split(/\r?\n/).filter((x) => /^\s+\d+\./.test(x))) prova.passos.push({ n: prova.passos.length + 1, nome: `T7 · ${l.trim()}`, ms: Date.now() - t0 });
   if (/OK, com avisos/.test(t7.saida)) prova.avisos.push(...t7.saida.split('OK, com avisos:')[1].split(/\r?\n/).map((x) => x.trim()).filter(Boolean).map((x) => `T7: ${x}`));

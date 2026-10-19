@@ -414,6 +414,13 @@ async function main() {
     return cob && ctr ? { cob, ctr } : null;
   });
   conferir(filaR4.cob.nivel === 'R4' && filaR4.ctr.nivel === 'R4' && filaR4.cob.alcadaMinima === 'titular', 'cobrança e contrato deviam ser R4 com alçada titular', filaR4);
+  // Rodada do trabalho T9: `JORNADA_PARAR_NO_R4=1` deixa a cobrança esperando a titular
+  // e para aqui, para a prova da aprovação R4 com senha na linha (trabalho.mjs) ter um R4 de verdade.
+  if (process.env.JORNADA_PARAR_NO_R4 === '1') {
+    console.log(`R4 pendente: ${filaR4.cob.id}`);
+    console.log(`Lead parado no R4: ${leadId}`);
+    process.exit(0);
+  }
   await confirmar(filaR4.cob.id, 'obrigação financeira com o cliente (R4: titular, senha e motivo)');
   await confirmar(filaR4.ctr.id, 'contrato enviado para assinatura (R4: titular, senha e motivo)');
   s = await sala(TOKEN);
