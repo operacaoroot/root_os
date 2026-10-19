@@ -128,7 +128,7 @@ describe('o mapa capacidade → conector', () => {
    * conector que o desligamento não reconhece e que segue mandando coisa para
    * fora depois de alguém ter mandado parar.
    */
-  it('a união do catálogo é o que a catraca mede — 16 da base + 68 do delta, 8 repetidos', () => {
+  it('a união do catálogo é o que a catraca mede — 16 da base + 69 do delta, 8 repetidos', () => {
     /*
      * Trava a FONTE, não só o resultado: se alguém voltar a ler só o delta, o
      * número cai para o do delta e este caso avisa antes de as oito sumirem
@@ -156,9 +156,9 @@ describe('o mapa capacidade → conector', () => {
      * Com a agenda: 63 no delta e 71 na união. Com o cockpit do lead (13/10/2026), 68 e 76.
      */
     expect(lerCatalogo('politica-root.json')).toHaveLength(16);
-    expect(lerCatalogo('politica-marketing-os.json')).toHaveLength(68);
-    // 76 desde o cockpit do lead (13/10/2026): as cinco escritas do comercial.
-    expect(capacidadesDoCatalogo()).toHaveLength(76);
+    expect(lerCatalogo('politica-marketing-os.json')).toHaveLength(69);
+    // 76 desde o cockpit do lead (13/10/2026): as cinco escritas do comercial; 77 com a sala publicada por versão (I3, 18/10/2026).
+    expect(capacidadesDoCatalogo()).toHaveLength(77);
     const soNaBase = lerCatalogo('politica-root.json')
       .map((c) => c.id)
       .filter((id) => !lerCatalogo('politica-marketing-os.json').some((d) => d.id === id));
@@ -232,8 +232,8 @@ describe('o mapa capacidade → conector', () => {
     expect(CONECTOR_DA_CAPACIDADE['youtube.video.enviar']).toBe('youtube');
     expect(CONECTOR_DA_CAPACIDADE['youtube.video.publicar']).toBe('youtube');
     expect(CONECTOR_DA_CAPACIDADE['pauta.semana.aprovar']).toBeNull();
-    // 76 desde o cockpit do lead (13/10/2026): as cinco escritas do comercial.
-    expect(capacidadesDoCatalogo()).toHaveLength(76);
+    // 76 desde o cockpit do lead (13/10/2026): as cinco escritas do comercial; 77 com a sala publicada por versão (I3, 18/10/2026).
+    expect(capacidadesDoCatalogo()).toHaveLength(77);
 
     // E `conectorDaCapacidade` concorda com o mapa, para os dois lados: o que
     // está declarado `null` e o que está em `SEM_INTERRUPTOR` devolve `null`.

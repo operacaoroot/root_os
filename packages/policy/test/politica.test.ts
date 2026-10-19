@@ -835,6 +835,8 @@ describe('as escritas do comercial (cockpit do lead)', () => {
   const NIVEIS: Record<string, string> = {
     'comercial.whatsapp.enviar': 'R3',
     'comercial.proposta.publicar': 'R3',
+    // Rodada da implantação I3 (18/10/2026): a sala publicada por versão, como a proposta.
+    'comercial.sala.publicar': 'R3',
     'comercial.cobranca.criar': 'R4',
     'comercial.contrato.enviar': 'R4',
     'comercial.fechamento.executar': 'R4',
@@ -864,7 +866,7 @@ describe('as escritas do comercial (cockpit do lead)', () => {
   });
 
   it('mensagem ao lead e proposta na sala são R3 e sobem a R4 com sinal, nunca descem', () => {
-    for (const id of ['comercial.whatsapp.enviar', 'comercial.proposta.publicar']) {
+    for (const id of ['comercial.whatsapp.enviar', 'comercial.proposta.publicar', 'comercial.sala.publicar']) {
       const c = MKTOS.capacidades.find((x) => x.id === id)!;
       const cap: Capacidade = { id: c.id, descricao: c.descricao, nivel: c.nivel, efeito: c.efeito };
       expect(avaliar(cap).nivel).toBe('R3');
@@ -877,6 +879,7 @@ describe('as escritas do comercial (cockpit do lead)', () => {
     const exige: Record<string, string[]> = {
       'comercial.whatsapp.enviar': ['leadId', 'mensagemId', 'texto'],
       'comercial.proposta.publicar': ['leadId', 'versao', 'hash'],
+      'comercial.sala.publicar': ['leadId', 'versao', 'hash'],
       'comercial.cobranca.criar': ['leadId', 'versao', 'hash', 'valorCentavos', 'parcelas', 'forma', 'devedorDocumento', 'devedorRazaoSocial', 'devedorEmail'],
       'comercial.contrato.enviar': ['leadId', 'versao', 'hash', 'signatarioEmail'],
       'comercial.fechamento.executar': ['leadId', 'chave', 'propostaHash'],

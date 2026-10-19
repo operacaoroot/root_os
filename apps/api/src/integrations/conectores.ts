@@ -255,6 +255,8 @@ export const CONECTOR_DA_CAPACIDADE: Readonly<Record<string, string | null>> = {
   'comercial.contrato.enviar': 'zapsign',
   'comercial.fechamento.executar': 'asaas',
   'comercial.proposta.publicar': null,
+  // Rodada da implantação I3 (18/10/2026): publicar a versão da sala é escrita no link do próprio OS, como a proposta.
+  'comercial.sala.publicar': null,
 
   // Daqui para baixo: nada sai da casa.
   'numeros.painel.ler': null,

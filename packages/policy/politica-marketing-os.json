@@ -1,6 +1,6 @@
 {
-  "versao": "1.8.1",
-  "atualizadoEm": "2026-10-13",
+  "versao": "1.9.0",
+  "atualizadoEm": "2026-10-18",
   "origem": "o código real deste repositório",
   "descricao": "Capacidades do marketing-os. É um DELTA sobre politica-root.json: herda níveis, gatilhos, escalonamento, invariantes e limites, e declara só o que existe em código aqui. Capacidade sem rota é declarada e não implementada — entra classificada, e a porta recusa antes de qualquer efeito.",
   "estende": "politica-root.json",
@@ -1686,6 +1686,48 @@
             "type": "integer",
             "minimum": 1,
             "maximum": 60
+          }
+        }
+      },
+      "efeito": {
+        "escreveForaDoOS": true,
+        "produzArtefato": false,
+        "reversibilidade": "manual",
+        "exposicaoExterna": true,
+        "impactoFinanceiro": "nenhum",
+        "sensibilidade": "confidencial",
+        "destruicao": false,
+        "obrigacaoLegal": false
+      }
+    },
+    {
+      "id": "comercial.sala.publicar",
+      "rota": "POST /comercial/lead/:id/sala/publicar",
+      "descricao": "Publica a versão exata da sala do cliente (onde estamos, próximos passos com dono e data, o que foi publicado para ele, o combinado e quem cuida da conta, presos pelo hash) no link privado /s/<token>, que o cliente abre sem login. O cliente só vê a última versão publicada; o rascunho nunca sai. Despublicar não desfaz o que foi lido: reversibilidade manual. Rodada da implantação I3 (18/10/2026).",
+      "nivel": "R3",
+      "argsSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "leadId",
+          "versao",
+          "hash"
+        ],
+        "properties": {
+          "leadId": {
+            "type": "string",
+            "minLength": 1,
+            "description": "o lead dono da sala"
+          },
+          "versao": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "a versão da sala"
+          },
+          "hash": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$",
+            "description": "o sha256 do conteúdo exato da versão"
           }
         }
       },

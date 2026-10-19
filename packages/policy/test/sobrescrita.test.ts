@@ -413,7 +413,11 @@ describe('ferramenta e esquema de argumentos têm direção própria', () => {
     // `.cobranca.criar`, `.contrato.enviar`, `.fechamento.executar`). Quem as
     // dispara é a reação do fio ou o clique na tela, pela porta; agente nenhum
     // manda mensagem ao lead, cobra ou fecha por conta própria.
-    expect(BASE.capacidades.filter((c) => !c.ferramenta)).toHaveLength(26);
+    //
+    // Vinte e sete desde a rodada da implantação I3 (18/10/2026):
+    // `comercial.sala.publicar`. A versão da sala sai pelo clique de gente na
+    // bancada e a segunda pessoa libera; agente nenhum publica a sala do cliente.
+    expect(BASE.capacidades.filter((c) => !c.ferramenta)).toHaveLength(27);
     for (const id of [
       'instagram.post.publicar',
       'pauta.semana.aprovar',
@@ -427,6 +431,7 @@ describe('ferramenta e esquema de argumentos têm direção própria', () => {
       'comercial.cobranca.criar',
       'comercial.contrato.enviar',
       'comercial.fechamento.executar',
+      'comercial.sala.publicar',
     ]) {
       expect(BASE.capacidades.find((c) => c.id === id)?.ferramenta, id).toBeUndefined();
     }
