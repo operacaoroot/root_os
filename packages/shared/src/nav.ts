@@ -157,6 +157,8 @@ export const NAV: NavItem[] = [
   { key: 'bio', label: 'Página de links', href: '/bio', icon: 'Link2', permission: 'bio.ver', secao: 'conteudo', modulo: 'bio' },
   { key: 'campanhas', label: 'Campanhas', href: '/campanhas', icon: 'Megaphone', permission: 'campanhas.ver', secao: 'conteudo', modulo: 'campanhas' },
   { key: 'pixels', label: 'Eventos do site', href: '/pixels', icon: 'Activity', permission: 'dashboard.ver', secao: 'conteudo', modulo: 'pixels' },
+  // A aba Tarefas de cada área é Dia a dia › Tarefas filtrada pela área: a mesma tarefa, nunca cópia (19/10/2026).
+  { key: 'marketing-tarefas', label: 'Tarefas', href: '/marketing/tarefas', icon: 'CheckSquare', permission: 'tarefas.ver', secao: 'conteudo', modulo: 'trabalho' },
 
   // O painel lê a lista "Gestão de Leads" do Trabalho (o CRM da casa); ver painel-comercial.ts.
   { key: 'comercial-painel', label: 'Painel geral', href: '/comercial', icon: 'TrendingUp', permission: 'leads.ver', secao: 'comercial', modulo: 'leads' },
@@ -164,8 +166,10 @@ export const NAV: NavItem[] = [
   { key: 'funil', label: 'Funil de vendas', href: '/funil', icon: 'Filter', permission: 'dashboard.ver', secao: 'comercial', modulo: 'leads', pai: 'leads' },
   // Depois do fechamento: onboarding e sucesso do cliente, com a mesma ficha do lead.
   { key: 'clientes', label: 'Clientes', href: '/clientes', icon: 'HeartHandshake', permission: 'tarefas.ver', secao: 'comercial', modulo: 'trabalho' },
+  { key: 'comercial-tarefas', label: 'Tarefas', href: '/comercial/tarefas', icon: 'CheckSquare', permission: 'tarefas.ver', secao: 'comercial', modulo: 'trabalho' },
 
   { key: 'financeiro', label: 'Financeiro', href: '/financeiro', icon: 'Wallet', permission: 'financeiro.ver', secao: 'financeiro', modulo: 'financeiro' },
+  { key: 'financeiro-tarefas', label: 'Tarefas', href: '/financeiro/tarefas', icon: 'CheckSquare', permission: 'tarefas.ver', secao: 'financeiro', modulo: 'trabalho' },
 
   { key: 'agentes', label: 'Agentes de IA', href: '/agentes', icon: 'Users', permission: 'mcp.ver', secao: 'automacoes' },
   { key: 'rotinas', label: 'Rotinas automáticas', href: '/rotinas', icon: 'Repeat', permission: 'automacoes.ver', secao: 'automacoes' },

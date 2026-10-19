@@ -19,6 +19,10 @@ import { Barras, type Fatia } from './graficos';
  * empresa (`ResumoDeTarefas`, abaixo), e cada clique dele abre esta lista filtrada. Filtros na URL (?pessoa=…&area=…), para
  * o voltar do navegador desfazer o clique e o link poder ser mandado a alguém.
  * O detalhe abre por cima (?tarefa=id), com × e Esc, como a ficha do cliente.
+ *
+ * CADA ÁREA TEM A SUA ABA (Comercial › Tarefas, Marketing › Tarefas, …): é este
+ * mesmo componente com `area` fixa. Lê a mesma lista e só esconde as das outras
+ * áreas; a tarefa criada ali já nasce com a área. Nada é copiado.
  */
 
 type Ver = 'quadro' | 'lista' | 'calendario';
@@ -97,7 +101,8 @@ function useAlturaAteOFim(ref: React.RefObject<HTMLElement | null>, folga = 16) 
   return altura;
 }
 
-export function TarefasDoDia() {
+/** `area`: nome da área (ex.: 'Comercial') quando a tela é a aba Tarefas de uma área. */
+export function TarefasDoDia({ area: nomeDaArea }: { area?: string } = {}) {
   const { token, ready, can } = useAuth();
   const podeEditar = can('tarefas.editar');
   const [p, setP] = useState<PainelDeTarefas | null>(null);
@@ -151,8 +156,17 @@ export function TarefasDoDia() {
     catch (e) { setErro((e as Error).message); return null; }
   };
 
-  const lista = useMemo(() => (p ? p.tarefas.filter((t) => passa(t, filtro)).sort(ordem) : []), [p, filtro]);
+  // A área fixa é achada pelo nome: o id muda de empresa para empresa.
+  const areaFixa = nomeDaArea && p ? p.areas.find((a) => a.nome.toLowerCase() === nomeDaArea.toLowerCase()) ?? null : null;
+  const faltaArea = !!nomeDaArea && !!p && !areaFixa;
+  const filtroDaTela: Filtro = useMemo(() => (areaFixa ? { ...filtro, area: areaFixa.id } : filtro), [filtro, areaFixa]);
+  const daTela = useMemo(
+    () => (p ? (areaFixa ? p.tarefas.filter((t) => t.area?.id === areaFixa.id) : faltaArea ? [] : p.tarefas) : []),
+    [p, areaFixa, faltaArea],
+  );
+  const lista = useMemo(() => daTela.filter((t) => passa(t, filtroDaTela)).sort(ordem), [daTela, filtroDaTela]);
   const tarefaAberta = p?.tarefas.find((t) => t.id === aberta) ?? null;
+  const agruparNaTela: Agrupar = areaFixa && agrupar === 'area' ? 'pessoa' : agrupar;
 
   return (
     <div className="com-tema mx-auto max-w-[1240px] space-y-5 text-text">
@@ -171,11 +185,12 @@ export function TarefasDoDia() {
         <div className="mb-2 flex items-center gap-5">
           {p && (
             <>
-              <span className="text-sm text-muted">Abertas: <b className="com-num text-text">{p.tarefas.filter((t) => t.situacao !== 'feita').length}</b></span>
-              <span className="text-sm text-muted">Atrasadas: <b className="com-num text-bad">{p.tarefas.filter((t) => t.situacao === 'atrasada').length}</b></span>
+              {nomeDaArea && <Link href="/dia-a-dia" className="text-sm text-muted hover:text-brand">todas as áreas →</Link>}
+              <span className="text-sm text-muted">Abertas: <b className="com-num text-text">{daTela.filter((t) => t.situacao !== 'feita').length}</b></span>
+              <span className="text-sm text-muted">Atrasadas: <b className="com-num text-bad">{daTela.filter((t) => t.situacao === 'atrasada').length}</b></span>
             </>
           )}
-          {podeEditar && (
+          {podeEditar && !faltaArea && (
             <button onClick={() => setNova(true)} className="rounded-md bg-brand px-4 py-2 text-sm font-medium text-ink hover:opacity-90">
               + Nova tarefa
             </button>
@@ -186,16 +201,21 @@ export function TarefasDoDia() {
       {erro && <div className="rounded-lg border border-bad/30 bg-bad/10 px-4 py-2 text-sm text-bad">{erro}</div>}
       {!p && !erro && <p className="text-muted">Carregando…</p>}
 
-      {p && <Filtros p={p} filtro={filtro} mudar={mudarFiltro} />}
-      {p && ver === 'quadro' && (
+      {faltaArea && (
+        <p className="rounded-md border border-border bg-surface px-4 py-3 text-muted">
+          A área {nomeDaArea} ainda não existe nesta empresa. Crie numa tarefa em <Link href="/dia-a-dia" className="text-brand">Dia a dia › Tarefas</Link>.
+        </p>
+      )}
+      {p && !faltaArea && <Filtros p={p} filtro={filtro} mudar={mudarFiltro} areaFixa={!!areaFixa} />}
+      {p && !faltaArea && ver === 'quadro' && (
         <QuadroDeTarefas
-          p={p} tarefas={lista} agrupar={agrupar} podeEditar={podeEditar}
+          p={p} tarefas={lista} agrupar={agruparNaTela} podeEditar={podeEditar} areaFixa={areaFixa?.id}
           trocarAgrupar={(g) => ir('quadro', filtro, g)} abrir={abrirTarefa} alternar={alternarFeita} editar={editar}
           criado={carregar} token={token}
         />
       )}
-      {p && ver === 'lista' && <ListaDeTarefas tarefas={lista} abrir={abrirTarefa} alternar={alternarFeita} podeEditar={podeEditar} />}
-      {p && ver === 'calendario' && (
+      {p && !faltaArea && ver === 'lista' && <ListaDeTarefas tarefas={lista} abrir={abrirTarefa} alternar={alternarFeita} podeEditar={podeEditar} mostrarArea={!areaFixa} />}
+      {p && !faltaArea && ver === 'calendario' && (
         <CalendarioDeTarefas tarefas={lista} hoje={p.hoje} podeEditar={podeEditar} abrir={abrirTarefa} mudarPrazo={(t, prazo) => editar(t, { prazo })} />
       )}
 
@@ -207,7 +227,7 @@ export function TarefasDoDia() {
       )}
       {p && nova && (
         <NovaTarefa
-          p={p} token={token} filtro={filtro} criarArea={criarArea}
+          p={p} token={token} filtro={filtroDaTela} criarArea={criarArea}
           fechar={() => setNova(false)} criada={(id) => { setNova(false); carregar(); abrirTarefa(id); }} abrir={(id) => { setNova(false); abrirTarefa(id); }}
         />
       )}
@@ -339,10 +359,10 @@ export function ResumoDeTarefas() {
 
 // ---------------- Filtros ----------------
 
-function Filtros({ p, filtro, mudar }: { p: PainelDeTarefas; filtro: Filtro; mudar: (f: Filtro) => void }) {
+function Filtros({ p, filtro, mudar, areaFixa }: { p: PainelDeTarefas; filtro: Filtro; mudar: (f: Filtro) => void; areaFixa: boolean }) {
   const set = (k: keyof Filtro, v: string) => { const f = { ...filtro }; if (v) (f as Record<string, string>)[k] = v; else delete f[k]; mudar(f); };
   const sel = 'rounded-md border border-border bg-surface-2 px-2.5 py-1.5 text-sm outline-none focus:border-brand';
-  const ativos = CHAVES.filter((k) => filtro[k]).length;
+  const ativos = CHAVES.filter((k) => filtro[k] && !(areaFixa && k === 'area')).length;
   return (
     <div className="flex flex-wrap items-center gap-2">
       <input
@@ -356,11 +376,13 @@ function Filtros({ p, filtro, mudar }: { p: PainelDeTarefas; filtro: Filtro; mud
         {p.pessoas.map((pe) => <option key={pe.id} value={pe.id}>{pe.nome}</option>)}
         <option value={SEM}>Sem responsável</option>
       </select>
-      <select value={filtro.area ?? ''} onChange={(e) => set('area', e.target.value)} className={sel}>
-        <option value="">Todas as áreas</option>
-        {p.areas.map((a) => <option key={a.id} value={a.id}>{a.nome}</option>)}
-        <option value={SEM}>Sem área</option>
-      </select>
+      {!areaFixa && (
+        <select value={filtro.area ?? ''} onChange={(e) => set('area', e.target.value)} className={sel}>
+          <option value="">Todas as áreas</option>
+          {p.areas.map((a) => <option key={a.id} value={a.id}>{a.nome}</option>)}
+          <option value={SEM}>Sem área</option>
+        </select>
+      )}
       <select value={filtro.situacao ?? ''} onChange={(e) => set('situacao', e.target.value)} className={sel}>
         <option value="">Abertas</option>
         {(Object.keys(NOME_DO_RECORTE) as Recorte[]).map((s) => <option key={s} value={s}>{NOME_DO_RECORTE[s]}</option>)}
@@ -419,8 +441,10 @@ function QuadroDeTarefas(props: {
   p: PainelDeTarefas; tarefas: TarefaDoDia[]; agrupar: Agrupar; podeEditar: boolean;
   trocarAgrupar: (g: Agrupar) => void; abrir: (id: string) => void; alternar: (t: TarefaDoDia) => void;
   editar: (t: TarefaDoDia, m: Record<string, unknown>) => void; criado: () => void; token: string | null;
+  /** Id da área quando o quadro é a aba de uma área: some a coluna por área e a tarefa nova nasce nela. */
+  areaFixa?: string;
 }) {
-  const { p, tarefas, agrupar } = props;
+  const { p, tarefas, agrupar, areaFixa } = props;
   const ref = useRef<HTMLDivElement>(null);
   const altura = useAlturaAteOFim(ref);
   const [arrastando, setArrastando] = useState<TarefaDoDia | null>(null);
@@ -452,7 +476,7 @@ function QuadroDeTarefas(props: {
     <div className="space-y-3">
       <div className="flex items-center gap-2 text-sm">
         <span className="text-muted">Colunas por</span>
-        {(['pessoa', 'area', 'situacao'] as Agrupar[]).map((g) => (
+        {(['pessoa', 'area', 'situacao'] as Agrupar[]).filter((g) => !areaFixa || g !== 'area').map((g) => (
           <button
             key={g}
             onClick={() => props.trocarAgrupar(g)}
@@ -484,7 +508,7 @@ function QuadroDeTarefas(props: {
                 {props.podeEditar && agrupar !== 'situacao' && (novoEm === c.chave ? (
                   <CriarRapido
                     p={p} token={props.token}
-                    base={agrupar === 'pessoa' ? { pessoaId: c.chave === SEM ? null : c.chave } : { areaId: c.chave === SEM ? undefined : c.chave }}
+                    base={agrupar === 'pessoa' ? { pessoaId: c.chave === SEM ? null : c.chave, areaId: areaFixa } : { areaId: c.chave === SEM ? undefined : c.chave }}
                     fechar={() => setNovoEm(null)} criado={() => { setNovoEm(null); props.criado(); }} abrir={props.abrir}
                   />
                 ) : (
@@ -504,7 +528,7 @@ function QuadroDeTarefas(props: {
                     <Bolinha t={t} alternar={props.alternar} podeEditar={props.podeEditar} />
                     <div className="min-w-0 flex-1">
                       <div className="text-sm font-medium leading-snug">{t.titulo}</div>
-                      <Meta t={t} mostrarArea={agrupar !== 'area'} mostrarPessoa={agrupar !== 'pessoa'} />
+                      <Meta t={t} mostrarArea={agrupar !== 'area' && !areaFixa} mostrarPessoa={agrupar !== 'pessoa'} />
                     </div>
                   </div>
                 ))}
@@ -520,7 +544,9 @@ function QuadroDeTarefas(props: {
 // ---------------- Lista ----------------
 
 type Coluninha = 'titulo' | 'area' | 'cliente' | 'pessoa' | 'prazo';
-function ListaDeTarefas({ tarefas, abrir, alternar, podeEditar }: { tarefas: TarefaDoDia[]; abrir: (id: string) => void; alternar: (t: TarefaDoDia) => void; podeEditar: boolean }) {
+function ListaDeTarefas({ tarefas, abrir, alternar, podeEditar, mostrarArea = true }: {
+  tarefas: TarefaDoDia[]; abrir: (id: string) => void; alternar: (t: TarefaDoDia) => void; podeEditar: boolean; mostrarArea?: boolean;
+}) {
   const [por, setPor] = useState<Coluninha>('prazo');
   const chave: Record<Coluninha, (t: TarefaDoDia) => string> = {
     titulo: (t) => t.titulo, area: (t) => t.area?.nome ?? '~', cliente: (t) => t.cliente?.titulo ?? '~',
@@ -538,7 +564,7 @@ function ListaDeTarefas({ tarefas, abrir, alternar, podeEditar }: { tarefas: Tar
         <thead>
           <tr className="text-left">
             <th className="w-6 pb-2" />
-            {th('titulo', 'Tarefa')}{th('area', 'Área')}{th('cliente', 'Cliente')}{th('pessoa', 'Responsável')}{th('prazo', 'Prazo')}
+            {th('titulo', 'Tarefa')}{mostrarArea && th('area', 'Área')}{th('cliente', 'Cliente')}{th('pessoa', 'Responsável')}{th('prazo', 'Prazo')}
             <th className="com-rotulo pb-2 font-normal">Status</th>
           </tr>
         </thead>
@@ -547,7 +573,7 @@ function ListaDeTarefas({ tarefas, abrir, alternar, podeEditar }: { tarefas: Tar
             <tr key={t.id} onClick={() => abrir(t.id)} className="cursor-pointer hover:bg-surface-2">
               <td className="py-2 pr-2"><Bolinha t={t} alternar={alternar} podeEditar={podeEditar} /></td>
               <td className={`py-2 pr-3 font-medium ${t.situacao === 'feita' ? 'text-muted line-through' : ''}`}>{t.titulo}</td>
-              <td className="py-2 pr-3 text-muted">{t.area?.nome ?? 'sem área'}</td>
+              {mostrarArea && <td className="py-2 pr-3 text-muted">{t.area?.nome ?? 'sem área'}</td>}
               <td className="py-2 pr-3 text-muted">{t.cliente?.titulo ?? '—'}</td>
               <td className="py-2 pr-3 text-muted">{t.pessoa?.nome ?? t.responsavelTexto ?? '—'}</td>
               <td className={`com-num py-2 pr-3 ${t.situacao === 'atrasada' ? 'font-semibold text-bad' : 'text-muted'}`}>{dd(t.prazo) || '—'}</td>

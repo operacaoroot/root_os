@@ -204,8 +204,10 @@ describe('NAV — estrutura', () => {
     // 18/10/2026: + /comercial, o painel do Motor Comercial (lê a lista Gestão de Leads).
     // 19/10/2026: + /cofre, o cofre da empresa (senhas, dados e documentos dos sócios).
     // 19/10/2026: + /dia-a-dia, todas as tarefas de todas as áreas (Dia a dia › Tarefas).
-    expect(NAV).toHaveLength(43);
-    expect(new Set(NAV.map((n) => n.href))).toEqual(new Set([...hrefsEsperados, ...rotasMK, '/comercial', '/clientes', '/cofre', '/dia-a-dia']));
+    // 19/10/2026: + a aba Tarefas de Comercial, Marketing e Financeiro (Dia a dia › Tarefas filtrada pela área).
+    const abasDeTarefas = ['/comercial/tarefas', '/marketing/tarefas', '/financeiro/tarefas'];
+    expect(NAV).toHaveLength(46);
+    expect(new Set(NAV.map((n) => n.href))).toEqual(new Set([...hrefsEsperados, ...rotasMK, '/comercial', '/clientes', '/cofre', '/dia-a-dia', ...abasDeTarefas]));
   });
 
   it('não repete chave nem rota', () => {
@@ -235,6 +237,7 @@ describe('NAV — estrutura', () => {
       ['tarefas', 'trabalho'], ['trabalho', 'trabalho'], ['onboarding', 'trabalho'],
       ['conteudo', 'conteudo'], ['pauta', 'pauta'], ['referencias', 'pauta'],
       ['instagram', 'instagram'], ['bio', 'bio'], ['comercial-painel', 'leads'], ['clientes', 'trabalho'], ['tarefas-todas', 'trabalho'], ['leads', 'leads'],
+      ['comercial-tarefas', 'trabalho'], ['marketing-tarefas', 'trabalho'], ['financeiro-tarefas', 'trabalho'],
       ['funil', 'leads'], ['campanhas', 'campanhas'], ['pixels', 'pixels'],
       ['relatorios', 'relatorios'], ['metas', 'metas'], ['financeiro', 'financeiro'],
       ['marca', 'pauta'], ['marketing', 'pauta'], ['marketing-ideias', 'pauta'],
@@ -504,7 +507,8 @@ describe('organização da navegação (ROOT-07)', () => {
     conteudo: 'dashboard.ver', pauta: 'pauta.ver', referencias: 'pauta.ver', marketing: 'pauta.ver',
     'marketing-ideias': 'pauta.ver', 'marketing-estrategia': 'pauta.ver', 'marketing-performance': 'pauta.ver',
     'marketing-relatorio': 'pauta.ver', instagram: 'instagram.ver', bio: 'bio.ver',
-    'comercial-painel': 'leads.ver', clientes: 'tarefas.ver', 'tarefas-todas': 'tarefas.ver', leads: 'leads.ver', funil: 'dashboard.ver', campanhas: 'campanhas.ver', pixels: 'dashboard.ver',
+    'comercial-painel': 'leads.ver', clientes: 'tarefas.ver', 'tarefas-todas': 'tarefas.ver', leads: 'leads.ver',
+    'comercial-tarefas': 'tarefas.ver', 'marketing-tarefas': 'tarefas.ver', 'financeiro-tarefas': 'tarefas.ver', funil: 'dashboard.ver', campanhas: 'campanhas.ver', pixels: 'dashboard.ver',
     relatorios: 'relatorios.ver', metas: 'dashboard.ver', financeiro: 'financeiro.ver', 'custo-ia': 'dashboard.ver',
     agentes: 'mcp.ver', rotinas: 'automacoes.ver', sessoes: 'mcp.ver', fluxos: 'automacoes.ver',
     ferramentas: 'mcp.ver', conexoes: 'dashboard.ver', regua: 'mcp.ver', cofre: 'cofre.ver', rastro: 'auditoria.ver',
@@ -520,7 +524,9 @@ describe('organização da navegação (ROOT-07)', () => {
     conteudo: 'Temas do ClickUp', pauta: 'Produção de conteúdo', referencias: 'Referências', marketing: 'Marketing',
     'marketing-ideias': 'Banco de ideias', 'marketing-estrategia': 'Estratégia do mês',
     'marketing-performance': 'Performance', 'marketing-relatorio': 'Relatório do mês',
-    instagram: 'Instagram', bio: 'Página de links', 'comercial-painel': 'Painel geral', clientes: 'Clientes', 'tarefas-todas': 'Tarefas', leads: 'Leads', funil: 'Funil de vendas',
+    instagram: 'Instagram', bio: 'Página de links', 'comercial-painel': 'Painel geral', clientes: 'Clientes', 'tarefas-todas': 'Tarefas', leads: 'Leads',
+    // 19/10/2026: a aba Tarefas de cada área (Dia a dia › Tarefas filtrada pela área).
+    'comercial-tarefas': 'Tarefas', 'marketing-tarefas': 'Tarefas', 'financeiro-tarefas': 'Tarefas', funil: 'Funil de vendas',
     campanhas: 'Campanhas', pixels: 'Eventos do site', relatorios: 'Relatórios', metas: 'Metas',
     financeiro: 'Financeiro', 'custo-ia': 'Custos de IA', agentes: 'Agentes de IA',
     rotinas: 'Rotinas automáticas', sessoes: 'Sessões de IA', fluxos: 'Processos',
@@ -543,6 +549,7 @@ describe('organização da navegação (ROOT-07)', () => {
     '/comercial': 'comercial', '/clientes': 'comercial', '/dia-a-dia': 'dia', '/leads': 'comercial', '/funil': 'comercial',
     '/relatorios': 'resultados', '/metas': 'resultados',
     '/financeiro': 'financeiro',
+    '/comercial/tarefas': 'comercial', '/marketing/tarefas': 'conteudo', '/financeiro/tarefas': 'financeiro',
     '/painel/custo-ia': 'automacoes', '/agentes': 'automacoes', '/rotinas': 'automacoes',
     '/sessoes': 'automacoes', '/fluxos': 'automacoes',
     '/ferramentas': 'controle', '/conexoes': 'controle', '/regua': 'controle', '/cofre': 'controle',
@@ -551,9 +558,9 @@ describe('organização da navegação (ROOT-07)', () => {
     '/config': 'conta',
   };
 
-  it('os 43 destinos mantêm chave, rótulo e permissão da base', () => {
-    expect(NAV).toHaveLength(43);
-    expect(Object.keys(PERMISSAO_DA_BASE)).toHaveLength(43);
+  it('os 46 destinos mantêm chave, rótulo e permissão da base', () => {
+    expect(NAV).toHaveLength(46);
+    expect(Object.keys(PERMISSAO_DA_BASE)).toHaveLength(46);
     for (const n of NAV) {
       expect(n.permission, `${n.key}: permissão mudou`).toBe(PERMISSAO_DA_BASE[n.key]);
       expect(n.label, `${n.key}: rótulo fora da tabela da ROOT-08`).toBe(ROTULOS_DA_ROOT_08[n.key] ?? ROTULO_DA_BASE[n.key]);
@@ -588,7 +595,7 @@ describe('organização da navegação (ROOT-07)', () => {
     expect(SECOES.find((s) => s.key === 'trabalho')?.hint).toBe('tarefas, quadro, ideias e implantação');
   });
 
-  it('cada destino cai na seção da matriz, e a matriz cobre exatamente os 43 href', () => {
+  it('cada destino cai na seção da matriz, e a matriz cobre exatamente os 46 href', () => {
     expect(new Set(Object.keys(SECAO_DA_MATRIZ))).toEqual(new Set(NAV.map((n) => n.href)));
     for (const n of NAV) expect(n.secao, `${n.key} (${n.href})`).toBe(SECAO_DA_MATRIZ[n.href]);
   });
