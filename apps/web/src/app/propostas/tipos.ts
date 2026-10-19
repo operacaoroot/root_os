@@ -1,4 +1,6 @@
-// Formatos devolvidos por GET /api/tenants/plataforma/propostas (apps/api/src/platform/propostas.service.ts).
+// Formatos devolvidos por GET /api/tenants/plataforma/propostas (apps/api/src/platform/propostas.service.ts):
+// as propostas antigas do serviço de propostas da ROOT, só na sessão da plataforma.
+// As propostas publicadas pela sala vêm de GET /api/comercial/propostas (tipos em @mktos/shared).
 
 export interface PropostaNaLista {
   cliente: string;
@@ -53,7 +55,9 @@ export interface DetalheDaProposta {
   visitasDaEquipeIgnoradas: number;
 }
 
+/** As etapas do leitor do serviço de propostas. Na sala, a última é o aceite. */
 export const ETAPAS = ['Enviada', 'Abriu', 'Leu o investimento', 'Clicou em pagar'] as const;
+export const ETAPAS_DA_SALA = ['Publicada', 'Abriu', 'Leu o investimento', 'Aceitou'] as const;
 
 export function tempo(ms: number): string {
   const s = Math.round(ms / 1000);

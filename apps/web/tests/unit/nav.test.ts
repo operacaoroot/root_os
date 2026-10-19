@@ -1,3 +1,5 @@
+import { existsSync } from 'node:fs';
+import { join } from 'node:path';
 import { describe, it, expect } from 'vitest';
 import {
   NAV,
@@ -191,54 +193,104 @@ describe('não se perdeu funcionalidade', () => {
 });
 
 /*
- * O COCKPIT DO LEAD (módulo comercial, 13/10/2026): os destinos novos da seção
- * comercial, governados pelo módulo `leads`. Cada lane da passagem acrescenta
- * o seu aqui, e as contagens abaixo somam esta lista aos 39 da base.
+ * O MENU FINAL (versão final, 19/10/2026): nossa + Pedro + Lucas, item a item e na
+ * ordem. É a tabela de `homolog/final/enxugamento.md` §2 em forma de teste: mexer
+ * no NAV sem mexer aqui reprova, e o motivo tem de ir junto.
+ *
+ * Colunas: chave, rótulo, rota, permissão, seção, módulo, pai, oculto.
  */
-// Na ORDEM do menu (rodada do trabalho T6, 19/10/2026): cinco itens soltos e a
-// fila de decisões oculta no fim, ainda dona de `/comercial`.
-const COCKPIT: Record<string, { href: string; permission: string; label: string; oculto?: true }> = {
-  'comercial-funil': { href: '/comercial/funil', permission: 'leads.ver', label: 'Funil vivo' },
-  'comercial-contratos': { href: '/comercial/contratos', permission: 'leads.ver', label: 'Contratos vivos' },
-  'comercial-simulador': { href: '/comercial/simulador', permission: 'leads.ver', label: 'Simulador de WhatsApp' },
-  'comercial-torre': { href: '/comercial/torre', permission: 'leads.ver', label: 'Torre das automações' },
-  'comercial-relatorio': { href: '/comercial/relatorio', permission: 'leads.ver', label: 'Relatório da semana' },
-  'comercial-decisoes': { href: '/comercial', permission: 'leads.ver', label: 'Decisões do comercial', oculto: true },
-};
-const N_COCKPIT = Object.keys(COCKPIT).length;
-const HREFS_DO_COCKPIT = Object.values(COCKPIT).map((c) => c.href);
+type LinhaDoMenu = [string, string, string, string, string, string | null, string | null, boolean];
+const MENU_FINAL: LinhaDoMenu[] = [
+  // Dia a dia: Visão geral (o dash do Lucas, entrada) · Pendências · Aprovações · Agenda · Painel geral da empresa.
+  ['tarefas-todas', 'Visão geral', '/dia-a-dia', 'tarefas.ver', 'dia', 'trabalho', null, false],
+  ['caixa', 'Pendências', '/caixa', 'dashboard.ver', 'dia', null, null, false],
+  ['atendimento', 'Aprovações', '/atendimento', 'aprovacoes.ver', 'dia', null, null, false],
+  ['agenda', 'Agenda', '/agenda', 'dashboard.ver', 'dia', null, null, false],
+  ['console', 'Painel geral da empresa', '/painel', 'dashboard.ver', 'dia', null, null, false],
+  // Contexto (desceu para depois do Motor de IA nas SECOES; no NAV a posição não pesa).
+  ['contexto', 'Conhecimento da empresa', '/contexto', 'obsidian.ver', 'empresa', null, null, false],
+  ['marca', 'Marca e pilares', '/contexto/marca', 'pauta.ver', 'empresa', 'pauta', 'contexto', false],
+  // Trabalho: a base nossa.
+  ['tarefas', 'Lista de tarefas', '/tarefas', 'tarefas.ver', 'trabalho', 'trabalho', null, true],
+  ['trabalho', 'Tarefas', '/trabalho', 'tarefas.ver', 'trabalho', 'trabalho', null, false],
+  ['implantacao', 'Implantação de clientes', '/trabalho/implantacao', 'tarefas.ver', 'trabalho', 'trabalho', 'trabalho', false],
+  ['onboarding', 'Bancada de onboarding', '/onboarding', 'tarefas.ver', 'trabalho', 'trabalho', 'trabalho', true],
+  ['trabalho-atas', 'Atas', '/trabalho/atas', 'tarefas.ver', 'trabalho', 'trabalho', 'trabalho', false],
+  ['conteudo', 'Temas do ClickUp', '/conteudo', 'dashboard.ver', 'trabalho', 'conteudo', null, true],
+  // Motor de Marketing: a forma da produção (Banco de ideias e Estratégia moram aqui, visíveis).
+  ['marketing-ideias', 'Banco de ideias', '/marketing/ideias', 'pauta.ver', 'conteudo', 'pauta', null, false],
+  ['marketing-estrategia', 'Estratégia do mês', '/marketing/estrategia', 'pauta.ver', 'conteudo', 'pauta', null, false],
+  ['pauta', 'Produção de conteúdo', '/pauta', 'pauta.ver', 'conteudo', 'pauta', null, false],
+  ['referencias', 'Referências', '/referencias', 'pauta.ver', 'conteudo', 'pauta', 'pauta', false],
+  ['marketing', 'Marketing', '/marketing', 'pauta.ver', 'conteudo', 'pauta', null, false],
+  ['marketing-performance', 'Performance', '/marketing/performance', 'pauta.ver', 'conteudo', 'pauta', 'marketing', false],
+  ['marketing-relatorio', 'Relatório do mês', '/marketing/relatorio', 'pauta.ver', 'conteudo', 'pauta', 'marketing', false],
+  ['instagram', 'Instagram', '/instagram', 'instagram.ver', 'conteudo', 'instagram', null, false],
+  ['bio', 'Página de links', '/bio', 'bio.ver', 'conteudo', 'bio', null, false],
+  ['campanhas', 'Campanhas', '/campanhas', 'campanhas.ver', 'conteudo', 'campanhas', null, false],
+  ['pixels', 'Eventos do site', '/pixels', 'dashboard.ver', 'conteudo', 'pixels', null, false],
+  ['marketing-tarefas', 'Tarefas', '/marketing/tarefas', 'tarefas.ver', 'conteudo', 'trabalho', null, false],
+  // Motor Comercial: Painel geral · Funil vivo · Propostas · Lista de leads · Contratos vivos · Simulador · Torre · Relatório.
+  ['comercial-painel', 'Painel geral', '/comercial', 'leads.ver', 'comercial', 'leads', null, false],
+  ['comercial-funil', 'Funil vivo', '/comercial/funil', 'leads.ver', 'comercial', 'leads', null, false],
+  ['propostas', 'Propostas', '/propostas', 'leads.ver', 'comercial', 'leads', null, false],
+  ['leads', 'Lista de leads', '/leads', 'leads.ver', 'comercial', 'leads', null, false],
+  ['comercial-contratos', 'Contratos vivos', '/comercial/contratos', 'leads.ver', 'comercial', 'leads', null, false],
+  ['comercial-simulador', 'Simulador de WhatsApp', '/comercial/simulador', 'leads.ver', 'comercial', 'leads', null, false],
+  ['comercial-torre', 'Torre das automações', '/comercial/torre', 'leads.ver', 'comercial', 'leads', null, false],
+  ['comercial-relatorio', 'Relatório da semana', '/comercial/relatorio', 'leads.ver', 'comercial', 'leads', null, false],
+  // Saem do Comercial, ocultos e vivos: o funil antigo, Clientes, Tarefas e a fila antiga de decisões.
+  ['funil', 'Funil de vendas', '/funil', 'dashboard.ver', 'comercial', 'leads', 'leads', true],
+  ['clientes', 'Clientes', '/clientes', 'tarefas.ver', 'comercial', 'trabalho', null, true],
+  ['comercial-tarefas', 'Tarefas', '/comercial/tarefas', 'tarefas.ver', 'comercial', 'trabalho', null, true],
+  ['comercial-decisoes', 'Decisões do comercial', '/comercial/decisoes', 'leads.ver', 'comercial', 'leads', null, true],
+  // Motor Financeiro, Motor de IA, Resultados, Configurações e Registros: a forma da produção.
+  ['financeiro', 'Financeiro', '/financeiro', 'financeiro.ver', 'financeiro', 'financeiro', null, false],
+  ['financeiro-tarefas', 'Tarefas', '/financeiro/tarefas', 'tarefas.ver', 'financeiro', 'trabalho', null, false],
+  ['agentes', 'Agentes de IA', '/agentes', 'mcp.ver', 'automacoes', null, null, false],
+  ['rotinas', 'Rotinas automáticas', '/rotinas', 'automacoes.ver', 'automacoes', null, null, false],
+  ['sessoes', 'Sessões de IA', '/sessoes', 'mcp.ver', 'automacoes', null, null, false],
+  ['fluxos', 'Processos', '/fluxos', 'automacoes.ver', 'automacoes', null, null, false],
+  ['custo-ia', 'Custos de IA', '/painel/custo-ia', 'dashboard.ver', 'automacoes', null, null, false],
+  ['relatorios', 'Relatórios', '/relatorios', 'relatorios.ver', 'resultados', 'relatorios', null, false],
+  ['metas', 'Metas', '/metas', 'dashboard.ver', 'resultados', 'metas', null, false],
+  ['organograma', 'Equipe', '/organograma', 'dashboard.ver', 'controle', null, null, false],
+  ['ferramentas', 'Ferramentas disponíveis', '/ferramentas', 'mcp.ver', 'controle', null, null, false],
+  ['conexoes', 'Integrações', '/conexoes', 'dashboard.ver', 'controle', null, null, false],
+  ['regua', 'Regras e permissões', '/regua', 'mcp.ver', 'controle', null, null, false],
+  ['cofre', 'Cofre', '/cofre', 'cofre.ver', 'controle', null, null, false],
+  ['assinatura', 'Plano e assinatura', '/assinatura', 'dashboard.ver', 'controle', null, null, true],
+  ['rastro', 'Registro de ações', '/rastro', 'auditoria.ver', 'registros', null, null, false],
+  ['linha-do-tempo', 'Atividade', '/linha-do-tempo', 'auditoria.ver', 'registros', null, 'rastro', false],
+  ['config', 'Configurações da conta', '/config', 'dashboard.ver', 'conta', null, null, false],
+];
 
-/*
- * A RODADA DO PAINEL (18/10/2026): os destinos NOVOS que ela acrescenta, fora do
- * comercial. Somam às contagens como os do cockpit somaram. P3: o banco de atas,
- * pendurado no Trabalho, governado pelo módulo `trabalho`.
- */
-const DA_RODADA_PAINEL: Record<string, { href: string; permission: string; label: string; secao: string; modulo: string; pai: string }> = {
-  'trabalho-atas': { href: '/trabalho/atas', permission: 'tarefas.ver', label: 'Atas', secao: 'trabalho', modulo: 'trabalho', pai: 'trabalho' },
-  // Rodada do trabalho T1 (19/10/2026): a implantação numa tela só, o kanban da lista Onboarding de cliente.
-  implantacao: { href: '/trabalho/implantacao', permission: 'tarefas.ver', label: 'Implantação de clientes', secao: 'trabalho', modulo: 'trabalho', pai: 'trabalho' },
+/** O que o enxugamento ocultou, e para onde a função foi (ROTAS_ABSORVIDAS). */
+const OCULTOS_E_DESTINO: Record<string, string | null> = {
+  tarefas: '/trabalho',
+  onboarding: '/trabalho/implantacao',
+  conteudo: '/trabalho',
+  funil: '/comercial/funil',
+  clientes: '/trabalho/implantacao',
+  'comercial-tarefas': '/trabalho',
+  'comercial-decisoes': '/caixa',
+  // Sai da barra e da busca por decisão de marca; não tem destino, a rota segue com dono.
+  assinatura: null,
 };
-const N_DA_RODADA = Object.keys(DA_RODADA_PAINEL).length;
-const HREFS_DA_RODADA = Object.values(DA_RODADA_PAINEL).map((c) => c.href);
+
+const RAIZ_DO_WEB = join(__dirname, '..', '..');
+const paginaExiste = (href: string) => existsSync(join(RAIZ_DO_WEB, 'src', 'app', ...href.split('/').filter(Boolean), 'page.tsx'));
 
 describe('NAV — estrutura', () => {
-  it('preserva as 33 rotas e acrescenta somente os seis destinos da frente MK', () => {
-    const hrefsEsperados = new Set([
-      '/caixa', '/atendimento', '/agenda', '/painel',
-      '/contexto', '/organograma',
-      '/tarefas', '/trabalho', '/onboarding',
-      '/conteudo', '/pauta', '/referencias', '/instagram', '/bio',
-      '/leads', '/funil', '/campanhas', '/pixels',
-      '/relatorios', '/metas', '/financeiro', '/painel/custo-ia',
-      '/agentes', '/rotinas', '/sessoes', '/fluxos',
-      '/ferramentas', '/conexoes', '/regua', '/rastro',
-      '/linha-do-tempo', '/assinatura', '/config',
-    ]);
-    expect(hrefsEsperados.size).toBe(33);
-    const rotasMK = ['/contexto/marca', '/marketing', '/marketing/ideias',
-      '/marketing/estrategia', '/marketing/performance', '/marketing/relatorio'];
-    expect(NAV).toHaveLength(39 + N_COCKPIT + N_DA_RODADA);
-    expect(new Set(NAV.map((n) => n.href))).toEqual(new Set([...hrefsEsperados, ...rotasMK, ...HREFS_DO_COCKPIT, ...HREFS_DA_RODADA]));
+  it('o menu final, item a item e na ordem (enxugamento.md §2)', () => {
+    expect(NAV.map((n) => [n.key, n.label, n.href, n.permission, n.secao, n.modulo ?? null, n.pai ?? null, !!n.oculto])).toEqual(MENU_FINAL);
+  });
+
+  it('toda rota do NAV tem página, visível ou oculta; a que não tem é parcial e cai na página de preparação', () => {
+    const semPagina = NAV.filter((n) => !paginaExiste(n.href));
+    expect(semPagina.map((n) => n.key).sort()).toEqual(['ferramentas', 'fluxos']);
+    for (const n of semPagina) expect(n.estado, n.key).toBe('parcial');
+    expect(existsSync(join(RAIZ_DO_WEB, 'src', 'app', '[...slug]', 'page.tsx'))).toBe(true);
   });
 
   it('não repete chave nem rota', () => {
@@ -261,22 +313,6 @@ describe('NAV — estrutura', () => {
     for (const n of NAV.filter((i) => i.estado === 'parcial')) {
       expect(n.parcial?.trim(), `${n.key} é parcial e não explica por quê`).toBeTruthy();
     }
-  });
-
-  it('agrupamento visual não altera a declaração individual dos módulos', () => {
-    const modulosEsperados = new Map([
-      ['tarefas', 'trabalho'], ['trabalho', 'trabalho'], ['onboarding', 'trabalho'],
-      ['conteudo', 'conteudo'], ['pauta', 'pauta'], ['referencias', 'pauta'],
-      ['instagram', 'instagram'], ['bio', 'bio'], ['comercial-painel', 'leads'], ['clientes', 'trabalho'], ['tarefas-todas', 'trabalho'], ['leads', 'leads'],
-      ['comercial-tarefas', 'trabalho'], ['marketing-tarefas', 'trabalho'], ['financeiro-tarefas', 'trabalho'],
-      ['funil', 'leads'], ['campanhas', 'campanhas'], ['pixels', 'pixels'],
-      ['relatorios', 'relatorios'], ['metas', 'metas'], ['financeiro', 'financeiro'],
-      ['marca', 'pauta'], ['marketing', 'pauta'], ['marketing-ideias', 'pauta'],
-      ['marketing-estrategia', 'pauta'], ['marketing-performance', 'pauta'], ['marketing-relatorio', 'pauta'],
-      ...Object.keys(COCKPIT).map((k) => [k, 'leads'] as [string, string]),
-      ...Object.entries(DA_RODADA_PAINEL).map(([k, v]) => [k, v.modulo] as [string, string]),
-    ]);
-    for (const n of NAV) expect(n.modulo).toBe(modulosEsperados.get(n.key));
   });
 
   it('as rotas de detalhe herdam a permissão do módulo pai', () => {
@@ -310,10 +346,9 @@ describe('navPorSecao', () => {
 
   it('destinos de apoio vêm depois dos grupos principais', () => {
     const tipos = navPorSecao(todas).map((g) => g.secao.tipo);
-    // 19/10/2026: o Trabalho foi absorvido pelo Dia a dia e pelo Marketing; a seção
-    // segue declarada (rotas vivas fora do menu), mas não tem item visível.
-    expect(tipos.slice(0, 7)).toEqual(Array(7).fill('principal'));
-    expect(tipos.slice(7)).toEqual(['apoio', 'apoio', 'apoio']);
+    // Versão final: o Trabalho voltou a ter itens visíveis (a nossa organização).
+    expect(tipos.slice(0, 8)).toEqual(Array(8).fill('principal'));
+    expect(tipos.slice(8)).toEqual(['apoio', 'apoio', 'apoio']);
   });
 
   it('sem permissão nenhuma não devolve seção nenhuma', () => {
@@ -324,9 +359,10 @@ describe('navPorSecao', () => {
     const grupos = navPorSecao(new Set(['leads.ver']));
     expect(grupos).toHaveLength(1);
     expect(grupos[0].secao.key).toBe('comercial');
-    // `leads` está oculto desde 18/10/2026: o cockpit absorve o MVP.
-    // `comercial-decisoes` também, desde 19/10/2026: as decisões moram em Pendências.
-    expect(grupos[0].itens.map((i) => i.key)).toEqual(Object.keys(COCKPIT).filter((k) => COCKPIT[k].permission === 'leads.ver' && !COCKPIT[k].oculto));
+    expect(grupos[0].itens.map((i) => i.key)).toEqual([
+      'comercial-painel', 'comercial-funil', 'propostas', 'leads',
+      'comercial-contratos', 'comercial-simulador', 'comercial-torre', 'comercial-relatorio',
+    ]);
   });
 
   it('módulo desligado sai do menu; a espinha nunca sai', () => {
@@ -334,8 +370,10 @@ describe('navPorSecao', () => {
     const chaves = grupos.flatMap((g) => g.itens.map((i) => i.key));
     expect(chaves).toContain('financeiro');
     expect(chaves).toContain('console'); // espinha
+    expect(chaves).toContain('caixa'); // espinha
     expect(chaves).toContain('regua'); // espinha
     expect(chaves).not.toContain('leads');
+    expect(chaves).not.toContain('tarefas-todas');
     expect(chaves).not.toContain('pauta');
   });
 
@@ -405,8 +443,7 @@ describe('navEmArvore', () => {
    * O CASO QUE CUSTA ACESSO SE FOR ESQUECIDO, e que é real: `marca` pede
    * `pauta.ver` e o pai dele, `contexto`, pede `obsidian.ver`. Quem opera sem
    * `obsidian.ver` TEM a Marca — se o filho caísse com o pai, a tela sumiria do
-   * menu sem nada acusar. (Até 18/10/2026 o exemplo era `funil` sob `leads`;
-   * os dois saíram do menu, ocultos, na rodada do painel.)
+   * menu sem nada acusar.
    */
   it('filho cujo pai foi filtrado sobe para o primeiro nível, e não desaparece', () => {
     const grupos = navEmArvore(new Set(['pauta.ver']));
@@ -418,7 +455,7 @@ describe('navEmArvore', () => {
   it('módulo desligado tira pai e filho juntos', () => {
     const chaves = planos(todas, ['financeiro']).map((i) => i.key);
     expect(chaves).not.toContain('trabalho');
-    expect(chaves).not.toContain('tarefas');
+    expect(chaves).not.toContain('implantacao');
     expect(chaves).toContain('financeiro');
   });
 
@@ -427,7 +464,7 @@ describe('navEmArvore', () => {
     const pauta = conteudo.itens.find((no) => no.item.key === 'pauta')!;
     expect(pauta.filhos.map((f) => f.key)).toEqual(['referencias']);
     expect(conteudo.itens.map((no) => no.item.key)).toEqual(
-      NAV.filter((n) => n.secao === 'conteudo' && !n.pai).map((n) => n.key),
+      NAV.filter((n) => n.secao === 'conteudo' && !n.pai && !n.oculto).map((n) => n.key),
     );
   });
 
@@ -467,7 +504,7 @@ describe('o bloco Marketing (MK7)', () => {
     expect(m!.pai, 'o bloco é raiz, não filho da Pauta').toBeUndefined();
   });
 
-  it('Performance e Relatório do mês penduram no bloco; Ideias e Estratégia moram no Marketing', () => {
+  it('Performance e Relatório do mês penduram no bloco; Banco de ideias e Estratégia ficam visíveis no Marketing', () => {
     for (const k of ['marketing-performance', 'marketing-relatorio']) {
       const n = item(k);
       expect(n, `${k} sumiu do menu`).toBeDefined();
@@ -478,11 +515,13 @@ describe('o bloco Marketing (MK7)', () => {
     for (const k of ['marketing-ideias', 'marketing-estrategia']) {
       const n = item(k);
       expect(n, `${k} sumiu do menu`).toBeDefined();
-      // 19/10/2026: o Trabalho foi absorvido; ideias e estratégia são de conteúdo.
+      // A forma da produção (fora do foco): moram no Marketing e aparecem no menu.
       expect(n!.secao, `${k}: mora no Marketing`).toBe('conteudo');
+      expect(n!.oculto, `${k}: a produção os mostra no Marketing`).toBeFalsy();
       expect(n!.pai, `${k}: o pai estaria em outra seção`).toBeUndefined();
       expect(n!.permission).toBe('pauta.ver');
       expect(n!.modulo).toBe('pauta');
+      expect(ROTAS_ABSORVIDAS.some((r) => r.href === n!.href), `${k}: item visível não é rota absorvida`).toBe(false);
     }
   });
 
@@ -513,10 +552,9 @@ describe('o bloco Marketing (MK7)', () => {
       'marketing-performance',
       'marketing-relatorio',
     ]);
-    // Ideias e Estratégia saíram do menu em 18/10/2026 (ocultas, telas vivas).
+    expect(conteudo!.itens.map((i) => i.item.key)).toEqual(expect.arrayContaining(['marketing-ideias', 'marketing-estrategia']));
     const trabalho = comModulo.find((g) => g.secao.key === 'trabalho');
     expect(trabalho?.itens.map((i) => i.item.key) ?? []).not.toContain('marketing-ideias');
-    expect(trabalho?.itens.map((i) => i.item.key) ?? []).not.toContain('marketing-estrategia');
 
     // Sem o módulo, a seção inteira some (nenhum item dela sobra) — o que
     // importa é que o bloco não aparece por nenhum caminho.
@@ -528,15 +566,12 @@ describe('o bloco Marketing (MK7)', () => {
   });
 });
 
-
 /*
- * A ORGANIZAÇÃO DA ROOT-07 (C-16): agrupamento, ordem, seção, hub e marca de
- * oculto. Nenhuma rota, permissão, módulo ou rótulo de item mudou — as tabelas
- * abaixo são a prova, copiadas da base 43b034d e da matriz-nav-empresa.json
- * (SHA256 626bf1a4…819e).
+ * A ORGANIZAÇÃO DA ROOT-07 (C-16) e o enxugamento da versão final: agrupamento,
+ * ordem, seção, hub e marca de oculto.
  */
-describe('organização da navegação (ROOT-07)', () => {
-  /** Permissão de cada item na base. Fixa: reorganizar não toca o acesso. */
+describe('organização da navegação (ROOT-07 e versão final)', () => {
+  /** Permissão de cada item que já existia na base. Fixa: reorganizar não toca o acesso. */
   const PERMISSAO_DA_BASE: Record<string, string> = {
     caixa: 'dashboard.ver', atendimento: 'aprovacoes.ver', agenda: 'dashboard.ver', console: 'dashboard.ver',
     contexto: 'obsidian.ver', marca: 'pauta.ver', organograma: 'dashboard.ver',
@@ -552,109 +587,39 @@ describe('organização da navegação (ROOT-07)', () => {
     'linha-do-tempo': 'auditoria.ver', assinatura: 'dashboard.ver', config: 'dashboard.ver',
   };
 
-  /** Rótulo de cada item na base (e5 765f00). A ROOT-08 muda um só: `console`, abaixo. */
-  const ROTULO_DA_BASE: Record<string, string> = {
-    caixa: 'Pendências', atendimento: 'Aprovações', agenda: 'Agenda', console: 'Visão geral',
-    contexto: 'Conhecimento da empresa', marca: 'Marca e pilares', organograma: 'Equipe',
-    // 19/10/2026: a implantação de clientes virou a aba Operação do Dia a dia.
-    tarefas: 'Lista de tarefas', trabalho: 'Quadro interno', onboarding: 'Operação',
-    conteudo: 'Temas do ClickUp', pauta: 'Produção de conteúdo', referencias: 'Referências', marketing: 'Marketing',
-    'marketing-ideias': 'Banco de ideias', 'marketing-estrategia': 'Estratégia do mês',
-    'marketing-performance': 'Performance', 'marketing-relatorio': 'Relatório do mês',
-    instagram: 'Instagram', bio: 'Página de links', 'comercial-painel': 'Painel geral', clientes: 'Clientes', 'tarefas-todas': 'Tarefas', leads: 'Leads',
-    // 19/10/2026: a aba Tarefas de cada área (Dia a dia › Tarefas filtrada pela área).
-    'comercial-tarefas': 'Tarefas', 'marketing-tarefas': 'Tarefas', 'financeiro-tarefas': 'Tarefas', funil: 'Funil de vendas',
-    campanhas: 'Campanhas', pixels: 'Eventos do site', relatorios: 'Relatórios', metas: 'Metas',
-    financeiro: 'Financeiro', 'custo-ia': 'Custos de IA', agentes: 'Agentes de IA',
-    rotinas: 'Rotinas automáticas', sessoes: 'Sessões de IA', fluxos: 'Processos',
-    ferramentas: 'Ferramentas disponíveis', conexoes: 'Integrações', regua: 'Regras e permissões', cofre: 'Cofre',
-    rastro: 'Registro de ações', 'linha-do-tempo': 'Atividade', assinatura: 'Plano e assinatura',
-    config: 'Configurações da conta',
-  };
-
-  /** matriz-nav-empresa.json: href → grupo proposto, traduzido para a chave da seção. */
-  const SECAO_DA_MATRIZ: Record<string, string> = {
-    '/caixa': 'dia', '/atendimento': 'dia', '/agenda': 'dia', '/painel': 'dia',
-    '/contexto': 'empresa', '/contexto/marca': 'empresa',
-    '/organograma': 'controle',
-    // 19/10/2026: o Trabalho foi absorvido. Lista, quadro e temas seguem na seção, ocultos.
-    '/tarefas': 'trabalho', '/trabalho': 'trabalho', '/onboarding': 'dia', '/conteudo': 'trabalho',
-    '/marketing/ideias': 'conteudo', '/marketing/estrategia': 'conteudo',
-    '/pauta': 'conteudo', '/referencias': 'conteudo', '/marketing': 'conteudo',
-    '/marketing/performance': 'conteudo', '/marketing/relatorio': 'conteudo',
-    '/instagram': 'conteudo', '/bio': 'conteudo', '/campanhas': 'conteudo', '/pixels': 'conteudo',
-    '/comercial': 'comercial', '/clientes': 'comercial', '/dia-a-dia': 'dia', '/leads': 'comercial', '/funil': 'comercial',
-    '/relatorios': 'resultados', '/metas': 'resultados',
-    '/financeiro': 'financeiro',
-    '/comercial/tarefas': 'comercial', '/marketing/tarefas': 'conteudo', '/financeiro/tarefas': 'financeiro',
-    '/painel/custo-ia': 'automacoes', '/agentes': 'automacoes', '/rotinas': 'automacoes',
-    '/sessoes': 'automacoes', '/fluxos': 'automacoes',
-    '/ferramentas': 'controle', '/conexoes': 'controle', '/regua': 'controle', '/cofre': 'controle',
-    '/rastro': 'registros', '/linha-do-tempo': 'registros',
-    '/assinatura': 'controle', // "Oculto na navegação interna": a seção é só a casa do dado
-    '/config': 'conta',
-  };
-
-  it('os 39 destinos mantêm chave, rótulo e permissão da base', () => {
-    expect(NAV).toHaveLength(39 + N_COCKPIT + N_DA_RODADA);
-    expect(Object.keys(PERMISSAO_DA_BASE)).toHaveLength(39);
-    for (const n of NAV) {
-      if (COCKPIT[n.key]) {
-        expect(n).toMatchObject({ href: COCKPIT[n.key].href, permission: COCKPIT[n.key].permission, label: COCKPIT[n.key].label, secao: 'comercial', modulo: 'leads' });
-        expect(!!n.oculto, `${n.key}: oculto`).toBe(!!COCKPIT[n.key].oculto);
-        continue;
-      }
-      if (DA_RODADA_PAINEL[n.key]) {
-        expect(n).toMatchObject(DA_RODADA_PAINEL[n.key]);
-        continue;
-      }
-      expect(n.permission, `${n.key}: permissão mudou`).toBe(PERMISSAO_DA_BASE[n.key]);
-      expect(n.label, `${n.key}: rótulo fora da tabela da ROOT-08`).toBe(
-        ROTULOS_DA_RODADA_PAINEL[n.key] ?? ROTULOS_DA_ROOT_08[n.key] ?? ROTULO_DA_BASE[n.key],
-      );
+  it('os destinos da base mantêm chave e permissão', () => {
+    for (const [k, perm] of Object.entries(PERMISSAO_DA_BASE)) {
+      expect(porKey.get(k)?.permission, `${k}: permissão mudou ou item sumiu`).toBe(perm);
     }
   });
 
   /*
-   * ROOT-08: o que mudou de rótulo, e por quê. Doc 38 ("Dia a dia"): "A visão da
-   * empresa continua disponível conforme permissão", ao lado das entradas da
-   * pessoa. O rótulo diz de quem é a visão. Os outros 38 já coincidiam com o doc
-   * 22 §4 e o doc 38; "Lista de tarefas" fica porque /tarefas lê `Task` nativa
-   * (o doc 38 proíbe anunciá-la como ClickUp ou como outra visão do quadro).
+   * Propostas: era tela da ROOT fora do NAV (pedia a sessão da plataforma). Na versão
+   * final é item do Comercial com `leads.ver`, a mesma permissão da API das propostas
+   * da sala; as antigas do serviço de propostas continuam só na sessão da plataforma.
    */
-  const ROTULOS_DA_ROOT_08: Record<string, string> = { console: 'Visão geral da empresa' };
+  it('Propostas é do Comercial, com leads.ver', () => {
+    expect(porKey.get('propostas')).toMatchObject({ href: '/propostas', permission: 'leads.ver', secao: 'comercial', modulo: 'leads' });
+    expect(moduloDaRotaDoWeb('/propostas')).toBe('leads');
+  });
 
-  /*
-   * Rodada do painel P2 (18/10/2026): quadro e lista viraram uma tela só, com a
-   * troca Quadro · Lista sobre a mesma fonte (WorkTask). "Quadro interno" passou a
-   * dizer só metade do que a tela faz; o rótulo virou "Tarefas". A chave e a rota
-   * não mudam. "Lista de tarefas" (/tarefas) segue com o rótulo, oculta.
-   */
-  const ROTULOS_DA_RODADA_PAINEL: Record<string, string> = { trabalho: 'Tarefas', onboarding: 'Bancada de onboarding' };
-
-  it('rótulos conforme a matriz da ROOT-08: um item muda, o resto fica, nada promete função ausente', () => {
-    expect(Object.keys(ROTULOS_DA_ROOT_08)).toEqual(['console']);
-    expect(NAV.find((n) => n.key === 'console')?.label).toBe('Visão geral da empresa');
+  it('rótulos: nada promete função ausente, e item não repete o nome da seção', () => {
+    expect(porKey.get('console')?.label).toBe('Painel geral da empresa');
+    expect(porKey.get('tarefas-todas')?.label).toBe('Visão geral');
+    expect(porKey.get('leads')?.label).toBe('Lista de leads');
     // "Minhas pendências/aprovações/agenda" só entram com o filtro pessoal pronto (doc 38).
     for (const n of NAV) expect(n.label, n.key).not.toMatch(/^minh[ao]s?\b/i);
     // nenhum rótulo anuncia a fonte ClickUp na tela que lê tarefa nativa
-    expect(NAV.find((n) => n.key === 'tarefas')?.label).toBe('Lista de tarefas');
+    expect(porKey.get('tarefas')?.label).toBe('Lista de tarefas');
     // as telas ainda não entregues dizem isso no próprio item
-    expect(NAV.find((n) => n.key === 'fluxos')).toMatchObject({ label: 'Processos', estado: 'parcial' });
-    // rótulo de item não repete o de uma seção (a barra leria duas vezes a mesma palavra)
+    expect(porKey.get('fluxos')).toMatchObject({ label: 'Processos', estado: 'parcial' });
     const rotulosDeSecao = new Set<string>(SECOES.map((s) => s.label));
     const repetidos = NAV.filter((n) => rotulosDeSecao.has(n.label)).map((n) => n.key);
     expect(repetidos).toEqual(['config']); // "Configurações da conta": a seção tem um item só, o mesmo destino
   });
 
-  it('o texto de apoio de Trabalho não cita as ideias, que saíram do menu em 18/10/2026', () => {
+  it('o texto de apoio de Trabalho não cita as ideias, que moram no Marketing', () => {
     expect(SECOES.find((s) => s.key === 'trabalho')?.hint).toBe('tarefas, quadro e implantação');
-  });
-
-  it('cada destino cai na seção da matriz, e a matriz cobre exatamente os 39 href', () => {
-    expect(new Set([...Object.keys(SECAO_DA_MATRIZ), ...HREFS_DO_COCKPIT, ...HREFS_DA_RODADA])).toEqual(new Set(NAV.map((n) => n.href)));
-    const secaoDaRodada = (href: string) => Object.values(DA_RODADA_PAINEL).find((c) => c.href === href)?.secao;
-    for (const n of NAV) expect(n.secao, `${n.key} (${n.href})`).toBe(SECAO_DA_MATRIZ[n.href] ?? (HREFS_DO_COCKPIT.includes(n.href) ? 'comercial' : secaoDaRodada(n.href)));
   });
 
   // Ordem de 18/10/2026 (rodada do painel P0): Contexto desce para depois do Motor de IA.
@@ -677,65 +642,83 @@ describe('organização da navegação (ROOT-07)', () => {
     expect(SECOES.filter((s) => 'dentroDe' in s)).toHaveLength(1);
   });
 
-  it('filho na seção do pai, ou de primeiro nível', () => {
-    for (const n of NAV.filter((i) => i.pai)) {
-      expect(NAV.find((i) => i.key === n.pai)?.secao, n.key).toBe(n.secao);
-    }
-    // Ideias e Estratégia continuam na seção Trabalho, ocultas (18/10/2026).
-    const trabalho = navEmArvore(new Set(NAV.map((n) => n.permission))).find((g) => g.secao.key === 'trabalho')!;
-    expect(trabalho.itens.map((no) => no.item.key)).not.toContain('marketing-ideias');
-    expect(NAV.find((n) => n.key === 'marketing-ideias')?.secao).toBe('trabalho');
+  it('Dia a dia: Visão geral · Pendências · Aprovações · Agenda · Painel geral da empresa, com Pendências visível', () => {
+    const todas = new Set(NAV.map((n) => n.permission));
+    const dia = navPorSecao(todas).find((g) => g.secao.key === 'dia')!;
+    expect(dia.itens.map((i) => i.label)).toEqual(['Visão geral', 'Pendências', 'Aprovações', 'Agenda', 'Painel geral da empresa']);
+    expect(porKey.get('caixa')?.oculto).toBeFalsy();
+    expect(moduloDaRotaDoWeb('/dia-a-dia')).toBe('trabalho');
   });
 
   /*
-   * Os cortes de 18/10/2026 (rodada do painel P0): cada item sai do menu marcado
-   * como oculto, com a rota em ROTAS_ABSORVIDAS e o mesmo módulo de antes.
+   * O enxugamento: o que eles ocultaram continua oculto, cada um com a rota em
+   * ROTAS_ABSORVIDAS dizendo para onde a função foi, a tela viva e o mesmo módulo.
+   * Nada volta ao menu por causa do merge.
    */
-  it('os cortes de 18/10/2026 saem do menu, ficam no NAV e dizem para onde a função foi', () => {
-    const cortes: Record<string, string> = {
-      conteudo: '/trabalho', 'marketing-ideias': '/trabalho', 'marketing-estrategia': '/trabalho',
-      // 19/10/2026 (rodada do trabalho T6): /comercial deixou de ser a fila; o Funil vivo é a entrada.
-      leads: '/comercial/funil', funil: '/comercial/funil',
-    };
+  it('o que foi ocultado continua oculto, vivo e com destino escrito', () => {
     const todas = new Set(NAV.map((n) => n.permission));
-    const noMenu = navPorSecao(todas).flatMap((g) => g.itens.map((i) => i.key));
-    for (const [k, destino] of Object.entries(cortes)) {
-      const n = NAV.find((i) => i.key === k)!;
+    const noMenu = navEmArvore(todas).flatMap((g) => g.itens.flatMap((no) => [no.item.key, ...no.filhos.map((f) => f.key)]));
+    expect(NAV.filter((n) => n.oculto).map((n) => n.key).sort()).toEqual(Object.keys(OCULTOS_E_DESTINO).sort());
+    for (const [k, destino] of Object.entries(OCULTOS_E_DESTINO)) {
+      const n = porKey.get(k)!;
       expect(n.oculto, k).toBe(true);
       expect(noMenu, k).not.toContain(k);
-      expect(ROTAS_ABSORVIDAS.find((r) => r.href === n.href)?.destino, k).toBe(destino);
-      expect(ROTAS_ABSORVIDAS.find((r) => r.href === n.href)?.porque.trim(), k).toBeTruthy();
+      expect(paginaExiste(n.href), `${k}: a tela segue viva`).toBe(true);
+      if (destino === null) continue;
+      const absorvida = ROTAS_ABSORVIDAS.find((r) => r.href === n.href);
+      expect(absorvida?.destino, k).toBe(destino);
+      expect(absorvida?.porque.trim(), k).toBeTruthy();
     }
   });
 
   /*
-   * Rodada do trabalho T6 (19/10/2026): o Motor Comercial são cinco itens soltos,
-   * nesta ordem, sem pai. A fila de decisões sai do menu oculta, absorvida por
-   * Pendências, e continua dona de `/comercial` (que redireciona para o Funil
-   * vivo): é ela que mantém `/comercial/decisoes` e `/comercial/lead/...` sob o
-   * módulo `leads`.
+   * Versão final (19/10/2026): o Motor Comercial tem oito itens soltos, nesta ordem.
+   * `/comercial` voltou a ser o Painel geral do Lucas (deixou de redirecionar), e a
+   * fila antiga das decisões mora em `/comercial/decisoes`, oculta, absorvida por
+   * Pendências. Clientes e Tarefas saem (duplicados), ocultos e vivos.
    */
-  it('Motor Comercial sem Decisões: cinco itens soltos, decisões absorvidas por Pendências', () => {
+  it('Motor Comercial: Painel geral · Funil vivo · Propostas · Lista de leads · Contratos vivos · Simulador · Torre · Relatório', () => {
     const todas = new Set(NAV.map((n) => n.permission));
     const comercial = navEmArvore(todas).find((g) => g.secao.key === 'comercial')!;
     expect(comercial.itens.map((no) => no.item.label)).toEqual([
-      'Funil vivo', 'Contratos vivos', 'Simulador de WhatsApp', 'Torre das automações', 'Relatório da semana',
+      'Painel geral', 'Funil vivo', 'Propostas', 'Lista de leads', 'Contratos vivos',
+      'Simulador de WhatsApp', 'Torre das automações', 'Relatório da semana',
     ]);
     for (const no of comercial.itens) {
       expect(no.item.pai, no.item.key).toBeUndefined();
       expect(no.filhos, no.item.key).toEqual([]);
     }
-    const decisoes = NAV.find((n) => n.key === 'comercial-decisoes')!;
-    expect(decisoes).toMatchObject({ href: '/comercial', oculto: true, modulo: 'leads', permission: 'leads.ver', secao: 'comercial' });
-    expect(NAV.filter((n) => n.pai === 'comercial-decisoes')).toEqual([]);
-    const absorvida = ROTAS_ABSORVIDAS.find((r) => r.href === '/comercial');
+    expect(porKey.get('comercial-painel')?.href).toBe('/comercial');
+    expect(porKey.get('comercial-painel')?.oculto).toBeFalsy();
+    expect(ROTAS_ABSORVIDAS.some((r) => r.href === '/comercial')).toBe(false);
+    const decisoes = porKey.get('comercial-decisoes')!;
+    expect(decisoes).toMatchObject({ href: '/comercial/decisoes', oculto: true, modulo: 'leads', permission: 'leads.ver', secao: 'comercial' });
+    const absorvida = ROTAS_ABSORVIDAS.find((r) => r.href === '/comercial/decisoes');
     expect(absorvida?.destino).toBe('/caixa');
     expect(absorvida?.porque).toMatch(/Pendências/);
-    expect(absorvida?.porque).toMatch(/segue viva/);
-    expect(moduloDaRotaDoWeb('/comercial')).toBe('leads');
-    expect(moduloDaRotaDoWeb('/comercial/decisoes')).toBe('leads');
-    expect(moduloDaRotaDoWeb('/comercial/lead/abc')).toBe('leads');
+    for (const rota of ['/comercial', '/comercial/decisoes', '/comercial/lead/abc', '/comercial/ficha/abc', '/propostas', '/leads']) {
+      expect(moduloDaRotaDoWeb(rota), rota).toBe('leads');
+    }
     expect(navPorSecao(todas, ['trabalho']).flatMap((g) => g.itens.map((i) => i.key))).not.toContain('comercial-funil');
+  });
+
+  /*
+   * F2.4 / decisão 3: o WhatsApp continua no Motor Comercial (o simulador ligado ao
+   * lead). Clientes e Tarefas do Comercial não aparecem, mas abrem: as rotas têm
+   * página e dono no NAV.
+   */
+  it('WhatsApp onde está; /clientes e /comercial/tarefas fora do menu, mas abrindo', () => {
+    expect(porKey.get('comercial-simulador')).toMatchObject({ href: '/comercial/simulador', secao: 'comercial' });
+    expect(porKey.get('comercial-simulador')?.oculto).toBeFalsy();
+    const todas = new Set(NAV.map((n) => n.permission));
+    const noMenu = navPorSecao(todas).flatMap((g) => g.itens.map((i) => i.href));
+    for (const href of ['/clientes', '/comercial/tarefas']) {
+      expect(noMenu, href).not.toContain(href);
+      expect(paginaExiste(href), href).toBe(true);
+      expect(NAV.find((n) => n.href === href)?.oculto, href).toBe(true);
+    }
+    expect(moduloDaRotaDoWeb('/clientes')).toBe('trabalho');
+    expect(moduloDaRotaDoWeb('/comercial/tarefas')).toBe('trabalho');
   });
 
   /*
@@ -746,20 +729,18 @@ describe('organização da navegação (ROOT-07)', () => {
    * fica pendurada no Trabalho, mesma seção.
    */
   it('quadro e lista são uma tela só: /tarefas oculta e absorvida, Implantação sob o Trabalho abrindo o kanban', () => {
-    const tarefas = NAV.find((n) => n.key === 'tarefas')!;
+    const tarefas = porKey.get('tarefas')!;
     expect(tarefas).toMatchObject({ href: '/tarefas', oculto: true, modulo: 'trabalho', permission: 'tarefas.ver' });
     const absorvida = ROTAS_ABSORVIDAS.find((r) => r.href === '/tarefas');
     expect(absorvida?.destino).toBe('/trabalho');
     expect(absorvida?.porque).toMatch(/uma tela só/);
-    expect(NAV.find((n) => n.key === 'trabalho')).toMatchObject({ label: 'Tarefas', href: '/trabalho' });
-    // Rodada do trabalho T1 (19/10/2026): a bancada antiga deixa de ser porta, oculta e absorvida pelo kanban.
-    expect(NAV.find((n) => n.key === 'onboarding')).toMatchObject({ pai: 'trabalho', secao: 'trabalho', href: '/onboarding', oculto: true });
+    expect(porKey.get('trabalho')).toMatchObject({ label: 'Tarefas', href: '/trabalho' });
+    expect(porKey.get('onboarding')).toMatchObject({ pai: 'trabalho', secao: 'trabalho', href: '/onboarding', oculto: true });
     expect(ROTAS_ABSORVIDAS.find((r) => r.href === '/onboarding')?.destino).toBe('/trabalho/implantacao');
-    expect(NAV.find((n) => n.key === 'implantacao')).toMatchObject({ pai: 'trabalho', secao: 'trabalho', href: '/trabalho/implantacao', label: 'Implantação de clientes' });
+    expect(porKey.get('implantacao')).toMatchObject({ pai: 'trabalho', secao: 'trabalho', href: '/trabalho/implantacao', label: 'Implantação de clientes' });
     const todas = new Set(NAV.map((n) => n.permission));
     const trabalho = navEmArvore(todas).find((g) => g.secao.key === 'trabalho')!;
     const raiz = trabalho.itens.find((no) => no.item.key === 'trabalho')!;
-    // Rodada do painel P3: as Atas também ficam penduradas no Trabalho, depois da Implantação.
     expect(raiz.filhos.map((f) => f.key)).toEqual(['implantacao', 'trabalho-atas']);
     expect(navPorSecao(todas).flatMap((g) => g.itens.map((i) => i.key))).not.toContain('tarefas');
     expect(moduloDaRotaDoWeb('/tarefas')).toBe('trabalho');
@@ -767,12 +748,10 @@ describe('organização da navegação (ROOT-07)', () => {
 
   /*
    * Rodada do painel P3 (18/10/2026): o banco de atas da operação mora no Trabalho,
-   * pendurado no item Tarefas, com a permissão de ler o quadro. É item vivo, não
-   * oculto, e a rota resolve para o módulo `trabalho` (o gate de módulos da API
-   * confere o mesmo primeiro segmento).
+   * pendurado no item Tarefas, com a permissão de ler o quadro.
    */
   it('as Atas ficam no Trabalho, sob Tarefas, com tarefas.ver e o módulo trabalho', () => {
-    const atas = NAV.find((n) => n.key === 'trabalho-atas')!;
+    const atas = porKey.get('trabalho-atas')!;
     expect(atas).toMatchObject({ label: 'Atas', href: '/trabalho/atas', icon: 'NotebookText', permission: 'tarefas.ver', secao: 'trabalho', modulo: 'trabalho', pai: 'trabalho' });
     expect(atas.oculto).toBeFalsy();
     expect(moduloDaRotaDoWeb('/trabalho/atas')).toBe('trabalho');
@@ -782,11 +761,8 @@ describe('organização da navegação (ROOT-07)', () => {
   });
 
   it('/assinatura sai da barra e da busca por marca, e continua no NAV', () => {
-    const a = NAV.find((n) => n.key === 'assinatura')!;
+    const a = porKey.get('assinatura')!;
     expect(a.oculto).toBe(true);
-    expect(NAV.filter((n) => n.oculto).map((n) => n.key).sort()).toEqual(
-      ['assinatura', 'comercial-decisoes', 'conteudo', 'funil', 'leads', 'marketing-estrategia', 'marketing-ideias', 'onboarding', 'tarefas'],
-    );
     const todas = new Set(NAV.map((n) => n.permission));
     expect(navPorSecao(todas).flatMap((g) => g.itens.map((i) => i.key))).not.toContain('assinatura');
     expect(

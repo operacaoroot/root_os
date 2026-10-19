@@ -11,7 +11,7 @@ const response = (body: unknown, status = 200) => new Response(JSON.stringify(bo
 beforeEach(() => { localStorage.clear(); window.history.replaceState(null, '', '/login'); nav.replace.mockReset(); fetchMock.mockReset(); vi.stubGlobal('fetch', fetchMock); });
 afterEach(() => vi.unstubAllGlobals());
 describe('entrada autenticada', () => {
-  it.each([['obsidian.ver', '/contexto'], ['pauta.ver', '/contexto/marca'], ['', '/painel']])('login com %s abre %s', async (permission, destino) => {
+  it.each([['tarefas.ver', '/dia-a-dia'], ['obsidian.ver', '/contexto'], ['pauta.ver', '/contexto/marca'], ['', '/painel']])('login com %s abre %s', async (permission, destino) => {
     fetchMock.mockImplementation(async (url: string) => url.endsWith('/auth/google/disponivel') ? response({ disponivel: false }) : response({ token: 'token-login-sintetico', user: { ...user, permissions: permission ? [permission] : [] } }));
     render(<AuthProvider><LoginPage /></AuthProvider>); const u = userEvent.setup();
     await u.type(screen.getByLabelText('Senha'), 'senha-sintetica'); await u.click(screen.getByRole('button', { name: 'Entrar' }));

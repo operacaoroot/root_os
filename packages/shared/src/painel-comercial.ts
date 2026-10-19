@@ -1,24 +1,33 @@
 /*
- * PAINEL DO COMERCIAL (homologação, 18/10/2026).
+ * PAINEL GERAL DO COMERCIAL (versão final, 19/10/2026).
  *
- * O CRM da casa é a lista de Trabalho "Gestão de Leads" (etapas Validar →
- * Negócio fechado, campos Canal de aquisição, Vendedor, Valor da proposta e
- * Data de Cadastro do Lead). O painel só LÊ essa lista; mover o cartão no
- * quadro é o que muda os números.
+ * A tela e o desenho são os do Lucas (18/10); os DADOS são os do cockpit: a
+ * tabela `Lead` com a `ComercialFicha` (etapa, valor da proposta, produto,
+ * canal de entrada, dono) e os fatos do fio (`cliente.ativo`, encerramento do
+ * contrato). Nada vem mais da lista "Gestão de Leads" do Trabalho: na versão
+ * final o organizador transforma aqueles cartões em leads do funil.
  *
- * Etapa fechada que se chama "fechado", "ganho", "contrato" ou "negócio
- * fechado" conta como venda; as demais fechadas (Perdido, Desqualificado) contam como
- * perda. Etapas abertas são o que está em negociação.
+ * O painel só LÊ. Quem move a etapa é o Funil vivo e o painel do lead.
+ * Dado que não existe (lead sem canal, sem dono, sem valor) aparece como
+ * ausente, nunca como zero inventado.
  */
-export type ResultadoDaEtapa = 'aberta' | 'ganho' | 'perdido';
+import type { ComercialEtapa } from './comercial.js';
+
+/**
+ * O que a etapa quer dizer para o painel: em negociação (E1 a E8), ganho (E9),
+ * perdido (desqualificado, perdido, enviado a parceiro) ou na geladeira
+ * (pausa com data de volta: não está em negociação e não é perda).
+ */
+export type ResultadoDaEtapa = 'aberta' | 'ganho' | 'perdido' | 'pausa';
 
 export interface PainelComercialEtapa {
-  /** Id da etapa (WorkStatus): o funil move o cartão por ele. */
-  id: string;
+  /** A etapa do cockpit (`ComercialEtapa`). */
+  id: ComercialEtapa;
   nome: string;
   cor: string;
   resultado: ResultadoDaEtapa;
   qtd: number;
+  /** Soma do valor da proposta dos negócios com valor; os sem valor não entram na soma. */
   valor: number;
 }
 
@@ -39,40 +48,39 @@ export interface PainelComercialGrupo {
   valorGanho: number;
 }
 
-/** Um negócio do CRM, com tudo o que o painel filtra: etapa, mês, canal e vendedor. */
+/** Um negócio = um lead do cockpit, com tudo o que o painel filtra. */
 export interface PainelComercialNegocio {
-  /** Id do cartão no Trabalho: a ficha do lead abre por ele. */
+  /** Id do lead: o painel do lead abre em `/comercial/lead/<id>`. */
   id: string;
+  /** A empresa da ficha ou, sem ela, o nome do lead. */
   titulo: string;
-  statusId: string;
+  /** O nome do lead (quem fala), para casar com outras telas. */
+  nome: string;
+  etapaChave: ComercialEtapa;
   etapa: string;
   etapaCor: string;
-  /** comercial, onboarding ou sucesso: um card por lead/cliente, a fase é da etapa. */
-  fase: 'comercial' | 'onboarding' | 'sucesso';
   resultado: ResultadoDaEtapa;
+  /** Valor da proposta (R$). Nulo quando a ficha ainda não tem valor. */
   valor: number | null;
   vendedor: string | null;
   canal: string | null;
   produto: string | null;
-  /** Quem é o contato do lead (campo Contato), para o cartão do funil. */
+  /** O contato do lead (telefone ou e-mail), quando existe. */
   contato: string | null;
-  /** Link público da proposta (campo Link da proposta): liga a aba Propostas ao lead. */
-  linkProposta: string | null;
-  /** Versão do cartão: o PATCH de mover etapa exige. */
   atualizadoEm: string;
-  /** `AAAA-MM` em que o lead entrou (Data de Cadastro do Lead, ou a criação do cartão). */
+  /** `AAAA-MM` em que o lead entrou. */
   mesEntrada: string;
-  /** `AAAA-MM` em que foi para a etapa fechada; nulo enquanto aberto. */
+  /** `AAAA-MM` do fechamento (ganho) ou da saída (perdido); nulo enquanto aberto. */
   mesFechado: string | null;
-  /** `AAAA-MM` de cada contrato do cliente (pode fechar mais de uma vez). */
+  /** `AAAA-MM` de cada fechamento (hoje, um por lead). */
   mesesFechados: string[];
-  /** Dias na etapa atual; nulo quando a data de entrada na etapa não existe. */
+  /** Dias na etapa atual. */
   diasNaEtapa: number | null;
+  /** O cliente está ativo hoje (fechou e o contrato não foi encerrado). */
+  clienteAtivo: boolean;
 }
 
 export interface PainelComercial {
-  /** Nulo quando a empresa ainda não tem a lista do CRM. */
-  lista: { id: string; nome: string } | null;
   ano: number;
   geradoEm: string;
   totais: {
@@ -81,18 +89,74 @@ export interface PainelComercial {
     ganhosNoAno: number;
     valorGanhoNoAno: number;
     perdidosNoAno: number;
+    /** Na geladeira agora. */
+    naGeladeira: number;
     /** ganhos / (ganhos + perdidos) no ano, 0–100; nulo sem nenhum fechamento. */
     conversao: number | null;
+    /** Média do valor dos fechamentos do ano que têm valor; nulo sem nenhum. */
     ticketMedio: number | null;
+    /** Fechamentos do ano sem valor na ficha (ficam fora do ticket médio). */
+    ganhosSemValor: number;
+    /** Clientes que fecharam e não tiveram o contrato encerrado. */
+    clientesAtivos: number;
+    /** Contratos vivos: `cliente.ativo` sem encerramento (a mesma conta de Contratos vivos). */
+    contratosVivos: number;
   };
   etapas: PainelComercialEtapa[];
   fechadosPorMes: PainelComercialMes[];
   entradasPorMes: PainelComercialMes[];
   canais: PainelComercialGrupo[];
   vendedores: PainelComercialGrupo[];
-  /** Todos os negócios da lista, do maior valor para o menor. */
+  /** Todos os negócios, do maior valor para o menor. */
   negocios: PainelComercialNegocio[];
+  /** Quando a leitura bate no teto de leads, quantos ficaram de fora. */
+  foraDoTeto: number;
 }
 
 /** O rótulo usado quando o lead não tem canal ou vendedor preenchido. */
 export const SEM_INFORMACAO = 'Sem informação';
+
+/** O canal de entrada da ficha (C07) como a tela mostra. */
+export const ROTULO_DO_CANAL_DE_ENTRADA: Record<string, string> = {
+  conteudo: 'Conteúdo',
+  erp_parceiro: 'ERP parceiro',
+  indicacao: 'Indicação',
+  evento: 'Evento',
+  comunidade: 'Comunidade',
+  site: 'Site',
+};
+
+/** O resultado de cada etapa do cockpit no painel. */
+export function resultadoDaEtapaDoCockpit(etapa: ComercialEtapa): ResultadoDaEtapa {
+  if (etapa === 'fechado') return 'ganho';
+  if (etapa === 'geladeira') return 'pausa';
+  if (etapa === 'desqualificado' || etapa === 'perdido' || etapa === 'parceiro') return 'perdido';
+  return 'aberta';
+}
+
+/*
+ * A LISTA DE LEADS (versão final, decisão 2): a tabela `Lead` do cockpit, com a
+ * etapa, o canal e o dono da ficha. É a base para a lista de transmissão e de
+ * e-mail; daqui nada é enviado, a tela só copia e exporta o recorte.
+ */
+export interface LinhaDaListaDeLeads {
+  id: string;
+  /** O nome do lead (quem fala). */
+  contato: string;
+  empresa: string | null;
+  telefone: string | null;
+  email: string | null;
+  etapaChave: ComercialEtapa;
+  etapa: string;
+  canal: string | null;
+  dono: string | null;
+  entrouEm: string;
+  /** O último fato do fio do lead ou a última mudança da ficha. */
+  ultimaAtividade: string;
+}
+
+export interface ListaDeLeads {
+  leads: LinhaDaListaDeLeads[];
+  /** Quantos leads ficaram fora do teto de leitura. */
+  foraDoTeto: number;
+}

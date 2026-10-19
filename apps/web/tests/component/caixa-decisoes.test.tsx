@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
-import type { CaixaResposta, FilaDeDecisoes } from '@mktos/shared';
+import { NAV, ROTAS_ABSORVIDAS, type CaixaResposta, type FilaDeDecisoes, type PainelComercial } from '@mktos/shared';
 
 /*
  * ==========================================================================
@@ -14,7 +14,9 @@ import type { CaixaResposta, FilaDeDecisoes } from '@mktos/shared';
  *     (`POST /comercial/decisoes/:id/responder`) com o mesmo corpo, provado
  *     clicando a mesma opção nas duas telas;
  *  4. AS SETAS andam pelas três abas;
- *  5. `/comercial` redireciona para o Funil vivo preservando a query.
+ *  5. (versão final, 19/10/2026) a tela antiga das decisões mora em
+ *     `/comercial/decisoes`, oculta e absorvida por Pendências, e `/comercial`
+ *     deixou de redirecionar: é o Painel geral do Comercial.
  */
 
 const apiGet = vi.fn();
@@ -199,15 +201,41 @@ describe('T6: a aba Decisões em Pendências', () => {
   });
 });
 
-describe('T6: /comercial redireciona para o Funil vivo', () => {
-  it('preserva a query, e sem query vai ao funil limpo', async () => {
-    await ComercialPage({ searchParams: Promise.resolve({ lead: 'l1', aba: 'decisoes' }) });
-    expect(redirect).toHaveBeenCalledWith('/comercial/funil?lead=l1&aba=decisoes');
-    redirect.mockReset();
-    await ComercialPage({ searchParams: Promise.resolve({ filtro: ['P1', 'P2'] }) });
-    expect(redirect).toHaveBeenCalledWith('/comercial/funil?filtro=P1&filtro=P2');
-    redirect.mockReset();
-    await ComercialPage({ searchParams: Promise.resolve({}) });
-    expect(redirect).toHaveBeenCalledWith('/comercial/funil');
+describe('Versão final: as decisões em /comercial/decisoes, e /comercial é o Painel geral', () => {
+  it('o item das decisões segue oculto, dono de /comercial/decisoes, absorvido por Pendências', () => {
+    const item = NAV.find((n) => n.key === 'comercial-decisoes');
+    expect(item).toMatchObject({ href: '/comercial/decisoes', oculto: true, secao: 'comercial' });
+    expect(ROTAS_ABSORVIDAS.find((r) => r.href === '/comercial/decisoes')?.destino).toBe('/caixa');
+    expect(NAV.find((n) => n.href === '/comercial')?.key).toBe('comercial-painel');
+  });
+
+  it('a tela antiga das decisões continua viva e lê a mesma fila', async () => {
+    render(<FilaAntiga />);
+    expect(await screen.findByRole('button', { name: /Manter o preço/ })).toBeTruthy();
+    expect(leuAFila()).toBe(true);
+  });
+
+  it('/comercial abre o Painel geral, sem redirecionar', async () => {
+    apiGet.mockImplementation((caminho: string) => {
+      if (caminho === '/comercial/painel') return Promise.resolve(PAINEL_VAZIO);
+      return Promise.reject(new Error(`rota inesperada ${caminho}`));
+    });
+    render(<ComercialPage />);
+    expect(await screen.findByText(/Ainda não há leads no funil/)).toBeTruthy();
+    expect(redirect).not.toHaveBeenCalled();
+    expect(apiGet.mock.calls.map(([c]) => c)).toEqual(['/comercial/painel']);
   });
 });
+
+const PAINEL_VAZIO: PainelComercial = {
+  ano: 2026,
+  geradoEm: '2026-10-19T12:00:00.000Z',
+  totais: { emNegociacao: 0, abertos: 0, ganhosNoAno: 0, valorGanhoNoAno: 0, perdidosNoAno: 0, naGeladeira: 0, conversao: null, ticketMedio: null, ganhosSemValor: 0, clientesAtivos: 0, contratosVivos: 0 },
+  etapas: [],
+  fechadosPorMes: [],
+  entradasPorMes: [],
+  canais: [],
+  vendedores: [],
+  negocios: [],
+  foraDoTeto: 0,
+};

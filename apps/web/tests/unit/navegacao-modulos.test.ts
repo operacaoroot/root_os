@@ -28,24 +28,39 @@ describe('projeção do NAV em módulos', () => {
     expect(destinoDaRota('/leads/123')?.key).toBe('leads');
     expect(destinoDaRota('/contextual')).toBeUndefined();
   });
-  it('Propostas depende da confirmação da plataforma, não de permissões comuns', () => {
-    expect(modulosDeNavegacao(permissoes).flatMap((area) => area.itens).some((i) => i.key === 'propostas')).toBe(false);
-    const comercial = modulosDeNavegacao(permissoes, [], true).find((area) => area.key === 'comercial');
-    expect(comercial?.itens.map((item) => item.key)).toEqual(['propostas']);
-    expect(destinoDaRota('/propostas')).toBeUndefined();
-    expect(areaDoDestino(destinoDaRota('/propostas', true)!)?.key).toBe('comercial');
+  // Versão final (19/10/2026): Propostas é item do NAV (Comercial, leads.ver) e lê as
+  // propostas da sala da empresa da sessão; na plataforma ela não se repete.
+  it('Propostas é item do Comercial com leads.ver, uma vez só, com ou sem plataforma', () => {
+    for (const plataforma of [false, true]) {
+      const comercial = modulosDeNavegacao(permissoes, undefined, plataforma).find((area) => area.key === 'comercial');
+      expect(comercial?.itens.filter((item) => item.key === 'propostas')).toHaveLength(1);
+      expect(comercial?.itens.find((item) => item.key === 'propostas')?.permission).toBe('leads.ver');
+    }
+    expect(modulosDeNavegacao(['dashboard.ver']).flatMap((area) => area.itens).some((i) => i.key === 'propostas')).toBe(false);
+    expect(areaDoDestino(destinoDaRota('/propostas')!)?.key).toBe('comercial');
   });
-  // 19/10/2026: Dia a dia abre na Visão geral e termina em Operação (a implantação, com a
-  // rodada semanal da ROOT dentro). /operacao segue viva, mas não é mais item de menu.
-  it('Dia a dia abre na Visão geral e termina em Operação; a rodada da ROOT não vira item próprio', () => {
+
+  it('as áreas seguem a ordem das seções, com Contexto depois da IA', () => {
+    expect(modulosDeNavegacao(permissoes).map((area) => area.key)).toEqual([
+      'dia', 'trabalho', 'conteudo', 'comercial', 'financeiro', 'automacoes', 'empresa', 'resultados', 'configuracoes',
+    ]);
+  });
+
+  it('Dia a dia abre na Visão geral e mostra Pendências; a rodada da ROOT não vira item próprio', () => {
     for (const plataforma of [false, true]) {
       const dia = modulosDeNavegacao(permissoes, undefined, plataforma).find((area) => area.key === 'dia');
-      expect(dia?.entrada?.key).toBe('console');
-      expect(dia?.itens[0]?.key).toBe('console');
-      expect(dia?.itens.at(-1)?.key).toBe('onboarding');
-      expect(dia?.itens.some((item) => item.key === 'operacao' || item.key === 'caixa')).toBe(false);
+      expect(dia?.entrada?.key).toBe('tarefas-todas');
+      expect(dia?.entrada?.href).toBe('/dia-a-dia');
+      expect(dia?.itens.map((item) => item.key)).toEqual(['tarefas-todas', 'caixa', 'atendimento', 'agenda', 'console']);
+      expect(dia?.itens.some((item) => item.key === 'operacao')).toBe(false);
     }
     expect(destinoDaRota('/operacao', true)).toBeUndefined();
-    expect(areaDoDestino(destinoDaRota('/onboarding')!)?.key).toBe('dia');
+    expect(areaDoDestino(destinoDaRota('/onboarding')!)?.key).toBe('trabalho');
+  });
+
+  it('Comercial abre no Painel geral', () => {
+    const comercial = modulosDeNavegacao(permissoes).find((area) => area.key === 'comercial');
+    expect(comercial?.entrada?.key).toBe('comercial-painel');
+    expect(comercial?.entrada?.href).toBe('/comercial');
   });
 });

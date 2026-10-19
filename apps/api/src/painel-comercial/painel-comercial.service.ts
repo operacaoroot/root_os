@@ -1,9 +1,16 @@
 import { Injectable } from '@nestjs/common';
 import {
+  COMERCIAL_ETAPAS,
+  COMERCIAL_ROTULO_DA_ETAPA,
+  COMERCIAL_SAIDAS,
+  ROTULO_DO_CANAL_DE_ENTRADA,
   SEM_INFORMACAO,
-  ehEtapaDeSaida,
-  faseDaEtapa,
-  type ContratoDoCliente,
+  TABELA_DE_PRECO,
+  resultadoDaEtapaDoCockpit,
+  type ComercialEtapa,
+  type ComercialProduto,
+  type LinhaDaListaDeLeads,
+  type ListaDeLeads,
   type PainelComercial,
   type PainelComercialGrupo,
   type PainelComercialMes,
@@ -11,29 +18,35 @@ import {
   type ResultadoDaEtapa,
 } from '@mktos/shared';
 import { PrismaService } from '../prisma/prisma.service';
-import { ContratosDoClienteService } from '../ficha/contratos-do-cliente.service';
 
-/** Chave da lista criada por `db:seed:crm`; o nome é o plano B (lista criada à mão no quadro). */
-export const LISTA_DO_CRM_EXTERNA = 'crm-root-lista';
-export const NOME_DA_LISTA_DO_CRM = 'Gestão de Leads';
-/** A coluna "Negócio fechado" do Painel geral: junta quem fechou, esteja onde estiver na operação do cliente. */
-export const ETAPA_CLIENTES = '__clientes';
+/*
+ * O PAINEL GERAL DO COMERCIAL (versão final, 19/10/2026): o desenho do Lucas
+ * lendo os dados do cockpit.
+ *
+ *   · negócio = um `Lead` da empresa, com a etapa da `ComercialFicha` (lead sem
+ *     ficha está em E1, como o `FichaService.garantir` o criaria);
+ *   · valor = o valor da proposta da ficha; produto = o produto da ficha;
+ *     canal = o canal de entrada da ficha ou, sem ele, a origem do lead;
+ *     vendedor = o dono da ficha ou, sem ele, o dono do lead;
+ *   · fechou = o fato `cliente.ativo` (a data dele) ou a etapa E9 (a data em
+ *     que entrou nela); perdeu = a saída (a data em que saiu);
+ *   · cliente ativo e contrato vivo = `cliente.ativo` sem `contrato.concluido`
+ *     nem `contrato.desativado` depois.
+ * Nada é estimado: sem valor, o negócio entra na contagem e fica fora da soma.
+ */
 
 const FUSO = 'America/Sao_Paulo';
 const DIA = 86_400_000;
+/** Teto de leads lidos de uma vez (o Funil vivo tem o dele; aqui é a conta do ano). */
+export const TETO_DO_PAINEL = 5000;
 
-const semAcento = (s: string) => s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().trim();
-
-/**
- * O resultado do card pela etapa (um card por lead/cliente): na fase
- * comercial está em negociação; Perdido e Desqualificado são perda; qualquer
- * etapa de onboarding ou sucesso (inclusive Cancelado e Encerrado) quer dizer
- * que ele fechou.
- */
-export function resultadoDaEtapa(nome: string): ResultadoDaEtapa {
-  if (faseDaEtapa(nome) !== 'comercial') return 'ganho';
-  return ehEtapaDeSaida(nome) ? 'perdido' : 'aberta';
-}
+/** A cor de cada resultado (um acento só, como o desenho do Lucas). */
+const COR_DO_RESULTADO: Record<ResultadoDaEtapa, string> = {
+  ganho: 'rgb(var(--os-ac))',
+  aberta: 'rgb(var(--os-ac) / 0.45)',
+  pausa: 'rgb(var(--os-tx2) / 0.45)',
+  perdido: 'rgb(var(--os-tx2) / 0.3)',
+};
 
 /** `AAAA-MM` no fuso de Brasília. */
 export function mesDe(data: Date): string {
@@ -41,119 +54,132 @@ export function mesDe(data: Date): string {
   return `${p.find((x) => x.type === 'year')!.value}-${p.find((x) => x.type === 'month')!.value}`;
 }
 
-/** "BRL 1500.00" → 1500; qualquer outra coisa → nulo. */
-export function lerMoeda(valor: string | null | undefined): number | null {
-  const m = /^[A-Z]{3} (-?\d+(?:\.\d+)?)$/.exec(valor ?? '');
-  return m ? Number(m[1]) : null;
+function meses(n: number, ate: string): string[] {
+  const [a, m] = ate.split('-').map(Number);
+  return Array.from({ length: n }, (_, i) => {
+    const d = new Date(Date.UTC(a, m - 1 - (n - 1 - i), 1));
+    return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`;
+  });
 }
 
-/** Acha o campo da lista pelo nome sem acento; aceita prefixo. */
-function campo<T extends { name: string }>(campos: T[], ...prefixos: string[]): T | undefined {
-  return campos.find((c) => prefixos.some((p) => semAcento(c.name).startsWith(p)));
+export function rotuloDoCanal(canal: string | null | undefined): string | null {
+  if (!canal) return null;
+  return ROTULO_DO_CANAL_DE_ENTRADA[canal] ?? canal;
+}
+
+export function rotuloDoProduto(produto: string | null | undefined): string | null {
+  if (!produto) return null;
+  return TABELA_DE_PRECO[produto as ComercialProduto]?.rotulo ?? produto;
 }
 
 @Injectable()
 export class PainelComercialService {
-  constructor(
-    private readonly prisma: PrismaService,
-    private readonly contratos: ContratosDoClienteService,
-  ) {}
+  constructor(private readonly prisma: PrismaService) {}
 
   async painel(orgId: string, agora = new Date()): Promise<PainelComercial> {
     const ano = Number(mesDe(agora).slice(0, 4));
-    const vazio: PainelComercial = {
-      lista: null,
-      ano,
-      geradoEm: agora.toISOString(),
-      totais: { emNegociacao: 0, abertos: 0, ganhosNoAno: 0, valorGanhoNoAno: 0, perdidosNoAno: 0, conversao: null, ticketMedio: null },
-      etapas: [],
-      fechadosPorMes: [],
-      entradasPorMes: [],
-      canais: [],
-      vendedores: [],
-      negocios: [],
-    };
 
-    const lista =
-      (await this.prisma.workList.findFirst({ where: { orgId, externalId: LISTA_DO_CRM_EXTERNA } })) ??
-      (await this.prisma.workList.findFirst({ where: { orgId, name: NOME_DA_LISTA_DO_CRM } }));
-    if (!lista) return vazio;
-
-    const [statuses, campos, tarefas] = await Promise.all([
-      this.prisma.workStatus.findMany({ where: { listId: lista.id }, orderBy: { order: 'asc' } }),
-      this.prisma.workField.findMany({ where: { orgId, OR: [{ listId: lista.id }, { listId: null }] }, include: { options: true } }),
-      this.prisma.workTask.findMany({
-        where: { orgId, listId: lista.id, archived: false, parentId: null },
-        include: { values: { include: { option: true } } },
+    const [total, leads] = await Promise.all([
+      this.prisma.lead.count({ where: { orgId } }),
+      this.prisma.lead.findMany({
+        where: { orgId },
+        orderBy: { enteredAt: 'desc' },
+        take: TETO_DO_PAINEL,
+        select: {
+          id: true,
+          name: true,
+          email: true,
+          phone: true,
+          ownerId: true,
+          enteredAt: true,
+          updatedAt: true,
+          source: { select: { name: true } },
+          ficha: {
+            select: {
+              etapa: true,
+              etapaDesde: true,
+              empresa: true,
+              canal: true,
+              donoId: true,
+              produto: true,
+              valorCentavos: true,
+              clienteAtivoEm: true,
+              atualizadoEm: true,
+            },
+          },
+        },
       }),
     ]);
-    const contratosPorCard = await this.contratos.porCliente(orgId, tarefas.map((t) => t.id));
+    const ids = leads.map((l) => l.id);
 
-    const fCanal = campo(campos, 'canal');
-    const fVendedor = campo(campos, 'vendedor');
-    // O valor da proposta, não o recorrente (mês): a lista tem os dois campos de moeda.
-    const fValor = campo(campos, 'valor da proposta') ?? campos.find((c) => c.type === 'moeda');
-    const fCadastro = campo(campos, 'data de cadastro', 'cadastro');
-    const fProduto = campo(campos, 'produto');
-    const fContato = campo(campos, 'contato');
-    const fLink = campo(campos, 'link da proposta');
-    const corDaOpcao = new Map<string, string>();
-    for (const f of [fCanal, fVendedor]) for (const o of f?.options ?? []) corDaOpcao.set(`${f!.id}:${o.name}`, o.color);
+    const [fatos, donos] = await Promise.all([
+      ids.length
+        ? this.prisma.leadEvent.findMany({
+            where: { orgId, leadId: { in: ids }, type: { in: ['cliente.ativo', 'contrato.concluido', 'contrato.desativado'] } },
+            select: { leadId: true, type: true, occurredAt: true },
+            orderBy: { occurredAt: 'asc' },
+          })
+        : Promise.resolve([]),
+      (async () => {
+        const quem = [...new Set(leads.flatMap((l) => [l.ficha?.donoId, l.ownerId]).filter((x): x is string => !!x))];
+        // A empresa vai no filtro: o dono se resolve na empresa da sessão, nunca por relação.
+        return quem.length ? this.prisma.user.findMany({ where: { orgId, id: { in: quem } }, select: { id: true, name: true } }) : [];
+      })(),
+    ]);
+    const nomeDoDono = new Map(donos.map((u) => [u.id, u.name]));
+    const ativoEm = new Map<string, Date>();
+    const encerradoEm = new Map<string, Date>();
+    for (const f of fatos) {
+      if (f.type === 'cliente.ativo') {
+        if (!ativoEm.has(f.leadId)) ativoEm.set(f.leadId, f.occurredAt);
+      } else encerradoEm.set(f.leadId, f.occurredAt);
+    }
 
-    const etapaPorId = new Map(statuses.map((s) => [s.id, { ...s, resultado: resultadoDaEtapa(s.name), fase: faseDaEtapa(s.name) }]));
-
-    const cards = tarefas.map((t) => {
-      const v = (f?: { id: string }) => (f ? t.values.find((x) => x.fieldId === f.id) : undefined);
-      const etapa = etapaPorId.get(t.statusId)!;
-      const cadastro = v(fCadastro)?.value;
-      const entrada = cadastro && /^\d{4}-\d{2}/.test(cadastro) ? cadastro.slice(0, 7) : mesDe(t.createdAt);
-      const valor = lerMoeda(v(fValor)?.value);
-      // Cliente sem contrato registrado conta como um contrato, com o valor da proposta,
-      // fechado quando o card chegou na etapa (o banco carimba `statusDesde` em toda troca).
-      let contratos: ContratoDoCliente[] = contratosPorCard.get(t.id) ?? [];
-      if (etapa.resultado === 'ganho' && !contratos.length) {
-        contratos = [{ id: t.id, titulo: v(fProduto)?.option?.name ?? 'Contrato', valor: valor ?? 0, fechadoEm: (t.statusDesde ?? t.updatedAt).toISOString().slice(0, 10) }];
-      }
-      if (etapa.resultado !== 'ganho') contratos = [];
+    const cards = leads.map((l) => {
+      const etapa = (l.ficha?.etapa ?? 'novo_lead') as ComercialEtapa;
+      const etapaDesde = l.ficha?.etapaDesde ?? l.enteredAt;
+      let resultado = resultadoDaEtapaDoCockpit(etapa);
+      // O fato `cliente.ativo` é o fechamento, esteja a ficha onde estiver.
+      const fechouEm = ativoEm.get(l.id) ?? (etapa === 'fechado' ? l.ficha?.clienteAtivoEm ?? etapaDesde : null);
+      if (fechouEm && resultado !== 'ganho') resultado = 'ganho';
+      const fim = encerradoEm.get(l.id);
+      const clienteAtivo = !!fechouEm && !(fim && fim >= fechouEm);
+      const contratoVivo = ativoEm.has(l.id) && clienteAtivo;
+      const valor = l.ficha?.valorCentavos != null ? l.ficha.valorCentavos / 100 : null;
+      const perdidoEm = resultado === 'perdido' ? etapaDesde : null;
       return {
-        t,
+        l,
         etapa,
+        etapaDesde,
+        resultado,
         valor,
-        contratos,
-        valorContratos: contratos.reduce((s, k) => s + k.valor, 0),
-        canal: v(fCanal)?.option?.name ?? null,
-        produto: v(fProduto)?.option?.name ?? v(fProduto)?.value ?? null,
-        contato: v(fContato)?.value ?? null,
-        linkProposta: v(fLink)?.value ?? null,
-        vendedor: v(fVendedor)?.option?.name ?? t.assignee ?? null,
-        entrada,
-        perdidoEm: etapa.resultado === 'perdido' && t.statusDesde ? mesDe(t.statusDesde) : null,
+        fechouEm,
+        perdidoEm,
+        clienteAtivo,
+        contratoVivo,
+        canal: rotuloDoCanal(l.ficha?.canal) ?? l.source?.name ?? null,
+        vendedor: nomeDoDono.get(l.ficha?.donoId ?? '') ?? nomeDoDono.get(l.ownerId ?? '') ?? null,
+        produto: rotuloDoProduto(l.ficha?.produto),
+        entrada: mesDe(l.enteredAt),
       };
     });
 
-    const doAno = (dia: string | null) => !!dia && dia.startsWith(`${ano}-`);
-    const abertos = cards.filter((c) => c.etapa.resultado === 'aberta');
-    const contratosDoAno = cards.flatMap((c) => c.contratos.filter((k) => doAno(k.fechadoEm)));
-    const clientesDoAno = cards.filter((c) => c.contratos.some((k) => doAno(k.fechadoEm)));
-    const perdidosAno = cards.filter((c) => doAno(c.perdidoEm));
-    const somaValor = (xs: { valor: number | null }[]) => xs.reduce((s, x) => s + (x.valor ?? 0), 0);
-    const valorGanhoNoAno = somaValor(contratosDoAno);
-    const fechamentos = clientesDoAno.length + perdidosAno.length;
+    const doAno = (d: Date | null) => !!d && mesDe(d).startsWith(`${ano}-`);
+    const soma = (xs: { valor: number | null }[]) => xs.reduce((s, x) => s + (x.valor ?? 0), 0);
+    const abertos = cards.filter((c) => c.resultado === 'aberta');
+    const ganhosAno = cards.filter((c) => c.resultado === 'ganho' && doAno(c.fechouEm));
+    const perdidosAno = cards.filter((c) => c.resultado === 'perdido' && doAno(c.perdidoEm));
+    const ganhosComValor = ganhosAno.filter((c) => c.valor != null);
+    const valorGanhoNoAno = soma(ganhosAno);
+    const fechamentos = ganhosAno.length + perdidosAno.length;
 
-    const meses = (n: number, ate: string): string[] => {
-      const [a, m] = ate.split('-').map(Number);
-      return Array.from({ length: n }, (_, i) => {
-        const d = new Date(Date.UTC(a, m - 1 - (n - 1 - i), 1));
-        return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`;
-      });
-    };
     const porMes = (lista: string[], itens: { mes: string | null; valor: number | null }[]): PainelComercialMes[] =>
       lista.map((mes) => {
         const doMes = itens.filter((x) => x.mes === mes);
-        return { mes, qtd: doMes.length, valor: somaValor(doMes) };
+        return { mes, qtd: doMes.length, valor: soma(doMes) };
       });
 
-    const agrupar = (chave: (c: (typeof cards)[number]) => string | null, fCor?: { id: string }): PainelComercialGrupo[] => {
+    const agrupar = (chave: (c: (typeof cards)[number]) => string | null): PainelComercialGrupo[] => {
       const grupos = new Map<string, typeof cards>();
       for (const c of cards) {
         const k = chave(c) ?? SEM_INFORMACAO;
@@ -161,83 +187,125 @@ export class PainelComercialService {
       }
       return [...grupos.entries()]
         .map(([nome, cs]) => {
-          const ab = cs.filter((c) => c.etapa.resultado === 'aberta');
-          const gs = cs.filter((c) => c.etapa.resultado === 'ganho');
-          return {
-            nome,
-            cor: fCor ? corDaOpcao.get(`${fCor.id}:${nome}`) ?? null : null,
-            leads: cs.length,
-            abertos: ab.length,
-            emNegociacao: somaValor(ab),
-            ganhos: gs.length,
-            valorGanho: gs.reduce((s, c) => s + c.valorContratos, 0),
-          };
+          const ab = cs.filter((c) => c.resultado === 'aberta');
+          const gs = cs.filter((c) => c.resultado === 'ganho');
+          return { nome, cor: null, leads: cs.length, abertos: ab.length, emNegociacao: soma(ab), ganhos: gs.length, valorGanho: soma(gs) };
         })
         .sort((a, b) => b.leads - a.leads || b.valorGanho - a.valorGanho);
     };
 
     const negocios: PainelComercialNegocio[] = cards
       .map((c) => {
-        const mesesFechados = [...new Set(c.contratos.map((k) => k.fechadoEm.slice(0, 7)))];
+        const mesFechado = c.fechouEm ? mesDe(c.fechouEm) : c.perdidoEm ? mesDe(c.perdidoEm) : null;
         return {
-          id: c.t.id,
-          titulo: c.t.title,
-          statusId: c.t.statusId,
-          etapa: c.etapa.name,
-          etapaCor: c.etapa.color,
-          fase: c.etapa.fase,
-          resultado: c.etapa.resultado,
-          valor: c.etapa.resultado === 'ganho' ? c.valorContratos : c.valor,
+          id: c.l.id,
+          titulo: c.l.ficha?.empresa || c.l.name,
+          nome: c.l.name,
+          etapaChave: c.etapa,
+          etapa: COMERCIAL_ROTULO_DA_ETAPA[c.etapa],
+          etapaCor: COR_DO_RESULTADO[c.resultado],
+          resultado: c.resultado,
+          valor: c.valor,
           vendedor: c.vendedor,
           canal: c.canal,
           produto: c.produto,
-          contato: c.contato,
-          linkProposta: c.linkProposta,
-          atualizadoEm: c.t.updatedAt.toISOString(),
+          contato: c.l.phone ?? c.l.email ?? null,
+          atualizadoEm: (c.l.ficha?.atualizadoEm ?? c.l.updatedAt).toISOString(),
           mesEntrada: c.entrada,
-          mesFechado: mesesFechados.at(-1) ?? c.perdidoEm,
-          mesesFechados,
-          diasNaEtapa: c.t.statusDesde ? Math.floor((agora.getTime() - c.t.statusDesde.getTime()) / DIA) : null,
+          mesFechado,
+          mesesFechados: c.fechouEm ? [mesDe(c.fechouEm)] : [],
+          diasNaEtapa: Math.max(0, Math.floor((agora.getTime() - c.etapaDesde.getTime()) / DIA)),
+          clienteAtivo: c.clienteAtivo,
         };
       })
-      .sort((a, b) => (b.valor ?? 0) - (a.valor ?? 0));
+      .sort((a, b) => (b.valor ?? -1) - (a.valor ?? -1) || a.titulo.localeCompare(b.titulo, 'pt'));
 
-    // Funil do painel: as etapas comerciais, uma coluna "Clientes" com quem já fechou
-    // (onboarding e sucesso juntos) e as saídas comerciais.
-    const clientes = cards.filter((c) => c.etapa.resultado === 'ganho');
-    const etapa = (s: (typeof statuses)[number]) => {
-      const cs = cards.filter((c) => c.t.statusId === s.id);
-      return { id: s.id, nome: s.name, cor: s.color, resultado: etapaPorId.get(s.id)!.resultado, qtd: cs.length, valor: somaValor(cs) };
-    };
-    const comerciais = statuses.filter((s) => faseDaEtapa(s.name) === 'comercial');
-    const etapas = [
-      ...comerciais.filter((s) => !ehEtapaDeSaida(s.name)).map(etapa),
-      { id: ETAPA_CLIENTES, nome: 'Negócio fechado', cor: '#008844', resultado: 'ganho' as const, qtd: clientes.length, valor: clientes.reduce((s, c) => s + c.valorContratos, 0) },
-      ...comerciais.filter((s) => ehEtapaDeSaida(s.name)).map(etapa),
-    ];
+    // O funil geral: as nove etapas, na ordem do cockpit, e as quatro saídas.
+    const etapas = [...COMERCIAL_ETAPAS, ...COMERCIAL_SAIDAS].map((e) => {
+      const cs = cards.filter((c) => c.etapa === e);
+      const resultado = resultadoDaEtapaDoCockpit(e);
+      return { id: e, nome: COMERCIAL_ROTULO_DA_ETAPA[e], cor: COR_DO_RESULTADO[resultado], resultado, qtd: cs.length, valor: soma(cs) };
+    });
 
     return {
-      lista: { id: lista.id, nome: lista.name },
       ano,
       geradoEm: agora.toISOString(),
       totais: {
-        emNegociacao: somaValor(abertos),
+        emNegociacao: soma(abertos),
         abertos: abertos.length,
-        ganhosNoAno: contratosDoAno.length,
+        ganhosNoAno: ganhosAno.length,
         valorGanhoNoAno,
         perdidosNoAno: perdidosAno.length,
-        conversao: fechamentos ? Math.round((clientesDoAno.length / fechamentos) * 100) : null,
-        ticketMedio: contratosDoAno.length ? valorGanhoNoAno / contratosDoAno.length : null,
+        naGeladeira: cards.filter((c) => c.resultado === 'pausa').length,
+        conversao: fechamentos ? Math.round((ganhosAno.length / fechamentos) * 100) : null,
+        ticketMedio: ganhosComValor.length ? soma(ganhosComValor) / ganhosComValor.length : null,
+        ganhosSemValor: ganhosAno.length - ganhosComValor.length,
+        clientesAtivos: cards.filter((c) => c.clienteAtivo).length,
+        contratosVivos: cards.filter((c) => c.contratoVivo).length,
       },
       etapas,
       fechadosPorMes: porMes(
         meses(12, `${ano}-12`),
-        cards.flatMap((c) => c.contratos.map((k) => ({ mes: k.fechadoEm.slice(0, 7), valor: k.valor }))),
+        cards.filter((c) => c.fechouEm).map((c) => ({ mes: mesDe(c.fechouEm!), valor: c.valor })),
       ),
       entradasPorMes: porMes(meses(12, mesDe(agora)), cards.map((c) => ({ mes: c.entrada, valor: c.valor }))),
-      canais: agrupar((c) => c.canal, fCanal),
-      vendedores: agrupar((c) => c.vendedor, fVendedor),
+      canais: agrupar((c) => c.canal),
+      vendedores: agrupar((c) => c.vendedor),
       negocios,
+      foraDoTeto: Math.max(0, total - leads.length),
     };
+  }
+
+  /**
+   * A Lista de leads: a tabela `Lead` da empresa com a ficha (etapa, empresa,
+   * canal, dono) e a última atividade (o último fato do fio ou a última
+   * mudança da ficha). Lead sem ficha está em E1.
+   */
+  async listaDeLeads(orgId: string): Promise<ListaDeLeads> {
+    const [total, leads] = await Promise.all([
+      this.prisma.lead.count({ where: { orgId } }),
+      this.prisma.lead.findMany({
+        where: { orgId },
+        orderBy: { updatedAt: 'desc' },
+        take: TETO_DO_PAINEL,
+        select: {
+          id: true, name: true, email: true, phone: true, ownerId: true, enteredAt: true, updatedAt: true,
+          source: { select: { name: true } },
+          ficha: { select: { etapa: true, empresa: true, canal: true, donoId: true, atualizadoEm: true } },
+        },
+      }),
+    ]);
+    const ids = leads.map((l) => l.id);
+    const [ultimos, donos] = await Promise.all([
+      ids.length
+        ? this.prisma.leadEvent.groupBy({ by: ['leadId'], where: { orgId, leadId: { in: ids } }, _max: { occurredAt: true } })
+        : Promise.resolve([] as { leadId: string; _max: { occurredAt: Date | null } }[]),
+      (async () => {
+        const quem = [...new Set(leads.flatMap((l) => [l.ficha?.donoId, l.ownerId]).filter((x): x is string => !!x))];
+        return quem.length ? this.prisma.user.findMany({ where: { orgId, id: { in: quem } }, select: { id: true, name: true } }) : [];
+      })(),
+    ]);
+    const ultimoDe = new Map(ultimos.map((u) => [u.leadId, u._max.occurredAt]));
+    const nomeDoDono = new Map(donos.map((u) => [u.id, u.name]));
+    const linhas: LinhaDaListaDeLeads[] = leads.map((l) => {
+      const etapa = (l.ficha?.etapa ?? 'novo_lead') as ComercialEtapa;
+      const datas = [ultimoDe.get(l.id), l.ficha?.atualizadoEm, l.updatedAt].filter((d): d is Date => !!d);
+      const ultima = datas.sort((a, b) => b.getTime() - a.getTime())[0];
+      return {
+        id: l.id,
+        contato: l.name,
+        empresa: l.ficha?.empresa ?? null,
+        telefone: l.phone,
+        email: l.email,
+        etapaChave: etapa,
+        etapa: COMERCIAL_ROTULO_DA_ETAPA[etapa],
+        canal: rotuloDoCanal(l.ficha?.canal) ?? l.source?.name ?? null,
+        dono: nomeDoDono.get(l.ficha?.donoId ?? '') ?? nomeDoDono.get(l.ownerId ?? '') ?? null,
+        entrouEm: l.enteredAt.toISOString(),
+        ultimaAtividade: ultima.toISOString(),
+      };
+    });
+    linhas.sort((a, b) => b.ultimaAtividade.localeCompare(a.ultimaAtividade));
+    return { leads: linhas, foraDoTeto: Math.max(0, total - leads.length) };
   }
 }

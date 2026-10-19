@@ -92,8 +92,9 @@ export * from './procedimento-ferramenta-local';
 // O painel da operação da Root, que só a sessão da plataforma abre — ver o
 // cabeçalho de `operacao-painel.ts`.
 export * from './operacao-painel.js';
-// O painel do comercial lido da lista "Gestão de Leads": ver `painel-comercial.ts`.
+// O Painel geral do comercial (layout do Lucas, dados do cockpit): ver `painel-comercial.ts`.
 export * from './painel-comercial.js';
+export * from './propostas-da-sala.js';
 // A ficha do cliente (reuniões presas ao cartão): ver `ficha-do-cliente.ts`.
 export * from './ficha-do-cliente.js';
 

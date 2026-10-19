@@ -2,8 +2,11 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
 
 /*
- * As telas da ROOT no menu (Propostas e Operação) só aparecem quando a API confirma a
- * sessão da plataforma. Empresa cliente tem as mesmas permissões e não pode ver.
+ * Propostas virou item do NAV na versão final (19/10/2026): Comercial, `leads.ver`. A
+ * tela mostra as propostas da sala da empresa da sessão, e as antigas do serviço de
+ * propostas só na sessão da plataforma. Por isso o item não depende mais de ser a
+ * plataforma, e na plataforma ele aparece UMA vez (ITENS_DA_ROOT ficou vazio).
+ * A Operação da Root segue fora do menu.
  */
 
 let EH_PLATAFORMA = false;
@@ -50,19 +53,20 @@ describe('grupo ROOT do menu', () => {
     localStorage.clear();
   });
 
-  it('empresa cliente não vê o grupo nem o link de Propostas', () => {
+  it('empresa cliente com leads.ver vê Propostas no Comercial, sem grupo ROOT nem Operação', () => {
+    CAMINHO = '/leads';
     render(<><Sidebar /><NavegacaoDoModulo /><Paleta aberto fechar={() => {}} /></>);
     expect(titulos()).not.toContain('ROOT');
-    expect(document.querySelector('a[href="/propostas"]')).toBeNull();
+    expect(screen.getByRole('link', { name: 'Propostas' })).toHaveAttribute('href', '/propostas');
     expect(document.querySelector('a[href="/operacao"]')).toBeNull();
   });
 
-  it('a sessão da plataforma encontra Propostas dentro de Comercial e na busca', () => {
+  it('a sessão da plataforma encontra Propostas uma vez só, no Comercial e na busca', () => {
     EH_PLATAFORMA = true;
     CAMINHO = '/leads';
     render(<><Sidebar /><NavegacaoDoModulo /><Paleta aberto fechar={() => {}} /></>);
-    expect(screen.getByRole('link', { name: 'Propostas' })).toHaveAttribute('href', '/propostas');
-    expect(screen.getByRole('button', { name: /Propostas.*Comercial/ })).toBeInTheDocument();
+    expect(screen.getAllByRole('link', { name: 'Propostas' })).toHaveLength(1);
+    expect(screen.getAllByRole('button', { name: /Propostas.*Comercial/ })).toHaveLength(1);
   });
 
   it('em /propostas o item fica marcado como a tela aberta', () => {

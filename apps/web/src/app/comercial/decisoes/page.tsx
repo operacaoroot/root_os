@@ -19,8 +19,8 @@ import { LinkDoLead, useMudouNoPainel, usePainel } from '../_painel/provedor';
  *
  * Rodada do trabalho T6 (19/10/2026): a fila saiu do menu. As decisões passaram
  * à aba Decisões de Pendências (`/caixa?aba=decisoes`), com o mesmo cartão e a
- * mesma rota da API. Esta tela segue viva aqui, em `/comercial/decisoes`, e
- * `/comercial` redireciona para o Funil vivo.
+ * mesma rota da API. Esta tela segue viva aqui, em `/comercial/decisoes`; desde
+ * a versão final (19/10/2026) `/comercial` é o Painel geral do Comercial.
  */
 export default function FilaDeDecisoesPage() {
   const { dados, erro, carregando, recarregar } = useCarregar<FilaDeDecisoes>('/comercial/fila', 30_000);
