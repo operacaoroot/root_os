@@ -57,7 +57,11 @@ export default function CofrePage() {
     if (!res.ok) {
       const body = await res.json().catch(() => ({}));
       if (res.status === 423) { setSessao(null); setItens([]); setRevelados({}); }
-      throw new Error(typeof body.message === 'string' ? body.message : Array.isArray(body.message) ? body.message.join(' ') : `Erro ${res.status}`);
+      // A validação do OS devolve `issues` (campo + motivo) e nenhuma `message`: mostrar o campo, não "Erro 400".
+      const issues = Array.isArray(body.issues) ? (body.issues as { path: string; message: string }[]) : [];
+      const CAMPO: Record<string, string> = { titulo: 'Título', onde: 'Onde', usuario: 'Usuário', segredo: 'Senha/dado', notas: 'Notas', senhaNova: 'Senha nova', senha: 'Senha', tipo: 'Tipo' };
+      const doCampo = issues.map((i) => `${CAMPO[i.path] ?? i.path}: ${i.message}`).join(' · ');
+      throw new Error(doCampo || (typeof body.message === 'string' ? body.message : Array.isArray(body.message) ? body.message.join(' ') : `Erro ${res.status}`));
     }
     const tipo = res.headers.get('content-type') ?? '';
     return (tipo.includes('application/json') ? res.json() : res.blob()) as Promise<T>;

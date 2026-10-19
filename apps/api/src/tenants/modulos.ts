@@ -191,6 +191,8 @@ export const PREFIXOS_DA_ESPINHA: readonly string[] = [
   'audit',
   'auth',
   'caixa',
+  // cofre da empresa: senhas e documentos dos sócios; não é módulo que se desliga por empresa
+  'cofre-da-empresa',
   'config',
   'dashboard',
   'google',
