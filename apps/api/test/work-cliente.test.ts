@@ -146,4 +146,13 @@ describe.skipIf(!URL)('trabalho: o cliente da tarefa', () => {
     const sub = await svc.criarTarefa(CASA, EU, { listId: onb, title: 'Marcar kickoff', parentId: card.id }, { exigirCliente: true });
     expect(sub.clienteId).toBe(alicerce);
   });
+
+  it('a lista da implantação não sai da pasta Clientes nem muda de nome; outras listas mudam', async () => {
+    const outra = await prisma.workFolder.create({ data: { orgId: CASA, name: 'Gestão' } });
+    await expect(svc.editarLista(CASA, EU, onb, { folderId: outra.id })).rejects.toThrow(/porta da implantação/);
+    await expect(svc.editarLista(CASA, EU, onb, { name: 'Onboarding antigo' })).rejects.toThrow(/porta da implantação/);
+    await svc.editarLista(CASA, EU, lista, { folderId: outra.id });
+    expect((await prisma.workList.findUniqueOrThrow({ where: { id: lista } })).folderId).toBe(outra.id);
+    expect((await prisma.workList.findUniqueOrThrow({ where: { id: onb } })).name).toBe(' onboarding  de cliente ');
+  });
 });

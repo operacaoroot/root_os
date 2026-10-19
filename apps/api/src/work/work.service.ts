@@ -1,7 +1,7 @@
 import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import {
   MODELOS_DE_LISTA, TRAB_LISTA_COM_DOIS_PAIS, TRAB_PASTA_COM_DOIS_PAIS, ehValorMonetarioCanonico,
-  listaDaImplantacao, PORTA_DA_IMPLANTACAO,
+  listaDaImplantacao, LISTA_DA_IMPLANTACAO, PASTA_DA_IMPLANTACAO, PORTA_DA_IMPLANTACAO,
 } from '@mktos/shared';
 import type {
   TrabEstrutura, TrabListaDto, TrabCampoDto, TrabTarefaLista, TrabTarefaResumo,
@@ -261,13 +261,27 @@ export class WorkService {
 
   /** Mover lista troca só a linha da lista: as tarefas e os IDs delas ficam onde estão. */
   async editarLista(orgId: string, actorId: string, id: string, input: TrabListaUpdateInput) {
-    const antes = await this.prisma.workList.findFirst({ where: { id, orgId }, select: { folderId: true, spaceId: true } });
+    const antes = await this.prisma.workList.findFirst({ where: { id, orgId }, select: { folderId: true, spaceId: true, name: true } });
     if (!antes) throw new NotFoundException('Lista não encontrada');
     const move = input.folderId !== undefined || input.spaceId !== undefined;
+    /*
+     * A LISTA DA IMPLANTAÇÃO NÃO SAI DO LUGAR (rodada do trabalho T1, 19/10/2026).
+     * O item "Implantação de clientes" e o card do fechamento a acham pelo nome
+     * dentro da pasta Clientes; movida ou renomeada, a tela fica vazia e o próximo
+     * fechamento abre outra lista. Na homologação isso aconteceu pelo seletor de
+     * pasta. Ela pode ganhar etapas e campos, não mudar de pasta nem de nome.
+     */
+    if ((move && input.folderId !== antes.folderId) || (input.name !== undefined && input.name !== antes.name)) {
+      const pasta = antes.folderId ? await this.prisma.workFolder.findFirst({ where: { id: antes.folderId, orgId }, select: { id: true, name: true, parentId: true } }) : null;
+      if (pasta && listaDaImplantacao([{ ...pasta, lists: [{ id, name: antes.name }] }])) {
+        throw new BadRequestException(`A lista ${LISTA_DA_IMPLANTACAO} é a porta da implantação de clientes: ela fica na pasta ${PASTA_DA_IMPLANTACAO}, com este nome.`);
+      }
+    }
     const pai = move ? await this.paiDaLista(orgId, input) : null;
+    const antesDoRastro = { folderId: antes.folderId, spaceId: antes.spaceId };
     return this.logado(orgId, actorId, 'work.list.update', 'work_list', id, () =>
       this.prisma.workList.update({ where: { id }, data: { name: input.name, order: input.order, ...pai } }),
-      pai ? { before: antes, after: pai } : undefined,
+      pai ? { before: antesDoRastro, after: pai } : undefined,
     );
   }
 

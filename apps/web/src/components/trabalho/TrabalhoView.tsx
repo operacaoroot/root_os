@@ -598,7 +598,8 @@ function TrabalhoConteudo({ visaoInicial, modo }: { visaoInicial: Visao; modo: M
                 ))}
               </div>
             )}
-            {editable && lista && estrutura && (
+            {/* A lista da implantação não muda de pasta (a API também recusa). */}
+            {editable && lista && estrutura && !listaEhImplantacao && (
               <SeletorDePastaDaLista
                 valor={pastaDaLista}
                 pastas={estrutura.folders}
