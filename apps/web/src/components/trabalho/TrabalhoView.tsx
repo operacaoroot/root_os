@@ -827,18 +827,27 @@ function Cartao({ t, lista, editable, token, agentes, trilho, mov, densidade, ba
       >
         {ultimo ? `${ultimo.quem} · ${ultimo.frase} · ${haCurto(ultimo.em)}` : 'sem movimento registrado'}
       </p>
-      {cheio && agente && (
+      {/*
+        QUEM ESTÁ COM A TAREFA (fatia A4) aparece em TODA densidade: travada
+        por agente é o que responde "isto está parado?", e esconder no compacto
+        faria a tarefa parecer livre. Entregar e soltar, a partir do médio.
+      */}
+      {agente && (
         <div
-          className="mt-1.5 flex items-center gap-1 rounded bg-brand/10 px-1.5 py-0.5 text-[11px] text-brand"
+          className={`flex items-center gap-1 rounded bg-brand/10 px-1.5 py-0.5 text-[11px] text-brand ${compacto ? 'mt-1' : 'mt-1.5'}`}
           title={`Assumida por ${agente} em ${dataHoraBR(t.agenteEm)}`}
         >
           <Bot size={11} className="shrink-0" />
           <span className="truncate">{agente}</span>
         </div>
       )}
-      {cheio && editable && (
+      {!compacto && editable && (
         <div className="relative z-10">
           <ControleDoAgente t={t} agentes={agentes} token={token} onMudou={onMudou} onErro={onErro} />
+        </div>
+      )}
+      {cheio && editable && (
+        <div className="relative z-10">
           <select
             value={t.statusId}
             onChange={(e) =>

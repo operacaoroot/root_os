@@ -165,6 +165,8 @@ const cartao = (titulo: string) =>
   screen.getByText(titulo).closest('div.rounded-lg') as HTMLElement;
 
 beforeEach(() => {
+  // Rodada da implantação I2: entregar e soltar ficam no cartão a partir da densidade média (o selo do agente aparece em todas).
+  window.localStorage.setItem('root-os:trabalho:densidade', 'medio');
   window.history.replaceState({}, '', '/trabalho');
   vi.clearAllMocks();
   PERMISSOES = ['tarefas.ver', 'tarefas.editar'];
