@@ -145,14 +145,22 @@ export const NAV: NavItem[] = [
   { key: 'trabalho', label: 'Quadro interno', href: '/trabalho', icon: 'KanbanSquare', permission: 'tarefas.ver', secao: 'trabalho', modulo: 'trabalho', oculto: true },
   { key: 'onboarding', label: 'Operação', href: '/onboarding', icon: 'DoorOpen', permission: 'tarefas.ver', secao: 'dia', modulo: 'trabalho' },
   { key: 'conteudo', label: 'Temas do ClickUp', href: '/conteudo', icon: 'FileText', permission: 'dashboard.ver', secao: 'trabalho', modulo: 'conteudo', oculto: true },
-  { key: 'marketing-ideias', label: 'Banco de ideias', href: '/marketing/ideias', icon: 'Lightbulb', permission: 'pauta.ver', secao: 'conteudo', modulo: 'pauta' },
+  // 19/10/2026: Marketing segue a Máquina de Conteúdo (fluxo próprio), na ordem dela:
+  // Início, a esteira (Banco → Design & Gravação → Agendar → Calendário), Análise,
+  // Estratégia, Referências e Relatório. O banco de ideias e a performance da pauta
+  // seguem vivos fora do menu (/marketing/ideias, /marketing/performance).
+  { key: 'marketing', label: 'Início', href: '/marketing', icon: 'Megaphone', permission: 'pauta.ver', secao: 'conteudo', modulo: 'pauta' },
+  { key: 'maquina-banco', label: 'Banco de ideias', href: '/marketing/banco', icon: 'Lightbulb', permission: 'pauta.ver', secao: 'conteudo', modulo: 'pauta' },
+  { key: 'maquina-producao', label: 'Design & Gravação', href: '/marketing/producao', icon: 'Clapperboard', permission: 'pauta.ver', secao: 'conteudo', modulo: 'pauta' },
+  { key: 'maquina-agendar', label: 'Agendar', href: '/marketing/agendar', icon: 'CalendarPlus', permission: 'pauta.ver', secao: 'conteudo', modulo: 'pauta' },
+  { key: 'maquina-calendario', label: 'Calendário', href: '/marketing/calendario', icon: 'CalendarDays', permission: 'pauta.ver', secao: 'conteudo', modulo: 'pauta' },
+  { key: 'maquina-analise', label: 'Análise', href: '/marketing/analise', icon: 'TrendingUp', permission: 'pauta.ver', secao: 'conteudo', modulo: 'pauta' },
   { key: 'marketing-estrategia', label: 'Estratégia do mês', href: '/marketing/estrategia', icon: 'Compass', permission: 'pauta.ver', secao: 'conteudo', modulo: 'pauta' },
-
-  { key: 'pauta', label: 'Produção de conteúdo', href: '/pauta', icon: 'CalendarClock', permission: 'pauta.ver', secao: 'conteudo', modulo: 'pauta' },
   { key: 'referencias', label: 'Referências', href: '/referencias', icon: 'Library', permission: 'pauta.ver', secao: 'conteudo', modulo: 'pauta', pai: 'pauta' },
-  { key: 'marketing', label: 'Marketing', href: '/marketing', icon: 'Megaphone', permission: 'pauta.ver', secao: 'conteudo', modulo: 'pauta' },
-  { key: 'marketing-performance', label: 'Performance', href: '/marketing/performance', icon: 'TrendingUp', permission: 'pauta.ver', secao: 'conteudo', modulo: 'pauta', pai: 'marketing' },
   { key: 'marketing-relatorio', label: 'Relatório do mês', href: '/marketing/relatorio', icon: 'FileBarChart', permission: 'pauta.ver', secao: 'conteudo', modulo: 'pauta', pai: 'marketing' },
+  { key: 'marketing-ideias', label: 'Banco de ideias', href: '/marketing/ideias', icon: 'Lightbulb', permission: 'pauta.ver', secao: 'conteudo', modulo: 'pauta', oculto: true },
+  { key: 'marketing-performance', label: 'Performance', href: '/marketing/performance', icon: 'TrendingUp', permission: 'pauta.ver', secao: 'conteudo', modulo: 'pauta', pai: 'marketing', oculto: true },
+  { key: 'pauta', label: 'Produção de conteúdo', href: '/pauta', icon: 'CalendarClock', permission: 'pauta.ver', secao: 'conteudo', modulo: 'pauta' },
   { key: 'instagram', label: 'Instagram', href: '/instagram', icon: 'Instagram', permission: 'instagram.ver', secao: 'conteudo', modulo: 'instagram' },
   { key: 'bio', label: 'Página de links', href: '/bio', icon: 'Link2', permission: 'bio.ver', secao: 'conteudo', modulo: 'bio' },
   { key: 'campanhas', label: 'Campanhas', href: '/campanhas', icon: 'Megaphone', permission: 'campanhas.ver', secao: 'conteudo', modulo: 'campanhas' },

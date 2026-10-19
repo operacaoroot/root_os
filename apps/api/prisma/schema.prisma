@@ -82,6 +82,8 @@ model Org {
   cofreSenhas CofreSenha[]
   cofreSessoes CofreSessao[]
   cofreItens CofreItem[]
+  marketingPosts   MarketingPost[]
+  marketingMaquina MarketingMaquinaAjuste?
   acordosComerciais AcordoComercial[]
   analiseLeituras AnaliseLeitura[]
   reunioesDeCartao ReuniaoDoCartao[]
@@ -5302,4 +5304,53 @@ model CofreItem {
   updatedAt      DateTime @updatedAt
 
   @@index([orgId])
+}
+
+/// MÁQUINA DE CONTEÚDO DA EMPRESA (Marketing, 19/10/2026): o post da própria
+/// empresa, da ideia ao postado, numa esteira só. Regras em
+/// `packages/shared/src/maquina-de-conteudo.ts`. Não confundir com PautaIdeia/
+/// PautaPeca (a pauta que parte do que o mundo publicou e publica pela API).
+model MarketingPost {
+  id            String    @id @default(uuid())
+  orgId         String
+  org           Org       @relation(fields: [orgId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  /// Rótulo livre (`ROOT-025`). A ordem é `ordem`.
+  numero        String    @default("")
+  ordem         Int       @default(0)
+  titulo        String
+  pilar         String    @default("")
+  formato       String    @default("Reel")
+  tipoCard      String    @default("video")
+  prioridade    String    @default("media")
+  headline      String    @default("")
+  subHeadline   String    @default("")
+  roteiro       String    @default("")
+  slides        Json      @default("[]")
+  design        String    @default("")
+  legenda       String    @default("")
+  cta           String    @default("")
+  porque        String    @default("")
+  fontes        Json      @default("[]")
+  recursos      Json      @default("[]")
+  etapa         String    @default("ideia")
+  /// Dia (sem hora) em que vai ao ar ou foi ao ar.
+  data          DateTime? @db.Date
+  linkPublicado String    @default("")
+  metricas      Json      @default("{}")
+  hist          Json      @default("[]")
+  comentarios   Json      @default("[]")
+  criadoPor     String?
+  criadoEm      DateTime  @default(now())
+  atualizadoEm  DateTime  @updatedAt
+
+  @@index([orgId, etapa])
+  @@index([orgId, data])
+}
+
+/// Ajustes da Máquina por empresa: os dias da semana em que ela posta.
+model MarketingMaquinaAjuste {
+  orgId        String   @id
+  org          Org      @relation(fields: [orgId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  cadencia     Int[]    @default([2, 4])
+  atualizadoEm DateTime @updatedAt
 }

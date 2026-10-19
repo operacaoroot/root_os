@@ -1,131 +1,130 @@
 'use client';
 
+import { useEffect, useState } from 'react';
 import Link from 'next/link';
+import type { MaquinaEtapa } from '@mktos/shared';
+import { MaquinaPagina } from '@/components/maquina/MaquinaPagina';
+import { hojeSP } from '@/components/maquina/pecas';
 import { useAuth } from '@/lib/auth';
 
 /*
- * MK7 — a porta do bloco Marketing.
+ * Marketing › INÍCIO: a home da Máquina de Conteúdo da empresa, no padrão da
+ * Máquina dos clientes: saudação, "Bora <palavra>" e os três lugares onde há
+ * trabalho esperando. Nada mais: o resto está nas abas.
  *
- * A organização segue a do app que virou o modelo desta frente: marca, banco de
- * ideias, agenda, estratégia, performance, relatório e concorrentes. O que MUDA
- * aqui é que cada uma dessas coisas mora onde ela já tem dono no OS — a agenda
- * é a aba Semana da Pauta, os concorrentes são o acervo de Referências ganhando
- * número, e a marca é contexto da empresa. Repetir cada uma como tela própria
- * criaria a segunda verdade que a decisão do Pedro manda evitar.
- *
- * Por isso esta página é um MAPA, e não um painel: ela diz onde cada coisa está
- * e o que ainda não existe, com o nome da fatia que traz. Painel de números
- * aqui competiria com a Central, que já é a home do OS.
+ * (Até 19/10/2026 esta página era o mapa de onde cada parte do marketing
+ * morava; as abas do módulo fazem esse papel agora.)
  */
 
-interface Destino {
-  titulo: string;
-  o_que: string;
-  href: string | null;
-  onde: string;
-  /** Quando ainda não existe, a fatia que traz. */
-  falta?: string;
+const PALAVRAS = ['criar', 'aprovar', 'gravar', 'agendar', 'postar', 'analisar'];
+const MESES = ['janeiro', 'fevereiro', 'março', 'abril', 'maio', 'junho', 'julho', 'agosto', 'setembro', 'outubro', 'novembro', 'dezembro'];
+
+/** Digita, espera 1,6 s e apaga, palavra por palavra, como na Máquina dos clientes. */
+function useDigitando(palavras: string[]) {
+  const [texto, setTexto] = useState('');
+  useEffect(() => {
+    if (typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+      setTexto(palavras[0]);
+      return;
+    }
+    let i = 0;
+    let n = 0;
+    let apagando = false;
+    let t: ReturnType<typeof setTimeout>;
+    const passo = () => {
+      const p = palavras[i % palavras.length];
+      if (!apagando) {
+        n++;
+        setTexto(p.slice(0, n));
+        if (n === p.length) {
+          apagando = true;
+          t = setTimeout(passo, 1600);
+          return;
+        }
+        t = setTimeout(passo, 70 + Math.random() * 60);
+      } else {
+        n--;
+        setTexto(p.slice(0, n));
+        if (n === 0) {
+          apagando = false;
+          i++;
+        }
+        t = setTimeout(passo, 36);
+      }
+    };
+    t = setTimeout(passo, 300);
+    return () => clearTimeout(t);
+  }, [palavras]);
+  return texto;
 }
 
-const DESTINOS: Destino[] = [
-  { titulo: "Contas e preparação", o_que: "Dono, operadores, versão aprovada e horário para cada destino.", href: "/marketing/preparacao", onde: "Marketing" },
-  {
-    titulo: 'Marca e pilares',
-    o_que: 'Quem a casa é e sobre o que fala. Entra nos pedidos que a pauta faz à IA, ao lado da voz.',
-    href: '/contexto/marca',
-    onde: 'Contexto',
-  },
-  {
-    titulo: 'Banco de ideias',
-    o_que: 'As ideias por pilar, com gancho, roteiro e legenda. Aprovada, vira peça na agenda da semana.',
-    href: '/marketing/ideias',
-    onde: 'Marketing',
-  },
-  {
-    titulo: 'Agenda do mês',
-    o_que: 'O que vai ao ar e quando, com a grade da semana, os feriados e a aprovação em lote.',
-    href: '/pauta?aba=semana',
-    onde: 'Pauta · aba Semana',
-  },
-  {
-    titulo: 'Estratégia do mês',
-    o_que: 'Os pilares da vez, a cadência, as metas, as apostas e o que parar. A IA propõe, você decide.',
-    href: '/marketing/estrategia',
-    onde: 'Marketing',
-  },
-  {
-    titulo: 'Performance',
-    o_que: 'O desempenho da conta e de cada post contra a mediana da própria casa.',
-    href: '/marketing/performance',
-    onde: 'Marketing',
-  },
-  {
-    titulo: 'Relatório do mês',
-    o_que: 'O fechamento: o que foi ao ar, o que decidimos, como rendeu e o que vem.',
-    href: '/marketing/relatorio',
-    onde: 'Marketing',
-  },
-  {
-    titulo: 'Concorrentes',
-    o_que: 'Os perfis observados com número: a mediana de cada um e o índice de cada post contra ela.',
-    href: '/referencias#concorrentes',
-    onde: 'Referências · aba Concorrentes',
-  },
+const CARTOES: { etapa: MaquinaEtapa; titulo: string; href: string; vazio: string }[] = [
+  { etapa: 'ideia', titulo: 'Banco de ideias', href: '/marketing/banco', vazio: 'nenhuma ideia esperando' },
+  { etapa: 'producao', titulo: 'Design & Gravação', href: '/marketing/producao', vazio: 'nada em produção' },
+  { etapa: 'a_agendar', titulo: 'Agendar', href: '/marketing/agendar', vazio: 'nada pronto sem data' },
 ];
 
-export default function MarketingPage() {
-  const { ready, can } = useAuth();
-  if (!ready) return <p className="text-muted">Carregando…</p>;
-  if (!can('pauta.ver')) return <p className="text-muted">Acesso insuficiente para Marketing.</p>;
+export default function MarketingInicioPage() {
+  const { user } = useAuth();
+  const palavra = useDigitando(PALAVRAS);
+  const hoje = hojeSP();
+  const primeiroNome = user?.name?.split(' ')[0];
 
   return (
-    <div className="space-y-5">
-      <div>
-        <h1 className="text-xl font-semibold">Marketing</h1>
-        <p className="mt-1 max-w-2xl text-sm text-muted">
-          Marca, ideias, planejamento e preparação das contas. O preparo de uma versão fica salvo;
-          a publicação depende da integração e da autorização da ação.
-        </p>
-      </div>
-
-      {can('tarefas.ver') && <section aria-label="Percurso da tarefa ao preparo" className="space-y-3 rounded-xl border border-border bg-surface p-4">
-        <h2 className="font-medium">Da tarefa ao preparo</h2>
-        <p className="text-sm text-muted">Em Trabalho, abra a tarefa e escolha “Abrir material e Produção”. Confira a versão e a aprovação; depois use “Preparar conta e horário” para levar a origem exata ao destino.</p>
-        <div className="flex flex-wrap gap-3 text-sm"><Link href="/trabalho" className="text-brand underline">Escolher tarefa em Trabalho</Link><Link href="/marketing/preparacao" className="text-brand underline">Conferir contas e preparos</Link></div>
-      </section>}
-
-      <div className="grid gap-3 md:grid-cols-2">
-        {DESTINOS.map((d) => {
-          const corpo = (
-            <>
-              <div className="flex flex-wrap items-baseline justify-between gap-2">
-                <h2 className="font-medium">{d.titulo}</h2>
-                <span className="font-os-mono text-[10px] uppercase tracking-[0.16em] text-muted">
-                  {d.onde}
-                </span>
+    <MaquinaPagina titulo="Marketing" semCabecalho>
+      {({ painel }) => {
+        const conta = (e: MaquinaEtapa) => painel.posts.filter((p) => p.etapa === e).length;
+        const proximo = painel.posts
+          .filter((p) => p.etapa === 'agendado' && p.data && p.data >= hoje)
+          .sort((a, b) => a.data!.localeCompare(b.data!))[0];
+        return (
+          <div className="space-y-10 py-4">
+            <section>
+              <div className="com-rotulo">
+                Marketing · {MESES[Number(hoje.slice(5, 7)) - 1]} {hoje.slice(0, 4)}
               </div>
-              <p className="mt-1 text-sm text-muted">{d.o_que}</p>
-              {d.falta && (
-                <p className="mt-2 font-os-mono text-[11px] text-warn">ainda não existe · fatia {d.falta}</p>
-              )}
-            </>
-          );
+              <p className="mt-6 text-lg text-muted">
+                {primeiroNome ? `${primeiroNome}, bem-vindo` : 'Bem-vindo'} à Máquina de Conteúdo
+              </p>
+              <h1 className="mt-1 text-[clamp(3rem,9vw,6.5rem)] font-bold leading-[0.95] tracking-[-0.03em]">
+                Bora <span className="text-brand">{palavra}</span>
+                <span aria-hidden className="ml-1 inline-block w-[0.08em] animate-pulse bg-brand align-baseline">
+                  &nbsp;
+                </span>
+              </h1>
+            </section>
 
-          return d.href ? (
-            <Link
-              key={d.titulo}
-              href={d.href}
-              className="rounded-xl border border-border bg-surface p-4 transition hover:border-brand-dim"
-            >
-              {corpo}
-            </Link>
-          ) : (
-            <div key={d.titulo} className="rounded-xl border border-border bg-surface p-4 opacity-60">
-              {corpo}
-            </div>
-          );
-        })}
-      </div>
-    </div>
+            <section className="grid gap-3 md:grid-cols-3">
+              {CARTOES.map((c) => {
+                const n = conta(c.etapa);
+                return (
+                  <Link
+                    key={c.etapa}
+                    href={c.href}
+                    className={`group rounded-md border bg-surface p-5 transition hover:border-brand ${n ? 'border-border-strong' : 'border-border'}`}
+                  >
+                    <div className="com-rotulo">{c.titulo}</div>
+                    <div className={`com-num mt-3 text-[3rem] font-bold leading-none ${n ? 'text-text' : 'text-dim'}`}>{n}</div>
+                    <div className="mt-3 flex items-center justify-between text-sm text-muted">
+                      <span>{n ? (n === 1 ? '1 post' : `${n} posts`) : c.vazio}</span>
+                      <span className="font-os-mono text-xs text-brand opacity-70 group-hover:opacity-100">abrir →</span>
+                    </div>
+                  </Link>
+                );
+              })}
+            </section>
+
+            {proximo && (
+              <p className="text-sm text-muted">
+                Próximo post: <span className="text-text">{proximo.titulo}</span> ·{' '}
+                <Link href={`/marketing/calendario?post=${proximo.id}`} className="text-brand underline">
+                  ver no calendário
+                </Link>
+              </p>
+            )}
+          </div>
+        );
+      }}
+    </MaquinaPagina>
   );
 }

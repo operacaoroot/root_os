@@ -206,8 +206,10 @@ describe('NAV — estrutura', () => {
     // 19/10/2026: + /dia-a-dia, todas as tarefas de todas as áreas (Dia a dia › Tarefas).
     // 19/10/2026: + a aba Tarefas de Comercial, Marketing e Financeiro (Dia a dia › Tarefas filtrada pela área).
     const abasDeTarefas = ['/comercial/tarefas', '/marketing/tarefas', '/financeiro/tarefas'];
-    expect(NAV).toHaveLength(46);
-    expect(new Set(NAV.map((n) => n.href))).toEqual(new Set([...hrefsEsperados, ...rotasMK, '/comercial', '/clientes', '/cofre', '/dia-a-dia', ...abasDeTarefas]));
+    // 19/10/2026: + a esteira da Máquina de Conteúdo da empresa em Marketing.
+    const maquina = ['/marketing/banco', '/marketing/producao', '/marketing/agendar', '/marketing/calendario', '/marketing/analise'];
+    expect(NAV).toHaveLength(51);
+    expect(new Set(NAV.map((n) => n.href))).toEqual(new Set([...hrefsEsperados, ...rotasMK, '/comercial', '/clientes', '/cofre', '/dia-a-dia', ...abasDeTarefas, ...maquina]));
   });
 
   it('não repete chave nem rota', () => {
@@ -242,6 +244,7 @@ describe('NAV — estrutura', () => {
       ['relatorios', 'relatorios'], ['metas', 'metas'], ['financeiro', 'financeiro'],
       ['marca', 'pauta'], ['marketing', 'pauta'], ['marketing-ideias', 'pauta'],
       ['marketing-estrategia', 'pauta'], ['marketing-performance', 'pauta'], ['marketing-relatorio', 'pauta'],
+      ['maquina-banco', 'pauta'], ['maquina-producao', 'pauta'], ['maquina-agendar', 'pauta'], ['maquina-calendario', 'pauta'], ['maquina-analise', 'pauta'],
     ]);
     for (const n of NAV) expect(n.modulo).toBe(modulosEsperados.get(n.key));
   });
@@ -391,7 +394,7 @@ describe('navEmArvore', () => {
     const pauta = conteudo.itens.find((no) => no.item.key === 'pauta')!;
     expect(pauta.filhos.map((f) => f.key)).toEqual(['referencias']);
     expect(conteudo.itens.map((no) => no.item.key)).toEqual(
-      NAV.filter((n) => n.secao === 'conteudo' && !n.pai).map((n) => n.key),
+      NAV.filter((n) => n.secao === 'conteudo' && !n.pai && !n.oculto).map((n) => n.key),
     );
   });
 
@@ -473,12 +476,10 @@ describe('o bloco Marketing (MK7)', () => {
     const conteudo = comModulo.find((g) => g.secao.key === 'conteudo');
     const bloco = conteudo?.itens.find((i) => i.item.key === 'marketing');
     expect(bloco, 'o bloco não apareceu para quem tem pauta.ver').toBeDefined();
-    expect(bloco!.filhos.map((f) => f.key).sort()).toEqual([
-      'marketing-performance',
-      'marketing-relatorio',
-    ]);
+    // 19/10/2026: a Performance da pauta saiu do menu (a Análise da Máquina a substitui).
+    expect(bloco!.filhos.map((f) => f.key).sort()).toEqual(['marketing-relatorio']);
     expect(conteudo?.itens.map((i) => i.item.key)).toEqual(
-      expect.arrayContaining(['marketing-ideias', 'marketing-estrategia']),
+      expect.arrayContaining(['maquina-banco', 'marketing-estrategia']),
     );
 
     // Sem o módulo, a seção inteira some (nenhum item dela sobra) — o que
@@ -507,6 +508,7 @@ describe('organização da navegação (ROOT-07)', () => {
     conteudo: 'dashboard.ver', pauta: 'pauta.ver', referencias: 'pauta.ver', marketing: 'pauta.ver',
     'marketing-ideias': 'pauta.ver', 'marketing-estrategia': 'pauta.ver', 'marketing-performance': 'pauta.ver',
     'marketing-relatorio': 'pauta.ver', instagram: 'instagram.ver', bio: 'bio.ver',
+    'maquina-banco': 'pauta.ver', 'maquina-producao': 'pauta.ver', 'maquina-agendar': 'pauta.ver', 'maquina-calendario': 'pauta.ver', 'maquina-analise': 'pauta.ver',
     'comercial-painel': 'leads.ver', clientes: 'tarefas.ver', 'tarefas-todas': 'tarefas.ver', leads: 'leads.ver',
     'comercial-tarefas': 'tarefas.ver', 'marketing-tarefas': 'tarefas.ver', 'financeiro-tarefas': 'tarefas.ver', funil: 'dashboard.ver', campanhas: 'campanhas.ver', pixels: 'dashboard.ver',
     relatorios: 'relatorios.ver', metas: 'dashboard.ver', financeiro: 'financeiro.ver', 'custo-ia': 'dashboard.ver',
@@ -521,9 +523,10 @@ describe('organização da navegação (ROOT-07)', () => {
     contexto: 'Conhecimento da empresa', marca: 'Marca e pilares', organograma: 'Equipe',
     // 19/10/2026: a implantação de clientes virou a aba Operação do Dia a dia.
     tarefas: 'Lista de tarefas', trabalho: 'Quadro interno', onboarding: 'Operação',
-    conteudo: 'Temas do ClickUp', pauta: 'Produção de conteúdo', referencias: 'Referências', marketing: 'Marketing',
+    conteudo: 'Temas do ClickUp', pauta: 'Produção de conteúdo', referencias: 'Referências', marketing: 'Início',
     'marketing-ideias': 'Banco de ideias', 'marketing-estrategia': 'Estratégia do mês',
     'marketing-performance': 'Performance', 'marketing-relatorio': 'Relatório do mês',
+    'maquina-banco': 'Banco de ideias', 'maquina-producao': 'Design & Gravação', 'maquina-agendar': 'Agendar', 'maquina-calendario': 'Calendário', 'maquina-analise': 'Análise',
     instagram: 'Instagram', bio: 'Página de links', 'comercial-painel': 'Painel geral', clientes: 'Clientes', 'tarefas-todas': 'Tarefas', leads: 'Leads',
     // 19/10/2026: a aba Tarefas de cada área (Dia a dia › Tarefas filtrada pela área).
     'comercial-tarefas': 'Tarefas', 'marketing-tarefas': 'Tarefas', 'financeiro-tarefas': 'Tarefas', funil: 'Funil de vendas',
@@ -545,6 +548,7 @@ describe('organização da navegação (ROOT-07)', () => {
     '/marketing/ideias': 'conteudo', '/marketing/estrategia': 'conteudo',
     '/pauta': 'conteudo', '/referencias': 'conteudo', '/marketing': 'conteudo',
     '/marketing/performance': 'conteudo', '/marketing/relatorio': 'conteudo',
+    '/marketing/banco': 'conteudo', '/marketing/producao': 'conteudo', '/marketing/agendar': 'conteudo', '/marketing/calendario': 'conteudo', '/marketing/analise': 'conteudo',
     '/instagram': 'conteudo', '/bio': 'conteudo', '/campanhas': 'conteudo', '/pixels': 'conteudo',
     '/comercial': 'comercial', '/clientes': 'comercial', '/dia-a-dia': 'dia', '/leads': 'comercial', '/funil': 'comercial',
     '/relatorios': 'resultados', '/metas': 'resultados',
@@ -559,8 +563,8 @@ describe('organização da navegação (ROOT-07)', () => {
   };
 
   it('os 46 destinos mantêm chave, rótulo e permissão da base', () => {
-    expect(NAV).toHaveLength(46);
-    expect(Object.keys(PERMISSAO_DA_BASE)).toHaveLength(46);
+    expect(NAV).toHaveLength(51);
+    expect(Object.keys(PERMISSAO_DA_BASE)).toHaveLength(51);
     for (const n of NAV) {
       expect(n.permission, `${n.key}: permissão mudou`).toBe(PERMISSAO_DA_BASE[n.key]);
       expect(n.label, `${n.key}: rótulo fora da tabela da ROOT-08`).toBe(ROTULOS_DA_ROOT_08[n.key] ?? ROTULO_DA_BASE[n.key]);
@@ -625,7 +629,7 @@ describe('organização da navegação (ROOT-07)', () => {
     }
     const conteudo = navEmArvore(new Set(NAV.map((n) => n.permission))).find((g) => g.secao.key === 'conteudo')!;
     expect(conteudo.itens.map((no) => no.item.key)).toEqual(
-      expect.arrayContaining(['marketing-ideias', 'marketing-estrategia']),
+      expect.arrayContaining(['maquina-banco', 'marketing-estrategia']),
     );
   });
 
@@ -634,7 +638,7 @@ describe('organização da navegação (ROOT-07)', () => {
     expect(a.oculto).toBe(true);
     // 19/10/2026: Pendências, Lista de tarefas, Quadro interno e Temas do ClickUp saíram
     // do menu e seguem vivas (Dia a dia › Tarefas as substitui; o quadro abre o detalhe).
-    expect(NAV.filter((n) => n.oculto).map((n) => n.key)).toEqual(['caixa', 'tarefas', 'trabalho', 'conteudo', 'assinatura']);
+    expect(NAV.filter((n) => n.oculto).map((n) => n.key)).toEqual(['caixa', 'tarefas', 'trabalho', 'conteudo', 'marketing-ideias', 'marketing-performance', 'assinatura']);
     const todas = new Set(NAV.map((n) => n.permission));
     expect(navPorSecao(todas).flatMap((g) => g.itens.map((i) => i.key))).not.toContain('assinatura');
     expect(
