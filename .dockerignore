@@ -10,3 +10,11 @@
 data/
 homolog/.tmp
 homolog/provas
+
+# Versão final (19/10/2026): worktrees dos agentes e pastas com dado real de cliente
+# (cópia da produção, mapas, sobras) nunca entram no contexto da imagem.
+.claude
+homolog/copia
+homolog/organizar/*
+!homolog/organizar/organizar.mjs
+homolog/.env*
