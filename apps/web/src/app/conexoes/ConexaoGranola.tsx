@@ -164,7 +164,7 @@ export function ConexaoGranola({ token, gerenciar }: { token: string; gerenciar:
           </div>
           <p className="text-muted">
             Campos: title, transcript, my_notes, attendees, start_time, link.
-            {' '}Senha {c.senha.ativa ? `ativa desde ${quando(c.senha.desde)}${c.senha.usadaEm ? `, usada em ${quando(c.senha.usadaEm)}` : ', ainda não usada'}` : c.senha.revogadaEm ? `revogada em ${quando(c.senha.revogadaEm)}` : 'ainda não gerada'}.
+            {' '}Senha {c.senha.ativa ? `ativa${c.senha.usadaEm ? `, último uso em ${quando(c.senha.usadaEm)}` : ', ainda não usada'}` : c.senha.revogadaEm ? `revogada em ${quando(c.senha.revogadaEm)}` : 'ainda não gerada'}.
             {c.desligado && ` Desligado em ${quando(c.desligadoEm)}.`}
           </p>
           <p className="text-muted">O OS acha o cliente pelo e-mail, pelo domínio do e-mail ou pelo nome. Preencha o E-mail ou o Site na ficha.</p>
