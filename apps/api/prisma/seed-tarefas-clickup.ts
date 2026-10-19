@@ -6,8 +6,8 @@
 // pessoa, prazo e cliente (o card do CRM, quando existe).
 //
 // IDEMPOTENTE e SEM DUPLICAR: a chave é o id do ClickUp (`externalId`, único
-// por empresa). Rodar de novo atualiza a tarefa que já existe; nunca cria a
-// segunda. Status já mexido no OS não volta para trás (só é escrito ao criar).
+// por empresa). Rodar de novo só cria a que falta; a que já existe NÃO é
+// regravada (só a descrição vazia é preenchida) — o que foi editado no OS fica.
 //   pnpm --filter @mktos/api db:seed:tarefas [arquivo.json]
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -122,9 +122,12 @@ async function main() {
     const ja = await prisma.workTask.findFirst({ where: { orgId, externalId: t.id }, select: { id: true, description: true } });
     const origem = t.paiNoClickUp ? `_No ClickUp era subtarefa de: ${t.paiNoClickUp}._` : null;
     const descricao = [t.descricao, t.nota, origem].filter(Boolean).join('\n\n') || null;
+    // TAREFA QUE JÁ EXISTE NÃO É REGRAVADA (19/10/2026): a carga de 18:09 regravou
+    // título, área, responsável e prazo de 28 tarefas que o Lucas tinha editado no
+    // OS. Desde então a carga só CRIA o que falta e, na que existe, só preenche a
+    // descrição vazia. O OS é a fonte; o ClickUp é só a origem.
     const tarefa = ja
-      // Atualiza o que vem do ClickUp; a descrição só entra onde ainda está vazia (ela agora é escrita no OS).
-      ? await prisma.workTask.update({ where: { id: ja.id }, data: { ...comum, ...(ja.description ? {} : { description: descricao }) } })
+      ? (ja.description ? { id: ja.id } : await prisma.workTask.update({ where: { id: ja.id }, data: { description: descricao } }))
       : await prisma.workTask.create({
         data: { ...comum, description: descricao, orgId, listId: lista.id, statusId: t.status === 'fazendo' ? lista.fazendo : lista.aberta, externalId: t.id },
       });
