@@ -33,3 +33,6 @@ homolog/.tmp/
 
 # bytecode do Python dos roteiros de prova
 __pycache__/
+
+# cópia de produção do Lucas (19/10): dado real de cliente, nunca no git
+homolog/copia/
