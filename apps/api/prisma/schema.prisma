@@ -171,6 +171,7 @@ model Org {
   caixaVistos           CaixaVisto[]
   /// As sugestões de tarefa lidas das atas do Trabalho (rodada do painel P3).
   ataSugestoes          AtaSugestao[]
+  vistasSalvas          VistaSalva[]
 
   // Fatia 3.6 — RF-G-05 (bloco no fim do arquivo). Só o outro lado da relação
   // mora aqui: é o que o Prisma exige, e nada além disso.
@@ -2282,6 +2283,30 @@ model CaixaVisto {
 
   @@unique([orgId, userId, origem, eventoId])
   @@index([orgId, userId, vistoEm])
+}
+
+/// A VISTA SALVA — rodada do trabalho T3, 19/10/2026.
+///
+/// A forma de ver uma tela (ordenação, agrupamento, colunas, filtros) que a
+/// PESSOA salvou com um nome, guardada no servidor para acompanhá-la em
+/// qualquer computador. Preferência de uma pessoa, não dado da empresa: só quem
+/// criou lê e escreve (o serviço filtra por `userId` além da empresa). Uma
+/// padrão por pessoa e tela (índice único parcial, só na migration). `config` é
+/// validado pelo schema da tela (`VistaConfigSchema` no shared) na entrada.
+model VistaSalva {
+  id           String   @id @default(uuid())
+  orgId        String
+  org          Org      @relation(fields: [orgId], references: [id])
+  userId       String
+  tela         String
+  nome         String
+  padrao       Boolean  @default(false)
+  config       Json
+  criadaEm     DateTime @default(now())
+  atualizadaEm DateTime @updatedAt
+
+  @@unique([orgId, userId, tela, nome])
+  @@index([orgId, userId, tela])
 }
 
 /// A SUGESTÃO DE TAREFA LIDA DE UMA ATA — rodada do painel P3, 18/10/2026.

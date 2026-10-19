@@ -428,6 +428,7 @@ const ALVOS: Alvo[] = [
   { tabela: 'WorkComment', escopo: 'filho', chaveSql: '"id"', nota: 'Texto livre e authorName. Conteúdo de tenant que só a política de linha separa.' },
   { tabela: 'WorkApontamento', escopo: 'filho', chaveSql: '"id"', nota: 'Horas de gente por cliente e por etapa: diz quanto a empresa cobra e quanto gasta. Número comercial que a vizinha não pode ver.' },
   { tabela: 'AtaSugestao', escopo: 'tenant', chaveSql: '"id"', nota: 'A sugestão de tarefa lida de uma ata do Trabalho (rodada do painel P3): o título, o dono sugerido, o prazo e o TRECHO da reunião de onde saiu. Ler a da outra empresa é ler o que ela combinou em reunião e com quem; ESCREVER é pôr tarefa na fila de aceite dela, ou aceitar por ela. Raiz da empresa, não filha: a ata vive em duas tabelas e o orgId vem do insert.' },
+  { tabela: 'VistaSalva', escopo: 'tenant', chaveSql: '"id"', nota: 'A vista salva de uma pessoa (rodada do trabalho T3): ordenação, agrupamento, colunas e filtros de Minhas tarefas e do quadro, com o nome que ela deu. LER a da outra empresa é ler como alguém de lá organiza o trabalho e por quais clientes filtra; ESCREVER é trocar a vista padrão de uma pessoa da outra casa. Raiz da empresa; o serviço ainda filtra por userId.' },
   { tabela: 'CaixaVisto', escopo: 'tenant', chaveSql: '"id"', nota: 'O "limpei isto" da caixa de entrada (rodada do painel P1): quem leu qual evento de qual tarefa, e até quando limpou tudo. Ler a da outra empresa é saber o que cada pessoa dela já viu; ESCREVER é sumir com recado da caixa de alguém de outra casa. Raiz da empresa, não filha: o evento vive em duas tabelas e o orgId vem do insert.' },
 
   // ---- onboarding do cliente (23/09/2026) -------------------------------
@@ -1231,6 +1232,12 @@ async function semear(c: PoolClient, rotulo: 'A' | 'B', vec: string): Promise<vo
     titulo: `Tarefa combinada na reunião da org ${rotulo}`, trecho: `Trecho privado da ata da org ${rotulo}`,
     estado: 'rascunho', atualizadaEm: new Date(),
   }));
+
+  // As vistas salvas (rodada do trabalho T3): a preferência de uma pessoa.
+  reg('VistaSalva', await ins(c, 'VistaSalva', {
+    id: crypto.randomUUID(), orgId, userId, tela: 'minhas-tarefas', nome: `Vista ${rotulo} ${MARCA}`,
+    padrao: false, config: JSON.stringify({ privado: rotulo }), atualizadaEm: new Date(),
+  }, { config: 'jsonb' }));
 
   // Onboarding do cliente (23/09/2026): o trilho e os quatro filhos.
   const trilhoId = await ins(c, 'OnboardingTrilho', {

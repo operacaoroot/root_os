@@ -9,6 +9,8 @@ import { MemoryModule } from '../memory/memoria.module';
 import { AtasController } from './atas/atas.controller';
 import { AtasService } from './atas/atas.service';
 import { MovimentoDoQuadroService } from './movimento-do-quadro.service';
+import { VistasController } from './vistas.controller';
+import { VistasService } from './vistas.service';
 
 /**
  * O CHECKOUT É EXPORTADO, e a exportação é a fatia A4 pela metade.
@@ -36,8 +38,8 @@ import { MovimentoDoQuadroService } from './movimento-do-quadro.service';
  */
 @Module({
   imports: [AuditModule, MemoryModule],
-  controllers: [WorkController, WorkFilesController, AtasController],
-  providers: [WorkService, CheckoutDeTarefaService, WorkFilesService, AtasService, MovimentoDoQuadroService],
+  controllers: [VistasController, WorkController, WorkFilesController, AtasController],
+  providers: [WorkService, CheckoutDeTarefaService, WorkFilesService, AtasService, MovimentoDoQuadroService, VistasService],
   exports: [CheckoutDeTarefaService, WorkService],
 })
 export class WorkModule {}

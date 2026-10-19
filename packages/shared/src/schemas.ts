@@ -5953,6 +5953,11 @@ export interface CaixaMinhaTarefa {
   atualizadaEm: string;
   /** Os mesmos motivos de parada da caixa (prazo vencido, sem movimento, presa). */
   motivos: CaixaMotivoDaParada[];
+  /** Rodada do trabalho T3/T4: para ordenar, agrupar e filtrar por cliente. */
+  criadaEm: string;
+  prioridade: WorkPriorityDto;
+  clienteId: string | null;
+  cliente: string | null;
 }
 
 export interface CaixaTarefasResposta {

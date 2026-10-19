@@ -11,6 +11,7 @@ import type {
 import { PrismaService } from '../prisma/prisma.service';
 import { ModulosService } from '../tenants/modulos.service';
 import { exigirTenant } from '../common/contexto-execucao';
+import { nomesDosClientes } from '../work/clientes-da-casa';
 import {
   ESTADO_DO_EIXO,
   condicoesDeResponsavel,
@@ -440,6 +441,9 @@ export class CaixaAtividadeService {
         agenteEm: true,
         assignee: true,
         listId: true,
+        clienteId: true,
+        priority: true,
+        createdAt: true,
         status: { select: { name: true, color: true, type: true } },
         list: { select: { name: true, folderId: true, folder: { select: { name: true } } } },
         _count: { select: { comments: true } },
@@ -447,6 +451,8 @@ export class CaixaAtividadeService {
     });
     const truncado = linhas.length > TETO_MINHAS_TAREFAS;
     const pagina = truncado ? linhas.slice(0, TETO_MINHAS_TAREFAS) : linhas;
+    // T3/T4: o cliente, escopado por empresa (o mesmo ajudante do Trabalho).
+    const clientes = await nomesDosClientes(this.prisma, orgId, pagina.map((t) => t.clienteId));
 
     return {
       ...base,
@@ -468,6 +474,10 @@ export class CaixaAtividadeService {
         responsavel: t.assignee,
         comentarios: t._count.comments,
         atualizadaEm: t.updatedAt.toISOString(),
+        criadaEm: t.createdAt.toISOString(),
+        prioridade: t.priority,
+        clienteId: t.clienteId && clientes.has(t.clienteId) ? t.clienteId : null,
+        cliente: t.clienteId ? clientes.get(t.clienteId) ?? null : null,
         // Tarefa encerrada não está parada: ela acabou.
         motivos: t.status.type === 'closed' ? [] : motivosDaParada(t, agora),
       })),

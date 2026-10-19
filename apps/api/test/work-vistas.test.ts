@@ -1,0 +1,115 @@
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { ConflictException, NotFoundException } from '@nestjs/common';
+import { PrismaClient } from '@prisma/client';
+import {
+  VISTA_PADRAO_DE_MINHAS_TAREFAS, VistaCriarSchema, agruparTarefas, grupoDeVencimento, ordenarTarefas,
+} from '@mktos/shared';
+import { VistasService } from '../src/work/vistas.service';
+import type { PrismaService } from '../src/prisma/prisma.service';
+import { exigirBancoDescartavel } from './banco-de-teste';
+
+/*
+ * AS VISTAS SALVAS (rodada do trabalho T3, 19/10/2026).
+ *
+ *  1. sem banco: grupos de vencimento no relógio de São Paulo (Atrasadas, Hoje,
+ *     Amanhã, Esta semana, Depois, Sem data), ordenação com o vazio no fim e o
+ *     schema recusando config estranha;
+ *  2. contra o Postgres: a vista é da pessoa (a de outra pessoa e a de outra
+ *     empresa respondem 404), uma padrão por tela, nome repetido é 409, e a
+ *     config é conferida pela tela da vista.
+ */
+
+describe('vistas: as regras puras', () => {
+  // Segunda-feira, 19/10/2026, 10h em São Paulo (13h UTC).
+  const agora = new Date('2026-10-19T13:00:00.000Z');
+
+  it('os grupos de vencimento contam o DIA em São Paulo', () => {
+    expect(grupoDeVencimento(null, agora)).toBe('sem-data');
+    expect(grupoDeVencimento('2026-10-18T23:00:00.000Z', agora)).toBe('atrasadas'); // 18/10 20h em SP
+    expect(grupoDeVencimento('2026-10-20T02:00:00.000Z', agora)).toBe('hoje'); // 19/10 23h em SP
+    expect(grupoDeVencimento('2026-10-20T15:00:00.000Z', agora)).toBe('amanha');
+    expect(grupoDeVencimento('2026-10-25T15:00:00.000Z', agora)).toBe('semana'); // domingo
+    expect(grupoDeVencimento('2026-10-26T15:00:00.000Z', agora)).toBe('depois'); // segunda seguinte
+  });
+
+  it('ordena por qualquer campo nas duas direções, com o vazio sempre no fim', () => {
+    const base = { status: 'A fazer', lista: 'Execução', prioridade: 'normal', criadaEm: '2026-10-01T00:00:00.000Z' };
+    const itens = [
+      { ...base, titulo: 'B', cliente: 'Studio Lume', prazo: '2026-10-22T12:00:00.000Z', prioridade: 'baixa' },
+      { ...base, titulo: 'A', cliente: null, prazo: null, prioridade: 'urgente' },
+      { ...base, titulo: 'C', cliente: 'Alicerce', prazo: '2026-10-20T12:00:00.000Z' },
+    ];
+    expect(ordenarTarefas(itens, { campo: 'vencimento', direcao: 'asc' }).map((t) => t.titulo)).toEqual(['C', 'B', 'A']);
+    expect(ordenarTarefas(itens, { campo: 'vencimento', direcao: 'desc' }).map((t) => t.titulo)).toEqual(['B', 'C', 'A']);
+    expect(ordenarTarefas(itens, { campo: 'cliente', direcao: 'asc' }).map((t) => t.titulo)).toEqual(['C', 'B', 'A']);
+    expect(ordenarTarefas(itens, { campo: 'prioridade', direcao: 'asc' }).map((t) => t.titulo)).toEqual(['A', 'C', 'B']);
+    const grupos = agruparTarefas(itens, 'cliente', agora);
+    expect(grupos.map((g) => [g.rotulo, g.itens.length])).toEqual([['Alicerce', 1], ['Studio Lume', 1], ['Sem cliente', 1]]);
+    expect(agruparTarefas(itens, 'vencimento', agora).map((g) => g.rotulo)).toEqual(['Amanhã', 'Esta semana', 'Sem data']);
+  });
+
+  it('o schema recusa config com chave estranha e tela desconhecida', () => {
+    expect(VistaCriarSchema.safeParse({ tela: 'minhas-tarefas', nome: 'Minha', config: VISTA_PADRAO_DE_MINHAS_TAREFAS }).success).toBe(true);
+    expect(VistaCriarSchema.safeParse({ tela: 'minhas-tarefas', nome: 'Minha', config: { ...VISTA_PADRAO_DE_MINHAS_TAREFAS, x: 1 } }).success).toBe(false);
+    expect(VistaCriarSchema.safeParse({ tela: 'outra', nome: 'Minha', config: {} }).success).toBe(false);
+    expect(VistaCriarSchema.safeParse({ tela: 'minhas-tarefas', nome: ' ', config: VISTA_PADRAO_DE_MINHAS_TAREFAS }).success).toBe(false);
+  });
+});
+
+const URL = process.env.TEST_DATABASE_URL;
+const CASA = 'org-teste-vistas-casa';
+const VIZINHA = 'org-teste-vistas-vizinha';
+const EU = 'u-vistas-eu';
+const COLEGA = 'u-vistas-colega';
+
+exigirBancoDescartavel(URL ?? '', 'ESCREVE nele (duas empresas e vistas salvas)');
+
+describe.skipIf(!URL)('vistas: contra o Postgres', () => {
+  let prisma: PrismaClient;
+  let svc: VistasService;
+  const cfg = VISTA_PADRAO_DE_MINHAS_TAREFAS;
+
+  beforeAll(async () => {
+    prisma = new PrismaClient({ datasources: { db: { url: URL } } });
+    await prisma.$connect();
+    svc = new VistasService(prisma as unknown as PrismaService);
+    for (const id of [CASA, VIZINHA]) await prisma.org.upsert({ where: { id }, create: { id, name: id, slug: id }, update: {} });
+  });
+  beforeEach(async () => { await prisma.vistaSalva.deleteMany({ where: { orgId: { in: [CASA, VIZINHA] } } }); });
+  afterAll(async () => {
+    await prisma.vistaSalva.deleteMany({ where: { orgId: { in: [CASA, VIZINHA] } } });
+    await prisma.org.deleteMany({ where: { id: { in: [CASA, VIZINHA] } } });
+    await prisma.$disconnect();
+  });
+
+  it('uma padrão por tela; marcar outra desmarca a anterior', async () => {
+    const a = await svc.criar(CASA, EU, { tela: 'minhas-tarefas', nome: 'Por cliente', padrao: true, config: { ...cfg, agrupamento: 'cliente' } });
+    const b = await svc.criar(CASA, EU, { tela: 'minhas-tarefas', nome: 'Atrasadas', padrao: true, config: { ...cfg, agrupamento: 'vencimento' } });
+    let lidas = await svc.listar(CASA, EU, 'minhas-tarefas');
+    expect(lidas.filter((v) => v.padrao).map((v) => v.id)).toEqual([b.id]);
+    await svc.alterar(CASA, EU, a.id, { padrao: true });
+    lidas = await svc.listar(CASA, EU, 'minhas-tarefas');
+    expect(lidas[0]).toMatchObject({ id: a.id, padrao: true });
+    expect(lidas.filter((v) => v.padrao)).toHaveLength(1);
+  });
+
+  it('nome repetido na mesma tela é 409; a config é conferida pela tela', async () => {
+    await svc.criar(CASA, EU, { tela: 'minhas-tarefas', nome: 'Minha', config: cfg });
+    await expect(svc.criar(CASA, EU, { tela: 'minhas-tarefas', nome: 'Minha', config: cfg })).rejects.toBeInstanceOf(ConflictException);
+    const v = (await svc.listar(CASA, EU, 'minhas-tarefas'))[0];
+    await expect(svc.alterar(CASA, EU, v.id, { config: { densidade: 'compacto' } })).rejects.toThrow();
+    const nova = await svc.alterar(CASA, EU, v.id, { config: { ...cfg, ordenacao: { campo: 'cliente', direcao: 'desc' } } });
+    expect((nova.config as typeof cfg).ordenacao).toEqual({ campo: 'cliente', direcao: 'desc' });
+  });
+
+  it('a vista é da pessoa: a de outra pessoa e a de outra empresa respondem 404 e não aparecem', async () => {
+    const minha = await svc.criar(CASA, EU, { tela: 'minhas-tarefas', nome: 'Minha', config: cfg });
+    expect(await svc.listar(CASA, COLEGA, 'minhas-tarefas')).toEqual([]);
+    expect(await svc.listar(VIZINHA, EU, 'minhas-tarefas')).toEqual([]);
+    await expect(svc.alterar(CASA, COLEGA, minha.id, { nome: 'Roubada' })).rejects.toBeInstanceOf(NotFoundException);
+    await expect(svc.remover(VIZINHA, EU, minha.id)).rejects.toBeInstanceOf(NotFoundException);
+    expect((await svc.listar(CASA, EU, 'minhas-tarefas')).map((x) => x.nome)).toEqual(['Minha']);
+    await svc.remover(CASA, EU, minha.id);
+    expect(await svc.listar(CASA, EU, 'minhas-tarefas')).toEqual([]);
+  });
+});
