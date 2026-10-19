@@ -143,7 +143,19 @@ export default function CofrePage() {
     }).catch((e) => setErro(e.message));
   };
 
-  if (!ready || !estado) return <p className="text-sm text-muted">Carregando…</p>;
+  if (!ready) return <p className="text-sm text-muted">Carregando…</p>;
+  if (!estado) {
+    if (!erro) return <p className="text-sm text-muted">Carregando…</p>;
+    // 403 logo depois de a permissão entrar: o login carrega as permissões; quem já estava logado precisa entrar de novo.
+    return (
+      <div className="mx-auto max-w-md rounded-xl border border-border bg-surface p-6 text-center text-sm">
+        <Icons.LockKeyhole size={28} className="mx-auto mb-2 text-muted" aria-hidden />
+        <p className="font-medium">Não foi possível abrir o cofre.</p>
+        <p className="mt-1 text-muted">{erro}</p>
+        <p className="mt-3 text-muted">Se você acabou de ganhar acesso ao cofre, saia do OS e entre de novo.</p>
+      </div>
+    );
+  }
 
   return (
     <div className="mx-auto max-w-[960px] space-y-6">
