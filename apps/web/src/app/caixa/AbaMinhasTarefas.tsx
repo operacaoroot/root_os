@@ -12,6 +12,8 @@ import type {
 } from '@mktos/shared';
 
 import { apiGet } from '@/lib/api';
+import { useTarefaNaUrl } from '@/lib/tarefa-na-url';
+import { TarefaFlutuante } from '@/components/trabalho/TrabalhoView';
 import {
   BOTAO_PEQUENO,
   CARTAO,
@@ -219,6 +221,13 @@ function BalaoDeComentarios({
  * ------------------------------------------------------------------------ */
 
 export function AbaMinhasTarefas({ token }: { token: string }) {
+  // A tarefa abre num pop-up por cima da tabela (rodada do trabalho T2): ninguém sai de Pendências.
+  const popup = useTarefaNaUrl();
+  const abrirNoClique = (id: string) => (e: React.MouseEvent) => {
+    if (e.metaKey || e.ctrlKey || e.shiftKey || e.button !== 0) return;
+    e.preventDefault();
+    popup.abrir(id);
+  };
   const [filtros, setFiltros] = useState<Filtros>({ lista: '', status: '', vencimento: '', responsavel: 'eu' });
   const [colunas, setColunas] = useState<Set<Coluna>>(() => new Set(COLUNAS));
   const [resposta, setResposta] = useState<CaixaTarefasResposta | null>(null);
@@ -442,14 +451,15 @@ export function AbaMinhasTarefas({ token }: { token: string }) {
               </thead>
               <tbody className="divide-y divide-border">
                 {resposta.itens.map((t) => (
-                  <tr key={t.id} data-testid={`caixa-tarefa-${t.id}`} className="align-top hover:bg-surface-2">
+                  <tr key={t.id} data-testid={`caixa-tarefa-${t.id}`} onClick={() => popup.abrir(t.id)} className="cursor-pointer align-top hover:bg-surface-2">
                     <td className="max-w-[320px] px-3 py-2">
-                      <Link
-                        href={`/trabalho?lista=${encodeURIComponent(t.listaId)}&tarefa=${encodeURIComponent(t.id)}`}
+                      <a
+                        href={`?aba=tarefas&tarefa=${encodeURIComponent(t.id)}`}
+                        onClick={(e) => { e.stopPropagation(); abrirNoClique(t.id)(e); }}
                         className={`break-words font-medium text-text hover:text-brand hover:underline ${FOCO}`}
                       >
                         {t.titulo}
-                      </Link>
+                      </a>
                       {t.motivos.length > 0 && (
                         <span className="mt-0.5 block text-[11px] text-warn">
                           {t.motivos.map((m) => FRASE_DO_MOTIVO[m]).join(' · ')}
@@ -478,7 +488,7 @@ export function AbaMinhasTarefas({ token }: { token: string }) {
                     {ver('responsaveis') && (
                       <td className="px-3 py-2 text-muted">{t.responsavel ?? 'ninguém'}</td>
                     )}
-                    {ver('comentarios') && <td className="px-3 py-2">{botaoDeComentarios(t)}</td>}
+                    {ver('comentarios') && <td className="px-3 py-2" onClick={(e) => e.stopPropagation()}>{botaoDeComentarios(t)}</td>}
                   </tr>
                 ))}
               </tbody>
@@ -488,13 +498,14 @@ export function AbaMinhasTarefas({ token }: { token: string }) {
           {/* Celular: cartões */}
           <ul className="space-y-2 md:hidden">
             {resposta.itens.map((t) => (
-              <li key={t.id} data-testid={`caixa-tarefa-cartao-${t.id}`} className={`${CARTAO} space-y-1.5 p-3`}>
-                <Link
-                  href={`/trabalho?lista=${encodeURIComponent(t.listaId)}&tarefa=${encodeURIComponent(t.id)}`}
-                  className={`block break-words text-[13px] font-medium text-text hover:text-brand ${FOCO}`}
+              <li key={t.id} data-testid={`caixa-tarefa-cartao-${t.id}`} className={`${CARTAO} relative space-y-1.5 p-3`}>
+                <a
+                  href={`?aba=tarefas&tarefa=${encodeURIComponent(t.id)}`}
+                  onClick={abrirNoClique(t.id)}
+                  className={`block break-words text-[13px] font-medium text-text after:absolute after:inset-0 after:content-[''] hover:text-brand ${FOCO}`}
                 >
                   {t.titulo}
-                </Link>
+                </a>
                 {t.motivos.length > 0 && (
                   <p className="text-[11px] text-warn">{t.motivos.map((m) => FRASE_DO_MOTIVO[m]).join(' · ')}</p>
                 )}
@@ -524,7 +535,7 @@ export function AbaMinhasTarefas({ token }: { token: string }) {
                     </>
                   )}
                 </dl>
-                {ver('comentarios') && botaoDeComentarios(t, true)}
+                {ver('comentarios') && <div className="relative z-10">{botaoDeComentarios(t, true)}</div>}
               </li>
             ))}
           </ul>
@@ -540,6 +551,7 @@ export function AbaMinhasTarefas({ token }: { token: string }) {
       {balao && token && (
         <BalaoDeComentarios tarefa={balao.tarefa} token={token} ancora={balao.ancora} origem={balao.origem} onFechar={fecharBalao} />
       )}
+      <TarefaFlutuante tarefa={popup} onMudou={() => void buscar()} />
     </div>
   );
 }

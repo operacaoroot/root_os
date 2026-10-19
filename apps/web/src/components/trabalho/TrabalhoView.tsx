@@ -14,6 +14,8 @@ import type {
 import { apiBlob, apiDelete, apiGet, apiPatch, apiPost } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 import { tarefasDeTrabalho } from '@/lib/work-projection';
+import { useTarefaNaUrl, type AbaDaTarefa } from '@/lib/tarefa-na-url';
+import { BancadaDoTrilho } from '@/components/onboarding/BancadaDoTrilho';
 import { diasDesde, formatarHoras, hojeEmBrasilia, minutosDeTexto } from '@/lib/horas';
 import {
   CHAVE_DA_DENSIDADE, DENSIDADES, DIAS_DE_ALERTA_NA_ETAPA, ESCOPOS, LARGURA_DA_COLUNA,
@@ -159,7 +161,10 @@ function TrabalhoConteudo({ visaoInicial, modo }: { visaoInicial: Visao; modo: M
   const [fPasta, setFPasta] = useState('');
   const [trilhos, setTrilhos] = useState<Map<string, TrilhoDoCartao>>(new Map());
   const [tarefas, setTarefas] = useState<TrabTarefaLista | null>(null);
-  const [painelId, setPainelId] = useState<string | null>(null);
+  // O pop-up da tarefa mora na URL (rodada do trabalho T2): voltar do navegador fecha.
+  const tarefaUrl = useTarefaNaUrl();
+  const painelId = tarefaUrl.tarefaId;
+  const filtrosLidos = useRef<string | null>(null);
   const [configAberta, setConfigAberta] = useState(false);
   const [fAssignee, setFAssignee] = useState('');
   const [fAgente, setFAgente] = useState('');
@@ -180,6 +185,11 @@ function TrabalhoConteudo({ visaoInicial, modo }: { visaoInicial: Visao; modo: M
   useEffect(() => {
     const ler = () => {
       const p = new URLSearchParams(window.location.search);
+      // Abrir e fechar o pop-up mexe só em `tarefa`/`tarefaAba`: o quadro não recarrega.
+      const semTarefa = new URLSearchParams(p); semTarefa.delete('tarefa'); semTarefa.delete('tarefaAba');
+      const assinatura = `${window.location.pathname}?${semTarefa.toString()}`;
+      if (filtrosLidos.current === assinatura) return;
+      filtrosLidos.current = assinatura;
       setFAssignee(p.get('assignee') ?? ''); setFBusca(p.get('q') ?? '');
       setFOpcao(p.get('opcao') ?? ''); setFAgente(p.get('agente') ?? '');
       setFStatus(p.get('statusId') ?? ''); setFArquivadas(p.get('arquivadas') === '1');
@@ -187,7 +197,7 @@ function TrabalhoConteudo({ visaoInicial, modo }: { visaoInicial: Visao; modo: M
       setFEscopo(p.get('escopo') ? lerEscopo(p.get('escopo')) : p.get('overdue') === '1' ? 'atrasados' : 'todos');
       setVisao(visaoDoEndereco(p.get('visao')) ?? visaoInicial);
       setFPasta(p.get('pasta') ?? '');
-      listaAtual.current = null; setListaId(null); setPainelId(null); setUrlPronta(true);
+      listaAtual.current = null; setListaId(null); setUrlPronta(true);
       setBump((b) => b + 1);
     };
     ler(); window.addEventListener('popstate', ler);
@@ -261,12 +271,13 @@ function TrabalhoConteudo({ visaoInicial, modo }: { visaoInicial: Visao; modo: M
       .then((t) => {
         if (!ativa || new URLSearchParams(window.location.search).get('tarefa') !== tarefaId) return;
         setListaDoLinkAusente(false);
+        if (implantacao) return;
         trocarLista(t.listId, listaAtual.current ?? new URLSearchParams(window.location.search).get('lista'));
-        setPainelId(t.id); mudarEndereco(t.listId, t.id);
+        mudarEndereco(t.listId, t.id);
       })
       .catch((e) => { if (ativa && new URLSearchParams(window.location.search).get('tarefa') === tarefaId) setErro(`Não foi possível abrir a tarefa do link: ${e.message}`); });
     return () => { ativa = false; };
-  }, [estrutura, token, readable, trocarLista]);
+  }, [estrutura, token, readable, trocarLista, implantacao]);
 
   /*
    * OS TRILHOS LIGADOS AOS CARTÕES (implantação aglutinada, rodada do painel P2).
@@ -287,7 +298,7 @@ function TrabalhoConteudo({ visaoInicial, modo }: { visaoInicial: Visao; modo: M
   }, [ready, token, readable, urlPronta]);
 
   const selecionarLista = (id: string) => {
-    setListaDoLinkAusente(false); trocarLista(id); setPainelId(null); mudarEndereco(id, null);
+    setListaDoLinkAusente(false); trocarLista(id); mudarEndereco(id, null);
   };
 
   const listasVisiveis = useMemo(() => (estrutura ? listasDaPasta(estrutura, fPasta) : []), [estrutura, fPasta]);
@@ -310,10 +321,10 @@ function TrabalhoConteudo({ visaoInicial, modo }: { visaoInicial: Visao; modo: M
     const daPasta = listasDaPasta(estrutura, pasta);
     if (listaId && daPasta.some((l) => l.id === listaId)) return;
     if (daPasta[0]) { selecionarLista(daPasta[0].id); return; }
-    listaAtual.current = null; setListaId(null); setPainelId(null); mudarEndereco(null, null);
+    listaAtual.current = null; setListaId(null); mudarEndereco(null, null);
   };
-  const abrirTarefa = (id: string) => { setPainelId(id); mudarEndereco(listaId, id); };
-  const fecharTarefa = () => { setPainelId(null); mudarEndereco(listaId, null); };
+  const abrirTarefa = (id: string, aba?: AbaDaTarefa) => tarefaUrl.abrir(id, aba);
+  const fecharTarefa = tarefaUrl.fechar;
 
   const lista: TrabListaDto | null = useMemo(() => {
     if (!estrutura || !listaId) return null;
@@ -597,6 +608,7 @@ function TrabalhoConteudo({ visaoInicial, modo }: { visaoInicial: Visao; modo: M
       {painelId && estrutura && (
         <PainelTarefa
           key={`${token}:${painelId}`} id={painelId} estrutura={estrutura} editable={editable} token={token} usuarioId={user?.id ?? null}
+          aba={tarefaUrl.aba} onTrocarAba={tarefaUrl.trocarAba}
           onFechar={fecharTarefa} onMoverLista={(id) => { trocarLista(id); mudarEndereco(id, painelId); }}
           onMudou={refresh} onErro={setErro}
         />
@@ -663,7 +675,7 @@ function Board({ lista, tarefas, editable, podeCriar, token, agentes, trilhos, m
   lista: TrabListaDto; tarefas: TrabTarefaResumo[]; editable: boolean; podeCriar: boolean; token: string | null;
   agentes: TrabAgenteDto[]; trilhos: Map<string, TrilhoDoCartao>;
   movimento: Map<string, TrabMovimentoDoCartao>; densidade: Densidade;
-  onAbrir: (id: string) => void; onMudou: () => void; onErro: (m: string) => void;
+  onAbrir: (id: string, aba?: AbaDaTarefa) => void; onMudou: () => void; onErro: (m: string) => void;
 }) {
   /*
    * ARRASTAR E SOLTAR com a API nativa do HTML5, sem biblioteca: dependência
@@ -747,7 +759,7 @@ function Board({ lista, tarefas, editable, podeCriar, token, agentes, trilhos, m
                   trilho={trilhos.get(t.id) ?? null} mov={movimento.get(t.id) ?? null} densidade={densidade}
                   balaoAberto={balao?.id === t.id}
                   onBalao={(ancora) => setBalao(ancora ? { id: t.id, ancora } : null)}
-                  onAbrir={(id) => { setBalao(null); onAbrir(id); }} onMudou={onMudou} onErro={onErro}
+                  onAbrir={(id, aba) => { setBalao(null); onAbrir(id, aba); }} onMudou={onMudou} onErro={onErro}
                 />
               ))}
               {podeCriar && <QuickAdd listaId={lista.id} statusId={st.id} token={token} onDone={onMudou} onErro={onErro} />}
@@ -770,7 +782,7 @@ function Cartao({ t, lista, editable, token, agentes, trilho, mov, densidade, ba
   t: TrabTarefaResumo; lista: TrabListaDto; editable: boolean; token: string | null;
   agentes: TrabAgenteDto[]; trilho: TrilhoDoCartao | null; mov: TrabMovimentoDoCartao | null; densidade: Densidade;
   balaoAberto: boolean; onBalao: (ancora: DOMRect | null) => void;
-  onAbrir: (id: string) => void; onMudou: () => void; onErro: (m: string) => void;
+  onAbrir: (id: string, aba?: AbaDaTarefa) => void; onMudou: () => void; onErro: (m: string) => void;
 }) {
   const pr = PRIORIDADES.find((p) => p.key === t.priority);
   const agente = nomeDoAgente(t);
@@ -870,7 +882,7 @@ function Cartao({ t, lista, editable, token, agentes, trilho, mov, densidade, ba
               {mov.procedencia.rotulo}
             </a>
           )}
-          {trilho && <div className="relative z-10"><AtalhoDoTrilho trilho={trilho} /></div>}
+          {trilho && <div className="relative z-10"><AtalhoDoTrilho trilho={trilho} onAbrir={() => onAbrir(t.id, 'trilho')} /></div>}
         </>
       )}
       {compacto && mov?.procedencia && <span className="sr-only">{mov.procedencia.rotulo}</span>}
@@ -1080,7 +1092,7 @@ function QuickAdd({ listaId, statusId, token, onDone, onErro }: {
 
 function Tabela({ lista, tarefas, campos, trilhos, onAbrir }: {
   lista: TrabListaDto; tarefas: TrabTarefaResumo[]; campos: string[]; trilhos: Map<string, TrilhoDoCartao>;
-  onAbrir: (id: string) => void;
+  onAbrir: (id: string, aba?: AbaDaTarefa) => void;
 }) {
   return (
     <div className="overflow-x-auto rounded-xl border border-border">
@@ -1102,7 +1114,7 @@ function Tabela({ lista, tarefas, campos, trilhos, onAbrir }: {
             <tr key={t.id} data-work-task-id={t.id} onClick={() => onAbrir(t.id)} className="cursor-pointer border-b border-border/50 hover:bg-surface-2/50">
               <td className="px-3 py-2">
                 <button onClick={(e) => { e.stopPropagation(); onAbrir(t.id); }} className="text-left hover:text-brand focus-visible:outline-brand">{t.title}</button>
-                {trilhos.get(t.id) && <AtalhoDoTrilho trilho={trilhos.get(t.id)!} />}
+                {trilhos.get(t.id) && <AtalhoDoTrilho trilho={trilhos.get(t.id)!} onAbrir={() => onAbrir(t.id, 'trilho')} />}
               </td>
               <td className="px-3 py-2">
                 <span className="rounded px-1.5 py-0.5 text-[11px] capitalize" style={{ background: `${t.statusColor}26`, color: t.statusColor }}>
@@ -1172,8 +1184,54 @@ function separarDependencias(description: string): {
     : { texto: description, sufixo: '', itens: [] };
 }
 
-function PainelTarefa({ id, estrutura, editable, token, usuarioId, onFechar, onMoverLista, onMudou, onErro }: {
+/**
+ * O pop-up da tarefa fora do Trabalho (Pendências, Minhas tarefas): lê a tarefa
+ * da URL pelo mesmo `useTarefaNaUrl` e carrega a árvore que o painel precisa
+ * (listas, etapas, campos, responsáveis). Quem chama só põe `<TarefaFlutuante />`
+ * na tela e abre com `useTarefaNaUrl().abrir(id)`; `onMudou` recarrega a lista
+ * de quem chamou depois de uma edição.
+ */
+export function TarefaFlutuante({ tarefa, onMudou }: { tarefa: ReturnType<typeof useTarefaNaUrl>; onMudou?: () => void }) {
+  const { token, can, user } = useAuth();
+  const [estrutura, setEstrutura] = useState<TrabEstrutura | null>(null);
+  const [erro, setErro] = useState<string | null>(null);
+  const aberta = !!tarefa.tarefaId;
+  useEffect(() => {
+    if (!aberta || estrutura || !token || !can('tarefas.ver')) return;
+    let ativa = true;
+    apiGet<TrabEstrutura>('/trabalho/estrutura', token)
+      .then((e) => { if (ativa) setEstrutura(e); })
+      .catch((e: Error) => { if (ativa) setErro(e.message); });
+    return () => { ativa = false; };
+  }, [aberta, estrutura, token, can]);
+  const mudou = useCallback(() => onMudou?.(), [onMudou]);
+  if (!tarefa.tarefaId) return null;
+  return (
+    <>
+      {erro && <p role="alert" className="text-sm text-bad">{erro}</p>}
+      {estrutura && (
+        <PainelTarefa
+          key={`${token}:${tarefa.tarefaId}`} id={tarefa.tarefaId} estrutura={estrutura} editable={can('tarefas.editar')}
+          token={token} usuarioId={user?.id ?? null} aba={tarefa.aba} onTrocarAba={tarefa.trocarAba}
+          onFechar={tarefa.fechar} onMoverLista={() => mudou()} onMudou={mudou} onErro={setErro}
+        />
+      )}
+    </>
+  );
+}
+
+/*
+ * O POP-UP ÚNICO DA TAREFA (rodada do trabalho T2, 19/10/2026). O mesmo
+ * componente abre por cima de Pendências, Minhas tarefas, Trabalho e
+ * Implantação, com o estado na URL (`?tarefa=<id>`, `lib/tarefa-na-url.ts`):
+ * voltar do navegador fecha, Esc fecha, o foco fica preso no diálogo e volta a
+ * quem abriu. No celular ele é uma folha que sobe de baixo. Quando o cartão tem
+ * trilho de onboarding ligado (`OnboardingTrilho.cardId`), a bancada do trilho
+ * é a aba "Trilho" (T1: a bancada antiga deixou de ser porta).
+ */
+function PainelTarefa({ id, estrutura, editable, token, usuarioId, aba = 'tarefa', onTrocarAba, onFechar, onMoverLista, onMudou, onErro }: {
   id: string; estrutura: TrabEstrutura; editable: boolean; token: string | null;
+  aba?: AbaDaTarefa; onTrocarAba?: (aba: AbaDaTarefa) => void;
   /** Quem está logado — só o autor de um lançamento de horas vê o botão de apagar. */
   usuarioId: string | null;
   onFechar: () => void; onMoverLista: (id: string) => void;
@@ -1183,6 +1241,15 @@ function PainelTarefa({ id, estrutura, editable, token, usuarioId, onFechar, onM
   const [comentario, setComentario] = useState('');
   const [novaTag, setNovaTag] = useState('');
   const [edicaoDescricao, setEdicaoDescricao] = useState(false);
+  const [trilho, setTrilho] = useState<{ id: string; cliente: string; faseRotulo: string; faltando: string[] } | null | undefined>(undefined);
+  useEffect(() => {
+    if (!token) return;
+    let ativa = true;
+    apiGet<{ id: string; cliente: string; faseRotulo: string; cardId: string | null; faltando: string[] }[]>(`/tenants/onboarding/trilhos?cardId=${encodeURIComponent(id)}`, token)
+      .then((lista) => { if (ativa) setTrilho(Array.isArray(lista) ? lista[0] ?? null : null); })
+      .catch(() => { if (ativa) setTrilho(null); });
+    return () => { ativa = false; };
+  }, [id, token]);
   const focoAnterior = useRef<HTMLElement | null>(null);
   const fecharRef = useRef<HTMLButtonElement | null>(null);
   useEffect(() => { focoAnterior.current = document.activeElement as HTMLElement; }, []);
@@ -1268,7 +1335,8 @@ function PainelTarefa({ id, estrutura, editable, token, usuarioId, onFechar, onM
             if (destino?.isConnected && destino !== document.body) destino.focus();
             else document.getElementById('root-os-main')?.focus();
           }}
-          className="fixed inset-y-0 right-0 z-50 flex w-[420px] max-w-full flex-col border-l border-border bg-surface shadow-2xl"
+          data-testid="tarefa-popup"
+          className={`fixed z-50 flex flex-col border-border bg-surface shadow-2xl max-md:inset-x-0 max-md:bottom-0 max-md:h-[92dvh] max-md:rounded-t-xl max-md:border-t md:inset-y-0 md:right-0 md:border-l ${aba === 'trilho' && trilho ? 'md:w-[min(1040px,100vw)]' : 'md:w-[520px]'} w-full md:max-w-full`}
         >
       <Dialog.Title className="sr-only">Detalhes da tarefa</Dialog.Title>
       <div className="flex items-start justify-between gap-2 border-b border-border px-4 py-3">
@@ -1289,8 +1357,36 @@ function PainelTarefa({ id, estrutura, editable, token, usuarioId, onFechar, onM
         </div>
       </div>
 
+      {trilho && (
+        <div role="tablist" aria-label="Partes da tarefa" className="flex gap-1 border-b border-border px-3">
+          {(['tarefa', 'trilho'] as const).map((a) => (
+            <button
+              key={a}
+              type="button"
+              role="tab"
+              aria-selected={aba === a}
+              data-testid={`tarefa-aba-${a}`}
+              onClick={() => onTrocarAba?.(a)}
+              className={`-mb-px border-b-2 px-3 py-2 text-[13px] max-md:min-h-[44px] ${aba === a ? 'border-brand text-text' : 'border-transparent text-muted hover:text-text'}`}
+            >
+              {a === 'tarefa' ? 'Tarefa' : `Trilho · ${trilho.faseRotulo}`}
+            </button>
+          ))}
+        </div>
+      )}
+      {aba === 'trilho' && trilho ? (
+        <div className="flex-1 overflow-y-auto px-4 py-3 text-sm" data-testid="tarefa-trilho">
+          <BancadaDoTrilho id={trilho.id} embutida />
+        </div>
+      ) : (
       <div className="flex-1 space-y-4 overflow-y-auto px-4 py-3 text-sm">
-        <LinkDoTrilho taskId={t.id} token={token} />
+        {trilho ? (
+          <button type="button" onClick={() => onTrocarAba?.('trilho')} className="block w-full rounded-lg border border-border bg-surface-2 px-3 py-2 text-left text-[12px] underline-offset-2 hover:underline">
+            Trilho de onboarding · {trilho.faseRotulo}{trilho.faltando.length ? ` · falta ${trilho.faltando.length}` : ' · portão cumprido'}
+          </button>
+        ) : trilho === null && listaDaImplantacao(estrutura.folders)?.listaId === t.listId ? (
+          <p className="rounded-lg border border-border bg-surface-2 px-3 py-2 text-[12px] text-muted">Sem trilho de onboarding ligado a este cartão.</p>
+        ) : null}
         {/* linha de propriedades — tudo editável */}
         <div className="grid grid-cols-2 gap-2">
           <Campo rotulo="Lista">
@@ -1595,6 +1691,7 @@ function PainelTarefa({ id, estrutura, editable, token, usuarioId, onFechar, onM
           <div>criada {new Date(t.createdAt).toLocaleString('pt-BR')} · atualizada {new Date(t.updatedAt).toLocaleString('pt-BR')}</div>
         </div>
       </div>
+      )}
         </Dialog.Content>
       </Dialog.Portal>
     </Dialog.Root>
@@ -1940,50 +2037,25 @@ function OpcaoNova({ fieldId, token, trata }: { fieldId: string; token: string |
   );
 }
 
-/*
- * O trilho de onboarding pendurado neste cartão (23/09/2026). A esteira de
- * clientes é a VISTA de fora (fase por coluna); o trilho é a vista de dentro
- * (portões, propostas, link). Um cartão sem trilho mostra o caminho para criar.
- */
-function LinkDoTrilho({ taskId, token }: { taskId: string; token: string | null }) {
-  const [trilho, setTrilho] = useState<{ id: string; cliente: string; faseRotulo: string; faltando: string[] } | null | undefined>(undefined);
-  useEffect(() => {
-    if (!token) return;
-    apiGet<{ id: string; cliente: string; faseRotulo: string; cardId: string | null; faltando: string[] }[]>(`/tenants/onboarding/trilhos?cardId=${encodeURIComponent(taskId)}`, token)
-      .then((lista) => setTrilho(lista[0] ?? null))
-      .catch(() => setTrilho(null));
-  }, [taskId, token]);
-  if (trilho === undefined) return null;
-  return (
-    <div className="rounded-lg border border-border bg-surface-2 px-3 py-2 text-[12px]">
-      {trilho ? (
-        <a href={`/onboarding/${trilho.id}`} className="underline underline-offset-2">
-          Trilho de onboarding · {trilho.faseRotulo}{trilho.faltando.length ? ` · falta ${trilho.faltando.length}` : ' · portão cumprido'}
-        </a>
-      ) : (
-        <span className="text-muted">Sem trilho de onboarding. <a href="/onboarding" className="underline underline-offset-2">Criar na bancada</a> e ligar a este cartão.</span>
-      )}
-    </div>
-  );
-}
 
 /*
  * O ATALHO DO TRILHO no cartão e na linha (implantação aglutinada, rodada do
  * painel P2). Só aparece no cartão que TEM trilho ligado por `cardId`; o resto
  * da conversa (criar trilho, ligar ao cartão) continua na gaveta da tarefa.
  */
-function AtalhoDoTrilho({ trilho }: { trilho: TrilhoDoCartao }) {
+function AtalhoDoTrilho({ trilho, onAbrir }: { trilho: TrilhoDoCartao; onAbrir: () => void }) {
+  // Desde a rodada do trabalho (T2), o trilho é a aba "Trilho" do pop-up do cartão.
   return (
-    <a
-      href={`/onboarding/${trilho.id}`}
+    <button
+      type="button"
       data-testid={`trabalho-trilho-${trilho.id}`}
-      onClick={(e) => e.stopPropagation()}
+      onClick={(e) => { e.stopPropagation(); onAbrir(); }}
       title={`Trilho de onboarding de ${trilho.cliente}`}
-      className="mt-1.5 flex items-center gap-1 text-[11px] text-brand underline-offset-2 hover:underline"
+      className="mt-1.5 flex max-w-full items-center gap-1 text-left text-[11px] text-brand underline-offset-2 hover:underline"
     >
       <DoorOpen size={11} className="shrink-0" />
       <span className="truncate">Trilho · {trilho.faseRotulo}</span>
-    </a>
+    </button>
   );
 }
 

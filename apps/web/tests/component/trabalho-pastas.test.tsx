@@ -214,7 +214,8 @@ describe('Trabalho: a implantação aglutinada', () => {
     window.localStorage.setItem('root-os:trabalho:densidade', 'medio');
     render(<TrabalhoPage />);
     const atalho = await screen.findByTestId('trabalho-trilho-trilho-1');
-    expect(atalho).toHaveAttribute('href', '/onboarding/trilho-1');
+    // Rodada do trabalho T2: o atalho abre a aba Trilho do pop-up do cartão, sem sair do quadro.
+    expect(atalho.tagName).toBe('BUTTON');
     expect(atalho).toHaveTextContent('1 · Diagnóstico');
     expect(atalho.closest('[data-work-task-id]')).toHaveAttribute('data-work-task-id', TAREFA);
     expect(document.querySelectorAll('[data-testid^="trabalho-trilho-"]')).toHaveLength(1);

@@ -1,7 +1,6 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import Link from 'next/link';
 import type {
   CaixaAtividade,
   CaixaAtividadeResposta,
@@ -10,6 +9,8 @@ import type {
 } from '@mktos/shared';
 
 import { apiGet, apiPost } from '@/lib/api';
+import { useTarefaNaUrl } from '@/lib/tarefa-na-url';
+import { TarefaFlutuante } from '@/components/trabalho/TrabalhoView';
 import {
   BOTAO,
   BOTAO_PEQUENO,
@@ -66,6 +67,8 @@ function caminho(antesDe: string | null, incluirMeus: boolean, incluirLimpos: bo
 }
 
 export function AbaAtividade({ token }: { token: string }) {
+  // O pop-up da tarefa abre aqui mesmo, por cima da caixa (rodada do trabalho T2).
+  const tarefa = useTarefaNaUrl();
   const [incluirMeus, setIncluirMeus] = useState(false);
   const [incluirLimpos, setIncluirLimpos] = useState(false);
   const [resposta, setResposta] = useState<CaixaAtividadeResposta | null>(null);
@@ -238,7 +241,7 @@ export function AbaAtividade({ token }: { token: string }) {
             <li
               key={i.id}
               data-testid={`caixa-item-${i.id}`}
-              className={`flex flex-col gap-1.5 px-4 py-3 sm:flex-row sm:items-start sm:gap-3 ${
+              className={`relative flex cursor-pointer flex-col gap-1.5 px-4 py-3 hover:bg-surface-2/60 sm:flex-row sm:items-start sm:gap-3 ${
                 i.limpo ? 'opacity-60' : ''
               }`}
             >
@@ -247,12 +250,19 @@ export function AbaAtividade({ token }: { token: string }) {
                   <span className="font-medium text-text">{i.quem ?? 'Alguém'}</span>
                   {i.porMim && <span className="text-muted"> (você)</span>}{' '}
                   <span className="text-muted">{VERBO[i.tipo]} em</span>{' '}
-                  <Link
-                    href={`/trabalho?tarefa=${encodeURIComponent(i.tarefaId)}`}
-                    className={`break-words font-medium text-brand hover:underline ${FOCO}`}
+                  {/* O item inteiro abre o pop-up: o título é um "link esticado" (o ::after cobre a linha). */}
+                  <a
+                    href={`?aba=atividade&tarefa=${encodeURIComponent(i.tarefaId)}`}
+                    data-testid={`caixa-abrir-${i.id}`}
+                    onClick={(e) => {
+                      if (e.metaKey || e.ctrlKey || e.shiftKey || e.button !== 0) return;
+                      e.preventDefault();
+                      tarefa.abrir(i.tarefaId);
+                    }}
+                    className={`break-words font-medium text-brand after:absolute after:inset-0 after:content-[''] hover:underline ${FOCO}`}
                   >
                     {i.tarefaTitulo}
-                  </Link>
+                  </a>
                 </p>
                 {i.mudancas.length > 0 && (
                   <ul className="space-y-0.5">
@@ -290,7 +300,7 @@ export function AbaAtividade({ token }: { token: string }) {
                   onClick={() => void limparUm(i.id)}
                   disabled={limpando.has(i.id)}
                   aria-label={`Limpar: ${VERBO[i.tipo]} em ${i.tarefaTitulo}`}
-                  className={`${BOTAO_PEQUENO} self-start`}
+                  className={`${BOTAO_PEQUENO} relative z-10 self-start`}
                 >
                   Limpar
                 </button>
@@ -314,6 +324,7 @@ export function AbaAtividade({ token }: { token: string }) {
           {resposta.tarefasTruncadas && ' Você tem muitas tarefas: a atividade olha as mil mexidas por último.'}
         </p>
       )}
+      <TarefaFlutuante tarefa={tarefa} />
     </div>
   );
 }

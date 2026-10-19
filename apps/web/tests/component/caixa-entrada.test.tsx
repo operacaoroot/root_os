@@ -203,8 +203,8 @@ describe('P1: a aba Atividade', () => {
     expect(within(item).getByText(/mudou o status/)).toBeTruthy();
     const comentario = screen.getByTestId('caixa-item-comentario:c1');
     expect(within(comentario).getByText(/precisa do anexo assinado/)).toBeTruthy();
-    // O link leva à tarefa no quadro.
-    expect(within(item).getByRole('link').getAttribute('href')).toBe('/trabalho?tarefa=t-1');
+    // Rodada do trabalho T2: o link abre a tarefa num pop-up aqui mesmo (?tarefa= na URL de Pendências).
+    expect(within(item).getByRole('link').getAttribute('href')).toBe('?aba=atividade&tarefa=t-1');
   });
 
   it('Limpar tira o item da caixa e manda só o id dele', async () => {
