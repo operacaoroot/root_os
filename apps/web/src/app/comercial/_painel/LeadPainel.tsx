@@ -28,6 +28,7 @@ import { AbaFio } from './AbaFio';
 import { AbaSessao } from './AbaSessao';
 import { AbaDinheiro } from './AbaDinheiro';
 import { AbaDecisoes } from './AbaDecisoes';
+import { AbaSala } from './AbaSala';
 
 const FOCAVEIS = 'a[href], button:not([disabled]), input:not([disabled]):not([type="hidden"]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
 
@@ -271,6 +272,7 @@ export function LeadPainel({ estado }: { estado: EstadoDoPainel }) {
             {aba === 'fio' && <AbaFio leadId={leadId} ficha={f} carregando={ficha.carregando && !f} aoMudar={aoMudar} />}
             {aba === 'sessao' && <AbaSessao leadId={leadId} aoMudar={aoMudar} irParaDecisoes={() => irParaAba('decisoes')} />}
             {aba === 'dinheiro' && <AbaDinheiro leadId={leadId} ficha={f} aoMudar={aoMudar} />}
+            {aba === 'sala' && <AbaSala leadId={leadId} aoMudar={aoMudar} />}
             {aba === 'decisoes' && (
               <AbaDecisoes
                 abertas={abertasDoLead}

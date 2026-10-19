@@ -11,7 +11,9 @@ import { ConfigComercialService } from './config.service';
 import { DecisoesService } from './decisoes.service';
 import { FichaService } from './ficha.service';
 import { MoverService, SoGenteGuard } from './mover.service';
+import { LeituraEReacaoService } from './leitura-e-reacao.service';
 import { ReacoesDaPropostaService } from './reacoes-da-proposta.service';
+import { SalaVersaoService } from './sala-versao.service';
 import { RelogioDaEspinha } from './relogio-da-espinha';
 
 /*
@@ -36,6 +38,8 @@ export class ComercialController {
     private readonly relogio: RelogioDaEspinha,
     private readonly moverSvc: MoverService,
     private readonly reacoesSvc: ReacoesDaPropostaService,
+    private readonly salaVersoes: SalaVersaoService,
+    private readonly leitura: LeituraEReacaoService,
   ) {}
 
   /** Tela 03: a fila de decisões, o que rodou sozinho hoje e os contadores. */
@@ -76,6 +80,71 @@ export class ComercialController {
   @RequirePermissions('leads.ver')
   reacoes(@CurrentUser() user: JwtUser, @Param('id') id: string) {
     return this.reacoesSvc.doLead(user.orgId, id);
+  }
+
+  /*
+   * I3 (rodada da implantação): a sala publicada por versão. A bancada lê o
+   * rascunho e o que está no ar, grava o rascunho e pede a publicação, que é
+   * `comercial.sala.publicar` (R3) pela porta: outra pessoa libera em
+   * /atendimento, lendo a versão inteira pela rota de conteúdo (só quem decide
+   * a fila, como a proposta). Pedir é só de gente: conta de máquina é recusada.
+   */
+  @Get('lead/:id/sala/versoes')
+  @RequirePermissions('leads.ver')
+  versoesDaSala(@CurrentUser() user: JwtUser, @Param('id') id: string) {
+    return this.salaVersoes.versoes(user.orgId, id);
+  }
+
+  @Put('lead/:id/sala/rascunho')
+  @RequirePermissions('leads.editar')
+  @UseGuards(SoGenteGuard)
+  rascunhoDaSala(@CurrentUser() user: JwtUser, @Param('id') id: string, @Body() body: unknown) {
+    return this.salaVersoes.salvarRascunho(user.orgId, id, body, { id: user.sub });
+  }
+
+  @Post('lead/:id/sala/publicar')
+  @HttpCode(200)
+  @RequirePermissions('leads.editar')
+  @UseGuards(SoGenteGuard)
+  publicarSala(@CurrentUser() user: JwtUser, @Param('id') id: string) {
+    return this.salaVersoes.publicar(user.orgId, id, { id: user.sub });
+  }
+
+  @Get('lead/:id/sala/v/:versao/conteudo')
+  @RequirePermissions('aprovacoes.decidir')
+  conteudoDaSala(@CurrentUser() user: JwtUser, @Param('id') id: string, @Param('versao') versao: string, @Query('hash') hash?: string) {
+    const n = Number(versao);
+    if (!Number.isInteger(n) || n < 1) throw new BadRequestException('versão inválida');
+    return this.salaVersoes.conteudoParaLiberar(user.orgId, id, n, typeof hash === 'string' && hash ? hash : null);
+  }
+
+  /*
+   * I5 (rodada da implantação): o bloco "Leitura e reação" do relatório. Só
+   * contagem do que está gravado. "Virar tarefa" cria a WorkTask com a
+   * procedência e o trecho (gente, `tarefas.editar` também); "respondida" só
+   * registra que alguém respondeu pelo canal.
+   */
+  @Get('relatorio/leitura')
+  @RequirePermissions('leads.ver')
+  relatorioDeLeitura(@CurrentUser() user: JwtUser, @Query('dias') dias?: string) {
+    return this.leitura.relatorio(user.orgId, dias);
+  }
+
+  @Post('reacoes/:id/tarefa')
+  @HttpCode(200)
+  @RequirePermissions('leads.editar', 'tarefas.editar')
+  @UseGuards(SoGenteGuard)
+  ideiaViraTarefa(@CurrentUser() user: JwtUser, @Param('id') id: string, @Body() body: unknown) {
+    const listId = body && typeof body === 'object' && typeof (body as { listId?: unknown }).listId === 'string' ? (body as { listId: string }).listId : null;
+    return this.leitura.virarTarefa(user.orgId, id, { id: user.sub, papeis: user.roles ?? [] }, listId);
+  }
+
+  @Post('reacoes/:id/respondida')
+  @HttpCode(200)
+  @RequirePermissions('leads.editar')
+  @UseGuards(SoGenteGuard)
+  ideiaRespondida(@CurrentUser() user: JwtUser, @Param('id') id: string) {
+    return this.leitura.marcarRespondida(user.orgId, id);
   }
 
   /** E1: o lead entra pelo WhatsApp (simulador ou provedor). Idempotente pelo telefone e pela mensagem. */

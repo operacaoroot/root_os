@@ -7,7 +7,7 @@
  * Funções puras: quem mexe no histórico é o provedor.
  */
 
-export const ABAS_DO_PAINEL = ['fio', 'sessao', 'dinheiro', 'decisoes'] as const;
+export const ABAS_DO_PAINEL = ['fio', 'sessao', 'dinheiro', 'decisoes', 'sala'] as const;
 export type AbaDoPainel = (typeof ABAS_DO_PAINEL)[number];
 
 export const ROTULO_DA_ABA: Record<AbaDoPainel, string> = {
@@ -15,6 +15,8 @@ export const ROTULO_DA_ABA: Record<AbaDoPainel, string> = {
   sessao: 'Sessão',
   dinheiro: 'Dinheiro',
   decisoes: 'Decisões',
+  // Rodada da implantação I3: a sala do cliente publicada por versão.
+  sala: 'Sala',
 };
 
 export interface EstadoDoPainel {

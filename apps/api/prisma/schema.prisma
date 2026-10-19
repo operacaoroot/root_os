@@ -97,6 +97,7 @@ model Org {
   comercialDocumentos  ComercialDocumento[]
   salasDoCliente       SalaDoCliente[]
   leadReacoes          LeadReacao[]
+  salaVersoes          SalaVersao[]
 
   // A régua e a porta (ver "Régua, porta e rastro" no fim do arquivo)
   policyVersions  PolicyVersion[]
@@ -406,6 +407,8 @@ model Lead {
   documentos        ComercialDocumento[]
   // Rodada da implantação I4: leitura e reação na página da proposta.
   reacoesDaProposta LeadReacao[]
+  // Rodada da implantação I3: a sala do cliente publicada por versão.
+  versoesDaSala     SalaVersao[]
 
   @@index([orgId, enteredAt])
   @@index([orgId, campaignId])
@@ -4810,4 +4813,35 @@ model LeadReacao {
 
   @@index([orgId, criadoEm])
   @@index([leadId, criadoEm])
+}
+
+/// A SALA DO CLIENTE PUBLICADA POR VERSÃO (rodada da implantação I3,
+/// 18/10/2026). A bancada monta o rascunho; publicar é `comercial.sala.publicar`
+/// (R3) pela porta, e o cliente lê só a última `publicada` no link `/s/<token>`.
+/// `conteudo` é o que a versão congela (estações e publicados derivados do fio,
+/// passos, combinado e quem cuida escritos pela bancada) e `hash` é o que a
+/// aprovação prende. Uma versão aberta (rascunho ou na porta) por lead, pelo
+/// índice único parcial da migration.
+model SalaVersao {
+  id           String    @id @default(uuid())
+  /// Sentinela + gatilho `SalaVersao_orgId_do_pai`.
+  orgId        String    @default("")
+  org          Org       @relation(fields: [orgId], references: [id])
+  leadId       String
+  lead         Lead      @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  numero       Int
+  /// rascunho · na_porta · publicada · substituida (CHECK no banco).
+  estado       String
+  conteudo     Json
+  hash         String
+  approvalId   String?
+  criadoPor    String?
+  publicadaEm  DateTime?
+  /// Quem liberou (a segunda pessoa), do contexto do efeito.
+  publicadaPor String?
+  criadoEm     DateTime  @default(now())
+  atualizadoEm DateTime  @updatedAt
+
+  @@unique([leadId, numero])
+  @@index([orgId, estado])
 }

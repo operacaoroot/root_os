@@ -413,6 +413,7 @@ const ALVOS: Alvo[] = [
   { tabela: 'ComercialCobranca', escopo: 'filho', chaveSql: '"id"', nota: 'Espelho das parcelas no provedor de cobrança: valor, vencimento, estado, link de pagamento e Pix copia-e-cola. LER a da outra é o extrato a receber dela; ESCREVER estado para paga quita uma parcela que ninguém pagou.' },
   { tabela: 'ComercialDocumento', escopo: 'filho', chaveSql: '"id"', nota: 'Espelho do contrato no provedor de assinatura, com os links de assinar. LER a da outra entrega o link que assina o contrato alheio.' },
   { tabela: 'LeadReacao', escopo: 'filho', chaveSql: '"id"', nota: 'O que o cliente leu na proposta e o que anotou nela (rodada da implantação I4): seção, tempo por visita, "faz sentido", dúvida e ideia com o texto dele. LER a da outra é ler como o cliente alheio reagiu à proposta e o que ele pensa dela; ESCREVER é pôr palavra na boca do cliente de outra casa ou apagar o termômetro dela. A rota anônima escreve aqui só DEPOIS de achar a empresa pelo hash na sala, então a leitura NÃO aceita a sentinela pública.' },
+  { tabela: 'SalaVersao', escopo: 'filho', chaveSql: '"id"', nota: 'A sala do cliente publicada por versão (rodada da implantação I3): o rascunho da bancada e cada versão que o cliente leu, com próximos passos, o combinado e quem cuida da conta. LER a da outra é ver o plano de implantação e o que a casa vizinha combinou com o cliente dela; ESCREVER é trocar o que o cliente alheio lê no link ou publicar por ela. A rota anônima lê aqui só DEPOIS de achar a empresa pelo hash na sala, então a leitura NÃO aceita a sentinela pública.' },
 
   // ---- trabalho ---------------------------------------------------------
   { tabela: 'WorkSpace', escopo: 'tenant', chaveSql: '"id"', nota: 'Topo da árvore espaço → pastas → listas (ROOT-16). O nome do espaço diz como a outra empresa organiza o trabalho dela; escrever nele é renomear ou esvaziar a árvore alheia. É raiz da empresa: o orgId vem do insert, e as pastas e listas penduradas nele conferem a empresa pela chave composta.' },
@@ -1298,6 +1299,11 @@ async function semear(c: PoolClient, rotulo: 'A' | 'B', vec: string): Promise<vo
   reg('LeadReacao', await ins(c, 'LeadReacao', {
     id: crypto.randomUUID(), orgId, leadId, versao: 1, secao: 'investimento', tipo: 'ideia',
     texto: `Ideia privada do cliente da org ${rotulo}`, acesso: 1, atualizadoEm: agora,
+  }));
+  // A versão publicada da sala (I3): o que o cliente lê no link, que não pode vazar.
+  reg('SalaVersao', await ins(c, 'SalaVersao', {
+    id: crypto.randomUUID(), orgId, leadId, numero: 1, estado: 'publicada', publicadaEm: agora,
+    conteudo: JSON.stringify({ nome: `Sala privada da org ${rotulo}` }), hash: 'a'.repeat(64), atualizadoEm: agora,
   }));
 
   await c.query('INSERT INTO "_WorkTaskTags" ("A", "B") VALUES ($1, $2)', [tagId, tarefaId]);
@@ -3085,6 +3091,10 @@ const LINHA_DE_FILHO: Record<string, (c: PoolClient) => Promise<Record<string, u
   LeadReacao: async () => ({
     id: crypto.randomUUID(), leadId: sementes.A.ref.leadId, versao: 1, secao: 'montar', tipo: 'faz_sentido', acesso: 1, atualizadoEm: new Date(),
   }),
+  SalaVersao: async () => ({
+    id: crypto.randomUUID(), leadId: sementes.A.ref.leadId, numero: 900 + Math.floor(Math.random() * 1000), estado: 'substituida', publicadaEm: new Date(),
+    conteudo: JSON.stringify({}), hash: 'b'.repeat(64), atualizadoEm: new Date(),
+  }),
   IntegrationHealth: async (c) => {
     // accountId é @unique: precisa de uma conta nova, senão colide com a semente.
     const conta = await ins(c, 'IntegrationAccount', {
@@ -3226,9 +3236,10 @@ describe('orgId em todo filho de tenant (RF-T-01)', () => {
     // + `ItemDoLote` (MD7, 24/09/2026) + `ComentarioComPalavra` (MD9, 25/09/2026)
     // + `EnvioAoYoutube` (MD10, 25/09/2026) + `EnvioDeResposta` (MD11, 25/09/2026)
     // + os 8 filhos de Lead do cockpit comercial (13/10/2026)
-    // + `LeadReacao` (rodada da implantação I4, 18/10/2026).
+    // + `LeadReacao` (rodada da implantação I4, 18/10/2026)
+    // + `SalaVersao` (rodada da implantação I3, 18/10/2026).
     // Filho novo sobe este número no mesmo commit.
-    expect(declarados.length).toBe(30);
+    expect(declarados.length).toBe(31);
   });
 
   it.each(FILHOS_COM_ORGID_REDUNDANTE.map((f) => [f.modelo, f] as const))(

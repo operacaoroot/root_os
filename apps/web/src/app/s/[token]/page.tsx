@@ -5,6 +5,7 @@ import { useParams } from 'next/navigation';
 import type { EstadoDaSala, OfertaNaSala, SalaBlocoDaProposta } from '@mktos/shared';
 
 import { apiPost, apiUpload } from '@/lib/api';
+import { SalaPublicada } from './SalaPublicada';
 import { abrirSalaMarcando, dataCurta, localSPParaIso, reais, ROTULO_DA_FORMA, rotuloDoHorario, soDigitos } from '@/lib/sala-do-cliente';
 
 /*
@@ -34,6 +35,21 @@ export default function SalaPage() {
   const [erro, setErro] = useState<string | null>(null);
   const [ocupado, setOcupado] = useState<string | null>(null);
   const [erroDe, setErroDe] = useState<Record<string, string>>({});
+  /*
+   * I3 (rodada da implantação): o aceite começa por um clique em "aceitar" (na
+   * sala ou na página da proposta, que traz `#aceite`). Antes, o bloco só existia
+   * a partir do estágio contrato, e o botão rolava para um lugar que não existia:
+   * o formulário que leva AO contrato morava dentro dele.
+   */
+  const [querAceitar, setQuerAceitar] = useState(false);
+  useEffect(() => {
+    if (window.location.hash === '#aceite') setQuerAceitar(true);
+  }, []);
+  const temEstado = Boolean(estado);
+  useEffect(() => {
+    if (!querAceitar || !temEstado) return;
+    requestAnimationFrame(() => document.getElementById('aceite')?.scrollIntoView({ behavior: 'smooth', block: 'start' }));
+  }, [querAceitar, temEstado]);
 
   // B-11: abrir a página é a visita (POST, uma vez); o GET da sala só lê.
   useEffect(() => {
@@ -80,6 +96,30 @@ export default function SalaPage() {
 
   const i = estado.estagios.findIndex((e) => e.chave === estado.estagio);
   const chegou = (chave: EstadoDaSala['estagio']) => estado.estagios.findIndex((e) => e.chave === chave) <= i;
+  const aceiteAntes = chegou('contrato') && estado.proposta;
+  const aceiteDepois = !chegou('contrato') && estado.estagio === 'proposta' && estado.proposta && querAceitar;
+
+  const blocos = (
+    <div className="mt-5 space-y-4">
+      {estado.estagio === 'comeco' && <Comeco estado={estado} agir={agir} ocupado={ocupado} erro={erroDe.kickoff} />}
+      {aceiteAntes && <Aceite estado={estado} agir={agir} ocupado={ocupado} erroDe={erroDe} />}
+      {chegou('proposta') && estado.proposta && <Proposta estado={estado} base={base} token={token} agir={agir} ocupado={ocupado} erroDe={erroDe} aoAceitar={() => setQuerAceitar(true)} />}
+      {aceiteDepois && <Aceite estado={estado} agir={agir} ocupado={ocupado} erroDe={erroDe} />}
+      {estado.diagnostico && <Diagnostico estado={estado} />}
+      <Conversa estado={estado} agir={agir} ocupado={ocupado} erroDe={erroDe} base={base} aoEnviarArquivo={setEstado} />
+      {!estado.publicada && <Plano estado={estado} />}
+    </div>
+  );
+
+  // I3: com versão publicada, o cliente lê a sala da versão (onde estamos, passos, publicados, o combinado);
+  // o que é ação dele continua logo abaixo. Sem versão, a sala de antes.
+  if (estado.publicada) {
+    return (
+      <SalaPublicada publicada={estado.publicada} estado={estado} token={token} marca={<Marca />}>
+        {blocos}
+      </SalaPublicada>
+    );
+  }
 
   return (
     <Casca>
@@ -92,14 +132,7 @@ export default function SalaPage() {
 
       <Estagios estado={estado} />
 
-      <div className="mt-5 space-y-4">
-        {estado.estagio === 'comeco' && <Comeco estado={estado} agir={agir} ocupado={ocupado} erro={erroDe.kickoff} />}
-        {chegou('contrato') && estado.proposta && <Aceite estado={estado} agir={agir} ocupado={ocupado} erroDe={erroDe} />}
-        {chegou('proposta') && estado.proposta && <Proposta estado={estado} base={base} token={token} agir={agir} ocupado={ocupado} erroDe={erroDe} />}
-        {estado.diagnostico && <Diagnostico estado={estado} />}
-        <Conversa estado={estado} agir={agir} ocupado={ocupado} erroDe={erroDe} base={base} aoEnviarArquivo={setEstado} />
-        <Plano estado={estado} />
-      </div>
+      {blocos}
 
       <p className="mt-6 text-center text-[11px] text-muted">
         Este endereço é só seu e vale até {dataCurta(estado.validoAte)}. Senha, token e dado bancário nunca entram por aqui.
@@ -332,7 +365,7 @@ function useLeitura(base: string, versao: number) {
   );
 }
 
-function Proposta({ estado, base, token, agir, ocupado, erroDe }: { estado: EstadoDaSala; base: string; token: string; agir: Agir; ocupado: string | null; erroDe: Record<string, string> }) {
+function Proposta({ estado, base, token, agir, ocupado, erroDe, aoAceitar }: { estado: EstadoDaSala; base: string; token: string; agir: Agir; ocupado: string | null; erroDe: Record<string, string>; aoAceitar: () => void }) {
   const p = estado.proposta!;
   const ler = useLeitura(base, p.versao);
   const [aberto, setAberto] = useState<'duvida' | 'ajuste' | null>(null);
@@ -351,7 +384,7 @@ function Proposta({ estado, base, token, agir, ocupado, erroDe }: { estado: Esta
         <p className="mt-1 text-[13.5px]">{p.ouvimos.join(' · ')}</p>
       </div>
       <div ref={ler('recomendada')}>
-        <Oferta oferta={p.recomendada} rotulo="recomendada" destaque aceitar={aceitando ? undefined : () => document.getElementById('aceite')?.scrollIntoView({ behavior: 'smooth' })} versao={p.versao} />
+        <Oferta oferta={p.recomendada} rotulo="recomendada" destaque aceitar={aceitando ? undefined : aoAceitar} versao={p.versao} />
       </div>
       {p.alternativa && (
         <div ref={ler('alternativa')}>

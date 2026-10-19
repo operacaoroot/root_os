@@ -1,5 +1,7 @@
 import { z } from 'zod';
 
+import type { SalaVersaoPublica } from './sala-versao.js';
+
 /*
  * O COCKPIT DO LEAD — o contrato do módulo comercial (12 e 13/10/2026).
  *
@@ -321,6 +323,8 @@ export const COMERCIAL_EVENTOS = [
   // a sala
   'sala.aberta',
   'sala.visitada',
+  // Rodada da implantação I3 (18/10): uma versão da sala foi publicada (liberada por outra pessoa).
+  'sala.publicada',
   'arquivo.enviado',
   // sessão, diagnóstico e proposta
   'ata.chegou',
@@ -813,6 +817,8 @@ export interface EstadoDaSala {
   aceite: AceiteNaSala | null;
   comeco: { grupoCriado: boolean; kickoffEm: string | null; linkDoTrilho: string | null } | null;
   validoAte: string;
+  /** I3 (rodada da implantação): a ÚLTIMA versão publicada da sala; nunca o rascunho. Nula = a sala de antes. */
+  publicada?: SalaVersaoPublica | null;
 }
 
 export interface PropostaNaSala {

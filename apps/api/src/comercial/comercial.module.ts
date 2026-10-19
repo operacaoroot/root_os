@@ -30,6 +30,8 @@ import { SimuladorController } from './simulador.controller';
 import { MensagensController } from './mensagens.controller';
 import { SalaService } from './sala.service';
 import { ReacoesDaPropostaService } from './reacoes-da-proposta.service';
+import { LeituraEReacaoService } from './leitura-e-reacao.service';
+import { SalaVersaoService } from './sala-versao.service';
 import { WhatsappComercialService } from './whatsapp.service';
 // lane D
 import { ZapsignModule } from './conectores/zapsign.module';
@@ -77,6 +79,9 @@ import { FechamentoService } from './fechamento.service';
     WhatsappComercialService,
     // --- rodada da implantação I4 (leitura e reação na página da proposta; a I5 lê daqui) ---
     ReacoesDaPropostaService,
+    // --- rodada da implantação I3 (a sala publicada por versão) e I5 (o relatório de leitura e reação) ---
+    SalaVersaoService,
+    LeituraEReacaoService,
     // --- lane D (cobrança, assinatura, fechamento, contrato vivo) ---
     // As portas de cobrança e assinatura chegam por token: `FinanceModule`
     // (PORTA_DE_COBRANCA → AsaasService) e `ZapsignModule` (PORTA_DE_ASSINATURA).

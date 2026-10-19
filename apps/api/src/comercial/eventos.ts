@@ -88,6 +88,7 @@ export const FONTE_DO_EVENTO: Record<ComercialEvento, ComercialFonte> = {
   'reuniao.noshow': 'agenda',
   'sala.aberta': 'sala',
   'sala.visitada': 'sala',
+  'sala.publicada': 'pessoa',
   'arquivo.enviado': 'sala',
   'ata.chegou': 'ata',
   'diagnostico.pronto': 'agente',
@@ -140,6 +141,7 @@ export interface PayloadsComerciais {
   'reuniao.noshow': { horario: string; tipo: 'remarcou' | 'sumiu' | 'cancelou' };
   'sala.aberta': { salaId: string; slug: string; validoAte: string };
   'sala.visitada': { salaId: string; estagio: string };
+  'sala.publicada': { versao: number; hash: string; liberadaPor?: string | null };
   'arquivo.enviado': { nome: string; bytes: number; tipo: string };
   /** `por`: o nome de quem conduziu a sessão e subiu a ata (vira o sócio da conta). Acréscimo da lane A. */
   'ata.chegou': { hash: string; caracteres: number; fonte: string; referencia?: string | null; por?: string | null; porId?: string | null };
@@ -272,6 +274,8 @@ export function resumoDoEvento(type: string, payload: unknown): { fonte: Comerci
       return { fonte, resumo: `sala criada (/s/…)` };
     case 'sala.visitada':
       return { fonte, resumo: `visitou a sala · ${String(p.estagio)}` };
+    case 'sala.publicada':
+      return { fonte, resumo: `sala publicada · versão ${String(p.versao)} no ar para o cliente` };
     case 'arquivo.enviado':
       return { fonte, resumo: `enviou ${curto(p.nome, 40)}` };
     case 'ata.chegou': {

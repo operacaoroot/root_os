@@ -239,6 +239,9 @@ export const FILHOS_COM_ORGID_REDUNDANTE: readonly FilhoComOrgIdRedundante[] = [
   // A leitura e a reação na página da proposta (rodada da implantação I4,
   // 18/10/2026): a empresa é a do lead — migration `20261018230000_lead_reacao`.
   { modelo: 'LeadReacao', pai: 'Lead', fk: 'leadId' },
+  // A sala do cliente publicada por versão (rodada da implantação I3,
+  // 18/10/2026): a empresa é a do lead — migration `20261018240000_sala_versao`.
+  { modelo: 'SalaVersao', pai: 'Lead', fk: 'leadId' },
 ] as const;
 
 /**

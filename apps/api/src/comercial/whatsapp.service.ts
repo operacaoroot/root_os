@@ -1,6 +1,7 @@
 import { BadRequestException, Injectable, Logger, NotFoundException, OnModuleInit, Optional } from '@nestjs/common';
 import {
   ComercialEntradaWhatsSchema,
+  LEU_SEM_RESPONDER_N,
   type ComercialEntradaWhatsInput,
   type ComercialEstadoDeMensagem,
   type ComercialTemplate,
@@ -617,7 +618,14 @@ export class WhatsappComercialService implements OnModuleInit {
       if (!link) continue;
       const validade = typeof p.validaAte === 'string' && p.validaAte ? dataCurtaSP(p.validaAte) : '';
       try {
-        if (primeiraLeitura && cfg.fupLeuDias && agora.getTime() - primeiraLeitura.occurredAt.getTime() >= cfg.fupLeuDias * DIA_MS) {
+        // I5 (rodada da implantação): leu N vezes (visitas distintas com leitura desta versão) sem responder também
+        // prepara o FUP 1, antes dos dias. O N é PROVISÓRIO ([a decidir] pela mesa) e só vale com o FUP ligado
+        // (fupLeuDias): desligado continua desligado. Mesma chave do M5 por dias: um rascunho só, nunca dois.
+        const visitasComLeitura = new Set(
+          depois.filter((d) => d.type === 'proposta.lida' && Number(((d.payload ?? {}) as P).versao) === versao).map((d) => String(((d.payload ?? {}) as P).visita ?? '')),
+        ).size;
+        const leuMuitas = !!cfg.fupLeuDias && visitasComLeitura >= LEU_SEM_RESPONDER_N;
+        if (primeiraLeitura && cfg.fupLeuDias && (leuMuitas || agora.getTime() - primeiraLeitura.occurredAt.getTime() >= cfg.fupLeuDias * DIA_MS)) {
           const r = await this.prepararTemplate(orgId, pub.leadId, 'M5', { validade }, { chave: `v${versao}` });
           if (r.nova) m5++;
         } else if (!primeiraLeitura && cfg.fupSilencioDias && agora.getTime() - pub.occurredAt.getTime() >= cfg.fupSilencioDias * DIA_MS) {

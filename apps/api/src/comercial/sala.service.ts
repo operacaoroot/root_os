@@ -31,6 +31,7 @@ import { StorageService } from '../storage/storage.service';
 import { horarioOferecido, horariosOferecidos } from './agenda-de-homologacao';
 import { hashDoConteudo } from './eventos';
 import { FioService, ReacoesRegistry } from './fio.service';
+import { publicadaDaSala } from './sala-versao.service';
 import { chaveDaDuvida, projetarSala, type DadosDaSala, type EventoDaSala } from './sala-projecao';
 import {
   cifrarTokenDaSala,
@@ -548,7 +549,9 @@ export class SalaService implements OnModuleInit {
       this.prisma.comercialCobranca.findMany({ where: { leadId } }),
       this.prisma.comercialDocumento.findMany({ where: { leadId } }),
     ]);
-    return projetarSala({
+    // I3: a última versão PUBLICADA (nunca o rascunho nem a que espera liberação).
+    const publicada = await publicadaDaSala(this.prisma, sala.orgId, leadId);
+    const estado = projetarSala({
       slug: sala.slug,
       nomeDoLead: lead.name,
       validoAte: sala.validoAte,
@@ -576,6 +579,7 @@ export class SalaService implements OnModuleInit {
       })),
       agora,
     });
+    return { ...estado, publicada };
   }
 }
 
