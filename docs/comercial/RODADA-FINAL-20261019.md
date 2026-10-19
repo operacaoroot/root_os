@@ -26,6 +26,16 @@
 4. **Áreas**: o dash do Lucas é **adequado para ler as nossas pastas e listas**. A tabela `WorkArea` fica no esquema (já está em produção, com dado), mas a organização e os dashboards usam pastas/listas.
 5. **Organizar as tarefas reais** como construímos (pastas Administrativa · Gestão · Clientes [Esteira · Onboarding de cliente · Execução] · Marketing; leads ao funil; clientes como `Partner`). **O que sobrar sem lugar claro vai para uma lista de sobras no RESULTADO** — o Rodrigo quer ser avisado.
 
+## A versão deles já é mais enxuta (alerta do Rodrigo, 19/10 noite)
+
+"Analise tudo com carinho, porque a versão deles já estava diferente quanto aos demais tópicos. Já estava mais enxuta."
+
+- A nossa branch saiu da main de **07/10**. A produção (Pedro 14/10 + Lucas) já **tirou, juntou ou simplificou** coisas que a main antiga ainda tem: itens de menu, seções, telas, rotas, abas. Um merge descuidado **ressuscita** o que eles enxugaram, porque o nosso lado ainda carrega a versão antiga dessas partes.
+- **Antes de resolver qualquer conflito**, montar o inventário comparado em `homolog/final/enxugamento.md` (no git, sem dado de cliente): para cada item de `nav.ts` (SECOES e NAV), cada rota em `apps/web/src/app/` e cada aba de tela fora das três áreas de foco, o estado na main antiga × na produção (`lucas/tarefas`) × na nossa branch. Marcar o que **eles removeram, ocultaram, renomearam, juntaram ou moveram**.
+- **Fora do foco, vale a forma enxuta deles**: o que eles tiraram continua fora; o que juntaram continua junto; os nomes deles ficam. A nossa branch só pode mexer fora do foco onde a mudança é NOSSA de verdade (feita nas rodadas de 13 a 19/10, documentada nos RESULTADO-*.md), e nunca para trazer de volta algo que eles tiraram.
+- **Dentro do foco** (Motor Comercial, Dia a dia, Trabalho), a nossa é a referência, mas com o mesmo cuidado: se eles enxugaram algo ali que nós não tocamos, fica enxuto.
+- O RESULTADO-FINAL traz a tabela do enxugamento: item · main antiga · produção · nossa · o que ficou · porquê. E o menu final completo (seções e itens, na ordem), comparado com o menu da produção de hoje, linha a linha.
+
 ## Regras duras
 
 - **Em conflito, a nossa é a referência** nas três áreas de foco (Motor Comercial, Dia a dia, Trabalho), com as exceções acima (o que fica do Lucas). Fora do foco (financeiro, cofre, Granola, análise, marketing, o que é do Pedro), **o que está em produção é a referência**: não quebrar nada que o Lucas ou o Pedro já usam.
