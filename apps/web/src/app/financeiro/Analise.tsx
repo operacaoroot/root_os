@@ -131,7 +131,16 @@ export function AnaliseView({ token, canEdit, onError }: { token: string | null;
   const tabela = porMes ? r.mesAMes.porMes : r.mesAMes.linhas;
   const linhasDoMes = LINHAS_DO_MES.filter((l) => !l.opcional || tabela.some((m) => m[l.k] !== 0));
   const temAnual = r.mesAMes.detalhe.some((d) => (d.mesesDeUso ?? 1) > 1);
-  const partes = celula ? r.mesAMes.detalhe.filter((d) => d.mes === celula.mes && d.grupo === celula.grupo) : [];
+  // Lançamento e estorno do mesmo valor, dia e conta se anulam: saem da lista (a soma não muda).
+  const doCelula = celula ? r.mesAMes.detalhe.filter((d) => d.mes === celula.mes && d.grupo === celula.grupo) : [];
+  const anulados = new Set<number>();
+  doCelula.forEach((a, i) => {
+    if (anulados.has(i) || a.valor <= 0) return;
+    const j = doCelula.findIndex((b, k) => k !== i && !anulados.has(k) && b.valor === -a.valor && b.data === a.data && b.conta === a.conta);
+    if (j >= 0) { anulados.add(i); anulados.add(j); }
+  });
+  const partes = doCelula.filter((_, i) => !anulados.has(i));
+  const paresOcultos = anulados.size / 2;
   const nMeses = r.mesAMes.linhas.length;
 
   return (
@@ -221,7 +230,7 @@ export function AnaliseView({ token, canEdit, onError }: { token: string | null;
                     {p.rateio && <span className="ml-2 text-[11px] text-muted">(parte de um rateio)</span>}
                   </span>
                   {p.conta && <span className="shrink-0 text-[12px] text-muted">{p.conta}</span>}
-                  {celula.grupo !== 'receita' && canEdit && !p.rateio && (
+                  {celula.grupo !== 'receita' && canEdit && !p.rateio && p.valor > 0 && (
                     <label className="flex shrink-0 items-center gap-1 text-[12px] text-muted" title="Pago de uma vez para 12 meses de uso: na leitura por mês entra 1/12 em cada mês">
                       <input type="checkbox" checked={(p.mesesDeUso ?? 1) === 12} onChange={(e) => mudarMesesDeUso(p.id, e.target.checked ? 12 : null)} />
                       anual
@@ -231,6 +240,9 @@ export function AnaliseView({ token, canEdit, onError }: { token: string | null;
                 </li>
               ))}
             </ul>
+            {paresOcultos > 0 && (
+              <p className="mt-2 text-[12px] text-muted">{paresOcultos} {paresOcultos === 1 ? 'par' : 'pares'} de pix estornado (saída e devolução no mesmo dia) {paresOcultos === 1 ? 'oculto' : 'ocultos'}: não mudam a soma.</p>
+            )}
             {celula.grupo !== 'receita' && (
               <p className="mt-2 text-[12px] text-muted">
                 Valor negativo é estorno abatendo o gasto. Para mudar custo ↔ despesa, troque a conta do lançamento na aba Lançamentos; para fixo/variável/eventual, use "Como cada conta conta" abaixo.
