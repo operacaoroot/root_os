@@ -6,7 +6,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
 import { LLM_PROVIDER, type LlmProvider } from '../llm/llm.provider';
 import { FinanceService } from './finance.service';
-import { contaFixa, ehReceita, grupoDaSaida, mesAMes, mesDe, mesesAte, naturezaDaConta, partesDaSaida, partesDoMes, type ContaDoPlano, type Movimento } from './mes-a-mes';
+import { ehReceita, grupoDaSaida, mesAMes, mesDe, mesesAte, naturezaDaConta, naturezaEmUso, partesDaSaida, partesDoMes, type ContaDoPlano, type Movimento } from './mes-a-mes';
 
 /*
  * ANÁLISE DO FINANCEIRO
@@ -47,7 +47,7 @@ Quem lê não é do financeiro: escreva em português do Brasil simples, sem jar
 Recebe um JSON com os números do momento. Devolva de 3 a 5 observações, cada uma numa linha começando com "- ".
 Cada observação: um fato com número (em R$ ou meses) e, quando couber, uma ação concreta em seguida, depois de " → ".
 Priorize: caixa e fôlego, o que deveria ter entrado e não entrou, peso das parcerias/permutas sobre o que foi entregue,
-dependência de um cliente só, contas recorrentes contra receita recorrente, o peso do custo fixo, do variável e do investimento
+dependência de um cliente só, contas recorrentes contra receita recorrente, custo da operação × despesa da estrutura (fixo, variável, eventual)
 nos últimos meses (em mesAMes; o mês atual ainda não fechou), pendências de dado que distorcem a leitura.
 Não invente número que não está no JSON. Não repita o mesmo ponto. Sem introdução e sem conclusão.`;
 
@@ -196,7 +196,7 @@ export class AnaliseService {
         if (!p.chartAccountId || (m.type === 'entrada' && ehReceita(porId, p.chartAccountId))) continue;
         const g = grupoDaSaida(porId, p.chartAccountId, false);
         const v = m.type === 'saida' ? p.valor : -p.valor;
-        if (g === 'fixo' || g === 'variavel' || g === 'eventual' || (g === 'impostos' && !naturezaDaConta(porId, p.chartAccountId))) {
+        if (g !== 'investimento' && g !== 'retirada') {
           usadas.set(p.chartAccountId, (usadas.get(p.chartAccountId) ?? 0) + v);
         }
       }
@@ -205,11 +205,12 @@ export class AnaliseService {
       .map(([id, total]) => {
         const c = contas.find((x) => x.id === id)!;
         // A natureza em uso: a escolhida (nesta conta ou numa conta-mãe), ou a que a regra dá hoje.
-        const herdada = !c.natureza ? naturezaDaConta(porId, id) : null;
-        const grupo = grupoDaSaida(porId, id, false);
+        // lado (custo da operação, despesa da estrutura ou imposto) e a natureza que vale sem escolha
+        const lado = c.codigo.startsWith('3') ? 'custo' : c.codigo.startsWith('2') ? 'imposto' : 'despesa';
+        const automatica = (() => { const sem = new Map(porId); sem.set(id, { ...c, natureza: null }); return naturezaEmUso(sem, id, false); })();
         return {
-          id, codigo: c.codigo, nome: c.nome, custoFixo: c.custoFixo, herdaFixo: !c.custoFixo && contaFixa(porId, id),
-          natureza: c.natureza ?? null, naturezaHerdada: herdada, grupo, total: r2(total),
+          id, codigo: c.codigo, nome: c.nome, lado, grupo: grupoDaSaida(porId, id, false),
+          natureza: c.natureza ?? null, naturezaHerdada: !c.natureza ? naturezaDaConta(porId, id) : null, automatica, total: r2(total),
         };
       })
       .sort((a, b) => b.total - a.total);
@@ -232,7 +233,7 @@ export class AnaliseService {
       },
       recorrentes: { linhas: recorrentes, custoMensal, receitaMensal, coberturaPct: custoMensal > 0 ? r2((receitaMensal / custoMensal) * 100) : null },
       mesAMes: {
-        linhas: mesAMes(movs, plano, meses), mesAtual, contas: contasDaJanela,
+        linhas: mesAMes(movs, plano, meses), porMes: mesAMes(movs, plano, meses, true), mesAtual, contas: contasDaJanela,
         // o que está dentro de cada célula da tabela (mês × grupo): o clique abre esta lista
         detalhe: partesDoMes(movs, plano, meses).map((pt) => {
           const t = movsJanela[pt.indice];

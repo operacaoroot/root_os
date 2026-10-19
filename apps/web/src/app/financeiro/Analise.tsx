@@ -17,16 +17,20 @@ type Recorrente = {
   id: string; tipo: 'entrada' | 'saida'; descricao: string; quem: string | null; valor: number; periodicidade: string; dia: number; porMes: number;
   noMes: { pago: number; previsto: number; vence: string | null };
 };
-type Mes = { mes: string; receita: number; impostos: number; fixo: number; fixoPorMes: number; variavel: number; eventual: number; investimento: number; retirada: number; saiu: number; sobra: number };
-type Grupo = 'receita' | 'impostos' | 'fixo' | 'variavel' | 'eventual' | 'investimento' | 'retirada';
+type Mes = {
+  mes: string; receita: number; custoFixo: number; custoVariavel: number; custo: number; margem: number;
+  despesaFixa: number; despesaVariavel: number; despesaEventual: number; despesas: number; impostos: number; sobra: number;
+  investimento: number; retirada: number; saiu: number; fixoDoMes: number;
+};
+type Grupo = 'receita' | 'custoFixo' | 'custoVariavel' | 'despesaFixa' | 'despesaVariavel' | 'despesaEventual' | 'impostos' | 'investimento' | 'retirada';
 type Natureza = 'fixo' | 'variavel' | 'eventual';
 type Parte = { mes: string; grupo: Grupo; id: string; data: string; descricao: string; extrato: string; quem: string | null; conta: string | null; valor: number; rateio: boolean; mesesDeUso: number | null };
-type ContaDaJanela = { id: string; codigo: string; nome: string; custoFixo: boolean; herdaFixo: boolean; natureza: Natureza | null; naturezaHerdada: Natureza | null; grupo: string; total: number };
+type ContaDaJanela = { id: string; codigo: string; nome: string; lado: 'custo' | 'despesa' | 'imposto'; grupo: string; natureza: Natureza | null; naturezaHerdada: Natureza | null; automatica: Natureza; total: number };
 type Resumo = {
   caixa: { saldo: number; aReceber: number; aPagar: number; folegoMeses: number | null };
   acordos: { linhas: Linha[]; porTipo: { tipo: Tipo; acordos: number; valor: number; recebido: number; aReceber: number }[]; entregue: number; viraCaixa: number; semCaixaPct: number; semRastro: number };
   recorrentes: { linhas: Recorrente[]; custoMensal: number; receitaMensal: number; coberturaPct: number | null };
-  mesAMes: { linhas: Mes[]; mesAtual: string; contas: ContaDaJanela[]; detalhe: Parte[] };
+  mesAMes: { linhas: Mes[]; porMes: Mes[]; mesAtual: string; contas: ContaDaJanela[]; detalhe: Parte[] };
   proximos: { dias: number; entra: number; sai: number }[];
   dependencia: { pagador: string; valor: number; pct: number; total90: number } | null;
   pendencias: { semClassificacao: number; vencidoReceber: number; vencidoPagar: number };
@@ -46,21 +50,30 @@ const MESES = ['jan', 'fev', 'mar', 'abr', 'mai', 'jun', 'jul', 'ago', 'set', 'o
 const nomeDoMes = (m: string) => `${MESES[Number(m.slice(5, 7)) - 1]}/${m.slice(2, 4)}`;
 const diaMes = (d: string) => `${d.slice(8, 10)}/${d.slice(5, 7)}`;
 // Linhas da tabela "Para onde foi o dinheiro", na ordem em que aparecem.
+// Regra do financeiro (Pedro): custo é a operação, o que se usa para entregar ao cliente (plano 3.x);
+// despesa é a estrutura e a administração (4.x). Dentro de cada lado: fixo, variável, eventual.
 // `grupo`: a linha é uma soma de lançamentos e o clique na célula abre a lista.
-const LINHAS_DO_MES: { k: keyof Omit<Mes, 'mes'>; rotulo: string; dica: string; grupo?: Grupo; forte?: boolean; opcional?: boolean; sub?: boolean }[] = [
-  { k: 'receita', rotulo: 'Entrou', dica: 'tudo o que entrou no mês', grupo: 'receita', forte: true },
-  { k: 'impostos', rotulo: 'Impostos', dica: 'contas 2.x do plano que não foram marcadas como fixas', grupo: 'impostos', opcional: true },
-  { k: 'fixo', rotulo: 'Custo fixo', dica: 'vem todo mês, vendendo ou não: contas marcadas como fixas e pagamentos presos a contrato', grupo: 'fixo' },
-  { k: 'fixoPorMes', rotulo: 'fixo por mês', dica: 'o que foi pago de uma vez para vários meses de uso (plano anual) dividido pelos meses: o custo de manter a empresa', sub: true },
-  { k: 'variavel', rotulo: 'Custo variável', dica: 'sobe e desce com as vendas (taxas, freelancer por projeto, comissão)', grupo: 'variavel' },
-  { k: 'eventual', rotulo: 'Eventual', dica: 'gasto pontual, por decisão (evento, confraternização, uniforme, presente)', grupo: 'eventual', opcional: true },
-  { k: 'sobra', rotulo: 'Sobra da operação', dica: 'entrou − impostos − fixo − variável − eventual', forte: true },
-  { k: 'investimento', rotulo: 'Investimento', dica: 'contas 5.x (equipamentos, móveis, instalações)', grupo: 'investimento' },
+type LinhaDaTabela = { k: keyof Omit<Mes, 'mes'>; rotulo: string; dica: string; grupo?: Grupo; forte?: boolean; opcional?: boolean; sub?: boolean };
+const LINHAS_DO_MES: LinhaDaTabela[] = [
+  { k: 'receita', rotulo: 'Entrou', dica: 'tudo o que entrou de cliente no mês', grupo: 'receita', forte: true },
+  { k: 'custo', rotulo: 'Custo da operação', dica: 'o que se usa para entregar ao cliente (plano 3.x)', forte: true },
+  { k: 'custoFixo', rotulo: 'fixo', dica: 'vem todo mês: assinaturas de IA, ferramentas da entrega', grupo: 'custoFixo', sub: true },
+  { k: 'custoVariavel', rotulo: 'variável', dica: 'acompanha a demanda dos clientes: servidor/VPS, freelancer por projeto', grupo: 'custoVariavel', sub: true },
+  { k: 'margem', rotulo: 'Margem da operação', dica: 'entrou − custo da operação: o que sobra para pagar a estrutura', forte: true },
+  { k: 'despesas', rotulo: 'Despesas da estrutura', dica: 'o que mantém a empresa de pé (plano 4.x)', forte: true },
+  { k: 'despesaFixa', rotulo: 'fixas', dica: 'vem todo mês, vendendo ou não: sala, internet, celular, ferramentas administrativas', grupo: 'despesaFixa', sub: true },
+  { k: 'despesaVariavel', rotulo: 'variáveis', dica: 'sobem e descem com o movimento: taxas do banco e do Asaas', grupo: 'despesaVariavel', sub: true },
+  { k: 'despesaEventual', rotulo: 'eventuais', dica: 'pontuais, por decisão: montagem da sala, confraternização, evento, uniforme, presente', grupo: 'despesaEventual', sub: true },
+  { k: 'impostos', rotulo: 'Impostos', dica: 'contas 2.x (DAS do MEI)', grupo: 'impostos', opcional: true },
+  { k: 'sobra', rotulo: 'Sobra', dica: 'margem − despesas − impostos: o que fica antes de investir e retirar', forte: true },
+  { k: 'investimento', rotulo: 'Investimento', dica: 'contas 5.x: bem durável e de valor alto', grupo: 'investimento', opcional: true },
   { k: 'retirada', rotulo: 'Retirada dos sócios', dica: 'contas 4.6.x (pró-labore, dividendos)', grupo: 'retirada', opcional: true },
   { k: 'saiu', rotulo: 'Saiu no total', dica: 'tudo o que saiu no mês' },
 ];
 const ROTULO_DO_GRUPO: Record<Grupo, string> = {
-  receita: 'Entrou', impostos: 'Impostos', fixo: 'Custo fixo', variavel: 'Custo variável', eventual: 'Eventual', investimento: 'Investimento', retirada: 'Retirada dos sócios',
+  receita: 'Entrou', custoFixo: 'Custo fixo da operação', custoVariavel: 'Custo variável da operação',
+  despesaFixa: 'Despesas fixas', despesaVariavel: 'Despesas variáveis', despesaEventual: 'Despesas eventuais',
+  impostos: 'Impostos', investimento: 'Investimento', retirada: 'Retirada dos sócios',
 };
 const ROTULO_NATUREZA: Record<Natureza, string> = { fixo: 'Fixo', variavel: 'Variável', eventual: 'Eventual' };
 const inputCls = 'rounded-lg border border-border bg-surface-2 px-3 py-2 text-sm outline-none focus:border-brand-dim';
@@ -78,6 +91,7 @@ export function AnaliseView({ token, canEdit, onError }: { token: string | null;
   const [contasAbertas, setContasAbertas] = useState(false);
   const [celula, setCelula] = useState<{ mes: string; grupo: Grupo } | null>(null);
   const [mediaMensal, setMediaMensal] = useState(false);
+  const [porMes, setPorMes] = useState(false);
 
   const carregar = useCallback(() => {
     if (!token) return;
@@ -113,8 +127,9 @@ export function AnaliseView({ token, canEdit, onError }: { token: string | null;
 
   if (!r) return <p className="text-sm text-muted">Carregando…</p>;
   const max = Math.max(1, ...r.acordos.porTipo.map((t) => t.valor));
-  const linhasDoMes = LINHAS_DO_MES.filter((l) =>
-    l.k === 'fixoPorMes' ? r.mesAMes.linhas.some((m) => m.fixoPorMes !== m.fixo) : !l.opcional || r.mesAMes.linhas.some((m) => m[l.k] !== 0));
+  const tabela = porMes ? r.mesAMes.porMes : r.mesAMes.linhas;
+  const linhasDoMes = LINHAS_DO_MES.filter((l) => !l.opcional || tabela.some((m) => m[l.k] !== 0));
+  const temAnual = r.mesAMes.detalhe.some((d) => (d.mesesDeUso ?? 1) > 1);
   const partes = celula ? r.mesAMes.detalhe.filter((d) => d.mes === celula.mes && d.grupo === celula.grupo) : [];
   const nMeses = r.mesAMes.linhas.length;
 
@@ -133,14 +148,20 @@ export function AnaliseView({ token, canEdit, onError }: { token: string | null;
       <div className="rounded-xl border border-border bg-surface p-5">
         <div className="flex flex-wrap items-baseline justify-between gap-2">
           <Rotulo>Para onde foi o dinheiro</Rotulo>
-          <span className="text-sm text-muted">realizado e conciliado · contratos de saída somam {brl(r.recorrentes.custoMensal)}/mês</span>
+          <div className="flex items-center gap-3 text-sm text-muted">
+            <div className="flex rounded border border-border text-[12px]" role="group" aria-label="Leitura da tabela">
+              <button onClick={() => setPorMes(false)} aria-pressed={!porMes} title="o que saiu do caixa em cada mês" className={`px-2 py-0.5 ${!porMes ? 'bg-brand/10 text-brand' : ''}`}>caixa</button>
+              <button onClick={() => setPorMes(true)} aria-pressed={porMes} title="o que foi pago para vários meses (plano anual) dividido pelos meses de uso" className={`px-2 py-0.5 ${porMes ? 'bg-brand/10 text-brand' : ''}`}>por mês</button>
+            </div>
+            <span>realizado e conciliado</span>
+          </div>
         </div>
         <div className="overflow-x-auto">
           <table className="w-full min-w-[560px] text-sm">
             <thead className="text-left text-[11px] uppercase tracking-wide text-muted">
               <tr>
                 <th className="py-2 pr-3" />
-                {r.mesAMes.linhas.map((m) => (
+                {tabela.map((m) => (
                   <th key={m.mes} className="py-2 pr-3 text-right">
                     {nomeDoMes(m.mes)}{m.mes === r.mesAMes.mesAtual && <span className="block normal-case tracking-normal">até hoje</span>}
                   </th>
@@ -151,7 +172,7 @@ export function AnaliseView({ token, canEdit, onError }: { token: string | null;
               {linhasDoMes.map((l) => (
                 <tr key={l.k} className={`${l.sub ? 'text-[12px] italic text-muted' : 'border-t border-border'} ${l.forte ? 'font-medium' : ''}`}>
                   <td className={`py-2 pr-3 ${l.sub ? 'pl-3 pt-0' : ''}`} title={l.dica}>{l.rotulo}</td>
-                  {r.mesAMes.linhas.map((m) => {
+                  {tabela.map((m) => {
                     const v = m[l.k];
                     const aberta = !!l.grupo && celula?.mes === m.mes && celula.grupo === l.grupo;
                     const cls = `tabular-nums ${v === 0 ? 'text-muted' : l.k === 'sobra' && m.sobra < 0 ? 'text-bad' : ''}`;
@@ -178,6 +199,11 @@ export function AnaliseView({ token, canEdit, onError }: { token: string | null;
             </tbody>
           </table>
         </div>
+        <p className="mt-2 text-[12px] text-muted">
+          Vem todo mês, vendendo ou não (custo fixo + despesas fixas{tabela.some((m) => m.impostos) ? ' + imposto fixo' : ''}):{' '}
+          {tabela.map((m) => `${nomeDoMes(m.mes)} ${brl(m.fixoDoMes)}`).join(' · ')} · contratos de saída somam {brl(r.recorrentes.custoMensal)}/mês
+          {porMes && temAnual && ' · anuais divididos por 12'}
+        </p>
         {celula && (
           <div className="mt-3 rounded-lg border border-brand/30 bg-surface-2/40 p-3">
             <div className="mb-2 flex items-center justify-between text-sm">
@@ -194,8 +220,8 @@ export function AnaliseView({ token, canEdit, onError }: { token: string | null;
                     {p.rateio && <span className="ml-2 text-[11px] text-muted">(parte de um rateio)</span>}
                   </span>
                   {p.conta && <span className="shrink-0 text-[12px] text-muted">{p.conta}</span>}
-                  {celula.grupo === 'fixo' && canEdit && !p.rateio && (
-                    <label className="flex shrink-0 items-center gap-1 text-[12px] text-muted" title="Pago de uma vez para 12 meses de uso: no fixo por mês entra 1/12 em cada mês">
+                  {celula.grupo !== 'receita' && canEdit && !p.rateio && (
+                    <label className="flex shrink-0 items-center gap-1 text-[12px] text-muted" title="Pago de uma vez para 12 meses de uso: na leitura por mês entra 1/12 em cada mês">
                       <input type="checkbox" checked={(p.mesesDeUso ?? 1) === 12} onChange={(e) => mudarMesesDeUso(p.id, e.target.checked ? 12 : null)} />
                       anual
                     </label>
@@ -205,12 +231,14 @@ export function AnaliseView({ token, canEdit, onError }: { token: string | null;
               ))}
             </ul>
             {celula.grupo !== 'receita' && (
-              <p className="mt-2 text-[12px] text-muted">Valor negativo é estorno abatendo o gasto. Para mudar a faixa de uma conta, use "Como cada conta conta" abaixo.</p>
+              <p className="mt-2 text-[12px] text-muted">
+                Valor negativo é estorno abatendo o gasto. Para mudar custo ↔ despesa, troque a conta do lançamento na aba Lançamentos; para fixo/variável/eventual, use "Como cada conta conta" abaixo.
+              </p>
             )}
           </div>
         )}
         <p className="mt-2 text-[12px] text-muted">
-          Clique num valor para ver os lançamentos. Fixo vem todo mês, vendendo ou não; variável acompanha as vendas; eventual é gasto pontual, por decisão. Investimento e retirada ficam fora da sobra.
+          Clique num valor para ver os lançamentos. Custo é a operação (o que se usa para entregar ao cliente); despesa é a estrutura. Fixo vem todo mês; variável acompanha a demanda; eventual é pontual, por decisão. Investimento e retirada ficam fora da sobra.
         </p>
         {r.mesAMes.contas.length > 0 && (
           <div className="mt-3">
@@ -234,6 +262,7 @@ export function AnaliseView({ token, canEdit, onError }: { token: string | null;
                   <li key={c.id} className="flex items-center gap-3 py-1.5">
                     <span className="w-14 shrink-0 font-os-mono text-[12px] text-muted">{c.codigo}</span>
                     <span className="min-w-0 flex-1 truncate">{c.nome}</span>
+                    <span className="w-16 shrink-0 text-[11px] text-muted">{c.lado === 'custo' ? 'custo' : c.lado === 'imposto' ? 'imposto' : 'despesa'}</span>
                     <select
                       aria-label={`Faixa da conta ${c.nome}`}
                       disabled={!canEdit}
@@ -241,7 +270,7 @@ export function AnaliseView({ token, canEdit, onError }: { token: string | null;
                       onChange={(e) => mudarNatureza(c.id, (e.target.value || null) as Natureza | null)}
                       className="rounded border border-border bg-surface px-1.5 py-0.5 text-[12px]"
                     >
-                      <option value="">{`automático (${c.naturezaHerdada ? ROTULO_NATUREZA[c.naturezaHerdada] : c.grupo === 'impostos' ? 'Impostos' : c.grupo === 'fixo' ? 'Fixo' : 'Variável'})`}</option>
+                      <option value="">{`automático (${ROTULO_NATUREZA[c.naturezaHerdada ?? c.automatica]})`}</option>
                       <option value="fixo">Fixo</option>
                       <option value="variavel">Variável</option>
                       <option value="eventual">Eventual</option>

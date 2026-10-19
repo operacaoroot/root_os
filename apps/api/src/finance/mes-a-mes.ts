@@ -1,29 +1,30 @@
 /*
  * PARA ONDE FOI O DINHEIRO, MÊS A MÊS
  *
- * Separa o que entrou e o que saiu (realizado ou conciliado) em receita,
- * impostos, custo fixo, custo variável, gasto eventual, investimento e
- * retirada dos sócios. Cada saída é lida pela conta do plano — ou por linha,
- * quando tem rateio — nesta ordem:
+ * Regra do financeiro da ROOT (Pedro, 19/10/2026):
+ *   CUSTO   é tudo o que se usa para entregar ao cliente — a operação (plano 3.x).
+ *   DESPESA é o que mantém a empresa de pé — estrutura e administração (plano 4.x).
+ * Dentro de cada lado, a natureza diz se o gasto vem todo mês (fixo), acompanha
+ * a demanda (variável) ou é pontual, por decisão (eventual). Assinatura de IA é
+ * custo fixo da operação; VPS é custo variável; tudo o que foi comprado para a
+ * sala é despesa (eventual), não investimento.
  *
- *   5.x            → investimento
- *   4.6.x          → retirada dos sócios (pró-labore, dividendos)
- *   natureza escolhida na conta (ela ou uma conta-mãe): fixo, variável ou eventual
- *   2.x            → impostos
- *   preso a contrato, ou conta marcada como fixa (custoFixo) → fixo
- *   o resto, inclusive sem conta → variável
+ * Cada saída é lida pela conta do plano — ou por linha, quando tem rateio:
  *
- * A natureza escolhida vem antes de imposto de propósito: o DAS do MEI tem
- * valor fixo todo mês, fature quanto faturar, e quem é MEI marca a conta do
- * DAS como fixa. No Simples de ME o imposto é % da venda e fica em impostos.
+ *   5.x   → investimento
+ *   4.6.x → retirada dos sócios (pró-labore, dividendos)
+ *   2.x   → impostos (contam no "fixo do mês" quando a conta é marcada fixa:
+ *           o DAS do MEI tem valor fixo todo mês)
+ *   3.x   → custo da operação: fixo ou variável (eventual conta como variável)
+ *   4.x e sem conta → despesa: fixa, variável ou eventual
  *
- * Fixo é o que vem todo mês, venda ou não venda. Variável sobe e desce com as
- * vendas. Eventual é gasto pontual, por decisão (confraternização, evento,
- * uniforme, presente): é o primeiro lugar a cortar quando o caixa aperta.
+ * A natureza vem da escolha feita na conta (ela ou uma conta-mãe); sem escolha,
+ * é fixa quando o pagamento está preso a contrato ou a conta tem custoFixo, e
+ * variável no resto.
  *
- * "Fixo por mês" divide o que foi pago de uma vez para vários meses de uso
- * (plano anual de hospedagem: 12 meses). A tabela continua mostrando o caixa
- * (o que saiu em cada mês); a linha "fixo por mês" mostra o custo de manter.
+ * Duas leituras da mesma tabela: o CAIXA (o que saiu em cada mês) e o POR MÊS,
+ * em que o pago de uma vez para N meses de uso (plano anual) vale 1/N em cada
+ * um dos N meses — é o custo de manter, não o movimento do caixa.
  *
  * Entrada é receita quando está numa conta de receita (1.x) ou sem conta.
  * Entrada numa conta de despesa é estorno ou devolução: abate o gasto daquela
@@ -32,7 +33,10 @@
  * Funções puras: o serviço busca no banco, aqui só se soma.
  */
 
-export type Grupo = 'impostos' | 'fixo' | 'variavel' | 'eventual' | 'investimento' | 'retirada';
+export type Grupo =
+  | 'custoFixo' | 'custoVariavel'
+  | 'despesaFixa' | 'despesaVariavel' | 'despesaEventual'
+  | 'impostos' | 'investimento' | 'retirada';
 export type Natureza = 'fixo' | 'variavel' | 'eventual';
 export const NATUREZAS: readonly Natureza[] = ['fixo', 'variavel', 'eventual'];
 
@@ -41,7 +45,7 @@ export interface ContaDoPlano {
   codigo: string;
   parentId: string | null;
   custoFixo: boolean;
-  /** Escolha explícita na Análise. Nula: vale a regra pelo código e por custoFixo. */
+  /** Escolha explícita na Análise. Nula: fixa por contrato/custoFixo, variável no resto. */
   natureza?: string | null;
 }
 
@@ -60,18 +64,25 @@ export interface Movimento {
 export interface LinhaDoMes {
   mes: string; // AAAA-MM
   receita: number;
+  custoFixo: number;
+  custoVariavel: number;
+  /** custo da operação = fixo + variável */
+  custo: number;
+  /** receita − custo: o que a operação deixa para pagar a estrutura */
+  margem: number;
+  despesaFixa: number;
+  despesaVariavel: number;
+  despesaEventual: number;
+  despesas: number;
   impostos: number;
-  fixo: number;
-  /** fixo com os pagamentos de vários meses de uso divididos pelos meses (custo de manter, não caixa) */
-  fixoPorMes: number;
-  variavel: number;
-  eventual: number;
+  /** margem − despesas − impostos: o que sobra antes de investir e retirar */
+  sobra: number;
   investimento: number;
   retirada: number;
   /** tudo o que saiu no mês */
   saiu: number;
-  /** receita − impostos − fixo − variável − eventual: o que a operação deixou, antes de investir e retirar */
-  sobra: number;
+  /** o que vem todo mês, vendendo ou não: custo fixo + despesa fixa + imposto de conta fixa */
+  fixoDoMes: number;
 }
 
 /** Uma parte de um lançamento dentro de uma célula da tabela (mês × grupo). */
@@ -82,6 +93,8 @@ export interface ParteDoMes {
   chartAccountId: string | null;
   /** com sinal: estorno entra negativo no grupo da conta */
   valor: number;
+  /** imposto de conta marcada fixa (entra no fixo do mês) */
+  impostoFixo?: boolean;
 }
 
 const r2 = (n: number) => Math.round(n * 100) / 100;
@@ -128,15 +141,19 @@ export function contaFixa(contas: Map<string, ContaDoPlano>, id: string | null):
   return false;
 }
 
+/** A natureza em uso: a escolhida, ou fixa por contrato/custoFixo, ou variável. */
+export function naturezaEmUso(contas: Map<string, ContaDoPlano>, id: string | null, temContrato: boolean): Natureza {
+  return naturezaDaConta(contas, id) ?? (temContrato || contaFixa(contas, id) ? 'fixo' : 'variavel');
+}
+
 export function grupoDaSaida(contas: Map<string, ContaDoPlano>, chartAccountId: string | null, temContrato: boolean): Grupo {
   const codigo = chartAccountId ? contas.get(chartAccountId)?.codigo ?? '' : '';
   if (codigo.startsWith('5')) return 'investimento';
   if (codigo === '4.6' || codigo.startsWith('4.6.')) return 'retirada';
-  const natureza = naturezaDaConta(contas, chartAccountId);
-  if (natureza) return natureza;
   if (codigo.startsWith('2')) return 'impostos';
-  if (temContrato || contaFixa(contas, chartAccountId)) return 'fixo';
-  return 'variavel';
+  const natureza = naturezaEmUso(contas, chartAccountId, temContrato);
+  if (codigo.startsWith('3')) return natureza === 'fixo' ? 'custoFixo' : 'custoVariavel';
+  return natureza === 'fixo' ? 'despesaFixa' : natureza === 'eventual' ? 'despesaEventual' : 'despesaVariavel';
 }
 
 /** As partes de um lançamento: as linhas do rateio, quando houver, ou o lançamento inteiro. */
@@ -162,41 +179,46 @@ export function partesDoMes(movs: Movimento[], contas: ContaDoPlano[], meses: st
     for (const p of partesDaSaida(m)) {
       if (m.type === 'entrada' && ehReceita(porId, p.chartAccountId)) {
         out.push({ mes, grupo: 'receita', indice, chartAccountId: p.chartAccountId, valor: p.valor });
-      } else {
-        out.push({ mes, grupo: grupoDaSaida(porId, p.chartAccountId, !!m.contractId), indice, chartAccountId: p.chartAccountId, valor: sinal * p.valor });
+        continue;
       }
+      const grupo = grupoDaSaida(porId, p.chartAccountId, !!m.contractId);
+      const impostoFixo = grupo === 'impostos' && naturezaEmUso(porId, p.chartAccountId, !!m.contractId) === 'fixo';
+      out.push({ mes, grupo, indice, chartAccountId: p.chartAccountId, valor: sinal * p.valor, ...(impostoFixo ? { impostoFixo } : {}) });
     }
   });
   return out;
 }
 
-export function mesAMes(movs: Movimento[], contas: ContaDoPlano[], meses: string[]): LinhaDoMes[] {
-  const linhas = new Map<string, LinhaDoMes>(
-    meses.map((mes) => [mes, { mes, receita: 0, impostos: 0, fixo: 0, fixoPorMes: 0, variavel: 0, eventual: 0, investimento: 0, retirada: 0, saiu: 0, sobra: 0 }]),
-  );
+type Soma = Omit<LinhaDoMes, 'mes' | 'custo' | 'margem' | 'despesas' | 'sobra'>;
+const zerado = (): Soma => ({
+  receita: 0, custoFixo: 0, custoVariavel: 0, despesaFixa: 0, despesaVariavel: 0, despesaEventual: 0,
+  impostos: 0, investimento: 0, retirada: 0, saiu: 0, fixoDoMes: 0,
+});
+
+/**
+ * A tabela mês a mês. `porMes`: o pago para N meses de uso entra 1/N em cada um
+ * dos N meses (o que cair fora da janela não aparece); sem ela, é o caixa.
+ */
+export function mesAMes(movs: Movimento[], contas: ContaDoPlano[], meses: string[], porMes = false): LinhaDoMes[] {
+  const somas = new Map<string, Soma>(meses.map((mes) => [mes, zerado()]));
   for (const p of partesDoMes(movs, contas, meses)) {
-    const l = linhas.get(p.mes)!;
-    if (p.grupo === 'receita') { l.receita += p.valor; continue; }
-    l[p.grupo] += p.valor;
-    l.saiu += p.valor;
-    if (p.grupo === 'fixo') {
-      // custo de manter: o pagamento de N meses de uso vale 1/N em cada um deles
-      const n = Math.max(1, Math.floor(movs[p.indice].mesesDeUso ?? 1));
-      for (let i = 0; i < n; i++) {
-        const alvo = linhas.get(somarMeses(p.mes, i));
-        if (alvo) alvo.fixoPorMes += p.valor / n;
-      }
+    const n = porMes && p.grupo !== 'receita' ? Math.max(1, Math.floor(movs[p.indice].mesesDeUso ?? 1)) : 1;
+    for (let i = 0; i < n; i++) {
+      const l = somas.get(somarMeses(p.mes, i));
+      if (!l) continue;
+      const v = p.valor / n;
+      if (p.grupo === 'receita') { l.receita += v; continue; }
+      l[p.grupo] += v;
+      l.saiu += v;
+      if (p.grupo === 'custoFixo' || p.grupo === 'despesaFixa' || p.impostoFixo) l.fixoDoMes += v;
     }
   }
   return meses.map((mes) => {
-    const l = linhas.get(mes)!;
-    const out: LinhaDoMes = {
-      mes,
-      receita: r2(l.receita), impostos: r2(l.impostos), fixo: r2(l.fixo), fixoPorMes: r2(l.fixoPorMes),
-      variavel: r2(l.variavel), eventual: r2(l.eventual), investimento: r2(l.investimento), retirada: r2(l.retirada),
-      saiu: r2(l.saiu), sobra: 0,
-    };
-    out.sobra = r2(out.receita - out.impostos - out.fixo - out.variavel - out.eventual);
-    return out;
+    const s = somas.get(mes)!;
+    const l = Object.fromEntries(Object.entries(s).map(([k, v]) => [k, r2(v)])) as Soma;
+    const custo = r2(l.custoFixo + l.custoVariavel);
+    const despesas = r2(l.despesaFixa + l.despesaVariavel + l.despesaEventual);
+    const margem = r2(l.receita - custo);
+    return { mes, ...l, custo, margem, despesas, sobra: r2(margem - despesas - l.impostos) };
   });
 }
