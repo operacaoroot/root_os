@@ -550,9 +550,9 @@
       "titulo": "Cartório de Descoberto (Jorge)",
       "etapa": "Depoimento e indicação",
       "criadoEm": "2026-08-21T19:00:00-03:00",
-      "nota": "Cliente que entrou por parceria (Lucas, 19/10/2026). Contrato de R$ 16.000 fechado em agosto/2026, com repasse para a Cardozo & Saggioro: por isso o contrato entra com R$ 0 no faturamento da ROOT (decisão do Lucas, 19/10). As notas dão o caso como entregue: minuta de escritura, orçamento e dossiê. O Jorge gravou um depoimento em áudio, usado nas propostas do Douglas Costa e do Lucas Rezende.",
+      "nota": "Cliente que veio do BNI; o valor foi recebido por repasse (Lucas, 19/10/2026). Contrato de R$ 16.000 fechado em agosto/2026, com repasse para a Cardozo & Saggioro: por isso o contrato entra com R$ 0 no faturamento da ROOT (decisão do Lucas, 19/10). As notas dão o caso como entregue: minuta de escritura, orçamento e dossiê. O Jorge gravou um depoimento em áudio, usado nas propostas do Douglas Costa e do Lucas Rezende.",
       "campos": {
-        "Canal de aquisição": "Parcerias",
+        "Canal de aquisição": "BNI",
         "Vendedor": "Pedro",
         "Empresa": "Cartório de Descoberto",
         "Contato": "Jorge"
