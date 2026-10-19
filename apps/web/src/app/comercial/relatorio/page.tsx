@@ -9,6 +9,7 @@ import { ROTULO_DO_MOTIVO, diaSP, numeroOuAusente, quandoCurtoSP, rotuloDaLinhaD
 
 import { BOTAO, CARTAO, Carregando, Erro, FOCO, Numero, Rotulo, useCarregar } from '../_ui';
 import { LinkDoLead, useMudouNoPainel } from '../_painel/provedor';
+import { LeituraEReacao } from './LeituraEReacao';
 
 /*
  * TELA 13 · O RELATÓRIO DA QUINTA (lane C). Conversão, velocidade, perdas por
@@ -142,6 +143,9 @@ export default function RelatorioPage() {
           </section>
         </>
       )}
+
+      {/* I5 (rodada da implantação): quantas vezes cada lead abriu a proposta e o que deixou nela. */}
+      <LeituraEReacao dias={dias} />
     </div>
   );
 }
