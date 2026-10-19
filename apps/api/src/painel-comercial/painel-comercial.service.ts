@@ -16,7 +16,7 @@ import { ContratosDoClienteService } from '../ficha/contratos-do-cliente.service
 /** Chave da lista criada por `db:seed:crm`; o nome é o plano B (lista criada à mão no quadro). */
 export const LISTA_DO_CRM_EXTERNA = 'crm-root-lista';
 export const NOME_DA_LISTA_DO_CRM = 'Gestão de Leads';
-/** A coluna que junta, no Painel geral, todos os cards que já viraram cliente. */
+/** A coluna "Negócio fechado" do Painel geral: junta quem fechou, esteja onde estiver na operação do cliente. */
 export const ETAPA_CLIENTES = '__clientes';
 
 const FUSO = 'America/Sao_Paulo';
@@ -212,7 +212,7 @@ export class PainelComercialService {
     const comerciais = statuses.filter((s) => faseDaEtapa(s.name) === 'comercial');
     const etapas = [
       ...comerciais.filter((s) => !ehSaida(s.name)).map(etapa),
-      { id: ETAPA_CLIENTES, nome: 'Clientes', cor: '#008844', resultado: 'ganho' as const, qtd: clientes.length, valor: clientes.reduce((s, c) => s + c.valorContratos, 0) },
+      { id: ETAPA_CLIENTES, nome: 'Negócio fechado', cor: '#008844', resultado: 'ganho' as const, qtd: clientes.length, valor: clientes.reduce((s, c) => s + c.valorContratos, 0) },
       ...comerciais.filter((s) => ehSaida(s.name)).map(etapa),
     ];
 

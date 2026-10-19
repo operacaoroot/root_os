@@ -62,6 +62,12 @@ export function VisoesDaLista(props: {
   fases?: FaseDoCliente[];
   /** Etapas de outra fase que a aba também mostra, como alvo (o Funil mostra "Negócio fechado"). */
   etapasExtras?: string[];
+  /**
+   * Visão comercial (Leads, Funil): vai só até "Negócio fechado". Quem já está na
+   * operação do cliente (onboarding, sucesso) aparece nessa coluna, com a etapa
+   * da operação indicada no card; a operação em si mora em Clientes.
+   */
+  ateNegocioFechado?: boolean;
 }) {
   const { chave } = props;
   const { token, ready, can } = useAuth();
@@ -132,11 +138,21 @@ export function VisoesDaLista(props: {
   if (!q.lista) return <p className="text-muted">Esta lista ainda não existe. Rode a carga do CRM (db:seed:crm).</p>;
 
   // A aba mostra só as etapas das suas fases (e as extras); os cards seguem as etapas visíveis.
-  const etapas = q.etapas.filter((e) => !props.fases || props.fases.includes(e.fase) || props.etapasExtras?.includes(e.nome));
+  const etapaDe = (c: Cartao) => q.etapas.find((e) => e.id === c.statusId);
+  const comercial = props.ateNegocioFechado;
+  const fechadoId = q.etapas.find((e) => e.nome === 'Negócio fechado')?.id;
+  const etapas = comercial
+    ? q.etapas.filter((e) => e.fase === 'comercial' || e.id === fechadoId)
+    : q.etapas.filter((e) => !props.fases || props.fases.includes(e.fase) || props.etapasExtras?.includes(e.nome));
   const daAba = new Set(etapas.map((e) => e.id));
-  const vista: QuadroDaLista = { ...q, etapas, cartoes: q.cartoes.filter((c) => daAba.has(c.statusId)) };
+  // Na visão comercial, quem já está na operação do cliente cai em "Negócio fechado", com a etapa real no card.
+  const cartoesDaAba = q.cartoes
+    .map((c) => (comercial && fechadoId && etapaDe(c)?.fase !== 'comercial' ? { ...c, statusId: fechadoId, naOperacao: etapaDe(c)?.nome } : c))
+    .filter((c) => daAba.has(c.statusId));
+  const vista: QuadroDaLista = { ...q, etapas, cartoes: cartoesDaAba };
   const fechada = (c: Cartao) => !!q.etapas.find((e) => e.id === c.statusId)?.fechada;
-  const abertos = vista.cartoes.filter((c) => !fechada(c));
+  // "No funil" é o que está em negociação: na visão comercial, só a fase comercial aberta.
+  const abertos = vista.cartoes.filter((c) => !fechada(c) && (!comercial || c.statusId !== fechadoId));
   const somaAbertos = abertos.reduce((s, c) => s + (c.valorContratos || c.valor || 0), 0);
 
   return (
@@ -260,6 +276,9 @@ function Quadro(props: {
                   className="shrink-0 cursor-pointer rounded-md border border-border bg-surface-2 px-3 py-2 hover:border-brand/60"
                 >
                   <div className="text-sm font-medium leading-snug">{c.titulo}</div>
+                  {(c as Cartao & { naOperacao?: string }).naOperacao && (
+                    <div className="mt-0.5 text-[0.7rem] uppercase tracking-wide text-brand">em {(c as Cartao & { naOperacao?: string }).naOperacao}</div>
+                  )}
                   {c.contato && <div className="mt-0.5 text-xs text-muted">{c.contato}</div>}
                   {c.selo && (
                     <span className="mt-1.5 inline-flex items-center gap-1 rounded-full border border-border px-2 py-0.5 text-[0.7rem] text-muted">

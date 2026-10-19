@@ -26,7 +26,7 @@ export default function LeadsPage() {
   return (
     <div className="com-tema space-y-6 text-text">
       <ReunioesSemCliente />
-      <VisoesDaLista chave={CRM} item="lead" rotuloAbertos="Cards" rotuloDoValor="No funil" novo="+ Novo lead" visaoInicial="lista" />
+      <VisoesDaLista chave={CRM} item="lead" rotuloAbertos="Em negociação" rotuloDoValor="No funil" novo="+ Novo lead" visaoInicial="lista" ateNegocioFechado />
       <EntradasDoSite />
     </div>
   );

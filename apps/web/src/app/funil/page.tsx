@@ -10,7 +10,7 @@ import { VisoesDaLista } from '@/components/ficha/VisoesDaLista';
 export default function FunilPage() {
   return (
     <div className="com-tema text-text">
-      <VisoesDaLista chave="crm-root-lista" item="lead" rotuloAbertos="Leads" rotuloDoValor="No funil" novo="+ Novo lead" fases={['comercial']} etapasExtras={['Negócio fechado']} />
+      <VisoesDaLista chave="crm-root-lista" item="lead" rotuloAbertos="Leads" rotuloDoValor="No funil" novo="+ Novo lead" ateNegocioFechado />
     </div>
   );
 }
