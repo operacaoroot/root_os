@@ -1,6 +1,7 @@
 import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import {
   MODELOS_DE_LISTA, TRAB_LISTA_COM_DOIS_PAIS, TRAB_PASTA_COM_DOIS_PAIS, ehValorMonetarioCanonico,
+  listaDaImplantacao, PORTA_DA_IMPLANTACAO,
 } from '@mktos/shared';
 import type {
   TrabEstrutura, TrabListaDto, TrabCampoDto, TrabTarefaLista, TrabTarefaResumo,
@@ -542,6 +543,14 @@ export class WorkService {
     });
     if (!list) throw new NotFoundException('Lista não encontrada');
     if (list.statuses.length === 0) throw new BadRequestException('Lista sem statuses.');
+    // A implantação tem porta única (rodada do trabalho T1): o cartão do cliente
+    // nasce do contrato assinado no comercial. Subtarefa dentro do cartão vale.
+    if (!input.parentId && list.folderId) {
+      const pasta = await this.prisma.workFolder.findFirst({ where: { id: list.folderId, orgId }, select: { id: true, name: true, parentId: true } });
+      if (pasta && listaDaImplantacao([{ ...pasta, lists: [{ id: list.id, name: list.name }] }])) {
+        throw new BadRequestException(PORTA_DA_IMPLANTACAO);
+      }
+    }
     const statusId = input.statusId ?? list.statuses[0].id;
     if (!list.statuses.some((s) => s.id === statusId)) {
       throw new BadRequestException('Status não pertence à lista.');

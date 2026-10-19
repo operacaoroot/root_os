@@ -315,3 +315,18 @@ body {
 ::-webkit-scrollbar-track {
   background: transparent;
 }
+
+/* O quadro do Trabalho rola para o lado (rodada do trabalho T1): a barra
+   lateral fica visível, com trilho, para ninguém achar que as etapas acabam
+   na borda da tela. */
+.quadro-rolagem-lateral {
+  scrollbar-width: auto;
+  scrollbar-color: rgb(var(--os-line-strong)) rgb(var(--os-line-strong) / 0.18);
+}
+.quadro-rolagem-lateral::-webkit-scrollbar {
+  height: 12px;
+}
+.quadro-rolagem-lateral::-webkit-scrollbar-track {
+  background: rgb(var(--os-line-strong) / 0.18);
+  border-radius: 8px;
+}

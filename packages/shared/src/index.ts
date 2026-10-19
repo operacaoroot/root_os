@@ -42,3 +42,7 @@ export * from './sala-versao.js';
 // O relatório do comercial, bloco Leitura e reação (rodada da implantação I5, 18/10/2026) — ver o
 // cabeçalho de `leitura-e-reacao.ts`.
 export * from './leitura-e-reacao.js';
+
+// A implantação de clientes numa tela só (rodada do trabalho T1, 19/10/2026): a lista
+// "Onboarding de cliente" da pasta "Clientes" — ver o cabeçalho de `implantacao.ts`.
+export * from './implantacao.js';

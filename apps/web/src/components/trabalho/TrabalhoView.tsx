@@ -5,7 +5,7 @@ import * as Dialog from '@radix-ui/react-dialog';
 import { Archive, Bot, Clock, DoorOpen, ExternalLink, Flag, Hourglass, MessageSquare, Plus, Settings2, Unlock, X } from 'lucide-react';
 import {
   MODELOS_DE_LISTA, MOEDA_PADRAO, ehValorMonetarioCanonico, formatarValorMonetario, lerValorDigitadoPtBr,
-  moedaDoValor, paraDigitarPtBr,
+  listaDaImplantacao, moedaDoValor, paraDigitarPtBr, LISTA_DA_IMPLANTACAO, PASTA_DA_IMPLANTACAO, PORTA_DA_IMPLANTACAO,
 } from '@mktos/shared';
 import type {
   TrabAgenteDto, TrabEstrutura, TrabListaDto, TrabTarefaLista, TrabTarefaResumo,
@@ -16,7 +16,7 @@ import { useAuth } from '@/lib/auth';
 import { tarefasDeTrabalho } from '@/lib/work-projection';
 import { diasDesde, formatarHoras, hojeEmBrasilia, minutosDeTexto } from '@/lib/horas';
 import {
-  CHAVE_DA_DENSIDADE, DENSIDADES, DIAS_DE_ALERTA_NA_ETAPA, ESCOPOS, LARGURA_MINIMA_DA_COLUNA,
+  CHAVE_DA_DENSIDADE, DENSIDADES, DIAS_DE_ALERTA_NA_ETAPA, ESCOPOS, LARGURA_DA_COLUNA,
   ehMeu, haCurto, lerDensidade, lerEscopo, posicaoDoBalao, type Densidade, type Escopo,
 } from '@/lib/quadro-denso';
 
@@ -117,11 +117,19 @@ function pastaEDescendentes(folders: TrabEstrutura['folders'], raiz: string): Se
   return dentro;
 }
 
-export function TrabalhoView({ visaoInicial = 'board' }: { visaoInicial?: VisaoDoTrabalho }) {
+/**
+ * `modo="implantacao"` (rodada do trabalho T1, 19/10/2026): o item "Implantação
+ * de clientes" abre o kanban denso da lista "Onboarding de cliente" da pasta
+ * "Clientes", em tela cheia (sem a árvore nem as pastas), e sem "+ adicionar":
+ * o cliente nasce do contrato assinado no comercial.
+ */
+export type ModoDoTrabalho = 'trabalho' | 'implantacao';
+
+export function TrabalhoView({ visaoInicial = 'board', modo = 'trabalho' }: { visaoInicial?: VisaoDoTrabalho; modo?: ModoDoTrabalho }) {
   const { token, ready, can } = useAuth();
   if (!ready) return <p className="text-muted">Carregando…</p>;
   if (!token || !can('tarefas.ver')) return <p className="text-muted">Sem permissão para ver tarefas.</p>;
-  return <TrabalhoConteudo key={token} visaoInicial={visaoDoEndereco(visaoInicial) ?? 'board'} />;
+  return <TrabalhoConteudo key={`${token}:${modo}`} visaoInicial={visaoDoEndereco(visaoInicial) ?? 'board'} modo={modo} />;
 }
 
 /** As listas que a pasta escolhida mostra. Pasta que não existe (link velho) = todas. */
@@ -137,7 +145,8 @@ function listasDaPasta(e: TrabEstrutura, pasta: string): TrabListaDto[] {
 /** O trilho de onboarding ligado a um cartão (`OnboardingTrilho.cardId`). */
 interface TrilhoDoCartao { id: string; cliente: string; faseRotulo: string }
 
-function TrabalhoConteudo({ visaoInicial }: { visaoInicial: Visao }) {
+function TrabalhoConteudo({ visaoInicial, modo }: { visaoInicial: Visao; modo: ModoDoTrabalho }) {
+  const implantacao = modo === 'implantacao';
   const { token, ready, can, user } = useAuth();
   const editable = can('tarefas.editar');
   const readable = can('tarefas.ver');
@@ -145,6 +154,7 @@ function TrabalhoConteudo({ visaoInicial }: { visaoInicial: Visao }) {
   const [estrutura, setEstrutura] = useState<TrabEstrutura | null>(null);
   const [listaId, setListaId] = useState<string | null>(null);
   const [listaDoLinkAusente, setListaDoLinkAusente] = useState(false);
+  const [semImplantacao, setSemImplantacao] = useState(false);
   const [visao, setVisao] = useState<Visao>(visaoInicial);
   const [fPasta, setFPasta] = useState('');
   const [trilhos, setTrilhos] = useState<Map<string, TrilhoDoCartao>>(new Map());
@@ -219,7 +229,11 @@ function TrabalhoConteudo({ visaoInicial }: { visaoInicial: Visao }) {
       .then((e) => {
         if (!ativa) return;
         setEstrutura(e);
-        if (!listaAtual.current) {
+        if (!listaAtual.current && implantacao) {
+          const achada = listaDaImplantacao(e.folders);
+          setSemImplantacao(!achada);
+          if (achada) trocarLista(achada.listaId);
+        } else if (!listaAtual.current) {
           const todas = [...e.folders.flatMap((f) => f.lists), ...e.listasSoltas];
           const endereco = new URLSearchParams(window.location.search);
           const solicitada = endereco.get('lista');
@@ -234,7 +248,7 @@ function TrabalhoConteudo({ visaoInicial }: { visaoInicial: Visao }) {
       })
       .catch((e) => { if (ativa) setErro(e.message); });
     return () => { ativa = false; };
-  }, [ready, token, readable, urlPronta, bump, trocarLista]);
+  }, [ready, token, readable, urlPronta, bump, trocarLista, implantacao]);
 
   // O ID do card é nativo e a API confere a empresa. O painel abre no mesmo
   // registro mesmo quando a URL traz uma lista antiga após ele ser movido.
@@ -356,11 +370,13 @@ function TrabalhoConteudo({ visaoInicial }: { visaoInicial: Visao }) {
 
   if (ready && !readable) return <p className="text-muted">Sem permissão para ver tarefas.</p>;
 
+  // A lista da implantação não recebe cartão solto, em nenhuma tela (a API também recusa).
+  const listaEhImplantacao = !!lista && !!estrutura && listaDaImplantacao(estrutura.folders)?.listaId === lista.id;
   const pastaDaLista = lista && estrutura ? estrutura.folders.find((f) => f.lists.some((l) => l.id === lista.id))?.id ?? '' : '';
 
   return (
     <div className={`flex h-full min-w-0 flex-col gap-3 ${visao === 'board' && lista ? 'md:h-[calc(100dvh-52px-2rem)] min-[820px]:h-[calc(100dvh-46px-3rem)]' : ''}`}>
-      {estrutura && (
+      {estrutura && !implantacao && (
         <BarraDePastas
           pastas={pastasDeTopo} temSoltas={estrutura.listasSoltas.length > 0} atual={fPasta}
           semPastas={estrutura.folders.length === 0} editable={editable} token={token}
@@ -369,6 +385,7 @@ function TrabalhoConteudo({ visaoInicial }: { visaoInicial: Visao }) {
       )}
       <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-4 lg:flex-row">
       {/* árvore: pastas → listas (só as da pasta escolhida no topo) */}
+      {!implantacao && (
       <aside className="max-h-44 w-full shrink-0 space-y-3 overflow-y-auto border-b border-border pb-2 pr-1 lg:max-h-none lg:w-52 lg:border-b-0 lg:pb-0">
         {pastasVisiveis.map((f) => (
           <div key={f.id}>
@@ -426,13 +443,15 @@ function TrabalhoConteudo({ visaoInicial }: { visaoInicial: Visao }) {
           <p className="px-1 text-[12px] text-muted">Nenhuma lista {fPasta ? 'nesta pasta' : 'ainda'}.</p>
         )}
       </aside>
+      )}
 
       {/* miolo: no quadro ele é coluna flexível, para as colunas terem a altura da janela e rolarem cada uma */}
       <div className={`min-w-0 flex-1 ${visao === 'board' && lista ? 'flex min-h-0 flex-col gap-3' : 'space-y-4'}`}>
         <div className="flex flex-wrap items-end justify-between gap-3">
           <div>
-            <h1 className="text-xl font-semibold">{lista?.name ?? 'Trabalho'}</h1>
+            <h1 className="text-xl font-semibold">{implantacao ? 'Implantação de clientes' : lista?.name ?? 'Trabalho'}</h1>
             <p className="text-sm text-muted">
+              {implantacao && lista ? `${PASTA_DA_IMPLANTACAO} · ${lista.name} · ` : ''}
               {!listaId && estrutura ? 'Selecione uma lista para ver as tarefas.' : tarefas ? `${visiveis.length} ${visiveis.length === 1 ? 'tarefa' : 'tarefas'}${visiveis.length !== tarefas.total ? ` de ${tarefas.total} na consulta` : ''}` : erro ? 'Consulta indisponível' : 'Carregando…'}
             </p>
           </div>
@@ -546,6 +565,14 @@ function TrabalhoConteudo({ visaoInicial }: { visaoInicial: Visao }) {
           </div>
         </div>
 
+        {implantacao && semImplantacao && (
+          <p role="status" data-testid="implantacao-sem-lista" className="rounded-lg border border-border bg-surface p-3 text-sm text-muted">
+            A lista {LISTA_DA_IMPLANTACAO} da pasta {PASTA_DA_IMPLANTACAO} ainda não existe nesta empresa. Ela nasce com o primeiro contrato fechado no comercial, ou pela estrutura sugerida em Tarefas.
+          </p>
+        )}
+        {listaEhImplantacao && editable && (
+          <p className="text-[12px] text-muted" data-testid="implantacao-porta">{PORTA_DA_IMPLANTACAO}</p>
+        )}
         {listaDoLinkAusente && <p role="status" className="rounded-lg border border-border bg-surface p-3 text-sm text-muted">A lista deste link ainda não está disponível no seu quadro. Escolha uma das listas disponíveis.</p>}
         {erro && (
           <div className="flex items-center justify-between rounded-lg border border-bad/40 bg-bad/10 px-3 py-2 text-sm text-bad">
@@ -556,7 +583,7 @@ function TrabalhoConteudo({ visaoInicial }: { visaoInicial: Visao }) {
 
         {lista && tarefas && visao === 'board' && (
           <Board
-            lista={lista} tarefas={visiveis} editable={editable} token={token}
+            lista={lista} tarefas={visiveis} editable={editable} podeCriar={editable && !listaEhImplantacao} token={token}
             agentes={estrutura?.agentes ?? []} trilhos={trilhos} movimento={movimento} densidade={densidade}
             onAbrir={abrirTarefa} onMudou={refresh} onErro={setErro}
           />
@@ -612,9 +639,12 @@ function ContagemDaEtapa({ quantas, limite }: { quantas: number; limite: number 
  * O QUADRO DENSO (rodada da implantação I2, 18/10/2026). Vale para a visão
  * Quadro do Trabalho inteira; a Implantação é o caso de prova.
  *
- *  · COLUNAS ESTREITAS em grade de larguras iguais (no compacto, sete etapas
- *    cabem em 1440 px com a árvore aberta); a coluna de saída (etapa fechada)
- *    fica esmaecida.
+ *  · COLUNAS NUMA LINHA SÓ, COM LARGURA FIXA, E O QUADRO ROLA PARA O LADO
+ *    (rodada do trabalho T1, 19/10/2026: "não faz sentido ter coluna na parte
+ *    de baixo"). `overflow-x: auto` com a barra visível; a roda com Shift e o
+ *    arrasto do trackpad rolam de lado. Nunca quebra coluna para baixo. Os
+ *    chips de etapa no topo levam até a coluna, como no funil. A coluna de
+ *    saída (etapa fechada) fica esmaecida.
  *  · ROLAGEM POR COLUNA: cada uma tem o próprio `overflow-y` e a altura da
  *    janela; a página não rola inteira (o mesmo arranjo do funil do comercial).
  *    No celular as colunas viram uma faixa com encaixe, uma por vez.
@@ -629,8 +659,8 @@ function ContagemDaEtapa({ quantas, limite }: { quantas: number; limite: number 
  *    da caixa de entrada (`GET /trabalho/quadro/movimento`). Falhar ali só tira
  *    o rodapé.
  */
-function Board({ lista, tarefas, editable, token, agentes, trilhos, movimento, densidade, onAbrir, onMudou, onErro }: {
-  lista: TrabListaDto; tarefas: TrabTarefaResumo[]; editable: boolean; token: string | null;
+function Board({ lista, tarefas, editable, podeCriar, token, agentes, trilhos, movimento, densidade, onAbrir, onMudou, onErro }: {
+  lista: TrabListaDto; tarefas: TrabTarefaResumo[]; editable: boolean; podeCriar: boolean; token: string | null;
   agentes: TrabAgenteDto[]; trilhos: Map<string, TrilhoDoCartao>;
   movimento: Map<string, TrabMovimentoDoCartao>; densidade: Densidade;
   onAbrir: (id: string) => void; onMudou: () => void; onErro: (m: string) => void;
@@ -660,12 +690,35 @@ function Board({ lista, tarefas, editable, token, agentes, trilhos, movimento, d
     return () => { document.removeEventListener('keydown', fechar); window.removeEventListener('scroll', sumir, true); };
   }, [balao]);
   const tarefaDoBalao = balao ? tarefas.find((t) => t.id === balao.id) ?? null : null;
+  const rolagem = useRef<HTMLDivElement>(null);
+  const irParaColuna = (statusId: string) => {
+    const alvo = rolagem.current?.querySelector<HTMLElement>(`[data-coluna="${statusId}"]`);
+    alvo?.scrollIntoView({ behavior: 'smooth', inline: 'start', block: 'nearest' });
+  };
   return (
+    <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-1.5">
+    <nav aria-label="Ir para a etapa" data-testid="trabalho-chips-de-etapa" className="flex shrink-0 gap-1 overflow-x-auto pb-0.5">
+      {lista.statuses.map((st) => (
+        <button
+          key={st.id}
+          type="button"
+          onClick={() => irParaColuna(st.id)}
+          className="flex shrink-0 items-center gap-1 rounded-full border border-border bg-surface px-2 py-0.5 font-os-mono text-[10.5px] text-muted hover:border-brand-dim hover:text-text max-md:min-h-[44px]"
+        >
+          <span aria-hidden className="h-1.5 w-1.5 rounded-full" style={{ background: st.color }} />
+          {st.name}
+          <span className="tabular-nums">{tarefas.filter((t) => t.statusId === st.id).length}</span>
+        </button>
+      ))}
+    </nav>
     <div
+      ref={rolagem}
       data-testid="trabalho-quadro"
       data-densidade={densidade}
-      className="flex min-h-0 flex-1 snap-x snap-mandatory gap-2 overflow-x-auto pb-1 md:grid md:snap-none md:[grid-template-columns:repeat(var(--colunas),minmax(var(--min-col),1fr))]"
-      style={{ '--colunas': String(Math.max(1, lista.statuses.length)), '--min-col': `${LARGURA_MINIMA_DA_COLUNA[densidade]}px` } as React.CSSProperties}
+      tabIndex={0}
+      aria-label={`Quadro de ${lista.name}: role para o lado para ver todas as etapas`}
+      className="quadro-rolagem-lateral flex min-h-0 flex-1 snap-x snap-mandatory flex-nowrap gap-2 overflow-x-auto overflow-y-hidden pb-2 outline-none focus-visible:ring-2 focus-visible:ring-brand md:snap-none"
+      style={{ '--largura-da-coluna': `${LARGURA_DA_COLUNA[densidade]}px` } as React.CSSProperties}
     >
       {lista.statuses.map((st) => {
         const itens = tarefas.filter((t) => t.statusId === st.id);
@@ -675,7 +728,7 @@ function Board({ lista, tarefas, editable, token, agentes, trilhos, movimento, d
             key={st.id}
             data-coluna={st.id}
             aria-label={`${st.name}: ${itens.length} ${itens.length === 1 ? 'tarefa' : 'tarefas'}`}
-            className={`flex w-[86%] min-w-0 shrink-0 snap-start flex-col rounded border bg-bg2 max-md:max-h-[72dvh] md:w-auto md:min-h-0 ${sobre === st.id ? 'border-brand' : 'border-border'} ${saida ? 'opacity-60 focus-within:opacity-100 hover:opacity-100' : ''}`}
+            className={`flex w-[86%] min-w-0 shrink-0 grow-0 snap-start flex-col rounded border bg-bg2 max-md:max-h-[72dvh] md:w-[var(--largura-da-coluna)] md:min-h-0 ${sobre === st.id ? 'border-brand' : 'border-border'} ${saida ? 'opacity-60 focus-within:opacity-100 hover:opacity-100' : ''}`}
             onDragOver={editable ? (e) => { e.preventDefault(); if (sobre !== st.id) setSobre(st.id); } : undefined}
             onDragLeave={editable ? (e) => { if (!e.currentTarget.contains(e.relatedTarget as Node)) setSobre(null); } : undefined}
             onDrop={editable ? (e) => soltar(st.id, e) : undefined}
@@ -697,7 +750,7 @@ function Board({ lista, tarefas, editable, token, agentes, trilhos, movimento, d
                   onAbrir={(id) => { setBalao(null); onAbrir(id); }} onMudou={onMudou} onErro={onErro}
                 />
               ))}
-              {editable && <QuickAdd listaId={lista.id} statusId={st.id} token={token} onDone={onMudou} onErro={onErro} />}
+              {podeCriar && <QuickAdd listaId={lista.id} statusId={st.id} token={token} onDone={onMudou} onErro={onErro} />}
               {itens.length === 0 && !editable && <p className="px-1 text-xs text-muted">Nada nesta etapa.</p>}
             </div>
           </section>
@@ -706,6 +759,7 @@ function Board({ lista, tarefas, editable, token, agentes, trilhos, movimento, d
       {balao && tarefaDoBalao && (
         <BalaoDoCartao t={tarefaDoBalao} mov={movimento.get(balao.id) ?? null} ancora={balao.ancora} />
       )}
+    </div>
     </div>
   );
 }

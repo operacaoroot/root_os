@@ -1,4 +1,4 @@
-import { ESTRUTURA_SUGERIDA, MODELOS_DE_LISTA } from '@mktos/shared';
+import { ESTRUTURA_SUGERIDA, LISTA_DA_IMPLANTACAO, MODELOS_DE_LISTA, PASTA_DA_IMPLANTACAO, chaveDoNomeDoTrabalho } from '@mktos/shared';
 import { ActorType, Prisma } from '@prisma/client';
 
 import { criarEstruturaSugerida } from '../work/estrutura-sugerida';
@@ -33,13 +33,12 @@ import { uuidDe } from './eventos';
  * SEM NEST, como a estrutura sugerida: o seed da homologação usa a mesma função.
  */
 
-export const LISTA_DA_IMPLANTACAO = 'Onboarding de cliente';
-export const PASTA_DA_IMPLANTACAO = 'Clientes';
+export { LISTA_DA_IMPLANTACAO, PASTA_DA_IMPLANTACAO };
 export const AUTOR_DO_FECHAMENTO = 'Fechamento comercial';
 
 type Db = Prisma.TransactionClient;
 
-const chaveDoNome = (nome: string) => nome.trim().replace(/\s+/g, ' ').toLocaleLowerCase('pt-BR');
+const chaveDoNome = chaveDoNomeDoTrabalho;
 
 export function cardIdDoLead(orgId: string, leadId: string): string {
   return uuidDe([orgId, 'comercial-card-implantacao', leadId]);

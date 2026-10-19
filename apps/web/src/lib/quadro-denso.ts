@@ -23,12 +23,16 @@ export function lerDensidade(valor: string | null | undefined): Densidade {
 }
 
 /**
- * A largura mínima da coluna por densidade. Medido na homologação a 1440 px, com
- * o menu do OS e a árvore de listas abertos, o quadro tem 916 px: no compacto,
- * 7 × 120 + 6 vãos de 8 = 888 cabem sem rolar (o nome longo vira reticências e
- * o balão mostra o resto). Médio e cheio rolam na horizontal, de propósito.
+ * A LARGURA DA COLUNA por densidade (rodada do trabalho T1, 19/10/2026).
+ *
+ * O Rodrigo decidiu: as colunas ficam numa linha só, com largura FIXA, e o
+ * quadro rola para o lado ("não faz sentido ter coluna na parte de baixo").
+ * Substitui o "caber as sete etapas em 1440 px espremendo colunas" da rodada
+ * da implantação. A referência é o ClickUp: cerca de 210 px no compacto e 250
+ * no médio. Nunca quebrar coluna para baixo; a rolagem vertical continua por
+ * coluna.
  */
-export const LARGURA_MINIMA_DA_COLUNA: Record<Densidade, number> = { compacto: 120, medio: 168, cheio: 220 };
+export const LARGURA_DA_COLUNA: Record<Densidade, number> = { compacto: 210, medio: 250, cheio: 290 };
 
 export type Escopo = 'todos' | 'meus' | 'atrasados';
 export const ESCOPOS: readonly { chave: Escopo; rotulo: string }[] = [
