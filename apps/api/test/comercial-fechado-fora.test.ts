@@ -136,6 +136,7 @@ describe.skipIf(!URL)('registrar cliente já fechado, pela porta e contra o Post
   let acoes: AcoesService;
   let fechamento: FechamentoService;
   let fora: FechadoForaService;
+  let semStorage: FechadoForaService;
   let contratoVivo: ContratoVivoService;
   let controlador: ApprovalsController;
   let quemRegistraId = '';
@@ -223,6 +224,9 @@ describe.skipIf(!URL)('registrar cliente já fechado, pela porta e contra o Post
     };
     const quemNaoAssina = new QuemNaoAssinaRegistry();
     fora = new FechadoForaService(p, fio, reacoes, fichas, fechamento, leads, undefined, armazem, quemNaoAssina);
+    // O storage existe mas sem as chaves do S3 (a homologação sem MinIO): conta como indisponível.
+    const semChaves = { configured: false, put: async () => { throw new Error('não devia gravar'); } };
+    semStorage = new FechadoForaService(p, fio, reacoes, fichas, fechamento, leads, { get: () => semChaves } as never, undefined, quemNaoAssina);
     controlador = new ApprovalsController(approvals, acoes, p, gateway, undefined, undefined, quemNaoAssina);
     fora.onModuleInit();
   }, 60_000);
@@ -263,6 +267,12 @@ describe.skipIf(!URL)('registrar cliente já fechado, pela porta e contra o Post
     await prisma.org.deleteMany({ where: { id: ORG } });
     await prisma.$disconnect();
   }, 60_000);
+
+  it('storage sem as chaves do S3: recusa com 503 ANTES de criar lead ou ficha (achado da prova na homologação)', async () => {
+    const antes = await prisma.lead.count({ where: { orgId: ORG } });
+    await expect(naEmpresa(() => semStorage.registrar(ORG, quem(), entrada({ cnpj: '11222333000181' }), arquivo()))).rejects.toThrow(/indisponível/);
+    expect(await prisma.lead.count({ where: { orgId: ORG } })).toBe(antes);
+  });
 
   it('registrar cria o lead pela entrada, o anexo e o aceite declarado, e propõe o fechamento (R4, retido)', async () => {
     const r = await naEmpresa(() => fora.registrar(ORG, quem(), entrada({ cnpj: CNPJ }), arquivo()));

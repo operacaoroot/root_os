@@ -272,7 +272,10 @@ export class FechadoForaService implements OnModuleInit {
   private armazemDisponivel(): ArmazemDoAnexo | null {
     if (this.armazem) return this.armazem;
     try {
-      return this.moduleRef?.get(StorageService, { strict: false }) ?? null;
+      // Sem as chaves do S3 o serviço existe mas não grava: conta como indisponível, para o registro
+      // recusar ANTES de criar lead e ficha (na homologação sem MinIO o lead ficava pela metade).
+      const storage = this.moduleRef?.get(StorageService, { strict: false }) ?? null;
+      return storage && storage.configured ? storage : null;
     } catch {
       return null;
     }

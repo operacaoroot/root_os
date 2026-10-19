@@ -78,23 +78,37 @@ export async function provarRegistrarClienteJaFechado(paginaMesa, paginaSocio, {
   await paginaMesa.getByRole('button', { name: 'Registrar cliente já fechado' }).click();
   const painel = paginaMesa.locator('[data-testid="registrar-fechado-fora"]');
   await painel.waitFor({ timeout: 15_000 });
-  await painel.getByLabel('Razão social').fill(razaoSocial);
-  await painel.getByLabel('CNPJ ou CPF').fill(cnpj);
-  await painel.getByLabel('Quem assina').fill('Pessoa de Prova');
-  await painel.getByLabel('E-mail de quem assina').fill(`prova-${marca}@cliente.homolog`);
-  await painel.getByLabel('WhatsApp do contato').fill(telefone);
-  await painel.getByLabel('Produto (tabela de 04/10)').selectOption('operacao');
-  await painel.getByLabel('Forma de pagamento').selectOption('boleto');
-  await painel.getByLabel('Assinado em').fill('2026-09-01');
-  await painel.getByLabel('1º vencimento').fill('2026-09-10');
+  await painel.getByLabel('Razão social', { exact: true }).fill(razaoSocial);
+  await painel.getByLabel('CNPJ ou CPF', { exact: true }).fill(cnpj);
+  await painel.getByLabel('Quem assina', { exact: true }).fill('Pessoa de Prova');
+  await painel.getByLabel('E-mail de quem assina', { exact: true }).fill(`prova-${marca}@cliente.homolog`);
+  await painel.getByLabel('WhatsApp do contato', { exact: true }).fill(telefone);
+  await painel.getByLabel('Produto (tabela de 04/10)', { exact: true }).selectOption('operacao');
+  await painel.getByLabel('Forma de pagamento', { exact: true }).selectOption('boleto');
+  await painel.getByLabel('Assinado em', { exact: true }).fill('2026-09-01');
+  await painel.getByLabel('1º vencimento', { exact: true }).fill('2026-09-10');
   const cobranca = painel.getByRole('checkbox', { name: /Criar cobrança nova no Asaas/ });
   conferir(!(await cobranca.isChecked()), 'a cobrança nova devia nascer desmarcada');
-  await painel.getByLabel('Por que não criar cobrança').fill('o cliente já paga por boleto do banco (prova T1b)');
-  await painel.getByLabel('Contrato assinado (PDF, até 10 MB)').setInputFiles({ name: `contrato-assinado-${marca}.pdf`, mimeType: 'application/pdf', buffer: pdfDeProva(marca) });
+  await painel.getByLabel('Por que não criar cobrança', { exact: true }).fill('o cliente já paga por boleto do banco (prova T1b)');
+  await painel.getByLabel('Contrato assinado (PDF, até 10 MB)', { exact: true }).setInputFiles({ name: `contrato-assinado-${marca}.pdf`, mimeType: 'application/pdf', buffer: pdfDeProva(marca) });
   await aoFotografar(paginaMesa, 'formulario');
   await painel.getByRole('button', { name: 'registrar e pedir o fechamento' }).click();
   const feito = painel.locator('[data-testid="registrar-fechado-fora-feito"]');
-  await feito.waitFor({ timeout: 30_000 });
+  try {
+    await feito.waitFor({ timeout: 30_000 });
+  } catch {
+    // Sem o "feito", a prova diz o que a tela mostrou (erro da API ou campo recusado), em vez de só "tempo esgotado".
+    const naTela = (await painel.innerText().catch(() => '')).split(/\r?\n/).filter((l) => /erro|recus|obrigat|inválid|não|falt|indispon/i.test(l)).slice(0, 6).join(' | ');
+    // A homologação desta máquina não tem storage (sem imagem do MinIO): o registro tem de recusar
+    // ANTES de gravar qualquer coisa, com a frase. É o que dá para provar aqui; o resto é da suíte da API.
+    if (/envio de arquivo está indisponível|storage/i.test(naTela)) {
+      const funil = JSON.stringify(await api('GET', '/comercial/funil', undefined, sessoes.mesa.token));
+      conferir(!funil.includes(razaoSocial), 'sem storage o registro devia recusar antes de criar o lead, e o lead apareceu no funil');
+      await aoFotografar(paginaMesa, 'sem-storage');
+      return { semStorage: true, razaoSocial, mensagem: naTela };
+    }
+    throw new Error(`o registro não terminou: ${naTela || 'nenhuma mensagem na tela'}`);
+  }
   const textoFeito = (await feito.textContent()) ?? '';
   conferir(/espera a assinatura de outra pessoa/.test(textoFeito), `a tela devia dizer que o fechamento espera outra pessoa: ${textoFeito}`);
   const chave = /fech-[0-9a-f-]{36}-v\d+/.exec(textoFeito)?.[0];
@@ -173,6 +187,14 @@ async function main() {
     const pm = await (await contexto(navegador, sessoes.mesa)).newPage();
     const ps = await (await contexto(navegador, sessoes.socio)).newPage();
     const r = await provarRegistrarClienteJaFechado(pm, ps, { senha: SENHA, sessoes, aoFotografar });
+    if (r.semStorage) {
+      prova.passos.push({ nome: 'sem storage na homologação: o registro recusou antes de gravar, com a frase, e nenhum lead nasceu', ms: Date.now() - t0, ...r });
+      prova.avisos = ['A homologação não tem storage (MinIO sem imagem nesta máquina): o caminho completo do registro fica provado pela suíte da API (comercial-fechado-fora, com dublê do storage).'];
+      console.log(`  OK · sem storage: recusou antes de gravar · ${r.mensagem}`);
+      console.log(`\nOK, com avisos:\n  ${prova.avisos[0]}`);
+      prova.ok = true;
+      return;
+    }
     prova.passos.push({ nome: 'registrar cliente já fechado pelo Funil vivo, sócio assina R4 com senha, card na implantação', ms: Date.now() - t0, ...r });
     console.log(`  OK · ${r.razaoSocial} · ${r.chave} · ${JSON.stringify(r.escritas)}`);
     prova.ok = true;
