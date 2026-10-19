@@ -10,6 +10,8 @@ import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { PermissionsGuard } from '../auth/permissions.guard';
 import { RequirePermissions } from '../auth/permissions.decorator';
 import { CurrentUser, JwtUser } from '../auth/current-user.decorator';
+import { PrismaService } from '../prisma/prisma.service';
+import { exigirAcessoAtual } from '../memory/acesso-memoria';
 
 /**
  * A ficha do cliente: o card do CRM (um por lead/cliente) e o que pende dele,
@@ -24,6 +26,7 @@ export class FichaController {
     private readonly tarefas: TarefasDoClienteService,
     private readonly contratos: ContratosDoClienteService,
     private readonly granola: GranolaService,
+    private readonly prisma: PrismaService,
   ) {}
 
   // ---- reuniões do Granola que chegaram sem cliente reconhecido ----
@@ -31,6 +34,24 @@ export class FichaController {
   @RequirePermissions('tarefas.ver')
   granolaSemCliente(@CurrentUser() u: JwtUser) {
     return this.granola.semCliente(u.orgId);
+  }
+
+  /** O painel do Granola em Conexões: ligado ou não, senha ativa e o que chegou. */
+  @Get('granola/conexao')
+  @RequirePermissions('dashboard.ver')
+  granolaConexao(@CurrentUser() u: JwtUser) {
+    return this.granola.conexao(u.orgId);
+  }
+
+  /**
+   * Gera (ou troca) a senha do Zap. A mesma permissão de ligar e desligar
+   * conector, conferida de novo no banco: quem perdeu o acesso agora não gera.
+   */
+  @Post('granola/senha')
+  @RequirePermissions('admin.usuarios')
+  async granolaSenha(@CurrentUser() u: JwtUser) {
+    await exigirAcessoAtual(this.prisma, u.orgId, u.sub, ['admin.usuarios']);
+    return this.granola.gerarSenha(u.orgId, u.sub);
   }
 
   @Post('reunioes/:id/vincular')

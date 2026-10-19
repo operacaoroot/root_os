@@ -2,6 +2,7 @@
 
 import { useAuth } from '@/lib/auth';
 import { CatalogoDeclarativo } from './CatalogoDeclarativo';
+import { ConexaoGranola } from './ConexaoGranola';
 
 export default function IntegracoesPage() {
   const { token, user, ready, can } = useAuth();
@@ -11,11 +12,14 @@ export default function IntegracoesPage() {
     return <p className="text-sm text-muted">Sem permissão para consultar Conexões.</p>;
   }
   return (
-    <CatalogoDeclarativo
-      key={JSON.stringify([user.id, token])}
-      token={token}
-      pessoaId={user.id}
-      podeSincronizarTarefas={can('tarefas.editar')}
-    />
+    <div className="space-y-5">
+      <ConexaoGranola key={`granola-${user.id}`} token={token} gerenciar={can('admin.usuarios')} />
+      <CatalogoDeclarativo
+        key={JSON.stringify([user.id, token])}
+        token={token}
+        pessoaId={user.id}
+        podeSincronizarTarefas={can('tarefas.editar')}
+      />
+    </div>
   );
 }

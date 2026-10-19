@@ -337,6 +337,8 @@ export const CONNECTORS: ConnectorInfo[] = [
   { key: 'pluggy', label: 'Bancos (Open Finance/Pluggy)', category: 'finance', phase: 2, authType: 'api_key', requires: 'PLUGGY_CLIENT_ID/SECRET (~/.config/root/pluggy.env)' },
   { key: 'asaas', label: 'Asaas (cobranças + conta digital)', category: 'finance', phase: 2, authType: 'api_key', requires: 'ASAAS_API_KEY (~/.config/root/asaas.env)' },
   { key: 'ofx', label: 'Extrato OFX (upload)', category: 'finance', phase: 2, authType: 'builtin', requires: 'arquivo .ofx exportado do banco' },
+  // Reuniões do Granola chegam pelo Zap (Webhooks by Zapier). Senha por empresa no cofre, gerada em Conexões.
+  { key: 'granola', label: 'Granola (reuniões)', category: 'knowledge', phase: 3, authType: 'webhook', requires: 'Zap do Granola com a senha gerada em Conexões' },
 ];
 
 export const IntegrationCatalogRowSchema = z.object({

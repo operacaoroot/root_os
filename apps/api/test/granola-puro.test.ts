@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { casarCliente, normalizar, type CardParaCasar } from '../src/ficha/granola.service';
+import { caminhoDoGranola, casarCliente, normalizar, senhaConfere, type CardParaCasar } from '../src/ficha/granola.service';
 
 /*
  * A regra que decide em que card cai a reunião do Granola. Pura: sem banco.
@@ -53,5 +53,20 @@ describe('Granola: achar o cliente', () => {
 
   it('sem pista nenhuma, sem cliente (vai para a caixa)', () => {
     expect(casarCliente(reuniao({ title: 'Reunião interna da Root', attendees: 'pedro@operacaoroot.com' }), cards)).toBeNull();
+  });
+});
+
+describe('Granola: a senha do Zap', () => {
+  it('só a senha exata entra (sem senha guardada, nada entra)', () => {
+    expect(senhaConfere('abc123', 'abc123')).toBe(true);
+    expect(senhaConfere('abc123', ' abc123 ')).toBe(true);
+    expect(senhaConfere('abc123', 'abc124')).toBe(false);
+    expect(senhaConfere('abc123', 'abc12')).toBe(false);
+    expect(senhaConfere('abc123', undefined)).toBe(false);
+    expect(senhaConfere('', '')).toBe(false);
+  });
+
+  it('o endereço do Zap é por empresa', () => {
+    expect(caminhoDoGranola('63cdd80e-0435-488d-98b5-c2653d235e50')).toBe('/api/trabalho/granola/63cdd80e-0435-488d-98b5-c2653d235e50');
   });
 });

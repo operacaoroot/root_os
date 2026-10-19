@@ -1,5 +1,11 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException, type OnModuleInit, Optional } from '@nestjs/common';
+import { randomBytes, timingSafeEqual } from 'node:crypto';
 import {
+  CABECALHO_DO_SEGREDO_GRANOLA,
+  CONECTOR_GRANOLA,
+  NOME_DA_SENHA_GRANOLA,
+  type ConexaoDoGranola,
+  type SenhaDoGranola,
   LISTA_DE_TAREFAS_DO_CLIENTE,
   LISTA_DO_CRM,
   type ReuniaoDoGranola,
@@ -7,6 +13,17 @@ import {
   type ResultadoDoGranola,
 } from '@mktos/shared';
 import { PrismaService } from '../prisma/prisma.service';
+import { CofreService, SegredoIndisponivelError } from '../cofre/cofre.service';
+import { ConectoresService } from '../integrations/conectores.service';
+import { RegistroDeConectores } from '../integrations/conectores.registry';
+import {
+  type ConectorDoContrato,
+  type ContextoDoVerbo,
+  type ResultadoDeRevogacao,
+  type SaudeDeConector,
+  conectado,
+  naoConfigurado,
+} from '../integrations/contrato-de-conector';
 
 /*
  * GRANOLA → OS. O Zap do Granola entrega cada reunião terminada; aqui ela vira
@@ -21,6 +38,13 @@ import { PrismaService } from '../prisma/prisma.service';
  *      da reunião ou no nome de um participante (o mais longo ganha).
  * Sem cliente reconhecido, a reunião espera num cartão-caixa ("Reuniões do
  * Granola sem cliente") até alguém vincular na tela de Leads. Nada se perde.
+ *
+ * A CONEXÃO (19/10/2026) é um conector do catálogo, como os outros:
+ *   · aparece em Conexões, com o painel do que chegou;
+ *   · LIGA/DESLIGA no interruptor de conector (`ConectorDesligado`, com rastro);
+ *   · a SENHA do Zap é por empresa, gerada na tela e guardada cifrada no cofre
+ *     (`granola/segredo_do_webhook`). Revogar queima a senha: o Zap para na hora.
+ * Sem senha ativa ou com o conector desligado, o endereço do Zap responde 404.
  */
 
 const semAcento = (s: string) => s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().trim();
@@ -32,6 +56,16 @@ const DOMINIOS_GENERICOS = new Set([
   'operacaoroot.com', 'ferpin.com.br', 'fullbpo.com',
 ]);
 const CAIXA = 'granola-sem-cliente';
+/** O endereço do Zap, sem a origem (a tela e o guia somam a origem do OS). */
+export const caminhoDoGranola = (orgId: string) => `/api/trabalho/granola/${orgId}`;
+
+/** Compara em tempo constante. */
+export function senhaConfere(esperada: string, apresentada: string | undefined | null): boolean {
+  if (!esperada || typeof apresentada !== 'string' || !apresentada) return false;
+  const a = Buffer.from(apresentada.trim(), 'utf8');
+  const b = Buffer.from(esperada, 'utf8');
+  return a.length === b.length && timingSafeEqual(a, b);
+}
 
 export interface CardParaCasar {
   id: string;
@@ -110,8 +144,146 @@ export function casarCliente(r: ReuniaoNormalizada, cards: CardParaCasar[]): { c
 }
 
 @Injectable()
-export class GranolaService {
-  constructor(private readonly prisma: PrismaService) {}
+export class GranolaService implements OnModuleInit {
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly cofre: CofreService,
+    private readonly conectores: ConectoresService,
+    /** `@Optional()` porque a suíte monta à mão; sem registro, o Granola só não aparece no contrato. */
+    @Optional() private readonly contrato?: RegistroDeConectores,
+  ) {}
+
+  onModuleInit(): void {
+    this.contrato?.registrar(this.descritorDoContrato(), 'GranolaService');
+  }
+
+  // ------------------------------------------------------------- a conexão
+
+  /**
+   * O webhook pode entrar? Senha primeiro (quem não sabe a senha não deixa
+   * rastro nenhum), interruptor depois (a recusa de quem sabe fica no RASTRO).
+   */
+  async podeReceber(orgId: string, apresentada: string | undefined): Promise<boolean> {
+    let confere = false;
+    try {
+      confere = await this.cofre.envolver({ orgId, conector: CONECTOR_GRANOLA, nome: NOME_DA_SENHA_GRANOLA }, (cred) =>
+        cred.usar((senha) => senhaConfere(senha, apresentada)),
+      );
+    } catch (e) {
+      if (e instanceof SegredoIndisponivelError) return false;
+      throw e;
+    }
+    if (!confere) return false;
+    const recusa = await this.conectores.verificar({ orgId, conector: CONECTOR_GRANOLA });
+    return !recusa;
+  }
+
+  /** Gera (ou troca) a senha do Zap. A anterior para de valer na hora. */
+  async gerarSenha(orgId: string, actorId: string | null): Promise<SenhaDoGranola> {
+    const senha = randomBytes(24).toString('base64url');
+    await this.cofre.guardar({
+      orgId, conector: CONECTOR_GRANOLA, nome: NOME_DA_SENHA_GRANOLA, valor: senha, origem: 'Conexões (senha do Zap)', actorId,
+    });
+    return { senha, caminho: caminhoDoGranola(orgId), cabecalho: CABECALHO_DO_SEGREDO_GRANOLA };
+  }
+
+  private async linhaDaSenha(orgId: string) {
+    const { items } = await this.cofre.estado(orgId);
+    return items.find((i) => i.conector === CONECTOR_GRANOLA && i.nome === NOME_DA_SENHA_GRANOLA) ?? null;
+  }
+
+  /** O painel do Granola em Conexões: estado da ligação e o que chegou. */
+  async conexao(orgId: string): Promise<ConexaoDoGranola> {
+    const [linha, desligados, caixa] = await Promise.all([
+      this.linhaDaSenha(orgId),
+      this.conectores.desligados(orgId),
+      this.prisma.workTask.findFirst({ where: { orgId, externalId: CAIXA }, select: { id: true } }),
+    ]);
+    const off = desligados.get(CONECTOR_GRANOLA) ?? null;
+    const ativa = !!linha && !linha.revogadoEm;
+    // Pelo Zap = fonte granola sem autor (a colada à mão na ficha tem autor).
+    const doZap = { orgId, fonte: 'granola', autorId: null };
+    const trintaDias = new Date(Date.now() - 30 * 86_400_000);
+    const [total, ultimos30Dias, semCliente, ultimas] = await Promise.all([
+      this.prisma.reuniaoDoCartao.count({ where: doZap }),
+      this.prisma.reuniaoDoCartao.count({ where: { ...doZap, createdAt: { gte: trintaDias } } }),
+      caixa ? this.prisma.reuniaoDoCartao.count({ where: { orgId, taskId: caixa.id } }) : Promise.resolve(0),
+      this.prisma.reuniaoDoCartao.findMany({
+        where: doZap,
+        orderBy: { createdAt: 'desc' },
+        take: 12,
+        select: { id: true, titulo: true, em: true, createdAt: true, taskId: true, task: { select: { title: true } } },
+      }),
+    ]);
+    const quando = (d: Date | string | null | undefined) => (d ? new Date(d).toISOString() : null);
+    return {
+      caminho: caminhoDoGranola(orgId),
+      cabecalho: CABECALHO_DO_SEGREDO_GRANOLA,
+      desligado: !!off,
+      desligadoEm: quando(off?.desligadoEm),
+      motivoDesligado: off?.motivo ?? null,
+      senha: {
+        ativa,
+        desde: ativa ? quando(linha?.atualizadoEm ?? linha?.criadoEm) : null,
+        usadaEm: quando(linha?.usadoEm),
+        revogadaEm: quando(linha?.revogadoEm),
+      },
+      recebendo: ativa && !off,
+      total,
+      ultimos30Dias,
+      semCliente,
+      ultimas: ultimas.map((r) => {
+        const naCaixa = caixa?.id === r.taskId;
+        return {
+          id: r.id, titulo: r.titulo, em: r.em.toISOString(), recebidaEm: r.createdAt.toISOString(),
+          cliente: naCaixa ? null : r.task.title, taskId: naCaixa ? null : r.taskId,
+        };
+      }),
+    };
+  }
+
+  /** O Granola no contrato de conectores: é assim que ele aparece em Conexões. */
+  private descritorDoContrato(): ConectorDoContrato {
+    return {
+      chave: CONECTOR_GRANOLA,
+      rotulo: 'Granola (reuniões)',
+      escopoDaCredencial: 'empresa',
+      linhasDoCatalogo: [CONECTOR_GRANOLA],
+      autorizar: async () => ({
+        tipo: 'manual',
+        instrucao:
+          'Gere a senha do Zap no painel do Granola, no topo de Conexões, e cole no cabeçalho x-root-segredo do passo Webhooks by Zapier.',
+      }),
+      sincronizar: async () => ({
+        tipo: 'nao_se_aplica',
+        motivo: 'O Granola não é consultado pelo OS: o Zap manda cada reunião quando a nota cai na pasta.',
+      }),
+      saude: async (ctx: ContextoDoVerbo): Promise<SaudeDeConector> => {
+        const comecou = Date.now();
+        const c = await this.conexao(ctx.orgId);
+        if (!c.senha.ativa) return naoConfigurado('Sem senha do Zap. Gere no painel do Granola, em Conexões, e cole no Zap.');
+        const ultima = c.ultimas[0]?.recebidaEm;
+        const quando = ultima ? new Date(ultima).toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' }) : null;
+        return conectado(
+          Date.now() - comecou,
+          `${c.total} reunião(ões) recebida(s)${quando ? ', a última em ' + quando : ', nenhuma ainda'}; ${c.semCliente} esperando cliente.`,
+        );
+      },
+      revogar: async (ctx: ContextoDoVerbo & { motivo?: string | null }): Promise<ResultadoDeRevogacao> => {
+        const r = await this.cofre.revogar({
+          orgId: ctx.orgId, conector: CONECTOR_GRANOLA, nome: NOME_DA_SENHA_GRANOLA, motivo: ctx.motivo ?? null, por: ctx.actorId ?? null,
+        });
+        return {
+          tipo: 'revogado',
+          segredos: r.revogados,
+          resumo:
+            'A senha do Zap foi queimada: o Zap para de entrar na hora. As reuniões já gravadas ficam. Para voltar, gere outra senha e cole no Zap.',
+        };
+      },
+    };
+  }
+
+  // ------------------------------------------------------------- o cliente
 
   private async cards(orgId: string): Promise<CardParaCasar[]> {
     const ts = await this.prisma.workTask.findMany({

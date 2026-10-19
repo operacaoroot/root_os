@@ -87,6 +87,48 @@ export interface ReuniaoSemCliente extends ReuniaoResumo {
 export const VincularReuniaoSchema = z.object({ taskId: z.string().uuid() });
 
 /*
+ * A CONEXÃO DO GRANOLA (19/10/2026). O Granola é um conector do catálogo
+ * (`granola` em CONNECTORS): liga e desliga no interruptor de Conexões, e a
+ * senha do Zap é por empresa, guardada cifrada no cofre e gerada na tela.
+ * Sem senha ou desligado, o endereço do Zap responde 404.
+ */
+export const CONECTOR_GRANOLA = 'granola';
+export const NOME_DA_SENHA_GRANOLA = 'segredo_do_webhook';
+
+export interface ReuniaoRecebida {
+  id: string;
+  titulo: string;
+  em: string;
+  recebidaEm: string;
+  /** O card em que está agora; nulo quando espera na caixa "sem cliente". */
+  cliente: string | null;
+  taskId: string | null;
+}
+
+export interface ConexaoDoGranola {
+  /** Caminho do endereço do Zap (a tela soma a origem). */
+  caminho: string;
+  cabecalho: string;
+  desligado: boolean;
+  desligadoEm: string | null;
+  motivoDesligado: string | null;
+  senha: { ativa: boolean; desde: string | null; usadaEm: string | null; revogadaEm: string | null };
+  /** Ligado de verdade: tem senha ativa e não está desligado. */
+  recebendo: boolean;
+  total: number;
+  ultimos30Dias: number;
+  semCliente: number;
+  ultimas: ReuniaoRecebida[];
+}
+
+/** A senha nova, mostrada UMA vez na tela. Não fica em lugar nenhum além do cofre. */
+export interface SenhaDoGranola {
+  senha: string;
+  caminho: string;
+  cabecalho: string;
+}
+
+/*
  * A JORNADA DO CLIENTE (18/10/2026): UM CARD POR LEAD/CLIENTE, da primeira
  * conversa ao pós-venda. A lista é uma só ("Gestão de Leads", chave
  * `crm-root-lista`), e a jornada mora nas ETAPAS, agrupadas em três fases.

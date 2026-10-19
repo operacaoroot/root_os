@@ -121,8 +121,6 @@ services:
       # `up -d --no-build api`.
       GATEWAY_MODO: ${GATEWAY_MODO:-observar}
       RASTRO_RETENCAO_DIAS: ${RASTRO_RETENCAO_DIAS:-1825}
-      # Webhook do Granola (Zapier) para as reuniões da ficha. Vazio = desligado.
-      GRANOLA_WEBHOOK_SEGREDO: ${GRANOLA_WEBHOOK_SEGREDO:-}
       # Fuso em que a janela horária da política é lida (onda D, MD3). O container
       # roda em UTC; sem isto a janela 08–20 valia das 05h às 17h de Brasília.
       # Fuso desconhecido derruba o arranque. Fonte: apps/api/src/policy/limites.ts.
