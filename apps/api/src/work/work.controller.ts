@@ -28,6 +28,29 @@ export class WorkController {
     private readonly movimento: MovimentoDoQuadroService,
   ) {}
 
+  /*
+   * OS CLIENTES DO SELETOR (rodada do trabalho T4): toda tarefa nova é ligada a um
+   * cliente. Lê o cadastro que o fechamento comercial escreve (`Partner` cliente)
+   * mais o cliente da casa. Só nome e CNPJ: o resto do cadastro é do Financeiro.
+   */
+  @Get('clientes')
+  @RequirePermissions('tarefas.ver')
+  clientes(@CurrentUser() u: JwtUser, @Query('q') q?: string) {
+    if (q !== undefined && (typeof q !== 'string' || q.length > 120)) throw new BadRequestException('q deve ser texto de até 120 caracteres');
+    return this.svc.clientes(u.orgId, q);
+  }
+
+  /*
+   * AS PESSOAS DA EMPRESA (rodada do trabalho T5): o seletor de responsável do
+   * aceite da ata lista os perfis reais (gente ativa, sem conta de máquina), em
+   * vez do texto livre que não atribuía a ninguém.
+   */
+  @Get('pessoas')
+  @RequirePermissions('tarefas.ver')
+  pessoas(@CurrentUser() u: JwtUser) {
+    return this.svc.pessoas(u.orgId);
+  }
+
   // ---- estrutura ----
   @Get('estrutura')
   @RequirePermissions('tarefas.ver')
@@ -217,7 +240,8 @@ export class WorkController {
   @Post('tarefas')
   @RequirePermissions('tarefas.editar')
   criarTarefa(@CurrentUser() u: JwtUser, @Body() body: unknown) {
-    return this.svc.criarTarefa(u.orgId, u.sub, TrabTarefaCreateSchema.parse(body));
+    // T4: a tarefa criada pela tela sempre tem cliente (subtarefa herda o da mãe).
+    return this.svc.criarTarefa(u.orgId, u.sub, TrabTarefaCreateSchema.parse(body), { exigirCliente: true });
   }
 
   @Patch('tarefas/:id')

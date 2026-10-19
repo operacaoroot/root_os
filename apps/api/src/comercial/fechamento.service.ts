@@ -529,6 +529,7 @@ export class FechamentoService implements OnModuleInit {
           chave: linha.chave,
           trilhoId,
           responsavel: dono?.name ?? null,
+          clienteId: refs.cliente ?? ficha?.partnerId ?? null,
         }),
       );
       if (r.estado === 'criado') {

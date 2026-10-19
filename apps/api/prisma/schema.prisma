@@ -829,11 +829,18 @@ model Partner {
   email        String?
   phone        String?
   ativo        Boolean  @default(true)
+  /// O CLIENTE DA CASA (rodada do trabalho T4, 19/10/2026): o trabalho da própria
+  /// empresa (pastas Administrativa e Gestão) fica ligado a ele, para a regra "toda
+  /// tarefa tem cliente" valer sem exceção. Um por empresa: índice único parcial
+  /// `Partner_orgId_interno_unico` (só na migration; o Prisma não descreve índice parcial).
+  interno      Boolean  @default(false)
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
   transactions FinanceTransaction[]
   contracts    Contract[]
+  /// As tarefas do Trabalho ligadas a este cliente (`WorkTask.clienteId`).
+  tarefas      WorkTask[]           @relation("TarefasDoCliente")
 
   @@index([orgId])
 }
@@ -2139,6 +2146,13 @@ model WorkTask {
   /// para elas, e a tela não inventa uma: preencher com `updatedAt` publicaria
   /// "parada há 2 dias" para o que está parado há dois meses.
   statusDesde DateTime?
+  /// O CLIENTE DA TAREFA (rodada do trabalho T4, 19/10/2026). Aponta para o cadastro
+  /// que o fechamento comercial já escreve (`Partner` com `isCliente`); o da casa é o
+  /// `Partner.interno`. Obrigatório em toda tarefa NOVA (a rota confere); as antigas
+  /// ficam nulas, com o selo "sem cliente". O gatilho `WorkTask_orgId_confere_cliente`
+  /// recusa cliente de outra empresa.
+  clienteId   String?
+  cliente     Partner?     @relation("TarefasDoCliente", fields: [clienteId], references: [id], onDelete: SetNull)
   dueDate     DateTime?
   startDate   DateTime?
   parentId    String?
@@ -2165,6 +2179,7 @@ model WorkTask {
   /// duas perguntas da tela de A4, e a de soltar tudo quando o agente é pausado
   /// ou encerrado. `orgId` à frente porque é tabela de tenant.
   @@index([orgId, agenteId, agenteEm])
+  @@index([orgId, clienteId])
 }
 
 /// Dois pais obrigatórios (WorkTask e WorkField). Aqui o gatilho é DOIS: o

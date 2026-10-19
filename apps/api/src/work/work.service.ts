@@ -15,6 +15,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
 import { CheckoutDeTarefaService } from './checkout-de-tarefa.service';
 import { agentesDaCasa, type AgenteDaCasa } from './agentes-da-casa';
+import { listarClientes, nomesDosClientes, resolverCliente } from './clientes-da-casa';
 import { criarEstruturaSugerida, criarListaDoModeloNoBanco } from './estrutura-sugerida';
 import type { WorkTaskQuery } from './work-task-query';
 
@@ -403,6 +404,7 @@ export class WorkService {
     now: Date,
     agentes: Map<string, AgenteDaCasa>,
     minutos: Map<string, number>,
+    clientes: Map<string, string>,
   ): TrabTarefaResumo {
     const agente = t.agenteId ? agentes.get(t.agenteId) ?? null : null;
     return {
@@ -423,6 +425,9 @@ export class WorkService {
         optionId: v.optionId, optionName: v.option?.name ?? null, optionColor: v.option?.color ?? null,
         value: v.value,
       })),
+      // O nome vem de `nomesDosClientes` (escopado por empresa); ponteiro que não resolve = sem cliente.
+      clienteId: t.clienteId && clientes.has(t.clienteId) ? t.clienteId : null,
+      clienteNome: t.clienteId ? clientes.get(t.clienteId) ?? null : null,
     };
   }
 
@@ -441,6 +446,8 @@ export class WorkService {
     if (f.tagId) where.tags = { some: { id: f.tagId } };
     if (f.q) where.title = { contains: f.q, mode: 'insensitive' };
     if (f.opcao) where.values = { some: { optionId: f.opcao } }; // filtro por opção de campo
+    if (f.cliente === 'sem') where.clienteId = null; // T4: o filtro de limpeza das antigas
+    else if (f.cliente) where.clienteId = f.cliente;
     if (f.dueFrom || f.dueTo) where.dueDate = {
       ...(f.dueFrom ? { gte: f.dueFrom } : {}),
       ...(f.dueTo ? { lt: f.dueTo } : {}),
@@ -463,8 +470,9 @@ export class WorkService {
      */
     const agentes = await agentesDaCasa(this.prisma, orgId, rows.map((t) => t.agenteId));
     const minutos = await this.minutosPorTarefa(orgId, rows.map((t) => t.id));
+    const clientes = await nomesDosClientes(this.prisma, orgId, rows.map((t) => t.clienteId));
     return {
-      items: rows.map((t) => this.mapTask(t, now, agentes, minutos)),
+      items: rows.map((t) => this.mapTask(t, now, agentes, minutos, clientes)),
       total,
       source: { tool: 'trabalho-interno', generatedAt: now.toISOString() },
     };
@@ -493,8 +501,9 @@ export class WorkService {
       : [];
     const nomePorAtor = new Map(atores.map((u) => [u.id, u.name]));
     const now = new Date();
-    const [agentes, apontamentos, porEtapa] = await Promise.all([
+    const [agentes, clientes, apontamentos, porEtapa] = await Promise.all([
       agentesDaCasa(this.prisma, orgId, [t.agenteId]),
+      nomesDosClientes(this.prisma, orgId, [t.clienteId]),
       this.prisma.workApontamento.findMany({
         where: { orgId, taskId: id },
         orderBy: [{ dia: 'desc' }, { createdAt: 'desc' }],
@@ -514,7 +523,7 @@ export class WorkService {
     ]);
     const minutosDaTarefa = porEtapa.reduce((soma, g) => soma + (g._sum.minutos ?? 0), 0);
     return {
-      ...this.mapTask(t, now, agentes, new Map([[t.id, minutosDaTarefa]])),
+      ...this.mapTask(t, now, agentes, new Map([[t.id, minutosDaTarefa]]), clientes),
       description: t.description, listName: t.list.name,
       createdAt: t.createdAt.toISOString(), updatedAt: t.updatedAt.toISOString(),
       comentarios: t.comments.map((c) => ({
@@ -536,7 +545,25 @@ export class WorkService {
     };
   }
 
-  async criarTarefa(orgId: string, actorId: string, input: TrabTarefaCreateInput) {
+  /**
+   * `exigirCliente` (rodada do trabalho T4): a rota da tela e o aceite da ata
+   * exigem o cliente; subtarefa sem cliente herda o da mãe. Chamadores internos
+   * que já sabem o cliente o mandam no `clienteId`.
+   */
+  async pessoas(orgId: string): Promise<{ id: string; nome: string }[]> {
+    const gente = await this.prisma.user.findMany({
+      where: { orgId, isActive: true, roles: { none: { key: { in: ['ia_servico', 'ia_acao'] } } } },
+      select: { id: true, name: true },
+      orderBy: { name: 'asc' },
+    });
+    return gente.map((g) => ({ id: g.id, nome: g.name }));
+  }
+
+  clientes(orgId: string, q?: string) {
+    return listarClientes(this.prisma, orgId, q);
+  }
+
+  async criarTarefa(orgId: string, actorId: string, input: TrabTarefaCreateInput, opcoes: { exigirCliente?: boolean } = {}) {
     const list = await this.prisma.workList.findFirst({
       where: { id: input.listId, orgId },
       include: { statuses: { orderBy: { order: 'asc' } } },
@@ -556,6 +583,13 @@ export class WorkService {
       throw new BadRequestException('Status não pertence à lista.');
     }
     await this.conferirPaiEEtiquetas(orgId, input);
+    let clienteId: string | null = input.clienteId ? await resolverCliente(this.prisma, orgId, input.clienteId) : null;
+    if (!clienteId && input.parentId) {
+      clienteId = (await this.prisma.workTask.findFirst({ where: { id: input.parentId, orgId }, select: { clienteId: true } }))?.clienteId ?? null;
+    }
+    if (!clienteId && opcoes.exigirCliente) {
+      throw new BadRequestException('Escolha o cliente da tarefa. O trabalho da própria empresa vai para o cliente interno.');
+    }
     const campos = input.campos ? await this.conferirCampos(orgId, list.id, input.campos) : [];
     return this.logado(orgId, actorId, 'work.task.create', 'work_task', null, async () => {
       const task = await this.prisma.$transaction(async (tx) => {
@@ -568,6 +602,7 @@ export class WorkService {
             dueDate: input.dueDate ? new Date(input.dueDate) : null,
             startDate: input.startDate ? new Date(input.startDate) : null,
             parentId: input.parentId ?? null,
+            clienteId,
             tags: input.tagIds ? { connect: input.tagIds.map((id) => ({ id })) } : undefined,
           },
         });
@@ -597,6 +632,7 @@ export class WorkService {
     }
     await this.conferirPaiEEtiquetas(orgId, input);
     const campos = input.campos ? await this.conferirCampos(orgId, listId, input.campos) : [];
+    const clienteId = input.clienteId ? await resolverCliente(this.prisma, orgId, input.clienteId) : undefined;
 
     const { depois, camposAntes, camposDepois } = await this.prisma.$transaction(async (tx) => {
       const camposAntes = campos.length ? await this.retratoDosCampos(tx, id, campos) : null;
@@ -612,6 +648,7 @@ export class WorkService {
           dueDate: input.dueDate === undefined ? undefined : input.dueDate ? new Date(input.dueDate) : null,
           startDate: input.startDate === undefined ? undefined : input.startDate ? new Date(input.startDate) : null,
           parentId: input.parentId === undefined ? undefined : input.parentId,
+          clienteId,
           archived: input.archived,
           order: input.order,
           tags: input.tagIds ? { set: input.tagIds.map((tid) => ({ id: tid })) } : undefined,
@@ -631,11 +668,13 @@ export class WorkService {
       before: {
         status: antes.status.name, title: antes.title, assignee: antes.assignee, priority: antes.priority,
         dueDate: antes.dueDate?.toISOString() ?? null,
+        ...(clienteId !== undefined ? { clienteId: antes.clienteId } : {}),
         ...(camposAntes ? { campos: camposAntes } : {}),
       },
       after: {
         status: depois.status.name, title: depois.title, assignee: depois.assignee, priority: depois.priority,
         dueDate: depois.dueDate?.toISOString() ?? null,
+        ...(clienteId !== undefined ? { clienteId: depois.clienteId } : {}),
         ...(camposDepois ? { campos: camposDepois } : {}),
       },
     });

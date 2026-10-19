@@ -270,7 +270,9 @@ describe.skipIf(!URL)('a sala publicada por versão e o relatório de leitura', 
     expect(a.tarefaId).toBe(b.tarefaId);
     expect(await prisma.workTask.count({ where: { orgId: ORG, listId: lista.id } })).toBe(1);
     const t = await prisma.workTask.findUniqueOrThrow({ where: { id: a.tarefaId } });
-    expect(t.title).toBe('Ideia de Construtora Alicerce: dá para integrar com o banco Inter?');
+    // Rodada do trabalho T4: nome imperativo, o cliente vai no campo (lead sem cliente ainda = o da casa).
+    expect(t.title).toBe('Responder a ideia: dá para integrar com o banco Inter?');
+    expect(t.clienteId).toBeTruthy();
     expect(t.description).toContain('Procedência: ideia deixada pelo cliente na proposta v1, seção COMO FUNCIONA');
     expect(t.description).toContain(`/comercial/lead/${leadId}`);
     expect(t.description).toContain('> dá para integrar com o banco Inter?');

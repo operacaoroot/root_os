@@ -520,7 +520,7 @@ describe.skipIf(!URL)('o banco de atas contra o Postgres', () => {
     const ata = await colar(ORG);
     const g = await naEmpresa(ORG, () => atas.gerar(ORG, GENTE, ata.id, VAULT));
     const s = g.criadas[0];
-    const cliques = await Promise.allSettled([atas.aceitar(ORG, GENTE, s.id, {}, VAULT), atas.aceitar(ORG, GENTE, s.id, {}, VAULT)]);
+    const cliques = await Promise.allSettled([atas.aceitar(ORG, GENTE, s.id, { clienteId: 'interno' }, VAULT), atas.aceitar(ORG, GENTE, s.id, { clienteId: 'interno' }, VAULT)]);
     expect(cliques.filter((c) => c.status === 'fulfilled')).toHaveLength(1);
     const recusa = cliques.find((c) => c.status === 'rejected') as PromiseRejectedResult;
     expect(recusa.reason).toBeInstanceOf(ConflictException);
@@ -548,9 +548,9 @@ describe.skipIf(!URL)('o banco de atas contra o Postgres', () => {
     });
     await expect(atas.aceitar(ORG, GENTE, solta.id, {}, VAULT)).rejects.toThrow(/Escolha a lista/);
     expect((await prisma.ataSugestao.findUniqueOrThrow({ where: { id: solta.id } })).estado).toBe('rascunho');
-    const ok = await atas.aceitar(ORG, GENTE, solta.id, { listaId: listas['Onboarding de cliente'] }, VAULT);
-    expect(ok).toMatchObject({ estado: 'aceita', listaId: listas['Onboarding de cliente'], listaNome: 'Onboarding de cliente' });
-    expect(await prisma.workTask.count({ where: { orgId: ORG, listId: listas['Onboarding de cliente'] } })).toBe(1);
+    const ok = await atas.aceitar(ORG, GENTE, solta.id, { listaId: listas['Esteira de clientes'], clienteId: 'interno' }, VAULT);
+    expect(ok).toMatchObject({ estado: 'aceita', listaId: listas['Esteira de clientes'], listaNome: 'Esteira de clientes' });
+    expect(await prisma.workTask.count({ where: { orgId: ORG, listId: listas['Esteira de clientes'] } })).toBe(1);
   });
 
   it('descartar não cria tarefa e fica registrado; depois não se aceita nem se descarta de novo', async () => {
@@ -591,8 +591,8 @@ describe.skipIf(!URL)('o banco de atas contra o Postgres', () => {
     const ata = await colar(ORG);
     const g = await naEmpresa(ORG, () => atas.gerar(ORG, GENTE, ata.id, VAULT));
     const [primeira, segunda] = g.criadas;
-    await atas.aceitar(ORG, GENTE, primeira.id, { dono: 'Paulo Rocha', vencimento: '2026-10-30' }, VAULT);
-    await atas.aceitar(ORG, GENTE, segunda.id, { dono: '', vencimento: null }, VAULT);
+    await atas.aceitar(ORG, GENTE, primeira.id, { dono: 'Paulo Rocha', vencimento: '2026-10-30', clienteId: 'interno' }, VAULT);
+    await atas.aceitar(ORG, GENTE, segunda.id, { dono: '', vencimento: null, clienteId: 'interno', listaId: listas['Esteira de clientes'] }, VAULT);
     const corrigida = await prisma.workTask.findFirstOrThrow({ where: { orgId: ORG, title: primeira.titulo } });
     expect(corrigida.assignee).toBe('Paulo Rocha');
     expect(corrigida.dueDate?.toISOString().slice(0, 10)).toBe('2026-10-30');
@@ -603,6 +603,33 @@ describe.skipIf(!URL)('o banco de atas contra o Postgres', () => {
     expect(JSON.stringify(auditoria.after)).not.toContain('Paulo');
     await expect(atas.aceitar(ORG, GENTE, g.criadas[2].id, { vencimento: '2026-02-30' }, VAULT)).rejects.toThrow(/não é uma data que existe/);
     expect((await prisma.ataSugestao.findUniqueOrThrow({ where: { id: g.criadas[2].id } })).estado).toBe('rascunho');
+  });
+
+  it('T5: tudo editável antes de criar (título, o que será executado, responsável de perfil, cliente e lista)', async () => {
+    const ata = await colar(ORG);
+    const g = await naEmpresa(ORG, () => atas.gerar(ORG, GENTE, ata.id, VAULT));
+    const s = g.criadas[0];
+    // Sem cliente: recusa ANTES de tomar a sugestão.
+    await expect(atas.aceitar(ORG, GENTE, s.id, {}, VAULT)).rejects.toThrow(/Escolha o cliente/);
+    expect((await prisma.ataSugestao.findUniqueOrThrow({ where: { id: s.id } })).estado).toBe('rascunho');
+    // Responsável que não é pessoa desta empresa: recusa.
+    await expect(atas.aceitar(ORG, GENTE, s.id, { clienteId: 'interno', responsavelId: MAQUINA }, VAULT)).rejects.toThrow(/não é uma pessoa/);
+    await atas.aceitar(ORG, GENTE, s.id, {
+      titulo: 'Enviar o relatório mensal',
+      descricao: 'Montar o relatório de outubro e mandar no grupo.',
+      responsavelId: EU,
+      clienteId: 'interno',
+      listaId: listas['Esteira de clientes'],
+    }, VAULT);
+    const t = await prisma.workTask.findFirstOrThrow({ where: { orgId: ORG, title: 'Enviar o relatório mensal' } });
+    const eu = await prisma.user.findUniqueOrThrow({ where: { id: EU } });
+    expect(t).toMatchObject({ listId: listas['Esteira de clientes'], assignee: eu.name });
+    expect(t.clienteId).toBeTruthy();
+    expect(t.description!.split('\n').slice(0, 2)).toEqual(['Montar o relatório de outubro e mandar no grupo.', '']);
+    // O trecho da ata segue guardado como procedência.
+    expect(t.description).toContain('> Marina vai enviar o relatório mensal da Padaria Exemplo até 23/10.');
+    const auditoria = await prisma.auditLog.findFirstOrThrow({ where: { orgId: ORG, action: 'trabalho.ata.sugestao_aceita', entityId: s.id } });
+    expect(auditoria.after).toMatchObject({ tituloCorrigido: true, descricaoEscrita: true, donoCorrigido: true });
   });
 
   it('PA-3: a conta de máquina não cola, não gera, não aceita nem descarta, nem com o token sem o papel', async () => {

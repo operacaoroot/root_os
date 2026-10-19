@@ -5193,6 +5193,25 @@ export const TrabCampoValorSchema = z.object({
   value: z.string().max(2000).nullish(),
 });
 
+/** `interno` = o cliente da casa (pastas Administrativa e Gestão); senão o id do `Partner`. */
+export const TRAB_CLIENTE_INTERNO = 'interno';
+export const TrabClienteIdSchema = z.union([z.literal(TRAB_CLIENTE_INTERNO), z.string().uuid()]);
+
+/** O que o seletor de cliente lista (`GET /trabalho/clientes`). */
+export interface TrabClienteDto {
+  id: string;
+  nome: string;
+  cnpj: string | null;
+  interno: boolean;
+}
+
+/**
+ * A DICA DO NOME DA TAREFA (rodada do trabalho T4): verbo no imperativo + objeto,
+ * curto. O cliente NÃO entra no nome (é campo). Só orienta: validar por regex seria
+ * frágil. A IA das atas e das ideias propõe neste formato.
+ */
+export const DICA_DO_NOME_DA_TAREFA = 'Verbo no imperativo + objeto, curto: "Enviar proposta revisada", "Marcar kickoff", "Instalar o kit". O cliente fica no campo Cliente, não no nome.';
+
 export const TrabTarefaCreateSchema = z.object({
   listId: z.string().uuid(),
   title: z.string().min(1).max(300),
@@ -5205,6 +5224,12 @@ export const TrabTarefaCreateSchema = z.object({
   parentId: z.string().uuid().nullish(),
   tagIds: z.array(z.string().uuid()).optional(),
   campos: z.record(z.string().uuid(), TrabCampoValorSchema).optional(),
+  /**
+   * O CLIENTE DA TAREFA (rodada do trabalho T4, 19/10/2026): o id de um `Partner`
+   * cliente desta empresa, ou `interno` para o cliente da casa (criado sob demanda).
+   * A rota de criação exige; subtarefa sem cliente herda o da mãe.
+   */
+  clienteId: TrabClienteIdSchema.nullish(),
 });
 
 export const TrabTarefaUpdateSchema = z.object({
@@ -5221,6 +5246,8 @@ export const TrabTarefaUpdateSchema = z.object({
   order: z.number().int().min(0).optional(),
   tagIds: z.array(z.string().uuid()).optional(),
   campos: z.record(z.string().uuid(), TrabCampoValorSchema).optional(),
+  /** Trocar o cliente. Nulo não é aceito: tirar o cliente de uma tarefa iria contra a regra. */
+  clienteId: TrabClienteIdSchema.optional(),
 });
 export type TrabTarefaCreateInput = z.infer<typeof TrabTarefaCreateSchema>;
 export type TrabTarefaUpdateInput = z.infer<typeof TrabTarefaUpdateSchema>;
@@ -5499,6 +5526,8 @@ export interface TrabTarefaResumo {
   parentId: string | null; subtasks: number; comments: number;
   externalId: string | null; externalUrl: string | null; archived: boolean; order: number;
   tags: TrabTagDto[]; values: TrabValorDto[];
+  /** O cliente (T4). Nulo = tarefa antiga sem cliente: a tela mostra o selo "sem cliente". */
+  clienteId: string | null; clienteNome: string | null;
 }
 /* ----------------------------------------------------------------------------
  * O MOVIMENTO DO CARTÃO no quadro denso (rodada da implantação I2, 18/10/2026)

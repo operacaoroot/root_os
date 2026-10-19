@@ -70,6 +70,7 @@ export async function semearImplantacao(
         chave: fechamento?.chave ?? `fech-${leadId}`,
         trilhoId: ficha.trilhoId ?? null,
         responsavel: dono?.name ?? null,
+        clienteId: ficha.partnerId ?? null,
       }, agora),
     );
     if (r.estado === 'criado') {

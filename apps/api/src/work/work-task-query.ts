@@ -9,6 +9,8 @@ export interface WorkTaskQuery {
   tagId?: string;
   q?: string;
   opcao?: string;
+  /** T4: o id do cliente, ou `sem` para as tarefas antigas sem cliente. */
+  cliente?: string;
   arquivadas?: boolean;
   dueFrom?: Date;
   dueTo?: Date;
@@ -58,6 +60,13 @@ function instante(raw: Record<string, unknown>, key: string): Date | undefined {
   return date;
 }
 
+function cliente(raw: Record<string, unknown>): string | undefined {
+  const value = texto(raw, 'cliente');
+  if (value === undefined || value === '') return undefined;
+  if (value !== 'sem' && !/^[0-9a-f-]{36}$/i.test(value)) throw new BadRequestException('cliente deve ser um id ou "sem"');
+  return value;
+}
+
 export function parseWorkTaskQuery(raw: Record<string, unknown>): WorkTaskQuery {
   const listId = texto(raw, 'listId');
   const listIds = ids(raw, 'listIds');
@@ -76,7 +85,7 @@ export function parseWorkTaskQuery(raw: Record<string, unknown>): WorkTaskQuery 
   return {
     listId, listIds, listExternalIds,
     statusId: texto(raw, 'statusId'), assignee: texto(raw, 'assignee'),
-    tagId: texto(raw, 'tagId'), q: texto(raw, 'q'), opcao: texto(raw, 'opcao'),
+    tagId: texto(raw, 'tagId'), q: texto(raw, 'q'), opcao: texto(raw, 'opcao'), cliente: cliente(raw),
     arquivadas: raw.arquivadas === '1' || raw.arquivadas === 'true',
     dueFrom, dueTo, page, limit,
   };

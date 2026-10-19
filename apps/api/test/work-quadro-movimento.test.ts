@@ -95,7 +95,8 @@ describe.skipIf(!URL)('movimento do cartão: contra o Postgres', () => {
   it('a tarefa movida e comentada pela tela mostra o rodapé e o balão com no máximo três passos', async () => {
     await work.criarEstruturaSugerida(ORG, EU);
     const lista = await prisma.workList.findFirstOrThrow({ where: { orgId: ORG, name: 'Onboarding de cliente' }, include: { statuses: { orderBy: { order: 'asc' } } } });
-    const t = await work.criarTarefa(ORG, EU, { listId: lista.id, title: 'Studio Lume' } as never);
+    // Rodada do trabalho T1: a lista da implantação não recebe cartão solto pela rota; o card nasce como o fechamento o abre.
+    const t = await prisma.workTask.create({ data: { orgId: ORG, listId: lista.id, statusId: lista.statuses[0].id, title: 'Studio Lume' } });
     for (const i of [1, 2, 3]) await work.editarTarefa(ORG, EU, t.id, { statusId: lista.statuses[i].id } as never);
     const r1 = await svc.daLista(ORG, lista.id);
     const c1 = r1.itens.find((x) => x.tarefaId === t.id)!;

@@ -119,6 +119,17 @@ export const TrabAtaAceitarSchema = z.object({
    */
   dono: z.string().trim().max(120).nullish(),
   vencimento: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'vencimento no formato AAAA-MM-DD').nullish(),
+  /*
+   * Rodada do trabalho T5 (19/10/2026): tudo editável antes de criar. O título
+   * (pré-preenchido no imperativo), o que será executado (a descrição; o trecho
+   * da ata continua guardado como procedência), o responsável escolhido entre os
+   * perfis reais da empresa (`responsavelId`, vence o `dono` em texto) e o
+   * cliente (T4, obrigatório).
+   */
+  titulo: z.string().trim().min(1).max(300).optional(),
+  descricao: z.string().max(4000).nullish(),
+  responsavelId: z.string().uuid().nullish(),
+  clienteId: z.union([z.literal('interno'), z.string().uuid()]).optional(),
 });
 export type TrabAtaAceitarInput = z.infer<typeof TrabAtaAceitarSchema>;
 

@@ -70,6 +70,11 @@ export interface DadosDoCard {
   trilhoId: string | null;
   /** O nome de quem cuida da conta (o dono do lead), ou nulo. */
   responsavel: string | null;
+  /**
+   * O cliente da tarefa (rodada do trabalho T4): o `Partner` que a escrita `cliente`
+   * do fechamento gravou (`ComercialFicha.partnerId`). Nulo só em lead sem cliente.
+   */
+  clienteId?: string | null;
 }
 
 /** A descrição do card: os dados copiados e os retrolinks, em markdown simples. */
@@ -131,6 +136,7 @@ export async function abrirCardDaImplantacao(db: Db, orgId: string, d: DadosDoCa
       title: d.empresa.slice(0, 200),
       description: descricao,
       assignee: d.responsavel,
+      clienteId: d.clienteId ?? null,
     },
   });
   await db.workComment.create({

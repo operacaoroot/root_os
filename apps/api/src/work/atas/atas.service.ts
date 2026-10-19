@@ -393,7 +393,20 @@ export class AtasService {
     this.exigirAcessoAFonte(s.ataRef, acesso);
     if (s.estado !== 'rascunho') throw this.jaDecidida(s.estado);
     // O dono e o vencimento são os que a pessoa confirmou na tela (PA-4); ausentes, os da sugestão.
-    const dono = input.dono === undefined ? s.donoSugerido : input.dono?.trim() || null;
+    let dono = input.dono === undefined ? s.donoSugerido : input.dono?.trim() || null;
+    // T5: o responsável escolhido entre os perfis reais da empresa (gente, não conta de máquina).
+    if (input.responsavelId) {
+      const pessoa = await this.prisma.user.findFirst({
+        where: { id: input.responsavelId, orgId, isActive: true },
+        select: { name: true, roles: { select: { key: true } } },
+      });
+      if (!pessoa || pessoa.roles.some((r) => ['ia_servico', 'ia_acao'].includes(r.key))) {
+        throw new BadRequestException('O responsável escolhido não é uma pessoa desta empresa.');
+      }
+      dono = pessoa.name;
+    } else if (input.responsavelId === null) dono = null;
+    const titulo = input.titulo?.trim() || s.titulo;
+    const descricaoEditada = input.descricao === undefined ? null : input.descricao?.trim() || null;
     let vencimento: string | null = s.vencimento ? s.vencimento.toISOString().slice(0, 10) : null;
     if (input.vencimento !== undefined) {
       if (input.vencimento === null) vencimento = null;
@@ -404,6 +417,8 @@ export class AtasService {
     }
     const listId = input.listaId ?? s.listaId;
     if (!listId) throw new BadRequestException('Escolha a lista da tarefa antes de aceitar.');
+    // T4: toda tarefa nova tem cliente; a pergunta vem antes da tomada, para nada ser marcado à toa.
+    if (!input.clienteId) throw new BadRequestException('Escolha o cliente da tarefa antes de aceitar. O trabalho da própria empresa vai para o cliente interno.');
     const lista = await this.prisma.workList.findFirst({ where: { id: listId, orgId }, select: { id: true } });
     if (!lista) throw new BadRequestException('A lista escolhida não existe mais nesta empresa.');
 
@@ -420,13 +435,16 @@ export class AtasService {
     const ata = await this.resumoDaAtaParaTarefa(orgId, s.ataRef, acesso);
     let tarefaId: string;
     try {
+      const procedencia = this.descricaoDaTarefa(s, ata);
       const tarefa = await this.work.criarTarefa(orgId, actorId, {
         listId,
-        title: s.titulo,
-        description: this.descricaoDaTarefa(s, ata),
+        title: titulo,
+        // O que será executado vem primeiro; o trecho da ata segue como procedência.
+        description: descricaoEditada ? [descricaoEditada, '', procedencia].join('\n') : procedencia,
         assignee: dono,
         dueDate: vencimento ? new Date(`${vencimento}T12:00:00.000Z`).toISOString() : null,
-      });
+        clienteId: input.clienteId ?? null,
+      }, { exigirCliente: true });
       tarefaId = tarefa.id;
     } catch (e) {
       // A tarefa não nasceu: a sugestão volta a rascunho, para a pessoa tentar de novo.
@@ -454,6 +472,8 @@ export class AtasService {
         listaId: listId,
         donoCorrigido: dono !== (s.donoSugerido ?? null),
         vencimentoCorrigido: vencimento !== vencimentoSugerido,
+        tituloCorrigido: titulo !== s.titulo,
+        descricaoEscrita: !!descricaoEditada,
       },
     });
     return (await this.paraDtos(orgId, [final]))[0];

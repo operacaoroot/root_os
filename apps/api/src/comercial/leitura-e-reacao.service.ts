@@ -7,6 +7,7 @@ import { ActorType, Prisma } from '@prisma/client';
 
 import { PrismaService } from '../prisma/prisma.service';
 import { uuidDe } from './eventos';
+import { clienteInterno } from '../work/clientes-da-casa';
 
 /*
  * O RELATÓRIO DO COMERCIAL · LEITURA E REAÇÃO (rodada da implantação I5, 18/10/2026).
@@ -187,11 +188,13 @@ export class LeituraEReacaoService {
     }
     const lista = await this.listaDestino(orgId, listIdPedido ?? null);
     const lead = await this.prisma.lead.findFirst({ where: { id: r.leadId, orgId }, select: { name: true } });
-    const ficha = await this.prisma.comercialFicha.findFirst({ where: { leadId: r.leadId, orgId }, select: { empresa: true } });
-    const nome = ficha?.empresa || lead?.name || 'cliente';
+    const ficha = await this.prisma.comercialFicha.findFirst({ where: { leadId: r.leadId, orgId }, select: { empresa: true, partnerId: true } });
     const quando = new Intl.DateTimeFormat('pt-BR', { timeZone: 'America/Sao_Paulo', day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }).format(r.criadoEm);
     const texto = (r.texto ?? '').trim();
-    const titulo = `${r.tipo === 'ideia' ? 'Ideia' : 'Dúvida'} de ${nome}: ${trecho(texto, 60)}`.slice(0, 200);
+    // T4: o nome é imperativo (verbo + objeto) e o cliente vai no campo Cliente, não no nome.
+    const titulo = `${r.tipo === 'ideia' ? 'Responder a ideia' : 'Responder a dúvida'}: ${trecho(texto, 60)}`.slice(0, 200);
+    // O cliente é o do fechamento; lead que ainda não fechou é trabalho comercial da casa (cliente interno).
+    const clienteId = ficha?.partnerId ?? (await clienteInterno(this.prisma, orgId)).id;
     const descricao = [
       `Procedência: ${r.tipo === 'ideia' ? 'ideia' : 'dúvida'} deixada pelo cliente na proposta v${r.versao}, seção ${rotuloDaSecao(r.secao)}, em ${quando}.`,
       `Lead no comercial: /comercial/lead/${r.leadId}`,
@@ -206,7 +209,7 @@ export class LeituraEReacaoService {
       if (tomada.count === 0) return false;
       const existe = await tx.workTask.findFirst({ where: { id: tarefaId }, select: { id: true } });
       if (existe) return false;
-      await tx.workTask.create({ data: { id: tarefaId, orgId, listId: lista.id, statusId: lista.statusId, title: titulo, description: descricao } });
+      await tx.workTask.create({ data: { id: tarefaId, orgId, listId: lista.id, statusId: lista.statusId, title: titulo, description: descricao, clienteId } });
       await tx.auditLog.create({
         data: {
           orgId, actorType: ActorType.user, actorId: pessoa.id, action: 'work.task.create', entityType: 'work_task', entityId: tarefaId,
