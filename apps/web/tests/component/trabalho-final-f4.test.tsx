@@ -43,7 +43,7 @@ function tarefa(id: string, title: string, lista: typeof listaA | typeof listaB,
   return {
     id, title, listId: lista.id, listName: lista.name, statusId, statusName: status.name, statusType: status.type, statusColor: '#87909e',
     priority: 'normal', assignee: null, assigneeUserId: null, assigneeUserName: null, assigneeUserEmail: null, assigneeUserIsActive: null,
-    dueDate: null, startDate: null, overdue: false, archived: false, agenteId: null, agenteNome: null, agenteSlug: null, agenteEm: null,
+    dueDate: null as string | null, startDate: null, overdue: false, archived: false, agenteId: null, agenteNome: null, agenteSlug: null, agenteEm: null,
     statusDesde: null, minutos: 0, parentId: null, subtasks: 0, comments: 0, externalId: null, externalUrl: null, order: 0, tags: [], values: [],
     clienteId: 'c-1', clienteNome: 'Construtora Alicerce', outrosResponsaveisIds: [] as string[], recorrencia: null, updatedAt: V1, ...extra,
   };
