@@ -131,7 +131,7 @@ describe.skipIf(!URL)('esteira: contra o Postgres', () => {
   async function tarefa(titulo = 'Cliente de teste') {
     const t = await prisma.workTask.create({
       data: { orgId: ORG, listId: listaId, statusId: etapa['Qualificação'], title: titulo },
-      select: { id: true, statusDesde: true },
+      select: { id: true, statusDesde: true, updatedAt: true },
     });
     return t;
   }
@@ -209,13 +209,13 @@ describe.skipIf(!URL)('esteira: contra o Postgres', () => {
   it('editar título NÃO reinicia a idade; trocar etapa reinicia', async () => {
     const t = await tarefa();
     const antiga = new Date('2026-08-01T12:00:00Z');
-    await prisma.workTask.update({ where: { id: t.id }, data: { statusDesde: antiga } });
+    const preparada = await prisma.workTask.update({ where: { id: t.id }, data: { statusDesde: antiga } });
 
-    await svc.editarTarefa(ORG, EU, t.id, { title: 'Cliente renomeado' });
+    const renomeada = await svc.editarTarefa(ORG, EU, t.id, { title: 'Cliente renomeado', expectedUpdatedAt: preparada.updatedAt.toISOString() });
     let agora = await prisma.workTask.findUniqueOrThrow({ where: { id: t.id } });
     expect(agora.statusDesde?.toISOString()).toBe(antiga.toISOString());
 
-    await svc.editarTarefa(ORG, EU, t.id, { statusId: etapa['Diagnóstico'] });
+    await svc.editarTarefa(ORG, EU, t.id, { statusId: etapa['Diagnóstico'], expectedUpdatedAt: renomeada.updatedAt });
     agora = await prisma.workTask.findUniqueOrThrow({ where: { id: t.id } });
     expect(agora.statusDesde!.getTime()).toBeGreaterThan(antiga.getTime());
   });
@@ -232,7 +232,7 @@ describe.skipIf(!URL)('esteira: contra o Postgres', () => {
   it('a hora grava a etapa ATUAL e o autor, e o dia padrão é hoje em Brasília', async () => {
     vi.setSystemTime(new Date('2026-09-16T01:30:00Z')); // 22h30 de 15/09 em Brasília
     const t = await tarefa();
-    await svc.editarTarefa(ORG, EU, t.id, { statusId: etapa['Implantação'] });
+    await svc.editarTarefa(ORG, EU, t.id, { statusId: etapa['Implantação'], expectedUpdatedAt: t.updatedAt.toISOString() });
     const a = await svc.apontar(ORG, EU, t.id, { minutos: 90, nota: 'Instalação do MCP' });
     expect(a).toMatchObject({ minutos: 90, etapa: 'Implantação', autorNome: 'Rodrigo', autorId: EU, dia: '2026-09-15' });
   });
@@ -241,7 +241,7 @@ describe.skipIf(!URL)('esteira: contra o Postgres', () => {
     const t = await tarefa();
     const outra = await tarefa('Cliente sem horas');
     await svc.apontar(ORG, EU, t.id, { minutos: 60, dia: '2026-09-01' });
-    await svc.editarTarefa(ORG, EU, t.id, { statusId: etapa['Diagnóstico'] });
+    await svc.editarTarefa(ORG, EU, t.id, { statusId: etapa['Diagnóstico'], expectedUpdatedAt: t.updatedAt.toISOString() });
     await svc.apontar(ORG, OUTRO, t.id, { minutos: 45, dia: '2026-09-02' });
     await svc.apontar(ORG, EU, t.id, { minutos: 30, dia: '2026-09-03' });
 

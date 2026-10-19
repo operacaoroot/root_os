@@ -19,6 +19,11 @@ import { useTarefaNaUrl, type AbaDaTarefa } from '@/lib/tarefa-na-url';
 import { BancadaDoTrilho } from '@/components/onboarding/BancadaDoTrilho';
 import { SeletorDeCliente, type ClienteEscolhido } from './SeletorDeCliente';
 import { VistasDoQuadro } from './VistasDoQuadro';
+import { AtividadeDaTarefa } from './AtividadeDaTarefa';
+import { EditorialTaskLink } from './EditorialTaskLink';
+import { OrigemComercialDaTarefa } from '@/app/leads/OrigemComercialDaTarefa';
+import { FontesDaTarefa } from './FontesDaTarefa';
+import { ResponsavelDaTarefa, SeletorResponsavel, rotuloDaPessoa } from './ResponsavelDaTarefa';
 import { diasDesde, formatarHoras, hojeEmBrasilia, minutosDeTexto } from '@/lib/horas';
 import {
   CHAVE_DA_DENSIDADE, DENSIDADES, DIAS_DE_ALERTA_NA_ETAPA, ESCOPOS, LARGURA_DA_COLUNA,
@@ -138,10 +143,11 @@ function pastaEDescendentes(folders: TrabEstrutura['folders'], raiz: string): Se
 export type ModoDoTrabalho = 'trabalho' | 'implantacao';
 
 export function TrabalhoView({ visaoInicial = 'board', modo = 'trabalho' }: { visaoInicial?: VisaoDoTrabalho; modo?: ModoDoTrabalho }) {
-  const { token, ready, can } = useAuth();
+  const { token, ready, can, user } = useAuth();
   if (!ready) return <p className="text-muted">Carregando…</p>;
   if (!token || !can('tarefas.ver')) return <p className="text-muted">Sem permissão para ver tarefas.</p>;
-  return <TrabalhoConteudo key={`${token}:${modo}`} visaoInicial={visaoDoEndereco(visaoInicial) ?? 'board'} modo={modo} />;
+  // A conta entra na chave: trocar de pessoa com o mesmo token não herda filtro nem painel.
+  return <TrabalhoConteudo key={`${user?.id ?? ''}:${token}:${modo}`} visaoInicial={visaoDoEndereco(visaoInicial) ?? 'board'} modo={modo} />;
 }
 
 /** As listas que a pasta escolhida mostra. Pasta que não existe (link velho) = todas. */
@@ -176,7 +182,10 @@ function TrabalhoConteudo({ visaoInicial, modo }: { visaoInicial: Visao; modo: M
   const painelId = tarefaUrl.tarefaId;
   const filtrosLidos = useRef<string | null>(null);
   const [configAberta, setConfigAberta] = useState(false);
+  const [novaListaAberta, setNovaListaAberta] = useState(false);
   const [fAssignee, setFAssignee] = useState('');
+  const [fPessoa, setFPessoa] = useState('');
+  const [todasListas, setTodasListas] = useState(false);
   const [fAgente, setFAgente] = useState('');
   const [fBusca, setFBusca] = useState('');
   const [fOpcao, setFOpcao] = useState('');
@@ -191,6 +200,10 @@ function TrabalhoConteudo({ visaoInicial, modo }: { visaoInicial: Visao; modo: M
   const listaAtual = useRef(listaId);
   listaAtual.current = listaId;
   const [bump, setBump] = useState(0);
+  const [conflitoEtapa, setConflitoEtapa] = useState<{ titulo: string; etapa: string } | null>(null);
+  const [salvandoEtapa, setSalvandoEtapa] = useState(false);
+  const escritaEtapa = useRef(false);
+  const recargaEtapa = useRef<number | null>(null);
   const refresh = useCallback(() => setBump((b) => b + 1), []);
 
 
@@ -202,11 +215,22 @@ function TrabalhoConteudo({ visaoInicial, modo }: { visaoInicial: Visao; modo: M
       if (filtrosLidos.current === assinatura) return;
       filtrosLidos.current = assinatura;
       setFAssignee(p.get('assignee') ?? ''); setFBusca(p.get('q') ?? '');
+      setFPessoa(p.get('assigneeUserId') ?? (p.get('semResponsavel') === '1' ? 'sem-vinculo' : ''));
+      setTodasListas(p.get('escopo') === 'pessoal' && !!p.get('assigneeUserId'));
       setFOpcao(p.get('opcao') ?? ''); setFAgente(p.get('agente') ?? '');
       setFStatus(p.get('statusId') ?? ''); setFArquivadas(p.get('arquivadas') === '1'); setFCliente(p.get('cliente') ?? '');
-      // `overdue=1` (o link antigo do "só atrasadas") continua valendo como o escopo "atrasados".
-      setFEscopo(p.get('escopo') ? lerEscopo(p.get('escopo')) : p.get('overdue') === '1' ? 'atrasados' : 'todos');
-      setVisao(visaoDoEndereco(p.get('visao')) ?? visaoInicial);
+      /*
+       * DOIS ESCOPOS NA MESMA CHAVE, SEM SE PISAR. `escopo=todos|meus|atrasados`
+       * é o recorte do quadro (rodada I2); `escopo=pessoal&assigneeUserId=` é o
+       * "Minhas tarefas" da produção (14/10): as tarefas de UMA pessoa em todas
+       * as listas, sempre na Lista. `pessoal` nunca vira escopo do quadro, e o
+       * recorte do quadro nunca liga o modo de todas as listas.
+       * `overdue=1` (o link antigo do "só atrasadas") continua valendo como "atrasados".
+       */
+      const escopo = p.get('escopo');
+      const pessoal = escopo === 'pessoal' && !!p.get('assigneeUserId');
+      setFEscopo(escopo && escopo !== 'pessoal' ? lerEscopo(escopo) : p.get('overdue') === '1' ? 'atrasados' : 'todos');
+      setVisao(pessoal ? 'tabela' : visaoDoEndereco(p.get('visao')) ?? visaoInicial);
       setFPasta(p.get('pasta') ?? '');
       listaAtual.current = null; setListaId(null); setUrlPronta(true);
       setBump((b) => b + 1);
@@ -228,6 +252,26 @@ function TrabalhoConteudo({ visaoInicial, modo }: { visaoInicial: Visao; modo: M
     const url = new URL(window.location.href);
     if (valor) url.searchParams.set(chave, valor); else url.searchParams.delete(chave);
     window.history.replaceState(window.history.state, '', `${url.pathname}${url.search}${url.hash}`);
+  };
+
+  /** Sai do "todas as listas" (escopo `pessoal`) sem apagar o recorte do quadro (`meus`/`atrasados`). */
+  const sairDoPessoal = () => {
+    if (!todasListas) return;
+    setTodasListas(false);
+    filtroNoEndereco('escopo', fEscopo === 'todos' ? '' : fEscopo);
+  };
+
+  const filtrarPessoa = (id: string, geral = todasListas) => {
+    const pessoal = geral && !!id && id !== 'sem-vinculo';
+    if (pessoal) {
+      // O modo de todas as listas ocupa a chave `escopo`: o recorte do quadro volta a "todos".
+      setTodasListas(true); setFEscopo('todos'); filtroNoEndereco('escopo', 'pessoal');
+    } else sairDoPessoal();
+    setFPessoa(id);
+    // Filtros de vínculo substituem a busca antiga por texto.
+    setFAssignee(''); filtroNoEndereco('assignee', '');
+    filtroNoEndereco('assigneeUserId', id && id !== 'sem-vinculo' ? id : '');
+    filtroNoEndereco('semResponsavel', id === 'sem-vinculo' ? '1' : '');
   };
 
   // Status e opção pertencem à lista; os demais filtros continuam ativos.
@@ -318,7 +362,24 @@ function TrabalhoConteudo({ visaoInicial, modo }: { visaoInicial: Visao; modo: M
     return () => { ativa = false; };
   }, [ready, token, readable, bump]);
 
+  const moverEtapa = async (t: TrabTarefaResumo, statusId: string) => {
+    if (!editable || escritaEtapa.current || conflitoEtapa || statusId === t.statusId) return;
+    if (!t.updatedAt) { setErro('Recarregue a lista antes de alterar esta tarefa: a versão não está disponível.'); return; }
+    escritaEtapa.current = true; setSalvandoEtapa(true);
+    try {
+      await apiPatch(`/trabalho/tarefas/${t.id}`, { statusId, expectedUpdatedAt: t.updatedAt }, token);
+      refresh();
+    } catch (e) {
+      if ((e as { status?: number }).status === 409) {
+        const todas = [...(estrutura?.folders.flatMap((f) => f.lists) ?? []), ...(estrutura?.listasSoltas ?? [])];
+        const etapa = todas.find((l) => l.id === t.listId)?.statuses.find((st) => st.id === statusId)?.name ?? 'Etapa indisponível';
+        setConflitoEtapa({ titulo: t.title, etapa });
+      } else setErro((e as Error).message);
+    } finally { escritaEtapa.current = false; setSalvandoEtapa(false); }
+  };
+
   const selecionarLista = (id: string) => {
+    sairDoPessoal();
     setListaDoLinkAusente(false); trocarLista(id); mudarEndereco(id, null);
   };
 
@@ -344,8 +405,22 @@ function TrabalhoConteudo({ visaoInicial, modo }: { visaoInicial: Visao; modo: M
     if (daPasta[0]) { selecionarLista(daPasta[0].id); return; }
     listaAtual.current = null; setListaId(null); mudarEndereco(null, null);
   };
-  // O endereço de quando o pop-up abriu: o voltar que o fecha cai nele e o quadro não recarrega.
-  const abrirTarefa = (id: string, aba?: AbaDaTarefa) => { filtrosLidos.current = assinaturaSemTarefa(); tarefaUrl.abrir(id, aba); };
+  /*
+   * O endereço de quando o pop-up abriu: o voltar que o fecha cai nele e o
+   * quadro não recarrega. Em "todas as listas" a tarefa pode ser de outra lista:
+   * a lista real dela vai para o endereço antes (a regra da produção, 14/10), e
+   * o filtro pessoal fica.
+   */
+  const abrirTarefa = (id: string, aba?: AbaDaTarefa) => {
+    const registro = tarefas?.items.find((tarefa) => tarefa.id === id);
+    if (registro && registro.listId !== listaAtual.current) {
+      trocarLista(registro.listId);
+      const url = new URL(window.location.href);
+      url.searchParams.set('lista', registro.listId);
+      window.history.replaceState(window.history.state, '', `${url.pathname}${url.search}${url.hash}`);
+    }
+    filtrosLidos.current = assinaturaSemTarefa(); tarefaUrl.abrir(id, aba);
+  };
   const fecharTarefa = tarefaUrl.fechar;
 
   const lista: TrabListaDto | null = useMemo(() => {
@@ -356,21 +431,27 @@ function TrabalhoConteudo({ visaoInicial, modo }: { visaoInicial: Visao; modo: M
   // Resposta antiga nunca publica itens nem erros na consulta seguinte.
   useEffect(() => {
     setTarefas(null);
-    if (!ready || !token || !readable || !listaId || !urlPronta) return;
+    if (!ready || !token || !readable || (!listaId && !todasListas) || !urlPronta) return;
     let ativa = true;
     setErro(null);
-    const p = new URLSearchParams({ listId: listaId });
+    const p = new URLSearchParams(todasListas ? {} : { listId: listaId! });
     if (fAssignee) p.set('assignee', fAssignee);
+    if (fPessoa === 'sem-vinculo') p.set('semResponsavel', '1');
+    else if (fPessoa) p.set('assigneeUserId', fPessoa);
     if (fBusca) p.set('q', fBusca);
-    if (fOpcao) p.set('opcao', fOpcao);
-    if (fStatus) p.set('statusId', fStatus);
+    // Etapa e opção são da lista: em "todas as listas" não valem.
+    if (fOpcao && !todasListas) p.set('opcao', fOpcao);
+    if (fStatus && !todasListas) p.set('statusId', fStatus);
     if (fCliente) p.set('cliente', fCliente);
     if (fArquivadas) p.set('arquivadas', '1');
     tarefasDeTrabalho(token, p, () => ativa)
-      .then((r) => { if (ativa) setTarefas(r); })
+      .then((r) => { if (ativa) {
+        setTarefas(r);
+        if (recargaEtapa.current === bump) { setConflitoEtapa(null); recargaEtapa.current = null; }
+      } })
       .catch((e) => { if (ativa) setErro(e.message); });
     return () => { ativa = false; };
-  }, [ready, token, readable, urlPronta, listaId, fAssignee, fBusca, fOpcao, fStatus, fCliente, fArquivadas, bump]);
+  }, [ready, token, readable, urlPronta, listaId, todasListas, fAssignee, fPessoa, fBusca, fOpcao, fStatus, fCliente, fArquivadas, bump]);
 
   /*
    * O MOVIMENTO DOS CARTÕES (I2): rodapé, balão, próxima ação e selo. Uma
@@ -394,13 +475,23 @@ function TrabalhoConteudo({ visaoInicial, modo }: { visaoInicial: Visao; modo: M
     [lista, estrutura],
   );
 
-  // Agente, atraso e "meus" filtram a coleção completa, após a última página.
+  /*
+   * Agente, atraso e "meus" filtram a coleção completa, após a última página.
+   * "Meus" casa pela CONTA (`assigneeUserId === user.id`, a regra da produção:
+   * identidade por ID, não por nome). Só a tarefa ainda sem vínculo de pessoa
+   * cai no nome antigo em texto, para o legado do ClickUp não sumir do recorte.
+   */
   const visiveis = useMemo(() => {
     const itens = tarefas?.items ?? [];
+    const meu = (t: TrabTarefaResumo) => (t.assigneeUserId ? t.assigneeUserId === user?.id : ehMeu(t.assignee, user?.name));
     return itens.filter((t) => (fEscopo !== 'atrasados' || t.overdue) &&
-      (fEscopo !== 'meus' || ehMeu(t.assignee, user?.name)) &&
+      (fEscopo !== 'meus' || meu(t)) &&
       (!fAgente || (fAgente === 'livres' ? !t.agenteId : t.agenteSlug === fAgente)));
-  }, [tarefas, fAgente, fEscopo, user?.name]);
+  }, [tarefas, fAgente, fEscopo, user?.id, user?.name]);
+  // Com conflito de versão aberto ou etapa gravando, o quadro não aceita outra escrita.
+  const quadroEditavel = editable && !conflitoEtapa && !salvandoEtapa;
+
+  const semListas = estrutura !== null && estrutura.folders.every((f) => f.lists.length === 0) && estrutura.listasSoltas.length === 0;
 
   if (ready && !readable) return <p className="text-muted">Sem permissão para ver tarefas.</p>;
 
@@ -470,6 +561,7 @@ function TrabalhoConteudo({ visaoInicial, modo }: { visaoInicial: Visao; modo: M
         {editable && estrutura && (
           <NovaLista
             key={fPasta} folders={estrutura.folders} token={token} onDone={refresh} onErro={setErro}
+            aberto={novaListaAberta} onAbrir={() => setNovaListaAberta(true)} onFechar={() => setNovaListaAberta(false)}
             pastaInicial={fPasta === PASTA_SEM_PASTA ? '' : estrutura.folders.some((f) => f.id === fPasta) ? fPasta : undefined}
           />
         )}
@@ -483,10 +575,10 @@ function TrabalhoConteudo({ visaoInicial, modo }: { visaoInicial: Visao; modo: M
       <div className={`min-w-0 flex-1 ${visao === 'board' && lista ? 'flex min-h-0 flex-col gap-3' : 'space-y-4'}`}>
         <div className="flex flex-wrap items-end justify-between gap-3">
           <div>
-            <h1 className="text-xl font-semibold">{implantacao ? 'Implantação de clientes' : lista?.name ?? 'Trabalho'}</h1>
+            <h1 className="text-xl font-semibold">{implantacao ? 'Implantação de clientes' : todasListas ? 'Tarefas da pessoa em todas as listas' : lista?.name ?? 'Trabalho'}</h1>
             <p className="text-sm text-muted">
               {implantacao && lista ? `${PASTA_DA_IMPLANTACAO} · ${lista.name} · ` : ''}
-              {!listaId && estrutura ? 'Selecione uma lista para ver as tarefas.' : tarefas ? `${visiveis.length} ${visiveis.length === 1 ? 'tarefa' : 'tarefas'}${visiveis.length !== tarefas.total ? ` de ${tarefas.total} na consulta` : ''}` : erro ? 'Consulta indisponível' : 'Carregando…'}
+              {!listaId && !todasListas && estrutura ? 'Selecione uma lista para ver as tarefas.' : tarefas ? `${visiveis.length} ${visiveis.length === 1 ? 'tarefa' : 'tarefas'}${visiveis.length !== tarefas.total ? ` de ${tarefas.total} na consulta` : ''}` : erro ? 'Consulta indisponível' : 'Carregando…'}
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
@@ -497,8 +589,18 @@ function TrabalhoConteudo({ visaoInicial, modo }: { visaoInicial: Visao; modo: M
               placeholder="Buscar cliente…"
               className="w-40 rounded-lg border border-border bg-surface px-3 py-1.5 text-sm outline-none focus:border-brand-dim"
             />
-            <select aria-label="Filtrar por responsável" value={fAssignee} onChange={(e) => { setFAssignee(e.target.value); filtroNoEndereco('assignee', e.target.value); }} className="rounded-lg border border-border bg-surface px-2 py-1.5 text-sm outline-none">
-              <option value="">Todos os responsáveis</option>
+            <select aria-label="Filtrar por responsável" value={fPessoa} onChange={(e) => filtrarPessoa(e.target.value)} className="rounded-lg border border-border bg-surface px-2 py-1.5 text-sm outline-none">
+              <option value="">Todas as pessoas</option>
+              <option value="sem-vinculo">Sem vínculo de pessoa</option>
+              {(estrutura?.pessoas ?? []).map((pessoa) => <option key={pessoa.id} value={pessoa.id}>{rotuloDaPessoa(pessoa)}{!pessoa.isActive ? ' (inativo)' : ''}</option>)}
+            </select>
+            {user?.id && <button aria-pressed={fPessoa === user.id} onClick={() => { filtrarPessoa(user.id, true); setVisao('tabela'); filtroNoEndereco('visao', 'lista'); }} className="rounded-lg border border-border bg-surface px-3 py-1.5 text-sm">Minhas tarefas</button>}
+            <select aria-label="Filtrar por texto legado" value={fAssignee} onChange={(e) => {
+                const texto = e.target.value;
+                if (texto) { sairDoPessoal(); setFPessoa(''); filtroNoEndereco('assigneeUserId', ''); filtroNoEndereco('semResponsavel', ''); }
+                setFAssignee(texto); filtroNoEndereco('assignee', texto);
+              }} className="rounded-lg border border-border bg-surface px-2 py-1.5 text-sm outline-none">
+              <option value="">Texto legado: todos</option>
               {estrutura?.responsaveis.map((r) => <option key={r} value={r}>{r}</option>)}
             </select>
             {/*
@@ -516,7 +618,7 @@ function TrabalhoConteudo({ visaoInicial, modo }: { visaoInicial: Visao; modo: M
                 </option>
               ))}
             </select>
-            {camposDaLista.filter((c) => c.type === 'drop_down' && c.options.length > 0).map((c) => (
+            {!todasListas && camposDaLista.filter((c) => c.type === 'drop_down' && c.options.length > 0).map((c) => (
               <select
                 key={c.id}
                 aria-label={`Filtrar por ${c.name}`}
@@ -533,7 +635,8 @@ function TrabalhoConteudo({ visaoInicial, modo }: { visaoInicial: Visao; modo: M
               <option value="sem">Sem cliente (para limpar)</option>
               {clientes.filter((c) => c.id !== 'interno').map((c) => <option key={c.id} value={c.id}>{c.nome}</option>)}
             </select>
-            <select aria-label="Filtrar por status" value={fStatus} onChange={(e) => { setFStatus(e.target.value); filtroNoEndereco('statusId', e.target.value); }} className="rounded-lg border border-border bg-surface px-2 py-1.5 text-sm">
+            <select disabled={todasListas} aria-label="Filtrar por status" value={fStatus} onChange={(e) => { setFStatus(e.target.value); filtroNoEndereco('statusId', e.target.value); }} className="rounded-lg border border-border bg-surface px-2 py-1.5 text-sm">
+
               <option value="">Todos os status</option>
               {lista?.statuses.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
             </select>
@@ -545,7 +648,8 @@ function TrabalhoConteudo({ visaoInicial, modo }: { visaoInicial: Visao; modo: M
                   type="button"
                   data-testid={`trabalho-escopo-${e.chave}`}
                   aria-pressed={fEscopo === e.chave}
-                  onClick={() => { setFEscopo(e.chave); filtroNoEndereco('escopo', e.chave === 'todos' ? '' : e.chave); filtroNoEndereco('overdue', ''); }}
+                  // O recorte do quadro ocupa a chave `escopo`: escolher um sai do "todas as listas".
+                  onClick={() => { setTodasListas(false); setFEscopo(e.chave); filtroNoEndereco('escopo', e.chave === 'todos' ? '' : e.chave); filtroNoEndereco('overdue', ''); }}
                   className={`px-2.5 py-1.5 text-sm max-md:min-h-[44px] ${fEscopo === e.chave ? 'bg-brand/15 text-text' : 'bg-surface text-muted hover:text-text'}`}
                 >
                   {e.rotulo}
@@ -555,9 +659,11 @@ function TrabalhoConteudo({ visaoInicial, modo }: { visaoInicial: Visao; modo: M
             {/* T3: a vista salva do quadro (filtros, densidade e visão), por pessoa, no servidor. */}
             <VistasDoQuadro
               token={token}
-              enderecoTemFiltro={['assignee', 'q', 'opcao', 'agente', 'statusId', 'escopo', 'overdue', 'cliente', 'visao'].some((k) => typeof window !== 'undefined' && new URLSearchParams(window.location.search).has(k))}
+              enderecoTemFiltro={['assignee', 'assigneeUserId', 'semResponsavel', 'q', 'opcao', 'agente', 'statusId', 'escopo', 'overdue', 'cliente', 'visao'].some((k) => typeof window !== 'undefined' && new URLSearchParams(window.location.search).has(k))}
               atual={{ densidade, visao, filtros: { assignee: fAssignee, agente: fAgente, statusId: fStatus, cliente: fCliente, escopo: fEscopo, q: fBusca } }}
               aplicar={(v: VistaQuadro) => {
+                // A vista grava o recorte do quadro na chave `escopo`: sai do "todas as listas".
+                setTodasListas(false);
                 escolherDensidade(v.densidade); setVisao(v.visao);
                 setFAssignee(v.filtros.assignee); setFAgente(v.filtros.agente); setFStatus(v.filtros.statusId);
                 setFCliente(v.filtros.cliente); setFEscopo(v.filtros.escopo); setFBusca(v.filtros.q);
@@ -574,7 +680,8 @@ function TrabalhoConteudo({ visaoInicial, modo }: { visaoInicial: Visao; modo: M
                 <button
                   key={v}
                   data-testid={v === 'board' ? 'trabalho-visao-quadro' : 'trabalho-visao-lista'}
-                  onClick={() => { setVisao(v); filtroNoEndereco('visao', v === 'board' ? 'board' : 'lista'); }}
+                  // O quadro é de uma lista: "todas as listas" só existe na Lista.
+                  onClick={() => { if (v === 'board') sairDoPessoal(); setVisao(v); filtroNoEndereco('visao', v === 'board' ? 'board' : 'lista'); }}
                   aria-pressed={visao === v}
                   className={`px-3 py-1.5 text-sm ${visao === v ? 'bg-brand/15 text-text' : 'bg-surface text-muted hover:text-text'}`}
                 >
@@ -629,30 +736,48 @@ function TrabalhoConteudo({ visaoInicial, modo }: { visaoInicial: Visao; modo: M
         {listaEhImplantacao && editable && (
           <p className="text-[12px] text-muted" data-testid="implantacao-porta">{PORTA_DA_IMPLANTACAO}</p>
         )}
+        {!implantacao && semListas && !erro && <section aria-label="Começar em Trabalho" className="space-y-3 rounded-lg border border-border bg-surface p-4">
+          <h2 className="font-semibold">Comece por uma lista</h2>
+          <p className="text-sm text-muted">Não há listas disponíveis para sua conta. Uma lista organiza as etapas e recebe as tarefas.</p>
+          {editable ? <><p className="text-sm text-muted">Crie uma lista ou escolha um modelo. Depois, adicione uma tarefa na etapa inicial.</p><button type="button" onClick={() => setNovaListaAberta(true)} className="min-h-11 rounded-lg border border-brand-dim px-3 text-sm text-brand">Criar primeira lista</button></> : <p className="text-sm text-muted">Peça a uma pessoa com acesso de edição para criar ou disponibilizar uma lista.</p>}
+        </section>}
+        {!implantacao && estrutura && can('pauta.ver') && <details className="rounded-lg border border-border bg-surface px-4 py-3 text-sm">
+          <summary className="cursor-pointer font-medium">Conteúdo a partir de uma tarefa</summary>
+          <p className="mt-2 text-muted">Abra uma tarefa e escolha “Abrir material e Produção”. Ali você vincula o material, confere a versão e segue as decisões permitidas à sua conta. Após a aprovação, “Preparar conta e horário” leva ao Marketing.</p>
+          {can('obsidian.ver') && <a href="/contexto" className="mt-2 inline-block text-brand underline">Criar tarefa usando uma fonte do Contexto</a>}
+        </details>}
         {listaDoLinkAusente && <p role="status" className="rounded-lg border border-border bg-surface p-3 text-sm text-muted">A lista deste link ainda não está disponível no seu quadro. Escolha uma das listas disponíveis.</p>}
         {erro && (
           <div className="flex items-center justify-between rounded-lg border border-bad/40 bg-bad/10 px-3 py-2 text-sm text-bad">
             <span>{erro}</span>
-            <button onClick={() => setErro(null)}><X size={14} /></button>
+            <button onClick={refresh} className="underline">Recarregar lista</button>
+            <button aria-label="Fechar erro" onClick={() => setErro(null)}><X size={14} /></button>
           </div>
         )}
 
+        {conflitoEtapa && <div role="alert" className="space-y-2 rounded-lg border border-warn/40 bg-warn/10 p-3 text-sm">
+          <p>Esta tarefa mudou desde que você abriu. Sua alteração não foi gravada.</p>
+          <p className="font-medium">Alteração não salva</p>
+          <dl className="text-xs"><dt>Tarefa</dt><dd>{conflitoEtapa.titulo}</dd><dt>Etapa</dt><dd>{conflitoEtapa.etapa}</dd></dl>
+          <button className="underline" onClick={() => { recargaEtapa.current = bump + 1; refresh(); }}>Recarregar lista</button>
+        </div>}
         {lista && tarefas && visao === 'board' && (
           <Board
-            lista={lista} tarefas={visiveis} editable={editable} podeCriar={editable && !listaEhImplantacao} token={token}
+            lista={lista} tarefas={visiveis} editable={quadroEditavel} podeCriar={quadroEditavel && !listaEhImplantacao} token={token}
             agentes={estrutura?.agentes ?? []} trilhos={trilhos} movimento={movimento} densidade={densidade}
-            onAbrir={abrirTarefa} onMudou={refresh} onErro={setErro}
+            onAbrir={abrirTarefa} onMudou={refresh} onErro={setErro} onMoverEtapa={moverEtapa}
           />
         )}
-        {lista && tarefas && visao === 'tabela' && (
-          <Tabela lista={lista} tarefas={visiveis} campos={camposDaLista.map((c) => c.name)} trilhos={trilhos} onAbrir={abrirTarefa} />
+        {/* A Lista também serve o "todas as listas" (escopo pessoal), sem lista aberta e sem campos de uma lista só. */}
+        {(lista || todasListas) && tarefas && visao === 'tabela' && (
+          <Tabela tarefas={visiveis} campos={todasListas ? [] : camposDaLista.map((c) => c.name)} trilhos={trilhos} onAbrir={abrirTarefa} />
         )}
       </div>
       </div>
 
       {painelId && estrutura && (
         <PainelTarefa
-          key={`${token}:${painelId}`} id={painelId} estrutura={estrutura} editable={editable} token={token} usuarioId={user?.id ?? null}
+          key={`${user?.id ?? ''}:${token}:${painelId}`} id={painelId} estrutura={estrutura} editable={editable && !conflitoEtapa} token={token} usuarioId={user?.id ?? null}
           aba={tarefaUrl.aba} onTrocarAba={tarefaUrl.trocarAba}
           onFechar={fecharTarefa} onMoverLista={(id) => { trocarLista(id); mudarEndereco(id, painelId); }}
           onMudou={refresh} onErro={setErro}
@@ -716,11 +841,13 @@ function ContagemDaEtapa({ quantas, limite }: { quantas: number; limite: number 
  *    da caixa de entrada (`GET /trabalho/quadro/movimento`). Falhar ali só tira
  *    o rodapé.
  */
-function Board({ lista, tarefas, editable, podeCriar, token, agentes, trilhos, movimento, densidade, onAbrir, onMudou, onErro }: {
+function Board({ lista, tarefas, editable, podeCriar, token, agentes, trilhos, movimento, densidade, onAbrir, onMudou, onErro, onMoverEtapa }: {
   lista: TrabListaDto; tarefas: TrabTarefaResumo[]; editable: boolean; podeCriar: boolean; token: string | null;
   agentes: TrabAgenteDto[]; trilhos: Map<string, TrilhoDoCartao>;
   movimento: Map<string, TrabMovimentoDoCartao>; densidade: Densidade;
   onAbrir: (id: string, aba?: AbaDaTarefa) => void; onMudou: () => void; onErro: (m: string) => void;
+  /** Toda troca de etapa (arraste e seletor) passa pela versão lida (`expectedUpdatedAt`). */
+  onMoverEtapa: (t: TrabTarefaResumo, statusId: string) => Promise<void>;
 }) {
   /*
    * ARRASTAR E SOLTAR com a API nativa do HTML5, sem biblioteca: dependência
@@ -737,7 +864,7 @@ function Board({ lista, tarefas, editable, podeCriar, token, agentes, trilhos, m
     const id = e.dataTransfer.getData('text/plain');
     const t = tarefas.find((x) => x.id === id);
     if (!t || t.statusId === statusId) return;
-    apiPatch(`/trabalho/tarefas/${id}`, { statusId }, token).then(onMudou).catch((er) => onErro(er.message));
+    void onMoverEtapa(t, statusId);
   };
   useEffect(() => {
     if (!balao) return;
@@ -806,6 +933,7 @@ function Board({ lista, tarefas, editable, podeCriar, token, agentes, trilhos, m
                   balaoAberto={balao?.id === t.id}
                   onBalao={(ancora) => setBalao(ancora ? { id: t.id, ancora } : null)}
                   onAbrir={(id, aba) => { setBalao(null); onAbrir(id, aba); }} onMudou={onMudou} onErro={onErro}
+                  onMoverEtapa={onMoverEtapa}
                 />
               ))}
               {podeCriar && <QuickAdd listaId={lista.id} statusId={st.id} token={token} clienteInicial={ultimoCliente} onCliente={setUltimoCliente} onDone={onMudou} onErro={onErro} />}
@@ -824,11 +952,12 @@ function Board({ lista, tarefas, editable, podeCriar, token, agentes, trilhos, m
 
 const ATRASO_DO_BALAO_MS = 350;
 
-function Cartao({ t, lista, editable, token, agentes, trilho, mov, densidade, balaoAberto, onBalao, onAbrir, onMudou, onErro }: {
+function Cartao({ t, lista, editable, token, agentes, trilho, mov, densidade, balaoAberto, onBalao, onAbrir, onMudou, onErro, onMoverEtapa }: {
   t: TrabTarefaResumo; lista: TrabListaDto; editable: boolean; token: string | null;
   agentes: TrabAgenteDto[]; trilho: TrilhoDoCartao | null; mov: TrabMovimentoDoCartao | null; densidade: Densidade;
   balaoAberto: boolean; onBalao: (ancora: DOMRect | null) => void;
   onAbrir: (id: string, aba?: AbaDaTarefa) => void; onMudou: () => void; onErro: (m: string) => void;
+  onMoverEtapa: (t: TrabTarefaResumo, statusId: string) => Promise<void>;
 }) {
   const pr = PRIORIDADES.find((p) => p.key === t.priority);
   const agente = nomeDoAgente(t);
@@ -913,7 +1042,8 @@ function Cartao({ t, lista, editable, token, agentes, trilho, mov, densidade, ba
           </p>
           <div className="mt-1 flex flex-wrap items-center gap-2 text-[11px] text-muted">
             {t.priority !== 'normal' && pr && <Flag size={11} style={{ color: pr.cor }} />}
-            {t.assignee && <span>{t.assignee}</span>}
+            {/* O responsável é a CONTA (produção, 14/10); o nome antigo em texto fica só no painel. */}
+            <ResponsavelDaTarefa tarefa={t} />
             {t.dueDate && <span className={t.overdue ? 'text-bad' : ''}>{dataBR(t.dueDate)}</span>}
             {t.comments > 0 && <span className="flex items-center gap-0.5"><MessageSquare size={10} />{t.comments}</span>}
             {t.subtasks > 0 && <span>{t.subtasks} sub</span>}
@@ -967,9 +1097,7 @@ function Cartao({ t, lista, editable, token, agentes, trilho, mov, densidade, ba
         <div className="relative z-10">
           <select
             value={t.statusId}
-            onChange={(e) =>
-              apiPatch(`/trabalho/tarefas/${t.id}`, { statusId: e.target.value }, token).then(onMudou).catch((er) => onErro(er.message))
-            }
+            onChange={(e) => { void onMoverEtapa(t, e.target.value); }}
             title="Mover etapa"
             aria-label={`Mover ${t.title} de etapa`}
             className="mt-1.5 w-full rounded border border-border bg-surface-2 px-1.5 py-1 text-[11px] outline-none focus:border-brand-dim"
@@ -1163,8 +1291,9 @@ function QuickAdd({ listaId, statusId, token, clienteInicial, onCliente, onDone,
 
 // ---------- visão tabela ----------
 
-function Tabela({ lista, tarefas, campos, trilhos, onAbrir }: {
-  lista: TrabListaDto; tarefas: TrabTarefaResumo[]; campos: string[]; trilhos: Map<string, TrilhoDoCartao>;
+// Sem `lista`: a mesma tabela serve uma lista e o "todas as listas" do escopo pessoal.
+function Tabela({ tarefas, campos, trilhos, onAbrir }: {
+  tarefas: TrabTarefaResumo[]; campos: string[]; trilhos: Map<string, TrilhoDoCartao>;
   onAbrir: (id: string, aba?: AbaDaTarefa) => void;
 }) {
   return (
@@ -1197,7 +1326,7 @@ function Tabela({ lista, tarefas, campos, trilhos, onAbrir }: {
                 </span>
               </td>
               <td className="px-3 py-2 capitalize">{t.priority}</td>
-              <td className="px-3 py-2">{t.assignee ?? '—'}</td>
+              <td className="px-3 py-2"><ResponsavelDaTarefa tarefa={t} /></td>
               <td className="px-3 py-2" title={t.agenteId ? `Assumida em ${dataHoraBR(t.agenteEm)}` : undefined}>
                 {nomeDoAgente(t) ?? '—'}
               </td>
@@ -1286,7 +1415,7 @@ export function TarefaFlutuante({ tarefa, onMudou }: { tarefa: ReturnType<typeof
       {erro && <p role="alert" className="text-sm text-bad">{erro}</p>}
       {estrutura && (
         <PainelTarefa
-          key={`${token}:${tarefa.tarefaId}`} id={tarefa.tarefaId} estrutura={estrutura} editable={can('tarefas.editar')}
+          key={`${user?.id ?? ''}:${token}:${tarefa.tarefaId}`} id={tarefa.tarefaId} estrutura={estrutura} editable={can('tarefas.editar')}
           token={token} usuarioId={user?.id ?? null} aba={tarefa.aba} onTrocarAba={tarefa.trocarAba}
           onFechar={tarefa.fechar} onMoverLista={() => mudou()} onMudou={mudou} onErro={setErro}
         />
@@ -1325,18 +1454,33 @@ function PainelTarefa({ id, estrutura, editable, token, usuarioId, aba = 'tarefa
       .catch(() => { if (ativa) setTrilho(null); });
     return () => { ativa = false; };
   }, [id, token]);
+  const [descricaoRascunho, setDescricaoRascunho] = useState('');
+  const [salvando, setSalvando] = useState(false);
+  const escrita = useRef(false);
+  const [conflito, setConflito] = useState<{ mudanca: Record<string, unknown>; recarregado: boolean; gravado?: boolean; indeterminado?: boolean } | null>(null);
   const focoAnterior = useRef<HTMLElement | null>(null);
   const fecharRef = useRef<HTMLButtonElement | null>(null);
   useEffect(() => { focoAnterior.current = document.activeElement as HTMLElement; }, []);
   useEffect(() => setEdicaoDescricao(false), [id]);
-  const leitura = useRef(0);
-  const recarregar = useCallback(() => {
+  const leitura = useRef(0), operacao = useRef(0), ativo = useRef(true);
+  const vigente = (epoch: number) => ativo.current && operacao.current === epoch;
+  const recarregar = useCallback((epoch = operacao.current) => {
+    if (!ativo.current || operacao.current !== epoch) return Promise.resolve(null);
     const atual = ++leitura.current;
-    apiGet<TrabTarefaDetalhe>(`/trabalho/tarefas/${id}`, token)
-      .then((t) => { if (atual === leitura.current) setT(t); })
-      .catch((e) => { if (atual === leitura.current) onErro(e.message); });
+    return apiGet<TrabTarefaDetalhe>(`/trabalho/tarefas/${id}`, token)
+      .then((t) => { if (ativo.current && operacao.current === epoch && atual === leitura.current) { setT(t); return t; } return null; })
+      .catch((e) => {
+        if (ativo.current && operacao.current === epoch && atual === leitura.current) {
+          if ([401, 403, 404].includes(e?.status)) setT(null);
+          onErro(e.message);
+        }
+        return null;
+      });
   }, [id, token, onErro]);
-  useEffect(() => { recarregar(); return () => { leitura.current += 1; }; }, [recarregar]);
+  useEffect(() => {
+    ativo.current = true; void recarregar();
+    return () => { ativo.current = false; leitura.current += 1; operacao.current += 1; };
+  }, [recarregar]);
 
   const todasListas = useMemo(
     () => [...estrutura.folders.flatMap((f) => f.lists), ...estrutura.listasSoltas],
@@ -1345,16 +1489,39 @@ function PainelTarefa({ id, estrutura, editable, token, usuarioId, aba = 'tarefa
   const lista = todasListas.find((l) => l.id === t?.listId);
   const campos = [...(lista?.fields ?? []), ...estrutura.camposGlobais];
 
-  const salvar = (mudanca: Record<string, unknown>) =>
-    apiPatch(`/trabalho/tarefas/${id}`, mudanca, token)
-      .then(() => { recarregar(); onMudou(); })
-      .catch((e) => onErro(e.message));
+  const salvar = async (mudanca: Record<string, unknown>) => {
+    if (!ativo.current || !t || !editable || escrita.current || (conflito && !conflito.recarregado)) return false;
+    if (!t.updatedAt || !Number.isFinite(Date.parse(t.updatedAt)) || !/T.*(?:Z|[+-]\d{2}:\d{2})$/.test(t.updatedAt)) { onErro('Recarregue a tarefa antes de editar: a versão não está disponível.'); return false; }
+    const epoch = ++operacao.current;
+    escrita.current = true; setSalvando(true);
+    try {
+      await apiPatch(`/trabalho/tarefas/${id}`, { ...mudanca, expectedUpdatedAt: t.updatedAt }, token);
+      if (!vigente(epoch)) return false;
+      const atual = await recarregar(epoch);
+      if (!vigente(epoch)) return false;
+      if (!atual) { setConflito({ mudanca, recarregado: false, gravado: true }); onMudou(); return false; }
+      setConflito(null); onMudou(); return true;
+    } catch (e) {
+      if (!vigente(epoch)) return false;
+      const status = (e as { status?: number } | null)?.status;
+      if (status === 409) setConflito((c) => ({ mudanca: { ...c?.mudanca, ...mudanca }, recarregado: false }));
+      else {
+        if (status && [401, 403, 404].includes(status)) setT(null);
+        else if (status === undefined || status >= 500) setConflito({ mudanca, recarregado: false, indeterminado: true });
+        onErro(e instanceof Error ? e.message : 'Não foi possível concluir a alteração.');
+      }
+      return false;
+    } finally { if (vigente(epoch)) { escrita.current = false; setSalvando(false); } }
+  };
 
   const moverLista = (destino: string) => {
     if (destino === t?.listId) return;
-    apiPatch(`/trabalho/tarefas/${id}`, { listId: destino }, token)
-      .then(() => { onMoverLista(destino); recarregar(); onMudou(); })
-      .catch((e) => onErro(e.message));
+    const epoch = operacao.current + 1;
+    void salvar({ listId: destino }).then((salvo) => { if (salvo && vigente(epoch)) onMoverLista(destino); });
+  };
+  const arquivar = async () => {
+    const epoch = operacao.current + 1;
+    if (await salvar({ archived: true }) && vigente(epoch)) onFechar();
   };
 
   const baixarAnexo = async (nome: string, caminho: string) => {
@@ -1377,9 +1544,9 @@ function PainelTarefa({ id, estrutura, editable, token, usuarioId, aba = 'tarefa
   };
 
   const criarEAnexarTag = () => {
-    if (!novaTag.trim() || !t) return;
+    if (!novaTag.trim() || !t || !editable || escrita.current || (conflito && !conflito.recarregado)) return;
     const existente = estrutura.tags.find((x) => x.name.toLowerCase() === novaTag.trim().toLowerCase());
-    const anexar = (tagId: string) => salvar({ tagIds: [...t.tags.map((x) => x.id), tagId] }).then(() => setNovaTag(''));
+    const anexar = (tagId: string) => salvar({ tagIds: [...t.tags.map((x) => x.id), tagId] }).then((salvo) => { if (salvo) setNovaTag(''); });
     if (existente) void anexar(existente.id);
     else {
       apiPost<{ id: string }>('/trabalho/tags', { name: novaTag.trim() }, token)
@@ -1389,13 +1556,29 @@ function PainelTarefa({ id, estrutura, editable, token, usuarioId, aba = 'tarefa
   };
 
   if (!t) return null;
-  const ro = !editable;
+  const ro = !editable || salvando || !!(conflito && !conflito.recarregado);
   const anexos = separarAnexos(t.description);
   const dependencias = separarDependencias(anexos.texto);
   const nomesListas = new Map([
     ...estrutura.folders.flatMap((f) => f.lists.map((l) => [l.id, `${f.name} / ${l.name}`] as const)),
     ...estrutura.listasSoltas.map((l) => [l.id, l.name] as const),
   ]);
+
+  const rascunho = conflito ? Object.entries(conflito.mudanca).map(([campo, valor]) => {
+    const rotulos: Record<string, string> = { title: 'Título', description: 'Descrição', statusId: 'Etapa', listId: 'Lista', assigneeUserId: 'Responsável', priority: 'Prioridade', dueDate: 'Prazo', startDate: 'Início', tagIds: 'Etiquetas', campos: 'Campos da tarefa', archived: 'Arquivamento', clienteId: 'Cliente' };
+    let texto = campo === 'archived' ? valor ? 'Arquivar tarefa' : 'Restaurar tarefa' : valor == null ? 'Sem valor' : String(valor);
+    if (campo === 'assigneeUserId') { const pessoa = estrutura.pessoas?.find((p) => p.id === valor); texto = valor == null ? 'Sem vínculo de pessoa' : pessoa ? rotuloDaPessoa(pessoa) : 'Pessoa indisponível'; }
+    if (campo === 'statusId') texto = lista?.statuses.find((st) => st.id === valor)?.name ?? 'Etapa indisponível';
+    if (campo === 'listId') texto = nomesListas.get(String(valor)) ?? 'Lista indisponível';
+    if (campo === 'clienteId') texto = valor === t.clienteId ? t.clienteNome ?? 'Cliente atual' : 'Outro cliente escolhido';
+    if (campo === 'tagIds' && Array.isArray(valor)) texto = valor.map((tag) => estrutura.tags.find((tg) => tg.id === tag)?.name ?? 'Etiqueta indisponível').join(', ') || 'Sem etiquetas';
+    if (campo === 'campos' && valor && typeof valor === 'object' && !Array.isArray(valor)) texto = Object.entries(valor).map(([fieldId, dado]) => {
+      const field = campos.find((c) => c.id === fieldId);
+      const v = dado as { optionId?: string | null; value?: string | null };
+      return `${field?.name ?? 'Campo'}: ${field?.options.find((o) => o.id === v.optionId)?.name ?? v.value ?? 'Sem valor'}`;
+    }).join('; ');
+    return { campo, rotulo: rotulos[campo] ?? 'Alteração', texto };
+  }) : [];
 
   return (
     <Dialog.Root open onOpenChange={(aberto) => { if (!aberto) onFechar(); }}>
@@ -1417,14 +1600,15 @@ function PainelTarefa({ id, estrutura, editable, token, usuarioId, aba = 'tarefa
       <div className="flex items-start justify-between gap-2 border-b border-border px-4 py-3">
         <input
           aria-label="Título da tarefa"
+          key={t.updatedAt}
           defaultValue={t.title}
           disabled={ro}
           onBlur={(e) => e.target.value !== t.title && salvar({ title: e.target.value })}
           className="w-full bg-transparent text-sm font-semibold outline-none focus:text-brand"
         />
         <div className="flex shrink-0 items-center gap-1">
-          {editable && (
-            <button title="Arquivar" onClick={() => { void apiDelete(`/trabalho/tarefas/${t.id}`, token).then(() => { onMudou(); onFechar(); }); }} className="p-1 text-muted hover:text-bad">
+          {editable && !t.archived && (
+            <button title="Arquivar" aria-label="Arquivar tarefa" disabled={ro} onClick={() => void arquivar()} className="p-1 text-muted hover:text-bad disabled:opacity-50">
               <Archive size={15} />
             </button>
           )}
@@ -1454,7 +1638,18 @@ function PainelTarefa({ id, estrutura, editable, token, usuarioId, aba = 'tarefa
           <BancadaDoTrilho id={trilho.id} embutida />
         </div>
       ) : (
-      <div className="flex-1 space-y-4 overflow-y-auto px-4 py-3 text-sm">
+      <div key={t.updatedAt} className="flex-1 space-y-4 overflow-y-auto px-4 py-3 text-sm">
+        {conflito && <div role="alert" className="space-y-2 rounded-lg border border-warn/40 bg-warn/10 p-3 text-sm">
+          <p>{conflito.indeterminado
+            ? conflito.recarregado ? 'A versão atual foi carregada. Confira o resultado antes de decidir sobre a alteração abaixo.' : 'Não foi possível confirmar a alteração. Recarregue a tarefa antes de tentar novamente.'
+            : conflito.gravado
+            ? conflito.recarregado ? 'A versão atual foi carregada. A alteração gravada continua abaixo.' : 'A alteração foi gravada, mas não conseguimos ler a versão atual. Recarregue a tarefa antes de editar novamente.'
+            : conflito.recarregado ? 'Confira a versão atual antes de editar novamente. Seu rascunho continua abaixo.' : 'Esta tarefa mudou desde que você abriu. Sua alteração não foi gravada.'}</p>
+          <p className="font-medium">{conflito.indeterminado ? 'Alteração a conferir' : conflito.gravado ? 'Alteração gravada' : 'Alteração não salva'}</p>
+          <dl className="space-y-1 text-xs">{rascunho.map((r) => <div key={r.campo}><dt className="font-medium">{r.rotulo}</dt><dd className="whitespace-pre-wrap break-words">{r.texto}</dd></div>)}</dl>
+          <button className="underline disabled:opacity-50" disabled={salvando} onClick={async () => { const epoch = operacao.current; const atual = await recarregar(epoch); if (atual && vigente(epoch)) { setEdicaoDescricao(false); setConflito((c) => c ? { ...c, recarregado: true } : c); if (atual.listId !== t.listId) onMoverLista(atual.listId); onMudou(); } }}>Recarregar tarefa</button>
+          <button className="ml-3 underline disabled:opacity-50" disabled={salvando || !conflito.recarregado} onClick={() => setConflito(null)}>Descartar alteração</button>
+        </div>}
         {trilho ? (
           <button type="button" onClick={() => onTrocarAba?.('trilho')} className="block w-full rounded-lg border border-border bg-surface-2 px-3 py-2 text-left text-[12px] underline-offset-2 hover:underline">
             Trilho de onboarding · {trilho.faseRotulo}{trilho.faltando.length ? ` · falta ${trilho.faltando.length}` : ' · portão cumprido'}
@@ -1462,6 +1657,9 @@ function PainelTarefa({ id, estrutura, editable, token, usuarioId, aba = 'tarefa
         ) : trilho === null && listaDaImplantacao(estrutura.folders)?.listaId === t.listId ? (
           <p className="rounded-lg border border-border bg-surface-2 px-3 py-2 text-[12px] text-muted">Sem trilho de onboarding ligado a este cartão.</p>
         ) : null}
+        <FontesDaTarefa taskId={t.id} />
+        <EditorialTaskLink taskId={t.id} />
+        <OrigemComercialDaTarefa taskId={t.id} />
         {/* linha de propriedades — tudo editável */}
         <div className="grid grid-cols-2 gap-2">
           <Campo rotulo="Lista">
@@ -1497,14 +1695,10 @@ function PainelTarefa({ id, estrutura, editable, token, usuarioId, aba = 'tarefa
             pareciam a mesma pergunta feita duas vezes.
           */}
           <Campo rotulo="Responsável (pessoa)">
-            <input
-              list="trab-responsaveis" disabled={ro} defaultValue={t.assignee ?? ''}
-              onBlur={(e) => (e.target.value || null) !== t.assignee && salvar({ assignee: e.target.value || null })}
-              className={INP} placeholder="—"
-            />
-            <datalist id="trab-responsaveis">
-              {estrutura.responsaveis.map((r) => <option key={r} value={r} />)}
-            </datalist>
+            <SeletorResponsavel tarefa={t} pessoas={estrutura.pessoas ?? []} disabled={ro} onChange={(assigneeUserId) => salvar({ assigneeUserId })} />
+          </Campo>
+          <Campo rotulo="Responsável antigo (texto)">
+            <p className="text-[13px] text-muted">{t.assignee ?? 'Sem registro antigo'}</p>
           </Campo>
           <Campo rotulo="Agente executor">
             {/*
@@ -1637,7 +1831,7 @@ function PainelTarefa({ id, estrutura, editable, token, usuarioId, aba = 'tarefa
             {t.tags.map((tg) => (
               <span key={tg.id} className="flex items-center gap-1 rounded px-1.5 py-0.5 text-[11px]" style={{ background: `${tg.color}26`, color: tg.color }}>
                 {tg.name}
-                {editable && (
+                {!ro && (
                   <button onClick={() => salvar({ tagIds: t.tags.filter((x) => x.id !== tg.id).map((x) => x.id) })}>
                     <X size={10} />
                   </button>
@@ -1646,6 +1840,7 @@ function PainelTarefa({ id, estrutura, editable, token, usuarioId, aba = 'tarefa
             ))}
             {editable && (
               <input
+                disabled={ro}
                 value={novaTag}
                 onChange={(e) => setNovaTag(e.target.value)}
                 onKeyDown={(e) => e.key === 'Enter' && criarEAnexarTag()}
@@ -1664,12 +1859,18 @@ function PainelTarefa({ id, estrutura, editable, token, usuarioId, aba = 'tarefa
         <div>
           <div className="mb-1 flex items-center justify-between gap-2">
             <div className="text-[11px] font-semibold uppercase tracking-wide text-muted">Descrição e material vigente</div>
-            {!ro && <button type="button" onClick={() => setEdicaoDescricao((v) => !v)} className="text-[11px] text-brand hover:underline">{edicaoDescricao ? 'Concluir edição' : 'Editar texto'}</button>}
+            {(edicaoDescricao || !ro) && <button type="button" disabled={ro} onClick={async () => {
+              if (!edicaoDescricao) { setDescricaoRascunho(dependencias.texto); setEdicaoDescricao(true); return; }
+              const novo = [descricaoRascunho.trimEnd(), dependencias.sufixo, anexos.sufixo].filter(Boolean).join('\n\n') || null;
+              if (novo === t.description || await salvar({ description: novo })) setEdicaoDescricao(false);
+            }} className="text-[11px] text-brand hover:underline">{edicaoDescricao ? 'Concluir edição' : 'Editar texto'}</button>}
           </div>
-          {edicaoDescricao && !ro ? (
+          {edicaoDescricao ? (
             <textarea
-              key={`${t.id}:${t.updatedAt}`}
-              defaultValue={dependencias.texto}
+              aria-label="Descrição e material vigente"
+              disabled={ro}
+              value={descricaoRascunho}
+              onChange={(e) => setDescricaoRascunho(e.target.value)}
               onBlur={(e) => {
                 const novo = [e.target.value.trimEnd(), dependencias.sufixo, anexos.sufixo].filter(Boolean).join('\n\n') || null;
                 if (novo !== t.description) salvar({ description: novo });
@@ -1752,19 +1953,7 @@ function PainelTarefa({ id, estrutura, editable, token, usuarioId, aba = 'tarefa
           </div>
         </div>
 
-        {/* atividade (auditoria) */}
-        {t.atividade.length > 0 && (
-          <div>
-            <div className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-muted">Atividade</div>
-            <div className="space-y-1">
-              {t.atividade.map((a) => (
-                <div key={a.id} className="text-[11px] text-muted">
-                  {new Date(a.createdAt).toLocaleString('pt-BR')} · {a.actorName ?? a.actorType} · {a.action}
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
+        <AtividadeDaTarefa taskId={t.id} token={token} userId={usuarioId} />
 
         {/* identidade (ids) */}
         <div className="rounded-lg border border-border/60 px-2.5 py-2 text-[11px] text-muted">
@@ -1913,24 +2102,25 @@ function Campo({ rotulo, children }: { rotulo: string; children: React.ReactNode
 
 // ---------- nova lista (na árvore) ----------
 
-function NovaLista({ folders, token, onDone, onErro, pastaInicial }: {
-  folders: TrabEstrutura['folders']; token: string | null; onDone: () => void; onErro: (m: string) => void;
+function NovaLista({ folders, token, aberto, onAbrir, onFechar, onDone, onErro, pastaInicial }: {
+  folders: TrabEstrutura['folders']; token: string | null; aberto: boolean; onAbrir: () => void; onFechar: () => void; onDone: () => void; onErro: (m: string) => void;
   /** A pasta escolhida no topo; ausente = a primeira pasta. */
   pastaInicial?: string;
 }) {
-  const [aberto, setAberto] = useState(false);
+  const nomeInput = useRef<HTMLInputElement>(null);
+  useEffect(() => { if (aberto) nomeInput.current?.focus(); }, [aberto]);
   const [nome, setNome] = useState('');
   const [pasta, setPasta] = useState(pastaInicial ?? folders[0]?.id ?? '');
   if (!aberto) {
     return (
-      <button onClick={() => setAberto(true)} className="flex items-center gap-1 px-2 text-[12px] text-muted hover:text-brand">
+      <button onClick={() => onAbrir()} className="flex items-center gap-1 px-2 text-[12px] text-muted hover:text-brand">
         <Plus size={12} /> nova lista
       </button>
     );
   }
   return (
     <div className="space-y-1.5 rounded-lg border border-border p-2">
-      <input value={nome} onChange={(e) => setNome(e.target.value)} placeholder="Nome da lista" className="w-full rounded border border-border bg-surface-2 px-2 py-1 text-xs outline-none" />
+      <input ref={nomeInput} aria-label="Nome da nova lista" value={nome} onChange={(e) => setNome(e.target.value)} placeholder="Nome da lista" className="w-full rounded border border-border bg-surface-2 px-2 py-1 text-xs outline-none" />
       <select value={pasta} onChange={(e) => setPasta(e.target.value)} className="w-full rounded border border-border bg-surface-2 px-2 py-1 text-xs outline-none">
         {folders.map((f) => <option key={f.id} value={f.id}>{f.name}</option>)}
         <option value="">Sem pasta</option>
@@ -1940,14 +2130,14 @@ function NovaLista({ folders, token, onDone, onErro, pastaInicial }: {
           onClick={() =>
             nome.trim() &&
             apiPost('/trabalho/listas', { folderId: pasta || null, name: nome.trim() }, token)
-              .then(() => { setNome(''); setAberto(false); onDone(); })
+              .then(() => { setNome(''); onFechar(); onDone(); })
               .catch((e) => onErro(e.message))
           }
           className="rounded bg-brand/15 px-2 py-1 text-xs text-brand"
         >
           Criar
         </button>
-        <button onClick={() => setAberto(false)} className="px-2 py-1 text-xs text-muted">Cancelar</button>
+        <button onClick={() => onFechar()} className="px-2 py-1 text-xs text-muted">Cancelar</button>
       </div>
       {/*
         OU A PARTIR DE UM MODELO: etapas, limites e campos prontos. O nome
@@ -1961,7 +2151,7 @@ function NovaLista({ folders, token, onDone, onErro, pastaInicial }: {
             title={m.descricao}
             onClick={() =>
               apiPost('/trabalho/listas/modelo', { modelo: m.chave, folderId: pasta || null, name: nome.trim() || undefined }, token)
-                .then(() => { setNome(''); setAberto(false); onDone(); })
+                .then(() => { setNome(''); onFechar(); onDone(); })
                 .catch((e) => onErro(e.message))
             }
             className="block w-full rounded px-1.5 py-1 text-left text-xs text-brand hover:bg-brand/10"

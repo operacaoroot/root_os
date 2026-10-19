@@ -2,6 +2,12 @@
 
 import { useEffect, useRef, useState } from 'react';
 import {
+  PAUTA_CHAVE_DA_MARCA, PAUTA_CHAVE_DOS_PILARES, BrandbookDocumentoSchema, PautaMarcaHumanoPainelSchema, PautaMarcaSalvarHumanoSchema, PautaPilaresSalvarHumanoSchema,
+  type BrandbookDocumento,
+  type BrandbookPainel,
+  type BrandbookPrevia,
+  type BrandbookColeta,
+  type BrandbookReferenciaRoot,
   PAUTA_SECOES_DA_MARCA,
   PAUTA_TETO_DE_PILARES,
   PAUTA_TETO_DO_PERFIL_DA_MARCA,
@@ -11,18 +17,15 @@ import {
   type PautaMarcaAplicarInput,
 } from '@mktos/shared';
 import { useAuth } from '@/lib/auth';
-import { apiGet, apiPost, apiPut } from '@/lib/api';
+import { apiGet, apiPost, apiPut, ErroDaApi } from '@/lib/api';
+import { BookOpen, Plus, Pencil } from 'lucide-react';
+import { LivroDaMarca } from './LivroDaMarca';
+import { CriadorDoBrandbook } from './CriadorDoBrandbook';
+import { aplicarColeta, copiarBrandbook, novoBrandbook } from './brandbook-formulario';
+import { useEdicaoHumana, ConferenciaEdicaoHumana } from '../../pauta/InterruptorDaAutomacao';
 
-/*
- * MK1 na tela. A marca e os pilares são o que a casa é e sobre o que fala; a
- * voz (aba Voz da Pauta) é como ela fala. Esta página mostra, no fim, o BLOCO
- * que os prompts da pauta recebem agora — é a prova visível de que existe um
- * ponto único e de que o que está escrito aqui chegou lá.
- *
- * Fica sob `/contexto` porque marca é contexto da empresa, e não uma tela do
- * bloco de marketing: quem escreve precisa dela à mão. A aba de verdade dentro
- * do Contexto entra na MK7, com a reorganização do menu.
- */
+/* Perfil e pilares existentes permanecem separados. O livro aprovado tem
+ * preferência na Pauta; o criador salva rascunho e exige uma prévia revisada. */
 
 const MODELO = PAUTA_SECOES_DA_MARCA.map((s) => `## ${s}\n`).join('\n');
 
@@ -37,52 +40,269 @@ const areaCls =
   'w-full rounded-lg border border-border bg-surface-2 px-3 py-2 font-os-mono text-sm outline-none focus:border-brand-dim disabled:opacity-50';
 
 export default function MarcaPage() {
-  const { token, ready, can } = useAuth();
-  const editavel = can('pauta.editar');
-  const podeLerFonte = can('pauta.ver') && can('obsidian.ver');
-  const podeAplicar = editavel && can('obsidian.ver');
-  const identidade = `${token ?? ''}:${podeLerFonte}:${podeAplicar}`;
+  const { token, ready, can, user } = useAuth();
+  const podeEditarPauta = can('pauta.editar');
+  const podeLerLivro = can('pauta.ver');
+  const podeLerFonte = podeLerLivro && can('obsidian.ver');
+  const podeGravarLivro = podeEditarPauta && can('obsidian.ver');
+  const identidade = `${token ?? ''}:${user?.id ?? ''}:${podeLerLivro}:${podeLerFonte}:${podeGravarLivro}`;
   const sessao = useRef(identidade);
   sessao.current = identidade;
   const [identidadeDoEstado, setIdentidadeDoEstado] = useState(identidade);
   const revisaoPrevia = useRef<Record<PautaMarcaDestino, number>>({ perfil: 0, pilares: 0 });
   const revisaoPainel = useRef(0);
   const escritaEmCurso = useRef<symbol | null>(null);
-  const [painel, setPainel] = useState<PautaMarcaPainel | null>(null);
-  const [perfil, setPerfil] = useState('');
-  const [pilares, setPilares] = useState('');
+  const perfilEditor = useEdicaoHumana({ token, path: '/pauta/marca', schema: PautaMarcaHumanoPainelSchema,
+    destino: p => p.destinos.perfil, texto: p => p.destinos.perfil.estado === 'existente' ? p.destinos.perfil.conteudo.corpo : '', conferir: p => p.destinos.perfil.chave === PAUTA_CHAVE_DA_MARCA && p.destinos.pilares.chave === PAUTA_CHAVE_DOS_PILARES });
+  const pilaresEditor = useEdicaoHumana({ token, path: '/pauta/marca', schema: PautaMarcaHumanoPainelSchema,
+    destino: p => p.destinos.pilares, texto: p => p.destinos.pilares.estado === 'existente' ? p.destinos.pilares.conteudo.corpo : '', conferir: p => p.destinos.perfil.chave === PAUTA_CHAVE_DA_MARCA && p.destinos.pilares.chave === PAUTA_CHAVE_DOS_PILARES });
+  const legadoVisivel = perfilEditor.visivel && pilaresEditor.visivel && perfilEditor.atual?.escopo.orgId === pilaresEditor.atual?.escopo.orgId && perfilEditor.atual?.escopo.actorId === pilaresEditor.atual?.escopo.actorId;
+  const painel = legadoVisivel ? perfilEditor.atual?.painel ?? null : null;
   const [erro, setErro] = useState<string | null>(null);
   const [salvando, setSalvando] = useState<'perfil' | 'pilares' | null>(null);
   const [previas, setPrevias] = useState<Record<PautaMarcaDestino, PautaMarcaPrevia | null>>({ perfil: null, pilares: null });
   const [textos, setTextos] = useState<Record<PautaMarcaDestino, string>>({ perfil: '', pilares: '' });
   const [aplicando, setAplicando] = useState<PautaMarcaDestino | null>(null);
+  const [livro, setLivro] = useState<BrandbookPainel | null>(null);
+  const [referencia, setReferencia] = useState<BrandbookReferenciaRoot | null>(null);
+  const [livroCarregado, setLivroCarregado] = useState(false);
+  const [erroLivro, setErroLivro] = useState<string | null>(null);
+  const [criadorAberto, setCriadorAberto] = useState(false);
+  const [criadorId, setCriadorId] = useState(0);
+  const [documentoLocal, setDocumentoLocal] = useState<BrandbookDocumento | null>(null);
+  const [versaoBase, setVersaoBase] = useState<number | null>(null);
+  const [previaLivro, setPreviaLivro] = useState<BrandbookPrevia | null>(null);
+  const [aprovado, setAprovado] = useState(false);
+  const [conflitoLivro, setConflitoLivro] = useState(false);
+  const [operacaoLivro, setOperacaoLivro] = useState<string | null>(null);
+  const [avisosDaColeta, setAvisosDaColeta] = useState<string[]>([]);
+  const [coletaPendente, setColetaPendente] = useState<BrandbookColeta | null>(null);
+  const [visaoDoLivro, setVisaoDoLivro] = useState<'ativo' | 'rascunho'>('ativo');
+  const [confirmaDesativar, setConfirmaDesativar] = useState(false);
+  const leituraDoLivro = useRef(0);
+  const revisaoLocal = useRef(0);
+  const localAtual = useRef(documentoLocal);
+  localAtual.current = documentoLocal;
+  const livroArquivado = livro?.estado === 'arquivado';
+  const livroAtivo = livro && !livroArquivado ? livro.ativo : null;
+  const perfil = legadoVisivel ? livroAtivo ? painel?.perfil ?? '' : perfilEditor.texto : '';
+  const pilares = legadoVisivel ? livroAtivo ? painel?.pilaresTexto ?? '' : pilaresEditor.texto : '';
+  const editavel = podeEditarPauta && legadoVisivel && livroCarregado && !livroAtivo && !livroArquivado && perfilEditor.atual?.origemEfetiva.tipo === 'legado';
+  const podeAplicar = editavel && can('obsidian.ver');
+  const ocupado = operacaoLivro !== null || salvando !== null || aplicando !== null || perfilEditor.ocupado || pilaresEditor.ocupado;
+  const alterado = documentoLocal !== null && (!livro?.rascunho ||
+    JSON.stringify(documentoLocal) !== JSON.stringify(livro.rascunho));
+  const documentoDoLivro = livroArquivado ? livro?.rascunho ?? livro?.ativo?.documento ?? null :
+    visaoDoLivro === 'rascunho' && livro?.rascunho ? livro.rascunho : livroAtivo?.documento ?? livro?.rascunho ?? referencia?.documento ?? null;
+  const mostrandoReferencia = !!documentoDoLivro && !livroArquivado && !livroAtivo && !livro?.rascunho;
+
 
   useEffect(() => {
-    let cancelada = false;
-    const leitura = ++revisaoPainel.current;
+    if (!alterado) return;
+    const avisar = (evento: BeforeUnloadEvent) => { evento.preventDefault(); evento.returnValue = ''; };
+    window.addEventListener('beforeunload', avisar);
+    return () => window.removeEventListener('beforeunload', avisar);
+  }, [alterado]);
+
+
+  useEffect(() => {
     escritaEmCurso.current = null;
-    setPainel(null);
-    setPerfil('');
-    setPilares('');
-    setPrevias({ perfil: null, pilares: null });
-    setTextos({ perfil: '', pilares: '' });
-    setErro(null);
-    setSalvando(null);
-    setAplicando(null);
-    revisaoPrevia.current.perfil++;
-    revisaoPrevia.current.pilares++;
+    setPrevias({ perfil: null, pilares: null }); setTextos({ perfil: '', pilares: '' });
+    setErro(null); setSalvando(null); setAplicando(null);
+    revisaoPrevia.current.perfil++; revisaoPrevia.current.pilares++;
     setIdentidadeDoEstado(identidade);
-    if (!ready || !token) return;
-    apiGet<PautaMarcaPainel>('/pauta/marca', token)
-      .then((p) => {
-        if (cancelada || sessao.current !== identidade || revisaoPainel.current !== leitura) return;
-        setPainel(p);
-        setPerfil(p.perfil ?? '');
-        setPilares(p.pilaresTexto);
-      })
-      .catch((e: Error) => { if (!cancelada && sessao.current === identidade) setErro(e.message); });
+  }, [identidade]);
+  useEffect(() => {
+    if (!perfilEditor.privado && !pilaresEditor.privado) return;
+    revisaoPrevia.current.perfil++; revisaoPrevia.current.pilares++;
+    setPrevias({ perfil: null, pilares: null }); setTextos({ perfil: '', pilares: '' }); setErro(null);
+  }, [perfilEditor.privado, pilaresEditor.privado]);
+
+  useEffect(() => {
+    const leitura = ++leituraDoLivro.current;
+    let cancelada = false;
+    revisaoLocal.current++;
+    setLivro(null); setReferencia(null); setLivroCarregado(false); setErroLivro(null);
+    setCriadorAberto(false); setDocumentoLocal(null); setVersaoBase(null);
+    setPreviaLivro(null); setAprovado(false); setConflitoLivro(false); setOperacaoLivro(null);
+    setAvisosDaColeta([]); setColetaPendente(null); setVisaoDoLivro('ativo'); setConfirmaDesativar(false);
+    if (!ready || !token || !podeLerLivro) return;
+    const valida = () => !cancelada && sessao.current === identidade && leituraDoLivro.current === leitura;
+    (async () => {
+      try {
+        const p = await apiGet<BrandbookPainel>('/pauta/marca/brandbook', token);
+        if (!valida()) return;
+        setLivro(p); setLivroCarregado(true); setVersaoBase(p.versao);
+        if (!p.rascunho && !p.ativo) {
+          const r = await apiGet<BrandbookReferenciaRoot>('/pauta/marca/brandbook/referencia-root', token);
+          if (valida()) setReferencia(r);
+        }
+      } catch (e) {
+        if (valida()) setErroLivro((e as Error).message);
+      }
+    })();
     return () => { cancelada = true; };
-  }, [ready, token, podeLerFonte, podeAplicar, identidade]);
+  }, [ready, token, identidade, podeLerLivro]);
+
+  function iniciarCriador(base?: BrandbookDocumento) {
+    if (!podeGravarLivro || !livroCarregado || livroArquivado || ocupado || escritaEmCurso.current) return;
+    if (base !== undefined && localAtual.current && alterado && !window.confirm('Substituir o rascunho local por outra base? Salve antes se quiser conservar estas alterações.')) return;
+    revisaoLocal.current++;
+    const preservando = base === undefined && localAtual.current !== null;
+    setDocumentoLocal(copiarBrandbook(base ?? localAtual.current ?? livro?.rascunho ?? livroAtivo?.documento ?? novoBrandbook()));
+    setVersaoBase(livro?.versao ?? null); setPreviaLivro(null); setAprovado(false);
+    setErroLivro(null); if (!preservando) setConflitoLivro(false); setAvisosDaColeta([]);
+    setColetaPendente(null); setCriadorId((n) => n + 1); setCriadorAberto(true);
+  }
+
+  function alterarLivro(d: BrandbookDocumento) {
+    if (!podeGravarLivro || livroArquivado || escritaEmCurso.current) return;
+    revisaoLocal.current++;
+    setDocumentoLocal(d); setPreviaLivro(null); setAprovado(false); setErroLivro(null);
+  }
+
+  function erroDoLivro(e: unknown) {
+    setPreviaLivro(null); setAprovado(false);
+    if (e instanceof ErroDaApi && e.status === 409) {
+      setConflitoLivro(true);
+      setErroLivro('O livro mudou enquanto você editava. Seu texto local foi preservado.');
+    } else setErroLivro((e as Error).message);
+  }
+
+  async function atualizarPautaAposLivro() {
+    // Atualiza somente a observação. O texto e a base dos editores humanos permanecem fixos.
+    await Promise.all([perfilEditor.conferir(), pilaresEditor.conferir()]);
+  }
+
+  async function salvarLivro() {
+    const d = localAtual.current;
+    if (!d || !token || !podeGravarLivro || livroArquivado || conflitoLivro || escritaEmCurso.current) return;
+    const validado = BrandbookDocumentoSchema.safeParse(d);
+    if (!validado.success) {
+      setErroLivro(validado.error.issues.map((i) => `${i.path.join('.') || 'Livro'}: ${i.message}`).join(' · '));
+      return;
+    }
+    const escrita = Symbol('salvar-livro'); escritaEmCurso.current = escrita;
+    const revisao = revisaoLocal.current;
+    setOperacaoLivro('Salvando rascunho…'); setErroLivro(null); setPreviaLivro(null); setAprovado(false);
+    ++leituraDoLivro.current; ++revisaoPainel.current;
+    try {
+      const p = await apiPut<BrandbookPainel>('/pauta/marca/brandbook/rascunho', { versaoEsperada: versaoBase, documento: validado.data }, token);
+      if (sessao.current !== identidade || escritaEmCurso.current !== escrita) return;
+      setLivro(p); setVersaoBase(p.versao); setReferencia(null); setVisaoDoLivro('rascunho');
+      if (revisaoLocal.current === revisao) setDocumentoLocal(copiarBrandbook(p.rascunho ?? validado.data));
+    } catch (e) {
+      if (sessao.current === identidade) erroDoLivro(e);
+    } finally {
+      if (sessao.current === identidade && escritaEmCurso.current === escrita) { escritaEmCurso.current = null; setOperacaoLivro(null); }
+    }
+  }
+
+  async function conferirLivro() {
+    if (!token || !podeGravarLivro || livroArquivado || !livro?.rascunho || !versaoBase || alterado || conflitoLivro ||
+      versaoBase !== livro.versao || escritaEmCurso.current) return;
+    const escrita = Symbol('previa-livro'); escritaEmCurso.current = escrita;
+    const revisao = revisaoLocal.current;
+    setOperacaoLivro('Conferindo prévia…'); setErroLivro(null); setPreviaLivro(null); setAprovado(false);
+    try {
+      const p = await apiPost<BrandbookPrevia>('/pauta/marca/brandbook/previa', { versaoEsperada: versaoBase }, token);
+      if (sessao.current !== identidade || escritaEmCurso.current !== escrita || revisaoLocal.current !== revisao) return;
+      const documento = BrandbookDocumentoSchema.parse(p.documento);
+      if (p.versao !== versaoBase || !/^[a-f0-9]{64}$/.test(p.draftHash) ||
+        JSON.stringify(documento) !== JSON.stringify(BrandbookDocumentoSchema.parse(livro.rascunho))) {
+        setConflitoLivro(true);
+        throw new Error('A prévia não corresponde ao rascunho salvo. Atualize a versão antes de continuar.');
+      }
+      setPreviaLivro({ ...p, documento });
+    } catch (e) {
+      if (sessao.current === identidade) erroDoLivro(e);
+    } finally {
+      if (sessao.current === identidade && escritaEmCurso.current === escrita) { escritaEmCurso.current = null; setOperacaoLivro(null); }
+    }
+  }
+
+  async function ativarLivro() {
+    const p = previaLivro;
+    if (!token || !podeGravarLivro || livroArquivado || !aprovado || !p || p.pendencias.length || alterado || conflitoLivro ||
+      p.versao !== versaoBase || p.versao !== livro?.versao || escritaEmCurso.current) return;
+    const escrita = Symbol('ativar-livro'); escritaEmCurso.current = escrita;
+    setOperacaoLivro('Ativando versão aprovada…'); setErroLivro(null);
+    ++leituraDoLivro.current; ++revisaoPainel.current;
+    try {
+      const novo = await apiPost<BrandbookPainel>('/pauta/marca/brandbook/ativar', { versaoEsperada: p.versao, draftHash: p.draftHash, aprovacao: true }, token);
+      if (sessao.current !== identidade || escritaEmCurso.current !== escrita) return;
+      setLivro(novo); setVersaoBase(novo.versao); setVisaoDoLivro('ativo'); setCriadorAberto(false);
+      setPreviaLivro(null); setAprovado(false); setConfirmaDesativar(false);
+      await atualizarPautaAposLivro();
+    } catch (e) {
+      if (sessao.current === identidade) erroDoLivro(e);
+    } finally {
+      if (sessao.current === identidade && escritaEmCurso.current === escrita) { escritaEmCurso.current = null; setOperacaoLivro(null); }
+    }
+  }
+
+  async function desativarLivro() {
+    if (!token || !podeGravarLivro || !livro || livro.versao === null || livroArquivado ||
+      !livroAtivo || !confirmaDesativar || escritaEmCurso.current) return;
+    const versaoEsperada = livro.versao;
+    const escrita = Symbol('desativar-livro'); escritaEmCurso.current = escrita;
+    setOperacaoLivro('Desativando livro…'); setErroLivro(null);
+    ++leituraDoLivro.current; ++revisaoPainel.current;
+    try {
+      const novo = await apiPost<BrandbookPainel>('/pauta/marca/brandbook/desativar', { versaoEsperada }, token);
+      if (sessao.current !== identidade || escritaEmCurso.current !== escrita) return;
+      setLivro(novo); setVersaoBase(novo.versao); setPreviaLivro(null); setAprovado(false); setConfirmaDesativar(false);
+      setVisaoDoLivro('rascunho');
+      await atualizarPautaAposLivro();
+    } catch (e) {
+      if (sessao.current === identidade) erroDoLivro(e);
+    } finally {
+      if (sessao.current === identidade && escritaEmCurso.current === escrita) { escritaEmCurso.current = null; setOperacaoLivro(null); }
+    }
+  }
+
+  async function atualizarVersaoDoLivro() {
+    if (!token || !podeLerLivro || escritaEmCurso.current) return;
+    const escrita = Symbol('atualizar-base-livro'); escritaEmCurso.current = escrita;
+    setOperacaoLivro('Atualizando versão de destino…'); setErroLivro(null);
+    ++leituraDoLivro.current;
+    try {
+      const novo = await apiGet<BrandbookPainel>('/pauta/marca/brandbook', token);
+      if (sessao.current !== identidade || escritaEmCurso.current !== escrita) return;
+      setLivro(novo); setLivroCarregado(true); setVersaoBase(novo.versao); setConflitoLivro(false); setPreviaLivro(null); setAprovado(false);
+      if (!novo.rascunho && !novo.ativo && novo.estado !== 'arquivado') {
+        const base = await apiGet<BrandbookReferenciaRoot>('/pauta/marca/brandbook/referencia-root', token);
+        if (sessao.current === identidade && escritaEmCurso.current === escrita) setReferencia(base);
+      } else setReferencia(null);
+    } catch (e) {
+      if (sessao.current === identidade) erroDoLivro(e);
+    } finally {
+      if (sessao.current === identidade && escritaEmCurso.current === escrita) { escritaEmCurso.current = null; setOperacaoLivro(null); }
+    }
+  }
+
+  async function coletarSite(url: string) {
+    if (!token || !podeEditarPauta || !podeGravarLivro || livroArquivado || !localAtual.current || escritaEmCurso.current) return;
+    const escrita = Symbol('coletar-site'); escritaEmCurso.current = escrita;
+    const revisao = revisaoLocal.current;
+    setOperacaoLivro('Coletando site…'); setErroLivro(null); setAvisosDaColeta([]); setColetaPendente(null);
+    try {
+      const coleta = await apiPost<BrandbookColeta>('/pauta/marca/brandbook/coletar-site', { url }, token);
+      if (sessao.current !== identidade || escritaEmCurso.current !== escrita || revisaoLocal.current !== revisao) return;
+      setColetaPendente(coleta); setAvisosDaColeta(coleta.avisos);
+    } catch (e) {
+      if (sessao.current === identidade) setErroLivro((e as Error).message);
+    } finally {
+      if (sessao.current === identidade && escritaEmCurso.current === escrita) { escritaEmCurso.current = null; setOperacaoLivro(null); }
+    }
+  }
+
+  function aplicarColetaPendente() {
+    if (!coletaPendente || !localAtual.current || ocupado || escritaEmCurso.current || !podeGravarLivro) return;
+    const validado = BrandbookDocumentoSchema.safeParse(aplicarColeta(localAtual.current, coletaPendente));
+    if (!validado.success) { setErroLivro(`A coleta não cabe no rascunho: ${validado.error.issues.map((i) => i.message).join(' · ')}`); return; }
+    alterarLivro(validado.data); setColetaPendente(null);
+  }
 
   async function carregarPrevia(qual: PautaMarcaDestino) {
     if (!podeLerFonte || !token) return;
@@ -94,7 +314,10 @@ export default function MarcaPage() {
       setPrevias((v) => ({ ...v, [qual]: p }));
       setTextos((v) => ({ ...v, [qual]: p.textoProposto }));
     } catch (e) {
-      if (sessao.current === identidade && revisaoPrevia.current[qual] === sequencia) setErro((e as Error).message);
+      if (sessao.current === identidade && revisaoPrevia.current[qual] === sequencia) {
+        if (e instanceof ErroDaApi && [401, 403].includes(e.status)) { perfilEditor.invalidar(e); pilaresEditor.invalidar(e); }
+        else setErro((e as Error).message);
+      }
     }
   }
 
@@ -113,11 +336,9 @@ export default function MarcaPage() {
       destinoHash: p.destinoHash, secoesUsadas: p.secoesUsadas, textoFinal: textos[qual],
     };
     try {
-      const novo = await apiPost<PautaMarcaPainel>(`/pauta/marca/projecao/${qual}`, corpo, token);
-      if (sessao.current !== identidade) return;
-      setPainel(novo);
-      if (qual === 'perfil') setPerfil(novo.perfil ?? '');
-      else setPilares(novo.pilaresTexto);
+      const editor = qual === 'perfil' ? perfilEditor : pilaresEditor;
+      const novo = await editor.executarExterno(() => apiPost<PautaMarcaPainel>(`/pauta/marca/projecao/${qual}`, corpo, token));
+      if (sessao.current !== identidade || !novo) return;
       await carregarPrevia(qual);
     } catch (e) {
       if (sessao.current === identidade) setErro(`${(e as Error).message} Atualize a prévia antes de tentar novamente.`);
@@ -129,32 +350,20 @@ export default function MarcaPage() {
     }
   }
 
-  async function salvar(qual: 'perfil' | 'pilares') {
+  async function salvar(qual: 'perfil' | 'pilares', reativar = false) {
     if (!editavel || !painel || !token || escritaEmCurso.current) return;
-    const escrita = Symbol('salvar');
-    escritaEmCurso.current = escrita;
-    ++revisaoPainel.current;
-    setSalvando(qual);
-    setErro(null);
+    const escrita = Symbol('salvar'); escritaEmCurso.current = escrita;
+    setSalvando(qual); setErro(null);
+    const editor = qual === 'perfil' ? perfilEditor : pilaresEditor;
     try {
-      const corpo =
-        qual === 'perfil'
-          ? { perfil, versao: painel?.perfilVersao ?? undefined }
-          : { pilares, versao: painel?.pilaresVersao ?? undefined };
-      const caminho = qual === 'perfil' ? '/pauta/marca' : '/pauta/marca/pilares';
-      const p = await apiPut<PautaMarcaPainel>(caminho, corpo, token);
-      if (sessao.current !== identidade) return;
-      setPainel(p);
-      if (qual === 'perfil') setPerfil(p.perfil ?? '');
-      else setPilares(p.pilaresTexto);
+      const r = await editor.enviar({ path: qual === 'perfil' ? '/pauta/marca' : '/pauta/marca/pilares',
+        schema: qual === 'perfil' ? PautaMarcaSalvarHumanoSchema : PautaPilaresSalvarHumanoSchema,
+        campos: qual === 'perfil' ? { perfil } : { pilares },
+        acao: qual === 'perfil' ? 'salvar_perfil_marca' : 'salvar_pilares', reativar });
+      if (sessao.current !== identidade || !r) return;
       if (podeLerFonte) await carregarPrevia(qual);
-    } catch (e) {
-      if (sessao.current === identidade) setErro((e as Error).message);
     } finally {
-      if (sessao.current === identidade && escritaEmCurso.current === escrita) {
-        escritaEmCurso.current = null;
-        setSalvando(null);
-      }
+      if (sessao.current === identidade && escritaEmCurso.current === escrita) { escritaEmCurso.current = null; setSalvando(null); }
     }
   }
 
@@ -163,14 +372,26 @@ export default function MarcaPage() {
 
   return (
     <div className="space-y-5">
-      <div>
-        <h1 className="text-xl font-semibold">Marca e pilares</h1>
-        <p className="mt-1 text-sm text-muted">
-          Quem a casa é e sobre o que ela fala. Isto entra nos pedidos que a pauta faz à IA — no
-          roteiro, nas peças da semana, na newsletter e no pacote do YouTube —, ao lado da voz de
-          quem apresenta. Em branco, os pedidos ficam exatamente como eram.
-        </p>
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <div><p className="font-os-mono text-[10px] uppercase tracking-[0.15em] text-muted">Contexto / Marca</p><h1 className="mt-1 text-xl font-semibold">Marca</h1><p className="mt-1 text-sm text-muted">Consulte o livro da marca ou crie uma versão com identidade, público, voz e visual. Salve o rascunho e aprove quando estiver pronto.</p></div>
+        {podeGravarLivro && livroCarregado && !livroArquivado && <div className="flex flex-wrap gap-2">
+          <button type="button" disabled={ocupado || criadorAberto} onClick={() => iniciarCriador(novoBrandbook())} className="inline-flex min-h-11 items-center gap-2 border border-brand-dim px-3 text-sm text-brand hover:bg-brand/10 focus-visible:outline-2 focus-visible:outline-brand disabled:opacity-50"><Plus size={15} /> Criar brandbook</button>
+          {(documentoLocal || livro?.rascunho || livroAtivo) && <button type="button" disabled={ocupado || criadorAberto} onClick={() => iniciarCriador()} className="inline-flex min-h-11 items-center gap-2 border border-border px-3 text-sm hover:bg-surface-2 focus-visible:outline-2 focus-visible:outline-brand disabled:opacity-50"><Pencil size={15} /> {documentoLocal && alterado ? 'Retomar rascunho local' : 'Editar rascunho'}</button>}
+        </div>}
       </div>
+      {!podeLerLivro ? <p className="text-sm text-muted">Sua conta precisa de acesso à Pauta para consultar o livro da marca.</p> : <>
+        {erroLivro && !criadorAberto && <div role="alert" className="border border-bad/40 bg-bad/10 p-3 text-sm"><p className="text-bad">{erroLivro}</p><button type="button" disabled={ocupado} onClick={() => void atualizarVersaoDoLivro()} className="mt-2 min-h-11 border border-border px-3">Tentar carregar o livro novamente</button></div>}
+        {!livroCarregado && !erroLivro && <p role="status" className="text-sm text-muted">Carregando livro da marca…</p>}
+        {mostrandoReferencia && <div className="flex items-start gap-3 border border-border bg-surface p-4 text-sm"><BookOpen size={18} className="mt-0.5 shrink-0 text-brand" /><div><p className="font-medium">Referência ROOT</p><p className="mt-1 text-muted">Guia canônico, somente leitura. Esta referência ainda não é o livro ativo desta empresa.</p></div></div>}
+        {livroArquivado && <p role="status" className="border border-warn/40 bg-warn/10 p-4 text-sm">Livro arquivado. Consulta disponível; criação, edição e ativação estão bloqueadas.</p>}
+        {livroAtivo && <div className="space-y-3 border border-good/30 bg-good/5 p-4 text-sm"><p className="font-medium text-good">Livro aprovado em uso na Pauta</p><p className="text-muted">Aprovado por {livroAtivo.aprovadoPor} em {new Date(livroAtivo.aprovadoEm).toLocaleString('pt-BR')}. Perfil e pilares abaixo usam esta fonte enquanto o livro estiver ativo.</p>{podeGravarLivro && <details><summary className="cursor-pointer text-xs text-muted">Desativar uso na Pauta</summary><label className="mt-3 flex items-start gap-2 text-sm"><input type="checkbox" checked={confirmaDesativar} disabled={ocupado} onChange={(e) => setConfirmaDesativar(e.target.checked)} /><span>Quero desativar o livro e voltar aos campos separados de perfil e pilares.</span></label><button type="button" disabled={ocupado || !confirmaDesativar} onClick={() => void desativarLivro()} className="mt-3 min-h-11 border border-border px-3 text-sm disabled:opacity-50">Desativar livro</button></details>}</div>}
+        {livroAtivo && livro?.rascunho && <div className="flex flex-wrap gap-2" role="group" aria-label="Versão do livro exibida">{(['ativo', 'rascunho'] as const).map((v) => <button key={v} type="button" aria-pressed={visaoDoLivro === v} onClick={() => setVisaoDoLivro(v)} className={`min-h-11 border px-3 text-sm ${visaoDoLivro === v ? 'border-brand-dim text-brand' : 'border-border text-muted'}`}>{v === 'ativo' ? 'Livro ativo' : 'Rascunho salvo'}</button>)}</div>}
+        {criadorAberto && documentoLocal && podeGravarLivro && !livroArquivado && <CriadorDoBrandbook key={`${identidade}:${criadorId}`} documento={documentoLocal} ocupado={ocupado} operacao={operacaoLivro} alterado={alterado} versao={versaoBase} previa={previaLivro} aprovado={aprovado} conflito={conflitoLivro} erro={erroLivro} avisosDaColeta={avisosDaColeta} coletaPendente={coletaPendente} onAplicarColeta={aplicarColetaPendente} onDescartarColeta={() => setColetaPendente(null)} onAlterar={alterarLivro} onColetar={coletarSite} onSalvar={salvarLivro} onPrevia={conferirLivro} onAtivar={ativarLivro} onAprovar={setAprovado} onAtualizarVersao={atualizarVersaoDoLivro} onFechar={() => { if (!alterado || window.confirm('Fechar o criador? Seu texto local ficará nesta página para retomar. Recarregar ou sair da página pode perdê-lo.')) setCriadorAberto(false); }} />}
+        {documentoDoLivro && <LivroDaMarca key={`${identidade}:${mostrandoReferencia ? 'referencia' : visaoDoLivro}`} documento={documentoDoLivro} fonteCompleta={mostrandoReferencia ? referencia!.fonte.texto : undefined} origem={mostrandoReferencia ? referencia!.fonte.nome : livroArquivado ? 'Livro arquivado — somente consulta' : visaoDoLivro === 'rascunho' || !livroAtivo ? 'Rascunho salvo da empresa — ainda não aprovado' : 'Livro ativo da empresa'} versao={mostrandoReferencia ? referencia!.fonte.versao : visaoDoLivro === 'ativo' && livroAtivo ? null : livro?.versao} hash={mostrandoReferencia ? referencia!.fonte.hash : visaoDoLivro === 'ativo' && livroAtivo ? livroAtivo.draftHash : livro?.hash} onUsarBase={mostrandoReferencia && podeGravarLivro && !ocupado && !criadorAberto ? () => iniciarCriador(referencia!.documento) : undefined} />}
+        {livroCarregado && !livroArquivado && !documentoDoLivro && !erroLivro && <p className="text-sm text-muted">Nenhum livro próprio salvo. Você pode criar um brandbook do zero.</p>}
+      </>}
+      <details className="border-t border-border pt-5"><summary className="cursor-pointer text-sm font-medium">Configurações anteriores de perfil e pilares</summary>
+      <div className="mt-4"><h2 className="text-lg font-semibold">Perfil e pilares da Pauta</h2><p className="mt-1 text-sm text-muted">{livroArquivado ? 'Livro arquivado. A edição do perfil e dos pilares está bloqueada.' : livroAtivo ? 'Leitura da fonte ativa. Desative o livro para editar os campos separados.' : 'Configuração existente dos pedidos de conteúdo. O criador do brandbook fica acima.'}</p></div>
 
       {erro && (
         <div role="alert" className="rounded-lg border border-bad/40 bg-bad/10 px-3 py-2 text-sm text-bad">{erro}</div>
@@ -190,7 +411,7 @@ export default function MarcaPage() {
           Confira os trechos do guia e edite o texto curto antes de aplicar. Perfil e pilares são
           versões separadas; cada botão grava apenas o destino indicado.
         </p>
-        {!podeLerFonte ? (
+        {!podeLerFonte || !legadoVisivel ? (
           <p className="mt-3 text-sm text-muted">Para consultar a fonte, sua conta precisa de acesso à Pauta e à Memória.</p>
         ) : (
           <div className="mt-4 grid gap-4 xl:grid-cols-2">
@@ -248,12 +469,12 @@ export default function MarcaPage() {
                               revisaoPrevia.current[qual]++;
                               setTextos((v) => ({ ...v, [qual]: e.target.value }));
                             }}
-                            disabled={!podeAplicar || aplicando !== null || salvando !== null} rows={qual === 'perfil' ? 14 : 8}
+                            disabled={!podeAplicar || ocupado} rows={qual === 'perfil' ? 14 : 8}
                             className={areaCls} />
                           <p className="font-os-mono text-xs text-muted">{textos[qual].length} / {PAUTA_TETO_DO_PERFIL_DA_MARCA} caracteres</p>
                           {podeAplicar && (
                             <button type="button" onClick={() => aplicar(qual)}
-                              disabled={!painel || !aplicavel || aplicando !== null || salvando !== null}
+                              disabled={!painel || !aplicavel || ocupado}
                               className="rounded-lg bg-brand px-3 py-1.5 text-sm font-medium text-bg hover:bg-brand/90 focus-visible:outline-2 focus-visible:outline-brand disabled:cursor-not-allowed disabled:opacity-50">
                               {aplicando === qual ? 'Aplicando…' : `Aplicar somente ${titulo.toLowerCase()}`}
                             </button>
@@ -278,28 +499,30 @@ export default function MarcaPage() {
             {perfil.length} / {PAUTA_TETO_DO_PERFIL_DA_MARCA}
           </span>
         </div>
-        <textarea
+        <ConferenciaEdicaoHumana editor={legadoVisivel ? perfilEditor : { ...perfilEditor, destinoBase: null, destinoAtual: null, visivel: false, mensagem: perfilEditor.privado ? perfilEditor.mensagem : null }} />
+        {legadoVisivel && <textarea
           aria-label="Perfil da marca"
           value={perfil}
-          onChange={(e) => setPerfil(e.target.value)}
-          disabled={!editavel || !painel || salvando !== null || aplicando !== null}
+          onChange={(e) => perfilEditor.alterar(e.target.value)}
+          disabled={!editavel || !painel || ocupado}
           rows={16}
           placeholder={MODELO}
           className={areaCls}
-        />
+        />}
         <div className="mt-3 flex flex-wrap items-center gap-2">
           {editavel && (
             <button
               onClick={() => salvar('perfil')}
-              disabled={!painel || salvando !== null || aplicando !== null || !perfil.trim()}
+              disabled={!painel || ocupado || !perfil.trim() || !perfilEditor.editavel}
               className="rounded-lg bg-brand px-3 py-1.5 text-sm font-medium text-bg hover:bg-brand/90 disabled:cursor-not-allowed disabled:opacity-50"
             >
-              {salvando === 'perfil' ? 'Salvando…' : 'Salvar o perfil'}
+              {salvando === 'perfil' ? 'Salvando…' : perfilEditor.destinoBase?.estado === 'existente' && perfilEditor.destinoBase.arquivada ? 'Salvar mantendo arquivada' : 'Salvar o perfil'}
             </button>
           )}
+          {editavel && perfilEditor.destinoBase?.estado === 'existente' && perfilEditor.destinoBase.arquivada && <button type="button" onClick={() => void salvar('perfil', true)} disabled={ocupado || !perfilEditor.editavel || !perfil.trim()} className="rounded border border-brand px-3 py-1.5 text-sm text-brand disabled:opacity-50">Salvar e reativar</button>}
           {editavel && !perfil.trim() && (
             <button
-              onClick={() => setPerfil(MODELO)}
+              onClick={() => perfilEditor.alterar(MODELO)}
               className="rounded-lg border border-border bg-surface-2 px-3 py-1.5 text-sm hover:border-brand-dim"
             >
               Começar pelas seções
@@ -326,15 +549,16 @@ export default function MarcaPage() {
             {painel?.pilares.length ?? 0} / {PAUTA_TETO_DE_PILARES}
           </span>
         </div>
-        <textarea
+        <ConferenciaEdicaoHumana editor={legadoVisivel ? pilaresEditor : { ...pilaresEditor, destinoBase: null, destinoAtual: null, visivel: false, mensagem: pilaresEditor.privado ? pilaresEditor.mensagem : null }} />
+        {legadoVisivel && <textarea
           aria-label="Pilares de conteúdo"
           value={pilares}
-          onChange={(e) => setPilares(e.target.value)}
-          disabled={!editavel || !painel || salvando !== null || aplicando !== null}
+          onChange={(e) => pilaresEditor.alterar(e.target.value)}
+          disabled={!editavel || !painel || ocupado}
           rows={8}
           placeholder={EXEMPLO_DE_PILARES}
           className={areaCls}
-        />
+        />}
         {painel?.pilares.length ? (
           <div className="mt-3 flex flex-wrap gap-2">
             {painel.pilares.map((p) => (
@@ -359,11 +583,12 @@ export default function MarcaPage() {
           <div className="mt-3">
             <button
               onClick={() => salvar('pilares')}
-              disabled={!painel || salvando !== null || aplicando !== null}
+              disabled={!painel || ocupado || !pilaresEditor.editavel}
               className="rounded-lg bg-brand px-3 py-1.5 text-sm font-medium text-bg hover:bg-brand/90 disabled:cursor-not-allowed disabled:opacity-50"
             >
-              {salvando === 'pilares' ? 'Salvando…' : 'Salvar os pilares'}
+              {salvando === 'pilares' ? 'Salvando…' : pilaresEditor.destinoBase?.estado === 'existente' && pilaresEditor.destinoBase.arquivada ? 'Salvar mantendo arquivada' : 'Salvar os pilares'}
             </button>
+            {pilaresEditor.destinoBase?.estado === 'existente' && pilaresEditor.destinoBase.arquivada && <button type="button" onClick={() => void salvar('pilares', true)} disabled={ocupado || !pilaresEditor.editavel} className="ml-2 rounded border border-brand px-3 py-1.5 text-sm text-brand disabled:opacity-50">Salvar e reativar</button>}
           </div>
         )}
       </section>
@@ -383,6 +608,7 @@ export default function MarcaPage() {
           </p>
         )}
       </section>
+      </details>
     </div>
   );
 }

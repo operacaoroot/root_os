@@ -8,6 +8,7 @@ import {
   RegisterPluggyItemSchema,
   PluggyConnectTokenSchema,
   CreateChartAccountSchema,
+  UpdateChartAccountSchema,
   CreatePartnerSchema,
   CreateDimensionSchema,
   CreateContractSchema,
@@ -21,10 +22,11 @@ import { AprService } from './apr.service';
 import { ConciliacaoService } from './conciliacao.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { PermissionsGuard } from '../auth/permissions.guard';
+import { AcessoAtualGuard } from '../memory/acesso-atual.guard';
 import { RequirePermissions } from '../auth/permissions.decorator';
 import { CurrentUser, JwtUser } from '../auth/current-user.decorator';
 
-@UseGuards(JwtAuthGuard, PermissionsGuard)
+@UseGuards(JwtAuthGuard, PermissionsGuard, AcessoAtualGuard)
 @Controller('finance')
 export class FinanceController {
   constructor(
@@ -132,7 +134,7 @@ export class FinanceController {
   @Get('payables')
   @RequirePermissions('financeiro.ver')
   payables(@CurrentUser() user: JwtUser, @Query('tipo') tipo?: string) {
-    return this.apr.payables(user.orgId, tipo);
+    return this.apr.payables(user.orgId, tipo, user.sub);
   }
 
   @Post('transactions/:id/approve')
@@ -153,6 +155,13 @@ export class FinanceController {
   createChartAccount(@CurrentUser() user: JwtUser, @Body() body: unknown) {
     const input = CreateChartAccountSchema.parse(body);
     return this.finops.createChartAccount(user.orgId, input, user.sub);
+  }
+
+  @Patch('chart-accounts/:id')
+  @RequirePermissions('financeiro.editar')
+  updateChartAccount(@CurrentUser() user: JwtUser, @Param('id') id: string, @Body() body: unknown) {
+    const input = UpdateChartAccountSchema.parse(body);
+    return this.finops.updateChartAccount(user.orgId, id, input, user.sub);
   }
 
   // --- Visão geral / fluxo de caixa ---

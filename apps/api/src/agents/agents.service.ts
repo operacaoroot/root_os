@@ -6,13 +6,18 @@ import {
   NotFoundException,
   Optional,
 } from '@nestjs/common';
-import { ActorType, EstadoDeAgente, SessionStatus } from '@prisma/client';
-import { DIAS_DA_JANELA, emHorasDecimais, totalDaSemana } from '@mktos/shared';
+import { ActorType, EstadoDeAgente, Prisma, SessionStatus } from '@prisma/client';
+import { AgentSopEdicaoSchema, AgentSopSalvaSchema, DIAS_DA_JANELA, emHorasDecimais, totalDaSemana } from '@mktos/shared';
 import { z } from 'zod';
+import { randomUUID } from 'node:crypto';
+import { AgendaLocalService } from './agenda-local.service';
+import { AgentEstadoHumanoSchema, AgendaLocalReciboSchema, AgentEstadoHumanoPainelSchema } from '@mktos/shared';
+import { EVENTO_DO_CHECKOUT } from '../work/checkout-de-tarefa';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
 import { EventLogService } from '../gateway/event-log.service';
 import { contextoAtual } from '../common/contexto-execucao';
+import { exigirAcessoAtual } from '../memory/acesso-memoria';
 import { donosDaCasa } from './donos-da-casa';
 import { CheckoutDeTarefaService } from '../work/checkout-de-tarefa.service';
 import { soltarPorCausaDoEstado } from '../work/checkout-de-tarefa';
@@ -139,6 +144,7 @@ export class AgentsService {
      * na cadeia de hash, e o log grita quando isso acontece.
      */
     @Optional() private readonly eventos?: EventLogService,
+    @Optional() private readonly agenda?: AgendaLocalService,
   ) {}
 
   /* ======================================================================== *
@@ -405,6 +411,13 @@ export class AgentsService {
    * leitura no web é convertida à força pelo genérico do `apiGet`. Correção de
    * 11/09/2026.
    */
+  async detalheParaPessoa(orgId: string, slug: string, userId: string) {
+    await exigirAcessoAtual(this.prisma, orgId, userId, ['mcp.ver']);
+    const detalhe = await this.detalhe(orgId, slug);
+    await exigirAcessoAtual(this.prisma, orgId, userId, ['mcp.ver']);
+    return detalhe;
+  }
+
   async detalhe(orgId: string, slug: string) {
     const a = await this.prisma.agent.findFirst({
       where: { orgId, slug },
@@ -486,159 +499,76 @@ export class AgentsService {
    * capacidades declaradas e ao teto de autonomia, e continua rebaixado se
    * estava rebaixado — o relógio do RF-N-07 não olha para o estado.
    */
-  async definirEstado(
-    orgId: string,
-    slug: string,
-    destino: EstadoDeAgente,
-    quem: { userId: string; motivo?: string | null },
-  ) {
-    const agente = await this.prisma.agent.findFirst({
-      where: { orgId, slug },
-      select: { id: true, slug: true, nome: true, estado: true, ativo: true, estadoMotivo: true },
-    });
-    if (!agente) throw new NotFoundException(`agente "${slug}" não existe`);
-
-    const motivo = quem.motivo?.trim() ? quem.motivo.trim().slice(0, 500) : null;
-    if (exigeMotivo(destino) && !motivo) {
-      throw new BadRequestException(
-        'Encerrar um agente é definitivo: ele não volta. Escreva o motivo — é o que responde, ' +
-          'seis meses depois, por que este agente saiu de circulação.',
-      );
-    }
-
-    if (agente.estado === destino) {
-      /*
-       * REPETIR O MESMO ESTADO É 409, não no-op silencioso.
-       *
-       * Um `ok: true` aqui reescreveria autor, data e motivo — e é a DATA que
-       * responde "desde quando este agente está parado?", que é a pergunta de
-       * quem audita. Mesma disciplina da idempotência de
-       * `ConectoresService.desligar`, que não move `desligadoEm`. 409 porque o
-       * pedido está em conflito com o estado atual, e a tela tem o que dizer:
-       * já está assim.
-       */
-      throw new ConflictException(
-        `O agente "${agente.nome}" já está ${destino}. Nada foi alterado — e a data de quando ` +
-          'ele entrou nesse estado foi preservada de propósito.',
-      );
-    }
-
-    if (!transicaoPermitida(agente.estado, destino)) {
-      const saidas = TRANSICOES[agente.estado];
-      throw new BadRequestException(
-        saidas.length === 0
-          ? `O agente "${agente.nome}" está encerrado, e encerrado não volta. O histórico dele ` +
-            'continua em /rastro e em /sessoes; para ter esse trabalho de volta, crie um agente novo.'
-          : `Não dá para ir de "${agente.estado}" para "${destino}". Deste estado só dá para: ` +
-            `${saidas.join(', ')}.`,
-      );
-    }
-
-    const agora = new Date();
-    /*
-     * O ESTADO DE ANTES, COPIADO PARA UMA CONSTANTE ANTES DO `update`.
-     *
-     * Parece preciosismo e não é: `registrarMudancaDeEstado` recebe "de onde
-     * ele veio", e ler isso da linha DEPOIS de escrever depende de o objeto
-     * lido não ser o mesmo objeto que a escrita mexeu. Com o Prisma de verdade
-     * são objetos diferentes; com qualquer camada que devolva a referência, o
-     * rastro passaria a registrar "de pausado para pausado" — uma linha que
-     * afirma que nada mudou sobre a mudança que ela existe para contar. Um
-     * caso da suíte pegou exatamente isso.
-     */
-    const estadoAnterior = agente.estado;
-    /*
-     * O ESTADO E O INTERRUPTOR ANDAM JUNTOS.
-     *
-     * `Agent.ativo` é o interruptor operacional antigo (é dele o índice
-     * `(ativo, cron)`) e o laço o consulta separadamente. Declarar `pausado` e
-     * deixar `ativo: true` faria o agendamento continuar buscando este agente e
-     * o laço recusá-lo passagem por passagem — barulho no rastro sem efeito
-     * nenhum. É a mesma correção que `RotinasService.definirEstado` já tinha
-     * feito do outro lado, quando pausar na tela de Rotinas deixava a tela de
-     * Pauta verde.
-     */
-    /*
-     * A MUDANÇA DE ESTADO E A SOLTURA DAS TAREFAS SÃO A MESMA TRANSAÇÃO
-     * (fatia A4).
-     *
-     * Pausar ou encerrar um agente que está com tarefas na mão deixava, até
-     * aqui, essas tarefas TRAVADAS por um dono que — por decisão declarada de
-     * uma pessoa — não volta para terminá-las. Com `encerrado` era definitivo:
-     * `TRANSICOES.encerrado` é vazio, então a tarefa ficava presa até alguém
-     * descobrir e soltar na mão. É o travamento eterno que o checkout atômico
-     * existe para evitar, entrando pela outra porta.
-     *
-     * Numa transação porque não pode existir instante em que o agente está
-     * pausado e a tarefa continua travada: se a soltura falhar, a pausa volta
-     * atrás junto. O RASTRO fica FORA, depois do commit, pela mesma razão de
-     * `registrarMudancaDeEstado` — falha de registro não desfaz mudança que já
-     * é legítima.
-     *
-     * `soltarPorCausaDoEstado` devolve `null` quando o estado TRABALHA, e é daí
-     * que sai a assimetria: retomar não solta nada e também não devolve nada.
-     * As tarefas soltas podem estar com outro agente agora; reatribuí-las
-     * automaticamente criaria uma segunda corrida fora do checkout.
-     */
-    const causaDaSoltura = soltarPorCausaDoEstado(destino);
-    const { atualizado, soltas } = await this.prisma.$transaction(async (tx) => {
-      const atualizado = await tx.agent.update({
-        where: { id: agente.id },
-        data: {
-          estado: destino,
-          ativo: estadoTrabalha(destino),
-          estadoPorId: quem.userId,
-          estadoEm: agora,
-          estadoMotivo: motivo,
-        },
-        select: { estado: true, ativo: true, estadoEm: true },
-      });
-      const soltas = causaDaSoltura
-        ? await this.checkout.soltarTodasDoAgente(tx, orgId, agente.id, causaDaSoltura)
-        : [];
-      return { atualizado, soltas };
-    });
-
-    if (soltas.length > 0 && causaDaSoltura) {
-      await this.registrarSoltura(orgId, agente, soltas, causaDaSoltura, quem.userId);
-    }
-
-    await this.registrarMudancaDeEstado(
-      orgId,
-      { id: agente.id, slug: agente.slug, estado: estadoAnterior },
-      destino,
-      motivo,
-      quem.userId,
-    );
-
-    return {
-      ok: true as const,
-      estado: atualizado.estado,
-      /* A tela repete o que a API decidiu, nunca o que ela supôs. */
-      transicoes: [...TRANSICOES[atualizado.estado]],
-      desde: atualizado.estadoEm?.toISOString() ?? null,
-      /*
-       * AS TAREFAS SOLTAS VOLTAM NA RESPOSTA, e não como efeito invisível.
-       * Quem pausa um agente precisa saber que acabou de devolver três tarefas
-       * para a fila — senão descobre pelo quadro, depois, sem saber por quê.
-       */
-      tarefasSoltas: soltas.map((t) => ({ id: t.id, titulo: t.title })),
-    };
+  private agendaLocal(): AgendaLocalService {
+    if (!this.agenda) throw new ConflictException('O serviço de operações locais está indisponível.');
+    return this.agenda;
   }
 
-  /**
-   * O RASTRO DA SOLTURA EM MASSA — um evento por tarefa, não um resumo.
-   *
-   * Um evento só, com a lista dentro, responderia "o agente foi pausado e três
-   * tarefas voltaram". O que se pergunta meses depois é outra coisa: "por que
-   * ESTA tarefa saiu da mão do agente?" — e essa pergunta se faz pela tarefa,
-   * filtrando `entityId`. Um resumo obrigaria a varrer o rastro inteiro abrindo
-   * payload para achar a linha que menciona aquele id.
-   *
-   * Cada um vai por conta própria (o `registrar` do checkout já isola falha por
-   * evento): uma tarefa que não conseguiu registrar não pode impedir as outras
-   * de registrar, e nenhuma delas desfaz a soltura, que já valeu no banco.
-   */
+  async estadoHumano(orgId: string, actorId: string, slug: string) {
+    return this.agendaLocal().estadoHumano(orgId, actorId, slug);
+  }
+
+  async definirEstado(orgId: string, slug: string, destino: EstadoDeAgente,
+    quem: { userId: string; requestId: string; marcaEsperada: string; motivo: string | null }) {
+    const input = AgentEstadoHumanoSchema.parse({ requestId: quem.requestId, marcaEsperada: quem.marcaEsperada, motivo: quem.motivo });
+    const agenda = this.agendaLocal();
+    if (!this.eventos) throw new ConflictException('O serviço de rastro está indisponível.');
+    const eventos = this.eventos;
+    await exigirAcessoAtual(this.prisma, orgId, quem.userId, ['admin.usuarios']);
+    const tipo = EVENTO_DA_TRANSICAO[destino];
+    const preparo = await eventos.prepararContextoParaTx({ orgId, tipo, nivel: null });
+    const causa = soltarPorCausaDoEstado(destino);
+    const preparoSoltura = causa ? await eventos.prepararContextoParaTx({ orgId, tipo: EVENTO_DO_CHECKOUT.soltada, nivel: null }) : null;
+    await this.prisma.$transaction(async (tx) => {
+      await agenda.travarClaimNoTx(tx, orgId, input.requestId);
+      const look = await agenda.lookupNoTx(tx, orgId, input.requestId);
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`memoria:${orgId}`}))`;
+      const agente = await agenda.travarAgenteNoTx(tx, orgId, slug);
+      const scope = agenda.escopo(orgId, quem.userId, agente);
+      const assinatura = await agenda.assinaturaNoTx(tx, scope, input.requestId, 'agente_estado', { destino, marcaEsperada: input.marcaEsperada, motivo: input.motivo });
+      const existing = agenda.conferirCausa(look, scope, input.requestId, 'agente_estado', assinatura);
+      await agenda.travarAutoridadeHumanaNoTx(tx, orgId, quem.userId, 'COMANDAR');
+      if (existing) { await agenda.recuperarNoTx(tx, scope, agente, existing); return; }
+      const anterior = await agenda.marcaNoTx(tx, scope, agente);
+      if (anterior.marca !== input.marcaEsperada) throw new ConflictException('O estado do agente mudou. Confira a marca escolhida antes de enviar.');
+      if (agente.estado === destino) throw new ConflictException('O agente já está nesse estado. Nada foi alterado.');
+      if (!transicaoPermitida(agente.estado, destino)) throw new BadRequestException('Esta transição não é permitida para o estado atual do agente.');
+      if (exigeMotivo(destino) && !input.motivo) throw new BadRequestException('Informe o motivo para encerrar o agente.');
+      const presas = causa ? await this.checkout.travarTarefasDoAgenteNoTx(tx, orgId, agente.id) : [];
+      await agenda.orcamentoEstadoHumanoNoTx(tx, scope, input.requestId, anterior, presas, { estado: destino, ativo: estadoTrabalha(destino), estadoMotivo: input.motivo });
+      const agora = new Date();
+      const { count } = await tx.agent.updateMany({ where: { id: agente.id, orgId, slug, estado: agente.estado, ativo: agente.ativo,
+        donoId: agente.donoId, estadoPorId: agente.estadoPorId, estadoEm: agente.estadoEm, estadoMotivo: agente.estadoMotivo, atualizadoEm: agente.atualizadoEm },
+        data: { estado: destino, ativo: estadoTrabalha(destino), estadoPorId: quem.userId, estadoEm: agora, estadoMotivo: input.motivo } });
+      if (count !== 1) throw new ConflictException('O estado do agente mudou antes da gravação.');
+      const soltas = causa ? await this.checkout.soltarTodasDoAgenteNoTx(tx, orgId, agente.id, causa) : [];
+      if (soltas.length !== presas.length || soltas.some((t, i) => t.id !== presas[i].id || t.title !== presas[i].title || t.desde?.getTime() !== presas[i].desde?.getTime()))
+        throw new ConflictException('As tarefas soltas não correspondem à base conferida.');
+      const solturas = causa && preparoSoltura ? await this.checkout.registrarSolturasNoTx(tx, orgId, soltas, agente, causa, quem.userId, preparoSoltura)
+        : { auditIds: [], eventSnapshot: [] };
+      const novo = await tx.agent.findFirst({ where: { id: agente.id, orgId } });
+      if (!novo) throw new ConflictException('O estado gravado não pôde ser conferido.');
+      const posterior = await agenda.marcaNoTx(tx, scope, novo);
+      const audit = await this.audit.logComRecibo({ orgId, actorId: quem.userId, action: tipo, entityType: 'agent', entityId: agente.id,
+        before: { estado: agente.estado }, after: { estado: destino, motivo: input.motivo }, metadata: { slug, requestId: input.requestId } }, tx);
+      const e = await eventos.registrarNoTx(tx, { orgId, tipo, actorType: ActorType.user, actorId: quem.userId, agentSlug: slug,
+        correlationId: input.requestId, payload: { slug, de: agente.estado, para: destino }, conteudo: { motivo: input.motivo,
+          estadoAnterior: { estado: agente.estado }, estadoNovo: { estado: destino }, desfazer: destino === EstadoDeAgente.encerrado
+            ? 'não tem volta: encerrar é definitivo' : transicaoPermitida(destino, agente.estado) ? `voltar para "${agente.estado}"` : `não existe caminho de volta para "${agente.estado}"` }, sensibilidade: 'interna' }, preparo);
+      const receipt = AgendaLocalReciboSchema.parse({ schemaVersion: 1, tipo: 'agente_estado', escopo: scope, requestId: input.requestId,
+        operationId: randomUUID(), confirmadoEm: agora.toISOString(), marcaAnterior: anterior.marca, marcaNova: posterior.marca, anterior, posterior,
+        tarefasSoltas: soltas.map((t) => ({ id: t.id, titulo: t.title, desde: t.desde?.toISOString() ?? null })),
+        auditIds: [...solturas.auditIds, audit.id], eventSnapshot: [...solturas.eventSnapshot.map((x) => ({ ...x, seq: x.seq.toString(), ocorreuEm: x.ocorreuEm.toISOString() })),
+          { id: e.id, seq: e.seq.toString(), hash: e.hash, tipo, ocorreuEm: e.ocorreuEm.toISOString() }] });
+      const op = await agenda.registrarOperacaoDeEstadoDoAgenteNoTx(tx, scope, assinatura, receipt);
+      await agenda.recuperarNoTx(tx, scope, novo, op);
+      const painel = AgentEstadoHumanoPainelSchema.parse({ ...posterior, autoridade: { comandar: true, verificadaEm: new Date().toISOString() }, transicoes: [...TRANSICOES[novo.estado]] });
+      await agenda.conferirTamanhoNoTx(tx, painel);
+      await exigirAcessoAtual(tx, orgId, quem.userId, ['admin.usuarios']);
+    }, { isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted });
+    return agenda.porOperacao(orgId, quem.userId, slug, input.requestId, 'agente_estado');
+  }
+
   private async registrarSoltura(
     orgId: string,
     agente: { id: string; slug: string; nome: string },
@@ -919,84 +849,82 @@ export class AgentsService {
   }
 
   /**
-   * Grava o procedimento — RF-N-02, o formato fixo com os sete campos.
-   *
-   * Recusa antes de tocar no banco quando falta qualquer um dos sete, quando a
-   * entrada tenta carregar um campo que não é editável (escalação à frente) ou
-   * quando um campo livre abre linha com um dos cabeçalhos do sistema.
-   *
-   * A versão sobe a cada gravação e o autor fica registrado: procedimento é o
-   * método de operação da empresa, e saber quem mudou o quê é metade do valor.
+   * Grava pela versão lida, com validação dos sete campos e dos textos fixos.
+   * SOP e auditoria usam a mesma transação; conflito conserva a versão atual.
    */
   async salvarSop(orgId: string, slug: string, entrada: unknown, userId: string) {
-    const agente = await this.prisma.agent.findFirst({
-      where: { orgId, slug },
-      select: { id: true, donoId: true, pilar: true, sop: true },
-    });
-    if (!agente) throw new NotFoundException(`agente "${slug}" não existe`);
-
-    // O dono conferido contra ESTA empresa — ver o cabeçalho de `donosDesta`.
-    // Ponteiro atravessado não é dono, e procedimento sem dono é recusado.
-    const donos = await this.donosDesta(orgId, [agente.donoId]);
-    const donoDaCasa = (agente.donoId && donos.get(agente.donoId)?.id) || null;
-
-    let dados;
-    try {
-      dados = validarProcedimento(entrada, { donoId: donoDaCasa, pilar: agente.pilar });
-    } catch (e) {
-      if (e instanceof FormatoDaSopInvalido) {
-        throw new BadRequestException({
-          error: 'ValidationError',
-          message: e.message,
-          issues: e.problemas.map((p) => ({ path: p.campo, message: p.motivo })),
-        });
+    const input = AgentSopEdicaoSchema.parse(entrada);
+    const permissoes = ['automacoes.executar', 'admin.usuarios'];
+    await exigirAcessoAtual(this.prisma, orgId, userId, permissoes);
+    return this.prisma.$transaction(async tx => {
+      await exigirAcessoAtual(tx, orgId, userId, permissoes);
+      const ids = await tx.$queryRaw<Array<{ id: string }>>`SELECT "id" FROM "Agent"
+        WHERE "orgId"=${orgId} AND "slug"=${slug} FOR UPDATE`;
+      if (!ids[0]) throw new NotFoundException(`agente "${slug}" não existe`);
+      const agentId = ids[0].id;
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`agent-sop:${orgId}:${agentId}`}))`;
+      const agente = await tx.agent.findFirst({ where: { orgId, id: agentId, slug },
+        select: { id: true, donoId: true, pilar: true, sop: true } });
+      if (!agente) throw new NotFoundException(`agente "${slug}" não existe`);
+      const antes = agente.sop;
+      if (antes && (antes.orgId !== orgId || antes.agentId !== agente.id)) {
+        throw new ConflictException('O vínculo do procedimento precisa ser conferido.');
       }
-      throw e;
-    }
-
-    const antes = agente.sop;
-    const comum = {
-      proposito: dados.proposito,
-      gatilho: dados.gatilho,
-      passos: dados.passos,
-      definicaoDePronto: dados.definicaoDePronto,
-      observacoes: dados.observacoes ?? null,
-      atualizadoPor: userId,
-    };
-
-    const sop = await this.prisma.sop.upsert({
-      where: { agentId: agente.id },
-      create: { orgId, agentId: agente.id, ...comum },
-      update: { ...comum, versao: { increment: 1 } },
-    });
-
-    /*
-     * O RASTRO administrativo. É `AuditService` e não `EventLogService` porque
-     * isto é escrita INTERNA, sem efeito fora do OS — mesma família de
-     * `user.create` e do módulo Trabalho. Se um dia editar procedimento passar a
-     * exigir aprovação (a pergunta aberta desta fatia), é aqui que a porta entra.
-     */
-    await this.audit.log({
-      orgId,
-      actorId: userId,
-      action: antes ? 'agent.sop.update' : 'agent.sop.create',
-      entityType: 'agent',
-      entityId: agente.id,
-      before: antes
-        ? {
-            proposito: antes.proposito,
-            gatilho: antes.gatilho,
-            passos: antes.passos,
-            definicaoDePronto: antes.definicaoDePronto,
-            observacoes: antes.observacoes,
-            versao: antes.versao,
+      if ((antes?.versao ?? null) !== input.expectedSopVersion) {
+        throw new ConflictException('O procedimento mudou. Recarregue a versão atual e confira seu rascunho.');
+      }
+      // O bloqueio da pessoa conserva o dono ativo até o compromisso da escrita.
+      const donos = agente.donoId ? await tx.$queryRaw<Array<{ id: string }>>`SELECT "id" FROM "User"
+        WHERE "orgId"=${orgId} AND "id"=${agente.donoId} AND "isActive"=true FOR SHARE` : [];
+      const donoDaCasa = donos[0]?.id ?? null;
+      let dados;
+      try {
+        dados = validarProcedimento(input.procedimento, { donoId: donoDaCasa, pilar: agente.pilar });
+      } catch (e) {
+        if (e instanceof FormatoDaSopInvalido) throw new BadRequestException({
+          error: 'ValidationError', message: e.message,
+          issues: e.problemas.map(p => ({ path: p.campo, message: p.motivo })),
+        });
+        throw e;
+      }
+      if (!donoDaCasa) throw new BadRequestException('O dono do agente deve continuar ativo nesta empresa.');
+      const comum = { proposito: dados.proposito, gatilho: dados.gatilho, passos: dados.passos,
+        definicaoDePronto: dados.definicaoDePronto, observacoes: dados.observacoes ?? null,
+        atualizadoPor: userId };
+      let versao: number;
+      if (antes) {
+        const esperada = input.expectedSopVersion;
+        if (esperada === null) throw new ConflictException('O procedimento já possui uma versão. Recarregue e confira seu rascunho.');
+        const atualizada = await tx.sop.updateMany({
+          where: { id: antes.id, orgId, agentId: agente.id, versao: esperada },
+          data: { ...comum, versao: { increment: 1 } },
+        });
+        if (atualizada.count !== 1) throw new ConflictException('O procedimento mudou. Recarregue a versão atual e confira seu rascunho.');
+        const atual = await tx.sop.findFirst({ where: { id: antes.id, orgId, agentId: agente.id }, select: { versao: true } });
+        if (!atual || atual.versao !== antes.versao + 1) throw new ConflictException('A versão gravada do procedimento precisa ser conferida.');
+        versao = atual.versao;
+      } else {
+        try {
+          const criada = await tx.sop.create({ data: { orgId, agentId: agente.id, ...comum }, select: { versao: true } });
+          versao = criada.versao;
+        } catch (e) {
+          if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === 'P2002') {
+            throw new ConflictException('O procedimento mudou. Recarregue a versão atual e confira seu rascunho.');
           }
-        : undefined,
-      after: { ...comum, versao: sop.versao },
-      metadata: { slug },
-    });
-
-    return { ok: true as const, versao: sop.versao };
+          throw e;
+        }
+      }
+      await this.audit.log({ orgId, actorId: userId,
+        action: antes ? 'agent.sop.update' : 'agent.sop.create', entityType: 'agent', entityId: agente.id,
+        before: antes ? { proposito: antes.proposito, gatilho: antes.gatilho, passos: antes.passos,
+          definicaoDePronto: antes.definicaoDePronto, observacoes: antes.observacoes, versao: antes.versao } : undefined,
+        after: { ...comum, versao }, metadata: { slug, expectedSopVersion: input.expectedSopVersion },
+      }, tx);
+      await exigirAcessoAtual(tx, orgId, userId, permissoes);
+      const donoAtual = await tx.user.findFirst({ where: { id: donoDaCasa, orgId, isActive: true }, select: { id: true } });
+      if (!donoAtual) throw new BadRequestException('O dono do agente deve continuar ativo nesta empresa.');
+      return AgentSopSalvaSchema.parse({ ok: true, versao });
+    }, { timeout: 20000 });
   }
 
   /**

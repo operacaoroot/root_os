@@ -2,7 +2,8 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { usePathname } from 'next/navigation';
-import { NAV, SECOES } from '@mktos/shared';
+import { areaDoDestino, destinoDaRota, rotuloDoDestino } from './navegacao-modulos';
+import { useEhPlataforma } from '@/lib/plataforma';
 import { Search, LogOut } from 'lucide-react';
 import { useAuth } from '@/lib/auth';
 import { Paleta } from './Paleta';
@@ -58,32 +59,15 @@ const SUBTITULOS: Record<string, string> = {
   config: 'organização, perfil e integrações',
 };
 
-const HINT_DA_SECAO = new Map<string, string>(SECOES.map((s) => [s.key, s.hint]));
-
-/*
- * Resolve título e subtítulo pela rota. Usa o NAV inteiro, e não a lista
- * filtrada por permissão: a barra só rotula a tela em que o usuário já está,
- * e quem barra o acesso é a rota, não o cabeçalho.
- * Casa pelo href mais longo para que /leads/[id] continue lendo "Leads" e uma
- * futura sub-rota registrada no NAV ganhe o próprio nome.
- */
-function rotuloDaRota(pathname: string): { titulo: string; subtitulo: string } {
-  const item = NAV.filter((n) =>
-    n.href === '/' ? pathname === '/' : pathname === n.href || pathname.startsWith(n.href + '/'),
-  ).sort((a, b) => b.href.length - a.href.length)[0];
-
+function rotuloDaRota(pathname: string, ehPlataforma: boolean): { titulo: string; subtitulo: string } {
+  const item = destinoDaRota(pathname, ehPlataforma);
   if (item) {
-    return {
-      titulo: item.label,
-      subtitulo: SUBTITULOS[item.key] ?? HINT_DA_SECAO.get(item.secao) ?? '',
-    };
+    const area = areaDoDestino(item);
+    return { titulo: area ? `${area.label} / ${rotuloDoDestino(item)}` : rotuloDoDestino(item),
+      subtitulo: SUBTITULOS[item.key] ?? '' };
   }
-
   const seg = pathname.split('/').filter(Boolean)[0];
-  return {
-    titulo: seg ? seg.charAt(0).toUpperCase() + seg.slice(1) : 'ROOT OS',
-    subtitulo: '',
-  };
+  return { titulo: seg ? seg.charAt(0).toUpperCase() + seg.slice(1) : 'ROOT OS', subtitulo: '' };
 }
 
 export function Topbar({ titulo, subtitulo }: { titulo?: string; subtitulo?: string } = {}) {
@@ -94,7 +78,8 @@ export function Topbar({ titulo, subtitulo }: { titulo?: string; subtitulo?: str
   const abertaPelaLupa = useRef(false);
   const [paleta, setPaleta] = useState(false);
 
-  const rotulo = rotuloDaRota(pathname);
+  const ehPlataforma = useEhPlataforma();
+  const rotulo = rotuloDaRota(pathname, ehPlataforma);
   const h1 = titulo ?? rotulo.titulo;
   const sub = subtitulo ?? rotulo.subtitulo;
 

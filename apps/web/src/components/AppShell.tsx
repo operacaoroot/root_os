@@ -7,9 +7,11 @@ import { apiGet } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 import { Sidebar } from './Sidebar';
 import { Topbar } from './Topbar';
+import { NavegacaoDoModulo } from './NavegacaoDoModulo';
 import { ChatFlutuante } from './ChatFlutuante';
 import { ModulosProvider, useModulos } from './modulos';
 import { CaixaProvider } from './caixa';
+import { FichaEmJanela } from './ficha/FichaEmJanela';
 
 // Superfícies que NÃO passam pelo shell autenticado: o login e tudo que é
 // público por natureza (página da bio, a Central da comunidade e os textos
@@ -27,16 +29,26 @@ import { CaixaProvider } from './caixa';
 const PUBLICAS = ['/', '/mapa-publico', '/entrar', '/login', '/b', '/central', '/termos', '/privacidade', '/e', '/s'];
 
 export function AppShell({ children }: { children: React.ReactNode }) {
-  const { user, ready } = useAuth();
+  const { user, ready, token, sessionError, retrySession } = useAuth();
   const pathname = usePathname();
   const router = useRouter();
   const publica = PUBLICAS.some((p) => pathname === p || pathname.startsWith(`${p}/`));
 
   useEffect(() => {
-    if (ready && !user && !publica) router.replace('/login');
-  }, [ready, user, publica, router]);
+    if (ready && !user && !publica && !token) router.replace('/login');
+  }, [ready, user, publica, router, token]);
 
   if (publica) return <>{children}</>;
+
+  if (ready && !user && token && sessionError) {
+    return <div data-os-app className="grid min-h-screen place-items-center p-6">
+      <section aria-labelledby="confirmar-sessao" className="w-full max-w-md space-y-4 rounded-root border border-border bg-bg2 p-6">
+        <h1 id="confirmar-sessao" className="text-lg font-semibold text-text">Confirme sua sessão</h1>
+        <p role="alert" className="text-sm leading-relaxed text-muted">{sessionError}</p>
+        <button type="button" onClick={() => void retrySession()} className="min-h-11 rounded-root bg-brand px-4 py-2 text-sm font-medium text-ink focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand">Tentar novamente</button>
+      </section>
+    </div>;
+  }
 
   // O data-os-app já vale aqui: é ele que traz a fonte de corpo, a seleção e
   // o anel de foco do ROOT OS (globals.css). Sem isso o "Carregando…" pisca
@@ -71,13 +83,15 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             <Topbar />
             <main id="root-os-main" tabIndex={-1} className="flex-1 min-w-0 p-4 min-[820px]:p-6">
               <PortaDaAssinatura>
-                <PortaDoModulo>{children}</PortaDoModulo>
+                <PortaDoModulo><NavegacaoDoModulo />{children}</PortaDoModulo>
               </PortaDaAssinatura>
             </main>
           </div>
           {/* Conversar acontece aqui; o REGISTRO do que foi conversado é /sessoes.
               Nunca nas superfícies públicas — o AppShell devolve os filhos crus lá. */}
           <ChatFlutuante />
+          {/* A ficha do cliente abre por cima de qualquer tela (?ficha=<id>). */}
+          <FichaEmJanela />
         </div>
       </CaixaProvider>
     </ModulosProvider>

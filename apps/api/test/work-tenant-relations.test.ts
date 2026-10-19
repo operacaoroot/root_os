@@ -76,6 +76,7 @@ describe.skipIf(!URL)('trabalho: as relações da tarefa ficam na empresa dela',
   let paiCasa: string;
   let paiVizinha: string;
   let alvo: string;
+  let versaoInicial: string;
 
   async function limparTarefas() {
     await prisma.workTask.deleteMany({ where: { orgId: { in: EMPRESAS } } });
@@ -163,12 +164,14 @@ describe.skipIf(!URL)('trabalho: as relações da tarefa ficam na empresa dela',
     paiVizinha = (await prisma.workTask.create({
       data: { orgId: VIZINHA, listId: listaVizinha, statusId: etapas.vizinha[0], title: 'Pai da vizinha' },
     })).id;
-    alvo = (await prisma.workTask.create({
+    const criada = await prisma.workTask.create({
       data: {
         orgId: CASA, listId: listaCasa, statusId: etapas.casa[0], title: 'Alvo',
         tags: { connect: [{ id: etiquetaCasa }] },
       },
-    })).id;
+    });
+    alvo = criada.id;
+    versaoInicial = criada.updatedAt.toISOString();
   });
 
   afterAll(async () => {
@@ -207,7 +210,7 @@ describe.skipIf(!URL)('trabalho: as relações da tarefa ficam na empresa dela',
 
     it('editar movendo para lista da vizinha, com ou sem etapa dela: 404 e a tarefa fica onde estava', async () => {
       for (const mudanca of [{ listId: listaVizinha }, { listId: listaVizinha, statusId: etapas.vizinha[1] }]) {
-        const erro = await erroDe(svc.editarTarefa(CASA, EU, alvo, { ...mudanca, title: 'Não pode gravar' }));
+        const erro = await erroDe(svc.editarTarefa(CASA, EU, alvo, { expectedUpdatedAt: versaoInicial, ...mudanca, title: 'Não pode gravar' }));
         expect({ erro, estado: await estadoDa(alvo), listaNoDetalhe: (await svc.tarefa(CASA, alvo)).listName }).toEqual({
           erro: LISTA_NAO_ENCONTRADA, estado: estadoInicial(), listaNoDetalhe: 'Lista da casa',
         });
@@ -215,7 +218,7 @@ describe.skipIf(!URL)('trabalho: as relações da tarefa ficam na empresa dela',
     });
 
     it('editar com pai da vizinha: 404, e nem o título que veio junto é gravado', async () => {
-      const erro = await erroDe(svc.editarTarefa(CASA, EU, alvo, { parentId: paiVizinha, title: 'Não pode gravar' }));
+      const erro = await erroDe(svc.editarTarefa(CASA, EU, alvo, { expectedUpdatedAt: versaoInicial, parentId: paiVizinha, title: 'Não pode gravar' }));
       expect({ erro, estado: await estadoDa(alvo), filhosNaVizinha: await filhosNaVizinha() }).toEqual({
         erro: PAI_NAO_ENCONTRADO, estado: estadoInicial(), filhosNaVizinha: [],
       });
@@ -223,7 +226,7 @@ describe.skipIf(!URL)('trabalho: as relações da tarefa ficam na empresa dela',
 
     it('editar com etiqueta da vizinha, sozinha ou ao lado de uma da casa: 404 e as etiquetas ficam como estavam', async () => {
       for (const tagIds of [[etiquetaVizinha], [outraEtiquetaCasa, etiquetaVizinha]]) {
-        const erro = await erroDe(svc.editarTarefa(CASA, EU, alvo, { tagIds, title: 'Não pode gravar' }));
+        const erro = await erroDe(svc.editarTarefa(CASA, EU, alvo, { expectedUpdatedAt: versaoInicial, tagIds, title: 'Não pode gravar' }));
         expect({ erro, estado: await estadoDa(alvo) }).toEqual({ erro: ETIQUETA_NAO_ENCONTRADA, estado: estadoInicial() });
       }
     });
@@ -232,9 +235,9 @@ describe.skipIf(!URL)('trabalho: as relações da tarefa ficam na empresa dela',
       const aoCriar = await erroDe(
         svc.criarTarefa(CASA, EU, { listId: listaCasa, title: 'Na etapa errada', statusId: etapas.vizinha[0] }),
       );
-      const aoEditar = await erroDe(svc.editarTarefa(CASA, EU, alvo, { statusId: etapas.vizinha[0], title: 'Não pode gravar' }));
+      const aoEditar = await erroDe(svc.editarTarefa(CASA, EU, alvo, { expectedUpdatedAt: versaoInicial, statusId: etapas.vizinha[0], title: 'Não pode gravar' }));
       const aoMover = await erroDe(
-        svc.editarTarefa(CASA, EU, alvo, { listId: outraListaCasa, statusId: etapas.vizinha[0], title: 'Não pode gravar' }),
+        svc.editarTarefa(CASA, EU, alvo, { expectedUpdatedAt: versaoInicial, listId: outraListaCasa, statusId: etapas.vizinha[0], title: 'Não pode gravar' }),
       );
       expect({ aoCriar, aoEditar, aoMover, ...(await criadasCom('Na etapa errada')), estado: await estadoDa(alvo) }).toEqual({
         aoCriar: ETAPA_FORA_DA_LISTA_AO_CRIAR,
@@ -248,35 +251,36 @@ describe.skipIf(!URL)('trabalho: as relações da tarefa ficam na empresa dela',
 
     it('tarefa já gravada em lista da vizinha não aceita etapa da vizinha, e pode voltar para lista da casa', async () => {
       // O estado que a falta de conferência deixava gravar, escrito direto no banco.
-      await prisma.workTask.update({ where: { id: alvo }, data: { listId: listaVizinha, statusId: etapas.vizinha[0] } });
+      const corrompida = await prisma.workTask.update({ where: { id: alvo }, data: { listId: listaVizinha, statusId: etapas.vizinha[0] } });
 
-      const erro = await erroDe(svc.editarTarefa(CASA, EU, alvo, { statusId: etapas.vizinha[1] }));
+      const erro = await erroDe(svc.editarTarefa(CASA, EU, alvo, { expectedUpdatedAt: corrompida.updatedAt.toISOString(), statusId: etapas.vizinha[1] }));
       expect({ erro, statusId: (await estadoDa(alvo)).statusId }).toEqual({
         erro: ETAPA_FORA_DA_LISTA_AO_EDITAR, statusId: etapas.vizinha[0],
       });
 
-      await svc.editarTarefa(CASA, EU, alvo, { listId: listaCasa });
+      await svc.editarTarefa(CASA, EU, alvo, { expectedUpdatedAt: corrompida.updatedAt.toISOString(), listId: listaCasa });
       expect(await estadoDa(alvo)).toMatchObject({ listId: listaCasa, statusId: etapas.casa[0] });
     });
   });
 
   describe('o erro não diz se o id existe na outra empresa', () => {
     async function restaurarAlvo() {
-      await prisma.workTask.update({
+      const restaurada = await prisma.workTask.update({
         where: { id: alvo },
         data: {
           listId: listaCasa, statusId: etapas.casa[0], parentId: null, title: 'Alvo',
           tags: { set: [{ id: etiquetaCasa }] },
         },
       });
+      return restaurada.updatedAt.toISOString();
     }
 
     // Restaura antes de cada chamada para que uma escrita aceita não mude o ponto de partida da seguinte.
-    async function comparar(chamar: (id: string) => Promise<unknown>, idDaVizinha: string) {
-      await restaurarAlvo();
-      const daVizinha = await erroDe(chamar(idDaVizinha));
-      await restaurarAlvo();
-      const inexistente = await erroDe(chamar(randomUUID()));
+    async function comparar(chamar: (id: string, versao: string) => Promise<unknown>, idDaVizinha: string) {
+      const versaoVizinha = await restaurarAlvo();
+      const daVizinha = await erroDe(chamar(idDaVizinha, versaoVizinha));
+      const versaoInexistente = await restaurarAlvo();
+      const inexistente = await erroDe(chamar(randomUUID(), versaoInexistente));
       return { daVizinha, inexistente };
     }
 
@@ -285,13 +289,13 @@ describe.skipIf(!URL)('trabalho: as relações da tarefa ficam na empresa dela',
         svc.criarTarefa(CASA, EU, { listId: listaCasa, title: 'Comparação', ...extra });
 
       expect({
-        listaAoEditar: await comparar((id) => svc.editarTarefa(CASA, EU, alvo, { listId: id }), listaVizinha),
+        listaAoEditar: await comparar((id, versao) => svc.editarTarefa(CASA, EU, alvo, { expectedUpdatedAt: versao, listId: id }), listaVizinha),
         etapaAoCriar: await comparar((id) => novaNaCasa({ statusId: id }), etapas.vizinha[0]),
-        etapaAoEditar: await comparar((id) => svc.editarTarefa(CASA, EU, alvo, { statusId: id }), etapas.vizinha[0]),
+        etapaAoEditar: await comparar((id, versao) => svc.editarTarefa(CASA, EU, alvo, { expectedUpdatedAt: versao, statusId: id }), etapas.vizinha[0]),
         paiAoCriar: await comparar((id) => novaNaCasa({ parentId: id }), paiVizinha),
-        paiAoEditar: await comparar((id) => svc.editarTarefa(CASA, EU, alvo, { parentId: id }), paiVizinha),
+        paiAoEditar: await comparar((id, versao) => svc.editarTarefa(CASA, EU, alvo, { expectedUpdatedAt: versao, parentId: id }), paiVizinha),
         etiquetaAoCriar: await comparar((id) => novaNaCasa({ tagIds: [id] }), etiquetaVizinha),
-        etiquetaAoEditar: await comparar((id) => svc.editarTarefa(CASA, EU, alvo, { tagIds: [id] }), etiquetaVizinha),
+        etiquetaAoEditar: await comparar((id, versao) => svc.editarTarefa(CASA, EU, alvo, { expectedUpdatedAt: versao, tagIds: [id] }), etiquetaVizinha),
       }).toEqual({
         listaAoEditar: { daVizinha: LISTA_NAO_ENCONTRADA, inexistente: LISTA_NAO_ENCONTRADA },
         etapaAoCriar: { daVizinha: ETAPA_FORA_DA_LISTA_AO_CRIAR, inexistente: ETAPA_FORA_DA_LISTA_AO_CRIAR },
@@ -332,23 +336,23 @@ describe.skipIf(!URL)('trabalho: as relações da tarefa ficam na empresa dela',
     });
 
     it('mover para outra lista da casa: sem etapa cai na primeira dela; com etapa, fica na escolhida', async () => {
-      await svc.editarTarefa(CASA, EU, alvo, { listId: outraListaCasa });
+      const movida = await svc.editarTarefa(CASA, EU, alvo, { expectedUpdatedAt: versaoInicial, listId: outraListaCasa });
       expect(await estadoDa(alvo)).toMatchObject({ listId: outraListaCasa, statusId: etapas.outra[0] });
 
-      await svc.editarTarefa(CASA, EU, alvo, { listId: listaCasa, statusId: etapas.casa[2] });
+      await svc.editarTarefa(CASA, EU, alvo, { expectedUpdatedAt: movida.updatedAt, listId: listaCasa, statusId: etapas.casa[2] });
       expect(await estadoDa(alvo)).toMatchObject({ listId: listaCasa, statusId: etapas.casa[2], edicoesNaAuditoria: 2 });
     });
 
     it('trocar e depois limpar pai e etiquetas da casa', async () => {
-      await svc.editarTarefa(CASA, EU, alvo, { parentId: paiCasa, tagIds: [outraEtiquetaCasa, outraEtiquetaCasa] });
+      const vinculada = await svc.editarTarefa(CASA, EU, alvo, { expectedUpdatedAt: versaoInicial, parentId: paiCasa, tagIds: [outraEtiquetaCasa, outraEtiquetaCasa] });
       expect(await estadoDa(alvo)).toMatchObject({ parentId: paiCasa, etiquetas: [outraEtiquetaCasa] });
 
-      await svc.editarTarefa(CASA, EU, alvo, { parentId: null, tagIds: [] });
+      await svc.editarTarefa(CASA, EU, alvo, { expectedUpdatedAt: vinculada.updatedAt, parentId: null, tagIds: [] });
       expect(await estadoDa(alvo)).toMatchObject({ parentId: null, etiquetas: [] });
     });
 
     it('repetir no corpo a lista em que a tarefa já está muda só o que foi pedido', async () => {
-      await svc.editarTarefa(CASA, EU, alvo, { listId: listaCasa, statusId: etapas.casa[1], title: 'Alvo renomeado' });
+      await svc.editarTarefa(CASA, EU, alvo, { expectedUpdatedAt: versaoInicial, listId: listaCasa, statusId: etapas.casa[1], title: 'Alvo renomeado' });
       expect(await estadoDa(alvo)).toEqual({
         ...estadoInicial(), statusId: etapas.casa[1], title: 'Alvo renomeado', edicoesNaAuditoria: 1,
       });

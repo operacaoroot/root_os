@@ -1,11 +1,11 @@
 import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import {
-  MODELOS_DE_LISTA, TRAB_LISTA_COM_DOIS_PAIS, TRAB_PASTA_COM_DOIS_PAIS, ehValorMonetarioCanonico,
+  MODELOS_DE_LISTA, TRAB_LISTA_COM_DOIS_PAIS, TRAB_PASTA_COM_DOIS_PAIS, ehValorMonetarioCanonico, TrabTarefaUpdateHttpSchema,
   listaDaImplantacao, LISTA_DA_IMPLANTACAO, PASTA_DA_IMPLANTACAO, PORTA_DA_IMPLANTACAO,
 } from '@mktos/shared';
 import type {
   TrabEstrutura, TrabListaDto, TrabCampoDto, TrabTarefaLista, TrabTarefaResumo,
-  TrabTarefaDetalhe, TrabTarefaCreateInput, TrabTarefaUpdateInput,
+  TrabTarefaDetalhe, TrabTarefaCreateInput, TrabTarefaUpdateHttpInput, TrabAtividadePagina,
   TrabApontamentoCreateInput, TrabApontamentoDto, TrabListaDoModeloInput, ModeloDeLista,
   TrabEspacoCreateInput, TrabEspacoUpdateInput, TrabPastaCreateInput, TrabPastaUpdateInput,
   TrabListaCreateInput, TrabListaUpdateInput, TrabEstruturaSugeridaResultado,
@@ -18,6 +18,8 @@ import { agentesDaCasa, type AgenteDaCasa } from './agentes-da-casa';
 import { listarClientes, nomesDosClientes, resolverCliente } from './clientes-da-casa';
 import { criarEstruturaSugerida, criarListaDoModeloNoBanco } from './estrutura-sugerida';
 import type { WorkTaskQuery } from './work-task-query';
+import { exigirAcessoAtual } from '../memory/acesso-memoria';
+import { activityCursor, activityDto, activityNames, activityPoint, activityWhere, parseActivityQuery } from './work-activity-page';
 
 // Módulo TRABALHO: gestão de tarefas estilo ClickUp, nativa do mkt-os.
 // Hierarquia pastas → listas → tarefas; statuses POR LISTA; campos personalizados
@@ -37,6 +39,7 @@ import type { WorkTaskQuery } from './work-task-query';
  */
 const TASK_INCLUDE = {
   status: true,
+  assigneeUser: { select: { id: true, name: true, email: true, isActive: true } },
   tags: true,
   values: { include: { field: true, option: true } },
   _count: { select: { subtasks: true, comments: true } },
@@ -106,7 +109,7 @@ export class WorkService {
   }
 
   async estrutura(orgId: string): Promise<TrabEstrutura> {
-    const [spaces, folders, lists, fields, tags, counts, byStatus, users, agentes] = await Promise.all([
+    const [spaces, folders, lists, fields, tags, counts, byStatus, users, agentes, pessoas] = await Promise.all([
       this.prisma.workSpace.findMany({ where: { orgId }, orderBy: [{ order: 'asc' }, { name: 'asc' }] }),
       this.prisma.workFolder.findMany({ where: { orgId }, orderBy: [{ order: 'asc' }, { name: 'asc' }] }),
       this.prisma.workList.findMany({
@@ -132,6 +135,10 @@ export class WorkService {
        * vazio no primeiro instante.
        */
       this.checkout.agentesParaEscolher(orgId),
+      this.prisma.user.findMany({
+        where: { orgId }, select: { id: true, name: true, email: true, isActive: true },
+        orderBy: [{ name: 'asc' }, { email: 'asc' }],
+      }),
     ]);
     const porLista = new Map(counts.map((c) => [c.listId, c._count]));
     const porStatus = new Map(byStatus.map((c) => [c.statusId, c._count]));
@@ -158,6 +165,7 @@ export class WorkService {
       tags: tags.map((t) => ({ id: t.id, name: t.name, color: t.color })),
       responsaveis: users.map((u) => u.assignee!).sort(),
       agentes,
+      pessoas,
     };
   }
 
@@ -430,6 +438,11 @@ export class WorkService {
       id: t.id, listId: t.listId, title: t.title,
       statusId: t.statusId, statusName: t.status.name, statusType: t.status.type, statusColor: t.status.color,
       priority: t.priority, assignee: t.assignee,
+      assigneeUserId: t.assigneeUserId,
+      assigneeUserName: t.assigneeUser?.name ?? null,
+      assigneeUserEmail: t.assigneeUser?.email ?? null,
+      assigneeUserIsActive: t.assigneeUser?.isActive ?? null,
+      updatedAt: t.updatedAt.toISOString(),
       agenteId: t.agenteId, agenteSlug: agente?.slug ?? null, agenteNome: agente?.nome ?? null,
       agenteEm: t.agenteEm?.toISOString() ?? null,
       statusDesde: t.statusDesde?.toISOString() ?? null,
@@ -462,6 +475,8 @@ export class WorkService {
     if (f.listExternalIds) where.list = { orgId, externalId: { in: f.listExternalIds } };
     if (f.statusId) where.statusId = f.statusId;
     if (f.assignee) where.assignee = f.assignee;
+    if (f.assigneeUserId) where.assigneeUserId = f.assigneeUserId;
+    if (f.semResponsavel) where.assigneeUserId = null;
     if (f.tagId) where.tags = { some: { id: f.tagId } };
     if (f.q) where.title = { contains: f.q, mode: 'insensitive' };
     if (f.opcao) where.values = { some: { optionId: f.opcao } }; // filtro por opção de campo
@@ -497,7 +512,27 @@ export class WorkService {
     };
   }
 
-  async tarefa(orgId: string, id: string): Promise<TrabTarefaDetalhe> {
+  async atividade(orgId: string, actorId: string, id: string, rawQuery: Record<string, unknown> = {}): Promise<TrabAtividadePagina> {
+    await exigirAcessoAtual(this.prisma, orgId, actorId, ['tarefas.ver']);
+    const scope = { orgId, taskId: id, userId: actorId };
+    const query = parseActivityQuery(rawQuery, scope);
+    const task = await this.prisma.workTask.findFirst({ where: { id, orgId }, select: { id: true } });
+    if (!task) throw new NotFoundException('Tarefa não encontrada');
+    const rows = await this.prisma.auditLog.findMany({
+      where: activityWhere(orgId, id, query), orderBy: [{ createdAt: 'desc' }, { id: 'desc' }], take: query.limit + 1,
+    });
+    const page = rows.slice(0, query.limit);
+    const anchor = query.anchor ?? (page.length ? activityPoint(page[0]) : null);
+    const hasMore = rows.length > query.limit;
+    const names = await activityNames(this.prisma, orgId, page);
+    await exigirAcessoAtual(this.prisma, orgId, actorId, ['tarefas.ver']);
+    return { escopo: scope, consultadoEm: new Date().toISOString(), limit: query.limit,
+      items: page.map(row => activityDto(row, names)), anchor, hasMore,
+      nextCursor: hasMore && anchor ? activityCursor(scope, query.limit, anchor, activityPoint(page[page.length - 1])) : null };
+  }
+
+  async tarefa(orgId: string, id: string, solicitanteId?: string): Promise<TrabTarefaDetalhe> {
+    if (solicitanteId !== undefined) await exigirAcessoAtual(this.prisma, orgId, solicitanteId, ['tarefas.ver']);
     const t = await this.prisma.workTask.findFirst({
       where: { id, orgId },
       include: {
@@ -510,15 +545,10 @@ export class WorkService {
     if (!t) throw new NotFoundException('Tarefa não encontrada');
     const atividade = await this.prisma.auditLog.findMany({
       where: { orgId, entityType: 'work_task', entityId: id },
-      orderBy: { createdAt: 'desc' },
+      orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
       take: 50,
     });
-    // AuditLog não tem relação com User (actorId é livre) → resolve nomes à parte
-    const actorIds = [...new Set(atividade.map((a) => a.actorId).filter((x): x is string => !!x))];
-    const atores = actorIds.length
-      ? await this.prisma.user.findMany({ where: { id: { in: actorIds } }, select: { id: true, name: true } })
-      : [];
-    const nomePorAtor = new Map(atores.map((u) => [u.id, u.name]));
+    const nomePorAtor = await activityNames(this.prisma, orgId, atividade);
     const now = new Date();
     const [agentes, clientes, apontamentos, porEtapa] = await Promise.all([
       agentesDaCasa(this.prisma, orgId, [t.agenteId]),
@@ -541,6 +571,7 @@ export class WorkService {
       }),
     ]);
     const minutosDaTarefa = porEtapa.reduce((soma, g) => soma + (g._sum.minutos ?? 0), 0);
+    if (solicitanteId !== undefined) await exigirAcessoAtual(this.prisma, orgId, solicitanteId, ['tarefas.ver']);
     return {
       ...this.mapTask(t, now, agentes, new Map([[t.id, minutosDaTarefa]]), clientes),
       description: t.description, listName: t.list.name,
@@ -549,10 +580,7 @@ export class WorkService {
         id: c.id, authorId: c.authorId, authorName: c.authorName, text: c.text,
         createdAt: c.createdAt.toISOString(),
       })),
-      atividade: atividade.map((a) => ({
-        id: a.id, actorType: a.actorType, actorName: (a.actorId && nomePorAtor.get(a.actorId)) ?? null, action: a.action,
-        before: a.before, after: a.after, createdAt: a.createdAt.toISOString(),
-      })),
+      atividade: atividade.map(a => activityDto(a, nomePorAtor)),
       filhos: t.subtasks.map((s) => ({
         id: s.id, title: s.title, statusName: s.status.name, statusColor: s.status.color,
       })),
@@ -609,6 +637,7 @@ export class WorkService {
     if (!clienteId && opcoes.exigirCliente) {
       throw new BadRequestException('Escolha o cliente da tarefa. O trabalho da própria empresa vai para o cliente interno.');
     }
+    await this.conferirResponsavel(orgId, input.assigneeUserId);
     const campos = input.campos ? await this.conferirCampos(orgId, list.id, input.campos) : [];
     return this.logado(orgId, actorId, 'work.task.create', 'work_task', null, async () => {
       const task = await this.prisma.$transaction(async (tx) => {
@@ -618,6 +647,7 @@ export class WorkService {
             title: input.title, description: input.description ?? null,
             priority: (input.priority as WorkPriority) ?? WorkPriority.normal,
             assignee: input.assignee ?? null,
+            assigneeUserId: input.assigneeUserId ?? null,
             dueDate: input.dueDate ? new Date(input.dueDate) : null,
             startDate: input.startDate ? new Date(input.startDate) : null,
             parentId: input.parentId ?? null,
@@ -640,9 +670,30 @@ export class WorkService {
     return !!pasta && !!listaDaImplantacao([{ ...pasta, lists: [{ id: l.id, name: l.name }] }]);
   }
 
-  async editarTarefa(orgId: string, actorId: string, id: string, input: TrabTarefaUpdateInput) {
+  /** Escritores internos também precisam da versão usada para preparar a edição. */
+  async editarTarefa(orgId: string, actorId: string, id: string, input: TrabTarefaUpdateHttpInput) {
+    return this.aplicarEdicaoTarefa(orgId, actorId, id, input, false);
+  }
+
+  async editarTarefaHttp(orgId: string, actorId: string, id: string, input: TrabTarefaUpdateHttpInput) {
+    await exigirAcessoAtual(this.prisma, orgId, actorId, ['tarefas.editar']);
+    const validado = TrabTarefaUpdateHttpSchema.parse(input);
+    return this.aplicarEdicaoTarefa(orgId, actorId, id, validado, true);
+  }
+
+  private async aplicarEdicaoTarefa(orgId: string, actorId: string, id: string, input: TrabTarefaUpdateHttpInput, acessoHttp: boolean) {
+    const versao = TrabTarefaUpdateHttpSchema.shape.expectedUpdatedAt.safeParse(input?.expectedUpdatedAt);
+    if (!versao.success) {
+      throw new BadRequestException('Informe uma versão válida da tarefa antes de editar.');
+    }
     const antes = await this.prisma.workTask.findFirst({ where: { id, orgId }, include: { status: true, tags: true } });
     if (!antes) throw new NotFoundException('Tarefa não encontrada');
+    const conflito = () => new ConflictException({
+      error: 'work_task_conflict', code: 'work_task_conflict', message: 'A tarefa mudou. Confira a versão atual antes de salvar.',
+    });
+    if (new Date(input.expectedUpdatedAt).getTime() !== antes.updatedAt.getTime()) {
+      throw conflito();
+    }
 
     if (input.listId) await this.achar(this.prisma.workList, orgId, input.listId, 'Lista');
     const listId = input.listId ?? antes.listId;
@@ -656,7 +707,6 @@ export class WorkService {
     }
     let statusId = input.statusId;
     if (input.listId && input.listId !== antes.listId && !statusId) {
-      // mover de lista sem status novo → cai no primeiro status da lista destino
       const primeiro = await this.prisma.workStatus.findFirst({ where: { listId, orgId }, orderBy: { order: 'asc' } });
       if (!primeiro) throw new BadRequestException('Lista destino sem statuses.');
       statusId = primeiro.id;
@@ -666,54 +716,73 @@ export class WorkService {
       if (!ok) throw new BadRequestException('Status não pertence à lista da tarefa.');
     }
     await this.conferirPaiEEtiquetas(orgId, input);
+    await this.conferirResponsavel(orgId, input.assigneeUserId, antes.assigneeUserId);
     const campos = input.campos ? await this.conferirCampos(orgId, listId, input.campos) : [];
     const clienteId = input.clienteId ? await resolverCliente(this.prisma, orgId, input.clienteId) : undefined;
+    const updatedAt = new Date(Math.max(Date.now(), antes.updatedAt.getTime() + 1));
 
-    const { depois, camposAntes, camposDepois } = await this.prisma.$transaction(async (tx) => {
-      const camposAntes = campos.length ? await this.retratoDosCampos(tx, id, campos) : null;
-      const depois = await tx.workTask.update({
-        where: { id },
+    await this.prisma.$transaction(async (tx) => {
+      if (acessoHttp) await exigirAcessoAtual(tx, orgId, actorId, ['tarefas.editar']);
+      // A instrução condicional trava a linha antes de etiquetas, campos e auditoria.
+      const claim = await tx.workTask.updateMany({
+        where: { id, orgId, updatedAt: antes.updatedAt },
         data: {
-          listId: input.listId,
-          statusId,
-          title: input.title,
-          description: input.description === undefined ? undefined : input.description,
+          listId: input.listId, statusId, title: input.title,
+          description: input.description,
           priority: input.priority as WorkPriority | undefined,
-          assignee: input.assignee === undefined ? undefined : input.assignee,
+          assignee: input.assignee,
+          assigneeUserId: input.assigneeUserId,
           dueDate: input.dueDate === undefined ? undefined : input.dueDate ? new Date(input.dueDate) : null,
           startDate: input.startDate === undefined ? undefined : input.startDate ? new Date(input.startDate) : null,
           parentId: input.parentId === undefined ? undefined : input.parentId,
           clienteId,
-          archived: input.archived,
-          order: input.order,
-          tags: input.tagIds ? { set: input.tagIds.map((tid) => ({ id: tid })) } : undefined,
+          archived: input.archived, order: input.order, updatedAt,
         },
-        include: { status: true },
       });
+      if (claim.count !== 1) throw conflito();
+      const camposAntes = campos.length ? await this.retratoDosCampos(tx, id, campos) : null;
+      if (input.tagIds !== undefined) {
+        await tx.workTask.update({
+          where: { id }, data: { tags: { set: input.tagIds.map((tid) => ({ id: tid })) }, updatedAt },
+        });
+      }
       await this.gravarCampos(tx, id, campos);
       const camposDepois = campos.length ? await this.retratoDosCampos(tx, id, campos) : null;
-      return { depois, camposAntes, camposDepois };
+      const depois = await tx.workTask.findFirst({ where: { id, orgId }, include: { status: true } });
+      if (!depois) throw new NotFoundException('Tarefa não encontrada');
+      await this.audit.log({
+        orgId, actorId, action: 'work.task.update', entityType: 'work_task', entityId: id,
+        // `dueDate` entrou na rodada do painel P1 (18/10/2026): a caixa de entrada
+        // mostra "vencimento mudou de → para" a partir DESTA linha, sem segundo
+        // caminho de escrita. Linha antiga, sem a chave, não mostra a mudança.
+        before: {
+          status: antes.status.name, title: antes.title, assignee: antes.assignee,
+          assigneeUserId: antes.assigneeUserId, priority: antes.priority,
+          dueDate: antes.dueDate?.toISOString() ?? null,
+          ...(clienteId !== undefined ? { clienteId: antes.clienteId } : {}),
+          ...(camposAntes ? { campos: camposAntes } : {}),
+        },
+        after: {
+          status: depois.status.name, title: depois.title, assignee: depois.assignee,
+          assigneeUserId: depois.assigneeUserId, priority: depois.priority,
+          dueDate: depois.dueDate?.toISOString() ?? null,
+          ...(clienteId !== undefined ? { clienteId: depois.clienteId } : {}),
+          ...(camposDepois ? { campos: camposDepois } : {}),
+        },
+      }, tx);
+      if (acessoHttp) await exigirAcessoAtual(tx, orgId, actorId, ['tarefas.editar']);
     });
+    const detail = await this.tarefa(orgId, id);
+    if (acessoHttp) await exigirAcessoAtual(this.prisma, orgId, actorId, ['tarefas.editar']);
+    return detail;
+  }
 
-    await this.audit.log({
-      orgId, actorId, action: 'work.task.update', entityType: 'work_task', entityId: id,
-      // `dueDate` entrou na rodada do painel P1 (18/10/2026): a caixa de entrada
-      // mostra "vencimento mudou de → para" a partir DESTA linha, sem segundo
-      // caminho de escrita. Linha antiga, sem a chave, não mostra a mudança.
-      before: {
-        status: antes.status.name, title: antes.title, assignee: antes.assignee, priority: antes.priority,
-        dueDate: antes.dueDate?.toISOString() ?? null,
-        ...(clienteId !== undefined ? { clienteId: antes.clienteId } : {}),
-        ...(camposAntes ? { campos: camposAntes } : {}),
-      },
-      after: {
-        status: depois.status.name, title: depois.title, assignee: depois.assignee, priority: depois.priority,
-        dueDate: depois.dueDate?.toISOString() ?? null,
-        ...(clienteId !== undefined ? { clienteId: depois.clienteId } : {}),
-        ...(camposDepois ? { campos: camposDepois } : {}),
-      },
-    });
-    return this.tarefa(orgId, id);
+  /** Um vínculo existente inativo pode permanecer; uma nova atribuição exige conta ativa desta empresa. */
+  private async conferirResponsavel(orgId: string, pedido: string | null | undefined, atual?: string | null) {
+    if (pedido == null || pedido === atual) return;
+    const pessoa = await this.prisma.user.findFirst({ where: { id: pedido, orgId }, select: { id: true, isActive: true } });
+    if (!pessoa) throw new NotFoundException('Pessoa não encontrada');
+    if (!pessoa.isActive) throw new BadRequestException('Pessoa inativa não recebe nova atribuição.');
   }
 
   /**

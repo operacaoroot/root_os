@@ -14,9 +14,7 @@ import { exigirTenant } from '../common/contexto-execucao';
 import { nomesDosClientes } from '../work/clientes-da-casa';
 import {
   ESTADO_DO_EIXO,
-  condicoesDeResponsavel,
   ehDeOutraPessoa,
-  identidadesDe,
   motivosDaParada,
   trechoDoComentario,
   type EstadoDoEixo,
@@ -92,6 +90,29 @@ export interface PedidoDasTarefas {
   filtros: CaixaTarefasQuery;
 }
 
+/*
+ * QUEM É "EU" (versão final, 19/10/2026): a produção (entrega do Pedro de 14/10)
+ * passou a identificar as tarefas pessoais pela CONTA (`assigneeUserId`), nunca
+ * pelo texto antigo do responsável, e o Lucas acrescentou os outros responsáveis
+ * (`outrosResponsaveisIds`). As abas Atividade e Minhas tarefas seguem a mesma
+ * regra. Os nomes continuam na resposta só para a tela dizer quem é você.
+ */
+function identidadesDe(pessoa: { name?: string | null; email?: string | null }): string[] {
+  const saida: string[] = [];
+  const vistos = new Set<string>();
+  for (const bruto of [pessoa.name ?? '', pessoa.email ?? '']) {
+    const limpo = bruto.trim();
+    if (!limpo || vistos.has(limpo.toLowerCase())) continue;
+    vistos.add(limpo.toLowerCase());
+    saida.push(limpo);
+  }
+  return saida;
+}
+
+function condicoesDaConta(usuarioId: string): Prisma.WorkTaskWhereInput[] {
+  return [{ assigneeUserId: usuarioId }, { outrosResponsaveisIds: { has: usuarioId } }];
+}
+
 @Injectable()
 export class CaixaAtividadeService {
   constructor(
@@ -150,7 +171,7 @@ export class CaixaAtividadeService {
 
     // As minhas tarefas — o responsável de AGORA, pela regra de `o-que-espera`.
     const tarefas = await this.prisma.workTask.findMany({
-      where: { orgId, archived: false, OR: condicoesDeResponsavel(identidades) },
+      where: { orgId, archived: false, OR: condicoesDaConta(eu.id) },
       orderBy: { updatedAt: 'desc' },
       take: TETO_TAREFAS_DA_ATIVIDADE + 1,
       select: { id: true, title: true, list: { select: { name: true } } },
@@ -421,7 +442,7 @@ export class CaixaAtividadeService {
     const where: Prisma.WorkTaskWhereInput = {
       orgId,
       archived: false,
-      ...(f.responsavel === 'eu' ? { OR: condicoesDeResponsavel(identidades) } : {}),
+      ...(f.responsavel === 'eu' ? { OR: condicoesDaConta(eu.id) } : {}),
       ...(f.listaId ? { listId: f.listaId } : {}),
       ...(f.pastaId ? { list: { orgId, folderId: f.pastaId } } : {}),
       ...(Object.keys(status).length ? { status } : {}),

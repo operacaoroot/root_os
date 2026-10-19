@@ -36,11 +36,12 @@ function bancada() {
     contextItem: {
       findMany: vi.fn(async ({ where }: { where: Record<string, any> }) => {
         expect(where).toMatchObject({ orgId: pedido.orgId, sourceType: 'vault', chave: { startsWith: 'vault:' }, arquivadoEm: null });
-        return where.OR.some((x: { body?: { contains: string }; title?: { contains: string } }) =>
+        if (where.id?.in) return where.id.in.includes(item.id) ? [{ ...item }] : [];
+        return where.AND.OR.some((x: { body?: { contains: string }; title?: { contains: string } }) =>
           (x.body && item.body.includes(x.body.contains)) || (x.title && item.title.includes(x.title.contains))) ? [{ ...item }] : [];
       }),
       findFirst: vi.fn(async ({ where }: { where: Record<string, any> }) => {
-        expect(where).toEqual({ id: where.id, orgId: pedido.orgId, sourceType: 'vault', chave: { startsWith: 'vault:' }, arquivadoEm: null });
+        expect(where).toMatchObject({ id: where.id, orgId: pedido.orgId, arquivadoEm: null });
         return where.id === item.id ? { ...item } : null;
       }),
     },

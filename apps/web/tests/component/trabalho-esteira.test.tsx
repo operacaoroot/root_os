@@ -69,7 +69,7 @@ const ESTEIRA = {
 
 function tarefa(over: Record<string, unknown> = {}) {
   return {
-    id: 't-1', listId: 'l-esteira', title: 'ProMedical',
+    id: 't-1', listId: 'l-esteira', title: 'ProMedical', updatedAt: '2026-09-17T10:00:00.000Z',
     statusId: 's-impl', statusName: 'Implantação', statusType: 'custom', statusColor: '#ff7800',
     priority: 'normal', assignee: 'Rodrigo',
     agenteId: null, agenteSlug: null, agenteNome: null, agenteEm: null,
@@ -171,7 +171,7 @@ describe('trabalho importado: card único e material preservado', () => {
     const painel = await screen.findByDisplayValue('ROOT-001');
     const gaveta = painel.closest('.fixed') as HTMLElement;
     await userEvent.selectOptions(within(gaveta).getByLabelText(/^Lista/), 'l-destino');
-    await waitFor(() => expect(apiPatch).toHaveBeenCalledWith(`/trabalho/tarefas/${id}`, { listId: 'l-destino' }, 'tok'));
+    await waitFor(() => expect(apiPatch).toHaveBeenCalledWith(`/trabalho/tarefas/${id}`, { listId: 'l-destino', expectedUpdatedAt: '2026-09-17T10:00:00.000Z' }, 'tok'));
     expect(apiPost).not.toHaveBeenCalledWith('/trabalho/tarefas', expect.anything(), 'tok');
     await waitFor(() => expect(window.location.search).toBe(`?lista=l-destino&tarefa=${id}`));
   });
@@ -204,6 +204,7 @@ describe('trabalho importado: card único e material preservado', () => {
     fireEvent.change(textarea, { target: { value: 'Pacote vigente' } });
     fireEvent.blur(textarea);
     await waitFor(() => expect(apiPatch).toHaveBeenCalledWith('/trabalho/tarefas/t-1', {
+      expectedUpdatedAt: '2026-09-17T10:00:00.000Z',
       description: `Pacote vigente\n\n${sufixo}`,
     }, 'tok'));
   });
@@ -222,6 +223,7 @@ describe('trabalho importado: card único e material preservado', () => {
     fireEvent.change(textarea, { target: { value: 'Contexto atualizado' } });
     fireEvent.blur(textarea);
     await waitFor(() => expect(apiPatch).toHaveBeenCalledWith('/trabalho/tarefas/t-1', {
+      expectedUpdatedAt: '2026-09-17T10:00:00.000Z',
       description: `Contexto atualizado\n\n${secao}`,
     }, 'tok'));
   });
@@ -352,7 +354,7 @@ describe('esteira: arrastar e soltar', () => {
     fireEvent.dragStart(c, { dataTransfer: dt });
     fireEvent.dragOver(coluna('s-impl'), { dataTransfer: dt });
     fireEvent.drop(coluna('s-impl'), { dataTransfer: dt });
-    await waitFor(() => expect(apiPatch).toHaveBeenCalledWith('/trabalho/tarefas/t-sol', { statusId: 's-impl' }, 'tok'));
+    await waitFor(() => expect(apiPatch).toHaveBeenCalledWith('/trabalho/tarefas/t-sol', { statusId: 's-impl', expectedUpdatedAt: '2026-09-17T10:00:00.000Z' }, 'tok'));
   });
 
   it('soltar na própria coluna não chama a API', async () => {

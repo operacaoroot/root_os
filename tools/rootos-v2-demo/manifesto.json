@@ -1,0 +1,96 @@
+{
+  "schemaVersion": 1,
+  "dataset": "rootos-v2-demo-2026-10-v1",
+  "namespace": "b23ef0ed-ab1f-57c9-b52a-744420199374",
+  "orgId": "7e4d6720-3a23-4933-9eef-ace27773c52b",
+  "actorId": "1803d3c5-bbc4-4140-90d9-fdc35c156ac8",
+  "requestId": "81f2c132-4f59-5dc2-9fa0-c95b68e0f279",
+  "assets": [
+    {
+      "key": "nota-aviso",
+      "path": "00 - Leia antes.md",
+      "sha256": "1f18bc68373b197d0d23786d1429017ccad2d782f2346b5235198bb26caf4e8e",
+      "bytes": 540
+    },
+    {
+      "key": "nota-conteudo",
+      "path": "01 - Briefing de conteúdo.md",
+      "sha256": "bcdbffb12756e97ad23516b0065976aea623ab8f5a8cc88286b375e689dfb0a4",
+      "bytes": 539
+    },
+    {
+      "key": "nota-financeiro",
+      "path": "02 - Condições financeiras.md",
+      "sha256": "08c790ea7d163d73a720fc1eedae362bc7282aed400498c319098903011dfa95",
+      "bytes": 546
+    }
+  ],
+  "objects": [
+    {
+      "key": "nota-aviso",
+      "logicalId": "23ea2db7-94d3-5837-a012-498f87c8f09f",
+      "requestId": null
+    },
+    {
+      "key": "nota-conteudo",
+      "logicalId": "34e39aba-1dd4-5573-b3b5-863107853425",
+      "requestId": null
+    },
+    {
+      "key": "nota-financeiro",
+      "logicalId": "f07ebd6e-4885-5325-97fc-3b533801ed55",
+      "requestId": null
+    },
+    {
+      "key": "espaco",
+      "logicalId": "9cd31941-469c-50f7-90cb-221cea9e2d64",
+      "requestId": null
+    },
+    {
+      "key": "lista",
+      "logicalId": "8f95cc17-64fd-509e-bef0-cf370d6f8665",
+      "requestId": null
+    },
+    {
+      "key": "tarefa",
+      "logicalId": "e640683e-cf0f-59b9-96d1-489a03ff4870",
+      "requestId": "015280b7-710c-5f36-848e-e326c54ff832"
+    },
+    {
+      "key": "agente",
+      "logicalId": "c3069432-c6fb-5676-8d9b-360005c19977",
+      "requestId": "d052b4ba-2036-5bd5-8c2a-92883ab7ff81"
+    },
+    {
+      "key": "material",
+      "logicalId": "b68d626e-a602-59bb-9b89-0036b4724458",
+      "requestId": "9b3689dc-da04-5e64-b46d-79d6347d6b90"
+    },
+    {
+      "key": "oportunidade",
+      "logicalId": "c79998f8-7592-5984-8914-41ef6d53276c",
+      "requestId": "6ff168da-b454-585c-9050-d5cc8f57a504"
+    },
+    {
+      "key": "conta",
+      "logicalId": "7829e67a-0203-523f-a62a-0266637ea5d4",
+      "requestId": null
+    },
+    {
+      "key": "classificacao",
+      "logicalId": "b52e6978-2a63-5739-83bc-1c7887c78287",
+      "requestId": null
+    },
+    {
+      "key": "contraparte",
+      "logicalId": "069643e3-1135-5a1e-bafa-03c47f802ace",
+      "requestId": null
+    },
+    {
+      "key": "contrato",
+      "logicalId": "afcd602d-e4f9-548d-8baa-3126fade3573",
+      "requestId": null
+    }
+  ],
+  "contractStart": "2026-10-01T12:00:00.000Z"
+}

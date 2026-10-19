@@ -81,28 +81,30 @@
 }
 
 :root[data-os-theme='mono'] {
-  color-scheme: dark;
-  --os-bg: 0 0 0;
-  --os-bg2: 0 0 0;
-  --os-s1: 10 10 10;
-  --os-s2: 16 16 16;
-  --os-s3: 22 22 22;
-  --os-line: 30 30 30;
-  --os-line-strong: 46 46 46;
-  --os-tx: 242 242 242;
-  --os-tx2: 154 154 154;
-  --os-tx3: 124 124 124;
-  --os-ac: 255 255 255;
-  --os-ac2: 255 255 255;
-  --os-ac-dim: 90 90 90;
-  --os-ac-ink: 0 0 0;
-  --os-mag: 255 59 48;
-  --os-cy: 255 255 255;
-  --os-ok: 48 209 88;
-  --os-warn: 255 214 10;
-  --os-err: 255 59 48;
+  /* Tema "claro": a paleta clara da Máquina de Conteúdo (conteudo.operacaoroot.com,
+     html[data-tema="claro"]). O id continua 'mono' para quem já tinha escolhido. */
+  color-scheme: light;
+  --os-bg: 243 245 240;
+  --os-bg2: 238 242 234;
+  --os-s1: 255 255 255;
+  --os-s2: 238 242 234;
+  --os-s3: 226 232 220;
+  --os-line: 216 223 208;
+  --os-line-strong: 197 208 186;
+  --os-tx: 23 33 22;
+  --os-tx2: 91 105 86;
+  --os-tx3: 125 139 112;
+  --os-ac: 74 122 0;
+  --os-ac2: 59 99 0;
+  --os-ac-dim: 168 180 156;
+  --os-ac-ink: 255 255 255;
+  --os-mag: 208 20 90;
+  --os-cy: 10 138 95;
+  --os-ok: 10 138 95;
+  --os-warn: 122 84 0;
+  --os-err: 208 20 90;
   --os-grid: transparent;
-  --os-logo-shadow: none;
+  --os-logo-shadow: 1px 0 #d0145a;
 }
 
 /* O fallback interno do var() é obrigatório: sem ele, se --font-jetbrains
@@ -329,4 +331,22 @@ body {
 .quadro-rolagem-lateral::-webkit-scrollbar-track {
   background: rgb(var(--os-line-strong) / 0.18);
   border-radius: 8px;
+}
+/* Comercial: a paleta vem do tema global (o claro é o da Máquina de Conteúdo);
+   aqui só o ritmo da tela e a regra de mono só em rótulo e número. */
+.com-tema {
+  font-size: 15px;
+  line-height: 1.55;
+}
+.com-tema .com-rotulo {
+  font-family: var(--os-mono);
+  font-size: 0.66rem;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: rgb(var(--os-tx3));
+}
+.com-tema .com-num {
+  font-family: var(--os-mono);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.02em;
 }

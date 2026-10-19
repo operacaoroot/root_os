@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { HttpException } from '@nestjs/common';
 import { Prisma, PrismaClient } from '@prisma/client';
-import { TrabCampoCreateSchema } from '@mktos/shared';
+import { TrabCampoCreateSchema, type TrabTarefaUpdateHttpInput } from '@mktos/shared';
 import { AuditService } from '../src/audit/audit.service';
 import { EventLogService } from '../src/gateway/event-log.service';
 import { CheckoutDeTarefaService } from '../src/work/checkout-de-tarefa.service';
@@ -47,6 +47,7 @@ async function erroDe(chamada: Promise<unknown>): Promise<{ status: number | nul
 const ORG = 'org-moeda-falsa';
 const LISTA = 'lista-falsa';
 const TAREFA = 'tarefa-falsa';
+const VERSAO_FALSA = '2026-10-07T00:00:00.000Z';
 const CAMPOS_FALSOS = [
   { id: 'c-valor', name: 'Valor em negocição', type: 'moeda', options: [] },
   { id: 'c-obs', name: 'Observação', type: 'texto', options: [] },
@@ -56,12 +57,14 @@ const CAMPOS_FALSOS = [
 function servicoFalso(valoresIniciais: Record<string, { optionId: string | null; value: string | null }> = {}) {
   const valores = new Map(Object.entries(valoresIniciais));
   const chamadas = { create: 0, update: 0, upsert: [] as unknown[], deleteMany: [] as unknown[] };
-  const tarefa = { id: TAREFA, orgId: ORG, listId: LISTA, title: 'Lead', assignee: null, priority: 'normal', status: { name: 'oportunidade' }, tags: [] };
+  const tarefa = { id: TAREFA, orgId: ORG, listId: LISTA, title: 'Lead', assignee: null, assigneeUserId: null, updatedAt: new Date(VERSAO_FALSA), priority: 'normal', status: { name: 'oportunidade' }, tags: [] };
+  const leitura = vi.fn(async () => ({ ...tarefa, status: { ...tarefa.status } }));
   const prisma: Record<string, unknown> = {
     workList: { findFirst: async () => ({ id: LISTA, orgId: ORG, statuses: [{ id: 'st-1' }] }) },
     workTask: {
-      findFirst: async () => tarefa,
+      findFirst: leitura,
       create: async () => { chamadas.create++; return { id: TAREFA, listId: LISTA }; },
+      updateMany: async ({ data }: { data: Record<string, unknown> }) => { chamadas.update++; for (const [key, value] of Object.entries(data)) if (value !== undefined) Object.assign(tarefa, { [key]: value }); return { count: 1 }; },
       update: async ({ data }: { data: { title?: string } }) => { chamadas.update++; return { ...tarefa, title: data.title ?? tarefa.title }; },
     },
     workField: {
@@ -83,8 +86,23 @@ function servicoFalso(valoresIniciais: Record<string, { optionId: string | null;
   const audit = { log: vi.fn(async () => undefined) };
   const svc = new WorkService(prisma as unknown as PrismaService, audit as unknown as AuditService, {} as CheckoutDeTarefaService);
   vi.spyOn(svc, 'tarefa').mockResolvedValue({ id: TAREFA } as never);
-  return { svc, chamadas, audit, valores };
+  return { svc, chamadas, audit, valores, leitura };
 }
+
+describe('escritor interno de tarefa exige versão antes da leitura', () => {
+  it.each([undefined, null, '', '2026-10-08', 'data-inválida'])('versão %j recusa sem consultar ou alterar conteúdo', async (version) => {
+    const { svc, chamadas, audit, valores, leitura } = servicoFalso({ 'c-obs': { optionId: null, value: 'Material preservado' } });
+    const body = { title: 'Pedido antigo sem versão válida', campos: { 'c-obs': { value: 'Não gravar' } },
+      ...(version === undefined ? {} : { expectedUpdatedAt: version }) } as TrabTarefaUpdateHttpInput;
+    expect(await erroDe(svc.editarTarefa(ORG, 'eu', TAREFA, body))).toEqual({
+      status: 400, mensagem: 'Informe uma versão válida da tarefa antes de editar.',
+    });
+    expect(leitura).not.toHaveBeenCalled();
+    expect(chamadas).toEqual({ create: 0, update: 0, upsert: [], deleteMany: [] });
+    expect(audit.log).not.toHaveBeenCalled();
+    expect(valores.get('c-obs')).toEqual({ optionId: null, value: 'Material preservado' });
+  });
+});
 
 describe('campo moeda: o que a API aceita', () => {
   it('POST /trabalho/campos aceita o tipo moeda; tipo desconhecido continua recusado', () => {
@@ -94,7 +112,7 @@ describe('campo moeda: o que a API aceita', () => {
 
   it('BRL 1500.00 chega ao upsert sem mudança e sem opção', async () => {
     const { svc, chamadas } = servicoFalso();
-    await svc.editarTarefa(ORG, 'eu', TAREFA, { campos: { 'c-valor': { value: 'BRL 1500.00' } } });
+    await svc.editarTarefa(ORG, 'eu', TAREFA, { expectedUpdatedAt: VERSAO_FALSA, campos: { 'c-valor': { value: 'BRL 1500.00' } } });
     expect(chamadas.upsert).toEqual([{
       where: { taskId_fieldId: { taskId: TAREFA, fieldId: 'c-valor' } },
       update: { optionId: null, value: 'BRL 1500.00' },
@@ -105,7 +123,7 @@ describe('campo moeda: o que a API aceita', () => {
   it.each(['1.500,00', '1500', '1500.00', 'BRL 1500', 'R$ 1.500,00', 'BRL -0.00', 'BRL 1500.0', 'brl 1500.00', 'XXY 1.00', ''])(
     '%j recebe 400 e nada é gravado', async (value) => {
       const { svc, chamadas } = servicoFalso();
-      expect(await erroDe(svc.editarTarefa(ORG, 'eu', TAREFA, { campos: { 'c-valor': { value } } })))
+      expect(await erroDe(svc.editarTarefa(ORG, 'eu', TAREFA, { expectedUpdatedAt: VERSAO_FALSA, campos: { 'c-valor': { value } } })))
         .toEqual({ status: 400, mensagem: MENSAGEM_MONETARIA('Valor em negocição') });
       expect(chamadas).toEqual({ create: 0, update: 0, upsert: [], deleteMany: [] });
     },
@@ -114,7 +132,7 @@ describe('campo moeda: o que a API aceita', () => {
   it('optionId num campo moeda recebe 400, com ou sem valor', async () => {
     for (const v of [{ optionId: 'op-p1' }, { optionId: 'op-p1', value: 'BRL 1500.00' }, { optionId: 'op-p1', value: null }]) {
       const { svc, chamadas } = servicoFalso();
-      expect(await erroDe(svc.editarTarefa(ORG, 'eu', TAREFA, { campos: { 'c-valor': v } })))
+      expect(await erroDe(svc.editarTarefa(ORG, 'eu', TAREFA, { expectedUpdatedAt: VERSAO_FALSA, campos: { 'c-valor': v } })))
         .toEqual({ status: 400, mensagem: MENSAGEM_MONETARIA('Valor em negocição') });
       expect(chamadas.upsert).toEqual([]);
     }
@@ -123,7 +141,7 @@ describe('campo moeda: o que a API aceita', () => {
   it('value null apaga, como nos outros tipos', async () => {
     for (const v of [{ value: null }, {}, { optionId: null }]) {
       const { svc, chamadas } = servicoFalso({ 'c-valor': { optionId: null, value: 'BRL 1500.00' } });
-      await svc.editarTarefa(ORG, 'eu', TAREFA, { campos: { 'c-valor': v } });
+      await svc.editarTarefa(ORG, 'eu', TAREFA, { expectedUpdatedAt: VERSAO_FALSA, campos: { 'c-valor': v } });
       expect(chamadas.upsert).toEqual([]);
       expect(chamadas.deleteMany).toEqual([{ where: { taskId: TAREFA, fieldId: 'c-valor' } }]);
     }
@@ -131,7 +149,7 @@ describe('campo moeda: o que a API aceita', () => {
 
   it('campo texto continua aceitando texto livre, inclusive com cara de dinheiro', async () => {
     const { svc, chamadas } = servicoFalso();
-    await svc.editarTarefa(ORG, 'eu', TAREFA, { campos: { 'c-obs': { value: 'R$ 15 mil, a confirmar' } } });
+    await svc.editarTarefa(ORG, 'eu', TAREFA, { expectedUpdatedAt: VERSAO_FALSA, campos: { 'c-obs': { value: 'R$ 15 mil, a confirmar' } } });
     expect(chamadas.upsert).toEqual([expect.objectContaining({ update: { optionId: null, value: 'R$ 15 mil, a confirmar' } })]);
   });
 });
@@ -149,7 +167,7 @@ describe('campo moeda: tudo é conferido antes da primeira escrita (E1)', () => 
 
   it('PATCH com texto válido e moeda inválida: 400 e nada alterado, nem o título', async () => {
     const { svc, chamadas, audit, valores } = servicoFalso({ 'c-obs': { optionId: null, value: 'antes' } });
-    const erro = await erroDe(svc.editarTarefa(ORG, 'eu', TAREFA, {
+    const erro = await erroDe(svc.editarTarefa(ORG, 'eu', TAREFA, { expectedUpdatedAt: VERSAO_FALSA,
       title: 'Título novo', campos: { 'c-obs': { value: 'depois' }, 'c-valor': { value: 'R$ 2.000,00' } },
     }));
     expect(erro).toEqual({ status: 400, mensagem: MENSAGEM_MONETARIA('Valor em negocição') });
@@ -160,7 +178,7 @@ describe('campo moeda: tudo é conferido antes da primeira escrita (E1)', () => 
 
   it('PATCH com opção de outro campo depois de um texto válido: 400 e nada gravado', async () => {
     const { svc, chamadas } = servicoFalso();
-    expect(await erroDe(svc.editarTarefa(ORG, 'eu', TAREFA, {
+    expect(await erroDe(svc.editarTarefa(ORG, 'eu', TAREFA, { expectedUpdatedAt: VERSAO_FALSA,
       campos: { 'c-obs': { value: 'ok' }, 'c-perfil': { optionId: 'op-de-outro-campo' } },
     }))).toEqual({ status: 400, mensagem: 'Opção não pertence ao campo Perfil.' });
     expect(chamadas.upsert).toEqual([]);
@@ -168,7 +186,7 @@ describe('campo moeda: tudo é conferido antes da primeira escrita (E1)', () => 
 
   it('campo que não vale para a lista: 400 antes de qualquer escrita', async () => {
     const { svc, chamadas } = servicoFalso();
-    expect(await erroDe(svc.editarTarefa(ORG, 'eu', TAREFA, {
+    expect(await erroDe(svc.editarTarefa(ORG, 'eu', TAREFA, { expectedUpdatedAt: VERSAO_FALSA,
       campos: { 'c-obs': { value: 'ok' }, 'c-de-outra-lista': { value: 'x' } },
     }))).toEqual({ status: 400, mensagem: 'Campo c-de-outra-lista não vale para esta lista.' });
     expect(chamadas).toEqual({ create: 0, update: 0, upsert: [], deleteMany: [] });
@@ -178,7 +196,7 @@ describe('campo moeda: tudo é conferido antes da primeira escrita (E1)', () => 
 describe('campo moeda: a auditoria guarda o valor (A4)', () => {
   it('work.task.update leva o antes e o depois dos campos do pedido', async () => {
     const { svc, audit } = servicoFalso({ 'c-valor': { optionId: null, value: 'BRL 1500.00' } });
-    await svc.editarTarefa(ORG, 'eu', TAREFA, { campos: { 'c-valor': { value: 'BRL 2000.00' }, 'c-perfil': { optionId: 'op-p1' } } });
+    await svc.editarTarefa(ORG, 'eu', TAREFA, { expectedUpdatedAt: VERSAO_FALSA, campos: { 'c-valor': { value: 'BRL 2000.00' }, 'c-perfil': { optionId: 'op-p1' } } });
     expect(audit.log).toHaveBeenCalledWith(expect.objectContaining({
       action: 'work.task.update', entityId: TAREFA,
       before: expect.objectContaining({ campos: {
@@ -189,18 +207,18 @@ describe('campo moeda: a auditoria guarda o valor (A4)', () => {
         'c-valor': { campo: 'Valor em negocição', tipo: 'moeda', opcao: null, valor: 'BRL 2000.00' },
         'c-perfil': { campo: 'Perfil', tipo: 'drop_down', opcao: 'P1', valor: null },
       } }),
-    }));
+    }), expect.anything());
   });
 
   it('PATCH sem campos não ganha a chave campos na auditoria', async () => {
     const { svc, audit } = servicoFalso();
-    await svc.editarTarefa(ORG, 'eu', TAREFA, { title: 'Só o título' });
+    await svc.editarTarefa(ORG, 'eu', TAREFA, { expectedUpdatedAt: VERSAO_FALSA, title: 'Só o título' });
     expect(audit.log).toHaveBeenCalledWith(expect.objectContaining({
       // `dueDate` entrou no antes/depois na rodada do painel P1 (a caixa de
       // entrada lê a mudança de vencimento desta linha).
-      before: { status: 'oportunidade', title: 'Lead', assignee: null, priority: 'normal', dueDate: null },
-      after: { status: 'oportunidade', title: 'Só o título', assignee: null, priority: 'normal', dueDate: null },
-    }));
+      before: { status: 'oportunidade', title: 'Lead', assignee: null, assigneeUserId: null, priority: 'normal', dueDate: null },
+      after: { status: 'oportunidade', title: 'Só o título', assignee: null, assigneeUserId: null, priority: 'normal', dueDate: null },
+    }), expect.anything());
   });
 });
 
@@ -253,6 +271,7 @@ describe.skipIf(!URL)('campo moeda no banco: recusa não deixa nada gravado', ()
   let valor: string;
   let obs: string;
   let alvo: string;
+  let versaoInicial: string;
 
   const auditoria = async (action: string) => prisma.auditLog.count({ where: { orgId: CASA, action } });
   const valoresDe = async (taskId: string) => Object.fromEntries(
@@ -281,9 +300,11 @@ describe.skipIf(!URL)('campo moeda no banco: recusa não deixa nada gravado', ()
   beforeEach(async () => {
     await prisma.workTask.deleteMany({ where: { orgId: CASA } });
     await prisma.auditLog.deleteMany({ where: { orgId: CASA, entityType: 'work_task' } });
-    alvo = (await svc.criarTarefa(CASA, EU, {
+    const criada = await svc.criarTarefa(CASA, EU, {
       listId: lista, title: 'Alvo', campos: { [obs]: { value: 'antes' }, [valor]: { value: 'BRL 1500.00' } },
-    })).id;
+    });
+    alvo = criada.id;
+    versaoInicial = criada.updatedAt;
     await prisma.auditLog.deleteMany({ where: { orgId: CASA, entityType: 'work_task' } });
   });
 
@@ -308,7 +329,7 @@ describe.skipIf(!URL)('campo moeda no banco: recusa não deixa nada gravado', ()
   });
 
   it('PATCH com texto válido e moeda inválida: 400 e nenhum valor gravado', async () => {
-    const erro = await erroDe(svc.editarTarefa(CASA, EU, alvo, {
+    const erro = await erroDe(svc.editarTarefa(CASA, EU, alvo, { expectedUpdatedAt: versaoInicial,
       title: 'Outro título', campos: { [obs]: { value: 'depois' }, [valor]: { value: '2000.50' } },
     }));
     expect(erro).toEqual({ status: 400, mensagem: MENSAGEM_MONETARIA('Valor em negocição') });
@@ -318,7 +339,7 @@ describe.skipIf(!URL)('campo moeda no banco: recusa não deixa nada gravado', ()
   });
 
   it('falha no meio da escrita desfaz a tarefa e os valores já gravados', async () => {
-    const erro = await erroDe(svcComFalha.editarTarefa(CASA, EU, alvo, {
+    const erro = await erroDe(svcComFalha.editarTarefa(CASA, EU, alvo, { expectedUpdatedAt: versaoInicial,
       title: 'Outro título', campos: { [obs]: { value: 'depois' }, [valor]: { value: 'BRL 2000.50' } },
     }));
     expect(erro).toEqual({ status: null, mensagem: 'falha simulada no meio da escrita' });
@@ -333,7 +354,7 @@ describe.skipIf(!URL)('campo moeda no banco: recusa não deixa nada gravado', ()
   });
 
   it('PATCH válido grava o canônico, a leitura devolve type moeda e a auditoria guarda o antes e o depois', async () => {
-    await svc.editarTarefa(CASA, EU, alvo, { campos: { [valor]: { value: 'BRL 2000.50' } } });
+    await svc.editarTarefa(CASA, EU, alvo, { expectedUpdatedAt: versaoInicial, campos: { [valor]: { value: 'BRL 2000.50' } } });
     expect(await valoresDe(alvo)).toEqual({ [obs]: 'antes', [valor]: 'BRL 2000.50' });
     const lida = (await svc.tarefas(CASA, { listId: lista })).items.find((t) => t.id === alvo)!;
     expect(lida.values.find((v) => v.fieldId === valor)).toMatchObject({ type: 'moeda', optionId: null, value: 'BRL 2000.50' });
@@ -343,7 +364,7 @@ describe.skipIf(!URL)('campo moeda no banco: recusa não deixa nada gravado', ()
   });
 
   it('value null apaga o valor monetário', async () => {
-    await svc.editarTarefa(CASA, EU, alvo, { campos: { [valor]: { value: null } } });
+    await svc.editarTarefa(CASA, EU, alvo, { expectedUpdatedAt: versaoInicial, campos: { [valor]: { value: null } } });
     expect(await valoresDe(alvo)).toEqual({ [obs]: 'antes' });
   });
 });

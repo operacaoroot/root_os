@@ -1,8 +1,9 @@
 import { Body, Controller, Get, Param, Post, Put, UseGuards } from '@nestjs/common';
-import { PautaEstrategiaSalvarSchema, PautaMesSchema } from '@mktos/shared';
+import { PautaEstrategiaSalvarHumanoSchema, PautaMesSchema } from '@mktos/shared';
 import { EstrategiaService } from './estrategia.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { PermissionsGuard } from '../auth/permissions.guard';
+import { AcessoAtualGuard } from '../memory/acesso-atual.guard';
 import { RequirePermissions } from '../auth/permissions.decorator';
 import { CurrentUser, JwtUser } from '../auth/current-user.decorator';
 
@@ -15,19 +16,21 @@ export class EstrategiaController {
   constructor(private readonly estrategias: EstrategiaService) {}
 
   @Get(':mes')
-  @RequirePermissions('pauta.ver')
+  @UseGuards(AcessoAtualGuard)
+  @RequirePermissions('pauta.ver', 'obsidian.ver')
   painel(@CurrentUser() user: JwtUser, @Param('mes') mes: string) {
-    return this.estrategias.painel(user.orgId, PautaMesSchema.parse(mes));
+    return this.estrategias.painelHumano(user.orgId, user.sub, PautaMesSchema.parse(mes));
   }
 
   @Put(':mes')
-  @RequirePermissions('pauta.editar')
+  @UseGuards(AcessoAtualGuard)
+  @RequirePermissions('pauta.editar', 'obsidian.ver')
   salvar(@CurrentUser() user: JwtUser, @Param('mes') mes: string, @Body() body: unknown) {
-    return this.estrategias.salvar(
+    return this.estrategias.salvarHumano(
       user.orgId,
       user.sub,
       PautaMesSchema.parse(mes),
-      PautaEstrategiaSalvarSchema.parse(body ?? {}),
+      PautaEstrategiaSalvarHumanoSchema.parse(body ?? {}),
     );
   }
 

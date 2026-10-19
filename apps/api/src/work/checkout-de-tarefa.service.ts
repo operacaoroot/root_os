@@ -9,7 +9,7 @@ import { ActorType, Prisma } from '@prisma/client';
 
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
-import { EventLogService } from '../gateway/event-log.service';
+import { EventLogService, type PreparoEventoNoTx } from '../gateway/event-log.service';
 import { contextoAtual } from '../common/contexto-execucao';
 import { agenteDaCasa } from './agentes-da-casa';
 import {
@@ -182,20 +182,28 @@ export class CheckoutDeTarefaService {
      * verdade contra o banco e exige que exatamente uma vença; e um caso dela
      * confere que este caminho nunca chama `workTask.update`.
      */
-    const { count } = await this.prisma.workTask.updateMany({
-      where: {
-        id: taskId,
-        orgId,
-        agenteId: null,
-        archived: false,
-        ...(statusId ? { listId: antes.listId } : {}),
-      },
-      data: {
-        agenteId: agente.id,
-        agenteEm: agora,
-        ...(statusId ? { statusId } : {}),
-      },
-    });
+    const { count } = await this.prisma.$transaction(async (tx) => {
+      // Pausa e nova assunção usam Agent→WorkTask no mesmo compromisso.
+      await tx.$queryRaw`SELECT id FROM "Agent" WHERE id=${agente.id} AND "orgId"=${orgId} FOR UPDATE`;
+      const atual = await tx.agent.findFirst({ where: { id: agente.id, orgId }, select: { estado: true, ativo: true } });
+      if (!atual || !atual.ativo || !agentePodeAssumir(atual.estado))
+        throw new ConflictException('O agente foi pausado ou está indisponível para assumir a tarefa.');
+      await tx.$queryRaw`SELECT id FROM "WorkTask" WHERE id=${taskId} AND "orgId"=${orgId} FOR UPDATE`;
+      return tx.workTask.updateMany({
+        where: {
+          id: taskId,
+          orgId,
+          agenteId: null,
+          archived: false,
+          ...(statusId ? { listId: antes.listId } : {}),
+        },
+        data: {
+          agenteId: agente.id,
+          agenteEm: agora,
+          ...(statusId ? { statusId } : {}),
+        },
+      });
+    }, { isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted });
 
     if (count === 0) {
       /*
@@ -381,6 +389,39 @@ export class CheckoutDeTarefaService {
     }
 
     return presas.map((t) => ({ id: t.id, title: t.title, desde: t.agenteEm }));
+  }
+
+  async travarTarefasDoAgenteNoTx(tx: Prisma.TransactionClient, orgId: string, agentId: string) {
+    await tx.$queryRaw`SELECT id FROM "WorkTask" WHERE "orgId"=${orgId} AND "agenteId"=${agentId} ORDER BY id FOR UPDATE`;
+    const presas = await tx.workTask.findMany({ where: { orgId, agenteId: agentId }, select: { id: true, title: true, agenteEm: true }, orderBy: { id: 'asc' } });
+    return presas.map((t) => ({ id: t.id, title: t.title, desde: t.agenteEm }));
+  }
+
+  async soltarTodasDoAgenteNoTx(tx: Prisma.TransactionClient, orgId: string, agentId: string, causa: MotivoDaSoltura) {
+    const presas = await this.travarTarefasDoAgenteNoTx(tx, orgId, agentId);
+    if (!presas.length) return [];
+    const { count } = await tx.workTask.updateMany({ where: { orgId, agenteId: agentId, id: { in: presas.map((p) => p.id) } }, data: { agenteId: null, agenteEm: null } });
+    if (count !== presas.length) throw new ConflictException('A soltura das tarefas não pôde ser conferida. Nenhuma alteração foi confirmada.');
+    return presas;
+  }
+
+  async registrarSolturasNoTx(tx: Prisma.TransactionClient, orgId: string,
+    soltas: Array<{ id: string; title: string; desde: Date | null }>, agente: { slug: string; nome: string },
+    causa: MotivoDaSoltura, actorId: string, preparo: PreparoEventoNoTx) {
+    if (!this.eventos) throw new ConflictException('O serviço de rastro está indisponível.');
+    const auditIds: string[] = [];
+    const eventSnapshot: Array<{ id: string; seq: bigint; hash: string; tipo: string; ocorreuEm: Date }> = [];
+    for (const t of soltas) {
+      const conteudo = { titulo: t.title, agente: agente.slug, agenteNome: agente.nome, desde: t.desde?.toISOString() ?? null,
+        causa, motivo: `Tarefa devolvida à fila pela mudança de estado do agente (${causa}).` };
+      const audit = await this.audit.logComRecibo({ orgId, actorId, actorType: ActorType.user,
+        action: EVENTO_DO_CHECKOUT.soltada, entityType: 'work_task', entityId: t.id, after: conteudo }, tx);
+      const e = await this.eventos.registrarNoTx(tx, { orgId, tipo: EVENTO_DO_CHECKOUT.soltada, actorType: ActorType.user,
+        actorId, agentSlug: agente.slug, correlationId: contextoAtual()?.correlationId ?? null,
+        payload: { taskId: t.id, agente: agente.slug }, conteudo: { argumentos: { taskId: t.id, ...conteudo }, resultado: { taskId: t.id } }, sensibilidade: 'interna' }, preparo);
+      auditIds.push(audit.id); eventSnapshot.push({ id: e.id, seq: e.seq, hash: e.hash, tipo: EVENTO_DO_CHECKOUT.soltada, ocorreuEm: e.ocorreuEm });
+    }
+    return { auditIds, eventSnapshot };
   }
 
   /* ====================================================================== *

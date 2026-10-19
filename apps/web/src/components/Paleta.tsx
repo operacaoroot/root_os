@@ -2,7 +2,9 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { NAV, SECOES, navPorSecao } from '@mktos/shared';
+import { SECOES } from '@mktos/shared';
+import { modulosDeNavegacao, rotuloDoDestino } from './navegacao-modulos';
+import { useEhPlataforma } from '@/lib/plataforma';
 import * as Icons from 'lucide-react';
 import { useAuth } from '@/lib/auth';
 import { useModulos } from './modulos';
@@ -32,33 +34,24 @@ export function Paleta({ aberto, fechar }: { aberto: boolean; fechar: () => void
   const { user } = useAuth();
   const { modulos } = useModulos();
   const router = useRouter();
+  const ehPlataforma = useEhPlataforma();
   const [q, setQ] = useState('');
   const [i, setI] = useState(0);
   const campo = useRef<HTMLInputElement>(null);
 
   const comandos = useMemo<Comando[]>(() => {
-    const perms = new Set(user?.permissions ?? []);
     const secaoDe = new Map<string, string>(SECOES.map((s) => [s.key, s.label]));
-    // Os mesmos dois filtros da sidebar — permissão e módulo contratado.
-    // A paleta navega, e não pode navegar para tela que a API vai recusar.
-    return navPorSecao(perms, modulos ?? undefined)
-      .flatMap((g) => g.itens)
-      .map((n) => ({
-        chave: n.key,
-        rotulo: n.label,
-        dica: secaoDe.get(n.secao) ?? '',
-        icone: n.icon,
-        ir: n.href,
-        secao: secaoDe.get(n.secao) ?? '',
-        estado:
-          n.estado === 'parcial'
-            ? {
-                texto: n.key === 'fluxos' ? 'em preparação' : 'parcial',
-                porque: n.parcial ?? 'esta tela ainda está incompleta',
-              }
-            : undefined,
-      }));
-  }, [user, modulos]);
+    return modulosDeNavegacao(user?.permissions ?? [], modulos ?? undefined, ehPlataforma)
+      .flatMap((area) => area.itens.map((n) => ({
+        chave: n.key, rotulo: rotuloDoDestino(n), dica: area.label,
+        icone: n.icon, ir: n.href,
+        secao: `${area.label} ${secaoDe.get(n.secao) ?? ''} ${n.label}`,
+        estado: n.estado === 'parcial' && n.key !== 'contexto' ? {
+          texto: n.key === 'fluxos' ? 'em preparação' : 'parcial',
+          porque: n.parcial ?? 'esta tela ainda está incompleta',
+        } : undefined,
+      })));
+  }, [user, modulos, ehPlataforma]);
 
   const filtrados = useMemo(() => {
     const termo = q.trim().toLowerCase();
@@ -95,6 +88,15 @@ export function Paleta({ aberto, fechar }: { aberto: boolean; fechar: () => void
       aria-label="Ir para"
       className="fixed inset-0 z-50 flex items-start justify-center bg-bg/70 pt-[12vh]"
       onClick={fechar}
+      onKeyDown={(e) => {
+        if (e.key === 'Escape') { e.preventDefault(); fechar(); }
+        if (e.key === 'Tab') {
+          const controles = Array.from(e.currentTarget.querySelectorAll<HTMLElement>('input, button:not([disabled])'));
+          const primeiro = controles[0], ultimo = controles[controles.length - 1];
+          if (e.shiftKey && document.activeElement === primeiro) { e.preventDefault(); ultimo?.focus(); }
+          else if (!e.shiftKey && document.activeElement === ultimo) { e.preventDefault(); primeiro?.focus(); }
+        }
+      }}
     >
       <div
         className="w-[min(560px,92vw)] overflow-hidden rounded-root border border-border bg-bg2 shadow-2xl"
@@ -105,7 +107,6 @@ export function Paleta({ aberto, fechar }: { aberto: boolean; fechar: () => void
           value={q}
           onChange={(e) => setQ(e.target.value)}
           onKeyDown={(e) => {
-            if (e.key === 'Escape') fechar();
             if (e.key === 'ArrowDown') {
               e.preventDefault();
               setI((v) => Math.min(v + 1, filtrados.length - 1));
@@ -135,7 +136,7 @@ export function Paleta({ aberto, fechar }: { aberto: boolean; fechar: () => void
                   type="button"
                   onMouseEnter={() => setI(k)}
                   onClick={() => escolher(c)}
-                  className={`flex w-full items-center gap-[10px] px-4 py-[7px] text-left transition-colors ${k === i ? 'bg-brand/10 text-brand' : 'text-muted hover:text-text'}`}
+                  className={`flex min-h-11 w-full items-center gap-[10px] px-4 py-[7px] text-left transition-colors ${k === i ? 'bg-brand/10 text-brand' : 'text-muted hover:text-text'}`}
                 >
                   <Icone size={13} className="flex-none" />
                   <span className="text-[12.5px]">{c.rotulo}</span>

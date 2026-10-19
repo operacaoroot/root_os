@@ -414,6 +414,7 @@ const ALVOS: Alvo[] = [
   { tabela: 'ComercialDocumento', escopo: 'filho', chaveSql: '"id"', nota: 'Espelho do contrato no provedor de assinatura, com os links de assinar. LER a da outra entrega o link que assina o contrato alheio.' },
   { tabela: 'LeadReacao', escopo: 'filho', chaveSql: '"id"', nota: 'O que o cliente leu na proposta e o que anotou nela (rodada da implantação I4): seção, tempo por visita, "faz sentido", dúvida e ideia com o texto dele. LER a da outra é ler como o cliente alheio reagiu à proposta e o que ele pensa dela; ESCREVER é pôr palavra na boca do cliente de outra casa ou apagar o termômetro dela. A rota anônima escreve aqui só DEPOIS de achar a empresa pelo hash na sala, então a leitura NÃO aceita a sentinela pública.' },
   { tabela: 'SalaVersao', escopo: 'filho', chaveSql: '"id"', nota: 'A sala do cliente publicada por versão (rodada da implantação I3): o rascunho da bancada e cada versão que o cliente leu, com próximos passos, o combinado e quem cuida da conta. LER a da outra é ver o plano de implantação e o que a casa vizinha combinou com o cliente dela; ESCREVER é trocar o que o cliente alheio lê no link ou publicar por ela. A rota anônima lê aqui só DEPOIS de achar a empresa pelo hash na sala, então a leitura NÃO aceita a sentinela pública.' },
+  { tabela: 'OperacaoRodada', escopo: 'tenant', chaveSql: '"id"', nota: 'O painel semanal da operação da ROOT: clientes, o que cada um deve, o que falta cobrar e as decisões em aberto. Em produção só a empresa da plataforma tem linha (o script que grava recusa org de cliente), mas a policy não sabe disso — se ela falhar, um cliente lê a carteira da ROOT com o valor que cada outro cliente paga. ESCREVER é reescrever o painel de outra empresa; apagar não é caminho da aplicação (sem GRANT de DELETE).' },
 
   // ---- trabalho ---------------------------------------------------------
   { tabela: 'WorkSpace', escopo: 'tenant', chaveSql: '"id"', nota: 'Topo da árvore espaço → pastas → listas (ROOT-16). O nome do espaço diz como a outra empresa organiza o trabalho dela; escrever nele é renomear ou esvaziar a árvore alheia. É raiz da empresa: o orgId vem do insert, e as pastas e listas penduradas nele conferem a empresa pela chave composta.' },
@@ -1139,6 +1140,12 @@ async function semear(c: PoolClient, rotulo: 'A' | 'B', vec: string): Promise<vo
     escopo: 'diagnostico', motivo: `motivo escrito pela org ${rotulo} ${MARCA}`,
     autorizadoPorId: userId, autorizadoPorNome: `Titular ${rotulo}`,
     autorizadoEm: agora, expiraEm: new Date(agora.getTime() + 3_600_000),
+  }));
+
+  reg('OperacaoRodada', await ins(c, 'OperacaoRodada', {
+    id: crypto.randomUUID(), orgId, rodadaEm: '2026-10-14',
+    conteudo: JSON.stringify({ versao: 1, rodadaEm: '2026-10-14', marca: MARCA, org: rotulo }),
+    origem: 'script', updatedAt: agora,
   }));
 
   // --- assinatura e cobrança (fatia 6.2) -----------------------------------

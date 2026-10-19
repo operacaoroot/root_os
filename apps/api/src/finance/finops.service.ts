@@ -1,6 +1,6 @@
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { Prisma, FinanceTxStatus } from '@prisma/client';
-import type { ChartAccountList, Dre, DreLineResult, CreateChartAccountInput, Kpis } from '@mktos/shared';
+import type { ChartAccountList, Dre, DreLineResult, CreateChartAccountInput, UpdateChartAccountInput, Kpis } from '@mktos/shared';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
 
@@ -64,6 +64,8 @@ export class FinopsService {
         dreLineId: c.dreLineId,
         dreCodigo: c.dreLine?.codigo ?? null,
         ativo: c.ativo,
+        custoFixo: c.custoFixo,
+        natureza: c.natureza,
       })),
       total: rows.length,
       source: this.meta(),
@@ -94,6 +96,25 @@ export class FinopsService {
       after: { codigo: acc.codigo, nome: acc.nome },
     });
     return { ok: true, id: acc.id };
+  }
+
+  async updateChartAccount(orgId: string, id: string, input: UpdateChartAccountInput, actorId: string) {
+    const antes = await this.prisma.chartAccount.findFirst({ where: { id, orgId } });
+    if (!antes) throw new NotFoundException('Conta não encontrada');
+    // Escolher a natureza também acerta custoFixo, que a imagem anterior ainda lê.
+    const data: Prisma.ChartAccountUpdateInput = {};
+    if (input.natureza !== undefined) {
+      data.natureza = input.natureza;
+      if (input.natureza) data.custoFixo = input.natureza === 'fixo';
+    }
+    if (input.custoFixo !== undefined) data.custoFixo = input.custoFixo;
+    const depois = await this.prisma.chartAccount.update({ where: { id }, data });
+    await this.audit.log({
+      orgId, actorId, action: 'finance.chart.update', entityType: 'chart_account', entityId: id,
+      before: { codigo: antes.codigo, custoFixo: antes.custoFixo, natureza: antes.natureza },
+      after: { codigo: antes.codigo, custoFixo: depois.custoFixo, natureza: depois.natureza },
+    });
+    return { ok: true, id };
   }
 
   // ---------- DRE (Motor Vortex) ----------

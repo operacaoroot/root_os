@@ -51,6 +51,8 @@ const DEVEM_IMPLEMENTAR: ReadonlyArray<{ chave: string; servico: string }> = [
   { chave: 'whatsapp', servico: 'EvolutionService' },
   // MD10: o canal do YouTube, credencial por empresa num projeto próprio do Google Cloud.
   { chave: 'youtube', servico: 'YoutubeService' },
+  // 19/10/2026: reuniões do Granola pelo Zap; senha por empresa no cofre.
+  { chave: 'granola', servico: 'GranolaService' },
 ];
 
 /** A lista cobrada, para a suíte poder afirmar sobre ela. */

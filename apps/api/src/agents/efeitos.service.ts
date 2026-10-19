@@ -59,7 +59,7 @@ export class EfeitosService implements OnModuleInit {
       'pecas.campanha.listar': (a: Record<string, unknown>, org: string) =>
         this.campanhas.list(org, a.status as string | undefined),
       'contexto.memoria.buscar': (a: Record<string, unknown>, org: string) =>
-        this.obsidian.search(org, String(a.q ?? a.query ?? ''), Number(a.limit ?? 5)),
+        this.obsidian.buscarIndiceInternoSemSolicitante(org, String(a.q ?? a.query ?? ''), Number(a.limit ?? 5)),
     }, 'EfeitosService (capacidades do próprio OS)');
     /*
      * O QUE SAIU DAQUI NA FATIA 3.3, e por quê.

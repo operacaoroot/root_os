@@ -3,12 +3,21 @@ import { Prisma, FinanceTxType } from '@prisma/client';
 import type { Conciliacao, AutoConciliarResult } from '@mktos/shared';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
+import { exigirAcessoAtual } from '../memory/acesso-memoria';
+import { travarFinanceiro, travarLancamentoFinanceiro, exigirNaoExercicio } from './financeiro-exercicio.service';
 
 // Conciliação bancária por SCORE (enxerto do FinOps5.0 — executar_conciliacao_auto).
-// Movimento = lançamento de origem bancária (ofx/pluggy, status realizado, ainda não
-// conciliado). Título = lançamento previsto (conta a pagar/receber). O match casa os
+// Movimento = lançamento de origem bancária (ofx/pluggy/asaas, status realizado, ainda
+// não conciliado). Título = lançamento previsto (conta a pagar/receber). O match casa os
 // dois por valor (50%) + data (30%) + tipo (20%); ≥0.85 auto, 0.50–0.84 sugestão.
+// Conciliar passa para o movimento a classificação E o contrato do título: é assim que
+// o pagamento de uma conta recorrente fica preso ao contrato dela.
 const num = (d: Prisma.Decimal | number | null | undefined): number => (d == null ? 0 : Number(d));
+
+// O extrato do Asaas é movimento como o de OFX/Pluggy. As cobranças em aberto que o
+// próprio sync do Asaas grava (source 'asaas', previsto) NÃO são título: o sync já as
+// apaga quando saem do aberto, e consumi-las aqui faria o sync recriá-las.
+const ORIGENS_DE_MOVIMENTO = ['ofx', 'pluggy', 'asaas'];
 
 // pesos e limiares (defaults do FinOps; configuráveis por env)
 const W_VALOR = 0.5;
@@ -44,13 +53,19 @@ export class ConciliacaoService {
 
   private async loadOpen(orgId: string, accountId?: string): Promise<{ movs: Mov[]; tits: Tit[] }> {
     const accFilter = accountId ? { accountId } : {};
+    const [legados, comerciais] = await Promise.all([
+      this.prisma.financeExerciseObligation.findMany({ where: { orgId }, select: { transactionId: true } }),
+      this.prisma.commercialExerciseObligation.findMany({ where: { orgId }, select: { transactionId: true } }),
+    ]);
+    const inscritos = [...legados, ...comerciais];
+    const idsExercicio = inscritos.map(o => o.transactionId);
     const [movRows, titRows] = await Promise.all([
       this.prisma.financeTransaction.findMany({
-        where: { orgId, ...accFilter, source: { in: ['ofx', 'pluggy'] }, status: 'realizado', matchType: null },
+        where: { orgId, ...accFilter, source: { in: ORIGENS_DE_MOVIMENTO }, status: 'realizado', matchType: null },
         orderBy: [{ date: 'desc' }], take: 500,
       }),
       this.prisma.financeTransaction.findMany({
-        where: { orgId, ...accFilter, status: 'previsto' },
+        where: { orgId, ...accFilter, status: 'previsto', source: { not: 'asaas' }, approvalStatus: { in: ['nao_requer', 'aprovado'] }, id: { notIn: idsExercicio } },
         include: { partner: { select: { razaoSocial: true } } },
         orderBy: [{ dueDate: 'asc' }], take: 500,
       }),
@@ -125,32 +140,34 @@ export class ConciliacaoService {
 
   // Enriquece o movimento com a classificação do título e consome o título (previsto).
   private async applyMatch(orgId: string, movId: string, titId: string, score: number, tipo: string, actorId: string) {
-    const [mov, tit] = await Promise.all([
-      this.prisma.financeTransaction.findFirst({ where: { id: movId, orgId } }),
-      this.prisma.financeTransaction.findFirst({ where: { id: titId, orgId } }),
-    ]);
-    if (!mov || !tit) throw new NotFoundException('Movimento ou título não encontrado');
-    await this.prisma.$transaction([
-      this.prisma.financeTransaction.update({
-        where: { id: movId },
-        data: {
-          status: 'conciliado',
-          matchScore: Math.round(score * 100) / 100,
-          matchType: tipo,
-          reconciledAt: new Date(),
-          chartAccountId: mov.chartAccountId ?? tit.chartAccountId,
-          categoryId: mov.categoryId ?? tit.categoryId,
-          partnerId: mov.partnerId ?? tit.partnerId,
-          departamentoId: mov.departamentoId ?? tit.departamentoId,
-          projetoId: mov.projetoId ?? tit.projetoId,
-          documentNumber: mov.documentNumber ?? tit.documentNumber,
-        },
-      }),
-      this.prisma.financeTransaction.delete({ where: { id: titId } }),
-    ]);
-    await this.audit.log({
-      orgId, actorId, actorType: actorId ? 'user' : 'system', action: 'finance.conciliacao.match',
-      entityType: 'finance_transaction', entityId: movId, after: { tituloId: titId, score, tipo },
-    });
+    await this.prisma.$transaction(async db => {
+      await exigirAcessoAtual(db, orgId, actorId, ['financeiro.ver', 'financeiro.conciliar']);
+      await travarFinanceiro(db, orgId);
+      for (const id of [...new Set([movId, titId])].sort()) {
+        await travarLancamentoFinanceiro(db, orgId, id);
+        await exigirNaoExercicio(db, orgId, id);
+      }
+      const [mov, tit] = await Promise.all([
+        db.financeTransaction.findFirst({ where: { id: movId, orgId } }),
+        db.financeTransaction.findFirst({ where: { id: titId, orgId } }),
+      ]);
+      if (!mov || !tit) throw new NotFoundException('Movimento ou título não encontrado');
+      if (movId === titId || mov.matchType || mov.status !== 'realizado' || !ORIGENS_DE_MOVIMENTO.includes(mov.source) ||
+          tit.status !== 'previsto' || tit.source === 'asaas' || !['nao_requer', 'aprovado'].includes(tit.approvalStatus))
+        throw new BadRequestException('Movimento ou título não está disponível para conciliação.');
+      await db.financeTransaction.update({ where: { id: movId }, data: {
+        status: 'conciliado', matchScore: Math.round(score * 100) / 100, matchType: tipo, reconciledAt: new Date(),
+        chartAccountId: mov.chartAccountId ?? tit.chartAccountId, categoryId: mov.categoryId ?? tit.categoryId,
+        partnerId: mov.partnerId ?? tit.partnerId, departamentoId: mov.departamentoId ?? tit.departamentoId,
+        projetoId: mov.projetoId ?? tit.projetoId, documentNumber: mov.documentNumber ?? tit.documentNumber,
+        contractId: mov.contractId ?? tit.contractId,
+      } });
+      await db.financeTransaction.delete({ where: { id: titId } });
+      await this.audit.log({
+        orgId, actorId, actorType: 'user', action: 'finance.conciliacao.match',
+        entityType: 'finance_transaction', entityId: movId, after: { tituloId: titId, score, tipo },
+      }, db);
+      await exigirAcessoAtual(db, orgId, actorId, ['financeiro.ver', 'financeiro.conciliar']);
+    }, { timeout: 30000 });
   }
 }

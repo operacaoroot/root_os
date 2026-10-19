@@ -1,0 +1,215 @@
+// Seed CRM — cria a lista "Gestão de Leads" no Trabalho nativo (etapas do funil,
+// canal, vendedor, valor da proposta) e carrega os negócios do arquivo, que é de
+// onde o painel do comercial (/comercial) lê. Idempotente: a chave de cada
+// cartão é o `id` do arquivo (`externalId`), então rodar de novo atualiza em
+// vez de duplicar. Não apaga nada que já esteja na lista.
+//   pnpm --filter @mktos/api db:seed:crm [arquivo.json]
+// Reuniões: `reunioes[].arquivo` é relativo a CRM_ARQUIVOS_DIR (a pasta
+// 10-clientes do Drive). Sem a variável ou sem o arquivo, a reunião é pulada:
+// transcrição de cliente não mora no repositório.
+import { existsSync, readFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { PrismaClient, WorkFieldType, WorkStatusType } from '@prisma/client';
+
+const prisma = new PrismaClient();
+
+interface Snapshot {
+  espaco: { id: string; nome: string };
+  pastas: { id: string; nome: string; pai?: string }[];
+  lista: { id: string; nome: string; pasta: string };
+  etapas: { nome: string; tipo: 'open' | 'custom' | 'closed'; cor: string }[];
+  campos: { nome: string; tipo: 'drop_down' | 'moeda' | 'data' | 'texto' | 'url'; opcoes: [string, string][] }[];
+  leads: {
+    id: string;
+    titulo: string;
+    etapa: string;
+    responsavel?: string;
+    criadoEm: number | string;
+    nota?: string;
+    etapaDesde?: number | string;
+    prazo?: number;
+    campos: Record<string, string | number>;
+    reunioes?: { titulo: string; em: string; arquivo: string }[];
+    contratos?: { titulo: string; valor: number; fechadoEm: string }[];
+  }[];
+  /** Cards que saíram da carga (viraram contrato de outro card): são arquivados. */
+  removidos?: string[];
+}
+
+const dia = (ms: number) =>
+  new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Sao_Paulo' }).format(new Date(ms));
+
+// Sem argumento, carrega o CRM da casa: um card por lead/cliente, com a jornada nas etapas.
+const PADRAO = ['crm-root-2026-10-18.json'];
+
+async function main() {
+  const arquivos = process.argv[2] ? [process.argv[2]] : PADRAO.map((a) => join(__dirname, 'data', a));
+  const org = await prisma.org.findUnique({ where: { slug: 'root' } });
+  if (!org) throw new Error('org root não encontrada; rode o seed base antes');
+  for (const arquivo of arquivos) {
+    const bruto = JSON.parse(readFileSync(arquivo, 'utf8').replace(/^\uFEFF/, ''));
+    // Um arquivo traz uma lista (o formato do CRM) ou várias em `listas`.
+    for (const s of (bruto.listas ?? [bruto]) as Snapshot[]) await carregar(s, org.id);
+  }
+}
+
+async function carregar(s: Snapshot, orgId: string) {
+
+  const espaco =
+    (await prisma.workSpace.findFirst({ where: { orgId, OR: [{ externalId: s.espaco.id }, { name: s.espaco.nome }] } })) ??
+    (await prisma.workSpace.create({ data: { orgId, name: s.espaco.nome, externalId: s.espaco.id } }));
+
+  // Só a pasta da lista, no topo do espaço: o painel não depende da árvore toda.
+  const p = s.pastas.find((x) => x.id === s.lista.pasta)!;
+  const pasta =
+    (await prisma.workFolder.findFirst({ where: { orgId, externalId: p.id } })) ??
+    (await prisma.workFolder.findFirst({ where: { orgId, spaceId: espaco.id, parentId: null, name: p.nome } })) ??
+    (await prisma.workFolder.create({ data: { orgId, spaceId: espaco.id, name: p.nome, externalId: p.id } }));
+
+  const lista =
+    (await prisma.workList.findFirst({ where: { orgId, externalId: s.lista.id } })) ??
+    (await prisma.workList.create({ data: { orgId, folderId: pasta.id, name: s.lista.nome, externalId: s.lista.id } }));
+
+  const etapas = new Map<string, string>();
+  for (const [i, e] of s.etapas.entries()) {
+    const st = await prisma.workStatus.upsert({
+      where: { listId_name: { listId: lista.id, name: e.nome } },
+      update: { type: e.tipo as WorkStatusType, color: e.cor, order: i },
+      create: { listId: lista.id, name: e.nome, type: e.tipo as WorkStatusType, color: e.cor, order: i },
+    });
+    etapas.set(e.nome, st.id);
+  }
+
+  const campos = new Map<string, { id: string; tipo: string; opcoes: Map<string, string> }>();
+  for (const [i, c] of s.campos.entries()) {
+    const f =
+      (await prisma.workField.findFirst({ where: { orgId, listId: lista.id, name: c.nome } })) ??
+      (await prisma.workField.create({ data: { orgId, listId: lista.id, name: c.nome, type: c.tipo as WorkFieldType, order: i } }));
+    const opcoes = new Map<string, string>();
+    for (const [j, [nome, cor]] of c.opcoes.entries()) {
+      const o = await prisma.workFieldOption.upsert({
+        where: { fieldId_name: { fieldId: f.id, name: nome } },
+        update: { color: cor, order: j },
+        create: { fieldId: f.id, name: nome, color: cor, order: j },
+      });
+      opcoes.set(nome, o.id);
+    }
+    campos.set(c.nome, { id: f.id, tipo: c.tipo, opcoes });
+  }
+
+  for (const [i, l] of s.leads.entries()) {
+    const statusId = etapas.get(l.etapa);
+    if (!statusId) throw new Error(`${l.titulo}: etapa ${l.etapa} não existe na lista`);
+    // O gatilho só carimba statusDesde quando ele vem nulo; aqui vai a data real da etapa, se houver.
+    const statusDesde = l.etapaDesde != null ? new Date(l.etapaDesde) : null;
+    const dados = {
+      listId: lista.id,
+      statusId,
+      title: l.titulo,
+      description: l.nota ?? null,
+      assignee: l.responsavel ?? null,
+      dueDate: l.prazo ? new Date(l.prazo) : null,
+      externalUrl: null,
+      order: i,
+    };
+    const existente = await prisma.workTask.findFirst({ where: { orgId, externalId: l.id } });
+    const t = existente
+      ? await prisma.workTask.update({ where: { id: existente.id }, data: { ...dados, ...(statusDesde ? { statusDesde } : {}) } })
+      : await prisma.workTask.create({
+          data: { orgId, externalId: l.id, createdAt: new Date(l.criadoEm), ...dados, ...(statusDesde ? { statusDesde } : {}) },
+        });
+    if (existente && statusDesde && existente.statusId !== statusId) {
+      // Troca de etapa no update: o gatilho carimbou agora; volta para a data da origem.
+      await prisma.workTask.update({ where: { id: t.id }, data: { statusDesde } });
+    }
+
+    for (const [nome, bruto] of Object.entries(l.campos)) {
+      const c = campos.get(nome);
+      if (!c) throw new Error(`${l.titulo}: campo ${nome} não existe na lista`);
+      let valor: { optionId: string | null; value: string | null };
+      if (c.tipo === 'drop_down') {
+        const optionId = c.opcoes.get(String(bruto));
+        if (!optionId) throw new Error(`${l.titulo}: opção ${bruto} não existe em ${nome}`);
+        valor = { optionId, value: null };
+      } else if (c.tipo === 'moeda') {
+        valor = { optionId: null, value: `BRL ${Number(bruto).toFixed(2)}` };
+      } else if (c.tipo !== 'data') {
+        valor = { optionId: null, value: String(bruto) };
+      } else {
+        valor = { optionId: null, value: typeof bruto === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(bruto) ? bruto : dia(Number(bruto)) };
+      }
+      await prisma.workFieldValue.upsert({
+        where: { taskId_fieldId: { taskId: t.id, fieldId: c.id } },
+        update: valor,
+        create: { taskId: t.id, fieldId: c.id, ...valor },
+      });
+    }
+
+    const base = process.env.CRM_ARQUIVOS_DIR;
+    for (const r of l.reunioes ?? []) {
+      const caminho = base ? join(base, r.arquivo) : null;
+      if (!caminho || !existsSync(caminho)) {
+        console.log(`  reunião pulada (${l.titulo} · ${r.titulo}): arquivo fora do alcance`);
+        continue;
+      }
+      const transcricao = readFileSync(caminho, 'utf8');
+      const em = new Date(`${r.em}T12:00:00-03:00`);
+      const ja = await prisma.reuniaoDoCartao.findFirst({ where: { orgId, taskId: t.id, titulo: r.titulo, em } });
+      if (ja) await prisma.reuniaoDoCartao.update({ where: { id: ja.id }, data: { transcricao } });
+      else await prisma.reuniaoDoCartao.create({ data: { orgId, taskId: t.id, titulo: r.titulo, em, fonte: 'arquivo', link: null, transcricao } });
+    }
+  }
+
+  // Contratos: filhos do card na lista "Contratos dos clientes" (valor e data de fechamento).
+  const comContrato = s.leads.filter((l) => l.contratos?.length);
+  if (comContrato.length) {
+    const lc =
+      (await prisma.workList.findFirst({ where: { orgId, externalId: 'crm-root-contratos' }, include: { statuses: { orderBy: { order: 'asc' } } } })) ??
+      (await prisma.workList.create({
+        data: {
+          orgId, folderId: pasta.id, name: 'Contratos dos clientes', externalId: 'crm-root-contratos',
+          statuses: { create: [
+            { name: 'Ativo', type: 'open', color: '#30a46c', order: 0 },
+            { name: 'Concluído', type: 'closed', color: '#008844', order: 1 },
+            { name: 'Cancelado', type: 'closed', color: '#6b6b6b', order: 2 },
+          ] },
+        },
+        include: { statuses: { orderBy: { order: 'asc' } } },
+      }));
+    const campoDe = async (nome: string, type: WorkFieldType, order: number) =>
+      (await prisma.workField.findFirst({ where: { orgId, listId: lc.id, name: nome } })) ??
+      (await prisma.workField.create({ data: { orgId, listId: lc.id, name: nome, type, order } }));
+    const fValor = await campoDe('Valor', 'moeda' as WorkFieldType, 0);
+    const fFechado = await campoDe('Fechado em', 'data' as WorkFieldType, 1);
+    for (const l of comContrato) {
+      const card = await prisma.workTask.findFirst({ where: { orgId, externalId: l.id } });
+      for (const [i, k] of l.contratos!.entries()) {
+        const ext = `${l.id}::contrato::${i}`;
+        const ja = await prisma.workTask.findFirst({ where: { orgId, externalId: ext } });
+        const t = ja
+          ? await prisma.workTask.update({ where: { id: ja.id }, data: { title: k.titulo, parentId: card!.id, archived: false } })
+          : await prisma.workTask.create({ data: { orgId, listId: lc.id, statusId: lc.statuses[0].id, parentId: card!.id, title: k.titulo, externalId: ext } });
+        for (const [fid, value] of [[fValor.id, `BRL ${k.valor.toFixed(2)}`], [fFechado.id, k.fechadoEm]] as const) {
+          await prisma.workFieldValue.upsert({
+            where: { taskId_fieldId: { taskId: t.id, fieldId: fid } },
+            update: { value, optionId: null },
+            create: { taskId: t.id, fieldId: fid, value },
+          });
+        }
+      }
+    }
+  }
+  for (const ext of s.removidos ?? []) {
+    await prisma.workTask.updateMany({ where: { orgId, externalId: ext, archived: false }, data: { archived: true } });
+  }
+
+  const total = await prisma.workTask.count({ where: { orgId, listId: lista.id, archived: false } });
+  console.log(`CRM: lista "${lista.name}" com ${total} cartão(ões); ${s.leads.length} vieram do arquivo.`);
+}
+
+main()
+  .catch((e) => {
+    console.error(e);
+    process.exit(1);
+  })
+  .finally(() => prisma.$disconnect());

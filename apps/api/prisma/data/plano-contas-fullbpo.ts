@@ -95,6 +95,7 @@ export const TEMPLATE_FULLBPO: PlanoContasTemplate[] = [
     { codigo: '3.1.06', nome: 'Despesa a Identificar', tipo: 'despesa', nivel: 3, permite_lancamento: true, dre_linha_codigo: 'CD_NI' },
     { codigo: '3.1.07', nome: 'Almoço com Cliente', tipo: 'despesa', nivel: 3, permite_lancamento: true, dre_linha_codigo: 'CD_CLI' },
     { codigo: '3.1.08', nome: 'Outras Despesas ADM Operacional', tipo: 'despesa', nivel: 3, permite_lancamento: true, dre_linha_codigo: 'CD_ADM' },
+    { codigo: '3.1.09', nome: 'Infraestrutura (servidor, VPS)', tipo: 'despesa', nivel: 3, permite_lancamento: true, dre_linha_codigo: 'CD_SW' },
 
     // 3.2 Custos com Pessoal
     { codigo: '3.2', nome: 'Custos com Pessoal', tipo: 'despesa', nivel: 2, permite_lancamento: false },
@@ -139,6 +140,8 @@ export const TEMPLATE_FULLBPO: PlanoContasTemplate[] = [
     { codigo: '4.1.11', nome: 'Advogados', tipo: 'despesa', nivel: 3, permite_lancamento: true, dre_conta: 'Despesas Administrativas', dre_linha_codigo: 'DO_ADM' },
     { codigo: '4.1.12', nome: 'Segurança', tipo: 'despesa', nivel: 3, permite_lancamento: true, dre_conta: 'Despesas Administrativas', dre_linha_codigo: 'DO_ADM' },
     { codigo: '4.1.13', nome: 'Limpeza', tipo: 'despesa', nivel: 3, permite_lancamento: true, dre_conta: 'Despesas Administrativas', dre_linha_codigo: 'DO_ADM' },
+    { codigo: '4.1.14', nome: 'Estrutura da sala (móveis, obra, equipamentos)', tipo: 'despesa', nivel: 3, permite_lancamento: true, dre_conta: 'Despesas Administrativas', dre_linha_codigo: 'DO_ADM' },
+    { codigo: '4.1.15', nome: 'Ferramentas administrativas', tipo: 'despesa', nivel: 3, permite_lancamento: true, dre_conta: 'Despesas Administrativas', dre_linha_codigo: 'DO_ADM' },
 
     // 4.2 Despesas com Pessoal (Indireto)
     { codigo: '4.2', nome: 'Despesas com Pessoal (Indireto)', tipo: 'despesa', nivel: 2, permite_lancamento: false },

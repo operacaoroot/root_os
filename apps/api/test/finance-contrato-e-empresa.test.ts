@@ -986,6 +986,64 @@ describe.skipIf(!URL)('financeiro: gerar lançamento de contrato e referências 
     });
   });
 
+  describe('classificar lançamento importado (PATCH com plano, parceiro e rateio)', () => {
+    const importado = () => prisma.financeTransaction.create({
+      data: {
+        orgId: CASA, accountId: casa.conta, type: 'saida', status: 'realizado', description: 'Importado do Asaas',
+        amount: new Prisma.Decimal(226.2), date: new Date('2026-09-15'), source: 'asaas', externalId: `fin_${randomUUID()}`,
+      },
+    });
+    const estado = async (id: string) => {
+      const t = await prisma.financeTransaction.findUniqueOrThrow({ where: { id }, include: { splits: true } });
+      return {
+        chartAccountId: t.chartAccountId, partnerId: t.partnerId, notes: t.notes, temRateio: t.temRateio,
+        rateio: t.splits.map((s) => ({ chartAccountId: s.chartAccountId, valor: s.valor.toFixed(2) })).sort((a, b) => a.valor.localeCompare(b.valor)),
+      };
+    };
+    const CASOS: Array<[string, (id: string) => Record<string, unknown>, keyof Ids, keyof typeof NAO_ENCONTRADO]> = [
+      ['plano de contas', (id) => ({ chartAccountId: id }), 'plano', 'plano'],
+      ['parceiro', (id) => ({ partnerId: id }), 'parceiro', 'parceiro'],
+      ['plano de contas no rateio', (id) => ({ splits: [{ valor: 200, chartAccountId: casa.plano }, { valor: 26.2, chartAccountId: id }] }), 'plano', 'plano'],
+    ];
+
+    it.each(CASOS)('%s da vizinha: o mesmo 404 do id inexistente, e o lançamento não muda', async (_, montar, daVizinha, esperado) => {
+      const { id } = await importado();
+      try {
+        const antes = await estado(id);
+        const comVizinha = await erroDe(fin.updateTransaction(CASA, id, montar(vizinha[daVizinha]), EU));
+        const comInexistente = await erroDe(fin.updateTransaction(CASA, id, montar(randomUUID()), EU));
+        expect({ comVizinha, comInexistente, depois: await estado(id) })
+          .toEqual({ comVizinha: NAO_ENCONTRADO[esperado], comInexistente: NAO_ENCONTRADO[esperado], depois: antes });
+      } finally {
+        await prisma.financeTransaction.delete({ where: { id } });
+      }
+    });
+
+    it('da casa: grava plano, parceiro, observação e rateio; rateio que não soma dá 400; [] tira o rateio', async () => {
+      const { id } = await importado();
+      try {
+        await fin.updateTransaction(CASA, id, { chartAccountId: casa.plano, partnerId: casa.parceiro, notes: 'Fatura do cartão' }, EU);
+        const simples = await estado(id);
+        const somaErrada = await erroDe(fin.updateTransaction(CASA, id, { splits: [{ valor: 100, chartAccountId: casa.plano }] }, EU));
+        await fin.updateTransaction(CASA, id, { splits: [{ valor: 178.2, chartAccountId: casa.plano }, { valor: 48, chartAccountId: casa.plano }] }, EU);
+        const rateado = await estado(id);
+        await fin.updateTransaction(CASA, id, { splits: [] }, EU);
+        const semRateio = await estado(id);
+        expect({ simples, somaErrada, rateado, semRateio }).toEqual({
+          simples: { chartAccountId: casa.plano, partnerId: casa.parceiro, notes: 'Fatura do cartão', temRateio: false, rateio: [] },
+          somaErrada: { status: 400, mensagem: 'Soma do rateio (100.00) diferente do valor (226.20)' },
+          rateado: {
+            chartAccountId: casa.plano, partnerId: casa.parceiro, notes: 'Fatura do cartão', temRateio: true,
+            rateio: [{ chartAccountId: casa.plano, valor: '178.20' }, { chartAccountId: casa.plano, valor: '48.00' }],
+          },
+          semRateio: { chartAccountId: casa.plano, partnerId: casa.parceiro, notes: 'Fatura do cartão', temRateio: false, rateio: [] },
+        });
+      } finally {
+        await prisma.financeTransaction.delete({ where: { id } });
+      }
+    });
+  });
+
   describe('gerar a partir de contrato que já aponta para a vizinha (dado gravado antes da conferência)', () => {
     const CASOS: Array<[string, 'accountId' | 'partnerId' | 'chartAccountId', keyof Ids, keyof typeof NAO_ENCONTRADO]> = [
       ['conta bancária', 'accountId', 'conta', 'conta'],

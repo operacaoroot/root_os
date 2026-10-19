@@ -1,4 +1,6 @@
+import type { M05EscopoDto, M05FonteAutorizadaDto } from './fonte-autorizada.js';
 import { z } from 'zod';
+import { IndiceEscopoHumanoSchema, EspelhoOnboardingFonteSchema } from './onboarding-indice.js';
 
 // --- Auth ---
 export const LoginSchema = z.object({
@@ -337,6 +339,8 @@ export const CONNECTORS: ConnectorInfo[] = [
   // Cockpit do lead (13/10/2026): o contrato do comercial sai para assinar pela ZapSign (API v1).
   { key: 'zapsign', label: 'ZapSign (assinatura de contrato)', category: 'knowledge', phase: 6, authType: 'api_key', requires: 'token da API da ZapSign (plano de API)' },
   { key: 'ofx', label: 'Extrato OFX (upload)', category: 'finance', phase: 2, authType: 'builtin', requires: 'arquivo .ofx exportado do banco' },
+  // Reuniões do Granola chegam pelo Zap (Webhooks by Zapier). Senha por empresa no cofre, gerada em Conexões.
+  { key: 'granola', label: 'Granola (reuniões)', category: 'knowledge', phase: 3, authType: 'webhook', requires: 'Zap do Granola com a senha gerada em Conexões' },
 ];
 
 export const IntegrationCatalogRowSchema = z.object({
@@ -410,42 +414,61 @@ export type ContentStats = z.infer<typeof ContentStatsSchema>;
 
 // --- Base de conhecimento (Obsidian) ---
 export const NoteRowSchema = z.object({
-  id: z.string(),
-  path: z.string(),
-  folder: z.string().nullable(),
-  title: z.string(),
-  tags: z.array(z.string()),
-  links: z.array(z.string()),
-  wordCount: z.number().int(),
-  fileTime: z.string(), // ISO
+  id: z.string(), path: z.string(), folder: z.string().nullable(),
+  title: z.string(), tags: z.array(z.string()), links: z.array(z.string()),
+  wordCount: z.number().int(), fileTime: z.string(),
+  fonteCanonica: EspelhoOnboardingFonteSchema.nullable(),
+}).strict();
+// Null somente em nota nativa autorizada. SQL/producer recusam onboarding sem vínculo;
+// parser não descobre identidade ou permissão a partir do path, hash ou null.
+const Detail = NoteRowSchema.extend({ content: z.string(), escopo: IndiceEscopoHumanoSchema });
+export const NoteDetailSchema = Detail.superRefine((r, c) => {
+  if (r.fonteCanonica && r.fonteCanonica.orgId !== r.escopo.orgId)
+    c.addIssue({ code: z.ZodIssueCode.custom, message: 'A fonte pertence a outra empresa.' });
+});
+export const SearchHitSchema = NoteRowSchema.extend({ score: z.number(), snippet: z.string() });
+const Lista = z.object({
+  escopo: IndiceEscopoHumanoSchema, items: z.array(NoteRowSchema),
+  total: z.number().int().nonnegative().safe(), folders: z.array(z.string()),
+  indexedNotes: z.number().int().nonnegative().safe(), source: SourceMetaSchema,
+}).strict();
+export const KnowledgeListSchema = Lista.superRefine((r, c) => {
+  if (r.indexedNotes > r.total || r.items.length > r.total)
+    c.addIssue({ code: z.ZodIssueCode.custom, message: 'Confira a população usada na contagem.' });
+  r.items.forEach((item, i) => {
+    if (item.fonteCanonica && item.fonteCanonica.orgId !== r.escopo.orgId)
+      c.addIssue({ code: z.ZodIssueCode.custom, path: ['items', i, 'fonteCanonica'], message: 'A fonte pertence a outra empresa.' });
+  });
+});
+const Busca = z.object({
+  escopo: IndiceEscopoHumanoSchema, query: z.string(),
+  mode: z.enum(['semantic', 'keyword']), items: z.array(SearchHitSchema), source: SourceMetaSchema,
+}).strict();
+export const SearchResultSchema = Busca.superRefine((r, c) => {
+  r.items.forEach((item, i) => {
+    if (item.fonteCanonica && item.fonteCanonica.orgId !== r.escopo.orgId)
+      c.addIssue({ code: z.ZodIssueCode.custom, path: ['items', i, 'fonteCanonica'], message: 'A fonte pertence a outra empresa.' });
+  });
 });
 export type NoteRow = z.infer<typeof NoteRowSchema>;
-
-export const NoteDetailSchema = NoteRowSchema.extend({ content: z.string() });
 export type NoteDetail = z.infer<typeof NoteDetailSchema>;
-
-export const KnowledgeListSchema = z.object({
-  items: z.array(NoteRowSchema),
-  total: z.number().int(),
-  folders: z.array(z.string()),
-  indexedNotes: z.number().int(),
-  source: SourceMetaSchema,
-});
 export type KnowledgeList = z.infer<typeof KnowledgeListSchema>;
-
-export const SearchHitSchema = NoteRowSchema.extend({
-  score: z.number(), // similaridade (0..1) na busca semântica; 0 no keyword
-  snippet: z.string(),
-});
 export type SearchHit = z.infer<typeof SearchHitSchema>;
-
-export const SearchResultSchema = z.object({
-  query: z.string(),
-  mode: z.enum(['semantic', 'keyword']),
-  items: z.array(SearchHitSchema),
-  source: SourceMetaSchema,
-});
 export type SearchResult = z.infer<typeof SearchResultSchema>;
+// Não aplicar este envelope público a callers sem pessoa. Contrato interno distinto,
+// com alcanceOnboarding:nao_conferido e sem espelho, antes de adaptar efeitos/saúde.
+// Cada consumidor público confere escopo/geração atual; schema não substitui autoridade.
+
+// Fachada interna sem pessoa: nunca retorna o envelope humano.
+const HitNativoInterno = SearchHitSchema.omit({ fonteCanonica: true }).extend({ fonteCanonica: z.null() });
+export const BuscaIndiceInternaSemSolicitanteSchema = z.object({
+ natureza: z.literal('indice_interno_sem_solicitante'), orgId: z.string().uuid(),
+ query: z.string(), mode: z.enum(['semantic', 'keyword']), items: z.array(HitNativoInterno),
+ source: SourceMetaSchema,
+ alcanceOnboarding: z.object({ estado: z.literal('nao_conferida'), total: z.null(), comVetor: z.null(),
+  motivo: z.literal('solicitante_nao_identificado'), observadoEm: z.string().datetime() }).strict(),
+}).strict();
+export type BuscaIndiceInternaSemSolicitante = z.infer<typeof BuscaIndiceInternaSemSolicitanteSchema>;
 
 // --- Financeiro (FinOps: contas, lançamentos, categorias, bancos) ---
 export const FINANCE_ACCOUNT_TYPES = ['corrente', 'poupanca', 'caixa', 'cartao', 'investimento'] as const;
@@ -647,6 +670,13 @@ export const UpdateFinanceTransactionSchema = z
     dueDate: z.string().nullable().optional(),
     paidAt: z.string().nullable().optional(),
     counterparty: z.string().max(160).nullable().optional(),
+    // classificação: vale também p/ lançamentos importados (Asaas/OFX/Pluggy); o sync não sobrescreve
+    chartAccountId: z.string().nullable().optional(),
+    partnerId: z.string().nullable().optional(),
+    notes: z.string().max(500).nullable().optional(),
+    splits: z.array(RateioSplitInputSchema).optional(), // [] remove o rateio; soma = amount
+    // pago de uma vez para N meses de uso (plano anual = 12); null volta a 1 mês
+    mesesDeUso: z.number().int().min(1).max(36).nullable().optional(),
   })
   .refine((v) => Object.values(v).some((x) => x !== undefined), { message: 'Nada para atualizar' });
 export type UpdateFinanceTransactionInput = z.infer<typeof UpdateFinanceTransactionSchema>;
@@ -683,6 +713,8 @@ export const ChartAccountSchema = z.object({
   dreLineId: z.string().nullable(),
   dreCodigo: z.string().nullable(),
   ativo: z.boolean(),
+  custoFixo: z.boolean(),
+  natureza: z.string().nullable(),
 });
 export type ChartAccount = z.infer<typeof ChartAccountSchema>;
 
@@ -703,6 +735,13 @@ export const CreateChartAccountSchema = z.object({
   dreCodigo: z.string().nullable().optional(),
 });
 export type CreateChartAccountInput = z.infer<typeof CreateChartAccountSchema>;
+
+// Por ora só o que a Análise edita: se a conta é custo fixo.
+export const NaturezaDaContaSchema = z.enum(['fixo', 'variavel', 'eventual']);
+export const UpdateChartAccountSchema = z
+  .object({ custoFixo: z.boolean().optional(), natureza: NaturezaDaContaSchema.nullable().optional() })
+  .refine((v) => v.custoFixo !== undefined || v.natureza !== undefined, { message: 'Nada para atualizar' });
+export type UpdateChartAccountInput = z.infer<typeof UpdateChartAccountSchema>;
 
 // --- FinOps: DRE (Demonstrativo de Resultado — "Motor Vortex") ---
 export const DreLineResultSchema = z.object({
@@ -841,6 +880,7 @@ export const PayableRowSchema = z.object({
   approvalStatus: z.string(),
   vencido: z.boolean(),
   diasAtraso: z.number().int(),
+  exercicioFinanceiro: z.boolean().optional(),
 });
 export type PayableRow = z.infer<typeof PayableRowSchema>;
 
@@ -5220,6 +5260,7 @@ export const TrabTarefaCreateSchema = z.object({
   statusId: z.string().uuid().optional(), // default: primeiro status da lista
   priority: WorkPrioritySchema.optional(),
   assignee: z.string().max(120).nullish(),
+  assigneeUserId: z.string().uuid().nullish(),
   dueDate: z.string().datetime().nullish(),
   startDate: z.string().datetime().nullish(),
   parentId: z.string().uuid().nullish(),
@@ -5240,6 +5281,8 @@ export const TrabTarefaUpdateSchema = z.object({
   statusId: z.string().uuid().optional(),
   priority: WorkPrioritySchema.optional(),
   assignee: z.string().max(120).nullish().optional(),
+  assigneeUserId: z.string().uuid().nullish().optional(),
+  expectedUpdatedAt: z.string().datetime({ offset: true }).optional(),
   dueDate: z.string().datetime().nullish().optional(),
   startDate: z.string().datetime().nullish().optional(),
   parentId: z.string().uuid().nullish().optional(),
@@ -5250,6 +5293,16 @@ export const TrabTarefaUpdateSchema = z.object({
   /** Trocar o cliente. Nulo não é aceito: tirar o cliente de uma tarefa iria contra a regra. */
   clienteId: TrabClienteIdSchema.optional(),
 });
+// HTTP e escritores de WorkTask usam o schema com versão obrigatória; o schema-base permanece exportado.
+export const TrabTarefaUpdateHttpSchema = TrabTarefaUpdateSchema.extend({
+  expectedUpdatedAt: z.string().datetime({ offset: true }),
+});
+export const TrabTarefaArchiveHttpSchema = z.object({
+  expectedUpdatedAt: z.string().datetime({ offset: true }),
+}).strict();
+export type TrabTarefaUpdateHttpInput = z.infer<typeof TrabTarefaUpdateHttpSchema>;
+export type TrabTarefaArchiveHttpInput = z.infer<typeof TrabTarefaArchiveHttpSchema>;
+
 export type TrabTarefaCreateInput = z.infer<typeof TrabTarefaCreateSchema>;
 export type TrabTarefaUpdateInput = z.infer<typeof TrabTarefaUpdateSchema>;
 
@@ -5480,6 +5533,8 @@ export interface TrabAgenteDto {
   tarefas: number;
 }
 
+export interface TrabPessoaDto { id: string; name: string; email: string; isActive: boolean }
+
 export interface TrabEstrutura {
   espacos: TrabEspacoDto[];
   folders: TrabPastaDto[];
@@ -5488,6 +5543,8 @@ export interface TrabEstrutura {
   tags: TrabTagDto[];
   /** Os responsáveis HUMANOS que aparecem nas tarefas (texto livre). */
   responsaveis: string[];
+  /** Contas desta empresa para associação explícita, incluindo vínculos inativos. */
+  pessoas?: TrabPessoaDto[];
   /** Os agentes desta empresa — a quem a tarefa pode ser entregue. */
   agentes: TrabAgenteDto[];
 }
@@ -5503,6 +5560,12 @@ export interface TrabTarefaResumo {
   priority: WorkPriorityDto;
   /** O responsável HUMANO (texto livre). Não é quem executa. */
   assignee: string | null;
+  /** Vínculo por conta. O texto legado permanece separado. */
+  assigneeUserId?: string | null;
+  assigneeUserName?: string | null;
+  assigneeUserEmail?: string | null;
+  assigneeUserIsActive?: boolean | null;
+  updatedAt?: string;
   /**
    * O AGENTE EXECUTOR que tem a tarefa na mão, ou nulo quando ela está livre
    * (fatia A4).
@@ -5570,6 +5633,16 @@ export interface TrabComentarioDto {
 export interface TrabAtividadeDto {
   id: string; actorType: string; actorName: string | null; action: string;
   before: unknown; after: unknown; createdAt: string;
+}
+/** Atividade ordenada dentro da âncora da primeira consulta. */
+export interface TrabAtividadePagina {
+  escopo: { orgId: string; taskId: string; userId: string };
+  consultadoEm: string;
+  items: TrabAtividadeDto[];
+  limit: number;
+  hasMore: boolean;
+  nextCursor: string | null;
+  anchor: { createdAt: string; id: string } | null;
 }
 export interface TrabApontamentoDto {
   id: string; autorId: string | null; autorNome: string;
@@ -5742,7 +5815,7 @@ export interface CaixaTarefa {
   status: string;
   statusCor: string;
   prioridade: string;
-  /** O texto gravado em `assignee` — o nome que casou com você. */
+  /** Texto legado preservado; a responsabilidade usa o ID da conta. */
   responsavel: string | null;
   prazo: string | null;
   atualizadaEm: string;
@@ -5758,11 +5831,7 @@ export interface CaixaEixoTarefas {
   itens: CaixaTarefa[];
   truncado: boolean;
   teto: number;
-  /**
-   * Por quais nomes a caixa procurou você. `WorkTask.assignee` é TEXTO LIVRE
-   * herdado do ClickUp, não ponteiro para `User`: o casamento é por nome e a
-   * tela publica o critério, porque casamento por nome erra nas duas direções.
-   */
+  /** Campo mantido por compatibilidade; nomes não atribuem responsabilidade. */
   identidades: string[];
   diasSemMovimento: number;
   horasPresa: number;
@@ -6183,4 +6252,47 @@ export interface PautaPerformancePainel {
   conectado: boolean;
   /** O que falta para medir, em português. Vazio quando dá para coletar. */
   comoConectar: string | null;
+}
+
+// Uso humano de uma versão de Contexto, com repetição identificada pelo pedido.
+export const ContextoTarefaCreateSchema = z.object({
+  requestId: z.string().uuid(),
+  versionId: z.string().uuid(),
+  contentHash: z.string().regex(/^[a-f0-9]{64}$/),
+  expectedItemVersion: z.number().int().min(1),
+  listId: z.string().uuid(),
+  statusId: z.string().uuid().optional(),
+  title: z.string().trim().min(1).max(300),
+  assigneeUserId: z.string().uuid().nullish(),
+}).strict();
+export type ContextoTarefaCreateInput = z.infer<typeof ContextoTarefaCreateSchema>;
+
+export interface ContextoFonteUtilizadaDto {
+  id: string;
+  itemId: string;
+  versionId: string;
+  chave: string;
+  versao: number;
+  contentHash: string;
+  sourceType: string;
+  sourceRef: string | null;
+  title: string;
+  body: string;
+  procedencia: string;
+  criadoEm: string;
+  utilizadaEm: string;
+  versaoAtual: number;
+  arquivada: boolean;
+  retratoFonte?: M05FonteAutorizadaDto;
+}
+export interface ContextoTarefaCreateResponse {
+  escopo?: M05EscopoDto;
+  taskId: string;
+  listId: string;
+  replayed: boolean;
+  fonte: ContextoFonteUtilizadaDto;
+}
+export interface ContextoFontesDaTarefaResponse {
+  escopo?: M05EscopoDto;
+  fontes: ContextoFonteUtilizadaDto[];
 }

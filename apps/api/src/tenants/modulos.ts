@@ -98,12 +98,14 @@ export const MODULO_POR_PREFIXO: Readonly<Record<string, ModuloKey>> = {
   // leads vista como funil com portão, fila de decisões e sala do cliente.
   // `sala` é a rota ANÔNIMA do link do cliente (como `tenants/onboarding/link`):
   // o gate deixa anônimo passar e o serviço confere a empresa pelo token.
+  // O painel do comercial (Lucas) também mora em `comercial`: é a leitura do funil de vendas.
   comercial: 'leads',
   sala: 'leads',
   campaigns: 'campanhas',
   events: 'pixels',
   content: 'conteudo',
   pauta: 'pauta',
+  marketing: 'pauta',
   'midia-publica': 'pauta',
   // MD10: o retorno do OAuth do canal do YouTube — o canal é da máquina de conteúdo.
   youtube: 'pauta',
@@ -194,6 +196,8 @@ export const PREFIXOS_DA_ESPINHA: readonly string[] = [
   'audit',
   'auth',
   'caixa',
+  // cofre da empresa: senhas e documentos dos sócios; não é módulo que se desliga por empresa
+  'cofre-da-empresa',
   'config',
   'dashboard',
   'google',

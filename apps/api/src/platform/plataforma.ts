@@ -196,11 +196,14 @@ const CAMPOS_DO_ACESSO = [
 ] as const;
 
 /**
- * O que o CONSOLE alcança. Uma tabela só, e ela é da própria plataforma.
+ * O que o CONSOLE alcança. Duas tabelas, e as duas são da própria plataforma.
  *
  * `EmpresaNaPlataforma` pertence à empresa da plataforma (`orgId` = plataforma)
  * e descreve um cliente (`empresaId`). Não guarda dado de operação do cliente:
  * guarda nome, plano, estado, saúde e contadores que a plataforma mediu.
+ *
+ * `OperacaoRodada` é o painel semanal da operação da ROOT, só leitura aqui (quem
+ * grava é o script `importar-painel-operacao`, que recusa org de cliente).
  *
  * SEM `relacoes`: a relação `org` existe no schema e leva a `Org`, e de `Org` se
  * chega a lead, sessão e evento. Não declarar é o que fecha o caminho.
@@ -236,6 +239,16 @@ export const SUPERFICIE_DO_CONSOLE: readonly ModeloCercado[] = [
       'uso e cobrança. Pertence à empresa da plataforma; nenhuma linha aqui é dado de operação ' +
       'de cliente. A relação `org` NÃO está declarada: por ela se chegaria a lead, sessão e ' +
       'evento.',
+  },
+  {
+    modelo: 'operacaoRodada',
+    operacoes: ['findMany', 'findUnique'],
+    campos: ['id', 'orgId', 'rodadaEm', 'conteudo', 'origem', 'createdAt', 'updatedAt'],
+    filtros: ['orgId', 'rodadaEm', 'orgId_rodadaEm'],
+    porQue:
+      'o painel semanal da operação da ROOT (clientes, ondas, dinheiro), uma linha por rodada. ' +
+      'Só existe linha da empresa da plataforma: o script que grava recusa org de cliente. ' +
+      'Sem relação declarada, pelo mesmo motivo de `empresaNaPlataforma`.',
   },
 ] as const;
 

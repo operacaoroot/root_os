@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import type {
   FinanceSummary,
   FinanceAccountList,
@@ -16,19 +16,23 @@ import type {
   ContractList,
   GerarContratoResposta,
   Payables,
+  PontePayableRef,
   Conciliacao,
   Kpis,
   Cashflow,
 } from '@mktos/shared';
-import { apiGet, apiPost, apiPatch } from '@/lib/api';
+import { apiGet, apiPost, apiPatch, ErroDaApi } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
+import { AnaliseView } from './Analise';
 // O cartão local que existia aqui sombreava o compartilhado e deixava a tela
 // financeira com o visual antigo ao lado do novo. Mesmas props, um só cartão.
 import { KpiCard } from '@/components/KpiCard';
+import { NovaInscricaoFinanceira } from './inscricoes/NovaInscricaoFinanceira';
 
 const brl = (n: number) =>
   n.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
-const dateBR = (iso: string | null) => (iso ? new Date(iso).toLocaleDateString('pt-BR') : '—');
+// Vencimento e competência são dia, gravados em UTC: mostrar em UTC evita o "um dia antes".
+const dateBR = (iso: string | null) => (iso ? new Date(iso).toLocaleDateString('pt-BR', { timeZone: 'UTC' }) : '—');
 const today = () => new Date().toISOString().slice(0, 10);
 
 const STATUS_CLS: Record<string, string> = {
@@ -46,6 +50,7 @@ const ACCOUNT_TYPES = [
 
 const TABS = [
   { key: 'visao', label: 'Visão geral' },
+  { key: 'analise', label: 'Análise' },
   { key: 'dre', label: 'DRE' },
   { key: 'apar', label: 'A Pagar/Receber' },
   { key: 'conciliacao', label: 'Conciliação' },
@@ -56,17 +61,37 @@ const TABS = [
 ] as const;
 type TabKey = (typeof TABS)[number]['key'];
 
+type TxFiltro = { status?: string; type?: string; accountId?: string; from?: string; to?: string };
+type AparFiltro = { tipo?: 'entrada' | 'saida'; vencido?: boolean };
+const mesAtual = () => {
+  const d = new Date();
+  const ini = new Date(Date.UTC(d.getFullYear(), d.getMonth(), 1));
+  const fim = new Date(Date.UTC(d.getFullYear(), d.getMonth() + 1, 0));
+  return { from: ini.toISOString().slice(0, 10), to: fim.toISOString().slice(0, 10) };
+};
+
 const inputCls =
   'rounded-lg border border-border bg-surface-2 px-3 py-2 text-sm outline-none focus:border-brand-dim';
 
 export default function FinanceiroPage() {
+  const { token, user, ready, can } = useAuth();
+  if (!ready) return <p>Carregando sessão…</p>;
+  if (!token || !user) return <p>Entre na sua conta para abrir o Financeiro.</p>;
+  if (!can('financeiro.ver')) return <p>Seu acesso atual não permite abrir o Financeiro.</p>;
+  return <FinanceiroSessao key={user.id + ':' + token} />;
+}
+
+function FinanceiroSessao() {
   const { token, ready, can } = useAuth();
+  const active = useRef(true);
+  useEffect(() => { active.current = true; return () => { active.current = false; }; }, []);
   const canEdit = can('financeiro.editar');
   const canBank = can('financeiro.conciliar');
 
   const [tab, setTab] = useState<TabKey>('visao');
   const [error, setError] = useState<string | null>(null);
   const [msg, setMsg] = useState<string | null>(null);
+  const [acessoPerdido, setAcessoPerdido] = useState(false);
 
   const [summary, setSummary] = useState<FinanceSummary | null>(null);
   const [accounts, setAccounts] = useState<FinanceAccountList | null>(null);
@@ -84,48 +109,65 @@ export default function FinanceiroPage() {
   const [kpis, setKpis] = useState<Kpis | null>(null);
   const [cashflow, setCashflow] = useState<Cashflow | null>(null);
 
-  const [txFilter, setTxFilter] = useState<{ status?: string; type?: string; accountId?: string }>({});
+  const [txFilter, setTxFilter] = useState<TxFiltro>({});
+  const [aparFiltro, setAparFiltro] = useState<AparFiltro>({});
+  // Clique num número da visão geral: abre a aba certa já filtrada.
+  const ir = (destino: TabKey, filtro?: { apar?: AparFiltro; tx?: TxFiltro }) => {
+    if (filtro?.apar) setAparFiltro(filtro.apar);
+    if (filtro?.tx) setTxFilter(filtro.tx);
+    setTab(destino);
+    if (typeof window !== 'undefined') window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  const readError = useCallback((e: unknown) => {
+    if (!active.current) return;
+    setError(typeof e === 'string' ? e : e instanceof Error ? e.message : 'Não foi possível concluir a operação no Financeiro.');
+    if (e instanceof ErroDaApi && [401, 403].includes(e.status)) setAcessoPerdido(true);
+  }, []);
+  const onMutationError = readError;
 
   const loadAll = useCallback(() => {
-    if (!token) return;
+    if (!token || !active.current) return;
     setError(null);
-    apiGet<FinanceSummary>('/finance/summary', token).then(setSummary).catch((e) => setError(e.message));
-    apiGet<FinanceAccountList>('/finance/accounts', token).then(setAccounts).catch(() => {});
-    apiGet<FinanceCategoryList>('/finance/categories', token).then(setCategories).catch(() => {});
-    apiGet<BankConnectionList>('/finance/bank/connections', token).then(setBanks).catch(() => {});
-    apiGet<ChartAccountList>('/finance/chart-accounts', token).then(setChart).catch(() => {});
-    apiGet<PartnerList>('/finance/partners', token).then(setPartners).catch(() => {});
-    apiGet<Kpis>('/finance/kpis', token).then(setKpis).catch(() => {});
-    apiGet<Cashflow>('/finance/cashflow', token).then(setCashflow).catch(() => {});
-  }, [token]);
+    apiGet<FinanceSummary>('/finance/summary', token).then((r) => { if (active.current) setSummary(r); }).catch(readError);
+    apiGet<FinanceAccountList>('/finance/accounts', token).then((r) => { if (active.current) setAccounts(r); }).catch(() => {});
+    apiGet<FinanceCategoryList>('/finance/categories', token).then((r) => { if (active.current) setCategories(r); }).catch(() => {});
+    apiGet<BankConnectionList>('/finance/bank/connections', token).then((r) => { if (active.current) setBanks(r); }).catch(() => {});
+    apiGet<ChartAccountList>('/finance/chart-accounts', token).then((r) => { if (active.current) setChart(r); }).catch(() => {});
+    apiGet<PartnerList>('/finance/partners', token).then((r) => { if (active.current) setPartners(r); }).catch(() => {});
+    apiGet<Kpis>('/finance/kpis', token).then((r) => { if (active.current) setKpis(r); }).catch(() => {});
+    apiGet<Cashflow>('/finance/cashflow', token).then((r) => { if (active.current) setCashflow(r); }).catch(() => {});
+  }, [token, readError]);
 
   const loadApar = useCallback(() => {
-    if (!token) return;
-    apiGet<Payables>('/finance/payables', token).then(setPayables).catch((e) => setError(e.message));
-    apiGet<ContractList>('/finance/contracts', token).then(setContracts).catch(() => {});
-  }, [token]);
+    if (!token || !active.current) return;
+    apiGet<Payables>('/finance/payables', token).then((r) => { if (active.current) setPayables(r); }).catch(readError);
+    apiGet<ContractList>('/finance/contracts', token).then((r) => { if (active.current) setContracts(r); }).catch(() => {});
+  }, [token, readError]);
 
   const loadConcil = useCallback(() => {
-    if (!token) return;
+    if (!token || !active.current) return;
     const q = concilAcc ? `?accountId=${concilAcc}` : '';
-    apiGet<Conciliacao>(`/finance/conciliacao${q}`, token).then(setConcil).catch((e) => setError(e.message));
-  }, [token, concilAcc]);
+    apiGet<Conciliacao>(`/finance/conciliacao${q}`, token).then((r) => { if (active.current) setConcil(r); }).catch(readError);
+  }, [token, concilAcc, readError]);
 
   const loadDre = useCallback(() => {
-    if (!token) return;
-    apiGet<Dre>(`/finance/dre?month=${dreMonth}`, token).then(setDre).catch((e) => setError(e.message));
-  }, [token, dreMonth]);
+    if (!token || !active.current) return;
+    apiGet<Dre>(`/finance/dre?month=${dreMonth}`, token).then((r) => { if (active.current) setDre(r); }).catch(readError);
+  }, [token, dreMonth, readError]);
 
   const loadTxs = useCallback(() => {
-    if (!token) return;
+    if (!token || !active.current) return;
     const p = new URLSearchParams();
     if (txFilter.status) p.set('status', txFilter.status);
     if (txFilter.type) p.set('type', txFilter.type);
     if (txFilter.accountId) p.set('accountId', txFilter.accountId);
+    if (txFilter.from) p.set('from', txFilter.from);
+    if (txFilter.to) p.set('to', txFilter.to);
     apiGet<FinanceTransactionList>(`/finance/transactions?${p.toString()}`, token)
-      .then(setTxs)
-      .catch((e) => setError(e.message));
-  }, [token, txFilter]);
+      .then((r) => { if (active.current) setTxs(r); })
+      .catch(readError);
+  }, [token, txFilter, readError]);
 
   useEffect(() => {
     if (!ready || !token) return;
@@ -153,10 +195,13 @@ export default function FinanceiroPage() {
   }, [ready, token, loadConcil]);
 
   const flash = (m: string) => {
+    if (!active.current) return;
     setMsg(m);
     setError(null);
-    setTimeout(() => setMsg(null), 4000);
+    setTimeout(() => { if (active.current) setMsg(null); }, 4000);
   };
+
+  if (acessoPerdido) return <p role="alert">{error ?? 'Seu acesso ao Financeiro precisa ser conferido novamente.'}</p>;
 
   return (
     <div className="space-y-6">
@@ -193,11 +238,14 @@ export default function FinanceiroPage() {
       {error && <div className="rounded-lg border border-bad/30 bg-bad/10 px-4 py-2 text-sm text-bad">{error}</div>}
       {msg && <div className="rounded-lg border border-good/30 bg-good/10 px-4 py-2 text-sm text-good">{msg}</div>}
 
-      {tab === 'visao' && <Visao summary={summary} kpis={kpis} cashflow={cashflow} />}
+      {tab === 'analise' && <AnaliseView token={token} canEdit={canEdit} onError={onMutationError} />}
+      {tab === 'visao' && <Visao summary={summary} kpis={kpis} cashflow={cashflow} txs={txs} payables={payables} ir={ir} />}
       {tab === 'dre' && <DreView dre={dre} month={dreMonth} setMonth={setDreMonth} />}
       {tab === 'apar' && (
         <ApAr
           payables={payables}
+          filtro={aparFiltro}
+          setFiltro={setAparFiltro}
           contracts={contracts}
           partners={partners}
           accounts={accounts}
@@ -205,7 +253,7 @@ export default function FinanceiroPage() {
           canEdit={canEdit}
           token={token}
           onChange={() => { loadApar(); loadAll(); loadTxs(); }}
-          onError={setError}
+          onError={onMutationError}
           onFlash={flash}
         />
       )}
@@ -218,7 +266,7 @@ export default function FinanceiroPage() {
           canBank={canBank}
           token={token}
           onChange={() => { loadConcil(); loadAll(); loadApar(); }}
-          onError={setError}
+          onError={onMutationError}
           onFlash={flash}
         />
       )}
@@ -235,87 +283,198 @@ export default function FinanceiroPage() {
           filter={txFilter}
           setFilter={setTxFilter}
           onChange={() => { loadTxs(); loadAll(); loadDre(); loadApar(); }}
-          onError={setError}
+          onError={onMutationError}
           onFlash={flash}
         />
       )}
       {tab === 'contas' && (
-        <Contas accounts={accounts} canEdit={canEdit} token={token} onChange={loadAll} onError={setError} onFlash={flash} />
+        <Contas accounts={accounts} canEdit={canEdit} token={token} onChange={loadAll} onError={onMutationError} onFlash={flash} />
       )}
       {tab === 'bancos' && (
-        <Bancos banks={banks} accounts={accounts} canBank={canBank} token={token} onChange={loadAll} onError={setError} onFlash={flash} />
+        <Bancos banks={banks} accounts={accounts} canBank={canBank} token={token} onChange={loadAll} onError={onMutationError} onFlash={flash} />
       )}
     </div>
   );
 }
 
 // ---------------- Visão geral ----------------
-function Card({ label, value, tone }: { label: string; value: string; tone?: 'good' | 'bad' | 'warn' }) {
+function Card({ label, value, tone, onClick, ativo }: {
+  label: string; value: string; tone?: 'good' | 'bad' | 'warn'; onClick?: () => void; ativo?: boolean;
+}) {
   const cls = tone === 'good' ? 'text-good' : tone === 'bad' ? 'text-bad' : tone === 'warn' ? 'text-warn' : 'text-text';
-  return (
-    <div className="rounded-xl border border-border bg-surface p-4">
-      <div className="text-[11px] uppercase tracking-wide text-muted">{label}</div>
+  const corpo = (
+    <>
+      <div className="flex items-center justify-between gap-2">
+        <span className="text-[11px] uppercase tracking-wide text-muted">{label}</span>
+        {onClick && <span aria-hidden className="text-[11px] text-muted transition-colors group-hover:text-brand">ver →</span>}
+      </div>
       <div className={`mt-1 text-xl font-semibold ${cls}`}>{value}</div>
-    </div>
+    </>
+  );
+  if (!onClick) return <div className="rounded-xl border border-border bg-surface p-4">{corpo}</div>;
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-pressed={ativo}
+      className={`group rounded-xl border bg-surface p-4 text-left transition-colors hover:border-brand/40 hover:bg-surface-2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-brand ${ativo ? 'border-brand' : 'border-border'}`}
+    >
+      {corpo}
+    </button>
   );
 }
 
-function CashflowChart({ cashflow }: { cashflow: Cashflow | null }) {
+/** KPI clicável: o cartão compartilhado dentro de um botão, sem mudar o visual. */
+function KpiBotao({ onClick, ...p }: React.ComponentProps<typeof KpiCard> & { onClick: () => void }) {
+  return (
+    <button type="button" onClick={onClick} className="h-full text-left focus-visible:outline focus-visible:outline-2 focus-visible:outline-brand">
+      <KpiCard {...p} />
+    </button>
+  );
+}
+
+// Fluxo de caixa projetado: linha do saldo dia a dia, com datas no eixo.
+// Passar o mouse mostra o dia; clicar abre o que entra e sai naquele dia
+// (realizados pelo extrato, previstos pelo vencimento).
+const diaCurto = (d: string) => `${d.slice(8, 10)}/${d.slice(5, 7)}`;
+
+function CashflowChart({ cashflow, txs, payables }: {
+  cashflow: Cashflow | null;
+  txs: FinanceTransactionList | null;
+  payables: Payables | null;
+}) {
+  const [foco, setFoco] = useState<number | null>(null);
+  const [dia, setDia] = useState<string | null>(null);
   if (!cashflow || cashflow.days.length === 0) return null;
-  const vals = cashflow.days.map((d) => d.acumulado);
+  const days = cashflow.days;
+  const vals = days.map((d) => d.acumulado);
   const min = Math.min(0, ...vals);
   const max = Math.max(0, ...vals);
   const range = max - min || 1;
   const W = 100, H = 34;
-  const pts = cashflow.days.map((d, i) => {
-    const x = (i / Math.max(cashflow.days.length - 1, 1)) * W;
-    const y = H - ((d.acumulado - min) / range) * H;
-    return `${x.toFixed(1)},${y.toFixed(1)}`;
-  }).join(' ');
-  const zeroY = H - ((0 - min) / range) * H;
+  const x = (i: number) => (i / Math.max(days.length - 1, 1)) * W;
+  const y = (v: number) => H - ((v - min) / range) * H;
+  const pts = days.map((d, i) => `${x(i).toFixed(2)},${y(d.acumulado).toFixed(2)}`).join(' ');
+  const zeroY = y(0);
   const last = vals[vals.length - 1];
+  const passo = Math.max(1, Math.round(days.length / 6));
+  const marcas = days.map((d, i) => ({ d, i })).filter(({ i }) => i % passo === 0 || i === days.length - 1);
+  const atual = foco !== null ? days[foco] : null;
+
+  const indiceDoMouse = (e: React.MouseEvent<HTMLDivElement>) => {
+    const r = e.currentTarget.getBoundingClientRect();
+    const t = Math.min(Math.max((e.clientX - r.left) / r.width, 0), 1);
+    return Math.round(t * (days.length - 1));
+  };
+
+  const doDia = (d: string) => [
+    ...(txs?.items ?? [])
+      .filter((t) => t.status !== 'previsto' && t.date.slice(0, 10) === d)
+      .map((t) => ({ id: t.id, tipo: t.type, desc: t.description, quem: t.counterparty, valor: t.amount, previsto: false })),
+    ...(payables?.items ?? [])
+      .filter((p) => p.dueDate?.slice(0, 10) === d)
+      .map((p) => ({ id: p.id, tipo: p.tipo, desc: p.description, quem: p.partnerName, valor: p.amount, previsto: true })),
+  ];
+  const itens = dia ? doDia(dia) : [];
+  const diaSel = dia ? days.find((d) => d.date === dia) : null;
+
   return (
     <div className="rounded-xl border border-border bg-surface p-4">
       <div className="mb-1 flex items-center justify-between">
         <h2 className="font-os-mono text-[10px] uppercase tracking-[0.16em] font-medium text-muted">Fluxo de caixa projetado (30 dias)</h2>
-        <span className={`text-sm font-semibold ${last >= 0 ? 'text-good' : 'text-bad'}`}>{brl(last)}</span>
+        <span className={`text-sm font-semibold ${last >= 0 ? 'text-good' : 'text-bad'}`}>{brl(last)} em {diaCurto(cashflow.window.to)}</span>
       </div>
-      <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" className="h-24 w-full">
-        <line x1="0" y1={zeroY} x2={W} y2={zeroY} stroke="currentColor" strokeWidth="0.3" className="text-border" />
-        <polyline points={pts} fill="none" stroke="currentColor" strokeWidth="0.8" className={last >= 0 ? 'text-good' : 'text-bad'} vectorEffect="non-scaling-stroke" />
-      </svg>
-      <div className="flex justify-between text-[10px] text-muted">
-        <span>{cashflow.window.from}</span><span>abertura {brl(cashflow.openingBalance)}</span><span>{cashflow.window.to}</span>
+      <div className="mb-2 h-5 text-[12px] text-muted">
+        {atual ? (
+          <>
+            <b className="text-text">{diaCurto(atual.date)}</b> · saldo {brl(atual.acumulado)}
+            {atual.entradas > 0 && <> · <span className="text-good">entra {brl(atual.entradas)}</span></>}
+            {atual.saidas > 0 && <> · <span className="text-bad">sai {brl(atual.saidas)}</span></>}
+            {(atual.entradas > 0 || atual.saidas > 0) && <> · clique para ver</>}
+          </>
+        ) : 'Passe o mouse para ver cada dia; clique num dia com movimento para abrir.'}
       </div>
+      <div
+        className="relative cursor-crosshair"
+        onMouseMove={(e) => setFoco(indiceDoMouse(e))}
+        onMouseLeave={() => setFoco(null)}
+        onClick={(e) => { const d = days[indiceDoMouse(e)].date; setDia(dia === d ? null : d); }}
+      >
+        <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" className="h-28 w-full" aria-label="Saldo projetado por dia">
+          <line x1="0" y1={zeroY} x2={W} y2={zeroY} stroke="currentColor" strokeWidth="0.3" className="text-border" vectorEffect="non-scaling-stroke" />
+          {days.map((d, i) => (d.entradas > 0 || d.saidas > 0) && (
+            <line key={d.date} x1={x(i)} x2={x(i)} y1={H} y2={H - 2.5} stroke="currentColor" className={d.saidas > d.entradas ? 'text-bad' : 'text-good'} strokeWidth="1.5" vectorEffect="non-scaling-stroke" />
+          ))}
+          <polyline points={pts} fill="none" stroke="currentColor" strokeWidth="1.5" className={last >= 0 ? 'text-good' : 'text-bad'} vectorEffect="non-scaling-stroke" />
+          {foco !== null && (
+            <line x1={x(foco)} x2={x(foco)} y1="0" y2={H} stroke="currentColor" strokeWidth="1" className="text-muted" vectorEffect="non-scaling-stroke" />
+          )}
+          {dia && days.findIndex((d) => d.date === dia) >= 0 && (
+            <line x1={x(days.findIndex((d) => d.date === dia))} x2={x(days.findIndex((d) => d.date === dia))} y1="0" y2={H} stroke="currentColor" strokeWidth="1.5" className="text-brand" vectorEffect="non-scaling-stroke" />
+          )}
+        </svg>
+      </div>
+      <div className="relative mt-1 h-4 text-[10px] text-muted">
+        {marcas.map(({ d, i }) => (
+          <span key={d.date} className="absolute -translate-x-1/2 whitespace-nowrap first:translate-x-0 last:-translate-x-full" style={{ left: `${x(i)}%` }}>{diaCurto(d.date)}</span>
+        ))}
+      </div>
+
+      {dia && (
+        <div className="mt-4 border-t border-border pt-3">
+          <div className="mb-2 flex items-center justify-between text-sm">
+            <span><b>{dateBR(dia)}</b>{diaSel && <span className="text-muted"> · saldo no fim do dia {brl(diaSel.acumulado)}</span>}</span>
+            <button className="text-muted hover:text-text" onClick={() => setDia(null)}>fechar</button>
+          </div>
+          {itens.length === 0 ? (
+            <p className="text-sm text-muted">Nenhum movimento neste dia.</p>
+          ) : (
+            <ul className="divide-y divide-border text-sm">
+              {itens.map((m) => (
+                <li key={m.id} className="flex items-center gap-3 py-2">
+                  <span className={`w-14 shrink-0 text-[11px] uppercase ${m.tipo === 'entrada' ? 'text-good' : 'text-bad'}`}>{m.tipo === 'entrada' ? 'entra' : 'sai'}</span>
+                  <span className="min-w-0 flex-1 truncate">{m.desc}{m.quem && <span className="ml-2 text-muted">{m.quem}</span>}</span>
+                  {m.previsto && <span className="shrink-0 rounded bg-surface-2 px-1.5 py-0.5 text-[11px] text-muted">previsto</span>}
+                  <span className="w-28 shrink-0 text-right tabular-nums">{brl(m.valor)}</span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
     </div>
   );
 }
 
-function Visao({ summary, kpis, cashflow }: { summary: FinanceSummary | null; kpis: Kpis | null; cashflow: Cashflow | null }) {
+function Visao({ summary, kpis, cashflow, txs, payables, ir }: {
+  summary: FinanceSummary | null; kpis: Kpis | null; cashflow: Cashflow | null;
+  txs: FinanceTransactionList | null; payables: Payables | null;
+  ir: (destino: TabKey, filtro?: { apar?: AparFiltro; tx?: TxFiltro }) => void;
+}) {
   if (!summary) return <p className="text-sm text-muted">Carregando…</p>;
   return (
     <div className="space-y-6">
       {kpis && (
         <>
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
-            <KpiCard label="Margem bruta" value={`${kpis.margens.bruta.toFixed(1)}%`} hint="MC / Faturamento líq." tone={kpis.margens.bruta >= 0 ? 'good' : 'bad'} />
-            <KpiCard label="Margem EBITDA" value={`${kpis.margens.ebitda.toFixed(1)}%`} tone={kpis.margens.ebitda >= 0 ? 'good' : 'bad'} />
-            <KpiCard label="Margem líquida" value={`${kpis.margens.liquida.toFixed(1)}%`} hint={`LL ${brl(kpis.dre.ll)}`} tone={kpis.margens.liquida >= 0 ? 'good' : 'bad'} />
-            <KpiCard label="Inadimplência" value={`${kpis.inadimplencia.toFixed(1)}%`} hint={`${brl(kpis.aReceberVencido)} vencido`} tone={kpis.inadimplencia > 0 ? 'warn' : 'good'} />
-            <KpiCard label="Índice de acurácia" value={`${kpis.acuracidade.toFixed(0)}%`} hint={`${kpis.bankConciliado}/${kpis.bankTotal} conciliados`} tone={kpis.acuracidade >= 90 ? 'good' : 'warn'} />
+            <KpiBotao onClick={() => ir('dre')} label="Margem bruta" value={`${kpis.margens.bruta.toFixed(1)}%`} hint="MC / Faturamento líq." tone={kpis.margens.bruta >= 0 ? 'good' : 'bad'} />
+            <KpiBotao onClick={() => ir('dre')} label="Margem EBITDA" value={`${kpis.margens.ebitda.toFixed(1)}%`} tone={kpis.margens.ebitda >= 0 ? 'good' : 'bad'} />
+            <KpiBotao onClick={() => ir('dre')} label="Margem líquida" value={`${kpis.margens.liquida.toFixed(1)}%`} hint={`LL ${brl(kpis.dre.ll)}`} tone={kpis.margens.liquida >= 0 ? 'good' : 'bad'} />
+            <KpiBotao onClick={() => ir('apar', { apar: { tipo: 'entrada', vencido: true } })} label="Inadimplência" value={`${kpis.inadimplencia.toFixed(1)}%`} hint={`${brl(kpis.aReceberVencido)} vencido`} tone={kpis.inadimplencia > 0 ? 'warn' : 'good'} />
+            <KpiBotao onClick={() => ir('conciliacao')} label="Índice de acurácia" value={`${kpis.acuracidade.toFixed(0)}%`} hint={`${kpis.bankConciliado}/${kpis.bankTotal} conciliados`} tone={kpis.acuracidade >= 90 ? 'good' : 'warn'} />
           </div>
-          <CashflowChart cashflow={cashflow} />
+          <CashflowChart cashflow={cashflow} txs={txs} payables={payables} />
         </>
       )}
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        <Card label="Resultado do mês" value={brl(summary.mes.resultado)} tone={summary.mes.resultado >= 0 ? 'good' : 'bad'} />
-        <Card label="Entradas do mês" value={brl(summary.mes.entradas)} tone="good" />
-        <Card label="Saídas do mês" value={brl(summary.mes.saidas)} tone="bad" />
-        <Card label="Contas" value={String(summary.contas)} />
-        <Card label="A receber" value={brl(summary.aReceber)} tone="good" />
-        <Card label="A pagar" value={brl(summary.aPagar)} tone="bad" />
-        <Card label="Receber vencido" value={brl(summary.aReceberVencido)} tone={summary.aReceberVencido > 0 ? 'warn' : undefined} />
-        <Card label="Pagar vencido" value={brl(summary.aPagarVencido)} tone={summary.aPagarVencido > 0 ? 'warn' : undefined} />
+        <Card label="Resultado do mês" value={brl(summary.mes.resultado)} tone={summary.mes.resultado >= 0 ? 'good' : 'bad'} onClick={() => ir('dre')} />
+        <Card label="Entradas do mês" value={brl(summary.mes.entradas)} tone="good" onClick={() => ir('lancamentos', { tx: { type: 'entrada', ...mesAtual() } })} />
+        <Card label="Saídas do mês" value={brl(summary.mes.saidas)} tone="bad" onClick={() => ir('lancamentos', { tx: { type: 'saida', ...mesAtual() } })} />
+        <Card label="Contas" value={String(summary.contas)} onClick={() => ir('contas')} />
+        <Card label="A receber" value={brl(summary.aReceber)} tone="good" onClick={() => ir('apar', { apar: { tipo: 'entrada' } })} />
+        <Card label="A pagar" value={brl(summary.aPagar)} tone="bad" onClick={() => ir('apar', { apar: { tipo: 'saida' } })} />
+        <Card label="Receber vencido" value={brl(summary.aReceberVencido)} tone={summary.aReceberVencido > 0 ? 'warn' : undefined} onClick={() => ir('apar', { apar: { tipo: 'entrada', vencido: true } })} />
+        <Card label="Pagar vencido" value={brl(summary.aPagarVencido)} tone={summary.aPagarVencido > 0 ? 'warn' : undefined} onClick={() => ir('apar', { apar: { tipo: 'saida', vencido: true } })} />
       </div>
 
       <div className="grid gap-4 lg:grid-cols-2">
@@ -326,9 +485,15 @@ function Visao({ summary, kpis, cashflow }: { summary: FinanceSummary | null; kp
           ) : (
             <ul className="space-y-2">
               {summary.byAccount.map((a) => (
-                <li key={a.id} className="flex items-center justify-between text-sm">
-                  <span>{a.name}</span>
-                  <span className={a.balance >= 0 ? 'text-good' : 'text-bad'}>{brl(a.balance)}</span>
+                <li key={a.id}>
+                  <button
+                    type="button"
+                    onClick={() => ir('lancamentos', { tx: { accountId: a.id } })}
+                    className="group -mx-2 flex w-[calc(100%+1rem)] items-center justify-between rounded px-2 py-1 text-left text-sm hover:bg-surface-2"
+                  >
+                    <span>{a.name} <span aria-hidden className="text-[11px] text-muted group-hover:text-brand">ver extrato →</span></span>
+                    <span className={a.balance >= 0 ? 'text-good' : 'text-bad'}>{brl(a.balance)}</span>
+                  </button>
                 </li>
               ))}
             </ul>
@@ -463,7 +628,7 @@ function ConciliacaoView(props: {
   canBank: boolean;
   token: string | null;
   onChange: () => void;
-  onError: (e: string) => void;
+  onError: (e: unknown) => void;
   onFlash: (m: string) => void;
 }) {
   const { concil, accounts, accountId, setAccountId, canBank, token, onChange, onError, onFlash } = props;
@@ -474,12 +639,12 @@ function ConciliacaoView(props: {
     setBusy(true);
     apiPost<{ conciliados: number; sugestoes: number }>(`/finance/conciliacao/auto${accountId ? `?accountId=${accountId}` : ''}`, {}, token)
       .then((r) => { onFlash(`✅ ${r.conciliados} conciliado(s) automaticamente · ${r.sugestoes} sugestão(ões) restante(s).`); onChange(); })
-      .catch((e) => onError(e.message)).finally(() => setBusy(false));
+      .catch((e) => onError(e)).finally(() => setBusy(false));
   };
   const conciliar = (movimentoId: string, tituloId: string) => {
     if (!tituloId) { onError('Escolha um título para conciliar.'); return; }
     apiPost<{ score: number }>('/finance/conciliacao/match', { movimentoId, tituloId }, token)
-      .then((r) => { onFlash(`Conciliado (score ${r.score}).`); onChange(); }).catch((e) => onError(e.message));
+      .then((r) => { onFlash(`Conciliado (score ${r.score}).`); onChange(); }).catch((e) => onError(e));
   };
 
   const titulos = concil?.titulos ?? [];
@@ -561,6 +726,8 @@ const APPROVAL_CLS: Record<string, string> = {
 
 function ApAr(props: {
   payables: Payables | null;
+  filtro: AparFiltro;
+  setFiltro: (f: AparFiltro) => void;
   contracts: ContractList | null;
   partners: PartnerList | null;
   accounts: FinanceAccountList | null;
@@ -568,10 +735,10 @@ function ApAr(props: {
   canEdit: boolean;
   token: string | null;
   onChange: () => void;
-  onError: (e: string) => void;
+  onError: (e: unknown) => void;
   onFlash: (m: string) => void;
 }) {
-  const { payables, contracts, partners, accounts, chart, canEdit, token, onChange, onError, onFlash } = props;
+  const { payables, filtro, setFiltro, contracts, partners, accounts, chart, canEdit, token, onChange, onError, onFlash } = props;
   const [pForm, setPForm] = useState({ razaoSocial: '', cnpjCpf: '', isCliente: false, isFornecedor: true });
   const [cForm, setCForm] = useState({
     tipo: 'saida', descricao: '', valor: '', diaVencimento: '5', periodicidade: 'mensal',
@@ -582,10 +749,10 @@ function ApAr(props: {
 
   const doApprove = (id: string, aprovar: boolean) =>
     apiPost(`/finance/transactions/${id}/approve`, { aprovar }, token)
-      .then(() => { onFlash(aprovar ? 'Aprovado.' : 'Rejeitado.'); onChange(); }).catch((e) => onError(e.message));
+      .then(() => { onFlash(aprovar ? 'Aprovado.' : 'Rejeitado.'); onChange(); }).catch((e) => onError(e));
   const baixar = (id: string) =>
     apiPatch(`/finance/transactions/${id}`, { status: 'realizado' }, token)
-      .then(() => { onFlash('Baixado (realizado).'); onChange(); }).catch((e) => onError(e.message));
+      .then(() => { onFlash('Baixado (realizado).'); onChange(); }).catch((e) => onError(e));
   // O vencimento vai no pedido: repetir o mesmo devolve o lançamento já gravado
   // (`replayed`) em vez de gerar a parcela seguinte.
   const gerar = (c: Contract) => {
@@ -597,14 +764,14 @@ function ApAr(props: {
           : 'Lançamento gerado a partir do contrato.');
         onChange();
       })
-      .catch((e) => onError(e.message))
+      .catch((e) => onError(e))
       .finally(() => setGerando(null));
   };
   const addPartner = () => {
     if (!pForm.razaoSocial) { onError('Informe a razão social.'); return; }
     apiPost('/finance/partners', pForm, token)
       .then(() => { onFlash('Parceiro criado.'); setPForm({ razaoSocial: '', cnpjCpf: '', isCliente: false, isFornecedor: true }); onChange(); })
-      .catch((e) => onError(e.message));
+      .catch((e) => onError(e));
   };
   const addContract = () => {
     if (!cForm.descricao || !cForm.valor || !cForm.accountId) { onError('Contrato: descrição, valor e conta bancária.'); return; }
@@ -615,20 +782,41 @@ function ApAr(props: {
       chartAccountId: cForm.chartAccountId || undefined, dataInicio: cForm.dataInicio,
     }, token)
       .then(() => { onFlash('Contrato criado.'); setCForm({ ...cForm, descricao: '', valor: '' }); onChange(); })
-      .catch((e) => onError(e.message));
+      .catch((e) => onError(e));
   };
 
   const t = payables?.totals;
+  const linhas = (payables?.items ?? []).filter((r) =>
+    (!filtro.tipo || r.tipo === filtro.tipo) && (!filtro.vencido || r.vencido));
   return (
     <div className="space-y-6">
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
-        <Card label="A pagar" value={brl(t?.aPagar ?? 0)} tone="bad" />
-        <Card label="A receber" value={brl(t?.aReceber ?? 0)} tone="good" />
-        <Card label="Vencido a pagar" value={brl(t?.vencidoPagar ?? 0)} tone={t && t.vencidoPagar > 0 ? 'warn' : undefined} />
-        <Card label="Vencido a receber" value={brl(t?.vencidoReceber ?? 0)} tone={t && t.vencidoReceber > 0 ? 'warn' : undefined} />
+        <Card label="A pagar" value={brl(t?.aPagar ?? 0)} tone="bad" ativo={filtro.tipo === 'saida' && !filtro.vencido} onClick={() => setFiltro({ tipo: 'saida' })} />
+        <Card label="A receber" value={brl(t?.aReceber ?? 0)} tone="good" ativo={filtro.tipo === 'entrada' && !filtro.vencido} onClick={() => setFiltro({ tipo: 'entrada' })} />
+        <Card label="Vencido a pagar" value={brl(t?.vencidoPagar ?? 0)} tone={t && t.vencidoPagar > 0 ? 'warn' : undefined} ativo={filtro.tipo === 'saida' && !!filtro.vencido} onClick={() => setFiltro({ tipo: 'saida', vencido: true })} />
+        <Card label="Vencido a receber" value={brl(t?.vencidoReceber ?? 0)} tone={t && t.vencidoReceber > 0 ? 'warn' : undefined} ativo={filtro.tipo === 'entrada' && !!filtro.vencido} onClick={() => setFiltro({ tipo: 'entrada', vencido: true })} />
         <Card label="Aguardando aprovação" value={String(t?.aguardandoAprovacao ?? 0)} tone={t && t.aguardandoAprovacao > 0 ? 'warn' : undefined} />
       </div>
       {payables && <p className="text-[11px] text-muted">Limite de aprovação: saídas acima de {brl(payables.approvalLimit)} exigem aprovação humana antes da baixa.</p>}
+      <div className="flex flex-wrap items-center gap-2 text-sm">
+        {([
+          ['Tudo', {}],
+          ['A receber', { tipo: 'entrada' }],
+          ['A pagar', { tipo: 'saida' }],
+          ['Vencidos', { vencido: true }],
+        ] as [string, AparFiltro][]).map(([rotulo, f]) => {
+          const on = filtro.tipo === f.tipo && !!filtro.vencido === !!f.vencido;
+          return (
+            <button key={rotulo} type="button" onClick={() => setFiltro(f)} aria-pressed={on}
+              className={`rounded-full border px-3 py-1 ${on ? 'border-brand bg-brand/10 text-brand' : 'border-border text-muted hover:text-text'}`}>
+              {rotulo}
+            </button>
+          );
+        })}
+        <span className="ml-auto text-muted">
+          {linhas.length} {linhas.length === 1 ? 'item' : 'itens'} · {brl(linhas.reduce((s, r) => s + r.amount, 0))}
+        </span>
+      </div>
 
       <div className="overflow-x-auto rounded-xl border border-border">
         <table className="w-full min-w-[820px] text-sm">
@@ -640,12 +828,14 @@ function ApAr(props: {
               <th className="px-3 py-2">Vencimento</th>
               <th className="px-3 py-2 text-right">Valor</th>
               <th className="px-3 py-2">Aprovação</th>
-              {canEdit && <th className="px-3 py-2" />}
+              <th className="px-3 py-2">Ações</th>
             </tr>
           </thead>
           <tbody>
-            {payables?.items.length === 0 && <tr><td colSpan={canEdit ? 7 : 6} className="px-3 py-6 text-center text-muted">Nada previsto. Crie lançamentos “previstos” ou gere de um contrato.</td></tr>}
-            {payables?.items.map((r) => (
+            {payables && linhas.length === 0 && <tr><td colSpan={7} className="px-3 py-6 text-center text-muted">Nada previsto. Crie lançamentos “previstos” ou gere de um contrato.</td></tr>}
+            {linhas.map((row) => {
+              const r = row as typeof row & Partial<PontePayableRef>;
+              return (
               <tr key={r.id} className="border-t border-border">
                 <td className="px-3 py-2"><span className={r.tipo === 'saida' ? 'text-bad' : 'text-good'}>{r.tipo === 'saida' ? 'pagar' : 'receber'}</span></td>
                 <td className="px-3 py-2">{r.description}{r.chartCodigo && <span className="ml-1 text-[10px] text-muted">[{r.chartCodigo}]</span>}</td>
@@ -653,11 +843,15 @@ function ApAr(props: {
                 <td className="px-3 py-2 whitespace-nowrap">
                   {dateBR(r.dueDate)}{r.vencido && <span className="ml-1 text-[10px] text-warn">({r.diasAtraso}d atraso)</span>}
                 </td>
-                <td className={`px-3 py-2 text-right font-medium ${r.tipo === 'saida' ? 'text-bad' : 'text-good'}`}>{brl(r.amount)}</td>
+                <td className={`px-3 py-2 text-right font-medium ${r.tipo === 'saida' ? 'text-bad' : 'text-good'}`}>{r.exercicioFinanceiro === true || r.exercicioComercial === true ? <span className="text-xs text-muted">Conferir valor e moeda no detalhe</span> : brl(r.amount)}</td>
                 <td className="px-3 py-2"><span className={`rounded px-1.5 py-0.5 text-[11px] ${APPROVAL_CLS[r.approvalStatus] ?? ''}`}>{r.approvalStatus.replace('_', ' ')}</span></td>
-                {canEdit && (
+                {(canEdit || r.exercicioFinanceiro === true || r.exercicioComercial === true) && (
                   <td className="px-3 py-2 text-right whitespace-nowrap">
-                    {r.approvalStatus === 'aguardando' ? (
+                    {r.exercicioComercial === true ? (
+                      r.exercicioComercialHref === '/finance/exercicio/comercial/obrigacoes/' + r.id ? <a href={'/financeiro/obrigacoes/' + encodeURIComponent(r.id) + '?origem=comercial'} className="text-brand underline">Conferir obrigação comercial</a> : <span className="text-xs text-muted">Vínculo comercial indisponível</span>
+                    ) : r.exercicioFinanceiro === true ? (
+                      <a href={'/financeiro/obrigacoes/' + encodeURIComponent(r.id)} className="text-brand underline">Conferir obrigação</a>
+                    ) : r.approvalStatus === 'aguardando' ? (
                       <>
                         <button onClick={() => doApprove(r.id, true)} className="rounded border border-border px-2 py-0.5 text-[11px] text-good hover:bg-surface-2">Aprovar</button>
                         <button onClick={() => doApprove(r.id, false)} className="ml-1 rounded border border-border px-2 py-0.5 text-[11px] text-bad hover:bg-surface-2">Rejeitar</button>
@@ -667,11 +861,14 @@ function ApAr(props: {
                     ) : null}
                   </td>
                 )}
+                {!canEdit && r.exercicioFinanceiro !== true && r.exercicioComercial !== true && <td />}
               </tr>
-            ))}
+            );})}
           </tbody>
         </table>
       </div>
+
+      {canEdit && <NovaInscricaoFinanceira contracts={contracts} onAtualizar={onChange} onError={onError} />}
 
       {/* Contratos recorrentes */}
       <div className="rounded-xl border border-border bg-surface p-4">
@@ -751,10 +948,10 @@ function Lancamentos(props: {
   partners: PartnerList | null;
   canEdit: boolean;
   token: string | null;
-  filter: { status?: string; type?: string; accountId?: string };
-  setFilter: (f: { status?: string; type?: string; accountId?: string }) => void;
+  filter: TxFiltro;
+  setFilter: (f: TxFiltro) => void;
   onChange: () => void;
-  onError: (e: string) => void;
+  onError: (e: unknown) => void;
   onFlash: (m: string) => void;
 }) {
   const { txs, accounts, categories, chart, partners, canEdit, token, filter, setFilter, onChange, onError, onFlash } = props;
@@ -788,11 +985,15 @@ function Lancamentos(props: {
         setOpen(false);
         onChange();
       })
-      .catch((e) => onError(e.message));
+      .catch((e) => onError(e));
   };
 
   const setStatus = (id: string, status: FinanceTxStatusValue) =>
-    apiPatch(`/finance/transactions/${id}`, { status }, token).then(() => { onFlash('Atualizado.'); onChange(); }).catch((e) => onError(e.message));
+    apiPatch(`/finance/transactions/${id}`, { status }, token).then(() => { onFlash('Atualizado.'); onChange(); }).catch((e) => onError(e));
+  const classificar = (id: string, chartAccountId: string) =>
+    apiPatch(`/finance/transactions/${id}`, { chartAccountId: chartAccountId || null }, token)
+      .then(() => { onFlash('Classificado.'); onChange(); })
+      .catch((e) => onError(e));
 
   return (
     <div className="space-y-4">
@@ -812,6 +1013,12 @@ function Lancamentos(props: {
           <option value="">Todas as contas</option>
           {accounts?.items.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
         </select>
+        {(filter.from || filter.to) && (
+          <button type="button" onClick={() => setFilter({ ...filter, from: undefined, to: undefined })}
+            className="rounded-full border border-brand bg-brand/10 px-3 py-1 text-sm text-brand">
+            {dateBR(filter.from ?? null)} a {dateBR(filter.to ?? null)} ✕
+          </button>
+        )}
         {canEdit && (
           <button onClick={() => setOpen((o) => !o)} className="ml-auto rounded-lg bg-brand px-3 py-2 text-sm font-medium text-ink hover:opacity-90">
             {open ? 'Fechar' : '+ Novo lançamento'}
@@ -870,7 +1077,7 @@ function Lancamentos(props: {
               <th className="px-3 py-2">Data</th>
               <th className="px-3 py-2">Descrição</th>
               <th className="px-3 py-2">Conta</th>
-              <th className="px-3 py-2">Categoria</th>
+              <th className="px-3 py-2">Plano de contas</th>
               <th className="px-3 py-2">Status</th>
               <th className="px-3 py-2 text-right">Valor</th>
               {canEdit && <th className="px-3 py-2" />}
@@ -885,7 +1092,19 @@ function Lancamentos(props: {
                 <td className="px-3 py-2 whitespace-nowrap">{dateBR(t.date)}</td>
                 <td className="px-3 py-2">{t.description}{t.source !== 'manual' && <span className="ml-1 text-[10px] text-muted">({t.source})</span>}</td>
                 <td className="px-3 py-2 text-muted">{t.accountName ?? '—'}</td>
-                <td className="px-3 py-2 text-muted">{t.categoryName ?? '—'}</td>
+                <td className="px-3 py-2 text-muted">
+                  {t.temRateio ? 'rateio' : canEdit ? (
+                    <select
+                      aria-label="Conta do plano"
+                      className="max-w-[220px] rounded border border-border bg-surface px-1.5 py-0.5 text-[12px]"
+                      value={t.chartAccountId ?? ''}
+                      onChange={(e) => classificar(t.id, e.target.value)}
+                    >
+                      <option value="">— sem conta —</option>
+                      {lancaveis.map((c) => <option key={c.id} value={c.id}>{c.codigo} {c.nome}</option>)}
+                    </select>
+                  ) : (t.chartCodigo ?? t.categoryName ?? '—')}
+                </td>
                 <td className="px-3 py-2"><span className={`rounded px-1.5 py-0.5 text-[11px] ${STATUS_CLS[t.status] ?? ''}`}>{t.status}</span></td>
                 <td className={`px-3 py-2 text-right font-medium ${t.type === 'entrada' ? 'text-good' : 'text-bad'}`}>
                   {t.type === 'entrada' ? '+' : '−'}{brl(t.amount)}
@@ -915,7 +1134,7 @@ function Contas(props: {
   canEdit: boolean;
   token: string | null;
   onChange: () => void;
-  onError: (e: string) => void;
+  onError: (e: unknown) => void;
   onFlash: (m: string) => void;
 }) {
   const { accounts, canEdit, token, onChange, onError, onFlash } = props;
@@ -929,7 +1148,7 @@ function Contas(props: {
       openingBalance: form.openingBalance ? Number(form.openingBalance) : undefined,
     }, token)
       .then(() => { onFlash('✅ Conta criada.'); setForm({ name: '', type: 'corrente', institution: '', openingBalance: '' }); onChange(); })
-      .catch((e) => onError(e.message));
+      .catch((e) => onError(e));
   };
 
   return (
@@ -984,7 +1203,7 @@ function Bancos(props: {
   canBank: boolean;
   token: string | null;
   onChange: () => void;
-  onError: (e: string) => void;
+  onError: (e: unknown) => void;
   onFlash: (m: string) => void;
 }) {
   const { banks, accounts, canBank, token, onChange, onError, onFlash } = props;
@@ -998,7 +1217,7 @@ function Bancos(props: {
     file.text()
       .then((content) => apiPost<{ imported: number; skipped: number }>('/finance/import/ofx', { accountId: ofxAccount, content }, token))
       .then((r) => { onFlash(`✅ OFX: ${r.imported} importado(s), ${r.skipped} já existente(s).`); onChange(); })
-      .catch((e) => onError(e.message))
+      .catch((e) => onError(e))
       .finally(() => setBusy(false));
   };
 
@@ -1017,13 +1236,13 @@ function Bancos(props: {
             await apiPost('/finance/bank/pluggy/item', { itemId: id }, token);
             onFlash('✅ Banco conectado e sincronizado.');
             onChange();
-          } catch (e) { onError((e as Error).message); }
+          } catch (e) { onError(e); }
         },
         onError: (err: any) => onError(`Pluggy: ${err?.message ?? 'erro na conexão'}`),
       });
       widget.init();
     } catch (e) {
-      onError((e as Error).message);
+      onError(e);
     } finally {
       setBusy(false);
     }
@@ -1034,7 +1253,7 @@ function Bancos(props: {
     setBusy(true);
     apiPost('/finance/bank/pluggy/item', { itemId }, token)
       .then(() => { onFlash('✅ Item registrado e sincronizado.'); setItemId(''); onChange(); })
-      .catch((e) => onError(e.message))
+      .catch((e) => onError(e))
       .finally(() => setBusy(false));
   };
 
@@ -1042,7 +1261,7 @@ function Bancos(props: {
     setBusy(true);
     apiPost<{ accounts: number; transactions: number }>(`/finance/bank/connections/${id}/sync`, {}, token)
       .then((r) => { onFlash(`✅ Sync: ${r.accounts} conta(s), ${r.transactions} lançamento(s).`); onChange(); })
-      .catch((e) => onError(e.message))
+      .catch((e) => onError(e))
       .finally(() => setBusy(false));
   };
 
@@ -1050,7 +1269,7 @@ function Bancos(props: {
     setBusy(true);
     apiPost<{ transactions: number; receivables: number }>('/finance/bank/asaas/connect', {}, token)
       .then((r) => { onFlash(`✅ Asaas conectado: ${r.transactions} lançamento(s), ${r.receivables} a receber.`); onChange(); })
-      .catch((e) => onError(e.message))
+      .catch((e) => onError(e))
       .finally(() => setBusy(false));
   };
 

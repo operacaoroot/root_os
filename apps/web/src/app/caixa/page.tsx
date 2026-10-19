@@ -33,7 +33,9 @@ import { CARTAO, FOCO, ROTULO } from './comum';
  *     acompanha a fila sem decidir lê a frase, não um zero;
  *  2. O CONTEÚDO EXATO DE UMA AÇÃO RETIDA NÃO PASSA POR AQUI. A fila, e a
  *     assinatura, continuam em `/atendimento`;
- *  3. "MINHAS" É CASAMENTO POR NOME, e a tela diz por quais nomes procurou;
+ *  3. "MINHAS" É PELA CONTA: tarefas e conversas pessoais são vinculadas à conta
+ *     autenticada por ID (produção, 14/10); o texto antigo do responsável não
+ *     define a identidade;
  *  4. A CAIXA LÊ. Quem mexe na tarefa é o quadro; a única escrita daqui é o
  *     Limpar, que não muda tarefa nenhuma.
  *

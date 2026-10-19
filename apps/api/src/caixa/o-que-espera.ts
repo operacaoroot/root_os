@@ -206,60 +206,6 @@ export function condicoesDeParada(agora: Date): Prisma.WorkTaskWhereInput[] {
   ];
 }
 
-/* ========================================================================== *
- * POR QUAL NOME A CAIXA PROCURA VOCÊ NO QUADRO
- * ========================================================================== */
-
-/**
- * `WorkTask.assignee` É TEXTO LIVRE, e isso é a limitação declarada da fatia.
- *
- * A coluna veio da fotografia do ClickUp e guarda o `username` de lá, não um
- * ponteiro para `User` (ver o comentário dela no `schema.prisma`, escrito pela
- * A4). Então "minhas tarefas" não é uma junção: é um CASAMENTO POR NOME, e
- * casamento por nome erra nas duas direções — o seu nome no ClickUp pode ser
- * outro (e a caixa não acha nada), e um homônimo na empresa traria tarefa que
- * não é sua.
- *
- * O que se faz com isso: tentar as identidades mais prováveis, sem maiúscula ou
- * minúscula atrapalhando, e DIZER NA TELA por quais nomes se procurou. A caixa
- * que erra em silêncio é pior que a caixa que mostra o critério — e o conserto
- * de verdade (`assignee` virar ponteiro para `User`) é migração de dados com
- * decisão de produto, não algo que uma tela de leitura resolve.
- *
- * O e-mail inteiro e a parte antes do `@` entram porque as duas aparecem como
- * responsável em quadro importado. Nome vazio não entra: `{ equals: '' }`
- * casaria com toda linha que tem responsável em branco.
- */
-export function identidadesDe(pessoa: { name?: string | null; email?: string | null }): string[] {
-  const candidatos = [
-    pessoa.name ?? '',
-    pessoa.email ?? '',
-    (pessoa.email ?? '').split('@')[0] ?? '',
-  ];
-  const vistos = new Set<string>();
-  const saida: string[] = [];
-  for (const bruto of candidatos) {
-    const limpo = bruto.trim();
-    if (!limpo) continue;
-    const chave = limpo.toLowerCase();
-    if (vistos.has(chave)) continue;
-    vistos.add(chave);
-    saida.push(limpo);
-  }
-  return saida;
-}
-
-/**
- * O `OR` que casa o responsável da tarefa com qualquer uma das identidades.
- *
- * `mode: 'insensitive'` em cada `equals`, e não um `in`: o `in` do Prisma não
- * aceita modo de comparação, então um `in` faria "Pedro Magnago" e "pedro
- * magnago" serem pessoas diferentes — e no quadro importado elas não são.
- */
-export function condicoesDeResponsavel(identidades: string[]): Prisma.WorkTaskWhereInput[] {
-  return identidades.map((i) => ({ assignee: { equals: i, mode: 'insensitive' as const } }));
-}
-
 /**
  * O trecho do comentário, com a marca de que foi cortado.
  *
@@ -272,21 +218,10 @@ export function trechoDoComentario(texto: string): { trecho: string; truncado: b
   return { trecho: `${limpo.slice(0, TETO_DO_TRECHO)}…`, truncado: true };
 }
 
-/**
- * Foi outra pessoa que escreveu isto?
- *
- * Compara por ID quando há ID — é o único critério que não erra. Sem ID (o
- * comentário veio da importação do ClickUp, onde só há o nome), compara pelo
- * nome sem diferenciar maiúscula. Na dúvida, o comentário FICA: uma conversa
- * própria aparecendo na caixa é ruído, um recado de outra pessoa desaparecendo
- * é o defeito que a fatia existe para consertar.
- */
+/** Comentário sem ID permanece visível; nome não prova autoria. */
 export function ehDeOutraPessoa(
   comentario: { authorId: string | null; authorName: string },
   eu: { id: string; name?: string | null },
 ): boolean {
-  if (comentario.authorId) return comentario.authorId !== eu.id;
-  const meuNome = (eu.name ?? '').trim().toLowerCase();
-  if (!meuNome) return true;
-  return comentario.authorName.trim().toLowerCase() !== meuNome;
+  return comentario.authorId !== eu.id;
 }

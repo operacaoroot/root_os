@@ -17,6 +17,8 @@ import { DashboardModule } from './dashboard/dashboard.module';
 import { LeadsModule } from './leads/leads.module';
 import { EventsModule } from './events/events.module';
 import { FunnelModule } from './funnel/funnel.module';
+import { PainelComercialModule } from './painel-comercial/painel-comercial.module';
+import { FichaModule } from './ficha/ficha.module';
 import { CampaignsModule } from './campaigns/campaigns.module';
 import { TasksModule } from './tasks/tasks.module';
 import { WorkModule } from './work/work.module';
@@ -29,10 +31,12 @@ import { ContentModule } from './content/content.module';
 import { ObsidianModule } from './obsidian/obsidian.module';
 import { GoogleModule } from './google/google.module';
 import { FinanceModule } from './finance/finance.module';
+import { CofreDaEmpresaModule } from './cofre-da-empresa/cofre-da-empresa.module';
 import { MetaModule } from './meta/meta.module';
 import { GoalsModule } from './goals/goals.module';
 import { BioModule } from './bio/bio.module';
 import { PautaModule } from './pauta/pauta.module';
+import { MarketingPreparacaoModule } from './marketing-preparacao/marketing-preparacao.module';
 import { MemoryModule } from './memory/memoria.module';
 import { RoutinesModule } from './routines/routines.module';
 import { PublicMapModule } from './public-map/public-map.module';
@@ -110,6 +114,8 @@ import { ComercialModule } from './comercial/comercial.module';
     LeadsModule,
     EventsModule,
     FunnelModule,
+    PainelComercialModule,
+    FichaModule,
     CampaignsModule,
     TasksModule,
     WorkModule,
@@ -122,10 +128,12 @@ import { ComercialModule } from './comercial/comercial.module';
     ObsidianModule,
     GoogleModule,
     FinanceModule,
+    CofreDaEmpresaModule,
     MetaModule,
     GoalsModule,
     BioModule,
     PautaModule,
+    MarketingPreparacaoModule,
     // O RELÓGIO DO PRODUTO (RF-N-04). Depois do PautaModule porque o executor da
     // pauta precisa do `RodadaService` que aquele módulo exporta. Sem esta linha
     // NENHUMA rotina dispara — nem a da pauta —, e a API RECUSA SUBIR: a

@@ -1,0 +1,572 @@
+{
+  "fonte": "Um card por lead/cliente (18/10/2026). Fechados e contratos: planilha do financeiro (financeiro-root-2026-10-18.xlsx). Em negociação: propostas do Drive e do serviço de propostas. Vendedor e canal: Lucas, 18/10 (Rodrigo fechou a Affari, Pedro os outros; BNI: Affari e Cartório de Descoberto; Indicação: Dispropan e Custeio; Base de clientes: o restante). Etapa de onboarding/sucesso: palpite, conferir.",
+  "espaco": {
+    "id": "crm-root",
+    "nome": "Comercial"
+  },
+  "pastas": [
+    {
+      "id": "crm-root-pasta",
+      "nome": "CRM"
+    }
+  ],
+  "lista": {
+    "id": "crm-root-lista",
+    "nome": "Gestão de Leads",
+    "pasta": "crm-root-pasta"
+  },
+  "etapas": [
+    {
+      "nome": "Validar",
+      "tipo": "open",
+      "cor": "#8b8d98"
+    },
+    {
+      "nome": "Oportunidade",
+      "tipo": "custom",
+      "cor": "#a18072"
+    },
+    {
+      "nome": "Marcar reunião",
+      "tipo": "custom",
+      "cor": "#0091ff"
+    },
+    {
+      "nome": "Reunião agendada",
+      "tipo": "custom",
+      "cor": "#30a46c"
+    },
+    {
+      "nome": "Followup",
+      "tipo": "custom",
+      "cor": "#3e63dd"
+    },
+    {
+      "nome": "Negócio fechado",
+      "tipo": "custom",
+      "cor": "#008844"
+    },
+    {
+      "nome": "Kickoff",
+      "tipo": "custom",
+      "cor": "#4a7a00"
+    },
+    {
+      "nome": "Diagnóstico",
+      "tipo": "custom",
+      "cor": "#4194f6"
+    },
+    {
+      "nome": "Implantação",
+      "tipo": "custom",
+      "cor": "#ff7800"
+    },
+    {
+      "nome": "Treinamento",
+      "tipo": "custom",
+      "cor": "#a875ff"
+    },
+    {
+      "nome": "Pós-entrega",
+      "tipo": "custom",
+      "cor": "#8b8d98"
+    },
+    {
+      "nome": "Acompanhamento 30 dias",
+      "tipo": "custom",
+      "cor": "#4194f6"
+    },
+    {
+      "nome": "Depoimento e indicação",
+      "tipo": "custom",
+      "cor": "#f9d900"
+    },
+    {
+      "nome": "Proposta de continuidade",
+      "tipo": "custom",
+      "cor": "#a875ff"
+    },
+    {
+      "nome": "Recorrente",
+      "tipo": "custom",
+      "cor": "#30a46c"
+    },
+    {
+      "nome": "Perdido",
+      "tipo": "closed",
+      "cor": "#e5484d"
+    },
+    {
+      "nome": "Desqualificado",
+      "tipo": "closed",
+      "cor": "#6b6b6b"
+    },
+    {
+      "nome": "Cancelado",
+      "tipo": "closed",
+      "cor": "#6b6b6b"
+    },
+    {
+      "nome": "Encerrado",
+      "tipo": "closed",
+      "cor": "#6b6b6b"
+    }
+  ],
+  "campos": [
+    {
+      "nome": "Canal de aquisição",
+      "tipo": "drop_down",
+      "opcoes": [
+        [
+          "BNI",
+          "#e5484d"
+        ],
+        [
+          "Cold Call",
+          "#3e63dd"
+        ],
+        [
+          "Mensagem direta",
+          "#ffc53d"
+        ],
+        [
+          "Indicação",
+          "#30a46c"
+        ],
+        [
+          "Base de clientes",
+          "#1bbc9c"
+        ],
+        [
+          "Site",
+          "#b6b6ff"
+        ],
+        [
+          "Instagram",
+          "#f76808"
+        ],
+        [
+          "Parcerias",
+          "#ab4aba"
+        ]
+      ]
+    },
+    {
+      "nome": "Vendedor",
+      "tipo": "drop_down",
+      "opcoes": [
+        [
+          "Lucas",
+          "#8d8d8d"
+        ],
+        [
+          "Pedro",
+          "#8d8d8d"
+        ],
+        [
+          "Rodrigo",
+          "#8d8d8d"
+        ]
+      ]
+    },
+    {
+      "nome": "Valor da proposta",
+      "tipo": "moeda",
+      "opcoes": []
+    },
+    {
+      "nome": "Data de Cadastro do Lead",
+      "tipo": "data",
+      "opcoes": []
+    },
+    {
+      "nome": "Próximo contato",
+      "tipo": "data",
+      "opcoes": []
+    },
+    {
+      "nome": "Produto",
+      "tipo": "drop_down",
+      "opcoes": [
+        [
+          "Imersão",
+          "#8d8d8d"
+        ],
+        [
+          "Implantação ROOT OS",
+          "#8d8d8d"
+        ],
+        [
+          "Operação ROOT",
+          "#8d8d8d"
+        ],
+        [
+          "Manutenção e suporte",
+          "#8d8d8d"
+        ],
+        [
+          "Outros",
+          "#cecece"
+        ]
+      ]
+    },
+    {
+      "nome": "Motivo da perda",
+      "tipo": "drop_down",
+      "opcoes": [
+        [
+          "Sem interesse",
+          "#8d8d8d"
+        ],
+        [
+          "Orçamento insuficiente",
+          "#8d8d8d"
+        ],
+        [
+          "Desqualificado",
+          "#8d8d8d"
+        ],
+        [
+          "Falta de retorno",
+          "#8d8d8d"
+        ],
+        [
+          "Outro",
+          "#8d8d8d"
+        ]
+      ]
+    },
+    {
+      "nome": "Empresa",
+      "tipo": "texto",
+      "opcoes": []
+    },
+    {
+      "nome": "Contato",
+      "tipo": "texto",
+      "opcoes": []
+    },
+    {
+      "nome": "Telefone",
+      "tipo": "texto",
+      "opcoes": []
+    },
+    {
+      "nome": "E-mail",
+      "tipo": "texto",
+      "opcoes": []
+    },
+    {
+      "nome": "Cidade",
+      "tipo": "texto",
+      "opcoes": []
+    },
+    {
+      "nome": "Site",
+      "tipo": "url",
+      "opcoes": []
+    },
+    {
+      "nome": "Link da proposta",
+      "tipo": "url",
+      "opcoes": []
+    },
+    {
+      "nome": "Responsável pela implantação",
+      "tipo": "drop_down",
+      "opcoes": [
+        [
+          "Lucas",
+          "#8d8d8d"
+        ],
+        [
+          "Pedro",
+          "#8d8d8d"
+        ],
+        [
+          "Rodrigo",
+          "#8d8d8d"
+        ]
+      ]
+    },
+    {
+      "nome": "Início",
+      "tipo": "data",
+      "opcoes": []
+    },
+    {
+      "nome": "Entrega prevista",
+      "tipo": "data",
+      "opcoes": []
+    },
+    {
+      "nome": "Saúde",
+      "tipo": "drop_down",
+      "opcoes": [
+        [
+          "Saudável",
+          "#30a46c"
+        ],
+        [
+          "Atenção",
+          "#f9d900"
+        ],
+        [
+          "Em risco",
+          "#e5484d"
+        ]
+      ]
+    },
+    {
+      "nome": "Valor recorrente (mês)",
+      "tipo": "moeda",
+      "opcoes": []
+    }
+  ],
+  "leads": [
+    {
+      "id": "fin-curral-implantacao",
+      "titulo": "Curral (Marcelo Alves Meroto)",
+      "etapa": "Recorrente",
+      "criadoEm": "2026-07-07T12:00:00-03:00",
+      "etapaDesde": "2026-10-06T12:00:00-03:00",
+      "nota": "Implantação de R$ 7.700 (2 parcelas de R$ 3.850; entraram R$ 3.501 em 07/07 e R$ 4.200 em 09/09), entregue. Desde outubro, manutenção e suporte de R$ 190/mês (12 previstas até 06/10/2027; conferir o prazo no contrato e a migração do CNPJ da FullBPO para o da ROOT).",
+      "campos": {
+        "Valor da proposta": "7700",
+        "Produto": "Implantação ROOT OS",
+        "Empresa": "Curral",
+        "Contato": "Marcelo Alves Meroto",
+        "Canal de aquisição": "Base de clientes",
+        "Vendedor": "Pedro",
+        "Valor recorrente (mês)": "190"
+      },
+      "contratos": [
+        {
+          "titulo": "Implantação",
+          "valor": 7700,
+          "fechadoEm": "2026-07-07"
+        }
+      ]
+    },
+    {
+      "id": "fin-promedical-implantacao",
+      "titulo": "ProMedical (Alexandre Tostes)",
+      "etapa": "Implantação",
+      "criadoEm": "2026-08-28T12:00:00-03:00",
+      "etapaDesde": "2026-09-30T12:00:00-03:00",
+      "nota": "Contrato ProMedical x Root 08/2026: ROOT OS por R$ 12.000 em 2 parcelas de R$ 6.000 (pagas 11/09 e 16/10). Escopo: central com contexto, carga do Painel de Vendas, régua R0–R5 e Agente Comercial, em 45 dias. Retomada em 30/09.",
+      "campos": {
+        "Valor da proposta": "12000",
+        "Produto": "Implantação ROOT OS",
+        "Empresa": "Promedical Equipamentos Médicos",
+        "Contato": "Alexandre Tostes",
+        "Cidade": "Juiz de Fora/MG",
+        "Canal de aquisição": "Base de clientes",
+        "Vendedor": "Pedro",
+        "Responsável pela implantação": "Pedro",
+        "Início": "2026-08-28",
+        "Entrega prevista": "2026-10-12"
+      },
+      "contratos": [
+        {
+          "titulo": "Implantação ROOT OS",
+          "valor": 12000,
+          "fechadoEm": "2026-08-28"
+        }
+      ],
+      "reunioes": [
+        {
+          "titulo": "Retomada: entregas",
+          "em": "2026-10-02",
+          "arquivo": "promedical/06 - Retomada 30-09/reuniao-2026-10-02-entregas.md"
+        },
+        {
+          "titulo": "Reunião de 13/10 (transcrição)",
+          "em": "2026-10-13",
+          "arquivo": "promedical/06 - Retomada 30-09/reuniao-2026-10-13-transcricao.txt"
+        }
+      ]
+    },
+    {
+      "id": "fin-custeio-operacao",
+      "titulo": "Custeio (Lucas Martins da Costa Moreira)",
+      "etapa": "Kickoff",
+      "criadoEm": "2026-08-31T12:00:00-03:00",
+      "etapaDesde": "2026-10-18T12:00:00-03:00",
+      "nota": "Imersão de R$ 2.997 fechada em 31/08 (paga no cartão em 3x pelo Lucas Moreira, a mesma venda). Upsell para a implantação em 18/10: entrada de R$ 6.000 em 20/10 e 6 parcelas de R$ 1.000 (20/11 a 20/04).",
+      "campos": {
+        "Valor da proposta": "12000",
+        "Produto": "Implantação ROOT OS",
+        "Empresa": "Custeio",
+        "Contato": "Lucas Martins da Costa Moreira",
+        "Link da proposta": "https://proposta.operacaoroot.com/lucas-custeio",
+        "Canal de aquisição": "Indicação",
+        "Vendedor": "Pedro",
+        "Início": "2026-10-20"
+      },
+      "contratos": [
+        {
+          "titulo": "Imersão",
+          "valor": 2997,
+          "fechadoEm": "2026-08-31"
+        },
+        {
+          "titulo": "Implantação (upsell)",
+          "valor": 12000,
+          "fechadoEm": "2026-10-18"
+        }
+      ]
+    },
+    {
+      "id": "fin-affari-imersao",
+      "titulo": "Affari (Antonio Fernandes)",
+      "etapa": "Negócio fechado",
+      "criadoEm": "2026-10-18T12:00:00-03:00",
+      "etapaDesde": "2026-10-18T12:00:00-03:00",
+      "nota": "Imersão de R$ 3.970, cobrança ainda a gerar no Asaas (18/10).",
+      "campos": {
+        "Valor da proposta": "3970",
+        "Produto": "Imersão",
+        "Empresa": "Affari",
+        "Contato": "Antonio Fernandes",
+        "Link da proposta": "https://proposta.operacaoroot.com/antonio-fernandes",
+        "Canal de aquisição": "BNI",
+        "Vendedor": "Rodrigo"
+      },
+      "contratos": [
+        {
+          "titulo": "Imersão",
+          "valor": 3970,
+          "fechadoEm": "2026-10-18"
+        }
+      ]
+    },
+    {
+      "id": "prop-sr-agranel-operacao",
+      "titulo": "Senhor aGranel (Felipe Fortes)",
+      "etapa": "Followup",
+      "criadoEm": "2026-10-14T01:55:38Z",
+      "etapaDesde": "2026-10-14T01:55:38Z",
+      "nota": "Proposta v5 publicada em 13/10: R$ 26.000, entrada de R$ 8.000 e 6 parcelas de R$ 3.000. No serviço de propostas (18/10): leu o investimento, 2 aberturas. https://proposta.operacaoroot.com/felipe-fortes . Existe também a proposta de Imersão de 09/10 (abriu), que a v5 substitui.",
+      "campos": {
+        "Valor da proposta": "26000",
+        "Produto": "Operação ROOT",
+        "Data de Cadastro do Lead": "2026-10-13",
+        "Empresa": "Senhor aGranel",
+        "Contato": "Felipe Fortes",
+        "Link da proposta": "https://proposta.operacaoroot.com/felipe-fortes",
+        "Canal de aquisição": "Base de clientes"
+      },
+      "reunioes": [
+        {
+          "titulo": "Reunião de 09/10 (transcrição)",
+          "em": "2026-10-09",
+          "arquivo": "sr-agranel/reuniao-2026-10-09-transcricao.md"
+        }
+      ]
+    },
+    {
+      "id": "prop-dispropan-ia-televendas",
+      "titulo": "Dispropan (Diogo Medina)",
+      "etapa": "Followup",
+      "criadoEm": "2026-10-14T23:23:58Z",
+      "etapaDesde": "2026-10-14T23:23:58Z",
+      "nota": "Setup da estrutura de IA R$ 4.500 + IA no televendas R$ 10.500 = R$ 15.000, até 4x de R$ 2.250. No serviço de propostas (18/10): leu o investimento. https://proposta.operacaoroot.com/diogo-medina",
+      "campos": {
+        "Valor da proposta": "15000",
+        "Data de Cadastro do Lead": "2026-10-14",
+        "Empresa": "Dispropan",
+        "Contato": "Diogo Medina",
+        "Link da proposta": "https://proposta.operacaoroot.com/diogo-medina",
+        "Canal de aquisição": "Indicação"
+      }
+    },
+    {
+      "id": "prop-easydr-imersao",
+      "titulo": "EasyDr.",
+      "etapa": "Followup",
+      "criadoEm": "2026-10-13T11:12:27Z",
+      "etapaDesde": "2026-10-13T11:12:27Z",
+      "nota": "Mesma oferta do Sr. aGranel: entrada de R$ 4.987 + até 6x R$ 1.497 = R$ 13.969. O valor não foi confirmado especificamente para a EasyDr. No serviço de propostas (18/10): não abriu. https://proposta.operacaoroot.com/easydr",
+      "campos": {
+        "Valor da proposta": "13969",
+        "Produto": "Imersão",
+        "Data de Cadastro do Lead": "2026-10-13",
+        "Empresa": "EasyDr.",
+        "Link da proposta": "https://proposta.operacaoroot.com/easydr",
+        "Canal de aquisição": "Base de clientes"
+      }
+    },
+    {
+      "id": "prop-mais-q-operacao",
+      "titulo": "Mais Q Contabilidade (Danilo Lourenço)",
+      "etapa": "Followup",
+      "criadoEm": "2026-10-04T20:49:56Z",
+      "etapaDesde": "2026-10-04T20:49:56Z",
+      "nota": "3x R$ 3.999 = R$ 11.997 (pix, boleto ou cartão em até 3x), validade 09/10. No serviço de propostas (18/10): leu o investimento. https://proposta.operacaoroot.com/danilo-lourenco",
+      "campos": {
+        "Valor da proposta": "11997",
+        "Produto": "Operação ROOT",
+        "Data de Cadastro do Lead": "2026-10-04",
+        "Empresa": "Mais Q Contabilidade",
+        "Contato": "Danilo Lourenço",
+        "Link da proposta": "https://proposta.operacaoroot.com/danilo-lourenco",
+        "Canal de aquisição": "Base de clientes"
+      },
+      "reunioes": [
+        {
+          "titulo": "Reunião de 23/09 (transcrição)",
+          "em": "2026-09-23",
+          "arquivo": "Mais Q/2026-09-23 - Transcricao reuniao MaisQ.md"
+        }
+      ]
+    },
+    {
+      "id": "prop-douglas-costa-imersao",
+      "titulo": "Douglas Costa (Supra IBR)",
+      "etapa": "Followup",
+      "criadoEm": "2026-10-01T13:36:03Z",
+      "etapaDesde": "2026-10-01T13:36:03Z",
+      "nota": "10x R$ 297 = R$ 2.970 no cartão, validade 02/10. No serviço de propostas (18/10): leu o investimento. https://proposta.operacaoroot.com/douglas-costa",
+      "campos": {
+        "Valor da proposta": "2970",
+        "Produto": "Imersão",
+        "Data de Cadastro do Lead": "2026-10-01",
+        "Empresa": "Supra IBR",
+        "Contato": "Douglas Costa",
+        "Link da proposta": "https://proposta.operacaoroot.com/douglas-costa",
+        "Canal de aquisição": "Base de clientes"
+      },
+      "reunioes": [
+        {
+          "titulo": "Kickoff de 30/09 (transcrição)",
+          "em": "2026-09-30",
+          "arquivo": "douglas-costa/_fonte/2026-09-30-reuniao-transcricao.md"
+        }
+      ]
+    },
+    {
+      "id": "cliente-cartorio-descoberto",
+      "titulo": "Cartório de Descoberto (Jorge)",
+      "etapa": "Depoimento e indicação",
+      "criadoEm": "2026-08-21T19:00:00-03:00",
+      "nota": "Cliente que veio do BNI; o valor foi recebido por repasse (Lucas, 19/10/2026). Contrato de R$ 16.000 fechado em agosto/2026, com repasse para a Cardozo & Saggioro: por isso o contrato entra com R$ 0 no faturamento da ROOT (decisão do Lucas, 19/10). As notas dão o caso como entregue: minuta de escritura, orçamento e dossiê. O Jorge gravou um depoimento em áudio, usado nas propostas do Douglas Costa e do Lucas Rezende.",
+      "campos": {
+        "Canal de aquisição": "BNI",
+        "Vendedor": "Pedro",
+        "Empresa": "Cartório de Descoberto",
+        "Contato": "Jorge"
+      },
+      "contratos": [
+        {
+          "titulo": "Contrato R$ 16.000 (repasse para Cardozo & Saggioro)",
+          "valor": 0,
+          "fechadoEm": "2026-08-21"
+        }
+      ]
+    }
+  ],
+  "removidos": [
+    "fin-custeio-imersao"
+  ]
+}

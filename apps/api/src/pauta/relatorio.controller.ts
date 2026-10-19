@@ -1,8 +1,9 @@
 import { Body, Controller, Get, Param, Post, Put, UseGuards } from '@nestjs/common';
-import { PautaMesSchema, PautaRelatorioSalvarSchema } from '@mktos/shared';
+import { PautaMesSchema, PautaRelatorioSalvarHumanoSchema } from '@mktos/shared';
 import { RelatorioService } from './relatorio.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { PermissionsGuard } from '../auth/permissions.guard';
+import { AcessoAtualGuard } from '../memory/acesso-atual.guard';
 import { RequirePermissions } from '../auth/permissions.decorator';
 import { CurrentUser, JwtUser } from '../auth/current-user.decorator';
 
@@ -16,19 +17,21 @@ export class RelatorioController {
   constructor(private readonly relatorios: RelatorioService) {}
 
   @Get(':mes')
-  @RequirePermissions('pauta.ver')
+  @UseGuards(AcessoAtualGuard)
+  @RequirePermissions('pauta.ver', 'obsidian.ver')
   painel(@CurrentUser() user: JwtUser, @Param('mes') mes: string) {
-    return this.relatorios.painel(user.orgId, PautaMesSchema.parse(mes));
+    return this.relatorios.painelHumano(user.orgId, user.sub, PautaMesSchema.parse(mes));
   }
 
   @Put(':mes')
-  @RequirePermissions('pauta.editar')
+  @UseGuards(AcessoAtualGuard)
+  @RequirePermissions('pauta.editar', 'obsidian.ver')
   salvar(@CurrentUser() user: JwtUser, @Param('mes') mes: string, @Body() body: unknown) {
-    return this.relatorios.salvar(
+    return this.relatorios.salvarHumano(
       user.orgId,
       user.sub,
       PautaMesSchema.parse(mes),
-      PautaRelatorioSalvarSchema.parse(body ?? {}),
+      PautaRelatorioSalvarHumanoSchema.parse(body ?? {}),
     );
   }
 

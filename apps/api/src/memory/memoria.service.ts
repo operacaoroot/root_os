@@ -1,7 +1,22 @@
+import { consultaMovimentoPendente, exigirNovoUsoSemMovimentoPendente, exigirColecaoSemMovimentoPendente, travarAutoridadeDoMovimento } from './contexto-movimento-namespace';
 import { createHash } from 'node:crypto';
+import { BRANDBOOK_CHAVE, PAUTA_CHAVE_DA_MARCA, PAUTA_CHAVE_DOS_PILARES,
+  PAUTA_CHAVE_DA_GRADE, PAUTA_CHAVE_DA_AUTOMACAO, PAUTA_CHAVE_DA_CHAVE_DA_VOZ,
+  PAUTA_CHAVE_DA_VOZ_PADRAO, chaveDaEstrategia, chaveDoRelatorio, chaveDaPerformance, PautaMesSchema,
+  PautaChaveDaVozSchema, PautaEscritaHumanaBaseSchema, PautaEscritaHumanaResultadoSchema,
+  type PautaEscritaHumanaBase, type PautaEscritaHumanaResultado, type PautaDestinoFisico, type PautaAutomacao,
+} from '@mktos/shared';
+import { chaveDoTema, temaPorId, CHAVE_DO_RETRATO } from '../agents/roster/carregador-de-contexto';
+import { estadoDispara, TIPO_PAUTA_RELATORIO, type ContextoDaRotina } from '../routines/rotina.tipos';
+import type { z } from 'zod';
+type BrandbookEnvelope = z.infer<typeof BrandbookEnvelopeSchema>;
+import { ESCRITA_DO_BRANDBOOK, BrandbookEnvelopeSchema } from './brandbook-escrita';
+import type { M05EscopoDto, M05FonteAutorizadaDto } from '@mktos/shared';
+import { construirFonteAutorizada } from './fonte-autorizada';
 import {
   BadRequestException,
   ConflictException,
+  ForbiddenException,
   Injectable,
   Logger,
   NotFoundException,
@@ -14,13 +29,15 @@ import {
   Prisma,
 } from '@prisma/client';
 import { contextoAtual } from '../common/contexto-execucao';
-import { EventLogService, sigiloso } from '../gateway/event-log.service';
+import { exigirAcessoAtual, filtroDeLeitura, leitorDoContexto, leitorAutorizado, podeLerFonte } from './acesso-memoria';
+import { EventLogService, sigiloso, type PreparoEventoNoTx } from '../gateway/event-log.service';
 import { mesclarComTextuais } from '../obsidian/embeddings-lotes';
 import { PrismaService } from '../prisma/prisma.service';
 import {
   chaveDaVault,
   corpoNormalizado,
   exigirProcedencia,
+  ehChaveDaVault,
   formaDoCorpo,
   hashDoCorpo,
   PREFIXO_DA_VAULT,
@@ -104,6 +121,8 @@ export interface EntradaDeNota {
   tags?: string[];
   sourceType: ContextSource;
   sourceRef?: string | null;
+  acessoRestrito?: boolean;
+  leitores?: string[];
   validFrom?: Date | null;
   validUntil?: Date | null;
   /**
@@ -126,6 +145,56 @@ export type MudancaDeNota = Partial<Omit<EntradaDeNota, 'chave'>> & {
   versaoEsperada?: number;
 };
 
+type IntencaoHumanaDaNota = { actorId: string; versaoEsperada: number; produtor?: 'pauta_editar' | 'pauta_publicar' | 'carga' };
+export type LeituraHumanaDoDestino = { tipo: 'marca' | 'voz' | 'grade' } | { tipo: 'estrategia' | 'relatorio'; mes: string }
+  | { tipo: 'interruptor'; qual: PautaAutomacao } | { tipo: 'tema_carga'; tema: string };
+export type CausaHumanaDoProdutor = { acao: 'salvar_perfil_marca' | 'salvar_pilares' | 'salvar_grade' }
+  | { acao: 'salvar_estrategia' | 'salvar_relatorio'; mes: string } | { acao: 'mudar_interruptor'; qual: PautaAutomacao }
+  | { acao: 'salvar_voz'; chaveVozEsperada: string } | { acao: 'mudar_chave_voz'; chaveEfetivaEsperada: string }
+  | { acao: 'responder_tema'; tema: string };
+export type DadosDoProdutorHumano = Pick<EntradaDeNota, 'title' | 'body' | 'kind' | 'tags' | 'sourceType' | 'sourceRef' | 'motivo'>;
+export interface DestinosHumanos {
+  escopo: { orgId: string; actorId: string };
+  autoridade: { ler: true; editar: boolean; verificadaEm: string };
+  observadoEm: string;
+  notas: Record<string, NotaDeContexto | null>;
+  destinos: Record<string, PautaDestinoFisico>;
+  configuracao: { chaveEfetiva: string; origemEfetiva: 'empresa' | 'padrao' } | null;
+  livro: { id: string; versao: number; ativo: BrandbookEnvelope['ativo'] } | null;
+}
+
+const TOKEN_DA_DERIVACAO = Symbol('derivacao-observada');
+const TOKEN_DO_COMPROMISSO_DERIVADO = Symbol('derivacao-aplicada');
+export type CapsulaDaDerivacao = Readonly<{ [TOKEN_DA_DERIVACAO]: true }>;
+export type CompromissoDaDerivacao = Readonly<{ [TOKEN_DO_COMPROMISSO_DERIVADO]: true; aplicada: VersaoAplicadaDaDerivacao }>;
+export type IdentidadeDaDerivacao = { tipo: 'humano'; actorId: string; correlationId: string }
+  | { tipo: 'rotina'; ctx: ContextoDaRotina; ator: { actorType: 'user'; actorId: string } | { actorType: 'system'; actorId: null } };
+export type CausaDaDerivacao = { tipo: 'A4-PERF' | 'A4-ESTRATEGIA' | 'A4-RELATORIO-HUMANO' | 'A4-RELATORIO-ROTINA'; mes: string }
+  | { tipo: 'A4-DOSSIE'; fonteId: string } | { tipo: 'A4-VOZ'; chave: string } | { tipo: 'A4-ONBOARDING-FECHAR' };
+export type DadosDerivadosDaNota = DadosDoProdutorHumano;
+type LinhaFisicaDaDerivacao = Prisma.ContextItemGetPayload<{ select: typeof SELECAO_FISICA_DA_DERIVACAO }>;
+const SELECAO_DA_VERSAO_DERIVADA = { id: true, orgId: true, itemId: true, versao: true, kind: true, title: true,
+  body: true, sourceType: true, sourceRef: true, contentHash: true } as const;
+type VersaoFisicaDaDerivacao = Prisma.ContextItemVersionGetPayload<{ select: typeof SELECAO_DA_VERSAO_DERIVADA }>;
+export type DescritorFisicoDaFonte = { estado: 'ausente_fisico'; orgId: string; chave: string }
+  | { estado: 'existente'; orgId: string; chave: string; nota: LinhaFisicaDaDerivacao; versao: VersaoFisicaDaDerivacao };
+export type LeitorFisicoDaDerivacao = (seletor: { chave: string } | { itemId: string }) => Promise<DescritorFisicoDaFonte>;
+export interface PlanoInternoDeFontesDaDerivacao<TMaterial, TSelecao> {
+  observar(tx: Prisma.TransactionClient, lerFonte: LeitorFisicoDaDerivacao): Promise<{ material: TMaterial; selecao: TSelecao; descritores: unknown }>;
+  reconferir(tx: Prisma.TransactionClient, lerFonte: LeitorFisicoDaDerivacao, selecao: Readonly<TSelecao>): Promise<{ material: TMaterial; descritores: unknown }>;
+}
+export interface ObservacaoDaDerivacao<TMaterial> { capsula: CapsulaDaDerivacao; material: Readonly<TMaterial> }
+export interface VersaoAplicadaDaDerivacao { orgId: string; itemId: string; versionId: string; versao: number;
+  chave: string; kind: ContextKind; title: string; body: string; contentHash: string; sourceType: ContextSource; sourceRef: string | null }
+export interface ResultadoDaDerivacao { aplicada: VersaoAplicadaDaDerivacao;
+  disponibilidadeAtual: { legivel: true; arquivada: boolean; versaoAtual: number; estaVersaoAindaCorrente: boolean };
+  registroMudanca: 'nao_conferido' }
+interface EstadoDaCapsulaDerivada { orgId: string; identidade: IdentidadeDaDerivacao; causa: CausaDaDerivacao;
+  chave: string; base: DescritorFisicoDaFonte; autoridade: string; fontes: string; notasConsumidas: DescritorFisicoDaFonte[];
+  reler(tx: Prisma.TransactionClient, lerFonte: LeitorFisicoDaDerivacao): Promise<{ material: unknown; descritores: unknown }> }
+interface EstadoDoCompromissoDerivado { capsula: EstadoDaCapsulaDerivada; aplicada: VersaoAplicadaDaDerivacao;
+  item: LinhaDaNota; anterior: LinhaDaNota | null; motivo: string | null; rastroIniciado: boolean }
+
 /** Escrita de uma nota derivada de outra, validando as duas no mesmo cadeado. */
 export interface ProjecaoCondicionada {
   fonte: { id: string; chave: string; versao: number; hash: string };
@@ -138,6 +207,8 @@ export interface ProjecaoCondicionada {
 }
 
 export interface NotaDeContexto {
+  escopo?: M05EscopoDto;
+  retratoFonte?: M05FonteAutorizadaDto;
   id: string;
   chave: string;
   kind: ContextKind;
@@ -161,6 +232,8 @@ export interface NotaDeContexto {
 }
 
 export interface VersaoDeNota {
+  escopo?: M05EscopoDto;
+  retratoFonte?: M05FonteAutorizadaDto;
   id: string;
   versao: number;
   mudanca: ContextChange;
@@ -284,6 +357,7 @@ export class VaultSuspeitaError extends Error {
 export const TIPO_DO_RECIBO = 'memoria.vault.recibo';
 
 /** A coleção `vault:` da root-base, como o recibo a nomeia. */
+const ESCRITA_DE_MOVIMENTO = Symbol('movimento-explicito');
 export const COLECAO_DA_VAULT = 'vault:root-base';
 
 /**
@@ -362,6 +436,8 @@ export function conjuntoDaGuarda(chaves: readonly string[]): string {
 @Injectable()
 export class MemoriaService {
   private readonly log = new Logger('Memoria');
+  private readonly capsulasDeDerivacao = new WeakMap<CapsulaDaDerivacao, EstadoDaCapsulaDerivada>();
+  private readonly compromissosDeDerivacao = new WeakMap<CompromissoDaDerivacao, EstadoDoCompromissoDerivado>();
 
   constructor(
     private readonly prisma: PrismaService,
@@ -375,40 +451,53 @@ export class MemoriaService {
   async listar(
     orgId: string,
     opcoes: { kind?: ContextKind; incluirArquivadas?: boolean } = {},
+    solicitanteId: string | null = leitorDoContexto(),
   ): Promise<{ itens: NotaDeContexto[]; total: number; comVetor: number }> {
-    const linhas = await this.prisma.contextItem.findMany({
+    if (solicitanteId) await exigirAcessoAtual(this.prisma, orgId, solicitanteId, ['obsidian.ver']);
+    let linhas = await this.prisma.contextItem.findMany({
       where: {
         orgId,
+        ...filtroDeLeitura(solicitanteId),
         ...(opcoes.kind ? { kind: opcoes.kind } : {}),
         ...(opcoes.incluirArquivadas ? {} : { arquivadoEm: null }),
       },
       orderBy: { atualizadoEm: 'desc' },
       select: SELECAO_DA_NOTA,
     });
-    const comVetor = await this.contarComVetor(orgId);
+    await this.contarComVetor(orgId, solicitanteId);
+    let notas = await this.comVetor(orgId, linhas);
+    if (solicitanteId) notas = await Promise.all(notas.map((n) => this.retratoAtual(orgId, n, solicitanteId)));
+    const final = await this.leituraAtual(orgId, solicitanteId, linhas.map((l) => l.id));
+    const ids = new Set(final.ids);
     return {
-      itens: await this.comVetor(orgId, linhas),
-      total: linhas.length,
-      comVetor,
+      itens: notas.filter((n) => ids.has(n.id)),
+      total: ids.size,
+      comVetor: Number(final.comVetor),
     };
   }
 
-  async obter(orgId: string, id: string): Promise<NotaDeContexto | null> {
+  async obter(orgId: string, id: string, solicitanteId: string | null = leitorDoContexto()): Promise<NotaDeContexto | null> {
+    if (solicitanteId) await exigirAcessoAtual(this.prisma, orgId, solicitanteId, ['obsidian.ver']);
     const linha = await this.prisma.contextItem.findFirst({
-      where: { id, orgId },
+      where: { id, orgId, ...filtroDeLeitura(solicitanteId) },
       select: SELECAO_DA_NOTA,
     });
     if (!linha) return null;
-    return (await this.comVetor(orgId, [linha]))[0];
+    let nota = (await this.comVetor(orgId, [linha]))[0];
+    if (solicitanteId) nota = await this.retratoAtual(orgId, nota, solicitanteId);
+    return (await this.reconferirLeitura(orgId, [linha], solicitanteId)).length ? nota : null;
   }
 
-  async porChave(orgId: string, chave: string): Promise<NotaDeContexto | null> {
+  async porChave(orgId: string, chave: string, solicitanteId: string | null = leitorDoContexto()): Promise<NotaDeContexto | null> {
+    if (solicitanteId) await exigirAcessoAtual(this.prisma, orgId, solicitanteId, ['obsidian.ver']);
     const linha = await this.prisma.contextItem.findFirst({
-      where: { orgId, chave },
+      where: { orgId, chave, ...filtroDeLeitura(solicitanteId) },
       select: SELECAO_DA_NOTA,
     });
     if (!linha) return null;
-    return (await this.comVetor(orgId, [linha]))[0];
+    let nota = (await this.comVetor(orgId, [linha]))[0];
+    if (solicitanteId) nota = await this.retratoAtual(orgId, nota, solicitanteId);
+    return (await this.reconferirLeitura(orgId, [linha], solicitanteId)).length ? nota : null;
   }
 
   /**
@@ -418,14 +507,25 @@ export class MemoriaService {
    * o elo com o evento do RASTRO que a produziu: é por ele que se prova, no
    * `GET /audit/verificar`, que a versão não foi escrita por fora.
    */
-  async historico(orgId: string, id: string): Promise<VersaoDeNota[]> {
-    const existe = await this.prisma.contextItem.count({ where: { id, orgId } });
+  async historico(orgId: string, id: string, solicitanteId: string | null = leitorDoContexto()): Promise<VersaoDeNota[]> {
+    if (solicitanteId) await exigirAcessoAtual(this.prisma, orgId, solicitanteId, ['obsidian.ver']);
+    const existe = await this.prisma.contextItem.count({ where: { id, orgId, ...filtroDeLeitura(solicitanteId) } });
     if (!existe) throw new NotFoundException('Nota não encontrada nesta empresa.');
     const linhas = await this.prisma.contextItemVersion.findMany({
       where: { orgId, itemId: id },
       orderBy: { versao: 'desc' },
     });
-    return linhas.map(paraVersao);
+    const item = await this.prisma.contextItem.findFirst({ where: { id, orgId, ...filtroDeLeitura(solicitanteId) } });
+    if (!item) throw new NotFoundException('Nota não encontrada nesta empresa.');
+    const verificadoEm = new Date();
+    const pendente = await consultaMovimentoPendente(this.prisma, orgId, id);
+    const resultado = linhas.map((v) => ({ ...paraVersao(v), ...(solicitanteId ? {
+      escopo: { orgId, userId: solicitanteId },
+      retratoFonte: construirFonteAutorizada({ item, versaoSelecionada: v, incluirCorpo: true, acessoVerificadoEm: verificadoEm,
+        novoUsoPermitido: !pendente && !item.arquivadoEm && v.sourceType === item.sourceType && v.sourceRef === item.sourceRef }),
+    } : {}) }));
+    if (!(await this.reconferirLeitura(orgId, [item], solicitanteId)).length) throw new NotFoundException('Nota não encontrada nesta empresa.');
+    return resultado;
   }
 
   // ==========================================================================
@@ -449,7 +549,9 @@ export class MemoriaService {
     query: string,
     limite = 8,
     vetorDaBusca?: number[] | null,
+    solicitanteId: string | null = leitorDoContexto(),
   ): Promise<ResultadoDeBusca> {
+    if (solicitanteId) await exigirAcessoAtual(this.prisma, orgId, solicitanteId, ['obsidian.ver']);
     const q = (query ?? '').trim();
     const take = Math.min(Math.max(limite, 1), 20);
     let modo: 'semantica' | 'textual' = 'textual';
@@ -463,12 +565,14 @@ export class MemoriaService {
                   (embedding IS NOT NULL) AS "temVetor",
                   1 - (embedding <=> $1::vector) AS score
              FROM "ContextItem"
-            WHERE "orgId" = $2 AND "arquivadoEm" IS NULL AND embedding IS NOT NULL
+            WHERE "orgId" = $2 AND "arquivadoEm" IS NULL
+              AND ("acessoRestrito" = false OR $4::text = ANY("leitores")) AND embedding IS NOT NULL
             ORDER BY embedding <=> $1::vector
             LIMIT $3`,
           vec,
           orgId,
           take,
+          solicitanteId,
         );
         /*
          * O KNN só vê nota COM vetor: sem nenhuma, a busca voltava vazia como
@@ -483,13 +587,15 @@ export class MemoriaService {
                     (embedding IS NOT NULL) AS "temVetor",
                     0 AS score
                FROM "ContextItem"
-              WHERE "orgId" = $2 AND "arquivadoEm" IS NULL AND embedding IS NULL
+              WHERE "orgId" = $2 AND "arquivadoEm" IS NULL
+              AND ("acessoRestrito" = false OR $4::text = ANY("leitores")) AND embedding IS NULL
                 AND (title ILIKE $1 OR body ILIKE $1)
               ORDER BY "atualizadoEm" DESC
               LIMIT $3`,
             `%${q}%`,
             orgId,
             take,
+            solicitanteId,
           );
           linhas = mesclarComTextuais(semanticas, semVetor, take);
           modo = 'semantica';
@@ -508,22 +614,29 @@ export class MemoriaService {
                 0 AS score
            FROM "ContextItem"
           WHERE "orgId" = $2 AND "arquivadoEm" IS NULL
+              AND ("acessoRestrito" = false OR $4::text = ANY("leitores"))
             AND (title ILIKE $1 OR body ILIKE $1)
           ORDER BY "atualizadoEm" DESC
           LIMIT $3`,
         `%${q}%`,
         orgId,
         take,
+        solicitanteId,
       );
     }
 
+    linhas = await this.reconferirLeitura(orgId, linhas as Array<Record<string, unknown> & { id: string; acessoRestrito?: boolean }>, solicitanteId);
+    const itens = await Promise.all(linhas.map(async (l) => {
+      const nota = paraNota(l as never, Boolean(l.temVetor));
+      return { ...(solicitanteId ? await this.retratoAtual(orgId, nota, solicitanteId) : nota),
+        score: Math.round(Number(l.score ?? 0) * 1000) / 1000 };
+    }));
+    const final = await this.leituraAtual(orgId, solicitanteId, itens.map((n) => n.id));
+    const ids = new Set(final.ids);
     return {
       query: q,
       modo,
-      itens: linhas.map((l) => ({
-        ...paraNota(l as never, Boolean(l.temVetor)),
-        score: Math.round(Number(l.score ?? 0) * 1000) / 1000,
-      })),
+      itens: itens.filter((n) => ids.has(n.id)),
       fonte: { tool: 'memoria', generatedAt: new Date().toISOString() },
     };
   }
@@ -532,12 +645,36 @@ export class MemoriaService {
   // ESCRITA — sempre evento + projeção
   // ==========================================================================
 
-  async criar(orgId: string, entrada: EntradaDeNota): Promise<NotaDeContexto> {
+  private conferirEscritorDaMarca(chave: string, autorizacao?: symbol): void {
+    if (chave.trim() === BRANDBOOK_CHAVE && autorizacao !== ESCRITA_DO_BRANDBOOK) {
+      throw new ForbiddenException('Altere o livro da marca pelo criador do brandbook.');
+    }
+    if (autorizacao === ESCRITA_DO_BRANDBOOK && chave.trim() !== BRANDBOOK_CHAVE) {
+      throw new ForbiddenException('A autorização do brandbook vale somente para sua nota.');
+    }
+  }
+
+  private async conferirMarcaLegadaNoCadeado(tx: Prisma.TransactionClient, orgId: string, chave: string): Promise<void> {
+    if (chave.trim() !== PAUTA_CHAVE_DA_MARCA && chave.trim() !== PAUTA_CHAVE_DOS_PILARES) return;
+    const livro = await tx.contextItem.findFirst({ where: { orgId, chave: BRANDBOOK_CHAVE }, select: { body: true, arquivadoEm: true, acessoRestrito: true } });
+    if (!livro) return;
+    if (livro.acessoRestrito) throw new ForbiddenException('O acesso ao brandbook precisa ser revisto antes de alterar a marca.');
+    if (livro.arquivadoEm) throw new ConflictException('O brandbook está arquivado. Revise sua situação no criador.');
+    let envelope: ReturnType<typeof BrandbookEnvelopeSchema.parse>;
+    try { envelope = BrandbookEnvelopeSchema.parse(JSON.parse(livro.body)); }
+    catch { throw new ConflictException('O brandbook armazenado está inválido. Revise-o antes de alterar a marca.'); }
+    if (envelope.ativo) throw new ConflictException('Há um brandbook ativo. Edite e aprove um rascunho no criador de marca.');
+  }
+
+  async criar(orgId: string, entrada: EntradaDeNota, autorizacao?: symbol): Promise<NotaDeContexto> {
     const chave = (entrada.chave ?? '').trim();
+    this.conferirEscritorDaMarca(chave, autorizacao);
+    if (autorizacao === ESCRITA_DO_BRANDBOOK && (entrada.acessoRestrito || entrada.leitores?.length)) throw new ForbiddenException('O brandbook deve ser uma nota aberta da empresa.');
     if (!chave) throw new BadRequestException('A nota precisa de uma chave estável.');
     if (!(entrada.title ?? '').trim()) throw new BadRequestException('A nota precisa de título.');
     const sourceType = this.exigirProcedencia(entrada.sourceType);
 
+    await this.conferirLeitores(this.prisma, orgId, entrada.leitores);
     const contentHash = hashDoCorpo(entrada.body ?? '');
     const ator = this.ator();
 
@@ -553,6 +690,10 @@ export class MemoriaService {
     try {
       criacao = await this.prisma.$transaction(async (tx) => {
         await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`memoria:${orgId}`}))`;
+        if (sourceType === ContextSource.vault || chave.startsWith('vault:')) await exigirColecaoSemMovimentoPendente(tx, orgId);
+        const claim = await tx.contextKeyClaim.findFirst({ where: { orgId, key: chave } });
+        if (claim && claim.tipo !== 'canonical') throw new ConflictException('A chave está reservada ou identifica um alias. Use o movimento explícito da fonte.');
+        await this.conferirMarcaLegadaNoCadeado(tx, orgId, chave);
         const jaExiste = await tx.contextItem.findFirst({
           where: { orgId, chave },
           select: { id: true },
@@ -569,6 +710,8 @@ export class MemoriaService {
             tags: entrada.tags ?? [],
             sourceType,
             sourceRef: entrada.sourceRef ?? null,
+            acessoRestrito: entrada.acessoRestrito ?? false,
+            leitores: entrada.leitores ?? [],
             validFrom: entrada.validFrom ?? null,
             validUntil: entrada.validUntil ?? null,
             supersedesId: entrada.supersedesId ?? null,
@@ -630,8 +773,27 @@ export class MemoriaService {
     return (await this.obter(orgId, item.id)) as NotaDeContexto;
   }
 
-  async alterar(orgId: string, id: string, mudancas: MudancaDeNota): Promise<NotaDeContexto> {
+  async alterar(orgId: string, id: string, mudancas: MudancaDeNota, autorizacao?: symbol): Promise<NotaDeContexto> {
+    return this.alterarNoFluxo(orgId, id, mudancas, autorizacao);
+  }
+
+  async alterarHumano(
+    orgId: string, actorId: string, id: string, mudancas: MudancaDeNota & { versaoEsperada: number },
+  ): Promise<NotaDeContexto> {
+    const intencao = this.exigirIntencaoHumana(orgId, actorId, mudancas.versaoEsperada);
+    if (mudancas.sourceType === ContextSource.vault) throw new ForbiddenException('A origem vault é reservada à projeção.');
+    return this.alterarNoFluxo(orgId, id, mudancas, undefined, intencao);
+  }
+
+  private async alterarNoFluxo(
+    orgId: string, id: string, mudancas: MudancaDeNota, autorizacao?: symbol, intencaoHumana?: IntencaoHumanaDaNota,
+  ): Promise<NotaDeContexto> {
+    if (autorizacao === ESCRITA_DO_BRANDBOOK && (!Number.isSafeInteger(mudancas.versaoEsperada) || (mudancas.versaoEsperada ?? 0) < 1)) {
+      throw new BadRequestException('Informe a versão esperada do brandbook.');
+    }
+    if (autorizacao === ESCRITA_DO_BRANDBOOK && (mudancas.acessoRestrito || mudancas.leitores?.length)) throw new ForbiddenException('O brandbook deve continuar aberto à empresa.');
     const ator = this.ator();
+    if (!intencaoHumana) await this.conferirLeitores(this.prisma, orgId, mudancas.leitores);
 
     /*
      * O QUE MUDA É MONTADO A PARTIR DO ESTADO LIDO DENTRO DO CADEADO — ver o
@@ -644,6 +806,14 @@ export class MemoriaService {
       id,
       mudanca: ContextChange.alteracao,
       ator,
+      autorizacao,
+      intencaoHumana,
+      conferir: intencaoHumana ? async (tx) => {
+        if (mudancas.leitores?.length) await tx.$queryRaw`
+          SELECT id FROM "User" WHERE "orgId"=${orgId} AND id IN (${Prisma.join([...new Set(mudancas.leitores)].sort())})
+          ORDER BY id FOR SHARE`;
+        await this.conferirLeitores(tx, orgId, mudancas.leitores);
+      } : undefined,
       montar: (atual) => {
         if (mudancas.versaoEsperada !== undefined && atual.versao !== mudancas.versaoEsperada) {
           throw new ConflictException(
@@ -664,6 +834,8 @@ export class MemoriaService {
             tags: mudancas.tags ?? atual.tags,
             sourceType,
             sourceRef: mudancas.sourceRef === undefined ? atual.sourceRef : mudancas.sourceRef,
+            ...(mudancas.acessoRestrito === undefined ? {} : { acessoRestrito: mudancas.acessoRestrito }),
+            ...(mudancas.leitores === undefined ? {} : { leitores: mudancas.leitores }),
             validFrom: mudancas.validFrom === undefined ? atual.validFrom : mudancas.validFrom,
             validUntil: mudancas.validUntil === undefined ? atual.validUntil : mudancas.validUntil,
             supersedesId: mudancas.supersedesId === undefined ? atual.supersedesId : mudancas.supersedesId,
@@ -725,7 +897,8 @@ export class MemoriaService {
       await this.gravarVetorSemDerrubar(orgId, id, item.contentHash, mudancas.embedding);
     }
 
-    return (await this.obter(orgId, id)) as NotaDeContexto;
+    return intencaoHumana ? this.entregarAoHumano(orgId, id, intencaoHumana)
+      : (await this.obter(orgId, id)) as NotaDeContexto;
   }
 
   /**
@@ -734,6 +907,7 @@ export class MemoriaService {
    * Mantém a mesma sequência item → versão → evento usada por criar/alterar.
    */
   async projetarCondicionado(orgId: string, pedido: ProjecaoCondicionada): Promise<NotaDeContexto> {
+    this.conferirEscritorDaMarca(pedido.destino.chave);
     if (!pedido.title.trim() || !pedido.body.trim()) throw new BadRequestException('A projeção precisa de título e corpo.');
     if (pedido.sourceRef.length > 1_000) throw new BadRequestException('A referência da fonte passou de 1.000 caracteres.');
     const ator = this.ator();
@@ -747,16 +921,20 @@ export class MemoriaService {
     try {
       gravada = await this.prisma.$transaction(async (tx) => {
         await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`memoria:${orgId}`}))`;
+        await this.conferirMarcaLegadaNoCadeado(tx, orgId, pedido.destino.chave);
+        const leitor = await leitorAutorizado(tx, orgId, leitorDoContexto());
         const fonte = await tx.contextItem.findFirst({
-          where: { orgId, chave: pedido.fonte.chave }, select: SELECAO_DA_NOTA,
+          where: { orgId, chave: pedido.fonte.chave, ...filtroDeLeitura(leitor) }, select: SELECAO_DA_NOTA,
         });
         if (!fonte || fonte.id !== pedido.fonte.id || fonte.arquivadoEm ||
             fonte.versao !== pedido.fonte.versao || fonte.contentHash !== pedido.fonte.hash) {
           throw new ConflictException('A fonte mudou, foi arquivada ou deixou de existir. Refaça a prévia.');
         }
+        await exigirNovoUsoSemMovimentoPendente(tx, orgId, fonte.id);
         const atual = await tx.contextItem.findFirst({
-          where: { orgId, chave: pedido.destino.chave }, select: SELECAO_DA_NOTA,
+          where: { orgId, chave: pedido.destino.chave, ...filtroDeLeitura(leitor) }, select: SELECAO_DA_NOTA,
         });
+        if (atual) await exigirNovoUsoSemMovimentoPendente(tx, orgId, atual.id);
         if (atual?.arquivadoEm) throw new ConflictException('O destino está arquivado. Restaure-o explicitamente na Memória antes de aplicar.');
 
         // Replay só é inofensivo quando ESTA foi a última versão criada a
@@ -858,12 +1036,26 @@ export class MemoriaService {
    * fazia assim em março".
    */
   async arquivar(orgId: string, id: string, motivo?: string | null): Promise<NotaDeContexto> {
+    return this.arquivarNoFluxo(orgId, id, motivo);
+  }
+
+  async arquivarHumano(
+    orgId: string, actorId: string, id: string, input: { versaoEsperada: number; motivo?: string | null },
+  ): Promise<NotaDeContexto> {
+    const intencao = this.exigirIntencaoHumana(orgId, actorId, input.versaoEsperada);
+    return this.arquivarNoFluxo(orgId, id, input.motivo, intencao);
+  }
+
+  private async arquivarNoFluxo(
+    orgId: string, id: string, motivo?: string | null, intencaoHumana?: IntencaoHumanaDaNota,
+  ): Promise<NotaDeContexto> {
     const ator = this.ator();
     const { item, anterior, versao } = await this.gravarVersao({
       orgId,
       id,
       mudanca: ContextChange.arquivamento,
       ator,
+      intencaoHumana,
       montar: (atual) => {
         // A recusa também mora aqui dentro: fora do cadeado, dois arquivamentos
         // simultâneos passavam os dois e gravavam duas versões de arquivar.
@@ -888,16 +1080,31 @@ export class MemoriaService {
       motivo: motivo ?? null,
       anterior,
     });
-    return (await this.obter(orgId, id)) as NotaDeContexto;
+    return intencaoHumana ? this.entregarAoHumano(orgId, id, intencaoHumana)
+      : (await this.obter(orgId, id)) as NotaDeContexto;
   }
 
   async restaurar(orgId: string, id: string, motivo?: string | null): Promise<NotaDeContexto> {
+    return this.restaurarNoFluxo(orgId, id, motivo);
+  }
+
+  async restaurarHumano(
+    orgId: string, actorId: string, id: string, input: { versaoEsperada: number; motivo?: string | null },
+  ): Promise<NotaDeContexto> {
+    const intencao = this.exigirIntencaoHumana(orgId, actorId, input.versaoEsperada);
+    return this.restaurarNoFluxo(orgId, id, input.motivo, intencao);
+  }
+
+  private async restaurarNoFluxo(
+    orgId: string, id: string, motivo?: string | null, intencaoHumana?: IntencaoHumanaDaNota,
+  ): Promise<NotaDeContexto> {
     const ator = this.ator();
     const { item, anterior, versao } = await this.gravarVersao({
       orgId,
       id,
       mudanca: ContextChange.restauracao,
       ator,
+      intencaoHumana,
       montar: (atual) => {
         if (!atual.arquivadoEm) throw new ConflictException('Esta nota não está arquivada.');
         return {
@@ -916,7 +1123,8 @@ export class MemoriaService {
       motivo: motivo ?? null,
       anterior,
     });
-    return (await this.obter(orgId, id)) as NotaDeContexto;
+    return intencaoHumana ? this.entregarAoHumano(orgId, id, intencaoHumana)
+      : (await this.obter(orgId, id)) as NotaDeContexto;
   }
 
   /**
@@ -989,27 +1197,10 @@ export class MemoriaService {
    * que a guarda segurou: a tela não arquiva item da vault (E4 da ROOT-05-REV).
    *
    * ----------------------------------------------------------------------------
-   * MOVER SEM PERDER O `itemId` (C19-04, R-4)
-   * ----------------------------------------------------------------------------
-   * Um item vivo cuja chave A sumiu e um membro novo B com o MESMO corpo formam
-   * par quando o `contentHash` é único em TODA a coleção — itens vivos e
-   * membros desta volta juntos, não só entre sumidos e novos: um arquivo novo
-   * igual a uma terceira nota viva também é ambíguo — e o corpo tem pelo menos
-   * `PISO_DO_PAR` caracteres. B não pode existir na empresa, nem arquivado.
-   *
-   * OS PARES SÃO CALCULADOS ANTES DE QUALQUER CRIAÇÃO. Antes, a criação de B vinha
-   * no laço e só depois se sabia que A tinha sumido: a nota nascia de novo e a
-   * antiga era arquivada, com outro `itemId`. Agora o par move a mesma linha
-   * (uma versão `alteracao` com `sourceRef` B e o motivo dizendo de onde para
-   * onde) e só então o laço passa por B, onde mudança de cabeçalho entra como
-   * alteração comum.
-   *
-   * Movimentos acima do mesmo teto da guarda de arquivamento ficam SEGURADOS por
-   * inteiro: nada nasce em B e nada é arquivado em A. O par tem o mesmo corpo,
-   * então segurar não perde conteúdo, e cair no comportamento antigo duplicaria
-   * a nota. Movimento não entra na conta da guarda de arquivamento — só o que
-   * sumiu sem par —, e uma reorganização de pastas deixa de parecer vault
-   * sumida.
+   * IDENTIDADE DO DOCUMENTO
+   * Hash confere conteúdo. Um caminho novo sem vínculo explícito cria outro
+   * item, mesmo com corpo igual. Não inferimos movimento nem alias nesta volta.
+   * Movimento explícito com rastro atômico pertence a outro contrato.
    *
    * `vistos` são os caminhos que ficaram fora da coleção por anomalia do clone
    * (alterado ou apagado fora do git, entrada não verificável, colisão de NFC):
@@ -1054,80 +1245,9 @@ export class MemoriaService {
       }
     }
 
-    // ---- os pares, antes de qualquer criação --------------------------------
-    const existentes = new Set(
-      (
-        await this.prisma.contextItem.findMany({
-          where: { orgId, chave: { in: [...membros.keys()] } },
-          select: { chave: true },
-        })
-      ).map((i) => i.chave),
-    );
-    const contagem = new Map<string, number>();
-    const somar = (h: string) => contagem.set(h, (contagem.get(h) ?? 0) + 1);
-    for (const v of vivos) somar(v.contentHash);
-    const hashDoMembro = new Map<string, string>();
-    for (const [chave, n] of membros) {
-      const h = hashDoCorpo(n.body);
-      hashDoMembro.set(chave, h);
-      somar(h);
-    }
-    const novosPorHash = new Map<string, string[]>();
-    for (const chave of membros.keys()) {
-      if (existentes.has(chave)) continue;
-      const h = hashDoMembro.get(chave)!;
-      novosPorHash.set(h, [...(novosPorHash.get(h) ?? []), chave]);
-    }
-    const pares: Array<{ de: { id: string; chave: string }; para: string }> = [];
-    for (const s of sumidos) {
-      const candidatos = novosPorHash.get(s.contentHash) ?? [];
-      if (!candidatos.length) continue;
-      if (candidatos.length !== 1 || contagem.get(s.contentHash) !== 2) {
-        resumo.movimentosDescartados.ambiguos++;
-        continue;
-      }
-      if (Array.from(corpoNormalizado(membros.get(candidatos[0])!.body)).length < PISO_DO_PAR) {
-        resumo.movimentosDescartados.curtos++;
-        continue;
-      }
-      pares.push({ de: { id: s.id, chave: s.chave }, para: candidatos[0] });
-    }
-
-    const conjuntoDosMovimentos = conjuntoDaGuarda(pares.map((p) => `${p.de.chave}\u0000${p.para}`));
+    // Um caminho novo não herda identidade por igualdade de conteúdo.
     const segurados = new Set<string>();
     const movidos = new Set<string>();
-    if (pares.length > teto && liberacao?.movimentos !== conjuntoDosMovimentos) {
-      resumo.movimentosRecusados = pares.length;
-      resumo.guardas.movimentos = { quantidade: pares.length, conjunto: conjuntoDosMovimentos };
-      for (const p of pares) {
-        segurados.add(p.de.chave);
-        segurados.add(p.para);
-        resumo.pares.push({ de: caminhoDe(p.de.chave), para: caminhoDe(p.para), situacao: 'segurado' });
-      }
-      this.log.error(
-        `empresa ${orgId}: a volta da vault moveria ${pares.length} nota(s), acima do teto de ${teto} ` +
-          'para uma volta só. NADA foi movido, criado no destino nem arquivado na origem (o corpo é ' +
-          'o mesmo dos dois lados, então nada se perde esperando). Se a reorganização for real, ' +
-          `quem decide libera este conjunto com \`${COMANDO_DE_LIBERACAO}\`.`,
-      );
-    } else {
-      if (pares.length > teto) resumo.liberacaoUsada = liberacao!.eventoId;
-      for (const p of pares) {
-        const de = caminhoDe(p.de.chave);
-        const para = caminhoDe(p.para);
-        try {
-          await this.mover(orgId, p.de.id, p.para, para, `o arquivo foi movido na vault (${de} → ${para}, corpo idêntico)`);
-          movidos.add(p.de.chave);
-          resumo.movidas++;
-          resumo.pares.push({ de, para, situacao: 'movido' });
-        } catch (e) {
-          // O par que não fechou volta ao comportamento de antes: A arquiva, B nasce.
-          resumo.falhas++;
-          resumo.pares.push({ de, para, situacao: 'falhou' });
-          this.log.warn(`empresa ${orgId}: não consegui mover "${de}" para "${para}" (${(e as Error).message}).`);
-        }
-      }
-    }
 
     // ---- o laço: quem não aponta substituição primeiro --------------------------
     const ordem = [...membros.entries()]
@@ -1518,8 +1638,10 @@ export class MemoriaService {
     return this.prisma.$queryRawUnsafe(
       `SELECT id, title, body, "contentHash"
          FROM "ContextItem"
-        WHERE "orgId" = $1 AND "arquivadoEm" IS NULL AND embedding IS NULL
+        WHERE "orgId" = $1 AND "arquivadoEm" IS NULL AND embedding IS NULL AND "acessoRestrito" = false
           AND NOT (chave = ANY($3::text[]))
+          AND NOT EXISTS (SELECT 1 FROM "ContextMovementIntent" i WHERE i."orgId"=$1 AND i.estado='pendente'
+            AND (i."itemId"="ContextItem".id OR (i."collectionId"='vault:root-base' AND ("sourceType"::text='vault' OR chave LIKE 'vault:%'))))
         ORDER BY "atualizadoEm" DESC
         LIMIT $2`,
       orgId,
@@ -1545,13 +1667,14 @@ export class MemoriaService {
    * descartado.
    */
   async gravarVetor(orgId: string, id: string, vetor: number[], contentHash: string): Promise<number> {
-    return this.prisma.$executeRawUnsafe(
-      'UPDATE "ContextItem" SET embedding = $1::vector WHERE id = $2 AND "orgId" = $3 AND "contentHash" = $4',
-      `[${vetor.join(',')}]`,
-      id,
-      orgId,
-      contentHash,
-    );
+    return this.prisma.$transaction(async (tx) => {
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`memoria:${orgId}`}))`;
+      if (await consultaMovimentoPendente(tx, orgId, id)) return 0;
+      return tx.$executeRawUnsafe(
+        'UPDATE "ContextItem" SET embedding = $1::vector WHERE id = $2 AND "orgId" = $3 AND "contentHash" = $4',
+        `[${vetor.join(',')}]`, id, orgId, contentHash,
+      );
+    });
   }
 
   /**
@@ -1620,6 +1743,7 @@ export class MemoriaService {
    * só então, "ninguém assumiu esta linha".
    */
   async conferirElos(orgId: string, limite = 5000): Promise<ResultadoDaConferencia> {
+    const leitor = await leitorAutorizado(this.prisma, orgId, leitorDoContexto());
     const [versoes, eventos] = await Promise.all([
       /*
        * OS DOIS LADOS PEGAM AS MAIS RECENTES, e a simetria importa: com o teto
@@ -1627,7 +1751,7 @@ export class MemoriaService {
        * explicação" em massa só porque o evento ficou de fora da consulta.
        */
       this.prisma.contextItemVersion.findMany({
-        where: { orgId },
+        where: { orgId, item: filtroDeLeitura(leitor) },
         orderBy: { criadoEm: 'desc' },
         take: limite,
         select: {
@@ -1733,12 +1857,10 @@ export class MemoriaService {
     return 'sem_explicacao';
   }
 
-  async contarComVetor(orgId: string): Promise<number> {
-    const r = await this.prisma.$queryRawUnsafe<Array<{ n: bigint }>>(
-      'SELECT count(*)::bigint AS n FROM "ContextItem" WHERE "orgId" = $1 AND embedding IS NOT NULL',
-      orgId,
-    );
-    return Number(r[0]?.n ?? 0);
+  async contarComVetor(orgId: string, solicitanteId: string | null = leitorDoContexto()): Promise<number> {
+    if (solicitanteId) await exigirAcessoAtual(this.prisma, orgId, solicitanteId, ['obsidian.ver']);
+    const final = await this.leituraAtual(orgId, solicitanteId, []);
+    return Number(final.comVetor);
   }
 
   // ==========================================================================
@@ -1751,6 +1873,563 @@ export class MemoriaService {
     } catch (e) {
       throw new BadRequestException((e as Error).message);
     }
+  }
+
+  /** Leitura humana física: recusa atual nunca vira ausência. */
+  async lerDestinosHumanos(orgId: string, actorId: string, leitura: LeituraHumanaDoDestino): Promise<DestinosHumanos> {
+    this.exigirAtorDoProdutor(orgId, actorId);
+    const permissoes = leitura.tipo === 'tema_carga' ? ['obsidian.ver'] : ['obsidian.ver', 'pauta.ver'];
+    const retrato = await this.prisma.$transaction(async (tx) => {
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`memoria:${orgId}`}))`;
+      const keys = await this.travarAutoridadeDoProdutorNoTx(tx, orgId, actorId, permissoes);
+      const notas: Record<string, NotaDeContexto | null> = {};
+      const destinos: Record<string, PautaDestinoFisico> = {};
+      let livro: { id: string; versao: number; ativo: BrandbookEnvelope['ativo'] } | null = null;
+      let configuracao: { chaveEfetiva: string; origemEfetiva: 'empresa' | 'padrao' } | null = null;
+      const ler = async (nome: string, chave: string) => {
+        const linha = await this.notaFisicaDoProdutorNoTx(tx, orgId, actorId, chave);
+        notas[nome] = linha ? paraNota(linha, false) : null;
+        destinos[nome] = this.destinoFisicoDoProdutor(chave, linha);
+      };
+      switch (leitura.tipo) {
+        case 'marca': {
+          await ler('perfil', PAUTA_CHAVE_DA_MARCA); await ler('pilares', PAUTA_CHAVE_DOS_PILARES);
+          const l = await this.notaFisicaDoProdutorNoTx(tx, orgId, actorId, BRANDBOOK_CHAVE);
+          if (l) {
+            if (l.arquivadoEm || l.acessoRestrito) throw new ConflictException('O brandbook foi arquivado ou teve o acesso alterado.');
+            let envelope: BrandbookEnvelope;
+            try { envelope = BrandbookEnvelopeSchema.parse(JSON.parse(l.body)); }
+            catch { throw new ConflictException('O brandbook está inválido. Confira o livro antes de continuar.'); }
+            livro = { id: l.id, versao: l.versao, ativo: envelope.ativo };
+          }
+          break;
+        }
+        case 'voz': {
+          const { chaveDaVozDaNota } = await import('../pauta/voz-da-pauta');
+          await ler('configuracao', PAUTA_CHAVE_DA_CHAVE_DA_VOZ);
+          const chave = chaveDaVozDaNota(notas.configuracao);
+          configuracao = { chaveEfetiva: chave ?? PAUTA_CHAVE_DA_VOZ_PADRAO, origemEfetiva: chave ? 'empresa' : 'padrao' };
+          await ler('perfil', configuracao.chaveEfetiva); break;
+        }
+        case 'estrategia': await ler('documento', chaveDaEstrategia(PautaMesSchema.parse(leitura.mes))); break;
+        case 'relatorio': await ler('documento', chaveDoRelatorio(PautaMesSchema.parse(leitura.mes))); break;
+        case 'grade': await ler('grade', PAUTA_CHAVE_DA_GRADE); break;
+        case 'interruptor': await ler('interruptor', PAUTA_CHAVE_DA_AUTOMACAO[leitura.qual]); break;
+        case 'tema_carga': {
+          if (!temaPorId(leitura.tema)) throw new BadRequestException('Tema desconhecido.');
+          await ler('tema', chaveDoTema(leitura.tema)); break;
+        }
+      }
+      await exigirAcessoAtual(tx, orgId, actorId, permissoes);
+      const editar = keys.has(leitura.tipo === 'tema_carga' ? 'obsidian.editar' : leitura.tipo === 'interruptor' ? 'pauta.publicar' : 'pauta.editar');
+      const observadoEm = new Date().toISOString();
+      return { escopo: { orgId, actorId }, autoridade: { ler: true as const, editar, verificadaEm: observadoEm },
+        observadoEm, notas, destinos, livro, configuracao };
+    }, { isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted });
+    this.exigirAtorDoProdutor(orgId, actorId);
+    await exigirAcessoAtual(this.prisma, orgId, actorId, permissoes);
+    return retrato;
+  }
+
+  async reconferirDestinosHumanos(orgId: string, actorId: string, leitura: LeituraHumanaDoDestino, anterior: DestinosHumanos): Promise<DestinosHumanos> {
+    const atual = await this.lerDestinosHumanos(orgId, actorId, leitura);
+    if (JSON.stringify([atual.destinos, atual.configuracao, atual.livro]) !== JSON.stringify([anterior.destinos, anterior.configuracao, anterior.livro])) {
+      throw new ConflictException('O contexto mudou durante a leitura. Recarregue antes de editar.');
+    }
+    return atual;
+  }
+
+  async gravarPautaHumana(orgId: string, actorId: string, causa: CausaHumanaDoProdutor,
+    entrada: PautaEscritaHumanaBase, dados: DadosDoProdutorHumano): Promise<PautaEscritaHumanaResultado> {
+    this.exigirAtorDoProdutor(orgId, actorId);
+    const base = PautaEscritaHumanaBaseSchema.parse({ escopoEsperado: entrada.escopoEsperado,
+      baseEsperada: entrada.baseEsperada, versaoEsperada: entrada.versaoEsperada, reativar: entrada.reativar });
+    if (base.escopoEsperado.orgId !== orgId || base.escopoEsperado.actorId !== actorId) throw new ForbiddenException('O escopo mudou. Reabra a edição.');
+    const produtor = causa.acao === 'responder_tema' ? 'carga' : causa.acao === 'mudar_interruptor' ? 'pauta_publicar' : 'pauta_editar';
+    const permissoes = this.permissoesDoProdutor(produtor);
+    const motivo = dados.motivo ?? null;
+    let compromisso: { edicao: { itemId: string; versionId: string; versao: number };
+      reativacao: PautaEscritaHumanaResultado['reativacao']; item: LinhaDaNota;
+      eventos: Array<{ item: LinhaDaNota; anterior: LinhaDaNota | null; versao: { id: string; versao: number }; mudanca: ContextChange }> };
+    try {
+      compromisso = await this.prisma.$transaction(async (tx) => {
+        await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`memoria:${orgId}`}))`;
+        await this.travarAutoridadeDoProdutorNoTx(tx, orgId, actorId, permissoes);
+        const chave = await this.chaveDoProdutorNoTx(tx, orgId, actorId, causa);
+        if (chave !== base.baseEsperada.chave) throw new ConflictException('O destino mudou desde a leitura.');
+        const atual = await this.notaFisicaDoProdutorNoTx(tx, orgId, actorId, chave, true);
+        this.conferirBaseDoProdutor(atual, base);
+        if (ehChaveDaVault(chave) || atual?.sourceType === ContextSource.vault || dados.sourceType === ContextSource.vault) {
+          throw new ForbiddenException('Esta nota vem da vault. Edite o arquivo na base, pelo git.');
+        }
+        this.conferirEscritorDaMarca(chave);
+        await this.conferirMarcaLegadaNoCadeado(tx, orgId, chave);
+        if (atual?.leitores?.length) await tx.$queryRaw`
+          SELECT id FROM "User" WHERE "orgId"=${orgId} AND id IN (${Prisma.join([...new Set(atual.leitores)].sort())}) ORDER BY id FOR SHARE`;
+        await this.conferirLeitores(tx, orgId, atual?.leitores);
+        if (!dados.title.trim()) throw new BadRequestException('A nota precisa de título.');
+        this.exigirProcedencia(dados.sourceType);
+        const ator = { actorType: ActorType.user, actorId };
+        const eventos: typeof compromisso.eventos = [];
+        let item: LinhaDaNota;
+        let versao: { id: string; versao: number };
+        if (!atual) {
+          item = await tx.contextItem.create({ data: { orgId, chave, body: dados.body, sourceType: dados.sourceType,
+            title: dados.title.trim(), kind: dados.kind ?? ContextKind.nota, tags: dados.tags ?? [],
+            sourceRef: dados.sourceRef ?? null, contentHash: hashDoCorpo(dados.body), versao: 1,
+            criadoPor: actorId, atualizadoPor: actorId }, select: SELECAO_DA_NOTA });
+          versao = await this.versaoCriadaDoProdutorNoTx(tx, orgId, item, ator, motivo);
+          eventos.push({ item, anterior: null, versao, mudanca: ContextChange.criacao });
+        } else {
+          const e = await this.gravarVersaoNoTx(tx, { orgId, id: atual.id, mudanca: ContextChange.alteracao, ator,
+            intencaoHumana: { actorId, versaoEsperada: atual.versao, produtor },
+            montar: () => ({ dados: { kind: dados.kind ?? atual.kind, title: dados.title.trim(), body: dados.body,
+              tags: dados.tags ?? atual.tags, sourceType: dados.sourceType, sourceRef: dados.sourceRef ?? null,
+              contentHash: hashDoCorpo(dados.body), atualizadoPor: actorId }, motivo }),
+            noCadeado: async (db, antes, depois) => {
+              if (antes.contentHash !== depois.contentHash) await db.$executeRaw`
+                UPDATE "ContextItem" SET embedding=NULL WHERE id=${depois.id} AND "orgId"=${orgId}`;
+            } });
+          item = e.item; versao = e.versao;
+          eventos.push({ ...e, mudanca: ContextChange.alteracao });
+        }
+        const edicao = { itemId: item.id, versionId: versao.id, versao: versao.versao };
+        let reativacao: PautaEscritaHumanaResultado['reativacao'] = { solicitada: false, estado: 'nao_solicitada', versao: null, versionId: null };
+        if (base.reativar) {
+          const r = await this.gravarVersaoNoTx(tx, { orgId, id: item.id, mudanca: ContextChange.restauracao, ator,
+            intencaoHumana: { actorId, versaoEsperada: versao.versao, produtor },
+            montar: (linha) => {
+              if (!linha.arquivadoEm) throw new ConflictException('Esta nota não está arquivada.');
+              return { dados: { arquivadoEm: null, arquivadoPor: null, atualizadoPor: actorId }, motivo };
+            } });
+          item = r.item; eventos.push({ ...r, mudanca: ContextChange.restauracao });
+          reativacao = { solicitada: true, estado: 'concluida', versao: r.versao.versao, versionId: r.versao.id };
+        }
+        await exigirAcessoAtual(tx, orgId, actorId, permissoes);
+        this.exigirAtorDoProdutor(orgId, actorId);
+        return { edicao, reativacao, item, eventos };
+      }, { isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted });
+    } catch (e) { throw this.traduzirChaveRepetida(e, base.baseEsperada.chave); }
+    for (const e of compromisso.eventos) await this.registrarMudanca({ orgId, mudanca: e.mudanca,
+      item: e.item, anterior: e.anterior, versaoId: e.versao.id, versaoNumero: e.versao.versao, motivo });
+    const r = { escopo: { orgId, actorId }, acao: causa.acao,
+      baseAplicada: { baseEsperada: base.baseEsperada, versaoEsperada: base.versaoEsperada },
+      edicao: compromisso.edicao, reativacao: compromisso.reativacao, resultado: 'concluido' as const, atomicidade: 'commit_unico' as const,
+      destinoFinal: this.destinoFisicoDoProdutor(compromisso.item.chave, compromisso.item), registroMudanca: 'nao_conferido' as const };
+    return this.reconferirResultadoHumanoDoProdutor(orgId, actorId, PautaEscritaHumanaResultadoSchema.parse(r));
+  }
+
+  async reconferirResultadoHumanoDoProdutor(orgId: string, actorId: string, resultado: PautaEscritaHumanaResultado): Promise<PautaEscritaHumanaResultado> {
+    this.exigirAtorDoProdutor(orgId, actorId);
+    if (resultado.escopo.orgId !== orgId || resultado.escopo.actorId !== actorId) throw new ForbiddenException('Acesso insuficiente.');
+    const produtor = resultado.acao === 'responder_tema' ? 'carga' : resultado.acao === 'mudar_interruptor' ? 'pauta_publicar' : 'pauta_editar';
+    const permissoes = this.permissoesDoProdutor(produtor);
+    const final = await this.prisma.$transaction(async (tx) => {
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`memoria:${orgId}`}))`;
+      await this.travarAutoridadeDoProdutorNoTx(tx, orgId, actorId, permissoes);
+      const linha = await this.notaFisicaDoProdutorNoTx(tx, orgId, actorId, resultado.baseAplicada.baseEsperada.chave);
+      if (!linha || linha.id !== resultado.edicao.itemId) throw new ConflictException('A nota gravada não pôde ser conferida.');
+      return this.destinoFisicoDoProdutor(linha.chave, linha);
+    }, { isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted });
+    this.exigirAtorDoProdutor(orgId, actorId);
+    await exigirAcessoAtual(this.prisma, orgId, actorId, permissoes);
+    return PautaEscritaHumanaResultadoSchema.parse({ ...resultado, destinoFinal: final });
+  }
+
+  async gravarTemaHumano(orgId: string, actorId: string, tema: string,
+    entrada: PautaEscritaHumanaBase, dados: DadosDoProdutorHumano): Promise<PautaEscritaHumanaResultado> {
+    return this.gravarPautaHumana(orgId, actorId, { acao: 'responder_tema', tema }, entrada, dados);
+  }
+
+
+  async observarDestinoDaDerivacaoNoTx<TMaterial, TSelecao>(tx: Prisma.TransactionClient, orgId: string,
+    identidade: IdentidadeDaDerivacao, causa: CausaDaDerivacao, plano: PlanoInternoDeFontesDaDerivacao<TMaterial, TSelecao>): Promise<ObservacaoDaDerivacao<TMaterial>> {
+    await this.travarCadeadoDaDerivacaoNoTx(tx, orgId);
+    const autoria = clonarDerivacao(identidade); const causaFixada = clonarDerivacao(causa);
+    const autoridade = await this.travarAutoridadeDaDerivacaoNoTx(tx, orgId, autoria, causaFixada);
+    const chave = this.chaveDaDerivacao(causaFixada);
+    const base = await this.observarFonteFisicaDaDerivacaoNoTx(tx, orgId, autoria, { chave });
+    this.conferirDestinoDaDerivacao(base);
+    await this.conferirMarcaLegadaNoCadeado(tx, orgId, chave);
+    const notas = new Map<string, DescritorFisicoDaFonte>();
+    const ler = this.leitorFisicoDaDerivacao(tx, orgId, autoria, notas);
+    const entrada = await plano.observar(tx, ler);
+    const selecao = clonarDerivacao(entrada.selecao); const reconferir = plano.reconferir;
+    const reler = (db: Prisma.TransactionClient, reader: LeitorFisicoDaDerivacao) => reconferir(db, reader, clonarDerivacao(selecao));
+    const fontes = assinaturaFisicaDaDerivacao({ material: entrada.material, descritores: entrada.descritores, notas: this.ordenarNotasDaDerivacao(notas) });
+    const estado: EstadoDaCapsulaDerivada = { orgId, identidade: autoria, causa: causaFixada, chave,
+      base: clonarDerivacao(base), autoridade, fontes, notasConsumidas: clonarDerivacao(this.ordenarNotasDaDerivacao(notas)), reler };
+    await this.reconferirFontesDaDerivacaoNoTx(tx, estado);
+    this.exigirMesmoRetratoDaDerivacao(base, await this.observarFonteFisicaDaDerivacaoNoTx(tx, orgId, autoria, { chave }));
+    if (autoridade !== await this.travarAutoridadeDaDerivacaoNoTx(tx, orgId, autoria, causaFixada)) throw this.derivacaoAlterada();
+    const capsula: CapsulaDaDerivacao = Object.freeze({ [TOKEN_DA_DERIVACAO]: true as const });
+    this.capsulasDeDerivacao.set(capsula, estado);
+    return Object.freeze({ capsula, material: clonarDerivacao(entrada.material) });
+  }
+
+  async aplicarDerivacaoCondicionadaNoTx(tx: Prisma.TransactionClient, capsula: CapsulaDaDerivacao, dados: DadosDerivadosDaNota): Promise<CompromissoDaDerivacao> {
+    const estado = this.capsulasDeDerivacao.get(capsula);
+    if (!estado) throw new ForbiddenException('Observação de derivação inválida.');
+    const { orgId, identidade, causa, chave } = estado;
+    await this.travarCadeadoDaDerivacaoNoTx(tx, orgId);
+    if (estado.autoridade !== await this.travarAutoridadeDaDerivacaoNoTx(tx, orgId, identidade, causa)) throw this.derivacaoAlterada();
+    await this.reconferirFontesDaDerivacaoNoTx(tx, estado);
+    const base = await this.observarFonteFisicaDaDerivacaoNoTx(tx, orgId, identidade, { chave }, true);
+    this.exigirMesmoRetratoDaDerivacao(estado.base, base); this.conferirDestinoDaDerivacao(base);
+    const entrada = clonarDerivacao({ title: dados.title, body: dados.body, sourceType: dados.sourceType,
+      kind: dados.kind ?? (base.estado === 'existente' ? base.nota.kind : ContextKind.nota),
+      tags: dados.tags ?? (base.estado === 'existente' ? base.nota.tags : []), sourceRef: dados.sourceRef ?? null, motivo: dados.motivo ?? null });
+    if (!entrada.title.trim()) throw new BadRequestException('A nota precisa de título.');
+    this.exigirProcedencia(entrada.sourceType);
+    if (entrada.sourceType === ContextSource.vault) throw new ForbiddenException('Esta nota vem da vault. Edite o arquivo na base, pelo git.');
+    const ator = this.atorDaDerivacao(identidade);
+    const motivo = entrada.motivo ?? null;
+    let gravada: { item: LinhaDaNota; anterior: LinhaDaNota | null; versao: { id: string; versao: number } };
+    try {
+      if (base.estado === 'ausente_fisico') gravada = await this.criarDerivacaoNoTx(tx, estado, entrada);
+      else gravada = await this.gravarVersaoNoTx(tx, { orgId, id: base.nota.id, mudanca: ContextChange.alteracao, ator, derivacao: capsula,
+        montar: () => ({ dados: { kind: entrada.kind ?? base.nota.kind, title: entrada.title.trim(), body: entrada.body,
+          tags: entrada.tags ?? base.nota.tags, sourceType: entrada.sourceType, sourceRef: entrada.sourceRef ?? null,
+          contentHash: hashDoCorpo(entrada.body), atualizadoPor: ator.actorId }, motivo }),
+        noCadeado: async (db, antes, depois) => {
+          if (antes.contentHash !== depois.contentHash) await db.$executeRaw`UPDATE "ContextItem" SET embedding=NULL WHERE id=${depois.id} AND "orgId"=${orgId}`;
+        } });
+    } catch (e) { throw this.traduzirChaveRepetida(e, chave); }
+    const depois = await this.observarFonteFisicaDaDerivacaoNoTx(tx, orgId, identidade, { itemId: gravada.item.id });
+    if (depois.estado !== 'existente' || depois.versao.id !== gravada.versao.id || depois.nota.versao !== gravada.versao.versao) throw this.derivacaoAlterada();
+    await this.reconferirFontesDaDerivacaoNoTx(tx, estado);
+    if (estado.autoridade !== await this.travarAutoridadeDaDerivacaoNoTx(tx, orgId, identidade, causa)) throw this.derivacaoAlterada();
+    const aplicada: VersaoAplicadaDaDerivacao = { orgId, itemId: depois.nota.id, versionId: depois.versao.id, versao: depois.versao.versao,
+      chave: depois.chave, kind: depois.versao.kind, title: depois.versao.title, body: depois.versao.body,
+      contentHash: depois.versao.contentHash, sourceType: depois.versao.sourceType, sourceRef: depois.versao.sourceRef };
+    const compromisso: CompromissoDaDerivacao = Object.freeze({ [TOKEN_DO_COMPROMISSO_DERIVADO]: true as const, aplicada: clonarDerivacao(aplicada) });
+    this.compromissosDeDerivacao.set(compromisso, { capsula: estado, aplicada: clonarDerivacao(aplicada),
+      item: clonarDerivacao(gravada.item), anterior: gravada.anterior ? clonarDerivacao(gravada.anterior) : null, motivo, rastroIniciado: false });
+    return compromisso;
+  }
+
+  async concluirEntregaDaDerivacao(compromisso: CompromissoDaDerivacao): Promise<ResultadoDaDerivacao> {
+    const c = this.compromissosDeDerivacao.get(compromisso);
+    if (!c) throw new ForbiddenException('Compromisso de derivação inválido.');
+    // A consulta fora de uma nova TX recusa uma versão ainda não comprometida.
+    this.exigirIdentidadeDaDerivacao(c.capsula.orgId, c.capsula.identidade, c.capsula.causa);
+    const comprometida = await this.prisma.contextItemVersion.findFirst({ where: { orgId: c.aplicada.orgId,
+      itemId: c.aplicada.itemId, id: c.aplicada.versionId, versao: c.aplicada.versao }, select: { id: true } });
+    if (!comprometida) throw new ConflictException('A versão aplicada ainda não foi comprometida.');
+    await this.conferirEntregaDaDerivacao(c);
+    if (!c.rastroIniciado) {
+      c.rastroIniciado = true;
+      this.exigirIdentidadeDaDerivacao(c.capsula.orgId, c.capsula.identidade, c.capsula.causa);
+      await this.registrarMudanca({ orgId: c.capsula.orgId, mudanca: c.anterior ? ContextChange.alteracao : ContextChange.criacao,
+        item: c.item, anterior: c.anterior, versaoId: c.aplicada.versionId, versaoNumero: c.aplicada.versao, motivo: c.motivo });
+    }
+    const disponibilidadeAtual = await this.conferirEntregaDaDerivacao(c);
+    return clonarDerivacao({ aplicada: c.aplicada, disponibilidadeAtual, registroMudanca: 'nao_conferido' as const });
+  }
+
+  private async travarCadeadoDaDerivacaoNoTx(tx: Prisma.TransactionClient, orgId: string) {
+    const rows = await tx.$queryRaw<Array<{ isolamento: string }>>`SELECT current_setting('transaction_isolation') AS isolamento`;
+    if (rows.length !== 1 || rows[0].isolamento !== 'read committed') throw new ConflictException('A derivação exige uma transação ReadCommitted.');
+    await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`memoria:${orgId}`}))`;
+  }
+
+  private async conferirEntregaDaDerivacao(c: EstadoDoCompromissoDerivado): Promise<ResultadoDaDerivacao['disponibilidadeAtual']> {
+    const e = c.capsula; const p = c.aplicada;
+    const r = await this.prisma.$transaction(async (tx) => {
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`memoria:${e.orgId}`}))`;
+      await this.travarAutoridadeDaDerivacaoNoTx(tx, e.orgId, e.identidade, e.causa);
+      const atual = await this.observarFonteFisicaDaDerivacaoNoTx(tx, e.orgId, e.identidade, { itemId: p.itemId }, false, true);
+      const v = await tx.contextItemVersion.findFirst({ where: { orgId: p.orgId, itemId: p.itemId, id: p.versionId, versao: p.versao }, select: SELECAO_DA_VERSAO_DERIVADA });
+      if (atual.estado !== 'existente' || !v || v.kind !== p.kind || v.title !== p.title || v.body !== p.body
+        || v.contentHash !== p.contentHash || hashDoCorpo(v.body) !== p.contentHash || v.sourceType !== p.sourceType || v.sourceRef !== p.sourceRef) throw this.derivacaoAlterada();
+      for (const fonte of e.notasConsumidas) if (fonte.estado === 'existente') await this.observarFonteFisicaDaDerivacaoNoTx(tx,
+        e.orgId, e.identidade, { itemId: fonte.nota.id }, false, true);
+      await this.travarAutoridadeDaDerivacaoNoTx(tx, e.orgId, e.identidade, e.causa);
+      return { legivel: true as const, arquivada: !!atual.nota.arquivadoEm, versaoAtual: atual.nota.versao,
+        estaVersaoAindaCorrente: atual.versao.id === p.versionId && atual.nota.chave === p.chave };
+    }, { isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted });
+    this.exigirIdentidadeDaDerivacao(e.orgId, e.identidade, e.causa);
+    const ator = this.atorDaDerivacao(e.identidade);
+
+    const ids = [...new Set([p.itemId, ...e.notasConsumidas.flatMap((f) => f.estado === 'existente' ? [f.nota.id] : [])])].sort();
+    const permissoes = this.permissoesDaDerivacao(e.identidade, e.causa);
+    const final = await this.prisma.$queryRaw<Array<{ autorizado: boolean }>>`
+      SELECT EXISTS (SELECT 1 FROM "Org" WHERE id=${e.orgId} AND "isActive"
+        AND (${e.identidade.tipo !== 'rotina'} OR 'pauta'=ANY(modulos)))
+      AND (${ator.actorId}::text IS NULL OR EXISTS (
+        SELECT 1 FROM "User" u JOIN "_UserRoles" ur ON ur."B"=u.id JOIN "Role" r ON r.id=ur."A" AND r."orgId"=u."orgId"
+        JOIN "_RolePermissions" rp ON rp."B"=r.id JOIN "Permission" p ON p.id=rp."A"
+        WHERE u.id=${ator.actorId} AND u."orgId"=${e.orgId} AND u."isActive" AND p.key IN (${Prisma.join(permissoes)})
+        GROUP BY u.id HAVING count(DISTINCT p.key)=${permissoes.length}
+      )) AND (SELECT count(*) FROM "ContextItem" WHERE "orgId"=${e.orgId} AND id IN (${Prisma.join(ids)})
+        AND (NOT "acessoRestrito" OR ${ator.actorId}::text=ANY(leitores)))=${ids.length} AS autorizado`;
+    if (final.length !== 1 || !final[0].autorizado) throw new ForbiddenException('Acesso à nota insuficiente.');
+    this.exigirIdentidadeDaDerivacao(e.orgId, e.identidade, e.causa);
+    return r;
+  }
+
+  private async criarDerivacaoNoTx(tx: Prisma.TransactionClient, e: EstadoDaCapsulaDerivada, dados: DadosDerivadosDaNota) {
+    const base = await this.observarFonteFisicaDaDerivacaoNoTx(tx, e.orgId, e.identidade, { chave: e.chave }, true);
+    this.exigirMesmoRetratoDaDerivacao(e.base, base);
+    if (base.estado !== 'ausente_fisico') throw this.derivacaoAlterada();
+    this.conferirEscritorDaMarca(e.chave); await this.conferirMarcaLegadaNoCadeado(tx, e.orgId, e.chave);
+    const ator = this.atorDaDerivacao(e.identidade);
+    const item = await tx.contextItem.create({ data: { orgId: e.orgId, chave: e.chave, title: dados.title.trim(), body: dados.body,
+      kind: dados.kind ?? ContextKind.nota, tags: dados.tags ?? [], sourceType: dados.sourceType, sourceRef: dados.sourceRef ?? null,
+      contentHash: hashDoCorpo(dados.body), versao: 1, criadoPor: ator.actorId, atualizadoPor: ator.actorId }, select: SELECAO_DA_NOTA });
+    const versao = await tx.contextItemVersion.create({ data: { orgId: e.orgId, itemId: item.id, versao: 1, mudanca: ContextChange.criacao,
+      kind: item.kind, title: item.title, body: item.body, sourceType: item.sourceType, sourceRef: item.sourceRef,
+      contentHash: item.contentHash, motivo: dados.motivo ?? null, autorTipo: ator.actorType, autorId: ator.actorId }, select: { id: true, versao: true } });
+    return { item, anterior: null, versao };
+  }
+
+  private async observarFonteFisicaDaDerivacaoNoTx(tx: Prisma.TransactionClient, orgId: string, identidade: IdentidadeDaDerivacao,
+    seletor: { chave: string } | { itemId: string }, escrita = false, historico = false): Promise<DescritorFisicoDaFonte> {
+    const where = 'chave' in seletor ? { orgId, chave: seletor.chave } : { orgId, id: seletor.itemId };
+    if ('chave' in seletor) {
+      if (escrita) await tx.$queryRaw`SELECT id FROM "ContextItem" WHERE "orgId"=${orgId} AND chave=${seletor.chave} FOR UPDATE`;
+      else await tx.$queryRaw`SELECT id FROM "ContextItem" WHERE "orgId"=${orgId} AND chave=${seletor.chave} FOR SHARE`;
+    } else {
+      if (escrita) await tx.$queryRaw`SELECT id FROM "ContextItem" WHERE "orgId"=${orgId} AND id=${seletor.itemId} FOR UPDATE`;
+      else await tx.$queryRaw`SELECT id FROM "ContextItem" WHERE "orgId"=${orgId} AND id=${seletor.itemId} FOR SHARE`;
+    }
+    const nota = await tx.contextItem.findFirst({ where, select: SELECAO_FISICA_DA_DERIVACAO });
+    const chave = nota?.chave ?? ('chave' in seletor ? seletor.chave : null);
+    if (!chave) throw new NotFoundException('Fonte indisponível.');
+    const claim = await tx.contextKeyClaim.findFirst({ where: { orgId, key: chave } });
+    if (!nota) {
+      if (claim) throw new ConflictException('A chave está reservada ou identifica outra fonte.');
+      return { estado: 'ausente_fisico', orgId, chave };
+    }
+    const leitor = this.atorDaDerivacao(identidade).actorId;
+    if (!podeLerFonte(nota, leitor)) throw new ForbiddenException('Acesso à nota insuficiente.');
+    if (chave.startsWith('vault:')) {
+      if (!claim || claim.tipo !== 'canonical' || claim.itemId !== nota.id) throw this.derivacaoAlterada();
+    } else if (claim) throw this.derivacaoAlterada();
+    if (!historico) {
+      if (nota.arquivadoEm) throw new ConflictException('A fonte está arquivada. Confira sua situação antes de gerar.');
+      await exigirNovoUsoSemMovimentoPendente(tx, orgId, nota.id);
+    }
+    if (nota.leitores.length) await tx.$queryRaw`SELECT id FROM "User" WHERE "orgId"=${orgId} AND id IN (${Prisma.join([...nota.leitores].sort())}) ORDER BY id FOR SHARE`;
+    await this.conferirLeitores(tx, orgId, nota.leitores);
+    const versao = await tx.contextItemVersion.findFirst({ where: { orgId, itemId: nota.id }, orderBy: { versao: 'desc' }, select: SELECAO_DA_VERSAO_DERIVADA });
+    if (!versao || !Number.isSafeInteger(nota.versao) || nota.versao < 1
+      || versao.orgId !== orgId || versao.itemId !== nota.id || versao.versao !== nota.versao
+      || versao.kind !== nota.kind || versao.title !== nota.title || versao.body !== nota.body
+      || versao.sourceType !== nota.sourceType || versao.sourceRef !== nota.sourceRef || versao.contentHash !== nota.contentHash
+      || hashDoCorpo(nota.body) !== nota.contentHash) throw new ConflictException('A versão da nota diverge do histórico.');
+    return { estado: 'existente', orgId, chave, nota: { ...nota, leitores: [...nota.leitores].sort() }, versao };
+  }
+
+  private leitorFisicoDaDerivacao(tx: Prisma.TransactionClient, orgId: string, identidade: IdentidadeDaDerivacao,
+    notas: Map<string, DescritorFisicoDaFonte>): LeitorFisicoDaDerivacao {
+    return async (seletor) => {
+      const r = await this.observarFonteFisicaDaDerivacaoNoTx(tx, orgId, identidade, seletor);
+      notas.set(r.chave, clonarDerivacao(r)); return clonarDerivacao(r);
+    };
+  }
+  private ordenarNotasDaDerivacao(notas: Map<string, DescritorFisicoDaFonte>) {
+    return [...notas.values()].sort((a, b) => a.chave < b.chave ? -1 : a.chave > b.chave ? 1 : 0);
+  }
+  private async reconferirFontesDaDerivacaoNoTx(tx: Prisma.TransactionClient, e: EstadoDaCapsulaDerivada) {
+    const notas = new Map<string, DescritorFisicoDaFonte>();
+    const atual = await e.reler(tx, this.leitorFisicoDaDerivacao(tx, e.orgId, e.identidade, notas));
+    if (e.fontes !== assinaturaFisicaDaDerivacao({ ...atual, notas: this.ordenarNotasDaDerivacao(notas) })) throw this.derivacaoAlterada();
+  }
+  private exigirMesmoRetratoDaDerivacao(a: DescritorFisicoDaFonte, b: DescritorFisicoDaFonte) {
+    if (assinaturaFisicaDaDerivacao(a) !== assinaturaFisicaDaDerivacao(b)) throw this.derivacaoAlterada();
+  }
+  private conferirDestinoDaDerivacao(base: DescritorFisicoDaFonte) {
+    if (ehChaveDaVault(base.chave) || base.estado === 'existente' && base.nota.sourceType === ContextSource.vault)
+      throw new ForbiddenException('Esta nota vem da vault. Edite o arquivo na base, pelo git.');
+    if (base.estado === 'existente' && base.nota.versao >= 2147483647) throw new ConflictException('A numeração da nota atingiu o limite.');
+    this.conferirEscritorDaMarca(base.chave);
+  }
+  private derivacaoAlterada() { return new ConflictException('A fonte, o destino ou a configuração mudou durante a geração. Confira a base antes de gerar novamente.'); }
+  private chaveDaDerivacao(c: CausaDaDerivacao): string {
+    switch (c.tipo) {
+      case 'A4-PERF': return chaveDaPerformance(PautaMesSchema.parse(c.mes));
+      case 'A4-ESTRATEGIA': return chaveDaEstrategia(PautaMesSchema.parse(c.mes));
+      case 'A4-RELATORIO-HUMANO': case 'A4-RELATORIO-ROTINA': return chaveDoRelatorio(PautaMesSchema.parse(c.mes));
+      case 'A4-DOSSIE':
+        if (!/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i.test(c.fonteId)) throw new BadRequestException('Fonte de dossiê inválida.');
+        return `pauta.concorrente.${c.fonteId}`;
+      case 'A4-VOZ': return PautaChaveDaVozSchema.parse(c.chave);
+      case 'A4-ONBOARDING-FECHAR': return CHAVE_DO_RETRATO;
+      default: throw new BadRequestException('Causa de derivação inválida.');
+    }
+  }
+  private atorDaDerivacao(i: IdentidadeDaDerivacao): { actorType: string; actorId: string | null } {
+    return i.tipo === 'humano' ? { actorType: ActorType.user, actorId: i.actorId } : i.ator;
+  }
+  private permissoesDaDerivacao(i: IdentidadeDaDerivacao, c: CausaDaDerivacao): string[] {
+    if (i.tipo === 'rotina') return ['automacoes.executar', 'obsidian.ver'];
+    return c.tipo === 'A4-ONBOARDING-FECHAR' ? ['obsidian.ver', 'obsidian.editar'] : ['obsidian.ver', 'pauta.editar', 'automacoes.executar'];
+  }
+  private exigirIdentidadeDaDerivacao(orgId: string, i: IdentidadeDaDerivacao, c: CausaDaDerivacao) {
+    const ctx = contextoAtual(); const ator = this.atorDaDerivacao(i);
+    const correlationId = i.tipo === 'humano' ? i.correlationId : i.ctx.correlationId;
+    if (!orgId || !correlationId || ctx?.orgId !== orgId || ctx.actorType !== ator.actorType || (ctx.actorId ?? null) !== ator.actorId
+      || ctx.correlationId !== correlationId || ator.actorType === ActorType.user && !ator.actorId) throw new ForbiddenException('Acesso insuficiente.');
+    if ((c.tipo === 'A4-RELATORIO-ROTINA') !== (i.tipo === 'rotina')) throw new ForbiddenException('A identidade da causa não pôde ser conferida.');
+    if (i.tipo === 'rotina' && (i.ctx.orgId !== orgId || !Number.isFinite(i.ctx.agora.getTime())
+      || i.ctx.origem === 'cron' && (ator.actorType !== ActorType.system || ator.actorId !== null)
+      || i.ctx.origem === 'manual' && (ator.actorType !== ActorType.user || !ator.actorId)
+      || i.ctx.origem !== 'cron' && i.ctx.origem !== 'manual')) throw new ForbiddenException('A identidade da rotina não pôde ser conferida.');
+  }
+  private async travarAutoridadeDaDerivacaoNoTx(tx: Prisma.TransactionClient, orgId: string, i: IdentidadeDaDerivacao, c: CausaDaDerivacao): Promise<string> {
+    this.exigirIdentidadeDaDerivacao(orgId, i, c);
+    const ator = this.atorDaDerivacao(i);
+    if (ator.actorId) await this.travarAutoridadeDoProdutorNoTx(tx, orgId, ator.actorId, this.permissoesDaDerivacao(i, c));
+    else await tx.$queryRaw`SELECT id FROM "Org" WHERE id=${orgId} AND "isActive" FOR SHARE`;
+    const org = await tx.org.findFirst({ where: { id: orgId, isActive: true }, select: { id: true, name: true, slug: true, modulos: true, isActive: true } });
+    if (!org) throw new ForbiddenException('Acesso insuficiente.');
+    if (i.tipo === 'humano') return assinaturaFisicaDaDerivacao(org);
+    if (!org.modulos.includes('pauta')) throw new ForbiddenException('O módulo pauta está desligado.');
+    await tx.$queryRaw`SELECT id FROM "Rotina" WHERE id=${i.ctx.rotinaId} AND "orgId"=${orgId} FOR SHARE`;
+    const r = await tx.rotina.findFirst({ where: { id: i.ctx.rotinaId, orgId }, select: { id: true, orgId: true, slug: true, tipo: true,
+      config: true, ativo: true, estado: true, origem: true, refExterna: true, cron: true, tz: true, agenteSlug: true } });
+    if (!r || r.tipo !== TIPO_PAUTA_RELATORIO || r.slug !== i.ctx.slug || r.refExterna !== i.ctx.refExterna
+      || assinaturaFisicaDaDerivacao(r.config) !== assinaturaFisicaDaDerivacao(i.ctx.config)
+      || i.ctx.origem === 'cron' && (!r.ativo || !estadoDispara(r.estado))) throw this.derivacaoAlterada();
+    let espelho: unknown = null;
+    if (r.origem === 'pauta') {
+      if (!r.refExterna) throw this.derivacaoAlterada();
+      await tx.$queryRaw`SELECT id FROM "PautaRotina" WHERE id=${r.refExterna} AND "orgId"=${orgId} FOR SHARE`;
+      const origem = await tx.pautaRotina.findFirst({ where: { id: r.refExterna, orgId }, select: { id: true, orgId: true, slug: true,
+        config: true, ativo: true, cron: true, tz: true } });
+      if (!origem || i.ctx.origem === 'cron' && !origem.ativo) throw this.derivacaoAlterada();
+      espelho = origem;
+    }
+    this.exigirIdentidadeDaDerivacao(orgId, i, c);
+    return assinaturaFisicaDaDerivacao({ org, rotina: r, espelho });
+  }
+
+  private exigirAtorDoProdutor(orgId: string, actorId: string): void {
+    const ctx = contextoAtual();
+    if (!orgId || !actorId || ctx?.actorType !== ActorType.user || ctx.orgId !== orgId || ctx.actorId !== actorId) throw new ForbiddenException('Acesso insuficiente.');
+  }
+  private permissoesDoProdutor(produtor?: IntencaoHumanaDaNota['produtor']): string[] {
+    return ['obsidian.ver', produtor === 'pauta_editar' ? 'pauta.editar' : produtor === 'pauta_publicar' ? 'pauta.publicar' : 'obsidian.editar'];
+  }
+  private async notaFisicaDoProdutorNoTx(tx: Prisma.TransactionClient, orgId: string, actorId: string, chave: string, escrita = false): Promise<LinhaDaNota | null> {
+    if (escrita) await tx.$queryRaw`SELECT id FROM "ContextItem" WHERE "orgId"=${orgId} AND chave=${chave} FOR UPDATE`;
+    else await tx.$queryRaw`SELECT id FROM "ContextItem" WHERE "orgId"=${orgId} AND chave=${chave} FOR SHARE`;
+    const linha = await tx.contextItem.findFirst({ where: { orgId, chave }, select: SELECAO_DA_NOTA });
+    if (!linha) return null;
+    if (!podeLerFonte(linha, actorId)) throw new ForbiddenException('Acesso à nota insuficiente.');
+    const ultima = await tx.contextItemVersion.findFirst({ where: { orgId, itemId: linha.id }, orderBy: { versao: 'desc' }, select: { versao: true } });
+    if (!ultima || linha.versao !== ultima.versao || !Number.isSafeInteger(linha.versao) || linha.versao < 1) throw new ConflictException('A versão da nota diverge do histórico.');
+    return linha;
+  }
+  private destinoFisicoDoProdutor(chave: string, linha: LinhaDaNota | null): PautaDestinoFisico {
+    if (!linha) return { estado: 'ausente', tipo: 'nota_memoria', chave, itemId: null, versao: null, kind: null, arquivada: null, origem: null, conteudo: null };
+    return { estado: 'existente', tipo: 'nota_memoria', chave: linha.chave, itemId: linha.id, versao: linha.versao, kind: linha.kind,
+      arquivada: !!linha.arquivadoEm, origem: { tipo: linha.sourceType, referencia: linha.sourceRef }, conteudo: { titulo: linha.title, corpo: linha.body } };
+  }
+  private conferirBaseDoProdutor(atual: LinhaDaNota | null, entrada: PautaEscritaHumanaBase): void {
+    const b = entrada.baseEsperada;
+    if (b.estado === 'ausente') {
+      if (atual) throw new ConflictException('A nota foi criada desde a leitura. Confira a versão atual.');
+      return;
+    }
+    if (!atual || atual.id !== b.itemId || atual.chave !== b.chave || atual.versao !== entrada.versaoEsperada || atual.kind !== b.kind ||
+      !!atual.arquivadoEm !== b.arquivada || atual.sourceType !== b.origem.tipo || atual.sourceRef !== b.origem.referencia) {
+      throw new ConflictException('A nota mudou desde a leitura. Confira a versão atual antes de continuar.');
+    }
+  }
+  private async chaveDoProdutorNoTx(tx: Prisma.TransactionClient, orgId: string, actorId: string, causa: CausaHumanaDoProdutor): Promise<string> {
+    switch (causa.acao) {
+      case 'salvar_perfil_marca': return PAUTA_CHAVE_DA_MARCA;
+      case 'salvar_pilares': return PAUTA_CHAVE_DOS_PILARES;
+      case 'salvar_grade': return PAUTA_CHAVE_DA_GRADE;
+      case 'mudar_interruptor': return PAUTA_CHAVE_DA_AUTOMACAO[causa.qual];
+      case 'salvar_estrategia': return chaveDaEstrategia(PautaMesSchema.parse(causa.mes));
+      case 'salvar_relatorio': return chaveDoRelatorio(PautaMesSchema.parse(causa.mes));
+      case 'responder_tema':
+        if (!temaPorId(causa.tema)) throw new BadRequestException('Tema desconhecido.');
+        return chaveDoTema(causa.tema);
+      case 'salvar_voz': case 'mudar_chave_voz': {
+        const { chaveDaVozDaNota } = await import('../pauta/voz-da-pauta');
+        const configuracao = await this.notaFisicaDoProdutorNoTx(tx, orgId, actorId, PAUTA_CHAVE_DA_CHAVE_DA_VOZ);
+        const efetiva = chaveDaVozDaNota(configuracao) ?? PAUTA_CHAVE_DA_VOZ_PADRAO;
+        const esperada = causa.acao === 'salvar_voz' ? causa.chaveVozEsperada : causa.chaveEfetivaEsperada;
+        if (efetiva !== PautaChaveDaVozSchema.parse(esperada)) throw new ConflictException('A chave da voz mudou desde a leitura.');
+        return causa.acao === 'salvar_voz' ? efetiva : PAUTA_CHAVE_DA_CHAVE_DA_VOZ;
+      }
+    }
+  }
+  private async versaoCriadaDoProdutorNoTx(tx: Prisma.TransactionClient, orgId: string, item: LinhaDaNota,
+    ator: { actorType: string; actorId: string }, motivo: string | null): Promise<{ id: string; versao: number }> {
+    return tx.contextItemVersion.create({ data: { orgId, itemId: item.id, versao: 1, mudanca: ContextChange.criacao,
+      kind: item.kind, title: item.title, body: item.body, sourceType: item.sourceType, sourceRef: item.sourceRef,
+      contentHash: item.contentHash, motivo, autorTipo: ator.actorType, autorId: ator.actorId }, select: { id: true, versao: true } });
+  }
+
+  private exigirIntencaoHumana(orgId: string, actorId: string, versaoEsperada: number): IntencaoHumanaDaNota {
+    if (!Number.isSafeInteger(versaoEsperada) || versaoEsperada < 1) {
+      throw new BadRequestException('Informe a versão esperada da nota.');
+    }
+    const ctx = contextoAtual();
+    if (!orgId || !actorId || ctx?.actorType !== ActorType.user || ctx.orgId !== orgId || ctx.actorId !== actorId) {
+      throw new ForbiddenException('Acesso insuficiente.');
+    }
+    return { actorId, versaoEsperada };
+  }
+
+  /** Somente concessões cujas linhas foram travadas satisfazem a escrita humana. */
+  private async travarAcessoHumano(tx: Prisma.TransactionClient, orgId: string, intencao: IntencaoHumanaDaNota): Promise<void> {
+    this.exigirIntencaoHumana(orgId, intencao.actorId, intencao.versaoEsperada);
+    await this.travarAutoridadeDoProdutorNoTx(tx, orgId, intencao.actorId, this.permissoesDoProdutor(intencao.produtor));
+  }
+
+  private async travarAutoridadeDoProdutorNoTx(tx: Prisma.TransactionClient, orgId: string, actorId: string, permissoes: string[]): Promise<Set<string>> {
+    this.exigirAtorDoProdutor(orgId, actorId);
+    const orgs = await tx.$queryRaw<Array<{ id: string }>>`
+      SELECT id FROM "Org" WHERE id=${orgId} AND "isActive" FOR SHARE`;
+    const pessoas = await tx.$queryRaw<Array<{ id: string }>>`
+      SELECT id FROM "User" WHERE id=${actorId} AND "orgId"=${orgId} AND "isActive" ORDER BY id FOR SHARE`;
+    if (orgs.length !== 1 || pessoas.length !== 1) throw new ForbiddenException('Acesso insuficiente.');
+    const vinculos = await tx.$queryRaw<Array<{ roleId: string }>>`
+      SELECT ur."A" AS "roleId" FROM "_UserRoles" ur JOIN "Role" r ON r.id=ur."A"
+      WHERE ur."B"=${actorId} AND r."orgId"=${orgId} ORDER BY ur."A",ur."B" FOR SHARE OF ur`;
+    const roleIds = [...new Set(vinculos.map((v) => v.roleId))].sort();
+    if (!roleIds.length) throw new ForbiddenException('Acesso insuficiente.');
+    const roles = await tx.$queryRaw<Array<{ id: string }>>`
+      SELECT id FROM "Role" WHERE "orgId"=${orgId} AND id IN (${Prisma.join(roleIds)}) ORDER BY id FOR SHARE`;
+    if (roles.length !== roleIds.length) throw new ForbiddenException('Acesso insuficiente.');
+    const concessoes = await tx.$queryRaw<Array<{ permissionId: string }>>`
+      SELECT rp."A" AS "permissionId" FROM "_RolePermissions" rp
+      WHERE rp."B" IN (${Prisma.join(roleIds)}) ORDER BY rp."B",rp."A" FOR SHARE OF rp`;
+    const permissionIds = [...new Set(concessoes.map((c) => c.permissionId))].sort();
+    if (!permissionIds.length) throw new ForbiddenException('Acesso insuficiente.');
+    const linhasPermissoes = await tx.$queryRaw<Array<{ id: string; key: string }>>`
+      SELECT id,key FROM "Permission" WHERE id IN (${Prisma.join(permissionIds)}) ORDER BY id FOR SHARE`;
+    const keys = new Set(linhasPermissoes.map((p) => p.key));
+    if (linhasPermissoes.length !== permissionIds.length || !permissoes.every((p) => keys.has(p))) {
+      throw new ForbiddenException('Acesso insuficiente.');
+    }
+    await exigirAcessoAtual(tx, orgId, actorId, permissoes);
+    return keys;
+  }
+
+  private async entregarAoHumano(orgId: string, id: string, intencao: IntencaoHumanaDaNota): Promise<NotaDeContexto> {
+    this.exigirIntencaoHumana(orgId, intencao.actorId, intencao.versaoEsperada);
+    await exigirAcessoAtual(this.prisma, orgId, intencao.actorId, ['obsidian.ver', 'obsidian.editar']);
+    const nota = await this.obter(orgId, id, intencao.actorId);
+    const linhas = await this.prisma.$queryRaw<Array<{ autorizado: boolean }>>`
+      SELECT EXISTS (
+        SELECT 1 FROM "ContextItem" c JOIN "Org" o ON o.id=c."orgId" AND o."isActive"
+        JOIN "User" u ON u.id=${intencao.actorId} AND u."orgId"=o.id AND u."isActive"
+        JOIN "_UserRoles" ur ON ur."B"=u.id JOIN "Role" r ON r.id=ur."A" AND r."orgId"=u."orgId"
+        JOIN "_RolePermissions" rp ON rp."B"=r.id JOIN "Permission" p ON p.id=rp."A"
+        WHERE c.id=${id} AND c."orgId"=${orgId} AND (NOT c."acessoRestrito" OR u.id=ANY(c.leitores))
+          AND p.key IN ('obsidian.ver','obsidian.editar')
+        GROUP BY c.id HAVING count(DISTINCT p.key)=2
+      ) AS autorizado`;
+    if (!nota || !linhas[0]?.autorizado) throw new ForbiddenException('Acesso à nota insuficiente.');
+    this.exigirIntencaoHumana(orgId, intencao.actorId, intencao.versaoEsperada);
+    return nota;
   }
 
   /** Ator da operação, herdado do contexto de execução. */
@@ -1796,6 +2475,8 @@ export class MemoriaService {
     id: string;
     mudanca: ContextChange;
     ator: { actorType: string; actorId: string | null };
+    autorizacao?: symbol;
+    intencaoHumana?: IntencaoHumanaDaNota;
     conferir?: (tx: Prisma.TransactionClient, atual: LinhaDaNota) => Promise<void>;
     montar: (atual: LinhaDaNota) => {
       dados: Prisma.ContextItemUncheckedUpdateInput;
@@ -1807,18 +2488,109 @@ export class MemoriaService {
     anterior: LinhaDaNota;
     versao: { id: string; versao: number };
   }> {
-    const { orgId, id, mudanca, ator, conferir, montar, noCadeado } = args;
     return this.prisma.$transaction(async (tx) => {
-      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`memoria:${orgId}`}))`;
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`memoria:${args.orgId}`}))`;
+      return this.gravarVersaoNoTx(tx, args);
+    }, args.intencaoHumana ? { isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted } : undefined);
+  }
 
+  async alterarCaminhoPorMovimentoNoTx(tx: Prisma.TransactionClient,
+    input: { orgId: string; actorId: string; intentId: string; expectedItemVersion: number }, preparo: PreparoEventoNoTx) {
+    const intent = await tx.contextMovementIntent.findFirst({ where: { id: input.intentId, orgId: input.orgId,
+      actorId: input.actorId, estado: 'pendente', revision: 1 } });
+    if (!intent || intent.expectedItemVersion !== input.expectedItemVersion || intent.destinationKey.length > 1400)
+      throw new ConflictException('A intenção de movimento não corresponde à versão escolhida.');
+    const resultado = await this.gravarVersaoNoTx(tx, { orgId: input.orgId, id: intent.itemId,
+      mudanca: ContextChange.alteracao, ator: { actorType: 'user', actorId: input.actorId },
+      movimento: { autorizacao: ESCRITA_DE_MOVIMENTO, actorId: input.actorId, versaoEsperada: input.expectedItemVersion },
+      conferir: async (_tx, atual) => {
+        if (atual.chave !== intent.originKey || atual.sourceType !== 'vault' || atual.sourceRef !== intent.originSourceRef
+          || atual.contentHash !== intent.currentContentHash || atual.arquivadoEm)
+          throw new ConflictException('A origem da fonte mudou.');
+      },
+      montar: () => ({ dados: { chave: intent.destinationKey, sourceRef: intent.destinationSourceRef, atualizadoPor: input.actorId }, motivo: intent.motivo }),
+    });
+    const { item, anterior, versao } = resultado;
+    const evento = await this.eventos.registrarNoTx(tx, { orgId: input.orgId, tipo: 'memoria.item.alterado', actorType: ActorType.user,
+      actorId: input.actorId, correlationId: contextoAtual()?.correlationId ?? null, contentHash: item.contentHash,
+      payload: { itemId: item.id, versaoId: versao.id, versao: versao.versao, mudanca: ContextChange.alteracao },
+      conteudo: { argumentos: { chave: sigiloso(item.chave, 'chave da nota'), kind: item.kind },
+        resumo: `${ContextChange.alteracao} · versão ${versao.versao} · ${formaDoCorpo(item.body, item.contentHash)}`,
+        fontes: [rotuloDeProcedencia(item.sourceType, item.sourceRef)], motivo: intent.motivo,
+        estadoAnterior: estadoDaNota(anterior), estadoNovo: estadoDaNota(item), resultado: { versao: versao.versao },
+        desfazer: 'memoria.item.alterar (a versão anterior continua no histórico)', referencia: referenciaDaVersao(versao.id) },
+      sensibilidade: 'interna',
+    }, preparo);
+    await tx.contextItemVersion.update({ where: { id: versao.id }, data: { eventoId: evento.id, eventoSeq: evento.seq } });
+    return { ...resultado, evento };
+  }
+
+  private async gravarVersaoNoTx(tx: Prisma.TransactionClient, args: {
+    orgId: string;
+    id: string;
+    mudanca: ContextChange;
+    ator: { actorType: string; actorId: string | null };
+    autorizacao?: symbol;
+    intencaoHumana?: IntencaoHumanaDaNota;
+    movimento?: { autorizacao: symbol; actorId: string; versaoEsperada: number };
+    derivacao?: CapsulaDaDerivacao;
+    conferir?: (tx: Prisma.TransactionClient, atual: LinhaDaNota) => Promise<void>;
+    montar: (atual: LinhaDaNota) => {
+      dados: Prisma.ContextItemUncheckedUpdateInput;
+      motivo: string | null;
+    };
+    noCadeado?: (tx: Prisma.TransactionClient, antes: LinhaDaNota, depois: LinhaDaNota) => Promise<void>;
+  }): Promise<{
+    item: LinhaDaNota;
+    anterior: LinhaDaNota;
+    versao: { id: string; versao: number };
+  }> {
+    const { orgId, id, mudanca, ator, autorizacao, intencaoHumana, movimento, derivacao, conferir, montar, noCadeado } = args;
+    const estadoDerivado = derivacao ? this.capsulasDeDerivacao.get(derivacao) : undefined;
+    if (derivacao && (!estadoDerivado || estadoDerivado.orgId !== orgId || estadoDerivado.base.estado !== 'existente'
+      || estadoDerivado.base.nota.id !== id || intencaoHumana || movimento || autorizacao || mudanca !== ContextChange.alteracao
+      || ator.actorType !== this.atorDaDerivacao(estadoDerivado.identidade).actorType
+      || ator.actorId !== this.atorDaDerivacao(estadoDerivado.identidade).actorId)) throw new ForbiddenException('Derivação não autorizada.');
+    if (estadoDerivado) {
+      if (estadoDerivado.autoridade !== await this.travarAutoridadeDaDerivacaoNoTx(tx, orgId, estadoDerivado.identidade, estadoDerivado.causa)) throw this.derivacaoAlterada();
+      const fisica = await this.observarFonteFisicaDaDerivacaoNoTx(tx, orgId, estadoDerivado.identidade, { itemId: id }, true);
+      this.exigirMesmoRetratoDaDerivacao(estadoDerivado.base, fisica); this.conferirDestinoDaDerivacao(fisica);
+    }
+      if (movimento && movimento.autorizacao !== ESCRITA_DE_MOVIMENTO) throw new ForbiddenException('Movimento não autorizado.');
+      const versaoEsperada = intencaoHumana?.versaoEsperada ?? movimento?.versaoEsperada
+        ?? (estadoDerivado?.base.estado === 'existente' ? estadoDerivado.base.nota.versao : undefined);
+      if (movimento) await travarAutoridadeDoMovimento(tx, orgId, movimento.actorId, true);
+      if (intencaoHumana || movimento || estadoDerivado) {
+        if (intencaoHumana) await this.travarAcessoHumano(tx, orgId, intencaoHumana);
+        await tx.$queryRaw`SELECT id FROM "ContextItem" WHERE id=${id} AND "orgId"=${orgId} FOR UPDATE`;
+      }
+      const leitor = estadoDerivado ? this.atorDaDerivacao(estadoDerivado.identidade).actorId
+        : movimento?.actorId ?? intencaoHumana?.actorId ?? await leitorAutorizado(tx, orgId, leitorDoContexto());
       const atual = await tx.contextItem.findFirst({
-        where: { id, orgId },
+        where: { id, orgId, ...filtroDeLeitura(leitor) },
         select: SELECAO_DA_NOTA,
       });
       if (!atual) throw new NotFoundException('Nota não encontrada nesta empresa.');
+      if (!movimento) await exigirNovoUsoSemMovimentoPendente(tx, orgId, atual.id);
+      if ((intencaoHumana || estadoDerivado) && (ehChaveDaVault(atual.chave) || atual.sourceType === ContextSource.vault)) {
+        throw new ForbiddenException('Esta nota vem da vault. Edite o arquivo na base, pelo git.');
+      }
+      if (versaoEsperada !== undefined && atual.versao !== versaoEsperada) {
+        throw new ConflictException('A nota mudou desde a leitura. Confira a versão atual antes de continuar.');
+      }
+      this.conferirEscritorDaMarca(atual.chave, autorizacao);
+      await this.conferirMarcaLegadaNoCadeado(tx, orgId, atual.chave);
+      if (atual.chave === BRANDBOOK_CHAVE && (atual.arquivadoEm || atual.acessoRestrito)) {
+        throw new ConflictException('O brandbook foi arquivado ou teve o acesso alterado. Recarregue antes de continuar.');
+      }
 
       await conferir?.(tx, atual);
       const { dados, motivo } = montar(atual);
+      const destino = typeof dados.chave === 'string' ? dados.chave : dados.chave?.set;
+      if (destino !== undefined) {
+        this.conferirEscritorDaMarca(destino, autorizacao);
+        await this.conferirMarcaLegadaNoCadeado(tx, orgId, destino);
+      }
 
       const ultima = await tx.contextItemVersion.findFirst({
         where: { orgId, itemId: atual.id },
@@ -1832,6 +2604,9 @@ export class MemoriaService {
        * fora, e a numeração segue pelo MAIOR dos dois para não reaproveitar um
        * número já usado — o índice único (itemId, versao) recusaria.
        */
+      if (versaoEsperada !== undefined && atual.versao !== maiorDoHistorico) {
+        throw new ConflictException('A versão da nota diverge do histórico. Confira a integridade antes de continuar.');
+      }
       if (atual.versao !== maiorDoHistorico) {
         this.log.error(
           `empresa ${orgId}: a nota ${atual.id} diz estar na versão ${atual.versao} e o ` +
@@ -1841,11 +2616,23 @@ export class MemoriaService {
       }
       const proxima = Math.max(atual.versao, maiorDoHistorico) + 1;
 
-      const item = await tx.contextItem.update({
-        where: { id: atual.id },
-        data: { ...dados, versao: proxima },
-        select: SELECAO_DA_NOTA,
-      });
+      let item: LinhaDaNota;
+      if (versaoEsperada !== undefined) {
+        const alteracao = await tx.contextItem.updateMany({
+          where: { id: atual.id, orgId, versao: versaoEsperada },
+          data: { ...dados, versao: proxima },
+        });
+        if (alteracao.count !== 1) throw new ConflictException('A nota mudou desde a leitura. Confira a versão atual antes de continuar.');
+        const gravado = await tx.contextItem.findFirst({ where: { id: atual.id, orgId }, select: SELECAO_DA_NOTA });
+        if (!gravado) throw new ConflictException('A nota gravada não pôde ser conferida.');
+        item = gravado;
+      } else {
+        item = await tx.contextItem.update({
+          where: { id: atual.id },
+          data: { ...dados, versao: proxima },
+          select: SELECAO_DA_NOTA,
+        });
+      }
       const versao = await tx.contextItemVersion.create({
         data: {
           orgId,
@@ -1865,8 +2652,11 @@ export class MemoriaService {
         select: { id: true, versao: true },
       });
       await noCadeado?.(tx, atual, item);
+      if (intencaoHumana) {
+        this.exigirIntencaoHumana(orgId, intencaoHumana.actorId, intencaoHumana.versaoEsperada);
+        await exigirAcessoAtual(tx, orgId, intencaoHumana.actorId, this.permissoesDoProdutor(intencaoHumana.produtor));
+      }
       return { item, anterior: atual, versao };
-    });
   }
 
   /** A recusa amigável de chave repetida, num lugar só. */
@@ -2036,6 +2826,63 @@ export class MemoriaService {
   }
 
   /** Preenche `temVetor` sem trazer 1536 números por linha para a memória do processo. */
+  private async conferirLeitores(db: Pick<Prisma.TransactionClient, 'user'>, orgId: string, leitores?: string[]): Promise<void> {
+    if (leitores === undefined) return;
+    if (new Set(leitores).size !== leitores.length ||
+      await db.user.count({ where: { orgId, id: { in: leitores } } }) !== leitores.length)
+      throw new BadRequestException('As pessoas concedidas precisam pertencer a esta empresa e não podem se repetir.');
+  }
+
+  private async reconferirLeitura<T extends { id: string; acessoRestrito?: boolean }>(
+    orgId: string, linhas: T[], solicitanteId: string | null,
+  ): Promise<T[]> {
+    const final = await this.leituraAtual(orgId, solicitanteId, linhas.map((l) => l.id));
+    const ids = new Set(final.ids);
+    return linhas.filter((l) => ids.has(l.id));
+  }
+
+  /** Pessoa, ACL da fonte e contador são conferidos no mesmo retrato do banco. */
+  private async leituraAtual(
+    orgId: string, solicitanteId: string | null, itemIds: string[],
+  ): Promise<{ autorizado: boolean; ids: string[]; comVetor: bigint }> {
+    const linhas = await this.prisma.$queryRawUnsafe<Array<{ autorizado: boolean; ids: string[]; comVetor: bigint }>>(`
+      WITH acesso AS (
+        SELECT ($2::text IS NULL OR EXISTS (
+          SELECT 1 FROM "User" u
+          JOIN "_UserRoles" ur ON ur."B" = u.id
+          JOIN "Role" r ON r.id = ur."A" AND r."orgId" = u."orgId"
+          JOIN "_RolePermissions" rp ON rp."B" = r.id
+          JOIN "Permission" p ON p.id = rp."A"
+          WHERE u.id = $2 AND u."orgId" = $1 AND u."isActive" = true AND p.key = 'obsidian.ver'
+        )) AS autorizado
+      ), permitidas AS (
+        SELECT c.id, (c.embedding IS NOT NULL) AS "temVetor" FROM "ContextItem" c
+        WHERE c."orgId" = $1
+          AND (c."acessoRestrito" = false OR $2::text = ANY(c.leitores))
+          AND (SELECT autorizado FROM acesso)
+      )
+      SELECT a.autorizado,
+        ARRAY(SELECT id FROM permitidas WHERE id = ANY($3::text[])) AS ids,
+        (SELECT count(*)::bigint FROM permitidas WHERE "temVetor") AS "comVetor"
+      FROM acesso a
+    `, orgId, solicitanteId, itemIds);
+    const final = linhas[0];
+    if (!final?.autorizado) throw new ForbiddenException('Acesso insuficiente.');
+    return final;
+  }
+
+  private async retratoAtual(orgId: string, nota: NotaDeContexto, pessoaId: string): Promise<NotaDeContexto> {
+    const v = await this.prisma.contextItemVersion.findFirst({ where: { orgId, itemId: nota.id, versao: nota.versao } });
+    if (!v || v.body !== nota.body || v.title !== nota.title || v.contentHash !== nota.contentHash
+      || v.sourceType !== nota.sourceType || v.sourceRef !== nota.sourceRef)
+      throw new ConflictException({ code: 'contexto_fonte_inconsistente', message: 'A versão da fonte não pôde ser conferida.' });
+    const pendente = await consultaMovimentoPendente(this.prisma, orgId, nota.id);
+    return { ...nota, escopo: { orgId, userId: pessoaId }, retratoFonte: construirFonteAutorizada({
+      item: { ...nota, orgId, arquivadoEm: nota.arquivadoEm, atualizadoEm: nota.atualizadoEm }, versaoSelecionada: v,
+      incluirCorpo: true, acessoVerificadoEm: new Date(), novoUsoPermitido: !pendente && !nota.arquivadoEm,
+    }) };
+  }
+
   private async comVetor(orgId: string, linhas: LinhaDaNota[]): Promise<NotaDeContexto[]> {
     if (linhas.length === 0) return [];
     const comVetor = await this.prisma.$queryRawUnsafe<Array<{ id: string }>>(
@@ -2057,7 +2904,7 @@ export class MemoriaService {
  * nota é encontrável por similaridade?") por um custo constante.
  */
 const SELECAO_DA_NOTA = {
-  id: true,
+  id: true, acessoRestrito: true, leitores: true,
   chave: true,
   kind: true,
   title: true,
@@ -2076,9 +2923,11 @@ const SELECAO_DA_NOTA = {
   atualizadoEm: true,
 } as const;
 
+const SELECAO_FISICA_DA_DERIVACAO = { ...SELECAO_DA_NOTA, orgId: true, criadoPor: true, atualizadoPor: true, arquivadoPor: true } as const;
+
 /** As mesmas colunas, para as consultas cruas (busca vetorial e textual). */
 const COLUNAS_DA_NOTA = [
-  'id',
+  'id', '"acessoRestrito"', 'leitores',
   'chave',
   'kind',
   'title',
@@ -2099,6 +2948,8 @@ const COLUNAS_DA_NOTA = [
 
 interface LinhaDaNota {
   id: string;
+  acessoRestrito?: boolean;
+  leitores?: string[];
   chave: string;
   kind: ContextKind;
   title: string;
@@ -2115,6 +2966,37 @@ interface LinhaDaNota {
   arquivadoEm: Date | null;
   criadoEm: Date;
   atualizadoEm: Date;
+}
+
+function assinaturaFisicaDaDerivacao(valor: unknown): string {
+  const vistos = new WeakSet<object>();
+  const normalizar = (v: unknown): unknown => {
+    if (v === null || typeof v === 'string' || typeof v === 'boolean') return v;
+    if (typeof v === 'number' && Number.isFinite(v)) return v;
+    if (v instanceof Date && Number.isFinite(v.getTime())) return v.toISOString();
+    if (typeof v !== 'object' || !v || vistos.has(v)) throw new BadRequestException('Descritor físico inválido.');
+    vistos.add(v);
+    let r: unknown;
+    if (Array.isArray(v)) r = v.map(normalizar);
+    else {
+      if (Object.getPrototypeOf(v) !== Object.prototype && Object.getPrototypeOf(v) !== null) throw new BadRequestException('Descritor físico inválido.');
+      r = Object.fromEntries(Object.entries(v).sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0).map(([k, x]) => [k, normalizar(x)]));
+    }
+    vistos.delete(v); return r;
+  };
+  const texto = JSON.stringify(normalizar(valor));
+  if (typeof texto !== 'string') throw new BadRequestException('Descritor físico inválido.');
+  return texto;
+}
+function clonarDerivacao<T>(valor: T): T {
+  assinaturaFisicaDaDerivacao(valor);
+  const clone = structuredClone(valor);
+  const congelar = (v: unknown): void => {
+    if (!v || typeof v !== 'object' || Object.isFrozen(v)) return;
+    for (const x of Object.values(v)) congelar(x);
+    Object.freeze(v);
+  };
+  congelar(clone); return clone;
 }
 
 function iso(d: Date | string | null | undefined): string | null {

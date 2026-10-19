@@ -8,6 +8,7 @@ import { JwtService } from '@nestjs/jwt';
 import { randomBytes } from 'node:crypto';
 import bcrypt from 'bcryptjs';
 import { PrismaService } from '../prisma/prisma.service';
+import { comContextoDePlataforma, comContextoDaEmpresaResolvida } from '../prisma/contexto-de-plataforma';
 import { AuthService } from './auth.service';
 
 // Login com a conta Google ("Entrar com o Gmail"). Usa a MESMA credencial OAuth do
@@ -198,34 +199,36 @@ export class GoogleLoginService {
   }
 
   private findUser(email: string) {
-    return this.prisma.user.findUnique({
+    return comContextoDePlataforma(() => this.prisma.user.findUnique({
       where: { email },
       include: { roles: { include: { permissions: true } } },
-    });
+    }));
   }
 
   /** Cria o usuário na org do root com papel de admin e senha inutilizável. */
   private async provision(email: string, name: string) {
-    const org =
+    const org = await comContextoDePlataforma(async () =>
       (await this.prisma.org.findUnique({ where: { slug: 'root' } })) ??
-      (await this.prisma.org.findFirst({ orderBy: { createdAt: 'asc' } }));
+      (await this.prisma.org.findFirst({ orderBy: { createdAt: 'asc' } })));
     if (!org) throw new Error('Nenhuma org no banco — rode o seed antes.');
 
-    const adminRole = await this.prisma.role.findUnique({
-      where: { orgId_key: { orgId: org.id, key: 'admin_master' } },
-    });
+    return comContextoDaEmpresaResolvida(org.id, async () => {
+      const adminRole = await this.prisma.role.findUnique({
+        where: { orgId_key: { orgId: org.id, key: 'admin_master' } },
+      });
 
-    // Sem senha local: só entra por este fluxo (hash de bytes aleatórios).
-    const passwordHash = await bcrypt.hash(randomBytes(32).toString('hex'), 10);
-    return this.prisma.user.create({
-      data: {
-        orgId: org.id,
-        email,
-        name,
-        passwordHash,
-        ...(adminRole ? { roles: { connect: { id: adminRole.id } } } : {}),
-      },
-      include: { roles: { include: { permissions: true } } },
-    });
+      // Sem senha local: só entra por este fluxo (hash de bytes aleatórios).
+      const passwordHash = await bcrypt.hash(randomBytes(32).toString('hex'), 10);
+      return await this.prisma.user.create({
+        data: {
+          orgId: org.id,
+          email,
+          name,
+          passwordHash,
+          ...(adminRole ? { roles: { connect: { id: adminRole.id } } } : {}),
+        },
+        include: { roles: { include: { permissions: true } } },
+      });
+    }, { origem: 'http' });
   }
 }

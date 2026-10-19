@@ -67,6 +67,9 @@ const FORMATO = '0b6c1b8e-1d2e-4f3a-8b4c-5d6e7f8a9b04';
 const REELS = '9a8b7c6d-5e4f-4a3b-8c2d-1e0f9a8b7c61';
 const CARROSSEL = '9a8b7c6d-5e4f-4a3b-8c2d-1e0f9a8b7c62';
 const ROTA = `/trabalho/tarefas/${TAREFA}`;
+const VERSAO = '2026-09-30T14:00:00.000Z';
+const versaoSeguinte = (passo: number) => new Date(Date.parse(VERSAO) + passo).toISOString();
+let versaoLida = VERSAO;
 const IMPORTADO = '2026-10-01T03:00:00.000Z';
 
 const CAMPOS = [
@@ -115,7 +118,8 @@ function tarefa() {
   };
 }
 
-function servir(inicial: Record<string, Partial<Gravado>>, datasIniciais: Partial<Datas> = {}) {
+function servir(inicial: Record<string, Partial<Gravado>>, datasIniciais: Partial<Datas> = {}, versaoCrescente = false) {
+  versaoLida = VERSAO;
   gravados = new Map(Object.entries(inicial).map(([id, v]) => [id, { optionId: v.optionId ?? null, value: v.value ?? null }]));
   datas = { startDate: null, dueDate: null, ...datasIniciais };
   apiGet.mockImplementation((rota: string) => {
@@ -137,7 +141,7 @@ function servir(inicial: Record<string, Partial<Gravado>>, datasIniciais: Partia
       return Promise.resolve({
         ...tarefa(),
         description: null, listName: 'Produção de conteúdo',
-        createdAt: '2026-09-30T14:00:00.000Z', updatedAt: '2026-09-30T14:00:00.000Z',
+        createdAt: '2026-09-30T14:00:00.000Z', updatedAt: versaoLida,
         comentarios: [], atividade: [], filhos: [], apontamentos: [], minutosPorEtapa: [],
       });
     }
@@ -155,6 +159,7 @@ function servir(inicial: Record<string, Partial<Gravado>>, datasIniciais: Partia
         gravados.set(fieldId, { optionId: v.optionId ?? null, value: v.value ?? null });
       }
     }
+    if (versaoCrescente) versaoLida = new Date(Date.parse(versaoLida) + 1).toISOString();
     return Promise.resolve({ ok: true });
   });
 }
@@ -238,7 +243,7 @@ describe('A1, campo data da gaveta: a edição de fato continua indo à API', ()
     const campo = await abrirGaveta();
     fireEvent.change(campo, { target: { value: '2026-10-15' } });
     fireEvent.blur(campo);
-    expect(patches()).toEqual([{ rota: ROTA, corpo: { campos: { [DATA]: { value: '2026-10-15' } } } }]);
+    expect(patches()).toEqual([{ rota: ROTA, corpo: { expectedUpdatedAt: VERSAO, campos: { [DATA]: { value: '2026-10-15' } } } }]);
     await assentar();
     expect(campo.defaultValue).toBe('2026-10-15');
     await entrarESair(campo);
@@ -262,7 +267,7 @@ describe('A1, campo data da gaveta: a edição de fato continua indo à API', ()
     expect(campo.value).toBe('2026-10-01');
     fireEvent.change(campo, { target: { value: '' } });
     fireEvent.blur(campo);
-    expect(patches()).toEqual([{ rota: ROTA, corpo: { campos: { [DATA]: { value: null } } } }]);
+    expect(patches()).toEqual([{ rota: ROTA, corpo: { expectedUpdatedAt: VERSAO, campos: { [DATA]: { value: null } } } }]);
     await assentar();
     expect(gravados.has(DATA)).toBe(false);
     expect(campo.value).toBe('');
@@ -273,7 +278,7 @@ describe('A1, campo data da gaveta: a edição de fato continua indo à API', ()
     const campo = await abrirGaveta();
     fireEvent.change(campo, { target: { value: '2026-10-20' } });
     fireEvent.blur(campo);
-    expect(patches()).toEqual([{ rota: ROTA, corpo: { campos: { [DATA]: { value: '2026-10-20' } } } }]);
+    expect(patches()).toEqual([{ rota: ROTA, corpo: { expectedUpdatedAt: VERSAO, campos: { [DATA]: { value: '2026-10-20' } } } }]);
     await assentar();
     expect(gravados.get(DATA)?.value).toBe('2026-10-20');
   });
@@ -306,7 +311,7 @@ describe('B1, Início e Prazo: o instante gravado só muda com edição', () => 
     const prazo = inputDe('Prazo');
     fireEvent.change(prazo, { target: { value: '2026-10-15' } });
     fireEvent.blur(prazo);
-    expect(patches()).toEqual([{ rota: ROTA, corpo: { dueDate: meioDiaLocal('2026-10-15') } }]);
+    expect(patches()).toEqual([{ rota: ROTA, corpo: { expectedUpdatedAt: VERSAO, dueDate: meioDiaLocal('2026-10-15') } }]);
     await assentar();
     expect(prazo.defaultValue).toBe('2026-10-15');
     await entrarESair(prazo);
@@ -330,7 +335,7 @@ describe('B1, Início e Prazo: o instante gravado só muda com edição', () => 
     const inicio = inputDe('Início');
     fireEvent.change(inicio, { target: { value: '' } });
     fireEvent.blur(inicio);
-    expect(patches()).toEqual([{ rota: ROTA, corpo: { startDate: null } }]);
+    expect(patches()).toEqual([{ rota: ROTA, corpo: { expectedUpdatedAt: VERSAO, startDate: null } }]);
     await assentar();
     expect(datas.startDate).toBeNull();
   });
@@ -345,7 +350,7 @@ describe('gaveta: os outros tipos de campo continuam como estavam', () => {
       [TEXTO]: { value: IMPORTADO },
       [NUMERO]: { value: '45' },
       [FORMATO]: { optionId: REELS },
-    });
+    }, {}, true);
     await abrirGaveta();
     const texto = inputDe('Observação');
     const numero = inputDe('Duração (min)');
@@ -356,14 +361,18 @@ describe('gaveta: os outros tipos de campo continuam como estavam', () => {
 
     fireEvent.change(texto, { target: { value: 'Gravar na quinta' } });
     fireEvent.blur(texto);
-    fireEvent.change(numero, { target: { value: '60' } });
-    fireEvent.blur(numero);
-    fireEvent.change(formato, { target: { value: CARROSSEL } });
+    expect(numero).toBeDisabled(); expect(formato).toBeDisabled();
+    await assentar();
+    expect(inputDe('Duração (min)')).not.toBeDisabled();
+    fireEvent.change(inputDe('Duração (min)'), { target: { value: '60' } });
+    fireEvent.blur(inputDe('Duração (min)'));
+    await assentar();
+    fireEvent.change(screen.getByLabelText(/^Formato/), { target: { value: CARROSSEL } });
 
     expect(patches()).toEqual([
-      { rota: ROTA, corpo: { campos: { [TEXTO]: { value: 'Gravar na quinta' } } } },
-      { rota: ROTA, corpo: { campos: { [NUMERO]: { value: '60' } } } },
-      { rota: ROTA, corpo: { campos: { [FORMATO]: { optionId: CARROSSEL } } } },
+      { rota: ROTA, corpo: { expectedUpdatedAt: VERSAO, campos: { [TEXTO]: { value: 'Gravar na quinta' } } } },
+      { rota: ROTA, corpo: { expectedUpdatedAt: versaoSeguinte(1), campos: { [NUMERO]: { value: '60' } } } },
+      { rota: ROTA, corpo: { expectedUpdatedAt: versaoSeguinte(2), campos: { [FORMATO]: { optionId: CARROSSEL } } } },
     ]);
     await assentar();
     expect(gravados.get(DATA)?.value).toBe(IMPORTADO);

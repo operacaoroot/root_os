@@ -54,3 +54,49 @@ export * from './vistas.js';
 // O cliente que fechou fora do sistema (rodada do trabalho T1b, 19/10/2026): a porta
 // "Registrar cliente já fechado" do Funil vivo. Ver o cabeçalho de `comercial-fechado-fora.ts`.
 export * from './comercial-fechado-fora.js';
+export * from './comercial-exercicio';
+export * from './fonte-autorizada.js';
+
+export * from './comercial-ponte-exercicio.js';
+export * from './catalogo-de-colecao.js';
+export * from './brandbook.js';
+export * from './financeiro-exercicio-inscricao.js';
+export * from './marketing-recuperacao.js';
+export * from './prontidao-local';
+export * from './agent-sop-edicao';
+export * from './conexoes-declarativas';
+
+export {
+  DemonstracaoSinteticaManifestoSchema,
+  DemonstracaoSinteticaFontesSchema,
+  DemonstracaoSinteticaReciboSchema,
+  DemonstracaoSinteticaResultadoSchema,
+  type DemonstracaoSinteticaManifesto,
+  type DemonstracaoSinteticaFontes,
+  type DemonstracaoSinteticaRecibo,
+  type DemonstracaoSinteticaResultado,
+} from './demonstracao-sintetica';
+
+export * from './procedimento-local';
+
+export * from './pauta-edicao-humana.js';
+
+export * from './contexto-movimento-explicito.js';
+export * from './agent-estado-humano';
+export * from './agenda-local';
+export * from './sessao-leitura-historica';
+export * from './onboarding-indice.js';
+
+export * from './procedimento-ferramenta-local';
+
+// O painel da operação da Root, que só a sessão da plataforma abre — ver o
+// cabeçalho de `operacao-painel.ts`.
+export * from './operacao-painel.js';
+// O painel do comercial lido da lista "Gestão de Leads": ver `painel-comercial.ts`.
+export * from './painel-comercial.js';
+// A ficha do cliente (reuniões presas ao cartão): ver `ficha-do-cliente.ts`.
+export * from './ficha-do-cliente.js';
+
+// Tarefas de todas as áreas (Dia a dia › Tarefas): o que é a MESMA tarefa, o que
+// não parece tarefa e a régua do prazo — a tela e a API leem a mesma regra.
+export * from './tarefas-do-dia.js';

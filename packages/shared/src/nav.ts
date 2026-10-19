@@ -126,11 +126,18 @@ export interface NavItem {
 }
 
 export const NAV: NavItem[] = [
-  // O trabalho do dia: /caixa continua lendo o quadro interno e não vira a entrada padrão.
+  // Versão final (19/10/2026, roteiro F3): Visão geral · Pendências · Aprovações ·
+  // Agenda · Painel geral da empresa. A Visão geral é o dash das tarefas do Lucas,
+  // lendo as pastas e listas do Trabalho, e é a entrada do Dia a dia. A lista de
+  // todas as tarefas que morava em /dia-a-dia virou "Todas" no Trabalho; o
+  // Calendário, uma visão de Minhas tarefas. A chave `tarefas-todas` não muda.
+  { key: 'tarefas-todas', label: 'Visão geral', href: '/dia-a-dia', icon: 'LayoutDashboard', permission: 'tarefas.ver', secao: 'dia', modulo: 'trabalho' },
+  // A produção tirou Pendências do menu em 19/10; o roteiro da versão final a mantém
+  // (Atividade · Minhas tarefas · Decisões), decisão do Rodrigo.
   { key: 'caixa', label: 'Pendências', href: '/caixa', icon: 'Inbox', permission: 'dashboard.ver', secao: 'dia' },
   { key: 'atendimento', label: 'Aprovações', href: '/atendimento', icon: 'MessagesSquare', permission: 'aprovacoes.ver', secao: 'dia', estado: 'parcial', parcial: 'a fila de aprovação funciona; a caixa de entrada por WhatsApp ainda não está disponível' },
   { key: 'agenda', label: 'Agenda', href: '/agenda', icon: 'CalendarDays', permission: 'dashboard.ver', secao: 'dia' },
-  { key: 'console', label: 'Visão geral da empresa', href: '/painel', icon: 'SquareTerminal', permission: 'dashboard.ver', secao: 'dia' },
+  { key: 'console', label: 'Painel geral da empresa', href: '/painel', icon: 'SquareTerminal', permission: 'dashboard.ver', secao: 'dia' },
 
   { key: 'contexto', label: 'Conhecimento da empresa', href: '/contexto', icon: 'Network', permission: 'obsidian.ver', secao: 'empresa', estado: 'parcial', parcial: 'o mapa e a página de Marca estão disponíveis; a aba Identidade ainda não está disponível' },
   { key: 'marca', label: 'Marca e pilares', href: '/contexto/marca', icon: 'Fingerprint', permission: 'pauta.ver', secao: 'empresa', modulo: 'pauta', pai: 'contexto' },
@@ -157,8 +164,10 @@ export const NAV: NavItem[] = [
   // As atas do vault e as coladas na tela, e as sugestões de tarefa que cada uma rende.
   { key: 'trabalho-atas', label: 'Atas', href: '/trabalho/atas', icon: 'NotebookText', permission: 'tarefas.ver', secao: 'trabalho', modulo: 'trabalho', pai: 'trabalho' },
   { key: 'conteudo', label: 'Temas do ClickUp', href: '/conteudo', icon: 'FileText', permission: 'dashboard.ver', secao: 'trabalho', modulo: 'conteudo', oculto: true },
-  { key: 'marketing-ideias', label: 'Banco de ideias', href: '/marketing/ideias', icon: 'Lightbulb', permission: 'pauta.ver', secao: 'trabalho', modulo: 'pauta', oculto: true },
-  { key: 'marketing-estrategia', label: 'Estratégia do mês', href: '/marketing/estrategia', icon: 'Compass', permission: 'pauta.ver', secao: 'trabalho', modulo: 'pauta', oculto: true },
+  // Fora do foco vale a forma da produção: Banco de ideias e Estratégia do mês moram
+  // no Motor de Marketing (enxugamento.md). A nossa só os tirava do Trabalho.
+  { key: 'marketing-ideias', label: 'Banco de ideias', href: '/marketing/ideias', icon: 'Lightbulb', permission: 'pauta.ver', secao: 'conteudo', modulo: 'pauta' },
+  { key: 'marketing-estrategia', label: 'Estratégia do mês', href: '/marketing/estrategia', icon: 'Compass', permission: 'pauta.ver', secao: 'conteudo', modulo: 'pauta' },
 
   { key: 'pauta', label: 'Produção de conteúdo', href: '/pauta', icon: 'CalendarClock', permission: 'pauta.ver', secao: 'conteudo', modulo: 'pauta' },
   { key: 'referencias', label: 'Referências', href: '/referencias', icon: 'Library', permission: 'pauta.ver', secao: 'conteudo', modulo: 'pauta', pai: 'pauta' },
@@ -169,27 +178,33 @@ export const NAV: NavItem[] = [
   { key: 'bio', label: 'Página de links', href: '/bio', icon: 'Link2', permission: 'bio.ver', secao: 'conteudo', modulo: 'bio' },
   { key: 'campanhas', label: 'Campanhas', href: '/campanhas', icon: 'Megaphone', permission: 'campanhas.ver', secao: 'conteudo', modulo: 'campanhas' },
   { key: 'pixels', label: 'Eventos do site', href: '/pixels', icon: 'Activity', permission: 'dashboard.ver', secao: 'conteudo', modulo: 'pixels' },
+  // A aba Tarefas de cada área é Dia a dia › Tarefas filtrada pela área: a mesma tarefa, nunca cópia (19/10/2026).
+  { key: 'marketing-tarefas', label: 'Tarefas', href: '/marketing/tarefas', icon: 'CheckSquare', permission: 'tarefas.ver', secao: 'conteudo', modulo: 'trabalho' },
 
-  // 18/10/2026 (rodada do painel P0): Leads e Funil de vendas, o MVP de antes, saem do
-  // menu. Tudo passa pelo cockpit (Decisões do comercial e Funil vivo). Ocultos, vivos.
-  { key: 'leads', label: 'Leads', href: '/leads', icon: 'UserPlus', permission: 'leads.ver', secao: 'comercial', modulo: 'leads', oculto: true },
-  { key: 'funil', label: 'Funil de vendas', href: '/funil', icon: 'Filter', permission: 'dashboard.ver', secao: 'comercial', modulo: 'leads', pai: 'leads', oculto: true },
-  // Rodada do trabalho T6 (19/10/2026): o Motor Comercial são cinco itens soltos,
-  // sem pai, nesta ordem. O Funil vivo é a entrada (`/comercial` redireciona para
-  // ele); as decisões do comercial passaram a Pendências (`/caixa?aba=decisoes`).
+  // Versão final (19/10/2026, roteiro F2): Painel geral · Funil vivo · Propostas ·
+  // Lista de leads · Contratos vivos · Simulador de WhatsApp · Torre das automações ·
+  // Relatório da semana. O Painel geral é o dash do Lucas (layout dele) lendo os
+  // dados do cockpit; Propostas lê as do serviço da ROOT e as publicadas pela sala;
+  // a Lista de leads lê a tabela `Lead`. Saem do Comercial (ocultos, vivos): o funil
+  // antigo, Clientes e Tarefas (duplicados do Funil vivo, da Implantação e do Trabalho).
+  { key: 'comercial-painel', label: 'Painel geral', href: '/comercial', icon: 'TrendingUp', permission: 'leads.ver', secao: 'comercial', modulo: 'leads' },
   { key: 'comercial-funil', label: 'Funil vivo', href: '/comercial/funil', icon: 'Columns3', permission: 'leads.ver', secao: 'comercial', modulo: 'leads' },
+  { key: 'propostas', label: 'Propostas', href: '/propostas', icon: 'Handshake', permission: 'leads.ver', secao: 'comercial', modulo: 'leads' },
+  { key: 'leads', label: 'Lista de leads', href: '/leads', icon: 'UserPlus', permission: 'leads.ver', secao: 'comercial', modulo: 'leads' },
   { key: 'comercial-contratos', label: 'Contratos vivos', href: '/comercial/contratos', icon: 'FileSignature', permission: 'leads.ver', secao: 'comercial', modulo: 'leads' },
   // Cockpit do lead (lane B, 13/10/2026): os celulares simulados do lead e da mesa, provedor `simulado`.
   { key: 'comercial-simulador', label: 'Simulador de WhatsApp', href: '/comercial/simulador', icon: 'Smartphone', permission: 'leads.ver', secao: 'comercial', modulo: 'leads' },
   { key: 'comercial-torre', label: 'Torre das automações', href: '/comercial/torre', icon: 'RadioTower', permission: 'leads.ver', secao: 'comercial', modulo: 'leads' },
   { key: 'comercial-relatorio', label: 'Relatório da semana', href: '/comercial/relatorio', icon: 'FileBarChart', permission: 'leads.ver', secao: 'comercial', modulo: 'leads' },
-  // A fila de decisões (lane C, 13/10/2026) sai do menu em 19/10/2026: oculta, viva.
-  // O item segue dono de `/comercial` (que redireciona para o Funil vivo) e, pelo
-  // prefixo, de `/comercial/decisoes` (a tela antiga) e `/comercial/lead/...`: é
-  // ele que mantém essas rotas sob o módulo `leads`. A chave não muda.
-  { key: 'comercial-decisoes', label: 'Decisões do comercial', href: '/comercial', icon: 'Inbox', permission: 'leads.ver', secao: 'comercial', modulo: 'leads', oculto: true },
+  { key: 'funil', label: 'Funil de vendas', href: '/funil', icon: 'Filter', permission: 'dashboard.ver', secao: 'comercial', modulo: 'leads', pai: 'leads', oculto: true },
+  { key: 'clientes', label: 'Clientes', href: '/clientes', icon: 'HeartHandshake', permission: 'tarefas.ver', secao: 'comercial', modulo: 'trabalho', oculto: true },
+  { key: 'comercial-tarefas', label: 'Tarefas', href: '/comercial/tarefas', icon: 'CheckSquare', permission: 'tarefas.ver', secao: 'comercial', modulo: 'trabalho', oculto: true },
+  // A fila de decisões (lane C, 13/10/2026) sai do menu em 19/10/2026: oculta, viva,
+  // em `/comercial/decisoes` (`/comercial` voltou a ser o Painel geral).
+  { key: 'comercial-decisoes', label: 'Decisões do comercial', href: '/comercial/decisoes', icon: 'Inbox', permission: 'leads.ver', secao: 'comercial', modulo: 'leads', oculto: true },
 
   { key: 'financeiro', label: 'Financeiro', href: '/financeiro', icon: 'Wallet', permission: 'financeiro.ver', secao: 'financeiro', modulo: 'financeiro' },
+  { key: 'financeiro-tarefas', label: 'Tarefas', href: '/financeiro/tarefas', icon: 'CheckSquare', permission: 'tarefas.ver', secao: 'financeiro', modulo: 'trabalho' },
 
   { key: 'agentes', label: 'Agentes de IA', href: '/agentes', icon: 'Users', permission: 'mcp.ver', secao: 'automacoes' },
   { key: 'rotinas', label: 'Rotinas automáticas', href: '/rotinas', icon: 'Repeat', permission: 'automacoes.ver', secao: 'automacoes' },
@@ -204,6 +219,8 @@ export const NAV: NavItem[] = [
   { key: 'ferramentas', label: 'Ferramentas disponíveis', href: '/ferramentas', icon: 'Wrench', permission: 'mcp.ver', secao: 'controle', estado: 'parcial', parcial: 'o catálogo completo de ferramentas ainda não está disponível nesta tela' },
   { key: 'conexoes', label: 'Integrações', href: '/conexoes', icon: 'Cable', permission: 'dashboard.ver', secao: 'controle' },
   { key: 'regua', label: 'Regras e permissões', href: '/regua', icon: 'Shield', permission: 'mcp.ver', secao: 'controle' },
+  // Senhas, dados e documentos dos sócios, atrás de uma senha própria. Fora do alcance da IA.
+  { key: 'cofre', label: 'Cofre', href: '/cofre', icon: 'LockKeyhole', permission: 'cofre.ver', secao: 'controle' },
   { key: 'assinatura', label: 'Plano e assinatura', href: '/assinatura', icon: 'CreditCard', permission: 'dashboard.ver', secao: 'controle', oculto: true },
 
   { key: 'rastro', label: 'Registro de ações', href: '/rastro', icon: 'Footprints', permission: 'auditoria.ver', secao: 'registros' },
@@ -225,19 +242,19 @@ export const ROTAS_ABSORVIDAS: { href: string; destino: string; porque: string }
   { href: '/google', destino: '/conexoes', porque: 'gerencia o OAuth do Google — é uma conexão; segue viva como destino do callback' },
   // 18/10/2026, rodada do painel P0: itens OCULTOS do NAV (continuam donos da rota e
   // do módulo). Apagar de vez é decisão do Pedro (ROOT-10, MK7-telas-repetidas §3.1).
-  { href: '/leads', destino: '/comercial/funil', porque: 'o cockpit absorve o MVP: o Funil vivo é a entrada dos leads; a tela segue viva' },
   { href: '/funil', destino: '/comercial/funil', porque: 'o cockpit absorve o MVP: o Funil vivo substitui o funil de antes; a tela segue viva' },
   { href: '/conteudo', destino: '/trabalho', porque: 'cortada do menu por decisão de 18/10/2026; a tela (espelho dos Temas do ClickUp) segue viva' },
-  { href: '/marketing/ideias', destino: '/trabalho', porque: 'cortada do menu por decisão de 18/10/2026; o editor do banco de ideias segue vivo' },
-  { href: '/marketing/estrategia', destino: '/trabalho', porque: 'cortada do menu por decisão de 18/10/2026; o editor da estratégia do mês segue vivo' },
   // 18/10/2026, rodada do painel P2: a lista de tarefas virou a visão Lista do Trabalho.
   { href: '/tarefas', destino: '/trabalho', porque: 'quadro e lista viraram uma tela só em 18/10/2026; /tarefas abre a visão de lista' },
   // 19/10/2026, rodada do trabalho T6: a fila de decisões do comercial virou a aba
   // Decisões de Pendências. `/comercial` redireciona para o Funil vivo e a tela
   // antiga mora em `/comercial/decisoes`.
-  { href: '/comercial', destino: '/caixa', porque: 'as decisões do comercial passaram a Pendências em 19/10/2026; a tela segue viva' },
+  { href: '/comercial/decisoes', destino: '/caixa', porque: 'as decisões do comercial passaram a Pendências em 19/10/2026; a tela segue viva' },
   // 19/10/2026, rodada do trabalho T1: a implantação numa tela só.
   { href: '/onboarding', destino: '/trabalho/implantacao', porque: 'a implantação de clientes virou o kanban da lista Onboarding de cliente em 19/10/2026; /onboarding redireciona e o trilho é a aba do pop-up do cartão' },
+  // Versão final (19/10/2026): o que a produção criou e a versão final absorve.
+  { href: '/clientes', destino: '/trabalho/implantacao', porque: 'onboarding e sucesso do cliente são a Implantação e os Contratos vivos na versão final; a tela segue viva' },
+  { href: '/comercial/tarefas', destino: '/trabalho', porque: 'as tarefas do comercial estão no Trabalho (pasta Gestão) na versão final; a tela segue viva' },
 ];
 
 // Rotas de detalhe que NÃO entram no menu: herdam o módulo pai e são protegidas

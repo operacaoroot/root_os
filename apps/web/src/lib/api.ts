@@ -101,9 +101,25 @@ export function erroDaResposta(body: Record<string, unknown>, status: number): E
   return new ErroDaApi(texto, status, typeof body.error === 'string' ? body.error : null, detalhes);
 }
 
-async function handle<T>(res: Response): Promise<T> {
+type ObservadorDeSessao = (tokenRecusado: string) => void;
+const observadoresDeSessao = new Set<ObservadorDeSessao>();
+/** Tokens circulam apenas entre os helpers e o provider em memória. */
+export function observarSessaoRecusada(observar: ObservadorDeSessao): () => void {
+  observadoresDeSessao.add(observar);
+  return () => { observadoresDeSessao.delete(observar); };
+}
+function conferirRecusaDaSessao(status: number, body: Record<string, unknown>, path: string, token?: string | null) {
+  if (status !== 401 || !token || path.split('?')[0] === '/auth/login') return;
+  // Outras recusas 401 (senha de confirmação ou credencial de provedor) não
+  // invalidam a sessão ROOT. Estas mensagens são emitidas pelo JwtAuthGuard.
+  if (path.split('?')[0] !== '/auth/me' && !['Token inválido', 'Sem token', 'Sessão sem empresa'].includes(String(body.message ?? ''))) return;
+  for (const observar of observadoresDeSessao) observar(token);
+}
+
+async function handle<T>(res: Response, path: string, token?: string | null): Promise<T> {
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
+    conferirRecusaDaSessao(res.status, body as Record<string, unknown>, path, token);
     throw erroDaResposta(body as Record<string, unknown>, res.status);
   }
   return res.json();
@@ -113,7 +129,7 @@ export function apiGet<T>(path: string, token?: string | null): Promise<T> {
   return fetch(`${API_BASE}${path}`, {
     headers: token ? { Authorization: `Bearer ${token}` } : {},
     cache: 'no-store',
-  }).then((r) => handle<T>(r));
+  }).then((r) => handle<T>(r, path, token));
 }
 
 /**
@@ -127,6 +143,7 @@ export async function apiTexto(path: string, token?: string | null): Promise<str
   });
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
+    conferirRecusaDaSessao(res.status, body as Record<string, unknown>, path, token);
     throw erroDaResposta(body as Record<string, unknown>, res.status);
   }
   return res.text();
@@ -140,6 +157,7 @@ export async function apiBlob(path: string, token?: string | null): Promise<Blob
   });
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
+    conferirRecusaDaSessao(res.status, body as Record<string, unknown>, path, token);
     throw erroDaResposta(body as Record<string, unknown>, res.status);
   }
   return res.blob();
@@ -157,7 +175,7 @@ export function apiPost<T>(
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
     },
     body: JSON.stringify(body),
-  }).then((r) => handle<T>(r));
+  }).then((r) => handle<T>(r, path, token));
 }
 
 /**
@@ -176,7 +194,7 @@ export function apiUpload<T>(
     method: 'POST',
     headers: token ? { Authorization: `Bearer ${token}` } : {},
     body: form,
-  }).then((r) => handle<T>(r));
+  }).then((r) => handle<T>(r, path, token));
 }
 
 export function apiPatch<T>(
@@ -191,14 +209,14 @@ export function apiPatch<T>(
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
     },
     body: JSON.stringify(body),
-  }).then((r) => handle<T>(r));
+  }).then((r) => handle<T>(r, path, token));
 }
 
 export function apiDelete<T>(path: string, token?: string | null): Promise<T> {
   return fetch(`${API_BASE}${path}`, {
     method: 'DELETE',
     headers: token ? { Authorization: `Bearer ${token}` } : {},
-  }).then((r) => handle<T>(r));
+  }).then((r) => handle<T>(r, path, token));
 }
 
 export function apiPut<T>(
@@ -213,7 +231,7 @@ export function apiPut<T>(
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
     },
     body: JSON.stringify(body),
-  }).then((r) => handle<T>(r));
+  }).then((r) => handle<T>(r, path, token));
 }
 
 /**
@@ -248,7 +266,8 @@ export function apiStream<E>(
     });
     if (!res.ok || !res.body) {
       const erro = await res.json().catch(() => ({}));
-      throw new Error(erro.message || erro.error || `Erro ${res.status}`);
+      conferirRecusaDaSessao(res.status, erro, path, token);
+      throw erroDaResposta(erro, res.status);
     }
 
     const leitor = res.body.getReader();

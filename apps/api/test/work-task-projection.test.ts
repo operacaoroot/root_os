@@ -9,7 +9,8 @@ function linha(n: number, orgId = 'root', dueDate = new Date('2026-09-30T12:00:0
   return {
     id: `t-${String(n).padStart(4, '0')}`, orgId, listId: 'lista', title: `Tarefa ${n}`,
     statusId: 'status', status: { name: 'A fazer', type: 'open', color: '#fff' },
-    priority: 'normal', assignee: null, agenteId: null, agenteEm: null, statusDesde: null,
+    priority: 'normal', assignee: null, assigneeUserId: null, assigneeUser: null,
+    updatedAt: new Date('2026-09-01T00:00:00Z'), agenteId: null, agenteEm: null, statusDesde: null,
     dueDate, startDate: null, parentId: null, externalId: null, externalUrl: null,
     archived: false, order: 0, createdAt: new Date('2026-09-01T00:00:00Z'),
     tags: [], values: [], _count: { subtasks: 0, comments: 0 },

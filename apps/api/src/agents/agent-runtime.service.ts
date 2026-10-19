@@ -1,4 +1,5 @@
-import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
+import type { IdentidadeIndiceRuntime } from '../onboarding/indice-protegido';
+import { BadRequestException, ForbiddenException, Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import {
   ActorType,
   Prisma,
@@ -37,6 +38,7 @@ import { EventLogService } from '../gateway/event-log.service';
 import { type MotivoDeHeartbeat, heartbeatLigado, pedidoDoHeartbeat } from './heartbeat';
 import { ORDEM_DOS_NIVEIS, type CapacidadeCatalogo, type Nivel } from '@mktos/policy';
 import { montarSop } from './sop';
+import { REF_PROCEDIMENTO_LOCAL } from './procedimento-do-agente.service';
 import { paraFerramentas, paraModelo, resumirArgs, resumirResultado } from './tool-adapter';
 
 export interface ExecutarPedido {
@@ -364,6 +366,13 @@ export class AgentRuntime {
   async executar(p: ExecutarPedido): Promise<SessionResumo> {
     const inicio = Date.now();
     const emitir = p.onEvento ?? (() => {});
+    // O procedimento local tem fontes e autorização próprias; não entra no histórico legado.
+    if (p.agentSlug.startsWith('procedimento-')) throw new BadRequestException('Este agente usa o procedimento local, com modelo e fontes próprios.');
+    if (p.canalRef?.startsWith(REF_PROCEDIMENTO_LOCAL)) throw new BadRequestException('Use o procedimento local para conferir esta execução.');
+    if (p.sessionId) {
+      const anterior = await this.prisma.session.findFirst({ where: { id: p.sessionId, orgId: p.orgId }, select: { canalRef: true } });
+      if (anterior?.canalRef?.startsWith(REF_PROCEDIMENTO_LOCAL)) throw new BadRequestException('Use o procedimento local para conferir esta execução.');
+    }
 
     const agent = await this.prisma.agent.findFirst({
       where: { orgId: p.orgId, slug: p.agentSlug },
@@ -478,7 +487,17 @@ export class AgentRuntime {
     inicio: number,
   ): Promise<SessionResumo> {
     // 2. O contexto que entra junto — bloco 02 do traço.
-    const montado = await this.contexto.montar(p.orgId, p.pedido, agent);
+    let leitura: IdentidadeIndiceRuntime | undefined;
+    if (p.solicitanteId) {
+      if (ctxExec.orgId !== p.orgId || ctxExec.actorType !== ActorType.ai || ctxExec.actorId !== p.solicitanteId
+        || ctxExec.agentSlug !== agent.slug || ctxExec.correlationId !== sessionId)
+        throw new ForbiddenException('Acesso insuficiente.');
+      leitura = { tipo: 'runtime_com_solicitante', orgId: p.orgId, solicitanteId: p.solicitanteId,
+        contextoExecucao: { actorType: 'ai', actorId: ctxExec.actorId,
+          agentSlug: ctxExec.agentSlug, correlationId: ctxExec.correlationId } };
+    }
+    // O solicitante vem do pedido do servidor; a identidade AI da execução não muda.
+    const montado = await this.contexto.montar(p.orgId, p.pedido, agent, leitura ? { leitura } : {});
     const { blocos, fontes } = montado;
     /*
      * A SEGUNDA PORTA DA MARCA: o construtor de contexto acende a dele quando

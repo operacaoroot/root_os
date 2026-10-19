@@ -2,7 +2,11 @@ import { Module } from '@nestjs/common';
 import { AuthModule } from '../auth/auth.module';
 import { AcessoDeSuporteService } from './acesso-de-suporte.service';
 import { ConsoleDaPlataformaService } from './console.service';
+import { OperacaoController } from './operacao.controller';
+import { OperacaoService } from './operacao.service';
 import { PlataformaController, SuporteDoClienteController } from './plataforma.controller';
+import { PropostasController } from './propostas.controller';
+import { PropostasService } from './propostas.service';
 import { SessaoDaPlataformaGuard } from './sessao-da-plataforma.guard';
 
 /*
@@ -25,7 +29,13 @@ import { SessaoDaPlataformaGuard } from './sessao-da-plataforma.guard';
  */
 @Module({
   imports: [AuthModule],
-  controllers: [PlataformaController, SuporteDoClienteController],
-  providers: [ConsoleDaPlataformaService, AcessoDeSuporteService, SessaoDaPlataformaGuard],
+  controllers: [PlataformaController, SuporteDoClienteController, PropostasController, OperacaoController],
+  providers: [
+    ConsoleDaPlataformaService,
+    AcessoDeSuporteService,
+    SessaoDaPlataformaGuard,
+    PropostasService,
+    OperacaoService,
+  ],
 })
 export class PlataformaModule {}

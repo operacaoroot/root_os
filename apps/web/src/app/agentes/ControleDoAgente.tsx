@@ -1,7 +1,9 @@
 'use client';
 
-import { useState } from 'react';
-import { apiPost } from '@/lib/api';
+import { useEffect, useRef, useState } from 'react';
+import { apiGet, apiPost } from '@/lib/api';
+import { AgentEstadoHumanoPainelSchema, AgentEstadoHumanoSchema, type AgentEstadoHumanoPainel } from '@mktos/shared';
+import { entradaDaAgenda, dadoDaAgenda, mesmoValorDaAgenda, useOperacoesLocaisDaAgenda, PedidosLocaisDaAgenda, EscolhaDaAgendaAlterada, ConferenciaDaAgendaInvalida, type PistaDaOperacaoLocal } from './AgendaManual';
 import {
   AVISO_DA_INVOCACAO,
   EXPLICA_O_ESTADO,
@@ -91,199 +93,74 @@ export function SelosDoAgente({ agente }: { agente: AgenteComEstado }) {
 interface Props {
   agente: AgenteComEstado;
   token: string | null;
-  /** `admin.usuarios` — a mesma chave que o interruptor de conector pede. */
+  pessoaId: string;
   podeComandar: boolean;
-  /** A dupla que a API exige para fazer um agente rodar. */
   podeInvocar: boolean;
   aoMudar: () => void;
 }
 
-export function ControleDoAgente({ agente, token, podeComandar, podeInvocar, aoMudar }: Props) {
-  const [abrindo, setAbrindo] = useState<BotaoDeEstado | null>(null);
-  const [motivo, setMotivo] = useState('');
-  const [emCurso, setEmCurso] = useState<string | null>(null);
-  const [erro, setErro] = useState<string | null>(null);
-  /*
-   * O DESFECHO DA INVOCAÇÃO, DITO COMO ELE FOI.
-   *
-   * A rota devolve o resumo da sessão, com `status` — que pode ser `recusada`
-   * (agente pausado, teto de custo) ou `retida`. Anunciar "invocado" em cima de
-   * qualquer um dos dois é o defeito que a tela do Google cometeu com o 200 de
-   * retenção. Aqui o que aparece é o status e o motivo que a API mandou.
-   */
+export function ControleDoAgente({ agente, token, pessoaId, podeComandar, podeInvocar, aoMudar }: Props) {
+  const op = useOperacoesLocaisDaAgenda({ token, pessoaId, slug: agente.slug });
+  const [escolhido, setEscolhido] = useState<AgentEstadoHumanoPainel | null>(null), [atual, setAtual] = useState<AgentEstadoHumanoPainel | null>(null);
+  const [abrindo, setAbrindo] = useState<BotaoDeEstado | null>(null), [motivo, setMotivo] = useState('');
   const [desfecho, setDesfecho] = useState<{ status: string; texto: string | null } | null>(null);
-
-  const botoes = botoesDeEstado(agente.transicoes);
-
-  async function mandar(botao: BotaoDeEstado, motivoTexto: string) {
-    setEmCurso(botao.rota);
-    setErro(null);
-    try {
-      await apiPost(
-        `/agents/${agente.slug}/${botao.rota}`,
-        { motivo: motivoTexto.trim() || undefined },
-        token,
-      );
-      setAbrindo(null);
-      setMotivo('');
-      aoMudar();
-    } catch (e) {
-      setErro((e as Error).message);
-    } finally {
-      setEmCurso(null);
-    }
+  const draftRevision = useRef(0);
+  function limpar() { setEscolhido(null); setAtual(null); setAbrindo(null); setMotivo(''); setDesfecho(null); draftRevision.current++; }
+  useEffect(limpar, [token, pessoaId, agente.slug]);
+  useEffect(() => { if (op.privada || !podeComandar) { setEscolhido(null); setAtual(null); setAbrindo(null); setMotivo(''); setDesfecho(null); draftRevision.current++; } }, [op.privada, podeComandar]);
+  async function lerAtual(c: number) {
+    const raw = await apiGet<unknown>(`/agents/${encodeURIComponent(agente.slug)}/estado-humano`, token);
+    if (!op.vigente(c)) return null;
+    const r = dadoDaAgenda(AgentEstadoHumanoPainelSchema.safeParse(raw)); op.adotarEscopo(r.escopo); setAtual(r); return r;
   }
-
+  useEffect(() => {
+    if (!token || !podeComandar) return;
+    void op.agir(async c => { const r = await lerAtual(c); if (r && op.vigente(c)) setEscolhido(r); });
+    // GET declarativo inicial; nenhum comando é enviado ao montar.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [token, pessoaId, agente.slug, podeComandar]);
+  const botoes = escolhido?.autoridade.comandar && !op.privada ? botoesDeEstado(escolhido.transicoes) : [];
+  async function mandar(b: BotaoDeEstado, texto: string) {
+    const base = escolhido, revision = draftRevision.current;
+    if (!podeComandar || !base || !base.autoridade.comandar || op.privada || op.storageBloqueado || op.pendente('agente_estado', null)) return;
+    await op.agir(async c => {
+      const recente = await lerAtual(c); if (!recente || !op.vigente(c) || draftRevision.current !== revision) return;
+      if (!recente.autoridade.comandar || !recente.transicoes.includes(b.destino) || recente.marca !== base.marca || !mesmoValorDaAgenda(recente.base, base.base)) throw new EscolhaDaAgendaAlterada('O estado do agente mudou. Seu motivo foi mantido; confira a decisão atual antes deste comando.');
+      const entrada = entradaDaAgenda(AgentEstadoHumanoSchema.safeParse({ requestId: crypto.randomUUID(), marcaEsperada: base.marca, motivo: texto.trim() || null }));
+      await op.enviar({ pista: { ...base.escopo, tipo: 'agente_estado', agendaId: null, requestId: entrada.requestId }, caminho: `/agents/${encodeURIComponent(agente.slug)}/${b.rota}`, metodo: 'POST', expectativa: { tipo: 'agente_estado', entrada, anterior: base, destino: b.destino } }, c);
+      if (op.vigente(c)) { setAbrindo(null); aoMudar(); }
+    });
+  }
+  async function reenviar(p: PistaDaOperacaoLocal) {
+    const causa = op.causa(p.requestId); if (!causa || causa.expectativa.tipo !== 'agente_estado' || !podeComandar || op.privada) return;
+    const expectativa = causa.expectativa;
+    await op.agir(async c => {
+      const r = await lerAtual(c); if (!r || !op.vigente(c)) return;
+      if (!r.autoridade.comandar || !r.transicoes.includes(expectativa.destino) || r.marca !== expectativa.entrada.marcaEsperada || !mesmoValorDaAgenda(r.base, expectativa.anterior.base)) throw new EscolhaDaAgendaAlterada('A decisão original mudou. Confira o pedido original; a consulta não autorizou um reenvio.');
+      await op.enviar(causa, c); if (op.vigente(c)) aoMudar();
+    });
+  }
   async function invocar() {
-    setEmCurso('invocar');
-    setErro(null);
-    setDesfecho(null);
-    try {
-      const r = await apiPost<{ status: string; motivo?: string | null; resposta?: string }>(
-        `/agents/${agente.slug}/invocar`,
-        {},
-        token,
-      );
-      setDesfecho({ status: r.status, texto: r.motivo ?? r.resposta ?? null });
-      aoMudar();
-    } catch (e) {
-      setErro((e as Error).message);
-    } finally {
-      setEmCurso(null);
-    }
+    if (!podeInvocar || op.privada) return;
+    await op.agir(async c => {
+      setDesfecho(null);
+      const r = await apiPost<{ status: string; motivo?: string | null; resposta?: string }>(`/agents/${encodeURIComponent(agente.slug)}/invocar`, {}, token);
+      if (!op.vigente(c)) return;
+      if (!r || typeof r.status !== 'string' || r.motivo != null && typeof r.motivo !== 'string' || r.resposta != null && typeof r.resposta !== 'string') throw new ConferenciaDaAgendaInvalida();
+      setDesfecho({ status: r.status, texto: r.motivo ?? r.resposta ?? null }); aoMudar();
+    });
   }
-
-  return (
-    <div className="mt-3 space-y-2 border-t border-border pt-3">
-      <div className="flex flex-wrap items-center gap-2">
-        <SelosDoAgente agente={agente} />
-        {/* A PROCEDÊNCIA DA DECISÃO. Sem ela, "pausado" é um agente parado que
-            ninguém sabe se pode religar. */}
-        {agente.estadoEm && (
-          <span className="font-os-mono text-[9.5px] text-dim">
-            desde {new Date(agente.estadoEm).toLocaleString('pt-BR')}
-            {agente.estadoPor ? ` · por ${agente.estadoPor}` : ''}
-          </span>
-        )}
-      </div>
-
-      {agente.estadoMotivo && (
-        <p className="font-os-mono text-[9.5px] leading-[1.6] text-muted">
-          motivo: {agente.estadoMotivo}
-        </p>
-      )}
-
-      {erro && (
-        <p role="alert" className="font-os-mono text-[9.5px] leading-[1.6] text-bad">
-          {erro}
-        </p>
-      )}
-
-      {desfecho && (
-        <p className="font-os-mono text-[9.5px] leading-[1.6] text-muted">
-          passagem: <span className="text-text">{desfecho.status}</span>
-          {desfecho.texto ? ` — ${desfecho.texto}` : ''}
-        </p>
-      )}
-
-      {/* O PEDIDO DE MOTIVO, em cima do botão que o exige. Duas etapas de
-          propósito: encerrar é definitivo, e um clique só seria barato demais
-          para uma decisão que não volta. */}
-      {abrindo ? (
-        <div className="space-y-2 rounded-root border border-bad/40 bg-bad/5 p-2">
-          <p className="text-[11px] leading-[1.5] text-muted">{abrindo.explica}</p>
-          <label className="block text-[10px] text-dim" htmlFor={`motivo-${agente.slug}`}>
-            Motivo (obrigatório — vai para o rastro)
-          </label>
-          <input
-            id={`motivo-${agente.slug}`}
-            autoFocus
-            value={motivo}
-            onChange={(e) => setMotivo(e.target.value)}
-            maxLength={500}
-            placeholder="ex.: trabalho absorvido pela rotina de pauta"
-            className="w-full rounded border border-border bg-bg px-2 py-1 font-os-mono text-[10px] text-text outline-none focus:border-brand"
-          />
-          <div className="flex gap-2">
-            <button
-              type="button"
-              disabled={!motivo.trim() || emCurso === abrindo.rota}
-              onClick={() => mandar(abrindo, motivo)}
-              className="rounded-root bg-bad px-2 py-1 font-os-mono text-[9.5px] uppercase tracking-[0.1em] text-ink disabled:opacity-50"
-            >
-              {emCurso === abrindo.rota ? 'encerrando…' : `${abrindo.rotulo} de vez`}
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                setAbrindo(null);
-                setMotivo('');
-              }}
-              className="font-os-mono text-[9.5px] uppercase tracking-[0.1em] text-muted"
-            >
-              cancelar
-            </button>
-          </div>
-        </div>
-      ) : (
-        <div className="flex flex-wrap items-center gap-2">
-          {podeComandar &&
-            botoes.map((b) => (
-              <button
-                key={b.rota}
-                type="button"
-                title={b.explica}
-                disabled={emCurso !== null}
-                onClick={() => (b.pedeMotivo ? setAbrindo(b) : mandar(b, ''))}
-                className={`rounded-root border px-2 py-1 font-os-mono text-[9.5px] uppercase tracking-[0.1em] disabled:opacity-50 ${
-                  b.tom === 'erro'
-                    ? 'border-bad/50 text-bad hover:bg-bad/10'
-                    : b.tom === 'atencao'
-                      ? 'border-warn/50 text-warn hover:bg-warn/10'
-                      : 'border-good/50 text-good hover:bg-good/10'
-                }`}
-              >
-                {emCurso === b.rota ? '…' : b.rotulo}
-              </button>
-            ))}
-
-          {/* INVOCAR só aparece para quem pode fazer o agente rodar, e só
-              enquanto ele PODE rodar: oferecer o botão a um agente encerrado
-              seria prometer uma passagem que a API recusa. */}
-          {podeInvocar && agente.estado === 'ativo' && (
-            <button
-              type="button"
-              title={AVISO_DA_INVOCACAO}
-              disabled={emCurso !== null}
-              onClick={invocar}
-              className="rounded-root bg-brand px-2 py-1 font-os-mono text-[9.5px] uppercase tracking-[0.1em] text-ink disabled:opacity-50"
-            >
-              {emCurso === 'invocar' ? 'invocando…' : 'Invocar'}
-            </button>
-          )}
-        </div>
-      )}
-
-      {/* O QUE CADA BOTÃO FAZ, escrito — não só no `title`, que não existe no
-          celular. A frase da invocação inclui a RETENÇÃO: ela é o que a pessoa
-          precisa saber ANTES do clique. */}
-      {!abrindo && podeComandar && botoes.length > 0 && (
-        <ul className="space-y-[2px] font-os-mono text-[9px] leading-[1.6] text-dim">
-          {botoes.map((b) => (
-            <li key={b.rota}>
-              <span className="text-muted">{b.rotulo.toLowerCase()}</span> — {b.explica}
-            </li>
-          ))}
-        </ul>
-      )}
-      {!abrindo && podeInvocar && agente.estado === 'ativo' && (
-        <p className="font-os-mono text-[9px] leading-[1.6] text-dim">{AVISO_DA_INVOCACAO}</p>
-      )}
-      {agente.estado === 'encerrado' && (
-        <p className="font-os-mono text-[9px] leading-[1.6] text-dim">
-          Encerrado não volta. O histórico dele segue em Sessões e no Rastro.
-        </p>
-      )}
-    </div>
-  );
+  return <div className="mt-3 space-y-2 border-t border-border pt-3">
+    {!op.privada && <><div className="flex flex-wrap items-center gap-2"><SelosDoAgente agente={agente} />{agente.estadoEm && <span className="font-os-mono text-[9.5px] text-dim">desde {new Date(agente.estadoEm).toLocaleString('pt-BR')}{agente.estadoPor ? ` · por ${agente.estadoPor}` : ''}</span>}</div>{agente.estadoMotivo && <p className="text-sm text-muted">Motivo registrado: {agente.estadoMotivo}</p>}</>}
+    {op.erro && <p role="alert" className="text-sm text-bad">{op.erro}</p>}
+    {podeComandar && <button type="button" disabled={op.ocupado} className="text-sm text-brand disabled:opacity-50" onClick={() => void op.agir(async c => { setAtual(null); await lerAtual(c); })}>Conferir decisão e acesso atuais</button>}
+    {!op.privada && escolhido && <p className="text-sm text-muted">Decisão escolhida: {escolhido.base.estado} · conferida em {new Date(escolhido.autoridade.verificadaEm).toLocaleString('pt-BR')}.</p>}
+    {!op.privada && atual && (!escolhido || atual.marca !== escolhido.marca) && <div className="space-y-2"><p className="text-sm">Decisão atual: {atual.base.estado}. O motivo escrito foi mantido.</p><button type="button" className="text-sm text-brand disabled:opacity-50" disabled={op.ocupado || op.pendente('agente_estado', null)} onClick={() => { if (op.ocupado || op.pendente('agente_estado', null)) return; draftRevision.current++; setEscolhido(atual); setAbrindo(null); }}>Usar decisão atual para o próximo comando</button></div>}
+    {!op.privada && desfecho && <p className="text-sm text-muted">Passagem geral: <span className="text-text">{desfecho.status}</span>{desfecho.texto ? ` — ${desfecho.texto}` : ''}</p>}
+    {!op.privada && abrindo ? <div className="space-y-2 rounded-root border border-bad/40 bg-bad/5 p-2"><p className="text-sm text-muted">{abrindo.explica}</p><label className="block text-sm" htmlFor={`motivo-${agente.slug}`}>Motivo obrigatório</label><input id={`motivo-${agente.slug}`} autoFocus value={motivo} disabled={op.ocupado} onChange={e => { draftRevision.current++; setMotivo(e.target.value); }} maxLength={500} className="w-full rounded border border-border bg-bg px-2 py-1 text-sm" /><div className="flex gap-2"><button type="button" disabled={!motivo.trim() || op.ocupado || op.storageBloqueado || op.pendente('agente_estado', null)} onClick={() => void mandar(abrindo, motivo)} className="rounded-root bg-bad px-2 py-1 text-sm text-ink disabled:opacity-50">Confirmar encerramento</button><button type="button" disabled={op.ocupado} onClick={() => setAbrindo(null)} className="text-sm text-muted">Voltar sem enviar</button></div></div> : !op.privada && <div className="flex flex-wrap items-center gap-2">{podeComandar && botoes.map(b => <button key={b.rota} type="button" title={b.explica} disabled={op.ocupado || op.storageBloqueado || op.pendente('agente_estado', null)} onClick={() => b.pedeMotivo ? setAbrindo(b) : void mandar(b, '')} className={`rounded-root border px-2 py-1 text-sm disabled:opacity-50 ${b.tom === 'erro' ? 'border-bad/50 text-bad' : b.tom === 'atencao' ? 'border-warn/50 text-warn' : 'border-good/50 text-good'}`}>{b.rotulo}</button>)}{podeInvocar && agente.estado === 'ativo' && <button type="button" title={AVISO_DA_INVOCACAO} disabled={op.ocupado} onClick={() => void invocar()} className="rounded-root bg-brand px-2 py-1 text-sm text-ink disabled:opacity-50">Invocar</button>}</div>}
+    {!op.privada && !abrindo && podeComandar && botoes.length > 0 && <ul className="space-y-1 text-xs text-muted">{botoes.map(b => <li key={b.rota}>{b.rotulo}: {b.explica}</li>)}</ul>}
+    {!op.privada && !abrindo && podeInvocar && agente.estado === 'ativo' && <p className="text-xs text-muted">{AVISO_DA_INVOCACAO}</p>}
+    {!op.privada && agente.estado === 'encerrado' && <p className="text-xs text-muted">Encerrado não volta. O histórico permanece em Sessões e no Rastro.</p>}
+    <PedidosLocaisDaAgenda operacoes={op} filtro={p => p.tipo === 'agente_estado'} reenviar={p => void reenviar(p)} />
+  </div>;
 }

@@ -1,3 +1,4 @@
+import { PautaGradeHumanoPainelSchema, PautaAutomacaoHumanoPainelSchema, type PautaGradeHumanoPainel, type PautaAutomacaoHumanoPainel, type PautaGradeSalvarHumanoInput, type PautaAutomacaoSalvarHumanoInput, type PautaEscritaHumanaResultado } from '@mktos/shared';
 import { BadRequestException, ConflictException, Injectable, Logger, NotFoundException, Optional, ServiceUnavailableException } from '@nestjs/common';
 import { ContextKind, ContextSource, type Prisma } from '@prisma/client';
 import {
@@ -136,6 +137,51 @@ export class AgendaService {
   ) {}
 
   // ---------------------------------------------------------------- a grade
+
+
+  async gradeHumana(orgId: string, actorId: string): Promise<PautaGradeHumanoPainel> {
+    const r = await this.memoria.lerDestinosHumanos(orgId, actorId, { tipo: 'grade' });
+    const n = r.notas.grade; const g = gradeDaNota(n);
+    const painel: PautaGradePainel = { grade: g.grade, texto: n && !n.arquivadoEm && n.body.trim() ? n.body : textoDaGrade(g.grade),
+      origem: g.origem, versao: g.versao, avisos: g.avisos };
+    const final = await this.memoria.reconferirDestinosHumanos(orgId, actorId, { tipo: 'grade' }, r);
+    return PautaGradeHumanoPainelSchema.parse({ contrato: 1, escopo: final.escopo, autoridade: final.autoridade,
+      observadoEm: final.observadoEm, painel, destinos: r.destinos });
+  }
+  async salvarGradeHumano(orgId: string, actorId: string, entrada: PautaGradeSalvarHumanoInput): Promise<PautaEscritaHumanaResultado> {
+    const { grade, avisos } = lerGradeDoTexto(entrada.texto);
+    if (avisos.length) throw new BadRequestException(avisos.join(' '));
+    if (!grade.slots.length) throw new BadRequestException('A grade precisa de pelo menos um slot (ex.: carrossel: seg, qua, sex 12:00).');
+    const r = await this.memoria.gravarPautaHumana(orgId, actorId, { acao: 'salvar_grade' }, entrada,
+      { kind: ContextKind.definicao, title: TITULO_DA_GRADE, body: textoDaGrade(grade), tags: ['pauta', 'agenda'], sourceType: ContextSource.operador,
+        sourceRef: 'pauta.agenda · grade', motivo: 'grade da semana de posts editada na aba Semana (MC16)' });
+    await this.audit.log({ orgId, actorId, action: 'pauta.agenda_grade', entityType: 'context_item', entityId: r.edicao.itemId,
+      after: { versao: r.edicao.versao, slots: grade.slots.length } }); return this.memoria.reconferirResultadoHumanoDoProdutor(orgId, actorId, r);
+  }
+  async automacaoHumana(orgId: string, actorId: string, qual: PautaAutomacao): Promise<PautaAutomacaoHumanoPainel> {
+    const r = await this.memoria.lerDestinosHumanos(orgId, actorId, { tipo: 'interruptor', qual });
+    const n = r.notas.interruptor; const podeLigar = qual !== 'dm' || pedeMensagensDoInstagram(process.env.INSTAGRAM_PEDIR_MENSAGENS);
+    const rotina = qual === 'publicacao' ? await rotinaDaPauta(this.prisma, orgId, PAUTA_TIPO_DA_ROTINA_DE_PUBLICACAO) : null;
+    const final = await this.memoria.reconferirDestinosHumanos(orgId, actorId, { tipo: 'interruptor', qual }, r);
+    return PautaAutomacaoHumanoPainelSchema.parse({ contrato: 1, escopo: final.escopo, autoridade: final.autoridade,
+      observadoEm: final.observadoEm, qual, destino: r.destinos.interruptor,
+      operacao: { ligada: notaDaAutomaticaLigada(n), origem: n && !n.arquivadoEm ? 'nota' : 'padrao', rotina, podeLigar,
+        impedimentos: podeLigar ? [] : ['A DM automática exige App Review e INSTAGRAM_PEDIR_MENSAGENS=sim.'] } });
+  }
+  async ligarAutomacaoHumano(orgId: string, actorId: string, qual: PautaAutomacao, entrada: PautaAutomacaoSalvarHumanoInput): Promise<PautaEscritaHumanaResultado> {
+    if (qual !== entrada.qualEsperado) throw new ConflictException('O interruptor mudou desde a leitura.');
+    if (qual === 'dm' && entrada.ligada && !pedeMensagensDoInstagram(process.env.INSTAGRAM_PEDIR_MENSAGENS)) {
+      throw new BadRequestException('A DM automática só liga depois do App Review da Meta: defina INSTAGRAM_PEDIR_MENSAGENS=sim no servidor e reconecte a conta de publicação.');
+    }
+    const rotulo = PAUTA_AUTOMACAO_ROTULO[qual];
+    const corpo = `${entrada.ligada ? 'ligada' : 'desligada'}\n\nA primeira linha liga (\`ligada\`) ou desliga a ${rotulo} da empresa. Mude pela aba Semana, que grava o motivo.`;
+    const motivo = `${rotulo} ${entrada.ligada ? 'ligada' : 'desligada'} na aba Semana: ${entrada.motivo}`;
+    const r = await this.memoria.gravarPautaHumana(orgId, actorId, { acao: 'mudar_interruptor', qual }, entrada,
+      { kind: ContextKind.definicao, title: TITULO_DA_AUTOMACAO[qual], body: corpo, tags: ['pauta', 'automacao'], sourceType: ContextSource.operador,
+        sourceRef: `pauta.automacao · ${qual}`, motivo });
+    await this.audit.log({ orgId, actorId, action: 'pauta.automacao_alterada', entityType: 'context_item', entityId: r.edicao.itemId,
+      after: { qual, ligada: entrada.ligada, versao: r.edicao.versao, motivo: entrada.motivo } }); return this.memoria.reconferirResultadoHumanoDoProdutor(orgId, actorId, r);
+  }
 
   private async notaDaGrade(orgId: string): Promise<NotaDeContexto | null> {
     return this.memoria.porChave(orgId, PAUTA_CHAVE_DA_GRADE);

@@ -4,9 +4,11 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Eye, EyeOff, RefreshCw, Search } from 'lucide-react';
 import { ErroDaApi, apiGet, apiPost } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
+import { ProntidaoLocal } from '@/components/ProntidaoLocal';
 import { CaminhoDeCarga } from './CaminhoDeCarga';
 import { Gaveta, type AlvoDaGaveta } from './Gaveta';
-import { Mapa } from './Mapa';
+import { NotaAberta } from './NotaAberta';
+import { MapaDaEmpresa } from './MapaDaEmpresa';
 import { Diretorio } from './Diretorio';
 import {
   eixosIncertos,
@@ -58,7 +60,7 @@ import type {
  * `estadoDaEmpresa` (em `grafo.ts`) separa as quatro respostas possíveis, e a
  * tela diz "não deu para ver" quando é isso que está acontecendo.
  *
- * RECUSA POR PERMISSÃO NÃO É FALHA. O 403 do servidor vira `semPermissao`, e
+ * RECUSA POR ACESSO NÃO É FALHA. O 401/403 do servidor vira `semPermissao`, e
  * não a caixa vermelha de erro: as duas palavras dizem coisas diferentes para
  * quem está olhando, e culpar o sistema por uma decisão de papel é a única das
  * três frases desta tela que seria mentira.
@@ -150,6 +152,22 @@ export default function ContextoPage() {
   const [organograma, setOrganograma] = useState<Fonte<Organograma>>({ dado: null });
 
   const [alvo, setAlvo] = useState<AlvoDaGaveta | null>(null);
+  const [fonteDoEndereco, setFonteDoEndereco] = useState<{ notaId: string; versionId: string | null } | null>(null);
+  useEffect(() => {
+    const ler = () => {
+      const p = new URLSearchParams(window.location.search);
+      const notaId = p.get('nota');
+      setFonteDoEndereco(notaId ? { notaId, versionId: p.get('versao') } : null);
+    };
+    ler(); window.addEventListener('popstate', ler);
+    return () => window.removeEventListener('popstate', ler);
+  }, []);
+  const limparFonteDoEndereco = useCallback(() => {
+    setFonteDoEndereco(null);
+    const url = new URL(window.location.href);
+    url.searchParams.delete('nota'); url.searchParams.delete('versao');
+    window.history.replaceState(window.history.state, '', `${url.pathname}${url.search}${url.hash}`);
+  }, []);
   const [sessao, setSessao] = useState<string | null>(null);
   const identidadeAtual = useRef({ token, ready, numero: 0 });
   if (identidadeAtual.current.token !== token || identidadeAtual.current.ready !== ready) {
@@ -157,7 +175,10 @@ export default function ContextoPage() {
   }
   const numeroDaSessao = identidadeAtual.current.numero;
   const geracao = useRef(0);
+  const acessoDaBusca = useRef(0);
   const origemDaGaveta = useRef<Element | null>(null);
+  const rolagemDoDiretorio = useRef<HTMLDivElement | null>(null);
+  const posicaoDoDiretorio = useRef(0);
   const [ocultos, setOcultos] = useState<Set<FamiliaKey>>(new Set());
   const [termo, setTermo] = useState('');
   const [area, setArea] = useState<FiltroDeArea>('');
@@ -168,19 +189,44 @@ export default function ContextoPage() {
   const [relendo, setRelendo] = useState(false);
   const [recado, setRecado] = useState<string | null>(null);
 
+  const privarConhecimento = useCallback(() => {
+    ++acessoDaBusca.current;
+    setMemoria({ dado: null, semPermissao: true });
+    setBruto(null);
+    setBuscando(false);
+    setErroDaBusca('Conhecimento não disponível para esta conta.');
+    setRecado(null);
+    setAlvo((atual) => {
+      const deMemoria = atual?.tipo === 'registro'
+        ? atual.item.registro.familia === 'memoria'
+        : atual?.tipo === 'eixo' && atual.eixo.key === 'memoria';
+      return deMemoria ? null : atual;
+    });
+    limparFonteDoEndereco();
+  }, [limparFonteDoEndereco]);
+
   const carregar = useCallback(() => {
     if (!token || !ready || identidadeAtual.current.numero !== numeroDaSessao) return;
     const ciclo = ++geracao.current;
 
     const puxar = <T,>(key: FamiliaKey, aplicar: (f: Fonte<T>) => void) => {
       const familia: DescricaoDeFamilia = familiaPorChave(key);
+      const acessoDoPedido = acessoDaBusca.current;
+      const vigente = () => ciclo === geracao.current
+        && identidadeAtual.current.numero === numeroDaSessao
+        && (key !== 'memoria' || acessoDoPedido === acessoDaBusca.current);
       if (!can(familia.permissao)) {
-        aplicar({ dado: null, semPermissao: true });
+        if (key === 'memoria') privarConhecimento();
+        else aplicar({ dado: null, semPermissao: true });
         return;
       }
       apiGet<T>(familia.consulta, token)
-        .then((dado) => { if (ciclo === geracao.current) aplicar({ dado }); })
-        .catch((e: unknown) => { if (ciclo === geracao.current) aplicar(porQueNaoVeio<T>(e)); });
+        .then((dado) => { if (vigente()) aplicar({ dado }); })
+        .catch((e: unknown) => {
+          if (!vigente()) return;
+          if (key === 'memoria' && acessoRecusado(e)) privarConhecimento();
+          else aplicar(porQueNaoVeio<T>(e));
+        });
     };
 
     puxar<MemoriaList>('memoria', setMemoria);
@@ -189,10 +235,11 @@ export default function ContextoPage() {
     puxar<CatalogoDeConexoes>('conexoes', setConexoes);
     puxar<Organograma>('gente', setOrganograma);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [token, ready, numeroDaSessao]);
+  }, [token, ready, numeroDaSessao, privarConhecimento]);
 
   useEffect(() => {
     ++geracao.current;
+    ++acessoDaBusca.current;
     setMemoria({ dado: null });
     setAgentes({ dado: null });
     setRotinas({ dado: null });
@@ -207,9 +254,10 @@ export default function ContextoPage() {
     setRecado(null);
     setOcultos(new Set());
     origemDaGaveta.current = null;
+    posicaoDoDiretorio.current = 0;
     setSessao(ready ? token : null);
     if (ready && token) carregar();
-    return () => { ++geracao.current; };
+    return () => { ++geracao.current; ++acessoDaBusca.current; };
   }, [ready, token, carregar]);
 
   const mapaBase = useMemo(
@@ -229,17 +277,24 @@ export default function ContextoPage() {
     setBuscando(true);
     setErroDaBusca(null);
     let vivo = true;
+    const acessoDoPedido = acessoDaBusca.current;
     const id = setTimeout(() => {
       procurar(alvoDaBusca, token)
         .then((r) => {
-          if (!vivo) return;
+          if (!vivo || acessoDoPedido !== acessoDaBusca.current
+            || identidadeAtual.current.numero !== numeroDaSessao) return;
           setBruto(r);
           setBuscando(false);
         })
-        .catch((e: Error) => {
-          if (!vivo) return;
+        .catch((e: unknown) => {
+          if (!vivo || acessoDoPedido !== acessoDaBusca.current
+            || identidadeAtual.current.numero !== numeroDaSessao) return;
+          if (acessoRecusado(e)) {
+            privarConhecimento();
+            return;
+          }
           setBruto(null);
-          setErroDaBusca(e.message);
+          setErroDaBusca(e instanceof Error ? e.message : 'A busca não respondeu. Tente de novo.');
           setBuscando(false);
         });
     }, 300);
@@ -247,7 +302,7 @@ export default function ContextoPage() {
       vivo = false;
       clearTimeout(id);
     };
-  }, [termo, token, sessao]);
+  }, [termo, token, sessao, numeroDaSessao, privarConhecimento]);
 
   /* A junção é derivada: ela refaz quando o mapa muda, sem pedir nada de novo. */
   const resultadoAtual = bruto?.termo === termo.trim() ? bruto : null;
@@ -278,21 +333,32 @@ export default function ContextoPage() {
       .finally(() => { if (vigente()) setRelendo(false); });
   };
 
+  const fonteIndisponivel = () => {
+    ++acessoDaBusca.current;
+    setAlvo(null); setMemoria({ dado: null }); setBruto(null); setTermo('');
+    setRecado('Fonte não disponível para esta conta.');
+    carregar();
+  };
+
   const lembrarOrigem = (origem?: Element) => {
     if (origem && !origem.closest('[aria-label="Registro selecionado"]')) origemDaGaveta.current = origem;
   };
   const abrirItem = (item: ItemDoEixo, origem?: Element) => {
+    limparFonteDoEndereco();
     lembrarOrigem(origem);
     setAlvo({ tipo: 'registro', item });
   };
   const abrirEixo = (eixo: EixoDoMapa, origem?: Element) => {
+    limparFonteDoEndereco();
     lembrarOrigem(origem);
     setAlvo({ tipo: 'eixo', eixo, itens: mapa.catalogo[eixo.key] });
   };
   const fecharGaveta = () => {
+    limparFonteDoEndereco();
     setAlvo(null);
     requestAnimationFrame(() => {
       const origem = origemDaGaveta.current;
+      if (rolagemDoDiretorio.current) rolagemDoDiretorio.current.scrollTop = posicaoDoDiretorio.current;
       if (origem?.isConnected && 'focus' in origem) (origem as HTMLElement).focus();
       else document.getElementById('busca-do-contexto')?.focus();
       origemDaGaveta.current = null;
@@ -335,145 +401,140 @@ export default function ContextoPage() {
 
   return (
     <div className="space-y-4">
-      <section className="rounded-root border border-border bg-surface p-4" aria-label="Do conhecimento ao trabalho">
-        <h2 className="font-semibold">Do conhecimento ao trabalho</h2>
-        <p className="mt-1 text-sm text-muted">Explore as fontes e quem responde por elas. Abra um processo para acompanhar o que ele recebe e o que precisa entregar.</p>
-        <nav aria-label="Caminhos de trabalho" className="mt-3 flex flex-wrap gap-4 text-sm text-brand">
-          {can('tarefas.ver') && <a className="underline" href="/trabalho">Projetos e tarefas</a>}
-          {can('pauta.ver') && <><a className="underline" href="/referencias#radar">Fontes de conteúdo</a><a className="underline" href="/pauta">Produção de conteúdo</a></>}
-          {can('automacoes.ver') && <a className="underline" href="/rotinas">Rotinas e resultados</a>}
-        </nav>
-      </section>
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="relative min-w-[260px] flex-1">
-          <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted" />
-          <input
-            id="busca-do-contexto"
-            value={termo}
-            onChange={(e) => { setTermo(e.target.value); setAlvo(null); }}
-            placeholder="Buscar no mapa e no diretório"
-            aria-label="Buscar no mapa e no diretório"
-            className="w-full rounded-root border border-border bg-surface py-2 pl-9 pr-3 text-sm outline-none focus:border-brand-dim"
-          />
-        </div>
-        {can('obsidian.editar') && (
-          <button
-            type="button"
-            onClick={relerAVault}
-            disabled={relendo}
-            className="inline-flex items-center gap-2 rounded-root border border-border px-3 py-2 text-sm text-muted hover:bg-surface-2 hover:text-text disabled:opacity-60"
-          >
-            <RefreshCw size={14} className={relendo ? 'animate-spin' : ''} /> reler a vault
-          </button>
-        )}
+      <div className="max-w-3xl">
+        <h2 className="text-xl font-semibold text-text">O contexto da empresa</h2>
+        <p className="mt-2 text-sm leading-relaxed text-muted">Explore uma área do mapa ou busque no diretório. Abra um registro para consultar sua fonte, versão e vínculos com o trabalho. O livro da marca e seu criador ficam na aba Marca e brandbook.</p>
       </div>
+      {fonteDoEndereco && <aside aria-label="Fonte usada na tarefa" className="space-y-3 rounded-root border border-border bg-surface p-4">
+        <div className="flex items-center justify-between gap-3"><h2 className="font-semibold">Fonte usada na tarefa</h2><button type="button" className="text-sm text-brand underline" onClick={limparFonteDoEndereco}>Fechar fonte usada</button></div>
+        <NotaAberta notaId={fonteDoEndereco.notaId} versaoInicial={fonteDoEndereco.versionId} onIndisponivel={fonteIndisponivel} />
+      </aside>}
 
-      <div className="flex flex-wrap items-end gap-3 rounded-root border border-border bg-surface p-3" aria-label="Filtros do mapa e do diretório">
-        <label className="min-w-[180px] flex-1 text-xs text-muted">Área
-          <select value={area} onChange={(evento) => { setArea(evento.target.value as FiltroDeArea); setAlvo(null); }}
-            className="mt-1 block min-h-11 w-full rounded-root border border-border bg-bg px-2 text-sm text-text focus-visible:outline focus-visible:outline-2 focus-visible:outline-brand">
-            <option value="">Todas as áreas</option>
-            {AREAS.map((opcao) => <option key={opcao.key} value={opcao.key}>{opcao.rotulo}</option>)}
-            <option value="sem-area">Sem área definida</option>
-          </select>
-        </label>
-        <label className="min-w-[180px] flex-1 text-xs text-muted">Tipo de registro
-          <select value={familiaFiltrada} onChange={(evento) => { setFamiliaFiltrada(evento.target.value as FamiliaKey | ''); setAlvo(null); }}
-            className="mt-1 block min-h-11 w-full rounded-root border border-border bg-bg px-2 text-sm text-text focus-visible:outline focus-visible:outline-2 focus-visible:outline-brand">
-            <option value="">Todos os tipos</option>
-            {mapaBase.eixos.map((eixo) => <option key={eixo.key} value={eixo.key}>{eixo.rotulo}</option>)}
-          </select>
-        </label>
-        {recorteAtivo && (
-          <button type="button" onClick={() => { setArea(''); setFamiliaFiltrada(''); setTermo(''); setAlvo(null); }}
-            className="min-h-11 cursor-pointer rounded-root border border-border px-3 py-2 text-sm text-brand focus-visible:outline focus-visible:outline-2 focus-visible:outline-brand">
-            Limpar filtros
-          </button>
-        )}
-      </div>
-
-      {recado && <p className="text-xs text-muted">{recado}</p>}
-
-      {(juncao || buscando || erroDaBusca) && (
-        <Resultados
-          juncao={juncao}
-          buscando={buscando}
-          erro={erroDaBusca}
-          modo={bruto?.modo ?? null}
-          catalogo={mapa.catalogo.memoria}
-          onAbrir={abrirItem}
-        />
-      )}
-
-      {estado === 'carregando' ? (
-        <p className="text-sm text-muted">Montando o mapa…</p>
-      ) : estado === 'desconhecida' ? (
-        <CaminhoDeCarga mapa={mapaBase} incertos={incertos} onCarregou={carregar} />
-      ) : estado === 'vazia' ? (
-        <CaminhoDeCarga mapa={mapaBase} onCarregou={carregar} />
-      ) : (
-        <>
-          {memoriaVazia && <CaminhoDeCarga mapa={mapaBase} compacto onCarregou={carregar} />}
-          <p className="text-xs text-muted" role="status">
-            {mapa.registros} {mapa.registros === 1 ? 'registro carregado' : 'registros carregados'}{recorteAtivo ? ' no recorte' : ''}.
-            Área organiza a visualização; linhas tracejadas representam apenas vínculos declarados.
-          </p>
-          <a href="#diretorio-do-contexto" className="w-fit text-sm text-brand underline underline-offset-2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-brand sm:hidden">
-            Ir ao diretório de registros
-          </a>
-          <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr),360px]">
-            <Mapa
-              mapa={mapa}
-              recorteAtivo={recorteAtivo}
-              selecionado={alvo?.tipo === 'registro' ? alvo.item.id : null}
-              destaque={termo.trim() ? null : juncao?.ids ?? null}
-              ocultos={ocultos}
-              onSelecionar={abrirItem}
-              onAbrirEixo={abrirEixo}
-            />
-            {alvoAtual ? (
-              <Gaveta alvo={alvoAtual} onFechar={fecharGaveta} onAbrirItem={abrirItem} />
-            ) : (
-              <Legenda mapa={mapa} recorteAtivo={recorteAtivo} ocultos={ocultos} onAlternar={alternarEixo} onAbrirEixo={abrirEixo} />
-            )}
+      <section className="overflow-hidden rounded-sm border border-border bg-surface" aria-label="Console de contexto">
+        <header className="flex flex-wrap items-center justify-between gap-3 border-b border-border px-4 py-4">
+          <div className="flex flex-wrap items-center gap-4">
+            <span className="font-os-mono text-lg font-semibold tracking-tight"><span className="text-brand">ROOT</span><span className="px-1 text-dim">/</span><span className="text-text">OS</span></span>
+            <span className="hidden h-5 w-px bg-border sm:block" aria-hidden="true" />
+            <div>
+              <h2 className="font-os-mono text-xs font-semibold uppercase tracking-[0.16em] text-text">Mapa de contexto</h2>
+              <p className="mt-1 text-[11px] text-muted" role="status">
+                {mapa.registros} {mapa.registros === 1 ? 'registro carregado' : 'registros carregados'}{recorteAtivo ? ' neste recorte' : ''}
+                {estado === 'carregando' ? ' · carregando fontes' : incertos.length ? ' · algumas fontes indisponíveis' : ''}
+              </p>
+            </div>
           </div>
-          <Diretorio mapa={mapa} recorteAtivo={recorteAtivo} onAbrir={abrirItem} />
-        </>
-      )}
+          {can('obsidian.editar') && <button type="button" onClick={relerAVault} disabled={relendo}
+            className="inline-flex min-h-11 items-center gap-2 rounded-root border border-border px-3 text-xs text-muted hover:bg-surface-2 hover:text-text disabled:opacity-60 focus-visible:outline focus-visible:outline-2 focus-visible:outline-brand">
+            <RefreshCw size={14} className={relendo ? 'animate-spin' : ''} /> Atualizar conhecimento
+          </button>}
+        </header>
+        {recado && <p className="border-b border-border px-4 py-2 text-xs text-muted" role="status">{recado}</p>}
+
+        <div className="grid min-w-0 lg:grid-cols-[minmax(0,1fr)_340px]">
+          <MapaDaEmpresa mapa={mapa} recorteAtivo={recorteAtivo}
+            selecionado={alvo?.tipo === 'registro' ? alvo.item.id : null}
+            destaque={termo.trim() ? null : juncao?.ids ?? null} ocultos={ocultos}
+            onSelecionar={abrirItem} onAbrirEixo={abrirEixo} areaSelecionada={area}
+            onSelecionarArea={(novaArea) => { setArea(novaArea); setAlvo(null); }} />
+
+          <aside aria-label="Explorar o mapa" className="flex min-w-0 flex-col border-t border-border lg:max-h-[calc(clamp(570px,70vh,850px)_+_128px)] lg:border-l lg:border-t-0">
+            <div className="space-y-3 px-4 py-4">
+              <h2 className="font-os-mono text-[10px] uppercase tracking-[0.16em] text-muted">Explorar</h2>
+              <div className="relative">
+                <Search size={15} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted" />
+                <input id="busca-do-contexto" value={termo} onChange={(evento) => { setTermo(evento.target.value); setAlvo(null); }}
+                  placeholder="Buscar no mapa e no diretório" aria-label="Buscar no mapa e no diretório"
+                  className="min-h-11 w-full rounded-root border border-border bg-bg py-2 pl-9 pr-3 text-sm text-text outline-none focus:border-brand-dim" />
+              </div>
+              <div className="grid grid-cols-2 gap-2" aria-label="Filtros do mapa e do diretório">
+                <label className="min-w-0 text-[11px] text-muted">Área
+                  <select value={area} onChange={(evento) => { setArea(evento.target.value as FiltroDeArea); setAlvo(null); }}
+                    className="mt-1 block min-h-11 w-full rounded-root border border-border bg-bg px-2 text-xs text-text focus-visible:outline focus-visible:outline-2 focus-visible:outline-brand">
+                    <option value="">Todas as áreas</option>
+                    {AREAS.map((opcao) => <option key={opcao.key} value={opcao.key}>{opcao.rotulo}</option>)}
+                    <option value="sem-area">Sem área definida</option>
+                  </select>
+                </label>
+                <label className="min-w-0 text-[11px] text-muted">Tipo de registro
+                  <select value={familiaFiltrada} onChange={(evento) => { setFamiliaFiltrada(evento.target.value as FamiliaKey | ''); setAlvo(null); }}
+                    className="mt-1 block min-h-11 w-full rounded-root border border-border bg-bg px-2 text-xs text-text focus-visible:outline focus-visible:outline-2 focus-visible:outline-brand">
+                    <option value="">Todos os tipos</option>
+                    {mapaBase.eixos.map((eixo) => <option key={eixo.key} value={eixo.key}>{eixo.rotulo}</option>)}
+                  </select>
+                </label>
+              </div>
+              {recorteAtivo && <button type="button" onClick={() => { setArea(''); setFamiliaFiltrada(''); setTermo(''); setAlvo(null); }}
+                className="min-h-11 text-xs text-brand underline underline-offset-4 focus-visible:outline focus-visible:outline-2 focus-visible:outline-brand">Limpar filtros</button>}
+            </div>
+
+            {(juncao || buscando || erroDaBusca) && <div className="max-h-48 overflow-y-auto px-4 pb-3">
+              <Resultados juncao={juncao} buscando={buscando} erro={erroDaBusca} modo={bruto?.modo ?? null}
+                catalogo={mapa.catalogo.memoria} onAbrir={abrirItem} />
+            </div>}
+
+            {alvoAtual && <div className="min-h-0 flex-1 border-t border-border [&>aside]:h-[560px] [&>aside]:max-h-none [&>aside]:rounded-none [&>aside]:border-0 lg:[&>aside]:h-full">
+              <Gaveta alvo={alvoAtual} onFechar={fecharGaveta} onAbrirItem={abrirItem} onFonteIndisponivel={fonteIndisponivel} />
+            </div>}
+            <div hidden={!!alvoAtual} style={alvoAtual ? { display: 'none' } : undefined} className="flex min-h-0 flex-1 flex-col">
+              <Legenda mapa={mapa} recorteAtivo={recorteAtivo} ocultos={ocultos} onAlternar={alternarEixo} onAbrirEixo={abrirEixo} />
+              <div ref={rolagemDoDiretorio} onScroll={(evento) => { if (!alvoAtual) posicaoDoDiretorio.current = evento.currentTarget.scrollTop; }}
+                className="min-h-[144px] max-h-[420px] flex-1 overflow-y-auto overscroll-contain lg:max-h-none">
+                <Diretorio mapa={mapa} recorteAtivo={recorteAtivo} onAbrir={abrirItem} compacto />
+              </div>
+            </div>
+          </aside>
+        </div>
+      </section>
+
+      <details className="rounded-sm border border-border bg-surface">
+        <summary className="min-h-11 cursor-pointer px-4 py-3 text-sm text-muted focus-visible:outline focus-visible:outline-2 focus-visible:outline-brand">Fontes e disponibilidade do conhecimento</summary>
+        <div className="border-t border-border p-3"><ProntidaoLocal tipo="contexto" /></div>
+      </details>
+
+      {estado !== 'carregando' && (memoriaVazia || estado === 'vazia' || estado === 'desconhecida') && <details className="rounded-sm border border-border bg-surface">
+        <summary className="min-h-11 cursor-pointer px-4 py-3 text-sm text-muted focus-visible:outline focus-visible:outline-2 focus-visible:outline-brand">
+          Carregar e organizar o contexto{memoriaVazia ? ' · memória ainda vazia' : ''}
+        </summary>
+        <div className="border-t border-border p-3">
+          <CaminhoDeCarga mapa={mapaBase} compacto={estado === 'com_contexto' && memoriaVazia} incertos={estado === 'desconhecida' ? incertos : []} onCarregou={carregar} />
+        </div>
+      </details>}
+      <nav aria-label="Caminhos de trabalho" className="flex flex-wrap gap-4 px-1 text-xs text-muted">
+        {can('tarefas.ver') && <a className="min-h-11 content-center underline underline-offset-4 hover:text-text" href="/trabalho">Projetos e tarefas</a>}
+        {can('pauta.ver') && <><a className="min-h-11 content-center underline underline-offset-4 hover:text-text" href="/referencias#radar">Fontes de conteúdo</a><a className="min-h-11 content-center underline underline-offset-4 hover:text-text" href="/pauta">Produção de conteúdo</a></>}
+        {can('automacoes.ver') && <a className="min-h-11 content-center underline underline-offset-4 hover:text-text" href="/rotinas">Rotinas e resultados</a>}
+      </nav>
     </div>
   );
 }
 
-/**
- * Por que o eixo não veio — e a diferença entre recusa e falha.
- *
- * 403 é decisão de papel: quem está olhando não tem a permissão daquela rota. A
- * tela diz "sem acesso". Qualquer outra coisa é o sistema não tendo respondido,
- * e aí a frase é "falhou", com a mensagem que veio. Enquanto o `catch` jogava
- * tudo num campo só, uma recusa de permissão aparecia em vermelho culpando o
- * sistema por uma decisão que ele tomou de propósito.
- */
+/** Recusa 401/403 retira os dados; outros erros mantêm o motivo da falha. */
 function porQueNaoVeio<T>(e: unknown): Fonte<T> {
-  if (e instanceof ErroDaApi && e.status === 403) return { dado: null, semPermissao: true };
+  if (acessoRecusado(e)) return { dado: null, semPermissao: true };
   return { dado: null, erro: e instanceof Error ? e.message : 'a fonte não respondeu' };
 }
 
+function acessoRecusado(e: unknown): e is ErroDaApi {
+  return e instanceof ErroDaApi && (e.status === 401 || e.status === 403);
+}
+
 /**
- * Dispara as duas buscas e devolve o que cada uma respondeu, SEM cruzar nada.
- *
- * A falha de UMA não derruba a outra: o índice fora do ar degrada a busca para o
- * que a memória sabe responder sozinha, que é o que RNF-04 pede. Se as duas
- * falharem, quem chamou recebe o erro.
+ * Falha operacional de uma busca permite usar a outra. Recusa 401/403 encerra
+ * a busca e retira o conhecimento anterior; não pode virar resposta parcial.
  */
 async function procurar(termo: string, token: string): Promise<BrutoDaBusca> {
+  const falhaOperacional = (e: unknown) => {
+    if (acessoRecusado(e)) throw e;
+    return null;
+  };
   const naMemoria = apiGet<ResultadoDeBusca>(
     `/memoria/buscar?q=${encodeURIComponent(termo)}&limite=20`,
     token,
-  ).catch(() => null);
+  ).catch(falhaOperacional);
   const noIndice = apiGet<{ items: AchadoDoIndice[]; mode: string }>(
     `/knowledge/search?q=${encodeURIComponent(termo)}&limit=20`,
     token,
-  ).catch(() => null);
+  ).catch(falhaOperacional);
 
   const [memoria, indice] = await Promise.all([naMemoria, noIndice]);
   if (!memoria && !indice) throw new Error('A busca não respondeu. Tente de novo.');
@@ -633,13 +694,13 @@ function Legenda({
   onAbrirEixo: (eixo: EixoDoMapa, origem?: Element) => void;
 }) {
   return (
-    <aside aria-label="Legenda do mapa" className="space-y-2 rounded-root border border-border bg-surface p-4">
-      <h2 className="text-[10px] uppercase tracking-[0.16em] text-dim">o que está no mapa</h2>
+    <aside aria-label="Legenda do mapa" className="max-h-80 shrink-0 space-y-2 overflow-y-auto border-t border-border px-4 py-3">
+      <h2 className="text-[10px] uppercase tracking-[0.16em] text-dim">tipos de registro</h2>
       <ul className="divide-y divide-border">
         {mapa.eixos.map((eixo) => {
           const oculto = ocultos.has(eixo.key);
           return (
-            <li key={eixo.key} className="flex items-start gap-2 py-2">
+            <li key={eixo.key} className="flex items-center gap-2 py-0.5">
               <button
                 type="button"
                 onClick={() => onAlternar(eixo.key)}
@@ -659,17 +720,17 @@ function Legenda({
                     {rotuloDoTotal(eixo, recorteAtivo)}
                   </span>
                 </span>
-                <span className="block text-[11px] leading-snug text-muted">{eixo.descricao}</span>
+                <span className="sr-only">{eixo.descricao}</span>
                 {eixo.erro && <span className="block text-[11px] text-bad">{eixo.erro}</span>}
               </button>
             </li>
           );
         })}
       </ul>
-      <p className="pt-1 text-[11px] leading-relaxed text-dim">
-        A linha cheia é o desenho do mapa. A linha tracejada é vínculo declarado no dado: a rotina e o
-        agente que ela roda, o agente e a pessoa que responde por ele, a nota e a que ela substitui.
-      </p>
+      <div className="space-y-1 border-t border-border pt-3 text-[11px] text-muted">
+        <p className="flex items-center gap-2"><span className="w-6 border-t border-border-strong" aria-hidden="true" /> Organização do mapa</p>
+        <p className="flex items-center gap-2"><span className="w-6 border-t border-dashed border-brand" aria-hidden="true" /> Vínculo declarado</p>
+      </div>
     </aside>
   );
 }

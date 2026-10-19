@@ -581,6 +581,7 @@ export async function coletarEstado(
     where: {
       orgId,
       arquivadoEm: null,
+      acessoRestrito: false,
       kind: { in: [...TIPOS_DOCUMENTAVEIS] },
     },
     select: {

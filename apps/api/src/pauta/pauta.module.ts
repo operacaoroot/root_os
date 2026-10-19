@@ -1,3 +1,6 @@
+import { EditorialController } from './editorial.controller';
+import { EditorialService } from './editorial.service';
+import { WorkFilesService } from '../work/work-files.service';
 import { Module } from '@nestjs/common';
 import { StorageModule } from '../storage/storage.module';
 import { GoogleModule } from '../google/google.module';
@@ -27,6 +30,9 @@ import { VozController } from './voz.controller';
 import { VozService } from './voz.service';
 import { MarcaController } from './marca.controller';
 import { MarcaService } from './marca.service';
+import { BrandbookController } from './brandbook.controller';
+import { BrandbookService } from './brandbook.service';
+import { AcessoAtualGuard } from '../memory/acesso-atual.guard';
 import { ConcorrentesController } from './concorrentes.controller';
 import { ConcorrentesService } from './concorrentes.service';
 import { EstrategiaController } from './estrategia.controller';
@@ -85,6 +91,7 @@ import { DmAutomaticaService } from './dm-automatica.service';
   // MidiaController ANTES do EpisodioController: `GET pendentes-midia` tem de
   // casar antes do `GET :id` de lá (Express casa na ordem de registro).
   controllers: [
+    EditorialController,
     PautaController,
     RodadaController,
     MidiaController,
@@ -92,6 +99,7 @@ import { DmAutomaticaService } from './dm-automatica.service';
     RoteiroController,
     VozController,
     MarcaController,
+    BrandbookController,
     ConcorrentesController,
     EstrategiaController,
     RelatorioController,
@@ -113,6 +121,8 @@ import { DmAutomaticaService } from './dm-automatica.service';
     EnvioAoYoutubeController,
   ],
   providers: [
+    EditorialService,
+    WorkFilesService,
     PautaService,
     ApifyService,
     EspelhoService,
@@ -137,6 +147,8 @@ import { DmAutomaticaService } from './dm-automatica.service';
     VozService,
     // MK1: a marca e os pilares, que o roteiro e as peças recebem ao lado da voz.
     MarcaService,
+    BrandbookService,
+    AcessoAtualGuard,
     // MK2: a mediana e o índice dos perfis raspados, e o dossiê por IA.
     ConcorrentesService,
     // MK4: o documento do mês, proposto pela IA e editado por gente.
@@ -178,6 +190,6 @@ import { DmAutomaticaService } from './dm-automatica.service';
   // rotinas (RoutinesModule).
   // MK6: `RelatorioService` sai daqui porque o executor da rotina mensal vive
   // no RoutinesModule, como o da coleta já fazia com o RodadaService.
-  exports: [PautaService, RodadaService, EvolutionService, EncadeamentoService, PublicacaoInstagramService, ComentariosService, EnvioAoYoutubeService, DmAutomaticaService, RelatorioService],
+  exports: [EditorialService, PautaService, RodadaService, EvolutionService, EncadeamentoService, PublicacaoInstagramService, ComentariosService, EnvioAoYoutubeService, DmAutomaticaService, RelatorioService],
 })
 export class PautaModule {}

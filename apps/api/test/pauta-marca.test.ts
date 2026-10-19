@@ -13,6 +13,8 @@ import {
 import { blocoDeMarca, marcaDaNota, pilaresDaNota, procedenciaDaMarca } from '../src/pauta/marca-da-pauta';
 import { proporMarcaDaFonte, referenciaDaProjecao, lerReferenciaDaProjecao } from '../src/pauta/marca-projecao';
 import { MarcaService } from '../src/pauta/marca.service';
+import type { BrandbookService } from '../src/pauta/brandbook.service';
+
 import { blocoDeVoz, TOM_DA_CASA } from '../src/pauta/voz-da-pauta';
 import { systemDoRoteiro } from '../src/pauta/roteiro-do-episodio';
 import { systemDasPecas } from '../src/pauta/rodada.service';
@@ -21,6 +23,12 @@ import { systemDaNewsletter } from '../src/pauta/newsletter-do-episodio';
 import { systemDoPacote } from '../src/pauta/pacote-do-episodio';
 import type { AuditService } from '../src/audit/audit.service';
 import type { MemoriaService } from '../src/memory/memoria.service';
+
+const brandbookAusente = () => ({
+  ativoParaPauta: async () => null,
+  painelParaPauta: async () => ({ id: null, versao: null, hash: null, estado: 'ausente', rascunho: null, ativo: null }),
+  exigirLegadoPermitido: async () => undefined,
+}) as unknown as BrandbookService;
 
 /*
  * MK1 — a marca e os pilares. O que esta suíte prova, na ordem do "pronto
@@ -98,7 +106,7 @@ describe('projeção do guia revisável', () => {
       porChave: async (_orgId: string, chave: string) => chave === fonte.chave ? fonte : null,
       projetarCondicionado: async (_orgId: string, pedido: unknown) => { escritas.push(pedido); },
     } as unknown as MemoriaService;
-    const servico = new MarcaService({} as AuditService, memoria);
+    const servico = new MarcaService({} as AuditService, memoria, brandbookAusente());
     vi.spyOn(servico, 'painel').mockResolvedValue({} as PautaMarcaPainel);
     const previa = await servico.previa(ORG, 'perfil');
     expect(previa.estado).toBe('excede_limite');
@@ -185,7 +193,7 @@ function memoriaFalsa(opts: { falha?: Error } = {}) {
     },
   } as unknown as MemoriaService;
   const audit = { log: async () => ({}) } as unknown as AuditService;
-  return { memoria, audit, notas, servico: new MarcaService(audit, memoria) };
+  return { memoria, audit, notas, servico: new MarcaService(audit, memoria, brandbookAusente()) };
 }
 
 // ---------------------------------------------------------------------------

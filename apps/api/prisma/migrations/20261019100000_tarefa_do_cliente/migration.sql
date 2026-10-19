@@ -32,18 +32,20 @@
 --   ALTER TABLE "Partner" DROP COLUMN "interno";
 -- ============================================================================
 
-ALTER TABLE "Partner" ADD COLUMN "interno" BOOLEAN NOT NULL DEFAULT false;
-CREATE UNIQUE INDEX "Partner_orgId_interno_unico" ON "Partner"("orgId") WHERE "interno";
-
-ALTER TABLE "WorkTask" ADD COLUMN "clienteId" TEXT;
-ALTER TABLE "WorkTask"
-  ADD CONSTRAINT "WorkTask_clienteId_fkey"
-  FOREIGN KEY ("clienteId") REFERENCES "Partner"("id") ON DELETE SET NULL ON UPDATE CASCADE;
-CREATE INDEX "WorkTask_orgId_clienteId_idx" ON "WorkTask"("orgId", "clienteId");
-
-CREATE TRIGGER "WorkTask_orgId_confere_cliente"
-  BEFORE INSERT OR UPDATE ON "WorkTask"
-  FOR EACH ROW EXECUTE FUNCTION mktos_orgid_do_pai('Partner', 'clienteId');
+-- ----------------------------------------------------------------------------
+-- VERSÃO FINAL (19/10/2026): esta migration NUNCA foi aplicada em produção, e a
+-- produção (Lucas, `20261019180000_tarefas_area_e_cliente`) criou a mesma coluna
+-- `WorkTask.clienteId` apontando para OUTRA tarefa. Para o histórico aplicar nos
+-- três pontos de partida (produção, homologações que já rodaram a versão antiga
+-- desta migration, banco novo), a parte da tarefa saiu daqui: quem cria a FK para
+-- `Partner`, o índice e o gatilho é a conciliação
+-- `20261019230000_conciliacao_cliente_da_tarefa`, depois da última do Lucas.
+-- Aqui fica só o cliente da casa, idempotente. Nas homologações que já rodaram a
+-- versão antiga, a coluna nossa existe e o preparo
+-- `20261019170000_cliente_da_tarefa_preparo` a põe de lado antes da do Lucas.
+-- ----------------------------------------------------------------------------
+ALTER TABLE "Partner" ADD COLUMN IF NOT EXISTS "interno" BOOLEAN NOT NULL DEFAULT false;
+CREATE UNIQUE INDEX IF NOT EXISTS "Partner_orgId_interno_unico" ON "Partner"("orgId") WHERE "interno";
 
 -- CONFERÊNCIA LOCAL — o isolamento continua de pé nas duas tabelas do par.
 DO $$
@@ -51,7 +53,7 @@ DECLARE
   t  text;
   ok boolean;
 BEGIN
-  FOREACH t IN ARRAY ARRAY['WorkTask', 'Partner'] LOOP
+  FOREACH t IN ARRAY ARRAY['Partner'] LOOP
     SELECT c.relrowsecurity
        AND c.relforcerowsecurity
        AND (SELECT count(*) FROM pg_policy p WHERE p.polrelid = c.oid) >= 4

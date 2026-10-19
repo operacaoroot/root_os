@@ -11,6 +11,8 @@ import { AtasService } from './atas/atas.service';
 import { MovimentoDoQuadroService } from './movimento-do-quadro.service';
 import { VistasController } from './vistas.controller';
 import { VistasService } from './vistas.service';
+import { TarefasDoDiaController } from './tarefas-do-dia.controller';
+import { TarefasDoDiaService } from './tarefas-do-dia.service';
 
 /**
  * O CHECKOUT É EXPORTADO, e a exportação é a fatia A4 pela metade.
@@ -38,8 +40,8 @@ import { VistasService } from './vistas.service';
  */
 @Module({
   imports: [AuditModule, MemoryModule],
-  controllers: [VistasController, WorkController, WorkFilesController, AtasController],
-  providers: [WorkService, CheckoutDeTarefaService, WorkFilesService, AtasService, MovimentoDoQuadroService, VistasService],
+  controllers: [VistasController, WorkController, WorkFilesController, AtasController, TarefasDoDiaController],
+  providers: [WorkService, CheckoutDeTarefaService, WorkFilesService, AtasService, MovimentoDoQuadroService, VistasService, TarefasDoDiaService],
   exports: [CheckoutDeTarefaService, WorkService],
 })
 export class WorkModule {}

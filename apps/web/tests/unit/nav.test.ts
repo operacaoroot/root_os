@@ -267,7 +267,8 @@ describe('NAV — estrutura', () => {
     const modulosEsperados = new Map([
       ['tarefas', 'trabalho'], ['trabalho', 'trabalho'], ['onboarding', 'trabalho'],
       ['conteudo', 'conteudo'], ['pauta', 'pauta'], ['referencias', 'pauta'],
-      ['instagram', 'instagram'], ['bio', 'bio'], ['leads', 'leads'],
+      ['instagram', 'instagram'], ['bio', 'bio'], ['comercial-painel', 'leads'], ['clientes', 'trabalho'], ['tarefas-todas', 'trabalho'], ['leads', 'leads'],
+      ['comercial-tarefas', 'trabalho'], ['marketing-tarefas', 'trabalho'], ['financeiro-tarefas', 'trabalho'],
       ['funil', 'leads'], ['campanhas', 'campanhas'], ['pixels', 'pixels'],
       ['relatorios', 'relatorios'], ['metas', 'metas'], ['financeiro', 'financeiro'],
       ['marca', 'pauta'], ['marketing', 'pauta'], ['marketing-ideias', 'pauta'],
@@ -309,8 +310,10 @@ describe('navPorSecao', () => {
 
   it('destinos de apoio vêm depois dos grupos principais', () => {
     const tipos = navPorSecao(todas).map((g) => g.secao.tipo);
-    expect(tipos.slice(0, 8)).toEqual(Array(8).fill('principal'));
-    expect(tipos.slice(8)).toEqual(['apoio', 'apoio', 'apoio']);
+    // 19/10/2026: o Trabalho foi absorvido pelo Dia a dia e pelo Marketing; a seção
+    // segue declarada (rotas vivas fora do menu), mas não tem item visível.
+    expect(tipos.slice(0, 7)).toEqual(Array(7).fill('principal'));
+    expect(tipos.slice(7)).toEqual(['apoio', 'apoio', 'apoio']);
   });
 
   it('sem permissão nenhuma não devolve seção nenhuma', () => {
@@ -464,7 +467,7 @@ describe('o bloco Marketing (MK7)', () => {
     expect(m!.pai, 'o bloco é raiz, não filho da Pauta').toBeUndefined();
   });
 
-  it('Performance e Relatório do mês penduram no bloco; Ideias e Estratégia moram em Trabalho', () => {
+  it('Performance e Relatório do mês penduram no bloco; Ideias e Estratégia moram no Marketing', () => {
     for (const k of ['marketing-performance', 'marketing-relatorio']) {
       const n = item(k);
       expect(n, `${k} sumiu do menu`).toBeDefined();
@@ -475,7 +478,8 @@ describe('o bloco Marketing (MK7)', () => {
     for (const k of ['marketing-ideias', 'marketing-estrategia']) {
       const n = item(k);
       expect(n, `${k} sumiu do menu`).toBeDefined();
-      expect(n!.secao, `${k}: documento 38 manda para Trabalho`).toBe('trabalho');
+      // 19/10/2026: o Trabalho foi absorvido; ideias e estratégia são de conteúdo.
+      expect(n!.secao, `${k}: mora no Marketing`).toBe('conteudo');
       expect(n!.pai, `${k}: o pai estaria em outra seção`).toBeUndefined();
       expect(n!.permission).toBe('pauta.ver');
       expect(n!.modulo).toBe('pauta');
@@ -540,10 +544,11 @@ describe('organização da navegação (ROOT-07)', () => {
     conteudo: 'dashboard.ver', pauta: 'pauta.ver', referencias: 'pauta.ver', marketing: 'pauta.ver',
     'marketing-ideias': 'pauta.ver', 'marketing-estrategia': 'pauta.ver', 'marketing-performance': 'pauta.ver',
     'marketing-relatorio': 'pauta.ver', instagram: 'instagram.ver', bio: 'bio.ver',
-    leads: 'leads.ver', funil: 'dashboard.ver', campanhas: 'campanhas.ver', pixels: 'dashboard.ver',
+    'comercial-painel': 'leads.ver', clientes: 'tarefas.ver', 'tarefas-todas': 'tarefas.ver', leads: 'leads.ver',
+    'comercial-tarefas': 'tarefas.ver', 'marketing-tarefas': 'tarefas.ver', 'financeiro-tarefas': 'tarefas.ver', funil: 'dashboard.ver', campanhas: 'campanhas.ver', pixels: 'dashboard.ver',
     relatorios: 'relatorios.ver', metas: 'dashboard.ver', financeiro: 'financeiro.ver', 'custo-ia': 'dashboard.ver',
     agentes: 'mcp.ver', rotinas: 'automacoes.ver', sessoes: 'mcp.ver', fluxos: 'automacoes.ver',
-    ferramentas: 'mcp.ver', conexoes: 'dashboard.ver', regua: 'mcp.ver', rastro: 'auditoria.ver',
+    ferramentas: 'mcp.ver', conexoes: 'dashboard.ver', regua: 'mcp.ver', cofre: 'cofre.ver', rastro: 'auditoria.ver',
     'linha-do-tempo': 'auditoria.ver', assinatura: 'dashboard.ver', config: 'dashboard.ver',
   };
 
@@ -551,15 +556,18 @@ describe('organização da navegação (ROOT-07)', () => {
   const ROTULO_DA_BASE: Record<string, string> = {
     caixa: 'Pendências', atendimento: 'Aprovações', agenda: 'Agenda', console: 'Visão geral',
     contexto: 'Conhecimento da empresa', marca: 'Marca e pilares', organograma: 'Equipe',
-    tarefas: 'Lista de tarefas', trabalho: 'Quadro interno', onboarding: 'Implantação de clientes',
+    // 19/10/2026: a implantação de clientes virou a aba Operação do Dia a dia.
+    tarefas: 'Lista de tarefas', trabalho: 'Quadro interno', onboarding: 'Operação',
     conteudo: 'Temas do ClickUp', pauta: 'Produção de conteúdo', referencias: 'Referências', marketing: 'Marketing',
     'marketing-ideias': 'Banco de ideias', 'marketing-estrategia': 'Estratégia do mês',
     'marketing-performance': 'Performance', 'marketing-relatorio': 'Relatório do mês',
-    instagram: 'Instagram', bio: 'Página de links', leads: 'Leads', funil: 'Funil de vendas',
+    instagram: 'Instagram', bio: 'Página de links', 'comercial-painel': 'Painel geral', clientes: 'Clientes', 'tarefas-todas': 'Tarefas', leads: 'Leads',
+    // 19/10/2026: a aba Tarefas de cada área (Dia a dia › Tarefas filtrada pela área).
+    'comercial-tarefas': 'Tarefas', 'marketing-tarefas': 'Tarefas', 'financeiro-tarefas': 'Tarefas', funil: 'Funil de vendas',
     campanhas: 'Campanhas', pixels: 'Eventos do site', relatorios: 'Relatórios', metas: 'Metas',
     financeiro: 'Financeiro', 'custo-ia': 'Custos de IA', agentes: 'Agentes de IA',
     rotinas: 'Rotinas automáticas', sessoes: 'Sessões de IA', fluxos: 'Processos',
-    ferramentas: 'Ferramentas disponíveis', conexoes: 'Integrações', regua: 'Regras e permissões',
+    ferramentas: 'Ferramentas disponíveis', conexoes: 'Integrações', regua: 'Regras e permissões', cofre: 'Cofre',
     rastro: 'Registro de ações', 'linha-do-tempo': 'Atividade', assinatura: 'Plano e assinatura',
     config: 'Configurações da conta',
   };
@@ -569,17 +577,19 @@ describe('organização da navegação (ROOT-07)', () => {
     '/caixa': 'dia', '/atendimento': 'dia', '/agenda': 'dia', '/painel': 'dia',
     '/contexto': 'empresa', '/contexto/marca': 'empresa',
     '/organograma': 'controle',
-    '/tarefas': 'trabalho', '/trabalho': 'trabalho', '/onboarding': 'trabalho', '/conteudo': 'trabalho',
-    '/marketing/ideias': 'trabalho', '/marketing/estrategia': 'trabalho',
+    // 19/10/2026: o Trabalho foi absorvido. Lista, quadro e temas seguem na seção, ocultos.
+    '/tarefas': 'trabalho', '/trabalho': 'trabalho', '/onboarding': 'dia', '/conteudo': 'trabalho',
+    '/marketing/ideias': 'conteudo', '/marketing/estrategia': 'conteudo',
     '/pauta': 'conteudo', '/referencias': 'conteudo', '/marketing': 'conteudo',
     '/marketing/performance': 'conteudo', '/marketing/relatorio': 'conteudo',
     '/instagram': 'conteudo', '/bio': 'conteudo', '/campanhas': 'conteudo', '/pixels': 'conteudo',
-    '/leads': 'comercial', '/funil': 'comercial',
+    '/comercial': 'comercial', '/clientes': 'comercial', '/dia-a-dia': 'dia', '/leads': 'comercial', '/funil': 'comercial',
     '/relatorios': 'resultados', '/metas': 'resultados',
     '/financeiro': 'financeiro',
+    '/comercial/tarefas': 'comercial', '/marketing/tarefas': 'conteudo', '/financeiro/tarefas': 'financeiro',
     '/painel/custo-ia': 'automacoes', '/agentes': 'automacoes', '/rotinas': 'automacoes',
     '/sessoes': 'automacoes', '/fluxos': 'automacoes',
-    '/ferramentas': 'controle', '/conexoes': 'controle', '/regua': 'controle',
+    '/ferramentas': 'controle', '/conexoes': 'controle', '/regua': 'controle', '/cofre': 'controle',
     '/rastro': 'registros', '/linha-do-tempo': 'registros',
     '/assinatura': 'controle', // "Oculto na navegação interna": a seção é só a casa do dado
     '/config': 'conta',
