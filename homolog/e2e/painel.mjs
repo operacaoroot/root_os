@@ -150,7 +150,8 @@ async function main() {
   const todas = [...estrutura.folders.flatMap((f) => f.lists), ...estrutura.listasSoltas];
   const execucao = todas.find((l) => l.name === 'Execução') ?? todas[0];
   conferir(execucao, 'o Trabalho não tem lista nenhuma (rode a estrutura sugerida)');
-  const tarefa = await api('POST', '/trabalho/tarefas', { listId: execucao.id, title: `Prova do painel ${SUFIXO}`, assignee: mesa.user.name }, admin.token);
+  // Rodada do trabalho T4: toda tarefa nova tem cliente (o da casa, aqui).
+  const tarefa = await api('POST', '/trabalho/tarefas', { listId: execucao.id, title: `Prova do painel ${SUFIXO}`, assignee: mesa.user.name, clienteId: 'interno' }, admin.token);
   await api('POST', `/trabalho/tarefas/${tarefa.id}/comentarios`, { text: `Comentário da prova ${SUFIXO}: confere o relatório antes de sexta.` }, admin.token);
   const lista = await api('POST', '/trabalho/listas', { name: `Lista da prova ${SUFIXO}` }, mesa.token);
   const entrada = await api('POST', '/comercial/simulador/entrada', {
@@ -248,6 +249,11 @@ async function main() {
     conferir(lidas.length > 0, 'a ata não gerou sugestão');
     const sug = lidas[0];
     passo('"Sugerir tarefas" trouxe rascunhos conferidos contra a ata', { detalhe: `${lidas.length} rascunho(s)` });
+    // Rodada do trabalho T4/T5: o aceite pede o cliente; a lista vai em dois níveis (pasta e lista).
+    await tid(pa, `ata-cliente-${sug.id}`).locator('[role="combobox"]').click();
+    await tid(pa, 'opcao-cliente-interno').first().click();
+    await tid(pa, `ata-pasta-${sug.id}`).selectOption({ label: 'Clientes' });
+    await tid(pa, `ata-lista-${sug.id}`).selectOption({ label: 'Execução' });
     await tid(pa, `ata-aceitar-${sug.id}`).click();
     let aceita = null;
     for (let i = 0; i < 30 && !aceita?.workTaskId; i++) {
@@ -258,6 +264,7 @@ async function main() {
     conferir(aceita?.workTaskId, 'aceitar não criou a tarefa');
     const criada = await api('GET', `/trabalho/tarefas/${aceita.workTaskId}`, undefined, mesa.token);
     conferir(criada.title === sug.titulo, 'a tarefa criada não tem o título da sugestão');
+    conferir(!!criada.clienteId, 'a tarefa aceita da ata nasceu sem cliente');
     passo('aceitar com um clique criou a tarefa no Trabalho', { detalhe: criada.title });
     await ctxAdmin.close();
 

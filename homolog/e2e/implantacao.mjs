@@ -203,12 +203,14 @@ async function main() {
     conferir(/Fechamento comercial · /.test(rodape), `o rodapé devia trazer o fechamento (veio "${rodape}")`);
     const altura = await p.locator(`[data-work-task-id="${cardId}"]`).evaluate((el) => el.getBoundingClientRect().height);
     conferir(altura <= 80, `o cartão compacto devia ter ~64 px (tem ${Math.round(altura)})`);
+    // Rodada do trabalho T1 (19/10/2026): as 7 etapas ficam numa linha só, com largura fixa,
+    // e o quadro rola para o lado (substitui o "caber em 1440 espremendo colunas" da I2).
     const colunas = await p.locator('[data-coluna]').count();
-    const larguraDoQuadro = await tid(p, 'trabalho-quadro').evaluate((el) => ({ scroll: el.scrollWidth, cliente: el.clientWidth }));
-    conferir(colunas === 7 && larguraDoQuadro.scroll <= larguraDoQuadro.cliente + 1, `as 7 etapas deviam caber em 1440 px (${colunas} colunas, ${larguraDoQuadro.scroll} > ${larguraDoQuadro.cliente})`);
+    const topos = await p.locator('[data-coluna]').evaluateAll((els) => els.map((el) => Math.round(el.getBoundingClientRect().top)));
+    conferir(colunas === 7 && new Set(topos).size === 1, `as 7 etapas deviam ficar numa linha só (${colunas} colunas, topos ${topos.join(',')})`);
     const rolaAPagina = await p.evaluate(() => document.scrollingElement.scrollHeight > window.innerHeight + 2);
     conferir(!rolaAPagina, 'a página do quadro rola inteira: cada coluna devia rolar sozinha');
-    passo('I2: o card no quadro compacto (~64 px), 7 colunas em 1440 px sem rolar a página, rodapé com a última movimentação', { detalhe: `${rodape} · ${Math.round(altura)} px` });
+    passo('I2: o card no quadro compacto (~64 px), 7 colunas numa linha sem rolar a página, rodapé com a última movimentação', { detalhe: `${rodape} · ${Math.round(altura)} px` });
 
     await p.locator(`[data-work-task-id="${cardId}"]`).hover();
     await tid(p, 'trabalho-balao').waitFor({ timeout: 5_000 });
