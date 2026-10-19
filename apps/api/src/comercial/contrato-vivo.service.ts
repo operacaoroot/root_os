@@ -1,5 +1,9 @@
-import { Injectable, Logger, NotFoundException, OnModuleInit } from '@nestjs/common';
-import { TABELA_DE_PRECO, type ComercialProduto, type ContratoVivo } from '@mktos/shared';
+import { BadRequestException, ConflictException, ForbiddenException, Injectable, Logger, NotFoundException, OnModuleInit } from '@nestjs/common';
+import { ActorType, Prisma } from '@prisma/client';
+import { classificar, type Efeito } from '@mktos/policy';
+import {
+  TABELA_DE_PRECO, type ComercialProduto, type ContratoEncerrarInput, type ContratoVivo, type SituacaoDoContrato,
+} from '@mktos/shared';
 
 import { PrismaService } from '../prisma/prisma.service';
 import { DecisoesService } from './decisoes.service';
@@ -30,6 +34,35 @@ import { RelogioComercialRegistry } from './relogio.registry';
  */
 
 const DIA_MS = 86_400_000;
+
+/*
+ * ENCERRAR O CONTRATO À MÃO (rodada do trabalho T8, 19/10/2026). O Rodrigo
+ * decidiu: alguém da casa move o contrato para concluído ou desativado quando
+ * ele termina. O nível sai do EFEITO pela escada (`classificar`): a escrita fica
+ * dentro do OS (um fato no fio e uma linha na auditoria), não cancela cobrança
+ * no Asaas, não manda nada para fora, então dá R0. Escrita interna com R0/R1 é
+ * gate de papel (`leads.editar`) com auditoria, como o Trabalho. Se um dia o
+ * efeito mudar (por exemplo, passar a cancelar a cobrança), a conta sobe sozinha
+ * e esta rota recusa até a capacidade entrar pelo catálogo.
+ */
+export const EFEITO_DE_ENCERRAR_CONTRATO: Efeito = {
+  escreveForaDoOS: false,
+  produzArtefato: false,
+  reversibilidade: 'automatica',
+  exposicaoExterna: false,
+  impactoFinanceiro: 'nenhum',
+  sensibilidade: 'interna',
+  destruicao: false,
+  obrigacaoLegal: false,
+};
+
+const PAPEIS_DE_MAQUINA = ['ia_servico', 'ia_acao'];
+
+/** Ativos primeiro, depois em implantação, e concluídos e desativados sempre por último. */
+const ORDEM_DA_SITUACAO: Record<SituacaoDoContrato, number> = { ativo: 0, em_implantacao: 1, concluido: 2, desativado: 3 };
+export function ordenarContratos(lista: ContratoVivo[]): ContratoVivo[] {
+  return [...lista].sort((a, b) => ORDEM_DA_SITUACAO[a.situacao] - ORDEM_DA_SITUACAO[b.situacao] || a.cliente.localeCompare(b.cliente, 'pt-BR'));
+}
 export const AVISOS_DA_REGUA = [
   { aviso: 'D-3', dia: -3 },
   { aviso: 'D0', dia: 0 },
@@ -179,11 +212,29 @@ export class ContratoVivoService implements OnModuleInit {
   async doLead(orgId: string, leadId: string, agora: Date = new Date()): Promise<ContratoVivo> {
     const lead = await this.prisma.lead.findFirst({ where: { id: leadId, orgId }, select: { name: true } });
     if (!lead) throw new NotFoundException('Lead não encontrado.');
-    const [ficha, cobrancas, marcoValor] = await Promise.all([
+    const [ficha, cobrancas, marcoValor, fim] = await Promise.all([
       this.prisma.comercialFicha.findUnique({ where: { leadId } }),
       this.prisma.comercialCobranca.findMany({ where: { leadId }, orderBy: { parcela: 'asc' } }),
       this.prisma.leadEvent.findFirst({ where: { leadId, type: 'marco.contrato', payload: { path: ['marco'], equals: 'primeiro_valor' } }, select: { occurredAt: true } }),
+      this.prisma.leadEvent.findFirst({ where: { leadId, type: { in: ['contrato.concluido', 'contrato.desativado'] } }, orderBy: { occurredAt: 'desc' }, select: { type: true, payload: true, occurredAt: true } }),
     ]);
+    // "Em implantação" (só informativo): ativo com o card da implantação aberto (não arquivado, etapa não fechada).
+    const card = ficha?.cardId
+      ? await this.prisma.workTask.findFirst({ where: { id: ficha.cardId, orgId }, select: { archived: true, status: { select: { type: true } } } })
+      : null;
+    const fimP = (fim?.payload ?? {}) as Record<string, unknown>;
+    const encerramento = fim
+      ? {
+        situacao: (fim.type === 'contrato.concluido' ? 'concluido' : 'desativado') as 'concluido' | 'desativado',
+        motivo: String(fimP.motivo ?? ''),
+        em: fim.occurredAt.toISOString(),
+        por: typeof fimP.porNome === 'string' ? fimP.porNome : null,
+        parcelasEmAberto: Number(fimP.parcelasEmAberto ?? 0),
+      }
+      : null;
+    const situacao: SituacaoDoContrato = encerramento
+      ? encerramento.situacao
+      : card && !card.archived && card.status.type !== 'closed' ? 'em_implantacao' : 'ativo';
     const hoje = diaSP(agora);
     const trilho = ficha?.trilhoId ? await this.prisma.onboardingTrilho.findFirst({ where: { id: ficha.trilhoId, orgId }, select: { fase: true } }) : null;
     const fases = ['qualificar', 'diagnostico', 'contrato', 'imersao', 'operacao'];
@@ -216,6 +267,10 @@ export class ContratoVivoService implements OnModuleInit {
       marcos: await this.marcosDoLead(leadId, ficha?.clienteAtivoEm ?? (await this.prisma.leadEvent.findFirst({ where: { leadId, type: 'cliente.ativo' }, select: { occurredAt: true } }))?.occurredAt ?? null),
       // C-17: nada conta aditivo ainda; nulo em vez de um zero com cara de medido.
       aditivos: null,
+      situacao,
+      encerramento,
+      cnpj: ficha?.cnpj ?? null,
+      socioDaConta: ficha?.socioDaConta ?? null,
     };
   }
 
@@ -223,6 +278,44 @@ export class ContratoVivoService implements OnModuleInit {
     const ativos = await this.prisma.leadEvent.findMany({ where: { type: 'cliente.ativo', lead: { orgId } }, orderBy: { occurredAt: 'desc' }, select: { leadId: true }, take: 200 });
     const out: ContratoVivo[] = [];
     for (const leadId of new Set(ativos.map((e) => e.leadId))) out.push(await this.doLead(orgId, leadId, agora));
-    return out;
+    return ordenarContratos(out);
+  }
+
+  /**
+   * Concluir ou desativar à mão (T8), com motivo. Parcela em aberto no Asaas
+   * AVISA e pede ciência explícita; a cobrança NÃO é cancelada (fica [a decidir]
+   * pela mesa). Vai ao fio (`contrato.concluido`/`contrato.desativado`, uma vez
+   * por contrato) e à auditoria (`comercial.contrato.encerrado`).
+   */
+  async encerrar(orgId: string, leadId: string, quem: { id: string; papeis: readonly string[] }, input: ContratoEncerrarInput, agora: Date = new Date()): Promise<ContratoVivo> {
+    if (quem.papeis.some((p) => PAPEIS_DE_MAQUINA.includes(p))) throw new ForbiddenException('Conta de máquina não encerra contrato: quem decide é gente da casa.');
+    const nivel = classificar(EFEITO_DE_ENCERRAR_CONTRATO);
+    if (nivel !== 'R0' && nivel !== 'R1') throw new ForbiddenException(`Encerrar contrato ficou ${nivel} pela escada: precisa de capacidade no catálogo antes de valer.`);
+    const pessoa = await this.prisma.user.findFirst({ where: { id: quem.id, orgId, isActive: true }, select: { id: true, name: true } });
+    if (!pessoa) throw new ForbiddenException('Só gente ativa da empresa encerra contrato.');
+    const ativo = await this.prisma.leadEvent.findFirst({ where: { leadId, type: 'cliente.ativo', lead: { orgId } }, select: { id: true } });
+    if (!ativo) throw new NotFoundException('Contrato vivo não encontrado.');
+    const atual = await this.doLead(orgId, leadId, agora);
+    if (atual.encerramento) {
+      throw new ConflictException(`Este contrato já está ${atual.encerramento.situacao === 'concluido' ? 'concluído' : 'desativado'} desde ${atual.encerramento.em.slice(0, 10)}.`);
+    }
+    const emAberto = atual.parcelas.filter((p) => p.estado !== 'paga').length;
+    if (emAberto > 0 && !input.cienteDasParcelas) {
+      throw new BadRequestException(`Há ${emAberto} parcela(s) em aberto no Asaas. Encerrar não cancela a cobrança (isso é decisão da mesa). Confirme que viu para seguir.`);
+    }
+    const tipo = input.situacao === 'concluido' ? 'contrato.concluido' : 'contrato.desativado';
+    const r = await this.fio.registrar(orgId, leadId, tipo, 'encerramento', {
+      motivo: input.motivo, por: pessoa.id, porNome: pessoa.name, parcelasEmAberto: emAberto, nivel,
+    }, { em: agora });
+    if (!r.novo) throw new ConflictException('Este contrato já foi encerrado.');
+    await this.prisma.auditLog.create({
+      data: {
+        orgId, actorType: ActorType.user, actorId: pessoa.id, action: 'comercial.contrato.encerrado', entityType: 'lead', entityId: leadId,
+        before: { situacao: atual.situacao } as Prisma.InputJsonValue,
+        after: { situacao: input.situacao, parcelasEmAberto: emAberto, nivel, eventoId: r.eventoId } as Prisma.InputJsonValue,
+      },
+    });
+    this.log.log(`contrato do lead ${leadId} ${input.situacao} (${nivel}), ${emAberto} parcela(s) em aberto`);
+    return this.doLead(orgId, leadId, agora);
   }
 }

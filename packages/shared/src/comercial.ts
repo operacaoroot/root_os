@@ -359,6 +359,9 @@ export const COMERCIAL_EVENTOS = [
   'parcela.atrasada',
   'parcela.estornada',
   'marco.contrato',
+  // Rodada do trabalho T8 (19/10): alguém da casa encerrou o contrato à mão, com motivo.
+  'contrato.concluido',
+  'contrato.desativado',
   // decisões, etapa e saídas
   'decisao.aberta',
   'decisao.tomada',
@@ -985,7 +988,31 @@ export interface ContratoVivo {
   marcos: { chave: string; rotulo: string; quando: string | null; feito: boolean }[];
   /** C-17: nulo enquanto nenhum código conta aditivos; a tela não afirma número. */
   aditivos: number | null;
+  /*
+   * Rodada do trabalho T8 (19/10/2026): a situação do contrato. "Em implantação"
+   * é só informativo (ativo com o card da implantação aberto); concluído e
+   * desativado são decisão de gente, à mão, com motivo, registrada no fio.
+   */
+  situacao: SituacaoDoContrato;
+  encerramento: { situacao: 'concluido' | 'desativado'; motivo: string; em: string; por: string | null; parcelasEmAberto: number } | null;
+  cnpj: string | null;
+  socioDaConta: string | null;
 }
+
+export const SITUACOES_DO_CONTRATO = ['ativo', 'em_implantacao', 'concluido', 'desativado'] as const;
+export type SituacaoDoContrato = (typeof SITUACOES_DO_CONTRATO)[number];
+export const ROTULO_DA_SITUACAO_DO_CONTRATO: Record<SituacaoDoContrato, string> = {
+  ativo: 'Ativo', em_implantacao: 'Em implantação', concluido: 'Concluído', desativado: 'Desativado',
+};
+
+/** Encerrar à mão (T8): concluir ou desativar, com motivo; parcela em aberto pede ciência explícita. */
+export const ContratoEncerrarSchema = z.object({
+  situacao: z.enum(['concluido', 'desativado']),
+  motivo: z.string().trim().min(5, 'Escreva o motivo (pelo menos 5 caracteres).').max(500),
+  /** Há parcela em aberto: quem encerra declara que viu. A cobrança NÃO é cancelada ([a decidir] pela mesa). */
+  cienteDasParcelas: z.boolean().optional(),
+}).strict();
+export type ContratoEncerrarInput = z.infer<typeof ContratoEncerrarSchema>;
 
 /** A torre (tela 12). */
 export interface TorreDasAutomacoes {

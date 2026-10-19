@@ -117,6 +117,8 @@ export const FONTE_DO_EVENTO: Record<ComercialEvento, ComercialFonte> = {
   'parcela.atrasada': 'relogio',
   'parcela.estornada': 'asaas',
   'marco.contrato': 'relogio',
+  'contrato.concluido': 'pessoa',
+  'contrato.desativado': 'pessoa',
   'decisao.aberta': 'decisao',
   'decisao.tomada': 'pessoa',
   'decisao.expirada': 'relogio',
@@ -179,6 +181,8 @@ export interface PayloadsComerciais {
   /** D-10: estorno ou chargeback no provedor. A parcela volta a não paga; `evento` é o nome cru do provedor. */
   'parcela.estornada': { parcela: number; externoId: string; evento: string; em: string; valorCentavos: number };
   'marco.contrato': { marco: 'dia_15_indicacao' | 'd_30_continuidade' | 'primeiro_valor'; quando: string };
+  'contrato.concluido': { motivo: string; por: string; porNome: string | null; parcelasEmAberto: number; nivel: string };
+  'contrato.desativado': { motivo: string; por: string; porNome: string | null; parcelasEmAberto: number; nivel: string };
   'decisao.aberta': { decisaoId: string; tipo: string; padrao: string; expiraEm: string };
   'decisao.tomada': { decisaoId: string; tipo: string; escolha: string; por: string | null; canal: string };
   'decisao.expirada': { decisaoId: string; tipo: string; padraoAplicado: string };
@@ -339,6 +343,9 @@ export function resumoDoEvento(type: string, payload: unknown): { fonte: Comerci
       return { fonte, resumo: `parcela ${String(p.parcela)} estornada · volta a não paga` };
     case 'marco.contrato':
       return { fonte, resumo: `marco: ${String(p.marco)}` };
+    case 'contrato.concluido':
+    case 'contrato.desativado':
+      return { fonte, resumo: `contrato ${type === 'contrato.concluido' ? 'concluído' : 'desativado'} por ${String(p.porNome ?? 'alguém da casa')}: ${String(p.motivo)}${Number(p.parcelasEmAberto) > 0 ? ` · ${String(p.parcelasEmAberto)} parcela(s) em aberto, cobrança mantida` : ''}` };
     case 'decisao.aberta':
       return { fonte, resumo: `decisão aberta: ${String(p.tipo)} · padrão ${String(p.padrao)}` };
     case 'decisao.tomada':

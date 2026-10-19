@@ -1,6 +1,7 @@
 import { Body, Controller, Get, Headers, HttpCode, Ip, NotFoundException, Param, Post, UseGuards } from '@nestjs/common';
 import { ActorType } from '@prisma/client';
 
+import { ContratoEncerrarSchema } from '@mktos/shared';
 import { CurrentUser, type JwtUser } from '../auth/current-user.decorator';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RequirePermissions } from '../auth/permissions.decorator';
@@ -83,6 +84,16 @@ export class DinheiroController {
   @RequirePermissions('leads.ver')
   contratoVivo(@CurrentUser() user: JwtUser, @Param('leadId') leadId: string) {
     return this.contratos.doLead(user.orgId, leadId);
+  }
+
+  /**
+   * Encerrar à mão (rodada do trabalho T8): concluir ou desativar, com motivo.
+   * Escrita interna classificada R0 pela escada; o gate é `leads.editar`.
+   */
+  @Post('contratos/:leadId/encerrar')
+  @RequirePermissions('leads.editar')
+  encerrarContrato(@CurrentUser() user: JwtUser, @Param('leadId') leadId: string, @Body() body: unknown) {
+    return this.contratos.encerrar(user.orgId, leadId, { id: user.sub, papeis: user.roles ?? [] }, ContratoEncerrarSchema.parse(body ?? {}));
   }
 
   /** A lista de contratos vivos da empresa. */
