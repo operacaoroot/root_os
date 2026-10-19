@@ -20,7 +20,6 @@
 |---|---|
 | `<hash-final>` | o commit da `homolog/final-20261019` na tag `final-entrega-20261020` (40 caracteres) |
 | `<curto>` | os 7 primeiros caracteres de `<hash-final>` |
-| `<conciliacao>` | o nome da pasta da migration de conciliação do `clienteId` (depois de `20261019220000_tarefas_varios_responsaveis`, algo como `2026101923xxxx_conciliacao_cliente_da_tarefa`) |
 | `<argumentos do organizar>` | as flags exatas de `homolog/organizar/organizar.mjs`, copiadas do cabeçalho do script (lane D) |
 | `<quem responde>` | o nome de quem assina a política (Rodrigo ou Pedro) |
 
@@ -192,7 +191,7 @@ ls apps/api/prisma/migrations | tail -16
 **Conferir:**
 - `git rev-parse virada/final-20261019` imprime exatamente `<hash-final>`.
 - `git log` mostra o commit da entrega final.
-- A lista de migrations termina em `<conciliacao>`, logo depois de `20261019220000_tarefas_varios_responsaveis`.
+- A lista de migrations termina em `20261019230000_conciliacao_cliente_da_tarefa`, logo depois de `20261019220000_tarefas_varios_responsaveis`.
 
 **Se falhar:**
 - Hash diferente: o bundle não é o da entrega. Pare. Não construa imagem de um commit que ninguém validou.
@@ -270,11 +269,12 @@ A produção tem 85 migrations. A versão final traz 12 que ela ainda não tem:
 | `20261018220000_implantacao_card` | coluna `ComercialFicha.cardId` (o card que nasce do fechamento) |
 | `20261018230000_lead_reacao` | tabela `LeadReacao` (leitura e reações da proposta), filha de `Lead`, com RLS |
 | `20261018240000_sala_versao` | tabela `SalaVersao` (sala publicada por versão), filha de `Lead`, com RLS |
-| `20261019100000_tarefa_do_cliente` | `Partner.interno` e o cliente da tarefa. Na versão final ela é segura quando a coluna `WorkTask.clienteId` já existe (caso da produção) |
+| `20261019100000_tarefa_do_cliente` | `Partner.interno` e o cliente da tarefa. Na versão final ela só garante `Partner.interno`, idempotente; a coluna do cliente fica com a conciliação |
 | `20261019110000_vista_salva` | tabela `VistaSalva` (vistas salvas por pessoa), com RLS |
-| `<conciliacao>` | a conciliação do cliente da tarefa (abaixo) |
+| `20261019170000_cliente_da_tarefa_preparo` | não faz nada na produção (só age na homologação que rodou a versão antiga da nossa `20261019100000`) |
+| `20261019230000_conciliacao_cliente_da_tarefa` | a conciliação do cliente da tarefa (abaixo) |
 
-As onze primeiras têm data anterior à última da produção. O `migrate deploy` aplica toda migration que o banco não tem, na ordem do nome, mesmo as de data anterior. Por isso o ensaio vem antes.
+As doze primeiras têm data anterior à última da produção. O `migrate deploy` aplica toda migration que o banco não tem, na ordem do nome, mesmo as de data anterior. Por isso o ensaio vem antes.
 
 **O que a conciliação faz.** Na produção, `WorkTask.clienteId` aponta para outra `WorkTask` (o cartão da lista `cadastro` do Lucas). Na versão final, aponta para `Partner`. A migration: garante `Partner.interno` (um cliente da casa por empresa); para cada tarefa com cliente, acha o `Partner` pelo CNPJ ou pelo nome normalizado do cartão de cadastro, ou cria um; troca o `clienteId` para o `Partner`; troca a chave estrangeira e o CHECK pelos da versão final. É idempotente: rodar de novo, ou rodar num banco que já tem o esquema novo, não muda nada. `outrosResponsaveisIds` e `WorkArea` ficam como estão.
 
@@ -316,7 +316,7 @@ docker run --rm --network "$NET" -w /app/apps/api \
 - Total de tarefas e de tarefas com cliente iguais aos de `contagens-antes.txt`.
 - Zero tarefa com cliente que não seja `Partner`. Nenhuma empresa com dois clientes internos.
 - A chave estrangeira do cliente aponta para `"Partner"`.
-- 97 migrations aplicadas.
+- 98 migrations aplicadas.
 - O smoke termina em `SMOKE OK`. Ele cita 71 capacidades, porque o dump do passo 1 é anterior ao seed. Para ensaiar o seed também, rode o comando do passo 4 com `DATABASE_URL="$ENSAIO"` antes do smoke: aí ele cita 77.
 
 Depois de conferir, o banco do ensaio pode sair (é cópia em claro da produção):
@@ -337,7 +337,7 @@ psql_prod 'select migration_name from "_prisma_migrations" order by finished_at 
 psql_prod 'select count(*) from "WorkTask" t left join "Partner" p on p.id = t."clienteId" where t."clienteId" is not null and p.id is null'
 ```
 
-**Conferir:** 12 migrations aplicadas, a mais recente é `<conciliacao>`, e a contagem de tarefa com cliente órfão é zero. Siga direto para o passo 6.
+**Conferir:** 13 migrations aplicadas, a mais recente é `20261019230000_conciliacao_cliente_da_tarefa`, e a contagem de tarefa com cliente órfão é zero. Siga direto para o passo 6.
 
 **Se falhar em produção:** a API antiga continua de pé, mas o banco ficou no meio do caminho. Vá ao passo 11 (rollback completo). Não tente "consertar à mão" uma migration pela metade.
 
