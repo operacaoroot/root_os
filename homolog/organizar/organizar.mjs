@@ -236,6 +236,11 @@ async function main() {
   const tok = await entrar(pede);
   const tokConf = await entrar(confere);
   const api = (m, c, b, extras) => chamar(m, c, b, tok, extras);
+  // A API do merge exige a versão lida em toda edição de tarefa (409 work_task_conflict se
+  // mudou): relê a tarefa logo antes de escrever e manda o updatedAt dela.
+  const versao = async (id) => (await api("GET", `/trabalho/tarefas/${id}`)).updatedAt;
+  const editarTarefa = async (id, patch) => api("PATCH", `/trabalho/tarefas/${id}`, { ...patch, expectedUpdatedAt: await versao(id) });
+  const arquivarTarefa = async (id) => api("DELETE", `/trabalho/tarefas/${id}`, { expectedUpdatedAt: await versao(id) });
 
   // ---------------- 1. estrutura nossa
   let estrutura = await api('GET', '/trabalho/estrutura');
@@ -368,7 +373,7 @@ async function main() {
       if (t.archived) { conta.testes.jaArquivados++; linhaDoPlano(t, 'arquivado', 'já está', m.motivo); continue; }
       if (SIMULAR) { conta.testes.aArquivar++; linhaDoPlano(t, 'arquivado', 'arquivar', m.motivo); continue; }
       await api('POST', `/trabalho/tarefas/${t.id}/comentarios`, { text: `Arquivado na organização de ${HOJE}: ${String(m.motivo ?? 'teste').slice(0, 300)}` });
-      await api('DELETE', `/trabalho/tarefas/${t.id}`);
+      await arquivarTarefa(t.id);
       conta.testes.arquivados++;
       linhaDoPlano(t, 'arquivado', 'arquivado', m.motivo);
       continue;
@@ -424,7 +429,7 @@ async function main() {
     if (Object.keys(patch).length === 0) { conta.tarefas.jaNoLugar++; linhaDoPlano(t, destinoNome, 'já está', motivo); continue; }
     if (SIMULAR) { conta.tarefas.aMover++; linhaDoPlano(t, destinoNome, `mudar ${Object.keys(patch).join(', ')}`, motivo); continue; }
     try {
-      await api('PATCH', `/trabalho/tarefas/${t.id}`, patch);
+      await editarTarefa(t.id, patch);
       conta.tarefas.movidas++;
       linhaDoPlano(t, destinoNome, `mudou ${Object.keys(patch).join(', ')}`, motivo);
     } catch (e) {
@@ -471,7 +476,7 @@ async function main() {
         const link = `${WEB}/comercial/lead/${leadId}`;
         await api('POST', `/trabalho/tarefas/${t.id}/comentarios`, { text: `Este cartão virou lead no Funil vivo na organização de ${HOJE}: ${link}` });
       }
-      if (!t.archived) await api('DELETE', `/trabalho/tarefas/${t.id}`);
+      if (!t.archived) await arquivarTarefa(t.id);
       conta.leads.cartoesArquivados++;
       linhaDoPlano(t, `Funil vivo (${agora})`, 'lead criado/achado; cartão arquivado com o link', motivo);
     } catch (e) {
@@ -501,7 +506,7 @@ async function main() {
       if (SIMULAR && doMapa.has(t.id) && doMapa.get(t.id).cliente) continue;
       if (pasta === 'administrativa' || pasta === 'gestao') {
         if (SIMULAR) { conta.varredura.aPreencher++; continue; }
-        await api('PATCH', `/trabalho/tarefas/${t.id}`, { clienteId: 'interno' });
+        await editarTarefa(t.id, { clienteId: 'interno' });
         conta.varredura.clienteInternoPreenchido++;
       } else {
         conta.varredura.semClienteEmClientes++;
