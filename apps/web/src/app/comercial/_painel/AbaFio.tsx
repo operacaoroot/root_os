@@ -145,6 +145,22 @@ export function AbaFio({ leadId, ficha: f, carregando, aoMudar }: { leadId: stri
           <li><Chip tom={f.ligadoA.proposta ? 'bom' : 'neutro'}>{f.ligadoA.proposta ? `proposta v${f.ligadoA.proposta}` : 'proposta · ainda não'}</Chip></li>
           <li><Chip tom={f.ligadoA.contrato ? 'bom' : 'neutro'}>contrato {f.ligadoA.contrato ? `· ${f.ligadoA.contrato}` : '· ainda não'}</Chip></li>
           <li><Chip tom={f.ligadoA.cobranca ? 'bom' : 'neutro'}>Asaas {f.ligadoA.cobranca ? `· ${f.ligadoA.cobranca}` : '· ainda não'}</Chip></li>
+          {f.ligadoA.implantacao ? (
+            <>
+              <li>
+                <a href={`/trabalho?lista=${f.ligadoA.implantacao.listId}&tarefa=${f.ligadoA.implantacao.cardId}`} data-testid="lead-card-implantacao" className="underline-offset-2 hover:underline">
+                  <Chip tom="bom">implantação · {f.ligadoA.implantacao.etapa}</Chip>
+                </a>
+              </li>
+              {f.ligadoA.implantacao.trilhoId && (
+                <li>
+                  <a href={`/onboarding/${f.ligadoA.implantacao.trilhoId}`} className="underline-offset-2 hover:underline"><Chip tom="bom">trilho de onboarding</Chip></a>
+                </li>
+              )}
+            </>
+          ) : (
+            <li><Chip tom="neutro">implantação · nasce no fechamento</Chip></li>
+          )}
         </ul>
       </section>
 

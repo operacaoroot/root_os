@@ -569,6 +569,10 @@ export class FichaService {
     const idDaAta = ataDoSocio ? (ataDoSocio.payload as { porId?: unknown }).porId : null;
     const socio = typeof idDaAta === 'string' && idDaAta ? await this.prisma.user.findFirst({ where: { id: idDaAta, orgId }, select: { id: true } }) : null;
     const balao = (await this.baloes(orgId, [leadId])).get(leadId) ?? null;
+    // I1: o retrolink lead → card da implantação (o card é do Trabalho; a empresa é conferida aqui).
+    const card = ficha.cardId
+      ? await this.prisma.workTask.findFirst({ where: { id: ficha.cardId, orgId }, select: { id: true, listId: true, status: { select: { name: true } } } })
+      : null;
 
     return {
       leadId,
@@ -607,6 +611,7 @@ export class FichaService {
         proposta: ficha.propostaVersao > 0 ? ficha.propostaVersao : null,
         contrato: documento?.externoId ?? null,
         cobranca: cobranca?.externoId ?? null,
+        implantacao: card ? { cardId: card.id, listId: card.listId, etapa: card.status.name, trilhoId: ficha.trilhoId ?? null } : null,
       },
       fio: linhasDoFio(eventos, lead.enteredAt),
       balao,

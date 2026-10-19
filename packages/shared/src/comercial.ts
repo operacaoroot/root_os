@@ -654,7 +654,11 @@ export interface FichaDoLead {
   proximaAcao: ComercialProximaAcao | null;
   proximasAcoesAutomaticas: string[];
   portao: { proxima: ComercialEtapaAtiva | null; faltando: string[]; itens: ComercialPortaoNaTela[] };
-  ligadoA: { sala: string | null; ata: boolean; proposta: number | null; contrato: string | null; cobranca: string | null };
+  ligadoA: {
+    sala: string | null; ata: boolean; proposta: number | null; contrato: string | null; cobranca: string | null;
+    /** I1 (rodada da implantação): o card que o fechamento abriu no Trabalho, e o trilho. Ausente em projeção antiga. */
+    implantacao?: { cardId: string; listId: string; etapa: string; trilhoId: string | null } | null;
+  };
   fio: LinhaDoFio[];
   /** P5: o balão de quem moveu o cartão com pendência (o mesmo do funil). */
   balao?: ComercialBalaoDoMover | null;
