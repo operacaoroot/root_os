@@ -118,17 +118,57 @@ describe('a barra lateral', () => {
     }
   });
 
-  // 19/10/2026: o Trabalho foi absorvido pelo Dia a dia e pelo Marketing — oito áreas.
-  it('mostra oito áreas em vez de todos os destinos na lateral', () => {
+  // Versão final (19/10/2026): nove áreas na ordem das SECOES (o Trabalho voltou com a
+  // nossa organização; o Contexto desceu para depois da IA em 18/10).
+  it('mostra nove áreas, na ordem das seções, em vez de todos os destinos na lateral', () => {
     PERMISSOES = TODAS_DO_NAV;
     render(<Sidebar />);
     const destinos = within(screen.getByRole('navigation', { name: 'Destinos' }));
     expect(destinos.getAllByRole('link').map((el) => el.textContent)).toEqual([
-      'Dia a dia', 'Contexto', 'Marketing', 'Comercial', 'Financeiro',
-      'IA e automações', 'Resultados', 'Configurações',
+      'Dia a dia', 'Trabalho', 'Marketing', 'Comercial', 'Financeiro',
+      'IA e automações', 'Contexto', 'Resultados', 'Configurações',
     ]);
     expect(link('/contexto/marca')).toBeNull();
     expect(link('/referencias')).toBeNull();
+  });
+
+  it('Dia a dia entra na Visão geral e as abas seguem a ordem final', () => {
+    PERMISSOES = TODAS_DO_NAV;
+    CAMINHO = '/dia-a-dia';
+    render(<><Sidebar /><NavegacaoDoModulo /></>);
+    expect(screen.getByRole('link', { name: 'Dia a dia' })).toHaveAttribute('href', '/dia-a-dia');
+    const abas = within(screen.getByRole('navigation', { name: 'Abas de Dia a dia' }));
+    expect(abas.getAllByRole('link').map((el) => el.textContent)).toEqual([
+      'Visão geral', 'Pendências', 'Aprovações', 'Agenda', 'Painel geral da empresa',
+    ]);
+    expect(abas.getByRole('link', { name: 'Visão geral' })).toHaveAttribute('aria-current', 'page');
+  });
+
+  it('Comercial entra no Painel geral, na ordem final, sem Clientes nem Tarefas', () => {
+    PERMISSOES = TODAS_DO_NAV;
+    CAMINHO = '/comercial';
+    render(<><Sidebar /><NavegacaoDoModulo /></>);
+    expect(screen.getByRole('link', { name: 'Comercial' })).toHaveAttribute('href', '/comercial');
+    const abas = within(screen.getByRole('navigation', { name: 'Abas de Comercial' }));
+    expect(abas.getAllByRole('link').map((el) => el.textContent)).toEqual([
+      'Painel geral', 'Funil vivo', 'Propostas', 'Lista de leads', 'Contratos vivos',
+      'Simulador de WhatsApp', 'Torre das automações', 'Relatório da semana',
+    ]);
+    expect(abas.getByRole('link', { name: 'Painel geral' })).toHaveAttribute('aria-current', 'page');
+    expect(link('/clientes')).toBeNull();
+    expect(link('/comercial/tarefas')).toBeNull();
+    expect(link('/comercial/decisoes')).toBeNull();
+    expect(link('/funil')).toBeNull();
+  });
+
+  it('Banco de ideias e Estratégia do mês ficam no Marketing', () => {
+    PERMISSOES = TODAS_DO_NAV;
+    CAMINHO = '/marketing/ideias';
+    render(<><Sidebar /><NavegacaoDoModulo /></>);
+    expect(within(screen.getByRole('navigation', { name: 'Destinos' })).getByRole('link', { name: 'Marketing' })).toHaveAttribute('aria-current', 'true');
+    const abas = within(screen.getByRole('navigation', { name: 'Abas de Marketing' }));
+    expect(abas.getByRole('link', { name: 'Banco de ideias' })).toHaveAttribute('aria-current', 'page');
+    expect(abas.getByRole('link', { name: 'Estratégia do mês' })).toHaveAttribute('href', '/marketing/estrategia');
   });
 
   it('Marca é uma aba de Contexto e seleciona o módulo, preservando URL', () => {
@@ -168,12 +208,22 @@ describe('a barra lateral', () => {
   });
 
   it('filho permitido continua acessível sem a permissão do pai', () => {
-    PERMISSOES = ['dashboard.ver'];
-    CAMINHO = '/funil';
+    // A Marca pede pauta.ver sob o Contexto (obsidian.ver): sem o pai, o filho segue acessível.
+    PERMISSOES = ['pauta.ver'];
+    CAMINHO = '/contexto/marca';
     render(<><Sidebar /><NavegacaoDoModulo /></>);
-    expect(screen.getByRole('link', { name: 'Comercial' })).toHaveAttribute('href', '/funil');
-    expect(screen.getByRole('link', { name: 'Funil de vendas' })).toHaveAttribute('aria-current', 'page');
-    expect(link('/leads')).toBeNull();
+    expect(screen.getByRole('link', { name: 'Marca e brandbook' })).toHaveAttribute('aria-current', 'page');
+    expect(link('/contexto')).toBeNull();
+  });
+
+  it('a área sem o primeiro item entra pelo primeiro que a permissão libera', () => {
+    // Sem tarefas.ver, Dia a dia entra em Pendências; o funil antigo do Lucas não volta ao menu.
+    PERMISSOES = ['dashboard.ver'];
+    CAMINHO = '/caixa';
+    render(<><Sidebar /><NavegacaoDoModulo /></>);
+    expect(screen.getByRole('link', { name: 'Dia a dia' })).toHaveAttribute('href', '/caixa');
+    expect(link('/funil')).toBeNull();
+    expect(screen.queryByRole('link', { name: 'Comercial' })).toBeNull();
   });
 
   it('Configurações reúne conta, empresa e registros em abas distintas', () => {
@@ -221,7 +271,7 @@ describe('a barra lateral', () => {
     PERMISSOES = ['dashboard.ver'];
     render(<Paleta aberto fechar={() => {}} />);
     const dialogo = screen.getByRole('dialog', { name: 'Ir para' });
-    expect(dialogo).toHaveTextContent('Visão geral da empresa');
+    expect(dialogo).toHaveTextContent('Painel geral da empresa');
     // sem as demais permissões, nenhuma outra tela do NAV é oferecida
     const oferecidas = screen.getAllByRole('button').map((b) => b.querySelector('span')?.textContent);
     const semAcesso = NAV.filter((n) => !PERMISSOES.includes(n.permission)).map((n) => n.label);
@@ -248,7 +298,8 @@ describe('a barra lateral', () => {
     PERMISSOES = TODAS_DO_NAV;
     render(<Paleta aberto fechar={() => {}} />);
     const campo = screen.getByPlaceholderText('ir para…');
-    for (const termo of ['proposta', 'assinar contrato', 'whatsapp', 'editor de processos']) {
+    // 'proposta' e 'whatsapp' viraram telas na versão final (Propostas, Simulador de WhatsApp).
+    for (const termo of ['assinar contrato', 'nota fiscal', 'editor de processos']) {
       await user.clear(campo);
       await user.type(campo, termo);
       expect(screen.queryAllByRole('button'), termo).toHaveLength(0);
@@ -265,7 +316,7 @@ describe('a barra lateral', () => {
     expect(screen.getByRole('button', { name: /Agentes de IA/ })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /Processos.*em preparação/ })).toBeInTheDocument();
     await user.clear(campo);
-    await user.type(campo, 'contratos'); // palavra só do texto de apoio da seção
+    await user.type(campo, 'medição'); // palavra só do texto de apoio da seção
     expect(screen.queryAllByRole('button')).toHaveLength(0);
   });
 
@@ -305,7 +356,7 @@ describe('a barra lateral', () => {
     PERMISSOES = TODAS_DO_NAV;
     CAMINHO = '/painel';
     render(<Topbar />);
-    expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent('Visão geral da empresa');
+    expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent('Painel geral da empresa');
   });
 
   it('a Topbar de /assinatura ainda mostra o título do item oculto', () => {
