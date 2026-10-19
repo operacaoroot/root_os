@@ -69,12 +69,21 @@ function montar() {
 describe('cofre da empresa', () => {
   it('criar a senha do cofre exige a senha do login; depois, a do cofre abre e a do login não', async () => {
     const { svc } = montar();
-    await expect(svc.definirSenha(ORG, EU, { senhaNova: 'cofre-123' })).rejects.toThrow(/senha com que você entra/);
+    await expect(svc.definirSenha(ORG, EU, { senhaNova: 'cofre-123' })).rejects.toThrow(/saia e entre de novo/);
     await expect(svc.definirSenha(ORG, EU, { senhaNova: 'cofre-123', senhaDoLogin: 'errada' })).rejects.toThrow();
     await svc.definirSenha(ORG, EU, { senhaNova: 'cofre-123', senhaDoLogin: LOGIN });
     await expect(svc.destrancar(ORG, EU, LOGIN)).rejects.toThrow(/Senha errada/);
     const { token } = await svc.destrancar(ORG, EU, 'cofre-123');
     expect(token).toMatch(/^[0-9a-f]{64}$/);
+  });
+
+  it('quem entra pelo Google cria a senha do cofre com login recente, sem senha do login; login antigo não serve', async () => {
+    const { svc } = montar();
+    const agora = Math.floor(Date.now() / 1000);
+    await expect(svc.definirSenha(ORG, EU, { senhaNova: 'cofre-123' }, agora - 3600)).rejects.toThrow(/saia e entre de novo/);
+    await expect(svc.definirSenha(ORG, EU, { senhaNova: 'cofre-123', senhaDoLogin: 'chute' }, agora - 3600)).rejects.toThrow(/não confere/);
+    await svc.definirSenha(ORG, EU, { senhaNova: 'cofre-123' }, agora - 60);
+    expect((await svc.destrancar(ORG, EU, 'cofre-123')).token).toMatch(/^[0-9a-f]{64}$/);
   });
 
   it('trancado: não lista, não revela, não cria', async () => {

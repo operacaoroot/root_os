@@ -315,14 +315,15 @@ function CriarSenha({ chamar, onPronto, onErro }: { chamar: Chamar; onPronto: ()
         e.preventDefault();
         if (f.nova.length < 8) return onErro('A senha do cofre precisa de pelo menos 8 caracteres.');
         if (f.nova !== f.conf) return onErro('As duas senhas do cofre não são iguais.');
-        try { await chamar('/senha', { method: 'POST', body: JSON.stringify({ senhaNova: f.nova, senhaDoLogin: f.login }) }, false); onPronto(); }
+        try { await chamar('/senha', { method: 'POST', body: JSON.stringify({ senhaNova: f.nova, ...(f.login ? { senhaDoLogin: f.login } : {}) }) }, false); onPronto(); }
         catch (err) { onErro((err as Error).message); }
       }}
       className="mx-auto max-w-sm space-y-3 rounded-xl border border-border bg-surface p-6"
     >
       <div className="text-center font-medium">Crie a senha do seu cofre</div>
-      <p className="text-center text-[12px] text-muted">Ela é sua, diferente da senha do login. Se esquecer, outro sócio precisa zerar o seu acesso.</p>
-      <input type="password" autoComplete="current-password" placeholder="Sua senha do login (para confirmar)" value={f.login} onChange={(e) => setF({ ...f, login: e.target.value })} className={inputCls} />
+      <p className="text-center text-[12px] text-muted">Ela é sua, diferente da senha do login. Se esquecer, outro sócio zera o seu acesso.</p>
+      <p className="text-center text-[12px] text-muted">Entra pelo Google? Deixe o primeiro campo vazio: vale se você entrou no OS nos últimos 10 minutos. Se não, saia e entre de novo.</p>
+      <input type="password" autoComplete="current-password" placeholder="Senha do login (vazio se entra pelo Google)" value={f.login} onChange={(e) => setF({ ...f, login: e.target.value })} className={inputCls} />
       <input type="password" autoComplete="new-password" placeholder="Nova senha do cofre (8+ caracteres)" value={f.nova} onChange={(e) => setF({ ...f, nova: e.target.value })} className={inputCls} />
       <input type="password" autoComplete="new-password" placeholder="Repita a senha do cofre" value={f.conf} onChange={(e) => setF({ ...f, conf: e.target.value })} className={inputCls} />
       <button className="w-full rounded-lg bg-brand px-3 py-2 text-sm font-medium text-ink hover:opacity-90">Criar senha do cofre</button>

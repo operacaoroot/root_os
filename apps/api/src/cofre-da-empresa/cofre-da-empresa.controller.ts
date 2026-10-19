@@ -25,8 +25,8 @@ export class CofreDaEmpresaController {
 
   @Post('senha')
   @RequirePermissions('cofre.ver')
-  senha(@CurrentUser() u: JwtUser, @Body() body: unknown) {
-    return this.svc.definirSenha(u.orgId, u.sub, DefinirSenhaSchema.parse(body));
+  senha(@CurrentUser() u: JwtUser & { iat?: number }, @Body() body: unknown) {
+    return this.svc.definirSenha(u.orgId, u.sub, DefinirSenhaSchema.parse(body), u.iat);
   }
 
   @Post('destrancar')

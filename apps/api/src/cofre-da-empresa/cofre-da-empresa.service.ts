@@ -31,6 +31,8 @@ import { cifrar, decifrar } from '../common/crypto';
  */
 
 export const MINUTOS_DA_SESSAO = 15;
+/** Criar a senha do cofre pela 1ª vez vale até este tempo depois do login (quem entra pelo Google não tem senha de login). */
+export const MINUTOS_DO_LOGIN_RECENTE = 10;
 export const TENTATIVAS_ATE_BLOQUEAR = 5;
 export const MINUTOS_DE_BLOQUEIO = 15;
 export const TETO_DO_ARQUIVO = 10 * 1024 * 1024;
@@ -85,7 +87,8 @@ export class CofreDaEmpresaService {
     };
   }
 
-  async definirSenha(orgId: string, userId: string, input: z.infer<typeof DefinirSenhaSchema>) {
+  /** `loginEm`: segundos (iat) do token de sessão; prova que a pessoa acabou de entrar no OS. */
+  async definirSenha(orgId: string, userId: string, input: z.infer<typeof DefinirSenhaSchema>, loginEm?: number) {
     const atual = await this.prisma.cofreSenha.findUnique({ where: { orgId_userId: { orgId, userId } } });
     if (atual) {
       // trocar: exige a senha do cofre de agora
@@ -93,10 +96,20 @@ export class CofreDaEmpresaService {
         throw new ForbiddenException('A senha atual do cofre não confere.');
       }
     } else {
-      // primeira vez: exige a senha do login, para quem achar a sessão aberta não criar o cofre no seu lugar
-      const user = await this.prisma.user.findFirst({ where: { id: userId, orgId }, select: { passwordHash: true } });
-      if (!user || !input.senhaDoLogin || !(await bcrypt.compare(input.senhaDoLogin, user.passwordHash))) {
-        throw new ForbiddenException('Para criar a senha do cofre, confirme a senha com que você entra no OS.');
+      // Primeira vez: prova de que é a própria pessoa, para quem achar a sessão aberta não criar o cofre
+      // no lugar dela. Vale a senha do login OU um login feito há pouco (quem entra pelo Google não tem
+      // senha de login; entrar de novo pelo Google é a prova).
+      const recente = typeof loginEm === 'number' && Date.now() - loginEm * 1000 <= MINUTOS_DO_LOGIN_RECENTE * 60_000;
+      let pelaSenha = false;
+      if (input.senhaDoLogin) {
+        const user = await this.prisma.user.findFirst({ where: { id: userId, orgId }, select: { passwordHash: true } });
+        pelaSenha = !!user && (await bcrypt.compare(input.senhaDoLogin, user.passwordHash));
+        if (!pelaSenha && !recente) throw new ForbiddenException('A senha do login não confere.');
+      }
+      if (!pelaSenha && !recente) {
+        throw new ForbiddenException(
+          `Para criar a senha do cofre, saia e entre de novo no OS (pelo Google ou pela senha) e crie em até ${MINUTOS_DO_LOGIN_RECENTE} minutos.`,
+        );
       }
     }
     const hash = await bcrypt.hash(input.senhaNova, 12);
