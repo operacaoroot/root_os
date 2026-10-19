@@ -431,7 +431,8 @@ export class DinheiroService implements OnModuleInit {
       parcelaCentavos,
       ...(ultimaParcelaCentavos !== parcelaCentavos ? { ultimaParcelaCentavos } : {}),
       forma: a.forma,
-      primeiroVencimento: hojeEmSP(),
+      // T1b: de quem fechou fora, o 1º vencimento é o DECLARADO (está no hash que a titular assinou); do funil, hoje.
+      primeiroVencimento: a.fora?.primeiroVencimento ?? hojeEmSP(),
       descricao: `${rotulo} · ${a.dados.razaoSocial}`,
       referenciaExterna: referencia,
     });
@@ -474,7 +475,7 @@ export class DinheiroService implements OnModuleInit {
       parcelas: r.parcelas.length,
       forma: a.forma,
       valorCentavos: a.valorCentavos,
-      primeiraVence: primeira?.vence ?? hojeEmSP(),
+      primeiraVence: primeira?.vence ?? a.fora?.primeiroVencimento ?? hojeEmSP(),
       devedor: devedorDosDados(a.dados),
     };
     await this.fio.registrar(orgId, leadId, 'cobranca.criada', referencia, criada);

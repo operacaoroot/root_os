@@ -30,6 +30,7 @@ import { alcadaDe, atendeAlcada, descreverAlcada, exigeMotivo, temPapelDeMaquina
 import { conferirPedidoDeMover } from './destino-do-mover';
 import { LimpezaDasVencidasService } from './limpeza-das-vencidas';
 import { RepedidosRegistry, chaveDoPedido } from './repedidos.registry';
+import { QuemNaoAssinaRegistry, type QuemNaoAssina } from './quem-nao-assina.registry';
 
 const CreateApprovalSchema = z.object({
   resourceType: z.enum(['lead', 'task', 'campaign', 'content']),
@@ -159,6 +160,13 @@ export class ApprovalsController {
      */
     @Optional() private readonly repedidos?: RepedidosRegistry,
     @Optional() private readonly limpeza?: LimpezaDasVencidasService,
+    /*
+     * T1b (revisão P2-2): quem não assina um pedido além de quem o propôs, pela
+     * regra do domínio (quem registrou um cliente fechado fora não confere o
+     * próprio registro). Opcional como os outros registros: as suítes montam o
+     * controlador à mão. Ver `quem-nao-assina.registry.ts`.
+     */
+    @Optional() private readonly quemNaoAssina?: QuemNaoAssinaRegistry,
   ) {}
 
   /** Os "pedir de novo" em curso neste processo: dois cliques não fazem dois pedidos. */
@@ -438,6 +446,20 @@ export class ApprovalsController {
     for (const l of leads) if (l.name) nomeDoLead.set(l.id, l.name);
     for (const f of fichas) if (f.empresa && nomeDoLead.has(f.leadId)) nomeDoLead.set(f.leadId, f.empresa);
 
+    /*
+     * T1b (revisão P2-2): quem NÃO assina cada pedido vivo pela regra do domínio,
+     * além de quem propôs. Sai de "quem pode aprovar" e lê o porquê no lugar do
+     * botão. A rota de confirmação faz a mesma pergunta antes de `confirm`.
+     */
+    const naoAssinam = new Map<string, QuemNaoAssina>();
+    if (this.quemNaoAssina) {
+      for (const ap of vivas) {
+        const ch = ap.toolCallId ? porChamada.get(ap.toolCallId) : undefined;
+        const r = await this.quemNaoAssina.consultar(orgId, ap.capabilityId, (ch?.args ?? null) as Record<string, unknown> | null, user.sub);
+        if (r) naoAssinam.set(ap.id, r);
+      }
+    }
+
     const itens = linhas.map((ap) => {
       const chamada = ap.toolCallId ? porChamada.get(ap.toolCallId) : undefined;
       const decisao = ap.decisionId ? porDecisao.get(ap.decisionId) : undefined;
@@ -455,8 +477,9 @@ export class ApprovalsController {
               : 'esperando';
 
       const aprovadores = pessoas.filter(
-        (p) => p.decide && p.id !== ap.propostoPorId && atendeAlcada(ap.alcadaMinima, p.alcada),
+        (p) => p.decide && p.id !== ap.propostoPorId && atendeAlcada(ap.alcadaMinima, p.alcada) && !naoAssinam.get(ap.id)?.ids.includes(p.id),
       );
+      const vetado = naoAssinam.get(ap.id)?.ids.includes(user.sub) ? naoAssinam.get(ap.id)!.motivo : null;
       const souOProponente = ap.propostoPorId === user.sub;
 
       /*
@@ -585,6 +608,7 @@ export class ApprovalsController {
               tokenDecide,
               peloToken,
               confirmadaAntes: ap.status === ApprovalState.confirmada,
+              vetado,
             }),
       };
     });
@@ -883,6 +907,16 @@ export class ApprovalsController {
     );
   }
 
+  /** T1b: a frase de recusa quando a regra do domínio tira `quem` desta assinatura; `null` quando não tira. */
+  private async vetoDeQuemNaoAssina(orgId: string, approvalId: string, quem: string): Promise<string | null> {
+    if (!this.quemNaoAssina) return null;
+    const ap = await this.prisma.approval.findFirst({ where: { id: approvalId, orgId }, select: { capabilityId: true, toolCallId: true } });
+    if (!ap?.capabilityId || !ap.toolCallId) return null;
+    const chamada = await this.prisma.toolCall.findFirst({ where: { id: ap.toolCallId, orgId }, select: { args: true } });
+    const r = await this.quemNaoAssina.consultar(orgId, ap.capabilityId, (chamada?.args ?? null) as Record<string, unknown> | null, quem);
+    return r && r.ids.includes(quem) ? r.motivo : null;
+  }
+
   /**
    * As pessoas ativas da empresa, com alçada e permissão de decidir — do BANCO.
    *
@@ -944,8 +978,10 @@ export class ApprovalsController {
     peloToken?: boolean;
     /** A linha chegou a ser confirmada (a gaveta "expirou" da superfície do token, PA-8). */
     confirmadaAntes?: boolean;
+    /** T1b: a regra do domínio tira esta pessoa de quem assina (ver `quem-nao-assina.registry.ts`). */
+    vetado?: string | null;
   }): string {
-    const { gaveta, souOProponente, eu, minima, impedimento, tokenDecide, peloToken, confirmadaAntes } = entrada;
+    const { gaveta, souOProponente, eu, minima, impedimento, tokenDecide, peloToken, confirmadaAntes, vetado } = entrada;
     if (gaveta === 'expirou' && peloToken && confirmadaAntes) {
       return 'Foi confirmada, mas o prazo venceu antes de quem pediu concluir: nada mudou. Para mudar, peça de novo.';
     }
@@ -969,6 +1005,7 @@ export class ApprovalsController {
     if (souOProponente) {
       return 'Você propôs esta ação, e quem propõe não assina. Ela precisa de outra pessoa com alçada.';
     }
+    if (vetado) return vetado;
     if (!eu) return 'Sua sessão não corresponde a um usuário ativo desta empresa. Entre de novo.';
     if (!eu.decide) return 'Seu perfil acompanha a fila, mas não decide nela (falta "aprovacoes.decidir").';
     if (!tokenDecide) {
@@ -1095,6 +1132,14 @@ export class ApprovalsController {
      */
     const impedimento = await this.impedimentoDeExecucao(user.orgId, id);
     if (impedimento) throw impedimento;
+
+    /*
+     * PASSO 3 (T1b, revisão P2-2) — quem a regra do domínio tira da assinatura,
+     * além de quem propôs. Recusa ANTES de `confirm`: a aprovação continua
+     * pendente para outra pessoa, e nenhuma assinatura vai ao RASTRO.
+     */
+    const veto = await this.vetoDeQuemNaoAssina(user.orgId, id, user.sub);
+    if (veto) throw new ForbiddenException(veto);
 
     const confirmada = await this.approvals.confirm(
       user.orgId,

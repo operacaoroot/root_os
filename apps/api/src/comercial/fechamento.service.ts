@@ -1,5 +1,5 @@
 import { Injectable, Logger, NotFoundException, OnModuleInit, Optional } from '@nestjs/common';
-import { COMERCIAL_FATOS_DA_PRIMEIRA_PAGA, TABELA_DE_PRECO, formatarReais, type EscritaDoFechamento, type FechamentoDoLead } from '@mktos/shared';
+import { COMERCIAL_FATOS_DA_PRIMEIRA_PAGA, TABELA_DE_PRECO, formatarReais, type ContratoAnexadoNaTela, type ConteudoDoFechamento, type EscritaDoFechamento, type FechamentoDoLead } from '@mktos/shared';
 import { ActorType, FinanceTxType, Prisma } from '@prisma/client';
 
 import { EfeitosRegistry, type ContextoDoEfeito } from '../gateway/efeitos.registry';
@@ -98,15 +98,6 @@ export const FECHAMENTO_PARADO_MS = 15 * 60_000;
 export const EQUIPE_A_DECIDIR = '[a decidir: quem entra no grupo]';
 
 type P = Record<string, unknown>;
-
-/** T1b: o PDF do contrato assinado fora, como a tela do fechamento mostra. */
-export interface ContratoAnexadoNaTela {
-  nome: string;
-  bytes: number;
-  sha256: string;
-  assinadoEm: string;
-  por: string | null;
-}
 
 export function chaveDoFechamento(leadId: string, versao: number): string {
   return `fech-${leadId}-v${versao}`;
@@ -762,10 +753,53 @@ export class FechamentoService implements OnModuleInit {
   }
 
   /** T1b: o contrato assinado fora, anexado (para quem confere o fechamento baixar o PDF antes de assinar). */
-  private async contratoAnexado(orgId: string, leadId: string): Promise<ContratoAnexadoNaTela | null> {
-    const fato = await this.prisma.leadEvent.findFirst({ where: { leadId, orgId, type: 'contrato.anexado' }, orderBy: { occurredAt: 'desc' }, select: { payload: true } });
-    if (!fato) return null;
+  private async contratoAnexado(orgId: string, leadId: string, a?: AceiteDoLead | null): Promise<ContratoAnexadoNaTela | null> {
+    // O PDF que a declaração VIGENTE cita (revisão: nunca "o mais novo", que pode ser de outra versão).
+    const aceite = a === undefined ? await this.aceiteParaFechar(orgId, leadId) : a;
+    const sha = aceite?.fora?.arquivoSha256;
+    if (!sha) return null;
+    const fato = await this.prisma.leadEvent.findUnique({ where: { id: eventoIdComercial(orgId, leadId, 'contrato.anexado', sha) }, select: { leadId: true, payload: true } });
+    if (!fato || fato.leadId !== leadId) return null;
     const p = (fato.payload ?? {}) as P;
     return { nome: String(p.nome ?? 'contrato.pdf'), bytes: Number(p.bytes ?? 0), sha256: String(p.sha256 ?? ''), assinadoEm: String(p.assinadoEm ?? ''), por: typeof p.por === 'string' ? p.por : null };
+  }
+
+  /**
+   * Revisão P2-1: o que a titular assina no R4 do fechamento, para o cartão de `/atendimento`. Os
+   * argumentos do pedido só levam lead, chave e hash; aqui vão os dados que o hash prende, com o hash
+   * RECALCULADO agora (da declaração, para quem fechou fora; do aceite da sala, para o funil) e o PDF
+   * que a declaração cita. `confere` falso = o conteúdo mudou depois do pedido, e a tela não acende o botão.
+   */
+  async conteudoParaAssinar(orgId: string, leadId: string, hashAssinado: string | null): Promise<ConteudoDoFechamento> {
+    const lead = await this.prisma.lead.findFirst({ where: { id: leadId, orgId }, select: { name: true } });
+    if (!lead) throw new NotFoundException('Lead não encontrado.');
+    const a = await this.aceiteParaFechar(orgId, leadId);
+    if (!a) throw new NotFoundException('Este lead não tem aceite para fechar.');
+    return {
+      leadId,
+      nome: lead.name,
+      origem: a.fora ? 'fora' : 'sala',
+      versao: a.versao,
+      chave: chaveDoFechamento(leadId, a.versao),
+      produto: a.produto,
+      rotuloDoProduto: TABELA_DE_PRECO[a.produto]?.rotulo ?? a.produto,
+      valorCentavos: a.valorCentavos,
+      parcelas: a.parcelas,
+      forma: a.forma,
+      dados: a.dados,
+      fora: a.fora
+        ? {
+            assinadoEm: a.fora.assinadoEm,
+            primeiroVencimento: a.fora.primeiroVencimento,
+            criarCobranca: a.fora.criarCobranca,
+            motivoSemCobranca: a.fora.motivoSemCobranca,
+            por: a.fora.por,
+            anexo: await this.contratoAnexado(orgId, leadId, a),
+          }
+        : null,
+      hashDeAgora: a.hash,
+      hashAssinado,
+      confere: !!hashAssinado && hashAssinado === a.hash,
+    };
   }
 }

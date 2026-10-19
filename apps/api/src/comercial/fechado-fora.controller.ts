@@ -1,7 +1,7 @@
-import { Body, Controller, Get, HttpCode, Logger, Param, Post, Res, UploadedFile, UseGuards, UseInterceptors } from '@nestjs/common';
+import { Body, Controller, Get, HttpCode, Logger, Param, Post, Query, Res, UploadedFile, UseGuards, UseInterceptors } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import type { Response } from 'express';
-import { FECHADO_FORA_MAX_BYTES, type ClienteFechadoForaResposta } from '@mktos/shared';
+import { FECHADO_FORA_MAX_BYTES, type ClienteFechadoForaResposta, type ConteudoDoFechamento } from '@mktos/shared';
 
 import { CurrentUser, type JwtUser } from '../auth/current-user.decorator';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
@@ -10,6 +10,7 @@ import { PermissionsGuard } from '../auth/permissions.guard';
 import { entregarArquivo } from '../common/entregar-arquivo';
 import { PrismaService } from '../prisma/prisma.service';
 import { FechadoForaService } from './fechado-fora.service';
+import { FechamentoService } from './fechamento.service';
 
 /*
  * "REGISTRAR CLIENTE JÁ FECHADO" (rodada do trabalho T1b, 19/10/2026): a porta
@@ -26,7 +27,18 @@ export class FechadoForaController {
   constructor(
     private readonly prisma: PrismaService,
     private readonly svc: FechadoForaService,
+    private readonly fechamentos: FechamentoService,
   ) {}
+
+  /**
+   * Revisão P2-1: o que a titular assina no R4 do fechamento, para o cartão de `/atendimento`. Como o
+   * conteúdo da sala e da proposta, só para quem decide (`aprovacoes.decidir`); o hash vem recalculado.
+   */
+  @Get('fechamentos/:leadId/conteudo')
+  @RequirePermissions('aprovacoes.decidir')
+  conteudo(@CurrentUser() user: JwtUser, @Param('leadId') leadId: string, @Query('hash') hash?: string): Promise<ConteudoDoFechamento> {
+    return this.fechamentos.conteudoParaAssinar(user.orgId, leadId, typeof hash === 'string' && /^[0-9a-f]{64}$/.test(hash) ? hash : null);
+  }
 
   @Post('clientes-fechados-fora')
   @HttpCode(200)
@@ -40,13 +52,13 @@ export class FechadoForaController {
   /** O PDF anexado, para conferir antes de assinar o fechamento (quem vê o lead vê o contrato dele). */
   @Get('lead/:id/contrato-anexado')
   @RequirePermissions('leads.ver')
-  async anexo(@CurrentUser() user: JwtUser, @Param('id') id: string, @Res() res: Response) {
+  async anexo(@CurrentUser() user: JwtUser, @Param('id') id: string, @Res() res: Response, @Query('sha') sha?: string) {
     const lead = await this.prisma.lead.findFirst({ where: { id, orgId: user.orgId }, select: { id: true } });
     if (!lead) {
       res.status(404).json({ message: 'Lead não encontrado.' });
       return;
     }
-    const { stream, size, nome } = await this.svc.anexo(user.orgId, id);
+    const { stream, size, nome } = await this.svc.anexo(user.orgId, id, typeof sha === 'string' ? sha : undefined);
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader('Content-Length', size);
     res.setHeader('Content-Disposition', `attachment; filename="${nome.replace(/[^\x20-\x7e]|["\\]/g, '_')}"`);

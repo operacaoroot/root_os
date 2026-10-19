@@ -134,12 +134,20 @@ export class ContratoVivoService implements OnModuleInit {
     });
     let avisos = 0;
     let decisoes = 0;
+    // T1b: de quem fechou FORA do sistema a 1ª parcela vence no 1º vencimento declarado, não no dia do aceite na sala.
+    const leadsDaPrimeira = [...new Set(abertas.filter((c) => c.parcela === 1).map((c) => c.leadId))];
+    const foraDoSistema = new Set(
+      leadsDaPrimeira.length
+        ? (await this.prisma.leadEvent.findMany({ where: { orgId, leadId: { in: leadsDaPrimeira }, type: 'aceite.declarado' }, select: { leadId: true }, distinct: ['leadId'] })).map((e) => e.leadId)
+        : [],
+    );
     for (const c of abertas) {
       const vence = diaSP(c.vence);
       const devido = avisoDevido(vence, hoje);
       if (!devido) continue;
       // A 1ª parcela vence no dia do aceite e é paga ali, na sala: aviso antes ou no dia seria ruído. A régua dela começa no D+1.
-      if (c.parcela === 1 && devido.dias < 1) continue;
+      // A de quem fechou fora não passa pela sala: a régua dela é a das outras parcelas (D-3, D0, D+1...).
+      if (c.parcela === 1 && devido.dias < 1 && !foraDoSistema.has(c.leadId)) continue;
       try {
         const chave = `${c.externoId}:${devido.aviso}`;
         const r = await this.fio.registrar(orgId, c.leadId, 'parcela.vence', chave, { parcela: c.parcela, vence, aviso: devido.aviso }, { em: agora });

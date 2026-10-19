@@ -6,14 +6,16 @@ import bcrypt from 'bcryptjs';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { A_DECIDIR, ClienteFechadoForaSchema, PRODUTOS_COM_PRECO, type ClienteFechadoForaInput } from '@mktos/shared';
 
+import { ApprovalsController } from '../src/approvals/approvals.controller';
 import { ApprovalsService } from '../src/approvals/approvals.service';
+import { QuemNaoAssinaRegistry } from '../src/approvals/quem-nao-assina.registry';
 import { AuditService } from '../src/audit/audit.service';
 import { ReauthService } from '../src/auth/reauth.service';
 import { comContexto } from '../src/common/contexto-execucao';
 import { ConfigComercialService } from '../src/comercial/config.service';
 import { ContratoVivoService } from '../src/comercial/contrato-vivo.service';
 import { DecisoesRegistry, DecisoesService } from '../src/comercial/decisoes.service';
-import { DinheiroService } from '../src/comercial/dinheiro.service';
+import { DinheiroService, hojeEmSP, venceComoData } from '../src/comercial/dinheiro.service';
 import { aceiteDaDeclaracao, camposDaDeclaracao, ehPdf, hashDaDeclaracao, parcelasDoContratoFora, payloadDaDeclaracao, somarMeses } from '../src/comercial/fechado-fora';
 import { FechadoForaService, type ArmazemDoAnexo } from '../src/comercial/fechado-fora.service';
 import { CAP_FECHAMENTO, FechamentoService } from '../src/comercial/fechamento.service';
@@ -135,6 +137,7 @@ describe.skipIf(!URL)('registrar cliente já fechado, pela porta e contra o Post
   let fechamento: FechamentoService;
   let fora: FechadoForaService;
   let contratoVivo: ContratoVivoService;
+  let controlador: ApprovalsController;
   let quemRegistraId = '';
   let outraTitularId = '';
   let leadId = '';
@@ -154,7 +157,8 @@ describe.skipIf(!URL)('registrar cliente já fechado, pela porta e contra o Post
     prisma = new PrismaClient({ datasources: { db: { url: URL } } });
     const p = prisma as unknown as PrismaService;
     await prisma.org.create({ data: { id: ORG, name: `Fechado fora ${MARCA}`, slug: `fechado-fora-${MARCA}` } });
-    const admin = await prisma.role.create({ data: { orgId: ORG, key: 'admin_master', name: 'Admin' }, select: { id: true } });
+    for (const key of ['aprovacoes.ver', 'aprovacoes.decidir']) await prisma.permission.upsert({ where: { key }, update: {}, create: { key } });
+    const admin = await prisma.role.create({ data: { orgId: ORG, key: 'admin_master', name: 'Admin', permissions: { connect: [{ key: 'aprovacoes.ver' }, { key: 'aprovacoes.decidir' }] } }, select: { id: true } });
     const hash = await bcrypt.hash(SENHA, 4);
     quemRegistraId = (await prisma.user.create({ data: { orgId: ORG, email: `rodrigo-${MARCA}@t1b.teste`, name: 'Rodrigo da Root', passwordHash: hash, roles: { connect: { id: admin.id } } }, select: { id: true } })).id;
     outraTitularId = (await prisma.user.create({ data: { orgId: ORG, email: `lidiane-${MARCA}@t1b.teste`, name: 'Outra titular', passwordHash: hash, roles: { connect: { id: admin.id } } }, select: { id: true } })).id;
@@ -217,7 +221,9 @@ describe.skipIf(!URL)('registrar cliente já fechado, pela porta e contra o Post
       put: async (k, corpo) => void guardados.set(k, corpo),
       get: async (k) => ({ stream: Readable.from(guardados.get(k) ?? Buffer.alloc(0)), contentType: 'application/pdf', size: guardados.get(k)?.length ?? 0 }),
     };
-    fora = new FechadoForaService(p, fio, reacoes, fichas, fechamento, leads, undefined, armazem);
+    const quemNaoAssina = new QuemNaoAssinaRegistry();
+    fora = new FechadoForaService(p, fio, reacoes, fichas, fechamento, leads, undefined, armazem, quemNaoAssina);
+    controlador = new ApprovalsController(approvals, acoes, p, gateway, undefined, undefined, quemNaoAssina);
     fora.onModuleInit();
   }, 60_000);
 
@@ -363,15 +369,26 @@ describe.skipIf(!URL)('registrar cliente já fechado, pela porta e contra o Post
     expect(await prisma.approval.count({ where: { orgId: ORG, capabilityId: CAP_FECHAMENTO } })).toBe(1);
   });
 
-  it('marcando a cobrança, ela nasce como a do funil (parcelas no provedor) e o contrato lê as parcelas dela', async () => {
-    const r = await naEmpresa(() => fora.registrar(ORG, quem(), entrada({ cnpj: CNPJ2, razaoSocial: 'Mercado Bom Preço Ltda', telefone: '(32) 99999-0002', criarCobranca: true, motivoSemCobranca: undefined }), arquivo()));
+  it('marcando a cobrança, ela nasce no 1º vencimento DECLARADO, e a régua avisa a 1ª parcela no dia (revisão P1-1)', async () => {
+    const vencimento = hojeEmSP(new Date(Date.now() + 20 * 86_400_000));
+    // Com cobrança nova, 1º vencimento no passado é recusado antes de qualquer escrita.
+    await expect(
+      naEmpresa(() => fora.registrar(ORG, quem(), entrada({ cnpj: CNPJ2, razaoSocial: 'Mercado Bom Preço Ltda', telefone: '(32) 99999-0002', criarCobranca: true, motivoSemCobranca: undefined }), arquivo())),
+    ).rejects.toMatchObject({ status: 400 });
+    const r = await naEmpresa(() =>
+      fora.registrar(ORG, quem(), entrada({ cnpj: CNPJ2, razaoSocial: 'Mercado Bom Preço Ltda', telefone: '(32) 99999-0002', criarCobranca: true, motivoSemCobranca: undefined, assinadoEm: hojeEmSP(), primeiroVencimento: vencimento }), arquivo()),
+    );
     expect(r.fechamento.estado).toBe('na_fila');
     expect((await assina(r.fechamento.approvalId!, outraTitularId)).status).toBe('executado');
     const tela = await naEmpresa(() => fechamento.doLead(ORG, r.leadId));
     expect(tela.escritas.find((e) => e.escrita === 'cobranca')?.estado).toBe('criado');
     expect(cobrancas).toHaveLength(1);
-    expect(cobrancas[0]).toMatchObject({ parcelas: 3, parcelaCentavos: 399_900, forma: 'boleto', referenciaExterna: `cob-${r.leadId}-v1` });
+    expect(cobrancas[0]).toMatchObject({ parcelas: 3, parcelaCentavos: 399_900, forma: 'boleto', referenciaExterna: `cob-${r.leadId}-v1`, primeiroVencimento: vencimento });
     expect(await prisma.comercialCobranca.count({ where: { leadId: r.leadId } })).toBe(3);
+    // A régua: a 1ª parcela de quem fechou fora não é paga na sala; ela é avisada no D0 como as outras.
+    await naEmpresa(() => contratoVivo.regua(ORG, venceComoData(vencimento)));
+    const avisos = await prisma.leadEvent.findMany({ where: { leadId: r.leadId, type: 'parcela.vence' }, select: { payload: true } });
+    expect(avisos.map((a) => a.payload)).toContainEqual(expect.objectContaining({ parcela: 1, aviso: 'D0', vence: vencimento }));
     expect(assinaturas).toBe(0);
     const ficha = await prisma.comercialFicha.findUniqueOrThrow({ where: { leadId: r.leadId } });
     expect(ficha.etapa).toBe('fechado');
@@ -384,11 +401,58 @@ describe.skipIf(!URL)('registrar cliente já fechado, pela porta e contra o Post
     const de_novo = await naEmpresa(() => fechamento.propor(ORG, r.leadId, { id: outraTitularId, tipo: 'user' as never }));
     expect(de_novo).toMatchObject({ estado: 'na_fila' });
     const ap = (de_novo as { approvalId: string }).approvalId;
+    // Revisão P2-2: a fila não oferece o botão a quem registrou, e a rota recusa ANTES do confirm (403), sem gastar a aprovação.
+    const sessao = (sub: string) => ({ sub, orgId: ORG, email: `${sub}@t1b`, name: sub, roles: ['admin_master'], permissions: ['aprovacoes.ver', 'aprovacoes.decidir'] }) as never;
+    const naFila = (await naEmpresa(() => controlador.fila(sessao(quemRegistraId)))).itens.find((i) => i.id === ap)!;
+    expect(naFila.euPossoAprovar).toBe(false);
+    expect(naFila.porQueNao).toMatch(/quem registra não confere o próprio registro/);
+    // Quem propôs de novo não assina (invariante 7) e quem registrou também não: nesta empresa de duas titulares, ninguém.
+    expect(naFila.aprovadores).toEqual([]);
+    await expect(
+      naEmpresa(() => controlador.confirm(sessao(quemRegistraId), ap, { reauth: { senha: SENHA }, motivo: 'tentando assinar o meu registro' }, { headers: {} })),
+    ).rejects.toMatchObject({ status: 403, message: expect.stringMatching(/quem registra não confere/) });
+    expect((await prisma.approval.findUniqueOrThrow({ where: { id: ap } })).status).toBe('pendente');
+    // A segunda tranca continua no efeito: pelo serviço (o terminal, sem a rota), quem registrou confirma e o efeito recusa.
     await naEmpresa(() => approvals.confirm(ORG, ap, { id: quemRegistraId, papeis: ['admin_master'], reauth: { senha: SENHA } }, 'tentando assinar o meu registro'));
     const saida = await naEmpresa(() => acoes.executarAprovada(ORG, ap, quemRegistraId)).catch((e: Error) => ({ status: 'erro', erro: e.message }));
     expect(JSON.stringify(saida)).toMatch(/não assina o próprio registro/);
     expect(await prisma.leadEvent.count({ where: { leadId: r.leadId, type: 'cliente.ativo' } })).toBe(0);
     expect((await prisma.comercialFicha.findUniqueOrThrow({ where: { leadId: r.leadId } })).partnerId).toBeNull();
+  });
+
+  it('o mesmo CNPJ em outro lead: no funil ou cliente ativo, recusa com o nome do lead e nada é registrado (revisão P2-3)', async () => {
+    const doc = `5${CNPJ.slice(1)}`;
+    const noFunil = await prisma.lead.create({ data: { orgId: ORG, name: 'Café Serra' }, select: { id: true } });
+    const formatado = `${doc.slice(0, 2)}.${doc.slice(2, 5)}.${doc.slice(5, 8)}/${doc.slice(8, 12)}-${doc.slice(12)}`;
+    await prisma.comercialFicha.create({ data: { leadId: noFunil.id, etapa: 'contrato', empresa: 'Café Serra Ltda', cnpj: formatado } });
+    const antes = await prisma.lead.count({ where: { orgId: ORG } });
+    await expect(naEmpresa(() => fora.registrar(ORG, quem(), entrada({ cnpj: doc, telefone: '(32) 99999-0005' }), arquivo()))).rejects.toMatchObject({
+      status: 409,
+      response: expect.objectContaining({ leadId: noFunil.id, message: expect.stringMatching(/já está no funil pelo lead "Café Serra Ltda".*o fechamento é por ele/) }),
+    });
+    // Cliente ativo por outro lead: 409 também.
+    await prisma.leadEvent.create({ data: { leadId: noFunil.id, type: 'cliente.ativo', payload: { chave: `fech-${noFunil.id}-v1` } } });
+    await expect(naEmpresa(() => fora.registrar(ORG, quem(), entrada({ cnpj: doc, telefone: '(32) 99999-0005' }), arquivo()))).rejects.toMatchObject({
+      status: 409,
+      response: expect.objectContaining({ message: expect.stringMatching(/já é cliente ativo pelo lead "Café Serra Ltda"/) }),
+    });
+    expect(await prisma.lead.count({ where: { orgId: ORG } })).toBe(antes);
+    // Lead em saída não impede.
+    await prisma.leadEvent.deleteMany({ where: { leadId: noFunil.id, type: 'cliente.ativo' } });
+    await prisma.comercialFicha.update({ where: { leadId: noFunil.id }, data: { etapa: 'perdido' } });
+    const r = await naEmpresa(() => fora.registrar(ORG, quem(), entrada({ cnpj: doc, telefone: '(32) 99999-0005' }), arquivo()));
+    expect(r.leadId).not.toBe(noFunil.id);
+    expect(r.fechamento.estado).toBe('na_fila');
+  });
+
+  it('o cartão de /atendimento lê os dados declarados, o PDF e o hash recalculado (revisão P2-1)', async () => {
+    const ap = await prisma.approval.findFirstOrThrow({ where: { orgId: ORG, capabilityId: CAP_FECHAMENTO, resourceId: `fech-${leadId}-v1` } });
+    const call = await prisma.toolCall.findUniqueOrThrow({ where: { id: ap.toolCallId! } });
+    const hash = (call.args as { propostaHash: string }).propostaHash;
+    const c = await naEmpresa(() => fechamento.conteudoParaAssinar(ORG, leadId, hash));
+    expect(c).toMatchObject({ origem: 'fora', confere: true, valorCentavos: 1_199_700, parcelas: 3, forma: 'boleto', dados: { razaoSocial: 'Padaria Trigo Bom Ltda', cnpj: CNPJ } });
+    expect(c.fora).toMatchObject({ assinadoEm: '2026-09-01', primeiroVencimento: '2026-09-10', criarCobranca: false, motivoSemCobranca: 'o cliente já paga por boleto do banco', anexo: { nome: 'Contrato assinado _ Trigo Bom.pdf' } });
+    expect((await naEmpresa(() => fechamento.conteudoParaAssinar(ORG, leadId, 'f'.repeat(64)))).confere).toBe(false);
   });
 
   it('o PDF anexado é lido de volta para quem confere', async () => {

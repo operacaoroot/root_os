@@ -86,3 +86,42 @@ export function condicoesDaTabela(produto: ComercialProduto): { valorCentavos: n
   const l = TABELA_DE_PRECO[produto];
   return l ? { valorCentavos: l.valorCentavos, parcelas: l.parcelas, formas: l.formas as readonly ComercialFormaDePagamento[] } : null;
 }
+
+/** O PDF do contrato assinado fora, como as telas mostram (nunca o conteúdo: só o que o fio guarda). */
+export interface ContratoAnexadoNaTela {
+  nome: string;
+  bytes: number;
+  sha256: string;
+  assinadoEm: string;
+  por: string | null;
+}
+
+/**
+ * Revisão P2-1: o que a titular assina no R4 do fechamento, para o cartão de `/atendimento`
+ * (`GET /comercial/fechamentos/:leadId/conteudo?hash=`). O hash é RECALCULADO agora; `confere`
+ * falso = o conteúdo mudou depois do pedido, e o botão não acende.
+ */
+export interface ConteudoDoFechamento {
+  leadId: string;
+  nome: string;
+  origem: 'fora' | 'sala';
+  versao: number;
+  chave: string;
+  produto: ComercialProduto;
+  rotuloDoProduto: string;
+  valorCentavos: number;
+  parcelas: number;
+  forma: string;
+  dados: { cnpj: string; razaoSocial: string; endereco: string; quemAssina: string; email: string };
+  fora: {
+    assinadoEm: string;
+    primeiroVencimento: string;
+    criarCobranca: boolean;
+    motivoSemCobranca: string | null;
+    por: string | null;
+    anexo: ContratoAnexadoNaTela | null;
+  } | null;
+  hashDeAgora: string;
+  hashAssinado: string | null;
+  confere: boolean;
+}

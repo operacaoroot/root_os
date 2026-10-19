@@ -9,6 +9,7 @@ import { AuthModule } from '../auth/auth.module';
 import { CanaisModule } from '../gateway/canais/canais.module';
 import { LimpezaDasVencidasService } from './limpeza-das-vencidas';
 import { RepedidosRegistry } from './repedidos.registry';
+import { QuemNaoAssinaRegistry } from './quem-nao-assina.registry';
 
 // @Global: o ApprovalGuard/ApprovalsService ficam disponíveis para qualquer
 // controller de escrita sensível sem precisar importar o módulo em cada um.
@@ -43,7 +44,7 @@ import { RepedidosRegistry } from './repedidos.registry';
   // T7 (rodada do trabalho): o registro do "pedir de novo" (os domínios se
   // inscrevem, a fila pergunta) e a limpeza diária das vencidas (o executor da
   // rotina mora em `routines/executores`, e o agendador semeia por aqui).
-  providers: [ApprovalsService, ApprovalGuard, LotesService, AssinaturaDeLoteService, RepedidosRegistry, LimpezaDasVencidasService],
-  exports: [ApprovalsService, ApprovalGuard, LotesService, RepedidosRegistry, LimpezaDasVencidasService],
+  providers: [ApprovalsService, ApprovalGuard, LotesService, AssinaturaDeLoteService, RepedidosRegistry, LimpezaDasVencidasService, QuemNaoAssinaRegistry],
+  exports: [ApprovalsService, ApprovalGuard, LotesService, RepedidosRegistry, LimpezaDasVencidasService, QuemNaoAssinaRegistry],
 })
 export class ApprovalsModule {}

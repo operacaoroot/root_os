@@ -4,7 +4,10 @@ import type { Readable } from 'node:stream';
 import { BadRequestException, ConflictException, ForbiddenException, Inject, Injectable, NotFoundException, OnModuleInit, Optional, ServiceUnavailableException } from '@nestjs/common';
 import { ModuleRef } from '@nestjs/core';
 import {
+  COMERCIAL_ROTULO_DA_ETAPA,
   ClienteFechadoForaSchema,
+  ehSaida,
+  type ComercialEtapa,
   FECHADO_FORA_MAX_BYTES,
   PROCEDENCIA_DO_FECHADO_FORA,
   type ClienteFechadoForaInput,
@@ -13,12 +16,15 @@ import {
 import { ActorType } from '@prisma/client';
 
 import { temPapelDeMaquina } from '../approvals/alcada';
+import { QuemNaoAssinaRegistry, type QuemNaoAssina } from '../approvals/quem-nao-assina.registry';
+import { leadIdDaEntrada } from '../leads/entrada-de-lead';
 import { LeadsService } from '../leads/leads.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { StorageService } from '../storage/storage.service';
-import { normalizarTelefone } from './eventos';
+import { hojeEmSP } from './dinheiro.service';
+import { eventoIdComercial, normalizarTelefone } from './eventos';
 import { chaveDoAnexo, camposDaDeclaracao, ehPdf, hashDaDeclaracao, payloadDaDeclaracao } from './fechado-fora';
-import { FechamentoService, chaveDoFechamento } from './fechamento.service';
+import { CAP_FECHAMENTO, FechamentoService, chaveDoFechamento } from './fechamento.service';
 import { FichaService } from './ficha.service';
 import { FioService, ReacoesRegistry } from './fio.service';
 
@@ -89,10 +95,55 @@ export class FechadoForaService implements OnModuleInit {
     private readonly leads: LeadsService,
     @Optional() private readonly moduleRef?: ModuleRef,
     @Optional() @Inject(ARMAZEM_DO_ANEXO) private readonly armazem?: ArmazemDoAnexo,
+    @Optional() private readonly quemNaoAssina?: QuemNaoAssinaRegistry,
   ) {}
 
   onModuleInit(): void {
     this.reacoes.inscrever('cliente.ativo', 'fechado-fora.etapa', (ev) => this.levarAoFechado(ev.orgId, ev.leadId, ev.eventoId, ev.em));
+    // Revisão P2-2: quem registrou não assina o próprio registro, e a fila sabe disso ANTES do confirm.
+    this.quemNaoAssina?.inscrever(CAP_FECHAMENTO, (orgId, args) => this.quemNaoAssinaOFechamento(orgId, args), 'comercial/fechado-fora.service');
+  }
+
+  /**
+   * Revisão P2-2: no fechamento de quem fechou fora, quem DECLAROU (o `porId` da declaração que o
+   * hash do pedido prende) não assina, nem quando outra pessoa propôs de novo. Fechamento do funil: ninguém a mais.
+   */
+  async quemNaoAssinaOFechamento(orgId: string, args: Record<string, unknown>): Promise<QuemNaoAssina | null> {
+    const leadId = typeof args.leadId === 'string' ? args.leadId : '';
+    const hash = typeof args.propostaHash === 'string' ? args.propostaHash : '';
+    if (!leadId || !hash) return null;
+    const ev = await this.prisma.leadEvent.findUnique({ where: { id: eventoIdComercial(orgId, leadId, 'aceite.declarado', hash) }, select: { leadId: true, payload: true } });
+    if (!ev || ev.leadId !== leadId) return null;
+    const porId = String(((ev.payload ?? {}) as Record<string, unknown>).porId ?? '');
+    return porId ? { ids: [porId], motivo: 'Você registrou este cliente fechado fora do sistema, e quem registra não confere o próprio registro. Outra pessoa com alçada titular assina.' } : null;
+  }
+
+  /**
+   * Revisão P2-3: o mesmo CNPJ em OUTRO lead da empresa. Cliente ativo por ele, ou lead vivo no funil,
+   * recusa (409) dizendo qual: o fechamento é por aquele lead, e registrar de novo duplicaria contrato,
+   * card e trilho. Lead em saída (perdido, geladeira...) não impede.
+   */
+  private async conferirOutrosLeads(orgId: string, documento: string, meuLeadId: string): Promise<void> {
+    const fichas = await this.prisma.comercialFicha.findMany({ where: { orgId, cnpj: { not: null }, leadId: { not: meuLeadId } }, select: { leadId: true, cnpj: true, etapa: true, empresa: true } });
+    const iguais = fichas.filter((f) => (f.cnpj ?? '').replace(/\D/g, '') === documento);
+    if (!iguais.length) return;
+    const ids = iguais.map((f) => f.leadId);
+    const [ativos, leads] = await Promise.all([
+      this.prisma.leadEvent.findMany({ where: { orgId, leadId: { in: ids }, type: 'cliente.ativo' }, select: { leadId: true } }),
+      this.prisma.lead.findMany({ where: { orgId, id: { in: ids } }, select: { id: true, name: true } }),
+    ]);
+    const nomeDe = (f: (typeof iguais)[number]) => f.empresa || leads.find((l) => l.id === f.leadId)?.name || f.leadId;
+    const ativo = iguais.find((f) => ativos.some((a) => a.leadId === f.leadId));
+    if (ativo) {
+      throw new ConflictException({ message: `Este CNPJ já é cliente ativo pelo lead "${nomeDe(ativo)}": o contrato vivo dele está em Contratos vivos. Nada foi registrado.`, leadId: ativo.leadId });
+    }
+    const aberto = iguais.find((f) => !ehSaida(f.etapa as ComercialEtapa));
+    if (aberto) {
+      throw new ConflictException({
+        message: `Este CNPJ já está no funil pelo lead "${nomeDe(aberto)}" (${COMERCIAL_ROTULO_DA_ETAPA[aberto.etapa as ComercialEtapa] ?? aberto.etapa}): o fechamento é por ele. Nada foi registrado.`,
+        leadId: aberto.leadId,
+      });
+    }
   }
 
   /** O corpo da rota: os dados vêm como JSON no campo `dados` do multipart, ao lado do PDF. */
@@ -125,6 +176,12 @@ export class FechadoForaService implements OnModuleInit {
     const campos = camposDaDeclaracao(input, sha);
     const hash = hashDaDeclaracao(campos);
     const telefone = normalizarTelefone(input.telefone);
+    // Revisão P1-1: a cobrança nova nasce no 1º vencimento declarado; parcela já vencida o provedor não cobra,
+    // e o que fazer com ela é decisão da mesa. Com cobrança nova, o 1º vencimento é hoje ou depois.
+    if (input.criarCobranca && input.primeiroVencimento < hojeEmSP()) {
+      throw new BadRequestException('Com cobrança nova, o 1º vencimento é hoje ou depois: parcela já vencida não vai ao Asaas. Ajuste o vencimento, ou registre sem cobrança nova com o motivo.');
+    }
+    await this.conferirOutrosLeads(orgId, campos.cnpj, leadIdDaEntrada(orgId, { tipo: 'manual', ref: `fechado-fora:${campos.cnpj}` }));
 
     // 1. O lead pela entrada idempotente (o mesmo CNPJ cai no mesmo lead).
     const entrada = await this.leads.entrada(
@@ -178,10 +235,14 @@ export class FechadoForaService implements OnModuleInit {
     };
   }
 
-  /** O PDF anexado de um lead (o mais novo), para quem confere antes de assinar. */
-  async anexo(orgId: string, leadId: string): Promise<{ stream: Readable; contentType: string; size: number; nome: string }> {
-    const fato = await this.prisma.leadEvent.findFirst({ where: { leadId, orgId, type: 'contrato.anexado' }, orderBy: { occurredAt: 'desc' }, select: { payload: true } });
-    if (!fato) throw new NotFoundException('Este lead não tem contrato anexado.');
+  /**
+   * O PDF anexado, para quem confere antes de assinar. Sem `sha`, o que a declaração VIGENTE cita
+   * (revisão: nunca "o mais novo", que pode ser de outra versão).
+   */
+  async anexo(orgId: string, leadId: string, sha?: string): Promise<{ stream: Readable; contentType: string; size: number; nome: string }> {
+    const alvo = sha && /^[0-9a-f]{64}$/.test(sha) ? sha : (await this.fechamento.aceiteParaFechar(orgId, leadId))?.fora?.arquivoSha256;
+    const fato = alvo ? await this.prisma.leadEvent.findUnique({ where: { id: eventoIdComercial(orgId, leadId, 'contrato.anexado', alvo) }, select: { leadId: true, payload: true } }) : null;
+    if (!fato || fato.leadId !== leadId) throw new NotFoundException('Este lead não tem contrato anexado.');
     const p = (fato.payload ?? {}) as Record<string, unknown>;
     const armazem = this.armazemDisponivel();
     if (!armazem) throw new ServiceUnavailableException('O storage de arquivos está indisponível agora.');
