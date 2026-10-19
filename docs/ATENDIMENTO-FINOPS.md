@@ -8,8 +8,8 @@ antes de qualquer alteração, o plano por etapas, o que foi implementado e o qu
 | Sistema | Repositório | Commit de referência |
 |---|---|---|
 | FinOps (referência, só leitura) | `pedromagnago/FinOps5.0`, `main` | `f0c40ece6116ef752276433b8dda2cf4520ecbb4` |
-| ROOT OS (destino) | `operacaoroot/marketing-os`, branch `root-os/tarefas` | `4b9085c792adcc9a6fb6f696116148465f8d2e85` (produção em 19/10, 17:36 UTC) |
-| Trabalho desta adaptação | branch `root-os/atendimento`, worktree `C:\Users\lucas\Projetos\root-os-atendimento` | ver `git log 4b9085c..` |
+| ROOT OS (destino) | `operacaoroot/marketing-os`, branch `root-os/tarefas` | comparação feita em `4b9085c792adcc9a6fb6f696116148465f8d2e85` (produção às 17:36 UTC de 19/10); trabalho refeito em cima de `abd1476`, a ponta da branch no fim do dia |
+| Trabalho desta adaptação | branch `root-os/atendimento`, worktree `C:\Users\lucas\Projetos\root-os-atendimento` | ver `git log abd1476..` |
 
 Conta GitHub em uso nesta máquina: `operacaoroot`, com leitura nos dois repositórios.
 No checkout do FinOps, todos os imports do módulo de atendimento resolvem: o GitHub não indica
