@@ -447,15 +447,16 @@ async function main() {
   toque('socioDaConta', 'assina o contrato pela Root (ZapSign)', 'o contrato tem dois signatários; a Root assina por um sócio');
   await esperar('contrato.assinado_root no fio', async () => (await api('GET', `/comercial/lead/${leadId}/fio`, como('mesa'))).fio.find((l) => l.type === 'contrato.assinado_root'));
 
-  passo('20. o fechamento vai à porta (R4) e a titular assina: cinco escritas');
+  passo('20. o fechamento vai à porta (R4) e a titular assina: seis escritas (com o card da implantação)');
   const fech = await esperar('a aprovação R4 do fechamento', async () => {
     const l = await api('GET', '/approvals?status=pendente', como('mesa'));
     return l.items.find((a) => a.capacidade === 'comercial.fechamento.executar' && String(a.recurso?.id ?? '').includes(leadId)) ?? null;
   });
   conferir(fech.nivel === 'R4', `o fechamento devia ser R4, veio ${fech.nivel}`, fech);
-  await confirmar(fech.id, 'o fechamento cria cliente, contrato, cobrança, trilho e grupo (R4: obrigação financeira)');
+  await confirmar(fech.id, 'o fechamento cria cliente, contrato, cobrança, trilho, card da implantação e grupo (R4: obrigação financeira)');
   const fechamento = await api('GET', `/comercial/fechamentos/${leadId}`, como('mesa'));
-  conferir(fechamento.estado === 'concluido' && fechamento.escritas?.length === 5, `o fechamento devia concluir com 5 escritas (estado ${fechamento.estado})`, fechamento);
+  // Rodada da implantação I1 (18/10/2026): a sexta escrita é o card da implantação.
+  conferir(fechamento.estado === 'concluido' && fechamento.escritas?.length === 6, `o fechamento devia concluir com 6 escritas (estado ${fechamento.estado})`, fechamento);
   resumo.fechamento = { estado: fechamento.estado, escritas: fechamento.escritas.map((e) => `${e.escrita}:${e.estado}`) };
   await anotarEtapa(leadId, 'fechamento');
 

@@ -72,7 +72,7 @@ export class LeituraEReacaoService {
       this.prisma.lead.findMany({ where: { orgId, id: { in: ids } }, select: { id: true, name: true } }),
       this.prisma.comercialFicha.findMany({ where: { orgId, leadId: { in: ids } }, select: { leadId: true, etapa: true, empresa: true } }),
       this.prisma.leadEvent.findMany({
-        where: { orgId, leadId: { in: ids }, type: { in: ['proposta.lida', ...FALAS_DO_CLIENTE] } },
+        where: { orgId, leadId: { in: ids }, type: { in: ['proposta.lida', 'followup.enviado', ...FALAS_DO_CLIENTE] } },
         select: { leadId: true, type: true, occurredAt: true, payload: true },
       }),
       this.prisma.leadReacao.findMany({ where: { orgId, leadId: { in: ids } }, select: { leadId: true, versao: true, secao: true, tipo: true, segundos: true, acesso: true, atualizadoEm: true } }),
@@ -115,7 +115,8 @@ export class LeituraEReacaoService {
       const maisLida = [...porSecao.entries()].sort((a, b) => b[1] - a[1])[0];
       const respondeu = evs.some((d) => FALAS_DO_CLIENTE.includes(d.type));
       const m5 = mensagens.find((m) => m.leadId === leadId && m.id === uuidDe([orgId, 'comercial-mensagem', leadId, 'M5', `v${pub.versao}`]));
-      const situacao = situacaoDaLeitura({ acessos, respondeu, fupPreparado: !!m5 && m5.estado !== 'descartada' });
+      const fupEnviado = evs.some((d) => d.type === 'followup.enviado' && ((d.payload ?? {}) as P).qual === 'M5' && Number(((d.payload ?? {}) as P).versao ?? pub.versao) === pub.versao);
+      const situacao = situacaoDaLeitura({ acessos, respondeu, fupPreparado: !!m5 && m5.estado !== 'descartada', fupEnviado });
       const viva = !evs.some((d) => d.type === 'proposta.aceita') && !!ficha && !SAIDAS.includes(ficha.etapa) && ficha.etapa !== 'fechado';
       if (viva) propostasVivas++;
       if (!viva && pub.em < desde) continue;

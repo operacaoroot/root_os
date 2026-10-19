@@ -2,6 +2,7 @@ import { PrismaClient } from '@prisma/client';
 import bcrypt from 'bcryptjs';
 
 import { contar, idsDosLeads, semearDemonstracao } from './seed-comercial/semear';
+import { semearImplantacao } from './seed-comercial/implantacao';
 import { criarEstruturaSugerida } from '../src/work/estrutura-sugerida';
 import { existsSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
@@ -151,6 +152,14 @@ async function main() {
   // → `MemoriaService.criar`, ADR-011: versão e evento no rastro). Rodar de novo
   // não duplica: se a nota de exemplo já existe, nada é gravado.
   await semearAtaDeExemplo(org.id, dono?.id ?? null);
+
+  // 6) Rodada da implantação (I6, 18/10/2026): o card da implantação para os já
+  // fechados (a MESMA função da sexta escrita do fechamento, idempotente pelo id
+  // derivado do lead) e as reações de exemplo na proposta (Alicerce e Rede Pão
+  // Bom), pelo mesmo id derivado da rota pública. Detalhe em ./seed-comercial/implantacao.ts.
+  // A ordem de `idsDosLeads` é a de `montarRoteiros`: Café Serra, Studio Lume, Alicerce, Ótica Vista, Rede Pão Bom…
+  const implantacao = await semearImplantacao(prisma, org.id, { alicerce: ids[2], redePaoBom: ids[4] }, agora);
+  console.log(`seed-comercial: implantação · cards dos fechados: ${implantacao.cards.map((c) => `${c.empresa} (${c.estado})`).join(', ') || 'nenhum fechado ainda'}; reações de exemplo gravadas agora: ${implantacao.reacoes}.`);
 }
 
 const TITULO_DA_ATA_DE_EXEMPLO = 'Reunião de operação semanal (ata de exemplo)';

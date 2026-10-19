@@ -18,7 +18,7 @@ export const LEU_SEM_RESPONDER_N = 3;
 export const LEU_SEM_RESPONDER_N_PROVISORIO = true;
 
 export type SituacaoDaLeitura =
-  | { tipo: 'leu_sem_responder'; acessos: number; fupPreparado: boolean }
+  | { tipo: 'leu_sem_responder'; acessos: number; fupPreparado: boolean; fupEnviado?: boolean }
   | { tipo: 'respondeu' }
   | { tipo: 'nao_abriu' }
   | { tipo: 'lendo'; acessos: number };
@@ -30,10 +30,10 @@ export type SituacaoDaLeitura =
  *  · leu N ou mais vezes sem responder: o FUP 1 é preparado;
  *  · lendo (abriu, ainda abaixo do N).
  */
-export function situacaoDaLeitura(e: { acessos: number; respondeu: boolean; fupPreparado: boolean }, n = LEU_SEM_RESPONDER_N): SituacaoDaLeitura {
+export function situacaoDaLeitura(e: { acessos: number; respondeu: boolean; fupPreparado: boolean; fupEnviado?: boolean }, n = LEU_SEM_RESPONDER_N): SituacaoDaLeitura {
   if (e.respondeu) return { tipo: 'respondeu' };
   if (e.acessos <= 0) return { tipo: 'nao_abriu' };
-  if (e.acessos >= n) return { tipo: 'leu_sem_responder', acessos: e.acessos, fupPreparado: e.fupPreparado };
+  if (e.acessos >= n) return { tipo: 'leu_sem_responder', acessos: e.acessos, fupPreparado: e.fupPreparado || !!e.fupEnviado, ...(e.fupEnviado ? { fupEnviado: true } : {}) };
   return { tipo: 'lendo', acessos: e.acessos };
 }
 
@@ -44,7 +44,7 @@ export function fraseDaSituacao(s: SituacaoDaLeitura): string {
     case 'nao_abriu':
       return 'não abriu · reenviar?';
     case 'leu_sem_responder':
-      return `leu ${s.acessos}× sem responder${s.fupPreparado ? ' · FUP 1 preparado' : ' · FUP 1 ainda não preparado'}`;
+      return `leu ${s.acessos}× sem responder${s.fupEnviado ? ' · FUP 1 enviado' : s.fupPreparado ? ' · FUP 1 preparado' : ' · FUP 1 ainda não preparado'}`;
     case 'lendo':
       return `abriu ${s.acessos}×`;
   }
