@@ -1,0 +1,162 @@
+# Ambiente da VERSÃO FINAL (nossa + Pedro + Lucas, rodada de 19/10/2026) no Predator.
+# Roteiro: docs/comercial/RODADA-FINAL-20261019.md, lane F5.
+#
+# Projeto próprio: nada aqui compartilha rede, volume ou porta com a homologação
+# (rootos-comercial, 3010/4010/5440/6391) nem com a cópia (rootos-copia,
+# 3020/4020/5441/6392) nem com outro projeto da máquina.
+#
+# UM banco só, de propósito (diferente da cópia, que tinha um staging separado):
+# o esquema da versão final CONTÉM o do Lucas, então o dump da produção é
+# restaurado direto no `db` e as migrations do merge entram por cima quando a API
+# sobe (`prisma migrate deploy` no command); a migration de conciliação converte
+# o WorkTask.clienteId dele (-> WorkTask de lista cadastro) para o nosso (-> Partner).
+# Depois do restore as credenciais são neutralizadas (homolog/organizar/README.md).
+#
+# Subir só o banco (restore):
+#   docker compose -p rootos-final -f homolog/docker-compose.final.yml --env-file homolog/.env.final up -d db
+# Subir tudo (depois que a imagem rootos-final-app:final existir):
+#   docker compose -p rootos-final -f homolog/docker-compose.final.yml --env-file homolog/.env.final up -d
+# Este arquivo não constrói nada: a imagem do merge é construída pelo orquestrador.
+#
+# Nada chama fora: agendador desligado, LLM dublê, WhatsApp simulado, Asaas e
+# ZapSign nos dublês (imagens da homologação), sem chave de provedor nenhum.
+name: rootos-final
+
+services:
+  db:
+    image: pgvector/pgvector:pg16
+    container_name: rootos_final_db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${DB_USER:-rootos}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?defina DB_PASSWORD em homolog/.env.final}
+      POSTGRES_DB: ${DB_NAME:-rootos_final}
+    ports:
+      - "127.0.0.1:${DB_PORT:-5443}:5432"
+    volumes:
+      - rootos_final_db:/var/lib/postgresql/data
+    networks: [rootos-final-net]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-rootos}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: rootos_final_redis
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:${REDIS_PORT:-6393}:6379"
+    networks: [rootos-final-net]
+
+  # Dublês do dinheiro e da assinatura, só na rede interna (nada publica fora).
+  asaas-mock:
+    image: rootos-comercial-asaas-mock:latest
+    container_name: rootos_final_asaas_mock
+    restart: unless-stopped
+    environment:
+      WEBHOOK_URL: http://api:4001/api/comercial/webhooks/asaas
+      WEBHOOK_TOKEN: ${ASAAS_WEBHOOK_TOKEN:?defina ASAAS_WEBHOOK_TOKEN em homolog/.env.final}
+      PUBLIC_URL: http://127.0.0.1:4011
+    volumes:
+      - rootos_final_asaas:/data
+    networks: [rootos-final-net]
+
+  zapsign-mock:
+    image: rootos-comercial-zapsign-mock:latest
+    container_name: rootos_final_zapsign_mock
+    restart: unless-stopped
+    environment:
+      WEBHOOK_URL: http://api:4001/api/comercial/webhooks/zapsign
+      WEBHOOK_TOKEN: ${ZAPSIGN_WEBHOOK_TOKEN:?defina ZAPSIGN_WEBHOOK_TOKEN em homolog/.env.final}
+      PUBLIC_URL: http://127.0.0.1:4012
+    volumes:
+      - rootos_final_zapsign:/data
+    networks: [rootos-final-net]
+
+  api:
+    image: rootos-final-app:final
+    container_name: rootos_final_api
+    restart: unless-stopped
+    working_dir: /app/apps/api
+    command: sh -c "pnpm exec prisma migrate deploy && node dist/main.js"
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: postgresql://${DB_USER:-rootos}:${DB_PASSWORD}@db:5432/${DB_NAME:-rootos_final}
+      TENANT_MODO: ${TENANT_MODO:-observar}
+      API_PORT: "4001"
+      JWT_SECRET: ${JWT_SECRET:?defina JWT_SECRET}
+      AUTH_SECRET: ${AUTH_SECRET:?defina AUTH_SECRET}
+      # NOVA: o cifrado da produção fica ilegível de todo jeito (e foi anulado no restore).
+      ENCRYPTION_KEY: ${ENCRYPTION_KEY:?defina ENCRYPTION_KEY}
+      COFRE_CHAVES: ""
+      COFRE_CHAVE_ATUAL: ""
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:?defina ADMIN_PASSWORD}
+      WEB_ORIGIN: ${WEB_ORIGIN:-http://100.95.41.124:3030}
+      PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:-http://100.95.41.124:3030}
+      GATEWAY_MODO: impor
+      RASTRO_RETENCAO_DIAS: "1825"
+      POLITICA_FUSO_HORARIO: America/Sao_Paulo
+      # Nada que chame fora: o agendador inteiro desligado.
+      ROTINAS_CRON: "off"
+      PAUTA_CRON: "off"
+      ONBOARDING_ABERTO: "nao"
+      ONBOARDING_AUDIO: "off"
+      LLM_PROVIDER: stub
+      ANTHROPIC_API_KEY: ""
+      OPENAI_API_KEY: ""
+      APIFY_TOKEN: ""
+      EVOLUTION_URL: ""
+      EVOLUTION_API_KEY: ""
+      YOUTUBE_AUDITORIA: pendente
+      ASAAS_API_KEY: ${ASAAS_API_KEY:-$$aact_hmlg_dublê}
+      ASAAS_BASE_URL: http://asaas-mock:4011/v3
+      ASAAS_WEBHOOK_TOKEN: ${ASAAS_WEBHOOK_TOKEN}
+      ZAPSIGN_API_TOKEN: dublê
+      ZAPSIGN_BASE_URL: http://zapsign-mock:4012/api/v1
+      ZAPSIGN_WEBHOOK_TOKEN: ${ZAPSIGN_WEBHOOK_TOKEN}
+      WHATSAPP_PROVEDOR: simulado
+      COMERCIAL_SEED_DEMONSTRACAO: "nao"
+      OBSIDIAN_VAULT_PATH: /vault
+      OBSIDIAN_FONTE: pasta
+    volumes:
+      - rootos_final_vault:/vault
+    ports:
+      - "127.0.0.1:${API_PORT:-4030}:4001"
+      - "${TAILSCALE_IP:-100.95.41.124}:${API_PORT:-4030}:4001"
+    depends_on:
+      db: { condition: service_healthy }
+      redis: { condition: service_started }
+    networks: [rootos-final-net]
+    healthcheck:
+      test: ["CMD-SHELL", "node -e \"fetch('http://127.0.0.1:4001/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))\""]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+
+  web:
+    image: rootos-final-app:final
+    container_name: rootos_final_web
+    restart: unless-stopped
+    working_dir: /app/apps/web
+    command: sh -c "pnpm exec next start -p 4000"
+    environment:
+      NODE_ENV: production
+      API_PROXY_TARGET: http://api:4001
+    ports:
+      - "127.0.0.1:${WEB_PORT:-3030}:4000"
+      - "${TAILSCALE_IP:-100.95.41.124}:${WEB_PORT:-3030}:4000"
+    depends_on:
+      api: { condition: service_started }
+    networks: [rootos-final-net]
+
+volumes:
+  rootos_final_db:
+  rootos_final_asaas:
+  rootos_final_zapsign:
+  rootos_final_vault:
+
+networks:
+  rootos-final-net:
+    name: rootos-final-net
