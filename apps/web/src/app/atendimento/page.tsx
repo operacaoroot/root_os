@@ -283,13 +283,13 @@ export default function AtendimentoPage() {
       {fila && <Corte fila={fila} />}
 
       {aviso && (
-        <div className="rounded-lg border border-good/40 bg-good/10 px-3 py-2 text-sm text-good" role="status">
+        <div className="rounded-lg border border-good/40 bg-good/10 px-3 py-2 text-sm text-good" role="status" data-testid="aprov-aviso">
           {aviso}
         </div>
       )}
 
       {erro && (
-        <div className="space-y-1 rounded-lg border border-bad/40 bg-bad/10 px-3 py-2 text-sm text-bad">
+        <div className="space-y-1 rounded-lg border border-bad/40 bg-bad/10 px-3 py-2 text-sm text-bad" role="alert" data-testid="aprov-erro">
           <div>{erro.texto}</div>
           {erro.conectorDesligado && (
             <div>
