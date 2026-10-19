@@ -34,3 +34,11 @@ export * from './comercial.js';
 // O banco de atas do Trabalho e as sugestões de tarefa (rodada do painel P3,
 // 18/10/2026) — ver o cabeçalho de `atas.ts`.
 export * from './atas.js';
+
+// A sala do cliente publicada por versão (rodada da implantação I3, 18/10/2026) — ver o
+// cabeçalho de `sala-versao.ts`.
+export * from './sala-versao.js';
+
+// O relatório do comercial, bloco Leitura e reação (rodada da implantação I5, 18/10/2026) — ver o
+// cabeçalho de `leitura-e-reacao.ts`.
+export * from './leitura-e-reacao.js';

@@ -153,6 +153,10 @@ export function fraseDoPedido(item: Item): string {
       const v = typeof a.versao === 'number' ? ` v${a.versao}` : '';
       return `Publicar a proposta${v} para ${doLead(item)}`;
     }
+    case 'comercial.sala.publicar': {
+      const v = typeof a.versao === 'number' ? ` (versão ${a.versao})` : '';
+      return `Publicar a sala${v} para ${doLead(item)}`;
+    }
     case 'comercial.cobranca.criar': {
       const valor = reais(a.valorCentavos);
       const parcelas = typeof a.parcelas === 'number' && a.parcelas > 1 ? ` em ${a.parcelas}×` : '';

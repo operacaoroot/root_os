@@ -7,6 +7,7 @@ import { diaHoraSP, prazoEmPalavras } from '@/lib/cockpit';
 import { Conteudo } from './Conteudo';
 import { CartaoDoLote } from './CartaoDoLote';
 import { CAPACIDADE_DA_PROPOSTA, CartaoDaProposta } from './CartaoDaProposta';
+import { CAPACIDADE_DA_SALA, CartaoDaSala } from './CartaoDaSala';
 import { fraseDoPedido } from './frase-do-pedido';
 import {
   concluiNoFunil,
@@ -110,12 +111,17 @@ export function Item({ item, euDecido, souOProponente, ocupado, aoAprovar, aoRec
   const [propostaLida, setPropostaLida] = useState(false);
   const aoLerProposta = useCallback((ok: boolean) => setPropostaLida(ok), []);
   const hashDaProposta = typeof item.conteudo?.hash === 'string' ? item.conteudo.hash : null;
-  const podeAprovarAgora = item.euPossoAprovar && (!ehLote || loteLido) && (!ehProposta || propostaLida);
+  /* I3 (rodada da implantação): a versão da sala, pelo mesmo arranjo da proposta. */
+  const ehSala = item.capacidade === CAPACIDADE_DA_SALA;
+  const [salaLida, setSalaLida] = useState(false);
+  const aoLerSala = useCallback((ok: boolean) => setSalaLida(ok), []);
+  const podeAprovarAgora = item.euPossoAprovar && (!ehLote || loteLido) && (!ehProposta || propostaLida) && (!ehSala || salaLida);
 
   const alternar = () => {
     if (aberto) {
       setLoteLido(false);
       setPropostaLida(false);
+      setSalaLida(false);
     }
     setAberto(!aberto);
   };
@@ -275,6 +281,11 @@ export function Item({ item, euDecido, souOProponente, ocupado, aoAprovar, aoRec
                 <CartaoDaProposta recursoId={item.recurso.id} hashAssinado={hashDaProposta} onPronto={aoLerProposta} />
               </div>
             )}
+            {ehSala && !item.conteudoOculto && (
+              <div className="mt-3">
+                <CartaoDaSala recursoId={item.recurso.id} hashAssinado={hashDaProposta} onPronto={aoLerSala} />
+              </div>
+            )}
             {/*
               "hash gravado", e não "assinatura do conteúdo": ninguém recalcula o
               hash sobre o texto acima, nem aqui nem na rota que alimenta a fila.
@@ -375,6 +386,15 @@ export function Item({ item, euDecido, souOProponente, ocupado, aoAprovar, aoRec
               <p className="text-xs text-muted" data-testid={`lote-esperando-${item.id}`}>
                 O botão de assinar aparece quando os posts do lote estiverem na tela: assinar é assinar o que você
                 leu.
+              </p>
+              {passo.recusar && botaoRecusar('Recusar')}
+            </div>
+          )}
+          {item.euPossoAprovar && ehSala && !salaLida && (
+            <div className="mt-4 space-y-2 border-t border-border pt-4">
+              <p className="text-xs text-muted" data-testid={`sala-esperando-${item.id}`}>
+                O botão de assinar aparece quando a versão inteira da sala estiver na tela e conferir com o hash da
+                aprovação.
               </p>
               {passo.recusar && botaoRecusar('Recusar')}
             </div>
