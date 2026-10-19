@@ -141,7 +141,7 @@ export function BancadaDoTrilho({ id, embutida = false }: { id: string; embutida
           <div className="space-y-4">
             <Portoes t={t} editavel={editavel && !encerrado} onPatch={patch} ocupado={ocupado} />
             {t.pendenciasDoRelogio.length > 0 && (
-              <Card titulo="O relógio — vencido hoje">
+              <Card titulo="O relógio: vencido hoje">
                 <ul className="space-y-1 text-[13px]">
                   {t.pendenciasDoRelogio.map((p, i) => <li key={i}><Chip tone="warn">{p.tipo}</Chip> <span className="text-muted">{p.texto}</span></li>)}
                 </ul>
@@ -154,7 +154,7 @@ export function BancadaDoTrilho({ id, embutida = false }: { id: string; embutida
             {t.fase === 'contrato' && <SecaoBoasVindas t={t} token={token} />}
             {(t.fase === 'contrato' || t.fase === 'imersao' || t.fase === 'operacao') && <SecaoMemoria t={t} editavel={editavel} agir={agir} token={token} setAviso={setAviso} />}
             {t.fase === 'imersao' && t.receitaDetalhe && (
-              <Card titulo={`Pauta dos dois dias — ${t.receitaDetalhe.nome}`}>
+              <Card titulo={`Pauta dos dois dias · ${t.receitaDetalhe.nome}`}>
                 <div className="grid gap-3 md:grid-cols-2">
                   {(['dia1', 'dia2'] as const).map((d) => (
                     <div key={d}>
@@ -174,7 +174,7 @@ export function BancadaDoTrilho({ id, embutida = false }: { id: string; embutida
               </Card>
             )}
             {t.fase === 'operacao' && editavel && (
-              <Card titulo="Operação assistida — a rotina">
+              <Card titulo="Operação assistida: a rotina">
                 <div className="flex flex-wrap gap-2">
                   <BotaoMarco tipo="check.semanal" rotulo="Check semanal feito" onRegistrar={(texto) => agir('check', () => apiPost(`/tenants/onboarding/trilhos/${id}/marcos`, { tipo: 'check.semanal', texto }, token))} />
                   <BotaoMarco tipo="retrospectiva" rotulo="Retrospectiva interna" onRegistrar={(texto) => agir('retro', () => apiPost(`/tenants/onboarding/trilhos/${id}/marcos`, { tipo: 'retrospectiva', texto }, token))} />
@@ -312,7 +312,7 @@ function ProximoPasso({ t, editavel, onPatch, ocupado }: { t: TrilhoCompleto; ed
   const [f, setF] = useState({ texto: t.proximoPasso ?? '', dono: t.proximoPassoDono ?? '', data: paraInputDate(t.proximoPassoEm) });
   useEffect(() => setF({ texto: t.proximoPasso ?? '', dono: t.proximoPassoDono ?? '', data: paraInputDate(t.proximoPassoEm) }), [t]);
   return (
-    <Card titulo="Próximo passo — com dono e data">
+    <Card titulo="Próximo passo, com dono e data">
       {!t.proximoPasso && <p className="mb-2 text-[12px] text-bad">Estado sem próximo passo é alerta. Toda fase termina com um.</p>}
       <form onSubmit={(e) => { e.preventDefault(); onPatch({ proximoPasso: f.texto || null, proximoPassoDono: f.dono || null, proximoPassoEm: dataInput(f.data) }); }} className="grid gap-2 md:grid-cols-[1fr_140px_140px_auto]">
         <input className={inputCls} placeholder="o que" value={f.texto} onChange={(e) => setF({ ...f, texto: e.target.value })} disabled={!editavel} />
@@ -436,7 +436,7 @@ function Convites({ t, blocos, convite, editavel, agir, token }: { t: TrilhoComp
     <div className="mt-3 space-y-3">
       {gerado && (
         <div className="rounded-lg border border-brand/40 bg-brand/10 p-3">
-          <p className="text-[12px] font-medium">Link gerado — ele aparece UMA vez aqui. Copie a mensagem e mande no grupo; depois marque como enviado.</p>
+          <p className="text-[12px] font-medium">Link gerado. Ele aparece UMA vez aqui. Copie a mensagem e mande no grupo; depois marque como enviado.</p>
           {gerado.aprovadosPelaRegra > 0 && <p className="text-[11px] text-muted">{gerado.aprovadosPelaRegra} proposta(s) literal(is) aprovada(s) pela regra.</p>}
           <pre className="mt-2 whitespace-pre-wrap rounded bg-surface p-2 text-[12.5px]">{gerado.mensagem}</pre>
           <div className="mt-2 flex gap-2">
@@ -544,7 +544,7 @@ function SecaoAta({ t, editavel, agir, token, setAviso }: { t: TrilhoCompleto; e
   };
   return (
     <Card titulo="A ata do kickoff → propostas (leitor de ata)">
-      <p className="text-[12.5px] text-muted">Cole a transcrição (Granola), o link ou envie o PDF. O agente propõe uma resposta por tema com trecho e minuto; literal vai direto, interpretado espera o seu OK, o que a ata não cobriu chega em branco. A transcrição não é gravada — só o hash e o que virou proposta.</p>
+      <p className="text-[12.5px] text-muted">Cole a transcrição (Granola), o link ou envie o PDF. O agente propõe uma resposta por tema com trecho e minuto; literal vai direto, interpretado espera o seu OK, o que a ata não cobriu chega em branco. A transcrição não é gravada: só o hash e o que virou proposta.</p>
       {editavel && (
         <div className="mt-2 space-y-2">
           <div className="flex flex-wrap items-center gap-2">
@@ -580,7 +580,7 @@ function SecaoLinkBCD({ t, editavel, agir, token }: { t: TrilhoCompleto; editave
 }
 
 function SecaoBoasVindas({ t, token }: { t: TrilhoCompleto; token: string | null }) {
-  const [passos, setPassos] = useState([{ texto: 'Kickoff gravado', data: paraInputDate(t.kickoffEm), dono: t.conduzidoPor ?? '' }, { texto: 'Imersão — dia 1', data: paraInputDate(t.imersaoEm), dono: t.implantadoPor ?? '' }]);
+  const [passos, setPassos] = useState([{ texto: 'Kickoff gravado', data: paraInputDate(t.kickoffEm), dono: t.conduzidoPor ?? '' }, { texto: 'Imersão · dia 1', data: paraInputDate(t.imersaoEm), dono: t.implantadoPor ?? '' }]);
   const [root, setRoot] = useState([t.conduzidoPor, t.implantadoPor].filter(Boolean).join(', '));
   const [texto, setTexto] = useState<string | null>(null);
   const [erro, setErro] = useState<string | null>(null);
@@ -683,7 +683,7 @@ function Item({ t, i, editavel, agir, token }: { t: TrilhoCompleto; i: ItemNaBan
       </div>
       <p className="mt-1 text-[12px] text-muted">{i.pergunta}</p>
       {respondido ? (
-        <div className="mt-2 text-[13px]"><span className="text-good">✓</span> {i.textoFinal} <span className="text-[11px] text-muted">— {i.status} por {i.respondidoPor}{i.respondidoVia === 'audio' ? ' (áudio)' : ''} em {dataBR(i.respondidoEm)}{i.notaId ? ' · na memória' : ''}</span></div>
+        <div className="mt-2 text-[13px]"><span className="text-good">✓</span> {i.textoFinal} <span className="text-[11px] text-muted">· {i.status} por {i.respondidoPor}{i.respondidoVia === 'audio' ? ' (áudio)' : ''} em {dataBR(i.respondidoEm)}{i.notaId ? ' · na memória' : ''}</span></div>
       ) : i.proposta && !editando ? (
         <div className="mt-2 text-[13px]">
           <p>{i.proposta}</p>

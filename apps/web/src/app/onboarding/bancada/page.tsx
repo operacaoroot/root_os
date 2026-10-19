@@ -77,7 +77,7 @@ export default function OnboardingPage() {
       </div>
 
       {pendencias.length > 0 && (
-        <Card titulo="O relógio — o que está vencido hoje">
+        <Card titulo="O relógio: o que está vencido hoje">
           <ul className="space-y-1.5">
             {pendencias.map((p, i) => (
               <li key={`${p.trilhoId}-${p.tipo}-${i}`} className="flex flex-wrap items-baseline gap-2 text-[13px]">
@@ -142,7 +142,7 @@ function LinhaDoTrilho({ t }: { t: TrilhoResumo }) {
       </div>
       {fase !== 'encerrado' && (
         <div className="mt-1 text-[11px] text-muted">
-          {t.podeAvancar ? <span className="text-good">portão cumprido — pode avançar</span> : `falta: ${t.faltando.slice(0, 2).join('; ')}${t.faltando.length > 2 ? ` (+${t.faltando.length - 2})` : ''}`}
+          {t.podeAvancar ? <span className="text-good">portão cumprido, pode avançar</span> : `falta: ${t.faltando.slice(0, 2).join('; ')}${t.faltando.length > 2 ? ` (+${t.faltando.length - 2})` : ''}`}
         </div>
       )}
     </li>
