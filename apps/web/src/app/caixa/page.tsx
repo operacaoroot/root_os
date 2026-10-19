@@ -8,6 +8,7 @@ import { useAuth } from '@/lib/auth';
 import { useCaixa } from '@/components/caixa';
 import { AbaAtividade } from './AbaAtividade';
 import { AbaMinhasTarefas } from './AbaMinhasTarefas';
+import { AbaDecisoes, ContadorDeDecisoes, useFilaDoComercial, useVeDecisoes, type FilaDoComercial } from './AbaDecisoes';
 import { CARTAO, FOCO, ROTULO } from './comum';
 
 /*
@@ -36,20 +37,26 @@ import { CARTAO, FOCO, ROTULO } from './comum';
  *  4. A CAIXA LÊ. Quem mexe na tarefa é o quadro; a única escrita daqui é o
  *     Limpar, que não muda tarefa nenhuma.
  *
- * A aba vai na query (`?aba=atividade|tarefas`) por `history.replaceState`, como
+ * A aba vai na query (`?aba=atividade|tarefas|decisoes`) por `history.replaceState`, como
  * a Pauta faz: o endereço copiado abre na mesma aba, e a troca não empilha
  * histórico do navegador.
+ *
+ * Rodada do trabalho T6 (19/10/2026): a terceira aba, DECISÕES, traz a fila de
+ * decisões do comercial com os mesmos cartões de um toque (`AbaDecisoes.tsx`).
+ * Só existe para quem tem `leads.ver` com o módulo `leads` ligado.
  */
 
 const ABAS = [
   { chave: 'atividade', rotulo: 'Atividade' },
   { chave: 'tarefas', rotulo: 'Minhas tarefas' },
+  { chave: 'decisoes', rotulo: 'Decisões' },
 ] as const;
 type Aba = (typeof ABAS)[number]['chave'];
 
 function abaDoEndereco(): Aba {
   if (typeof window === 'undefined') return 'atividade';
-  return new URLSearchParams(window.location.search).get('aba') === 'tarefas' ? 'tarefas' : 'atividade';
+  const pedida = new URLSearchParams(window.location.search).get('aba');
+  return pedida === 'tarefas' || pedida === 'decisoes' ? pedida : 'atividade';
 }
 
 /* ------------------------------------------------------------------------ *
@@ -71,7 +78,18 @@ function fraseDasAprovacoes(caixa: CaixaResposta): string | null {
   return null;
 }
 
-function Resumo({ caixa, erro, onTentar }: { caixa: CaixaResposta | null; erro: string | null; onTentar: () => void }) {
+function Resumo({
+  caixa,
+  erro,
+  onTentar,
+  decisoes,
+}: {
+  caixa: CaixaResposta | null;
+  erro: string | null;
+  onTentar: () => void;
+  /** O contador das decisões do comercial; ausente para quem não vê a aba. */
+  decisoes?: { fila: FilaDoComercial; aoAbrir: () => void };
+}) {
   if (erro) {
     return (
       <div role="alert" className={`${CARTAO} flex flex-wrap items-center gap-2 px-4 py-3 text-sm`}>
@@ -117,6 +135,7 @@ function Resumo({ caixa, erro, onTentar }: { caixa: CaixaResposta | null; erro: 
             </span>
           </p>
         )}
+        {decisoes && <ContadorDeDecisoes fila={decisoes.fila} aoAbrir={decisoes.aoAbrir} />}
         <p className="text-xs text-muted">
           sua alçada: <span className="text-text">{caixa.eu.alcada}</span> · medido às {medido}
         </p>
@@ -153,7 +172,12 @@ export default function CaixaPage() {
   const [caixa, setCaixa] = useState<CaixaResposta | null>(null);
   const [erro, setErro] = useState<string | null>(null);
   const [aba, setAba] = useState<Aba>('atividade');
-  const botoes = useRef<Record<Aba, HTMLButtonElement | null>>({ atividade: null, tarefas: null });
+  const botoes = useRef<Record<Aba, HTMLButtonElement | null>>({ atividade: null, tarefas: null, decisoes: null });
+  const veDecisoes = useVeDecisoes();
+  const fila = useFilaDoComercial(veDecisoes);
+  const abas = ABAS.filter((a) => a.chave !== 'decisoes' || veDecisoes);
+  // `?aba=decisoes` de quem não vê a aba cai na Atividade.
+  const abaAtiva: Aba = aba === 'decisoes' && !veDecisoes ? 'atividade' : aba;
 
   useEffect(() => {
     setAba(abaDoEndereco());
@@ -191,24 +215,29 @@ export default function CaixaPage() {
   function teclaNasAbas(e: React.KeyboardEvent) {
     if (e.key !== 'ArrowRight' && e.key !== 'ArrowLeft' && e.key !== 'Home' && e.key !== 'End') return;
     e.preventDefault();
-    const i = ABAS.findIndex((a) => a.chave === aba);
+    const i = abas.findIndex((a) => a.chave === abaAtiva);
     const proxima =
       e.key === 'Home'
         ? 0
         : e.key === 'End'
-          ? ABAS.length - 1
-          : (i + (e.key === 'ArrowRight' ? 1 : -1) + ABAS.length) % ABAS.length;
-    const alvo = ABAS[proxima].chave;
+          ? abas.length - 1
+          : (i + (e.key === 'ArrowRight' ? 1 : -1) + abas.length) % abas.length;
+    const alvo = abas[proxima].chave;
     trocar(alvo);
     botoes.current[alvo]?.focus();
   }
 
   return (
     <div className="space-y-4">
-      <Resumo caixa={caixa} erro={erro} onTentar={() => void buscar()} />
+      <Resumo
+        caixa={caixa}
+        erro={erro}
+        onTentar={() => void buscar()}
+        decisoes={veDecisoes ? { fila, aoAbrir: () => trocar('decisoes') } : undefined}
+      />
 
       <div role="tablist" aria-label="Caixa de entrada" onKeyDown={teclaNasAbas} className="flex gap-1 border-b border-border">
-        {ABAS.map((a) => (
+        {abas.map((a) => (
           <button
             key={a.chave}
             ref={(el) => {
@@ -217,13 +246,13 @@ export default function CaixaPage() {
             type="button"
             role="tab"
             id={`caixa-aba-${a.chave}-botao`}
-            aria-selected={aba === a.chave}
+            aria-selected={abaAtiva === a.chave}
             aria-controls={`caixa-painel-${a.chave}`}
-            tabIndex={aba === a.chave ? 0 : -1}
+            tabIndex={abaAtiva === a.chave ? 0 : -1}
             data-testid={`caixa-aba-${a.chave}`}
             onClick={() => trocar(a.chave)}
             className={`-mb-px border-b-2 px-3 py-2 text-[13px] max-md:min-h-[44px] ${FOCO} ${
-              aba === a.chave ? 'border-brand text-text' : 'border-transparent text-muted hover:text-text'
+              abaAtiva === a.chave ? 'border-brand text-text' : 'border-transparent text-muted hover:text-text'
             }`}
           >
             {a.rotulo}
@@ -233,14 +262,16 @@ export default function CaixaPage() {
 
       <div
         role="tabpanel"
-        id={`caixa-painel-${aba}`}
-        aria-labelledby={`caixa-aba-${aba}-botao`}
+        id={`caixa-painel-${abaAtiva}`}
+        aria-labelledby={`caixa-aba-${abaAtiva}-botao`}
         tabIndex={0}
         className="focus-visible:outline-none"
       >
         {ready && token ? (
-          aba === 'atividade' ? (
+          abaAtiva === 'atividade' ? (
             <AbaAtividade token={token} />
+          ) : abaAtiva === 'decisoes' ? (
+            <AbaDecisoes fila={fila} />
           ) : (
             <AbaMinhasTarefas token={token} />
           )

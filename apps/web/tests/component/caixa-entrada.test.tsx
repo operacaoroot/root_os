@@ -171,7 +171,8 @@ describe('P1: as abas', () => {
   it('abre na Atividade, é um tablist acessível e troca pela query', async () => {
     render(<CaixaPage />);
     const tabs = screen.getAllByRole('tab');
-    expect(tabs.map((t) => t.textContent)).toEqual(['Atividade', 'Minhas tarefas']);
+    // A terceira aba, Decisões (T6, 19/10/2026), aparece porque este perfil tem leads.ver.
+    expect(tabs.map((t) => t.textContent)).toEqual(['Atividade', 'Minhas tarefas', 'Decisões']);
     expect(screen.getByTestId('caixa-aba-atividade').getAttribute('aria-selected')).toBe('true');
     fireEvent.click(screen.getByTestId('caixa-aba-tarefas'));
     expect(screen.getByTestId('caixa-aba-tarefas').getAttribute('aria-selected')).toBe('true');
