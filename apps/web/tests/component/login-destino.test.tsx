@@ -12,10 +12,25 @@ beforeEach(() => { localStorage.clear(); window.history.replaceState(null, '', '
 afterEach(() => vi.unstubAllGlobals());
 describe('entrada autenticada', () => {
   it.each([['tarefas.ver', '/dia-a-dia'], ['obsidian.ver', '/contexto'], ['pauta.ver', '/contexto/marca'], ['', '/painel']])('login com %s abre %s', async (permission, destino) => {
-    fetchMock.mockImplementation(async (url: string) => url.endsWith('/auth/google/disponivel') ? response({ disponivel: false }) : response({ token: 'token-login-sintetico', user: { ...user, permissions: permission ? [permission] : [] } }));
+    fetchMock.mockImplementation(async (url: string) => url.endsWith('/auth/google/disponivel') ? response({ disponivel: false })
+      : url.endsWith('/tenants/modulos') ? response({ modulos: ['trabalho', 'pauta'], catalogo: ['trabalho', 'pauta'] })
+      : response({ token: 'token-login-sintetico', user: { ...user, permissions: permission ? [permission] : [] } }));
     render(<AuthProvider><LoginPage /></AuthProvider>); const u = userEvent.setup();
     await u.type(screen.getByLabelText('Senha'), 'senha-sintetica'); await u.click(screen.getByRole('button', { name: 'Entrar' }));
     await waitFor(() => expect(nav.replace).toHaveBeenCalledWith(destino));
+  });
+  // Revisão final 2.1: sem o módulo trabalho, ou sem resposta dos módulos, vale a regra da produção.
+  it.each([
+    ['sem o módulo trabalho', async () => response({ modulos: ['pauta'], catalogo: ['trabalho', 'pauta'] }), '/contexto'],
+    ['com a consulta de módulos falhando', async () => response({ message: 'falhou' }, 500), '/contexto'],
+  ])('tarefas.ver %s abre a entrada da produção', async (_caso, modulos, destino) => {
+    fetchMock.mockImplementation(async (url: string) => url.endsWith('/auth/google/disponivel') ? response({ disponivel: false })
+      : url.endsWith('/tenants/modulos') ? modulos()
+      : response({ token: 'token-login-sintetico', user: { ...user, permissions: ['tarefas.ver', 'obsidian.ver'] } }));
+    render(<AuthProvider><LoginPage /></AuthProvider>); const u = userEvent.setup();
+    await u.type(screen.getByLabelText('Senha'), 'senha-sintetica'); await u.click(screen.getByRole('button', { name: 'Entrar' }));
+    await waitFor(() => expect(nav.replace).toHaveBeenCalledWith(destino));
+    expect(nav.replace).not.toHaveBeenCalledWith('/dia-a-dia');
   });
   it('valida token Google antes de abrir Contexto e remove fragmento da URL', async () => {
     localStorage.setItem('mktos_token', 'sessao-antiga-expirada');
