@@ -7,7 +7,9 @@ import { WorkFilesController } from './work-files.controller';
 import { WorkFilesService } from './work-files.service';
 import { MemoryModule } from '../memory/memoria.module';
 import { AtasController } from './atas/atas.controller';
+import { AtasDoGranolaService } from './atas/atas-do-granola.service';
 import { AtasService } from './atas/atas.service';
+import { GranolaModule } from '../granola/granola.module';
 import { MovimentoDoQuadroService } from './movimento-do-quadro.service';
 import { VistasController } from './vistas.controller';
 import { VistasService } from './vistas.service';
@@ -39,9 +41,10 @@ import { TarefasDoDiaService } from './tarefas-do-dia.service';
  * provider de modelo chega pelo `LlmModule`, que é global.
  */
 @Module({
-  imports: [AuditModule, MemoryModule],
+  // GranolaModule (20/10/2026): o Granola direto, que o banco de atas lê por `FONTE_DO_GRANOLA`.
+  imports: [AuditModule, MemoryModule, GranolaModule],
   controllers: [VistasController, WorkController, WorkFilesController, AtasController, TarefasDoDiaController],
-  providers: [WorkService, CheckoutDeTarefaService, WorkFilesService, AtasService, MovimentoDoQuadroService, VistasService, TarefasDoDiaService],
+  providers: [WorkService, CheckoutDeTarefaService, WorkFilesService, AtasService, AtasDoGranolaService, MovimentoDoQuadroService, VistasService, TarefasDoDiaService],
   exports: [CheckoutDeTarefaService, WorkService],
 })
 export class WorkModule {}

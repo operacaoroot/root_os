@@ -603,6 +603,11 @@ describe('a instrumentação — antes de medir defesa, medir o medidor', () => 
       // de pedir a síntese ao modelo. É dado de ferramenta, nunca ordem; a cerca acrescenta
       // defesa e não tira nenhuma.
       'src/agents/sintese-local.ts': 1,
+      // O OITAVO, 20/10/2026 (rodada da interface, U5, o Granola direto): `promptDaAtaDoGranola`
+      // cerca a TRANSCRIÇÃO de uma reunião lida do Granola, já mascarada pela varredura de
+      // segredos. É fala de quem estava na sala, transcrita por máquina: dado, nunca ordem. As
+      // listas e as pessoas da casa ficam FORA da cerca; o clique em "Gerar ata" não é texto livre.
+      'src/work/atas/leitor-do-granola.ts': 1,
     };
 
     const porArquivo: Record<string, number> = {};

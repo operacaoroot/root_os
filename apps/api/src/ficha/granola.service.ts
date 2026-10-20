@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable, NotFoundException, type OnModuleInit, Optional } from '@nestjs/common';
+import { BadRequestException, Inject, Injectable, NotFoundException, type OnModuleInit, Optional } from '@nestjs/common';
 import { randomBytes, timingSafeEqual } from 'node:crypto';
 import {
   CABECALHO_DO_SEGREDO_GRANOLA,
@@ -12,6 +12,7 @@ import {
   type ReuniaoSemCliente,
   type ResultadoDoGranola,
 } from '@mktos/shared';
+import { CONEXAO_DIRETA_DO_GRANOLA, type ConexaoDiretaDoGranola } from '../granola/conexao-direta';
 import { PrismaService } from '../prisma/prisma.service';
 import { CofreService, SegredoIndisponivelError } from '../cofre/cofre.service';
 import { ConectoresService } from '../integrations/conectores.service';
@@ -19,7 +20,9 @@ import { RegistroDeConectores } from '../integrations/conectores.registry';
 import {
   type ConectorDoContrato,
   type ContextoDoVerbo,
+  type ResultadoDeAutorizacao,
   type ResultadoDeRevogacao,
+  type ResultadoDeSincronizacao,
   type SaudeDeConector,
   conectado,
   naoConfigurado,
@@ -143,6 +146,116 @@ export function casarCliente(r: ReuniaoNormalizada, cards: CardParaCasar[]): { c
   return melhor ? { card: melhor.card, porque: 'nome' } : null;
 }
 
+/*
+ * O MESMO CAMINHO PARA O MODO DIRETO (rodada da interface, 20/10/2026).
+ *
+ * O banco de atas lê a reunião direto do Granola e a reconhece com AS MESMAS
+ * regras do Zap: os cards vêm de `cardsParaCasar` e quem decide é `casarCliente`.
+ * Nada é copiado. O id da reunião no Granola é o que impede a mesma reunião de
+ * entrar duas vezes na ficha: o Zap traz o link da nota (onde o id aparece) e
+ * a ata gerada no OS leva a marca `granola:<id>` no corpo.
+ */
+
+/** Os cards do CRM que podem ser o cliente de uma reunião. */
+export async function cardsParaCasar(prisma: Pick<PrismaService, 'workTask'>, orgId: string): Promise<CardParaCasar[]> {
+  const ts = await prisma.workTask.findMany({
+    where: { orgId, archived: false, parentId: null, list: { externalId: LISTA_DO_CRM } },
+    select: { id: true, title: true, values: { select: { value: true, field: { select: { name: true } } } } },
+  });
+  return ts.map((t) => {
+    const v = (n: string) => t.values.find((x) => semAcento(x.field.name) === n)?.value ?? null;
+    return { id: t.id, titulo: t.title, email: v('e-mail'), site: v('site'), empresa: v('empresa'), contato: v('contato') };
+  });
+}
+
+/** A marca que a ata gerada no OS leva no corpo, e que a reunião da ficha também leva. */
+export const marcaDoGranola = (id: string) => `granola:${id}`;
+
+const ID_NO_LINK = /([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}|not_[A-Za-z0-9]{14})/i;
+
+/** O id da reunião que aparece no link da nota do Granola (o Zap manda o link), ou nulo. */
+export function idDoGranolaNoLink(link: string | null | undefined): string | null {
+  const m = link ? ID_NO_LINK.exec(link) : null;
+  return m ? m[1] : null;
+}
+
+/** A reunião deste id já está na ficha de alguém? Pelo link do Zap ou pela marca da ata gerada no OS. */
+export async function reuniaoDoGranolaNaFicha(
+  prisma: Pick<PrismaService, 'reuniaoDoCartao'>,
+  orgId: string,
+  granolaId: string,
+): Promise<{ id: string; taskId: string; autorId: string | null } | null> {
+  if (!granolaId) return null;
+  return prisma.reuniaoDoCartao.findFirst({
+    where: {
+      orgId,
+      fonte: 'granola',
+      OR: [{ link: { contains: granolaId } }, { transcricao: { contains: marcaDoGranola(granolaId) } }],
+    },
+    orderBy: { createdAt: 'asc' },
+    select: { id: true, taskId: true, autorId: true },
+  });
+}
+
+export interface ReuniaoDiretaParaFicha {
+  granolaId: string;
+  titulo: string;
+  em: Date;
+  participantes: string[];
+  emails: string[];
+  link: string | null;
+  /** O que a ficha guarda: a ATA (com a marca `granola:<id>`), nunca a transcrição bruta. */
+  ata: string;
+  autorId: string;
+}
+
+export interface ClienteReconhecido {
+  taskId: string;
+  titulo: string;
+  porque: 'email' | 'dominio' | 'nome';
+}
+
+/** O cliente de uma reunião lida direto, pelas regras do Zap (`casarCliente`). */
+export function clienteDaReuniao(
+  r: { titulo: string; participantes: string[]; emails: string[]; link: string | null },
+  cards: CardParaCasar[],
+): ClienteReconhecido | null {
+  const achado = casarCliente(
+    { titulo: r.titulo, transcricao: '', participantes: r.participantes.join(', '), emails: r.emails, link: r.link, em: new Date(0) },
+    cards,
+  );
+  return achado ? { taskId: achado.card.id, titulo: achado.card.titulo, porque: achado.porque } : null;
+}
+
+/**
+ * Leva a reunião lida direto para a ficha do cliente, se ele for reconhecido
+ * pelas regras do Zap. Sem cliente, nada é gravado (a caixa "sem cliente" é do
+ * Zap, que não tem outro lugar para pôr a transcrição; aqui a ata já mora no
+ * banco de atas). Já na ficha pelo Zap: fica como está. Já na ficha por uma ata
+ * anterior deste modo: a reunião passa a mostrar a versão nova da ata.
+ */
+export async function levarReuniaoDiretaParaFicha(
+  prisma: Pick<PrismaService, 'workTask' | 'reuniaoDoCartao'>,
+  orgId: string,
+  r: ReuniaoDiretaParaFicha,
+): Promise<{ ficha: 'criada' | 'atualizada' | 'ja_estava' | 'sem_cliente'; cliente: ClienteReconhecido | null }> {
+  const cliente = clienteDaReuniao(r, await cardsParaCasar(prisma, orgId));
+  const ja = await reuniaoDoGranolaNaFicha(prisma, orgId, r.granolaId);
+  const cabecalho = r.participantes.length ? `Participantes: ${r.participantes.join(', ')}\n\n` : '';
+  const corpo = `${cabecalho}${r.ata}`.slice(0, 2_000_000);
+  if (ja) {
+    // Só a reunião que este modo gravou é reescrita; a que o Zap trouxe é dele (sem autor).
+    if (ja.autorId === null) return { ficha: 'ja_estava', cliente };
+    await prisma.reuniaoDoCartao.updateMany({ where: { id: ja.id, orgId }, data: { titulo: r.titulo, transcricao: corpo } });
+    return { ficha: 'atualizada', cliente };
+  }
+  if (!cliente) return { ficha: 'sem_cliente', cliente: null };
+  await prisma.reuniaoDoCartao.create({
+    data: { orgId, taskId: cliente.taskId, titulo: r.titulo, em: r.em, fonte: 'granola', link: r.link, transcricao: corpo, autorId: r.autorId },
+  });
+  return { ficha: 'criada', cliente };
+}
+
 @Injectable()
 export class GranolaService implements OnModuleInit {
   constructor(
@@ -151,6 +264,8 @@ export class GranolaService implements OnModuleInit {
     private readonly conectores: ConectoresService,
     /** `@Optional()` porque a suíte monta à mão; sem registro, o Granola só não aparece no contrato. */
     @Optional() private readonly contrato?: RegistroDeConectores,
+    /** O modo direto (MCP do Granola), quando o módulo dele está montado. Sem ele, o descritor é só o do Zap. */
+    @Optional() @Inject(CONEXAO_DIRETA_DO_GRANOLA) private readonly direto?: ConexaoDiretaDoGranola,
   ) {}
 
   onModuleInit(): void {
@@ -242,42 +357,53 @@ export class GranolaService implements OnModuleInit {
     };
   }
 
-  /** O Granola no contrato de conectores: é assim que ele aparece em Conexões. */
+  /**
+   * O Granola no contrato de conectores: é assim que ele aparece em Conexões.
+   * Desde 20/10/2026 são DOIS modos sob a mesma chave (uma inscrição só): o Zap
+   * (a senha do webhook) e o direto (o MCP do Granola, com OAuth). Autorizar
+   * leva ao OAuth do modo direto; a senha do Zap continua sendo gerada no painel.
+   * Revogar queima as duas, e diz o quê.
+   */
   private descritorDoContrato(): ConectorDoContrato {
+    const instrucaoDoZap =
+      'Gere a senha do Zap no painel do Granola, no topo de Configurações → Integrações, e cole no cabeçalho x-root-segredo do passo Webhooks by Zapier.';
     return {
       chave: CONECTOR_GRANOLA,
       rotulo: 'Granola (reuniões)',
       escopoDaCredencial: 'empresa',
       linhasDoCatalogo: [CONECTOR_GRANOLA],
-      autorizar: async () => ({
-        tipo: 'manual',
-        instrucao:
-          'Gere a senha do Zap no painel do Granola, no topo de Configurações → Integrações, e cole no cabeçalho x-root-segredo do passo Webhooks by Zapier.',
-      }),
-      sincronizar: async () => ({
-        tipo: 'nao_se_aplica',
-        motivo: 'O Granola não é consultado pelo OS: o Zap manda cada reunião quando a nota cai na pasta.',
-      }),
+      autorizar: async (ctx: ContextoDoVerbo): Promise<ResultadoDeAutorizacao> =>
+        this.direto ? this.direto.autorizar(ctx) : { tipo: 'manual', instrucao: instrucaoDoZap },
+      sincronizar: async (ctx: ContextoDoVerbo): Promise<ResultadoDeSincronizacao> =>
+        this.direto
+          ? this.direto.sincronizar(ctx)
+          : { tipo: 'nao_se_aplica', motivo: 'O Granola não é consultado pelo OS: o Zap manda cada reunião quando a nota cai na pasta.' },
       saude: async (ctx: ContextoDoVerbo): Promise<SaudeDeConector> => {
         const comecou = Date.now();
         const c = await this.conexao(ctx.orgId);
-        if (!c.senha.ativa) return naoConfigurado('Sem senha do Zap. Gere no painel do Granola, em Configurações → Integrações, e cole no Zap.');
+        const direto = this.direto && (await this.direto.estado(ctx.orgId)).conectado ? await this.direto.saude(ctx) : null;
+        if (direto && direto.estado !== 'conectado') return direto;
+        if (!c.senha.ativa) {
+          if (direto) return direto;
+          return naoConfigurado('Sem senha do Zap nem conexão direta. Use "Conectar ao Granola" ou gere a senha do Zap no painel do Granola.');
+        }
         const ultima = c.ultimas[0]?.recebidaEm;
         const quando = ultima ? new Date(ultima).toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' }) : null;
-        return conectado(
-          Date.now() - comecou,
-          `${c.total} reunião(ões) recebida(s)${quando ? ', a última em ' + quando : ', nenhuma ainda'}; ${c.semCliente} esperando cliente.`,
-        );
+        const doZap = `${c.total} reunião(ões) recebida(s) pelo Zap${quando ? ', a última em ' + quando : ', nenhuma ainda'}; ${c.semCliente} esperando cliente.`;
+        return conectado(Date.now() - comecou, direto ? `Direto: ${direto.mensagem ?? 'conectado'}. ${doZap}` : doZap);
       },
       revogar: async (ctx: ContextoDoVerbo & { motivo?: string | null }): Promise<ResultadoDeRevogacao> => {
         const r = await this.cofre.revogar({
           orgId: ctx.orgId, conector: CONECTOR_GRANOLA, nome: NOME_DA_SENHA_GRANOLA, motivo: ctx.motivo ?? null, por: ctx.actorId ?? null,
         });
+        const direto = this.direto ? await this.direto.revogar(ctx) : null;
+        const segredos = [...r.revogados, ...(direto?.tipo === 'revogado' ? direto.segredos : [])];
         return {
           tipo: 'revogado',
-          segredos: r.revogados,
+          segredos,
           resumo:
-            'A senha do Zap foi queimada: o Zap para de entrar na hora. As reuniões já gravadas ficam. Para voltar, gere outra senha e cole no Zap.',
+            'A senha do Zap e a conexão direta foram queimadas: o Zap para de entrar e o OS para de ler o Granola na hora. ' +
+            'As reuniões e atas já gravadas ficam. Para voltar, gere outra senha ou conecte de novo.',
         };
       },
     };
@@ -286,14 +412,7 @@ export class GranolaService implements OnModuleInit {
   // ------------------------------------------------------------- o cliente
 
   private async cards(orgId: string): Promise<CardParaCasar[]> {
-    const ts = await this.prisma.workTask.findMany({
-      where: { orgId, archived: false, parentId: null, list: { externalId: LISTA_DO_CRM } },
-      select: { id: true, title: true, values: { select: { value: true, field: { select: { name: true } } } } },
-    });
-    return ts.map((t) => {
-      const v = (n: string) => t.values.find((x) => semAcento(x.field.name) === n)?.value ?? null;
-      return { id: t.id, titulo: t.title, email: v('e-mail'), site: v('site'), empresa: v('empresa'), contato: v('contato') };
-    });
+    return cardsParaCasar(this.prisma, orgId);
   }
 
   /** O cartão-caixa das reuniões sem cliente, na lista "Tarefas dos clientes". */
@@ -333,10 +452,13 @@ export class GranolaService implements OnModuleInit {
     const taskId = achado?.card.id ?? (await this.caixa(orgId));
 
     // O Zap reenvia quando a chamada falha: o mesmo link (ou título + horário) não entra duas vezes.
-    const ja = await this.prisma.reuniaoDoCartao.findFirst({
-      where: { orgId, fonte: 'granola', ...(r.link ? { link: r.link } : { titulo: r.titulo, em: r.em }) },
-      select: { id: true, taskId: true },
-    });
+    // E a reunião que a ata do modo direto já levou à ficha (marca `granola:<id>`) também não.
+    const idNoLink = idDoGranolaNoLink(r.link);
+    const ja =
+      (await this.prisma.reuniaoDoCartao.findFirst({
+        where: { orgId, fonte: 'granola', ...(r.link ? { link: r.link } : { titulo: r.titulo, em: r.em }) },
+        select: { id: true, taskId: true },
+      })) ?? (idNoLink ? await reuniaoDoGranolaNaFicha(this.prisma, orgId, idNoLink) : null);
     const nome = (id: string) => cards.find((c) => c.id === id)?.titulo ?? null;
     if (ja) return { ok: true, duplicada: true, cliente: nome(ja.taskId), porque: null };
 
