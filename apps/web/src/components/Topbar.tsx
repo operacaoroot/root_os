@@ -22,11 +22,13 @@ const SUBTITULOS: Record<string, string> = {
   atendimento: 'fila de decisões que exigem aprovação',
   agenda: 'compromissos e reuniões',
   console: 'indicadores da operação',
+  'tarefas-todas': 'as tarefas das pastas e listas do Trabalho',
   contexto: 'regras, fontes e decisões da empresa',
   marca: 'quem a empresa é e sobre o que fala',
   organograma: 'pessoas e agentes da empresa',
   tarefas: 'tarefas da lista selecionada',
   trabalho: 'quadro de tarefas nativo do OS',
+  'trabalho-todas': 'tarefas de todas as pastas e listas',
   onboarding: 'esteira de clientes em cinco fases',
   conteudo: 'espelho dos temas do ClickUp',
   pauta: 'curadoria, episódios e semana de posts',
@@ -40,6 +42,8 @@ const SUBTITULOS: Record<string, string> = {
   bio: 'links da página pública',
   leads: 'contatos comerciais',
   funil: 'etapas dos leads',
+  'comercial-rodada': 'a rodada semanal do painel da operação',
+  whatsapp: 'o celular do lead e o da mesa, no provedor configurado',
   campanhas: 'campanhas e gastos',
   pixels: 'eventos registrados pelo site',
   relatorios: 'relatórios disponíveis',
@@ -63,7 +67,9 @@ function rotuloDaRota(pathname: string, ehPlataforma: boolean): { titulo: string
   const item = destinoDaRota(pathname, ehPlataforma);
   if (item) {
     const area = areaDoDestino(item);
-    return { titulo: area ? `${area.label} / ${rotuloDoDestino(item)}` : rotuloDoDestino(item),
+    const nome = rotuloDoDestino(item);
+    // Área de um item só com o mesmo nome (WhatsApp): o título não repete a palavra.
+    return { titulo: area && area.label !== nome ? `${area.label} / ${nome}` : nome,
       subtitulo: SUBTITULOS[item.key] ?? '' };
   }
   const seg = pathname.split('/').filter(Boolean)[0];

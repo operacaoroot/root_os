@@ -3,14 +3,15 @@ import { NAV, navPorSecao, type NavItem } from '@mktos/shared';
 /**
  * Somente apresentação: permissões, módulos e URLs continuam no NAV.
  * A ordem segue a de `SECOES` (o Contexto desceu para depois do Motor de IA em
- * 18/10/2026). `principal` é a entrada da área: Dia a dia abre na Visão geral e
- * o Comercial no Painel geral (versão final, 19/10/2026).
+ * 18/10/2026; o WhatsApp entrou depois do Comercial em 20/10/2026). `principal`
+ * é a entrada da área: Dia a dia abre na Visão geral e o Comercial no Painel geral.
  */
 export const AREAS_DE_NAVEGACAO = [
   { key: 'dia', label: 'Dia a dia', icon: 'Inbox', secoes: ['dia'], principal: 'tarefas-todas' },
   { key: 'trabalho', label: 'Trabalho', icon: 'KanbanSquare', secoes: ['trabalho'], principal: 'trabalho' },
   { key: 'conteudo', label: 'Marketing', icon: 'Megaphone', secoes: ['conteudo'], principal: 'marketing' },
   { key: 'comercial', label: 'Comercial', icon: 'Handshake', secoes: ['comercial'], principal: 'comercial-painel' },
+  { key: 'whatsapp', label: 'WhatsApp', icon: 'MessageCircle', secoes: ['whatsapp'], principal: 'whatsapp' },
   { key: 'financeiro', label: 'Financeiro', icon: 'Wallet', secoes: ['financeiro'], principal: 'financeiro' },
   { key: 'automacoes', label: 'IA e automações', icon: 'Bot', secoes: ['automacoes'], principal: 'agentes' },
   { key: 'empresa', label: 'Contexto', icon: 'Network', secoes: ['empresa'], principal: 'contexto' },
@@ -18,17 +19,35 @@ export const AREAS_DE_NAVEGACAO = [
   { key: 'configuracoes', label: 'Configurações', icon: 'Settings', secoes: ['controle', 'registros', 'conta'], principal: 'config' },
 ] as const;
 
+export type AreaDeNavegacao = (typeof AREAS_DE_NAVEGACAO)[number];
+
 export const OPERACAO_DA_ROOT: NavItem = {
   key: 'operacao', label: 'Operação da Root', href: '/operacao', icon: 'Radar',
   permission: 'dashboard.ver', secao: 'dia',
 };
+
 /**
- * Telas da ROOT: fora do NAV, porque o NAV filtra por permissão e não por "ser a plataforma".
- * A Operação da Root (rodada semanal) mora dentro da Implantação desde 19/10/2026;
- * a rota /operacao segue viva. Propostas saiu daqui na versão final: virou item do
- * NAV (Comercial, `leads.ver`), e listá-la aqui de novo a mostraria duas vezes.
+ * A Rodada da semana do Pedro (a tela de `/operacao`) mora no Comercial desde
+ * 20/10/2026 (rodada da interface, U1, item 10 da ata), em `/comercial/rodada`.
+ * É tela da ROOT: só a sessão da plataforma a vê, e a API do painel recusa as
+ * outras sessões de qualquer jeito. A permissão abaixo não é usada para mostrar o
+ * item (o que decide é `ehPlataforma`); ela é a do Comercial, para a rota ter dono.
  */
-export const ITENS_DA_ROOT: readonly NavItem[] = [];
+export const RODADA_DA_SEMANA: NavItem = {
+  key: 'comercial-rodada', label: 'Rodada da semana', href: '/comercial/rodada', icon: 'Radar',
+  permission: 'leads.ver', secao: 'comercial', modulo: 'leads',
+};
+
+/**
+ * Telas da ROOT: fora do NAV, porque o NAV filtra por permissão e não por "ser a
+ * plataforma". `depoisDe` diz onde o item entra na área (a chave do item do NAV que
+ * vem antes dele); sem o vizinho visível, ele vai para o fim da área.
+ * Propostas saiu daqui na versão final: virou item do NAV (Comercial, `leads.ver`).
+ */
+export const ITENS_DA_ROOT: readonly (NavItem & { depoisDe?: string })[] = [
+  { ...RODADA_DA_SEMANA, depoisDe: 'comercial-contratos' },
+];
+
 export function rotuloDoDestino(item: NavItem): string {
   if (item.key === 'contexto') return 'Mapa da empresa';
   if (item.key === 'marca') return 'Marca e brandbook';
@@ -44,9 +63,18 @@ export function destinoDaRota(pathname: string, ehPlataforma = false): NavItem |
     .sort((a, b) => b.href.length - a.href.length)[0];
 }
 export function modulosDeNavegacao(permissoes: Iterable<string>, modulos?: Iterable<string>, ehPlataforma = false) {
-  const permitidos = navPorSecao(permissoes, modulos).flatMap((grupo) => grupo.itens);
+  const permitidos: NavItem[] = navPorSecao(permissoes, modulos).flatMap((grupo) => grupo.itens);
   // A API de plataforma confirma o acesso às telas da ROOT. Permissões comuns não o substituem.
-  if (ehPlataforma) permitidos.push(...ITENS_DA_ROOT);
+  if (ehPlataforma) {
+    const ligados = modulos ? new Set(modulos) : null;
+    for (const { depoisDe, ...item } of ITENS_DA_ROOT) {
+      // Módulo desligado tira também a tela da ROOT: a rota responderia "não contratado".
+      if (ligados && item.modulo && !ligados.has(item.modulo)) continue;
+      const vizinho = depoisDe ? permitidos.findIndex((n) => n.key === depoisDe) : -1;
+      if (vizinho >= 0) permitidos.splice(vizinho + 1, 0, item);
+      else permitidos.push(item);
+    }
+  }
   return AREAS_DE_NAVEGACAO.map((area) => {
     const itens = permitidos.filter((item) => (area.secoes as readonly string[]).includes(item.secao));
     const entrada = itens.find((item) => item.key === area.principal) ?? itens[0];

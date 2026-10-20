@@ -1,14 +1,16 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { modulosDeNavegacao, destinoDaRota, areaDoDestino } from './navegacao-modulos';
+import { modulosDeNavegacao, destinoDaRota, areaDoDestino, rotuloDoDestino } from './navegacao-modulos';
 import * as Icons from 'lucide-react';
 import { useAuth } from '@/lib/auth';
 import { useEhPlataforma } from '@/lib/plataforma';
 import { useModulos } from './modulos';
 import { textoDoSelo, tituloDoSelo, useCaixa } from './caixa';
+import { LogoRoot } from './LogoRoot';
+import { BalaoDaArea } from './BalaoDaArea';
 
 type IconName = keyof typeof Icons;
 
@@ -21,11 +23,20 @@ const CHAVE_RECOLHIDO = 'root-os:menu-recolhido';
 // Mantida para não quebrar importações; o menu por áreas não usa o estado antigo.
 export const CHAVE_MENU = 'root-os:menu-fechado';
 
+/** A ponte de hover: o tempo que o balão espera antes de fechar quando o mouse sai do ícone. */
+export const PONTE_DO_BALAO_MS = 150;
+
 const TEMAS: { id: TemaOs; rotulo: string }[] = [
   { id: 'dark', rotulo: 'escuro' },
   { id: 'light', rotulo: 'papel' },
   { id: 'mono', rotulo: 'claro' },
 ];
+
+/** O ícone de uma área no menu: âncora do balão e destino do foco quando ele fecha pelo Esc. */
+function iconeDaArea(chave: string): HTMLAnchorElement | null {
+  if (typeof document === 'undefined') return null;
+  return document.querySelector<HTMLAnchorElement>(`#root-os-nav a[data-area="${chave}"]`);
+}
 
 export function lerTema(): TemaOs {
   try {
@@ -37,6 +48,19 @@ export function lerTema(): TemaOs {
   return 'dark';
 }
 
+/*
+ * O MENU LATERAL (rodada da interface, 20/10/2026, U1).
+ *
+ * As subseções saíram do campo principal (as abas de `NavegacaoDoModulo`) e moram só
+ * aqui. Menu ABERTO: cada área é um grupo, e só a área aberta mostra as subseções,
+ * indentadas, com a da rota atual em `aria-current="page"` (acordeão de uma aberta só;
+ * clicar na área navega para a entrada dela e abre o grupo). Área com uma subseção só
+ * não mostra lista. Menu RECOLHIDO (64 px, só de 820 px para cima): o ícone da área
+ * abre o `BalaoDaArea` ao lado, por hover, foco ou toque, um balão por vez.
+ *
+ * No topo, a logo oficial (`LogoRoot`): só o R no recolhido, a palavra inteira no
+ * aberto, com o R no mesmo lugar. Ela é o link para a entrada do Dia a dia.
+ */
 export function Sidebar() {
   const { user } = useAuth();
   const { modulos } = useModulos();
@@ -57,6 +81,11 @@ export function Sidebar() {
   const areaAtiva = destino && areaDoDestino(destino)?.key;
   const areas = modulosDeNavegacao(user?.permissions ?? [], modulos ?? undefined, ehPlataforma);
   const seloDaCaixa = { texto: textoDoSelo(caixa), titulo: tituloDoSelo(caixa) };
+  const inicio = areas.find((area) => area.key === 'dia')?.entrada.href ?? '/dia-a-dia';
+
+  // O grupo aberto no menu aberto. Segue a rota; o clique na área abre na hora.
+  const [areaAberta, setAreaAberta] = useState<string | undefined>(areaAtiva);
+  useEffect(() => { setAreaAberta(areaAtiva); }, [areaAtiva]);
 
   useEffect(() => { setTema(lerTema()); }, []);
   useEffect(() => {
@@ -70,6 +99,60 @@ export function Sidebar() {
   }
   // No celular a barra abre inteira; recolher só vale de 820px para cima.
   const compacta = recolhida && !abertaNoMovel;
+
+  // ---- O balão do menu recolhido: um por vez. ----
+  const [balao, setBalao] = useState<string | null>(null);
+  const balaoAberto = useRef<string | null>(null);
+  balaoAberto.current = balao;
+  const timerDoBalao = useRef<number | undefined>(undefined);
+  const mouseNoBalao = useRef(false);
+  // O foco que o Esc devolve ao ícone não reabre o balão.
+  const focoDevolvido = useRef(false);
+  // O tipo do último ponteiro: no toque, o primeiro toque abre o balão em vez de navegar.
+  const ultimoPonteiro = useRef<string>('mouse');
+
+  const abrirBalao = useCallback((chave: string) => {
+    window.clearTimeout(timerDoBalao.current);
+    setBalao(chave);
+  }, []);
+  const fecharBalao = useCallback((devolverFoco = false) => {
+    window.clearTimeout(timerDoBalao.current);
+    const atual = balaoAberto.current;
+    setBalao(null);
+    if (devolverFoco && atual) {
+      focoDevolvido.current = true;
+      iconeDaArea(atual)?.focus();
+    }
+  }, []);
+  // A ponte de hover: sair do ícone não fecha na hora, para dar tempo de entrar no balão.
+  function fecharDepois() {
+    window.clearTimeout(timerDoBalao.current);
+    timerDoBalao.current = window.setTimeout(() => setBalao(null), PONTE_DO_BALAO_MS);
+  }
+
+  useEffect(() => { if (!compacta) setBalao(null); }, [compacta]);
+  useEffect(() => { setBalao(null); }, [pathname]);
+  useEffect(() => () => window.clearTimeout(timerDoBalao.current), []);
+  useEffect(() => {
+    if (!balao) return;
+    // Toque ou clique fora do ícone e do balão fecha. Rolar o menu ou mudar a janela
+    // também fecha: o balão é fixo na tela e ficaria longe do ícone.
+    function aoTocarFora(e: PointerEvent) {
+      const alvo = e.target as Element | null;
+      if (alvo?.closest?.(`[data-grupo-da-area="${balao}"]`)) return;
+      setBalao(null);
+    }
+    function aoMudarJanela() { setBalao(null); }
+    document.addEventListener('pointerdown', aoTocarFora);
+    window.addEventListener('resize', aoMudarJanela);
+    const nav = document.getElementById('root-os-destinos');
+    nav?.addEventListener('scroll', aoMudarJanela);
+    return () => {
+      document.removeEventListener('pointerdown', aoTocarFora);
+      window.removeEventListener('resize', aoMudarJanela);
+      nav?.removeEventListener('scroll', aoMudarJanela);
+    };
+  }, [balao]);
 
   useEffect(() => {
     setAbertaNoMovel(false);
@@ -136,6 +219,7 @@ export function Sidebar() {
   }, [abertaNoMovel]);
 
   function aoNavegar() {
+    setBalao(null);
     if (!abertaNoMovel) return;
     setAbertaNoMovel(false);
     requestAnimationFrame(() => document.getElementById('root-os-main')?.focus());
@@ -181,28 +265,157 @@ export function Sidebar() {
         aria-modal={abertaNoMovel ? true : undefined}
         aria-label="Navegação do ROOT OS"
         className={[
-          'fixed inset-y-0 left-0 z-50 flex h-dvh w-[min(288px,calc(100vw-48px))] flex-col border-r border-border bg-bg2 font-os-mono transition-transform duration-200 min-[820px]:sticky min-[820px]:h-screen min-[820px]:shrink-0 min-[820px]:translate-x-0 min-[820px]:transition-[width]',
+          // `transform-none` no desktop: com `transform` o menu viraria a referência do
+          // `position: fixed` e o balão da área sairia do lugar.
+          'fixed inset-y-0 left-0 z-50 flex h-dvh w-[min(288px,calc(100vw-48px))] flex-col border-r border-border bg-bg2 font-os-mono transition-transform duration-200 min-[820px]:sticky min-[820px]:h-screen min-[820px]:shrink-0 min-[820px]:transform-none min-[820px]:transition-[width]',
           compacta ? 'min-[820px]:w-[64px]' : 'min-[820px]:w-[252px]',
           abertaNoMovel ? 'translate-x-0 visible' : '-translate-x-full invisible min-[820px]:visible',
         ].join(' ')}
       >
-      {/* marca */}
-      <div className="flex min-h-[56px] items-center gap-[10px] border-b border-border px-[14px]">
-        <span
-          aria-hidden
-          className="inline-block text-[16px] font-extrabold italic leading-none tracking-[-0.05em] text-brand"
-          style={{ transform: 'skewX(-10deg)', textShadow: 'var(--os-logo-shadow, none)' }}
+      {/* marca: a logo oficial, link para a entrada do Dia a dia */}
+      <div className="flex min-h-[56px] items-center gap-2 border-b border-border pl-[17px] pr-2">
+        <Link
+          href={inicio}
+          onClick={aoNavegar}
+          aria-label="ROOT OS, início"
+          title="ROOT OS · operação root"
+          data-logo-do-menu
+          className="block rounded-root text-brand focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand"
         >
-          R
-        </span>
-        <span className={`min-w-0 flex-1 leading-[1.25] ${compacta ? 'min-[820px]:hidden' : ''}`}>
-          <span className="block text-[12px] font-bold tracking-[-0.02em] text-text">
-            ROOT OS
-          </span>
-          <span className="block truncate text-[9px] uppercase tracking-[0.15em] text-muted">
-            operação root
-          </span>
-        </span>
+          <LogoRoot recolhida={compacta} />
+        </Link>
+        <span className="flex-1" />
+        <button ref={botaoFechar} type="button" aria-label="Fechar navegação" onClick={() => { setAbertaNoMovel(false); botaoAbrir.current?.focus(); }} className="grid h-11 w-11 place-items-center text-muted focus-visible:outline focus-visible:outline-2 focus-visible:outline-brand min-[820px]:hidden"><Icons.X size={18} aria-hidden /></button>
+      </div>
+
+      <nav id="root-os-destinos" aria-label="Destinos" className="min-h-0 flex-1 overflow-y-auto px-2 py-4">
+        <p className={`px-3 pb-3 text-[10px] uppercase tracking-[0.14em] text-muted ${compacta ? 'min-[820px]:sr-only' : ''}`}>Áreas da empresa</p>
+        {areas.map((area) => {
+          const Icon = (Icons[area.icon as IconName] ?? Icons.Circle) as React.ElementType;
+          const ativo = area.key === areaAtiva;
+          const temLista = area.itens.length > 1;
+          const aberta = !compacta && temLista && areaAberta === area.key;
+          const comBalao = compacta && balao === area.key;
+          const idDaLista = `root-os-area-${area.key}`;
+          return (
+            <div
+              key={area.key}
+              data-grupo-da-area={area.key}
+              className="mb-1"
+              onMouseEnter={compacta ? () => { mouseNoBalao.current = true; abrirBalao(area.key); } : undefined}
+              onMouseLeave={compacta ? () => { mouseNoBalao.current = false; fecharDepois(); } : undefined}
+              onBlur={compacta ? (e) => {
+                // O foco saiu do ícone e do balão (Tab para a próxima área, clique fora): fecha.
+                const para = e.relatedTarget as Node | null;
+                if (para && e.currentTarget.contains(para)) return;
+                if (!mouseNoBalao.current) setBalao((atual) => (atual === area.key ? null : atual));
+              } : undefined}
+            >
+              <Link
+                href={area.entrada.href}
+                data-area={area.key}
+                aria-current={ativo ? 'true' : undefined}
+                aria-expanded={compacta ? comBalao : temLista ? aberta : undefined}
+                aria-controls={compacta ? (comBalao ? `root-os-balao-${area.key}` : undefined) : aberta ? idDaLista : undefined}
+                onPointerDown={(e: React.PointerEvent) => { ultimoPonteiro.current = e.pointerType || 'mouse'; }}
+                onFocus={compacta ? () => {
+                  if (focoDevolvido.current) { focoDevolvido.current = false; return; }
+                  abrirBalao(area.key);
+                } : undefined}
+                onKeyDown={compacta ? (e: React.KeyboardEvent) => {
+                  if (e.key === 'Escape' && balao === area.key) {
+                    e.preventDefault();
+                    fecharBalao(true);
+                  } else if (e.key === 'ArrowDown' || e.key === 'ArrowRight') {
+                    e.preventDefault();
+                    abrirBalao(area.key);
+                    requestAnimationFrame(() => document.querySelector<HTMLAnchorElement>(`#root-os-balao-${area.key} a[href]`)?.focus());
+                  }
+                } : undefined}
+                onClick={(e: React.MouseEvent) => {
+                  // No toque, com o menu recolhido, o primeiro toque abre o balão; o segundo navega.
+                  if (compacta && ultimoPonteiro.current === 'touch' && balao !== area.key) {
+                    e.preventDefault();
+                    abrirBalao(area.key);
+                    return;
+                  }
+                  setAreaAberta(area.key);
+                  aoNavegar();
+                }}
+                className={`relative flex min-h-11 items-center gap-3 rounded-root px-3 py-3 text-[12px] transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-brand ${ativo ? 'bg-brand/10 font-semibold text-brand' : 'text-muted hover:bg-surface-2 hover:text-text'}`}
+              >
+                <Icon size={18} aria-hidden className="shrink-0" />
+                <span className={`flex-1 ${compacta ? 'min-[820px]:sr-only' : ''}`}>{area.label}</span>
+                {/* O selo do que espera por você (Pendências) fica na área Dia a dia, aberto e recolhido. */}
+                {area.key === 'dia' && seloDaCaixa.texto &&
+                  // Recolhido (só ícones, 64 px), o selo sobe para o canto do ícone em vez de empurrar para fora da barra.
+                  <span aria-label={seloDaCaixa.titulo} title={seloDaCaixa.titulo} className={`bg-brand px-1.5 py-0.5 text-[10px] font-bold text-ink ${compacta ? 'min-[820px]:absolute min-[820px]:right-1 min-[820px]:top-1 min-[820px]:px-1 min-[820px]:py-0 min-[820px]:text-[9px]' : ''}`}>{seloDaCaixa.texto}</span>}
+                {!compacta && temLista && (aberta ? <Icons.ChevronDown size={14} aria-hidden /> : <Icons.ChevronRight size={14} aria-hidden />)}
+              </Link>
+              {aberta && (
+                <ul id={idDaLista} aria-label={`Subseções de ${area.label}`} className="m-0 mb-2 ml-[21px] mt-1 list-none border-l border-border p-0 pl-2">
+                  {area.itens.map((item) => {
+                    const aqui = destino?.key === item.key;
+                    return (
+                      <li key={item.key}>
+                        <Link
+                          href={item.href}
+                          onClick={aoNavegar}
+                          aria-current={aqui ? 'page' : undefined}
+                          title={item.key === 'fluxos' ? 'Processos: em preparação' : undefined}
+                          className={`flex min-h-9 items-center gap-2 rounded-root px-3 py-2 text-[12px] transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-brand max-[819px]:min-h-11 ${aqui ? 'font-semibold text-brand' : 'text-muted hover:bg-surface-2 hover:text-text'}`}
+                        >
+                          {rotuloDoDestino(item)}
+                          {item.key === 'fluxos' && <span className="text-[10px]">em preparação</span>}
+                        </Link>
+                      </li>
+                    );
+                  })}
+                </ul>
+              )}
+              {comBalao && (
+                <BalaoDaArea
+                  id={`root-os-balao-${area.key}`}
+                  titulo={area.label}
+                  itens={area.itens}
+                  atual={destino?.key}
+                  ancora={iconeDaArea(area.key)}
+                  aoFechar={(devolver) => fecharBalao(devolver)}
+                  aoNavegar={aoNavegar}
+                />
+              )}
+            </div>
+          );
+        })}
+      </nav>
+
+      {/* rodapé: os três temas e o botão de recolher (no recolhido, só o botão) */}
+      <div className={`flex items-center gap-[6px] border-t border-border px-3 py-[9px] ${compacta ? 'min-[820px]:justify-center min-[820px]:px-0' : ''}`}>
+        <div
+          role="group"
+          aria-label="Tema da interface"
+          className={`flex min-w-0 flex-1 flex-row items-center gap-[6px] ${compacta ? 'min-[820px]:hidden' : ''}`}
+        >
+          {TEMAS.map((t) => {
+            const on = tema === t.id;
+            return (
+              <button
+                key={t.id}
+                type="button"
+                onClick={() => setTema(t.id)}
+                aria-pressed={on}
+                className={[
+                  'min-h-11 flex-1 cursor-pointer border py-[5px] font-os-mono text-[9px] uppercase tracking-[0.12em] transition-colors duration-150 focus-visible:outline focus-visible:outline-2 focus-visible:outline-brand min-[820px]:min-h-0',
+                  on
+                    ? 'border-brand bg-brand text-ink'
+                    : 'border-border text-muted hover:border-border-strong hover:text-text',
+                ].join(' ')}
+              >
+                {t.rotulo}
+              </button>
+            );
+          })}
+        </div>
         <button
           type="button"
           onClick={alternarRecolhida}
@@ -213,54 +426,6 @@ export function Sidebar() {
         >
           {compacta ? <Icons.ChevronsRight size={16} aria-hidden /> : <Icons.ChevronsLeft size={16} aria-hidden />}
         </button>
-        <button ref={botaoFechar} type="button" aria-label="Fechar navegação" onClick={() => { setAbertaNoMovel(false); botaoAbrir.current?.focus(); }} className="grid h-11 w-11 place-items-center text-muted focus-visible:outline focus-visible:outline-2 focus-visible:outline-brand min-[820px]:hidden"><Icons.X size={18} aria-hidden /></button>
-      </div>
-
-      <nav aria-label="Destinos" className="min-h-0 flex-1 overflow-y-auto px-2 py-4">
-        <p className={`px-3 pb-3 text-[10px] uppercase tracking-[0.14em] text-muted ${compacta ? 'min-[820px]:sr-only' : ''}`}>Áreas da empresa</p>
-        {areas.map((area) => {
-          const Icon = (Icons[area.icon as IconName] ?? Icons.Circle) as React.ElementType;
-          const ativo = area.key === areaAtiva;
-          return <Link key={area.key} href={area.entrada.href} onClick={aoNavegar}
-            aria-current={ativo ? 'true' : undefined}
-            title={compacta ? area.label : undefined}
-            className={`relative mb-1 flex min-h-11 items-center gap-3 rounded-root px-3 py-3 text-[12px] transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-brand ${ativo ? 'bg-brand/10 font-semibold text-brand' : 'text-muted hover:bg-surface-2 hover:text-text'}`}>
-            <Icon size={18} aria-hidden className="shrink-0" />
-            <span className={`flex-1 ${compacta ? 'min-[820px]:sr-only' : ''}`}>{area.label}</span>
-            {/* O selo do que espera por você (Pendências) fica na área Dia a dia, cuja entrada é a Visão geral (versão final, 19/10/2026). */}
-            {area.key === 'dia' && seloDaCaixa.texto &&
-              // Recolhido (só ícones, 64 px), o selo sobe para o canto do ícone em vez de empurrar para fora da barra.
-              <span aria-label={seloDaCaixa.titulo} title={seloDaCaixa.titulo} className={`bg-brand px-1.5 py-0.5 text-[10px] font-bold text-ink ${compacta ? 'min-[820px]:absolute min-[820px]:right-1 min-[820px]:top-1 min-[820px]:px-1 min-[820px]:py-0 min-[820px]:text-[9px]' : ''}`}>{seloDaCaixa.texto}</span>}
-            {ativo && !compacta && <Icons.ChevronRight size={14} aria-hidden />}
-          </Link>;
-        })}
-      </nav>
-
-      {/* rodapé: os três temas */}
-      <div
-        role="group"
-        aria-label="Tema da interface"
-        className={`flex flex-row items-center gap-[6px] border-t border-border px-3 py-[9px] ${compacta ? 'min-[820px]:hidden' : ''}`}
-      >
-        {TEMAS.map((t) => {
-          const on = tema === t.id;
-          return (
-            <button
-              key={t.id}
-              type="button"
-              onClick={() => setTema(t.id)}
-              aria-pressed={on}
-              className={[
-                'min-h-11 flex-1 cursor-pointer border py-[5px] font-os-mono text-[9px] uppercase tracking-[0.12em] transition-colors duration-150 focus-visible:outline focus-visible:outline-2 focus-visible:outline-brand min-[820px]:min-h-0',
-                on
-                  ? 'border-brand bg-brand text-ink'
-                  : 'border-border text-muted hover:border-border-strong hover:text-text',
-              ].join(' ')}
-            >
-              {t.rotulo}
-            </button>
-          );
-        })}
       </div>
       </aside>
     </>

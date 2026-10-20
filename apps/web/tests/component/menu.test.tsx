@@ -1,8 +1,14 @@
+import { existsSync, readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 
-/* A sidebar preserva a hierarquia declarada, o acesso e a seção ativa. */
+/*
+ * A sidebar preserva a hierarquia declarada, o acesso e a seção ativa.
+ * Desde 20/10/2026 (rodada da interface, U1) as subseções de cada área moram só no menu
+ * lateral: a área aberta mostra a lista delas, e o campo principal não tem mais abas.
+ */
 
 let PERMISSOES: string[] = [];
 let CAMINHO = '/painel';
@@ -55,13 +61,16 @@ import { Paleta } from '@/components/Paleta';
 import { Topbar } from '@/components/Topbar';
 // eslint-disable-next-line import/first
 import { NAV } from '@mktos/shared';
-import { NavegacaoDoModulo } from '@/components/NavegacaoDoModulo';
 import { modulosDeNavegacao, rotuloDoDestino } from '@/components/navegacao-modulos';
 
 const TODAS = ['dashboard.ver', 'tarefas.ver', 'pauta.ver', 'leads.ver', 'mcp.ver'];
 const TODAS_DO_NAV = [...new Set(NAV.map((n) => n.permission))];
 
 const link = (href: string) => document.querySelector(`a[href="${href}"]`);
+/** Os links das áreas (um por área), sem as subseções da área aberta. */
+const linksDasAreas = () => Array.from(document.querySelectorAll<HTMLAnchorElement>('#root-os-nav a[data-area]'));
+const area = (nome: string) => linksDasAreas().find((a) => a.textContent?.trim() === nome)!;
+const subsecoes = (nome: string) => within(screen.getByRole('list', { name: `Subseções de ${nome}` }));
 
 beforeEach(() => {
   PERMISSOES = [...TODAS];
@@ -118,43 +127,102 @@ describe('a barra lateral', () => {
     }
   });
 
-  // Versão final (19/10/2026): nove áreas na ordem das SECOES (o Trabalho voltou com a
-  // nossa organização; o Contexto desceu para depois da IA em 18/10).
-  it('mostra nove áreas, na ordem das seções, em vez de todos os destinos na lateral', () => {
+  // Versão final (19/10/2026) e rodada da interface (20/10/2026): dez áreas na ordem das
+  // SECOES, com o WhatsApp depois do Comercial e o Contexto depois da IA.
+  it('mostra dez áreas, na ordem das seções, e só a área aberta mostra subseções', () => {
     PERMISSOES = TODAS_DO_NAV;
     render(<Sidebar />);
-    const destinos = within(screen.getByRole('navigation', { name: 'Destinos' }));
-    expect(destinos.getAllByRole('link').map((el) => el.textContent)).toEqual([
-      'Dia a dia', 'Trabalho', 'Marketing', 'Comercial', 'Financeiro',
+    expect(linksDasAreas().map((el) => el.textContent)).toEqual([
+      'Dia a dia', 'Trabalho', 'Marketing', 'Comercial', 'WhatsApp', 'Financeiro',
       'IA e automações', 'Contexto', 'Resultados', 'Configurações',
     ]);
+    // /painel é do Dia a dia (o item oculto): só ele abre; as subseções das outras áreas não aparecem.
+    expect(screen.getAllByRole('list', { name: /^Subseções de / })).toHaveLength(1);
+    expect(screen.getByRole('list', { name: 'Subseções de Dia a dia' })).toBeInTheDocument();
     expect(link('/contexto/marca')).toBeNull();
     expect(link('/referencias')).toBeNull();
   });
 
-  it('Dia a dia entra na Visão geral e as abas seguem a ordem final', () => {
-    PERMISSOES = TODAS_DO_NAV;
-    CAMINHO = '/dia-a-dia';
-    render(<><Sidebar /><NavegacaoDoModulo /></>);
-    expect(screen.getByRole('link', { name: 'Dia a dia' })).toHaveAttribute('href', '/dia-a-dia');
-    const abas = within(screen.getByRole('navigation', { name: 'Abas de Dia a dia' }));
-    expect(abas.getAllByRole('link').map((el) => el.textContent)).toEqual([
-      'Visão geral', 'Pendências', 'Aprovações', 'Agenda', 'Painel geral da empresa',
-    ]);
-    expect(abas.getByRole('link', { name: 'Visão geral' })).toHaveAttribute('aria-current', 'page');
+  it('o campo principal não tem mais abas: o menu é o único lugar das subseções', () => {
+    expect(existsSync(join(__dirname, '..', '..', 'src', 'components', 'NavegacaoDoModulo.tsx'))).toBe(false);
+    const shell = readFileSync(join(__dirname, '..', '..', 'src', 'components', 'AppShell.tsx'), 'utf8');
+    expect(shell).not.toMatch(/NavegacaoDoModulo/);
   });
 
-  it('Comercial entra no Painel geral, na ordem final, sem Clientes nem Tarefas', () => {
+  it('a logo é o link de início, com nome acessível e sem "ROOT OS" escrito', () => {
+    PERMISSOES = TODAS_DO_NAV;
+    render(<Sidebar />);
+    const logo = screen.getByRole('link', { name: 'ROOT OS, início' });
+    expect(logo).toHaveAttribute('href', '/dia-a-dia');
+    expect(logo.querySelector('[data-logo-root] svg')).not.toBeNull();
+    const aside = document.getElementById('root-os-nav')!;
+    expect(aside.textContent).not.toMatch(/ROOT OS/);
+    expect(aside.textContent?.toLowerCase()).not.toMatch(/operação root/);
+    // Os textos de antes vão para o title do link.
+    expect(logo).toHaveAttribute('title', 'ROOT OS · operação root');
+  });
+
+  it('a logo leva à entrada do Dia a dia que a permissão libera', () => {
+    PERMISSOES = ['dashboard.ver'];
+    render(<Sidebar />);
+    expect(screen.getByRole('link', { name: 'ROOT OS, início' })).toHaveAttribute('href', '/caixa');
+  });
+
+  it('Dia a dia entra na Visão geral e as subseções seguem a ordem final, sem o Painel geral', () => {
+    PERMISSOES = TODAS_DO_NAV;
+    CAMINHO = '/dia-a-dia';
+    render(<Sidebar />);
+    expect(area('Dia a dia')).toHaveAttribute('href', '/dia-a-dia');
+    expect(area('Dia a dia')).toHaveAttribute('aria-expanded', 'true');
+    const lista = subsecoes('Dia a dia');
+    expect(lista.getAllByRole('link').map((el) => el.textContent)).toEqual([
+      'Visão geral', 'Pendências', 'Aprovações', 'Agenda',
+    ]);
+    expect(lista.getByRole('link', { name: 'Visão geral' })).toHaveAttribute('aria-current', 'page');
+    expect(link('/painel')).toBeNull();
+  });
+
+  it('acordeão: clicar noutra área abre o grupo dela e fecha o anterior', async () => {
+    const user = userEvent.setup();
+    PERMISSOES = TODAS_DO_NAV;
+    CAMINHO = '/dia-a-dia';
+    render(<Sidebar />);
+    await user.click(area('Trabalho'));
+    expect(screen.queryByRole('list', { name: 'Subseções de Dia a dia' })).toBeNull();
+    expect(area('Dia a dia')).toHaveAttribute('aria-expanded', 'false');
+    expect(area('Trabalho')).toHaveAttribute('aria-expanded', 'true');
+    expect(subsecoes('Trabalho').getAllByRole('link').map((el) => el.textContent)).toEqual([
+      'Tarefas', 'Todas as tarefas', 'Implantação de clientes', 'Atas',
+    ]);
+    expect(subsecoes('Trabalho').getByRole('link', { name: 'Todas as tarefas' })).toHaveAttribute('href', '/trabalho/todas');
+  });
+
+  it('área com uma subseção só não mostra lista: o WhatsApp é um link', async () => {
+    const user = userEvent.setup();
+    PERMISSOES = TODAS_DO_NAV;
+    CAMINHO = '/whatsapp';
+    render(<Sidebar />);
+    expect(area('WhatsApp')).toHaveAttribute('href', '/whatsapp');
+    expect(area('WhatsApp')).toHaveAttribute('aria-current', 'true');
+    expect(area('WhatsApp')).not.toHaveAttribute('aria-expanded');
+    expect(screen.queryByRole('list', { name: 'Subseções de WhatsApp' })).toBeNull();
+    await user.click(area('WhatsApp'));
+    expect(screen.queryAllByRole('list', { name: /^Subseções de / })).toHaveLength(0);
+  });
+
+  it('Comercial entra no Painel geral, na ordem final, sem Clientes, Tarefas nem o Simulador', () => {
     PERMISSOES = TODAS_DO_NAV;
     CAMINHO = '/comercial';
-    render(<><Sidebar /><NavegacaoDoModulo /></>);
-    expect(screen.getByRole('link', { name: 'Comercial' })).toHaveAttribute('href', '/comercial');
-    const abas = within(screen.getByRole('navigation', { name: 'Abas de Comercial' }));
-    expect(abas.getAllByRole('link').map((el) => el.textContent)).toEqual([
+    render(<Sidebar />);
+    expect(area('Comercial')).toHaveAttribute('href', '/comercial');
+    const lista = subsecoes('Comercial');
+    expect(lista.getAllByRole('link').map((el) => el.textContent)).toEqual([
       'Painel geral', 'Funil vivo', 'Propostas', 'Lista de leads', 'Contratos vivos',
-      'Simulador de WhatsApp', 'Torre das automações', 'Relatório da semana',
+      'Torre das automações', 'Relatório da semana',
     ]);
-    expect(abas.getByRole('link', { name: 'Painel geral' })).toHaveAttribute('aria-current', 'page');
+    expect(lista.getByRole('link', { name: 'Painel geral' })).toHaveAttribute('aria-current', 'page');
+    expect(link('/comercial/simulador')).toBeNull();
+    expect(link('/comercial/rodada')).toBeNull();
     expect(link('/clientes')).toBeNull();
     expect(link('/comercial/tarefas')).toBeNull();
     expect(link('/comercial/decisoes')).toBeNull();
@@ -164,75 +232,69 @@ describe('a barra lateral', () => {
   it('Banco de ideias e Estratégia do mês ficam no Marketing', () => {
     PERMISSOES = TODAS_DO_NAV;
     CAMINHO = '/marketing/ideias';
-    render(<><Sidebar /><NavegacaoDoModulo /></>);
-    expect(within(screen.getByRole('navigation', { name: 'Destinos' })).getByRole('link', { name: 'Marketing' })).toHaveAttribute('aria-current', 'true');
-    const abas = within(screen.getByRole('navigation', { name: 'Abas de Marketing' }));
-    expect(abas.getByRole('link', { name: 'Banco de ideias' })).toHaveAttribute('aria-current', 'page');
-    expect(abas.getByRole('link', { name: 'Estratégia do mês' })).toHaveAttribute('href', '/marketing/estrategia');
+    render(<Sidebar />);
+    expect(area('Marketing')).toHaveAttribute('aria-current', 'true');
+    const lista = subsecoes('Marketing');
+    expect(lista.getByRole('link', { name: 'Banco de ideias' })).toHaveAttribute('aria-current', 'page');
+    expect(lista.getByRole('link', { name: 'Estratégia do mês' })).toHaveAttribute('href', '/marketing/estrategia');
   });
 
-  it('Marca é uma aba de Contexto e seleciona o módulo, preservando URL', () => {
+  it('Marca é uma subseção de Contexto e seleciona a área, preservando URL', () => {
     PERMISSOES = TODAS_DO_NAV;
     CAMINHO = '/contexto/marca';
-    render(<><Sidebar /><NavegacaoDoModulo /></>);
-    expect(screen.getByRole('link', { name: 'Contexto' })).toHaveAttribute('aria-current', 'true');
-    const abas = screen.getByRole('navigation', { name: 'Abas de Contexto' });
-    expect(within(abas).getByRole('link', { name: 'Mapa da empresa' })).toHaveAttribute('href', '/contexto');
-    expect(within(abas).getByRole('link', { name: 'Marca e brandbook' })).toHaveAttribute('aria-current', 'page');
+    render(<Sidebar />);
+    expect(area('Contexto')).toHaveAttribute('aria-current', 'true');
+    const lista = subsecoes('Contexto');
+    expect(lista.getByRole('link', { name: 'Mapa da empresa' })).toHaveAttribute('href', '/contexto');
+    expect(lista.getByRole('link', { name: 'Marca e brandbook' })).toHaveAttribute('aria-current', 'page');
   });
 
   it('quem só pode ver Marca entra em Contexto sem ganhar acesso ao mapa', () => {
     PERMISSOES = ['pauta.ver'];
     CAMINHO = '/contexto/marca';
-    render(<><Sidebar /><NavegacaoDoModulo /></>);
-    expect(screen.getByRole('link', { name: 'Contexto' })).toHaveAttribute('href', '/contexto/marca');
+    render(<Sidebar />);
+    // Uma subseção só: a área é o próprio link da Marca, sem lista.
+    expect(area('Contexto')).toHaveAttribute('href', '/contexto/marca');
+    expect(area('Contexto')).toHaveAttribute('aria-current', 'true');
     expect(screen.queryByRole('link', { name: 'Mapa da empresa' })).toBeNull();
-    expect(screen.getByRole('link', { name: 'Marca e brandbook' })).toHaveAttribute('href', '/contexto/marca');
+    expect(link('/contexto')).toBeNull();
   });
 
   it('Marca desaparece quando Pauta está desligada, sem esconder mapa permitido', () => {
     PERMISSOES = TODAS_DO_NAV;
     MODULOS_LIGADOS = ['trabalho'];
     CAMINHO = '/contexto';
-    render(<><Sidebar /><NavegacaoDoModulo /></>);
-    expect(screen.getByRole('link', { name: 'Mapa da empresa' })).toBeInTheDocument();
+    render(<Sidebar />);
+    expect(area('Contexto')).toHaveAttribute('href', '/contexto');
+    expect(link('/contexto/marca')).toBeNull();
     expect(screen.queryByRole('link', { name: 'Marca e brandbook' })).toBeNull();
   });
 
-  it('nas subrotas de custo só IA e a aba correta ficam ativas', () => {
+  it('nas subrotas de custo só IA e a subseção correta ficam ativas', () => {
     CAMINHO = '/painel/custo-ia';
-    render(<><Sidebar /><NavegacaoDoModulo /></>);
-    expect(screen.getByRole('link', { name: 'IA e automações' })).toHaveAttribute('aria-current', 'true');
-    expect(screen.getByRole('link', { name: 'Dia a dia' })).not.toHaveAttribute('aria-current');
-    expect(screen.getByRole('link', { name: 'Custos de IA' })).toHaveAttribute('aria-current', 'page');
-  });
-
-  it('filho permitido continua acessível sem a permissão do pai', () => {
-    // A Marca pede pauta.ver sob o Contexto (obsidian.ver): sem o pai, o filho segue acessível.
-    PERMISSOES = ['pauta.ver'];
-    CAMINHO = '/contexto/marca';
-    render(<><Sidebar /><NavegacaoDoModulo /></>);
-    expect(screen.getByRole('link', { name: 'Marca e brandbook' })).toHaveAttribute('aria-current', 'page');
-    expect(link('/contexto')).toBeNull();
+    render(<Sidebar />);
+    expect(area('IA e automações')).toHaveAttribute('aria-current', 'true');
+    expect(area('Dia a dia')).not.toHaveAttribute('aria-current');
+    expect(subsecoes('IA e automações').getByRole('link', { name: 'Custos de IA' })).toHaveAttribute('aria-current', 'page');
   });
 
   it('a área sem o primeiro item entra pelo primeiro que a permissão libera', () => {
     // Sem tarefas.ver, Dia a dia entra em Pendências; o funil antigo do Lucas não volta ao menu.
     PERMISSOES = ['dashboard.ver'];
     CAMINHO = '/caixa';
-    render(<><Sidebar /><NavegacaoDoModulo /></>);
-    expect(screen.getByRole('link', { name: 'Dia a dia' })).toHaveAttribute('href', '/caixa');
+    render(<Sidebar />);
+    expect(area('Dia a dia')).toHaveAttribute('href', '/caixa');
     expect(link('/funil')).toBeNull();
     expect(screen.queryByRole('link', { name: 'Comercial' })).toBeNull();
   });
 
-  it('Configurações reúne conta, empresa e registros em abas distintas', () => {
+  it('Configurações reúne conta, empresa e registros nas subseções', () => {
     PERMISSOES = TODAS_DO_NAV;
     CAMINHO = '/config';
-    render(<NavegacaoDoModulo />);
-    const abas = screen.getByRole('navigation', { name: 'Abas de Configurações' });
+    render(<Sidebar />);
+    const lista = subsecoes('Configurações');
     for (const nome of ['Equipe', 'Integrações', 'Regras e permissões', 'Registro de ações', 'Atividade', 'Configurações da conta']) {
-      expect(within(abas).getByRole('link', { name: nome })).toBeInTheDocument();
+      expect(lista.getByRole('link', { name: nome })).toBeInTheDocument();
     }
     expect(link('/assinatura')).toBeNull();
   });
@@ -240,21 +302,21 @@ describe('a barra lateral', () => {
   it('Registros tem entrada mesmo quando nenhuma outra configuração foi liberada', () => {
     PERMISSOES = ['auditoria.ver'];
     CAMINHO = '/rastro';
-    render(<><Sidebar /><NavegacaoDoModulo /></>);
-    expect(screen.getByRole('link', { name: 'Configurações' })).toHaveAttribute('href', '/rastro');
-    expect(screen.getByRole('link', { name: 'Registro de ações' })).toHaveAttribute('aria-current', 'page');
+    render(<Sidebar />);
+    expect(area('Configurações')).toHaveAttribute('href', '/rastro');
+    expect(subsecoes('Configurações').getByRole('link', { name: 'Registro de ações' })).toHaveAttribute('aria-current', 'page');
   });
 
   it('as preferências antigas não escondem áreas nem causam erro', () => {
     localStorage.setItem(CHAVE_MENU, '{não é json');
     render(<Sidebar />);
-    expect(screen.getByRole('link', { name: 'Marketing' })).toBeInTheDocument();
+    expect(area('Marketing')).toBeInTheDocument();
   });
 
-  it('/assinatura permanece fora da lateral e das abas', () => {
+  it('/assinatura permanece fora da lateral e das subseções', () => {
     PERMISSOES = TODAS_DO_NAV;
     CAMINHO = '/config';
-    render(<><Sidebar /><NavegacaoDoModulo /></>);
+    render(<Sidebar />);
     expect(link('/assinatura')).toBeNull();
     expect(link('/config')).toBeInTheDocument();
   });
@@ -271,7 +333,9 @@ describe('a barra lateral', () => {
     PERMISSOES = ['dashboard.ver'];
     render(<Paleta aberto fechar={() => {}} />);
     const dialogo = screen.getByRole('dialog', { name: 'Ir para' });
-    expect(dialogo).toHaveTextContent('Painel geral da empresa');
+    // O Painel geral saiu do menu e da busca em 20/10/2026; Pendências segue.
+    expect(dialogo).toHaveTextContent('Pendências');
+    expect(dialogo).not.toHaveTextContent('Painel geral da empresa');
     // sem as demais permissões, nenhuma outra tela do NAV é oferecida
     const oferecidas = screen.getAllByRole('button').map((b) => b.querySelector('span')?.textContent);
     const semAcesso = NAV.filter((n) => !PERMISSOES.includes(n.permission)).map((n) => n.label);
@@ -298,7 +362,7 @@ describe('a barra lateral', () => {
     PERMISSOES = TODAS_DO_NAV;
     render(<Paleta aberto fechar={() => {}} />);
     const campo = screen.getByPlaceholderText('ir para…');
-    // 'proposta' e 'whatsapp' viraram telas na versão final (Propostas, Simulador de WhatsApp).
+    // 'proposta' e 'whatsapp' viraram telas na versão final (Propostas, WhatsApp).
     for (const termo of ['assinar contrato', 'nota fiscal', 'editor de processos']) {
       await user.clear(campo);
       await user.type(campo, termo);

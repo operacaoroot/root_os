@@ -8,7 +8,7 @@ import type { Permission } from './permissions.js';
 // deriva as áreas daqui). Por isso as oito chaves de antes (dia, empresa,
 // trabalho, conteudo, comercial, resultados, automacoes, controle) continuam
 // existindo e só mudaram de rótulo, de ordem e de tipo; o que entrou de novo
-// (financeiro, registros, conta) soma chaves. Trocar ou tirar uma chave deixa a
+// (financeiro, registros, conta; e `whatsapp` em 20/10/2026) soma chaves. Trocar ou tirar uma chave deixa a
 // nota com a tag antiga sem área, calada: o teste de nav.test.ts cobra a lista.
 //
 // A ORDEM é desenho e pode mudar (18/10/2026: Contexto desceu para depois do
@@ -21,6 +21,9 @@ export const SECOES = [
   { key: 'trabalho', label: 'Trabalho', hint: 'tarefas, quadro e implantação', tipo: 'principal' },
   { key: 'conteudo', label: 'Motor de Marketing', hint: 'conteúdo, campanhas e medição', tipo: 'principal' },
   { key: 'comercial', label: 'Motor Comercial', hint: 'leads e funil de vendas', tipo: 'principal' },
+  // 20/10/2026 (rodada da interface, U1): o WhatsApp vira área própria, logo depois do
+  // Comercial. Chave nova, somada; nenhuma chave antiga mudou.
+  { key: 'whatsapp', label: 'WhatsApp', hint: 'conversas do lead e da mesa', tipo: 'principal' },
   { key: 'financeiro', label: 'Motor Financeiro', hint: 'ferramentas e contratos financeiros', tipo: 'principal' },
   { key: 'automacoes', label: 'Motor de IA', hint: 'agentes, rotinas, sessões e custos', tipo: 'principal' },
   { key: 'empresa', label: 'Contexto', hint: 'mapa, conhecimento e marca', tipo: 'principal' },
@@ -137,7 +140,9 @@ export const NAV: NavItem[] = [
   { key: 'caixa', label: 'Pendências', href: '/caixa', icon: 'Inbox', permission: 'dashboard.ver', secao: 'dia' },
   { key: 'atendimento', label: 'Aprovações', href: '/atendimento', icon: 'MessagesSquare', permission: 'aprovacoes.ver', secao: 'dia', estado: 'parcial', parcial: 'a fila de aprovação funciona; a caixa de entrada por WhatsApp ainda não está disponível' },
   { key: 'agenda', label: 'Agenda', href: '/agenda', icon: 'CalendarDays', permission: 'dashboard.ver', secao: 'dia' },
-  { key: 'console', label: 'Painel geral da empresa', href: '/painel', icon: 'SquareTerminal', permission: 'dashboard.ver', secao: 'dia' },
+  // 20/10/2026 (rodada da interface, U1, item 4 da ata): o Painel geral sai do menu. A
+  // Visão geral é a entrada do dia; `/painel` segue viva pela rota (ROTAS_ABSORVIDAS).
+  { key: 'console', label: 'Painel geral da empresa', href: '/painel', icon: 'SquareTerminal', permission: 'dashboard.ver', secao: 'dia', oculto: true },
 
   { key: 'contexto', label: 'Conhecimento da empresa', href: '/contexto', icon: 'Network', permission: 'obsidian.ver', secao: 'empresa', estado: 'parcial', parcial: 'o mapa e a página de Marca estão disponíveis; a aba Identidade ainda não está disponível' },
   { key: 'marca', label: 'Marca e pilares', href: '/contexto/marca', icon: 'Fingerprint', permission: 'pauta.ver', secao: 'empresa', modulo: 'pauta', pai: 'contexto' },
@@ -154,6 +159,9 @@ export const NAV: NavItem[] = [
   // pendurada no Trabalho (só forma: mesma seção, mesma rota, mesmo módulo).
   { key: 'tarefas', label: 'Lista de tarefas', href: '/tarefas', icon: 'CheckSquare', permission: 'tarefas.ver', secao: 'trabalho', modulo: 'trabalho', oculto: true },
   { key: 'trabalho', label: 'Tarefas', href: '/trabalho', icon: 'KanbanSquare', permission: 'tarefas.ver', secao: 'trabalho', modulo: 'trabalho' },
+  // 20/10/2026 (rodada da interface, U1/U3): as tarefas de todas as pastas e listas numa
+  // tela só, com os segmentos por pasta de topo. Por dentro é o `?pasta=todas` do Trabalho.
+  { key: 'trabalho-todas', label: 'Todas as tarefas', href: '/trabalho/todas', icon: 'ListChecks', permission: 'tarefas.ver', secao: 'trabalho', modulo: 'trabalho', pai: 'trabalho' },
   // 19/10/2026 (rodada do trabalho T1): "Implantação de clientes" abre o kanban denso da
   // lista "Onboarding de cliente" (pasta Clientes), com rolagem lateral. A bancada antiga
   // `/onboarding` deixa de ser porta: o item fica oculto e a rota redireciona para o kanban;
@@ -182,8 +190,9 @@ export const NAV: NavItem[] = [
   { key: 'marketing-tarefas', label: 'Tarefas', href: '/marketing/tarefas', icon: 'CheckSquare', permission: 'tarefas.ver', secao: 'conteudo', modulo: 'trabalho' },
 
   // Versão final (19/10/2026, roteiro F2): Painel geral · Funil vivo · Propostas ·
-  // Lista de leads · Contratos vivos · Simulador de WhatsApp · Torre das automações ·
-  // Relatório da semana. O Painel geral é o dash do Lucas (layout dele) lendo os
+  // Lista de leads · Contratos vivos · Torre das automações · Relatório da semana (o
+  // Simulador de WhatsApp virou a área WhatsApp em 20/10/2026, e a Rodada da semana entra
+  // depois dos Contratos vivos só para a sessão da plataforma, fora do NAV). O Painel geral é o dash do Lucas (layout dele) lendo os
   // dados do cockpit; Propostas lê as do serviço da ROOT e as publicadas pela sala;
   // a Lista de leads lê a tabela `Lead`. Saem do Comercial (ocultos, vivos): o funil
   // antigo, Clientes e Tarefas (duplicados do Funil vivo, da Implantação e do Trabalho).
@@ -193,7 +202,9 @@ export const NAV: NavItem[] = [
   { key: 'leads', label: 'Lista de leads', href: '/leads', icon: 'UserPlus', permission: 'leads.ver', secao: 'comercial', modulo: 'leads' },
   { key: 'comercial-contratos', label: 'Contratos vivos', href: '/comercial/contratos', icon: 'FileSignature', permission: 'leads.ver', secao: 'comercial', modulo: 'leads' },
   // Cockpit do lead (lane B, 13/10/2026): os celulares simulados do lead e da mesa, provedor `simulado`.
-  { key: 'comercial-simulador', label: 'Simulador de WhatsApp', href: '/comercial/simulador', icon: 'Smartphone', permission: 'leads.ver', secao: 'comercial', modulo: 'leads' },
+  // 20/10/2026 (rodada da interface, U1, item 18 da ata): a tela mudou para a área
+  // WhatsApp (`/whatsapp`). O item fica oculto e a rota redireciona, preservando a query.
+  { key: 'comercial-simulador', label: 'Simulador de WhatsApp', href: '/comercial/simulador', icon: 'Smartphone', permission: 'leads.ver', secao: 'comercial', modulo: 'leads', oculto: true },
   { key: 'comercial-torre', label: 'Torre das automações', href: '/comercial/torre', icon: 'RadioTower', permission: 'leads.ver', secao: 'comercial', modulo: 'leads' },
   { key: 'comercial-relatorio', label: 'Relatório da semana', href: '/comercial/relatorio', icon: 'FileBarChart', permission: 'leads.ver', secao: 'comercial', modulo: 'leads' },
   { key: 'funil', label: 'Funil de vendas', href: '/funil', icon: 'Filter', permission: 'dashboard.ver', secao: 'comercial', modulo: 'leads', pai: 'leads', oculto: true },
@@ -202,6 +213,10 @@ export const NAV: NavItem[] = [
   // A fila de decisões (lane C, 13/10/2026) sai do menu em 19/10/2026: oculta, viva,
   // em `/comercial/decisoes` (`/comercial` voltou a ser o Painel geral).
   { key: 'comercial-decisoes', label: 'Decisões do comercial', href: '/comercial/decisoes', icon: 'Inbox', permission: 'leads.ver', secao: 'comercial', modulo: 'leads', oculto: true },
+
+  // 20/10/2026 (rodada da interface, U1): a tela de conversas do WhatsApp, o celular do
+  // lead e o da mesa no provedor configurado. Mesma permissão e mesmo módulo de antes.
+  { key: 'whatsapp', label: 'WhatsApp', href: '/whatsapp', icon: 'MessageCircle', permission: 'leads.ver', secao: 'whatsapp', modulo: 'leads' },
 
   { key: 'financeiro', label: 'Financeiro', href: '/financeiro', icon: 'Wallet', permission: 'financeiro.ver', secao: 'financeiro', modulo: 'financeiro' },
   { key: 'financeiro-tarefas', label: 'Tarefas', href: '/financeiro/tarefas', icon: 'CheckSquare', permission: 'tarefas.ver', secao: 'financeiro', modulo: 'trabalho' },
@@ -255,6 +270,9 @@ export const ROTAS_ABSORVIDAS: { href: string; destino: string; porque: string }
   // Versão final (19/10/2026): o que a produção criou e a versão final absorve.
   { href: '/clientes', destino: '/trabalho/implantacao', porque: 'onboarding e sucesso do cliente são a Implantação e os Contratos vivos na versão final; a tela segue viva' },
   { href: '/comercial/tarefas', destino: '/trabalho', porque: 'as tarefas do comercial estão no Trabalho (pasta Gestão) na versão final; a tela segue viva' },
+  // 20/10/2026, rodada da interface (U1).
+  { href: '/painel', destino: '/dia-a-dia', porque: 'a Visão geral é a entrada do dia; o painel antigo segue vivo pela rota' },
+  { href: '/comercial/simulador', destino: '/whatsapp', porque: 'o WhatsApp virou área própria em 20/10/2026; /comercial/simulador redireciona para /whatsapp com a mesma query' },
 ];
 
 // Rotas de detalhe que NÃO entram no menu: herdam o módulo pai e são protegidas

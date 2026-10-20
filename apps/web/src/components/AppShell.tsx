@@ -7,7 +7,6 @@ import { apiGet } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 import { Sidebar } from './Sidebar';
 import { Topbar } from './Topbar';
-import { NavegacaoDoModulo } from './NavegacaoDoModulo';
 import { ChatFlutuante } from './ChatFlutuante';
 import { ModulosProvider, useModulos } from './modulos';
 import { CaixaProvider } from './caixa';
@@ -83,7 +82,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             <Topbar />
             <main id="root-os-main" tabIndex={-1} className="flex-1 min-w-0 p-4 min-[820px]:p-6">
               <PortaDaAssinatura>
-                <PortaDoModulo><NavegacaoDoModulo />{children}</PortaDoModulo>
+                {/* As subseções de cada área moram só no menu lateral desde 20/10/2026
+                    (rodada da interface, U1): o campo principal é todo da tela. */}
+                <PortaDoModulo>{children}</PortaDoModulo>
               </PortaDaAssinatura>
             </main>
           </div>

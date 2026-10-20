@@ -80,7 +80,8 @@ vi.mock('next/link', () => ({
 import { Sidebar } from '@/components/Sidebar';
 
 // Versão final (19/10/2026): o Dia a dia entra na Visão geral (/dia-a-dia); o selo continua no item da área.
-const itemDaCaixa = () => document.querySelector('a[href="/dia-a-dia"]');
+// Desde 20/10/2026 a logo e a subseção Visão geral também levam a /dia-a-dia: o item é o da área.
+const itemDaCaixa = () => document.querySelector('#root-os-nav a[data-area="dia"]');
 
 describe('A7: o selo mora no item da Caixa, e explica o que é', () => {
   it('o número medido aparece dentro do item da Caixa', () => {
@@ -98,9 +99,7 @@ describe('A7: o selo mora no item da Caixa, e explica o que é', () => {
 
   it('nenhum outro item do menu ganha selo', () => {
     render(<Sidebar />);
-    const outros = [...document.querySelectorAll('a[href]')].filter(
-      (a) => a.getAttribute('href') !== '/dia-a-dia',
-    );
+    const outros = [...document.querySelectorAll('a[href]')].filter((a) => a !== itemDaCaixa());
     for (const a of outros) {
       expect(a.querySelector('[aria-label]'), `${a.getAttribute('href')} ganhou selo`).toBeNull();
     }
