@@ -363,6 +363,14 @@ async function main() {
   await confirmar(v1.approvalId, 'a proposta sai para o cliente (R3: publicação externa)');
   resumo.proposta = { versao: v1.versao, produto: v1.conteudo?.produto, valorCentavos: v1.conteudo?.valorCentavos, parcelas: v1.conteudo?.parcelas, validaAte: v1.conteudo?.validaAte, laudo: v1.laudo };
   await anotarEtapa(leadId, 'proposta publicada');
+  // Rodada da interface (20/10/2026): `JORNADA_PARAR_NA_PROPOSTA=1` para com a proposta publicada e
+  // em aberto, para o ux-painel.mjs ter uma empresa que ainda aceita pedido de ajuste pela sala
+  // (`UX_EMPRESA=<a empresa impressa>`; o link da sala o ux-painel lê do simulador da mesa).
+  if (process.env.JORNADA_PARAR_NA_PROPOSTA === '1') {
+    console.log(`Empresa parada na proposta: ${EMPRESA}`);
+    console.log(`Lead parado na proposta: ${leadId}`);
+    process.exit(0);
+  }
 
   passo('11. M4 avisa que a proposta chegou: R3, outra pessoa libera');
   await liberarMensagem(leadId, 'M4', 'o aviso da proposta sai da casa (R3)');
