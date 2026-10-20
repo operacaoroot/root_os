@@ -171,6 +171,7 @@ export async function provarPedirDeNovo(pagina, approvalId) {
   conferir((await tid(pagina, `aprov-acao-${approvalId}`).count()) === 0, 'a vencida não pode ter botão de aprovar');
   const titulo = await botao.getAttribute('title');
   conferir(/Você vira quem pede/.test(titulo ?? '') && /não poderá assinar/.test(titulo ?? ''), 'o botão não diz que quem clica vira o proponente');
+  await botao.evaluate((el) => el.scrollIntoView({ block: 'center' }));
   await botao.click();
   const d = await desfecho(pagina);
   return d;

@@ -380,7 +380,9 @@ async function partesDasOutrasLanes(p, sessao) {
     await p.getByTestId(`funil-mensagem-${alvo.leadId}`).waitFor();
     const mensagem = (await p.getByTestId(`funil-mensagem-${alvo.leadId}`).innerText()).replace(/\s+/g, ' ').trim();
     conferir(/^Movido para/.test(mensagem), `a mensagem do mover veio: ${mensagem}`);
-    conferir(await p.getByTestId(`funil-coluna-${para}`).locator(`[data-testid="funil-card-${alvo.leadId}"]`).count() === 1, `o cartão não está em ${para}`);
+    // O quadro recarrega depois da mensagem: espera o cartão chegar à coluna de destino.
+    await p.getByTestId(`funil-coluna-${para}`).locator(`[data-testid="funil-card-${alvo.leadId}"]`).waitFor({ timeout: 20_000 })
+      .catch(() => { throw new Error(`o cartão não está em ${para}`); });
     await foto(p, 'funil-movido-escuro');
     // De volta, pela mesma rota da tela (gente com leads.editar, sem token).
     await api('POST', `/comercial/lead/${alvo.leadId}/mover`, { para: alvo.etapa }, sessao.token);
