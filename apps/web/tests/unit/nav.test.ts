@@ -1,4 +1,4 @@
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, it, expect } from 'vitest';
 import {
@@ -787,5 +787,17 @@ describe('organização da navegação (ROOT-07 e versão final)', () => {
     expect(areasDaNota(['area:empresa', 'area:conteudo', 'area:comercial', 'area:automacoes']))
       .toEqual(['conteudo', 'comercial', 'automacoes', 'empresa']); // na ordem das SECOES (Contexto desceu em 18/10/2026)
     expect(areasDaNota(['area:nao-existe'])).toEqual([]);
+  });
+});
+
+describe('revisão final 2.5: os comentários descrevem o menu final', () => {
+  const ler = (...p: string[]) => readFileSync(join(__dirname, '..', '..', ...p), 'utf8');
+  it('/comercial é o Painel geral (não redireciona ao Funil vivo) e Pendências está no menu', () => {
+    const nav = ler('..', '..', 'packages', 'shared', 'src', 'nav.ts');
+    expect(nav).not.toMatch(/`\/comercial` redireciona/);
+    expect(nav).not.toMatch(/Dia a dia › Tarefas filtrada/);
+    expect(NAV.find((i) => i.href === '/comercial')?.label).toBe('Painel geral');
+    expect(NAV.find((i) => i.key === 'caixa')?.oculto).toBeFalsy();
+    expect(ler('src', 'components', 'Sidebar.tsx')).not.toMatch(/Pendências fora do menu/);
   });
 });
