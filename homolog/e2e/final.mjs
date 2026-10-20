@@ -92,7 +92,10 @@ const SELETORES = {
       // Linhas da lista: o que for linha de tabela, item de lista ou cartão no main.
       linhas: 'main table tbody tr, main [role="row"], main li, main article',
       // Marca visível das propostas publicadas pela sala (ajustar ao rótulo da F2).
-      marcaDaSala: /\bda sala\b|sala do cliente|publicada na sala/i,
+      // A coluna "Origem" da tabela: "Sala" (publicada pela sala do cliente) ou
+      // "Serviço de propostas" (as antigas do serviço da ROOT).
+      marcaDaSala: /(^|\t)Sala(\t|$)/m,
+      marcaDoServico: /(^|\t)Serviço de propostas(\t|$)/m,
     },
     leads: { rotulo: 'Lista de leads', url: '/leads' },
   },
@@ -674,7 +677,7 @@ main()
   .finally(() => {
     gravar();
     const { passa, falha } = prova.placar;
-    console.log(`\nPlacar: ${passa} PASSA · ${falha} FALHA · ${prova.fotos} fotos em homolog/organizar/fotos/ (fora do git)`);
-    console.log('Resumo: homolog/organizar/prova-final.json');
+    console.log(`\nPlacar: ${passa} PASSA · ${falha} FALHA · ${prova.fotos} fotos em ${FOTOS}`);
+    console.log(`Resumo: ${join(SAIDA, 'prova-final.json')}`);
     process.exitCode = falha ? 1 : 0;
   });

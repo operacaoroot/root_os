@@ -1,0 +1,210 @@
+{
+  "roteiro": "homolog/e2e/final.mjs",
+  "inicio": "2026-10-20T00:48:22.834Z",
+  "alvo": "homologacao-local",
+  "passos": [
+    {
+      "n": 1,
+      "nome": "login",
+      "resultado": "PASSA",
+      "ms": 1629,
+      "detalhe": {
+        "entrada": "/dia-a-dia"
+      }
+    },
+    {
+      "n": 2,
+      "nome": "menu lateral recolhe e expande",
+      "resultado": "PASSA",
+      "ms": 3191,
+      "detalhe": {
+        "aberto": 252,
+        "recolhido": 64,
+        "expandido": 252
+      }
+    },
+    {
+      "n": 3,
+      "nome": "Motor Comercial › Painel geral como primeira aba, com números e sem erro",
+      "resultado": "PASSA",
+      "ms": 4004,
+      "detalhe": {
+        "numerosVisiveis": 124
+      }
+    },
+    {
+      "n": 4,
+      "nome": "Motor Comercial: abas na ordem nova, sem Clientes e Tarefas",
+      "resultado": "PASSA",
+      "ms": 4009,
+      "detalhe": {
+        "abas": 8
+      }
+    },
+    {
+      "n": 5,
+      "nome": "Motor Comercial › Funil vivo",
+      "resultado": "PASSA",
+      "ms": 4803
+    },
+    {
+      "n": 6,
+      "nome": "Motor Comercial › Propostas (as antigas e as da sala, quando houver)",
+      "resultado": "PASSA",
+      "ms": 5605,
+      "detalhe": {
+        "linhas": 11,
+        "daSala": 9,
+        "doServico": 2
+      }
+    },
+    {
+      "n": 7,
+      "nome": "Motor Comercial › Lista de leads",
+      "resultado": "PASSA",
+      "ms": 6402,
+      "detalhe": {
+        "linhas": 24
+      }
+    },
+    {
+      "n": 8,
+      "nome": "Dia a dia › Visão geral como primeira aba, lendo as pastas e listas",
+      "resultado": "PASSA",
+      "ms": 7230,
+      "detalhe": {
+        "abas": 5,
+        "pastasDaCasa": 4,
+        "pastasCitadasNoDash": 1
+      }
+    },
+    {
+      "n": 9,
+      "nome": "Dia a dia › Pendências",
+      "resultado": "PASSA",
+      "ms": 8034
+    },
+    {
+      "n": 10,
+      "nome": "Trabalho › seletor de pastas em \"Todas\" mostra tarefas de várias pastas",
+      "resultado": "FALHA",
+      "ms": 9095,
+      "motivo": "as tarefas visíveis são de 1 pasta só"
+    },
+    {
+      "n": 11,
+      "nome": "Trabalho › calendário",
+      "resultado": "PASSA",
+      "ms": 9907
+    },
+    {
+      "n": 12,
+      "nome": "pop-up de tarefa com vários responsáveis",
+      "resultado": "PASSA",
+      "ms": 11645,
+      "detalhe": {
+        "responsaveisNaTarefa": 2,
+        "responsaveisNoPopup": 2
+      }
+    },
+    {
+      "n": 13,
+      "nome": "Financeiro abre sem erro",
+      "resultado": "PASSA",
+      "ms": 13087
+    },
+    {
+      "n": 14,
+      "nome": "Cofre abre sem erro",
+      "resultado": "PASSA",
+      "ms": 14601
+    },
+    {
+      "n": 15,
+      "nome": "Granola em Integrações abre sem erro",
+      "resultado": "PASSA",
+      "ms": 16017
+    },
+    {
+      "n": 16,
+      "nome": "nenhuma página com rolagem horizontal a 390 px",
+      "resultado": "PASSA",
+      "ms": 25926,
+      "detalhe": {
+        "telas": 10,
+        "linhaDeBaseDaProducao": [
+          "financeiro",
+          "integracoes"
+        ]
+      }
+    },
+    {
+      "n": 17,
+      "nome": "fotos das telas em escuro, claro e 390 px",
+      "resultado": "PASSA",
+      "ms": 72795,
+      "detalhe": {
+        "fotos": 30
+      }
+    }
+  ],
+  "semRolagemHorizontal": [
+    {
+      "tela": "comercial-painel",
+      "rola": false,
+      "daProducao": false
+    },
+    {
+      "tela": "comercial-funil",
+      "rola": false,
+      "daProducao": false
+    },
+    {
+      "tela": "propostas",
+      "rola": false,
+      "daProducao": false
+    },
+    {
+      "tela": "lista-de-leads",
+      "rola": false,
+      "daProducao": false
+    },
+    {
+      "tela": "dia-visao-geral",
+      "rola": false,
+      "daProducao": false
+    },
+    {
+      "tela": "pendencias",
+      "rola": false,
+      "daProducao": false
+    },
+    {
+      "tela": "trabalho",
+      "rola": false,
+      "daProducao": false
+    },
+    {
+      "tela": "financeiro",
+      "rola": true,
+      "daProducao": true
+    },
+    {
+      "tela": "cofre",
+      "rola": false,
+      "daProducao": true
+    },
+    {
+      "tela": "integracoes",
+      "rola": true,
+      "daProducao": true
+    }
+  ],
+  "fotos": 42,
+  "placar": {
+    "passa": 16,
+    "falha": 1
+  },
+  "fim": "2026-10-20T00:49:35.689Z",
+  "duracaoMs": 72855
+}
