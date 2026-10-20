@@ -277,7 +277,7 @@ function acharLista(nome: unknown, listas: readonly ListaParaAta[]): ListaParaAt
  * com o nome cadastrado; senão, como foi escrito. O primeiro nome sozinho não é
  * trocado pelo nome completo de ninguém: "Rodrigo" na ata pode ser o cliente.
  */
-function acharDono(nome: unknown, pessoas: readonly string[], ataNorm: string): string | null {
+export function acharDono(nome: unknown, pessoas: readonly string[], ataNorm: string): string | null {
   if (typeof nome !== 'string') return null;
   const limpo = cortar(nome, 120);
   if (!nomeEstaNaAta(limpo, ataNorm)) return null;

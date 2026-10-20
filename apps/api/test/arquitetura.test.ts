@@ -353,6 +353,8 @@ const CONECTORES: Record<string, string> = {
   'src/youtube/youtube.service.ts': 'YouTube',
   // Cockpit comercial (lane D, 13/10/2026): assinatura do contrato, entregue ao comercial pela PORTA_DE_ASSINATURA.
   'src/comercial/conectores/zapsign.service.ts': 'ZapSign',
+  // Rodada da interface (20/10/2026, U5): o Granola direto, cliente do servidor MCP dele, entregue ao banco de atas por FONTE_DO_GRANOLA.
+  'src/granola/granola-direto.service.ts': 'Granola (MCP)',
 };
 
 /**
@@ -962,6 +964,8 @@ const HOSTS: Array<{ padrao: RegExp; conector: string }> = [
   { padrao: /https?:\/\/(?:[\w-]+\.)*youtube\.com/, conector: 'src/youtube/youtube.service.ts' },
   { padrao: /https?:\/\/(?:[\w-]+\.)*youtu\.be/, conector: 'src/youtube/youtube.service.ts' },
   { padrao: /https?:\/\/(?:[\w-]+\.)*zapsign\.com(?:\.br)?/, conector: 'src/comercial/conectores/zapsign.service.ts' },
+  // U5 (20/10/2026): o servidor MCP e o OAuth do Granola. O link da nota que o Zap manda não é escrito em código.
+  { padrao: /https?:\/\/(?:[\w-]+\.)*granola\.(?:ai|so)/, conector: 'src/granola/granola-direto.service.ts' },
 ];
 
 /*
@@ -1168,6 +1172,9 @@ const CREDENCIAIS: Record<string, string> = {
   YOUTUBE_API_URL: 'src/youtube/youtube.service.ts',
   YOUTUBE_UPLOAD_URL: 'src/youtube/youtube.service.ts',
   YOUTUBE_OAUTH_URL: 'src/youtube/youtube.service.ts',
+  // U5 (20/10/2026): o endereço do MCP do Granola (só o dublê preenche) e o retorno do OAuth.
+  GRANOLA_MCP_URL: 'src/granola/granola-direto.service.ts',
+  GRANOLA_REDIRECT_URI: 'src/granola/granola-direto.service.ts',
 };
 
 /*
@@ -1668,6 +1675,20 @@ describe('catraca de arquitetura: o modelo tem uma casa só', () => {
 describe('catraca de arquitetura: ninguém é cliente de MCP', () => {
   const SDK = '@modelcontextprotocol/sdk';
   const CASA_DO_MCP = 'packages/mcp';
+  /*
+   * A ÚNICA EXCEÇÃO, e ela é um CONECTOR, não um agente (rodada da interface,
+   * 20/10/2026, U5, autorizada pela rodada: "levar o SDK para apps/api"). O
+   * Granola só oferece o servidor MCP dele com OAuth por pessoa, e o Rodrigo
+   * pediu o OS falando direto com ele. O que a frente proíbe é o LAÇO DE
+   * FERRAMENTA paralelo (um modelo escolhendo o que chamar, sem régua e sem
+   * RASTRO); o conector chama três ferramentas de LEITURA com nomes e
+   * argumentos fixos no código, como um cliente HTTP, e nenhum modelo vê a
+   * lista de ferramentas. O teste de baixo confere isso: o arquivo não fala
+   * com o provedor de modelo nem lê a lista de ferramentas para outro fim que
+   * a sonda de saúde.
+   */
+  const CONECTOR_DO_GRANOLA = 'apps/api/src/granola/granola-direto.service.ts';
+  const MANIFESTO_DO_CONECTOR = 'apps/api/package.json';
 
   /*
    * O LADO CLIENTE TEM UMA CASA, E ELA É O PRÓPRIO PACOTE DO MCP.
@@ -1679,7 +1700,7 @@ describe('catraca de arquitetura: ninguém é cliente de MCP', () => {
    * lado cliente é montar um laço de ferramenta próprio.
    */
   const clientes = FONTES_MONO.filter(
-    (f) => f.codigo.includes(`${SDK}/client`) && !f.arquivo.startsWith(`${CASA_DO_MCP}/`),
+    (f) => f.codigo.includes(`${SDK}/client`) && !f.arquivo.startsWith(`${CASA_DO_MCP}/`) && f.arquivo !== CONECTOR_DO_GRANOLA,
   ).map((f) => ({
     arquivo: f.arquivo,
     linha: linhaDe(f.codigo, f.codigo.indexOf(`${SDK}/client`)),
@@ -1731,6 +1752,7 @@ describe('catraca de arquitetura: ninguém é cliente de MCP', () => {
 
     const declaram = manifestos.filter((m) => {
       if (m === `${CASA_DO_MCP}/package.json`) return false;
+      if (m === MANIFESTO_DO_CONECTOR) return false;
       const json = JSON.parse(readFileSync(path.join(RAIZ_MONO, m), 'utf8')) as {
         dependencies?: Record<string, string>;
         devDependencies?: Record<string, string>;
@@ -1741,6 +1763,23 @@ describe('catraca de arquitetura: ninguém é cliente de MCP', () => {
       declaram.map((m) => `${m} declara ${SDK}`),
       `O SDK do MCP é dependência de ${CASA_DO_MCP} e de mais ninguém.`,
     ).toEqual([]);
+  });
+
+  it('a exceção do Granola é um conector: cliente de leitura, sem modelo e sem laço', () => {
+    const fonte = FONTES_MONO.find((f) => f.arquivo === CONECTOR_DO_GRANOLA);
+    expect(fonte, `${CONECTOR_DO_GRANOLA} sumiu: apague a exceção desta frente`).toBeDefined();
+    const codigo = fonte!.codigo;
+    expect(codigo.includes(`${SDK}/client`), 'a exceção existe porque este arquivo é cliente do MCP do Granola').toBe(true);
+    // Nenhum modelo no conector: quem escolhe a ferramenta é o código.
+    expect(codigo).not.toMatch(/llm\.provider|LLM_PROVIDER|anthropic|openai/i);
+    // As ferramentas chamadas são nomes fixos, de leitura (e a saída da conta, na revogação).
+    const chamadas = [...codigo.matchAll(/this\.chamar\(\s*cliente\s*,\s*'([a-z_]+)'/g)].map((m) => m[1]).sort();
+    expect([...new Set(chamadas)]).toEqual(['get_meeting_transcript', 'get_meetings', 'list_meetings', 'sign_out']);
+    // Uma chamada só ao SDK, dentro de `chamar`, com o nome que veio dos literais acima: nome de ferramenta escolhido por outro é laço.
+    expect([...codigo.matchAll(/callTool\(\s*\{\s*name\s*:\s*(\w+)/g)].map((m) => m[1])).toEqual(['nome']);
+    // Só este arquivo da API importa o lado cliente.
+    const outros = FONTES_MONO.filter((f) => f.arquivo.startsWith('apps/api/') && f.arquivo !== CONECTOR_DO_GRANOLA && f.codigo.includes(SDK));
+    expect(outros.map((f) => f.arquivo)).toEqual([]);
   });
 });
 
@@ -2249,5 +2288,40 @@ describe('catraca de arquitetura: o YouTube (MD10)', () => {
     const chamadasDoAjudante = (fonte.semTexto.match(/this\s*\.\s*thumbEPlaylist\s*\(/g) ?? []).length;
     const noTrechoDosEfeitos = (fonte.semTexto.slice(inicio, fim).match(/this\s*\.\s*thumbEPlaylist\s*\(/g) ?? []).length;
     expect(noTrechoDosEfeitos).toBe(chamadasDoAjudante);
+  });
+});
+
+describe('catraca de arquitetura: o Granola direto (rodada da interface, U5)', () => {
+  const CONECTOR = 'src/granola/granola-direto.service.ts';
+  const FONTE = 'src/work/atas/fonte-do-granola.ts';
+  const CONEXAO = 'src/granola/conexao-direta.ts';
+  const FIACAO = 'src/granola/granola.module.ts';
+  const CONSUMIDOR = 'src/work/atas/atas-do-granola.service.ts';
+  const CONTROLADOR = 'src/granola/granola-direto.controller.ts';
+  const DESCRITOR = 'src/ficha/granola.service.ts';
+
+  it('os arquivos existem onde a catraca procura', () => {
+    for (const a of [CONECTOR, FONTE, CONEXAO, FIACAO, CONSUMIDOR, CONTROLADOR, DESCRITOR]) expect(EXISTE.has(a), a).toBe(true);
+  });
+
+  it('a leitura das reuniões tem um dono: só a declaração, a fiação e o banco de atas citam FONTE_DO_GRANOLA', () => {
+    const citam = FONTES.filter((f) => /\bFONTE_DO_GRANOLA\b/.test(f.semTexto)).map((f) => f.arquivo).sort();
+    expect(citam).toEqual([CONSUMIDOR, FIACAO, FONTE].sort());
+  });
+
+  it('a conexão tem dono: só a declaração, a fiação, o retorno do OAuth e o descritor citam CONEXAO_DIRETA_DO_GRANOLA', () => {
+    const citam = FONTES.filter((f) => /\bCONEXAO_DIRETA_DO_GRANOLA\b/.test(f.semTexto)).map((f) => f.arquivo).sort();
+    expect(citam).toEqual([CONTROLADOR, CONEXAO, DESCRITOR, FIACAO].sort());
+  });
+
+  it('ninguém fora da pasta importa o conector, e o controlador da pasta também não', () => {
+    const imports = REFS.filter((r) => r.alvo === CONECTOR && r.arquivo !== FIACAO).map((r) => `${r.arquivo}:${r.linha}`);
+    expect(imports).toEqual([]);
+  });
+
+  it('o conector não grava a transcrição: não escreve no banco e não loga o que leu', () => {
+    const codigo = FONTES.find((f) => f.arquivo === CONECTOR)!.semTexto;
+    expect(codigo).not.toMatch(/this\s*\.\s*prisma\s*\.\s*\w+\s*\.\s*(create|update|upsert|createMany|updateMany)\s*\(/);
+    expect(codigo).not.toMatch(/log\.\w+\([^)]*transcri/i);
   });
 });

@@ -1,0 +1,328 @@
+import {
+  BadRequestException,
+  ConflictException,
+  ForbiddenException,
+  Inject,
+  Injectable,
+  Logger,
+  NotFoundException,
+  Optional,
+  ServiceUnavailableException,
+} from '@nestjs/common';
+import { ContextKind, ContextSource } from '@prisma/client';
+import { createHash } from 'node:crypto';
+import {
+  ATA_PREFIXO_DA_CHAVE,
+  GRANOLA_DIAS_DA_LISTA,
+  refDaAta,
+  type TrabGranolaAtaGerada,
+  type TrabGranolaReunioes,
+} from '@mktos/shared';
+
+import { AuditService } from '../../audit/audit.service';
+import { cardsParaCasar, clienteDaReuniao, levarReuniaoDiretaParaFicha, reuniaoDoGranolaNaFicha } from '../../ficha/granola.service';
+import { ConectorDesligadoError } from '../../integrations/conectores.service';
+import { LLM_PROVIDER, type LlmProvider, type LlmStepOutput } from '../../llm/llm.provider';
+import { MemoriaService } from '../../memory/memoria.service';
+import { normalizarParaBusca } from '../../onboarding/trilho/leitor-de-ata';
+import { varrerSegredos } from '../../onboarding/trilho/segredos';
+import { umaPorVez } from '../../pauta/uma-por-vez';
+import { PrismaService } from '../../prisma/prisma.service';
+import { AtasService, PREFIXO_DA_PROCEDENCIA_DO_GRANOLA, type QuemDecide } from './atas.service';
+import {
+  FONTE_DO_GRANOLA,
+  type FonteDoGranola,
+  GranolaIndisponivelError,
+  GranolaNaoConectadoError,
+  ID_DE_REUNIAO_DO_GRANOLA,
+} from './fonte-do-granola';
+import { SugestoesIlegiveisError, slugDaAta } from './leitor-de-atas';
+import { interpretarAtaDoGranola, markdownDaAta, promptDaAtaDoGranola, type LeituraDaAtaDoGranola } from './leitor-do-granola';
+
+/* ==========================================================================
+ * AS REUNIÕES DO GRANOLA NO BANCO DE ATAS (rodada da interface, 20/10/2026)
+ * ==========================================================================
+ *
+ * "Gerar ata": o OS puxa a TRANSCRIÇÃO pelo conector direto (`FONTE_DO_GRANOLA`),
+ * mascara os segredos, pede ao modelo a ata e as sugestões num pedido só (sob o
+ * teto da empresa e o `umaPorVez`), e o parser decide o que vale
+ * (`leitor-do-granola.ts`). Depois:
+ *   · a ATA vira nota da memória pelo `MemoriaService` (ADR-011): chave
+ *     `ata:<data>-<slug>`, procedência `granola:<id da reunião>`. Gerar de novo
+ *     é VERSÃO NOVA DA MESMA NOTA, achada pela procedência, nunca outra nota;
+ *   · as SUGESTÕES entram em `AtaSugestao`, em rascunho, com `ataRef` apontando
+ *     para a nota (a mesma tarefa lida de novo não vira segundo rascunho);
+ *   · a REUNIÃO vai para a ficha do cliente quando ele é reconhecido, pelas
+ *     regras e funções do Zap (`ficha/granola.service.ts`), sem duplicar o que
+ *     o Zap já trouxe (o id da reunião é a chave).
+ *
+ * A TRANSCRIÇÃO BRUTA NÃO É GRAVADA, a mesma regra do leitor de ata do
+ * onboarding: nem no banco, nem no log, nem no RASTRO. Ela vive só dentro de
+ * `gerarAgora`. O que fica é o hash (sha256 da transcrição mascarada), o
+ * tamanho, o custo e a procedência, na seção "Procedência" da ata e na
+ * auditoria. Os trechos de cada sugestão (até 400 caracteres, conferidos e
+ * mascarados) são citação, como na ata colada. "Reprocessar" puxa de novo do
+ * Granola.
+ *
+ * Gente, não máquina: as mesmas trancas do banco de atas (guarda do token no
+ * controller e `exigirGente` pelo banco antes de gastar IA).
+ */
+
+const SAIDA_DA_LEITURA = 6000;
+const MIN_CARACTERES_DA_TRANSCRICAO = 50;
+
+const diaEmSaoPaulo = (d: Date): string =>
+  new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Sao_Paulo', year: 'numeric', month: '2-digit', day: '2-digit' }).format(d);
+
+export const RECUSA_SEM_GRANOLA = 'Conecte o Granola em Configurações › Integrações para ler as reuniões daqui.';
+
+@Injectable()
+export class AtasDoGranolaService {
+  private readonly log = new Logger('AtasDoGranola');
+
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly memoria: MemoriaService,
+    private readonly atas: AtasService,
+    private readonly audit: AuditService,
+    @Inject(LLM_PROVIDER) private readonly llm: LlmProvider,
+    /** `@Optional()`: sem o módulo do conector montado, o bloco diz "conecte o Granola" e nada quebra. */
+    @Optional() @Inject(FONTE_DO_GRANOLA) private readonly fonte?: FonteDoGranola,
+  ) {}
+
+  // ==========================================================================
+  // A LISTA
+  // ==========================================================================
+
+  async reunioes(orgId: string): Promise<TrabGranolaReunioes> {
+    const base = { reunioes: [], iaConfigurada: this.llm.configured };
+    if (!this.fonte || !(await this.fonte.conectado(orgId))) {
+      return { ...base, conectado: false, desligado: false, motivo: RECUSA_SEM_GRANOLA };
+    }
+    let lista: Awaited<ReturnType<FonteDoGranola['listarReunioes']>>;
+    try {
+      lista = await this.fonte.listarReunioes(orgId, { dias: GRANOLA_DIAS_DA_LISTA });
+    } catch (e) {
+      if (e instanceof ConectorDesligadoError) {
+        return { ...base, conectado: true, desligado: true, motivo: 'O Granola está desligado em Conexões. Religue lá para ler as reuniões.' };
+      }
+      if (e instanceof GranolaNaoConectadoError) return { ...base, conectado: false, desligado: false, motivo: e.message };
+      if (e instanceof GranolaIndisponivelError || e instanceof Error) {
+        this.log.warn(`${orgId}: a lista de reuniões do Granola falhou: ${e.message.slice(0, 200)}`);
+        return { ...base, conectado: true, desligado: false, motivo: e.message.slice(0, 300) };
+      }
+      throw e;
+    }
+    const validas = lista.filter((r) => ID_DE_REUNIAO_DO_GRANOLA.test(r.id));
+    const marcas = validas.map((r) => `${PREFIXO_DA_PROCEDENCIA_DO_GRANOLA}${r.id}`);
+    const [cards, atas, naFicha] = await Promise.all([
+      cardsParaCasar(this.prisma, orgId),
+      marcas.length
+        ? this.prisma.contextItem.findMany({
+            where: { orgId, sourceRef: { in: marcas }, chave: { startsWith: ATA_PREFIXO_DA_CHAVE }, arquivadoEm: null },
+            select: { id: true, sourceRef: true, versao: true },
+          })
+        : Promise.resolve([]),
+      Promise.all(validas.map((r) => reuniaoDoGranolaNaFicha(this.prisma, orgId, r.id))),
+    ]);
+    const ataDe = new Map(atas.map((a) => [a.sourceRef, a]));
+    return {
+      ...base,
+      conectado: true,
+      desligado: false,
+      motivo: null,
+      reunioes: validas.map((r, i) => {
+        const ata = ataDe.get(`${PREFIXO_DA_PROCEDENCIA_DO_GRANOLA}${r.id}`);
+        return {
+          id: r.id,
+          titulo: r.titulo,
+          em: r.em,
+          participantes: r.participantes,
+          cliente: clienteDaReuniao(r, cards),
+          ataRef: ata ? refDaAta('colada', ata.id) : null,
+          ataVersao: ata?.versao ?? null,
+          naFicha: !!naFicha[i],
+        };
+      }),
+    };
+  }
+
+  // ==========================================================================
+  // GERAR A ATA — da transcrição, num pedido só
+  // ==========================================================================
+
+  async gerarAta(orgId: string, quem: QuemDecide, granolaId: string): Promise<TrabGranolaAtaGerada> {
+    if (!ID_DE_REUNIAO_DO_GRANOLA.test(String(granolaId ?? ''))) throw new NotFoundException('Reunião do Granola não encontrada.');
+    // Antes do `umaPorVez` e do modelo: conta de máquina não gasta IA nem ocupa a vez.
+    await this.atas.exigirGente(orgId, quem);
+    return umaPorVez(`trabalho-atas-granola:${orgId}:${granolaId}`, 'A ata desta reunião', () => this.gerarAgora(orgId, quem.id, granolaId));
+  }
+
+  /** "Reprocessar" de uma ata que veio do Granola: o id sai da procedência da nota. */
+  async reprocessar(orgId: string, quem: QuemDecide, granolaId: string): Promise<TrabGranolaAtaGerada> {
+    return this.gerarAta(orgId, quem, granolaId);
+  }
+
+  private async gerarAgora(orgId: string, actorId: string, granolaId: string): Promise<TrabGranolaAtaGerada> {
+    if (!this.fonte) throw new BadRequestException(RECUSA_SEM_GRANOLA);
+    if (!this.llm.configured) throw new ServiceUnavailableException(`IA não configurada: falta a credencial do provider "${this.llm.name}".`);
+
+    // A TRANSCRIÇÃO: só nesta função, e mascarada antes de qualquer outra coisa.
+    let reuniao: Awaited<ReturnType<FonteDoGranola['lerReuniao']>>;
+    try {
+      reuniao = await this.fonte.lerReuniao(orgId, granolaId);
+    } catch (e) {
+      if (e instanceof GranolaNaoConectadoError) throw new BadRequestException(e.message);
+      if (e instanceof GranolaIndisponivelError) throw new ServiceUnavailableException(e.message);
+      throw e;
+    }
+    const varredura = varrerSegredos(String(reuniao.transcricao ?? '').replace(/\r\n/g, '\n').trim());
+    const transcricao = varredura.texto;
+    if (Array.from(transcricao).length < MIN_CARACTERES_DA_TRANSCRICAO) {
+      throw new BadRequestException('Esta reunião ainda não tem transcrição no Granola (ou o plano da conta não libera a transcrição).');
+    }
+    const caracteres = Array.from(transcricao).length;
+    const sha256 = createHash('sha256').update(transcricao, 'utf8').digest('hex');
+    const em = reuniao.em ? new Date(reuniao.em) : null;
+    const data = em && !Number.isNaN(em.getTime()) ? diaEmSaoPaulo(em) : null;
+    const participantes = reuniao.participantes.map((p) => varrerSegredos(p).texto);
+    const paraAta = { granolaId, titulo: varrerSegredos(reuniao.titulo).texto, data, participantes };
+
+    const [listas, pessoas] = await Promise.all([this.atas.listasDaEmpresa(orgId), this.atas.pessoasDaEmpresa(orgId)]);
+    const { system, user, cortada } = promptDaAtaDoGranola({ reuniao: paraAta, transcricao, listas, pessoas });
+
+    let saida: LlmStepOutput;
+    try {
+      saida = await this.llm.step({ system, turns: [{ role: 'user', text: user }], orgId, maxTokens: SAIDA_DA_LEITURA });
+    } catch (e) {
+      if (e instanceof BadRequestException || e instanceof ConflictException || e instanceof ForbiddenException) throw e;
+      const msg = `o leitor de reuniões não conseguiu chamar o modelo: ${(e as Error).message}`.slice(0, 300);
+      this.log.warn(`${orgId} granola:${granolaId}: ${msg}`);
+      throw new ServiceUnavailableException(msg);
+    }
+
+    let leitura: LeituraDaAtaDoGranola;
+    try {
+      leitura = interpretarAtaDoGranola(saida.text, { transcricao, listas, pessoas, referencia: data ?? diaEmSaoPaulo(new Date()) });
+    } catch (e) {
+      if (e instanceof SugestoesIlegiveisError) throw new ServiceUnavailableException(e.message);
+      throw e;
+    }
+    const custoUsd = Number.isFinite(saida.usage?.custoUsd) ? saida.usage.custoUsd : 0;
+    const modelo = saida.usage?.modeloServido || this.llm.model;
+    const corpo = markdownDaAta(paraAta, leitura, { caracteres, sha256, segredosMascarados: varredura.removidos, modelo, custoUsd, cortada });
+    const avisos = [...(cortada ? ['a transcrição é longa e entrou cortada na leitura'] : []), ...leitura.avisos];
+
+    // A ATA na memória: versão nova da MESMA nota quando a reunião já tem ata.
+    const marca = `${PREFIXO_DA_PROCEDENCIA_DO_GRANOLA}${granolaId}`;
+    const existente = await this.prisma.contextItem.findFirst({
+      where: { orgId, sourceRef: marca, chave: { startsWith: ATA_PREFIXO_DA_CHAVE }, arquivadoEm: null },
+      orderBy: { criadoEm: 'asc' },
+      select: { id: true },
+    });
+    const nota = existente
+      ? await this.memoria.alterar(orgId, existente.id, {
+          title: paraAta.titulo,
+          body: corpo,
+          sourceType: ContextSource.conector,
+          sourceRef: marca,
+          motivo: 'ata reprocessada da transcrição do Granola',
+        })
+      : await this.criarNota(orgId, paraAta.titulo, data, corpo, marca);
+
+    // AS SUGESTÕES: a mesma tarefa lida de novo não vira segundo rascunho (vale o título, sem caixa nem acento).
+    const ataRef = refDaAta('colada', nota.id);
+    const ja = new Set(
+      (await this.prisma.ataSugestao.findMany({ where: { orgId, ataRef }, select: { titulo: true } })).map((x) => normalizarParaBusca(x.titulo)),
+    );
+    const novas = leitura.sugestoes.filter((x) => !ja.has(normalizarParaBusca(x.titulo)));
+    const repetidas = leitura.sugestoes.length - novas.length;
+    const criadas = novas.length
+      ? await this.prisma.$transaction(
+          novas.map((x) =>
+            this.prisma.ataSugestao.create({
+              data: {
+                orgId,
+                ataRef,
+                titulo: varrerSegredos(x.titulo).texto,
+                listaId: x.listaId,
+                donoSugerido: x.donoSugerido,
+                vencimento: x.vencimento ? new Date(`${x.vencimento}T12:00:00.000Z`) : null,
+                trecho: varrerSegredos(x.trecho).texto,
+                estado: 'rascunho',
+                criadaPor: actorId,
+              },
+            }),
+          ),
+        )
+      : [];
+
+    // A FICHA: pelo caminho do Zap, sem duplicar o que ele já trouxe.
+    const ficha = await levarReuniaoDiretaParaFicha(this.prisma, orgId, {
+      granolaId,
+      titulo: paraAta.titulo,
+      em: em && !Number.isNaN(em.getTime()) ? em : new Date(),
+      participantes,
+      emails: reuniao.emails,
+      link: reuniao.link,
+      ata: corpo,
+      autorId: actorId,
+    });
+
+    await this.audit.log({
+      orgId,
+      actorId,
+      action: 'trabalho.ata.granola_gerada',
+      entityType: 'ata',
+      entityId: ataRef,
+      // Só a forma: nem a transcrição nem os trechos entram na auditoria.
+      after: {
+        procedencia: marca,
+        versao: nota.versao,
+        nova: !existente,
+        transcricao: { caracteres, sha256, segredosMascarados: varredura.removidos, cortada },
+        custoUsd,
+        modelo,
+        criadas: criadas.length,
+        repetidas,
+        descartadasPeloParser: leitura.descartadas,
+        ficha: ficha.ficha,
+      },
+    });
+
+    return {
+      ata: await this.atas.ler(orgId, ataRef, { vault: false }),
+      nova: !existente,
+      versao: nota.versao,
+      criadas: await this.atas.paraDtos(orgId, criadas),
+      repetidas,
+      avisos,
+      cliente: ficha.cliente,
+      ficha: ficha.ficha,
+    };
+  }
+
+  private async criarNota(orgId: string, titulo: string, data: string | null, corpo: string, marca: string) {
+    const base = `${ATA_PREFIXO_DA_CHAVE}${data ?? 'sem-data'}-${slugDaAta(titulo)}`;
+    for (let n = 1; n <= 20; n++) {
+      const chave = n === 1 ? base : `${base}-${n}`;
+      if (await this.memoria.porChave(orgId, chave)) continue;
+      try {
+        return await this.memoria.criar(orgId, {
+          chave,
+          kind: ContextKind.nota,
+          title: titulo,
+          body: corpo,
+          tags: ['ata', 'trabalho', 'granola'],
+          sourceType: ContextSource.conector,
+          sourceRef: marca,
+          motivo: 'ata gerada da transcrição do Granola em Trabalho › Atas',
+        });
+      } catch (e) {
+        if (e instanceof ConflictException) continue;
+        throw e;
+      }
+    }
+    throw new ConflictException('Já existem atas demais com esse título nesse dia.');
+  }
+}

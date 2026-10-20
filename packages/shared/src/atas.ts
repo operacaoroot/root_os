@@ -31,7 +31,13 @@ export const ATA_PREFIXO_DA_CHAVE = 'ata:';
 export const ATA_MIN_CARACTERES = 120;
 export const ATA_MAX_CARACTERES = 200_000;
 
-export type TrabAtaFonte = 'vault' | 'colada';
+/**
+ * `granola` (rodada da interface, 20/10/2026): a ata que o OS escreveu a partir
+ * da TRANSCRIÇÃO de uma reunião lida direto do Granola. Mora na memória como a
+ * colada (a referência continua `memoria:<id>`); a fonte só diz de onde veio,
+ * pela procedência `granola:<id da reunião>`.
+ */
+export type TrabAtaFonte = 'vault' | 'colada' | 'granola';
 export type TrabAtaSugestaoEstado = 'rascunho' | 'aceita' | 'descartada';
 
 export interface TrabAtaContagem {
@@ -52,7 +58,34 @@ export interface TrabAtaResumo {
   /** O caminho no vault (só `vault`). */
   caminho: string | null;
   sugestoes: TrabAtaContagem;
+  /**
+   * As sugestões já decididas, com quem decidiu e a tarefa criada (as mais
+   * recentes primeiro, até 6). É o que deixa a lista dizer "aceita por Fulana,
+   * virou a tarefa X" sem abrir a ata.
+   */
+  decididas?: TrabAtaDecidida[];
+  /** O id da reunião no Granola, quando a ata veio de lá (é por ele que "Reprocessar" busca de novo). */
+  granolaId?: string | null;
   atualizadaEm: string;
+}
+
+export interface TrabAtaDecidida {
+  id: string;
+  titulo: string;
+  estado: 'aceita' | 'descartada';
+  decididaPor: string | null;
+  decididaEm: string | null;
+  workTaskId: string | null;
+  /** A lista da tarefa criada (para o link abrir a tarefa no quadro). */
+  listaId: string | null;
+}
+
+/** Uma pendência da ata aberta e, quando virou tarefa, a sugestão e a tarefa. */
+export interface TrabAtaPendencia {
+  texto: string;
+  sugestaoId: string | null;
+  estado: TrabAtaSugestaoEstado | null;
+  workTaskId: string | null;
 }
 
 export interface TrabAtaDetalhe extends TrabAtaResumo {
@@ -60,6 +93,12 @@ export interface TrabAtaDetalhe extends TrabAtaResumo {
   /** De onde veio, em uma linha (o caminho do vault ou a procedência da memória). */
   procedencia: string;
   sugestoesDaAta: TrabAtaSugestaoDto[];
+  /** A seção "Decisões" da ata, item por item (vazia quando a ata não tem a seção). */
+  decisoes?: string[];
+  /** As seções "Pendências", "Próximos passos" e "Encaminhamentos", item por item, marcadas quando viraram tarefa. */
+  pendencias?: TrabAtaPendencia[];
+  /** A versão da nota da memória (a ata do Granola reprocessada ganha versão nova da mesma nota). */
+  versao?: number | null;
 }
 
 export interface TrabAtaLista {
@@ -132,6 +171,75 @@ export const TrabAtaAceitarSchema = z.object({
   clienteId: z.union([z.literal('interno'), z.string().uuid()]).optional(),
 });
 export type TrabAtaAceitarInput = z.infer<typeof TrabAtaAceitarSchema>;
+
+/* ==========================================================================
+ * AS REUNIÕES DO GRANOLA, LIDAS DIRETO (rodada da interface, 20/10/2026)
+ * ==========================================================================
+ *
+ * Ao lado do Zap (que continua igual), o OS fala com o servidor MCP do Granola
+ * com a autorização de cada empresa (OAuth no navegador, token no cofre). O
+ * bloco "Reuniões do Granola" da tela de Atas lista as últimas reuniões e
+ * "Gerar ata" puxa a TRANSCRIÇÃO, escreve a ata no formato da casa e as
+ * sugestões de tarefa num pedido só. A transcrição não é gravada em lugar
+ * nenhum: ficam o hash, o tamanho, o custo e a procedência.
+ */
+
+export interface TrabGranolaCliente {
+  taskId: string;
+  titulo: string;
+  /** Por que esse card: e-mail, domínio ou nome (as regras do Zap). */
+  porque: 'email' | 'dominio' | 'nome';
+}
+
+export interface TrabGranolaReuniao {
+  id: string;
+  titulo: string;
+  /** ISO, quando o Granola diz. */
+  em: string | null;
+  participantes: string[];
+  cliente: TrabGranolaCliente | null;
+  /** A ata já gerada desta reunião (`memoria:<id>`), quando existe. */
+  ataRef: string | null;
+  ataVersao: number | null;
+  /** A reunião já está na ficha do cliente (pelo Zap ou por uma ata gerada aqui). */
+  naFicha: boolean;
+}
+
+export interface TrabGranolaReunioes {
+  /** A empresa autorizou o Granola direto e o token está no cofre. */
+  conectado: boolean;
+  /** O conector está desligado em Conexões (a autorização fica guardada). */
+  desligado: boolean;
+  /** Quando não dá para listar, a frase que a tela mostra. */
+  motivo: string | null;
+  reunioes: TrabGranolaReuniao[];
+  iaConfigurada: boolean;
+}
+
+export interface TrabGranolaAtaGerada {
+  ata: TrabAtaDetalhe;
+  /** Primeira ata desta reunião (`true`) ou versão nova da mesma nota. */
+  nova: boolean;
+  versao: number;
+  criadas: TrabAtaSugestaoDto[];
+  repetidas: number;
+  avisos: string[];
+  cliente: TrabGranolaCliente | null;
+  /** O que aconteceu na ficha do cliente. */
+  ficha: 'criada' | 'atualizada' | 'ja_estava' | 'sem_cliente';
+}
+
+/** O estado da conexão direta, para o cartão de Conexões. */
+export interface TrabGranolaConexaoDireta {
+  conectado: boolean;
+  desde: string | null;
+  /** O endereço do servidor MCP que este processo usa. */
+  servidor: string;
+  /** Para onde o Granola devolve o navegador depois da autorização. */
+  retorno: string;
+}
+
+export const GRANOLA_DIAS_DA_LISTA = 30;
 
 /** A referência da ata, desmontada. `null` quando não é uma das duas formas. */
 export function lerRefDaAta(ref: string): { fonte: TrabAtaFonte; id: string } | null {

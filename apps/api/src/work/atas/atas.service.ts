@@ -18,10 +18,12 @@ import {
   type TrabAtaAceitarInput,
   type TrabAtaColarInput,
   type TrabAtaContagem,
+  type TrabAtaDecidida,
   type TrabAtaDetalhe,
   type TrabAtaFonte,
   type TrabAtaGeracao,
   type TrabAtaLista,
+  type TrabAtaPendencia,
   type TrabAtaResumo,
   type TrabAtaSugestaoDto,
   type TrabAtaSugestaoEstado,
@@ -46,6 +48,7 @@ import {
   slugDaAta,
   type ListaParaAta,
 } from './leitor-de-atas';
+import { pendenciaCasaComSugestao, secoesDaAta } from './leitor-do-granola';
 
 /* ==========================================================================
  * O BANCO DE ATAS DO TRABALHO (rodada do painel P3, 18/10/2026)
@@ -112,7 +115,15 @@ interface AtaLida {
   caminho: string | null;
   procedencia: string;
   atualizadaEm: Date;
+  /** O id da reunião no Granola, quando a ata veio de lá (procedência `granola:<id>`). */
+  granolaId?: string | null;
+  versao?: number | null;
 }
+
+/** A procedência das atas que o OS escreveu a partir do Granola. */
+export const PREFIXO_DA_PROCEDENCIA_DO_GRANOLA = 'granola:';
+const granolaIdDa = (sourceRef: string | null | undefined): string | null =>
+  sourceRef && sourceRef.startsWith(PREFIXO_DA_PROCEDENCIA_DO_GRANOLA) ? sourceRef.slice(PREFIXO_DA_PROCEDENCIA_DO_GRANOLA.length) || null : null;
 
 function contagemVazia(): TrabAtaContagem {
   return { rascunho: 0, aceitas: 0, descartadas: 0 };
@@ -172,23 +183,36 @@ export class AtasService {
         where: { orgId, chave: { startsWith: ATA_PREFIXO_DA_CHAVE }, arquivadoEm: null },
         orderBy: { atualizadoEm: 'desc' },
         take: MAX_COLADAS,
-        select: { id: true, title: true, body: true, atualizadoEm: true },
+        select: { id: true, title: true, body: true, atualizadoEm: true, sourceRef: true, versao: true },
       }),
       this.prisma.knowledgeNote.count({ where: { orgId } }),
       this.contagens(orgId),
     ]);
+    const decididas = await this.decididasPorAta(orgId);
 
     const atas: TrabAtaResumo[] = [
       ...doVault.map((n) =>
         this.resumo(
           { ref: refDaAta('vault', n.id), fonte: 'vault', titulo: n.title, texto: varrerSegredos(n.content).texto, caminho: n.path, procedencia: '', atualizadaEm: n.fileTime },
           contagens,
+          decididas,
         ),
       ),
       ...coladas.map((c) =>
         this.resumo(
-          { ref: refDaAta('colada', c.id), fonte: 'colada', titulo: c.title, texto: c.body, caminho: null, procedencia: '', atualizadaEm: c.atualizadoEm },
+          {
+            ref: refDaAta('colada', c.id),
+            fonte: granolaIdDa(c.sourceRef) ? 'granola' : 'colada',
+            titulo: c.title,
+            texto: c.body,
+            caminho: null,
+            procedencia: '',
+            atualizadaEm: c.atualizadoEm,
+            granolaId: granolaIdDa(c.sourceRef),
+            versao: c.versao,
+          },
           contagens,
+          decididas,
         ),
       ),
     ];
@@ -205,7 +229,23 @@ export class AtasService {
     });
     const dtos = await this.paraDtos(orgId, linhas);
     const contagens = new Map<string, TrabAtaContagem>([[ata.ref, this.contar(linhas)]]);
-    return { ...this.resumo(ata, contagens), texto: ata.texto, procedencia: ata.procedencia, sugestoesDaAta: dtos };
+    const decididas = new Map<string, TrabAtaDecidida[]>([[ata.ref, this.decididasDe(dtos)]]);
+    // A ata aberta mostra decisões e pendências como lista; a pendência que virou sugestão aparece marcada.
+    const secoes = secoesDaAta(ata.texto);
+    const pendencias: TrabAtaPendencia[] = secoes.pendencias.map((texto) => {
+      const casadas = dtos.filter((d) => pendenciaCasaComSugestao(texto, d));
+      const s = casadas.find((d) => d.estado === 'aceita') ?? casadas.find((d) => d.estado === 'rascunho') ?? casadas[0] ?? null;
+      return { texto, sugestaoId: s?.id ?? null, estado: s?.estado ?? null, workTaskId: s?.workTaskId ?? null };
+    });
+    return {
+      ...this.resumo(ata, contagens, decididas),
+      texto: ata.texto,
+      procedencia: ata.procedencia,
+      sugestoesDaAta: dtos,
+      decisoes: secoes.decisoes,
+      pendencias,
+      versao: ata.versao ?? null,
+    };
   }
 
   async sugestoes(
@@ -517,7 +557,7 @@ export class AtasService {
    * de máquina. O guarda do controller recusa pelo token; esta é a segunda
    * tranca, contra o token antigo de quem virou conta de serviço (PA-3).
    */
-  private async exigirGente(orgId: string, quem: QuemDecide): Promise<void> {
+  async exigirGente(orgId: string, quem: QuemDecide): Promise<void> {
     if (temPapelDeMaquina(quem.papeis)) throw new ForbiddenException(RECUSA_DE_MAQUINA_NAS_ATAS);
     const doBanco = await lerAprovador(this.prisma, quem.id, orgId);
     if (!doBanco || !doBanco.ativo) throw new ForbiddenException('Quem decide uma ata precisa ser um usuário ativo desta empresa.');
@@ -535,7 +575,7 @@ export class AtasService {
     );
   }
 
-  private async exigirAta(orgId: string, ref: string, acesso: AcessoAsAtas): Promise<AtaLida> {
+  async exigirAta(orgId: string, ref: string, acesso: AcessoAsAtas): Promise<AtaLida> {
     const lida = lerRefDaAta(ref);
     if (!lida) throw new NotFoundException('Ata não encontrada.');
     if (lida.fonte === 'vault') {
@@ -564,7 +604,9 @@ export class AtasService {
     if (!c) throw new NotFoundException('Ata não encontrada.');
     return {
       ref: refDaAta('colada', c.id),
-      fonte: 'colada',
+      fonte: granolaIdDa(c.sourceRef) ? 'granola' : 'colada',
+      granolaId: granolaIdDa(c.sourceRef),
+      versao: c.versao,
       titulo: c.title,
       texto: c.body,
       caminho: null,
@@ -573,7 +615,7 @@ export class AtasService {
     };
   }
 
-  private resumo(ata: AtaLida, contagens: Map<string, TrabAtaContagem>): TrabAtaResumo {
+  private resumo(ata: AtaLida, contagens: Map<string, TrabAtaContagem>, decididas?: Map<string, TrabAtaDecidida[]>): TrabAtaResumo {
     const meta = metadadosDaAta(ata.texto, ata.caminho);
     return {
       id: ata.ref,
@@ -584,8 +626,46 @@ export class AtasService {
       resumo: meta.resumo,
       caminho: ata.caminho,
       sugestoes: contagens.get(ata.ref) ?? contagemVazia(),
+      decididas: decididas?.get(ata.ref) ?? [],
+      granolaId: ata.granolaId ?? null,
       atualizadaEm: ata.atualizadaEm.toISOString(),
     };
+  }
+
+  /** As decididas mais recentes de uma ata, a partir dos DTOs já resolvidos (nomes e tarefa). */
+  private decididasDe(dtos: TrabAtaSugestaoDto[]): TrabAtaDecidida[] {
+    return dtos
+      .filter((d) => d.estado === 'aceita' || d.estado === 'descartada')
+      .sort((a, b) => (b.decididaEm ?? '').localeCompare(a.decididaEm ?? ''))
+      .slice(0, 6)
+      .map((d) => ({
+        id: d.id,
+        titulo: d.titulo,
+        estado: d.estado as 'aceita' | 'descartada',
+        decididaPor: d.decididaPor,
+        decididaEm: d.decididaEm,
+        workTaskId: d.workTaskId,
+        listaId: d.listaId,
+      }));
+  }
+
+  /** As decididas de todas as atas da empresa, para a lista (até 6 por ata). */
+  private async decididasPorAta(orgId: string): Promise<Map<string, TrabAtaDecidida[]>> {
+    const linhas = await this.prisma.ataSugestao.findMany({
+      where: { orgId, estado: { in: ['aceita', 'descartada'] } },
+      orderBy: { decididaEm: 'desc' },
+      take: 1000,
+    });
+    const porAta = new Map<string, LinhaDaSugestao[]>();
+    for (const l of linhas) {
+      const lista = porAta.get(l.ataRef) ?? [];
+      if (lista.length < 6) lista.push(l);
+      porAta.set(l.ataRef, lista);
+    }
+    const dtos = await this.paraDtos(orgId, [...porAta.values()].flat());
+    const mapa = new Map<string, TrabAtaDecidida[]>();
+    for (const d of dtos) mapa.set(d.ataRef, [...(mapa.get(d.ataRef) ?? []), ...this.decididasDe([d])]);
+    return mapa;
   }
 
   private contar(linhas: Array<{ estado: string }>): TrabAtaContagem {
@@ -615,7 +695,7 @@ export class AtasService {
     return mapa;
   }
 
-  private async listasDaEmpresa(orgId: string): Promise<ListaParaAta[]> {
+  async listasDaEmpresa(orgId: string): Promise<ListaParaAta[]> {
     const listas = await this.prisma.workList.findMany({
       where: { orgId },
       orderBy: [{ order: 'asc' }, { name: 'asc' }],
@@ -625,7 +705,7 @@ export class AtasService {
     return listas.map((l) => ({ id: l.id, nome: l.name, rotulo: l.folder ? `${l.folder.name} › ${l.name}` : l.name }));
   }
 
-  private async pessoasDaEmpresa(orgId: string): Promise<string[]> {
+  async pessoasDaEmpresa(orgId: string): Promise<string[]> {
     const gente = await this.prisma.user.findMany({
       where: { orgId, isActive: true },
       orderBy: { name: 'asc' },
@@ -657,7 +737,7 @@ export class AtasService {
     return [origem, '', trecho, '', `Ata: /trabalho/atas?ata=${encodeURIComponent(s.ataRef)}`].join('\n');
   }
 
-  private async paraDtos(orgId: string, linhas: LinhaDaSugestao[]): Promise<TrabAtaSugestaoDto[]> {
+  async paraDtos(orgId: string, linhas: LinhaDaSugestao[]): Promise<TrabAtaSugestaoDto[]> {
     const ids = [...new Set(linhas.map((l) => l.listaId).filter((x): x is string => !!x))];
     const listas = ids.length
       ? await this.prisma.workList.findMany({ where: { orgId, id: { in: ids } }, select: { id: true, name: true } })

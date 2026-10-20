@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ATA_MAX_CARACTERES, ATA_MIN_CARACTERES, DICA_DO_NOME_DA_TAREFA } from '@mktos/shared';
 import type {
   TrabAtaDetalhe, TrabAtaGeracao, TrabAtaLista, TrabAtaResumo, TrabAtaSugestaoDto, TrabEstrutura,
+  TrabGranolaAtaGerada, TrabGranolaReuniao, TrabGranolaReunioes,
 } from '@mktos/shared';
 import { apiGet, apiPost } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
@@ -30,6 +31,18 @@ import { SeletorDeCliente, type ClienteEscolhido } from './SeletorDeCliente';
  *     o ponto de partida, e o aceite leva o que a pessoa confirmou ou corrigiu;
  *   · PA-6: a ata colada vai até 200 mil caracteres, e a tela avisa antes.
  * No celular os botões e campos têm 44 px (o alvo do polegar).
+ *
+ * ATAS MAIS VIVAS E O GRANOLA DIRETO (rodada da interface, 20/10/2026, U5):
+ *   · o bloco "Reuniões do Granola" lista as últimas reuniões lidas direto do
+ *     Granola (título, data, participantes e o cliente reconhecido pelas regras
+ *     do Zap). "Gerar ata" puxa a TRANSCRIÇÃO e escreve a ata e as sugestões
+ *     num pedido só; a transcrição não fica guardada. Sem a conexão, o bloco diz
+ *     onde conectar;
+ *   · cada ata da lista mostra o estado das sugestões (pendentes, aceitas,
+ *     descartadas), quem aceitou e o link da tarefa criada;
+ *   · a ata aberta mostra as decisões e as pendências como lista, com a
+ *     pendência que virou tarefa marcada; "Reprocessar da transcrição" (ata do
+ *     Granola) ou "Sugerir tarefas" (ata colada ou do vault).
  */
 
 const ALVO = 'max-md:min-h-[44px]';
@@ -71,6 +84,8 @@ export function AtasView() {
   const [ajustes, setAjustes] = useState<Record<string, Ajuste>>({});
   const [pessoas, setPessoas] = useState<{ id: string; nome: string }[]>([]);
   const [colando, setColando] = useState(false);
+  const [granola, setGranola] = useState<TrabGranolaReunioes | null>(null);
+  const [gerandoDoGranola, setGerandoDoGranola] = useState<string | null>(null);
 
   const fecharColar = useCallback(() => {
     setColando(false);
@@ -89,6 +104,15 @@ export function AtasView() {
   }, [token, podeVer]);
 
   useEffect(() => { carregarLista(); }, [carregarLista]);
+
+  const carregarGranola = useCallback(() => {
+    if (!token || !podeVer) return;
+    apiGet<TrabGranolaReunioes | null>('/trabalho/atas/granola', token)
+      .then((g) => setGranola(g && Array.isArray(g.reunioes) ? g : null))
+      .catch(() => setGranola(null));
+  }, [token, podeVer]);
+
+  useEffect(() => { carregarGranola(); }, [carregarGranola]);
 
   useEffect(() => {
     if (!token || !podeEditar) return;
@@ -113,24 +137,58 @@ export function AtasView() {
   }, [refAberta]);
 
 
+  const avisosDaLeitura = (g: { criadas: unknown[]; repetidas: number; avisos: string[] }, extra: string[] = []) => [
+    g.criadas.length
+      ? `${g.criadas.length} ${g.criadas.length === 1 ? 'sugestão nova' : 'sugestões novas'} em rascunho.`
+      : 'Nenhuma sugestão nova nesta leitura.',
+    ...(g.repetidas ? [`${g.repetidas} já tinha${g.repetidas === 1 ? '' : 'm'} sido sugerida${g.repetidas === 1 ? '' : 's'} antes.`] : []),
+    ...extra,
+    ...g.avisos,
+  ];
+
+  const resumoDaFicha = (g: TrabGranolaAtaGerada): string[] => {
+    const versao = g.nova ? 'Ata gerada da transcrição.' : `Ata reprocessada: versão ${g.versao} da mesma nota.`;
+    const ficha =
+      g.ficha === 'criada' ? `A reunião entrou na ficha de ${g.cliente?.titulo ?? 'cliente'}.`
+        : g.ficha === 'atualizada' ? `A reunião na ficha de ${g.cliente?.titulo ?? 'cliente'} mostra a ata nova.`
+          : g.ficha === 'ja_estava' ? 'A reunião já estava na ficha do cliente (veio pelo Zap).'
+            : 'Nenhum cliente reconhecido: a reunião não foi para ficha nenhuma.';
+    return [versao, ficha];
+  };
+
   const gerar = () => {
     if (!aberta || !token) return;
     setLendo(true);
     setErro(null);
-    apiPost<TrabAtaGeracao>(`/trabalho/atas/${encodeURIComponent(aberta.id)}/sugestoes`, {}, token)
+    // Ata do Granola: reprocessa da TRANSCRIÇÃO (puxa de novo). Colada ou do vault: lê a própria ata.
+    const doGranola = aberta.fonte === 'granola';
+    const rota = doGranola ? 'reprocessar' : 'sugestoes';
+    apiPost<TrabAtaGeracao & Partial<TrabGranolaAtaGerada>>(`/trabalho/atas/${encodeURIComponent(aberta.id)}/${rota}`, {}, token)
       .then((g) => {
-        setAvisos([
-          g.criadas.length
-            ? `${g.criadas.length} ${g.criadas.length === 1 ? 'sugestão nova' : 'sugestões novas'} em rascunho.`
-            : 'Nenhuma sugestão nova nesta leitura.',
-          ...(g.repetidas ? [`${g.repetidas} já tinha${g.repetidas === 1 ? '' : 'm'} sido sugerida${g.repetidas === 1 ? '' : 's'} antes.`] : []),
-          ...g.avisos,
-        ]);
+        setAvisos(avisosDaLeitura(g, doGranola && g.versao ? resumoDaFicha(g as TrabGranolaAtaGerada) : []));
         abrir(aberta.id);
         carregarLista();
+        if (doGranola) carregarGranola();
       })
       .catch((e) => setErro(e.message))
       .finally(() => setLendo(false));
+  };
+
+  const gerarDoGranola = (r: TrabGranolaReuniao) => {
+    if (!token) return;
+    setGerandoDoGranola(r.id);
+    setErro(null);
+    apiPost<TrabGranolaAtaGerada>(`/trabalho/atas/granola/${encodeURIComponent(r.id)}/ata`, {}, token)
+      .then((g) => {
+        setAvisos(avisosDaLeitura(g, resumoDaFicha(g)));
+        setAberta(g.ata);
+        setRefAberta(g.ata.id);
+        escreverAtaNoEndereco(g.ata.id);
+        carregarLista();
+        carregarGranola();
+      })
+      .catch((e) => setErro(e.message))
+      .finally(() => setGerandoDoGranola(null));
   };
 
   const decidir = (s: TrabAtaSugestaoDto, como: 'aceitar' | 'descartar') => {
@@ -210,6 +268,16 @@ export function AtasView() {
         />
       )}
 
+      {granola && (
+        <ReunioesDoGranola
+          dados={granola}
+          podeGerar={podeColar}
+          gerando={gerandoDoGranola}
+          onGerar={gerarDoGranola}
+          onAbrir={(ref) => { setAvisos([]); abrir(ref); }}
+        />
+      )}
+
       <div className="grid gap-4 lg:grid-cols-[minmax(16rem,22rem)_minmax(0,1fr)]">
         <section aria-label="Atas da operação" className="min-w-0 space-y-2">
           {lista && (
@@ -225,6 +293,7 @@ export function AtasView() {
             {lista?.atas.map((a) => (
               <li key={a.id}>
                 <ItemDaAta ata={a} ativa={a.id === refAberta} onAbrir={() => { setAvisos([]); abrir(a.id); }} />
+                <DecididasDaAta ata={a} />
               </li>
             ))}
           </ul>
@@ -255,11 +324,19 @@ export function AtasView() {
                       type="button"
                       data-testid={`ata-gerar-${aberta.id}`}
                       className={BTN_PRIMARIO}
-                      disabled={lendo || lista?.iaConfigurada === false}
+                      disabled={lendo || lista?.iaConfigurada === false || (aberta.fonte === 'granola' && !podeColar)}
                       onClick={gerar}
-                      title={lista?.iaConfigurada === false ? 'A IA não está configurada nesta instalação.' : 'O agente lê a ata e propõe tarefas em rascunho.'}
+                      title={
+                        lista?.iaConfigurada === false
+                          ? 'A IA não está configurada nesta instalação.'
+                          : aberta.fonte === 'granola'
+                            ? 'Puxa a transcrição de novo do Granola, reescreve a ata (versão nova) e propõe as tarefas que faltam.'
+                            : 'O agente lê a ata e propõe tarefas em rascunho.'
+                      }
                     >
-                      {lendo ? 'Lendo a ata…' : 'Sugerir tarefas'}
+                      {aberta.fonte === 'granola'
+                        ? (lendo ? 'Lendo a transcrição…' : 'Reprocessar da transcrição')
+                        : (lendo ? 'Lendo a ata…' : 'Sugerir tarefas')}
                     </button>
                   )}
                 </div>
@@ -335,6 +412,8 @@ export function AtasView() {
                   </details>
                 )}
               </div>
+
+              <DecisoesEPendencias ata={aberta} />
 
               <article aria-label="A ata inteira" className="rounded-lg border border-border bg-surface p-3">
                 <RoteiroMarkdown texto={aberta.texto} />
@@ -466,7 +545,7 @@ function FormularioDoAceite({ s, ajuste, pessoas, estrutura, token, listaId, onL
 }
 
 function ItemDaAta({ ata, ativa, onAbrir }: { ata: TrabAtaResumo; ativa: boolean; onAbrir: () => void }) {
-  const { rascunho, aceitas } = ata.sugestoes;
+  const { rascunho, aceitas, descartadas } = ata.sugestoes;
   return (
     <button
       type="button"
@@ -484,11 +563,145 @@ function ItemDaAta({ ata, ativa, onAbrir }: { ata: TrabAtaResumo; ativa: boolean
       )}
       {ata.resumo && <span className="line-clamp-2 block text-[12px] text-muted break-words">{ata.resumo}</span>}
       <span className="flex flex-wrap gap-1.5 text-[11px] text-muted">
-        <span className="rounded bg-surface-2 px-1.5 py-0.5">{ata.fonte === 'vault' ? 'vault' : 'colada'}</span>
+        <span className="rounded bg-surface-2 px-1.5 py-0.5">{ata.fonte === 'vault' ? 'vault' : ata.fonte === 'granola' ? 'Granola' : 'colada'}</span>
         {rascunho > 0 && <span className="rounded bg-brand/10 px-1.5 py-0.5 text-brand">{rascunho} para decidir</span>}
         {aceitas > 0 && <span className="rounded bg-surface-2 px-1.5 py-0.5">{aceitas} {aceitas === 1 ? 'virou tarefa' : 'viraram tarefas'}</span>}
+        {descartadas > 0 && <span className="rounded bg-surface-2 px-1.5 py-0.5">{descartadas} {descartadas === 1 ? 'descartada' : 'descartadas'}</span>}
       </span>
     </button>
+  );
+}
+
+const linkDaTarefa = (listaId: string | null, tarefaId: string) => (listaId ? `/trabalho?lista=${listaId}&tarefa=${tarefaId}` : `/trabalho?tarefa=${tarefaId}`);
+
+/** Abaixo do item da lista: quem decidiu as sugestões e o link da tarefa criada (fora do botão). */
+function DecididasDaAta({ ata }: { ata: TrabAtaResumo }) {
+  const decididas = ata.decididas ?? [];
+  if (decididas.length === 0) return null;
+  return (
+    <ul data-testid={`ata-decididas-${ata.id}`} aria-label={`Sugestões decididas de "${ata.titulo}"`} className="mt-1 space-y-0.5 px-3 text-[11px] text-muted">
+      {decididas.slice(0, 3).map((d) => (
+        <li key={d.id} className="flex flex-wrap items-baseline gap-x-1.5 break-words">
+          <span className={d.estado === 'aceita' ? 'text-text' : 'line-through'}>{d.titulo}</span>
+          <span>{d.estado === 'aceita' ? 'aceita' : 'descartada'}{d.decididaPor ? ` por ${d.decididaPor}` : ''}</span>
+          {d.estado === 'aceita' && d.workTaskId && (
+            <a className={`text-brand underline underline-offset-2 ${ALVO} max-md:inline-flex max-md:items-center`} href={linkDaTarefa(d.listaId, d.workTaskId)}>abrir a tarefa</a>
+          )}
+        </li>
+      ))}
+      {decididas.length > 3 && <li>e mais {decididas.length - 3}</li>}
+    </ul>
+  );
+}
+
+/** A ata aberta: decisões e pendências como lista, e a pendência que virou tarefa marcada. */
+function DecisoesEPendencias({ ata }: { ata: TrabAtaDetalhe }) {
+  const decisoes = ata.decisoes ?? [];
+  const pendencias = ata.pendencias ?? [];
+  if (decisoes.length === 0 && pendencias.length === 0) return null;
+  return (
+    <section aria-label="Decisões e pendências" className="grid gap-3 rounded-lg border border-border bg-surface p-3 md:grid-cols-2">
+      <div className="min-w-0 space-y-1">
+        <h3 className="text-sm font-semibold">Decisões</h3>
+        {decisoes.length === 0 ? (
+          <p className="text-[12px] text-muted">A ata não registra decisão.</p>
+        ) : (
+          <ul data-testid="ata-decisoes" className="list-disc space-y-0.5 pl-5 text-sm">
+            {decisoes.map((d, i) => <li key={i} className="break-words">{d}</li>)}
+          </ul>
+        )}
+      </div>
+      <div className="min-w-0 space-y-1">
+        <h3 className="text-sm font-semibold">Pendências</h3>
+        {pendencias.length === 0 ? (
+          <p className="text-[12px] text-muted">A ata não registra pendência.</p>
+        ) : (
+          <ul data-testid="ata-pendencias" className="space-y-1 text-sm">
+            {pendencias.map((p, i) => (
+              <li key={i} data-testid={`ata-pendencia-${i}`} className="flex flex-wrap items-baseline gap-x-2 break-words">
+                <span className={p.workTaskId ? 'text-text' : 'text-muted'}>{p.texto}</span>
+                {p.workTaskId ? (
+                  <a className={`text-[12px] text-brand underline underline-offset-2 ${ALVO} max-md:inline-flex max-md:items-center`} href={linkDaTarefa(null, p.workTaskId)}>virou tarefa</a>
+                ) : p.estado === 'rascunho' ? (
+                  <span className="text-[12px] text-muted">sugestão para decidir</span>
+                ) : p.estado === 'descartada' ? (
+                  <span className="text-[12px] text-muted">sugestão descartada</span>
+                ) : null}
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+    </section>
+  );
+}
+
+const quandoBR = (iso: string | null) =>
+  iso ? new Date(iso).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : 'sem data';
+
+/** O bloco "Reuniões do Granola": as últimas reuniões, lidas direto, com "Gerar ata". */
+function ReunioesDoGranola({ dados, podeGerar, gerando, onGerar, onAbrir }: {
+  dados: TrabGranolaReunioes; podeGerar: boolean; gerando: string | null;
+  onGerar: (r: TrabGranolaReuniao) => void; onAbrir: (ref: string) => void;
+}) {
+  return (
+    <section aria-label="Reuniões do Granola" data-testid="granola-reunioes" className="space-y-2 rounded-lg border border-border bg-surface p-3">
+      <div className="flex flex-wrap items-baseline justify-between gap-2">
+        <h2 className="text-sm font-semibold">Reuniões do Granola</h2>
+        <span className="text-[12px] text-muted">Gerar ata lê a transcrição e propõe as tarefas. A transcrição não fica guardada no OS.</span>
+      </div>
+      {!dados.conectado || dados.desligado ? (
+        <p data-testid="granola-sem-conexao" className="text-sm text-muted break-words">
+          {dados.motivo ?? 'Conecte o Granola em Configurações › Integrações para ler as reuniões daqui.'}{' '}
+          <a href="/conexoes" className={`text-brand underline underline-offset-2 ${ALVO} max-md:inline-flex max-md:items-center`}>Abrir Integrações</a>
+        </p>
+      ) : dados.motivo ? (
+        <p role="alert" className="text-sm text-warn break-words">{dados.motivo}</p>
+      ) : dados.reunioes.length === 0 ? (
+        <p className="text-sm text-muted">Nenhuma reunião no Granola nos últimos 30 dias.</p>
+      ) : (
+        <ul className="divide-y divide-border">
+          {dados.reunioes.map((r) => (
+            <li key={r.id} data-testid={`granola-reuniao-${r.id}`} className="flex flex-wrap items-center gap-x-3 gap-y-1 py-2">
+              <div className="min-w-0 flex-1 space-y-0.5">
+                <p className="truncate text-sm font-medium" title={r.titulo}>{r.titulo}</p>
+                <p className="truncate text-[12px] text-muted" title={r.participantes.join(', ')}>
+                  {[quandoBR(r.em), r.participantes.length ? r.participantes.join(', ') : 'participantes não informados'].join(' · ')}
+                </p>
+                <p className="flex flex-wrap gap-1.5 text-[11px]">
+                  {r.cliente ? (
+                    <span className="rounded bg-brand/10 px-1.5 py-0.5 text-brand" title={`reconhecido por ${r.cliente.porque === 'email' ? 'e-mail' : r.cliente.porque === 'dominio' ? 'domínio do e-mail' : 'nome'}`}>{r.cliente.titulo}</span>
+                  ) : (
+                    <span className="rounded bg-surface-2 px-1.5 py-0.5 text-muted">sem cliente reconhecido</span>
+                  )}
+                  {r.naFicha && <span className="rounded bg-surface-2 px-1.5 py-0.5 text-muted">na ficha</span>}
+                  {r.ataRef && (
+                    <button type="button" className={`rounded bg-surface-2 px-1.5 py-0.5 text-brand underline-offset-2 hover:underline ${ALVO}`} onClick={() => onAbrir(r.ataRef!)}>
+                      abrir a ata{r.ataVersao && r.ataVersao > 1 ? ` (versão ${r.ataVersao})` : ''}
+                    </button>
+                  )}
+                </p>
+              </div>
+              {podeGerar && (
+                <button
+                  type="button"
+                  data-testid={`granola-gerar-${r.id}`}
+                  className={BTN_PRIMARIO}
+                  disabled={gerando !== null || !dados.iaConfigurada}
+                  title={!dados.iaConfigurada ? 'A IA não está configurada nesta instalação.' : 'Puxa a transcrição, escreve a ata e propõe as tarefas.'}
+                  onClick={() => onGerar(r)}
+                >
+                  {gerando === r.id ? 'Lendo a transcrição…' : r.ataRef ? 'Gerar de novo' : 'Gerar ata'}
+                </button>
+              )}
+            </li>
+          ))}
+        </ul>
+      )}
+      {!podeGerar && dados.conectado && !dados.desligado && dados.reunioes.length > 0 && (
+        <p className="text-[12px] text-muted">Gerar ata grava uma nota na memória e pede as permissões de editar o Trabalho e a memória.</p>
+      )}
+    </section>
   );
 }
 
