@@ -423,6 +423,23 @@ describe('a barra lateral', () => {
     expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent('Painel geral da empresa');
   });
 
+  it('a Topbar da área WhatsApp diz "WhatsApp" uma vez, sem "simulador"', () => {
+    PERMISSOES = TODAS_DO_NAV;
+    CAMINHO = '/whatsapp';
+    render(<Topbar />);
+    const h1 = screen.getByRole('heading', { level: 1 });
+    expect(h1.textContent).toBe('WhatsApp');
+    expect(document.body.textContent).toContain('o celular do lead e o da mesa, no provedor configurado');
+    expect(document.body.textContent?.toLowerCase()).not.toContain('simulador');
+  });
+
+  it('a Topbar de Todas as tarefas fica no Trabalho', () => {
+    PERMISSOES = TODAS_DO_NAV;
+    CAMINHO = '/trabalho/todas';
+    render(<Topbar />);
+    expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent('Trabalho / Todas as tarefas');
+  });
+
   it('a Topbar de /assinatura ainda mostra o título do item oculto', () => {
     PERMISSOES = TODAS_DO_NAV;
     CAMINHO = '/assinatura';

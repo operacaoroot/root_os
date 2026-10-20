@@ -108,8 +108,10 @@ export function Sidebar() {
   const mouseNoBalao = useRef(false);
   // O foco que o Esc devolve ao ícone não reabre o balão.
   const focoDevolvido = useRef(false);
-  // O tipo do último ponteiro: no toque, o primeiro toque abre o balão em vez de navegar.
-  const ultimoPonteiro = useRef<string>('mouse');
+  // Veio de toque? No toque, o primeiro toque abre o balão em vez de navegar, e os eventos
+  // de mouse e de foco que o navegador emula depois do toque não abrem nem navegam sozinhos.
+  // Ponteiro de mouse ou tecla devolvem ao normal.
+  const toque = useRef(false);
 
   const abrirBalao = useCallback((chave: string) => {
     window.clearTimeout(timerDoBalao.current);
@@ -288,7 +290,7 @@ export function Sidebar() {
         <button ref={botaoFechar} type="button" aria-label="Fechar navegação" onClick={() => { setAbertaNoMovel(false); botaoAbrir.current?.focus(); }} className="grid h-11 w-11 place-items-center text-muted focus-visible:outline focus-visible:outline-2 focus-visible:outline-brand min-[820px]:hidden"><Icons.X size={18} aria-hidden /></button>
       </div>
 
-      <nav id="root-os-destinos" aria-label="Destinos" className="min-h-0 flex-1 overflow-y-auto px-2 py-4">
+      <nav id="root-os-destinos" aria-label="Destinos" onKeyDownCapture={() => { toque.current = false; }} className="min-h-0 flex-1 overflow-y-auto px-2 py-4">
         <p className={`px-3 pb-3 text-[10px] uppercase tracking-[0.14em] text-muted ${compacta ? 'min-[820px]:sr-only' : ''}`}>Áreas da empresa</p>
         {areas.map((area) => {
           const Icon = (Icons[area.icon as IconName] ?? Icons.Circle) as React.ElementType;
@@ -302,7 +304,7 @@ export function Sidebar() {
               key={area.key}
               data-grupo-da-area={area.key}
               className="mb-1"
-              onMouseEnter={compacta ? () => { mouseNoBalao.current = true; abrirBalao(area.key); } : undefined}
+              onMouseEnter={compacta ? () => { if (toque.current) return; mouseNoBalao.current = true; abrirBalao(area.key); } : undefined}
               onMouseLeave={compacta ? () => { mouseNoBalao.current = false; fecharDepois(); } : undefined}
               onBlur={compacta ? (e) => {
                 // O foco saiu do ícone e do balão (Tab para a próxima área, clique fora): fecha.
@@ -317,9 +319,11 @@ export function Sidebar() {
                 aria-current={ativo ? 'true' : undefined}
                 aria-expanded={compacta ? comBalao : temLista ? aberta : undefined}
                 aria-controls={compacta ? (comBalao ? `root-os-balao-${area.key}` : undefined) : aberta ? idDaLista : undefined}
-                onPointerDown={(e: React.PointerEvent) => { ultimoPonteiro.current = e.pointerType || 'mouse'; }}
+                onPointerDown={(e: React.PointerEvent) => { toque.current = e.pointerType === 'touch'; }}
+                onTouchStart={() => { toque.current = true; }}
                 onFocus={compacta ? () => {
                   if (focoDevolvido.current) { focoDevolvido.current = false; return; }
+                  if (toque.current) return;
                   abrirBalao(area.key);
                 } : undefined}
                 onKeyDown={compacta ? (e: React.KeyboardEvent) => {
@@ -334,7 +338,7 @@ export function Sidebar() {
                 } : undefined}
                 onClick={(e: React.MouseEvent) => {
                   // No toque, com o menu recolhido, o primeiro toque abre o balão; o segundo navega.
-                  if (compacta && ultimoPonteiro.current === 'touch' && balao !== area.key) {
+                  if (compacta && toque.current && balao !== area.key) {
                     e.preventDefault();
                     abrirBalao(area.key);
                     return;
