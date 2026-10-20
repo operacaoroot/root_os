@@ -61,6 +61,7 @@ export const REUNIOES_FICTICIAS: ReuniaoDoDuble[] = [
 ];
 
 export interface OpcoesDoDuble {
+  host?: string;
   porta?: number;
   reunioes?: ReuniaoDoDuble[];
   /** Como `list_meetings` responde: JSON no texto, marcação ou `structuredContent`. */
@@ -257,7 +258,9 @@ export async function iniciarDubleDoGranola(o: OpcoesDoDuble = {}): Promise<Dubl
     }
   });
 
-  await new Promise<void>((ok) => servidor.listen(o.porta ?? 0, '127.0.0.1', () => ok()));
+  // `host` só muda onde escuta (0.0.0.0 dentro do container da homologação, para a porta
+  // publicada em 127.0.0.1 chegar nele); o endereço anunciado continua o de loopback.
+  await new Promise<void>((ok) => servidor.listen(o.porta ?? 0, o.host ?? '127.0.0.1', () => ok()));
   origem = `http://127.0.0.1:${(servidor.address() as AddressInfo).port}`;
 
   return {
@@ -283,7 +286,7 @@ export async function iniciarDubleDoGranola(o: OpcoesDoDuble = {}): Promise<Dubl
 
 // Rodado à mão: sobe o dublê na porta pedida e fica de pé.
 if (process.argv[1] && /granola-mcp\.ts$/.test(process.argv[1])) {
-  void iniciarDubleDoGranola({ porta: Number(process.argv[2] ?? 4791) }).then((d) => {
+  void iniciarDubleDoGranola({ porta: Number(process.argv[2] ?? 4791), host: process.argv[3] }).then((d) => {
     process.stdout.write(`dublê do Granola em ${d.url}\n`);
   });
 }
