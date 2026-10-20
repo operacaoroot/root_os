@@ -368,6 +368,63 @@ async function partesDasOutrasLanes(p, sessao) {
     await api('POST', `/comercial/lead/${alvo.leadId}/mover`, { para: alvo.etapa }, sessao.token);
     return { detalhe: { de: alvo.etapa, para, mensagem: mensagem.slice(0, 160) } };
   });
+
+  // ---------------- U5 · Granola direto e atas ----------------
+  // A stack do seed aponta GRANOLA_MCP_URL para o dublê fictício que roda dentro do
+  // container da API (loopback), com a porta publicada só em 127.0.0.1 para o navegador.
+  await passo('Conexões › Granola: "Conectar ao Granola" faz o OAuth (dublê) e volta conectado', async () => {
+    await p.goto(`${WEB}/conexoes`, { waitUntil: 'networkidle' });
+    const bloco = p.getByTestId('granola-direto');
+    await bloco.waitFor();
+    if (await p.getByTestId('granola-conectar').count()) {
+      await p.getByTestId('granola-conectar').click();
+      await p.waitForURL(/\/conexoes/, { timeout: 30_000 });
+      await p.waitForLoadState('networkidle');
+    }
+    const texto = (await p.getByTestId('granola-direto').innerText()).replace(/\s+/g, ' ');
+    conferir(/conectad/i.test(texto) && !/não conectad/i.test(texto), `o Granola não ficou conectado: ${texto.slice(0, 200)}`);
+    return { detalhe: { estado: texto.slice(0, 120) } };
+  });
+
+  await passo('Atas › Reuniões do Granola › Gerar ata: ata da transcrição, decisões, pendências e sugestões', async () => {
+    await p.goto(`${WEB}/trabalho/atas`, { waitUntil: 'networkidle' });
+    const bloco = p.getByTestId('granola-reunioes');
+    await bloco.waitFor();
+    const reunioes = bloco.locator('[data-testid^="granola-reuniao-"]');
+    await reunioes.first().waitFor({ timeout: 30_000 });
+    const n = await reunioes.count();
+    await foto(p, 'atas-granola-escuro');
+    await bloco.locator('[data-testid^="granola-gerar-"]').first().click();
+    await p.locator('[data-testid^="ata-aceitar-"]').first().waitFor({ timeout: 60_000 });
+    conferir(await p.getByTestId('ata-decisoes').count() && await p.getByTestId('ata-pendencias').count(), 'a ata aberta não mostra decisões e pendências em lista');
+    await foto(p, 'atas-gerada-escuro');
+    return { detalhe: { reunioes: n } };
+  });
+
+  await passo('Atas: aceitar uma sugestão vira tarefa no Trabalho', async () => {
+    const aceitar = p.locator('[data-testid^="ata-aceitar-"]').first();
+    const sid = (await aceitar.getAttribute('data-testid')).replace('ata-aceitar-', '');
+    const cliente = p.getByTestId(`ata-cliente-${sid}`);
+    if (await cliente.count()) {
+      await cliente.locator('[role="combobox"]').click();
+      await p.getByTestId('opcao-cliente-interno').first().click();
+    }
+    const pasta = p.getByTestId(`ata-pasta-${sid}`);
+    if (await pasta.count()) await pasta.selectOption({ label: 'Clientes' }).catch(() => pasta.selectOption({ index: 1 }));
+    const lista = p.getByTestId(`ata-lista-${sid}`);
+    if (await lista.count()) await lista.selectOption({ label: 'Execução' }).catch(() => lista.selectOption({ index: 1 }));
+    await p.getByTestId(`ata-aceitar-${sid}`).click();
+    let tarefa = null;
+    for (let i = 0; i < 40 && !tarefa; i++) {
+      const s = await api('GET', '/trabalho/atas/sugestoes?estado=aceita', undefined, sessao.token).catch(() => null);
+      const lidas = Array.isArray(s) ? s : s?.sugestoes ?? s?.itens ?? [];
+      tarefa = lidas.find((x) => x.id === sid)?.workTaskId ?? null;
+      if (!tarefa) await dormir(400);
+    }
+    conferir(tarefa, 'aceitar a sugestão da ata do Granola não criou a tarefa');
+    const t = await api('GET', `/trabalho/tarefas/${tarefa}`, undefined, sessao.token);
+    return { detalhe: { tarefa: t.title } };
+  });
 }
 
 main()
