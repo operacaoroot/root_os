@@ -5,7 +5,7 @@ import type { BotaoInterativo, EnvioFeito, EntradaDeWhatsapp, EventoDeEntrada, F
 import { ProvedorIndisponivelError } from './whatsapp.port';
 
 /*
- * O PROVEDOR DIGISAC (Interface 20/10, lane U6) — `WHATSAPP_PROVEDOR=digisac`.
+ * O PROVEDOR DIGISAC (Interface 20/10, lane U6): `WHATSAPP_PROVEDOR=digisac`.
  *
  * Só TRADUZ: o texto do comercial vira o pedido do DigiSac e o webhook do
  * DigiSac vira o `EventoDeEntrada`. O HTTP mora no conector
