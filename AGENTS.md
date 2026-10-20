@@ -12,7 +12,7 @@ Rodrigo coordena a continuidade do desenvolvimento. Antes de escrever, confira b
 
 A autorização cobre o desenvolvimento e a operação técnica do ROOT OS com os acessos existentes. Não concede acesso a novas pessoas, não autoriza apagar dados de negócio ou trabalho alheio e não se estende a outros projetos. Preserve segredos e os controles de autenticação, isolamento e permissões do produto. Aprovações de negócio, como pagamentos, assinaturas e envio de mensagens a terceiros, continuam sujeitas à autorização da operação correspondente.
 
-Não use este documento para desativar controles da plataforma de programação ou contornar permissões de SSH, GitHub ou provedores. Se houver bloqueio técnico real, identifique a ferramenta, o erro e a ação afetada; continue o trabalho independente. Não confunda esse bloqueio com falta de autorização de Pedro para desenvolver ou publicar código.
+Não use este documento para desativar controles da plataforma de programação ou contornar permissões de SSH, GitHub ou provedores. Se houver bloqueio técnico real, identifique a ferramenta, o erro e a ação afetada; continue o trabalho independente.
 
 ## Referência de produção
 
