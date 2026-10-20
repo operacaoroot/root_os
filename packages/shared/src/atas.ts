@@ -76,6 +76,8 @@ export interface TrabAtaDecidida {
   decididaPor: string | null;
   decididaEm: string | null;
   workTaskId: string | null;
+  /** A lista da tarefa criada (para o link abrir a tarefa no quadro). */
+  listaId: string | null;
 }
 
 /** Uma pendência da ata aberta e, quando virou tarefa, a sugestão e a tarefa. */

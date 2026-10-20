@@ -645,6 +645,7 @@ export class AtasService {
         decididaPor: d.decididaPor,
         decididaEm: d.decididaEm,
         workTaskId: d.workTaskId,
+        listaId: d.listaId,
       }));
   }
 
