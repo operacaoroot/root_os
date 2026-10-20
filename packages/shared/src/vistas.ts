@@ -15,7 +15,10 @@ import { situacaoDoPrazo, type SituacaoDoPrazo } from './tarefas-do-dia.js';
  * ordenação e os grupos de vencimento (no relógio de São Paulo).
  */
 
-export const TELAS_DE_VISTA = ['minhas-tarefas', 'quadro'] as const;
+// 20/10/2026 (rodada da interface U2): a Implantação e o Funil vivo ganham vistas
+// próprias. A Implantação guarda a mesma forma do quadro (é o TrabalhoView); o
+// Funil guarda a visão (quadro ou lista) e os filtros dele. Entram no FIM da lista.
+export const TELAS_DE_VISTA = ['minhas-tarefas', 'quadro', 'implantacao', 'funil'] as const;
 export type TelaDeVista = (typeof TELAS_DE_VISTA)[number];
 
 export const CAMPOS_DE_ORDEM = ['vencimento', 'status', 'cliente', 'lista', 'prioridade', 'criadaEm', 'titulo'] as const;
@@ -81,11 +84,37 @@ export const VistaQuadroSchema = z.object({
 }).strict();
 export type VistaQuadro = z.infer<typeof VistaQuadroSchema>;
 
+/**
+ * A vista do Funil vivo (rodada da interface U2/U4, 20/10/2026): a visão e os
+ * filtros do painel "Filtros", os mesmos que o endereço carrega. Cada filtro é
+ * texto curto; vazio = sem filtro. A forma é estrita: chave nova entra aqui.
+ */
+export const VistaFunilSchema = z.object({
+  visao: z.enum(['quadro', 'lista']),
+  filtros: z.object({
+    dono: z.string().max(120),
+    produto: z.string().max(80),
+    perfil: z.string().max(40),
+    etapa: z.string().max(40),
+    parado: z.string().max(20),
+    decisao: z.string().max(20),
+    q: z.string().max(120),
+  }),
+}).strict();
+export type VistaFunil = z.infer<typeof VistaFunilSchema>;
+
+export const VISTA_PADRAO_DO_FUNIL: VistaFunil = {
+  visao: 'quadro',
+  filtros: { dono: '', produto: '', perfil: '', etapa: '', parado: '', decisao: '', q: '' },
+};
+
 const NomeDaVista = z.string().trim().min(1, 'Dê um nome à vista.').max(60, 'O nome da vista tem até 60 caracteres.');
 
 export const VistaCriarSchema = z.discriminatedUnion('tela', [
   z.object({ tela: z.literal('minhas-tarefas'), nome: NomeDaVista, padrao: z.boolean().optional(), config: VistaMinhasTarefasSchema }),
   z.object({ tela: z.literal('quadro'), nome: NomeDaVista, padrao: z.boolean().optional(), config: VistaQuadroSchema }),
+  z.object({ tela: z.literal('implantacao'), nome: NomeDaVista, padrao: z.boolean().optional(), config: VistaQuadroSchema }),
+  z.object({ tela: z.literal('funil'), nome: NomeDaVista, padrao: z.boolean().optional(), config: VistaFunilSchema }),
 ]);
 export type VistaCriarInput = z.infer<typeof VistaCriarSchema>;
 
@@ -97,8 +126,10 @@ export const VistaAlterarSchema = z.object({
 }).strict();
 export type VistaAlterarInput = z.infer<typeof VistaAlterarSchema>;
 
-export function conferirConfigDaVista(tela: TelaDeVista, config: unknown): VistaMinhasTarefas | VistaQuadro {
-  return tela === 'minhas-tarefas' ? VistaMinhasTarefasSchema.parse(config) : VistaQuadroSchema.parse(config);
+export function conferirConfigDaVista(tela: TelaDeVista, config: unknown): VistaMinhasTarefas | VistaQuadro | VistaFunil {
+  if (tela === 'minhas-tarefas') return VistaMinhasTarefasSchema.parse(config);
+  if (tela === 'funil') return VistaFunilSchema.parse(config);
+  return VistaQuadroSchema.parse(config);
 }
 
 export interface VistaSalvaDto {
@@ -106,7 +137,7 @@ export interface VistaSalvaDto {
   tela: TelaDeVista;
   nome: string;
   padrao: boolean;
-  config: VistaMinhasTarefas | VistaQuadro;
+  config: VistaMinhasTarefas | VistaQuadro | VistaFunil;
   atualizadaEm: string;
 }
 
