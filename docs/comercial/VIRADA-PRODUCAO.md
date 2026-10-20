@@ -2,6 +2,7 @@
 
 > Para: Rodrigo e Pedro. Escrito em 19/10/2026 pela rodada "Versão final" (`docs/comercial/RODADA-FINAL-20261019.md`, F6).
 > O que sobe: a branch `homolog/final-20261019` (nossa + Pedro de 14/10 + Lucas), validada na stack `rootos-final` do Predator.
+> Atualizado em 20/10/2026 pelos ajustes da versão final (`docs/comercial/RODADA-AJUSTES-20261019.md`): sobe a tag `final-ajustes-20261020`, que traz o "Iniciar onboarding" antes do fechamento e os textos do Pedro. Os ajustes não trazem migration, variável, capacidade nem permissão nova: a contagem de migrations, a política e as variáveis deste roteiro continuam as mesmas. O `final.bundle` foi refeito com a tag nova (`main..homolog/final-20261019`).
 > Onde: a VPS da ROOT (`ssh vps-root`), produção em `https://os.operacaoroot.com`.
 > Este arquivo não tem dado de cliente nem segredo. Onde aparece `<...>`, é um valor que se preenche na hora ou um placeholder que o orquestrador completa antes da virada.
 
@@ -16,11 +17,11 @@
 
 ## Os valores que se preenchem na hora
 
-Um arquivo não consegue citar o hash do commit que o contém. Por isso o hash não está escrito aqui: ele é lido da tag, no Predator, e conferido no bundle, na VPS (o `list-heads` do passo "Antes de começar" e o `rev-parse` do passo 2 mostram o mesmo valor). O valor também está no fim do `homolog/RESULTADO-FINAL.md`, na linha "A tag".
+Um arquivo não consegue citar o hash do commit que o contém. Por isso o hash não está escrito aqui: ele é lido da tag, no Predator, e conferido no bundle, na VPS (o `list-heads` do passo "Antes de começar" e o `rev-parse` do passo 2 mostram o mesmo valor). O valor também está no fim do `homolog/RESULTADO-AJUSTES.md`, na linha "A tag".
 
 | Valor | O que é |
 |---|---|
-| `<hash-final>` | o commit da tag `final-entrega-20261020`: `git -C /c/Users/User/dev/marketing-os rev-parse final-entrega-20261020^{commit}` (40 caracteres) |
+| `<hash-final>` | o commit da tag `final-ajustes-20261020`: `git -C /c/Users/User/dev/marketing-os rev-parse final-ajustes-20261020^{commit}` (40 caracteres) |
 | `<curto>` | os 7 primeiros caracteres de `<hash-final>` |
 | `<quem responde>` | o nome de quem assina a política (Rodrigo ou Pedro): preenchido na hora, por quem executa |
 
@@ -51,7 +52,7 @@ O OS fica fora do ar, ou instável nas tarefas, do fim do passo 5 ao fim do pass
 1. Confira que a tag e o bundle existem e batem com `<hash-final>`:
 
    ```bash
-   git -C /c/Users/User/dev/marketing-os rev-parse final-entrega-20261020^{commit}
+   git -C /c/Users/User/dev/marketing-os rev-parse final-ajustes-20261020^{commit}
    git -C /c/Users/User/dev/marketing-os bundle verify /c/Users/User/dev/final.bundle
    git -C /c/Users/User/dev/marketing-os bundle list-heads /c/Users/User/dev/final.bundle
    ```
