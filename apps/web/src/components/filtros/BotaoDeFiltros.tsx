@@ -20,8 +20,11 @@ export type { DefinicaoDeFiltro, ValoresDeFiltro } from './filtros';
  *
  * Acessibilidade: `role="dialog"` com o título "Filtros", o foco entra no
  * primeiro controle, Tab e Shift+Tab giram dentro do painel enquanto ele está
- * aberto, Esc fecha e devolve o foco ao botão. Clique fora fecha. Sem
- * biblioteca: o painel é posicionado por CSS relativo ao botão.
+ * aberto, Esc fecha e devolve o foco ao botão. Clique fora fecha. O "limpar"
+ * de um filtro some ao ser clicado e o "Limpar tudo" fica desabilitado: nos dois
+ * casos o foco vai a um controle do painel (o do filtro limpo, ou o primeiro),
+ * em vez de cair no body com o painel aberto. Sem biblioteca: o painel é
+ * posicionado por CSS relativo ao botão.
  */
 
 const FOCO = 'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand';
@@ -51,6 +54,10 @@ export function BotaoDeFiltros({
   const idTitulo = useId();
   const ativos = contarFiltrosAtivos(filtros, valores);
 
+  const primeiroControle = () =>
+    painel.current?.querySelector<HTMLElement>('[data-corpo] select, [data-corpo] input')
+      ?? painel.current?.querySelector<HTMLElement>('button:not([disabled])');
+
   const fechar = (devolverFoco = true) => {
     setAberto(false);
     if (devolverFoco) requestAnimationFrame(() => botao.current?.focus());
@@ -59,9 +66,7 @@ export function BotaoDeFiltros({
   useEffect(() => {
     if (!aberto) return;
     // O foco entra no primeiro filtro, não no X de fechar.
-    const primeiro = painel.current?.querySelector<HTMLElement>('[data-corpo] select, [data-corpo] input')
-      ?? painel.current?.querySelector<HTMLElement>('button:not([disabled])');
-    primeiro?.focus();
+    primeiroControle()?.focus();
 
     function aoTeclar(e: KeyboardEvent) {
       if (e.key === 'Escape') {
@@ -147,7 +152,11 @@ export function BotaoDeFiltros({
                 type="button"
                 data-testid={`${testId}-limpar-tudo`}
                 disabled={ativos === 0}
-                onClick={aoLimparTudo}
+                onClick={() => {
+                  aoLimparTudo();
+                  // O botão fica desabilitado: o foco vai ao primeiro filtro, não ao body.
+                  primeiroControle()?.focus();
+                }}
                 className={`rounded border border-border px-2.5 py-1.5 text-[12.5px] text-muted hover:text-text disabled:opacity-50 max-md:min-h-[44px] ${FOCO}`}
               >
                 Limpar tudo
@@ -170,13 +179,19 @@ function CampoDeFiltro({ def, valor, aoMudar, testId }: {
   testId: string;
 }) {
   const id = useId();
+  const controle = useRef<HTMLInputElement | HTMLSelectElement | null>(null);
+  const guardar = (el: HTMLInputElement | HTMLSelectElement | null) => { controle.current = el; };
   const ativo = valor.trim() !== '';
   const limpar = ativo ? (
     <button
       type="button"
       data-testid={`${testId}-limpar-${def.chave}`}
       aria-label={`Limpar ${def.rotulo}`}
-      onClick={() => aoMudar(def.chave, '')}
+      onClick={() => {
+        aoMudar(def.chave, '');
+        // O "limpar" some com o valor: o foco vai ao controle do filtro, não ao body.
+        controle.current?.focus();
+      }}
       className={`text-[11px] text-muted underline-offset-2 hover:text-text hover:underline ${FOCO}`}
     >
       limpar
@@ -189,6 +204,7 @@ function CampoDeFiltro({ def, valor, aoMudar, testId }: {
       <div className="flex items-center justify-between gap-2 py-1.5">
         <label htmlFor={id} className="flex items-center gap-2 text-[13px] text-text max-md:min-h-[44px]">
           <input
+            ref={guardar}
             id={id}
             type="checkbox"
             data-testid={`${testId}-${def.chave}`}
@@ -211,6 +227,7 @@ function CampoDeFiltro({ def, valor, aoMudar, testId }: {
       </div>
       {def.tipo === 'texto' ? (
         <input
+          ref={guardar}
           id={id}
           type="search"
           data-testid={`${testId}-${def.chave}`}
@@ -221,6 +238,7 @@ function CampoDeFiltro({ def, valor, aoMudar, testId }: {
         />
       ) : (
         <select
+          ref={guardar}
           id={id}
           data-testid={`${testId}-${def.chave}`}
           value={valor}

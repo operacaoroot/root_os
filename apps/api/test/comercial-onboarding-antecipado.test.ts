@@ -109,6 +109,18 @@ describe('onboarding antecipado: a parte pura', () => {
     expect(seloDoCard({ ...base, etapa: 'fechado', antecipado: false })).toEqual({ tipo: 'fechamento', leadId: 'l1', rotulo: 'criado pelo fechamento · 19/10/2026' });
   });
 
+  it('o selo: "Negócio fechado" à mão, sem fechamento nem cliente ativo, não diz "fechado no comercial"', () => {
+    const base = { leadId: 'l1', criadoEm: new Date('2026-10-19T12:00:00Z'), motivoSaida: null, fechadoEm: null };
+    expect(seloDoCard({ ...base, etapa: 'fechado', antecipado: true })).toEqual({
+      tipo: 'antecipado',
+      leadId: 'l1',
+      rotulo: 'Iniciado antes do fechamento · lead em Negócio fechado, sem fechamento registrado',
+    });
+    // O cliente ativo (que o quadro passa em `fechadoEm`) é o que tira o selo.
+    expect(seloDoCard({ ...base, etapa: 'fechado', antecipado: true, fechadoEm: new Date('2026-10-26T12:00:00Z') }))
+      .toEqual({ tipo: 'fechamento', leadId: 'l1', rotulo: 'fechado no comercial · 26/10/2026' });
+  });
+
   it('a porta única da implantação cita a terceira porta (cartão solto continua recusado)', () => {
     expect(PORTA_DA_IMPLANTACAO).toMatch(/Iniciar onboarding/);
   });

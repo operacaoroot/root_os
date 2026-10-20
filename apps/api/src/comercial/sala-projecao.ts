@@ -164,9 +164,16 @@ export function chaveDaDuvida(versao: number, pergunta: string): string {
   return hashDoConteudo({ versao, pergunta });
 }
 
+/**
+ * O estágio da sala. O Começo (e com ele o kickoff que o cliente marca) abre só
+ * com o cliente ativo de verdade: a data na ficha ou o fato `cliente.ativo`,
+ * que o fechamento grava. Nunca pela etapa: desde o mover livre (Interface
+ * 20/10), gente leva o cartão a "Negócio fechado" sem fechamento, e esse gesto
+ * é só a etapa. A sala fica no estágio que os fatos sustentam.
+ */
 export function estagioDaSala(e: EntradaDaProjecao): SalaEstagio {
   const tem = (t: string) => e.eventos.some((x) => x.type === t);
-  if (e.ficha?.clienteAtivoEm || e.ficha?.etapa === 'fechado' || tem('cliente.ativo')) return 'comeco';
+  if (e.ficha?.clienteAtivoEm || tem('cliente.ativo')) return 'comeco';
   if (tem('proposta.aceita') || tem('aceite.dados')) return 'contrato';
   if (tem('proposta.publicada')) return 'proposta';
   const agora = (e.agora ?? new Date()).getTime();

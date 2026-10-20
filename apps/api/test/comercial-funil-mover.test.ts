@@ -26,7 +26,7 @@
 import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 
-import { ForbiddenException, GoneException, NotFoundException, type ExecutionContext } from '@nestjs/common';
+import { ConflictException, ForbiddenException, GoneException, NotFoundException, type ExecutionContext } from '@nestjs/common';
 import { PrismaClient } from '@prisma/client';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { destinoDoMover, mensagemDoMover, COMERCIAL_ESTAGIOS } from '@mktos/shared';
@@ -41,6 +41,7 @@ import { FichaService } from '../src/comercial/ficha.service';
 import { FioService, ReacoesRegistry } from '../src/comercial/fio.service';
 import { MoverService, SoGenteGuard } from '../src/comercial/mover.service';
 import { pendenciasDoMover, pendenciasQueRestam } from '../src/comercial/portoes';
+import { SalaService } from '../src/comercial/sala.service';
 import { LeadsController } from '../src/leads/leads.controller';
 import type { PrismaService } from '../src/prisma/prisma.service';
 import { exigirBancoDescartavel } from './banco-de-teste';
@@ -193,6 +194,7 @@ describe.skipIf(!URL)('mover o cartão do funil, contra o banco', () => {
     for (const org of [ORG, ORG2].filter(Boolean)) {
       const leads = (await prisma.lead.findMany({ where: { orgId: org }, select: { id: true } })).map((l) => l.id);
       await prisma.comercialReacao.deleteMany({ where: { leadId: { in: leads } } });
+      await prisma.salaDoCliente.deleteMany({ where: { orgId: org } });
       await prisma.comercialFicha.deleteMany({ where: { leadId: { in: leads } } });
       await prisma.leadEvent.deleteMany({ where: { leadId: { in: leads } } });
       await prisma.lead.deleteMany({ where: { orgId: org } });
@@ -344,6 +346,28 @@ describe.skipIf(!URL)('mover o cartão do funil, contra o banco', () => {
     await prisma.comercialFicha.updateMany({ where: { leadId: lead }, data: { clienteAtivoEm: new Date() } });
     const sem = (await fichas.funil(ORG, null)).colunas.flatMap((c) => c.cartoes).find((c) => c.leadId === lead);
     expect(sem?.avisoDoMover).toBeNull();
+  });
+
+  it('"negócio fechado" à mão não abre o começo na sala: o kickoff segue fechado até o cliente ficar ativo', async () => {
+    process.env.ENCRYPTION_KEY ??= 'chave-de-teste-do-mover-0123456789abcdef';
+    const sala = new SalaService(p, fio, new ReacoesRegistry());
+    const lead = await novoLead(ORG, 'Lead Com Sala', 8);
+    await sala.garantir(ORG, lead);
+    const m = /\/s\/([A-Za-z0-9_-]{40,48})/.exec((await sala.linkDoLead(ORG, lead)) ?? '');
+    expect(m).not.toBeNull();
+    const token = m![1];
+    await prisma.comercialFicha.updateMany({ where: { leadId: lead }, data: { etapa: 'contrato' } });
+    await daSocia(lead, { para: 'fechado' });
+    expect(await etapa(lead)).toBe('fechado');
+    expect((await sala.estado(token)).estagio).not.toBe('comeco');
+    const horario = new Date(Date.now() + 3 * 86_400_000).toISOString();
+    await expect(sala.kickoff(token, { horario })).rejects.toBeInstanceOf(ConflictException);
+    expect(await fatos(lead, 'kickoff.marcado')).toHaveLength(0);
+    // O cliente ativo de verdade (o que o fechamento grava) abre o começo e o kickoff.
+    await prisma.comercialFicha.updateMany({ where: { leadId: lead }, data: { clienteAtivoEm: new Date() } });
+    expect((await sala.estado(token)).estagio).toBe('comeco');
+    await sala.kickoff(token, { horario });
+    expect(await fatos(lead, 'kickoff.marcado')).toHaveLength(1);
   });
 
   it('de "negócio fechado" para trás também grava direto', async () => {

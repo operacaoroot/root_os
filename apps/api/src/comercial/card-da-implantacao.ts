@@ -104,7 +104,9 @@ export function avisoDeSaidaDoFunil(saida: ComercialEtapa, motivo: string | null
  *   · card do fechamento: "criado pelo fechamento · data";
  *   · card antecipado com o lead no funil: "Iniciado antes do fechamento · lead em <etapa>";
  *   · card antecipado com o lead numa saída: o aviso "lead saiu do funil: <motivo>";
- *   · card antecipado de lead que fechou depois: o selo de antes sai, e fica "fechado no comercial · data".
+ *   · card antecipado de lead que fechou depois: o selo de antes sai, e fica "fechado no comercial · data";
+ *   · card antecipado com o lead levado a "Negócio fechado" à mão, sem fechamento: continua antecipado,
+ *     e o selo diz que não há fechamento registrado.
  */
 export function seloDoCard(s: {
   leadId: string;
@@ -116,7 +118,10 @@ export function seloDoCard(s: {
   fechadoEm: Date | null;
 }): { tipo: 'fechamento' | 'antecipado' | 'saiu_do_funil'; leadId: string; rotulo: string } {
   if (!s.antecipado) return { tipo: 'fechamento', leadId: s.leadId, rotulo: procedenciaDoCard(s.criadoEm) };
-  if (s.fechadoEm || s.etapa === 'fechado') return { tipo: 'fechamento', leadId: s.leadId, rotulo: `fechado no comercial · ${dataCurta(s.fechadoEm ?? s.criadoEm)}` };
+  // Só o fechamento de verdade (o fato no card ou o cliente ativo) tira o selo. A etapa
+  // "Negócio fechado" sozinha é o mover à mão, que não fecha nada.
+  if (s.fechadoEm) return { tipo: 'fechamento', leadId: s.leadId, rotulo: `fechado no comercial · ${dataCurta(s.fechadoEm)}` };
+  if (s.etapa === 'fechado') return { tipo: 'antecipado', leadId: s.leadId, rotulo: `${procedenciaDoCardAntecipado(s.etapa)}, sem fechamento registrado` };
   if (ehSaida(s.etapa)) return { tipo: 'saiu_do_funil', leadId: s.leadId, rotulo: avisoDeSaidaDoFunil(s.etapa, s.motivoSaida) };
   return { tipo: 'antecipado', leadId: s.leadId, rotulo: procedenciaDoCardAntecipado(s.etapa) };
 }

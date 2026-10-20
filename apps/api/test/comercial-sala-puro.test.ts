@@ -193,6 +193,19 @@ describe('a sala como projeção do fio', () => {
     expect(ativo.estagio).toBe('comeco');
     expect(ativo.estagios.map((x) => x.estado)).toEqual(['passou', 'passou', 'passou', 'passou', 'atual']);
   });
+
+  it('"Negócio fechado" à mão não abre o começo: sem cliente ativo, a sala fica no estágio dos fatos', () => {
+    const dados = ev('aceite.dados', { cnpj: '12345678000199', razaoSocial: 'Construtora Alicerce Ltda', endereco: 'Rua A, 1', quemAssina: 'Marina Duarte', email: 'm@a.com' }, 3100);
+    const aceita = ev('proposta.aceita', { versao: 1, produto: 'operacao', valorCentavos: 1_199_700, parcelas: 3, forma: 'pix', hash: 'h1' }, 3101);
+    const ficha = { etapa: 'fechado', empresa: null, reuniaoEm: null, quadroDeCustos: null, grupoJid: null, kickoffEm: null, clienteAtivoEm: null, trilhoId: null };
+    const mao = ev('etapa.movida_a_mao', { de: 'contrato', para: 'fechado', pendencias: [], atravessadas: ['contrato'] }, 3200);
+    expect(estagioDaSala({ ...base([form, pub, dados, aceita, mao]), ficha })).toBe('contrato');
+    expect(estagioDaSala({ ...base([form, pub, mao]), ficha })).toBe('proposta');
+    expect(estagioDaSala({ ...base([mao]), ficha })).toBe('conversa');
+    // O cliente ativo de verdade (a data na ficha ou o fato) abre o começo.
+    expect(estagioDaSala({ ...base([form, pub, dados, aceita, mao]), ficha: { ...ficha, clienteAtivoEm: new Date('2026-10-20T12:00:00Z') } })).toBe('comeco');
+    expect(estagioDaSala({ ...base([form, pub, dados, aceita, mao, ev('cliente.ativo', { chave: 'fech-x-v1' }, 4000)]), ficha })).toBe('comeco');
+  });
 });
 
 describe('o teto por origem', () => {

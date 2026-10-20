@@ -55,6 +55,30 @@ describe('BotaoDeFiltros', () => {
     expect(screen.queryByTestId('filtros-contagem')).toBeNull();
   });
 
+  it('limpar um filtro devolve o foco ao controle dele, não ao body', () => {
+    render(<Tela inicial={{ assigneeUserId: 'u1', prazo: 'atrasadas', arquivadas: '1', q: 'abc' }} />);
+    fireEvent.click(screen.getByTestId('filtros-botao'));
+    for (const chave of ['prazo', 'arquivadas', 'q']) {
+      const limpar = screen.getByTestId(`filtros-limpar-${chave}`);
+      limpar.focus();
+      fireEvent.click(limpar);
+      expect(screen.queryByTestId(`filtros-limpar-${chave}`)).toBeNull();
+      expect(document.activeElement).toBe(screen.getByTestId(`filtros-${chave}`));
+    }
+    expect(screen.getByTestId('filtros-contagem').textContent).toBe('(1)');
+  });
+
+  it('"Limpar tudo" devolve o foco ao primeiro controle do painel, não ao body', () => {
+    render(<Tela inicial={{ prazo: 'atrasadas', q: 'abc' }} />);
+    fireEvent.click(screen.getByTestId('filtros-botao'));
+    const tudo = screen.getByTestId('filtros-limpar-tudo') as HTMLButtonElement;
+    tudo.focus();
+    fireEvent.click(tudo);
+    expect(tudo.disabled).toBe(true);
+    expect(document.activeElement).toBe(screen.getByTestId('filtros-assigneeUserId'));
+    expect(document.activeElement).not.toBe(document.body);
+  });
+
   it('escolher no painel conta, e fechar não perde', () => {
     render(<Tela />);
     fireEvent.click(screen.getByTestId('filtros-botao'));

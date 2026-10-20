@@ -1,6 +1,7 @@
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import path from 'node:path';
 
+import { BadRequestException } from '@nestjs/common';
 import { PrismaClient } from '@prisma/client';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 
@@ -118,12 +119,59 @@ describe('DigiSac: as partes puras', () => {
     });
   });
 
-  it('o endereço da conta: https, sem caminho; http só para o dublê local', () => {
+  it('o endereço da conta: https num domínio do DigiSac, sem caminho; http só para o dublê em loopback', () => {
     expect(baseDoDigisac('https://minhaconta.digisac.me')).toBe('https://minhaconta.digisac.me');
-    expect(baseDoDigisac('https://minhaconta.digisac.me/api/v1/')).toBe('https://minhaconta.digisac.me');
+    expect(baseDoDigisac('https://MinhaConta.Digisac.me/api/v1/')).toBe('https://minhaconta.digisac.me');
+    expect(baseDoDigisac('https://minhaconta.digisac.chat')).toBe('https://minhaconta.digisac.chat');
+    expect(baseDoDigisac('https://minhaconta.digisac.com')).toBe('https://minhaconta.digisac.com');
     expect(baseDoDigisac('http://minhaconta.digisac.me')).toBeNull();
     expect(baseDoDigisac('http://127.0.0.1:4013/api/v1')).toBe('http://127.0.0.1:4013');
-    expect(baseDoDigisac('http://digisac-mock:4013')).toBe('http://digisac-mock:4013');
+    expect(baseDoDigisac('http://localhost:4013')).toBe('http://localhost:4013');
+    expect(baseDoDigisac('http://[::1]:4013')).toBe('http://[::1]:4013');
+    expect(baseDoDigisac('https://minhaconta.digisac.me/outra')).toBeNull();
+    expect(baseDoDigisac('https://u:p@minhaconta.digisac.me')).toBeNull();
+    expect(baseDoDigisac('não é url')).toBeNull();
+  });
+
+  it('o endereço da conta recusa a rede interna (SSRF): nome de container, IP literal, metadados e domínio parecido', () => {
+    for (const url of [
+      'http://minio:9000',
+      'https://minio:9000',
+      'http://digisac-mock:4013',
+      'https://10.0.0.5',
+      'https://192.168.0.10',
+      'https://172.17.0.1:8080',
+      'https://169.254.169.254',
+      'http://169.254.169.254/latest/meta-data',
+      'https://[fd00::1]',
+      'https://[::ffff:10.0.0.5]',
+      'https://conta.digisac.me.atacante.com',
+      'https://digisac.me',
+      'https://atacantedigisac.me',
+      'https://a.b.digisac.me',
+      'https://conta.digisac.me?x=1',
+      'ftp://conta.digisac.me',
+      'http://0.0.0.0:3000',
+    ]) {
+      expect(baseDoDigisac(url), url).toBeNull();
+    }
+  });
+
+  it('o endereço da conta recusado não sai do sistema: a tela recebe a regra, nunca uma resposta do host', async () => {
+    const espiao = vi.spyOn(globalThis, 'fetch');
+    try {
+      const cofre = { envolver: vi.fn(), guardar: vi.fn(), estado: vi.fn() };
+      const conector = new DigisacService({} as never, cofre as never);
+      for (const url of ['http://minio:9000', 'https://10.0.0.5', 'https://169.254.169.254', 'https://conta.digisac.me.atacante.com']) {
+        const erro = await conector.guardarCredencial('org-x', { url, token: 't', servicoId: 's' }, null).catch((e: unknown) => e);
+        expect(erro).toBeInstanceOf(BadRequestException);
+        expect((erro as Error).message).toBe('Endereço da conta inválido: use https://<sua conta>.digisac.me, sem caminho.');
+      }
+      expect(espiao).not.toHaveBeenCalled();
+      expect(cofre.guardar).not.toHaveBeenCalled();
+    } finally {
+      espiao.mockRestore();
+    }
     expect(baseDoDigisac('https://minhaconta.digisac.me/outra')).toBeNull();
     expect(baseDoDigisac('https://u:p@minhaconta.digisac.me')).toBeNull();
     expect(baseDoDigisac('não é url')).toBeNull();
