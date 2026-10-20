@@ -1,3 +1,11 @@
+<!-- rootos-autonomia-20261011 -->
+## Autorização vigente — 11/10/2026
+
+Leia [AGENTS.md](../AGENTS.md). Preserve dados, segredos e trabalho dos demais.
+
+As descrições antigas de produção abaixo são históricas. Confira o ambiente efetivo conforme AGENTS.md antes de executar receitas de deploy. Nesta branch, a receita de subida em produção é `docs/comercial/VIRADA-PRODUCAO.md`.
+<!-- /rootos-autonomia-20261011 -->
+
 # Plano de continuidade de desenvolvimento — marketing-os → ROOT OS
 
 > Escrito em 10/09/2026 a partir do repo (`main` + branch `root-os/frente-0`), do pacote `HANDOFF-DEV` do vault `Obsidian/Root`, das notas de oferta e inbox do vault, das memórias do Claude, da VPS e do grupo de WhatsApp "ROOT | Estratégia e Produto" (08/05→10/09). Revisado contra `02-CONSTRAINTS.md`, `06-ESTADO-DA-BASE.md` e o código da branch.

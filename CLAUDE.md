@@ -1,3 +1,11 @@
+<!-- rootos-autonomia-20261011 -->
+## Autorização vigente — 11/10/2026
+
+Leia [AGENTS.md](AGENTS.md). Preserve dados, segredos e trabalho dos demais.
+
+As descrições antigas de produção abaixo são históricas. Confira o ambiente efetivo conforme AGENTS.md antes de executar receitas de deploy. Nesta branch, a receita de subida em produção é `docs/comercial/VIRADA-PRODUCAO.md`.
+<!-- /rootos-autonomia-20261011 -->
+
 # marketing-os — sistema de marketing FullBPO/ROOT
 
 ## Onde roda
