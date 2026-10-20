@@ -89,14 +89,15 @@ const DESTINO: Record<string, { paraKey: string; absorvido?: string }> = {
   metas: { paraKey: 'metas' },
   financeiro: { paraKey: 'financeiro' },
   whatsapp: {
-    paraKey: 'atendimento',
+    paraKey: 'whatsapp',
     absorvido:
-      'o /whatsapp de antes era uma tela sem conector (o placeholder de módulo). O que está de ' +
-      'pé em /atendimento é a FILA DE APROVAÇÃO, e ela não é de um canal: retém qualquer ' +
-      'capacidade R2+ do catálogo. Por isso a permissão deixou de ser whatsapp.enviar (que só o ' +
-      'Admin Master tem) e passou a ser aprovacoes.ver — a mesma que a API exige em ' +
-      'approvals.controller.ts, fatia 3.10. A caixa de entrada por WhatsApp continua declarada ' +
-      'em `parcial` e volta com o FinOps, com whatsapp.enviar na rota dela',
+      'o /whatsapp de antes era uma tela sem conector (o placeholder de módulo), e até ' +
+      '20/10/2026 a rota redirecionava para a fila de aprovação (/atendimento, aprovacoes.ver). ' +
+      'Na rodada da interface (20/10/2026, U1) a rota voltou a ter tela: a área WhatsApp, que é ' +
+      'a tela de conversas do comercial que morava em /comercial/simulador, com a MESMA ' +
+      'permissão de antes (leads.ver, a que a API exige nas rotas /comercial/simulador/*). ' +
+      'Enviar mensagem continua sendo a capacidade comercial.whatsapp.enviar (R3), retida na ' +
+      'fila: a tela não envia nada sozinha, e por isso whatsapp.enviar não é a permissão dela',
   },
   usuarios: {
     paraKey: 'regua',
@@ -201,18 +202,21 @@ describe('não se perdeu funcionalidade', () => {
  */
 type LinhaDoMenu = [string, string, string, string, string, string | null, string | null, boolean];
 const MENU_FINAL: LinhaDoMenu[] = [
-  // Dia a dia: Visão geral (o dash do Lucas, entrada) · Pendências · Aprovações · Agenda · Painel geral da empresa.
+  // Dia a dia: Visão geral (o dash do Lucas, entrada) · Pendências · Aprovações · Agenda. O Painel
+  // geral da empresa sai do menu em 20/10/2026 (rodada da interface, U1): oculto, vivo pela rota.
   ['tarefas-todas', 'Visão geral', '/dia-a-dia', 'tarefas.ver', 'dia', 'trabalho', null, false],
   ['caixa', 'Pendências', '/caixa', 'dashboard.ver', 'dia', null, null, false],
   ['atendimento', 'Aprovações', '/atendimento', 'aprovacoes.ver', 'dia', null, null, false],
   ['agenda', 'Agenda', '/agenda', 'dashboard.ver', 'dia', null, null, false],
-  ['console', 'Painel geral da empresa', '/painel', 'dashboard.ver', 'dia', null, null, false],
+  ['console', 'Painel geral da empresa', '/painel', 'dashboard.ver', 'dia', null, null, true],
   // Contexto (desceu para depois do Motor de IA nas SECOES; no NAV a posição não pesa).
   ['contexto', 'Conhecimento da empresa', '/contexto', 'obsidian.ver', 'empresa', null, null, false],
   ['marca', 'Marca e pilares', '/contexto/marca', 'pauta.ver', 'empresa', 'pauta', 'contexto', false],
   // Trabalho: a base nossa.
   ['tarefas', 'Lista de tarefas', '/tarefas', 'tarefas.ver', 'trabalho', 'trabalho', null, true],
   ['trabalho', 'Tarefas', '/trabalho', 'tarefas.ver', 'trabalho', 'trabalho', null, false],
+  // Todas as tarefas (20/10/2026, rodada da interface, U1/U3): a rota nova, pendurada no Trabalho.
+  ['trabalho-todas', 'Todas as tarefas', '/trabalho/todas', 'tarefas.ver', 'trabalho', 'trabalho', 'trabalho', false],
   ['implantacao', 'Implantação de clientes', '/trabalho/implantacao', 'tarefas.ver', 'trabalho', 'trabalho', 'trabalho', false],
   ['onboarding', 'Bancada de onboarding', '/onboarding', 'tarefas.ver', 'trabalho', 'trabalho', 'trabalho', true],
   ['trabalho-atas', 'Atas', '/trabalho/atas', 'tarefas.ver', 'trabalho', 'trabalho', 'trabalho', false],
@@ -230,13 +234,14 @@ const MENU_FINAL: LinhaDoMenu[] = [
   ['campanhas', 'Campanhas', '/campanhas', 'campanhas.ver', 'conteudo', 'campanhas', null, false],
   ['pixels', 'Eventos do site', '/pixels', 'dashboard.ver', 'conteudo', 'pixels', null, false],
   ['marketing-tarefas', 'Tarefas', '/marketing/tarefas', 'tarefas.ver', 'conteudo', 'trabalho', null, false],
-  // Motor Comercial: Painel geral · Funil vivo · Propostas · Lista de leads · Contratos vivos · Simulador · Torre · Relatório.
+  // Motor Comercial: Painel geral · Funil vivo · Propostas · Lista de leads · Contratos vivos · Torre · Relatório.
+  // O Simulador de WhatsApp virou a área WhatsApp em 20/10/2026: oculto, a rota redireciona.
   ['comercial-painel', 'Painel geral', '/comercial', 'leads.ver', 'comercial', 'leads', null, false],
   ['comercial-funil', 'Funil vivo', '/comercial/funil', 'leads.ver', 'comercial', 'leads', null, false],
   ['propostas', 'Propostas', '/propostas', 'leads.ver', 'comercial', 'leads', null, false],
   ['leads', 'Lista de leads', '/leads', 'leads.ver', 'comercial', 'leads', null, false],
   ['comercial-contratos', 'Contratos vivos', '/comercial/contratos', 'leads.ver', 'comercial', 'leads', null, false],
-  ['comercial-simulador', 'Simulador de WhatsApp', '/comercial/simulador', 'leads.ver', 'comercial', 'leads', null, false],
+  ['comercial-simulador', 'Simulador de WhatsApp', '/comercial/simulador', 'leads.ver', 'comercial', 'leads', null, true],
   ['comercial-torre', 'Torre das automações', '/comercial/torre', 'leads.ver', 'comercial', 'leads', null, false],
   ['comercial-relatorio', 'Relatório da semana', '/comercial/relatorio', 'leads.ver', 'comercial', 'leads', null, false],
   // Saem do Comercial, ocultos e vivos: o funil antigo, Clientes, Tarefas e a fila antiga de decisões.
@@ -244,6 +249,8 @@ const MENU_FINAL: LinhaDoMenu[] = [
   ['clientes', 'Clientes', '/clientes', 'tarefas.ver', 'comercial', 'trabalho', null, true],
   ['comercial-tarefas', 'Tarefas', '/comercial/tarefas', 'tarefas.ver', 'comercial', 'trabalho', null, true],
   ['comercial-decisoes', 'Decisões do comercial', '/comercial/decisoes', 'leads.ver', 'comercial', 'leads', null, true],
+  // WhatsApp (20/10/2026, rodada da interface, U1): área própria, um item, leads.ver e o módulo leads.
+  ['whatsapp', 'WhatsApp', '/whatsapp', 'leads.ver', 'whatsapp', 'leads', null, false],
   // Motor Financeiro, Motor de IA, Resultados, Configurações e Registros: a forma da produção.
   ['financeiro', 'Financeiro', '/financeiro', 'financeiro.ver', 'financeiro', 'financeiro', null, false],
   ['financeiro-tarefas', 'Tarefas', '/financeiro/tarefas', 'tarefas.ver', 'financeiro', 'trabalho', null, false],
@@ -274,6 +281,9 @@ const OCULTOS_E_DESTINO: Record<string, string | null> = {
   clientes: '/trabalho/implantacao',
   'comercial-tarefas': '/trabalho',
   'comercial-decisoes': '/caixa',
+  // 20/10/2026 (rodada da interface, U1).
+  console: '/dia-a-dia',
+  'comercial-simulador': '/whatsapp',
   // Sai da barra e da busca por decisão de marca; não tem destino, a rota segue com dono.
   assinatura: null,
 };
@@ -287,7 +297,11 @@ describe('NAV — estrutura', () => {
   });
 
   it('toda rota do NAV tem página, visível ou oculta; a que não tem é parcial e cai na página de preparação', () => {
-    const semPagina = NAV.filter((n) => !paginaExiste(n.href));
+    // `/trabalho/todas` é criada pela lane U2 da rodada da interface (20/10/2026), em paralelo
+    // a este item do menu. Enquanto ela não chega, a rota cai na página de preparação. Depois
+    // do merge das lanes a página existe e esta exceção não tem mais efeito.
+    const PAGINA_DE_OUTRA_LANE = new Set(['trabalho-todas']);
+    const semPagina = NAV.filter((n) => !paginaExiste(n.href) && !PAGINA_DE_OUTRA_LANE.has(n.key));
     expect(semPagina.map((n) => n.key).sort()).toEqual(['ferramentas', 'fluxos']);
     for (const n of semPagina) expect(n.estado, n.key).toBe('parcial');
     expect(existsSync(join(RAIZ_DO_WEB, 'src', 'app', '[...slug]', 'page.tsx'))).toBe(true);
@@ -346,9 +360,10 @@ describe('navPorSecao', () => {
 
   it('destinos de apoio vêm depois dos grupos principais', () => {
     const tipos = navPorSecao(todas).map((g) => g.secao.tipo);
-    // Versão final: o Trabalho voltou a ter itens visíveis (a nossa organização).
-    expect(tipos.slice(0, 8)).toEqual(Array(8).fill('principal'));
-    expect(tipos.slice(8)).toEqual(['apoio', 'apoio', 'apoio']);
+    // Versão final: o Trabalho voltou a ter itens visíveis (a nossa organização); o WhatsApp
+    // entrou como área principal em 20/10/2026.
+    expect(tipos.slice(0, 9)).toEqual(Array(9).fill('principal'));
+    expect(tipos.slice(9)).toEqual(['apoio', 'apoio', 'apoio']);
   });
 
   it('sem permissão nenhuma não devolve seção nenhuma', () => {
@@ -357,19 +372,19 @@ describe('navPorSecao', () => {
 
   it('mostra só o que a permissão libera e descarta a seção vazia', () => {
     const grupos = navPorSecao(new Set(['leads.ver']));
-    expect(grupos).toHaveLength(1);
-    expect(grupos[0].secao.key).toBe('comercial');
+    expect(grupos.map((g) => g.secao.key)).toEqual(['comercial', 'whatsapp']);
     expect(grupos[0].itens.map((i) => i.key)).toEqual([
       'comercial-painel', 'comercial-funil', 'propostas', 'leads',
-      'comercial-contratos', 'comercial-simulador', 'comercial-torre', 'comercial-relatorio',
+      'comercial-contratos', 'comercial-torre', 'comercial-relatorio',
     ]);
+    expect(grupos[1].itens.map((i) => i.key)).toEqual(['whatsapp']);
   });
 
   it('módulo desligado sai do menu; a espinha nunca sai', () => {
     const grupos = navPorSecao(todas, ['financeiro']);
     const chaves = grupos.flatMap((g) => g.itens.map((i) => i.key));
     expect(chaves).toContain('financeiro');
-    expect(chaves).toContain('console'); // espinha
+    expect(chaves).toContain('agenda'); // espinha
     expect(chaves).toContain('caixa'); // espinha
     expect(chaves).toContain('regua'); // espinha
     expect(chaves).not.toContain('leads');
@@ -615,7 +630,8 @@ describe('organização da navegação (ROOT-07 e versão final)', () => {
     expect(porKey.get('fluxos')).toMatchObject({ label: 'Processos', estado: 'parcial' });
     const rotulosDeSecao = new Set<string>(SECOES.map((s) => s.label));
     const repetidos = NAV.filter((n) => rotulosDeSecao.has(n.label)).map((n) => n.key);
-    expect(repetidos).toEqual(['config']); // "Configurações da conta": a seção tem um item só, o mesmo destino
+    // "WhatsApp" e "Configurações da conta": cada seção tem um item só, o mesmo destino.
+    expect(repetidos).toEqual(['whatsapp', 'config']);
   });
 
   it('o texto de apoio de Trabalho não cita as ideias, que moram no Marketing', () => {
@@ -629,6 +645,7 @@ describe('organização da navegação (ROOT-07 e versão final)', () => {
       ['trabalho', 'Trabalho', 'principal'],
       ['conteudo', 'Motor de Marketing', 'principal'],
       ['comercial', 'Motor Comercial', 'principal'],
+      ['whatsapp', 'WhatsApp', 'principal'],
       ['financeiro', 'Motor Financeiro', 'principal'],
       ['automacoes', 'Motor de IA', 'principal'],
       ['empresa', 'Contexto', 'principal'],
@@ -642,12 +659,31 @@ describe('organização da navegação (ROOT-07 e versão final)', () => {
     expect(SECOES.filter((s) => 'dentroDe' in s)).toHaveLength(1);
   });
 
-  it('Dia a dia: Visão geral · Pendências · Aprovações · Agenda · Painel geral da empresa, com Pendências visível', () => {
+  it('Dia a dia: Visão geral · Pendências · Aprovações · Agenda, com Pendências visível', () => {
     const todas = new Set(NAV.map((n) => n.permission));
     const dia = navPorSecao(todas).find((g) => g.secao.key === 'dia')!;
-    expect(dia.itens.map((i) => i.label)).toEqual(['Visão geral', 'Pendências', 'Aprovações', 'Agenda', 'Painel geral da empresa']);
+    expect(dia.itens.map((i) => i.label)).toEqual(['Visão geral', 'Pendências', 'Aprovações', 'Agenda']);
     expect(porKey.get('caixa')?.oculto).toBeFalsy();
     expect(moduloDaRotaDoWeb('/dia-a-dia')).toBe('trabalho');
+  });
+
+  /*
+   * Rodada da interface (20/10/2026, U1, item 4 da ata): o Painel geral da empresa sai do
+   * menu. O item fica no NAV, oculto e dono da rota; `/painel` continua respondendo, e o
+   * Custos de IA (`/painel/custo-ia`) segue na IA e automações.
+   */
+  it('o Painel geral sai do menu, e /painel segue viva com dono', () => {
+    const todas = new Set(NAV.map((n) => n.permission));
+    const painel = porKey.get('console')!;
+    expect(painel).toMatchObject({ href: '/painel', oculto: true, permission: 'dashboard.ver', secao: 'dia' });
+    expect(painel.modulo).toBeUndefined();
+    expect(navEmArvore(todas).flatMap((g) => g.itens.flatMap((no) => [no.item.key, ...no.filhos.map((f) => f.key)]))).not.toContain('console');
+    const absorvida = ROTAS_ABSORVIDAS.find((r) => r.href === '/painel');
+    expect(absorvida?.destino).toBe('/dia-a-dia');
+    expect(absorvida?.porque).toBe('a Visão geral é a entrada do dia; o painel antigo segue vivo pela rota');
+    expect(paginaExiste('/painel')).toBe(true);
+    expect(porKey.get('custo-ia')).toMatchObject({ href: '/painel/custo-ia', secao: 'automacoes' });
+    expect(porKey.get('custo-ia')?.oculto).toBeFalsy();
   });
 
   /*
@@ -677,12 +713,14 @@ describe('organização da navegação (ROOT-07 e versão final)', () => {
    * fila antiga das decisões mora em `/comercial/decisoes`, oculta, absorvida por
    * Pendências. Clientes e Tarefas saem (duplicados), ocultos e vivos.
    */
-  it('Motor Comercial: Painel geral · Funil vivo · Propostas · Lista de leads · Contratos vivos · Simulador · Torre · Relatório', () => {
+  it('Motor Comercial: Painel geral · Funil vivo · Propostas · Lista de leads · Contratos vivos · Torre · Relatório', () => {
     const todas = new Set(NAV.map((n) => n.permission));
     const comercial = navEmArvore(todas).find((g) => g.secao.key === 'comercial')!;
+    // A Rodada da semana entra depois dos Contratos vivos só para a plataforma, fora do NAV
+    // (navegacao-modulos.test.ts cobra). O Simulador virou a área WhatsApp em 20/10/2026.
     expect(comercial.itens.map((no) => no.item.label)).toEqual([
       'Painel geral', 'Funil vivo', 'Propostas', 'Lista de leads', 'Contratos vivos',
-      'Simulador de WhatsApp', 'Torre das automações', 'Relatório da semana',
+      'Torre das automações', 'Relatório da semana',
     ]);
     for (const no of comercial.itens) {
       expect(no.item.pai, no.item.key).toBeUndefined();
@@ -703,13 +741,28 @@ describe('organização da navegação (ROOT-07 e versão final)', () => {
   });
 
   /*
-   * F2.4 / decisão 3: o WhatsApp continua no Motor Comercial (o simulador ligado ao
-   * lead). Clientes e Tarefas do Comercial não aparecem, mas abrem: as rotas têm
-   * página e dono no NAV.
+   * Rodada da interface (20/10/2026, U1, item 18 da ata): o WhatsApp vira área própria,
+   * logo depois do Comercial, com a tela que morava em /comercial/simulador. Mesma
+   * permissão e mesmo módulo; o item antigo fica oculto e dono da rota, que redireciona.
+   * Clientes e Tarefas do Comercial não aparecem, mas abrem: as rotas têm página e dono.
    */
-  it('WhatsApp onde está; /clientes e /comercial/tarefas fora do menu, mas abrindo', () => {
-    expect(porKey.get('comercial-simulador')).toMatchObject({ href: '/comercial/simulador', secao: 'comercial' });
-    expect(porKey.get('comercial-simulador')?.oculto).toBeFalsy();
+  it('WhatsApp é área própria; /comercial/simulador, /clientes e /comercial/tarefas fora do menu, mas abrindo', () => {
+    expect(porKey.get('whatsapp')).toMatchObject({ label: 'WhatsApp', href: '/whatsapp', icon: 'MessageCircle', permission: 'leads.ver', secao: 'whatsapp', modulo: 'leads' });
+    expect(porKey.get('whatsapp')?.oculto).toBeFalsy();
+    expect(porKey.get('whatsapp')?.pai).toBeUndefined();
+    expect(moduloDaRotaDoWeb('/whatsapp')).toBe('leads');
+    expect(moduloDaRotaDoWeb('/whatsapp?conversa=abc')).toBe('leads');
+    expect(paginaExiste('/whatsapp')).toBe(true);
+    const ordem = SECOES.map((s) => s.key as string);
+    expect(ordem.indexOf('whatsapp')).toBe(ordem.indexOf('comercial') + 1);
+    // nenhum rótulo visível do menu chama a tela de simulador
+    const comTodas = new Set(NAV.map((n) => n.permission));
+    expect(navPorSecao(comTodas).flatMap((g) => g.itens.map((i) => i.label)).filter((r) => /simulador/i.test(r))).toEqual([]);
+    expect(porKey.get('comercial-simulador')).toMatchObject({ href: '/comercial/simulador', secao: 'comercial', oculto: true, permission: 'leads.ver', modulo: 'leads' });
+    expect(ROTAS_ABSORVIDAS.find((r) => r.href === '/comercial/simulador')?.destino).toBe('/whatsapp');
+    expect(paginaExiste('/comercial/simulador')).toBe(true);
+    // A rota /whatsapp deixou de redirecionar para /atendimento: a página é que responde.
+    expect((ROTAS_ANTIGAS as { de: string }[]).some((r) => r.de === '/whatsapp')).toBe(false);
     const todas = new Set(NAV.map((n) => n.permission));
     const noMenu = navPorSecao(todas).flatMap((g) => g.itens.map((i) => i.href));
     for (const href of ['/clientes', '/comercial/tarefas']) {
@@ -741,7 +794,7 @@ describe('organização da navegação (ROOT-07 e versão final)', () => {
     const todas = new Set(NAV.map((n) => n.permission));
     const trabalho = navEmArvore(todas).find((g) => g.secao.key === 'trabalho')!;
     const raiz = trabalho.itens.find((no) => no.item.key === 'trabalho')!;
-    expect(raiz.filhos.map((f) => f.key)).toEqual(['implantacao', 'trabalho-atas']);
+    expect(raiz.filhos.map((f) => f.key)).toEqual(['trabalho-todas', 'implantacao', 'trabalho-atas']);
     expect(navPorSecao(todas).flatMap((g) => g.itens.map((i) => i.key))).not.toContain('tarefas');
     expect(moduloDaRotaDoWeb('/tarefas')).toBe('trabalho');
   });
@@ -750,6 +803,20 @@ describe('organização da navegação (ROOT-07 e versão final)', () => {
    * Rodada do painel P3 (18/10/2026): o banco de atas da operação mora no Trabalho,
    * pendurado no item Tarefas, com a permissão de ler o quadro.
    */
+  /*
+   * Rodada da interface (20/10/2026, U1/U3): "Todas as tarefas" é a rota /trabalho/todas,
+   * pendurada no Trabalho, com a permissão de ler o quadro.
+   */
+  it('Todas as tarefas: /trabalho/todas no Trabalho, sob Tarefas, com tarefas.ver', () => {
+    expect(porKey.get('trabalho-todas')).toMatchObject({ label: 'Todas as tarefas', href: '/trabalho/todas', permission: 'tarefas.ver', secao: 'trabalho', modulo: 'trabalho', pai: 'trabalho' });
+    expect(porKey.get('trabalho-todas')?.oculto).toBeFalsy();
+    expect(moduloDaRotaDoWeb('/trabalho/todas')).toBe('trabalho');
+    expect(moduloDaRotaDoWeb('/trabalho/todas?segmento=abc')).toBe('trabalho');
+    const todas = new Set(NAV.map((n) => n.permission));
+    const trabalho = navPorSecao(todas).find((g) => g.secao.key === 'trabalho')!;
+    expect(trabalho.itens.map((i) => i.label)).toEqual(['Tarefas', 'Todas as tarefas', 'Implantação de clientes', 'Atas']);
+  });
+
   it('as Atas ficam no Trabalho, sob Tarefas, com tarefas.ver e o módulo trabalho', () => {
     const atas = porKey.get('trabalho-atas')!;
     expect(atas).toMatchObject({ label: 'Atas', href: '/trabalho/atas', icon: 'NotebookText', permission: 'tarefas.ver', secao: 'trabalho', modulo: 'trabalho', pai: 'trabalho' });
@@ -784,6 +851,10 @@ describe('organização da navegação (ROOT-07 e versão final)', () => {
     for (const chave of ['empresa', 'conteudo', 'comercial', 'automacoes', 'dia', 'trabalho', 'resultados', 'controle']) {
       expect(areasDaNota([`area:${chave}`]), `area:${chave} ficou sem área`).toEqual([chave]);
     }
+    // A chave nova soma (20/10/2026): `area:whatsapp` cai na área WhatsApp do mapa, e
+    // nenhuma chave publicada sumiu.
+    expect(areasDaNota(['area:whatsapp'])).toEqual(['whatsapp']);
+    expect(SECOES.map((s) => s.key)).toEqual(expect.arrayContaining(['empresa', 'conteudo', 'comercial', 'automacoes', 'dia', 'trabalho', 'resultados', 'controle', 'financeiro', 'registros', 'conta', 'whatsapp']));
     expect(areasDaNota(['area:empresa', 'area:conteudo', 'area:comercial', 'area:automacoes']))
       .toEqual(['conteudo', 'comercial', 'automacoes', 'empresa']); // na ordem das SECOES (Contexto desceu em 18/10/2026)
     expect(areasDaNota(['area:nao-existe'])).toEqual([]);

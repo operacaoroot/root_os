@@ -1,12 +1,15 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { render, screen, within } from '@testing-library/react';
 
 /*
  * Propostas virou item do NAV na versão final (19/10/2026): Comercial, `leads.ver`. A
  * tela mostra as propostas da sala da empresa da sessão, e as antigas do serviço de
  * propostas só na sessão da plataforma. Por isso o item não depende mais de ser a
- * plataforma, e na plataforma ele aparece UMA vez (ITENS_DA_ROOT ficou vazio).
- * A Operação da Root segue fora do menu.
+ * plataforma, e na plataforma ele aparece UMA vez.
+ *
+ * Rodada da interface (20/10/2026, U1, item 10): a Rodada da semana (a tela de
+ * `/operacao`) é item do Comercial só para a sessão da plataforma (`ITENS_DA_ROOT`),
+ * em `/comercial/rodada`, depois dos Contratos vivos. "Operação da Root" não vira item.
  */
 
 let EH_PLATAFORMA = false;
@@ -40,7 +43,6 @@ vi.mock('next/link', () => ({
 
 // eslint-disable-next-line import/first
 import { Sidebar } from '@/components/Sidebar';
-import { NavegacaoDoModulo } from '@/components/NavegacaoDoModulo';
 import { Paleta } from '@/components/Paleta';
 
 const titulos = () =>
@@ -55,7 +57,7 @@ describe('grupo ROOT do menu', () => {
 
   it('empresa cliente com leads.ver vê Propostas no Comercial, sem grupo ROOT nem Operação', () => {
     CAMINHO = '/leads';
-    render(<><Sidebar /><NavegacaoDoModulo /><Paleta aberto fechar={() => {}} /></>);
+    render(<><Sidebar /><Paleta aberto fechar={() => {}} /></>);
     expect(titulos()).not.toContain('ROOT');
     expect(screen.getByRole('link', { name: 'Propostas' })).toHaveAttribute('href', '/propostas');
     expect(document.querySelector('a[href="/operacao"]')).toBeNull();
@@ -64,7 +66,7 @@ describe('grupo ROOT do menu', () => {
   it('a sessão da plataforma encontra Propostas uma vez só, no Comercial e na busca', () => {
     EH_PLATAFORMA = true;
     CAMINHO = '/leads';
-    render(<><Sidebar /><NavegacaoDoModulo /><Paleta aberto fechar={() => {}} /></>);
+    render(<><Sidebar /><Paleta aberto fechar={() => {}} /></>);
     expect(screen.getAllByRole('link', { name: 'Propostas' })).toHaveLength(1);
     expect(screen.getAllByRole('button', { name: /Propostas.*Comercial/ })).toHaveLength(1);
   });
@@ -72,16 +74,35 @@ describe('grupo ROOT do menu', () => {
   it('em /propostas o item fica marcado como a tela aberta', () => {
     EH_PLATAFORMA = true;
     CAMINHO = '/propostas';
-    render(<><Sidebar /><NavegacaoDoModulo /><Paleta aberto fechar={() => {}} /></>);
+    render(<><Sidebar /><Paleta aberto fechar={() => {}} /></>);
     expect(screen.getByRole('link', { name: 'Propostas' }).getAttribute('aria-current')).toBe('page');
   });
 
-  // 19/10/2026: a Operação da Root virou a "Rodada da semana" dentro de Dia a dia › Operação.
-  it('a rodada da ROOT não é mais item próprio: nem no menu, nem na busca', () => {
+  it('"Operação da Root" não é item: nem no menu, nem na busca', () => {
     EH_PLATAFORMA = true;
     CAMINHO = '/operacao';
-    render(<><Sidebar /><NavegacaoDoModulo /><Paleta aberto fechar={() => {}} /></>);
+    render(<><Sidebar /><Paleta aberto fechar={() => {}} /></>);
     expect(screen.queryByRole('link', { name: 'Operação da Root' })).toBeNull();
     expect(screen.queryByRole('button', { name: /Operação da Root/ })).toBeNull();
+  });
+
+  it('a plataforma vê a Rodada da semana no Comercial, depois dos Contratos vivos, e na busca', () => {
+    EH_PLATAFORMA = true;
+    CAMINHO = '/comercial/rodada';
+    render(<><Sidebar /><Paleta aberto fechar={() => {}} /></>);
+    const lista = screen.getByRole('list', { name: 'Subseções de Comercial' });
+    const nomes = Array.from(lista.querySelectorAll('a')).map((a) => a.textContent);
+    expect(nomes.indexOf('Rodada da semana')).toBe(nomes.indexOf('Contratos vivos') + 1);
+    const rodada = within(lista).getByRole('link', { name: 'Rodada da semana' });
+    expect(rodada).toHaveAttribute('href', '/comercial/rodada');
+    expect(rodada).toHaveAttribute('aria-current', 'page');
+    expect(screen.getAllByRole('button', { name: /Rodada da semana.*Comercial/ })).toHaveLength(1);
+  });
+
+  it('empresa cliente não vê a Rodada da semana: nem no menu, nem na busca', () => {
+    CAMINHO = '/comercial/rodada';
+    render(<><Sidebar /><Paleta aberto fechar={() => {}} /></>);
+    expect(document.querySelector('a[href="/comercial/rodada"]')).toBeNull();
+    expect(screen.queryByRole('button', { name: /Rodada da semana/ })).toBeNull();
   });
 });

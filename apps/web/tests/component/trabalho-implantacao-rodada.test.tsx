@@ -3,10 +3,10 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/re
 import { afterEach } from 'vitest';
 
 /*
- * A RODADA DA SEMANA NA IMPLANTAÇÃO (versão final, F4, 19/10/2026): como era a
- * "Operação" da produção, a Implantação ganha a aba "Rodada da semana" do Pedro, só
- * para a sessão da plataforma (a ROOT). Sem a sessão da plataforma, nenhuma aba aparece
- * e a tela é a implantação de sempre. `/operacao` continua viva (a aba é a mesma tela).
+ * A RODADA DA SEMANA SAIU DA IMPLANTAÇÃO (rodada da interface, 20/10/2026, U1, item 10).
+ * Ela foi para o Comercial (`/comercial/rodada`), com a mesma trava de plataforma de
+ * `/operacao`. A Implantação não tem mais aba nenhuma: nem para a ROOT, nem com
+ * `?aba=rodada` no link, que passa a mandar para o endereço novo com o resto da query.
  */
 
 const apiGet = vi.fn();
@@ -20,6 +20,12 @@ vi.mock('@/lib/auth', () => ({
 
 // eslint-disable-next-line import/first
 import ImplantacaoPage from '@/app/trabalho/implantacao/page';
+// eslint-disable-next-line import/first
+import RodadaPage from '@/app/comercial/rodada/page';
+// eslint-disable-next-line import/first
+import OperacaoPage from '@/app/operacao/page';
+// eslint-disable-next-line import/first
+import { destinoDaAbaRodada } from '@/lib/rotas-movidas';
 // eslint-disable-next-line import/first
 import { ErroDaApi } from '@/lib/api';
 
@@ -43,25 +49,49 @@ beforeEach(() => {
 });
 afterEach(cleanup);
 
-describe('Implantação · Rodada da semana', () => {
-  it('a ROOT vê as duas abas; a Rodada é a tela do /operacao e fica no endereço', async () => {
+describe('Implantação sem a Rodada da semana', () => {
+  it('nem a ROOT vê aba: a tela é a implantação de sempre, sem ler o painel da operação', async () => {
     render(<ImplantacaoPage />);
-    const rodada = await screen.findByTestId('implantacao-aba-rodada');
-    expect(screen.getByTestId('implantacao-aba-implantacao')).toHaveAttribute('aria-selected', 'true');
     expect(await screen.findByRole('heading', { name: 'Implantação de clientes' })).toBeInTheDocument();
-    fireEvent.click(rodada);
-    expect(new URLSearchParams(window.location.search).get('aba')).toBe('rodada');
+    expect(screen.queryByRole('tablist', { name: 'Implantação' })).toBeNull();
+    expect(screen.queryByTestId('implantacao-aba-rodada')).toBeNull();
+    expect(apiGet.mock.calls.some(([r]) => String(r).startsWith('/tenants/plataforma/operacao/painel'))).toBe(false);
+  });
+
+  it('?aba=rodada manda para /comercial/rodada, com o resto da query e sem a aba', async () => {
+    const replace = vi.fn();
+    const original = window.location;
+    Object.defineProperty(window, 'location', { configurable: true, value: { ...original, search: '?aba=rodada&rodada=2026-10-19', replace } });
+    try {
+      render(<ImplantacaoPage />);
+      await waitFor(() => expect(replace).toHaveBeenCalledWith('/comercial/rodada?rodada=2026-10-19'));
+    } finally {
+      Object.defineProperty(window, 'location', { configurable: true, value: original });
+    }
+  });
+
+  it('o destino da aba antiga: só ?aba=rodada redireciona', () => {
+    expect(destinoDaAbaRodada({ aba: 'rodada' })).toBe('/comercial/rodada');
+    expect(destinoDaAbaRodada({ aba: ['rodada', 'x'], lista: 'l1' })).toBe('/comercial/rodada?lista=l1');
+    expect(destinoDaAbaRodada({ aba: 'implantacao' })).toBeNull();
+    expect(destinoDaAbaRodada({})).toBeNull();
+  });
+});
+
+describe('a Rodada da semana no Comercial', () => {
+  it('a ROOT vê a tela do /operacao em /comercial/rodada', async () => {
+    render(<RodadaPage />);
     expect(await screen.findByText('Operação da Root')).toBeInTheDocument();
     await waitFor(() => expect(apiGet.mock.calls.some(([r]) => String(r).startsWith('/tenants/plataforma/operacao/painel'))).toBe(true));
   });
 
-  it('fora da sessão da plataforma não há abas, nem com ?aba=rodada no link', async () => {
+  it('fora da plataforma devolve o mesmo aviso que o /operacao', async () => {
     plataforma = false;
-    window.history.replaceState({}, '', '/trabalho/implantacao?aba=rodada');
-    render(<ImplantacaoPage />);
-    expect(await screen.findByRole('heading', { name: 'Implantação de clientes' })).toBeInTheDocument();
-    await waitFor(() => expect(apiGet.mock.calls.some(([r]) => r === '/tenants/plataforma/quem-sou')).toBe(true));
-    expect(screen.queryByTestId('implantacao-aba-rodada')).toBeNull();
+    const { unmount } = render(<RodadaPage />);
+    const aviso = (await screen.findByText('Esta área é da ROOT.')).parentElement!.textContent;
+    unmount();
+    render(<OperacaoPage />);
+    expect((await screen.findByText('Esta área é da ROOT.')).parentElement!.textContent).toBe(aviso);
     expect(apiGet.mock.calls.some(([r]) => String(r).startsWith('/tenants/plataforma/operacao/painel'))).toBe(false);
   });
 });

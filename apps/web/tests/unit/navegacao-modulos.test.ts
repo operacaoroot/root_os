@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { NAV, navPorSecao, MODULOS } from '@mktos/shared';
-import { areaDoDestino, destinoDaRota, modulosDeNavegacao } from '@/components/navegacao-modulos';
+import { ITENS_DA_ROOT, areaDoDestino, destinoDaRota, modulosDeNavegacao } from '@/components/navegacao-modulos';
 
 const permissoes = [...new Set(NAV.map((item) => item.permission))];
 describe('projeção do NAV em módulos', () => {
@@ -40,22 +40,76 @@ describe('projeção do NAV em módulos', () => {
     expect(areaDoDestino(destinoDaRota('/propostas')!)?.key).toBe('comercial');
   });
 
-  it('as áreas seguem a ordem das seções, com Contexto depois da IA', () => {
+  it('as áreas seguem a ordem das seções, com o WhatsApp depois do Comercial e o Contexto depois da IA', () => {
     expect(modulosDeNavegacao(permissoes).map((area) => area.key)).toEqual([
-      'dia', 'trabalho', 'conteudo', 'comercial', 'financeiro', 'automacoes', 'empresa', 'resultados', 'configuracoes',
+      'dia', 'trabalho', 'conteudo', 'comercial', 'whatsapp', 'financeiro', 'automacoes', 'empresa', 'resultados', 'configuracoes',
     ]);
   });
 
-  it('Dia a dia abre na Visão geral e mostra Pendências; a rodada da ROOT não vira item próprio', () => {
+  // Rodada da interface (20/10/2026, U1, item 4): o Painel geral sai do Dia a dia.
+  it('Dia a dia abre na Visão geral: Visão geral · Pendências · Aprovações · Agenda, sem o Painel geral', () => {
     for (const plataforma of [false, true]) {
       const dia = modulosDeNavegacao(permissoes, undefined, plataforma).find((area) => area.key === 'dia');
       expect(dia?.entrada?.key).toBe('tarefas-todas');
       expect(dia?.entrada?.href).toBe('/dia-a-dia');
-      expect(dia?.itens.map((item) => item.key)).toEqual(['tarefas-todas', 'caixa', 'atendimento', 'agenda', 'console']);
+      expect(dia?.itens.map((item) => item.key)).toEqual(['tarefas-todas', 'caixa', 'atendimento', 'agenda']);
       expect(dia?.itens.some((item) => item.key === 'operacao')).toBe(false);
     }
+    // /painel segue com dono (o item oculto), na área Dia a dia; /painel/custo-ia é da IA.
+    expect(destinoDaRota('/painel')?.key).toBe('console');
+    expect(areaDoDestino(destinoDaRota('/painel')!)?.key).toBe('dia');
     expect(destinoDaRota('/operacao', true)).toBeUndefined();
     expect(areaDoDestino(destinoDaRota('/onboarding')!)?.key).toBe('trabalho');
+  });
+
+  it('Trabalho: Tarefas · Todas as tarefas · Implantação de clientes · Atas, e /trabalho/todas é de Todas', () => {
+    const trabalho = modulosDeNavegacao(permissoes).find((area) => area.key === 'trabalho');
+    expect(trabalho?.entrada?.key).toBe('trabalho');
+    expect(trabalho?.itens.map((item) => item.label)).toEqual(['Tarefas', 'Todas as tarefas', 'Implantação de clientes', 'Atas']);
+    // A rota mais longa vence: Todas não se confunde com /trabalho.
+    expect(destinoDaRota('/trabalho/todas')?.key).toBe('trabalho-todas');
+    expect(destinoDaRota('/trabalho/todas?segmento=f1&pasta=todas')?.key).toBe('trabalho-todas');
+    expect(destinoDaRota('/trabalho?pasta=todas')?.key).toBe('trabalho');
+    expect(areaDoDestino(destinoDaRota('/trabalho/todas')!)?.key).toBe('trabalho');
+  });
+
+  it('WhatsApp é área própria, com um item, e /comercial/simulador continua dono da rota antiga', () => {
+    const whatsapp = modulosDeNavegacao(permissoes).find((area) => area.key === 'whatsapp');
+    expect(whatsapp).toMatchObject({ label: 'WhatsApp', icon: 'MessageCircle' });
+    expect(whatsapp?.itens.map((item) => item.key)).toEqual(['whatsapp']);
+    expect(whatsapp?.entrada?.href).toBe('/whatsapp');
+    expect(areaDoDestino(destinoDaRota('/whatsapp?conversa=abc')!)?.key).toBe('whatsapp');
+    const comercial = modulosDeNavegacao(permissoes).find((area) => area.key === 'comercial');
+    expect(comercial?.itens.some((item) => item.key === 'comercial-simulador')).toBe(false);
+    expect(destinoDaRota('/comercial/simulador')?.key).toBe('comercial-simulador');
+    // Sem leads.ver, sem a área; sem o módulo leads, também.
+    expect(modulosDeNavegacao(['dashboard.ver']).some((area) => area.key === 'whatsapp')).toBe(false);
+    expect(modulosDeNavegacao(permissoes, ['trabalho']).some((area) => area.key === 'whatsapp')).toBe(false);
+  });
+
+  /*
+   * Rodada da interface (20/10/2026, U1, item 10): a Rodada da semana mora no Comercial,
+   * depois dos Contratos vivos, e só a sessão da plataforma a vê. Permissão comum não a
+   * mostra: quem decide é `ehPlataforma` (a API de plataforma), como era na Implantação.
+   */
+  it('a Rodada da semana fica no Comercial, depois dos Contratos vivos, só para a plataforma', () => {
+    const daPlataforma = modulosDeNavegacao(permissoes, undefined, true).find((area) => area.key === 'comercial');
+    expect(daPlataforma?.itens.map((item) => item.label)).toEqual([
+      'Painel geral', 'Funil vivo', 'Propostas', 'Lista de leads', 'Contratos vivos',
+      'Rodada da semana', 'Torre das automações', 'Relatório da semana',
+    ]);
+    expect(daPlataforma?.itens.find((item) => item.key === 'comercial-rodada')?.href).toBe('/comercial/rodada');
+    expect(daPlataforma?.entrada?.key).toBe('comercial-painel');
+    const deCliente = modulosDeNavegacao(permissoes, undefined, false).find((area) => area.key === 'comercial');
+    expect(deCliente?.itens.some((item) => item.key === 'comercial-rodada')).toBe(false);
+    // Nem com todas as permissões do NAV, nem só com a de plataforma sem módulo leads.
+    expect(modulosDeNavegacao(permissoes, ['trabalho'], true).flatMap((a) => a.itens).some((i) => i.key === 'comercial-rodada')).toBe(false);
+    expect(ITENS_DA_ROOT.map((item) => item.key)).toEqual(['comercial-rodada']);
+    expect(NAV.some((item) => item.key === 'comercial-rodada' || item.href === '/comercial/rodada')).toBe(false);
+    // A rota: na plataforma é a Rodada; fora dela cai no Comercial pelo prefixo, sem item próprio.
+    expect(destinoDaRota('/comercial/rodada', true)?.key).toBe('comercial-rodada');
+    expect(destinoDaRota('/comercial/rodada', false)?.key).toBe('comercial-painel');
+    expect(areaDoDestino(destinoDaRota('/comercial/rodada', true)!)?.key).toBe('comercial');
   });
 
   it('Comercial abre no Painel geral', () => {

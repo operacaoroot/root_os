@@ -17,7 +17,8 @@ export const ROTAS_ANTIGAS = [
   { de: '/ia', para: '/sessoes' },
   { de: '/mcp', para: '/ferramentas' },
   { de: '/automacoes', para: '/rotinas' },
-  { de: '/whatsapp', para: '/atendimento' },
+  // `/whatsapp` → `/atendimento` saiu em 20/10/2026 (rodada da interface, U1): a rota
+  // voltou a ter tela própria, a área WhatsApp (os celulares do lead e da mesa).
   // absorvidas: viraram conteúdo dentro de outra tela
   { de: '/documentos', para: '/contexto?aba=arquivos' },
 ];

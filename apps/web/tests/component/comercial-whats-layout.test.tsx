@@ -47,7 +47,8 @@ vi.mock('@/lib/api', async (original) => {
   };
 });
 
-import SimuladorPage from '@/app/comercial/simulador/page';
+// A tela mudou de `/comercial/simulador` para a área WhatsApp em 20/10/2026 (rodada da interface, U1).
+import SimuladorPage from '@/app/whatsapp/page';
 import LayoutDoComercial from '@/app/comercial/layout';
 import ContratosPage from '@/app/comercial/contratos/page';
 import TorrePage from '@/app/comercial/torre/page';
@@ -102,7 +103,7 @@ beforeEach(() => {
   RESPOSTAS = {};
   posts.length = 0;
   window.localStorage.clear();
-  window.history.replaceState(null, '', '/comercial/simulador');
+  window.history.replaceState(null, '', '/whatsapp');
 });
 
 describe('WhatsApp do comercial: três colunas no desktop, uma por vez no celular', () => {
@@ -152,7 +153,7 @@ describe('WhatsApp do comercial: três colunas no desktop, uma por vez no celula
 
   it('vindo do painel com ?conversa=, abre direto na conversa', async () => {
     respostasDoSimulador();
-    window.history.replaceState(null, '', '/comercial/simulador?conversa=lead-longo');
+    window.history.replaceState(null, '', '/whatsapp?conversa=lead-longo');
     render(<SimuladorPage />);
     expect(await screen.findByTestId('whats-balao-m1')).toBeInTheDocument();
     expect(screen.getByTestId('whats-atendimento').dataset.vista).toBe('conversa');
@@ -190,7 +191,7 @@ describe('WhatsApp do comercial: três colunas no desktop, uma por vez no celula
 describe('texto longo não vaza', () => {
   it('no WhatsApp: nome de 80 corta com o nome inteiro no title; balão quebra URL e mensagem de 2.000', async () => {
     respostasDoSimulador();
-    window.history.replaceState(null, '', '/comercial/simulador?conversa=lead-longo');
+    window.history.replaceState(null, '', '/whatsapp?conversa=lead-longo');
     const u = userEvent.setup();
     render(<SimuladorPage />);
     const item = await screen.findByTestId('whats-conversa-lead-longo');
