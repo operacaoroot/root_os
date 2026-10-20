@@ -101,6 +101,20 @@ WITH u AS (UPDATE "OnboardingConvite" SET "tokenHash" = encode(neutralizar_tmp.d
 INSERT INTO resumo SELECT 'OnboardingConvite.tokenHash/tokenCifrado', count(*) FROM u;
 WITH u AS (UPDATE "Approval" SET "tokenHash" = encode(neutralizar_tmp.digest(neutralizar_tmp.gen_random_bytes(32), 'sha256'), 'hex') RETURNING 1)
 INSERT INTO resumo SELECT 'Approval.tokenHash', count(*) FROM u;
+-- Revisão adversarial 4.2: a aprovação pendente da produção não fica viva na fila da homologação.
+WITH u AS (UPDATE "Approval" SET "expiraEm" = least("expiraEm", now()) WHERE status = 'pendente' AND "expiraEm" > now() RETURNING 1)
+INSERT INTO resumo SELECT 'Approval pendente vencida agora', count(*) FROM u;
+-- Revisão 4.1: a sala do cliente (/s/<token>) só existe depois da virada; numa cópia
+-- feita depois dela o link do cliente não pode abrir na homologação.
+DO $neutralizar$
+DECLARE n integer := 0;
+BEGIN
+  IF to_regclass('public."SalaDoCliente"') IS NOT NULL THEN
+    UPDATE "SalaDoCliente" SET "tokenHash" = encode(neutralizar_tmp.digest(neutralizar_tmp.gen_random_bytes(32), 'sha256'), 'hex'), "tokenCifrado" = NULL;
+    GET DIAGNOSTICS n = ROW_COUNT;
+  END IF;
+  INSERT INTO resumo VALUES ('SalaDoCliente.tokenHash/tokenCifrado', n);
+END $neutralizar$;
 WITH u AS (UPDATE "EnvioAoYoutube" SET "sessaoCifrada" = NULL WHERE "sessaoCifrada" IS NOT NULL RETURNING 1)
 INSERT INTO resumo SELECT 'EnvioAoYoutube.sessaoCifrada', count(*) FROM u;
 
