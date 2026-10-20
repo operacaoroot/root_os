@@ -43,6 +43,12 @@ beforeEach(() => {
 afterEach(cleanup);
 const renderedIds = () => [...document.querySelectorAll('[data-work-task-id]')].map((e) => e.getAttribute('data-work-task-id'));
 
+/** Rodada da interface (U2, 20/10/2026): a busca mora no painel de "Filtros". */
+function buscar(valor: string) {
+  if (!screen.queryByTestId('trabalho-filtros-painel')) fireEvent.click(screen.getByTestId('trabalho-filtros-botao'));
+  fireEvent.change(screen.getByTestId('trabalho-filtros-q'), { target: { value: valor } });
+}
+
 describe('ROOT-12: lista e quadro Work', () => {
   it('projeta os mesmos 501 UUIDs e total em /tarefas e /trabalho, com duas páginas', async () => {
     const table = render(<TasksPage />);
@@ -78,7 +84,7 @@ describe('ROOT-12: lista e quadro Work', () => {
     get.mockImplementation((path: string) => path.includes('/tarefas?') && !path.includes('q=nova') ? new Promise((resolve) => { resolveOld = resolve; }) : path.includes('/tarefas?') ? Promise.resolve({ items: [{ ...task(500), title: 'QA nova' }], total: 1 }) : serve(path));
     render(<TasksPage />);
     await waitFor(() => expect(resolveOld).toBeTypeOf('function'));
-    fireEvent.change(screen.getByLabelText('Buscar tarefas'), { target: { value: 'nova' } });
+    buscar('nova');
     await screen.findByText('QA nova');
     await act(async () => resolveOld({ items: [{ ...task(500), title: 'QA antiga' }], total: 1 }));
     expect(screen.queryByText('QA antiga')).toBeNull(); expect(screen.getByText('1 tarefa')).toBeInTheDocument();
@@ -93,9 +99,9 @@ describe('ROOT-12: lista e quadro Work', () => {
     let rejectOld!: (e: Error) => void;
     get.mockImplementation((path: string) => path.includes('/tarefas?') && !path.includes('q=') ? new Promise((_, reject) => { rejectOld = reject; }) : path.includes('q=falha') ? Promise.reject(new Error('QA falha atual')) : path.includes('/tarefas?') ? Promise.resolve({ items: [task(0)], total: 1 }) : serve(path));
     render(<TasksPage />); await waitFor(() => expect(rejectOld).toBeTypeOf('function'));
-    fireEvent.change(screen.getByLabelText('Buscar tarefas'), { target: { value: 'nova' } }); await screen.findByText('1 tarefa');
+    buscar('nova'); await screen.findByText('1 tarefa');
     await act(async () => rejectOld(new Error('QA falha velha'))); expect(screen.queryByText('QA falha velha')).toBeNull();
-    fireEvent.change(screen.getByLabelText('Buscar tarefas'), { target: { value: 'falha' } });
+    buscar('falha');
     await screen.findByText('QA falha atual'); expect(renderedIds()).toEqual([]); expect(screen.queryByText('1 tarefa')).toBeNull();
   });
 
@@ -172,9 +178,14 @@ describe('ROOT-12: filtros ao trocar de lista', () => {
     }
     await screen.findByText('1 tarefa');
     expect(renderedIds()).toEqual([idEsperado]);
-    // O diálogo torna o resto da tela aria-hidden, mas os filtros continuam no DOM.
-    expect(document.querySelector('[aria-label="Filtrar por status"]')).toHaveValue('');
-    expect(document.querySelector('[aria-label="Filtrar por Categoria"]')).toHaveValue('');
+    // Os filtros moram no painel de "Filtros" (U2). A consulta acima já prova o estado; sem o
+    // pop-up da tarefa aberto, o painel mostra status e campo em branco.
+    if (!comPainel) {
+      fireEvent.click(screen.getByTestId('trabalho-filtros-botao'));
+      expect(screen.getByTestId('trabalho-filtros-statusId')).toHaveValue('');
+      expect(screen.getByTestId('trabalho-filtros-opcao')).toHaveValue('');
+      fireEvent.click(screen.getByRole('button', { name: 'Pronto' }));
+    }
     expect(url.searchParams.get('tarefa')).toBe(comPainel ? ID : null);
     if (comPainel) expect(await screen.findByLabelText('Título da tarefa')).toHaveValue('QA Card 0');
   }
@@ -229,7 +240,9 @@ describe('ROOT-12: filtros ao trocar de lista', () => {
     fireEvent.click(screen.getByRole('button', { name: /QA Lista/ }));
     expect(new URLSearchParams(window.location.search).get('statusId')).toBe('qa-status');
     expect(new URLSearchParams(window.location.search).get('opcao')).toBe('opcao-origem');
-    expect(screen.getByLabelText('Filtrar por status')).toHaveValue('qa-status');
+    fireEvent.click(screen.getByTestId('trabalho-filtros-botao'));
+    expect(screen.getByTestId('trabalho-filtros-statusId')).toHaveValue('qa-status');
+    expect(screen.getByTestId('trabalho-filtros-opcao')).toHaveValue('opcao-origem');
   });
 
   it('deep link na mesma lista por externalId preserva os filtros válidos', async () => {

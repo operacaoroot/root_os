@@ -18,7 +18,7 @@ import { CheckoutDeTarefaService } from './checkout-de-tarefa.service';
 import { agentesDaCasa, type AgenteDaCasa } from './agentes-da-casa';
 import { listarClientes, nomesDosClientes, resolverCliente } from './clientes-da-casa';
 import { criarEstruturaSugerida, criarListaDoModeloNoBanco } from './estrutura-sugerida';
-import type { WorkTaskQuery } from './work-task-query';
+import { SEGMENTO_SEM_PASTA, pastaComSubpastas, type WorkTaskQuery } from './work-task-query';
 import { exigirAcessoAtual } from '../memory/acesso-memoria';
 import { activityCursor, activityDto, activityNames, activityPoint, activityWhere, parseActivityQuery } from './work-activity-page';
 
@@ -497,6 +497,17 @@ export class WorkService {
         { OR: [{ parentId: null }, { parent: { list: { natureza: 'cadastro' } } }] },
         { OR: [{ externalId: null }, { externalId: { notIn: [...CARTOES_QUE_NAO_SAO_TAREFA] } }] },
       ];
+      /*
+       * O SEGMENTO (rodada da interface U3): "Todas" recortada por uma pasta de topo,
+       * com as subpastas dentro, ou só as listas soltas. A árvore é lida da EMPRESA
+       * da sessão: pasta de outra empresa vira conjunto vazio, e nada aparece.
+       */
+      if (f.segmentoId === SEGMENTO_SEM_PASTA) {
+        where.list = { ...(where.list as Prisma.WorkListWhereInput), folderId: null };
+      } else if (f.segmentoId) {
+        const pastas = await this.prisma.workFolder.findMany({ where: { orgId }, select: { id: true, parentId: true } });
+        where.list = { ...(where.list as Prisma.WorkListWhereInput), folderId: { in: [...pastaComSubpastas(pastas, f.segmentoId)] } };
+      }
     }
     if (f.tagId) where.tags = { some: { id: f.tagId } };
     if (f.q) where.title = { contains: f.q, mode: 'insensitive' };

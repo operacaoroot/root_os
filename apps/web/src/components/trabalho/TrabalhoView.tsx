@@ -7,7 +7,7 @@ import {
   MODELOS_DE_LISTA, MOEDA_PADRAO, ehValorMonetarioCanonico, formatarValorMonetario, lerValorDigitadoPtBr,
   listaDaImplantacao, moedaDoValor, paraDigitarPtBr, LISTA_DA_IMPLANTACAO, PASTA_DA_IMPLANTACAO, PORTA_DA_IMPLANTACAO,
   DICA_DO_NOME_DA_TAREFA, AGRUPAMENTOS, ROTULO_DO_AGRUPAMENTO, agruparTarefas, descreverRecorrencia,
-  ROTULO_DA_REGUA_DE_PRAZO, reguaDePrazo,
+  ROTULO_DA_REGUA_DE_PRAZO, reguaDePrazo, GRUPOS_DA_REGUA_DE_PRAZO,
 } from '@mktos/shared';
 import type {
   VistaQuadro, TrabClienteDto, TrabAgenteDto, TrabEstrutura, TrabListaDto, TrabTarefaLista, TrabTarefaResumo,
@@ -21,6 +21,7 @@ import { useTarefaNaUrl, type AbaDaTarefa } from '@/lib/tarefa-na-url';
 import { BancadaDoTrilho } from '@/components/onboarding/BancadaDoTrilho';
 import { SeletorDeCliente, type ClienteEscolhido } from './SeletorDeCliente';
 import { VistasDoQuadro } from './VistasDoQuadro';
+import { BotaoDeFiltros, type DefinicaoDeFiltro, type ValoresDeFiltro } from '@/components/filtros/BotaoDeFiltros';
 import { IniciarOnboardingDaImplantacao } from './IniciarOnboardingDaImplantacao';
 import { AtividadeDaTarefa } from './AtividadeDaTarefa';
 import { EditorialTaskLink } from './EditorialTaskLink';
@@ -30,7 +31,7 @@ import { OutrosResponsaveis, ResponsavelDaTarefa, SeletorOutrosResponsaveis, Sel
 import { CalendarioDeTarefas, diaDoPrazo, prazoDoDia } from './CalendarioDeTarefas';
 import { diasDesde, formatarHoras, hojeEmBrasilia, minutosDeTexto } from '@/lib/horas';
 import {
-  CHAVE_DA_DENSIDADE, DENSIDADES, DIAS_DE_ALERTA_NA_ETAPA, ESCOPOS, LARGURA_DA_COLUNA,
+  CHAVE_DA_DENSIDADE, DENSIDADES, DIAS_DE_ALERTA_NA_ETAPA, LARGURA_DA_COLUNA,
   ehMeu, haCurto, lerDensidade, lerEscopo, posicaoDoBalao, type Densidade, type Escopo,
 } from '@/lib/quadro-denso';
 
@@ -169,6 +170,15 @@ export function recorteDePrazo(v: string | null): RecorteDePrazo | '' {
 }
 const ROTULO_DO_RECORTE = (r: RecorteDePrazo) => (r === 'emdia' ? 'Em dia' : ROTULO_DA_REGUA_DE_PRAZO[r]);
 
+/**
+ * As chaves do endereço que são FILTRO (o painel "Filtros"). Pasta, segmento, lista,
+ * visão, agrupamento e a tarefa aberta não estão aqui: "Limpar tudo" não mexe nelas.
+ */
+export const CHAVES_DOS_FILTROS = [
+  'assigneeUserId', 'semResponsavel', 'assignee', 'escopo', 'overdue', 'prazo', 'statusId', 'opcao',
+  'cliente', 'tagId', 'agente', 'concluidas', 'arquivadas', 'q',
+] as const;
+
 /** As colunas do quadro de "Todas": o tipo da etapa, com o id virtual `tipo:<tipo>`. */
 const COLUNAS_POR_TIPO = [
   { id: 'tipo:open', name: 'A fazer', type: 'open', color: '#87909e' },
@@ -202,13 +212,28 @@ function pastaEDescendentes(folders: TrabEstrutura['folders'], raiz: string): Se
  */
 export type ModoDoTrabalho = 'trabalho' | 'implantacao';
 
-export function TrabalhoView({ visaoInicial = 'board', modo = 'trabalho' }: { visaoInicial?: VisaoDoTrabalho; modo?: ModoDoTrabalho }) {
+/**
+ * `/trabalho/todas` (rodada da interface U3, 20/10/2026): a tela "Todas as tarefas"
+ * é o mesmo `?pasta=todas`, fixo pela rota. Com `aoSairDeTodas`, escolher uma lista
+ * ou uma pasta sai da rota para `/trabalho` com o endereço novo (a busca, com `?`).
+ */
+export function TrabalhoView({ visaoInicial = 'board', modo = 'trabalho', aoSairDeTodas }: {
+  visaoInicial?: VisaoDoTrabalho;
+  modo?: ModoDoTrabalho;
+  aoSairDeTodas?: (busca: string) => void;
+}) {
   const { token, ready, can, user } = useAuth();
   if (!ready) return <p className="text-muted">Carregando…</p>;
   if (!token || !can('tarefas.ver')) return <p className="text-muted">Sem permissão para ver tarefas.</p>;
   // A conta entra na chave: trocar de pessoa com o mesmo token não herda filtro nem painel.
-  return <TrabalhoConteudo key={`${user?.id ?? ''}:${token}:${modo}`} visaoInicial={visaoDoEndereco(visaoInicial) ?? 'board'} modo={modo} />;
+  return <TrabalhoConteudo key={`${user?.id ?? ''}:${token}:${modo}:${aoSairDeTodas ? 'todas' : ''}`} visaoInicial={visaoDoEndereco(visaoInicial) ?? 'board'} modo={modo} aoSairDeTodas={aoSairDeTodas} />;
 }
+
+/**
+ * Os SEGMENTOS de "Todas" (U3): `?segmento=<id da pasta de topo>` ou `sem-pasta`,
+ * combinado com `pasta=todas`. A API recorta com `segmentoId` (as subpastas entram).
+ */
+export const SEGMENTO_SEM_PASTA = 'sem-pasta';
 
 /** As listas que a pasta escolhida mostra. Pasta que não existe (link velho) = todas. */
 function listasDaPasta(e: TrabEstrutura, pasta: string): TrabListaDto[] {
@@ -223,8 +248,14 @@ function listasDaPasta(e: TrabEstrutura, pasta: string): TrabListaDto[] {
 /** O trilho de onboarding ligado a um cartão (`OnboardingTrilho.cardId`). */
 interface TrilhoDoCartao { id: string; cliente: string; faseRotulo: string }
 
-function TrabalhoConteudo({ visaoInicial, modo }: { visaoInicial: Visao; modo: ModoDoTrabalho }) {
+function TrabalhoConteudo({ visaoInicial, modo, aoSairDeTodas }: { visaoInicial: Visao; modo: ModoDoTrabalho; aoSairDeTodas?: (busca: string) => void }) {
   const implantacao = modo === 'implantacao';
+  // Na rota `/trabalho/todas` a pasta é sempre "Todas", com ou sem `?pasta=` no endereço.
+  const todasFixa = !!aoSairDeTodas && !implantacao;
+  const geralNoEndereco = () => {
+    const p = new URLSearchParams(window.location.search);
+    return todasFixa || (p.get('pasta') === PASTA_TODAS && !p.get('lista'));
+  };
   const { token, ready, can, user } = useAuth();
   const editable = can('tarefas.editar');
   const readable = can('tarefas.ver');
@@ -256,6 +287,8 @@ function TrabalhoConteudo({ visaoInicial, modo }: { visaoInicial: Visao; modo: M
   const [fConcluidas, setFConcluidas] = useState<'mostrar' | 'ocultar'>('mostrar');
   const [fAgrupar, setFAgrupar] = useState<Agrupamento>('nenhum');
   const [fPrazo, setFPrazo] = useState<RecorteDePrazo | ''>('');
+  const [fEtiqueta, setFEtiqueta] = useState('');
+  const [fSegmento, setFSegmento] = useState('');
   // Seleção em lote da Lista (versão final, F4): cada escrita sai com a versão lida.
   const [selecionadas, setSelecionadas] = useState<Set<string>>(new Set());
   const [avisoDoLote, setAvisoDoLote] = useState<string | null>(null);
@@ -288,6 +321,7 @@ function TrabalhoConteudo({ visaoInicial, modo }: { visaoInicial: Visao; modo: M
       // `concluidas=1` (o link da Visão geral) e a ausência da chave mostram; `ocultar` esconde.
       setFConcluidas(p.get('concluidas') === 'ocultar' ? 'ocultar' : 'mostrar');
       setFPrazo(recorteDePrazo(p.get('prazo')));
+      setFEtiqueta(p.get('tagId') ?? ''); setFSegmento(p.get('segmento') ?? '');
       const agrupar = p.get('agrupar');
       setFAgrupar((AGRUPAMENTOS as readonly string[]).includes(agrupar ?? '') ? agrupar as Agrupamento : 'nenhum');
       setSelecionadas(new Set());
@@ -304,13 +338,13 @@ function TrabalhoConteudo({ visaoInicial, modo }: { visaoInicial: Visao; modo: M
       setFEscopo(escopo && escopo !== 'pessoal' ? lerEscopo(escopo) : p.get('overdue') === '1' ? 'atrasados' : 'todos');
       setVisao(pessoal ? 'tabela' : visaoDoEndereco(p.get('visao')) ?? visaoInicial);
       // "Todas" com uma lista no link (o clique numa lista da Visão geral) é aquela lista.
-      setFPasta(p.get('pasta') === PASTA_TODAS && p.get('lista') ? '' : p.get('pasta') ?? '');
+      setFPasta(todasFixa ? PASTA_TODAS : p.get('pasta') === PASTA_TODAS && p.get('lista') ? '' : p.get('pasta') ?? '');
       listaAtual.current = null; setListaId(null); setUrlPronta(true);
       setBump((b) => b + 1);
     };
     ler(); window.addEventListener('popstate', ler);
     return () => window.removeEventListener('popstate', ler);
-  }, [visaoInicial]);
+  }, [visaoInicial, todasFixa]);
 
   // A densidade é preferência da pessoa neste navegador (I2), não do link.
   useEffect(() => {
@@ -371,7 +405,7 @@ function TrabalhoConteudo({ visaoInicial, modo }: { visaoInicial: Visao; modo: M
           const achada = listaDaImplantacao(e.folders);
           setSemImplantacao(!achada);
           if (achada) trocarLista(achada.listaId);
-        } else if (!listaAtual.current && !(new URLSearchParams(window.location.search).get('pasta') === PASTA_TODAS && !new URLSearchParams(window.location.search).get('lista'))) {
+        } else if (!listaAtual.current && !geralNoEndereco()) {
           const todas = [...e.folders.flatMap((f) => f.lists), ...e.listasSoltas];
           const endereco = new URLSearchParams(window.location.search);
           const solicitada = endereco.get('lista');
@@ -386,7 +420,9 @@ function TrabalhoConteudo({ visaoInicial, modo }: { visaoInicial: Visao; modo: M
       })
       .catch((e) => { if (ativa) setErro(e.message); });
     return () => { ativa = false; };
-  }, [ready, token, readable, urlPronta, bump, trocarLista, implantacao]);
+    // geralNoEndereco só lê o endereço e `todasFixa`, que entra aqui.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ready, token, readable, urlPronta, bump, trocarLista, implantacao, todasFixa]);
 
   // O ID do card é nativo e a API confere a empresa. O painel abre no mesmo
   // registro mesmo quando a URL traz uma lista antiga após ele ser movido.
@@ -400,13 +436,14 @@ function TrabalhoConteudo({ visaoInicial, modo }: { visaoInicial: Visao; modo: M
         if (!ativa || new URLSearchParams(window.location.search).get('tarefa') !== tarefaId) return;
         setListaDoLinkAusente(false);
         // Em "Todas as tarefas" o pop-up abre por cima da visão geral: nenhuma lista é escolhida.
-        if (implantacao || (new URLSearchParams(window.location.search).get('pasta') === PASTA_TODAS && !new URLSearchParams(window.location.search).get('lista'))) return;
+        if (implantacao || geralNoEndereco()) return;
         trocarLista(t.listId, listaAtual.current ?? new URLSearchParams(window.location.search).get('lista'));
         mudarEndereco(t.listId, t.id);
       })
       .catch((e) => { if (ativa && new URLSearchParams(window.location.search).get('tarefa') === tarefaId) setErro(`Não foi possível abrir a tarefa do link: ${e.message}`); });
     return () => { ativa = false; };
-  }, [estrutura, token, readable, trocarLista, implantacao]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [estrutura, token, readable, trocarLista, implantacao, todasFixa]);
 
   /*
    * OS TRILHOS LIGADOS AOS CARTÕES (implantação aglutinada, rodada do painel P2).
@@ -452,8 +489,16 @@ function TrabalhoConteudo({ visaoInicial, modo }: { visaoInicial: Visao; modo: M
     } finally { escritaEtapa.current = false; setSalvandoEtapa(false); }
   };
 
+  /** Sair de "Todas" (para uma lista ou uma pasta) leva o segmento junto. */
+  const sairDoSegmento = () => {
+    if (!fSegmento) return;
+    setFSegmento(''); filtroNoEndereco('segmento', '');
+  };
+
   const selecionarLista = (id: string) => {
-    sairDoPessoal();
+    // Na rota de Todas, abrir uma lista é ir para o Trabalho com ela.
+    if (todasFixa) { aoSairDeTodas?.(`?lista=${encodeURIComponent(id)}`); return; }
+    sairDoPessoal(); sairDoSegmento();
     // Escolher uma lista na árvore sai de "Todas as tarefas" e volta à árvore inteira.
     if (fPasta === PASTA_TODAS) { setFPasta(''); filtroNoEndereco('pasta', ''); }
     setSelecionadas(new Set());
@@ -475,7 +520,9 @@ function TrabalhoConteudo({ visaoInicial, modo }: { visaoInicial: Visao; modo: M
 
   /** Trocar de pasta mantém a lista aberta se ela é da pasta; senão abre a primeira da pasta. */
   const selecionarPasta = (pasta: string) => {
-    setFPasta(pasta); filtroNoEndereco('pasta', pasta);
+    if (todasFixa && pasta !== PASTA_TODAS) { aoSairDeTodas?.(pasta ? `?pasta=${encodeURIComponent(pasta)}` : ''); return; }
+    if (pasta !== PASTA_TODAS) sairDoSegmento();
+    setFPasta(pasta); filtroNoEndereco('pasta', todasFixa ? '' : pasta);
     setSelecionadas(new Set());
     if (pasta === PASTA_TODAS) {
       sairDoPessoal();
@@ -528,6 +575,9 @@ function TrabalhoConteudo({ visaoInicial, modo }: { visaoInicial: Visao; modo: M
     if (fStatus && !todasListas && !geral) p.set('statusId', fStatus);
     if (fCliente) p.set('cliente', fCliente);
     if (fArquivadas) p.set('arquivadas', '1');
+    if (fEtiqueta) p.set('tagId', fEtiqueta);
+    // O segmento só vale em "Todas" (a API recusa sem `todas=1`).
+    if (geral && fSegmento) p.set('segmentoId', fSegmento);
     tarefasDeTrabalho(token, p, () => ativa)
       .then((r) => { if (ativa) {
         setTarefas(r);
@@ -535,7 +585,7 @@ function TrabalhoConteudo({ visaoInicial, modo }: { visaoInicial: Visao; modo: M
       } })
       .catch((e) => { if (ativa) setErro(e.message); });
     return () => { ativa = false; };
-  }, [ready, token, readable, urlPronta, listaId, todasListas, fPasta, fAssignee, fPessoa, fBusca, fOpcao, fStatus, fCliente, fArquivadas, bump]);
+  }, [ready, token, readable, urlPronta, listaId, todasListas, fPasta, fAssignee, fPessoa, fBusca, fOpcao, fStatus, fCliente, fArquivadas, fEtiqueta, fSegmento, bump]);
 
   /*
    * O MOVIMENTO DOS CARTÕES (I2): rodapé, balão, próxima ação e selo. Uma
@@ -676,9 +726,112 @@ function TrabalhoConteudo({ visaoInicial, modo }: { visaoInicial: Visao; modo: M
   const listaEhImplantacao = !!lista && !!estrutura && listaDaImplantacao(estrutura.folders)?.listaId === lista.id;
   const pastaDaLista = lista && estrutura ? estrutura.folders.find((f) => f.lists.some((l) => l.id === lista.id))?.id ?? '' : '';
 
+  /*
+   * OS FILTROS NUM BOTÃO SÓ (rodada da interface U2, 20/10/2026). Os filtros que
+   * ficavam soltos no cabeçalho vão para o painel de "Filtros (n)". As chaves no
+   * endereço são as de sempre (`?assigneeUserId=`, `?prazo=`…): é o que a vista
+   * salva guarda e o que o link carrega. Os valores saem do estado da tela, e cada
+   * mudança passa pelas mesmas regras de antes (pessoa, texto antigo, recorte).
+   * Visão, densidade e agrupamento são formas de ver e ficam fora do painel.
+   */
+  const pessoaEscolhida = !!fPessoa && fPessoa !== 'sem-vinculo';
+  const camposComOpcao = camposDaLista.filter((c) => c.type === 'drop_down' && c.options.length > 0);
+  const opcoesDePessoa = [
+    { valor: 'sem-vinculo', rotulo: 'Sem vínculo de pessoa' },
+    ...(estrutura?.pessoas ?? []).map((pessoa) => ({ valor: pessoa.id, rotulo: `${rotuloDaPessoa(pessoa)}${!pessoa.isActive ? ' (inativo)' : ''}` })),
+  ];
+  const opcoesDeCliente = [
+    { valor: 'sem', rotulo: 'Sem cliente (para limpar)' },
+    ...clientes.filter((c) => c.id !== 'interno').map((c) => ({ valor: c.id, rotulo: c.nome })),
+  ];
+  const opcoesDeEtapa = (lista?.statuses ?? []).map((st) => ({ valor: st.id, rotulo: st.name }));
+  const filtroDaPessoa: DefinicaoDeFiltro = { chave: 'assigneeUserId', rotulo: 'Responsável', tipo: 'pessoa', vazio: 'Todas as pessoas', opcoes: opcoesDePessoa };
+  const filtroDoCliente: DefinicaoDeFiltro = { chave: 'cliente', rotulo: 'Cliente', tipo: 'cliente', vazio: 'Todos os clientes', opcoes: opcoesDeCliente };
+  const filtroDaBusca: DefinicaoDeFiltro = { chave: 'q', rotulo: 'Busca', tipo: 'texto', placeholder: 'Nome da tarefa' };
+  const definicoesDosFiltros: DefinicaoDeFiltro[] = implantacao ? [
+    filtroDaPessoa,
+    filtroDoCliente,
+    { chave: 'statusId', rotulo: 'Etapa', tipo: 'etapa', vazio: 'Todas as etapas', opcoes: opcoesDeEtapa },
+    { chave: 'escopo', rotulo: 'Só as atrasadas', tipo: 'booleano', valorMarcado: 'atrasados' },
+    filtroDaBusca,
+  ] : [
+    filtroDaPessoa,
+    ...(pessoaEscolhida && !geral ? [{ chave: 'todasAsListas', rotulo: 'Em todas as listas', tipo: 'booleano' as const, dica: 'As tarefas da pessoa em todas as listas, na Lista.' }] : []),
+    { chave: 'escopo', rotulo: 'Recorte', tipo: 'opcoes', vazio: 'Todas', opcoes: [{ valor: 'meus', rotulo: 'Só as minhas' }, { valor: 'atrasados', rotulo: 'Só as atrasadas' }] },
+    { chave: 'prazo', rotulo: 'Prazo', tipo: 'prazo', vazio: 'Qualquer prazo', opcoes: [...GRUPOS_DA_REGUA_DE_PRAZO.map((g) => ({ valor: g, rotulo: ROTULO_DA_REGUA_DE_PRAZO[g] })), { valor: 'emdia', rotulo: 'Em dia' }] },
+    ...(!semLista ? [{ chave: 'statusId', rotulo: 'Status', tipo: 'etapa' as const, vazio: 'Todos os status', opcoes: opcoesDeEtapa }] : []),
+    filtroDoCliente,
+    ...((estrutura?.tags ?? []).length ? [{ chave: 'tagId', rotulo: 'Etiqueta', tipo: 'etiqueta' as const, vazio: 'Todas as etiquetas', opcoes: (estrutura?.tags ?? []).map((tg) => ({ valor: tg.id, rotulo: tg.name })) }] : []),
+    ...(!semLista && camposComOpcao.length ? [{
+      chave: 'opcao', rotulo: 'Campo da lista', tipo: 'opcoes' as const, vazio: 'Todos',
+      opcoes: camposComOpcao.flatMap((c) => c.options.map((o) => ({ valor: o.id, rotulo: `${c.name}: ${o.name}` }))),
+    }] : []),
+    // O agente é outro eixo (fatia A4): quem tem a tarefa NA MÃO, não quem responde por ela.
+    { chave: 'agente', rotulo: 'Agente', tipo: 'opcoes', vazio: 'Todos os agentes', opcoes: [{ valor: 'livres', rotulo: 'Sem agente (livres)' }, ...(estrutura?.agentes ?? []).map((a) => ({ valor: a.slug, rotulo: `${a.nome}${a.tarefas > 0 ? ` (${a.tarefas})` : ''}` }))] },
+    ...((estrutura?.responsaveis ?? []).length ? [{ chave: 'assignee', rotulo: 'Responsável (texto antigo)', tipo: 'opcoes' as const, vazio: 'Todos', opcoes: (estrutura?.responsaveis ?? []).map((r) => ({ valor: r, rotulo: r })), dica: 'O nome escrito nas tarefas importadas, antes do vínculo com a conta.' }] : []),
+    { chave: 'concluidas', rotulo: 'Ocultar concluídas', tipo: 'booleano', valorMarcado: 'ocultar' },
+    { chave: 'arquivadas', rotulo: 'Incluir arquivadas', tipo: 'booleano' },
+    filtroDaBusca,
+  ];
+  const valoresDosFiltros: ValoresDeFiltro = {
+    assigneeUserId: fPessoa,
+    todasAsListas: todasListas ? '1' : '',
+    escopo: todasListas || fEscopo === 'todos' ? '' : fEscopo,
+    prazo: fPrazo,
+    statusId: fStatus,
+    cliente: fCliente,
+    tagId: fEtiqueta,
+    opcao: fOpcao,
+    agente: fAgente,
+    assignee: fAssignee,
+    concluidas: fConcluidas === 'ocultar' ? 'ocultar' : '',
+    arquivadas: fArquivadas ? '1' : '',
+    q: fBusca,
+  };
+  const mudarFiltro = (chave: string, valor: string) => {
+    setSelecionadas(new Set());
+    switch (chave) {
+      case 'assigneeUserId': filtrarPessoa(valor); return;
+      case 'todasAsListas':
+        if (valor && pessoaEscolhida) { filtrarPessoa(fPessoa, true); setVisao('tabela'); filtroNoEndereco('visao', 'lista'); }
+        else sairDoPessoal();
+        return;
+      case 'escopo': {
+        // O recorte do quadro ocupa a chave `escopo`: escolher um sai do "todas as listas".
+        const escopo = lerEscopo(valor);
+        setTodasListas(false); setFEscopo(escopo); filtroNoEndereco('escopo', escopo === 'todos' ? '' : escopo); filtroNoEndereco('overdue', '');
+        return;
+      }
+      case 'prazo': setFPrazo(recorteDePrazo(valor)); filtroNoEndereco('prazo', valor); return;
+      case 'statusId': setFStatus(valor); filtroNoEndereco('statusId', valor); return;
+      case 'cliente': setFCliente(valor); filtroNoEndereco('cliente', valor); return;
+      case 'tagId': setFEtiqueta(valor); filtroNoEndereco('tagId', valor); return;
+      case 'opcao': setFOpcao(valor); filtroNoEndereco('opcao', valor); return;
+      case 'agente': setFAgente(valor); filtroNoEndereco('agente', valor); return;
+      case 'assignee':
+        // O texto antigo e o vínculo de pessoa não valem juntos.
+        if (valor) { sairDoPessoal(); setFPessoa(''); filtroNoEndereco('assigneeUserId', ''); filtroNoEndereco('semResponsavel', ''); }
+        setFAssignee(valor); filtroNoEndereco('assignee', valor);
+        return;
+      case 'concluidas': setFConcluidas(valor === 'ocultar' ? 'ocultar' : 'mostrar'); filtroNoEndereco('concluidas', valor === 'ocultar' ? 'ocultar' : ''); return;
+      case 'arquivadas': setFArquivadas(!!valor); filtroNoEndereco('arquivadas', valor ? '1' : ''); return;
+      case 'q': setFBusca(valor); filtroNoEndereco('q', valor); return;
+    }
+  };
+  /** "Limpar tudo": tira os filtros do endereço e mantém pasta, segmento, lista, visão e agrupamento. */
+  const limparFiltros = () => {
+    setSelecionadas(new Set());
+    setTodasListas(false); setFPessoa(''); setFAssignee(''); setFEscopo('todos'); setFPrazo(''); setFStatus(''); setFOpcao('');
+    setFCliente(''); setFEtiqueta(''); setFAgente(''); setFConcluidas('mostrar'); setFArquivadas(false); setFBusca('');
+    const url = new URL(window.location.href);
+    for (const k of CHAVES_DOS_FILTROS) url.searchParams.delete(k);
+    window.history.replaceState(window.history.state, '', `${url.pathname}${url.search}${url.hash}`);
+  };
+
   return (
     <div className="flex min-w-0 flex-col gap-3">
-      {estrutura && !implantacao && (
+      {/* Na rota de Todas os segmentos ocupam o lugar das pastas; em /trabalho as pastas ficam como estão. */}
+      {estrutura && !implantacao && !todasFixa && (
         <BarraDePastas
           pastas={pastasDeTopo} temSoltas={estrutura.listasSoltas.length > 0} atual={fPasta}
           semPastas={estrutura.folders.length === 0} editable={editable} token={token}
@@ -759,114 +912,34 @@ function TrabalhoConteudo({ visaoInicial, modo }: { visaoInicial: Visao; modo: M
               {!listaId && !semLista && estrutura ? 'Selecione uma lista para ver as tarefas.' : tarefas ? `${visiveis.length} ${visiveis.length === 1 ? 'tarefa' : 'tarefas'}${visiveis.length !== tarefas.total ? ` de ${tarefas.total} na consulta` : ''}` : erro ? 'Consulta indisponível' : 'Carregando…'}
             </p>
           </div>
-          {/* Os seletores não passam da largura da tela a 390 px (versão final). */}
+          {/*
+            O CABEÇALHO (rodada da interface U2, 20/10/2026): as ações da lista aberta, as
+            formas de ver (Quadro · Lista · Calendário, agrupamento, densidade) e, sempre por
+            último, o par [Vistas] [Filtros (n)]. Os filtros moram no painel do botão.
+            Nada passa da largura da tela a 390 px.
+          */}
           <div className="flex min-w-0 flex-wrap items-center gap-2 [&>select]:min-w-0 [&>select]:max-w-full">
-            <input
-              aria-label="Buscar tarefas"
-              value={fBusca}
-              onChange={(e) => { setFBusca(e.target.value); filtroNoEndereco('q', e.target.value); }}
-              placeholder="Buscar cliente…"
-              className="w-40 rounded-lg border border-border bg-surface px-3 py-1.5 text-sm outline-none focus:border-brand-dim"
-            />
-            <select aria-label="Filtrar por responsável" value={fPessoa} onChange={(e) => filtrarPessoa(e.target.value)} className="rounded-lg border border-border bg-surface px-2 py-1.5 text-sm outline-none">
-              <option value="">Todas as pessoas</option>
-              <option value="sem-vinculo">Sem vínculo de pessoa</option>
-              {(estrutura?.pessoas ?? []).map((pessoa) => <option key={pessoa.id} value={pessoa.id}>{rotuloDaPessoa(pessoa)}{!pessoa.isActive ? ' (inativo)' : ''}</option>)}
-            </select>
-            {user?.id && <button aria-pressed={fPessoa === user.id} onClick={() => { filtrarPessoa(user.id, true); setVisao('tabela'); filtroNoEndereco('visao', 'lista'); }} className="rounded-lg border border-border bg-surface px-3 py-1.5 text-sm">Minhas tarefas</button>}
-            <select aria-label="Filtrar por texto legado" value={fAssignee} onChange={(e) => {
-                const texto = e.target.value;
-                if (texto) { sairDoPessoal(); setFPessoa(''); filtroNoEndereco('assigneeUserId', ''); filtroNoEndereco('semResponsavel', ''); }
-                setFAssignee(texto); filtroNoEndereco('assignee', texto);
-              }} className="rounded-lg border border-border bg-surface px-2 py-1.5 text-sm outline-none">
-              <option value="">Texto legado: todos</option>
-              {estrutura?.responsaveis.map((r) => <option key={r} value={r}>{r}</option>)}
-            </select>
-            {/*
-              O AGENTE É OUTRO EIXO, não o mesmo do responsável (fatia A4). O
-              seletor acima filtra por quem RESPONDE pela tarefa; este, por quem
-              a tem NA MÃO. Um seletor só faria as duas perguntas parecerem a
-              mesma — e é a confusão que a fatia existe para desfazer.
-            */}
-            <select aria-label="Filtrar por agente" value={fAgente} onChange={(e) => { setFAgente(e.target.value); filtroNoEndereco('agente', e.target.value); }} className="rounded-lg border border-border bg-surface px-2 py-1.5 text-sm outline-none">
-              <option value="">Todos os agentes</option>
-              <option value="livres">Sem agente (livres)</option>
-              {estrutura?.agentes.map((a) => (
-                <option key={a.slug} value={a.slug}>
-                  {a.nome}{a.tarefas > 0 ? ` (${a.tarefas})` : ''}
-                </option>
-              ))}
-            </select>
-            {!semLista && camposDaLista.filter((c) => c.type === 'drop_down' && c.options.length > 0).map((c) => (
-              <select
-                key={c.id}
-                aria-label={`Filtrar por ${c.name}`}
-                value={c.options.some((o) => o.id === fOpcao) ? fOpcao : ''}
-                onChange={(e) => { setFOpcao(e.target.value); filtroNoEndereco('opcao', e.target.value); }}
-                className="rounded-lg border border-border bg-surface px-2 py-1.5 text-sm outline-none"
-              >
-                <option value="">{c.name}: todos</option>
-                {c.options.map((o) => <option key={o.id} value={o.id}>{o.name}</option>)}
-              </select>
-            ))}
-            <select aria-label="Filtrar por cliente" data-testid="trabalho-filtro-cliente" value={fCliente} onChange={(e) => { setFCliente(e.target.value); filtroNoEndereco('cliente', e.target.value); }} className="rounded-lg border border-border bg-surface px-2 py-1.5 text-sm outline-none">
-              <option value="">Todos os clientes</option>
-              <option value="sem">Sem cliente (para limpar)</option>
-              {clientes.filter((c) => c.id !== 'interno').map((c) => <option key={c.id} value={c.id}>{c.nome}</option>)}
-            </select>
-            <select disabled={semLista} aria-label="Filtrar por status" value={fStatus} onChange={(e) => { setFStatus(e.target.value); filtroNoEndereco('statusId', e.target.value); }} className="rounded-lg border border-border bg-surface px-2 py-1.5 text-sm">
-
-              <option value="">Todos os status</option>
-              {lista?.statuses.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
-            </select>
-            <label className="text-sm text-muted"><input type="checkbox" checked={fArquivadas} onChange={(e) => { setFArquivadas(e.target.checked); filtroNoEndereco('arquivadas', e.target.checked ? '1' : ''); }} /> Incluir arquivadas</label>
-            {/* Concluídas: mostrar ou ocultar (versão final, F4), em todas as visões. */}
-            <button
-              type="button"
-              data-testid="trabalho-concluidas"
-              aria-pressed={fConcluidas === 'ocultar'}
-              onClick={() => { const v = fConcluidas === 'ocultar' ? 'mostrar' : 'ocultar'; setFConcluidas(v); filtroNoEndereco('concluidas', v === 'ocultar' ? 'ocultar' : ''); }}
-              className={`rounded-lg border border-border px-2.5 py-1.5 text-sm max-md:min-h-[44px] ${fConcluidas === 'ocultar' ? 'bg-brand/15 text-text' : 'bg-surface text-muted hover:text-text'}`}
-            >
-              {fConcluidas === 'ocultar' ? 'Mostrar concluídas' : 'Ocultar concluídas'}
-            </button>
-            <div className="flex overflow-hidden rounded-lg border border-border" role="group" aria-label="Quais tarefas">
-              {ESCOPOS.map((e) => (
-                <button
-                  key={e.chave}
-                  type="button"
-                  data-testid={`trabalho-escopo-${e.chave}`}
-                  aria-pressed={fEscopo === e.chave}
-                  // O recorte do quadro ocupa a chave `escopo`: escolher um sai do "todas as listas".
-                  onClick={() => { setTodasListas(false); setFEscopo(e.chave); filtroNoEndereco('escopo', e.chave === 'todos' ? '' : e.chave); filtroNoEndereco('overdue', ''); }}
-                  className={`px-2.5 py-1.5 text-sm max-md:min-h-[44px] ${fEscopo === e.chave ? 'bg-brand/15 text-text' : 'bg-surface text-muted hover:text-text'}`}
-                >
-                  {e.rotulo}
-                </button>
-              ))}
-            </div>
-            {/* T3: a vista salva do quadro (filtros, densidade e visão), por pessoa, no servidor. */}
-            <VistasDoQuadro
-              token={token}
-              enderecoTemFiltro={['assignee', 'assigneeUserId', 'semResponsavel', 'q', 'opcao', 'agente', 'statusId', 'escopo', 'overdue', 'cliente', 'visao', 'prazo', 'concluidas', 'agrupar'].some((k) => typeof window !== 'undefined' && new URLSearchParams(window.location.search).has(k))}
-              // Agrupamento e concluídas só entram quando fogem do padrão: a vista salva antes deles continua igual.
-              atual={{ densidade, visao, filtros: { assignee: fAssignee, agente: fAgente, statusId: fStatus, cliente: fCliente, escopo: fEscopo, q: fBusca },
-                ...(fAgrupar !== 'nenhum' ? { agrupamento: fAgrupar } : {}), ...(fConcluidas === 'ocultar' ? { concluidas: 'ocultar' as const } : {}) }}
-              aplicar={(v: VistaQuadro) => {
-                // A vista grava o recorte do quadro na chave `escopo`: sai do "todas as listas".
-                setTodasListas(false);
-                escolherDensidade(v.densidade); setVisao(v.visao);
-                setFAssignee(v.filtros.assignee); setFAgente(v.filtros.agente); setFStatus(v.filtros.statusId);
-                setFCliente(v.filtros.cliente); setFEscopo(v.filtros.escopo); setFBusca(v.filtros.q);
-                setFAgrupar(v.agrupamento ?? 'nenhum'); setFConcluidas(v.concluidas ?? 'mostrar');
-                const url = new URL(window.location.href);
-                for (const [k, val] of [['assignee', v.filtros.assignee], ['agente', v.filtros.agente], ['statusId', v.filtros.statusId], ['cliente', v.filtros.cliente], ['escopo', v.filtros.escopo === 'todos' ? '' : v.filtros.escopo], ['q', v.filtros.q], ['visao', v.visao === 'board' ? '' : v.visao === 'calendario' ? 'calendario' : 'lista'],
-                  ['agrupar', v.agrupamento && v.agrupamento !== 'nenhum' ? v.agrupamento : ''], ['concluidas', v.concluidas === 'ocultar' ? 'ocultar' : '']] as const) {
-                  if (val) url.searchParams.set(k, val); else url.searchParams.delete(k);
+            {/* A lista da implantação não muda de pasta (a API também recusa). */}
+            {editable && lista && estrutura && !listaEhImplantacao && (
+              <SeletorDePastaDaLista
+                valor={pastaDaLista}
+                pastas={estrutura.folders}
+                onMover={(folderId) =>
+                  apiPatch(`/trabalho/listas/${lista.id}`, { folderId: folderId || null }, token)
+                    .then(refresh).catch((er) => setErro(er.message))
                 }
-                window.history.replaceState(window.history.state, '', `${url.pathname}${url.search}${url.hash}`);
-              }}
-            />
+              />
+            )}
+            {editable && lista && (
+              <button
+                onClick={() => setConfigAberta(true)}
+                title="Configurar lista (etapas e campos)"
+                aria-label="Configurar lista (etapas e campos)"
+                className="rounded-lg border border-border bg-surface p-2 text-muted hover:text-text"
+              >
+                <Settings2 size={15} />
+              </button>
+            )}
             {/* Quadro e Lista: a mesma fonte (WorkTask), duas formas de ver. */}
             <div className="flex overflow-hidden rounded-lg border border-border" role="group" aria-label="Visão das tarefas">
               {(['board', 'tabela', 'calendario'] as const).map((v) => (
@@ -876,7 +949,7 @@ function TrabalhoConteudo({ visaoInicial, modo }: { visaoInicial: Visao; modo: M
                   // O quadro da pessoa em todas as listas não existe: escolher Quadro sai dele.
                   onClick={() => { if (v === 'board') sairDoPessoal(); setVisao(v); setSelecionadas(new Set()); filtroNoEndereco('visao', v === 'board' ? 'board' : v === 'tabela' ? 'lista' : 'calendario'); }}
                   aria-pressed={visao === v}
-                  className={`px-3 py-1.5 text-sm ${visao === v ? 'bg-brand/15 text-text' : 'bg-surface text-muted hover:text-text'}`}
+                  className={`px-3 py-1.5 text-sm max-md:min-h-[44px] ${visao === v ? 'bg-brand/15 text-text' : 'bg-surface text-muted hover:text-text'}`}
                 >
                   {v === 'board' ? 'Quadro' : v === 'tabela' ? 'Lista' : 'Calendário'}
                 </button>
@@ -888,7 +961,7 @@ function TrabalhoConteudo({ visaoInicial, modo }: { visaoInicial: Visao; modo: M
                 data-testid="trabalho-agrupar"
                 value={fAgrupar}
                 onChange={(e) => { const a = e.target.value as Agrupamento; setFAgrupar(a); filtroNoEndereco('agrupar', a === 'nenhum' ? '' : a); }}
-                className="rounded-lg border border-border bg-surface px-2 py-1.5 text-sm outline-none"
+                className="rounded-lg border border-border bg-surface px-2 py-1.5 text-sm outline-none max-md:min-h-[44px]"
               >
                 {AGRUPAMENTOS.map((a) => <option key={a} value={a}>{a === 'nenhum' ? 'Sem grupos' : `Agrupar: ${ROTULO_DO_AGRUPAMENTO[a]}`}</option>)}
               </select>
@@ -909,28 +982,61 @@ function TrabalhoConteudo({ visaoInicial, modo }: { visaoInicial: Visao; modo: M
                 ))}
               </div>
             )}
-            {/* A lista da implantação não muda de pasta (a API também recusa). */}
-            {editable && lista && estrutura && !listaEhImplantacao && (
-              <SeletorDePastaDaLista
-                valor={pastaDaLista}
-                pastas={estrutura.folders}
-                onMover={(folderId) =>
-                  apiPatch(`/trabalho/listas/${lista.id}`, { folderId: folderId || null }, token)
-                    .then(refresh).catch((er) => setErro(er.message))
+            {/* T3: a vista salva (filtros, densidade e visão), por pessoa, no servidor. A Implantação tem as dela. */}
+            <VistasDoQuadro
+              token={token}
+              tela={implantacao ? 'implantacao' : 'quadro'}
+              testId={implantacao ? 'implantacao' : 'trabalho'}
+              enderecoTemFiltro={[...CHAVES_DOS_FILTROS, 'visao', 'agrupar'].some((k) => typeof window !== 'undefined' && new URLSearchParams(window.location.search).has(k))}
+              // As chaves opcionais só entram quando fogem do padrão: a vista salva antes delas continua igual.
+              atual={{
+                densidade, visao,
+                filtros: {
+                  assignee: fAssignee, agente: fAgente, statusId: fStatus, cliente: fCliente, escopo: fEscopo, q: fBusca,
+                  ...(fPessoa ? { pessoa: fPessoa } : {}), ...(fPrazo ? { prazo: fPrazo } : {}), ...(fEtiqueta ? { etiqueta: fEtiqueta } : {}),
+                  ...(fOpcao ? { opcao: fOpcao } : {}), ...(fArquivadas ? { arquivadas: true } : {}),
+                },
+                ...(fAgrupar !== 'nenhum' ? { agrupamento: fAgrupar } : {}), ...(fConcluidas === 'ocultar' ? { concluidas: 'ocultar' as const } : {}),
+              }}
+              aplicar={(v: VistaQuadro) => {
+                // A vista grava o recorte do quadro na chave `escopo`: sai do "todas as listas".
+                setTodasListas(false); setSelecionadas(new Set());
+                escolherDensidade(v.densidade); setVisao(v.visao);
+                const pessoa = v.filtros.pessoa ?? '';
+                setFAssignee(v.filtros.assignee); setFAgente(v.filtros.agente); setFStatus(v.filtros.statusId);
+                setFCliente(v.filtros.cliente); setFEscopo(v.filtros.escopo); setFBusca(v.filtros.q);
+                setFPessoa(pessoa); setFPrazo(recorteDePrazo(v.filtros.prazo ?? null)); setFEtiqueta(v.filtros.etiqueta ?? '');
+                setFOpcao(v.filtros.opcao ?? ''); setFArquivadas(!!v.filtros.arquivadas);
+                setFAgrupar(v.agrupamento ?? 'nenhum'); setFConcluidas(v.concluidas ?? 'mostrar');
+                const url = new URL(window.location.href);
+                for (const [k, val] of [['assignee', v.filtros.assignee], ['agente', v.filtros.agente], ['statusId', v.filtros.statusId], ['cliente', v.filtros.cliente], ['escopo', v.filtros.escopo === 'todos' ? '' : v.filtros.escopo], ['q', v.filtros.q], ['visao', v.visao === 'board' ? '' : v.visao === 'calendario' ? 'calendario' : 'lista'],
+                  ['agrupar', v.agrupamento && v.agrupamento !== 'nenhum' ? v.agrupamento : ''], ['concluidas', v.concluidas === 'ocultar' ? 'ocultar' : ''],
+                  ['assigneeUserId', pessoa && pessoa !== 'sem-vinculo' ? pessoa : ''], ['semResponsavel', pessoa === 'sem-vinculo' ? '1' : ''],
+                  ['prazo', v.filtros.prazo ?? ''], ['tagId', v.filtros.etiqueta ?? ''], ['opcao', v.filtros.opcao ?? ''], ['arquivadas', v.filtros.arquivadas ? '1' : ''], ['overdue', '']] as const) {
+                  if (val) url.searchParams.set(k, val); else url.searchParams.delete(k);
                 }
-              />
-            )}
-            {editable && lista && (
-              <button
-                onClick={() => setConfigAberta(true)}
-                title="Configurar lista (etapas e campos)"
-                className="rounded-lg border border-border bg-surface p-2 text-muted hover:text-text"
-              >
-                <Settings2 size={15} />
-              </button>
-            )}
+                window.history.replaceState(window.history.state, '', `${url.pathname}${url.search}${url.hash}`);
+              }}
+            />
+            <BotaoDeFiltros
+              filtros={definicoesDosFiltros}
+              valores={valoresDosFiltros}
+              aoMudar={mudarFiltro}
+              aoLimparTudo={limparFiltros}
+              testId={implantacao ? 'implantacao-filtros' : 'trabalho-filtros'}
+            />
           </div>
         </div>
+
+        {geral && estrutura && (
+          <SegmentosDeTodas
+            pastas={pastasDeTopo}
+            todasAsPastas={estrutura.folders}
+            temSoltas={estrutura.listasSoltas.length > 0}
+            atual={fSegmento}
+            onEscolher={(seg) => { setSelecionadas(new Set()); setFSegmento(seg); filtroNoEndereco('segmento', seg); }}
+          />
+        )}
 
         {implantacao && semImplantacao && (
           <p role="status" data-testid="implantacao-sem-lista" className="rounded-lg border border-border bg-surface p-3 text-sm text-muted">
@@ -2904,6 +3010,49 @@ function SeletorDePastaDaLista({ valor, pastas, onMover }: {
       {pastas.map((f) => <option key={f.id} value={f.id}>Pasta: {f.name}</option>)}
       <option value="">Sem pasta</option>
     </select>
+  );
+}
+
+/*
+ * OS SEGMENTOS DE "TODAS" (rodada da interface U3, 20/10/2026).
+ *
+ * "Todas as tarefas" junta as tarefas de todas as pastas e listas; o segmento recorta
+ * por uma pasta de TOPO (as subpastas entram) ou só as listas soltas. O estado mora em
+ * `?segmento=` e a API recorta com `segmentoId`. "Todas" tira o recorte.
+ */
+function SegmentosDeTodas({ pastas, todasAsPastas, temSoltas, atual, onEscolher }: {
+  pastas: TrabEstrutura['folders']; todasAsPastas: TrabEstrutura['folders']; temSoltas: boolean; atual: string;
+  onEscolher: (segmento: string) => void;
+}) {
+  const desconhecido = !!atual && atual !== SEGMENTO_SEM_PASTA && !todasAsPastas.some((f) => f.id === atual);
+  const chip = (chave: string, rotulo: string, testid: string) => (
+    <button
+      key={testid}
+      type="button"
+      data-testid={testid}
+      aria-pressed={atual === chave}
+      onClick={() => onEscolher(chave)}
+      title={rotulo}
+      className={[
+        'max-w-48 truncate rounded-full border px-3 py-1 text-[12px] transition max-md:min-h-[44px]',
+        atual === chave ? 'border-brand-dim bg-brand/15 text-text' : 'border-border bg-surface text-muted hover:text-text',
+      ].join(' ')}
+    >
+      {rotulo}
+    </button>
+  );
+  return (
+    <div className="space-y-1">
+      <div className="flex flex-wrap items-center gap-1.5" role="group" aria-label="Segmentos" data-testid="trabalho-segmentos">
+        <span className="mr-1 font-os-mono text-[10px] uppercase tracking-[0.16em] text-muted">Segmento</span>
+        {chip('', 'Todas', 'trabalho-segmento-todas')}
+        {pastas.map((p) => chip(p.id, p.name, `trabalho-segmento-${p.id}`))}
+        {(temSoltas || atual === SEGMENTO_SEM_PASTA) && chip(SEGMENTO_SEM_PASTA, 'Sem pasta', 'trabalho-segmento-sem-pasta')}
+      </div>
+      {desconhecido && (
+        <p role="status" className="text-[12px] text-muted">A pasta deste link não existe nesta empresa. Escolha um segmento ou volte a Todas.</p>
+      )}
+    </div>
   );
 }
 

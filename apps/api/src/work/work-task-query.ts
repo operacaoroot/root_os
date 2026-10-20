@@ -16,6 +16,12 @@ export interface WorkTaskQuery {
   arquivadas?: boolean;
   /** "Todas as tarefas" (versão final): só tarefas de verdade, de todas as listas, sem card repetido. */
   todas?: boolean;
+  /**
+   * O SEGMENTO de "Todas as tarefas" (rodada da interface U3, 20/10/2026): o id de
+   * uma pasta (as subpastas entram junto) ou `sem-pasta` para as listas soltas.
+   * Só vale com `todas=1`; pasta de outra empresa ou que não existe não traz nada.
+   */
+  segmentoId?: string;
   dueFrom?: Date;
   dueTo?: Date;
   page?: number;
@@ -71,6 +77,31 @@ function cliente(raw: Record<string, unknown>): string | undefined {
   return value;
 }
 
+export const SEGMENTO_SEM_PASTA = 'sem-pasta';
+
+function segmento(raw: Record<string, unknown>, todas: boolean): string | undefined {
+  const value = texto(raw, 'segmentoId');
+  if (value === undefined || value === '') return undefined;
+  if (!todas) throw new BadRequestException('segmentoId só vale com todas=1');
+  if (value !== SEGMENTO_SEM_PASTA && !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value)) {
+    throw new BadRequestException('segmentoId deve ser o id de uma pasta ou "sem-pasta"');
+  }
+  return value;
+}
+
+/** A pasta e todas as que estão dentro dela, em qualquer nível. Pasta que não está na lista: vazio. */
+export function pastaComSubpastas(pastas: readonly { id: string; parentId: string | null }[], raiz: string): Set<string> {
+  if (!pastas.some((p) => p.id === raiz)) return new Set();
+  const dentro = new Set([raiz]);
+  for (let mudou = true; mudou;) {
+    mudou = false;
+    for (const p of pastas) {
+      if (p.parentId && dentro.has(p.parentId) && !dentro.has(p.id)) { dentro.add(p.id); mudou = true; }
+    }
+  }
+  return dentro;
+}
+
 export function parseWorkTaskQuery(raw: Record<string, unknown>): WorkTaskQuery {
   const listId = texto(raw, 'listId');
   const listIds = ids(raw, 'listIds');
@@ -105,6 +136,7 @@ export function parseWorkTaskQuery(raw: Record<string, unknown>): WorkTaskQuery 
     tagId: texto(raw, 'tagId'), q: texto(raw, 'q'), opcao: texto(raw, 'opcao'), cliente: cliente(raw),
     arquivadas: raw.arquivadas === '1' || raw.arquivadas === 'true',
     todas: raw.todas === '1',
+    segmentoId: segmento(raw, raw.todas === '1'),
     dueFrom, dueTo, page, limit,
   };
 }

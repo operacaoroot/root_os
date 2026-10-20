@@ -360,7 +360,9 @@ describe('A4: o filtro por agente é outro eixo', () => {
     render(<TrabalhoPage />);
     await waitFor(() => cartao('Fechar o mês'));
 
-    await userEvent.selectOptions(screen.getByDisplayValue('Todos os agentes'), 'livres');
+    // Rodada da interface (U2): o filtro de agente mora no painel de "Filtros".
+    await userEvent.click(screen.getByTestId('trabalho-filtros-botao'));
+    await userEvent.selectOptions(screen.getByLabelText('Agente'), 'livres');
     expect(screen.queryByText('Fechar o mês')).toBeNull();
     expect(screen.getByText('Conciliar cartão')).toBeTruthy();
 
