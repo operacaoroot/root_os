@@ -1,0 +1,14 @@
+{
+  "tarefa": "trabalho.ata.granola",
+  "_sobre": "Respostas do stub para a ata gerada da transcrição do Granola (rodada da interface, U5). A regra casa com a transcrição fictícia do dublê (apps/api/test/dubles/granola-mcp.ts). De propósito, a segunda decisão e a quarta sugestão citam trechos que NÃO estão na transcrição (o parser tira), e o segundo próximo passo traz uma data que o trecho não diz (o parser anula). Qualquer outra transcrição recebe a ata vazia.",
+  "respostas": [
+    {
+      "depoisDe": "A TRANSCRIÇÃO:",
+      "quando": [
+        "reuniao ficticia de homologacao do granola"
+      ],
+      "texto": "{\"resumo\": \"Reunião de kickoff com a Padaria Exemplo para combinar a rotina do relatório mensal, os dados de vendas e o contrato de fornecimento.\", \"decisoes\": [{\"texto\": \"O relatório mensal sai na primeira segunda-feira do mês\", \"trecho\": \"Decidimos que o relatório mensal passa a sair toda primeira segunda-feira do mês.\"}, {\"texto\": \"A Padaria Exemplo vai abrir três lojas no ano que vem\", \"trecho\": \"Decidimos abrir três lojas novas no ano que vem.\"}], \"pendencias\": [{\"texto\": \"Definir quem cuida das redes sociais da loja nova\", \"trecho\": \"Ainda falta definir quem cuida das redes sociais da loja nova.\"}], \"proximos_passos\": [{\"texto\": \"Mandar a planilha de vendas de setembro\", \"dono\": \"Marina Alves\", \"data\": \"2026-10-24\", \"trecho\": \"Eu vou mandar a planilha de vendas de setembro até 24/10.\"}, {\"texto\": \"Revisar o contrato de fornecimento com o jurídico\", \"dono\": \"Rodrigo Teste\", \"data\": \"2026-10-30\", \"trecho\": \"E eu fico de revisar o contrato de fornecimento com o jurídico.\"}], \"sugestoes\": [{\"titulo\": \"Mandar a planilha de vendas de setembro\", \"lista\": \"Clientes › Execução\", \"dono\": \"Marina Alves\", \"vencimento\": \"2026-10-24\", \"trecho\": \"Eu vou mandar a planilha de vendas de setembro até 24/10.\"}, {\"titulo\": \"Revisar o contrato de fornecimento\", \"lista\": \"Clientes › Execução\", \"dono\": \"Rodrigo Teste\", \"vencimento\": null, \"trecho\": \"E eu fico de revisar o contrato de fornecimento com o jurídico.\"}, {\"titulo\": \"Definir o responsável pelas redes sociais da loja nova\", \"lista\": \"Gestão\", \"dono\": null, \"vencimento\": null, \"trecho\": \"Ainda falta definir quem cuida das redes sociais da loja nova.\"}, {\"titulo\": \"Contratar uma agência de publicidade\", \"lista\": \"Gestão\", \"dono\": \"Marina Alves\", \"vencimento\": null, \"trecho\": \"Marina vai contratar uma agência de publicidade até sexta.\"}]}"
+    }
+  ],
+  "padrao": "{\"resumo\": \"\", \"decisoes\": [], \"pendencias\": [], \"proximos_passos\": [], \"sugestoes\": []}"
+}
