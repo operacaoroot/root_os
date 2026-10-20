@@ -483,10 +483,9 @@ async function main() {
       if (SAIDAS.has(alvo)) {
         if (agora !== alvo) await api('POST', `/comercial/lead/${leadId}/saida`, { saida: alvo, motivo: 'outro', detalhe: `Organização de ${HOJE} · status do cartão: ${String(m.etapaOrigem ?? '').slice(0, 120)}` });
       } else if (agora !== alvo && alvo !== 'novo_lead') {
-        // Escrita sensível: uma conta PEDE, a outra CONFIRMA, a primeira conclui com o token.
-        const pedido = await api('POST', `/comercial/lead/${leadId}/mover/pedido`, { para: alvo });
-        await chamar('POST', `/approvals/${pedido.approvalId}/confirm`, { reauth: { senha: confere.senha }, motivo: `Organização das tarefas reais (${HOJE})` }, tokConf);
-        await api('POST', `/comercial/lead/${leadId}/mover`, { para: alvo }, { headers: { 'x-approval-token': pedido.token } });
+        // Mover livre para gente (rodada da interface U4, 20/10/2026): a pessoa com leads.editar
+        // move direto; o fato etapa.movida_a_mao vai ao fio e à auditoria, sem escrita de fechamento.
+        await api('POST', `/comercial/lead/${leadId}/mover`, { para: alvo });
         conta.leads.movidos++;
       }
       agora = (await etapaAtual()) ?? alvo;

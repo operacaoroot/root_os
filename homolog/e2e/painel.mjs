@@ -18,11 +18,10 @@
  *      uma cria UMA tarefa no Trabalho. Quem cola é o admin: colar grava nota
  *      da memória e pede `obsidian.editar`, que a mesa (gestor_marketing) não
  *      tem (revisão PA-2, 18/10/2026); a mesa confere pela API que vê a colada.
- *   4. APROVAÇÃO + FUNIL (P4 e P5): o admin pede para mover um lead novo de E1
- *      para E3 pelo menu do cartão (pedir pede leads.editar, que o sócio da
- *      homologação não tem); a mesa encontra o pedido em "Depende de você" e
- *      confirma pela tela nova; o admin conclui e o cartão mostra o balão
- *      "movido com pendências".
+ *   4. FUNIL (P5 e rodada da interface U4): o admin move um lead novo de E1
+ *      para E3 pelo menu do cartão, sem pedido nem assinatura de outra pessoa
+ *      (mover livre para gente, 20/10/2026); a tela diz "Movido para … sem as
+ *      conclusões de …" e o cartão mostra o balão "movido com pendências".
  * E fotografa cada tela mexida em escuro, claro e 390 px, conferindo que a
  * página não rola na horizontal no celular.
  *
@@ -271,45 +270,24 @@ async function main() {
     passo('aceitar com um clique criou a tarefa no Trabalho', { detalhe: criada.title });
     await ctxAdmin.close();
 
-    // ---- 4. pedido de mover (sócio) → aprovação pela tela (mesa) → balão ----
-    const ctxSocio = await contexto(navegador, admin, 'dark'); // quem pede precisa de leads.editar
+    // ---- 4. mover livre (rodada da interface U4, 20/10/2026) → mensagem e balão ----
+    // A pessoa com leads.editar move para qualquer etapa, sem pedido nem assinatura de outra
+    // pessoa; a tela diz "Movido para <etapa> sem as conclusões de …" e o balão fica.
+    const ctxSocio = await contexto(navegador, admin, 'dark');
     const ps = await ctxSocio.newPage();
     await ps.goto(`${WEB}/comercial/funil`, { waitUntil: 'networkidle' });
     await tid(ps, `funil-mover-${leadId}`).waitFor({ timeout: 30_000 });
     await tid(ps, `funil-mover-${leadId}`).click();
     await tid(ps, 'funil-mover-para-reuniao_agendada').first().click();
-    await tid(ps, `funil-pedido-${leadId}`).waitFor({ timeout: 20_000 });
-    passo('o admin pediu para mover o lead novo de E1 para E3 pelo menu do cartão');
-
-    await p.goto(`${WEB}/atendimento`, { waitUntil: 'networkidle' });
-    const frase = p.locator('[data-testid="aprov-grupo-voce"] [data-testid^="aprov-frase-"]', { hasText: `Prova Painel ${SUFIXO}` }).first();
-    await frase.waitFor({ timeout: 30_000 });
-    const aprovId = (await frase.getAttribute('data-testid')).replace('aprov-frase-', '');
-    passo('a mesa encontrou o pedido em "Depende de você", em português', { detalhe: (await frase.innerText()).trim() });
-    await tid(p, `aprov-expandir-${aprovId}`).click();
-    await tid(p, `aprov-condicoes-${aprovId}`).waitFor({ timeout: 15_000 });
-    const senha = p.locator(`[data-testid="item-${aprovId}"] input[type="password"]`);
-    if (await senha.count()) await senha.fill(SENHA);
-    const motivo = p.locator(`[data-testid="item-${aprovId}"] textarea`);
-    if (await motivo.count()) await motivo.fill('Prova do painel: mover o lead da homologação.');
-    await foto(p, 'aprovacoes-aberta-escuro');
-    await tid(p, `aprov-acao-${aprovId}`).last().click();
-    await tid(p, `aprov-item-${aprovId}`).locator('xpath=ancestor::*[@data-testid="aprov-grupo-voce"]').waitFor({ state: 'detached', timeout: 20_000 }).catch(() => {});
-    let decidida = false;
-    for (let i = 0; i < 30 && !decidida; i++) {
-      decidida = (await p.locator(`[data-testid="aprov-grupo-voce"] [data-testid="aprov-item-${aprovId}"]`).count()) === 0;
-      if (!decidida) await esperar(400);
-    }
-    conferir(decidida, 'o pedido não saiu de "Depende de você" depois de confirmar');
-    passo('a mesa confirmou pela tela nova (as condições apareceram antes do clique)');
-
-    await tid(ps, `funil-pedido-${leadId}`).getByRole('button', { name: 'concluir a mudança' }).click();
+    await tid(ps, `funil-mensagem-${leadId}`).waitFor({ timeout: 20_000 });
+    const mensagem = (await tid(ps, `funil-mensagem-${leadId}`).innerText()).trim();
+    conferir(/^Movido para/.test(mensagem) && /sem as conclusões/.test(mensagem), `a mensagem do mover veio: ${mensagem}`);
     await tid(ps, `funil-balao-${leadId}`).waitFor({ timeout: 20_000 });
     const balao = (await tid(ps, `funil-balao-${leadId}`).innerText()).trim();
     conferir(/pend/i.test(balao), `o balão não fala de pendência: ${balao}`);
     const naColuna = await tid(ps, 'funil-coluna-reuniao_agendada').locator(`[data-testid="funil-card-${leadId}"]`).count();
     conferir(naColuna === 1, 'o cartão não está na coluna E3');
-    passo('o admin concluiu: o cartão está em E3 com o balão de pendências', { detalhe: balao.replace(/\s+/g, ' ').slice(0, 160) });
+    passo('o admin moveu o lead novo de E1 para E3 sem pedido: a mensagem diz o que ficou sem concluir e o balão fica', { detalhe: `${mensagem.slice(0, 120)} · ${balao.replace(/\s+/g, ' ').slice(0, 80)}` });
     await ctxSocio.close();
     await ctxMesa.close();
 

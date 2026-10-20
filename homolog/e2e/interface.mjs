@@ -305,8 +305,70 @@ async function main() {
   await navegador.close();
 }
 
-/* Preenchido depois da integração das lanes U4, U5 e U6. */
-async function partesDasOutrasLanes() {}
+const ETAPAS_ATIVAS = ['novo_lead', 'qualificacao', 'reuniao_agendada', 'sessao', 'diagnostico', 'proposta', 'follow_up', 'contrato', 'fechado'];
+
+async function partesDasOutrasLanes(p, sessao) {
+  // ---------------- U4 · Funil vivo ----------------
+  await passo('Funil vivo: sem os chips das etapas, com Vistas e Filtros (responsável primeiro)', async () => {
+    await p.goto(`${WEB}/comercial/funil`, { waitUntil: 'networkidle' });
+    await p.locator('[data-testid^="funil-coluna-"]').first().waitFor();
+    conferir(!(await p.locator('nav[aria-label="etapas do funil"], [data-testid^="funil-chip-"]').count()), 'os chips das etapas continuam no funil');
+    await p.getByTestId('funil-vistas').waitFor();
+    await p.getByTestId('funil-filtros-botao').click();
+    const painel = p.getByTestId('funil-filtros-painel');
+    await painel.waitFor();
+    const primeiro = await painel.locator('[data-corpo] select, [data-corpo] input').first().getAttribute('data-testid');
+    conferir(primeiro === 'funil-filtros-dono', `o primeiro filtro do funil é ${primeiro}`);
+    await p.getByTestId('funil-filtros-dono').selectOption('eu');
+    await dormir(600);
+    conferir(new URL(p.url()).searchParams.get('dono') === 'eu', `o endereço do funil ficou ${new URL(p.url()).search}`);
+    await p.keyboard.press('Escape');
+    await foto(p, 'funil-filtro-dono-escuro');
+    await p.getByTestId('funil-filtros-botao').click();
+    await p.getByTestId('funil-filtros-limpar-tudo').click();
+    await p.keyboard.press('Escape');
+  });
+
+  await passo('Funil vivo: a Lista, com o clique abrindo o painel do lead', async () => {
+    await p.getByTestId('funil-visao-lista').click();
+    await p.getByTestId('funil-lista').waitFor();
+    conferir(new URL(p.url()).searchParams.get('visao') === 'lista', 'a visão Lista não foi ao endereço');
+    const linhas = p.locator('[data-testid^="funil-linha-"]');
+    conferir(await linhas.count(), 'a lista do funil está vazia');
+    await foto(p, 'funil-lista-escuro');
+    await linhas.first().click();
+    await p.locator('[role="dialog"]').first().waitFor();
+    await p.keyboard.press('Escape');
+    await p.getByTestId('funil-visao-quadro').click();
+  });
+
+  await passo('Funil vivo: mover para trás sem pedido, com a mensagem; e de volta', async () => {
+    const funil = await api('GET', '/comercial/funil', undefined, sessao.token);
+    const cartoes = [];
+    const varrer = (v) => {
+      if (Array.isArray(v)) v.forEach(varrer);
+      else if (v && typeof v === 'object') {
+        if (typeof v.leadId === 'string' && typeof v.etapa === 'string') cartoes.push(v);
+        else Object.values(v).forEach(varrer);
+      }
+    };
+    varrer(funil);
+    const alvo = cartoes.find((c) => ['reuniao_agendada', 'sessao', 'diagnostico'].includes(c.etapa));
+    conferir(alvo, `nenhum lead do seed em E3 a E5 para mover para trás (${cartoes.length} lidos)`);
+    const para = ETAPAS_ATIVAS[ETAPAS_ATIVAS.indexOf(alvo.etapa) - 1];
+    await p.goto(`${WEB}/comercial/funil`, { waitUntil: 'networkidle' });
+    await p.getByTestId(`funil-mover-${alvo.leadId}`).click();
+    await p.getByTestId(`funil-mover-para-${para}`).first().click();
+    await p.getByTestId(`funil-mensagem-${alvo.leadId}`).waitFor();
+    const mensagem = (await p.getByTestId(`funil-mensagem-${alvo.leadId}`).innerText()).replace(/\s+/g, ' ').trim();
+    conferir(/^Movido para/.test(mensagem), `a mensagem do mover veio: ${mensagem}`);
+    conferir(await p.getByTestId(`funil-coluna-${para}`).locator(`[data-testid="funil-card-${alvo.leadId}"]`).count() === 1, `o cartão não está em ${para}`);
+    await foto(p, 'funil-movido-escuro');
+    // De volta, pela mesma rota da tela (gente com leads.editar, sem token).
+    await api('POST', `/comercial/lead/${alvo.leadId}/mover`, { para: alvo.etapa }, sessao.token);
+    return { detalhe: { de: alvo.etapa, para, mensagem: mensagem.slice(0, 160) } };
+  });
+}
 
 main()
   .then(() => { prova.ok = true; gravar(); console.log(`PASSA · ${prova.passos.length} passos · ${Math.round((Date.now() - t0) / 1000)} s`); })

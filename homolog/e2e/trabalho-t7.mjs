@@ -8,9 +8,9 @@
  * `homolog/.env.homolog` em tempo de execução.
  *
  * O que ela prova (docs/comercial/RODADA-TRABALHO-20261019.md, T7 e T9):
- *   1. R3 NA LINHA · a mesa pede para mover um cartão do funil; o sócio, em
- *      /atendimento, aprova com UM clique na própria linha (o item não abre); o
- *      pedido fica "confirmada" e a mesa conclui com o token de uso único;
+ *   1. R3 NA LINHA · um pedido R3 da fila (o mover do funil deixou de passar por
+ *      aprovação em 20/10/2026); o sócio, em /atendimento, aprova com UM clique
+ *      na própria linha (o item não abre);
  *   2. R4 COM SENHA NO MESMO LUGAR · um pedido R4 que o sócio (titular) pode
  *      assinar: o clique na linha abre a caixa de motivo e senha ali mesmo (ou,
  *      no conteúdo longo, o item abre no lugar com o foco no campo), e Aprovar
@@ -48,7 +48,6 @@ const WEB = process.env.UX_WEB ?? 'http://127.0.0.1:3010';
 const PW = process.env.UX_PW ?? 'C:/Users/User/dev/pw-tools';
 const PROVAS = join(RAIZ, 'homolog/provas');
 
-const ETAPAS = ['novo_lead', 'qualificacao', 'reuniao_agendada', 'sessao', 'diagnostico', 'proposta', 'follow_up'];
 
 function lerEnv(arquivo) {
   const out = {};
@@ -232,40 +231,23 @@ async function main() {
     const ctxMesa = await contexto(navegador, pessoas.mesa);
     const pm = await ctxMesa.newPage();
 
-    // ---- 1. R3 na linha: um pedido de mover do funil ----
-    const funil = await api('GET', '/comercial/funil', undefined, pessoas.mesa.token);
-    const cartoes = [];
-    const varrer = (v) => {
-      if (Array.isArray(v)) v.forEach(varrer);
-      else if (v && typeof v === 'object') {
-        if (typeof v.leadId === 'string' && typeof v.etapa === 'string') cartoes.push(v);
-        else Object.values(v).forEach(varrer);
-      }
-    };
-    varrer(funil);
-    let pedido = null;
-    let leadDoMover = null;
-    for (const c of cartoes) {
-      const i = ETAPAS.indexOf(c.etapa);
-      if (i < 0 || i >= ETAPAS.length - 1 || c.etapa === 'novo_lead') continue;
-      const para = ETAPAS[i + 1];
-      try {
-        pedido = await api('POST', `/comercial/lead/${c.leadId}/mover/pedido`, { para }, pessoas.mesa.token);
-        leadDoMover = c.leadId;
-        break;
-      } catch {
-        /* esta etapa não avança por aqui: tenta o próximo cartão */
-      }
+    // ---- 1. R3 na linha ----
+    // Desde a rodada da interface (20/10/2026) o mover do funil não passa mais por aprovação
+    // (mover livre para gente). O R3 vem da fila: `T7_R3_ID`, ou o primeiro R3 pendente que o
+    // sócio pode assinar; sem nenhum, a sala de `T7_LEAD` publicada de novo (R3 dentro da janela).
+    let r3Id = process.env.T7_R3_ID ?? null;
+    if (!r3Id) {
+      const f = await filaDe(pessoas.socio);
+      r3Id = f.itens.find((i) => i.gaveta === 'esperando' && i.nivel === 'R3' && i.euPossoAprovar && i.linha?.pode !== false)?.id ?? null;
     }
-    conferir(pedido, `nenhum cartão do funil aceitou um pedido de mover (${cartoes.length} lidos)`);
-    passo('a mesa pediu para mover um cartão do funil', { detalhe: `${pedido.de} → ${pedido.para}`, approvalId: pedido.approvalId });
-    const r3 = await provarR3NaLinha(ps, pedido.approvalId);
-    await foto(ps, 'r3-aprovada-na-linha');
-    const estado = await api('GET', `/comercial/lead/${leadDoMover}/mover/pedido?aprovacao=${pedido.approvalId}`, undefined, pessoas.mesa.token);
-    conferir(estado.pedido?.estado === 'confirmada', `o pedido devia estar confirmado (está ${estado.pedido?.estado})`);
-    await api('POST', `/comercial/lead/${leadDoMover}/mover`, { para: pedido.para }, pessoas.mesa.token, { 'x-approval-token': pedido.token });
-    passo('R3 na linha: o sócio aprovou com UM clique, sem abrir o item; a mesa concluiu com o token', { detalhe: r3.aviso });
-
+    if (r3Id) {
+      passo('um pedido R3 da fila, que o sócio pode assinar', { approvalId: r3Id });
+      const r3 = await provarR3NaLinha(ps, r3Id);
+      await foto(ps, 'r3-aprovada-na-linha');
+      passo('R3 na linha: o sócio aprovou com UM clique, sem abrir o item', { detalhe: r3.aviso });
+    } else {
+      prova.avisos.push('R3 na linha sem pedido próprio nesta execução: o mover do funil deixou de passar por aprovação (20/10/2026). Passe T7_R3_ID, ou T7_LEAD para a sala dentro da janela.');
+    }
     // ---- 2. R4 com senha no mesmo lugar ----
     let r4Id = process.env.T7_R4_ID ?? null;
     if (!r4Id) {
@@ -299,14 +281,11 @@ async function main() {
     if (process.env.T7_VENCIDA_ID) vencidas = [process.env.T7_VENCIDA_ID];
     else {
       if (process.env.T7_ESPERAR_VENCIDA === '1') {
-        // Um pedido novo que a gente deixa vencer: só serve se ainda houver cartão que avance.
-        const c = cartoes.find((x) => x.leadId !== leadDoMover && ETAPAS.indexOf(x.etapa) > 0 && ETAPAS.indexOf(x.etapa) < ETAPAS.length - 1);
-        if (c) {
-          const p = await api('POST', `/comercial/lead/${c.leadId}/mover/pedido`, { para: ETAPAS[ETAPAS.indexOf(c.etapa) + 1] }, pessoas.mesa.token).catch(() => null);
-          if (p) {
-            console.log('     esperando o pedido vencer (10 min)…');
-            await new Promise((r) => setTimeout(r, Math.max(0, new Date(p.expiraEm).getTime() - Date.now()) + 15_000));
-          }
+        // O pedido de mover deixou de existir (20/10/2026). Um R3 pendente da fila é deixado vencer.
+        const pendente = (await filaDe(pessoas.mesa)).itens.find((i) => i.gaveta === 'esperando' && i.expiraEm);
+        if (pendente) {
+          console.log('     esperando um pedido pendente vencer…');
+          await new Promise((r) => setTimeout(r, Math.max(0, new Date(pendente.expiraEm).getTime() - Date.now()) + 15_000));
         }
       }
       const f = await filaDe(pessoas.mesa);
