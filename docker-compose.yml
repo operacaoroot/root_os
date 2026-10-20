@@ -271,6 +271,10 @@ services:
       DIGISAC_TOKEN: ${DIGISAC_TOKEN:-}
       DIGISAC_SERVICE_ID: ${DIGISAC_SERVICE_ID:-}
       DIGISAC_WEBHOOK_SEGREDO: ${DIGISAC_WEBHOOK_SEGREDO:-}
+      # Rodada da interface (20/10/2026): o Granola direto pelo MCP. Vazias valem os padrões
+      # (o servidor oficial e <WEB_ORIGIN>/api/trabalho/granola/callback); o token fica no cofre.
+      GRANOLA_MCP_URL: ${GRANOLA_MCP_URL:-}
+      GRANOLA_REDIRECT_URI: ${GRANOLA_REDIRECT_URI:-}
       FINANCE_APPROVAL_LIMIT: ${FINANCE_APPROVAL_LIMIT:-5000}
       META_APP_ID: ${META_APP_ID:-}
       META_APP_SECRET: ${META_APP_SECRET:-}
