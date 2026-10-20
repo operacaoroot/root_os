@@ -10,9 +10,12 @@
  * FALHA com o motivo e o roteiro SEGUE para o próximo. No fim, o placar, e código
  * de saída 1 se algum passo falhou.
  *
- * SÓ LÊ. Nenhum passo grava nada no OS: navega, abre pop-up, recolhe o menu (isso
- * fica no localStorage do navegador da prova) e consulta a API por GET. Por isso
- * pode rodar contra a produção depois da virada.
+ * SÓ LÊ, com UMA exceção que só vale em homologação: navega, abre pop-up, recolhe o
+ * menu (isso fica no localStorage do navegador da prova) e consulta a API por GET.
+ * A exceção é o passo dos vários responsáveis: quando a base não tem tarefa com dois,
+ * e o alvo é a homologação local (127.0.0.1/localhost), ele põe um segundo responsável
+ * numa tarefa, confere o pop-up e desfaz (com a versão lida). Contra outro endereço
+ * (a produção depois da virada) esse passo não escreve: falha dizendo que falta a tarefa.
  *
  * Parâmetros (variáveis de ambiente):
  *   BASE_URL      o web (padrão http://127.0.0.1:3030, a stack rootos-final)
@@ -131,7 +134,8 @@ const RAIZ = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
 const WEB = (process.env.BASE_URL ?? 'http://127.0.0.1:3030').replace(/\/+$/, '');
 const API = (process.env.API_URL ?? `${WEB}/api`).replace(/\/+$/, '');
 const PW = process.env.UX_PW ?? 'C:/Users/User/dev/pw-tools';
-const SAIDA = join(RAIZ, 'homolog/organizar');
+// FINAL_SAIDA troca a pasta da prova (ex.: a stack com o seed, para não sobrescrever a da cópia).
+const SAIDA = process.env.FINAL_SAIDA ? join(RAIZ, process.env.FINAL_SAIDA) : join(RAIZ, 'homolog/organizar');
 const FOTOS = join(SAIDA, 'fotos');
 mkdirSync(FOTOS, { recursive: true });
 
@@ -444,11 +448,12 @@ async function main() {
       const texto = await semErroNaTela(p, vigia);
       const linhas = await p.locator(SELETORES.comercial.propostas.linhas).count();
       conferir(linhas > 0, 'a lista de propostas está vazia');
-      const daSala = (texto.match(new RegExp(SELETORES.comercial.propostas.marcaDaSala.source, 'gi')) ?? []).length;
+      const daSala = (texto.match(new RegExp(SELETORES.comercial.propostas.marcaDaSala.source, 'gm')) ?? []).length;
+      const doServico = (texto.match(new RegExp(SELETORES.comercial.propostas.marcaDoServico.source, 'gm')) ?? []).length;
       await foto(p, 'propostas-escuro');
       return {
-        detalhe: { linhas, marcasDaSala: daSala },
-        aviso: daSala ? undefined : 'nenhuma proposta da sala visível (pode não haver nesta base; ajuste SELETORES.comercial.propostas.marcaDaSala se o rótulo for outro)',
+        detalhe: { linhas, daSala, doServico },
+        aviso: daSala ? undefined : 'nenhuma proposta da sala nesta base (a produção ainda não publica pela sala; a prova da sala é a da stack com o seed)',
       };
     });
 
@@ -567,7 +572,7 @@ async function main() {
       // A cópia da produção não tem tarefa com dois responsáveis. O passo cria um
       // segundo responsável numa tarefa (com a versão lida), confere o pop-up e DESFAZ.
       let desfazer = null;
-      if (!alvo) {
+      if (!alvo && prova.alvo === 'homologacao-local') {
         const tarefas = itensCom(await api('/trabalho/tarefas?limit=200'));
         const pessoas = itensCom(await api('/trabalho/pessoas'));
         const t = tarefas.find((x) => x.assigneeUserId && !(x.outrosResponsaveisIds ?? []).length);
