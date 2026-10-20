@@ -238,7 +238,9 @@ async function main() {
     let r3Id = process.env.T7_R3_ID ?? null;
     if (!r3Id) {
       const f = await filaDe(pessoas.socio);
-      r3Id = f.itens.find((i) => i.gaveta === 'esperando' && i.nivel === 'R3' && i.euPossoAprovar && i.linha?.pode !== false)?.id ?? null;
+      // Só o que cabe na linha se aprova nela (organizar-fila.ts, cabeNaLinha): desde o mover livre,
+      // é a sala publicada (`comercial.sala.publicar`) sem impedimento.
+      r3Id = f.itens.find((i) => i.gaveta === 'esperando' && i.nivel === 'R3' && i.euPossoAprovar && i.capacidade === 'comercial.sala.publicar' && !i.impedimento)?.id ?? null;
     }
     if (r3Id) {
       passo('um pedido R3 da fila, que o sócio pode assinar', { approvalId: r3Id });

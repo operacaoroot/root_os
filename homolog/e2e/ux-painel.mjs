@@ -106,7 +106,13 @@ async function entrar(email) {
   return { token: r.token ?? r.accessToken, user: r.user };
 }
 
+// A empresa da prova. Padrão: a Construtora Alicerce da semente. Numa stack em que ela já fechou
+// (a proposta aceita não aceita pedido de ajuste), troque por outra com a proposta publicada e em
+// aberto, com `UX_EMPRESA` (o link da sala vem do simulador da mesa quando não há `UX_SALA_ALICERCE`).
+const EMPRESA = process.env.UX_EMPRESA ?? 'Construtora Alicerce';
+
 function tokenDaSalaDaAlicerce() {
+  if (process.env.UX_EMPRESA && process.env.UX_EMPRESA !== 'Construtora Alicerce') return null;
   if (process.env.UX_SALA_ALICERCE) return process.env.UX_SALA_ALICERCE.replace(/^.*\/s\//, '');
   const log = join(RAIZ, 'homolog/.tmp/seed-r5.log');
   if (!existsSync(log)) return null;
@@ -154,10 +160,14 @@ async function main() {
 
   // 1. A Alicerce pede 8% pela sala: a decisão abre na fila.
   const funil = await api('GET', '/comercial/funil?filtro=todos', undefined, mesa.token);
-  const cartaoAlicerce = funil.colunas.flatMap((c) => c.cartoes).find((c) => (c.empresa ?? c.nome) === 'Construtora Alicerce');
-  conferir(cartaoAlicerce, 'a Construtora Alicerce não está no funil (rode db:seed:comercial)');
+  const cartaoAlicerce = funil.colunas.flatMap((c) => c.cartoes).find((c) => (c.empresa ?? c.nome) === EMPRESA);
+  conferir(cartaoAlicerce, `a ${EMPRESA} não está no funil (rode db:seed:comercial)`);
   const leadId = cartaoAlicerce.leadId;
-  const salaToken = tokenDaSalaDaAlicerce();
+  let salaToken = tokenDaSalaDaAlicerce();
+  if (!salaToken) {
+    const conversa = await api('GET', `/comercial/simulador/lead/${leadId}`, undefined, mesa.token);
+    salaToken = /\/s\/([A-Za-z0-9_-]+)/.exec(conversa?.linkDaSala ?? '')?.[1] ?? null;
+  }
   conferir(salaToken, 'link da sala da Alicerce ausente: rode db:seed:comercial ou defina UX_SALA_ALICERCE');
   const marca = `prova ux ${new Date().toISOString().slice(11, 19)}`;
   await api('POST', `/sala/${salaToken}/proposta/ajuste`, { pedido: `Dá para fazer 8%? (${marca})`, descontoPct: 8 });
@@ -193,7 +203,7 @@ async function main() {
         conferir(url.searchParams.get('lead') === leadId && url.searchParams.get('aba') === 'decisoes', `query errada: ${url.search}`);
         conferir(await aindaMarcado(p), 'a página recarregou ao abrir o painel');
         conferir((await dialogo(p).getAttribute('aria-modal')) === 'true', 'o painel não é modal');
-        await p.getByRole('dialog', { name: /Construtora Alicerce/ }).waitFor({ timeout: 15_000 });
+        await p.getByRole('dialog', { name: new RegExp(EMPRESA) }).waitFor({ timeout: 15_000 });
         conferir((await dialogo(p).getByRole('heading', { level: 2 }).count()) === 1, 'o painel tem mais de um h2: o nome do lead tem de ser o único');
         passo('da fila, "ver o lead" abriu o painel na aba Decisões; só a query mudou', { detalhe: url.search });
         await dialogo(p).locator(`#painel-dec-${decisao.id}`).waitFor();
