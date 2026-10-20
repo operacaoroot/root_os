@@ -231,29 +231,35 @@ describe('funil vivo (tela 04): respostas atrasadas não escrevem por cima (C-10
     return { p, soltar };
   }
 
+  // U4 (20/10): os filtros foram para o botão "Filtros"; a regra do C-10 é a mesma.
   it('C-10: trocar o filtro tira a lista anterior da tela e descarta a resposta antiga', async () => {
-    const todos = adiado<unknown>();
-    RESPOSTAS['/comercial/funil?filtro=todos'] = funil(cartao('a', 'Lead Antigo'));
-    RESPOSTAS['/comercial/funil?filtro=parados'] = todos.p;
+    const parados = adiado<unknown>();
+    window.history.replaceState(null, '', '/comercial/funil');
+    // A chave mais específica primeiro: o dublê casa pelo começo do caminho.
+    RESPOSTAS['/comercial/funil?parado=1'] = parados.p;
+    RESPOSTAS['/comercial/funil'] = funil(cartao('a', 'Lead Antigo'));
     render(<FunilPage />);
     expect(await screen.findByText('Lead Antigo')).toBeInTheDocument();
-    await userEvent.setup().click(screen.getByRole('button', { name: 'parados' }));
+    const u = userEvent.setup();
+    await u.click(screen.getByTestId('funil-filtros-botao'));
+    await u.click(screen.getByTestId('funil-filtros-parado'));
     await waitFor(() => expect(screen.queryByText('Lead Antigo')).toBeNull());
     expect(screen.getByText('carregando…')).toBeInTheDocument();
-    todos.soltar(funil(cartao('b', 'Lead Parado')));
+    parados.soltar(funil(cartao('b', 'Lead Parado')));
     expect(await screen.findByText('Lead Parado')).toBeInTheDocument();
+    window.history.replaceState(null, '', '/');
   });
 
-  // P5 (18/10): mover deixou de ser bloqueado; o C-11 vira "cada pedido fica no cartão dele".
-  it('C-11: pedir a mudança de A e logo a de B põe cada pedido no seu cartão, mesmo com o de A chegando depois', async () => {
-    const pedidoA = adiado<unknown>();
+  // U4 (20/10): o mover grava direto; o C-11 vira "cada mensagem fica no cartão dela".
+  it('C-11: mover A e logo B põe cada mensagem no seu cartão, mesmo com a resposta de A chegando depois', async () => {
+    const respostaA = adiado<unknown>();
     RESPOSTAS['/comercial/funil'] = funil(cartao('a', 'Lead A'), cartao('b', 'Lead B'));
     const real = (await import('@/lib/api')).apiPost as unknown as ReturnType<typeof vi.fn>;
     real.mockImplementation(async (caminho: string, corpo: unknown) => {
       posts.push({ caminho, corpo });
       const leadId = caminho.split('/')[3];
-      const p = { approvalId: `ap-${leadId}`, token: `t-${leadId}`, expiraEm: new Date(Date.now() + 600_000).toISOString(), de: 'novo_lead', para: 'qualificacao', pendencias: [`portão de ${leadId.toUpperCase()}`], resumo: '' };
-      return leadId === 'a' ? pedidoA.p.then(() => p) : p;
+      const r = { ok: true, mudou: true, de: 'novo_lead', para: 'qualificacao', balao: null, pendencias: [], semConclusoesDe: [], mensagem: `mensagem de ${leadId.toUpperCase()}`, aviso: null };
+      return leadId === 'a' ? respostaA.p.then(() => r) : r;
     });
     render(<FunilPage />);
     const u = userEvent.setup();
@@ -261,21 +267,21 @@ describe('funil vivo (tela 04): respostas atrasadas não escrevem por cima (C-10
     await u.click(screen.getByTestId('funil-mover-para-qualificacao'));
     await u.click(screen.getByRole('button', { name: /mover Lead B/ }));
     await u.click(screen.getByTestId('funil-mover-para-qualificacao'));
-    expect(await screen.findByTestId('funil-pedido-b')).toHaveTextContent('portão de B');
-    pedidoA.soltar(null);
-    expect(await screen.findByTestId('funil-pedido-a')).toHaveTextContent('portão de A');
-    expect(screen.getByTestId('funil-pedido-b')).not.toHaveTextContent('portão de A');
+    expect(await screen.findByTestId('funil-mensagem-b')).toHaveTextContent('mensagem de B');
+    respostaA.soltar(null);
+    expect(await screen.findByTestId('funil-mensagem-a')).toHaveTextContent('mensagem de A');
+    expect(screen.getByTestId('funil-mensagem-b')).not.toHaveTextContent('mensagem de A');
+    expect(posts.map((x) => x.caminho)).toEqual(['/comercial/lead/a/mover', '/comercial/lead/b/mover']);
     real.mockImplementation(async (caminho: string, corpo: unknown) => {
       posts.push({ caminho, corpo });
       return POST_ADIADO ?? {};
     });
-    window.sessionStorage.clear();
   });
 });
 
 describe('funil vivo: o corte acima do teto aparece (C-20)', () => {
   it('o aviso da API sai na tela', async () => {
-    RESPOSTAS['/comercial/funil?filtro=todos'] = { colunas: [], total: 1200, aviso: 'Mostrando 1000 de 1200 leads: os 200 parados há mais tempo na etapa ficaram de fora.' };
+    RESPOSTAS['/comercial/funil'] = { colunas: [], total: 1200, aviso: 'Mostrando 1000 de 1200 leads: os 200 parados há mais tempo na etapa ficaram de fora.' };
     render(<FunilPage />);
     expect(await screen.findByText(/Mostrando 1000 de 1200 leads/)).toBeInTheDocument();
   });

@@ -130,6 +130,7 @@ export const FONTE_DO_EVENTO: Record<ComercialEvento, ComercialFonte> = {
   'veto.registrado': 'pessoa',
   'etapa.mudou': 'sistema',
   'etapa.movida_com_pendencia': 'pessoa',
+  'etapa.movida_a_mao': 'pessoa',
   'saida.registrada': 'pessoa',
   'vigia.premissa': 'relogio',
 };
@@ -228,6 +229,8 @@ export interface PayloadsComerciais {
   'etapa.mudou': { de: string; para: string; motivo: string; eventoGatilho?: string | null };
   /** P5: uma pessoa moveu o cartão com portão em aberto. `pendencias` é a lista exata do momento; `atravessadas`, as etapas cujo portão ficou para trás. */
   'etapa.movida_com_pendencia': { de: string; para: string; pendencias: string[]; atravessadas: string[]; por: string | null; porId: string | null };
+  /** U4 (20/10/2026): uma PESSOA moveu o cartão à mão, para qualquer etapa. `pendencias` e `atravessadas` só quando ficou portão para trás; `motivo` só na saída. */
+  'etapa.movida_a_mao': { de: string; para: string; pendencias: string[]; atravessadas: string[]; por: string | null; porId: string | null; motivo?: string | null; semMotivo?: boolean };
   'saida.registrada': { saida: string; motivo: string; detalhe?: string | null; voltaEm?: string | null; parceiro?: string | null; por: string | null };
   'vigia.premissa': { automacao: string; premissa: string; ok: boolean; detalhe?: string | null };
 }
@@ -407,6 +410,11 @@ export function resumoDoEvento(type: string, payload: unknown): { fonte: Comerci
     case 'etapa.movida_com_pendencia': {
       const lista = Array.isArray(p.pendencias) ? p.pendencias.map(String) : [];
       return { fonte, resumo: `movido à mão ${String(p.de)} → ${String(p.para)}${p.por ? ` por ${String(p.por)}` : ''} · com pendências: ${curto(lista.join('; '), 120)}` };
+    }
+    case 'etapa.movida_a_mao': {
+      const lista = Array.isArray(p.pendencias) ? p.pendencias.map(String) : [];
+      const sem = p.semMotivo ? ' · sem motivo informado' : p.motivo ? ` · ${curto(p.motivo, 60)}` : '';
+      return { fonte, resumo: `movido à mão ${String(p.de)} → ${String(p.para)}${p.por ? ` por ${String(p.por)}` : ''}${lista.length ? ` · sem as conclusões: ${curto(lista.join('; '), 120)}` : ''}${sem}` };
     }
     case 'saida.registrada':
       return { fonte, resumo: `saída: ${String(p.saida)} · ${String(p.motivo)}` };

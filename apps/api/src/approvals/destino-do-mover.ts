@@ -15,6 +15,15 @@ import { hashDaSuperficieAntiga } from './approvals.service';
  * `POST /approvals/:id/confirm` recusa antes de mexer no estado.
  *
  * Nada aqui afrouxa: o consumo continua conferindo recurso e hash como sempre.
+ *
+ * APOSENTADO EM 20/10/2026 (rodada da interface U4, decisão do dono do
+ * produto): o mover do funil não pede mais assinatura; a pessoa com
+ * `leads.editar` move direto. Os pedidos de mover que ainda estiverem na fila
+ * ficam IMPEDIDOS (`PEDIDO_DE_MOVER_APOSENTADO`): a fila os mostra, ninguém os
+ * confirma (`confirm` recusa antes de mexer no estado), recusar continua
+ * valendo, e eles vencem sozinhos. A confirmada antiga não tem mais onde ser
+ * consumida: a rota de mover não lê token, e o `PATCH /leads/:id` com `{para}`
+ * não muda nada (o corpo não tem status nem próxima ação).
  */
 
 export interface ConferenciaDoMover {
@@ -27,6 +36,10 @@ export interface ConferenciaDoMover {
 }
 
 export const DESTINO_NAO_CONFERE = 'O destino assinado não confere com o texto do pedido. Recuse e peça de novo pelo funil.';
+
+/** U4 (20/10/2026): o pedido de mover não se confirma mais; a pessoa move direto no funil. */
+export const PEDIDO_DE_MOVER_NA_FILA_APOSENTADO =
+  'O mover do funil não pede mais assinatura desde 20/10/2026: recuse este pedido; quem pediu move direto no funil.';
 
 /** O cache dos hashes por etapa: o cálculo não depende de nada além do recurso. */
 let hashes: Map<string, ComercialEtapa> | null = null;
@@ -90,5 +103,6 @@ export function conferirPedidoDeMover(ap: { contentHash: string; resumo: string 
     return dizQueMove(ap.resumo ?? '', citados) ? { destino: null, rotulo: null, impedimento: DESTINO_NAO_CONFERE } : null;
   }
   const outro = citados.some((e) => e !== destino);
-  return { destino, rotulo: COMERCIAL_ROTULO_DA_ETAPA[destino], impedimento: outro ? DESTINO_NAO_CONFERE : null };
+  // U4: todo pedido de mover fica impedido; o texto que não confere com o hash continua dizendo isso primeiro.
+  return { destino, rotulo: COMERCIAL_ROTULO_DA_ETAPA[destino], impedimento: outro ? DESTINO_NAO_CONFERE : PEDIDO_DE_MOVER_NA_FILA_APOSENTADO };
 }

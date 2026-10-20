@@ -4,9 +4,9 @@ import { ActorType, ApprovalState, PrismaClient, RiskLevel, ToolCallStatus } fro
 
 import { ApprovalsController } from '../src/approvals/approvals.controller';
 import { ApprovalsService, hashDaSuperficieAntiga } from '../src/approvals/approvals.service';
-import { DESTINO_NAO_CONFERE, conferirPedidoDeMover, destinoDoHash, destinosCitados } from '../src/approvals/destino-do-mover';
+import { DESTINO_NAO_CONFERE, PEDIDO_DE_MOVER_NA_FILA_APOSENTADO, conferirPedidoDeMover, destinoDoHash, destinosCitados } from '../src/approvals/destino-do-mover';
 import { AuditService } from '../src/audit/audit.service';
-import { MoverService } from '../src/comercial/mover.service';
+import { ComercialController } from '../src/comercial/comercial.controller';
 import { AcoesService } from '../src/gateway/acoes.service';
 import { EfeitosRegistry } from '../src/gateway/efeitos.registry';
 import { EventLogService } from '../src/gateway/event-log.service';
@@ -26,6 +26,11 @@ import { exigirBancoDescartavel } from './banco-de-teste';
  *   PA-7 · quem pediu lê o estado do próprio pedido (só leitura, sem o token).
  *   PA-8 · a confirmada da superfície do token que venceu vai para "expirou" e
  *          para o fim da ordem; a da porta (com capacidade) fica como estava.
+ *
+ * U4 (20/10/2026, decisão do dono do produto): o mover do funil não pede mais
+ * assinatura. Os pedidos de mover que ainda estão na fila ficam IMPEDIDOS: a
+ * fila mostra o destino conferido e o porquê, ninguém confirma, recusar vale.
+ * O estado do pedido (PA-7) foi aposentado junto: a rota responde vazio.
  */
 
 const resumoDoFunil = (de: string, para: string, pend = '') =>
@@ -38,12 +43,12 @@ describe('o destino do mover sai do hash, não do texto (PA-1, conta pura)', () 
     expect(destinoDoHash(hashDaSuperficieAntiga('lead', { status: 'ganho' }))).toBeNull();
   });
 
-  it('o resumo que o servidor escreve confere com o hash', () => {
+  it('o resumo que o servidor escreveu confere com o hash, e mesmo assim o pedido fica impedido (U4: aposentado)', () => {
     const c = conferirPedidoDeMover({
       contentHash: hashDaSuperficieAntiga('lead', { para: 'reuniao_agendada' }),
       resumo: resumoDoFunil('E2 · Qualificação', 'E3 · Reunião agendada'),
     });
-    expect(c).toEqual({ destino: 'reuniao_agendada', rotulo: 'E3 · Reunião agendada', impedimento: null });
+    expect(c).toEqual({ destino: 'reuniao_agendada', rotulo: 'E3 · Reunião agendada', impedimento: PEDIDO_DE_MOVER_NA_FILA_APOSENTADO });
   });
 
   it('o cenário do laudo: texto diz E3, hash prende E7, e a linha fica impedida', () => {
@@ -78,7 +83,8 @@ describe('o destino do mover sai do hash, não do texto (PA-1, conta pura)', () 
   it('pendência que fala "para a proposta" não vira destino citado', () => {
     const resumo = resumoDoFunil('E1 · Novo lead', 'E3 · Reunião agendada', 'levar o orçamento para Proposta (E2)');
     expect(destinosCitados(resumo)).toEqual(['reuniao_agendada']);
-    expect(conferirPedidoDeMover({ contentHash: hashDaSuperficieAntiga('lead', { para: 'reuniao_agendada' }), resumo })?.impedimento).toBeNull();
+    // A pendência não vira destino (o texto confere); o impedimento é só o da aposentadoria (U4).
+    expect(conferirPedidoDeMover({ contentHash: hashDaSuperficieAntiga('lead', { para: 'reuniao_agendada' }), resumo })?.impedimento).toBe(PEDIDO_DE_MOVER_NA_FILA_APOSENTADO);
   });
 });
 
@@ -114,7 +120,6 @@ const sessao = (sub: string) => ({ sub, orgId: ORG, email: `${sub}@teste`, name:
 describe.skipIf(!URL)('a fila do mover, contra o banco (PA-1, PA-7, PA-8)', () => {
   let prisma: PrismaClient;
   let controlador: ApprovalsController;
-  let mover: MoverService;
   const ids: Record<string, string> = {};
   const ANA = `ana-${ORG}`;
   const BETO = `beto-${ORG}`;
@@ -225,7 +230,6 @@ describe.skipIf(!URL)('a fila do mover, contra o banco (PA-1, PA-7, PA-8)', () =
     efeitos.registrar({ [CAP]: async () => ({ enviado: true }) });
     const gateway = new ToolGateway(p, policy, new SinaisService(p, policy), approvals, eventos, undefined, undefined, efeitos);
     controlador = new ApprovalsController(approvals, new AcoesService(p, gateway, eventos, undefined, policy), p, gateway);
-    mover = new MoverService(p, undefined as never, approvals);
   });
 
   afterAll(async () => {
@@ -241,11 +245,12 @@ describe.skipIf(!URL)('a fila do mover, contra o banco (PA-1, PA-7, PA-8)', () =
 
   const item = async (id: string) => (await controlador.fila(sessao(ANA))).itens.find((i) => i.id === id);
 
-  it('PA-1: o pedido certo traz o destino conferido e pode ser assinado', async () => {
+  it('U4: o pedido antigo de mover traz o destino conferido, fica impedido e sem botão', async () => {
     const i = await item(ids.certo);
     expect(i?.destinoConferido).toEqual({ etapa: 'reuniao_agendada', rotulo: 'E3 · Reunião agendada' });
-    expect(i?.impedimento).toBeNull();
-    expect(i?.euPossoAprovar).toBe(true);
+    expect(i?.impedimento).toBe(PEDIDO_DE_MOVER_NA_FILA_APOSENTADO);
+    expect(i?.euPossoAprovar).toBe(false);
+    expect(i?.porQueNao).toBe(PEDIDO_DE_MOVER_NA_FILA_APOSENTADO);
   });
 
   it('PA-1: o forjado mostra o destino REAL, fica impedido e sem botão', async () => {
@@ -281,20 +286,16 @@ describe.skipIf(!URL)('a fila do mover, contra o banco (PA-1, PA-7, PA-8)', () =
     expect(fila.itens.map((x) => x.id).indexOf(ids.daPorta)).toBe(0);
   });
 
-  it('PA-7: quem pediu lê o estado do próprio pedido, com o destino do hash; outra pessoa não lê', async () => {
-    const meu = await mover.estadoDoPedido(ORG, ids.lead, BETO, ids.certo);
-    expect(meu).toMatchObject({ approvalId: ids.certo, estado: 'esperando', para: 'reuniao_agendada', confirmadaPor: null });
-    expect(JSON.stringify(meu)).not.toMatch(/token/i);
-    const vencido = await mover.estadoDoPedido(ORG, ids.lead, BETO, ids.confirmadaVencida);
-    expect(vencido).toMatchObject({ estado: 'venceu', confirmadaPor: ANA });
-    expect(await mover.estadoDoPedido(ORG, ids.lead, ANA, ids.certo)).toBeNull();
-    expect(await mover.estadoDoPedido('outra-empresa', ids.lead, BETO, ids.certo)).toBeNull();
+  it('U4: o estado do pedido de mover foi aposentado: a rota responde vazio, sem ler nada', () => {
+    const r = (ComercialController.prototype.estadoDoPedido as () => { pedido: null; aposentado: string }).call({});
+    expect(r.pedido).toBeNull();
+    expect(r.aposentado).toMatch(/move direto no funil/);
   });
 
-  it('PA-7: confirmado, o estado vira "confirmada" com o nome de quem assinou', async () => {
-    await controlador.confirm(sessao(ANA), ids.certo, {}, undefined);
-    const meu = await mover.estadoDoPedido(ORG, ids.lead, BETO, ids.certo);
-    expect(meu).toMatchObject({ estado: 'confirmada', confirmadaPor: ANA });
-    expect(meu?.confirmadaEm).toBeTruthy();
+  it('U4: o servidor recusa confirmar o pedido antigo de mover, ele segue pendente, e recusar continua valendo', async () => {
+    await expect(controlador.confirm(sessao(ANA), ids.certo, {}, undefined)).rejects.toThrow(PEDIDO_DE_MOVER_NA_FILA_APOSENTADO);
+    expect((await prisma.approval.findUnique({ where: { id: ids.certo } }))?.status).toBe(ApprovalState.pendente);
+    await controlador.reject(sessao(ANA), ids.certo, {});
+    expect((await prisma.approval.findUnique({ where: { id: ids.certo } }))?.status).toBe(ApprovalState.rejeitada);
   });
 });

@@ -5,13 +5,21 @@ import {
   COMERCIAL_SAIDAS,
   ComercialAtaSchema,
   ComercialEntradaWhatsSchema,
+  COMERCIAL_SEM_MOTIVO_INFORMADO,
   ComercialSaidaSchema,
   LEAD_STATUS_DA_ETAPA,
+  avisoDoMoverAMao,
   destinoDoMover,
   ehSaida,
   filtroDoFunil,
+  filtrosDoFiltroAntigo,
+  filtrosDoFunilVazios,
+  mensagemDoMover,
   proximaEtapa,
+  type ComercialAvisoDoMover,
   type ComercialBalaoDoMover,
+  type ComercialFiltrosDoFunil,
+  type ComercialMoverInput,
   type CartaoDoFunil,
   type ComercialCanalDeEntrada,
   type ComercialEtapa,
@@ -24,7 +32,7 @@ import {
   type FichaDoLead,
   type FunilVivo,
 } from '@mktos/shared';
-import { LeadStatus, Prisma, type ComercialEtapa as EtapaDoBanco } from '@prisma/client';
+import { ActorType, LeadStatus, Prisma, type ComercialEtapa as EtapaDoBanco } from '@prisma/client';
 
 import { PrismaService } from '../prisma/prisma.service';
 import { ConfigComercialService } from './config.service';
@@ -34,7 +42,7 @@ import { FioService, type EventoGravado } from './fio.service';
 import { produtoAlvo } from './pontuacao';
 import { decisaoSemPrazo } from './decisoes.service';
 import { proximaAcaoDoLead, saudeDoLead, type DecisaoParaProximaAcao } from './proxima-acao';
-import { avancar, avancarDepoisDaSessao, pendenciasDoMover, pendenciasQueRestam, podeSair, portoesDaEtapa, type EstadoParaPortao, type Veredicto } from './portoes';
+import { avancar, avancarDepoisDaSessao, pendenciasDasEtapas, pendenciasDoMover, pendenciasQueRestam, podeSair, portoesDaEtapa, type EstadoParaPortao, type Veredicto } from './portoes';
 
 /*
  * A FICHA DO LEAD (lane A, 13/10/2026) — a tela 05 é PROJEÇÃO do fio.
@@ -266,6 +274,12 @@ export interface ResultadoDaMudanca extends Veredicto {
   mudou: boolean;
   /** P5: o que ficou em aberto quando uma pessoa moveu com pendência (vazio no caminho dos portões). */
   pendencias?: string[];
+  /** U4: as etapas cujas conclusões ficaram para trás no mover à mão. */
+  semConclusoesDe?: ComercialEtapa[];
+  /** U4: a frase da tela do mover à mão. */
+  mensagem?: string;
+  /** U4: o aviso que o cartão passa a mostrar (E8 e E9 à mão, saída sem motivo). */
+  aviso?: string | null;
 }
 
 export interface QuemFez {
@@ -383,6 +397,14 @@ export class FichaService {
        */
       pessoa?: QuemFez;
       /**
+       * U4: a saída à mão (só com `pessoa` e destino de saída). Vai no MESMO
+       * gesto: os campos da saída entram na escrita da etapa e o fato
+       * `saida.registrada` na mesma transação.
+       */
+      saida?: PayloadDe<'saida.registrada'>;
+      /** U4: o motivo escrito da saída à mão (`null` = sem motivo informado). */
+      motivoDoMover?: { texto: string | null; semMotivo: boolean };
+      /**
        * T1b: o cliente que fechou FORA do sistema vai a E9 quando o fechamento conclui
        * (`cliente.ativo`), sem percorrer o funil. Só vale para `fechado`, nunca a partir de uma
        * saída, e o motivo escrito vai no `etapa.mudou`. Quem chama confere o registro e o fato.
@@ -399,11 +421,11 @@ export class FichaService {
     if (opcoes.fechadoForaDoSistema) {
       veredicto = para === 'fechado' && !ehSaida(de) ? { ok: true, de, para, faltando: [] } : { ok: false, de, para, faltando: ['o registro de cliente fechado fora só leva a Negócio fechado, e nunca a partir de uma saída'] };
     } else if (opcoes.pessoa) {
+      // U4 (20/10/2026, decisão do dono do produto): GENTE move para qualquer etapa. O portão em aberto
+      // não trava: vira a lista do fato `etapa.movida_a_mao` e o balão. Este ramo é SÓ da pessoa (a rota
+      // do mover, com `SoGenteGuard` e a releitura no banco); sem `pessoa`, os portões abaixo recusam como sempre.
       const destino = destinoDoMover(de, para, (ficha.etapaAntesDaSaida as ComercialEtapaAtiva | null) ?? null);
-      if (!destino.permitido || destino.caminho !== 'mover') {
-        const motivo = destino.motivo ?? 'saída vai pelo registro de saída, com motivo';
-        return { ok: false, mudou: false, de, para, faltando: [motivo] };
-      }
+      if (!destino.permitido) return { ok: false, mudou: false, de, para, faltando: [destino.motivo ?? 'mover recusado'] };
       const p = pendenciasDoMover(estado, de, para);
       if (p.pendencias.length) comPendencia = p;
       veredicto = { ok: true, de, para, faltando: [] };
@@ -423,6 +445,8 @@ export class FichaService {
     if (!veredicto.ok) return { ...veredicto, mudou: false };
 
     const agora = opcoes.agora ?? new Date();
+    const aMao = opcoes.pessoa ?? null;
+    const saidaAMao = aMao && ehSaida(para) ? (opcoes.saida ?? null) : null;
     // A-5: a etapa, o `Lead.status` e o fato `etapa.mudou` numa transação só. Queda no meio desfaz as três:
     // nunca a etapa nova sem o fato no fio (o fio é a fonte da ficha). As reações ao fato rodam depois do commit.
     const gravado = await this.prisma.$transaction(async (tx) => {
@@ -432,6 +456,12 @@ export class FichaService {
           etapa: para as EtapaDoBanco,
           etapaDesde: agora,
           ...(ehSaida(para) ? { etapaAntesDaSaida: (ehSaida(de) ? ficha.etapaAntesDaSaida : de) as EtapaDoBanco | null } : {}),
+          // U4: a saída à mão leva os campos dela na mesma escrita; voltar de uma saída à mão limpa os da saída
+          // (senão o cartão ativo mostraria o motivo da saída antiga).
+          ...(saidaAMao
+            ? { motivoSaida: saidaAMao.motivo, motivoDetalhe: saidaAMao.detalhe ?? null, voltaEm: saidaAMao.voltaEm ? new Date(saidaAMao.voltaEm) : null, parceiro: saidaAMao.parceiro ?? null }
+            : {}),
+          ...(aMao && ehSaida(de) && !ehSaida(para) ? { motivoSaida: null, motivoDetalhe: null, voltaEm: null, parceiro: null } : {}),
         },
       });
       if (escrita.count === 0) return null;
@@ -446,24 +476,101 @@ export class FichaService {
         { de, para, motivo: opcoes.motivo, eventoGatilho: opcoes.eventoGatilho ?? null },
         agora,
       );
-      // P5: o aviso no lugar da trava fica no fio, com a MESMA chave da mudança (o mesmo pedido cai no mesmo fato).
-      const pendencia = comPendencia
+      // U4: o mover à mão fica no fio com a MESMA chave da mudança (a mesma mudança cai no mesmo fato) e na
+      // auditoria, na mesma transação. Substitui o `etapa.movida_com_pendencia` da P5 (os fatos antigos seguem
+      // valendo para o balão): a lista do que ficou para trás vai aqui.
+      const movida = aMao
         ? await this.fio.gravarNaTransacao(
             tx,
             orgId,
             leadId,
-            'etapa.movida_com_pendencia',
+            'etapa.movida_a_mao',
             chave,
-            { de, para, pendencias: comPendencia.pendencias, atravessadas: comPendencia.atravessadas, por: opcoes.pessoa?.nome ?? null, porId: opcoes.pessoa?.id ?? null },
+            {
+              de,
+              para,
+              pendencias: comPendencia?.pendencias ?? [],
+              atravessadas: comPendencia?.atravessadas ?? [],
+              por: aMao.nome ?? null,
+              porId: aMao.id ?? null,
+              motivo: opcoes.motivoDoMover?.texto ?? null,
+              semMotivo: opcoes.motivoDoMover?.semMotivo ?? false,
+            },
             new Date(agora.getTime() + 1),
           )
         : null;
-      return { mudou, pendencia };
+      // U4: a saída à mão é o MESMO fato da rota de saída, com a mesma forma de chave (etapa de origem e o
+      // instante em que entrou nela): registrar a saída pelos dois caminhos no mesmo estado cai num fato só.
+      const saida = saidaAMao
+        ? await this.fio.gravarNaTransacao(tx, orgId, leadId, 'saida.registrada', `${para}:${de}:${ficha.etapaDesde.toISOString()}`, saidaAMao, new Date(agora.getTime() + 2))
+        : null;
+      if (aMao && movida?.novo) {
+        await tx.auditLog.create({
+          data: {
+            orgId,
+            actorType: ActorType.user,
+            actorId: aMao.id,
+            action: 'comercial.etapa.movida_a_mao',
+            entityType: 'lead',
+            entityId: leadId,
+            before: { etapa: de } as Prisma.InputJsonValue,
+            after: {
+              etapa: para,
+              pendencias: comPendencia?.pendencias ?? [],
+              motivo: opcoes.motivoDoMover?.texto ?? null,
+              semMotivo: opcoes.motivoDoMover?.semMotivo ?? false,
+              eventoId: movida.evento.eventoId,
+            } as Prisma.InputJsonValue,
+          },
+        });
+      }
+      return { mudou, movida, saida };
     });
     if (!gravado) return { ok: false, mudou: false, de, para, faltando: ['a etapa mudou por outro caminho no mesmo instante: releia a ficha'] };
     if (gravado.mudou.novo) await this.fio.reagir(gravado.mudou.evento);
-    if (gravado.pendencia?.novo) await this.fio.reagir(gravado.pendencia.evento);
+    if (gravado.movida?.novo) await this.fio.reagir(gravado.movida.evento);
+    if (gravado.saida?.novo) await this.fio.reagir(gravado.saida.evento);
     return { ok: true, mudou: true, de, para, faltando: [], pendencias: comPendencia?.pendencias ?? [] };
+  }
+
+  /**
+   * U4 (20/10/2026): o MOVER À MÃO de uma pessoa, para qualquer etapa. Quem
+   * chama (a rota, com `SoGenteGuard`, e o `MoverService`, que relê a pessoa no
+   * banco) já garantiu que é gente com `leads.editar`. Escreve por `mudarEtapa`
+   * com `pessoa` e devolve a mensagem da tela. Nenhuma escrita do fechamento
+   * nasce daqui: só a etapa, o fio e a auditoria (e, na saída, o fato de saída).
+   */
+  async moverAMao(orgId: string, leadId: string, entrada: ComercialMoverInput, pessoa: QuemFez, agora?: Date): Promise<ResultadoDaMudanca> {
+    const { ficha, estado } = await this.estado(orgId, leadId);
+    const de = ficha.etapa as ComercialEtapa;
+    const para = entrada.para as ComercialEtapa;
+    const texto = entrada.motivo?.trim() ? entrada.motivo.trim() : null;
+    const saida: PayloadDe<'saida.registrada'> | undefined = ehSaida(para)
+      ? {
+          saida: para,
+          motivo: entrada.tipoDeMotivo ?? 'outro',
+          detalhe: texto ?? COMERCIAL_SEM_MOTIVO_INFORMADO,
+          voltaEm: para === 'geladeira' ? (entrada.voltaEm ?? null) : null,
+          parceiro: para === 'parceiro' ? (entrada.parceiro?.trim() || null) : null,
+          por: pessoa.nome ?? pessoa.id ?? null,
+        }
+      : undefined;
+    const semMotivo = ehSaida(para) && !texto;
+    const r = await this.mudarEtapa(orgId, leadId, para, {
+      motivo: `movido à mão por ${pessoa.nome ?? 'pessoa da mesa'} pela tela do funil`,
+      eventoGatilho: `mao:${ficha.etapaDesde.toISOString()}`,
+      pessoa,
+      saida,
+      motivoDoMover: ehSaida(para) ? { texto, semMotivo } : undefined,
+      agora,
+    });
+    if (!r.ok) return r;
+    if (!r.mudou) return { ...r, pendencias: [], semConclusoesDe: [], mensagem: `O lead já está em ${COMERCIAL_ROTULO_DA_ETAPA[para]}.`, aviso: null };
+    const pendencias = r.pendencias ?? [];
+    const semConclusoesDe = pendencias.length
+      ? pendenciasDoMover(estado, de, para).atravessadas.filter((s) => pendenciasDasEtapas(estado, [s]).length > 0)
+      : [];
+    return { ...r, pendencias, semConclusoesDe, mensagem: mensagemDoMover(para, semConclusoesDe, pendencias), aviso: avisoDoMoverAMao(para, semMotivo) };
   }
 
   /**
@@ -476,17 +583,20 @@ export class FichaService {
     const saida = new Map<string, ComercialBalaoDoMover>();
     if (!leadIds.length) return saida;
     const fatos = await this.prisma.leadEvent.findMany({
-      where: { orgId, type: 'etapa.movida_com_pendencia', leadId: { in: [...leadIds] } },
+      // U4: o mover à mão de agora grava `etapa.movida_a_mao`; os fatos da P5 seguem valendo.
+      where: { orgId, type: { in: ['etapa.movida_com_pendencia', 'etapa.movida_a_mao'] }, leadId: { in: [...leadIds] } },
       orderBy: { occurredAt: 'asc' },
       select: { leadId: true, payload: true, occurredAt: true },
     });
+    const atravessadasDo = (f: (typeof fatos)[number]): string[] => {
+      const a = (f.payload as { atravessadas?: unknown } | null)?.atravessadas;
+      return Array.isArray(a) ? a.map(String) : [];
+    };
     const porLead = new Map<string, typeof fatos>();
-    for (const f of fatos) porLead.set(f.leadId, [...(porLead.get(f.leadId) ?? []), f]);
+    // Só os movimentos que deixaram etapa para trás com pendência contam (o mover à mão sem pendência não tem balão).
+    for (const f of fatos) if (atravessadasDo(f).length) porLead.set(f.leadId, [...(porLead.get(f.leadId) ?? []), f]);
     for (const [leadId, lista] of porLead) {
-      const atravessadas = lista.flatMap((f) => {
-        const a = (f.payload as { atravessadas?: unknown } | null)?.atravessadas;
-        return Array.isArray(a) ? a.map(String) : [];
-      });
+      const atravessadas = lista.flatMap(atravessadasDo);
       const { estado } = await this.estado(orgId, leadId);
       const pendencias = pendenciasQueRestam(estado, atravessadas);
       if (!pendencias.length) continue;
@@ -647,64 +757,128 @@ export class FichaService {
    * novos sempre aparecem) e a resposta diz quantos ficaram de fora. Na tela, a
    * ordem segue a de antes (dentro da coluna, o mais antigo na etapa primeiro).
    */
-  async funil(orgId: string, filtro?: string | null, agora = new Date(), teto = TETO_DO_FUNIL): Promise<FunilVivo> {
+  async funil(
+    orgId: string,
+    filtro?: string | Partial<ComercialFiltrosDoFunil> | null,
+    agora = new Date(),
+    teto = TETO_DO_FUNIL,
+    quemPergunta?: string | null,
+  ): Promise<FunilVivo> {
     const cfg = await this.config.ler(orgId);
-    const [total, maisNovas] = await Promise.all([
-      this.prisma.comercialFicha.count({ where: { orgId } }),
+    // U4: os filtros do painel. O `?filtro=` antigo (etiqueta) chega como texto e é traduzido para o mesmo formato.
+    const antigo = typeof filtro === 'string' || filtro == null ? (filtro ?? null) : null;
+    const f: ComercialFiltrosDoFunil = { ...filtrosDoFunilVazios(), ...(antigo !== null || filtro == null ? filtrosDoFiltroAntigo(antigo) : (filtro as Partial<ComercialFiltrosDoFunil>)) };
+    for (const k of Object.keys(f) as (keyof ComercialFiltrosDoFunil)[]) f[k] = String(f[k] ?? '').trim().slice(0, 120);
+    const abertas = await this.prisma.comercialDecisao.findMany({ where: { orgId, estado: 'aberta' }, select: { leadId: true, titulo: true, padrao: true, expiraEm: true } });
+    const comDecisao = new Set(abertas.map((d) => d.leadId));
+    const decisoesDo = (leadId: string) => abertas.filter((d) => d.leadId === leadId).map(paraProximaAcao);
+    // O filtro vai no banco, antes do teto: o corte acima do teto é dos leads que PASSAM no filtro.
+    const e: Prisma.ComercialFichaWhereInput[] = [];
+    if (f.dono === 'sem') e.push({ donoId: null });
+    else if (f.dono === 'eu') e.push({ donoId: quemPergunta || '__ninguem__' });
+    else if (f.dono) e.push({ donoId: f.dono });
+    if (f.produto) e.push({ produto: f.produto });
+    if (f.perfil) e.push({ perfil: f.perfil });
+    if (f.etapa === 'saidas') e.push({ etapa: { in: [...COMERCIAL_SAIDAS] as EtapaDoBanco[] } });
+    else if (f.etapa && ((COMERCIAL_ETAPAS as readonly string[]).includes(f.etapa) || (COMERCIAL_SAIDAS as readonly string[]).includes(f.etapa))) e.push({ etapa: f.etapa as EtapaDoBanco });
+    else if (f.etapa) e.push({ leadId: { in: [] } });
+    if (f.decisao) e.push({ leadId: { in: [...comDecisao] } });
+    if (f.parado) {
+      // A mesma conta do `parado` do cartão: dias inteiros na etapa ACIMA do limite, fora das saídas e do fechado.
+      if (cfg.leadParadoDias == null) e.push({ leadId: { in: [] } });
+      else {
+        e.push({ etapa: { in: COMERCIAL_ETAPAS.filter((x) => x !== 'fechado') as EtapaDoBanco[] } });
+        e.push({ etapaDesde: { lte: new Date(agora.getTime() - (cfg.leadParadoDias + 1) * DIA_MS) } });
+      }
+    }
+    if (f.q) e.push({ OR: [{ empresa: { contains: f.q, mode: 'insensitive' } }, { lead: { name: { contains: f.q, mode: 'insensitive' } } }] });
+    const where: Prisma.ComercialFichaWhereInput = e.length ? { orgId, AND: e } : { orgId };
+    const [total, maisNovas, comDono] = await Promise.all([
+      this.prisma.comercialFicha.count({ where }),
       this.prisma.comercialFicha.findMany({
-        where: { orgId },
+        where,
         include: { lead: { select: { name: true } } },
         orderBy: [{ etapaDesde: 'desc' }, { leadId: 'asc' }],
         take: teto,
       }),
+      this.prisma.comercialFicha.findMany({ where: { orgId, donoId: { not: null } }, select: { donoId: true }, distinct: ['donoId'] }),
     ]);
     const fichas = [...maisNovas].reverse();
     const fora = Math.max(0, total - fichas.length);
-    const abertas = await this.prisma.comercialDecisao.findMany({ where: { orgId, estado: 'aberta' }, select: { leadId: true, titulo: true, padrao: true, expiraEm: true } });
-    const comDecisao = new Set(abertas.map((d) => d.leadId));
-    const decisoesDo = (leadId: string) => abertas.filter((d) => d.leadId === leadId).map(paraProximaAcao);
-    const cartoes: CartaoDoFunil[] = fichas.map((f) => {
-      const diasNaEtapa = Math.max(0, Math.floor((agora.getTime() - f.etapaDesde.getTime()) / DIA_MS));
-      const etapa = f.etapa as ComercialEtapa;
+    const nomes = await this.nomesDeUsuarios(orgId, comDono.map((d) => d.donoId));
+    const cartoes: CartaoDoFunil[] = fichas.map((ficha) => {
+      const diasNaEtapa = Math.max(0, Math.floor((agora.getTime() - ficha.etapaDesde.getTime()) / DIA_MS));
+      const etapa = ficha.etapa as ComercialEtapa;
       return {
-        leadId: f.leadId,
-        nome: f.lead.name,
-        empresa: f.empresa,
+        leadId: ficha.leadId,
+        nome: ficha.lead.name,
+        empresa: ficha.empresa,
         etapa,
         saude: saudeDoLead(),
-        proximaAcao: proximaAcaoDoLead(f, cfg, decisoesDo(f.leadId), agora),
-        precisaDeDecisao: comDecisao.has(f.leadId),
+        proximaAcao: proximaAcaoDoLead(ficha, cfg, decisoesDo(ficha.leadId), agora),
+        precisaDeDecisao: comDecisao.has(ficha.leadId),
         parado: cfg.leadParadoDias != null && !ehSaida(etapa) && etapa !== 'fechado' && diasNaEtapa > cfg.leadParadoDias,
         diasNaEtapa,
-        motivoSaida: (f.motivoSaida as ComercialMotivoDeSaida | null) ?? null,
-        voltaEm: f.voltaEm?.toISOString() ?? null,
-        perfil: (f.perfil as ComercialPerfil | null) ?? null,
-        produto: (f.produto as ComercialProduto | null) ?? null,
-        voltaPara: etapa === 'geladeira' ? ((f.etapaAntesDaSaida as ComercialEtapaAtiva | null) ?? 'qualificacao') : null,
+        motivoSaida: (ficha.motivoSaida as ComercialMotivoDeSaida | null) ?? null,
+        voltaEm: ficha.voltaEm?.toISOString() ?? null,
+        perfil: (ficha.perfil as ComercialPerfil | null) ?? null,
+        produto: (ficha.produto as ComercialProduto | null) ?? null,
+        voltaPara: etapa === 'geladeira' ? ((ficha.etapaAntesDaSaida as ComercialEtapaAtiva | null) ?? 'qualificacao') : null,
         balao: null,
+        donoId: ficha.donoId ?? null,
+        dono: ficha.donoId ? (nomes.get(ficha.donoId) ?? null) : null,
+        avisoDoMover: null,
       };
     });
-    const passa = (c: CartaoDoFunil): boolean => {
-      if (!filtro || filtro === 'todos') return true;
-      if (filtro === 'parados') return c.parado;
-      if (filtro === 'decisao') return c.precisaDeDecisao;
-      if (/^P[123]$/.test(filtro)) return c.perfil === filtro;
-      if (PRODUTOS.includes(filtro)) return c.produto === filtro;
-      return true;
-    };
-    const visiveis = cartoes.filter(passa);
-    // P5: o balão de quem moveu com pendência, só dos cartões que vão à tela.
-    const baloes = await this.baloes(orgId, visiveis.map((c) => c.leadId));
-    for (const c of visiveis) c.balao = baloes.get(c.leadId) ?? null;
+    // P5: o balão de quem moveu com pendência; U4: o aviso de quem moveu à mão. Só dos cartões que vão à tela.
+    const ids = cartoes.map((c) => c.leadId);
+    const [baloes, avisos] = await Promise.all([this.baloes(orgId, ids), this.avisosDoMover(orgId, fichas)]);
+    for (const c of cartoes) {
+      c.balao = baloes.get(c.leadId) ?? null;
+      c.avisoDoMover = avisos.get(c.leadId) ?? null;
+    }
     return {
       total,
-      filtro: filtroDoFunil(filtro),
+      filtro: filtroDoFunil(antigo),
+      filtros: f,
+      donos: [...nomes.entries()].map(([id, nome]) => ({ id, nome })).sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR')),
       aviso: fora ? `O funil mostra os ${fichas.length} leads que mudaram de etapa por último; ${fora} ${fora === 1 ? 'ficou' : 'ficaram'} de fora. Use um filtro.` : null,
       colunas: [
-        ...COMERCIAL_ETAPAS.map((e) => ({ etapa: e as ComercialEtapa, rotulo: COMERCIAL_ROTULO_DA_ETAPA[e], cartoes: visiveis.filter((c) => c.etapa === e) })),
-        { etapa: 'saidas' as const, rotulo: 'Saídas', cartoes: visiveis.filter((c) => (COMERCIAL_SAIDAS as readonly string[]).includes(c.etapa)) },
+        ...COMERCIAL_ETAPAS.map((etapa) => ({ etapa: etapa as ComercialEtapa, rotulo: COMERCIAL_ROTULO_DA_ETAPA[etapa], cartoes: cartoes.filter((c) => c.etapa === etapa) })),
+        { etapa: 'saidas' as const, rotulo: 'Saídas', cartoes: cartoes.filter((c) => (COMERCIAL_SAIDAS as readonly string[]).includes(c.etapa)) },
       ],
     };
+  }
+
+  /**
+   * U4: o aviso de quem moveu à mão, lido do último `etapa.movida_a_mao` de
+   * cada lead. Vale enquanto o lead está na etapa para onde a pessoa o levou
+   * (o fato é do instante em que ele entrou nela). Some quando o fato de
+   * verdade chega: o aceite para E8, o fechamento para E9.
+   */
+  private async avisosDoMover(
+    orgId: string,
+    fichas: readonly { leadId: string; etapa: string; etapaDesde: Date; propostaAceitaEm: Date | null; clienteAtivoEm: Date | null }[],
+  ): Promise<Map<string, ComercialAvisoDoMover>> {
+    const saida = new Map<string, ComercialAvisoDoMover>();
+    const candidatas = fichas.filter((f) => f.etapa === 'fechado' || f.etapa === 'contrato' || ehSaida(f.etapa as ComercialEtapa));
+    if (!candidatas.length) return saida;
+    const fatos = await this.prisma.leadEvent.findMany({
+      where: { orgId, type: 'etapa.movida_a_mao', leadId: { in: candidatas.map((f) => f.leadId) } },
+      orderBy: { occurredAt: 'desc' },
+      select: { leadId: true, payload: true, occurredAt: true },
+    });
+    for (const f of candidatas) {
+      const ultimo = fatos.find((x) => x.leadId === f.leadId);
+      if (!ultimo || ultimo.occurredAt.getTime() < f.etapaDesde.getTime()) continue;
+      const p = (ultimo.payload ?? {}) as { para?: unknown; por?: unknown; semMotivo?: unknown };
+      if (p.para !== f.etapa) continue;
+      if (f.etapa === 'fechado' && f.clienteAtivoEm) continue;
+      if (f.etapa === 'contrato' && f.propostaAceitaEm) continue;
+      const texto = avisoDoMoverAMao(f.etapa as ComercialEtapa, p.semMotivo === true);
+      if (texto) saida.set(f.leadId, { texto, por: typeof p.por === 'string' && p.por ? p.por : null, em: ultimo.occurredAt.toISOString() });
+    }
+    return saida;
   }
 
   /** O laudo do revisor na proposta vigente (o portão de E6 o exige limpo). */

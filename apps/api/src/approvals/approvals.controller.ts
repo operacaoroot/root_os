@@ -1034,16 +1034,16 @@ export class ApprovalsController {
   create(@CurrentUser() user: JwtUser, @Body() body: unknown) {
     const input = CreateApprovalSchema.parse(body);
     /*
-     * O PEDIDO DE MOVER SÓ NASCE PELO FUNIL (revisão PA-1). Aqui o resumo é texto
-     * livre de quem pede, e o hash prende só `changes`: com `para` no recurso
-     * `lead`, dava para assinar "para E3" e mover para E7. O pedido de mover
-     * tem rota própria (`POST /comercial/lead/:id/mover/pedido`), onde o servidor
-     * escreve o resumo a partir do destino. A chave presente já basta para
-     * recusar, com qualquer valor.
+     * NENHUM PEDIDO DE MOVER NASCE AQUI (revisão PA-1; e, desde a U4, 20/10/2026,
+     * em lugar nenhum). Aqui o resumo é texto livre de quem pede, e o hash prende
+     * só `changes`: com `para` no recurso `lead`, dava para assinar "para E3" e
+     * mover para E7. O mover do funil não pede mais assinatura: a pessoa com
+     * `leads.editar` move direto (`POST /comercial/lead/:id/mover`). A chave
+     * presente já basta para recusar, com qualquer valor.
      */
     if (input.resourceType === 'lead' && Object.prototype.hasOwnProperty.call(input.changes, 'para')) {
       throw new ForbiddenException(
-        'O pedido de mover o cartão nasce só pelo funil (POST /comercial/lead/:id/mover/pedido), onde o servidor escreve o resumo.',
+        'O mover do funil não pede assinatura: a pessoa com leads.editar move direto no funil (POST /comercial/lead/:id/mover).',
       );
     }
     return this.approvals.create({ orgId: user.orgId, actorId: user.sub, ...input });

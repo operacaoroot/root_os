@@ -1,8 +1,6 @@
-import { BadRequestException, Body, Controller, Get, Headers, HttpCode, Ip, Param, Post, Put, Query, UseGuards } from '@nestjs/common';
-import { COMERCIAL_ESTADOS_DE_DECISAO, ComercialDecisaoRespostaSchema, type ComercialEstadoDeDecisao } from '@mktos/shared';
+import { BadRequestException, Body, Controller, Get, GoneException, HttpCode, Ip, Param, Post, Put, Query, UseGuards } from '@nestjs/common';
+import { COMERCIAL_CHAVES_DOS_FILTROS_DO_FUNIL, COMERCIAL_ESTADOS_DE_DECISAO, ComercialDecisaoRespostaSchema, type ComercialEstadoDeDecisao, type ComercialFiltrosDoFunil } from '@mktos/shared';
 
-import { ApprovalGuard } from '../approvals/approval.guard';
-import { SensitiveWrite } from '../approvals/sensitive-write.decorator';
 import { CurrentUser, type JwtUser } from '../auth/current-user.decorator';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RequirePermissions } from '../auth/permissions.decorator';
@@ -10,7 +8,7 @@ import { PermissionsGuard } from '../auth/permissions.guard';
 import { ConfigComercialService } from './config.service';
 import { DecisoesService } from './decisoes.service';
 import { FichaService } from './ficha.service';
-import { MoverService, SoGenteGuard } from './mover.service';
+import { MoverService, PEDIDO_DE_MOVER_APOSENTADO, SoGenteGuard } from './mover.service';
 import { LeituraEReacaoService } from './leitura-e-reacao.service';
 import { ReacoesDaPropostaService } from './reacoes-da-proposta.service';
 import { SalaVersaoService } from './sala-versao.service';
@@ -24,9 +22,10 @@ import { RelogioDaEspinha } from './relogio-da-espinha';
  * A etapa NUNCA se escreve por aqui: não há PATCH de etapa. Quem move é a
  * reação a um evento, e o portão recusa com a lista do que falta. A saída é um
  * FATO com motivo (`saida.registrada`), conferido por `podeSair` antes de entrar
- * no fio. A exceção, desde a rodada do painel (P5, 18/10/2026), é a PESSOA que
- * move o cartão adiante: pedido → assinatura de OUTRA pessoa → mover com o
- * token, com a mesma proteção do `PATCH /leads/:id` (ver `mover.service.ts`).
+ * no fio. A exceção é a PESSOA que move o cartão: desde a rodada da interface
+ * (U4, 20/10/2026, decisão do dono do produto) ela move para qualquer etapa,
+ * direto, sem pedido nem assinatura de outra pessoa (ver `mover.service.ts`).
+ * Conta de máquina e agente seguem fora (`SoGenteGuard` e os portões).
  */
 @UseGuards(JwtAuthGuard, PermissionsGuard)
 @Controller('comercial')
@@ -49,11 +48,20 @@ export class ComercialController {
     return this.decisoesSvc.fila(user.orgId);
   }
 
-  /** Tela 04: o funil vivo, com as saídas visíveis. Filtro: todos, parados, decisao, P1/P2/P3 ou produto. */
+  /**
+   * Tela 04: o funil vivo, com as saídas visíveis. Filtros do painel (U4):
+   * `dono` (id, `eu` ou `sem`), `produto`, `perfil`, `etapa` (ou `saidas`),
+   * `parado=1`, `decisao=1` e `q` (empresa ou contato). O `?filtro=` antigo
+   * (todos, parados, decisao, P1/P2/P3 ou produto) continua valendo.
+   */
   @Get('funil')
   @RequirePermissions('leads.ver')
-  funil(@CurrentUser() user: JwtUser, @Query('filtro') filtro?: string) {
-    return this.fichas.funil(user.orgId, filtro ?? null);
+  funil(@CurrentUser() user: JwtUser, @Query() query: Record<string, unknown>) {
+    const lido = (k: string) => (typeof query[k] === 'string' ? (query[k] as string) : '');
+    const temPainel = COMERCIAL_CHAVES_DOS_FILTROS_DO_FUNIL.some((k) => lido(k).trim() !== '');
+    if (!temPainel) return this.fichas.funil(user.orgId, lido('filtro') || null, undefined, undefined, user.sub);
+    const filtros = Object.fromEntries(COMERCIAL_CHAVES_DOS_FILTROS_DO_FUNIL.map((k) => [k, lido(k)])) as unknown as ComercialFiltrosDoFunil;
+    return this.fichas.funil(user.orgId, filtros, undefined, undefined, user.sub);
   }
 
   /** Tela 05: a ficha do lead — projeção do fio, com o portão da próxima etapa. */
@@ -170,44 +178,39 @@ export class ComercialController {
   }
 
   /**
-   * P5 · o PEDIDO de mover o cartão: confere o destino, diz o que fica pendente
-   * e cria a aprovação retida do recurso `lead` (outra pessoa assina em
-   * /atendimento). Não muda nada. Só gente: conta de máquina é recusada.
+   * APOSENTADO (U4, 20/10/2026) · o pedido de mover. O mover não pede mais
+   * assinatura: responde 410 com o caminho novo e não cria nada na fila.
    */
   @Post('lead/:id/mover/pedido')
-  @HttpCode(200)
   @RequirePermissions('leads.editar')
   @UseGuards(SoGenteGuard)
-  pedirMover(@CurrentUser() user: JwtUser, @Param('id') id: string, @Body() body: unknown) {
-    return this.moverSvc.pedir(user.orgId, id, body, { id: user.sub, nome: user.name ?? null, papeis: user.roles ?? [] });
+  pedirMover(): never {
+    throw new GoneException(PEDIDO_DE_MOVER_APOSENTADO);
   }
 
   /**
-   * Revisão PA-7 · em que pé está o MEU pedido de mover este lead (esperando,
-   * confirmada, usada, recusada, venceu), para o cartão acender "concluir a
-   * mudança" quando a assinatura chega. Só leitura e só o pedido de quem
-   * pergunta; o token nunca sai do servidor por aqui.
+   * APOSENTADO (U4, 20/10/2026) · o estado do pedido de mover. Não há mais
+   * pedido: responde sempre vazio, para a aba antiga parar de esperar.
    */
   @Get('lead/:id/mover/pedido')
   @RequirePermissions('leads.ver')
-  async estadoDoPedido(@CurrentUser() user: JwtUser, @Param('id') id: string, @Query('aprovacao') aprovacao?: string) {
-    return { pedido: await this.moverSvc.estadoDoPedido(user.orgId, id, user.sub, aprovacao || undefined) };
+  estadoDoPedido() {
+    return { pedido: null, aposentado: PEDIDO_DE_MOVER_APOSENTADO };
   }
 
   /**
-   * P5 · MOVER, com a mesma proteção da mudança manual de etapa que já existia
-   * (`PATCH /leads/:id`): `leads.editar` + escrita sensível do recurso `lead` +
-   * `x-approval-token` confirmado por outra pessoa, preso ao `para`. O
-   * `SoGenteGuard` vem ANTES do `ApprovalGuard`: conta de máquina é recusada sem
-   * queimar a aprovação. Com pendência de portão, executa e grava o aviso.
+   * U4 · MOVER, sem limitação: a pessoa com `leads.editar` leva o lead para
+   * qualquer etapa (para a frente, para trás, E8 e E9, de e para as saídas).
+   * Grava direto: sem pedido, sem assinatura, sem token. Só gente: conta de
+   * máquina cai no `SoGenteGuard` e na releitura do banco. Nenhuma escrita do
+   * fechamento nasce daqui. Devolve a mensagem da tela.
    */
   @Post('lead/:id/mover')
   @HttpCode(200)
   @RequirePermissions('leads.editar')
-  @SensitiveWrite('lead')
-  @UseGuards(SoGenteGuard, ApprovalGuard)
-  mover(@CurrentUser() user: JwtUser, @Param('id') id: string, @Body() body: unknown, @Headers('x-approval-token') token: string) {
-    return this.moverSvc.mover(user.orgId, id, body, { id: user.sub, nome: user.name ?? null, papeis: user.roles ?? [] }, token);
+  @UseGuards(SoGenteGuard)
+  mover(@CurrentUser() user: JwtUser, @Param('id') id: string, @Body() body: unknown) {
+    return this.moverSvc.mover(user.orgId, id, body, { id: user.sub, nome: user.name ?? null, papeis: user.roles ?? [] });
   }
 
   /** A fila de decisões (abertas, tomadas, expiradas). */

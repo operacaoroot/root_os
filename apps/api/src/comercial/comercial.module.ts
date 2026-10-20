@@ -76,7 +76,7 @@ import { OnboardingAntecipadoService } from './onboarding-antecipado.service';
     FichaService,
     RelogioDaEspinha,
     ReacoesDaEspinha,
-    // --- rodada do painel P5 (mover o cartão pela tela, pela aprovação) ---
+    // --- mover o cartão pela tela (P5, 18/10; sem limitação e sem aprovação desde a U4, 20/10) ---
     MoverService,
     SoGenteGuard,
     // --- rodada do trabalho T7 ("pedir de novo" a vencida em /atendimento, pelo caminho de cada pedido) ---

@@ -128,76 +128,71 @@ export function proximaEtapa(etapa: ComercialEtapa): ComercialEtapaAtiva | null 
 }
 
 // ---------------------------------------------------------------------------
-// Mover o cartão pela tela (rodada do painel P5, 18/10/2026)
+// Mover o cartão pela tela (rodada do painel P5, 18/10/2026; sem limitação desde a
+// rodada da interface U4, 20/10/2026)
 // ---------------------------------------------------------------------------
 
 /**
- * As etapas em que o lead ENTRA por efeito de sistema, e por isso não aceitam
- * arrasto. O texto é o porquê que o menu "Mover para" mostra:
+ * As etapas que, no caminho dos FATOS, nascem de efeito de sistema. Uma pessoa
+ * pode levar o cartão até elas à mão (decisão do dono do produto, 20/10/2026),
+ * e o texto diz o que o mover à mão NÃO faz: nenhuma escrita automática do
+ * contrato ou do fechamento nasce da etapa.
  *   · E8 nasce do aceite do cliente na sala (`proposta.aceita`), que traz
- *     valor, parcelas e forma: sem ele não há o que levar ao contrato;
- *   · E9 nasce do fechamento (`cliente.ativo`), proposto à porta quando a 1ª
- *     parcela está paga e o contrato está assinado pelos dois, e assinado pela
- *     titular em /atendimento (R4).
+ *     valor, parcelas e forma;
+ *   · E9 nasce do fechamento (`cliente.ativo`), com a 1ª parcela paga, o
+ *     contrato assinado pelos dois e a assinatura da titular em /atendimento.
  */
 export const COMERCIAL_ETAPAS_DE_SISTEMA: Readonly<Partial<Record<ComercialEtapa, string>>> = {
-  contrato: 'entra sozinho quando o cliente aceita a proposta na sala: o aceite traz valor, parcelas e forma do contrato',
-  fechado: 'fecha sozinho quando a 1ª parcela é paga, o contrato está assinado pelos dois e a titular assina o fechamento em /atendimento',
+  contrato: 'só a etapa muda: o contrato e a cobrança nascem do aceite do cliente na sala',
+  fechado: 'só a etapa muda: cobrança, contrato, cliente e card da implantação nascem do fechamento de verdade (o aceite ou "Registrar cliente já fechado")',
 };
 
-/** O que uma PESSOA pode fazer ao soltar o cartão em `para`. `caminho: 'saida'` vai ao registro de saída, com motivo. */
+/** O que uma PESSOA pode fazer ao soltar o cartão em `para`. `caminho: 'saida'` leva junto o motivo da saída. */
 export interface ComercialDestinoDoMover {
   para: ComercialEtapa;
   permitido: boolean;
   caminho: 'mover' | 'saida' | null;
   /** Por que não pode (permitido = falso). Nulo quando pode. */
   motivo: string | null;
+  /** O que fica pendente nas etapas que ficam para trás (quem chama passa a lista dos portões). Vazio = nada. */
+  pendencias: string[];
+  /** Uma linha de apoio para o menu: o que o mover à mão não faz, ou a etapa de onde o lead saiu. Nulo = nada a dizer. */
+  dica: string | null;
 }
 
 /**
- * Para onde uma pessoa pode mover o cartão. Puro: a API decide com esta mesma
- * conta, e a tela a usa para desligar as opções do menu com o porquê.
+ * Para onde uma PESSOA pode mover o cartão: para qualquer etapa, menos a etapa
+ * em que o lead já está (decisão do dono do produto, 20/10/2026). Puro: a API
+ * decide com esta mesma conta, e a tela a usa para desenhar o menu.
  *
- * Avançar para qualquer etapa adiante é permitido (com pendência, avisa; não
- * trava). Voltar não: quem volta é a saída com motivo. Saída leva ao registro
- * de saída. A geladeira só volta para a etapa em que estava. As etapas de
- * sistema (`COMERCIAL_ETAPAS_DE_SISTEMA`) não aceitam arrasto. Isto vale só
- * para gente: o agente continua passando pelos portões.
+ * Saída leva o motivo no mesmo gesto (`caminho: 'saida'`). As pendências vêm de
+ * quem chama (os portões moram na API): a função só as devolve no destino.
+ *
+ * ISTO VALE SÓ PARA GENTE. O agente, as reações e o relógio não passam por
+ * aqui: seguem em `mudarEtapa` sem `pessoa`, pelos portões (`avancar`,
+ * `avancarDepoisDaSessao`, `podeSair`), que recusam como sempre.
  */
-export function destinoDoMover(de: ComercialEtapa, para: ComercialEtapa, voltaPara?: ComercialEtapaAtiva | null): ComercialDestinoDoMover {
-  const nao = (motivo: string): ComercialDestinoDoMover => ({ para, permitido: false, caminho: null, motivo });
-  if (de === para) return nao('o lead já está nesta etapa');
-  if (de === 'fechado') return nao('negócio fechado é etapa final: quem encerra é o contrato vivo');
-  if (ehSaida(para)) {
-    if (ehSaida(de) && de !== 'geladeira') return nao(`o lead já está em ${COMERCIAL_ROTULO_DA_ETAPA[de]}`);
-    return { para, permitido: true, caminho: 'saida', motivo: null };
-  }
-  const sistema = COMERCIAL_ETAPAS_DE_SISTEMA[para];
-  if (sistema) return nao(sistema);
-  if (de === 'geladeira') {
-    const volta = voltaPara ?? 'qualificacao';
-    return volta === para ? { para, permitido: true, caminho: 'mover', motivo: null } : nao(`da geladeira o lead volta para ${COMERCIAL_ROTULO_DA_ETAPA[volta]}`);
-  }
-  if (ehSaida(de)) return nao(`lead em ${COMERCIAL_ROTULO_DA_ETAPA[de]} não volta pelo funil`);
-  if ((ordemDaEtapa(para) ?? 0) < (ordemDaEtapa(de) ?? 0)) {
-    return nao(`voltar de ${COMERCIAL_ROTULO_DA_ETAPA[de]} para ${COMERCIAL_ROTULO_DA_ETAPA[para]} não é avanço: registre uma saída com motivo`);
-  }
-  return { para, permitido: true, caminho: 'mover', motivo: null };
+export function destinoDoMover(
+  de: ComercialEtapa,
+  para: ComercialEtapa,
+  voltaPara?: ComercialEtapaAtiva | null,
+  pendencias: readonly string[] = [],
+): ComercialDestinoDoMover {
+  if (de === para) return { para, permitido: false, caminho: null, motivo: 'o lead já está nesta etapa', pendencias: [], dica: null };
+  const saida = ehSaida(para);
+  const dica =
+    COMERCIAL_ETAPAS_DE_SISTEMA[para] ??
+    (de === 'geladeira' && voltaPara === para ? 'a etapa em que o lead estava antes da geladeira' : null);
+  return { para, permitido: true, caminho: saida ? 'saida' : 'mover', motivo: null, pendencias: saida ? [] : [...pendencias], dica };
 }
 
-/** O corpo de `POST /comercial/lead/:id/mover` e do pedido. Saída não entra aqui: vai por `/saida`, com motivo. */
-export const ComercialMoverSchema = z.object({ para: z.enum(COMERCIAL_ETAPAS) }).strict();
-export type ComercialMoverInput = z.infer<typeof ComercialMoverSchema>;
-
-/** O pedido de mudança: a aprovação retida (a mudança de etapa pela tela é escrita sensível, como o PATCH de `/leads/:id`). */
+/** O pedido de mudança da rodada do painel (P5). APOSENTADO em 20/10/2026: o mover grava direto. Fica o tipo para leitura do que já existe. */
 export interface ComercialPedidoDeMover {
   approvalId: string;
-  /** O token de uso único: só vale depois que OUTRA pessoa confirmar em /atendimento. */
   token: string;
   expiraEm: string;
   de: ComercialEtapa;
   para: ComercialEtapaAtiva;
-  /** O que o portão ainda pede. Vazio = sem pendência. */
   pendencias: string[];
   resumo: string;
 }
@@ -209,12 +204,65 @@ export interface ComercialBalaoDoMover {
   em: string;
 }
 
+/** O aviso do cartão movido à mão para onde o mover não faz tudo (E8 e E9 à mão, saída sem motivo). Some quando o fato de verdade chega. */
+export interface ComercialAvisoDoMover {
+  texto: string;
+  por: string | null;
+  em: string;
+}
+
 export interface ComercialResultadoDoMover {
   ok: boolean;
   mudou: boolean;
   de: ComercialEtapa;
   para: ComercialEtapa;
   balao: ComercialBalaoDoMover | null;
+  /** O que a etapa de origem (e as atravessadas) deixou pendente. Vazio = nada. */
+  pendencias: string[];
+  /** As etapas cujas conclusões ficaram para trás. */
+  semConclusoesDe: ComercialEtapa[];
+  /** A frase da tela: "Movido para <etapa>." ou "Movido para <etapa> sem as conclusões de <etapa>: <lista>." */
+  mensagem: string;
+  /** O aviso que o cartão passa a mostrar (E8 e E9 à mão, saída sem motivo). Nulo = nenhum. */
+  aviso: string | null;
+}
+
+/** "E3" de "E3 · Reunião agendada"; "Saída · Perdido" fica inteiro. */
+function rotuloDaMensagem(e: ComercialEtapa): string {
+  return COMERCIAL_ROTULO_DA_ETAPA[e];
+}
+
+/** As etapas citadas como "A", "A e B" ou "A, B e C". */
+function listaDeEtapas(etapas: readonly ComercialEtapa[]): string {
+  const r = etapas.map(rotuloDaMensagem);
+  return r.length <= 1 ? (r[0] ?? '') : `${r.slice(0, -1).join(', ')} e ${r[r.length - 1]}`;
+}
+
+/**
+ * A MENSAGEM do mover à mão, a única coisa que a tela diz (decisão de 20/10/2026):
+ *   · sem pendência: "Movido para E3 · Reunião agendada.";
+ *   · com pendência: "Movido para E3 · Reunião agendada sem as conclusões de E1 · Novo lead e E2 · Qualificação: canal de entrada (E1); …".
+ */
+export function mensagemDoMover(para: ComercialEtapa, semConclusoesDe: readonly ComercialEtapa[], pendencias: readonly string[]): string {
+  const base = `Movido para ${rotuloDaMensagem(para)}`;
+  if (!pendencias.length || !semConclusoesDe.length) return `${base}.`;
+  return `${base} sem as conclusões de ${listaDeEtapas(semConclusoesDe)}: ${pendencias.join('; ')}.`;
+}
+
+/** O texto que fica quando a saída vai sem motivo escrito. */
+export const COMERCIAL_SEM_MOTIVO_INFORMADO = 'sem motivo informado';
+
+/**
+ * O aviso do cartão movido à mão para onde o mover não faz tudo. Nulo quando
+ * não há o que avisar. O aviso de E8 some quando o aceite chega; o de E9,
+ * quando o fechamento de verdade conclui (`cliente.ativo`); quem decide isso é
+ * a projeção do funil.
+ */
+export function avisoDoMoverAMao(para: ComercialEtapa, semMotivo: boolean): string | null {
+  if (para === 'fechado') return 'Negócio fechado à mão: só a etapa mudou. Cobrança, contrato, cliente e card da implantação nascem do aceite ou de "Registrar cliente já fechado".';
+  if (para === 'contrato') return 'Contrato à mão: só a etapa mudou. O contrato e a cobrança nascem do aceite do cliente na sala.';
+  if (ehSaida(para) && semMotivo) return `Saída ${COMERCIAL_SEM_MOTIVO_INFORMADO}.`;
+  return null;
 }
 
 // ---------------------------------------------------------------------------
@@ -381,6 +429,8 @@ export const COMERCIAL_EVENTOS = [
   'etapa.mudou',
   // Rodada do painel P5 (18/10): uma PESSOA moveu o cartão com portão em aberto; a lista exata vai no fato.
   'etapa.movida_com_pendencia',
+  // Rodada da interface U4 (20/10): uma PESSOA moveu o cartão à mão, para qualquer etapa (quem, de, para, pendências).
+  'etapa.movida_a_mao',
   'saida.registrada',
   'vigia.premissa',
 ] as const;
@@ -689,6 +739,25 @@ export const ComercialSaidaSchema = z
   .strict();
 export type ComercialSaidaInput = z.infer<typeof ComercialSaidaSchema>;
 
+/**
+ * O corpo de `POST /comercial/lead/:id/mover` (rodada da interface U4, 20/10/2026):
+ * qualquer etapa, ativa ou saída. Na saída, o motivo vai no mesmo gesto, em
+ * texto livre e sem trava: sem ele, vale "sem motivo informado". O tipo do
+ * motivo (para o relatório de perdas) é opcional; sem ele, "outro". A data de
+ * volta da geladeira e o parceiro também são opcionais. Para etapa ativa, os
+ * campos da saída são ignorados.
+ */
+export const ComercialMoverSchema = z
+  .object({
+    para: z.enum(COMERCIAL_ESTAGIOS),
+    motivo: z.string().trim().max(400).optional(),
+    tipoDeMotivo: ComercialMotivoDeSaidaSchema.optional(),
+    voltaEm: z.string().datetime({ offset: true }).optional(),
+    parceiro: z.string().trim().max(120).optional(),
+  })
+  .strict();
+export type ComercialMoverInput = z.infer<typeof ComercialMoverSchema>;
+
 /** Os níveis de autonomia por automação (tela 12). A0 não roda; A3 roda e só avisa quebra. */
 export const COMERCIAL_AUTONOMIAS = ['A0', 'A1', 'A2', 'A3'] as const;
 export type ComercialAutonomia = (typeof COMERCIAL_AUTONOMIAS)[number];
@@ -909,6 +978,47 @@ export interface FunilVivo {
   aviso?: string | null;
   /** P5: o filtro que a API aplicou, com a mesma explicação que a etiqueta mostra. */
   filtro?: ComercialFiltroDoFunil | null;
+  /** U4: os filtros do painel que a API aplicou (o `?filtro=` antigo já traduzido). */
+  filtros?: ComercialFiltrosDoFunil;
+  /** U4: quem é dono de algum lead da empresa, para o filtro "Responsável". */
+  donos?: { id: string; nome: string }[];
+}
+
+/**
+ * Os filtros do painel do Funil vivo (rodada da interface U2/U4, 20/10/2026).
+ * As chaves são as de `VistaFunilSchema.filtros` e as do endereço. Vazio = sem
+ * filtro. `dono` aceita o id de uma pessoa, `eu` (quem pergunta) ou `sem`
+ * (lead sem dono); `etapa` aceita uma etapa ou `saidas`; `parado` e `decisao`
+ * valem com `1`; `q` busca na empresa e no contato.
+ */
+export interface ComercialFiltrosDoFunil {
+  dono: string;
+  produto: string;
+  perfil: string;
+  etapa: string;
+  parado: string;
+  decisao: string;
+  q: string;
+}
+
+export const COMERCIAL_CHAVES_DOS_FILTROS_DO_FUNIL = ['dono', 'produto', 'perfil', 'etapa', 'parado', 'decisao', 'q'] as const;
+
+export function filtrosDoFunilVazios(): ComercialFiltrosDoFunil {
+  return { dono: '', produto: '', perfil: '', etapa: '', parado: '', decisao: '', q: '' };
+}
+
+/**
+ * O link antigo `?filtro=` (as etiquetas da tela 04) traduzido para o painel:
+ * `parados` → parado, `decisao` → decisão sua, `P1`..`P3` → perfil, produto →
+ * produto. `todos` e o desconhecido não filtram nada.
+ */
+export function filtrosDoFiltroAntigo(filtro: string | null | undefined): Partial<ComercialFiltrosDoFunil> {
+  const f = (filtro ?? '').trim();
+  if (f === 'parados') return { parado: '1' };
+  if (f === 'decisao') return { decisao: '1' };
+  if (/^P[123]$/.test(f)) return { perfil: f };
+  if ((COMERCIAL_PRODUTOS as readonly string[]).includes(f)) return { produto: f };
+  return {};
 }
 
 /**
@@ -960,6 +1070,11 @@ export interface CartaoDoFunil {
   voltaPara?: ComercialEtapaAtiva | null;
   /** P5: o balão persistente de quem moveu com pendência. Nulo quando não há pendência aberta. */
   balao?: ComercialBalaoDoMover | null;
+  /** U4: o dono do lead (id e nome), para o filtro "Responsável" e a lista. */
+  donoId?: string | null;
+  dono?: string | null;
+  /** U4: o aviso de quem moveu à mão para onde o mover não faz tudo (E8 e E9, saída sem motivo). */
+  avisoDoMover?: ComercialAvisoDoMover | null;
 }
 
 /** O fechamento (tela 10): as cinco escritas com chave. */
