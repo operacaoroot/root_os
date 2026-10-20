@@ -37,14 +37,14 @@
 //   node homolog/organizar/organizar.mjs --api http://127.0.0.1:4030/api \
 //        --mapas homolog/copia/mapa-crm.json,homolog/copia/mapa-gestao.json,homolog/organizar/mapa-novos.json \
 //        [--env homolog/.env.final] [--web http://100.95.41.124:3030] [--saida homolog/organizar] \
-//        [--simular] [--detalhe] [--producao]
+//        [--simular] [--detalhe] (--producao | --homologacao, obrigatório para escrever)
 // Contas (variáveis de ambiente ou do --env):
 //   ORGANIZAR_PEDE_EMAIL / ORGANIZAR_PEDE_SENHA        quem escreve e PEDE o movimento de etapa
 //   ORGANIZAR_CONFERE_EMAIL / ORGANIZAR_CONFERE_SENHA  quem CONFIRMA (outra pessoa, com alçada)
 // `--simular` só lê (o login das duas contas é o único registro que ele deixa) e
 // imprime o plano por destino; `--detalhe` grava o plano com títulos em
-// <saida>/plano.md (dado de cliente: fora do git). URL fora de loopback/rede
-// privada exige `--producao` para escrever.
+// <saida>/plano.md (dado de cliente: fora do git). Em qualquer URL, de loopback, rede
+// privada ou não, a passada que escreve exige `--producao` ou `--homologacao`.
 //
 // A saída do console é SÓ de contagens. Título, nome e cliente vão apenas aos
 // arquivos de <saida> (plano.md, sobras.md), que ficam fora do git.
@@ -79,8 +79,11 @@ const MAPAS = (arg('--mapas') ?? cfg('ORGANIZAR_MAPAS') ?? '').split(',').map((s
 if (!API) throw new Error('informe --api <url da API, terminando em /api>');
 if (MAPAS.length === 0) throw new Error('informe --mapas a.json,b.json');
 const host = new URL(API).hostname;
-const local = /^(localhost|127\.|10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.|100\.)/.test(host);
-if (!SIMULAR && !local && !flag('--producao')) throw new Error('API fora de loopback/rede privada: para escrever, passe --producao (e rode --simular antes)');
+// Revisão adversarial 5.4: a passada que ESCREVE exige dizer onde está escrevendo,
+// em qualquer endereço (pela rede interna da VPS o host também é 127.* ou 172.*).
+if (!SIMULAR && flag('--producao') === flag('--homologacao')) {
+  throw new Error('para escrever, passe exatamente uma de --producao ou --homologacao (e rode --simular antes)');
+}
 
 const HOJE = new Intl.DateTimeFormat('pt-BR', { timeZone: 'America/Sao_Paulo' }).format(new Date());
 
@@ -242,6 +245,22 @@ async function main() {
   const editarTarefa = async (id, patch) => api("PATCH", `/trabalho/tarefas/${id}`, { ...patch, expectedUpdatedAt: await versao(id) });
   const arquivarTarefa = async (id) => api("DELETE", `/trabalho/tarefas/${id}`, { expectedUpdatedAt: await versao(id) });
 
+  // ---------------- 0. é a API do merge, com a conciliação aplicada? (revisão 5.3)
+  // Nada foi escrito até aqui. Contra a API antiga (cliente da tarefa = card), a
+  // simulação contaria errado e a passada real quebraria no meio: aborta.
+  const sonda = await chamar('GET', '/comercial/propostas', undefined, tok).then(() => true, (e) => (e.status === 404 ? false : Promise.reject(e)));
+  if (!sonda) throw new Error('a API não é a da versão final (GET /comercial/propostas responde 404): nada foi feito');
+  // Revisão 5.1: a lista de Partner é lida sem rede de segurança. Uma falha aqui (403 sem
+  // financeiro.ver, 5xx) virava "nenhum Partner" e fazia nascer clientes duplicados.
+  const partners = (await api('GET', '/finance/partners'))?.items;
+  if (!Array.isArray(partners)) throw new Error('GET /finance/partners não devolveu a lista: nada foi feito');
+  const idsDePartner = new Set(partners.map((x) => x.id));
+  {
+    const r = await api('GET', '/trabalho/tarefas?limit=500');
+    const comCard = (r?.items ?? r ?? []).filter((t) => t.clienteId && !idsDePartner.has(t.clienteId));
+    if (comCard.length) throw new Error(`${comCard.length} tarefa(s) com cliente que não é Partner: a conciliação (20261019230000) não foi aplicada; nada foi feito`);
+  }
+
   // ---------------- 1. estrutura nossa
   let estrutura = await api('GET', '/trabalho/estrutura');
   let idx = indexar(estrutura);
@@ -279,7 +298,6 @@ async function main() {
   const precisa = new Set();
   for (const m of doMapa.values()) if ((m.destino?.tipo === 'tarefa' || m.destino?.tipo === 'cliente') && m.cliente) precisa.add(m.cliente);
   conta.clientes.necessarios = precisa.size;
-  const partners = (await api('GET', '/finance/partners').catch(() => ({ items: [] })))?.items ?? [];
   const partnerDaChave = new Map();
   for (const chave of precisa) {
     if (chave === 'cli:root-interno') { partnerDaChave.set(chave, 'interno'); conta.clientes.interno++; continue; }
@@ -292,7 +310,8 @@ async function main() {
       if (cartao?.title) { nomes.add(normalizar(cartao.title)); nomes.add(normalizar(String(cartao.title).split('|')[0])); }
     }
     let p = doc ? partners.find((x) => digitos(x.cnpjCpf) === doc) : null;
-    p ??= partners.find((x) => nomes.has(normalizar(x.razaoSocial)) || nomes.has(normalizar(x.nomeFantasia)));
+    // Pelo nome só casa quem já é cliente (um fornecedor de nome parecido não vira cliente).
+    p ??= partners.find((x) => x.isCliente && (nomes.has(normalizar(x.razaoSocial)) || nomes.has(normalizar(x.nomeFantasia))));
     // a conciliação já pode ter ligado as tarefas do mapa a um Partner: segue o voto delas
     if (!p) {
       const votos = new Map();
@@ -504,7 +523,12 @@ async function main() {
       if (!nossa || t.clienteId) continue;
       // Na simulação, a tarefa do mapa que ainda vai receber cliente pelo passo 4 não conta aqui.
       if (SIMULAR && doMapa.has(t.id) && doMapa.get(t.id).cliente) continue;
-      if (pasta === 'administrativa' || pasta === 'gestao') {
+      if ((pasta === 'administrativa' || pasta === 'gestao') && !doMapa.has(t.id)) {
+        // Revisão 5.2: tarefa nova (criada depois da cópia, fora dos mapas) pode ser de
+        // cliente; o cliente da casa não é posto por suposição.
+        conta.varredura.semClienteForaDoMapa = (conta.varredura.semClienteForaDoMapa ?? 0) + 1;
+        sobra(t, `${l.folderName} / ${l.name}`, 'tarefa fora dos mapas e sem cliente: escolher à mão (cliente da casa ou o cliente)');
+      } else if (pasta === 'administrativa' || pasta === 'gestao') {
         if (SIMULAR) { conta.varredura.aPreencher++; continue; }
         await editarTarefa(t.id, { clienteId: 'interno' });
         conta.varredura.clienteInternoPreenchido++;

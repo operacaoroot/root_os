@@ -30,8 +30,16 @@ node homolog/organizar/organizar.mjs ...
 Variáveis (ambiente ou `--env`): `ORGANIZAR_PEDE_EMAIL`/`ORGANIZAR_PEDE_SENHA` (quem
 escreve e pede o movimento de etapa) e `ORGANIZAR_CONFERE_EMAIL`/`ORGANIZAR_CONFERE_SENHA`
 (outra pessoa, com alçada, que confirma com reautenticação). Opcionais:
-`ORGANIZAR_API_URL`, `ORGANIZAR_WEB_URL`, `ORGANIZAR_MAPAS`, `ORGANIZAR_SAIDA`. API fora de
-loopback ou rede privada só escreve com `--producao`.
+`ORGANIZAR_API_URL`, `ORGANIZAR_WEB_URL`, `ORGANIZAR_MAPAS`, `ORGANIZAR_SAIDA`. A passada
+que escreve exige `--producao` ou `--homologacao`, em qualquer endereço. As duas contas
+precisam ter SENHA (conta só de Google não reautentica), `tarefas.editar`, `leads.editar`,
+`financeiro.ver` e `financeiro.editar`, e quem confere precisa de alçada.
+
+Travas da revisão adversarial (19/10): antes de qualquer escrita o script confere que a API
+é a da versão final (`GET /comercial/propostas`), que a lista de `Partner` veio (sem ela,
+aborta: nada de cliente duplicado) e que nenhuma tarefa ainda aponta para card (conciliação
+aplicada). Pelo nome, só casa `Partner` que já é cliente. O cliente da casa só vai para
+tarefa que está nos mapas; tarefa nova sem cliente vira sobra.
 
 Saídas em `--saida` (padrão: a pasta do script): `contagens-simular.json` ou
 `contagens-organizar-<instante>.json` (antes, depois e o que foi feito, por destino),
