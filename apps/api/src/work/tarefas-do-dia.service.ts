@@ -1,7 +1,7 @@
 import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma, WorkListaNatureza, WorkStatusType } from '@prisma/client';
 import {
-  AREAS_PADRAO, CARTOES_QUE_NAO_SAO_TAREFA, tituloNormalizado, faseDaEtapa, DOMINIO_DAS_CONTAS_DO_SISTEMA, equipeDasContas, mesmaTarefa, naoPareceTarefa, notaDeSemelhanca, situacaoDoPrazo,
+  AREAS_PADRAO, CARTOES_QUE_NAO_SAO_TAREFA, faseDaEtapa, DOMINIO_DAS_CONTAS_DO_SISTEMA, equipeDasContas, mesmaTarefa, naoPareceTarefa, notaDeSemelhanca, situacaoDoPrazo,
   type AreaDeTarefa, type PainelDeTarefas, type ResultadoDeCriar, type ResumoDaPessoa, type TarefaDoDia,
   type TarefaDoDiaCriar, type TarefaDoDiaEditar,
   RecorrenciaSchema, proximaOcorrencia, type RecorrenciaDaTarefa,
@@ -9,6 +9,7 @@ import {
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
 import { WorkService, hojeEmBrasilia } from './work.service';
+import { acharOuCriarClientePorNome } from './clientes-da-casa';
 
 /*
  * TAREFAS DE TODAS AS ÁREAS — a visão "Tudo" do Trabalho (19/10/2026).
@@ -90,25 +91,21 @@ export class TarefasDoDiaService {
     return { id: a.id, nome: a.nome, cor: a.cor, ordem: a.ordem };
   }
 
-  // ---------- cliente novo (mora no CRM, não aqui) ----------
+  // ---------- cliente novo (é Partner, como no Trabalho) ----------
 
   /**
-   * O cliente é um card da lista do CRM (crm-root-lista), a casa dele no
-   * Comercial. Criar pela tarefa não abre outra lista de clientes: entra lá,
-   * na primeira etapa do funil. Nome igual a um que já existe devolve o que
-   * existe, em vez de duplicar.
+   * Depois da conciliação (`20261019230000`) o cliente da tarefa é o `Partner`
+   * cliente, o mesmo cadastro do fechamento comercial, do Financeiro e do seletor
+   * do Trabalho. "Novo cliente" acha o que já existe pelo nome (régua normalizada
+   * da conciliação) ou cria o `Partner`; nenhum card de lista nasce daqui
+   * (revisão final, achado 1.7: o card devolvido caía em "Cliente não encontrado").
    */
   async criarCliente(orgId: string, actorId: string, nome: string): Promise<{ id: string; titulo: string; jaExistia: boolean }> {
-    const lista = await this.prisma.workList.findFirst({
-      where: { orgId, externalId: 'crm-root-lista' },
-      include: { statuses: { orderBy: { order: 'asc' } } },
-    });
-    if (!lista || !lista.statuses.length) throw new BadRequestException('A lista de clientes do Comercial ainda não existe nesta empresa.');
-    const cards = await this.prisma.workTask.findMany({ where: { orgId, listId: lista.id, parentId: null, archived: false }, select: { id: true, title: true } });
-    const igual = cards.find((c) => mesmaTarefa(c.title, nome) === 'igual' || tituloNormalizado(c.title).startsWith(tituloNormalizado(nome) + ' '));
-    if (igual) return { id: igual.id, titulo: igual.title, jaExistia: true };
-    const novo = await this.trabalho.criarTarefa(orgId, actorId, { listId: lista.id, statusId: lista.statuses[0].id, title: nome.trim() });
-    return { id: novo.id, titulo: nome.trim(), jaExistia: false };
+    const c = await acharOuCriarClientePorNome(this.prisma, orgId, nome);
+    if (!c.jaExistia) {
+      await this.audit.log({ orgId, actorId, action: 'finance.partner.create', entityType: 'partner', entityId: c.id, after: { razaoSocial: c.nome, isCliente: true, origem: 'tarefas' } });
+    }
+    return { id: c.id, titulo: c.nome, jaExistia: c.jaExistia };
   }
 
   // ---------- leitura ----------
@@ -275,7 +272,8 @@ export class TarefasDoDiaService {
       include: INCLUDE,
     });
     const hoje = hojeEmBrasilia();
-    const doCliente = (t: Linha) => (t.clienteId ?? (t.parent?.list.natureza === WorkListaNatureza.cadastro ? t.parentId : null)) === (input.clienteId ?? null);
+    // O cliente é o Partner; o pai de cadastro (id de card) não é comparável com ele (revisão final, 1.9).
+    const doCliente = (t: Linha) => (t.clienteId ?? null) === (input.clienteId ?? null);
     const igual = abertas.find((t) => doCliente(t) && mesmaTarefa(t.title, input.titulo) === 'igual');
     // Igual e aberta: não cria nunca, nem confirmando. Devolve a que já existe.
     if (igual) return { criada: false, aviso: { tipo: 'igual', tarefa: this.mapear(igual, hoje, await this.equipe(orgId)) } };

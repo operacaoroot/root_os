@@ -1,6 +1,6 @@
 import { BadRequestException } from '@nestjs/common';
 import { Prisma, PrismaClient } from '@prisma/client';
-import { TRAB_CLIENTE_INTERNO, type TrabClienteDto } from '@mktos/shared';
+import { TRAB_CLIENTE_INTERNO, tituloNormalizado, type TrabClienteDto } from '@mktos/shared';
 
 /*
  * O CLIENTE DA TAREFA (rodada do trabalho T4, 19/10/2026).
@@ -81,6 +81,54 @@ export async function resolverCliente(db: Db, orgId: string, clienteId: string):
   if (!p) throw new BadRequestException('Cliente não encontrado nesta empresa.');
   if (!p.isCliente) throw new BadRequestException('Este cadastro não é de cliente.');
   return p.id;
+}
+
+/**
+ * O nome do cliente na régua da conciliação `20261019230000` (`mktos_nome_normalizado`):
+ * minúsculas, sem acento, só letras e números separados por um espaço. Vazio = sem nome.
+ */
+export function nomeDeClienteNormalizado(nome: string | null | undefined): string {
+  return tituloNormalizado(nome ?? '');
+}
+
+/**
+ * O cliente desta empresa com esse nome (razão social ou nome fantasia, na régua
+ * normalizada), ou nulo. Só `Partner` cliente e fora o da casa: fornecedor de nome
+ * parecido NÃO vira cliente por aqui (revisão final, achado 1.2 — só o CNPJ promove).
+ * Ativo antes de inativo; o mais antigo antes.
+ */
+export async function acharClientePorNome(db: Db, orgId: string, nome: string): Promise<{ id: string; nome: string } | null> {
+  const alvo = nomeDeClienteNormalizado(nome);
+  if (!alvo) return null;
+  const rows = await db.partner.findMany({
+    where: { orgId, isCliente: true, interno: false },
+    select: { id: true, razaoSocial: true, nomeFantasia: true, ativo: true },
+    orderBy: [{ createdAt: 'asc' }],
+  });
+  const casa = rows
+    .filter((p) => nomeDeClienteNormalizado(p.razaoSocial) === alvo || nomeDeClienteNormalizado(p.nomeFantasia) === alvo)
+    .sort((a, b) => Number(b.ativo) - Number(a.ativo))[0];
+  return casa ? { id: casa.id, nome: nomeDoPartner(casa) } : null;
+}
+
+/**
+ * "Novo cliente" digitado numa tela de tarefas: acha o `Partner` cliente pelo nome
+ * ou cria um (`isCliente`), nunca um card de lista. Sob cadeado por empresa e nome,
+ * dois cliques juntos dão um cliente só.
+ */
+export async function acharOuCriarClientePorNome(
+  prisma: PrismaClient, orgId: string, nome: string,
+): Promise<{ id: string; nome: string; jaExistia: boolean }> {
+  const limpo = nome.trim().replace(/\s+/g, ' ');
+  const alvo = nomeDeClienteNormalizado(limpo);
+  if (!alvo) throw new BadRequestException('Escreva o nome do cliente com letras ou números.');
+  return prisma.$transaction(async (tx) => {
+    await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`cliente-por-nome:${orgId}:${alvo}`}))`;
+    const ja = await acharClientePorNome(tx, orgId, limpo);
+    if (ja) return { ...ja, jaExistia: true };
+    const p = await tx.partner.create({ data: { orgId, isCliente: true, razaoSocial: limpo.slice(0, 160) } });
+    return { id: p.id, nome: p.razaoSocial, jaExistia: false };
+  });
 }
 
 /**
