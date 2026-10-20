@@ -141,10 +141,15 @@ services:
       COMERCIAL_SEED_DEMONSTRACAO: "sim"
       OBSIDIAN_VAULT_PATH: /vault
       OBSIDIAN_FONTE: pasta
+      # Rodada da interface (20/10/2026): o Granola direto aponta para o dublê fictício que o
+      # roteiro interface.mjs sobe DENTRO deste container (loopback); a porta 4791 sai só em
+      # 127.0.0.1 para o navegador fazer o OAuth do dublê. Nenhuma conta real do Granola.
+      GRANOLA_MCP_URL: ${GRANOLA_MCP_URL:-http://127.0.0.1:4791/mcp}
     volumes:
       - rootos_final_seed_vault:/vault
     ports:
       - "127.0.0.1:${API_PORT:-4031}:4001"
+      - "127.0.0.1:4791:4791"
     depends_on:
       db: { condition: service_healthy }
       redis: { condition: service_started }
