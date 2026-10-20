@@ -12,7 +12,10 @@ import type { ComercialProvedorDeWhatsapp } from '@mktos/shared';
  *     pasta não é conector: o provedor existe, diz que está pendente e por quê
  *     (ver `evolution.provider.ts`);
  *   · `meta` — a Cloud API oficial. Só a interface e o esqueleto documentado;
- *     sem credencial não sobe, e a credencial é decisão da mesa (K08-4).
+ *     sem credencial não sobe, e a credencial é decisão da mesa (K08-4);
+ *   · `digisac` — o DigiSac (Interface 20/10, U6). O provedor traduz e chama o
+ *     conector de `gateway/canais/digisac.conector.ts` pela porta
+ *     `ENVIO_PELO_DIGISAC`; credencial no cofre da empresa (ver `digisac.provider.ts`).
  *
  * QUEM CHAMA ESTA PORTA. Só o EFEITO de `comercial.whatsapp.enviar`, que a
  * `PortaDoOperador` dispara depois de a régua deixar (R3: com a assinatura de
@@ -76,7 +79,7 @@ export const WHATSAPP_PORT = Symbol('WHATSAPP_PORT');
 
 export function provedorDoAmbiente(valor = process.env.WHATSAPP_PROVEDOR): ComercialProvedorDeWhatsapp {
   const v = String(valor ?? '').trim().toLowerCase();
-  if (v === 'evolution' || v === 'meta') return v;
+  if (v === 'evolution' || v === 'meta' || v === 'digisac') return v;
   return 'simulado';
 }
 

@@ -34,6 +34,9 @@ import { ReacoesDaPropostaService } from './reacoes-da-proposta.service';
 import { LeituraEReacaoService } from './leitura-e-reacao.service';
 import { SalaVersaoService } from './sala-versao.service';
 import { WhatsappComercialService } from './whatsapp.service';
+// Interface 20/10 (U6): o WhatsApp pelo DigiSac (cartão de Conexões e a entrada do webhook).
+import { DigisacEntradaService } from './digisac-entrada.service';
+import { IntegracaoDoDigisacController, WebhookDoDigisacController } from './digisac.controller';
 // lane D
 import { ZapsignModule } from './conectores/zapsign.module';
 import { ContratoVivoService } from './contrato-vivo.service';
@@ -63,7 +66,7 @@ import { OnboardingAntecipadoService } from './onboarding-antecipado.service';
  */
 @Module({
   imports: [TenantsModule, AuthModule, LeadsModule, OnboardingModule, FinanceModule, RoutinesModule, ZapsignModule, MemoryModule],
-  controllers: [ComercialController, SalaController, SimuladorController, MensagensController, DinheiroController, WebhooksDoDinheiroController, InteligenciaController, FechadoForaController, OnboardingAntecipadoController],
+  controllers: [ComercialController, SalaController, SimuladorController, MensagensController, DinheiroController, WebhooksDoDinheiroController, InteligenciaController, FechadoForaController, OnboardingAntecipadoController, IntegracaoDoDigisacController, WebhookDoDigisacController],
   providers: [
     // --- orquestrador: o fio (único caminho de escrita de fato) e o registro de reações ---
     ReacoesRegistry,
@@ -84,6 +87,8 @@ import { OnboardingAntecipadoService } from './onboarding-antecipado.service';
     // --- lane B (sala, WhatsApp por porta, simulador) ---
     SalaService,
     WhatsappComercialService,
+    // --- Interface 20/10 U6 (a entrada do DigiSac; o conector chega pelas portas de `gateway/canais/digisac.port.ts`) ---
+    DigisacEntradaService,
     // --- rodada da implantação I4 (leitura e reação na página da proposta; a I5 lê daqui) ---
     ReacoesDaPropostaService,
     // --- rodada da implantação I3 (a sala publicada por versão) e I5 (o relatório de leitura e reação) ---

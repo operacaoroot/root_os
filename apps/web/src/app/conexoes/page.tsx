@@ -3,6 +3,7 @@
 import { useAuth } from '@/lib/auth';
 import { CatalogoDeclarativo } from './CatalogoDeclarativo';
 import { ConexaoGranola } from './ConexaoGranola';
+import { ConexaoDigisac } from './ConexaoDigisac';
 
 export default function IntegracoesPage() {
   const { token, user, ready, can } = useAuth();
@@ -14,6 +15,7 @@ export default function IntegracoesPage() {
   return (
     <div className="space-y-5">
       <ConexaoGranola key={`granola-${user.id}`} token={token} gerenciar={can('admin.usuarios')} />
+      <ConexaoDigisac key={`digisac-${user.id}`} token={token} gerenciar={can('admin.usuarios')} />
       <CatalogoDeclarativo
         key={JSON.stringify([user.id, token])}
         token={token}

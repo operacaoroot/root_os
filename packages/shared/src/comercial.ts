@@ -497,7 +497,7 @@ export interface OpcaoDeDecisao {
 export const COMERCIAL_TEMPLATES = ['M1', 'M2', 'M3', 'M4', 'M5', 'M6', 'M7', 'M8'] as const;
 export type ComercialTemplate = (typeof COMERCIAL_TEMPLATES)[number];
 
-export const COMERCIAL_PROVEDORES_DE_WHATSAPP = ['simulado', 'evolution', 'meta'] as const;
+export const COMERCIAL_PROVEDORES_DE_WHATSAPP = ['simulado', 'evolution', 'meta', 'digisac'] as const;
 export type ComercialProvedorDeWhatsapp = (typeof COMERCIAL_PROVEDORES_DE_WHATSAPP)[number];
 
 export const COMERCIAL_ESTADOS_DE_MENSAGEM = ['rascunho', 'na_fila', 'em_veto', 'enviando', 'enviada', 'vetada', 'recebida', 'falhou'] as const;

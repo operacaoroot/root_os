@@ -5,6 +5,8 @@ import { EntradaDeGrupoRegistry } from './entrada-de-grupo.registry';
 import { EnvioDeAprovacaoService } from './envio-de-aprovacao.service';
 import { CanalDeAprovacaoService } from './canal-de-aprovacao.service';
 import { CanalDeAprovacaoController } from './canal-de-aprovacao.controller';
+import { DigisacService } from './digisac.conector';
+import { ADMINISTRACAO_DO_DIGISAC, ENVIO_PELO_DIGISAC } from './digisac.port';
 
 /*
  * O CANAL EXTERNO DE APROVAÇÃO — fatia 5.5, RF-A-06.
@@ -60,7 +62,11 @@ import { CanalDeAprovacaoController } from './canal-de-aprovacao.controller';
     EntradaDeGrupoRegistry,
     EnvioDeAprovacaoService,
     CanalDeAprovacaoService,
+    // Interface 20/10 (U6): o conector do DigiSac, entregue ao comercial pelas duas portas de `digisac.port.ts`.
+    DigisacService,
+    { provide: ENVIO_PELO_DIGISAC, useExisting: DigisacService },
+    { provide: ADMINISTRACAO_DO_DIGISAC, useExisting: DigisacService },
   ],
-  exports: [TransporteDeCanalRegistry, EntradaDeGrupoRegistry, EnvioDeAprovacaoService],
+  exports: [TransporteDeCanalRegistry, EntradaDeGrupoRegistry, EnvioDeAprovacaoService, ENVIO_PELO_DIGISAC, ADMINISTRACAO_DO_DIGISAC],
 })
 export class CanaisModule {}
