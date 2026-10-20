@@ -425,6 +425,25 @@ async function partesDasOutrasLanes(p, sessao) {
     const t = await api('GET', `/trabalho/tarefas/${tarefa}`, undefined, sessao.token);
     return { detalhe: { tarefa: t.title } };
   });
+
+  // ---------------- U6 · DigiSac ----------------
+  await passo('Conexões › WhatsApp (DigiSac): o cartão com a URL do webhook, sem token na tela', async () => {
+    await p.goto(`${WEB}/conexoes`, { waitUntil: 'networkidle' });
+    const url = p.getByTestId('url-do-webhook-digisac');
+    await url.waitFor();
+    const texto = (await url.innerText()).trim();
+    conferir(/\/api\/comercial\/webhooks\/digisac\/[0-9a-f-]{36}/.test(texto), `a URL do webhook veio: ${texto}`);
+    conferir(/segredo=\s*$/.test(texto) || !/segredo=[^\s&]+/.test(texto), 'a URL do webhook mostra um segredo');
+    const cartao = url.locator('xpath=ancestor::section[1]');
+    const alvo = (await cartao.count()) ? cartao : url;
+    await alvo.scrollIntoViewIfNeeded();
+    await foto(p, 'conexoes-digisac-escuro');
+    // A entrada recusa sem segredo (a stack do seed não tem DigiSac configurado: 404 para tudo).
+    const orgId = texto.match(/digisac\/([0-9a-f-]{36})/)[1];
+    const r = await http('POST', `${API}/comercial/webhooks/digisac/${orgId}`, { event: 'message.created', data: { id: 'x', isFromMe: false, type: 'chat', text: 'oi' } });
+    conferir(r.status === 401 || r.status === 403 || r.status === 404, `o webhook sem segredo respondeu ${r.status}`);
+    return { detalhe: { webhook: texto.replace(/[0-9a-f-]{36}/, '<empresa>'), semSegredo: r.status } };
+  });
 }
 
 main()
