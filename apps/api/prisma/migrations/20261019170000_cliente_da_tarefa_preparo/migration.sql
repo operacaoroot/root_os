@@ -11,6 +11,11 @@
 --
 -- Na produção a coluna já é a do Lucas (FK para WorkTask) e num banco novo ela
 -- ainda não existe: nos dois casos esta migration não faz nada.
+--
+-- Reentrância (revisão adversarial 1.4): depois da conciliação a FK para
+-- `Partner` volta a existir. Rodado de novo à mão nesse estado, o preparo
+-- tiraria a coluna do esquema. Por isso ele só age enquanto a migration do Lucas
+-- (que cria `WorkArea`) ainda não passou.
 -- ============================================================================
 DO $$
 BEGIN
@@ -21,7 +26,7 @@ BEGIN
       JOIN pg_class r ON r.oid = c.confrelid
      WHERE c.contype = 'f' AND t.relname = 'WorkTask' AND r.relname = 'Partner'
        AND c.conname = 'WorkTask_clienteId_fkey'
-  ) THEN
+  ) AND to_regclass('public."WorkArea"') IS NULL THEN
     DROP TRIGGER IF EXISTS "WorkTask_orgId_confere_cliente" ON "WorkTask";
     ALTER TABLE "WorkTask" DROP CONSTRAINT "WorkTask_clienteId_fkey";
     DROP INDEX IF EXISTS "WorkTask_orgId_clienteId_idx";
