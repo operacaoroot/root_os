@@ -14,11 +14,13 @@
 - Variável nova se declara em dois lugares: na aba Ambiente do serviço no easyPanel e no bloco `environment:` do compose do painel. O `.env` do repositório não chega lá.
 - As migrations rodam também no `command` do container `api`. Migration que falha derruba a API.
 
-## Placeholders que o orquestrador preenche antes da virada
+## Os valores que se preenchem na hora
 
-| Placeholder | O que é |
+Um arquivo não consegue citar o hash do commit que o contém. Por isso o hash não está escrito aqui: ele é lido da tag, no Predator, e conferido no bundle, na VPS (o `list-heads` do passo "Antes de começar" e o `rev-parse` do passo 2 mostram o mesmo valor). O valor também está no fim do `homolog/RESULTADO-FINAL.md`, na linha "A tag".
+
+| Valor | O que é |
 |---|---|
-| `<hash-final>` | o commit da `homolog/final-20261019` na tag `final-entrega-20261020` (40 caracteres) |
+| `<hash-final>` | o commit da tag `final-entrega-20261020`: `git -C /c/Users/User/dev/marketing-os rev-parse final-entrega-20261020^{commit}` (40 caracteres) |
 | `<curto>` | os 7 primeiros caracteres de `<hash-final>` |
 | `<quem responde>` | o nome de quem assina a política (Rodrigo ou Pedro): preenchido na hora, por quem executa |
 
@@ -50,8 +52,8 @@ O OS fica fora do ar, ou instável nas tarefas, do fim do passo 5 ao fim do pass
 
    ```bash
    git -C /c/Users/User/dev/marketing-os rev-parse final-entrega-20261020^{commit}
-   git -C /c/Users/User/dev/marketing-os bundle verify /c/Users/User/dev/rootos-final.bundle
-   git -C /c/Users/User/dev/marketing-os bundle list-heads /c/Users/User/dev/rootos-final.bundle
+   git -C /c/Users/User/dev/marketing-os bundle verify /c/Users/User/dev/final.bundle
+   git -C /c/Users/User/dev/marketing-os bundle list-heads /c/Users/User/dev/final.bundle
    ```
 
    Esperado: o `rev-parse` imprime `<hash-final>`; o `verify` termina com `is okay` e lista `5260924` como pré-requisito; o `list-heads` mostra `<hash-final> refs/heads/homolog/final-20261019`.
@@ -67,7 +69,7 @@ O OS fica fora do ar, ou instável nas tarefas, do fim do passo 5 ao fim do pass
 
    ```bash
    ssh vps-root "mkdir -p /root/virada"
-   scp rootos-final.bundle rootos-final-completo.bundle vps-root:/root/virada/
+   scp final.bundle rootos-final-completo.bundle vps-root:/root/virada/
    ```
 
    Use o `ssh` e o `scp` secos, sem flag na linha: as opções estão no `~/.ssh/config`.
@@ -172,10 +174,10 @@ echo "$REPO:rollback-$DIA" > "$VIRADA/imagem-de-volta.txt"
 cd "$FONTE"
 git rev-parse HEAD > "$VIRADA/sha-antes.txt"
 git rev-parse --abbrev-ref HEAD > "$VIRADA/branch-antes.txt"
-git bundle verify "$VIRADA/rootos-final.bundle"
+git bundle verify "$VIRADA/final.bundle"
 ```
 
-- Se o `verify` disser `is okay`: use `BUNDLE=$VIRADA/rootos-final.bundle`.
+- Se o `verify` disser `is okay`: use `BUNDLE=$VIRADA/final.bundle`.
 - Se disser que falta o pré-requisito `5260924`: use `BUNDLE=$VIRADA/rootos-final-completo.bundle` e rode o `verify` nele.
 
 ```bash
@@ -315,7 +317,7 @@ docker run --rm --network "$NET" -w /app/apps/api \
 **Conferir:**
 - O seed da política no ensaio termina como o passo 5a espera (abaixo) e não fala em "Nada foi semeado".
 - O primeiro `migrate status` lista 13 migrations pendentes (as da tabela). O primeiro `deploy` aplica as 13; o segundo diz que não há nada a aplicar (idempotência).
-- Total de tarefas igual ao de `contagens-antes.txt`. Tarefas com cliente: igual ou menor que antes; a diferença são as tarefas que citavam um cartão ainda em fase de lead, que ficam sem cliente de propósito (o passo 9 as leva ao funil pelos mapas). Na cópia de 19/10 foram 8 antes e 6 depois, com 4 `Partner` criados. Anote os dois números.
+- Total de tarefas igual ao de `contagens-antes.txt`. Tarefas com cliente: igual ou menor que antes; a diferença são as tarefas que citavam um cartão ainda em fase de lead, que ficam sem cliente de propósito (o passo 9 as leva ao funil pelos mapas). Na cópia de 19/10 foram 8 antes e 6 depois, com 3 `Partner` criados. Anote os dois números.
 - Zero tarefa com cliente que não seja `Partner`. Nenhuma empresa com dois clientes internos.
 - A chave estrangeira do cliente aponta para `"Partner"`.
 - 98 migrations aplicadas.

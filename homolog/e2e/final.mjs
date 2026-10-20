@@ -584,7 +584,8 @@ async function main() {
           const antes = await api(`/trabalho/tarefas/${t.id}`);
           const r = await escrever('PATCH', `/trabalho/tarefas/${t.id}`, { outrosResponsaveisIds: [outra.id], expectedUpdatedAt: antes.updatedAt });
           alvo = t.id;
-          nomes = [antes.assigneeUser?.name ?? antes.assignee, outra.nome].filter(Boolean);
+          const principal = pessoas.find((x) => x.id === t.assigneeUserId)?.nome ?? antes.assigneeUser?.name ?? antes.assignee;
+          nomes = [principal, outra.nome].filter(Boolean);
           desfazer = async () => {
             const agora = await api(`/trabalho/tarefas/${t.id}`);
             await escrever('PATCH', `/trabalho/tarefas/${t.id}`, { outrosResponsaveisIds: [], expectedUpdatedAt: agora.updatedAt });
@@ -599,7 +600,8 @@ async function main() {
       await popup.waitFor({ timeout: 20_000 });
       const texto = await popup.innerText();
       const achados = nomes.filter((n) => texto.includes(n)).length;
-      conferir(nomes.length < 2 || achados >= 2, `o pop-up mostra ${achados} de ${nomes.length} responsáveis`);
+      conferir(nomes.length >= 2, `a tarefa da prova tem ${nomes.length} responsável(is) com nome; o passo pede dois`);
+      conferir(achados >= 2, `o pop-up mostra ${achados} de ${nomes.length} responsáveis`);
       conferir(!vigia.problemas().length, vigia.problemas().slice(0, 2).join(' · '));
       await foto(p, 'popup-responsaveis-escuro');
       await p.keyboard.press('Escape').catch(() => {});

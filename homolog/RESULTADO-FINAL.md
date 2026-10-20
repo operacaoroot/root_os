@@ -9,8 +9,8 @@
 
 | O quê | Onde |
 |---|---|
-| A versão final com a cópia da produção de 19/10 (19h33), organizada | `rootos-final`: web `http://100.95.41.124:3030` (e `127.0.0.1:3030`), api `:4030`. Login do Rodrigo e do Lucas com a senha que está em `homolog/.env.final` |
-| A versão final com o seed fictício (onde os 5 roteiros rodaram) | `rootos-final-seed`: web `http://127.0.0.1:3031`, api `:4031` |
+| A versão final com a cópia da produção de 19/10 (19h33), organizada | `rootos-final`: web `http://100.95.41.124:3030` (e `127.0.0.1:3030`; a raiz abre o login), api `:4030`, banco `rootos_final_b`, imagem `rootos-final-app:final` (= `final3`). Login do Rodrigo e do Lucas com a senha que está em `homolog/.env.final` (`FINAL_LOGIN_*`) |
+| A versão final com o seed fictício (onde os 5 roteiros rodaram) | `rootos-final-seed`: web `http://127.0.0.1:3031`, api `:4031`, imagem `final2` (os consertos da revisão vieram depois: API de Tarefas do dia, login, carga e migration), login `admin@marketing-os.local` com a `ADMIN_PASSWORD` de `homolog/.env.final-seed` |
 | A homologação de antes e a cópia de 16h | `rootos-comercial` (3010) e `rootos-copia` (3020), intocadas nesta rodada |
 
 ## 2. As fontes e o que entrou
@@ -49,7 +49,7 @@
 
 O que mudou nos roteiros, sempre por decisão declarada (nenhuma conferência afrouxada): T6 confere as 8 abas do Comercial na ordem nova e que `/comercial` fica no Painel geral (não redireciona mais ao Funil vivo); T1 entra pela área Trabalho (o menu da produção não tem `title` no link); a tarefa de prova nasce com `assigneeUserId` (Minhas tarefas e Atividade acham por conta desde F1); `ux-painel` aceita `UX_RAIZ=site`. A stack do seed roda com `ROTINAS_CRON=on`, como a `rootos-comercial`, porque a jornada depende do relógio para a mensagem da véspera.
 
-**`final.mjs` com a cópia da produção** (`rootos-final`; `homolog/organizar/prova-final.json`, fotos fora do git): RESULTADO_FINAL_MJS_COPIA
+**`final.mjs` com a cópia da produção** (`rootos-final`): 17 de 17, detalhe logo abaixo, em "A organização das tarefas reais".
 
 **Suítes** (`homolog/final/suites.md`). A linha de base da produção foi refeita: a de 236 vermelhos estava baixa demais porque o worktree `base-lucas` não tinha o `packages/policy` construído, e todo arquivo que importava a política caía como um vermelho só. Medida de novo num `git archive abd1476` com policy e shared construídos:
 
@@ -65,7 +65,23 @@ O que mudou nos roteiros, sempre por decisão declarada (nenhuma conferência af
 **Nenhum vermelho é só da versão final e nenhum vem da política de conflito.** Todos os vermelhos restantes são do mesmo código e do mesmo teste da produção (classe a): permissão e symlink do Windows, as guardas de "acesso atual" e os dublês sem método do Pedro, a catraca de arquitetura com `contexto-movimento-explicito.service.ts` (que veio da produção), testes que pedem `ROOTOS_QA_PREVIEW=1` ou o clone local de QA. A versão final deixa verdes 8 casos que estão vermelhos na produção. Um defeito nosso foi achado e consertado: o `prisma format` tinha realinhado o bloco `PautaEpisodio`, e o teste da MD2 do Pedro confere o texto exato. Os testes novos da revisão: `tarefas-do-dia-cliente` 8/8, `ficha-revisao` 4/4, `destino-do-login` 7/7, `login-destino` 8/8, `nav` 46/46; work-*, tarefas*, caixa*, ficha*, checkout e comercial-seed 290 verdes.
 
 **Conciliação provada** (Postgres descartável com a cópia 19b, depois da revisão): 8 tarefas com cliente → 6 convertidas e 2 sem cliente (citavam cartão em fase de lead; o organizador as leva ao funil), 4 `Partner` criados, nenhum fornecedor promovido, um cartão de título `---` convertido sem derrubar a migration; segunda passada do preparo e da conciliação sem mudança (md5 de tarefa e cliente igual, coluna mantida). A revisão adversarial provou também o ponto de partida da homologação (o vínculo nosso fica) e banco com duas empresas (cada uma com o seu `Partner`; cliente de outra empresa recusado pelo gatilho).
-<!-- ORGANIZAR -->
+
+### A organização das tarefas reais (F5, decisão 5), na imagem final
+
+A cópia de 19/10 19h33 foi restaurada **de novo**, num banco novo da stack (`rootos_final_b`), depois dos consertos da revisão, para a homologação ficar exatamente no estado que a virada vai produzir. A ordem foi a do VIRADA: restore, neutralização (6 senhas descartadas, Rodrigo e Lucas com senha nova, tokens e cofre anulados, 3 convites, 2 hashes de aprovação, 4 rotinas desligadas; varredura de formato de credencial em toda coluna de texto: 0), migrations no arranque da API (98 aplicadas; a conciliação deixou 6 tarefas com `Partner`, 2 sem cliente por citarem cartão de lead, 3 `Partner` criados e nenhum órfão), `db:seed:politica` com a assinatura de capacidade nova (6 criadas, 71 atualizadas, 77 no total) e o organizador:
+
+| Passada | Resultado |
+|---|---|
+| `--simular` | o plano: 6 pastas e listas a criar, 4 listas e 67 tarefas a mover, cliente em 65 tarefas, 19 leads ao funil, 4 testes a arquivar, 108 de marketing intocadas |
+| `--homologacao` (para valer) | 3 pastas e 3 listas criadas, 4 listas movidas, 67 tarefas movidas e 4 já no lugar (6 soltas do pai, 3 pedidas para a Implantação foram para Execução porque a porta da implantação recusa cartão solto), cliente preenchido em 65; 19 leads criados no Funil vivo (17 movidos pela régua; 6 ficaram na etapa anterior porque o portão pediu o que o cartão não tinha; por etapa: 8 follow-up, 8 proposta, 1 qualificação, 2 novo lead), os 19 cartões de origem arquivados com o link; 4 testes arquivados; marketing intocado (108); nada recusado |
+| `--simular` de novo | nada a fazer (71 tarefas e 4 listas no lugar, 19 leads já feitos, 4 testes já arquivados): idempotente |
+
+Destinos: Administrativa / Administrativo 6 · Administrativa / Financeiro 3 · Gestão / Comercial 8 · Gestão / Operação 15 · Clientes / Execução 39 · Funil vivo 19 leads · 4 testes arquivados · Marketing onde está (108).
+
+**Sobras: 4**, todas listas que ficaram vazias fora das pastas da casa (as duas do CRM antigo de onde saíram cartões e contratos, e duas listas soltas de teste). Ficaram onde estavam; a lista com os nomes está em `homolog/organizar/sobras.md` (fora do git). Nenhuma tarefa ficou sem destino. As 2 tarefas que citavam cartão de lead viraram lead no funil pelos mapas.
+
+**`final.mjs` com a cópia organizada:** 17 de 17. Menu recolhe (252 → 64 px) e expande; Painel geral do Comercial com números e as 8 abas na ordem; Funil vivo; Propostas com as 2 do serviço antigo (o dublê; a produção ainda não publica pela sala, por isso 0 da sala aqui, e a prova da sala é a do seed); Lista de leads com 19; Visão geral do Dia a dia como primeira aba, citando 4 das 5 pastas da casa (a quinta, Marketing, não tem tarefa aberta nas listas que o dash lê); "Todas" com 58 tarefas de 4 pastas; calendário; pop-up com 2 responsáveis (o passo põe um segundo responsável numa tarefa, confere e desfaz; conferido no banco que não sobrou nenhum); Financeiro, Cofre e Granola abrindo sem erro; nenhuma tela do foco rola na horizontal a 390 px (Financeiro e Integrações rolam, igual à produção: linha de base, telas fora do foco sem mudança nossa); 43 fotos em escuro, claro e 390 px, fora do git.
+
 
 ## 5. Conflitos do merge (F1), arquivo a arquivo
 
@@ -241,11 +257,12 @@ docker compose -p rootos-copia down -v   # rootos_copia_{db,staging,api,web,redi
 docker compose -p rootos-final -f homolog/docker-compose.final.yml --env-file homolog/.env.final down -v
                                          # rootos_final_{db,api,web,redis,asaas_mock,zapsign_mock,propostas_mock}
                                          # volumes rootos-final_rootos_final_{db,vault,asaas,zapsign}
+                                         # (o volume do db guarda os DOIS bancos com a cópia: rootos_final, da rodada 1, e rootos_final_b, o atual)
 ```
 
 **Stack só com dado fictício (o seed), pode ir junto:** `docker compose -p rootos-final-seed -f homolog/docker-compose.final-seed.yml --env-file homolog/.env.final-seed down -v`.
 
-**Imagens** (o contexto de construção fechava as pastas com dado real no `.dockerignore`, então nenhuma tem dado de cliente; são só espaço, 2,6 GB cada): `rootos-final-app:{f1,f2,final1-rollback,final2,final}`, `rootos-copia-app:trabalho-entrega-20261020`, `rootos-final-propostas-mock:latest`, `rootos-final-seed-propostas-mock:latest`.
+**Imagens** (o contexto de construção fechava as pastas com dado real no `.dockerignore`, então nenhuma tem dado de cliente; são só espaço, 2,6 GB cada): `rootos-final-app:{f1,f2,final1-rollback,final2,final2-rollback,final3,final}`, `rootos-copia-app:trabalho-entrega-20261020`, `rootos-final-propostas-mock:latest`, `rootos-final-seed-propostas-mock:latest`.
 
 **Arquivos com dado real de cliente:**
 
@@ -262,4 +279,20 @@ docker compose -p rootos-final -f homolog/docker-compose.final.yml --env-file ho
 
 **Bundles desta frente:** `C:\Users\User\dev\final.bundle` e `C:\Users\User\dev\rootos-final.bundle` (depois que a branch chegar ao GitHub pelo rito da quinta), `C:\Users\User\dev\copia-lucas.bundle`.
 
-**Árvores de trabalho dos agentes e a linha de base:** `git worktree remove` em `C:\Users\User\dev\base-lucas` e em cada `marketing-os\.claude\worktrees\agent-*`; os bancos de teste `base_lucas_test` e `*_final_test` no Postgres da homologação (5440) são fictícios e podem ir com `DROP DATABASE`.
+**Árvores de trabalho dos agentes e a linha de base:** `git worktree remove` em `C:\Users\User\dev\base-lucas` e em cada `marketing-os\.claude\worktrees\agent-*`; os bancos de teste no Postgres da homologação (5440: `base_lucas_test`, `rootos_baselucas_test`, `rootos_final_test`, `rootos_final_test_rls`, `rootos_final_rev17_test`) e no da `rootos-final` (5443: `conc_a_test`, `conc_b_test`, `conc_c_test`, `rootos_final_test`, `rootos_final_test_rls`, `rootos_final_test_b`, `rootos_final_test_int`, `rootos_final_test_seed`, `base_lucas_test`) são fictícios e podem ir com `DROP DATABASE`; a cópia limpa da produção usada como linha de base das suítes, `C:/Users/User/dev/final-suites-base-prod` (só código, sem dado), também pode ir.
+
+## 10. O que fica para o Rodrigo (e o Pedro e o Lucas) decidir
+
+- **Validar na `rootos-final`** (3030) com o Lucas, e marcar a virada. O roteiro é `docs/comercial/VIRADA-PRODUCAO.md`: o passo 4 ensaia tudo numa cópia descartável antes de qualquer escrita em produção; a política pede a assinatura de quem responde (Rodrigo ou Pedro).
+- **As 6 etapas de lead que ficaram para trás** na organização (o portão pediu o que o cartão não tinha): conferir no Funil vivo e mover pela tela. Rodrigo pede, Lucas confirma (as duas contas da organização).
+- **As 4 sobras** (listas vazias fora das pastas da casa, em `homolog/organizar/sobras.md`): ficam onde estão até alguém decidir arquivar.
+- **Criação manual de trilho de onboarding** (revisão 2.2): hoje só pelo "Registrar cliente já fechado" ou pelo fechamento; empresa sem o módulo `leads` não tem tela para abrir trilho.
+- **Os textos operacionais do Pedro** que não são código (`AGENTS.md` e os cabeçalhos "Autorização vigente" de 7ed42fb): trazer ou não.
+- **A catraca de arquitetura** vermelha por um arquivo que veio da produção (`contexto-movimento-explicito.service.ts` importa o `ObsidianService` fora da porta): exceção com motivo ou passar pela porta, com o Pedro.
+- **As Tarefas do dia do Lucas** (`/trabalho/todas`): versão na ordem manual, guarda de acesso atual e áreas criadas num `GET`; próxima rodada, com o Lucas.
+- **O menu de Propostas** com `leads.ver` (antes só a sessão da plataforma via o item).
+- **Limpeza** (§9): depois da validação e da virada.
+
+## 11. A tag
+
+`final-entrega-20261020` aponta para o commit que traz este arquivo (o hash sai de `git rev-parse final-entrega-20261020^{commit}` e é o mesmo do `list-heads` do bundle `C:\Users\User\dev\final.bundle`, `main..homolog/final-20261019`). A `rootos-final` roda a imagem construída desse código (`rootos-final-app:final`, igual a `final3`; o commit da tag só acrescenta documentos a ela).
