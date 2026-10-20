@@ -1123,7 +1123,8 @@ function TrabalhoConteudo({ visaoInicial, modo, aoSairDeTodas }: { visaoInicial:
         )}
         {geral && tarefas && visao === 'board' && (
           <Board
-            lista={fConcluidas === 'ocultar' ? { ...listaGeral, statuses: listaGeral.statuses.filter((st) => st.type !== 'closed') } : listaGeral}
+            // Uma coluna concluída fica se ainda tem tarefa aberta (o mesmo nome é etapa aberta noutra lista).
+            lista={fConcluidas === 'ocultar' ? { ...listaGeral, statuses: listaGeral.statuses.filter((st) => st.type !== 'closed' || visiveisNoQuadroGeral.some((t) => t.statusId === st.id)) } : listaGeral}
             tarefas={visiveisNoQuadroGeral} editable={quadroEditavel} podeCriar={false} token={token}
             agentes={estrutura?.agentes ?? []} pessoas={estrutura?.pessoas ?? []} trilhos={trilhos} movimento={new Map()} densidade={densidade}
             semMovimento listasPorColuna={listasPorColuna}

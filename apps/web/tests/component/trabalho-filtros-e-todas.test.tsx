@@ -330,6 +330,19 @@ describe('Ajuste do Todas: o quadro com os status reais de todas as listas', () 
     await waitFor(() => expect(colunas()).toEqual(['nome:a fazer', 'nome:kickoff marcado', 'nome:imersao']));
   });
 
+  it('"Ocultar concluídas" não esconde a tarefa aberta cujo status tem o nome de uma etapa concluída de outra lista', async () => {
+    const antes = get.getMockImplementation()!;
+    const exec = { ...execucao, statuses: [st('exec-feito-aberto', 'Feito', 'open', 0)] };
+    const e = { ...estrutura, folders: estrutura.folders.map((f) => (f.id === CLIENTES ? { ...f, lists: [exec, onboarding] } : f)) };
+    get.mockImplementation((rota: string) => (rota === '/trabalho/estrutura' ? Promise.resolve(e) : antes(rota)));
+    tarefas.push(tarefa('55555555-5555-4555-8555-555555555555', 'Revisar a entrega', exec as ReturnType<typeof lista>));
+    window.history.replaceState({}, '', '/trabalho?pasta=todas&concluidas=ocultar');
+    render(<TrabalhoPage />);
+    await waitFor(() => expect(document.querySelectorAll('[data-work-task-id]')).toHaveLength(4));
+    expect(colunas()).toContain('nome:feito');
+    expect(within(coluna('nome:feito')).getByText('Revisar a entrega')).toBeInTheDocument();
+  });
+
   it('a união é por nome normalizado e o destino nunca é status de outra lista', () => {
     expect(nomeNormalizado('  Em   Revisão ')).toBe('em revisao');
     const a = { ...lista('l-a', 'A'), statuses: [st('a1', 'Em Revisão', 'custom', 0), st('a2', 'Feito', 'closed', 1)] };
