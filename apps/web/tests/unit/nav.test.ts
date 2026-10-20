@@ -297,11 +297,7 @@ describe('NAV — estrutura', () => {
   });
 
   it('toda rota do NAV tem página, visível ou oculta; a que não tem é parcial e cai na página de preparação', () => {
-    // `/trabalho/todas` é criada pela lane U2 da rodada da interface (20/10/2026), em paralelo
-    // a este item do menu. Enquanto ela não chega, a rota cai na página de preparação. Depois
-    // do merge das lanes a página existe e esta exceção não tem mais efeito.
-    const PAGINA_DE_OUTRA_LANE = new Set(['trabalho-todas']);
-    const semPagina = NAV.filter((n) => !paginaExiste(n.href) && !PAGINA_DE_OUTRA_LANE.has(n.key));
+    const semPagina = NAV.filter((n) => !paginaExiste(n.href));
     expect(semPagina.map((n) => n.key).sort()).toEqual(['ferramentas', 'fluxos']);
     for (const n of semPagina) expect(n.estado, n.key).toBe('parcial');
     expect(existsSync(join(RAIZ_DO_WEB, 'src', 'app', '[...slug]', 'page.tsx'))).toBe(true);
