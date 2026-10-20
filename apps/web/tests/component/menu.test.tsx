@@ -191,10 +191,12 @@ describe('a barra lateral', () => {
     expect(screen.queryByRole('list', { name: 'Subseções de Dia a dia' })).toBeNull();
     expect(area('Dia a dia')).toHaveAttribute('aria-expanded', 'false');
     expect(area('Trabalho')).toHaveAttribute('aria-expanded', 'true');
+    // 20/10/2026 (noite, pedido do Rodrigo): o Todas é o chip de Tarefas, não uma subseção.
     expect(subsecoes('Trabalho').getAllByRole('link').map((el) => el.textContent)).toEqual([
-      'Tarefas', 'Todas as tarefas', 'Implantação de clientes', 'Atas',
+      'Tarefas', 'Implantação de clientes', 'Atas',
     ]);
-    expect(subsecoes('Trabalho').getByRole('link', { name: 'Todas as tarefas' })).toHaveAttribute('href', '/trabalho/todas');
+    expect(subsecoes('Trabalho').queryByRole('link', { name: 'Todas as tarefas' })).toBeNull();
+    expect(link('/trabalho/todas')).toBeNull();
   });
 
   it('área com uma subseção só não mostra lista: o WhatsApp é um link', async () => {
@@ -433,7 +435,8 @@ describe('a barra lateral', () => {
     expect(document.body.textContent?.toLowerCase()).not.toContain('simulador');
   });
 
-  it('a Topbar de Todas as tarefas fica no Trabalho', () => {
+  // A rota redireciona para o chip Todas; enquanto isso, o item oculto ainda dá o título.
+  it('a Topbar de /trabalho/todas fica no Trabalho, pelo item oculto', () => {
     PERMISSOES = TODAS_DO_NAV;
     CAMINHO = '/trabalho/todas';
     render(<Topbar />);

@@ -9,8 +9,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
  *     no endereço, conta os ativos, e "Limpar tudo" não mexe em lista, visão nem pasta;
  *  2. U2 · a Implantação tem o mesmo par, com as vistas dela (`tela=implantacao`) e os
  *     filtros responsável, cliente, etapa, atrasadas e busca;
- *  3. U3 · "Todas" tem os segmentos por pasta de topo (`?segmento=`, `segmentoId` na API),
- *     e a rota `/trabalho/todas` abre o Trabalho já em "Todas".
+ *  3. U3 · "Todas" tem os segmentos por pasta de topo (`?segmento=`, `segmentoId` na API);
+ *  4. Ajuste do Todas (20/10/2026, noite): o quadro de "Todas" tem as colunas dos status
+ *     REAIS de todas as listas do recorte (união pelo nome, com as vazias); soltar cai no
+ *     status de mesmo nome da lista da tarefa ou, sem ele, no primeiro do mesmo tipo, com
+ *     aviso. A rota `/trabalho/todas` virou redirecionamento (rotas-movidas.test).
  */
 
 const get = vi.fn(), post = vi.fn(), patch = vi.fn();
@@ -22,8 +25,8 @@ vi.mock('@/lib/api', () => ({
 vi.mock('@/lib/auth', () => ({ useAuth: () => ({ token: 'tok', ready: true, user: { id: EU, name: 'Rodrigo QA' }, can: (p: string) => ['tarefas.ver', 'tarefas.editar'].includes(p) }) }));
 vi.mock('next/navigation', () => ({ useRouter: () => ({ push, replace: vi.fn(), back: vi.fn(), prefetch: vi.fn() }) }));
 import TrabalhoPage from '@/app/trabalho/page';
-import TodasAsTarefasPage from '@/app/trabalho/todas/page';
 import { TrabalhoView } from '@/components/trabalho/TrabalhoView';
+import { colunasDeTodas, destinoNaLista, nomeNormalizado } from '@/components/trabalho/colunas-de-todas';
 
 const EU = '0e0e0e0e-0000-4000-8000-000000000001';
 const ANA = '0e0e0e0e-0000-4000-8000-000000000002';
@@ -245,19 +248,99 @@ describe('U3: Todas as tarefas, por segmento', () => {
     expect(screen.queryByTestId('trabalho-segmentos')).toBeNull();
     expect(consultas().every((p) => !p.has('segmentoId'))).toBe(true);
   });
+});
 
-  it('a rota /trabalho/todas abre "Todas" sem ?pasta=, com os segmentos no lugar das pastas', async () => {
-    window.history.replaceState({}, '', '/trabalho/todas');
-    render(<TodasAsTarefasPage />);
-    expect(await screen.findByRole('heading', { name: 'Todas as tarefas' })).toBeInTheDocument();
-    await waitFor(() => expect(consultas().some((p) => p.get('todas') === '1' && !p.has('listId'))).toBe(true));
-    expect(await screen.findByTestId('trabalho-segmentos')).toBeInTheDocument();
-    expect(screen.queryByTestId('trabalho-pasta-todas')).toBeNull();
-    expect(query().has('pasta')).toBe(false);
+describe('Ajuste do Todas: o quadro com os status reais de todas as listas', () => {
+  const colunas = () => [...document.querySelectorAll('[data-coluna]')].map((c) => c.getAttribute('data-coluna'));
+  const coluna = (id: string) => document.querySelector(`[data-coluna="${id}"]`) as HTMLElement;
+  const cartao = (id: string) => document.querySelector(`[data-work-task-id="${id}"]`) as HTMLElement;
+  function dataTransfer() {
+    const dados: Record<string, string> = {};
+    return { setData: (k: string, v: string) => { dados[k] = v; }, getData: (k: string) => dados[k] ?? '', effectAllowed: 'all', dropEffect: 'move' };
+  }
+  function arrastar(id: string, colunaId: string) {
+    const dt = dataTransfer();
+    fireEvent.dragStart(cartao(id), { dataTransfer: dt });
+    fireEvent.dragOver(coluna(colunaId), { dataTransfer: dt });
+    fireEvent.drop(coluna(colunaId), { dataTransfer: dt });
+  }
+  /** Uma variante da estrutura em que o Onboarding tem uma etapa fechada com outro nome. */
+  function comEntregue() {
+    const antes = get.getMockImplementation()!;
+    const onb = { ...onboarding, statuses: [...onboarding.statuses, st('onb-ok', 'Entregue', 'closed', 2)] };
+    const e = { ...estrutura, folders: estrutura.folders.map((f) => (f.id === CLIENTES ? { ...f, lists: [execucao, onb] } : f)) };
+    get.mockImplementation((rota: string) => (rota === '/trabalho/estrutura' ? Promise.resolve(e) : antes(rota)));
+  }
+
+  it('o chip Todas marcado mostra uma coluna por status real, com as vazias e em quantas listas cada uma existe', async () => {
+    window.history.replaceState({}, '', '/trabalho?pasta=todas');
+    render(<TrabalhoPage />);
+    await waitFor(() => expect(document.querySelectorAll('[data-work-task-id]')).toHaveLength(3));
+    expect(screen.getByTestId('trabalho-pasta-todas')).toHaveAttribute('aria-pressed', 'true');
+    // Abertos, em andamento, concluídos; dentro do tipo, pela ordem da primeira lista.
+    expect(colunas()).toEqual(['nome:a fazer', 'nome:kickoff marcado', 'nome:imersao', 'nome:feito']);
+    expect(coluna('nome:kickoff marcado')).toHaveAttribute('aria-label', 'Kickoff marcado: 0 tarefas');
+    expect(coluna('nome:imersao')).toHaveAttribute('aria-label', 'Imersão: 0 tarefas');
+    expect(within(coluna('nome:a fazer')).getByTestId('trabalho-coluna-listas')).toHaveTextContent('· 4 listas');
+    expect(within(coluna('nome:kickoff marcado')).getByTestId('trabalho-coluna-listas')).toHaveTextContent('· 1 lista');
+    expect(within(coluna('nome:feito')).getByTestId('trabalho-coluna-listas')).toHaveTextContent('· 4 listas');
+    // Nenhum cartão fica de fora nem aparece duas vezes: a soma das colunas é o total.
+    const soma = colunas().reduce((n, id) => n + coluna(id!).querySelectorAll('[data-work-task-id]').length, 0);
+    expect(soma).toBe(3);
+    expect(new Set([...document.querySelectorAll('[data-work-task-id]')].map((e) => e.getAttribute('data-work-task-id'))).size).toBe(3);
+  });
+
+  it('o segmento recorta as colunas pelas listas da pasta', async () => {
+    window.history.replaceState({}, '', `/trabalho?pasta=todas&segmento=${ADM}`);
+    render(<TrabalhoPage />);
+    await waitFor(() => expect(colunas()).toEqual(['nome:a fazer', 'nome:feito']));
     fireEvent.click(screen.getByTestId(`trabalho-segmento-${CLIENTES}`));
-    expect(query().get('segmento')).toBe(CLIENTES);
-    // Abrir uma lista pela árvore vai para o Trabalho com ela.
-    fireEvent.click(screen.getByRole('button', { name: /Rotina/ }));
-    expect(push).toHaveBeenCalledWith('/trabalho?lista=l-rotina');
+    await waitFor(() => expect(colunas()).toEqual(['nome:a fazer', 'nome:kickoff marcado', 'nome:imersao', 'nome:feito']));
+    expect(within(coluna('nome:a fazer')).getByTestId('trabalho-coluna-listas')).toHaveTextContent('· 1 lista');
+  });
+
+  it('soltar numa coluna move para o status de mesmo nome da lista da tarefa', async () => {
+    window.history.replaceState({}, '', '/trabalho?pasta=todas');
+    render(<TrabalhoPage />);
+    await waitFor(() => expect(cartao(T1)).toBeTruthy());
+    arrastar(T1, 'nome:feito');
+    await waitFor(() => expect(patch).toHaveBeenCalledWith(`/trabalho/tarefas/${T1}`, { statusId: 'l-rotina-feita', expectedUpdatedAt: V1 }, 'tok'));
+    expect(screen.queryByTestId('trabalho-todas-aviso')).toBeNull();
+  });
+
+  it('sem o mesmo nome, cai no primeiro status do mesmo tipo e avisa; sem o tipo, nada muda e diz por quê', async () => {
+    comEntregue();
+    tarefas.push(tarefa('44444444-4444-4444-8444-444444444444', 'Fazer o kickoff', onboarding as ReturnType<typeof lista>));
+    window.history.replaceState({}, '', '/trabalho?pasta=todas');
+    render(<TrabalhoPage />);
+    await waitFor(() => expect(colunas()).toContain('nome:entregue'));
+    arrastar('44444444-4444-4444-8444-444444444444', 'nome:feito');
+    await waitFor(() => expect(patch).toHaveBeenCalledWith('/trabalho/tarefas/44444444-4444-4444-8444-444444444444', { statusId: 'onb-ok', expectedUpdatedAt: V1 }, 'tok'));
+    expect(await screen.findByTestId('trabalho-todas-aviso')).toHaveTextContent('Movida para Entregue (a lista Onboarding de cliente não tem a etapa Feito).');
+
+    patch.mockClear();
+    arrastar(T1, 'nome:imersao');
+    expect(await screen.findByTestId('trabalho-todas-aviso')).toHaveTextContent('Nada mudou: a lista Rotina não tem a etapa Imersão nem outra do mesmo tipo.');
+    expect(patch).not.toHaveBeenCalled();
+  });
+
+  it('"Ocultar concluídas" esconde as colunas de tipo concluído', async () => {
+    window.history.replaceState({}, '', '/trabalho?pasta=todas&concluidas=ocultar');
+    render(<TrabalhoPage />);
+    await waitFor(() => expect(colunas()).toEqual(['nome:a fazer', 'nome:kickoff marcado', 'nome:imersao']));
+  });
+
+  it('a união é por nome normalizado e o destino nunca é status de outra lista', () => {
+    expect(nomeNormalizado('  Em   Revisão ')).toBe('em revisao');
+    const a = { ...lista('l-a', 'A'), statuses: [st('a1', 'Em Revisão', 'custom', 0), st('a2', 'Feito', 'closed', 1)] };
+    const b = { ...lista('l-b', 'B'), statuses: [st('b1', 'em  revisao', 'custom', 0), st('b2', 'Pronto', 'closed', 1)] };
+    const cols = colunasDeTodas([a, b] as never);
+    expect(cols.map((c) => [c.id, c.name, c.listas])).toEqual([['nome:em revisao', 'Em Revisão', 2], ['nome:feito', 'Feito', 1], ['nome:pronto', 'Pronto', 1]]);
+    // A tarefa cujo status não veio na estrutura ganha a coluna dela, sem contar lista.
+    expect(colunasDeTodas([a] as never, [{ statusName: 'Órfã', statusType: 'open' }]).map((c) => c.id)).toEqual(['nome:orfa', 'nome:em revisao', 'nome:feito']);
+    expect(destinoNaLista(b as never, { id: 'nome:feito', type: 'closed' })).toEqual({ statusId: 'b2', nome: 'Pronto', exato: false });
+    expect(destinoNaLista(b as never, { id: 'nome:em revisao', type: 'custom' })).toEqual({ statusId: 'b1', nome: 'em  revisao', exato: true });
+    expect(destinoNaLista(b as never, { id: 'nome:a fazer', type: 'open' })).toBeNull();
+    expect(destinoNaLista(undefined, { id: 'nome:feito', type: 'closed' })).toBeNull();
   });
 });

@@ -99,15 +99,18 @@ describe('F4: "Todas as tarefas"', () => {
     expect(document.querySelectorAll('[data-work-task-id]')).toHaveLength(3);
   });
 
-  it('no quadro, as colunas são o tipo da etapa e soltar vai à primeira etapa daquele tipo na lista da tarefa', async () => {
+  it('no quadro, as colunas são os status reais das listas e, sem o mesmo nome, soltar vai à primeira etapa do tipo, com aviso', async () => {
     window.history.replaceState({}, '', '/trabalho?pasta=todas');
     render(<TrabalhoPage />);
-    const afazer = await screen.findByRole('region', { name: 'A fazer: 2 tarefas' });
-    expect(within(afazer).getByText('Marcar kickoff')).toBeInTheDocument();
-    const concluidas = screen.getByRole('region', { name: 'Concluídas: 1 tarefa' });
-    fireEvent.dragOver(concluidas, arrasto(T2));
-    fireEvent.drop(concluidas, arrasto(T2));
+    // Ajuste do Todas (20/10/2026): uma coluna por status real, não mais uma por tipo.
+    const aberta = await screen.findByRole('region', { name: 'Aberta: 1 tarefa' });
+    expect(within(aberta).getByText('Marcar kickoff')).toBeInTheDocument();
+    expect(screen.getByRole('region', { name: 'Fazendo: 0 tarefas' })).toBeInTheDocument();
+    const feito = screen.getByRole('region', { name: 'Feito: 1 tarefa' });
+    fireEvent.dragOver(feito, arrasto(T2));
+    fireEvent.drop(feito, arrasto(T2));
     await waitFor(() => expect(patch).toHaveBeenCalledWith(`/trabalho/tarefas/${T2}`, { statusId: 'b-feita', expectedUpdatedAt: V2 }, 'tok'));
+    expect(await screen.findByTestId('trabalho-todas-aviso')).toHaveTextContent('Movida para Encerrada (a lista Gestão não tem a etapa Feito).');
   });
 
   it('o quadro mede onde começa e ocupa até o fim da janela (a rolagem lateral fica visível com o menu recolhido ou não)', async () => {

@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { comQuery, destinoDaAbaRodada, destinoDoSimulador } from '@/lib/rotas-movidas';
+import { comQuery, destinoDaAbaRodada, destinoDeTodas, destinoDoSimulador } from '@/lib/rotas-movidas';
 
 /* As rotas que mudaram de lugar na rodada da interface (20/10/2026, U1) não perdem a query. */
 
@@ -13,6 +13,15 @@ describe('rotas movidas', () => {
     expect(destinoDoSimulador({ conversa: 'lead-1' })).toBe('/whatsapp?conversa=lead-1');
     expect(destinoDoSimulador({ conversa: 'lead-1', lead: 'lead-1', aba: 'resumo' })).toBe('/whatsapp?conversa=lead-1&lead=lead-1&aba=resumo');
     expect(destinoDoSimulador({ x: ['1', '2'], vazio: undefined })).toBe('/whatsapp?x=1&x=2');
+  });
+
+  // 20/10/2026 (noite, pedido do Rodrigo): o Todas é o chip de Tarefas.
+  it('/trabalho/todas vai para o chip Todas de /trabalho, com a mesma query', () => {
+    expect(destinoDeTodas({})).toBe('/trabalho?pasta=todas');
+    expect(destinoDeTodas({ segmento: 'X', visao: 'lista' })).toBe('/trabalho?pasta=todas&segmento=X&visao=lista');
+    // `pasta` é sempre todas, e `lista` (uma lista só) contradiz Todas.
+    expect(destinoDeTodas({ pasta: 'p1', lista: 'l1', segmento: 'X' })).toBe('/trabalho?pasta=todas&segmento=X');
+    expect(ler('app', 'trabalho', 'todas', 'page.tsx')).toMatch(/redirect\(destinoDeTodas\(/);
   });
 
   it('a aba antiga da rodada vai para o Comercial, sem a aba e com o resto', () => {

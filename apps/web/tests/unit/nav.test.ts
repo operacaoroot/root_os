@@ -162,8 +162,9 @@ describe('não se perdeu funcionalidade', () => {
         true,
       );
     }
+    // O destino pode levar query (`/trabalho?pasta=todas`, 20/10/2026): a rota é o que vem antes.
     for (const r of ROTAS_ABSORVIDAS) {
-      expect(hrefsNovos.has(r.destino), `${r.href} → ${r.destino} não existe`).toBe(true);
+      expect(hrefsNovos.has(r.destino.split('?')[0]), `${r.href} → ${r.destino} não existe`).toBe(true);
     }
   });
 
@@ -215,8 +216,9 @@ const MENU_FINAL: LinhaDoMenu[] = [
   // Trabalho: a base nossa.
   ['tarefas', 'Lista de tarefas', '/tarefas', 'tarefas.ver', 'trabalho', 'trabalho', null, true],
   ['trabalho', 'Tarefas', '/trabalho', 'tarefas.ver', 'trabalho', 'trabalho', null, false],
-  // Todas as tarefas (20/10/2026, rodada da interface, U1/U3): a rota nova, pendurada no Trabalho.
-  ['trabalho-todas', 'Todas as tarefas', '/trabalho/todas', 'tarefas.ver', 'trabalho', 'trabalho', 'trabalho', false],
+  // Todas as tarefas (20/10/2026, rodada da interface, U1/U3): a rota pendurada no Trabalho.
+  // Na mesma noite saiu do menu (pedido do Rodrigo): oculto, a rota redireciona para o chip Todas.
+  ['trabalho-todas', 'Todas as tarefas', '/trabalho/todas', 'tarefas.ver', 'trabalho', 'trabalho', 'trabalho', true],
   ['implantacao', 'Implantação de clientes', '/trabalho/implantacao', 'tarefas.ver', 'trabalho', 'trabalho', 'trabalho', false],
   ['onboarding', 'Bancada de onboarding', '/onboarding', 'tarefas.ver', 'trabalho', 'trabalho', 'trabalho', true],
   ['trabalho-atas', 'Atas', '/trabalho/atas', 'tarefas.ver', 'trabalho', 'trabalho', 'trabalho', false],
@@ -284,6 +286,8 @@ const OCULTOS_E_DESTINO: Record<string, string | null> = {
   // 20/10/2026 (rodada da interface, U1).
   console: '/dia-a-dia',
   'comercial-simulador': '/whatsapp',
+  // 20/10/2026 (noite, pedido do Rodrigo): o Todas é o chip de Tarefas.
+  'trabalho-todas': '/trabalho?pasta=todas',
   // Sai da barra e da busca por decisão de marca; não tem destino, a rota segue com dono.
   assinatura: null,
 };
@@ -790,7 +794,7 @@ describe('organização da navegação (ROOT-07 e versão final)', () => {
     const todas = new Set(NAV.map((n) => n.permission));
     const trabalho = navEmArvore(todas).find((g) => g.secao.key === 'trabalho')!;
     const raiz = trabalho.itens.find((no) => no.item.key === 'trabalho')!;
-    expect(raiz.filhos.map((f) => f.key)).toEqual(['trabalho-todas', 'implantacao', 'trabalho-atas']);
+    expect(raiz.filhos.map((f) => f.key)).toEqual(['implantacao', 'trabalho-atas']);
     expect(navPorSecao(todas).flatMap((g) => g.itens.map((i) => i.key))).not.toContain('tarefas');
     expect(moduloDaRotaDoWeb('/tarefas')).toBe('trabalho');
   });
@@ -800,17 +804,26 @@ describe('organização da navegação (ROOT-07 e versão final)', () => {
    * pendurado no item Tarefas, com a permissão de ler o quadro.
    */
   /*
-   * Rodada da interface (20/10/2026, U1/U3): "Todas as tarefas" é a rota /trabalho/todas,
-   * pendurada no Trabalho, com a permissão de ler o quadro.
+   * Rodada da interface (20/10/2026, U1/U3): "Todas as tarefas" era a rota /trabalho/todas,
+   * pendurada no Trabalho. Na mesma noite (pedido do Rodrigo) "o Todas é uma opção dentro
+   * de Tarefas, não uma subseção": o item fica oculto e dono da rota, absorvido pelo chip
+   * Todas de /trabalho, e a página redireciona com a mesma query.
    */
-  it('Todas as tarefas: /trabalho/todas no Trabalho, sob Tarefas, com tarefas.ver', () => {
-    expect(porKey.get('trabalho-todas')).toMatchObject({ label: 'Todas as tarefas', href: '/trabalho/todas', permission: 'tarefas.ver', secao: 'trabalho', modulo: 'trabalho', pai: 'trabalho' });
-    expect(porKey.get('trabalho-todas')?.oculto).toBeFalsy();
+  it('Todas as tarefas: oculto, dono de /trabalho/todas e absorvido pelo chip Todas de Tarefas', () => {
+    expect(porKey.get('trabalho-todas')).toMatchObject({ label: 'Todas as tarefas', href: '/trabalho/todas', permission: 'tarefas.ver', secao: 'trabalho', modulo: 'trabalho', pai: 'trabalho', oculto: true });
     expect(moduloDaRotaDoWeb('/trabalho/todas')).toBe('trabalho');
     expect(moduloDaRotaDoWeb('/trabalho/todas?segmento=abc')).toBe('trabalho');
+    const absorvida = ROTAS_ABSORVIDAS.find((r) => r.href === '/trabalho/todas');
+    expect(absorvida?.destino).toBe('/trabalho?pasta=todas');
+    expect(absorvida?.porque).toMatch(/opção dentro de Tarefas, não uma subseção/);
+    expect(paginaExiste('/trabalho/todas')).toBe(true);
     const todas = new Set(NAV.map((n) => n.permission));
     const trabalho = navPorSecao(todas).find((g) => g.secao.key === 'trabalho')!;
-    expect(trabalho.itens.map((i) => i.label)).toEqual(['Tarefas', 'Todas as tarefas', 'Implantação de clientes', 'Atas']);
+    expect(trabalho.itens.map((i) => i.label)).toEqual(['Tarefas', 'Implantação de clientes', 'Atas']);
+    // As contagens do menu depois da noite de 20/10/2026.
+    expect(NAV.filter((n) => !n.oculto)).toHaveLength(46);
+    expect(NAV.filter((n) => n.oculto)).toHaveLength(11);
+    expect(ROTAS_ABSORVIDAS).toHaveLength(12);
   });
 
   it('as Atas ficam no Trabalho, sob Tarefas, com tarefas.ver e o módulo trabalho', () => {

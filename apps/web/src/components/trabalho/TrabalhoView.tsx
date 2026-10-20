@@ -29,6 +29,7 @@ import { OrigemComercialDaTarefa } from '@/app/leads/OrigemComercialDaTarefa';
 import { FontesDaTarefa } from './FontesDaTarefa';
 import { OutrosResponsaveis, ResponsavelDaTarefa, SeletorOutrosResponsaveis, SeletorResponsavel, rotuloDaPessoa } from './ResponsavelDaTarefa';
 import { CalendarioDeTarefas, diaDoPrazo, prazoDoDia } from './CalendarioDeTarefas';
+import { colunasDeTodas, destinoNaLista, idDaColuna } from './colunas-de-todas';
 import { diasDesde, formatarHoras, hojeEmBrasilia, minutosDeTexto } from '@/lib/horas';
 import {
   CHAVE_DA_DENSIDADE, DENSIDADES, DIAS_DE_ALERTA_NA_ETAPA, LARGURA_DA_COLUNA,
@@ -148,8 +149,9 @@ export const PASTA_SEM_PASTA = 'sem-pasta';
 /**
  * `?pasta=todas` (versão final, F4): "Todas as tarefas", o Everything do ClickUp. As
  * tarefas de todas as pastas e listas numa visão só, sem card repetido e sem cadastro
- * como tarefa (a API aplica as regras com `todas=1`). No quadro, as colunas são o TIPO
- * da etapa (a fazer, em andamento, concluída), porque cada lista tem as suas etapas.
+ * como tarefa (a API aplica as regras com `todas=1`). No quadro, as colunas são os
+ * status REAIS de todas as listas do recorte, unidos pelo nome (ajuste do Todas,
+ * 20/10/2026: `colunas-de-todas.ts`); a seleção em lote segue pelo tipo da etapa.
  */
 export const PASTA_TODAS = 'todas';
 
@@ -179,7 +181,7 @@ export const CHAVES_DOS_FILTROS = [
   'cliente', 'tagId', 'agente', 'concluidas', 'arquivadas', 'q',
 ] as const;
 
-/** As colunas do quadro de "Todas": o tipo da etapa, com o id virtual `tipo:<tipo>`. */
+/** As etapas do lote em "Todas": o tipo da etapa, com o id virtual `tipo:<tipo>`. */
 const COLUNAS_POR_TIPO = [
   { id: 'tipo:open', name: 'A fazer', type: 'open', color: '#87909e' },
   { id: 'tipo:custom', name: 'Em andamento', type: 'custom', color: '#f9a400' },
@@ -473,19 +475,22 @@ function TrabalhoConteudo({ visaoInicial, modo, aoSairDeTodas }: { visaoInicial:
     return () => { ativa = false; };
   }, [ready, token, readable, bump]);
 
-  const moverEtapa = async (t: TrabTarefaResumo, statusId: string) => {
-    if (!editable || escritaEtapa.current || conflitoEtapa || statusId === t.statusId) return;
-    if (!t.updatedAt) { setErro('Recarregue a lista antes de alterar esta tarefa: a versão não está disponível.'); return; }
+  /** Devolve `true` só quando a etapa foi gravada (o aviso de "Todas" depende disso). */
+  const moverEtapa = async (t: TrabTarefaResumo, statusId: string): Promise<boolean> => {
+    if (!editable || escritaEtapa.current || conflitoEtapa || statusId === t.statusId) return false;
+    if (!t.updatedAt) { setErro('Recarregue a lista antes de alterar esta tarefa: a versão não está disponível.'); return false; }
     escritaEtapa.current = true; setSalvandoEtapa(true);
     try {
       await apiPatch(`/trabalho/tarefas/${t.id}`, { statusId, expectedUpdatedAt: t.updatedAt }, token);
       refresh();
+      return true;
     } catch (e) {
       if ((e as { status?: number }).status === 409) {
         const todas = [...(estrutura?.folders.flatMap((f) => f.lists) ?? []), ...(estrutura?.listasSoltas ?? [])];
         const etapa = todas.find((l) => l.id === t.listId)?.statuses.find((st) => st.id === statusId)?.name ?? 'Etapa indisponível';
         setConflitoEtapa({ titulo: t.title, etapa });
       } else setErro((e as Error).message);
+      return false;
     } finally { escritaEtapa.current = false; setSalvandoEtapa(false); }
   };
 
@@ -632,23 +637,43 @@ function TrabalhoConteudo({ visaoInicial, modo, aoSairDeTodas }: { visaoInicial:
   // Sem uma lista aberta: "Todas as tarefas" ou o "todas as listas" da pessoa.
   const semLista = geral || todasListas;
   const todasAsListas = useMemo(() => (estrutura ? [...estrutura.folders.flatMap((f) => f.lists), ...estrutura.listasSoltas] : []), [estrutura]);
-  /** A lista virtual do quadro de "Todas": colunas pelo tipo da etapa. */
+  /*
+   * A lista virtual do quadro de "Todas" (ajuste do Todas, 20/10/2026): as colunas são os
+   * status reais das listas do recorte (todas, ou as do segmento), unidos pelo nome, com
+   * as vazias. As tarefas entram só para nenhuma ficar sem coluna.
+   */
+  const listasDoRecorte = useMemo(
+    () => (estrutura ? (fSegmento ? listasDaPasta(estrutura, fSegmento) : todasAsListas) : []),
+    [estrutura, fSegmento, todasAsListas],
+  );
+  const colunasGerais = useMemo(() => colunasDeTodas(listasDoRecorte, visiveis), [listasDoRecorte, visiveis]);
   const listaGeral: TrabListaDto = useMemo(() => ({
-    id: PASTA_TODAS, name: 'Todas as tarefas', total: visiveis.length, order: 0, externalId: null, fields: [],
-    statuses: COLUNAS_POR_TIPO.map((c, i) => ({ id: c.id, name: c.name, type: c.type, color: c.color, order: i, total: 0, limite: null })),
-  }) as unknown as TrabListaDto, [visiveis.length]);
+    id: PASTA_TODAS, name: 'Todas as tarefas', total: visiveis.length, order: 0, externalId: null, spaceId: null, fields: [],
+    statuses: colunasGerais,
+  }), [visiveis.length, colunasGerais]);
   const visiveisNoQuadroGeral = useMemo(
-    () => visiveis.map((t) => ({ ...t, statusId: `tipo:${t.statusType}` })),
+    () => visiveis.map((t) => ({ ...t, statusId: idDaColuna(t.statusName) })),
     [visiveis],
   );
+  const listasPorColuna = useMemo(() => new Map(colunasGerais.map((c) => [c.id, c.listas])), [colunasGerais]);
+  const [avisoDoQuadro, setAvisoDoQuadro] = useState<string | null>(null);
 
-  /** No quadro de "Todas", soltar numa coluna é ir à primeira etapa daquele tipo na lista da tarefa. */
-  const moverPorTipo = async (t: TrabTarefaResumo, colunaId: string) => {
+  /**
+   * Soltar numa coluna de "Todas": o status da lista da tarefa com o mesmo nome; sem ele,
+   * o primeiro do mesmo tipo, com aviso; sem os dois, o motivo e nada muda.
+   */
+  const moverPorNome = async (t: TrabTarefaResumo, colunaId: string) => {
     const real = tarefas?.items.find((x) => x.id === t.id);
-    if (!real) return;
-    const destino = etapaDoTipo(todasAsListas, real.listId, colunaId.replace(/^tipo:/, ''));
-    if (!destino) { setErro(`A lista ${real.listName ?? 'da tarefa'} não tem uma etapa desse tipo.`); return; }
-    await moverEtapa(real, destino);
+    const coluna = colunasGerais.find((c) => c.id === colunaId);
+    if (!real || !coluna) return;
+    setAvisoDoQuadro(null);
+    const daTarefa = todasAsListas.find((l) => l.id === real.listId);
+    const nomeDaLista = real.listName ?? daTarefa?.name ?? 'da tarefa';
+    const destino = destinoNaLista(daTarefa, coluna);
+    if (!destino) { setAvisoDoQuadro(`Nada mudou: a lista ${nomeDaLista} não tem a etapa ${coluna.name} nem outra do mesmo tipo.`); return; }
+    if (destino.statusId === real.statusId) return;
+    const gravou = await moverEtapa(real, destino.statusId);
+    if (gravou && !destino.exato) setAvisoDoQuadro(`Movida para ${destino.nome} (a lista ${nomeDaLista} não tem a etapa ${coluna.name}).`);
   };
 
   /**
@@ -1089,14 +1114,20 @@ function TrabalhoConteudo({ visaoInicial, modo, aoSairDeTodas }: { visaoInicial:
             onAbrir={abrirTarefa} onMudou={refresh} onErro={setErro} onMoverEtapa={moverEtapa} onReordenar={reordenar}
           />
         )}
-        {/* "Todas as tarefas" no quadro: colunas pelo tipo da etapa; soltar leva à primeira etapa do tipo na lista da tarefa. */}
+        {/* "Todas as tarefas" no quadro: os status reais de todas as listas; soltar cai no de mesmo nome da lista da tarefa. */}
+        {geral && tarefas && visao === 'board' && avisoDoQuadro && (
+          <p role="status" data-testid="trabalho-todas-aviso" className="flex items-center justify-between gap-2 rounded-lg border border-warn/40 bg-warn/10 px-3 py-2 text-sm">
+            <span>{avisoDoQuadro}</span>
+            <button type="button" aria-label="Fechar aviso" onClick={() => setAvisoDoQuadro(null)}><X size={14} /></button>
+          </p>
+        )}
         {geral && tarefas && visao === 'board' && (
           <Board
             lista={fConcluidas === 'ocultar' ? { ...listaGeral, statuses: listaGeral.statuses.filter((st) => st.type !== 'closed') } : listaGeral}
             tarefas={visiveisNoQuadroGeral} editable={quadroEditavel} podeCriar={false} token={token}
             agentes={estrutura?.agentes ?? []} pessoas={estrutura?.pessoas ?? []} trilhos={trilhos} movimento={new Map()} densidade={densidade}
-            semMovimento
-            onAbrir={abrirTarefa} onMudou={refresh} onErro={setErro} onMoverEtapa={moverPorTipo} onReordenar={reordenar}
+            semMovimento listasPorColuna={listasPorColuna}
+            onAbrir={abrirTarefa} onMudou={refresh} onErro={setErro} onMoverEtapa={moverPorNome} onReordenar={reordenar}
           />
         )}
         {/* A Lista também serve "Todas" e o "todas as listas" da pessoa, sem lista aberta e sem campos de uma lista só. */}
@@ -1212,17 +1243,19 @@ function ContagemDaEtapa({ quantas, limite }: { quantas: number; limite: number 
  *    da caixa de entrada (`GET /trabalho/quadro/movimento`). Falhar ali só tira
  *    o rodapé.
  */
-function Board({ lista, tarefas, editable, podeCriar, token, agentes, pessoas = [], trilhos, movimento, densidade, onAbrir, onMudou, onErro, onMoverEtapa, onReordenar, semMovimento = false }: {
+function Board({ lista, tarefas, editable, podeCriar, token, agentes, pessoas = [], trilhos, movimento, densidade, onAbrir, onMudou, onErro, onMoverEtapa, onReordenar, semMovimento = false, listasPorColuna }: {
   lista: TrabListaDto; tarefas: TrabTarefaResumo[]; editable: boolean; podeCriar: boolean; token: string | null;
   agentes: TrabAgenteDto[]; pessoas?: PessoaDaEstrutura[]; trilhos: Map<string, TrilhoDoCartao>;
   movimento: Map<string, TrabMovimentoDoCartao>; densidade: Densidade;
   onAbrir: (id: string, aba?: AbaDaTarefa) => void; onMudou: () => void; onErro: (m: string) => void;
   /** Toda troca de etapa (arraste e seletor) passa pela versão lida (`expectedUpdatedAt`). */
-  onMoverEtapa: (t: TrabTarefaResumo, statusId: string) => Promise<void>;
+  onMoverEtapa: (t: TrabTarefaResumo, statusId: string) => Promise<unknown>;
   /** Ordem manual: soltar um cartão sobre outro da MESMA coluna grava a sequência da coluna. */
   onReordenar?: (ids: string[]) => Promise<void>;
   /** "Todas as tarefas": o movimento não foi lido, então o cartão não diz "sem movimento". */
   semMovimento?: boolean;
+  /** "Todas as tarefas": em quantas listas do recorte cada status existe (o cabeçalho diz). */
+  listasPorColuna?: Map<string, number>;
 }) {
   /*
    * ARRASTAR E SOLTAR com a API nativa do HTML5, sem biblioteca: dependência
@@ -1310,6 +1343,11 @@ function Board({ lista, tarefas, editable, podeCriar, token, agentes, pessoas = 
               <span className="flex min-w-0 items-center gap-1.5 font-os-mono text-[11px] uppercase tracking-wide">
                 <span aria-hidden className="h-2 w-2 shrink-0 rounded-full" style={{ background: st.color }} />
                 <span className="truncate" title={st.name}>{st.name}</span>
+                {listasPorColuna?.has(st.id) && (
+                  <span data-testid="trabalho-coluna-listas" className="shrink-0 normal-case tracking-normal text-muted">
+                    · {listasPorColuna.get(st.id)} {listasPorColuna.get(st.id) === 1 ? 'lista' : 'listas'}
+                  </span>
+                )}
               </span>
               <span className="font-os-mono"><ContagemDaEtapa quantas={itens.length} limite={st.limite} /></span>
             </header>
@@ -1376,7 +1414,7 @@ function Cartao({ t, lista, editable, token, agentes, pessoas = [], onSoltarSobr
   trilho: TrilhoDoCartao | null; mov: TrabMovimentoDoCartao | null; densidade: Densidade;
   balaoAberto: boolean; onBalao: (ancora: DOMRect | null) => void;
   onAbrir: (id: string, aba?: AbaDaTarefa) => void; onMudou: () => void; onErro: (m: string) => void;
-  onMoverEtapa: (t: TrabTarefaResumo, statusId: string) => Promise<void>;
+  onMoverEtapa: (t: TrabTarefaResumo, statusId: string) => Promise<unknown>;
 }) {
   const pr = PRIORIDADES.find((p) => p.key === t.priority);
   const agente = nomeDoAgente(t);

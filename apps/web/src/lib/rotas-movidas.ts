@@ -22,6 +22,16 @@ export function destinoDoSimulador(query: Query): string {
 }
 
 /**
+ * `/trabalho/todas` virou o chip Todas de `/trabalho` (20/10/2026, noite, pedido do
+ * Rodrigo). A pasta é sempre `todas`, e `lista` sai porque contradiz Todas; o resto
+ * da query (segmento, visão, filtros) segue.
+ */
+export function destinoDeTodas(query: Query): string {
+  const resto = Object.fromEntries(Object.entries(query).filter(([chave]) => chave !== 'pasta'));
+  return comQuery('/trabalho', { pasta: 'todas', ...resto }, ['lista']);
+}
+
+/**
  * A aba "Rodada da semana" saiu da Implantação e foi para o Comercial. Com
  * `?aba=rodada` a Implantação manda para `/comercial/rodada`; sem ela, `null` (a
  * Implantação abre como sempre).

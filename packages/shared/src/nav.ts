@@ -161,7 +161,10 @@ export const NAV: NavItem[] = [
   { key: 'trabalho', label: 'Tarefas', href: '/trabalho', icon: 'KanbanSquare', permission: 'tarefas.ver', secao: 'trabalho', modulo: 'trabalho' },
   // 20/10/2026 (rodada da interface, U1/U3): as tarefas de todas as pastas e listas numa
   // tela só, com os segmentos por pasta de topo. Por dentro é o `?pasta=todas` do Trabalho.
-  { key: 'trabalho-todas', label: 'Todas as tarefas', href: '/trabalho/todas', icon: 'ListChecks', permission: 'tarefas.ver', secao: 'trabalho', modulo: 'trabalho', pai: 'trabalho' },
+  // 20/10/2026 (noite, pedido do Rodrigo): "o Todas é uma opção dentro de Tarefas, não uma
+  // subseção". O item sai do menu, oculto e dono da rota; `/trabalho/todas` redireciona
+  // para o chip Todas de `/trabalho` com a mesma query (ROTAS_ABSORVIDAS).
+  { key: 'trabalho-todas', label: 'Todas as tarefas', href: '/trabalho/todas', icon: 'ListChecks', permission: 'tarefas.ver', secao: 'trabalho', modulo: 'trabalho', pai: 'trabalho', oculto: true },
   // 19/10/2026 (rodada do trabalho T1): "Implantação de clientes" abre o kanban denso da
   // lista "Onboarding de cliente" (pasta Clientes), com rolagem lateral. A bancada antiga
   // `/onboarding` deixa de ser porta: o item fica oculto e a rota redireciona para o kanban;
@@ -273,6 +276,8 @@ export const ROTAS_ABSORVIDAS: { href: string; destino: string; porque: string }
   // 20/10/2026, rodada da interface (U1).
   { href: '/painel', destino: '/dia-a-dia', porque: 'a Visão geral é a entrada do dia; o painel antigo segue vivo pela rota' },
   { href: '/comercial/simulador', destino: '/whatsapp', porque: 'o WhatsApp virou área própria em 20/10/2026; /comercial/simulador redireciona para /whatsapp com a mesma query' },
+  // 20/10/2026 (noite, pedido do Rodrigo): o destino leva a query do chip, e o item é `/trabalho`.
+  { href: '/trabalho/todas', destino: '/trabalho?pasta=todas', porque: 'o Todas é uma opção dentro de Tarefas, não uma subseção (20/10/2026); /trabalho/todas redireciona para o chip Todas com a mesma query' },
 ];
 
 // Rotas de detalhe que NÃO entram no menu: herdam o módulo pai e são protegidas
