@@ -181,7 +181,9 @@ describe('quadro denso na tela', () => {
   it('"meus" deixa só o que é da pessoa da sessão', async () => {
     render(<TrabalhoPage />);
     await screen.findByTestId('trabalho-rodape-t-lume');
-    fireEvent.click(screen.getByTestId('trabalho-escopo-meus'));
+    // Rodada da interface (U2): o recorte do quadro mora no painel de "Filtros".
+    fireEvent.click(screen.getByTestId('trabalho-filtros-botao'));
+    fireEvent.change(screen.getByTestId('trabalho-filtros-escopo'), { target: { value: 'meus' } });
     await waitFor(() => expect(screen.queryByTestId('trabalho-rodape-t-lume')).toBeNull());
     expect(screen.getByTestId('trabalho-rodape-t-alicerce')).toBeTruthy();
     expect(window.location.search).toContain('escopo=meus');

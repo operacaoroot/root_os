@@ -249,8 +249,11 @@ describe('F4: agrupamento, concluídas e "meus"', () => {
     window.history.replaceState({}, '', '/trabalho?lista=l-a&visao=lista');
     render(<TrabalhoPage />);
     await waitFor(() => expect(document.querySelectorAll('tr[data-work-task-id]')).toHaveLength(2));
-    fireEvent.click(screen.getByTestId('trabalho-concluidas'));
+    // Rodada da interface (U2): "Ocultar concluídas" mora no painel de "Filtros" e conta como filtro ativo.
+    fireEvent.click(screen.getByTestId('trabalho-filtros-botao'));
+    fireEvent.click(screen.getByTestId('trabalho-filtros-concluidas'));
     expect(query().get('concluidas')).toBe('ocultar');
+    expect(screen.getByTestId('trabalho-filtros-contagem')).toHaveTextContent('(1)');
     expect([...document.querySelectorAll('tr[data-work-task-id]')].map((e) => e.getAttribute('data-work-task-id'))).toEqual([T1]);
   });
 

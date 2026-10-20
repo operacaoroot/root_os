@@ -92,12 +92,22 @@ describe('responsável por conta, sem associação por texto', () => {
     expect(await screen.findByLabelText('Título da tarefa')).toHaveValue('Entrega QA');
     expect(new URLSearchParams(window.location.search).get('tarefa')).toBe(ID);
   });
-  it('botão pessoal usa User.id e filtro sem vínculo não envia ID nem texto', async () => {
+  /*
+   * Rodada da interface (U2, 20/10/2026): o responsável e o "em todas as listas" (o antigo
+   * botão "Minhas tarefas") moram no painel de "Filtros". A regra é a mesma: User.id.
+   */
+  const minhasTarefasPeloPainel = async () => {
+    fireEvent.click(screen.getByTestId('trabalho-filtros-botao'));
+    fireEvent.change(screen.getByTestId('trabalho-filtros-assigneeUserId'), { target: { value: 'qa-eu' } });
+    fireEvent.click(await screen.findByTestId('trabalho-filtros-todasAsListas'));
+  };
+  it('o pessoal em todas as listas usa User.id e filtro sem vínculo não envia ID nem texto', async () => {
     render(<TrabalhoPage />); await screen.findByText('1 tarefa');
-    fireEvent.click(screen.getByRole('button', { name: 'Minhas tarefas' }));
-    await waitFor(() => expect(get.mock.calls.some(([p]) => String(p).includes('assigneeUserId=qa-eu'))).toBe(true));
+    await minhasTarefasPeloPainel();
+    await waitFor(() => expect(get.mock.calls.some(([p]) => String(p).includes('assigneeUserId=qa-eu') && !String(p).includes('listId'))).toBe(true));
     expect(new URLSearchParams(window.location.search).get('escopo')).toBe('pessoal');
-    fireEvent.change(screen.getByLabelText('Filtrar por responsável'), { target: { value: 'sem-vinculo' } });
+    expect(new URLSearchParams(window.location.search).get('visao')).toBe('lista');
+    fireEvent.change(screen.getByLabelText('Responsável'), { target: { value: 'sem-vinculo' } });
     await waitFor(() => expect(get.mock.calls.some(([p]) => String(p).includes('semResponsavel=1'))).toBe(true));
     const query = new URL(`http://qa${get.mock.calls.filter(([p]) => String(p).includes('semResponsavel=1')).at(-1)![0]}`).searchParams;
     expect(query.has('assigneeUserId')).toBe(false); expect(query.has('assignee')).toBe(false);
@@ -132,16 +142,17 @@ describe('responsável por conta, sem associação por texto', () => {
   });
   it('troca filtro pessoal por texto legado sem combinar identidades na URL ou consulta', async () => {
     render(<TrabalhoPage />); await screen.findByText('1 tarefa');
-    fireEvent.click(screen.getByRole('button', { name: 'Minhas tarefas' }));
+    await minhasTarefasPeloPainel();
     await waitFor(() => expect(get.mock.calls.some(([p]) => String(p).includes('assigneeUserId=qa-eu'))).toBe(true));
     get.mockClear();
-    fireEvent.change(screen.getByLabelText('Filtrar por texto legado'), { target: { value: 'Texto antigo QA' } });
+    fireEvent.change(screen.getByLabelText('Responsável (texto antigo)'), { target: { value: 'Texto antigo QA' } });
     await waitFor(() => expect(get.mock.calls.some(([p]) => String(p).includes('assignee=Texto'))).toBe(true));
     const url = new URLSearchParams(window.location.search);
     expect(url.get('assignee')).toBe('Texto antigo QA');
     expect(url.has('assigneeUserId')).toBe(false); expect(url.has('semResponsavel')).toBe(false); expect(url.has('escopo')).toBe(false);
-    expect(screen.getByLabelText('Filtrar por responsável')).toHaveValue('');
-    expect(screen.getByRole('button', { name: 'Minhas tarefas' })).toHaveAttribute('aria-pressed', 'false');
+    expect(screen.getByLabelText('Responsável')).toHaveValue('');
+    // Sem pessoa escolhida, o "em todas as listas" sai do painel.
+    expect(screen.queryByTestId('trabalho-filtros-todasAsListas')).toBeNull();
     for (const [path] of get.mock.calls.filter(([p]) => String(p).startsWith('/trabalho/tarefas?'))) {
       const query = new URL(`http://qa${path}`).searchParams;
       expect(query.get('assignee')).toBe('Texto antigo QA'); expect(query.has('assigneeUserId')).toBe(false); expect(query.has('semResponsavel')).toBe(false);

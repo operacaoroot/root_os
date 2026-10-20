@@ -110,7 +110,9 @@ describe('T4: o cliente da tarefa na tela', () => {
   it('o filtro "sem cliente" vai na consulta', async () => {
     render(<TrabalhoPage />);
     await screen.findByText('Enviar proposta revisada');
-    fireEvent.change(screen.getByTestId('trabalho-filtro-cliente'), { target: { value: 'sem' } });
+    // Rodada da interface (U2): o filtro de cliente mora no painel de "Filtros".
+    fireEvent.click(screen.getByTestId('trabalho-filtros-botao'));
+    fireEvent.change(screen.getByTestId('trabalho-filtros-cliente'), { target: { value: 'sem' } });
     await waitFor(() => expect(apiGet.mock.calls.some(([r]) => String(r).includes('cliente=sem'))).toBe(true));
   });
 });
