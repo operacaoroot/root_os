@@ -353,6 +353,8 @@ const CONECTORES: Record<string, string> = {
   'src/youtube/youtube.service.ts': 'YouTube',
   // Cockpit comercial (lane D, 13/10/2026): assinatura do contrato, entregue ao comercial pela PORTA_DE_ASSINATURA.
   'src/comercial/conectores/zapsign.service.ts': 'ZapSign',
+  // Interface 20/10 (U6): o WhatsApp do comercial pelo DigiSac. O conector mora na pasta do canal e chega ao comercial por duas portas.
+  'src/gateway/canais/digisac.conector.ts': 'DigiSac (WhatsApp)',
 };
 
 /**
@@ -962,6 +964,8 @@ const HOSTS: Array<{ padrao: RegExp; conector: string }> = [
   { padrao: /https?:\/\/(?:[\w-]+\.)*youtube\.com/, conector: 'src/youtube/youtube.service.ts' },
   { padrao: /https?:\/\/(?:[\w-]+\.)*youtu\.be/, conector: 'src/youtube/youtube.service.ts' },
   { padrao: /https?:\/\/(?:[\w-]+\.)*zapsign\.com(?:\.br)?/, conector: 'src/comercial/conectores/zapsign.service.ts' },
+  // A conta do DigiSac é um subdomínio por cliente (`<conta>.digisac.me`); só o conector o endereça.
+  { padrao: /https?:\/\/(?:[\w-]+\.)*digisac\.(?:me|com|chat)/, conector: 'src/gateway/canais/digisac.conector.ts' },
 ];
 
 /*
@@ -1149,6 +1153,11 @@ const CREDENCIAIS: Record<string, string> = {
   ZAPSIGN_BASE_URL: 'src/comercial/conectores/zapsign.service.ts',
   ZAPSIGN_API_TOKEN: 'src/comercial/conectores/zapsign.service.ts',
   ZAPSIGN_WEBHOOK_TOKEN: 'src/comercial/conectores/zapsign.service.ts',
+  // Interface 20/10 (U6): fallback de ambiente do DigiSac, só para a empresa da casa; o normal é o cofre.
+  DIGISAC_URL: 'src/gateway/canais/digisac.conector.ts',
+  DIGISAC_TOKEN: 'src/gateway/canais/digisac.conector.ts',
+  DIGISAC_SERVICE_ID: 'src/gateway/canais/digisac.conector.ts',
+  DIGISAC_WEBHOOK_SEGREDO: 'src/gateway/canais/digisac.conector.ts',
   GOOGLE_CLIENT_ID: 'src/google/google.service.ts',
   GOOGLE_CLIENT_SECRET: 'src/google/google.service.ts',
   GOOGLE_REDIRECT_URI: 'src/google/google.service.ts',

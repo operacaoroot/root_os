@@ -342,6 +342,8 @@ export const CONNECTORS: ConnectorInfo[] = [
   { key: 'ofx', label: 'Extrato OFX (upload)', category: 'finance', phase: 2, authType: 'builtin', requires: 'arquivo .ofx exportado do banco' },
   // Reuniões do Granola chegam pelo Zap (Webhooks by Zapier). Senha por empresa no cofre, gerada em Conexões.
   { key: 'granola', label: 'Granola (reuniões)', category: 'knowledge', phase: 3, authType: 'webhook', requires: 'Zap do Granola com a senha gerada em Conexões' },
+  // Interface 20/10 (U6): o WhatsApp do comercial pelo DigiSac. Token e conexão por empresa no cofre.
+  { key: 'digisac', label: 'WhatsApp (DigiSac)', category: 'messaging', phase: 6, authType: 'api_key', requires: 'token da API do DigiSac e id da conexão, salvos em Conexões' },
 ];
 
 export const IntegrationCatalogRowSchema = z.object({

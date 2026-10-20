@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable, Logger, NotFoundException, OnModuleInit, Optional } from '@nestjs/common';
+import { BadRequestException, Inject, Injectable, Logger, NotFoundException, OnModuleInit, Optional } from '@nestjs/common';
 import {
   ComercialEntradaWhatsSchema,
   LEU_SEM_RESPONDER_N,
@@ -8,10 +8,12 @@ import {
 } from '@mktos/shared';
 import { ActorType, Prisma } from '@prisma/client';
 
+import { ENVIO_PELO_DIGISAC, type EnvioPeloDigisac } from '../gateway/canais/digisac.port';
 import { EfeitosRegistry, type ContextoDoEfeito } from '../gateway/efeitos.registry';
 import { PortaDoOperador } from '../gateway/porta-do-operador.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { dataCurtaSP, rotuloDoHorario } from './agenda-de-homologacao';
+import { DigisacProvider } from './canais/digisac.provider';
 import { EvolutionProvider } from './canais/evolution.provider';
 import { MetaProvider } from './canais/meta.provider';
 import { SimuladoProvider } from './canais/simulado.provider';
@@ -120,8 +122,9 @@ export function textoComNome(template: ComercialTemplate, nome: string | null, v
     .replace(new RegExp(MARCA_DO_NOME, 'g'), '');
 }
 
-function provedorPorNome(): WhatsappPort {
+function provedorPorNome(digisac: EnvioPeloDigisac | null): WhatsappPort {
   const p = provedorDoAmbiente();
+  if (p === 'digisac') return new DigisacProvider(digisac);
   if (p === 'evolution') return new EvolutionProvider();
   if (p === 'meta') return new MetaProvider();
   return new SimuladoProvider();
@@ -141,8 +144,10 @@ export class WhatsappComercialService implements OnModuleInit {
     private readonly efeitos: EfeitosRegistry,
     private readonly operador: PortaDoOperador,
     @Optional() provedor?: WhatsappPort,
+    /** Interface 20/10 (U6): o envio do DigiSac, usado só quando `WHATSAPP_PROVEDOR=digisac`. */
+    @Optional() @Inject(ENVIO_PELO_DIGISAC) digisac?: EnvioPeloDigisac,
   ) {
-    this.porta = provedor ?? provedorPorNome();
+    this.porta = provedor ?? provedorPorNome(digisac ?? null);
   }
 
   onModuleInit(): void {
