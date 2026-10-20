@@ -1,0 +1,97 @@
+{
+  "inicio": "2026-10-20T03:22:29.340Z",
+  "web": "http://127.0.0.1:3031",
+  "passos": [
+    {
+      "n": 1,
+      "nome": "mesa entrou pela API",
+      "ms": 84,
+      "detalhe": "mesa@root.homolog"
+    },
+    {
+      "n": 2,
+      "nome": "a Alicerce pediu 8% pela sala e a decisão abriu",
+      "ms": 234,
+      "detalhe": "Marina Duarte pediu 8% de desconto na Operação ROOT",
+      "leadId": "ac624b28-3903-5478-bf13-df71d1499aac",
+      "decisaoId": "5abe308e-f102-5b40-8bb6-4ae0b2295fa9"
+    },
+    {
+      "n": 3,
+      "nome": "da fila, \"ver o lead\" abriu o painel na aba Decisões; só a query mudou",
+      "ms": 3137,
+      "detalhe": "?lead=ac624b28-3903-5478-bf13-df71d1499aac&aba=decisoes"
+    },
+    {
+      "n": 4,
+      "nome": "decidiu \"manter o preço\" dentro do painel; o aviso no canto disse o que aconteceu",
+      "ms": 3687
+    },
+    {
+      "n": 5,
+      "nome": "o cartão da decisão saiu da fila de trás sem recarregar",
+      "ms": 3689
+    },
+    {
+      "n": 6,
+      "nome": "o fio ganhou a linha da decisão; a URL mudou só na query",
+      "ms": 3762,
+      "detalhe": "?lead=ac624b28-3903-5478-bf13-df71d1499aac&aba=fio"
+    },
+    {
+      "n": 7,
+      "nome": "Esc fechou o painel, a URL voltou à da fila e o foco voltou à tela de trás",
+      "ms": 3775
+    },
+    {
+      "n": 8,
+      "nome": "no funil, as setas andaram até a Alicerce e Enter abriu o painel na aba Fio",
+      "ms": 4554,
+      "detalhe": "?lead=ac624b28-3903-5478-bf13-df71d1499aac&aba=fio"
+    },
+    {
+      "n": 9,
+      "nome": "a linha da lista de contratos abriu o painel na aba Dinheiro",
+      "ms": 8937
+    },
+    {
+      "n": 10,
+      "nome": "a rota antiga /comercial/lead/<id> redirecionou para o funil com o painel na aba Fio",
+      "ms": 9710
+    },
+    {
+      "n": 11,
+      "nome": "a rota antiga /sessao abriu a aba Sessão",
+      "ms": 10466
+    },
+    {
+      "n": 12,
+      "nome": "a raiz / manda ao site (imagem da versão final, sem NEXT_PUBLIC_RAIZ=login)",
+      "ms": 10478,
+      "detalhe": "307 https://operacaoroot.com"
+    },
+    {
+      "n": 13,
+      "nome": "no celular (390 px) a folha abriu na tela inteira e fechou; sem rolagem horizontal; fechar com 44 px",
+      "ms": 11924,
+      "detalhe": "390x843.9999866485596"
+    }
+  ],
+  "screenshots": [
+    "ajustes-seed-ux-fila-painel-decisoes-escuro.png",
+    "ajustes-seed-ux-funil-painel-fio-escuro.png",
+    "ajustes-seed-ux-painel-sessao-escuro.png",
+    "ajustes-seed-ux-painel-dinheiro-alicerce-escuro.png",
+    "ajustes-seed-ux-contratos-painel-dinheiro-escuro.png",
+    "ajustes-seed-ux-celular-folha-escuro.png",
+    "ajustes-seed-ux-fila-painel-decisoes-claro.png",
+    "ajustes-seed-ux-funil-painel-fio-claro.png",
+    "ajustes-seed-ux-painel-sessao-claro.png",
+    "ajustes-seed-ux-painel-dinheiro-alicerce-claro.png",
+    "ajustes-seed-ux-contratos-painel-dinheiro-claro.png",
+    "ajustes-seed-ux-celular-folha-claro.png"
+  ],
+  "ok": true,
+  "fim": "2026-10-20T03:22:50.653Z",
+  "duracaoMs": 21312
+}

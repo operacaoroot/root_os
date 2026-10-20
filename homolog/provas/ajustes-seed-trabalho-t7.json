@@ -1,0 +1,61 @@
+{
+  "inicio": "2026-10-20T13:10:04.280Z",
+  "web": "http://127.0.0.1:3031",
+  "passos": [
+    {
+      "n": 1,
+      "nome": "mesa, sócio e admin entraram pela API",
+      "ms": 249
+    },
+    {
+      "n": 2,
+      "nome": "a mesa pediu para mover um cartão do funil",
+      "ms": 501,
+      "detalhe": "reuniao_agendada → sessao",
+      "approvalId": "5afb36da-90bd-4f22-a0cb-dd83acea4466"
+    },
+    {
+      "n": 3,
+      "nome": "R3 na linha: o sócio aprovou com UM clique, sem abrir o item; a mesa concluiu com o token",
+      "ms": 1880,
+      "detalhe": "Aprovada: Mover Construtora Alicerce Homolog 9422 de E3 · Reunião agendada para E4 · Sessão estratégica com pendências: confirmação de véspera enviada (E3). Pedido por Mesa · responsável (homologação) pela tela do funil.. Esta é da superfície antiga: quem executa é a rota que carrega o token."
+    },
+    {
+      "n": 4,
+      "nome": "R4 com senha no mesmo lugar: o clique abriu a caixa ali, e Aprovar foi junto com a senha",
+      "ms": 3220,
+      "detalhe": "ler-e-aprovar · Aprovada e EXECUTADA: comercial.cobranca 80314647-b2d6-5f82-9bfb-36cde39c7c05:v1.",
+      "approvalId": "fcf2e5fa-a34b-462a-8870-dccd4de79fff"
+    },
+    {
+      "n": 5,
+      "nome": "vencida: \"Pedir de novo\" recriou o pedido; quem clicou vira o proponente e não assina",
+      "ms": 619695,
+      "detalhe": "65b2f07d-cdbc-4bb1-9340-0849518f9086 → 1856dfd3-f5a1-42b2-88b1-5f2e4165ec8f · o sócio pode assinar",
+      "tentativas": [
+        {
+          "id": "65b2f07d-cdbc-4bb1-9340-0849518f9086",
+          "ok": true,
+          "texto": "Pedido de novo, a partir da etapa de agora. Você pediu, então não assina: outra pessoa assina na fila, e depois você conclui no funil, nesta mesma aba. O pedido"
+        }
+      ]
+    },
+    {
+      "n": 6,
+      "nome": "fotos da fila em escuro, claro e 390 px; nada rola na horizontal no celular",
+      "ms": 622988
+    }
+  ],
+  "screenshots": [
+    "ajustes-seed-trabalho-t7-r3-aprovada-na-linha.png",
+    "ajustes-seed-trabalho-t7-r4-aprovada-com-senha.png",
+    "ajustes-seed-trabalho-t7-pedir-de-novo.png",
+    "ajustes-seed-trabalho-t7-fila-escuro.png",
+    "ajustes-seed-trabalho-t7-fila-claro.png",
+    "ajustes-seed-trabalho-t7-fila-390.png"
+  ],
+  "avisos": [],
+  "ok": true,
+  "fim": "2026-10-20T13:20:27.343Z",
+  "duracaoMs": 623063
+}

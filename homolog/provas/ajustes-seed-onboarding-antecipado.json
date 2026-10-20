@@ -1,0 +1,76 @@
+{
+  "inicio": "2026-10-20T03:23:43.981Z",
+  "web": "http://127.0.0.1:3031",
+  "passos": [
+    {
+      "n": 1,
+      "nome": "admin, mesa e sócio entraram pela API; os dublês respondem",
+      "ms": 233
+    },
+    {
+      "n": 2,
+      "nome": "o lead do seed está em andamento, com proposta e sem card",
+      "ms": 259,
+      "leadId": "ac624b28-3903-5478-bf13-df71d1499aac",
+      "detalhe": "Construtora Alicerce · follow_up"
+    },
+    {
+      "n": 3,
+      "nome": "o botão \"Iniciar onboarding\" do painel abriu o card (etapa padrão Kickoff marcado) e o painel mostra o link",
+      "ms": 2326
+    },
+    {
+      "n": 4,
+      "nome": "o card: Onboarding de cliente · Kickoff marcado, com cliente, selo e o fato no fio",
+      "ms": 2415,
+      "cardId": "d14f7f4f-fd73-59da-92aa-5bc921737bfe",
+      "detalhe": "Iniciado antes do fechamento · lead em Follow-up"
+    },
+    {
+      "n": 5,
+      "nome": "na Implantação o card mostra o selo, e o pop-up abre o trilho ligado a ele",
+      "ms": 4914,
+      "detalhe": "Iniciado antes do fechamento · lead em Follow-up"
+    },
+    {
+      "n": 6,
+      "nome": "o cliente aceita na sala (dados, pagamento e contrato)",
+      "ms": 5193,
+      "detalhe": "operacao · pix"
+    },
+    {
+      "n": 7,
+      "nome": "cobrança e contrato pela porta: R4, a titular assinou com senha e motivo",
+      "ms": 5605
+    },
+    {
+      "n": 8,
+      "nome": "o cliente pagou no dublê do Asaas; cliente e Root assinaram no dublê da ZapSign",
+      "ms": 5957
+    },
+    {
+      "n": 9,
+      "nome": "o fechamento (R4) concluiu as seis escritas reaproveitando o card, o trilho e o cliente",
+      "ms": 6251,
+      "detalhe": "cliente:reaproveitado contrato:criado cobranca:reaproveitado kit_e_trilho:reaproveitado card:reaproveitado grupo:criado"
+    },
+    {
+      "n": 10,
+      "nome": "continua um card só, na mesma etapa, sem o selo de antes, com o comentário do fechamento e o fato no fio",
+      "ms": 7689,
+      "detalhe": "fechado no comercial · 20/10/2026"
+    }
+  ],
+  "screenshots": [
+    "ajustes-seed-onboarding-antecipado-painel-escolha.png",
+    "ajustes-seed-onboarding-antecipado-painel-iniciado.png",
+    "ajustes-seed-onboarding-antecipado-quadro-com-selo.png",
+    "ajustes-seed-onboarding-antecipado-popup-trilho.png",
+    "ajustes-seed-onboarding-antecipado-quadro-depois-do-fechamento.png"
+  ],
+  "ok": true,
+  "leadId": "ac624b28-3903-5478-bf13-df71d1499aac",
+  "cardId": "d14f7f4f-fd73-59da-92aa-5bc921737bfe",
+  "fim": "2026-10-20T03:23:51.737Z",
+  "duracaoMs": 7756
+}

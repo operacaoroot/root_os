@@ -1,0 +1,171 @@
+{
+  "inicio": "2026-10-20T03:22:50.995Z",
+  "web": "http://127.0.0.1:3031",
+  "sufixo": "032250",
+  "passos": [
+    {
+      "n": 1,
+      "nome": "mesa, sócio e admin entraram pela API",
+      "ms": 251,
+      "detalhe": "Mesa · responsável (homologação) · Sócio titular (homologação) · Admin Root"
+    },
+    {
+      "n": 2,
+      "nome": "preparou: tarefa da mesa comentada pelo admin, lista solta e um lead novo em E1",
+      "ms": 564,
+      "tarefaId": "d82d844b-17cc-41e2-a82b-fd60fb2d8ea6",
+      "listaId": "7fb5c480-9255-4121-9fff-26a4496bcbb8",
+      "leadId": "2613f5a5-13eb-5c01-80b7-63cdd48f3979"
+    },
+    {
+      "n": 3,
+      "nome": "na caixa da mesa, Atividade mostra o comentário do admin",
+      "ms": 1576,
+      "detalhe": "comentario:e0435aed-adf3-4473-be3e-02c51a08ccc6"
+    },
+    {
+      "n": 4,
+      "nome": "\"Limpar\" tirou o item da caixa e ele continua no histórico",
+      "ms": 1657
+    },
+    {
+      "n": 5,
+      "nome": "Minhas tarefas mostra a tarefa e os comentários abrem no lugar",
+      "ms": 1843
+    },
+    {
+      "n": 6,
+      "nome": "pasta criada pela tela",
+      "ms": 3063,
+      "detalhe": "Pasta da prova 032250"
+    },
+    {
+      "n": 7,
+      "nome": "a lista foi movida para a pasta pelo seletor e o chip da pasta a mostra",
+      "ms": 3780
+    },
+    {
+      "n": 8,
+      "nome": "Quadro e Lista alternam sobre a mesma lista",
+      "ms": 3850
+    },
+    {
+      "n": 9,
+      "nome": "ata colada pela tela entrou no banco de atas (pela memória)",
+      "ms": 5322,
+      "detalhe": "memoria:fd471af9-1ff6-412b-8082-3b01252f1439"
+    },
+    {
+      "n": 10,
+      "nome": "\"Sugerir tarefas\" trouxe rascunhos conferidos contra a ata",
+      "ms": 5481,
+      "detalhe": "3 rascunho(s)"
+    },
+    {
+      "n": 11,
+      "nome": "aceitar com um clique criou a tarefa no Trabalho",
+      "ms": 6228,
+      "detalhe": "Enviar o relatório mensal da Padaria Exemplo"
+    },
+    {
+      "n": 12,
+      "nome": "o admin pediu para mover o lead novo de E1 para E3 pelo menu do cartão",
+      "ms": 7204
+    },
+    {
+      "n": 13,
+      "nome": "a mesa encontrou o pedido em \"Depende de você\", em português",
+      "ms": 7837,
+      "detalhe": "Mover Prova Painel 032250 para Reunião agendada"
+    },
+    {
+      "n": 14,
+      "nome": "a mesa confirmou pela tela nova (as condições apareceram antes do clique)",
+      "ms": 8468
+    },
+    {
+      "n": 15,
+      "nome": "o admin concluiu: o cartão está em E3 com o balão de pendências",
+      "ms": 8590,
+      "detalhe": "MOVIDO COM PENDÊNCIAS sistema ou ERP em uso (E2); base de dados: sim ou não (E2); produto-alvo proposto (E2) por Admin Root · 20/10 · some quando o que falta ch"
+    },
+    {
+      "n": 16,
+      "nome": "fotografou as telas mexidas em escuro, claro e 390 px; nenhuma rola na horizontal no celular",
+      "ms": 35957,
+      "detalhe": "25 fotos"
+    }
+  ],
+  "screenshots": [
+    "ajustes-seed-painel-aprovacoes-aberta-escuro.png",
+    "ajustes-seed-painel-caixa-atividade-escuro.png",
+    "ajustes-seed-painel-caixa-tarefas-escuro.png",
+    "ajustes-seed-painel-trabalho-pastas-escuro.png",
+    "ajustes-seed-painel-trabalho-lista-escuro.png",
+    "ajustes-seed-painel-atas-escuro.png",
+    "ajustes-seed-painel-aprovacoes-escuro.png",
+    "ajustes-seed-painel-funil-escuro.png",
+    "ajustes-seed-painel-whatsapp-escuro.png",
+    "ajustes-seed-painel-caixa-atividade-celular.png",
+    "ajustes-seed-painel-caixa-tarefas-celular.png",
+    "ajustes-seed-painel-trabalho-pastas-celular.png",
+    "ajustes-seed-painel-trabalho-lista-celular.png",
+    "ajustes-seed-painel-atas-celular.png",
+    "ajustes-seed-painel-aprovacoes-celular.png",
+    "ajustes-seed-painel-funil-celular.png",
+    "ajustes-seed-painel-whatsapp-celular.png",
+    "ajustes-seed-painel-caixa-atividade-claro.png",
+    "ajustes-seed-painel-caixa-tarefas-claro.png",
+    "ajustes-seed-painel-trabalho-pastas-claro.png",
+    "ajustes-seed-painel-trabalho-lista-claro.png",
+    "ajustes-seed-painel-atas-claro.png",
+    "ajustes-seed-painel-aprovacoes-claro.png",
+    "ajustes-seed-painel-funil-claro.png",
+    "ajustes-seed-painel-whatsapp-claro.png"
+  ],
+  "semRolagemHorizontal": [
+    {
+      "tela": "caixa-atividade",
+      "doc": 390,
+      "janela": 390
+    },
+    {
+      "tela": "caixa-tarefas",
+      "doc": 390,
+      "janela": 390
+    },
+    {
+      "tela": "trabalho-pastas",
+      "doc": 390,
+      "janela": 390
+    },
+    {
+      "tela": "trabalho-lista",
+      "doc": 390,
+      "janela": 390
+    },
+    {
+      "tela": "atas",
+      "doc": 390,
+      "janela": 390
+    },
+    {
+      "tela": "aprovacoes",
+      "doc": 390,
+      "janela": 390
+    },
+    {
+      "tela": "funil",
+      "doc": 390,
+      "janela": 390
+    },
+    {
+      "tela": "whatsapp",
+      "doc": 390,
+      "janela": 390
+    }
+  ],
+  "ok": true,
+  "fim": "2026-10-20T03:23:27.007Z",
+  "duracaoMs": 36012
+}
