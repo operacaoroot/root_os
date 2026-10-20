@@ -20,8 +20,7 @@
 |---|---|
 | `<hash-final>` | o commit da `homolog/final-20261019` na tag `final-entrega-20261020` (40 caracteres) |
 | `<curto>` | os 7 primeiros caracteres de `<hash-final>` |
-| `<argumentos do organizar>` | as flags exatas de `homolog/organizar/organizar.mjs`, copiadas do cabeçalho do script (lane D) |
-| `<quem responde>` | o nome de quem assina a política (Rodrigo ou Pedro) |
+| `<quem responde>` | o nome de quem assina a política (Rodrigo ou Pedro): preenchido na hora, por quem executa |
 
 ## Tempo total
 
@@ -31,8 +30,8 @@
 | 1. Backup | 15 min |
 | 2. Código pelo bundle | 10 min |
 | 3. Imagem | 15 min |
-| 4. Política | 5 min |
-| 5. Migrations (ensaio + produção) | 25 min |
+| 4. Ensaio completo (política, migrations, boot) num banco descartável | 25 min |
+| 5. Política e migrations em produção | 10 min |
 | 6. Variáveis | 10 min |
 | 7. Subir | 5 min |
 | 8. Permissões | 0 a 5 min |
@@ -90,6 +89,8 @@ export CURTO=<curto>
 mkdir -p "$VIRADA" "$BACKUPS"
 export NET=$(docker inspect mktos_api -f '{{range $k, $v := .NetworkSettings.Networks}}{{$k}}{{"\n"}}{{end}}' | head -1)
 export DB="$(docker exec mktos_api printenv DATABASE_URL)"   # não dê echo nesta variável
+# A imagem que está no ar AGORA. Se a sessão cair depois do passo 7, leia de $VIRADA/imagem-antes.txt.
+export IMG_ID=$(cat "$VIRADA/imagem-antes.txt" 2>/dev/null | awk '{print $2}'); [ -n "$IMG_ID" ] || export IMG_ID=$(docker inspect mktos_api -f '{{.Image}}')
 psql_prod() { docker exec mktos_db psql -U mkt -d marketing_os -At -c "$1"; }
 ```
 
@@ -113,6 +114,7 @@ git -C "$FONTE" status --porcelain | head -20
 psql_prod 'select migration_name from "_prisma_migrations" order by finished_at desc nulls first limit 3'
 psql_prod 'select count(*) from "_prisma_migrations" where finished_at is not null'
 docker logs mktos_api 2>&1 | grep -E 'capacidades' | tail -1
+docker exec mktos_api printenv | grep -cE '^PROPOSTAS_(URL|API_TOKEN)='   # só a contagem, nunca o valor
 df -h / | tail -1
 psql_prod "select pg_size_pretty(pg_database_size('marketing_os'))"
 ```
@@ -124,6 +126,7 @@ psql_prod "select pg_size_pretty(pg_database_size('marketing_os'))"
 - A linha `image:` do compose do painel: anote se é tag móvel (`mktos-app` ou `mktos-app:latest`) ou tag fixa (`rootos-official:<algo>`). O passo 7 muda conforme o caso.
 - A última migration é `20261019220000_tarefas_varios_responsaveis` e o total é 85.
 - O boot diz `(71 capacidades)`.
+- A contagem das variáveis `PROPOSTAS_*` dá 2. Se der 0, a tela de Propostas já mostra hoje só o aviso de serviço fora; registre e siga (a versão final mostra as da sala do mesmo jeito).
 - Espaço livre em disco maior que três vezes o tamanho do banco mais 5 GB (dump, ensaio e a imagem nova).
 
 **Se falhar:**
@@ -145,8 +148,7 @@ sha256sum "$BACKUPS/rootos-antes-da-virada-$HORA.dump" > "$BACKUPS/rootos-antes-
 psql_prod 'select (select count(*) from "WorkTask") tarefas, (select count(*) from "WorkTask" where "clienteId" is not null) tarefas_com_cliente, (select count(*) from "Partner") partners, (select count(*) from "Lead") leads, (select count(*) from "User") usuarios' > "$VIRADA/contagens-antes.txt"
 cat "$VIRADA/contagens-antes.txt"
 
-# 1c. A imagem em execução ganha a etiqueta de volta, e uma cópia em disco.
-IMG_ID=$(docker inspect mktos_api -f '{{.Image}}')
+# 1c. A imagem em execução ganha a etiqueta de volta, e uma cópia em disco ($IMG_ID vem do bloco da sessão).
 REPO=$(docker inspect mktos_api -f '{{.Config.Image}}'); REPO=${REPO%%:*}
 docker tag "$IMG_ID" "$REPO:rollback-$DIA"
 docker save "$REPO:rollback-$DIA" | gzip > "$BACKUPS/imagem-rollback-$DIA.tar.gz"
@@ -224,9 +226,11 @@ docker image ls rootos-official --format '{{.Tag}}  {{.ID}}  {{.CreatedSince}}'
 - Erro de compilação: o commit não é o validado ou falta arquivo. Confira o hash do passo 2. Nada em produção mudou; pode parar aqui sem rollback.
 - Falta de espaço: libere espaço com quem administra a VPS e repita.
 
-## 4. A política, ANTES da subida (5 min)
+## 4. Ensaio completo num banco descartável, ANTES de tocar a produção (25 min)
 
-A versão final acrescenta **6 capacidades** ao catálogo que a produção usa hoje (delta `politica-marketing-os.json` 1.7.0 para 1.9.0; base `politica-root.json` sem mudança; nenhuma capacidade existente mudou de nível, de esquema ou de ferramenta; invariantes iguais):
+Nada deste passo escreve no banco de produção. A política, as migrations e o boot da imagem nova rodam primeiro numa cópia do dump do passo 1; só com o ensaio verde o passo 5 escreve em produção.
+
+**A política.** A versão final acrescenta **6 capacidades** ao catálogo que a produção usa hoje (delta `politica-marketing-os.json` 1.7.0 para 1.9.0; base `politica-root.json` sem mudança; nenhuma capacidade existente mudou de nível, de esquema ou de ferramenta; invariantes iguais):
 
 | Capacidade | Nível |
 |---|---|
@@ -239,24 +243,7 @@ A versão final acrescenta **6 capacidades** ao catálogo que a produção usa h
 
 Por isso basta a assinatura de capacidade nova. Sem ela, o seed recusa com "Nada foi semeado", e as seis valem R5 (a porta recusa tudo do cockpit).
 
-```bash
-docker run --rm --network "$NET" -w /app/apps/api -e DATABASE_URL="$DB" \
-  -e POLITICA_CAPACIDADE_NOVA_AUTOR='<quem responde>' \
-  -e POLITICA_CAPACIDADE_NOVA_MOTIVO='Versão final 20/10/2026: o cockpit comercial entra no catálogo (envio de WhatsApp do comercial, proposta e sala publicadas, cobrança, contrato e fechamento), todas R3 ou R4 pela régua' \
-  "rootos-official:final-$CURTO" pnpm db:seed:politica
-```
-
-**Conferir:** a saída termina com `capacidades: 6 criadas, 71 atualizadas, 77 no total` e não fala em "Nada foi semeado".
-
-**Se falhar:**
-- "Nada foi semeado" listando REBAIXAMENTO: o arquivo da branch afrouxa algo além das capacidades novas. Isso não era esperado. Pare, copie a lista impressa (não tem dado de cliente) e mande ao orquestrador. Não assine rebaixamento para destravar.
-- Lista de capacidades novas com mais de 6 itens: a política do banco estava atrás do que se pensava. Confira a lista contra a tabela acima com o Pedro antes de assinar.
-- "catálogo diverge da régua": defeito do arquivo. Pare; a produção segue intacta.
-- O seed já gravou e algo deu errado depois: a versão anterior volta com o restore do passo 11 (o dump é anterior ao seed).
-
-## 5. As migrations (25 min)
-
-A produção tem 85 migrations. A versão final traz 12 que ela ainda não tem:
+**As migrations.** A produção tem 85 migrations. A versão final traz 13 que ela ainda não tem:
 
 | Migration | O que faz |
 |---|---|
@@ -276,15 +263,29 @@ A produção tem 85 migrations. A versão final traz 12 que ela ainda não tem:
 
 As doze primeiras têm data anterior à última da produção. O `migrate deploy` aplica toda migration que o banco não tem, na ordem do nome, mesmo as de data anterior. Por isso o ensaio vem antes.
 
-**O que a conciliação faz.** Na produção, `WorkTask.clienteId` aponta para outra `WorkTask` (o cartão da lista `cadastro` do Lucas). Na versão final, aponta para `Partner`. A migration: garante `Partner.interno` (um cliente da casa por empresa); para cada tarefa com cliente, acha o `Partner` pelo CNPJ ou pelo nome normalizado do cartão de cadastro, ou cria um; troca o `clienteId` para o `Partner`; troca a chave estrangeira e o CHECK pelos da versão final. É idempotente: rodar de novo, ou rodar num banco que já tem o esquema novo, não muda nada. `outrosResponsaveisIds` e `WorkArea` ficam como estão.
+**O que a conciliação faz.** Na produção, `WorkTask.clienteId` aponta para outra `WorkTask` (o cartão da lista `cadastro` do Lucas). Na versão final, aponta para `Partner`. A migration: garante `Partner.interno` (um cliente da casa por empresa); para cada tarefa com cliente, acha o `Partner` pelo CNPJ ou, entre os que já são clientes, pelo nome normalizado do cartão de cadastro, ou cria um (cartão ainda em fase de lead não vira `Partner`: a tarefa fica sem cliente e o passo 9 decide pelos mapas; fornecedor nunca vira cliente pelo nome); confere que a conta fecha antes de trocar a coluna e recusa rodar com um papel que não atravessa o isolamento por linha; troca o `clienteId` para o `Partner`; troca a chave estrangeira e o CHECK pelos da versão final. É idempotente: rodar de novo, ou rodar num banco que já tem o esquema novo, não muda nada. `outrosResponsaveisIds` e `WorkArea` ficam como estão.
 
-### 5a. Ensaio num banco descartável, com o dump do passo 1
+### 4a. O ensaio
 
 ```bash
 docker exec mktos_db psql -U mkt -d postgres -c "create database virada_ensaio"
 docker exec -i mktos_db pg_restore -U mkt -d virada_ensaio < "$BACKUPS/rootos-antes-da-virada-$HORA.dump" 2> "$VIRADA/ensaio-restore.log"; tail -5 "$VIRADA/ensaio-restore.log"
 ENSAIO="${DB%%\?*}"; ENSAIO="${ENSAIO%/*}/virada_ensaio"
 docker run --rm --network "$NET" -w /app/apps/api -e DATABASE_URL="$ENSAIO" "rootos-official:final-$CURTO" pnpm exec prisma migrate status
+```
+
+A política no ensaio, com a mesma assinatura que irá à produção no passo 5a:
+
+```bash
+docker run --rm --network "$NET" -w /app/apps/api -e DATABASE_URL="$ENSAIO" \
+  -e POLITICA_CAPACIDADE_NOVA_AUTOR='<quem responde>' \
+  -e POLITICA_CAPACIDADE_NOVA_MOTIVO='Versão final 20/10/2026: o cockpit comercial entra no catálogo (envio de WhatsApp do comercial, proposta e sala publicadas, cobrança, contrato e fechamento), todas R3 ou R4 pela régua' \
+  "rootos-official:final-$CURTO" pnpm db:seed:politica
+```
+
+E as migrations, duas vezes (a segunda prova a idempotência):
+
+```bash
 docker run --rm --network "$NET" -w /app/apps/api -e DATABASE_URL="$ENSAIO" "rootos-official:final-$CURTO" pnpm exec prisma migrate deploy
 docker run --rm --network "$NET" -w /app/apps/api -e DATABASE_URL="$ENSAIO" "rootos-official:final-$CURTO" pnpm exec prisma migrate deploy
 ```
@@ -312,12 +313,13 @@ docker run --rm --network "$NET" -w /app/apps/api \
 ```
 
 **Conferir:**
-- O primeiro `migrate status` lista 12 migrations pendentes (as da tabela). O primeiro `deploy` aplica as 12; o segundo diz que não há nada a aplicar (idempotência).
-- Total de tarefas e de tarefas com cliente iguais aos de `contagens-antes.txt`.
+- O seed da política no ensaio termina como o passo 5a espera (abaixo) e não fala em "Nada foi semeado".
+- O primeiro `migrate status` lista 13 migrations pendentes (as da tabela). O primeiro `deploy` aplica as 13; o segundo diz que não há nada a aplicar (idempotência).
+- Total de tarefas igual ao de `contagens-antes.txt`. Tarefas com cliente: igual ou menor que antes; a diferença são as tarefas que citavam um cartão ainda em fase de lead, que ficam sem cliente de propósito (o passo 9 as leva ao funil pelos mapas). Na cópia de 19/10 foram 8 antes e 6 depois, com 4 `Partner` criados. Anote os dois números.
 - Zero tarefa com cliente que não seja `Partner`. Nenhuma empresa com dois clientes internos.
 - A chave estrangeira do cliente aponta para `"Partner"`.
 - 98 migrations aplicadas.
-- O smoke termina em `SMOKE OK`. Ele cita 71 capacidades, porque o dump do passo 1 é anterior ao seed. Para ensaiar o seed também, rode o comando do passo 4 com `DATABASE_URL="$ENSAIO"` antes do smoke: aí ele cita 77.
+- O smoke termina em `SMOKE OK` e cita 77 capacidades (o seed do ensaio já entrou).
 
 Depois de conferir, o banco do ensaio pode sair (é cópia em claro da produção):
 
@@ -325,9 +327,30 @@ Depois de conferir, o banco do ensaio pode sair (é cópia em claro da produçã
 docker exec mktos_db psql -U mkt -d postgres -c "drop database virada_ensaio"
 ```
 
-**Se falhar no ensaio:** nada de produção mudou. Pare, guarde `ensaio-restore.log` e a saída do `migrate deploy` (sem `DATABASE_URL`) e mande ao orquestrador. A causa mais provável é a `20261019100000_tarefa_do_cliente` não estar na forma segura para coluna existente, ou a conciliação achar um caso que a homologação não tinha.
+**Se falhar no ensaio:** nada de produção mudou (nem a política: ela só vai à produção no passo 5). Pare, guarde `ensaio-restore.log` e a saída do `migrate deploy` (sem `DATABASE_URL`) e mande ao orquestrador. A causa mais provável é a `20261019100000_tarefa_do_cliente` não estar na forma segura para coluna existente, ou a conciliação achar um caso que a homologação não tinha.
 
-### 5b. Em produção
+## 5. A política e as migrations em produção (10 min)
+
+### 5a. A política, ANTES da subida
+
+A mesma assinatura do ensaio:
+
+```bash
+docker run --rm --network "$NET" -w /app/apps/api -e DATABASE_URL="$DB" \
+  -e POLITICA_CAPACIDADE_NOVA_AUTOR='<quem responde>' \
+  -e POLITICA_CAPACIDADE_NOVA_MOTIVO='Versão final 20/10/2026: o cockpit comercial entra no catálogo (envio de WhatsApp do comercial, proposta e sala publicadas, cobrança, contrato e fechamento), todas R3 ou R4 pela régua' \
+  "rootos-official:final-$CURTO" pnpm db:seed:politica
+```
+
+**Conferir:** a saída termina com `capacidades: 6 criadas, 71 atualizadas, 77 no total` e não fala em "Nada foi semeado".
+
+**Se falhar:**
+- "Nada foi semeado" listando REBAIXAMENTO: o arquivo da branch afrouxa algo além das capacidades novas. Isso não era esperado. Pare, copie a lista impressa (não tem dado de cliente) e mande ao orquestrador. Não assine rebaixamento para destravar.
+- Lista de capacidades novas com mais de 6 itens: a política do banco estava atrás do que se pensava. Confira a lista contra a tabela acima com o Pedro antes de assinar.
+- "catálogo diverge da régua": defeito do arquivo. Pare; a produção segue intacta.
+- O seed já gravou e algo deu errado depois: a versão anterior volta com o restore do passo 11 (o dump é anterior ao seed).
+
+### 5b. As migrations
 
 Avise o time: "o OS fica instável por 10 minutos". Daqui até o fim do passo 7 a API antiga roda sobre o esquema novo.
 
@@ -397,7 +420,7 @@ curl -fsS https://os.operacaoroot.com/api/health; echo
 
 **Se falhar:**
 - `api` reiniciando em laço ou `unhealthy` depois de 5 minutos: `docker logs --tail 80 mktos_api` (o log não traz senha). Erro de variável obrigatória: corrija no easyPanel e recrie. Qualquer outro erro: passo 11.
-- Boot com 71 capacidades: o seed do passo 4 não pegou. Rode de novo e recrie o `api`.
+- Boot com 71 capacidades: o seed do passo 5a não pegou. Rode de novo e recrie o `api`.
 
 ## 8. Permissões (0 a 5 min)
 
@@ -430,25 +453,41 @@ O script `homolog/organizar/organizar.mjs` (lane D) é o mesmo que organizou a c
 
 Ele roda **no Predator**, onde estão os mapas (`homolog/copia/mapa-*.json` e os do próprio organizar, com dado real, fora do git), falando com a API de produção pelo endereço público. Precisa de:
 - a URL da API: `https://os.operacaoroot.com/api`;
-- duas contas de gente da produção (quem propõe e quem confere; a régua não deixa a mesma pessoa propor e assinar), com as credenciais digitadas no terminal na hora, nunca gravadas em arquivo do repositório;
-- o caminho da pasta dos mapas.
+- duas contas de gente da produção, **com senha** (conta que só entra pelo Google não reautentica): quem pede, com `tarefas.editar`, `leads.editar`, `financeiro.ver` e `financeiro.editar`; e quem confere, outra pessoa, com alçada para confirmar o movimento de etapa (a régua não deixa a mesma pessoa propor e assinar);
+- os mapas: `homolog/copia/mapa-crm.json`, `homolog/copia/mapa-gestao.json` e `homolog/organizar/mapa-novos.json` (no Predator; fora do git).
+
+As senhas entram só na memória do terminal (Git Bash no Predator), nunca em arquivo:
 
 ```bash
+cd /c/Users/User/dev/marketing-os
+export ORGANIZAR_PEDE_EMAIL='<e-mail de quem pede>'   ; read -rs -p 'senha de quem pede: ' ORGANIZAR_PEDE_SENHA; echo; export ORGANIZAR_PEDE_SENHA
+export ORGANIZAR_CONFERE_EMAIL='<e-mail de quem confere>'; read -rs -p 'senha de quem confere: ' ORGANIZAR_CONFERE_SENHA; echo; export ORGANIZAR_CONFERE_SENHA
+ARGS="--api https://os.operacaoroot.com/api --web https://os.operacaoroot.com --mapas homolog/copia/mapa-crm.json,homolog/copia/mapa-gestao.json,homolog/organizar/mapa-novos.json --saida homolog/organizar/producao-$(date +%Y%m%d)"
+
 # 9a. Simular: lista o que vai mover, sem gravar nada.
-node homolog/organizar/organizar.mjs --simular <argumentos do organizar>
+node homolog/organizar/organizar.mjs --simular --detalhe $ARGS
 ```
+
+Antes de qualquer escrita o script confere três coisas e aborta, sem ter feito nada, se uma falhar: a API é a da versão final, a lista de `Partner` veio inteira, e nenhuma tarefa ainda aponta para cartão (a conciliação do passo 5b passou).
 
 **Conferir com o Rodrigo**, linha a linha do resumo: quantas listas e tarefas vão para cada pasta, quantos leads vão ao funil, quantos `Partner` serão criados ou reaproveitados, quantas tarefas ficam como sobra. Os números devem bater com os da homologação final (`homolog/RESULTADO-FINAL.md`), descontado o que entrou na produção depois da cópia.
 
 ```bash
-# 9b. Para valer.
-node homolog/organizar/organizar.mjs <argumentos do organizar>
+# 9b. Para valer (a flag --producao é obrigatória para escrever).
+node homolog/organizar/organizar.mjs --producao $ARGS
 
 # 9c. De novo, para provar que não repete nada.
-node homolog/organizar/organizar.mjs --simular <argumentos do organizar>
+node homolog/organizar/organizar.mjs --simular $ARGS
+
+# Ao fim, as senhas saem da memória.
+unset ORGANIZAR_PEDE_SENHA ORGANIZAR_CONFERE_SENHA
 ```
 
 **Conferir:** a 9b termina sem erro e com os mesmos números da 9a. A 9c diz que não há nada a mover (zero em tudo, exceto as sobras, que continuam listadas). A lista de sobras fica em `homolog/organizar/sobras.md` no Predator (fora do git) e vai para o Rodrigo.
+
+**Não rode depois da virada** a carga antiga do ClickUp do Lucas (`db:seed:tarefas`, `seed-tarefas-clickup.ts`) numa versão anterior a esta: ela gravava o cartão como cliente da tarefa, o que a chave nova recusa. Na versão final ela já resolve o cliente como `Partner`.
+
+Tarefa criada na produção depois da cópia de 19/10 e que não está nos mapas não recebe o cliente da casa por suposição: ela vai para as sobras com "escolher à mão".
 
 **Se falhar:**
 - A simulação mostra algo que o Rodrigo não aprova: não rode a 9b. Ajuste o mapa no Predator, simule de novo.
