@@ -108,6 +108,22 @@ describe('nenhuma reação nasce da etapa (estático)', () => {
     expect(inscritos.length).toBeGreaterThan(10);
     expect(inscritos.filter((t) => t.startsWith('etapa.'))).toEqual([]);
   });
+
+  it('o mover livre tem uma porta só: moverAMao é chamado só pelo MoverService, e o MoverService só pela rota de gente', () => {
+    const src = join(__dirname, '..', 'src');
+    const chamam = (alvo: RegExp) => arquivos(src).filter((f) => alvo.test(readFileSync(f, 'utf8'))).map((f) => f.slice(src.length + 1).replace(/\\/g, '/')).sort();
+    expect(chamam(/\.moverAMao\(/)).toEqual(['comercial/mover.service.ts']);
+    expect(chamam(/import[^;]*\bMoverService\b/)).toEqual(['comercial/comercial.controller.ts', 'comercial/comercial.module.ts']);
+    // Só o `moverAMao` passa `pessoa` ao `mudarEtapa`: as reações, o relógio e o fechado-fora seguem pelos portões.
+    const ficha = readFileSync(join(src, 'comercial', 'ficha.service.ts'), 'utf8');
+    const corpoDoMoverAMao = ficha.slice(ficha.indexOf('async moverAMao('), ficha.indexOf('async baloes('));
+    expect(corpoDoMoverAMao).toMatch(/this\.mudarEtapa\(/);
+    expect(corpoDoMoverAMao).toMatch(/\n\s+pessoa,\n/);
+    for (const f of arquivos(src).filter((x) => !x.endsWith('ficha.service.ts'))) {
+      const t = readFileSync(f, 'utf8');
+      for (const m of t.matchAll(/\.mudarEtapa\(([\s\S]*?)\);/g)) expect(m[1]).not.toMatch(/\bpessoa\b/);
+    }
+  });
 });
 
 describe.skipIf(!URL)('mover o cartão do funil, contra o banco', () => {
