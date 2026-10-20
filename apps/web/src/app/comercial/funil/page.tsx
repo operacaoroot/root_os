@@ -411,7 +411,7 @@ function Cartao({
 
       {c.balao && (
         <div role="note" data-testid={`funil-balao-${c.leadId}`} className="mt-2 rounded border border-warn/50 bg-warn/10 px-2 py-1.5 text-[11.5px] leading-snug">
-          <p className="font-os-mono text-[9.5px] uppercase tracking-[0.12em] text-warn">movido sem as conclusões</p>
+          <p className="font-os-mono text-[9.5px] uppercase tracking-[0.12em] text-warn">movido com pendências</p>
           <p className="mt-0.5 text-text">{c.balao.pendencias.join('; ')}</p>
           <p className="mt-0.5 text-dim">{c.balao.movidoPor ? `por ${c.balao.movidoPor} · ` : ''}{diaSP(c.balao.em)} · some quando o que falta chegar</p>
         </div>

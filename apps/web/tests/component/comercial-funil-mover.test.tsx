@@ -230,14 +230,14 @@ describe('mover pelo arraste', () => {
 });
 
 describe('o balão e as colunas, sem os chips das etapas', () => {
-  it('o cartão movido sem as conclusões mostra o balão com a lista e quem moveu', async () => {
+  it('o cartão movido com pendências mostra o balão com a lista e quem moveu (o balão da P5 fica)', async () => {
     RESPOSTAS['/comercial/funil'] = funil([
       cartao('a', 'Lead A', 'reuniao_agendada', { balao: { pendencias: ['dono do lead (E1)', 'sistema ou ERP em uso (E2)'], movidoPor: 'Sócia da conta', em: '2026-10-18T15:00:00.000Z' } }),
       cartao('b', 'Lead B', 'reuniao_agendada'),
     ]);
     render(<FunilPage />);
     const balao = await screen.findByTestId('funil-balao-a');
-    expect(balao).toHaveTextContent('movido sem as conclusões');
+    expect(balao).toHaveTextContent('movido com pendências');
     expect(balao).toHaveTextContent('dono do lead (E1); sistema ou ERP em uso (E2)');
     expect(balao).toHaveTextContent('por Sócia da conta');
     expect(screen.queryByTestId('funil-balao-b')).toBeNull();
