@@ -1,0 +1,136 @@
+{
+  "inicio": "2026-10-20T00:25:14.018Z",
+  "web": "http://127.0.0.1:3031",
+  "sufixo": "002514",
+  "passos": [
+    {
+      "n": 1,
+      "nome": "mesa, sócio e admin entraram pela API",
+      "ms": 406
+    },
+    {
+      "n": 2,
+      "nome": "a jornada fechou um lead de teste pelos dublês (Pix, assinatura, fechamento R4)",
+      "ms": 50891,
+      "leadId": "2e192e2a-ab37-524d-9fa4-0268953f7422"
+    },
+    {
+      "n": 3,
+      "nome": "I1: o card nasceu em Onboarding de cliente · Fechado no comercial, com procedência e retrolinks card ↔ lead ↔ trilho",
+      "ms": 50994,
+      "cardId": "e7e8913e-3d72-546a-b6c3-813fee2f4b29",
+      "lista": "Onboarding de cliente",
+      "etapa": "Fechado no comercial"
+    },
+    {
+      "n": 4,
+      "nome": "I1: rodar o fechamento de novo não duplica o card",
+      "ms": 51018,
+      "detalhe": "1 card \"Construtora Alicerce Homolog 4491 Ltda\""
+    },
+    {
+      "n": 5,
+      "nome": "I2: o card no quadro compacto (~64 px), 7 colunas numa linha sem rolar a página, rodapé com a última movimentação",
+      "ms": 52438,
+      "detalhe": "Fechamento comercial · abriu o card · agora · 68 px"
+    },
+    {
+      "n": 6,
+      "nome": "I2: parar o mouse e focar mostram o balão (3 passos, comentário), dentro da tela; Esc fecha",
+      "ms": 53843
+    },
+    {
+      "n": 7,
+      "nome": "I2: mover de coluna funciona e o rodapé passa a dizer \"moveu para Kickoff marcado\"",
+      "ms": 54076
+    },
+    {
+      "n": 8,
+      "nome": "I2: o clique no cartão abre o painel",
+      "ms": 54241
+    },
+    {
+      "n": 9,
+      "nome": "I3: a sala v1 pedida pelo admin, liberada por outra pessoa (R4, socio@root.homolog)",
+      "ms": 54632
+    },
+    {
+      "n": 10,
+      "nome": "I3: em /atendimento, o cartão mostra a versão inteira da sala antes de assinar",
+      "ms": 56533
+    },
+    {
+      "n": 11,
+      "nome": "I3: v2 editada, pedida e liberada (R4); o cliente vê só a v2",
+      "ms": 56775
+    },
+    {
+      "n": 12,
+      "nome": "I4: \"faz sentido\" e uma ideia pela rota pública chegam ao fio, à bancada e ao relatório",
+      "ms": 56955
+    },
+    {
+      "n": 13,
+      "nome": "I5: a ideia vira UMA tarefa (dois cliques) com a procedência e o trecho",
+      "ms": 57085,
+      "tarefa": "Responder a ideia: Dá para começar pelo fechamento de outubro? (prova 002514)"
+    },
+    {
+      "n": 14,
+      "nome": "fotografou o quadro, a aba Sala, o relatório, a sala publicada e a proposta em escuro, claro e 390 px; nada rola na horizontal no celular",
+      "ms": 76851,
+      "detalhe": "17 fotos"
+    }
+  ],
+  "screenshots": [
+    "final-seed-implantacao-quadro-balao-escuro.png",
+    "final-seed-implantacao-atendimento-sala-escuro.png",
+    "final-seed-implantacao-quadro-escuro.png",
+    "final-seed-implantacao-painel-sala-escuro.png",
+    "final-seed-implantacao-relatorio-escuro.png",
+    "final-seed-implantacao-sala-publicada-escuro.png",
+    "final-seed-implantacao-proposta-escuro.png",
+    "final-seed-implantacao-quadro-celular.png",
+    "final-seed-implantacao-painel-sala-celular.png",
+    "final-seed-implantacao-relatorio-celular.png",
+    "final-seed-implantacao-sala-publicada-celular.png",
+    "final-seed-implantacao-proposta-celular.png",
+    "final-seed-implantacao-quadro-claro.png",
+    "final-seed-implantacao-painel-sala-claro.png",
+    "final-seed-implantacao-relatorio-claro.png",
+    "final-seed-implantacao-sala-publicada-claro.png",
+    "final-seed-implantacao-proposta-claro.png"
+  ],
+  "semRolagemHorizontal": [
+    {
+      "tela": "quadro",
+      "doc": 390,
+      "janela": 390
+    },
+    {
+      "tela": "painel-sala",
+      "doc": 390,
+      "janela": 390
+    },
+    {
+      "tela": "relatorio",
+      "doc": 390,
+      "janela": 390
+    },
+    {
+      "tela": "sala-publicada",
+      "doc": 390,
+      "janela": 390
+    },
+    {
+      "tela": "proposta",
+      "doc": 390,
+      "janela": 390
+    }
+  ],
+  "ok": true,
+  "leadId": "2e192e2a-ab37-524d-9fa4-0268953f7422",
+  "cardId": "e7e8913e-3d72-546a-b6c3-813fee2f4b29",
+  "fim": "2026-10-20T00:26:30.950Z",
+  "duracaoMs": 76932
+}

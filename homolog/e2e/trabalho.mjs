@@ -62,7 +62,7 @@ function lerEnv(arquivo) {
   }
   return out;
 }
-const SENHA = lerEnv(join(RAIZ, 'homolog/.env.homolog')).ADMIN_PASSWORD;
+const SENHA = lerEnv(process.env.HOMOLOG_ENV ?? join(RAIZ, 'homolog/.env.homolog')).ADMIN_PASSWORD;
 const SUFIXO = new Date().toISOString().slice(11, 19).replace(/:/g, '');
 
 const prova = { inicio: new Date().toISOString(), web: WEB, sufixo: SUFIXO, passos: [], screenshots: [], semRolagemHorizontal: [], avisos: [], ok: false };
@@ -77,7 +77,7 @@ function gravar() {
   prova.fim = new Date().toISOString();
   prova.duracaoMs = Date.now() - t0;
   const texto = JSON.stringify(prova, null, 2).replace(/\/s\/([A-Za-z0-9_-]{6})[A-Za-z0-9_-]{30,50}/g, '/s/$1…');
-  writeFileSync(join(PROVAS, 'trabalho.json'), `${texto}\n`);
+  writeFileSync(join(PROVAS, `${process.env.PROVAS_PREFIXO ?? ''}trabalho.json`), `${texto}\n`);
 }
 function conferir(cond, msg) {
   if (!cond) throw new Error(msg);
@@ -117,7 +117,7 @@ async function contexto(navegador, sessao, tema, viewport = { width: 1440, heigh
 }
 const tid = (p, id) => p.locator(`[data-testid="${id}"]`);
 async function foto(pagina, nome) {
-  const arquivo = `trabalho-${nome}.png`;
+  const arquivo = `${process.env.PROVAS_PREFIXO ?? ''}trabalho-${nome}.png`;
   await pagina.waitForTimeout(400);
   await pagina.screenshot({ path: join(PROVAS, arquivo), fullPage: false });
   prova.screenshots.push(arquivo);
@@ -164,7 +164,10 @@ async function main() {
   let solta = null;
   try { await api('POST', '/trabalho/tarefas', { listId: onb.id, title: `Cliente solto ${SUFIXO}`, clienteId: 'interno' }, pessoas.mesa.token); } catch (e) { solta = e.message; }
   conferir(/Registrar cliente já fechado/.test(solta ?? ''), 'a lista da implantação aceitou cartão solto');
-  const daProva = await api('POST', '/trabalho/tarefas', { listId: execucao.id, title: `Conferir a prova do trabalho ${SUFIXO}`, assignee: pessoas.mesa.user.name, clienteId: 'interno' }, pessoas.admin.token);
+  // Versão final (19/10/2026, F1): Minhas tarefas e Atividade identificam a pessoa pela CONTA
+  // (assigneeUserId e outros responsáveis), como a produção; o texto do responsável sozinho
+  // não põe a tarefa na caixa de ninguém. A tarefa da prova leva a conta da mesa.
+  const daProva = await api('POST', '/trabalho/tarefas', { listId: execucao.id, title: `Conferir a prova do trabalho ${SUFIXO}`, assignee: pessoas.mesa.user.name, assigneeUserId: pessoas.mesa.user.id, clienteId: 'interno' }, pessoas.admin.token);
   await api('POST', `/trabalho/tarefas/${daProva.id}/comentarios`, { text: `Comentário da prova ${SUFIXO}.` }, pessoas.admin.token);
   conferir(daProva.clienteNome && /interno/.test(daProva.clienteNome), 'a tarefa com o cliente da casa não trouxe o nome');
   passo('T4 (API): sem cliente é 400; a implantação recusa cartão solto; com o cliente da casa a tarefa nasce', { detalhe: daProva.clienteNome });
@@ -175,18 +178,34 @@ async function main() {
     const p = await ctx.newPage();
 
     // ---- T6: o menu comercial e /comercial ----
-    await p.goto(`${WEB}/caixa`, { waitUntil: 'networkidle' });
-    const hrefsComerciais = await p.locator('nav a[href^="/comercial"]').evaluateAll((as) => as.map((a) => a.getAttribute('href')));
-    conferir(JSON.stringify(hrefsComerciais) === JSON.stringify(['/comercial/funil', '/comercial/contratos', '/comercial/simulador', '/comercial/torre', '/comercial/relatorio']),
-      `o menu comercial devia ser Funil · Contratos · Simulador · Torre · Relatório (veio ${hrefsComerciais.join(', ')})`);
-    conferir(await p.locator('nav a[title="Decisões do comercial"]').count() === 0, 'Decisões do comercial ainda está no menu');
+    // Versão final (19/10/2026; homolog/final/enxugamento.md §2): o menu virou a barra por
+    // ÁREAS da produção, com as abas de cada área (`nav[aria-label="Abas de <área>"]`) e sem
+    // `title` nos links. O Comercial tem a ordem do roteiro F2: Painel geral · Funil vivo ·
+    // Propostas · Lista de leads · Contratos vivos · Simulador de WhatsApp · Torre das
+    // automações · Relatório da semana. `/comercial` deixou de redirecionar ao Funil vivo: é
+    // o Painel geral do Lucas (decisão do Rodrigo). Decisões continua fora do menu.
+    await p.goto(`${WEB}/comercial/funil`, { waitUntil: 'networkidle' });
+    const abasComerciais = p.locator('nav[aria-label="Abas de Comercial"] a');
+    await abasComerciais.first().waitFor({ timeout: 20_000 });
+    const hrefsComerciais = await abasComerciais.evaluateAll((as) => as.map((a) => a.getAttribute('href')));
+    const ORDEM_DO_COMERCIAL = ['/comercial', '/comercial/funil', '/propostas', '/leads', '/comercial/contratos', '/comercial/simulador', '/comercial/torre', '/comercial/relatorio'];
+    conferir(JSON.stringify(hrefsComerciais) === JSON.stringify(ORDEM_DO_COMERCIAL),
+      `o menu comercial devia ser Painel geral · Funil vivo · Propostas · Lista de leads · Contratos · Simulador · Torre · Relatório (veio ${hrefsComerciais.join(', ')})`);
+    const rotulosComerciais = (await abasComerciais.allInnerTexts()).map((t) => t.trim());
+    conferir(rotulosComerciais[0] === 'Painel geral' && rotulosComerciais[1] === 'Funil vivo' && rotulosComerciais[3] === 'Lista de leads', `rótulos do menu comercial: ${rotulosComerciais.join(' · ')}`);
+    conferir(!rotulosComerciais.some((t) => /Decis/.test(t)) && await p.locator('nav a[href="/comercial/decisoes"]').count() === 0, 'Decisões do comercial ainda está no menu');
     await p.goto(`${WEB}/comercial`, { waitUntil: 'networkidle' });
-    conferir(new URL(p.url()).pathname === '/comercial/funil', `/comercial devia ir ao Funil vivo (foi a ${p.url()})`);
-    passo('T6: o menu comercial sem Decisões, na ordem Funil · Contratos · Simulador · Torre · Relatório; /comercial vai ao Funil');
+    conferir(new URL(p.url()).pathname === '/comercial', `/comercial devia ficar no Painel geral (foi a ${p.url()})`);
+    await p.locator('#root-os-main').getByText('Funil geral', { exact: true }).first().waitFor({ timeout: 20_000 });
+    conferir(await p.locator('nav[aria-label="Abas de Comercial"] a[aria-current="page"]').getAttribute('href') === '/comercial', 'a aba ativa em /comercial devia ser o Painel geral');
+    passo('T6: o menu comercial sem Decisões, na ordem Painel geral · Funil vivo · Propostas · Lista de leads · Contratos · Simulador · Torre · Relatório; /comercial é o Painel geral');
 
     // ---- T1: o menu Implantação abre o kanban ----
+    // Versão final: a área Trabalho na barra, depois a aba "Implantação de clientes".
     await p.goto(`${WEB}/caixa`, { waitUntil: 'networkidle' });
-    await p.locator('nav a[title="Implantação de clientes"]').first().click();
+    await p.locator('nav a[href="/trabalho"]', { hasText: 'Trabalho' }).first().click();
+    await p.waitForURL(/\/trabalho(\?|$)/, { timeout: 20_000 });
+    await p.locator('nav[aria-label="Abas de Trabalho"] a', { hasText: 'Implantação de clientes' }).first().click();
     await p.waitForURL(/\/trabalho\/implantacao/, { timeout: 20_000 });
     await p.locator('#root-os-main').getByRole('heading', { name: 'Implantação de clientes' }).waitFor({ timeout: 20_000 });
     await p.locator('[data-coluna]').first().waitFor({ timeout: 20_000 });

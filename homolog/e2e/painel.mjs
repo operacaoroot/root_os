@@ -61,7 +61,7 @@ function lerEnv(arquivo) {
   }
   return out;
 }
-const SENHA = lerEnv(join(RAIZ, 'homolog/.env.homolog')).ADMIN_PASSWORD;
+const SENHA = lerEnv(process.env.HOMOLOG_ENV ?? join(RAIZ, 'homolog/.env.homolog')).ADMIN_PASSWORD;
 const SUFIXO = new Date().toISOString().slice(11, 19).replace(/:/g, '');
 
 const prova = { inicio: new Date().toISOString(), web: WEB, sufixo: SUFIXO, passos: [], screenshots: [], semRolagemHorizontal: [], ok: false };
@@ -75,7 +75,7 @@ function passo(nome, dados = {}) {
 function gravar() {
   prova.fim = new Date().toISOString();
   prova.duracaoMs = Date.now() - t0;
-  writeFileSync(join(PROVAS, 'painel.json'), `${JSON.stringify(prova, null, 2)}\n`);
+  writeFileSync(join(PROVAS, `${process.env.PROVAS_PREFIXO ?? ''}painel.json`), `${JSON.stringify(prova, null, 2)}\n`);
 }
 function conferir(cond, msg) {
   if (!cond) throw new Error(msg);
@@ -118,7 +118,7 @@ async function contexto(navegador, sessao, tema, viewport = { width: 1440, heigh
 const tid = (p, id) => p.locator(`[data-testid="${id}"]`);
 
 async function foto(pagina, nome) {
-  const arquivo = `painel-${nome}.png`;
+  const arquivo = `${process.env.PROVAS_PREFIXO ?? ''}painel-${nome}.png`;
   await pagina.waitForTimeout(400);
   await pagina.screenshot({ path: join(PROVAS, arquivo), fullPage: false });
   prova.screenshots.push(arquivo);
@@ -151,7 +151,10 @@ async function main() {
   const execucao = todas.find((l) => l.name === 'Execução') ?? todas[0];
   conferir(execucao, 'o Trabalho não tem lista nenhuma (rode a estrutura sugerida)');
   // Rodada do trabalho T4: toda tarefa nova tem cliente (o da casa, aqui).
-  const tarefa = await api('POST', '/trabalho/tarefas', { listId: execucao.id, title: `Prova do painel ${SUFIXO}`, assignee: mesa.user.name, clienteId: 'interno' }, admin.token);
+  // Versão final (19/10/2026, F1): Minhas tarefas e Atividade identificam a pessoa pela CONTA
+  // (assigneeUserId e outros responsáveis), como a produção; o texto do responsável sozinho
+  // não põe a tarefa na caixa de ninguém. A tarefa da prova leva a conta da mesa.
+  const tarefa = await api('POST', '/trabalho/tarefas', { listId: execucao.id, title: `Prova do painel ${SUFIXO}`, assignee: mesa.user.name, assigneeUserId: mesa.user.id, clienteId: 'interno' }, admin.token);
   await api('POST', `/trabalho/tarefas/${tarefa.id}/comentarios`, { text: `Comentário da prova ${SUFIXO}: confere o relatório antes de sexta.` }, admin.token);
   const lista = await api('POST', '/trabalho/listas', { name: `Lista da prova ${SUFIXO}` }, mesa.token);
   const entrada = await api('POST', '/comercial/simulador/entrada', {

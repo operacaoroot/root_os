@@ -64,7 +64,7 @@ function lerEnv(arquivo) {
   }
   return out;
 }
-const ENV = lerEnv(join(RAIZ, 'homolog/.env.homolog'));
+const ENV = lerEnv(process.env.HOMOLOG_ENV ?? join(RAIZ, 'homolog/.env.homolog'));
 const SENHA = ENV.ADMIN_PASSWORD;
 if (!SENHA) falhar('ADMIN_PASSWORD ausente em homolog/.env.homolog');
 
@@ -552,7 +552,7 @@ async function main() {
 }
 
 function gravarProva(dados) {
-  const arquivo = join(RAIZ, 'homolog/provas/jornada-docker.json');
+  const arquivo = join(RAIZ, 'homolog/provas', `${process.env.PROVAS_PREFIXO ?? ''}jornada-docker.json`);
   mkdirSync(dirname(arquivo), { recursive: true });
   // O token da sala é a chave de acesso do cliente: a prova guarda só o começo dele (a tela mostra o link inteiro).
   const texto = JSON.stringify(dados, null, 2).replace(/\/s\/([A-Za-z0-9_-]{6})[A-Za-z0-9_-]{34,42}/g, '/s/$1…');

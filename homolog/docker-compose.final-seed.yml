@@ -1,0 +1,183 @@
+# Stack TEMPORÁRIA das provas e2e da VERSÃO FINAL com o SEED (rodada de 19/10/2026, F6).
+# Roteiro: docs/comercial/RODADA-FINAL-20261019.md, F6 ("os nossos 5 roteiros e2e verdes na
+# imagem final com o seed"). Placar: homolog/final/e2e-seed.md.
+#
+# Cópia do docker-compose.final.yml com nomes, volumes, rede e portas próprios. Nada aqui
+# compartilha rede, volume ou porta com rootos-comercial (3010), rootos-copia (3020) nem
+# rootos-final (3030). Tudo publicado só em 127.0.0.1 (sem Tailscale).
+#
+#   web 3031 · api 4031 · db 5444 · redis 6394 · dublê Asaas 4032 · dublê ZapSign 4033
+#
+# Banco NOVO, sem dado real: as migrations sobem no command da api e o seed entra depois,
+# dentro do container api (tsx da própria imagem), na ordem db:seed, db:seed:politica,
+# db:seed:comercial. O nome do banco casa /homolog/ de propósito (o seed-comercial recusa
+# banco que não pareça de homologação).
+#
+# Diferenças deliberadas em relação ao final.yml, todas para casar com a rootos-comercial,
+# onde os roteiros foram provados:
+#   - ROTINAS_CRON on: a jornada espera a M3 da véspera preparada pelo tique de 1 minuto da
+#     rotina comercial.relogio. Nada chama fora mesmo assim (LLM stub, WhatsApp simulado,
+#     Asaas e ZapSign nos dublês, sem chave de provedor).
+#   - COMERCIAL_SEED_DEMONSTRACAO=sim e QUADRO_DE_CUSTOS_EXEMPLO (fixture dentro da imagem).
+#   - os dublês do Asaas e da ZapSign publicados em 127.0.0.1 (a jornada paga o Pix e assina
+#     pelos dois a partir do host).
+#
+# Subir:
+#   docker compose -p rootos-final-seed -f homolog/docker-compose.final-seed.yml --env-file homolog/.env.final-seed up -d
+# Derrubar (decisão do orquestrador):
+#   docker compose -p rootos-final-seed -f homolog/docker-compose.final-seed.yml --env-file homolog/.env.final-seed down
+name: rootos-final-seed
+
+services:
+  db:
+    image: pgvector/pgvector:pg16
+    container_name: rootos_final_seed_db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${DB_USER:-rootos}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?defina DB_PASSWORD em homolog/.env.final-seed}
+      POSTGRES_DB: ${DB_NAME:-rootos_final_seed_homolog}
+    ports:
+      - "127.0.0.1:${DB_PORT:-5444}:5432"
+    volumes:
+      - rootos_final_seed_db:/var/lib/postgresql/data
+    networks: [rootos-final-seed-net]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-rootos}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: rootos_final_seed_redis
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:${REDIS_PORT:-6394}:6379"
+    networks: [rootos-final-seed-net]
+
+  asaas-mock:
+    image: rootos-comercial-asaas-mock:latest
+    container_name: rootos_final_seed_asaas_mock
+    restart: unless-stopped
+    environment:
+      WEBHOOK_URL: http://api:4001/api/comercial/webhooks/asaas
+      WEBHOOK_TOKEN: ${ASAAS_WEBHOOK_TOKEN:?defina ASAAS_WEBHOOK_TOKEN em homolog/.env.final-seed}
+      PUBLIC_URL: http://127.0.0.1:${ASAAS_MOCK_PORT:-4032}
+    volumes:
+      - rootos_final_seed_asaas:/data
+    ports:
+      - "127.0.0.1:${ASAAS_MOCK_PORT:-4032}:4011"
+    networks: [rootos-final-seed-net]
+
+  zapsign-mock:
+    image: rootos-comercial-zapsign-mock:latest
+    container_name: rootos_final_seed_zapsign_mock
+    restart: unless-stopped
+    environment:
+      WEBHOOK_URL: http://api:4001/api/comercial/webhooks/zapsign
+      WEBHOOK_TOKEN: ${ZAPSIGN_WEBHOOK_TOKEN:?defina ZAPSIGN_WEBHOOK_TOKEN em homolog/.env.final-seed}
+      PUBLIC_URL: http://127.0.0.1:${ZAPSIGN_MOCK_PORT:-4033}
+    volumes:
+      - rootos_final_seed_zapsign:/data
+    ports:
+      - "127.0.0.1:${ZAPSIGN_MOCK_PORT:-4033}:4012"
+    networks: [rootos-final-seed-net]
+
+  # Dublê do serviço das propostas antigas da ROOT (só leitura pelo OS), só na rede interna.
+  propostas-mock:
+    build: ./mocks/propostas
+    image: rootos-final-seed-propostas-mock:latest
+    container_name: rootos_final_seed_propostas_mock
+    restart: unless-stopped
+    environment:
+      PROPOSTAS_API_TOKEN: ${PROPOSTAS_API_TOKEN:-dublê-propostas}
+      PORT: "4013"
+    networks: [rootos-final-seed-net]
+
+  api:
+    image: rootos-final-app:final2
+    container_name: rootos_final_seed_api
+    restart: unless-stopped
+    working_dir: /app/apps/api
+    command: sh -c "pnpm exec prisma migrate deploy && node dist/main.js"
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: postgresql://${DB_USER:-rootos}:${DB_PASSWORD}@db:5432/${DB_NAME:-rootos_final_seed_homolog}
+      TENANT_MODO: ${TENANT_MODO:-observar}
+      API_PORT: "4001"
+      JWT_SECRET: ${JWT_SECRET:?defina JWT_SECRET}
+      AUTH_SECRET: ${AUTH_SECRET:?defina AUTH_SECRET}
+      ENCRYPTION_KEY: ${ENCRYPTION_KEY:?defina ENCRYPTION_KEY}
+      COFRE_CHAVES: ""
+      COFRE_CHAVE_ATUAL: ""
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:?defina ADMIN_PASSWORD}
+      WEB_ORIGIN: ${WEB_ORIGIN:-http://127.0.0.1:3031}
+      PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:-http://127.0.0.1:3031}
+      GATEWAY_MODO: impor
+      RASTRO_RETENCAO_DIAS: "1825"
+      POLITICA_FUSO_HORARIO: America/Sao_Paulo
+      ROTINAS_CRON: "on"
+      PAUTA_CRON: "off"
+      ONBOARDING_ABERTO: "nao"
+      ONBOARDING_AUDIO: "off"
+      LLM_PROVIDER: stub
+      ANTHROPIC_API_KEY: ""
+      OPENAI_API_KEY: ""
+      APIFY_TOKEN: ""
+      EVOLUTION_URL: ""
+      EVOLUTION_API_KEY: ""
+      YOUTUBE_AUDITORIA: pendente
+      QUADRO_DE_CUSTOS_EXEMPLO: /app/homolog/fixtures/quadro-de-custos-exemplo.json
+      ASAAS_API_KEY: $$aact_hmlg_dublê
+      ASAAS_BASE_URL: http://asaas-mock:4011/v3
+      ASAAS_WEBHOOK_TOKEN: ${ASAAS_WEBHOOK_TOKEN}
+      ZAPSIGN_API_TOKEN: dublê
+      ZAPSIGN_BASE_URL: http://zapsign-mock:4012/api/v1
+      ZAPSIGN_WEBHOOK_TOKEN: ${ZAPSIGN_WEBHOOK_TOKEN}
+      WHATSAPP_PROVEDOR: simulado
+      PROPOSTAS_URL: http://propostas-mock:4013
+      PROPOSTAS_API_TOKEN: ${PROPOSTAS_API_TOKEN:-dublê-propostas}
+      COMERCIAL_SEED_DEMONSTRACAO: "sim"
+      OBSIDIAN_VAULT_PATH: /vault
+      OBSIDIAN_FONTE: pasta
+    volumes:
+      - rootos_final_seed_vault:/vault
+    ports:
+      - "127.0.0.1:${API_PORT:-4031}:4001"
+    depends_on:
+      db: { condition: service_healthy }
+      redis: { condition: service_started }
+      asaas-mock: { condition: service_started }
+      zapsign-mock: { condition: service_started }
+    networks: [rootos-final-seed-net]
+    healthcheck:
+      test: ["CMD-SHELL", "node -e \"fetch('http://127.0.0.1:4001/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))\""]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+
+  web:
+    image: rootos-final-app:final2
+    container_name: rootos_final_seed_web
+    restart: unless-stopped
+    working_dir: /app/apps/web
+    command: sh -c "pnpm exec next start -p 4000"
+    environment:
+      NODE_ENV: production
+      API_PROXY_TARGET: http://api:4001
+    ports:
+      - "127.0.0.1:${WEB_PORT:-3031}:4000"
+    depends_on:
+      api: { condition: service_started }
+    networks: [rootos-final-seed-net]
+
+volumes:
+  rootos_final_seed_db:
+  rootos_final_seed_asaas:
+  rootos_final_seed_zapsign:
+  rootos_final_seed_vault:
+
+networks:
+  rootos-final-seed-net:
+    name: rootos-final-seed-net

@@ -1,0 +1,171 @@
+{
+  "inicio": "2026-10-20T00:23:43.732Z",
+  "web": "http://127.0.0.1:3031",
+  "sufixo": "002343",
+  "passos": [
+    {
+      "n": 1,
+      "nome": "mesa, sócio e admin entraram pela API",
+      "ms": 314,
+      "detalhe": "Mesa · responsável (homologação) · Sócio titular (homologação) · Admin Root"
+    },
+    {
+      "n": 2,
+      "nome": "preparou: tarefa da mesa comentada pelo admin, lista solta e um lead novo em E1",
+      "ms": 607,
+      "tarefaId": "79f72f99-1cd4-474f-9865-c224b515b1bd",
+      "listaId": "0c3be06d-350f-4e60-b237-a27433e79692",
+      "leadId": "ea8ddfde-a69d-5dae-816e-819dc9893445"
+    },
+    {
+      "n": 3,
+      "nome": "na caixa da mesa, Atividade mostra o comentário do admin",
+      "ms": 1615,
+      "detalhe": "comentario:503ba905-c530-4e25-be74-15ee54310b9d"
+    },
+    {
+      "n": 4,
+      "nome": "\"Limpar\" tirou o item da caixa e ele continua no histórico",
+      "ms": 1695
+    },
+    {
+      "n": 5,
+      "nome": "Minhas tarefas mostra a tarefa e os comentários abrem no lugar",
+      "ms": 1895
+    },
+    {
+      "n": 6,
+      "nome": "pasta criada pela tela",
+      "ms": 2872,
+      "detalhe": "Pasta da prova 002343"
+    },
+    {
+      "n": 7,
+      "nome": "a lista foi movida para a pasta pelo seletor e o chip da pasta a mostra",
+      "ms": 4268
+    },
+    {
+      "n": 8,
+      "nome": "Quadro e Lista alternam sobre a mesma lista",
+      "ms": 4406
+    },
+    {
+      "n": 9,
+      "nome": "ata colada pela tela entrou no banco de atas (pela memória)",
+      "ms": 6286,
+      "detalhe": "memoria:fc8739e7-9e71-41c0-9650-0414c31b46f9"
+    },
+    {
+      "n": 10,
+      "nome": "\"Sugerir tarefas\" trouxe rascunhos conferidos contra a ata",
+      "ms": 6561,
+      "detalhe": "3 rascunho(s)"
+    },
+    {
+      "n": 11,
+      "nome": "aceitar com um clique criou a tarefa no Trabalho",
+      "ms": 7421,
+      "detalhe": "Enviar o relatório mensal da Padaria Exemplo"
+    },
+    {
+      "n": 12,
+      "nome": "o admin pediu para mover o lead novo de E1 para E3 pelo menu do cartão",
+      "ms": 8768
+    },
+    {
+      "n": 13,
+      "nome": "a mesa encontrou o pedido em \"Depende de você\", em português",
+      "ms": 9562,
+      "detalhe": "Mover Prova Painel 002343 para Reunião agendada"
+    },
+    {
+      "n": 14,
+      "nome": "a mesa confirmou pela tela nova (as condições apareceram antes do clique)",
+      "ms": 10399
+    },
+    {
+      "n": 15,
+      "nome": "o admin concluiu: o cartão está em E3 com o balão de pendências",
+      "ms": 10749,
+      "detalhe": "MOVIDO COM PENDÊNCIAS sistema ou ERP em uso (E2); base de dados: sim ou não (E2); produto-alvo proposto (E2) por Admin Root · 19/10 · some quando o que falta ch"
+    },
+    {
+      "n": 16,
+      "nome": "fotografou as telas mexidas em escuro, claro e 390 px; nenhuma rola na horizontal no celular",
+      "ms": 45067,
+      "detalhe": "25 fotos"
+    }
+  ],
+  "screenshots": [
+    "final-seed-painel-aprovacoes-aberta-escuro.png",
+    "final-seed-painel-caixa-atividade-escuro.png",
+    "final-seed-painel-caixa-tarefas-escuro.png",
+    "final-seed-painel-trabalho-pastas-escuro.png",
+    "final-seed-painel-trabalho-lista-escuro.png",
+    "final-seed-painel-atas-escuro.png",
+    "final-seed-painel-aprovacoes-escuro.png",
+    "final-seed-painel-funil-escuro.png",
+    "final-seed-painel-whatsapp-escuro.png",
+    "final-seed-painel-caixa-atividade-celular.png",
+    "final-seed-painel-caixa-tarefas-celular.png",
+    "final-seed-painel-trabalho-pastas-celular.png",
+    "final-seed-painel-trabalho-lista-celular.png",
+    "final-seed-painel-atas-celular.png",
+    "final-seed-painel-aprovacoes-celular.png",
+    "final-seed-painel-funil-celular.png",
+    "final-seed-painel-whatsapp-celular.png",
+    "final-seed-painel-caixa-atividade-claro.png",
+    "final-seed-painel-caixa-tarefas-claro.png",
+    "final-seed-painel-trabalho-pastas-claro.png",
+    "final-seed-painel-trabalho-lista-claro.png",
+    "final-seed-painel-atas-claro.png",
+    "final-seed-painel-aprovacoes-claro.png",
+    "final-seed-painel-funil-claro.png",
+    "final-seed-painel-whatsapp-claro.png"
+  ],
+  "semRolagemHorizontal": [
+    {
+      "tela": "caixa-atividade",
+      "doc": 390,
+      "janela": 390
+    },
+    {
+      "tela": "caixa-tarefas",
+      "doc": 390,
+      "janela": 390
+    },
+    {
+      "tela": "trabalho-pastas",
+      "doc": 390,
+      "janela": 390
+    },
+    {
+      "tela": "trabalho-lista",
+      "doc": 390,
+      "janela": 390
+    },
+    {
+      "tela": "atas",
+      "doc": 390,
+      "janela": 390
+    },
+    {
+      "tela": "aprovacoes",
+      "doc": 390,
+      "janela": 390
+    },
+    {
+      "tela": "funil",
+      "doc": 390,
+      "janela": 390
+    },
+    {
+      "tela": "whatsapp",
+      "doc": 390,
+      "janela": 390
+    }
+  ],
+  "ok": true,
+  "fim": "2026-10-20T00:24:28.994Z",
+  "duracaoMs": 45262
+}

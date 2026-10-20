@@ -1,0 +1,389 @@
+{
+  "ok": true,
+  "em": "2026-10-20T00:32:07.978Z",
+  "api": "http://127.0.0.1:4031/api",
+  "tempoTotalMs": 24805,
+  "lead": {
+    "telefone": "+5532956303173",
+    "nome": "Marina Teste 3173",
+    "empresa": "Construtora Alicerce Homolog 3173",
+    "id": "f67f81f5-4543-5249-8751-84b95bf5e173"
+  },
+  "linkDaSala": "http://127.0.0.1:3031/s/sfap8L…",
+  "horario": "2026-10-20T10:00:00-03:00",
+  "diagnostico": {
+    "dores": [
+      "04:12",
+      "11:40",
+      "19:05",
+      "27:30"
+    ],
+    "produtoSugerido": "operacao",
+    "modelo": "stub"
+  },
+  "proposta": {
+    "versao": 1,
+    "produto": "operacao",
+    "valorCentavos": 1199700,
+    "parcelas": 3,
+    "validaAte": "2026-10-27T23:59:59-03:00",
+    "laudo": {
+      "ok": false,
+      "notas": [
+        "parcelas fecham o total: 3× de R$ 3.999,00 = R$ 11.997,00",
+        "preço bate a tabela de 2026-10-04",
+        "validade escrita: até 2026-10-27"
+      ],
+      "apontamentos": [
+        "quadro de custos com VALORES DE EXEMPLO (exemplo do mapa (tela 07), a decidir): não é dado do cliente, [a decidir] com o dado real"
+      ]
+    }
+  },
+  "cobranca": {
+    "linkPagamento": "http://127.0.0.1:4032/fatura/pay_9ada9f70563d4c2e",
+    "pix": true,
+    "primeiraParcelaCentavos": 399900
+  },
+  "fechamento": {
+    "estado": "concluido",
+    "escritas": [
+      "cliente:criado",
+      "contrato:criado",
+      "cobranca:reaproveitado",
+      "kit_e_trilho:criado",
+      "card:criado",
+      "grupo:criado"
+    ]
+  },
+  "contratoVivo": {
+    "parcelas": [
+      "paga",
+      "pendente",
+      "pendente"
+    ],
+    "marcos": [
+      "dia_15_indicacao",
+      "d_30_continuidade"
+    ]
+  },
+  "funil": {
+    "fechadosAntes": 1,
+    "fechadosDepois": 2,
+    "fechadosNestaExecucao": 1,
+    "esteLeadFechado": true,
+    "paginaDaSalaNoWeb": 200,
+    "relatorioDaSemana": 200
+  },
+  "etapas": [
+    "novo_lead → qualificacao · form.respondido sustenta qualificacao",
+    "qualificacao → reuniao_agendada · agenda.escolhida sustenta reuniao_agendada",
+    "reuniao_agendada → sessao · ata.chegou sustenta sessao",
+    "sessao → diagnostico · diagnostico.pronto sustenta diagnostico",
+    "diagnostico → proposta · proposta.publicada sustenta proposta",
+    "proposta → follow_up · proposta.lida sustenta follow_up",
+    "follow_up → contrato · proposta.aceita sustenta contrato",
+    "contrato → fechado · cliente.ativo sustenta fechado"
+  ],
+  "etapasAmostradas": [
+    {
+      "etapa": "novo_lead",
+      "quando": "entrada"
+    },
+    {
+      "etapa": "qualificacao",
+      "quando": "formulário"
+    },
+    {
+      "etapa": "reuniao_agendada",
+      "quando": "horário escolhido"
+    },
+    {
+      "etapa": "diagnostico",
+      "quando": "diagnóstico"
+    },
+    {
+      "etapa": "proposta",
+      "quando": "proposta publicada"
+    },
+    {
+      "etapa": "follow_up",
+      "quando": "proposta lida"
+    },
+    {
+      "etapa": "contrato",
+      "quando": "aceite"
+    },
+    {
+      "etapa": "fechado",
+      "quando": "fechamento"
+    }
+  ],
+  "estagiosDaSala": [
+    "conversa",
+    "proposta",
+    "contrato",
+    "comeco"
+  ],
+  "etapaFinal": "fechado",
+  "toques": [
+    {
+      "n": 1,
+      "quem": "sócio titular",
+      "email": "socio@root.homolog",
+      "acao": "assina comercial.whatsapp.enviar (R4, senha e motivo)",
+      "porque": "M1: a primeira resposta ao lead sai da casa (R3: irreversível e confidencial)",
+      "nivel": "R4",
+      "capacidade": "comercial.whatsapp.enviar",
+      "alcada": "titular",
+      "approvalId": "9399cb67-d8b0-4b15-b4d6-81119b0c17ad"
+    },
+    {
+      "n": 2,
+      "quem": "sócio titular",
+      "email": "socio@root.homolog",
+      "acao": "assina comercial.whatsapp.enviar (R4, senha e motivo)",
+      "porque": "M2: a oferta de horários sai da casa (R3)",
+      "nivel": "R4",
+      "capacidade": "comercial.whatsapp.enviar",
+      "alcada": "titular",
+      "approvalId": "9dd705a2-f93b-405d-99e2-445104846ce3"
+    },
+    {
+      "n": 3,
+      "quem": "sócio titular",
+      "email": "socio@root.homolog",
+      "acao": "assina comercial.whatsapp.enviar (R4, senha e motivo)",
+      "porque": "M3: a confirmação de véspera sai da casa (R3)",
+      "nivel": "R4",
+      "capacidade": "comercial.whatsapp.enviar",
+      "alcada": "titular",
+      "approvalId": "63e27f7e-d271-4c05-8f01-52d7711a3aff"
+    },
+    {
+      "n": 4,
+      "quem": "sócio da conta (admin)",
+      "email": "admin@marketing-os.local",
+      "acao": "conduz a sessão estratégica e sobe a ata",
+      "porque": "a sessão é humana por desenho (E4); a ata é o insumo do diagnóstico"
+    },
+    {
+      "n": 5,
+      "quem": "sócio da conta (admin)",
+      "email": "admin@marketing-os.local",
+      "acao": "aprova o diagnóstico",
+      "porque": "portão de E5: diagnóstico aprovado por sócio solta a proposta"
+    },
+    {
+      "n": 6,
+      "quem": "sócio da conta (admin)",
+      "email": "admin@marketing-os.local",
+      "acao": "leva à liberação a proposta com o quadro de exemplo",
+      "porque": "o revisor aponta número de exemplo (E-3): uma pessoa decide, um toque"
+    },
+    {
+      "n": 7,
+      "quem": "sócio titular",
+      "email": "socio@root.homolog",
+      "acao": "assina comercial.proposta.publicar (R4, senha e motivo)",
+      "porque": "a proposta sai para o cliente (R3: publicação externa)",
+      "nivel": "R4",
+      "capacidade": "comercial.proposta.publicar",
+      "alcada": "titular",
+      "approvalId": "77c9a085-1754-42c4-b1e6-987e12ea534c"
+    },
+    {
+      "n": 8,
+      "quem": "sócio titular",
+      "email": "socio@root.homolog",
+      "acao": "assina comercial.whatsapp.enviar (R4, senha e motivo)",
+      "porque": "M4: o aviso da proposta sai da casa (R3)",
+      "nivel": "R4",
+      "capacidade": "comercial.whatsapp.enviar",
+      "alcada": "titular",
+      "approvalId": "9374f029-7e68-4df6-ad0d-ca2a09291140"
+    },
+    {
+      "n": 9,
+      "quem": "sócio da conta (admin)",
+      "email": "admin@marketing-os.local",
+      "acao": "decide o pedido de ajuste (manter o preço)",
+      "porque": "desconto é decisão de gente: a fila de decisões, um toque"
+    },
+    {
+      "n": 10,
+      "quem": "sócio titular",
+      "email": "socio@root.homolog",
+      "acao": "assina comercial.cobranca.criar (R4, senha e motivo)",
+      "porque": "obrigação financeira com o cliente (R4: titular, senha e motivo)",
+      "nivel": "R4",
+      "capacidade": "comercial.cobranca.criar",
+      "alcada": "titular",
+      "approvalId": "f3661d56-31a4-4103-8b02-66f613073617"
+    },
+    {
+      "n": 11,
+      "quem": "sócio titular",
+      "email": "socio@root.homolog",
+      "acao": "assina comercial.contrato.enviar (R4, senha e motivo)",
+      "porque": "contrato enviado para assinatura (R4: titular, senha e motivo)",
+      "nivel": "R4",
+      "capacidade": "comercial.contrato.enviar",
+      "alcada": "titular",
+      "approvalId": "bdd4c380-c06a-4407-b352-aae022e1793c"
+    },
+    {
+      "n": 12,
+      "quem": "sócio da conta (admin)",
+      "email": "admin@marketing-os.local",
+      "acao": "assina o contrato pela Root (ZapSign)",
+      "porque": "o contrato tem dois signatários; a Root assina por um sócio"
+    },
+    {
+      "n": 13,
+      "quem": "sócio titular",
+      "email": "socio@root.homolog",
+      "acao": "assina comercial.fechamento.executar (R4, senha e motivo)",
+      "porque": "o fechamento cria cliente, contrato, cobrança, trilho, card da implantação e grupo (R4: obrigação financeira)",
+      "nivel": "R4",
+      "capacidade": "comercial.fechamento.executar",
+      "alcada": "titular",
+      "approvalId": "380cdb4a-ec13-402b-a92a-fed0b129405b"
+    }
+  ],
+  "acoesDoCliente": [
+    "manda o primeiro \"oi\" no WhatsApp (simulador)",
+    "responde o formulário de qualificação na sala",
+    "escolhe o horário Ter 20/10 · 10h na sala",
+    "lê os cinco blocos da proposta na sala",
+    "pede 8% de desconto na sala",
+    "confere os dados do contratante",
+    "aceita a Operação ROOT em Pix",
+    "abre o passo do contrato",
+    "paga a 1ª parcela no Pix (dublê do Asaas)",
+    "assina o contrato (dublê da ZapSign)"
+  ],
+  "automaticas": {
+    "total": 31,
+    "sozinho": 16,
+    "efeitosLiberados": 15,
+    "fatosNoFio": 55,
+    "atosDoCliente": 19,
+    "atosDePessoa": 5,
+    "porTipo": {
+      "lead.pontuado": 2,
+      "dono.atribuido": 1,
+      "sala.aberta": 1,
+      "whats.enviada": 4,
+      "etapa.mudou": 8,
+      "agenda.confirmada": 1,
+      "diagnostico.pronto": 1,
+      "decisao.aberta": 2,
+      "proposta.publicada": 1,
+      "cobranca.criada": 1,
+      "contrato.gerado": 1,
+      "fechamento.escrita": 6,
+      "implantacao.card_criado": 1,
+      "cliente.ativo": 1
+    }
+  },
+  "pendentesAoFim": {
+    "aprovacoes": [],
+    "mensagensNaFila": [
+      "M7"
+    ]
+  },
+  "passos": [
+    {
+      "nome": "0. homologação de pé e as três pessoas entram",
+      "emMs": 1
+    },
+    {
+      "nome": "1. o lead entra pelo simulador do WhatsApp",
+      "emMs": 332
+    },
+    {
+      "nome": "2. M1 com o formulário: retida em R3, outra pessoa libera",
+      "emMs": 564
+    },
+    {
+      "nome": "3. o formulário respondido na sala",
+      "emMs": 809
+    },
+    {
+      "nome": "4. M2 com dois horários em botões: R3, outra pessoa libera",
+      "emMs": 1018
+    },
+    {
+      "nome": "5. o lead escolhe o horário (o primeiro, para a véspera cair dentro desta execução)",
+      "emMs": 1216
+    },
+    {
+      "nome": "6. a véspera: o relógio prepara a M3 (R3), outra pessoa libera, e a confirmação entra no fio",
+      "emMs": 1325
+    },
+    {
+      "nome": "7. a sessão: o sócio da conta conduz e sobe a ata (fixture da Alicerce)",
+      "emMs": 22281
+    },
+    {
+      "nome": "8. o diagnóstico com stub: 4 falas com minuto",
+      "emMs": 22386
+    },
+    {
+      "nome": "9. o sócio aprova o diagnóstico",
+      "emMs": 22424
+    },
+    {
+      "nome": "10. a proposta pela tabela; o quadro de EXEMPLO é apontamento do revisor (E-3): decisão de um toque, depois a porta (R3)",
+      "emMs": 22487
+    },
+    {
+      "nome": "11. M4 avisa que a proposta chegou: R3, outra pessoa libera",
+      "emMs": 22800
+    },
+    {
+      "nome": "12. o cliente lê a proposta por bloco na sala",
+      "emMs": 22979
+    },
+    {
+      "nome": "13. o pedido de ajuste cai na fila de decisões",
+      "emMs": 23194
+    },
+    {
+      "nome": "14. decisão de um toque: manter o preço",
+      "emMs": 23257
+    },
+    {
+      "nome": "15. o aceite na sala: dados, pagamento e contrato",
+      "emMs": 23311
+    },
+    {
+      "nome": "16. cobrança e contrato pela porta: R4, a titular assina",
+      "emMs": 23519
+    },
+    {
+      "nome": "17. o cliente paga o Pix no dublê do Asaas e o webhook grava o fato",
+      "emMs": 23880
+    },
+    {
+      "nome": "18. o cliente assina o contrato no dublê da ZapSign",
+      "emMs": 23942
+    },
+    {
+      "nome": "19. o sócio assina pela Root",
+      "emMs": 24023
+    },
+    {
+      "nome": "20. o fechamento vai à porta (R4) e a titular assina: seis escritas (com o card da implantação)",
+      "emMs": 24228
+    },
+    {
+      "nome": "21. o contrato vivo, com parcelas",
+      "emMs": 24563
+    },
+    {
+      "nome": "22. o funil conta o lead em \"fechado\"",
+      "emMs": 24606
+    }
+  ]
+}

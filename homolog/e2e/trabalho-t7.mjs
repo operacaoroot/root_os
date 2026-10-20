@@ -183,7 +183,7 @@ async function main() {
   mkdirSync(PROVAS, { recursive: true });
   const require = createRequire(join(PW, 'package.json'));
   const { chromium } = require('playwright');
-  const SENHA = lerEnv(join(RAIZ, 'homolog/.env.homolog')).ADMIN_PASSWORD;
+  const SENHA = lerEnv(process.env.HOMOLOG_ENV ?? join(RAIZ, 'homolog/.env.homolog')).ADMIN_PASSWORD;
   conferir(SENHA, 'ADMIN_PASSWORD ausente em homolog/.env.homolog');
 
   const prova = { inicio: new Date().toISOString(), web: WEB, passos: [], screenshots: [], avisos: [], ok: false };
@@ -196,7 +196,7 @@ async function main() {
   const gravar = () => {
     prova.fim = new Date().toISOString();
     prova.duracaoMs = Date.now() - t0;
-    writeFileSync(join(PROVAS, 'trabalho-t7.json'), `${JSON.stringify(prova, null, 2).replace(/"token":\s*"[^"]{6}[^"]*"/g, '"token": "…"')}\n`);
+    writeFileSync(join(PROVAS, `${process.env.PROVAS_PREFIXO ?? ''}trabalho-t7.json`), `${JSON.stringify(prova, null, 2).replace(/"token":\s*"[^"]{6}[^"]*"/g, '"token": "…"')}\n`);
   };
   const entrar = async (email) => {
     const r = await api('POST', '/auth/login', { email, password: SENHA });
@@ -215,7 +215,7 @@ async function main() {
     return ctx;
   };
   const foto = async (pagina, nome) => {
-    const arquivo = `trabalho-t7-${nome}.png`;
+    const arquivo = `${process.env.PROVAS_PREFIXO ?? ''}trabalho-t7-${nome}.png`;
     await pagina.waitForTimeout(300);
     await pagina.screenshot({ path: join(PROVAS, arquivo), fullPage: false });
     prova.screenshots.push(arquivo);

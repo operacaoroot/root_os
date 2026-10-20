@@ -154,7 +154,7 @@ async function main() {
   mkdirSync(PROVAS, { recursive: true });
   const require = createRequire(join(PW, 'package.json'));
   const { chromium } = require('playwright');
-  const SENHA = lerEnv(join(RAIZ, 'homolog/.env.homolog')).ADMIN_PASSWORD;
+  const SENHA = lerEnv(process.env.HOMOLOG_ENV ?? join(RAIZ, 'homolog/.env.homolog')).ADMIN_PASSWORD;
   conferir(SENHA, 'ADMIN_PASSWORD ausente em homolog/.env.homolog');
   const prova = { inicio: new Date().toISOString(), web: WEB, passos: [], screenshots: [], ok: false };
   const t0 = Date.now();
@@ -175,7 +175,7 @@ async function main() {
     return ctx;
   };
   const aoFotografar = async (pagina, nome) => {
-    const arquivo = `trabalho-t1b-${nome}.png`;
+    const arquivo = `${process.env.PROVAS_PREFIXO ?? ''}trabalho-t1b-${nome}.png`;
     await pagina.waitForTimeout(300);
     await pagina.screenshot({ path: join(PROVAS, arquivo), fullPage: false });
     prova.screenshots.push(arquivo);
@@ -202,7 +202,7 @@ async function main() {
     await navegador.close();
     prova.fim = new Date().toISOString();
     prova.duracaoMs = Date.now() - t0;
-    writeFileSync(join(PROVAS, 'trabalho-t1b.json'), `${JSON.stringify(prova, null, 2)}\n`);
+    writeFileSync(join(PROVAS, `${process.env.PROVAS_PREFIXO ?? ''}trabalho-t1b.json`), `${JSON.stringify(prova, null, 2)}\n`);
   }
 }
 

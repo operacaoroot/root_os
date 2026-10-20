@@ -58,7 +58,7 @@ function lerEnv(arquivo) {
   }
   return out;
 }
-const SENHA = lerEnv(join(RAIZ, 'homolog/.env.homolog')).ADMIN_PASSWORD;
+const SENHA = lerEnv(process.env.HOMOLOG_ENV ?? join(RAIZ, 'homolog/.env.homolog')).ADMIN_PASSWORD;
 const SUFIXO = new Date().toISOString().slice(11, 19).replace(/:/g, '');
 
 const prova = { inicio: new Date().toISOString(), web: WEB, sufixo: SUFIXO, passos: [], screenshots: [], semRolagemHorizontal: [], ok: false };
@@ -74,7 +74,7 @@ function gravar() {
   prova.duracaoMs = Date.now() - t0;
   // O token da sala é a chave do cliente: a prova guarda só o começo dele.
   const texto = JSON.stringify(prova, null, 2).replace(/\/s\/([A-Za-z0-9_-]{6})[A-Za-z0-9_-]{30,50}/g, '/s/$1…');
-  writeFileSync(join(PROVAS, 'implantacao.json'), `${texto}\n`);
+  writeFileSync(join(PROVAS, `${process.env.PROVAS_PREFIXO ?? ''}implantacao.json`), `${texto}\n`);
 }
 function conferir(cond, msg) {
   if (!cond) throw new Error(msg);
@@ -131,7 +131,7 @@ async function contexto(navegador, sessao, tema, viewport = { width: 1440, heigh
 const tid = (p, id) => p.locator(`[data-testid="${id}"]`);
 
 async function foto(pagina, nome) {
-  const arquivo = `implantacao-${nome}.png`;
+  const arquivo = `${process.env.PROVAS_PREFIXO ?? ''}implantacao-${nome}.png`;
   await pagina.waitForTimeout(400);
   await pagina.screenshot({ path: join(PROVAS, arquivo), fullPage: false });
   prova.screenshots.push(arquivo);

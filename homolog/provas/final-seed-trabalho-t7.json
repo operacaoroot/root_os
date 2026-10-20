@@ -1,0 +1,61 @@
+{
+  "inicio": "2026-10-20T00:33:03.263Z",
+  "web": "http://127.0.0.1:3031",
+  "passos": [
+    {
+      "n": 1,
+      "nome": "mesa, sócio e admin entraram pela API",
+      "ms": 235
+    },
+    {
+      "n": 2,
+      "nome": "a mesa pediu para mover um cartão do funil",
+      "ms": 465,
+      "detalhe": "reuniao_agendada → sessao",
+      "approvalId": "7620510f-6af5-48b7-ad32-4d02792a73b1"
+    },
+    {
+      "n": 3,
+      "nome": "R3 na linha: o sócio aprovou com UM clique, sem abrir o item; a mesa concluiu com o token",
+      "ms": 1820,
+      "detalhe": "Aprovada: Mover Prova Painel 002343 de E3 · Reunião agendada para E4 · Sessão estratégica com pendências: evento na agenda com data e hora (E3); confirmação de véspera enviada (E3). Pedido por Mesa · responsável (homologação) pela tela do funil.. Esta é da superfície antiga: quem executa é a rota que carrega o token."
+    },
+    {
+      "n": 4,
+      "nome": "R4 com senha no mesmo lugar: o clique abriu a caixa ali, e Aprovar foi junto com a senha",
+      "ms": 3147,
+      "detalhe": "ler-e-aprovar · Aprovada e EXECUTADA: comercial.cobranca 77beaac4-6559-571e-9465-22b06bac4fb4:v1.",
+      "approvalId": "ae21780d-bed0-4491-9e98-cf2cf2a16d8c"
+    },
+    {
+      "n": 5,
+      "nome": "vencida: \"Pedir de novo\" recriou o pedido; quem clicou vira o proponente e não assina",
+      "ms": 623328,
+      "detalhe": "ac83e049-aeb5-4188-95ce-86ac7475fa73 → 3d3e35d6-f503-4850-851f-c07b22bd4334 · o sócio pode assinar",
+      "tentativas": [
+        {
+          "id": "ac83e049-aeb5-4188-95ce-86ac7475fa73",
+          "ok": true,
+          "texto": "Pedido de novo, a partir da etapa de agora. Você pediu, então não assina: outra pessoa assina na fila, e depois você conclui no funil, nesta mesma aba. O pedido"
+        }
+      ]
+    },
+    {
+      "n": 6,
+      "nome": "fotos da fila em escuro, claro e 390 px; nada rola na horizontal no celular",
+      "ms": 627212
+    }
+  ],
+  "screenshots": [
+    "final-seed-trabalho-t7-r3-aprovada-na-linha.png",
+    "final-seed-trabalho-t7-r4-aprovada-com-senha.png",
+    "final-seed-trabalho-t7-pedir-de-novo.png",
+    "final-seed-trabalho-t7-fila-escuro.png",
+    "final-seed-trabalho-t7-fila-claro.png",
+    "final-seed-trabalho-t7-fila-390.png"
+  ],
+  "avisos": [],
+  "ok": true,
+  "fim": "2026-10-20T00:43:30.779Z",
+  "duracaoMs": 627516
+}

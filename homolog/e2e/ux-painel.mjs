@@ -56,7 +56,7 @@ function lerEnv(arquivo) {
   }
   return out;
 }
-const SENHA = lerEnv(join(RAIZ, 'homolog/.env.homolog')).ADMIN_PASSWORD;
+const SENHA = lerEnv(process.env.HOMOLOG_ENV ?? join(RAIZ, 'homolog/.env.homolog')).ADMIN_PASSWORD;
 
 const prova = { inicio: new Date().toISOString(), web: WEB, passos: [], screenshots: [], ok: false };
 const t0 = Date.now();
@@ -70,7 +70,7 @@ function passo(nome, dados = {}) {
 function gravar() {
   prova.fim = new Date().toISOString();
   prova.duracaoMs = Date.now() - t0;
-  writeFileSync(join(PROVAS, 'ux-painel.json'), `${JSON.stringify(prova, null, 2)}\n`);
+  writeFileSync(join(PROVAS, `${process.env.PROVAS_PREFIXO ?? ''}ux-painel.json`), `${JSON.stringify(prova, null, 2)}\n`);
 }
 
 function falhar(msg) {
@@ -130,7 +130,7 @@ async function contexto(navegador, sessao, tema, viewport = { width: 1440, heigh
 }
 
 async function foto(pagina, nome) {
-  const arquivo = `ux-${nome}.png`;
+  const arquivo = `${process.env.PROVAS_PREFIXO ?? ''}ux-${nome}.png`;
   await pagina.waitForTimeout(350); // a animação de entrada termina
   await pagina.screenshot({ path: join(PROVAS, arquivo), fullPage: false });
   prova.screenshots.push(arquivo);
@@ -299,13 +299,24 @@ async function main() {
         conferir(new URL(p.url()).searchParams.get('aba') === 'sessao', 'a rota antiga da sessão não abriu a aba Sessão');
         passo('a rota antiga /sessao abriu a aba Sessão');
 
-        // 7. A raiz abre o login.
+        // 7. A raiz abre o login (imagem da homologação, NEXT_PUBLIC_RAIZ=login).
+        // Versão final (19/10/2026, F6): a imagem rootos-final-app é construída SEM o build
+        // arg da homologação, como a da produção, e a raiz manda ao site. Com UX_RAIZ=site
+        // a prova confere ESSE comportamento (307 para o site, sem seguir para fora da
+        // máquina) em vez do login; o padrão segue sendo o login.
+        if ((process.env.UX_RAIZ ?? 'login') === 'site') {
+          const r = await fetch(`${WEB}/`, { redirect: 'manual' });
+          const destino = r.headers.get('location') ?? '';
+          conferir(r.status >= 300 && r.status < 400 && /^https:\/\/operacaoroot\.com\/?$/.test(destino), `a raiz devia mandar ao site (imagem sem NEXT_PUBLIC_RAIZ=login): ${r.status} ${destino}`);
+          passo('a raiz / manda ao site (imagem da versão final, sem NEXT_PUBLIC_RAIZ=login)', { detalhe: `${r.status} ${destino}` });
+        } else {
         const raiz = await (await navegador.newContext()).newPage();
         await raiz.goto(`${WEB}/`, { waitUntil: 'domcontentloaded' });
         await raiz.waitForURL(/\/login|\/painel/, { timeout: 20_000 });
         conferir(/\/login|\/painel/.test(new URL(raiz.url()).pathname), `a raiz foi para ${raiz.url()}`);
         passo('a raiz / abriu o login (NEXT_PUBLIC_RAIZ=login)', { detalhe: new URL(raiz.url()).pathname });
         await raiz.context().close();
+        }
       }
       await ctx.close();
 
