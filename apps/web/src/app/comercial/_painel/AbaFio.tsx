@@ -32,6 +32,7 @@ import {
 } from '@/lib/cockpit';
 
 import { BOTAO, BOTAO_PRIMARIO, CARTAO, Carregando, Chip, ErroDaAcao, INPUT, Rotulo } from '../_ui';
+import { IniciarOnboarding } from './IniciarOnboarding';
 import { LeituraEIdeias } from './LeituraEIdeias';
 import { usePainel } from './provedor';
 
@@ -163,10 +164,13 @@ export function AbaFio({ leadId, ficha: f, carregando, aoMudar }: { leadId: stri
               )}
             </>
           ) : (
-            <li><Chip tom="neutro">implantação · nasce no fechamento</Chip></li>
+            <li><Chip tom="neutro">implantação · ainda não</Chip></li>
           )}
         </ul>
       </section>
+
+      {/* A2: o onboarding pode começar antes do fechamento; o fechamento depois reaproveita o mesmo card. */}
+      <IniciarOnboarding leadId={leadId} ficha={f} aoMudar={aoMudar} />
 
       {!ehSaida(f.etapa) && f.etapa !== 'fechado' && <RegistrarSaida leadId={leadId} aoMudar={aoMudar} />}
     </div>

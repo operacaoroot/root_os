@@ -21,6 +21,7 @@ import { useTarefaNaUrl, type AbaDaTarefa } from '@/lib/tarefa-na-url';
 import { BancadaDoTrilho } from '@/components/onboarding/BancadaDoTrilho';
 import { SeletorDeCliente, type ClienteEscolhido } from './SeletorDeCliente';
 import { VistasDoQuadro } from './VistasDoQuadro';
+import { IniciarOnboardingDaImplantacao } from './IniciarOnboardingDaImplantacao';
 import { AtividadeDaTarefa } from './AtividadeDaTarefa';
 import { EditorialTaskLink } from './EditorialTaskLink';
 import { OrigemComercialDaTarefa } from '@/app/leads/OrigemComercialDaTarefa';
@@ -939,6 +940,10 @@ function TrabalhoConteudo({ visaoInicial, modo }: { visaoInicial: Visao; modo: M
         {listaEhImplantacao && editable && (
           <p className="text-[12px] text-muted" data-testid="implantacao-porta">{PORTA_DA_IMPLANTACAO}</p>
         )}
+        {/* A2: a terceira porta, sempre a partir de um lead do funil (nunca cartão solto). */}
+        {implantacao && (
+          <IniciarOnboardingDaImplantacao onIniciado={(r) => { refresh(); tarefaUrl.abrir(r.cardId); }} />
+        )}
         {!implantacao && semListas && !erro && <section aria-label="Começar em Trabalho" className="space-y-3 rounded-lg border border-border bg-surface p-4">
           <h2 className="font-semibold">Comece por uma lista</h2>
           <p className="text-sm text-muted">Não há listas disponíveis para sua conta. Uma lista organiza as etapas e recebe as tarefas.</p>
@@ -1287,7 +1292,7 @@ function Cartao({ t, lista, editable, token, agentes, pessoas = [], onSoltarSobr
   return (
     <div
       ref={ref}
-      className={`group relative rounded-lg border bg-surface px-2 py-1.5 transition focus-within:border-brand hover:border-brand-dim ${mov?.procedencia ? 'border-border border-l-2 border-l-brand' : 'border-border'}`}
+      className={`group relative rounded-lg border bg-surface px-2 py-1.5 transition focus-within:border-brand hover:border-brand-dim ${mov?.procedencia ? `border-border border-l-2 ${mov.procedencia.tipo === 'saiu_do_funil' ? 'border-l-warn' : 'border-l-brand'}` : 'border-border'}`}
       data-work-task-id={t.id}
       data-densidade={densidade}
       draggable={editable}
@@ -1372,8 +1377,9 @@ function Cartao({ t, lista, editable, token, agentes, pessoas = [], onSoltarSobr
             <a
               href={`/comercial/lead/${mov.procedencia.leadId}`}
               data-testid={`trabalho-procedencia-${t.id}`}
-              className="relative z-10 mt-1 inline-flex items-center gap-1 rounded border border-brand/40 px-1.5 py-0.5 font-os-mono text-[10px] text-brand hover:bg-brand/10"
-              title="Abrir o lead no comercial"
+              data-procedencia={mov.procedencia.tipo}
+              className={`relative z-10 mt-1 inline-flex items-center gap-1 rounded border px-1.5 py-0.5 font-os-mono text-[10px] ${mov.procedencia.tipo === 'saiu_do_funil' ? 'border-warn/50 text-warn hover:bg-warn/10' : 'border-brand/40 text-brand hover:bg-brand/10'}`}
+              title={mov.procedencia.tipo === 'saiu_do_funil' ? 'O lead saiu do funil: decida se o card segue ou é arquivado. Abrir o lead no comercial' : 'Abrir o lead no comercial'}
             >
               {mov.procedencia.rotulo}
             </a>
