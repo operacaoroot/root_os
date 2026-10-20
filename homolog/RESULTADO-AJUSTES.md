@@ -70,3 +70,38 @@ A terceira porta da Implantação, sempre a partir de um lead do funil. Commits 
 | Revisor, provas próprias no contrato novo | 13/13; casa 253/254 (o vermelho é a catraca `arquitetura` pelo arquivo do Pedro, já na linha de base) |
 
 **Revisão adversarial** (`homolog/revisao/ajustes-adversarial.md`): primeira passada **não fecha** (1 bloqueia: o contador partilhado ligava o lead ao cliente errado e o contrato nascia nele; 2 a corrigir: CNPJ repetido, corrida que duplicava o trilho). Depois de 2ac511f e 9e71517, **fecha com ressalvas**: 1, 2, 3, 4, 5a, 9 e 10 consertados, sem regressão no fechamento normal, no fechado fora nem no `criarNaTransacao`. Ficam registrados: 5b (empresa sem o módulo `trabalho` ganha card, como no fechamento de hoje: decisão de produto) e N1 (um cliente antigo de mesma razão social e sem CNPJ ainda é achado pelo nome, e o fechamento grava nele o CNPJ do aceite; é a regra do "Novo cliente"; fechar seria gravar CNPJ só no `Partner` que o próprio antecipado criou).
+
+**Roteiros e2e na imagem dos ajustes** (`rootos-final-app:ajustes2`, com o conserto 2ac511f; a `ajustes1`, sem ele, passou pelos mesmos roteiros antes):
+
+| Roteiro | Onde | Resultado |
+|---|---|---|
+| `onboarding-antecipado.mjs` (novo) | seed, 3031 | PASSA, 10 passos, 7,8 s: lead em Follow-up com proposta → "Iniciar onboarding" no painel (etapa padrão Kickoff marcado) → card na Implantação com o selo, cliente e o fato no fio → o pop-up abre o trilho ligado → aceite na sala, cobrança e contrato pela porta (R4 com senha), Pix e assinatura nos dublês → fechamento com as seis escritas, `cliente`, `kit_e_trilho`, `card` e `cobranca` reaproveitados → um card só, na mesma etapa, sem o selo, com o comentário e o fato do fechamento. Rodado duas vezes (Rede Pão Bom na `ajustes1`, Construtora Alicerce na `ajustes2`) |
+| `ux-painel.mjs` | seed | PASSA, 13 passos |
+| `painel.mjs` | seed | PASSA, 16 passos, 36 s |
+| `jornada-docker.mjs` | seed | PASSA inteira, 23 passos, 13 toques humanos (rodada às 10h06: antes das 10h ela para de propósito, porque a M3 só sai 24 h antes do primeiro horário oferecido) |
+| `implantacao.mjs` | seed | PASSA, 14 passos, 85 s |
+| `trabalho.mjs` (com `trabalho-t7` e `trabalho-t1b`) | seed | PASSA com os avisos de sempre (T1b sem storage; nenhuma decisão pendente no seed): T7 com R3 na linha, R4 com senha e "Pedir de novo" na vencida. Numa passada de madrugada ele caiu em "nenhum contrato vivo ativo": o T8 conclui um contrato por passada e o seed só tinha o que a passada anterior já tinha concluído (condição do dado; voltou a passar com o contrato que o roteiro novo fechou) |
+| `final.mjs` | cópia, 3030 | **17 de 17**, 43 fotos fora do git (`homolog/organizar/ajustes-final/`) |
+
+**As stacks** (imagem nova sem perder dado): `rootos-final` (3030) e `rootos-final-seed` (3031) recriadas só nos serviços `api` e `web`, com `--no-build`. Nenhuma migration nova (98 aplicadas, "No pending migrations"); na 3030 as contagens ficaram iguais antes e depois da troca (98 migrations, 202 tarefas, 19 leads, 18 `Partner`). Para voltar: `rootos-final-app:final3` (3030) e `final2` (3031) seguem no Docker.
+
+**A virada** (`docs/comercial/VIRADA-PRODUCAO.md`): sobe a tag `final-ajustes-20261020`; o `final.bundle` foi refeito com ela. Nada mais muda no roteiro: sem migration, variável, capacidade ou permissão nova.
+
+## Onde ver
+
+| O quê | Onde |
+|---|---|
+| A versão final com a cópia de 19/10 organizada, com os ajustes | `rootos-final`: web `http://100.95.41.124:3030` (e `127.0.0.1:3030`), imagem `rootos-final-app:ajustes2`, login como na `RESULTADO-FINAL` §1 |
+| Com o seed fictício (onde os roteiros rodaram) | `rootos-final-seed`: web `http://127.0.0.1:3031`, imagem `ajustes2`. A Rede Pão Bom e a Construtora Alicerce terminaram fechadas pelo roteiro novo; os leads elegíveis que sobraram no seed estão em etapas anteriores (sessão, diagnóstico, reunião) |
+| Onde clicar | painel do lead › aba Fio › "Iniciar onboarding"; ou Trabalho › Clientes › Onboarding de cliente (Implantação) › "Iniciar onboarding" no topo |
+
+## Para o Rodrigo decidir
+
+- **Empresa sem o módulo `trabalho`** ganha o card na Implantação pela porta nova, como já ganha pelo fechamento (revisão 5b). Exigir o módulo nas duas portas ou deixar como está.
+- **Cliente antigo de mesma razão social e sem CNPJ** é achado pelo nome no onboarding antecipado, e o fechamento grava nele o CNPJ do aceite (revisão N1). É a regra do "Novo cliente" do Trabalho; fechar seria gravar o CNPJ só no `Partner` que o próprio antecipado criou e avisar nos outros casos.
+- **O aviso `cliente.a_conciliar`** aparece quando o lead do antecipado ficou ligado a um cliente e o aceite trouxe outro CNPJ: alguém concilia à mão (os dois cadastros ficam; nada é apagado).
+- **O `comercial-seed` de madrugada** (das 23h às 5h, mais ou menos) é defeito da semente que já estava na tag; consertar é fixar o dia da validade da proposta semeada.
+
+## A tag e o bundle
+
+`final-ajustes-20261020` aponta para o commit que traz este arquivo (`git rev-parse final-ajustes-20261020^{commit}`). Bundle delta `C:\Users\User\dev\ajustes-delta.bundle` com `homolog/final-20261019` e a tag, pré-requisito 17b95d24 (`final-entrega-20261020`). O `C:\Users\User\dev\final.bundle` (`main..homolog/final-20261019`, com a tag nova) foi refeito para a virada. Nada foi apagado nesta rodada; o que sobra para apagar depois é a lista da `RESULTADO-FINAL` §9 mais: as imagens `rootos-final-app:ajustes1` e `ajustes2` (depois da virada), os bancos de teste `rootos_ajustes_test`, `rootos_ajustes_rev_test` e `rootos_ajustes_tag_test` (5440, fictícios), as pastas `C:\Users\User\dev\ajustes-tag-wt` e `C:\Users\User\dev\ajustes-rev-tmp`, os rascunhos `C:\Users\User\dev\scratch-ajustes-*` (um deles guarda o link da sala da Alicerce do seed, dado fictício) e `homolog/organizar/ajustes-final/` (fotos com dado real).
