@@ -158,6 +158,41 @@ describe('o balão da área', () => {
     expect(icone('trabalho')).toHaveFocus();
   });
 
+  it('Esc no ícone não deixa marca presa: o Tab seguinte abre o balão do próximo ícone', async () => {
+    const user = userEvent.setup();
+    renderRecolhido();
+    const icones = Array.from(document.querySelectorAll<HTMLAnchorElement>('#root-os-nav a[data-area]'));
+    const i = icones.findIndex((a) => a.dataset.area === 'trabalho');
+    const proximo = icones[i + 1];
+    act(() => icone('trabalho').focus());
+    expect(balao('Trabalho')).toBeInTheDocument();
+    await user.keyboard('{Escape}');
+    expect(baloes()).toHaveLength(0);
+    expect(icone('trabalho')).toHaveFocus();
+    await user.tab();
+    expect(proximo).toHaveFocus();
+    expect(baloes()).toHaveLength(1);
+    expect(proximo).toHaveAttribute('aria-expanded', 'true');
+  });
+
+  it('Esc com o foco fora do balão aberto pelo hover fecha o balão e deixa o foco onde está', async () => {
+    const user = userEvent.setup();
+    renderRecolhido();
+    const fora = document.createElement('button');
+    fora.textContent = 'conteúdo';
+    document.body.appendChild(fora);
+    try {
+      act(() => fora.focus());
+      fireEvent.mouseEnter(grupo('comercial'));
+      expect(balao('Comercial')).toBeInTheDocument();
+      await user.keyboard('{Escape}');
+      expect(baloes()).toHaveLength(0);
+      expect(fora).toHaveFocus();
+    } finally {
+      fora.remove();
+    }
+  });
+
   it('no toque, o primeiro toque abre o balão em vez de navegar; tocar fora fecha', () => {
     renderRecolhido();
     // A ordem de um toque no navegador: touchstart, os eventos de mouse emulados

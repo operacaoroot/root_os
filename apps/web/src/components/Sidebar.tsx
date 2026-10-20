@@ -122,8 +122,13 @@ export function Sidebar() {
     const atual = balaoAberto.current;
     setBalao(null);
     if (devolverFoco && atual) {
+      // O foco que volta ao ícone dispara o onFocus dele na hora (é síncrono), e a marca
+      // impede que ele reabra o balão. Zerada logo depois: com o foco já no ícone (Esc
+      // no próprio ícone) não há evento de foco, e a marca presa engoliria a abertura
+      // do próximo ícone que recebesse foco.
       focoDevolvido.current = true;
       iconeDaArea(atual)?.focus();
+      focoDevolvido.current = false;
     }
   }, []);
   // A ponte de hover: sair do ícone não fecha na hora, para dar tempo de entrar no balão.
@@ -145,12 +150,24 @@ export function Sidebar() {
       setBalao(null);
     }
     function aoMudarJanela() { setBalao(null); }
+    // Esc fecha o balão aberto também com o foco fora dele (aberto pelo hover, com o foco
+    // no conteúdo): dispensável sem mover o ponteiro (WCAG 1.4.13). O foco fica onde está.
+    // Dentro do ícone ou do balão, quem trata o Esc são eles, e devolvem o foco ao ícone.
+    function aoTeclarEsc(e: KeyboardEvent) {
+      if (e.key !== 'Escape') return;
+      const alvo = e.target as Element | null;
+      if (alvo?.closest?.(`[data-grupo-da-area="${balao}"]`)) return;
+      window.clearTimeout(timerDoBalao.current);
+      setBalao(null);
+    }
     document.addEventListener('pointerdown', aoTocarFora);
+    document.addEventListener('keydown', aoTeclarEsc);
     window.addEventListener('resize', aoMudarJanela);
     const nav = document.getElementById('root-os-destinos');
     nav?.addEventListener('scroll', aoMudarJanela);
     return () => {
       document.removeEventListener('pointerdown', aoTocarFora);
+      document.removeEventListener('keydown', aoTeclarEsc);
       window.removeEventListener('resize', aoMudarJanela);
       nav?.removeEventListener('scroll', aoMudarJanela);
     };
