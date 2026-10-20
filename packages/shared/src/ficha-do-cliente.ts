@@ -18,7 +18,8 @@ export const NovaReuniaoSchema = z
     em: z.string().min(10).max(40),
     /** `granola` e `link` buscam o texto no link público; `texto` usa o que veio colado. */
     fonte: z.enum(['granola', 'link', 'texto']),
-    link: z.string().url().max(2000).nullish(),
+    /** Só http(s): `javascript:`, `data:` e afins são recusados (revisão final, item 7). */
+    link: z.string().url().max(2000).refine((u) => /^https?:\/\//i.test(u), { message: 'O link precisa começar com http:// ou https://.' }).nullish(),
     texto: z.string().max(1_500_000).nullish(),
   })
   .refine((r) => (r.fonte === 'texto' ? !!r.texto?.trim() : !!r.link), {
