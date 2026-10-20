@@ -55,6 +55,16 @@ type Db = Prisma.TransactionClient;
 
 const chaveDoNome = chaveDoNomeDoTrabalho;
 
+/**
+ * O CADEADO DA IMPLANTAÇÃO DO LEAD (revisão adversarial A2): "Iniciar onboarding" e as escritas
+ * cliente, trilho e card do fechamento tomam o MESMO cadeado, sempre DENTRO da transação que faz o
+ * trabalho (sem segurar uma conexão enquanto pede outra). Quem chega depois relê a ficha e acha o
+ * que o primeiro gravou: um cliente, um trilho e um card por lead.
+ */
+export async function travarImplantacaoDoLead(db: Db, orgId: string, leadId: string): Promise<void> {
+  await db.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`implantacao-do-lead:${orgId}:${leadId}`}))`;
+}
+
 export function cardIdDoLead(orgId: string, leadId: string): string {
   return uuidDe([orgId, 'comercial-card-implantacao', leadId]);
 }

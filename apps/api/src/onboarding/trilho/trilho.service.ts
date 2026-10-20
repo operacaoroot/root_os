@@ -20,7 +20,7 @@ import { randomBytes } from 'node:crypto';
 
 import { CHAVE_DO_RETRATO, ROSTER_DO_ONBOARDING, precisaSemear, semearRoster } from '../../agents/roster';
 import { comContexto, contextoAtual, novaCorrelacao } from '../../common/contexto-execucao';
-import { EventLogService } from '../../gateway/event-log.service';
+import { EventLogService, type PreparoEventoNoTx } from '../../gateway/event-log.service';
 import { MemoriaService } from '../../memory/memoria.service';
 import { proximaOcorrencia } from '../../pauta/cron';
 import { PrismaService } from '../../prisma/prisma.service';
@@ -416,6 +416,53 @@ export class TrilhoService {
   }
 
   async criar(orgId: string, entrada: NovoTrilho, quem: Quem): Promise<TrilhoCompleto> {
+    const cliente = this.validarNovoTrilho(entrada);
+    if (entrada.cardId) await this.exigirCartao(orgId, entrada.cardId);
+    const slug = await this.slugLivre(this.prisma, orgId, cliente);
+    const trilho = await this.prisma.onboardingTrilho.create({ data: this.dadosDoNovoTrilho(orgId, cliente, slug, entrada, quem) });
+    await this.marco(orgId, trilho.id, 'trilho.criado', `${cliente} entrou na esteira (fase 0 · Qualificar).`, {}, quem);
+    return this.obter(orgId, trilho.id);
+  }
+
+  /**
+   * Ajustes da versão final A2: o que `criarNaTransacao` precisa ler do RASTRO (a política e a
+   * retenção) é lido AQUI, antes de qualquer transação. Quem cria o trilho sob um cadeado não
+   * pode pedir uma segunda conexão do pool enquanto segura a primeira.
+   */
+  prepararCriacaoNaTransacao(orgId: string): Promise<PreparoEventoNoTx> {
+    return this.eventos.prepararContextoParaTx({ orgId, tipo: 'onboarding.trilho.criado', nivel: RiskLevel.R1 });
+  }
+
+  /**
+   * A2: a MESMA criação do `criar` (validação, slug, linha, marco e evento no RASTRO), toda na
+   * transação de quem chama, sem tocar outra conexão. É o caminho do onboarding iniciado antes do
+   * fechamento e do fechamento, os dois sob o cadeado do lead: assim o trilho que um cria o outro vê.
+   * Devolve só o id (o `obter` leria por fora da transação e não acharia a linha ainda não gravada).
+   */
+  async criarNaTransacao(tx: Prisma.TransactionClient, orgId: string, entrada: NovoTrilho, quem: Quem, preparo: PreparoEventoNoTx): Promise<{ id: string; cliente: string }> {
+    const cliente = this.validarNovoTrilho(entrada);
+    if (entrada.cardId) {
+      const card = await tx.workTask.findFirst({ where: { id: entrada.cardId, orgId }, select: { id: true } });
+      if (!card) throw new BadRequestException('o cartão da esteira não existe nesta empresa.');
+    }
+    const slug = await this.slugLivre(tx, orgId, cliente);
+    const trilho = await tx.onboardingTrilho.create({ data: this.dadosDoNovoTrilho(orgId, cliente, slug, entrada, quem), select: { id: true } });
+    const textoDoMarco = `${cliente} entrou na esteira (fase 0 · Qualificar).`;
+    const linha = await this.eventos.registrarNoTx(tx, {
+      orgId,
+      tipo: 'onboarding.trilho.criado',
+      actorType: quem.id ? 'user' : 'system',
+      actorId: quem.id,
+      nivel: RiskLevel.R1,
+      correlationId: contextoAtual()?.correlationId ?? null,
+      conteudo: { argumentos: { trilhoId: trilho.id, texto: textoDoMarco } },
+      sensibilidade: 'interna',
+    }, preparo);
+    await tx.onboardingMarco.create({ data: { orgId, trilhoId: trilho.id, tipo: 'trilho.criado', texto: textoDoMarco, dados: {} as Prisma.InputJsonValue, quem: quem.nome, eventoId: linha.id } });
+    return { id: trilho.id, cliente };
+  }
+
+  private validarNovoTrilho(entrada: NovoTrilho): string {
     const cliente = String(entrada.cliente ?? '').trim();
     if (cliente.length < 2) throw new BadRequestException('o nome do cliente precisa de ao menos 2 caracteres.');
     if (entrada.perfil != null && entrada.perfil !== '' && !ehPerfil(entrada.perfil)) {
@@ -425,40 +472,41 @@ export class TrilhoService {
       throw new BadRequestException('nível inválido: beaba, avancar-junto ou entregar-pronto.');
     }
     if (entrada.receita && !receita(entrada.receita)) throw new BadRequestException('receita desconhecida.');
-    if (entrada.cardId) await this.exigirCartao(orgId, entrada.cardId);
+    return cliente;
+  }
 
+  private async slugLivre(db: Pick<Prisma.TransactionClient, 'onboardingTrilho'>, orgId: string, cliente: string): Promise<string> {
     const base = slugDaEmpresa(cliente);
     let slug = base;
     for (let tentativa = 0; tentativa < 4; tentativa++) {
-      const existe = await this.prisma.onboardingTrilho.findUnique({
+      const existe = await db.onboardingTrilho.findUnique({
         where: { orgId_slug: { orgId, slug } },
         select: { id: true },
       });
       if (!existe) break;
       slug = comSufixo(base, randomBytes(2).toString('hex'));
     }
+    return slug;
+  }
 
-    const trilho = await this.prisma.onboardingTrilho.create({
-      data: {
-        orgId,
-        cliente,
-        slug,
-        perfil: entrada.perfil || null,
-        nivel: entrada.nivel || null,
-        receita: entrada.receita || null,
-        contatoNome: texto(entrada.contatoNome, 120) ?? null,
-        contatoWhatsapp: texto(entrada.contatoWhatsapp, 40) ?? null,
-        contatoEmail: texto(entrada.contatoEmail, 200) ?? null,
-        conduzidoPor: texto(entrada.conduzidoPor, 120) ?? null,
-        implantadoPor: texto(entrada.implantadoPor, 120) ?? null,
-        reuniaoEm: dataOuNull(entrada.reuniaoEm) ?? null,
-        cardId: entrada.cardId || null,
-        observacoes: texto(entrada.observacoes, 4000) ?? null,
-        criadoPor: quem.id,
-      },
-    });
-    await this.marco(orgId, trilho.id, 'trilho.criado', `${cliente} entrou na esteira (fase 0 · Qualificar).`, {}, quem);
-    return this.obter(orgId, trilho.id);
+  private dadosDoNovoTrilho(orgId: string, cliente: string, slug: string, entrada: NovoTrilho, quem: Quem): Prisma.OnboardingTrilhoUncheckedCreateInput {
+    return {
+      orgId,
+      cliente,
+      slug,
+      perfil: entrada.perfil || null,
+      nivel: entrada.nivel || null,
+      receita: entrada.receita || null,
+      contatoNome: texto(entrada.contatoNome, 120) ?? null,
+      contatoWhatsapp: texto(entrada.contatoWhatsapp, 40) ?? null,
+      contatoEmail: texto(entrada.contatoEmail, 200) ?? null,
+      conduzidoPor: texto(entrada.conduzidoPor, 120) ?? null,
+      implantadoPor: texto(entrada.implantadoPor, 120) ?? null,
+      reuniaoEm: dataOuNull(entrada.reuniaoEm) ?? null,
+      cardId: entrada.cardId || null,
+      observacoes: texto(entrada.observacoes, 4000) ?? null,
+      criadoPor: quem.id,
+    };
   }
 
   async obter(orgId: string, id: string): Promise<TrilhoCompleto> {

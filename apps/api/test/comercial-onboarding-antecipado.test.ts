@@ -143,6 +143,8 @@ describe.skipIf(!URL)('onboarding antecipado contra o Postgres', { timeout: 60_0
   let euId = '';
   let maquinaId = '';
   let inativoId = '';
+  let semTarefasId = '';
+  let trilhosSvc: TrilhoService;
   let leadA = '';
   const naEmpresa = <T>(fn: () => Promise<T>): Promise<T> => comContexto({ orgId: ORG, correlationId: `a2-${MARCA}`, origem: 'http' }, fn);
   const eu = () => ({ id: euId, nome: 'Rodrigo da Root', papeis: ['admin_master'] });
@@ -163,6 +165,21 @@ describe.skipIf(!URL)('onboarding antecipado contra o Postgres', { timeout: 60_0
     fatos: await prisma.leadEvent.count({ where: { leadId, type: 'implantacao.iniciada_antes_do_fechamento' } }),
   });
 
+  let seq = 0;
+  const cnpjNovo = () => `8${(Date.now() + ++seq).toString().slice(-13)}`;
+  /** O lead fecha pela declaração (o caminho mais curto do mesmo fechamento: as seis escritas são as mesmas). */
+  async function declararAceite(leadId: string, razaoSocial: string, cnpj: string, email: string) {
+    const input = ClienteFechadoForaSchema.parse({
+      razaoSocial, cnpj, quemAssina: 'Fulano Teste', email, telefone: '(32) 99999-0101',
+      produto: 'operacao', valorCentavos: 1_199_700, parcelas: 3, forma: 'boleto', assinadoEm: '2026-10-01', primeiroVencimento: '2026-10-10', motivoSemCobranca: 'boleto do banco',
+    });
+    const sha = createHash('sha256').update(`pdf-${MARCA}-${leadId}`).digest('hex');
+    const payload = payloadDaDeclaracao(camposDaDeclaracao(input, sha), 1, { id: euId, nome: 'Rodrigo da Root' });
+    await fio.registrar(ORG, leadId, 'contrato.anexado', sha, { nome: 'c.pdf', bytes: 10, tipo: 'application/pdf', sha256: sha, chave: `x/${sha}`, assinadoEm: '2026-10-01', procedencia: 'teste', por: 'Rodrigo da Root' });
+    await fio.registrar(ORG, leadId, 'aceite.declarado', String(payload.hash), payload);
+    return (await naEmpresa(() => fechamento.aceiteParaFechar(ORG, leadId)))!;
+  }
+
   async function seloDe(leadId: string) {
     const card = await prisma.workTask.findUniqueOrThrow({ where: { id: cardIdDoLead(ORG, leadId) }, select: { listId: true } });
     const m = await naEmpresa(() => movimento.daLista(ORG, card.listId));
@@ -173,9 +190,12 @@ describe.skipIf(!URL)('onboarding antecipado contra o Postgres', { timeout: 60_0
     prisma = new PrismaClient({ datasources: { db: { url: URL } } });
     const p = prisma as unknown as PrismaService;
     await prisma.org.create({ data: { id: ORG, name: `Onboarding antecipado ${MARCA}`, slug: `onb-antecipado-${MARCA}` } });
-    const admin = await prisma.role.create({ data: { orgId: ORG, key: 'admin_master', name: 'Admin' }, select: { id: true } });
+    for (const key of ['leads.editar', 'tarefas.editar']) await prisma.permission.upsert({ where: { key }, update: {}, create: { key } });
+    const admin = await prisma.role.create({ data: { orgId: ORG, key: 'admin_master', name: 'Admin', permissions: { connect: [{ key: 'leads.editar' }, { key: 'tarefas.editar' }] } }, select: { id: true } });
     const ia = await prisma.role.create({ data: { orgId: ORG, key: 'ia_servico', name: 'IA' }, select: { id: true } });
+    const soLeads = await prisma.role.create({ data: { orgId: ORG, key: 'gestor_marketing', name: 'Só leads', permissions: { connect: [{ key: 'leads.editar' }] } }, select: { id: true } });
     const hash = await bcrypt.hash(SENHA, 4);
+    semTarefasId = (await prisma.user.create({ data: { orgId: ORG, email: `sem-tarefas-${MARCA}@a2.teste`, name: 'Perdeu tarefas', passwordHash: hash, roles: { connect: { id: soLeads.id } } }, select: { id: true } })).id;
     euId = (await prisma.user.create({ data: { orgId: ORG, email: `rodrigo-${MARCA}@a2.teste`, name: 'Rodrigo da Root', passwordHash: hash, roles: { connect: { id: admin.id } } }, select: { id: true } })).id;
     maquinaId = (await prisma.user.create({ data: { orgId: ORG, email: `ia-${MARCA}@a2.teste`, name: 'Conta de serviço', passwordHash: hash, roles: { connect: { id: ia.id } } }, select: { id: true } })).id;
     inativoId = (await prisma.user.create({ data: { orgId: ORG, email: `inativo-${MARCA}@a2.teste`, name: 'Saiu da casa', passwordHash: hash, isActive: false, roles: { connect: { id: admin.id } } }, select: { id: true } })).id;
@@ -212,6 +232,7 @@ describe.skipIf(!URL)('onboarding antecipado contra o Postgres', { timeout: 60_0
     const trilhos = new TrilhoService(p, undefined as never, eventos, undefined as never);
     fechamento = new FechamentoService(p, fio, reacoes, efeitos, porta, dinheiro, config, decisoes, registroDeDecisoes, trilhos, whats, relogio);
     fechamento.onModuleInit();
+    trilhosSvc = trilhos;
     svc = new OnboardingAntecipadoService(p, fio, reacoes, fichas, trilhos);
     svc.onModuleInit();
     movimento = new MovimentoDoQuadroService(p);
@@ -337,6 +358,8 @@ describe.skipIf(!URL)('onboarding antecipado contra o Postgres', { timeout: 60_0
     await expect(naEmpresa(() => svc.iniciar(ORG, l, {}, { id: maquinaId, nome: 'IA', papeis: ['admin_master'] }))).rejects.toMatchObject({ status: 403, message: expect.stringMatching(/de gente/) });
     await expect(naEmpresa(() => svc.iniciar(ORG, l, {}, { id: inativoId, nome: 'Saiu', papeis: ['admin_master'] }))).rejects.toMatchObject({ status: 403 });
     await expect(naEmpresa(() => svc.iniciar(ORG, l, {}, { id: 'agente-qualquer', nome: 'Agente', papeis: [] }))).rejects.toMatchObject({ status: 403 });
+    // Revisão A2, achado 5: o token ainda diz tarefas.editar, o banco não; a permissão vale AGORA.
+    await expect(naEmpresa(() => svc.iniciar(ORG, l, {}, { id: semTarefasId, nome: 'Perdeu tarefas', papeis: ['gestor_marketing'] }))).rejects.toMatchObject({ status: 403, message: 'Acesso insuficiente.' });
     await expect(naEmpresa(() => svc.iniciar(ORG, 'lead-de-outra-empresa', {}, eu()))).rejects.toMatchObject({ status: 404 });
     expect(await contar(l)).toEqual(antes);
   });
@@ -388,6 +411,68 @@ describe.skipIf(!URL)('onboarding antecipado contra o Postgres', { timeout: 60_0
     const outro = await lead('Auto Peças Sul Sem Card', 'proposta');
     await naEmpresa(() => fichas.registrarSaida(ORG, outro, { saida: 'perdido', motivo: 'sumiu' }, { id: euId, nome: 'Rodrigo da Root' }));
     expect(await prisma.workTask.count({ where: { id: cardIdDoLead(ORG, outro) } })).toBe(0);
+  });
+
+  it('revisão A2, achado 9: lead em saída com o card antecipado é recusado com o motivo, sem escrever', async () => {
+    const l = await lead('Saída Depois do Card', 'proposta');
+    await naEmpresa(() => svc.iniciar(ORG, l, {}, eu()));
+    await prisma.comercialFicha.update({ where: { leadId: l }, data: { etapa: 'perdido' } });
+    const auditoria = await prisma.auditLog.count({ where: { orgId: ORG } });
+    const antes = await contar(l);
+    await expect(naEmpresa(() => svc.iniciar(ORG, l, {}, eu()))).rejects.toMatchObject({ status: 409, message: expect.stringMatching(/saiu do funil/) });
+    expect(await prisma.auditLog.count({ where: { orgId: ORG } })).toBe(auditoria);
+    expect(await contar(l)).toEqual(antes);
+  });
+
+  it('revisão A2, achado 3: com o fechamento a caminho (pendente ou em curso), iniciar recusa com o motivo', async () => {
+    const l = await lead('Fechando Agora', 'contrato');
+    await prisma.comercialFechamento.create({ data: { leadId: l, chave: `fech-${l}-v1`, versao: 1, estado: 'pendente', escritas: [] } });
+    await expect(naEmpresa(() => svc.iniciar(ORG, l, {}, eu()))).rejects.toMatchObject({ status: 409, message: expect.stringMatching(/fechamento deste lead já está a caminho/) });
+    expect((await contar(l)).cards).toBe(0);
+    expect(await prisma.onboardingTrilho.count({ where: { orgId: ORG, cliente: 'Fechando Agora' } })).toBe(0);
+  });
+
+  it('revisão A2, achado 3 (Q2c): iniciar em paralelo com o fechamento dá um card, um trilho e um cliente, sem órfão', async () => {
+    const res: { iniciar: string; fechamento: string | undefined; cards: number; trilhos: number; orfaos: number; partners: number; comCnpj: number }[] = [];
+    for (let i = 0; i < 6; i++) {
+      const nome = `Corrida ${i} ${MARCA}`;
+      const doc = cnpjNovo();
+      const l = await lead(nome, 'contrato', { empresa: `${nome} Ltda`, phone: `55329222${String(i).padStart(5, '0')}` });
+      const a = await declararAceite(l, `${nome} Ltda`, doc, `c${i}@corrida.test`);
+      const tr0 = await prisma.onboardingTrilho.count({ where: { orgId: ORG } });
+      const pa0 = await prisma.partner.count({ where: { orgId: ORG } });
+      const [ri, rf] = await Promise.allSettled([naEmpresa(() => svc.iniciar(ORG, l, {}, eu())), naEmpresa(() => fechamento.executar(ORG, l, a))]);
+      const ficha = await prisma.comercialFicha.findUniqueOrThrow({ where: { leadId: l } });
+      res.push({
+        iniciar: ri.status === 'fulfilled' ? ri.value.estado : `recusado ${(ri.reason as { status?: number }).status ?? (ri.reason as Error).message}`,
+        fechamento: rf.status === 'fulfilled' ? rf.value.estado : `erro ${(rf.reason as Error).message}`,
+        cards: await prisma.workTask.count({ where: { orgId: ORG, id: cardIdDoLead(ORG, l) } }),
+        trilhos: (await prisma.onboardingTrilho.count({ where: { orgId: ORG } })) - tr0,
+        orfaos: await prisma.onboardingTrilho.count({ where: { orgId: ORG, cliente: { startsWith: nome }, NOT: { id: ficha.trilhoId ?? '' } } }),
+        partners: (await prisma.partner.count({ where: { orgId: ORG } })) - pa0,
+        comCnpj: await prisma.partner.count({ where: { orgId: ORG, cnpjCpf: doc, isCliente: true } }),
+      });
+    }
+    for (const r of res) {
+      expect(['criado', 'reaproveitado', 'recusado 409']).toContain(r.iniciar);
+      expect(r).toMatchObject({ fechamento: 'concluido', cards: 1, trilhos: 1, orfaos: 0, partners: 1, comCnpj: 1 });
+    }
+  });
+
+  it('revisão A2, achado 4: com o pool de 2 conexões, dois leads ao mesmo tempo iniciam sem esgotar o pool', async () => {
+    const pequeno = new PrismaClient({ datasources: { db: { url: `${URL}${URL!.includes('?') ? '&' : '?'}connection_limit=2&pool_timeout=5` } } });
+    try {
+      const pp = pequeno as unknown as PrismaService;
+      const reacoes2 = new ReacoesRegistry();
+      const fio2 = new FioService(pp, reacoes2);
+      const svc2 = new OnboardingAntecipadoService(pp, fio2, reacoes2, new FichaService(pp, fio2, new ConfigComercialService(pp)), new TrilhoService(pp, undefined as never, new EventLogService(pp), undefined as never));
+      const l1 = await lead('Pool Um', 'proposta');
+      const l2 = await lead('Pool Dois', 'proposta');
+      const r = await Promise.all([naEmpresa(() => svc2.iniciar(ORG, l1, {}, eu())), naEmpresa(() => svc2.iniciar(ORG, l2, {}, eu()))]);
+      expect(r.map((x) => x.estado)).toEqual(['criado', 'criado']);
+    } finally {
+      await pequeno.$disconnect();
+    }
   });
 
   it('fechar depois reaproveita o card (sem o selo de antes), o trilho e o Partner; fechar de novo não duplica', async () => {
@@ -447,9 +532,11 @@ describe.skipIf(!URL)('onboarding antecipado contra o Postgres', { timeout: 60_0
     expect(await contar(leadA)).toEqual(antes);
     expect(await prisma.workComment.count({ where: { taskId: card.id, authorName: AUTOR_DO_FECHAMENTO } })).toBe(1);
     expect(await prisma.leadEvent.count({ where: { leadId: leadA, type: 'implantacao.fechamento_registrado' } })).toBe(1);
-    expect(await prisma.contract.count({ where: { orgId: ORG } })).toBe(1);
-    // Depois de fechado, iniciar de novo devolve o mesmo card, sem nada novo.
-    expect((await naEmpresa(() => svc.iniciar(ORG, leadA, {}, eu()))).estado).toBe('reaproveitado');
+    expect(await prisma.contract.count({ where: { orgId: ORG, partnerId: partner.id } })).toBe(1);
+    // Revisão A2, achado 9: depois de fechado, iniciar de novo é recusado com o motivo e não escreve nada.
+    const auditoria = await prisma.auditLog.count({ where: { orgId: ORG } });
+    await expect(naEmpresa(() => svc.iniciar(ORG, leadA, {}, eu()))).rejects.toMatchObject({ status: 409, message: expect.stringMatching(/já fechou/) });
+    expect(await prisma.auditLog.count({ where: { orgId: ORG } })).toBe(auditoria);
     expect(await contar(leadA)).toEqual(antes);
   });
 
@@ -470,14 +557,73 @@ describe.skipIf(!URL)('onboarding antecipado contra o Postgres', { timeout: 60_0
       expect((await prisma.partner.findUniqueOrThrow({ where: { id: fornecedor.id } })).isCliente).toBe(false);
     });
 
-    it('pelo telefone e pelo e-mail, só entre clientes', async () => {
+    it('revisão A2, achado 1 (Q2a): telefone e e-mail SOZINHOS não ligam o lead a outro cliente, nem no fechamento', async () => {
       const porTel = await prisma.partner.create({ data: { orgId: ORG, isCliente: true, razaoSocial: 'Cliente do Telefone', phone: '(32) 98888-0002' } });
       const l = await lead('Outro Nome Qualquer', 'qualificacao', { phone: '5532988880002' });
-      expect(await naEmpresa(() => svc.iniciar(ORG, l, {}, eu()))).toMatchObject({ cliente: 'contato', partnerId: porTel.id });
+      const r = await naEmpresa(() => svc.iniciar(ORG, l, {}, eu()));
+      expect(r.cliente).toBe('criado');
+      expect(r.partnerId).not.toBe(porTel.id);
 
-      const porEmail = await prisma.partner.create({ data: { orgId: ORG, isCliente: true, razaoSocial: 'Cliente do E-mail', email: 'Contato@Cliente-Email.test' } });
-      const l2 = await lead('Mais Um Nome', 'novo_lead', { email: 'contato@cliente-email.test' });
-      expect(await naEmpresa(() => svc.iniciar(ORG, l2, {}, eu()))).toMatchObject({ cliente: 'contato', partnerId: porEmail.id });
+      // O contador partilhado: o e-mail dele não une a empresa nova ao cliente antigo.
+      const outro = await prisma.partner.create({ data: { orgId: ORG, isCliente: true, razaoSocial: 'Cliente Antigo Contábil SA', email: 'contador@escritorio.test' } });
+      const l2 = await lead('Fulana', 'proposta', { empresa: 'Empresa Nova Ltda', email: 'contador@escritorio.test' });
+      const r2 = await naEmpresa(() => svc.iniciar(ORG, l2, {}, eu()));
+      expect(r2.cliente).toBe('criado');
+      expect(r2.partnerId).not.toBe(outro.id);
+      const doc = cnpjNovo();
+      const a = await declararAceite(l2, 'Empresa Nova Ltda', doc, 'financeiro@empresanova.test');
+      const tela = await naEmpresa(() => fechamento.executar(ORG, l2, a));
+      expect(tela.escritas.find((e) => e.escrita === 'cliente')).toMatchObject({ estado: 'reaproveitado', ref: r2.partnerId });
+      const ficha = await prisma.comercialFicha.findUniqueOrThrow({ where: { leadId: l2 } });
+      expect((await prisma.contract.findUniqueOrThrow({ where: { id: ficha.contractId! } })).partnerId).toBe(r2.partnerId);
+      expect((await prisma.partner.findUniqueOrThrow({ where: { id: outro.id } })).cnpjCpf).toBeNull();
+      expect((await prisma.partner.findUniqueOrThrow({ where: { id: r2.partnerId! } })).cnpjCpf).toBe(doc);
+    });
+
+    it('revisão A2, achado 2 (Q2b): o fechamento não grava no cliente da ficha um CNPJ que outro cliente já tem; segue pelo CNPJ e avisa', async () => {
+      const doc = cnpjNovo();
+      const z = await prisma.partner.create({ data: { orgId: ORG, isCliente: true, razaoSocial: 'Cliente Z Com CNPJ', cnpjCpf: doc } });
+      const l = await lead('Beltrano', 'proposta', { empresa: 'Nome Diferente Comércio', phone: '5532911110000' });
+      const r = await naEmpresa(() => svc.iniciar(ORG, l, {}, eu()));
+      expect(r.cliente).toBe('criado');
+      const a = await declararAceite(l, 'Cliente Z Com CNPJ', doc, 'z@z.test');
+      const tela = await naEmpresa(() => fechamento.executar(ORG, l, a));
+      const escrita = tela.escritas.find((e) => e.escrita === 'cliente')!;
+      expect([escrita.estado, escrita.ref]).toEqual(['reaproveitado', z.id]);
+      expect(escrita.detalhe).toMatch(/A conciliar: outro cliente da empresa já tem o CNPJ do aceite/);
+      expect(await prisma.partner.count({ where: { orgId: ORG, cnpjCpf: doc, isCliente: true } })).toBe(1);
+      // O cliente de antes fica (nada é apagado), sem o CNPJ alheio.
+      expect((await prisma.partner.findUniqueOrThrow({ where: { id: r.partnerId! } })).cnpjCpf).toBeNull();
+      const ficha = await prisma.comercialFicha.findUniqueOrThrow({ where: { leadId: l } });
+      expect(ficha.partnerId).toBe(z.id);
+      expect((await prisma.contract.findUniqueOrThrow({ where: { id: ficha.contractId! } })).partnerId).toBe(z.id);
+      const card = await prisma.workTask.findUniqueOrThrow({ where: { id: cardIdDoLead(ORG, l) }, include: { comments: true } });
+      expect(card.clienteId).toBe(z.id);
+      expect(card.comments.filter((c) => c.text.startsWith('Cliente a conciliar:'))).toHaveLength(1);
+      const aviso = await prisma.leadEvent.findMany({ where: { leadId: l, type: 'cliente.a_conciliar' } });
+      expect(aviso).toHaveLength(1);
+      expect(aviso[0].payload).toMatchObject({ partnerDaFicha: r.partnerId, partnerDoFechamento: z.id });
+      // Fechar de novo não repete o aviso nem cria cliente.
+      await prisma.comercialFechamento.updateMany({ where: { leadId: l }, data: { estado: 'erro' } });
+      await naEmpresa(() => fechamento.executar(ORG, l, a));
+      expect(await prisma.leadEvent.count({ where: { leadId: l, type: 'cliente.a_conciliar' } })).toBe(1);
+      expect(await prisma.partner.count({ where: { orgId: ORG, cnpjCpf: doc, isCliente: true } })).toBe(1);
+    });
+
+    it('revisão A2: o cliente da ficha com OUTRO CNPJ não recebe o contrato; o fechamento segue a D-12 e avisa', async () => {
+      const docAntigo = cnpjNovo();
+      const antigo = await prisma.partner.create({ data: { orgId: ORG, isCliente: true, razaoSocial: 'Grupo Antigo SA', cnpjCpf: docAntigo } });
+      const l = await lead('Grupo Antigo Filial', 'proposta', { empresa: 'Grupo Antigo SA', cnpj: docAntigo });
+      expect(await naEmpresa(() => svc.iniciar(ORG, l, {}, eu()))).toMatchObject({ cliente: 'cnpj', partnerId: antigo.id });
+      const docNovo = cnpjNovo();
+      const a = await declararAceite(l, 'Grupo Antigo Filial Ltda', docNovo, 'filial@grupo.test');
+      const tela = await naEmpresa(() => fechamento.executar(ORG, l, a));
+      const escrita = tela.escritas.find((e) => e.escrita === 'cliente')!;
+      expect(escrita.estado).toBe('criado');
+      expect(escrita.ref).not.toBe(antigo.id);
+      expect(escrita.detalhe).toMatch(/A conciliar: o cliente ligado ao lead antes do fechamento tem outro CNPJ/);
+      expect((await prisma.partner.findUniqueOrThrow({ where: { id: antigo.id } })).cnpjCpf).toBe(docAntigo);
+      expect((await prisma.partner.findUniqueOrThrow({ where: { id: escrita.ref! } })).cnpjCpf).toBe(docNovo);
     });
 
     it('pelo nome normalizado; fornecedor de mesmo nome nunca é promovido', async () => {
@@ -500,6 +646,14 @@ describe.skipIf(!URL)('onboarding antecipado contra o Postgres', { timeout: 60_0
       expect(await naEmpresa(() => svc.iniciar(ORG, l, {}, eu()))).toMatchObject({ cliente: 'ficha', partnerId: daFicha.id });
       const card = await prisma.workTask.findUniqueOrThrow({ where: { id: cardIdDoLead(ORG, l) } });
       expect(card.clienteId).toBe(daFicha.id);
+    });
+
+    it('revisão A2, achado 2: ao fim da suíte, nenhum par de clientes da empresa com o mesmo CNPJ', async () => {
+      const clientes = await prisma.partner.findMany({ where: { orgId: ORG, isCliente: true, cnpjCpf: { not: null } }, select: { cnpjCpf: true } });
+      const docs = clientes.map((c) => c.cnpjCpf!.replace(/\D/g, '')).filter(Boolean);
+      expect(docs.length).toBeGreaterThan(3);
+      expect(new Set(docs).size).toBe(docs.length);
+      expect(trilhosSvc).toBeDefined();
     });
   });
 });

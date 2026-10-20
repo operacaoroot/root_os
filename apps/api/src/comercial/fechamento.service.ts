@@ -10,7 +10,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { ConfigComercialService } from './config.service';
 import { DecisoesRegistry, DecisoesService, type DecisaoResolvida } from './decisoes.service';
 import { DinheiroService, hojeEmSP, venceComoData, type AceiteDoLead } from './dinheiro.service';
-import { abrirCardDaImplantacao } from './card-da-implantacao';
+import { AUTOR_DO_FECHAMENTO, abrirCardDaImplantacao, travarImplantacaoDoLead } from './card-da-implantacao';
 import { eventoIdComercial, uuidDe } from './eventos';
 import { aceiteDaDeclaracao, chaveDoAnexo, parcelasDoContratoFora } from './fechado-fora';
 import { FioService, ReacoesRegistry } from './fio.service';
@@ -454,34 +454,65 @@ export class FechamentoService implements OnModuleInit {
       await this.fio.registrar(orgId, leadId, 'fechamento.escrita', `${linha.chave}:${escrita}:${e.estado}:${e.ref ?? ''}`, { chave: linha.chave, escrita, estado: e.estado, ref: e.ref, ms: e.ms });
     };
 
-    // 1. cliente: Partner, reaproveitado pelo da ficha e, sem ele, pelo CNPJ.
+    // 1. cliente: Partner, reaproveitado pelo da ficha (quando confere) e, sem ele, pelo CNPJ.
     // D-12: só se reaproveita um Partner que já é CLIENTE. O CNPJ vem da sala, que o cliente preenche sem
     // conferência: o fornecedor com o mesmo CNPJ não vira o cliente deste contrato nem é tocado; nasce outro.
-    // A2 (onboarding iniciado antes do fechamento): o lead pode já ter o cliente ligado na ficha. Sendo um
-    // Partner CLIENTE desta empresa, é ele: só ganha o CNPJ e o e-mail que estiverem vazios, nada é trocado.
+    // A2 e a revisão adversarial (achados 1 e 2): o lead pode já ter um cliente na ficha (onboarding
+    // iniciado antes). Ele só vale se o CNPJ dele for o do aceite, ou se estiver vazio e nenhum outro
+    // cliente da empresa tiver o CNPJ do aceite (aí ganha o CNPJ e o e-mail vazios). Senão vale a regra
+    // D-12, e a troca fica À VISTA: no detalhe da escrita, no fio (`cliente.a_conciliar`) e no card.
+    // Tudo sob o cadeado do lead, relendo a ficha (o iniciar pode ter acabado de ligar um cliente).
+    let conciliar: { partnerDaFicha: string; motivo: string } | null = null;
     await rodar('cliente', async () => {
       if (!aprovado) throw new Error(SEM_COBRANCA_APROVADA);
       const doc = a.dados.cnpj.replace(/\D/g, '');
-      const daFicha = ficha?.partnerId
-        ? await this.prisma.partner.findFirst({ where: { id: ficha.partnerId, orgId, isCliente: true, interno: false }, select: { id: true, cnpjCpf: true, email: true } })
-        : null;
-      if (daFicha) {
-        const vazios: { cnpjCpf?: string; email?: string } = {};
-        if (!daFicha.cnpjCpf && doc) vazios.cnpjCpf = doc;
-        if (!daFicha.email && a.dados.email) vazios.email = a.dados.email;
-        if (Object.keys(vazios).length) await this.prisma.partner.updateMany({ where: { id: daFicha.id, orgId }, data: vazios });
-        return { estado: 'reaproveitado', detalhe: 'cliente já ligado ao lead', ref: daFicha.id };
+      const final4 = (d: string) => `…${d.slice(-4)}`;
+      const r = await this.prisma.$transaction(
+        async (tx) => {
+          await travarImplantacaoDoLead(tx, orgId, leadId);
+          const fichaAgora = await tx.comercialFicha.findFirst({ where: { leadId, orgId }, select: { partnerId: true } });
+          const daFicha = fichaAgora?.partnerId
+            ? await tx.partner.findFirst({ where: { id: fichaAgora.partnerId, orgId, isCliente: true, interno: false }, select: { id: true, cnpjCpf: true, email: true } })
+            : null;
+          let aviso: { partnerDaFicha: string; motivo: string } | null = null;
+          if (daFicha) {
+            const docDaFicha = (daFicha.cnpjCpf ?? '').replace(/\D/g, '');
+            const outro = doc
+              ? await tx.partner.findFirst({ where: { orgId, cnpjCpf: doc, isCliente: true, id: { not: daFicha.id } }, select: { id: true } })
+              : null;
+            if ((doc && docDaFicha === doc) || (!docDaFicha && !outro)) {
+              const vazios: { cnpjCpf?: string; email?: string } = {};
+              if (!docDaFicha && doc) vazios.cnpjCpf = doc;
+              if (!daFicha.email && a.dados.email) vazios.email = a.dados.email;
+              if (Object.keys(vazios).length) await tx.partner.updateMany({ where: { id: daFicha.id, orgId }, data: vazios });
+              return { estado: 'reaproveitado' as const, detalhe: 'cliente já ligado ao lead', ref: daFicha.id, aviso };
+            }
+            aviso = {
+              partnerDaFicha: daFicha.id,
+              motivo: docDaFicha
+                ? `o cliente ligado ao lead antes do fechamento tem outro CNPJ (${final4(docDaFicha)}) que o do aceite (${final4(doc)})`
+                : `outro cliente da empresa já tem o CNPJ do aceite (${final4(doc)}); o cliente ligado ao lead antes do fechamento não o recebeu`,
+            };
+          }
+          const comAviso = (t: string) => (aviso ? `${t}. A conciliar: ${aviso.motivo}` : t).slice(0, 400);
+          const ja = doc ? await tx.partner.findFirst({ where: { orgId, cnpjCpf: doc, isCliente: true }, orderBy: { createdAt: 'asc' }, select: { id: true } }) : null;
+          if (ja) {
+            if (!fichaAgora?.partnerId || aviso) await tx.comercialFicha.updateMany({ where: { leadId, orgId }, data: { partnerId: ja.id } });
+            return { estado: 'reaproveitado' as const, detalhe: comAviso('cliente já existia com este CNPJ'), ref: ja.id, aviso };
+          }
+          const p = await tx.partner.create({
+            data: { orgId, isCliente: true, razaoSocial: a.dados.razaoSocial, cnpjCpf: doc, email: a.dados.email || null, phone: lead.phone ?? null },
+          });
+          await tx.comercialFicha.updateMany({ where: { leadId, orgId }, data: { partnerId: p.id } });
+          return { estado: 'criado' as const, detalhe: comAviso(a.dados.razaoSocial), ref: p.id, aviso };
+        },
+        { timeout: 30_000, maxWait: 10_000 },
+      );
+      if (r.aviso) {
+        conciliar = r.aviso;
+        await this.fio.registrar(orgId, leadId, 'cliente.a_conciliar', `${linha.chave}:${r.aviso.partnerDaFicha}:${r.ref}`, { chave: linha.chave, partnerDaFicha: r.aviso.partnerDaFicha, partnerDoFechamento: r.ref, motivo: r.aviso.motivo });
       }
-      const ja = await this.prisma.partner.findFirst({ where: { orgId, cnpjCpf: doc, isCliente: true }, orderBy: { createdAt: 'asc' }, select: { id: true } });
-      if (ja) {
-        if (!ficha?.partnerId) await this.prisma.comercialFicha.updateMany({ where: { leadId, orgId }, data: { partnerId: ja.id } });
-        return { estado: 'reaproveitado', detalhe: 'cliente já existia com este CNPJ', ref: ja.id };
-      }
-      const p = await this.prisma.partner.create({
-        data: { orgId, isCliente: true, razaoSocial: a.dados.razaoSocial, cnpjCpf: doc, email: a.dados.email || null, phone: lead.phone ?? null },
-      });
-      await this.prisma.comercialFicha.updateMany({ where: { leadId, orgId }, data: { partnerId: p.id } });
-      return { estado: 'criado', detalhe: a.dados.razaoSocial, ref: p.id };
+      return { estado: r.estado, detalhe: r.detalhe, ref: r.ref };
     });
 
     // 2. cobrança: a que a aprovação de `comercial.cobranca.criar` criou, reaproveitada; nunca uma cobrança com outro devedor.
@@ -556,63 +587,109 @@ export class FechamentoService implements OnModuleInit {
     });
 
     // 4. kit e trilho: o trilho de implantação com os dados copiados.
+    // Revisão adversarial A2 (achado 3): sob o cadeado do lead, relendo a ficha, e o trilho criado na
+    // MESMA transação (`criarNaTransacao`). O trilho que o "Iniciar onboarding" acabou de criar é
+    // reaproveitado; o `trilhoId` só é gravado onde ainda está vazio, e se não der, a transação volta
+    // (trilho criado e não ligado não fica órfão).
     await rodar('kit_e_trilho', async () => {
-      const ref = anteriores.get('kit_e_trilho')?.ref ?? ficha?.trilhoId ?? null;
-      if (ref) {
-        const t = await this.prisma.onboardingTrilho.findFirst({ where: { id: ref, orgId }, select: { id: true, fase: true } });
-        if (t) return { estado: 'reaproveitado', detalhe: `trilho na fase ${FASES_DO_TRILHO.indexOf(t.fase) + 1} de 5`, ref: t.id };
-      }
       if (!this.trilhos) throw new Error('o serviço do trilho não está disponível nesta instância');
+      const trilhos = this.trilhos;
       const manifesto = await this.manifesto(orgId, leadId, a);
-      const t = await this.trilhos.criar(
-        orgId,
-        {
-          cliente: a.dados.razaoSocial,
-          contatoNome: a.dados.quemAssina,
-          contatoWhatsapp: lead.phone ?? null,
-          contatoEmail: a.dados.email || null,
-          perfil: ficha?.perfil ?? null,
-          reuniaoEm: ficha?.reuniaoEm?.toISOString() ?? null,
-          observacoes: manifesto,
+      const preparo = await trilhos.prepararCriacaoNaTransacao(orgId);
+      const r = await this.prisma.$transaction(
+        async (tx) => {
+          await travarImplantacaoDoLead(tx, orgId, leadId);
+          const fichaAgora = await tx.comercialFicha.findFirst({ where: { leadId, orgId }, select: { trilhoId: true, perfil: true, reuniaoEm: true } });
+          const ref = fichaAgora?.trilhoId ?? anteriores.get('kit_e_trilho')?.ref ?? null;
+          if (ref) {
+            const t = await tx.onboardingTrilho.findFirst({ where: { id: ref, orgId }, select: { id: true, fase: true } });
+            if (t) {
+              if (!fichaAgora?.trilhoId) await tx.comercialFicha.updateMany({ where: { leadId, orgId, trilhoId: null }, data: { trilhoId: t.id } });
+              return { novo: false, id: t.id, fase: t.fase };
+            }
+          }
+          const t = await trilhos.criarNaTransacao(
+            tx,
+            orgId,
+            {
+              cliente: a.dados.razaoSocial,
+              contatoNome: a.dados.quemAssina,
+              contatoWhatsapp: lead.phone ?? null,
+              contatoEmail: a.dados.email || null,
+              perfil: fichaAgora?.perfil ?? null,
+              reuniaoEm: fichaAgora?.reuniaoEm?.toISOString() ?? null,
+              observacoes: manifesto,
+            },
+            { id: null, nome: 'Fechamento comercial' },
+            preparo,
+          );
+          const ligou = await tx.comercialFicha.updateMany({ where: { leadId, orgId, OR: [{ trilhoId: null }, { trilhoId: fichaAgora?.trilhoId ?? '' }] }, data: { trilhoId: t.id } });
+          if (ligou.count !== 1) throw new Error('a ficha do lead ganhou outro trilho no meio do caminho: nenhum trilho foi criado; rodar de novo reaproveita o dela');
+          return { novo: true, id: t.id, fase: 'qualificar' };
         },
-        { id: null, nome: 'Fechamento comercial' },
+        { timeout: 30_000, maxWait: 10_000 },
       );
-      await this.prisma.comercialFicha.updateMany({ where: { leadId, orgId }, data: { trilhoId: t.id } });
+      if (!r.novo) return { estado: 'reaproveitado', detalhe: `trilho na fase ${FASES_DO_TRILHO.indexOf(r.fase) + 1} de 5`, ref: r.id };
       // O comercial já qualificou: o trilho tenta passar pelo portão da fase 0. O portão é do onboarding e
       // recusa com a lista do que falta (próximo passo, dono, data...): isso vira lacuna à vista, não erro.
       let falta = '';
       try {
-        await this.trilhos.avancar(orgId, t.id, { id: null, nome: 'Fechamento comercial' });
+        await trilhos.avancar(orgId, r.id, { id: null, nome: 'Fechamento comercial' });
       } catch (e) {
-        const r = (e as { getResponse?: () => unknown }).getResponse?.() as { faltando?: unknown } | undefined;
-        falta = Array.isArray(r?.faltando) ? (r!.faltando as unknown[]).map(String).join('; ') : (e as Error).message;
+        const resp = (e as { getResponse?: () => unknown }).getResponse?.() as { faltando?: unknown } | undefined;
+        falta = Array.isArray(resp?.faltando) ? (resp!.faltando as unknown[]).map(String).join('; ') : (e as Error).message;
       }
-      const fase = (await this.prisma.onboardingTrilho.findUniqueOrThrow({ where: { id: t.id }, select: { fase: true } })).fase;
+      const fase = (await this.prisma.onboardingTrilho.findUniqueOrThrow({ where: { id: r.id }, select: { fase: true } })).fase;
       const detalhe = `trilho aberto na fase ${FASES_DO_TRILHO.indexOf(fase) + 1} de 5. Lacunas [a decidir]: nível, receita e quem conduz${falta ? `. Para avançar a fase falta: ${falta}` : ''}`;
-      return { estado: 'criado', detalhe: detalhe.slice(0, 400), ref: t.id };
+      return { estado: 'criado', detalhe: detalhe.slice(0, 400), ref: r.id };
     });
 
     // 5. o card da implantação, na lista "Onboarding de cliente" (I1): dados copiados, retrolinks, procedência.
+    // Sob o cadeado do lead (revisão A2): o card que o "Iniciar onboarding" abriu é o mesmo (id do lead).
     await rodar('card', async () => {
-      const trilhoId = refs.kit_e_trilho ?? ficha?.trilhoId ?? null;
-      const dono = ficha?.donoId ? await this.prisma.user.findFirst({ where: { id: ficha.donoId, orgId }, select: { name: true } }) : null;
-      const r = await this.prisma.$transaction((tx) =>
-        abrirCardDaImplantacao(tx, orgId, {
-          leadId,
-          empresa: a.dados.razaoSocial || lead.name,
-          cnpj: a.dados.cnpj,
-          contato: a.dados.quemAssina,
-          telefone: lead.phone ?? null,
-          email: a.dados.email || lead.email || null,
-          produto: TABELA_DE_PRECO[a.produto]?.rotulo ?? a.produto,
-          valor: formatarReais(a.valorCentavos),
-          parcelas: a.parcelas,
-          forma: a.forma,
-          chave: linha.chave,
-          trilhoId,
-          responsavel: dono?.name ?? null,
-          clienteId: refs.cliente ?? ficha?.partnerId ?? null,
-        }),
+      const aConciliar = conciliar as { partnerDaFicha: string; motivo: string } | null;
+      const r = await this.prisma.$transaction(
+        async (tx) => {
+          await travarImplantacaoDoLead(tx, orgId, leadId);
+          const fichaAgora = await tx.comercialFicha.findFirst({ where: { leadId, orgId }, select: { trilhoId: true, partnerId: true, donoId: true } });
+          const trilhoId = refs.kit_e_trilho ?? fichaAgora?.trilhoId ?? null;
+          const dono = fichaAgora?.donoId ? await tx.user.findFirst({ where: { id: fichaAgora.donoId, orgId }, select: { name: true } }) : null;
+          const clienteId = refs.cliente ?? fichaAgora?.partnerId ?? null;
+          const c = await abrirCardDaImplantacao(tx, orgId, {
+            leadId,
+            empresa: a.dados.razaoSocial || lead.name,
+            cnpj: a.dados.cnpj,
+            contato: a.dados.quemAssina,
+            telefone: lead.phone ?? null,
+            email: a.dados.email || lead.email || null,
+            produto: TABELA_DE_PRECO[a.produto]?.rotulo ?? a.produto,
+            valor: formatarReais(a.valorCentavos),
+            parcelas: a.parcelas,
+            forma: a.forma,
+            chave: linha.chave,
+            trilhoId,
+            responsavel: dono?.name ?? null,
+            clienteId,
+          });
+          // Revisão A2: o fechamento ficou com outro cliente. O card que apontava o de antes passa ao do
+          // fechamento (o que uma pessoa escolheu à mão fica), e o aviso fica no card para conciliar.
+          if (aConciliar && clienteId) {
+            await tx.workTask.updateMany({ where: { id: c.cardId, orgId, clienteId: aConciliar.partnerDaFicha }, data: { clienteId } });
+            await tx.workComment.createMany({
+              data: [{
+                id: uuidDe([orgId, 'comercial-card-cliente-a-conciliar', c.cardId, linha.chave]),
+                orgId,
+                taskId: c.cardId,
+                authorId: null,
+                authorName: AUTOR_DO_FECHAMENTO,
+                text: `Cliente a conciliar: ${aConciliar.motivo}. O fechamento ficou com o cliente do CNPJ do aceite; o cadastro de antes continua lá para uma pessoa decidir.`.slice(0, 2000),
+              }],
+              skipDuplicates: true,
+            });
+          }
+          return c;
+        },
+        { timeout: 30_000, maxWait: 10_000 },
       );
       if (r.estado === 'criado') {
         await this.fio.registrar(orgId, leadId, 'implantacao.card_criado', r.cardId, { chave: linha.chave, cardId: r.cardId, listId: r.listId, lista: r.lista, etapa: r.etapa });

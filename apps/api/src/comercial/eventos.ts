@@ -115,6 +115,7 @@ export const FONTE_DO_EVENTO: Record<ComercialEvento, ComercialFonte> = {
   'implantacao.card_criado': 'sistema',
   'implantacao.iniciada_antes_do_fechamento': 'pessoa',
   'implantacao.fechamento_registrado': 'sistema',
+  'cliente.a_conciliar': 'sistema',
   'kickoff.marcado': 'sala',
   'parcela.vence': 'relogio',
   'parcela.paga': 'asaas',
@@ -209,6 +210,8 @@ export interface PayloadsComerciais {
   'implantacao.iniciada_antes_do_fechamento': { cardId: string; listId: string; lista: string; etapa: string; etapaDoLead: string; trilhoId: string | null; partnerId: string | null; por: string | null; porId: string };
   /** A2: o fechamento reaproveitou o card iniciado antes dele e registrou o fechamento no card. */
   'implantacao.fechamento_registrado': { chave: string; cardId: string };
+  /** Revisão A2: o Partner da ficha não conferia com o CNPJ do aceite; o fechamento ficou com outro e avisa. */
+  'cliente.a_conciliar': { chave: string; partnerDaFicha: string; partnerDoFechamento: string; motivo: string };
   'kickoff.marcado': { horario: string };
   'parcela.vence': { parcela: number; vence: string; aviso: 'D-3' | 'D0' | 'D+1' | 'D+5' | 'D+10' };
   'parcela.paga': { parcela: number; pagoEm: string; valorCentavos: number };
@@ -374,6 +377,8 @@ export function resumoDoEvento(type: string, payload: unknown): { fonte: Comerci
       return { fonte, resumo: `onboarding iniciado antes do fechamento${p.por ? ` por ${String(p.por)}` : ''} · card em ${curto(p.etapa, 30)}` };
     case 'implantacao.fechamento_registrado':
       return { fonte, resumo: 'fechamento registrado no card da implantação iniciado antes' };
+    case 'cliente.a_conciliar':
+      return { fonte, resumo: `cliente a conciliar: ${curto(p.motivo, 120)}` };
     case 'kickoff.marcado':
       return { fonte, resumo: `kickoff marcado · ${horarioLegivel(p.horario)}` };
     case 'parcela.vence':

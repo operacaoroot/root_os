@@ -78,8 +78,8 @@ export interface OnboardingAntecipadoResposta {
   etapa: string;
   trilhoId: string | null;
   partnerId: string | null;
-  /** Como o cliente (`Partner`) foi achado: o da ficha, pelo CNPJ, telefone ou e-mail, nome, ou criado. */
-  cliente: 'ficha' | 'cnpj' | 'contato' | 'nome' | 'criado';
+  /** Como o cliente (`Partner`) foi achado: o da ficha, pelo CNPJ, pelo nome, ou criado (telefone e e-mail não ligam sozinhos). */
+  cliente: 'ficha' | 'cnpj' | 'nome' | 'criado';
   selo: string;
 }
 

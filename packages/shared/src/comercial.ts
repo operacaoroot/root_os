@@ -361,6 +361,9 @@ export const COMERCIAL_EVENTOS = [
   // (o card nasce antes do fechamento), e o fechamento depois reaproveitou esse mesmo card.
   'implantacao.iniciada_antes_do_fechamento',
   'implantacao.fechamento_registrado',
+  // Revisão adversarial A2: o cliente ligado ao lead antes do fechamento não confere com o CNPJ do
+  // aceite; o fechamento seguiu pela regra do CNPJ e deixou o aviso para uma pessoa conciliar.
+  'cliente.a_conciliar',
   'kickoff.marcado',
   'parcela.vence',
   'parcela.paga',

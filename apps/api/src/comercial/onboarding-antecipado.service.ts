@@ -24,6 +24,8 @@ import { ActorType, Prisma } from '@prisma/client';
 
 import { temPapelDeMaquina } from '../approvals/alcada';
 import { lerAprovador } from '../auth/aprovador';
+import type { PreparoEventoNoTx } from '../gateway/event-log.service';
+import { exigirAcessoAtual } from '../memory/acesso-memoria';
 import { TrilhoService } from '../onboarding/trilho/trilho.service';
 import { PrismaService } from '../prisma/prisma.service';
 import {
@@ -33,6 +35,7 @@ import {
   avisoDeSaidaDoFunil,
   cardIdDoLead,
   procedenciaDoCardAntecipado,
+  travarImplantacaoDoLead,
 } from './card-da-implantacao';
 import { acharOuCriarClienteDoLead } from './cliente-do-lead';
 import { eventoIdComercial, uuidDe } from './eventos';
@@ -110,32 +113,37 @@ export class OnboardingAntecipadoService implements OnModuleInit {
     this.reacoes.inscrever('saida.registrada', 'implantacao.aviso-de-saida', (ev) => this.avisarSaida(ev));
   }
 
-  /** Gente de verdade, relida no banco: ativa, desta empresa e sem papel de máquina (a forma do mover). */
+  /**
+   * Gente de verdade, relida no banco: ativa, desta empresa e sem papel de máquina (a forma do
+   * mover), e com as duas permissões da rota AGORA (revisão A2, achado 5: `exigirAcessoAtual`, o
+   * mesmo das rotas do Trabalho). Quem perdeu a permissão não abre card até o token vencer.
+   */
   private async exigirGente(orgId: string, quem: QuemInicia): Promise<{ id: string; nome: string | null }> {
     if (temPapelDeMaquina(quem.papeis)) throw new ForbiddenException(RECUSA_DE_MAQUINA);
     const doBanco = await lerAprovador(this.prisma, quem.id, orgId);
     if (!doBanco || !doBanco.ativo) throw new ForbiddenException('Quem inicia o onboarding precisa ser um usuário ativo desta empresa.');
     if (temPapelDeMaquina(doBanco.papeis)) throw new ForbiddenException(RECUSA_DE_MAQUINA);
+    await exigirAcessoAtual(this.prisma, orgId, quem.id, ['leads.editar', 'tarefas.editar']);
     const u = await this.prisma.user.findFirst({ where: { id: quem.id, orgId }, select: { name: true } });
     return { id: quem.id, nome: u?.name ?? quem.nome };
   }
 
   /** As etapas da lista de onboarding desta empresa (ou as do modelo, se a lista ainda não existe). */
-  private async etapasDaLista(orgId: string): Promise<EtapaDaListaDeOnboarding[]> {
-    const pasta = (await this.prisma.workFolder.findMany({ where: { orgId, parentId: null }, select: { id: true, name: true } }))
+  private async etapasDaLista(db: Prisma.TransactionClient | PrismaService, orgId: string): Promise<EtapaDaListaDeOnboarding[]> {
+    const pasta = (await db.workFolder.findMany({ where: { orgId, parentId: null }, select: { id: true, name: true } }))
       .find((p) => chaveDoNomeDoTrabalho(p.name) === chaveDoNomeDoTrabalho(PASTA_DA_IMPLANTACAO));
     const lista = pasta
-      ? (await this.prisma.workList.findMany({ where: { orgId, folderId: pasta.id }, select: { id: true, name: true } }))
+      ? (await db.workList.findMany({ where: { orgId, folderId: pasta.id }, select: { id: true, name: true } }))
         .find((l) => chaveDoNomeDoTrabalho(l.name) === chaveDoNomeDoTrabalho(LISTA_DA_IMPLANTACAO))
       : undefined;
     if (!lista) return ETAPAS_DO_MODELO;
-    const etapas = await this.prisma.workStatus.findMany({ where: { orgId, listId: lista.id }, orderBy: { order: 'asc' }, select: { name: true, type: true } });
+    const etapas = await db.workStatus.findMany({ where: { orgId, listId: lista.id }, orderBy: { order: 'asc' }, select: { name: true, type: true } });
     return etapas.length ? etapas.map((e) => ({ name: e.name, type: e.type })) : ETAPAS_DO_MODELO;
   }
 
   /** As etapas de entrada que a tela oferece. */
   async etapas(orgId: string): Promise<EtapasDoOnboardingAntecipado> {
-    const lista = etapasDeEntrada(await this.etapasDaLista(orgId));
+    const lista = etapasDeEntrada(await this.etapasDaLista(this.prisma, orgId));
     const padrao = lista.find((e) => chaveDoNomeDoTrabalho(e) === chaveDoNomeDoTrabalho(ETAPA_PADRAO_DO_ONBOARDING_ANTECIPADO)) ?? lista[0] ?? ETAPA_PADRAO_DO_ONBOARDING_ANTECIPADO;
     return { etapas: lista, padrao };
   }
@@ -167,9 +175,14 @@ export class OnboardingAntecipadoService implements OnModuleInit {
   }
 
   /**
-   * INICIAR. Recusa (403) quem não é gente; (404) lead de outra empresa; (409) lead
-   * fechado ou em saída; (400) etapa de entrada que não serve. Repetir devolve o
-   * mesmo card sem escrever nada de novo.
+   * INICIAR. Recusa (403) quem não é gente ou perdeu a permissão; (404) lead de outra empresa;
+   * (409) lead fechado, em saída ou com o fechamento a caminho; (400) etapa de entrada que não
+   * serve. Repetir com o lead em andamento devolve o mesmo card sem escrever nada de novo.
+   *
+   * UMA TRANSAÇÃO SÓ (revisão A2, achados 3 e 4): o cadeado do lead (`travarImplantacaoDoLead`, o
+   * mesmo das escritas cliente, trilho e card do fechamento) e TODO o trabalho, o trilho inclusive
+   * (`TrilhoService.criarNaTransacao`), correm na mesma conexão. Nada pede uma segunda conexão do
+   * pool enquanto o cadeado está preso; o que o RASTRO precisa ler vem preparado antes.
    */
   async iniciar(orgId: string, leadId: string, corpo: unknown, quem: QuemInicia, agora: Date = new Date()): Promise<OnboardingAntecipadoResposta> {
     const r = OnboardingAntecipadoSchema.safeParse(corpo ?? {});
@@ -180,48 +193,73 @@ export class OnboardingAntecipadoService implements OnModuleInit {
     const lead = await this.prisma.lead.findFirst({ where: { id: leadId, orgId }, select: { id: true } });
     if (!lead) throw new NotFoundException('Lead não encontrado.');
     await this.fichas.garantir(orgId, leadId);
+    if (!this.trilhos) throw new ServiceUnavailableException('O serviço do trilho de onboarding não está disponível agora: nada foi criado.');
+    const preparo = await this.trilhos.prepararCriacaoNaTransacao(orgId);
 
-    // O cadeado do lead: dois cliques (ou duas abas) não abrem dois trilhos. Ele fica preso numa
-    // transação só dele; o trabalho roda nas suas próprias transações enquanto ela segura a vez.
-    return this.prisma.$transaction(
-      async (trava) => {
-        await trava.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`onboarding-antecipado:${orgId}:${leadId}`}))`;
-        return this.iniciarNaVez(orgId, leadId, r.data.etapa, pessoa, nivel, agora);
-      },
-      { timeout: 60_000, maxWait: 15_000 },
-    );
+    let gravado: { novo: boolean; evento: EventoGravado } | null = null;
+    let resposta: OnboardingAntecipadoResposta;
+    try {
+      resposta = await this.prisma.$transaction(
+        async (tx) => {
+          await travarImplantacaoDoLead(tx, orgId, leadId);
+          const feito = await this.iniciarNaVez(tx, orgId, leadId, r.data.etapa, pessoa, nivel, agora, preparo);
+          gravado = feito.gravado;
+          return feito.resposta;
+        },
+        { timeout: 30_000, maxWait: 10_000 },
+      );
+    } catch (e) {
+      if (e instanceof EtapaDeEntradaRecusada) throw new BadRequestException(e.message);
+      throw e;
+    }
+    const g = gravado as { novo: boolean; evento: EventoGravado } | null;
+    if (g?.novo) await this.fio.reagir(g.evento);
+    if (resposta.estado === 'criado') this.log.log(`onboarding do lead ${leadId} iniciado antes do fechamento (${nivel}): card ${resposta.cardId} em ${resposta.etapa}, cliente ${resposta.cliente}`);
+    return resposta;
   }
 
   private async iniciarNaVez(
+    tx: Prisma.TransactionClient,
     orgId: string,
     leadId: string,
     etapaPedida: string | undefined,
     pessoa: { id: string; nome: string | null },
     nivel: string,
     agora: Date,
-  ): Promise<OnboardingAntecipadoResposta> {
-    const lead = await this.prisma.lead.findFirstOrThrow({ where: { id: leadId, orgId }, select: { name: true, phone: true, email: true } });
-    const ficha = await this.prisma.comercialFicha.findFirstOrThrow({ where: { leadId, orgId } });
+    preparo: PreparoEventoNoTx,
+  ): Promise<{ resposta: OnboardingAntecipadoResposta; gravado: { novo: boolean; evento: EventoGravado } | null }> {
+    const lead = await tx.lead.findFirstOrThrow({ where: { id: leadId, orgId }, select: { name: true, phone: true, email: true } });
+    const ficha = await tx.comercialFicha.findFirstOrThrow({ where: { leadId, orgId } });
     const cardId = cardIdDoLead(orgId, leadId);
+    const etapaDoLead = ficha.etapa as ComercialEtapa;
+    const clienteAtivo = !!(await tx.leadEvent.findFirst({ where: { leadId, orgId, type: 'cliente.ativo' }, select: { id: true } }));
+
+    // Revisão A2, achado 9: lead fechado ou em saída é recusado com o motivo, tenha card ou não.
+    const motivo = motivoParaNaoIniciarOnboarding({ etapa: etapaDoLead, clienteAtivo });
+    if (motivo) throw new ConflictException(motivo);
 
     // Já iniciado: o mesmo card, nada de novo.
-    const card = await this.prisma.workTask.findFirst({ where: { id: cardId, orgId }, select: { id: true, listId: true, clienteId: true, status: { select: { name: true } } } });
+    const card = await tx.workTask.findFirst({ where: { id: cardId, orgId }, select: { id: true, listId: true, clienteId: true, status: { select: { name: true } } } });
     if (card) {
-      const fato = await this.prisma.leadEvent.findUnique({ where: { id: eventoIdComercial(orgId, leadId, 'implantacao.iniciada_antes_do_fechamento', cardId) }, select: { leadId: true } });
+      const fato = await tx.leadEvent.findUnique({ where: { id: eventoIdComercial(orgId, leadId, 'implantacao.iniciada_antes_do_fechamento', cardId) }, select: { leadId: true } });
       if (!fato || fato.leadId !== leadId) throw new ConflictException('Este lead já tem o card da implantação, aberto pelo fechamento.');
       return {
-        leadId, estado: 'reaproveitado', cardId, listId: card.listId, etapa: card.status.name,
-        trilhoId: ficha.trilhoId, partnerId: card.clienteId ?? ficha.partnerId, cliente: 'ficha',
-        selo: procedenciaDoCardAntecipado(ficha.etapa as ComercialEtapa),
+        gravado: null,
+        resposta: {
+          leadId, estado: 'reaproveitado', cardId, listId: card.listId, etapa: card.status.name,
+          trilhoId: ficha.trilhoId, partnerId: card.clienteId ?? ficha.partnerId, cliente: 'ficha',
+          selo: procedenciaDoCardAntecipado(etapaDoLead),
+        },
       };
     }
 
-    const etapaDoLead = ficha.etapa as ComercialEtapa;
-    const clienteAtivo = !!(await this.prisma.leadEvent.findFirst({ where: { leadId, orgId, type: 'cliente.ativo' }, select: { id: true } }));
-    const motivo = motivoParaNaoIniciarOnboarding({ etapa: etapaDoLead, clienteAtivo });
-    if (motivo) throw new ConflictException(motivo);
-    // A etapa é conferida ANTES de qualquer escrita (o trilho nasce antes do card).
-    const etapa = conferirEtapaDeEntrada(await this.etapasDaLista(orgId), etapaPedida);
+    // Revisão A2, achado 3: com o fechamento a caminho (aprovação na fila ou rodando), o card nasce
+    // nele. Iniciar agora correria com ele.
+    const fechando = await tx.comercialFechamento.findFirst({ where: { leadId, orgId, estado: { in: ['pendente', 'em_curso'] } }, select: { estado: true } });
+    if (fechando) throw new ConflictException('O fechamento deste lead já está a caminho: o card da implantação nasce nele. Acompanhe pelo fechamento.');
+
+    // A etapa é conferida ANTES de qualquer escrita.
+    const etapa = conferirEtapaDeEntrada(await this.etapasDaLista(tx, orgId), etapaPedida);
     if (!etapa.ok) throw new BadRequestException(etapa.motivo);
 
     const cadastro = (ficha.cadastro ?? {}) as Record<string, unknown>;
@@ -232,12 +270,12 @@ export class OnboardingAntecipadoService implements OnModuleInit {
     const email = str(cadastro.email) ?? lead.email ?? null;
     const produto = ficha.produto ? TABELA_DE_PRECO[ficha.produto as keyof typeof TABELA_DE_PRECO]?.rotulo ?? ficha.produto : '';
 
-    // O trilho: o que a ficha já aponta, ou um novo pelo mesmo serviço do fechamento.
+    // O trilho: o que a ficha já aponta, ou um novo pela mesma criação do fechamento, na transação.
     let trilhoId: string | null = null;
-    if (ficha.trilhoId) trilhoId = (await this.prisma.onboardingTrilho.findFirst({ where: { id: ficha.trilhoId, orgId }, select: { id: true } }))?.id ?? null;
+    if (ficha.trilhoId) trilhoId = (await tx.onboardingTrilho.findFirst({ where: { id: ficha.trilhoId, orgId }, select: { id: true } }))?.id ?? null;
     if (!trilhoId) {
-      if (!this.trilhos) throw new ServiceUnavailableException('O serviço do trilho de onboarding não está disponível agora: nada foi criado.');
-      const t = await this.trilhos.criar(
+      const t = await this.trilhos!.criarNaTransacao(
+        tx,
         orgId,
         {
           cliente: empresa,
@@ -249,74 +287,60 @@ export class OnboardingAntecipadoService implements OnModuleInit {
           observacoes: `Onboarding iniciado antes do fechamento, com o lead em ${rotuloCurtoDaEtapa(etapaDoLead)}${pessoa.nome ? `, por ${pessoa.nome}` : ''}. Os dados vêm da ficha do lead; o que ainda não existe fica [a decidir].`,
         },
         { id: pessoa.id, nome: pessoa.nome ?? 'Comercial' },
+        preparo,
       );
       trilhoId = t.id;
-      await this.prisma.comercialFicha.updateMany({ where: { leadId, orgId, trilhoId: null }, data: { trilhoId } });
+      // Escrita condicionada: sob o cadeado a ficha está vazia; se não estiver, nada fica órfão (a transação volta).
+      const ligou = await tx.comercialFicha.updateMany({ where: { leadId, orgId, OR: [{ trilhoId: null }, { trilhoId: ficha.trilhoId ?? '' }] }, data: { trilhoId } });
+      if (ligou.count !== 1) throw new ConflictException('A ficha do lead ganhou outro trilho no meio do caminho: nada foi criado. Tente de novo.');
     }
 
-    const dono = ficha.donoId ? await this.prisma.user.findFirst({ where: { id: ficha.donoId, orgId }, select: { name: true } }) : null;
-    let como: OnboardingAntecipadoResposta['cliente'] = 'criado';
-    let partnerId: string | null = null;
-    let gravado: { novo: boolean; evento: EventoGravado } | null = null;
-    let aberto: Awaited<ReturnType<typeof abrirCardDaImplantacao>>;
-    try {
-      aberto = await this.prisma.$transaction(
-        async (tx) => {
-          const cliente = await acharOuCriarClienteDoLead(tx, orgId, { partnerIdDaFicha: ficha.partnerId, nome: empresa, cnpj, telefone: lead.phone, email });
-          como = cliente.como;
-          partnerId = cliente.id;
-          // A ficha aponta o cliente; o ponteiro que já vale (cliente desta empresa) não é trocado.
-          if (cliente.como !== 'ficha') await tx.comercialFicha.updateMany({ where: { leadId, orgId }, data: { partnerId: cliente.id } });
-          const c = await abrirCardDaImplantacao(
-            tx,
-            orgId,
-            {
-              leadId,
-              empresa,
-              cnpj: cnpj ?? '',
-              contato,
-              telefone: lead.phone ?? null,
-              email,
-              produto,
-              valor: ficha.valorCentavos ? formatarReais(ficha.valorCentavos) : '',
-              parcelas: ficha.parcelas ?? 0,
-              forma: ficha.forma ?? '',
-              chave: 'antes-do-fechamento',
-              trilhoId,
-              responsavel: dono?.name ?? null,
-              clienteId: cliente.id,
-            },
-            agora,
-            { origem: 'antecipado', etapa: etapa.etapa, etapaDoLead, ator: pessoa },
-          );
-          gravado = await this.fio.gravarNaTransacao(tx, orgId, leadId, 'implantacao.iniciada_antes_do_fechamento', c.cardId, {
-            cardId: c.cardId, listId: c.listId, lista: c.lista, etapa: c.etapa, etapaDoLead, trilhoId, partnerId: cliente.id, por: pessoa.nome, porId: pessoa.id,
-          }, agora);
-          await tx.auditLog.create({
-            data: {
-              orgId,
-              actorType: ActorType.user,
-              actorId: pessoa.id,
-              action: 'comercial.implantacao.iniciada_antes_do_fechamento',
-              entityType: 'lead',
-              entityId: leadId,
-              after: { cardId: c.cardId, listId: c.listId, etapa: c.etapa, etapaDoLead, trilhoId, partnerId: cliente.id, cliente: cliente.como, nivel } as Prisma.InputJsonValue,
-            },
-          });
-          return c;
-        },
-        { timeout: 30_000 },
-      );
-    } catch (e) {
-      if (e instanceof EtapaDeEntradaRecusada) throw new BadRequestException(e.message);
-      throw e;
-    }
-    const g = gravado as { novo: boolean; evento: EventoGravado } | null;
-    if (g?.novo) await this.fio.reagir(g.evento);
-    this.log.log(`onboarding do lead ${leadId} iniciado antes do fechamento (${nivel}): card ${aberto.cardId} em ${aberto.etapa}, cliente ${como}`);
+    const dono = ficha.donoId ? await tx.user.findFirst({ where: { id: ficha.donoId, orgId }, select: { name: true } }) : null;
+    const cliente = await acharOuCriarClienteDoLead(tx, orgId, { partnerIdDaFicha: ficha.partnerId, nome: empresa, cnpj, telefone: lead.phone, email });
+    // A ficha aponta o cliente; o ponteiro que já vale (cliente desta empresa) não é trocado.
+    if (cliente.como !== 'ficha') await tx.comercialFicha.updateMany({ where: { leadId, orgId }, data: { partnerId: cliente.id } });
+    const c = await abrirCardDaImplantacao(
+      tx,
+      orgId,
+      {
+        leadId,
+        empresa,
+        cnpj: cnpj ?? '',
+        contato,
+        telefone: lead.phone ?? null,
+        email,
+        produto,
+        valor: ficha.valorCentavos ? formatarReais(ficha.valorCentavos) : '',
+        parcelas: ficha.parcelas ?? 0,
+        forma: ficha.forma ?? '',
+        chave: 'antes-do-fechamento',
+        trilhoId,
+        responsavel: dono?.name ?? null,
+        clienteId: cliente.id,
+      },
+      agora,
+      { origem: 'antecipado', etapa: etapa.etapa, etapaDoLead, ator: pessoa },
+    );
+    const gravado = await this.fio.gravarNaTransacao(tx, orgId, leadId, 'implantacao.iniciada_antes_do_fechamento', c.cardId, {
+      cardId: c.cardId, listId: c.listId, lista: c.lista, etapa: c.etapa, etapaDoLead, trilhoId, partnerId: cliente.id, por: pessoa.nome, porId: pessoa.id,
+    }, agora);
+    await tx.auditLog.create({
+      data: {
+        orgId,
+        actorType: ActorType.user,
+        actorId: pessoa.id,
+        action: 'comercial.implantacao.iniciada_antes_do_fechamento',
+        entityType: 'lead',
+        entityId: leadId,
+        after: { cardId: c.cardId, listId: c.listId, etapa: c.etapa, etapaDoLead, trilhoId, partnerId: cliente.id, cliente: cliente.como, nivel } as Prisma.InputJsonValue,
+      },
+    });
     return {
-      leadId, estado: aberto.estado, cardId: aberto.cardId, listId: aberto.listId, etapa: aberto.etapa,
-      trilhoId, partnerId, cliente: como, selo: procedenciaDoCardAntecipado(etapaDoLead),
+      gravado,
+      resposta: {
+        leadId, estado: c.estado, cardId: c.cardId, listId: c.listId, etapa: c.etapa,
+        trilhoId, partnerId: cliente.id, cliente: cliente.como, selo: procedenciaDoCardAntecipado(etapaDoLead),
+      },
     };
   }
 
