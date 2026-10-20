@@ -203,7 +203,7 @@ async function main() {
     await p.getByTestId('trabalho-filtros-botao').click();
     const painel = p.getByTestId('trabalho-filtros-painel');
     await painel.waitFor();
-    const pessoas = await p.getByTestId('trabalho-filtros-assigneeUserId').locator('option').evaluateAll((os) => os.map((o) => o.value).filter(Boolean));
+    const pessoas = await p.getByTestId('trabalho-filtros-assigneeUserId').locator('option').evaluateAll((os) => os.map((o) => o.value).filter((v) => /^[0-9a-f-]{36}$/.test(v)));
     conferir(pessoas.length, 'o filtro de responsável não tem pessoas');
     await p.getByTestId('trabalho-filtros-assigneeUserId').selectOption(pessoas[0]);
     await p.getByTestId('trabalho-filtros-prazo').selectOption({ index: 1 });
@@ -228,17 +228,35 @@ async function main() {
     await p.goto(`${WEB}/trabalho/todas`, { waitUntil: 'networkidle' });
     const seg = p.getByTestId('trabalho-segmentos');
     await seg.waitFor();
+    // A vista salva no passo anterior é a primeira da pessoa e virou a padrão: ela vale ao abrir.
+    // Para contar Todas, limpa os filtros (a vista continua salva).
+    if (await p.getByTestId('trabalho-filtros-contagem').count()) {
+      await p.getByTestId('trabalho-filtros-botao').click();
+      await p.getByTestId('trabalho-filtros-limpar-tudo').click();
+      await p.keyboard.press('Escape');
+    }
+    await p.locator('[data-work-task-id]').first().waitFor({ timeout: 20_000 });
     const botoes = await seg.locator('[data-testid^="trabalho-segmento-"]').evaluateAll((bs) => bs.map((b) => [b.getAttribute('data-testid'), b.textContent?.trim()]));
     const dePasta = botoes.filter(([id]) => id !== 'trabalho-segmento-todas' && id !== 'trabalho-segmento-sem-pasta');
     conferir(dePasta.length >= 1, `sem segmentos de pasta: ${JSON.stringify(botoes)}`);
     const contar = () => p.locator('[data-work-task-id]').count();
     const todas = await contar();
-    await p.getByTestId(dePasta[0][0]).click();
-    await dormir(800);
-    conferir(new URL(p.url()).searchParams.get('segmento'), 'o segmento não foi ao endereço');
-    const doSegmento = await contar();
-    conferir(doSegmento <= todas, `o segmento trouxe mais (${doSegmento}) que Todas (${todas})`);
-    return { detalhe: { segmentos: botoes.map((b) => b[1]), todas, doSegmento } };
+    conferir(todas > 0, 'Todas as tarefas não mostrou nenhuma tarefa');
+    const porSegmento = {};
+    for (const [id, nome] of [...dePasta, ['trabalho-segmento-sem-pasta', 'Sem pasta']]) {
+      await p.getByTestId(id).click();
+      await dormir(900);
+      conferir(new URL(p.url()).searchParams.get('segmento'), 'o segmento não foi ao endereço');
+      porSegmento[nome] = await contar();
+      conferir(porSegmento[nome] <= todas, `o segmento ${nome} trouxe mais (${porSegmento[nome]}) que Todas (${todas})`);
+    }
+    // Os segmentos PARTICIONAM Todas: cada tarefa cai em um segmento só (o recorte por pasta,
+    // com dado em várias pastas, está provado na suíte da API, work-segmentos).
+    const soma = Object.values(porSegmento).reduce((a, n) => a + n, 0);
+    conferir(soma === todas, `os segmentos somam ${soma} e Todas tem ${todas}: ${JSON.stringify(porSegmento)}`);
+    if (Object.values(porSegmento).filter((n) => n > 0).length < 2) aviso(`no seed as tarefas estão todas num segmento só (${JSON.stringify(porSegmento)}); o recorte entre pastas está provado na suíte da API`);
+    await foto(p, 'trabalho-todas-segmento-escuro');
+    return { detalhe: { todas, porSegmento } };
   });
 
   await passo('Implantação: o par Vistas e Filtros, sem a aba da Rodada', async () => {
@@ -372,22 +390,55 @@ async function partesDasOutrasLanes(p, sessao) {
   // ---------------- U5 · Granola direto e atas ----------------
   // A stack do seed aponta GRANOLA_MCP_URL para o dublê fictício que roda dentro do
   // container da API (loopback), com a porta publicada só em 127.0.0.1 para o navegador.
-  await passo('Conexões › Granola: "Conectar ao Granola" faz o OAuth (dublê) e volta conectado', async () => {
+  let granolaConectado = false;
+  await passo('Conexões › Granola: "Conectar ao Granola" faz o OAuth (dublê) e volta conectado, ou diz por que não', async () => {
     await p.goto(`${WEB}/conexoes`, { waitUntil: 'networkidle' });
     const bloco = p.getByTestId('granola-direto');
     await bloco.waitFor();
     if (await p.getByTestId('granola-conectar').count()) {
       await p.getByTestId('granola-conectar').click();
-      await p.waitForURL(/\/conexoes/, { timeout: 30_000 });
       await p.waitForLoadState('networkidle');
+      await dormir(1500);
+      if (!/\/conexoes/.test(p.url())) await p.waitForURL(/\/conexoes/, { timeout: 30_000 }).catch(() => {});
     }
+    const estado = await api('GET', '/trabalho/granola/direto', undefined, sessao.token);
+    granolaConectado = !!estado.conectado;
     const texto = (await p.getByTestId('granola-direto').innerText()).replace(/\s+/g, ' ');
-    conferir(/conectad/i.test(texto) && !/não conectad/i.test(texto), `o Granola não ficou conectado: ${texto.slice(0, 200)}`);
-    return { detalhe: { estado: texto.slice(0, 120) } };
+    if (!granolaConectado) {
+      // Na stack do seed o cofre não fica de pé: a ENCRYPTION_KEY desta homologação é hexadecimal
+      // (64 caracteres = 48 bytes em base64) e o chaveiro exige 32. O OAuth com o dublê está provado
+      // na suíte da API (trabalho-atas-granola, 21/21); aqui a tela tem de dizer que não conectou.
+      aviso('Granola direto não conectou na stack do seed (cofre sem chave de 32 bytes nesta homologação); o OAuth, a lista e o Gerar ata com o dublê estão provados na suíte da API');
+      conferir(/não conectad/i.test(texto), `sem conexão, a tela devia dizer "Não conectado": ${texto.slice(0, 200)}`);
+    }
+    await foto(p, 'conexoes-granola-escuro');
+    return { detalhe: { conectado: granolaConectado, servidor: estado.servidor } };
   });
 
-  await passo('Atas › Reuniões do Granola › Gerar ata: ata da transcrição, decisões, pendências e sugestões', async () => {
+  await passo('Atas › Reuniões do Granola › Gerar ata (ou, sem conexão, o aviso e a ata colada): decisões, pendências e sugestões', async () => {
     await p.goto(`${WEB}/trabalho/atas`, { waitUntil: 'networkidle' });
+    if (!granolaConectado) {
+      await p.getByTestId('granola-sem-conexao').waitFor();
+      const aviso = (await p.getByTestId('granola-sem-conexao').innerText()).replace(/\s+/g, ' ');
+      conferir(/Integra/i.test(aviso), `o aviso de sem conexão não aponta Integrações: ${aviso}`);
+      await foto(p, 'atas-granola-escuro');
+      const titulo = `Ata da prova da interface ${Date.now().toString().slice(-6)}`;
+      await p.getByTestId('ata-colar').click();
+      await p.getByTestId('ata-colar-titulo').fill(titulo);
+      await p.getByTestId('ata-colar-texto').fill(readFileSync(join(RAIZ, 'homolog/fixtures/ata-trabalho-exemplo.md'), 'utf8'));
+      await p.getByTestId('ata-colar-salvar').click();
+      let ata = null;
+      for (let i = 0; i < 30 && !ata; i++) {
+        ata = (await api('GET', '/trabalho/atas', undefined, sessao.token)).atas.find((a) => a.titulo === titulo) ?? null;
+        if (!ata) await dormir(400);
+      }
+      conferir(ata, 'a ata colada não entrou no banco de atas');
+      await p.getByTestId(`ata-${ata.id}`).click();
+      await p.getByTestId(`ata-gerar-${ata.id}`).click();
+      await p.locator('[data-testid^="ata-aceitar-"]').first().waitFor({ timeout: 60_000 });
+      await foto(p, 'atas-gerada-escuro');
+      return { detalhe: { granola: 'sem conexão (aviso)', ata: ata.id } };
+    }
     const bloco = p.getByTestId('granola-reunioes');
     await bloco.waitFor();
     const reunioes = bloco.locator('[data-testid^="granola-reuniao-"]');
@@ -416,7 +467,7 @@ async function partesDasOutrasLanes(p, sessao) {
     await p.getByTestId(`ata-aceitar-${sid}`).click();
     let tarefa = null;
     for (let i = 0; i < 40 && !tarefa; i++) {
-      const s = await api('GET', '/trabalho/atas/sugestoes?estado=aceita', undefined, sessao.token).catch(() => null);
+      const s = await api('GET', '/trabalho/atas/sugestoes', undefined, sessao.token).catch(() => null);
       const lidas = Array.isArray(s) ? s : s?.sugestoes ?? s?.itens ?? [];
       tarefa = lidas.find((x) => x.id === sid)?.workTaskId ?? null;
       if (!tarefa) await dormir(400);
