@@ -2,7 +2,8 @@
 
 > Para: Rodrigo e Pedro. Escrito em 19/10/2026 pela rodada "Versão final" (`docs/comercial/RODADA-FINAL-20261019.md`, F6).
 > O que sobe: a branch `homolog/final-20261019` (nossa + Pedro de 14/10 + Lucas), validada na stack `rootos-final` do Predator.
-> Atualizado em 20/10/2026 pelos ajustes da versão final (`docs/comercial/RODADA-AJUSTES-20261019.md`): sobe a tag `final-ajustes-20261020`, que traz o "Iniciar onboarding" antes do fechamento e os textos do Pedro. Os ajustes não trazem migration, variável, capacidade nem permissão nova: a contagem de migrations, a política e as variáveis deste roteiro continuam as mesmas. O `final.bundle` foi refeito com a tag nova (`main..homolog/final-20261019`).
+> Atualizado em 20/10/2026 pelos ajustes da versão final (`docs/comercial/RODADA-AJUSTES-20261019.md`): sobe a tag `interface-entrega-20261020`, que traz o "Iniciar onboarding" antes do fechamento e os textos do Pedro. Os ajustes não trazem migration, variável, capacidade nem permissão nova: a contagem de migrations, a política e as variáveis deste roteiro continuam as mesmas. O `final.bundle` foi refeito com a tag nova (`main..homolog/final-20261019`).
+> Atualizado em 20/10/2026 (noite) pela rodada da interface (`docs/comercial/RODADA-INTERFACE-20261020.md`): sobe a tag `interface-entrega-20261020`, que traz o menu novo (logo oficial, subseções no menu, balão), os filtros num botão, Todas as tarefas com segmentos, o funil sem chips com mover livre para gente, a área WhatsApp, o Granola direto nas atas e o WhatsApp pelo DigiSac. Traz **uma** migration nova (`20261020100000_vista_salva_telas`, só a verificação das telas da vista salva) e **seis** variáveis opcionais (`DIGISAC_*` e `GRANOLA_*`, passo 6). Nenhuma capacidade nem permissão nova: a política continua com 77 capacidades. O `final.bundle` foi refeito com a tag nova. A seção "Os dados vivos", antes do passo 10, diz o que a virada não toca.
 > Onde: a VPS da ROOT (`ssh vps-root`), produção em `https://os.operacaoroot.com`.
 > Este arquivo não tem dado de cliente nem segredo. Onde aparece `<...>`, é um valor que se preenche na hora ou um placeholder que o orquestrador completa antes da virada.
 
@@ -17,11 +18,11 @@
 
 ## Os valores que se preenchem na hora
 
-Um arquivo não consegue citar o hash do commit que o contém. Por isso o hash não está escrito aqui: ele é lido da tag, no Predator, e conferido no bundle, na VPS (o `list-heads` do passo "Antes de começar" e o `rev-parse` do passo 2 mostram o mesmo valor). O valor também está no fim do `homolog/RESULTADO-AJUSTES.md`, na linha "A tag".
+Um arquivo não consegue citar o hash do commit que o contém. Por isso o hash não está escrito aqui: ele é lido da tag, no Predator, e conferido no bundle, na VPS (o `list-heads` do passo "Antes de começar" e o `rev-parse` do passo 2 mostram o mesmo valor). O valor também está no fim do `homolog/RESULTADO-INTERFACE.md`, na linha "A tag".
 
 | Valor | O que é |
 |---|---|
-| `<hash-final>` | o commit da tag `final-ajustes-20261020`: `git -C /c/Users/User/dev/marketing-os rev-parse final-ajustes-20261020^{commit}` (40 caracteres) |
+| `<hash-final>` | o commit da tag `interface-entrega-20261020`: `git -C /c/Users/User/dev/marketing-os rev-parse interface-entrega-20261020^{commit}` (40 caracteres) |
 | `<curto>` | os 7 primeiros caracteres de `<hash-final>` |
 | `<quem responde>` | o nome de quem assina a política (Rodrigo ou Pedro): preenchido na hora, por quem executa |
 
@@ -52,7 +53,7 @@ O OS fica fora do ar, ou instável nas tarefas, do fim do passo 5 ao fim do pass
 1. Confira que a tag e o bundle existem e batem com `<hash-final>`:
 
    ```bash
-   git -C /c/Users/User/dev/marketing-os rev-parse final-ajustes-20261020^{commit}
+   git -C /c/Users/User/dev/marketing-os rev-parse interface-entrega-20261020^{commit}
    git -C /c/Users/User/dev/marketing-os bundle verify /c/Users/User/dev/final.bundle
    git -C /c/Users/User/dev/marketing-os bundle list-heads /c/Users/User/dev/final.bundle
    ```
@@ -196,7 +197,7 @@ ls apps/api/prisma/migrations | tail -16
 **Conferir:**
 - `git rev-parse virada/final-20261019` imprime exatamente `<hash-final>`.
 - `git log` mostra o commit da entrega final.
-- A lista de migrations termina em `20261019230000_conciliacao_cliente_da_tarefa`, logo depois de `20261019220000_tarefas_varios_responsaveis`.
+- A lista de migrations termina em `20261020100000_vista_salva_telas`, logo depois de `20261019230000_conciliacao_cliente_da_tarefa`.
 
 **Se falhar:**
 - Hash diferente: o bundle não é o da entrega. Pare. Não construa imagem de um commit que ninguém validou.
@@ -246,7 +247,7 @@ Nada deste passo escreve no banco de produção. A política, as migrations e o 
 
 Por isso basta a assinatura de capacidade nova. Sem ela, o seed recusa com "Nada foi semeado", e as seis valem R5 (a porta recusa tudo do cockpit).
 
-**As migrations.** A produção tem 85 migrations. A versão final traz 13 que ela ainda não tem:
+**As migrations.** A produção tem 85 migrations. A versão final traz 14 que ela ainda não tem:
 
 | Migration | O que faz |
 |---|---|
@@ -263,6 +264,7 @@ Por isso basta a assinatura de capacidade nova. Sem ela, o seed recusa com "Nada
 | `20261019110000_vista_salva` | tabela `VistaSalva` (vistas salvas por pessoa), com RLS |
 | `20261019170000_cliente_da_tarefa_preparo` | não faz nada na produção (só age na homologação que rodou a versão antiga da nossa `20261019100000`) |
 | `20261019230000_conciliacao_cliente_da_tarefa` | a conciliação do cliente da tarefa (abaixo) |
+| `20261020100000_vista_salva_telas` | rodada da interface: a verificação de `VistaSalva.tela` passa a aceitar `implantacao` e `funil` (só troca o `CHECK`; nenhuma linha muda) |
 
 As doze primeiras têm data anterior à última da produção. O `migrate deploy` aplica toda migration que o banco não tem, na ordem do nome, mesmo as de data anterior. Por isso o ensaio vem antes.
 
@@ -317,7 +319,7 @@ docker run --rm --network "$NET" -w /app/apps/api \
 
 **Conferir:**
 - O seed da política no ensaio termina como o passo 5a espera (abaixo) e não fala em "Nada foi semeado".
-- O primeiro `migrate status` lista 13 migrations pendentes (as da tabela). O primeiro `deploy` aplica as 13; o segundo diz que não há nada a aplicar (idempotência).
+- O primeiro `migrate status` lista 14 migrations pendentes (as da tabela). O primeiro `deploy` aplica as 14; o segundo diz que não há nada a aplicar (idempotência).
 - Total de tarefas igual ao de `contagens-antes.txt`. Tarefas com cliente: igual ou menor que antes; a diferença são as tarefas que citavam um cartão ainda em fase de lead, que ficam sem cliente de propósito (o passo 9 as leva ao funil pelos mapas). Na cópia de 19/10 foram 8 antes e 6 depois, com 3 `Partner` criados. Anote os dois números.
 - Zero tarefa com cliente que não seja `Partner`. Nenhuma empresa com dois clientes internos.
 - A chave estrangeira do cliente aponta para `"Partner"`.
@@ -363,13 +365,13 @@ psql_prod 'select migration_name from "_prisma_migrations" order by finished_at 
 psql_prod 'select count(*) from "WorkTask" t left join "Partner" p on p.id = t."clienteId" where t."clienteId" is not null and p.id is null'
 ```
 
-**Conferir:** 13 migrations aplicadas, a mais recente é `20261019230000_conciliacao_cliente_da_tarefa`, e a contagem de tarefa com cliente órfão é zero. Siga direto para o passo 6.
+**Conferir:** 14 migrations aplicadas, a mais recente é `20261020100000_vista_salva_telas`, e a contagem de tarefa com cliente órfão é zero. Siga direto para o passo 6.
 
 **Se falhar em produção:** a API antiga continua de pé, mas o banco ficou no meio do caminho. Vá ao passo 11 (rollback completo). Não tente "consertar à mão" uma migration pela metade.
 
 ## 6. As variáveis novas (10 min)
 
-Compare feito entre o `docker-compose.yml` e o `.env.example` da nossa branch e os da `lucas/tarefas`. A versão final pede cinco variáveis que a produção não tem, todas do serviço `api`:
+Compare feito entre o `docker-compose.yml` e o `.env.example` da nossa branch e os da `lucas/tarefas`. A versão final pede onze variáveis que a produção não tem, todas do serviço `api` (as seis últimas vieram da rodada da interface e são opcionais):
 
 | Variável | Para que serve | Valor na virada |
 |---|---|---|
@@ -377,7 +379,13 @@ Compare feito entre o `docker-compose.yml` e o `.env.example` da nossa branch e 
 | `ZAPSIGN_WEBHOOK_TOKEN` | segredo do cabeçalho `x-zapsign-token` do webhook da ZapSign; diferente do anterior | gerar na VPS, 32+ caracteres |
 | `ZAPSIGN_API_TOKEN` | token da API da conta ZapSign da Root; sem ele o contrato não é enviado | vazio até a conta existir |
 | `ZAPSIGN_BASE_URL` | força a base da ZapSign (sandbox ou produção) | vazio |
-| `WHATSAPP_PROVEDOR` | provedor de WhatsApp do comercial: `simulado`, `evolution` ou `meta` | `simulado` (nada sai para o lead) |
+| `WHATSAPP_PROVEDOR` | provedor de WhatsApp do comercial: `simulado`, `evolution`, `meta` ou `digisac` | `simulado` (nada sai para o lead) |
+| `DIGISAC_URL` | endereço da conta DigiSac da Root (`https://<conta>.digisac.me`); reserva para a empresa da casa quando o cofre não tem a credencial | vazio até a conta da Root existir (a credencial vai pelo cartão em Integrações, no cofre) |
+| `DIGISAC_TOKEN` | token de acesso da conta DigiSac; mesma reserva | vazio |
+| `DIGISAC_SERVICE_ID` | id da conexão de WhatsApp no DigiSac; mesma reserva | vazio |
+| `DIGISAC_WEBHOOK_SEGREDO` | segredo do webhook do DigiSac (vai na URL cadastrada, `?segredo=`); 32+ caracteres, mais curto é ignorado | vazio (sem ele, o webhook recusa tudo) |
+| `GRANOLA_MCP_URL` | endereço do servidor MCP do Granola; o padrão é o oficial (`https://mcp.granola.ai/mcp`) | vazio |
+| `GRANOLA_REDIRECT_URI` | retorno do OAuth do Granola; o padrão é `<WEB_ORIGIN>/api/trabalho/granola/callback` | vazio |
 
 Para gerar os dois segredos, no terminal da VPS, cada um com o seu comando (nunca cole o valor em arquivo do repositório, em chat ou em anotação):
 
@@ -390,7 +398,7 @@ No easyPanel, serviço `marketing-os`:
 2. Ambiente: preencha os dois segredos e `WHATSAPP_PROVEDOR=simulado`.
 3. Salve. Não clique em Deploy: a subida é o passo 7.
 
-**Não levar para a produção** (são só da homologação): `LLM_PROVIDER=stub` ou `ponte`, `PONTE_MODELO_URL`, `QUADRO_DE_CUSTOS_EXEMPLO`, `NEXT_PUBLIC_RAIZ=login`, e os dublês `ASAAS_BASE_URL`/`ZAPSIGN_BASE_URL` apontando para `asaas-mock`/`zapsign-mock`.
+**Não levar para a produção** (são só da homologação): `LLM_PROVIDER=stub` ou `ponte`, `PONTE_MODELO_URL`, `QUADRO_DE_CUSTOS_EXEMPLO`, `NEXT_PUBLIC_RAIZ=login`, `GRANOLA_MCP_URL` apontando para o dublê em `127.0.0.1:4791`, e os dublês `ASAAS_BASE_URL`/`ZAPSIGN_BASE_URL` apontando para `asaas-mock`/`zapsign-mock`.
 
 **Continuam como estão** (são do Lucas e do Pedro e a versão final segue lendo): `PROPOSTAS_URL`, `PROPOSTAS_API_TOKEN`, `ROOTOS_LOCAL_MODEL_URL`, `ROOTOS_QA_PREVIEW`, `ASAAS_API_KEY`, `ASAAS_BASE_URL`, `LLM_PROVIDER`.
 
@@ -497,6 +505,15 @@ Tarefa criada na produção depois da cópia de 19/10 e que não está nos mapas
 - A 9b para no meio: rode de novo. O script é idempotente e continua de onde parou. Se o mesmo erro repetir, pare e guarde a saída (ela traz só contagens e ids).
 - Algo foi movido errado: mova de volta pela tela, item a item. Só use o rollback do passo 11 se o estrago for grande e ninguém tiver trabalhado no OS desde a virada.
 
+## Os dados vivos
+
+A virada não apaga nem reescreve nada do que está na produção. Vale para tarefa, lead, lista, pasta, usuário, conexão, nota da memória e linha do RASTRO.
+
+- **As migrations são aditivas.** A única desta rodada troca a verificação de uma coluna de texto (`VistaSalva.tela`) para aceitar mais dois valores; nenhuma linha é lida nem escrita.
+- **A interface não mexe em dado.** Menu, filtros, vistas, segmentos, a área WhatsApp e a Rodada no Comercial são telas. Os endereços antigos continuam vivos (`/painel`; `/comercial/simulador` redireciona para `/whatsapp` com a query; `/trabalho/implantacao?aba=rodada` vai a `/comercial/rodada`); nenhum item do menu foi apagado, só ocultado. Prova: na homologação, o organizador em `--simular` depois da imagem nova deu zero mudanças.
+- **O organizador só move o que o mapa de 19/10 diz** (passo 9), e roda simulado antes. O que foi apurado na homologação (classificação dos cartões, leads levados ao funil) entra por ele, e ele é idempotente: rodar de novo não repete nada. Desde esta rodada ele leva o lead à etapa pelo mover livre (gente com `leads.editar`, sem token); o mover à mão não cria cobrança, contrato, card nem cliente.
+- **Granola e DigiSac nascem desligados.** O Zap do Granola continua como está; a conexão direta só existe depois que alguém clica "Conectar ao Granola". O DigiSac só envia com `WHATSAPP_PROVEDOR=digisac` e a credencial salva; a produção sobe com `simulado`.
+
 ## 10. Conferências depois da virada (20 min)
 
 Com uma conta de gente, no navegador:
@@ -505,14 +522,19 @@ Com uma conta de gente, no navegador:
 |---|---|
 | `https://os.operacaoroot.com/api/health` | 200 |
 | Login | entra pelo Google e pela saída de emergência (e-mail e senha) |
-| Menu lateral | recolhe e expande; as áreas na ordem do `RESULTADO-FINAL` |
-| Motor Comercial | abre no **Painel geral** com números, sem erro; abas Painel geral · Funil vivo · Propostas · Lista de leads · Contratos vivos · Simulador de WhatsApp · Torre das automações · Relatório da semana; sem Clientes e Tarefas |
+| Menu lateral | a logo oficial no topo (recolhido, só o R); as subseções da área aberta aparecem indentadas no menu, e nenhuma aba no campo principal; recolhido, passar o mouse numa área abre o balão com as subseções; uma área nova **WhatsApp** depois de Comercial |
+| Motor Comercial | abre no **Painel geral** com números, sem erro; subseções Painel geral · Funil vivo · Propostas · Lista de leads · Contratos vivos · Rodada da semana (só para a Root) · Torre das automações · Relatório da semana; sem Clientes, Tarefas e Simulador |
+| Funil vivo | sem os chips das etapas; Vistas e Filtros (n) no cabeçalho, com Responsável primeiro; troca Quadro · Lista; mover um lead para trás mostra "Movido para …" (e devolva-o) |
+| WhatsApp | a área abre a tela do celular do lead e da mesa; `/comercial/simulador` cai nela |
 | Propostas | as antigas do Lucas continuam na lista |
-| Dia a dia | abre na **Visão geral** (por pasta e lista), depois Pendências, Aprovações, Agenda, Painel geral da empresa |
-| Trabalho › Tarefas | as pastas da casa no topo; "Todas" mostra tarefas de várias pastas; calendário; pop-up com vários responsáveis |
+| Dia a dia | abre na **Visão geral** (por pasta e lista), depois Pendências, Aprovações, Agenda; o Painel geral da empresa saiu do menu e `/painel` continua abrindo |
+| Trabalho › Tarefas | as pastas da casa no topo; Vistas e Filtros (n) no cabeçalho (os filtros soltos foram para o painel); calendário; pop-up com vários responsáveis |
+| Trabalho › Todas as tarefas | tarefas de todas as pastas, com os segmentos por pasta de topo (Administrativa, Gestão, Clientes e as do Lucas) e Sem pasta |
+| Trabalho › Implantação | o kanban com Vistas e Filtros; sem a aba Rodada da semana |
+| Trabalho › Atas | o bloco "Reuniões do Granola" diz para conectar em Integrações (até alguém conectar); as atas mostram o estado das sugestões |
 | Financeiro | abre como antes, com os números do mês |
 | Cofre | abre e pede a senha do cofre, como antes |
-| Configurações › Integrações | o Granola aparece como antes |
+| Configurações › Integrações | o Granola aparece como antes, com "Conectar ao Granola" a mais; o cartão "WhatsApp (DigiSac)" aparece sem credencial, com a URL do webhook |
 | Rotinas | nenhuma rotina nova nasceu ligada |
 
 O roteiro automático faz a mesma volta, só lendo (não grava nada), e tira as fotos para a pasta fora do git:
