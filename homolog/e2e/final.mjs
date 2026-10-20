@@ -68,8 +68,9 @@ const SELETORES = {
     larguraRecolhidoMax: 96,
     larguraAbertoMin: 180,
   },
-  // aria-label do <nav> das abas de uma área (NavegacaoDoModulo.tsx).
-  abasDe: (area) => `Abas de ${area}`,
+  // As subseções de uma área moram no menu lateral desde a rodada da interface (20/10/2026):
+  // a lista `ul[aria-label="Subseções de <área>"]` da área aberta (Sidebar.tsx).
+  abasDe: (area) => `Subseções de ${area}`,
   main: '#root-os-main',
   // Texto que, visível na área principal, quer dizer tela quebrada.
   textoDeErro: /Application error|Internal Server Error|Algo deu errado|Erro ao carregar|Não foi possível carregar|Unhandled Runtime Error/i,
@@ -82,8 +83,10 @@ const SELETORES = {
     controle: 'Configurações',
   },
   comercial: {
-    ordem: ['Painel geral', 'Funil vivo', 'Propostas', 'Lista de leads', 'Contratos vivos', 'Simulador de WhatsApp', 'Torre das automações', 'Relatório da semana'],
-    naoPodemEstar: ['Clientes', 'Tarefas'],
+    // O WhatsApp virou área própria e a Rodada da semana (só da plataforma) entrou depois de Contratos vivos.
+    ordem: ['Painel geral', 'Funil vivo', 'Propostas', 'Lista de leads', 'Contratos vivos', 'Torre das automações', 'Relatório da semana'],
+    soDaPlataforma: ['Rodada da semana'],
+    naoPodemEstar: ['Clientes', 'Tarefas', 'Simulador de WhatsApp'],
     painel: { rotulo: 'Painel geral', url: '/comercial', minimoDeNumeros: 4 },
     funil: { rotulo: 'Funil vivo', url: '/comercial/funil' },
     propostas: {
@@ -100,7 +103,7 @@ const SELETORES = {
     leads: { rotulo: 'Lista de leads', url: '/leads' },
   },
   dia: {
-    ordem: ['Visão geral', 'Pendências', 'Aprovações', 'Agenda', 'Painel geral da empresa'],
+    ordem: ['Visão geral', 'Pendências', 'Aprovações', 'Agenda'],
     visaoGeral: { rotulo: 'Visão geral', url: '/dia-a-dia' },
     pendencias: { rotulo: 'Pendências', url: '/caixa' },
   },
@@ -312,7 +315,7 @@ async function abrirArea(p, area) {
 
 /** As abas da área aberta, na ordem da tela. */
 async function abasDaArea(p, area) {
-  const nav = p.getByRole('navigation', { name: SELETORES.abasDe(area) });
+  const nav = p.getByRole('list', { name: SELETORES.abasDe(area) });
   if (!(await nav.count())) return [];
   return (await nav.first().getByRole('link').allInnerTexts()).map((t) => t.replace(/\s+/g, ' ').trim()).filter(Boolean);
 }
@@ -324,7 +327,7 @@ async function abasDaArea(p, area) {
  */
 async function abrirAba(p, area, rotulo) {
   const candidatos = [
-    p.getByRole('navigation', { name: SELETORES.abasDe(area) }).getByRole('link', { name: rotulo, exact: true }),
+    p.getByRole('list', { name: SELETORES.abasDe(area) }).getByRole('link', { name: rotulo, exact: true }),
     p.getByRole('tab', { name: rotulo, exact: true }),
     p.locator(SELETORES.main).getByRole('link', { name: rotulo, exact: true }),
     p.getByRole('button', { name: rotulo, exact: true }),
@@ -418,7 +421,7 @@ async function main() {
       await abrirArea(p, SELETORES.areas.comercial);
       const abas = await abasDaArea(p, SELETORES.areas.comercial);
       conferir(abas[0] === SELETORES.comercial.painel.rotulo, `a primeira aba é "${abas[0] ?? 'nenhuma'}"`);
-      const atual = p.getByRole('navigation', { name: SELETORES.abasDe(SELETORES.areas.comercial) }).locator('a[aria-current="page"]');
+      const atual = p.getByRole('list', { name: SELETORES.abasDe(SELETORES.areas.comercial) }).locator('a[aria-current="page"]');
       conferir((await atual.count()) && (await atual.first().innerText()).trim() === SELETORES.comercial.painel.rotulo, 'a área não abriu no Painel geral');
       const texto = await semErroNaTela(p, vigia);
       const numeros = (texto.match(/\d[\d.,]*/g) ?? []).length;
@@ -428,7 +431,7 @@ async function main() {
     });
 
     await passo('Motor Comercial: abas na ordem nova, sem Clientes e Tarefas', async () => {
-      const abas = await abasDaArea(p, SELETORES.areas.comercial);
+      const abas = (await abasDaArea(p, SELETORES.areas.comercial)).filter((r) => !SELETORES.comercial.soDaPlataforma.includes(r));
       const esperado = SELETORES.comercial.ordem;
       conferir(JSON.stringify(abas.slice(0, esperado.length)) === JSON.stringify(esperado), `as abas vieram: ${abas.join(' · ')}`);
       const sobrando = SELETORES.comercial.naoPodemEstar.filter((r) => abas.includes(r));

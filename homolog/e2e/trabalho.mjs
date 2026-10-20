@@ -185,27 +185,29 @@ async function main() {
     // automações · Relatório da semana. `/comercial` deixou de redirecionar ao Funil vivo: é
     // o Painel geral do Lucas (decisão do Rodrigo). Decisões continua fora do menu.
     await p.goto(`${WEB}/comercial/funil`, { waitUntil: 'networkidle' });
-    const abasComerciais = p.locator('nav[aria-label="Abas de Comercial"] a');
+    // Rodada da interface (20/10/2026): as subseções moram no menu lateral, o WhatsApp virou área
+    // própria e a Rodada da semana (só da plataforma) entrou depois de Contratos vivos.
+    const abasComerciais = p.locator('ul[aria-label="Subseções de Comercial"] a:not([href="/comercial/rodada"])');
     await abasComerciais.first().waitFor({ timeout: 20_000 });
     const hrefsComerciais = await abasComerciais.evaluateAll((as) => as.map((a) => a.getAttribute('href')));
-    const ORDEM_DO_COMERCIAL = ['/comercial', '/comercial/funil', '/propostas', '/leads', '/comercial/contratos', '/comercial/simulador', '/comercial/torre', '/comercial/relatorio'];
+    const ORDEM_DO_COMERCIAL = ['/comercial', '/comercial/funil', '/propostas', '/leads', '/comercial/contratos', '/comercial/torre', '/comercial/relatorio'];
     conferir(JSON.stringify(hrefsComerciais) === JSON.stringify(ORDEM_DO_COMERCIAL),
-      `o menu comercial devia ser Painel geral · Funil vivo · Propostas · Lista de leads · Contratos · Simulador · Torre · Relatório (veio ${hrefsComerciais.join(', ')})`);
+      `o menu comercial devia ser Painel geral · Funil vivo · Propostas · Lista de leads · Contratos · Torre · Relatório (veio ${hrefsComerciais.join(', ')})`);
     const rotulosComerciais = (await abasComerciais.allInnerTexts()).map((t) => t.trim());
     conferir(rotulosComerciais[0] === 'Painel geral' && rotulosComerciais[1] === 'Funil vivo' && rotulosComerciais[3] === 'Lista de leads', `rótulos do menu comercial: ${rotulosComerciais.join(' · ')}`);
     conferir(!rotulosComerciais.some((t) => /Decis/.test(t)) && await p.locator('nav a[href="/comercial/decisoes"]').count() === 0, 'Decisões do comercial ainda está no menu');
     await p.goto(`${WEB}/comercial`, { waitUntil: 'networkidle' });
     conferir(new URL(p.url()).pathname === '/comercial', `/comercial devia ficar no Painel geral (foi a ${p.url()})`);
     await p.locator('#root-os-main').getByText('Funil geral', { exact: true }).first().waitFor({ timeout: 20_000 });
-    conferir(await p.locator('nav[aria-label="Abas de Comercial"] a[aria-current="page"]').getAttribute('href') === '/comercial', 'a aba ativa em /comercial devia ser o Painel geral');
-    passo('T6: o menu comercial sem Decisões, na ordem Painel geral · Funil vivo · Propostas · Lista de leads · Contratos · Simulador · Torre · Relatório; /comercial é o Painel geral');
+    conferir(await p.locator('ul[aria-label="Subseções de Comercial"] a[aria-current="page"]').getAttribute('href') === '/comercial', 'a subseção ativa em /comercial devia ser o Painel geral');
+    passo('T6: o menu comercial sem Decisões, na ordem Painel geral · Funil vivo · Propostas · Lista de leads · Contratos · Torre · Relatório; /comercial é o Painel geral');
 
     // ---- T1: o menu Implantação abre o kanban ----
     // Versão final: a área Trabalho na barra, depois a aba "Implantação de clientes".
     await p.goto(`${WEB}/caixa`, { waitUntil: 'networkidle' });
     await p.locator('nav a[href="/trabalho"]', { hasText: 'Trabalho' }).first().click();
     await p.waitForURL(/\/trabalho(\?|$)/, { timeout: 20_000 });
-    await p.locator('nav[aria-label="Abas de Trabalho"] a', { hasText: 'Implantação de clientes' }).first().click();
+    await p.locator('ul[aria-label="Subseções de Trabalho"] a', { hasText: 'Implantação de clientes' }).first().click();
     await p.waitForURL(/\/trabalho\/implantacao/, { timeout: 20_000 });
     await p.locator('#root-os-main').getByRole('heading', { name: 'Implantação de clientes' }).waitFor({ timeout: 20_000 });
     await p.locator('[data-coluna]').first().waitFor({ timeout: 20_000 });
