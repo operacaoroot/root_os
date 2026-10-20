@@ -2,8 +2,9 @@
 
 > Para: Rodrigo e Pedro. Escrito em 19/10/2026 pela rodada "Versão final" (`docs/comercial/RODADA-FINAL-20261019.md`, F6).
 > O que sobe: a branch `homolog/final-20261019` (nossa + Pedro de 14/10 + Lucas), validada na stack `rootos-final` do Predator.
-> Atualizado em 20/10/2026 pelos ajustes da versão final (`docs/comercial/RODADA-AJUSTES-20261019.md`): sobe a tag `interface-entrega-20261020`, que traz o "Iniciar onboarding" antes do fechamento e os textos do Pedro. Os ajustes não trazem migration, variável, capacidade nem permissão nova: a contagem de migrations, a política e as variáveis deste roteiro continuam as mesmas. O `final.bundle` foi refeito com a tag nova (`main..homolog/final-20261019`).
-> Atualizado em 20/10/2026 (noite) pela rodada da interface (`docs/comercial/RODADA-INTERFACE-20261020.md`): sobe a tag `interface-entrega-20261020`, que traz o menu novo (logo oficial, subseções no menu, balão), os filtros num botão, Todas as tarefas com segmentos, o funil sem chips com mover livre para gente, a área WhatsApp, o Granola direto nas atas e o WhatsApp pelo DigiSac. Traz **uma** migration nova (`20261020100000_vista_salva_telas`, só a verificação das telas da vista salva) e **seis** variáveis opcionais (`DIGISAC_*` e `GRANOLA_*`, passo 6). Nenhuma capacidade nem permissão nova: a política continua com 77 capacidades. O `final.bundle` foi refeito com a tag nova. A seção "Os dados vivos", antes do passo 10, diz o que a virada não toca.
+> Atualizado em 20/10/2026 pelos ajustes da versão final (`docs/comercial/RODADA-AJUSTES-20261019.md`): sobe a tag `interface-todas-20261020`, que traz o "Iniciar onboarding" antes do fechamento e os textos do Pedro. Os ajustes não trazem migration, variável, capacidade nem permissão nova: a contagem de migrations, a política e as variáveis deste roteiro continuam as mesmas. O `final.bundle` foi refeito com a tag nova (`main..homolog/final-20261019`).
+> Atualizado em 20/10/2026 (noite) pela rodada da interface (`docs/comercial/RODADA-INTERFACE-20261020.md`): sobe a tag `interface-todas-20261020`, que traz o menu novo (logo oficial, subseções no menu, balão), os filtros num botão, Todas as tarefas com segmentos, o funil sem chips com mover livre para gente, a área WhatsApp, o Granola direto nas atas e o WhatsApp pelo DigiSac. Traz **uma** migration nova (`20261020100000_vista_salva_telas`, só a verificação das telas da vista salva) e **seis** variáveis opcionais (`DIGISAC_*` e `GRANOLA_*`, passo 6). Nenhuma capacidade nem permissão nova: a política continua com 77 capacidades. O `final.bundle` foi refeito com a tag nova. A seção "Os dados vivos", antes do passo 10, diz o que a virada não toca.
+> Atualizado em 20/10/2026 (noite, depois da interface) pelo ajuste do Todas (`docs/comercial/RODADA-TODAS-20261020.md`): sobe a tag `interface-todas-20261020`. O item "Todas as tarefas" sai do menu (oculto; `/trabalho/todas` redireciona para `/trabalho?pasta=todas` com a mesma query) e o chip Todas de Tarefas passa a mostrar as colunas dos status reais de todas as pastas. Só tela: nada mais muda, sem migration, variável, capacidade ou permissão nova além do que a rodada da interface já listou. O `final.bundle` foi refeito com a tag nova.
 > Onde: a VPS da ROOT (`ssh vps-root`), produção em `https://os.operacaoroot.com`.
 > Este arquivo não tem dado de cliente nem segredo. Onde aparece `<...>`, é um valor que se preenche na hora ou um placeholder que o orquestrador completa antes da virada.
 
@@ -22,7 +23,7 @@ Um arquivo não consegue citar o hash do commit que o contém. Por isso o hash n
 
 | Valor | O que é |
 |---|---|
-| `<hash-final>` | o commit da tag `interface-entrega-20261020`: `git -C /c/Users/User/dev/marketing-os rev-parse interface-entrega-20261020^{commit}` (40 caracteres) |
+| `<hash-final>` | o commit da tag `interface-todas-20261020`: `git -C /c/Users/User/dev/marketing-os rev-parse interface-todas-20261020^{commit}` (40 caracteres) |
 | `<curto>` | os 7 primeiros caracteres de `<hash-final>` |
 | `<quem responde>` | o nome de quem assina a política (Rodrigo ou Pedro): preenchido na hora, por quem executa |
 
@@ -53,7 +54,7 @@ O OS fica fora do ar, ou instável nas tarefas, do fim do passo 5 ao fim do pass
 1. Confira que a tag e o bundle existem e batem com `<hash-final>`:
 
    ```bash
-   git -C /c/Users/User/dev/marketing-os rev-parse interface-entrega-20261020^{commit}
+   git -C /c/Users/User/dev/marketing-os rev-parse interface-todas-20261020^{commit}
    git -C /c/Users/User/dev/marketing-os bundle verify /c/Users/User/dev/final.bundle
    git -C /c/Users/User/dev/marketing-os bundle list-heads /c/Users/User/dev/final.bundle
    ```
@@ -529,7 +530,7 @@ Com uma conta de gente, no navegador:
 | Propostas | as antigas do Lucas continuam na lista |
 | Dia a dia | abre na **Visão geral** (por pasta e lista), depois Pendências, Aprovações, Agenda; o Painel geral da empresa saiu do menu e `/painel` continua abrindo |
 | Trabalho › Tarefas | as pastas da casa no topo; Vistas e Filtros (n) no cabeçalho (os filtros soltos foram para o painel); calendário; pop-up com vários responsáveis |
-| Trabalho › Todas as tarefas | tarefas de todas as pastas, com os segmentos por pasta de topo (Administrativa, Gestão, Clientes e as do Lucas) e Sem pasta |
+| Trabalho › Tarefas › chip Todas | todas as tarefas, com as colunas dos status reais de todas as pastas (as vazias também, rolagem lateral) e os segmentos por pasta de topo (Administrativa, Gestão, Clientes e as do Lucas) e Sem pasta; "Todas as tarefas" não aparece no menu e `/trabalho/todas` abre o chip |
 | Trabalho › Implantação | o kanban com Vistas e Filtros; sem a aba Rodada da semana |
 | Trabalho › Atas | o bloco "Reuniões do Granola" diz para conectar em Integrações (até alguém conectar); as atas mostram o estado das sugestões |
 | Financeiro | abre como antes, com os números do mês |

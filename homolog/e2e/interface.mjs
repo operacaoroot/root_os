@@ -11,6 +11,8 @@
  *   menu aberto com as subseções da área → recolher → balão no hover → clicar subseção;
  *   Painel geral fora do menu e /painel vivo; Trabalho com o painel de filtros
  *   (responsável e prazo), vista salva e Todas com segmento; Implantação com filtros;
+ *   (ajuste do Todas, 20/10 noite) o Todas é o chip de Tarefas, com as colunas dos status
+ *   reais de todas as listas, e /trabalho/todas redireciona para ele;
  *   Funil sem chips, filtro por responsável, lista, mover para trás com a mensagem;
  *   WhatsApp como área com a tela; Atas › Reuniões do Granola (dublê) › Gerar ata ›
  *   sugestões › aceitar uma vira tarefa; Conexões › DigiSac com a URL do webhook.
@@ -178,14 +180,18 @@ async function main() {
     const titulo = (await balao.locator('p').first().innerText()).trim();
     conferir(/Trabalho/i.test(titulo), `o balão abriu com o título "${titulo}"`);
     const links = (await balao.getByRole('link').allInnerTexts()).map((t) => t.trim());
-    conferir(links.includes('Todas as tarefas') && links.includes('Implantação de clientes') && links.includes('Atas'), `o balão do Trabalho veio: ${links.join(' · ')}`);
+    // Ajuste do Todas (20/10 noite): "Todas as tarefas" saiu do menu; o Todas é o chip de Tarefas.
+    conferir(links.includes('Tarefas') && links.includes('Implantação de clientes') && links.includes('Atas') && !links.includes('Todas as tarefas'), `o balão do Trabalho veio: ${links.join(' · ')}`);
     await foto(p, 'menu-recolhido-balao-escuro');
     // Entrar no balão com o mouse não fecha (ponte de hover).
-    await balao.getByRole('link', { name: 'Todas as tarefas' }).hover();
+    await balao.getByRole('link', { name: 'Tarefas', exact: true }).hover();
     await dormir(250);
     conferir(await balao.isVisible(), 'o balão fechou quando o mouse entrou nele');
-    await balao.getByRole('link', { name: 'Todas as tarefas' }).click();
-    await p.waitForURL(/\/trabalho\/todas/);
+    await balao.getByRole('link', { name: 'Tarefas', exact: true }).click();
+    await p.waitForURL((u) => new URL(u).pathname === '/trabalho');
+    await p.getByTestId('trabalho-pasta-todas').click();
+    await p.waitForURL((u) => new URL(u).searchParams.get('pasta') === 'todas');
+    conferir(await p.getByTestId('trabalho-pasta-todas').getAttribute('aria-pressed') === 'true', 'o chip Todas não ficou marcado');
     // Esc fecha e devolve o foco ao ícone.
     await p.locator('#root-os-nav a[data-area="comercial"]').focus();
     await balao.waitFor({ state: 'visible' });
@@ -224,8 +230,41 @@ async function main() {
     return { detalhe: { nome } };
   });
 
+  await passo('Todas: /trabalho/todas redireciona para o chip, e as colunas são os status reais', async () => {
+    await p.goto(`${WEB}/trabalho/todas?visao=board`, { waitUntil: 'networkidle' });
+    const u = new URL(p.url());
+    conferir(u.pathname === '/trabalho' && u.searchParams.get('pasta') === 'todas' && u.searchParams.get('visao') === 'board', `/trabalho/todas foi para ${p.url()}`);
+    conferir(await p.getByTestId('trabalho-pasta-todas').getAttribute('aria-pressed') === 'true', 'o chip Todas não está marcado');
+    if (await p.getByTestId('trabalho-filtros-contagem').count()) {
+      await p.getByTestId('trabalho-filtros-botao').click();
+      await p.getByTestId('trabalho-filtros-limpar-tudo').click();
+      await p.keyboard.press('Escape');
+    }
+    await p.locator('[data-work-task-id]').first().waitFor({ timeout: 20_000 });
+    await dormir(400);
+    const quadro = p.getByTestId('trabalho-quadro');
+    const colunas = await quadro.locator('[data-coluna]').evaluateAll((cs) => cs.map((c) => ({
+      id: c.getAttribute('data-coluna'), nome: (c.getAttribute('aria-label') ?? '').replace(/: \d+ tarefas?$/, ''),
+      cartoes: c.querySelectorAll('[data-work-task-id]').length, largura: Math.round(c.getBoundingClientRect().width),
+      listas: c.querySelector('[data-testid="trabalho-coluna-listas"]')?.textContent?.trim() ?? '',
+    })));
+    const ids = await quadro.locator('[data-work-task-id]').evaluateAll((es) => es.map((e) => e.getAttribute('data-work-task-id')));
+    const total = await p.locator('[data-work-task-id]').count();
+    conferir(colunas.length > 0 && colunas.every((c) => c.id?.startsWith('nome:')), `colunas fora do padrão: ${JSON.stringify(colunas.map((c) => c.id))}`);
+    conferir(colunas.some((c) => !['A fazer', 'Em andamento', 'Concluídas'].includes(c.nome)), 'as colunas ainda são só as três por tipo');
+    conferir(colunas.reduce((n, c) => n + c.cartoes, 0) === total, `as colunas somam ${colunas.reduce((n, c) => n + c.cartoes, 0)} e o quadro tem ${total}`);
+    conferir(new Set(ids).size === ids.length, 'algum cartão apareceu duas vezes');
+    conferir(colunas.every((c) => /· \d+ listas?$/.test(c.listas)), 'alguma coluna sem "N listas" no cabeçalho');
+    conferir(new Set(colunas.map((c) => c.largura)).size === 1, `as colunas não têm a mesma largura: ${[...new Set(colunas.map((c) => c.largura))].join(', ')}`);
+    const rola = await quadro.evaluate((q) => ({ scroll: q.scrollWidth, cliente: q.clientWidth }));
+    if (rola.scroll <= rola.cliente) aviso(`as ${colunas.length} colunas cabem na largura (${rola.cliente} px): sem rolagem lateral para provar`);
+    const vazias = colunas.filter((c) => !c.cartoes).length;
+    await foto(p, 'trabalho-todas-colunas-escuro');
+    return { detalhe: { colunas: colunas.length, vazias, total, rolagem: rola, nomes: colunas.map((c) => `${c.nome} ${c.listas}`) } };
+  });
+
   await passo('Todas as tarefas: segmentos por pasta de topo, e o segmento filtra', async () => {
-    await p.goto(`${WEB}/trabalho/todas`, { waitUntil: 'networkidle' });
+    await p.goto(`${WEB}/trabalho?pasta=todas`, { waitUntil: 'networkidle' });
     const seg = p.getByTestId('trabalho-segmentos');
     await seg.waitFor();
     // A vista salva no passo anterior é a primeira da pessoa e virou a padrão: ela vale ao abrir.
@@ -304,7 +343,7 @@ async function main() {
     const c3 = await contexto(navegador, sessao, 'dark', { width: 390, height: 844 }, { isMobile: true, hasTouch: true });
     const p3 = await c3.newPage();
     const medidas = {};
-    for (const [nome, url] of [['trabalho', '/trabalho'], ['funil', '/comercial/funil'], ['whatsapp', '/whatsapp'], ['atas', '/trabalho/atas']]) {
+    for (const [nome, url] of [['trabalho', '/trabalho'], ['todas', '/trabalho?pasta=todas&visao=board'], ['funil', '/comercial/funil'], ['whatsapp', '/whatsapp'], ['atas', '/trabalho/atas']]) {
       await p3.goto(`${WEB}${url}`, { waitUntil: 'networkidle' });
       medidas[nome] = await semRolagemLateral(p3);
       await foto(p3, `${nome}-390`);
