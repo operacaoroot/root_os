@@ -107,9 +107,30 @@ export class DigisacNaoConfiguradoError extends Error {
 }
 
 /**
+ * Os domínios da conta do DigiSac: cada cliente é um subdomínio de um deles
+ * (`<conta>.digisac.me`). É a mesma lista que a catraca de endereços do
+ * `arquitetura.test.ts` reconhece.
+ */
+export const DOMINIOS_DO_DIGISAC = ['digisac.me', 'digisac.com', 'digisac.chat'] as const;
+
+/** Loopback: o único lugar onde o dublê dos testes pode morar (e em http). */
+function hostDeLoopback(host: string): boolean {
+  return host === 'localhost' || host === '::1' || /^127\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(host);
+}
+
+/** IP literal (v4 ou v6): nunca é a conta de alguém no DigiSac. */
+function ipLiteral(host: string): boolean {
+  return /^\d{1,3}(\.\d{1,3}){3}$/.test(host) || host.includes(':');
+}
+
+/**
  * O endereço da conta, normalizado: só esquema, host e porta, sem `/api/v1`.
- * `https` sempre, menos para o dublê local (loopback ou nome sem ponto, como o
- * de um container vizinho). Devolve `null` para o que não serve.
+ * Vale só `https://<conta>.<domínio do DigiSac>`: o endereço é escrito por um
+ * admin da empresa, e a listagem de conexões e a sonda de saúde chamam esse
+ * host de dentro da rede dos containers. Aceitar qualquer host abriria a rede
+ * interna (minio, banco, metadados da nuvem) a quem tem a tela de Conexões.
+ * A única exceção é o loopback (127.x, localhost, ::1), em http ou https, que
+ * é onde o dublê dos testes escuta. Devolve `null` para o que não serve.
  */
 export function baseDoDigisac(entrada: string | null | undefined): string | null {
   const cru = String(entrada ?? '').trim();
@@ -121,8 +142,18 @@ export function baseDoDigisac(entrada: string | null | undefined): string | null
     return null;
   }
   if (u.username || u.password) return null;
-  const local = u.hostname === 'localhost' || u.hostname === '127.0.0.1' || u.hostname === '::1' || !u.hostname.includes('.');
-  if (u.protocol !== 'https:' && !(u.protocol === 'http:' && local)) return null;
+  if (u.search || u.hash) return null;
+  const host = u.hostname.replace(/^\[|\]$/g, '').toLowerCase();
+  if (hostDeLoopback(host)) {
+    if (u.protocol !== 'https:' && u.protocol !== 'http:') return null;
+  } else {
+    if (u.protocol !== 'https:') return null;
+    if (ipLiteral(host)) return null;
+    const conta = DOMINIOS_DO_DIGISAC.find((d) => host.endsWith(`.${d}`));
+    if (!conta) return null;
+    const rotulo = host.slice(0, -(conta.length + 1));
+    if (!/^[a-z0-9]([a-z0-9-]*[a-z0-9])?$/.test(rotulo)) return null;
+  }
   const caminho = u.pathname.replace(/\/+$/, '').replace(/\/api\/v1$/, '');
   if (caminho) return null;
   return `${u.protocol}//${u.host}`;
