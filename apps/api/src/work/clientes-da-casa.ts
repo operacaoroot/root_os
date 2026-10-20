@@ -112,6 +112,23 @@ export async function acharClientePorNome(db: Db, orgId: string, nome: string): 
 }
 
 /**
+ * O `Partner` cliente de um card de cadastro da forma antiga (a da produção antes da
+ * conciliação), pelo nome: o campo "Empresa" do card ou, sem ele, o título — a mesma
+ * escolha da migration `20261019230000`. Só ACHA (não cria): sem cliente com esse
+ * nome, devolve nulo e a tarefa fica "sem cliente". Nunca devolve o id do card.
+ */
+export async function clienteDoCard(db: Db, orgId: string, cardId: string): Promise<string | null> {
+  const card = await db.workTask.findFirst({ where: { id: cardId, orgId }, select: { title: true } });
+  if (!card) return null;
+  const campos = await db.workFieldValue.findMany({
+    where: { orgId, taskId: cardId, value: { not: null } },
+    select: { value: true, field: { select: { name: true } } },
+  });
+  const empresa = campos.find((v) => nomeDeClienteNormalizado(v.field.name) === 'empresa' && v.value?.trim())?.value ?? null;
+  return (await acharClientePorNome(db, orgId, empresa?.trim() || card.title))?.id ?? null;
+}
+
+/**
  * "Novo cliente" digitado numa tela de tarefas: acha o `Partner` cliente pelo nome
  * ou cria um (`isCliente`), nunca um card de lista. Sob cadeado por empresa e nome,
  * dois cliques juntos dão um cliente só.

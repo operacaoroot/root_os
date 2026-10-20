@@ -3,7 +3,12 @@
 // Só tarefa entra: leads, contratos e posts do ClickUp ficaram de fora do
 // arquivo (são cadastro e já moram no Comercial e no Marketing). Cada tarefa
 // cai na lista da sua ÁREA ("Tarefas › <área>", a mesma que a tela usa), com
-// pessoa, prazo e cliente (o card do CRM, quando existe).
+// pessoa, prazo e cliente.
+//
+// O CLIENTE É `Partner` (versão final, conciliação `20261019230000`): o card do
+// CRM citado no arquivo é resolvido pelo nome (campo "Empresa" ou título) entre
+// os `Partner` cliente da empresa; sem casar, a tarefa fica sem cliente. O id do
+// card NUNCA vai para `clienteId` — a FK é para `Partner` e a carga abortaria.
 //
 // IDEMPOTENTE e SEM DUPLICAR: a chave é o id do ClickUp (`externalId`, único
 // por empresa). Rodar de novo só cria a que falta; a que já existe NÃO é
@@ -13,6 +18,7 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { PrismaClient, WorkListaNatureza, WorkStatusType } from '@prisma/client';
 import { AREAS_PADRAO, DOMINIO_DAS_CONTAS_DO_SISTEMA, equipeDasContas } from '@mktos/shared';
+import { acharClientePorNome, clienteDoCard } from '../src/work/clientes-da-casa';
 
 const prisma = new PrismaClient();
 
@@ -102,18 +108,33 @@ async function main() {
     return usuarios.find((u) => u.name.toLowerCase() === n) ?? usuarios.find((u) => u.name.toLowerCase().split(' ')[0] === n.split(' ')[0]) ?? null;
   };
 
+  // Cliente do arquivo → Partner (ou nulo). Memória por chave: o mesmo card aparece em várias tarefas.
+  const clientes = new Map<string, string | null>();
+  async function clienteDa(c: Arquivo['tarefas'][number]['cliente']): Promise<string | null> {
+    if (!c) return null;
+    const chave = 'chave' in c ? `card:${c.chave}` : `nome:${c.nome}`;
+    if (clientes.has(chave)) return clientes.get(chave)!;
+    let id: string | null = null;
+    if ('chave' in c) {
+      const card = await prisma.workTask.findFirst({ where: { orgId, externalId: c.chave }, select: { id: true } });
+      id = card ? await clienteDoCard(prisma, orgId, card.id) : null;
+    } else {
+      id = (await acharClientePorNome(prisma, orgId, c.nome))?.id ?? null;
+    }
+    clientes.set(chave, id);
+    return id;
+  }
+
   let criadas = 0, atualizadas = 0;
   for (const t of arquivo.tarefas) {
     const lista = await listaDa(t.area);
     const area = areas.get(t.area)!;
     const dono = pessoa(t.responsaveis[0]);
-    const cliente = t.cliente && 'chave' in t.cliente
-      ? await prisma.workTask.findFirst({ where: { orgId, externalId: t.cliente.chave }, select: { id: true } })
-      : null;
+    const clienteId = await clienteDa(t.cliente);
     const comum = {
       title: t.titulo,
       areaId: area.id,
-      clienteId: cliente?.id ?? null,
+      clienteId,
       assigneeUserId: dono?.id ?? null,
       assignee: dono ? null : t.responsaveis.join(', ') || null,
       dueDate: t.prazo ? instante(t.prazo) : null,

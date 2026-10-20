@@ -5,7 +5,9 @@ import { EventLogService } from '../src/gateway/event-log.service';
 import { CheckoutDeTarefaService } from '../src/work/checkout-de-tarefa.service';
 import { WorkService } from '../src/work/work.service';
 import { TarefasDoDiaService } from '../src/work/tarefas-do-dia.service';
-import { acharClientePorNome, nomeDeClienteNormalizado } from '../src/work/clientes-da-casa';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { acharClientePorNome, clienteDoCard, nomeDeClienteNormalizado } from '../src/work/clientes-da-casa';
 import type { PrismaService } from '../src/prisma/prisma.service';
 import { exigirBancoDescartavel } from './banco-de-teste';
 
@@ -18,6 +20,9 @@ import { exigirBancoDescartavel } from './banco-de-teste';
  *      Fornecedor de nome igual não vira cliente; cliente da vizinha não é achado.
  *  1.9 A deduplicação compara só o `clienteId` (Partner): o pai de cadastro (id de
  *      card) deixou de valer como "cliente" da tarefa.
+ *  1.8 A carga do ClickUp (`db:seed:tarefas`) resolve o card citado como cliente
+ *      para o `Partner` pelo nome (`clienteDoCard`) ou deixa nulo; o id do card
+ *      violaria a FK para `Partner` e abortaria a carga.
  */
 
 const URL = process.env.TEST_DATABASE_URL;
@@ -31,6 +36,15 @@ describe('a régua do nome do cliente', () => {
     expect(nomeDeClienteNormalizado('  Construtora   ALICERCE — Ltda. ')).toBe('construtora alicerce ltda');
     expect(nomeDeClienteNormalizado('Padaria Pão & Cia')).toBe('padaria pao cia');
     expect(nomeDeClienteNormalizado('---')).toBe('');
+  });
+});
+
+describe('1.8: a carga do ClickUp não grava id de card como cliente', () => {
+  it('o cliente da tarefa sai de clienteDoCard/acharClientePorNome, nunca do id do card', () => {
+    const fonte = readFileSync(join(__dirname, '..', 'prisma', 'seed-tarefas-clickup.ts'), 'utf8');
+    expect(fonte).toMatch(/clienteDoCard\(prisma, orgId, card\.id\)/);
+    expect(fonte).toMatch(/acharClientePorNome\(prisma, orgId, c\.nome\)/);
+    expect(fonte).not.toMatch(/clienteId:\s*cliente\?\.id/);
   });
 });
 
@@ -144,5 +158,20 @@ describe.skipIf(!URL)('tarefas de todas as áreas: o cliente é Partner', () => 
     // Com o Partner como cliente: outra tarefa.
     const com = await svc.criar(CASA, EU, { titulo: 'Enviar a minuta revisada', areaId: area.id, clienteId: alicerce });
     expect(com.criada).toBe(true);
+  });
+
+  it('1.8: clienteDoCard acha o Partner pelo campo "Empresa" ou pelo título; sem casar, nulo (nunca o card)', async () => {
+    const st = await prisma.workStatus.findFirstOrThrow({ where: { listId: listaDoCrm } });
+    const peloTitulo = await prisma.workTask.create({ data: { orgId: CASA, listId: listaDoCrm, statusId: st.id, title: 'CONSTRUTORA ALICERCE' } });
+    expect(await clienteDoCard(prisma, CASA, peloTitulo.id)).toBe(alicerce);
+    const campo = await prisma.workField.create({ data: { orgId: CASA, listId: listaDoCrm, name: 'Empresa', type: 'texto' } });
+    const peloCampo = await prisma.workTask.create({ data: { orgId: CASA, listId: listaDoCrm, statusId: st.id, title: 'Alicerce | João' } });
+    await prisma.workFieldValue.create({ data: { orgId: CASA, taskId: peloCampo.id, fieldId: campo.id, value: 'Construtora Alicerce Ltda.' } });
+    expect(await clienteDoCard(prisma, CASA, peloCampo.id)).toBe(alicerce);
+    const semCliente = await prisma.workTask.create({ data: { orgId: CASA, listId: listaDoCrm, statusId: st.id, title: 'Gráfica Pontual' } });
+    expect(await clienteDoCard(prisma, CASA, semCliente.id)).toBeNull();
+    // Card de outra empresa não resolve aqui.
+    expect(await clienteDoCard(prisma, VIZINHA, peloTitulo.id)).toBeNull();
+    await prisma.workField.deleteMany({ where: { orgId: CASA } });
   });
 });
