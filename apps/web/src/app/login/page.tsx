@@ -4,6 +4,7 @@ import { FormEvent, useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/auth';
 import { API_BASE, apiGet } from '@/lib/api';
+import { destinoDepoisDoLogin } from '@/lib/destino-do-login';
 
 const ERROS: Record<string, string> = {
   'nao-autorizado': 'Esta conta Google não tem acesso ao ROOT OS.',
@@ -24,7 +25,7 @@ function GoogleG() {
 }
 
 export default function LoginPage() {
-  const { login, loginWithToken, user, ready, sessionError } = useAuth();
+  const { login, loginWithToken, user, ready, sessionError, token } = useAuth();
   const router = useRouter();
   const [email, setEmail] = useState('admin@marketing-os.local');
   const [password, setPassword] = useState('');
@@ -62,13 +63,23 @@ export default function LoginPage() {
   }, []);
 
   // A entrada é a da primeira área do menu: Dia a dia › Visão geral (versão final,
-  // 19/10/2026; o Contexto desceu para depois do Motor de IA em 18/10). Quem não vê
-  // tarefas segue o caminho de antes: Contexto, Marca ou o Painel geral da empresa.
+  // 19/10/2026; o Contexto desceu para depois do Motor de IA em 18/10), só para quem
+  // vê tarefas E tem o módulo `trabalho` contratado. Sem isso, ou sem resposta dos
+  // módulos, vale a regra da produção: Contexto, Marca ou o Painel geral da empresa
+  // (`lib/destino-do-login.ts`).
   useEffect(() => {
     if (!ready || !user) return;
+    let vivo = true;
     const p = user.permissions;
-    router.replace(p.includes('tarefas.ver') ? '/dia-a-dia' : p.includes('obsidian.ver') ? '/contexto' : p.includes('pauta.ver') ? '/contexto/marca' : '/painel');
-  }, [ready, user, router]);
+    const ir = (modulos: string[] | null) => { if (vivo) router.replace(destinoDepoisDoLogin(p, modulos)); };
+    if (!token || !p.includes('tarefas.ver')) ir(null);
+    else {
+      apiGet<{ modulos?: unknown }>('/tenants/modulos', token)
+        .then((r) => ir(Array.isArray(r.modulos) ? r.modulos.filter((m): m is string => typeof m === 'string') : null))
+        .catch(() => ir(null));
+    }
+    return () => { vivo = false; };
+  }, [ready, user, token, router]);
 
   async function submit(e: FormEvent) {
     e.preventDefault();

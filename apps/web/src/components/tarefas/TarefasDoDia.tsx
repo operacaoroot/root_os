@@ -204,13 +204,13 @@ export function TarefasDoDia({ area: nomeDaArea }: { area?: string } = {}) {
     setP((x) => (x ? { ...x, tarefas: x.tarefas.map((t) => (pos.has(t.id) ? { ...t, ordem: pos.get(t.id)! } : t)) } : x));
     try { await apiPost('/trabalho/todas/ordem', { ids }, token); } catch (e) { setErro((e as Error).message); carregar(); }
   };
-  /** "+ cadastrar novo cliente…": o card nasce no CRM (Comercial); nome igual liga ao que já existe. */
+  /** "+ cadastrar novo cliente…": acha ou cria o cliente no cadastro de clientes (o mesmo do Trabalho); nome igual liga ao que já existe. Lead mora no funil. */
   const criarCliente = async (): Promise<{ id: string; titulo: string } | null> => {
-    const nome = window.prompt('Nome do cliente ou lead (empresa | contato). Ele entra no Comercial, na primeira etapa:')?.trim();
+    const nome = window.prompt('Nome do cliente (empresa ou pessoa). Ele entra no cadastro de clientes; lead novo se cadastra no funil do Comercial:')?.trim();
     if (!nome || !token) return null;
     try {
       const c = await apiPost<{ id: string; titulo: string; jaExistia: boolean }>('/trabalho/todas/clientes', { nome }, token);
-      setAviso({ texto: c.jaExistia ? `${c.titulo} já estava no Comercial: a tarefa foi ligada a ele.` : `${c.titulo} entrou no Comercial (Leads, primeira etapa).` });
+      setAviso({ texto: c.jaExistia ? `${c.titulo} já estava no cadastro de clientes: a tarefa foi ligada a ele.` : `${c.titulo} entrou no cadastro de clientes.` });
       carregar();
       return c;
     } catch (e) { setErro((e as Error).message); return null; }
@@ -1202,7 +1202,7 @@ function JanelaDaTarefa({ t, p, podeEditar, fechar, alternar, editar, criarArea,
           >
             <option value="">— nenhum —</option>
             <OpcoesDeCliente clientes={p.clientes} />
-            <option value="__novo">+ cadastrar novo cliente ou lead…</option>
+            <option value="__novo">+ cadastrar novo cliente…</option>
           </select>
         </Campo>
       </div>
@@ -1391,8 +1391,8 @@ function NovaTarefa({ p, token, filtro, criarArea, criarCliente, fechar, criada,
             }}
           >
             <option value="">— nenhum —</option>
-            <OpcoesDeCliente clientes={[...p.clientes, ...clientesNovos.filter((c) => !p.clientes.some((x) => x.id === c.id)).map((c) => ({ ...c, fase: 'lead' as const }))]} />
-            <option value="__novo">+ cadastrar novo cliente ou lead…</option>
+            <OpcoesDeCliente clientes={[...p.clientes, ...clientesNovos.filter((c) => !p.clientes.some((x) => x.id === c.id)).map((c) => ({ ...c, fase: 'cliente' as const }))]} />
+            <option value="__novo">+ cadastrar novo cliente…</option>
           </select>
         </Campo>
       </div>

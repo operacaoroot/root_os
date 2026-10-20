@@ -22,10 +22,11 @@ export class FichaService {
     if (!t) throw new NotFoundException('Ficha não encontrada');
   }
 
-  private async nomes(ids: (string | null)[]) {
+  /** Nome dos autores, só das pessoas desta empresa (revisão final, item 7: o filtro por empresa não depende de quem chama). */
+  private async nomes(orgId: string, ids: (string | null)[]) {
     const uns = [...new Set(ids.filter((x): x is string => !!x))];
     if (!uns.length) return new Map<string, string>();
-    const us = await this.prisma.user.findMany({ where: { id: { in: uns } }, select: { id: true, name: true } });
+    const us = await this.prisma.user.findMany({ where: { orgId, id: { in: uns } }, select: { id: true, name: true } });
     return new Map(us.map((u) => [u.id, u.name]));
   }
 
@@ -47,14 +48,14 @@ export class FichaService {
   async listar(orgId: string, taskId: string): Promise<ReuniaoResumo[]> {
     await this.exigirCartao(orgId, taskId);
     const rs = await this.prisma.reuniaoDoCartao.findMany({ where: { orgId, taskId }, orderBy: { em: 'desc' } });
-    const n = await this.nomes(rs.map((r) => r.autorId));
+    const n = await this.nomes(orgId, rs.map((r) => r.autorId));
     return rs.map((r) => this.resumo(r, n));
   }
 
   async ler(orgId: string, id: string): Promise<ReuniaoCompleta> {
     const r = await this.prisma.reuniaoDoCartao.findFirst({ where: { id, orgId } });
     if (!r) throw new NotFoundException('Reunião não encontrada');
-    const n = await this.nomes([r.autorId]);
+    const n = await this.nomes(orgId, [r.autorId]);
     return { ...this.resumo(r, n), transcricao: r.transcricao };
   }
 
@@ -82,7 +83,7 @@ export class FichaService {
     const r = await this.prisma.reuniaoDoCartao.create({
       data: { orgId, taskId, titulo: body.titulo.trim(), em, fonte, link: body.link ?? null, transcricao: texto, autorId },
     });
-    return this.resumo(r, await this.nomes([autorId]));
+    return this.resumo(r, await this.nomes(orgId, [autorId]));
   }
 
   async apagar(orgId: string, id: string): Promise<{ ok: true }> {

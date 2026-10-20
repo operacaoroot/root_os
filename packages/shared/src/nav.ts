@@ -178,7 +178,7 @@ export const NAV: NavItem[] = [
   { key: 'bio', label: 'Página de links', href: '/bio', icon: 'Link2', permission: 'bio.ver', secao: 'conteudo', modulo: 'bio' },
   { key: 'campanhas', label: 'Campanhas', href: '/campanhas', icon: 'Megaphone', permission: 'campanhas.ver', secao: 'conteudo', modulo: 'campanhas' },
   { key: 'pixels', label: 'Eventos do site', href: '/pixels', icon: 'Activity', permission: 'dashboard.ver', secao: 'conteudo', modulo: 'pixels' },
-  // A aba Tarefas de cada área é Dia a dia › Tarefas filtrada pela área: a mesma tarefa, nunca cópia (19/10/2026).
+  // A aba Tarefas de cada área é a visão "Todas" do Trabalho filtrada pela área: a mesma tarefa, nunca cópia (19/10/2026).
   { key: 'marketing-tarefas', label: 'Tarefas', href: '/marketing/tarefas', icon: 'CheckSquare', permission: 'tarefas.ver', secao: 'conteudo', modulo: 'trabalho' },
 
   // Versão final (19/10/2026, roteiro F2): Painel geral · Funil vivo · Propostas ·
@@ -247,8 +247,8 @@ export const ROTAS_ABSORVIDAS: { href: string; destino: string; porque: string }
   // 18/10/2026, rodada do painel P2: a lista de tarefas virou a visão Lista do Trabalho.
   { href: '/tarefas', destino: '/trabalho', porque: 'quadro e lista viraram uma tela só em 18/10/2026; /tarefas abre a visão de lista' },
   // 19/10/2026, rodada do trabalho T6: a fila de decisões do comercial virou a aba
-  // Decisões de Pendências. `/comercial` redireciona para o Funil vivo e a tela
-  // antiga mora em `/comercial/decisoes`.
+  // Decisões de Pendências; a tela antiga mora em `/comercial/decisoes`. Na versão
+  // final `/comercial` é o Painel geral do Comercial (o dash do Lucas), não um redirect.
   { href: '/comercial/decisoes', destino: '/caixa', porque: 'as decisões do comercial passaram a Pendências em 19/10/2026; a tela segue viva' },
   // 19/10/2026, rodada do trabalho T1: a implantação numa tela só.
   { href: '/onboarding', destino: '/trabalho/implantacao', porque: 'a implantação de clientes virou o kanban da lista Onboarding de cliente em 19/10/2026; /onboarding redireciona e o trilho é a aba do pop-up do cartão' },
