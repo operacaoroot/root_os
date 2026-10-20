@@ -28,7 +28,7 @@ node homolog/organizar/organizar.mjs ...
 ```
 
 Variáveis (ambiente ou `--env`): `ORGANIZAR_PEDE_EMAIL`/`ORGANIZAR_PEDE_SENHA` (quem
-escreve e pede o movimento de etapa) e `ORGANIZAR_CONFERE_EMAIL`/`ORGANIZAR_CONFERE_SENHA`
+escreve e move o lead de etapa; desde 20/10/2026 o mover é livre para gente com `leads.editar`, sem pedido nem token) e `ORGANIZAR_CONFERE_EMAIL`/`ORGANIZAR_CONFERE_SENHA`
 (outra pessoa, com alçada, que confirma com reautenticação). Opcionais:
 `ORGANIZAR_API_URL`, `ORGANIZAR_WEB_URL`, `ORGANIZAR_MAPAS`, `ORGANIZAR_SAIDA`. A passada
 que escreve exige `--producao` ou `--homologacao`, em qualquer endereço. As duas contas
