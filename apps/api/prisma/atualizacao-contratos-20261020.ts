@@ -40,8 +40,8 @@ interface Atualizacao {
   observacao: string;
   /** Nulo mantém o que o acordo já tem. */
   apelidos: string | null;
-  /** Só o acordo: o dinheiro chega pelo sync do Asaas, e o previsto à mão ficaria em dobro. */
-  soAcordo?: boolean;
+  /** Descrição de previsto antigo que as parcelas novas substituem (sai, se ainda for previsto). */
+  substitui?: string[];
 }
 
 const ATUALIZACOES: Atualizacao[] = [
@@ -59,47 +59,20 @@ const ATUALIZACOES: Atualizacao[] = [
     apelidos: null,
   },
   {
-    // a proposta v5 era R$ 26.000 (R$ 8.000 + 6 x R$ 3.000)
-    cliente: 'Senhor aGranel',
-    busca: 'granel',
-    rotulo: 'Senhor aGranel — Operação ROOT',
-    produto: 'Operação ROOT',
-    totalCentavos: 5_600_000,
-    avulsos: [{ nome: 'entrada', vence: '2026-10-23', centavos: 800_000 }],
-    parcelas: { primeira: '2026-11-23', quantas: 12, centavos: 400_000, ultimaCentavos: 400_000 },
-    nota: 'R$ 56.000: entrada de R$ 8.000 + 12 x R$ 4.000.',
-    observacao: 'R$ 8.000 em 23/10 + 12 x R$ 4.000 (23/11/2026 a 23/10/2027)',
-    apelidos: 'aGranel,Felipe Fortes',
-  },
-  {
-    // a entrega ainda não tem dia: fica um mês depois da entrada até ter
-    cliente: 'Papeleira Santa Rita',
-    busca: 'papeleira',
-    rotulo: 'Papeleira Santa Rita',
-    produto: 'a confirmar',
-    totalCentavos: 1_000_000,
-    avulsos: [
-      { nome: 'entrada', vence: '2026-10-23', centavos: 500_000 },
-      { nome: 'entrega', vence: '2026-11-23', centavos: 500_000 },
-    ],
-    parcelas: null,
-    nota: 'R$ 10.000: entrada de R$ 5.000 + R$ 5.000 na entrega.',
-    observacao: 'R$ 5.000 em 23/10 + R$ 5.000 na entrega (prevista para 23/11)',
-    apelidos: 'Papeleira,Santa Rita',
-  },
-  {
-    // a cobrança estava "ainda não gerada"; Antônio pagou em 20/10 no cartão
+    // a cobrança estava "a gerar" (R$ 3.970 em 31/10); Antônio pagou em 20/10 no cartão.
+    // O repasse do cartão é um por mês: se vier pelo Asaas, o asaas-depois-do-csv casa
+    // cada parcela do sync com a daqui (mesmo valor, vencimento perto).
     cliente: 'Affari',
     busca: 'affari',
     rotulo: 'Affari — Imersão ROOT',
     produto: 'Imersão ROOT',
     totalCentavos: 397_000,
     avulsos: [],
-    parcelas: null,
+    parcelas: { primeira: '2026-11-20', quantas: 10, centavos: 39_700, ultimaCentavos: 39_700 },
     nota: '',
     observacao: 'pago em 20/10 no cartão, 10 x R$ 397,00 sem juros',
     apelidos: null,
-    soAcordo: true,
+    substitui: ['Affari — Imersão ROOT (cobrança a gerar)'],
   },
 ];
 
@@ -161,6 +134,21 @@ async function lancamentos(a: Atualizacao, contaId: string, receitaId: string, d
     },
   });
   for (const t of doAsaas) diz(`atenção: cobrança do Asaas em aberto, ${brl(t.amount)} em ${br(t.dueDate ?? t.date)} (asaas-depois-do-csv casa com o previsto à mão)`);
+
+  // previsto antigo que o cronograma novo substitui: só sai o que ainda é previsto lançado à mão
+  for (const description of a.substitui ?? []) {
+    const velhos = partnerId
+      ? await prisma.financeTransaction.findMany({ where: { orgId, partnerId, type: 'entrada', description, contractId: null } })
+      : [];
+    for (const v of velhos) {
+      if (v.status !== 'previsto' || v.source !== 'manual' || v.reconciledAt) {
+        diz(`atenção: "${description}" (${brl(v.amount)}) já é ${v.status}: não mexo, confira`);
+        continue;
+      }
+      diz(`sai o previsto antigo "${description}", ${brl(v.amount)} em ${br(v.dueDate ?? v.date)}`);
+      if (APLICAR) await prisma.financeTransaction.delete({ where: { id: v.id } });
+    }
+  }
 
   // 2. avulsos (entrada, entrega)
   for (const v of a.avulsos) {
@@ -269,9 +257,9 @@ async function main() {
     const diz = (t: string) => log.push(`${a.cliente}: ${t}`);
     const p = a.parcelas;
     const soma = a.avulsos.reduce((s, v) => s + v.centavos, 0) + (p ? p.centavos * (p.quantas - 1) + p.ultimaCentavos : 0);
-    if (!a.soAcordo && soma !== a.totalCentavos) throw new Error(`${a.cliente}: as partes somam ${brl(soma / 100)}, o total é ${brl(a.totalCentavos / 100)}`);
+    if (soma !== a.totalCentavos) throw new Error(`${a.cliente}: as partes somam ${brl(soma / 100)}, o total é ${brl(a.totalCentavos / 100)}`);
 
-    if (!a.soAcordo) await lancamentos(a, conta.id, receita.id, diz);
+    await lancamentos(a, conta.id, receita.id, diz);
 
     // acordo da Análise: pelo cliente (o produto pode mudar); com dois acordos, o do mesmo produto
     const acordos = await prisma.acordoComercial.findMany({ where: { orgId, cliente: a.cliente } });
