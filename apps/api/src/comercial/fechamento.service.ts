@@ -81,11 +81,11 @@ const ONDE: Record<EscritaDoFechamento['escrita'], string> = {
   grupo: 'WhatsApp',
 };
 const SE_RODAR_DE_NOVO: Record<EscritaDoFechamento['escrita'], string> = {
-  cliente: 'reaproveita pelo CNPJ',
+  cliente: 'reaproveita o da ficha ou pelo CNPJ',
   contrato: 'reaproveita pela chave',
   cobranca: 'não cria outra',
   kit_e_trilho: 'reaproveita',
-  card: 'acha o mesmo card',
+  card: 'acha o mesmo card (também o iniciado antes do fechamento)',
   grupo: 'não cria outro',
 };
 const FASES_DO_TRILHO = ['qualificar', 'diagnostico', 'contrato', 'imersao', 'operacao'];
@@ -454,12 +454,24 @@ export class FechamentoService implements OnModuleInit {
       await this.fio.registrar(orgId, leadId, 'fechamento.escrita', `${linha.chave}:${escrita}:${e.estado}:${e.ref ?? ''}`, { chave: linha.chave, escrita, estado: e.estado, ref: e.ref, ms: e.ms });
     };
 
-    // 1. cliente: Partner, reaproveitado pelo CNPJ.
+    // 1. cliente: Partner, reaproveitado pelo da ficha e, sem ele, pelo CNPJ.
     // D-12: só se reaproveita um Partner que já é CLIENTE. O CNPJ vem da sala, que o cliente preenche sem
     // conferência: o fornecedor com o mesmo CNPJ não vira o cliente deste contrato nem é tocado; nasce outro.
+    // A2 (onboarding iniciado antes do fechamento): o lead pode já ter o cliente ligado na ficha. Sendo um
+    // Partner CLIENTE desta empresa, é ele: só ganha o CNPJ e o e-mail que estiverem vazios, nada é trocado.
     await rodar('cliente', async () => {
       if (!aprovado) throw new Error(SEM_COBRANCA_APROVADA);
       const doc = a.dados.cnpj.replace(/\D/g, '');
+      const daFicha = ficha?.partnerId
+        ? await this.prisma.partner.findFirst({ where: { id: ficha.partnerId, orgId, isCliente: true, interno: false }, select: { id: true, cnpjCpf: true, email: true } })
+        : null;
+      if (daFicha) {
+        const vazios: { cnpjCpf?: string; email?: string } = {};
+        if (!daFicha.cnpjCpf && doc) vazios.cnpjCpf = doc;
+        if (!daFicha.email && a.dados.email) vazios.email = a.dados.email;
+        if (Object.keys(vazios).length) await this.prisma.partner.updateMany({ where: { id: daFicha.id, orgId }, data: vazios });
+        return { estado: 'reaproveitado', detalhe: 'cliente já ligado ao lead', ref: daFicha.id };
+      }
       const ja = await this.prisma.partner.findFirst({ where: { orgId, cnpjCpf: doc, isCliente: true }, orderBy: { createdAt: 'asc' }, select: { id: true } });
       if (ja) {
         if (!ficha?.partnerId) await this.prisma.comercialFicha.updateMany({ where: { leadId, orgId }, data: { partnerId: ja.id } });
@@ -604,6 +616,11 @@ export class FechamentoService implements OnModuleInit {
       );
       if (r.estado === 'criado') {
         await this.fio.registrar(orgId, leadId, 'implantacao.card_criado', r.cardId, { chave: linha.chave, cardId: r.cardId, listId: r.listId, lista: r.lista, etapa: r.etapa });
+      }
+      // A2: o card foi iniciado antes do fechamento. É o mesmo card (id do lead); o fechamento fica
+      // registrado nele (comentário, uma vez por chave) e no fio. A etapa não muda.
+      if (r.antecipado) {
+        await this.fio.registrar(orgId, leadId, 'implantacao.fechamento_registrado', `${linha.chave}:${r.cardId}`, { chave: linha.chave, cardId: r.cardId });
       }
       return { estado: r.estado, detalhe: r.detalhe, ref: r.cardId };
     });

@@ -41,6 +41,8 @@ import { DinheiroService } from './dinheiro.service';
 import { FechadoForaController } from './fechado-fora.controller';
 import { FechadoForaService } from './fechado-fora.service';
 import { FechamentoService } from './fechamento.service';
+import { OnboardingAntecipadoController } from './onboarding-antecipado.controller';
+import { OnboardingAntecipadoService } from './onboarding-antecipado.service';
 
 /*
  * O COCKPIT DO LEAD — módulo comercial (13/10/2026).
@@ -61,7 +63,7 @@ import { FechamentoService } from './fechamento.service';
  */
 @Module({
   imports: [TenantsModule, AuthModule, LeadsModule, OnboardingModule, FinanceModule, RoutinesModule, ZapsignModule, MemoryModule],
-  controllers: [ComercialController, SalaController, SimuladorController, MensagensController, DinheiroController, WebhooksDoDinheiroController, InteligenciaController, FechadoForaController],
+  controllers: [ComercialController, SalaController, SimuladorController, MensagensController, DinheiroController, WebhooksDoDinheiroController, InteligenciaController, FechadoForaController, OnboardingAntecipadoController],
   providers: [
     // --- orquestrador: o fio (único caminho de escrita de fato) e o registro de reações ---
     ReacoesRegistry,
@@ -95,6 +97,8 @@ import { FechamentoService } from './fechamento.service';
     ContratoVivoService,
     // --- rodada do trabalho T1b (registrar cliente já fechado fora do sistema: a mesma transação de fechamento) ---
     FechadoForaService,
+    // --- ajustes da versão final A2 (iniciar o onboarding antes do negócio fechado: o mesmo card do fechamento) ---
+    OnboardingAntecipadoService,
     // --- lane E (inteligência: stub/ponte, diagnóstico, proposta, relator, vigia) ---
     // O provider (stub/ponte) é escolhido em `llm/llm.module.ts`; aqui, o leitor de ata, o
     // construtor e revisor de proposta e o assistente da dúvida (fase mínima).

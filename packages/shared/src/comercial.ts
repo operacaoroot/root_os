@@ -357,6 +357,10 @@ export const COMERCIAL_EVENTOS = [
   'cliente.ativo',
   // Rodada da implantação I1 (18/10): a sexta escrita do fechamento abriu o card na lista "Onboarding de cliente".
   'implantacao.card_criado',
+  // Ajustes da versão final A2 (19/10): uma pessoa iniciou o onboarding com o lead ainda no funil
+  // (o card nasce antes do fechamento), e o fechamento depois reaproveitou esse mesmo card.
+  'implantacao.iniciada_antes_do_fechamento',
+  'implantacao.fechamento_registrado',
   'kickoff.marcado',
   'parcela.vence',
   'parcela.paga',

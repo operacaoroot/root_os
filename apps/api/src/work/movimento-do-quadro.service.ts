@@ -1,9 +1,9 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
-import type { TrabMovimentoDoCartao, TrabMovimentoDoQuadro, TrabPassoDoCartao } from '@mktos/shared';
+import type { ComercialEtapa, TrabMovimentoDoCartao, TrabMovimentoDoQuadro, TrabPassoDoCartao } from '@mktos/shared';
 import { WorkStatusType } from '@prisma/client';
 
 import { ACOES_DA_ATIVIDADE, ENTIDADE_DA_TAREFA } from '../caixa/atividade-da-caixa';
-import { procedenciaDoCard } from '../comercial/card-da-implantacao';
+import { seloDoCard } from '../comercial/card-da-implantacao';
 import { PrismaService } from '../prisma/prisma.service';
 import { PASSOS_NO_BALAO, passoDaAuditoria, passoDoComentario, ultimoPasso } from './movimento-do-quadro';
 
@@ -60,7 +60,7 @@ export class MovimentoDoQuadroService {
       }),
       this.prisma.comercialFicha.findMany({
         where: { orgId, cardId: { in: ids } },
-        select: { cardId: true, leadId: true, kickoffEm: true },
+        select: { cardId: true, leadId: true, kickoffEm: true, etapa: true, motivoSaida: true, clienteAtivoEm: true },
       }),
       this.prisma.workTask.findMany({
         where: { orgId, parentId: { in: ids }, archived: false, status: { type: { not: WorkStatusType.closed } } },
@@ -88,6 +88,21 @@ export class MovimentoDoQuadroService {
     const comentarioDe = new Map(comentarios.map((c) => [c.taskId, passoDoComentario(c)]));
     const trilhoDe = new Map(trilhos.filter((t) => t.cardId).map((t) => [t.cardId as string, t]));
     const fichaDe = new Map(fichas.filter((f) => f.cardId).map((f) => [f.cardId as string, f]));
+    // A2: o card iniciado antes do fechamento e o fechamento registrado nele são FATOS do fio do lead;
+    // o selo é lido deles (sem coluna nova). Só os leads destes cards, com a empresa no `where`.
+    const fatos = fichas.length
+      ? await this.prisma.leadEvent.findMany({
+          where: { orgId, leadId: { in: fichas.map((f) => f.leadId) }, type: { in: ['implantacao.iniciada_antes_do_fechamento', 'implantacao.fechamento_registrado'] } },
+          select: { leadId: true, type: true, occurredAt: true, payload: true },
+        })
+      : [];
+    const antecipadoDe = new Set<string>();
+    const fechadoNoCardEm = new Map<string, Date>();
+    for (const f of fatos) {
+      const card = String(((f.payload ?? {}) as { cardId?: unknown }).cardId ?? '');
+      if (f.type === 'implantacao.iniciada_antes_do_fechamento') antecipadoDe.add(`${f.leadId}:${card}`);
+      else if (!fechadoNoCardEm.has(`${f.leadId}:${card}`)) fechadoNoCardEm.set(`${f.leadId}:${card}`, f.occurredAt);
+    }
     const subDe = new Map<string, (typeof subtarefas)[number]>();
     for (const s of subtarefas) if (s.parentId && !subDe.has(s.parentId)) subDe.set(s.parentId, s);
 
@@ -112,7 +127,16 @@ export class MovimentoDoQuadroService {
         passos,
         ultimoComentario,
         proximaAcao,
-        procedencia: ficha ? { tipo: 'fechamento', leadId: ficha.leadId, rotulo: procedenciaDoCard(t.createdAt) } : null,
+        procedencia: ficha
+          ? seloDoCard({
+              leadId: ficha.leadId,
+              criadoEm: t.createdAt,
+              etapa: ficha.etapa as ComercialEtapa,
+              motivoSaida: ficha.motivoSaida,
+              antecipado: antecipadoDe.has(`${ficha.leadId}:${t.id}`),
+              fechadoEm: fechadoNoCardEm.get(`${ficha.leadId}:${t.id}`) ?? ficha.clienteAtivoEm ?? null,
+            })
+          : null,
       };
     });
     return { itens };

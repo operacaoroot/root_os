@@ -34,4 +34,4 @@ export function listaDaImplantacao(pastas: readonly PastaComListas[]): { pastaId
 
 /** A frase de quem tenta abrir cartão solto na implantação: a porta é o comercial. */
 export const PORTA_DA_IMPLANTACAO =
-  'O cliente entra na implantação pelo contrato assinado no comercial. Quem fechou fora do sistema entra por "Registrar cliente já fechado", no Funil vivo.';
+  'O cliente entra na implantação pelo contrato assinado no comercial. Quem fechou fora do sistema entra por "Registrar cliente já fechado", no Funil vivo. Para começar antes do fechamento, use "Iniciar onboarding" a partir do lead.';

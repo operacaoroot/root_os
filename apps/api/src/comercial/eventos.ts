@@ -113,6 +113,8 @@ export const FONTE_DO_EVENTO: Record<ComercialEvento, ComercialFonte> = {
   'fechamento.escrita': 'sistema',
   'cliente.ativo': 'sistema',
   'implantacao.card_criado': 'sistema',
+  'implantacao.iniciada_antes_do_fechamento': 'pessoa',
+  'implantacao.fechamento_registrado': 'sistema',
   'kickoff.marcado': 'sala',
   'parcela.vence': 'relogio',
   'parcela.paga': 'asaas',
@@ -203,6 +205,10 @@ export interface PayloadsComerciais {
   'fechamento.escrita': { chave: string; escrita: string; estado: string; ref?: string | null; ms?: number | null };
   'cliente.ativo': { chave: string; partnerId?: string | null; contractId?: string | null; trilhoId?: string | null };
   'implantacao.card_criado': { chave: string; cardId: string; listId: string; lista: string; etapa: string };
+  /** A2: uma pessoa abriu o card da implantação com o lead ainda no funil (`etapaDoLead` é a do funil). */
+  'implantacao.iniciada_antes_do_fechamento': { cardId: string; listId: string; lista: string; etapa: string; etapaDoLead: string; trilhoId: string | null; partnerId: string | null; por: string | null; porId: string };
+  /** A2: o fechamento reaproveitou o card iniciado antes dele e registrou o fechamento no card. */
+  'implantacao.fechamento_registrado': { chave: string; cardId: string };
   'kickoff.marcado': { horario: string };
   'parcela.vence': { parcela: number; vence: string; aviso: 'D-3' | 'D0' | 'D+1' | 'D+5' | 'D+10' };
   'parcela.paga': { parcela: number; pagoEm: string; valorCentavos: number };
@@ -364,6 +370,10 @@ export function resumoDoEvento(type: string, payload: unknown): { fonte: Comerci
       return { fonte, resumo: 'cliente ativo · fechamento concluído' };
     case 'implantacao.card_criado':
       return { fonte, resumo: `card da implantação aberto · ${curto(p.lista, 40)} · ${curto(p.etapa, 30)}` };
+    case 'implantacao.iniciada_antes_do_fechamento':
+      return { fonte, resumo: `onboarding iniciado antes do fechamento${p.por ? ` por ${String(p.por)}` : ''} · card em ${curto(p.etapa, 30)}` };
+    case 'implantacao.fechamento_registrado':
+      return { fonte, resumo: 'fechamento registrado no card da implantação iniciado antes' };
     case 'kickoff.marcado':
       return { fonte, resumo: `kickoff marcado · ${horarioLegivel(p.horario)}` };
     case 'parcela.vence':

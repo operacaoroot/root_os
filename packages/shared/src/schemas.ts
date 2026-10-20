@@ -5648,8 +5648,12 @@ export interface TrabMovimentoDoCartao {
    * fechamento e ainda sem kickoff) "marcar o kickoff". Sem fonte, nulo.
    */
   proximaAcao: { texto: string; dono: string | null; quando: string | null; fonte: 'trilho' | 'subtarefa' | 'implantacao' } | null;
-  /** O selo de procedência do card aberto pelo fechamento do comercial (I1). */
-  procedencia: { tipo: 'fechamento'; leadId: string; rotulo: string } | null;
+  /**
+   * O selo de procedência do card que veio do comercial: aberto pelo fechamento (I1);
+   * iniciado antes do fechamento, com o lead ainda no funil (ajustes A2); ou o aviso de
+   * que o lead do card antecipado saiu do funil e alguém precisa decidir (A2).
+   */
+  procedencia: { tipo: 'fechamento' | 'antecipado' | 'saiu_do_funil'; leadId: string; rotulo: string } | null;
 }
 export interface TrabMovimentoDoQuadro { itens: TrabMovimentoDoCartao[] }
 
