@@ -1666,17 +1666,17 @@ model PautaEpisodio {
 
   /// Uma rodada vira no máximo um episódio. `Restrict`: apagar a rodada não
   /// pode levar junto roteiro, mídia e transcrição.
-  rodadaId    String              @unique
-  rodada      PautaRodada         @relation(fields: [rodadaId], references: [id], onDelete: Restrict)
+  rodadaId String              @unique
+  rodada   PautaRodada         @relation(fields: [rodadaId], references: [id], onDelete: Restrict)
   /// Sequencial por empresa (ep-01, ep-02…), dado sob cadeado na criação.
-  numero      Int
-  titulo      String
-  status      PautaEpisodioStatus @default(roteiro)
+  numero   Int
+  titulo   String
+  status   PautaEpisodioStatus @default(roteiro)
   /// MD2: desde quando está no status atual. Quem carimba é o GATILHO
   /// `PautaEpisodio_statusDesde`, em toda troca de status por qualquer caminho
   /// (mídia, transcrição, roteiro, semana, o passo à mão). O vigia do Mac só
   /// aceita bruto do OBS gravado depois da entrada em Gravação.
-  statusDesde DateTime            @default(now())
+  statusDesde DateTime @default(now())
 
   roteiro          String  @default("")
   /// D-MC2: a palavra dita a cada erro na gravação, só deste episódio. Nula =
