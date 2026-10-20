@@ -75,6 +75,17 @@ services:
       - rootos_final_zapsign:/data
     networks: [rootos-final-net]
 
+  # Dublê do serviço das propostas antigas da ROOT (só leitura pelo OS), só na rede interna.
+  propostas-mock:
+    build: ./mocks/propostas
+    image: rootos-final-propostas-mock:latest
+    container_name: rootos_final_propostas_mock
+    restart: unless-stopped
+    environment:
+      PROPOSTAS_API_TOKEN: ${PROPOSTAS_API_TOKEN:-dublê-propostas}
+      PORT: "4013"
+    networks: [rootos-final-net]
+
   api:
     image: rootos-final-app:final
     container_name: rootos_final_api
@@ -117,6 +128,8 @@ services:
       ZAPSIGN_BASE_URL: http://zapsign-mock:4012/api/v1
       ZAPSIGN_WEBHOOK_TOKEN: ${ZAPSIGN_WEBHOOK_TOKEN}
       WHATSAPP_PROVEDOR: simulado
+      PROPOSTAS_URL: http://propostas-mock:4013
+      PROPOSTAS_API_TOKEN: ${PROPOSTAS_API_TOKEN:-dublê-propostas}
       COMERCIAL_SEED_DEMONSTRACAO: "nao"
       OBSIDIAN_VAULT_PATH: /vault
       OBSIDIAN_FONTE: pasta

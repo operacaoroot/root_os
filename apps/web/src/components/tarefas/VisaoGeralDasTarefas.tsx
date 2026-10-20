@@ -169,24 +169,24 @@ export function VisaoGeralDasTarefas() {
       </div>
 
       <div className="grid gap-5 lg:grid-cols-2">
-        <Quadro titulo="Carga por prazo" nota="tarefas abertas · clique numa coluna">
+        <Quadro className="min-w-0 overflow-x-auto" titulo="Carga por prazo" nota="tarefas abertas · clique numa coluna">
           <Barras itens={porSituacao} />
         </Quadro>
-        <Quadro titulo="Tarefas por responsável" nota="abertas · clique numa pessoa">
+        <Quadro className="min-w-0 overflow-x-auto" titulo="Tarefas por responsável" nota="abertas · clique numa pessoa">
           <Barras itens={porPessoa} />
         </Quadro>
       </div>
 
       <div className="grid gap-5 lg:grid-cols-2">
-        <Quadro titulo="Tarefas por pasta" nota="abertas em cada pasta do Trabalho · clique numa coluna">
+        <Quadro className="min-w-0 overflow-x-auto" titulo="Tarefas por pasta" nota="abertas em cada pasta do Trabalho · clique numa coluna">
           {porPasta.length ? <Barras itens={porPasta} /> : <p className="text-sm text-muted">Nenhuma tarefa aberta.</p>}
         </Quadro>
-        <Quadro titulo="Tarefas por lista" nota="abertas em cada lista · clique numa coluna">
+        <Quadro className="min-w-0 overflow-x-auto" titulo="Tarefas por lista" nota="abertas em cada lista · clique numa coluna">
           {porLista.length ? <Barras itens={porLista} /> : <p className="text-sm text-muted">Nenhuma tarefa aberta.</p>}
         </Quadro>
       </div>
 
-      <Quadro titulo="Cada pessoa" nota="o que está atrasado, em dia e sem prazo · clique num número">
+      <Quadro className="min-w-0 overflow-x-auto" titulo="Cada pessoa" nota="o que está atrasado, em dia e sem prazo · clique num número">
         <div className="overflow-x-auto">
           <table className="w-full min-w-[520px] text-sm">
             <thead>

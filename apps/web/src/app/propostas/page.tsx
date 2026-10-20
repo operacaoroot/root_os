@@ -117,6 +117,8 @@ export default function Propostas() {
   const [plataforma, setPlataforma] = useState<boolean | null>(null);
   const [crm, setCrm] = useState<PainelComercial | null>(null);
   const [erro, setErro] = useState<string | null>(null);
+  /** O serviço das propostas antigas fora do ar (503) não esconde as da sala: vira aviso. */
+  const [avisoDoServico, setAvisoDoServico] = useState<string | null>(null);
   const [carregando, setCarregando] = useState(true);
   const [selecionada, setSelecionada] = useState<Linha | null>(null);
   const [criando, setCriando] = useState<string | null>(null);
@@ -127,6 +129,7 @@ export default function Propostas() {
     if (!token) return;
     setCarregando(true);
     setErro(null);
+    setAvisoDoServico(null);
     const tarefas: Promise<unknown>[] = [];
     if (verSala) {
       tarefas.push(apiGet<PropostasDaSala>('/comercial/propostas', token).then(setSala).catch((e) => setErro((e as Error).message)));
@@ -141,6 +144,7 @@ export default function Propostas() {
         })
         .catch((e) => {
           if (e instanceof ErroDaApi && e.status === 403) setPlataforma(false);
+          else if (e instanceof ErroDaApi && e.status === 503) setAvisoDoServico((e as Error).message);
           else setErro((e as Error).message);
         }),
     );
@@ -196,6 +200,11 @@ export default function Propostas() {
   return (
     <div className="com-tema mx-auto max-w-[1180px] space-y-6 text-text">
       {erro && <div className="rounded-lg border border-bad/30 bg-bad/10 px-4 py-2 text-sm text-bad">{erro}</div>}
+      {avisoDoServico && (
+        <div className="rounded-lg border border-border bg-surface px-4 py-2 text-sm text-muted">
+          As propostas antigas do serviço de propostas não vieram agora ({avisoDoServico}). As da sala seguem abaixo.
+        </div>
+      )}
 
       <Funil linhas={linhas} chegou={chegou} filtrar={setChegou} emJogo={emJogo} fechadas={fechadas.length} valorFechado={valorFechado} comCrm={!!crm} />
 

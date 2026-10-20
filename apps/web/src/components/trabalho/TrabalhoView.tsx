@@ -758,7 +758,8 @@ function TrabalhoConteudo({ visaoInicial, modo }: { visaoInicial: Visao; modo: M
               {!listaId && !semLista && estrutura ? 'Selecione uma lista para ver as tarefas.' : tarefas ? `${visiveis.length} ${visiveis.length === 1 ? 'tarefa' : 'tarefas'}${visiveis.length !== tarefas.total ? ` de ${tarefas.total} na consulta` : ''}` : erro ? 'Consulta indisponível' : 'Carregando…'}
             </p>
           </div>
-          <div className="flex flex-wrap items-center gap-2">
+          {/* Os seletores não passam da largura da tela a 390 px (versão final). */}
+          <div className="flex min-w-0 flex-wrap items-center gap-2 [&>select]:min-w-0 [&>select]:max-w-full">
             <input
               aria-label="Buscar tarefas"
               value={fBusca}

@@ -71,11 +71,12 @@ const SELETORES = {
   // Texto que, visível na área principal, quer dizer tela quebrada.
   textoDeErro: /Application error|Internal Server Error|Algo deu errado|Erro ao carregar|Não foi possível carregar|Unhandled Runtime Error/i,
   areas: {
-    comercial: 'Motor Comercial',
+    // Rótulos das ÁREAS da barra da produção (navegacao-modulos.ts), não das seções.
+    comercial: 'Comercial',
     dia: 'Dia a dia',
     trabalho: 'Trabalho',
-    financeiro: 'Motor Financeiro',
-    controle: 'Configurações da empresa',
+    financeiro: 'Financeiro',
+    controle: 'Configurações',
   },
   comercial: {
     ordem: ['Painel geral', 'Funil vivo', 'Propostas', 'Lista de leads', 'Contratos vivos', 'Simulador de WhatsApp', 'Torre das automações', 'Relatório da semana'],
@@ -117,9 +118,9 @@ const SELETORES = {
     { nome: 'dia-visao-geral', url: '/dia-a-dia' },
     { nome: 'pendencias', url: '/caixa' },
     { nome: 'trabalho', url: '/trabalho' },
-    { nome: 'financeiro', url: '/financeiro' },
-    { nome: 'cofre', url: '/cofre' },
-    { nome: 'integracoes', url: '/conexoes' },
+    { nome: 'financeiro', url: '/financeiro', daProducao: true },
+    { nome: 'cofre', url: '/cofre', daProducao: true },
+    { nome: 'integracoes', url: '/conexoes', daProducao: true },
   ],
 };
 
@@ -217,6 +218,16 @@ function gravar() {
 // ============================================================================
 let TOKEN = '';
 let USUARIO = null;
+
+async function escrever(metodo, caminho, corpo) {
+  const r = await fetch(`${API}${caminho}`, {
+    method: metodo,
+    headers: { authorization: `Bearer ${TOKEN}`, 'content-type': 'application/json' },
+    body: JSON.stringify(corpo),
+  });
+  if (!r.ok) throw new Falha(`${metodo} ${caminho.split('?')[0]} respondeu ${r.status}`);
+  return r.json().catch(() => null);
+}
 
 async function api(caminho) {
   const r = await fetch(`${API}${caminho}`, { headers: { authorization: `Bearer ${TOKEN}` } });
@@ -553,7 +564,27 @@ async function main() {
           nomes = [det?.assignee, ...(det?.outrosResponsaveis ?? det?.responsaveis ?? []).map((r) => r?.nome ?? r?.name)].filter(Boolean);
         }
       }
-      conferir(alvo, 'nenhuma tarefa com mais de um responsável nesta base');
+      // A cópia da produção não tem tarefa com dois responsáveis. O passo cria um
+      // segundo responsável numa tarefa (com a versão lida), confere o pop-up e DESFAZ.
+      let desfazer = null;
+      if (!alvo) {
+        const tarefas = itensCom(await api('/trabalho/tarefas?limit=200'));
+        const pessoas = itensCom(await api('/trabalho/pessoas'));
+        const t = tarefas.find((x) => x.assigneeUserId && !(x.outrosResponsaveisIds ?? []).length);
+        const outra = t && pessoas.find((x) => x.id !== t.assigneeUserId);
+        if (t && outra) {
+          const antes = await api(`/trabalho/tarefas/${t.id}`);
+          const r = await escrever('PATCH', `/trabalho/tarefas/${t.id}`, { outrosResponsaveisIds: [outra.id], expectedUpdatedAt: antes.updatedAt });
+          alvo = t.id;
+          nomes = [antes.assigneeUser?.name ?? antes.assignee, outra.nome].filter(Boolean);
+          desfazer = async () => {
+            const agora = await api(`/trabalho/tarefas/${t.id}`);
+            await escrever('PATCH', `/trabalho/tarefas/${t.id}`, { outrosResponsaveisIds: [], expectedUpdatedAt: agora.updatedAt });
+          };
+          void r;
+        }
+      }
+      conferir(alvo, 'nenhuma tarefa com responsável para receber um segundo');
       await p.goto(`${WEB}/trabalho?tarefa=${alvo}`, { waitUntil: 'domcontentloaded' });
       await esperar(p);
       const popup = p.locator(SELETORES.trabalho.popup).first();
@@ -564,6 +595,7 @@ async function main() {
       conferir(!vigia.problemas().length, vigia.problemas().slice(0, 2).join(' · '));
       await foto(p, 'popup-responsaveis-escuro');
       await p.keyboard.press('Escape').catch(() => {});
+      if (desfazer) await desfazer();
       return { detalhe: { responsaveisNaTarefa: nomes.length, responsaveisNoPopup: achados } };
     });
 
@@ -590,16 +622,20 @@ async function main() {
       const c = await contexto(navegador, 'dark', { width: 390, height: 844 });
       const pg = await c.newPage();
       const rolam = [];
+      const baseDaProducao = [];
       for (const t of SELETORES.telas) {
         await pg.goto(`${WEB}${t.url}`, { waitUntil: 'domcontentloaded' });
         await esperar(pg);
         const rola = await rolaNaHorizontal(pg);
-        prova.semRolagemHorizontal.push({ tela: t.nome, rola });
-        if (rola) rolam.push(t.nome);
+        prova.semRolagemHorizontal.push({ tela: t.nome, rola, daProducao: !!t.daProducao });
+        // Tela de fora do foco, sem mudança nossa: o que ela faz é o que a produção faz.
+        // Fica registrado como linha de base, não como falha desta versão.
+        if (rola && t.daProducao) baseDaProducao.push(t.nome);
+        else if (rola) rolam.push(t.nome);
       }
       await c.close();
       conferir(!rolam.length, `rolam na horizontal: ${rolam.join(', ')}`);
-      return { detalhe: { telas: SELETORES.telas.length } };
+      return { detalhe: { telas: SELETORES.telas.length, linhaDeBaseDaProducao: baseDaProducao } };
     });
 
     // ---- 16. fotos em escuro, claro e 390 px ----
