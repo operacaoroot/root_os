@@ -2,7 +2,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { ConflictException, NotFoundException } from '@nestjs/common';
 import { PrismaClient } from '@prisma/client';
 import {
-  VISTA_PADRAO_DE_MINHAS_TAREFAS, VistaCriarSchema, agruparTarefas, grupoDeVencimento, ordenarTarefas,
+  VISTA_PADRAO_DE_MINHAS_TAREFAS, VISTA_PADRAO_DO_FUNIL, VistaCriarSchema, agruparTarefas, grupoDeVencimento, ordenarTarefas,
 } from '@mktos/shared';
 import { VistasService } from '../src/work/vistas.service';
 import type { PrismaService } from '../src/prisma/prisma.service';
@@ -75,6 +75,21 @@ describe('vistas: as regras puras', () => {
     expect(VistaCriarSchema.safeParse({ tela: 'quadro', nome: 'Nova', config: { ...antiga, visao: 'calendario', agrupamento: 'prazo', concluidas: 'ocultar' } }).success).toBe(true);
     expect(VistaCriarSchema.safeParse({ tela: 'minhas-tarefas', nome: 'Régua', config: { ...VISTA_PADRAO_DE_MINHAS_TAREFAS, agrupamento: 'prazo' } }).success).toBe(true);
   });
+
+  // Rodada da interface (U2, 20/10/2026): os filtros do painel entram como chaves opcionais.
+  it('a vista do quadro e a da implantação aceitam os filtros do painel, e a forma continua estrita', () => {
+    const antiga = { densidade: 'compacto', visao: 'board', filtros: { assignee: '', agente: '', statusId: '', cliente: '', escopo: 'todos', q: '' } };
+    const comPainel = { ...antiga, filtros: { ...antiga.filtros, pessoa: 'sem-vinculo', prazo: 'hoje', etiqueta: 'tag-1', opcao: 'op-1', arquivadas: true } };
+    for (const tela of ['quadro', 'implantacao'] as const) {
+      expect(VistaCriarSchema.safeParse({ tela, nome: 'Painel', config: antiga }).success).toBe(true);
+      expect(VistaCriarSchema.safeParse({ tela, nome: 'Painel', config: comPainel }).success).toBe(true);
+      expect(VistaCriarSchema.safeParse({ tela, nome: 'Painel', config: { ...antiga, extra: 1 } }).success).toBe(false);
+      expect(VistaCriarSchema.safeParse({ tela, nome: 'Painel', config: { ...comPainel, filtros: { ...comPainel.filtros, arquivadas: 'sim' } } }).success).toBe(false);
+      expect(VistaCriarSchema.safeParse({ tela, nome: 'Painel', config: { ...comPainel, filtros: { ...comPainel.filtros, prazo: 'x'.repeat(21) } } }).success).toBe(false);
+      // A forma do funil não serve à implantação nem ao quadro.
+      expect(VistaCriarSchema.safeParse({ tela, nome: 'Funil', config: VISTA_PADRAO_DO_FUNIL }).success).toBe(false);
+    }
+  });
 });
 
 const URL = process.env.TEST_DATABASE_URL;
@@ -121,6 +136,26 @@ describe.skipIf(!URL)('vistas: contra o Postgres', () => {
     await expect(svc.alterar(CASA, EU, v.id, { config: { densidade: 'compacto' } })).rejects.toThrow();
     const nova = await svc.alterar(CASA, EU, v.id, { config: { ...cfg, ordenacao: { campo: 'cliente', direcao: 'desc' } } });
     expect((nova.config as typeof cfg).ordenacao).toEqual({ campo: 'cliente', direcao: 'desc' });
+  });
+
+  it('a implantação tem as vistas dela: grava, lista separada do quadro e confere a config pela tela', async () => {
+    const quadro = { densidade: 'compacto' as const, visao: 'board' as const, filtros: { assignee: '', agente: '', statusId: '', cliente: '', escopo: 'todos' as const, q: '' } };
+    const daImplantacao = { ...quadro, filtros: { ...quadro.filtros, escopo: 'atrasados' as const, pessoa: EU } };
+    const q = await svc.criar(CASA, EU, { tela: 'quadro', nome: 'Atrasadas', padrao: true, config: quadro });
+    const i = await svc.criar(CASA, EU, { tela: 'implantacao', nome: 'Atrasadas', padrao: true, config: daImplantacao });
+    // O mesmo nome e uma padrão em cada tela: são vistas de telas diferentes.
+    expect((await svc.listar(CASA, EU, 'quadro')).map((v) => [v.id, v.padrao])).toEqual([[q.id, true]]);
+    const lidas = await svc.listar(CASA, EU, 'implantacao');
+    expect(lidas.map((v) => [v.id, v.padrao])).toEqual([[i.id, true]]);
+    expect(lidas[0].config).toEqual(daImplantacao);
+    // A config é conferida pela tela da vista: a do funil não entra na implantação.
+    await expect(svc.alterar(CASA, EU, i.id, { config: VISTA_PADRAO_DO_FUNIL })).rejects.toThrow();
+    await expect(svc.alterar(CASA, EU, i.id, { config: { ...daImplantacao, filtros: { ...daImplantacao.filtros, escopo: 'meio' } } })).rejects.toThrow();
+    // A de outra pessoa não aparece e responde 404.
+    expect(await svc.listar(CASA, COLEGA, 'implantacao')).toEqual([]);
+    await expect(svc.alterar(CASA, COLEGA, i.id, { nome: 'Roubada' })).rejects.toBeInstanceOf(NotFoundException);
+    expect(svc.telaValida('implantacao')).toBe('implantacao');
+    expect(() => svc.telaValida('trabalho')).toThrow(NotFoundException);
   });
 
   it('a vista é da pessoa: a de outra pessoa e a de outra empresa respondem 404 e não aparecem', async () => {

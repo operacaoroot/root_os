@@ -80,6 +80,21 @@ export const VistaQuadroSchema = z.object({
     cliente: z.string().max(80),
     escopo: z.enum(['todos', 'meus', 'atrasados']),
     q: z.string().max(120),
+    /*
+     * Os filtros que foram para o painel "Filtros" (rodada da interface U2, 20/10/2026).
+     * Todos opcionais: a vista salva antes deles continua valendo como está, e a tela
+     * só grava a chave quando o filtro está ligado.
+     */
+    /** O responsável pela conta (`assigneeUserId`) ou `sem-vinculo`. */
+    pessoa: z.string().max(120).optional(),
+    /** O recorte da régua de prazo (`?prazo=`). */
+    prazo: z.string().max(20).optional(),
+    /** A etiqueta (`?tagId=`). */
+    etiqueta: z.string().max(80).optional(),
+    /** A opção de um campo da lista (`?opcao=`). */
+    opcao: z.string().max(80).optional(),
+    /** Incluir as arquivadas (`?arquivadas=1`). */
+    arquivadas: z.boolean().optional(),
   }),
 }).strict();
 export type VistaQuadro = z.infer<typeof VistaQuadroSchema>;
