@@ -1,12 +1,12 @@
 {
-  "inicio": "2026-10-20T21:52:57.642Z",
+  "inicio": "2026-10-20T22:29:13.570Z",
   "web": "http://127.0.0.1:3031",
   "passos": [
     {
       "n": 1,
       "nome": "Menu aberto: a logo oficial sem texto ao lado e as subseções da área ativa",
       "ok": true,
-      "ms": 883,
+      "ms": 1308,
       "detalhe": {
         "itens": [
           "Visão geral",
@@ -20,13 +20,13 @@
       "n": 2,
       "nome": "/painel continua vivo fora do menu",
       "ok": true,
-      "ms": 689
+      "ms": 735
     },
     {
       "n": 3,
       "nome": "Recolher: só o R, e o balão no hover com as subseções, clicável",
       "ok": true,
-      "ms": 1539,
+      "ms": 1662,
       "detalhe": {
         "largura": 64,
         "links": [
@@ -41,7 +41,7 @@
       "n": 4,
       "nome": "Trabalho: Filtros (n) com responsável e prazo, estado no endereço",
       "ok": true,
-      "ms": 1180,
+      "ms": 1240,
       "detalhe": {
         "endereco": "?assigneeUserId=6a463a3f-8acb-4ba4-8272-306a301d95b2&prazo=atrasada"
       }
@@ -50,25 +50,27 @@
       "n": 5,
       "nome": "Trabalho: salvar a vista com os filtros",
       "ok": true,
-      "ms": 53,
+      "ms": 72,
       "detalhe": {
-        "nome": "Interface 182168"
+        "nome": "Interface 360030"
       }
     },
     {
       "n": 6,
       "nome": "Todas as tarefas: segmentos por pasta de topo, e o segmento filtra",
       "ok": true,
-      "ms": 7502,
+      "ms": 9239,
       "detalhe": {
-        "todas": 38,
+        "todas": 57,
         "porSegmento": {
           "Administrativa": 0,
           "Pasta da prova 002343": 0,
           "Pasta da prova 030143": 0,
           "Pasta da prova 032250": 0,
+          "Pasta da prova 215432": 0,
+          "Pasta da prova 221123": 0,
           "Gestão": 0,
-          "Clientes": 38,
+          "Clientes": 57,
           "Sem pasta": 0
         }
       }
@@ -77,31 +79,31 @@
       "n": 7,
       "nome": "Implantação: o par Vistas e Filtros, sem a aba da Rodada",
       "ok": true,
-      "ms": 737
+      "ms": 728
     },
     {
       "n": 8,
       "nome": "WhatsApp como área própria, com a tela; o endereço antigo redireciona",
       "ok": true,
-      "ms": 1615
+      "ms": 1521
     },
     {
       "n": 9,
       "nome": "Funil vivo: sem os chips das etapas, com Vistas e Filtros (responsável primeiro)",
       "ok": true,
-      "ms": 1490
+      "ms": 1572
     },
     {
       "n": 10,
       "nome": "Funil vivo: a Lista, com o clique abrindo o painel do lead",
       "ok": true,
-      "ms": 268
+      "ms": 257
     },
     {
       "n": 11,
       "nome": "Funil vivo: mover para trás sem pedido, com a mensagem; e de volta",
       "ok": true,
-      "ms": 1032,
+      "ms": 1062,
       "detalhe": {
         "de": "reuniao_agendada",
         "para": "qualificacao",
@@ -112,7 +114,7 @@
       "n": 12,
       "nome": "Conexões › Granola: \"Conectar ao Granola\" faz o OAuth (dublê) e volta conectado, ou diz por que não",
       "ok": true,
-      "ms": 2276,
+      "ms": 2329,
       "detalhe": {
         "conectado": false,
         "servidor": "http://127.0.0.1:4791/mcp"
@@ -122,17 +124,17 @@
       "n": 13,
       "nome": "Atas › Reuniões do Granola › Gerar ata (ou, sem conexão, o aviso e a ata colada): decisões, pendências e sugestões",
       "ok": true,
-      "ms": 1510,
+      "ms": 1587,
       "detalhe": {
         "granola": "sem conexão (aviso)",
-        "ata": "memoria:0b43fd31-44c6-47a5-80a3-9147e1dd4c1a"
+        "ata": "memoria:1edcce30-7210-4eb0-b946-1c3e1fe88bfd"
       }
     },
     {
       "n": 14,
       "nome": "Atas: aceitar uma sugestão vira tarefa no Trabalho",
       "ok": true,
-      "ms": 795,
+      "ms": 793,
       "detalhe": {
         "tarefa": "Enviar o relatório mensal da Padaria Exemplo"
       }
@@ -141,7 +143,7 @@
       "n": 15,
       "nome": "Conexões › WhatsApp (DigiSac): o cartão com a URL do webhook, sem token na tela",
       "ok": true,
-      "ms": 820,
+      "ms": 797,
       "detalhe": {
         "webhook": "http://127.0.0.1:3031/api/comercial/webhooks/digisac/<empresa>?segredo=",
         "semSegredo": 404
@@ -151,7 +153,7 @@
       "n": 16,
       "nome": "Celular (390 px): o menu abre inteiro e as telas não rolam de lado",
       "ok": true,
-      "ms": 3272,
+      "ms": 3297,
       "detalhe": {
         "trabalho": true,
         "funil": true,
@@ -184,10 +186,10 @@
     "interface-menu-390.png"
   ],
   "avisos": [
-    "no seed as tarefas estão todas num segmento só ({\"Administrativa\":0,\"Pasta da prova 002343\":0,\"Pasta da prova 030143\":0,\"Pasta da prova 032250\":0,\"Gestão\":0,\"Clientes\":38,\"Sem pasta\":0}); o recorte entre pastas está provado na suíte da API",
+    "no seed as tarefas estão todas num segmento só ({\"Administrativa\":0,\"Pasta da prova 002343\":0,\"Pasta da prova 030143\":0,\"Pasta da prova 032250\":0,\"Pasta da prova 215432\":0,\"Pasta da prova 221123\":0,\"Gestão\":0,\"Clientes\":57,\"Sem pasta\":0}); o recorte entre pastas está provado na suíte da API",
     "Granola direto não conectou na stack do seed (cofre sem chave de 32 bytes nesta homologação); o OAuth, a lista e o Gerar ata com o dublê estão provados na suíte da API"
   ],
   "ok": true,
-  "fim": "2026-10-20T21:53:25.885Z",
-  "duracaoMs": 28242
+  "fim": "2026-10-20T22:29:45.403Z",
+  "duracaoMs": 31833
 }

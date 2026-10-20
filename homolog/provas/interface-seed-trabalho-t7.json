@@ -1,0 +1,49 @@
+{
+  "inicio": "2026-10-20T22:31:02.162Z",
+  "web": "http://127.0.0.1:3031",
+  "passos": [
+    {
+      "n": 1,
+      "nome": "mesa, sócio e admin entraram pela API",
+      "ms": 235
+    },
+    {
+      "n": 2,
+      "nome": "R4 com senha no mesmo lugar: o clique abriu a caixa ali, e Aprovar foi junto com a senha",
+      "ms": 1939,
+      "detalhe": "ler-e-aprovar · Aprovada e EXECUTADA: comercial.cobranca 9073fc0d-07c7-51a8-9684-ebed086b09f4:v1.",
+      "approvalId": "bec782f7-c838-4051-b08b-d1d7aa00bc44"
+    },
+    {
+      "n": 3,
+      "nome": "vencida: \"Pedir de novo\" recriou o pedido; quem clicou vira o proponente e não assina",
+      "ms": 3470,
+      "detalhe": "d498cc8e-c0be-420d-a8e9-00ee667524b0 → 0fb35d2d-463e-439c-8634-ea493079abd6 · o sócio pode assinar",
+      "tentativas": [
+        {
+          "id": "d498cc8e-c0be-420d-a8e9-00ee667524b0",
+          "ok": true,
+          "texto": "Pedido de novo, com o conteúdo de agora. Você pediu, então não assina: outra pessoa com alçada aprova na fila."
+        }
+      ]
+    },
+    {
+      "n": 4,
+      "nome": "fotos da fila em escuro, claro e 390 px; nada rola na horizontal no celular",
+      "ms": 6921
+    }
+  ],
+  "screenshots": [
+    "interface-seed-trabalho-t7-r4-aprovada-com-senha.png",
+    "interface-seed-trabalho-t7-pedir-de-novo.png",
+    "interface-seed-trabalho-t7-fila-escuro.png",
+    "interface-seed-trabalho-t7-fila-claro.png",
+    "interface-seed-trabalho-t7-fila-390.png"
+  ],
+  "avisos": [
+    "R3 na linha sem pedido próprio nesta execução: o mover do funil deixou de passar por aprovação (20/10/2026). Passe T7_R3_ID, ou T7_LEAD para a sala dentro da janela."
+  ],
+  "ok": true,
+  "fim": "2026-10-20T22:31:09.168Z",
+  "duracaoMs": 7005
+}
