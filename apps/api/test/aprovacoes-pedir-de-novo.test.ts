@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeAll, afterAll, vi } from 'vitest';
-import { ConflictException, ForbiddenException } from '@nestjs/common';
+import { ConflictException, ForbiddenException, GoneException } from '@nestjs/common';
 import { ActorType, ApprovalState, PrismaClient, RiskLevel, ToolCallStatus } from '@prisma/client';
 
 import { ApprovalsController } from '../src/approvals/approvals.controller';
@@ -76,7 +76,6 @@ describe('o comercial pede de novo pelo caminho de cada pedido (dublês)', () =>
     const registro = new RepedidosRegistry();
     const r = new RepedidosDoComercial(
       registro,
-      (o.mover ?? {}) as never,
       (o.salas ?? {}) as never,
       (o.propostas ?? {}) as never,
       (o.whats ?? {}) as never,
@@ -103,13 +102,11 @@ describe('o comercial pede de novo pelo caminho de cada pedido (dublês)', () =>
     for (const k of registro.inscritos) expect(registro.de(k)!.permissoes).toEqual(['leads.editar']);
   });
 
-  it('mover: o destino sai do HASH da vencida e o token volta só para quem pediu', async () => {
-    const pedir = vi.fn(async () => ({ approvalId: 'nova', token: 'tok', expiraEm: 'x', de: 'qualificacao', para: 'reuniao_agendada', pendencias: [], resumo: 's' }));
-    const { r } = montar({ mover: { pedir } });
-    const out = await r.moverDeNovo(base);
-    expect(pedir).toHaveBeenCalledWith('o', 'L1', { para: 'reuniao_agendada' }, base.quem);
-    expect(out.approvalId).toBe('nova');
-    expect(out.paraQuemPediu).toEqual({ moverDoFunil: { leadId: 'L1', pedido: expect.objectContaining({ token: 'tok' }) } });
+  // U4 (20/10/2026): o mover não pede mais assinatura. Pedir de novo um mover vencido responde 410 e não cria nada.
+  it('mover: o pedido vencido de mover não volta à fila (aposentado); o que não é mover segue recusado', async () => {
+    const { r } = montar({});
+    await expect(r.moverDeNovo(base)).rejects.toBeInstanceOf(GoneException);
+    await expect(r.moverDeNovo(base)).rejects.toThrow(/move direto no funil/);
     await expect(r.moverDeNovo({ ...base, contentHash: hashDaSuperficieAntiga('lead', { status: 'ganho' }) })).rejects.toThrow(ConflictException);
   });
 
@@ -231,7 +228,9 @@ describe.skipIf(!URL)('pedir de novo e a limpeza das vencidas, contra o banco', 
     const repedidos = new RepedidosRegistry();
     /*
      * A receita de teste faz o que o domínio faz: cria o pedido do zero em nome
-     * de quem clicou (aqui pela superfície do token, como o mover do funil).
+     * de quem clicou (aqui pela superfície do token, como o `PATCH /leads/:id`;
+     * o mover do funil não pede mais assinatura desde a U4, 20/10/2026, e o
+     * pedido de mover que nascesse aqui ficaria impedido na fila).
      */
     repedidos.inscrever('legado:lead', {
       permissoes: ['leads.editar'],
@@ -242,8 +241,8 @@ describe.skipIf(!URL)('pedir de novo e a limpeza das vencidas, contra o banco', 
           actorId: pv.quem.id,
           resourceType: 'lead',
           resourceId: pv.resourceId,
-          changes: { para: 'reuniao_agendada' },
-          summary: 'Mover Construtora Alicerce de E2 · Qualificação para E3 · Reunião agendada (portões cumpridos).',
+          changes: { status: 'ganho' },
+          summary: 'Marcar Construtora Alicerce como ganho.',
           propostoPorTipo: ActorType.user,
         });
         return { approvalId: t.approvalId, paraQuemPediu: { token: t.token } };

@@ -1,11 +1,11 @@
-import { ConflictException, Injectable, OnModuleInit } from '@nestjs/common';
+import { ConflictException, GoneException, Injectable, OnModuleInit } from '@nestjs/common';
 import { ActorType } from '@prisma/client';
 
 import { destinoDoHash } from '../approvals/destino-do-mover';
 import { RepedidosRegistry, type PedidoRefeito, type PedidoVencido } from '../approvals/repedidos.registry';
 import { CAP_COBRANCA, CAP_CONTRATO, DinheiroService } from './dinheiro.service';
 import { CAP_FECHAMENTO, FechamentoService } from './fechamento.service';
-import { MoverService } from './mover.service';
+import { PEDIDO_DE_MOVER_APOSENTADO } from './mover.service';
 import { CAPACIDADE_DA_PROPOSTA, PropostaService } from './proposta.service';
 import { CAPACIDADE_DA_SALA, SalaVersaoService } from './sala-versao.service';
 import { CAPACIDADE_DO_WHATSAPP, WhatsappComercialService } from './whatsapp.service';
@@ -17,10 +17,9 @@ import { CAPACIDADE_DO_WHATSAPP, WhatsappComercialService } from './whatsapp.ser
  * em nome de quem clicou em /atendimento, e esse caminho relê o conteúdo de
  * agora:
  *
- *   · mover o cartão (superfície do token) → `MoverService.pedir`, que relê a
- *     etapa atual, o destino permitido e os portões. O destino sai do HASH da
- *     vencida (o mesmo que a fila confere), nunca do resumo. O token novo volta
- *     só para quem clicou, que conclui no funil;
+ *   · mover o cartão (superfície do token): APOSENTADO em 20/10/2026 (U4). O
+ *     mover não pede mais assinatura; pedir de novo um mover vencido responde
+ *     410 com o caminho novo e não cria nada (a pessoa move direto no funil);
  *   · publicar a sala → `SalaVersaoService.publicar`, que remonta a versão
  *     aberta com o derivado de agora;
  *   · publicar a proposta → `PropostaService.repedirLiberacao`, que relê a
@@ -59,7 +58,6 @@ function versaoDoPedido(p: PedidoVencido): number {
 export class RepedidosDoComercial implements OnModuleInit {
   constructor(
     private readonly registro: RepedidosRegistry,
-    private readonly mover: MoverService,
     private readonly salas: SalaVersaoService,
     private readonly propostas: PropostaService,
     private readonly whats: WhatsappComercialService,
@@ -78,17 +76,15 @@ export class RepedidosDoComercial implements OnModuleInit {
     this.registro.inscrever(CAP_FECHAMENTO, { permissoes: PERMISSOES, repedir: (p) => this.fechamentoDeNovo(p) }, quem);
   }
 
+  /**
+   * U4 (20/10/2026): o mover não pede mais assinatura. O pedido vencido de
+   * mover não volta à fila: a resposta diz que a pessoa move direto no funil.
+   * O que não é um mover (o `PATCH /leads/:id`) segue recusado como antes.
+   */
   async moverDeNovo(p: PedidoVencido): Promise<PedidoRefeito> {
     const para = destinoDoHash(p.contentHash);
     if (!para) throw new ConflictException('O pedido vencido não era um mover do funil com destino conferido: peça pelo funil.');
-    const pedido = await this.mover.pedir(p.orgId, p.resourceId, { para }, p.quem);
-    return {
-      approvalId: pedido.approvalId,
-      aviso:
-        'Pedido de novo, a partir da etapa de agora. Você pediu, então não assina: outra pessoa assina na fila, ' +
-        'e depois você conclui no funil, nesta mesma aba.',
-      paraQuemPediu: { moverDoFunil: { leadId: p.resourceId, pedido } },
-    };
+    throw new GoneException(PEDIDO_DE_MOVER_APOSENTADO);
   }
 
   async salaDeNovo(p: PedidoVencido): Promise<PedidoRefeito> {

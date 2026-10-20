@@ -1,17 +1,14 @@
 /*
- * MOVER O CARTÃO DO FUNIL (rodada do painel P5, 18/10/2026) — a parte sem tela.
+ * MOVER O CARTÃO DO FUNIL (rodada do painel P5, 18/10/2026; sem limitação desde
+ * a rodada da interface U4, 20/10/2026) — a parte sem tela.
  *
- * Mudar a etapa pela tela é escrita sensível, como sempre foi o `PATCH
- * /leads/:id`: quem move PEDE, outra pessoa assina em /atendimento, e quem
- * pediu conclui com o token de uso único. Este arquivo guarda o pedido na aba
- * (sessionStorage, vence com a aprovação, em 10 min) e fala com as três rotas.
+ * Decisão do dono do produto (20/10/2026): a pessoa com `leads.editar` move o
+ * lead para QUALQUER etapa, por arrasto ou pelo menu "Mover para", direto, sem
+ * pedido nem assinatura de outra pessoa. A tela diz só a mensagem que a API
+ * devolve ("Movido para…", e "sem as conclusões de…" quando ficou portão para
+ * trás). Saída leva o motivo no mesmo gesto, sem trava.
  *
- * O TOKEN SÓ MORA NESTA ABA, de propósito (revisão PA-7): ele é de uso único e
- * não deve ficar em claro no servidor. A tela diz isso no pedido, com a hora em
- * que ele vence, e relê o ESTADO do pedido (`GET …/mover/pedido`, só leitura,
- * sem token) para acender "concluir a mudança" quando a assinatura chega.
- * Fica fora do page.tsx porque página do App Router não exporta nada além do
- * componente.
+ * Fica fora do page.tsx porque página do App Router não exporta nada além do componente.
  */
 import {
   COMERCIAL_ETAPAS,
@@ -21,73 +18,25 @@ import {
   type CartaoDoFunil,
   type ComercialDestinoDoMover,
   type ComercialEtapa,
+  type ComercialMoverInput,
   type ComercialPedidoDeMover,
   type ComercialResultadoDoMover,
 } from '@mktos/shared';
 
-import { API_BASE, ErroDaApi, apiGet, apiPost, erroDaResposta } from '@/lib/api';
-
-/** O que `GET /comercial/lead/:id/mover/pedido` responde (espelho de `EstadoDoPedidoDeMover` da API). */
-export interface EstadoDoPedido {
-  approvalId: string;
-  estado: 'esperando' | 'confirmada' | 'usada' | 'recusada' | 'venceu';
-  /** O destino que o hash prende, recalculado no servidor. */
-  para: ComercialEtapa | null;
-  expiraEm: string;
-  confirmadaPor: string | null;
-  confirmadaEm: string | null;
-}
-
-/** De quanto em quanto tempo o cartão relê o pedido que espera assinatura. */
-export const RELEITURA_DO_PEDIDO_MS = 8_000;
-
-export async function lerEstadoDoPedido(leadId: string, approvalId: string, token: string | null): Promise<EstadoDoPedido | null> {
-  const r = await apiGet<{ pedido: EstadoDoPedido | null }>(`/comercial/lead/${leadId}/mover/pedido?aprovacao=${encodeURIComponent(approvalId)}`, token);
-  return r.pedido;
-}
+import { ErroDaApi, apiPost } from '@/lib/api';
 
 /** "10:42" no relógio de São Paulo. */
 export function horaSP(iso: string): string {
   return new Date(iso).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', timeZone: 'America/Sao_Paulo' });
 }
 
-/** O pedido saiu do jogo (usado, recusado ou vencido): a frase do aviso, ou `null` se ainda vale. */
-export function fraseDoFim(e: Pick<EstadoDoPedido, 'estado' | 'confirmadaPor'>): string | null {
-  if (e.estado === 'recusada') return 'O pedido foi recusado em /atendimento. Nada mudou.';
-  if (e.estado === 'venceu') {
-    return e.confirmadaPor
-      ? `O pedido foi assinado por ${e.confirmadaPor}, mas venceu antes de concluir. Nada mudou: peça de novo.`
-      : 'O pedido venceu sem assinatura. Nada mudou: peça de novo.';
-  }
-  if (e.estado === 'usada') return 'Este pedido já foi usado. Releia o funil.';
-  return null;
-}
-
-const CHAVE = (leadId: string) => `comercial.mover.${leadId}`;
-
-/** Os pedidos desta aba ainda dentro do prazo, por lead. O vencido some. */
-export function lerPedidos(agora = Date.now()): Record<string, ComercialPedidoDeMover> {
-  const saida: Record<string, ComercialPedidoDeMover> = {};
-  if (typeof window === 'undefined') return saida;
-  for (let i = 0; i < window.sessionStorage.length; i++) {
-    const k = window.sessionStorage.key(i);
-    if (!k?.startsWith('comercial.mover.')) continue;
-    try {
-      const p = JSON.parse(window.sessionStorage.getItem(k) ?? '') as ComercialPedidoDeMover & { leadId?: string };
-      if (new Date(p.expiraEm).getTime() > agora && p.leadId) saida[p.leadId] = p;
-    } catch {
-      /* linha ilegível: ignora */
-    }
-  }
-  return saida;
-}
-
+/**
+ * APOSENTADO (U4): o pedido de mover não existe mais. Fica para a tela da fila,
+ * que ainda o chama ao "pedir de novo" (a API responde 410 antes de chegar aqui).
+ */
 export function guardarPedido(leadId: string, p: ComercialPedidoDeMover): void {
-  window.sessionStorage.setItem(CHAVE(leadId), JSON.stringify({ ...p, leadId }));
-}
-
-export function esquecerPedido(leadId: string): void {
-  window.sessionStorage.removeItem(CHAVE(leadId));
+  if (typeof window === 'undefined') return;
+  window.sessionStorage.setItem(`comercial.mover.${leadId}`, JSON.stringify({ ...p, leadId }));
 }
 
 /** O rótulo curto da coluna ("E3", "Saídas"). */
@@ -95,51 +44,28 @@ export function rotuloCurto(etapa: ComercialEtapa | 'saidas'): string {
   return etapa === 'saidas' ? 'Saídas' : COMERCIAL_ROTULO_DA_ETAPA[etapa].split(' · ')[0];
 }
 
-/** As opções do menu "Mover para": cada etapa ativa e cada saída, com o porquê das desligadas. */
+/** As opções do menu "Mover para": cada etapa ativa e cada saída, menos a etapa em que o cartão está. */
 export function opcoesDoMenu(c: Pick<CartaoDoFunil, 'etapa' | 'voltaPara'>): ComercialDestinoDoMover[] {
   return [...COMERCIAL_ETAPAS, ...COMERCIAL_SAIDAS].filter((e) => e !== c.etapa).map((e) => destinoDoMover(c.etapa, e, c.voltaPara ?? null));
 }
 
-/** Soltar na coluna: a coluna "Saídas" leva ao registro de saída; as outras, ao destino da etapa. */
+/** Soltar na coluna: a coluna "Saídas" abre o motivo da saída; as outras levam à etapa. */
 export function destinoDaColuna(c: Pick<CartaoDoFunil, 'etapa' | 'voltaPara'>, coluna: ComercialEtapa | 'saidas'): ComercialDestinoDoMover {
   if (coluna === 'saidas') {
-    const d = destinoDoMover(c.etapa, 'perdido', c.voltaPara ?? null);
-    return d.permitido ? { ...d, caminho: 'saida' } : d;
+    const para = c.etapa === 'perdido' ? 'geladeira' : 'perdido';
+    return { ...destinoDoMover(c.etapa, para, c.voltaPara ?? null), caminho: 'saida' };
   }
   return destinoDoMover(c.etapa, coluna, c.voltaPara ?? null);
 }
 
-export function pedirMudanca(leadId: string, para: ComercialEtapa, token: string | null): Promise<ComercialPedidoDeMover> {
-  return apiPost<ComercialPedidoDeMover>(`/comercial/lead/${leadId}/mover/pedido`, { para }, token);
+/** Move direto: a API grava e devolve a mensagem da tela. */
+export function moverCartao(leadId: string, corpo: ComercialMoverInput, token: string | null): Promise<ComercialResultadoDoMover> {
+  return apiPost<ComercialResultadoDoMover>(`/comercial/lead/${leadId}/mover`, corpo, token);
 }
 
-/**
- * Conclui com o token de uso único. A assinatura que ainda não veio responde
- * 403 e o pedido FICA (dá para tentar de novo); vencido, usado ou recusado, o
- * pedido sai da aba.
- */
-export async function concluirMudanca(leadId: string, p: ComercialPedidoDeMover, token: string | null): Promise<ComercialResultadoDoMover> {
-  const res = await fetch(`${API_BASE}/comercial/lead/${leadId}/mover`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'x-approval-token': p.token, ...(token ? { Authorization: `Bearer ${token}` } : {}) },
-    body: JSON.stringify({ para: p.para }),
-  });
-  if (!res.ok) {
-    const body = (await res.json().catch(() => ({}))) as Record<string, unknown>;
-    const erro = erroDaResposta(body, res.status);
-    if (!/não confirmada/i.test(erro.message)) esquecerPedido(leadId);
-    throw erro;
-  }
-  esquecerPedido(leadId);
-  return res.json();
-}
-
-/** A frase da assinatura que ainda não veio, traduzida para quem clicou. */
+/** O erro do mover, traduzido para quem clicou. */
 export function fraseDoErro(e: unknown): string {
   const m = e instanceof Error ? e.message : String(e ?? '');
-  if (/não confirmada/i.test(m)) return 'A assinatura ainda não veio: outra pessoa precisa confirmar em /atendimento. O pedido continua de pé.';
-  if (/expirada/i.test(m)) return 'O pedido venceu sem assinatura. Peça de novo.';
-  if (/uso único/i.test(m)) return 'Este pedido já foi usado. Releia o funil.';
   const detalhes = e instanceof ErroDaApi && e.detalhes.length ? `: ${e.detalhes.join('; ')}` : '';
   return `${m || 'Não deu para mover agora.'}${detalhes}`;
 }
