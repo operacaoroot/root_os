@@ -17,8 +17,11 @@ import { anotarProcedencia } from './procedencia';
  *
  * COMO ELE ESCOLHE A RESPOSTA
  *   1. A tarefa vem marcada no prompt de sistema: `[tarefa:comercial.diagnostico]`.
- *      Pedido sem marca, ou de tarefa sem arquivo, LANÇA: o stub não inventa
- *      resposta para pergunta que ninguém escreveu.
+ *      DESDE A RODADA DOS AGENTES (21/10/2026) a FUNÇÃO da chamada também é
+ *      marca: com `funcao: 'CO-11'` vale o arquivo `CO-11.json` ou o que declara
+ *      `"funcao": "CO-11"`. A tarefa marcada vem primeiro; sem fixture dela, a
+ *      da função. Pedido sem nenhuma das duas marcas, ou cuja marca não tem
+ *      arquivo, LANÇA: o stub não inventa resposta para pergunta que ninguém escreveu.
  *   2. O arquivo da tarefa tem `respostas: [{ quando: [...], depoisDe?, texto }]` e
  *      `padrao`. Vale a primeira resposta cujos termos de `quando` aparecem
  *      TODOS no pedido do usuário (sem acento, sem caixa), contados depois da
@@ -47,9 +50,20 @@ interface RespostaDoStub {
 }
 
 interface ArquivoDoStub {
-  tarefa: string;
+  /** A tarefa marcada no prompt de sistema. Opcional quando o arquivo é de uma função. */
+  tarefa?: string;
+  /** A função do cadastro único (`CO-11`). Também vale o nome do arquivo (`CO-11.json`). */
+  funcao?: string;
   respostas?: RespostaDoStub[];
   padrao?: string | null;
+}
+
+/** O id de uma função do cadastro (`CO-11`, `AG-01`). */
+const ID_DE_FUNCAO = /^[A-Z]{2}-\d{2}$/;
+
+/** A chave do índice para um arquivo de função (fica separada das tarefas). */
+function chaveDaFuncao(id: string): string {
+  return `funcao:${id.trim().toUpperCase()}`;
 }
 
 export class StubSemRespostaError extends Error {
@@ -79,26 +93,50 @@ export function pastaDoStub(): string | null {
   return candidatas.find((c) => existsSync(c)) ?? null;
 }
 
-/** Lê as tarefas da pasta. Arquivo malformado lança na leitura, com o nome dele. */
+/**
+ * Lê as tarefas da pasta. Arquivo malformado lança na leitura, com o nome dele.
+ * Um arquivo entra pela tarefa (`"tarefa"`), pela função (`"funcao"`) ou pelo
+ * nome quando ele é um id de função (`CO-11.json`); sem nenhum dos três, lança.
+ */
 export function carregarRespostasDoStub(pasta: string): Map<string, ArquivoDoStub> {
   const mapa = new Map<string, ArquivoDoStub>();
   for (const nome of readdirSync(pasta).filter((n) => n.endsWith('.json')).sort()) {
     const bruto = JSON.parse(readFileSync(join(pasta, nome), 'utf8')) as ArquivoDoStub;
-    if (!bruto || typeof bruto.tarefa !== 'string' || !bruto.tarefa.trim()) {
-      throw new Error(`fixture do stub sem "tarefa": ${nome}`);
+    const chaves: string[] = [];
+    if (bruto && typeof bruto.tarefa === 'string' && bruto.tarefa.trim()) chaves.push(bruto.tarefa.trim().toLowerCase());
+    if (bruto && typeof bruto.funcao === 'string' && ID_DE_FUNCAO.test(bruto.funcao.trim().toUpperCase())) {
+      chaves.push(chaveDaFuncao(bruto.funcao));
     }
-    mapa.set(bruto.tarefa.trim().toLowerCase(), bruto);
+    const doNome = nome.slice(0, -'.json'.length);
+    if (ID_DE_FUNCAO.test(doNome)) chaves.push(chaveDaFuncao(doNome));
+    if (!bruto || !chaves.length) {
+      throw new Error(`fixture do stub sem "tarefa" nem "funcao": ${nome}`);
+    }
+    for (const c of new Set(chaves)) mapa.set(c, bruto);
   }
   return mapa;
 }
 
 /** Puro: a resposta do stub para um pedido, ou o erro que diz por que não há. */
-export function responderPeloStub(respostas: Map<string, ArquivoDoStub>, input: { system: string; user: string }): string {
+export function responderPeloStub(
+  respostas: Map<string, ArquivoDoStub>,
+  input: { system: string; user: string; funcao?: string },
+): string {
   const marca = MARCA_DA_TAREFA.exec(input.system ?? '');
-  if (!marca) throw new StubSemRespostaError('o prompt de sistema não marca a tarefa ([tarefa:...])');
-  const tarefa = marca[1].toLowerCase();
-  const arquivo = respostas.get(tarefa);
-  if (!arquivo) throw new StubSemRespostaError(`nenhuma fixture para a tarefa "${tarefa}"`);
+  const funcao = input.funcao?.trim() ? input.funcao.trim().toUpperCase() : null;
+  if (!marca && !funcao) {
+    throw new StubSemRespostaError('o prompt de sistema não marca a tarefa ([tarefa:...]) e a chamada não traz a função');
+  }
+  const tarefa = marca ? marca[1].toLowerCase() : null;
+  const arquivo = (tarefa ? respostas.get(tarefa) : undefined) ?? (funcao ? respostas.get(chaveDaFuncao(funcao)) : undefined);
+  if (!arquivo) {
+    throw new StubSemRespostaError(
+      [tarefa ? `nenhuma fixture para a tarefa "${tarefa}"` : null, funcao ? `nenhuma fixture para a função "${funcao}"` : null]
+        .filter(Boolean)
+        .join(' e '),
+    );
+  }
+  const rotulo = tarefa && respostas.get(tarefa) ? `tarefa "${tarefa}"` : `função "${funcao}"`;
   const pedido = semAcento(input.user);
   for (const r of arquivo.respostas ?? []) {
     const marcaDoTrecho = r.depoisDe ? semAcento(r.depoisDe) : '';
@@ -109,7 +147,7 @@ export function responderPeloStub(respostas: Map<string, ArquivoDoStub>, input: 
     if (termos.every((t) => alvo.includes(t))) return r.texto;
   }
   if (typeof arquivo.padrao === 'string') return arquivo.padrao;
-  throw new StubSemRespostaError(`nenhuma regra da tarefa "${tarefa}" casou com o pedido e ela não tem padrão`);
+  throw new StubSemRespostaError(`nenhuma regra da ${rotulo} casou com o pedido e ela não tem padrão`);
 }
 
 @Injectable()
@@ -148,7 +186,7 @@ export class StubProvider implements LlmProvider {
   async step(input: LlmStepInput): Promise<LlmStepOutput> {
     const ultimo = [...input.turns].reverse().find((t) => t.role === 'user');
     const user = ultimo && ultimo.role === 'user' ? ultimo.text : '';
-    const text = responderPeloStub(this.respostas(), { system: input.system, user });
+    const text = responderPeloStub(this.respostas(), { system: input.system, user, funcao: input.funcao });
     return {
       text,
       toolCalls: [],

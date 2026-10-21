@@ -42,6 +42,8 @@ import {
   type ReciboDaVault,
 } from './recibo-da-vault';
 import { env } from '../llm/env';
+import { MedidorDeGastoExterno, tokensDaRespostaDeEmbedding as tokensDaResposta } from '../llm/gasto-externo';
+import { RecusaDeCustoDeIaError } from '../llm/recusa-de-custo';
 import {
   FalhaDeEmbedding,
   PRAZO_DA_BUSCA_MS,
@@ -80,6 +82,8 @@ const SLUG_DA_CASA = 'root';
 // Ingesta .md → KnowledgeNote; embeddings OpenAI (text-embedding-3-small) → pgvector;
 // busca SEMÂNTICA (KNN por cosseno) com fallback keyword. Só leitura.
 const EMBED_MODEL = 'text-embedding-3-small';
+/** A função do cadastro em nome de quem a vault e a memória vetorizam (o indexador, CE-05). */
+const FUNCAO_DA_VETORIZACAO_DA_VAULT = 'CE-05';
 
 /**
  * Uma nota da vault pronta para o índice e a projeção. `cabecalho` ausente é
@@ -191,6 +195,14 @@ export class ObsidianService implements OnModuleInit {
      */
     @Optional() private readonly google?: GoogleService,
     @Optional() private readonly catalogo?: CatalogoDeColecaoService,
+    /*
+     * O TETO DA VETORIZAÇÃO (rodada dos agentes, 21/10/2026, A1). Vem do
+     * `LlmModule`, que é `@Global`: injetar aqui não acrescenta aresta de módulo.
+     * Com ele, todo pedido de embedding reserva no teto da empresa ANTES de sair,
+     * liquida pelos tokens que o fornecedor contou e soma no livro por função
+     * (CE-05). `@Optional()` pelas suítes que montam o serviço à mão.
+     */
+    @Optional() private readonly medidor?: MedidorDeGastoExterno,
   ) {}
 
   async prontidao(orgId: string, pessoaId: string): Promise<ProntidaoContexto> {
@@ -642,10 +654,10 @@ export class ObsidianService implements OnModuleInit {
    * e a resposta é conferida antes de virar vetor. Toda falha sai como
    * `FalhaDeEmbedding`, com o status HTTP quando houve um.
    */
-  private async embed(texts: string[], prazoMs = PRAZO_DO_LOTE_MS): Promise<number[][]> {
+  private async embed(texts: string[], prazoMs = PRAZO_DO_LOTE_MS, orgId?: string): Promise<number[][]> {
     if (!texts.length) return [];
     const input = texts.map((t) => cortarParaEmbedding(t));
-    try {
+    const chamar = async () => {
       const res = await fetch(`${this.openaiBase}/embeddings`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${this.openaiKey}` },
@@ -653,9 +665,24 @@ export class ObsidianService implements OnModuleInit {
         signal: AbortSignal.timeout(prazoMs),
       });
       if (!res.ok) throw new FalhaDeEmbedding(`OpenAI embeddings HTTP ${res.status}`, res.status);
-      return vetoresDaResposta(await res.json(), input.length);
+      const corpo: unknown = await res.json();
+      return { resultado: vetoresDaResposta(corpo, input.length), tokens: tokensDaResposta(corpo) };
+    };
+    try {
+      // Com o medidor, o pedido passa pelo teto da empresa (reserva antes, acerto depois).
+      if (this.medidor) {
+        return await this.medidor.vetorizacao(
+          { orgId, funcao: FUNCAO_DA_VETORIZACAO_DA_VAULT, modelo: EMBED_MODEL, textos: input },
+          chamar,
+        );
+      }
+      return (await chamar()).resultado;
     } catch (e) {
       if (e instanceof FalhaDeEmbedding) throw e;
+      // O teto do dia recusou: a vetorização para aqui e volta na próxima passada.
+      if (e instanceof RecusaDeCustoDeIaError) {
+        throw new FalhaDeEmbedding(`teto de custo de IA da empresa: ${e.motivo}`);
+      }
       throw new FalhaDeEmbedding(`OpenAI embeddings sem resposta utilizável (${(e as Error).message})`);
     }
   }
@@ -989,7 +1016,7 @@ export class ObsidianService implements OnModuleInit {
       if (semVetor.length) {
         vetorizacao = await vetorizarEmLotes(
           semVetor.map((r) => `${r.title}\n\n${r.content}`),
-          (lote) => this.embed(lote),
+          (lote) => this.embed(lote, PRAZO_DO_LOTE_MS, orgId),
           {
             gravar: async (indices, vetores) => {
               for (let k = 0; k < indices.length; k++) {
@@ -1388,7 +1415,7 @@ export class ObsidianService implements OnModuleInit {
     // As 100 da volta iam num pedido só, até 800 kB; agora vão em lotes com teto.
     const r = await vetorizarEmLotes(
       pendentes.map((n) => `${n.title}\n\n${n.body}`),
-      (lote) => this.embed(lote),
+      (lote) => this.embed(lote, PRAZO_DO_LOTE_MS, orgId),
       {
         gravar: async (indices, vetores) => {
           for (let k = 0; k < indices.length; k++) {
@@ -1463,11 +1490,11 @@ export class ObsidianService implements OnModuleInit {
     return { natureza: 'indice_runtime_com_solicitante', leitura, resultado };
   }
 
-  private async vetorDaConsulta(query: string): Promise<string | null> {
+  private async vetorDaConsulta(query: string, orgId?: string): Promise<string | null> {
     if (!this.openaiKey || !query) return null;
     // Somente a falha do embedding permite busca textual. Recusas e erros do banco seguem para o caller.
     try {
-      const [vetor] = await this.embed([query], PRAZO_DA_BUSCA_MS);
+      const [vetor] = await this.embed([query], PRAZO_DA_BUSCA_MS, orgId);
       return vetor?.length && vetor.every(Number.isFinite) ? `[${vetor.join(',')}]` : null;
     } catch {
       this.log.warn('Embedding da consulta indisponível; usando busca textual.');
@@ -1477,7 +1504,7 @@ export class ObsidianService implements OnModuleInit {
 
   private async buscarParaPessoa(orgId: string, query: string, limit: number, leitura: IdentidadeIndice): Promise<SearchResult> {
     await this.conferirPessoaDaLeituraAtual(orgId, leitura);
-    const q = query.trim(), take = limiteDaBusca(limit), vetor = await this.vetorDaConsulta(q);
+    const q = query.trim(), take = limiteDaBusca(limit), vetor = await this.vetorDaConsulta(q, orgId);
     return this.comIndiceAutorizado(orgId, leitura, async (tx, populacao) => {
       const busca = await ranquearIndiceNoTx(tx, orgId, populacao, q, take, vetor);
       return SearchResultSchema.parse({ escopo: { orgId, userId: pessoaDoIndice(leitura) }, query: q,
@@ -1494,7 +1521,7 @@ export class ObsidianService implements OnModuleInit {
       if (org.length !== 1) throw new ForbiddenException('Acesso insuficiente.');
       conferirContextoInternoDoIndice(orgId);
     }, { isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted });
-    const q = query.trim(), take = limiteDaBusca(limit), vetor = await this.vetorDaConsulta(q);
+    const q = query.trim(), take = limiteDaBusca(limit), vetor = await this.vetorDaConsulta(q, orgId);
     return this.prisma.$transaction(async (tx) => {
       await travarIndiceEMemoriaNoTx(tx, orgId);
       conferirContextoInternoDoIndice(orgId);

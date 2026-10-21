@@ -11,6 +11,8 @@ import { env } from './env';
 import { TranscricaoService } from './transcricao.provider';
 import { StubProvider } from './stub.provider';
 import { PonteProvider } from './ponte.provider';
+import { GastoPorFuncaoService } from './gasto-por-funcao.service';
+import { MedidorDeGastoExterno } from './gasto-externo';
 
 // Escolhe o provider por env LLM_PROVIDER: anthropic | openrouter | openai | stub | ponte.
 //
@@ -64,6 +66,11 @@ import { PonteProvider } from './ponte.provider';
 // refazer por fora a conta que o teto já faz. Precisa estar declarado aqui: até
 // a fatia 6.4 ele era classe sem módulo — código morto que nenhuma rota
 // alcançava e que consulta bruta nenhuma chegou a executar.
+//
+// O QUE ENTROU NA RODADA DOS AGENTES (21/10/2026, A1): `GastoPorFuncaoService`
+// (o livro do gasto por função do cadastro, somado pelo envelope em toda
+// chamada e lido pela tela de Agentes em `doMes`) e `MedidorDeGastoExterno`
+// (vetorização e transcrição passando pelo teto do dia, com o mesmo livro).
 @Global()
 @Module({
   providers: [
@@ -74,6 +81,8 @@ import { PonteProvider } from './ponte.provider';
     RelatorioDeCustoIaService,
     OrcamentoDeAgenteService,
     TranscricaoService,
+    GastoPorFuncaoService,
+    MedidorDeGastoExterno,
     // O stub vem sem pasta fixa: ele a procura no uso (`pastaDoStub`).
     { provide: StubProvider, useFactory: () => new StubProvider() },
     PonteProvider,
@@ -87,6 +96,7 @@ import { PonteProvider } from './ponte.provider';
         orcamentoDoAgente: OrcamentoDeAgenteService,
         stub: StubProvider,
         ponte: PonteProvider,
+        gastoPorFuncao: GastoPorFuncaoService,
       ) => {
         const escolhido = env('LLM_PROVIDER', 'anthropic');
         const provider =
@@ -99,7 +109,7 @@ import { PonteProvider } from './ponte.provider';
                 : escolhido === 'ponte'
                   ? ponte
                   : anthropic;
-        return new ProviderComTeto(provider, teto, orcamentoDoAgente);
+        return new ProviderComTeto(provider, teto, orcamentoDoAgente, gastoPorFuncao);
       },
       inject: [
         OpenAiProvider,
@@ -109,6 +119,7 @@ import { PonteProvider } from './ponte.provider';
         OrcamentoDeAgenteService,
         StubProvider,
         PonteProvider,
+        GastoPorFuncaoService,
       ],
     },
   ],
@@ -121,6 +132,8 @@ import { PonteProvider } from './ponte.provider';
     RelatorioDeCustoIaService,
     OrcamentoDeAgenteService,
     TranscricaoService,
+    GastoPorFuncaoService,
+    MedidorDeGastoExterno,
   ],
 })
 export class LlmModule {}

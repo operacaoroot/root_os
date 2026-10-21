@@ -37,9 +37,13 @@ import { recusaPorEstado } from './estado-do-agente';
 import { EventLogService } from '../gateway/event-log.service';
 import { type MotivoDeHeartbeat, heartbeatLigado, pedidoDoHeartbeat } from './heartbeat';
 import { ORDEM_DOS_NIVEIS, type CapacidadeCatalogo, type Nivel } from '@mktos/policy';
+import { funcaoPorSlug } from '@mktos/shared';
 import { montarSop } from './sop';
 import { REF_PROCEDIMENTO_LOCAL } from './procedimento-do-agente.service';
 import { paraFerramentas, paraModelo, resumirArgs, resumirResultado } from './tool-adapter';
+
+/** O padrão da coluna `Agent.effort` (schema.prisma): igual a ele não é ajuste de ninguém. */
+const ESFORCO_PADRAO_DA_COLUNA = 'high';
 
 export interface ExecutarPedido {
   orgId: string;
@@ -665,6 +669,13 @@ export class AgentRuntime {
     let custoEstimado = true;
     let tokensIn = 0;
     let tokensOut = 0;
+    /*
+     * O modelo que de fato respondeu (rodada dos agentes, 21/10/2026). Com a escolha
+     * por função, o registro `Agent.modelo` pode estar vazio e quem decide é o
+     * cadastro; a sessão grava o que o provedor serviu, não um palpite.
+     */
+    let modeloServido: string | null = null;
+    const funcaoDoAgente = funcaoPorSlug(agent.slug)?.id;
     let nivelMax: RiskLevel | null = null;
     let resposta = '';
     let status: SessionStatus = SessionStatus.falhou;
@@ -690,8 +701,17 @@ export class AgentRuntime {
           system,
           turns,
           tools: ferramentas.map((f) => f.spec),
+          /*
+           * O registro do agente, quando alguém o ajustou, vale por cima do cadastro
+           * (é como a tela de Agentes muda um agente); sem ajuste, o provedor escolhe
+           * pela `funcao`. `Agent.effort` nasce `high` pelo padrão da coluna, então
+           * só conta como ajuste quando difere dele ou quando o modelo também foi
+           * fixado no registro: senão todo agente do laço atropelaria o esforço do
+           * cadastro com um valor que ninguém escolheu.
+           */
           model: agent.modelo ?? undefined,
-          effort: agent.effort as never,
+          effort: (agent.modelo || (agent.effort && agent.effort !== ESFORCO_PADRAO_DA_COLUNA) ? agent.effort : undefined) as never,
+          funcao: funcaoDoAgente,
           onTextDelta: p.onEvento ? (d) => emitir({ t: 'texto', delta: d }) : undefined,
           orgId: p.orgId,
           /*
@@ -744,6 +764,7 @@ export class AgentRuntime {
       // custo aconteceu, e a sessão precisa mostrar onde parou.
       custo += saida.usage.custoUsd;
       if (!saida.usage.custoEstimado) custoEstimado = false;
+      if (saida.usage.modeloServido) modeloServido = saida.usage.modeloServido;
       tokensIn += saida.usage.inputTokens;
       tokensOut += saida.usage.outputTokens;
       await this.sessoes.passo(p.orgId, sessionId, {
@@ -933,7 +954,7 @@ export class AgentRuntime {
       custoUsd: custo,
       custoEstimado,
       provider: this.llm.name,
-      modelo: agent.modelo ?? this.llm.model,
+      modelo: modeloServido ?? agent.modelo ?? this.llm.model,
       tokensIn,
       tokensOut,
       passos,

@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import Anthropic from '@anthropic-ai/sdk';
 import type {
   ChamadaParaTeto,
+  LlmEffort,
   LlmMessage,
   LlmProvider,
   LlmStepInput,
@@ -12,8 +13,14 @@ import type {
   LlmUsage,
 } from './llm.provider';
 import { saidaDaResposta } from './llm.provider';
-import { custoUsd } from './preco';
+import { custoUsd, PRECO_BUSCA_NA_WEB_USD } from './preco';
 import { env, envNumero, envOpcional } from './env';
+import {
+  BETA_DO_FALLBACK,
+  aceitaFallbackDeServidor,
+  modeloDaChamada,
+  tipoDaBuscaNaWeb,
+} from './modelo-da-chamada';
 
 // Provider Claude (SDK oficial @anthropic-ai/sdk). Credencial PRÓPRIA do root.
 //
@@ -25,6 +32,19 @@ import { env, envNumero, envOpcional } from './env';
 //   teto abaixo é folgado.
 // - A resposta pode vir com `stop_reason: 'refusal'` (HTTP 200, conteúdo vazio) —
 //   ler `content[0]` direto quebraria. Ver o tratamento em complete().
+//
+// MODELO POR FUNÇÃO (rodada dos agentes, 21/10/2026). O modelo e o esforço de
+// cada chamada saem de `modeloDaChamada`: explícito > `LLM_MODELO_<ID>` >
+// cadastro único > `ANTHROPIC_MODEL`. Três regras dos modelos 5.5 (skill
+// `claude-api`, conferida em 21/10/2026):
+//  · ESFORÇO SEMPRE EXPLÍCITO. O Opus 5.5 e o Haiku 5.5 têm padrão `medium`, os
+//    outros `high`; omitir deixaria o esforço depender do modelo servido.
+//  · THINKING ADAPTATIVO, nunca `disabled`: o Opus 5.5 e o Sonnet 5.5 recusam
+//    `disabled` com 400 (e `budget_tokens` em todos).
+//  · FALLBACK DE SERVIDOR SÓ ONDE EXISTE. `fallbacks: "default"` com o beta
+//    `server-side-fallback-2026-07-01` vai para Opus 5.5, Opus 5, Sonnet 5.5
+//    (só essa forma) e Fable 5.1. O Haiku 5.5 não tem fallback de servidor:
+//    o parâmetro não vai, e a recusa chega como recusa.
 
 /*
  * O teto de saída quando a chamada é em STREAMING. Nomeado porque ganhou um
@@ -41,18 +61,15 @@ export class AnthropicProvider implements LlmProvider {
   readonly name = 'anthropic';
   readonly supportsTools = true;
   readonly leAnexos = true;
+  /** Executa `servidor.buscaNaWeb` (ferramenta `web_search` do servidor da Anthropic). */
+  readonly buscaNaWeb = true;
   private readonly log = new Logger('AnthropicProvider');
   private readonly apiKey = envOpcional('ANTHROPIC_API_KEY');
   // O SDK também aceita ANTHROPIC_AUTH_TOKEN (perfil OAuth). Não dá para forçar
   // uma apiKey falsa no construtor: isso atropelaria a resolução do próprio SDK.
   private readonly authToken = envOpcional('ANTHROPIC_AUTH_TOKEN');
-  readonly model = env('ANTHROPIC_MODEL', 'claude-opus-5');
-  private readonly effort = env('ANTHROPIC_EFFORT', 'high') as
-    | 'low'
-    | 'medium'
-    | 'high'
-    | 'xhigh'
-    | 'max';
+  readonly model = env('ANTHROPIC_MODEL', 'claude-opus-5-5');
+  private readonly effort = env('ANTHROPIC_EFFORT', 'high') as LlmEffort;
   private readonly maxTokens = envNumero('ANTHROPIC_MAX_TOKENS', 16000);
 
   // Sem credencial no env o cliente sobe assim mesmo (o SDK resolve sozinho se
@@ -65,6 +82,22 @@ export class AnthropicProvider implements LlmProvider {
     return this.apiKey.length > 0 || this.authToken.length > 0;
   }
 
+  /** Ver `LlmProvider.modeloDaChamada` e `modelo-da-chamada.ts`. */
+  modeloDaChamada(input: { funcao?: string; model?: string; effort?: LlmEffort }): {
+    modelo: string;
+    esforco: LlmEffort;
+  } {
+    const m = modeloDaChamada(input, { modelo: this.model, esforco: this.effort });
+    return { modelo: m.modelo, esforco: m.esforco };
+  }
+
+  /** O beta e o parâmetro do fallback de servidor, só para o modelo que o aceita. */
+  private fallbackPara(modelo: string): { betas?: string[]; fallbacks?: 'default' } {
+    return aceitaFallbackDeServidor(modelo)
+      ? { betas: [BETA_DO_FALLBACK], fallbacks: 'default' as const }
+      : {};
+  }
+
   /**
    * Ver `LlmProvider.tetoDeSaida`. É a MESMA expressão que vai em `max_tokens`
    * — `step()` chama este método em vez de repetir a conta, para que a reserva
@@ -75,7 +108,8 @@ export class AnthropicProvider implements LlmProvider {
     return chamada.maxTokens ?? (chamada.streaming ? TETO_SAIDA_STREAM : this.maxTokens);
   }
 
-  async complete({ system, user, maxTokens }: LlmMessage): Promise<string> {
+  async complete(input: LlmMessage): Promise<string> {
+    const { system, user, maxTokens } = input;
     if (!this.configured) {
       throw new Error(
         'ANTHROPIC_API_KEY ausente. Defina no .env (ver .env.example) e reinicie a API. ' +
@@ -83,16 +117,17 @@ export class AnthropicProvider implements LlmProvider {
       );
     }
 
+    const { modelo, esforco } = this.modeloDaChamada(input);
     const res = await this.client.beta.messages.create({
-      model: this.model,
+      model: modelo,
       max_tokens: this.tetoDeSaida({ tipo: 'completa', maxTokens }),
       // Pensamento adaptativo: o modelo decide quanto pensar por tarefa.
       thinking: { type: 'adaptive' },
-      output_config: { effort: this.effort },
+      output_config: { effort: esforco },
       // Se um classificador recusar, a API repete o pedido no modelo de reserva
       // recomendado em vez de devolver a recusa. Sai mais caro só quando ocorre.
-      betas: ['server-side-fallback-2026-07-01'],
-      fallbacks: 'default',
+      // Só para o modelo que tem fallback de servidor (ver o cabeçalho).
+      ...this.fallbackPara(modelo),
       system,
       messages: [{ role: 'user', content: user }],
     });
@@ -136,7 +171,31 @@ export class AnthropicProvider implements LlmProvider {
       );
     }
 
-    const modelo = input.model ?? this.model;
+    const { modelo, esforco } = this.modeloDaChamada(input);
+    /*
+     * A BUSCA NA WEB DO SERVIDOR (IM-02). Quem liga é a nota da empresa, nunca o
+     * modelo: sem `servidor.buscaNaWeb`, a ferramenta não vai. O teto de usos é o
+     * do pedido (no mínimo 1). Roda na Anthropic; o resultado volta como bloco
+     * de conteúdo, não como `tool_use` que a porta precise executar.
+     */
+    const buscaNaWeb = input.servidor?.buscaNaWeb
+      ? [
+          {
+            type: tipoDaBuscaNaWeb(modelo),
+            name: 'web_search' as const,
+            max_uses: Math.max(1, Math.floor(input.servidor.buscaNaWeb.maxUsos || 1)),
+          },
+        ]
+      : [];
+    const ferramentas = [
+      ...(input.tools ?? []).map((t) => ({
+        name: t.name,
+        description: t.description,
+        input_schema: t.inputSchema as Anthropic.Beta.BetaTool['input_schema'],
+      })),
+      ...buscaNaWeb,
+    ] as Anthropic.Beta.BetaToolUnion[];
+
     const pedido = {
       model: modelo,
       // Sem streaming o teto fica no valor seguro contra timeout de HTTP; com
@@ -147,22 +206,14 @@ export class AnthropicProvider implements LlmProvider {
         streaming: Boolean(input.onTextDelta),
       }),
       thinking: { type: 'adaptive' as const },
-      output_config: { effort: input.effort ?? this.effort },
-      betas: ['server-side-fallback-2026-07-01'],
-      fallbacks: 'default' as const,
+      output_config: { effort: esforco },
+      ...this.fallbackPara(modelo),
       system: input.system,
       messages: input.turns.map((t) => this.paraMensagem(t)),
       // `tool_choice` fica de fora: `auto` é o default, e forçar escolha
-      // desliga o paralelismo de chamadas.
-      ...(input.tools?.length
-        ? {
-            tools: input.tools.map((t) => ({
-              name: t.name,
-              description: t.description,
-              input_schema: t.inputSchema as Anthropic.Beta.BetaTool['input_schema'],
-            })),
-          }
-        : {}),
+      // desliga o paralelismo de chamadas (e o Opus 5.5 e o Sonnet 5.5 recusam
+      // `any`/`tool` com 400).
+      ...(ferramentas.length ? { tools: ferramentas } : {}),
     };
 
     const res = input.onTextDelta
@@ -270,12 +321,15 @@ export class AnthropicProvider implements LlmProvider {
     // Precifica pelo modelo que RESPONDEU: com `fallbacks: 'default'` ligado,
     // ele diverge do pedido justamente nos casos que custam mais.
     const modeloServido = res.model ?? this.model;
-    const { custoUsd: custo, custoEstimado } = custoUsd(modeloServido, {
+    const { custoUsd: custoDosTokens, custoEstimado } = custoUsd(modeloServido, {
       entrada,
       saida,
       cacheLeitura,
       cacheEscrita,
     });
+    // A busca na web do servidor é cobrada por busca, além dos tokens.
+    const buscas = u?.server_tool_use?.web_search_requests ?? 0;
+    const custo = Number((custoDosTokens + buscas * PRECO_BUSCA_NA_WEB_USD).toFixed(6));
     return {
       inputTokens: entrada,
       outputTokens: saida,

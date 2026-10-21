@@ -1,6 +1,7 @@
 import { Logger } from '@nestjs/common';
 import type {
   ChamadaParaTeto,
+  LlmEffort,
   LlmMessage,
   LlmProvider,
   LlmStepInput,
@@ -13,7 +14,9 @@ import {
   type TamanhoDaEntrada,
 } from './estimativa';
 import type { ReservaDeCusto, TetoDeCustoIaService } from './teto-diario.service';
-import type { OrcamentoDeAgenteService } from './orcamento-de-agente.service';
+import { OrcamentoIlegivelError, type OrcamentoDeAgenteService } from './orcamento-de-agente.service';
+import type { GastoPorFuncaoService } from './gasto-por-funcao.service';
+import { slugDaChamada } from './modelo-da-chamada';
 import { contextoAtual } from '../common/contexto-execucao';
 
 /*
@@ -41,6 +44,19 @@ import { contextoAtual } from '../common/contexto-execucao';
  * fatia existe para consertar. Inverter 0 e 1 deixaria reserva pendurada
  * segurando o teto da empresa por uma chamada que o orçamento do agente já
  * havia barrado — o porquê está no bloco de `step()`.
+ *
+ * MODELO POR FUNÇÃO E GASTO POR FUNÇÃO (rodada dos agentes, 21/10/2026, A1):
+ *  · a reserva usa o modelo que o provedor VAI mandar (`modeloDaChamada`: o
+ *    explícito, senão o da função no cadastro, senão o padrão), e não mais o
+ *    padrão do provedor — reservar Opus para uma chamada de Haiku cortaria a
+ *    empresa com 40 vezes o que ela gasta;
+ *  · o agente da chamada é o `agentSlug`, senão o slug da `funcao` no cadastro,
+ *    senão o do contexto. O orçamento mensal passa a valer também para
+ *    `complete()` com função. Função sem registro `Agent` (as novas) não tem
+ *    orçamento e NUNCA é recusada por isso: quando o slug veio da função, a
+ *    leitura ilegível do orçamento é aviso, não recusa;
+ *  · toda chamada soma no livro por função (`GastoPorFuncaoService`), com ou sem
+ *    teto, em melhor esforço — é de onde a tela de Agentes lê o gasto do mês.
  *
  * EMPRESA SEM TETO CONFIGURADO passa direto: `reservar()` devolve `null`,
  * nenhuma linha é escrita e nada muda para quem nunca configurou. Ligar o teto é
@@ -80,7 +96,12 @@ export class ProviderComTeto implements LlmProvider {
      * quem o injeta é a fábrica de `llm.module.ts`, sempre.
      */
     private readonly orcamentoDoAgente?: OrcamentoDeAgenteService,
+    /** O livro do gasto por função (A1). Opcional pelo mesmo motivo do orçamento. */
+    private readonly gastoPorFuncao?: GastoPorFuncaoService,
   ) {}
+
+  /** Avisos de orçamento ilegível para slug vindo da função: uma vez por slug. */
+  private readonly avisadosSemOrcamento = new Set<string>();
 
   get name(): string {
     return this.interno.name;
@@ -99,6 +120,20 @@ export class ProviderComTeto implements LlmProvider {
     return this.interno.leAnexos ?? false;
   }
 
+  get buscaNaWeb(): boolean {
+    return this.interno.buscaNaWeb ?? false;
+  }
+
+  /** O modelo que o provedor de dentro vai mandar. Ver `LlmProvider.modeloDaChamada`. */
+  modeloDaChamada(input: { funcao?: string; model?: string; effort?: LlmEffort }): {
+    modelo: string;
+    esforco?: LlmEffort;
+  } {
+    return (
+      this.interno.modeloDaChamada?.(input) ?? { modelo: input.model ?? this.interno.model, esforco: input.effort }
+    );
+  }
+
   tetoDeSaida(chamada: ChamadaParaTeto): number {
     return this.interno.tetoDeSaida(chamada);
   }
@@ -115,15 +150,12 @@ export class ProviderComTeto implements LlmProvider {
    */
   async complete(input: LlmMessage): Promise<string> {
     const orgId = this.empresaDe(input.orgId, 'complete');
+    const modelo = this.modeloDaChamada(input).modelo;
     const entrada = tamanhoDeTexto(input.system, input.user);
-    const reserva = orgId
-      ? await this.teto.reservar({
-          orgId,
-          modelo: this.interno.model,
-          entrada,
-          tokensSaida: this.interno.tetoDeSaida({ tipo: 'completa', maxTokens: input.maxTokens }),
-        })
-      : null;
+    const tokensSaida = this.interno.tetoDeSaida({ tipo: 'completa', maxTokens: input.maxTokens });
+    const quem = this.agenteDe(input);
+    if (orgId && quem.slug) await this.conferirOrcamento({ orgId, quem, modelo, entrada, tokensSaida });
+    const reserva = orgId ? await this.teto.reservar({ orgId, modelo, entrada, tokensSaida }) : null;
 
     let resposta: string | null = null;
     try {
@@ -139,13 +171,24 @@ export class ProviderComTeto implements LlmProvider {
           ? { falhou: true }
           : { observado: this.custoObservado(reserva, entrada, resposta) },
       );
+      if (orgId && resposta !== null) {
+        const observado = estimarCustoDaResposta(modelo, { entrada, resposta });
+        await this.gastoPorFuncao?.registrar({
+          orgId,
+          funcao: input.funcao,
+          agentSlug: quem.slug,
+          modelo,
+          estimadoUsd: observado.medivel ? observado.usd : 0,
+          naoMedida: !observado.medivel,
+        });
+      }
     }
   }
 
   /** UM passo da conversa com ferramentas. O laço continua sendo do runtime. */
   async step(input: LlmStepInput): Promise<LlmStepOutput> {
     const orgId = this.empresaDe(input.orgId, 'step');
-    const modelo = input.model ?? this.interno.model;
+    const modelo = this.modeloDaChamada(input).modelo;
     // Os esquemas das ferramentas entram: eles sobem INTEIROS a cada passo e num
     // agente com catálogo grande são o maior bloco fixo da chamada.
     const entrada = caracteresDaConversa(input.system, input.turns, input.tools);
@@ -170,24 +213,18 @@ export class ProviderComTeto implements LlmProvider {
      * curadoria e ficha chamam o modelo em nome da empresa, não de ninguém — e
      * atribuir esse gasto a um agente qualquer seria inventar procedência.
      */
-    const agentSlug = input.agentSlug?.trim() || contextoAtual()?.agentSlug?.trim() || '';
-    if (orgId && agentSlug && this.orcamentoDoAgente) {
-      await this.orcamentoDoAgente.conferir({
-        orgId,
-        agentSlug,
-        modelo,
-        entrada,
-        tokensSaida,
-      });
-    }
+    const quem = this.agenteDe(input);
+    if (orgId && quem.slug) await this.conferirOrcamento({ orgId, quem, modelo, entrada, tokensSaida });
 
     const reserva = orgId
       ? await this.teto.reservar({ orgId, modelo, entrada, tokensSaida })
       : null;
 
     let usoReal: { custoUsd: number; custoEstimado: boolean } | null = null;
+    let modeloServido = modelo;
     try {
       const saida = await this.interno.step(input);
+      modeloServido = saida.usage.modeloServido || modelo;
       /*
        * O custo REAL vem do provedor — é ele que a liquidação grava, e é por
        * isso que a estimativa some por inteiro. Vale inclusive quando o modelo
@@ -198,6 +235,67 @@ export class ProviderComTeto implements LlmProvider {
       return saida;
     } finally {
       await this.encerrar(reserva, usoReal ? { real: usoReal } : { falhou: true });
+      if (orgId && usoReal) {
+        await this.gastoPorFuncao?.registrar({
+          orgId,
+          funcao: input.funcao,
+          agentSlug: quem.slug,
+          modelo: modeloServido,
+          gastoUsd: usoReal.custoEstimado ? usoReal.custoUsd : 0,
+          naoMedida: !usoReal.custoEstimado,
+        });
+      }
+    }
+  }
+
+  /**
+   * Em nome de quem é a chamada: o `agentSlug` informado, senão o slug da
+   * `funcao` no cadastro, senão o do contexto de execução. `daFuncao` diz se o
+   * slug foi deduzido da função (aí a falta de orçamento legível não recusa).
+   */
+  private agenteDe(input: { agentSlug?: string; funcao?: string }): { slug: string; daFuncao: boolean } {
+    const explicito = input.agentSlug?.trim();
+    if (explicito) return { slug: explicito, daFuncao: false };
+    const daFuncao = slugDaChamada({ funcao: input.funcao });
+    if (daFuncao) return { slug: daFuncao, daFuncao: true };
+    return { slug: contextoAtual()?.agentSlug?.trim() || '', daFuncao: false };
+  }
+
+  /**
+   * O orçamento MENSAL do agente, antes da reserva (ver o bloco em `step()`).
+   *
+   * As funções novas do cadastro não têm registro `Agent`, e portanto não têm
+   * orçamento: o serviço volta calado quando lê a linha e ela não existe. A
+   * única recusa que sobraria por falta de registro é a leitura ILEGÍVEL (o
+   * contexto da sessão não é o da empresa). Para slug deduzido da função, isso
+   * vira aviso no log, nunca recusa: errar o contexto não pode derrubar uma
+   * função que nem orçamento tem. Para slug explícito, a regra de sempre vale.
+   */
+  private async conferirOrcamento(p: {
+    orgId: string;
+    quem: { slug: string; daFuncao: boolean };
+    modelo: string;
+    entrada: TamanhoDaEntrada;
+    tokensSaida: number;
+  }): Promise<void> {
+    if (!this.orcamentoDoAgente) return;
+    try {
+      await this.orcamentoDoAgente.conferir({
+        orgId: p.orgId,
+        agentSlug: p.quem.slug,
+        modelo: p.modelo,
+        entrada: p.entrada,
+        tokensSaida: p.tokensSaida,
+      });
+    } catch (e) {
+      if (!(p.quem.daFuncao && e instanceof OrcamentoIlegivelError)) throw e;
+      if (!this.avisadosSemOrcamento.has(p.quem.slug)) {
+        this.avisadosSemOrcamento.add(p.quem.slug);
+        this.log.warn(
+          `orçamento de "${p.quem.slug}" (slug da função) ilegível fora do contexto da empresa: ` +
+            'a chamada seguiu sem o eixo do agente; o teto da empresa continua valendo.',
+        );
+      }
     }
   }
 

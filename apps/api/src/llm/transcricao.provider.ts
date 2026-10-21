@@ -1,7 +1,9 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, Optional } from '@nestjs/common';
 
 import { env, envOpcional } from './env';
-import { TetoDeCustoIaService } from './teto-diario.service';
+import { MedidorDeGastoExterno } from './gasto-externo';
+import { custoUsd } from './preco';
+import { TetoDeCustoIaService, TetoDiarioEstouradoError } from './teto-diario.service';
 
 /* ==========================================================================
  * TRANSCRIÇÃO DE ÁUDIO — o cliente fala, o OS escreve
@@ -13,12 +15,14 @@ import { TetoDeCustoIaService } from './teto-diario.service';
  * arquitetura exige que o modelo tenha uma casa só — e porque é aqui que o teto
  * de custo por empresa consegue ao menos RECUSAR quando o dia já fechou.
  *
- * O QUE NÃO ENTRA NO LIVRO DO DIA, e está dito: a transcrição é cobrada por
- * minuto, não por token, e `TetoDeCustoIaService.reservar` só sabe reservar
- * por token de um modelo da tabela de preço. Então este serviço pergunta
- * `motivoDeCorte` antes (dia fechado recusa) e devolve a ESTIMATIVA de custo
- * para quem chama gravar no marco. Passar a somar no livro pede um item de
- * preço por minuto em `preco.ts` — está no relatório, não escondido.
+ * DENTRO DO TETO DO DIA DESDE A RODADA DOS AGENTES (21/10/2026, A1, IM-06).
+ * Antes, este serviço só perguntava `motivoDeCorte` (dia fechado recusa) e o
+ * gasto ficava fora do livro. Agora passa pelo `MedidorDeGastoExterno`: reserva
+ * o valor do minuto ANTES (`reservarValor`; o dia que não comporta recusa e a
+ * OpenAI não é chamada), liquida pelo que a resposta contou (`usage` em tokens,
+ * pelo preço de `gpt-4o-transcribe` em `preco.ts`, ou em segundos, pelo minuto)
+ * e soma no livro por função (IM-06). Sem o medidor (suítes que montam o
+ * serviço à mão), cai na pergunta de antes.
  *
  * A estimativa de duração é por tamanho do arquivo (~32 kbps, o que o celular
  * grava em opus/aac). Ela existe para o custo aparecer na tela como "≈", não
@@ -53,6 +57,32 @@ export interface Transcricao {
   segundosEstimados: number;
 }
 
+/** A função do cadastro único em nome de quem a transcrição gasta (IM-06). */
+export const FUNCAO_DA_TRANSCRICAO = 'IM-06';
+
+/**
+ * O custo que a própria resposta permite medir, ou `null`:
+ *  · `usage.type === 'tokens'` (gpt-4o-transcribe): áudio de entrada e texto de
+ *    saída pelo preço de `preco.ts`;
+ *  · `usage.type === 'duration'` (whisper-1): os segundos pelo minuto.
+ * Modelo sem preço ou uso torto = `null` (vale a estimativa pelo tamanho).
+ */
+export function custoDoUso(modelo: string, usage: unknown): number | null {
+  const u = usage as
+    | { type?: string; input_tokens?: number; output_tokens?: number; seconds?: number }
+    | null
+    | undefined;
+  if (!u || typeof u !== 'object') return null;
+  if (u.type === 'tokens' && Number.isFinite(u.input_tokens) && Number.isFinite(u.output_tokens)) {
+    const c = custoUsd(modelo, { entrada: Number(u.input_tokens), saida: Number(u.output_tokens) });
+    return c.custoEstimado ? c.custoUsd : null;
+  }
+  if (u.type === 'duration' && Number.isFinite(u.seconds) && Number(u.seconds) >= 0) {
+    return Number(((Number(u.seconds) / 60) * PRECO_TRANSCRICAO_USD_POR_MINUTO).toFixed(6));
+  }
+  return null;
+}
+
 export class TranscricaoIndisponivelError extends Error {
   constructor(motivo: string) {
     super(motivo);
@@ -67,7 +97,10 @@ export class TranscricaoService {
   private readonly baseUrl = env('OPENAI_BASE_URL', 'https://api.openai.com/v1').replace(/\/$/, '');
   readonly modelo = env('TRANSCRICAO_MODELO', 'gpt-4o-transcribe');
 
-  constructor(private readonly teto: TetoDeCustoIaService) {}
+  constructor(
+    private readonly teto: TetoDeCustoIaService,
+    @Optional() private readonly medidor?: MedidorDeGastoExterno,
+  ) {}
 
   get configured(): boolean {
     return this.apiKey.length > 0;
@@ -94,11 +127,35 @@ export class TranscricaoService {
     if (p.audio.length > MAX_BYTES_DE_AUDIO) {
       throw new TranscricaoIndisponivelError('o áudio passa de 25 MB. Grave em partes menores.');
     }
-    const corte = await this.teto.motivoDeCorte(p.orgId);
-    if (corte) throw new TranscricaoIndisponivelError(`teto de custo de IA da empresa: ${corte}`);
-
     const segundos = Math.max(1, Math.round(p.audio.length / BYTES_POR_SEGUNDO_ESTIMADO));
-    const custoUsd = Number(((segundos / 60) * PRECO_TRANSCRICAO_USD_POR_MINUTO).toFixed(6));
+    const estimadoUsd = Number(((segundos / 60) * PRECO_TRANSCRICAO_USD_POR_MINUTO).toFixed(6));
+
+    if (!this.medidor) {
+      const corte = await this.teto.motivoDeCorte(p.orgId);
+      if (corte) throw new TranscricaoIndisponivelError(`teto de custo de IA da empresa: ${corte}`);
+      return (await this.chamar(p, tipo, segundos, estimadoUsd)).resultado;
+    }
+    try {
+      return await this.medidor.transcricao(
+        { orgId: p.orgId, funcao: FUNCAO_DA_TRANSCRICAO, modelo: this.modelo, usdEstimado: estimadoUsd },
+        () => this.chamar(p, tipo, segundos, estimadoUsd),
+      );
+    } catch (e) {
+      // A recusa do teto vira a mensagem de sempre para o cliente (nenhum código na tela).
+      if (e instanceof TetoDiarioEstouradoError) {
+        throw new TranscricaoIndisponivelError(`teto de custo de IA da empresa: ${e.message}`);
+      }
+      throw e;
+    }
+  }
+
+  /** A ida à OpenAI. Devolve o texto e o custo: medido quando a resposta contou o uso. */
+  private async chamar(
+    p: { audio: Buffer; nome?: string; idioma?: string },
+    tipo: string,
+    segundos: number,
+    estimadoUsd: number,
+  ): Promise<{ resultado: Transcricao; custoUsd: number; medido: boolean }> {
 
     const form = new FormData();
     form.append(
@@ -147,10 +204,16 @@ export class TranscricaoService {
         'o serviço de transcrição não respondeu. Tente o áudio de novo em instantes, ou responda por texto.',
       );
     }
-    const json = (await res.json()) as { text?: string };
+    const json = (await res.json()) as { text?: string; usage?: unknown };
     const texto = String(json.text ?? '').trim();
     if (!texto) throw new TranscricaoIndisponivelError('a transcrição voltou vazia. Fale mais perto do microfone.');
 
-    return { texto, modelo: this.modelo, custoUsd, custoEstimado: true, segundosEstimados: segundos };
+    const medido = custoDoUso(this.modelo, json.usage);
+    const custo = medido ?? estimadoUsd;
+    return {
+      resultado: { texto, modelo: this.modelo, custoUsd: custo, custoEstimado: true, segundosEstimados: segundos },
+      custoUsd: custo,
+      medido: medido !== null,
+    };
   }
 }

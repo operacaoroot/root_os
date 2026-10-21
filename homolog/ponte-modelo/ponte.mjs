@@ -5,9 +5,14 @@
  * Existe para a demonstração rodar sem chave da Anthropic válida no
  * `.env.homolog`: o container da API aponta `PONTE_MODELO_URL` para
  * http://host.docker.internal:4099 e o provider `ponte` (apps/api/src/llm)
- * faz `POST /complete {system, user, maxTokens}`. Aqui a pergunta vira uma
+ * faz `POST /complete {system, user, maxTokens, model}`. Aqui a pergunta vira uma
  * chamada a `claude -p --model <modelo> --output-format text`, e a resposta
  * volta como texto.
+ *
+ * O MODELO PEDIDO (rodada dos agentes, 21/10/2026): `model` no corpo escolhe
+ * entre os três modelos 5.5 do cadastro (`claude-opus-5-5`, `claude-sonnet-5-5`,
+ * `claude-haiku-5-5`); outro valor é 400, e sem `model` vale o `PONTE_MODELO`
+ * (padrão `claude-opus-5-5`). As regras estão em `modelos.mjs`.
  *
  * O que ela NÃO é: um provedor de produção. Ela gasta a assinatura de quem está
  * logado no Claude Code desta máquina, não mede custo (o OS grava custo 0 com
@@ -46,9 +51,11 @@ import { tmpdir } from 'node:os';
 import { delimiter, dirname, isAbsolute, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import { MODELOS_DA_PONTE, argumentosDoCli, modeloDoPedido } from './modelos.mjs';
+
 const AQUI = dirname(fileURLToPath(import.meta.url));
 const PORTA = Number(process.env.PONTE_PORTA ?? 4099);
-const MODELO = process.env.PONTE_MODELO ?? 'claude-fable-5-1';
+const MODELO = (process.env.PONTE_MODELO ?? 'claude-opus-5-5').trim();
 const PRAZO_MS = Number(process.env.PONTE_PRAZO_MS ?? 180_000);
 const MAX_EM_CURSO = Number(process.env.PONTE_MAX_EM_CURSO ?? 2);
 const MAX_CORPO = 2_000_000;
@@ -82,6 +89,10 @@ const TOKEN = lerToken();
 const CLAUDE = acharClaude();
 if (TOKEN.length < 32) {
   console.error('[ponte] PONTE_MODELO_TOKEN ausente ou curto (32+ caracteres): gere com `node -e "console.log(require(\'crypto\').randomBytes(32).toString(\'hex\'))"` e ponha no homolog/.env.homolog. Não subi.');
+  process.exit(1);
+}
+if (!MODELOS_DA_PONTE.includes(MODELO)) {
+  console.error(`[ponte] PONTE_MODELO="${MODELO}" não é um dos modelos aceitos (${MODELOS_DA_PONTE.join(', ')}). Não subi.`);
   process.exit(1);
 }
 if (!CLAUDE) {
@@ -118,19 +129,10 @@ function tokenConfere(recebido) {
 }
 
 /** Chama o CLI: sem shell, sem ferramentas, sem MCP, sem configurações; sistema por arquivo, pergunta pela entrada padrão. */
-function perguntar({ system, user }) {
+function perguntar({ system, user, modelo }) {
   return new Promise((resolverPergunta) => {
     const pasta = mkdtempSync(join(tmpdir(), 'ponte-modelo-'));
-    const args = [
-      '-p',
-      '--model', MODELO,
-      '--output-format', 'text',
-      '--tools', '',
-      '--disallowedTools', ...PROIBIDAS,
-      '--strict-mcp-config',
-      '--setting-sources', '',
-      '--no-session-persistence',
-    ];
+    const args = argumentosDoCli(modelo, PROIBIDAS);
     if (system && String(system).trim()) {
       const arquivo = join(pasta, 'sistema.txt');
       writeFileSync(arquivo, String(system), 'utf8');
@@ -192,11 +194,13 @@ const servidor = createServer(async (req, res) => {
       if (!pedido || typeof pedido.user !== 'string' || !pedido.user.trim()) {
         return responder(400, { erro: 'faltou `user`' });
       }
+      const escolha = modeloDoPedido(pedido, MODELO);
+      if (escolha.erro) return responder(400, { erro: escolha.erro });
       emCurso += 1;
       const inicio = Date.now();
       let r;
       try {
-        r = await perguntar(pedido);
+        r = await perguntar({ system: pedido.system, user: pedido.user, modelo: escolha.modelo });
       } finally {
         emCurso -= 1;
       }
@@ -207,8 +211,8 @@ const servidor = createServer(async (req, res) => {
         return responder(r.status, { erro: r.erro });
       }
       falhasSeguidas = 0;
-      console.log(`[ponte] ok em ${Date.now() - inicio} ms (${r.texto.length} caracteres)`);
-      return responder(200, { texto: r.texto, modelo: MODELO, custoUsd: 0, custoDesconhecido: true, ms: Date.now() - inicio });
+      console.log(`[ponte] ok em ${Date.now() - inicio} ms (${escolha.modelo}, ${r.texto.length} caracteres)`);
+      return responder(200, { texto: r.texto, modelo: escolha.modelo, custoUsd: 0, custoDesconhecido: true, ms: Date.now() - inicio });
     }
     responder(404, { erro: 'rota desconhecida' });
   } catch (e) {
