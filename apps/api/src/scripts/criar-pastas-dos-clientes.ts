@@ -21,6 +21,10 @@
  * aprovar em /atendimento (outra pessoa) → `--simular` de novo, que tem de dar
  * zero a propor.
  *
+ * Clientes com o mesmo nome de pasta de outro cliente não são propostos
+ * (`nomeRepetido` na contagem): os dois ligariam a mesma pasta. Diferencie os
+ * nomes e rode de novo.
+ *
  * Códigos de saída: 0 ok; 1 falhou; 2 algum cliente deu erro ou a empresa está
  * sem raiz/sem Google (o motivo está no detalhe).
  */
@@ -120,6 +124,7 @@ async function main(): Promise<number> {
           comPonteiro: plano.comPonteiro,
           internos: plano.internos,
           semNome: plano.semNome,
+          nomeRepetido: plano.nomeRepetido,
           aguardandoAprovacao: plano.aguardandoAprovacao,
           aPropor: plano.aPropor,
           resultados: plano.resultados,
@@ -133,6 +138,9 @@ async function main(): Promise<number> {
       console.log(plano.aPropor ? `${plano.aPropor} pedido(s) de pasta a propor. Nada foi escrito.` : 'Zero a propor: todo cliente tem pasta ou pedido na fila.');
     } else if (plano.resultados.aguardando_aprovacao) {
       console.log(`${plano.resultados.aguardando_aprovacao} pedido(s) na fila de aprovação (/atendimento): outra pessoa confirma cada um.`);
+    }
+    if (plano.nomeRepetido) {
+      console.error(`${plano.nomeRepetido} cliente(s) com o nome de pasta de outro cliente (ou do modelo) não foram propostos: veja o arquivo de --detalhe.`);
     }
     if ((plano.resultados.erro ?? 0) > 0 || (plano.resultados.sem_raiz ?? 0) > 0) {
       console.error('Algum pedido não foi feito: o motivo está no arquivo de --detalhe.');

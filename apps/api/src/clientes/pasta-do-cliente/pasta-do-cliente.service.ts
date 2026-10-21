@@ -1,5 +1,5 @@
 import { BadRequestException, Inject, Injectable, Logger, OnModuleInit } from '@nestjs/common';
-import { ActorType, ApprovalState } from '@prisma/client';
+import { ActorType, ApprovalState, Prisma } from '@prisma/client';
 import { PASTA_MODELO_DO_CLIENTE, linkDaPastaDoDrive } from '@mktos/shared';
 
 import { AuditService } from '../../audit/audit.service';
@@ -10,7 +10,16 @@ import { DRIVE_DO_CLIENTE, type DriveDoCliente, type ItemDoDrive } from '../../g
 import { MemoriaService } from '../../memory/memoria.service';
 import { PrismaService } from '../../prisma/prisma.service';
 import type { PastaDoClientePort, PedidoDePasta, ResultadoDaPasta } from '../portas';
-import { escolherPastaExistente, nomeDaPastaDoPartner } from './nome-da-pasta';
+import {
+  FRASE_NOME_REPETIDO,
+  FRASE_NOME_RESERVADO,
+  FRASE_PASTA_DE_OUTRO,
+  chaveDoNomeDaPasta,
+  ehNomeDoModelo,
+  escolherPastaExistente,
+  nomeDaPastaDoPartner,
+  outrosComAChave,
+} from './nome-da-pasta';
 import { FRASE_SEM_GOOGLE, FRASE_SEM_RAIZ, idDaRaizDosClientes } from './raiz';
 
 /*
@@ -40,6 +49,16 @@ import { FRASE_SEM_GOOGLE, FRASE_SEM_RAIZ, idDaRaizDosClientes } from './raiz';
  *
  * Nunca lança por falha do Drive: devolve `erro` com o motivo e grava o motivo
  * em `Partner.pastaDriveErro` (limpo quando dá certo).
+ *
+ * UMA PASTA, UM CLIENTE (revisão adversarial de 21/10/2026). Ligar pelo nome
+ * podia apontar dois clientes para a mesma pasta, e o arquivista mandaria o
+ * arquivo de um para a pasta do outro. Agora: (a) antes de gravar o ponteiro o
+ * efeito recusa a pasta que já é ponteiro de outro cliente da empresa, e o
+ * banco garante o mesmo (índice único parcial `("orgId","pastaDriveId")`,
+ * migration `20261021380000_pasta_do_cliente_unica`); (c) no modo LIGAR, se
+ * outro cliente da empresa responde pela mesma chave de nome, nada é ligado; e
+ * o cliente com o nome da pasta-modelo nunca ganha pasta. As três recusas
+ * deixam a frase em `pastaDriveErro`.
  */
 
 /** O proponente quando quem pede é o sistema (o fechamento, o script). O slug do TR-04. */
@@ -97,6 +116,7 @@ export class PastaDoClienteService implements PastaDoClientePort, OnModuleInit {
     }
     const nome = nomeDaPastaDoPartner(partner);
     if (!nome) return this.falhou(orgId, partnerId, 'o nome do cliente não serve para nome de pasta (vazio depois da limpeza).');
+    if (ehNomeDoModelo(nome)) return this.falhou(orgId, partnerId, FRASE_NOME_RESERVADO);
 
     const raiz = await idDaRaizDosClientes(this.memoria, orgId).catch(() => null);
     if (!raiz) return { estado: 'sem_raiz', motivo: FRASE_SEM_RAIZ };
@@ -169,6 +189,7 @@ export class PastaDoClienteService implements PastaDoClientePort, OnModuleInit {
       if (nomeDaPastaDoPartner(partner) !== nomePedido) {
         throw new BadRequestException('o nome do cliente mudou depois do pedido: peça a pasta de novo.');
       }
+      if (ehNomeDoModelo(nomePedido)) throw new BadRequestException(FRASE_NOME_RESERVADO);
 
       const raizConfigurada = await idDaRaizDosClientes(this.memoria, orgId);
       if (!raizConfigurada) throw new BadRequestException(FRASE_SEM_RAIZ);
@@ -186,6 +207,15 @@ export class PastaDoClienteService implements PastaDoClientePort, OnModuleInit {
       let copia: { pastasCriadas: number; arquivosCopiados: number } | null = null;
       if (escolha.tipo === 'ligar') {
         pasta = pastasDaRaiz.find((p) => p.id === escolha.id)!;
+        // (c) Outro cliente desta empresa responde pela mesma chave: a pasta pode ser dele.
+        const clientes = await this.prisma.partner.findMany({
+          where: { orgId, isCliente: true, interno: false },
+          select: { id: true, razaoSocial: true, nomeFantasia: true },
+        });
+        if (outrosComAChave(chaveDoNomeDaPasta(pasta.nome), partner.id, clientes).length) {
+          throw new BadRequestException(FRASE_NOME_REPETIDO);
+        }
+        await this.exigirPastaLivre(orgId, partner.id, pasta.id);
         ligada = true;
       } else {
         const modelo = pastasDaRaiz.find((p) => p.nome === PASTA_MODELO_DO_CLIENTE);
@@ -203,10 +233,17 @@ export class PastaDoClienteService implements PastaDoClientePort, OnModuleInit {
         throw new BadRequestException('a pasta do cliente ficou fora da raiz dos clientes: o ponteiro não foi gravado.');
       }
       const url = pasta.url ?? linkDaPastaDoDrive(pasta.id);
-      const gravou = await this.prisma.partner.updateMany({
-        where: { id: partner.id, orgId, pastaDriveId: null },
-        data: { pastaDriveId: pasta.id, pastaDriveUrl: url, pastaDriveErro: null },
-      });
+      // (a) Conferido de novo logo antes de gravar; a corrida que passar daqui o índice único barra.
+      await this.exigirPastaLivre(orgId, partner.id, pasta.id);
+      const gravou = await this.prisma.partner
+        .updateMany({
+          where: { id: partner.id, orgId, pastaDriveId: null },
+          data: { pastaDriveId: pasta.id, pastaDriveUrl: url, pastaDriveErro: null },
+        })
+        .catch((e) => {
+          if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === 'P2002') throw new BadRequestException(FRASE_PASTA_DE_OUTRO);
+          throw e;
+        });
       if (gravou.count !== 1) {
         // Outra passada gravou antes: vale a que já está no cliente.
         const atual = await this.prisma.partner.findFirst({ where: { id: partner.id, orgId }, select: { pastaDriveId: true, pastaDriveUrl: true } });
@@ -231,6 +268,15 @@ export class PastaDoClienteService implements PastaDoClientePort, OnModuleInit {
         .catch(() => undefined);
       throw e;
     }
+  }
+
+  /** (a) A pasta já é o ponteiro de OUTRO cliente desta empresa? Recusa com a frase. */
+  private async exigirPastaLivre(orgId: string, partnerId: string, pastaId: string): Promise<void> {
+    const dono = await this.prisma.partner.findFirst({
+      where: { orgId, pastaDriveId: pastaId, NOT: { id: partnerId } },
+      select: { id: true },
+    });
+    if (dono) throw new BadRequestException(FRASE_PASTA_DE_OUTRO);
   }
 
   private async avisarNascimento(orgId: string, partnerId: string): Promise<void> {

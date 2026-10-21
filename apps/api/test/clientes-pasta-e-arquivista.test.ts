@@ -22,7 +22,13 @@ import { SinaisService } from '../src/policy/sinais.service';
 import type { PrismaService } from '../src/prisma/prisma.service';
 import { ArquivistaService } from '../src/clientes/arquivista/arquivista.service';
 import { classificacaoSegura, lerClassificacao, promptDaClassificacao } from '../src/clientes/arquivista/classificador';
-import { chaveDoNomeDaPasta, escolherPastaExistente } from '../src/clientes/pasta-do-cliente/nome-da-pasta';
+import {
+  FRASE_NOME_RESERVADO,
+  chaveDoNomeDaPasta,
+  ehNomeDoModelo,
+  escolherPastaExistente,
+  outrosComAChave,
+} from '../src/clientes/pasta-do-cliente/nome-da-pasta';
 import { PastaDoClienteService } from '../src/clientes/pasta-do-cliente/pasta-do-cliente.service';
 import { dentroDeGit, planoDasPastas, proporPastas } from '../src/clientes/pasta-do-cliente/pastas-dos-clientes';
 import { exigirBancoDescartavel } from './banco-de-teste';
@@ -48,13 +54,33 @@ const PEDRO = { id: 'a4-pedro-0000-0000-0000-000000000001', papeis: ['admin_mast
 const LUCAS = { id: 'a4-lucas-0000-0000-0000-000000000002', papeis: ['gestor_marketing'] };
 
 describe('partes puras da pasta e do arquivista', () => {
-  it('a chave do nome liga "Affari Ltda" a "affari", e não liga nome parecido', () => {
-    expect(chaveDoNomeDaPasta('Affari Ltda')).toBe('affari');
-    expect(chaveDoNomeDaPasta('Promédical S/A')).toBe('promedical');
-    expect(escolherPastaExistente({ razaoSocial: 'Affari Ltda' }, [{ id: '1', nome: 'affari' }, { id: '2', nome: 'affari-2' }])).toEqual({ tipo: 'ligar', id: '1' });
-    expect(escolherPastaExistente({ razaoSocial: 'Custeio Agro Ltda' }, [{ id: '1', nome: 'custeio' }])).toEqual({ tipo: 'criar' });
-    expect(escolherPastaExistente({ razaoSocial: 'Curral' }, [{ id: '1', nome: 'curral' }, { id: '2', nome: 'Curral ME' }])).toEqual({ tipo: 'ambigua', quantas: 2 });
+  it('a chave do nome liga "Vortexa Ltda" a "vortexa", e não liga nome parecido', () => {
+    // Nomes inventados: nada de cliente de verdade em teste.
+    expect(chaveDoNomeDaPasta('Vortexa Ltda')).toBe('vortexa');
+    expect(chaveDoNomeDaPasta('Médicaplus S/A')).toBe('medicaplus');
+    expect(escolherPastaExistente({ razaoSocial: 'Vortexa Ltda' }, [{ id: '1', nome: 'vortexa' }, { id: '2', nome: 'vortexa-2' }])).toEqual({ tipo: 'ligar', id: '1' });
+    expect(escolherPastaExistente({ razaoSocial: 'Campolindo Agro Ltda' }, [{ id: '1', nome: 'campolindo' }])).toEqual({ tipo: 'criar' });
+    expect(escolherPastaExistente({ razaoSocial: 'Celeiro' }, [{ id: '1', nome: 'celeiro' }, { id: '2', nome: 'Celeiro ME' }])).toEqual({ tipo: 'ambigua', quantas: 2 });
     expect(escolherPastaExistente({ razaoSocial: '_modelo-cliente' }, [{ id: '1', nome: '_modelo-cliente' }])).toEqual({ tipo: 'criar' });
+  });
+
+  it('o modelo nunca é candidato, nem com outra grafia; cliente com o nome do modelo é reconhecido', () => {
+    expect(ehNomeDoModelo('_modelo-cliente')).toBe(true);
+    expect(ehNomeDoModelo('Modelo Cliente')).toBe(true);
+    expect(ehNomeDoModelo('Modelo Clientes')).toBe(false);
+    expect(
+      escolherPastaExistente({ razaoSocial: 'Modelo Cliente Ltda' }, [{ id: '1', nome: '_modelo-cliente' }, { id: '2', nome: 'modelo cliente' }]),
+    ).toEqual({ tipo: 'criar' });
+  });
+
+  it('outro cliente com a mesma chave de nome é achado (fantasia ou razão social); o próprio não conta', () => {
+    const clientes = [
+      { id: 'a', razaoSocial: 'Gemeos Exemplo Ltda', nomeFantasia: null },
+      { id: 'b', razaoSocial: 'Outra Razao SA', nomeFantasia: 'Gêmeos Exemplo' },
+      { id: 'c', razaoSocial: 'Sem Relacao' },
+    ];
+    expect(outrosComAChave('gemeos exemplo', 'a', clientes).map((c) => c.id)).toEqual(['b']);
+    expect(outrosComAChave('sem relacao', 'c', clientes)).toEqual([]);
   });
 
   it('o classificador cerca o arquivo e só aceita subpasta da lista', () => {
@@ -270,14 +296,57 @@ describe.skipIf(!URL)('TR-04 e TR-05 contra o banco, pela porta', { timeout: 60_
   });
 
   it('pasta de mesmo nome na raiz é LIGADA, não recriada', async () => {
-    const existente = drive.pasta('affari', raiz.raiz);
-    const c = await cliente('Affari Ltda');
+    const existente = drive.pasta('vortexa', raiz.raiz);
+    const c = await cliente('Vortexa Ltda');
     const r = (await na(() => pastas.garantir({ orgId: ORG, partnerId: c.id, origem: 'script', atorId: PEDRO.id }))) as { approvalId: string };
     const escritas = drive.escritas.length;
     const exec = await confirmar(r.approvalId);
     expect((exec as { resultado: { ligada: boolean } }).resultado.ligada).toBe(true);
     expect(drive.escritas.length).toBe(escritas);
     expect((await prisma.partner.findUniqueOrThrow({ where: { id: c.id } })).pastaDriveId).toBe(existente);
+  });
+
+  it('REVISÃO: a pasta que já é de outro cliente NÃO é ligada; o motivo fica no cliente e nada vai ao Drive', async () => {
+    const pastaDoDono = drive.pasta('Dono Exemplo', raiz.raiz);
+    // O dono tem outro nome (a pasta foi ligada à mão), mas a pasta é dele.
+    await cliente('Razao Antiga do Dono', { pastaDriveId: pastaDoDono, pastaDriveUrl: `https://drive.google.com/drive/folders/${pastaDoDono}` });
+    const intruso = await cliente('Dono Exemplo Ltda');
+    const r = (await na(() => pastas.garantir({ orgId: ORG, partnerId: intruso.id, origem: 'manual', atorId: PEDRO.id }))) as { approvalId: string };
+    const escritas = drive.escritas.length;
+    await expect(confirmar(r.approvalId)).rejects.toThrow(/já é de outro cliente/);
+    const p = await prisma.partner.findUniqueOrThrow({ where: { id: intruso.id } });
+    expect(p.pastaDriveId).toBeNull();
+    expect(p.pastaDriveErro).toMatch(/esta pasta já é de outro cliente/);
+    expect(drive.escritas.length).toBe(escritas);
+  });
+
+  it('REVISÃO: o banco também recusa dois clientes da mesma empresa na mesma pasta (índice único parcial)', async () => {
+    await cliente('Indice Um', { pastaDriveId: 'pasta-do-indice-unica' });
+    const b = await cliente('Indice Dois');
+    await expect(prisma.partner.update({ where: { id: b.id }, data: { pastaDriveId: 'pasta-do-indice-unica' } })).rejects.toThrow(/Unique constraint/i);
+    // Outra empresa com o mesmo id de pasta não colide; sem pasta (NULL) também não.
+    await expect(cliente('Indice da Outra', { pastaDriveId: 'pasta-do-indice-unica' }, ORG_B)).resolves.toBeTruthy();
+    await expect(cliente('Indice Tres')).resolves.toBeTruthy();
+  });
+
+  it('REVISÃO: dois clientes com a mesma chave de nome: ligar recusa, nada é ligado', async () => {
+    drive.pasta('gemeos exemplo', raiz.raiz);
+    const um = await cliente('Gemeos Exemplo Ltda');
+    await cliente('Gêmeos Exemplo ME');
+    const r = (await na(() => pastas.garantir({ orgId: ORG, partnerId: um.id, origem: 'manual', atorId: PEDRO.id }))) as { approvalId: string };
+    await expect(confirmar(r.approvalId)).rejects.toThrow(/mesmo nome de pasta/);
+    const p = await prisma.partner.findUniqueOrThrow({ where: { id: um.id } });
+    expect(p.pastaDriveId).toBeNull();
+    expect(p.pastaDriveErro).toMatch(/mais de um cliente desta empresa tem o mesmo nome de pasta/);
+  });
+
+  it('REVISÃO: cliente com o nome da pasta-modelo não ganha pasta, e nada vai à porta', async () => {
+    for (const nome of ['_modelo-cliente', 'Modelo Cliente Ltda']) {
+      const c = await cliente(nome);
+      const r = await na(() => pastas.garantir({ orgId: ORG, partnerId: c.id, origem: 'manual', atorId: PEDRO.id }));
+      expect(r).toEqual({ estado: 'erro', motivo: FRASE_NOME_RESERVADO });
+      expect(await prisma.approval.count({ where: { orgId: ORG, resourceId: c.id } })).toBe(0);
+    }
   });
 
   it('o erro do Drive grava o motivo no cliente; dar certo depois limpa', async () => {
@@ -478,13 +547,21 @@ describe.skipIf(!URL)('TR-04 e TR-05 contra o banco, pela porta', { timeout: 60_
   it('o script: --simular conta, --valer propõe uma pasta por cliente, --simular de novo dá zero', async () => {
     // Os clientes das outras provas já têm ponteiro ou pedido; estes três são novos.
     for (const n of ['Script Um', 'Script Dois', 'Script Tres']) await cliente(n);
+    // REVISÃO: dois clientes com a mesma chave de nome não são propostos (ligariam a mesma pasta).
+    const gemeo1 = await cliente('Script Gemeo Ltda');
+    const gemeo2 = await cliente('Script Gêmeo EPP', { ativo: false });
     const antes = await na(() => planoDasPastas(prisma as unknown as PrismaService, ORG));
     expect(antes.aPropor).toBeGreaterThanOrEqual(3);
+    expect(antes.linhas.find((l) => l.partnerId === gemeo1.id)?.acao).toBe('nome-repetido');
+    // O inativo não é candidato, mas é contra ele que o ativo colide.
+    expect(antes.linhas.find((l) => l.partnerId === gemeo2.id)).toBeUndefined();
+    expect(antes.nomeRepetido).toBeGreaterThanOrEqual(1);
     const propostos = antes.aPropor;
     // Cada pedido é R3; o segundo da hora subiria para R4 pelo volume. A suíte mede a idempotência, não o sinal.
     const pastasSemVolume = { garantir: async (pd: Parameters<PastaDoClienteService['garantir']>[0]) => { await zerarVolume(); return pastas.garantir(pd); } };
     const valer = await na(() => proporPastas(prisma as unknown as PrismaService, pastasSemVolume, ORG, PEDRO.id));
     expect(valer.resultados.aguardando_aprovacao).toBe(propostos);
+    expect(await prisma.approval.count({ where: { orgId: ORG, resourceId: gemeo1.id } })).toBe(0);
     const depois = await na(() => planoDasPastas(prisma as unknown as PrismaService, ORG));
     expect(depois.aPropor).toBe(0);
     expect(depois.aguardandoAprovacao).toBeGreaterThanOrEqual(propostos);
