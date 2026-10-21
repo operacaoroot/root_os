@@ -12,6 +12,7 @@ import {
 import {
   LLM_PROVIDER,
   type LlmProvider,
+  type LlmStepInput,
   type LlmStepOutput,
   type LlmToolResult,
   type LlmTurn,
@@ -68,6 +69,17 @@ export interface ExecutarPedido {
    */
   heartbeat?: MotivoDeHeartbeat;
   onEvento?: (e: SessionEvent) => void;
+  /**
+   * A função do cadastro único em nome de quem o laço chama o modelo (rodada dos
+   * agentes, 21/10/2026; o pesquisador de conta, IM-02, é o primeiro). Viaja em
+   * cada `llm.step` do laço. Ausente = como antes.
+   */
+  funcao?: string;
+  /**
+   * Ferramentas de servidor do provedor (hoje só a busca na web do IM-02). Quem
+   * liga é o serviço que chama, pela nota da empresa; o laço só repassa.
+   */
+  servidor?: LlmStepInput['servidor'];
 }
 
 /*
@@ -703,6 +715,8 @@ export class AgentRuntime {
            * sabendo a quem cobrar.
            */
           agentSlug: agent.slug,
+          ...(p.funcao ? { funcao: p.funcao } : {}),
+          ...(p.servidor ? { servidor: p.servidor } : {}),
         });
       } catch (e) {
         /*
