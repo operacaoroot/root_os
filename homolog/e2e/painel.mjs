@@ -130,7 +130,7 @@ function telas(ids) {
     { nome: 'caixa-tarefas', url: '/caixa?aba=tarefas', pronto: `[data-testid="caixa-aba-tarefas"]` },
     { nome: 'trabalho-pastas', url: `/trabalho?lista=${ids.listaId}`, pronto: '[data-testid="trabalho-pasta-todas"]' },
     { nome: 'trabalho-lista', url: `/trabalho?lista=${ids.listaId}&visao=lista`, pronto: '[data-testid="trabalho-visao-lista"]' },
-    { nome: 'atas', url: `/trabalho/atas?ata=${encodeURIComponent(ids.ataRef)}`, pronto: '[data-testid="atas-lista"]' },
+    { nome: 'atas', url: `/trabalho/atas?ata=${encodeURIComponent(ids.ataRef)}`, pronto: '[data-testid="atas-tela"]' }, // P7 (21/10): no celular a ata aberta é tela própria, sem a lista
     { nome: 'aprovacoes', url: '/atendimento', pronto: '[data-testid="aprov-grupo-voce"]' },
     { nome: 'funil', url: '/comercial/funil', pronto: `[data-testid="funil-card-${ids.leadId}"]` },
     { nome: 'whatsapp', url: '/whatsapp', pronto: '[data-testid="whats-lista"]' },
