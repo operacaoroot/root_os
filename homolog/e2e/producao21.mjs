@@ -54,6 +54,7 @@ const ENV = lerEnv(process.env.HOMOLOG_ENV ?? join(RAIZ, 'homolog/.env.final-see
 const SENHA = ENV.ADMIN_PASSWORD;
 const EMAIL = process.env.INTERFACE_EMAIL ?? 'admin@marketing-os.local';
 
+let leadComSala = null;
 const prova = { inicio: new Date().toISOString(), web: WEB, passos: [], screenshots: [], avisos: [], ok: false };
 const t0 = Date.now();
 
@@ -321,7 +322,9 @@ async function main() {
     await dormir(800);
     const comPalavra = await p.locator('[data-testid="atas-lista"] button[data-testid^="ata-"]').count();
     conferir(comPalavra >= 1, 'a busca pela palavra não achou a ata colada');
-    const hoje = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Sao_Paulo' }).format(new Date());
+    // A data da ata é a da reunião escrita nela (a linha "Data:" da fixture), não a do dia em que foi colada.
+    const hoje = /^Data:\s*(\d{4}-\d{2}-\d{2})/m.exec(readFileSync(join(RAIZ, 'homolog/fixtures/ata-trabalho-exemplo.md'), 'utf8'))?.[1];
+    conferir(hoje, 'a fixture da ata não tem a linha Data:');
     await p.getByTestId('atas-de').fill('2001-01-01');
     await p.getByTestId('atas-ate').fill('2001-01-02');
     await p.waitForURL((u) => new URL(u).searchParams.get('ate') === '2001-01-02', { timeout: 10_000 });
@@ -333,7 +336,7 @@ async function main() {
     await p.waitForURL((u) => new URL(u).searchParams.get('de') === hoje, { timeout: 10_000 });
     await dormir(800);
     const hojeN = await p.locator('[data-testid="atas-lista"] button[data-testid^="ata-"]').count();
-    conferir(hojeN >= 1, 'o intervalo de hoje não mostra a ata colada hoje');
+    conferir(hojeN >= 1, `o intervalo do dia da reunião (${hoje}) não mostra a ata colada`);
     await foto(p, 'atas-busca-escuro');
     await claro.goto(p.url(), { waitUntil: 'networkidle' });
     await foto(claro, 'atas-busca-claro');
@@ -379,7 +382,16 @@ async function main() {
     await p.getByTestId('funil-lista').waitFor();
     const linhas = p.locator('[data-testid^="funil-linha-"]');
     conferir(await linhas.count(), 'a lista do funil está vazia');
-    await linhas.first().click();
+    // Um lead com sala e link (a rota de estado diz; ela nunca devolve o link em claro).
+    const ids = (await linhas.evaluateAll((ls) => ls.map((l) => l.getAttribute('data-testid')))).map((t) => t.replace('funil-linha-', ''));
+    let escolhido = null;
+    for (const id of ids) {
+      const r = await http('GET', `${API}/comercial/lead/${id}/sala/estado`, undefined, sessao.token);
+      if (r.status === 200 && r.json?.linkDisponivel) { escolhido = id; break; }
+    }
+    conferir(escolhido, 'nenhum lead do funil tem sala com link');
+    leadComSala = escolhido;
+    await p.getByTestId(`funil-linha-${escolhido}`).click();
     const painel = p.locator('[role="dialog"]').first();
     await painel.waitFor();
     await painel.getByRole('tab', { name: /Sala/ }).click();
@@ -404,7 +416,7 @@ async function main() {
     for (const [pg, nome] of [[claro, 'sala-estado-claro'], [m, 'sala-estado-390']]) {
       await pg.goto(`${WEB}/comercial/funil?visao=lista`, { waitUntil: 'networkidle' });
       await pg.getByTestId('funil-lista').waitFor();
-      await pg.locator('[data-testid^="funil-linha-"]').first().click();
+      await pg.getByTestId(`funil-linha-${leadComSala}`).click();
       const painel = pg.locator('[role="dialog"]').first();
       await painel.waitFor();
       await painel.getByRole('tab', { name: /Sala/ }).click();
