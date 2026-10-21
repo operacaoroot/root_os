@@ -29,7 +29,7 @@ Todo conector tem, obrigatoriamente: **auth própria · logs · health · rate-l
 | **Pixel/Página de vendas** | ads | webhook secret / público | ingest | page_view, scroll_*, click_cta, form_*, checkout, purchase, UTMs, sessão, device | — | Baixo (anônimo)/Alto (form) | **1** |
 | **ClickUp** | tasks | OAuth2 / API token | 2 vias | tarefas, listas, status, responsáveis, prazos, comentários | criar/atualizar tarefa, comentar | Médio | **2** |
 | **Asana** | tasks | OAuth2 / PAT | 2 vias | tarefas, projetos, assignees, due dates | criar/atualizar tarefa | Médio | **2** |
-| **WhatsApp** (Digisac/Z-API/Meta) | messaging | API key + webhook | 2 vias | mensagens recebidas, status de entrega | **enviar msg/alerta/relatório** (sensível) | **Alto** | **2** |
+| **WhatsApp** (Evolution; Meta Cloud API como alternativa) | messaging | API key + webhook | 2 vias | mensagens recebidas, status de entrega | **enviar msg/alerta/relatório** (sensível) | **Alto** | **2** |
 | **Zapier** | automation | webhook in/out + REST | 2 vias | execuções de zaps, payloads, falhas | disparar zap (write_safe) | Médio | **3** |
 | **Apify** | automation | API token | pull | actors, runs, datasets, logs, custo | rodar actor (write_safe) | Médio | **3** |
 | **Instagram** (Graph API) | social | OAuth2 (Meta) | pull | seguidores, alcance, posts, reels, stories, engajamento, cliques | — (publicação fora do MVP) | Médio | **4** |
