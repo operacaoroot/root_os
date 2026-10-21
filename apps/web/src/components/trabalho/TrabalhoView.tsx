@@ -31,6 +31,7 @@ import { AtividadeDaTarefa } from './AtividadeDaTarefa';
 import { EditorialTaskLink } from './EditorialTaskLink';
 import { OrigemComercialDaTarefa } from '@/app/leads/OrigemComercialDaTarefa';
 import { FontesDaTarefa } from './FontesDaTarefa';
+import { AnexosDaTarefa } from './AnexosDaTarefa';
 import { OutrosResponsaveis, ResponsavelDaTarefa, SeletorOutrosResponsaveis, SeletorResponsavel, rotuloDaPessoa } from './ResponsavelDaTarefa';
 import { CalendarioDeTarefas, diaDoPrazo, prazoDoDia } from './CalendarioDeTarefas';
 import { colunasDeTodas, destinoNaLista, idDaColuna } from './colunas-de-todas';
@@ -2289,6 +2290,7 @@ function PainelTarefa({ id, estrutura, editable, token, usuarioId, aba = 'tarefa
         ) : null}
         {trilho && <QuemTrabalhaNaEtapa trilhoId={trilho.id} token={token} />}
         <FontesDaTarefa taskId={t.id} />
+        <AnexosDaTarefa taskId={t.id} />
         <EditorialTaskLink taskId={t.id} />
         <OrigemComercialDaTarefa taskId={t.id} />
         {/* linha de propriedades — tudo editável */}
