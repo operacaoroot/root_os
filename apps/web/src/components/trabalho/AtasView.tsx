@@ -182,15 +182,20 @@ export function AtasView() {
     window.setTimeout(() => botaoColar.current?.focus(), 0);
   }, []);
 
+  // Só a resposta do ÚLTIMO pedido vale: trocar "de" e "até" em sequência dispara duas
+  // buscas, e a mais velha (só com o "de") não pode chegar por último e mandar na lista.
+  const pedidoDaLista = useRef(0);
   const carregarLista = useCallback(() => {
     if (!token || !podeVer) return;
+    const este = ++pedidoDaLista.current;
     apiGet<TrabAtaLista>(rotaDaLista(filtros), token)
       .then((l) => {
+        if (este !== pedidoDaLista.current) return;
         setLista(l);
         // No desktop a primeira abre sozinha; no celular a lista vem primeiro.
         if (largo) setRefAberta((atual) => atual ?? ataDoEndereco() ?? l.atas[0]?.id ?? null);
       })
-      .catch((e) => setErro(e.message));
+      .catch((e) => { if (este === pedidoDaLista.current) setErro(e.message); });
   }, [token, podeVer, filtros, largo]);
 
   useEffect(() => { carregarLista(); }, [carregarLista]);

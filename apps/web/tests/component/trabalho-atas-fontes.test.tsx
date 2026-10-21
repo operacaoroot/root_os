@@ -111,6 +111,27 @@ describe('Atas: a busca', () => {
     expect(rotasDaLista().at(-1)).toBe('/trabalho/atas');
   });
 
+  it('a resposta velha que chega depois não manda na lista (de e até trocados em sequência)', async () => {
+    render(<AtasPage />);
+    await screen.findByTestId('atas-lista');
+    const pendentes: Array<{ rota: string; soltar: () => void }> = [];
+    const comum = get.getMockImplementation()!;
+    get.mockImplementation((rota: string) => {
+      if (rota.startsWith('/trabalho/atas?')) {
+        return new Promise((ok) => pendentes.push({ rota, soltar: () => ok({ pasta: '80-Reunioes', notasDoVault: 3, vaultVisivel: true, iaConfigurada: true, fontes: FONTES, atas: rota.includes('ate=') ? [] : ATAS }) }));
+      }
+      return comum(rota);
+    });
+    fireEvent.change(screen.getByTestId('atas-de'), { target: { value: '2001-01-01' } });
+    await waitFor(() => expect(pendentes.length).toBe(1));
+    fireEvent.change(screen.getByTestId('atas-ate'), { target: { value: '2001-01-02' } });
+    await waitFor(() => expect(pendentes.length).toBe(2));
+    await act(async () => { pendentes[1].soltar(); });
+    await act(async () => { pendentes[0].soltar(); });
+    const lista = screen.getByTestId('atas-lista');
+    expect(within(lista).queryAllByRole('button').filter((b) => (b.getAttribute('data-testid') ?? '').startsWith('ata-'))).toHaveLength(0);
+  });
+
   it('o endereço com a busca abre a tela já filtrada', async () => {
     window.history.replaceState({}, '', '/trabalho/atas?q=diretoria&tipo=ata');
     render(<AtasPage />);

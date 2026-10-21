@@ -251,7 +251,7 @@ async function main() {
     conferir(depois.every((n) => n > 0), 'ainda há coluna vazia com o modo ligado');
     conferir(depois.length === antes.length - vaziasAntes, `colunas ${antes.length} → ${depois.length}, vazias ${vaziasAntes}`);
     if (vaziasAntes) {
-      const texto = (await p.getByTestId('trabalho-vazios-contagem').innerText()).trim();
+      const texto = (await p.getByTestId('trabalho-vazios-contagem').innerText()).replace(/^[\s·]+/, '').trim();
       conferir(texto.startsWith(String(vaziasAntes)), `a contagem diz "${texto}" e eram ${vaziasAntes}`);
     } else aviso('nenhuma coluna vazia no quadro do seed: a contagem não tem o que mostrar');
     await foto(p, 'todas-vazios-ocultos-escuro');
@@ -319,20 +319,20 @@ async function main() {
     await p.getByTestId('atas-busca').fill('prova da produção 21');
     await p.waitForURL((u) => (new URL(u).searchParams.get('q') ?? '').includes('produção 21'), { timeout: 10_000 });
     await dormir(800);
-    const comPalavra = await p.locator('[data-testid="atas-lista"] [data-testid^="ata-"]').count();
+    const comPalavra = await p.locator('[data-testid="atas-lista"] button[data-testid^="ata-"]').count();
     conferir(comPalavra >= 1, 'a busca pela palavra não achou a ata colada');
     const hoje = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Sao_Paulo' }).format(new Date());
     await p.getByTestId('atas-de').fill('2001-01-01');
     await p.getByTestId('atas-ate').fill('2001-01-02');
     await p.waitForURL((u) => new URL(u).searchParams.get('ate') === '2001-01-02', { timeout: 10_000 });
     await dormir(800);
-    const noPassado = await p.locator('[data-testid="atas-lista"] [data-testid^="ata-"]').count();
+    const noPassado = await p.locator('[data-testid="atas-lista"] button[data-testid^="ata-"]').count();
     conferir(noPassado === 0, `o intervalo de 2001 ainda mostra ${noPassado} ata(s)`);
     await p.getByTestId('atas-ate').fill(hoje);
     await p.getByTestId('atas-de').fill(hoje);
     await p.waitForURL((u) => new URL(u).searchParams.get('de') === hoje, { timeout: 10_000 });
     await dormir(800);
-    const hojeN = await p.locator('[data-testid="atas-lista"] [data-testid^="ata-"]').count();
+    const hojeN = await p.locator('[data-testid="atas-lista"] button[data-testid^="ata-"]').count();
     conferir(hojeN >= 1, 'o intervalo de hoje não mostra a ata colada hoje');
     await foto(p, 'atas-busca-escuro');
     await claro.goto(p.url(), { waitUntil: 'networkidle' });
@@ -340,7 +340,7 @@ async function main() {
     await m.goto(`${WEB}/trabalho/atas`, { waitUntil: 'networkidle' });
     conferir(await semRolagemLateral(m), 'Atas rola de lado a 390');
     await foto(m, 'atas-390');
-    const primeira = m.locator('[data-testid="atas-lista"] [data-testid^="ata-"]').first();
+    const primeira = m.locator('[data-testid="atas-lista"] button[data-testid^="ata-"]').first();
     if (await primeira.count()) {
       await primeira.click();
       await m.getByTestId('atas-voltar').waitFor();
