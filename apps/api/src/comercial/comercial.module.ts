@@ -48,6 +48,7 @@ import { FechadoForaService } from './fechado-fora.service';
 import { FechamentoService } from './fechamento.service';
 import { OnboardingAntecipadoController } from './onboarding-antecipado.controller';
 import { OnboardingAntecipadoService } from './onboarding-antecipado.service';
+import { ImportadorCrmService } from './importador-crm/importador-crm.service';
 
 /*
  * O COCKPIT DO LEAD — módulo comercial (13/10/2026).
@@ -108,6 +109,8 @@ import { OnboardingAntecipadoService } from './onboarding-antecipado.service';
     FechadoForaService,
     // --- ajustes da versão final A2 (iniciar o onboarding antes do negócio fechado: o mesmo card do fechamento) ---
     OnboardingAntecipadoService,
+    // --- rodada de produção 1 (o importador do CRM antigo: só pelo script `importar-crm`, sem rota) ---
+    ImportadorCrmService,
     // --- lane E (inteligência: stub/ponte, diagnóstico, proposta, relator, vigia) ---
     // O provider (stub/ponte) é escolhido em `llm/llm.module.ts`; aqui, o leitor de ata, o
     // construtor e revisor de proposta e o assistente da dúvida (fase mínima).

@@ -81,6 +81,8 @@ import {
 import { montarRetratoDoTrilho, type RetratoDoTrilho } from './retrato-do-trilho';
 import { montarRoteiro, type RoteiroDoKickoff } from './roteiro';
 import { varrerSegredos } from './segredos';
+import { MARCOS_DO_AGENTE, MARCOS_DO_RELOGIO, montarQuemTrabalha } from './quem-trabalha';
+import type { QuemTrabalhaNaEtapa } from '@mktos/shared';
 import { notasDaConversaDe } from './teia-do-cliente';
 
 /* ==========================================================================
@@ -1257,6 +1259,41 @@ export class TrilhoService {
     );
     void orgId;
     return pendenciasDoRelogio(paraRelogio, convites, agora, { nDiasSemUso });
+  }
+
+  /**
+   * QUEM TRABALHA NESTA ETAPA (rodada de produção 1, 21/10/2026): os agentes do roster, o último
+   * marco de cada um neste trilho e o que vão fazer; o relógio e as pendências que a próxima
+   * passagem grava. Só leitura (`quem-trabalha.ts` monta).
+   */
+  async quemTrabalha(orgId: string, trilhoId: string, agora = new Date()): Promise<QuemTrabalhaNaEtapa> {
+    const t = await this.prisma.onboardingTrilho.findFirst({
+      where: { id: trilhoId, orgId },
+      include: { convites: true, marcos: this.marcosParaORelogio(agora) },
+    });
+    if (!t) throw new NotFoundException('trilho não encontrado.');
+    const tiposDosAgentes = Object.values(MARCOS_DO_AGENTE).flat();
+    const [marcos, agentes, rotina, pend] = await Promise.all([
+      this.prisma.onboardingMarco.findMany({
+        where: { trilhoId, orgId, tipo: { in: [...tiposDosAgentes, ...MARCOS_DO_RELOGIO] } },
+        orderBy: { em: 'desc' },
+        take: 200,
+        select: { tipo: true, texto: true, em: true, quem: true },
+      }),
+      this.prisma.agent.findMany({ where: { orgId, slug: { in: ROSTER_DO_ONBOARDING.map((a) => a.slug) } }, select: { slug: true, estado: true } }),
+      this.prisma.rotina.findFirst({ where: { orgId, slug: SLUG_DA_ROTINA_DO_RELOGIO }, select: { ativo: true, proximaExecucaoEm: true, config: true } }),
+      this.pendenciasDe(orgId, [t], agora),
+    ]);
+    const n = Number(((rotina?.config ?? {}) as { nDiasSemUso?: unknown }).nDiasSemUso);
+    const pendencias = Number.isFinite(n) && n > 0 && n !== N_DIAS_SEM_USO_PADRAO ? await this.pendenciasDe(orgId, [t], agora, n) : pend;
+    return montarQuemTrabalha({
+      trilho: { id: t.id, fase: t.fase, faseRotulo: ROTULO_DA_FASE[t.fase] },
+      roster: ROSTER_DO_ONBOARDING,
+      estados: new Map(agentes.map((a) => [a.slug, a.estado])),
+      marcos: marcos.map((m) => ({ tipo: m.tipo, texto: m.texto, em: m.em, quem: m.quem ?? null })),
+      rotina: rotina ? { ativo: rotina.ativo, proximaExecucaoEm: rotina.proximaExecucaoEm ?? null } : null,
+      pendencias: pendencias.filter((p) => p.trilhoId === t.id),
+    });
   }
 
   /** O que a rotina faz com uma pendência: grava o marco e, no lembrete, carimba o convite. */

@@ -12,6 +12,7 @@ import { ROTULO_DO_PRODUTO, contarParcelas, dataDoDia, numeroOuAusente, reaisOuA
 
 import { Aviso, BarraDaSaude, BOTAO, BOTAO_PRIMARIO, CARTAO, Carregando, Chip, Erro, ErroDaAcao, FOCO, INPUT, ROTULO, useCarregar } from '../_ui';
 import { LinkDoLead, useMudouNoPainel } from '../_painel/provedor';
+import { ContratosImportados } from '../_painel/ContratosImportados';
 
 /*
  * TELA 11 · OS CONTRATOS VIVOS (lane C), a lista. O contrato não some depois
@@ -144,9 +145,13 @@ export default function ContratosPage() {
                 {c.cnpj ? ` · ${c.cnpj}` : ''}
                 {c.socioDaConta ? ` · sócio ${c.socioDaConta}` : ''}
               </p>
-              <p className="mt-1 text-[12.5px] tabular-nums">
-                {p.pagas}/{p.total} parcelas pagas{proxima ? ` · próxima vence ${dataDoDia(proxima.vence)}` : ''}
-              </p>
+              {c.importados?.length && p.total === 0 ? (
+                <ContratosImportados itens={c.importados} />
+              ) : (
+                <p className="mt-1 text-[12.5px] tabular-nums">
+                  {p.pagas}/{p.total} parcelas pagas{proxima ? ` · próxima vence ${dataDoDia(proxima.vence)}` : ''}
+                </p>
+              )}
               {c.encerramento ? (
                 <p className="mt-1 text-[12px] text-muted" data-testid={`contrato-encerramento-${c.leadId}`}>
                   {c.encerramento.situacao === 'concluido' ? 'Concluído' : 'Desativado'} em {dataDoDia(c.encerramento.em.slice(0, 10))}

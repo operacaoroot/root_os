@@ -32,6 +32,50 @@ export function listaDaImplantacao(pastas: readonly PastaComListas[]): { pastaId
   return lista ? { pastaId: pasta.id, listaId: lista.id } : null;
 }
 
+/*
+ * QUEM TRABALHA NESTA ETAPA (rodada de produção 1, 21/10/2026): o painel do card da
+ * implantação mostra, só para ler, os agentes do roster do onboarding e o relógio do
+ * trilho, com o último fato de cada um neste cliente e o que vai fazer. Nada inventado:
+ * o último fato é um marco gravado; o que vai fazer é o gatilho do procedimento do
+ * agente e a pendência que o relógio calcula do que está gravado.
+ */
+export type EstadoDoAgenteNaEtapa = 'ativo' | 'pausado' | 'planejado' | 'encerrado' | 'ausente';
+
+export interface FatoNaEtapa {
+  texto: string;
+  /** ISO do marco. */
+  em: string;
+}
+
+export interface AgenteNaEtapa {
+  slug: string;
+  nome: string;
+  iniciais: string;
+  missao: string;
+  /** `ausente`: o agente não foi semeado nesta empresa. */
+  estado: EstadoDoAgenteNaEtapa;
+  ultimoFato: FatoNaEtapa | null;
+  oQueVaiFazer: string;
+}
+
+export interface RelogioNaEtapa {
+  nome: string;
+  /** A rotina existe e está ligada. */
+  ligado: boolean;
+  proximaPassagemEm: string | null;
+  ultimoFato: FatoNaEtapa | null;
+  /** O que a próxima passagem grava para este cliente (as pendências de agora). */
+  vaiFazer: string[];
+}
+
+export interface QuemTrabalhaNaEtapa {
+  trilhoId: string;
+  fase: string;
+  faseRotulo: string;
+  agentes: AgenteNaEtapa[];
+  relogio: RelogioNaEtapa;
+}
+
 /** A frase de quem tenta abrir cartão solto na implantação: a porta é o comercial. */
 export const PORTA_DA_IMPLANTACAO =
   'O cliente entra na implantação pelo contrato assinado no comercial. Quem fechou fora do sistema entra por "Registrar cliente já fechado", no Funil vivo. Para começar antes do fechamento, use "Iniciar onboarding" a partir do lead.';

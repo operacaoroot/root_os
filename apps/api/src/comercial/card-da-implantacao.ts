@@ -78,6 +78,11 @@ export function procedenciaDoCard(em: Date): string {
   return `criado pelo fechamento · ${dataCurta(em)}`;
 }
 
+/** Rodada de produção 1: o selo do card que veio do CRM antigo pelo importador. */
+export function procedenciaDoCardImportado(em: Date): string {
+  return `importado do CRM antigo · ${dataCurta(em)}`;
+}
+
 /** A2: o selo do card iniciado antes do fechamento, com a etapa em que o lead está agora. */
 export function procedenciaDoCardAntecipado(etapaDoLead: ComercialEtapa): string {
   return `Iniciado antes do fechamento · lead em ${rotuloCurtoDaEtapa(etapaDoLead)}`;
@@ -116,7 +121,10 @@ export function seloDoCard(s: {
   antecipado: boolean;
   /** Quando o fechamento foi registrado no card antecipado (ou o cliente ficou ativo), ou nulo. */
   fechadoEm: Date | null;
+  /** Rodada de produção 1: o card nasceu do importador do CRM antigo (fato `implantacao.card_criado` com origem `importacao`). */
+  importado?: boolean;
 }): { tipo: 'fechamento' | 'antecipado' | 'saiu_do_funil'; leadId: string; rotulo: string } {
+  if (s.importado && !s.antecipado) return { tipo: 'fechamento', leadId: s.leadId, rotulo: procedenciaDoCardImportado(s.criadoEm) };
   if (!s.antecipado) return { tipo: 'fechamento', leadId: s.leadId, rotulo: procedenciaDoCard(s.criadoEm) };
   // Só o fechamento de verdade (o fato no card ou o cliente ativo) tira o selo. A etapa
   // "Negócio fechado" sozinha é o mover à mão, que não fecha nada.
@@ -152,14 +160,17 @@ export interface DadosDoCard {
   clienteId?: string | null;
 }
 
-/** De onde o card veio (A2): o fechamento (padrão) ou "Iniciar onboarding" antes dele. */
+/**
+ * De onde o card veio (A2): o fechamento (padrão), "Iniciar onboarding" antes dele, ou (rodada de
+ * produção 1) o importador do CRM antigo, que traz o cliente que já estava em kickoff ou implantação.
+ */
 export interface EntradaDoCard {
-  origem?: 'fechamento' | 'antecipado';
-  /** O nome da etapa de entrada (só no antecipado; o fechamento entra na primeira). */
+  origem?: 'fechamento' | 'antecipado' | 'importacao';
+  /** O nome da etapa de entrada (no antecipado e na importação; o fechamento entra na primeira). */
   etapa?: string;
   /** A etapa do funil em que o lead estava ao iniciar (só no antecipado). */
   etapaDoLead?: ComercialEtapa;
-  /** A pessoa que iniciou (só no antecipado; no fechamento quem abre é o sistema). */
+  /** A pessoa que iniciou (no antecipado) ou importou (na importação); no fechamento quem abre é o sistema. */
   ator?: { id: string; nome: string | null };
 }
 
@@ -182,6 +193,9 @@ export function descricaoDoCard(d: DadosDoCard, em: Date, entrada: EntradaDoCard
     const etapa = entrada.etapaDoLead ? ` · lead em ${rotuloCurtoDaEtapa(entrada.etapaDoLead)}` : '';
     const por = entrada.ator?.nome ? `, por ${entrada.ator.nome}` : '';
     linhas.push('', `Procedência: iniciado antes do fechamento${etapa} · ${dataCurta(em)}${por}. Nada foi redigitado: os dados vêm da ficha do lead, e o que ainda não existe fica ${A_DECIDIR_NO_CARD}.`);
+  } else if (entrada.origem === 'importacao') {
+    const por = entrada.ator?.nome ? `, por ${entrada.ator.nome}` : '';
+    linhas.push('', `Procedência: ${procedenciaDoCardImportado(em)}${por}. O cliente já estava nesta etapa no CRM antigo; os dados vêm do cartão de lá, e o que não existia fica ${A_DECIDIR_NO_CARD}.`);
   } else {
     linhas.push('', `Procedência: ${procedenciaDoCard(em)} (chave ${d.chave}). Nada foi redigitado: os dados vêm do aceite aprovado.`);
   }
@@ -274,7 +288,7 @@ export async function abrirCardDaImplantacao(db: Db, orgId: string, d: DadosDoCa
   const etapas = await db.workStatus.findMany({ where: { orgId, listId: lista.id }, orderBy: { order: 'asc' }, select: { id: true, name: true, type: true } });
   if (!etapas.length) throw new Error(`a lista ${LISTA_DA_IMPLANTACAO} não tem etapa`);
   let alvo = etapas[0];
-  if (origem === 'antecipado') {
+  if (origem === 'antecipado' || origem === 'importacao') {
     // A2: nunca a primeira (é do fechamento), nunca a de encerramento, nunca uma que não existe.
     const c = conferirEtapaDeEntrada(etapas.map((e) => ({ name: e.name, type: e.type })), entrada.etapa);
     if (!c.ok) throw new EtapaDeEntradaRecusada(c.motivo);
@@ -294,10 +308,12 @@ export async function abrirCardDaImplantacao(db: Db, orgId: string, d: DadosDoCa
       clienteId: d.clienteId ?? null,
     },
   });
-  const pessoa = origem === 'antecipado' ? entrada.ator ?? null : null;
+  const pessoa = origem === 'antecipado' || origem === 'importacao' ? entrada.ator ?? null : null;
   const texto = origem === 'antecipado'
     ? `Card iniciado antes do fechamento, com o lead em ${entrada.etapaDoLead ? rotuloCurtoDaEtapa(entrada.etapaDoLead) : 'andamento'}. Quando o lead fechar, o fechamento fica registrado aqui e o card continua o mesmo.`
-    : `Card ${procedenciaDoCard(agora)} (${d.chave}). Próximo passo: marcar o kickoff com ${d.contato || 'o cliente'}.`;
+    : origem === 'importacao'
+      ? `Card ${procedenciaDoCardImportado(agora)}, em ${alvo.name}. O cliente já estava nesta etapa no CRM antigo; nenhuma mensagem foi enviada.`
+      : `Card ${procedenciaDoCard(agora)} (${d.chave}). Próximo passo: marcar o kickoff com ${d.contato || 'o cliente'}.`;
   await db.workComment.create({
     data: { orgId, taskId: cardId, authorId: pessoa?.id ?? null, authorName: pessoa ? pessoa.nome || 'Comercial' : AUTOR_DO_FECHAMENTO, text: texto },
   });

@@ -207,6 +207,15 @@ export function camposDoEvento(type: string, payload: unknown, em: Date, ficha: 
     }
     case 'kickoff.marcado':
       return data(p.horario) ? { kickoffEm: data(p.horario) } : null;
+    case 'lead.importado': {
+      // Rodada de produção 1: o que o cartão do CRM antigo trazia preenche só o que a ficha ainda não tem.
+      const c: CamposDaFicha = {};
+      if (str(p.empresa) && !ficha.empresa) c.empresa = str(p.empresa);
+      if (str(p.cnpj) && !ficha.cnpj) c.cnpj = str(p.cnpj);
+      if (str(p.produto) && PRODUTOS.includes(str(p.produto)!) && !ficha.produto) c.produto = str(p.produto);
+      if (num(p.valorCentavos) !== null && ficha.valorCentavos == null) c.valorCentavos = num(p.valorCentavos);
+      return Object.keys(c).length ? c : null;
+    }
     case 'saida.registrada':
       return {
         motivoSaida: str(p.motivo),
