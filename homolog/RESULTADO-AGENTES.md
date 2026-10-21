@@ -94,7 +94,7 @@ Os 42 arquivos vermelhos de comportamento da API estão todos na linha de base (
 
 Haiku e Sonnet contra o modelo de cima: manter em CO-04, CO-06, CO-12, CO-16, IM-03, IM-07, TR-01, TR-05, TR-07, TR-08, TR-11 e AG-01; **troca recomendada** só no CO-11 (Haiku → Sonnet), pela variável `LLM_MODELOS_POR_FUNCAO=CO-11=claude-sonnet-5-5`, decisão do Rodrigo. Nada foi trocado no cadastro. Correções que a prova revelou e entraram: o esforço da função agora chega ao CLI da ponte (`--effort`); o prompt do arquivista não se contradiz mais sobre print sem texto e o limiar ficou estrito; o texto do padrão no vigia.
 
-**Roteiros e2e** (imagem `rootos-final-app:agentes1`):
+**Roteiros e2e** (imagem `rootos-final-app:agentes1`; `agentes.mjs` e `final.mjs` rodados de novo, verdes, na imagem final `rootos-final-app:agentes2`, com os consertos):
 
 | Roteiro | Onde | Resultado |
 |---|---|---|
@@ -106,7 +106,7 @@ Haiku e Sonnet contra o modelo de cima: manter em CO-04, CO-06, CO-12, CO-16, IM
 
 O Drive, a Evolution e o Google Agenda de verdade não existem nas stacks: fechamento criando a pasta, arquivista classificando e enviando, triagem do WhatsApp e vigia propondo estão provados nas suítes com dublê HTTP (`google-drive-cliente`, `clientes-pasta-e-arquivista`, `comercial-agentes-*`, `agenda-vigia`) e com modelo real na prova pela ponte.
 
-**As stacks** (`up -d --no-build api web`, bancos não recriados, política semeada com a assinatura de capacidade nova): `rootos-final` (3030) com 202 tarefas, 19 leads, 18 `Partner`, 8 usuários, 19 listas, 5 pastas e 84 status antes e depois (migrations 102 → `<total>`); ensaiados ali os passos de dado do "Para publicar": a tripulação (`0 criados, 8 atualizados`) e `desativar-ia-acao` (simular, valer, de novo: "nada mudou"). `rootos-final-seed` (3031): seed fictício refeito com as três pessoas de exemplo.
+**As stacks** (`up -d --no-build api web`, bancos não recriados, política semeada com a assinatura de capacidade nova): `rootos-final` (3030) com 202 tarefas, 19 leads, 18 `Partner`, 8 usuários, 19 listas, 5 pastas e 84 status antes e depois (migrations 102 → 113); ensaiados ali os passos de dado do "Para publicar": a tripulação (`0 criados, 8 atualizados`) e `desativar-ia-acao` (simular, valer, de novo: "nada mudou"). `rootos-final-seed` (3031): seed fictício refeito com as três pessoas de exemplo. **Imagem final nas duas: `rootos-final-app:agentes2`** (a `agentes1` ficou de reserva, sem os consertos da revisão). O vigia da agenda já tinha sido semeado ligado nas stacks pela `agentes1` (o upsert não mexe em linha existente; as stacks rodam com `ROTINAS_CRON=off`); na produção ele nasce desligado.
 
 ## 6. Revisão adversarial
 

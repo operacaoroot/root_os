@@ -1,12 +1,12 @@
 {
-  "inicio": "2026-10-21T10:14:23.912Z",
+  "inicio": "2026-10-21T11:03:02.128Z",
   "web": "http://127.0.0.1:3031",
   "passos": [
     {
       "n": 1,
       "nome": "CO-15 · o formulário do site cria o lead (CORS de operacaoroot.com, idempotente, isca calada)",
       "ok": true,
-      "ms": 145,
+      "ms": 245,
       "detalhe": {
         "leadsAchados": 0,
         "status": [
@@ -20,7 +20,7 @@
       "n": 2,
       "nome": "TR-04 · a pasta do cliente sem a raiz configurada responde sem_raiz com a frase",
       "ok": true,
-      "ms": 26,
+      "ms": 24,
       "detalhe": {
         "clientes": 10,
         "estado": "sem_raiz"
@@ -30,7 +30,7 @@
       "n": 3,
       "nome": "TR-06 · anexo na tarefa: sobe, aparece na lista e fica no OS/na fila sem pasta",
       "ok": true,
-      "ms": 1139,
+      "ms": 1948,
       "detalhe": {
         "anexos": 0,
         "semStorage": true,
@@ -41,7 +41,7 @@
       "n": 4,
       "nome": "AG-01 · a rota do vigia responde e a /agenda carrega sem erro",
       "ok": true,
-      "ms": 767,
+      "ms": 806,
       "detalhe": {
         "itens": 0,
         "motivo": null
@@ -51,7 +51,7 @@
       "n": 5,
       "nome": "A7 · Equipe com três pessoas e os agentes sob cada uma",
       "ok": true,
-      "ms": 2433,
+      "ms": 2647,
       "detalhe": {
         "pessoas": [
           "Lucas",
@@ -65,14 +65,14 @@
       "n": 6,
       "nome": "A7 · /agentes com as abas Agentes, Rotinas e Automações, filtro no endereço",
       "ok": true,
-      "ms": 2450,
+      "ms": 2700,
       "detalhe": {
         "abas": [
-          "Agentes 34",
+          "Agentes 33",
           "Rotinas 9",
           "Automações e integrações 13"
         ],
-        "linhas": 34,
+        "linhas": 33,
         "urlRotinas": "?aba=rotinas"
       }
     },
@@ -80,7 +80,7 @@
       "n": 7,
       "nome": "A6 · /conexoes com o cartão único e sem DigiSac",
       "ok": true,
-      "ms": 2745,
+      "ms": 2230,
       "detalhe": {
         "cartoes": 20
       }
@@ -89,7 +89,7 @@
       "n": 8,
       "nome": "Lane 0 · as pendências respondem e a caixa abre",
       "ok": true,
-      "ms": 678,
+      "ms": 708,
       "detalhe": {
         "abertas": 0
       }
@@ -115,6 +115,6 @@
     "stack sem MinIO: o upload respondeu 503 com a frase do storage (o caminho com storage é a suíte work-anexos)"
   ],
   "ok": true,
-  "fim": "2026-10-21T10:14:34.668Z",
-  "duracaoMs": 10756
+  "fim": "2026-10-21T11:03:15.313Z",
+  "duracaoMs": 13185
 }
