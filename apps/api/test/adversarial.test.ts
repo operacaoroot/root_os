@@ -607,6 +607,9 @@ describe('a instrumentação — antes de medir defesa, medir o medidor', () => 
       // cerca a TRANSCRIÇÃO de uma reunião lida do Granola, já mascarada pela varredura de
       // segredos. É fala de quem estava na sala, transcrita por máquina: dado, nunca ordem. As
       // listas e as pessoas da casa ficam FORA da cerca; o clique em "Gerar ata" não é texto livre.
+      // Desde a produção 21 (P7, 21/10/2026) a MESMA cerca serve à transcrição de um arquivo da
+      // pasta do Google Drive das atas (origem `drive:<id>`), e `promptDasSugestoes` (o sexto) à ata
+      // do Drive: nenhuma chamada nova, as mesmas duas cercas.
       'src/work/atas/leitor-do-granola.ts': 1,
     };
 

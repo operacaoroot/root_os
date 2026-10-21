@@ -1,5 +1,12 @@
-import { Body, Controller, ForbiddenException, Get, Param, Post, Query, UseGuards } from '@nestjs/common';
-import { TrabAtaAceitarSchema, TrabAtaColarSchema } from '@mktos/shared';
+import { Body, Controller, ForbiddenException, Get, Param, Post, Put, Query, UseGuards } from '@nestjs/common';
+import {
+  TrabAtaAceitarSchema,
+  TrabAtaColarSchema,
+  TrabAtaDrivePastaSchema,
+  TrabAtaFiltrosSchema,
+  lerRefDaAta,
+  type TrabAtaFiltros,
+} from '@mktos/shared';
 
 import { JwtAuthGuard } from '../../auth/jwt-auth.guard';
 import { PermissionsGuard } from '../../auth/permissions.guard';
@@ -7,6 +14,7 @@ import { RequirePermissions } from '../../auth/permissions.decorator';
 import { CurrentUser, JwtUser } from '../../auth/current-user.decorator';
 import { AtasDoGranolaService } from './atas-do-granola.service';
 import { AtasService, type AcessoAsAtas, type QuemDecide } from './atas.service';
+import { DriveDasAtasService } from './fonte-do-drive';
 import { SoGenteNasAtasGuard } from './so-gente-nas-atas.guard';
 
 /*
@@ -36,6 +44,16 @@ import { SoGenteNasAtasGuard } from './so-gente-nas-atas.guard';
  * A ORDEM DOS MÉTODOS IMPORTA: `sugestoes` e `granola` vêm antes de `:ref`,
  * senão o `GET :ref` os engoliria.
  *
+ * AS FONTES E A BUSCA (produção 21, P7, 21/10/2026): `GET /trabalho/atas`
+ * aceita `?q=&de=&ate=&tipo=&fonte=` e junta vault, coladas, Granola (cada
+ * reunião é uma TRANSCRIÇÃO, `granola:<id>`) e a pasta do Google Drive
+ * (`drive:<id>`). O Drive é lido PELA PORTA (`contexto.arquivo.listar` e
+ * `contexto.arquivo.ler`, R0) e pede `drive.ver`, como toda leitura do Drive
+ * na API; escolher a pasta (`PUT drive`) escreve nota da memória e pede
+ * `tarefas.editar` + `obsidian.editar` + `drive.ver`. Gerar a ata de uma
+ * transcrição do Drive (`POST drive/:id/ata`) pede o mesmo que a do Granola,
+ * mais `drive.ver`.
+ *
  * AS REUNIÕES DO GRANOLA (rodada da interface, 20/10/2026), as mesmas regras:
  *   · ver a lista é `tarefas.ver` (a lista só diz título, data, participantes
  *     e o cliente reconhecido);
@@ -46,7 +64,12 @@ import { SoGenteNasAtasGuard } from './so-gente-nas-atas.guard';
  *     aqui, porque a rota serve às duas fontes.
  */
 const RECUSA_SEM_EDITAR_MEMORIA = 'Reprocessar uma ata do Granola reescreve a nota da memória, e isso pede a permissão "obsidian.editar".';
-const acessoDe = (u: JwtUser): AcessoAsAtas => ({ vault: (u.permissions ?? []).includes('obsidian.ver') });
+const acessoDe = (u: JwtUser): AcessoAsAtas => ({
+  vault: (u.permissions ?? []).includes('obsidian.ver'),
+  drive: (u.permissions ?? []).includes('drive.ver'),
+  actorId: u.sub,
+});
+const RECUSA_SEM_DRIVE = 'Ler o Google Drive pede a permissão "drive.ver", que o seu perfil não tem.';
 const quemE = (u: JwtUser): QuemDecide => ({ id: u.sub, papeis: u.roles ?? [] });
 
 @UseGuards(JwtAuthGuard, PermissionsGuard)
@@ -55,12 +78,42 @@ export class AtasController {
   constructor(
     private readonly atas: AtasService,
     private readonly doGranola: AtasDoGranolaService,
+    private readonly drive: DriveDasAtasService,
   ) {}
 
   @Get()
   @RequirePermissions('tarefas.ver')
-  listar(@CurrentUser() u: JwtUser) {
-    return this.atas.listar(u.orgId, acessoDe(u));
+  async listar(@CurrentUser() u: JwtUser, @Query() query: Record<string, unknown>) {
+    const filtros = TrabAtaFiltrosSchema.parse(query ?? {}) as TrabAtaFiltros;
+    // As reuniões do Granola só são pedidas quando a busca pode trazê-las (transcrição do Granola).
+    const comGranola = (!filtros.fonte || filtros.fonte === 'granola') && (!filtros.tipo || filtros.tipo === 'transcricao');
+    const granola = comGranola ? await this.doGranola.reunioes(u.orgId) : null;
+    return this.atas.listar(u.orgId, acessoDe(u), filtros, { granola });
+  }
+
+  /** A pasta do Google Drive das atas (P7): qual é e se quem pede pode ler o Drive. */
+  @Get('drive')
+  @RequirePermissions('tarefas.ver')
+  pastaDoDrive(@CurrentUser() u: JwtUser) {
+    return this.drive.estado(u.orgId, acessoDe(u).drive === true);
+  }
+
+  /** Escolhe a pasta (link ou id colado) ou a tira (`pasta: null`). Nota da memória, pelo `MemoriaService`. */
+  @Put('drive')
+  @UseGuards(SoGenteNasAtasGuard)
+  @RequirePermissions('tarefas.editar', 'obsidian.editar', 'drive.ver')
+  async escolherPastaDoDrive(@CurrentUser() u: JwtUser, @Body() body: unknown) {
+    const { pasta } = TrabAtaDrivePastaSchema.parse(body ?? {});
+    await this.atas.exigirGente(u.orgId, quemE(u));
+    return this.drive.configurar(u.orgId, u.sub, pasta);
+  }
+
+  /** Gera a ata de uma TRANSCRIÇÃO da pasta do Drive: o mesmo pedido da do Granola. */
+  @Post('drive/:id/ata')
+  @UseGuards(SoGenteNasAtasGuard)
+  @RequirePermissions('tarefas.editar', 'obsidian.editar', 'drive.ver')
+  gerarAtaDoDrive(@CurrentUser() u: JwtUser, @Param('id') id: string) {
+    return this.doGranola.gerarAtaDoDrive(u.orgId, quemE(u), id, acessoDe(u));
   }
 
   @Post()
@@ -106,6 +159,9 @@ export class AtasController {
   @Get(':ref')
   @RequirePermissions('tarefas.ver')
   ler(@CurrentUser() u: JwtUser, @Param('ref') ref: string) {
+    // A transcrição de uma reunião do Granola é lida agora pelo conector e não fica guardada.
+    const lida = lerRefDaAta(ref);
+    if (lida?.fonte === 'granola') return this.doGranola.lerTranscricao(u.orgId, lida.id);
     return this.atas.ler(u.orgId, ref, acessoDe(u));
   }
 
@@ -129,6 +185,12 @@ export class AtasController {
     if (ata.granolaId) {
       if (!(u.permissions ?? []).includes('obsidian.editar')) throw new ForbiddenException(RECUSA_SEM_EDITAR_MEMORIA);
       return { origem: 'granola' as const, ...(await this.doGranola.reprocessar(u.orgId, quemE(u), ata.granolaId)) };
+    }
+    // A ata que o OS escreveu de uma transcrição do Drive: puxa de novo do Drive (P7).
+    if (ata.fonte === 'drive' && ata.driveId && lerRefDaAta(ref)?.fonte === 'colada') {
+      if (!(u.permissions ?? []).includes('obsidian.editar')) throw new ForbiddenException(RECUSA_SEM_EDITAR_MEMORIA);
+      if (!acessoDe(u).drive) throw new ForbiddenException(RECUSA_SEM_DRIVE);
+      return { origem: 'drive' as const, ...(await this.doGranola.gerarAtaDoDrive(u.orgId, quemE(u), ata.driveId, acessoDe(u))) };
     }
     return { origem: 'ata' as const, ...(await this.atas.gerar(u.orgId, quemE(u), ref, acessoDe(u))) };
   }

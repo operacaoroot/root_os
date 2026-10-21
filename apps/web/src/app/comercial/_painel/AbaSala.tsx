@@ -11,9 +11,18 @@
  * /atendimento (R3): até ela assinar, o cliente continua na versão anterior.
  */
 import { useEffect, useState } from 'react';
-import { SALA_WHATSAPP_PLACEHOLDER, type ConteudoDaSalaPublicada, type PassoDaSalaPublicada, type VersoesDaSala } from '@mktos/shared';
+import {
+  SALA_AJUDA_DO_PAINEL,
+  SALA_WHATSAPP_PLACEHOLDER,
+  type ConteudoDaSalaPublicada,
+  type EstadoDaSalaNoPainel,
+  type LinkDaSalaCopiado,
+  type PassoDaSalaPublicada,
+  type VersoesDaSala,
+} from '@mktos/shared';
 
 import { apiPost, apiPut } from '@/lib/api';
+import { useAuth } from '@/lib/auth';
 import { quandoCurtoSP } from '@/lib/cockpit';
 
 import { Aviso, BOTAO, BOTAO_PRIMARIO, CARTAO, Carregando, Chip, Erro, ErroDaAcao, INPUT, Rotulo, useCarregar } from '../_ui';
@@ -94,6 +103,8 @@ export function AbaSala({ leadId, aoMudar }: { leadId: string; aoMudar: () => Pr
 
   return (
     <div className="space-y-4" data-testid="aba-sala">
+      {/* A chave muda quando a versão anda (publicar, pedir liberação): o quadro relê o estado. */}
+      <EstadoDaSala key={`${r.versao}:${r.estado}:${pub?.versao ?? 0}`} leadId={leadId} />
       {!dados.temSala && <Aviso tom="ruim">Este lead ainda não tem sala: o link nasce no primeiro contato.</Aviso>}
       <section className={CARTAO} aria-label="o que o cliente vê agora">
         <Rotulo>no ar para o cliente</Rotulo>
@@ -194,6 +205,83 @@ export function AbaSala({ leadId, aoMudar }: { leadId: string; aoMudar: () => Pr
       )}
       <Erro erro={erro} aoTentar={() => void recarregar()} />
     </div>
+  );
+}
+
+/**
+ * QUANDO A SALA ENTRA (rodada de produção 1, P9): a linha do tempo real da
+ * sala deste lead, lida do que está gravado. "Copiar link da sala" só aparece
+ * para quem tem `leads.editar`; o link sai da API só nessa resposta, vai para a
+ * área de transferência e não fica guardado na tela.
+ */
+function EstadoDaSala({ leadId }: { leadId: string }) {
+  const { can } = useAuth();
+  const { dados, erro, token, recarregar } = useCarregar<EstadoDaSalaNoPainel>(`/comercial/lead/${encodeURIComponent(leadId)}/sala/estado`);
+  const [copiando, setCopiando] = useState(false);
+  const [copiado, setCopiado] = useState<string | null>(null);
+  const [manual, setManual] = useState<string | null>(null);
+  const [erroDaCopia, setErroDaCopia] = useState<unknown>(null);
+  const podeCopiar = can('leads.editar');
+
+  async function copiar() {
+    setCopiando(true);
+    setErroDaCopia(null);
+    setCopiado(null);
+    setManual(null);
+    try {
+      const r = await apiPost<LinkDaSalaCopiado>(`/comercial/lead/${encodeURIComponent(leadId)}/sala/link`, {}, token);
+      try {
+        await navigator.clipboard.writeText(r.link);
+        setCopiado(`Link copiado. Ele vale até ${quandoCurtoSP(r.validaAte)}.`);
+      } catch {
+        // Sem área de transferência (navegador sem permissão): o link aparece para copiar à mão.
+        setManual(r.link);
+      }
+    } catch (e) {
+      setErroDaCopia(e);
+    } finally {
+      setCopiando(false);
+    }
+  }
+
+  return (
+    <section className={CARTAO} aria-label="estado da sala" data-testid="sala-estado">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <Rotulo>quando a sala entra</Rotulo>
+        {podeCopiar && dados?.linkDisponivel && (
+          <button type="button" data-testid="sala-copiar-link" className={BOTAO} disabled={copiando} onClick={() => void copiar()}>
+            {copiando ? 'copiando…' : 'Copiar link da sala'}
+          </button>
+        )}
+      </div>
+      <p className="mt-1 text-[12.5px] text-muted" data-testid="sala-ajuda">{SALA_AJUDA_DO_PAINEL}</p>
+      {!dados && !erro && <p className="mt-2 text-[12.5px] text-dim">carregando…</p>}
+      {dados && (
+        <ol className="mt-3 space-y-2" data-testid="sala-marcos">
+          {dados.marcos.map((m) => (
+            <li key={m.tipo} className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5 text-[12.5px]" data-testid={`sala-marco-${m.tipo}`}>
+              <Chip tom={m.tom}>{m.rotulo}</Chip>
+              {m.em && <span className="font-os-mono text-[11px] text-dim">{quandoCurtoSP(m.em)}</span>}
+              <span className="text-muted">{m.detalhe}</span>
+              {m.link && (
+                <a className="underline" href={m.link}>
+                  abrir Aprovações
+                </a>
+              )}
+            </li>
+          ))}
+        </ol>
+      )}
+      {copiado && <p className="mt-2 text-[12.5px] text-good" role="status">{copiado}</p>}
+      {manual && (
+        <label className="mt-2 block text-[12px] text-muted">
+          Copie o link à mão:
+          <input className={INPUT} readOnly value={manual} onFocus={(e) => e.currentTarget.select()} data-testid="sala-link-manual" />
+        </label>
+      )}
+      <ErroDaAcao erro={erroDaCopia} />
+      <Erro erro={erro} aoTentar={() => void recarregar()} />
+    </section>
   );
 }
 

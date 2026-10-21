@@ -122,3 +122,58 @@ export const SalaRascunhoSchema = z.object({
   quemCuida: z.object({ nome: texto(80), papel: z.string().trim().max(80) }).strict().nullable(),
 }).strict();
 export type SalaRascunhoInput = z.infer<typeof SalaRascunhoSchema>;
+
+/* ==========================================================================
+ * QUANDO A SALA ENTRA (rodada de produção 1, P9, 21/10/2026)
+ * ==========================================================================
+ *
+ * A aba Sala do painel do lead mostra a linha do tempo REAL da sala deste
+ * lead, toda derivada do que está gravado (a sala, o fio, as mensagens, as
+ * versões e a aprovação). Nada é inventado: marco sem fato gravado diz que
+ * ainda não aconteceu.
+ *
+ * O LINK EM CLARO NUNCA SAI DAQUI. O estado diz se o link foi entregue, por
+ * qual mensagem e qual provedor; o link só sai na rota de copiar (gente com
+ * `leads.editar`, com auditoria `sala.link.copiado` e sem o token).
+ */
+
+export const SALA_AJUDA_DO_PAINEL =
+  'A sala nasce quando o lead entra. O cliente recebe o link na primeira mensagem do WhatsApp. ' +
+  'O que você publica aqui só aparece para ele depois que outra pessoa liberar em Aprovações.';
+
+export type MarcoDaSalaTipo = 'criada' | 'link' | 'publicada' | 'na_porta' | 'visita' | 'validade';
+export type TomDoMarcoDaSala = 'bom' | 'alerta' | 'ruim' | 'neutro';
+
+export interface MarcoDaSala {
+  tipo: MarcoDaSalaTipo;
+  /** A frase curta do marco ("Sala criada", "Link não entregue: WhatsApp simulado"). */
+  rotulo: string;
+  /** Quando aconteceu (ISO). `null` = ainda não aconteceu, ou não há data gravada. */
+  em: string | null;
+  /** O porquê, em uma linha (por qual fato, qual mensagem, qual versão). */
+  detalhe: string;
+  tom: TomDoMarcoDaSala;
+  /** Para onde ir quando o marco pede ação de outra pessoa (a fila de Aprovações). */
+  link?: string | null;
+}
+
+/** Como o link chegou (ou não) ao cliente. */
+export type EntregaDoLinkDaSala = 'entregue' | 'simulado' | 'preparado' | 'falhou' | 'nao_preparado' | 'sem_sala';
+
+export interface EstadoDaSalaNoPainel {
+  leadId: string;
+  temSala: boolean;
+  /** A sala aceita o cliente agora (não venceu e não foi revogada). */
+  ativa: boolean;
+  validaAte: string | null;
+  entrega: EntregaDoLinkDaSala;
+  /** O link pode ser reescrito (há o token cifrado e a chave do ambiente)? */
+  linkDisponivel: boolean;
+  marcos: MarcoDaSala[];
+}
+
+/** A resposta de "Copiar link da sala": o ÚNICO lugar em que o link sai em claro. */
+export interface LinkDaSalaCopiado {
+  link: string;
+  validaAte: string;
+}

@@ -451,7 +451,10 @@ describe('catálogo do marketing-os', () => {
     // comentou, que vai para a fila e nunca para um modelo.
     // MD11 (25/09/2026): `instagram.regra_de_resposta.pausar` também é R0 sem
     // ferramenta — é o freio da DM automática, clicado por gente na fila.
-    const semFerramenta = ['instagram.comentario.ler', 'instagram.regra_de_resposta.pausar'];
+    // Produção 21 (P7, 21/10/2026): `contexto.arquivo.ler`, o texto de um arquivo
+    // do Drive para o banco de atas, também é R0 sem ferramenta: quem lê é gente
+    // na tela de Atas, e o texto volta sigiloso ao registro.
+    const semFerramenta = ['instagram.comentario.ler', 'instagram.regra_de_resposta.pausar', 'contexto.arquivo.ler'];
     const leituras = DELTA.capacidades.filter((c) => c.nivel === 'R0' && !semFerramenta.includes(c.id));
     expect(leituras).toHaveLength(36);
     for (const id of semFerramenta) expect(DELTA.capacidades.find((c) => c.id === id)?.ferramenta, id).toBeUndefined();
@@ -459,6 +462,21 @@ describe('catálogo do marketing-os', () => {
       expect(c.ferramenta, `${c.id} sem nome de ferramenta`).toBeTruthy();
       expect(c.efeito.escreveForaDoOS).toBe(false);
     }
+  });
+
+  it('contexto.arquivo.ler (produção 21, P7): R0 pela escada, só o id do arquivo, sem ferramenta', () => {
+    const c = DELTA.capacidades.find((x) => x.id === 'contexto.arquivo.ler');
+    expect(c, 'a leitura do texto de arquivo do Drive está no delta').toBeTruthy();
+    expect(c!.nivel).toBe('R0');
+    expect(classificar(c!.efeito)).toBe('R0');
+    expect(c!.ferramenta).toBeUndefined();
+    expect(c!.efeito.escreveForaDoOS).toBe(false);
+    const schema = c!.argsSchema as { additionalProperties: boolean; required: string[]; properties: Record<string, { pattern?: string }> };
+    expect(schema.additionalProperties).toBe(false);
+    expect(schema.required).toEqual(['id']);
+    expect(Object.keys(schema.properties)).toEqual(['id']);
+    expect(new RegExp(schema.properties.id.pattern!).test('1AbC_def-GHIjklmnop')).toBe(true);
+    expect(new RegExp(schema.properties.id.pattern!).test('../segredo')).toBe(false);
   });
 
   it('nome de ferramenta é aceito pela API de tool-calling e não se repete', () => {

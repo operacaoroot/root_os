@@ -206,6 +206,8 @@ export const CONECTOR_DA_CAPACIDADE: Readonly<Record<string, string | null>> = {
 
   // Google — quatro superfícies, uma credencial (ver GRUPOS_DE_CONECTOR).
   'contexto.arquivo.listar': 'drive',
+  // O texto de um arquivo do Drive (Documento, PDF, .txt, .md) para o banco de atas (produção 21, P7).
+  'contexto.arquivo.ler': 'drive',
   'contexto.documento.ler': 'gdocs',
   'comunicacao.email.buscar': 'gmail',
   'comunicacao.email.ler': 'gmail',

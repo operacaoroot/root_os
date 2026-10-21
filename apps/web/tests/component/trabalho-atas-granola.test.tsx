@@ -4,10 +4,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 /*
  * ATAS MAIS VIVAS E O GRANOLA DIRETO (rodada da interface, 20/10/2026, U5).
  *
- *  1. sem a conexão direta, o bloco "Reuniões do Granola" diz onde conectar;
- *  2. conectado, lista as reuniões com o cliente reconhecido, e "Gerar ata"
- *     chama `POST /trabalho/atas/granola/:id/ata`, abre a ata e diz o que a
- *     leitura fez (versão, ficha, o que o parser tirou);
+ *  1. sem a conexão direta, a lista diz onde conectar o Granola;
+ *  2. conectado, cada reunião entra na lista como TRANSCRIÇÃO (produção 21,
+ *     P7), com o cliente reconhecido; aberta, mostra a transcrição, e "Gerar
+ *     ata" chama `POST /trabalho/atas/granola/:id/ata`, abre a ata e diz o que
+ *     a leitura fez (versão, ficha, o que o parser tirou);
  *  3. a ata aberta mostra decisões e pendências, com a pendência que virou
  *     tarefa marcada e o link dela;
  *  4. a lista mostra pendentes, aceitas e descartadas, quem aceitou e o link;
@@ -84,6 +85,19 @@ const detalheGranola = () => ({
   versao: 1,
 });
 
+/** A reunião como a lista unificada a traz (P7): uma TRANSCRIÇÃO do Granola. */
+const transcricao = (r: ReturnType<typeof reunioes>['reunioes'][number]) => ({
+  id: `granola:${r.id}`, fonte: 'granola', tipo: 'transcricao', titulo: r.titulo, data: r.em ? r.em.slice(0, 10) : null,
+  participantes: r.participantes, resumo: r.cliente ? `Cliente reconhecido: ${r.cliente.titulo}` : '', caminho: null,
+  sugestoes: { rascunho: 0, aceitas: 0, descartadas: 0 }, decididas: [], granolaId: r.id, ataGerada: r.ataRef, link: null,
+  atualizadaEm: r.em ?? '2026-10-01T00:00:00.000Z',
+});
+const fontes = () => ({
+  vault: { visivel: true, notas: 0, pasta: '80-Reunioes' },
+  granola: { conectado, motivo: conectado ? null : 'Conecte o Granola em Configurações › Integrações para ler as reuniões daqui.', reunioes: reunioes().reunioes.length },
+  drive: { configurada: false, pastaId: null, permitido: false, motivo: 'Nenhuma pasta do Drive escolhida para as atas.', link: null, arquivos: 0 },
+});
+
 beforeEach(() => {
   window.history.replaceState({}, '', '/trabalho/atas');
   permissions = [...TODAS];
@@ -91,8 +105,18 @@ beforeEach(() => {
   comAta = false;
   get.mockReset(); post.mockReset();
   get.mockImplementation((rota: string) => {
-    if (rota === '/trabalho/atas') return Promise.resolve({ pasta: '80-Reunioes', notasDoVault: 0, vaultVisivel: true, iaConfigurada: true, atas: comAta ? [resumoGranola()] : [] });
-    if (rota === '/trabalho/atas/granola') return Promise.resolve(reunioes());
+    if (rota === '/trabalho/atas') {
+      return Promise.resolve({
+        pasta: '80-Reunioes', notasDoVault: 0, vaultVisivel: true, iaConfigurada: true, fontes: fontes(),
+        atas: [...(comAta ? [resumoGranola()] : []), ...reunioes().reunioes.map(transcricao)],
+      });
+    }
+    if (rota === `/trabalho/atas/${encodeURIComponent(`granola:${R1}`)}`) {
+      return Promise.resolve({
+        ...transcricao(reunioes().reunioes[0]), texto: 'Marina: vamos abrir a loja nova em novembro.\nRodrigo: e as redes sociais?',
+        procedencia: 'Granola: a transcrição é lida agora e não fica guardada no OS.', sugestoesDaAta: [], decisoes: [], pendencias: [], versao: null,
+      });
+    }
     if (rota === `/trabalho/atas/${encodeURIComponent(REF)}`) return Promise.resolve(detalheGranola());
     if (rota === '/trabalho/estrutura') return Promise.resolve({ espacos: [], folders: [], listasSoltas: [], camposGlobais: [], tags: [], responsaveis: [], agentes: [] });
     if (rota === '/trabalho/pessoas') return Promise.resolve([]);
@@ -103,13 +127,14 @@ beforeEach(() => {
 afterEach(cleanup);
 
 describe('Atas › Reuniões do Granola', () => {
-  it('sem a conexão direta, diz onde conectar e não oferece "Gerar ata"', async () => {
+  it('sem a conexão direta, diz onde conectar e não traz transcrição do Granola', async () => {
     conectado = false;
     render(<AtasPage />);
-    const bloco = await screen.findByTestId('granola-reunioes');
-    expect(within(bloco).getByTestId('granola-sem-conexao')).toHaveTextContent('Conecte o Granola em Configurações › Integrações');
-    expect(within(bloco).getByRole('link', { name: 'Abrir Integrações' })).toHaveAttribute('href', '/conexoes');
-    expect(within(bloco).queryByRole('button', { name: /Gerar ata/ })).toBeNull();
+    const aviso = await screen.findByTestId('granola-sem-conexao');
+    expect(aviso).toHaveTextContent('Conecte o Granola em Configurações › Integrações');
+    expect(within(aviso).getByRole('link', { name: 'Abrir Integrações' })).toHaveAttribute('href', '/conexoes');
+    expect(screen.queryByTestId(`ata-granola:${R1}`)).toBeNull();
+    expect(screen.queryByRole('button', { name: /Gerar ata/ })).toBeNull();
   });
 
   it('lista as reuniões com o cliente reconhecido; Gerar ata puxa a transcrição e abre a ata', async () => {
@@ -125,13 +150,18 @@ describe('Atas › Reuniões do Granola', () => {
       return Promise.resolve(null);
     });
     render(<AtasPage />);
-    const r1 = await screen.findByTestId(`granola-reuniao-${R1}`);
+    const r1 = await screen.findByTestId(`ata-granola:${R1}`);
     expect(r1).toHaveTextContent('Kickoff Padaria Exemplo');
-    expect(r1).toHaveTextContent('Padaria Exemplo');
+    expect(r1).toHaveTextContent('Cliente reconhecido: Padaria Exemplo');
     expect(r1).toHaveTextContent('Marina Alves <marina@padariaexemplo.com.br>');
-    expect(screen.getByTestId(`granola-reuniao-${R2}`)).toHaveTextContent('sem cliente reconhecido');
+    expect(r1).toHaveTextContent('transcrição');
+    expect(r1).toHaveTextContent('Granola');
+    expect(screen.getByTestId(`ata-granola:${R2}`)).not.toHaveTextContent('Cliente reconhecido');
 
-    fireEvent.click(within(r1).getByTestId(`granola-gerar-${R1}`));
+    // Aberta, a transcrição aparece inteira à direita, com "Gerar ata".
+    fireEvent.click(r1);
+    expect(await screen.findByTestId('transcricao-texto')).toHaveTextContent('vamos abrir a loja nova em novembro');
+    fireEvent.click(screen.getByTestId(`transcricao-gerar-granola:${R1}`));
     await waitFor(() => expect(post).toHaveBeenCalledWith(`/trabalho/atas/granola/${encodeURIComponent(R1)}/ata`, {}, 'tok'));
     const leitura = await screen.findByRole('list', { name: 'O que a leitura disse' });
     expect(leitura).toHaveTextContent('1 sugestão nova em rascunho.');
@@ -139,9 +169,9 @@ describe('Atas › Reuniões do Granola', () => {
     expect(leitura).toHaveTextContent('A reunião entrou na ficha de Padaria Exemplo.');
     expect(leitura).toHaveTextContent('NÃO está inteiro');
     expect(new URLSearchParams(window.location.search).get('ata')).toBe(REF);
-    // Depois de gerar, a reunião mostra a ata e a ficha.
-    await waitFor(() => expect(screen.getByTestId(`granola-reuniao-${R1}`)).toHaveTextContent('abrir a ata'));
-    expect(screen.getByTestId(`granola-gerar-${R1}`)).toHaveTextContent('Gerar de novo');
+    // Depois de gerar, a ata aberta é a escrita, e a transcrição mostra que já tem ata.
+    expect(await screen.findByRole('article', { name: 'A ata inteira' })).toBeInTheDocument();
+    await waitFor(() => expect(screen.getByTestId(`ata-granola:${R1}`)).toHaveTextContent('ata gerada'));
   });
 
   it('a ata aberta mostra decisões e pendências, e a pendência que virou tarefa leva à tarefa', async () => {
@@ -179,11 +209,12 @@ describe('Atas › Reuniões do Granola', () => {
     expect(await screen.findByText('Ata reprocessada: versão 2 da mesma nota.')).toBeInTheDocument();
   });
 
-  it('sem obsidian.editar, a lista aparece mas Gerar ata não', async () => {
+  it('sem obsidian.editar, a transcrição abre mas Gerar ata não', async () => {
     permissions = ['tarefas.ver', 'tarefas.editar'];
     render(<AtasPage />);
-    await screen.findByTestId(`granola-reuniao-${R1}`);
-    expect(screen.queryByTestId(`granola-gerar-${R1}`)).toBeNull();
+    fireEvent.click(await screen.findByTestId(`ata-granola:${R1}`));
+    await screen.findByTestId('transcricao-texto');
+    expect(screen.queryByTestId(`transcricao-gerar-granola:${R1}`)).toBeNull();
     expect(screen.getByText(/Gerar ata grava uma nota na memória/)).toBeInTheDocument();
   });
 });

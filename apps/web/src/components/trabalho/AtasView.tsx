@@ -1,12 +1,12 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { ATA_MAX_CARACTERES, ATA_MIN_CARACTERES, DICA_DO_NOME_DA_TAREFA } from '@mktos/shared';
 import type {
-  TrabAtaDetalhe, TrabAtaGeracao, TrabAtaLista, TrabAtaResumo, TrabAtaSugestaoDto, TrabEstrutura,
-  TrabGranolaAtaGerada, TrabGranolaReuniao, TrabGranolaReunioes,
+  TrabAtaDetalhe, TrabAtaDriveEstado, TrabAtaGeracao, TrabAtaLista, TrabAtaResumo, TrabAtaSugestaoDto, TrabEstrutura,
+  TrabGranolaAtaGerada,
 } from '@mktos/shared';
-import { apiGet, apiPost } from '@/lib/api';
+import { apiGet, apiPost, apiPut } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 import { RoteiroMarkdown } from '@/app/pauta/roteiro-markdown';
 import { SeletorDeCliente, type ClienteEscolhido } from './SeletorDeCliente';
@@ -33,16 +33,22 @@ import { SeletorDeCliente, type ClienteEscolhido } from './SeletorDeCliente';
  * No celular os botões e campos têm 44 px (o alvo do polegar).
  *
  * ATAS MAIS VIVAS E O GRANOLA DIRETO (rodada da interface, 20/10/2026, U5):
- *   · o bloco "Reuniões do Granola" lista as últimas reuniões lidas direto do
- *     Granola (título, data, participantes e o cliente reconhecido pelas regras
- *     do Zap). "Gerar ata" puxa a TRANSCRIÇÃO e escreve a ata e as sugestões
- *     num pedido só; a transcrição não fica guardada. Sem a conexão, o bloco diz
- *     onde conectar;
- *   · cada ata da lista mostra o estado das sugestões (pendentes, aceitas,
- *     descartadas), quem aceitou e o link da tarefa criada;
- *   · a ata aberta mostra as decisões e as pendências como lista, com a
- *     pendência que virou tarefa marcada; "Reprocessar da transcrição" (ata do
- *     Granola) ou "Sugerir tarefas" (ata colada ou do vault).
+ * "Gerar ata" puxa a TRANSCRIÇÃO do Granola e escreve a ata e as sugestões
+ * num pedido só; a transcrição não fica guardada. A ata aberta mostra as
+ * decisões e as pendências como lista, com a pendência que virou tarefa
+ * marcada.
+ *
+ * AS FONTES, A BUSCA E AS DUAS COLUNAS (produção 21, P7, 21/10/2026):
+ *   · uma lista só com o vault, as coladas, o Granola (cada reunião é uma
+ *     TRANSCRIÇÃO) e a pasta do Google Drive escolhida aqui ("Pasta do Drive");
+ *     cada item diz se é ata ou transcrição, e a fonte;
+ *   · a busca (palavra-chave, de, até, tipo e fonte) mora no endereço
+ *     (`?q=&de=&ate=&tipo=&fonte=`), a mais nova primeiro;
+ *   · no desktop a tela ocupa a janela e NÃO rola: a lista da esquerda tem a
+ *     altura da janela e rolagem própria, e a direita mostra a ata ou a
+ *     transcrição clicada, ampla, com rolagem própria e as ações (gerar ata da
+ *     transcrição, sugerir tarefas, abrir na fonte). No celular, lista e
+ *     detalhe são telas separadas, com "Voltar".
  */
 
 const ALVO = 'max-md:min-h-[44px]';
@@ -50,19 +56,95 @@ const INP = `w-full rounded-lg border border-border bg-surface-2 px-2 py-1.5 tex
 const BTN = `rounded-lg border border-border bg-surface px-3 py-1.5 text-sm hover:border-brand-dim disabled:opacity-50 ${ALVO}`;
 const BTN_PRIMARIO = `rounded-lg bg-brand/15 px-3 py-1.5 text-sm text-text outline outline-1 outline-brand-dim hover:bg-brand/25 disabled:opacity-50 ${ALVO}`;
 
+/** A largura a partir da qual lista e detalhe ficam lado a lado (o `lg` do Tailwind). */
+export const LARGURA_DAS_DUAS_COLUNAS = 1024;
+
 const dataBR = (iso: string | null) => (iso ? new Date(`${iso.slice(0, 10)}T12:00:00`).toLocaleDateString('pt-BR') : null);
+
+const CHAVES_DOS_FILTROS = ['q', 'de', 'ate', 'tipo', 'fonte'] as const;
+type Filtros = Partial<Record<(typeof CHAVES_DOS_FILTROS)[number], string>>;
+
+function filtrosDoEndereco(): Filtros {
+  if (typeof window === 'undefined') return {};
+  const p = new URLSearchParams(window.location.search);
+  const f: Filtros = {};
+  for (const k of CHAVES_DOS_FILTROS) {
+    const v = p.get(k);
+    if (v) f[k] = v;
+  }
+  return f;
+}
 
 function ataDoEndereco(): string | null {
   if (typeof window === 'undefined') return null;
   return new URLSearchParams(window.location.search).get('ata');
 }
 
-function escreverAtaNoEndereco(ref: string | null) {
+/** Escreve a ata aberta e os filtros no endereço. `empurrar` cria uma entrada no histórico (o "voltar" do celular). */
+function escreverNoEndereco(mudanca: { ata?: string | null; filtros?: Filtros }, empurrar = false) {
   const u = new URL(window.location.href);
-  if (ref) u.searchParams.set('ata', ref);
-  else u.searchParams.delete('ata');
-  window.history.replaceState({}, '', `${u.pathname}${u.search}`);
+  if (mudanca.ata !== undefined) {
+    if (mudanca.ata) u.searchParams.set('ata', mudanca.ata);
+    else u.searchParams.delete('ata');
+  }
+  if (mudanca.filtros) {
+    for (const k of CHAVES_DOS_FILTROS) {
+      const v = mudanca.filtros[k];
+      if (v) u.searchParams.set(k, v);
+      else u.searchParams.delete(k);
+    }
+  }
+  const destino = `${u.pathname}${u.search}`;
+  if (empurrar) window.history.pushState({}, '', destino);
+  else window.history.replaceState({}, '', destino);
 }
+
+/** A rota da lista com a busca (sem busca, a rota de sempre). */
+function rotaDaLista(f: Filtros): string {
+  const p = new URLSearchParams();
+  for (const k of CHAVES_DOS_FILTROS) if (f[k]) p.set(k, f[k]!);
+  const qs = p.toString();
+  return qs ? `/trabalho/atas?${qs}` : '/trabalho/atas';
+}
+
+/** Desktop (lado a lado) ou celular (uma tela de cada vez). */
+function useDuasColunas(): boolean {
+  const ler = () => (typeof window === 'undefined' ? true : window.innerWidth >= LARGURA_DAS_DUAS_COLUNAS);
+  const [largo, setLargo] = useState(ler);
+  useEffect(() => {
+    const medir = () => setLargo(ler());
+    window.addEventListener('resize', medir);
+    return () => window.removeEventListener('resize', medir);
+  }, []);
+  return largo;
+}
+
+/**
+ * A ALTURA ATÉ O FIM DA JANELA (a mesma conta do quadro do Trabalho): a tela de
+ * Atas mede onde começa e ocupa o resto, para a PÁGINA não rolar; quem rola é a
+ * lista e o detalhe, cada um por si. Remede ao redimensionar e quando algo
+ * acima muda de tamanho (o formulário de colar, a pasta do Drive).
+ */
+function useAlturaAteOFim(ref: React.RefObject<HTMLElement | null>, ativo: boolean, folga = 24) {
+  const [altura, setAltura] = useState<number | null>(null);
+  useLayoutEffect(() => {
+    if (!ativo) { setAltura(null); return; }
+    const medir = () => {
+      const el = ref.current;
+      if (!el) return;
+      const nova = Math.max(360, Math.floor(window.innerHeight - el.getBoundingClientRect().top - folga));
+      setAltura((antes) => (antes === nova ? antes : nova));
+    };
+    medir();
+    window.addEventListener('resize', medir);
+    const observador = typeof ResizeObserver === 'function' ? new ResizeObserver(medir) : null;
+    observador?.observe(document.body);
+    return () => { window.removeEventListener('resize', medir); observador?.disconnect(); };
+  }, [ref, ativo, folga]);
+  return altura;
+}
+
+const ROTULO_DA_FONTE: Record<TrabAtaResumo['fonte'], string> = { vault: 'vault', colada: 'colada', granola: 'Granola', drive: 'Drive' };
 
 export function AtasView() {
   const { token, ready, can } = useAuth();
@@ -70,11 +152,19 @@ export function AtasView() {
   const podeEditar = can('tarefas.editar');
   // Colar escreve nota da memória: pede o mesmo que o POST /memoria (PA-2).
   const podeColar = podeEditar && can('obsidian.editar');
+  // Escolher a pasta do Drive escreve nota da memória e lê o Drive.
+  const podeEscolherPasta = podeColar && can('drive.ver');
   const botaoColar = useRef<HTMLButtonElement>(null);
+  const raiz = useRef<HTMLDivElement>(null);
+  const largo = useDuasColunas();
+  const altura = useAlturaAteOFim(raiz, largo);
 
+  const [filtros, setFiltros] = useState<Filtros>(filtrosDoEndereco);
+  const [busca, setBusca] = useState(filtros.q ?? '');
   const [lista, setLista] = useState<TrabAtaLista | null>(null);
   const [aberta, setAberta] = useState<TrabAtaDetalhe | null>(null);
-  const [refAberta, setRefAberta] = useState<string | null>(null);
+  const [refAberta, setRefAberta] = useState<string | null>(ataDoEndereco);
+  const [abrindo, setAbrindo] = useState(false);
   const [estrutura, setEstrutura] = useState<TrabEstrutura | null>(null);
   const [erro, setErro] = useState<string | null>(null);
   const [avisos, setAvisos] = useState<string[]>([]);
@@ -84,8 +174,7 @@ export function AtasView() {
   const [ajustes, setAjustes] = useState<Record<string, Ajuste>>({});
   const [pessoas, setPessoas] = useState<{ id: string; nome: string }[]>([]);
   const [colando, setColando] = useState(false);
-  const [granola, setGranola] = useState<TrabGranolaReunioes | null>(null);
-  const [gerandoDoGranola, setGerandoDoGranola] = useState<string | null>(null);
+  const [pastaAberta, setPastaAberta] = useState(false);
 
   const fecharColar = useCallback(() => {
     setColando(false);
@@ -95,24 +184,35 @@ export function AtasView() {
 
   const carregarLista = useCallback(() => {
     if (!token || !podeVer) return;
-    apiGet<TrabAtaLista>('/trabalho/atas', token)
+    apiGet<TrabAtaLista>(rotaDaLista(filtros), token)
       .then((l) => {
         setLista(l);
-        setRefAberta((atual) => atual ?? ataDoEndereco() ?? l.atas[0]?.id ?? null);
+        // No desktop a primeira abre sozinha; no celular a lista vem primeiro.
+        if (largo) setRefAberta((atual) => atual ?? ataDoEndereco() ?? l.atas[0]?.id ?? null);
       })
       .catch((e) => setErro(e.message));
-  }, [token, podeVer]);
+  }, [token, podeVer, filtros, largo]);
 
   useEffect(() => { carregarLista(); }, [carregarLista]);
 
-  const carregarGranola = useCallback(() => {
-    if (!token || !podeVer) return;
-    apiGet<TrabGranolaReunioes | null>('/trabalho/atas/granola', token)
-      .then((g) => setGranola(g && Array.isArray(g.reunioes) ? g : null))
-      .catch(() => setGranola(null));
-  }, [token, podeVer]);
+  // A palavra-chave vai ao endereço e à API depois de uma pausa na digitação.
+  useEffect(() => {
+    const atual = filtros.q ?? '';
+    if (busca.trim() === atual) return;
+    const t = window.setTimeout(() => mudarFiltros({ q: busca.trim() || undefined }), 350);
+    return () => window.clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [busca]);
 
-  useEffect(() => { carregarGranola(); }, [carregarGranola]);
+  // O "voltar" do navegador no celular: a ata do endereço manda.
+  useEffect(() => {
+    const aoVoltar = () => {
+      setRefAberta(ataDoEndereco());
+      setFiltros(filtrosDoEndereco());
+    };
+    window.addEventListener('popstate', aoVoltar);
+    return () => window.removeEventListener('popstate', aoVoltar);
+  }, []);
 
   useEffect(() => {
     if (!token || !podeEditar) return;
@@ -121,21 +221,47 @@ export function AtasView() {
     apiGet<{ id: string; nome: string }[]>('/trabalho/pessoas', token).then((r) => setPessoas(Array.isArray(r) ? r : [])).catch(() => setPessoas([]));
   }, [token, podeEditar]);
 
-  const abrir = useCallback((ref: string) => {
+  const mudarFiltros = (mudanca: Filtros) => {
+    const novos: Filtros = { ...filtros, ...mudanca };
+    for (const k of CHAVES_DOS_FILTROS) if (!novos[k]) delete novos[k];
+    setFiltros(novos);
+    escreverNoEndereco({ filtros: novos });
+  };
+
+  const limparFiltros = () => {
+    setBusca('');
+    setFiltros({});
+    escreverNoEndereco({ filtros: {} });
+  };
+
+  const buscarDetalhe = useCallback((ref: string) => {
     if (!token) return;
-    setRefAberta(ref);
-    escreverAtaNoEndereco(ref);
+    setAbrindo(true);
     apiGet<TrabAtaDetalhe>(`/trabalho/atas/${encodeURIComponent(ref)}`, token)
       .then((a) => { setAberta(a); setErro(null); })
-      .catch((e) => setErro(e.message));
+      .catch((e) => setErro(e.message))
+      .finally(() => setAbrindo(false));
   }, [token]);
 
+  const abrir = useCallback((ref: string) => {
+    setAvisos([]);
+    setRefAberta(ref);
+    // No celular, abrir é ir para outra tela: entra no histórico para o "voltar" do aparelho.
+    escreverNoEndereco({ ata: ref }, !largo);
+    buscarDetalhe(ref);
+  }, [buscarDetalhe, largo]);
+
+  const voltar = () => {
+    setRefAberta(null);
+    setAberta(null);
+    escreverNoEndereco({ ata: null });
+  };
+
   useEffect(() => {
-    if (refAberta && (!aberta || aberta.id !== refAberta)) abrir(refAberta);
+    if (refAberta && (!aberta || aberta.id !== refAberta)) buscarDetalhe(refAberta);
     // abrir só quando a ata pedida muda
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [refAberta]);
-
 
   const avisosDaLeitura = (g: { criadas: unknown[]; repetidas: number; avisos: string[] }, extra: string[] = []) => [
     g.criadas.length
@@ -152,43 +278,45 @@ export function AtasView() {
       g.ficha === 'criada' ? `A reunião entrou na ficha de ${g.cliente?.titulo ?? 'cliente'}.`
         : g.ficha === 'atualizada' ? `A reunião na ficha de ${g.cliente?.titulo ?? 'cliente'} mostra a ata nova.`
           : g.ficha === 'ja_estava' ? 'A reunião já estava na ficha do cliente (veio pelo Zap).'
-            : 'Nenhum cliente reconhecido: a reunião não foi para ficha nenhuma.';
+            : g.ficha === 'nao_se_aplica' ? 'A transcrição veio do Drive: ela não vai à ficha do cliente.'
+              : 'Nenhum cliente reconhecido: a reunião não foi para ficha nenhuma.';
     return [versao, ficha];
   };
 
+  /** "Sugerir tarefas" (ata colada, do vault ou do Drive) ou "Reprocessar da transcrição" (ata escrita de uma transcrição). */
   const gerar = () => {
     if (!aberta || !token) return;
     setLendo(true);
     setErro(null);
-    // Ata do Granola: reprocessa da TRANSCRIÇÃO (puxa de novo). Colada ou do vault: lê a própria ata.
-    const doGranola = aberta.fonte === 'granola';
-    const rota = doGranola ? 'reprocessar' : 'sugestoes';
+    const daTranscricao = !!aberta.transcricaoRef || aberta.fonte === 'granola';
+    const rota = daTranscricao ? 'reprocessar' : 'sugestoes';
     apiPost<TrabAtaGeracao & Partial<TrabGranolaAtaGerada>>(`/trabalho/atas/${encodeURIComponent(aberta.id)}/${rota}`, {}, token)
       .then((g) => {
-        setAvisos(avisosDaLeitura(g, doGranola && g.versao ? resumoDaFicha(g as TrabGranolaAtaGerada) : []));
-        abrir(aberta.id);
+        setAvisos(avisosDaLeitura(g, daTranscricao && g.versao ? resumoDaFicha(g as TrabGranolaAtaGerada) : []));
+        buscarDetalhe(aberta.id);
         carregarLista();
-        if (doGranola) carregarGranola();
       })
       .catch((e) => setErro(e.message))
       .finally(() => setLendo(false));
   };
 
-  const gerarDoGranola = (r: TrabGranolaReuniao) => {
+  /** "Gerar ata" de uma TRANSCRIÇÃO (Granola ou Drive): abre a ata escrita. */
+  const gerarAtaDaTranscricao = (t: TrabAtaDetalhe) => {
     if (!token) return;
-    setGerandoDoGranola(r.id);
+    const [fonte, id] = [t.fonte, t.id.slice(t.id.indexOf(':') + 1)];
+    const rota = fonte === 'granola' ? `/trabalho/atas/granola/${encodeURIComponent(id)}/ata` : `/trabalho/atas/drive/${encodeURIComponent(id)}/ata`;
+    setLendo(true);
     setErro(null);
-    apiPost<TrabGranolaAtaGerada>(`/trabalho/atas/granola/${encodeURIComponent(r.id)}/ata`, {}, token)
+    apiPost<TrabGranolaAtaGerada>(rota, {}, token)
       .then((g) => {
         setAvisos(avisosDaLeitura(g, resumoDaFicha(g)));
         setAberta(g.ata);
         setRefAberta(g.ata.id);
-        escreverAtaNoEndereco(g.ata.id);
+        escreverNoEndereco({ ata: g.ata.id });
         carregarLista();
-        carregarGranola();
       })
       .catch((e) => setErro(e.message))
-      .finally(() => setGerandoDoGranola(null));
+      .finally(() => setLendo(false));
   };
 
   const decidir = (s: TrabAtaSugestaoDto, como: 'aceitar' | 'descartar') => {
@@ -211,7 +339,7 @@ export function AtasView() {
       }
       : {};
     apiPost<TrabAtaSugestaoDto>(`/trabalho/atas/sugestoes/${s.id}/${como}`, corpo, token)
-      .then(() => { abrir(aberta.id); carregarLista(); })
+      .then(() => { buscarDetalhe(aberta.id); carregarLista(); })
       .catch((e) => setErro(e.message))
       .finally(() => setDecidindo(null));
   };
@@ -221,9 +349,20 @@ export function AtasView() {
 
   const rascunhos = aberta?.sugestoesDaAta.filter((s) => s.estado === 'rascunho') ?? [];
   const decididas = aberta?.sugestoesDaAta.filter((s) => s.estado !== 'rascunho') ?? [];
+  const mostrarLista = largo || !refAberta;
+  const mostrarDetalhe = largo || !!refAberta;
+  const ehTranscricao = aberta?.tipo === 'transcricao';
+  // A ata que o OS escreveu de uma transcrição (Granola ou Drive) se reprocessa da transcrição.
+  const ataDaTranscricao = !!aberta && !ehTranscricao && (!!aberta.transcricaoRef || aberta.fonte === 'granola');
+  const temFiltro = CHAVES_DOS_FILTROS.some((k) => !!filtros[k]);
 
   return (
-    <div className="space-y-4">
+    <div
+      ref={raiz}
+      data-testid="atas-tela"
+      className={`flex flex-col gap-3 ${largo ? 'overflow-hidden' : ''}`}
+      style={largo && altura ? { height: altura, overflow: 'hidden' } : largo ? { overflow: 'hidden' } : undefined}
+    >
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div className="min-w-0">
           <h1 className="text-xl font-semibold">Atas</h1>
@@ -231,19 +370,33 @@ export function AtasView() {
             As reuniões da operação e as tarefas que elas combinaram. Toda sugestão é rascunho até alguém aceitar.
           </p>
         </div>
-        {podeColar && (
-          <button
-            ref={botaoColar}
-            type="button"
-            data-testid="ata-colar"
-            className={BTN}
-            onClick={() => (colando ? fecharColar() : setColando(true))}
-            aria-expanded={colando}
-            aria-controls="ata-colar-form"
-          >
-            {colando ? 'Fechar' : 'Colar ata'}
-          </button>
-        )}
+        <div className="flex flex-wrap gap-2">
+          {podeEscolherPasta && (
+            <button
+              type="button"
+              data-testid="ata-pasta-do-drive"
+              className={BTN}
+              onClick={() => setPastaAberta((v) => !v)}
+              aria-expanded={pastaAberta}
+              aria-controls="ata-pasta-form"
+            >
+              {pastaAberta ? 'Fechar' : 'Pasta do Drive'}
+            </button>
+          )}
+          {podeColar && (
+            <button
+              ref={botaoColar}
+              type="button"
+              data-testid="ata-colar"
+              className={BTN}
+              onClick={() => (colando ? fecharColar() : setColando(true))}
+              aria-expanded={colando}
+              aria-controls="ata-colar-form"
+            >
+              {colando ? 'Fechar' : 'Colar ata'}
+            </button>
+          )}
+        </div>
       </div>
       {podeEditar && !podeColar && (
         <p className="text-[12px] text-muted">
@@ -253,6 +406,15 @@ export function AtasView() {
 
       {erro && <p role="alert" className="rounded-lg border border-bad/40 bg-bad/10 px-3 py-2 text-sm break-words">{erro}</p>}
 
+      {pastaAberta && podeEscolherPasta && (
+        <PastaDoDrive
+          token={token}
+          estado={lista?.fontes?.drive ?? null}
+          onSalva={() => { setPastaAberta(false); carregarLista(); }}
+          onErro={setErro}
+        />
+      )}
+
       {colando && podeColar && (
         <ColarAta
           token={token}
@@ -261,166 +423,238 @@ export function AtasView() {
             fecharColar();
             setAberta(a);
             setRefAberta(a.id);
-            escreverAtaNoEndereco(a.id);
+            escreverNoEndereco({ ata: a.id });
             carregarLista();
           }}
           onErro={setErro}
         />
       )}
 
-      {granola && (
-        <ReunioesDoGranola
-          dados={granola}
-          podeGerar={podeColar}
-          gerando={gerandoDoGranola}
-          onGerar={gerarDoGranola}
-          onAbrir={(ref) => { setAvisos([]); abrir(ref); }}
-        />
-      )}
+      <form role="search" aria-label="Buscar atas" className="grid gap-2 sm:grid-cols-2 lg:grid-cols-[minmax(12rem,1fr)_auto_auto_auto_auto_auto]" onSubmit={(e) => { e.preventDefault(); mudarFiltros({ q: busca.trim() || undefined }); }}>
+        <label className="text-[12px] text-muted sm:col-span-2 lg:col-span-1">
+          <span className="sr-only">Palavra-chave</span>
+          <input data-testid="atas-busca" type="search" className={INP} placeholder="Buscar por palavra-chave" value={busca} onChange={(e) => setBusca(e.target.value)} />
+        </label>
+        <label className="flex items-center gap-1 text-[12px] text-muted">
+          <span>De</span>
+          <input data-testid="atas-de" type="date" aria-label="De" className={INP} value={filtros.de ?? ''} onChange={(e) => mudarFiltros({ de: e.target.value || undefined })} />
+        </label>
+        <label className="flex items-center gap-1 text-[12px] text-muted">
+          <span>Até</span>
+          <input data-testid="atas-ate" type="date" aria-label="Até" className={INP} value={filtros.ate ?? ''} onChange={(e) => mudarFiltros({ ate: e.target.value || undefined })} />
+        </label>
+        <select data-testid="atas-tipo" aria-label="Tipo" className={INP} value={filtros.tipo ?? ''} onChange={(e) => mudarFiltros({ tipo: e.target.value || undefined })}>
+          <option value="">Atas e transcrições</option>
+          <option value="ata">Só atas</option>
+          <option value="transcricao">Só transcrições</option>
+        </select>
+        <select data-testid="atas-fonte" aria-label="Fonte" className={INP} value={filtros.fonte ?? ''} onChange={(e) => mudarFiltros({ fonte: e.target.value || undefined })}>
+          <option value="">Todas as fontes</option>
+          <option value="vault">Vault</option>
+          <option value="colada">Coladas</option>
+          <option value="granola">Granola</option>
+          <option value="drive">Google Drive</option>
+        </select>
+        <button type="button" data-testid="atas-limpar" className={BTN} disabled={!temFiltro && !busca} onClick={limparFiltros}>Limpar</button>
+      </form>
 
-      <div className="grid gap-4 lg:grid-cols-[minmax(16rem,22rem)_minmax(0,1fr)]">
-        <section aria-label="Atas da operação" className="min-w-0 space-y-2">
-          {lista && (
-            <p className="px-1 text-[12px] text-muted break-words">
-              {lista.vaultVisivel === false
-                ? `As atas do vault (a pasta ${lista.pasta}) pedem a permissão de ler o vault (obsidian.ver), que o seu perfil não tem: aparecem só as atas coladas aqui.`
-                : lista.notasDoVault > 0
-                  ? `Do vault, a pasta ${lista.pasta}; e as coladas aqui.`
-                  : `Nenhuma nota do vault indexada nesta empresa: aparecem só as atas coladas aqui (a pasta ${lista.pasta} entra quando o vault for indexado).`}
-            </p>
-          )}
-          <ul data-testid="atas-lista" className="space-y-1.5">
-            {lista?.atas.map((a) => (
-              <li key={a.id}>
-                <ItemDaAta ata={a} ativa={a.id === refAberta} onAbrir={() => { setAvisos([]); abrir(a.id); }} />
-                <DecididasDaAta ata={a} />
-              </li>
-            ))}
-          </ul>
-          {lista && lista.atas.length === 0 && (
-            <p className="rounded-lg border border-dashed border-border px-3 py-4 text-sm text-muted">
-              Nenhuma ata ainda. {podeColar ? 'Cole a primeira em "Colar ata".' : 'Quem edita o Trabalho e a memória pode colar a primeira.'}
-            </p>
-          )}
-          {!lista && !erro && <p className="text-sm text-muted">Carregando…</p>}
-        </section>
+      <div className={`grid gap-4 ${largo ? 'min-h-0 flex-1 grid-cols-[minmax(18rem,24rem)_minmax(0,1fr)]' : ''}`}>
+        {mostrarLista && (
+          <section
+            aria-label="Atas e transcrições"
+            data-testid="atas-coluna-lista"
+            className={`min-w-0 space-y-2 ${largo ? 'h-full min-h-0 overflow-y-auto overscroll-contain pr-1' : ''}`}
+          >
+            {lista && <EstadoDasFontes lista={lista} />}
+            <ul data-testid="atas-lista" className="space-y-1.5">
+              {lista?.atas.map((a) => (
+                <li key={a.id}>
+                  <ItemDaAta ata={a} ativa={a.id === refAberta} onAbrir={() => abrir(a.id)} />
+                  <DecididasDaAta ata={a} />
+                </li>
+              ))}
+            </ul>
+            {lista && lista.atas.length === 0 && (
+              <p className="rounded-lg border border-dashed border-border px-3 py-4 text-sm text-muted">
+                {temFiltro
+                  ? 'Nada com essa busca. Mude a palavra ou as datas, ou limpe os filtros.'
+                  : `Nenhuma ata ainda. ${podeColar ? 'Cole a primeira em "Colar ata".' : 'Quem edita o Trabalho e a memória pode colar a primeira.'}`}
+              </p>
+            )}
+            {!lista && !erro && <p className="text-sm text-muted">Carregando…</p>}
+          </section>
+        )}
 
-        <section aria-label="Ata aberta" className="min-w-0 space-y-4">
-          {!aberta && lista && lista.atas.length > 0 && <p className="text-sm text-muted">Escolha uma ata à esquerda.</p>}
-          {aberta && (
-            <>
-              <header className="space-y-1 rounded-lg border border-border bg-surface p-3">
-                <h2 className="text-lg font-semibold break-words">{aberta.titulo}</h2>
-                <p className="text-[12px] text-muted break-words">
-                  {[dataBR(aberta.data) ?? 'sem data', aberta.participantes.length ? aberta.participantes.join(', ') : 'participantes não informados', aberta.procedencia].join(' · ')}
-                </p>
-              </header>
-
-              <div className="space-y-3 rounded-lg border border-border bg-surface p-3">
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <h3 className="text-sm font-semibold">Sugestões de tarefa</h3>
-                  {podeEditar && (
-                    <button
-                      type="button"
-                      data-testid={`ata-gerar-${aberta.id}`}
-                      className={BTN_PRIMARIO}
-                      disabled={lendo || lista?.iaConfigurada === false || (aberta.fonte === 'granola' && !podeColar)}
-                      onClick={gerar}
-                      title={
-                        lista?.iaConfigurada === false
-                          ? 'A IA não está configurada nesta instalação.'
-                          : aberta.fonte === 'granola'
-                            ? 'Puxa a transcrição de novo do Granola, reescreve a ata (versão nova) e propõe as tarefas que faltam.'
-                            : 'O agente lê a ata e propõe tarefas em rascunho.'
-                      }
-                    >
-                      {aberta.fonte === 'granola'
-                        ? (lendo ? 'Lendo a transcrição…' : 'Reprocessar da transcrição')
-                        : (lendo ? 'Lendo a ata…' : 'Sugerir tarefas')}
-                    </button>
+        {mostrarDetalhe && (
+          <section
+            aria-label="Ata aberta"
+            data-testid="atas-coluna-detalhe"
+            className={`min-w-0 space-y-4 ${largo ? 'h-full min-h-0 overflow-y-auto overscroll-contain pr-1' : ''}`}
+          >
+            {!largo && (
+              <button type="button" data-testid="atas-voltar" className={BTN} onClick={voltar}>
+                Voltar para a lista
+              </button>
+            )}
+            {!aberta && abrindo && <p className="text-sm text-muted">Abrindo…</p>}
+            {!aberta && !abrindo && lista && lista.atas.length > 0 && <p className="text-sm text-muted">Escolha uma ata ou transcrição à esquerda.</p>}
+            {aberta && (
+              <>
+                <header className="space-y-2 rounded-lg border border-border bg-surface p-3">
+                  <div className="flex flex-wrap items-center gap-1.5 text-[11px] text-muted">
+                    <span className="rounded bg-surface-2 px-1.5 py-0.5">{ehTranscricao ? 'transcrição' : 'ata'}</span>
+                    <span className="rounded bg-surface-2 px-1.5 py-0.5">{ROTULO_DA_FONTE[aberta.fonte]}</span>
+                  </div>
+                  <h2 className="text-lg font-semibold break-words">{aberta.titulo}</h2>
+                  <p className="text-[12px] text-muted break-words">
+                    {[dataBR(aberta.data) ?? 'sem data', aberta.participantes.length ? aberta.participantes.join(', ') : 'participantes não informados', aberta.procedencia].join(' · ')}
+                  </p>
+                  <div className="flex flex-wrap items-center gap-2">
+                    {ehTranscricao && podeColar && (
+                      <button
+                        type="button"
+                        data-testid={`transcricao-gerar-${aberta.id}`}
+                        className={BTN_PRIMARIO}
+                        disabled={lendo || lista?.iaConfigurada === false || (aberta.fonte === 'drive' && !can('drive.ver'))}
+                        title={lista?.iaConfigurada === false ? 'A IA não está configurada nesta instalação.' : 'Lê a transcrição, escreve a ata e propõe as tarefas. A transcrição não fica guardada no OS.'}
+                        onClick={() => gerarAtaDaTranscricao(aberta)}
+                      >
+                        {lendo ? 'Lendo a transcrição…' : aberta.ataGerada ? 'Gerar a ata de novo' : 'Gerar ata'}
+                      </button>
+                    )}
+                    {ehTranscricao && aberta.ataGerada && (
+                      <button type="button" data-testid="transcricao-abrir-ata" className={BTN} onClick={() => abrir(aberta.ataGerada!)}>Abrir a ata gerada</button>
+                    )}
+                    {!ehTranscricao && aberta.transcricaoRef && (
+                      <button type="button" data-testid="ata-abrir-transcricao" className={BTN} onClick={() => abrir(aberta.transcricaoRef!)}>Abrir a transcrição</button>
+                    )}
+                    {aberta.link && (
+                      <a data-testid="ata-abrir-fonte" className={`${BTN} inline-flex items-center`} href={aberta.link} target="_blank" rel="noopener noreferrer">
+                        Abrir {aberta.fonte === 'drive' ? 'no Drive' : aberta.fonte === 'granola' ? 'no Granola' : 'na fonte'}
+                      </a>
+                    )}
+                  </div>
+                  {ehTranscricao && !podeColar && (
+                    <p className="text-[12px] text-muted">Gerar ata grava uma nota na memória e pede as permissões de editar o Trabalho e a memória.</p>
                   )}
-                </div>
+                </header>
+
                 {avisos.length > 0 && (
                   <ul aria-label="O que a leitura disse" className="space-y-0.5 rounded-lg bg-surface-2 px-3 py-2 text-[12px] text-muted">
                     {avisos.map((a, i) => <li key={i} className="break-words">{a}</li>)}
                   </ul>
                 )}
-                {rascunhos.length === 0 && decididas.length === 0 && (
-                  <p className="text-sm text-muted">Nenhuma sugestão desta ata ainda.</p>
-                )}
-                <ul className="space-y-2">
-                  {rascunhos.map((s) => (
-                    <li key={s.id} data-testid={`ata-sugestao-${s.id}`} className="space-y-2 rounded-lg border border-border bg-surface-2 p-3">
-                      {!podeEditar && <p className="font-medium break-words">{s.titulo}</p>}
-                      <blockquote className="border-l-2 border-brand-dim pl-2 text-[13px] text-muted break-words">{s.trecho}</blockquote>
-                      {!podeEditar && (
-                        <p className="text-[12px] text-muted break-words">
-                          {[s.donoSugerido ? `dono sugerido: ${s.donoSugerido}` : 'sem dono sugerido', s.vencimento ? `vence ${dataBR(s.vencimento)}` : 'sem vencimento'].join(' · ')}
-                        </p>
-                      )}
+
+                {!ehTranscricao && (
+                  <div className="space-y-3 rounded-lg border border-border bg-surface p-3">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <h3 className="text-sm font-semibold">Sugestões de tarefa</h3>
                       {podeEditar && (
-                        <FormularioDoAceite
-                          s={s} ajuste={ajustes[s.id] ?? {}} pessoas={pessoas} estrutura={estrutura} token={token}
-                          listaId={listaEscolhida[s.id] ?? s.listaId ?? ''}
-                          onLista={(id) => setListaEscolhida((m) => ({ ...m, [s.id]: id }))}
-                          onAjuste={(mudanca) => setAjustes((m) => ({ ...m, [s.id]: { ...m[s.id], ...mudanca } }))}
-                        />
+                        <button
+                          type="button"
+                          data-testid={`ata-gerar-${aberta.id}`}
+                          className={BTN_PRIMARIO}
+                          disabled={lendo || lista?.iaConfigurada === false || (ataDaTranscricao && !podeColar)}
+                          onClick={gerar}
+                          title={
+                            lista?.iaConfigurada === false
+                              ? 'A IA não está configurada nesta instalação.'
+                              : ataDaTranscricao
+                                ? 'Puxa a transcrição de novo, reescreve a ata (versão nova) e propõe as tarefas que faltam.'
+                                : 'O agente lê a ata e propõe tarefas em rascunho.'
+                          }
+                        >
+                          {ataDaTranscricao
+                            ? (lendo ? 'Lendo a transcrição…' : 'Reprocessar da transcrição')
+                            : (lendo ? 'Lendo a ata…' : 'Sugerir tarefas')}
+                        </button>
                       )}
-                      {podeEditar && (
-                        <div className="flex flex-wrap items-center gap-2">
-                          <button
-                            type="button"
-                            data-testid={`ata-aceitar-${s.id}`}
-                            className={BTN_PRIMARIO}
-                            disabled={decidindo === s.id || !(listaEscolhida[s.id] || s.listaId) || !ajustes[s.id]?.cliente}
-                            title={!ajustes[s.id]?.cliente ? 'Escolha o cliente antes de aceitar' : undefined}
-                            onClick={() => decidir(s, 'aceitar')}
-                          >
-                            Aceitar
-                          </button>
-                          <button
-                            type="button"
-                            data-testid={`ata-descartar-${s.id}`}
-                            className={BTN}
-                            disabled={decidindo === s.id}
-                            onClick={() => decidir(s, 'descartar')}
-                          >
-                            Descartar
-                          </button>
-                        </div>
-                      )}
-                    </li>
-                  ))}
-                </ul>
-                {decididas.length > 0 && (
-                  <details className="text-sm">
-                    <summary className={`cursor-pointer text-muted ${ALVO} max-md:flex max-md:items-center`}>Decididas ({decididas.length})</summary>
-                    <ul className="mt-2 space-y-1">
-                      {decididas.map((s) => (
-                        <li key={s.id} data-testid={`ata-sugestao-${s.id}`} className="flex flex-wrap items-baseline gap-x-2 break-words">
-                          <span className={s.estado === 'aceita' ? 'text-brand' : 'text-muted line-through'}>{s.titulo}</span>
-                          <span className="text-[12px] text-muted">
-                            {s.estado === 'aceita' ? `aceita${s.listaNome ? ` em ${s.listaNome}` : ''}` : 'descartada'}
-                            {s.decididaPor ? ` por ${s.decididaPor}` : ''}
-                          </span>
-                          {s.estado === 'aceita' && s.workTaskId && s.listaId && (
-                            <a className={`text-[12px] text-brand underline underline-offset-2 ${ALVO} max-md:inline-flex max-md:items-center`} href={`/trabalho?lista=${s.listaId}&tarefa=${s.workTaskId}`}>abrir a tarefa</a>
+                    </div>
+                    {rascunhos.length === 0 && decididas.length === 0 && (
+                      <p className="text-sm text-muted">Nenhuma sugestão desta ata ainda.</p>
+                    )}
+                    <ul className="space-y-2">
+                      {rascunhos.map((s) => (
+                        <li key={s.id} data-testid={`ata-sugestao-${s.id}`} className="space-y-2 rounded-lg border border-border bg-surface-2 p-3">
+                          {!podeEditar && <p className="font-medium break-words">{s.titulo}</p>}
+                          <blockquote className="border-l-2 border-brand-dim pl-2 text-[13px] text-muted break-words">{s.trecho}</blockquote>
+                          {!podeEditar && (
+                            <p className="text-[12px] text-muted break-words">
+                              {[s.donoSugerido ? `dono sugerido: ${s.donoSugerido}` : 'sem dono sugerido', s.vencimento ? `vence ${dataBR(s.vencimento)}` : 'sem vencimento'].join(' · ')}
+                            </p>
+                          )}
+                          {podeEditar && (
+                            <FormularioDoAceite
+                              s={s} ajuste={ajustes[s.id] ?? {}} pessoas={pessoas} estrutura={estrutura} token={token}
+                              listaId={listaEscolhida[s.id] ?? s.listaId ?? ''}
+                              onLista={(id) => setListaEscolhida((m) => ({ ...m, [s.id]: id }))}
+                              onAjuste={(mudanca) => setAjustes((m) => ({ ...m, [s.id]: { ...m[s.id], ...mudanca } }))}
+                            />
+                          )}
+                          {podeEditar && (
+                            <div className="flex flex-wrap items-center gap-2">
+                              <button
+                                type="button"
+                                data-testid={`ata-aceitar-${s.id}`}
+                                className={BTN_PRIMARIO}
+                                disabled={decidindo === s.id || !(listaEscolhida[s.id] || s.listaId) || !ajustes[s.id]?.cliente}
+                                title={!ajustes[s.id]?.cliente ? 'Escolha o cliente antes de aceitar' : undefined}
+                                onClick={() => decidir(s, 'aceitar')}
+                              >
+                                Aceitar
+                              </button>
+                              <button
+                                type="button"
+                                data-testid={`ata-descartar-${s.id}`}
+                                className={BTN}
+                                disabled={decidindo === s.id}
+                                onClick={() => decidir(s, 'descartar')}
+                              >
+                                Descartar
+                              </button>
+                            </div>
                           )}
                         </li>
                       ))}
                     </ul>
-                  </details>
+                    {decididas.length > 0 && (
+                      <details className="text-sm">
+                        <summary className={`cursor-pointer text-muted ${ALVO} max-md:flex max-md:items-center`}>Decididas ({decididas.length})</summary>
+                        <ul className="mt-2 space-y-1">
+                          {decididas.map((s) => (
+                            <li key={s.id} data-testid={`ata-sugestao-${s.id}`} className="flex flex-wrap items-baseline gap-x-2 break-words">
+                              <span className={s.estado === 'aceita' ? 'text-brand' : 'text-muted line-through'}>{s.titulo}</span>
+                              <span className="text-[12px] text-muted">
+                                {s.estado === 'aceita' ? `aceita${s.listaNome ? ` em ${s.listaNome}` : ''}` : 'descartada'}
+                                {s.decididaPor ? ` por ${s.decididaPor}` : ''}
+                              </span>
+                              {s.estado === 'aceita' && s.workTaskId && s.listaId && (
+                                <a className={`text-[12px] text-brand underline underline-offset-2 ${ALVO} max-md:inline-flex max-md:items-center`} href={`/trabalho?lista=${s.listaId}&tarefa=${s.workTaskId}`}>abrir a tarefa</a>
+                              )}
+                            </li>
+                          ))}
+                        </ul>
+                      </details>
+                    )}
+                  </div>
                 )}
-              </div>
 
-              <DecisoesEPendencias ata={aberta} />
+                {!ehTranscricao && <DecisoesEPendencias ata={aberta} />}
 
-              <article aria-label="A ata inteira" className="rounded-lg border border-border bg-surface p-3">
-                <RoteiroMarkdown texto={aberta.texto} />
-              </article>
-            </>
-          )}
-        </section>
+                {ehTranscricao ? (
+                  <article aria-label="A transcrição inteira" data-testid="transcricao-texto" className="rounded-lg border border-border bg-surface p-3">
+                    <p className="mb-2 text-[11px] text-muted">A transcrição é lida agora da fonte e não fica guardada no OS.</p>
+                    <pre className="whitespace-pre-wrap break-words font-sans text-sm">{aberta.texto}</pre>
+                  </article>
+                ) : (
+                  <article aria-label="A ata inteira" className="rounded-lg border border-border bg-surface p-3">
+                    <RoteiroMarkdown texto={aberta.texto} />
+                  </article>
+                )}
+              </>
+            )}
+          </section>
+        )}
       </div>
     </div>
   );
@@ -546,6 +780,7 @@ function FormularioDoAceite({ s, ajuste, pessoas, estrutura, token, listaId, onL
 
 function ItemDaAta({ ata, ativa, onAbrir }: { ata: TrabAtaResumo; ativa: boolean; onAbrir: () => void }) {
   const { rascunho, aceitas, descartadas } = ata.sugestoes;
+  const transcricao = ata.tipo === 'transcricao';
   return (
     <button
       type="button"
@@ -563,12 +798,93 @@ function ItemDaAta({ ata, ativa, onAbrir }: { ata: TrabAtaResumo; ativa: boolean
       )}
       {ata.resumo && <span className="line-clamp-2 block text-[12px] text-muted break-words">{ata.resumo}</span>}
       <span className="flex flex-wrap gap-1.5 text-[11px] text-muted">
-        <span className="rounded bg-surface-2 px-1.5 py-0.5">{ata.fonte === 'vault' ? 'vault' : ata.fonte === 'granola' ? 'Granola' : 'colada'}</span>
+        <span data-testid={`ata-tipo-${ata.id}`} className={`rounded px-1.5 py-0.5 ${transcricao ? 'bg-surface-2 text-text' : 'bg-surface-2'}`}>{transcricao ? 'transcrição' : 'ata'}</span>
+        <span className="rounded bg-surface-2 px-1.5 py-0.5">{ROTULO_DA_FONTE[ata.fonte] ?? ata.fonte}</span>
+        {transcricao && ata.ataGerada && <span className="rounded bg-surface-2 px-1.5 py-0.5">ata gerada</span>}
         {rascunho > 0 && <span className="rounded bg-brand/10 px-1.5 py-0.5 text-brand">{rascunho} para decidir</span>}
         {aceitas > 0 && <span className="rounded bg-surface-2 px-1.5 py-0.5">{aceitas} {aceitas === 1 ? 'virou tarefa' : 'viraram tarefas'}</span>}
         {descartadas > 0 && <span className="rounded bg-surface-2 px-1.5 py-0.5">{descartadas} {descartadas === 1 ? 'descartada' : 'descartadas'}</span>}
       </span>
     </button>
+  );
+}
+
+/** De onde a lista veio, fonte por fonte, e por que uma delas não trouxe nada. */
+function EstadoDasFontes({ lista }: { lista: TrabAtaLista }) {
+  const f = lista.fontes;
+  const vault = lista.vaultVisivel === false
+    ? `As atas do vault (a pasta ${lista.pasta}) pedem a permissão de ler o vault (obsidian.ver), que o seu perfil não tem: aparecem só as atas coladas aqui.`
+    : lista.notasDoVault > 0
+      ? `Do vault, a pasta ${lista.pasta}; e as coladas aqui.`
+      : `Nenhuma nota do vault indexada nesta empresa: aparecem só as atas coladas aqui (a pasta ${lista.pasta} entra quando o vault for indexado).`;
+  return (
+    <div data-testid="atas-fontes" className="space-y-0.5 px-1 text-[12px] text-muted break-words">
+      <p>{vault}</p>
+      {f && (
+        f.granola.conectado ? (
+          <p>Granola: as reuniões dos últimos 30 dias, como transcrição.</p>
+        ) : (
+          <p data-testid="granola-sem-conexao">
+            {f.granola.motivo ?? 'Conecte o Granola em Configurações › Integrações para ler as reuniões daqui.'}{' '}
+            <a href="/conexoes" className={`text-brand underline underline-offset-2 ${ALVO} max-md:inline-flex max-md:items-center`}>Abrir Integrações</a>
+          </p>
+        )
+      )}
+      {f && (
+        <p data-testid="drive-estado">
+          {f.drive.motivo
+            ? `Google Drive: ${f.drive.motivo}`
+            : `Google Drive: os arquivos da pasta escolhida (até 50 por busca, os mais recentes).`}
+          {f.drive.link && (
+            <>
+              {' '}
+              <a href={f.drive.link} target="_blank" rel="noopener noreferrer" className="text-brand underline underline-offset-2">abrir a pasta</a>
+            </>
+          )}
+        </p>
+      )}
+    </div>
+  );
+}
+
+/** "Pasta do Drive": colar o link (ou o id) da pasta das atas, ou tirar a pasta. */
+function PastaDoDrive({ token, estado, onSalva, onErro }: {
+  token: string; estado: TrabAtaDriveEstado | null; onSalva: () => void; onErro: (m: string) => void;
+}) {
+  const campo = useRef<HTMLInputElement>(null);
+  useEffect(() => { campo.current?.focus(); }, []);
+  const [pasta, setPasta] = useState(estado?.link ?? '');
+  const [salvando, setSalvando] = useState(false);
+  const salvar = (valor: string | null) => {
+    setSalvando(true);
+    apiPut<TrabAtaDriveEstado>('/trabalho/atas/drive', { pasta: valor }, token)
+      .then(onSalva)
+      .catch((e) => onErro(e.message))
+      .finally(() => setSalvando(false));
+  };
+  return (
+    <form
+      id="ata-pasta-form"
+      aria-label="Pasta do Drive das atas"
+      className="space-y-2 rounded-lg border border-border bg-surface p-3"
+      onSubmit={(e) => { e.preventDefault(); if (pasta.trim()) salvar(pasta.trim()); }}
+    >
+      <p className="text-[12px] text-muted">
+        Cole o link da pasta do Google Drive onde ficam as atas e as transcrições. O OS lê os arquivos (Documento Google, PDF com texto, .txt e .md) e não copia nada além do índice. Arquivo com "transcrição" no nome entra como transcrição.
+      </p>
+      <label className="block space-y-1 text-[12px] text-muted">
+        <span>Link ou id da pasta</span>
+        <input ref={campo} data-testid="ata-pasta-campo" className={INP} value={pasta} onChange={(e) => setPasta(e.target.value)} placeholder="https://drive.google.com/drive/folders/..." />
+      </label>
+      <div className="flex flex-wrap gap-2">
+        <button type="submit" data-testid="ata-pasta-salvar" className={BTN_PRIMARIO} disabled={salvando || !pasta.trim()}>
+          {salvando ? 'Conferindo a pasta…' : 'Usar esta pasta'}
+        </button>
+        {estado?.configurada && (
+          <button type="button" data-testid="ata-pasta-tirar" className={BTN} disabled={salvando} onClick={() => salvar(null)}>Tirar a pasta</button>
+        )}
+      </div>
+    </form>
   );
 }
 
@@ -632,75 +948,6 @@ function DecisoesEPendencias({ ata }: { ata: TrabAtaDetalhe }) {
           </ul>
         )}
       </div>
-    </section>
-  );
-}
-
-const quandoBR = (iso: string | null) =>
-  iso ? new Date(iso).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : 'sem data';
-
-/** O bloco "Reuniões do Granola": as últimas reuniões, lidas direto, com "Gerar ata". */
-function ReunioesDoGranola({ dados, podeGerar, gerando, onGerar, onAbrir }: {
-  dados: TrabGranolaReunioes; podeGerar: boolean; gerando: string | null;
-  onGerar: (r: TrabGranolaReuniao) => void; onAbrir: (ref: string) => void;
-}) {
-  return (
-    <section aria-label="Reuniões do Granola" data-testid="granola-reunioes" className="space-y-2 rounded-lg border border-border bg-surface p-3">
-      <div className="flex flex-wrap items-baseline justify-between gap-2">
-        <h2 className="text-sm font-semibold">Reuniões do Granola</h2>
-        <span className="text-[12px] text-muted">Gerar ata lê a transcrição e propõe as tarefas. A transcrição não fica guardada no OS.</span>
-      </div>
-      {!dados.conectado || dados.desligado ? (
-        <p data-testid="granola-sem-conexao" className="text-sm text-muted break-words">
-          {dados.motivo ?? 'Conecte o Granola em Configurações › Integrações para ler as reuniões daqui.'}{' '}
-          <a href="/conexoes" className={`text-brand underline underline-offset-2 ${ALVO} max-md:inline-flex max-md:items-center`}>Abrir Integrações</a>
-        </p>
-      ) : dados.motivo ? (
-        <p role="alert" className="text-sm text-warn break-words">{dados.motivo}</p>
-      ) : dados.reunioes.length === 0 ? (
-        <p className="text-sm text-muted">Nenhuma reunião no Granola nos últimos 30 dias.</p>
-      ) : (
-        <ul className="divide-y divide-border">
-          {dados.reunioes.map((r) => (
-            <li key={r.id} data-testid={`granola-reuniao-${r.id}`} className="flex flex-wrap items-center gap-x-3 gap-y-1 py-2">
-              <div className="min-w-0 flex-1 space-y-0.5">
-                <p className="truncate text-sm font-medium" title={r.titulo}>{r.titulo}</p>
-                <p className="truncate text-[12px] text-muted" title={r.participantes.join(', ')}>
-                  {[quandoBR(r.em), r.participantes.length ? r.participantes.join(', ') : 'participantes não informados'].join(' · ')}
-                </p>
-                <p className="flex flex-wrap gap-1.5 text-[11px]">
-                  {r.cliente ? (
-                    <span className="rounded bg-brand/10 px-1.5 py-0.5 text-brand" title={`reconhecido por ${r.cliente.porque === 'email' ? 'e-mail' : r.cliente.porque === 'dominio' ? 'domínio do e-mail' : 'nome'}`}>{r.cliente.titulo}</span>
-                  ) : (
-                    <span className="rounded bg-surface-2 px-1.5 py-0.5 text-muted">sem cliente reconhecido</span>
-                  )}
-                  {r.naFicha && <span className="rounded bg-surface-2 px-1.5 py-0.5 text-muted">na ficha</span>}
-                  {r.ataRef && (
-                    <button type="button" className={`rounded bg-surface-2 px-1.5 py-0.5 text-brand underline-offset-2 hover:underline ${ALVO}`} onClick={() => onAbrir(r.ataRef!)}>
-                      abrir a ata{r.ataVersao && r.ataVersao > 1 ? ` (versão ${r.ataVersao})` : ''}
-                    </button>
-                  )}
-                </p>
-              </div>
-              {podeGerar && (
-                <button
-                  type="button"
-                  data-testid={`granola-gerar-${r.id}`}
-                  className={BTN_PRIMARIO}
-                  disabled={gerando !== null || !dados.iaConfigurada}
-                  title={!dados.iaConfigurada ? 'A IA não está configurada nesta instalação.' : 'Puxa a transcrição, escreve a ata e propõe as tarefas.'}
-                  onClick={() => onGerar(r)}
-                >
-                  {gerando === r.id ? 'Lendo a transcrição…' : r.ataRef ? 'Gerar de novo' : 'Gerar ata'}
-                </button>
-              )}
-            </li>
-          ))}
-        </ul>
-      )}
-      {!podeGerar && dados.conectado && !dados.desligado && dados.reunioes.length > 0 && (
-        <p className="text-[12px] text-muted">Gerar ata grava uma nota na memória e pede as permissões de editar o Trabalho e a memória.</p>
-      )}
     </section>
   );
 }

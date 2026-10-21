@@ -67,12 +67,22 @@ function limpo(s: unknown, max: number): string {
 }
 
 export interface ReuniaoParaAta {
+  /** O id da reunião no Granola, ou o id do arquivo no Drive (com `fonte: 'drive'`). */
   granolaId: string;
   titulo: string;
   /** AAAA-MM-DD do dia da reunião, quando o Granola diz. */
   data: string | null;
   participantes: string[];
+  /**
+   * De onde veio a transcrição (produção 21, P7): o Granola (padrão) ou um
+   * arquivo da pasta do Drive das atas. O pedido ao modelo e as regras são os
+   * mesmos; muda o rótulo da origem e a linha de procedência.
+   */
+  fonte?: 'granola' | 'drive';
 }
+
+const origemDa = (r: ReuniaoParaAta) => `${r.fonte === 'drive' ? 'drive' : 'granola'}:${r.granolaId}`;
+const nomeDaFonte = (r: ReuniaoParaAta) => (r.fonte === 'drive' ? 'no Google Drive' : 'no Granola');
 
 export function promptDaAtaDoGranola(args: {
   reuniao: ReuniaoParaAta;
@@ -84,7 +94,7 @@ export function promptDaAtaDoGranola(args: {
   const system = [
     `[tarefa:${TAREFA_ATA_DO_GRANOLA}]`,
     'Você é o leitor de reuniões do Trabalho da Root. Recebe a TRANSCRIÇÃO de uma reunião gravada',
-    'no Granola e devolve, num JSON só, o material da ata e as tarefas que a reunião combinou.',
+    `${args.reuniao.fonte === 'drive' ? 'e salva no Google Drive' : 'no Granola'} e devolve, num JSON só, o material da ata e as tarefas que a reunião combinou.`,
     'Quem decide se a ata e as tarefas valem é uma pessoa, depois de ler a sua proposta.',
     '',
     'REGRAS, e nenhuma delas é negociável:',
@@ -111,11 +121,11 @@ export function promptDaAtaDoGranola(args: {
   const letras = Array.from(String(args.transcricao ?? ''));
   const cortada = letras.length > MAX_TRANSCRICAO_NO_PROMPT;
   const texto = cortada ? letras.slice(0, MAX_TRANSCRICAO_NO_PROMPT).join('') : letras.join('');
-  const cercada = blocoExterno([{ origem: `granola:${args.reuniao.granolaId}`, titulo: args.reuniao.titulo, conteudo: texto }]).texto;
+  const cercada = blocoExterno([{ origem: origemDa(args.reuniao), titulo: args.reuniao.titulo, conteudo: texto }]).texto;
 
   const user = [
     args.reuniao.data ? `Reunião de ${args.reuniao.data}.` : 'Reunião sem data.',
-    `Título no Granola: ${umaLinha(args.reuniao.titulo)}`,
+    `Título ${nomeDaFonte(args.reuniao)}: ${umaLinha(args.reuniao.titulo)}`,
     '',
     'LISTAS DA EMPRESA (escreva uma destas em "lista"):',
     ...(args.listas.length ? args.listas.map((l) => `- ${umaLinha(l.rotulo)}`) : ['(a empresa ainda não tem lista: use null)']),
@@ -271,10 +281,11 @@ const dataBr = (iso: string) => {
  * isso com uma frase, em vez de sumir.
  */
 export function markdownDaAta(reuniao: ReuniaoParaAta, leitura: LeituraDaAtaDoGranola, p: ProcedenciaDaAta): string {
-  const linhas: string[] = [`# ${umaLinha(reuniao.titulo) || 'Reunião do Granola'}`, ''];
+  const doDrive = reuniao.fonte === 'drive';
+  const linhas: string[] = [`# ${umaLinha(reuniao.titulo) || (doDrive ? 'Reunião (transcrição do Drive)' : 'Reunião do Granola')}`, ''];
   if (reuniao.data) linhas.push(`Data: ${reuniao.data}`);
   if (reuniao.participantes.length) linhas.push(`Participantes: ${reuniao.participantes.map((x) => umaLinha(x)).join(', ')}`);
-  linhas.push('', '## Resumo', '', leitura.resumo || 'A leitura não trouxe resumo. Abra a reunião no Granola.');
+  linhas.push('', '## Resumo', '', leitura.resumo || `A leitura não trouxe resumo. Abra a reunião ${nomeDaFonte(reuniao)}.`);
   const secao = (titulo: string, itens: string[], vazio: string) => {
     linhas.push('', `## ${titulo}`, '');
     if (itens.length) linhas.push(...itens.map((i) => `- ${i}`));
@@ -291,10 +302,10 @@ export function markdownDaAta(reuniao: ReuniaoParaAta, leitura: LeituraDaAtaDoGr
     '',
     '## Procedência',
     '',
-    `- Fonte: ${`granola:${reuniao.granolaId}`}`,
+    `- Fonte: ${origemDa(reuniao)}`,
     `- Transcrição: ${p.caracteres.toLocaleString('pt-BR')} caracteres · sha256 ${p.sha256.slice(0, 16)} · ${p.segredosMascarados} segredo(s) mascarado(s)${p.cortada ? ' · entrou cortada na leitura' : ''}`,
     `- Leitura: ${umaLinha(p.modelo)} · custo US$ ${p.custoUsd.toFixed(4)}`,
-    '- A transcrição não fica guardada no OS. "Reprocessar" busca de novo no Granola.',
+    `- A transcrição não fica guardada no OS. "Reprocessar" busca de novo ${nomeDaFonte(reuniao)}.`,
   );
   return linhas.join('\n');
 }
