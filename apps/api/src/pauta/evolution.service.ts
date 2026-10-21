@@ -373,8 +373,8 @@ export class EvolutionService implements OnModuleInit {
 // empresa cliente nunca usa a credencial do processo, e credencial revogada no
 // cofre não cai para o ambiente (revogar é parar).
 //
-// POR QUE MORA NESTE ARQUIVO, e não num conector novo em `gateway/canais/`
-// como o DigiSac: a catraca de arquitetura diz que a credencial e o endereço de
+// POR QUE MORA NESTE ARQUIVO, e não num conector novo em `gateway/canais/`:
+// a catraca de arquitetura diz que a credencial e o endereço de
 // um fornecedor são lidos só pelo conector dele (`CREDENCIAIS`), e o conector
 // da Evolution é este arquivo. Um segundo arquivo lendo `EVOLUTION_*` (a reserva
 // da casa) seria uma exceção nova na catraca; um segundo cliente HTTP da mesma
@@ -396,7 +396,7 @@ export class EvolutionService implements OnModuleInit {
 //
 // O ENDEREÇO (a regra contra SSRF, `baseDaEvolution` + `enderecosPermitidos`):
 // a Evolution é instalada por quem a usa, então não há domínio oficial para
-// conferir, como há no DigiSac. O endereço é escrito por um admin da empresa e
+// conferir. O endereço é escrito por um admin da empresa e
 // chamado de dentro da rede dos containers; a regra é:
 //
 //   · http ou https, sem usuário e senha na URL, sem query nem fragmento, com

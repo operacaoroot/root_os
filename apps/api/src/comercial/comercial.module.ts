@@ -37,9 +37,6 @@ import { SalaVersaoService } from './sala-versao.service';
 import { SalaEstadoController } from './sala-estado.controller';
 import { SalaEstadoService, SoGenteNaSalaGuard } from './sala-estado.service';
 import { WhatsappComercialService } from './whatsapp.service';
-// Interface 20/10 (U6): o WhatsApp pelo DigiSac (cartão de Conexões e a entrada do webhook).
-import { DigisacEntradaService } from './digisac-entrada.service';
-import { IntegracaoDoDigisacController, WebhookDoDigisacController } from './digisac.controller';
 import { EvolutionEntradaService } from './evolution-entrada.service';
 import { IntegracaoDaEvolutionController } from './evolution.controller';
 // lane D
@@ -85,7 +82,7 @@ import { TriagemDoWhatsappService } from './triagem-do-whatsapp/triagem-do-whats
  */
 @Module({
   imports: [TenantsModule, AuthModule, LeadsModule, OnboardingModule, FinanceModule, RoutinesModule, ZapsignModule, MemoryModule, WorkModule],
-  controllers: [ComercialController, SalaController, SimuladorController, MensagensController, DinheiroController, WebhooksDoDinheiroController, InteligenciaController, FechadoForaController, OnboardingAntecipadoController, IntegracaoDoDigisacController, WebhookDoDigisacController, IntegracaoDaEvolutionController, SalaEstadoController, TarefasDoComercialController, ContratoDaRootController, FormularioDoSiteController],
+  controllers: [ComercialController, SalaController, SimuladorController, MensagensController, DinheiroController, WebhooksDoDinheiroController, InteligenciaController, FechadoForaController, OnboardingAntecipadoController, IntegracaoDaEvolutionController, SalaEstadoController, TarefasDoComercialController, ContratoDaRootController, FormularioDoSiteController],
   providers: [
     // --- orquestrador: o fio (único caminho de escrita de fato) e o registro de reações ---
     ReacoesRegistry,
@@ -106,8 +103,6 @@ import { TriagemDoWhatsappService } from './triagem-do-whatsapp/triagem-do-whats
     // --- lane B (sala, WhatsApp por porta, simulador) ---
     SalaService,
     WhatsappComercialService,
-    // --- Interface 20/10 U6 (a entrada do DigiSac; o conector chega pelas portas de `gateway/canais/digisac.port.ts`) ---
-    DigisacEntradaService,
     // Produção 21 (P8): a conversa do lead que chega pela Evolution, inscrita na entrada direta do canal.
     EvolutionEntradaService,
     // --- rodada da implantação I4 (leitura e reação na página da proposta; a I5 lê daqui) ---

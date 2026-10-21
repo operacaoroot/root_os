@@ -3,7 +3,7 @@
 import { useAuth } from '@/lib/auth';
 import { CatalogoDeclarativo } from './CatalogoDeclarativo';
 import { ConexaoGranola } from './ConexaoGranola';
-// Produção 21 (P8): o WhatsApp do comercial pela Evolution. O cartão do DigiSac saiu da tela; o código fica.
+// Produção 21 (P8): o WhatsApp do comercial pela Evolution.
 import { ConexaoEvolution } from './ConexaoEvolution';
 
 export default function IntegracoesPage() {

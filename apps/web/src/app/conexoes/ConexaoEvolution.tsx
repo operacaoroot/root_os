@@ -11,9 +11,7 @@ import { apiGet, apiPost, apiPut } from '@/lib/api';
  * está com o provedor `evolution`. Daqui se guarda o endereço da Evolution, a
  * chave da API e o nome da instância no cofre da empresa (a chave nunca volta
  * para a tela), se vê o estado da instância (conectada, QR pendente, erro), se
- * gera o QR para ligar o número e se copia a URL do webhook. No lugar do cartão
- * do DigiSac, que saiu da tela (o código fica, e `WHATSAPP_PROVEDOR=digisac`
- * continua aceito).
+ * gera o QR para ligar o número e se copia a URL do webhook.
  */
 
 const SELO: Record<EstadoDaEvolution['estado'] | 'nao_verificado', { texto: string; cor: string }> = {
@@ -30,7 +28,6 @@ const SELO: Record<EstadoDaEvolution['estado'] | 'nao_verificado', { texto: stri
 const PROVEDOR: Record<string, string> = {
   evolution: 'evolution (esta conexão)',
   simulado: 'simulado (nada sai do sistema)',
-  digisac: 'digisac',
   meta: 'meta',
 };
 

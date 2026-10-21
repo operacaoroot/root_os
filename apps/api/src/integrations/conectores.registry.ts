@@ -53,8 +53,6 @@ const DEVEM_IMPLEMENTAR: ReadonlyArray<{ chave: string; servico: string }> = [
   { chave: 'youtube', servico: 'YoutubeService' },
   // 19/10/2026: reuniões do Granola pelo Zap; senha por empresa no cofre.
   { chave: 'granola', servico: 'GranolaService' },
-  // Interface 20/10 (U6): o WhatsApp do comercial pelo DigiSac; token e conexão por empresa no cofre.
-  { chave: 'digisac', servico: 'DigisacService' },
   // Produção 21 (P8): o WhatsApp do comercial pela Evolution; endereço, chave e instância por empresa no cofre.
   { chave: 'evolution', servico: 'EvolutionDaEmpresaService' },
 ];

@@ -5,8 +5,6 @@ import { EntradaDeGrupoRegistry } from './entrada-de-grupo.registry';
 import { EnvioDeAprovacaoService } from './envio-de-aprovacao.service';
 import { CanalDeAprovacaoService } from './canal-de-aprovacao.service';
 import { CanalDeAprovacaoController } from './canal-de-aprovacao.controller';
-import { DigisacService } from './digisac.conector';
-import { ADMINISTRACAO_DO_DIGISAC, ENVIO_PELO_DIGISAC } from './digisac.port';
 import { EntradaDiretaRegistry } from './entrada-direta.registry';
 import { ADMINISTRACAO_DA_EVOLUTION, ENVIO_PELA_EVOLUTION } from './evolution.port';
 // Produção 21 (P8): a Evolution da EMPRESA mora no arquivo do conector da Evolution (a catraca de
@@ -67,10 +65,6 @@ import { EvolutionDaEmpresaService } from '../../pauta/evolution.service';
     EntradaDeGrupoRegistry,
     EnvioDeAprovacaoService,
     CanalDeAprovacaoService,
-    // Interface 20/10 (U6): o conector do DigiSac, entregue ao comercial pelas duas portas de `digisac.port.ts`.
-    DigisacService,
-    { provide: ENVIO_PELO_DIGISAC, useExisting: DigisacService },
-    { provide: ADMINISTRACAO_DO_DIGISAC, useExisting: DigisacService },
     // Produção 21 (P8): a conversa 1:1 do lead que chega pelo webhook da Evolution vai ao comercial, por registro.
     EntradaDiretaRegistry,
     // Produção 21 (P8): a Evolution da empresa, entregue ao comercial pelas duas portas de `evolution.port.ts`.
@@ -83,8 +77,6 @@ import { EvolutionDaEmpresaService } from '../../pauta/evolution.service';
     EntradaDeGrupoRegistry,
     EntradaDiretaRegistry,
     EnvioDeAprovacaoService,
-    ENVIO_PELO_DIGISAC,
-    ADMINISTRACAO_DO_DIGISAC,
     ENVIO_PELA_EVOLUTION,
     ADMINISTRACAO_DA_EVOLUTION,
   ],

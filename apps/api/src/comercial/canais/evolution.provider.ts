@@ -16,14 +16,14 @@ import { ProvedorIndisponivelError } from './whatsapp.port';
  * Evolution oferece, no próprio conector (`pauta/evolution.service.ts`, classe
  * `EvolutionDaEmpresaService`), o envio ao lead e o grupo, e este provedor só
  * TRADUZ, recebendo o conector pela porta `ENVIO_PELA_EVOLUTION`
- * (`gateway/canais/evolution.port.ts`), como o DigiSac. O transporte do canal
+ * (`gateway/canais/evolution.port.ts`). O transporte do canal
  * continua só do canal.
  *
  * Quem chama este provedor é só o EFEITO de `comercial.whatsapp.enviar` (R3):
  * o provedor é transporte, não régua. A capacidade e a porta não mudaram.
  *
- * BOTÕES E FORMULÁRIO VIRAM TEXTO NUMERADO (`texto-numerado.ts`, o mesmo do
- * DigiSac); a resposta numerada é lida na entrada (`evolution-entrada.service.ts`).
+ * BOTÕES E FORMULÁRIO VIRAM TEXTO NUMERADO (`texto-numerado.ts`); a resposta
+ * numerada é lida na entrada (`evolution-entrada.service.ts`).
  *
  * GRUPO: a Evolution cria o grupo (`group/create`) e devolve o JID `@g.us`; o
  * jid que volta ao comercial leva o prefixo `evolution:` para o envio no grupo

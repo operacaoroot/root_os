@@ -99,8 +99,6 @@ export * from './procedimento-ferramenta-local';
 export * from './operacao-painel.js';
 // O Painel geral do comercial (layout do Lucas, dados do cockpit): ver `painel-comercial.ts`.
 export * from './painel-comercial.js';
-// O WhatsApp do comercial pelo DigiSac em Conexões (Interface 20/10, U6): ver `digisac.ts`.
-export * from './digisac.js';
 // O WhatsApp do comercial pela Evolution em Integrações (Produção 21, P8): ver `evolution.ts`.
 export * from './evolution.js';
 export * from './propostas-da-sala.js';

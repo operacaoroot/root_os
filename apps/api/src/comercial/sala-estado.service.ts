@@ -50,7 +50,6 @@ export class SoGenteNaSalaGuard implements CanActivate {
 const PROVEDORES: Record<string, string> = {
   simulado: 'WhatsApp simulado',
   evolution: 'Evolution',
-  digisac: 'DigiSac',
   meta: 'WhatsApp Cloud (Meta)',
 };
 const nomeDoProvedor = (p: string | null | undefined): string => (p ? (PROVEDORES[p] ?? p) : 'provedor desconhecido');

@@ -8,8 +8,8 @@ import userEvent from '@testing-library/user-event';
  * O que ele promete: o selo é o estado da instância (conectada, QR pendente,
  * erro); a chave digitada vai para o cofre e some da tela; o QR aparece como
  * imagem quando a instância pede e some quando ela abre; a URL do webhook está
- * à vista sem segredo nenhum; quem não administra só lê. E o cartão do DigiSac
- * saiu da tela. Chaves e instâncias daqui são inventadas.
+ * à vista sem segredo nenhum; quem não administra só lê. E o WhatsApp da tela
+ * é só a Evolution. Chaves e instâncias daqui são inventadas.
  */
 
 const apiGet = vi.fn();
@@ -154,10 +154,10 @@ describe('o cartão da Evolution', () => {
 });
 
 describe('a tela de Integrações', () => {
-  it('mostra o cartão da Evolution e não mostra mais o do DigiSac', async () => {
+  it('mostra o cartão da Evolution, e todo cartão de WhatsApp da tela é da Evolution', async () => {
     render(<IntegracoesPage />);
     expect(await screen.findByRole('region', { name: 'WhatsApp (Evolution)' })).toBeInTheDocument();
-    expect(screen.queryByRole('region', { name: 'WhatsApp (DigiSac)' })).toBeNull();
-    expect(apiGet.mock.calls.some(([r]) => String(r).startsWith('/integrations/digisac'))).toBe(false);
+    const deWhatsapp = screen.queryAllByRole('region').map((r) => r.getAttribute('aria-label') ?? '').filter((n) => /whatsapp/i.test(n));
+    expect(deWhatsapp.every((n) => /evolution/i.test(n))).toBe(true);
   });
 });

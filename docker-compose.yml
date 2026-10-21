@@ -274,11 +274,6 @@ services:
       ZAPSIGN_BASE_URL: ${ZAPSIGN_BASE_URL:-}
       ZAPSIGN_WEBHOOK_TOKEN: ${ZAPSIGN_WEBHOOK_TOKEN:-}
       WHATSAPP_PROVEDOR: ${WHATSAPP_PROVEDOR:-simulado}
-      # Interface 20/10 (U6): fallback do DigiSac só para a empresa da casa; o normal é o cofre por empresa.
-      DIGISAC_URL: ${DIGISAC_URL:-}
-      DIGISAC_TOKEN: ${DIGISAC_TOKEN:-}
-      DIGISAC_SERVICE_ID: ${DIGISAC_SERVICE_ID:-}
-      DIGISAC_WEBHOOK_SEGREDO: ${DIGISAC_WEBHOOK_SEGREDO:-}
       # Rodada da interface (20/10/2026): o Granola direto pelo MCP. Vazias valem os padrões
       # (o servidor oficial e <WEB_ORIGIN>/api/trabalho/granola/callback); o token fica no cofre.
       GRANOLA_MCP_URL: ${GRANOLA_MCP_URL:-}
