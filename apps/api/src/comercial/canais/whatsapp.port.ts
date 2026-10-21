@@ -7,10 +7,10 @@ import type { ComercialProvedorDeWhatsapp } from '@mktos/shared';
  *
  *   · `simulado` — nada sai da máquina. A mensagem fica em `ComercialMensagem`
  *     e a tela `/comercial/simulador` é o celular do lead e o da mesa;
- *   · `evolution` — a Evolution da Root. A catraca de arquitetura proíbe
- *     entregar pelo transporte do canal fora de `src/gateway/canais/`, e esta
- *     pasta não é conector: o provedor existe, diz que está pendente e por quê
- *     (ver `evolution.provider.ts`);
+ *   · `evolution` — a Evolution (Produção 21, P8). O provedor traduz e chama a
+ *     classe da empresa do conector (`pauta/evolution.service.ts`) pela porta
+ *     `ENVIO_PELA_EVOLUTION`; credencial no cofre da empresa, com a reserva de
+ *     ambiente só da casa (ver `evolution.provider.ts`);
  *   · `meta` — a Cloud API oficial. Só a interface e o esqueleto documentado;
  *     sem credencial não sobe, e a credencial é decisão da mesa (K08-4);
  *   · `digisac` — o DigiSac (Interface 20/10, U6). O provedor traduz e chama o

@@ -37,6 +37,8 @@ import { WhatsappComercialService } from './whatsapp.service';
 // Interface 20/10 (U6): o WhatsApp pelo DigiSac (cartão de Conexões e a entrada do webhook).
 import { DigisacEntradaService } from './digisac-entrada.service';
 import { IntegracaoDoDigisacController, WebhookDoDigisacController } from './digisac.controller';
+import { EvolutionEntradaService } from './evolution-entrada.service';
+import { IntegracaoDaEvolutionController } from './evolution.controller';
 // lane D
 import { ZapsignModule } from './conectores/zapsign.module';
 import { ContratoVivoService } from './contrato-vivo.service';
@@ -66,7 +68,7 @@ import { OnboardingAntecipadoService } from './onboarding-antecipado.service';
  */
 @Module({
   imports: [TenantsModule, AuthModule, LeadsModule, OnboardingModule, FinanceModule, RoutinesModule, ZapsignModule, MemoryModule],
-  controllers: [ComercialController, SalaController, SimuladorController, MensagensController, DinheiroController, WebhooksDoDinheiroController, InteligenciaController, FechadoForaController, OnboardingAntecipadoController, IntegracaoDoDigisacController, WebhookDoDigisacController],
+  controllers: [ComercialController, SalaController, SimuladorController, MensagensController, DinheiroController, WebhooksDoDinheiroController, InteligenciaController, FechadoForaController, OnboardingAntecipadoController, IntegracaoDoDigisacController, WebhookDoDigisacController, IntegracaoDaEvolutionController],
   providers: [
     // --- orquestrador: o fio (único caminho de escrita de fato) e o registro de reações ---
     ReacoesRegistry,
@@ -89,6 +91,8 @@ import { OnboardingAntecipadoService } from './onboarding-antecipado.service';
     WhatsappComercialService,
     // --- Interface 20/10 U6 (a entrada do DigiSac; o conector chega pelas portas de `gateway/canais/digisac.port.ts`) ---
     DigisacEntradaService,
+    // Produção 21 (P8): a conversa do lead que chega pela Evolution, inscrita na entrada direta do canal.
+    EvolutionEntradaService,
     // --- rodada da implantação I4 (leitura e reação na página da proposta; a I5 lê daqui) ---
     ReacoesDaPropostaService,
     // --- rodada da implantação I3 (a sala publicada por versão) e I5 (o relatório de leitura e reação) ---

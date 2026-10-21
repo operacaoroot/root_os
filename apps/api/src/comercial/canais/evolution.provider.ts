@@ -1,58 +1,87 @@
+import { contextoAtual } from '../../common/contexto-execucao';
+import { PREFIXO_DO_GRUPO_EVOLUTION, type EnvioPelaEvolution } from '../../gateway/canais/evolution.port';
+import { normalizarTelefone } from '../eventos';
+import { textoComBotoes, textoComFormulario } from './texto-numerado';
 import type { BotaoInterativo, EnvioFeito, FormularioInterativo, WhatsappPort } from './whatsapp.port';
 import { ProvedorIndisponivelError } from './whatsapp.port';
 
 /*
- * O PROVEDOR EVOLUTION — PENDENTE, e o motivo é uma catraca, não falta de tempo.
+ * O PROVEDOR EVOLUTION (`WHATSAPP_PROVEDOR=evolution`) — Rodada de produção 1,
+ * 21/10/2026, P8.
  *
- * O desenho da passagem previa este provedor entregando pelo
- * `TransporteDeCanalRegistry.entregar('whatsapp', destino, texto)`, o registro
- * em que a Evolution se inscreve. A catraca "mensagem de serviço do canal só
- * sai do canal" (`test/arquitetura.test.ts`) proíbe exatamente isso fora de
- * `src/gateway/canais/`: com o registro injetado, um serviço qualquer manda
- * texto arbitrário para número arbitrário pela instância da Root. Abrir exceção
- * na catraca seria afrouxar a régua; contornar o detector seria pior.
+ * Até esta rodada ele era um esqueleto que lançava `EVOLUTION_PENDENTE`: a
+ * catraca de arquitetura proíbe entregar pelo transporte do canal de aprovação
+ * fora de `src/gateway/canais/`, e o transporte nem sabia criar grupo. O
+ * caminho certo, que o próprio esqueleto descrevia, foi o que se fez: a
+ * Evolution oferece, no próprio conector (`pauta/evolution.service.ts`, classe
+ * `EvolutionDaEmpresaService`), o envio ao lead e o grupo, e este provedor só
+ * TRADUZ, recebendo o conector pela porta `ENVIO_PELA_EVOLUTION`
+ * (`gateway/canais/evolution.port.ts`), como o DigiSac. O transporte do canal
+ * continua só do canal.
  *
- * E o transporte nem serviria inteiro: ele entrega só em conversa INDIVIDUAL
- * (o `jidDireto` do conector recusa grupo) e não expõe criar grupo.
+ * Quem chama este provedor é só o EFEITO de `comercial.whatsapp.enviar` (R3):
+ * o provedor é transporte, não régua. A capacidade e a porta não mudaram.
  *
- * O CAMINHO CERTO, para quem pode mexer no conector: a Evolution inscrever ela
- * mesma o efeito de envio ao lead e o de grupo, no próprio
- * `pauta/evolution.service.ts`, como já faz com `whatsapp.mensagem.enviar`. A
- * C08 recomenda a Evolution só para grupos e avisos da mesa; o 1:1 com o lead é
- * a Cloud API, cujo custo a mesa ainda decide.
+ * BOTÕES E FORMULÁRIO VIRAM TEXTO NUMERADO (`texto-numerado.ts`, o mesmo do
+ * DigiSac); a resposta numerada é lida na entrada (`evolution-entrada.service.ts`).
  *
- * Até lá: `configured = false`, e toda chamada lança com a frase abaixo. O
- * efeito da porta transforma isso em `falhou` na mensagem, com o motivo.
+ * GRUPO: a Evolution cria o grupo (`group/create`) e devolve o JID `@g.us`; o
+ * jid que volta ao comercial leva o prefixo `evolution:` para o envio no grupo
+ * recusar grupo que outro provedor criou (o do simulado, por exemplo).
  */
-export const EVOLUTION_PENDENTE =
-  'envio pela Evolution: pendente. A Evolution só está ligada ao transporte de texto do canal de aprovação, ' +
-  'e a catraca de arquitetura proíbe usá-lo fora de src/gateway/canais. Falta a Evolution inscrever o efeito ' +
-  'de envio ao lead no próprio conector.';
 
-export const EVOLUTION_GRUPO_PENDENTE =
-  'criar grupo pela Evolution: pendente, a Evolution só está ligada ao transporte de texto.';
+export const EVOLUTION_SEM_EMPRESA = 'envio pela Evolution sem empresa no contexto: nada foi enviado.';
+export const EVOLUTION_SEM_CONECTOR = 'o conector da Evolution não está carregado nesta API: nada foi enviado.';
+export const EVOLUTION_GRUPO_DE_OUTRO_PROVEDOR =
+  'o grupo não foi criado pela Evolution (o jid não começa com evolution:): crie o grupo de novo com a Evolution configurada.';
 
 export class EvolutionProvider implements WhatsappPort {
   readonly provedor = 'evolution' as const;
-  readonly configured = false;
+  readonly configured: boolean;
 
-  async enviarTexto(_destino: string, _texto: string): Promise<EnvioFeito> {
-    throw new ProvedorIndisponivelError(EVOLUTION_PENDENTE);
+  constructor(private readonly envio: EnvioPelaEvolution | null = null) {
+    this.configured = !!envio;
   }
 
-  async enviarFormulario(_destino: string, _texto: string, _formulario: FormularioInterativo): Promise<EnvioFeito> {
-    throw new ProvedorIndisponivelError(EVOLUTION_PENDENTE);
+  private orgId(): string {
+    const id = contextoAtual()?.orgId;
+    if (!id) throw new ProvedorIndisponivelError(EVOLUTION_SEM_EMPRESA);
+    return id;
   }
 
-  async enviarBotoes(_destino: string, _texto: string, _botoes: BotaoInterativo[]): Promise<EnvioFeito> {
-    throw new ProvedorIndisponivelError(EVOLUTION_PENDENTE);
+  private exigirEnvio(): EnvioPelaEvolution {
+    if (!this.envio) throw new ProvedorIndisponivelError(EVOLUTION_SEM_CONECTOR);
+    return this.envio;
   }
 
-  async criarGrupo(_nome: string, _participantes: string[]): Promise<{ jid: string }> {
-    throw new ProvedorIndisponivelError(EVOLUTION_GRUPO_PENDENTE);
+  private async mandar(destino: string, texto: string): Promise<EnvioFeito> {
+    const envio = this.exigirEnvio();
+    const r = await envio.enviarAoNumero(this.orgId(), normalizarTelefone(destino), texto);
+    return { mensagemExternaId: r.id, provedor: 'evolution' };
   }
 
-  async enviarNoGrupo(_jid: string, _texto: string): Promise<EnvioFeito> {
-    throw new ProvedorIndisponivelError(EVOLUTION_GRUPO_PENDENTE);
+  enviarTexto(destino: string, texto: string): Promise<EnvioFeito> {
+    return this.mandar(destino, texto);
+  }
+
+  enviarFormulario(destino: string, texto: string, formulario: FormularioInterativo): Promise<EnvioFeito> {
+    return this.mandar(destino, textoComFormulario(texto, formulario));
+  }
+
+  enviarBotoes(destino: string, texto: string, botoes: BotaoInterativo[]): Promise<EnvioFeito> {
+    return this.mandar(destino, textoComBotoes(texto, botoes));
+  }
+
+  async criarGrupo(nome: string, participantes: string[]): Promise<{ jid: string }> {
+    const envio = this.exigirEnvio();
+    const r = await envio.abrirGrupo(this.orgId(), nome, participantes.map(normalizarTelefone));
+    return { jid: `${PREFIXO_DO_GRUPO_EVOLUTION}${r.jid}` };
+  }
+
+  async enviarNoGrupo(jid: string, texto: string): Promise<EnvioFeito> {
+    if (!jid.startsWith(PREFIXO_DO_GRUPO_EVOLUTION)) throw new ProvedorIndisponivelError(EVOLUTION_GRUPO_DE_OUTRO_PROVEDOR);
+    const envio = this.exigirEnvio();
+    const r = await envio.enviarAoGrupo(this.orgId(), jid.slice(PREFIXO_DO_GRUPO_EVOLUTION.length), texto);
+    return { mensagemExternaId: r.id, provedor: 'evolution' };
   }
 }
