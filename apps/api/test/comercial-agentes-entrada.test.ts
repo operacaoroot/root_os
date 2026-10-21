@@ -16,7 +16,11 @@ import { EvolutionEntradaService } from '../src/comercial/evolution-entrada.serv
 import { FichaService } from '../src/comercial/ficha.service';
 import { FioService, ReacoesRegistry } from '../src/comercial/fio.service';
 import { FormularioDoSiteController } from '../src/comercial/formulario-do-site/formulario-do-site.controller';
-import { FormularioDoSiteService } from '../src/comercial/formulario-do-site/formulario-do-site.service';
+import {
+  FormularioDoSiteService,
+  NOTA_DO_FORMULARIO_DO_SITE,
+  formularioLigadoNaNota,
+} from '../src/comercial/formulario-do-site/formulario-do-site.service';
 import { ConfigComercialService } from '../src/comercial/config.service';
 import { DecisoesRegistry, DecisoesService } from '../src/comercial/decisoes.service';
 import { ReacoesDaEspinha } from '../src/comercial/reacoes-da-espinha';
@@ -98,7 +102,8 @@ describe.skipIf(!URL)('a entrada de leads dos agentes do comercial, contra o Pos
     prisma = new PrismaClient({ datasources: { db: { url: URL } } });
     const p = prisma as unknown as PrismaService;
     await prisma.org.create({ data: { id: ORG, name: `Agentes A2 entrada ${MARCA}`, slug: `a2-entrada-${MARCA}` } });
-    const papel = await prisma.role.create({ data: { orgId: ORG, key: 'admin_master', name: 'Admin' }, select: { id: true } });
+    // Responder a triagem do WhatsApp exige `leads.editar` (relida no banco).
+    const papel = await prisma.role.create({ data: { orgId: ORG, key: 'admin_master', name: 'Admin', permissions: { connectOrCreate: [{ where: { key: 'leads.editar' }, create: { key: 'leads.editar' } }] } }, select: { id: true } });
     pessoaId = (await prisma.user.create({ data: { orgId: ORG, email: `lucas-${MARCA}@a2.teste`, name: 'Lucas Exemplo', passwordHash: await bcrypt.hash('x', 4), roles: { connect: { id: papel.id } } }, select: { id: true } })).id;
 
     const audit = new AuditService(p);
@@ -128,10 +133,11 @@ describe.skipIf(!URL)('a entrada de leads dos agentes do comercial, contra o Pos
     const modulos = { modulosDaOrg: async () => modulosLigados } as unknown as ModulosService;
     const leads = new LeadsService(p, audit, modulos);
     new LeadCriarService(efeitos, leads, fichas, fio, whats).onModuleInit();
-    formulario = new FormularioDoSiteService(p, porta, modulos);
-    controlador = new FormularioDoSiteController(formulario);
-
     const memoria = { porChave: async (_org: string, chave: string) => (notas[chave] ? { body: notas[chave] } : null) } as unknown as MemoriaService;
+    // A empresa optou pelo formulário do site (a nota que a revisão de 21/10 exige).
+    notas[NOTA_DO_FORMULARIO_DO_SITE] = 'ligado\nformulário de operacaoroot.com';
+    formulario = new FormularioDoSiteService(p, porta, modulos, memoria);
+    controlador = new FormularioDoSiteController(formulario);
     const registroDePendencias = new PendenciasRegistry();
     pendencias = new PendenciasService(p, registroDePendencias);
     const arquivista: ArquivistaDoClientePort = {
@@ -238,6 +244,20 @@ describe.skipIf(!URL)('a entrada de leads dos agentes do comercial, contra o Pos
       modulosLigados.add('leads');
     }
     expect(await prisma.lead.count({ where: { orgId: ORG } })).toBe(antes);
+  });
+
+  it('REVISÃO CO-15: sem o opt-in da empresa (nota comercial.formulario.site = ligado) é o mesmo 404, e nada é gravado', async () => {
+    const antes = await prisma.lead.count({ where: { orgId: ORG } });
+    for (const corpoDaNota of [undefined, 'desligado', '', 'ligada mas não']) {
+      if (corpoDaNota === undefined) delete notas[NOTA_DO_FORMULARIO_DO_SITE];
+      else notas[NOTA_DO_FORMULARIO_DO_SITE] = corpoDaNota;
+      await expect(controlador.lead(corpo({ email: `sem-optin-${MARCA}@exemplo.test` }), { ip: '10.1.1.9' } as never)).rejects.toBeInstanceOf(NotFoundException);
+    }
+    expect(await prisma.lead.count({ where: { orgId: ORG } })).toBe(antes);
+    notas[NOTA_DO_FORMULARIO_DO_SITE] = 'ligado';
+    expect(formularioLigadoNaNota('**Ligado**\nqualquer coisa')).toBe(true);
+    expect(formularioLigadoNaNota('\n  ligado  ')).toBe(true);
+    expect(formularioLigadoNaNota('desligado')).toBe(false);
   });
 
   it('CO-15: o teto por origem dá 429 (e outra origem segue)', async () => {

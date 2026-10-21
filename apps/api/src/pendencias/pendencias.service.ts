@@ -5,7 +5,6 @@ import { funcaoPorId, type OpcaoDaPendencia, type Pendencia } from '@mktos/share
 import { PrismaService } from '../prisma/prisma.service';
 import { exigirTenant } from '../common/contexto-execucao';
 import { temPapelDeMaquina } from '../approvals/alcada';
-import { lerAprovador } from '../auth/aprovador';
 import { PendenciasRegistry } from './pendencias.registry';
 
 /** O que um agente ou rotina manda para abrir uma pendência. */
@@ -27,6 +26,9 @@ export interface AbrirPendencia {
 const TETO_DA_LISTA = 200;
 
 export const RECUSA_DE_MAQUINA_NA_PENDENCIA = 'Responder pendência é de gente: conta de máquina não faz.';
+export const RECUSA_DE_OUTRA_PESSOA_NA_PENDENCIA = 'Esta pendência é de outra pessoa: só ela responde ou descarta.';
+export const recusaDePermissaoNaPendencia = (permissao: string) =>
+  `Responder ou descartar esta pendência exige a permissão "${permissao}", que o seu perfil não tem.`;
 
 /**
  * As pendências que agentes e rotinas deixam para gente (rodada dos agentes, Lane 0).
@@ -38,6 +40,11 @@ export const RECUSA_DE_MAQUINA_NA_PENDENCIA = 'Responder pendência é de gente:
  * então chama o tratador do tipo; se o tratador falha, a linha volta a aberta e
  * o erro sobe. Dois cliques: o segundo ouve 409.
  * Só gente responde (a rota confere pelo token; aqui, pelo banco).
+ *
+ * E SÓ QUEM PODE (revisão adversarial de 21/10/2026): a pendência com
+ * destinatário (`paraUsuarioId`) só é respondida ou descartada por ele; e a
+ * permissão que o tratador do tipo declarou é relida no banco ANTES de tomar a
+ * linha. Recusa é 403 e nada muda.
  */
 @Injectable()
 export class PendenciasService {
@@ -124,9 +131,10 @@ export class PendenciasService {
 
   async responder(orgIdBruto: string, id: string, usuarioId: string, escolha: string, complemento?: string): Promise<{ ok: true }> {
     const orgId = exigirTenant(orgIdBruto, 'PendenciasService.responder');
-    await this.exigirGente(orgId, usuarioId);
+    const quem = await this.exigirGente(orgId, usuarioId);
     const p = await this.prisma.pendencia.findFirst({ where: { id, orgId } });
     if (!p) throw new NotFoundException('Pendência não encontrada.');
+    this.exigirQuePossa(p, usuarioId, quem.permissoes);
     if (p.estado !== 'aberta') throw new ConflictException('Esta pendência já foi decidida.');
     const opcoes = (Array.isArray(p.opcoes) ? p.opcoes : []) as unknown as OpcaoDaPendencia[];
     if (!opcoes.some((o) => o.chave === escolha)) throw new ConflictException('Esta opção não existe nesta pendência.');
@@ -152,7 +160,10 @@ export class PendenciasService {
 
   async descartar(orgIdBruto: string, id: string, usuarioId: string): Promise<{ ok: true }> {
     const orgId = exigirTenant(orgIdBruto, 'PendenciasService.descartar');
-    await this.exigirGente(orgId, usuarioId);
+    const quem = await this.exigirGente(orgId, usuarioId);
+    const p = await this.prisma.pendencia.findFirst({ where: { id, orgId }, select: { tipo: true, paraUsuarioId: true } });
+    if (!p) throw new NotFoundException('Pendência não encontrada.');
+    this.exigirQuePossa(p, usuarioId, quem.permissoes);
     const r = await this.prisma.pendencia.updateMany({
       where: { id, orgId, estado: 'aberta' },
       data: { estado: 'descartada', decididaPor: usuarioId, decididaEm: new Date() },
@@ -161,11 +172,23 @@ export class PendenciasService {
     return { ok: true };
   }
 
-  private async exigirGente(orgId: string, usuarioId: string): Promise<void> {
-    const doBanco = await lerAprovador(this.prisma, usuarioId, orgId);
-    if (!doBanco || !doBanco.ativo) {
+  /** Relê quem responde no BANCO: ativo, desta empresa, gente; e as permissões dos papéis de agora. */
+  private async exigirGente(orgId: string, usuarioId: string): Promise<{ permissoes: Set<string> }> {
+    const u = await this.prisma.user.findFirst({
+      where: { id: usuarioId, orgId },
+      select: { isActive: true, roles: { select: { key: true, permissions: { select: { key: true } } } } },
+    });
+    if (!u || !u.isActive) {
       throw new ForbiddenException('Sua sessão não corresponde a um usuário ativo desta empresa. Saia e entre de novo.');
     }
-    if (temPapelDeMaquina(doBanco.papeis)) throw new ForbiddenException(RECUSA_DE_MAQUINA_NA_PENDENCIA);
+    if (temPapelDeMaquina(u.roles.map((r) => r.key))) throw new ForbiddenException(RECUSA_DE_MAQUINA_NA_PENDENCIA);
+    return { permissoes: new Set(u.roles.flatMap((r) => r.permissions.map((x) => x.key))) };
+  }
+
+  /** O destinatário e a permissão declarada pelo tratador do tipo. Antes de tomar a linha. */
+  private exigirQuePossa(p: { tipo: string; paraUsuarioId: string | null }, usuarioId: string, permissoes: Set<string>): void {
+    if (p.paraUsuarioId && p.paraUsuarioId !== usuarioId) throw new ForbiddenException(RECUSA_DE_OUTRA_PESSOA_NA_PENDENCIA);
+    const exigida = this.registro.permissaoDe(p.tipo);
+    if (exigida && !permissoes.has(exigida)) throw new ForbiddenException(recusaDePermissaoNaPendencia(exigida));
   }
 }

@@ -148,6 +148,9 @@ async function main() {
   await passo('CO-15 · o formulário do site cria o lead (CORS de operacaoroot.com, idempotente, isca calada)', async () => {
     const marca = `e2e-agentes-${Date.now()}`;
     const corpo = { k: orgId, nome: `Pessoa Fictícia ${marca}`, email: `${marca}@exemplo-ficticio.dev`, empresa: `Empresa Fictícia ${marca}`, mensagem: 'Quero conhecer a Operação Root.' };
+    // Desde a revisão de 21/10 o formulário só vale na empresa que optou: a nota
+    // `comercial.formulario.site` com `ligado` na primeira linha (pela memória; já existir é ok).
+    await api('POST', '/memoria', { chave: 'comercial.formulario.site', title: 'Formulário do site', body: 'ligado\nOpt-in do formulário do site (e2e).', sourceType: 'operador' }, sessao.token).catch(() => null);
     const pre = await http('OPTIONS', `${API}/publico/lead`, undefined, null, { origin: 'https://operacaoroot.com', 'access-control-request-method': 'POST', 'access-control-request-headers': 'content-type' });
     conferir(pre.headers.get('access-control-allow-origin') === 'https://operacaoroot.com', `preflight sem CORS da origem do site (${pre.status})`);
     const outra = await http('OPTIONS', `${API}/publico/lead`, undefined, null, { origin: 'https://site-de-outro.dev', 'access-control-request-method': 'POST' });

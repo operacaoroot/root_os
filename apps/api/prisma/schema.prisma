@@ -903,6 +903,9 @@ model Partner {
   interno      Boolean  @default(false)
   /// A PASTA DO CLIENTE NO DRIVE (rodada dos agentes, 21/10/2026, TR-04): o id e o
   /// link de <raiz>/10-clientes/<nome>, e o motivo da última tentativa que falhou.
+  /// Uma pasta, um cliente: índice único parcial `Partner_orgId_pastaDriveId_unica`
+  /// ("orgId","pastaDriveId") WHERE "pastaDriveId" IS NOT NULL (só na migration
+  /// 20261021380000; o Prisma não descreve índice parcial).
   pastaDriveId   String?
   pastaDriveUrl  String?
   pastaDriveErro String?

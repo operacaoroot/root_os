@@ -112,7 +112,12 @@ describe('a frase do pedido: verbo + objeto em português', () => {
     ['proposta', { capacidade: 'comercial.proposta.publicar', conteudo: { versao: 2 }, alvo: 'Marina Duarte' }, 'Publicar a proposta v2 para Marina Duarte'],
     ['cobrança', { capacidade: 'comercial.cobranca.criar', conteudo: { valorCentavos: 1_199_700, parcelas: 3 }, alvo: 'Marina' }, 'Criar a cobrança de R$ 11.997,00 em 3× para Marina'],
     ['YouTube', { capacidade: 'youtube.video.enviar', conteudo: { titulo: 'Episódio 12' } }, 'Enviar ao YouTube o vídeo “Episódio 12”'],
-    ['DM automática', { capacidade: 'instagram.resposta_privada.enviar', conteudo: { palavra: 'AGENTES' } }, 'Responder no direct quem comentar AGENTES'],
+    [
+      'pasta do cliente: o nome da pasta-alvo e as duas saídas',
+      { capacidade: 'drive.pasta.criar', conteudo: { clienteId: 'p1', nome: 'Padaria Exemplo', origem: 'manual' } },
+      'Pasta do cliente “Padaria Exemplo” no Drive: ligar a de mesmo nome na raiz ou criar com o modelo',
+    ],
+    ['DM automática',{ capacidade: 'instagram.resposta_privada.enviar', conteudo: { palavra: 'AGENTES' } }, 'Responder no direct quem comentar AGENTES'],
     ['superfície antiga sem frase própria usa o resumo do servidor', { capacidade: null, conteudo: null, recurso: { tipo: 'campaign', id: 'c' }, resumo: 'Pausar a campanha de outubro' }, 'Pausar a campanha de outubro'],
     ['capacidade desconhecida: o caso honesto', { capacidade: 'omie.titulo.alterar' }, 'Executar omie.titulo.alterar'],
   ];

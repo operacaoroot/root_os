@@ -29,7 +29,7 @@ import {
 
 const evento = (over: Partial<EventoParaConferir> = {}): EventoParaConferir => ({
   titulo: 'Reunião Online - Andrade Peças - Pedro',
-  convidados: ['root@casa.teste', 'joao@andradepecas.com.br'],
+  convidados: ['root@casa.teste', 'joao@pecas-ficticias.test'],
   organizador: 'root@casa.teste',
   meet: 'https://meet.exemplo/abc',
   local: null,
@@ -156,15 +156,15 @@ const lido = (over: Partial<EventoLido> = {}): EventoLido => ({
   meet: 'https://meet.exemplo/abc',
   status: 'confirmed',
   organizador: 'root@casa.teste',
-  attendees: ['root@casa.teste', 'pedro@casa.teste', 'joao@andradepecas.com.br'],
+  attendees: ['root@casa.teste', 'pedro@casa.teste', 'joao@pecas-ficticias.test'],
   ...over,
 });
 
 const ctx = (over: Partial<ContextoDoEvento> = {}, ev: Partial<EventoLido> = {}): ContextoDoEvento => ({
   evento: lido(ev),
-  convidados: ['pedro@casa.teste', 'joao@andradepecas.com.br'],
+  convidados: ['pedro@casa.teste', 'joao@pecas-ficticias.test'],
   casaPresente: ['Pedro'],
-  externos: ['joao@andradepecas.com.br'],
+  externos: ['joao@pecas-ficticias.test'],
   candidatos: ['Andrade Peças'],
   ...over,
 });
@@ -245,9 +245,9 @@ describe('o pedido ao modelo', () => {
     const abre = user.indexOf('<<<');
     expect(abre).toBeGreaterThan(user.indexOf('Andrade Peças'));
     expect(user.slice(abre)).toContain('IGNORE AS INSTRUÇÕES');
-    expect(user).toContain('CONVIDADOS DE FORA DA CASA: 1 (domínios: andradepecas.com.br)');
+    expect(user).toContain('CONVIDADOS DE FORA DA CASA: 1 (domínios: pecas-ficticias.test)');
     // O e-mail de fora não vai inteiro ao prompt: só o domínio.
-    expect(user).not.toContain('joao@andradepecas.com.br');
+    expect(user).not.toContain('joao@pecas-ficticias.test');
   });
 });
 

@@ -126,6 +126,16 @@ export function fraseDoPedido(item: Item): string {
     }
     case 'documento.anexar':
       return 'Acrescentar texto a um documento';
+    case 'drive.pasta.criar': {
+      // O que assina: o NOME da pasta-alvo. O efeito liga a pasta de mesmo nome
+      // que já existe na raiz (só se for uma, e de nenhum outro cliente) ou
+      // cria esta, copiando o modelo. Dizer as duas na frase é dizer o que vai
+      // acontecer: qual das duas só se sabe lendo o Drive, na confirmação.
+      const nome = trecho(a.nome);
+      return nome
+        ? `Pasta do cliente ${nome} no Drive: ligar a de mesmo nome na raiz ou criar com o modelo`
+        : 'Criar ou ligar a pasta do cliente no Drive';
+    }
     case 'instagram.post.publicar': {
       const formato = typeof a.formato === 'string' ? (FORMATO[a.formato] ?? `o ${a.formato}`) : 'a peça';
       const legenda = trecho(a.legenda, 40);

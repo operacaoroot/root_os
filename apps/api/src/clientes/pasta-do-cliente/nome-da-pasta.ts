@@ -39,6 +39,47 @@ export function nomeDaPastaDoPartner(p: { nomeFantasia?: string | null; razaoSoc
   return nomeDaPastaDoCliente(nomeDoCliente(p));
 }
 
+/*
+ * TRÊS RECUSAS COM FRASE (revisão adversarial de 21/10/2026). Cada uma deixa a
+ * pasta sem ligar e a frase em `Partner.pastaDriveErro`.
+ */
+
+/** A pasta escolhida já é o ponteiro de outro cliente desta empresa. */
+export const FRASE_PASTA_DE_OUTRO =
+  'esta pasta já é de outro cliente: nada foi ligado. Confira no Drive de quem é a pasta e renomeie a que não é deste cliente.';
+/** Mais de um cliente da empresa responde pela mesma chave de nome: ligar seria adivinhar. */
+export const FRASE_NOME_REPETIDO =
+  'mais de um cliente desta empresa tem o mesmo nome de pasta: nada foi ligado. Diferencie os nomes dos clientes (fantasia ou razão social) ou ligue a pasta à mão.';
+/** O nome do cliente é o da pasta-modelo. */
+export const FRASE_NOME_RESERVADO = `o nome deste cliente é o da pasta-modelo ("${PASTA_MODELO_DO_CLIENTE}"): nada foi criado nem ligado. Corrija o nome do cliente.`;
+
+const CHAVE_DO_MODELO = chaveDoNomeDaPasta(PASTA_MODELO_DO_CLIENTE);
+
+/** O nome (de pasta ou de cliente) é, pela chave, o da pasta-modelo? */
+export function ehNomeDoModelo(nome: string | null | undefined): boolean {
+  return !!nome && chaveDoNomeDaPasta(nome) === CHAVE_DO_MODELO;
+}
+
+/** As chaves pelas quais este cliente liga uma pasta: a do nome com que aparece e a da razão social. */
+export function chavesDoCliente(cliente: { nomeFantasia?: string | null; razaoSocial: string }): Set<string> {
+  return new Set(
+    [nomeDoCliente(cliente), cliente.razaoSocial]
+      .map((n) => nomeDaPastaDoCliente(n))
+      .filter((n): n is string => !!n)
+      .map(chaveDoNomeDaPasta)
+      .filter(Boolean),
+  );
+}
+
+/** Os OUTROS clientes que respondem pela chave `chave` (a do nome da pasta a ligar). */
+export function outrosComAChave<T extends { id: string; nomeFantasia?: string | null; razaoSocial: string }>(
+  chave: string,
+  idDoCliente: string,
+  clientes: ReadonlyArray<T>,
+): T[] {
+  return clientes.filter((c) => c.id !== idDoCliente && chavesDoCliente(c).has(chave));
+}
+
 export type EscolhaDaPasta =
   | { tipo: 'ligar'; id: string }
   | { tipo: 'criar' }
@@ -53,14 +94,9 @@ export function escolherPastaExistente(
   cliente: { nomeFantasia?: string | null; razaoSocial: string },
   pastas: ReadonlyArray<{ id: string; nome: string }>,
 ): EscolhaDaPasta {
-  const chaves = new Set(
-    [nomeDoCliente(cliente), cliente.razaoSocial]
-      .map((n) => nomeDaPastaDoCliente(n))
-      .filter((n): n is string => !!n)
-      .map(chaveDoNomeDaPasta)
-      .filter(Boolean),
-  );
-  const iguais = pastas.filter((p) => p.nome !== PASTA_MODELO_DO_CLIENTE && chaves.has(chaveDoNomeDaPasta(p.nome)));
+  const chaves = chavesDoCliente(cliente);
+  // O modelo nunca é candidato, nem com outra grafia ("Modelo Cliente").
+  const iguais = pastas.filter((p) => !ehNomeDoModelo(p.nome) && chaves.has(chaveDoNomeDaPasta(p.nome)));
   if (iguais.length === 1) return { tipo: 'ligar', id: iguais[0].id };
   if (iguais.length > 1) return { tipo: 'ambigua', quantas: iguais.length };
   return { tipo: 'criar' };

@@ -293,6 +293,11 @@ export class EquipeService {
 
     try {
       await this.prisma.$transaction(async (tx) => {
+        // REVISÃO (21/10/2026): o WhatsApp de aprovação é de gente da casa. Número de
+        // lead ou de cliente/fornecedor desta empresa decidiria aprovação em nome de
+        // quem é contato, não equipe. Comparação só pelos dígitos (com o 55 na frente
+        // quando o cadastro guardou só DDD e número).
+        if (await numeroDeContatoDaEmpresa(tx, orgId, digitos)) throw new ConflictException(RECUSA_DE_NUMERO_DE_CONTATO);
         const deOutro = await tx.channelIdentity.findFirst({
           where: { orgId, canal: CANAL, ativo: true, externalId: { in: formasDaChave(digitos) }, NOT: { userId: alvo.id } },
           select: { id: true },
@@ -342,3 +347,24 @@ export class EquipeService {
 }
 
 export type { ContextoDaEquipe };
+
+/** A recusa de cadastrar como WhatsApp de uma pessoa da casa o número de um contato da empresa. */
+export const RECUSA_DE_NUMERO_DE_CONTATO =
+  'Este número é de um lead ou de um cliente desta empresa: o WhatsApp de aprovação é só de gente da casa.';
+
+/**
+ * O número (só dígitos, com o 55) é o telefone de algum Lead ou Partner desta
+ * empresa? O telefone deles é texto livre ("(32) 99999-0001", "+55 32 ..."):
+ * a conta tira tudo que não é dígito e põe o 55 quando sobram 10 ou 11.
+ */
+async function numeroDeContatoDaEmpresa(tx: Prisma.TransactionClient, orgId: string, digitos: string): Promise<boolean> {
+  const linhas = await tx.$queryRaw<Array<{ achou: number }>>(Prisma.sql`
+    SELECT 1 AS achou FROM (
+      SELECT regexp_replace(coalesce("phone", ''), '[^0-9]', '', 'g') AS d FROM "Lead" WHERE "orgId" = ${orgId} AND "phone" IS NOT NULL
+      UNION ALL
+      SELECT regexp_replace(coalesce("phone", ''), '[^0-9]', '', 'g') AS d FROM "Partner" WHERE "orgId" = ${orgId} AND "phone" IS NOT NULL
+    ) t
+    WHERE (CASE WHEN length(t.d) IN (10, 11) THEN '55' || t.d ELSE t.d END) = ${digitos}
+    LIMIT 1`);
+  return linhas.length > 0;
+}

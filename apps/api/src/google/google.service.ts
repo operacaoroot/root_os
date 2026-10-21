@@ -31,6 +31,7 @@ import {
   type ResultadoDaCopia,
 } from './drive-do-cliente';
 import { planoDaPadronizacao, type EventoLido } from './padronizar-evento';
+import { tipoMimeValido } from './tipo-mime';
 import { EfeitosRegistry, type ContextoDoEfeito } from '../gateway/efeitos.registry';
 import { CofreService, SegredoIndisponivelError } from '../cofre/cofre.service';
 import { NOMES_CONHECIDOS } from '../cofre/segredo';
@@ -970,6 +971,8 @@ export class GoogleService implements OnModuleInit, DriveDoCliente {
         meet: e.hangoutLink ?? null,
         status: e.status ?? null,
         organizador: e.organizer?.email ?? null,
+        /** Quem organizou é a própria agenda lida? O Google só manda `self` quando é verdade. */
+        organizadorEhAgenda: e.organizer?.self === true,
         attendees: (e.attendees ?? []).map((a: any) => a.email).filter(Boolean),
       };
     });
@@ -1582,9 +1585,12 @@ export class GoogleService implements OnModuleInit, DriveDoCliente {
     this.exigirIdDoDrive(entrada.paiId, 'pasta');
     if (!nomeValidoNoDrive(entrada.nome)) throw new BadRequestException('Nome de arquivo inválido: sem barra, sem caractere de controle, até 200.');
     if (!entrada.conteudo.length) throw new BadRequestException('O arquivo está vazio.');
+    const mime = entrada.tipoMime || 'application/octet-stream';
+    // Vai literal a uma linha `Content-Type:` do multipart: só `tipo/subtipo` (ver `tipo-mime.ts`),
+    // conferido antes de qualquer pedido ao Drive.
+    if (!tipoMimeValido(mime)) throw new BadRequestException('Tipo do arquivo inválido: use tipo/subtipo, sem espaço nem quebra de linha.');
     const existentes = await this.filhosDaPasta(orgId, entrada.paiId);
     const nome = nomeSemColisao(entrada.nome, existentes.map((i) => i.nome));
-    const mime = entrada.tipoMime || 'application/octet-stream';
     const metadados = { name: nome, parents: [entrada.paiId] };
     const campos = encodeURIComponent(GoogleService.CAMPOS_DO_ITEM);
 
@@ -1642,6 +1648,7 @@ export class GoogleService implements OnModuleInit, DriveDoCliente {
    * PÔR UM EVENTO NO PADRÃO (capacidade `agenda.evento.padronizar`, R3). Lê o
    * evento, confere que o título de agora é o da proposta (`planoDaPadronizacao`)
    * e manda UM patch com título, descrição e, se pedido e faltando, o Meet.
+   * Evento organizado por OUTRA agenda (`organizer.self` não verdadeiro) é recusado.
    * `sendUpdates=none`: os convidados não recebem aviso de uma troca de título.
    * Horário e convidados não vão no corpo, então não mudam. Nada é apagado.
    */
@@ -1652,7 +1659,7 @@ export class GoogleService implements OnModuleInit, DriveDoCliente {
   ) {
     if (!/^[A-Za-z0-9_@.-]{3,1024}$/.test(pedido.eventoId)) throw new BadRequestException('Esse não é um id de evento da Agenda.');
     const base = `https://www.googleapis.com/calendar/v3/calendars/primary/events/${encodeURIComponent(pedido.eventoId)}`;
-    const evento = await this.api<EventoLido & { id: string; htmlLink?: string }>(orgId, `${base}?fields=${encodeURIComponent('id,summary,description,hangoutLink,conferenceData,status,htmlLink')}`);
+    const evento = await this.api<EventoLido & { id: string; htmlLink?: string }>(orgId, `${base}?fields=${encodeURIComponent('id,summary,description,hangoutLink,conferenceData,status,htmlLink,organizer')}`);
     const plano = planoDaPadronizacao(evento, pedido, `root-os-padrao-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`);
     if (plano.tipo === 'recusa') throw new BadRequestException(plano.motivo);
     if (plano.tipo === 'nada') return { ok: true, id: pedido.eventoId, mudou: false, motivo: plano.motivo };

@@ -24,7 +24,12 @@ import type { PrismaService } from '../src/prisma/prisma.service';
 import { ExecutoresDeRotinaRegistry } from '../src/routines/executores.registry';
 import { TIPO_AGENDA_VIGIA } from '../src/routines/rotina.tipos';
 import { ExecutorDoVigiaDaAgenda } from '../src/agenda/vigia-da-agenda.executor';
-import { SLUG_DA_ROTINA_DO_VIGIA, VigiaDaAgendaService } from '../src/agenda/vigia-da-agenda.service';
+import {
+  MOTIVO_DE_OUTRO_ORGANIZADOR,
+  RESUMO_FORA_DA_CASA,
+  SLUG_DA_ROTINA_DO_VIGIA,
+  VigiaDaAgendaService,
+} from '../src/agenda/vigia-da-agenda.service';
 import { CAPACIDADE_DE_PADRONIZAR, OPCAO_NAO_E_REUNIAO, type EventoLido } from '../src/agenda/vigia-da-agenda';
 import { exigirBancoDescartavel } from './banco-de-teste';
 
@@ -53,6 +58,8 @@ const ORG = `org-agenda-${MARCA}`;
 const CASA = `casa-${MARCA}.teste`;
 const PEDRO = { id: `pedro-${MARCA}`, papeis: ['gestor_marketing'] };
 const LUCAS = { id: `lucas-${MARCA}`, papeis: ['gestor_marketing'] };
+/** Gente da casa SEM `agenda.editar`. */
+const ANA = `ana-${MARCA}`;
 const ANDRADE = `andrade-${MARCA}.com.br`;
 const FIXTURES = join(__dirname, '..', '..', '..', 'homolog', 'fixtures', 'stub');
 
@@ -69,6 +76,7 @@ const ev = (id: string, over: Partial<EventoLido>): EventoLido => ({
   meet: null,
   status: 'confirmed',
   organizador: `root@${CASA}`,
+  organizadorEhAgenda: true,
   attendees: [],
   ...over,
 });
@@ -109,7 +117,15 @@ describe('o vigia da agenda (AG-01) acha, propõe pela porta e não repete', () 
     process.env.GATEWAY_MODO = 'impor';
     prisma = new PrismaClient({ datasources: { db: { url: URL } } });
     await prisma.org.create({ data: { id: ORG, name: `Agenda ${MARCA}`, slug: `agenda-${MARCA}` } });
-    const papel = await prisma.role.create({ data: { orgId: ORG, key: 'gestor_marketing', name: 'Gestor de Marketing' }, select: { id: true } });
+    // Responder a pendência da agenda exige `agenda.editar` (relida no banco).
+    const papel = await prisma.role.create({
+      data: { orgId: ORG, key: 'gestor_marketing', name: 'Gestor de Marketing', permissions: { connectOrCreate: [{ where: { key: 'agenda.editar' }, create: { key: 'agenda.editar' } }] } },
+      select: { id: true },
+    });
+    const semAgenda = await prisma.role.create({ data: { orgId: ORG, key: 'leitura', name: 'Só leitura' }, select: { id: true } });
+    await prisma.user.create({
+      data: { id: ANA, orgId: ORG, email: `ana@${CASA}`, name: 'Ana Teste', passwordHash: 'sem-senha-util', roles: { connect: { id: semAgenda.id } } },
+    });
     for (const [u, nome] of [[PEDRO, 'Pedro Teste'], [LUCAS, 'Lucas Teste']] as const) {
       await prisma.user.create({
         data: { id: u.id, orgId: ORG, email: `${nome.split(' ')[0].toLowerCase()}@${CASA}`, name: nome, passwordHash: 'sem-senha-util', roles: { connect: { id: papel.id } } },
@@ -204,6 +220,18 @@ describe('o vigia da agenda (AG-01) acha, propõe pela porta e não repete', () 
     const registro = new ExecutoresDeRotinaRegistry();
     new ExecutorDoVigiaDaAgenda(vigia, registro).onModuleInit();
     expect(registro.tem(TIPO_AGENDA_VIGIA)).toBe(true);
+  });
+
+  it('REVISÃO: fora da empresa da casa a rotina não é semeada e a passagem é pulada, sem ler nada', async () => {
+    // A empresa deste teste não é a da casa (o slug não é o da plataforma): a pergunta é a do banco, sem dublê.
+    const n = leituras.length;
+    await naEmpresa(() => vigia.listar(ORG, DIA_UTIL));
+    expect(await prisma.rotina.count({ where: { orgId: ORG, slug: SLUG_DA_ROTINA_DO_VIGIA } })).toBe(0);
+    const r = await naEmpresa(() => vigia.passagem(ORG, DIA_UTIL));
+    expect(r).toEqual({ status: 'pulada', resumo: RESUMO_FORA_DA_CASA });
+    expect(leituras.length).toBe(n);
+    // Daqui em diante a empresa do teste FAZ O PAPEL da casa (o slug da plataforma é único no banco e outras suítes o usam).
+    vi.spyOn(vigia as unknown as { ehDaCasa: (o: string) => Promise<boolean> }, 'ehDaCasa').mockImplementation(async (o) => o === ORG);
   });
 
   it('primeira passada: acha os fora do padrão, conserta pela gramática, propõe pelo modelo e a porta RETÉM (R3)', async () => {
@@ -314,7 +342,7 @@ describe('o vigia da agenda (AG-01) acha, propõe pela porta e não repete', () 
     expect((await conferencia('ev_modelo')).estado).toBe('resolvido');
   });
 
-  it('a tela: selo e lista com a proposta de cada uma; a rotina nasce ligada, em aprendendo', async () => {
+  it('a tela: selo e lista com a proposta de cada uma; a rotina nasce DESLIGADA, em planejado', async () => {
     const r = await naEmpresa(() => vigia.listar(ORG, DIA_UTIL));
     expect(r.total).toBe(3);
     const porId = new Map(r.itens.map((i) => [i.eventoId, i]));
@@ -332,8 +360,8 @@ describe('o vigia da agenda (AG-01) acha, propõe pela porta e não repete', () 
     expect(inventa.pendencia!.opcoes.find((o) => o.chave === OPCAO_NAO_E_REUNIAO)).not.toHaveProperty('pedeNome');
 
     const rotina = await prisma.rotina.findUniqueOrThrow({ where: { orgId_slug: { orgId: ORG, slug: SLUG_DA_ROTINA_DO_VIGIA } } });
-    expect(rotina).toMatchObject({ tipo: 'agenda.vigia', cron: '*/15 * * * *', ativo: true, estado: 'aprendendo' });
-    expect(r.rotina).toMatchObject({ ativa: true, estado: 'aprendendo', dispara: true });
+    expect(rotina).toMatchObject({ tipo: 'agenda.vigia', cron: '*/15 * * * *', ativo: false, estado: 'planejado' });
+    expect(r.rotina).toMatchObject({ ativa: false, estado: 'planejado', dispara: false });
   });
 
   it('"aprovar aqui": com a aprovação do vigia viva, devolve a mesma; vencida, a pessoa propõe e espera OUTRA pessoa', async () => {
@@ -360,6 +388,11 @@ describe('o vigia da agenda (AG-01) acha, propõe pela porta e não repete', () 
     const opcoes = p.opcoes as Array<{ chave: string; rotulo: string }>;
     const outro = opcoes.find((o) => o.rotulo.startsWith('Outro cliente · Pedro'))!;
     expect(outro).toBeTruthy();
+
+    // REVISÃO: quem não tem `agenda.editar` ouve 403 e a pendência não muda.
+    await expect(naEmpresa(() => pendencias.responder(ORG, p.id, ANA, outro.chave, 'Fornecedor Novo'))).rejects.toMatchObject({ status: 403 });
+    await expect(naEmpresa(() => pendencias.descartar(ORG, p.id, ANA))).rejects.toMatchObject({ status: 403 });
+    expect((await prisma.pendencia.findUniqueOrThrow({ where: { id: p.id } })).estado).toBe('aberta');
 
     // Sem o nome no complemento, a pendência continua aberta.
     await expect(naEmpresa(() => pendencias.responder(ORG, p.id, LUCAS.id, outro.chave))).rejects.toThrow(/nome do cliente/);
@@ -430,6 +463,27 @@ describe('o vigia da agenda (AG-01) acha, propõe pela porta e não repete', () 
     expect(r).toMatchObject({ status: 'pulada' });
     expect(r.resumo).toMatch(/não conectado/);
     expect(leituras.length).toBe(n);
+  });
+
+  it('REVISÃO: convite de outra agenda não ganha proposta nem pendência; o motivo fica na conferência, uma vez', async () => {
+    agenda = [
+      ...agenda,
+      ev('ev_convite', { title: 'Call com o pessoal da Andrade', organizador: `joao@${ANDRADE}`, organizadorEhAgenda: false, attendees: [`root@${CASA}`, `joao@${ANDRADE}`] }),
+    ];
+    const antesModelo = chamadasDoModelo.length;
+    const aprovacoes = await prisma.approval.count({ where: { orgId: ORG } });
+    const pendenciasAntes = await prisma.pendencia.count({ where: { orgId: ORG } });
+    const r = await naEmpresa(() => vigia.passagem(ORG, DIA_UTIL));
+    expect(r.resumo).toMatch(/1 organizada\(s\) por outra agenda/);
+    expect(chamadasDoModelo.length).toBe(antesModelo);
+    expect(await prisma.approval.count({ where: { orgId: ORG } })).toBe(aprovacoes);
+    expect(await prisma.pendencia.count({ where: { orgId: ORG } })).toBe(pendenciasAntes);
+    const linha = await conferencia('ev_convite');
+    expect(linha).toMatchObject({ estado: 'resolvido', motivo: MOTIVO_DE_OUTRO_ORGANIZADOR, tituloProposto: null, approvalId: null, pendenciaId: null });
+    // A passada seguinte não regrava (o motivo já está lá).
+    await naEmpresa(() => vigia.passagem(ORG, new Date(DIA_UTIL.getTime() + 15 * 60_000)));
+    expect((await conferencia('ev_convite')).atualizadoEm).toEqual(linha.atualizadoEm);
+    agenda = agenda.filter((e) => e.id !== 'ev_convite');
   });
 
   it('o evento que saiu da agenda fecha a conferência e a pendência aberta (pelo vigia, sem decidir por ninguém)', async () => {

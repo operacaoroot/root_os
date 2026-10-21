@@ -34,6 +34,7 @@ import { proximaOcorrencia } from '../pauta/cron';
 import { PrismaService } from '../prisma/prisma.service';
 import { foraDaJanela, minutosNoFuso } from '../policy/limites';
 import { PolicyService } from '../policy/policy.service';
+import { ehEmpresaDaCasa } from '../tenants/empresa-da-casa';
 import type { ResultadoDaRotina } from '../routines/rotina.tipos';
 import { TIPO_AGENDA_VIGIA } from '../routines/rotina.tipos';
 import {
@@ -87,6 +88,16 @@ import {
  *      montadas pela gramática. A resposta manda pela mesma porta, agora em
  *      nome de quem respondeu (aí sim, outra pessoa confirma).
  *
+ * SÓ NA EMPRESA DA CASA, E NASCE DESLIGADA (revisão adversarial de 21/10/2026):
+ * a agenda que ele lê é a da conta Google da casa (o mesmo critério do
+ * `ObsidianService.exigirEmpresaDaCasa`, em `tenants/empresa-da-casa.ts`); em
+ * outra empresa a rotina não é semeada e a passagem é `pulada`. Semeada, ela
+ * nasce `ativo: false`, `planejado`: quem liga é gente, em /rotinas.
+ *
+ * SÓ O QUE A PRÓPRIA AGENDA ORGANIZOU: convite de outra pessoa
+ * (`organizer.self` não verdadeiro) fica de fora, com o motivo gravado na
+ * conferência, sem proposta e sem pendência. O efeito recusa o mesmo.
+ *
  * O QUE O VIGIA NUNCA FAZ: apagar evento, mudar horário ou convidados. Os
  * argumentos que ele manda são os do catálogo — `{eventoId, tituloAtual,
  * tituloNovo, adicionarMeet}` — e o efeito (no conector do Google) só troca o
@@ -105,6 +116,11 @@ export const CRON_DO_VIGIA = '*/15 * * * *';
 export const FUSO_DO_VIGIA = 'America/Sao_Paulo';
 const LIVRE = new Date(0);
 const ABERTOS = ['proposta', 'pendencia'] as const;
+
+/** O motivo gravado na conferência do evento que outra agenda organizou. */
+export const MOTIVO_DE_OUTRO_ORGANIZADOR = 'quem organizou o evento não é esta agenda (convite de outra pessoa): o vigia não propõe mudar';
+/** A passagem fora da empresa da casa. */
+export const RESUMO_FORA_DA_CASA = 'O vigia da agenda só roda na empresa da casa: nada foi lido.';
 
 /** Provedores de e-mail de pessoa: domínio deles não liga convidado a cliente nenhum. */
 const DOMINIOS_PUBLICOS = new Set([
@@ -163,22 +179,33 @@ export class VigiaDaAgendaService implements OnModuleInit {
     }
   }
 
+  /** A empresa é a da casa? A mesma pergunta do `ObsidianService.exigirEmpresaDaCasa`. */
+  protected ehDaCasa(orgId: string): Promise<boolean> {
+    return ehEmpresaDaCasa(this.prisma, orgId);
+  }
+
   onModuleInit(): void {
-    this.registroDePendencias.aoResponder(TIPO_DA_PENDENCIA_DA_AGENDA, (r) => this.aoResponder(r), 'VigiaDaAgendaService');
+    // A resposta propõe a correção pela porta: exige o mesmo `agenda.editar` da rota de padronizar.
+    this.registroDePendencias.aoResponder(TIPO_DA_PENDENCIA_DA_AGENDA, (r) => this.aoResponder(r), 'VigiaDaAgendaService', {
+      permissao: 'agenda.editar',
+    });
   }
 
   // ------------------------------------------------------------------ rotina
 
   /**
    * Semeia a rotina do vigia nesta empresa (idempotente; uma vez por processo e
-   * empresa; nunca lança). Nasce LIGADA, em `aprendendo` — ver docs/AGENDA.md,
-   * "O vigia": ela só lê e propõe, toda escrita fica retida pela régua, a
-   * deduplicação e os tetos por passagem impedem a fila de encher, e a empresa
-   * sem Google conectado só registra `pulada` (que nem vira linha de histórico).
+   * empresa; nunca lança). SÓ NA EMPRESA DA CASA, e nasce DESLIGADA
+   * (`ativo: false`, `planejado`), como as outras rotinas da casa que escrevem
+   * fora do OS: quem liga é gente, em /rotinas — ver docs/AGENDA.md, "O vigia".
+   * Até a revisão adversarial de 21/10/2026 ela nascia ligada e em qualquer
+   * empresa que abrisse a tela `/agenda`.
    */
   async garantirRotina(orgId: string): Promise<void> {
     if (!orgId || this.semeadas.has(orgId)) return;
     try {
+      // Fora da casa não semeia (e não guarda o "não": a resposta é do banco, a cada vez).
+      if (!(await this.ehDaCasa(orgId))) return;
       await this.prisma.rotina.upsert({
         where: { orgId_slug: { orgId, slug: SLUG_DA_ROTINA_DO_VIGIA } },
         create: {
@@ -189,8 +216,8 @@ export class VigiaDaAgendaService implements OnModuleInit {
           config: {} as Prisma.InputJsonValue,
           cron: CRON_DO_VIGIA,
           tz: FUSO_DO_VIGIA,
-          ativo: true,
-          estado: AgentEstado.aprendendo,
+          ativo: false,
+          estado: AgentEstado.planejado,
           origem: 'manual',
           refExterna: null,
           agenteSlug: null,
@@ -209,6 +236,7 @@ export class VigiaDaAgendaService implements OnModuleInit {
   /** Uma passagem do vigia. Ver o cabeçalho. */
   async passagem(orgIdBruto: string, agora: Date = new Date()): Promise<ResultadoDaRotina> {
     const orgId = exigirTenant(orgIdBruto, 'VigiaDaAgendaService.passagem');
+    if (!(await this.ehDaCasa(orgId))) return { status: 'pulada', resumo: RESUMO_FORA_DA_CASA };
 
     const recusa = await this.interruptores.consultar({
       orgId,
@@ -248,7 +276,7 @@ export class VigiaDaAgendaService implements OnModuleInit {
     );
 
     const conta = {
-      reunioes: 0, foraDoPadrao: 0, propostas: 0, pendencias: 0, resolvidos: 0, repetidos: 0, adiados: 0, falhas: 0, naoEReuniao: 0, esperamJanela: 0,
+      reunioes: 0, foraDoPadrao: 0, propostas: 0, pendencias: 0, resolvidos: 0, repetidos: 0, adiados: 0, falhas: 0, naoEReuniao: 0, esperamJanela: 0, deOutroOrganizador: 0,
     };
     let chamadasDeModelo = 0;
     let propostasNaPorta = 0;
@@ -289,6 +317,15 @@ export class VigiaDaAgendaService implements OnModuleInit {
       conta.foraDoPadrao++;
       if (linha?.estado === 'nao_e_reuniao') {
         conta.naoEReuniao++;
+        continue;
+      }
+      // CONVITE DE OUTRA PESSOA: o vigia não propõe nem pergunta. O motivo fica
+      // na conferência (uma vez), e o que estava aberto para ele é fechado.
+      if (e.organizadorEhAgenda !== true) {
+        conta.deOutroOrganizador++;
+        if (!linha || linha.estado !== 'resolvido' || linha.motivo !== MOTIVO_DE_OUTRO_ORGANIZADOR) {
+          await this.registrarDeOutroOrganizador(orgId, e, conf.problemas, linha);
+        }
         continue;
       }
 
@@ -393,6 +430,7 @@ export class VigiaDaAgendaService implements OnModuleInit {
       `${conta.propostas} proposta(s), ${conta.pendencias} pendência(s), ${conta.resolvidos} resolvida(s), ` +
       `${conta.repetidos} já vista(s)` +
       (conta.naoEReuniao ? `, ${conta.naoEReuniao} marcada(s) como "não é reunião"` : '') +
+      (conta.deOutroOrganizador ? `, ${conta.deOutroOrganizador} organizada(s) por outra agenda (sem proposta)` : '') +
       (conta.adiados ? `, ${conta.adiados} para a próxima passagem (teto do modelo)` : '') +
       (conta.falhas ? `, ${conta.falhas} sem resposta do modelo` : '') +
       (conta.esperamJanela ? `, ${conta.esperamJanela} esperando a janela da política para ir à fila` : '') +
@@ -704,6 +742,34 @@ export class VigiaDaAgendaService implements OnModuleInit {
       create: { orgId, eventoId: e.id, ...campos },
       update: campos,
     });
+  }
+
+  /** O evento que outra agenda organizou: a conferência fica `resolvido` com o motivo, sem proposta nem pendência. */
+  private async registrarDeOutroOrganizador(
+    orgId: string,
+    e: EventoLido,
+    problemas: ProblemaDoPadrao[],
+    linha: AgendaConferencia | undefined,
+  ): Promise<void> {
+    const campos = {
+      tituloLido: String(e.title ?? ''),
+      assinatura: assinaturaDoEvento(e),
+      inicio: inicioDoEvento(e),
+      estado: 'resolvido',
+      problemas: problemas as unknown as Prisma.InputJsonValue,
+      tituloProposto: null,
+      adicionarMeet: false,
+      origem: null,
+      motivo: MOTIVO_DE_OUTRO_ORGANIZADOR,
+      approvalId: null,
+      pendenciaId: null,
+    };
+    await this.prisma.agendaConferencia.upsert({
+      where: { orgId_eventoId: { orgId, eventoId: e.id } },
+      create: { orgId, eventoId: e.id, ...campos },
+      update: campos,
+    });
+    if (linha?.pendenciaId) await this.fecharPendencia(orgId, linha.pendenciaId, MOTIVO_DE_OUTRO_ORGANIZADOR);
   }
 
   private async resolver(orgId: string, linha: AgendaConferencia, motivo: string): Promise<void> {

@@ -96,6 +96,8 @@ describe.skipIf(!URL)('a Equipe e o catálogo, com banco', () => {
     await prisma.rotina.deleteMany({ where: { orgId: orgs } });
     await prisma.gastoDeIaPorFuncao.deleteMany({ where: { orgId: orgs } });
     await prisma.channelIdentity.deleteMany({ where: { orgId: orgs } });
+    await prisma.lead.deleteMany({ where: { orgId: orgs } });
+    await prisma.partner.deleteMany({ where: { orgId: orgs } });
     await prisma.donoDaFuncao.deleteMany({ where: { orgId: orgs } });
     await prisma.agent.deleteMany({ where: { orgId: orgs } });
     await prisma.auditLog.deleteMany({ where: { orgId: orgs } });
@@ -242,6 +244,18 @@ describe.skipIf(!URL)('a Equipe e o catálogo, com banco', () => {
       await equipe.cadastrarWhatsapp(A, PED, PED, null);
       expect(await reconhece('5532999990001')).toBeNull();
       expect(await prisma.channelIdentity.count({ where: { orgId: A, externalId: '5532999990001' } })).toBe(1);
+    });
+
+    it('REVISÃO: número que é telefone de lead ou de cliente da empresa é recusado (só pelos dígitos); o de outra empresa não conta', async () => {
+      await prisma.lead.create({ data: { orgId: A, name: 'Lead Fictício', phone: '(32) 98888-7001' } });
+      await prisma.partner.create({ data: { orgId: A, razaoSocial: 'Cliente Fictício Ltda', isCliente: true, phone: '+55 32 3333-7002' } });
+      await prisma.lead.create({ data: { orgId: B, name: 'Lead da Outra', phone: '32 98888-7003' } });
+      await expect(equipe.cadastrarWhatsapp(A, LUC, LUC, '+55 (32) 98888-7001')).rejects.toThrow(/lead ou de um cliente/);
+      await expect(equipe.cadastrarWhatsapp(A, LUC, LUC, '3233337002')).rejects.toThrow(/lead ou de um cliente/);
+      expect(await prisma.channelIdentity.count({ where: { orgId: A, externalId: { in: ['5532988887001', '553233337002'] } } })).toBe(0);
+      const r = await equipe.cadastrarWhatsapp(A, LUC, LUC, '32 98888-7003');
+      expect(r.cadastrado).toBe(true);
+      await equipe.cadastrarWhatsapp(A, LUC, LUC, '32 99999-0002');
     });
 
     it('conta de outra empresa não é alcançada', async () => {

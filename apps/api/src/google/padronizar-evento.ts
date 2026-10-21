@@ -13,12 +13,18 @@ import { lerTituloDeReuniao } from '@mktos/shared';
 
 export const PREFIXO_DO_TITULO_ORIGINAL = 'Título original: ';
 
+/** O evento foi organizado por outra agenda (um convite): nada é mudado nele. */
+export const FRASE_DE_OUTRO_ORGANIZADOR =
+  'quem organizou o evento não é esta agenda (é um convite de outra pessoa): nada foi alterado.';
+
 export interface EventoLido {
   summary?: string | null;
   description?: string | null;
   hangoutLink?: string | null;
   conferenceData?: { entryPoints?: Array<{ entryPointType?: string; uri?: string }> } | null;
   status?: string | null;
+  /** `organizer.self` é `true` só quando quem organizou é a própria agenda lida (o Google omite o falso). */
+  organizer?: { email?: string | null; self?: boolean | null } | null;
 }
 
 export interface PedidoDePadronizacao {
@@ -43,10 +49,16 @@ export function eventoTemMeet(e: EventoLido): boolean {
 /**
  * O que mandar ao Google. Recusa quando o título de AGORA não é o que a
  * aprovação viu (alguém mudou o evento depois da proposta), quando o título
- * novo não está no padrão da casa, e quando o evento foi cancelado.
+ * novo não está no padrão da casa, quando o evento foi cancelado e quando quem
+ * ORGANIZOU o evento não é a própria agenda (revisão adversarial de 21/10/2026):
+ * evento de outro organizador é convite; mudar o título da cópia da casa não é
+ * mudar a reunião de quem convidou, e a régua não assinou mexer nele.
  */
 export function planoDaPadronizacao(evento: EventoLido, pedido: PedidoDePadronizacao, requestId: string): PlanoDaPadronizacao {
   if (evento.status === 'cancelled') return { tipo: 'recusa', motivo: 'o evento foi cancelado na Agenda.' };
+  if (evento.organizer?.self !== true) {
+    return { tipo: 'recusa', motivo: FRASE_DE_OUTRO_ORGANIZADOR };
+  }
   const atual = limpa(evento.summary);
   if (atual !== limpa(pedido.tituloAtual)) {
     return {
