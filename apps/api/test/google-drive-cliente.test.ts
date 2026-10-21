@@ -73,7 +73,15 @@ async function fetchFalso(entrada: string | URL | Request, init: RequestInit = {
     const id = decodeURIComponent(ev[1]);
     const e = eventos[id];
     if (!e) return resposta(404, { error: 'not found' });
-    if (metodo === 'GET') return resposta(200, { id, ...e });
+    if (metodo === 'GET') {
+      // Como o Google: com `fields`, só volta o que foi pedido (o organizador inclusive).
+      const campos = u.searchParams.get('fields');
+      if (campos && !campos.split(',').includes('organizer')) {
+        const { organizer: _fora, ...semOrganizador } = e;
+        return resposta(200, { id, ...semOrganizador });
+      }
+      return resposta(200, { id, ...e });
+    }
     if (metodo === 'PATCH') {
       const patch = corpo as Record<string, unknown>;
       Object.assign(e, patch);
@@ -272,6 +280,8 @@ describe('agenda.evento.padronizar pelo conector (dublê de HTTP)', () => {
   const comeco = { dateTime: '2026-10-22T14:00:00-03:00' };
   const fim = { dateTime: '2026-10-22T15:00:00-03:00' };
   const convidados = [{ email: 'cliente@exemplo.invalid' }];
+  /** Quem organizou é a própria agenda (o Google manda `self: true`). */
+  const DA_AGENDA = { email: 'casa@exemplo.invalid', self: true };
 
   it('o efeito está inscrito no registro pelo conector', () => {
     expect(efeitos.donoDe('agenda.evento.padronizar')).toBe('GoogleService');
@@ -281,7 +291,7 @@ describe('agenda.evento.padronizar pelo conector (dublê de HTTP)', () => {
   });
 
   it('troca só o título, escreve "Título original" na primeira linha e pede o Meet; horário e convidados não vão no patch', async () => {
-    eventos.ev123 = { summary: 'call com padaria', description: 'pauta: preços', start: comeco, end: fim, attendees: convidados, status: 'confirmed' };
+    eventos.ev123 = { summary: 'call com padaria', description: 'pauta: preços', start: comeco, end: fim, attendees: convidados, status: 'confirmed', organizer: DA_AGENDA };
     const r = (await efeitos.executar(
       'agenda.evento.padronizar',
       { eventoId: 'ev123', tituloAtual: 'call com padaria', tituloNovo: 'Reunião Online - Padaria Exemplo - Rodrigo', adicionarMeet: true },
@@ -304,7 +314,7 @@ describe('agenda.evento.padronizar pelo conector (dublê de HTTP)', () => {
   });
 
   it('não pede Meet quando o evento já tem sala, nem quando adicionarMeet é falso', async () => {
-    eventos.ev2 = { summary: 'kickoff', hangoutLink: 'https://meet.invalid/ja', start: comeco, end: fim };
+    eventos.ev2 = { summary: 'kickoff', hangoutLink: 'https://meet.invalid/ja', start: comeco, end: fim, organizer: DA_AGENDA };
     await google.padronizarEvento(ORG, { eventoId: 'ev2', tituloAtual: 'kickoff', tituloNovo: 'Reunião Online - Padaria Exemplo - Lucas', adicionarMeet: true });
     const corpo = pedidos.find((p) => p.metodo === 'PATCH')!.corpo as Record<string, unknown>;
     expect(corpo.conferenceData).toBeUndefined();
@@ -312,7 +322,7 @@ describe('agenda.evento.padronizar pelo conector (dublê de HTTP)', () => {
   });
 
   it('recusa quando o título de agora não é o que a aprovação viu: nada é escrito', async () => {
-    eventos.ev3 = { summary: 'título mudado por alguém', start: comeco, end: fim };
+    eventos.ev3 = { summary: 'título mudado por alguém', start: comeco, end: fim, organizer: DA_AGENDA };
     await expect(
       google.padronizarEvento(ORG, { eventoId: 'ev3', tituloAtual: 'título antigo', tituloNovo: 'Reunião Online - Padaria Exemplo - Pedro', adicionarMeet: false }),
     ).rejects.toThrow(/título do evento mudou/);
@@ -321,12 +331,28 @@ describe('agenda.evento.padronizar pelo conector (dublê de HTTP)', () => {
   });
 
   it('recusa título novo fora do padrão da casa', () => {
-    const p = planoDaPadronizacao({ summary: 'x' }, { tituloAtual: 'x', tituloNovo: 'Conversa qualquer', adicionarMeet: false }, 'r');
-    expect(p.tipo).toBe('recusa');
+    const p = planoDaPadronizacao({ summary: 'x', organizer: DA_AGENDA }, { tituloAtual: 'x', tituloNovo: 'Conversa qualquer', adicionarMeet: false }, 'r');
+    expect(p).toMatchObject({ tipo: 'recusa', motivo: expect.stringMatching(/padrão da casa/) });
+  });
+
+  it('REVISÃO: evento organizado por OUTRA agenda (convite) é recusado; o GET pede o organizador; nada é escrito', async () => {
+    eventos.ev5 = { summary: 'call com padaria', start: comeco, end: fim, attendees: convidados, organizer: { email: 'outra-pessoa@exemplo.invalid' } };
+    await expect(
+      google.padronizarEvento(ORG, { eventoId: 'ev5', tituloAtual: 'call com padaria', tituloNovo: 'Reunião Online - Padaria Exemplo - Pedro', adicionarMeet: true }),
+    ).rejects.toThrow(/convite de outra pessoa/);
+    expect(pedidos.some((p) => p.metodo === 'PATCH')).toBe(false);
+    const get = pedidos.find((p) => p.metodo === 'GET' && p.url.includes('/events/ev5'))!;
+    expect(new URL(get.url).searchParams.get('fields')!.split(',')).toContain('organizer');
+    expect(eventos.ev5.summary).toBe('call com padaria');
+    // `self: false` explícito e organizador ausente também recusam: só `true` conta.
+    for (const organizer of [{ email: 'x@exemplo.invalid', self: false }, undefined]) {
+      const p = planoDaPadronizacao({ summary: 'a', organizer }, { tituloAtual: 'a', tituloNovo: 'Reunião Online - Padaria Exemplo - Pedro', adicionarMeet: false }, 'r');
+      expect(p.tipo).toBe('recusa');
+    }
   });
 
   it('evento já no padrão e com sala: nada a fazer, nada é enviado', async () => {
-    eventos.ev4 = { summary: 'Reunião Online - Padaria Exemplo - Pedro', hangoutLink: 'https://meet.invalid/x' };
+    eventos.ev4 = { summary: 'Reunião Online - Padaria Exemplo - Pedro', hangoutLink: 'https://meet.invalid/x', organizer: DA_AGENDA };
     const r = await google.padronizarEvento(ORG, { eventoId: 'ev4', tituloAtual: 'Reunião Online - Padaria Exemplo - Pedro', tituloNovo: 'Reunião Online - Padaria Exemplo - Pedro', adicionarMeet: true });
     expect(r.mudou).toBe(false);
     expect(pedidos.some((p) => p.metodo === 'PATCH')).toBe(false);

@@ -46,6 +46,7 @@ import { MedidorDeGastoExterno, tokensDaRespostaDeEmbedding as tokensDaResposta 
 import { RecusaDeCustoDeIaError } from '../llm/recusa-de-custo';
 import { TIPO_CASA_VAULT, inscreverTarefaDaCasa, registrarPassagemDeFundo } from '../routines/rotinas-da-casa';
 import type { ResultadoDaRotina } from '../routines/rotina.tipos';
+import { ehEmpresaDaCasa } from '../tenants/empresa-da-casa';
 import {
   FalhaDeEmbedding,
   PRAZO_DA_BUSCA_MS,
@@ -1163,11 +1164,8 @@ export class ObsidianService implements OnModuleInit {
 
   /** A empresa é a da casa? Mesma consulta da guarda: a própria linha ou nada. */
   private async ehDaCasa(orgId: string): Promise<boolean> {
-    const daCasa = await this.prisma.org.findFirst({
-      where: { id: orgId, slug: SLUG_DA_CASA },
-      select: { id: true },
-    });
-    return Boolean(daCasa);
+    // A mesma pergunta do vigia da agenda: `tenants/empresa-da-casa.ts`.
+    return ehEmpresaDaCasa(this.prisma, orgId);
   }
 
   /**

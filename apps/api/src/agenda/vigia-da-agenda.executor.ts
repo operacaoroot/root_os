@@ -9,10 +9,11 @@ import { VigiaDaAgendaService } from './vigia-da-agenda.service';
  * O EXECUTOR DO VIGIA DA AGENDA (AG-01) — a rotina `agenda.vigia`, a cada 15
  * minutos (`*\/15 * * * *`, São Paulo).
  *
- * Semeado por empresa na primeira leitura de `GET /agenda/fora-do-padrao` (a
- * tela `/agenda`), LIGADO e em `aprendendo`. A passagem é do serviço
- * (`VigiaDaAgendaService.passagem`): sem Google conectado, ou com o Google
- * Agenda desligado em Conexões, ela é `pulada` e não vira linha de histórico.
+ * Semeado só na empresa da casa, na primeira leitura de `GET /agenda/fora-do-padrao`
+ * (a tela `/agenda`), DESLIGADO (`ativo: false`, `planejado`): quem liga é gente,
+ * em /rotinas. A passagem é do serviço (`VigiaDaAgendaService.passagem`): fora
+ * da empresa da casa, sem Google conectado, ou com o Google Agenda desligado em
+ * Conexões, ela é `pulada` e não vira linha de histórico.
  */
 @Injectable()
 export class ExecutorDoVigiaDaAgenda implements OnModuleInit {

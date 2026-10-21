@@ -105,18 +105,32 @@ regra em `packages/shared/src/agenda.ts`, linha `AG-01` do cadastro
 ### A rotina
 
 - Tipo **`agenda.vigia`**, slug `vigia-da-agenda`, cron `*/15 * * * *` em São
-  Paulo. Nasce por empresa na primeira vez que alguém abre `/agenda` (a lista
-  `GET /agenda/fora-do-padrao` semeia a rotina).
-- **Nasce LIGADA, em `aprendendo`** (dispara e fica marcada como sob
-  observação em `/rotinas`). Por quê: ela só LÊ (R0) e PROPÕE; toda escrita é
-  R3 e fica retida na fila; a deduplicação impede repetir proposta; e há teto
-  por passagem (10 chamadas de modelo, 10 propostas à porta), então a primeira
-  passagem numa agenda bagunçada não enche a fila de uma vez. A passagem sem
-  nada novo é `pulada` e nem vira linha de histórico.
+  Paulo. Nasce **só na empresa da casa** (slug da plataforma, `root`: a mesma
+  pergunta do `ObsidianService.exigirEmpresaDaCasa`, em
+  `apps/api/src/tenants/empresa-da-casa.ts`), na primeira vez que alguém abre
+  `/agenda` (a lista `GET /agenda/fora-do-padrao` semeia a rotina). Em outra
+  empresa a rotina não é semeada e a passagem, se chamada, é `pulada` sem ler
+  nada: a agenda que o vigia confere é a da conta Google da casa.
+- **Nasce DESLIGADA** (`ativo: false`, `planejado`), como as outras rotinas da
+  casa que escrevem fora do OS (o cobrador de tarefas, a coleta da pauta):
+  quem liga é gente, em `/rotinas`. Até a revisão adversarial de 21/10/2026 ela
+  nascia ligada, em `aprendendo`, e em qualquer empresa que abrisse `/agenda`.
+  Ligada, ela só LÊ (R0) e PROPÕE; toda escrita é R3 e fica retida na fila; a
+  deduplicação impede repetir proposta; e há teto por passagem (10 chamadas de
+  modelo, 10 propostas à porta), então a primeira passagem numa agenda
+  bagunçada não enche a fila de uma vez. A passagem sem nada novo é `pulada` e
+  nem vira linha de histórico.
+- **Só o que a própria agenda organizou.** Evento cujo organizador não é a
+  agenda lida (`organizer.self` do Google não verdadeiro: um convite de outra
+  pessoa) não ganha proposta nem pendência: a conferência fica `resolvido` com
+  o motivo "quem organizou o evento não é esta agenda", gravado uma vez. O
+  efeito de `agenda.evento.padronizar` pede `organizer` no GET e recusa o mesmo
+  caso, mesmo que alguém monte o pedido à mão.
 - **Só age na empresa com Google conectado**, e pergunta isso ao conector, não
   à variável: primeiro o interruptor do Google Agenda (`gcal`, em Conexões),
   depois a sonda do contrato de conector do Google. Desligado ou não
   conectado: `pulada`, nada é lido.
+- Ligar: em `/rotinas`, a rotina "Vigia da agenda (AG-01)" da empresa da casa.
 - Desligar: pausar a rotina em `/rotinas`, ou desligar o Google Agenda em
   Conexões (cala a leitura e a escrita), ou `ROTINAS_CRON=off` (cala todas).
 

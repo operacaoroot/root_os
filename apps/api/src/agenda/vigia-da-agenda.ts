@@ -97,6 +97,12 @@ export interface EventoLido {
   meet: string | null;
   status: string | null;
   organizador: string | null;
+  /**
+   * Quem organizou é a PRÓPRIA agenda lida (`organizer.self` do Google)? Só
+   * `true` conta: convite de outra pessoa (falso ou ausente) o vigia não propõe
+   * mudar (revisão adversarial de 21/10/2026).
+   */
+  organizadorEhAgenda?: boolean;
   attendees: string[];
 }
 

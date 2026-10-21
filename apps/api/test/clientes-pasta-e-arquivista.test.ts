@@ -376,7 +376,12 @@ describe.skipIf(!URL)('TR-04 e TR-05 contra o banco, pela porta', { timeout: 60_
   });
 
   it('agenda.evento.padronizar: R3 retém; com a Agenda desligada a porta recusa; confirmado, só título, descrição e Meet', async () => {
-    eventosDaAgenda.evA4 = { summary: 'call padaria', start: { dateTime: '2026-10-22T14:00:00-03:00' }, attendees: [{ email: 'x@exemplo.invalid' }] };
+    eventosDaAgenda.evA4 = {
+      summary: 'call padaria',
+      start: { dateTime: '2026-10-22T14:00:00-03:00' },
+      attendees: [{ email: 'x@exemplo.invalid' }],
+      organizer: { email: 'casa@a4.teste', self: true },
+    };
     const args = { eventoId: 'evA4', tituloAtual: 'call padaria', tituloNovo: 'Reunião Online - Padaria Exemplo - Rodrigo', adicionarMeet: true };
     await na(() => conectores.desligar(ORG, 'gcal', { motivo: 'teste', actorId: PEDRO.id }));
     await expect(na(() => porta.executar({ orgId: ORG, actorId: PEDRO.id, capabilityId: 'agenda.evento.padronizar', args, resource: { type: 'evento', id: 'evA4' } }))).rejects.toThrow();
