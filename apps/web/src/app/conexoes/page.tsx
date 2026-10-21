@@ -1,10 +1,9 @@
 'use client';
 
 import { useAuth } from '@/lib/auth';
-import { CatalogoDeclarativo } from './CatalogoDeclarativo';
-import { ConexaoGranola } from './ConexaoGranola';
-// Produção 21 (P8): o WhatsApp do comercial pela Evolution. O cartão do DigiSac saiu da tela; o código fica.
-import { ConexaoEvolution } from './ConexaoEvolution';
+// Rodada dos agentes (21/10/2026, A6): todo conector num cartão só (`CartaoDeConexao`). O conteúdo próprio
+// da Evolution (Produção 21, P8) e do Granola entra como filho do cartão deles, dentro do catálogo.
+import { CatalogoDeConexoes } from './CatalogoDeConexoes';
 
 export default function IntegracoesPage() {
   const { token, user, ready, can } = useAuth();
@@ -15,14 +14,8 @@ export default function IntegracoesPage() {
   }
   return (
     <div className="space-y-5">
-      <ConexaoGranola key={`granola-${user.id}`} token={token} gerenciar={can('admin.usuarios')} />
-      <ConexaoEvolution key={`evolution-${user.id}`} token={token} gerenciar={can('admin.usuarios')} />
-      <CatalogoDeclarativo
-        key={JSON.stringify([user.id, token])}
-        token={token}
-        pessoaId={user.id}
-        podeSincronizarTarefas={can('tarefas.editar')}
-      />
+      <a href="/marketing/preparacao" className="text-sm text-brand underline">Dono e operadores das contas de Marketing</a>
+      <CatalogoDeConexoes key={`${user.id}-${token}`} token={token} pessoaId={user.id} podeGerenciar={can('admin.usuarios')} />
     </div>
   );
 }

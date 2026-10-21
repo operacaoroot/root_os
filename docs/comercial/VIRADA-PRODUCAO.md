@@ -380,11 +380,8 @@ Compare feito entre o `docker-compose.yml` e o `.env.example` da nossa branch e 
 | `ZAPSIGN_WEBHOOK_TOKEN` | segredo do cabeçalho `x-zapsign-token` do webhook da ZapSign; diferente do anterior | gerar na VPS, 32+ caracteres |
 | `ZAPSIGN_API_TOKEN` | token da API da conta ZapSign da Root; sem ele o contrato não é enviado | vazio até a conta existir |
 | `ZAPSIGN_BASE_URL` | força a base da ZapSign (sandbox ou produção) | vazio |
-| `WHATSAPP_PROVEDOR` | provedor de WhatsApp do comercial: `simulado`, `evolution`, `meta` ou `digisac` | `simulado` (nada sai para o lead) |
-| `DIGISAC_URL` | endereço da conta DigiSac da Root (`https://<conta>.digisac.me`); reserva para a empresa da casa quando o cofre não tem a credencial | vazio até a conta da Root existir (a credencial vai pelo cartão em Integrações, no cofre) |
-| `DIGISAC_TOKEN` | token de acesso da conta DigiSac; mesma reserva | vazio |
-| `DIGISAC_SERVICE_ID` | id da conexão de WhatsApp no DigiSac; mesma reserva | vazio |
-| `DIGISAC_WEBHOOK_SEGREDO` | segredo do webhook do DigiSac (vai na URL cadastrada, `?segredo=`); 32+ caracteres, mais curto é ignorado | vazio (sem ele, o webhook recusa tudo) |
+| `WHATSAPP_PROVEDOR` | provedor de WhatsApp do comercial: `simulado`, `evolution` ou `meta`. O valor `digisac` foi excluído em 21/10/2026 (rodada dos agentes, A6) e **derruba o arranque** com a frase do que trocar | `simulado` (nada sai para o lead) |
+| ~~`DIGISAC_URL`, `DIGISAC_TOKEN`, `DIGISAC_SERVICE_ID`, `DIGISAC_WEBHOOK_SEGREDO`~~ | **excluídas em 21/10/2026** (A6): saíram do compose e do código; remova do `final.env` | — |
 | `GRANOLA_MCP_URL` | endereço do servidor MCP do Granola; o padrão é o oficial (`https://mcp.granola.ai/mcp`) | vazio |
 | `GRANOLA_REDIRECT_URI` | retorno do OAuth do Granola; o padrão é `<WEB_ORIGIN>/api/trabalho/granola/callback` | vazio |
 

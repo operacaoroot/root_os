@@ -8,13 +8,11 @@ import {
 } from '@mktos/shared';
 import { ActorType, Prisma } from '@prisma/client';
 
-import { ENVIO_PELO_DIGISAC, type EnvioPeloDigisac } from '../gateway/canais/digisac.port';
 import { ENVIO_PELA_EVOLUTION, type EnvioPelaEvolution } from '../gateway/canais/evolution.port';
 import { EfeitosRegistry, type ContextoDoEfeito } from '../gateway/efeitos.registry';
 import { PortaDoOperador } from '../gateway/porta-do-operador.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { dataCurtaSP, rotuloDoHorario } from './agenda-de-homologacao';
-import { DigisacProvider } from './canais/digisac.provider';
 import { EvolutionProvider } from './canais/evolution.provider';
 import { MetaProvider } from './canais/meta.provider';
 import { SimuladoProvider } from './canais/simulado.provider';
@@ -123,9 +121,9 @@ export function textoComNome(template: ComercialTemplate, nome: string | null, v
     .replace(new RegExp(MARCA_DO_NOME, 'g'), '');
 }
 
-function provedorPorNome(digisac: EnvioPeloDigisac | null, evolution: EnvioPelaEvolution | null): WhatsappPort {
+function provedorPorNome(evolution: EnvioPelaEvolution | null): WhatsappPort {
+  // Lança no arranque se o ambiente ainda pedir o provedor excluído (ver `provedorDoAmbiente`).
   const p = provedorDoAmbiente();
-  if (p === 'digisac') return new DigisacProvider(digisac);
   if (p === 'evolution') return new EvolutionProvider(evolution);
   if (p === 'meta') return new MetaProvider();
   return new SimuladoProvider();
@@ -145,12 +143,10 @@ export class WhatsappComercialService implements OnModuleInit {
     private readonly efeitos: EfeitosRegistry,
     private readonly operador: PortaDoOperador,
     @Optional() provedor?: WhatsappPort,
-    /** Interface 20/10 (U6): o envio do DigiSac, usado só quando `WHATSAPP_PROVEDOR=digisac`. */
-    @Optional() @Inject(ENVIO_PELO_DIGISAC) digisac?: EnvioPeloDigisac,
     /** Produção 21 (P8): o envio da Evolution da empresa, usado só quando `WHATSAPP_PROVEDOR=evolution`. */
     @Optional() @Inject(ENVIO_PELA_EVOLUTION) evolution?: EnvioPelaEvolution,
   ) {
-    this.porta = provedor ?? provedorPorNome(digisac ?? null, evolution ?? null);
+    this.porta = provedor ?? provedorPorNome(evolution ?? null);
   }
 
   onModuleInit(): void {
@@ -272,7 +268,7 @@ export class WhatsappComercialService implements OnModuleInit {
   /**
    * Cria o grupo do cliente no provedor. É escrita fora da casa: quem chama é o
    * EFEITO de uma capacidade da porta (o fechamento, lane D), nunca uma rota.
-   * No simulado devolve um jid local; DigiSac e Evolution criam de verdade; Meta diz por que não.
+   * No simulado devolve um jid local; a Evolution cria de verdade; Meta diz por que não.
    */
   async criarGrupo(nome: string, participantes: string[]): Promise<{ jid: string }> {
     return this.porta.criarGrupo(nome, participantes.map(normalizarTelefone));

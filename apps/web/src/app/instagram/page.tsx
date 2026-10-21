@@ -57,6 +57,7 @@ export default function InstagramPage() {
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
           <p className="text-sm text-muted">Conta Business via Login do Facebook (Instagram Graph API).</p>
+          <a href="/conexoes" className="mt-1 inline-block text-xs text-brand underline">Configurar em Conexões</a>
         </div>
         {st?.connected && can('admin.usuarios') && (
           <button onClick={disconnect} className="rounded-lg border border-border px-3 py-1.5 text-sm text-muted hover:bg-surface-2 hover:text-text">Desconectar</button>

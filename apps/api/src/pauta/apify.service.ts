@@ -1,4 +1,15 @@
-import { Injectable, Logger, ServiceUnavailableException } from '@nestjs/common';
+import { Injectable, Logger, OnModuleInit, Optional, ServiceUnavailableException } from '@nestjs/common';
+import { PRAZO_DA_CHAMADA_DE_SONDA_MS, RegistroDeConectores } from '../integrations/conectores.registry';
+import {
+  type ConectorDoContrato,
+  type ResultadoDeAutorizacao,
+  type ResultadoDeRevogacao,
+  type ResultadoDeSincronizacao,
+  type SaudeDeConector,
+  conectado,
+  erroDeConector,
+  naoConfigurado,
+} from '../integrations/contrato-de-conector';
 import type { PautaPerfilPlataforma } from '@mktos/shared';
 import { postsPedidos } from './perfil-da-pauta';
 
@@ -73,7 +84,7 @@ export interface ApifyRun {
 }
 
 @Injectable()
-export class ApifyService {
+export class ApifyService implements OnModuleInit {
   private readonly log = new Logger('ApifyService');
   private readonly token = process.env.APIFY_TOKEN ?? '';
   private readonly base = 'https://api.apify.com/v2';
@@ -81,8 +92,56 @@ export class ApifyService {
   // do painel indefinidamente quando o actor trava.
   private readonly timeoutSec = Number(process.env.APIFY_TIMEOUT_SEC ?? 120);
 
+  constructor(
+    /** Rodada dos agentes (A6): o Apify implementa o contrato único de conector. */
+    @Optional() private readonly contrato?: RegistroDeConectores,
+  ) {}
+
+  onModuleInit(): void {
+    this.contrato?.registrar(this.descritorDoContrato(), 'ApifyService');
+  }
+
   get configured(): boolean {
     return this.token.length > 0;
+  }
+
+  /**
+   * O CONTRATO ÚNICO (rodada dos agentes, A6). O token do Apify é do PROCESSO e
+   * cada run é cobrado, então a sonda NÃO roda actor: ela pergunta quem é o dono
+   * do token (`GET /users/me`), que não gasta crédito. Desligado, o registro nem
+   * chama.
+   */
+  private descritorDoContrato(): ConectorDoContrato {
+    return {
+      chave: 'apify',
+      rotulo: 'Apify (coleta de perfis e busca)',
+      escopoDaCredencial: 'processo',
+      autorizar: async (): Promise<ResultadoDeAutorizacao> => ({
+        tipo: 'manual',
+        instrucao: 'O Apify não tem OAuth: o token da conta (Settings › Integrations) vai em APIFY_TOKEN no ambiente da API.',
+      }),
+      sincronizar: async (): Promise<ResultadoDeSincronizacao> => ({
+        tipo: 'nao_se_aplica',
+        motivo: 'Cada run é pago e sai da coleta da Pauta (Radar ou a rodada), com o teto de runs por fonte; não há espelho para trazer.',
+      }),
+      saude: async (): Promise<SaudeDeConector> => {
+        if (!this.configured) return naoConfigurado('APIFY_TOKEN ausente no ambiente da API: links do Instagram e do TikTok, perfis e buscas não são coletados.');
+        const comecou = Date.now();
+        try {
+          const res = await fetch(`${this.base}/users/me?token=${encodeURIComponent(this.token)}`, {
+            signal: AbortSignal.timeout(PRAZO_DA_CHAMADA_DE_SONDA_MS),
+          });
+          if (!res.ok) return erroDeConector(`O Apify recusou o token (HTTP ${res.status}).`, Date.now() - comecou);
+          return conectado(Date.now() - comecou);
+        } catch (e) {
+          return erroDeConector(`O Apify não respondeu: ${(e as Error).message}`, Date.now() - comecou);
+        }
+      },
+      revogar: async (): Promise<ResultadoDeRevogacao> => ({
+        tipo: 'nao_se_aplica',
+        motivo: 'O token do Apify é do processo: para queimar, gere outro no painel do Apify e troque APIFY_TOKEN no ambiente da API.',
+      }),
+    };
   }
 
   /** Descobre a plataforma pela URL — define o actor e o formato do input. */

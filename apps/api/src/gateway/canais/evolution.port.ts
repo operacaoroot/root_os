@@ -6,8 +6,7 @@
  * Evolution (CONECTORES) e o único que pode ler `EVOLUTION_*` (CREDENCIAIS). A
  * classe da empresa (`EvolutionDaEmpresaService`) mora lá, ao lado da do canal
  * de aprovação, e é provida por `canais.module.ts` (a pasta da porta pode
- * importar conector). Este arquivo só declara o que ela oferece, em DUAS portas,
- * como o DigiSac (`digisac.port.ts`):
+ * importar conector). Este arquivo só declara o que ela oferece, em DUAS portas:
  *
  *   · `ENVIO_PELA_EVOLUTION` manda texto a um número, cria o grupo do cliente e
  *     manda texto no grupo. Só o provedor do comercial

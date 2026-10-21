@@ -320,7 +320,8 @@ export interface ConnectorInfo {
 // Catálogo único dos conectores planejados. A ligação real de cada um entra na sua fase;
 // os OAuth (Instagram/Gmail/Drive) dependem de credencial PRÓPRIA do root.
 export const CONNECTORS: ConnectorInfo[] = [
-  { key: 'openai', label: 'OpenAI (IA)', category: 'ai', phase: 2, authType: 'api_key', requires: 'OPENAI_API_KEY (~/.config/root)' },
+  // Rodada dos agentes (A6): a OpenAI fica só para vetores (embeddings) e transcrição de áudio; o texto é a Anthropic.
+  { key: 'openai', label: 'OpenAI (vetores e áudio)', category: 'ai', phase: 2, authType: 'api_key', requires: 'OPENAI_API_KEY no ambiente da API (só vetores e transcrição de áudio)' },
   { key: 'telegram', label: 'Telegram', category: 'messaging', phase: 2, authType: 'api_key', requires: 'TELEGRAM_BOT_TOKEN (~/.config/root)' },
   { key: 'clickup', label: 'ClickUp', category: 'tasks', phase: 2, authType: 'api_key', requires: 'API token do ClickUp' },
   { key: 'asana', label: 'Asana', category: 'tasks', phase: 2, authType: 'oauth2', requires: 'OAuth/PAT do Asana' },
@@ -334,7 +335,8 @@ export const CONNECTORS: ConnectorInfo[] = [
   { key: 'gdocs', label: 'Google Docs', category: 'knowledge', phase: 5, authType: 'oauth2', requires: 'Conectar conta Google (OAuth)' },
   { key: 'drive', label: 'Google Drive', category: 'storage', phase: 5, authType: 'oauth2', requires: 'Conectar conta Google (OAuth)' },
   { key: 'obsidian', label: 'Obsidian', category: 'knowledge', phase: 5, authType: 'builtin', requires: 'pasta/sync do vault' },
-  { key: 'whatsapp', label: 'WhatsApp (Zapfy)', category: 'messaging', phase: 6, authType: 'api_key', requires: 'canal próprio (app consolidado)' },
+  // O canal de aprovação e o grupo da pauta pela Evolution do processo (`EVOLUTION_*`); o comercial tem a linha `evolution`.
+  { key: 'whatsapp', label: 'WhatsApp (Evolution)', category: 'messaging', phase: 6, authType: 'api_key', requires: 'EVOLUTION_URL, EVOLUTION_API_KEY e EVOLUTION_INSTANCIA do processo (canal de aprovação e grupo da pauta)' },
   { key: 'pluggy', label: 'Bancos (Open Finance/Pluggy)', category: 'finance', phase: 2, authType: 'api_key', requires: 'PLUGGY_CLIENT_ID/SECRET (~/.config/root/pluggy.env)' },
   { key: 'asaas', label: 'Asaas (cobranças + conta digital)', category: 'finance', phase: 2, authType: 'api_key', requires: 'ASAAS_API_KEY (~/.config/root/asaas.env)' },
   // Cockpit do lead (13/10/2026): o contrato do comercial sai para assinar pela ZapSign (API v1).
@@ -342,8 +344,6 @@ export const CONNECTORS: ConnectorInfo[] = [
   { key: 'ofx', label: 'Extrato OFX (upload)', category: 'finance', phase: 2, authType: 'builtin', requires: 'arquivo .ofx exportado do banco' },
   // Reuniões do Granola chegam pelo Zap (Webhooks by Zapier). Senha por empresa no cofre, gerada em Conexões.
   { key: 'granola', label: 'Granola (reuniões)', category: 'knowledge', phase: 3, authType: 'webhook', requires: 'Zap do Granola com a senha gerada em Conexões' },
-  // Interface 20/10 (U6): o WhatsApp do comercial pelo DigiSac. Token e conexão por empresa no cofre.
-  { key: 'digisac', label: 'WhatsApp (DigiSac)', category: 'messaging', phase: 6, authType: 'api_key', requires: 'token da API do DigiSac e id da conexão, salvos em Conexões' },
   // Produção 21 (P8): o WhatsApp do comercial pela Evolution. Endereço, chave e instância por empresa no cofre.
   { key: 'evolution', label: 'WhatsApp do comercial (Evolution)', category: 'messaging', phase: 6, authType: 'api_key', requires: 'endereço, chave da API e instância da Evolution, salvos em Integrações' },
 ];

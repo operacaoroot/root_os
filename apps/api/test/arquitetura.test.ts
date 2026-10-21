@@ -355,8 +355,6 @@ const CONECTORES: Record<string, string> = {
   'src/comercial/conectores/zapsign.service.ts': 'ZapSign',
   // Rodada da interface (20/10/2026, U5): o Granola direto, cliente do servidor MCP dele, entregue ao banco de atas por FONTE_DO_GRANOLA.
   'src/granola/granola-direto.service.ts': 'Granola (MCP)',
-  // Interface 20/10 (U6): o WhatsApp do comercial pelo DigiSac. O conector mora na pasta do canal e chega ao comercial por duas portas.
-  'src/gateway/canais/digisac.conector.ts': 'DigiSac (WhatsApp)',
 };
 
 /**
@@ -968,8 +966,6 @@ const HOSTS: Array<{ padrao: RegExp; conector: string }> = [
   { padrao: /https?:\/\/(?:[\w-]+\.)*zapsign\.com(?:\.br)?/, conector: 'src/comercial/conectores/zapsign.service.ts' },
   // U5 (20/10/2026): o servidor MCP e o OAuth do Granola. O link da nota que o Zap manda não é escrito em código.
   { padrao: /https?:\/\/(?:[\w-]+\.)*granola\.(?:ai|so)/, conector: 'src/granola/granola-direto.service.ts' },
-  // A conta do DigiSac é um subdomínio por cliente (`<conta>.digisac.me`); só o conector o endereça.
-  { padrao: /https?:\/\/(?:[\w-]+\.)*digisac\.(?:me|com|chat)/, conector: 'src/gateway/canais/digisac.conector.ts' },
 ];
 
 /*
@@ -1157,11 +1153,6 @@ const CREDENCIAIS: Record<string, string> = {
   ZAPSIGN_BASE_URL: 'src/comercial/conectores/zapsign.service.ts',
   ZAPSIGN_API_TOKEN: 'src/comercial/conectores/zapsign.service.ts',
   ZAPSIGN_WEBHOOK_TOKEN: 'src/comercial/conectores/zapsign.service.ts',
-  // Interface 20/10 (U6): fallback de ambiente do DigiSac, só para a empresa da casa; o normal é o cofre.
-  DIGISAC_URL: 'src/gateway/canais/digisac.conector.ts',
-  DIGISAC_TOKEN: 'src/gateway/canais/digisac.conector.ts',
-  DIGISAC_SERVICE_ID: 'src/gateway/canais/digisac.conector.ts',
-  DIGISAC_WEBHOOK_SEGREDO: 'src/gateway/canais/digisac.conector.ts',
   GOOGLE_CLIENT_ID: 'src/google/google.service.ts',
   GOOGLE_CLIENT_SECRET: 'src/google/google.service.ts',
   GOOGLE_REDIRECT_URI: 'src/google/google.service.ts',

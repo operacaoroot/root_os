@@ -13,9 +13,9 @@ import type { ComercialProvedorDeWhatsapp } from '@mktos/shared';
  *     ambiente só da casa (ver `evolution.provider.ts`);
  *   · `meta` — a Cloud API oficial. Só a interface e o esqueleto documentado;
  *     sem credencial não sobe, e a credencial é decisão da mesa (K08-4);
- *   · `digisac` — o DigiSac (Interface 20/10, U6). O provedor traduz e chama o
- *     conector de `gateway/canais/digisac.conector.ts` pela porta
- *     `ENVIO_PELO_DIGISAC`; credencial no cofre da empresa (ver `digisac.provider.ts`).
+ *
+ * O provedor do DigiSac foi EXCLUÍDO em 21/10/2026 (rodada dos agentes, A6):
+ * o valor antigo é recusado no arranque, com a frase de `PROVEDOR_EXCLUIDO`.
  *
  * QUEM CHAMA ESTA PORTA. Só o EFEITO de `comercial.whatsapp.enviar`, que a
  * `PortaDoOperador` dispara depois de a régua deixar (R3: com a assinatura de
@@ -77,9 +77,31 @@ export interface EntradaDeWhatsapp {
 /** Token de injeção do provedor escolhido. */
 export const WHATSAPP_PORT = Symbol('WHATSAPP_PORT');
 
+/**
+ * O valor de `WHATSAPP_PROVEDOR` que deixou de existir e a frase do arranque.
+ *
+ * O DigiSac foi excluído do código em 21/10/2026. Um `.env` antigo com esse
+ * valor NÃO cai calado no simulado: a API recusa subir dizendo o que trocar,
+ * porque cair no simulado faria a mesa achar que a mensagem saiu. É o único
+ * lugar do código, fora do cadastro de funções, que ainda escreve o nome (a
+ * catraca `sem-digisac.test.ts` aceita este arquivo e nenhum outro de código).
+ */
+const PROVEDOR_EXCLUIDO = 'digisac';
+export const RECUSA_DO_PROVEDOR_EXCLUIDO =
+  'O DigiSac foi excluído em 21/10/2026: use WHATSAPP_PROVEDOR=evolution ou simulado ' +
+  '(o valor WHATSAPP_PROVEDOR=digisac não é mais aceito e a API não sobe com ele).';
+
+export class ProvedorExcluidoError extends Error {
+  constructor() {
+    super(RECUSA_DO_PROVEDOR_EXCLUIDO);
+    this.name = 'ProvedorExcluidoError';
+  }
+}
+
 export function provedorDoAmbiente(valor = process.env.WHATSAPP_PROVEDOR): ComercialProvedorDeWhatsapp {
   const v = String(valor ?? '').trim().toLowerCase();
-  if (v === 'evolution' || v === 'meta' || v === 'digisac') return v;
+  if (v === PROVEDOR_EXCLUIDO) throw new ProvedorExcluidoError();
+  if (v === 'evolution' || v === 'meta') return v;
   return 'simulado';
 }
 

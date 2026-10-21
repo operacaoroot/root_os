@@ -530,7 +530,7 @@ async function partesDasOutrasLanes(p, sessao) {
     await url.waitFor();
     const texto = (await url.innerText()).trim();
     conferir(/\/api\/approvals\/canal\/whatsapp\/[0-9a-f-]{36}$/.test(texto), `a URL do webhook veio: ${texto}`);
-    conferir((await p.getByTestId('url-do-webhook-digisac').count()) === 0, 'o cartão do DigiSac ainda está na tela');
+    conferir((await p.getByText(/digisac|zapfy/i).count()) === 0, 'o DigiSac ou o Zapfy ainda aparecem na tela (excluídos em 21/10/2026)');
     const cartao = url.locator('xpath=ancestor::section[1]');
     const alvo = (await cartao.count()) ? cartao : url;
     await alvo.scrollIntoViewIfNeeded();

@@ -35,8 +35,7 @@ import { WhatsappComercialService } from './whatsapp.service';
  *      protocolo, mídia e reação ficam de fora);
  *   4. grava a mensagem (`receberDoLead`) e, se a última mensagem enviada ao
  *      lead tinha botões ou formulário, a resposta numerada vira a escolha do
- *      horário ou o formulário respondido, pelos MESMOS caminhos do DigiSac e do
- *      simulador.
+ *      horário ou o formulário respondido, pelos MESMOS caminhos do simulador.
  *
  * Nem o número, nem o texto, nem o corpo vão para o log (o corpo do webhook da
  * Evolution traz a chave da instância).

@@ -3,8 +3,8 @@ import type { BotaoInterativo, FormularioInterativo } from './whatsapp.port';
 /*
  * O TEXTO NUMERADO DO WHATSAPP DO COMERCIAL.
  *
- * Nasceu no provedor do DigiSac (Interface 20/10, U6) e saiu para cá na rodada
- * de produção 1 (21/10/2026, P8), porque a Evolution faz o mesmo: botões e
+ * Nasceu na rodada da interface (20/10, U6) e saiu para cá na rodada de
+ * produção 1 (21/10/2026, P8), porque a Evolution faz o mesmo: botões e
  * formulário viram texto numerado (sai em qualquer conexão, sem cadastro de
  * mensagem interativa), e a resposta numerada é lida na entrada contra a última
  * mensagem interativa enviada ao lead. Um formatador só, para os dois provedores.

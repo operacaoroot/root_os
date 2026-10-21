@@ -17,7 +17,7 @@ import { corsDoFormularioDoSite } from './comercial/formulario-do-site/cors';
 
 // Credenciais PRÓPRIAS do root (isolamento): ficam em ~/.config/root/*.env,
 // nunca no repo. Carregadas AQUI sem sobrescrever o .env local da API.
-for (const name of ['openai.env', 'zapfy.env', 'clickup.env', 'google.env', 'pluggy.env', 'asaas.env', 'meta.env']) {
+for (const name of ['openai.env', 'clickup.env', 'google.env', 'pluggy.env', 'asaas.env', 'meta.env']) {
   const p = join(homedir(), '.config', 'root', name);
   if (existsSync(p)) loadEnv({ path: p, override: false });
 }

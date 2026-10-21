@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import type { ConexaoDoGranola, SenhaDoGranola, TrabGranolaConexaoDireta } from '@mktos/shared';
-import { apiDelete, apiGet, apiPost } from '@/lib/api';
+import { apiGet, apiPost } from '@/lib/api';
 import { abrirFicha } from '@/lib/ficha';
 
 /*
@@ -18,6 +18,11 @@ import { abrirFicha } from '@/lib/ficha';
  * cofre da empresa, e a tela volta para cá com `?granola=<motivo>`. Daí em
  * diante, Trabalho › Atas lista as reuniões e gera a ata da transcrição. O Zap
  * continua funcionando como antes, ao lado.
+ *
+ * Desde a rodada dos agentes (A6, 21/10/2026) este é o CONTEÚDO PRÓPRIO do
+ * cartão do Granola: o `CartaoDeConexao` mostra o estado sondado, quem usa e as
+ * ações comuns (Testar, Desconectar = queimar senha e conexão direta, Desligar);
+ * aqui ficam a senha do Zap, a conexão direta e o que chegou.
  */
 
 const RETORNO_DO_GRANOLA: Record<string, { texto: string; bom: boolean }> = {
@@ -63,12 +68,18 @@ function Copiar({ texto }: { texto: string }) {
   );
 }
 
-export function ConexaoGranola({ token, gerenciar }: { token: string; gerenciar: boolean }) {
+export function ConexaoGranola({ token, gerenciar, desligado: desligadoNoCartao, aoMudar }: {
+  token: string;
+  gerenciar: boolean;
+  /** O estado do interruptor que o cartão já sabe; sem ele, vale o que a conexão do Granola diz. */
+  desligado?: boolean;
+  aoMudar?: () => void;
+}) {
   const [c, setC] = useState<ConexaoDoGranola | null>(null);
   const [senha, setSenha] = useState<SenhaDoGranola | null>(null);
   const [ocupado, setOcupado] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
-  const [confirmar, setConfirmar] = useState<'desligar' | 'revogar' | 'trocar' | 'desconectar' | null>(null);
+  const [confirmar, setConfirmar] = useState<'trocar' | 'desconectar' | null>(null);
   const [direto, setDireto] = useState<TrabGranolaConexaoDireta | null>(null);
   const [retorno] = useState<string | null>(() => retornoDoEndereco());
 
@@ -100,6 +111,7 @@ export function ConexaoGranola({ token, gerenciar }: { token: string; gerenciar:
       await fn();
       setConfirmar(null);
       carregar();
+      aoMudar?.();
     } catch (e) {
       setErro((e as Error).message);
     } finally {
@@ -110,59 +122,30 @@ export function ConexaoGranola({ token, gerenciar }: { token: string; gerenciar:
   if (!c) return erro ? <p className="text-sm text-bad">{erro}</p> : null;
 
   const endereco = `${typeof window !== 'undefined' ? window.location.origin : ''}${c.caminho}`;
-  const estado = c.desligado
-    ? { texto: 'Desligado', cor: 'bg-warn/15 text-warn' }
-    : c.senha.ativa
-      ? { texto: 'Recebendo', cor: 'bg-good/15 text-good' }
-      : direto?.conectado
-        ? { texto: 'Conectado direto', cor: 'bg-good/15 text-good' }
-        : { texto: 'Sem senha', cor: 'bg-surface-2 text-muted' };
+  const desligado = desligadoNoCartao ?? c.desligado;
 
   return (
-    <section className="rounded-xl border border-border bg-surface p-5">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <div className="flex items-center gap-2">
-            <h2 className="text-[1.05rem] font-semibold text-text">Granola · reuniões dos clientes</h2>
-            <span className={`rounded px-1.5 py-0.5 text-[11px] font-medium ${estado.cor}`}>{estado.texto}</span>
-          </div>
-          <p className="mt-1 text-xs text-muted">
-            A nota que cai na pasta do Granola vai pelo Zapier até o OS, que grava a reunião na ficha do cliente.
-          </p>
+    <div className="text-xs" data-testid="conteudo-granola">
+      <p className="text-muted">
+        A nota que cai na pasta do Granola vai pelo Zapier até o OS, que grava a reunião na ficha do cliente.
+      </p>
+      {gerenciar && (
+        <div className="mt-2 flex flex-wrap gap-2">
+          <button type="button" disabled={ocupado} onClick={() => (c.senha.ativa ? setConfirmar('trocar') : void fazer(async () => setSenha(await apiPost<SenhaDoGranola>('/trabalho/fichas/granola/senha', {}, token))))}
+            className="rounded-lg border border-border px-3 py-1.5 text-xs text-brand disabled:opacity-50">
+            {c.senha.ativa ? 'Trocar senha do Zap' : 'Gerar senha do Zap'}
+          </button>
         </div>
-        {gerenciar && (
-          <div className="flex flex-wrap gap-2">
-            {c.desligado ? (
-              <button type="button" disabled={ocupado} onClick={() => void fazer(() => apiDelete('/integrations/granola/desligamento', token))}
-                className="rounded-lg bg-brand px-3 py-1.5 text-xs font-medium text-ink disabled:opacity-50">Ligar</button>
-            ) : (
-              <button type="button" disabled={ocupado} onClick={() => setConfirmar('desligar')}
-                className="rounded-lg border border-border px-3 py-1.5 text-xs text-muted disabled:opacity-50">Desligar</button>
-            )}
-            <button type="button" disabled={ocupado} onClick={() => (c.senha.ativa ? setConfirmar('trocar') : void fazer(async () => setSenha(await apiPost<SenhaDoGranola>('/trabalho/fichas/granola/senha', {}, token))))}
-              className="rounded-lg border border-border px-3 py-1.5 text-xs text-brand disabled:opacity-50">
-              {c.senha.ativa ? 'Trocar senha' : 'Gerar senha'}
-            </button>
-            {(c.senha.ativa || direto?.conectado) && (
-              <button type="button" disabled={ocupado} onClick={() => setConfirmar('revogar')}
-                className="rounded-lg border border-bad/40 px-3 py-1.5 text-xs text-bad disabled:opacity-50">Revogar tudo</button>
-            )}
-          </div>
-        )}
-      </div>
+      )}
 
       {confirmar && (
         <div className="mt-3 flex flex-wrap items-center gap-3 rounded-lg border border-warn/40 bg-warn/5 px-3 py-2 text-xs">
           <span className="text-text">
-            {confirmar === 'desligar' && 'Desligar: o OS recusa o que o Zap mandar até religar. A senha continua guardada.'}
             {confirmar === 'trocar' && 'Trocar: a senha atual para de valer agora. O Zap só volta a entrar com a nova.'}
-            {confirmar === 'revogar' && 'Revogar tudo: a senha do Zap e a conexão direta são queimadas, o Zap para e o OS para de ler o Granola na hora. Para voltar, gere outra senha ou conecte de novo.'}
             {confirmar === 'desconectar' && 'Desconectar: a autorização direta é queimada e o OS para de ler as reuniões. O Zap continua com a senha dele.'}
           </span>
           <button type="button" disabled={ocupado} className="font-medium text-bad disabled:opacity-50"
             onClick={() => void fazer(async () => {
-              if (confirmar === 'desligar') await apiPost('/integrations/granola/desligamento', { motivo: 'Desligado no painel do Granola' }, token);
-              if (confirmar === 'revogar') await apiPost('/integrations/granola/revogacao', { motivo: 'Revogada no painel do Granola' }, token);
               if (confirmar === 'trocar') setSenha(await apiPost<SenhaDoGranola>('/trabalho/fichas/granola/senha', {}, token));
               if (confirmar === 'desconectar') await apiPost('/trabalho/granola/direto/revogacao', { motivo: 'Desconectada no painel do Granola' }, token);
             })}>
@@ -199,8 +182,8 @@ export function ConexaoGranola({ token, gerenciar }: { token: string; gerenciar:
               <button type="button" disabled={ocupado} onClick={() => setConfirmar('desconectar')}
                 className="rounded-lg border border-border px-3 py-1.5 text-xs text-muted disabled:opacity-50">Desconectar</button>
             ) : (
-              <button type="button" data-testid="granola-conectar" disabled={ocupado || c.desligado} onClick={() => void fazer(conectarDireto)}
-                title={c.desligado ? 'Religue o Granola antes de conectar.' : undefined}
+              <button type="button" data-testid="granola-conectar" disabled={ocupado || desligado} onClick={() => void fazer(conectarDireto)}
+                title={desligado ? 'Religue o Granola antes de conectar.' : undefined}
                 className="rounded-lg bg-brand px-3 py-1.5 text-xs font-medium text-ink disabled:opacity-50">Conectar ao Granola</button>
             )
           )}
@@ -245,7 +228,7 @@ export function ConexaoGranola({ token, gerenciar }: { token: string; gerenciar:
           <p className="text-muted">
             Campos: title, transcript, my_notes, attendees, start_time, link.
             {' '}Senha {c.senha.ativa ? `ativa${c.senha.usadaEm ? `, último uso em ${quando(c.senha.usadaEm)}` : ', ainda não usada'}` : c.senha.revogadaEm ? `revogada em ${quando(c.senha.revogadaEm)}` : 'ainda não gerada'}.
-            {c.desligado && ` Desligado em ${quando(c.desligadoEm)}.`}
+            {desligado && c.desligadoEm && ` Desligado em ${quando(c.desligadoEm)}.`}
           </p>
           <p className="text-muted">O OS acha o cliente pelo e-mail, pelo domínio do e-mail ou pelo nome. Preencha o E-mail ou o Site na ficha.</p>
         </div>
@@ -271,6 +254,6 @@ export function ConexaoGranola({ token, gerenciar }: { token: string; gerenciar:
           )}
         </div>
       </div>
-    </section>
+    </div>
   );
 }

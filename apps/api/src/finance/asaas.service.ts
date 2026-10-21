@@ -1,5 +1,16 @@
-import { Injectable, OnModuleInit, Logger, ServiceUnavailableException } from '@nestjs/common';
+import { Injectable, OnModuleInit, Logger, Optional, ServiceUnavailableException } from '@nestjs/common';
 import { ConectoresConfiguradosRegistry } from '../gateway/conectores-configurados.registry';
+import { PRAZO_DA_CHAMADA_DE_SONDA_MS, RegistroDeConectores } from '../integrations/conectores.registry';
+import {
+  type ConectorDoContrato,
+  type ResultadoDeAutorizacao,
+  type ResultadoDeRevogacao,
+  type ResultadoDeSincronizacao,
+  type SaudeDeConector,
+  conectado,
+  erroDeConector,
+  naoConfigurado,
+} from '../integrations/contrato-de-conector';
 import {
   billingTypeDoAsaas,
   lerWebhookDoAsaas,
@@ -76,7 +87,11 @@ export class AsaasService implements OnModuleInit, PortaDeCobranca {
   private readonly webhookToken = (process.env.ASAAS_WEBHOOK_TOKEN ?? '').trim();
   readonly provedor = 'asaas';
 
-  constructor(private readonly conectoresConfigurados: ConectoresConfiguradosRegistry) {}
+  constructor(
+    private readonly conectoresConfigurados: ConectoresConfiguradosRegistry,
+    /** Rodada dos agentes (A6): o Asaas implementa o contrato único de conector. */
+    @Optional() private readonly contrato?: RegistroDeConectores,
+  ) {}
 
   /*
    * `configured` aqui lê a chave com `.trim()` aplicado na leitura da variável —
@@ -86,6 +101,55 @@ export class AsaasService implements OnModuleInit, PortaDeCobranca {
    */
   onModuleInit(): void {
     this.conectoresConfigurados.registrar('asaas', () => this.configured);
+    this.contrato?.registrar(this.descritorDoContrato(), 'AsaasService');
+  }
+
+  /**
+   * O CONTRATO ÚNICO (rodada dos agentes, A6). A chave do Asaas é do PROCESSO
+   * (a conta da Operação ROOT, `ASAAS_API_KEY`), como a do ClickUp: não há
+   * OAuth, revogar é trocar a chave no painel do Asaas, e parar UMA empresa é o
+   * desligamento. A sonda lê o saldo (`GET /finance/balance`), a leitura mais
+   * barata que prova chave aceita; desligado, o registro nem chama.
+   */
+  private descritorDoContrato(): ConectorDoContrato {
+    return {
+      chave: 'asaas',
+      rotulo: 'Asaas (cobranças e conta digital)',
+      escopoDaCredencial: 'processo',
+      autorizar: async (): Promise<ResultadoDeAutorizacao> => ({
+        tipo: 'manual',
+        instrucao:
+          'O Asaas não tem OAuth: a chave da API (painel do Asaas › Integrações) vai em ASAAS_API_KEY no ambiente ' +
+          'da API, e o segredo do webhook em ASAAS_WEBHOOK_TOKEN. Recrie o container depois de trocar.',
+      }),
+      sincronizar: async (): Promise<ResultadoDeSincronizacao> => ({
+        tipo: 'nao_se_aplica',
+        motivo:
+          'O extrato e as cobranças do Asaas entram pela sincronização do Financeiro (Financeiro › Sincronizar), ' +
+          'que concilia com as contas; o pagamento de cada cobrança chega pelo webhook.',
+      }),
+      saude: async (): Promise<SaudeDeConector> => {
+        if (!this.configured) return naoConfigurado('ASAAS_API_KEY ausente no ambiente da API: nenhuma cobrança sai e o extrato não entra.');
+        const comecou = Date.now();
+        try {
+          await this.req<{ balance?: number }>('/finance/balance', AbortSignal.timeout(PRAZO_DA_CHAMADA_DE_SONDA_MS));
+          return conectado(
+            Date.now() - comecou,
+            `${this.environment === 'sandbox' ? 'ambiente de testes (sandbox)' : 'produção'}` +
+              (this.webhookToken ? '' : ' · sem ASAAS_WEBHOOK_TOKEN: o pagamento não volta ao OS'),
+          );
+        } catch (e) {
+          return erroDeConector(`O Asaas não respondeu: ${(e as Error).message}`, Date.now() - comecou);
+        }
+      },
+      revogar: async (): Promise<ResultadoDeRevogacao> => ({
+        tipo: 'nao_se_aplica',
+        motivo:
+          'A chave do Asaas é do processo. Para parar agora, DESLIGUE o conector em Conexões (a porta recusa ' +
+          'comercial.cobranca.criar e comercial.fechamento.executar); para queimar a chave, gere outra no painel do ' +
+          'Asaas e troque ASAAS_API_KEY no ambiente da API.',
+      }),
+    };
   }
 
   get configured(): boolean {
@@ -113,9 +177,10 @@ export class AsaasService implements OnModuleInit, PortaDeCobranca {
     }
   }
 
-  private async req<T>(path: string): Promise<T> {
+  private async req<T>(path: string, sinal?: AbortSignal): Promise<T> {
     this.ensureConfigured();
     const res = await fetch(`${this.base}${path}`, {
+      ...(sinal ? { signal: sinal } : {}),
       headers: {
         access_token: this.apiKey,
         'Content-Type': 'application/json',
