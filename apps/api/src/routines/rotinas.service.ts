@@ -37,6 +37,7 @@ import {
   type RotinaResumo,
   type RotinasList,
 } from './rotina.tipos';
+import { ehTipoDaCasa } from './rotinas-da-casa';
 
 /** Quanto do histórico a tela pede de uma vez. */
 const HISTORICO_PADRAO = 30;
@@ -693,7 +694,8 @@ export class RotinasService {
    * a pergunta aqui é uma só por chamada.
    */
   private async tiposDaEmpresa(orgId: string): Promise<string[]> {
-    const inscritos = this.executores.inscritos;
+    // As rotinas da casa (`casa.*`) nascem sozinhas por empresa: não se criam pela tela.
+    const inscritos = this.executores.inscritos.filter((t) => !ehTipoDaCasa(t));
     if (!inscritos.some((t) => MODULO_DO_TIPO[t])) return inscritos;
     const org = await this.prisma.org.findUnique({ where: { id: orgId }, select: { modulos: true } });
     const ligados = org?.modulos ?? [];
@@ -778,7 +780,7 @@ export class RotinasService {
    */
   async criar(orgIdBruto: string, corpo: unknown, actorId: string): Promise<RotinaResumo> {
     const orgId = exigirTenant(orgIdBruto, 'RotinasService.criar');
-    const lida = lerNovaRotina(corpo, this.executores.inscritos);
+    const lida = lerNovaRotina(corpo, this.executores.inscritos.filter((t) => !ehTipoDaCasa(t)));
     if ('erro' in lida) throw new BadRequestException(lida.erro);
     const d = lida.dados;
     const modulo = MODULO_DO_TIPO[d.tipo];

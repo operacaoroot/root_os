@@ -44,6 +44,8 @@ import {
 import { env } from '../llm/env';
 import { MedidorDeGastoExterno, tokensDaRespostaDeEmbedding as tokensDaResposta } from '../llm/gasto-externo';
 import { RecusaDeCustoDeIaError } from '../llm/recusa-de-custo';
+import { TIPO_CASA_VAULT, inscreverTarefaDaCasa, registrarPassagemDeFundo } from '../routines/rotinas-da-casa';
+import type { ResultadoDaRotina } from '../routines/rotina.tipos';
 import {
   FalhaDeEmbedding,
   PRAZO_DA_BUSCA_MS,
@@ -557,6 +559,7 @@ export class ObsidianService implements OnModuleInit {
              * `catch`, o lançamento pulava o laço abaixo e a memória das outras
              * empresas ficava sem vetorizar nesta volta.
              */
+            // Cada passagem vai ao histórico de rotinas (`casa.vault`, rodada dos agentes, A1).
             await comContexto(
               {
                 orgId: casa.id,
@@ -564,8 +567,18 @@ export class ObsidianService implements OnModuleInit {
                 correlationId: novaCorrelacao('obsidian'),
                 origem: 'cron',
               },
-              async () => this.log.log(`Obsidian reindex: ${await this.reindex(casa.id)} nota(s)`),
-            ).catch((e: unknown) => this.log.warn(`Obsidian reindex falhou: ${(e as Error).message}`));
+              () =>
+                registrarPassagemDeFundo(this.prisma, { orgId: casa.id, tipo: TIPO_CASA_VAULT }, () => this.passagemDaCasa(casa.id), {
+                  criar: 'sempre',
+                  intervaloMin: min,
+                }),
+            )
+              .then((r) =>
+                r.status === 'erro'
+                  ? this.log.warn(`Obsidian reindex falhou: ${r.resumo}`)
+                  : this.log.log(`Obsidian reindex: ${r.resumo}`),
+              )
+              .catch((e: unknown) => this.log.warn(`Obsidian reindex falhou: ${(e as Error).message}`));
           }
         }
 
@@ -573,15 +586,19 @@ export class ObsidianService implements OnModuleInit {
           // A casa já vetorizou dentro do `reindex`, e refazer custaria dinheiro.
           if (this.configured && org.id === casa?.id) continue;
           try {
-            await comContexto(
+            const r = await comContexto(
               {
                 orgId: org.id,
                 actorType: 'system',
                 correlationId: novaCorrelacao('obsidian'),
                 origem: 'cron',
               },
-              () => this.vetorizarPendentesDaMemoria(org.id),
+              () =>
+                registrarPassagemDeFundo(this.prisma, { orgId: org.id, tipo: TIPO_CASA_VAULT }, () => this.passagemDaCasa(org.id), {
+                  intervaloMin: min,
+                }),
             );
+            if (r.status === 'erro') throw new Error(r.resumo);
           } catch (e) {
             this.log.warn(
               `memória da empresa ${org.id}: vetorização falhou (${(e as Error).message}). ` +
@@ -593,6 +610,8 @@ export class ObsidianService implements OnModuleInit {
         this.log.warn(`Obsidian reindex falhou: ${(e as Error).message}`);
       }
     };
+    // O "Rodar agora" da tela /rotinas roda a mesma passagem (executor `casa.vault`).
+    inscreverTarefaDaCasa(TIPO_CASA_VAULT, (orgId) => this.passagemDaCasa(orgId), 'ObsidianService');
     setTimeout(run, 25_000);
     if (min > 0) setInterval(run, min * 60_000);
     this.log.log(
@@ -1406,10 +1425,15 @@ export class ObsidianService implements OnModuleInit {
    */
   async vetorizarPendentesDaMemoria(
     orgId: string,
-    opcoes: { excetoChaves?: readonly string[] } = {},
+    opcoes: {
+      excetoChaves?: readonly string[];
+      /** Quantas pendentes havia e quantas ganharam vetor (o resumo da rotina `casa.vault`). */
+      contar?: (pendentes: number, vetorizadas: number) => void;
+    } = {},
   ): Promise<void> {
     if (!this.openaiKey) return;
     const pendentes = await this.memoria.semVetor(orgId, 100, { excetoChaves: opcoes.excetoChaves });
+    opcoes.contar?.(pendentes.length, 0);
     if (!pendentes.length) return;
     let descartados = 0;
     // As 100 da volta iam num pedido só, até 800 kB; agora vão em lotes com teto.
@@ -1433,8 +1457,33 @@ export class ObsidianService implements OnModuleInit {
             'vetor era do texto anterior.'
           : '.'),
     );
+    opcoes.contar?.(pendentes.length, r.vetorizados);
     // Quem chama registra o aviso; o que foi gravado fica, e o resto volta na próxima.
     if (r.semVetor) throw new Error(descreverVetorizacao(r));
+  }
+
+  /**
+   * UMA passagem da rotina da casa `casa.vault` numa empresa (rodada dos agentes,
+   * A1): na casa com vault, reindexa (que já vetoriza a memória); nas outras,
+   * vetoriza a memória pendente. Resumo só com contagem.
+   */
+  private async passagemDaCasa(orgId: string): Promise<ResultadoDaRotina> {
+    const casa = await this.prisma.org.findFirst({ where: { id: orgId, slug: SLUG_DA_CASA }, select: { id: true } });
+    if (this.configured && casa) {
+      const n = await this.reindex(orgId);
+      return { status: 'ok', resumo: `${n} nota(s) indexada(s)` };
+    }
+    if (!this.openaiKey) return { status: 'pulada', resumo: 'sem chave de embedding' };
+    let pendentes = 0;
+    let vetorizadas = 0;
+    await this.vetorizarPendentesDaMemoria(orgId, {
+      contar: (p, v) => {
+        pendentes = p;
+        vetorizadas = v;
+      },
+    });
+    if (!pendentes) return { status: 'pulada', resumo: 'nenhuma nota da memória sem vetor' };
+    return { status: 'ok', resumo: `${vetorizadas} de ${pendentes} nota(s) da memória vetorizada(s)` };
   }
 
   // ---------- leitura ----------

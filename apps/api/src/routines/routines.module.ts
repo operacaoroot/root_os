@@ -9,6 +9,7 @@ import { ExecutorDeEncadeamentoDaPauta } from './executores/pauta-encadear.execu
 import { ExecutorDePublicacaoDaPauta } from './executores/pauta-publicar.executor';
 import { ExecutorDeComentariosDaPauta } from './executores/pauta-comentarios.executor';
 import { ExecutorDaLimpezaDasVencidas } from './executores/aprovacoes-vencidas.executor';
+import { ExecutorDasRotinasDaCasa } from './executores/casa.executor';
 import { RotinasController } from './rotinas.controller';
 import { RotinasScheduler } from './rotinas.scheduler';
 import { RotinasService } from './rotinas.service';
@@ -57,6 +58,8 @@ import { RotinasService } from './rotinas.service';
     ExecutorDoRelatorioDaPauta,
     // T7: a limpeza diária das aprovações vencidas (o serviço vem do ApprovalsModule, global).
     ExecutorDaLimpezaDasVencidas,
+    // Rodada dos agentes (A1): o "Rodar agora" das rotinas da casa (casa.*).
+    ExecutorDasRotinasDaCasa,
     RotinasService,
     RotinasScheduler,
   ],

@@ -8,6 +8,7 @@ import { LimpezaDasVencidasService } from '../approvals/limpeza-das-vencidas';
 import { acessoBloqueado } from '../billing/assinatura';
 import { RotinasService } from './rotinas.service';
 import { ESTADOS_QUE_DISPARAM, LIVRE, TIPOS_DA_PAUTA, type EstadoDoAgendador } from './rotina.tipos';
+import { ehTipoDaCasa } from './rotinas-da-casa';
 import { anunciarAgendadorDeRotinas } from './sinal-do-agendador';
 
 /** O tique. Um minuto, como o do agendador da pauta — é o mesmo relógio. */
@@ -351,6 +352,9 @@ export class RotinasScheduler implements OnModuleInit {
             const retomada = this.arrendamentoVencido(r, agora);
             if (!retomada && !this.bate(r, agora)) continue;
             if (this.pautaDesligada && TIPOS_DA_PAUTA.includes(r.tipo)) continue;
+            // As rotinas da casa têm o relógio do próprio serviço (`rotinas-da-casa.ts`):
+            // dispará-las aqui também faria a passagem em dobro.
+            if (ehTipoDaCasa(r.tipo)) continue;
             this.log.log(
               retomada
                 ? `retomando rotina "${r.slug}" (${orgId}): a passagem anterior não terminou`

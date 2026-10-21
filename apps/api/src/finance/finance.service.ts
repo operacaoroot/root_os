@@ -22,6 +22,10 @@ import { parseOfx } from './ofx';
 import { APPROVAL_LIMIT, conferirReferencias } from './apr.service';
 import { exigirAcessoAtual } from '../memory/acesso-memoria';
 import { travarFinanceiro, travarLancamentoFinanceiro, exigirNaoExercicio } from './financeiro-exercicio.service';
+import { comContextoDaEmpresaResolvida } from '../prisma/contexto-de-plataforma';
+import { novaCorrelacao } from '../common/contexto-execucao';
+import { TIPO_CASA_CONCILIACAO, inscreverTarefaDaCasa, registrarPassagemDeFundo } from '../routines/rotinas-da-casa';
+import type { ResultadoDaRotina } from '../routines/rotina.tipos';
 
 // status que efetivamente movem o caixa (contam no saldo)
 const EFFECTIVE: FinanceTxStatus[] = ['realizado', 'conciliado'];
@@ -56,21 +60,38 @@ export class FinanceService implements OnModuleInit {
   // Sync AGENDADO das conexões bancárias (Pluggy + Asaas), in-process como o ClickUp.
   // PLUGGY_SYNC_INTERVAL_MIN / ASAAS_SYNC_INTERVAL_MIN (default 360 = 6h; 0 desliga).
   // Só roda se ao menos um provedor estiver configurado.
+  //
+  // DESDE A RODADA DOS AGENTES (21/10/2026, A1): cada passagem, por empresa, vai ao
+  // histórico de rotinas como `casa.conciliacao` (FI-02), com duração e desfecho,
+  // dentro do contexto da empresa. A descoberta das conexões continua a de sempre.
   onModuleInit(): void {
     if (!this.pluggy.configured && !this.asaas.configured) return;
     const min = Number(process.env.PLUGGY_SYNC_INTERVAL_MIN ?? process.env.ASAAS_SYNC_INTERVAL_MIN ?? 360);
     if (!(min > 0)) return;
+    // O "Rodar agora" da tela /rotinas roda a mesma passagem (executor `casa.conciliacao`).
+    inscreverTarefaDaCasa(TIPO_CASA_CONCILIACAO, (orgId) => this.passagemDaConciliacao(orgId), 'FinanceService');
     const run = async () => {
       try {
         const conns = await this.prisma.bankConnection.findMany({
           where: { provider: { in: ['pluggy', 'asaas'] }, status: { in: ['connected', 'error'] }, externalId: { not: null } },
+          select: { orgId: true },
         });
-        for (const c of conns) {
+        for (const orgId of [...new Set(conns.map((c) => c.orgId))]) {
           try {
-            const r = await this.syncBankConnection(c.orgId, c.id);
-            this.log.log(`${c.provider} sync ${c.id}: ${r.accounts} conta(s), ${r.transactions} lançamento(s)`);
+            const r = await comContextoDaEmpresaResolvida(
+              orgId,
+              () =>
+                registrarPassagemDeFundo(
+                  this.prisma,
+                  { orgId, tipo: TIPO_CASA_CONCILIACAO },
+                  () => this.passagemDaConciliacao(orgId),
+                  { criar: 'sempre', intervaloMin: min },
+                ),
+              { correlationId: novaCorrelacao('cron'), origem: 'cron', actorId: null, actorType: null },
+            );
+            this.log.log(`sync bancário da empresa ${orgId}: ${r.status} (${r.resumo})`);
           } catch (e) {
-            this.log.warn(`${c.provider} sync ${c.id} falhou: ${(e as Error).message}`);
+            this.log.warn(`sync bancário da empresa ${orgId} falhou: ${(e as Error).message}`);
           }
         }
       } catch (e) {
@@ -80,6 +101,41 @@ export class FinanceService implements OnModuleInit {
     setTimeout(run, 30_000);
     setInterval(run, min * 60_000);
     this.log.log(`Sync bancário agendado a cada ${min} min (pluggy=${this.pluggy.configured} asaas=${this.asaas.configured})`);
+  }
+
+  /**
+   * UMA passagem da conciliação numa empresa: sincroniza cada conexão bancária
+   * dela, uma falha não derruba as outras. Resumo só com contagem.
+   */
+  private async passagemDaConciliacao(orgId: string): Promise<ResultadoDaRotina> {
+    const conns = await this.prisma.bankConnection.findMany({
+      where: {
+        orgId,
+        provider: { in: ['pluggy', 'asaas'] },
+        status: { in: ['connected', 'error'] },
+        externalId: { not: null },
+      },
+      select: { id: true, provider: true },
+    });
+    if (!conns.length) return { status: 'pulada', resumo: 'nenhuma conexão bancária ativa' };
+    let contas = 0;
+    let lancamentos = 0;
+    const falhas: string[] = [];
+    for (const c of conns) {
+      try {
+        const r = await this.syncBankConnection(orgId, c.id);
+        contas += r.accounts;
+        lancamentos += r.transactions;
+      } catch (e) {
+        falhas.push(c.provider);
+        this.log.warn(`${c.provider} sync ${c.id} falhou: ${(e as Error).message}`);
+      }
+    }
+    const resumo =
+      `${conns.length - falhas.length} de ${conns.length} conexão(ões): ${contas} conta(s), ` +
+      `${lancamentos} lançamento(s)`;
+    if (falhas.length === conns.length) throw new Error(`nenhuma conexão sincronizou (${falhas.join(', ')})`);
+    return { status: 'ok', resumo: falhas.length ? `${resumo}; falharam: ${falhas.join(', ')}` : resumo };
   }
 
   private meta() {
