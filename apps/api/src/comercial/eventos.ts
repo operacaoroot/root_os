@@ -116,6 +116,8 @@ export const FONTE_DO_EVENTO: Record<ComercialEvento, ComercialFonte> = {
   'implantacao.iniciada_antes_do_fechamento': 'pessoa',
   'implantacao.fechamento_registrado': 'sistema',
   'cliente.a_conciliar': 'sistema',
+  'lead.importado': 'pessoa',
+  'contrato.importado': 'pessoa',
   'kickoff.marcado': 'sala',
   'parcela.vence': 'relogio',
   'parcela.paga': 'asaas',
@@ -205,14 +207,52 @@ export interface PayloadsComerciais {
   /** T1b: o contrato já assinado, anexado em PDF (guardado no storage pela chave, nunca o conteúdo no fio). */
   'contrato.anexado': { nome: string; bytes: number; tipo: string; sha256: string; chave: string; assinadoEm: string; procedencia: string; por: string | null };
   'fechamento.escrita': { chave: string; escrita: string; estado: string; ref?: string | null; ms?: number | null };
-  'cliente.ativo': { chave: string; partnerId?: string | null; contractId?: string | null; trilhoId?: string | null };
-  'implantacao.card_criado': { chave: string; cardId: string; listId: string; lista: string; etapa: string };
+  /** `importado`: o cliente veio do CRM antigo (rodada de produção 1); a régua e os marcos não valem para ele. */
+  'cliente.ativo': { chave: string; partnerId?: string | null; contractId?: string | null; trilhoId?: string | null; importado?: boolean; origem?: string | null };
+  /** `origem: 'importacao'`: o card veio do importador do CRM antigo (rodada de produção 1). */
+  'implantacao.card_criado': { chave: string; cardId: string; listId: string; lista: string; etapa: string; origem?: string };
   /** A2: uma pessoa abriu o card da implantação com o lead ainda no funil (`etapaDoLead` é a do funil). */
   'implantacao.iniciada_antes_do_fechamento': { cardId: string; listId: string; lista: string; etapa: string; etapaDoLead: string; trilhoId: string | null; partnerId: string | null; por: string | null; porId: string };
   /** A2: o fechamento reaproveitou o card iniciado antes dele e registrou o fechamento no card. */
   'implantacao.fechamento_registrado': { chave: string; cardId: string };
   /** Revisão A2: o Partner da ficha não conferia com o CNPJ do aceite; o fechamento ficou com outro e avisa. */
   'cliente.a_conciliar': { chave: string; partnerDaFicha: string; partnerDoFechamento: string; motivo: string };
+  /**
+   * Rodada de produção 1 (21/10/2026): o cartão do CRM antigo virou (ou reaproveitou) este lead.
+   * `origem` é `cartao:<id>`; os campos são os do cartão, nada inventado. Gravado sem reação.
+   */
+  'lead.importado': {
+    origem: string;
+    lista: string;
+    status: string;
+    destino: string;
+    empresa: string | null;
+    contato: string | null;
+    cnpj: string | null;
+    produto: string | null;
+    produtoRotulo: string | null;
+    valorCentavos: number | null;
+    valorRecorrenteCentavos: number | null;
+    reaproveitado: string | null;
+    por: string | null;
+    porId: string;
+    marca: string;
+  };
+  /** Rodada de produção 1: uma subtarefa de "Contratos dos clientes", o contrato vivo do cliente. Sem PDF, sem parcela. */
+  'contrato.importado': {
+    origem: string;
+    cartaoDoCliente: string;
+    titulo: string;
+    produto: string | null;
+    produtoRotulo: string | null;
+    valorCentavos: number | null;
+    fechadoEm: string | null;
+    semDocumento: boolean;
+    parcelas: string;
+    por: string | null;
+    porId: string;
+    marca: string;
+  };
   'kickoff.marcado': { horario: string };
   'parcela.vence': { parcela: number; vence: string; aviso: 'D-3' | 'D0' | 'D+1' | 'D+5' | 'D+10' };
   'parcela.paga': { parcela: number; pagoEm: string; valorCentavos: number };
@@ -373,7 +413,7 @@ export function resumoDoEvento(type: string, payload: unknown): { fonte: Comerci
     case 'fechamento.escrita':
       return { fonte, resumo: `fechamento · ${String(p.escrita)}: ${String(p.estado)}` };
     case 'cliente.ativo':
-      return { fonte, resumo: 'cliente ativo · fechamento concluído' };
+      return { fonte, resumo: p.importado ? 'cliente ativo · importado do CRM antigo' : 'cliente ativo · fechamento concluído' };
     case 'implantacao.card_criado':
       return { fonte, resumo: `card da implantação aberto · ${curto(p.lista, 40)} · ${curto(p.etapa, 30)}` };
     case 'implantacao.iniciada_antes_do_fechamento':
@@ -382,6 +422,10 @@ export function resumoDoEvento(type: string, payload: unknown): { fonte: Comerci
       return { fonte, resumo: 'fechamento registrado no card da implantação iniciado antes' };
     case 'cliente.a_conciliar':
       return { fonte, resumo: `cliente a conciliar: ${curto(p.motivo, 120)}` };
+    case 'lead.importado':
+      return { fonte, resumo: `importado do CRM antigo${p.por ? ` por ${String(p.por)}` : ''}${p.status ? ` · status do cartão: ${curto(p.status, 40)}` : ''}` };
+    case 'contrato.importado':
+      return { fonte, resumo: `contrato importado do CRM antigo${p.titulo ? ` · ${curto(p.titulo, 60)}` : ''}${typeof p.valorCentavos === 'number' ? ` · ${reais(p.valorCentavos)}` : ''} · anexar o PDF` };
     case 'kickoff.marcado':
       return { fonte, resumo: `kickoff marcado · ${horarioLegivel(p.horario)}` };
     case 'parcela.vence':

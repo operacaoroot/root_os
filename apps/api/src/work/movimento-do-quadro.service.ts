@@ -92,14 +92,20 @@ export class MovimentoDoQuadroService {
     // o selo é lido deles (sem coluna nova). Só os leads destes cards, com a empresa no `where`.
     const fatos = fichas.length
       ? await this.prisma.leadEvent.findMany({
-          where: { orgId, leadId: { in: fichas.map((f) => f.leadId) }, type: { in: ['implantacao.iniciada_antes_do_fechamento', 'implantacao.fechamento_registrado'] } },
+          where: { orgId, leadId: { in: fichas.map((f) => f.leadId) }, type: { in: ['implantacao.iniciada_antes_do_fechamento', 'implantacao.fechamento_registrado', 'implantacao.card_criado'] } },
           select: { leadId: true, type: true, occurredAt: true, payload: true },
         })
       : [];
     const antecipadoDe = new Set<string>();
+    const importadoDe = new Set<string>();
     const fechadoNoCardEm = new Map<string, Date>();
     for (const f of fatos) {
       const card = String(((f.payload ?? {}) as { cardId?: unknown }).cardId ?? '');
+      if (f.type === 'implantacao.card_criado') {
+        // Rodada de produção 1: o card que o importador do CRM antigo abriu tem selo próprio.
+        if (((f.payload ?? {}) as { origem?: unknown }).origem === 'importacao') importadoDe.add(`${f.leadId}:${card}`);
+        continue;
+      }
       if (f.type === 'implantacao.iniciada_antes_do_fechamento') antecipadoDe.add(`${f.leadId}:${card}`);
       else if (!fechadoNoCardEm.has(`${f.leadId}:${card}`)) fechadoNoCardEm.set(`${f.leadId}:${card}`, f.occurredAt);
     }
@@ -134,6 +140,7 @@ export class MovimentoDoQuadroService {
               etapa: ficha.etapa as ComercialEtapa,
               motivoSaida: ficha.motivoSaida,
               antecipado: antecipadoDe.has(`${ficha.leadId}:${t.id}`),
+              importado: importadoDe.has(`${ficha.leadId}:${t.id}`),
               fechadoEm: fechadoNoCardEm.get(`${ficha.leadId}:${t.id}`) ?? ficha.clienteAtivoEm ?? null,
             })
           : null,

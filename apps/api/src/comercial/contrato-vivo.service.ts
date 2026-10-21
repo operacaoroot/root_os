@@ -2,7 +2,7 @@ import { BadRequestException, ConflictException, ForbiddenException, Injectable,
 import { ActorType, Prisma } from '@prisma/client';
 import { classificar, type Efeito } from '@mktos/policy';
 import {
-  TABELA_DE_PRECO, type ComercialProduto, type ContratoEncerrarInput, type ContratoVivo, type SituacaoDoContrato,
+  TABELA_DE_PRECO, type ComercialProduto, type ContratoEncerrarInput, type ContratoImportadoNaTela, type ContratoVivo, type SituacaoDoContrato,
 } from '@mktos/shared';
 
 import { PrismaService } from '../prisma/prisma.service';
@@ -105,6 +105,29 @@ function diaSP(d: Date): string {
   return hojeEmSP(d);
 }
 
+/** O cliente ativo veio do CRM antigo (rodada de produção 1): a régua e os marcos não valem para ele. */
+export function ehClienteImportado(payload: unknown): boolean {
+  return ((payload ?? {}) as { importado?: unknown }).importado === true;
+}
+
+/** Os contratos importados do CRM antigo, na ordem do fechamento, como a tela mostra (puro). */
+export function contratosImportados(fatos: readonly { payload: unknown }[]): ContratoImportadoNaTela[] {
+  const txt = (v: unknown) => (typeof v === 'string' && v.trim() ? v.trim() : null);
+  return fatos
+    .map((f) => {
+      const p = (f.payload ?? {}) as Record<string, unknown>;
+      return {
+        origem: txt(p.origem) ?? '',
+        titulo: txt(p.titulo) ?? 'Contrato',
+        produtoRotulo: txt(p.produtoRotulo),
+        valorCentavos: typeof p.valorCentavos === 'number' && Number.isFinite(p.valorCentavos) ? p.valorCentavos : null,
+        fechadoEm: txt(p.fechadoEm),
+        semDocumento: p.semDocumento !== false,
+      };
+    })
+    .sort((a, b) => (a.fechadoEm ?? '9999').localeCompare(b.fechadoEm ?? '9999') || a.origem.localeCompare(b.origem));
+}
+
 @Injectable()
 export class ContratoVivoService implements OnModuleInit {
   private readonly log = new Logger('ComercialContratoVivo');
@@ -184,8 +207,10 @@ export class ContratoVivoService implements OnModuleInit {
 
   async marcos(orgId: string, agora: Date): Promise<{ marcos: number }> {
     // O fato `cliente.ativo` é a fonte (a ficha é projeção dele e pode atrasar).
-    const ativos = await this.prisma.leadEvent.findMany({ where: { type: 'cliente.ativo', lead: { orgId } }, orderBy: { occurredAt: 'asc' }, select: { leadId: true, occurredAt: true } });
-    const fichas = [...new Map(ativos.map((e) => [e.leadId, { leadId: e.leadId, clienteAtivoEm: e.occurredAt as Date | null }])).values()];
+    const ativos = await this.prisma.leadEvent.findMany({ where: { type: 'cliente.ativo', lead: { orgId } }, orderBy: { occurredAt: 'asc' }, select: { leadId: true, occurredAt: true, payload: true } });
+    // Rodada de produção 1: cliente importado do CRM antigo não ganha o pedido de indicação do dia 15 (a data seria a da importação).
+    const importados = new Set(ativos.filter((e) => ehClienteImportado(e.payload)).map((e) => e.leadId));
+    const fichas = [...new Map(ativos.filter((e) => !importados.has(e.leadId)).map((e) => [e.leadId, { leadId: e.leadId, clienteAtivoEm: e.occurredAt as Date | null }])).values()];
     let n = 0;
     for (const f of fichas) {
       const marcos = await this.marcosDoLead(f.leadId, f.clienteAtivoEm);
@@ -220,12 +245,16 @@ export class ContratoVivoService implements OnModuleInit {
   async doLead(orgId: string, leadId: string, agora: Date = new Date()): Promise<ContratoVivo> {
     const lead = await this.prisma.lead.findFirst({ where: { id: leadId, orgId }, select: { name: true } });
     if (!lead) throw new NotFoundException('Lead não encontrado.');
-    const [ficha, cobrancas, marcoValor, fim] = await Promise.all([
+    const [ficha, cobrancas, marcoValor, fim, doCrm, ativoFato] = await Promise.all([
       this.prisma.comercialFicha.findUnique({ where: { leadId } }),
       this.prisma.comercialCobranca.findMany({ where: { leadId }, orderBy: { parcela: 'asc' } }),
       this.prisma.leadEvent.findFirst({ where: { leadId, type: 'marco.contrato', payload: { path: ['marco'], equals: 'primeiro_valor' } }, select: { occurredAt: true } }),
       this.prisma.leadEvent.findFirst({ where: { leadId, type: { in: ['contrato.concluido', 'contrato.desativado'] } }, orderBy: { occurredAt: 'desc' }, select: { type: true, payload: true, occurredAt: true } }),
+      this.prisma.leadEvent.findMany({ where: { leadId, type: 'contrato.importado' }, select: { payload: true } }),
+      this.prisma.leadEvent.findFirst({ where: { leadId, type: 'cliente.ativo' }, orderBy: { occurredAt: 'asc' }, select: { occurredAt: true, payload: true } }),
     ]);
+    const importados = contratosImportados(doCrm);
+    const clienteImportado = ehClienteImportado(ativoFato?.payload);
     // "Em implantação" (só informativo): ativo com o card da implantação aberto (não arquivado, etapa não fechada).
     const card = ficha?.cardId
       ? await this.prisma.workTask.findFirst({ where: { id: ficha.cardId, orgId }, select: { archived: true, status: { select: { type: true } } } })
@@ -246,7 +275,11 @@ export class ContratoVivoService implements OnModuleInit {
     const hoje = diaSP(agora);
     const trilho = ficha?.trilhoId ? await this.prisma.onboardingTrilho.findFirst({ where: { id: ficha.trilhoId, orgId }, select: { fase: true } }) : null;
     const fases = ['qualificar', 'diagnostico', 'contrato', 'imersao', 'operacao'];
-    const valorCentavos = ficha?.valorCentavos ?? cobrancas.reduce((s, c) => s + c.valorCentavos, 0);
+    // Contrato importado: o valor é a soma dos contratos do CRM antigo quando todos têm valor; senão, o da ficha.
+    const somaImportada = importados.length && importados.every((c) => c.valorCentavos !== null)
+      ? importados.reduce((s, c) => s + (c.valorCentavos ?? 0), 0)
+      : null;
+    const valorCentavos = somaImportada ?? ficha?.valorCentavos ?? cobrancas.reduce((s, c) => s + c.valorCentavos, 0);
     return {
       leadId,
       cliente: ficha?.empresa ?? lead.name,
@@ -272,13 +305,15 @@ export class ContratoVivoService implements OnModuleInit {
       // C-7: nenhum código escreve a saúde; até a fórmula existir ([a decidir]), a mesma leitura do funil.
       saude: saudeDoLead(),
       faseDaImplantacao: trilho ? { atual: Math.max(1, fases.indexOf(trilho.fase) + 1), total: 5 } : null,
-      marcos: await this.marcosDoLead(leadId, ficha?.clienteAtivoEm ?? (await this.prisma.leadEvent.findFirst({ where: { leadId, type: 'cliente.ativo' }, select: { occurredAt: true } }))?.occurredAt ?? null),
+      // Cliente importado: sem data do dia 15 (seria a da importação, não a do primeiro valor).
+      marcos: await this.marcosDoLead(leadId, clienteImportado ? null : ficha?.clienteAtivoEm ?? ativoFato?.occurredAt ?? null),
       // C-17: nada conta aditivo ainda; nulo em vez de um zero com cara de medido.
       aditivos: null,
       situacao,
       encerramento,
       cnpj: ficha?.cnpj ?? null,
       socioDaConta: ficha?.socioDaConta ?? null,
+      importados,
     };
   }
 

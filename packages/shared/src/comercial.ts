@@ -412,6 +412,11 @@ export const COMERCIAL_EVENTOS = [
   // Revisão adversarial A2: o cliente ligado ao lead antes do fechamento não confere com o CNPJ do
   // aceite; o fechamento seguiu pela regra do CNPJ e deixou o aviso para uma pessoa conciliar.
   'cliente.a_conciliar',
+  // Rodada de produção 1 (21/10/2026): o CRM antigo (listas `cadastro` do Trabalho) importado para o
+  // Comercial por uma pessoa, pelo script `importar-crm`. Fato passado registrado, não ato comercial novo:
+  // nenhum dos dois roda reação (nada sai para fora).
+  'lead.importado',
+  'contrato.importado',
   'kickoff.marcado',
   'parcela.vence',
   'parcela.paga',
@@ -1124,7 +1129,30 @@ export interface ContratoVivo {
   encerramento: { situacao: 'concluido' | 'desativado'; motivo: string; em: string; por: string | null; parcelasEmAberto: number } | null;
   cnpj: string | null;
   socioDaConta: string | null;
+  /**
+   * Rodada de produção 1 (21/10/2026): os contratos que vieram do CRM antigo (`contrato.importado`),
+   * um por subtarefa de "Contratos dos clientes". Sem PDF e sem parcela: a régua fica desligada e a
+   * tela pede o PDF. Ausente (ou vazio) no contrato que nasceu pelo fechamento.
+   */
+  importados?: ContratoImportadoNaTela[];
 }
+
+/** O contrato importado do CRM antigo, como a tela de Contratos vivos mostra. */
+export interface ContratoImportadoNaTela {
+  /** `cartao:<id da subtarefa>`: de onde veio. */
+  origem: string;
+  titulo: string;
+  produtoRotulo: string | null;
+  valorCentavos: number | null;
+  /** AAAA-MM-DD, quando o cartão tinha a data de fechamento. */
+  fechadoEm: string | null;
+  semDocumento: boolean;
+}
+
+/** A marca de toda escrita do importador do CRM antigo no fio, na auditoria e no RASTRO. */
+export const IMPORTACAO_CRM_MARCA = 'importacao.crm';
+/** O aviso do contrato que veio do CRM antigo sem o PDF assinado. */
+export const AVISO_DO_CONTRATO_IMPORTADO = 'Contrato importado do CRM antigo · anexar o PDF';
 
 export const SITUACOES_DO_CONTRATO = ['ativo', 'em_implantacao', 'concluido', 'desativado'] as const;
 export type SituacaoDoContrato = (typeof SITUACOES_DO_CONTRATO)[number];

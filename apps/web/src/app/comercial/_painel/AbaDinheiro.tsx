@@ -17,6 +17,7 @@ import { useAuth } from '@/lib/auth';
 import { AUSENTE, ROTULO_DO_PRODUTO, contarParcelas, dataDoDia, ficouRetida, numeroOuAusente, quandoCurtoSP, reaisOuAusente, segundos } from '@/lib/cockpit';
 
 import { AguardandoAprovacao, Aviso, BOTAO, BOTAO_PRIMARIO, CARTAO, Carregando, Chip, Erro, ErroDaAcao, INPUT, Rotulo, useCarregar } from '../_ui';
+import { ContratosImportados } from './ContratosImportados';
 import { usePainel } from './provedor';
 
 /** T1b: `contratoAnexado` só vem para quem fechou fora do sistema (o PDF assinado, registrado à mão). */
@@ -107,6 +108,8 @@ export function AbaDinheiro({ leadId, ficha: f, aoMudar }: { leadId: string; fic
           <div className="mt-2"><Erro erro={vivo.erro} aoTentar={() => void vivo.recarregar()} /></div>
         ) : !vivo.dados ? (
           <div className="mt-2"><Carregando linhas={2} altura="h-6" /></div>
+        ) : vivo.dados.parcelas.length === 0 && vivo.dados.importados?.length ? (
+          <ContratosImportados itens={vivo.dados.importados} />
         ) : vivo.dados.parcelas.length === 0 ? (
           <p className="mt-2 text-[12.5px] text-muted">Nenhuma parcela ainda: elas nascem com a cobrança.</p>
         ) : (
