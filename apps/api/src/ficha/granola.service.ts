@@ -1,5 +1,6 @@
 import { BadRequestException, Inject, Injectable, NotFoundException, type OnModuleInit, Optional } from '@nestjs/common';
 import { randomBytes, timingSafeEqual } from 'node:crypto';
+import { Prisma } from '@prisma/client';
 import {
   CABECALHO_DO_SEGREDO_GRANOLA,
   CONECTOR_GRANOLA,
@@ -179,13 +180,22 @@ export function idDoGranolaNoLink(link: string | null | undefined): string | nul
   return m ? m[1] : null;
 }
 
-/** A reunião deste id já está na ficha de alguém? Pelo link do Zap ou pela marca da ata gerada no OS. */
+/**
+ * A reunião deste id já está na ficha de alguém? Pela coluna `granolaId` (desde a
+ * rodada dos agentes, 21/10/2026) e, para as linhas antigas que a migration não
+ * preencheu, pelo link do Zap ou pela marca da ata gerada no OS.
+ */
 export async function reuniaoDoGranolaNaFicha(
   prisma: Pick<PrismaService, 'reuniaoDoCartao'>,
   orgId: string,
   granolaId: string,
 ): Promise<{ id: string; taskId: string; autorId: string | null } | null> {
   if (!granolaId) return null;
+  const pelaColuna = await prisma.reuniaoDoCartao.findFirst({
+    where: { orgId, granolaId },
+    select: { id: true, taskId: true, autorId: true },
+  });
+  if (pelaColuna) return pelaColuna;
   return prisma.reuniaoDoCartao.findFirst({
     where: {
       orgId,
@@ -195,6 +205,68 @@ export async function reuniaoDoGranolaNaFicha(
     orderBy: { createdAt: 'asc' },
     select: { id: true, taskId: true, autorId: true },
   });
+}
+
+export interface ReuniaoDoGranolaParaGravar {
+  /** O id da reunião no Granola; nulo quando o Zap não mandou o link da nota. */
+  granolaId: string | null;
+  taskId: string;
+  titulo: string;
+  em: Date;
+  link: string | null;
+  transcricao: string;
+  autorId: string | null;
+}
+
+/**
+ * UMA ENTRADA SÓ PARA A REUNIÃO DO GRANOLA (rodada dos agentes, 21/10/2026, TR-02/TR-03).
+ *
+ * O webhook do Zap (`GranolaService.receber`) e o modo direto
+ * (`levarReuniaoDiretaParaFicha`, chamado pelo banco de atas) gravam por AQUI.
+ * Com o id do Granola, o índice único `(orgId, granolaId)` decide: a segunda
+ * chegada da mesma reunião, por qualquer das duas portas e mesmo ao mesmo tempo,
+ * não cria linha; devolve a que já existe (`criada: false`). Sem id (o Zap sem
+ * link), vale a procura de antes por título e horário, que é o que existia.
+ */
+export async function gravarReuniaoDoGranola(
+  prisma: Pick<PrismaService, 'reuniaoDoCartao'>,
+  orgId: string,
+  r: ReuniaoDoGranolaParaGravar,
+): Promise<{ criada: boolean; id: string; taskId: string; autorId: string | null }> {
+  if (r.granolaId) {
+    const ja = await reuniaoDoGranolaNaFicha(prisma, orgId, r.granolaId);
+    if (ja) return { criada: false, ...ja };
+  } else {
+    const ja = await prisma.reuniaoDoCartao.findFirst({
+      where: { orgId, fonte: 'granola', ...(r.link ? { link: r.link } : { titulo: r.titulo, em: r.em }) },
+      select: { id: true, taskId: true, autorId: true },
+    });
+    if (ja) return { criada: false, ...ja };
+  }
+  try {
+    const nova = await prisma.reuniaoDoCartao.create({
+      data: {
+        orgId,
+        taskId: r.taskId,
+        titulo: r.titulo,
+        em: r.em,
+        fonte: 'granola',
+        link: r.link,
+        transcricao: r.transcricao.slice(0, 2_000_000),
+        autorId: r.autorId,
+        granolaId: r.granolaId,
+      },
+      select: { id: true, taskId: true, autorId: true },
+    });
+    return { criada: true, ...nova };
+  } catch (e) {
+    // A corrida: a outra porta gravou a mesma reunião entre a procura e o insert.
+    if (r.granolaId && e instanceof Prisma.PrismaClientKnownRequestError && e.code === 'P2002') {
+      const ja = await reuniaoDoGranolaNaFicha(prisma, orgId, r.granolaId);
+      if (ja) return { criada: false, ...ja };
+    }
+    throw e;
+  }
 }
 
 export interface ReuniaoDiretaParaFicha {
@@ -243,16 +315,19 @@ export async function levarReuniaoDiretaParaFicha(
   const ja = await reuniaoDoGranolaNaFicha(prisma, orgId, r.granolaId);
   const cabecalho = r.participantes.length ? `Participantes: ${r.participantes.join(', ')}\n\n` : '';
   const corpo = `${cabecalho}${r.ata}`.slice(0, 2_000_000);
-  if (ja) {
+  const atualizar = async (alvo: { id: string; autorId: string | null }) => {
     // Só a reunião que este modo gravou é reescrita; a que o Zap trouxe é dele (sem autor).
-    if (ja.autorId === null) return { ficha: 'ja_estava', cliente };
-    await prisma.reuniaoDoCartao.updateMany({ where: { id: ja.id, orgId }, data: { titulo: r.titulo, transcricao: corpo } });
-    return { ficha: 'atualizada', cliente };
-  }
+    if (alvo.autorId === null) return { ficha: 'ja_estava' as const, cliente };
+    await prisma.reuniaoDoCartao.updateMany({ where: { id: alvo.id, orgId }, data: { titulo: r.titulo, transcricao: corpo } });
+    return { ficha: 'atualizada' as const, cliente };
+  };
+  if (ja) return atualizar(ja);
   if (!cliente) return { ficha: 'sem_cliente', cliente: null };
-  await prisma.reuniaoDoCartao.create({
-    data: { orgId, taskId: cliente.taskId, titulo: r.titulo, em: r.em, fonte: 'granola', link: r.link, transcricao: corpo, autorId: r.autorId },
+  const gravada = await gravarReuniaoDoGranola(prisma, orgId, {
+    granolaId: r.granolaId, taskId: cliente.taskId, titulo: r.titulo, em: r.em, link: r.link, transcricao: corpo, autorId: r.autorId,
   });
+  // A outra porta (o webhook) gravou a mesma reunião no meio: vale a regra de "já estava".
+  if (!gravada.criada) return atualizar(gravada);
   return { ficha: 'criada', cliente };
 }
 
@@ -452,20 +527,19 @@ export class GranolaService implements OnModuleInit {
     const taskId = achado?.card.id ?? (await this.caixa(orgId));
 
     // O Zap reenvia quando a chamada falha: o mesmo link (ou título + horário) não entra duas vezes.
-    // E a reunião que a ata do modo direto já levou à ficha (marca `granola:<id>`) também não.
+    // E a reunião que a ata do modo direto já levou à ficha também não: as duas portas gravam pela
+    // MESMA função, com o id do Granola na coluna de índice único (TR-02/TR-03, 21/10/2026).
     const idNoLink = idDoGranolaNoLink(r.link);
-    const ja =
-      (await this.prisma.reuniaoDoCartao.findFirst({
-        where: { orgId, fonte: 'granola', ...(r.link ? { link: r.link } : { titulo: r.titulo, em: r.em }) },
-        select: { id: true, taskId: true },
-      })) ?? (idNoLink ? await reuniaoDoGranolaNaFicha(this.prisma, orgId, idNoLink) : null);
     const nome = (id: string) => cards.find((c) => c.id === id)?.titulo ?? null;
-    if (ja) return { ok: true, duplicada: true, cliente: nome(ja.taskId), porque: null };
-
+    if (r.link && !idNoLink) {
+      const peloLink = await this.prisma.reuniaoDoCartao.findFirst({ where: { orgId, fonte: 'granola', link: r.link }, select: { taskId: true } });
+      if (peloLink) return { ok: true, duplicada: true, cliente: nome(peloLink.taskId), porque: null };
+    }
     const cabecalho = r.participantes ? `Participantes: ${r.participantes}\n\n` : '';
-    await this.prisma.reuniaoDoCartao.create({
-      data: { orgId, taskId, titulo: r.titulo, em: r.em, fonte: 'granola', link: r.link, transcricao: `${cabecalho}${r.transcricao}`.slice(0, 2_000_000) },
+    const gravada = await gravarReuniaoDoGranola(this.prisma, orgId, {
+      granolaId: idNoLink, taskId, titulo: r.titulo, em: r.em, link: r.link, transcricao: `${cabecalho}${r.transcricao}`, autorId: null,
     });
+    if (!gravada.criada) return { ok: true, duplicada: true, cliente: nome(gravada.taskId), porque: null };
     return { ok: true, duplicada: false, cliente: achado?.card.titulo ?? null, porque: achado?.porque ?? null };
   }
 

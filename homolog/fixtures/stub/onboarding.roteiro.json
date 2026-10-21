@@ -1,0 +1,6 @@
+{
+  "tarefa": "onboarding.roteiro",
+  "_sobre": "Resposta do stub para o roteirista do kickoff (IM-03): reescreve só a pergunta do negócio; as demais ficam como estão. Dado fictício.",
+  "respostas": [],
+  "padrao": "{\"perguntas\": {\"negocio\": \"Em duas frases: o que vocês vendem, e para quem?\"}}"
+}

@@ -56,10 +56,23 @@ export interface AgenteNaEtapa {
   estado: EstadoDoAgenteNaEtapa;
   ultimoFato: FatoNaEtapa | null;
   oQueVaiFazer: string;
+  /**
+   * Do cadastro único (rodada dos agentes, 21/10/2026): o id da função (IM-01...),
+   * para que serve, o estado declarado e o modelo com o esforço. Ausentes quando a
+   * função não está no cadastro.
+   */
+  funcao?: string;
+  paraQueServe?: string;
+  estadoDeclarado?: string;
+  modelo?: string | null;
+  esforco?: string | null;
 }
 
 export interface RelogioNaEtapa {
   nome: string;
+  /** Do cadastro único (IM-05): o id e para que serve. */
+  funcao?: string;
+  paraQueServe?: string;
   /** A rotina existe e está ligada. */
   ligado: boolean;
   proximaPassagemEm: string | null;

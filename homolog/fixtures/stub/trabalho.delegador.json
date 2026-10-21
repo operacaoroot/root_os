@@ -1,0 +1,6 @@
+{
+  "tarefa": "trabalho.delegador",
+  "_sobre": "Resposta do stub para o delegador (TR-09): uma subtarefa para o arquivista do cliente (TR-05), sem prazo. Pessoa não entra porque o nome teria de ser o de uma pessoa da empresa de homologação. Tudo nasce sugestão.",
+  "respostas": [],
+  "padrao": "{\"subtarefas\": [{\"titulo\": \"Classificar os arquivos que chegaram do cliente\", \"descricao\": \"Pôr cada arquivo na subpasta certa da pasta do cliente.\", \"dono\": {\"tipo\": \"agente\", \"funcao\": \"TR-05\"}, \"prazo\": null, \"porque\": \"O arquivista classifica arquivo de cliente.\"}]}"
+}

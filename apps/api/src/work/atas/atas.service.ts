@@ -38,6 +38,7 @@ import {
 } from '@mktos/shared';
 
 import { temPapelDeMaquina } from '../../approvals/alcada';
+import { ARQUIVISTA_DO_CLIENTE, type ArquivistaDoClientePort } from '../../clientes/portas';
 import { AuditService } from '../../audit/audit.service';
 import { lerAprovador } from '../../auth/aprovador';
 import { LLM_PROVIDER, type LlmProvider } from '../../llm/llm.provider';
@@ -185,6 +186,8 @@ export class AtasService {
     @Inject(LLM_PROVIDER) private readonly llm: LlmProvider,
     /** `@Optional()`: a fonte do Drive (P7). Sem ela, a lista não traz o Drive e diz por quê. */
     @Optional() private readonly drive?: DriveDasAtasService,
+    /** TR-01: a ata aceita vai a `05-acompanhamento` do cliente. Ausente = só no OS. */
+    @Optional() @Inject(ARQUIVISTA_DO_CLIENTE) private readonly arquivista?: ArquivistaDoClientePort,
   ) {}
 
   // ==========================================================================
@@ -633,43 +636,45 @@ export class AtasService {
     const lista = await this.prisma.workList.findFirst({ where: { id: listId, orgId }, select: { id: true } });
     if (!lista) throw new BadRequestException('A lista escolhida não existe mais nesta empresa.');
 
-    // A TOMADA: só um clique passa daqui. O segundo lê `count: 0` e ouve 409.
-    const tomada = await this.prisma.ataSugestao.updateMany({
-      where: { id, orgId, estado: 'rascunho' },
-      data: { estado: 'aceita', listaId: listId, decididaPor: actorId, decididaEm: new Date() },
-    });
-    if (tomada.count === 0) {
-      const agora = await this.prisma.ataSugestao.findFirst({ where: { id, orgId }, select: { estado: true } });
-      throw this.jaDecidida(agora?.estado ?? 'aceita');
-    }
-
     const ata = await this.resumoDaAtaParaTarefa(orgId, s.ataRef, acesso);
-    let tarefaId: string;
-    try {
-      const procedencia = this.descricaoDaTarefa(s, ata);
-      const tarefa = await this.work.criarTarefa(orgId, actorId, {
-        listId,
-        title: titulo,
-        // O que será executado vem primeiro; o trecho da ata segue como procedência.
-        description: descricaoEditada ? [descricaoEditada, '', procedencia].join('\n') : procedencia,
-        assignee: dono,
-        dueDate: vencimento ? new Date(`${vencimento}T12:00:00.000Z`).toISOString() : null,
-        clienteId: input.clienteId ?? null,
-      }, { exigirCliente: true });
-      tarefaId = tarefa.id;
-    } catch (e) {
-      // A tarefa não nasceu: a sugestão volta a rascunho, para a pessoa tentar de novo.
-      await this.prisma.ataSugestao.updateMany({
-        where: { id, orgId, estado: 'aceita', workTaskId: null },
-        data: { estado: 'rascunho', decididaPor: null, decididaEm: null },
-      });
-      throw e;
-    }
+    const procedencia = this.descricaoDaTarefa(s, ata);
+    // As conferências do Trabalho (lista, porta da implantação, cliente, responsável) vêm ANTES da tomada.
+    const preparo = await this.work.prepararCriacaoDeTarefa(orgId, {
+      listId,
+      title: titulo,
+      // O que será executado vem primeiro; o trecho da ata segue como procedência.
+      description: descricaoEditada ? [descricaoEditada, '', procedencia].join('\n') : procedencia,
+      assignee: dono,
+      dueDate: vencimento ? new Date(`${vencimento}T12:00:00.000Z`).toISOString() : null,
+      clienteId: input.clienteId ?? null,
+    }, { exigirCliente: true });
 
-    // Com a empresa no `where`, como toda escrita deste serviço.
-    await this.prisma.ataSugestao.updateMany({ where: { id, orgId, estado: 'aceita' }, data: { workTaskId: tarefaId } });
+    /*
+     * A TOMADA E A TAREFA NUMA TRANSAÇÃO SÓ (rodada dos agentes, 21/10/2026, TR-01).
+     * Antes a sugestão era tomada, a tarefa criada fora e o id gravado depois: um
+     * erro entre as duas escritas (ou o processo caindo) deixava "aceita sem
+     * tarefa". Agora as três escritas caem ou ficam juntas. Dois cliques: o
+     * segundo espera a linha, lê `count: 0` e ouve 409, sem tarefa nenhuma.
+     */
+    const tarefaId = await this.prisma.$transaction(async (tx) => {
+      const tomada = await tx.ataSugestao.updateMany({
+        where: { id, orgId, estado: 'rascunho' },
+        data: { estado: 'aceita', listaId: listId, decididaPor: actorId, decididaEm: new Date() },
+      });
+      if (tomada.count === 0) {
+        const agora = await tx.ataSugestao.findFirst({ where: { id, orgId }, select: { estado: true } });
+        throw this.jaDecidida(agora?.estado ?? 'aceita');
+      }
+      const tarefa = await this.work.gravarTarefaPreparada(tx, preparo);
+      // Com a empresa no `where`, como toda escrita deste serviço.
+      await tx.ataSugestao.updateMany({ where: { id, orgId, estado: 'aceita' }, data: { workTaskId: tarefa.id } });
+      return tarefa.id;
+    });
+    await this.work.auditarCriacaoDeTarefa(orgId, actorId, tarefaId);
     const final = await this.prisma.ataSugestao.findFirstOrThrow({ where: { id, orgId } });
     const vencimentoSugerido = s.vencimento ? s.vencimento.toISOString().slice(0, 10) : null;
+    // TR-01: a ata aceita de um cliente vai como `.md` para `05-acompanhamento` dele. Nunca derruba o aceite.
+    const copiaDaAta = await this.copiarAtaParaOCliente(orgId, id, s.ataRef, preparo.clienteId, actorId, acesso);
     await this.audit.log({
       orgId,
       actorId,
@@ -685,9 +690,67 @@ export class AtasService {
         vencimentoCorrigido: vencimento !== vencimentoSugerido,
         tituloCorrigido: titulo !== s.titulo,
         descricaoEscrita: !!descricaoEditada,
+        copiaDaAta,
       },
     });
     return (await this.paraDtos(orgId, [final]))[0];
+  }
+
+  /**
+   * A ATA ACEITA VAI À PASTA DO CLIENTE (rodada dos agentes, 21/10/2026, TR-01).
+   *
+   * Pelo arquivista (`drive.arquivo.enviar`, R3, pela porta dele), em
+   * `05-acompanhamento`, como `.md`. Uma vez por ata e cliente: a segunda
+   * sugestão aceita da mesma ata para o mesmo cliente não manda de novo. O
+   * cliente interno ("Root (interno)") o arquivista guarda só no OS. Volta só o
+   * estado, para a auditoria; o texto não é gravado aqui.
+   */
+  private async copiarAtaParaOCliente(
+    orgId: string,
+    sugestaoId: string,
+    ataRef: string,
+    clienteId: string | null,
+    actorId: string,
+    acesso: AcessoAsAtas,
+  ): Promise<string> {
+    if (!this.arquivista) return 'sem_arquivista';
+    if (!clienteId) return 'sem_cliente';
+    try {
+      const ja = await this.prisma.ataSugestao.count({
+        where: { orgId, ataRef, estado: 'aceita', id: { not: sugestaoId }, workTaskId: { not: null } },
+      });
+      if (ja) {
+        const outras = await this.prisma.ataSugestao.findMany({
+          where: { orgId, ataRef, estado: 'aceita', id: { not: sugestaoId }, workTaskId: { not: null } },
+          select: { workTaskId: true },
+        });
+        const mesmas = await this.prisma.workTask.count({
+          where: { orgId, id: { in: outras.map((o) => o.workTaskId!).filter(Boolean) }, clienteId },
+        });
+        if (mesmas) return 'ja_enviada';
+      }
+      const a = await this.exigirAta(orgId, ataRef, { ...acesso, actorId: acesso.actorId ?? actorId });
+      const meta = metadadosDaAta(a.texto, a.caminho);
+      const md = [`# ${a.titulo}`, '', `Ata do banco de atas do OS (${a.procedencia}).${meta.data ? ` Reunião de ${meta.data}.` : ''}`, '', a.texto.trim(), ''].join('\n');
+      const r = await this.arquivista.arquivar({
+        orgId,
+        partnerId: clienteId,
+        origem: 'ata',
+        nomeOriginal: `ata-${slugDaAta(a.titulo) || 'reuniao'}.md`,
+        tipoMime: 'text/markdown',
+        conteudo: { buffer: Buffer.from(md, 'utf8') },
+        subpasta: '05-acompanhamento',
+        tipo: 'ata',
+        titulo: a.titulo,
+        data: meta.data ? new Date(`${meta.data}T12:00:00.000Z`) : a.atualizadaEm,
+        texto: md.slice(0, 8000),
+        atorId: actorId,
+      });
+      return r.estado;
+    } catch (e) {
+      this.log.warn(`ata ${ataRef}: não foi para a pasta do cliente (${(e as Error).message})`);
+      return 'erro';
+    }
   }
 
   async descartar(orgId: string, quem: QuemDecide, id: string, acesso: AcessoAsAtas): Promise<TrabAtaSugestaoDto> {

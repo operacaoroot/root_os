@@ -22,6 +22,7 @@ import { RequirePermissions } from '../../auth/permissions.decorator';
 import { ESPINHA, NIVEIS, PERFIS, ROTULO_DO_BLOCO, ROTULO_DO_NIVEL } from './espinha';
 import { ORDEM_DAS_FASES, ROTULO_DA_FASE } from './fases';
 import { LeituraDaAtaService, type FonteDaAta } from './leitura-da-ata.service';
+import { KitDoTrilhoService } from './kit/kit.service';
 import { REGUA_DO_LINK, SemDataError } from './mensagens';
 import { RECEITAS } from './receitas';
 import { MARCOS_MANUAIS, TrilhoService, type Quem } from './trilho.service';
@@ -148,6 +149,7 @@ export class TrilhosController {
   constructor(
     private readonly trilhos: TrilhoService,
     private readonly leitura: LeituraDaAtaService,
+    private readonly kits: KitDoTrilhoService,
   ) {}
 
   // ------------------------------------------------------------ leituras
@@ -296,6 +298,20 @@ export class TrilhosController {
     const bruto = kickoffDaQuery ?? body?.kickoffEm;
     const kickoffEm = typeof bruto === 'string' && bruto.trim() ? bruto.trim() : null;
     return this.leitura.lerAta(user.orgId, id, fonte, quemDe(user), kickoffEm);
+  }
+
+  /** IM-07 (rodada dos agentes): o kit e a pasta do cliente, para o card da Implantação. */
+  @Get(':id/kit')
+  @RequirePermissions('tarefas.ver')
+  kit(@CurrentUser() user: JwtUser, @Param('id') id: string) {
+    return this.kits.doCard(user.orgId, id);
+  }
+
+  /** IM-07: "Montar kit" no card. Gasta modelo; o segundo clique em curso ouve 409. */
+  @Post(':id/kit')
+  @RequirePermissions('tarefas.editar')
+  montarKit(@CurrentUser() user: JwtUser, @Param('id') id: string) {
+    return this.kits.montar(user.orgId, id, quemDe(user));
   }
 
   @Post(':id/dossie')

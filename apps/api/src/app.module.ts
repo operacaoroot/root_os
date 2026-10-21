@@ -48,6 +48,8 @@ import { ClientesModule } from './clientes/clientes.module';
 import { ComercialModule } from './comercial/comercial.module';
 import { AnexosDaTarefaModule } from './work/anexos/anexos.module';
 import { AgendaModule } from './agenda/agenda.module';
+import { CobrancaDeTarefasModule } from './work/cobranca/cobranca.module';
+import { DelegadorModule } from './work/delegador/delegador.module';
 
 @Module({
   imports: [
@@ -199,6 +201,12 @@ import { AgendaModule } from './agenda/agenda.module';
     // (o tratador da pendência "qual é o cliente?"). Sem esta linha a rotina
     // fica órfã e `GET /api/agenda/fora-do-padrao` responde 404.
     AgendaModule,
+    // Rodada dos agentes (21/10/2026), lane A3+TR: o cobrador de tarefas (TR-07, a rotina
+    // `trabalho.cobranca` e o tratador de `tarefa.cobranca`) e o delegador (TR-09, as rotas
+    // `/trabalho/tarefas/:id/delegacao`). Sem as linhas, a rotina fica "sem executor" e as
+    // rotas do delegador respondem 404, sem nada acusar.
+    CobrancaDeTarefasModule,
+    DelegadorModule,
   ],
   controllers: [HealthController],
 })

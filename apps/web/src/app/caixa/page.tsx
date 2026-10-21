@@ -9,6 +9,7 @@ import { useCaixa } from '@/components/caixa';
 import { AbaAtividade } from './AbaAtividade';
 import { AbaMinhasTarefas } from './AbaMinhasTarefas';
 import { AbaDecisoes, ContadorDeDecisoes, useFilaDoComercial, useVeDecisoes, type FilaDoComercial } from './AbaDecisoes';
+import { ContadorDePendencias, usePendenciasDaCaixa, type PendenciasLidas } from './PendenciasDaCaixa';
 import { CARTAO, FOCO, ROTULO } from './comum';
 
 /*
@@ -46,6 +47,11 @@ import { CARTAO, FOCO, ROTULO } from './comum';
  * Rodada do trabalho T6 (19/10/2026): a terceira aba, DECISÕES, traz a fila de
  * decisões do comercial com os mesmos cartões de um toque (`AbaDecisoes.tsx`).
  * Só existe para quem tem `leads.ver` com o módulo `leads` ligado.
+ *
+ * Rodada dos agentes (21/10/2026): a aba Decisões existe para TODA pessoa da caixa,
+ * porque traz as pendências que os agentes e as rotinas deixaram (`GET /caixa/pendencias`,
+ * a lista de `GET /pendencias` triada); a fila do comercial continua só para quem tem
+ * `leads.ver` com o módulo `leads`. O topo ganha o contador das pendências.
  */
 
 const ABAS = [
@@ -85,12 +91,15 @@ function Resumo({
   erro,
   onTentar,
   decisoes,
+  pendencias,
 }: {
   caixa: CaixaResposta | null;
   erro: string | null;
   onTentar: () => void;
   /** O contador das decisões do comercial; ausente para quem não vê a aba. */
   decisoes?: { fila: FilaDoComercial; aoAbrir: () => void };
+  /** O contador das pendências dos agentes (todos). */
+  pendencias?: { lidas: PendenciasLidas; aoAbrir: () => void };
 }) {
   if (erro) {
     return (
@@ -137,6 +146,7 @@ function Resumo({
             </span>
           </p>
         )}
+        {pendencias && <ContadorDePendencias pendencias={pendencias.lidas} aoAbrir={pendencias.aoAbrir} />}
         {decisoes && <ContadorDeDecisoes fila={decisoes.fila} aoAbrir={decisoes.aoAbrir} />}
         <p className="text-xs text-muted">
           sua alçada: <span className="text-text">{caixa.eu.alcada}</span> · medido às {medido}
@@ -177,9 +187,10 @@ export default function CaixaPage() {
   const botoes = useRef<Record<Aba, HTMLButtonElement | null>>({ atividade: null, tarefas: null, decisoes: null });
   const veDecisoes = useVeDecisoes();
   const fila = useFilaDoComercial(veDecisoes);
-  const abas = ABAS.filter((a) => a.chave !== 'decisoes' || veDecisoes);
-  // `?aba=decisoes` de quem não vê a aba cai na Atividade.
-  const abaAtiva: Aba = aba === 'decisoes' && !veDecisoes ? 'atividade' : aba;
+  const pendencias = usePendenciasDaCaixa();
+  // Rodada dos agentes: a aba Decisões é de todos (as pendências dos agentes); a fila do comercial, de quem vê.
+  const abas = ABAS;
+  const abaAtiva: Aba = aba;
 
   useEffect(() => {
     setAba(abaDoEndereco());
@@ -236,6 +247,7 @@ export default function CaixaPage() {
         erro={erro}
         onTentar={() => void buscar()}
         decisoes={veDecisoes ? { fila, aoAbrir: () => trocar('decisoes') } : undefined}
+        pendencias={{ lidas: pendencias, aoAbrir: () => trocar('decisoes') }}
       />
 
       <div role="tablist" aria-label="Caixa de entrada" onKeyDown={teclaNasAbas} className="flex gap-1 border-b border-border">
@@ -273,7 +285,7 @@ export default function CaixaPage() {
           abaAtiva === 'atividade' ? (
             <AbaAtividade token={token} />
           ) : abaAtiva === 'decisoes' ? (
-            <AbaDecisoes fila={fila} />
+            <AbaDecisoes fila={veDecisoes ? fila : null} pendencias={pendencias} />
           ) : (
             <AbaMinhasTarefas token={token} />
           )

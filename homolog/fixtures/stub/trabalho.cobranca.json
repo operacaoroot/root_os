@@ -1,0 +1,6 @@
+{
+  "tarefa": "trabalho.cobranca",
+  "_sobre": "Resposta do stub para a frase do cobrador de tarefas (TR-07). Sem número de propósito: a contagem é do sistema, e frase com número que não está na contagem é descartada.",
+  "respostas": [],
+  "padrao": "{\"frase\": \"Bom dia. Estas tarefas pedem a sua atenção hoje; comece pelas vencidas.\"}"
+}

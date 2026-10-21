@@ -1,21 +1,34 @@
-import { BadRequestException, Inject, Injectable, Logger } from '@nestjs/common';
-import { Prisma } from '@prisma/client';
+import { BadRequestException, Inject, Injectable, Logger, Optional } from '@nestjs/common';
+import { Prisma, SessionCanal, SessionStatus } from '@prisma/client';
 import { createHash } from 'node:crypto';
 import { isIP } from 'node:net';
 import { lookup } from 'node:dns/promises';
 
+import { AgentRuntime } from '../../agents/agent-runtime.service';
 import {
   SLUG_DO_LEITOR_DE_ATA,
   SLUG_DO_PESQUISADOR_DE_CONTA,
   SLUG_DO_ROTEIRISTA,
 } from '../../agents/roster';
-import { LLM_PROVIDER, type LlmProvider, type LlmStepOutput } from '../../llm/llm.provider';
+import { ARQUIVISTA_DO_CLIENTE, type ArquivistaDoClientePort, type ResultadoDoArquivo } from '../../clientes/portas';
+import { LLM_PROVIDER, type LlmProvider, type LlmStepInput, type LlmStepOutput } from '../../llm/llm.provider';
+import { MemoriaService } from '../../memory/memoria.service';
 import { PrismaService } from '../../prisma/prisma.service';
-import { interpretarDossie, promptDoDossie, type Dossie } from './dossie';
+import {
+  NOTA_DA_PESQUISA_NA_WEB,
+  USOS_DA_BUSCA_NA_WEB,
+  buscaNaWebLigada,
+  pedidoDoPesquisador,
+  promptDoDossie,
+  interpretarDossie,
+  TAREFA_DO_DOSSIE,
+  type Dossie,
+} from './dossie';
 import { ehNivel, temasDoBloco, temasDoConvite, type Nivel } from './espinha';
 import {
   AtaInvalidaError,
   LeituraIlegivelError,
+  ataGeradaEmMarkdown,
   conferirAta,
   interpretarLeitura,
   promptDoLeitor,
@@ -23,6 +36,9 @@ import {
 } from './leitor-de-ata';
 import { varrerSegredos } from './segredos';
 import { TrilhoService, type AtaNaBancada, type Quem } from './trilho.service';
+
+/** A marca do stub para o roteirista (`homolog/fixtures/stub/onboarding.roteiro.json`). */
+export const TAREFA_DO_ROTEIRO = 'onboarding.roteiro';
 
 /* ==========================================================================
  * AS TRÊS CHAMADAS DE MODELO DO TRILHO — ata, dossiê, roteiro
@@ -200,6 +216,12 @@ export class LeituraDaAtaService {
     @Inject(LLM_PROVIDER) private readonly llm: LlmProvider,
     private readonly trilhos: TrilhoService,
     private readonly prisma: PrismaService,
+    /** A nota `onboarding.pesquisa.web` (IM-02). `@Optional()`: as suítes montam à mão. */
+    @Optional() private readonly memoria?: MemoriaService,
+    /** O laço do agente (IM-02). Sem ele, ou com provedor que não chama ferramenta, o dossiê sai pela chamada direta. */
+    @Optional() private readonly runtime?: AgentRuntime,
+    /** IM-01: a ata gerada vai a `03-kickoff` do cliente. Ausente = fica só no OS. */
+    @Optional() @Inject(ARQUIVISTA_DO_CLIENTE) private readonly arquivista?: ArquivistaDoClientePort,
   ) {}
 
   // ==========================================================================
@@ -292,18 +314,88 @@ export class LeituraDaAtaService {
       quem,
       varredura.removidos,
     );
+
+    /*
+     * IM-01 (rodada dos agentes, 21/10/2026): as NOTAS DA CONVERSA viram o marco
+     * `ata.notas`, que a teia do link e `carregarMemoria` já leem (antes era
+     * escrito por script). Só com nota: ata sem nota não apaga as notas que uma
+     * leitura anterior deixou.
+     */
+    if (leitura.notas.length) {
+      await this.trilhos.marco(
+        orgId,
+        trilhoId,
+        'ata.notas',
+        `${leitura.notas.length} nota(s) nasceram da conversa.`,
+        { notas: leitura.notas as unknown as Record<string, unknown>[], ataId: registrada.id },
+        quem,
+      );
+    }
+
+    // A ata GERADA (nunca a transcrição) vai a `03-kickoff` do cliente. Falha não derruba a leitura.
+    const copia = await this.copiarAtaParaOCliente(orgId, t, leitura, temas, quem);
+
     await this.trilhos.marco(
       orgId,
       trilhoId,
       'ata.lida',
       `Ata lida (${fonte.tipo}): ${leitura.propostas.length} proposta(s) em ${temas.length} temas, ${leitura.emBranco.length} em branco` +
+        (leitura.notas.length ? `, ${leitura.notas.length} nota(s) da conversa` : '') +
         (varredura.removidos ? `, ${varredura.removidos} segredo(s) mascarado(s)` : '') +
         (preservadas.length ? `; ${preservadas.length} tema(s) já respondidos pelo cliente foram preservados` : '') +
         '.',
-      { avisos: leitura.avisos, emBranco: leitura.emBranco, preservadas, custoUsd: saida.usage.custoUsd, modelo: saida.usage.modeloServido },
+      {
+        avisos: leitura.avisos,
+        emBranco: leitura.emBranco,
+        preservadas,
+        custoUsd: saida.usage.custoUsd,
+        modelo: saida.usage.modeloServido,
+        notas: leitura.notas.length,
+        copiaNoDrive: copia,
+      },
       quem,
     );
     return { ata: registrada, leitura, preservadas };
+  }
+
+  /**
+   * A ata gerada como `.md` na pasta do cliente (`03-kickoff`), pelo arquivista
+   * (`drive.arquivo.enviar`, R3, pela porta dele). Só o resumo do resultado volta,
+   * nunca o conteúdo. Sem arquivista, sem cliente ligado ou com o Drive fora, a
+   * leitura segue: a ata já está no OS (o trilho), a cópia é conveniência.
+   */
+  private async copiarAtaParaOCliente(
+    orgId: string,
+    t: { id: string; cliente: string; slug: string; cardId: string | null; kickoffEm: Date | null },
+    leitura: LeituraDaAta,
+    temas: ReturnType<typeof temasDoConvite>,
+    quem: Quem,
+  ): Promise<{ estado: ResultadoDoArquivo['estado'] | 'sem_cliente' | 'sem_arquivista'; motivo: string | null }> {
+    if (!this.arquivista) return { estado: 'sem_arquivista', motivo: 'o arquivista não está montado neste processo' };
+    try {
+      const partnerId = await this.trilhos.clienteDoTrilho(orgId, t);
+      if (!partnerId) return { estado: 'sem_cliente', motivo: 'o trilho não tem cliente ligado (ficha ou card)' };
+      const dia = t.kickoffEm ? t.kickoffEm.toISOString().slice(0, 10) : null;
+      const md = ataGeradaEmMarkdown({ cliente: t.cliente, kickoffEm: dia, temas, leitura });
+      const r = await this.arquivista.arquivar({
+        orgId,
+        partnerId,
+        origem: 'ata',
+        nomeOriginal: `ata-kickoff-${t.slug}.md`,
+        tipoMime: 'text/markdown',
+        conteudo: { buffer: Buffer.from(md, 'utf8') },
+        subpasta: '03-kickoff',
+        tipo: 'ata',
+        titulo: `Ata do kickoff ${t.cliente}`,
+        data: t.kickoffEm ?? new Date(),
+        texto: md.slice(0, 8000),
+        atorId: quem.id,
+      });
+      return { estado: r.estado, motivo: 'motivo' in r ? r.motivo : null };
+    } catch (e) {
+      this.log.warn(`trilho ${t.id}: a ata não foi para a pasta do cliente (${(e as Error).message})`);
+      return { estado: 'erro', motivo: (e as Error).message.slice(0, 300) };
+    }
   }
 
   /** O texto da ata, venha de onde vier. PDF passa pelo modelo primeiro. */
@@ -444,22 +536,59 @@ export class LeituraDaAtaService {
     const memoria = notas.map((n) => ({ titulo: n.title, trecho: Array.from(n.body).slice(0, 400).join('') }));
 
     const fonte = fontePublica ? varrerSegredos(String(fontePublica).slice(0, 40_000)).texto : null;
-    const { system, user } = promptDoDossie({
-      cliente: t.cliente,
-      contato: t.contatoNome,
-      respostasA,
-      fontePublica: fonte,
-      memoria,
-    });
-    const saida = await this.llm.step({
-      funcao: 'IM-02',
-      system,
-      turns: [{ role: 'user', text: user }],
-      orgId,
-      agentSlug: SLUG_DO_PESQUISADOR_DE_CONTA,
-      maxTokens: 12_000,
-    });
-    const dossie = interpretarDossie(saida.text);
+    const entrada = { cliente: t.cliente, contato: t.contatoNome, respostasA, fontePublica: fonte, memoria };
+
+    /*
+     * IM-02 (rodada dos agentes, 21/10/2026): o pesquisador passa pelo LAÇO DO
+     * AGENTE e pela porta, com as capacidades que declara (`contexto.memoria.buscar`,
+     * `contexto.nota.ler`), em nome do registro `Agent` que o roster do onboarding
+     * semeia. A busca na web só com o provedor que a executa E a nota ligada.
+     *
+     * Sem o laço montado, ou com um provedor que não chama ferramenta (o `stub` da
+     * homologação), cai na chamada direta de antes, com o mesmo prompt e o mesmo
+     * parser: o dossiê não pode depender de a homologação ter modelo de verdade.
+     */
+    let texto: string;
+    let custoUsd = 0;
+    let modelo: string | null = null;
+    let via: 'laco' | 'direta';
+    let web = false;
+    if (this.runtime && this.llm.supportsTools) {
+      web = await this.buscaNaWebPermitida(orgId);
+      const r = await this.runtime.executar({
+        orgId,
+        agentSlug: SLUG_DO_PESQUISADOR_DE_CONTA,
+        canal: SessionCanal.web,
+        pedido: pedidoDoPesquisador(entrada, { buscaNaWeb: web }),
+        solicitanteId: quem.id,
+        solicitanteRotulo: quem.nome,
+        funcao: 'IM-02',
+        ...(web ? { servidor: { buscaNaWeb: { maxUsos: USOS_DA_BUSCA_NA_WEB } } } : {}),
+      });
+      if (r.status !== SessionStatus.respondida || !r.resposta.trim()) {
+        throw new BadRequestException(
+          `o pesquisador de conta não respondeu (${r.status}${r.motivo ? `: ${r.motivo}` : ''}). Veja a sessão ${r.sessionId} em Agentes.`,
+        );
+      }
+      texto = r.resposta;
+      custoUsd = r.custoUsd;
+      via = 'laco';
+    } else {
+      const { system, user } = promptDoDossie(entrada);
+      const saida = await this.llm.step({
+        funcao: 'IM-02',
+        system,
+        turns: [{ role: 'user', text: user }],
+        orgId,
+        agentSlug: SLUG_DO_PESQUISADOR_DE_CONTA,
+        maxTokens: 12_000,
+      });
+      texto = saida.text;
+      custoUsd = saida.usage.custoUsd;
+      modelo = saida.usage.modeloServido;
+      via = 'direta';
+    }
+    const dossie = interpretarDossie(texto);
     await this.trilhos.marco(
       orgId,
       trilhoId,
@@ -467,11 +596,20 @@ export class LeituraDaAtaService {
       `Dossiê gerado: ${dossie.afirmacoes.length} afirmação(ões), ${dossie.hipoteses.length} hipótese(s), ` +
         `${dossie.perguntasQueFaltam.length} pergunta(s) que faltam` +
         (dossie.perfilSugerido ? `; perfil sugerido ${dossie.perfilSugerido}` : '') +
+        (via === 'laco' ? `; pelo laço do agente${web ? ', com busca na web' : ''}` : '') +
         '.',
-      { dossie: dossie as unknown as Record<string, unknown>, custoUsd: saida.usage.custoUsd, modelo: saida.usage.modeloServido },
+      { dossie: dossie as unknown as Record<string, unknown>, custoUsd, modelo, via, buscaNaWeb: web },
       quem,
     );
     return dossie;
+  }
+
+  /** As duas condições da busca na web (IM-02): o provedor a executa e a nota está `ligada`. */
+  async buscaNaWebPermitida(orgId: string): Promise<boolean> {
+    if (!this.llm.buscaNaWeb || !this.memoria) return false;
+    // Nota de configuração da casa: lida como fonte aberta (leitor nulo), como `trabalho.atas.pasta`.
+    const nota = await this.memoria.porChave(orgId, NOTA_DA_PESQUISA_NA_WEB, null).catch(() => null);
+    return !!nota && !nota.arquivadoEm && buscaNaWebLigada(nota.body);
   }
 
   // ==========================================================================
@@ -486,6 +624,7 @@ export class LeituraDaAtaService {
     const ids = new Set(temas.map((x) => x.id));
 
     const system = [
+      `[tarefa:${TAREFA_DO_ROTEIRO}]`,
       'Você é o roteirista do kickoff da Root. Recebe o roteiro base de uma reunião com um cliente e',
       'reescreve CADA pergunta de abertura com o vocabulário e o contexto do cliente — o nome da',
       'empresa, o sistema que ela usa, a dor que declarou. A lista de temas é FIXA: nem um a mais,',

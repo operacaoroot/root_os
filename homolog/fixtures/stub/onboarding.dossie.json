@@ -1,0 +1,6 @@
+{
+  "tarefa": "onboarding.dossie",
+  "_sobre": "Resposta do stub para o pesquisador de conta (IM-02). Com o stub a chamada é a direta (o stub não chama ferramenta, então o laço do agente não roda): o mesmo prompt e o mesmo parser. Dado fictício.",
+  "respostas": [],
+  "padrao": "{\"afirmacoes\": [{\"texto\": \"Vende pão de fermentação natural para cafeterias\", \"fonte\": \"triagem\", \"hipotese\": false}], \"hipoteses\": [{\"titulo\": \"Lista de produção automática\", \"comoEra\": \"conferir encomendas à mão\", \"comoFica\": \"a lista sai das encomendas\", \"receita\": null, \"metrica\": \"minutos por dia na conferência\"}], \"perguntasQueFaltam\": [\"Quantas encomendas chegam por dia?\"], \"perfilSugerido\": \"P2\", \"motivoDoPerfil\": \"tem planilha e caixa, sem integração\"}"
+}

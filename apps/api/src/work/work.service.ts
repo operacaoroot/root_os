@@ -60,7 +60,17 @@ const TASK_INCLUDE = {
 type TaskRow = Prisma.WorkTaskGetPayload<{ include: typeof TASK_INCLUDE }>;
 
 type ValorDoCampo = { optionId?: string | null; value?: string | null };
-type CampoConferido = { field: Prisma.WorkFieldGetPayload<{ include: { options: true } }>; v: ValorDoCampo };
+export type CampoConferido = { field: Prisma.WorkFieldGetPayload<{ include: { options: true } }>; v: ValorDoCampo };
+
+/** A tarefa conferida e pronta para gravar (`prepararCriacaoDeTarefa` → `gravarTarefaPreparada`). */
+export interface TarefaPreparada {
+  orgId: string;
+  listId: string;
+  statusId: string;
+  clienteId: string | null;
+  campos: CampoConferido[];
+  input: TrabTarefaCreateInput;
+}
 
 /** O pai imediato de cada nó da árvore; os dois nulos = fora de espaço. */
 type PaiDaPasta = { spaceId: string | null; parentId: string | null };
@@ -1074,6 +1084,25 @@ export class WorkService {
   }
 
   async criarTarefa(orgId: string, actorId: string, input: TrabTarefaCreateInput, opcoes: { exigirCliente?: boolean } = {}) {
+    const preparo = await this.prepararCriacaoDeTarefa(orgId, input, opcoes);
+    return this.logado(orgId, actorId, 'work.task.create', 'work_task', null, async () => {
+      const task = await this.prisma.$transaction((tx) => this.gravarTarefaPreparada(tx, preparo));
+      return this.tarefa(orgId, task.id);
+    });
+  }
+
+  /*
+   * A VARIANTE TRANSACIONAL (rodada dos agentes, 21/10/2026, TR-01 e TR-09).
+   *
+   * `criarTarefa` = preparar (as conferências de lista, porta da implantação,
+   * status, pai, cliente, responsável e campos, fora da transação) + gravar (a
+   * tarefa e os campos, dentro de uma) + auditar. Quem precisa que a tarefa nasça
+   * NA MESMA transação de outra escrita (o aceite da sugestão da ata, o aceite da
+   * delegação) chama as três partes: a sugestão tomada e a tarefa criada caem ou
+   * ficam juntas, e nunca sobra sugestão "aceita" sem tarefa. O comportamento de
+   * `criarTarefa` não muda.
+   */
+  async prepararCriacaoDeTarefa(orgId: string, input: TrabTarefaCreateInput, opcoes: { exigirCliente?: boolean } = {}): Promise<TarefaPreparada> {
     const list = await this.prisma.workList.findFirst({
       where: { id: input.listId, orgId },
       include: { statuses: { orderBy: { order: 'asc' } } },
@@ -1102,27 +1131,33 @@ export class WorkService {
     }
     await this.conferirResponsavel(orgId, input.assigneeUserId);
     const campos = input.campos ? await this.conferirCampos(orgId, list.id, input.campos) : [];
-    return this.logado(orgId, actorId, 'work.task.create', 'work_task', null, async () => {
-      const task = await this.prisma.$transaction(async (tx) => {
-        const criada = await tx.workTask.create({
-          data: {
-            orgId, listId: list.id, statusId,
-            title: input.title, description: input.description ?? null,
-            priority: (input.priority as WorkPriority) ?? WorkPriority.normal,
-            assignee: input.assignee ?? null,
-            assigneeUserId: input.assigneeUserId ?? null,
-            dueDate: input.dueDate ? new Date(input.dueDate) : null,
-            startDate: input.startDate ? new Date(input.startDate) : null,
-            parentId: input.parentId ?? null,
-            clienteId,
-            tags: input.tagIds ? { connect: input.tagIds.map((id) => ({ id })) } : undefined,
-          },
-        });
-        await this.gravarCampos(tx, criada.id, campos);
-        return criada;
-      });
-      return this.tarefa(orgId, task.id);
+    return { orgId, listId: list.id, statusId, clienteId, campos, input };
+  }
+
+  /** Grava a tarefa preparada dentro da transação de quem chama (ver acima). */
+  async gravarTarefaPreparada(tx: Prisma.TransactionClient, p: TarefaPreparada): Promise<{ id: string }> {
+    const { input } = p;
+    const criada = await tx.workTask.create({
+      data: {
+        orgId: p.orgId, listId: p.listId, statusId: p.statusId,
+        title: input.title, description: input.description ?? null,
+        priority: (input.priority as WorkPriority) ?? WorkPriority.normal,
+        assignee: input.assignee ?? null,
+        assigneeUserId: input.assigneeUserId ?? null,
+        dueDate: input.dueDate ? new Date(input.dueDate) : null,
+        startDate: input.startDate ? new Date(input.startDate) : null,
+        parentId: input.parentId ?? null,
+        clienteId: p.clienteId,
+        tags: input.tagIds ? { connect: input.tagIds.map((id) => ({ id })) } : undefined,
+      },
     });
+    await this.gravarCampos(tx, criada.id, p.campos);
+    return { id: criada.id };
+  }
+
+  /** A auditoria `work.task.create`, depois do commit de quem gravou pela variante transacional. */
+  async auditarCriacaoDeTarefa(orgId: string, actorId: string, taskId: string): Promise<void> {
+    await this.audit.log({ orgId, actorId, action: 'work.task.create', entityType: 'work_task', entityId: taskId });
   }
 
   /** A lista é a da implantação (Onboarding de cliente na pasta Clientes)? Porta única do T1. */

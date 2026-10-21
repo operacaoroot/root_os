@@ -1296,6 +1296,25 @@ export class TrilhoService {
     });
   }
 
+  /**
+   * O CLIENTE (`Partner`) DO TRILHO (rodada dos agentes, 21/10/2026): o que a ficha do
+   * comercial ligou ao trilho (`ComercialFicha.trilhoId`/`cardId` → `partnerId`) ou, sem
+   * ficha, o cliente do card da implantação (`WorkTask.clienteId`). Nulo quando nenhum
+   * dos dois diz. É por ele que a ata (IM-01) e o kit (IM-07) chegam à pasta certa: a
+   * porta do arquivista recebe o cliente, nunca uma pasta.
+   */
+  async clienteDoTrilho(orgId: string, t: { id: string; cardId: string | null }): Promise<string | null> {
+    const ficha = await this.prisma.comercialFicha.findFirst({
+      where: { orgId, partnerId: { not: null }, OR: [{ trilhoId: t.id }, ...(t.cardId ? [{ cardId: t.cardId }] : [])] },
+      orderBy: { atualizadoEm: 'desc' },
+      select: { partnerId: true },
+    });
+    if (ficha?.partnerId) return ficha.partnerId;
+    if (!t.cardId) return null;
+    const card = await this.prisma.workTask.findFirst({ where: { id: t.cardId, orgId }, select: { clienteId: true } });
+    return card?.clienteId ?? null;
+  }
+
   /** O que a rotina faz com uma pendência: grava o marco e, no lembrete, carimba o convite. */
   async registrarPendencia(orgId: string, p: Pendencia): Promise<void> {
     /*

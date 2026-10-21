@@ -120,3 +120,5 @@ export * from './pendencias.js';
 export * from './pasta-do-cliente.js';
 // Os arquivos do cliente e o anexo na tarefa (rodada dos agentes, lane A4): ver `clientes-arquivos.ts`.
 export * from './clientes-arquivos.js';
+// A lane A3+TR da rodada dos agentes (kit, cobrador, triagem da caixa, delegador): ver `agentes-da-implantacao.ts`.
+export * from './agentes-da-implantacao.js';

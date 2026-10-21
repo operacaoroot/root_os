@@ -130,8 +130,8 @@ dele, e não num "obrigado, recebemos" no fim.
 
 Três espécies de nó: **tema** (`pronta` quando ele confirmou/respondeu, `rascunho` quando há
 proposta aprovada esperando o OK, `vazia` quando nada foi dito); **da conversa** — uma nota que JÁ
-NASCEU da transcrição (marco `ata.notas`, com minuto e trecho; hoje escrita pelo agente na sessão,
-amanhã pelo leitor de ata), o que dá ao vault conteúdo desde o primeiro dia; e o **índice** (o MOC
+NASCEU da transcrição (marco `ata.notas`, com minuto e trecho; desde a rodada dos agentes de
+21/10/2026 escrita pelo próprio leitor de ata, IM-01, com o trecho conferido contra a ata), o que dá ao vault conteúdo desde o primeiro dia; e o **índice** (o MOC
 do Obsidian), que liga só o que existe de verdade: pronta e da conversa. As ligações entre temas
 são dado versionado (`LIGACOES_DA_ESPINHA`); as notas da conversa trazem as suas (`liga`).
 

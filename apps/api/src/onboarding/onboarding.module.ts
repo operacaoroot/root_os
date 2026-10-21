@@ -11,6 +11,7 @@ import { LeituraDaAtaService } from './trilho/leitura-da-ata.service';
 import { LinkPublicoController } from './trilho/link-publico.controller';
 import { LinkPublicoService } from './trilho/link-publico.service';
 import { ExecutorDoRelogioDoOnboarding } from './trilho/relogio.executor';
+import { KitDoTrilhoService } from './trilho/kit/kit.service';
 import { TrilhoService } from './trilho/trilho.service';
 import { TrilhosController } from './trilho/trilhos.controller';
 
@@ -28,7 +29,7 @@ import { TrilhosController } from './trilho/trilhos.controller';
 @Module({
   imports: [TenantsModule, MemoryModule, AgentsModule, AuthModule, RoutinesModule],
   controllers: [OnboardingController, TrilhosController, LinkPublicoController],
-  providers: [OnboardingService, TrilhoService, LeituraDaAtaService, LinkPublicoService, ExecutorDoRelogioDoOnboarding],
+  providers: [OnboardingService, TrilhoService, LeituraDaAtaService, LinkPublicoService, ExecutorDoRelogioDoOnboarding, KitDoTrilhoService],
   exports: [OnboardingService, TrilhoService],
 })
 export class OnboardingModule {}

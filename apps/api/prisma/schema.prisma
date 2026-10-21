@@ -181,6 +181,8 @@ model Org {
   /// As sugestões de tarefa lidas das atas do Trabalho (rodada do painel P3).
   ataSugestoes          AtaSugestao[]
   pendencias            Pendencia[]
+  /// TR-09, o Delegador (rodada dos agentes, 21/10/2026): as subtarefas propostas, à espera de gente.
+  delegacaoSugestoes    DelegacaoSugestao[]
   vistasSalvas          VistaSalva[]
   /// Os arquivos do cliente e os anexos das tarefas (rodada dos agentes, lane A4).
   arquivosDoCliente     ArquivoDoCliente[]
@@ -2290,6 +2292,9 @@ model WorkTask {
   /// com orgId: lead de outra empresa não pendura. Migration `20261021200000_tarefa_do_lead`.
   leadId String?
   lead   Lead?   @relation("TarefasDoLead", fields: [leadId, orgId], references: [id, orgId], onDelete: Restrict, onUpdate: Restrict)
+
+  /// TR-09: as subtarefas que o Delegador propôs para esta tarefa (sugestões; gente aceita).
+  delegacoesSugeridas DelegacaoSugestao[] @relation("DelegacoesDaTarefa")
 
   @@unique([id, orgId])
   @@unique([orgId, externalId])
@@ -5849,8 +5854,14 @@ model ReuniaoDoCartao {
   link        String?
   transcricao String
   autorId     String?
+  /// O id da reunião no Granola (TR-02/TR-03, rodada dos agentes, 21/10/2026): o webhook do
+  /// Zap e o modo direto gravam a MESMA linha, e o índice único impede a segunda. Nulo nas
+  /// reuniões que não vieram do Granola (link, texto, arquivo) e nas do Zap sem o link da nota.
+  /// Migration `20261021340000_reuniao_do_granola_id`.
+  granolaId   String?
   createdAt   DateTime @default(now())
 
+  @@unique([orgId, granolaId])
   @@index([orgId, taskId, em])
 }
 
@@ -6062,5 +6073,38 @@ model AgendaConferencia {
   atualizadoEm   DateTime  @updatedAt
 
   @@unique([orgId, eventoId])
+}
+
+/// TR-09 · O DELEGADOR (rodada dos agentes, 21/10/2026). Numa tarefa atribuída a um agente,
+/// o Delegador propõe subtarefas com dono (pessoa ou agente do cadastro único) e prazo. Nada é
+/// atribuído sozinho: cada proposta mora aqui em `rascunho` até uma PESSOA aceitar (a subtarefa
+/// nasce na mesma transação que toma a linha) ou descartar (fica registrado quem e quando). O
+/// mesmo desenho da `AtaSugestao`. Raiz da empresa; a tarefa-mãe entra por chave composta com
+/// `orgId`, então tarefa de outra empresa não pendura. Migration `20261021340100_delegacao_sugestao`.
+model DelegacaoSugestao {
+  id            String    @id @default(uuid())
+  orgId         String
+  org           Org       @relation(fields: [orgId], references: [id])
+  taskId        String
+  task          WorkTask  @relation("DelegacoesDaTarefa", fields: [taskId, orgId], references: [id, orgId], onDelete: Cascade, onUpdate: Restrict)
+  titulo        String
+  descricao     String    @default("")
+  /// `pessoa` | `agente`
+  donoTipo      String
+  /// Quando o dono é pessoa: o `User` da empresa (conferido no aceite).
+  donoUsuarioId String?
+  /// Quando o dono é agente: o id do cadastro único (`TR-05`, `IM-07`...).
+  donoFuncao    String?
+  prazo         DateTime?
+  porque        String    @default("")
+  estado        String    @default("rascunho")
+  subtarefaId   String?
+  criadaPor     String?
+  decididaPor   String?
+  criadaEm      DateTime  @default(now())
+  decididaEm    DateTime?
+  atualizadaEm  DateTime  @updatedAt
+
+  @@index([orgId, taskId])
   @@index([orgId, estado])
 }

@@ -1,4 +1,4 @@
-import type { AgenteNaEtapa, EstadoDoAgenteNaEtapa, FatoNaEtapa, QuemTrabalhaNaEtapa } from '@mktos/shared';
+import { funcaoPorId, funcaoPorSlug, MARCO_DO_KIT, type AgenteNaEtapa, type EstadoDoAgenteNaEtapa, type FatoNaEtapa, type FuncaoDoCadastro, type QuemTrabalhaNaEtapa } from '@mktos/shared';
 
 import type { AgenteDoRoster } from '../../agents/roster/roster';
 import type { TipoDePendencia } from './relogio';
@@ -17,7 +17,38 @@ export const MARCOS_DO_AGENTE: Readonly<Record<string, readonly string[]>> = {
   'leitor-de-ata': ['ata.lida', 'ata.notas'],
   'pesquisador-de-conta': ['dossie.gerado'],
   'roteirista-de-kickoff': ['roteiro.personalizado'],
+  // IM-07 (rodada dos agentes, 21/10/2026): o montador do kit grava o kit como marco.
+  'montador-do-kit': [MARCO_DO_KIT],
 };
+
+/**
+ * As funções da Implantação que trabalham no card e NÃO são semeadas como `Agent`
+ * (o roster do onboarding semeia IM-01, IM-02 e IM-03). Aparecem na lista com o
+ * estado declarado no cadastro único (rodada dos agentes, 21/10/2026).
+ */
+export const FUNCOES_DO_CARD_FORA_DO_ROSTER: readonly string[] = ['IM-07'];
+
+/** O relógio no cadastro único. */
+export const FUNCAO_DO_RELOGIO = 'IM-05';
+
+/** O estado declarado no cadastro, na língua da tela da etapa (para quem não tem `Agent`). */
+export function estadoDoCadastroNaEtapa(estado: FuncaoDoCadastro['estado']): EstadoDoAgenteNaEtapa {
+  if (estado === 'ativo') return 'ativo';
+  if (estado === 'desligado') return 'pausado';
+  if (estado === 'so-homologacao') return 'planejado';
+  return 'encerrado';
+}
+
+function iniciaisDe(nome: string): string {
+  const p = nome.split(/\s+/).filter((x) => x.length > 2);
+  return ((p[0]?.[0] ?? 'A') + (p[1]?.[0] ?? p[0]?.[1] ?? 'G')).toUpperCase();
+}
+
+/** Os campos do cadastro que a tela mostra ao lado de cada agente. */
+function doCadastro(f: FuncaoDoCadastro | undefined): Pick<AgenteNaEtapa, 'funcao' | 'paraQueServe' | 'estadoDeclarado' | 'modelo' | 'esforco'> {
+  if (!f) return {};
+  return { funcao: f.id, paraQueServe: f.paraQueServe, estadoDeclarado: f.estado, modelo: f.modelo, esforco: f.esforco };
+}
 
 /** Os marcos que o relógio grava (os tipos de pendência de `relogio.ts`). */
 export const MARCOS_DO_RELOGIO: readonly TipoDePendencia[] = [
@@ -71,15 +102,32 @@ export function montarQuemTrabalha(e: {
         : fato
           ? `Já rodou neste cliente. Roda de novo com ${quando}.`
           : `Ainda não rodou neste cliente. Roda com ${quando}.`;
-    return { slug: a.slug, nome: a.nome, iniciais: a.iniciais, missao: a.missao, estado, ultimoFato: fato, oQueVaiFazer };
+    const f = funcaoPorSlug(a.slug);
+    return { slug: a.slug, nome: f?.nome ?? a.nome, iniciais: a.iniciais, missao: a.missao, estado, ultimoFato: fato, oQueVaiFazer, ...doCadastro(f) };
   });
+  // As funções da Implantação sem `Agent` (IM-07): o estado é o declarado no cadastro.
+  for (const id of FUNCOES_DO_CARD_FORA_DO_ROSTER) {
+    const f = funcaoPorId(id);
+    if (!f || agentes.some((a) => a.slug === f.slug)) continue;
+    const fato = ultimo(e.marcos, MARCOS_DO_AGENTE[f.slug] ?? []);
+    const estado = estadoDoCadastroNaEtapa(f.estado);
+    const quando = primeiraMinuscula(f.gatilho);
+    const oQueVaiFazer = estado !== 'ativo'
+      ? `Está ${estado} no cadastro: não roda até o dono ligar de novo.`
+      : fato
+        ? `Já rodou neste cliente. Roda de novo com o botão "Montar kit" (gatilho: ${quando}).`
+        : `Ainda não rodou neste cliente. Roda com o botão "Montar kit" (gatilho: ${quando}).`;
+    agentes.push({ slug: f.slug, nome: f.nome, iniciais: iniciaisDe(f.nome), missao: f.paraQueServe, estado, ultimoFato: fato, oQueVaiFazer, ...doCadastro(f) });
+  }
+  const relogioDoCadastro = funcaoPorId(FUNCAO_DO_RELOGIO);
   return {
     trilhoId: e.trilho.id,
     fase: e.trilho.fase,
     faseRotulo: e.trilho.faseRotulo,
     agentes,
     relogio: {
-      nome: 'Relógio do onboarding',
+      nome: relogioDoCadastro?.nome ?? 'Relógio do onboarding',
+      ...(relogioDoCadastro ? { funcao: relogioDoCadastro.id, paraQueServe: relogioDoCadastro.paraQueServe } : {}),
       ligado: !!e.rotina?.ativo,
       proximaPassagemEm: e.rotina?.ativo && e.rotina.proximaExecucaoEm ? e.rotina.proximaExecucaoEm.toISOString() : null,
       ultimoFato: ultimo(e.marcos, MARCOS_DO_RELOGIO, QUEM_E_O_RELOGIO),
