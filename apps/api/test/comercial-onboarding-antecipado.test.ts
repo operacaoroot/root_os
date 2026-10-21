@@ -511,6 +511,8 @@ describe.skipIf(!URL)('onboarding antecipado contra o Postgres', { timeout: 60_0
       ['kit_e_trilho', 'reaproveitado'],
       ['card', 'reaproveitado'],
       ['grupo', 'criado'],
+      // CO-10 (rodada dos agentes, 21/10/2026): a 7ª escrita; sem a porta da pasta nesta montagem, `pulado`.
+      ['pasta', 'pulado'],
     ]);
     expect(tela.escritas.find((e) => e.escrita === 'card')?.ref).toBe(cardAntes.id);
 

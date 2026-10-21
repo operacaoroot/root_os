@@ -1,4 +1,4 @@
-import { BadRequestException, ConflictException, ForbiddenException, Injectable, Logger, NotFoundException, OnModuleInit, Optional, ServiceUnavailableException } from '@nestjs/common';
+import { BadRequestException, ConflictException, ForbiddenException, Inject, Injectable, Logger, NotFoundException, OnModuleInit, Optional, ServiceUnavailableException } from '@nestjs/common';
 import { classificar, type Efeito } from '@mktos/policy';
 import {
   COMERCIAL_ETAPAS,
@@ -19,11 +19,13 @@ import {
   type EtapasDoOnboardingAntecipado,
   type LeadElegivelAoOnboarding,
   type OnboardingAntecipadoResposta,
+  type PastaPedidaNaTela,
 } from '@mktos/shared';
 import { ActorType, Prisma } from '@prisma/client';
 
 import { temPapelDeMaquina } from '../approvals/alcada';
 import { lerAprovador } from '../auth/aprovador';
+import { PASTA_DO_CLIENTE, type PastaDoClientePort } from '../clientes/portas';
 import type { PreparoEventoNoTx } from '../gateway/event-log.service';
 import { exigirAcessoAtual } from '../memory/acesso-memoria';
 import { TrilhoService } from '../onboarding/trilho/trilho.service';
@@ -72,6 +74,13 @@ import { FioService, ReacoesRegistry, type EventoGravado } from './fio.service';
  * do OS (card, trilho, cadastro de cliente, um fato e a auditoria), sem mensagem ao
  * cliente, sem cobrança, sem documento. Dá R0. Se o efeito um dia mudar e a conta
  * subir, a rota recusa até a capacidade entrar pelo catálogo.
+ *
+ * A PASTA DO CLIENTE (rodada dos agentes, 21/10/2026, CO-10): depois da transação,
+ * fora dela, o "Iniciar onboarding" pede a pasta do cliente pela MESMA porta do
+ * fechamento (`PASTA_DO_CLIENTE`, origem `onboarding-antecipado`, R3 pela
+ * `drive.pasta.criar`). A pasta NÃO entra no nível acima: ela é outra capacidade,
+ * classificada pela escada na porta da lane do Drive, e o card nasce mesmo com o
+ * Drive fora do ar. O resultado vai na resposta (`pasta`) e no fio (`pasta.do_cliente`).
  */
 export const EFEITO_DE_INICIAR_ONBOARDING: Efeito = {
   escreveForaDoOS: false,
@@ -107,6 +116,8 @@ export class OnboardingAntecipadoService implements OnModuleInit {
     private readonly reacoes: ReacoesRegistry,
     private readonly fichas: FichaService,
     @Optional() private readonly trilhos?: TrilhoService,
+    // CO-10 (rodada dos agentes): a porta da pasta do cliente. Sem ela, a resposta diz `sem_porta`.
+    @Optional() @Inject(PASTA_DO_CLIENTE) private readonly pastas?: PastaDoClientePort,
   ) {}
 
   onModuleInit(): void {
@@ -184,7 +195,7 @@ export class OnboardingAntecipadoService implements OnModuleInit {
    * (`TrilhoService.criarNaTransacao`), correm na mesma conexão. Nada pede uma segunda conexão do
    * pool enquanto o cadeado está preso; o que o RASTRO precisa ler vem preparado antes.
    */
-  async iniciar(orgId: string, leadId: string, corpo: unknown, quem: QuemInicia, agora: Date = new Date()): Promise<OnboardingAntecipadoResposta> {
+  async iniciar(orgId: string, leadId: string, corpo: unknown, quem: QuemInicia, agora: Date = new Date()): Promise<OnboardingAntecipadoResposta & { pasta?: PastaPedidaNaTela }> {
     const r = OnboardingAntecipadoSchema.safeParse(corpo ?? {});
     if (!r.success) throw new BadRequestException({ message: 'Pedido inválido.', erros: r.error.issues.map((i) => `${i.path.join('.') || 'corpo'}: ${i.message}`) });
     const pessoa = await this.exigirGente(orgId, quem);
@@ -215,7 +226,42 @@ export class OnboardingAntecipadoService implements OnModuleInit {
     const g = gravado as { novo: boolean; evento: EventoGravado } | null;
     if (g?.novo) await this.fio.reagir(g.evento);
     if (resposta.estado === 'criado') this.log.log(`onboarding do lead ${leadId} iniciado antes do fechamento (${nivel}): card ${resposta.cardId} em ${resposta.etapa}, cliente ${resposta.cliente}`);
-    return resposta;
+    // CO-10: a pasta do cliente, fora da transação. Falha do Drive não desfaz o card.
+    if (!resposta.partnerId) return resposta;
+    return { ...resposta, pasta: await this.pedirPasta(orgId, leadId, resposta.partnerId, pessoa.id) };
+  }
+
+  /**
+   * CO-10: a pasta do cliente pela porta (`onboarding-antecipado`). Com o ponteiro no cliente, devolve
+   * a pasta sem chamar a porta. O resultado vai ao fio (`pasta.do_cliente`, um fato por estado).
+   */
+  async pedirPasta(orgId: string, leadId: string, partnerId: string, atorId: string | null): Promise<PastaPedidaNaTela> {
+    const cliente = await this.prisma.partner.findFirst({ where: { id: partnerId, orgId }, select: { pastaDriveId: true, pastaDriveUrl: true } });
+    if (cliente?.pastaDriveId) return { estado: 'pronta', url: cliente.pastaDriveUrl ?? null };
+    if (!this.pastas) return { estado: 'sem_porta', motivo: 'a porta da pasta do cliente não está disponível nesta instância' };
+    let r: PastaPedidaNaTela;
+    try {
+      const p = await this.pastas.garantir({ orgId, partnerId, origem: 'onboarding-antecipado', leadId, atorId });
+      r =
+        p.estado === 'pronta'
+          ? { estado: 'pronta', url: p.url }
+          : p.estado === 'aguardando_aprovacao'
+            ? { estado: 'aguardando_aprovacao', approvalId: p.approvalId, motivo: 'a criação da pasta espera a aprovação de outra pessoa em /atendimento' }
+            : { estado: p.estado, motivo: p.motivo };
+    } catch (e) {
+      r = { estado: 'erro', motivo: (e as Error).message.slice(0, 400) };
+    }
+    await this.fio
+      .registrar(orgId, leadId, 'pasta.do_cliente', `${partnerId}:${r.estado}:${r.approvalId ?? r.url ?? ''}`, {
+        partnerId,
+        origem: 'onboarding-antecipado',
+        estado: r.estado,
+        motivo: r.motivo ?? null,
+        approvalId: r.approvalId ?? null,
+        url: r.url ?? null,
+      })
+      .catch((e: Error) => this.log.warn(`pasta do cliente do lead ${leadId}: o fato não foi gravado (${e.message})`));
+    return r;
   }
 
   private async iniciarNaVez(

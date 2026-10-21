@@ -126,6 +126,8 @@ export class TorreService {
         premissasConferidas: passagem?.conferidas ?? 0,
         premissasQuebradas: passagem?.quebradas ?? 0,
         premissas: passagem?.premissas ?? [],
+        // CO-11 (rodada dos agentes): as três linhas do topo da última passagem.
+        resumo: passagem?.resumo ?? null,
       },
       ...custo,
       automacoes,

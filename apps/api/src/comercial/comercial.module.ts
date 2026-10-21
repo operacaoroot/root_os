@@ -56,6 +56,8 @@ import { ImportadorCrmService } from './importador-crm/importador-crm.service';
 import { WorkModule } from '../work/work.module';
 import { TarefasDoComercialController } from './tarefas/tarefas-do-comercial.controller';
 import { TarefasDoComercialService } from './tarefas/tarefas-do-comercial.service';
+// Rodada dos agentes (21/10/2026, lane A2): CO-08 (o contrato assinado na pasta do cliente).
+import { AssinadoNaPastaService } from './assinado-na-pasta.service';
 
 /*
  * O COCKPIT DO LEAD — módulo comercial (13/10/2026).
@@ -133,6 +135,8 @@ import { TarefasDoComercialService } from './tarefas/tarefas-do-comercial.servic
     VigiaService,
     RelatorioDaSemanaService,
     TorreService,
+    // --- rodada dos agentes, 21/10/2026, lane A2 (CO-08 o PDF assinado na pasta do cliente) ---
+    AssinadoNaPastaService,
   ],
   exports: [FioService, ReacoesRegistry, RelogioComercialRegistry, FichaService, DecisoesService, DecisoesRegistry, ConfigComercialService, SalaService, WhatsappComercialService, DinheiroService, FechamentoService, ContratoVivoService],
 })

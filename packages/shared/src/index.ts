@@ -118,3 +118,5 @@ export * from './agentes.js';
 export * from './pendencias.js';
 // A pasta do cliente no Drive e o nome padrão dos arquivos (rodada dos agentes): ver `pasta-do-cliente.ts`.
 export * from './pasta-do-cliente.js';
+// Os agentes do comercial da rodada de 21/10/2026 (lane A2): ver `comercial-agentes.ts`.
+export * from './comercial-agentes.js';

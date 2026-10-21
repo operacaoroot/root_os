@@ -11,6 +11,7 @@ import { EfeitosRegistry, type ContextoDoEfeito } from '../gateway/efeitos.regis
 import { PortaDoOperador } from '../gateway/porta-do-operador.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { hashDoContrato, lacunasDoContrato, montarContrato } from './contrato-modelo';
+import { SO_DOCUMENTOS_DE_ASSINATURA } from './documentos';
 import { uuidDe, type PayloadDe } from './eventos';
 import type { DeclaracaoDoFechadoFora } from './fechado-fora';
 import { FioService, ReacoesRegistry } from './fio.service';
@@ -569,7 +570,7 @@ export class DinheiroService implements OnModuleInit {
     if (!doBanco || !doBanco.ativo) throw new ForbiddenException('Quem assina pela Root precisa ser um usuário ativo desta empresa.');
     if (!atendeAlcada('titular', alcadaDe(doBanco.papeis))) throw new ForbiddenException('Assinar pela Root pede alçada titular.');
 
-    const doc = await this.prisma.comercialDocumento.findFirst({ where: { leadId, orgId }, orderBy: { criadoEm: 'desc' } });
+    const doc = await this.prisma.comercialDocumento.findFirst({ where: { leadId, orgId, ...SO_DOCUMENTOS_DE_ASSINATURA }, orderBy: { criadoEm: 'desc' } });
     if (!doc) throw new NotFoundException('O contrato deste lead ainda não foi gerado.');
     const base = { externoId: doc.externoId, estado: doc.estado, assinadoRootEm: doc.assinadoRootEm?.toISOString() ?? null };
     if (doc.assinadoRootEm) return { ...base, linkAssinatura: null };
@@ -682,6 +683,16 @@ export class DinheiroService implements OnModuleInit {
       }
       if (w.todosAssinaram) {
         await this.prisma.comercialDocumento.updateMany({ where: { id: r.documentoId }, data: { estado: 'assinado', ...(w.pdfUrl ? { pdfUrl: w.pdfUrl } : {}) } });
+        // CO-08 (rodada dos agentes): o documento inteiro assinado vira fato; a reação do assinador copia o PDF
+        // para `02-contrato` da pasta do cliente (`assinado-na-pasta.service.ts`). A URL do provedor fica no documento.
+        const doc = await this.prisma.comercialDocumento.findFirst({ where: { id: r.documentoId, orgId: r.orgId }, select: { pdfUrl: true } });
+        // Não conta em `gravados`: a resposta do webhook continua contando só as assinaturas.
+        await this.fio.registrar(r.orgId, r.leadId, 'contrato.assinado', w.externoId, {
+          provedor: this.assinatura.provedor,
+          externoId: w.externoId,
+          documentoId: r.documentoId,
+          temPdf: Boolean(doc?.pdfUrl),
+        });
       } else if (w.assinados.length) {
         await this.prisma.comercialDocumento.updateMany({ where: { id: r.documentoId, estado: { not: 'assinado' } }, data: { estado: 'assinado_parcial' } });
       }

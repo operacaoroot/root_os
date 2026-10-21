@@ -64,6 +64,27 @@ export interface PortaDeAssinatura {
   consultarEstado(externoId: string): Promise<DocumentoNoProvedor | null>;
   webhookAutentico(token: string | undefined | null): boolean;
   interpretarWebhook(corpo: unknown): AssinaturaNoWebhook | null;
+  /**
+   * CO-08 (rodada dos agentes, 21/10/2026): o PDF ASSINADO do documento, baixado pelo conector a
+   * partir do estado que o PROVEDOR devolve agora (nunca da URL que veio no corpo do webhook).
+   * `null` = o documento não está assinado ou não tem PDF. Opcional: o dublê da suíte vive sem.
+   */
+  baixarAssinado?(externoId: string): Promise<PdfAssinado | null>;
+}
+
+/** O PDF assinado, já conferido pelo conector (assinatura `%PDF-` e teto de tamanho). */
+export interface PdfAssinado {
+  buffer: Buffer;
+  tipoMime: 'application/pdf';
+  bytes: number;
+}
+
+/** O maior PDF assinado que o conector baixa. */
+export const MAX_BYTES_DO_PDF_ASSINADO = 25 * 1024 * 1024;
+
+/** O começo de todo PDF (`%PDF-`). */
+export function pareceSerPdf(b: Buffer): boolean {
+  return b.length >= 5 && b.subarray(0, 5).toString('latin1') === '%PDF-';
 }
 
 type P = Record<string, unknown>;

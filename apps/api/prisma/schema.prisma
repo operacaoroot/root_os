@@ -5033,6 +5033,10 @@ model ComercialDocumento {
   pdfUrl            String?
   criadoEm          DateTime  @default(now())
   atualizadoEm      DateTime  @updatedAt
+  /// Rodada dos agentes (CO-13): o texto da minuta do contrato da Root (provedor `minuta`, estado `rascunho`).
+  conteudo          String?
+  /// Rodada dos agentes (CO-14): o laudo do revisor da minuta, ranqueado por gravidade.
+  laudo             Json?
 
   @@unique([provedor, externoId])
   @@index([orgId, leadId])

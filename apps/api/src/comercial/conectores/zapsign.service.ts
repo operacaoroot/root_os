@@ -13,11 +13,14 @@ import {
   type SaudeDeConector,
 } from '../../integrations/contrato-de-conector';
 import {
+  MAX_BYTES_DO_PDF_ASSINADO,
   documentoDaZapsign,
   lerWebhookDaZapsign,
+  pareceSerPdf,
   type AssinaturaNoWebhook,
   type DocumentoNoProvedor,
   type NovoDocumento,
+  type PdfAssinado,
   type PortaDeAssinatura,
 } from '../portas/assinatura.port';
 import { segredoConfere } from '../portas/cobranca.port';
@@ -42,6 +45,29 @@ import { segredoConfere } from '../portas/cobranca.port';
  */
 
 const PADRAO = 'https://api.zapsign.com.br/api/v1';
+
+/**
+ * CO-08: o endereço do PDF assinado que o conector aceita baixar. Só `https`, sem usuário e senha
+ * na URL; `http` só quando é o MESMO endereço da API configurada (o dublê da homologação). O
+ * endereço vem do estado que o provedor devolve agora, nunca do corpo do webhook.
+ */
+export function enderecoDoPdfAssinado(bruto: string, base: string): string | null {
+  let u: URL;
+  try {
+    u = new URL(bruto);
+  } catch {
+    return null;
+  }
+  if (u.username || u.password) return null;
+  if (u.protocol === 'https:') return u.toString();
+  let b: URL;
+  try {
+    b = new URL(base);
+  } catch {
+    return null;
+  }
+  return u.protocol === 'http:' && u.origin === b.origin ? u.toString() : null;
+}
 
 @Injectable()
 export class ZapsignService implements OnModuleInit, PortaDeAssinatura {
@@ -110,6 +136,26 @@ export class ZapsignService implements OnModuleInit, PortaDeAssinatura {
 
   async enviarParaAssinar(externoId: string): Promise<DocumentoNoProvedor | null> {
     return this.consultarEstado(externoId);
+  }
+
+  /**
+   * CO-08 (rodada dos agentes): o PDF assinado, para a cópia em `02-contrato` da pasta do cliente.
+   * Relê o documento no provedor (o endereço do webhook não é usado), baixa sem seguir
+   * redirecionamento, com prazo e teto, e confere que é PDF. Erro lança com o motivo.
+   */
+  async baixarAssinado(externoId: string): Promise<PdfAssinado | null> {
+    const doc = await this.consultarEstado(externoId);
+    if (!doc || doc.estado !== 'assinado' || !doc.pdfUrl) return null;
+    const url = enderecoDoPdfAssinado(doc.pdfUrl, this.base);
+    if (!url) throw new Error('o endereço do PDF assinado que a ZapSign devolveu não é https: nada foi baixado');
+    const res = await fetch(url, { redirect: 'error', signal: AbortSignal.timeout(30_000) });
+    if (!res.ok) throw new Error(`a ZapSign não entregou o PDF assinado (HTTP ${res.status})`);
+    const declarado = Number(res.headers.get('content-length') ?? '0');
+    if (declarado > MAX_BYTES_DO_PDF_ASSINADO) throw new Error('o PDF assinado passa do teto de 25 MB: nada foi baixado');
+    const buffer = Buffer.from(await res.arrayBuffer());
+    if (buffer.length > MAX_BYTES_DO_PDF_ASSINADO) throw new Error('o PDF assinado passa do teto de 25 MB: nada foi copiado');
+    if (!pareceSerPdf(buffer)) throw new Error('o arquivo assinado que a ZapSign entregou não é um PDF');
+    return { buffer, tipoMime: 'application/pdf', bytes: buffer.length };
   }
 
   webhookAutentico(token: string | undefined | null): boolean {

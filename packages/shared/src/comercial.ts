@@ -2,6 +2,7 @@ import { z } from 'zod';
 
 import type { SalaVersaoPublica } from './sala-versao.js';
 import type { TarefaNoCartaoDoFunil } from './comercial-tarefas.js';
+import type { PastaDoClienteNaFicha, ResumoDoVigia } from './comercial-agentes.js';
 
 /*
  * O COCKPIT DO LEAD — o contrato do módulo comercial (12 e 13/10/2026).
@@ -439,6 +440,19 @@ export const COMERCIAL_EVENTOS = [
   'etapa.movida_a_mao',
   'saida.registrada',
   'vigia.premissa',
+  // Rodada dos agentes (21/10/2026, lane A2):
+  // CO-08: os dois assinaram (o documento inteiro), e a cópia do PDF assinado (ou da minuta, CO-13) na pasta do cliente;
+  'contrato.assinado',
+  'documento.na_pasta',
+  // CO-10: a pasta do cliente pedida por uma porta do card fora do fechamento (o fechamento grava `fechamento.escrita`);
+  'pasta.do_cliente',
+  // CO-13 e CO-14: a minuta do contrato da Root e o laudo dela;
+  'minuta.gerada',
+  'minuta.revisada',
+  // CO-15: um envio do formulário do site (cada envio, idempotente pela chave da requisição);
+  'site.formulario',
+  // CO-16: a classe que a triagem do WhatsApp deu a uma mensagem (e para onde ela foi).
+  'whats.triada',
 ] as const;
 export type ComercialEvento = (typeof COMERCIAL_EVENTOS)[number];
 export const ComercialEventoSchema = z.enum(COMERCIAL_EVENTOS);
@@ -875,6 +889,8 @@ export interface FichaDoLead {
   fio: LinhaDoFio[];
   /** P5: o balão de quem moveu o cartão com pendência (o mesmo do funil). */
   balao?: ComercialBalaoDoMover | null;
+  /** Rodada dos agentes (CO-10): a pasta do cliente no Drive (o ponteiro do `Partner` da ficha). */
+  pasta?: PastaDoClienteNaFicha | null;
 }
 
 export interface LinhaDoFio {
@@ -1091,10 +1107,14 @@ export interface CartaoDoFunil {
 
 /** O fechamento (tela 10): as cinco escritas com chave. */
 export interface EscritaDoFechamento {
-  escrita: 'cliente' | 'contrato' | 'cobranca' | 'kit_e_trilho' | 'card' | 'grupo';
+  /** `pasta` (rodada dos agentes, CO-10): a 7ª, a pasta do cliente no Drive, fora da transação do banco. */
+  escrita: 'cliente' | 'contrato' | 'cobranca' | 'kit_e_trilho' | 'card' | 'grupo' | 'pasta';
   onde: string;
-  /** `pulado` (T1b): a escrita não se aplica e o motivo está no detalhe (a cobrança de quem já paga fora). */
-  estado: 'pendente' | 'criado' | 'reaproveitado' | 'pulado' | 'erro';
+  /**
+   * `pulado` (T1b): a escrita não se aplica e o motivo está no detalhe (a cobrança de quem já paga fora).
+   * `aguardando_aprovacao` (CO-10): a escrita foi à porta e espera a segunda pessoa (a pasta é R3); `ref` é a aprovação.
+   */
+  estado: 'pendente' | 'criado' | 'reaproveitado' | 'pulado' | 'aguardando_aprovacao' | 'erro';
   detalhe: string;
   ms: number | null;
   seRodarDeNovo: string;
@@ -1184,6 +1204,8 @@ export interface TorreDasAutomacoes {
     premissasQuebradas: number;
     /** Acréscimo da lane E (fase 2): cada premissa da última passagem, com o que quebrou. */
     premissas?: PremissaDoVigia[];
+    /** Rodada dos agentes (CO-11): as três linhas do topo; os números são do sistema. Ausente em passagem antiga. */
+    resumo?: ResumoDoVigia | null;
   };
   custoDeIaHojeCentavos: number | null;
   custoDesconhecido: boolean;

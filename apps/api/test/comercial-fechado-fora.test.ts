@@ -328,6 +328,8 @@ describe.skipIf(!URL)('registrar cliente já fechado, pela porta e contra o Post
       ['kit_e_trilho', 'criado'],
       ['card', 'criado'],
       ['grupo', 'criado'],
+      // CO-10 (rodada dos agentes, 21/10/2026): a 7ª escrita; sem a porta da pasta nesta montagem, `pulado`.
+      ['pasta', 'pulado'],
     ]);
     expect(tela.escritas.find((e) => e.escrita === 'cobranca')?.detalhe).toContain('o cliente já paga por boleto do banco');
     expect(cobrancas).toHaveLength(0);

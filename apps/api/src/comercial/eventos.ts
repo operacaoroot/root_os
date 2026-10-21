@@ -135,11 +135,24 @@ export const FONTE_DO_EVENTO: Record<ComercialEvento, ComercialFonte> = {
   'etapa.movida_a_mao': 'pessoa',
   'saida.registrada': 'pessoa',
   'vigia.premissa': 'relogio',
+  // Rodada dos agentes (21/10/2026, lane A2).
+  'contrato.assinado': 'zapsign',
+  'documento.na_pasta': 'sistema',
+  'pasta.do_cliente': 'sistema',
+  'minuta.gerada': 'agente',
+  'minuta.revisada': 'agente',
+  'site.formulario': 'form',
+  'whats.triada': 'agente',
 };
 
 /** Os payloads esperados por tipo. Só o que a projeção lê; o resto é livre. */
 export interface PayloadsComerciais {
-  'lead.chegou': { telefone: string; texto: string; canal?: string | null; palavraChave?: string | null; nome?: string | null };
+  /**
+   * `origem` e `empresa`: rodada dos agentes (CO-15). O lead do formulário do site chega com `origem:
+   * 'formulario-do-site'` (a M1 não é preparada para um número que um anônimo digitou) e a empresa que a
+   * pessoa escreveu (vai à ficha, que só a grava se estiver vazia).
+   */
+  'lead.chegou': { telefone: string; texto: string; canal?: string | null; palavraChave?: string | null; nome?: string | null; origem?: string | null; empresa?: string | null };
   'cnpj.enriquecido': { cnpj: string; razaoSocial?: string | null; cidade?: string | null; funcionarios?: number | null; endereco?: string | null; fonte: string };
   'lead.pontuado': { pontuacao: number; perfil: 'P1' | 'P2' | 'P3' | null; criterios: Record<string, number | boolean | string | null> };
   'dono.atribuido': { donoId: string | null; donoNome: string | null; regra: string };
@@ -273,6 +286,23 @@ export interface PayloadsComerciais {
   'etapa.movida_a_mao': { de: string; para: string; pendencias: string[]; atravessadas: string[]; por: string | null; porId: string | null; motivo?: string | null; semMotivo?: boolean };
   'saida.registrada': { saida: string; motivo: string; detalhe?: string | null; voltaEm?: string | null; parceiro?: string | null; por: string | null };
   'vigia.premissa': { automacao: string; premissa: string; ok: boolean; detalhe?: string | null };
+  /** CO-08: o documento inteiro assinado (o webhook disse que todos assinaram). Dispara a cópia para a pasta. */
+  'contrato.assinado': { provedor: string; externoId: string; documentoId: string; temPdf: boolean };
+  /**
+   * CO-08 e CO-13: um arquivo do comercial a caminho da pasta do cliente pelo arquivista. `estado` é o da porta
+   * (`enviado`, `aguardando_aprovacao`, `na_fila`, `classificar_a_mao`, `so_no_os`, `erro`); `motivo` diz por quê.
+   */
+  'documento.na_pasta': { origem: string; ref: string; estado: string; subpasta: string | null; nome: string | null; motivo: string | null; approvalId?: string | null; url?: string | null; sha256?: string | null };
+  /** CO-10: a pasta do cliente pedida pelo "Iniciar onboarding" (o fechamento grava `fechamento.escrita`). */
+  'pasta.do_cliente': { partnerId: string; origem: string; estado: string; motivo: string | null; approvalId?: string | null; url?: string | null };
+  /** CO-13: a minuta do contrato da Root, rascunho no OS (`ComercialDocumento` provedor `minuta`). Nunca o texto no fio. */
+  'minuta.gerada': { documentoId: string; versao: number; hash: string; inseridos: number; lacunas: number; origem: string; modelo: string; por: string | null };
+  /** CO-14: o laudo da minuta, contado por gravidade (o laudo inteiro fica no documento). */
+  'minuta.revisada': { documentoId: string; hash: string; criticas: number; altas: number; medias: number; baixas: number; porModelo: boolean };
+  /** CO-15: um envio do formulário do site. Texto de quem escreveu: dado, nunca instrução. */
+  'site.formulario': { nome: string; empresa: string | null; email: string | null; telefone: string | null; mensagem: string | null; chave: string };
+  /** CO-16: a classe da triagem e o destino. `regra` quando o sistema corrigiu o modelo; `pessoa` quando veio da pendência. */
+  'whats.triada': { classe: string; confianca: number; destino: string; origem: 'modelo' | 'regra' | 'pessoa'; motivo?: string | null; mensagemId?: string | null };
 }
 
 export type PayloadDe<T extends ComercialEvento> = PayloadsComerciais[T];
@@ -464,6 +494,20 @@ export function resumoDoEvento(type: string, payload: unknown): { fonte: Comerci
       return { fonte, resumo: `saída: ${String(p.saida)} · ${String(p.motivo)}` };
     case 'vigia.premissa':
       return { fonte, resumo: `vigia · ${String(p.automacao)}: ${p.ok ? 'ok' : 'QUEBRADA'} · ${curto(p.premissa, 50)}` };
+    case 'contrato.assinado':
+      return { fonte, resumo: 'contrato assinado pelas duas partes' };
+    case 'documento.na_pasta':
+      return { fonte, resumo: `${p.origem === 'minuta' ? 'minuta' : 'contrato assinado'} para a pasta do cliente: ${String(p.estado)}${p.subpasta ? ` (${String(p.subpasta)})` : ''}${p.motivo ? ` · ${curto(p.motivo, 80)}` : ''}` };
+    case 'pasta.do_cliente':
+      return { fonte, resumo: `pasta do cliente: ${String(p.estado)}${p.motivo ? ` · ${curto(p.motivo, 80)}` : ''}` };
+    case 'minuta.gerada':
+      return { fonte, resumo: `minuta do contrato v${String(p.versao)} · ${String(p.inseridos)} inserção(ões) · ${String(p.lacunas)} lacuna(s)${p.origem === 'sistema' ? ' · montada sem o modelo' : ''}` };
+    case 'minuta.revisada':
+      return { fonte, resumo: `laudo da minuta: ${String(p.criticas)} crítico(s), ${String(p.altas)} alto(s), ${String(p.medias)} médio(s), ${String(p.baixas)} baixo(s)` };
+    case 'site.formulario':
+      return { fonte, resumo: `formulário do site${p.empresa ? ` · ${curto(p.empresa, 40)}` : ''}${p.mensagem ? ` · “${curto(p.mensagem, 60)}”` : ''}` };
+    case 'whats.triada':
+      return { fonte, resumo: `triagem do WhatsApp: ${String(p.classe).replace(/_/g, ' ')} (${Math.round(Number(p.confianca) * 100)}%) · ${String(p.destino)}` };
   }
 }
 
