@@ -40,8 +40,11 @@ import {
  * não sobe. A prova de que "conector novo entra sem tocar no núcleo" é ele se
  * registrar em tempo de teste e aparecer no catálogo — não estar nesta lista.
  *
- * Seis chaves desde a MD10, e elas são UNIDADES DE CREDENCIAL, não superfícies: `google`
- * cobre gmail/gcal/gdocs/drive, `meta` cobre instagram.
+ * As chaves são UNIDADES DE CREDENCIAL, não superfícies: `google` cobre
+ * gmail/gcal/gdocs/drive, `meta` cobre instagram. Desde a rodada dos agentes
+ * (A6) todo conector do catálogo que fala com fora (ou lê arquivo, o OFX) está
+ * aqui; ficam de fora só as linhas sem implementação (Asana, Zapier, Telegram)
+ * e a OpenAI, que é só provedor de vetores e áudio.
  */
 const DEVEM_IMPLEMENTAR: ReadonlyArray<{ chave: string; servico: string }> = [
   { chave: 'google', servico: 'GoogleService' },
@@ -55,6 +58,13 @@ const DEVEM_IMPLEMENTAR: ReadonlyArray<{ chave: string; servico: string }> = [
   { chave: 'granola', servico: 'GranolaService' },
   // Produção 21 (P8): o WhatsApp do comercial pela Evolution; endereço, chave e instância por empresa no cofre.
   { chave: 'evolution', servico: 'EvolutionDaEmpresaService' },
+  // Rodada dos agentes (21/10/2026, A6): integrações num padrão só. Os conectores do catálogo que ainda
+  // não estavam cobrados passam a ser. ZapSign já se inscrevia (lane D) sem estar na lista.
+  { chave: 'zapsign', servico: 'ZapsignService' },
+  { chave: 'asaas', servico: 'AsaasService' },
+  { chave: 'pluggy', servico: 'PluggyService' },
+  { chave: 'ofx', servico: 'OfxConector' },
+  { chave: 'apify', servico: 'ApifyService' },
 ];
 
 /** A lista cobrada, para a suíte poder afirmar sobre ela. */

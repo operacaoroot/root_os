@@ -9,6 +9,8 @@ import { FinanceController } from './finance.controller';
 import { FinanceService } from './finance.service';
 import { PluggyService } from './pluggy.service';
 import { AsaasService } from './asaas.service';
+// Rodada dos agentes (A6): o extrato OFX no contrato único de conector.
+import { OfxConector } from './ofx.conector';
 import { FinopsService } from './finops.service';
 import { AprService } from './apr.service';
 import { ConciliacaoService } from './conciliacao.service';
@@ -26,6 +28,7 @@ import { PORTA_DE_COBRANCA } from '../comercial/portas/cobranca.port';
     FinanceService,
     PluggyService,
     AsaasService,
+    OfxConector,
     FinopsService,
     AprService,
     ConciliacaoService,

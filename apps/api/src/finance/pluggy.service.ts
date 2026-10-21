@@ -1,5 +1,16 @@
-import { Injectable, OnModuleInit, Logger, ServiceUnavailableException } from '@nestjs/common';
+import { Injectable, OnModuleInit, Logger, Optional, ServiceUnavailableException } from '@nestjs/common';
 import { ConectoresConfiguradosRegistry } from '../gateway/conectores-configurados.registry';
+import { PRAZO_DA_CHAMADA_DE_SONDA_MS, RegistroDeConectores } from '../integrations/conectores.registry';
+import {
+  type ConectorDoContrato,
+  type ResultadoDeAutorizacao,
+  type ResultadoDeRevogacao,
+  type ResultadoDeSincronizacao,
+  type SaudeDeConector,
+  conectado,
+  erroDeConector,
+  naoConfigurado,
+} from '../integrations/contrato-de-conector';
 
 // Conector de bancos via Open Finance (Pluggy — https://pluggy.ai).
 // Credencial PRÓPRIA do root em ~/.config/root/pluggy.env (isolado do escritório).
@@ -35,7 +46,11 @@ export class PluggyService implements OnModuleInit {
   private apiKey: string | null = null;
   private apiKeyAt = 0;
 
-  constructor(private readonly conectoresConfigurados: ConectoresConfiguradosRegistry) {}
+  constructor(
+    private readonly conectoresConfigurados: ConectoresConfiguradosRegistry,
+    /** Rodada dos agentes (A6): a Pluggy implementa o contrato único de conector. */
+    @Optional() private readonly contrato?: RegistroDeConectores,
+  ) {}
 
   /*
    * A Pluggy precisa de DUAS variáveis para estar configurada, e é por isso que
@@ -47,6 +62,47 @@ export class PluggyService implements OnModuleInit {
    */
   onModuleInit(): void {
     this.conectoresConfigurados.registrar('pluggy', () => this.configured);
+    this.contrato?.registrar(this.descritorDoContrato(), 'PluggyService');
+  }
+
+  /**
+   * O CONTRATO ÚNICO (rodada dos agentes, A6). O par cliente/segredo da Pluggy é
+   * do PROCESSO; o banco de cada conta é ligado pelo widget do Financeiro (a
+   * Pluggy guarda a senha do banco, o OS guarda só o itemId). A sonda faz a
+   * autenticação (`POST /auth`), que prova o par aceito sem tocar em conta.
+   */
+  private descritorDoContrato(): ConectorDoContrato {
+    return {
+      chave: 'pluggy',
+      rotulo: 'Bancos (Open Finance/Pluggy)',
+      escopoDaCredencial: 'processo',
+      autorizar: async (): Promise<ResultadoDeAutorizacao> => ({
+        tipo: 'manual',
+        instrucao:
+          'O par da Pluggy (PLUGGY_CLIENT_ID e PLUGGY_CLIENT_SECRET) vai no ambiente da API. Cada banco é ligado ' +
+          'depois pelo botão "Conectar banco" do Financeiro, no widget da própria Pluggy.',
+      }),
+      sincronizar: async (): Promise<ResultadoDeSincronizacao> => ({
+        tipo: 'nao_se_aplica',
+        motivo: 'Contas e extratos entram pela sincronização do Financeiro (Financeiro › Sincronizar), conta a conta.',
+      }),
+      saude: async (): Promise<SaudeDeConector> => {
+        if (!this.configured) return naoConfigurado('PLUGGY_CLIENT_ID e PLUGGY_CLIENT_SECRET ausentes no ambiente da API: nenhum banco entra pelo Open Finance.');
+        const comecou = Date.now();
+        try {
+          await this.auth(AbortSignal.timeout(PRAZO_DA_CHAMADA_DE_SONDA_MS), true);
+          return conectado(Date.now() - comecou);
+        } catch (e) {
+          return erroDeConector(`A Pluggy não respondeu: ${(e as Error).message}`, Date.now() - comecou);
+        }
+      },
+      revogar: async (): Promise<ResultadoDeRevogacao> => ({
+        tipo: 'nao_se_aplica',
+        motivo:
+          'O par da Pluggy é do processo, não desta empresa: para queimar, gere outro par no painel da Pluggy e troque ' +
+          'as duas variáveis no ambiente da API. Cada banco ligado se desfaz no próprio Financeiro.',
+      }),
+    };
   }
 
   get configured(): boolean {
@@ -62,11 +118,12 @@ export class PluggyService implements OnModuleInit {
   }
 
   // apiKey do Pluggy vale ~2h; cacheamos por 1h30.
-  private async auth(): Promise<string> {
+  private async auth(sinal?: AbortSignal, semMemoria = false): Promise<string> {
     this.ensureConfigured();
-    if (this.apiKey && Date.now() - this.apiKeyAt < 90 * 60_000) return this.apiKey;
+    if (!semMemoria && this.apiKey && Date.now() - this.apiKeyAt < 90 * 60_000) return this.apiKey;
     const res = await fetch(`${this.base}/auth`, {
       method: 'POST',
+      ...(sinal ? { signal: sinal } : {}),
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ clientId: this.clientId, clientSecret: this.clientSecret }),
     });
