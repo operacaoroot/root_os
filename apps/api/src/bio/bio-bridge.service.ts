@@ -1,6 +1,9 @@
 import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { ActorType } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
+import { comContexto, novaCorrelacao } from '../common/contexto-execucao';
+import { TIPO_CASA_METAS, inscreverTarefaDaCasa, registrarPassagemDeFundo } from '../routines/rotinas-da-casa';
+import type { ResultadoDaRotina } from '../routines/rotina.tipos';
 
 const DIA = 86_400_000;
 const CLIQUES = ['link_click', 'whatsapp_click'];
@@ -20,16 +23,43 @@ export class BioBridgeService implements OnModuleInit {
     const min = Number(process.env.BIO_BRIDGE_INTERVAL_MIN ?? 720);
     if (!(min > 0)) return;
 
+    /*
+     * DESDE A RODADA DOS AGENTES (21/10/2026, A1): uma passagem por empresa, cada
+     * uma no histórico de rotinas (`casa.metas`, RO-03) e dentro do contexto dela.
+     */
+    inscreverTarefaDaCasa(TIPO_CASA_METAS, (orgId) => this.passagemDaCasa(orgId), 'BioBridgeService');
     const run = async () => {
       try {
         const orgs = await this.prisma.org.findMany({ select: { id: true } });
-        for (const o of orgs) await this.backfill(o.id);
+        for (const o of orgs) {
+          try {
+            await comContexto(
+              { orgId: o.id, actorType: 'system', correlationId: novaCorrelacao('cron'), origem: 'cron' },
+              () =>
+                registrarPassagemDeFundo(
+                  this.prisma,
+                  { orgId: o.id, tipo: TIPO_CASA_METAS },
+                  () => this.passagemDaCasa(o.id),
+                  { intervaloMin: min },
+                ),
+            );
+          } catch (e) {
+            this.log.warn(`ponte de metas falhou numa empresa: ${(e as Error).message}`);
+          }
+        }
       } catch (e) {
         this.log.warn(`ponte de metas falhou: ${(e as Error).message}`);
       }
     };
     setTimeout(run, 40_000);
     setInterval(run, min * 60_000);
+  }
+
+  /** UMA passagem da rotina da casa `casa.metas` numa empresa. Só contagem no resumo. */
+  private async passagemDaCasa(orgId: string): Promise<ResultadoDaRotina> {
+    const r = await this.backfill(orgId);
+    if (!r.semanas && !r.cliques) return { status: 'pulada', resumo: 'nenhuma semana com clique a recalcular' };
+    return { status: 'ok', resumo: `${r.semanas} semana(s) atualizada(s), ${r.cliques} clique(s) contado(s)` };
   }
 
   /** Início efetivo do desafio: o do bio manda; GoalConfig é o fallback. */

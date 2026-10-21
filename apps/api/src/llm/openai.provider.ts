@@ -57,7 +57,17 @@ export class OpenAiProvider implements LlmProvider {
     return this.apiKey.length > 0;
   }
 
-  async complete({ system, user, maxTokens }: LlmMessage): Promise<string> {
+  /**
+   * O modelo desta chamada (rodada dos agentes, A1). Aqui a FUNÇÃO não escolhe:
+   * o cadastro fala em modelos Claude, e o OpenAI não os serve. Vale o explícito,
+   * senão o do ambiente. O OpenRouter sobrescreve (ver `openrouter.provider.ts`).
+   */
+  modeloDaChamada(input: { funcao?: string; model?: string }): { modelo: string } {
+    return { modelo: input.model?.trim() || this.model };
+  }
+
+  async complete(input: LlmMessage): Promise<string> {
+    const { system, user, maxTokens } = input;
     if (!this.configured) {
       throw new Error(
         `${this.envDaChave} ausente. Configure a credencial no ambiente da API e reinicie.`,
@@ -72,7 +82,7 @@ export class OpenAiProvider implements LlmProvider {
         ...this.headersExtras,
       },
       body: JSON.stringify({
-        model: this.model,
+        model: this.modeloDaChamada(input).modelo,
         temperature: 0.3,
         max_tokens: this.tetoDeSaida({ tipo: 'completa', maxTokens }),
         messages: [
@@ -119,7 +129,7 @@ export class OpenAiProvider implements LlmProvider {
       );
     }
 
-    const modelo = input.model ?? this.model;
+    const modelo = this.modeloDaChamada(input).modelo;
     const corpo: Record<string, unknown> = {
       model: modelo,
       max_tokens: input.maxTokens ?? TETO_SAIDA_PASSO,

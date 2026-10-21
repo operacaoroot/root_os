@@ -1,7 +1,8 @@
 import { Injectable, Logger } from '@nestjs/common';
 
 import { env, envNumero } from './env';
-import type { ChamadaParaTeto, LlmMessage, LlmProvider, LlmStepInput, LlmStepOutput } from './llm.provider';
+import type { ChamadaParaTeto, LlmEffort, LlmMessage, LlmProvider, LlmStepInput, LlmStepOutput } from './llm.provider';
+import { modeloDaChamada } from './modelo-da-chamada';
 import { anotarProcedencia } from './procedencia';
 import { StubProvider } from './stub.provider';
 
@@ -19,10 +20,15 @@ import { StubProvider } from './stub.provider';
  * diagnóstico, a proposta, a dúvida) leva os dois para a tela. Sem a queda, a
  * demonstração pararia inteira porque a sessão do CLI expirou.
  *
- * CUSTO: 0 com `custoDesconhecido: true`. O modelo servido (`claude-fable-5-1`,
- * por padrão) não está em `preco.ts` e não se inventa preço: com o teto da
- * empresa LIGADO a chamada é recusada antes de sair; a homologação roda sem
- * teto, e "preço do Fable na tabela" é pendência registrada.
+ * O MODELO PEDIDO (rodada dos agentes, 21/10/2026): o corpo leva `model`, escolhido
+ * pela função como no provedor `anthropic` (explícito > `LLM_MODELO_<ID>` >
+ * cadastro > `PONTE_MODELO`). A ponte aceita só os três modelos 5.5 e passa
+ * `--model <id>` ao `claude -p`; o padrão sem função é o `PONTE_MODELO`.
+ *
+ * CUSTO: 0 com `custoDesconhecido: true`: a ponte gasta a assinatura de quem
+ * está logado no host, e não há conta por token a fazer. Os três modelos 5.5
+ * estão em `preco.ts`, então o teto da empresa, quando LIGADO, reserva pelo
+ * preço de tabela do modelo pedido e solta a reserva com o custo 0 da volta.
  */
 
 const PRAZO_PADRAO_MS = 190_000;
@@ -34,7 +40,8 @@ export class PonteProvider implements LlmProvider {
   private readonly log = new Logger('PonteProvider');
   private readonly url = env('PONTE_MODELO_URL', 'http://127.0.0.1:4099').replace(/\/$/, '');
   private readonly prazoMs = envNumero('PONTE_MODELO_PRAZO_MS', PRAZO_PADRAO_MS);
-  readonly model = env('PONTE_MODELO', 'claude-fable-5-1');
+  readonly model = env('PONTE_MODELO', 'claude-opus-5-5');
+  private readonly effort = env('ANTHROPIC_EFFORT', 'high') as LlmEffort;
   /** O token compartilhado com a ponte (E-1): sem ele a ponte recusa com 401 e a chamada cai no stub com aviso. */
   private readonly token = env('PONTE_MODELO_TOKEN', '');
 
@@ -48,6 +55,12 @@ export class PonteProvider implements LlmProvider {
     return chamada.maxTokens ?? 4_000;
   }
 
+  /** Ver `LlmProvider.modeloDaChamada`. */
+  modeloDaChamada(input: { funcao?: string; model?: string; effort?: LlmEffort }): { modelo: string; esforco: LlmEffort } {
+    const m = modeloDaChamada(input, { modelo: this.model, esforco: this.effort });
+    return { modelo: m.modelo, esforco: m.esforco };
+  }
+
   async complete(input: LlmMessage): Promise<string> {
     const controle = new AbortController();
     const relogio = setTimeout(() => controle.abort(), this.prazoMs);
@@ -56,7 +69,12 @@ export class PonteProvider implements LlmProvider {
       const r = await fetch(`${this.url}/complete`, {
         method: 'POST',
         headers: { 'content-type': 'application/json', ...(this.token ? { 'x-ponte-token': this.token } : {}) },
-        body: JSON.stringify({ system: input.system, user: input.user, maxTokens: input.maxTokens }),
+        body: JSON.stringify({
+          system: input.system,
+          user: input.user,
+          maxTokens: input.maxTokens,
+          model: this.modeloDaChamada(input).modelo,
+        }),
         signal: controle.signal,
       });
       const corpo = (await r.json().catch(() => null)) as { texto?: unknown; modelo?: unknown; erro?: unknown } | null;
@@ -90,12 +108,20 @@ export class PonteProvider implements LlmProvider {
   /** Passo de agente com ferramentas não passa pela ponte: ela só sabe responder texto. */
   async step(input: LlmStepInput): Promise<LlmStepOutput> {
     const ultimo = [...input.turns].reverse().find((t) => t.role === 'user');
-    const text = await this.complete({ system: input.system, user: ultimo && ultimo.role === 'user' ? ultimo.text : '', orgId: input.orgId, maxTokens: input.maxTokens });
+    const text = await this.complete({
+      system: input.system,
+      user: ultimo && ultimo.role === 'user' ? ultimo.text : '',
+      orgId: input.orgId,
+      maxTokens: input.maxTokens,
+      funcao: input.funcao,
+      model: input.model,
+      effort: input.effort,
+    });
     return {
       text,
       toolCalls: [],
       stopReason: 'end_turn',
-      usage: { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0, custoUsd: 0, custoEstimado: false, modeloServido: this.model },
+      usage: { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0, custoUsd: 0, custoEstimado: false, modeloServido: this.modeloDaChamada(input).modelo },
       raw: null,
     };
   }

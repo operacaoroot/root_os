@@ -14,7 +14,17 @@ export {
   type TemaDaCarga,
 } from './carregador-de-contexto';
 
-export { ROSTER_DE_ENTRADA, agenteDoRoster, type AgenteDoRoster } from './roster';
+export { ROSTER_DE_ENTRADA, agenteDoRoster, paraRoster, type AgenteDoRoster } from './roster';
+
+// Rodada dos agentes (A1): o que o cadastro único não tem, e o filtro de módulo.
+export {
+  COMPLEMENTOS_DOS_AGENTES,
+  agenteDaFuncao,
+  agentesDaSemente,
+  type AgenteDaSemente,
+  type ComplementoDoAgente,
+} from './complementos';
+export { capacidadesDaEmpresa } from './capacidades-da-empresa';
 
 export {
   ROSTER_DO_ONBOARDING,

@@ -160,9 +160,10 @@ export function estimarCustoUsd(
   modelo: string,
   chamada: { entrada: TamanhoDaEntrada; tokensSaida: number },
 ): EstimativaDeCusto {
-  const p = precoDe(modelo);
   const tokensEntrada = estimarTokensDeEntrada(chamada.entrada);
   const tokensSaida = Math.max(Math.ceil(chamada.tokensSaida), 0);
+  // A faixa do pedido (o Haiku 5.5 cobra outro preço acima de 100 mil tokens de entrada).
+  const p = precoDe(modelo, tokensEntrada);
   if (!p) return { usd: 0, medivel: false, tokensEntrada, tokensSaida };
 
   const total = (tokensEntrada * p.entrada + tokensSaida * p.saida) / 1_000_000;

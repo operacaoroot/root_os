@@ -2,6 +2,7 @@ import type { PrismaClient } from '@prisma/client';
 
 import { FormatoDaSopInvalido, validarProcedimento } from '../sop';
 import { ROSTER_DE_ENTRADA, type AgenteDoRoster } from './roster';
+import { capacidadesDaEmpresa } from './capacidades-da-empresa';
 
 /* ==========================================================================
  * SEMEAR O ROSTER DE UMA EMPRESA — idempotente, como o provisionamento
@@ -30,6 +31,11 @@ import { ROSTER_DE_ENTRADA, type AgenteDoRoster } from './roster';
  * não pode voltar a rodar porque a carga foi reaberta. Missão, nome, pilar e
  * capacidades acompanham o código, pelo mesmo critério que
  * `prisma/seed-tripulacao.ts` já usa.
+ *
+ * AS CAPACIDADES PASSAM PELO FILTRO DE MÓDULO (rodada dos agentes, 21/10/2026,
+ * A1): o roster declara a lista do cadastro único, e a empresa ganha só as que
+ * alcança com os módulos ligados (`capacidades-da-empresa.ts`). É isso que deixa
+ * o assistente ser UMA definição para a casa e para a empresa nova.
  *
  * O PROCEDIMENTO É VALIDADO ANTES DE SER GRAVADO, e a validação é a MESMA que
  * a tela usa (`validarProcedimento`, em `agents/sop.ts`). Não é zelo: um
@@ -76,6 +82,11 @@ export interface OpcoesDaSemente {
   donoId?: string | null;
   /** O roster a semear. Existe para o teste poder medir um roster inválido. */
   roster?: readonly AgenteDoRoster[];
+  /**
+   * Os módulos ligados da empresa, para o filtro das capacidades. Ausente = lidos
+   * de `Org.modulos` (empresa sem linha = nenhum módulo, só a espinha).
+   */
+  modulos?: readonly string[];
 }
 
 /**
@@ -124,6 +135,10 @@ export async function semearRoster(
   opcoes: OpcoesDaSemente = {},
 ): Promise<ResumoDoRoster> {
   const roster = opcoes.roster ?? ROSTER_DE_ENTRADA;
+  const modulos =
+    opcoes.modulos ??
+    (await prisma.org.findUnique({ where: { id: orgId }, select: { modulos: true } }))?.modulos ??
+    [];
   const resumo: ResumoDoRoster = {
     criados: [],
     jaExistiam: [],
@@ -174,7 +189,7 @@ export async function semearRoster(
               tipo: semente.tipo,
               estado: semente.estado,
               autonomiaAte: semente.autonomiaAte,
-              capacidades: [...semente.capacidades],
+              capacidades: capacidadesDaEmpresa(semente.capacidades, modulos),
               donoId: donoEfetivo,
             },
             select: { id: true },
@@ -192,7 +207,7 @@ export async function semearRoster(
           missao: semente.missao,
           pilar: semente.pilar,
           tipo: semente.tipo,
-          capacidades: [...semente.capacidades],
+          capacidades: capacidadesDaEmpresa(semente.capacidades, modulos),
           ...(existente.donoId ? {} : { donoId: donoEfetivo }),
         },
       });

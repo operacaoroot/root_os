@@ -220,7 +220,13 @@ function montarClickup(org: { id: string } | null = { id: A }) {
   vi.stubEnv('CLICKUP_SYNC_INTERVAL_MIN', '60');
   const observados: Array<string | null | undefined> = [];
   const prisma = { org: { findUnique: vi.fn(() => lazy(() => { observados.push(contextoAtual()?.orgId); return org; })) } };
-  const conectores = { exigirLigado: vi.fn(async () => { throw new Error('conector sintético desligado'); }) };
+  // `recusaDe`/`desligar`: a passagem da rotina da casa (rodada dos agentes, A1) pergunta
+  // ao interruptor antes de sincronizar; ligado aqui, para o laço chegar ao `sync`.
+  const conectores = {
+    exigirLigado: vi.fn(async () => { throw new Error('conector sintético desligado'); }),
+    recusaDe: vi.fn(async () => null),
+    desligar: vi.fn(async () => ({ ok: true, conectores: ['clickup'], efetivados: ['clickup'] })),
+  };
   const registry = { registrar: vi.fn() };
   const service = new ClickupService(fake(prisma), fake({}), fake(conectores), fake(registry), fake(registry), fake(registry));
   return { service, prisma, observados, conectores };

@@ -55,6 +55,13 @@ export interface LlmMessage {
   funcao?: string;
   /** O agente em nome de quem (ver `LlmStepInput.agentSlug`). Ausente = o slug da `funcao`. */
   agentSlug?: string;
+  /**
+   * Modelo e esforço EXPLÍCITOS (rodada dos agentes, A1). Chamada nova NÃO os
+   * passa: quem decide é o cadastro, pela `funcao`. Existem para o mesmo caso do
+   * `LlmStepInput`: um ajuste deliberado vale por cima do cadastro.
+   */
+  model?: string;
+  effort?: LlmEffort;
 }
 
 /**
@@ -223,6 +230,13 @@ export interface LlmProvider {
   readonly leAnexos?: boolean;
   /** true quando o provider executa `LlmStepInput.servidor.buscaNaWeb`. Ausente = não executa. */
   readonly buscaNaWeb?: boolean;
+  /**
+   * O modelo e o esforço que ESTE provedor vai mandar para esta chamada
+   * (rodada dos agentes, A1): o explícito, senão a função do cadastro, senão o
+   * padrão dele. O envelope do teto reserva com o mesmo número que vai no pedido.
+   * Ausente (dublês, provedores que não escolhem) = `input.model ?? this.model`.
+   */
+  modeloDaChamada?(input: { funcao?: string; model?: string; effort?: LlmEffort }): { modelo: string; esforco?: LlmEffort };
   complete(input: LlmMessage): Promise<string>;
   step(input: LlmStepInput): Promise<LlmStepOutput>;
   /**

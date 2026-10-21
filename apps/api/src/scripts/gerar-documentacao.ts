@@ -13,6 +13,12 @@
  * escreve uma base de conhecimento .md na vault, com marcador de geração. A
  * lógica toda mora em `src/memory/documentacao.ts`; aqui é só a borda.
  *
+ * DESDE A RODADA DOS AGENTES (21/10/2026, A1) entra também a página
+ * `agentes-do-cadastro.md`, saída do CADASTRO ÚNICO (`packages/shared/src/agentes.ts`)
+ * em três seções: Agentes, Rotinas, Automações e integrações (para que serve,
+ * estado, dono, modelo e esforço, gatilho, onde). Ver
+ * `src/agents/roster/documentacao-do-cadastro.ts`.
+ *
  * ----------------------------------------------------------------------------
  * POR QUE ELE NÃO SOBE O NEST
  * ----------------------------------------------------------------------------
@@ -56,6 +62,7 @@ import {
 } from '../memory/documentacao';
 import { conferirQueAtravessaOIsolamento } from '../memory/migrar-conhecimento';
 import { configDoEspelho, raizDaVault } from '../pauta/espelho.service';
+import { paginaDoCadastro } from '../agents/roster/documentacao-do-cadastro';
 
 /** A subpasta da vault onde a documentação mora, se ninguém disser outra. */
 const PASTA_PADRAO = 'root-os/documentacao';
@@ -223,7 +230,8 @@ async function main(): Promise<void> {
     const dir = `${pasta.replace(/\/+$/, '')}/${org.slug}`;
 
     const estado = await coletarEstado(prisma, org.id);
-    const paginas = montarPaginas(estado);
+    // As páginas do estado da empresa e, junto, a do cadastro único dos agentes.
+    const paginas = [...montarPaginas(estado), paginaDoCadastro()];
 
     console.log(
       `\nEmpresa ${org.slug} (${org.name}) — ${estado.notas.length} nota(s), ` +

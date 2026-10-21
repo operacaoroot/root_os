@@ -1820,35 +1820,14 @@ const CASAS_DA_CONTA_DE_SERVICO = ['packages/mcp/src/client.ts', 'apps/api/prism
 const CONTA_DE_ACAO = ['MCP_ACTION_EMAIL', 'MCP_ACTION_PASSWORD'];
 
 /*
- * A ÚNICA LINHA QUE AINDA CONHECE A CONTA DE AÇÃO, e é dívida de verdade.
+ * A DÍVIDA DA CONTA DE AÇÃO FOI PAGA (rodada dos agentes, 21/10/2026, A1).
  *
- * O bot morreu; a semente continua criando `ia-acao@` e continua exigindo a
- * senha dela. Sobra uma conta de máquina com permissão de escrita (`leads.editar`,
- * `campanhas.editar`, `tarefas.editar`, `gmail.responder`, `agenda.editar`,
- * `drive.editar`) que ninguém usa — credencial viva sem dono é superfície de
- * ataque, não resíduo cosmético.
- *
- * Não saiu na 5.8 porque `apps/api/prisma/seed.ts` e
- * `packages/shared/src/permissions.ts` não eram daquela fatia, e porque APAGAR A
- * CONTA É DECISÃO, não limpeza: se algum dia o produto voltar a ter um executor
- * de máquina para ação aprovada, é este perfil que ele herda. O caminho curto,
- * enquanto a decisão não vem, é a semente parar de exigir `MCP_ACTION_PASSWORD`
- * (criar a conta sem senha utilizável) — aí esta linha sai daqui sozinha.
+ * A semente deixou de criar `ia-acao@` e de exigir `MCP_ACTION_PASSWORD`; a conta
+ * que já existe é desativada (nunca apagada) por `scripts/desativar-ia-acao.ts`.
+ * Nenhum arquivo lê mais a credencial dela, e a lista fica vazia: um leitor novo
+ * é caminho de escrita novo nascendo fora da porta.
  */
-const EXCECOES_CONTA_DE_ACAO: Excecao[] = [
-  {
-    arquivo: 'apps/api/prisma/seed.ts',
-    conector: 'conta de máquina ia-acao@',
-    motivo:
-      'A semente cria a conta de AÇÃO da IA e lê MCP_ACTION_PASSWORD para guardar o hash. O ' +
-      'único cliente dela era o bot de Telegram, aposentado na fatia 5.8 — e o laço dele já ' +
-      'estava morto antes disso, porque `ia_acao` não tem `aprovacoes.decidir` e ' +
-      'ApprovalsService.confirm recusa conta de máquina e recusa o proponente (fatia 3.10). ' +
-      'Sobra uma conta com seis permissões de escrita e nenhum usuário. Some quando alguém ' +
-      'decidir entre apagar a conta e guardá-la para um executor futuro.',
-    fatia: 'onda 11 — decisão humana sobre apagar a conta ia-acao@; ver o relatório da 5.8',
-  },
-];
+const EXCECOES_CONTA_DE_ACAO: Excecao[] = [];
 
 describe('catraca de arquitetura: credencial de conta de máquina tem dono', () => {
   it('a conta de serviço do MCP é lida nas casas dela', () => {

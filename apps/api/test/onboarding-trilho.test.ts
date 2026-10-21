@@ -1,5 +1,6 @@
 import { OnboardingFase } from '@prisma/client';
 import { describe, expect, it } from 'vitest';
+import { funcaoPorSlug } from '@mktos/shared';
 
 import { ROSTER_DO_ONBOARDING, TEMAS_DA_CARGA } from '../src/agents/roster';
 import { FormatoDaSopInvalido, validarProcedimento } from '../src/agents/sop';
@@ -890,7 +891,13 @@ describe('o cardápio de receitas e o roster do onboarding', () => {
         ),
       ).not.toThrow(FormatoDaSopInvalido);
       expect(a.autonomiaAte).toBe('R1');
-      expect(a.capacidades.every((c) => c.startsWith('contexto.'))).toBe(true);
+      /*
+       * Desde a rodada dos agentes (21/10/2026, A1) as capacidades são as do cadastro
+       * único (IM-01..03). A única escrita externa é a do leitor de ata
+       * (`drive.arquivo.enviar`, R3 pela porta: a ata gerada vai a 03-kickoff do cliente).
+       */
+      expect(a.capacidades).toEqual(funcaoPorSlug(a.slug)?.capacidades);
+      expect(a.capacidades.every((c) => c.startsWith('contexto.') || c === 'drive.arquivo.enviar')).toBe(true);
     }
   });
 });

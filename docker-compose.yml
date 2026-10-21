@@ -143,9 +143,17 @@ services:
       # de um deploy. Lida no construtor: trocar exige `up -d --no-build api`.
       ONBOARDING_ABERTO: ${ONBOARDING_ABERTO:-nao}
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
-      ANTHROPIC_MODEL: ${ANTHROPIC_MODEL:-claude-opus-5}
+      # O padrão do provedor (rodada dos agentes, 21/10/2026): Opus 5.5. Quem decide
+      # o modelo de cada chamada é a FUNÇÃO do cadastro único (packages/shared/src/agentes.ts);
+      # este é o modelo da chamada sem função. O esforço vai sempre explícito.
+      ANTHROPIC_MODEL: ${ANTHROPIC_MODEL:-claude-opus-5-5}
       ANTHROPIC_EFFORT: ${ANTHROPIC_EFFORT:-high}
       ANTHROPIC_MAX_TOKENS: ${ANTHROPIC_MAX_TOKENS:-16000}
+      # Sobrescrita por função, numa linha só (`CO-03=claude-sonnet-5-5,IM-02=claude-opus-5-5`
+      # e `CO-11=medium`): viram LLM_MODELO_<ID>/LLM_ESFORCO_<ID> no provedor
+      # (src/llm/modelo-da-chamada.ts). Vazias = o cadastro manda.
+      LLM_MODELOS_POR_FUNCAO: ${LLM_MODELOS_POR_FUNCAO:-}
+      LLM_ESFORCOS_POR_FUNCAO: ${LLM_ESFORCOS_POR_FUNCAO:-}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       # Transcrição de áudio do onboarding (src/llm/transcricao.provider.ts).
       TRANSCRICAO_MODELO: ${TRANSCRICAO_MODELO:-gpt-4o-transcribe}

@@ -42,6 +42,10 @@ import {
   type ReciboDaVault,
 } from './recibo-da-vault';
 import { env } from '../llm/env';
+import { MedidorDeGastoExterno, tokensDaRespostaDeEmbedding as tokensDaResposta } from '../llm/gasto-externo';
+import { RecusaDeCustoDeIaError } from '../llm/recusa-de-custo';
+import { TIPO_CASA_VAULT, inscreverTarefaDaCasa, registrarPassagemDeFundo } from '../routines/rotinas-da-casa';
+import type { ResultadoDaRotina } from '../routines/rotina.tipos';
 import {
   FalhaDeEmbedding,
   PRAZO_DA_BUSCA_MS,
@@ -80,6 +84,8 @@ const SLUG_DA_CASA = 'root';
 // Ingesta .md → KnowledgeNote; embeddings OpenAI (text-embedding-3-small) → pgvector;
 // busca SEMÂNTICA (KNN por cosseno) com fallback keyword. Só leitura.
 const EMBED_MODEL = 'text-embedding-3-small';
+/** A função do cadastro em nome de quem a vault e a memória vetorizam (o indexador, CE-05). */
+const FUNCAO_DA_VETORIZACAO_DA_VAULT = 'CE-05';
 
 /**
  * Uma nota da vault pronta para o índice e a projeção. `cabecalho` ausente é
@@ -191,6 +197,14 @@ export class ObsidianService implements OnModuleInit {
      */
     @Optional() private readonly google?: GoogleService,
     @Optional() private readonly catalogo?: CatalogoDeColecaoService,
+    /*
+     * O TETO DA VETORIZAÇÃO (rodada dos agentes, 21/10/2026, A1). Vem do
+     * `LlmModule`, que é `@Global`: injetar aqui não acrescenta aresta de módulo.
+     * Com ele, todo pedido de embedding reserva no teto da empresa ANTES de sair,
+     * liquida pelos tokens que o fornecedor contou e soma no livro por função
+     * (CE-05). `@Optional()` pelas suítes que montam o serviço à mão.
+     */
+    @Optional() private readonly medidor?: MedidorDeGastoExterno,
   ) {}
 
   async prontidao(orgId: string, pessoaId: string): Promise<ProntidaoContexto> {
@@ -545,6 +559,7 @@ export class ObsidianService implements OnModuleInit {
              * `catch`, o lançamento pulava o laço abaixo e a memória das outras
              * empresas ficava sem vetorizar nesta volta.
              */
+            // Cada passagem vai ao histórico de rotinas (`casa.vault`, rodada dos agentes, A1).
             await comContexto(
               {
                 orgId: casa.id,
@@ -552,8 +567,18 @@ export class ObsidianService implements OnModuleInit {
                 correlationId: novaCorrelacao('obsidian'),
                 origem: 'cron',
               },
-              async () => this.log.log(`Obsidian reindex: ${await this.reindex(casa.id)} nota(s)`),
-            ).catch((e: unknown) => this.log.warn(`Obsidian reindex falhou: ${(e as Error).message}`));
+              () =>
+                registrarPassagemDeFundo(this.prisma, { orgId: casa.id, tipo: TIPO_CASA_VAULT }, () => this.passagemDaCasa(casa.id), {
+                  criar: 'sempre',
+                  intervaloMin: min,
+                }),
+            )
+              .then((r) =>
+                r.status === 'erro'
+                  ? this.log.warn(`Obsidian reindex falhou: ${r.resumo}`)
+                  : this.log.log(`Obsidian reindex: ${r.resumo}`),
+              )
+              .catch((e: unknown) => this.log.warn(`Obsidian reindex falhou: ${(e as Error).message}`));
           }
         }
 
@@ -561,15 +586,19 @@ export class ObsidianService implements OnModuleInit {
           // A casa já vetorizou dentro do `reindex`, e refazer custaria dinheiro.
           if (this.configured && org.id === casa?.id) continue;
           try {
-            await comContexto(
+            const r = await comContexto(
               {
                 orgId: org.id,
                 actorType: 'system',
                 correlationId: novaCorrelacao('obsidian'),
                 origem: 'cron',
               },
-              () => this.vetorizarPendentesDaMemoria(org.id),
+              () =>
+                registrarPassagemDeFundo(this.prisma, { orgId: org.id, tipo: TIPO_CASA_VAULT }, () => this.passagemDaCasa(org.id), {
+                  intervaloMin: min,
+                }),
             );
+            if (r.status === 'erro') throw new Error(r.resumo);
           } catch (e) {
             this.log.warn(
               `memória da empresa ${org.id}: vetorização falhou (${(e as Error).message}). ` +
@@ -581,6 +610,8 @@ export class ObsidianService implements OnModuleInit {
         this.log.warn(`Obsidian reindex falhou: ${(e as Error).message}`);
       }
     };
+    // O "Rodar agora" da tela /rotinas roda a mesma passagem (executor `casa.vault`).
+    inscreverTarefaDaCasa(TIPO_CASA_VAULT, (orgId) => this.passagemDaCasa(orgId), 'ObsidianService');
     setTimeout(run, 25_000);
     if (min > 0) setInterval(run, min * 60_000);
     this.log.log(
@@ -642,10 +673,10 @@ export class ObsidianService implements OnModuleInit {
    * e a resposta é conferida antes de virar vetor. Toda falha sai como
    * `FalhaDeEmbedding`, com o status HTTP quando houve um.
    */
-  private async embed(texts: string[], prazoMs = PRAZO_DO_LOTE_MS): Promise<number[][]> {
+  private async embed(texts: string[], prazoMs = PRAZO_DO_LOTE_MS, orgId?: string): Promise<number[][]> {
     if (!texts.length) return [];
     const input = texts.map((t) => cortarParaEmbedding(t));
-    try {
+    const chamar = async () => {
       const res = await fetch(`${this.openaiBase}/embeddings`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${this.openaiKey}` },
@@ -653,9 +684,24 @@ export class ObsidianService implements OnModuleInit {
         signal: AbortSignal.timeout(prazoMs),
       });
       if (!res.ok) throw new FalhaDeEmbedding(`OpenAI embeddings HTTP ${res.status}`, res.status);
-      return vetoresDaResposta(await res.json(), input.length);
+      const corpo: unknown = await res.json();
+      return { resultado: vetoresDaResposta(corpo, input.length), tokens: tokensDaResposta(corpo) };
+    };
+    try {
+      // Com o medidor, o pedido passa pelo teto da empresa (reserva antes, acerto depois).
+      if (this.medidor) {
+        return await this.medidor.vetorizacao(
+          { orgId, funcao: FUNCAO_DA_VETORIZACAO_DA_VAULT, modelo: EMBED_MODEL, textos: input },
+          chamar,
+        );
+      }
+      return (await chamar()).resultado;
     } catch (e) {
       if (e instanceof FalhaDeEmbedding) throw e;
+      // O teto do dia recusou: a vetorização para aqui e volta na próxima passada.
+      if (e instanceof RecusaDeCustoDeIaError) {
+        throw new FalhaDeEmbedding(`teto de custo de IA da empresa: ${e.motivo}`);
+      }
       throw new FalhaDeEmbedding(`OpenAI embeddings sem resposta utilizável (${(e as Error).message})`);
     }
   }
@@ -989,7 +1035,7 @@ export class ObsidianService implements OnModuleInit {
       if (semVetor.length) {
         vetorizacao = await vetorizarEmLotes(
           semVetor.map((r) => `${r.title}\n\n${r.content}`),
-          (lote) => this.embed(lote),
+          (lote) => this.embed(lote, PRAZO_DO_LOTE_MS, orgId),
           {
             gravar: async (indices, vetores) => {
               for (let k = 0; k < indices.length; k++) {
@@ -1379,16 +1425,21 @@ export class ObsidianService implements OnModuleInit {
    */
   async vetorizarPendentesDaMemoria(
     orgId: string,
-    opcoes: { excetoChaves?: readonly string[] } = {},
+    opcoes: {
+      excetoChaves?: readonly string[];
+      /** Quantas pendentes havia e quantas ganharam vetor (o resumo da rotina `casa.vault`). */
+      contar?: (pendentes: number, vetorizadas: number) => void;
+    } = {},
   ): Promise<void> {
     if (!this.openaiKey) return;
     const pendentes = await this.memoria.semVetor(orgId, 100, { excetoChaves: opcoes.excetoChaves });
+    opcoes.contar?.(pendentes.length, 0);
     if (!pendentes.length) return;
     let descartados = 0;
     // As 100 da volta iam num pedido só, até 800 kB; agora vão em lotes com teto.
     const r = await vetorizarEmLotes(
       pendentes.map((n) => `${n.title}\n\n${n.body}`),
-      (lote) => this.embed(lote),
+      (lote) => this.embed(lote, PRAZO_DO_LOTE_MS, orgId),
       {
         gravar: async (indices, vetores) => {
           for (let k = 0; k < indices.length; k++) {
@@ -1406,8 +1457,33 @@ export class ObsidianService implements OnModuleInit {
             'vetor era do texto anterior.'
           : '.'),
     );
+    opcoes.contar?.(pendentes.length, r.vetorizados);
     // Quem chama registra o aviso; o que foi gravado fica, e o resto volta na próxima.
     if (r.semVetor) throw new Error(descreverVetorizacao(r));
+  }
+
+  /**
+   * UMA passagem da rotina da casa `casa.vault` numa empresa (rodada dos agentes,
+   * A1): na casa com vault, reindexa (que já vetoriza a memória); nas outras,
+   * vetoriza a memória pendente. Resumo só com contagem.
+   */
+  private async passagemDaCasa(orgId: string): Promise<ResultadoDaRotina> {
+    const casa = await this.prisma.org.findFirst({ where: { id: orgId, slug: SLUG_DA_CASA }, select: { id: true } });
+    if (this.configured && casa) {
+      const n = await this.reindex(orgId);
+      return { status: 'ok', resumo: `${n} nota(s) indexada(s)` };
+    }
+    if (!this.openaiKey) return { status: 'pulada', resumo: 'sem chave de embedding' };
+    let pendentes = 0;
+    let vetorizadas = 0;
+    await this.vetorizarPendentesDaMemoria(orgId, {
+      contar: (p, v) => {
+        pendentes = p;
+        vetorizadas = v;
+      },
+    });
+    if (!pendentes) return { status: 'pulada', resumo: 'nenhuma nota da memória sem vetor' };
+    return { status: 'ok', resumo: `${vetorizadas} de ${pendentes} nota(s) da memória vetorizada(s)` };
   }
 
   // ---------- leitura ----------
@@ -1463,11 +1539,11 @@ export class ObsidianService implements OnModuleInit {
     return { natureza: 'indice_runtime_com_solicitante', leitura, resultado };
   }
 
-  private async vetorDaConsulta(query: string): Promise<string | null> {
+  private async vetorDaConsulta(query: string, orgId?: string): Promise<string | null> {
     if (!this.openaiKey || !query) return null;
     // Somente a falha do embedding permite busca textual. Recusas e erros do banco seguem para o caller.
     try {
-      const [vetor] = await this.embed([query], PRAZO_DA_BUSCA_MS);
+      const [vetor] = await this.embed([query], PRAZO_DA_BUSCA_MS, orgId);
       return vetor?.length && vetor.every(Number.isFinite) ? `[${vetor.join(',')}]` : null;
     } catch {
       this.log.warn('Embedding da consulta indisponível; usando busca textual.');
@@ -1477,7 +1553,7 @@ export class ObsidianService implements OnModuleInit {
 
   private async buscarParaPessoa(orgId: string, query: string, limit: number, leitura: IdentidadeIndice): Promise<SearchResult> {
     await this.conferirPessoaDaLeituraAtual(orgId, leitura);
-    const q = query.trim(), take = limiteDaBusca(limit), vetor = await this.vetorDaConsulta(q);
+    const q = query.trim(), take = limiteDaBusca(limit), vetor = await this.vetorDaConsulta(q, orgId);
     return this.comIndiceAutorizado(orgId, leitura, async (tx, populacao) => {
       const busca = await ranquearIndiceNoTx(tx, orgId, populacao, q, take, vetor);
       return SearchResultSchema.parse({ escopo: { orgId, userId: pessoaDoIndice(leitura) }, query: q,
@@ -1494,7 +1570,7 @@ export class ObsidianService implements OnModuleInit {
       if (org.length !== 1) throw new ForbiddenException('Acesso insuficiente.');
       conferirContextoInternoDoIndice(orgId);
     }, { isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted });
-    const q = query.trim(), take = limiteDaBusca(limit), vetor = await this.vetorDaConsulta(q);
+    const q = query.trim(), take = limiteDaBusca(limit), vetor = await this.vetorDaConsulta(q, orgId);
     return this.prisma.$transaction(async (tx) => {
       await travarIndiceEMemoriaNoTx(tx, orgId);
       conferirContextoInternoDoIndice(orgId);

@@ -4,7 +4,7 @@ import { randomUUID } from 'node:crypto';
 import { PrismaService } from '../prisma/prisma.service';
 import { EventLogService } from '../gateway/event-log.service';
 import { comContexto, contextoAtual, novaCorrelacao } from '../common/contexto-execucao';
-import { estimarCustoUsd, type EstimativaDeCusto, type TamanhoDaEntrada } from './estimativa';
+import { ENTRADA_VAZIA, estimarCustoUsd, type EstimativaDeCusto, type TamanhoDaEntrada } from './estimativa';
 import { RecusaDeCustoDeIaError } from './recusa-de-custo';
 
 /*
@@ -303,6 +303,28 @@ export class TetoDeCustoIaService implements OnModuleInit, OnModuleDestroy {
     entrada: TamanhoDaEntrada;
     tokensSaida: number;
   }): Promise<ReservaDeCusto | null> {
+    const est = estimarCustoUsd(p.modelo, { entrada: p.entrada, tokensSaida: p.tokensSaida });
+    return this.reservarEstimativa({ orgId: p.orgId, modelo: p.modelo, entrada: p.entrada }, est);
+  }
+
+  /**
+   * Reserva um VALOR já conhecido em dólar, para o gasto que não é cobrado por
+   * token de conversa (rodada dos agentes, A1): a transcrição, cobrada por
+   * minuto de áudio. Mesmas recusas, mesma liquidação e mesmo coletor de
+   * reserva presa da reserva por token — só a estimativa vem pronta.
+   */
+  async reservarValor(p: { orgId: string; modelo: string; usd: number }): Promise<ReservaDeCusto | null> {
+    const usd = Number.isFinite(p.usd) && p.usd > 0 ? Number(p.usd.toFixed(6)) : 0;
+    return this.reservarEstimativa(
+      { orgId: p.orgId, modelo: p.modelo, entrada: ENTRADA_VAZIA },
+      { usd, medivel: true, tokensEntrada: 0, tokensSaida: 0 },
+    );
+  }
+
+  private async reservarEstimativa(
+    p: { orgId: string; modelo: string; entrada: TamanhoDaEntrada },
+    est: EstimativaDeCusto,
+  ): Promise<ReservaDeCusto | null> {
     const cfg = await this.configuracao(p.orgId);
     if (!cfg) return null;
 
@@ -310,7 +332,6 @@ export class TetoDeCustoIaService implements OnModuleInit, OnModuleDestroy {
     const agora = new Date();
     const dia = this.diaDaEmpresa(fuso, agora);
     const teto = Number(cfg.tetoDiarioUsd);
-    const est = estimarCustoUsd(p.modelo, { entrada: p.entrada, tokensSaida: p.tokensSaida });
     const impor = cfg.ativo;
 
     const janela = await this.lerJanela(p.orgId, dia, this.inicioDoDia(fuso, agora));

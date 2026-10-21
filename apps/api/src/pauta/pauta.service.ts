@@ -6,6 +6,7 @@ import {
   Logger,
   NotFoundException,
   OnModuleInit,
+  Optional,
   ServiceUnavailableException,
 } from '@nestjs/common';
 import {
@@ -67,10 +68,14 @@ import {
   vetorizarEmLotes,
 } from '../obsidian/embeddings-lotes';
 import { LLM_PROVIDER, type LlmProvider } from '../llm/llm.provider';
+import { MedidorDeGastoExterno, tokensDaRespostaDeEmbedding } from '../llm/gasto-externo';
+import { RecusaDeCustoDeIaError } from '../llm/recusa-de-custo';
 import { umaPorVez } from './uma-por-vez';
 import { buscarPaginaPublica } from './pagina-publica';
 
 const EMBED_MODEL = 'text-embedding-3-small';
+/** A função do cadastro em nome de quem o acervo vetoriza (a ficha da referência, CT-02). */
+const FUNCAO_DA_VETORIZACAO_DO_ACERVO = 'CT-02';
 // Teto de itens por página. `total` na resposta é a contagem REAL do filtro (não o
 // tamanho da página), senão a tela mostra "300 fichas" com 432 no acervo.
 const PAGINA = 300;
@@ -149,6 +154,12 @@ export class PautaService implements OnModuleInit {
     private readonly espelho: EspelhoService,
     @Inject(LLM_PROVIDER) private readonly llm: LlmProvider,
     private readonly coleta: ColetaService,
+    /*
+     * O TETO DA VETORIZAÇÃO (rodada dos agentes, 21/10/2026, A1): o embedding do
+     * acervo reserva no teto da empresa antes de sair e soma no livro por função
+     * (CT-02). Vem do `LlmModule` (`@Global`). `@Optional()` pelas suítes à mão.
+     */
+    @Optional() private readonly medidor?: MedidorDeGastoExterno,
   ) {}
 
   onModuleInit(): void {
@@ -516,10 +527,10 @@ export class PautaService implements OnModuleInit {
   // ---------- acervo ----------
 
   /** Um pedido ao fornecedor, com o mesmo corte, prazo e conferência do `embed` da vault. */
-  private async embed(textos: string[], prazoMs = PRAZO_DO_LOTE_MS): Promise<number[][]> {
+  private async embed(textos: string[], prazoMs = PRAZO_DO_LOTE_MS, orgId?: string): Promise<number[][]> {
     if (!textos.length) return [];
     const input = textos.map((t) => cortarParaEmbedding(t));
-    try {
+    const chamar = async () => {
       const res = await fetch(`${this.openaiBase}/embeddings`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${this.openaiKey}` },
@@ -527,9 +538,23 @@ export class PautaService implements OnModuleInit {
         signal: AbortSignal.timeout(prazoMs),
       });
       if (!res.ok) throw new FalhaDeEmbedding(`OpenAI embeddings HTTP ${res.status}`, res.status);
-      return vetoresDaResposta(await res.json(), input.length);
+      const corpo: unknown = await res.json();
+      return { resultado: vetoresDaResposta(corpo, input.length), tokens: tokensDaRespostaDeEmbedding(corpo) };
+    };
+    try {
+      // Com o medidor, o pedido passa pelo teto da empresa (reserva antes, acerto depois).
+      if (this.medidor) {
+        return await this.medidor.vetorizacao(
+          { orgId, funcao: FUNCAO_DA_VETORIZACAO_DO_ACERVO, modelo: EMBED_MODEL, textos: input },
+          chamar,
+        );
+      }
+      return (await chamar()).resultado;
     } catch (e) {
       if (e instanceof FalhaDeEmbedding) throw e;
+      if (e instanceof RecusaDeCustoDeIaError) {
+        throw new FalhaDeEmbedding(`teto de custo de IA da empresa: ${e.motivo}`);
+      }
       throw new FalhaDeEmbedding(`OpenAI embeddings sem resposta utilizável (${(e as Error).message})`);
     }
   }
@@ -559,7 +584,7 @@ export class PautaService implements OnModuleInit {
     if (!r) return;
     const texto = this.textoDaFicha(r);
     try {
-      const [v] = await this.embed([texto]);
+      const [v] = await this.embed([texto], PRAZO_DO_LOTE_MS, r.orgId);
       await this.prisma.$executeRawUnsafe(
         'UPDATE "PautaReferencia" SET embedding = $1::vector WHERE id = $2',
         `[${v.join(',')}]`,
@@ -640,7 +665,7 @@ export class PautaService implements OnModuleInit {
     // Busca semântica quando há pergunta em linguagem natural e chave de embedding.
     if (filtro.q && this.openaiKey) {
       try {
-        const [qv] = await this.embed([filtro.q], PRAZO_DA_BUSCA_MS);
+        const [qv] = await this.embed([filtro.q], PRAZO_DA_BUSCA_MS, orgId);
         /*
          * Só `id` e similaridade. O `SELECT *` de antes trazia a coluna
          * `embedding`, que o Prisma não lê ("Failed to deserialize column of
@@ -832,7 +857,7 @@ export class PautaService implements OnModuleInit {
       : [];
     const r = await vetorizarEmLotes(
       fichas.map((f) => this.textoDaFicha(f)),
-      (lote) => this.embed(lote),
+      (lote) => this.embed(lote, PRAZO_DO_LOTE_MS, orgId),
       {
         gravar: async (indices, vetores) => {
           for (let k = 0; k < indices.length; k++) {

@@ -1,5 +1,7 @@
 import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
-import { contextoAtual } from '../common/contexto-execucao';
+import { contextoAtual, novaCorrelacao } from '../common/contexto-execucao';
+import { TIPO_CASA_BIO, inscreverTarefaDaCasa, registrarPassagemDeFundo } from '../routines/rotinas-da-casa';
+import type { ResultadoDaRotina } from '../routines/rotina.tipos';
 import { comContextoDePlataforma, comContextoDaEmpresaResolvida, ehContextoDePlataforma } from '../prisma/contexto-de-plataforma';
 import { PrismaService } from '../prisma/prisma.service';
 import { cifrar, decifrar, temChaveDeCriptografia } from '../common/crypto';
@@ -47,19 +49,38 @@ export class BioSyncService implements OnModuleInit {
     const min = Number(process.env.BIO_SYNC_INTERVAL_MIN ?? 360);
     if (!(min > 0)) return;
 
+    /*
+     * DESDE A RODADA DOS AGENTES (21/10/2026, A1): uma passagem POR EMPRESA, cada
+     * uma no histórico de rotinas (`casa.bio`, RO-02) com duração e desfecho. A
+     * empresa que nunca teve conta conectada não ganha rotina vazia na tela.
+     */
+    inscreverTarefaDaCasa(TIPO_CASA_BIO, (orgId) => this.passagemDaCasa(orgId), 'BioSyncService');
     const run = async () => {
+      let empresas: Array<{ id: string }> = [];
       try {
-        const r = await this.sincronizarTudo();
-        const ok = r.filter((x) => x.ok).length;
-        if (r.length) this.log.log(`sync agendado: ${ok}/${r.length} conta(s) ok`);
+        empresas = await comContextoDePlataforma(() => this.prisma.org.findMany({ select: { id: true } }));
       } catch (e) {
         this.log.warn(`sync agendado falhou: ${(e as Error).message}`);
+        return;
       }
-      try {
-        const r = await this.renovarContasDePublicacao();
-        if (r.length) this.log.log(`contas de publicação: ${r.filter((x) => x.ok).length}/${r.length} renovada(s)`);
-      } catch (e) {
-        this.log.warn(`renovação das contas de publicação falhou: ${(e as Error).message}`);
+      for (const empresa of empresas) {
+        try {
+          const r = await comContextoDaEmpresaResolvida(
+            empresa.id,
+            () =>
+              registrarPassagemDeFundo(
+                this.prisma,
+                { orgId: empresa.id, tipo: TIPO_CASA_BIO },
+                () => this.passagemDaCasa(empresa.id),
+                { intervaloMin: min },
+              ),
+            { correlationId: novaCorrelacao('cron'), origem: 'cron', actorId: null, actorType: null },
+          );
+          if (r.status !== 'pulada') this.log.log(`sync agendado (${empresa.id}): ${r.status} (${r.resumo})`);
+        } catch (e) {
+          this.log.warn('Rodada de Bio falhou em uma empresa; as demais serão processadas.');
+          this.log.debug?.(`detalhe: ${(e as Error).message}`);
+        }
       }
     };
     setTimeout(run, 25_000);
@@ -255,6 +276,24 @@ export class BioSyncService implements OnModuleInit {
       }
       return saida;
     });
+  }
+
+  /**
+   * UMA passagem da rotina da casa `casa.bio` numa empresa: sincroniza as contas
+   * do desafio e renova as contas de publicação perto de vencer. Só contagem no
+   * resumo. Falha das duas metades = `erro`; nada a fazer = `pulada`.
+   */
+  private async passagemDaCasa(orgId: string): Promise<ResultadoDaRotina> {
+    const contas = await this.sincronizarTudo(orgId);
+    const publicacao = await this.renovarContasDePublicacao(orgId);
+    if (!contas.length && !publicacao.length) return { status: 'pulada', resumo: 'nenhuma conta conectada a sincronizar' };
+    const okContas = contas.filter((x) => x.ok).length;
+    const okPublicacao = publicacao.filter((x) => x.ok).length;
+    const resumo =
+      `${okContas}/${contas.length} conta(s) do desafio sincronizada(s); ` +
+      `${okPublicacao}/${publicacao.length} conta(s) de publicação renovada(s)`;
+    if (okContas + okPublicacao === 0) throw new Error(`nenhuma conta sincronizou: ${resumo}`);
+    return { status: 'ok', resumo };
   }
 
   /** Todas as contas conectadas de desafios vigentes (opcionalmente de uma org). */

@@ -8,6 +8,13 @@ import { ConectoresConfiguradosRegistry } from '../gateway/conectores-configurad
 import { EfeitosRegistry } from '../gateway/efeitos.registry';
 import { PRAZO_DA_CHAMADA_DE_SONDA_MS, RegistroDeConectores } from './conectores.registry';
 import {
+  TIPO_CASA_CLICKUP,
+  garantirRotinaDaCasa,
+  inscreverTarefaDaCasa,
+  registrarPassagemDeFundo,
+} from '../routines/rotinas-da-casa';
+import type { ResultadoDaRotina } from '../routines/rotina.tipos';
+import {
   type ConectorDoContrato,
   type ContextoDoVerbo,
   type ResultadoDeAutorizacao,
@@ -308,12 +315,22 @@ export class ClickupService implements OnModuleInit {
         ),
     }, 'ClickupService');
 
+    /*
+     * RO-01 NASCE DESLIGADO (rodada dos agentes, 21/10/2026, A1). O Trabalho mora
+     * no OS e o token do ClickUp foi revogado em 25/07: na primeira passagem em
+     * que a rotina `casa.clickup` nasce para a empresa da casa, o INTERRUPTOR do
+     * conector é desligado (religável em Conexões), sem apagar código nem
+     * credencial, e a passagem sai `pulada`. Sem token (ou com intervalo zero)
+     * não há passagem e nada sai para o ClickUp: o interruptor fica como está.
+     */
     if (!this.configured) return;
     const min = Number(process.env.CLICKUP_SYNC_INTERVAL_MIN ?? 60);
     if (!(min > 0)) return;
+    // O "Rodar agora" da tela /rotinas roda a mesma passagem (executor `casa.clickup`).
+    inscreverTarefaDaCasa(TIPO_CASA_CLICKUP, (orgId) => this.passagemDaCasa(orgId), 'ClickupService');
     const run = async () => {
       try {
-        const org = await comContextoDePlataforma(() => this.prisma.org.findUnique({ where: { slug: 'root' } }));
+        const org = await this.empresaDaCasa();
         if (!org) return;
         /*
          * O CONTEXTO, que este laço não tinha. Sem requisição não há
@@ -325,10 +342,22 @@ export class ClickupService implements OnModuleInit {
          * varredura é de uma empresa só, a do slug `root`.
          */
         const r = await comContextoDaEmpresaResolvida(
-          org.id, async () => await this.sync(org.id),
+          org.id,
+          async () => {
+            await this.garantirNascidoDesligado(org.id).catch((e: unknown) =>
+              this.log.warn(`interruptor do ClickUp não foi conferido: ${(e as Error).message}`),
+            );
+            // Cada passagem vai ao histórico de rotinas (`casa.clickup`), com duração e desfecho.
+            return registrarPassagemDeFundo(
+              this.prisma,
+              { orgId: org.id, tipo: TIPO_CASA_CLICKUP },
+              () => this.passagemDaCasa(org.id),
+              { criar: 'sempre', intervaloMin: min },
+            );
+          },
           { correlationId: novaCorrelacao('cron'), origem: 'cron', actorId: null, actorType: null },
         );
-        this.log.log(`sync agendado: ${r.tasks} tarefa(s) + ${r.content} conteúdo(s)`);
+        this.log.log(`sync agendado: ${r.status} (${r.resumo})`);
       } catch (e) {
         this.log.warn(`sync agendado falhou: ${(e as Error).message}`);
       }
@@ -336,6 +365,40 @@ export class ClickupService implements OnModuleInit {
     setTimeout(run, 20_000);
     setInterval(run, min * 60_000);
     this.log.log(`ClickUp sync agendado a cada ${min} min`);
+  }
+
+  /** A empresa da casa (slug `root`), descoberta sob a sentinela de plataforma. */
+  private empresaDaCasa(): Promise<{ id: string } | null> {
+    return comContextoDePlataforma(() => this.prisma.org.findUnique({ where: { slug: 'root' } }));
+  }
+
+  /**
+   * A rotina `casa.clickup` existe; se ESTA chamada a criou, o conector nasce
+   * desligado (ver `onModuleInit`). Rotina que já existia não mexe no interruptor:
+   * quem religou em Conexões continua religado.
+   */
+  private async garantirNascidoDesligado(orgId: string): Promise<void> {
+    const { criada } = await garantirRotinaDaCasa(this.prisma, orgId, TIPO_CASA_CLICKUP);
+    if (!criada) return;
+    await this.conectores.desligar(orgId, 'clickup', {
+      motivo:
+        'Desligado por padrão em 21/10/2026: o Trabalho mora no OS e o token do ClickUp foi revogado ' +
+        'em 25/07. Religue em Conexões se precisar sincronizar de novo.',
+      actorId: null,
+    });
+  }
+
+  /**
+   * UMA passagem da rotina da casa (RO-01). Com o conector desligado, `pulada`
+   * sem tocar no ClickUp (e sem evento de recusa a cada hora). O resumo é só
+   * contagem: nenhum título de tarefa vai ao histórico.
+   */
+  private async passagemDaCasa(orgId: string): Promise<ResultadoDaRotina> {
+    if (await this.conectores.recusaDe({ orgId, conector: 'clickup' })) {
+      return { status: 'pulada', resumo: 'conector ClickUp desligado em Conexões' };
+    }
+    const r = await this.sync(orgId);
+    return { status: 'ok', resumo: `${r.tasks} tarefa(s), ${r.content} conteúdo(s), ${r.lists} lista(s)` };
   }
 
   private async cu<T>(path: string, init?: RequestInit): Promise<T> {

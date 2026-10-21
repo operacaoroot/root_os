@@ -253,6 +253,9 @@ model Org {
   localOperations AgentLocalOperation[]
 
   toolReceipts AgentLocalToolReceipt[] @relation("ToolReceiptOrg")
+
+  // Rodada dos agentes (21/10/2026, A1): o gasto de IA por função do cadastro.
+  gastosDeIaPorFuncao GastoDeIaPorFuncao[]
 }
 
 model User {
@@ -5899,4 +5902,49 @@ model CofreItem {
   updatedAt      DateTime @updatedAt
 
   @@index([orgId])
+}
+
+// ===========================================================================
+// RODADA DOS AGENTES (21/10/2026, A1) — O GASTO DE IA POR FUNÇÃO
+// ===========================================================================
+//
+// O livro do dia (`GastoDeIaNoDia`) diz QUANTO a empresa gastou; o log de passos
+// (`SessionStep`) diz quanto cada sessão de agente gastou. Nenhum dos dois diz
+// QUEM gastou quando a chamada não é sessão de agente: o vigia das 08h, o
+// arquivista, a newsletter e a vetorização chamam o modelo direto. Esta tabela é
+// o gasto POR FUNÇÃO do cadastro único (`packages/shared/src/agentes.ts`) e por
+// dia, escrito pelo envelope do modelo (`llm/provider-com-teto.ts`) e pelo
+// medidor de gasto externo (vetorização e transcrição) em TODA chamada, com ou
+// sem teto configurado. É de onde a tela de Agentes lê "gasto do mês".
+//
+// Raiz da empresa (não filha). `funcao`/`agentSlug` vazios = a chamada não disse
+// em nome de quem (aparece como "sem função", para achar quem falta marcar).
+model GastoDeIaPorFuncao {
+  id        String @id @default(uuid())
+  orgId     String
+  org       Org    @relation(fields: [orgId], references: [id])
+  /// `AAAA-MM-DD` em America/Sao_Paulo.
+  dia       String
+  /// O id da função no cadastro (`CO-11`), ou '' quando a chamada não disse.
+  funcao    String @default("")
+  /// O `agentSlug` da chamada (o slug do cadastro ou do `Agent`), ou ''.
+  agentSlug String @default("")
+  /// O modelo PEDIDO (o servido pode diferir com fallback; o custo é o do servido).
+  modelo    String
+  /// `conversa` (complete/step), `vetorizacao` ou `transcricao`.
+  tipo      String @default("conversa")
+
+  chamadas    Int     @default(0)
+  /// Custo REAL informado pelo provedor.
+  gastoUsd    Decimal @default(0) @db.Decimal(12, 6)
+  /// Custo ESTIMADO de quem não devolve uso (o `complete()`): separado do real.
+  estimadoUsd Decimal @default(0) @db.Decimal(12, 6)
+  /// Chamadas cujo modelo servido não tem preço: não medido, não zero.
+  naoMedidas  Int     @default(0)
+
+  criadoEm     DateTime @default(now())
+  atualizadoEm DateTime @default(now())
+
+  @@unique([orgId, dia, funcao, agentSlug, modelo, tipo])
+  @@index([orgId, dia])
 }
