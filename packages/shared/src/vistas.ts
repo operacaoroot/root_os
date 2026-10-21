@@ -73,6 +73,11 @@ export const VistaQuadroSchema = z.object({
   agrupamento: z.enum(AGRUPAMENTOS).optional(),
   /** Mostrar ou ocultar as concluídas (versão final). Opcional: sem a chave, mostra. */
   concluidas: z.enum(['mostrar', 'ocultar']).optional(),
+  /**
+   * Ocultar as colunas sem cartão no quadro (rodada de produção 1, P4, 21/10/2026),
+   * o `?vazios=ocultar`. Opcional: sem a chave, mostra todas.
+   */
+  vazios: z.enum(['mostrar', 'ocultar']).optional(),
   filtros: z.object({
     assignee: z.string().max(120),
     agente: z.string().max(80),

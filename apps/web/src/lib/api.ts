@@ -212,10 +212,15 @@ export function apiPatch<T>(
   }).then((r) => handle<T>(r, path, token));
 }
 
-export function apiDelete<T>(path: string, token?: string | null): Promise<T> {
+/** DELETE; o corpo é opcional (excluir lista leva a confirmação do nome, 21/10/2026). */
+export function apiDelete<T>(path: string, token?: string | null, body?: unknown): Promise<T> {
   return fetch(`${API_BASE}${path}`, {
     method: 'DELETE',
-    headers: token ? { Authorization: `Bearer ${token}` } : {},
+    headers: {
+      ...(body !== undefined ? { 'Content-Type': 'application/json' } : {}),
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
+    ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
   }).then((r) => handle<T>(r, path, token));
 }
 
