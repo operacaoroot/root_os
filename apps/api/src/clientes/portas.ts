@@ -72,6 +72,12 @@ export interface PedidoDeArquivo {
   /** Até as duas primeiras páginas de texto, quando o chamador já leu. */
   texto?: string;
   atorId?: string | null;
+  /**
+   * De onde o arquivo veio no OS (lane A4): o anexo da tarefa manda
+   * `{ tipo: 'WorkAnexo', id }`. É a idempotência do chamador (o mesmo anexo
+   * arquivado duas vezes cai no mesmo registro) e o que a lista de anexos lê.
+   */
+  ref?: { tipo: string; id: string } | null;
 }
 
 export interface ArquivistaDoClientePort {

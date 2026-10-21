@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { GoogleController } from './google.controller';
 import { GoogleConexaoController } from './google-conexao.controller';
 import { GoogleService } from './google.service';
+import { DRIVE_DO_CLIENTE } from './drive-do-cliente';
 import { AuthModule } from '../auth/auth.module';
 
 /*
@@ -20,10 +21,15 @@ import { AuthModule } from '../auth/auth.module';
  * era público, mover o import não movia nada, porque qualquer arquivo podia
  * montar a URL do Google por fora e entregar pronta.
  */
+/*
+ * `DRIVE_DO_CLIENTE` (rodada dos agentes, 21/10/2026): o cliente do Drive da
+ * pasta do cliente que `clientes/` recebe por injeção. É o mesmo objeto
+ * (`useExisting`), e `clientes/` vê só a interface de `drive-do-cliente.ts`.
+ */
 @Module({
   imports: [AuthModule], // login com Gmail volta pelo callback deste conector
   controllers: [GoogleConexaoController, GoogleController],
-  providers: [GoogleService],
-  exports: [GoogleService],
+  providers: [GoogleService, { provide: DRIVE_DO_CLIENTE, useExisting: GoogleService }],
+  exports: [GoogleService, DRIVE_DO_CLIENTE],
 })
 export class GoogleModule {}
