@@ -323,7 +323,7 @@ export class AtasDoGranolaService {
 
     let saida: LlmStepOutput;
     try {
-      saida = await this.llm.step({ system, turns: [{ role: 'user', text: user }], orgId, maxTokens: SAIDA_DA_LEITURA });
+      saida = await this.llm.step({ funcao: 'TR-02', system, turns: [{ role: 'user', text: user }], orgId, maxTokens: SAIDA_DA_LEITURA });
     } catch (e) {
       if (e instanceof BadRequestException || e instanceof ConflictException || e instanceof ForbiddenException) throw e;
       const msg = `o leitor de reuniões não conseguiu chamar o modelo: ${(e as Error).message}`.slice(0, 300);

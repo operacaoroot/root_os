@@ -122,7 +122,7 @@ export class AssistenteService implements OnModuleInit {
     else {
       try {
         const { system, user } = promptDaDuvida({ fatos, pergunta: d.pergunta });
-        const r = await comProcedencia(() => this.llm.complete({ system, user, orgId, maxTokens: 800 }));
+        const r = await comProcedencia(() => this.llm.complete({ funcao: 'CO-06', system, user, orgId, maxTokens: 800 }));
         procedencia = r.procedencia ?? { provider: this.llm.name, modelo: this.llm.model, custoUsd: 0, custoDesconhecido: true, caiuNoStub: false, aviso: null };
         const lida = interpretarDuvida(r.resultado, fatos);
         ({ resposta, doModelo, motivo, fato, sugestao } = lida);

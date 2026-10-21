@@ -212,7 +212,7 @@ export class VozService {
     this.identidadeHumana(orgId, actorId);
     await exigirAcessoAtual(this.prisma, orgId, actorId, ['obsidian.ver', 'pauta.editar', 'automacoes.executar']);
     this.conferirModeloEscolhido(m);
-    const saida = await this.llm.complete({ system: SYSTEM_VOZ, user: m.texto, orgId, maxTokens: SAIDA_DA_GERACAO_LONGA });
+    const saida = await this.llm.complete({ funcao: 'CT-09', system: SYSTEM_VOZ, user: m.texto, orgId, maxTokens: SAIDA_DA_GERACAO_LONGA });
     let corpo: string;
     try { corpo = montarPerfil(lerPerfilDaIa(saida)); }
     catch (err) {

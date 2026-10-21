@@ -307,6 +307,7 @@ export class DerivacaoService {
       let montada: DerivacaoMontada;
       try {
         const saida = await this.llm.complete({
+          funcao: 'CT-08',
           system,
           user: entradaDaDerivacao({ apelido: e.apelido, titulo: e.titulo, item, n, total: e.itens.length, segmentos: e.transcricao, duracaoSeg }),
           // De quem é o gasto (RF-G-05), como nas outras chamadas da pauta.

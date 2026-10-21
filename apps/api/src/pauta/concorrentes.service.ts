@@ -141,6 +141,7 @@ export class ConcorrentesService {
       throw new ServiceUnavailableException('Este perfil ainda não tem post capturado: rode a coleta da fonte antes.');
     }
     const saida = await this.llm.complete({
+      funcao: 'CT-10',
       system: SYSTEM_DOSSIE,
       user: texto,
       orgId,

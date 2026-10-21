@@ -136,6 +136,7 @@ export class PacoteService {
     const itens = itensMantidos(e.rodada.itens);
     const duracaoSeg = this.duracao(e);
     const saida = await this.llm.complete({
+      funcao: 'CT-06',
       system: systemDoPacote(await this.vozes.bloco(orgId), await this.marcas.bloco(orgId)),
       user: entradaDoPacote({ apelido, titulo: e.titulo, itens, segmentos, duracaoSeg }),
       // De quem é o gasto (RF-G-05), como nas outras chamadas da pauta.

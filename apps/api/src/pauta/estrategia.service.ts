@@ -161,7 +161,7 @@ export class EstrategiaService {
     this.identidadeHumana(orgId, actorId);
     await exigirAcessoAtual(this.prisma, orgId, actorId, ['obsidian.ver', 'pauta.editar', 'automacoes.executar', 'pauta.ver']);
     this.conferirModeloEscolhido(m);
-    const saida = await this.llm.complete({ system: SYSTEM_ESTRATEGIA, user: m.texto, orgId, maxTokens: SAIDA_DA_GERACAO_LONGA });
+    const saida = await this.llm.complete({ funcao: 'CT-11', system: SYSTEM_ESTRATEGIA, user: m.texto, orgId, maxTokens: SAIDA_DA_GERACAO_LONGA });
     let documento: string;
     try { documento = montarEstrategia(mes, lerEstrategiaDaIa(saida, m.insumo.pilares)); }
     catch (err) {

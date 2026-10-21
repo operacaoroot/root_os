@@ -909,3 +909,74 @@ describe('as escritas do comercial (cockpit do lead)', () => {
     }
   });
 });
+
+/*
+ * Rodada dos agentes (21/10/2026): as quatro capacidades novas, cada uma no nível
+ * que a escada calcula do efeito (nada declarado à mão abaixo do que ela diz).
+ *   comercial.lead.criar      R1: escreve só dentro do OS (o lead e o fato).
+ *   drive.pasta.criar         R3: sai da casa, e desfazer é tirar a pasta à mão.
+ *   drive.arquivo.enviar      R3: idem, e o conteúdo é do cliente (confidencial).
+ *   agenda.evento.padronizar  R3: escreve no Google Agenda, e voltar o título é à mão.
+ * Nenhuma tem ferramenta (agente nenhum as chama pelo laço) nem desfazer.
+ */
+describe('capacidades da rodada dos agentes (21/10/2026)', () => {
+  const NIVEL: Record<string, string> = {
+    'comercial.lead.criar': 'R1',
+    'drive.pasta.criar': 'R3',
+    'drive.arquivo.enviar': 'R3',
+    'agenda.evento.padronizar': 'R3',
+  };
+
+  it('cada uma está no delta com o nível que a escada calcula, sem ferramenta e sem desfazer', () => {
+    for (const [id, nivel] of Object.entries(NIVEL)) {
+      const c = DELTA.capacidades.find((x) => x.id === id);
+      expect(c, id).toBeTruthy();
+      expect(c!.nivel, id).toBe(nivel);
+      expect(classificar(c!.efeito), id).toBe(nivel);
+      expect(c!.ferramenta, id).toBeUndefined();
+      expect(c!.desfazer, id).toBeUndefined();
+      expect(c!.rota, id).toMatch(/^POST \//);
+    }
+  });
+
+  it('o delta subiu para 1.11.0', () => {
+    expect(json('politica-marketing-os.json').versao).toBe('1.11.0');
+  });
+
+  it('os esquemas são fechados e exigem o que a aprovação assina', () => {
+    const exige: Record<string, string[]> = {
+      'comercial.lead.criar': ['origem', 'nome', 'chave'],
+      'drive.pasta.criar': ['clienteId', 'nome'],
+      'drive.arquivo.enviar': ['clienteId', 'subpasta', 'nome', 'chave', 'sha256', 'bytes'],
+      'agenda.evento.padronizar': ['eventoId', 'tituloAtual', 'tituloNovo', 'adicionarMeet'],
+    };
+    for (const [id, campos] of Object.entries(exige)) {
+      const s = DELTA.capacidades.find((x) => x.id === id)!.argsSchema as { additionalProperties: boolean; required: string[] };
+      expect(s.additionalProperties, id).toBe(false);
+      expect(s.required.sort(), id).toEqual([...campos].sort());
+    }
+  });
+
+  it('o nome da pasta e do arquivo não aceita barra (não sai da pasta do cliente pelo nome)', () => {
+    for (const id of ['drive.pasta.criar', 'drive.arquivo.enviar']) {
+      const s = DELTA.capacidades.find((x) => x.id === id)!.argsSchema as { properties: Record<string, { pattern?: string }> };
+      const re = new RegExp(s.properties.nome.pattern!);
+      expect(re.test('Cliente Exemplo'), id).toBe(true);
+      expect(re.test('../outro-cliente'), id).toBe(false);
+      expect(re.test('a\\b'), id).toBe(false);
+    }
+  });
+
+  it('o envio ao Drive só aceita as subpastas do modelo do cliente', () => {
+    const s = DELTA.capacidades.find((x) => x.id === 'drive.arquivo.enviar')!.argsSchema as { properties: { subpasta: { enum: string[] } } };
+    expect(s.properties.subpasta.enum).toEqual(['01-comercial', '02-contrato', '03-kickoff', '04-entrega', '05-acompanhamento', '06-financeiro', '07-evidencias', '99-arquivo', '_fonte']);
+  });
+
+  it('com sinal aceso as R3 sobem a R4 e a R1 a R2, nunca descem', () => {
+    for (const [id, nivel] of Object.entries(NIVEL)) {
+      const c = MKTOS.capacidades.find((x) => x.id === id)!;
+      const d = avaliar(c, { sinais: ['volume_atipico'] });
+      expect(d.nivel, id).toBe(nivel === 'R1' ? 'R2' : 'R4');
+    }
+  });
+});

@@ -180,6 +180,7 @@ model Org {
   caixaVistos           CaixaVisto[]
   /// As sugestões de tarefa lidas das atas do Trabalho (rodada do painel P3).
   ataSugestoes          AtaSugestao[]
+  pendencias            Pendencia[]
   vistasSalvas          VistaSalva[]
 
   // Fatia 3.6 — RF-G-05 (bloco no fim do arquivo). Só o outro lado da relação
@@ -2453,6 +2454,41 @@ model VistaSalva {
 /// Raiz da empresa, não filha: o `orgId` vem do insert, RLS FORCE no grupo
 /// padrão. `listaId` sem FK: a lista pode ser apagada depois, e a sugestão
 /// decidida continua sendo histórico.
+/// A decisão que um agente ou uma rotina deixa para uma pessoa (rodada dos
+/// agentes, 21/10/2026): o arquivista sem subpasta certa, o cobrador de tarefas,
+/// a triagem do WhatsApp com confiança baixa, o vigia da agenda sem proposta
+/// segura. A caixa (Pendências) LÊ; responder chama o tratador do tipo
+/// (`pendencias/pendencias.registry.ts`). Raiz da empresa, RLS FORCE.
+model Pendencia {
+  id            String    @id @default(uuid())
+  orgId         String
+  org           Org       @relation(fields: [orgId], references: [id])
+  /// O id da função no cadastro único (TR-05, TR-07, CO-16, AG-01...).
+  funcao        String
+  tipo          String
+  /// Idempotência: a mesma pendência aberta de novo cai na mesma linha.
+  chave         String
+  titulo        String
+  contexto      String    @default("")
+  /// `[{ chave, rotulo }]`
+  opcoes        Json      @default("[]")
+  /// A pessoa a quem ela espera; nula = qualquer pessoa da empresa.
+  paraUsuarioId String?
+  refTipo       String?
+  refId         String?
+  dados         Json?
+  estado        String    @default("aberta")
+  escolha       String?
+  decididaPor   String?
+  decididaEm    DateTime?
+  criadaEm      DateTime  @default(now())
+  atualizadaEm  DateTime  @updatedAt
+
+  @@unique([orgId, chave])
+  @@index([orgId, estado])
+  @@index([orgId, paraUsuarioId, estado])
+}
+
 model AtaSugestao {
   id           String    @id @default(uuid())
   orgId        String

@@ -208,6 +208,8 @@ export const PREFIXOS_DA_ESPINHA: readonly string[] = [
   'mapa-publico',
   'memoria',
   'organograma',
+  // as pendências que agentes e rotinas deixam para gente (rodada dos agentes, 21/10/2026): a caixa lê
+  'pendencias',
   'policy',
   'roles',
   'rotinas',

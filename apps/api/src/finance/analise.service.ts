@@ -287,7 +287,7 @@ export class AnaliseService {
       throw new ServiceUnavailableException(`IA não configurada: falta a credencial do provider "${this.llm.name}".`);
     }
     // 6000: o modelo pode raciocinar antes de escrever, e o raciocínio conta nesse teto.
-    const texto = (await this.llm.complete({ system: SISTEMA, user: `Números de hoje (${dia}):\n${json}`, orgId, maxTokens: 6000 })).trim();
+    const texto = (await this.llm.complete({ funcao: 'FI-01', system: SISTEMA, user: `Números de hoje (${dia}):\n${json}`, orgId, maxTokens: 6000 })).trim();
     // upsert: dois pedidos simultâneos (duas abas, duplo clique) não quebram na chave única.
     const salva = await this.prisma.analiseLeitura.upsert({
       where: { orgId_dia_hash: { orgId, dia, hash } },

@@ -41,6 +41,20 @@ export interface LlmMessage {
    * usa o mesmo número (`tetoDeSaida({ tipo: 'completa', maxTokens })`).
    */
   maxTokens?: number;
+  /**
+   * A FUNÇÃO do cadastro único (`packages/shared/src/agentes.ts`) em nome de quem
+   * esta chamada acontece: `CO-03`, `IM-07`, `AG-01`... (rodada dos agentes, 21/10/2026).
+   *
+   * O provedor escolhe o modelo e o esforço por ela (`escolherModelo`: a variável
+   * `LLM_MODELO_<ID>`, depois o cadastro, depois o padrão), e o orçamento por agente
+   * enxerga o gasto pelo slug dela quando `agentSlug` não vem. `model`/`effort`
+   * passados explicitamente na chamada continuam valendo por cima (é como a tela
+   * de Agentes ajusta um agente do laço). Ausente = como antes. O stub aceita a
+   * função como marca, além do `[tarefa:...]`.
+   */
+  funcao?: string;
+  /** O agente em nome de quem (ver `LlmStepInput.agentSlug`). Ausente = o slug da `funcao`. */
+  agentSlug?: string;
 }
 
 /**
@@ -150,6 +164,18 @@ export interface LlmStepInput {
    * empresa e por dia se aplica.
    */
   agentSlug?: string;
+  /**
+   * A FUNÇÃO do cadastro único (`packages/shared/src/agentes.ts`) em nome de quem
+   * esta chamada acontece: `CO-03`, `IM-07`, `AG-01`... (rodada dos agentes, 21/10/2026).
+   *
+   * O provedor escolhe o modelo e o esforço por ela (`escolherModelo`: a variável
+   * `LLM_MODELO_<ID>`, depois o cadastro, depois o padrão), e o orçamento por agente
+   * enxerga o gasto pelo slug dela quando `agentSlug` não vem. `model`/`effort`
+   * passados explicitamente na chamada continuam valendo por cima (é como a tela
+   * de Agentes ajusta um agente do laço). Ausente = como antes. O stub aceita a
+   * função como marca, além do `[tarefa:...]`.
+   */
+  funcao?: string;
 }
 
 /**

@@ -112,3 +112,9 @@ export * from './ficha-do-cliente.js';
 export * from './tarefas-do-dia.js';
 // As tarefas do comercial (adendo de 21/10/2026, §A1): ver `comercial-tarefas.ts`.
 export * from './comercial-tarefas.js';
+// O cadastro único de agentes, rotinas e automações (rodada dos agentes, 21/10/2026): ver `agentes.ts`.
+export * from './agentes.js';
+// As pendências que agentes e rotinas deixam para uma pessoa (rodada dos agentes): ver `pendencias.ts`.
+export * from './pendencias.js';
+// A pasta do cliente no Drive e o nome padrão dos arquivos (rodada dos agentes): ver `pasta-do-cliente.ts`.
+export * from './pasta-do-cliente.js';

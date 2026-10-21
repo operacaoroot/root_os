@@ -266,6 +266,7 @@ export class RodadaService {
       const lista = capturas.map((c, i) => linhaDoInsumo(c, i + 1)).join('\n\n');
 
       const saida = await this.llm.complete({
+        funcao: 'CT-04',
         system: SYSTEM_CURADORIA,
         user: `Janela: ${janelaIni.toISOString()} até ${janelaFim.toISOString()}\n\nItens coletados:\n\n${lista}`,
         // De quem é o gasto (RF-G-05). A curadoria roda pela tela E pela rotina
@@ -441,6 +442,7 @@ export class RodadaService {
             .map((c, i) => linhaDoInsumo(c, i + 1, RESUMO_NO_PROMPT_DE_SUGESTAO))
             .join('\n\n');
           const saida = await this.llm.complete({
+            funcao: 'CT-03',
             system: SYSTEM_SUGESTAO,
             user: `Janela: ${janelaIni.toISOString()} até ${janelaFim.toISOString()}\n\nItens coletados (${escolhidas.length}):\n\n${lista}`,
             orgId,
@@ -637,6 +639,7 @@ export class RodadaService {
       : '(acervo sem fichas campeãs — escreva no tom direto da ROOT)';
 
     const saida = await this.llm.complete({
+      funcao: 'CT-04',
       system: systemDasPecas(await this.vozes.bloco(orgId, ''), await this.marcas.bloco(orgId)),
       user: entradaDasPecas({ titulo: rodada.titulo, corpo: rodada.corpo, itens: rodada.itens, repertorio }),
       maxTokens: SAIDA_DA_GERACAO_LONGA,

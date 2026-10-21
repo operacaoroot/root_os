@@ -515,7 +515,7 @@ export class AtasService {
 
     let saida: string;
     try {
-      saida = await this.llm.complete({ system, user, orgId, maxTokens: SAIDA_DA_LEITURA });
+      saida = await this.llm.complete({ funcao: 'TR-01', system, user, orgId, maxTokens: SAIDA_DA_LEITURA });
     } catch (e) {
       if (e instanceof BadRequestException || e instanceof ConflictException) throw e;
       const msg = `o leitor de atas não conseguiu chamar o modelo: ${(e as Error).message}`;

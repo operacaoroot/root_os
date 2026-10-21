@@ -259,6 +259,13 @@ export const CONECTOR_DA_CAPACIDADE: Readonly<Record<string, string | null>> = {
   'comercial.proposta.publicar': null,
   // Rodada da implantação I3 (18/10/2026): publicar a versão da sala é escrita no link do próprio OS, como a proposta.
   'comercial.sala.publicar': null,
+  // Rodada dos agentes (21/10/2026): o lead do formulário do site e da triagem do WhatsApp nasce dentro do OS.
+  'comercial.lead.criar': null,
+  // A pasta do cliente e os arquivos dela vão ao Drive da empresa: desligar o Drive segura os dois.
+  'drive.pasta.criar': 'drive',
+  'drive.arquivo.enviar': 'drive',
+  // O vigia da agenda (AG-01) troca o título do evento no Google Agenda.
+  'agenda.evento.padronizar': 'gcal',
 
   // Daqui para baixo: nada sai da casa.
   'numeros.painel.ler': null,

@@ -166,7 +166,7 @@ export class NewsletterService {
     const system = systemDaNewsletter(await this.vozes.bloco(orgId), await this.marcas.bloco(orgId));
     const user = entradaDaNewsletter({ apelido: e.apelido, titulo: e.titulo, itens: e.itens, segmentos: e.transcricao });
     // De quem é o gasto (RF-G-05), como nas outras chamadas da pauta.
-    const primeira = await this.llm.complete({ system, user, orgId, maxTokens: SAIDA_DA_GERACAO_LONGA });
+    const primeira = await this.llm.complete({ funcao: 'CT-07', system, user, orgId, maxTokens: SAIDA_DA_GERACAO_LONGA });
     let escolhida: NewsletterMontada;
     try {
       escolhida = montarNewsletter(primeira, ctx);
@@ -183,6 +183,7 @@ export class NewsletterService {
     if (!checagem.aprovada) {
       tentativas = 2;
       const segunda = await this.llm.complete({
+        funcao: 'CT-07',
         system,
         user: user + pedidoDeReescrita(checagem),
         orgId,

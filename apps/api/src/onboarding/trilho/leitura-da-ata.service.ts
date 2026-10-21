@@ -253,11 +253,11 @@ export class LeituraDaAtaService {
     let saida: LlmStepOutput;
     try {
       saida = await this.llm.step({
+        funcao: 'IM-01',
         system,
         turns: [{ role: 'user', text: user }],
         orgId,
         agentSlug: SLUG_DO_LEITOR_DE_ATA,
-        effort: 'high',
         maxTokens: 16000,
       });
     } catch (e) {
@@ -336,6 +336,7 @@ export class LeituraDaAtaService {
     if (!base64) throw new FonteIndisponivelError('o PDF veio vazio.');
     if ((base64.length * 3) / 4 > MAX_PDF_BYTES) throw new FonteIndisponivelError('o PDF passa de 30 MB.');
     const saida = await this.llm.step({
+      funcao: 'IM-01',
       system:
         'Você transcreve documentos. Devolva o TEXTO INTEGRAL do PDF anexado, na ordem em que aparece, ' +
         'sem resumir, sem comentar, sem corrigir. Preserve as marcas de tempo e os nomes de quem fala. ' +
@@ -451,11 +452,11 @@ export class LeituraDaAtaService {
       memoria,
     });
     const saida = await this.llm.step({
+      funcao: 'IM-02',
       system,
       turns: [{ role: 'user', text: user }],
       orgId,
       agentSlug: SLUG_DO_PESQUISADOR_DE_CONTA,
-      effort: 'high',
       maxTokens: 12_000,
     });
     const dossie = interpretarDossie(saida.text);
@@ -505,11 +506,11 @@ export class LeituraDaAtaService {
     ].join('\n');
 
     const saida = await this.llm.step({
+      funcao: 'IM-03',
       system,
       turns: [{ role: 'user', text: user }],
       orgId,
       agentSlug: SLUG_DO_ROTEIRISTA,
-      effort: 'medium',
       maxTokens: 8000,
     });
     const a = saida.text.indexOf('{');

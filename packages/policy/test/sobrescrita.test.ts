@@ -422,8 +422,18 @@ describe('ferramenta e esquema de argumentos têm direção própria', () => {
     // É leitura do texto de um arquivo do Drive para o banco de atas, pedida
     // pelo clique de gente na tela de Atas; o texto volta sigiloso e não vai ao
     // contexto de agente nenhum por esta porta.
-    expect(BASE.capacidades.filter((c) => !c.ferramenta)).toHaveLength(28);
+    //
+    // Trinta e duas desde a rodada dos agentes (21/10/2026): `comercial.lead.criar`
+    // (o formulário do site e a triagem do WhatsApp), `drive.pasta.criar` e
+    // `drive.arquivo.enviar` (a pasta do cliente e o arquivista) e
+    // `agenda.evento.padronizar` (o vigia da agenda). Quem as dispara é a rota
+    // pública, a reação ou a rotina, pela porta; nenhuma vira ferramenta do laço.
+    expect(BASE.capacidades.filter((c) => !c.ferramenta)).toHaveLength(32);
     for (const id of [
+      'comercial.lead.criar',
+      'drive.pasta.criar',
+      'drive.arquivo.enviar',
+      'agenda.evento.padronizar',
       'contexto.arquivo.ler',
       'instagram.post.publicar',
       'pauta.semana.aprovar',

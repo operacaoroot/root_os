@@ -271,6 +271,7 @@ export class IdeiasService {
     ]);
 
     const saida = await this.llm.complete({
+      funcao: 'CT-12',
       system: SYSTEM_IDEIAS,
       user: entradaDasIdeias({
         pilar,

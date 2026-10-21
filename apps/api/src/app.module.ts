@@ -43,6 +43,8 @@ import { PublicMapModule } from './public-map/public-map.module';
 import { PlataformaModule } from './platform/plataforma.module';
 import { LinhaDoTempoModule } from './linha-do-tempo/linha-do-tempo.module';
 import { CaixaModule } from './caixa/caixa.module';
+import { PendenciasModule } from './pendencias/pendencias.module';
+import { ClientesModule } from './clientes/clientes.module';
 import { ComercialModule } from './comercial/comercial.module';
 
 @Module({
@@ -172,6 +174,13 @@ import { ComercialModule } from './comercial/comercial.module';
     // NADA ACUSA — mesmo silêncio da linha do tempo, e é por isso que a rota
     // está na lista padrão do smoke.
     CaixaModule,
+    // As pendências que agentes e rotinas deixam para gente (rodada dos agentes,
+    // 21/10/2026). Global: o arquivista, o cobrador, a triagem e o vigia abrem;
+    // a caixa lê. Sem esta linha `GET /api/pendencias` responde 404 e nada acusa.
+    PendenciasModule,
+    // A pasta do cliente no Drive e o arquivista (rodada dos agentes, 21/10/2026):
+    // global, as duas portas que o comercial, a implantação e o trabalho chamam.
+    ClientesModule,
     // O COCKPIT DO LEAD (módulo comercial, 13/10/2026): o funil com portão, a
     // fila de decisões, a sala do cliente e o fechamento com chave. Depois de
     // `LeadsModule` (o fio é o `LeadEvent`), de `OnboardingModule` (o fechamento

@@ -164,7 +164,7 @@ export class RelatorioDaSemanaService implements OnModuleInit {
     let narrativa: string | null = null;
     try {
       const { system, user } = promptDoRelatorio(r);
-      const bruta = await this.llm.complete({ system, user, orgId, maxTokens: 800 });
+      const bruta = await this.llm.complete({ funcao: 'CO-12', system, user, orgId, maxTokens: 800 });
       const limpa = limparNarrativa(bruta);
       narrativa = limpa.narrativa;
       avisos.push(...limpa.avisos);

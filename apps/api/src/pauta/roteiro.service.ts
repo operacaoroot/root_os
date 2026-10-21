@@ -169,6 +169,7 @@ export class RoteiroService {
     const palavra = palavraDeCorteEfetiva(e.palavraDeCorte, daEmpresa);
 
     const saida = await this.llm.complete({
+      funcao: 'CT-05',
       system: systemDoRoteiro(await this.vozes.bloco(orgId), await this.marcas.bloco(orgId)),
       user: entradaDoRoteiro({ apelido, titulo: e.titulo, itens }),
       // De quem é o gasto (RF-G-05), como nas outras chamadas da pauta.

@@ -1,0 +1,30 @@
+# Rodada dos agentes (21/10/2026): o contrato das lanes
+
+> Escrito na Lane 0, antes de abrir as lanes. Roteiro: `docs/comercial/RODADA-AGENTES-20261021.md`.
+> Branch `homolog/final-20261019`, sobre a tag `producao-21b-20261021`.
+
+## O que a Lane 0 entregou (use, não refaça)
+
+1. **Cadastro único** `packages/shared/src/agentes.ts` (`CADASTRO_DE_FUNCOES`, 78 linhas: as 77 do levantamento + `AG-01`). Campos do roteiro mais `modeloExterno` (OpenAI e modelos locais, só para a tela), `semente` (qual seed vira `Agent`), `rotina` (o tipo no histórico `RotinaExecucao`) e `soNoPapel`. Ajudantes: `funcaoPorId`, `funcaoPorSlug`, `funcoesDoTipo`, `funcoesDaSemente`, `escolherModelo(funcao, padrao, env)` (ordem: `LLM_MODELO_<ID>`/`LLM_ESFORCO_<ID>` → cadastro → padrão), `variavelDoModelo`. Teste: `apps/api/test/agentes-cadastro.test.ts`.
+   - O arquivo é **da Lane 0/orquestrador**. Lane que precisar mudar uma linha (o `onde`, o `estado`, uma capacidade) **não edita**: escreve a correção no relatório final e o orquestrador aplica na integração.
+2. **`funcao` nas chamadas ao modelo**: `LlmMessage.funcao`, `LlmStepInput.funcao` e `LlmMessage.agentSlug` (opcionais) em `apps/api/src/llm/llm.provider.ts`. As 26 chamadas existentes já passam `funcao` (as do onboarding perderam o `effort` explícito, para o cadastro decidir; a transcrição de PDF do IM-01 segue `low`). Chamada nova de modelo **sempre** passa `funcao`, e **não** passa `model`/`effort` (quem decide é o cadastro). O laço do agente (`agent-runtime.service.ts`) é da A1.
+3. **Política 1.11.0**: quatro capacidades no delta, classificadas pela escada, sem ferramenta e sem desfazer:
+   - `comercial.lead.criar` **R1** (`POST /publico/lead`), args `{origem: formulario-do-site|whatsapp, nome, chave, empresa?, email?, telefone?, mensagem?}`;
+   - `drive.pasta.criar` **R3** (`POST /clientes/:id/pasta`), args `{clienteId, nome, origem?}`;
+   - `drive.arquivo.enviar` **R3** (`POST /trabalho/tarefas/:id/anexos`), args `{clienteId, subpasta, nome, chave, sha256, bytes, tipoMime?, origem?}`;
+   - `agenda.evento.padronizar` **R3** (`POST /agenda/padronizar/:eventoId`), args `{eventoId, tituloAtual, tituloNovo, adicionarMeet}`.
+   - Conector: `drive`, `drive`, `gcal`; o lead é `null` (`apps/api/src/integrations/conectores.ts`). As rotas declaradas são as que a lane dona implementa (se mudar, avise).
+   - Nenhuma lane mexe em `packages/policy/*.json` sem falar com o orquestrador.
+4. **Pendências** (`apps/api/src/pendencias/`, global; tabela `Pendencia`, migration `20261021300000_pendencia`, RLS FORCE, semeada no `tenant-isolation`): a decisão que um agente ou rotina deixa para uma pessoa fora do funil. `PendenciasService.abrir(orgId, {funcao, tipo, chave, titulo, contexto?, opcoes, paraUsuarioId?, refTipo?, refId?, dados?})` (idempotente pela `chave`; decidida não reabre), `PendenciasRegistry.aoResponder(tipo, fn, quem)` (o tratador; o que sai do OS vai pela porta), rotas `GET /pendencias`, `POST /pendencias/:id/responder {escolha, complemento?}`, `POST /pendencias/:id/descartar` (só gente). Tipos combinados: `arquivo.classificar` (TR-05), `tarefa.cobranca` (TR-07), `whatsapp.triagem` (CO-16), `agenda.padrao` (AG-01). A caixa mostra as pendências (UI da lane do Trabalho).
+5. **As portas da pasta do cliente** (`apps/api/src/clientes/portas.ts`, módulo global `ClientesModule` com implementação "ainda não ligada"): `PASTA_DO_CLIENTE` (`garantir({orgId, partnerId, origem, leadId?, atorId?})` → `pronta | aguardando_aprovacao | sem_raiz | erro`) e `ARQUIVISTA_DO_CLIENTE` (`arquivar({orgId, partnerId|null, leadId?, origem, nomeOriginal, tipoMime, conteudo: {chave,sha256,bytes}|{buffer}, subpasta?, tipo?, titulo?, data?, texto?, atorId?})` → `enviado | aguardando_aprovacao | na_fila | classificar_a_mao | so_no_os | erro`). Nenhuma das duas lança por falha do Drive. Chamador injeta com `@Inject(PASTA_DO_CLIENTE) @Optional()`. Constantes e nome padrão em `packages/shared/src/pasta-do-cliente.ts` (`SUBPASTAS_DO_CLIENTE`, `nomeDaPastaDoCliente`, `nomePadraoDoArquivo`, `NOTA_DA_RAIZ_DOS_CLIENTES = 'clientes.pasta.raiz'`).
+
+## Regras de todas as lanes
+
+- As de sempre (`docs/comercial/PASSAGEM-PREDATOR-COMERCIAL.md` §0, `CLAUDE.md`, `AGENTS.md`). Nada em produção. Nada de dado de cliente nem segredo no git, no log ou no relatório.
+- **Arquivos disjuntos**: cada lane só mexe nos arquivos da lista dela. Arquivo partilhado inevitável (`schema.prisma`, `packages/shared/src/index.ts`, `app.module.ts`, `comercial.module.ts`, `tenant-isolation.test.ts`, `arquitetura.test.ts`): só acréscimo, no fim do bloco, para a integração juntar sem conflito de sentido.
+- **Migrations**: aditivas, com RLS FORCE em tabela nova (modelo: `20261021300000_pendencia`), uma faixa de horário por lane: A1 `202610213100xx`, A2 `202610213200xx`, A4 `202610213300xx`, A3+TR `202610213400xx`, A5 `202610213500xx`, A6 `202610213600xx`, A7 `202610213700xx`. Tabela nova entra no `tenant-isolation.test.ts` (filha: `FILHOS_COM_ORGID_REDUNDANTE`).
+- **Modelo**: toda chamada nova passa `funcao` do cadastro e tem fixture do stub (`homolog/fixtures/stub/<tarefa>.json`, com a marca `[tarefa:<tarefa>]` no prompt de sistema; a A1 faz o stub aceitar também a função como marca). Nada de chave de API: prova com modelo real só pela ponte, e quem roda é o orquestrador no fim.
+- **Escrita fora do OS** só pela porta (`PortaDoOperador`), com a capacidade do catálogo. Nunca apagar evento da agenda nem arquivo do Drive. Escrita no Drive só dentro da raiz configurada.
+- **Testes**: banco descartável próprio (`homolog/banco-de-teste.sh rootos_ag_<lane>_test`), suíte da lane verde, `tsc` limpo na API e no web; nada de vermelho novo fora da linha de base (`homolog/final/suites.md`). A catraca `arquitetura.test.ts` já tem 1 vermelho na base (`contexto-movimento-explicito.service.ts importa Obsidian`).
+- **Commits** na worktree da lane, com mensagem `Agentes 21/10 · <lane> · ...` e a identidade do clone. O orquestrador integra.
+- Onde faltar decisão de produto: `[a decidir]` e siga.

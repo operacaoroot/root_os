@@ -206,7 +206,7 @@ export class RelatorioService {
     if (!m.configured) throw new ServiceUnavailableException(`IA não configurada: falta a credencial do provider "${m.provider}".`);
     await this.conferirAntesDoIO(orgId, identidade);
     this.conferirModeloEscolhido(m);
-    const saida = await this.llm.complete({ system: SYSTEM_RELATORIO, user: m.texto, orgId, maxTokens: SAIDA_DA_GERACAO_LONGA });
+    const saida = await this.llm.complete({ funcao: 'CT-13', system: SYSTEM_RELATORIO, user: m.texto, orgId, maxTokens: SAIDA_DA_GERACAO_LONGA });
     let documento: string;
     try { documento = montarRelatorio(m.dados, lerRelatorioDaIa(saida)); }
     catch (err) {

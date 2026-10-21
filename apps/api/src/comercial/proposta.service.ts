@@ -283,7 +283,7 @@ export class PropostaService implements OnModuleInit {
     if (objecoes.length) {
       try {
         const { system, user } = promptDaProposta({ produto: TABELA_DE_PRECO[produto]?.rotulo ?? produto, dores, objecoes });
-        const r = await comProcedencia(() => this.llm.complete({ system, user, orgId, maxTokens: 600 }));
+        const r = await comProcedencia(() => this.llm.complete({ funcao: 'CO-04', system, user, orgId, maxTokens: 600 }));
         procedencia = r.procedencia ?? { provider: this.llm.name, modelo: this.llm.model, custoUsd: 0, custoDesconhecido: true, caiuNoStub: false, aviso: null };
         const lida = interpretarProposta(r.resultado);
         comoEDiferente = lida.comoEDiferente;

@@ -421,6 +421,7 @@ export class PautaService implements OnModuleInit {
 
       const bruto = (coleta.bruto ?? {}) as Record<string, unknown>;
       const saida = await this.llm.complete({
+        funcao: 'CT-02',
         system: SYSTEM_FICHA,
         // Na captura do Gmail a nota é o trecho automático do mesmo corpo, não a voz de alguém.
         user: `Material capturado${c.url ? ` (${c.url})` : ''}:\n\n${coleta.texto}${

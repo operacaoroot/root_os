@@ -87,7 +87,7 @@ export class DiagnosticoService implements OnModuleInit {
     const ficha = await this.prisma.comercialFicha.findFirst({ where: { leadId, orgId }, select: { empresa: true, sistemaErp: true, baseDados: true } });
 
     const { system, user } = promptDoDiagnostico({ empresa: ficha?.empresa ?? lead.name, ata });
-    const { resultado: saida, procedencia } = await comProcedencia(() => this.llm.complete({ system, user, orgId, maxTokens: 4_000 }));
+    const { resultado: saida, procedencia } = await comProcedencia(() => this.llm.complete({ funcao: 'CO-03', system, user, orgId, maxTokens: 4_000 }));
     const leitura: LeituraDoDiagnostico = interpretarDiagnostico(saida, ata);
     for (const a of leitura.avisos) this.log.warn(`diagnóstico do lead ${leadId}: ${a}`);
 
