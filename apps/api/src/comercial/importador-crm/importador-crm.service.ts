@@ -19,6 +19,7 @@ import { LeadsService } from '../../leads/leads.service';
 import { leadIdDaEntrada } from '../../leads/entrada-de-lead';
 import { PrismaService } from '../../prisma/prisma.service';
 import { criarEstruturaSugerida } from '../../work/estrutura-sugerida';
+import { LISTA_DO_COMERCIAL, NOME_DA_LISTA_DO_COMERCIAL, acharOuCriarListaDoComercial, type ListaDoComercial } from '../../work/lista-do-comercial';
 import { abrirCardDaImplantacao, cardIdDoLead, travarImplantacaoDoLead } from '../card-da-implantacao';
 import { acharOuCriarClienteDoLead } from '../cliente-do-lead';
 import { eventoIdComercial, uuidDe } from '../eventos';
@@ -26,18 +27,22 @@ import { FichaService } from '../ficha.service';
 import { FioService } from '../fio.service';
 import { MoverService } from '../mover.service';
 import {
+  LISTAS_DE_CONTATO_A_TIRAR,
   LISTAS_SOLTAS_QUE_FICAM,
   LISTA_DE_CONTRATOS,
   LISTA_DE_DEMANDAS_GERAIS,
   LISTA_DE_LEADS,
   LISTA_DE_TESTE,
+  LISTA_SOLTA_COMERCIAL,
   LISTA_SOLTA_DE_MARKETING,
   PASTA_ADMINISTRATIVA,
   PASTA_DE_MARKETING,
   PASTA_DO_CRM,
   acharLeadDuplicado,
+  destinoDaTarefaDoComercial,
   donoPeloVendedor,
   etapaNoDestino,
+  hashDoNome,
   montarPlano,
   normalizar,
   precisaMover,
@@ -56,7 +61,10 @@ import {
  * cartão de origem (nunca apaga) com o link do lead, e, com tudo arquivado, as duas
  * listas e a pasta. Faz também a limpeza que a ata de 21/10 pediu, em etapas
  * separadas: a tarefa da lista solta "Marketing", a lista "Teste teste", a estrutura
- * sugerida (Gestão com Pessoas) e a pasta "Administrativa" vazia.
+ * sugerida (Gestão com Pessoas) e a pasta "Administrativa" vazia. E o adendo: as
+ * tarefas da lista solta "Comercial" vão para a lista do comercial (A1; ligadas ao lead
+ * que o título cita, pela regra de `plano.ts`, DEPOIS do CRM, porque casam também contra
+ * os leads que ele cria), e a lista solta de um contato sai (A2), arquivada.
  *
  * DE GENTE, COM AUDITORIA. Quem roda é uma pessoa da casa (`--como`), relida no banco,
  * com `leads.editar` e `tarefas.editar`; conta de máquina é recusada. Toda escrita leva
@@ -113,6 +121,19 @@ export const PASSOS_DO_IMPORTADOR = [
   'teste.cartoes',
   'teste.lista',
   'administrativa.pasta',
+  // A1: a lista solta "Comercial". `tarefas` conta toda tarefa movida; cada uma é também
+  // UMA de `ligadas` (lead que já existe ou que o CRM cria), `leads` (lead criado por ela),
+  // `internas` (sem nome citado) ou `ambiguas` (nas sobras, entra sem lead).
+  'comercial.destino',
+  'comercial.tarefas',
+  'comercial.ligadas',
+  'comercial.leads',
+  'comercial.internas',
+  'comercial.ambiguas',
+  'comercial.lista',
+  // A2: a lista solta de um contato.
+  'contato.cartoes',
+  'contato.lista',
 ] as const;
 export type PassoDoImportador = (typeof PASSOS_DO_IMPORTADOR)[number];
 
@@ -170,6 +191,8 @@ export interface OpcoesDoImportador {
   /** A origem da web para o link do lead no comentário (`https://os...`); sem ela, o caminho relativo. */
   web?: string | null;
   agora?: Date;
+  /** Os sha256 dos nomes das listas de contato a tirar (A2). Padrão: `LISTAS_DE_CONTATO_A_TIRAR`; o teste injeta o seu. */
+  listasDeContatoATirar?: readonly string[];
 }
 
 type Tx = Prisma.TransactionClient;
@@ -178,6 +201,23 @@ class Simulacao extends Error {
   constructor(readonly resultado: TrabEstruturaSugeridaResultado) {
     super('simulação: desfeita');
   }
+}
+
+class SimulacaoDaLista extends Error {
+  constructor(readonly lista: ListaDoComercial) {
+    super('simulação: desfeita');
+  }
+}
+
+/** Uma tarefa da lista solta "Comercial", como o importador a lê. */
+interface TarefaDaListaComercial {
+  id: string;
+  title: string;
+  createdAt: Date;
+  assigneeUserId: string | null;
+  areaId: string | null;
+  leadId: string | null;
+  status: { name: string; type: string };
 }
 
 /** O dia AAAA-MM-DD ao meio-dia de São Paulo (uma data de calendário, sem hora inventada). */
@@ -287,9 +327,9 @@ class Execucao {
     this.detalhe.push({ passo, item, acao: como === 'ja' ? `já estava: ${acao}` : this.valer ? acao : `a fazer: ${acao}`, motivo, id });
   }
 
-  private sobra(cartaoId: string, titulo: string, onde: string, motivo: string): void {
+  private sobra(cartaoId: string, titulo: string, onde: string, motivo: string, acao = 'fica onde está'): void {
     this.sobras.push({ cartaoId, titulo, onde, motivo });
-    this.detalhe.push({ passo: 'sobra', item: titulo, acao: 'fica onde está', motivo, id: cartaoId });
+    this.detalhe.push({ passo: 'sobra', item: titulo, acao, motivo, id: cartaoId });
   }
 
   private async auditar(acao: string, entityType: string, entityId: string, after: Record<string, unknown>, before?: Record<string, unknown>, db: Tx | PrismaService = this.prisma): Promise<void> {
@@ -324,11 +364,13 @@ class Execucao {
     await this.estrutura();
     const crm = await this.lerCrm();
     let noPlano = 0;
+    // Os leads que existem, mais os que o CRM cria nesta passada (também no simular, com
+    // id `novo:`): é contra eles que a lista Comercial (A1) casa, depois do CRM.
+    const leadsExistentes = await this.leadsExistentes();
     if (crm) {
       const plano = montarPlano(crm.cartoes);
       noPlano = plano.cartoes.length;
       for (const s of plano.sobras) this.sobra(s.cartaoId, s.titulo, s.onde, s.motivo);
-      const leadsExistentes = await this.leadsExistentes();
       const arquivadosNoPlano = new Set<string>();
       for (const c of plano.cartoes) {
         try {
@@ -341,8 +383,10 @@ class Execucao {
       }
       await this.arquivarCrm(crm, arquivadosNoPlano);
     }
+    await this.listaComercial(leadsExistentes);
     await this.marketingSolta();
     await this.listaDeTeste();
+    await this.listasDeContato();
     await this.administrativa();
     await this.listasSoltasQueSobram();
 
@@ -428,7 +472,18 @@ class Execucao {
       select: { id: true, name: true, ficha: { select: { empresa: true, cnpj: true } } },
       orderBy: [{ enteredAt: 'asc' }, { id: 'asc' }],
     });
-    return leads.map((l) => ({ id: l.id, nome: l.name, empresa: l.ficha?.empresa ?? null, cnpj: l.ficha?.cnpj ?? null }));
+    // O contato não mora na ficha: o do cartão do CRM está no fato `lead.importado` (o primeiro).
+    const fatos = await this.prisma.leadEvent.findMany({
+      where: { type: 'lead.importado', lead: { orgId: this.orgId } },
+      select: { leadId: true, payload: true },
+      orderBy: [{ occurredAt: 'asc' }, { id: 'asc' }],
+    });
+    const contatos = new Map<string, string>();
+    for (const f of fatos) {
+      const c = (f.payload ?? {}) as { contato?: unknown };
+      if (typeof c.contato === 'string' && c.contato.trim() && !contatos.has(f.leadId)) contatos.set(f.leadId, c.contato.trim());
+    }
+    return leads.map((l) => ({ id: l.id, nome: l.name, empresa: l.ficha?.empresa ?? null, cnpj: l.ficha?.cnpj ?? null, contato: contatos.get(l.id) ?? null }));
   }
 
   /** O comentário de importação deste cartão já existe? (id derivado do cartão) */
@@ -481,14 +536,20 @@ class Execucao {
     if (novo) {
       if (!this.valer) {
         this.conta('leads.criados', 'fazer', titulo, 'criar lead pela entrada idempotente', cartao.id);
-        existentes.push({ id: `novo:${cartao.id}`, nome: dados.empresa, empresa: dados.empresa, cnpj: dados.cnpj });
+        existentes.push({ id: `novo:${cartao.id}`, nome: dados.empresa, empresa: dados.empresa, cnpj: dados.cnpj, contato: dados.contato });
         this.contarTudoAFazer(c);
         return this.idsQueArquiva(c);
       }
       leadId = await this.criarLead(c);
-      existentes.push({ id: leadId, nome: dados.empresa, empresa: dados.empresa, cnpj: dados.cnpj });
+      existentes.push({ id: leadId, nome: dados.empresa, empresa: dados.empresa, cnpj: dados.cnpj, contato: dados.contato });
       this.conta('leads.criados', 'fazer', titulo, 'lead criado pela entrada idempotente', leadId);
-    } else if (duplicado) {
+    } else {
+      // O lead reaproveitado ganha o contato do cartão para o casamento da lista Comercial (A1),
+      // nas duas passadas igual: o fato que o grava ainda não existe no simular.
+      const e = existentes.find((x) => x.id === leadId);
+      if (e && !e.contato && dados.contato) e.contato = dados.contato;
+    }
+    if (!novo && duplicado) {
       if (String(leadId).startsWith('novo:')) {
         // Na simulação, outro cartão desta passada já criaria este lead.
         this.conta('leads.reaproveitados', 'fazer', titulo, `reaproveitar o lead que outro cartão cria (${reaproveitado})`, cartao.id);
@@ -507,23 +568,7 @@ class Execucao {
     // 3. o dono.
     await this.dono(c, id, ficha?.donoId ?? null);
     // 4. a etapa.
-    const etapaAtual = ((await this.prisma.comercialFicha.findFirst({ where: { leadId: id, orgId: this.orgId }, select: { etapa: true } }))?.etapa ?? 'novo_lead') as ComercialEtapa;
-    const alvo: ComercialEtapa = destino.tipo === 'lead' ? destino.etapa : 'fechado';
-    const mover = precisaMover(etapaAtual, alvo);
-    if (mover === 'saida') {
-      this.sobra(cartao.id, titulo, 'Comercial', `o lead está numa saída do funil (${etapaAtual}): a etapa fica, uma pessoa decide`);
-      return [];
-    }
-    if (mover === 'mover') {
-      if (this.valer) {
-        // A MESMA porta do mover livre da tela (U4): o `MoverService` relê a pessoa e grava por `moverAMao`.
-        await this.mover.mover(this.orgId, id, { para: alvo, motivo: `Importação do CRM antigo (${IMPORTACAO_CRM_MARCA}): status do cartão "${cartao.status}"`.slice(0, 400) }, this.pessoa);
-        await this.auditar('etapa', 'lead', id, { de: etapaAtual, para: alvo, cartao: ref }, { etapa: etapaAtual });
-      }
-      this.conta('leads.etapa', 'fazer', titulo, `${etapaAtual} → ${alvo}`, id);
-    } else {
-      this.conta('leads.etapa', 'ja', titulo, mover === 'alem' ? `lead já em ${etapaAtual}, além de ${alvo}: fica` : alvo, id);
-    }
+    if (!(await this.etapaDoLead(c, id))) return [];
 
     // 5. cliente: Partner, cliente ativo, contratos e (kickoff/implantação) o card.
     const contratosQueFicam = destino.tipo === 'cliente' ? await this.cliente(c, id) : new Set<string>();
@@ -535,6 +580,31 @@ class Execucao {
       await this.fecharCartao(k.cartao.id, k.dados.titulo, `Importado para o Comercial como contrato vivo do cliente: ${this.linkDoLead(id)}?aba=dinheiro`);
     }
     return this.idsQueArquiva(c).filter((x) => !contratosQueFicam.has(x));
+  }
+
+  /** Leva o lead à etapa do destino, só para a frente. Falso quando ele está numa saída do funil (vai às sobras). */
+  private async etapaDoLead(c: CartaoNoPlano, id: string): Promise<boolean> {
+    const { cartao, destino } = c;
+    const titulo = cartao.titulo;
+    const etapaAtual = ((await this.prisma.comercialFicha.findFirst({ where: { leadId: id, orgId: this.orgId }, select: { etapa: true } }))?.etapa ?? 'novo_lead') as ComercialEtapa;
+    const alvo: ComercialEtapa = destino.tipo === 'lead' ? destino.etapa : 'fechado';
+    const mover = precisaMover(etapaAtual, alvo);
+    if (mover === 'saida') {
+      this.sobra(cartao.id, titulo, 'Comercial', `o lead está numa saída do funil (${etapaAtual}): a etapa fica, uma pessoa decide`);
+      return false;
+    }
+    if (mover === 'mover') {
+      if (this.valer) {
+        const porque = cartao.lista === LISTA_SOLTA_COMERCIAL ? 'tarefa da lista Comercial que cita quem ainda não era lead' : `status do cartão "${cartao.status}"`;
+        // A MESMA porta do mover livre da tela (U4): o `MoverService` relê a pessoa e grava por `moverAMao`.
+        await this.mover.mover(this.orgId, id, { para: alvo, motivo: `Importação do CRM antigo (${IMPORTACAO_CRM_MARCA}): ${porque}`.slice(0, 400) }, this.pessoa);
+        await this.auditar('etapa', 'lead', id, { de: etapaAtual, para: alvo, cartao: `cartao:${cartao.id}` }, { etapa: etapaAtual });
+      }
+      this.conta('leads.etapa', 'fazer', titulo, `${etapaAtual} → ${alvo}`, id);
+    } else {
+      this.conta('leads.etapa', 'ja', titulo, mover === 'alem' ? `lead já em ${etapaAtual}, além de ${alvo}: fica` : alvo, id);
+    }
+    return true;
   }
 
   private idsQueArquiva(c: CartaoNoPlano): string[] {
@@ -601,7 +671,7 @@ class Execucao {
     if (this.valer) {
       const payload = {
         origem: ref,
-        lista: 'CRM / Gestão de Leads',
+        lista: cartao.lista === LISTA_SOLTA_COMERCIAL ? 'Trabalho / Comercial' : 'CRM / Gestão de Leads',
         status: cartao.status,
         destino: destino.tipo === 'lead' ? destino.etapa : 'fechado',
         empresa: dados.empresa,
@@ -863,6 +933,197 @@ class Execucao {
     this.conta('crm.pasta', 'fazer', '(pasta) CRM', 'arquivar a pasta', crm.pastaId);
   }
 
+  // ------------------------------------------------------------------ a lista solta "Comercial" (A1)
+  /**
+   * As tarefas da lista solta "Comercial" (a da área, sem pasta) vão para a lista do
+   * comercial: o MESMO id, a etapa pelo nome ou tipo, a área Comercial e o lead quando o
+   * título o cita sem ambiguidade (a regra mora em `plano.ts`). Concluída continua
+   * concluída. Sem tarefa ativa, a lista é arquivada (nunca apagada).
+   */
+  private async listaComercial(existentes: LeadExistente[]): Promise<void> {
+    const listas = (await this.prisma.workList.findMany({
+      where: { orgId: this.orgId, folderId: null, OR: [{ externalId: null }, { externalId: { not: LISTA_DO_COMERCIAL } }] },
+      select: { id: true, name: true, arquivadaEm: true },
+      orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
+    })).filter((l) => normalizar(l.name) === LISTA_SOLTA_COMERCIAL);
+    for (const l of listas) {
+      if (l.arquivadaEm) {
+        this.conta('comercial.lista', 'ja', `(lista) ${l.name}`, 'lista arquivada', l.id);
+        continue;
+      }
+      const tarefas: TarefaDaListaComercial[] = await this.prisma.workTask.findMany({
+        where: { orgId: this.orgId, listId: l.id, archived: false },
+        select: { id: true, title: true, createdAt: true, assigneeUserId: true, areaId: true, leadId: true, status: { select: { name: true, type: true } } },
+        orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
+      });
+      let movidas = 0;
+      if (tarefas.length) {
+        const destino = await this.listaDoComercial();
+        for (const t of tarefas) {
+          try {
+            await this.tarefaDoComercial(t, l.id, destino, existentes);
+            movidas++;
+          } catch (e) {
+            this.erros++;
+            this.sobra(t.id, t.title, 'Trabalho / Comercial', `erro na importação: ${(e as Error).message}`.slice(0, 300));
+          }
+        }
+      }
+      const vivas = this.valer ? await this.prisma.workTask.count({ where: { orgId: this.orgId, listId: l.id, archived: false } }) : tarefas.length - movidas;
+      if (vivas) {
+        this.sobra(l.id, `(lista) ${l.name}`, 'Trabalho', `${vivas} tarefa(s) ativa(s) ficaram na lista: ela não é arquivada`);
+        continue;
+      }
+      if (this.valer) {
+        const r = await this.prisma.workList.updateMany({ where: { id: l.id, orgId: this.orgId, arquivadaEm: null }, data: { arquivadaEm: this.agora } });
+        if (r.count) await this.auditar('lista_arquivada', 'work_list', l.id, { arquivadaEm: this.agora.toISOString(), tarefasMovidas: movidas, motivo: 'lista solta Comercial: as tarefas foram para o Comercial (adendo A1)' });
+      }
+      this.conta('comercial.lista', 'fazer', `(lista) ${l.name}`, 'arquivar a lista sem tarefa ativa', l.id);
+    }
+  }
+
+  /** A lista do comercial (acha ou cria). No simular, cria numa transação desfeita, como a estrutura. */
+  private async listaDoComercial(): Promise<ListaDoComercial> {
+    let l: ListaDoComercial;
+    if (this.valer) {
+      l = await acharOuCriarListaDoComercial(this.prisma, this.orgId);
+      if (l.criada) await this.auditar('lista_do_comercial', 'work_list', l.id, { nome: NOME_DA_LISTA_DO_COMERCIAL, externalId: LISTA_DO_COMERCIAL, areaId: l.areaId });
+    } else {
+      try {
+        await this.prisma.$transaction(async (tx) => {
+          throw new SimulacaoDaLista(await acharOuCriarListaDoComercial(tx, this.orgId));
+        }, { timeout: 30_000, maxWait: 10_000 });
+        throw new Error('a simulação da lista do comercial não desfez');
+      } catch (e) {
+        if (!(e instanceof SimulacaoDaLista)) throw e;
+        l = e.lista;
+      }
+    }
+    this.conta('comercial.destino', l.criada ? 'fazer' : 'ja', `(lista) ${NOME_DA_LISTA_DO_COMERCIAL}`, 'criar a lista do comercial', l.id);
+    return l;
+  }
+
+  private async tarefaDoComercial(t: TarefaDaListaComercial, origemId: string, destino: ListaDoComercial, existentes: LeadExistente[]): Promise<void> {
+    const concluida = t.status.type === 'closed';
+    const etapa = etapaNoDestino(destino.statuses, t.status);
+    if (!etapa) throw new Error('a lista do comercial está sem etapas');
+    // Lead criado por esta tarefa numa passada que caiu no meio: segue por ele (cada passo confere).
+    const idDaRef = leadIdDaEntrada(this.orgId, { tipo: 'manual', ref: `cartao:${t.id}` });
+    const jaCriado = await this.prisma.lead.findFirst({ where: { id: idDaRef, orgId: this.orgId }, select: { name: true } });
+    const d = jaCriado ? { tipo: 'criar' as const, nome: jaCriado.name } : destinoDaTarefaDoComercial(t.title, concluida, existentes);
+
+    let leadId: string | null = null;
+    let motivo: string;
+    if (d.tipo === 'lead') {
+      leadId = d.leadId;
+      motivo = `cita "${d.citado}" (${d.como === 'igual' ? 'nome igual ao do lead' : 'começa pelo nome do lead'})`;
+      this.conta('comercial.ligadas', 'fazer', t.title, leadId.startsWith('novo:') ? 'ligar ao lead que o CRM cria nesta passada' : 'ligar ao lead', leadId, motivo);
+    } else if (d.tipo === 'criar') {
+      leadId = await this.leadDaTarefa(t, d.nome, existentes);
+      motivo = `cita "${d.nome}", que não era lead: lead criado em Qualificação`;
+    } else if (d.tipo === 'ambigua') {
+      motivo = `cita "${d.citado}": ${d.motivo}`;
+      this.sobra(t.id, t.title, 'Trabalho / Comercial', motivo, 'entra como tarefa do comercial sem lead');
+      this.conta('comercial.ambiguas', 'fazer', t.title, 'tarefa do comercial sem lead (ambígua)', t.id, motivo);
+    } else {
+      motivo = d.motivo;
+      this.conta('comercial.internas', 'fazer', t.title, 'tarefa do comercial sem lead', t.id, motivo);
+    }
+
+    if (this.valer) {
+      const r = await this.prisma.workTask.updateMany({
+        where: { id: t.id, orgId: this.orgId, listId: origemId },
+        data: { listId: destino.id, statusId: etapa.id, areaId: destino.areaId, ...(leadId ? { leadId } : {}) },
+      });
+      if (r.count) {
+        await this.auditar(
+          'tarefa_do_comercial',
+          'work_task',
+          t.id,
+          { listId: destino.id, status: etapa.name, areaId: destino.areaId, leadId: leadId ?? t.leadId, regra: d.tipo, concluida },
+          { listId: origemId, status: t.status.name, areaId: t.areaId, leadId: t.leadId },
+        );
+      }
+    }
+    this.conta('comercial.tarefas', 'fazer', t.title, `mover para ${NOME_DA_LISTA_DO_COMERCIAL} (${etapa.name})${leadId ? ', ligada ao lead' : ', sem lead'}`, t.id, motivo);
+  }
+
+  /**
+   * O lead que a tarefa cita e que não existia: criado em Qualificação pelo MESMO caminho
+   * dos leads do CRM (entrada idempotente com a origem `cartao:<id da tarefa>`, fato
+   * `lead.importado` sem reação, dono, mover livre). Fato passado: nada vai à porta.
+   */
+  private async leadDaTarefa(t: TarefaDaListaComercial, nome: string, existentes: LeadExistente[]): Promise<string> {
+    const c: CartaoNoPlano = {
+      cartao: { id: t.id, titulo: t.title, descricao: null, lista: LISTA_SOLTA_COMERCIAL, status: t.status.name, parentId: null, archived: false, criadoEm: t.createdAt, assigneeUserId: t.assigneeUserId, campos: [] },
+      destino: { tipo: 'lead', etapa: 'qualificacao' },
+      dados: { empresa: nome, contato: null, telefone: null, email: null, cnpj: null, produto: null, produtoRotulo: null, valorCentavos: null, valorRecorrenteCentavos: null, cadastradoEm: null, vendedor: null },
+      contratos: [],
+    };
+    const idDaRef = leadIdDaEntrada(this.orgId, { tipo: 'manual', ref: `cartao:${t.id}` });
+    const existe = await this.prisma.lead.findFirst({ where: { id: idDaRef, orgId: this.orgId }, select: { id: true } });
+    if (!existe && !this.valer) {
+      const id = `novo:${t.id}`;
+      this.conta('comercial.leads', 'fazer', nome, 'criar lead em Qualificação', t.id, t.title);
+      this.conta('leads.fato', 'fazer', nome, 'fato lead.importado', t.id);
+      this.conta('leads.dono', 'fazer', nome, 'dono do lead', t.id);
+      this.conta('leads.etapa', 'fazer', nome, 'novo_lead → qualificacao', t.id);
+      existentes.push({ id, nome, empresa: nome, cnpj: null, contato: null });
+      return id;
+    }
+    let id: string;
+    if (existe) {
+      id = existe.id;
+      this.conta('comercial.leads', 'ja', nome, 'lead da referência da tarefa', id, t.title);
+    } else {
+      id = await this.criarLead(c);
+      this.conta('comercial.leads', 'fazer', nome, 'lead criado em Qualificação', id, t.title);
+    }
+    if (!existentes.some((x) => x.id === id)) existentes.push({ id, nome, empresa: nome, cnpj: null, contato: null });
+    if (this.valer) await this.fichas.garantir(this.orgId, id);
+    const ficha = await this.prisma.comercialFicha.findFirst({ where: { leadId: id, orgId: this.orgId }, select: { donoId: true } });
+    await this.fatoDoLead(c, id, null);
+    await this.dono(c, id, ficha?.donoId ?? null);
+    await this.etapaDoLead(c, id);
+    return id;
+  }
+
+  // ------------------------------------------------------------------ a lista solta de um contato (A2)
+  /** A lista solta de um contato que a ata manda tirar (pelo hash do nome): cartões e lista arquivados, como a "Teste teste". */
+  private async listasDeContato(): Promise<void> {
+    const hashes = new Set(this.opcoes.listasDeContatoATirar ?? LISTAS_DE_CONTATO_A_TIRAR);
+    if (!hashes.size) return;
+    const listas = (await this.prisma.workList.findMany({ where: { orgId: this.orgId, folderId: null }, select: { id: true, name: true, arquivadaEm: true }, orderBy: [{ createdAt: 'asc' }, { id: 'asc' }] }))
+      .filter((l) => hashes.has(hashDoNome(l.name)));
+    for (const l of listas) {
+      const tarefas = await this.prisma.workTask.findMany({ where: { orgId: this.orgId, listId: l.id }, select: { id: true, title: true, archived: true }, orderBy: [{ createdAt: 'asc' }, { id: 'asc' }] });
+      for (const t of tarefas) {
+        if (t.archived) {
+          this.conta('contato.cartoes', 'ja', t.title, 'cartão arquivado', t.id);
+          continue;
+        }
+        if (this.valer) {
+          await this.prisma.workComment.createMany({
+            data: [{ id: this.comentarioId(t.id), orgId: this.orgId, taskId: t.id, authorId: this.pessoa.id, authorName: this.pessoa.nome ?? AUTOR_DO_IMPORTADOR, text: 'Arquivado na importação do CRM antigo: a lista solta deste contato não tinha trabalho a fazer (ata de 21/10/2026). Nada foi apagado.' }],
+            skipDuplicates: true,
+          });
+          const r = await this.prisma.workTask.updateMany({ where: { id: t.id, orgId: this.orgId, archived: false }, data: { archived: true } });
+          if (r.count) await this.auditar('cartao_arquivado', 'work_task', t.id, { archived: true, motivo: 'lista solta de um contato (ata de 21/10)' }, { archived: false });
+        }
+        this.conta('contato.cartoes', 'fazer', t.title, 'arquivar o cartão', t.id);
+      }
+      if (l.arquivadaEm) {
+        this.conta('contato.lista', 'ja', `(lista) ${l.name}`, 'lista arquivada', l.id);
+        continue;
+      }
+      if (this.valer) {
+        const r = await this.prisma.workList.updateMany({ where: { id: l.id, orgId: this.orgId, arquivadaEm: null }, data: { arquivadaEm: this.agora } });
+        if (r.count) await this.auditar('lista_arquivada', 'work_list', l.id, { arquivadaEm: this.agora.toISOString(), tarefas: tarefas.length, motivo: 'lista solta de um contato (a regra da casa: com tarefa arquivada, arquivar; nunca apagar)' });
+      }
+      this.conta('contato.lista', 'fazer', `(lista) ${l.name}`, 'arquivar a lista', l.id);
+    }
+  }
+
   // ------------------------------------------------------------------ limpeza da ata
   private async listasSoltasPorNome(chave: string) {
     return (await this.prisma.workList.findMany({ where: { orgId: this.orgId, folderId: null }, select: { id: true, name: true, arquivadaEm: true } }))
@@ -971,13 +1232,15 @@ class Execucao {
 
   /** Listas soltas que ninguém tocou e que não são Comercial nem Operação: ficam, e vão às sobras. */
   private async listasSoltasQueSobram(): Promise<void> {
-    const tratadas = new Set([LISTA_SOLTA_DE_MARKETING, LISTA_DE_TESTE, ...LISTAS_SOLTAS_QUE_FICAM]);
+    const tratadas = new Set([LISTA_SOLTA_DE_MARKETING, LISTA_DE_TESTE, LISTA_SOLTA_COMERCIAL, ...LISTAS_SOLTAS_QUE_FICAM]);
+    const deContato = new Set(this.opcoes.listasDeContatoATirar ?? LISTAS_DE_CONTATO_A_TIRAR);
     const daEstrutura = new Set(ESTRUTURA_SUGERIDA.flatMap((p) => p.listas.map((l) => normalizar(l.nome))));
     const soltas = await this.prisma.workList.findMany({ where: { orgId: this.orgId, folderId: null, spaceId: null, arquivadaEm: null }, select: { id: true, name: true } });
     for (const l of soltas) {
       const n = normalizar(l.name);
-      // No simular, as listas da estrutura ainda soltas seriam movidas pela estrutura sugerida.
-      if (tratadas.has(n) || (!this.valer && daEstrutura.has(n))) continue;
+      // No simular, as listas da estrutura ainda soltas seriam movidas pela estrutura sugerida;
+      // a de contato e a Comercial (com tarefa que sobrou) já foram tratadas acima.
+      if (tratadas.has(n) || deContato.has(hashDoNome(l.name)) || (!this.valer && daEstrutura.has(n))) continue;
       this.sobra(l.id, `(lista) ${l.name}`, 'Sem pasta', 'lista solta fora da estrutura (parece teste): fica onde está; o Rodrigo decide');
     }
   }
