@@ -277,6 +277,48 @@ async function main() {
     return { detalhe: { nome } };
   });
 
+  // ---------------- P3 · Excluir pela árvore ----------------
+  await passo('P3 · a árvore do Trabalho: o menu da lista oferece excluir (ou arquivar antes) e pede o nome', async () => {
+    await p.goto(`${WEB}/trabalho`, { waitUntil: 'networkidle' });
+    const botao = p.locator('[data-testid^="trabalho-lista-acoes-"]').first();
+    await botao.waitFor();
+    await botao.click();
+    const menu = p.getByRole('menu').first();
+    await menu.waitFor();
+    const itens = (await menu.getByRole('menuitem').allInnerTexts().catch(() => [])).map((t) => t.trim()).filter(Boolean);
+    const textos = itens.length ? itens : [(await menu.innerText()).replace(/\s+/g, ' ')];
+    conferir(textos.some((t) => /Excluir lista|Arquivar todas/i.test(t)), `o menu da lista veio: ${textos.join(' · ')}`);
+    await foto(p, 'trabalho-menu-da-lista-escuro');
+    await p.keyboard.press('Escape');
+    return { detalhe: { itens: textos } };
+  });
+
+  // ---------------- P6 · Implantação ----------------
+  await passo('P6 · Implantação: o cartão diz há quantos dias está na etapa, e o painel mostra quem trabalha nela', async () => {
+    await p.goto(`${WEB}/trabalho/implantacao`, { waitUntil: 'networkidle' });
+    const cartao = p.locator('[data-work-task-id]').first();
+    if (!(await cartao.count())) { aviso('a Implantação do seed não tem cartão'); return { detalhe: { cartoes: 0 } }; }
+    await cartao.waitFor();
+    const texto = (await cartao.innerText()).replace(/\s+/g, ' ');
+    conferir(!/Invalid date|NaN|T\d{2}:\d{2}:\d{2}/.test(texto), `data torta no cartão: ${texto.slice(0, 160)}`);
+    await foto(p, 'implantacao-quadro-escuro');
+    await cartao.click();
+    const quem = p.getByTestId('quem-trabalha');
+    await quem.waitFor({ timeout: 15_000 }).catch(() => null);
+    const temQuem = await quem.count();
+    if (!temQuem) aviso('o painel do cartão abriu sem "Quem trabalha nesta etapa" (cartão sem trilho)');
+    else await quem.scrollIntoViewIfNeeded();
+    await foto(p, 'implantacao-painel-escuro');
+    await p.keyboard.press('Escape');
+    await claro.goto(`${WEB}/trabalho/implantacao`, { waitUntil: 'networkidle' });
+    await foto(claro, 'implantacao-quadro-claro');
+    await m.goto(`${WEB}/trabalho/implantacao`, { waitUntil: 'networkidle' });
+    // O kanban rola de lado por desenho (colunas de largura fixa); a página em volta, não.
+    const pagina390 = await semRolagemLateral(m);
+    await foto(m, 'implantacao-390');
+    return { detalhe: { naEtapa: /na etapa há \d+ d|\d+d/.test(texto), quemTrabalha: !!temQuem, pagina390SemRolagem: pagina390 } };
+  });
+
   // ---------------- P7 · Atas ----------------
   await passo('P7 · Atas: duas colunas, a página não rola e a lista rola sozinha', async () => {
     await p.goto(`${WEB}/trabalho/atas`, { waitUntil: 'networkidle' });

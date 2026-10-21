@@ -1,12 +1,12 @@
 {
-  "inicio": "2026-10-20T22:29:13.570Z",
+  "inicio": "2026-10-21T05:40:24.781Z",
   "web": "http://127.0.0.1:3031",
   "passos": [
     {
       "n": 1,
       "nome": "Menu aberto: a logo oficial sem texto ao lado e as subseções da área ativa",
       "ok": true,
-      "ms": 1308,
+      "ms": 870,
       "detalhe": {
         "itens": [
           "Visão geral",
@@ -20,18 +20,17 @@
       "n": 2,
       "nome": "/painel continua vivo fora do menu",
       "ok": true,
-      "ms": 735
+      "ms": 716
     },
     {
       "n": 3,
       "nome": "Recolher: só o R, e o balão no hover com as subseções, clicável",
       "ok": true,
-      "ms": 1662,
+      "ms": 1577,
       "detalhe": {
         "largura": 64,
         "links": [
           "Tarefas",
-          "Todas as tarefas",
           "Implantação de clientes",
           "Atas"
         ]
@@ -41,7 +40,7 @@
       "n": 4,
       "nome": "Trabalho: Filtros (n) com responsável e prazo, estado no endereço",
       "ok": true,
-      "ms": 1240,
+      "ms": 1205,
       "detalhe": {
         "endereco": "?assigneeUserId=6a463a3f-8acb-4ba4-8272-306a301d95b2&prazo=atrasada"
       }
@@ -50,60 +49,94 @@
       "n": 5,
       "nome": "Trabalho: salvar a vista com os filtros",
       "ok": true,
-      "ms": 72,
+      "ms": 78,
       "detalhe": {
-        "nome": "Interface 360030"
+        "nome": "Interface 229383"
       }
     },
     {
       "n": 6,
+      "nome": "Todas: /trabalho/todas redireciona para o chip, e as colunas são os status reais",
+      "ok": true,
+      "ms": 1226,
+      "detalhe": {
+        "colunas": 16,
+        "vazias": 12,
+        "total": 71,
+        "rolagem": {
+          "scroll": 3480,
+          "cliente": 916
+        },
+        "nomes": [
+          "A fazer · 8 listas",
+          "Qualificação · 1 lista",
+          "Fechado no comercial · 1 lista",
+          "Em andamento · 8 listas",
+          "Diagnóstico · 1 lista",
+          "Contrato · 1 lista",
+          "Onboarding · 1 lista",
+          "Implantação · 1 lista",
+          "Operação · 1 lista",
+          "Kickoff marcado · 1 lista",
+          "Kit montado · 1 lista",
+          "Contexto carregado · 1 lista",
+          "Imersão · 1 lista",
+          "Operação assistida · 1 lista",
+          "Concluída · 8 listas",
+          "Encerrado · 2 listas"
+        ]
+      }
+    },
+    {
+      "n": 7,
       "nome": "Todas as tarefas: segmentos por pasta de topo, e o segmento filtra",
       "ok": true,
-      "ms": 9239,
+      "ms": 10271,
       "detalhe": {
-        "todas": 57,
+        "todas": 71,
         "porSegmento": {
           "Administrativa": 0,
+          "Pasta da prova 000508": 0,
           "Pasta da prova 002343": 0,
           "Pasta da prova 030143": 0,
           "Pasta da prova 032250": 0,
           "Pasta da prova 215432": 0,
           "Pasta da prova 221123": 0,
           "Gestão": 0,
-          "Clientes": 57,
+          "Clientes": 71,
           "Sem pasta": 0
         }
       }
     },
     {
-      "n": 7,
+      "n": 8,
       "nome": "Implantação: o par Vistas e Filtros, sem a aba da Rodada",
       "ok": true,
-      "ms": 728
-    },
-    {
-      "n": 8,
-      "nome": "WhatsApp como área própria, com a tela; o endereço antigo redireciona",
-      "ok": true,
-      "ms": 1521
+      "ms": 708
     },
     {
       "n": 9,
-      "nome": "Funil vivo: sem os chips das etapas, com Vistas e Filtros (responsável primeiro)",
+      "nome": "WhatsApp como área própria, com a tela; o endereço antigo redireciona",
       "ok": true,
-      "ms": 1572
+      "ms": 1489
     },
     {
       "n": 10,
-      "nome": "Funil vivo: a Lista, com o clique abrindo o painel do lead",
+      "nome": "Funil vivo: sem os chips das etapas, com Vistas e Filtros (responsável primeiro)",
       "ok": true,
-      "ms": 257
+      "ms": 1507
     },
     {
       "n": 11,
+      "nome": "Funil vivo: a Lista, com o clique abrindo o painel do lead",
+      "ok": true,
+      "ms": 237
+    },
+    {
+      "n": 12,
       "nome": "Funil vivo: mover para trás sem pedido, com a mensagem; e de volta",
       "ok": true,
-      "ms": 1062,
+      "ms": 1003,
       "detalhe": {
         "de": "reuniao_agendada",
         "para": "qualificacao",
@@ -111,51 +144,52 @@
       }
     },
     {
-      "n": 12,
+      "n": 13,
       "nome": "Conexões › Granola: \"Conectar ao Granola\" faz o OAuth (dublê) e volta conectado, ou diz por que não",
       "ok": true,
-      "ms": 2329,
+      "ms": 2317,
       "detalhe": {
         "conectado": false,
         "servidor": "http://127.0.0.1:4791/mcp"
       }
     },
     {
-      "n": 13,
+      "n": 14,
       "nome": "Atas › Reuniões do Granola › Gerar ata (ou, sem conexão, o aviso e a ata colada): decisões, pendências e sugestões",
       "ok": true,
-      "ms": 1587,
+      "ms": 1475,
       "detalhe": {
         "granola": "sem conexão (aviso)",
-        "ata": "memoria:1edcce30-7210-4eb0-b946-1c3e1fe88bfd"
+        "ata": "memoria:47a3c0c9-9376-4693-953c-d0a23249b67f"
       }
     },
     {
-      "n": 14,
+      "n": 15,
       "nome": "Atas: aceitar uma sugestão vira tarefa no Trabalho",
       "ok": true,
-      "ms": 793,
+      "ms": 783,
       "detalhe": {
         "tarefa": "Enviar o relatório mensal da Padaria Exemplo"
       }
     },
     {
-      "n": 15,
-      "nome": "Conexões › WhatsApp (DigiSac): o cartão com a URL do webhook, sem token na tela",
+      "n": 16,
+      "nome": "Conexões › WhatsApp (Evolution): o cartão com a URL do webhook, sem chave na tela, e sem o DigiSac",
       "ok": true,
-      "ms": 797,
+      "ms": 835,
       "detalhe": {
-        "webhook": "http://127.0.0.1:3031/api/comercial/webhooks/digisac/<empresa>?segredo=",
+        "webhook": "http://127.0.0.1:3031/api/approvals/canal/whatsapp/<empresa>",
         "semSegredo": 404
       }
     },
     {
-      "n": 16,
+      "n": 17,
       "nome": "Celular (390 px): o menu abre inteiro e as telas não rolam de lado",
       "ok": true,
-      "ms": 3297,
+      "ms": 4074,
       "detalhe": {
         "trabalho": true,
+        "todas": true,
         "funil": true,
         "whatsapp": true,
         "atas": true
@@ -166,6 +200,7 @@
     "interface-menu-aberto-escuro.png",
     "interface-menu-recolhido-balao-escuro.png",
     "interface-trabalho-filtros-escuro.png",
+    "interface-trabalho-todas-colunas-escuro.png",
     "interface-trabalho-todas-segmento-escuro.png",
     "interface-whatsapp-escuro.png",
     "interface-funil-filtro-dono-escuro.png",
@@ -174,22 +209,24 @@
     "interface-conexoes-granola-escuro.png",
     "interface-atas-granola-escuro.png",
     "interface-atas-gerada-escuro.png",
-    "interface-conexoes-digisac-escuro.png",
+    "interface-conexoes-evolution-escuro.png",
     "interface-menu-aberto-claro.png",
     "interface-trabalho-filtros-claro.png",
     "interface-menu-aberto-contraste.png",
     "interface-trabalho-filtros-contraste.png",
     "interface-trabalho-390.png",
+    "interface-todas-390.png",
+    "interface-todas-quadro-390.png",
     "interface-funil-390.png",
     "interface-whatsapp-390.png",
     "interface-atas-390.png",
     "interface-menu-390.png"
   ],
   "avisos": [
-    "no seed as tarefas estão todas num segmento só ({\"Administrativa\":0,\"Pasta da prova 002343\":0,\"Pasta da prova 030143\":0,\"Pasta da prova 032250\":0,\"Pasta da prova 215432\":0,\"Pasta da prova 221123\":0,\"Gestão\":0,\"Clientes\":57,\"Sem pasta\":0}); o recorte entre pastas está provado na suíte da API",
+    "no seed as tarefas estão todas num segmento só ({\"Administrativa\":0,\"Pasta da prova 000508\":0,\"Pasta da prova 002343\":0,\"Pasta da prova 030143\":0,\"Pasta da prova 032250\":0,\"Pasta da prova 215432\":0,\"Pasta da prova 221123\":0,\"Gestão\":0,\"Clientes\":71,\"Sem pasta\":0}); o recorte entre pastas está provado na suíte da API",
     "Granola direto não conectou na stack do seed (cofre sem chave de 32 bytes nesta homologação); o OAuth, a lista e o Gerar ata com o dublê estão provados na suíte da API"
   ],
   "ok": true,
-  "fim": "2026-10-20T22:29:45.403Z",
-  "duracaoMs": 31833
+  "fim": "2026-10-21T05:40:57.476Z",
+  "duracaoMs": 32695
 }
