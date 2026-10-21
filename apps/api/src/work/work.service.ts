@@ -26,6 +26,7 @@ import { criarEstruturaSugerida, criarListaDoModeloNoBanco } from './estrutura-s
 import { SEGMENTO_SEM_PASTA, pastaComSubpastas, type WorkTaskQuery } from './work-task-query';
 import { exigirAcessoAtual } from '../memory/acesso-memoria';
 import { listaVisivel, pastasEscondidas, tarefaDeListaVisivel } from './arquivadas';
+import { ehListaDoComercial, foraDaArvore } from './lista-do-comercial';
 import { activityCursor, activityDto, activityNames, activityPoint, activityWhere, parseActivityQuery } from './work-activity-page';
 
 // Módulo TRABALHO: gestão de tarefas estilo ClickUp, nativa do mkt-os.
@@ -158,7 +159,8 @@ export class WorkService {
     // Pasta e lista arquivadas saem da árvore (21/10/2026); as tarefas delas ficam no banco.
     const escondidas = pastasEscondidas(folders);
     const pastasVivas = folders.filter((fo) => !escondidas.has(fo.id));
-    const listasVivas = lists.filter((l) => !l.arquivadaEm && !(l.folderId && escondidas.has(l.folderId)));
+    // A lista do comercial mora no Funil vivo, não na árvore (adendo de 21/10/2026).
+    const listasVivas = lists.filter((l) => !l.arquivadaEm && !(l.folderId && escondidas.has(l.folderId)) && !ehListaDoComercial(l));
 
     const toLista = (l: (typeof lists)[number]): TrabListaDto => ({
       id: l.id, name: l.name, order: l.order, externalId: l.externalId, spaceId: l.spaceId,
@@ -643,6 +645,8 @@ export class WorkService {
         { OR: [{ parentId: null }, { parent: { list: { natureza: 'cadastro' } } }] },
         { OR: [{ externalId: null }, { externalId: { notIn: [...CARTOES_QUE_NAO_SAO_TAREFA] } }] },
         visivel,
+        // As tarefas do comercial moram no Funil vivo, fora da árvore e de Todas (adendo de 21/10/2026).
+        { list: foraDaArvore() },
       ];
       /*
        * O SEGMENTO (rodada da interface U3): "Todas" recortada por uma pasta de topo,

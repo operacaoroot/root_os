@@ -443,6 +443,8 @@ model Lead {
   reacoesDaProposta LeadReacao[]
   // Rodada da implantação I3: a sala do cliente publicada por versão.
   versoesDaSala     SalaVersao[]
+  // Adendo de 21/10/2026: as tarefas do comercial ligadas ao lead.
+  tarefas           WorkTask[] @relation("TarefasDoLead")
 
   @@index([orgId, enteredAt])
   @@index([orgId, campaignId])
@@ -2267,6 +2269,12 @@ model WorkTask {
   /// assigneeUserId, que o resto do OS lê; aqui ficam os demais, ids de User da empresa.
   outrosResponsaveisIds String[] @default([])
 
+  /// A tarefa do lead (adendo de 21/10/2026): o Comercial mostra no painel do lead e no
+  /// cartão do funil. Nula = tarefa do Trabalho (ou do comercial sem lead). Chave composta
+  /// com orgId: lead de outra empresa não pendura. Migration `20261021200000_tarefa_do_lead`.
+  leadId String?
+  lead   Lead?   @relation("TarefasDoLead", fields: [leadId, orgId], references: [id, orgId], onDelete: Restrict, onUpdate: Restrict)
+
   @@unique([id, orgId])
   @@unique([orgId, externalId])
   @@index([orgId, listId, statusId])
@@ -2279,6 +2287,7 @@ model WorkTask {
   @@index([orgId, areaId, archived])
   @@index([orgId, clienteId])
   @@index([orgId, serieId])
+  @@index([orgId, leadId])
 }
 
 /// As áreas da empresa para separar tarefas (Comercial, Marketing, Operação…).

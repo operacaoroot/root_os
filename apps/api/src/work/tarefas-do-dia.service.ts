@@ -241,7 +241,8 @@ export class TarefasDoDiaService {
     const area = await this.prisma.workArea.findFirst({ where: { id: areaId, orgId } });
     if (!area) throw new NotFoundException('Área não encontrada');
     const ja = await this.prisma.workList.findFirst({
-      where: { orgId, areaPadraoId: area.id, natureza: WorkListaNatureza.tarefas },
+      // Lista arquivada não recebe tarefa nova (a lista "Comercial" antiga sai depois do importador, 21/10/2026).
+      where: { orgId, areaPadraoId: area.id, natureza: WorkListaNatureza.tarefas, arquivadaEm: null },
       include: { statuses: { orderBy: { order: 'asc' } } },
       orderBy: { createdAt: 'asc' },
     });
