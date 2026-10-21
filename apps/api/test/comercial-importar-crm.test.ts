@@ -19,21 +19,30 @@ import { FioService, ReacoesRegistry } from '../src/comercial/fio.service';
 import { MoverService } from '../src/comercial/mover.service';
 import { EFEITO_DE_IMPORTAR_CRM, ImportadorCrmService, PASSOS_DO_IMPORTADOR, type RelatorioDoImportador } from '../src/comercial/importador-crm/importador-crm.service';
 import {
+  LISTAS_DE_CONTATO_A_TIRAR,
+  LISTAS_SOLTAS_QUE_FICAM,
   acharLeadDuplicado,
+  casarCitado,
   centavosDaMoeda,
+  chavesDoLead,
+  citacaoDoTitulo,
   cnpjDoCartao,
   dadosDoLead,
+  destinoDaTarefaDoComercial,
   destinoDoStatus,
   diaDoCampo,
   donoPeloVendedor,
   empresaEContato,
   etapaNoDestino,
+  hashDoNome,
   montarPlano,
+  nomeParecido,
   normalizar,
   precisaMover,
   produtoDoCartao,
   type CartaoDoCrm,
 } from '../src/comercial/importador-crm/plano';
+import { LISTA_DO_COMERCIAL } from '../src/work/lista-do-comercial';
 import { ReacoesDaEspinha } from '../src/comercial/reacoes-da-espinha';
 import { RelogioDaEspinha } from '../src/comercial/relogio-da-espinha';
 import { RelogioComercialRegistry } from '../src/comercial/relogio.registry';
@@ -71,6 +80,12 @@ import { exigirBancoDescartavel } from './banco-de-teste';
  *     não muda nada; simular depois dá zero; nenhuma mensagem, aprovação, cobrança,
  *     documento, sala, contrato do Financeiro, reação ou decisão nasce (contados antes
  *     e depois); conta de máquina e quem perdeu a permissão são recusados.
+ *  3. o adendo (A1/A2): a regra pura de qual tarefa da lista solta "Comercial" cita qual
+ *     lead (nome citado, casamento igual e "começa pela chave", ambíguas que nunca ligam)
+ *     e, no banco, as tarefas movidas para a lista do comercial (ligadas, lead criado em
+ *     Qualificação, internas, ambíguas nas sobras, concluídas como concluídas), a lista
+ *     Comercial arquivada e a lista de um contato (achada pelo hash do nome) arquivada.
+ *     Os nomes são todos fictícios.
  */
 
 const cartao = (p: Partial<CartaoDoCrm> & { id: string; titulo: string; status: string }): CartaoDoCrm => ({
@@ -188,6 +203,78 @@ describe('importador do CRM: a parte pura', () => {
     expect(dentroDeGit(`${process.cwd()}/qualquer.md`)).toBe(true);
     expect(normalizar('Gestão de Leads')).toBe('gestao de leads');
   });
+
+  it('A1: o nome citado no título, pela forma (separador, prefixo de ação, conectivos); o resto é interna', () => {
+    expect(citacaoDoTitulo('Fulana — Marcar onboarding')).toEqual({ tipo: 'citado', nome: 'Fulana' });
+    expect(citacaoDoTitulo('Fulana Teste — Cobrar preenchimento e marcar nova conversa')).toEqual({ tipo: 'citado', nome: 'Fulana Teste' });
+    expect(citacaoDoTitulo('FUP Oficina Sintética')).toEqual({ tipo: 'citado', nome: 'Oficina Sintética' });
+    expect(citacaoDoTitulo('Proposta Lumen e instalação do OS')).toEqual({ tipo: 'citado', nome: 'Lumen e instalação do OS' });
+    expect(citacaoDoTitulo('Proposta Ciclano Souza — fazer FUP')).toEqual({ tipo: 'citado', nome: 'Ciclano Souza' });
+    expect(citacaoDoTitulo('Marcar reunião - Lexidoc')).toEqual({ tipo: 'citado', nome: 'Lexidoc' });
+    expect(citacaoDoTitulo('Confirmar reunião com o Beltrano')).toEqual({ tipo: 'citado', nome: 'Beltrano' });
+    expect(citacaoDoTitulo('Indicação do Tício')).toEqual({ tipo: 'indicacao', nome: 'Tício' });
+    expect(citacaoDoTitulo('Acionar indicação do Tício')).toEqual({ tipo: 'indicacao', nome: 'Tício' });
+    for (const t of [
+      'Colher feedback dos clientes atuais',
+      'Entrada no grupo de networking',
+      'Atualizar pipe',
+      'Estudar rede de contatos e abastecer pipeline',
+      'Checar integração da Ferramenta Sintética',
+      // verbo genérico no começo não é prefixo de nome, mesmo com separador
+      'Cobrar preenchimento do formulário',
+      'Atualizar pipe - semana que vem',
+      'Marcar reunião',
+      '',
+    ]) expect(citacaoDoTitulo(t), t).toEqual({ tipo: 'interna' });
+  });
+
+  it('A1: o casamento (igual, começa pela chave), as ambíguas que nunca ligam e a tarefa concluída que não cria lead', () => {
+    const leads = [
+      { id: 'l-lumen', nome: 'Lumen | Carla Teste', empresa: null },
+      { id: 'l-padaria', nome: 'Padaria Sintética', empresa: 'Padaria Sintética', contato: 'Fulana Teste' },
+      { id: 'l-oficina', nome: 'Oficina Sintética', empresa: 'Oficina Sintética', contato: 'Beltrano Silva' },
+      { id: 'l-lexi', nome: 'Lexidr.', empresa: null },
+      { id: 'l-gama1', nome: 'Gama', empresa: null },
+      { id: 'l-gama2', nome: 'Gama', empresa: null },
+      { id: 'l-orion', nome: 'Orion (Rui Teste)', empresa: null },
+    ];
+    expect(chavesDoLead(leads[0])).toEqual([{ texto: 'lumen carla teste', tipo: 'empresa' }, { texto: 'lumen', tipo: 'empresa' }, { texto: 'carla teste', tipo: 'contato' }]);
+    // igual: empresa, contato (duas palavras ou mais), a parte antes de "(" e a de dentro
+    expect(casarCitado('Oficina Sintética', leads)).toEqual({ tipo: 'lead', leadId: 'l-oficina', como: 'igual' });
+    expect(casarCitado('fulana  TESTE', leads)).toEqual({ tipo: 'lead', leadId: 'l-padaria', como: 'igual' });
+    expect(casarCitado('Orion', leads)).toEqual({ tipo: 'lead', leadId: 'l-orion', como: 'igual' });
+    expect(casarCitado('Rui Teste', leads)).toEqual({ tipo: 'lead', leadId: 'l-orion', como: 'igual' });
+    // começa pela chave de empresa em palavras inteiras
+    expect(casarCitado('Lumen e instalação do OS', leads)).toEqual({ tipo: 'lead', leadId: 'l-lumen', como: 'comeca' });
+    expect(casarCitado('Lumenx e instalação', leads).tipo).not.toBe('lead');
+    // ambíguas
+    expect(casarCitado('Beltrano', leads)).toMatchObject({ tipo: 'ambigua', candidatos: ['l-oficina'] });
+    expect(casarCitado('Fulana', leads)).toMatchObject({ tipo: 'ambigua', motivo: expect.stringMatching(/parecido/) });
+    expect(casarCitado('Lexidoc', leads)).toMatchObject({ tipo: 'ambigua', candidatos: ['l-lexi'] });
+    expect(casarCitado('Gama', leads)).toMatchObject({ tipo: 'ambigua', motivo: expect.stringMatching(/mais de um lead/) });
+    expect(casarCitado('Carla', leads)).toMatchObject({ tipo: 'ambigua' });
+    expect(casarCitado('Zeferino', leads)).toMatchObject({ tipo: 'ambigua', motivo: expect.stringMatching(/um nome só/) });
+    expect(casarCitado('Oficina Norte', leads)).toMatchObject({ tipo: 'ambigua', candidatos: ['l-oficina'] });
+    // sem casar e sem parecido, duas palavras: nenhum (o importador cria)
+    expect(casarCitado('Ciclano Souza', leads)).toEqual({ tipo: 'nenhum' });
+    expect(nomeParecido('vetordoc', 'vetordr')).toBe(true);
+    expect(nomeParecido('maria lima', 'maria souza')).toBe(true);
+    expect(nomeParecido('casa e cia', 'loja e cia')).toBe(false);
+
+    expect(destinoDaTarefaDoComercial('FUP Oficina Sintética', false, leads)).toMatchObject({ tipo: 'lead', leadId: 'l-oficina' });
+    expect(destinoDaTarefaDoComercial('Proposta Ciclano Souza — fazer FUP', false, leads)).toEqual({ tipo: 'criar', nome: 'Ciclano Souza' });
+    expect(destinoDaTarefaDoComercial('Proposta Ciclano Souza — fazer FUP', true, leads)).toMatchObject({ tipo: 'interna', motivo: expect.stringMatching(/não cria lead/) });
+    expect(destinoDaTarefaDoComercial('Indicação da Oficina Sintética', false, leads)).toMatchObject({ tipo: 'ambigua', motivo: expect.stringMatching(/indicação/) });
+    expect(destinoDaTarefaDoComercial('Atualizar pipe', false, leads)).toMatchObject({ tipo: 'interna' });
+  });
+
+  it('A2 e as listas que ficam: a lista de contato pelo hash do nome; a Comercial deixou de ficar', () => {
+    expect(hashDoNome('  CONTATO Fictício ')).toBe(hashDoNome('contato ficticio'));
+    expect(hashDoNome('contato ficticio')).toMatch(/^[0-9a-f]{64}$/);
+    expect(LISTAS_DE_CONTATO_A_TIRAR).toHaveLength(1);
+    expect(LISTAS_DE_CONTATO_A_TIRAR[0]).toMatch(/^[0-9a-f]{64}$/);
+    expect([...LISTAS_SOLTAS_QUE_FICAM]).toEqual(['operacao']);
+  });
 });
 
 const URL = process.env.TEST_DATABASE_URL;
@@ -211,7 +298,9 @@ describe.skipIf(!URL)('importador do CRM contra o Postgres (fixture sintética)'
   const ids: Record<string, string> = {};
   const naEmpresa = <T>(fn: () => Promise<T>): Promise<T> => comContexto({ orgId: ORG, correlationId: `ic-${MARCA}`, origem: 'script' }, fn);
   const eu = () => ({ id: euId, nome: 'Rodrigo da Root', papeis: ['admin_master'] });
-  const rodar = (valer: boolean) => naEmpresa(() => svc.executar(ORG, eu(), { valer, web: 'https://os.exemplo.teste' }));
+  // A lista de um contato do teste (nome fictício), injetada pelo hash: a constante do código é a da produção.
+  const NOME_DO_CONTATO = 'Contato Fictício Sintético';
+  const rodar = (valer: boolean) => naEmpresa(() => svc.executar(ORG, eu(), { valer, web: 'https://os.exemplo.teste', listasDeContatoATirar: [hashDoNome(NOME_DO_CONTATO)] }));
   const soma = (r: RelatorioDoImportador, k: 'feitos' | 'aFazer') => PASSOS_DO_IMPORTADOR.reduce((s, p) => s + r.passos[p][k], 0);
 
   async function lista(nome: string, folderId: string | null, natureza: 'tarefas' | 'cadastro', etapas: [string, WorkStatusType][], campos: [string, WorkFieldType, string[]?][] = []) {
@@ -347,8 +436,42 @@ describe.skipIf(!URL)('importador do CRM contra o Postgres (fixture sintética)'
     ids.listaAdm = adm.id;
     ids.tarefaAdm = await tarefa(adm, 'Tarefa administrativa', 'A fazer');
     await lista('Financeiro', null, 'tarefas', [['A fazer', 'open']]);
-    await lista('Comercial', null, 'tarefas', [['A fazer', 'open']]);
     await lista('Operação', null, 'tarefas', [['A fazer', 'open']]);
+
+    // A1: a lista da ÁREA Comercial, solta (espaço, sem pasta), com as formas de título da produção (nomes fictícios).
+    ids.leadLumen = await leadAMao('Lumen | Carla Teste', 'qualificacao');
+    ids.leadLexi = await leadAMao('Lexidr.', 'qualificacao');
+    const area = await prisma.workArea.create({ data: { orgId: ORG, nome: 'Comercial', cor: '#2a78d6' }, select: { id: true } });
+    ids.areaComercial = area.id;
+    const espacoDaArea = await prisma.workSpace.create({ data: { orgId: ORG, name: 'Áreas' }, select: { id: true } });
+    const com = await lista('Comercial', null, 'tarefas', [['A fazer', 'open'], ['Feito', 'closed']]);
+    await prisma.workList.update({ where: { id: com.id }, data: { spaceId: espacoDaArea.id, areaPadraoId: area.id } });
+    ids.listaComercial = com.id;
+    let t1 = Date.parse('2026-09-01T12:00:00Z');
+    const depois = () => new Date((t1 += 3_600_000));
+    const tc = async (k: string, titulo: string, etapa: 'A fazer' | 'Feito', assigneeUserId: string | null = euId) => {
+      ids[k] = await tarefa(com, titulo, etapa, { criadoEm: depois() });
+      await prisma.workTask.update({ where: { id: ids[k] }, data: { areaId: area.id, assigneeUserId, dueDate: new Date('2026-10-30T12:00:00Z') } });
+    };
+    await tc('cAna', 'Ana Teste — Cobrar preenchimento e marcar nova conversa', 'A fazer'); // contato do lead que o CRM cria: liga
+    await tc('cDora', 'Dora — Marcar onboarding', 'A fazer'); // primeiro nome sozinho (contato de um lead): ambígua
+    await tc('cBeta', 'FUP Beta Sintética', 'A fazer'); // lead à mão, nome igual: liga
+    await tc('cLumen', 'Proposta Lumen e instalação do OS', 'A fazer'); // "Lumen | Carla Teste": começa pela chave, liga
+    await tc('cCiclano', 'Proposta Ciclano Souza — fazer FUP', 'A fazer', lucasId); // ninguém parecido: cria o lead
+    await tc('cLexi', 'Marcar reunião - Lexidoc', 'A fazer'); // grafia abreviada: ambígua
+    await tc('cBruno', 'Confirmar reunião com o Bruno', 'A fazer'); // primeiro nome: ambígua
+    await tc('cIndica', 'Indicação do Tício Sintético', 'A fazer'); // indicação: ambígua
+    await tc('cAciona', 'Acionar indicação do Tício Sintético', 'Feito'); // indicação concluída
+    await tc('cFeedback', 'Colher feedback dos clientes atuais', 'Feito'); // interna concluída
+    await tc('cPipe', 'Atualizar pipe', 'A fazer'); // interna
+    await tc('cIntegra', 'Checar integração da Ferramenta Sintética', 'A fazer', null); // interna
+    await tc('cCiclano2', 'FUP Ciclano Souza', 'A fazer'); // liga ao lead criado pela tarefa de antes
+    await tc('cMevio', 'Proposta Mévio Prado — fazer FUP', 'Feito'); // concluída sem lead: não cria, interna
+
+    // A2: a lista solta de um contato, com um cartão de lixo (achada pelo hash do nome fictício).
+    const lc = await lista(NOME_DO_CONTATO, null, 'tarefas', [['A fazer', 'open']]);
+    ids.listaContato = lc.id;
+    ids.cartaoContato = await tarefa(lc, 'cartão de lixo', 'A fazer');
     const pt = await lista('Lista Que Parece Teste', null, 'tarefas', [['A fazer', 'open']]);
     ids.listaParece = pt.id;
     await tarefa(pt, 'uma só', 'A fazer');
@@ -374,6 +497,8 @@ describe.skipIf(!URL)('importador do CRM contra o Postgres (fixture sintética)'
     await prisma.workList.deleteMany({ where: { orgId: ORG } });
     await prisma.workFolder.deleteMany({ where: { orgId: ORG, parentId: { not: null } } });
     await prisma.workFolder.deleteMany({ where: { orgId: ORG } });
+    await prisma.workSpace.deleteMany({ where: { orgId: ORG } });
+    await prisma.workArea.deleteMany({ where: { orgId: ORG } });
     await prisma.partner.deleteMany({ where: { orgId: ORG } });
     await prisma.comercialReacao.deleteMany({ where: { leadId: { in: leadIds } } });
     await prisma.comercialDecisao.deleteMany({ where: { leadId: { in: leadIds } } });
@@ -415,6 +540,13 @@ describe.skipIf(!URL)('importador do CRM contra o Postgres (fixture sintética)'
     expect(r.passos['administrativa.pasta'].aFazer).toBe(1);
     // Gestão e Clientes (pastas), Pessoas e as três listas de Clientes (criadas), Administrativo e Financeiro (movidas).
     expect(r.passos.estrutura.aFazer).toBe(8);
+    // A1: 14 tarefas da lista Comercial = 4 ligadas + 1 que cria lead + 4 internas + 5 ambíguas; a lista do comercial e o arquivo da Comercial.
+    const c = (p: (typeof PASSOS_DO_IMPORTADOR)[number]) => r.passos[p].aFazer;
+    expect([c('comercial.destino'), c('comercial.tarefas'), c('comercial.ligadas'), c('comercial.leads'), c('comercial.internas'), c('comercial.ambiguas'), c('comercial.lista')]).toEqual([1, 14, 4, 1, 4, 5, 1]);
+    // A2: o cartão e a lista do contato.
+    expect([c('contato.cartoes'), c('contato.lista')]).toEqual([1, 1]);
+    expect(r.sobrasDetalhe.filter((s) => s.onde === 'Trabalho / Comercial').map((s) => s.cartaoId).sort()).toEqual([ids.cDora, ids.cLexi, ids.cBruno, ids.cIndica, ids.cAciona].sort());
+    expect(r.sobrasDetalhe.some((s) => s.cartaoId === ids.listaContato || s.cartaoId === ids.listaComercial)).toBe(false);
     expect(r.efeitos.antes).toEqual(r.efeitos.depois);
   });
 
@@ -518,6 +650,66 @@ describe.skipIf(!URL)('importador do CRM contra o Postgres (fixture sintética)'
     expect(marcadas.every((a) => a.actorId === euId && a.actorType === 'user' && (a.metadata as { marca?: string }).marca === IMPORTACAO_CRM_MARCA)).toBe(true);
   });
 
+  it('A1/A2 no valer: as tarefas da lista Comercial no Comercial, ligadas só quando é seguro; as duas listas arquivadas', async () => {
+    const r = primeiro;
+    const f = (p: (typeof PASSOS_DO_IMPORTADOR)[number]) => r.passos[p].feitos;
+    expect([f('comercial.destino'), f('comercial.tarefas'), f('comercial.ligadas'), f('comercial.leads'), f('comercial.internas'), f('comercial.ambiguas'), f('comercial.lista')]).toEqual([1, 14, 4, 1, 4, 5, 1]);
+    expect([f('contato.cartoes'), f('contato.lista')]).toEqual([1, 1]);
+
+    const destino = await prisma.workList.findFirstOrThrow({ where: { orgId: ORG, externalId: LISTA_DO_COMERCIAL }, include: { statuses: true } });
+    expect([destino.name, destino.folderId, destino.areaPadraoId]).toEqual(['Tarefas do comercial', null, ids.areaComercial]);
+    const tarefas = await prisma.workTask.findMany({
+      where: { orgId: ORG, id: { in: Object.keys(ids).filter((k) => /^c[A-Z]/.test(k)).map((k) => ids[k]) } },
+      include: { status: true },
+    });
+    expect(tarefas).toHaveLength(14);
+    const por = (k: string) => tarefas.find((t) => t.id === ids[k])!;
+    // O mesmo id, na lista do comercial, com a área Comercial; responsável e prazo intactos.
+    for (const t of tarefas) {
+      expect([t.listId, t.areaId, t.archived], t.title).toEqual([destino.id, ids.areaComercial, false]);
+      expect(t.dueDate?.toISOString()).toBe('2026-10-30T12:00:00.000Z');
+    }
+    expect(por('cIntegra').assigneeUserId).toBeNull();
+    // Concluída continua concluída; aberta vai para "A fazer".
+    for (const k of ['cAciona', 'cFeedback', 'cMevio']) expect([por(k).status.name, por(k).status.type], k).toEqual(['Feito', 'closed']);
+    for (const k of ['cAna', 'cPipe', 'cLumen']) expect(por(k).status.name, k).toBe('A fazer');
+
+    // Ligadas: ao lead que o CRM criou (contato igual), ao lead à mão (nome igual) e ao "Nome | Contato" (começa pela chave).
+    const alfa = leadIdDaEntrada(ORG, { tipo: 'manual', ref: `cartao:${ids.alfa}` });
+    expect(por('cAna').leadId).toBe(alfa);
+    expect(por('cBeta').leadId).toBe(ids.leadBeta);
+    expect(por('cLumen').leadId).toBe(ids.leadLumen);
+    // O lead criado pela tarefa: em Qualificação, com o responsável dela como dono, pelo fato importado (sem reação).
+    const ciclano = leadIdDaEntrada(ORG, { tipo: 'manual', ref: `cartao:${ids.cCiclano}` });
+    expect(por('cCiclano').leadId).toBe(ciclano);
+    expect(por('cCiclano2').leadId).toBe(ciclano);
+    const lc = await prisma.lead.findUniqueOrThrow({ where: { id: ciclano }, include: { ficha: true } });
+    expect([lc.name, lc.ownerId, lc.ficha?.etapa, lc.ficha?.empresa, lc.ficha?.donoId]).toEqual(['Ciclano Souza', lucasId, 'qualificacao', 'Ciclano Souza', lucasId]);
+    const fato = await prisma.leadEvent.findFirstOrThrow({ where: { leadId: ciclano, type: 'lead.importado' } });
+    expect(fato.payload).toMatchObject({ origem: `cartao:${ids.cCiclano}`, lista: 'Trabalho / Comercial', destino: 'qualificacao', marca: IMPORTACAO_CRM_MARCA });
+    // Nenhum lead novo para quem só foi citado de forma ambígua ou numa concluída.
+    for (const k of ['cDora', 'cLexi', 'cBruno', 'cIndica', 'cAciona', 'cMevio', 'cFeedback', 'cPipe', 'cIntegra']) {
+      expect(por(k).leadId, k).toBeNull();
+      expect(await prisma.lead.count({ where: { id: leadIdDaEntrada(ORG, { tipo: 'manual', ref: `cartao:${ids[k]}` }) } }), k).toBe(0);
+    }
+    expect(r.sobrasDetalhe.find((s) => s.cartaoId === ids.cDora)?.motivo).toMatch(/primeiro nome/);
+    expect(r.sobrasDetalhe.find((s) => s.cartaoId === ids.cLexi)?.motivo).toMatch(/parecido/);
+    expect(r.sobrasDetalhe.find((s) => s.cartaoId === ids.cIndica)?.motivo).toMatch(/indicação/);
+    expect(r.detalhe.find((l) => l.passo === 'sobra' && l.id === ids.cBruno)?.acao).toBe('entra como tarefa do comercial sem lead');
+
+    // A lista Comercial e a do contato: arquivadas, não apagadas; o cartão do contato arquivado com o porquê.
+    expect((await prisma.workList.findUniqueOrThrow({ where: { id: ids.listaComercial } })).arquivadaEm).toBeTruthy();
+    expect(await prisma.workTask.count({ where: { listId: ids.listaComercial } })).toBe(0);
+    expect((await prisma.workList.findUniqueOrThrow({ where: { id: ids.listaContato } })).arquivadaEm).toBeTruthy();
+    const cc = await prisma.workTask.findUniqueOrThrow({ where: { id: ids.cartaoContato }, include: { comments: true } });
+    expect([cc.archived, cc.listId, cc.comments.length]).toEqual([true, ids.listaContato, 1]);
+
+    // A auditoria de cada tarefa movida, com a pessoa e a marca.
+    const movidas = await prisma.auditLog.findMany({ where: { orgId: ORG, action: `${IMPORTACAO_CRM_MARCA}.tarefa_do_comercial` } });
+    expect(movidas).toHaveLength(14);
+    expect(movidas.every((a) => a.actorId === euId && (a.before as { listId: string }).listId === ids.listaComercial)).toBe(true);
+  });
+
   it('valer de novo não muda nada; simular depois dá zero', async () => {
     const antes = await fotografia();
     const r2 = await rodar(true);
@@ -527,6 +719,9 @@ describe.skipIf(!URL)('importador do CRM contra o Postgres (fixture sintética)'
     const r3 = await rodar(false);
     expect(soma(r3, 'aFazer')).toBe(0);
     expect(r3.passos['cartoes.arquivados'].jaEstava).toBe(12);
+    // A lista Comercial e a do contato já arquivadas: nada a mover, nada a ligar, nenhum lead novo.
+    expect([r3.passos['comercial.lista'].jaEstava, r3.passos['contato.lista'].jaEstava, r3.passos['contato.cartoes'].jaEstava, r3.passos['comercial.tarefas'].jaEstava]).toEqual([1, 1, 1, 0]);
+    expect(r3.efeitos.depois).toEqual(primeiro.efeitos.antes);
     expect(await fotografia()).toEqual(antes);
   });
 

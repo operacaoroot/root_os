@@ -14,6 +14,11 @@
  * A sequência na produção: `--simular` → conferir com o Rodrigo → `--valer` →
  * `--simular` de novo, que tem de dar zero a fazer.
  *
+ * O adendo (A1/A2) entra nos mesmos `passos`: `comercial.*` (as tarefas da lista solta
+ * "Comercial" movidas para a lista do comercial: ligadas, leads criados, internas,
+ * ambíguas, a lista arquivada) e `contato.*` (a lista solta de um contato arquivada). As
+ * ambíguas também contam em `sobras`, com o motivo só no arquivo de `--detalhe`.
+ *
  * Roda compilado (Nest), contra o banco de `DATABASE_URL`, com as tarefas de fundo
  * desligadas (`sem-tarefas-de-fundo.ts`, o PRIMEIRO import). A lógica mora em
  * `comercial/importador-crm/`; aqui só os argumentos, a pessoa e a saída.
