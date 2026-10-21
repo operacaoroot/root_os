@@ -49,7 +49,8 @@ describe('projeção do prompt de Reports', () => {
     const { svc, prisma, work, legacy, complete } = fixture();
     const generated = await svc.generateDaily('qa-org', selection);
     const input = complete.mock.calls[0][0];
-    expect(input).toEqual({ system: expect.any(String), user: expect.any(String), orgId: 'qa-org' });
+    // A rodada dos agentes (21/10/2026) marca a função do cadastro (CE-03, o briefing antigo) em toda chamada.
+    expect(input).toEqual({ funcao: 'CE-03', system: expect.any(String), user: expect.any(String), orgId: 'qa-org' });
     const fullArgument = JSON.stringify(input);
     for (const value of [...Object.values(selector).flatMap((s) => s.split(',')), filters.statusId, filters.tagId, filters.opcao, filters.assignee, filters.q, 'source-list-id', 'internal-campaign', ...items.map((t) => t.id)]) {
       expect(fullArgument).not.toContain(value);
