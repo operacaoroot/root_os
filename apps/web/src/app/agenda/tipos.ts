@@ -1,5 +1,7 @@
 import type { ReuniaoDaAgenda } from '@mktos/shared';
 
+import { FUSO_DA_AGENDA, noFuso } from './semana';
+
 /**
  * Um evento como a API devolve em `GET /google/calendar/periodo`.
  *
@@ -51,11 +53,12 @@ export function chaveDoDia(d: Date): string {
 export function diaDoEvento(e: EventoDaAgenda): string | null {
   if (!e.start) return null;
   if (e.diaInteiro) return e.start.slice(0, 10);
-  return chaveDoDia(new Date(e.start));
+  // P2 (21/10): o dia do evento com hora é o de America/Sao_Paulo, não o do navegador.
+  return noFuso(new Date(e.start)).dia;
 }
 
 export const horaCurta = (iso: string | null): string =>
-  iso ? new Date(iso).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }) : '';
+  iso ? new Date(iso).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', timeZone: FUSO_DA_AGENDA }) : '';
 
 /** As cores por natureza do compromisso. Fora do padrão é warn de propósito. */
 export function tomDoEvento(e: EventoDaAgenda): 'brand' | 'good' | 'muted' | 'warn' {
