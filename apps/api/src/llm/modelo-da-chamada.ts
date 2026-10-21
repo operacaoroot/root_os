@@ -29,12 +29,45 @@ export interface ModeloDaChamada {
   origem: 'explicito' | 'variavel' | 'cadastro' | 'padrao';
 }
 
+/*
+ * AS LISTAS POR FUNÇÃO, PARA O CONTAINER. O container só enxerga a variável que
+ * está no bloco `environment:` do compose, e pôr ali uma `LLM_MODELO_<ID>` por
+ * função seriam dezenas de linhas. Então o compose passa DUAS variáveis:
+ *
+ *   LLM_MODELOS_POR_FUNCAO="CO-03=claude-sonnet-5-5,IM-02=claude-opus-5-5"
+ *   LLM_ESFORCOS_POR_FUNCAO="CO-11=medium"
+ *
+ * que viram `LLM_MODELO_CO_03`/`LLM_ESFORCO_CO_11` para `escolherModelo`. A
+ * variável específica, quando existe no processo, vence a lista. Valor fora dos
+ * modelos e esforços do cadastro é ignorado (é a regra do `escolherModelo`).
+ */
+export function ambienteDosModelos(
+  env: Readonly<Record<string, string | undefined>>,
+): Readonly<Record<string, string | undefined>> {
+  const extra: Record<string, string> = {};
+  const ler = (lista: string | undefined, prefixo: string) => {
+    for (const par of (lista ?? '').split(/[,;\s]+/)) {
+      const [id, valor] = par.split('=').map((x) => x?.trim() ?? '');
+      if (!id || !valor || !/^[A-Za-z]{2}-\d{2}$/.test(id)) continue;
+      const chave = `${prefixo}${id.toUpperCase().replace(/[^A-Z0-9]+/g, '_')}`;
+      if (!(env[chave] ?? '').trim()) extra[chave] = valor;
+    }
+  };
+  ler(env.LLM_MODELOS_POR_FUNCAO, 'LLM_MODELO_');
+  ler(env.LLM_ESFORCOS_POR_FUNCAO, 'LLM_ESFORCO_');
+  return Object.keys(extra).length ? { ...env, ...extra } : env;
+}
+
 export function modeloDaChamada(
   input: { funcao?: string; model?: string; effort?: LlmEffort },
   padrao: PadraoDoProvedor,
   ambiente: Readonly<Record<string, string | undefined>> = process.env,
 ): ModeloDaChamada {
-  const escolha = escolherModelo(input.funcao, { modelo: padrao.modelo, esforco: padrao.esforco as EsforcoDaFuncao }, ambiente);
+  const escolha = escolherModelo(
+    input.funcao,
+    { modelo: padrao.modelo, esforco: padrao.esforco as EsforcoDaFuncao },
+    ambienteDosModelos(ambiente),
+  );
   const model = input.model?.trim();
   const effort = input.effort;
   return {

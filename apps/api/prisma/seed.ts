@@ -11,7 +11,9 @@ const prisma = new PrismaClient();
 // Rotacionar = definir a env e rodar `pnpm db:seed` de novo.
 const ADMIN_EMAIL = 'admin@marketing-os.local';
 const MCP_EMAIL = 'mcp@marketing-os.local';
-const IA_ACAO_EMAIL = 'ia-acao@marketing-os.local';
+// A conta de AÇÃO `ia-acao@` NÃO é mais criada (rodada dos agentes, 21/10/2026, A1):
+// era do bot de Telegram, aposentado em 11/09, e não tem cliente. A que já existe
+// é desativada (nunca apagada) por `node dist/scripts/desativar-ia-acao.js --valer`.
 
 async function upsertServiceUser(args: {
   orgId: string;
@@ -123,18 +125,6 @@ async function main() {
     name: 'MCP Service (IA)',
     roleId: iaRole.id,
     envPassword: process.env.MCP_SERVICE_PASSWORD,
-  });
-
-  // 4c) Conta de AÇÃO da IA (escreve só o que o humano aprovou no Telegram)
-  const iaAcaoRole = await prisma.role.findUniqueOrThrow({
-    where: { orgId_key: { orgId: org.id, key: 'ia_acao' } },
-  });
-  await upsertServiceUser({
-    orgId: org.id,
-    email: IA_ACAO_EMAIL,
-    name: 'IA Ação (aprovada)',
-    roleId: iaAcaoRole.id,
-    envPassword: process.env.MCP_ACTION_PASSWORD,
   });
 
   // 5) Dados demonstrativos — só ACRESCENTA, nunca apaga
@@ -304,8 +294,8 @@ async function main() {
 
   console.log('✔ Seed concluído.');
   console.log(`  Org: ${org.name} (${org.slug})`);
-  console.log(`  Contas: ${ADMIN_EMAIL} · ${MCP_EMAIL} (read-only) · ${IA_ACAO_EMAIL} (ação)`);
-  console.log('  Senhas: via env (ADMIN_PASSWORD / MCP_SERVICE_PASSWORD / MCP_ACTION_PASSWORD) ou geradas acima.');
+  console.log(`  Contas: ${ADMIN_EMAIL} · ${MCP_EMAIL} (read-only)`);
+  console.log('  Senhas: via env (ADMIN_PASSWORD / MCP_SERVICE_PASSWORD) ou geradas acima.');
 }
 
 main()
