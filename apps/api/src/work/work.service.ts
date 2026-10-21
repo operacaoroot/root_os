@@ -6,7 +6,8 @@ import {
   MODELOS_DE_LISTA, TRAB_LISTA_COM_DOIS_PAIS, TRAB_PASTA_COM_DOIS_PAIS, ehValorMonetarioCanonico, TrabTarefaUpdateHttpSchema,
   listaDaImplantacao, LISTA_DA_IMPLANTACAO, PASTA_DA_IMPLANTACAO, PORTA_DA_IMPLANTACAO,
   CARTOES_QUE_NAO_SAO_TAREFA, RecorrenciaSchema, proximaOcorrencia, type RecorrenciaDaTarefa, type TrabTarefasOrdemInput,
-  nomeParaConfirmar,
+  nomeParaConfirmar, chaveDoNomeNoNivel, etapaNoDestino,
+  TRAB_NOME_DE_PASTA_REPETIDO, TRAB_NOME_DE_LISTA_REPETIDO, TRAB_PASTA_DA_IMPLANTACAO_PROTEGIDA, TRAB_ORDEM_FORA_DO_NIVEL,
 } from '@mktos/shared';
 import type {
   TrabEstrutura, TrabListaDto, TrabCampoDto, TrabTarefaLista, TrabTarefaResumo,
@@ -15,14 +16,16 @@ import type {
   TrabEspacoCreateInput, TrabEspacoUpdateInput, TrabPastaCreateInput, TrabPastaUpdateInput,
   TrabListaCreateInput, TrabListaUpdateInput, TrabEstruturaSugeridaResultado,
   TrabListaExcluirInput, TrabListaExcluida, TrabPastaExcluida, TrabListaArquivarTarefasInput, TrabListaTarefasArquivadas,
+  TrabPastaExcluirComDestinoInput, TrabPastaExcluidaComDestino, TrabListaMoverTarefasInput, TrabListaTarefasMovidas,
+  TrabArvoreOrdemInput,
 } from '@mktos/shared';
-import { Prisma, WorkFieldType, WorkPriority, WorkStatusType } from '@prisma/client';
+import { Prisma, WorkFieldType, WorkListaNatureza, WorkPriority, WorkStatusType } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
 import { CheckoutDeTarefaService } from './checkout-de-tarefa.service';
 import { agentesDaCasa, type AgenteDaCasa } from './agentes-da-casa';
 import { listarClientes, nomesDosClientes, resolverCliente } from './clientes-da-casa';
-import { criarEstruturaSugerida, criarListaDoModeloNoBanco } from './estrutura-sugerida';
+import { criarEstruturaSugerida, criarListaDoModeloNoBanco, criarListaPadraoNoBanco } from './estrutura-sugerida';
 import { SEGMENTO_SEM_PASTA, pastaComSubpastas, type WorkTaskQuery } from './work-task-query';
 import { exigirAcessoAtual } from '../memory/acesso-memoria';
 import { listaVisivel, pastasEscondidas, tarefaDeListaVisivel } from './arquivadas';
@@ -63,7 +66,7 @@ type CampoConferido = { field: Prisma.WorkFieldGetPayload<{ include: { options: 
 type PaiDaPasta = { spaceId: string | null; parentId: string | null };
 type PaiDaLista = { folderId: string | null; spaceId: string | null };
 
-const NOME_DE_PASTA_REPETIDO = 'Já existe uma pasta com esse nome neste lugar.';
+const NOME_DE_PASTA_REPETIDO = TRAB_NOME_DE_PASTA_REPETIDO;
 const NOME_DE_ESPACO_REPETIDO = 'Já existe um espaço com esse nome.';
 const PASTA_EM_CICLO = 'A pasta não pode ficar dentro dela mesma nem de uma pasta que está dentro dela.';
 const PASTA_COM_LISTAS = 'A pasta tem listas. Mova ou exclua as listas antes.';
@@ -94,6 +97,13 @@ export function hojeEmBrasilia(agora: Date = new Date()): string {
   return new Intl.DateTimeFormat('en-CA', {
     timeZone: 'America/Sao_Paulo', year: 'numeric', month: '2-digit', day: '2-digit',
   }).format(agora);
+}
+
+/** O nome de pasta ou lista como é gravado: sem espaço nas pontas; vazio depois disso é recusado. */
+function nomeDoNo(nome: string): string {
+  const n = nome.trim();
+  if (!n) throw new BadRequestException('Escreva um nome.');
+  return n;
 }
 
 /** `true` só para data de calendário que existe (recusa 2026-02-31). */
@@ -164,6 +174,7 @@ export class WorkService {
 
     const toLista = (l: (typeof lists)[number]): TrabListaDto => ({
       id: l.id, name: l.name, order: l.order, externalId: l.externalId, spaceId: l.spaceId,
+      natureza: l.natureza,
       total: porLista.get(l.id) ?? 0,
       statuses: l.statuses.map((s) => ({
         id: s.id, name: s.name, type: s.type, color: s.color, order: s.order,
@@ -219,11 +230,19 @@ export class WorkService {
 
   // ---------- pastas ----------
 
+  /**
+   * Nasce no fim do nível, sob o cadeado da árvore, e recusa nome repetido entre
+   * as irmãs sem diferença de maiúscula nem acento (A3, 21/10/2026).
+   */
   async criarPasta(orgId: string, actorId: string, input: TrabPastaCreateInput) {
     const pai = await this.paiDaPasta(orgId, input);
+    const nome = nomeDoNo(input.name);
     return this.logado(orgId, actorId, 'work.folder.create', 'work_folder', null, () =>
-      this.semNomeRepetido(NOME_DE_PASTA_REPETIDO, () =>
-        this.prisma.workFolder.create({ data: { orgId, name: input.name, ...pai } })),
+      this.semNomeRepetido(NOME_DE_PASTA_REPETIDO, () => this.naArvore(orgId, async (tx) => {
+        await this.conferirNomeDaPasta(tx, orgId, nome, pai);
+        const order = await this.fimDoNivelDePasta(tx, orgId, pai.parentId);
+        return tx.workFolder.create({ data: { orgId, name: nome, order, ...pai } });
+      })),
     );
   }
 
@@ -243,18 +262,24 @@ export class WorkService {
       throw new BadRequestException(`A pasta ${PASTA_DA_IMPLANTACAO} guarda a lista ${LISTA_DA_IMPLANTACAO}, a porta da implantação de clientes: ela fica no primeiro nível, com este nome.`);
     }
     const pai = move ? await this.paiDaPasta(orgId, input) : null;
-    const data = { name: input.name, order: input.order, ...pai };
+    const nome = input.name === undefined ? undefined : nomeDoNo(input.name);
+    const data = { name: nome, order: input.order, ...pai };
+    const renomeia = nome !== undefined && nome !== antes.name;
+    const mudaDeNivel = !!pai && (pai.spaceId !== antes.spaceId || pai.parentId !== antes.parentId);
+    const trilha = (pai || renomeia) ? {
+      before: { ...(pai ? { spaceId: antes.spaceId, parentId: antes.parentId } : {}), ...(renomeia ? { name: antes.name } : {}) },
+      after: { ...(pai ?? {}), ...(renomeia ? { name: nome } : {}) },
+    } : undefined;
     return this.logado(orgId, actorId, 'work.folder.update', 'work_folder', id, () =>
-      this.semNomeRepetido(NOME_DE_PASTA_REPETIDO, () => {
-        if (!pai?.parentId) return this.prisma.workFolder.update({ where: { id }, data });
-        const mae = pai.parentId;
-        return this.prisma.$transaction(async (tx) => {
-          await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`work-arvore:${orgId}`}))`;
-          await this.conferirSemCiclo(tx, orgId, id, mae);
-          return tx.workFolder.update({ where: { id }, data });
-        });
-      }),
-      pai ? { before: { spaceId: antes.spaceId, parentId: antes.parentId }, after: pai } : undefined,
+      this.semNomeRepetido(NOME_DE_PASTA_REPETIDO, () => this.naArvore(orgId, async (tx) => {
+        if (pai?.parentId) await this.conferirSemCiclo(tx, orgId, id, pai.parentId);
+        // Nome repetido no MESMO nível (A3): o nível depois da mudança, sem contar a própria pasta.
+        if (renomeia || mudaDeNivel) {
+          await this.conferirNomeDaPasta(tx, orgId, nome ?? antes.name, pai ?? { spaceId: antes.spaceId, parentId: antes.parentId }, id);
+        }
+        return tx.workFolder.update({ where: { id }, data });
+      })),
+      trilha,
     );
   }
 
@@ -314,19 +339,13 @@ export class WorkService {
 
   async criarLista(orgId: string, actorId: string, input: TrabListaCreateInput) {
     const pai = await this.paiDaLista(orgId, input);
-    return this.logado(orgId, actorId, 'work.list.create', 'work_list', null, async () => {
-      const list = await this.prisma.workList.create({
-        data: { orgId, ...pai, name: input.name },
-      });
-      // toda lista nasce com um pipeline mínimo (padrão ClickUp: open → custom → closed)
-      const padrao = [
-        { name: 'A fazer', type: WorkStatusType.open, color: '#87909e', order: 0 },
-        { name: 'Em andamento', type: WorkStatusType.custom, color: '#f9d900', order: 1 },
-        { name: 'Concluída', type: WorkStatusType.closed, color: '#6bc950', order: 2 },
-      ];
-      await this.prisma.workStatus.createMany({ data: padrao.map((s) => ({ ...s, listId: list.id })) });
-      return list;
-    });
+    const nome = nomeDoNo(input.name);
+    // Toda lista nasce com um pipeline mínimo (padrão ClickUp: open → custom → closed), no fim do
+    // nível e com nome que não repete o de uma irmã (A3).
+    return this.logado(orgId, actorId, 'work.list.create', 'work_list', null, () => this.naArvore(orgId, async (tx) => {
+      await this.conferirNomeDaLista(tx, orgId, nome, pai);
+      return criarListaPadraoNoBanco(tx, orgId, pai, nome, await this.fimDoNivelDeLista(tx, orgId, pai.folderId));
+    }));
   }
 
   /** Mover lista troca só a linha da lista: as tarefas e os IDs delas ficam onde estão. */
@@ -348,11 +367,21 @@ export class WorkService {
       }
     }
     const pai = move ? await this.paiDaLista(orgId, input) : null;
-    const antesDoRastro = { folderId: antes.folderId, spaceId: antes.spaceId };
-    return this.logado(orgId, actorId, 'work.list.update', 'work_list', id, () =>
-      this.prisma.workList.update({ where: { id }, data: { name: input.name, order: input.order, ...pai } }),
-      pai ? { before: antesDoRastro, after: pai } : undefined,
-    );
+    const nome = input.name === undefined ? undefined : nomeDoNo(input.name);
+    const renomeia = nome !== undefined && nome !== antes.name;
+    const mudaDeNivel = !!pai && (pai.folderId !== antes.folderId || pai.spaceId !== antes.spaceId);
+    const trilha = (pai || renomeia) ? {
+      before: { ...(pai ? { folderId: antes.folderId, spaceId: antes.spaceId } : {}), ...(renomeia ? { name: antes.name } : {}) },
+      after: { ...(pai ?? {}), ...(renomeia ? { name: nome } : {}) },
+    } : undefined;
+    return this.logado(orgId, actorId, 'work.list.update', 'work_list', id, () => this.naArvore(orgId, async (tx) => {
+      if (renomeia || mudaDeNivel) {
+        await this.conferirNomeDaLista(tx, orgId, nome ?? antes.name, pai ?? { folderId: antes.folderId, spaceId: antes.spaceId }, id);
+      }
+      // Lista que muda de lugar sem ordem pedida vai para o fim do nível novo (arrastar para a pasta, A3).
+      const order = input.order ?? (mudaDeNivel ? await this.fimDoNivelDeLista(tx, orgId, pai!.folderId) : undefined);
+      return tx.workList.update({ where: { id }, data: { name: nome, order, ...pai } });
+    }), trilha);
   }
 
   /*
@@ -453,6 +482,248 @@ export class WorkService {
       return alvo.length;
     }, { timeout: 60_000 });
     return { id, arquivadas };
+  }
+
+  /*
+   * APAGAR PASTA LEVANDO O QUE ESTÁ DENTRO (A3, 21/10/2026). A pessoa escolhe para
+   * onde vão as listas e as pastas que aparecem dentro dela (outra pasta ou "Sem
+   * pasta") e só então a pasta sai. Nada é apagado junto sem a pessoa ver: as
+   * listas e as pastas mudam de lugar com os mesmos ids, as tarefas não mudam.
+   * Depois de esvaziada, a pasta segue a regra do P3: sem nada dentro é apagada;
+   * se ainda guarda listas ou pastas arquivadas, é arquivada (elas ficam com ela).
+   *
+   * Uma transação sob o cadeado da árvore, condicionada ao que a tela mostrou
+   * (`esperadas`): lista ou pasta que entrou ou saiu no meio = 409 e nada muda.
+   * O destino precisa aparecer na árvore e não pode estar dentro da pasta que sai;
+   * nome repetido no destino é recusado com o nome. A pasta Clientes que guarda a
+   * lista da implantação não sai. Auditoria por item movido e uma da pasta, com as
+   * contagens. Só de gente (o guarda pelo token e `exigirGenteNoTrabalho` pelo banco).
+   */
+  async excluirPastaComDestino(orgId: string, actorId: string, id: string, input: TrabPastaExcluirComDestinoInput): Promise<TrabPastaExcluidaComDestino> {
+    await this.exigirGenteNoTrabalho(orgId, actorId);
+    return this.naArvore(orgId, async (tx) => {
+      const todas = await tx.workFolder.findMany({
+        where: { orgId }, select: { id: true, name: true, parentId: true, spaceId: true, arquivadaEm: true },
+      });
+      const escondidas = pastasEscondidas(todas);
+      const pasta = todas.find((p) => p.id === id);
+      if (!pasta || escondidas.has(id)) throw new NotFoundException('Pasta não encontrada');
+      const listas = await tx.workList.findMany({
+        where: { orgId, folderId: id }, select: { id: true, name: true, externalId: true, arquivadaEm: true, spaceId: true },
+        orderBy: [{ order: 'asc' }, { name: 'asc' }],
+      });
+      const listasVivas = listas.filter((l) => !l.arquivadaEm);
+      if (!pasta.parentId && listaDaImplantacao([{ ...pasta, lists: listasVivas }])) throw new BadRequestException(TRAB_PASTA_DA_IMPLANTACAO_PROTEGIDA);
+      const filhasVivas = todas.filter((p) => p.parentId === id && !p.arquivadaEm);
+      // A tela não vê a lista do comercial, então ela não entra na conta (mas muda de lugar junto).
+      const listasNaTela = listasVivas.filter((l) => !ehListaDoComercial(l));
+      if (listasNaTela.length !== input.esperadas.listas || filhasVivas.length !== input.esperadas.pastas) {
+        throw new ConflictException(PASTA_MUDOU_NO_MEIO);
+      }
+      const temDentro = listasVivas.length + filhasVivas.length > 0;
+      if (temDentro && !input.destino) {
+        throw new BadRequestException('A pasta tem listas ou pastas dentro. Escolha para onde elas vão antes de apagar.');
+      }
+
+      let paiDasListas: PaiDaLista = { folderId: null, spaceId: null };
+      let paiDasPastas: PaiDaPasta = { spaceId: null, parentId: null };
+      let destinoNoRastro: { folderId: string; nome: string } | { semPasta: true } | null = null;
+      if (temDentro && input.destino) {
+        if ('folderId' in input.destino) {
+          const alvo = todas.find((p) => p.id === (input.destino as { folderId: string }).folderId);
+          if (!alvo || escondidas.has(alvo.id)) throw new NotFoundException('Pasta de destino não encontrada');
+          // Subindo pelas mães do destino: se passar pela pasta que sai, o destino está dentro dela.
+          const maeDe = new Map(todas.map((p) => [p.id, p.parentId]));
+          for (let atual: string | null = alvo.id; atual; atual = maeDe.get(atual) ?? null) {
+            if (atual === id) throw new BadRequestException('O destino não pode ser a própria pasta nem uma pasta que está dentro dela.');
+          }
+          paiDasListas = { folderId: alvo.id, spaceId: null };
+          paiDasPastas = { spaceId: null, parentId: alvo.id };
+          destinoNoRastro = { folderId: alvo.id, nome: alvo.name };
+        } else {
+          // "Sem pasta": as listas ficam soltas e as pastas sobem ao topo, no espaço da pasta de topo de onde saem.
+          let topo = pasta;
+          for (let i = 0; topo.parentId && i < 50; i++) topo = todas.find((p) => p.id === topo.parentId) ?? { ...topo, parentId: null };
+          paiDasListas = { folderId: null, spaceId: topo.spaceId };
+          paiDasPastas = { spaceId: topo.spaceId, parentId: null };
+          destinoNoRastro = { semPasta: true };
+        }
+      }
+
+      let ordemDaLista = temDentro ? await this.fimDoNivelDeLista(tx, orgId, paiDasListas.folderId) : 0;
+      for (const l of listasVivas) {
+        if (!ehListaDoComercial(l)) {
+          try {
+            await this.conferirNomeDaLista(tx, orgId, l.name, paiDasListas, l.id);
+          } catch (e) {
+            if (e instanceof ConflictException) throw new ConflictException(`No destino já existe uma lista chamada "${l.name}". Renomeie uma delas antes de apagar a pasta.`);
+            throw e;
+          }
+        }
+        const r = await tx.workList.updateMany({
+          where: { id: l.id, orgId, folderId: id, arquivadaEm: null },
+          data: { ...paiDasListas, order: ordemDaLista++ },
+        });
+        if (r.count !== 1) throw new ConflictException(PASTA_MUDOU_NO_MEIO);
+        await this.audit.log({
+          orgId, actorId, action: 'work.list.update', entityType: 'work_list', entityId: l.id,
+          before: { folderId: id, spaceId: l.spaceId }, after: { ...paiDasListas }, metadata: { origem: 'pasta.excluir', pastaId: id },
+        }, tx);
+      }
+      let ordemDaPasta = filhasVivas.length ? await this.fimDoNivelDePasta(tx, orgId, paiDasPastas.parentId) : 0;
+      for (const f of filhasVivas) {
+        try {
+          await this.conferirNomeDaPasta(tx, orgId, f.name, paiDasPastas, f.id);
+        } catch (e) {
+          if (e instanceof ConflictException) throw new ConflictException(`No destino já existe uma pasta chamada "${f.name}". Renomeie uma delas antes de apagar a pasta.`);
+          throw e;
+        }
+        const r = await this.semNomeRepetido(NOME_DE_PASTA_REPETIDO, () => tx.workFolder.updateMany({
+          where: { id: f.id, orgId, parentId: id, arquivadaEm: null },
+          data: { ...paiDasPastas, order: ordemDaPasta++ },
+        }));
+        if (r.count !== 1) throw new ConflictException(PASTA_MUDOU_NO_MEIO);
+        await this.audit.log({
+          orgId, actorId, action: 'work.folder.update', entityType: 'work_folder', entityId: f.id,
+          before: { spaceId: f.spaceId, parentId: id }, after: { ...paiDasPastas }, metadata: { origem: 'pasta.excluir', pastaId: id },
+        }, tx);
+      }
+
+      const listasMovidas = listasNaTela.length;
+      const pastasMovidas = filhasVivas.length;
+      const [guardadas, filhasGuardadas] = await Promise.all([
+        tx.workList.count({ where: { orgId, folderId: id } }),
+        tx.workFolder.count({ where: { orgId, parentId: id } }),
+      ]);
+      const contas = { listasMovidas, pastasMovidas, destino: destinoNoRastro };
+      if (guardadas + filhasGuardadas === 0) {
+        await tx.workFolder.delete({ where: { id } });
+        await this.audit.log({
+          orgId, actorId, action: 'work.folder.delete', entityType: 'work_folder', entityId: id,
+          before: { name: pasta.name }, after: { modo: 'apagada', ...contas },
+        }, tx);
+        return { id, modo: 'apagada' as const, listasMovidas, pastasMovidas };
+      }
+      const agora = new Date();
+      const r = await tx.workFolder.updateMany({
+        where: { id, orgId, arquivadaEm: null, lists: { none: { arquivadaEm: null } }, children: { none: { arquivadaEm: null } } },
+        data: { arquivadaEm: agora },
+      });
+      if (r.count !== 1) throw new ConflictException(PASTA_MUDOU_NO_MEIO);
+      await this.audit.log({
+        orgId, actorId, action: 'work.folder.archive', entityType: 'work_folder', entityId: id,
+        before: { name: pasta.name, arquivadaEm: null },
+        after: { modo: 'arquivada', arquivadaEm: agora.toISOString(), listasArquivadas: guardadas, pastasArquivadas: filhasGuardadas, ...contas },
+      }, tx);
+      return { id, modo: 'arquivada' as const, listasMovidas, pastasMovidas };
+    });
+  }
+
+  /*
+   * MOVER AS TAREFAS DE UMA LISTA PARA OUTRA (A3, 21/10/2026): o caminho que a tela
+   * oferece antes de apagar uma lista com tarefa ativa, ao lado de "arquivar todas".
+   * Só as ativas mudam (as arquivadas ficam e, ao apagar, a lista é arquivada com
+   * elas, como no P3). Os ids não mudam; a etapa no destino é a de mesmo nome,
+   * senão a primeira do mesmo tipo, senão a primeira (`etapaNoDestino`), e a
+   * resposta diz quantas mudaram de etapa. O destino precisa aparecer no Trabalho,
+   * ser de natureza `tarefas`, não ser a lista do comercial nem a da implantação
+   * (porta única). Sob o cadeado da árvore e o da lista, condicionada ao número
+   * que a tela mostrou e à versão de cada tarefa; auditada; só de gente.
+   */
+  async moverTarefasDaLista(orgId: string, actorId: string, id: string, input: TrabListaMoverTarefasInput): Promise<TrabListaTarefasMovidas> {
+    await this.exigirGenteNoTrabalho(orgId, actorId);
+    const origem = await this.prisma.workList.findFirst({ where: { id, orgId, arquivadaEm: null }, select: { id: true, name: true } });
+    if (!origem) throw new NotFoundException('Lista não encontrada');
+    if (await this.ehListaDaImplantacao(orgId, id)) throw new BadRequestException(LISTA_DA_IMPLANTACAO_FICA);
+    if (input.destinoId === id) throw new BadRequestException('Escolha outra lista para receber as tarefas.');
+    const destino = await this.prisma.workList.findFirst({
+      where: { id: input.destinoId, orgId },
+      select: { id: true, name: true, externalId: true, natureza: true, arquivadaEm: true },
+    });
+    if (!destino) throw new NotFoundException('Lista de destino não encontrada');
+    const visivel = await this.prisma.workList.count({ where: { id: destino.id, orgId, AND: [listaVisivel()] } });
+    if (destino.arquivadaEm || visivel !== 1) throw new BadRequestException('A lista de destino está arquivada. Escolha uma lista que aparece no Trabalho.');
+    if (ehListaDoComercial(destino)) throw new BadRequestException('As tarefas do comercial moram no Funil vivo: a lista do comercial não recebe tarefas do Trabalho.');
+    if (destino.natureza === WorkListaNatureza.cadastro) throw new BadRequestException('A lista de destino é de cadastro, não de tarefas. Escolha uma lista de tarefas.');
+    if (await this.ehListaDaImplantacao(orgId, destino.id)) throw new BadRequestException(PORTA_DA_IMPLANTACAO);
+    await exigirAcessoAtual(this.prisma, orgId, actorId, ['tarefas.editar']);
+
+    const r = await this.prisma.$transaction(async (tx) => {
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`work-arvore:${orgId}`}))`;
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`work-lista:${id}`}))`;
+      const ainda = await tx.workList.count({ where: { id: destino.id, orgId, arquivadaEm: null } });
+      if (ainda !== 1) throw new ConflictException(LISTA_MUDOU_NO_MEIO);
+      const etapas = await tx.workStatus.findMany({ where: { listId: destino.id, orgId }, orderBy: { order: 'asc' }, select: { id: true, name: true, type: true } });
+      if (etapas.length === 0) throw new BadRequestException('A lista de destino não tem etapas. Crie uma etapa nela antes.');
+      const alvo = await tx.workTask.findMany({
+        where: { orgId, listId: id, archived: false },
+        select: { id: true, updatedAt: true, status: { select: { name: true, type: true } } },
+        orderBy: [{ order: 'asc' }, { createdAt: 'asc' }],
+      });
+      if (alvo.length !== input.esperadas) throw new ConflictException(LISTA_MUDOU_NO_MEIO);
+      const agora = new Date();
+      let mudaramDeEtapa = 0;
+      for (const t of alvo) {
+        const etapa = etapaNoDestino(t.status, etapas)!;
+        if (chaveDoNomeNoNivel(etapa.name) !== chaveDoNomeNoNivel(t.status.name)) mudaramDeEtapa += 1;
+        const updatedAt = new Date(Math.max(agora.getTime(), t.updatedAt.getTime() + 1));
+        const u = await tx.workTask.updateMany({
+          where: { id: t.id, orgId, listId: id, archived: false, updatedAt: t.updatedAt },
+          data: { listId: destino.id, statusId: etapa.id, updatedAt },
+        });
+        if (u.count !== 1) throw new ConflictException(LISTA_MUDOU_NO_MEIO);
+        await this.audit.log({
+          orgId, actorId, action: 'work.task.update', entityType: 'work_task', entityId: t.id,
+          before: { listId: id, status: t.status.name }, after: { listId: destino.id, status: etapa.name },
+          metadata: { origem: 'lista.mover-tarefas', listId: id },
+        }, tx);
+      }
+      await this.audit.log({
+        orgId, actorId, action: 'work.list.tasks.move', entityType: 'work_list', entityId: id,
+        before: { name: origem.name, vivas: alvo.length },
+        after: { vivas: 0, destinoId: destino.id, destino: destino.name, movidas: alvo.length, mudaramDeEtapa },
+      }, tx);
+      await exigirAcessoAtual(tx, orgId, actorId, ['tarefas.editar']);
+      return { movidas: alvo.length, mudaramDeEtapa };
+    }, { timeout: 60_000 });
+    return { id, destinoId: destino.id, ...r };
+  }
+
+  /*
+   * A ORDEM DE UM NÍVEL DA ÁRVORE (A3, 21/10/2026): arrastar pasta ou lista, ou
+   * Alt+↑/↓. Regrava a posição (0, 1, 2…) dos irmãos que aparecem naquele nível,
+   * sob o cadeado da árvore. `ids` precisa ser exatamente esse conjunto, sem faltar
+   * nem sobrar (o que a tela viu é o que muda); senão 400 e nada muda. As pastas de
+   * topo e as listas soltas são um nível cada, como a árvore as mostra.
+   */
+  async ordenarArvore(orgId: string, actorId: string, input: TrabArvoreOrdemInput): Promise<{ ok: true }> {
+    if (new Set(input.ids).size !== input.ids.length) throw new BadRequestException(TRAB_ORDEM_FORA_DO_NIVEL);
+    await this.naArvore(orgId, async (tx) => {
+      const todas = await tx.workFolder.findMany({ where: { orgId }, select: { id: true, parentId: true, arquivadaEm: true, order: true, name: true } });
+      const escondidas = pastasEscondidas(todas);
+      if (input.paiId && (!todas.some((p) => p.id === input.paiId) || escondidas.has(input.paiId))) throw new NotFoundException('Pasta não encontrada');
+      let irmaos: { id: string; order: number; name: string }[];
+      if (input.tipo === 'pasta') {
+        irmaos = todas.filter((p) => p.parentId === input.paiId && !escondidas.has(p.id));
+      } else {
+        const listas = await tx.workList.findMany({
+          where: { orgId, folderId: input.paiId, arquivadaEm: null }, select: { id: true, order: true, name: true, externalId: true },
+        });
+        irmaos = listas.filter((l) => !ehListaDoComercial(l));
+      }
+      const conjunto = new Set(irmaos.map((i) => i.id));
+      if (irmaos.length !== input.ids.length || input.ids.some((i) => !conjunto.has(i))) throw new BadRequestException(TRAB_ORDEM_FORA_DO_NIVEL);
+      const antes = [...irmaos].sort((a, b) => a.order - b.order || a.name.localeCompare(b.name)).map((i) => i.id);
+      for (const [order, itemId] of input.ids.entries()) {
+        if (input.tipo === 'pasta') await tx.workFolder.updateMany({ where: { id: itemId, orgId }, data: { order } });
+        else await tx.workList.updateMany({ where: { id: itemId, orgId }, data: { order } });
+      }
+      await this.audit.log({
+        orgId, actorId, action: 'work.tree.reorder', entityType: input.tipo === 'pasta' ? 'work_folder' : 'work_list',
+        entityId: input.paiId ?? input.ids[0], before: { ids: antes }, after: { tipo: input.tipo, paiId: input.paiId, ids: input.ids },
+      }, tx);
+    });
+    return { ok: true };
   }
 
   // ---------- statuses (pipeline por lista) ----------
@@ -1264,17 +1535,20 @@ export class WorkService {
    * Cria uma lista pronta a partir de `MODELOS_DE_LISTA` (hoje, a esteira de
    * clientes): etapas com cor, tipo e limite, e campos com opções.
    *
-   * Não abre `$transaction(async ...)`, como `criarLista`; `criarTarefa` e
-   * `editarTarefa` abrem uma sob a mesma sessão de banco, que carimba a empresa
-   * por consulta (`prisma/sessao-de-banco.ts`). Se falhar no meio, sobra uma
-   * lista incompleta, visível, editável e apagável pela tela.
+   * Desde o A3 (21/10/2026) roda numa transação sob o cadeado da árvore, como
+   * `criarLista`: o nome não pode repetir o de uma irmã, e a conferência e a
+   * criação precisam ser uma coisa só. A transação interativa vale sob a sessão
+   * de banco que carimba a empresa (`prisma/sessao-de-banco.ts`), como em
+   * `criarTarefa` e `editarTarefa`; falhar no meio não deixa lista pela metade.
    */
   async criarListaDoModelo(orgId: string, actorId: string, input: TrabListaDoModeloInput) {
     const modelo: ModeloDeLista = MODELOS_DE_LISTA[input.modelo];
     const pai = await this.paiDaLista(orgId, input);
-    return this.logado(orgId, actorId, 'work.list.create_from_model', 'work_list', null, () =>
-      criarListaDoModeloNoBanco(this.prisma, orgId, pai, modelo, input.name ?? modelo.nome),
-    );
+    const nome = nomeDoNo(input.name ?? modelo.nome);
+    return this.logado(orgId, actorId, 'work.list.create_from_model', 'work_list', null, () => this.naArvore(orgId, async (tx) => {
+      await this.conferirNomeDaLista(tx, orgId, nome, pai);
+      return criarListaDoModeloNoBanco(tx, orgId, pai, modelo, nome, await this.fimDoNivelDeLista(tx, orgId, pai.folderId));
+    }));
   }
 
   /**
@@ -1339,6 +1613,50 @@ export class WorkService {
       if (atual === pastaId) throw new BadRequestException(PASTA_EM_CICLO);
       vistas.add(atual);
     }
+  }
+
+  /** O cadeado da árvore da empresa: o mesmo de mover pasta e da estrutura sugerida. */
+  private naArvore<T>(orgId: string, fn: (tx: Prisma.TransactionClient) => Promise<T>): Promise<T> {
+    return this.prisma.$transaction(async (tx) => {
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`work-arvore:${orgId}`}))`;
+      return fn(tx);
+    }, { timeout: 60_000 });
+  }
+
+  /**
+   * Nome repetido no MESMO nível de pasta (A3): a mãe, ou o topo do mesmo espaço.
+   * Sem maiúscula, acento nem espaço sobrando (`chaveDoNomeNoNivel`). As arquivadas
+   * não contam aqui; o índice único do banco ainda recusa o nome idêntico ao de uma
+   * arquivada, e `semNomeRepetido` devolve a mesma frase.
+   */
+  private async conferirNomeDaPasta(db: Prisma.TransactionClient, orgId: string, nome: string, pai: PaiDaPasta, excetoId?: string) {
+    const irmas = await db.workFolder.findMany({
+      where: { orgId, spaceId: pai.spaceId, parentId: pai.parentId, arquivadaEm: null, ...(excetoId ? { id: { not: excetoId } } : {}) },
+      select: { name: true },
+    });
+    if (irmas.some((p) => chaveDoNomeNoNivel(p.name) === chaveDoNomeNoNivel(nome))) throw new ConflictException(TRAB_NOME_DE_PASTA_REPETIDO);
+  }
+
+  /** Nome repetido no MESMO nível de lista (A3): a pasta, ou as soltas do mesmo espaço. A lista do comercial não conta. */
+  private async conferirNomeDaLista(db: Prisma.TransactionClient, orgId: string, nome: string, pai: PaiDaLista, excetoId?: string) {
+    const nivel: Prisma.WorkListWhereInput = pai.folderId ? { folderId: pai.folderId } : { folderId: null, spaceId: pai.spaceId };
+    const irmas = await db.workList.findMany({
+      where: { orgId, ...nivel, arquivadaEm: null, AND: [foraDaArvore()], ...(excetoId ? { id: { not: excetoId } } : {}) },
+      select: { name: true },
+    });
+    if (irmas.some((l) => chaveDoNomeNoNivel(l.name) === chaveDoNomeNoNivel(nome))) throw new ConflictException(TRAB_NOME_DE_LISTA_REPETIDO);
+  }
+
+  /** A posição depois da última pasta do nível (a mãe, ou o topo). */
+  private async fimDoNivelDePasta(db: Prisma.TransactionClient, orgId: string, parentId: string | null): Promise<number> {
+    const r = await db.workFolder.aggregate({ where: { orgId, parentId }, _max: { order: true } });
+    return r._max.order === null ? 0 : r._max.order + 1;
+  }
+
+  /** A posição depois da última lista do nível (a pasta, ou as soltas). */
+  private async fimDoNivelDeLista(db: Prisma.TransactionClient, orgId: string, folderId: string | null): Promise<number> {
+    const r = await db.workList.aggregate({ where: { orgId, folderId }, _max: { order: true } });
+    return r._max.order === null ? 0 : r._max.order + 1;
   }
 
   /** Nome repetido entre irmãs é 409 com a frase da tela, e não o 500 do índice único. */

@@ -23,7 +23,7 @@ import { SeletorDeCliente, type ClienteEscolhido } from './SeletorDeCliente';
 import { VistasDoQuadro } from './VistasDoQuadro';
 import { BotaoDeFiltros, type DefinicaoDeFiltro, type ValoresDeFiltro } from '@/components/filtros/BotaoDeFiltros';
 import { IniciarOnboardingDaImplantacao } from './IniciarOnboardingDaImplantacao';
-import { AcoesDaListaNaArvore, AcoesDaPastaNaArvore } from './ExcluirDaArvore';
+import { ArvoreDoTrabalho } from './ArvoreDoTrabalho';
 import { QuemTrabalhaNaEtapa } from './QuemTrabalhaNaEtapa';
 import { DatasNoBalao, ProximaDataNoCartao } from './DatasDoCartao';
 import { diaCompleto, diaCurto, diaComSemana, instanteComSemana, instanteCurto } from '@/lib/datas-do-cartao';
@@ -780,11 +780,6 @@ function TrabalhoConteudo({ visaoInicial, modo, aoSairDeTodas }: { visaoInicial:
     const novo = ocultarVazias ? 'mostrar' : 'ocultar';
     setFVazios(novo); filtroNoEndereco('vazios', novo === 'ocultar' ? 'ocultar' : '');
   };
-  /** O menu da lista na árvore (P3). A lista da implantação não tem: ela não sai do Trabalho. */
-  const idDaImplantacao = estrutura ? listaDaImplantacao(estrutura.folders)?.listaId ?? null : null;
-  const acoesDaLista = (l: TrabListaDto) => (editable && l.id !== idDaImplantacao ? (
-    <AcoesDaListaNaArvore lista={l} token={token} aoExcluir={() => listaSaiu(l.id)} aoMudar={refresh} aoErro={setErro} />
-  ) : null);
   /** A lista excluída pela árvore estava aberta: o quadro volta à escolha da lista. */
   const listaSaiu = (id: string) => {
     if (listaAtual.current === id) { listaAtual.current = null; setListaId(null); mudarEndereco(null, null); }
@@ -912,70 +907,22 @@ function TrabalhoConteudo({ visaoInicial, modo, aoSairDeTodas }: { visaoInicial:
       {/* árvore: pastas → listas (só as da pasta escolhida no topo) */}
       {!implantacao && (
       <aside ref={arvore} style={alturaDaArvore ? { maxHeight: alturaDaArvore } : undefined} className="max-h-44 w-full shrink-0 space-y-3 overflow-y-auto border-b border-border pb-2 pr-1 lg:max-h-none lg:w-52 lg:border-b-0 lg:pb-0">
-        {pastasVisiveis.map((f) => (
-          <div key={f.id}>
-            <div className="flex items-start justify-between gap-1">
-              <div title={f.name} className="min-w-0 break-words px-1 text-[11px] font-semibold uppercase tracking-wide text-muted">{f.name}</div>
-              {editable && estrutura && (
-                <AcoesDaPastaNaArvore
-                  pasta={f} token={token} aoErro={setErro}
-                  vazia={f.lists.length === 0 && !estrutura.folders.some((x) => x.parentId === f.id)}
-                  aoExcluir={() => { if (fPasta === f.id) { setFPasta(''); filtroNoEndereco('pasta', ''); } refresh(); }}
-                />
-              )}
-            </div>
-            <div className="mt-1 space-y-0.5">
-              {f.lists.length === 0 && <p className="px-2 text-[11px] text-muted">Pasta vazia. Crie uma lista nela ou mova uma para cá.</p>}
-              {f.lists.map((l) => (
-                <div key={l.id} className="flex items-center gap-0.5">
-                  <button
-                    onClick={() => selecionarLista(l.id)}
-                    className={[
-                      'flex min-w-0 flex-1 items-center justify-between rounded-md px-2 py-1 text-left text-[13px] transition',
-                      l.id === listaId ? 'bg-brand/15 text-text' : 'text-muted hover:bg-surface-2 hover:text-text',
-                    ].join(' ')}
-                  >
-                    <span title={l.name} className="min-w-0 break-words">{l.name}</span>
-                    <span className="ml-1 text-[10px] text-muted">{l.total}</span>
-                  </button>
-                  {acoesDaLista(l)}
-                </div>
-              ))}
-            </div>
-          </div>
-        ))}
-        {/*
-          LISTAS SEM PASTA também aparecem na árvore. Antes da esteira elas só
-          existiam por importação; com o modelo, uma empresa sem pastas cria a
-          lista solta — e ela sumiria da navegação se a árvore só desenhasse pastas.
-        */}
-        {estrutura && mostraSoltas && estrutura.listasSoltas.length > 0 && (
-          <div>
-            <div className="px-1 text-[11px] font-semibold uppercase tracking-wide text-muted">Sem pasta</div>
-            <div className="mt-1 space-y-0.5">
-              {estrutura.listasSoltas.map((l) => (
-                <div key={l.id} className="flex items-center gap-0.5">
-                  <button
-                    onClick={() => selecionarLista(l.id)}
-                    className={[
-                      'flex min-w-0 flex-1 items-center justify-between rounded-md px-2 py-1 text-left text-[13px] transition',
-                      l.id === listaId ? 'bg-brand/15 text-text' : 'text-muted hover:bg-surface-2 hover:text-text',
-                    ].join(' ')}
-                  >
-                    <span className="truncate">{l.name}</span>
-                    <span className="ml-1 text-[10px] text-muted">{l.total}</span>
-                  </button>
-                  {acoesDaLista(l)}
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-        {editable && estrutura && (
-          <NovaLista
-            key={fPasta} folders={estrutura.folders} token={token} onDone={refresh} onErro={setErro}
-            aberto={novaListaAberta} onAbrir={() => setNovaListaAberta(true)} onFechar={() => setNovaListaAberta(false)}
-            pastaInicial={fPasta === PASTA_SEM_PASTA ? '' : estrutura.folders.some((f) => f.id === fPasta) ? fPasta : undefined}
+        {/* A árvore editável onde a pessoa está olhando (A3): criar, renomear, excluir, arrastar e reordenar. */}
+        {estrutura && (
+          <ArvoreDoTrabalho
+            estrutura={estrutura} pastas={pastasVisiveis} mostraSoltas={mostraSoltas} listaId={listaId}
+            editable={editable} token={token}
+            pastaEscolhida={estrutura.folders.some((f) => f.id === fPasta) ? fPasta : null}
+            onSelecionarLista={selecionarLista} onMudou={refresh} onErro={setErro}
+            onListaSaiu={listaSaiu}
+            onPastaSaiu={(id) => { if (fPasta === id) { setFPasta(''); filtroNoEndereco('pasta', ''); } refresh(); }}
+            novaLista={editable ? (
+              <NovaLista
+                key={fPasta} folders={estrutura.folders} token={token} onDone={refresh} onErro={setErro}
+                aberto={novaListaAberta} onAbrir={() => setNovaListaAberta(true)} onFechar={() => setNovaListaAberta(false)}
+                pastaInicial={fPasta === PASTA_SEM_PASTA ? '' : estrutura.folders.some((f) => f.id === fPasta) ? fPasta : undefined}
+              />
+            ) : null}
           />
         )}
         {estrutura && listasVisiveis.length === 0 && (

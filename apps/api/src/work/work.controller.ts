@@ -10,6 +10,7 @@ import {
   TrabTarefaCreateSchema, TrabTarefaUpdateHttpSchema, TrabTarefaArchiveHttpSchema, TrabComentarioSchema,
   TrabAssumirSchema, TrabSoltarSchema, TrabApontamentoCreateSchema, TrabListaDoModeloSchema,
   TrabTarefasOrdemSchema, TrabListaExcluirSchema, TrabListaArquivarTarefasSchema,
+  TrabPastaExcluirComDestinoSchema, TrabListaMoverTarefasSchema, TrabArvoreOrdemSchema,
 } from '@mktos/shared';
 import { WorkService } from './work.service';
 import { CheckoutDeTarefaService } from './checkout-de-tarefa.service';
@@ -131,6 +132,29 @@ export class WorkController {
     return this.svc.apagarPasta(u.orgId, u.sub, id);
   }
 
+  /*
+   * Apagar pasta levando o que está dentro (A3, 21/10/2026): `{destino, esperadas}`.
+   * As listas e as pastas que aparecem dentro vão para outra pasta (`{folderId}`) ou
+   * para Sem pasta (`{semPasta: true}`) e a pasta sai, numa transação sob o cadeado
+   * da árvore. Só de gente. Ver `WorkService.excluirPastaComDestino`.
+   */
+  @Post('pastas/:id/excluir')
+  @UseGuards(AcessoAtualGuard, SoGenteNoTrabalhoGuard)
+  @RequirePermissions('tarefas.editar')
+  excluirPastaComDestino(@CurrentUser() u: JwtUser, @Param('id') id: string, @Body() body: unknown) {
+    return this.svc.excluirPastaComDestino(u.orgId, u.sub, id, TrabPastaExcluirComDestinoSchema.parse(body ?? {}));
+  }
+
+  /*
+   * A ordem de um nível da árvore (A3): `{tipo: 'pasta'|'lista', paiId, ids}` com os
+   * irmãos daquele nível na ordem nova. Arrastar e Alt+↑/↓ na árvore.
+   */
+  @Post('arvore/ordem')
+  @RequirePermissions('tarefas.editar')
+  ordenarArvore(@CurrentUser() u: JwtUser, @Body() body: unknown) {
+    return this.svc.ordenarArvore(u.orgId, u.sub, TrabArvoreOrdemSchema.parse(body));
+  }
+
   // ---- listas ----
   @Post('listas')
   @RequirePermissions('tarefas.editar')
@@ -163,6 +187,17 @@ export class WorkController {
   @RequirePermissions('tarefas.editar')
   arquivarTarefasDaLista(@CurrentUser() u: JwtUser, @Param('id') id: string, @Body() body: unknown) {
     return this.svc.arquivarTarefasDaLista(u.orgId, u.sub, id, TrabListaArquivarTarefasSchema.parse(body));
+  }
+
+  /**
+   * Mover as tarefas ativas para outra lista, o passo antes de excluir (A3).
+   * `{destinoId, esperadas}`; mesmos ids, etapa pelo nome no destino. Só de gente.
+   */
+  @Post('listas/:id/mover-tarefas')
+  @UseGuards(AcessoAtualGuard, SoGenteNoTrabalhoGuard)
+  @RequirePermissions('tarefas.editar')
+  moverTarefasDaLista(@CurrentUser() u: JwtUser, @Param('id') id: string, @Body() body: unknown) {
+    return this.svc.moverTarefasDaLista(u.orgId, u.sub, id, TrabListaMoverTarefasSchema.parse(body));
   }
 
   // Lista pronta a partir de um modelo versionado (`MODELOS_DE_LISTA`).
