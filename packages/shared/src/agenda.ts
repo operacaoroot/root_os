@@ -459,7 +459,11 @@ export interface ItemForaDoPadrao {
     propostaPor: 'vigia' | 'pessoa';
   } | null;
   /** A pendência aberta, quando o vigia deixou a decisão para gente. */
-  pendencia: { id: string; opcoes: Array<{ chave: string; rotulo: string }> } | null;
+  pendencia: {
+    id: string;
+    /** `pedeNome`: a opção "outro cliente", que manda o nome no complemento da resposta. */
+    opcoes: Array<{ chave: string; rotulo: string; pedeNome?: boolean }>;
+  } | null;
   atualizadoEm: string;
 }
 

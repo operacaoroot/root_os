@@ -6,9 +6,10 @@ import { apiGet } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 import { useModulos } from '@/components/modulos';
 import { intervaloDaGrade, prazosDeTrabalho, trabalhoHref } from '@/lib/work-projection';
-import type { TrabTarefaResumo } from '@mktos/shared';
+import type { ForaDoPadraoDaAgenda, TrabTarefaResumo } from '@mktos/shared';
 import { Botao, Card, Chip } from '../referencias/ui';
 import { MarcarReuniao } from './MarcarReuniao';
+import { ListaForaDoPadrao, SeloForaDoPadrao } from './ForaDoPadrao';
 import { GradeDaSemana, useEhCelular } from './GradeDaSemana';
 import {
   diaVizinho,
@@ -25,6 +26,7 @@ import {
 import {
   chaveDoDia,
   diaDoEvento,
+  foraDoPadraoNaTela,
   horaCurta,
   rotuloCurto,
   tomDoEvento,
@@ -105,6 +107,18 @@ export default function AgendaPage() {
   const [trilhos, setTrilhos] = useState<string[]>([]);
   const [prazos, setPrazos] = useState<TrabTarefaResumo[] | null>(null);
   const [erroPrazos, setErroPrazos] = useState<string | null>(null);
+  // O vigia da agenda (AG-01): o selo "N fora do padrão" e a lista com as propostas.
+  const [vigia, setVigia] = useState<ForaDoPadraoDaAgenda | null>(null);
+  const [erroVigia, setErroVigia] = useState<string | null>(null);
+
+  const carregarVigia = useCallback(() => {
+    if (!token) return;
+    apiGet<ForaDoPadraoDaAgenda>('/agenda/fora-do-padrao', token)
+      .then((d) => { setVigia(d); setErroVigia(null); })
+      .catch((e) => { setVigia(null); setErroVigia(e.message); });
+  }, [token]);
+
+  useEffect(() => { if (ready && token) carregarVigia(); }, [ready, token, carregarVigia]);
 
   useEffect(() => {
     const ler = () => setEstado({ ...lerEstadoDaAgenda(window.location.search, hojeNoFuso()), lido: true });
@@ -167,7 +181,7 @@ export default function AgendaPage() {
       (eventos ?? []).filter((e) => {
         if (filtro === 'cliente' && e.reuniao?.tipo !== 'cliente') return false;
         if (filtro === 'interna' && e.reuniao?.tipo !== 'interna') return false;
-        if (filtro === 'fora' && e.reuniao) return false;
+        if (filtro === 'fora' && !foraDoPadraoNaTela(e)) return false;
         return true;
       }),
     [eventos, filtro],
@@ -207,7 +221,7 @@ export default function AgendaPage() {
     return [...s].sort((a, b) => a.localeCompare(b, 'pt-BR'));
   }, [eventos]);
 
-  const foraDoPadrao = (eventos ?? []).filter((e) => !e.reuniao).length;
+  const foraDoPadrao = (eventos ?? []).filter(foraDoPadraoNaTela).length;
   const doDia = useMemo(() => {
     if (visao === 'mes') return porDia.get(diaAberto) ?? [];
     const [d] = eventosPorDia(filtrados, [diaAberto]);
@@ -230,6 +244,7 @@ export default function AgendaPage() {
             O calendário do <span className="font-medium text-text">operacao.root@gmail.com</span>, desenhado
             pelo padrão da casa. Marcar por aqui garante o padrão; marcar pelo Google, não.
           </p>
+          <div className="mt-1"><SeloForaDoPadrao dados={vigia} /></div>
         </div>
         {can('agenda.editar') && (
           <MarcarReuniao clientes={clientesConhecidos} responsaveis={responsaveisConhecidos} aoMarcar={carregar} />
@@ -241,6 +256,14 @@ export default function AgendaPage() {
           {erro} — se a conta do Google não está conectada, ela se conecta em <a className="underline" href="/conexoes">Conexões</a>.
         </div>
       )}
+
+      <ListaForaDoPadrao
+        dados={vigia}
+        erro={erroVigia}
+        token={token}
+        podeEditar={can('agenda.editar')}
+        aoMudar={carregarVigia}
+      />
 
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex flex-wrap items-center gap-2">
@@ -377,12 +400,12 @@ export default function AgendaPage() {
                         {e.reuniao.responsavel && <Chip>{e.reuniao.responsavel}</Chip>}
                       </>
                     ) : (
-                      <>
-                        <span className="text-sm">{e.title}</span>
-                        <Chip tone="warn">
-                          <span className="inline-flex items-center gap-1"><AlertTriangle size={10} /> fora do padrão</span>
-                        </Chip>
-                      </>
+                      <span className="text-sm">{e.title}</span>
+                    )}
+                    {foraDoPadraoNaTela(e) && (
+                      <Chip tone="warn">
+                        <span className="inline-flex items-center gap-1"><AlertTriangle size={10} /> fora do padrão</span>
+                      </Chip>
                     )}
                   </div>
                   <div className="flex flex-wrap items-center gap-3 text-[11px] text-muted">
@@ -433,8 +456,10 @@ export default function AgendaPage() {
 
       <p className="text-[11px] text-muted">
         Padrão da casa: <span className="font-os-mono">Reunião Online|Presencial - Cliente - Responsável</span> para
-        cliente, <span className="font-os-mono">Reunião Interna - Sócio|Todos</span> para dentro de casa. O que o
-        Google tiver em outro formato aparece em âmbar, com o título cru, para alguém corrigir.
+        cliente, <span className="font-os-mono">Reunião Interna - Sócio|Todos</span> para dentro de casa; reunião
+        online sempre com Meet. A reunião que o Google tiver fora disso aparece em âmbar, com o título cru, e o
+        vigia da agenda propõe a correção (que espera a confirmação na fila de aprovações). Compromisso que não é
+        reunião, como bloqueio e lembrete sem convidado, fica neutro.
       </p>
     </div>
   );

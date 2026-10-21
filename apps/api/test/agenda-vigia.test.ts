@@ -327,6 +327,9 @@ describe('o vigia da agenda (AG-01) acha, propõe pela porta e não repete', () 
     const inventa = porId.get('ev_inventa')!;
     expect(inventa.estado).toBe('pendencia');
     expect(inventa.pendencia!.opcoes.map((o) => o.chave)).toContain(OPCAO_NAO_E_REUNIAO);
+    // "Outro cliente" pede o nome; "não é reunião", não.
+    expect(inventa.pendencia!.opcoes.find((o) => o.rotulo.startsWith('Outro cliente'))).toMatchObject({ pedeNome: true });
+    expect(inventa.pendencia!.opcoes.find((o) => o.chave === OPCAO_NAO_E_REUNIAO)).not.toHaveProperty('pedeNome');
 
     const rotina = await prisma.rotina.findUniqueOrThrow({ where: { orgId_slug: { orgId: ORG, slug: SLUG_DA_ROTINA_DO_VIGIA } } });
     expect(rotina).toMatchObject({ tipo: 'agenda.vigia', cron: '*/15 * * * *', ativo: true, estado: 'aprendendo' });

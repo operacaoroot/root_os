@@ -418,7 +418,7 @@ export class VigiaDaAgendaService implements OnModuleInit {
       (
         await this.prisma.pendencia.findMany({
           where: { orgId, id: { in: linhas.map((l) => l.pendenciaId).filter((x): x is string => !!x) }, estado: 'aberta' },
-          select: { id: true, opcoes: true },
+          select: { id: true, opcoes: true, dados: true },
         })
       ).map((p) => [p.id, p]),
     );
@@ -448,7 +448,7 @@ export class VigiaDaAgendaService implements OnModuleInit {
               propostaPor: a.propostoPorTipo === ActorType.user ? 'pessoa' : 'vigia',
             }
           : null,
-        pendencia: p ? { id: p.id, opcoes: Array.isArray(p.opcoes) ? (p.opcoes as Array<{ chave: string; rotulo: string }>) : [] } : null,
+        pendencia: p ? { id: p.id, opcoes: opcoesDaTela(p.opcoes, p.dados) } : null,
         atualizadoEm: l.atualizadoEm.toISOString(),
       };
     });
@@ -857,6 +857,18 @@ export class VigiaDaAgendaService implements OnModuleInit {
     }
     return nomes.slice(0, TETO_DE_CANDIDATOS);
   }
+}
+
+/** As opções da pendência para a tela, com a marca de quem pede o nome do cliente ("outro cliente"). */
+function opcoesDaTela(opcoes: Prisma.JsonValue, dados: Prisma.JsonValue): Array<{ chave: string; rotulo: string; pedeNome?: boolean }> {
+  if (!Array.isArray(opcoes)) return [];
+  const doVigia = (dados && typeof dados === 'object' && !Array.isArray(dados) ? (dados as Partial<DadosDaPendenciaDaAgenda>).opcoes : undefined) ?? [];
+  const pedem = new Set(doVigia.filter((o) => o?.outro).map((o) => o.chave));
+  return (opcoes as Array<{ chave: string; rotulo: string }>).map((o) => ({
+    chave: o.chave,
+    rotulo: o.rotulo,
+    ...(pedem.has(o.chave) ? { pedeNome: true } : {}),
+  }));
 }
 
 /** Os problemas gravados, em frase. */

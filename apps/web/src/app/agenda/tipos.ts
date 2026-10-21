@@ -1,4 +1,4 @@
-import type { ReuniaoDaAgenda } from '@mktos/shared';
+import { conferirEvento, type ReuniaoDaAgenda } from '@mktos/shared';
 
 import { FUSO_DA_AGENDA, noFuso } from './semana';
 
@@ -60,9 +60,38 @@ export function diaDoEvento(e: EventoDaAgenda): string | null {
 export const horaCurta = (iso: string | null): string =>
   iso ? new Date(iso).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', timeZone: FUSO_DA_AGENDA }) : '';
 
-/** As cores por natureza do compromisso. Fora do padrão é warn de propósito. */
+/**
+ * A conferência do evento pela MESMA régua do vigia da agenda (AG-01,
+ * `conferirEvento` no shared): é reunião? está no padrão estrito (forma
+ * canônica, responsável da lista, online com Meet)? A tela e o vigia não podem
+ * discordar sobre o que está fora.
+ */
+export function conferenciaDoEvento(e: EventoDaAgenda) {
+  return conferirEvento({
+    titulo: e.title,
+    convidados: e.attendees ?? [],
+    organizador: e.organizador,
+    meet: e.meet,
+    local: e.location,
+    descricao: e.description,
+    status: e.status,
+  });
+}
+
+/** Reunião fora do padrão da casa. Compromisso que não é reunião (bloqueio, lembrete) nunca está "fora". */
+export function foraDoPadraoNaTela(e: EventoDaAgenda): boolean {
+  const c = conferenciaDoEvento(e);
+  return c.reuniao && !c.noPadrao;
+}
+
+/**
+ * As cores por natureza do compromisso. Reunião fora do padrão é warn de
+ * propósito; o que não é reunião fica neutro (desde o vigia, 21/10/2026: antes
+ * "Academia" aparecia em âmbar como se fosse reunião mal escrita).
+ */
 export function tomDoEvento(e: EventoDaAgenda): 'brand' | 'good' | 'muted' | 'warn' {
-  if (!e.reuniao) return 'warn';
+  if (foraDoPadraoNaTela(e)) return 'warn';
+  if (!e.reuniao) return 'muted';
   if (e.reuniao.tipo === 'interna') return 'muted';
   return e.reuniao.modalidade === 'online' ? 'brand' : 'good';
 }
