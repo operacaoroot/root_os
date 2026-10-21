@@ -219,6 +219,8 @@ export const PREFIXOS_DA_ESPINHA: readonly string[] = [
   'sessions',
   'tenants',
   'users',
+  // o vigia da agenda (AG-01, rodada dos agentes, 21/10/2026): a agenda da Root, como o `google`, não é módulo
+  'agenda',
 ] as const;
 
 const ESPINHA = new Set<string>(PREFIXOS_DA_ESPINHA);

@@ -47,6 +47,7 @@ import { PendenciasModule } from './pendencias/pendencias.module';
 import { ClientesModule } from './clientes/clientes.module';
 import { ComercialModule } from './comercial/comercial.module';
 import { AnexosDaTarefaModule } from './work/anexos/anexos.module';
+import { AgendaModule } from './agenda/agenda.module';
 
 @Module({
   imports: [
@@ -192,6 +193,12 @@ import { AnexosDaTarefaModule } from './work/anexos/anexos.module';
     // O anexo na tarefa (rodada dos agentes, TR-06): `/api/trabalho/tarefas/:id/anexos`.
     // Sem esta linha as rotas de anexo respondem 404 e nada acusa.
     AnexosDaTarefaModule,
+    // O VIGIA DA AGENDA (AG-01, rodada dos agentes, 21/10/2026): a rotina
+    // `agenda.vigia` e as rotas `/api/agenda/*` da tela. Depois de
+    // `RoutinesModule` (o registro de executores) e de `PendenciasModule`
+    // (o tratador da pendência "qual é o cliente?"). Sem esta linha a rotina
+    // fica órfã e `GET /api/agenda/fora-do-padrao` responde 404.
+    AgendaModule,
   ],
   controllers: [HealthController],
 })
