@@ -5457,9 +5457,21 @@ export const MODELOS_DE_LISTA = {
 export interface ListaSugerida { nome: string; modelo: ChaveDeModeloDeLista | null }
 export interface PastaSugerida { nome: string; listas: readonly ListaSugerida[] }
 
+/*
+ * Rodada de produção 1 (21/10/2026, a ata do Rodrigo): Gestão leva Administrativo,
+ * Financeiro e Pessoas; a pasta "Administrativa" saiu do desenho e nunca é recriada.
+ * Lista de mesmo nome que já existe SOLTA (sem pasta) é movida para a pasta sugerida
+ * em vez de ganhar uma gêmea: mover preserva tarefas e ids.
+ */
 export const ESTRUTURA_SUGERIDA: readonly PastaSugerida[] = [
-  { nome: 'Administrativa', listas: [] },
-  { nome: 'Gestão', listas: [] },
+  {
+    nome: 'Gestão',
+    listas: [
+      { nome: 'Administrativo', modelo: null },
+      { nome: 'Financeiro', modelo: null },
+      { nome: 'Pessoas', modelo: null },
+    ],
+  },
   {
     nome: 'Clientes',
     listas: [
@@ -5474,6 +5486,8 @@ export const ESTRUTURA_SUGERIDA: readonly PastaSugerida[] = [
 export interface TrabEstruturaSugeridaResultado {
   criadas: { pastas: string[]; listas: string[] };
   jaExistiam: { pastas: string[]; listas: string[] };
+  /** Listas soltas de mesmo nome levadas para a pasta sugerida (`Pasta / Lista`). Ausente na API antiga. */
+  movidas?: { listas: string[] };
 }
 
 export type ChaveDeModeloDeLista = keyof typeof MODELOS_DE_LISTA;

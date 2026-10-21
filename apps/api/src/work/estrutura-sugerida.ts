@@ -20,7 +20,11 @@ import { Prisma, WorkFieldType, WorkStatusType } from '@prisma/client';
  * IDEMPOTENTE PELO NOME: pasta de topo (sem mãe) com o mesmo nome, sem
  * diferença de maiúscula e espaço, é a mesma pasta — esteja ou não num espaço.
  * Lista com o mesmo nome dentro dessa pasta é a mesma lista. O que existe não é
- * renomeado, movido nem reetapado. O cadeado `work-arvore:<empresa>` (o mesmo de
+ * renomeado nem reetapado. A ÚNICA mudança em coisa que já existe (rodada de
+ * produção 1, 21/10/2026): lista SOLTA (sem pasta e sem espaço) com o nome de uma
+ * lista sugerida é movida para a pasta sugerida em vez de ganhar uma gêmea; mover
+ * preserva tarefas, etapas e ids. Pasta e lista arquivadas (`arquivadaEm`) não
+ * contam: não são a pasta sugerida nem viram destino. O cadeado `work-arvore:<empresa>` (o mesmo de
  * mover pasta) faz dois cliques ao mesmo tempo virarem uma criação só.
  */
 
@@ -80,32 +84,50 @@ export async function criarEstruturaSugerida(
   db: Db, orgId: string, estrutura: readonly PastaSugerida[] = ESTRUTURA_SUGERIDA,
 ): Promise<TrabEstruturaSugeridaResultado> {
   await db.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`work-arvore:${orgId}`}))`;
-  const r: TrabEstruturaSugeridaResultado = { criadas: { pastas: [], listas: [] }, jaExistiam: { pastas: [], listas: [] } };
+  const r: TrabEstruturaSugeridaResultado = {
+    criadas: { pastas: [], listas: [] }, jaExistiam: { pastas: [], listas: [] }, movidas: { listas: [] },
+  };
 
   const deTopo = await db.workFolder.findMany({
     where: { orgId, parentId: null },
-    select: { id: true, name: true, order: true },
+    select: { id: true, name: true, order: true, arquivadaEm: true },
     orderBy: [{ order: 'asc' }, { name: 'asc' }],
   });
   let proximaOrdem = deTopo.reduce((m, p) => Math.max(m, p.order + 1), 0);
 
   for (const sugerida of estrutura) {
-    let pasta = deTopo.find((p) => chaveDoNome(p.name) === chaveDoNome(sugerida.nome));
+    let pasta = deTopo.find((p) => !p.arquivadaEm && chaveDoNome(p.name) === chaveDoNome(sugerida.nome));
+    if (!pasta && deTopo.some((p) => p.arquivadaEm && chaveDoNome(p.name) === chaveDoNome(sugerida.nome))) {
+      // Arquivada de propósito: não se recria ao lado (o nome é único entre irmãs) nem se desarquiva sozinha.
+      r.jaExistiam.pastas.push(`${sugerida.nome} (arquivada)`);
+      continue;
+    }
     if (pasta) {
       r.jaExistiam.pastas.push(pasta.name);
     } else {
       const criada = await db.workFolder.create({ data: { orgId, name: sugerida.nome, order: proximaOrdem++ } });
-      pasta = { id: criada.id, name: criada.name, order: criada.order };
+      pasta = { id: criada.id, name: criada.name, order: criada.order, arquivadaEm: null };
       deTopo.push(pasta);
       r.criadas.pastas.push(criada.name);
     }
 
-    const listas = await db.workList.findMany({ where: { orgId, folderId: pasta.id }, select: { name: true, order: true } });
+    const listas = await db.workList.findMany({ where: { orgId, folderId: pasta.id, arquivadaEm: null }, select: { name: true, order: true } });
     let ordemDaLista = listas.reduce((m, l) => Math.max(m, l.order + 1), 0);
     for (const l of sugerida.listas) {
       const existente = listas.find((x) => chaveDoNome(x.name) === chaveDoNome(l.nome));
       if (existente) {
         r.jaExistiam.listas.push(`${pasta.name} / ${existente.name}`);
+        continue;
+      }
+      const solta = (await db.workList.findMany({
+        where: { orgId, folderId: null, spaceId: null, arquivadaEm: null },
+        select: { id: true, name: true },
+        orderBy: [{ order: 'asc' }, { createdAt: 'asc' }],
+      })).find((x) => chaveDoNome(x.name) === chaveDoNome(l.nome));
+      if (solta) {
+        await db.workList.update({ where: { id: solta.id }, data: { folderId: pasta.id, order: ordemDaLista++ } });
+        listas.push({ name: solta.name, order: ordemDaLista - 1 });
+        r.movidas!.listas.push(`${pasta.name} / ${solta.name}`);
         continue;
       }
       const pai = { folderId: pasta.id, spaceId: null };

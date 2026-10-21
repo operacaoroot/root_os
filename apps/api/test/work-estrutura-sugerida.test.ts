@@ -41,8 +41,11 @@ const EU = 'u-estrutura-sugerida';
 exigirBancoDescartavel(URL ?? '', 'ESCREVE nele (pastas, listas e auditoria)');
 
 describe('estrutura sugerida: o dado e a permissão (sem banco)', () => {
-  it('três pastas de topo, e as três listas dentro de Clientes', () => {
-    expect(ESTRUTURA_SUGERIDA.map((p) => p.nome)).toEqual(['Administrativa', 'Gestão', 'Clientes']);
+  it('duas pastas de topo (Gestão e Clientes, sem Administrativa desde 21/10), três listas em cada', () => {
+    expect(ESTRUTURA_SUGERIDA.map((p) => p.nome)).toEqual(['Gestão', 'Clientes']);
+    expect(ESTRUTURA_SUGERIDA[0].listas.map((l) => [l.nome, l.modelo])).toEqual([
+      ['Administrativo', null], ['Financeiro', null], ['Pessoas', null],
+    ]);
     const clientes = ESTRUTURA_SUGERIDA.find((p) => p.nome === 'Clientes')!;
     expect(clientes.listas.map((l) => [l.nome, l.modelo])).toEqual([
       ['Esteira de clientes', 'esteira-de-clientes'],
@@ -124,16 +127,18 @@ describe.skipIf(!URL)('estrutura sugerida: contra o Postgres', () => {
     await prisma.$disconnect();
   });
 
-  it('a primeira chamada cria as 3 pastas e as 3 listas, com as etapas de cada modelo', async () => {
+  it('a primeira chamada cria as 2 pastas e as 6 listas, com as etapas de cada modelo', async () => {
     const r = await svc.criarEstruturaSugerida(ORG, EU);
-    expect(r.criadas.pastas).toEqual(['Administrativa', 'Gestão', 'Clientes']);
+    expect(r.criadas.pastas).toEqual(['Gestão', 'Clientes']);
     expect(r.criadas.listas).toEqual([
+      'Gestão / Administrativo', 'Gestão / Financeiro', 'Gestão / Pessoas',
       'Clientes / Esteira de clientes', 'Clientes / Onboarding de cliente', 'Clientes / Execução',
     ]);
     expect(r.jaExistiam).toEqual({ pastas: [], listas: [] });
+    expect(r.movidas).toEqual({ listas: [] });
 
     const e = await svc.estrutura(ORG);
-    expect(e.folders.map((f) => f.name)).toEqual(['Administrativa', 'Gestão', 'Clientes']);
+    expect(e.folders.map((f) => f.name)).toEqual(['Gestão', 'Clientes']);
     expect(e.folders.every((f) => f.parentId === null && f.spaceId === null)).toBe(true);
     const clientes = e.folders.find((f) => f.name === 'Clientes')!;
     expect(clientes.lists.map((l) => l.name)).toEqual(['Esteira de clientes', 'Onboarding de cliente', 'Execução']);
@@ -145,7 +150,7 @@ describe.skipIf(!URL)('estrutura sugerida: contra o Postgres', () => {
     const esteira = clientes.lists.find((l) => l.name === 'Esteira de clientes')!;
     expect(esteira.fields.map((f) => f.name)).toEqual(MODELOS_DE_LISTA['esteira-de-clientes'].campos.map((c) => c.name));
     expect(esteira.statuses.find((s) => s.name === 'Implantação')?.limite).toBe(2);
-    expect(e.folders.find((f) => f.name === 'Administrativa')!.lists).toEqual([]);
+    expect(e.folders.find((f) => f.name === 'Gestão')!.lists.map((l) => l.name)).toEqual(['Administrativo', 'Financeiro', 'Pessoas']);
 
     const auditoria = await prisma.auditLog.findMany({ where: { orgId: ORG, action: 'work.structure.suggested' } });
     expect(auditoria).toHaveLength(1);
@@ -157,35 +162,67 @@ describe.skipIf(!URL)('estrutura sugerida: contra o Postgres', () => {
     const antes = { pastas: await prisma.workFolder.count({ where: { orgId: ORG } }), listas: await prisma.workList.count({ where: { orgId: ORG } }), etapas: await prisma.workStatus.count({ where: { orgId: ORG } }) };
     const r = await svc.criarEstruturaSugerida(ORG, EU);
     expect(r.criadas).toEqual({ pastas: [], listas: [] });
-    expect(r.jaExistiam.pastas).toEqual(['Administrativa', 'Gestão', 'Clientes']);
-    expect(r.jaExistiam.listas).toHaveLength(3);
+    expect(r.jaExistiam.pastas).toEqual(['Gestão', 'Clientes']);
+    expect(r.jaExistiam.listas).toHaveLength(6);
+    expect(r.movidas).toEqual({ listas: [] });
     expect({ pastas: await prisma.workFolder.count({ where: { orgId: ORG } }), listas: await prisma.workList.count({ where: { orgId: ORG } }), etapas: await prisma.workStatus.count({ where: { orgId: ORG } }) }).toEqual(antes);
-    expect(antes).toEqual({ pastas: 3, listas: 3, etapas: 7 + 7 + 3 });
+    expect(antes).toEqual({ pastas: 2, listas: 6, etapas: 3 + 3 + 3 + 7 + 7 + 3 });
   });
 
   it('duas chamadas ao mesmo tempo criam uma estrutura só (cadeado da árvore)', async () => {
     await Promise.all([svc.criarEstruturaSugerida(ORG, EU), svc.criarEstruturaSugerida(ORG, EU)]);
-    expect(await prisma.workFolder.count({ where: { orgId: ORG } })).toBe(3);
-    expect(await prisma.workList.count({ where: { orgId: ORG } })).toBe(3);
+    expect(await prisma.workFolder.count({ where: { orgId: ORG } })).toBe(2);
+    expect(await prisma.workList.count({ where: { orgId: ORG } })).toBe(6);
   });
 
   it('o que já existe não é renomeado nem duplicado: só o que falta nasce', async () => {
     const minha = await svc.criarPasta(ORG, EU, { name: 'clientes' });
     await svc.criarLista(ORG, EU, { folderId: minha.id, name: 'Execução' });
     const r = await svc.criarEstruturaSugerida(ORG, EU);
-    expect(r.criadas.pastas).toEqual(['Administrativa', 'Gestão']);
+    expect(r.criadas.pastas).toEqual(['Gestão']);
     expect(r.jaExistiam.pastas).toEqual(['clientes']);
-    expect(r.criadas.listas).toEqual(['clientes / Esteira de clientes', 'clientes / Onboarding de cliente']);
+    expect(r.criadas.listas).toEqual([
+      'Gestão / Administrativo', 'Gestão / Financeiro', 'Gestão / Pessoas',
+      'clientes / Esteira de clientes', 'clientes / Onboarding de cliente',
+    ]);
     expect(r.jaExistiam.listas).toEqual(['clientes / Execução']);
     const pasta = await prisma.workFolder.findUniqueOrThrow({ where: { id: minha.id } });
     expect(pasta.name).toBe('clientes');
     expect(await prisma.workList.count({ where: { orgId: ORG, folderId: minha.id } })).toBe(3);
   });
 
+  it('lista SOLTA de mesmo nome vai para a pasta sugerida (mesmo id, mesmas etapas); a segunda passada não mexe', async () => {
+    const solta = await svc.criarLista(ORG, EU, { name: 'administrativo' });
+    const etapasAntes = await prisma.workStatus.findMany({ where: { listId: solta.id }, select: { id: true } });
+    const r = await svc.criarEstruturaSugerida(ORG, EU);
+    expect(r.movidas).toEqual({ listas: ['Gestão / administrativo'] });
+    expect(r.criadas.listas).not.toContain('Gestão / Administrativo');
+    const depois = await prisma.workList.findUniqueOrThrow({ where: { id: solta.id }, include: { folder: true } });
+    expect(depois.folder?.name).toBe('Gestão');
+    expect(depois.name).toBe('administrativo');
+    expect(await prisma.workStatus.findMany({ where: { listId: solta.id }, select: { id: true } })).toEqual(etapasAntes);
+    expect(await prisma.workList.count({ where: { orgId: ORG, name: { equals: 'administrativo', mode: 'insensitive' } } })).toBe(1);
+    const segunda = await svc.criarEstruturaSugerida(ORG, EU);
+    expect(segunda.movidas).toEqual({ listas: [] });
+    expect(segunda.criadas).toEqual({ pastas: [], listas: [] });
+  });
+
+  it('a pasta Administrativa nunca é recriada, e pasta ou lista arquivada não conta', async () => {
+    await prisma.workFolder.create({ data: { orgId: ORG, name: 'Gestão', arquivadaEm: new Date() } });
+    const arquivada = await prisma.workList.create({ data: { orgId: ORG, name: 'Financeiro', arquivadaEm: new Date() } });
+    const r = await svc.criarEstruturaSugerida(ORG, EU);
+    expect(r.criadas.pastas).toEqual(['Clientes']);
+    expect(r.criadas.pastas).not.toContain('Administrativa');
+    // a Gestão arquivada não é a sugerida e não se recria ao lado (nome único entre irmãs) nem se desarquiva sozinha
+    expect(r.jaExistiam.pastas).toEqual(['Gestão (arquivada)']);
+    expect(r.movidas).toEqual({ listas: [] });
+    expect((await prisma.workList.findUniqueOrThrow({ where: { id: arquivada.id } })).folderId).toBeNull();
+  });
+
   it('outra empresa fica isolada: não recebe nada e não conta como existente', async () => {
     await svc.criarPasta(VIZINHA, EU, { name: 'Clientes' });
     const r = await svc.criarEstruturaSugerida(ORG, EU);
-    expect(r.criadas.pastas).toEqual(['Administrativa', 'Gestão', 'Clientes']);
+    expect(r.criadas.pastas).toEqual(['Gestão', 'Clientes']);
     expect(await prisma.workFolder.count({ where: { orgId: VIZINHA } })).toBe(1);
     expect(await prisma.workList.count({ where: { orgId: VIZINHA } })).toBe(0);
     const daVizinha = await svc.estrutura(VIZINHA);

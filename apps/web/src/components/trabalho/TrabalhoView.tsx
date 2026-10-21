@@ -3148,9 +3148,11 @@ function BarraDePastas({ pastas, temSoltas, atual, semPastas, editable, token, o
     apiPost<TrabEstruturaSugeridaResultado>('/trabalho/estrutura/sugerida', {}, token)
       .then((r) => {
         const criadas = r ? r.criadas.pastas.length + r.criadas.listas.length : 0;
+        const movidas = r?.movidas?.listas.length ?? 0;
+        const textoMovidas = movidas > 0 ? ` ${movidas} lista(s) solta(s) foram para a pasta sugerida, com as tarefas.` : '';
         setAviso(criadas > 0
-          ? `Criadas ${r.criadas.pastas.length} pasta(s) e ${r.criadas.listas.length} lista(s). Renomeie ou mova o que quiser.`
-          : 'A estrutura sugerida já existia; nada foi criado.');
+          ? `Criadas ${r.criadas.pastas.length} pasta(s) e ${r.criadas.listas.length} lista(s).${textoMovidas} Renomeie ou mova o que quiser.`
+          : movidas > 0 ? textoMovidas.trim() : 'A estrutura sugerida já existia; nada foi criado.');
         onMudou();
       })
       .catch((e) => onErro(e.message))

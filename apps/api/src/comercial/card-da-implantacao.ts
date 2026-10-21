@@ -261,8 +261,11 @@ export async function abrirCardDaImplantacao(db: Db, orgId: string, d: DadosDoCa
     };
   }
 
-  const estrutura = await criarEstruturaSugerida(db, orgId, ESTRUTURA_SUGERIDA);
-  const pasta = (await db.workFolder.findMany({ where: { orgId, parentId: null }, select: { id: true, name: true } }))
+  // Só a pasta da implantação (21/10/2026): abrir um card não cria nem move as listas de Gestão.
+  const estrutura = await criarEstruturaSugerida(
+    db, orgId, ESTRUTURA_SUGERIDA.filter((p) => chaveDoNome(p.nome) === chaveDoNome(PASTA_DA_IMPLANTACAO)),
+  );
+  const pasta = (await db.workFolder.findMany({ where: { orgId, parentId: null, arquivadaEm: null }, select: { id: true, name: true } }))
     .find((p) => chaveDoNome(p.name) === chaveDoNome(PASTA_DA_IMPLANTACAO));
   if (!pasta) throw new Error(`a pasta ${PASTA_DA_IMPLANTACAO} não existe e a estrutura sugerida não a criou`);
   const lista = (await db.workList.findMany({ where: { orgId, folderId: pasta.id }, select: { id: true, name: true } }))
