@@ -215,7 +215,7 @@ export function LeadPainel({ estado }: { estado: EstadoDoPainel }) {
                 </span>
                 <span className="text-muted">dono: <span className="text-text">{f.dono?.nome ?? AUSENTE}</span></span>
                 {/* CO-10 (rodada dos agentes): a pasta do cliente no Drive, ou "Criar pasta" (de novo, se falhou). */}
-                {f.pasta && <PastaDoCliente partnerId={f.pasta.partnerId} url={f.pasta.url} erro={f.pasta.erro} compacto />}
+                {f.pasta?.partnerId && <PastaDoCliente partnerId={f.pasta.partnerId} url={f.pasta.url} erro={f.pasta.erro} compacto />}
               </>
             ) : (
               <span className="h-5 w-48 animate-pulse rounded bg-surface-2 motion-reduce:animate-none" aria-hidden />
