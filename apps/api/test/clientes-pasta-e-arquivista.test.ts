@@ -144,8 +144,10 @@ describe.skipIf(!URL)('TR-04 e TR-05 contra o banco, pela porta', { timeout: 60_
     for (const [id, slug] of [[ORG, 'a4-pasta'], [ORG_B, 'a4-pasta-b']]) {
       await prisma.org.upsert({ where: { id }, create: { id, name: `A4 ${slug}`, slug }, update: {} });
     }
-    const papel = await prisma.role.upsert({ where: { orgId_key: { orgId: ORG, key: 'admin_master' } }, create: { orgId: ORG, key: 'admin_master', name: 'Admin' }, update: {}, select: { id: true } });
-    const papelL = await prisma.role.upsert({ where: { orgId_key: { orgId: ORG, key: 'gestor_marketing' } }, create: { orgId: ORG, key: 'gestor_marketing', name: 'Gestor' }, update: {}, select: { id: true } });
+    // Classificar à mão exige `tarefas.editar` (relida no banco).
+    const comPermissao = { permissions: { connectOrCreate: [{ where: { key: 'tarefas.editar' }, create: { key: 'tarefas.editar' } }] } };
+    const papel = await prisma.role.upsert({ where: { orgId_key: { orgId: ORG, key: 'admin_master' } }, create: { orgId: ORG, key: 'admin_master', name: 'Admin', ...comPermissao }, update: comPermissao, select: { id: true } });
+    const papelL = await prisma.role.upsert({ where: { orgId_key: { orgId: ORG, key: 'gestor_marketing' } }, create: { orgId: ORG, key: 'gestor_marketing', name: 'Gestor', ...comPermissao }, update: comPermissao, select: { id: true } });
     for (const [u, r] of [[PEDRO, papel.id], [LUCAS, papelL.id]] as const) {
       await prisma.user.upsert({
         where: { id: u.id },
@@ -454,14 +456,17 @@ describe.skipIf(!URL)('TR-04 e TR-05 contra o banco, pela porta', { timeout: 60_
     expect(drive.escritas.length).toBe(escritas);
 
     await zerarVolume();
-    await na(() => pendencias.responder(ORG, pend.id, LUCAS.id, '07-evidencias'));
+    // REVISÃO: a pendência é de quem mandou o arquivo (PEDRO); outra pessoa não a responde.
+    expect(pend.paraUsuarioId).toBe(PEDRO.id);
+    await expect(na(() => pendencias.responder(ORG, pend.id, LUCAS.id, '07-evidencias'))).rejects.toMatchObject({ status: 403 });
+    await na(() => pendencias.responder(ORG, pend.id, PEDRO.id, '07-evidencias'));
     const linha = await prisma.arquivoDoCliente.findFirstOrThrow({ where: { orgId: ORG, partnerId: c.id } });
     expect(linha.estado).toBe('aguardando_aprovacao');
     expect(linha.subpasta).toBe('07-evidencias');
     // Quem escolheu propôs: quem confirma é a outra pessoa.
     await zerarVolume();
-    await na(() => approvals.confirm(ORG, linha.approvalId!, PEDRO));
-    await na(() => acoes.executarAprovada(ORG, linha.approvalId!, PEDRO.id));
+    await na(() => approvals.confirm(ORG, linha.approvalId!, LUCAS));
+    await na(() => acoes.executarAprovada(ORG, linha.approvalId!, LUCAS.id));
     const enviado = await prisma.arquivoDoCliente.findUniqueOrThrow({ where: { id: linha.id } });
     expect(enviado.estado).toBe('enviado');
     expect(drive.nos.get(drive.nos.get(enviado.driveArquivoId!)!.pais[0])!.nome).toBe('07-evidencias');

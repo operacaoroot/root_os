@@ -185,7 +185,10 @@ export class VigiaDaAgendaService implements OnModuleInit {
   }
 
   onModuleInit(): void {
-    this.registroDePendencias.aoResponder(TIPO_DA_PENDENCIA_DA_AGENDA, (r) => this.aoResponder(r), 'VigiaDaAgendaService');
+    // A resposta propõe a correção pela porta: exige o mesmo `agenda.editar` da rota de padronizar.
+    this.registroDePendencias.aoResponder(TIPO_DA_PENDENCIA_DA_AGENDA, (r) => this.aoResponder(r), 'VigiaDaAgendaService', {
+      permissao: 'agenda.editar',
+    });
   }
 
   // ------------------------------------------------------------------ rotina

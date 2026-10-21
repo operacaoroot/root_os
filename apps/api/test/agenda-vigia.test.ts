@@ -58,6 +58,8 @@ const ORG = `org-agenda-${MARCA}`;
 const CASA = `casa-${MARCA}.teste`;
 const PEDRO = { id: `pedro-${MARCA}`, papeis: ['gestor_marketing'] };
 const LUCAS = { id: `lucas-${MARCA}`, papeis: ['gestor_marketing'] };
+/** Gente da casa SEM `agenda.editar`. */
+const ANA = `ana-${MARCA}`;
 const ANDRADE = `andrade-${MARCA}.com.br`;
 const FIXTURES = join(__dirname, '..', '..', '..', 'homolog', 'fixtures', 'stub');
 
@@ -115,7 +117,15 @@ describe('o vigia da agenda (AG-01) acha, propõe pela porta e não repete', () 
     process.env.GATEWAY_MODO = 'impor';
     prisma = new PrismaClient({ datasources: { db: { url: URL } } });
     await prisma.org.create({ data: { id: ORG, name: `Agenda ${MARCA}`, slug: `agenda-${MARCA}` } });
-    const papel = await prisma.role.create({ data: { orgId: ORG, key: 'gestor_marketing', name: 'Gestor de Marketing' }, select: { id: true } });
+    // Responder a pendência da agenda exige `agenda.editar` (relida no banco).
+    const papel = await prisma.role.create({
+      data: { orgId: ORG, key: 'gestor_marketing', name: 'Gestor de Marketing', permissions: { connectOrCreate: [{ where: { key: 'agenda.editar' }, create: { key: 'agenda.editar' } }] } },
+      select: { id: true },
+    });
+    const semAgenda = await prisma.role.create({ data: { orgId: ORG, key: 'leitura', name: 'Só leitura' }, select: { id: true } });
+    await prisma.user.create({
+      data: { id: ANA, orgId: ORG, email: `ana@${CASA}`, name: 'Ana Teste', passwordHash: 'sem-senha-util', roles: { connect: { id: semAgenda.id } } },
+    });
     for (const [u, nome] of [[PEDRO, 'Pedro Teste'], [LUCAS, 'Lucas Teste']] as const) {
       await prisma.user.create({
         data: { id: u.id, orgId: ORG, email: `${nome.split(' ')[0].toLowerCase()}@${CASA}`, name: nome, passwordHash: 'sem-senha-util', roles: { connect: { id: papel.id } } },
@@ -378,6 +388,11 @@ describe('o vigia da agenda (AG-01) acha, propõe pela porta e não repete', () 
     const opcoes = p.opcoes as Array<{ chave: string; rotulo: string }>;
     const outro = opcoes.find((o) => o.rotulo.startsWith('Outro cliente · Pedro'))!;
     expect(outro).toBeTruthy();
+
+    // REVISÃO: quem não tem `agenda.editar` ouve 403 e a pendência não muda.
+    await expect(naEmpresa(() => pendencias.responder(ORG, p.id, ANA, outro.chave, 'Fornecedor Novo'))).rejects.toMatchObject({ status: 403 });
+    await expect(naEmpresa(() => pendencias.descartar(ORG, p.id, ANA))).rejects.toMatchObject({ status: 403 });
+    expect((await prisma.pendencia.findUniqueOrThrow({ where: { id: p.id } })).estado).toBe('aberta');
 
     // Sem o nome no complemento, a pendência continua aberta.
     await expect(naEmpresa(() => pendencias.responder(ORG, p.id, LUCAS.id, outro.chave))).rejects.toThrow(/nome do cliente/);

@@ -69,6 +69,8 @@ export class CobrancaDeTarefasService implements OnModuleInit {
         });
       },
       'CobrancaDeTarefasService',
+      // A cobrança só registra a resposta: basta ver as tarefas.
+      { permissao: 'tarefas.ver' },
     );
   }
 

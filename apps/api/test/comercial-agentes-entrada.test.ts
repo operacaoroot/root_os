@@ -98,7 +98,8 @@ describe.skipIf(!URL)('a entrada de leads dos agentes do comercial, contra o Pos
     prisma = new PrismaClient({ datasources: { db: { url: URL } } });
     const p = prisma as unknown as PrismaService;
     await prisma.org.create({ data: { id: ORG, name: `Agentes A2 entrada ${MARCA}`, slug: `a2-entrada-${MARCA}` } });
-    const papel = await prisma.role.create({ data: { orgId: ORG, key: 'admin_master', name: 'Admin' }, select: { id: true } });
+    // Responder a triagem do WhatsApp exige `leads.editar` (relida no banco).
+    const papel = await prisma.role.create({ data: { orgId: ORG, key: 'admin_master', name: 'Admin', permissions: { connectOrCreate: [{ where: { key: 'leads.editar' }, create: { key: 'leads.editar' } }] } }, select: { id: true } });
     pessoaId = (await prisma.user.create({ data: { orgId: ORG, email: `lucas-${MARCA}@a2.teste`, name: 'Lucas Exemplo', passwordHash: await bcrypt.hash('x', 4), roles: { connect: { id: papel.id } } }, select: { id: true } })).id;
 
     const audit = new AuditService(p);

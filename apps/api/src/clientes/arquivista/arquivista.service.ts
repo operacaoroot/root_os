@@ -119,7 +119,10 @@ export class ArquivistaService implements ArquivistaDoClientePort, OnModuleInit 
       { 'drive.arquivo.enviar': (a, org, ctx) => this.efeitoEnviar(a, org, ctx) },
       'ArquivistaService',
     );
-    this.registroDePendencias.aoResponder(TIPO_DA_PENDENCIA, (r) => this.aoClassificarAMao(r), 'ArquivistaService');
+    // Classificar à mão manda o arquivo à pasta do cliente: o mesmo `tarefas.editar` do anexo.
+    this.registroDePendencias.aoResponder(TIPO_DA_PENDENCIA, (r) => this.aoClassificarAMao(r), 'ArquivistaService', {
+      permissao: 'tarefas.editar',
+    });
     this.pastas.quandoAPastaNascer(async (orgId, partnerId) => {
       await this.esvaziarFila(orgId, partnerId);
     }, 'ArquivistaService');

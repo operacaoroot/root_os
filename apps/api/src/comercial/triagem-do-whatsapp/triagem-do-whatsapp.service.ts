@@ -101,7 +101,10 @@ export class TriagemDoWhatsappService implements OnModuleInit {
   ) {}
 
   onModuleInit(): void {
-    this.registroDePendencias.aoResponder(TIPO_DA_PENDENCIA_DA_TRIAGEM, (r) => this.aoResponder(r), 'comercial/triagem-do-whatsapp');
+    // A resposta pode criar lead e mexer no fio do comercial: exige `leads.editar`.
+    this.registroDePendencias.aoResponder(TIPO_DA_PENDENCIA_DA_TRIAGEM, (r) => this.aoResponder(r), 'comercial/triagem-do-whatsapp', {
+      permissao: 'leads.editar',
+    });
   }
 
   /** As duas chaves: o provedor `evolution` e a nota `comercial.whatsapp.triagem` = `ligada`. */
