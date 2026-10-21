@@ -31,6 +31,7 @@ import type { PrismaService } from '../src/prisma/prisma.service';
 import type { ToolGateway } from '../src/gateway/tool-gateway.service';
 import type { ModulosService } from '../src/tenants/modulos.service';
 import { exigirBancoDescartavel } from './banco-de-teste';
+import { tarefaDeListaVisivel } from '../src/work/arquivadas';
 
 /*
  * ==========================================================================
@@ -772,8 +773,10 @@ describe('A7: o que é uma tarefa PARADA', () => {
     await b.svc.montar(SESSAO);
     const w = b.consultas.find((c) => c.modelo === 'workTask.findMany')!.where;
     const ands = w.AND as { OR: unknown[] }[];
-    expect(ands).toHaveLength(2);
+    expect(ands).toHaveLength(3);
     expect(ands[1].OR).toHaveLength(3);
+    // Lista ou pasta arquivada (21/10/2026) também sai no banco.
+    expect(ands[2]).toEqual(tarefaDeListaVisivel());
     // Tarefa arquivada e status encerrado não esperam ninguém.
     expect(w.archived).toBe(false);
     expect(w.status).toEqual({ type: { not: 'closed' } });

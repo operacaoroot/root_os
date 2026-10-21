@@ -190,14 +190,15 @@ describe('U2: os filtros do Trabalho num botão só', () => {
 });
 
 describe('U2: a Implantação com o mesmo par', () => {
-  it('as vistas são da implantação e os filtros são responsável, cliente, etapa, atrasadas e busca', async () => {
+  it('as vistas são da implantação e os filtros são responsável, cliente, etapa, atrasadas, vazios e busca', async () => {
     render(<TrabalhoView modo="implantacao" />);
     await waitFor(() => expect(get.mock.calls.some(([r]) => String(r) === '/trabalho/vistas?tela=implantacao')).toBe(true));
     expect(screen.getByTestId('implantacao-vistas')).toBeInTheDocument();
     fireEvent.click(screen.getByTestId('implantacao-filtros-botao'));
     const painel = screen.getByRole('dialog', { name: 'Filtros' });
     const rotulos = [...painel.querySelectorAll('label')].map((l) => l.textContent?.trim());
-    expect(rotulos).toEqual(['Responsável', 'Cliente', 'Etapa', 'Só as atrasadas', 'Busca']);
+    // "Ocultar status vazios" (P4, 21/10/2026) vale também na Implantação.
+    expect(rotulos).toEqual(['Responsável', 'Cliente', 'Etapa', 'Só as atrasadas', 'Ocultar status vazios', 'Busca']);
     expect(within(painel).getByRole('option', { name: 'Imersão' })).toBeInTheDocument();
     fireEvent.click(screen.getByTestId('implantacao-filtros-escopo'));
     expect(query().get('escopo')).toBe('atrasados');

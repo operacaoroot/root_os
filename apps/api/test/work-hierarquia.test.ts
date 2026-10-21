@@ -68,7 +68,10 @@ describe('trabalho: o que o serviço confere sem banco', () => {
     const audit = new AuditService(prisma);
     const svc = new WorkService(prisma, audit, new CheckoutDeTarefaService(prisma, audit, new EventLogService(prisma)));
     await svc.apagarPasta(CASA, EU, 'p1');
+    // Primeiro o que aparece (sem as arquivadas), depois tudo, para decidir entre apagar e arquivar.
     expect(consultas).toEqual([
+      { modelo: 'workList', where: { orgId: CASA, folderId: 'p1', arquivadaEm: null } },
+      { modelo: 'workFolder', where: { orgId: CASA, parentId: 'p1', arquivadaEm: null } },
       { modelo: 'workList', where: { orgId: CASA, folderId: 'p1' } },
       { modelo: 'workFolder', where: { orgId: CASA, parentId: 'p1' } },
     ]);
@@ -370,8 +373,8 @@ describe.skipIf(!URL)('trabalho: espaço, pasta aninhada e lista', () => {
     const mae = await svc.criarPasta(CASA, EU, { name: 'Mãe', spaceId: espaco.id });
     const filha = await svc.criarPasta(CASA, EU, { name: 'Filha', parentId: mae.id });
     const lista = await svc.criarLista(CASA, EU, { name: 'Na filha', folderId: filha.id });
-    expect(await erroDe(svc.apagarPasta(CASA, EU, mae.id))).toEqual({ status: 400, mensagem: 'Pasta tem pastas dentro — mova ou apague antes.' });
-    expect(await erroDe(svc.apagarPasta(CASA, EU, filha.id))).toEqual({ status: 400, mensagem: 'Pasta tem listas — mova ou apague antes.' });
+    expect(await erroDe(svc.apagarPasta(CASA, EU, mae.id))).toEqual({ status: 400, mensagem: 'A pasta tem pastas dentro. Mova ou exclua essas pastas antes.' });
+    expect(await erroDe(svc.apagarPasta(CASA, EU, filha.id))).toEqual({ status: 400, mensagem: 'A pasta tem listas. Mova ou exclua as listas antes.' });
     const espacoCheio = { status: 400, mensagem: 'Espaço tem pastas ou listas — mova ou apague antes.' };
     expect(await erroDe(svc.apagarEspaco(CASA, EU, espaco.id))).toEqual(espacoCheio);
     // O banco segura o mesmo: RESTRICT da lista para a pasta e da filha para a mãe.

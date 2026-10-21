@@ -10,6 +10,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
 import { WorkService, hojeEmBrasilia } from './work.service';
 import { acharOuCriarClientePorNome } from './clientes-da-casa';
+import { tarefaDeListaVisivel } from './arquivadas';
 
 /*
  * TAREFAS DE TODAS AS ÁREAS — a visão "Tudo" do Trabalho (19/10/2026).
@@ -118,6 +119,8 @@ export class TarefasDoDiaService {
         { OR: [{ parentId: null }, { parent: { list: { natureza: WorkListaNatureza.cadastro } } }] },
         // externalId nulo precisa de ramo próprio: em SQL, NULL NOT IN (...) é desconhecido e a linha some.
         { OR: [{ externalId: null }, { externalId: { notIn: [...CARTOES_QUE_NAO_SAO_TAREFA] } }] },
+        // Lista ou pasta arquivada sai do Dia a dia inteiro: painel, contadores e criação (21/10/2026).
+        tarefaDeListaVisivel(),
       ],
     };
   }

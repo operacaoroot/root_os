@@ -23,6 +23,7 @@ import { SeletorDeCliente, type ClienteEscolhido } from './SeletorDeCliente';
 import { VistasDoQuadro } from './VistasDoQuadro';
 import { BotaoDeFiltros, type DefinicaoDeFiltro, type ValoresDeFiltro } from '@/components/filtros/BotaoDeFiltros';
 import { IniciarOnboardingDaImplantacao } from './IniciarOnboardingDaImplantacao';
+import { AcoesDaListaNaArvore, AcoesDaPastaNaArvore } from './ExcluirDaArvore';
 import { AtividadeDaTarefa } from './AtividadeDaTarefa';
 import { EditorialTaskLink } from './EditorialTaskLink';
 import { OrigemComercialDaTarefa } from '@/app/leads/OrigemComercialDaTarefa';
@@ -178,8 +179,14 @@ const ROTULO_DO_RECORTE = (r: RecorteDePrazo) => (r === 'emdia' ? 'Em dia' : ROT
  */
 export const CHAVES_DOS_FILTROS = [
   'assigneeUserId', 'semResponsavel', 'assignee', 'escopo', 'overdue', 'prazo', 'statusId', 'opcao',
-  'cliente', 'tagId', 'agente', 'concluidas', 'arquivadas', 'q',
+  'cliente', 'tagId', 'agente', 'concluidas', 'vazios', 'arquivadas', 'q',
 ] as const;
+
+/** "Ocultar status vazios" escrito para quem lê: quantas colunas o quadro escondeu agora. */
+export function textoDosVaziosOcultos(n: number): string {
+  if (n === 0) return 'nenhum vazio';
+  return n === 1 ? '1 vazio oculto' : `${n} vazios ocultos`;
+}
 
 /** As etapas do lote em "Todas": o tipo da etapa, com o id virtual `tipo:<tipo>`. */
 const COLUNAS_POR_TIPO = [
@@ -287,6 +294,8 @@ function TrabalhoConteudo({ visaoInicial, modo, aoSairDeTodas }: { visaoInicial:
   const [clientes, setClientes] = useState<TrabClienteDto[]>([]);
   const [fArquivadas, setFArquivadas] = useState(false);
   const [fConcluidas, setFConcluidas] = useState<'mostrar' | 'ocultar'>('mostrar');
+  // P4 (21/10/2026): esconder as colunas sem cartão; `?vazios=ocultar`, como `concluidas`.
+  const [fVazios, setFVazios] = useState<'mostrar' | 'ocultar'>('mostrar');
   const [fAgrupar, setFAgrupar] = useState<Agrupamento>('nenhum');
   const [fPrazo, setFPrazo] = useState<RecorteDePrazo | ''>('');
   const [fEtiqueta, setFEtiqueta] = useState('');
@@ -322,6 +331,7 @@ function TrabalhoConteudo({ visaoInicial, modo, aoSairDeTodas }: { visaoInicial:
       setFStatus(p.get('statusId') ?? ''); setFArquivadas(p.get('arquivadas') === '1'); setFCliente(p.get('cliente') ?? '');
       // `concluidas=1` (o link da Visão geral) e a ausência da chave mostram; `ocultar` esconde.
       setFConcluidas(p.get('concluidas') === 'ocultar' ? 'ocultar' : 'mostrar');
+      setFVazios(p.get('vazios') === 'ocultar' ? 'ocultar' : 'mostrar');
       setFPrazo(recorteDePrazo(p.get('prazo')));
       setFEtiqueta(p.get('tagId') ?? ''); setFSegmento(p.get('segmento') ?? '');
       const agrupar = p.get('agrupar');
@@ -752,6 +762,33 @@ function TrabalhoConteudo({ visaoInicial, modo, aoSairDeTodas }: { visaoInicial:
   const pastaDaLista = lista && estrutura ? estrutura.folders.find((f) => f.lists.some((l) => l.id === lista.id))?.id ?? '' : '';
 
   /*
+   * AS COLUNAS DO QUADRO (Todas, uma lista, a Implantação). "Ocultar concluídas" tira
+   * as colunas fechadas (em Todas, a que ainda tem tarefa aberta fica, ajuste do Todas).
+   * "Ocultar status vazios" (P4, 21/10/2026) vem depois e esconde, no próprio quadro,
+   * as que ficaram sem cartão com os filtros aplicados; durante um arraste elas voltam.
+   */
+  const statusesDoQuadro = geral
+    ? (fConcluidas === 'ocultar' ? listaGeral.statuses.filter((st) => st.type !== 'closed' || visiveisNoQuadroGeral.some((t) => t.statusId === st.id)) : listaGeral.statuses)
+    : lista ? (fConcluidas === 'ocultar' ? lista.statuses.filter((st) => st.type !== 'closed') : lista.statuses) : [];
+  const tarefasDoQuadro = geral ? visiveisNoQuadroGeral : visiveis;
+  const vaziasNoQuadro = statusesDoQuadro.filter((st) => !tarefasDoQuadro.some((t) => t.statusId === st.id)).length;
+  const ocultarVazias = fVazios === 'ocultar';
+  const alternarVazias = () => {
+    const novo = ocultarVazias ? 'mostrar' : 'ocultar';
+    setFVazios(novo); filtroNoEndereco('vazios', novo === 'ocultar' ? 'ocultar' : '');
+  };
+  /** O menu da lista na árvore (P3). A lista da implantação não tem: ela não sai do Trabalho. */
+  const idDaImplantacao = estrutura ? listaDaImplantacao(estrutura.folders)?.listaId ?? null : null;
+  const acoesDaLista = (l: TrabListaDto) => (editable && l.id !== idDaImplantacao ? (
+    <AcoesDaListaNaArvore lista={l} token={token} aoExcluir={() => listaSaiu(l.id)} aoMudar={refresh} aoErro={setErro} />
+  ) : null);
+  /** A lista excluída pela árvore estava aberta: o quadro volta à escolha da lista. */
+  const listaSaiu = (id: string) => {
+    if (listaAtual.current === id) { listaAtual.current = null; setListaId(null); mudarEndereco(null, null); }
+    refresh();
+  };
+
+  /*
    * OS FILTROS NUM BOTÃO SÓ (rodada da interface U2, 20/10/2026). Os filtros que
    * ficavam soltos no cabeçalho vão para o painel de "Filtros (n)". As chaves no
    * endereço são as de sempre (`?assigneeUserId=`, `?prazo=`…): é o que a vista
@@ -773,11 +810,13 @@ function TrabalhoConteudo({ visaoInicial, modo, aoSairDeTodas }: { visaoInicial:
   const filtroDaPessoa: DefinicaoDeFiltro = { chave: 'assigneeUserId', rotulo: 'Responsável', tipo: 'pessoa', vazio: 'Todas as pessoas', opcoes: opcoesDePessoa };
   const filtroDoCliente: DefinicaoDeFiltro = { chave: 'cliente', rotulo: 'Cliente', tipo: 'cliente', vazio: 'Todos os clientes', opcoes: opcoesDeCliente };
   const filtroDaBusca: DefinicaoDeFiltro = { chave: 'q', rotulo: 'Busca', tipo: 'texto', placeholder: 'Nome da tarefa' };
+  const filtroDosVazios: DefinicaoDeFiltro = { chave: 'vazios', rotulo: 'Ocultar status vazios', tipo: 'booleano', valorMarcado: 'ocultar', dica: 'No quadro, as colunas sem cartão somem. Ao arrastar, elas voltam como destino.' };
   const definicoesDosFiltros: DefinicaoDeFiltro[] = implantacao ? [
     filtroDaPessoa,
     filtroDoCliente,
     { chave: 'statusId', rotulo: 'Etapa', tipo: 'etapa', vazio: 'Todas as etapas', opcoes: opcoesDeEtapa },
     { chave: 'escopo', rotulo: 'Só as atrasadas', tipo: 'booleano', valorMarcado: 'atrasados' },
+    filtroDosVazios,
     filtroDaBusca,
   ] : [
     filtroDaPessoa,
@@ -795,6 +834,7 @@ function TrabalhoConteudo({ visaoInicial, modo, aoSairDeTodas }: { visaoInicial:
     { chave: 'agente', rotulo: 'Agente', tipo: 'opcoes', vazio: 'Todos os agentes', opcoes: [{ valor: 'livres', rotulo: 'Sem agente (livres)' }, ...(estrutura?.agentes ?? []).map((a) => ({ valor: a.slug, rotulo: `${a.nome}${a.tarefas > 0 ? ` (${a.tarefas})` : ''}` }))] },
     ...((estrutura?.responsaveis ?? []).length ? [{ chave: 'assignee', rotulo: 'Responsável (texto antigo)', tipo: 'opcoes' as const, vazio: 'Todos', opcoes: (estrutura?.responsaveis ?? []).map((r) => ({ valor: r, rotulo: r })), dica: 'O nome escrito nas tarefas importadas, antes do vínculo com a conta.' }] : []),
     { chave: 'concluidas', rotulo: 'Ocultar concluídas', tipo: 'booleano', valorMarcado: 'ocultar' },
+    filtroDosVazios,
     { chave: 'arquivadas', rotulo: 'Incluir arquivadas', tipo: 'booleano' },
     filtroDaBusca,
   ];
@@ -810,6 +850,7 @@ function TrabalhoConteudo({ visaoInicial, modo, aoSairDeTodas }: { visaoInicial:
     agente: fAgente,
     assignee: fAssignee,
     concluidas: fConcluidas === 'ocultar' ? 'ocultar' : '',
+    vazios: fVazios === 'ocultar' ? 'ocultar' : '',
     arquivadas: fArquivadas ? '1' : '',
     q: fBusca,
   };
@@ -839,6 +880,7 @@ function TrabalhoConteudo({ visaoInicial, modo, aoSairDeTodas }: { visaoInicial:
         setFAssignee(valor); filtroNoEndereco('assignee', valor);
         return;
       case 'concluidas': setFConcluidas(valor === 'ocultar' ? 'ocultar' : 'mostrar'); filtroNoEndereco('concluidas', valor === 'ocultar' ? 'ocultar' : ''); return;
+      case 'vazios': setFVazios(valor === 'ocultar' ? 'ocultar' : 'mostrar'); filtroNoEndereco('vazios', valor === 'ocultar' ? 'ocultar' : ''); return;
       case 'arquivadas': setFArquivadas(!!valor); filtroNoEndereco('arquivadas', valor ? '1' : ''); return;
       case 'q': setFBusca(valor); filtroNoEndereco('q', valor); return;
     }
@@ -847,7 +889,7 @@ function TrabalhoConteudo({ visaoInicial, modo, aoSairDeTodas }: { visaoInicial:
   const limparFiltros = () => {
     setSelecionadas(new Set());
     setTodasListas(false); setFPessoa(''); setFAssignee(''); setFEscopo('todos'); setFPrazo(''); setFStatus(''); setFOpcao('');
-    setFCliente(''); setFEtiqueta(''); setFAgente(''); setFConcluidas('mostrar'); setFArquivadas(false); setFBusca('');
+    setFCliente(''); setFEtiqueta(''); setFAgente(''); setFConcluidas('mostrar'); setFVazios('mostrar'); setFArquivadas(false); setFBusca('');
     const url = new URL(window.location.href);
     for (const k of CHAVES_DOS_FILTROS) url.searchParams.delete(k);
     window.history.replaceState(window.history.state, '', `${url.pathname}${url.search}${url.hash}`);
@@ -869,21 +911,32 @@ function TrabalhoConteudo({ visaoInicial, modo, aoSairDeTodas }: { visaoInicial:
       <aside ref={arvore} style={alturaDaArvore ? { maxHeight: alturaDaArvore } : undefined} className="max-h-44 w-full shrink-0 space-y-3 overflow-y-auto border-b border-border pb-2 pr-1 lg:max-h-none lg:w-52 lg:border-b-0 lg:pb-0">
         {pastasVisiveis.map((f) => (
           <div key={f.id}>
-            <div title={f.name} className="break-words px-1 text-[11px] font-semibold uppercase tracking-wide text-muted">{f.name}</div>
+            <div className="flex items-start justify-between gap-1">
+              <div title={f.name} className="min-w-0 break-words px-1 text-[11px] font-semibold uppercase tracking-wide text-muted">{f.name}</div>
+              {editable && estrutura && (
+                <AcoesDaPastaNaArvore
+                  pasta={f} token={token} aoErro={setErro}
+                  vazia={f.lists.length === 0 && !estrutura.folders.some((x) => x.parentId === f.id)}
+                  aoExcluir={() => { if (fPasta === f.id) { setFPasta(''); filtroNoEndereco('pasta', ''); } refresh(); }}
+                />
+              )}
+            </div>
             <div className="mt-1 space-y-0.5">
               {f.lists.length === 0 && <p className="px-2 text-[11px] text-muted">Pasta vazia. Crie uma lista nela ou mova uma para cá.</p>}
               {f.lists.map((l) => (
-                <button
-                  key={l.id}
-                  onClick={() => selecionarLista(l.id)}
-                  className={[
-                    'flex w-full items-center justify-between rounded-md px-2 py-1 text-left text-[13px] transition',
-                    l.id === listaId ? 'bg-brand/15 text-text' : 'text-muted hover:bg-surface-2 hover:text-text',
-                  ].join(' ')}
-                >
-                  <span title={l.name} className="min-w-0 break-words">{l.name}</span>
-                  <span className="ml-1 text-[10px] text-muted">{l.total}</span>
-                </button>
+                <div key={l.id} className="flex items-center gap-0.5">
+                  <button
+                    onClick={() => selecionarLista(l.id)}
+                    className={[
+                      'flex min-w-0 flex-1 items-center justify-between rounded-md px-2 py-1 text-left text-[13px] transition',
+                      l.id === listaId ? 'bg-brand/15 text-text' : 'text-muted hover:bg-surface-2 hover:text-text',
+                    ].join(' ')}
+                  >
+                    <span title={l.name} className="min-w-0 break-words">{l.name}</span>
+                    <span className="ml-1 text-[10px] text-muted">{l.total}</span>
+                  </button>
+                  {acoesDaLista(l)}
+                </div>
               ))}
             </div>
           </div>
@@ -898,17 +951,19 @@ function TrabalhoConteudo({ visaoInicial, modo, aoSairDeTodas }: { visaoInicial:
             <div className="px-1 text-[11px] font-semibold uppercase tracking-wide text-muted">Sem pasta</div>
             <div className="mt-1 space-y-0.5">
               {estrutura.listasSoltas.map((l) => (
-                <button
-                  key={l.id}
-                  onClick={() => selecionarLista(l.id)}
-                  className={[
-                    'flex w-full items-center justify-between rounded-md px-2 py-1 text-left text-[13px] transition',
-                    l.id === listaId ? 'bg-brand/15 text-text' : 'text-muted hover:bg-surface-2 hover:text-text',
-                  ].join(' ')}
-                >
-                  <span className="truncate">{l.name}</span>
-                  <span className="ml-1 text-[10px] text-muted">{l.total}</span>
-                </button>
+                <div key={l.id} className="flex items-center gap-0.5">
+                  <button
+                    onClick={() => selecionarLista(l.id)}
+                    className={[
+                      'flex min-w-0 flex-1 items-center justify-between rounded-md px-2 py-1 text-left text-[13px] transition',
+                      l.id === listaId ? 'bg-brand/15 text-text' : 'text-muted hover:bg-surface-2 hover:text-text',
+                    ].join(' ')}
+                  >
+                    <span className="truncate">{l.name}</span>
+                    <span className="ml-1 text-[10px] text-muted">{l.total}</span>
+                  </button>
+                  {acoesDaLista(l)}
+                </div>
               ))}
             </div>
           </div>
@@ -980,6 +1035,22 @@ function TrabalhoConteudo({ visaoInicial, modo, aoSairDeTodas }: { visaoInicial:
                 </button>
               ))}
             </div>
+            {/* P4: recolher os status vazios do quadro; o mesmo booleano do painel de Filtros (`?vazios=ocultar`). */}
+            {visao === 'board' && (lista || geral) && (
+              <button
+                type="button"
+                data-testid="trabalho-vazios"
+                aria-pressed={ocultarVazias}
+                onClick={alternarVazias}
+                title={ocultarVazias ? 'Mostrar de novo as colunas sem cartão' : 'Esconder as colunas sem cartão'}
+                className={`rounded-lg border px-3 py-1.5 text-sm max-md:min-h-[44px] ${ocultarVazias ? 'border-brand-dim bg-brand/15 text-text' : 'border-border bg-surface text-muted hover:text-text'}`}
+              >
+                Ocultar status vazios
+                {ocultarVazias && (
+                  <span data-testid="trabalho-vazios-contagem" className="ml-1.5 font-os-mono text-[11px] text-muted">· {textoDosVaziosOcultos(vaziasNoQuadro)}</span>
+                )}
+              </button>
+            )}
             {visao === 'tabela' && (
               <select
                 aria-label="Agrupar a lista"
@@ -1022,6 +1093,7 @@ function TrabalhoConteudo({ visaoInicial, modo, aoSairDeTodas }: { visaoInicial:
                   ...(fOpcao ? { opcao: fOpcao } : {}), ...(fArquivadas ? { arquivadas: true } : {}),
                 },
                 ...(fAgrupar !== 'nenhum' ? { agrupamento: fAgrupar } : {}), ...(fConcluidas === 'ocultar' ? { concluidas: 'ocultar' as const } : {}),
+                ...(fVazios === 'ocultar' ? { vazios: 'ocultar' as const } : {}),
               }}
               aplicar={(v: VistaQuadro) => {
                 // A vista grava o recorte do quadro na chave `escopo`: sai do "todas as listas".
@@ -1032,10 +1104,10 @@ function TrabalhoConteudo({ visaoInicial, modo, aoSairDeTodas }: { visaoInicial:
                 setFCliente(v.filtros.cliente); setFEscopo(v.filtros.escopo); setFBusca(v.filtros.q);
                 setFPessoa(pessoa); setFPrazo(recorteDePrazo(v.filtros.prazo ?? null)); setFEtiqueta(v.filtros.etiqueta ?? '');
                 setFOpcao(v.filtros.opcao ?? ''); setFArquivadas(!!v.filtros.arquivadas);
-                setFAgrupar(v.agrupamento ?? 'nenhum'); setFConcluidas(v.concluidas ?? 'mostrar');
+                setFAgrupar(v.agrupamento ?? 'nenhum'); setFConcluidas(v.concluidas ?? 'mostrar'); setFVazios(v.vazios ?? 'mostrar');
                 const url = new URL(window.location.href);
                 for (const [k, val] of [['assignee', v.filtros.assignee], ['agente', v.filtros.agente], ['statusId', v.filtros.statusId], ['cliente', v.filtros.cliente], ['escopo', v.filtros.escopo === 'todos' ? '' : v.filtros.escopo], ['q', v.filtros.q], ['visao', v.visao === 'board' ? '' : v.visao === 'calendario' ? 'calendario' : 'lista'],
-                  ['agrupar', v.agrupamento && v.agrupamento !== 'nenhum' ? v.agrupamento : ''], ['concluidas', v.concluidas === 'ocultar' ? 'ocultar' : ''],
+                  ['agrupar', v.agrupamento && v.agrupamento !== 'nenhum' ? v.agrupamento : ''], ['concluidas', v.concluidas === 'ocultar' ? 'ocultar' : ''], ['vazios', v.vazios === 'ocultar' ? 'ocultar' : ''],
                   ['assigneeUserId', pessoa && pessoa !== 'sem-vinculo' ? pessoa : ''], ['semResponsavel', pessoa === 'sem-vinculo' ? '1' : ''],
                   ['prazo', v.filtros.prazo ?? ''], ['tagId', v.filtros.etiqueta ?? ''], ['opcao', v.filtros.opcao ?? ''], ['arquivadas', v.filtros.arquivadas ? '1' : ''], ['overdue', '']] as const) {
                   if (val) url.searchParams.set(k, val); else url.searchParams.delete(k);
@@ -1108,7 +1180,7 @@ function TrabalhoConteudo({ visaoInicial, modo, aoSairDeTodas }: { visaoInicial:
         </div>}
         {lista && !geral && tarefas && visao === 'board' && (
           <Board
-            lista={fConcluidas === 'ocultar' ? { ...lista, statuses: lista.statuses.filter((st) => st.type !== 'closed') } : lista}
+            lista={{ ...lista, statuses: statusesDoQuadro }} ocultarVazias={ocultarVazias}
             tarefas={visiveis} editable={quadroEditavel} podeCriar={quadroEditavel && !listaEhImplantacao} token={token}
             agentes={estrutura?.agentes ?? []} pessoas={estrutura?.pessoas ?? []} trilhos={trilhos} movimento={movimento} densidade={densidade}
             onAbrir={abrirTarefa} onMudou={refresh} onErro={setErro} onMoverEtapa={moverEtapa} onReordenar={reordenar}
@@ -1124,7 +1196,7 @@ function TrabalhoConteudo({ visaoInicial, modo, aoSairDeTodas }: { visaoInicial:
         {geral && tarefas && visao === 'board' && (
           <Board
             // Uma coluna concluída fica se ainda tem tarefa aberta (o mesmo nome é etapa aberta noutra lista).
-            lista={fConcluidas === 'ocultar' ? { ...listaGeral, statuses: listaGeral.statuses.filter((st) => st.type !== 'closed' || visiveisNoQuadroGeral.some((t) => t.statusId === st.id)) } : listaGeral}
+            lista={{ ...listaGeral, statuses: statusesDoQuadro }} ocultarVazias={ocultarVazias}
             tarefas={visiveisNoQuadroGeral} editable={quadroEditavel} podeCriar={false} token={token}
             agentes={estrutura?.agentes ?? []} pessoas={estrutura?.pessoas ?? []} trilhos={trilhos} movimento={new Map()} densidade={densidade}
             semMovimento listasPorColuna={listasPorColuna}
@@ -1244,7 +1316,7 @@ function ContagemDaEtapa({ quantas, limite }: { quantas: number; limite: number 
  *    da caixa de entrada (`GET /trabalho/quadro/movimento`). Falhar ali só tira
  *    o rodapé.
  */
-function Board({ lista, tarefas, editable, podeCriar, token, agentes, pessoas = [], trilhos, movimento, densidade, onAbrir, onMudou, onErro, onMoverEtapa, onReordenar, semMovimento = false, listasPorColuna }: {
+function Board({ lista, tarefas, editable, podeCriar, token, agentes, pessoas = [], trilhos, movimento, densidade, onAbrir, onMudou, onErro, onMoverEtapa, onReordenar, semMovimento = false, listasPorColuna, ocultarVazias = false }: {
   lista: TrabListaDto; tarefas: TrabTarefaResumo[]; editable: boolean; podeCriar: boolean; token: string | null;
   agentes: TrabAgenteDto[]; pessoas?: PessoaDaEstrutura[]; trilhos: Map<string, TrilhoDoCartao>;
   movimento: Map<string, TrabMovimentoDoCartao>; densidade: Densidade;
@@ -1257,6 +1329,8 @@ function Board({ lista, tarefas, editable, podeCriar, token, agentes, pessoas = 
   semMovimento?: boolean;
   /** "Todas as tarefas": em quantas listas do recorte cada status existe (o cabeçalho diz). */
   listasPorColuna?: Map<string, number>;
+  /** P4: as colunas sem cartão somem; durante um arraste voltam como destino. */
+  ocultarVazias?: boolean;
 }) {
   /*
    * ARRASTAR E SOLTAR com a API nativa do HTML5, sem biblioteca: dependência
@@ -1267,9 +1341,26 @@ function Board({ lista, tarefas, editable, podeCriar, token, agentes, pessoas = 
   const [sobre, setSobre] = useState<string | null>(null);
   const [balao, setBalao] = useState<{ id: string; ancora: DOMRect } | null>(null);
   const [ultimoCliente, setUltimoCliente] = useState<ClienteEscolhido | null>(null);
+  /*
+   * O ARRASTE MOSTRA AS VAZIAS (P4). Sem isso, com "Ocultar status vazios" ligado não
+   * daria para mover um cartão para uma etapa sem nenhum. A troca vem um tique depois
+   * do `dragstart`: mexer nas colunas dentro dele faz o Chrome cancelar o arraste.
+   */
+  const [arrastando, setArrastando] = useState(false);
+  const arrasteAtivo = useRef(false);
+  const comecouArraste = () => {
+    if (!ocultarVazias) return;
+    arrasteAtivo.current = true;
+    window.setTimeout(() => { if (arrasteAtivo.current) setArrastando(true); }, 0);
+  };
+  const acabouArraste = () => { arrasteAtivo.current = false; setArrastando(false); };
+  const colunas = ocultarVazias && !arrastando
+    ? lista.statuses.filter((st) => tarefas.some((t) => t.statusId === st.id))
+    : lista.statuses;
   const soltar = (statusId: string, e: React.DragEvent) => {
     e.preventDefault();
     setSobre(null);
+    acabouArraste();
     const id = e.dataTransfer.getData('text/plain');
     const t = tarefas.find((x) => x.id === id);
     if (!t || t.statusId === statusId) return;
@@ -1303,9 +1394,13 @@ function Board({ lista, tarefas, editable, podeCriar, token, agentes, pessoas = 
     alvo?.scrollIntoView({ behavior: 'smooth', inline: 'start', block: 'nearest' });
   };
   return (
-    <div ref={caixaDoQuadro} data-testid="trabalho-quadro-caixa" className="flex min-h-0 min-w-0 flex-1 flex-col gap-1.5" style={altura ? { height: altura, flex: 'none' } : undefined}>
+    <div
+      ref={caixaDoQuadro} data-testid="trabalho-quadro-caixa" data-arrastando={arrastando ? '1' : undefined}
+      className="flex min-h-0 min-w-0 flex-1 flex-col gap-1.5" style={altura ? { height: altura, flex: 'none' } : undefined}
+      onDragStart={editable ? comecouArraste : undefined} onDragEnd={editable ? acabouArraste : undefined}
+    >
     <nav aria-label="Ir para a etapa" data-testid="trabalho-chips-de-etapa" className="flex shrink-0 gap-1 overflow-x-auto pb-0.5">
-      {lista.statuses.map((st) => (
+      {colunas.map((st) => (
         <button
           key={st.id}
           type="button"
@@ -1327,7 +1422,12 @@ function Board({ lista, tarefas, editable, podeCriar, token, agentes, pessoas = 
       className="quadro-rolagem-lateral flex min-h-0 flex-1 snap-x snap-mandatory flex-nowrap gap-2 overflow-x-auto overflow-y-hidden pb-2 outline-none focus-visible:ring-2 focus-visible:ring-brand md:snap-none"
       style={{ '--largura-da-coluna': `${LARGURA_DA_COLUNA[densidade]}px` } as React.CSSProperties}
     >
-      {lista.statuses.map((st) => {
+      {ocultarVazias && colunas.length === 0 && (
+        <p data-testid="trabalho-quadro-tudo-vazio" className="px-2 py-3 text-sm text-muted">
+          Nenhum status com tarefa. Desligue Ocultar status vazios para ver todos.
+        </p>
+      )}
+      {colunas.map((st) => {
         const itens = tarefas.filter((t) => t.statusId === st.id);
         const saida = st.type === 'closed';
         return (

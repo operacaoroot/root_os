@@ -73,6 +73,11 @@ describe('vistas: as regras puras', () => {
     const antiga = { densidade: 'compacto', visao: 'board', filtros: { assignee: '', agente: '', statusId: '', cliente: '', escopo: 'todos', q: '' } };
     expect(VistaCriarSchema.safeParse({ tela: 'quadro', nome: 'Antiga', config: antiga }).success).toBe(true);
     expect(VistaCriarSchema.safeParse({ tela: 'quadro', nome: 'Nova', config: { ...antiga, visao: 'calendario', agrupamento: 'prazo', concluidas: 'ocultar' } }).success).toBe(true);
+    // P4 (21/10/2026): "Ocultar status vazios" entra na vista; valor fora do par é recusado.
+    for (const tela of ['quadro', 'implantacao'] as const) {
+      expect(VistaCriarSchema.safeParse({ tela, nome: 'Sem vazios', config: { ...antiga, vazios: 'ocultar' } }).success).toBe(true);
+      expect(VistaCriarSchema.safeParse({ tela, nome: 'Sem vazios', config: { ...antiga, vazios: 'sim' } }).success).toBe(false);
+    }
     expect(VistaCriarSchema.safeParse({ tela: 'minhas-tarefas', nome: 'Régua', config: { ...VISTA_PADRAO_DE_MINHAS_TAREFAS, agrupamento: 'prazo' } }).success).toBe(true);
   });
 
