@@ -122,3 +122,5 @@ export * from './clientes-arquivos.js';
 export * from './agentes-da-implantacao.js';
 // Os agentes do comercial da rodada de 21/10/2026 (lane A2): ver `comercial-agentes.ts`.
 export * from './comercial-agentes.js';
+// O cartão único de Conexões (rodada dos agentes, lane A6): ver `cartoes-de-conexao.ts`.
+export * from './cartoes-de-conexao.js';

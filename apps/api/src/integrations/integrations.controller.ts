@@ -52,6 +52,18 @@ export class IntegrationsController {
     return result;
   }
 
+  /**
+   * O CARTÃO ÚNICO de Conexões (rodada dos agentes, A6): o catálogo sondado, com
+   * quem usa cada conector e se há credencial no cofre (nunca o valor).
+   * `dashboard.ver`, como o catálogo: ler a tela não muda nada; agir pede
+   * `admin.usuarios` nas rotas dos verbos e do desligamento.
+   */
+  @Get('cartoes')
+  @RequirePermissions('dashboard.ver')
+  cartoes(@CurrentUser() user: JwtUser) {
+    return this.svc.cartoes(user.orgId, user.sub);
+  }
+
   @Get('catalogo-declarativo')
   @RequirePermissions('dashboard.ver')
   catalogoDeclarativo(@CurrentUser() user: JwtUser) {

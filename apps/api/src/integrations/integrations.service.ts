@@ -1,5 +1,5 @@
 import { BadRequestException, ForbiddenException, Injectable, Logger } from '@nestjs/common';
-import { CONNECTORS, ConexoesDeclarativasSchema, type ConexoesDeclarativas, type ConexaoDeclarativaLinha, type IntegrationCatalog, type IntegrationCatalogRow } from '@mktos/shared';
+import { CONNECTORS, CartoesDeConexaoSchema, PARA_QUE_SERVE_DO_CONECTOR, type CartaoDeConexao, type CartoesDeConexao, ConexoesDeclarativasSchema, type ConexoesDeclarativas, type ConexaoDeclarativaLinha, type IntegrationCatalog, type IntegrationCatalogRow } from '@mktos/shared';
 import { PrismaService } from '../prisma/prisma.service';
 import { exigirAcessoAtual } from '../memory/acesso-memoria';
 import { AuditService } from '../audit/audit.service';
@@ -23,6 +23,7 @@ import {
   aplicacaoDoDesligamento,
   grupoDoConector,
 } from './conectores';
+import { quemUsa } from './usado-por';
 
 /*
  * O catálogo da tela de Conexões, com o DESLIGAMENTO por empresa junto (RF-G-06)
@@ -208,6 +209,86 @@ export class IntegrationsService {
    * seletor, um script) sem pagar cinco chamadas externas — e, por ser explícito
    * em vez de padrão, ninguém acaba mostrando estado velho por acidente.
    */
+  /**
+   * O CARTÃO ÚNICO DE CONEXÕES (rodada dos agentes, A6). É o catálogo SONDADO
+   * (`catalog`: uma sonda por conector do contrato, em paralelo, com prazo, e
+   * nenhuma sonda no conector desligado) traduzido para o vocabulário de um
+   * cartão só, com quem usa cada conector (o cadastro único) e se há credencial
+   * desta empresa no cofre — o fato, nunca o valor.
+   *
+   * A pessoa é relida no banco antes e depois, como no catálogo: quem perdeu o
+   * acesso no meio não leva a resposta.
+   */
+  async cartoes(orgId: string, pessoaId: string, opcoes: { prazoDeSondaMs?: number } = {}): Promise<CartoesDeConexao> {
+    await exigirAcessoAtual(this.prisma, orgId, pessoaId, ['dashboard.ver']);
+    const [catalogo, segredos, pessoa] = await Promise.all([
+      this.catalog(orgId, { sondar: true, prazoDeSondaMs: opcoes.prazoDeSondaMs }),
+      this.prisma.segredoDeConector.findMany({ where: { orgId, revogadoEm: null }, select: { conector: true } }),
+      this.prisma.user.findFirst({
+        where: { id: pessoaId, orgId, isActive: true },
+        select: { roles: { where: { orgId }, select: { permissions: { select: { key: true } } } } },
+      }),
+    ]);
+    const noCofre = new Set(segredos.map((s) => s.conector));
+    const permissoes = new Set(pessoa?.roles.flatMap((r) => r.permissions.map((p) => p.key)) ?? []);
+    const items = catalogo.items.map((l) => this.cartaoDaLinha(l, noCofre));
+    await exigirAcessoAtual(this.prisma, orgId, pessoaId, ['dashboard.ver']);
+    return CartoesDeConexaoSchema.parse({
+      autoridadeGerenciar: permissoes.has('admin.usuarios'),
+      items: items.sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR')),
+      geradoEm: new Date().toISOString(),
+    });
+  }
+
+  private cartaoDaLinha(l: LinhaDoCatalogo, noCofre: ReadonlySet<string>): CartaoDeConexao {
+    const s = l.saude;
+    let estado: CartaoDeConexao['estado'];
+    let motivo: string | null;
+    if (l.desligado) {
+      estado = 'desligado';
+      motivo = l.motivoDesligado ?? s?.mensagem ?? null;
+    } else if (s) {
+      estado = s.estado;
+      motivo = s.mensagem;
+    } else {
+      // Linha sem conector do contrato: não há sonda. Com credencial declarada no ambiente,
+      // "não verificado"; sem ela, "não configurado" com o que falta.
+      estado = l.status === 'connected' ? 'nao_verificado' : 'nao_configurado';
+      motivo =
+        estado === 'nao_verificado'
+          ? 'Sem sonda: esta linha ainda não tem conector do contrato; a credencial está declarada no ambiente.'
+          : l.requires;
+    }
+    return {
+      key: l.key,
+      nome: l.label,
+      paraQueServe: PARA_QUE_SERVE_DO_CONECTOR[l.key] ?? (l.contrato ? PARA_QUE_SERVE_DO_CONECTOR[l.contrato.chave] : undefined) ?? l.requires,
+      categoria: l.category,
+      fase: l.phase,
+      estado,
+      motivo,
+      medidoEm: !l.desligado && s ? s.verificadoEm : null,
+      latenciaMs: !l.desligado && s ? s.latenciaMs : null,
+      conta: estado === 'conectado' ? (s?.mensagem ?? null) : null,
+      ultimaSincronizacao: l.lastSyncAt,
+      credencialNoCofre: noCofre.has(l.key) || (!!l.contrato && noCofre.has(l.contrato.chave)),
+      desligado: l.desligado,
+      desligadoEm: l.desligadoEm,
+      motivoDesligado: l.motivoDesligado,
+      textoDoDesligamento: l.textoDoDesligamento,
+      grupo: l.grupo,
+      contrato: l.contrato
+        ? {
+            chave: l.contrato.chave,
+            rotulo: l.contrato.rotulo,
+            escopoDaCredencial: l.contrato.escopoDaCredencial,
+            linhasIrmas: l.contrato.linhasIrmas,
+          }
+        : null,
+      usadoPor: quemUsa(l.key),
+    };
+  }
+
   async catalog(
     orgId: string,
     /** `prazoDeSondaMs` existe só para a suíte — ver `RegistroDeConectores.sondar`. */
