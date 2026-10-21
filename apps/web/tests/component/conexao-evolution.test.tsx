@@ -3,13 +3,16 @@ import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 
 /*
- * O CARTÃO "WHATSAPP (EVOLUTION)" EM INTEGRAÇÕES (Rodada de produção 1, 21/10/2026, P8).
+ * A EVOLUTION EM INTEGRAÇÕES (Rodada de produção 1, 21/10/2026, P8; cartão único
+ * desde a rodada dos agentes, A6).
  *
- * O que ele promete: o selo é o estado da instância (conectada, QR pendente,
- * erro); a chave digitada vai para o cofre e some da tela; o QR aparece como
- * imagem quando a instância pede e some quando ela abre; a URL do webhook está
- * à vista sem segredo nenhum; quem não administra só lê. E o WhatsApp da tela
- * é só a Evolution. Chaves e instâncias daqui são inventadas.
+ * O estado do CONECTOR é o do cartão padrão (sonda do contrato, suíte
+ * `conexoes.test.tsx`). Este é o CONTEÚDO PRÓPRIO dele, e o que promete: o estado
+ * da instância (aberta, aguardando QR, fechada, erro) aparece como detalhe; a
+ * chave digitada vai para o cofre e some da tela; o QR aparece como imagem
+ * quando a instância pede e some quando ela abre; a URL do webhook está à vista
+ * sem segredo nenhum; quem não administra só lê. E o WhatsApp da tela é só a
+ * Evolution. Chaves e instâncias daqui são inventadas.
  */
 
 const apiGet = vi.fn();
@@ -35,7 +38,6 @@ vi.mock('@/lib/auth', () => ({
     can: (p: string) => PERMISSOES.includes(p),
   }),
 }));
-vi.mock('@/app/conexoes/CatalogoDeclarativo', () => ({ CatalogoDeclarativo: () => null }));
 vi.mock('@/app/conexoes/ConexaoGranola', () => ({ ConexaoGranola: () => null }));
 
 // eslint-disable-next-line import/first
@@ -73,13 +75,30 @@ beforeEach(() => {
   estado = conexao();
   instancia = { estado: 'nao_configurada', mensagem: 'Evolution não configurada nesta empresa.', verificadoEm: agora() };
   apiGet.mockImplementation(async (rota: string) => {
+    if (rota === '/integrations/cartoes') return CARTOES;
     if (rota === '/integrations/evolution/conexao') return estado;
     if (rota === '/integrations/evolution/estado') return instancia;
     throw new Error(`rota inesperada ${rota}`);
   });
 });
 
-const cartao = () => screen.getByRole('region', { name: 'WhatsApp (Evolution)' });
+const cartao = () => screen.getByTestId('conteudo-evolution');
+const instanciaDiz = () => screen.getByTestId('instancia-evolution').textContent ?? '';
+
+const linhaDoCartao = (key: string, nome: string, over: Record<string, unknown> = {}) => ({
+  key, nome, paraQueServe: 'p', categoria: 'messaging', fase: 6, estado: 'nao_configurado', motivo: 'm',
+  medidoEm: null, latenciaMs: null, conta: null, ultimaSincronizacao: null, credencialNoCofre: false,
+  desligado: false, desligadoEm: null, motivoDesligado: null, textoDoDesligamento: 't', grupo: null,
+  contrato: { chave: key, rotulo: nome, escopoDaCredencial: 'empresa', linhasIrmas: [] }, usadoPor: [], ...over,
+});
+const CARTOES = {
+  autoridadeGerenciar: true,
+  geradoEm: new Date().toISOString(),
+  items: [
+    linhaDoCartao('evolution', 'WhatsApp do comercial (Evolution)'),
+    linhaDoCartao('whatsapp', 'WhatsApp (Evolution)', { contrato: { chave: 'whatsapp', rotulo: 'WhatsApp (Evolution)', escopoDaCredencial: 'processo', linhasIrmas: [] } }),
+  ],
+};
 
 describe('o cartão da Evolution', () => {
   it('mostra a URL do webhook e o cabeçalho, sem segredo, e avisa quando a entrada está fechada', async () => {
@@ -88,7 +107,7 @@ describe('o cartão da Evolution', () => {
     const url = await screen.findByTestId('url-do-webhook-evolution');
     expect(url.textContent).toBe(`${window.location.origin}/api/approvals/canal/whatsapp/org-1`);
     expect(within(cartao()).getAllByText(/x-canal-segredo/).length).toBeGreaterThan(0);
-    await waitFor(() => expect(screen.getByTestId('selo-evolution').textContent).toBe('não configurada'));
+    await waitFor(() => expect(instanciaDiz()).toContain('não configurada'));
     expect(within(cartao()).getByText(/A entrada está fechada/)).toBeInTheDocument();
     expect(within(cartao()).getByText(/simulado \(nada sai do sistema\)/)).toBeInTheDocument();
   });
@@ -118,30 +137,29 @@ describe('o cartão da Evolution', () => {
       throw new Error(`rota inesperada ${rota}`);
     });
     render(<ConexaoEvolution token="tok" gerenciar />);
-    await waitFor(() => expect(screen.getByTestId('selo-evolution').textContent).toBe('desconectada'));
+    await waitFor(() => expect(instanciaDiz()).toContain('fechada'));
     const user = userEvent.setup();
     await user.click(screen.getByRole('button', { name: 'Gerar QR' }));
     const img = await screen.findByRole('img', { name: 'QR para ligar o número' });
     expect(img.getAttribute('src')).toBe(QR);
     expect(screen.getByText('WZYEH1YY')).toBeInTheDocument();
-    expect(screen.getByTestId('selo-evolution').textContent).toBe('QR pendente');
+    expect(instanciaDiz()).toContain('aguardando a leitura do QR');
 
     instancia = { estado: 'open', mensagem: 'Instância conectada.', verificadoEm: agora() };
     await user.click(screen.getByRole('button', { name: 'Já li o QR' }));
-    await waitFor(() => expect(screen.getByTestId('selo-evolution').textContent).toBe('conectada'));
+    await waitFor(() => expect(instanciaDiz()).toContain('aberta'));
     expect(screen.queryByRole('img', { name: 'QR para ligar o número' })).toBeNull();
     expect(screen.queryByRole('button', { name: 'Gerar QR' })).toBeNull();
   });
 
-  it('erro da Evolution aparece no selo, com a frase do servidor', async () => {
+  it('erro da Evolution aparece no detalhe da instância (a frase vai no estado do cartão)', async () => {
     estado = conexao({ origem: 'cofre', url: 'https://evolution.exemplo.com', instancia: 'root-comercial', chaveGuardada: true });
     instancia = { estado: 'erro', mensagem: 'A Evolution respondeu HTTP 401 em GET /instance/connectionState.', verificadoEm: agora() };
     render(<ConexaoEvolution token="tok" gerenciar />);
-    await waitFor(() => expect(screen.getByTestId('selo-evolution').textContent).toBe('erro'));
-    expect(within(cartao()).getByText(/HTTP 401/)).toBeInTheDocument();
+    await waitFor(() => expect(instanciaDiz()).toContain('erro ao consultar'));
   });
 
-  it('quem não administra só lê: sem formulário, sem QR, sem revogar', async () => {
+  it('quem não administra só lê: sem formulário e sem QR', async () => {
     estado = conexao({ origem: 'cofre', url: 'https://evolution.exemplo.com', instancia: 'root-comercial', chaveGuardada: true });
     instancia = { estado: 'close', mensagem: 'Instância desconectada.', verificadoEm: agora() };
     render(<ConexaoEvolution token="tok" gerenciar={false} />);
@@ -149,14 +167,15 @@ describe('o cartão da Evolution', () => {
     expect(screen.queryByRole('button', { name: 'Salvar no cofre' })).toBeNull();
     expect(screen.queryByRole('button', { name: 'Gerar QR' })).toBeNull();
     expect(screen.queryByRole('button', { name: 'Revogar' })).toBeNull();
-    expect(screen.getByRole('button', { name: 'Verificar' })).toBeInTheDocument();
   });
 });
 
 describe('a tela de Integrações', () => {
-  it('mostra o cartão da Evolution, e todo cartão de WhatsApp da tela é da Evolution', async () => {
+  it('mostra o cartão da Evolution com o conteúdo dentro, e todo cartão de WhatsApp da tela é da Evolution', async () => {
     render(<IntegracoesPage />);
-    expect(await screen.findByRole('region', { name: 'WhatsApp (Evolution)' })).toBeInTheDocument();
+    const doComercial = await screen.findByRole('region', { name: 'WhatsApp do comercial (Evolution)' });
+    expect(await within(doComercial).findByTestId('url-do-webhook-evolution')).toBeInTheDocument();
+    expect(screen.getByRole('region', { name: 'WhatsApp (Evolution)' })).toBeInTheDocument();
     const deWhatsapp = screen.queryAllByRole('region').map((r) => r.getAttribute('aria-label') ?? '').filter((n) => /whatsapp/i.test(n));
     expect(deWhatsapp.every((n) => /evolution/i.test(n))).toBe(true);
   });
