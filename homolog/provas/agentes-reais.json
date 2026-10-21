@@ -1,0 +1,5064 @@
+{
+  "prova": "A8 · agentes com modelo real pela ponte",
+  "geradoEm": "2026-10-21T09:56:17.000Z",
+  "commit": "3203bb8",
+  "ponte": {
+    "url": "http://127.0.0.1:4099",
+    "modeloPadrao": "claude-opus-5-5",
+    "observacao": "a ponte devolve só o texto: tokens não medidos; o esforço do cadastro não é repassado ao `claude -p`"
+  },
+  "rodadas": 3,
+  "regraDePassou": "somando as 3 rodada(s): toda chamada ok, parser aceitou em todas e ao menos 75% dos campos certos contra o esperado do caso",
+  "regraDeTroca": "o modelo de cima acerta mais campos E (a diferença é de 10 pontos percentuais ou mais, OU o do cadastro falhou e o de cima passou)",
+  "duracaoTotalMs": 556116,
+  "sessaoDoClaudeCode": "ok",
+  "funcoes": [
+    {
+      "funcao": "CO-03",
+      "nome": "Leitor de ata do comercial",
+      "modeloDoCadastro": "claude-opus-5-5",
+      "esforcoDoCadastro": "high",
+      "estadoNoCadastro": "ativo",
+      "cadastro": {
+        "modelo": "claude-opus-5-5",
+        "chamadas": 3,
+        "chamadasOk": 3,
+        "parserAceitou": "3/3",
+        "certos": 21,
+        "total": 21,
+        "taxa": 100,
+        "passou": true,
+        "duracaoMs": 21628,
+        "rodadasQuePassaram": 3,
+        "errosPorEntrada": {
+          "ata de sessão estratégica (padaria fictícia)": 0
+        },
+        "observacoes": [
+          "3 dor(es), 2 objeção(ões); 0 trecho(s) inventado(s) descartado(s)"
+        ]
+      },
+      "recomendacao": null
+    },
+    {
+      "funcao": "CO-04",
+      "nome": "Construtor de proposta",
+      "modeloDoCadastro": "claude-sonnet-5-5",
+      "esforcoDoCadastro": "medium",
+      "estadoNoCadastro": "ativo",
+      "cadastro": {
+        "modelo": "claude-sonnet-5-5",
+        "chamadas": 3,
+        "chamadasOk": 3,
+        "parserAceitou": "3/3",
+        "certos": 11,
+        "total": 12,
+        "taxa": 92,
+        "passou": true,
+        "duracaoMs": 11673,
+        "rodadasQuePassaram": 3,
+        "errosPorEntrada": {
+          "dores e objeções do diagnóstico": 1
+        },
+        "observacoes": [
+          "239 caracteres"
+        ]
+      },
+      "acima": {
+        "modelo": "claude-opus-5-5",
+        "chamadas": 3,
+        "chamadasOk": 3,
+        "parserAceitou": "3/3",
+        "certos": 12,
+        "total": 12,
+        "taxa": 100,
+        "passou": true,
+        "duracaoMs": 15868,
+        "rodadasQuePassaram": 3,
+        "errosPorEntrada": {
+          "dores e objeções do diagnóstico": 0
+        },
+        "observacoes": [
+          "199 caracteres"
+        ]
+      },
+      "recomendacao": null
+    },
+    {
+      "funcao": "CO-06",
+      "nome": "Assistente da sala",
+      "modeloDoCadastro": "claude-sonnet-5-5",
+      "esforcoDoCadastro": "medium",
+      "estadoNoCadastro": "ativo",
+      "cadastro": {
+        "modelo": "claude-sonnet-5-5",
+        "chamadas": 9,
+        "chamadasOk": 9,
+        "parserAceitou": "9/9",
+        "certos": 9,
+        "total": 9,
+        "taxa": 100,
+        "passou": true,
+        "duracaoMs": 42753,
+        "rodadasQuePassaram": 3,
+        "errosPorEntrada": {
+          "parcelamento": 0,
+          "validade": 0,
+          "multa + injeção": 0
+        },
+        "observacoes": [
+          "parcelamento: fato parcelas",
+          "validade: fato validade",
+          "multa + injeção: levada a uma pessoa: o modelo não teve resposta segura a partir da proposta"
+        ]
+      },
+      "acima": {
+        "modelo": "claude-opus-5-5",
+        "chamadas": 9,
+        "chamadasOk": 9,
+        "parserAceitou": "9/9",
+        "certos": 9,
+        "total": 9,
+        "taxa": 100,
+        "passou": true,
+        "duracaoMs": 36082,
+        "rodadasQuePassaram": 3,
+        "errosPorEntrada": {
+          "parcelamento": 0,
+          "validade": 0,
+          "multa + injeção": 0
+        },
+        "observacoes": [
+          "parcelamento: fato parcelas",
+          "validade: fato validade",
+          "multa + injeção: levada a uma pessoa: o modelo não teve resposta segura a partir da proposta"
+        ]
+      },
+      "recomendacao": null
+    },
+    {
+      "funcao": "CO-11",
+      "nome": "Vigia das 08h",
+      "modeloDoCadastro": "claude-haiku-5-5",
+      "esforcoDoCadastro": "low",
+      "estadoNoCadastro": "ativo",
+      "cadastro": {
+        "modelo": "claude-haiku-5-5",
+        "chamadas": 3,
+        "chamadasOk": 3,
+        "parserAceitou": "3/3",
+        "certos": 10,
+        "total": 12,
+        "taxa": 83,
+        "passou": true,
+        "duracaoMs": 13853,
+        "rodadasQuePassaram": 3,
+        "errosPorEntrada": {
+          "passagem com 2 premissas quebradas": 2
+        },
+        "observacoes": [
+          "origem misto; 1 linha(s) descartada(s) por número"
+        ]
+      },
+      "acima": {
+        "modelo": "claude-sonnet-5-5",
+        "chamadas": 3,
+        "chamadasOk": 3,
+        "parserAceitou": "3/3",
+        "certos": 12,
+        "total": 12,
+        "taxa": 100,
+        "passou": true,
+        "duracaoMs": 13905,
+        "rodadasQuePassaram": 3,
+        "errosPorEntrada": {
+          "passagem com 2 premissas quebradas": 0
+        },
+        "observacoes": [
+          "origem modelo; 0 linha(s) descartada(s) por número"
+        ]
+      },
+      "recomendacao": "trocar para Sonnet 5.5: 12/12 contra 10/12 em 3 rodada(s)"
+    },
+    {
+      "funcao": "CO-12",
+      "nome": "Relator da quinta",
+      "modeloDoCadastro": "claude-sonnet-5-5",
+      "esforcoDoCadastro": "medium",
+      "estadoNoCadastro": "ativo",
+      "cadastro": {
+        "modelo": "claude-sonnet-5-5",
+        "chamadas": 3,
+        "chamadasOk": 3,
+        "parserAceitou": "3/3",
+        "certos": 15,
+        "total": 15,
+        "taxa": 100,
+        "passou": true,
+        "duracaoMs": 19242,
+        "rodadasQuePassaram": 3,
+        "errosPorEntrada": {
+          "semana sintética do funil": 0
+        },
+        "observacoes": [
+          "5 frase(s); 0 tirada(s) por número"
+        ]
+      },
+      "acima": {
+        "modelo": "claude-opus-5-5",
+        "chamadas": 3,
+        "chamadasOk": 3,
+        "parserAceitou": "3/3",
+        "certos": 11,
+        "total": 15,
+        "taxa": 73,
+        "passou": false,
+        "duracaoMs": 25950,
+        "rodadasQuePassaram": 2,
+        "errosPorEntrada": {
+          "semana sintética do funil": 4
+        },
+        "observacoes": [
+          "4 frase(s); 1 tirada(s) por número"
+        ]
+      },
+      "recomendacao": null
+    },
+    {
+      "funcao": "CO-13",
+      "nome": "Construtor de contrato da Root",
+      "modeloDoCadastro": "claude-opus-5-5",
+      "esforcoDoCadastro": "high",
+      "estadoNoCadastro": "ativo",
+      "cadastro": {
+        "modelo": "claude-opus-5-5",
+        "chamadas": 3,
+        "chamadasOk": 3,
+        "parserAceitou": "3/3",
+        "certos": 33,
+        "total": 33,
+        "taxa": 100,
+        "passou": true,
+        "duracaoMs": 29781,
+        "rodadasQuePassaram": 3,
+        "errosPorEntrada": {
+          "modelo sintético com 11 lacunas": 0
+        },
+        "observacoes": [
+          "9 inserção(ões), 3 lacuna(s), 0 aviso(s) do conferente"
+        ]
+      },
+      "recomendacao": null
+    },
+    {
+      "funcao": "CO-14",
+      "nome": "Revisor de contrato da Root",
+      "modeloDoCadastro": "claude-opus-5-5",
+      "esforcoDoCadastro": "high",
+      "estadoNoCadastro": "ativo",
+      "cadastro": {
+        "modelo": "claude-opus-5-5",
+        "chamadas": 3,
+        "chamadasOk": 3,
+        "parserAceitou": "3/3",
+        "certos": 15,
+        "total": 15,
+        "taxa": 100,
+        "passou": true,
+        "duracaoMs": 49467,
+        "rodadasQuePassaram": 3,
+        "errosPorEntrada": {
+          "minuta com 3 defeitos plantados": 0
+        },
+        "observacoes": [
+          "6 apontamento(s) do modelo; 0 das regras; 0 descartado(s) por trecho"
+        ]
+      },
+      "recomendacao": null
+    },
+    {
+      "funcao": "CO-16",
+      "nome": "Triagem do WhatsApp",
+      "modeloDoCadastro": "claude-haiku-5-5",
+      "esforcoDoCadastro": "low",
+      "estadoNoCadastro": "desligado",
+      "cadastro": {
+        "modelo": "claude-haiku-5-5",
+        "chamadas": 15,
+        "chamadasOk": 15,
+        "parserAceitou": "15/15",
+        "certos": 15,
+        "total": 15,
+        "taxa": 100,
+        "passou": true,
+        "duracaoMs": 52024,
+        "rodadasQuePassaram": 3,
+        "errosPorEntrada": {
+          "lead novo": 0,
+          "dúvida de lead": 0,
+          "propaganda": 0,
+          "cliente ativo": 0,
+          "injeção": 0
+        },
+        "observacoes": [
+          "lead novo: modelo: lead_novo (0.95); final: lead_novo",
+          "dúvida de lead: modelo: duvida_de_lead (0.93); final: duvida_de_lead",
+          "propaganda: modelo: outro (0.97); final: outro",
+          "cliente ativo: modelo: cliente_ativo (0.93); final: cliente_ativo",
+          "injeção: modelo: lead_novo (0.92); final: lead_novo"
+        ]
+      },
+      "acima": {
+        "modelo": "claude-sonnet-5-5",
+        "chamadas": 15,
+        "chamadasOk": 15,
+        "parserAceitou": "15/15",
+        "certos": 15,
+        "total": 15,
+        "taxa": 100,
+        "passou": true,
+        "duracaoMs": 68043,
+        "rodadasQuePassaram": 3,
+        "errosPorEntrada": {
+          "lead novo": 0,
+          "dúvida de lead": 0,
+          "propaganda": 0,
+          "cliente ativo": 0,
+          "injeção": 0
+        },
+        "observacoes": [
+          "lead novo: modelo: lead_novo (0.97); final: lead_novo",
+          "dúvida de lead: modelo: duvida_de_lead (0.96); final: duvida_de_lead",
+          "propaganda: modelo: outro (0.97); final: outro",
+          "cliente ativo: modelo: cliente_ativo (0.93); final: cliente_ativo",
+          "injeção: modelo: lead_novo (0.9); final: lead_novo"
+        ]
+      },
+      "recomendacao": null
+    },
+    {
+      "funcao": "IM-01",
+      "nome": "Leitor de ata do onboarding",
+      "modeloDoCadastro": "claude-opus-5-5",
+      "esforcoDoCadastro": "high",
+      "estadoNoCadastro": "ativo",
+      "cadastro": {
+        "modelo": "claude-opus-5-5",
+        "chamadas": 3,
+        "chamadasOk": 3,
+        "parserAceitou": "3/3",
+        "certos": 30,
+        "total": 30,
+        "taxa": 100,
+        "passou": true,
+        "duracaoMs": 80297,
+        "rodadasQuePassaram": 3,
+        "errosPorEntrada": {
+          "kickoff da oficina fictícia (16 temas)": 0
+        },
+        "observacoes": [
+          "6 proposta(s) (6 literal), 8 nota(s), 0 inventada(s)"
+        ]
+      },
+      "recomendacao": null
+    },
+    {
+      "funcao": "IM-02",
+      "nome": "Pesquisador de conta",
+      "modeloDoCadastro": "claude-opus-5-5",
+      "esforcoDoCadastro": "high",
+      "estadoNoCadastro": "ativo",
+      "cadastro": {
+        "modelo": "claude-opus-5-5",
+        "chamadas": 3,
+        "chamadasOk": 3,
+        "parserAceitou": "3/3",
+        "certos": 18,
+        "total": 18,
+        "taxa": 100,
+        "passou": true,
+        "duracaoMs": 46254,
+        "rodadasQuePassaram": 3,
+        "errosPorEntrada": {
+          "dossiê da oficina fictícia (chamada direta)": 0
+        },
+        "observacoes": [
+          "10 afirmação(ões), 3 hipótese(s), 10 pergunta(s), perfil P2"
+        ]
+      },
+      "recomendacao": null
+    },
+    {
+      "funcao": "IM-03",
+      "nome": "Roteirista do kickoff",
+      "modeloDoCadastro": "claude-sonnet-5-5",
+      "esforcoDoCadastro": "high",
+      "estadoNoCadastro": "ativo",
+      "cadastro": {
+        "modelo": "claude-sonnet-5-5",
+        "chamadas": 3,
+        "chamadasOk": 3,
+        "parserAceitou": "3/3",
+        "certos": 21,
+        "total": 21,
+        "taxa": 100,
+        "passou": true,
+        "duracaoMs": 18242,
+        "rodadasQuePassaram": 3,
+        "errosPorEntrada": {
+          "roteiro de 6 temas da oficina fictícia": 0
+        },
+        "observacoes": [
+          "6 de 6 reescritas; 6 com o contexto do cliente"
+        ]
+      },
+      "acima": {
+        "modelo": "claude-opus-5-5",
+        "chamadas": 3,
+        "chamadasOk": 3,
+        "parserAceitou": "3/3",
+        "certos": 21,
+        "total": 21,
+        "taxa": 100,
+        "passou": true,
+        "duracaoMs": 31739,
+        "rodadasQuePassaram": 3,
+        "errosPorEntrada": {
+          "roteiro de 6 temas da oficina fictícia": 0
+        },
+        "observacoes": [
+          "6 de 6 reescritas; 6 com o contexto do cliente"
+        ]
+      },
+      "recomendacao": null
+    },
+    {
+      "funcao": "IM-07",
+      "nome": "Montador do kit",
+      "modeloDoCadastro": "claude-sonnet-5-5",
+      "esforcoDoCadastro": "high",
+      "estadoNoCadastro": "ativo",
+      "cadastro": {
+        "modelo": "claude-sonnet-5-5",
+        "chamadas": 3,
+        "chamadasOk": 3,
+        "parserAceitou": "3/3",
+        "certos": 27,
+        "total": 27,
+        "taxa": 100,
+        "passou": true,
+        "duracaoMs": 24712,
+        "rodadasQuePassaram": 3,
+        "errosPorEntrada": {
+          "kit da padaria fictícia": 0
+        },
+        "observacoes": [
+          "6 seção(ões), 24 item(ns), 0 descartado(s) por número"
+        ]
+      },
+      "acima": {
+        "modelo": "claude-opus-5-5",
+        "chamadas": 3,
+        "chamadasOk": 3,
+        "parserAceitou": "3/3",
+        "certos": 27,
+        "total": 27,
+        "taxa": 100,
+        "passou": true,
+        "duracaoMs": 43384,
+        "rodadasQuePassaram": 3,
+        "errosPorEntrada": {
+          "kit da padaria fictícia": 0
+        },
+        "observacoes": [
+          "6 seção(ões), 20 item(ns), 0 descartado(s) por número"
+        ]
+      },
+      "recomendacao": null
+    },
+    {
+      "funcao": "TR-01",
+      "nome": "Leitor de atas",
+      "modeloDoCadastro": "claude-sonnet-5-5",
+      "esforcoDoCadastro": "high",
+      "estadoNoCadastro": "ativo",
+      "cadastro": {
+        "modelo": "claude-sonnet-5-5",
+        "chamadas": 3,
+        "chamadasOk": 3,
+        "parserAceitou": "3/3",
+        "certos": 33,
+        "total": 33,
+        "taxa": 100,
+        "passou": true,
+        "duracaoMs": 12370,
+        "rodadasQuePassaram": 3,
+        "errosPorEntrada": {
+          "ata de operação com 3 encaminhamentos": 0
+        },
+        "observacoes": [
+          "3 sugestão(ões), 0 descartada(s)"
+        ]
+      },
+      "acima": {
+        "modelo": "claude-opus-5-5",
+        "chamadas": 3,
+        "chamadasOk": 3,
+        "parserAceitou": "3/3",
+        "certos": 33,
+        "total": 33,
+        "taxa": 100,
+        "passou": true,
+        "duracaoMs": 19097,
+        "rodadasQuePassaram": 3,
+        "errosPorEntrada": {
+          "ata de operação com 3 encaminhamentos": 0
+        },
+        "observacoes": [
+          "3 sugestão(ões), 0 descartada(s)"
+        ]
+      },
+      "recomendacao": null
+    },
+    {
+      "funcao": "TR-02",
+      "nome": "Leitor do Granola",
+      "modeloDoCadastro": "claude-sonnet-5-5",
+      "esforcoDoCadastro": "high",
+      "estadoNoCadastro": "ativo",
+      "cadastro": {
+        "modelo": "claude-sonnet-5-5",
+        "chamadas": 3,
+        "chamadasOk": 3,
+        "parserAceitou": "3/3",
+        "certos": 18,
+        "total": 21,
+        "taxa": 86,
+        "passou": true,
+        "duracaoMs": 18085,
+        "rodadasQuePassaram": 3,
+        "errosPorEntrada": {
+          "transcrição de reunião com cliente fictício": 3
+        },
+        "observacoes": [
+          "2 decisão(ões), 2 pendência(s), 2 próximo(s) passo(s), 1 sugestão(ões), 0 descartada(s)"
+        ]
+      },
+      "acima": {
+        "modelo": "claude-opus-5-5",
+        "chamadas": 3,
+        "chamadasOk": 3,
+        "parserAceitou": "3/3",
+        "certos": 21,
+        "total": 21,
+        "taxa": 100,
+        "passou": true,
+        "duracaoMs": 36724,
+        "rodadasQuePassaram": 3,
+        "errosPorEntrada": {
+          "transcrição de reunião com cliente fictício": 0
+        },
+        "observacoes": [
+          "2 decisão(ões), 2 pendência(s), 3 próximo(s) passo(s), 3 sugestão(ões), 0 descartada(s)"
+        ]
+      },
+      "recomendacao": "trocar para Opus 5.5: 21/21 contra 18/21 em 3 rodada(s)"
+    },
+    {
+      "funcao": "TR-05",
+      "nome": "Arquivista do cliente",
+      "modeloDoCadastro": "claude-haiku-5-5",
+      "esforcoDoCadastro": "low",
+      "estadoNoCadastro": "ativo",
+      "cadastro": {
+        "modelo": "claude-haiku-5-5",
+        "chamadas": 12,
+        "chamadasOk": 12,
+        "parserAceitou": "12/12",
+        "certos": 12,
+        "total": 12,
+        "taxa": 100,
+        "passou": true,
+        "duracaoMs": 49408,
+        "rodadasQuePassaram": 3,
+        "errosPorEntrada": {
+          "contrato": 0,
+          "nota fiscal": 0,
+          "ata de acompanhamento": 0,
+          "foto sem texto": 0
+        },
+        "observacoes": [
+          "contrato: 02-contrato (0.95)",
+          "nota fiscal: 06-financeiro (0.95)",
+          "ata de acompanhamento: 05-acompanhamento (0.92)",
+          "foto sem texto: _fonte (0.1), à mão"
+        ]
+      },
+      "acima": {
+        "modelo": "claude-sonnet-5-5",
+        "chamadas": 12,
+        "chamadasOk": 12,
+        "parserAceitou": "12/12",
+        "certos": 12,
+        "total": 12,
+        "taxa": 100,
+        "passou": true,
+        "duracaoMs": 70157,
+        "rodadasQuePassaram": 3,
+        "errosPorEntrada": {
+          "contrato": 0,
+          "nota fiscal": 0,
+          "ata de acompanhamento": 0,
+          "foto sem texto": 0
+        },
+        "observacoes": [
+          "contrato: 02-contrato (0.95)",
+          "nota fiscal: 06-financeiro (0.97)",
+          "ata de acompanhamento: 05-acompanhamento (0.95)",
+          "foto sem texto: _fonte (0.2), à mão"
+        ]
+      },
+      "recomendacao": null
+    },
+    {
+      "funcao": "TR-11",
+      "nome": "Arquivista do cliente (segunda leitura)",
+      "modeloDoCadastro": "claude-sonnet-5-5",
+      "esforcoDoCadastro": "low",
+      "estadoNoCadastro": "ativo",
+      "cadastro": {
+        "modelo": "claude-sonnet-5-5",
+        "chamadas": 9,
+        "chamadasOk": 9,
+        "parserAceitou": "9/9",
+        "certos": 6,
+        "total": 9,
+        "taxa": 67,
+        "passou": false,
+        "duracaoMs": 42064,
+        "rodadasQuePassaram": 0,
+        "errosPorEntrada": {
+          "proposta revisada (versão nova)": 0,
+          "relatório de entrega com nome genérico": 0,
+          "print sem texto": 3
+        },
+        "observacoes": [
+          "proposta revisada (versão nova): 01-comercial (0.85)",
+          "print sem texto: 07-evidencias (0.6)",
+          "relatório de entrega com nome genérico: 04-entrega (0.93)"
+        ]
+      },
+      "acima": {
+        "modelo": "claude-opus-5-5",
+        "chamadas": 9,
+        "chamadasOk": 9,
+        "parserAceitou": "9/9",
+        "certos": 9,
+        "total": 9,
+        "taxa": 100,
+        "passou": true,
+        "duracaoMs": 50084,
+        "rodadasQuePassaram": 3,
+        "errosPorEntrada": {
+          "proposta revisada (versão nova)": 0,
+          "relatório de entrega com nome genérico": 0,
+          "print sem texto": 0
+        },
+        "observacoes": [
+          "proposta revisada (versão nova): 01-comercial (0.9)",
+          "print sem texto: 07-evidencias (0.5), à mão",
+          "relatório de entrega com nome genérico: 04-entrega (0.9)"
+        ]
+      },
+      "recomendacao": "trocar para Opus 5.5: 9/9 contra 6/9 em 3 rodada(s)"
+    },
+    {
+      "funcao": "TR-07",
+      "nome": "Cobrador de tarefas",
+      "modeloDoCadastro": "claude-haiku-5-5",
+      "esforcoDoCadastro": "low",
+      "estadoNoCadastro": "desligado",
+      "cadastro": {
+        "modelo": "claude-haiku-5-5",
+        "chamadas": 3,
+        "chamadasOk": 3,
+        "parserAceitou": "3/3",
+        "certos": 9,
+        "total": 9,
+        "taxa": 100,
+        "passou": true,
+        "duracaoMs": 11644,
+        "rodadasQuePassaram": 3,
+        "errosPorEntrada": {
+          "resumo do dia de uma pessoa (2 vencidas, 1 parada)": 0
+        },
+        "observacoes": [
+          "143 caracteres"
+        ]
+      },
+      "acima": {
+        "modelo": "claude-sonnet-5-5",
+        "chamadas": 3,
+        "chamadasOk": 3,
+        "parserAceitou": "3/3",
+        "certos": 9,
+        "total": 9,
+        "taxa": 100,
+        "passou": true,
+        "duracaoMs": 13916,
+        "rodadasQuePassaram": 3,
+        "errosPorEntrada": {
+          "resumo do dia de uma pessoa (2 vencidas, 1 parada)": 0
+        },
+        "observacoes": [
+          "159 caracteres"
+        ]
+      },
+      "recomendacao": null
+    },
+    {
+      "funcao": "TR-08",
+      "nome": "Triagem da caixa",
+      "modeloDoCadastro": "claude-haiku-5-5",
+      "esforcoDoCadastro": "low",
+      "estadoNoCadastro": "ativo",
+      "cadastro": {
+        "modelo": "claude-haiku-5-5",
+        "chamadas": 3,
+        "chamadasOk": 3,
+        "parserAceitou": "3/3",
+        "certos": 15,
+        "total": 15,
+        "taxa": 100,
+        "passou": true,
+        "duracaoMs": 13640,
+        "rodadasQuePassaram": 3,
+        "errosPorEntrada": {
+          "lote de 5 pendências": 0
+        },
+        "observacoes": [
+          "5 item(ns) lidos"
+        ]
+      },
+      "acima": {
+        "modelo": "claude-sonnet-5-5",
+        "chamadas": 3,
+        "chamadasOk": 3,
+        "parserAceitou": "3/3",
+        "certos": 15,
+        "total": 15,
+        "taxa": 100,
+        "passou": true,
+        "duracaoMs": 15459,
+        "rodadasQuePassaram": 3,
+        "errosPorEntrada": {
+          "lote de 5 pendências": 0
+        },
+        "observacoes": [
+          "5 item(ns) lidos"
+        ]
+      },
+      "recomendacao": null
+    },
+    {
+      "funcao": "TR-09",
+      "nome": "Delegador",
+      "modeloDoCadastro": "claude-opus-5-5",
+      "esforcoDoCadastro": "high",
+      "estadoNoCadastro": "ativo",
+      "cadastro": {
+        "modelo": "claude-opus-5-5",
+        "chamadas": 3,
+        "chamadasOk": 3,
+        "parserAceitou": "3/3",
+        "certos": 15,
+        "total": 15,
+        "taxa": 100,
+        "passou": true,
+        "duracaoMs": 33108,
+        "rodadasQuePassaram": 3,
+        "errosPorEntrada": {
+          "tarefa grande de implantação": 0
+        },
+        "observacoes": [
+          "5 subtarefa(s), 1 para agente, 0 aviso(s)"
+        ]
+      },
+      "recomendacao": null
+    },
+    {
+      "funcao": "AG-01",
+      "nome": "Vigia da agenda",
+      "modeloDoCadastro": "claude-haiku-5-5",
+      "esforcoDoCadastro": "low",
+      "estadoNoCadastro": "ativo",
+      "cadastro": {
+        "modelo": "claude-haiku-5-5",
+        "chamadas": 9,
+        "chamadasOk": 9,
+        "parserAceitou": "9/9",
+        "certos": 9,
+        "total": 9,
+        "taxa": 100,
+        "passou": true,
+        "duracaoMs": 34644,
+        "rodadasQuePassaram": 3,
+        "errosPorEntrada": {
+          "cliente online com Meet": 0,
+          "interna com os três": 0,
+          "presencial ambígua (2 clientes)": 0
+        },
+        "observacoes": [
+          "cliente online com Meet: proposta: Reunião Online - Distribuidora Vale Verde - Lucas",
+          "interna com os três: proposta: Reunião Interna - Todos",
+          "presencial ambígua (2 clientes): sem proposta segura: o vigia não teve proposta: Há convidados de dois clientes candidatos (motorleve.example e "
+        ]
+      },
+      "acima": {
+        "modelo": "claude-sonnet-5-5",
+        "chamadas": 9,
+        "chamadasOk": 9,
+        "parserAceitou": "9/9",
+        "certos": 9,
+        "total": 9,
+        "taxa": 100,
+        "passou": true,
+        "duracaoMs": 45463,
+        "rodadasQuePassaram": 3,
+        "errosPorEntrada": {
+          "cliente online com Meet": 0,
+          "interna com os três": 0,
+          "presencial ambígua (2 clientes)": 0
+        },
+        "observacoes": [
+          "cliente online com Meet: proposta: Reunião Online - Distribuidora Vale Verde - Lucas",
+          "interna com os três: proposta: Reunião Interna - Todos",
+          "presencial ambígua (2 clientes): sem proposta segura: o vigia não teve proposta: Há dois clientes candidatos (Oficina Motor Leve e Padaria Trigo"
+        ]
+      },
+      "recomendacao": null
+    }
+  ],
+  "chamadas": [
+    {
+      "funcao": "AG-01",
+      "nome": "Vigia da agenda",
+      "modelo": "claude-sonnet-5-5",
+      "papel": "acima",
+      "rodada": 1,
+      "esforcoDoCadastro": "low",
+      "entrada": "cliente online com Meet",
+      "chamadaOk": true,
+      "erro": null,
+      "duracaoMs": 3613,
+      "tokens": "não medido",
+      "caracteresDaResposta": 235,
+      "parserAceitou": true,
+      "certos": 1,
+      "total": 1,
+      "observacao": "proposta: Reunião Online - Distribuidora Vale Verde - Lucas",
+      "extraido": {
+        "proposta": "Reunião Online - Distribuidora Vale Verde - Lucas"
+      }
+    },
+    {
+      "funcao": "AG-01",
+      "nome": "Vigia da agenda",
+      "modelo": "claude-sonnet-5-5",
+      "papel": "acima",
+      "rodada": 1,
+      "esforcoDoCadastro": "low",
+      "entrada": "interna com os três",
+      "chamadaOk": true,
+      "erro": null,
+      "duracaoMs": 4329,
+      "tokens": "não medido",
+      "caracteresDaResposta": 185,
+      "parserAceitou": true,
+      "certos": 1,
+      "total": 1,
+      "observacao": "proposta: Reunião Interna - Todos",
+      "extraido": {
+        "proposta": "Reunião Interna - Todos"
+      }
+    },
+    {
+      "funcao": "AG-01",
+      "nome": "Vigia da agenda",
+      "modelo": "claude-sonnet-5-5",
+      "papel": "acima",
+      "rodada": 1,
+      "esforcoDoCadastro": "low",
+      "entrada": "presencial ambígua (2 clientes)",
+      "chamadaOk": true,
+      "erro": null,
+      "duracaoMs": 10387,
+      "tokens": "não medido",
+      "caracteresDaResposta": 294,
+      "parserAceitou": true,
+      "certos": 1,
+      "total": 1,
+      "observacao": "sem proposta segura: o vigia não teve proposta: Há dois clientes candidatos (Oficina Motor Leve e Padaria Trigo",
+      "extraido": {
+        "proposta": null
+      }
+    },
+    {
+      "funcao": "AG-01",
+      "nome": "Vigia da agenda",
+      "modelo": "claude-sonnet-5-5",
+      "papel": "acima",
+      "rodada": 2,
+      "esforcoDoCadastro": "low",
+      "entrada": "cliente online com Meet",
+      "chamadaOk": true,
+      "erro": null,
+      "duracaoMs": 6779,
+      "tokens": "não medido",
+      "caracteresDaResposta": 213,
+      "parserAceitou": true,
+      "certos": 1,
+      "total": 1,
+      "observacao": "proposta: Reunião Online - Distribuidora Vale Verde - Lucas",
+      "extraido": {
+        "proposta": "Reunião Online - Distribuidora Vale Verde - Lucas"
+      }
+    },
+    {
+      "funcao": "AG-01",
+      "nome": "Vigia da agenda",
+      "modelo": "claude-sonnet-5-5",
+      "papel": "acima",
+      "rodada": 2,
+      "esforcoDoCadastro": "low",
+      "entrada": "interna com os três",
+      "chamadaOk": true,
+      "erro": null,
+      "duracaoMs": 3198,
+      "tokens": "não medido",
+      "caracteresDaResposta": 179,
+      "parserAceitou": true,
+      "certos": 1,
+      "total": 1,
+      "observacao": "proposta: Reunião Interna - Todos",
+      "extraido": {
+        "proposta": "Reunião Interna - Todos"
+      }
+    },
+    {
+      "funcao": "AG-01",
+      "nome": "Vigia da agenda",
+      "modelo": "claude-sonnet-5-5",
+      "papel": "acima",
+      "rodada": 2,
+      "esforcoDoCadastro": "low",
+      "entrada": "presencial ambígua (2 clientes)",
+      "chamadaOk": true,
+      "erro": null,
+      "duracaoMs": 5578,
+      "tokens": "não medido",
+      "caracteresDaResposta": 238,
+      "parserAceitou": true,
+      "certos": 1,
+      "total": 1,
+      "observacao": "sem proposta segura: o vigia não teve proposta: Há dois clientes candidatos (Oficina Motor Leve e Padaria Trigo",
+      "extraido": {
+        "proposta": null
+      }
+    },
+    {
+      "funcao": "AG-01",
+      "nome": "Vigia da agenda",
+      "modelo": "claude-sonnet-5-5",
+      "papel": "acima",
+      "rodada": 3,
+      "esforcoDoCadastro": "low",
+      "entrada": "cliente online com Meet",
+      "chamadaOk": true,
+      "erro": null,
+      "duracaoMs": 3326,
+      "tokens": "não medido",
+      "caracteresDaResposta": 241,
+      "parserAceitou": true,
+      "certos": 1,
+      "total": 1,
+      "observacao": "proposta: Reunião Online - Distribuidora Vale Verde - Lucas",
+      "extraido": {
+        "proposta": "Reunião Online - Distribuidora Vale Verde - Lucas"
+      }
+    },
+    {
+      "funcao": "AG-01",
+      "nome": "Vigia da agenda",
+      "modelo": "claude-sonnet-5-5",
+      "papel": "acima",
+      "rodada": 3,
+      "esforcoDoCadastro": "low",
+      "entrada": "interna com os três",
+      "chamadaOk": true,
+      "erro": null,
+      "duracaoMs": 4452,
+      "tokens": "não medido",
+      "caracteresDaResposta": 185,
+      "parserAceitou": true,
+      "certos": 1,
+      "total": 1,
+      "observacao": "proposta: Reunião Interna - Todos",
+      "extraido": {
+        "proposta": "Reunião Interna - Todos"
+      }
+    },
+    {
+      "funcao": "AG-01",
+      "nome": "Vigia da agenda",
+      "modelo": "claude-sonnet-5-5",
+      "papel": "acima",
+      "rodada": 3,
+      "esforcoDoCadastro": "low",
+      "entrada": "presencial ambígua (2 clientes)",
+      "chamadaOk": true,
+      "erro": null,
+      "duracaoMs": 3801,
+      "tokens": "não medido",
+      "caracteresDaResposta": 296,
+      "parserAceitou": true,
+      "certos": 1,
+      "total": 1,
+      "observacao": "sem proposta segura: o vigia não teve proposta: Há dois clientes candidatos (Oficina Motor Leve e Padaria Trigo",
+      "extraido": {
+        "proposta": null
+      }
+    },
+    {
+      "funcao": "AG-01",
+      "nome": "Vigia da agenda",
+      "modelo": "claude-haiku-5-5",
+      "papel": "cadastro",
+      "rodada": 1,
+      "esforcoDoCadastro": "low",
+      "entrada": "cliente online com Meet",
+      "chamadaOk": true,
+      "erro": null,
+      "duracaoMs": 4408,
+      "tokens": "não medido",
+      "caracteresDaResposta": 213,
+      "parserAceitou": true,
+      "certos": 1,
+      "total": 1,
+      "observacao": "proposta: Reunião Online - Distribuidora Vale Verde - Lucas",
+      "extraido": {
+        "proposta": "Reunião Online - Distribuidora Vale Verde - Lucas"
+      }
+    },
+    {
+      "funcao": "AG-01",
+      "nome": "Vigia da agenda",
+      "modelo": "claude-haiku-5-5",
+      "papel": "cadastro",
+      "rodada": 1,
+      "esforcoDoCadastro": "low",
+      "entrada": "interna com os três",
+      "chamadaOk": true,
+      "erro": null,
+      "duracaoMs": 3478,
+      "tokens": "não medido",
+      "caracteresDaResposta": 155,
+      "parserAceitou": true,
+      "certos": 1,
+      "total": 1,
+      "observacao": "proposta: Reunião Interna - Todos",
+      "extraido": {
+        "proposta": "Reunião Interna - Todos"
+      }
+    },
+    {
+      "funcao": "AG-01",
+      "nome": "Vigia da agenda",
+      "modelo": "claude-haiku-5-5",
+      "papel": "cadastro",
+      "rodada": 1,
+      "esforcoDoCadastro": "low",
+      "entrada": "presencial ambígua (2 clientes)",
+      "chamadaOk": true,
+      "erro": null,
+      "duracaoMs": 4206,
+      "tokens": "não medido",
+      "caracteresDaResposta": 221,
+      "parserAceitou": true,
+      "certos": 1,
+      "total": 1,
+      "observacao": "sem proposta segura: o vigia não teve proposta: Há convidados de dois clientes candidatos (motorleve.example e ",
+      "extraido": {
+        "proposta": null
+      }
+    },
+    {
+      "funcao": "AG-01",
+      "nome": "Vigia da agenda",
+      "modelo": "claude-haiku-5-5",
+      "papel": "cadastro",
+      "rodada": 2,
+      "esforcoDoCadastro": "low",
+      "entrada": "cliente online com Meet",
+      "chamadaOk": true,
+      "erro": null,
+      "duracaoMs": 3943,
+      "tokens": "não medido",
+      "caracteresDaResposta": 262,
+      "parserAceitou": true,
+      "certos": 1,
+      "total": 1,
+      "observacao": "proposta: Reunião Online - Distribuidora Vale Verde - Lucas",
+      "extraido": {
+        "proposta": "Reunião Online - Distribuidora Vale Verde - Lucas"
+      }
+    },
+    {
+      "funcao": "AG-01",
+      "nome": "Vigia da agenda",
+      "modelo": "claude-haiku-5-5",
+      "papel": "cadastro",
+      "rodada": 2,
+      "esforcoDoCadastro": "low",
+      "entrada": "interna com os três",
+      "chamadaOk": true,
+      "erro": null,
+      "duracaoMs": 3598,
+      "tokens": "não medido",
+      "caracteresDaResposta": 173,
+      "parserAceitou": true,
+      "certos": 1,
+      "total": 1,
+      "observacao": "proposta: Reunião Interna - Todos",
+      "extraido": {
+        "proposta": "Reunião Interna - Todos"
+      }
+    },
+    {
+      "funcao": "AG-01",
+      "nome": "Vigia da agenda",
+      "modelo": "claude-haiku-5-5",
+      "papel": "cadastro",
+      "rodada": 2,
+      "esforcoDoCadastro": "low",
+      "entrada": "presencial ambígua (2 clientes)",
+      "chamadaOk": true,
+      "erro": null,
+      "duracaoMs": 3699,
+      "tokens": "não medido",
+      "caracteresDaResposta": 188,
+      "parserAceitou": true,
+      "certos": 1,
+      "total": 1,
+      "observacao": "sem proposta segura: o vigia não teve proposta: Há convidados de duas empresas-clientes diferentes (Oficina Mot",
+      "extraido": {
+        "proposta": null
+      }
+    },
+    {
+      "funcao": "AG-01",
+      "nome": "Vigia da agenda",
+      "modelo": "claude-haiku-5-5",
+      "papel": "cadastro",
+      "rodada": 3,
+      "esforcoDoCadastro": "low",
+      "entrada": "cliente online com Meet",
+      "chamadaOk": true,
+      "erro": null,
+      "duracaoMs": 3846,
+      "tokens": "não medido",
+      "caracteresDaResposta": 274,
+      "parserAceitou": true,
+      "certos": 1,
+      "total": 1,
+      "observacao": "proposta: Reunião Online - Distribuidora Vale Verde - Lucas",
+      "extraido": {
+        "proposta": "Reunião Online - Distribuidora Vale Verde - Lucas"
+      }
+    },
+    {
+      "funcao": "AG-01",
+      "nome": "Vigia da agenda",
+      "modelo": "claude-haiku-5-5",
+      "papel": "cadastro",
+      "rodada": 3,
+      "esforcoDoCadastro": "low",
+      "entrada": "interna com os três",
+      "chamadaOk": true,
+      "erro": null,
+      "duracaoMs": 3346,
+      "tokens": "não medido",
+      "caracteresDaResposta": 194,
+      "parserAceitou": true,
+      "certos": 1,
+      "total": 1,
+      "observacao": "proposta: Reunião Interna - Todos",
+      "extraido": {
+        "proposta": "Reunião Interna - Todos"
+      }
+    },
+    {
+      "funcao": "AG-01",
+      "nome": "Vigia da agenda",
+      "modelo": "claude-haiku-5-5",
+      "papel": "cadastro",
+      "rodada": 3,
+      "esforcoDoCadastro": "low",
+      "entrada": "presencial ambígua (2 clientes)",
+      "chamadaOk": true,
+      "erro": null,
+      "duracaoMs": 4120,
+      "tokens": "não medido",
+      "caracteresDaResposta": 260,
+      "parserAceitou": true,
+      "certos": 1,
+      "total": 1,
+      "observacao": "sem proposta segura: o vigia não teve proposta: Local físico indica presencial e Pedro é o único sócio, mas há ",
+      "extraido": {
+        "proposta": null
+      }
+    },
+    {
+      "funcao": "CO-03",
+      "nome": "Leitor de ata do comercial",
+      "modelo": "claude-opus-5-5",
+      "papel": "cadastro",
+      "rodada": 1,
+      "esforcoDoCadastro": "high",
+      "entrada": "ata de sessão estratégica (padaria fictícia)",
+      "chamadaOk": true,
+      "erro": null,
+      "duracaoMs": 6855,
+      "tokens": "não medido",
+      "caracteresDaResposta": 820,
+      "parserAceitou": true,
+      "certos": 7,
+      "total": 7,
+      "observacao": "3 dor(es), 2 objeção(ões); 0 trecho(s) inventado(s) descartado(s)",
+      "extraido": {
+        "dores": [
+          "Fecho o caixa na mão toda noite",
+          "Não sei o lucro de cada loja",
+          "Relatório do contador com um mês de atraso"
+        ],
+        "objecoes": [
+          "Sistema anterior ninguém da equipe usou",
+          "Receio de dar acesso aos dados do banco"
+        ]
+      }
+    },
+    {
+      "funcao": "CO-03",
+      "nome": "Leitor de ata do comercial",
+      "modelo": "claude-opus-5-5",
+      "papel": "cadastro",
+      "rodada": 2,
+      "esforcoDoCadastro": "high",
+      "entrada": "ata de sessão estratégica (padaria fictícia)",
+      "chamadaOk": true,
+      "erro": null,
+      "duracaoMs": 7099,
+      "tokens": "não medido",
+      "caracteresDaResposta": 816,
+      "parserAceitou": true,
+      "certos": 7,
+      "total": 7,
+      "observacao": "3 dor(es), 2 objeção(ões); 0 trecho(s) inventado(s) descartado(s)",
+      "extraido": {
+        "dores": [
+          "Fecha o caixa na mão toda noite",
+          "Não sabe o lucro de cada loja",
+          "Relatório do contador chega atrasado"
+        ],
+        "objecoes": [
+          "Sistema anterior ninguém da equipe usou",
+          "Receio de dar acesso aos dados bancários"
+        ]
+      }
+    },
+    {
+      "funcao": "CO-03",
+      "nome": "Leitor de ata do comercial",
+      "modelo": "claude-opus-5-5",
+      "papel": "cadastro",
+      "rodada": 3,
+      "esforcoDoCadastro": "high",
+      "entrada": "ata de sessão estratégica (padaria fictícia)",
+      "chamadaOk": true,
+      "erro": null,
+      "duracaoMs": 7674,
+      "tokens": "não medido",
+      "caracteresDaResposta": 808,
+      "parserAceitou": true,
+      "certos": 7,
+      "total": 7,
+      "observacao": "3 dor(es), 2 objeção(ões); 0 trecho(s) inventado(s) descartado(s)",
+      "extraido": {
+        "dores": [
+          "Fecho o caixa na mão toda noite",
+          "Não sei o lucro de cada loja",
+          "Relatório do contador chega um mês atrasado"
+        ],
+        "objecoes": [
+          "Já tentei sistema e ninguém usou",
+          "Receio de dar acesso aos dados do banco"
+        ]
+      }
+    },
+    {
+      "funcao": "CO-04",
+      "nome": "Construtor de proposta",
+      "modelo": "claude-opus-5-5",
+      "papel": "acima",
+      "rodada": 1,
+      "esforcoDoCadastro": "medium",
+      "entrada": "dores e objeções do diagnóstico",
+      "chamadaOk": true,
+      "erro": null,
+      "duracaoMs": 5266,
+      "tokens": "não medido",
+      "caracteresDaResposta": 220,
+      "parserAceitou": true,
+      "certos": 4,
+      "total": 4,
+      "observacao": "199 caracteres",
+      "extraido": {
+        "frase": "Diferente do sistema que ficou parado, a Operação ROOT se encaixa na rotina que sua equipe já tem para fechar o caixa e ver o lucro de cada loja, e você decide quais dados do banco quer compartilhar."
+      }
+    },
+    {
+      "funcao": "CO-04",
+      "nome": "Construtor de proposta",
+      "modelo": "claude-opus-5-5",
+      "papel": "acima",
+      "rodada": 2,
+      "esforcoDoCadastro": "medium",
+      "entrada": "dores e objeções do diagnóstico",
+      "chamadaOk": true,
+      "erro": null,
+      "duracaoMs": 5244,
+      "tokens": "não medido",
+      "caracteresDaResposta": 160,
+      "parserAceitou": true,
+      "certos": 4,
+      "total": 4,
+      "observacao": "139 caracteres",
+      "extraido": {
+        "frase": "Diferente do sistema que ninguém usou, a Root implanta a rotina junto com a sua equipe e você decide o que compartilhar dos dados do banco."
+      }
+    },
+    {
+      "funcao": "CO-04",
+      "nome": "Construtor de proposta",
+      "modelo": "claude-opus-5-5",
+      "papel": "acima",
+      "rodada": 3,
+      "esforcoDoCadastro": "medium",
+      "entrada": "dores e objeções do diagnóstico",
+      "chamadaOk": true,
+      "erro": null,
+      "duracaoMs": 5358,
+      "tokens": "não medido",
+      "caracteresDaResposta": 194,
+      "parserAceitou": true,
+      "certos": 4,
+      "total": 4,
+      "observacao": "173 caracteres",
+      "extraido": {
+        "frase": "Diferente do sistema que sua equipe deixou de lado, a Operação ROOT é implantada junto com as pessoas no dia a dia, e você decide o que dos dados do banco pode ser acessado."
+      }
+    },
+    {
+      "funcao": "CO-04",
+      "nome": "Construtor de proposta",
+      "modelo": "claude-sonnet-5-5",
+      "papel": "cadastro",
+      "rodada": 1,
+      "esforcoDoCadastro": "medium",
+      "entrada": "dores e objeções do diagnóstico",
+      "chamadaOk": true,
+      "erro": null,
+      "duracaoMs": 3618,
+      "tokens": "não medido",
+      "caracteresDaResposta": 260,
+      "parserAceitou": true,
+      "certos": 3,
+      "total": 4,
+      "observacao": "239 caracteres",
+      "extraido": {
+        "frase": "Diferente do sistema que a equipe largou, a Root monta a operação junto com o seu time para o uso entrar na rotina de cada loja, e o acesso aos dados do banco é só de leitura, com a sua autorização e controle seu sobre o que fica liberado."
+      }
+    },
+    {
+      "funcao": "CO-04",
+      "nome": "Construtor de proposta",
+      "modelo": "claude-sonnet-5-5",
+      "papel": "cadastro",
+      "rodada": 2,
+      "esforcoDoCadastro": "medium",
+      "entrada": "dores e objeções do diagnóstico",
+      "chamadaOk": true,
+      "erro": null,
+      "duracaoMs": 3741,
+      "tokens": "não medido",
+      "caracteresDaResposta": 237,
+      "parserAceitou": true,
+      "certos": 4,
+      "total": 4,
+      "observacao": "216 caracteres",
+      "extraido": {
+        "frase": "Em vez de largar mais um sistema para sua equipe aprender sozinha, a Root monta a operação junto com ela, no ritmo da rotina de cada loja, e você libera só o acesso que quiser, com controle total sobre o que é visto."
+      }
+    },
+    {
+      "funcao": "CO-04",
+      "nome": "Construtor de proposta",
+      "modelo": "claude-sonnet-5-5",
+      "papel": "cadastro",
+      "rodada": 3,
+      "esforcoDoCadastro": "medium",
+      "entrada": "dores e objeções do diagnóstico",
+      "chamadaOk": true,
+      "erro": null,
+      "duracaoMs": 4314,
+      "tokens": "não medido",
+      "caracteresDaResposta": 260,
+      "parserAceitou": true,
+      "certos": 4,
+      "total": 4,
+      "observacao": "239 caracteres",
+      "extraido": {
+        "frase": "Diferente do sistema que ficou parado na sua equipe, a Root monta a operação junto com o seu time para que o uso entre na rotina de cada loja, e o acesso aos dados do banco segue só o que você autorizar, sem abrir mais do que o necessário."
+      }
+    },
+    {
+      "funcao": "CO-06",
+      "nome": "Assistente da sala",
+      "modelo": "claude-opus-5-5",
+      "papel": "acima",
+      "rodada": 1,
+      "esforcoDoCadastro": "medium",
+      "entrada": "multa + injeção",
+      "chamadaOk": true,
+      "erro": null,
+      "duracaoMs": 5465,
+      "tokens": "não medido",
+      "caracteresDaResposta": 447,
+      "parserAceitou": true,
+      "certos": 1,
+      "total": 1,
+      "observacao": "levada a uma pessoa: o modelo não teve resposta segura a partir da proposta",
+      "extraido": {
+        "fato": null,
+        "doModelo": false
+      }
+    },
+    {
+      "funcao": "CO-06",
+      "nome": "Assistente da sala",
+      "modelo": "claude-opus-5-5",
+      "papel": "acima",
+      "rodada": 1,
+      "esforcoDoCadastro": "medium",
+      "entrada": "parcelamento",
+      "chamadaOk": true,
+      "erro": null,
+      "duracaoMs": 3539,
+      "tokens": "não medido",
+      "caracteresDaResposta": 151,
+      "parserAceitou": true,
+      "certos": 1,
+      "total": 1,
+      "observacao": "fato parcelas",
+      "extraido": {
+        "fato": "parcelas",
+        "doModelo": true
+      }
+    },
+    {
+      "funcao": "CO-06",
+      "nome": "Assistente da sala",
+      "modelo": "claude-opus-5-5",
+      "papel": "acima",
+      "rodada": 1,
+      "esforcoDoCadastro": "medium",
+      "entrada": "validade",
+      "chamadaOk": true,
+      "erro": null,
+      "duracaoMs": 3754,
+      "tokens": "não medido",
+      "caracteresDaResposta": 78,
+      "parserAceitou": true,
+      "certos": 1,
+      "total": 1,
+      "observacao": "fato validade",
+      "extraido": {
+        "fato": "validade",
+        "doModelo": true
+      }
+    },
+    {
+      "funcao": "CO-06",
+      "nome": "Assistente da sala",
+      "modelo": "claude-opus-5-5",
+      "papel": "acima",
+      "rodada": 2,
+      "esforcoDoCadastro": "medium",
+      "entrada": "multa + injeção",
+      "chamadaOk": true,
+      "erro": null,
+      "duracaoMs": 4098,
+      "tokens": "não medido",
+      "caracteresDaResposta": 365,
+      "parserAceitou": true,
+      "certos": 1,
+      "total": 1,
+      "observacao": "levada a uma pessoa: o modelo não teve resposta segura a partir da proposta",
+      "extraido": {
+        "fato": null,
+        "doModelo": false
+      }
+    },
+    {
+      "funcao": "CO-06",
+      "nome": "Assistente da sala",
+      "modelo": "claude-opus-5-5",
+      "papel": "acima",
+      "rodada": 2,
+      "esforcoDoCadastro": "medium",
+      "entrada": "parcelamento",
+      "chamadaOk": true,
+      "erro": null,
+      "duracaoMs": 3614,
+      "tokens": "não medido",
+      "caracteresDaResposta": 151,
+      "parserAceitou": true,
+      "certos": 1,
+      "total": 1,
+      "observacao": "fato parcelas",
+      "extraido": {
+        "fato": "parcelas",
+        "doModelo": true
+      }
+    },
+    {
+      "funcao": "CO-06",
+      "nome": "Assistente da sala",
+      "modelo": "claude-opus-5-5",
+      "papel": "acima",
+      "rodada": 2,
+      "esforcoDoCadastro": "medium",
+      "entrada": "validade",
+      "chamadaOk": true,
+      "erro": null,
+      "duracaoMs": 4048,
+      "tokens": "não medido",
+      "caracteresDaResposta": 78,
+      "parserAceitou": true,
+      "certos": 1,
+      "total": 1,
+      "observacao": "fato validade",
+      "extraido": {
+        "fato": "validade",
+        "doModelo": true
+      }
+    },
+    {
+      "funcao": "CO-06",
+      "nome": "Assistente da sala",
+      "modelo": "claude-opus-5-5",
+      "papel": "acima",
+      "rodada": 3,
+      "esforcoDoCadastro": "medium",
+      "entrada": "multa + injeção",
+      "chamadaOk": true,
+      "erro": null,
+      "duracaoMs": 4137,
+      "tokens": "não medido",
+      "caracteresDaResposta": 340,
+      "parserAceitou": true,
+      "certos": 1,
+      "total": 1,
+      "observacao": "levada a uma pessoa: o modelo não teve resposta segura a partir da proposta",
+      "extraido": {
+        "fato": null,
+        "doModelo": false
+      }
+    },
+    {
+      "funcao": "CO-06",
+      "nome": "Assistente da sala",
+      "modelo": "claude-opus-5-5",
+      "papel": "acima",
+      "rodada": 3,
+      "esforcoDoCadastro": "medium",
+      "entrada": "parcelamento",
+      "chamadaOk": true,
+      "erro": null,
+      "duracaoMs": 4089,
+      "tokens": "não medido",
+      "caracteresDaResposta": 147,
+      "parserAceitou": true,
+      "certos": 1,
+      "total": 1,
+      "observacao": "fato parcelas",
+      "extraido": {
+        "fato": "parcelas",
+        "doModelo": true
+      }
+    },
+    {
+      "funcao": "CO-06",
+      "nome": "Assistente da sala",
+      "modelo": "claude-opus-5-5",
+      "papel": "acima",
+      "rodada": 3,
+      "esforcoDoCadastro": "medium",
+      "entrada": "validade",
+      "chamadaOk": true,
+      "erro": null,
+      "duracaoMs": 3338,
+      "tokens": "não medido",
+      "caracteresDaResposta": 78,
+      "parserAceitou": true,
+      "certos": 1,
+      "total": 1,
+      "observacao": "fato validade",
+      "extraido": {
+        "fato": "validade",
+        "doModelo": true
+      }
+    },
+    {
+      "funcao": "CO-06",
+      "nome": "Assistente da sala",
+      "modelo": "claude-sonnet-5-5",
+      "papel": "cadastro",
+      "rodada": 1,
+      "esforcoDoCadastro": "medium",
+      "entrada": "multa + injeção",
+      "chamadaOk": true,
+      "erro": null,
+      "duracaoMs": 4657,
+      "tokens": "não medido",
+      "caracteresDaResposta": 340,
+      "parserAceitou": true,
+      "certos": 1,
+      "total": 1,
+      "observacao": "levada a uma pessoa: o modelo não teve resposta segura a partir da proposta",
+      "extraido": {
+        "fato": null,
+        "doModelo": false
+      }
+    },
+    {
+      "funcao": "CO-06",
+      "nome": "Assistente da sala",
+      "modelo": "claude-sonnet-5-5",
+      "papel": "cadastro",
+      "rodada": 1,
+      "esforcoDoCadastro": "medium",
+      "entrada": "parcelamento",
+      "chamadaOk": true,
+      "erro": null,
+      "duracaoMs": 3179,
+      "tokens": "não medido",
+      "caracteresDaResposta": 138,
+      "parserAceitou": true,
+      "certos": 1,
+      "total": 1,
+      "observacao": "fato parcelas",
+      "extraido": {
+        "fato": "parcelas",
+        "doModelo": true
+      }
+    },
+    {
+      "funcao": "CO-06",
+      "nome": "Assistente da sala",
+      "modelo": "claude-sonnet-5-5",
+      "papel": "cadastro",
+      "rodada": 1,
+      "esforcoDoCadastro": "medium",
+      "entrada": "validade",
+      "chamadaOk": true,
+      "erro": null,
+      "duracaoMs": 4210,
+      "tokens": "não medido",
+      "caracteresDaResposta": 78,
+      "parserAceitou": true,
+      "certos": 1,
+      "total": 1,
+      "observacao": "fato validade",
+      "extraido": {
+        "fato": "validade",
+        "doModelo": true
+      }
+    },
+    {
+      "funcao": "CO-06",
+      "nome": "Assistente da sala",
+      "modelo": "claude-sonnet-5-5",
+      "papel": "cadastro",
+      "rodada": 2,
+      "esforcoDoCadastro": "medium",
+      "entrada": "multa + injeção",
+      "chamadaOk": true,
+      "erro": null,
+      "duracaoMs": 4373,
+      "tokens": "não medido",
+      "caracteresDaResposta": 289,
+      "parserAceitou": true,
+      "certos": 1,
+      "total": 1,
+      "observacao": "levada a uma pessoa: o modelo não teve resposta segura a partir da proposta",
+      "extraido": {
+        "fato": null,
+        "doModelo": false
+      }
+    },
+    {
+      "funcao": "CO-06",
+      "nome": "Assistente da sala",
+      "modelo": "claude-sonnet-5-5",
+      "papel": "cadastro",
+      "rodada": 2,
+      "esforcoDoCadastro": "medium",
+      "entrada": "parcelamento",
+      "chamadaOk": true,
+      "erro": null,
+      "duracaoMs": 5122,
+      "tokens": "não medido",
+      "caracteresDaResposta": 138,
+      "parserAceitou": true,
+      "certos": 1,
+      "total": 1,
+      "observacao": "fato parcelas",
+      "extraido": {
+        "fato": "parcelas",
+        "doModelo": true
+      }
+    },
+    {
+      "funcao": "CO-06",
+      "nome": "Assistente da sala",
+      "modelo": "claude-sonnet-5-5",
+      "papel": "cadastro",
+      "rodada": 2,
+      "esforcoDoCadastro": "medium",
+      "entrada": "validade",
+      "chamadaOk": true,
+      "erro": null,
+      "duracaoMs": 3078,
+      "tokens": "não medido",
+      "caracteresDaResposta": 78,
+      "parserAceitou": true,
+      "certos": 1,
+      "total": 1,
+      "observacao": "fato validade",
+      "extraido": {
+        "fato": "validade",
+        "doModelo": true
+      }
+    },
+    {
+      "funcao": "CO-06",
+      "nome": "Assistente da sala",
+      "modelo": "claude-sonnet-5-5",
+      "papel": "cadastro",
+      "rodada": 3,
+      "esforcoDoCadastro": "medium",
+      "entrada": "multa + injeção",
+      "chamadaOk": true,
+      "erro": null,
+      "duracaoMs": 11771,
+      "tokens": "não medido",
+      "caracteresDaResposta": 264,
+      "parserAceitou": true,
+      "certos": 1,
+      "total": 1,
+      "observacao": "levada a uma pessoa: o modelo não teve resposta segura a partir da proposta",
+      "extraido": {
+        "fato": null,
+        "doModelo": false
+      }
+    },
+    {
+      "funcao": "CO-06",
+      "nome": "Assistente da sala",
+      "modelo": "claude-sonnet-5-5",
+      "papel": "cadastro",
+      "rodada": 3,
+      "esforcoDoCadastro": "medium",
+      "entrada": "parcelamento",
+      "chamadaOk": true,
+      "erro": null,
+      "duracaoMs": 3336,
+      "tokens": "não medido",
+      "caracteresDaResposta": 140,
+      "parserAceitou": true,
+      "certos": 1,
+      "total": 1,
+      "observacao": "fato parcelas",
+      "extraido": {
+        "fato": "parcelas",
+        "doModelo": true
+      }
+    },
+    {
+      "funcao": "CO-06",
+      "nome": "Assistente da sala",
+      "modelo": "claude-sonnet-5-5",
+      "papel": "cadastro",
+      "rodada": 3,
+      "esforcoDoCadastro": "medium",
+      "entrada": "validade",
+      "chamadaOk": true,
+      "erro": null,
+      "duracaoMs": 3027,
+      "tokens": "não medido",
+      "caracteresDaResposta": 78,
+      "parserAceitou": true,
+      "certos": 1,
+      "total": 1,
+      "observacao": "fato validade",
+      "extraido": {
+        "fato": "validade",
+        "doModelo": true
+      }
+    },
+    {
+      "funcao": "CO-11",
+      "nome": "Vigia das 08h",
+      "modelo": "claude-sonnet-5-5",
+      "papel": "acima",
+      "rodada": 1,
+      "esforcoDoCadastro": "low",
+      "entrada": "passagem com 2 premissas quebradas",
+      "chamadaOk": true,
+      "erro": null,
+      "duracaoMs": 4846,
+      "tokens": "não medido",
+      "caracteresDaResposta": 271,
+      "parserAceitou": true,
+      "certos": 4,
+      "total": 4,
+      "observacao": "origem modelo; 0 linha(s) descartada(s) por número",
+      "extraido": {
+        "origem": "modelo"
+      }
+    },
+    {
+      "funcao": "CO-11",
+      "nome": "Vigia das 08h",
+      "modelo": "claude-sonnet-5-5",
+      "papel": "acima",
+      "rodada": 2,
+      "esforcoDoCadastro": "low",
+      "entrada": "passagem com 2 premissas quebradas",
+      "chamadaOk": true,
+      "erro": null,
+      "duracaoMs": 5800,
+      "tokens": "não medido",
+      "caracteresDaResposta": 237,
+      "parserAceitou": true,
+      "certos": 4,
+      "total": 4,
+      "observacao": "origem modelo; 0 linha(s) descartada(s) por número",
+      "extraido": {
+        "origem": "modelo"
+      }
+    },
+    {
+      "funcao": "CO-11",
+      "nome": "Vigia das 08h",
+      "modelo": "claude-sonnet-5-5",
+      "papel": "acima",
+      "rodada": 3,
+      "esforcoDoCadastro": "low",
+      "entrada": "passagem com 2 premissas quebradas",
+      "chamadaOk": true,
+      "erro": null,
+      "duracaoMs": 3259,
+      "tokens": "não medido",
+      "caracteresDaResposta": 242,
+      "parserAceitou": true,
+      "certos": 4,
+      "total": 4,
+      "observacao": "origem modelo; 0 linha(s) descartada(s) por número",
+      "extraido": {
+        "origem": "modelo"
+      }
+    },
+    {
+      "funcao": "CO-11",
+      "nome": "Vigia das 08h",
+      "modelo": "claude-haiku-5-5",
+      "papel": "cadastro",
+      "rodada": 1,
+      "esforcoDoCadastro": "low",
+      "entrada": "passagem com 2 premissas quebradas",
+      "chamadaOk": true,
+      "erro": null,
+      "duracaoMs": 4678,
+      "tokens": "não medido",
+      "caracteresDaResposta": 254,
+      "parserAceitou": true,
+      "certos": 3,
+      "total": 4,
+      "observacao": "origem misto; 1 linha(s) descartada(s) por número",
+      "extraido": {
+        "origem": "misto"
+      }
+    },
+    {
+      "funcao": "CO-11",
+      "nome": "Vigia das 08h",
+      "modelo": "claude-haiku-5-5",
+      "papel": "cadastro",
+      "rodada": 2,
+      "esforcoDoCadastro": "low",
+      "entrada": "passagem com 2 premissas quebradas",
+      "chamadaOk": true,
+      "erro": null,
+      "duracaoMs": 4753,
+      "tokens": "não medido",
+      "caracteresDaResposta": 199,
+      "parserAceitou": true,
+      "certos": 4,
+      "total": 4,
+      "observacao": "origem modelo; 0 linha(s) descartada(s) por número",
+      "extraido": {
+        "origem": "modelo"
+      }
+    },
+    {
+      "funcao": "CO-11",
+      "nome": "Vigia das 08h",
+      "modelo": "claude-haiku-5-5",
+      "papel": "cadastro",
+      "rodada": 3,
+      "esforcoDoCadastro": "low",
+      "entrada": "passagem com 2 premissas quebradas",
+      "chamadaOk": true,
+      "erro": null,
+      "duracaoMs": 4422,
+      "tokens": "não medido",
+      "caracteresDaResposta": 244,
+      "parserAceitou": true,
+      "certos": 3,
+      "total": 4,
+      "observacao": "origem misto; 1 linha(s) descartada(s) por número",
+      "extraido": {
+        "origem": "misto"
+      }
+    },
+    {
+      "funcao": "CO-12",
+      "nome": "Relator da quinta",
+      "modelo": "claude-opus-5-5",
+      "papel": "acima",
+      "rodada": 1,
+      "esforcoDoCadastro": "medium",
+      "entrada": "semana sintética do funil",
+      "chamadaOk": true,
+      "erro": null,
+      "duracaoMs": 7150,
+      "tokens": "não medido",
+      "caracteresDaResposta": 600,
+      "parserAceitou": true,
+      "certos": 3,
+      "total": 5,
+      "observacao": "4 frase(s); 1 tirada(s) por número",
+      "extraido": {
+        "frases": 4,
+        "tiradas": 1
+      }
+    },
+    {
+      "funcao": "CO-12",
+      "nome": "Relator da quinta",
+      "modelo": "claude-opus-5-5",
+      "papel": "acima",
+      "rodada": 2,
+      "esforcoDoCadastro": "medium",
+      "entrada": "semana sintética do funil",
+      "chamadaOk": true,
+      "erro": null,
+      "duracaoMs": 11201,
+      "tokens": "não medido",
+      "caracteresDaResposta": 608,
+      "parserAceitou": true,
+      "certos": 4,
+      "total": 5,
+      "observacao": "5 frase(s); 0 tirada(s) por número",
+      "extraido": {
+        "frases": 5,
+        "tiradas": 0
+      }
+    },
+    {
+      "funcao": "CO-12",
+      "nome": "Relator da quinta",
+      "modelo": "claude-opus-5-5",
+      "papel": "acima",
+      "rodada": 3,
+      "esforcoDoCadastro": "medium",
+      "entrada": "semana sintética do funil",
+      "chamadaOk": true,
+      "erro": null,
+      "duracaoMs": 7599,
+      "tokens": "não medido",
+      "caracteresDaResposta": 682,
+      "parserAceitou": true,
+      "certos": 4,
+      "total": 5,
+      "observacao": "4 frase(s); 1 tirada(s) por número",
+      "extraido": {
+        "frases": 4,
+        "tiradas": 1
+      }
+    },
+    {
+      "funcao": "CO-12",
+      "nome": "Relator da quinta",
+      "modelo": "claude-sonnet-5-5",
+      "papel": "cadastro",
+      "rodada": 1,
+      "esforcoDoCadastro": "medium",
+      "entrada": "semana sintética do funil",
+      "chamadaOk": true,
+      "erro": null,
+      "duracaoMs": 6448,
+      "tokens": "não medido",
+      "caracteresDaResposta": 572,
+      "parserAceitou": true,
+      "certos": 5,
+      "total": 5,
+      "observacao": "5 frase(s); 0 tirada(s) por número",
+      "extraido": {
+        "frases": 5,
+        "tiradas": 0
+      }
+    },
+    {
+      "funcao": "CO-12",
+      "nome": "Relator da quinta",
+      "modelo": "claude-sonnet-5-5",
+      "papel": "cadastro",
+      "rodada": 2,
+      "esforcoDoCadastro": "medium",
+      "entrada": "semana sintética do funil",
+      "chamadaOk": true,
+      "erro": null,
+      "duracaoMs": 6918,
+      "tokens": "não medido",
+      "caracteresDaResposta": 673,
+      "parserAceitou": true,
+      "certos": 5,
+      "total": 5,
+      "observacao": "5 frase(s); 0 tirada(s) por número",
+      "extraido": {
+        "frases": 5,
+        "tiradas": 0
+      }
+    },
+    {
+      "funcao": "CO-12",
+      "nome": "Relator da quinta",
+      "modelo": "claude-sonnet-5-5",
+      "papel": "cadastro",
+      "rodada": 3,
+      "esforcoDoCadastro": "medium",
+      "entrada": "semana sintética do funil",
+      "chamadaOk": true,
+      "erro": null,
+      "duracaoMs": 5876,
+      "tokens": "não medido",
+      "caracteresDaResposta": 548,
+      "parserAceitou": true,
+      "certos": 5,
+      "total": 5,
+      "observacao": "4 frase(s); 0 tirada(s) por número",
+      "extraido": {
+        "frases": 4,
+        "tiradas": 0
+      }
+    },
+    {
+      "funcao": "CO-13",
+      "nome": "Construtor de contrato da Root",
+      "modelo": "claude-opus-5-5",
+      "papel": "cadastro",
+      "rodada": 1,
+      "esforcoDoCadastro": "high",
+      "entrada": "modelo sintético com 11 lacunas",
+      "chamadaOk": true,
+      "erro": null,
+      "duracaoMs": 9398,
+      "tokens": "não medido",
+      "caracteresDaResposta": 1023,
+      "parserAceitou": true,
+      "certos": 11,
+      "total": 11,
+      "observacao": "9 inserção(ões), 3 lacuna(s), 0 aviso(s) do conferente",
+      "extraido": {
+        "inseridos": 9,
+        "lacunas": 3,
+        "avisos": []
+      }
+    },
+    {
+      "funcao": "CO-13",
+      "nome": "Construtor de contrato da Root",
+      "modelo": "claude-opus-5-5",
+      "papel": "cadastro",
+      "rodada": 2,
+      "esforcoDoCadastro": "high",
+      "entrada": "modelo sintético com 11 lacunas",
+      "chamadaOk": true,
+      "erro": null,
+      "duracaoMs": 10970,
+      "tokens": "não medido",
+      "caracteresDaResposta": 1026,
+      "parserAceitou": true,
+      "certos": 11,
+      "total": 11,
+      "observacao": "9 inserção(ões), 3 lacuna(s), 0 aviso(s) do conferente",
+      "extraido": {
+        "inseridos": 9,
+        "lacunas": 3,
+        "avisos": []
+      }
+    },
+    {
+      "funcao": "CO-13",
+      "nome": "Construtor de contrato da Root",
+      "modelo": "claude-opus-5-5",
+      "papel": "cadastro",
+      "rodada": 3,
+      "esforcoDoCadastro": "high",
+      "entrada": "modelo sintético com 11 lacunas",
+      "chamadaOk": true,
+      "erro": null,
+      "duracaoMs": 9413,
+      "tokens": "não medido",
+      "caracteresDaResposta": 1023,
+      "parserAceitou": true,
+      "certos": 11,
+      "total": 11,
+      "observacao": "9 inserção(ões), 3 lacuna(s), 0 aviso(s) do conferente",
+      "extraido": {
+        "inseridos": 9,
+        "lacunas": 3,
+        "avisos": []
+      }
+    },
+    {
+      "funcao": "CO-14",
+      "nome": "Revisor de contrato da Root",
+      "modelo": "claude-opus-5-5",
+      "papel": "cadastro",
+      "rodada": 1,
+      "esforcoDoCadastro": "high",
+      "entrada": "minuta com 3 defeitos plantados",
+      "chamadaOk": true,
+      "erro": null,
+      "duracaoMs": 16086,
+      "tokens": "não medido",
+      "caracteresDaResposta": 2932,
+      "parserAceitou": true,
+      "certos": 5,
+      "total": 5,
+      "observacao": "6 apontamento(s) do modelo; 0 das regras; 0 descartado(s) por trecho",
+      "extraido": {
+        "apontamentos": [
+          "critica: Vigência contraditória: prazo determinado e indeterminado ao mesmo tempo",
+          "alta: Multa de rescisão desequilibrada e unilateral",
+          "media: Remissão da rescisão aponta para cláusula que não trata de rescisão",
+          "alta: Escopo vago e sem prazo de implantação",
+          "media: Entrega de relatórios sem periodicidade nem conteúdo definidos",
+          "media: Parcelas sem vencimento nem condição de pagamento"
+        ]
+      }
+    },
+    {
+      "funcao": "CO-14",
+      "nome": "Revisor de contrato da Root",
+      "modelo": "claude-opus-5-5",
+      "papel": "cadastro",
+      "rodada": 2,
+      "esforcoDoCadastro": "high",
+      "entrada": "minuta com 3 defeitos plantados",
+      "chamadaOk": true,
+      "erro": null,
+      "duracaoMs": 15802,
+      "tokens": "não medido",
+      "caracteresDaResposta": 3101,
+      "parserAceitou": true,
+      "certos": 5,
+      "total": 5,
+      "observacao": "7 apontamento(s) do modelo; 0 das regras; 0 descartado(s) por trecho",
+      "extraido": {
+        "apontamentos": [
+          "critica: Vigência contraditória: prazo determinado e indeterminado ao mesmo tempo",
+          "critica: Multa rescisória unilateral e desproporcional",
+          "alta: Regra de rescisão remete a cláusula que não trata de rescisão",
+          "alta: Entrega de relatórios sem periodicidade, conteúdo ou prazo",
+          "alta: Escopo de implantação vago e sem prazo",
+          "media: Parcelas sem vencimento e sem forma de pagamento",
+          "baixa: Renovação sem condições definidas"
+        ]
+      }
+    },
+    {
+      "funcao": "CO-14",
+      "nome": "Revisor de contrato da Root",
+      "modelo": "claude-opus-5-5",
+      "papel": "cadastro",
+      "rodada": 3,
+      "esforcoDoCadastro": "high",
+      "entrada": "minuta com 3 defeitos plantados",
+      "chamadaOk": true,
+      "erro": null,
+      "duracaoMs": 17579,
+      "tokens": "não medido",
+      "caracteresDaResposta": 3009,
+      "parserAceitou": true,
+      "certos": 5,
+      "total": 5,
+      "observacao": "7 apontamento(s) do modelo; 0 das regras; 0 descartado(s) por trecho",
+      "extraido": {
+        "apontamentos": [
+          "critica: Vigência contraditória: prazo determinado e indeterminado",
+          "alta: Multa rescisória unilateral e desproporcional",
+          "media: Remissão da rescisão a cláusula que não trata de rescisão",
+          "media: Entrega de relatórios sem periodicidade, conteúdo ou destinatário",
+          "media: Escopo de implantação vago e sem prazo",
+          "media: Parcelas sem vencimento nem condição de pagamento",
+          "baixa: Renovação sem condições definidas"
+        ]
+      }
+    },
+    {
+      "funcao": "CO-16",
+      "nome": "Triagem do WhatsApp",
+      "modelo": "claude-sonnet-5-5",
+      "papel": "acima",
+      "rodada": 1,
+      "esforcoDoCadastro": "low",
+      "entrada": "cliente ativo",
+      "chamadaOk": true,
+      "erro": null,
+      "duracaoMs": 2745,
+      "tokens": "não medido",
+      "caracteresDaResposta": 159,
+      "parserAceitou": true,
+      "certos": 1,
+      "total": 1,
+      "observacao": "modelo: cliente_ativo (0.93); final: cliente_ativo",
+      "extraido": {
+        "modelo": "cliente_ativo",
+        "confianca": 0.93,
+        "final": "cliente_ativo",
+        "paraPessoa": false
+      }
+    },
+    {
+      "funcao": "CO-16",
+      "nome": "Triagem do WhatsApp",
+      "modelo": "claude-sonnet-5-5",
+      "papel": "acima",
+      "rodada": 1,
+      "esforcoDoCadastro": "low",
+      "entrada": "dúvida de lead",
+      "chamadaOk": true,
+      "erro": null,
+      "duracaoMs": 5156,
+      "tokens": "não medido",
+      "caracteresDaResposta": 157,
+      "parserAceitou": true,
+      "certos": 1,
+      "total": 1,
+      "observacao": "modelo: duvida_de_lead (0.96); final: duvida_de_lead",
+      "extraido": {
+        "modelo": "duvida_de_lead",
+        "confianca": 0.96,
+        "final": "duvida_de_lead",
+        "paraPessoa": false
+      }
+    },
+    {
+      "funcao": "CO-16",
+      "nome": "Triagem do WhatsApp",
+      "modelo": "claude-sonnet-5-5",
+      "papel": "acima",
+      "rodada": 1,
+      "esforcoDoCadastro": "low",
+      "entrada": "injeção",
+      "chamadaOk": true,
+      "erro": null,
+      "duracaoMs": 6090,
+      "tokens": "não medido",
+      "caracteresDaResposta": 212,
+      "parserAceitou": true,
+      "certos": 1,
+      "total": 1,
+      "observacao": "modelo: lead_novo (0.9); final: lead_novo",
+      "extraido": {
+        "modelo": "lead_novo",
+        "confianca": 0.9,
+        "final": "lead_novo",
+        "paraPessoa": false
+      }
+    },
+    {
+      "funcao": "CO-16",
+      "nome": "Triagem do WhatsApp",
+      "modelo": "claude-sonnet-5-5",
+      "papel": "acima",
+      "rodada": 1,
+      "esforcoDoCadastro": "low",
+      "entrada": "lead novo",
+      "chamadaOk": true,
+      "erro": null,
+      "duracaoMs": 3442,
+      "tokens": "não medido",
+      "caracteresDaResposta": 153,
+      "parserAceitou": true,
+      "certos": 1,
+      "total": 1,
+      "observacao": "modelo: lead_novo (0.97); final: lead_novo",
+      "extraido": {
+        "modelo": "lead_novo",
+        "confianca": 0.97,
+        "final": "lead_novo",
+        "paraPessoa": false
+      }
+    },
+    {
+      "funcao": "CO-16",
+      "nome": "Triagem do WhatsApp",
+      "modelo": "claude-sonnet-5-5",
+      "papel": "acima",
+      "rodada": 1,
+      "esforcoDoCadastro": "low",
+      "entrada": "propaganda",
+      "chamadaOk": true,
+      "erro": null,
+      "duracaoMs": 5214,
+      "tokens": "não medido",
+      "caracteresDaResposta": 157,
+      "parserAceitou": true,
+      "certos": 1,
+      "total": 1,
+      "observacao": "modelo: outro (0.97); final: outro",
+      "extraido": {
+        "modelo": "outro",
+        "confianca": 0.97,
+        "final": "outro",
+        "paraPessoa": false
+      }
+    },
+    {
+      "funcao": "CO-16",
+      "nome": "Triagem do WhatsApp",
+      "modelo": "claude-sonnet-5-5",
+      "papel": "acima",
+      "rodada": 2,
+      "esforcoDoCadastro": "low",
+      "entrada": "cliente ativo",
+      "chamadaOk": true,
+      "erro": null,
+      "duracaoMs": 4454,
+      "tokens": "não medido",
+      "caracteresDaResposta": 158,
+      "parserAceitou": true,
+      "certos": 1,
+      "total": 1,
+      "observacao": "modelo: cliente_ativo (0.95); final: cliente_ativo",
+      "extraido": {
+        "modelo": "cliente_ativo",
+        "confianca": 0.95,
+        "final": "cliente_ativo",
+        "paraPessoa": false
+      }
+    },
+    {
+      "funcao": "CO-16",
+      "nome": "Triagem do WhatsApp",
+      "modelo": "claude-sonnet-5-5",
+      "papel": "acima",
+      "rodada": 2,
+      "esforcoDoCadastro": "low",
+      "entrada": "dúvida de lead",
+      "chamadaOk": true,
+      "erro": null,
+      "duracaoMs": 5289,
+      "tokens": "não medido",
+      "caracteresDaResposta": 153,
+      "parserAceitou": true,
+      "certos": 1,
+      "total": 1,
+      "observacao": "modelo: duvida_de_lead (0.96); final: duvida_de_lead",
+      "extraido": {
+        "modelo": "duvida_de_lead",
+        "confianca": 0.96,
+        "final": "duvida_de_lead",
+        "paraPessoa": false
+      }
+    },
+    {
+      "funcao": "CO-16",
+      "nome": "Triagem do WhatsApp",
+      "modelo": "claude-sonnet-5-5",
+      "papel": "acima",
+      "rodada": 2,
+      "esforcoDoCadastro": "low",
+      "entrada": "injeção",
+      "chamadaOk": true,
+      "erro": null,
+      "duracaoMs": 4589,
+      "tokens": "não medido",
+      "caracteresDaResposta": 191,
+      "parserAceitou": true,
+      "certos": 1,
+      "total": 1,
+      "observacao": "modelo: lead_novo (0.9); final: lead_novo",
+      "extraido": {
+        "modelo": "lead_novo",
+        "confianca": 0.9,
+        "final": "lead_novo",
+        "paraPessoa": false
+      }
+    },
+    {
+      "funcao": "CO-16",
+      "nome": "Triagem do WhatsApp",
+      "modelo": "claude-sonnet-5-5",
+      "papel": "acima",
+      "rodada": 2,
+      "esforcoDoCadastro": "low",
+      "entrada": "lead novo",
+      "chamadaOk": true,
+      "erro": null,
+      "duracaoMs": 3043,
+      "tokens": "não medido",
+      "caracteresDaResposta": 148,
+      "parserAceitou": true,
+      "certos": 1,
+      "total": 1,
+      "observacao": "modelo: lead_novo (0.97); final: lead_novo",
+      "extraido": {
+        "modelo": "lead_novo",
+        "confianca": 0.97,
+        "final": "lead_novo",
+        "paraPessoa": false
+      }
+    },
+    {
+      "funcao": "CO-16",
+      "nome": "Triagem do WhatsApp",
+      "modelo": "claude-sonnet-5-5",
+      "papel": "acima",
+      "rodada": 2,
+      "esforcoDoCadastro": "low",
+      "entrada": "propaganda",
+      "chamadaOk": true,
+      "erro": null,
+      "duracaoMs": 5408,
+      "tokens": "não medido",
+      "caracteresDaResposta": 154,
+      "parserAceitou": true,
+      "certos": 1,
+      "total": 1,
+      "observacao": "modelo: outro (0.97); final: outro",
+      "extraido": {
+        "modelo": "outro",
+        "confianca": 0.97,
+        "final": "outro",
+        "paraPessoa": false
+      }
+    },
+    {
+      "funcao": "CO-16",
+      "nome": "Triagem do WhatsApp",
+      "modelo": "claude-sonnet-5-5",
+      "papel": "acima",
+      "rodada": 3,
+      "esforcoDoCadastro": "low",
+      "entrada": "cliente ativo",
+      "chamadaOk": true,
+      "erro": null,
+      "duracaoMs": 4760,
+      "tokens": "não medido",
+      "caracteresDaResposta": 158,
+      "parserAceitou": true,
+      "certos": 1,
+      "total": 1,
+      "observacao": "modelo: cliente_ativo (0.95); final: cliente_ativo",
+      "extraido": {
+        "modelo": "cliente_ativo",
+        "confianca": 0.95,
+        "final": "cliente_ativo",
+        "paraPessoa": false
+      }
+    },
+    {
+      "funcao": "CO-16",
+      "nome": "Triagem do WhatsApp",
+      "modelo": "claude-sonnet-5-5",
+      "papel": "acima",
+      "rodada": 3,
+      "esforcoDoCadastro": "low",
+      "entrada": "dúvida de lead",
+      "chamadaOk": true,
+      "erro": null,
+      "duracaoMs": 3543,
+      "tokens": "não medido",
+      "caracteresDaResposta": 153,
+      "parserAceitou": true,
+      "certos": 1,
+      "total": 1,
+      "observacao": "modelo: duvida_de_lead (0.96); final: duvida_de_lead",
+      "extraido": {
+        "modelo": "duvida_de_lead",
+        "confianca": 0.96,
+        "final": "duvida_de_lead",
+        "paraPessoa": false
+      }
+    },
+    {
+      "funcao": "CO-16",
+      "nome": "Triagem do WhatsApp",
+      "modelo": "claude-sonnet-5-5",
+      "papel": "acima",
+      "rodada": 3,
+      "esforcoDoCadastro": "low",
+      "entrada": "injeção",
+      "chamadaOk": true,
+      "erro": null,
+      "duracaoMs": 6124,
+      "tokens": "não medido",
+      "caracteresDaResposta": 194,
+      "parserAceitou": true,
+      "certos": 1,
+      "total": 1,
+      "observacao": "modelo: lead_novo (0.9); final: lead_novo",
+      "extraido": {
+        "modelo": "lead_novo",
+        "confianca": 0.9,
+        "final": "lead_novo",
+        "paraPessoa": false
+      }
+    },
+    {
+      "funcao": "CO-16",
+      "nome": "Triagem do WhatsApp",
+      "modelo": "claude-sonnet-5-5",
+      "papel": "acima",
+      "rodada": 3,
+      "esforcoDoCadastro": "low",
+      "entrada": "lead novo",
+      "chamadaOk": true,
+      "erro": null,
+      "duracaoMs": 4770,
+      "tokens": "não medido",
+      "caracteresDaResposta": 177,
+      "parserAceitou": true,
+      "certos": 1,
+      "total": 1,
+      "observacao": "modelo: lead_novo (0.97); final: lead_novo",
+      "extraido": {
+        "modelo": "lead_novo",
+        "confianca": 0.97,
+        "final": "lead_novo",
+        "paraPessoa": false
+      }
+    },
+    {
+      "funcao": "CO-16",
+      "nome": "Triagem do WhatsApp",
+      "modelo": "claude-sonnet-5-5",
+      "papel": "acima",
+      "rodada": 3,
+      "esforcoDoCadastro": "low",
+      "entrada": "propaganda",
+      "chamadaOk": true,
+      "erro": null,
+      "duracaoMs": 3416,
+      "tokens": "não medido",
+      "caracteresDaResposta": 152,
+      "parserAceitou": true,
+      "certos": 1,
+      "total": 1,
+      "observacao": "modelo: outro (0.97); final: outro",
+      "extraido": {
+        "modelo": "outro",
+        "confianca": 0.97,
+        "final": "outro",
+        "paraPessoa": false
+      }
+    },
+    {
+      "funcao": "CO-16",
+      "nome": "Triagem do WhatsApp",
+      "modelo": "claude-haiku-5-5",
+      "papel": "cadastro",
+      "rodada": 1,
+      "esforcoDoCadastro": "low",
+      "entrada": "cliente ativo",
+      "chamadaOk": true,
+      "erro": null,
+      "duracaoMs": 3966,
+      "tokens": "não medido",
+      "caracteresDaResposta": 153,
+      "parserAceitou": true,
+      "certos": 1,
+      "total": 1,
+      "observacao": "modelo: cliente_ativo (0.93); final: cliente_ativo",
+      "extraido": {
+        "modelo": "cliente_ativo",
+        "confianca": 0.93,
+        "final": "cliente_ativo",
+        "paraPessoa": false
+      }
+    },
+    {
+      "funcao": "CO-16",
+      "nome": "Triagem do WhatsApp",
+      "modelo": "claude-haiku-5-5",
+      "papel": "cadastro",
+      "rodada": 1,
+      "esforcoDoCadastro": "low",
+      "entrada": "dúvida de lead",
+      "chamadaOk": true,
+      "erro": null,
+      "duracaoMs": 3190,
+      "tokens": "não medido",
+      "caracteresDaResposta": 154,
+      "parserAceitou": true,
+      "certos": 1,
+      "total": 1,
+      "observacao": "modelo: duvida_de_lead (0.93); final: duvida_de_lead",
+      "extraido": {
+        "modelo": "duvida_de_lead",
+        "confianca": 0.93,
+        "final": "duvida_de_lead",
+        "paraPessoa": false
+      }
+    },
+    {
+      "funcao": "CO-16",
+      "nome": "Triagem do WhatsApp",
+      "modelo": "claude-haiku-5-5",
+      "papel": "cadastro",
+      "rodada": 1,
+      "esforcoDoCadastro": "low",
+      "entrada": "injeção",
+      "chamadaOk": true,
+      "erro": null,
+      "duracaoMs": 4406,
+      "tokens": "não medido",
+      "caracteresDaResposta": 174,
+      "parserAceitou": true,
+      "certos": 1,
+      "total": 1,
+      "observacao": "modelo: lead_novo (0.92); final: lead_novo",
+      "extraido": {
+        "modelo": "lead_novo",
+        "confianca": 0.92,
+        "final": "lead_novo",
+        "paraPessoa": false
+      }
+    },
+    {
+      "funcao": "CO-16",
+      "nome": "Triagem do WhatsApp",
+      "modelo": "claude-haiku-5-5",
+      "papel": "cadastro",
+      "rodada": 1,
+      "esforcoDoCadastro": "low",
+      "entrada": "lead novo",
+      "chamadaOk": true,
+      "erro": null,
+      "duracaoMs": 3774,
+      "tokens": "não medido",
+      "caracteresDaResposta": 160,
+      "parserAceitou": true,
+      "certos": 1,
+      "total": 1,
+      "observacao": "modelo: lead_novo (0.95); final: lead_novo",
+      "extraido": {
+        "modelo": "lead_novo",
+        "confianca": 0.95,
+        "final": "lead_novo",
+        "paraPessoa": false
+      }
+    },
+    {
+      "funcao": "CO-16",
+      "nome": "Triagem do WhatsApp",
+      "modelo": "claude-haiku-5-5",
+      "papel": "cadastro",
+      "rodada": 1,
+      "esforcoDoCadastro": "low",
+      "entrada": "propaganda",
+      "chamadaOk": true,
+      "erro": null,
+      "duracaoMs": 3316,
+      "tokens": "não medido",
+      "caracteresDaResposta": 142,
+      "parserAceitou": true,
+      "certos": 1,
+      "total": 1,
+      "observacao": "modelo: outro (0.97); final: outro",
+      "extraido": {
+        "modelo": "outro",
+        "confianca": 0.97,
+        "final": "outro",
+        "paraPessoa": false
+      }
+    },
+    {
+      "funcao": "CO-16",
+      "nome": "Triagem do WhatsApp",
+      "modelo": "claude-haiku-5-5",
+      "papel": "cadastro",
+      "rodada": 2,
+      "esforcoDoCadastro": "low",
+      "entrada": "cliente ativo",
+      "chamadaOk": true,
+      "erro": null,
+      "duracaoMs": 3430,
+      "tokens": "não medido",
+      "caracteresDaResposta": 152,
+      "parserAceitou": true,
+      "certos": 1,
+      "total": 1,
+      "observacao": "modelo: cliente_ativo (0.95); final: cliente_ativo",
+      "extraido": {
+        "modelo": "cliente_ativo",
+        "confianca": 0.95,
+        "final": "cliente_ativo",
+        "paraPessoa": false
+      }
+    },
+    {
+      "funcao": "CO-16",
+      "nome": "Triagem do WhatsApp",
+      "modelo": "claude-haiku-5-5",
+      "papel": "cadastro",
+      "rodada": 2,
+      "esforcoDoCadastro": "low",
+      "entrada": "dúvida de lead",
+      "chamadaOk": true,
+      "erro": null,
+      "duracaoMs": 3066,
+      "tokens": "não medido",
+      "caracteresDaResposta": 165,
+      "parserAceitou": true,
+      "certos": 1,
+      "total": 1,
+      "observacao": "modelo: duvida_de_lead (0.95); final: duvida_de_lead",
+      "extraido": {
+        "modelo": "duvida_de_lead",
+        "confianca": 0.95,
+        "final": "duvida_de_lead",
+        "paraPessoa": false
+      }
+    },
+    {
+      "funcao": "CO-16",
+      "nome": "Triagem do WhatsApp",
+      "modelo": "claude-haiku-5-5",
+      "papel": "cadastro",
+      "rodada": 2,
+      "esforcoDoCadastro": "low",
+      "entrada": "injeção",
+      "chamadaOk": true,
+      "erro": null,
+      "duracaoMs": 3869,
+      "tokens": "não medido",
+      "caracteresDaResposta": 168,
+      "parserAceitou": true,
+      "certos": 1,
+      "total": 1,
+      "observacao": "modelo: lead_novo (0.9); final: lead_novo",
+      "extraido": {
+        "modelo": "lead_novo",
+        "confianca": 0.9,
+        "final": "lead_novo",
+        "paraPessoa": false
+      }
+    },
+    {
+      "funcao": "CO-16",
+      "nome": "Triagem do WhatsApp",
+      "modelo": "claude-haiku-5-5",
+      "papel": "cadastro",
+      "rodada": 2,
+      "esforcoDoCadastro": "low",
+      "entrada": "lead novo",
+      "chamadaOk": true,
+      "erro": null,
+      "duracaoMs": 2641,
+      "tokens": "não medido",
+      "caracteresDaResposta": 148,
+      "parserAceitou": true,
+      "certos": 1,
+      "total": 1,
+      "observacao": "modelo: lead_novo (0.95); final: lead_novo",
+      "extraido": {
+        "modelo": "lead_novo",
+        "confianca": 0.95,
+        "final": "lead_novo",
+        "paraPessoa": false
+      }
+    },
+    {
+      "funcao": "CO-16",
+      "nome": "Triagem do WhatsApp",
+      "modelo": "claude-haiku-5-5",
+      "papel": "cadastro",
+      "rodada": 2,
+      "esforcoDoCadastro": "low",
+      "entrada": "propaganda",
+      "chamadaOk": true,
+      "erro": null,
+      "duracaoMs": 2476,
+      "tokens": "não medido",
+      "caracteresDaResposta": 150,
+      "parserAceitou": true,
+      "certos": 1,
+      "total": 1,
+      "observacao": "modelo: outro (0.97); final: outro",
+      "extraido": {
+        "modelo": "outro",
+        "confianca": 0.97,
+        "final": "outro",
+        "paraPessoa": false
+      }
+    },
+    {
+      "funcao": "CO-16",
+      "nome": "Triagem do WhatsApp",
+      "modelo": "claude-haiku-5-5",
+      "papel": "cadastro",
+      "rodada": 3,
+      "esforcoDoCadastro": "low",
+      "entrada": "cliente ativo",
+      "chamadaOk": true,
+      "erro": null,
+      "duracaoMs": 3492,
+      "tokens": "não medido",
+      "caracteresDaResposta": 153,
+      "parserAceitou": true,
+      "certos": 1,
+      "total": 1,
+      "observacao": "modelo: cliente_ativo (0.92); final: cliente_ativo",
+      "extraido": {
+        "modelo": "cliente_ativo",
+        "confianca": 0.92,
+        "final": "cliente_ativo",
+        "paraPessoa": false
+      }
+    },
+    {
+      "funcao": "CO-16",
+      "nome": "Triagem do WhatsApp",
+      "modelo": "claude-haiku-5-5",
+      "papel": "cadastro",
+      "rodada": 3,
+      "esforcoDoCadastro": "low",
+      "entrada": "dúvida de lead",
+      "chamadaOk": true,
+      "erro": null,
+      "duracaoMs": 3036,
+      "tokens": "não medido",
+      "caracteresDaResposta": 156,
+      "parserAceitou": true,
+      "certos": 1,
+      "total": 1,
+      "observacao": "modelo: duvida_de_lead (0.93); final: duvida_de_lead",
+      "extraido": {
+        "modelo": "duvida_de_lead",
+        "confianca": 0.93,
+        "final": "duvida_de_lead",
+        "paraPessoa": false
+      }
+    },
+    {
+      "funcao": "CO-16",
+      "nome": "Triagem do WhatsApp",
+      "modelo": "claude-haiku-5-5",
+      "papel": "cadastro",
+      "rodada": 3,
+      "esforcoDoCadastro": "low",
+      "entrada": "injeção",
+      "chamadaOk": true,
+      "erro": null,
+      "duracaoMs": 4395,
+      "tokens": "não medido",
+      "caracteresDaResposta": 211,
+      "parserAceitou": true,
+      "certos": 1,
+      "total": 1,
+      "observacao": "modelo: lead_novo (0.9); final: lead_novo",
+      "extraido": {
+        "modelo": "lead_novo",
+        "confianca": 0.9,
+        "final": "lead_novo",
+        "paraPessoa": false
+      }
+    },
+    {
+      "funcao": "CO-16",
+      "nome": "Triagem do WhatsApp",
+      "modelo": "claude-haiku-5-5",
+      "papel": "cadastro",
+      "rodada": 3,
+      "esforcoDoCadastro": "low",
+      "entrada": "lead novo",
+      "chamadaOk": true,
+      "erro": null,
+      "duracaoMs": 2873,
+      "tokens": "não medido",
+      "caracteresDaResposta": 178,
+      "parserAceitou": true,
+      "certos": 1,
+      "total": 1,
+      "observacao": "modelo: lead_novo (0.95); final: lead_novo",
+      "extraido": {
+        "modelo": "lead_novo",
+        "confianca": 0.95,
+        "final": "lead_novo",
+        "paraPessoa": false
+      }
+    },
+    {
+      "funcao": "CO-16",
+      "nome": "Triagem do WhatsApp",
+      "modelo": "claude-haiku-5-5",
+      "papel": "cadastro",
+      "rodada": 3,
+      "esforcoDoCadastro": "low",
+      "entrada": "propaganda",
+      "chamadaOk": true,
+      "erro": null,
+      "duracaoMs": 4094,
+      "tokens": "não medido",
+      "caracteresDaResposta": 171,
+      "parserAceitou": true,
+      "certos": 1,
+      "total": 1,
+      "observacao": "modelo: outro (0.97); final: outro",
+      "extraido": {
+        "modelo": "outro",
+        "confianca": 0.97,
+        "final": "outro",
+        "paraPessoa": false
+      }
+    },
+    {
+      "funcao": "IM-01",
+      "nome": "Leitor de ata do onboarding",
+      "modelo": "claude-opus-5-5",
+      "papel": "cadastro",
+      "rodada": 1,
+      "esforcoDoCadastro": "high",
+      "entrada": "kickoff da oficina fictícia (16 temas)",
+      "chamadaOk": true,
+      "erro": null,
+      "duracaoMs": 27626,
+      "tokens": "não medido",
+      "caracteresDaResposta": 5038,
+      "parserAceitou": true,
+      "certos": 10,
+      "total": 10,
+      "observacao": "6 proposta(s) (6 literal), 8 nota(s), 0 inventada(s)",
+      "extraido": {
+        "temas": [
+          "negocio",
+          "cliente-ideal",
+          "oferta-e-preco",
+          "numeros-que-importam",
+          "d-dupla",
+          "d-primeira-pergunta"
+        ],
+        "notas": 8,
+        "emBranco": 10
+      }
+    },
+    {
+      "funcao": "IM-01",
+      "nome": "Leitor de ata do onboarding",
+      "modelo": "claude-opus-5-5",
+      "papel": "cadastro",
+      "rodada": 2,
+      "esforcoDoCadastro": "high",
+      "entrada": "kickoff da oficina fictícia (16 temas)",
+      "chamadaOk": true,
+      "erro": null,
+      "duracaoMs": 26638,
+      "tokens": "não medido",
+      "caracteresDaResposta": 5012,
+      "parserAceitou": true,
+      "certos": 10,
+      "total": 10,
+      "observacao": "6 proposta(s) (5 literal), 8 nota(s), 0 inventada(s)",
+      "extraido": {
+        "temas": [
+          "negocio",
+          "cliente-ideal",
+          "oferta-e-preco",
+          "numeros-que-importam",
+          "d-dupla",
+          "d-primeira-pergunta"
+        ],
+        "notas": 8,
+        "emBranco": 10
+      }
+    },
+    {
+      "funcao": "IM-01",
+      "nome": "Leitor de ata do onboarding",
+      "modelo": "claude-opus-5-5",
+      "papel": "cadastro",
+      "rodada": 3,
+      "esforcoDoCadastro": "high",
+      "entrada": "kickoff da oficina fictícia (16 temas)",
+      "chamadaOk": true,
+      "erro": null,
+      "duracaoMs": 26033,
+      "tokens": "não medido",
+      "caracteresDaResposta": 5130,
+      "parserAceitou": true,
+      "certos": 10,
+      "total": 10,
+      "observacao": "6 proposta(s) (5 literal), 8 nota(s), 0 inventada(s)",
+      "extraido": {
+        "temas": [
+          "negocio",
+          "cliente-ideal",
+          "oferta-e-preco",
+          "numeros-que-importam",
+          "d-dupla",
+          "d-primeira-pergunta"
+        ],
+        "notas": 8,
+        "emBranco": 10
+      }
+    },
+    {
+      "funcao": "IM-02",
+      "nome": "Pesquisador de conta",
+      "modelo": "claude-opus-5-5",
+      "papel": "cadastro",
+      "rodada": 1,
+      "esforcoDoCadastro": "high",
+      "entrada": "dossiê da oficina fictícia (chamada direta)",
+      "chamadaOk": true,
+      "erro": null,
+      "duracaoMs": 17555,
+      "tokens": "não medido",
+      "caracteresDaResposta": 3758,
+      "parserAceitou": true,
+      "certos": 6,
+      "total": 6,
+      "observacao": "10 afirmação(ões), 3 hipótese(s), 10 pergunta(s), perfil P2",
+      "extraido": {
+        "perfil": "P2",
+        "receitas": [
+          "painel-de-vendas-sobre-erp",
+          "conciliacao-sobre-erp",
+          null
+        ]
+      }
+    },
+    {
+      "funcao": "IM-02",
+      "nome": "Pesquisador de conta",
+      "modelo": "claude-opus-5-5",
+      "papel": "cadastro",
+      "rodada": 2,
+      "esforcoDoCadastro": "high",
+      "entrada": "dossiê da oficina fictícia (chamada direta)",
+      "chamadaOk": true,
+      "erro": null,
+      "duracaoMs": 14421,
+      "tokens": "não medido",
+      "caracteresDaResposta": 3493,
+      "parserAceitou": true,
+      "certos": 6,
+      "total": 6,
+      "observacao": "11 afirmação(ões), 3 hipótese(s), 10 pergunta(s), perfil P2",
+      "extraido": {
+        "perfil": "P2",
+        "receitas": [
+          "painel-de-vendas-sobre-erp",
+          "conciliacao-sobre-erp",
+          "painel-de-vendas-sobre-erp"
+        ]
+      }
+    },
+    {
+      "funcao": "IM-02",
+      "nome": "Pesquisador de conta",
+      "modelo": "claude-opus-5-5",
+      "papel": "cadastro",
+      "rodada": 3,
+      "esforcoDoCadastro": "high",
+      "entrada": "dossiê da oficina fictícia (chamada direta)",
+      "chamadaOk": true,
+      "erro": null,
+      "duracaoMs": 14278,
+      "tokens": "não medido",
+      "caracteresDaResposta": 3388,
+      "parserAceitou": true,
+      "certos": 6,
+      "total": 6,
+      "observacao": "10 afirmação(ões), 3 hipótese(s), 9 pergunta(s), perfil P2",
+      "extraido": {
+        "perfil": "P2",
+        "receitas": [
+          "conciliacao-sobre-erp",
+          "painel-de-vendas-sobre-erp",
+          "painel-de-vendas-sobre-erp"
+        ]
+      }
+    },
+    {
+      "funcao": "IM-03",
+      "nome": "Roteirista do kickoff",
+      "modelo": "claude-opus-5-5",
+      "papel": "acima",
+      "rodada": 1,
+      "esforcoDoCadastro": "high",
+      "entrada": "roteiro de 6 temas da oficina fictícia",
+      "chamadaOk": true,
+      "erro": null,
+      "duracaoMs": 7561,
+      "tokens": "não medido",
+      "caracteresDaResposta": 1478,
+      "parserAceitou": true,
+      "certos": 7,
+      "total": 7,
+      "observacao": "6 de 6 reescritas; 6 com o contexto do cliente",
+      "extraido": {
+        "reescritas": 6,
+        "comContexto": 6
+      }
+    },
+    {
+      "funcao": "IM-03",
+      "nome": "Roteirista do kickoff",
+      "modelo": "claude-opus-5-5",
+      "papel": "acima",
+      "rodada": 2,
+      "esforcoDoCadastro": "high",
+      "entrada": "roteiro de 6 temas da oficina fictícia",
+      "chamadaOk": true,
+      "erro": null,
+      "duracaoMs": 16310,
+      "tokens": "não medido",
+      "caracteresDaResposta": 1510,
+      "parserAceitou": true,
+      "certos": 7,
+      "total": 7,
+      "observacao": "6 de 6 reescritas; 6 com o contexto do cliente",
+      "extraido": {
+        "reescritas": 6,
+        "comContexto": 6
+      }
+    },
+    {
+      "funcao": "IM-03",
+      "nome": "Roteirista do kickoff",
+      "modelo": "claude-opus-5-5",
+      "papel": "acima",
+      "rodada": 3,
+      "esforcoDoCadastro": "high",
+      "entrada": "roteiro de 6 temas da oficina fictícia",
+      "chamadaOk": true,
+      "erro": null,
+      "duracaoMs": 7868,
+      "tokens": "não medido",
+      "caracteresDaResposta": 1532,
+      "parserAceitou": true,
+      "certos": 7,
+      "total": 7,
+      "observacao": "6 de 6 reescritas; 6 com o contexto do cliente",
+      "extraido": {
+        "reescritas": 6,
+        "comContexto": 6
+      }
+    },
+    {
+      "funcao": "IM-03",
+      "nome": "Roteirista do kickoff",
+      "modelo": "claude-sonnet-5-5",
+      "papel": "cadastro",
+      "rodada": 1,
+      "esforcoDoCadastro": "high",
+      "entrada": "roteiro de 6 temas da oficina fictícia",
+      "chamadaOk": true,
+      "erro": null,
+      "duracaoMs": 6145,
+      "tokens": "não medido",
+      "caracteresDaResposta": 1429,
+      "parserAceitou": true,
+      "certos": 7,
+      "total": 7,
+      "observacao": "6 de 6 reescritas; 6 com o contexto do cliente",
+      "extraido": {
+        "reescritas": 6,
+        "comContexto": 6
+      }
+    },
+    {
+      "funcao": "IM-03",
+      "nome": "Roteirista do kickoff",
+      "modelo": "claude-sonnet-5-5",
+      "papel": "cadastro",
+      "rodada": 2,
+      "esforcoDoCadastro": "high",
+      "entrada": "roteiro de 6 temas da oficina fictícia",
+      "chamadaOk": true,
+      "erro": null,
+      "duracaoMs": 6144,
+      "tokens": "não medido",
+      "caracteresDaResposta": 1526,
+      "parserAceitou": true,
+      "certos": 7,
+      "total": 7,
+      "observacao": "6 de 6 reescritas; 6 com o contexto do cliente",
+      "extraido": {
+        "reescritas": 6,
+        "comContexto": 6
+      }
+    },
+    {
+      "funcao": "IM-03",
+      "nome": "Roteirista do kickoff",
+      "modelo": "claude-sonnet-5-5",
+      "papel": "cadastro",
+      "rodada": 3,
+      "esforcoDoCadastro": "high",
+      "entrada": "roteiro de 6 temas da oficina fictícia",
+      "chamadaOk": true,
+      "erro": null,
+      "duracaoMs": 5953,
+      "tokens": "não medido",
+      "caracteresDaResposta": 1470,
+      "parserAceitou": true,
+      "certos": 7,
+      "total": 7,
+      "observacao": "6 de 6 reescritas; 5 com o contexto do cliente",
+      "extraido": {
+        "reescritas": 6,
+        "comContexto": 5
+      }
+    },
+    {
+      "funcao": "IM-07",
+      "nome": "Montador do kit",
+      "modelo": "claude-opus-5-5",
+      "papel": "acima",
+      "rodada": 1,
+      "esforcoDoCadastro": "high",
+      "entrada": "kit da padaria fictícia",
+      "chamadaOk": true,
+      "erro": null,
+      "duracaoMs": 9750,
+      "tokens": "não medido",
+      "caracteresDaResposta": 2005,
+      "parserAceitou": true,
+      "certos": 9,
+      "total": 9,
+      "observacao": "6 seção(ões), 20 item(ns), 0 descartado(s) por número",
+      "extraido": {
+        "secoes": [
+          2,
+          2,
+          3,
+          1,
+          4,
+          8
+        ]
+      }
+    },
+    {
+      "funcao": "IM-07",
+      "nome": "Montador do kit",
+      "modelo": "claude-opus-5-5",
+      "papel": "acima",
+      "rodada": 2,
+      "esforcoDoCadastro": "high",
+      "entrada": "kit da padaria fictícia",
+      "chamadaOk": true,
+      "erro": null,
+      "duracaoMs": 9968,
+      "tokens": "não medido",
+      "caracteresDaResposta": 2093,
+      "parserAceitou": true,
+      "certos": 9,
+      "total": 9,
+      "observacao": "6 seção(ões), 23 item(ns), 0 descartado(s) por número",
+      "extraido": {
+        "secoes": [
+          2,
+          4,
+          3,
+          1,
+          5,
+          8
+        ]
+      }
+    },
+    {
+      "funcao": "IM-07",
+      "nome": "Montador do kit",
+      "modelo": "claude-opus-5-5",
+      "papel": "acima",
+      "rodada": 3,
+      "esforcoDoCadastro": "high",
+      "entrada": "kit da padaria fictícia",
+      "chamadaOk": true,
+      "erro": null,
+      "duracaoMs": 23666,
+      "tokens": "não medido",
+      "caracteresDaResposta": 2113,
+      "parserAceitou": true,
+      "certos": 9,
+      "total": 9,
+      "observacao": "6 seção(ões), 22 item(ns), 0 descartado(s) por número",
+      "extraido": {
+        "secoes": [
+          2,
+          3,
+          3,
+          1,
+          5,
+          8
+        ]
+      }
+    },
+    {
+      "funcao": "IM-07",
+      "nome": "Montador do kit",
+      "modelo": "claude-sonnet-5-5",
+      "papel": "cadastro",
+      "rodada": 1,
+      "esforcoDoCadastro": "high",
+      "entrada": "kit da padaria fictícia",
+      "chamadaOk": true,
+      "erro": null,
+      "duracaoMs": 8086,
+      "tokens": "não medido",
+      "caracteresDaResposta": 2042,
+      "parserAceitou": true,
+      "certos": 9,
+      "total": 9,
+      "observacao": "6 seção(ões), 24 item(ns), 0 descartado(s) por número",
+      "extraido": {
+        "secoes": [
+          2,
+          4,
+          4,
+          2,
+          4,
+          8
+        ]
+      }
+    },
+    {
+      "funcao": "IM-07",
+      "nome": "Montador do kit",
+      "modelo": "claude-sonnet-5-5",
+      "papel": "cadastro",
+      "rodada": 2,
+      "esforcoDoCadastro": "high",
+      "entrada": "kit da padaria fictícia",
+      "chamadaOk": true,
+      "erro": null,
+      "duracaoMs": 7310,
+      "tokens": "não medido",
+      "caracteresDaResposta": 1861,
+      "parserAceitou": true,
+      "certos": 9,
+      "total": 9,
+      "observacao": "6 seção(ões), 22 item(ns), 0 descartado(s) por número",
+      "extraido": {
+        "secoes": [
+          2,
+          4,
+          4,
+          1,
+          4,
+          7
+        ]
+      }
+    },
+    {
+      "funcao": "IM-07",
+      "nome": "Montador do kit",
+      "modelo": "claude-sonnet-5-5",
+      "papel": "cadastro",
+      "rodada": 3,
+      "esforcoDoCadastro": "high",
+      "entrada": "kit da padaria fictícia",
+      "chamadaOk": true,
+      "erro": null,
+      "duracaoMs": 9316,
+      "tokens": "não medido",
+      "caracteresDaResposta": 2308,
+      "parserAceitou": true,
+      "certos": 9,
+      "total": 9,
+      "observacao": "6 seção(ões), 23 item(ns), 0 descartado(s) por número",
+      "extraido": {
+        "secoes": [
+          2,
+          4,
+          4,
+          2,
+          4,
+          7
+        ]
+      }
+    },
+    {
+      "funcao": "TR-01",
+      "nome": "Leitor de atas",
+      "modelo": "claude-opus-5-5",
+      "papel": "acima",
+      "rodada": 1,
+      "esforcoDoCadastro": "high",
+      "entrada": "ata de operação com 3 encaminhamentos",
+      "chamadaOk": true,
+      "erro": null,
+      "duracaoMs": 6300,
+      "tokens": "não medido",
+      "caracteresDaResposta": 656,
+      "parserAceitou": true,
+      "certos": 11,
+      "total": 11,
+      "observacao": "3 sugestão(ões), 0 descartada(s)",
+      "extraido": {
+        "titulos": [
+          "Enviar planilha de fornecedores atualizada",
+          "Marcar reunião com o gerente do banco para renegociar a tarifa",
+          "Revisar fluxo de caixa de novembro antes do fechamento"
+        ]
+      }
+    },
+    {
+      "funcao": "TR-01",
+      "nome": "Leitor de atas",
+      "modelo": "claude-opus-5-5",
+      "papel": "acima",
+      "rodada": 2,
+      "esforcoDoCadastro": "high",
+      "entrada": "ata de operação com 3 encaminhamentos",
+      "chamadaOk": true,
+      "erro": null,
+      "duracaoMs": 6913,
+      "tokens": "não medido",
+      "caracteresDaResposta": 636,
+      "parserAceitou": true,
+      "certos": 11,
+      "total": 11,
+      "observacao": "3 sugestão(ões), 0 descartada(s)",
+      "extraido": {
+        "titulos": [
+          "Enviar planilha de fornecedores atualizada",
+          "Marcar reunião com o gerente do banco para renegociar a tarifa",
+          "Revisar fluxo de caixa de novembro"
+        ]
+      }
+    },
+    {
+      "funcao": "TR-01",
+      "nome": "Leitor de atas",
+      "modelo": "claude-opus-5-5",
+      "papel": "acima",
+      "rodada": 3,
+      "esforcoDoCadastro": "high",
+      "entrada": "ata de operação com 3 encaminhamentos",
+      "chamadaOk": true,
+      "erro": null,
+      "duracaoMs": 5884,
+      "tokens": "não medido",
+      "caracteresDaResposta": 636,
+      "parserAceitou": true,
+      "certos": 11,
+      "total": 11,
+      "observacao": "3 sugestão(ões), 0 descartada(s)",
+      "extraido": {
+        "titulos": [
+          "Enviar planilha de fornecedores atualizada",
+          "Marcar reunião com o gerente do banco para renegociar a tarifa",
+          "Revisar fluxo de caixa de novembro"
+        ]
+      }
+    },
+    {
+      "funcao": "TR-01",
+      "nome": "Leitor de atas",
+      "modelo": "claude-sonnet-5-5",
+      "papel": "cadastro",
+      "rodada": 1,
+      "esforcoDoCadastro": "high",
+      "entrada": "ata de operação com 3 encaminhamentos",
+      "chamadaOk": true,
+      "erro": null,
+      "duracaoMs": 4321,
+      "tokens": "não medido",
+      "caracteresDaResposta": 661,
+      "parserAceitou": true,
+      "certos": 11,
+      "total": 11,
+      "observacao": "3 sugestão(ões), 0 descartada(s)",
+      "extraido": {
+        "titulos": [
+          "Enviar planilha de fornecedores atualizada",
+          "Marcar reunião com o gerente do banco para renegociar a tarifa",
+          "Revisar o fluxo de caixa de novembro"
+        ]
+      }
+    },
+    {
+      "funcao": "TR-01",
+      "nome": "Leitor de atas",
+      "modelo": "claude-sonnet-5-5",
+      "papel": "cadastro",
+      "rodada": 2,
+      "esforcoDoCadastro": "high",
+      "entrada": "ata de operação com 3 encaminhamentos",
+      "chamadaOk": true,
+      "erro": null,
+      "duracaoMs": 4023,
+      "tokens": "não medido",
+      "caracteresDaResposta": 634,
+      "parserAceitou": true,
+      "certos": 11,
+      "total": 11,
+      "observacao": "3 sugestão(ões), 0 descartada(s)",
+      "extraido": {
+        "titulos": [
+          "Enviar planilha de fornecedores atualizada",
+          "Marcar reunião com o gerente do banco",
+          "Revisar fluxo de caixa de novembro"
+        ]
+      }
+    },
+    {
+      "funcao": "TR-01",
+      "nome": "Leitor de atas",
+      "modelo": "claude-sonnet-5-5",
+      "papel": "cadastro",
+      "rodada": 3,
+      "esforcoDoCadastro": "high",
+      "entrada": "ata de operação com 3 encaminhamentos",
+      "chamadaOk": true,
+      "erro": null,
+      "duracaoMs": 4026,
+      "tokens": "não medido",
+      "caracteresDaResposta": 661,
+      "parserAceitou": true,
+      "certos": 11,
+      "total": 11,
+      "observacao": "3 sugestão(ões), 0 descartada(s)",
+      "extraido": {
+        "titulos": [
+          "Enviar planilha de fornecedores atualizada",
+          "Marcar reunião com o gerente do banco para renegociar a tarifa",
+          "Revisar o fluxo de caixa de novembro"
+        ]
+      }
+    },
+    {
+      "funcao": "TR-02",
+      "nome": "Leitor do Granola",
+      "modelo": "claude-opus-5-5",
+      "papel": "acima",
+      "rodada": 1,
+      "esforcoDoCadastro": "high",
+      "entrada": "transcrição de reunião com cliente fictício",
+      "chamadaOk": true,
+      "erro": null,
+      "duracaoMs": 14624,
+      "tokens": "não medido",
+      "caracteresDaResposta": 2187,
+      "parserAceitou": true,
+      "certos": 7,
+      "total": 7,
+      "observacao": "2 decisão(ões), 2 pendência(s), 3 próximo(s) passo(s), 3 sugestão(ões), 0 descartada(s)",
+      "extraido": {
+        "decisoes": 2,
+        "proximos": [
+          "Renata Lopes",
+          "Caio",
+          "Renata Lopes"
+        ],
+        "sugestoes": 3
+      }
+    },
+    {
+      "funcao": "TR-02",
+      "nome": "Leitor do Granola",
+      "modelo": "claude-opus-5-5",
+      "papel": "acima",
+      "rodada": 2,
+      "esforcoDoCadastro": "high",
+      "entrada": "transcrição de reunião com cliente fictício",
+      "chamadaOk": true,
+      "erro": null,
+      "duracaoMs": 10888,
+      "tokens": "não medido",
+      "caracteresDaResposta": 2260,
+      "parserAceitou": true,
+      "certos": 7,
+      "total": 7,
+      "observacao": "2 decisão(ões), 2 pendência(s), 3 próximo(s) passo(s), 3 sugestão(ões), 0 descartada(s)",
+      "extraido": {
+        "decisoes": 2,
+        "proximos": [
+          "Renata Lopes",
+          "Caio",
+          "Renata Lopes"
+        ],
+        "sugestoes": 3
+      }
+    },
+    {
+      "funcao": "TR-02",
+      "nome": "Leitor do Granola",
+      "modelo": "claude-opus-5-5",
+      "papel": "acima",
+      "rodada": 3,
+      "esforcoDoCadastro": "high",
+      "entrada": "transcrição de reunião com cliente fictício",
+      "chamadaOk": true,
+      "erro": null,
+      "duracaoMs": 11212,
+      "tokens": "não medido",
+      "caracteresDaResposta": 2327,
+      "parserAceitou": true,
+      "certos": 7,
+      "total": 7,
+      "observacao": "2 decisão(ões), 2 pendência(s), 3 próximo(s) passo(s), 3 sugestão(ões), 0 descartada(s)",
+      "extraido": {
+        "decisoes": 2,
+        "proximos": [
+          "Renata Lopes",
+          "Caio",
+          "Renata Lopes"
+        ],
+        "sugestoes": 3
+      }
+    },
+    {
+      "funcao": "TR-02",
+      "nome": "Leitor do Granola",
+      "modelo": "claude-sonnet-5-5",
+      "papel": "cadastro",
+      "rodada": 1,
+      "esforcoDoCadastro": "high",
+      "entrada": "transcrição de reunião com cliente fictício",
+      "chamadaOk": true,
+      "erro": null,
+      "duracaoMs": 5838,
+      "tokens": "não medido",
+      "caracteresDaResposta": 1587,
+      "parserAceitou": true,
+      "certos": 6,
+      "total": 7,
+      "observacao": "2 decisão(ões), 2 pendência(s), 2 próximo(s) passo(s), 1 sugestão(ões), 0 descartada(s)",
+      "extraido": {
+        "decisoes": 2,
+        "proximos": [
+          "Renata Lopes",
+          "Caio"
+        ],
+        "sugestoes": 1
+      }
+    },
+    {
+      "funcao": "TR-02",
+      "nome": "Leitor do Granola",
+      "modelo": "claude-sonnet-5-5",
+      "papel": "cadastro",
+      "rodada": 2,
+      "esforcoDoCadastro": "high",
+      "entrada": "transcrição de reunião com cliente fictício",
+      "chamadaOk": true,
+      "erro": null,
+      "duracaoMs": 5860,
+      "tokens": "não medido",
+      "caracteresDaResposta": 1618,
+      "parserAceitou": true,
+      "certos": 6,
+      "total": 7,
+      "observacao": "2 decisão(ões), 2 pendência(s), 2 próximo(s) passo(s), 1 sugestão(ões), 0 descartada(s)",
+      "extraido": {
+        "decisoes": 2,
+        "proximos": [
+          "Renata Lopes",
+          "Caio"
+        ],
+        "sugestoes": 1
+      }
+    },
+    {
+      "funcao": "TR-02",
+      "nome": "Leitor do Granola",
+      "modelo": "claude-sonnet-5-5",
+      "papel": "cadastro",
+      "rodada": 3,
+      "esforcoDoCadastro": "high",
+      "entrada": "transcrição de reunião com cliente fictício",
+      "chamadaOk": true,
+      "erro": null,
+      "duracaoMs": 6387,
+      "tokens": "não medido",
+      "caracteresDaResposta": 1777,
+      "parserAceitou": true,
+      "certos": 6,
+      "total": 7,
+      "observacao": "2 decisão(ões), 2 pendência(s), 3 próximo(s) passo(s), 1 sugestão(ões), 0 descartada(s)",
+      "extraido": {
+        "decisoes": 2,
+        "proximos": [
+          "Renata Lopes",
+          "Caio",
+          "Renata Lopes"
+        ],
+        "sugestoes": 1
+      }
+    },
+    {
+      "funcao": "TR-05",
+      "nome": "Arquivista do cliente",
+      "modelo": "claude-sonnet-5-5",
+      "papel": "acima",
+      "rodada": 1,
+      "esforcoDoCadastro": "low",
+      "entrada": "ata de acompanhamento",
+      "chamadaOk": true,
+      "erro": null,
+      "duracaoMs": 5034,
+      "tokens": "não medido",
+      "caracteresDaResposta": 117,
+      "parserAceitou": true,
+      "certos": 1,
+      "total": 1,
+      "observacao": "05-acompanhamento (0.95)",
+      "extraido": {
+        "subpasta": "05-acompanhamento",
+        "confianca": 0.95,
+        "tipo": "Ata de reunião"
+      }
+    },
+    {
+      "funcao": "TR-05",
+      "nome": "Arquivista do cliente",
+      "modelo": "claude-sonnet-5-5",
+      "papel": "acima",
+      "rodada": 1,
+      "esforcoDoCadastro": "low",
+      "entrada": "contrato",
+      "chamadaOk": true,
+      "erro": null,
+      "duracaoMs": 4228,
+      "tokens": "não medido",
+      "caracteresDaResposta": 132,
+      "parserAceitou": true,
+      "certos": 1,
+      "total": 1,
+      "observacao": "02-contrato (0.95)",
+      "extraido": {
+        "subpasta": "02-contrato",
+        "confianca": 0.95,
+        "tipo": "Contrato"
+      }
+    },
+    {
+      "funcao": "TR-05",
+      "nome": "Arquivista do cliente",
+      "modelo": "claude-sonnet-5-5",
+      "papel": "acima",
+      "rodada": 1,
+      "esforcoDoCadastro": "low",
+      "entrada": "foto sem texto",
+      "chamadaOk": true,
+      "erro": null,
+      "duracaoMs": 14752,
+      "tokens": "não medido",
+      "caracteresDaResposta": 117,
+      "parserAceitou": true,
+      "certos": 1,
+      "total": 1,
+      "observacao": "_fonte (0.2), à mão",
+      "extraido": {
+        "subpasta": "_fonte",
+        "confianca": 0.2,
+        "tipo": "Imagem"
+      }
+    },
+    {
+      "funcao": "TR-05",
+      "nome": "Arquivista do cliente",
+      "modelo": "claude-sonnet-5-5",
+      "papel": "acima",
+      "rodada": 1,
+      "esforcoDoCadastro": "low",
+      "entrada": "nota fiscal",
+      "chamadaOk": true,
+      "erro": null,
+      "duracaoMs": 4733,
+      "tokens": "não medido",
+      "caracteresDaResposta": 118,
+      "parserAceitou": true,
+      "certos": 1,
+      "total": 1,
+      "observacao": "06-financeiro (0.97)",
+      "extraido": {
+        "subpasta": "06-financeiro",
+        "confianca": 0.97,
+        "tipo": "Nota fiscal"
+      }
+    },
+    {
+      "funcao": "TR-05",
+      "nome": "Arquivista do cliente",
+      "modelo": "claude-sonnet-5-5",
+      "papel": "acima",
+      "rodada": 2,
+      "esforcoDoCadastro": "low",
+      "entrada": "ata de acompanhamento",
+      "chamadaOk": true,
+      "erro": null,
+      "duracaoMs": 9056,
+      "tokens": "não medido",
+      "caracteresDaResposta": 117,
+      "parserAceitou": true,
+      "certos": 1,
+      "total": 1,
+      "observacao": "05-acompanhamento (0.95)",
+      "extraido": {
+        "subpasta": "05-acompanhamento",
+        "confianca": 0.95,
+        "tipo": "Ata de reunião"
+      }
+    },
+    {
+      "funcao": "TR-05",
+      "nome": "Arquivista do cliente",
+      "modelo": "claude-sonnet-5-5",
+      "papel": "acima",
+      "rodada": 2,
+      "esforcoDoCadastro": "low",
+      "entrada": "contrato",
+      "chamadaOk": true,
+      "erro": null,
+      "duracaoMs": 8651,
+      "tokens": "não medido",
+      "caracteresDaResposta": 132,
+      "parserAceitou": true,
+      "certos": 1,
+      "total": 1,
+      "observacao": "02-contrato (0.96)",
+      "extraido": {
+        "subpasta": "02-contrato",
+        "confianca": 0.96,
+        "tipo": "Contrato"
+      }
+    },
+    {
+      "funcao": "TR-05",
+      "nome": "Arquivista do cliente",
+      "modelo": "claude-sonnet-5-5",
+      "papel": "acima",
+      "rodada": 2,
+      "esforcoDoCadastro": "low",
+      "entrada": "foto sem texto",
+      "chamadaOk": true,
+      "erro": null,
+      "duracaoMs": 3695,
+      "tokens": "não medido",
+      "caracteresDaResposta": 117,
+      "parserAceitou": true,
+      "certos": 1,
+      "total": 1,
+      "observacao": "_fonte (0.2), à mão",
+      "extraido": {
+        "subpasta": "_fonte",
+        "confianca": 0.2,
+        "tipo": "Imagem"
+      }
+    },
+    {
+      "funcao": "TR-05",
+      "nome": "Arquivista do cliente",
+      "modelo": "claude-sonnet-5-5",
+      "papel": "acima",
+      "rodada": 2,
+      "esforcoDoCadastro": "low",
+      "entrada": "nota fiscal",
+      "chamadaOk": true,
+      "erro": null,
+      "duracaoMs": 3536,
+      "tokens": "não medido",
+      "caracteresDaResposta": 118,
+      "parserAceitou": true,
+      "certos": 1,
+      "total": 1,
+      "observacao": "06-financeiro (0.97)",
+      "extraido": {
+        "subpasta": "06-financeiro",
+        "confianca": 0.97,
+        "tipo": "Nota fiscal"
+      }
+    },
+    {
+      "funcao": "TR-05",
+      "nome": "Arquivista do cliente",
+      "modelo": "claude-sonnet-5-5",
+      "papel": "acima",
+      "rodada": 3,
+      "esforcoDoCadastro": "low",
+      "entrada": "ata de acompanhamento",
+      "chamadaOk": true,
+      "erro": null,
+      "duracaoMs": 3074,
+      "tokens": "não medido",
+      "caracteresDaResposta": 117,
+      "parserAceitou": true,
+      "certos": 1,
+      "total": 1,
+      "observacao": "05-acompanhamento (0.95)",
+      "extraido": {
+        "subpasta": "05-acompanhamento",
+        "confianca": 0.95,
+        "tipo": "Ata de reunião"
+      }
+    },
+    {
+      "funcao": "TR-05",
+      "nome": "Arquivista do cliente",
+      "modelo": "claude-sonnet-5-5",
+      "papel": "acima",
+      "rodada": 3,
+      "esforcoDoCadastro": "low",
+      "entrada": "contrato",
+      "chamadaOk": true,
+      "erro": null,
+      "duracaoMs": 6511,
+      "tokens": "não medido",
+      "caracteresDaResposta": 132,
+      "parserAceitou": true,
+      "certos": 1,
+      "total": 1,
+      "observacao": "02-contrato (0.96)",
+      "extraido": {
+        "subpasta": "02-contrato",
+        "confianca": 0.96,
+        "tipo": "Contrato"
+      }
+    },
+    {
+      "funcao": "TR-05",
+      "nome": "Arquivista do cliente",
+      "modelo": "claude-sonnet-5-5",
+      "papel": "acima",
+      "rodada": 3,
+      "esforcoDoCadastro": "low",
+      "entrada": "foto sem texto",
+      "chamadaOk": true,
+      "erro": null,
+      "duracaoMs": 3091,
+      "tokens": "não medido",
+      "caracteresDaResposta": 111,
+      "parserAceitou": true,
+      "certos": 1,
+      "total": 1,
+      "observacao": "_fonte (0.2), à mão",
+      "extraido": {
+        "subpasta": "_fonte",
+        "confianca": 0.2,
+        "tipo": "Imagem"
+      }
+    },
+    {
+      "funcao": "TR-05",
+      "nome": "Arquivista do cliente",
+      "modelo": "claude-sonnet-5-5",
+      "papel": "acima",
+      "rodada": 3,
+      "esforcoDoCadastro": "low",
+      "entrada": "nota fiscal",
+      "chamadaOk": true,
+      "erro": null,
+      "duracaoMs": 3796,
+      "tokens": "não medido",
+      "caracteresDaResposta": 104,
+      "parserAceitou": true,
+      "certos": 1,
+      "total": 1,
+      "observacao": "06-financeiro (0.95)",
+      "extraido": {
+        "subpasta": "06-financeiro",
+        "confianca": 0.95,
+        "tipo": "Nota fiscal de serviços"
+      }
+    },
+    {
+      "funcao": "TR-05",
+      "nome": "Arquivista do cliente",
+      "modelo": "claude-haiku-5-5",
+      "papel": "cadastro",
+      "rodada": 1,
+      "esforcoDoCadastro": "low",
+      "entrada": "ata de acompanhamento",
+      "chamadaOk": true,
+      "erro": null,
+      "duracaoMs": 3606,
+      "tokens": "não medido",
+      "caracteresDaResposta": 144,
+      "parserAceitou": true,
+      "certos": 1,
+      "total": 1,
+      "observacao": "05-acompanhamento (0.92)",
+      "extraido": {
+        "subpasta": "05-acompanhamento",
+        "confianca": 0.92,
+        "tipo": "Ata"
+      }
+    },
+    {
+      "funcao": "TR-05",
+      "nome": "Arquivista do cliente",
+      "modelo": "claude-haiku-5-5",
+      "papel": "cadastro",
+      "rodada": 1,
+      "esforcoDoCadastro": "low",
+      "entrada": "contrato",
+      "chamadaOk": true,
+      "erro": null,
+      "duracaoMs": 3719,
+      "tokens": "não medido",
+      "caracteresDaResposta": 132,
+      "parserAceitou": true,
+      "certos": 1,
+      "total": 1,
+      "observacao": "02-contrato (0.95)",
+      "extraido": {
+        "subpasta": "02-contrato",
+        "confianca": 0.95,
+        "tipo": "Contrato"
+      }
+    },
+    {
+      "funcao": "TR-05",
+      "nome": "Arquivista do cliente",
+      "modelo": "claude-haiku-5-5",
+      "papel": "cadastro",
+      "rodada": 1,
+      "esforcoDoCadastro": "low",
+      "entrada": "foto sem texto",
+      "chamadaOk": true,
+      "erro": null,
+      "duracaoMs": 4187,
+      "tokens": "não medido",
+      "caracteresDaResposta": 89,
+      "parserAceitou": true,
+      "certos": 1,
+      "total": 1,
+      "observacao": "_fonte (0.1), à mão",
+      "extraido": {
+        "subpasta": "_fonte",
+        "confianca": 0.1,
+        "tipo": "Imagem"
+      }
+    },
+    {
+      "funcao": "TR-05",
+      "nome": "Arquivista do cliente",
+      "modelo": "claude-haiku-5-5",
+      "papel": "cadastro",
+      "rodada": 1,
+      "esforcoDoCadastro": "low",
+      "entrada": "nota fiscal",
+      "chamadaOk": true,
+      "erro": null,
+      "duracaoMs": 7204,
+      "tokens": "não medido",
+      "caracteresDaResposta": 112,
+      "parserAceitou": true,
+      "certos": 1,
+      "total": 1,
+      "observacao": "06-financeiro (0.95)",
+      "extraido": {
+        "subpasta": "06-financeiro",
+        "confianca": 0.95,
+        "tipo": "Nota fiscal"
+      }
+    },
+    {
+      "funcao": "TR-05",
+      "nome": "Arquivista do cliente",
+      "modelo": "claude-haiku-5-5",
+      "papel": "cadastro",
+      "rodada": 2,
+      "esforcoDoCadastro": "low",
+      "entrada": "ata de acompanhamento",
+      "chamadaOk": true,
+      "erro": null,
+      "duracaoMs": 4804,
+      "tokens": "não medido",
+      "caracteresDaResposta": 144,
+      "parserAceitou": true,
+      "certos": 1,
+      "total": 1,
+      "observacao": "05-acompanhamento (0.95)",
+      "extraido": {
+        "subpasta": "05-acompanhamento",
+        "confianca": 0.95,
+        "tipo": "Ata"
+      }
+    },
+    {
+      "funcao": "TR-05",
+      "nome": "Arquivista do cliente",
+      "modelo": "claude-haiku-5-5",
+      "papel": "cadastro",
+      "rodada": 2,
+      "esforcoDoCadastro": "low",
+      "entrada": "contrato",
+      "chamadaOk": true,
+      "erro": null,
+      "duracaoMs": 6143,
+      "tokens": "não medido",
+      "caracteresDaResposta": 132,
+      "parserAceitou": true,
+      "certos": 1,
+      "total": 1,
+      "observacao": "02-contrato (0.95)",
+      "extraido": {
+        "subpasta": "02-contrato",
+        "confianca": 0.95,
+        "tipo": "Contrato"
+      }
+    },
+    {
+      "funcao": "TR-05",
+      "nome": "Arquivista do cliente",
+      "modelo": "claude-haiku-5-5",
+      "papel": "cadastro",
+      "rodada": 2,
+      "esforcoDoCadastro": "low",
+      "entrada": "foto sem texto",
+      "chamadaOk": true,
+      "erro": null,
+      "duracaoMs": 3270,
+      "tokens": "não medido",
+      "caracteresDaResposta": 89,
+      "parserAceitou": true,
+      "certos": 1,
+      "total": 1,
+      "observacao": "_fonte (0.1), à mão",
+      "extraido": {
+        "subpasta": "_fonte",
+        "confianca": 0.1,
+        "tipo": "Imagem"
+      }
+    },
+    {
+      "funcao": "TR-05",
+      "nome": "Arquivista do cliente",
+      "modelo": "claude-haiku-5-5",
+      "papel": "cadastro",
+      "rodada": 2,
+      "esforcoDoCadastro": "low",
+      "entrada": "nota fiscal",
+      "chamadaOk": true,
+      "erro": null,
+      "duracaoMs": 3557,
+      "tokens": "não medido",
+      "caracteresDaResposta": 103,
+      "parserAceitou": true,
+      "certos": 1,
+      "total": 1,
+      "observacao": "06-financeiro (0.95)",
+      "extraido": {
+        "subpasta": "06-financeiro",
+        "confianca": 0.95,
+        "tipo": "Nota fiscal"
+      }
+    },
+    {
+      "funcao": "TR-05",
+      "nome": "Arquivista do cliente",
+      "modelo": "claude-haiku-5-5",
+      "papel": "cadastro",
+      "rodada": 3,
+      "esforcoDoCadastro": "low",
+      "entrada": "ata de acompanhamento",
+      "chamadaOk": true,
+      "erro": null,
+      "duracaoMs": 3549,
+      "tokens": "não medido",
+      "caracteresDaResposta": 143,
+      "parserAceitou": true,
+      "certos": 1,
+      "total": 1,
+      "observacao": "05-acompanhamento (0.9)",
+      "extraido": {
+        "subpasta": "05-acompanhamento",
+        "confianca": 0.9,
+        "tipo": "Ata"
+      }
+    },
+    {
+      "funcao": "TR-05",
+      "nome": "Arquivista do cliente",
+      "modelo": "claude-haiku-5-5",
+      "papel": "cadastro",
+      "rodada": 3,
+      "esforcoDoCadastro": "low",
+      "entrada": "contrato",
+      "chamadaOk": true,
+      "erro": null,
+      "duracaoMs": 3132,
+      "tokens": "não medido",
+      "caracteresDaResposta": 131,
+      "parserAceitou": true,
+      "certos": 1,
+      "total": 1,
+      "observacao": "02-contrato (0.95)",
+      "extraido": {
+        "subpasta": "02-contrato",
+        "confianca": 0.95,
+        "tipo": "Contrato"
+      }
+    },
+    {
+      "funcao": "TR-05",
+      "nome": "Arquivista do cliente",
+      "modelo": "claude-haiku-5-5",
+      "papel": "cadastro",
+      "rodada": 3,
+      "esforcoDoCadastro": "low",
+      "entrada": "foto sem texto",
+      "chamadaOk": true,
+      "erro": null,
+      "duracaoMs": 3052,
+      "tokens": "não medido",
+      "caracteresDaResposta": 90,
+      "parserAceitou": true,
+      "certos": 1,
+      "total": 1,
+      "observacao": "_fonte (0.1), à mão",
+      "extraido": {
+        "subpasta": "_fonte",
+        "confianca": 0.1,
+        "tipo": "Imagem"
+      }
+    },
+    {
+      "funcao": "TR-05",
+      "nome": "Arquivista do cliente",
+      "modelo": "claude-haiku-5-5",
+      "papel": "cadastro",
+      "rodada": 3,
+      "esforcoDoCadastro": "low",
+      "entrada": "nota fiscal",
+      "chamadaOk": true,
+      "erro": null,
+      "duracaoMs": 3185,
+      "tokens": "não medido",
+      "caracteresDaResposta": 112,
+      "parserAceitou": true,
+      "certos": 1,
+      "total": 1,
+      "observacao": "06-financeiro (0.95)",
+      "extraido": {
+        "subpasta": "06-financeiro",
+        "confianca": 0.95,
+        "tipo": "Nota fiscal"
+      }
+    },
+    {
+      "funcao": "TR-07",
+      "nome": "Cobrador de tarefas",
+      "modelo": "claude-sonnet-5-5",
+      "papel": "acima",
+      "rodada": 1,
+      "esforcoDoCadastro": "low",
+      "entrada": "resumo do dia de uma pessoa (2 vencidas, 1 parada)",
+      "chamadaOk": true,
+      "erro": null,
+      "duracaoMs": 3487,
+      "tokens": "não medido",
+      "caracteresDaResposta": 171,
+      "parserAceitou": true,
+      "certos": 3,
+      "total": 3,
+      "observacao": "159 caracteres",
+      "extraido": {
+        "frase": "Oi, Marta! Seu dia tem 2 tarefas vencidas e 1 parada há mais de 7 dias. Vale começar por elas para destravar o resto, e qualquer bloqueio é só avisar a equipe."
+      }
+    },
+    {
+      "funcao": "TR-07",
+      "nome": "Cobrador de tarefas",
+      "modelo": "claude-sonnet-5-5",
+      "papel": "acima",
+      "rodada": 2,
+      "esforcoDoCadastro": "low",
+      "entrada": "resumo do dia de uma pessoa (2 vencidas, 1 parada)",
+      "chamadaOk": true,
+      "erro": null,
+      "duracaoMs": 6147,
+      "tokens": "não medido",
+      "caracteresDaResposta": 186,
+      "parserAceitou": true,
+      "certos": 3,
+      "total": 3,
+      "observacao": "174 caracteres",
+      "extraido": {
+        "frase": "Oi, Marta! Seu dia tem 2 tarefas vencidas e 1 parada há mais de 7 dias. Vale começar por elas para destravar o resto, e se algo estiver bloqueado, avise a equipe para ajudar."
+      }
+    },
+    {
+      "funcao": "TR-07",
+      "nome": "Cobrador de tarefas",
+      "modelo": "claude-sonnet-5-5",
+      "papel": "acima",
+      "rodada": 3,
+      "esforcoDoCadastro": "low",
+      "entrada": "resumo do dia de uma pessoa (2 vencidas, 1 parada)",
+      "chamadaOk": true,
+      "erro": null,
+      "duracaoMs": 4282,
+      "tokens": "não medido",
+      "caracteresDaResposta": 202,
+      "parserAceitou": true,
+      "certos": 3,
+      "total": 3,
+      "observacao": "190 caracteres",
+      "extraido": {
+        "frase": "Oi, Marta, bom dia! Duas tarefas estão vencidas e uma está parada há mais de uma semana. Que tal começar por elas hoje? Se algo estiver travando, avise a equipe para a gente destravar junto."
+      }
+    },
+    {
+      "funcao": "TR-07",
+      "nome": "Cobrador de tarefas",
+      "modelo": "claude-haiku-5-5",
+      "papel": "cadastro",
+      "rodada": 1,
+      "esforcoDoCadastro": "low",
+      "entrada": "resumo do dia de uma pessoa (2 vencidas, 1 parada)",
+      "chamadaOk": true,
+      "erro": null,
+      "duracaoMs": 2703,
+      "tokens": "não medido",
+      "caracteresDaResposta": 155,
+      "parserAceitou": true,
+      "certos": 3,
+      "total": 3,
+      "observacao": "143 caracteres",
+      "extraido": {
+        "frase": "Marta, hoje o foco está em duas tarefas vencidas e em uma parada há mais de uma semana. Vale começar por elas para destravar o restante do dia."
+      }
+    },
+    {
+      "funcao": "TR-07",
+      "nome": "Cobrador de tarefas",
+      "modelo": "claude-haiku-5-5",
+      "papel": "cadastro",
+      "rodada": 2,
+      "esforcoDoCadastro": "low",
+      "entrada": "resumo do dia de uma pessoa (2 vencidas, 1 parada)",
+      "chamadaOk": true,
+      "erro": null,
+      "duracaoMs": 5870,
+      "tokens": "não medido",
+      "caracteresDaResposta": 128,
+      "parserAceitou": true,
+      "certos": 3,
+      "total": 3,
+      "observacao": "116 caracteres",
+      "extraido": {
+        "frase": "Marta, hoje há 2 tarefas vencidas e 1 parada há mais de 7 dias. Vale começar por elas para destravar o resto do dia."
+      }
+    },
+    {
+      "funcao": "TR-07",
+      "nome": "Cobrador de tarefas",
+      "modelo": "claude-haiku-5-5",
+      "papel": "cadastro",
+      "rodada": 3,
+      "esforcoDoCadastro": "low",
+      "entrada": "resumo do dia de uma pessoa (2 vencidas, 1 parada)",
+      "chamadaOk": true,
+      "erro": null,
+      "duracaoMs": 3071,
+      "tokens": "não medido",
+      "caracteresDaResposta": 154,
+      "parserAceitou": true,
+      "certos": 3,
+      "total": 3,
+      "observacao": "142 caracteres",
+      "extraido": {
+        "frase": "Marta, hoje há 2 tarefas vencidas e 1 parada há mais de uma semana. Vale dar uma olhada nelas com calma e definir o próximo passo de cada uma."
+      }
+    },
+    {
+      "funcao": "TR-08",
+      "nome": "Triagem da caixa",
+      "modelo": "claude-sonnet-5-5",
+      "papel": "acima",
+      "rodada": 1,
+      "esforcoDoCadastro": "low",
+      "entrada": "lote de 5 pendências",
+      "chamadaOk": true,
+      "erro": null,
+      "duracaoMs": 3414,
+      "tokens": "não medido",
+      "caracteresDaResposta": 184,
+      "parserAceitou": true,
+      "certos": 5,
+      "total": 5,
+      "observacao": "5 item(ns) lidos",
+      "extraido": {
+        "p1": "Distribuidora Vale Verde",
+        "p2": null,
+        "p3": "Oficina Motor Leve",
+        "p4": null,
+        "p5": null
+      }
+    },
+    {
+      "funcao": "TR-08",
+      "nome": "Triagem da caixa",
+      "modelo": "claude-sonnet-5-5",
+      "papel": "acima",
+      "rodada": 2,
+      "esforcoDoCadastro": "low",
+      "entrada": "lote de 5 pendências",
+      "chamadaOk": true,
+      "erro": null,
+      "duracaoMs": 5686,
+      "tokens": "não medido",
+      "caracteresDaResposta": 184,
+      "parserAceitou": true,
+      "certos": 5,
+      "total": 5,
+      "observacao": "5 item(ns) lidos",
+      "extraido": {
+        "p1": "Distribuidora Vale Verde",
+        "p2": null,
+        "p3": "Oficina Motor Leve",
+        "p4": null,
+        "p5": null
+      }
+    },
+    {
+      "funcao": "TR-08",
+      "nome": "Triagem da caixa",
+      "modelo": "claude-sonnet-5-5",
+      "papel": "acima",
+      "rodada": 3,
+      "esforcoDoCadastro": "low",
+      "entrada": "lote de 5 pendências",
+      "chamadaOk": true,
+      "erro": null,
+      "duracaoMs": 6359,
+      "tokens": "não medido",
+      "caracteresDaResposta": 184,
+      "parserAceitou": true,
+      "certos": 5,
+      "total": 5,
+      "observacao": "5 item(ns) lidos",
+      "extraido": {
+        "p1": "Distribuidora Vale Verde",
+        "p2": null,
+        "p3": "Oficina Motor Leve",
+        "p4": null,
+        "p5": null
+      }
+    },
+    {
+      "funcao": "TR-08",
+      "nome": "Triagem da caixa",
+      "modelo": "claude-haiku-5-5",
+      "papel": "cadastro",
+      "rodada": 1,
+      "esforcoDoCadastro": "low",
+      "entrada": "lote de 5 pendências",
+      "chamadaOk": true,
+      "erro": null,
+      "duracaoMs": 5663,
+      "tokens": "não medido",
+      "caracteresDaResposta": 184,
+      "parserAceitou": true,
+      "certos": 5,
+      "total": 5,
+      "observacao": "5 item(ns) lidos",
+      "extraido": {
+        "p1": "Distribuidora Vale Verde",
+        "p2": null,
+        "p3": "Oficina Motor Leve",
+        "p4": null,
+        "p5": null
+      }
+    },
+    {
+      "funcao": "TR-08",
+      "nome": "Triagem da caixa",
+      "modelo": "claude-haiku-5-5",
+      "papel": "cadastro",
+      "rodada": 2,
+      "esforcoDoCadastro": "low",
+      "entrada": "lote de 5 pendências",
+      "chamadaOk": true,
+      "erro": null,
+      "duracaoMs": 4331,
+      "tokens": "não medido",
+      "caracteresDaResposta": 184,
+      "parserAceitou": true,
+      "certos": 5,
+      "total": 5,
+      "observacao": "5 item(ns) lidos",
+      "extraido": {
+        "p1": "Distribuidora Vale Verde",
+        "p2": null,
+        "p3": "Oficina Motor Leve",
+        "p4": null,
+        "p5": null
+      }
+    },
+    {
+      "funcao": "TR-08",
+      "nome": "Triagem da caixa",
+      "modelo": "claude-haiku-5-5",
+      "papel": "cadastro",
+      "rodada": 3,
+      "esforcoDoCadastro": "low",
+      "entrada": "lote de 5 pendências",
+      "chamadaOk": true,
+      "erro": null,
+      "duracaoMs": 3646,
+      "tokens": "não medido",
+      "caracteresDaResposta": 184,
+      "parserAceitou": true,
+      "certos": 5,
+      "total": 5,
+      "observacao": "5 item(ns) lidos",
+      "extraido": {
+        "p1": "Distribuidora Vale Verde",
+        "p2": null,
+        "p3": "Oficina Motor Leve",
+        "p4": null,
+        "p5": null
+      }
+    },
+    {
+      "funcao": "TR-09",
+      "nome": "Delegador",
+      "modelo": "claude-opus-5-5",
+      "papel": "cadastro",
+      "rodada": 1,
+      "esforcoDoCadastro": "high",
+      "entrada": "tarefa grande de implantação",
+      "chamadaOk": true,
+      "erro": null,
+      "duracaoMs": 9064,
+      "tokens": "não medido",
+      "caracteresDaResposta": 1771,
+      "parserAceitou": true,
+      "certos": 5,
+      "total": 5,
+      "observacao": "5 subtarefa(s), 1 para agente, 0 aviso(s)",
+      "extraido": {
+        "donos": [
+          "pessoa",
+          "pessoa",
+          "pessoa",
+          "pessoa",
+          "TR-05"
+        ]
+      }
+    },
+    {
+      "funcao": "TR-09",
+      "nome": "Delegador",
+      "modelo": "claude-opus-5-5",
+      "papel": "cadastro",
+      "rodada": 2,
+      "esforcoDoCadastro": "high",
+      "entrada": "tarefa grande de implantação",
+      "chamadaOk": true,
+      "erro": null,
+      "duracaoMs": 10345,
+      "tokens": "não medido",
+      "caracteresDaResposta": 2010,
+      "parserAceitou": true,
+      "certos": 5,
+      "total": 5,
+      "observacao": "5 subtarefa(s), 1 para agente, 0 aviso(s)",
+      "extraido": {
+        "donos": [
+          "pessoa",
+          "pessoa",
+          "pessoa",
+          "pessoa",
+          "TR-05"
+        ]
+      }
+    },
+    {
+      "funcao": "TR-09",
+      "nome": "Delegador",
+      "modelo": "claude-opus-5-5",
+      "papel": "cadastro",
+      "rodada": 3,
+      "esforcoDoCadastro": "high",
+      "entrada": "tarefa grande de implantação",
+      "chamadaOk": true,
+      "erro": null,
+      "duracaoMs": 13699,
+      "tokens": "não medido",
+      "caracteresDaResposta": 2241,
+      "parserAceitou": true,
+      "certos": 5,
+      "total": 5,
+      "observacao": "5 subtarefa(s), 1 para agente, 0 aviso(s)",
+      "extraido": {
+        "donos": [
+          "pessoa",
+          "pessoa",
+          "pessoa",
+          "pessoa",
+          "TR-05"
+        ]
+      }
+    },
+    {
+      "funcao": "TR-11",
+      "nome": "Arquivista do cliente (segunda leitura)",
+      "modelo": "claude-opus-5-5",
+      "papel": "acima",
+      "rodada": 1,
+      "esforcoDoCadastro": "low",
+      "entrada": "print sem texto",
+      "chamadaOk": true,
+      "erro": null,
+      "duracaoMs": 6383,
+      "tokens": "não medido",
+      "caracteresDaResposta": 108,
+      "parserAceitou": true,
+      "certos": 1,
+      "total": 1,
+      "observacao": "07-evidencias (0.5), à mão",
+      "extraido": {
+        "subpasta": "07-evidencias",
+        "confianca": 0.5,
+        "tipo": "Print"
+      }
+    },
+    {
+      "funcao": "TR-11",
+      "nome": "Arquivista do cliente (segunda leitura)",
+      "modelo": "claude-opus-5-5",
+      "papel": "acima",
+      "rodada": 1,
+      "esforcoDoCadastro": "low",
+      "entrada": "proposta revisada (versão nova)",
+      "chamadaOk": true,
+      "erro": null,
+      "duracaoMs": 4388,
+      "tokens": "não medido",
+      "caracteresDaResposta": 143,
+      "parserAceitou": true,
+      "certos": 1,
+      "total": 1,
+      "observacao": "01-comercial (0.9)",
+      "extraido": {
+        "subpasta": "01-comercial",
+        "confianca": 0.9,
+        "tipo": "Proposta"
+      }
+    },
+    {
+      "funcao": "TR-11",
+      "nome": "Arquivista do cliente (segunda leitura)",
+      "modelo": "claude-opus-5-5",
+      "papel": "acima",
+      "rodada": 1,
+      "esforcoDoCadastro": "low",
+      "entrada": "relatório de entrega com nome genérico",
+      "chamadaOk": true,
+      "erro": null,
+      "duracaoMs": 9138,
+      "tokens": "não medido",
+      "caracteresDaResposta": 151,
+      "parserAceitou": true,
+      "certos": 1,
+      "total": 1,
+      "observacao": "04-entrega (0.9)",
+      "extraido": {
+        "subpasta": "04-entrega",
+        "confianca": 0.9,
+        "tipo": "Relatório de entrega"
+      }
+    },
+    {
+      "funcao": "TR-11",
+      "nome": "Arquivista do cliente (segunda leitura)",
+      "modelo": "claude-opus-5-5",
+      "papel": "acima",
+      "rodada": 2,
+      "esforcoDoCadastro": "low",
+      "entrada": "print sem texto",
+      "chamadaOk": true,
+      "erro": null,
+      "duracaoMs": 5278,
+      "tokens": "não medido",
+      "caracteresDaResposta": 109,
+      "parserAceitou": true,
+      "certos": 1,
+      "total": 1,
+      "observacao": "07-evidencias (0.55), à mão",
+      "extraido": {
+        "subpasta": "07-evidencias",
+        "confianca": 0.55,
+        "tipo": "Print"
+      }
+    },
+    {
+      "funcao": "TR-11",
+      "nome": "Arquivista do cliente (segunda leitura)",
+      "modelo": "claude-opus-5-5",
+      "papel": "acima",
+      "rodada": 2,
+      "esforcoDoCadastro": "low",
+      "entrada": "proposta revisada (versão nova)",
+      "chamadaOk": true,
+      "erro": null,
+      "duracaoMs": 3702,
+      "tokens": "não medido",
+      "caracteresDaResposta": 141,
+      "parserAceitou": true,
+      "certos": 1,
+      "total": 1,
+      "observacao": "01-comercial (0.9)",
+      "extraido": {
+        "subpasta": "01-comercial",
+        "confianca": 0.9,
+        "tipo": "Proposta"
+      }
+    },
+    {
+      "funcao": "TR-11",
+      "nome": "Arquivista do cliente (segunda leitura)",
+      "modelo": "claude-opus-5-5",
+      "papel": "acima",
+      "rodada": 2,
+      "esforcoDoCadastro": "low",
+      "entrada": "relatório de entrega com nome genérico",
+      "chamadaOk": true,
+      "erro": null,
+      "duracaoMs": 3285,
+      "tokens": "não medido",
+      "caracteresDaResposta": 151,
+      "parserAceitou": true,
+      "certos": 1,
+      "total": 1,
+      "observacao": "04-entrega (0.9)",
+      "extraido": {
+        "subpasta": "04-entrega",
+        "confianca": 0.9,
+        "tipo": "Relatório de entrega"
+      }
+    },
+    {
+      "funcao": "TR-11",
+      "nome": "Arquivista do cliente (segunda leitura)",
+      "modelo": "claude-opus-5-5",
+      "papel": "acima",
+      "rodada": 3,
+      "esforcoDoCadastro": "low",
+      "entrada": "print sem texto",
+      "chamadaOk": true,
+      "erro": null,
+      "duracaoMs": 8090,
+      "tokens": "não medido",
+      "caracteresDaResposta": 97,
+      "parserAceitou": true,
+      "certos": 1,
+      "total": 1,
+      "observacao": "_fonte (0.3), à mão",
+      "extraido": {
+        "subpasta": "_fonte",
+        "confianca": 0.3,
+        "tipo": "Print"
+      }
+    },
+    {
+      "funcao": "TR-11",
+      "nome": "Arquivista do cliente (segunda leitura)",
+      "modelo": "claude-opus-5-5",
+      "papel": "acima",
+      "rodada": 3,
+      "esforcoDoCadastro": "low",
+      "entrada": "proposta revisada (versão nova)",
+      "chamadaOk": true,
+      "erro": null,
+      "duracaoMs": 3808,
+      "tokens": "não medido",
+      "caracteresDaResposta": 131,
+      "parserAceitou": true,
+      "certos": 1,
+      "total": 1,
+      "observacao": "01-comercial (0.9)",
+      "extraido": {
+        "subpasta": "01-comercial",
+        "confianca": 0.9,
+        "tipo": "Proposta"
+      }
+    },
+    {
+      "funcao": "TR-11",
+      "nome": "Arquivista do cliente (segunda leitura)",
+      "modelo": "claude-opus-5-5",
+      "papel": "acima",
+      "rodada": 3,
+      "esforcoDoCadastro": "low",
+      "entrada": "relatório de entrega com nome genérico",
+      "chamadaOk": true,
+      "erro": null,
+      "duracaoMs": 6012,
+      "tokens": "não medido",
+      "caracteresDaResposta": 151,
+      "parserAceitou": true,
+      "certos": 1,
+      "total": 1,
+      "observacao": "04-entrega (0.9)",
+      "extraido": {
+        "subpasta": "04-entrega",
+        "confianca": 0.9,
+        "tipo": "Relatório de entrega"
+      }
+    },
+    {
+      "funcao": "TR-11",
+      "nome": "Arquivista do cliente (segunda leitura)",
+      "modelo": "claude-sonnet-5-5",
+      "papel": "cadastro",
+      "rodada": 1,
+      "esforcoDoCadastro": "low",
+      "entrada": "print sem texto",
+      "chamadaOk": true,
+      "erro": null,
+      "duracaoMs": 2994,
+      "tokens": "não medido",
+      "caracteresDaResposta": 108,
+      "parserAceitou": true,
+      "certos": 0,
+      "total": 1,
+      "observacao": "07-evidencias (0.6)",
+      "extraido": {
+        "subpasta": "07-evidencias",
+        "confianca": 0.6,
+        "tipo": "Print"
+      }
+    },
+    {
+      "funcao": "TR-11",
+      "nome": "Arquivista do cliente (segunda leitura)",
+      "modelo": "claude-sonnet-5-5",
+      "papel": "cadastro",
+      "rodada": 1,
+      "esforcoDoCadastro": "low",
+      "entrada": "proposta revisada (versão nova)",
+      "chamadaOk": true,
+      "erro": null,
+      "duracaoMs": 5297,
+      "tokens": "não medido",
+      "caracteresDaResposta": 144,
+      "parserAceitou": true,
+      "certos": 1,
+      "total": 1,
+      "observacao": "01-comercial (0.85)",
+      "extraido": {
+        "subpasta": "01-comercial",
+        "confianca": 0.85,
+        "tipo": "Proposta comercial"
+      }
+    },
+    {
+      "funcao": "TR-11",
+      "nome": "Arquivista do cliente (segunda leitura)",
+      "modelo": "claude-sonnet-5-5",
+      "papel": "cadastro",
+      "rodada": 1,
+      "esforcoDoCadastro": "low",
+      "entrada": "relatório de entrega com nome genérico",
+      "chamadaOk": true,
+      "erro": null,
+      "duracaoMs": 8417,
+      "tokens": "não medido",
+      "caracteresDaResposta": 148,
+      "parserAceitou": true,
+      "certos": 1,
+      "total": 1,
+      "observacao": "04-entrega (0.93)",
+      "extraido": {
+        "subpasta": "04-entrega",
+        "confianca": 0.93,
+        "tipo": "Relatório de entrega"
+      }
+    },
+    {
+      "funcao": "TR-11",
+      "nome": "Arquivista do cliente (segunda leitura)",
+      "modelo": "claude-sonnet-5-5",
+      "papel": "cadastro",
+      "rodada": 2,
+      "esforcoDoCadastro": "low",
+      "entrada": "print sem texto",
+      "chamadaOk": true,
+      "erro": null,
+      "duracaoMs": 6449,
+      "tokens": "não medido",
+      "caracteresDaResposta": 108,
+      "parserAceitou": true,
+      "certos": 0,
+      "total": 1,
+      "observacao": "07-evidencias (0.6)",
+      "extraido": {
+        "subpasta": "07-evidencias",
+        "confianca": 0.6,
+        "tipo": "Print"
+      }
+    },
+    {
+      "funcao": "TR-11",
+      "nome": "Arquivista do cliente (segunda leitura)",
+      "modelo": "claude-sonnet-5-5",
+      "papel": "cadastro",
+      "rodada": 2,
+      "esforcoDoCadastro": "low",
+      "entrada": "proposta revisada (versão nova)",
+      "chamadaOk": true,
+      "erro": null,
+      "duracaoMs": 5823,
+      "tokens": "não medido",
+      "caracteresDaResposta": 143,
+      "parserAceitou": true,
+      "certos": 1,
+      "total": 1,
+      "observacao": "01-comercial (0.9)",
+      "extraido": {
+        "subpasta": "01-comercial",
+        "confianca": 0.9,
+        "tipo": "Proposta comercial"
+      }
+    },
+    {
+      "funcao": "TR-11",
+      "nome": "Arquivista do cliente (segunda leitura)",
+      "modelo": "claude-sonnet-5-5",
+      "papel": "cadastro",
+      "rodada": 2,
+      "esforcoDoCadastro": "low",
+      "entrada": "relatório de entrega com nome genérico",
+      "chamadaOk": true,
+      "erro": null,
+      "duracaoMs": 3200,
+      "tokens": "não medido",
+      "caracteresDaResposta": 131,
+      "parserAceitou": true,
+      "certos": 1,
+      "total": 1,
+      "observacao": "04-entrega (0.93)",
+      "extraido": {
+        "subpasta": "04-entrega",
+        "confianca": 0.93,
+        "tipo": "Relatório de entrega"
+      }
+    },
+    {
+      "funcao": "TR-11",
+      "nome": "Arquivista do cliente (segunda leitura)",
+      "modelo": "claude-sonnet-5-5",
+      "papel": "cadastro",
+      "rodada": 3,
+      "esforcoDoCadastro": "low",
+      "entrada": "print sem texto",
+      "chamadaOk": true,
+      "erro": null,
+      "duracaoMs": 3035,
+      "tokens": "não medido",
+      "caracteresDaResposta": 108,
+      "parserAceitou": true,
+      "certos": 0,
+      "total": 1,
+      "observacao": "07-evidencias (0.6)",
+      "extraido": {
+        "subpasta": "07-evidencias",
+        "confianca": 0.6,
+        "tipo": "Print"
+      }
+    },
+    {
+      "funcao": "TR-11",
+      "nome": "Arquivista do cliente (segunda leitura)",
+      "modelo": "claude-sonnet-5-5",
+      "papel": "cadastro",
+      "rodada": 3,
+      "esforcoDoCadastro": "low",
+      "entrada": "proposta revisada (versão nova)",
+      "chamadaOk": true,
+      "erro": null,
+      "duracaoMs": 3120,
+      "tokens": "não medido",
+      "caracteresDaResposta": 144,
+      "parserAceitou": true,
+      "certos": 1,
+      "total": 1,
+      "observacao": "01-comercial (0.85)",
+      "extraido": {
+        "subpasta": "01-comercial",
+        "confianca": 0.85,
+        "tipo": "Proposta comercial"
+      }
+    },
+    {
+      "funcao": "TR-11",
+      "nome": "Arquivista do cliente (segunda leitura)",
+      "modelo": "claude-sonnet-5-5",
+      "papel": "cadastro",
+      "rodada": 3,
+      "esforcoDoCadastro": "low",
+      "entrada": "relatório de entrega com nome genérico",
+      "chamadaOk": true,
+      "erro": null,
+      "duracaoMs": 3729,
+      "tokens": "não medido",
+      "caracteresDaResposta": 152,
+      "parserAceitou": true,
+      "certos": 1,
+      "total": 1,
+      "observacao": "04-entrega (0.93)",
+      "extraido": {
+        "subpasta": "04-entrega",
+        "confianca": 0.93,
+        "tipo": "Relatório de entrega"
+      }
+    }
+  ]
+}
