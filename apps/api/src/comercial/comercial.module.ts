@@ -33,6 +33,9 @@ import { SalaService } from './sala.service';
 import { ReacoesDaPropostaService } from './reacoes-da-proposta.service';
 import { LeituraEReacaoService } from './leitura-e-reacao.service';
 import { SalaVersaoService } from './sala-versao.service';
+// Produção 21 (P9): quando a sala entra (o estado na aba Sala e "Copiar link da sala").
+import { SalaEstadoController } from './sala-estado.controller';
+import { SalaEstadoService, SoGenteNaSalaGuard } from './sala-estado.service';
 import { WhatsappComercialService } from './whatsapp.service';
 // Interface 20/10 (U6): o WhatsApp pelo DigiSac (cartão de Conexões e a entrada do webhook).
 import { DigisacEntradaService } from './digisac-entrada.service';
@@ -66,7 +69,7 @@ import { OnboardingAntecipadoService } from './onboarding-antecipado.service';
  */
 @Module({
   imports: [TenantsModule, AuthModule, LeadsModule, OnboardingModule, FinanceModule, RoutinesModule, ZapsignModule, MemoryModule],
-  controllers: [ComercialController, SalaController, SimuladorController, MensagensController, DinheiroController, WebhooksDoDinheiroController, InteligenciaController, FechadoForaController, OnboardingAntecipadoController, IntegracaoDoDigisacController, WebhookDoDigisacController],
+  controllers: [ComercialController, SalaController, SimuladorController, MensagensController, DinheiroController, WebhooksDoDinheiroController, InteligenciaController, FechadoForaController, OnboardingAntecipadoController, IntegracaoDoDigisacController, WebhookDoDigisacController, SalaEstadoController],
   providers: [
     // --- orquestrador: o fio (único caminho de escrita de fato) e o registro de reações ---
     ReacoesRegistry,
@@ -94,6 +97,8 @@ import { OnboardingAntecipadoService } from './onboarding-antecipado.service';
     // --- rodada da implantação I3 (a sala publicada por versão) e I5 (o relatório de leitura e reação) ---
     SalaVersaoService,
     LeituraEReacaoService,
+    SalaEstadoService,
+    SoGenteNaSalaGuard,
     // --- lane D (cobrança, assinatura, fechamento, contrato vivo) ---
     // As portas de cobrança e assinatura chegam por token: `FinanceModule`
     // (PORTA_DE_COBRANCA → AsaasService) e `ZapsignModule` (PORTA_DE_ASSINATURA).
