@@ -1,0 +1,254 @@
+{
+  "inicio": "2026-10-21T10:16:03.777Z",
+  "web": "http://127.0.0.1:3031",
+  "passos": [
+    {
+      "n": 1,
+      "nome": "P1 · Visão geral a 1440: os gráficos cabem e o balão da primeira e da última coluna fica dentro",
+      "ok": true,
+      "ms": 1118,
+      "detalhe": [
+        {
+          "titulo": "Carga por prazo",
+          "barras": 4,
+          "orientacao": "colunas"
+        },
+        {
+          "titulo": "Tarefas por lista",
+          "barras": 3,
+          "orientacao": "colunas"
+        }
+      ]
+    },
+    {
+      "n": 2,
+      "nome": "P1 · Visão geral a 390 (toque): sem rolagem lateral, balão dentro, tocar fora fecha",
+      "ok": true,
+      "ms": 1813,
+      "detalhe": [
+        {
+          "titulo": "Carga por prazo",
+          "barras": 4,
+          "orientacao": "colunas"
+        },
+        {
+          "titulo": "Tarefas por lista",
+          "barras": 3,
+          "orientacao": "colunas"
+        }
+      ]
+    },
+    {
+      "n": 3,
+      "nome": "P2 · Agenda: Semana no endereço, grade de horas no desktop, volta ao Mês",
+      "ok": true,
+      "ms": 1985,
+      "detalhe": {
+        "dia": "2026-10-21"
+      }
+    },
+    {
+      "n": 4,
+      "nome": "P2 · Agenda a 390: a semana vira lista por dia, sem rolagem lateral",
+      "ok": true,
+      "ms": 850
+    },
+    {
+      "n": 5,
+      "nome": "P4 · Todas: \"Ocultar status vazios\" alterna, conta, vai ao endereço e some com as colunas vazias",
+      "ok": true,
+      "ms": 1526,
+      "detalhe": {
+        "colunasAntes": 16,
+        "vazias": 12,
+        "colunasDepois": 4
+      }
+    },
+    {
+      "n": 6,
+      "nome": "P4 · a vista salva leva \"Ocultar status vazios\"",
+      "ok": true,
+      "ms": 1598,
+      "detalhe": {
+        "nome": "Produção 21 771432"
+      }
+    },
+    {
+      "n": 7,
+      "nome": "P3 · a árvore do Trabalho: o menu da lista oferece excluir (ou arquivar antes) e pede o nome",
+      "ok": true,
+      "ms": 954,
+      "detalhe": {
+        "itens": [
+          "Renomear",
+          "Excluir lista"
+        ]
+      }
+    },
+    {
+      "n": 8,
+      "nome": "P6 · Implantação: o cartão diz há quantos dias está na etapa, e o painel mostra quem trabalha nela",
+      "ok": true,
+      "ms": 2329,
+      "detalhe": {
+        "naEtapa": true,
+        "quemTrabalha": true,
+        "pagina390SemRolagem": true
+      }
+    },
+    {
+      "n": 9,
+      "nome": "P7 · Atas: duas colunas, a página não rola e a lista rola sozinha",
+      "ok": true,
+      "ms": 1962,
+      "detalhe": {
+        "ata": "memoria:d643e939-2acf-400b-87c5-f6aa00609740",
+        "rolavel": true,
+        "baixo": 876,
+        "janela": 900,
+        "pagina": 900,
+        "cabe": true,
+        "fontes": "Nenhuma nota do vault indexada nesta empresa: aparecem só as atas coladas aqui (a pasta 80-Reunioes entra quando o vault for indexado). Conecte o Granola em Con"
+      }
+    },
+    {
+      "n": 10,
+      "nome": "P7 · Atas: busca por palavra e por data vão ao endereço e filtram",
+      "ok": true,
+      "ms": 4428,
+      "detalhe": {
+        "comPalavra": 10,
+        "noPassado": 0,
+        "hoje": 10,
+        "endereco": "?ata=memoria%3Ad643e939-2acf-400b-87c5-f6aa00609740&q=<palavra>&de=2026-10-16&ate=2026-10-16"
+      }
+    },
+    {
+      "n": 11,
+      "nome": "P8 · Integrações: o cartão WhatsApp (Evolution) com estado e webhook, sem chave na tela e sem o DigiSac",
+      "ok": true,
+      "ms": 2320,
+      "detalhe": {
+        "selo": "Não configurado"
+      }
+    },
+    {
+      "n": 12,
+      "nome": "P9 · aba Sala: o estado da sala deste lead, a ajuda e o \"Copiar link da sala\"",
+      "ok": true,
+      "ms": 2015,
+      "detalhe": {
+        "linkNaAreaDeTransferencia": true,
+        "naoEntregueSimulado": false,
+        "marcos": 4
+      }
+    },
+    {
+      "n": 13,
+      "nome": "P9 · aba Sala no claro e a 390",
+      "ok": true,
+      "ms": 2228
+    },
+    {
+      "n": 14,
+      "nome": "A3 · árvore: \"+ nova pasta\" inline (Enter salva), renomear com duplo clique, repetido no mesmo nível recusado",
+      "ok": true,
+      "ms": 3226,
+      "detalhe": {
+        "recusa": "Já existe uma pasta com esse nome neste lugar.",
+        "pastas": 2
+      }
+    },
+    {
+      "n": 15,
+      "nome": "A3 · árvore: arrastar a lista para outra pasta e reordenar com Alt+↓",
+      "ok": true,
+      "ms": 2123,
+      "detalhe": {
+        "listasNaPasta": 2
+      }
+    },
+    {
+      "n": 16,
+      "nome": "A3 · apagar pasta com listas: o diálogo pede o destino (Sem pasta), move as listas e apaga",
+      "ok": true,
+      "ms": 1135,
+      "detalhe": {
+        "listasMovidas": 2
+      }
+    },
+    {
+      "n": 17,
+      "nome": "A3 · apagar lista vazia pelo menu (nome digitado) e a pasta vazia que sobrou; 390 sem rolagem lateral",
+      "ok": true,
+      "ms": 2216,
+      "detalhe": {
+        "listasApagadas": 2
+      }
+    },
+    {
+      "n": 18,
+      "nome": "A1 · Funil vivo: bloco \"Tarefas do comercial\" com contagem, \"+ tarefa\" (Enter salva) e concluir",
+      "ok": true,
+      "ms": 1531,
+      "detalhe": {
+        "contagemAntes": 0
+      }
+    },
+    {
+      "n": 19,
+      "nome": "A1 · painel do lead: bloco \"Tarefas\", \"+ tarefa\" já ligada ao lead, e o cartão mostra a tarefa",
+      "ok": true,
+      "ms": 1952,
+      "detalhe": {
+        "linhaMostra": true
+      }
+    },
+    {
+      "n": 20,
+      "nome": "A1 · o bloco no claro e a 390, sem rolagem lateral",
+      "ok": true,
+      "ms": 1469
+    }
+  ],
+  "screenshots": [
+    "agentes-rodada-producao21-visao-geral-balao-escuro.png",
+    "agentes-rodada-producao21-visao-geral-390.png",
+    "agentes-rodada-producao21-visao-geral-claro.png",
+    "agentes-rodada-producao21-agenda-semana-escuro.png",
+    "agentes-rodada-producao21-agenda-semana-claro.png",
+    "agentes-rodada-producao21-agenda-semana-390.png",
+    "agentes-rodada-producao21-todas-vazios-ocultos-escuro.png",
+    "agentes-rodada-producao21-todas-vazios-ocultos-claro.png",
+    "agentes-rodada-producao21-todas-vazios-390.png",
+    "agentes-rodada-producao21-trabalho-menu-da-lista-escuro.png",
+    "agentes-rodada-producao21-implantacao-quadro-escuro.png",
+    "agentes-rodada-producao21-implantacao-painel-escuro.png",
+    "agentes-rodada-producao21-implantacao-quadro-claro.png",
+    "agentes-rodada-producao21-implantacao-390.png",
+    "agentes-rodada-producao21-atas-escuro.png",
+    "agentes-rodada-producao21-atas-busca-escuro.png",
+    "agentes-rodada-producao21-atas-busca-claro.png",
+    "agentes-rodada-producao21-atas-390.png",
+    "agentes-rodada-producao21-atas-detalhe-390.png",
+    "agentes-rodada-producao21-conexoes-evolution-escuro.png",
+    "agentes-rodada-producao21-conexoes-evolution-claro.png",
+    "agentes-rodada-producao21-conexoes-evolution-390.png",
+    "agentes-rodada-producao21-sala-estado-escuro.png",
+    "agentes-rodada-producao21-sala-estado-claro.png",
+    "agentes-rodada-producao21-sala-estado-390.png",
+    "agentes-rodada-producao21-adendo-arvore-renomeada-escuro.png",
+    "agentes-rodada-producao21-adendo-apagar-pasta-escuro.png",
+    "agentes-rodada-producao21-adendo-arvore-390.png",
+    "agentes-rodada-producao21-adendo-funil-tarefas-escuro.png",
+    "agentes-rodada-producao21-adendo-painel-tarefas-escuro.png",
+    "agentes-rodada-producao21-adendo-funil-tarefas-claro.png",
+    "agentes-rodada-producao21-adendo-funil-tarefas-390.png"
+  ],
+  "avisos": [
+    "Drive e Granola com dublê estão provados na suíte da API (trabalho-atas-fontes, trabalho-atas-granola); a stack do seed não tem conta Google nem o cofre de pé"
+  ],
+  "ok": true,
+  "fim": "2026-10-21T10:16:42.972Z",
+  "duracaoMs": 39195
+}

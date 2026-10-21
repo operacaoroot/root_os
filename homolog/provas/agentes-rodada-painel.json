@@ -1,0 +1,154 @@
+{
+  "inicio": "2026-10-21T10:17:19.963Z",
+  "web": "http://127.0.0.1:3031",
+  "sufixo": "101719",
+  "passos": [
+    {
+      "n": 1,
+      "nome": "mesa, sócio e admin entraram pela API",
+      "ms": 250,
+      "detalhe": "Mesa · responsável (homologação) · Sócio titular (homologação) · Admin Root"
+    },
+    {
+      "n": 2,
+      "nome": "preparou: tarefa da mesa comentada pelo admin, lista solta e um lead novo em E1",
+      "ms": 574,
+      "tarefaId": "087a216b-079a-4f1b-9438-ce4957ee523f",
+      "listaId": "a8131b60-7e9e-4990-869b-4072493e2dfe",
+      "leadId": "1b3ccd3f-678f-5bbe-9671-ce40e54be4b9"
+    },
+    {
+      "n": 3,
+      "nome": "na caixa da mesa, Atividade mostra o comentário do admin",
+      "ms": 1661,
+      "detalhe": "comentario:f00c81e1-93cd-481d-a503-857af872726d"
+    },
+    {
+      "n": 4,
+      "nome": "\"Limpar\" tirou o item da caixa e ele continua no histórico",
+      "ms": 1753
+    },
+    {
+      "n": 5,
+      "nome": "Minhas tarefas mostra a tarefa e os comentários abrem no lugar",
+      "ms": 1938
+    },
+    {
+      "n": 6,
+      "nome": "pasta criada pela tela",
+      "ms": 2730,
+      "detalhe": "Pasta da prova 101719"
+    },
+    {
+      "n": 7,
+      "nome": "a lista foi movida para a pasta pelo seletor e o chip da pasta a mostra",
+      "ms": 3853
+    },
+    {
+      "n": 8,
+      "nome": "Quadro e Lista alternam sobre a mesma lista",
+      "ms": 4148
+    },
+    {
+      "n": 9,
+      "nome": "ata colada pela tela entrou no banco de atas (pela memória)",
+      "ms": 5564,
+      "detalhe": "memoria:aa807d22-4a74-4992-8cfb-c8aba0a65410"
+    },
+    {
+      "n": 10,
+      "nome": "\"Sugerir tarefas\" trouxe rascunhos conferidos contra a ata",
+      "ms": 5724,
+      "detalhe": "3 rascunho(s)"
+    },
+    {
+      "n": 11,
+      "nome": "aceitar com um clique criou a tarefa no Trabalho",
+      "ms": 6517,
+      "detalhe": "Enviar o relatório mensal da Padaria Exemplo"
+    },
+    {
+      "n": 12,
+      "nome": "o admin moveu o lead novo de E1 para E3 sem pedido: a mensagem diz o que ficou sem concluir e o balão fica",
+      "ms": 7601,
+      "detalhe": "Movido para E3 · Reunião agendada sem as conclusões de E2 · Qualificação: sistema ou ERP em uso (E2); base de dados: sim · MOVIDO COM PENDÊNCIAS sistema ou ERP em uso (E2); base de dados: sim ou não (E2)"
+    },
+    {
+      "n": 13,
+      "nome": "fotografou as telas mexidas em escuro, claro e 390 px; nenhuma rola na horizontal no celular",
+      "ms": 36702,
+      "detalhe": "24 fotos"
+    }
+  ],
+  "screenshots": [
+    "agentes-rodada-painel-caixa-atividade-escuro.png",
+    "agentes-rodada-painel-caixa-tarefas-escuro.png",
+    "agentes-rodada-painel-trabalho-pastas-escuro.png",
+    "agentes-rodada-painel-trabalho-lista-escuro.png",
+    "agentes-rodada-painel-atas-escuro.png",
+    "agentes-rodada-painel-aprovacoes-escuro.png",
+    "agentes-rodada-painel-funil-escuro.png",
+    "agentes-rodada-painel-whatsapp-escuro.png",
+    "agentes-rodada-painel-caixa-atividade-celular.png",
+    "agentes-rodada-painel-caixa-tarefas-celular.png",
+    "agentes-rodada-painel-trabalho-pastas-celular.png",
+    "agentes-rodada-painel-trabalho-lista-celular.png",
+    "agentes-rodada-painel-atas-celular.png",
+    "agentes-rodada-painel-aprovacoes-celular.png",
+    "agentes-rodada-painel-funil-celular.png",
+    "agentes-rodada-painel-whatsapp-celular.png",
+    "agentes-rodada-painel-caixa-atividade-claro.png",
+    "agentes-rodada-painel-caixa-tarefas-claro.png",
+    "agentes-rodada-painel-trabalho-pastas-claro.png",
+    "agentes-rodada-painel-trabalho-lista-claro.png",
+    "agentes-rodada-painel-atas-claro.png",
+    "agentes-rodada-painel-aprovacoes-claro.png",
+    "agentes-rodada-painel-funil-claro.png",
+    "agentes-rodada-painel-whatsapp-claro.png"
+  ],
+  "semRolagemHorizontal": [
+    {
+      "tela": "caixa-atividade",
+      "doc": 390,
+      "janela": 390
+    },
+    {
+      "tela": "caixa-tarefas",
+      "doc": 390,
+      "janela": 390
+    },
+    {
+      "tela": "trabalho-pastas",
+      "doc": 390,
+      "janela": 390
+    },
+    {
+      "tela": "trabalho-lista",
+      "doc": 390,
+      "janela": 390
+    },
+    {
+      "tela": "atas",
+      "doc": 390,
+      "janela": 390
+    },
+    {
+      "tela": "aprovacoes",
+      "doc": 390,
+      "janela": 390
+    },
+    {
+      "tela": "funil",
+      "doc": 390,
+      "janela": 390
+    },
+    {
+      "tela": "whatsapp",
+      "doc": 390,
+      "janela": 390
+    }
+  ],
+  "ok": true,
+  "fim": "2026-10-21T10:17:57.000Z",
+  "duracaoMs": 37037
+}
