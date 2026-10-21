@@ -23,6 +23,9 @@ import { SeletorDeCliente, type ClienteEscolhido } from './SeletorDeCliente';
 import { VistasDoQuadro } from './VistasDoQuadro';
 import { BotaoDeFiltros, type DefinicaoDeFiltro, type ValoresDeFiltro } from '@/components/filtros/BotaoDeFiltros';
 import { IniciarOnboardingDaImplantacao } from './IniciarOnboardingDaImplantacao';
+import { QuemTrabalhaNaEtapa } from './QuemTrabalhaNaEtapa';
+import { DatasNoBalao, ProximaDataNoCartao } from './DatasDoCartao';
+import { diaCompleto, diaCurto, diaComSemana, instanteComSemana, instanteCurto } from '@/lib/datas-do-cartao';
 import { AtividadeDaTarefa } from './AtividadeDaTarefa';
 import { EditorialTaskLink } from './EditorialTaskLink';
 import { OrigemComercialDaTarefa } from '@/app/leads/OrigemComercialDaTarefa';
@@ -50,9 +53,9 @@ const PRIORIDADES = [
 
 const INP = 'w-full rounded-lg border border-border bg-surface-2 px-2 py-1 text-[13px] outline-none focus:border-brand-dim disabled:opacity-60';
 
-const dataBR = (iso: string | null) => (iso ? new Date(iso).toLocaleDateString('pt-BR') : '—');
-const dataHoraBR = (iso: string | null) =>
-  iso ? new Date(iso).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' }) : '—';
+// Rodada de produção 1: fuso de São Paulo, o DIA do trilho em UTC e nunca "Invalid Date" (`lib/datas-do-cartao.ts`).
+const dataBR = (iso: string | null) => diaCompleto(iso) ?? '—';
+const dataHoraBR = (iso: string | null) => instanteCurto(iso) ?? '—';
 
 /**
  * O NOME DO AGENTE QUE ESTÁ COM A TAREFA (fatia A4).
@@ -1461,10 +1464,10 @@ function Cartao({ t, lista, editable, token, agentes, pessoas = [], onSoltarSobr
           {dias !== null && (
             <span
               data-idade-dias={dias}
-              title={`Nesta etapa desde ${dataHoraBR(t.statusDesde)}`}
+              title={`Nesta etapa desde ${instanteComSemana(t.statusDesde) ?? '—'}`}
               className={`font-os-mono text-[10px] tabular-nums ${dias > DIAS_DE_ALERTA_NA_ETAPA ? 'text-mag' : 'text-muted'}`}
             >
-              {compacto ? <>{dias}d<span className="sr-only"> na etapa</span></> : `${dias}d na etapa`}
+              {compacto ? <>{dias}d<span className="sr-only"> na etapa</span></> : `na etapa há ${dias} d`}
             </span>
           )}
           {t.externalUrl && !compacto && (
@@ -1479,7 +1482,7 @@ function Cartao({ t, lista, editable, token, agentes, pessoas = [], onSoltarSobr
       ) : (
       <p className={`mt-0.5 truncate text-[11.5px] ${mov?.proximaAcao ? 'text-text' : 'text-muted'}`} title={mov?.proximaAcao?.texto ?? undefined}>
         {mov?.proximaAcao ? mov.proximaAcao.texto : 'sem próxima ação'}
-        {mov?.proximaAcao?.quando && <span className="text-muted"> · {dataBR(mov.proximaAcao.quando)}</span>}
+        {mov?.proximaAcao?.quando && diaCurto(mov.proximaAcao.quando) && <span className="text-muted" title={diaComSemana(mov.proximaAcao.quando) ?? undefined}> · {diaCurto(mov.proximaAcao.quando)}</span>}
       </p>
       )}
       {!compacto && (
@@ -1509,7 +1512,7 @@ function Cartao({ t, lista, editable, token, agentes, pessoas = [], onSoltarSobr
             <ResponsavelDaTarefa tarefa={t} />
             <OutrosResponsaveis ids={t.outrosResponsaveisIds ?? []} pessoas={pessoas} />
             {t.recorrencia && <span title={descreverRecorrencia(t.recorrencia)} className="flex items-center"><Repeat size={10} /><span className="sr-only">{descreverRecorrencia(t.recorrencia)}</span></span>}
-            {t.dueDate && <span className={atrasada(t) ? 'text-bad' : ''}>{dataBR(t.dueDate)}</span>}
+            <ProximaDataNoCartao dueDate={t.dueDate} proximoPassoEm={mov?.proximaAcao?.quando ?? null} concluida={t.statusType === 'closed'} />
             {t.comments > 0 && <span className="flex items-center gap-0.5"><MessageSquare size={10} />{t.comments}</span>}
             {t.subtasks > 0 && <span>{t.subtasks} sub</span>}
             {minutos > 0 && (
@@ -1596,6 +1599,7 @@ function BalaoDoCartao({ t, mov, ancora }: { t: TrabTarefaResumo; mov: TrabMovim
       style={{ top: pos?.top ?? -9999, left: pos?.left ?? -9999 }}
     >
       <p className="truncate font-semibold">{t.title}</p>
+      <DatasNoBalao statusDesde={t.statusType === 'closed' ? null : t.statusDesde} dueDate={t.dueDate} proximoPassoEm={mov?.proximaAcao?.quando ?? null} />
       <p className="mt-1.5 font-os-mono text-[10px] uppercase tracking-[0.14em] text-muted">últimos passos</p>
       {passos.length === 0 ? (
         <p className="mt-0.5 text-muted">Nenhum movimento registrado.</p>
@@ -2236,6 +2240,7 @@ function PainelTarefa({ id, estrutura, editable, token, usuarioId, aba = 'tarefa
         ) : trilho === null && listaDaImplantacao(estrutura.folders)?.listaId === t.listId ? (
           <p className="rounded-lg border border-border bg-surface-2 px-3 py-2 text-[12px] text-muted">Sem trilho de onboarding ligado a este cartão.</p>
         ) : null}
+        {trilho && <QuemTrabalhaNaEtapa trilhoId={trilho.id} token={token} />}
         <FontesDaTarefa taskId={t.id} />
         <EditorialTaskLink taskId={t.id} />
         <OrigemComercialDaTarefa taskId={t.id} />

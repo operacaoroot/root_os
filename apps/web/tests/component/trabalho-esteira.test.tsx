@@ -257,7 +257,7 @@ describe('esteira: idade e horas no cartão', () => {
     servir();
     render(<TrabalhoPage />);
     const c = await waitFor(() => cartao('ProMedical'));
-    expect(within(c).getByText('12d na etapa')).toBeTruthy();
+    expect(within(c).getByText('na etapa há 12 d')).toBeTruthy();
     expect(within(c).getByText('1h30')).toBeTruthy();
     expect(within(cartao('Cartório')).getByText('10h')).toBeTruthy();
   });

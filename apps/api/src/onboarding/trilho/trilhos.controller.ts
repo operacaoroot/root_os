@@ -197,6 +197,13 @@ export class TrilhosController {
     return this.trilhos.obter(user.orgId, id);
   }
 
+  /** Rodada de produção 1: quem trabalha nesta etapa (agentes do roster e o relógio), só leitura. */
+  @Get(':id/quem-trabalha')
+  @RequirePermissions('tarefas.ver')
+  quemTrabalha(@CurrentUser() user: JwtUser, @Param('id') id: string) {
+    return this.trilhos.quemTrabalha(user.orgId, id);
+  }
+
   @Get(':id/roteiro')
   @RequirePermissions('tarefas.ver')
   roteiro(@CurrentUser() user: JwtUser, @Param('id') id: string) {
