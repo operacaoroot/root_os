@@ -45,6 +45,7 @@ describe.skipIf(!URL)('TR-06 contra o banco', { timeout: 60_000 }, () => {
   let anexos: AnexosDaTarefaService;
   let storage: StorageEmMemoria;
   const pedidos: PedidoDeArquivo[] = [];
+  const aprovacoes: string[] = [];
   const ids = { tarefaCliente: '', tarefaInterna: '', tarefaSem: '', tarefaB: '', cliente: '' };
 
   beforeAll(async () => {
@@ -74,14 +75,21 @@ describe.skipIf(!URL)('TR-06 contra o banco', { timeout: 60_000 }, () => {
       arquivar: async (pd): Promise<ResultadoDoArquivo> => {
         pedidos.push(pd);
         const c = pd.conteudo as { chave: string; sha256: string; bytes: number };
+        const ap = await prisma.approval.create({
+          data: {
+            orgId: pd.orgId, capabilityId: 'drive.arquivo.enviar', propostoPorId: 'pessoa-1', resourceType: 'arquivo-do-cliente', resourceId: pd.ref!.id,
+            contentHash: c.sha256, resumo: 'teste', tokenHash: `a4-${c.sha256}-${Date.now()}`, expiraEm: new Date(Date.now() + 86_400_000),
+          },
+        });
+        aprovacoes.push(ap.id);
         await prisma.arquivoDoCliente.create({
           data: {
             orgId: pd.orgId, partnerId: pd.partnerId, origem: pd.origem, nomeOriginal: pd.nomeOriginal, tipoMime: pd.tipoMime,
             chave: c.chave, sha256: c.sha256, bytes: c.bytes, subpasta: '02-contrato', nome: '2026-10-21 - Contrato - x.pdf',
-            estado: 'aguardando_aprovacao', approvalId: 'aprovacao-de-teste', refTipo: pd.ref?.tipo, refId: pd.ref?.id,
+            estado: 'aguardando_aprovacao', approvalId: ap.id, refTipo: pd.ref?.tipo, refId: pd.ref?.id,
           },
         });
-        return { estado: 'aguardando_aprovacao', approvalId: 'aprovacao-de-teste', subpasta: '02-contrato', nome: 'x' };
+        return { estado: 'aguardando_aprovacao', approvalId: ap.id, subpasta: '02-contrato', nome: 'x' };
       },
     };
     anexos = new AnexosDaTarefaService(p, new AuditService(p), arquivista);
@@ -92,6 +100,7 @@ describe.skipIf(!URL)('TR-06 contra o banco', { timeout: 60_000 }, () => {
   afterAll(async () => {
     const orgs = [ORG, ORG_B];
     await prisma.arquivoDoCliente.deleteMany({ where: { orgId: { in: orgs } } });
+    await prisma.approval.deleteMany({ where: { orgId: { in: orgs } } });
     await prisma.workAnexo.deleteMany({ where: { orgId: { in: orgs } } });
     await prisma.workTask.deleteMany({ where: { orgId: { in: orgs } } });
     await prisma.workStatus.deleteMany({ where: { orgId: { in: orgs } } });
@@ -107,7 +116,7 @@ describe.skipIf(!URL)('TR-06 contra o banco', { timeout: 60_000 }, () => {
   it('anexo de tarefa de cliente: fica no OS e a cópia é pedida ao arquivista com o cliente da tarefa', async () => {
     const a = await anexos.enviar(ORG, ids.tarefaCliente, { id: 'pessoa-1', nome: 'Pessoa' }, arquivo('Contrato assinado.pdf', 'pdf do contrato'));
     expect(a.estado).toBe('aguardando_aprovacao');
-    expect(a.approvalId).toBe('aprovacao-de-teste');
+    expect(a.approvalId).toBe(aprovacoes.at(-1));
     const linha = await prisma.workAnexo.findUniqueOrThrow({ where: { id: a.id } });
     expect(linha.orgId).toBe(ORG);
     expect(linha.sha256).toBe(createHash('sha256').update('pdf do contrato').digest('hex'));
@@ -123,6 +132,14 @@ describe.skipIf(!URL)('TR-06 contra o banco', { timeout: 60_000 }, () => {
     const partes: Buffer[] = [];
     for await (const p of baixado.stream as AsyncIterable<Buffer>) partes.push(p);
     expect(Buffer.concat(partes).toString()).toBe('pdf do contrato');
+  });
+
+  it('o pedido cuja aprovação venceu não aparece como "aguardando": a tela diz para anexar de novo', async () => {
+    const a = await anexos.enviar(ORG, ids.tarefaCliente, { id: 'pessoa-1', nome: 'Pessoa' }, arquivo('Proposta.pdf', 'pdf da proposta'));
+    expect(a.estado).toBe('aguardando_aprovacao');
+    await prisma.approval.update({ where: { id: a.approvalId! }, data: { status: 'expirada' } });
+    const depois = (await anexos.listar(ORG, ids.tarefaCliente)).find((x) => x.id === a.id)!;
+    expect(depois).toMatchObject({ estado: 'erro', approvalId: null, motivo: expect.stringMatching(/venceu/) });
   });
 
   it('tarefa do cliente interno e tarefa sem cliente: só no OS, sem pedir nada ao arquivista', async () => {

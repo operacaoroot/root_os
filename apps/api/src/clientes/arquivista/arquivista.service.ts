@@ -177,6 +177,8 @@ export class ArquivistaService implements ArquivistaDoClientePort, OnModuleInit 
         : { orgId, sha256: conteudo.sha256, ...(partner ? { partnerId: partner.id } : { leadId: pedido.leadId ?? undefined }), estado: { not: 'erro' } },
       orderBy: { criadoEm: 'desc' },
     });
+    // Pedido antigo cuja aprovação venceu ou foi recusada: propõe de novo (o mesmo registro).
+    if (ja && ja.estado === 'aguardando_aprovacao') return this.proporEnvio(ja, pedido.atorId ?? ja.atorId);
     if (ja && ja.estado !== 'erro') return this.resultadoDe(ja);
 
     // A classificação: a do chamador, ou a do modelo.
@@ -341,7 +343,7 @@ export class ArquivistaService implements ArquivistaDoClientePort, OnModuleInit 
   }
 
   private async ehPessoaDaEmpresa(orgId: string, id: string): Promise<boolean> {
-    if (!/^[0-9a-f-]{36}$/i.test(id)) return false;
+    if (!id || id.length > 64) return false;
     return !!(await this.prisma.user.findFirst({ where: { id, orgId, isActive: true }, select: { id: true } }));
   }
 

@@ -402,6 +402,21 @@ describe.skipIf(!URL)('TR-04 e TR-05 contra o banco, pela porta', { timeout: 60_
     expect(await prisma.arquivoDoCliente.count({ where: { orgId: ORG, partnerId: c.id } })).toBe(1);
   });
 
+  it('pedido cuja aprovação foi recusada é proposto de novo no mesmo registro', async () => {
+    const c = await cliente('Recusa Exemplo');
+    const p = (await na(() => pastas.garantir({ orgId: ORG, partnerId: c.id, origem: 'manual', atorId: PEDRO.id }))) as { approvalId: string };
+    await confirmar(p.approvalId);
+    await zerarVolume();
+    const pedido = { orgId: ORG, partnerId: c.id, origem: 'manual' as const, nomeOriginal: 'Proposta revisada.pdf', tipoMime: 'application/pdf', conteudo: { buffer: Buffer.from('proposta r2') }, atorId: PEDRO.id };
+    const a = (await arquivista.arquivar(pedido)) as { approvalId: string };
+    await prisma.approval.update({ where: { id: a.approvalId }, data: { status: 'rejeitada' } });
+    await zerarVolume();
+    const b = (await arquivista.arquivar(pedido)) as { estado: string; approvalId: string };
+    expect(b.estado).toBe('aguardando_aprovacao');
+    expect(b.approvalId).not.toBe(a.approvalId);
+    expect(await prisma.arquivoDoCliente.count({ where: { orgId: ORG, partnerId: c.id } })).toBe(1);
+  });
+
   it('ADVERSARIAL: arquivo do cliente A nunca vai para a pasta do cliente B, nem pela porta montada à mão', async () => {
     const a = await cliente('Cliente A Exemplo');
     const b = await cliente('Cliente B Exemplo');

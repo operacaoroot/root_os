@@ -1,5 +1,6 @@
 import { BadRequestException, Inject, Injectable, NotFoundException, Optional, ServiceUnavailableException } from '@nestjs/common';
 import { createHash } from 'node:crypto';
+import { ApprovalState } from '@prisma/client';
 import {
   motivoParaRecusarAnexo,
   tipoDoAnexo,
@@ -84,6 +85,18 @@ export class AnexosDaTarefaService {
     });
     const porAnexo = new Map<string, (typeof copias)[number]>();
     for (const c of copias) if (c.refId && !porAnexo.has(c.refId)) porAnexo.set(c.refId, c);
+    // O pedido que espera aprovação só vale enquanto a aprovação está viva.
+    const pedidos = copias.filter((c) => c.estado === 'aguardando_aprovacao' && c.approvalId).map((c) => c.approvalId!);
+    const vivas = new Set(
+      pedidos.length
+        ? (
+            await this.prisma.approval.findMany({
+              where: { orgId, id: { in: pedidos }, status: { in: [ApprovalState.pendente, ApprovalState.confirmada] }, expiraEm: { gt: new Date() } },
+              select: { id: true },
+            })
+          ).map((a) => a.id)
+        : [],
+    );
     const semCopia = !t.clienteId
       ? 'tarefa sem cliente: o anexo fica só no OS.'
       : t.cliente?.interno
@@ -91,6 +104,14 @@ export class AnexosDaTarefaService {
         : 'a cópia na pasta do cliente não foi pedida.';
     return anexos.map((a) => {
       const c = porAnexo.get(a.id);
+      const venceu = c?.estado === 'aguardando_aprovacao' && !vivas.has(c.approvalId ?? '');
+      if (c && venceu) {
+        return {
+          id: a.id, nome: a.nome, tipoMime: a.tipoMime, bytes: a.bytes, autorNome: a.autorNome, criadoEm: a.criadoEm.toISOString(),
+          estado: 'erro' as EstadoDoArquivoDoCliente, driveUrl: null, subpasta: c.subpasta ?? null,
+          motivo: 'o pedido de cópia no Drive venceu ou foi recusado: anexe o arquivo de novo para pedir outra vez.', approvalId: null,
+        };
+      }
       return {
         id: a.id,
         nome: a.nome,
