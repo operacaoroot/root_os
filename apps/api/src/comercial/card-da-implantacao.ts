@@ -282,7 +282,7 @@ export async function abrirCardDaImplantacao(db: Db, orgId: string, d: DadosDoCa
   const pasta = (await db.workFolder.findMany({ where: { orgId, parentId: null, arquivadaEm: null }, select: { id: true, name: true } }))
     .find((p) => chaveDoNome(p.name) === chaveDoNome(PASTA_DA_IMPLANTACAO));
   if (!pasta) throw new Error(`a pasta ${PASTA_DA_IMPLANTACAO} não existe e a estrutura sugerida não a criou`);
-  const lista = (await db.workList.findMany({ where: { orgId, folderId: pasta.id }, select: { id: true, name: true } }))
+  const lista = (await db.workList.findMany({ where: { orgId, folderId: pasta.id, arquivadaEm: null }, select: { id: true, name: true } }))
     .find((l) => chaveDoNome(l.name) === chaveDoNome(LISTA_DA_IMPLANTACAO));
   if (!lista) throw new Error(`a lista ${LISTA_DA_IMPLANTACAO} não existe em ${PASTA_DA_IMPLANTACAO}`);
   const etapas = await db.workStatus.findMany({ where: { orgId, listId: lista.id }, orderBy: { order: 'asc' }, select: { id: true, name: true, type: true } });

@@ -130,10 +130,10 @@ export class OnboardingAntecipadoService implements OnModuleInit {
 
   /** As etapas da lista de onboarding desta empresa (ou as do modelo, se a lista ainda não existe). */
   private async etapasDaLista(db: Prisma.TransactionClient | PrismaService, orgId: string): Promise<EtapaDaListaDeOnboarding[]> {
-    const pasta = (await db.workFolder.findMany({ where: { orgId, parentId: null }, select: { id: true, name: true } }))
+    const pasta = (await db.workFolder.findMany({ where: { orgId, parentId: null, arquivadaEm: null }, select: { id: true, name: true } }))
       .find((p) => chaveDoNomeDoTrabalho(p.name) === chaveDoNomeDoTrabalho(PASTA_DA_IMPLANTACAO));
     const lista = pasta
-      ? (await db.workList.findMany({ where: { orgId, folderId: pasta.id }, select: { id: true, name: true } }))
+      ? (await db.workList.findMany({ where: { orgId, folderId: pasta.id, arquivadaEm: null }, select: { id: true, name: true } }))
         .find((l) => chaveDoNomeDoTrabalho(l.name) === chaveDoNomeDoTrabalho(LISTA_DA_IMPLANTACAO))
       : undefined;
     if (!lista) return ETAPAS_DO_MODELO;
