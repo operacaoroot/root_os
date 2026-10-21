@@ -167,6 +167,10 @@ describe('importador do CRM: a parte pura', () => {
     expect(acharLeadDuplicado({ empresa: 'Outro nome', cnpj: '12345678000190' }, leads)).toEqual({ id: 'l2', como: 'cnpj' });
     expect(acharLeadDuplicado({ empresa: 'ab', cnpj: null }, leads)).toBeNull();
     expect(acharLeadDuplicado({ empresa: 'Nova Sintética', cnpj: null }, leads)).toBeNull();
+    // O lead criado pela tela leva o produto na frente do nome e a empresa vazia.
+    const daTela = [{ id: 'l3', nome: 'Produto X · Gama Sintética', empresa: null, cnpj: null }];
+    expect(acharLeadDuplicado({ empresa: 'Gama Sintetica', cnpj: null }, daTela)).toEqual({ id: 'l3', como: 'nome' });
+    expect(acharLeadDuplicado({ empresa: 'Produto X', cnpj: null }, daTela)).toBeNull();
   });
 
   it('mover só para a frente; saída fica; o vendedor só vira dono sem ambiguidade; a etapa do destino', () => {

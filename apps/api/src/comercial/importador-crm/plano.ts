@@ -308,7 +308,9 @@ export function acharLeadDuplicado(
   }
   const alvo = normalizar(d.empresa);
   if (alvo.length >= 3) {
-    const l = leads.find((x) => normalizar(x.empresa) === alvo || normalizar(x.nome) === alvo);
+    // O lead criado pela tela leva o produto na frente do nome ("<produto> · <empresa>"): compara também sem ele.
+    const semProduto = (nome: string) => normalizar(nome.includes(' · ') ? nome.slice(nome.lastIndexOf(' · ') + 3) : nome);
+    const l = leads.find((x) => normalizar(x.empresa) === alvo || normalizar(x.nome) === alvo || semProduto(x.nome) === alvo);
     if (l) return { id: l.id, como: 'nome' };
   }
   return null;
