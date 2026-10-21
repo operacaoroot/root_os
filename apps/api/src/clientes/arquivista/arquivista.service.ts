@@ -13,6 +13,7 @@ import { AuditService } from '../../audit/audit.service';
 import { EfeitosRegistry, type ContextoDoEfeito } from '../../gateway/efeitos.registry';
 import { PortaDoOperador } from '../../gateway/porta-do-operador.service';
 import { DRIVE_DO_CLIENTE, MIME_DA_PASTA, type DriveDoCliente } from '../../google/drive-do-cliente';
+import { tipoMimeOuBinario } from '../../google/tipo-mime';
 import { LLM_PROVIDER, type LlmProvider } from '../../llm/llm.provider';
 import { MemoriaService } from '../../memory/memoria.service';
 import { PendenciasRegistry, type RespostaDaPendencia } from '../../pendencias/pendencias.registry';
@@ -167,7 +168,7 @@ export class ArquivistaService implements ArquivistaDoClientePort, OnModuleInit 
       if (!deposito) return { estado: 'erro', motivo: 'o storage do OS está indisponível: o arquivo não foi guardado.' };
       const sha256 = createHash('sha256').update(buffer).digest('hex');
       conteudo = { chave: `clientes/arquivos/${orgId}/${sha256}`, sha256, bytes: buffer.length };
-      await deposito.put(conteudo.chave, buffer, pedido.tipoMime || 'application/octet-stream');
+      await deposito.put(conteudo.chave, buffer, tipoMimeOuBinario(pedido.tipoMime));
     } else {
       conteudo = pedido.conteudo;
       if (!/^[a-f0-9]{64}$/.test(conteudo.sha256) || !(conteudo.bytes > 0)) return { estado: 'erro', motivo: 'o arquivo do storage veio sem hash ou sem tamanho.' };
@@ -215,7 +216,8 @@ export class ArquivistaService implements ArquivistaDoClientePort, OnModuleInit 
       leadId: pedido.leadId ?? null,
       origem: pedido.origem,
       nomeOriginal: pedido.nomeOriginal.slice(0, 300),
-      tipoMime: (pedido.tipoMime || 'application/octet-stream').slice(0, 120),
+      // Guardado já limpo: é o que vai ao cabeçalho do envio ao Drive.
+      tipoMime: tipoMimeOuBinario(pedido.tipoMime).slice(0, 120),
       chave: conteudo.chave,
       sha256: conteudo.sha256,
       bytes: conteudo.bytes,

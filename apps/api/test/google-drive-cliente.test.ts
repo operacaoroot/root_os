@@ -10,6 +10,7 @@ import {
   subirAteARaiz,
 } from '../src/google/drive-do-cliente';
 import { planoDaPadronizacao } from '../src/google/padronizar-evento';
+import { tipoMimeOuBinario, tipoMimeValido } from '../src/google/tipo-mime';
 
 /*
  * O CONECTOR GOOGLE DA PASTA DO CLIENTE E DA AGENDA (rodada dos agentes, 21/10/2026, lane A4).
@@ -215,12 +216,12 @@ describe('Drive da pasta do cliente pelo conector (dublê de HTTP)', () => {
 
   it('lista os filhos pelo nome exato (para ligar a pasta de mesmo nome), com aspas escapadas', async () => {
     const raiz = pasta('10-clientes', null);
-    const affari = pasta("Affari d'Oro", raiz);
-    pasta('Affari', raiz);
-    const achados = await google.filhosDaPasta(ORG, raiz, { nome: "Affari d'Oro", soPastas: true });
-    expect(achados.map((a) => a.id)).toEqual([affari]);
+    const vortexa = pasta("Vortexa d'Oro", raiz);
+    pasta('Vortexa', raiz);
+    const achados = await google.filhosDaPasta(ORG, raiz, { nome: "Vortexa d'Oro", soPastas: true });
+    expect(achados.map((a) => a.id)).toEqual([vortexa]);
     const q = new URL(pedidos.at(-1)!.url).searchParams.get('q')!;
-    expect(q).toContain("name = 'Affari d\\'Oro'");
+    expect(q).toContain("name = 'Vortexa d\\'Oro'");
     expect(q).toContain('trashed = false');
   });
 
@@ -264,6 +265,19 @@ describe('Drive da pasta do cliente pelo conector (dublê de HTTP)', () => {
     const r3 = await google.enviarArquivo(ORG, { paiId: sub, nome: '2026-10-21 - Contrato - Serviços.pdf', tipoMime: 'application/pdf', conteudo: Buffer.from('terceira') });
     expect(r3.nome).toBe('2026-10-21 - Contrato - Serviços (3).pdf');
     expect(nomeSemColisao('a.pdf', ['A.PDF'])).toBe('a (2).pdf');
+  });
+
+  it('REVISÃO: o tipo MIME com quebra de linha não chega ao cabeçalho do multipart; nada vai ao Drive', async () => {
+    const raiz = pasta('10-clientes', null);
+    const antes = pedidos.length;
+    for (const tipoMime of ['application/pdf\r\nX-Injetado: sim', 'text/plain; charset=utf-8', 'pdf', ' application/pdf']) {
+      await expect(google.enviarArquivo(ORG, { paiId: raiz, nome: 'x.pdf', tipoMime, conteudo: Buffer.from('x') })).rejects.toThrow(/Tipo do arquivo inválido/);
+    }
+    expect(pedidos.length).toBe(antes);
+    expect(tipoMimeValido('application/vnd.openxmlformats-officedocument.wordprocessingml.document')).toBe(true);
+    expect(tipoMimeValido('image/svg+xml')).toBe(true);
+    expect(tipoMimeOuBinario('text/html\nSet-Cookie: x')).toBe('application/octet-stream');
+    expect(tipoMimeOuBinario('application/pdf')).toBe('application/pdf');
   });
 
   it('arquivo acima de 5 MB vai por envio resumable', async () => {

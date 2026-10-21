@@ -31,6 +31,7 @@ import {
   type ResultadoDaCopia,
 } from './drive-do-cliente';
 import { planoDaPadronizacao, type EventoLido } from './padronizar-evento';
+import { tipoMimeValido } from './tipo-mime';
 import { EfeitosRegistry, type ContextoDoEfeito } from '../gateway/efeitos.registry';
 import { CofreService, SegredoIndisponivelError } from '../cofre/cofre.service';
 import { NOMES_CONHECIDOS } from '../cofre/segredo';
@@ -1584,9 +1585,12 @@ export class GoogleService implements OnModuleInit, DriveDoCliente {
     this.exigirIdDoDrive(entrada.paiId, 'pasta');
     if (!nomeValidoNoDrive(entrada.nome)) throw new BadRequestException('Nome de arquivo inválido: sem barra, sem caractere de controle, até 200.');
     if (!entrada.conteudo.length) throw new BadRequestException('O arquivo está vazio.');
+    const mime = entrada.tipoMime || 'application/octet-stream';
+    // Vai literal a uma linha `Content-Type:` do multipart: só `tipo/subtipo` (ver `tipo-mime.ts`),
+    // conferido antes de qualquer pedido ao Drive.
+    if (!tipoMimeValido(mime)) throw new BadRequestException('Tipo do arquivo inválido: use tipo/subtipo, sem espaço nem quebra de linha.');
     const existentes = await this.filhosDaPasta(orgId, entrada.paiId);
     const nome = nomeSemColisao(entrada.nome, existentes.map((i) => i.nome));
-    const mime = entrada.tipoMime || 'application/octet-stream';
     const metadados = { name: nome, parents: [entrada.paiId] };
     const campos = encodeURIComponent(GoogleService.CAMPOS_DO_ITEM);
 
