@@ -64,8 +64,8 @@ export class WorkController {
 
   /*
    * A estrutura sugerida (rodada do painel P2, 18/10/2026): cria SÓ o que falta
-   * de Administrativa, Gestão e Clientes (com a esteira, o onboarding e a
-   * execução). `tarefas.editar`, como criar pasta e lista à mão: é a mesma
+   * de Gestão (Administrativo, Financeiro, Pessoas) e Clientes (com a esteira, o
+   * onboarding e a execução); desde 21/10/2026 move a lista solta de mesmo nome. `tarefas.editar`, como criar pasta e lista à mão: é a mesma
    * escrita, em lote. Repetir a chamada não duplica nada.
    */
   @Post('estrutura/sugerida')

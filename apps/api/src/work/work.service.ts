@@ -1261,7 +1261,7 @@ export class WorkService {
   }
 
   /**
-   * A ESTRUTURA SUGERIDA (rodada do painel P2): Administrativa, Gestão e
+   * A ESTRUTURA SUGERIDA (rodada do painel P2; Gestão refeita em 21/10/2026): Gestão e
    * Clientes, com a esteira, o onboarding e a execução dentro de Clientes. Cria
    * só o que falta pelo nome, numa transação sob o cadeado da árvore; a regra
    * inteira está em `estrutura-sugerida.ts`, que o seed da homologação também usa.

@@ -58,6 +58,7 @@ import {
 } from './leitor-de-atas';
 import { pendenciaCasaComSugestao, secoesDaAta } from './leitor-do-granola';
 import { DriveDasAtasService, RECUSA_DO_DRIVE_NAS_ATAS, tituloDoArquivo } from './fonte-do-drive';
+import { listaVisivel } from '../arquivadas';
 
 /* ==========================================================================
  * O BANCO DE ATAS DO TRABALHO (rodada do painel P3, 18/10/2026)
@@ -913,7 +914,7 @@ export class AtasService {
 
   async listasDaEmpresa(orgId: string): Promise<ListaParaAta[]> {
     const listas = await this.prisma.workList.findMany({
-      where: { orgId },
+      where: { orgId, ...listaVisivel() },
       orderBy: [{ order: 'asc' }, { name: 'asc' }],
       select: { id: true, name: true, folder: { select: { name: true } } },
       take: 200,
