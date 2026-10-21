@@ -112,7 +112,9 @@ export function MinutaDoContrato({ leadId, temAceite }: { leadId: string; temAce
     }
   }
 
-  const m = minuta.dados;
+  // Só é minuta o que tem o texto e a lista de lacunas (resposta de outro formato não quebra o painel).
+  const bruta = minuta.dados;
+  const m = bruta && typeof bruta.conteudo === 'string' && Array.isArray(bruta.lacunas) ? bruta : null;
   return (
     <>
       <div className="flex flex-wrap items-center gap-2">
@@ -132,7 +134,7 @@ export function MinutaDoContrato({ leadId, temAceite }: { leadId: string; temAce
       {m && (
         <div className="grid gap-3 lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
           <TextoDaMinuta conteudo={m.conteudo} />
-          {m.laudo ? <LaudoDaMinuta laudo={m.laudo} /> : <p className="text-[12.5px] text-muted">A minuta ainda não foi revisada.</p>}
+          {m.laudo && Array.isArray(m.laudo.apontamentos) ? <LaudoDaMinuta laudo={m.laudo} /> :<p className="text-[12.5px] text-muted">A minuta ainda não foi revisada.</p>}
         </div>
       )}
       {avisos.length > 0 && (
