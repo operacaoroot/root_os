@@ -6,6 +6,8 @@ import { CaixaService } from './caixa.service';
 import { CaixaAtividadeController } from './caixa-atividade.controller';
 import { CaixaAtividadeService } from './caixa-atividade.service';
 import { CaixaVistoService } from './caixa-visto.service';
+import { CaixaPendenciasController } from './caixa-pendencias.controller';
+import { TriagemDaCaixaService } from '../work/triagem-da-caixa/triagem-da-caixa.service';
 
 /**
  * A CAIXA PESSOAL — fatia A7.
@@ -44,7 +46,12 @@ import { CaixaVistoService } from './caixa-visto.service';
    * a marca pessoal de "limpei", na tabela `CaixaVisto`. Nada exportado, pelo
    * mesmo motivo de cima.
    */
-  controllers: [CaixaController, CaixaAtividadeController],
-  providers: [CaixaService, CaixaAtividadeService, CaixaVistoService],
+  /*
+   * As pendências triadas (rodada dos agentes, 21/10/2026, TR-08): `CaixaPendenciasController`
+   * (só leitura) e a triagem, que mora em `work/triagem-da-caixa/`. A tabela `Pendencia` vem
+   * do Prisma global e o modelo do `LlmModule`, global. Nada exportado.
+   */
+  controllers: [CaixaController, CaixaAtividadeController, CaixaPendenciasController],
+  providers: [CaixaService, CaixaAtividadeService, CaixaVistoService, TriagemDaCaixaService],
 })
 export class CaixaModule {}

@@ -46,6 +46,8 @@ import { CaixaModule } from './caixa/caixa.module';
 import { PendenciasModule } from './pendencias/pendencias.module';
 import { ClientesModule } from './clientes/clientes.module';
 import { ComercialModule } from './comercial/comercial.module';
+import { CobrancaDeTarefasModule } from './work/cobranca/cobranca.module';
+import { DelegadorModule } from './work/delegador/delegador.module';
 
 @Module({
   imports: [
@@ -188,6 +190,12 @@ import { ComercialModule } from './comercial/comercial.module';
     // `RoutinesModule` (o relógio comercial é uma rotina). Sem esta linha toda
     // rota de `/api/comercial` e `/api/sala` responde 404 sem nada acusar.
     ComercialModule,
+    // Rodada dos agentes (21/10/2026), lane A3+TR: o cobrador de tarefas (TR-07, a rotina
+    // `trabalho.cobranca` e o tratador de `tarefa.cobranca`) e o delegador (TR-09, as rotas
+    // `/trabalho/tarefas/:id/delegacao`). Sem as linhas, a rotina fica "sem executor" e as
+    // rotas do delegador respondem 404, sem nada acusar.
+    CobrancaDeTarefasModule,
+    DelegadorModule,
   ],
   controllers: [HealthController],
 })
