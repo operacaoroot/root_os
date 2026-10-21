@@ -165,7 +165,11 @@ export class WhatsappComercialService implements OnModuleInit {
       }
     }, 'lane B');
 
-    this.reacoes.inscrever('lead.chegou', 'whats.m1', (ev) => this.prepararM1(ev.orgId, ev.leadId));
+    // Rodada dos agentes (CO-15): o lead do formulário do site NÃO ganha M1 sozinho. O número foi digitado por um
+    // anônimo na internet; mandar WhatsApp para ele é decisão de gente (o lead aparece no funil, e a pessoa escreve).
+    this.reacoes.inscrever('lead.chegou', 'whats.m1', (ev) =>
+      ev.payload.origem === 'formulario-do-site' ? Promise.resolve({ pulado: 'lead do formulário do site: a M1 não é preparada sozinha' }) : this.prepararM1(ev.orgId, ev.leadId),
+    );
     this.reacoes.inscrever('form.respondido', 'whats.m2', (ev) => this.prepararM2(ev.orgId, ev.leadId, ev.em));
     this.reacoes.inscrever('proposta.publicada', 'whats.m4', (ev) => this.prepararM4(ev.orgId, ev.leadId, ev.payload));
 

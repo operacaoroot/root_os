@@ -58,6 +58,13 @@ import { TarefasDoComercialController } from './tarefas/tarefas-do-comercial.con
 import { TarefasDoComercialService } from './tarefas/tarefas-do-comercial.service';
 // Rodada dos agentes (21/10/2026, lane A2): CO-08 (o contrato assinado na pasta do cliente).
 import { AssinadoNaPastaService } from './assinado-na-pasta.service';
+// CO-13 e CO-14 (o contrato da Root), CO-15 (o formulário do site), CO-16 (a triagem do WhatsApp) e o efeito de `comercial.lead.criar`.
+import { ContratoDaRootController } from './contrato-da-root/contrato-da-root.controller';
+import { ContratoDaRootService } from './contrato-da-root/contrato-da-root.service';
+import { FormularioDoSiteController } from './formulario-do-site/formulario-do-site.controller';
+import { FormularioDoSiteService } from './formulario-do-site/formulario-do-site.service';
+import { LeadCriarService } from './lead-criar.service';
+import { TriagemDoWhatsappService } from './triagem-do-whatsapp/triagem-do-whatsapp.service';
 
 /*
  * O COCKPIT DO LEAD — módulo comercial (13/10/2026).
@@ -78,7 +85,7 @@ import { AssinadoNaPastaService } from './assinado-na-pasta.service';
  */
 @Module({
   imports: [TenantsModule, AuthModule, LeadsModule, OnboardingModule, FinanceModule, RoutinesModule, ZapsignModule, MemoryModule, WorkModule],
-  controllers: [ComercialController, SalaController, SimuladorController, MensagensController, DinheiroController, WebhooksDoDinheiroController, InteligenciaController, FechadoForaController, OnboardingAntecipadoController, IntegracaoDoDigisacController, WebhookDoDigisacController, IntegracaoDaEvolutionController, SalaEstadoController, TarefasDoComercialController],
+  controllers: [ComercialController, SalaController, SimuladorController, MensagensController, DinheiroController, WebhooksDoDinheiroController, InteligenciaController, FechadoForaController, OnboardingAntecipadoController, IntegracaoDoDigisacController, WebhookDoDigisacController, IntegracaoDaEvolutionController, SalaEstadoController, TarefasDoComercialController, ContratoDaRootController, FormularioDoSiteController],
   providers: [
     // --- orquestrador: o fio (único caminho de escrita de fato) e o registro de reações ---
     ReacoesRegistry,
@@ -137,6 +144,11 @@ import { AssinadoNaPastaService } from './assinado-na-pasta.service';
     TorreService,
     // --- rodada dos agentes, 21/10/2026, lane A2 (CO-08 o PDF assinado na pasta do cliente) ---
     AssinadoNaPastaService,
+    // CO-13/CO-14 o contrato da Root; CO-15 o formulário do site; CO-16 a triagem; o efeito de `comercial.lead.criar`.
+    ContratoDaRootService,
+    FormularioDoSiteService,
+    LeadCriarService,
+    TriagemDoWhatsappService,
   ],
   exports: [FioService, ReacoesRegistry, RelogioComercialRegistry, FichaService, DecisoesService, DecisoesRegistry, ConfigComercialService, SalaService, WhatsappComercialService, DinheiroService, FechamentoService, ContratoVivoService],
 })

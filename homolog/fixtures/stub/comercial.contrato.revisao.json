@@ -1,0 +1,12 @@
+{
+  "tarefa": "comercial.contrato.revisao",
+  "funcao": "CO-14",
+  "_sobre": "O revisor da minuta do contrato da Root (rodada dos agentes, 21/10/2026, CO-14). Regras primeiro, modelo depois: o modelo só aponta o que regra não pega e cita trecho literal. Na regra do caso sintético da suíte, o segundo apontamento cita um trecho que NÃO está na minuta, e o sistema o descarta. Sem regra, nenhum apontamento do modelo. Dado fictício.",
+  "respostas": [
+    {
+      "quando": ["padaria exemplo de teste"],
+      "texto": "{\"apontamentos\":[{\"gravidade\":\"media\",\"titulo\":\"Prazo sem data de início escrita\",\"trecho\":\"a partir da assinatura\",\"detalhe\":\"A assinatura eletrônica tem duas datas (cliente e Root): diga qual vale.\"},{\"gravidade\":\"alta\",\"titulo\":\"Cláusula inventada\",\"trecho\":\"cláusula de não concorrência por cinco anos\",\"detalhe\":\"Este trecho não está na minuta.\"}]}"
+    }
+  ],
+  "padrao": "{\"apontamentos\":[]}"
+}

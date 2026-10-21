@@ -1,0 +1,12 @@
+{
+  "tarefa": "comercial.vigia.resumo",
+  "funcao": "CO-11",
+  "_sobre": "O resumo de três linhas do vigia das 08:00 (rodada dos agentes, 21/10/2026, CO-11). Os números são do sistema: a linha com número que não é um dos que o vigia contou é descartada e a do sistema entra. A regra com quebradas escreve um número de propósito (o 7 não é contado pelo vigia na homologação) para a tela mostrar o descarte. Dado fictício.",
+  "respostas": [
+    {
+      "quando": ["quebradas: nenhuma"],
+      "texto": "O funil amanheceu conferido e de pé.\nNada quebrou nas automações que o vigia alcança.\nA fila de decisões não ganhou nada novo hoje."
+    }
+  ],
+  "padrao": "Algumas premissas quebraram na passagem de hoje.\nForam 7 leads tocados pelo defeito, segundo a leitura.\nQuem conserta é gente: as decisões estão na fila."
+}

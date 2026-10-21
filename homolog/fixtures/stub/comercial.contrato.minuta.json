@@ -1,0 +1,12 @@
+{
+  "tarefa": "comercial.contrato.minuta",
+  "funcao": "CO-13",
+  "_sobre": "O construtor da minuta do contrato da Root (rodada dos agentes, 21/10/2026, CO-13). Uma regra só, para o caso sintético da suíte (Padaria Exemplo de Teste Ltda, sobre o modelo curto de apps/api/test/comercial-agentes-contrato.test.ts): a minuta volta com as marcas, uma inserção inventada (12 meses) e um número sem fonte (20), que o sistema troca por lacuna. Sem a regra, o padrão é vazio de propósito: o serviço cai na minuta que o próprio sistema preencheu, que é a certa para o esqueleto de homologação. Dado fictício.",
+  "respostas": [
+    {
+      "quando": ["padaria exemplo de teste"],
+      "texto": "# CONTRATO DE PRESTAÇÃO DE SERVIÇOS\n\nCONTRATANTE: ⟦inserido: Padaria Exemplo de Teste Ltda⟧, inscrita no CNPJ sob o nº ⟦inserido: 11.222.333/0001-81⟧.\n\nCONTRATADA: Operação Root, ⟦lacuna: CNPJ da Operação Root⟧.\n\n1. OBJETO\n\n1.1. A CONTRATADA presta o serviço ⟦inserido: Imersão⟧.\n\n2. PREÇO\n\n2.1. Valor total de ⟦inserido: R$ 2.970,00⟧ (⟦inserido: dois mil novecentos e setenta reais⟧), em ⟦inserido: 10⟧ parcelas.\n\n3. PRAZO\n\n3.1. O contrato vale por ⟦inserido: 12 meses⟧ a partir da assinatura, com multa de 20 por cento, conforme a cláusula 2.1."
+    }
+  ],
+  "padrao": ""
+}

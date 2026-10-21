@@ -10,13 +10,21 @@
  * fechado", fora das saídas e enquanto o lead não tem card. A API confere tudo de novo.
  */
 import { useState } from 'react';
-import type { EtapasDoOnboardingAntecipado, FichaDoLead } from '@mktos/shared';
+import type { EtapasDoOnboardingAntecipado, FichaDoLead, PastaPedidaNaTela } from '@mktos/shared';
 
 import { useAuth } from '@/lib/auth';
 import { ETAPAS_DE_RESERVA, iniciarOnboarding, lerEtapasDoOnboarding, linkDoCardAntecipado, mostrarIniciarOnboardingNoLead } from '@/lib/onboarding-antecipado';
 
 import { BOTAO, BOTAO_PRIMARIO, CARTAO, ErroDaAcao, INPUT, Rotulo } from '../_ui';
 import { usePainel } from './provedor';
+
+/** CO-10 (rodada dos agentes): o que aconteceu com a pasta do cliente pedida junto com o card. */
+export function fraseDaPasta(p: PastaPedidaNaTela | undefined): string | null {
+  if (!p) return null;
+  if (p.estado === 'pronta') return 'A pasta do cliente está pronta no Drive.';
+  if (p.estado === 'aguardando_aprovacao') return 'A pasta do cliente espera a liberação de outra pessoa em Aprovações.';
+  return `A pasta do cliente não foi criada${p.motivo ? `: ${p.motivo}` : ''}. Use "Criar pasta de novo" no topo do painel.`;
+}
 
 export function IniciarOnboarding({ leadId, ficha, aoMudar }: { leadId: string; ficha: FichaDoLead; aoMudar: () => Promise<void> }) {
   const { token, can } = useAuth();
@@ -27,6 +35,7 @@ export function IniciarOnboarding({ leadId, ficha, aoMudar }: { leadId: string; 
   const [erro, setErro] = useState<unknown>(null);
   const [enviando, setEnviando] = useState(false);
   const [feito, setFeito] = useState<string | null>(null);
+  const [pasta, setPasta] = useState<string | null>(null);
 
   // Depois de iniciar, a ficha relida já traz o card e o botão sai; o link do card fica até o painel fechar.
   if (!feito && !mostrarIniciarOnboardingNoLead(can, ficha)) return null;
@@ -52,6 +61,7 @@ export function IniciarOnboarding({ leadId, ficha, aoMudar }: { leadId: string; 
     try {
       const r = await iniciarOnboarding(token, leadId, etapa || ETAPAS_DE_RESERVA.padrao);
       setFeito(linkDoCardAntecipado(r));
+      setPasta(fraseDaPasta((r as { pasta?: PastaPedidaNaTela }).pasta));
       setAberto(false);
       painel.avisar(`Onboarding iniciado: o card está na Implantação, em ${r.etapa}.`);
       await aoMudar();
@@ -68,6 +78,7 @@ export function IniciarOnboarding({ leadId, ficha, aoMudar }: { leadId: string; 
       {feito ? (
         <p className="mt-2 text-[12.5px]">
           Card aberto. <a href={feito} className="underline underline-offset-2" data-testid="lead-onboarding-link">Abrir o card na Implantação</a>
+          {pasta && <span className="block text-[12px] text-muted" data-testid="lead-onboarding-pasta">{pasta}</span>}
         </p>
       ) : !aberto ? (
         <div className="mt-2 flex flex-wrap items-center gap-2">
