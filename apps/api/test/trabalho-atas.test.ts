@@ -715,7 +715,10 @@ describe.skipIf(!URL)('o banco de atas contra o Postgres', () => {
   it('o banco recusa estado desconhecido, referência torta e tarefa fora da aceita', async () => {
     const base = { orgId: ORG, titulo: 't', trecho: 't' };
     await expect(prisma.ataSugestao.create({ data: { ...base, ataRef: 'memoria:x', estado: 'pendente' } })).rejects.toThrow();
-    await expect(prisma.ataSugestao.create({ data: { ...base, ataRef: 'drive:x' } })).rejects.toThrow();
+    // Produção 21 (P7): `drive:` virou forma válida (a ata da pasta do Drive); a transcrição do
+    // Granola (`granola:`) e qualquer outra forma continuam recusadas pelo banco.
+    await expect(prisma.ataSugestao.create({ data: { ...base, ataRef: 'granola:x' } })).rejects.toThrow();
+    await expect(prisma.ataSugestao.create({ data: { ...base, ataRef: 'onedrive:x' } })).rejects.toThrow();
     await expect(prisma.ataSugestao.create({ data: { ...base, ataRef: 'memoria:x', workTaskId: 'w' } })).rejects.toThrow();
   });
 });

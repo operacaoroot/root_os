@@ -9,6 +9,7 @@ import { MemoryModule } from '../memory/memoria.module';
 import { AtasController } from './atas/atas.controller';
 import { AtasDoGranolaService } from './atas/atas-do-granola.service';
 import { AtasService } from './atas/atas.service';
+import { DriveDasAtasService } from './atas/fonte-do-drive';
 import { GranolaModule } from '../granola/granola.module';
 import { MovimentoDoQuadroService } from './movimento-do-quadro.service';
 import { VistasController } from './vistas.controller';
@@ -44,7 +45,7 @@ import { TarefasDoDiaService } from './tarefas-do-dia.service';
   // GranolaModule (20/10/2026): o Granola direto, que o banco de atas lê por `FONTE_DO_GRANOLA`.
   imports: [AuditModule, MemoryModule, GranolaModule],
   controllers: [VistasController, WorkController, WorkFilesController, AtasController, TarefasDoDiaController],
-  providers: [WorkService, CheckoutDeTarefaService, WorkFilesService, AtasService, AtasDoGranolaService, MovimentoDoQuadroService, VistasService, TarefasDoDiaService],
+  providers: [WorkService, CheckoutDeTarefaService, WorkFilesService, AtasService, AtasDoGranolaService, DriveDasAtasService, MovimentoDoQuadroService, VistasService, TarefasDoDiaService],
   exports: [CheckoutDeTarefaService, WorkService],
 })
 export class WorkModule {}

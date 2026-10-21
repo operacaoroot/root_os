@@ -15,6 +15,8 @@ import {
   ATA_PREFIXO_DA_CHAVE,
   GRANOLA_DIAS_DA_LISTA,
   refDaAta,
+  refDaTranscricaoDoGranola,
+  type TrabAtaDetalhe,
   type TrabGranolaAtaGerada,
   type TrabGranolaReunioes,
 } from '@mktos/shared';
@@ -28,7 +30,13 @@ import { normalizarParaBusca } from '../../onboarding/trilho/leitor-de-ata';
 import { varrerSegredos } from '../../onboarding/trilho/segredos';
 import { umaPorVez } from '../../pauta/uma-por-vez';
 import { PrismaService } from '../../prisma/prisma.service';
-import { AtasService, PREFIXO_DA_PROCEDENCIA_DO_GRANOLA, type QuemDecide } from './atas.service';
+import {
+  AtasService,
+  PREFIXO_DA_PROCEDENCIA_DO_DRIVE,
+  PREFIXO_DA_PROCEDENCIA_DO_GRANOLA,
+  type AcessoAsAtas,
+  type QuemDecide,
+} from './atas.service';
 import {
   FONTE_DO_GRANOLA,
   type FonteDoGranola,
@@ -36,7 +44,7 @@ import {
   GranolaNaoConectadoError,
   ID_DE_REUNIAO_DO_GRANOLA,
 } from './fonte-do-granola';
-import { SugestoesIlegiveisError, slugDaAta } from './leitor-de-atas';
+import { SugestoesIlegiveisError, metadadosDaAta, slugDaAta } from './leitor-de-atas';
 import { interpretarAtaDoGranola, markdownDaAta, promptDaAtaDoGranola, type LeituraDaAtaDoGranola } from './leitor-do-granola';
 
 /* ==========================================================================
@@ -75,6 +83,23 @@ const diaEmSaoPaulo = (d: Date): string =>
   new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Sao_Paulo', year: 'numeric', month: '2-digit', day: '2-digit' }).format(d);
 
 export const RECUSA_SEM_GRANOLA = 'Conecte o Granola em Configurações › Integrações para ler as reuniões daqui.';
+
+/** Uma transcrição para virar ata, do Granola ou do Drive (P7). O texto vive só na chamada. */
+interface TranscricaoParaAta {
+  fonte: 'granola' | 'drive';
+  id: string;
+  titulo: string;
+  /** AAAA-MM-DD do dia da reunião. */
+  data: string | null;
+  /** A hora da reunião (só o Granola diz; a ficha usa). */
+  em: Date | null;
+  participantes: string[];
+  emails: string[];
+  link: string | null;
+  transcricao: string;
+  /** Do Drive, a varredura já rodou ao abrir: soma na procedência. */
+  segredosJaMascarados: number;
+}
 
 @Injectable()
 export class AtasDoGranolaService {
@@ -163,6 +188,81 @@ export class AtasDoGranolaService {
     return this.gerarAta(orgId, quem, granolaId);
   }
 
+  // ==========================================================================
+  // A TRANSCRIÇÃO ABERTA na tela (P7): lida agora, mascarada, nunca gravada
+  // ==========================================================================
+
+  /** A transcrição de uma reunião do Granola, para a coluna da direita. Nada dela é gravado. */
+  async lerTranscricao(orgId: string, granolaId: string): Promise<TrabAtaDetalhe> {
+    if (!ID_DE_REUNIAO_DO_GRANOLA.test(String(granolaId ?? ''))) throw new NotFoundException('Reunião do Granola não encontrada.');
+    if (!this.fonte) throw new BadRequestException(RECUSA_SEM_GRANOLA);
+    let reuniao: Awaited<ReturnType<FonteDoGranola['lerReuniao']>>;
+    try {
+      reuniao = await this.fonte.lerReuniao(orgId, granolaId);
+    } catch (e) {
+      if (e instanceof ConectorDesligadoError) throw new BadRequestException('O Granola está desligado em Conexões. Religue lá para ler as reuniões.');
+      if (e instanceof GranolaNaoConectadoError) throw new BadRequestException(e.message);
+      if (e instanceof GranolaIndisponivelError) throw new ServiceUnavailableException(e.message);
+      throw e;
+    }
+    const texto = varrerSegredos(String(reuniao.transcricao ?? '').replace(/\r\n/g, '\n').trim()).texto;
+    const em = reuniao.em ? new Date(reuniao.em) : null;
+    const valida = em && !Number.isNaN(em.getTime()) ? em : null;
+    const ata = await this.prisma.contextItem.findFirst({
+      where: { orgId, sourceRef: `${PREFIXO_DA_PROCEDENCIA_DO_GRANOLA}${granolaId}`, chave: { startsWith: ATA_PREFIXO_DA_CHAVE }, arquivadoEm: null },
+      orderBy: { criadoEm: 'asc' },
+      select: { id: true },
+    });
+    return {
+      id: refDaTranscricaoDoGranola(granolaId),
+      fonte: 'granola',
+      tipo: 'transcricao',
+      titulo: varrerSegredos(reuniao.titulo).texto,
+      data: valida ? diaEmSaoPaulo(valida) : null,
+      participantes: reuniao.participantes.map((p) => varrerSegredos(p).texto),
+      resumo: '',
+      caminho: null,
+      sugestoes: { rascunho: 0, aceitas: 0, descartadas: 0 },
+      decididas: [],
+      granolaId,
+      link: reuniao.link,
+      ataGerada: ata ? refDaAta('colada', ata.id) : null,
+      atualizadaEm: (valida ?? new Date(0)).toISOString(),
+      texto: texto || 'Esta reunião ainda não tem transcrição no Granola.',
+      procedencia: 'Granola: a transcrição é lida agora e não fica guardada no OS.',
+      sugestoesDaAta: [],
+      decisoes: [],
+      pendencias: [],
+      versao: null,
+    };
+  }
+
+  // ==========================================================================
+  // GERAR A ATA DE UMA TRANSCRIÇÃO DO DRIVE (P7) — o mesmo pedido, a mesma régua
+  // ==========================================================================
+
+  async gerarAtaDoDrive(orgId: string, quem: QuemDecide, fileId: string, acesso: AcessoAsAtas): Promise<TrabGranolaAtaGerada> {
+    if (!/^[A-Za-z0-9_-]{10,120}$/.test(String(fileId ?? ''))) throw new NotFoundException('Arquivo do Drive não encontrado.');
+    await this.atas.exigirGente(orgId, quem);
+    return umaPorVez(`trabalho-atas-drive:${orgId}:${fileId}`, 'A ata desta transcrição', async () => {
+      const lida = await this.atas.lerDoDrive(orgId, fileId, { ...acesso, actorId: quem.id });
+      if (lida.tipo !== 'transcricao') throw new BadRequestException('Este arquivo é uma ata, não uma transcrição: use "Sugerir tarefas".');
+      const data = metadadosDaAta('', lida.caminho).data ?? (lida.atualizadaEm.getTime() > 0 ? diaEmSaoPaulo(lida.atualizadaEm) : null);
+      return this.escreverAta(orgId, quem.id, {
+        fonte: 'drive',
+        id: fileId,
+        titulo: lida.titulo,
+        data,
+        em: null,
+        participantes: metadadosDaAta(lida.texto).participantes,
+        emails: [],
+        link: lida.link ?? null,
+        transcricao: lida.texto,
+        segredosJaMascarados: lida.segredosMascarados ?? 0,
+      });
+    });
+  }
+
   private async gerarAgora(orgId: string, actorId: string, granolaId: string): Promise<TrabGranolaAtaGerada> {
     if (!this.fonte) throw new BadRequestException(RECUSA_SEM_GRANOLA);
     if (!this.llm.configured) throw new ServiceUnavailableException(`IA não configurada: falta a credencial do provider "${this.llm.name}".`);
@@ -176,17 +276,47 @@ export class AtasDoGranolaService {
       if (e instanceof GranolaIndisponivelError) throw new ServiceUnavailableException(e.message);
       throw e;
     }
-    const varredura = varrerSegredos(String(reuniao.transcricao ?? '').replace(/\r\n/g, '\n').trim());
+    const em = reuniao.em ? new Date(reuniao.em) : null;
+    const valida = em && !Number.isNaN(em.getTime()) ? em : null;
+    return this.escreverAta(orgId, actorId, {
+      fonte: 'granola',
+      id: granolaId,
+      titulo: reuniao.titulo,
+      data: valida ? diaEmSaoPaulo(valida) : null,
+      em: valida,
+      participantes: reuniao.participantes,
+      emails: reuniao.emails,
+      link: reuniao.link,
+      transcricao: reuniao.transcricao,
+      segredosJaMascarados: 0,
+    });
+  }
+
+  /**
+   * A ata de uma TRANSCRIÇÃO, venha do Granola ou do Drive: mascara, pede ao
+   * modelo num pedido só, o parser confere, a ata vira nota da memória (versão
+   * nova da mesma nota quando a transcrição já tem ata) e as sugestões entram em
+   * rascunho. A reunião vai à ficha do cliente só quando veio do Granola.
+   */
+  private async escreverAta(orgId: string, actorId: string, entrada: TranscricaoParaAta): Promise<TrabGranolaAtaGerada> {
+    if (!this.llm.configured) throw new ServiceUnavailableException(`IA não configurada: falta a credencial do provider "${this.llm.name}".`);
+    const granolaId = entrada.id;
+    const varredura = varrerSegredos(String(entrada.transcricao ?? '').replace(/\r\n/g, '\n').trim());
     const transcricao = varredura.texto;
+    const segredosMascarados = varredura.removidos + entrada.segredosJaMascarados;
     if (Array.from(transcricao).length < MIN_CARACTERES_DA_TRANSCRICAO) {
-      throw new BadRequestException('Esta reunião ainda não tem transcrição no Granola (ou o plano da conta não libera a transcrição).');
+      throw new BadRequestException(
+        entrada.fonte === 'drive'
+          ? 'Este arquivo do Drive é curto demais para ser uma transcrição.'
+          : 'Esta reunião ainda não tem transcrição no Granola (ou o plano da conta não libera a transcrição).',
+      );
     }
     const caracteres = Array.from(transcricao).length;
     const sha256 = createHash('sha256').update(transcricao, 'utf8').digest('hex');
-    const em = reuniao.em ? new Date(reuniao.em) : null;
-    const data = em && !Number.isNaN(em.getTime()) ? diaEmSaoPaulo(em) : null;
-    const participantes = reuniao.participantes.map((p) => varrerSegredos(p).texto);
-    const paraAta = { granolaId, titulo: varrerSegredos(reuniao.titulo).texto, data, participantes };
+    const em = entrada.em;
+    const data = entrada.data;
+    const participantes = entrada.participantes.map((p) => varrerSegredos(p).texto);
+    const paraAta = { granolaId, titulo: varrerSegredos(entrada.titulo).texto, data, participantes, fonte: entrada.fonte };
 
     const [listas, pessoas] = await Promise.all([this.atas.listasDaEmpresa(orgId), this.atas.pessoasDaEmpresa(orgId)]);
     const { system, user, cortada } = promptDaAtaDoGranola({ reuniao: paraAta, transcricao, listas, pessoas });
@@ -197,7 +327,7 @@ export class AtasDoGranolaService {
     } catch (e) {
       if (e instanceof BadRequestException || e instanceof ConflictException || e instanceof ForbiddenException) throw e;
       const msg = `o leitor de reuniões não conseguiu chamar o modelo: ${(e as Error).message}`.slice(0, 300);
-      this.log.warn(`${orgId} granola:${granolaId}: ${msg}`);
+      this.log.warn(`${orgId} ${entrada.fonte}:${granolaId}: ${msg}`);
       throw new ServiceUnavailableException(msg);
     }
 
@@ -210,11 +340,12 @@ export class AtasDoGranolaService {
     }
     const custoUsd = Number.isFinite(saida.usage?.custoUsd) ? saida.usage.custoUsd : 0;
     const modelo = saida.usage?.modeloServido || this.llm.model;
-    const corpo = markdownDaAta(paraAta, leitura, { caracteres, sha256, segredosMascarados: varredura.removidos, modelo, custoUsd, cortada });
+    const corpo = markdownDaAta(paraAta, leitura, { caracteres, sha256, segredosMascarados, modelo, custoUsd, cortada });
     const avisos = [...(cortada ? ['a transcrição é longa e entrou cortada na leitura'] : []), ...leitura.avisos];
 
     // A ATA na memória: versão nova da MESMA nota quando a reunião já tem ata.
-    const marca = `${PREFIXO_DA_PROCEDENCIA_DO_GRANOLA}${granolaId}`;
+    const doDrive = entrada.fonte === 'drive';
+    const marca = `${doDrive ? PREFIXO_DA_PROCEDENCIA_DO_DRIVE : PREFIXO_DA_PROCEDENCIA_DO_GRANOLA}${granolaId}`;
     const existente = await this.prisma.contextItem.findFirst({
       where: { orgId, sourceRef: marca, chave: { startsWith: ATA_PREFIXO_DA_CHAVE }, arquivadoEm: null },
       orderBy: { criadoEm: 'asc' },
@@ -226,9 +357,9 @@ export class AtasDoGranolaService {
           body: corpo,
           sourceType: ContextSource.conector,
           sourceRef: marca,
-          motivo: 'ata reprocessada da transcrição do Granola',
+          motivo: doDrive ? 'ata reprocessada da transcrição do Drive' : 'ata reprocessada da transcrição do Granola',
         })
-      : await this.criarNota(orgId, paraAta.titulo, data, corpo, marca);
+      : await this.criarNota(orgId, paraAta.titulo, data, corpo, marca, entrada.fonte);
 
     // AS SUGESTÕES: a mesma tarefa lida de novo não vira segundo rascunho (vale o título, sem caixa nem acento).
     const ataRef = refDaAta('colada', nota.id);
@@ -257,22 +388,24 @@ export class AtasDoGranolaService {
         )
       : [];
 
-    // A FICHA: pelo caminho do Zap, sem duplicar o que ele já trouxe.
-    const ficha = await levarReuniaoDiretaParaFicha(this.prisma, orgId, {
-      granolaId,
-      titulo: paraAta.titulo,
-      em: em && !Number.isNaN(em.getTime()) ? em : new Date(),
-      participantes,
-      emails: reuniao.emails,
-      link: reuniao.link,
-      ata: corpo,
-      autorId: actorId,
-    });
+    // A FICHA: pelo caminho do Zap, sem duplicar o que ele já trouxe. Só a reunião do Granola vai à ficha.
+    const ficha: { ficha: TrabGranolaAtaGerada['ficha']; cliente: TrabGranolaAtaGerada['cliente'] } = doDrive
+      ? { ficha: 'nao_se_aplica', cliente: null }
+      : await levarReuniaoDiretaParaFicha(this.prisma, orgId, {
+          granolaId,
+          titulo: paraAta.titulo,
+          em: em && !Number.isNaN(em.getTime()) ? em : new Date(),
+          participantes,
+          emails: entrada.emails,
+          link: entrada.link,
+          ata: corpo,
+          autorId: actorId,
+        });
 
     await this.audit.log({
       orgId,
       actorId,
-      action: 'trabalho.ata.granola_gerada',
+      action: doDrive ? 'trabalho.ata.drive_gerada' : 'trabalho.ata.granola_gerada',
       entityType: 'ata',
       entityId: ataRef,
       // Só a forma: nem a transcrição nem os trechos entram na auditoria.
@@ -280,7 +413,7 @@ export class AtasDoGranolaService {
         procedencia: marca,
         versao: nota.versao,
         nova: !existente,
-        transcricao: { caracteres, sha256, segredosMascarados: varredura.removidos, cortada },
+        transcricao: { caracteres, sha256, segredosMascarados, cortada },
         custoUsd,
         modelo,
         criadas: criadas.length,
@@ -302,7 +435,7 @@ export class AtasDoGranolaService {
     };
   }
 
-  private async criarNota(orgId: string, titulo: string, data: string | null, corpo: string, marca: string) {
+  private async criarNota(orgId: string, titulo: string, data: string | null, corpo: string, marca: string, fonte: 'granola' | 'drive' = 'granola') {
     const base = `${ATA_PREFIXO_DA_CHAVE}${data ?? 'sem-data'}-${slugDaAta(titulo)}`;
     for (let n = 1; n <= 20; n++) {
       const chave = n === 1 ? base : `${base}-${n}`;
@@ -313,10 +446,10 @@ export class AtasDoGranolaService {
           kind: ContextKind.nota,
           title: titulo,
           body: corpo,
-          tags: ['ata', 'trabalho', 'granola'],
+          tags: ['ata', 'trabalho', fonte],
           sourceType: ContextSource.conector,
           sourceRef: marca,
-          motivo: 'ata gerada da transcrição do Granola em Trabalho › Atas',
+          motivo: fonte === 'drive' ? 'ata gerada da transcrição do Drive em Trabalho › Atas' : 'ata gerada da transcrição do Granola em Trabalho › Atas',
         });
       } catch (e) {
         if (e instanceof ConflictException) continue;

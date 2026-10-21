@@ -37,8 +37,21 @@ export const ATA_MAX_CARACTERES = 200_000;
  * colada (a referência continua `memoria:<id>`); a fonte só diz de onde veio,
  * pela procedência `granola:<id da reunião>`.
  */
-export type TrabAtaFonte = 'vault' | 'colada' | 'granola';
+export type TrabAtaFonte = 'vault' | 'colada' | 'granola' | 'drive';
+export const TRAB_ATA_FONTES = ['vault', 'colada', 'granola', 'drive'] as const;
 export type TrabAtaSugestaoEstado = 'rascunho' | 'aceita' | 'descartada';
+
+/*
+ * ATA OU TRANSCRIÇÃO (rodada de produção 1, P7, 21/10/2026). Cada item da lista
+ * é uma das duas coisas, com filtro na tela:
+ *   · vault: ata (a pasta das reuniões guarda atas);
+ *   · colada: ata;
+ *   · Granola: a REUNIÃO (a fala gravada) é transcrição; a ata que o OS escreveu
+ *     a partir dela é ata;
+ *   · Google Drive: pela regra de `tipoDoArquivoDeAta` (o nome do arquivo).
+ */
+export type TrabAtaTipo = 'ata' | 'transcricao';
+export const TRAB_ATA_TIPOS = ['ata', 'transcricao'] as const;
 
 export interface TrabAtaContagem {
   rascunho: number;
@@ -47,9 +60,22 @@ export interface TrabAtaContagem {
 }
 
 export interface TrabAtaResumo {
-  /** A referência da ata: `vault:<id>` ou `memoria:<id>`. */
+  /**
+   * A referência: `vault:<id>`, `memoria:<id>`, `drive:<id do arquivo>` ou
+   * `granola:<id da reunião>` (a transcrição de uma reunião do Granola).
+   */
   id: string;
   fonte: TrabAtaFonte;
+  /** Ata ou transcrição (P7). Ausente nas respostas antigas: vale `ata`. */
+  tipo?: TrabAtaTipo;
+  /** O endereço para abrir na fonte (Drive, Granola), quando ela diz. */
+  link?: string | null;
+  /** Tamanho do arquivo na fonte (Drive), quando ela diz. Nada além do índice fica no OS. */
+  bytes?: number | null;
+  /** Na transcrição: a ata que o OS já escreveu a partir dela (`memoria:<id>`). */
+  ataGerada?: string | null;
+  /** Na ata escrita pelo OS: a transcrição de onde ela veio (`granola:<id>` ou `drive:<id>`). */
+  transcricaoRef?: string | null;
   titulo: string;
   /** AAAA-MM-DD, quando a ata diz (cabeçalho, linha "Data:" ou nome do arquivo). */
   data: string | null;
@@ -113,6 +139,112 @@ export interface TrabAtaLista {
    */
   vaultVisivel: boolean;
   iaConfigurada: boolean;
+  /** Os filtros que valeram nesta lista (P7). */
+  filtros?: TrabAtaFiltros;
+  /** O estado de cada fonte, para a tela dizer por que uma delas não trouxe nada (P7). */
+  fontes?: TrabAtaFontes;
+}
+
+/** O estado das fontes de atas desta empresa. Nenhuma é obrigatória. */
+export interface TrabAtaFontes {
+  vault: { visivel: boolean; notas: number; pasta: string };
+  granola: { conectado: boolean; motivo: string | null; reunioes: number };
+  drive: TrabAtaDriveEstado & { arquivos: number };
+}
+
+/** A pasta do Google Drive que a empresa escolheu para as atas (nota `trabalho.atas.drive`). */
+export interface TrabAtaDriveEstado {
+  /** Há pasta escolhida. */
+  configurada: boolean;
+  /** O id da pasta (não é segredo: é o que está no link da pasta). */
+  pastaId: string | null;
+  /** Quem pediu pode ler o Drive (`drive.ver`)? Sem ela, a fonte não é lida. */
+  permitido: boolean;
+  /** Quando a fonte não trouxe nada, a frase que a tela mostra. */
+  motivo: string | null;
+  /** O endereço da pasta no Drive. */
+  link: string | null;
+}
+
+/** A nota da memória com a pasta do Google Drive das atas (primeira linha = o id da pasta). */
+export const ATA_CHAVE_DO_DRIVE = 'trabalho.atas.drive';
+
+/*
+ * A BUSCA (P7): palavra-chave (título e corpo), intervalo de datas e os
+ * filtros de tipo e de fonte, todos no endereço da tela
+ * (`?q=&de=&ate=&tipo=&fonte=`). A ordem é sempre por data, a mais nova
+ * primeiro.
+ */
+const DIA = /^\d{4}-\d{2}-\d{2}$/;
+const vazioSome = (v: unknown) => (typeof v === 'string' && v.trim() === '' ? undefined : v);
+export const TrabAtaFiltrosSchema = z.object({
+  q: z.preprocess(vazioSome, z.string().trim().max(200).optional()),
+  de: z.preprocess(vazioSome, z.string().regex(DIA, 'de no formato AAAA-MM-DD').optional()),
+  ate: z.preprocess(vazioSome, z.string().regex(DIA, 'até no formato AAAA-MM-DD').optional()),
+  tipo: z.preprocess(vazioSome, z.enum(TRAB_ATA_TIPOS).optional()),
+  fonte: z.preprocess(vazioSome, z.enum(TRAB_ATA_FONTES).optional()),
+});
+export interface TrabAtaFiltros {
+  q?: string;
+  de?: string;
+  ate?: string;
+  tipo?: TrabAtaTipo;
+  fonte?: TrabAtaFonte;
+}
+
+/** A pasta do Drive escolhida na tela: o link da pasta ou o id. `null` tira a pasta. */
+export const TrabAtaDrivePastaSchema = z.object({
+  pasta: z.string().trim().max(500).nullable(),
+});
+export type TrabAtaDrivePastaInput = z.infer<typeof TrabAtaDrivePastaSchema>;
+
+const ID_DO_DRIVE = /^[A-Za-z0-9_-]{10,120}$/;
+
+/**
+ * O id de uma pasta do Google Drive a partir do que a pessoa colou: o link
+ * (`drive.google.com/drive/folders/<id>`, com ou sem `/u/0/` e `?usp=`), o link
+ * antigo (`open?id=<id>`) ou o próprio id. Qualquer outra coisa é `null`.
+ */
+export function idDaPastaDoDrive(colado: string | null | undefined): string | null {
+  const t = String(colado ?? '').trim();
+  if (!t) return null;
+  if (ID_DO_DRIVE.test(t)) return t;
+  let url: URL;
+  try {
+    url = new URL(t);
+  } catch {
+    return null;
+  }
+  if (url.protocol !== 'https:' || !/(^|\.)drive\.google\.com$/i.test(url.hostname)) return null;
+  const pasta = /\/folders\/([A-Za-z0-9_-]+)/.exec(url.pathname)?.[1] ?? url.searchParams.get('id');
+  return pasta && ID_DO_DRIVE.test(pasta) ? pasta : null;
+}
+
+/** O endereço da pasta no Drive, para o link "abrir a pasta". */
+export function linkDaPastaDoDrive(id: string): string {
+  return `https://drive.google.com/drive/folders/${encodeURIComponent(id)}`;
+}
+
+/**
+ * ATA OU TRANSCRIÇÃO, para um arquivo do Drive: a regra é o NOME. Um nome que
+ * diz "transcrição", "transcricao", "transcript" ou "transcrito", ou a
+ * extensão de legenda (`.vtt`, `.srt`), é transcrição; o resto é ata. O
+ * conteúdo não entra na regra de propósito: a lista não abre o arquivo, e o
+ * tipo de um item não pode mudar quando alguém o abre.
+ */
+export function tipoDoArquivoDeAta(nome: string): TrabAtaTipo {
+  const n = String(nome ?? '').normalize('NFD').replace(/\p{M}/gu, '').toLowerCase();
+  if (/\.(vtt|srt)$/.test(n)) return 'transcricao';
+  return /transcri(?:cao|coes|to|ta|pt|ption)/.test(n) ? 'transcricao' : 'ata';
+}
+
+/** Os tipos de arquivo do Drive que o banco de atas lê: Documento Google, PDF com texto, .txt e .md (e legendas). */
+export function arquivoDoDriveEhLegivel(nome: string, mimeType: string): boolean {
+  const n = String(nome ?? '').toLowerCase();
+  const m = String(mimeType ?? '').toLowerCase();
+  if (m === 'application/vnd.google-apps.document' || m === 'application/pdf') return true;
+  if (m.startsWith('text/')) return true;
+  return /\.(md|markdown|txt|vtt|srt|pdf)$/.test(n);
 }
 
 export interface TrabAtaSugestaoDto {
@@ -225,8 +357,8 @@ export interface TrabGranolaAtaGerada {
   repetidas: number;
   avisos: string[];
   cliente: TrabGranolaCliente | null;
-  /** O que aconteceu na ficha do cliente. */
-  ficha: 'criada' | 'atualizada' | 'ja_estava' | 'sem_cliente';
+  /** O que aconteceu na ficha do cliente. `nao_se_aplica`: a transcrição veio do Drive, que não leva reunião à ficha. */
+  ficha: 'criada' | 'atualizada' | 'ja_estava' | 'sem_cliente' | 'nao_se_aplica';
 }
 
 /** O estado da conexão direta, para o cartão de Conexões. */
@@ -241,13 +373,25 @@ export interface TrabGranolaConexaoDireta {
 
 export const GRANOLA_DIAS_DA_LISTA = 30;
 
-/** A referência da ata, desmontada. `null` quando não é uma das duas formas. */
+/**
+ * A referência da ata, desmontada. `null` quando não é uma das formas.
+ * `memoria:` volta como `colada` (a fonte de verdade, colada ou escrita do
+ * Granola ou do Drive, sai da procedência da nota); `granola:` é a TRANSCRIÇÃO
+ * de uma reunião do Granola; `drive:` é um arquivo da pasta do Drive.
+ */
 export function lerRefDaAta(ref: string): { fonte: TrabAtaFonte; id: string } | null {
-  const m = /^(vault|memoria):([A-Za-z0-9_-]{1,80})$/.exec(String(ref ?? ''));
+  const m = /^(vault|memoria|drive|granola):([A-Za-z0-9_-]{1,120})$/.exec(String(ref ?? ''));
   if (!m) return null;
-  return { fonte: m[1] === 'vault' ? 'vault' : 'colada', id: m[2] };
+  const fonte: TrabAtaFonte = m[1] === 'vault' ? 'vault' : m[1] === 'drive' ? 'drive' : m[1] === 'granola' ? 'granola' : 'colada';
+  return { fonte, id: m[2] };
 }
 
+/** `vault:` e `drive:` para as duas fontes de arquivo; `memoria:` para toda nota da memória (colada, ou escrita do Granola ou do Drive). */
 export function refDaAta(fonte: TrabAtaFonte, id: string): string {
-  return `${fonte === 'vault' ? 'vault' : 'memoria'}:${id}`;
+  return `${fonte === 'vault' ? 'vault' : fonte === 'drive' ? 'drive' : 'memoria'}:${id}`;
+}
+
+/** A referência da TRANSCRIÇÃO de uma reunião do Granola na lista de atas. */
+export function refDaTranscricaoDoGranola(id: string): string {
+  return `granola:${id}`;
 }
