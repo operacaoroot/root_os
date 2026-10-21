@@ -80,6 +80,17 @@ describe('o texto de um PDF', () => {
     expect(textoDoPdf(arquivo)).toBe('');
   });
 
+  it('PDF-bomba: o fluxo que descomprime além do teto é pulado, sem derrubar o processo', () => {
+    const bomba = deflateSync(Buffer.alloc(70 * 1024 * 1024, 0x20));
+    const arquivo = pdf([
+      { n: 1, dict: '<< /Type /Catalog /Pages 2 0 R >>' },
+      { n: 2, dict: '<< /Type /Pages /Kids [3 0 R] /Count 1 >>' },
+      { n: 3, dict: '<< /Type /Page /Parent 2 0 R /Contents 4 0 R >>' },
+      { n: 4, dict: '<< /Length @LEN /Filter /FlateDecode >>', fluxo: bomba },
+    ]);
+    expect(textoDoPdf(arquivo)).toBe('');
+  });
+
   it('o teto de caracteres vale', () => {
     const conteudo = Buffer.from(`BT /F1 12 Tf (${'a'.repeat(500)}) Tj ET`, 'latin1');
     const arquivo = pdf([

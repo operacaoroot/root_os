@@ -42,6 +42,10 @@ interface Objeto {
   fluxo: Buffer | null;
 }
 
+/** Tetos contra PDF malformado ou hostil: o que um fluxo descomprime e quantos códigos um mapa guarda. */
+const MAX_FLUXO_DESCOMPRIMIDO = 64 * 1024 * 1024;
+const MAX_CODIGOS_DO_MAPA = 200_000;
+
 const ESPACO = new Set([0x00, 0x09, 0x0a, 0x0c, 0x0d, 0x20]);
 const DELIM = new Set([0x28, 0x29, 0x3c, 0x3e, 0x5b, 0x5d, 0x7b, 0x7d, 0x2f, 0x25]);
 
@@ -216,7 +220,8 @@ function decodificar(dict: Map<string, Valor>, cru: Buffer): Buffer | null {
   for (const f of filtros) {
     if (f === 'FlateDecode' || f === 'Fl') {
       try {
-        dados = inflateSync(dados);
+        // Teto do que um fluxo pode descomprimir: um PDF-bomba não derruba o processo.
+        dados = inflateSync(dados, { maxOutputLength: MAX_FLUXO_DESCOMPRIMIDO });
       } catch {
         return null;
       }
@@ -316,7 +321,7 @@ function lerCMap(dados: Buffer): { mapa: Map<string, string>; bytes: number } {
           const ini = parseInt(a.v.toString('hex') || '0', 16);
           const fim = parseInt(b.v.toString('hex') || '0', 16);
           const largura = a.v.length;
-          for (let k = 0; ini + k <= fim && k < 65536; k++) {
+          for (let k = 0; ini + k <= fim && k < 65536 && mapa.size < MAX_CODIGOS_DO_MAPA; k++) {
             const codigo = (ini + k).toString(16).padStart(largura * 2, '0');
             if (c.t === 'str') {
               const base = Buffer.from(c.v);
