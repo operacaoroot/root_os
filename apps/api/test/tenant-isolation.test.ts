@@ -453,6 +453,7 @@ const ALVOS: Alvo[] = [
   { tabela: 'Pendencia', escopo: 'tenant', chaveSql: '"id"', nota: 'A pendência que um agente ou rotina deixa para uma pessoa (rodada dos agentes, 21/10/2026): o arquivo de cliente sem subpasta, a tarefa vencida, a mensagem de WhatsApp sem dono, a reunião fora do padrão. Ler a da outra empresa é ler o que chegou para ela e de quem; ESCREVER é decidir por ela. Raiz da empresa: o refId aponta para tabelas diferentes, sem FK.' },
   { tabela: 'VistaSalva', escopo: 'tenant', chaveSql: '"id"', nota: 'A vista salva de uma pessoa (rodada do trabalho T3): ordenação, agrupamento, colunas e filtros de Minhas tarefas e do quadro, com o nome que ela deu. LER a da outra empresa é ler como alguém de lá organiza o trabalho e por quais clientes filtra; ESCREVER é trocar a vista padrão de uma pessoa da outra casa. Raiz da empresa; o serviço ainda filtra por userId.' },
   { tabela: 'CaixaVisto', escopo: 'tenant', chaveSql: '"id"', nota: 'O "limpei isto" da caixa de entrada (rodada do painel P1): quem leu qual evento de qual tarefa, e até quando limpou tudo. Ler a da outra empresa é saber o que cada pessoa dela já viu; ESCREVER é sumir com recado da caixa de alguém de outra casa. Raiz da empresa, não filha: o evento vive em duas tabelas e o orgId vem do insert.' },
+  { tabela: 'GastoDeIaPorFuncao', escopo: 'tenant', chaveSql: '"id"', nota: 'O gasto de IA por função do cadastro e por dia (rodada dos agentes, 21/10/2026, A1): quem gastou quanto, em que modelo. Ler o da outra empresa é ver quais agentes ela usa e quanto paga; ESCREVER é inflar ou zerar o gasto que a tela de Agentes mostra para ela. Raiz da empresa.' },
 
   // ---- onboarding do cliente (23/09/2026) -------------------------------
   { tabela: 'OnboardingTrilho', escopo: 'tenant', chaveSql: '"id"', nota: 'O cliente na esteira de entrega da empresa que o entrega: fase, perfil, nível, receita, contato, portões (entrada compensada, linha de base, dupla). É a carteira comercial em andamento — ler a da outra é ler quem ela está fechando e em que pé; ESCREVER `fase` é mover o cliente alheio de fase sem portão.' },
@@ -1339,6 +1340,12 @@ async function semear(c: PoolClient, rotulo: 'A' | 'B', vec: string): Promise<vo
     id: crypto.randomUUID(), orgId, userId, tela: 'minhas-tarefas', nome: `Vista ${rotulo} ${MARCA}`,
     padrao: false, config: JSON.stringify({ privado: rotulo }), atualizadaEm: new Date(),
   }, { config: 'jsonb' }));
+
+  // O gasto de IA por função (rodada dos agentes, 21/10/2026, A1).
+  reg('GastoDeIaPorFuncao', await ins(c, 'GastoDeIaPorFuncao', {
+    id: crypto.randomUUID(), orgId, dia: '2026-10-21', funcao: 'CO-11', agentSlug: `vigia_${rotulo}_${MARCA}`,
+    modelo: 'claude-haiku-5-5', tipo: 'conversa', chamadas: 1, gastoUsd: 0.001,
+  }));
 
   // Onboarding do cliente (23/09/2026): o trilho e os quatro filhos.
   const trilhoId = await ins(c, 'OnboardingTrilho', {

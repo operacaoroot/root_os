@@ -22,8 +22,7 @@ import { parseOfx } from './ofx';
 import { APPROVAL_LIMIT, conferirReferencias } from './apr.service';
 import { exigirAcessoAtual } from '../memory/acesso-memoria';
 import { travarFinanceiro, travarLancamentoFinanceiro, exigirNaoExercicio } from './financeiro-exercicio.service';
-import { comContextoDaEmpresaResolvida } from '../prisma/contexto-de-plataforma';
-import { novaCorrelacao } from '../common/contexto-execucao';
+import { comContexto, novaCorrelacao } from '../common/contexto-execucao';
 import { TIPO_CASA_CONCILIACAO, inscreverTarefaDaCasa, registrarPassagemDeFundo } from '../routines/rotinas-da-casa';
 import type { ResultadoDaRotina } from '../routines/rotina.tipos';
 
@@ -78,8 +77,9 @@ export class FinanceService implements OnModuleInit {
         });
         for (const orgId of [...new Set(conns.map((c) => c.orgId))]) {
           try {
-            const r = await comContextoDaEmpresaResolvida(
-              orgId,
+            // O contexto da empresa (não o de plataforma): a passagem roda como uma rota dela.
+            const r = await comContexto(
+              { orgId, actorType: 'system', correlationId: novaCorrelacao('cron'), origem: 'cron' },
               () =>
                 registrarPassagemDeFundo(
                   this.prisma,
@@ -87,7 +87,6 @@ export class FinanceService implements OnModuleInit {
                   () => this.passagemDaConciliacao(orgId),
                   { criar: 'sempre', intervaloMin: min },
                 ),
-              { correlationId: novaCorrelacao('cron'), origem: 'cron', actorId: null, actorType: null },
             );
             this.log.log(`sync bancário da empresa ${orgId}: ${r.status} (${r.resumo})`);
           } catch (e) {

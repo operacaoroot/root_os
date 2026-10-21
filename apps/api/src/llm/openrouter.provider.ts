@@ -1,6 +1,23 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { OpenAiProvider } from './openai.provider';
 import { env, envOpcional } from './env';
+import { modeloDaChamada } from './modelo-da-chamada';
+import { precoDe } from './preco';
+
+/*
+ * O MODELO DA FUNÇÃO NO OPENROUTER (rodada dos agentes, 21/10/2026, A1), só onde
+ * faz sentido: o cadastro fala em `claude-sonnet-5-5`, e o OpenRouter chama o
+ * mesmo modelo de `anthropic/claude-sonnet-5.5`. A troca só vale para o nome que
+ * tem PREÇO conferido em `preco.ts` (com o teto ligado, modelo sem preço é
+ * recusado). Opus 5.5 e Haiku 5.5 no OpenRouter ainda não têm preço conferido na
+ * tabela: a função cai no `OPENROUTER_MODEL` de sempre. [a decidir] conferir os
+ * dois preços no OpenRouter e acrescentar aqui.
+ */
+const NOME_NO_OPENROUTER: Readonly<Record<string, string>> = {
+  'claude-sonnet-5-5': 'anthropic/claude-sonnet-5.5',
+  'claude-opus-5-5': 'anthropic/claude-opus-5.5',
+  'claude-haiku-5-5': 'anthropic/claude-haiku-5.5',
+};
 
 /*
  * OpenRouter — a mesma API de Chat Completions, com duas diferenças que valem
@@ -30,6 +47,14 @@ export class OpenRouterProvider extends OpenAiProvider {
 
   protected get envDaChave(): string {
     return 'OPENROUTER_API_KEY';
+  }
+
+  /** Explícito > modelo da função com preço conferido > `OPENROUTER_MODEL`. */
+  modeloDaChamada(input: { funcao?: string; model?: string }): { modelo: string } {
+    if (input.model?.trim()) return { modelo: input.model.trim() };
+    const daFuncao = modeloDaChamada(input, { modelo: '', esforco: 'high' });
+    const nome = NOME_NO_OPENROUTER[daFuncao.modelo];
+    return { modelo: nome && precoDe(nome) ? nome : this.model };
   }
 
   // O OpenRouter usa estes headers para atribuir a chamada a uma aplicação.

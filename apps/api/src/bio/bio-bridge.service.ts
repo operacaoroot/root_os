@@ -1,8 +1,7 @@
 import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { ActorType } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
-import { novaCorrelacao } from '../common/contexto-execucao';
-import { comContextoDaEmpresaResolvida } from '../prisma/contexto-de-plataforma';
+import { comContexto, novaCorrelacao } from '../common/contexto-execucao';
 import { TIPO_CASA_METAS, inscreverTarefaDaCasa, registrarPassagemDeFundo } from '../routines/rotinas-da-casa';
 import type { ResultadoDaRotina } from '../routines/rotina.tipos';
 
@@ -34,8 +33,8 @@ export class BioBridgeService implements OnModuleInit {
         const orgs = await this.prisma.org.findMany({ select: { id: true } });
         for (const o of orgs) {
           try {
-            await comContextoDaEmpresaResolvida(
-              o.id,
+            await comContexto(
+              { orgId: o.id, actorType: 'system', correlationId: novaCorrelacao('cron'), origem: 'cron' },
               () =>
                 registrarPassagemDeFundo(
                   this.prisma,
@@ -43,7 +42,6 @@ export class BioBridgeService implements OnModuleInit {
                   () => this.passagemDaCasa(o.id),
                   { intervaloMin: min },
                 ),
-              { correlationId: novaCorrelacao('cron'), origem: 'cron', actorId: null, actorType: null },
             );
           } catch (e) {
             this.log.warn(`ponte de metas falhou numa empresa: ${(e as Error).message}`);

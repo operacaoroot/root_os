@@ -1,3 +1,4 @@
+// @ts-check
 /*
  * OS MODELOS QUE A PONTE ACEITA (rodada dos agentes, 21/10/2026).
  *
@@ -13,7 +14,12 @@
 
 export const MODELOS_DA_PONTE = Object.freeze(['claude-opus-5-5', 'claude-sonnet-5-5', 'claude-haiku-5-5']);
 
-/** O modelo deste pedido, ou o erro que diz por que não. */
+/**
+ * O modelo deste pedido, ou o erro que diz por que não.
+ * @param {{ model?: unknown } | null | undefined} pedido
+ * @param {string} padrao
+ * @returns {{ modelo: string, erro?: undefined } | { erro: string, modelo?: undefined }}
+ */
 export function modeloDoPedido(pedido, padrao) {
   const bruto = pedido && pedido.model;
   if (bruto === undefined || bruto === null || bruto === '') return { modelo: padrao };
@@ -23,7 +29,12 @@ export function modeloDoPedido(pedido, padrao) {
   return { modelo: bruto.trim() };
 }
 
-/** Os argumentos do CLI, sem shell: o modelo vai em `--model`, o resto é a tranca de sempre. */
+/**
+ * Os argumentos do CLI, sem shell: o modelo vai em `--model`, o resto é a tranca de sempre.
+ * @param {string} modelo
+ * @param {readonly string[]} proibidas
+ * @returns {string[]}
+ */
 export function argumentosDoCli(modelo, proibidas) {
   if (!MODELOS_DA_PONTE.includes(modelo)) throw new Error(`modelo fora da lista da ponte: ${modelo}`);
   return [
