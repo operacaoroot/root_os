@@ -31,7 +31,15 @@ describe('quem trabalha nesta etapa: a parte pura', () => {
       rotina: { ativo: true, proximaExecucaoEm: new Date('2026-10-22T12:00:00Z') },
       pendencias: [{ texto: 'Cliente: sem próximo passo com dono e data.' }],
     });
-    expect(r.agentes.map((a) => [a.slug, a.estado])).toEqual([['leitor-de-ata', 'ativo'], ['pesquisador-de-conta', 'ativo'], ['roteirista-de-kickoff', 'pausado']]);
+    // Os três do roster, na ordem, e o montador do kit (IM-07, sem `Agent`: o estado é o do cadastro).
+    expect(r.agentes.map((a) => [a.slug, a.estado])).toEqual([['leitor-de-ata', 'ativo'], ['pesquisador-de-conta', 'ativo'], ['roteirista-de-kickoff', 'pausado'], ['montador-do-kit', 'ativo']]);
+    // Rodada dos agentes: nome, para que serve, estado declarado e modelo vêm do cadastro único.
+    expect(r.agentes.map((a) => a.funcao)).toEqual(['IM-01', 'IM-02', 'IM-03', 'IM-07']);
+    expect(r.agentes[0]).toMatchObject({ nome: 'Leitor de ata do onboarding', estadoDeclarado: 'ativo', modelo: 'claude-opus-5-5', esforco: 'high' });
+    expect(r.agentes[2]).toMatchObject({ modelo: 'claude-sonnet-5-5', esforco: 'high' });
+    expect(r.agentes[3]).toMatchObject({ nome: 'Montador do kit', modelo: 'claude-sonnet-5-5', ultimoFato: null });
+    expect(r.agentes[3].oQueVaiFazer).toMatch(/Montar kit/);
+    expect(r.agentes.every((a) => (a.paraQueServe ?? '').length > 10)).toBe(true);
     expect(r.agentes[0].ultimoFato).toEqual({ texto: 'Ata lida (pdf): 5 proposta(s)', em: '2026-10-12T13:00:00.000Z' });
     expect(r.agentes[0].oQueVaiFazer).toMatch(/^Já rodou neste cliente\. Roda de novo com uma ata de kickoff/);
     expect(r.agentes[1].ultimoFato).toBeNull();
@@ -39,7 +47,7 @@ describe('quem trabalha nesta etapa: a parte pura', () => {
     expect(r.agentes[2].oQueVaiFazer).toBe('Está pausado: não roda até o dono ligar de novo em Agentes.');
     // O check semanal feito por gente não é fato do relógio.
     expect(r.relogio).toEqual({
-      nome: 'Relógio do onboarding', ligado: true, proximaPassagemEm: '2026-10-22T12:00:00.000Z',
+      nome: 'Relógio do onboarding', funcao: 'IM-05', paraQueServe: expect.any(String), ligado: true, proximaPassagemEm: '2026-10-22T12:00:00.000Z',
       ultimoFato: { texto: 'Cliente: sem próximo passo', em: '2026-10-11T12:00:00.000Z' },
       vaiFazer: ['Cliente: sem próximo passo com dono e data.'],
     });
@@ -48,7 +56,8 @@ describe('quem trabalha nesta etapa: a parte pura', () => {
 
   it('agente não semeado e relógio desligado: diz isso, sem data inventada', () => {
     const r = montarQuemTrabalha({ trilho, roster: ROSTER_DO_ONBOARDING, estados: new Map(), marcos: [], rotina: { ativo: false, proximaExecucaoEm: new Date() }, pendencias: [{ texto: 'x' }] });
-    expect(r.agentes.every((a) => a.estado === 'ausente' && /Não está semeado/.test(a.oQueVaiFazer))).toBe(true);
+    const doRoster = r.agentes.filter((a) => a.slug !== 'montador-do-kit');
+    expect(doRoster.every((a) => a.estado === 'ausente' && /Não está semeado/.test(a.oQueVaiFazer))).toBe(true);
     expect([r.relogio.ligado, r.relogio.proximaPassagemEm, r.relogio.vaiFazer, r.relogio.ultimoFato]).toEqual([false, null, [], null]);
     expect(montarQuemTrabalha({ trilho, roster: [], estados: new Map(), marcos: [], rotina: null, pendencias: [] }).relogio.ligado).toBe(false);
   });
@@ -97,6 +106,7 @@ describe.skipIf(!URL)('quem trabalha nesta etapa, contra o Postgres', { timeout:
       ['leitor-de-ata', 'ausente', null],
       ['pesquisador-de-conta', 'ativo', 'Dossiê gerado: 4 afirmação(ões)'],
       ['roteirista-de-kickoff', 'ausente', null],
+      ['montador-do-kit', 'ativo', null],
     ]);
     expect(r.relogio.ligado).toBe(true);
     expect(r.relogio.ultimoFato?.texto).toBe('Cliente Sintético: o próximo passo venceu');
