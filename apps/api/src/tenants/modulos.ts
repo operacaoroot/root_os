@@ -196,6 +196,9 @@ export const PREFIXOS_DA_ESPINHA: readonly string[] = [
   'audit',
   'auth',
   'caixa',
+  // a pasta do cliente no Drive (rodada dos agentes, 21/10/2026, TR-04): serve ao comercial,
+  // à implantação e ao trabalho ao mesmo tempo; a permissão é conferida na rota
+  'clientes',
   // cofre da empresa: senhas e documentos dos sócios; não é módulo que se desliga por empresa
   'cofre-da-empresa',
   'config',

@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import type { FaseDoCliente } from '@mktos/shared';
 import { VisoesDaLista } from '@/components/ficha/VisoesDaLista';
+import { PastasDosClientes } from '@/components/clientes/PastasDosClientes';
 
 /*
  * CLIENTES: os mesmos cards do CRM (um por lead/cliente), nas etapas de depois
@@ -54,6 +55,7 @@ export default function ClientesPage() {
         novo="+ Novo cliente"
         fases={[aba]}
       />
+      <PastasDosClientes />
     </div>
   );
 }

@@ -182,6 +182,9 @@ model Org {
   ataSugestoes          AtaSugestao[]
   pendencias            Pendencia[]
   vistasSalvas          VistaSalva[]
+  /// Os arquivos do cliente e os anexos das tarefas (rodada dos agentes, lane A4).
+  arquivosDoCliente     ArquivoDoCliente[]
+  workAnexos            WorkAnexo[]
 
   // Fatia 3.6 — RF-G-05 (bloco no fim do arquivo). Só o outro lado da relação
   // mora aqui: é o que o Prisma exige, e nada além disso.
@@ -2259,6 +2262,8 @@ model WorkTask {
   comments          WorkComment[]
   fontesContexto    WorkContextSource[]
   apontamentos      WorkApontamento[]
+  /// Os anexos da tarefa (rodada dos agentes, TR-06).
+  anexos            WorkAnexo[]
   /// O trilho de onboarding pendurado neste cartão da esteira (23/09/2026).
   onboardingTrilhos OnboardingTrilho[] @relation("OnboardingDoCartao")
   /// As reuniões da ficha do cliente (transcrição do Granola, link ou texto).
@@ -5947,4 +5952,76 @@ model GastoDeIaPorFuncao {
 
   @@unique([orgId, dia, funcao, agentSlug, modelo, tipo])
   @@index([orgId, dia])
+}
+
+/// O ARQUIVO DO CLIENTE (rodada dos agentes, 21/10/2026, lane A4, TR-05).
+///
+/// Cada arquivo que chega para um cliente (sala, anexo de tarefa, contrato
+/// assinado, WhatsApp, ata, kit) e o que o arquivista fez com ele: o binário
+/// fica no storage do OS (`chave`, `sha256`) e a cópia vai à subpasta da pasta
+/// do cliente no Drive pela porta (`drive.arquivo.enviar`, R3). É também a FILA:
+/// sem pasta do cliente o arquivo espera aqui em `na_fila` e sai quando a pasta
+/// nascer. Raiz da empresa (o `orgId` vem do insert): o arquivo pode chegar
+/// antes do cliente, só com o lead. `refTipo`/`refId` apontam a origem (o anexo).
+model ArquivoDoCliente {
+  id             String   @id @default(uuid())
+  orgId          String
+  org            Org      @relation(fields: [orgId], references: [id])
+  partnerId      String?
+  leadId         String?
+  origem         String
+  nomeOriginal   String
+  tipoMime       String
+  chave          String
+  sha256         String
+  bytes          Int
+  /// A subpasta e o nome padrão no Drive, quando decididos.
+  subpasta       String?
+  nome           String?
+  tipo           String?
+  titulo         String?
+  confianca      Float?
+  estado         String   @default("na_fila")
+  motivo         String?
+  approvalId     String?
+  pendenciaId    String?
+  driveArquivoId String?
+  driveUrl       String?
+  /// Quem pediu (pessoa) ou nulo (o sistema): é o proponente na porta.
+  atorId         String?
+  refTipo        String?
+  refId          String?
+  criadoEm       DateTime @default(now())
+  atualizadoEm   DateTime @updatedAt
+
+  @@index([orgId, partnerId, estado])
+  @@index([orgId, leadId, estado])
+  @@index([orgId, refTipo, refId])
+  @@index([orgId, approvalId])
+}
+
+/// O ANEXO DA TAREFA (rodada dos agentes, 21/10/2026, TR-06).
+///
+/// Filho de `WorkTask`: `orgId` com a sentinela `''` e o gatilho
+/// `WorkAnexo_orgId_do_pai` (a empresa é a da tarefa). O binário fica no
+/// storage do OS; a cópia na pasta do cliente é o `ArquivoDoCliente` de
+/// `refTipo = 'WorkAnexo'`, `refId = id`.
+model WorkAnexo {
+  id        String   @id @default(uuid())
+  /// Sentinela + gatilho `WorkAnexo_orgId_do_pai` (ver topo do arquivo).
+  orgId     String   @default("")
+  org       Org      @relation(fields: [orgId], references: [id])
+  taskId    String
+  task      WorkTask @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  nome      String
+  tipoMime  String
+  bytes     Int
+  sha256    String
+  chave     String
+  autorId   String?
+  autorNome String
+  criadoEm  DateTime @default(now())
+
+  @@index([taskId, criadoEm])
+  @@index([orgId, criadoEm])
 }

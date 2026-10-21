@@ -17,6 +17,20 @@ import { PrismaService } from '../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
 import { MAX_BYTES_DO_ARQUIVO_LIDO, consultaDoDrive, leituraDoArquivo, type OpcoesDaListaDoDrive } from './drive-das-atas';
 import { PdfIlegivelError, textoDoPdf } from './texto-do-pdf';
+import {
+  LIMITE_DO_ENVIO_MULTIPART,
+  MIME_DA_PASTA,
+  MIME_DO_ATALHO,
+  copiarEstruturaDoModelo,
+  nomeSemColisao,
+  nomeValidoNoDrive,
+  subirAteARaiz,
+  valorNaConsultaDoDrive,
+  type DriveDoCliente,
+  type ItemDoDrive,
+  type ResultadoDaCopia,
+} from './drive-do-cliente';
+import { planoDaPadronizacao, type EventoLido } from './padronizar-evento';
 import { EfeitosRegistry, type ContextoDoEfeito } from '../gateway/efeitos.registry';
 import { CofreService, SegredoIndisponivelError } from '../cofre/cofre.service';
 import { NOMES_CONHECIDOS } from '../cofre/segredo';
@@ -73,7 +87,7 @@ const SCOPES = [
 ];
 
 @Injectable()
-export class GoogleService implements OnModuleInit {
+export class GoogleService implements OnModuleInit, DriveDoCliente {
   private readonly log = new Logger('GoogleService');
   private readonly clientId = process.env.GOOGLE_CLIENT_ID ?? '';
   private readonly clientSecret = process.env.GOOGLE_CLIENT_SECRET ?? '';
@@ -262,6 +276,25 @@ export class GoogleService implements OnModuleInit {
         ),
       'documento.anexar': (a, org, ctx: ContextoDoEfeito) =>
         this.appendDoc(org, texto(a.documentoId), String(a.texto ?? ''), ctx.actorId ?? undefined),
+      /*
+       * PÔR UM EVENTO NO PADRÃO (rodada dos agentes, 21/10/2026, R3). Só título,
+       * a linha "Título original" e o Meet; recusa se o título de agora não é o
+       * que a aprovação viu. Os dois efeitos do Drive da pasta do cliente
+       * (`drive.pasta.criar`, `drive.arquivo.enviar`) NÃO moram aqui: têm regra de
+       * negócio (raiz da memória, ponteiro no cliente, binário do storage) e são
+       * inscritos por `clientes/`, que recebe este conector por `DRIVE_DO_CLIENTE`.
+       */
+      'agenda.evento.padronizar': (a, org, ctx: ContextoDoEfeito) =>
+        this.padronizarEvento(
+          org,
+          {
+            eventoId: texto(a.eventoId),
+            tituloAtual: String(a.tituloAtual ?? ''),
+            tituloNovo: texto(a.tituloNovo),
+            adicionarMeet: a.adicionarMeet === true,
+          },
+          ctx.actorId ?? undefined,
+        ),
     }, 'GoogleService');
   }
 
@@ -1408,6 +1441,236 @@ export class GoogleService implements OnModuleInit {
       throw new BadRequestException(`Drive alt=media ${fileId} → HTTP ${res.status} ${corpo.slice(0, 160)}`);
     }
     return res.text();
+  }
+
+  /*
+   * ==========================================================================
+   * A PASTA DO CLIENTE NO DRIVE (rodada dos agentes, 21/10/2026, TR-04/TR-05)
+   * ==========================================================================
+   *
+   * Os métodos que `clientes/` recebe por `DRIVE_DO_CLIENTE` (ver
+   * `drive-do-cliente.ts`): ler um item, listar os filhos de uma pasta, subir
+   * até a raiz, criar pasta, copiar a estrutura do modelo e enviar um binário.
+   * Destino e método fixos, sem URL vinda de fora. Nenhum apaga, move ou
+   * sobrescreve. Quem os chama para ESCREVER são os efeitos de
+   * `drive.pasta.criar` e `drive.arquivo.enviar`, que só rodam pela porta.
+   *
+   * `supportsAllDrives` em todos: a raiz dos clientes da Root está no Drive de
+   * outra pessoa, compartilhada com a conta da empresa (e chega como atalho).
+   */
+
+  /** Os campos que todo item lido traz. */
+  private static readonly CAMPOS_DO_ITEM = 'id,name,mimeType,webViewLink,parents,trashed,shortcutDetails(targetId,targetMimeType)';
+
+  private itemDoBruto(f: {
+    id: string;
+    name: string;
+    mimeType: string;
+    webViewLink?: string;
+    parents?: string[];
+    shortcutDetails?: { targetId?: string };
+  }): ItemDoDrive {
+    return {
+      id: f.id,
+      nome: f.name,
+      mimeType: f.mimeType,
+      url: f.webViewLink ?? null,
+      pais: f.parents ?? [],
+      ...(f.mimeType === MIME_DO_ATALHO ? { alvoDoAtalho: f.shortcutDetails?.targetId ?? null } : {}),
+    };
+  }
+
+  private exigirIdDoDrive(id: string, oQue: string): string {
+    if (!/^[A-Za-z0-9_-]{10,120}$/.test(String(id ?? ''))) throw new BadRequestException(`Esse não é um id de ${oQue} do Drive.`);
+    return id;
+  }
+
+  async itemDoDrive(orgId: string, id: string): Promise<ItemDoDrive | null> {
+    if (!/^[A-Za-z0-9_-]{10,120}$/.test(String(id ?? ''))) return null;
+    const at = await this.token(orgId);
+    const res = await fetch(
+      `https://www.googleapis.com/drive/v3/files/${encodeURIComponent(id)}?supportsAllDrives=true&fields=${encodeURIComponent(GoogleService.CAMPOS_DO_ITEM)}`,
+      { headers: { Authorization: `Bearer ${at}` } },
+    );
+    if (res.status === 404) return null;
+    if (!res.ok) {
+      const corpo = await res.text().catch(() => '');
+      throw new BadRequestException(`O Drive não respondeu sobre o item (HTTP ${res.status}). ${corpo.slice(0, 120)}`.trim());
+    }
+    const f = (await res.json()) as Parameters<GoogleService['itemDoBruto']>[0] & { trashed?: boolean };
+    if (f.trashed) return null;
+    return this.itemDoBruto(f);
+  }
+
+  /** A pasta de verdade por trás de um id: atalho vira o alvo; o que não é pasta volta `null`. */
+  async pastaReal(orgId: string, id: string): Promise<ItemDoDrive | null> {
+    const item = await this.itemDoDrive(orgId, id);
+    if (!item) return null;
+    if (item.mimeType === MIME_DO_ATALHO) {
+      if (!item.alvoDoAtalho) return null;
+      const alvo = await this.itemDoDrive(orgId, item.alvoDoAtalho);
+      return alvo && alvo.mimeType === MIME_DA_PASTA ? alvo : null;
+    }
+    return item.mimeType === MIME_DA_PASTA ? item : null;
+  }
+
+  async filhosDaPasta(orgId: string, pastaId: string, filtro: { nome?: string; soPastas?: boolean } = {}): Promise<ItemDoDrive[]> {
+    this.exigirIdDoDrive(pastaId, 'pasta');
+    const partes = [`'${pastaId}' in parents`, 'trashed = false'];
+    if (filtro.soPastas) partes.push(`mimeType = '${MIME_DA_PASTA}'`);
+    if (filtro.nome !== undefined) partes.push(`name = '${valorNaConsultaDoDrive(filtro.nome)}'`);
+    const q = partes.join(' and ');
+    const saida: ItemDoDrive[] = [];
+    let pageToken: string | undefined;
+    do {
+      const url =
+        'https://www.googleapis.com/drive/v3/files' +
+        `?q=${encodeURIComponent(q)}&pageSize=1000&supportsAllDrives=true&includeItemsFromAllDrives=true` +
+        `&fields=${encodeURIComponent(`nextPageToken,files(${GoogleService.CAMPOS_DO_ITEM})`)}` +
+        (pageToken ? `&pageToken=${encodeURIComponent(pageToken)}` : '');
+      const pagina = await this.api<{ nextPageToken?: string; files?: Array<Parameters<GoogleService['itemDoBruto']>[0]> }>(orgId, url);
+      for (const f of pagina.files ?? []) saida.push(this.itemDoBruto(f));
+      if (saida.length > 5000) throw new BadRequestException('A pasta do Drive tem mais de 5.000 itens: confira se é a pasta certa.');
+      pageToken = pagina.nextPageToken;
+    } while (pageToken);
+    return saida;
+  }
+
+  async dentroDaRaiz(orgId: string, id: string, raizId: string): Promise<boolean> {
+    return subirAteARaiz(id, raizId, async (x) => (await this.itemDoDrive(orgId, x))?.pais ?? null);
+  }
+
+  async criarPasta(orgId: string, paiId: string, nome: string): Promise<ItemDoDrive> {
+    this.exigirIdDoDrive(paiId, 'pasta');
+    if (!nomeValidoNoDrive(nome)) throw new BadRequestException('Nome de pasta inválido: sem barra, sem caractere de controle, até 200.');
+    const f = await this.api<Parameters<GoogleService['itemDoBruto']>[0]>(
+      orgId,
+      `https://www.googleapis.com/drive/v3/files?supportsAllDrives=true&fields=${encodeURIComponent(GoogleService.CAMPOS_DO_ITEM)}`,
+      { method: 'POST', body: JSON.stringify({ name: nome, mimeType: MIME_DA_PASTA, parents: [paiId] }) },
+    );
+    return this.itemDoBruto(f);
+  }
+
+  /** Copia UM arquivo para outra pasta (o `.md` do modelo). Não mexe no original. */
+  async copiarArquivo(orgId: string, arquivoId: string, paiId: string, nome: string): Promise<ItemDoDrive> {
+    this.exigirIdDoDrive(arquivoId, 'arquivo');
+    this.exigirIdDoDrive(paiId, 'pasta');
+    if (!nomeValidoNoDrive(nome)) throw new BadRequestException('Nome de arquivo inválido.');
+    const f = await this.api<Parameters<GoogleService['itemDoBruto']>[0]>(
+      orgId,
+      `https://www.googleapis.com/drive/v3/files/${encodeURIComponent(arquivoId)}/copy?supportsAllDrives=true&fields=${encodeURIComponent(GoogleService.CAMPOS_DO_ITEM)}`,
+      { method: 'POST', body: JSON.stringify({ name: nome, parents: [paiId] }) },
+    );
+    return this.itemDoBruto(f);
+  }
+
+  async copiarEstrutura(orgId: string, modeloId: string, destinoId: string): Promise<ResultadoDaCopia> {
+    this.exigirIdDoDrive(modeloId, 'pasta');
+    this.exigirIdDoDrive(destinoId, 'pasta');
+    return copiarEstruturaDoModelo(this, orgId, modeloId, destinoId);
+  }
+
+  /**
+   * Envia um binário. Até 5 MB, multipart (uma chamada); acima, resumable (abre a
+   * sessão e manda os bytes num PUT). O nome que já existe na pasta ganha sufixo
+   * (`nome (2).pdf`): nunca sobrescreve.
+   */
+  async enviarArquivo(
+    orgId: string,
+    entrada: { paiId: string; nome: string; tipoMime: string; conteudo: Buffer },
+  ): Promise<ItemDoDrive> {
+    this.exigirIdDoDrive(entrada.paiId, 'pasta');
+    if (!nomeValidoNoDrive(entrada.nome)) throw new BadRequestException('Nome de arquivo inválido: sem barra, sem caractere de controle, até 200.');
+    if (!entrada.conteudo.length) throw new BadRequestException('O arquivo está vazio.');
+    const existentes = await this.filhosDaPasta(orgId, entrada.paiId);
+    const nome = nomeSemColisao(entrada.nome, existentes.map((i) => i.nome));
+    const mime = entrada.tipoMime || 'application/octet-stream';
+    const metadados = { name: nome, parents: [entrada.paiId] };
+    const campos = encodeURIComponent(GoogleService.CAMPOS_DO_ITEM);
+
+    if (entrada.conteudo.length <= LIMITE_DO_ENVIO_MULTIPART) {
+      const fronteira = `mktos-${Math.random().toString(36).slice(2)}${Date.now().toString(36)}`;
+      const corpo = Buffer.concat([
+        Buffer.from(`--${fronteira}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${JSON.stringify(metadados)}\r\n`, 'utf8'),
+        Buffer.from(`--${fronteira}\r\nContent-Type: ${mime}\r\n\r\n`, 'utf8'),
+        entrada.conteudo,
+        Buffer.from(`\r\n--${fronteira}--`, 'utf8'),
+      ]);
+      const f = await this.api<Parameters<GoogleService['itemDoBruto']>[0]>(
+        orgId,
+        `https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&supportsAllDrives=true&fields=${campos}`,
+        { method: 'POST', headers: { 'Content-Type': `multipart/related; boundary=${fronteira}` }, body: corpo },
+      );
+      return this.itemDoBruto(f);
+    }
+
+    const at = await this.token(orgId);
+    const sessao = await fetch(
+      `https://www.googleapis.com/upload/drive/v3/files?uploadType=resumable&supportsAllDrives=true&fields=${campos}`,
+      {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${at}`,
+          'Content-Type': 'application/json; charset=UTF-8',
+          'X-Upload-Content-Type': mime,
+          'X-Upload-Content-Length': String(entrada.conteudo.length),
+        },
+        body: JSON.stringify(metadados),
+      },
+    );
+    const local = sessao.headers.get('location');
+    if (!sessao.ok || !local) {
+      const corpo = await sessao.text().catch(() => '');
+      throw new BadRequestException(`O Drive não abriu o envio (HTTP ${sessao.status}). ${corpo.slice(0, 120)}`.trim());
+    }
+    if (!/^https:\/\/www\.googleapis\.com\/upload\/drive\/v3\/files/.test(local)) {
+      throw new BadRequestException('O Drive devolveu um endereço de envio inesperado. Nada foi enviado.');
+    }
+    const envio = await fetch(local, {
+      method: 'PUT',
+      headers: { Authorization: `Bearer ${at}`, 'Content-Type': mime, 'Content-Length': String(entrada.conteudo.length) },
+      body: entrada.conteudo,
+    });
+    if (!envio.ok) {
+      const corpo = await envio.text().catch(() => '');
+      throw new BadRequestException(`O Drive recusou o arquivo (HTTP ${envio.status}). ${corpo.slice(0, 120)}`.trim());
+    }
+    return this.itemDoBruto((await envio.json()) as Parameters<GoogleService['itemDoBruto']>[0]);
+  }
+
+  /*
+   * PÔR UM EVENTO NO PADRÃO (capacidade `agenda.evento.padronizar`, R3). Lê o
+   * evento, confere que o título de agora é o da proposta (`planoDaPadronizacao`)
+   * e manda UM patch com título, descrição e, se pedido e faltando, o Meet.
+   * `sendUpdates=none`: os convidados não recebem aviso de uma troca de título.
+   * Horário e convidados não vão no corpo, então não mudam. Nada é apagado.
+   */
+  async padronizarEvento(
+    orgId: string,
+    pedido: { eventoId: string; tituloAtual: string; tituloNovo: string; adicionarMeet: boolean },
+    actorId?: string,
+  ) {
+    if (!/^[A-Za-z0-9_@.-]{3,1024}$/.test(pedido.eventoId)) throw new BadRequestException('Esse não é um id de evento da Agenda.');
+    const base = `https://www.googleapis.com/calendar/v3/calendars/primary/events/${encodeURIComponent(pedido.eventoId)}`;
+    const evento = await this.api<EventoLido & { id: string; htmlLink?: string }>(orgId, `${base}?fields=${encodeURIComponent('id,summary,description,hangoutLink,conferenceData,status,htmlLink')}`);
+    const plano = planoDaPadronizacao(evento, pedido, `root-os-padrao-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`);
+    if (plano.tipo === 'recusa') throw new BadRequestException(plano.motivo);
+    if (plano.tipo === 'nada') return { ok: true, id: pedido.eventoId, mudou: false, motivo: plano.motivo };
+    const e = await this.api<{ id: string; summary?: string; hangoutLink?: string; htmlLink?: string }>(
+      orgId,
+      `${base}?sendUpdates=none${plano.pedeMeet ? '&conferenceDataVersion=1' : ''}`,
+      { method: 'PATCH', body: JSON.stringify(plano.corpo) },
+    );
+    await this.audit.log({
+      orgId,
+      actorId,
+      action: 'google.calendar.padronizar',
+      entityType: 'calendar',
+      entityId: pedido.eventoId,
+      before: { titulo: pedido.tituloAtual },
+      after: { titulo: e.summary ?? pedido.tituloNovo, meet: plano.pedeMeet },
+    });
+    return { ok: true, id: e.id, mudou: true, titulo: e.summary ?? pedido.tituloNovo, meet: e.hangoutLink ?? null, link: e.htmlLink ?? null };
   }
 
   async appendDoc(orgId: string, docId: string, text: string, actorId?: string) {

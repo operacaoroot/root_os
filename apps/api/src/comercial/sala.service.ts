@@ -28,6 +28,7 @@ import { Prisma } from '@prisma/client';
 import { comTenantPublico, resolverTenantDaSala } from '../common/tenant-publico';
 import { PrismaService } from '../prisma/prisma.service';
 import { StorageService } from '../storage/storage.service';
+import { ARQUIVISTA_DO_CLIENTE, type ArquivistaDoClientePort } from '../clientes/portas';
 import { horarioOferecido, horariosOferecidos } from './agenda-de-homologacao';
 import { hashDoConteudo } from './eventos';
 import { FioService, ReacoesRegistry } from './fio.service';
@@ -335,6 +336,8 @@ export class SalaService implements OnModuleInit {
       const nome = arquivo.originalname.replace(/[^\p{L}\p{N}._ -]/gu, '_').slice(0, 120) || 'arquivo';
       await storage.put(`comercial/sala/${r.salaId}/${sha}`, arquivo.buffer, arquivo.mimetype);
       await this.fio.registrar(r.orgId, r.leadId, 'arquivo.enviado', sha, { nome, bytes: arquivo.size, tipo: arquivo.mimetype });
+      // TR-05 (lane A4): a cópia vai ao arquivista, que a manda à pasta do cliente pela porta (R3). Nunca derruba o envio.
+      void Promise.resolve().then(() => this.moduleRef?.get<ArquivistaDoClientePort>(ARQUIVISTA_DO_CLIENTE, { strict: false })?.arquivar({ orgId: r.orgId, partnerId: null, leadId: r.leadId, origem: 'sala', nomeOriginal: nome, tipoMime: arquivo.mimetype, conteudo: { chave: `comercial/sala/${r.salaId}/${sha}`, sha256: sha, bytes: arquivo.buffer.length } })).catch(() => undefined);
     });
   }
 

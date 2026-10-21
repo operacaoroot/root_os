@@ -118,3 +118,5 @@ export * from './agentes.js';
 export * from './pendencias.js';
 // A pasta do cliente no Drive e o nome padrão dos arquivos (rodada dos agentes): ver `pasta-do-cliente.ts`.
 export * from './pasta-do-cliente.js';
+// Os arquivos do cliente e o anexo na tarefa (rodada dos agentes, lane A4): ver `clientes-arquivos.ts`.
+export * from './clientes-arquivos.js';

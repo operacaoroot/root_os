@@ -611,6 +611,13 @@ describe('a instrumentação — antes de medir defesa, medir o medidor', () => 
       // pasta do Google Drive das atas (origem `drive:<id>`), e `promptDasSugestoes` (o sexto) à ata
       // do Drive: nenhuma chamada nova, as mesmas duas cercas.
       'src/work/atas/leitor-do-granola.ts': 1,
+      // O NONO, 21/10/2026 (rodada dos agentes, lane A4, TR-05 o arquivista do cliente):
+      // `promptDaClassificacao` cerca o NOME e até as duas primeiras páginas de TEXTO de um
+      // arquivo que chegou para um cliente (a sala, o anexo da tarefa, o WhatsApp), com os
+      // segredos já mascarados. É documento de cliente ou de terceiro: dado, nunca ordem. A
+      // lista de subpastas e as regras ficam FORA da cerca; a subpasta que o modelo escreve só
+      // vale se for uma da lista, e o nome no Drive é montado pelo sistema.
+      'src/clientes/arquivista/classificador.ts': 1,
     };
 
     const porArquivo: Record<string, number> = {};

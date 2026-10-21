@@ -1,35 +1,36 @@
 import { Global, Module } from '@nestjs/common';
 
-import {
-  ARQUIVISTA_DO_CLIENTE,
-  PASTA_DO_CLIENTE,
-  type ArquivistaDoClientePort,
-  type PastaDoClientePort,
-} from './portas';
+import { GoogleModule } from '../google/google.module';
+import { MemoryModule } from '../memory/memoria.module';
+import { StorageModule } from '../storage/storage.module';
+import { ArquivistaService } from './arquivista/arquivista.service';
+import { ClientesController } from './clientes.controller';
+import { PastaDoClienteService } from './pasta-do-cliente/pasta-do-cliente.service';
+import { ARQUIVISTA_DO_CLIENTE, PASTA_DO_CLIENTE } from './portas';
 
 /*
  * A PASTA DO CLIENTE E O ARQUIVISTA (rodada dos agentes, 21/10/2026).
  *
- * Lane 0 deixa o módulo com as duas portas respondendo "ainda não ligado", para
- * as lanes que CHAMAM (comercial, implantação, trabalho) compilarem e testarem
- * contra o contrato enquanto a lane do Drive (TR-04/TR-05) implementa. A lane
- * do Drive troca estes dois provedores pelos de verdade, aqui mesmo.
+ * A Lane 0 deixou as duas portas respondendo "ainda não ligado"; a lane A4
+ * (TR-04/TR-05) as liga aqui: `PASTA_DO_CLIENTE` é o `PastaDoClienteService` e
+ * `ARQUIVISTA_DO_CLIENTE` é o `ArquivistaService`, os dois inscrevendo o efeito
+ * da própria capacidade (`drive.pasta.criar`, `drive.arquivo.enviar`) e
+ * recebendo o cliente do Drive por `DRIVE_DO_CLIENTE` (o conector Google, sem
+ * importá-lo). A rota é `POST /clientes/:id/pasta` e `GET /clientes/pastas`.
  *
- * `@Global`: chamado de muitos módulos; importar em cada um fecharia ciclo.
+ * `@Global`: chamado de muitos módulos (comercial, implantação, trabalho);
+ * importar em cada um fecharia ciclo.
  */
-const PASTA_AINDA_NAO_LIGADA: PastaDoClientePort = {
-  garantir: async () => ({ estado: 'erro', motivo: 'a pasta do cliente ainda não está ligada nesta versão' }),
-};
-const ARQUIVISTA_AINDA_NAO_LIGADO: ArquivistaDoClientePort = {
-  arquivar: async () => ({ estado: 'so_no_os', motivo: 'o arquivista ainda não está ligado nesta versão' }),
-};
-
 @Global()
 @Module({
+  imports: [GoogleModule, MemoryModule, StorageModule],
+  controllers: [ClientesController],
   providers: [
-    { provide: PASTA_DO_CLIENTE, useValue: PASTA_AINDA_NAO_LIGADA },
-    { provide: ARQUIVISTA_DO_CLIENTE, useValue: ARQUIVISTA_AINDA_NAO_LIGADO },
+    PastaDoClienteService,
+    ArquivistaService,
+    { provide: PASTA_DO_CLIENTE, useExisting: PastaDoClienteService },
+    { provide: ARQUIVISTA_DO_CLIENTE, useExisting: ArquivistaService },
   ],
-  exports: [PASTA_DO_CLIENTE, ARQUIVISTA_DO_CLIENTE],
+  exports: [PASTA_DO_CLIENTE, ARQUIVISTA_DO_CLIENTE, ArquivistaService, PastaDoClienteService],
 })
 export class ClientesModule {}

@@ -46,6 +46,7 @@ import { CaixaModule } from './caixa/caixa.module';
 import { PendenciasModule } from './pendencias/pendencias.module';
 import { ClientesModule } from './clientes/clientes.module';
 import { ComercialModule } from './comercial/comercial.module';
+import { AnexosDaTarefaModule } from './work/anexos/anexos.module';
 
 @Module({
   imports: [
@@ -188,6 +189,9 @@ import { ComercialModule } from './comercial/comercial.module';
     // `RoutinesModule` (o relógio comercial é uma rotina). Sem esta linha toda
     // rota de `/api/comercial` e `/api/sala` responde 404 sem nada acusar.
     ComercialModule,
+    // O anexo na tarefa (rodada dos agentes, TR-06): `/api/trabalho/tarefas/:id/anexos`.
+    // Sem esta linha as rotas de anexo respondem 404 e nada acusa.
+    AnexosDaTarefaModule,
   ],
   controllers: [HealthController],
 })
