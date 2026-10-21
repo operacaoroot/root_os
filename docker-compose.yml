@@ -445,19 +445,16 @@ services:
   #     de serviço do servidor MCP avulso (`packages/mcp/src/client.ts`), que
   #     roda por fora do compose (Claude Desktop, `docker run`) e NÃO SOBE sem
   #     ela. Sem essa variável o compose vai bem e o MCP é que não funciona.
-  #   · `MCP_ACTION_PASSWORD` ainda é lida por `apps/api/prisma/seed.ts`, que
-  #     cria a conta de máquina `ia-acao@` e precisa da senha em claro uma vez
-  #     para guardar o hash. A catraca de arquitetura carrega essa linha como
-  #     EXCEÇÃO DECLARADA (`EXCECOES_CONTA_DE_ACAO`), não como esquecimento: a
-  #     conta ficou sem cliente quando o bot saiu, e apagá-la é decisão humana
-  #     pendente.
-  #   · `MCP_ACTION_EMAIL` é a única que ficou sem leitor nenhum — o e-mail da
-  #     conta está fixo no código da semente.
+  #   · `MCP_ACTION_PASSWORD` e `MCP_ACTION_EMAIL` ficaram SEM LEITOR (rodada dos
+  #     agentes, 21/10/2026): a semente (`apps/api/prisma/seed.ts`) NÃO cria mais
+  #     a conta de máquina `ia-acao@` nem pede a senha. A conta que já existe num
+  #     banco é DESATIVADA, nunca apagada, por
+  #     `node dist/scripts/desativar-ia-acao.js --valer` (padrão: simula;
+  #     idempotente, com auditoria `usuario.conta_de_maquina_desativada`).
   #
   # A catraca de arquitetura (frente 5, `apps/api/test/arquitetura.test.ts`)
-  # vigia os dois sentidos: um leitor NOVO de `MCP_ACTION_*` é caminho de escrita
-  # novo fora da porta, e o dia em que a semente parar de ler a senha a exceção
-  # tem de sair da lista.
+  # vigia: um leitor NOVO de `MCP_ACTION_*` é caminho de escrita novo fora da
+  # porta, e a lista de exceções (`EXCECOES_CONTA_DE_ACAO`) está vazia.
   # ---------------------------------------------------------------------------
 
 networks:

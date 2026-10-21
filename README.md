@@ -78,10 +78,12 @@ as interpolava com `:?`, e como a interpolação é do arquivo inteiro, faltar u
 `config` e até `ps`. Aquele serviço foi aposentado (fatia 5.8) e a exigência caiu com ele — não
 sobrou nenhum `:?` no `docker-compose.yml`.
 
-As duas continuam valendo fora do compose: `MCP_SERVICE_PASSWORD` é a senha da conta de serviço do
-servidor MCP avulso (`packages/mcp`) e `MCP_ACTION_PASSWORD` é lida por `apps/api/prisma/seed.ts`.
-Se for usar qualquer um dos dois, gere as senhas (`openssl rand -base64 24`) e rode `pnpm db:seed`
-para alinhar os hashes — mas **nunca em produção**: o seed não é idempotente e apaga dados do org.
+`MCP_SERVICE_PASSWORD` continua valendo fora do compose: é a senha da conta de serviço do servidor
+MCP avulso (`packages/mcp`). Se for usá-lo, gere a senha (`openssl rand -base64 24`) e rode
+`pnpm db:seed` para alinhar o hash — mas **nunca em produção**: o seed não é idempotente e apaga
+dados do org. `MCP_ACTION_PASSWORD` e `MCP_ACTION_EMAIL` não têm mais leitor (rodada dos agentes,
+21/10/2026): a semente **não cria mais** a conta de máquina `ia-acao@`, e a que já existe num banco
+é desativada, nunca apagada, por `node dist/scripts/desativar-ia-acao.js --valer` (padrão: simula).
 
 Comandos: `npm run dev` / `build` / `typecheck`; banco: `db:generate`, `db:migrate`, `db:deploy`. Testes: `pnpm --filter @mktos/api test`, `pnpm --filter @mktos/policy test`, `pnpm --filter @mktos/web test`. Deploy na VPS: `deploy/up.sh --vps api web` (o `--vps` não é opcional — ver CLAUDE.md).
 
