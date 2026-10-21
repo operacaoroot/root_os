@@ -124,3 +124,7 @@ export * from './clientes-arquivos.js';
 export * from './agentes-da-implantacao.js';
 // Os agentes do comercial da rodada de 21/10/2026 (lane A2): ver `comercial-agentes.ts`.
 export * from './comercial-agentes.js';
+// A Equipe e o catálogo na tela (rodada dos agentes, lane A7): ver `equipe-pessoas.ts`, `equipe-whatsapp.ts` e `agentes-tela.ts`.
+export * from './equipe-pessoas.js';
+export * from './equipe-whatsapp.js';
+export * from './agentes-tela.js';

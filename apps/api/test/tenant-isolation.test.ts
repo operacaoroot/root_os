@@ -517,6 +517,7 @@ const ALVOS: Alvo[] = [
   { tabela: 'CofreSenha', escopo: 'tenant', chaveSql: '"id"', nota: 'O hash da senha-mestra do cofre de cada pessoa, com tentativas e bloqueio. Ler o da outra entrega o hash para ataque fora do sistema; escrever zera o bloqueio ou troca a senha-mestra de alguém de outra casa.' },
   { tabela: 'CofreSessao', escopo: 'tenant', chaveSql: '"id"', nota: 'A sessão aberta do cofre (hash do token e validade). Escrever na da outra estende ou abre a sessão de cofre de alguém de outra casa.' },
   { tabela: 'AgendaConferencia', escopo: 'tenant', chaveSql: '"id"', nota: 'O que o vigia da agenda (AG-01, rodada dos agentes, 21/10/2026) concluiu de uma reunião fora do padrão: o título lido do Google, a proposta e a aprovação ou pendência. Ler a da outra é ler com quem ela se reúne e quando; ESCREVER é pôr título na proposta de correção da agenda dela ou marcar reunião alheia como "não é reunião". Raiz da empresa: approvalId e pendenciaId apontam para outras tabelas, sem FK.' },
+  { tabela: 'DonoDaFuncao', escopo: 'tenant', chaveSql: '"id"', nota: 'O dono trocado na Equipe de uma função do cadastro sem registro Agent (rodada dos agentes, 21/10/2026, A7). Ler o da outra empresa é ver quem responde por cada rotina e automação de lá; ESCREVER é tirar ou dar a função de alguém de outra casa. Raiz da empresa, com FK composta (userId, orgId) para User.' },
 
   // ---- junções implícitas do Prisma (não têm id) ------------------------
   { tabela: '_UserRoles', escopo: 'juncao', chaveSql: `"A" || '|' || "B"`, nota: 'A=Role.id, B=User.id. Sem policy dá para conceder Role de outra org — escalação cross-tenant.' },
@@ -1473,6 +1474,12 @@ async function semear(c: PoolClient, rotulo: 'A' | 'B', vec: string): Promise<vo
     estado: 'proposta', tituloProposto: `Reunião Online - Cliente ${rotulo} - Pedro`,
     problemas: JSON.stringify(['titulo_fora_da_gramatica']), atualizadoEm: agora,
   }, { problemas: 'jsonb' }));
+
+  // O dono trocado na Equipe (rodada dos agentes, 21/10/2026, A7).
+  reg('DonoDaFuncao', await ins(c, 'DonoDaFuncao', {
+    id: crypto.randomUUID(), orgId, funcaoId: rotulo === 'A' ? 'CO-07' : 'RO-02', userId, definidoPorId: userId,
+    atualizadoEm: agora,
+  }));
 
   await semearEntregasDoMerge(c, rotulo, {
     orgId, suf, userId, agentId, sopId, sop, leadId, leadEventId, contextoId, contextoVersaoId,
