@@ -2,6 +2,21 @@
 
 O formulário de contato de operacaoroot.com cria o lead direto no funil do comercial do ROOT OS. Sem modelo, sem mensagem automática: a pessoa preenche, o lead aparece em Novo lead, e quem decide o primeiro contato é gente.
 
+## Como ligar (opt-in por empresa)
+
+O formulário **nasce desligado em toda empresa**. A chave `k` é o id da empresa, que o pixel já publica no HTML do site; sem um opt-in, qualquer pessoa que soubesse o id de qualquer empresa do OS criaria lead nela (revisão adversarial de 21/10/2026). Vale só na empresa que tem a nota da memória:
+
+- chave **`comercial.formulario.site`**;
+- **primeira linha `ligado`** (sem acento, maiúscula ou marcação de markdown, tudo bem: `**Ligado**` vale); o resto da nota é livre, para dizer quem ligou e por quê.
+
+Crie a nota em Memória (`/memoria`), ou pela API (`POST /api/memoria`, permissão `obsidian.editar`):
+
+```json
+{ "chave": "comercial.formulario.site", "title": "Formulário do site", "body": "ligado\nLigado por <quem>, <data>: formulário de operacaoroot.com.", "sourceType": "operador" }
+```
+
+O OS só LÊ a nota (a escrita é de gente, pelo caminho da memória, com versão e RASTRO). Sem a nota, com outra primeira linha (`desligado`, vazia) ou com a nota arquivada, a rota responde o **mesmo 404** da chave que não existe: o site não aprende se a empresa existe. Desligar é arquivar a nota ou trocar a primeira linha.
+
 ## O endereço
 
 ```
@@ -33,7 +48,7 @@ Campo vazio conta como ausente. Campo fora desta lista é recusado (400).
 | 202 | Recebido (lead novo, o mesmo envio repetido, isca, ou retido pela régua) | `{"ok":true,"mensagem":"Recebemos o seu contato. A Root responde em breve."}` |
 | 400 | Campo inválido | `{"message":"Formulário inválido.","erros":["email: E-mail inválido."]}` |
 | 403 | Origem de navegador que não é o site | `{"statusCode":403,"message":"Origem não autorizada."}` |
-| 404 | Chave `k` que não é de nenhuma empresa (ou empresa sem o módulo de leads) | `{"message":"Não encontrado."}` |
+| 404 | Chave `k` que não é de nenhuma empresa, empresa sem o módulo de leads, ou empresa que não ligou o formulário (nota `comercial.formulario.site`) | `{"message":"Não encontrado."}` |
 | 413 | Corpo acima de 16 KB | `{"statusCode":413,"message":"Formulário grande demais."}` |
 | 429 | Mais de 10 envios por hora do mesmo endereço (ou 300 por hora no total) | `{"message":"Muitos envios. Tente de novo mais tarde."}` |
 | 503 | O OS não conseguiu registrar agora | `{"message":"Não conseguimos registrar o contato agora. Tente de novo em instantes."}` |
@@ -94,10 +109,11 @@ Troque `ID-DA-EMPRESA-ROOT` pelo id da empresa Root no OS (ver "Para publicar" n
 </script>
 ```
 
-O snippet não tem segredo nem cookie: a chave `k` aparece no HTML do site, como a do pixel, e o que segura a rota é o CORS, o teto por endereço, a isca e a régua.
+O snippet não tem segredo nem cookie: a chave `k` aparece no HTML do site, como a do pixel, e o que segura a rota é o opt-in da empresa (a nota acima), o CORS, o teto por endereço, a isca e a régua.
 
 ## Como conferir depois de publicar
 
+0. Confira que a empresa Root tem a nota `comercial.formulario.site` com `ligado` na primeira linha (sem ela, todo envio dá 404).
 1. Abra o site, preencha com um e-mail de teste e envie: a tela mostra "Recebemos o seu contato".
 2. No OS, em Comercial › Funil, o lead aparece em Novo lead com o canal "site" e a mensagem no fio.
 3. Fora do horário (depois das 20h), o pedido aparece em Aprovações como `comercial.lead.criar` e o lead nasce quando alguém libera.
