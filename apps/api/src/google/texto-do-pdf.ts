@@ -42,9 +42,28 @@ interface Objeto {
   fluxo: Buffer | null;
 }
 
-/** Tetos contra PDF malformado ou hostil: o que um fluxo descomprime e quantos códigos um mapa guarda. */
+/*
+ * Tetos contra PDF malformado ou hostil. O leitor roda síncrono na thread da
+ * API: o que não tem teto aqui trava o processo inteiro, não só o pedido.
+ *   · o que um fluxo descomprime, e o que o DOCUMENTO descomprime somado
+ *     (cada fluxo uma vez só, guardado pelo número do objeto);
+ *   · quantos bytes de conteúdo de página são interpretados no total (a mesma
+ *     referência repetida em `Contents` não multiplica o trabalho sem fim);
+ *   · quantos nós da árvore de páginas se visitam (e nenhum duas vezes);
+ *   · quantas vezes o tamanho do arquivo a leitura de objetos pode percorrer
+ *     (objetos sobrepostos de propósito não viram trabalho quadrático);
+ *   · o aninhamento de array e dicionário (acima dele, o resto é achatado);
+ *   · quantos códigos um mapa guarda.
+ */
 const MAX_FLUXO_DESCOMPRIMIDO = 64 * 1024 * 1024;
+const MAX_DESCOMPRIMIDO_NO_DOCUMENTO = 64 * 1024 * 1024;
+const MAX_CONTEUDO_INTERPRETADO = 64 * 1024 * 1024;
+const MAX_NOS_DA_ARVORE = 50_000;
+const LEITURAS_POR_BYTE = 8;
+const MAX_ANINHAMENTO = 200;
 const MAX_CODIGOS_DO_MAPA = 200_000;
+/** O deflate não passa de ~1032:1; é o teto do que um fluxo que falhou pode ter descomprimido antes do erro. */
+const RAZAO_MAXIMA_DO_DEFLATE = 1032;
 
 const ESPACO = new Set([0x00, 0x09, 0x0a, 0x0c, 0x0d, 0x20]);
 const DELIM = new Set([0x28, 0x29, 0x3c, 0x3e, 0x5b, 0x5d, 0x7b, 0x7d, 0x2f, 0x25]);
@@ -52,6 +71,7 @@ const DELIM = new Set([0x28, 0x29, 0x3c, 0x3e, 0x5b, 0x5d, 0x7b, 0x7d, 0x2f, 0x2
 /** Um leitor de tokens do PDF sobre um Buffer (sintaxe de objeto e de conteúdo). */
 class Leitor {
   pos = 0;
+  private profundidade = 0;
   constructor(private readonly b: Buffer, inicio = 0) {
     this.pos = inicio;
   }
@@ -70,51 +90,75 @@ class Leitor {
     }
   }
 
-  /** O próximo valor (ou operador, na sintaxe de conteúdo). `null` no fim. */
+  /**
+   * O próximo valor (ou operador, na sintaxe de conteúdo). `null` no fim. É um
+   * laço e não recursão para o delimitador solto: um milhão de `)` seguidos não
+   * estoura a pilha. Array e dicionário recursam só até `MAX_ANINHAMENTO`; dali
+   * para dentro o delimitador de abertura vira `null` e o resto é lido no mesmo
+   * nível (PDF assim já é lixo; o que importa é terminar).
+   */
   proximo(): Valor | null {
-    this.pularEspaco();
-    if (this.fim()) return null;
-    const c = this.b[this.pos];
-    if (c === 0x2f) return { t: 'nome', v: this.nome() };
-    if (c === 0x28) return { t: 'str', v: this.literal() };
-    if (c === 0x3c) {
-      if (this.b[this.pos + 1] === 0x3c) {
-        this.pos += 2;
-        return this.dicionario();
-      }
-      return { t: 'str', v: this.hex() };
-    }
-    if (c === 0x5b) {
-      this.pos++;
-      const itens: Valor[] = [];
-      for (let guarda = 0; guarda < 1_000_000; guarda++) {
-        this.pularEspaco();
-        if (this.fim()) break;
-        if (this.b[this.pos] === 0x5d) {
-          this.pos++;
-          break;
+    for (;;) {
+      this.pularEspaco();
+      if (this.fim()) return null;
+      const c = this.b[this.pos];
+      if (c === 0x2f) return { t: 'nome', v: this.nome() };
+      if (c === 0x28) return { t: 'str', v: this.literal() };
+      if (c === 0x3c) {
+        if (this.b[this.pos + 1] === 0x3c) {
+          this.pos += 2;
+          if (this.profundidade >= MAX_ANINHAMENTO) return { t: 'nulo' };
+          this.profundidade++;
+          try {
+            return this.dicionario();
+          } finally {
+            this.profundidade--;
+          }
         }
-        const v = this.proximo();
-        if (!v) break;
-        itens.push(v);
+        return { t: 'str', v: this.hex() };
       }
-      return { t: 'arr', v: this.juntarRefs(itens) };
+      if (c === 0x5b) {
+        this.pos++;
+        if (this.profundidade >= MAX_ANINHAMENTO) return { t: 'nulo' };
+        this.profundidade++;
+        try {
+          return { t: 'arr', v: this.array() };
+        } finally {
+          this.profundidade--;
+        }
+      }
+      if (c === 0x5d || c === 0x3e || c === 0x7b || c === 0x7d || c === 0x29) {
+        this.pos++;
+        continue;
+      }
+      const inicio = this.pos;
+      while (this.pos < this.b.length && !ESPACO.has(this.b[this.pos]) && !DELIM.has(this.b[this.pos])) this.pos++;
+      const palavra = this.b.toString('latin1', inicio, this.pos);
+      if (!palavra) {
+        this.pos++;
+        continue;
+      }
+      if (/^[+-]?(\d+\.?\d*|\.\d+)$/.test(palavra)) return { t: 'num', v: Number(palavra) };
+      if (palavra === 'true' || palavra === 'false') return { t: 'bool', v: palavra === 'true' };
+      if (palavra === 'null') return { t: 'nulo' };
+      return { t: 'op', v: palavra };
     }
-    if (c === 0x5d || c === 0x3e || c === 0x7b || c === 0x7d || c === 0x29) {
-      this.pos++;
-      return this.proximo();
+  }
+
+  private array(): Valor[] {
+    const itens: Valor[] = [];
+    for (let guarda = 0; guarda < 1_000_000; guarda++) {
+      this.pularEspaco();
+      if (this.fim()) break;
+      if (this.b[this.pos] === 0x5d) {
+        this.pos++;
+        break;
+      }
+      const v = this.proximo();
+      if (!v) break;
+      itens.push(v);
     }
-    const inicio = this.pos;
-    while (this.pos < this.b.length && !ESPACO.has(this.b[this.pos]) && !DELIM.has(this.b[this.pos])) this.pos++;
-    const palavra = this.b.toString('latin1', inicio, this.pos);
-    if (!palavra) {
-      this.pos++;
-      return this.proximo();
-    }
-    if (/^[+-]?(\d+\.?\d*|\.\d+)$/.test(palavra)) return { t: 'num', v: Number(palavra) };
-    if (palavra === 'true' || palavra === 'false') return { t: 'bool', v: palavra === 'true' };
-    if (palavra === 'null') return { t: 'nulo' };
-    return { t: 'op', v: palavra };
+    return this.juntarRefs(itens);
   }
 
   /** `n g R` dentro de array e dicionário vira referência. */
@@ -212,34 +256,72 @@ class Leitor {
 const num = (v: Valor | undefined): number | null => (v && v.t === 'num' ? v.v : null);
 const nomeDe = (v: Valor | undefined): string | null => (v && v.t === 'nome' ? v.v : null);
 
-/** Desfaz os filtros de um fluxo. Só `FlateDecode` (e nenhum); qualquer outro devolve `null`. */
-function decodificar(dict: Map<string, Valor>, cru: Buffer): Buffer | null {
-  const filtro = dict.get('Filter');
-  const filtros = !filtro ? [] : filtro.t === 'arr' ? filtro.v.map(nomeDe) : [nomeDe(filtro)];
-  let dados = cru;
-  for (const f of filtros) {
-    if (f === 'FlateDecode' || f === 'Fl') {
+/**
+ * Os fluxos de um documento, sem filtro. Cada objeto é descomprimido UMA vez
+ * (guardado pelo número: `Contents [5 0 R 5 0 R …]` não descomprime de novo a
+ * cada referência), e o documento inteiro descomprime no máximo
+ * `MAX_DESCOMPRIMIDO_NO_DOCUMENTO`: passando disso, o fluxo seguinte volta
+ * `null` e quem lê fica com o que já tinha.
+ */
+class Fluxos {
+  private restante = MAX_DESCOMPRIMIDO_NO_DOCUMENTO;
+  private readonly cache = new Map<number, Buffer | null>();
+
+  /** O fluxo do objeto `n`, já sem filtro; `null` sem fluxo, com filtro que não lemos ou acima do teto. */
+  doObjeto(n: number, o: Objeto | undefined): Buffer | null {
+    if (this.cache.has(n)) return this.cache.get(n) ?? null;
+    const dados = o?.fluxo && o.valor.t === 'dict' ? this.decodificar(o.valor.v, o.fluxo) : null;
+    this.cache.set(n, dados);
+    return dados;
+  }
+
+  /** Desfaz os filtros de um fluxo. Só `FlateDecode` (e nenhum); qualquer outro devolve `null`. */
+  private decodificar(dict: Map<string, Valor>, cru: Buffer): Buffer | null {
+    const filtro = dict.get('Filter');
+    const filtros = !filtro ? [] : filtro.t === 'arr' ? filtro.v.map(nomeDe) : [nomeDe(filtro)];
+    let dados = cru;
+    for (const f of filtros) {
+      if (f !== 'FlateDecode' && f !== 'Fl') return null;
+      // Teto de um fluxo e o que sobra do documento: um PDF-bomba não derruba o processo.
+      const teto = Math.min(MAX_FLUXO_DESCOMPRIMIDO, this.restante);
+      if (teto <= 0) return null;
       try {
-        // Teto do que um fluxo pode descomprimir: um PDF-bomba não derruba o processo.
-        dados = inflateSync(dados, { maxOutputLength: MAX_FLUXO_DESCOMPRIMIDO });
+        dados = inflateSync(dados, { maxOutputLength: teto });
+        this.restante -= dados.length;
       } catch {
+        // O que falhou também gastou: até o teto, ou o máximo que aquela entrada rende.
+        this.restante -= Math.min(teto, dados.length * RAZAO_MAXIMA_DO_DEFLATE);
         return null;
       }
-    } else return null;
+    }
+    return dados;
   }
-  return dados;
 }
 
+/*
+ * O começo de `N G obj`: no começo do arquivo ou depois de espaço/delimitador
+ * do PDF, com no máximo 10 dígitos em cada número. Sem a âncora e sem o teto,
+ * `(\d+)\s+(\d+)` sobre uma cauda de milhões de dígitos é quadrático e trava
+ * a thread.
+ */
+const INICIO_DE_OBJETO = /(?<![^\x00\t\n\f\r ()<>[\]{}/%])(\d{1,10})\s+(\d{1,10})\s+obj\b/g;
+
 /** Os objetos do arquivo, pelo número (o último vence, como numa atualização incremental). */
-function lerObjetos(pdf: Buffer): Map<number, Objeto> {
+function lerObjetos(pdf: Buffer, fluxos: Fluxos): Map<number, Objeto> {
   const objetos = new Map<number, Objeto>();
   const texto = pdf.toString('latin1');
-  const re = /(\d+)\s+(\d+)\s+obj\b/g;
+  const re = new RegExp(INICIO_DE_OBJETO.source, 'g');
+  // Quanto a leitura pode percorrer: objetos sobrepostos (um `1 0 obj [` repetido
+  // sem fechar) fariam cada um reler o arquivo até o fim. Esgotado, fica o que leu.
+  let orcamento = LEITURAS_POR_BYTE * pdf.length;
   let m: RegExpExecArray | null;
   while ((m = re.exec(texto))) {
     const n = Number(m[1]);
-    const leitor = new Leitor(pdf, m.index + m[0].length);
+    const inicio = m.index + m[0].length;
+    const leitor = new Leitor(pdf, inicio);
     const valor = leitor.proximo();
+    orcamento -= leitor.pos - inicio;
+    if (orcamento < 0) break;
     if (!valor) continue;
     let fluxo: Buffer | null = null;
     const depois = texto.slice(leitor.pos, leitor.pos + 30);
@@ -260,9 +342,9 @@ function lerObjetos(pdf: Buffer): Map<number, Objeto> {
     objetos.set(n, { valor, fluxo });
   }
   // Os objetos guardados dentro de fluxos de objeto (`/Type /ObjStm`).
-  for (const [, o] of [...objetos]) {
+  for (const [numeroDoFluxo, o] of [...objetos]) {
     if (o.valor.t !== 'dict' || nomeDe(o.valor.v.get('Type')) !== 'ObjStm' || !o.fluxo) continue;
-    const dados = decodificar(o.valor.v, o.fluxo);
+    const dados = fluxos.doObjeto(numeroDoFluxo, o);
     const n = num(o.valor.v.get('N'));
     const primeiro = num(o.valor.v.get('First'));
     if (!dados || n === null || primeiro === null) continue;
@@ -274,9 +356,15 @@ function lerObjetos(pdf: Buffer): Map<number, Objeto> {
       if (a === null || b === null) break;
       pares.push([a, b]);
     }
+    // O mesmo orçamento, agora sobre o fluxo: deslocamentos que apontam todos
+    // para o começo de um array sem fim não releem o fluxo para cada objeto.
+    let orcamentoDoFluxo = LEITURAS_POR_BYTE * dados.length;
     for (const [numero, desloc] of pares) {
       if (objetos.has(numero)) continue;
-      const v = new Leitor(dados, primeiro + desloc).proximo();
+      const l = new Leitor(dados, primeiro + desloc);
+      const v = l.proximo();
+      orcamentoDoFluxo -= l.pos - (primeiro + desloc);
+      if (orcamentoDoFluxo < 0) break;
       if (v) objetos.set(numero, { valor: v, fluxo: null });
     }
   }
@@ -375,7 +463,8 @@ export function textoDoPdf(pdf: Buffer, maxCaracteres = 400_000): string {
   if (!pdf.subarray(0, 1024).toString('latin1').includes('%PDF-')) throw new PdfIlegivelError('o arquivo não é um PDF');
   const bruto = pdf.toString('latin1');
   if (/\/Encrypt\s/.test(bruto)) throw new PdfIlegivelError('o PDF é protegido por senha ou cifrado');
-  const objetos = lerObjetos(pdf);
+  const fluxos = new Fluxos();
+  const objetos = lerObjetos(pdf, fluxos);
   const resolver = (v: Valor | undefined, guarda = 0): Valor | undefined => {
     if (v?.t === 'ref' && guarda < 20) return resolver(objetos.get(v.n)?.valor, guarda + 1);
     return v;
@@ -394,25 +483,32 @@ export function textoDoPdf(pdf: Buffer, maxCaracteres = 400_000): string {
     let fonte: Fonte = { mapa: null, bytes: composta ? 2 : 1 };
     const tu = d.get('ToUnicode');
     if (tu?.t === 'ref') {
-      const o = objetos.get(tu.n);
-      if (o?.fluxo && o.valor.t === 'dict') {
-        const dados = decodificar(o.valor.v, o.fluxo);
-        if (dados) {
-          const cm = lerCMap(dados);
-          fonte = { mapa: cm.mapa, bytes: cm.bytes || fonte.bytes };
-        }
+      const dados = fluxos.doObjeto(tu.n, objetos.get(tu.n));
+      if (dados) {
+        const cm = lerCMap(dados);
+        fonte = { mapa: cm.mapa, bytes: cm.bytes || fonte.bytes };
       }
     }
     if (chave !== null) cacheDeFontes.set(chave, fonte);
     return fonte;
   };
 
-  // As páginas, na ordem da árvore.
+  // As páginas, na ordem da árvore. Cada nó indireto é visitado uma vez só
+  // (`Kids [2 0 R 2 0 R]` apontando para si, ou uma escada em diamante, seria
+  // exponencial) e a árvore inteira tem um orçamento de visitas.
   const paginas: Map<string, Valor>[] = [];
   const raiz = [...objetos.values()].find((o) => o.valor.t === 'dict' && nomeDe(o.valor.v.get('Type')) === 'Catalog');
+  const visitados = new Set<number>();
+  let visitas = 0;
   const visitar = (no: Valor | undefined, herdado: Map<string, Valor> | null, guarda = 0) => {
+    if (guarda > 50 || paginas.length > 5000 || visitas >= MAX_NOS_DA_ARVORE) return;
+    if (no?.t === 'ref') {
+      if (visitados.has(no.n)) return;
+      visitados.add(no.n);
+    }
+    visitas++;
     const d = dictDe(no);
-    if (!d || guarda > 50 || paginas.length > 5000) return;
+    if (!d) return;
     const recursos = dictDe(d.get('Resources')) ?? herdado;
     const tipo = nomeDe(d.get('Type'));
     if (tipo === 'Pages' || d.has('Kids')) {
@@ -432,8 +528,11 @@ export function textoDoPdf(pdf: Buffer, maxCaracteres = 400_000): string {
 
   const partes: string[] = [];
   let total = 0;
+  // O conteúdo interpretado no documento todo: o fluxo vem do cache, mas cada
+  // referência repetida ainda seria lida de novo; passando do teto, fica o que leu.
+  let conteudoRestante = MAX_CONTEUDO_INTERPRETADO;
   for (const pagina of paginas) {
-    if (total >= maxCaracteres) break;
+    if (total >= maxCaracteres || conteudoRestante <= 0) break;
     const recursos = dictDe(pagina.get('Resources'));
     const fontes = dictDe(recursos?.get('Font'));
     const conteudo = resolver(pagina.get('Contents'));
@@ -441,10 +540,14 @@ export function textoDoPdf(pdf: Buffer, maxCaracteres = 400_000): string {
     const blocos: Buffer[] = [];
     for (const r of refs) {
       if (r.t !== 'ref') continue;
-      const o = objetos.get(r.n);
-      if (!o?.fluxo || o.valor.t !== 'dict') continue;
-      const dados = decodificar(o.valor.v, o.fluxo);
-      if (dados) blocos.push(dados);
+      const dados = fluxos.doObjeto(r.n, objetos.get(r.n));
+      if (!dados) continue;
+      if (dados.length > conteudoRestante) {
+        conteudoRestante = 0;
+        break;
+      }
+      conteudoRestante -= dados.length;
+      blocos.push(dados);
     }
     const texto = textoDoConteudo(Buffer.concat(blocos), (nome) => fonteDe(fontes?.get(nome)));
     if (texto.trim()) {

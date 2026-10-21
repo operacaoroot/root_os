@@ -103,3 +103,90 @@ describe('o texto de um PDF', () => {
     expect(textoDoPdf(arquivo, 100)).toHaveLength(100);
   });
 });
+
+/*
+ * PDF HOSTIL (revisão adversarial da P7): o leitor roda síncrono na thread da
+ * API, então cada caso abaixo travaria o processo inteiro antes do conserto.
+ * O relógio é a prova: todos terminam bem abaixo do prazo.
+ */
+const rapido = <T>(f: () => T, prazoMs: number): T => {
+  const t0 = Date.now();
+  const r = f();
+  expect(Date.now() - t0).toBeLessThan(prazoMs);
+  return r;
+};
+
+describe('PDF hostil não trava o processo', () => {
+  it('cauda de dígitos depois do cabeçalho: a busca de objetos é linear e não acha objeto', () => {
+    const arquivo = Buffer.from('%PDF-1.4\n' + '1'.repeat(5_000_000), 'latin1');
+    expect(rapido(() => textoDoPdf(arquivo), 2000)).toBe('');
+  });
+
+  it('árvore de páginas em ciclo e em diamante: cada nó é visitado uma vez', () => {
+    // 2 aponta para si mesmo duas vezes; 10..39 é uma escada em diamante
+    // (cada degrau aponta duas vezes para o seguinte), que sem conjunto de
+    // visitados daria 2^30 chamadas; 40 é a única página.
+    const degraus = Array.from({ length: 30 }, (_, i) => ({
+      n: 10 + i,
+      dict: `<< /Type /Pages /Kids [${11 + i} 0 R ${11 + i} 0 R] >>`,
+    }));
+    const arquivo = pdf([
+      { n: 1, dict: '<< /Type /Catalog /Pages 2 0 R >>' },
+      { n: 2, dict: '<< /Type /Pages /Kids [2 0 R 2 0 R 10 0 R] /Resources << /Font << /F1 5 0 R >> >> >>' },
+      ...degraus,
+      { n: 40, dict: '<< /Type /Page /Contents 4 0 R >>' },
+      { n: 4, dict: '<< /Length @LEN >>', fluxo: Buffer.from('BT /F1 12 Tf (uma vez) Tj ET', 'latin1') },
+      { n: 5, dict: '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>' },
+    ]);
+    expect(rapido(() => textoDoPdf(arquivo), 2000)).toBe('uma vez');
+  });
+
+  it('o mesmo fluxo referenciado milhares de vezes descomprime uma vez só e para no teto do documento', () => {
+    // 256 KB por cópia × 5000 referências = 1,25 GB se cada uma descomprimisse e entrasse.
+    const fluxo = deflateSync(Buffer.from('BT /F1 12 Tf (oi) Tj ET\n' + ' '.repeat(256 * 1024), 'latin1'));
+    const arquivo = pdf([
+      { n: 1, dict: '<< /Type /Catalog /Pages 2 0 R >>' },
+      { n: 2, dict: '<< /Type /Pages /Kids [3 0 R] /Count 1 >>' },
+      { n: 3, dict: `<< /Type /Page /Resources << /Font << /F1 6 0 R >> >> /Contents [${'5 0 R '.repeat(5000)}] >>` },
+      { n: 5, dict: '<< /Length @LEN /Filter /FlateDecode >>', fluxo },
+      { n: 6, dict: '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>' },
+    ]);
+    const texto = rapido(() => textoDoPdf(arquivo), 5000);
+    expect(texto.startsWith('oi')).toBe(true);
+    // Só o que coube no teto de 64 MB de conteúdo: 256 cópias, não 5000.
+    expect(texto.split('oi').length - 1).toBeLessThanOrEqual(256);
+  });
+
+  it('fluxos distintos que somam mais que o teto: lê os primeiros e devolve o que tem', () => {
+    // 12 páginas de 8 MB descomprimidos cada (96 MB) contra o teto de 64 MB do documento.
+    const paginas = Array.from({ length: 12 }, (_, i) => i);
+    const arquivo = pdf([
+      { n: 1, dict: '<< /Type /Catalog /Pages 2 0 R >>' },
+      { n: 2, dict: `<< /Type /Pages /Kids [${paginas.map((i) => `${100 + i} 0 R`).join(' ')}] /Resources << /Font << /F1 6 0 R >> >> >>` },
+      ...paginas.map((i) => ({ n: 100 + i, dict: `<< /Type /Page /Contents ${200 + i} 0 R >>` })),
+      ...paginas.map((i) => ({
+        n: 200 + i,
+        dict: '<< /Length @LEN /Filter /FlateDecode >>',
+        fluxo: deflateSync(Buffer.from(`BT /F1 12 Tf (p${i}) Tj ET\n` + ' '.repeat(8 * 1024 * 1024), 'latin1')),
+      })),
+      { n: 6, dict: '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>' },
+    ]);
+    const texto = rapido(() => textoDoPdf(arquivo), 8000);
+    expect(texto.startsWith('p0\n\np1')).toBe(true);
+    expect(texto).not.toContain('p11');
+  });
+
+  it('aninhamento profundo e delimitadores soltos não estouram a pilha', () => {
+    const arquivo = pdf([
+      { n: 1, dict: '<< /Type /Catalog /Pages 2 0 R >>' },
+      { n: 2, dict: '<< /Type /Pages /Kids [3 0 R 7 0 R] /Resources << /Font << /F1 5 0 R >> >> >>' },
+      { n: 3, dict: '<< /Type /Page /Contents 4 0 R >>' },
+      { n: 4, dict: '<< /Length @LEN >>', fluxo: Buffer.from('BT /F1 12 Tf ' + '['.repeat(100_000) + ' (nunca) Tj ET', 'latin1') },
+      { n: 5, dict: '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>' },
+      { n: 7, dict: '<< /Type /Page /Contents 8 0 R >>' },
+      { n: 8, dict: '<< /Length @LEN >>', fluxo: Buffer.from(')'.repeat(1_000_000) + ' BT /F1 12 Tf (normal) Tj ET', 'latin1') },
+      { n: 9, dict: '<< /Lixo ' + '<<'.repeat(100_000) + ' >>' },
+    ]);
+    expect(rapido(() => textoDoPdf(arquivo), 3000)).toBe('normal');
+  });
+});
