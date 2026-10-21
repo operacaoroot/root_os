@@ -319,6 +319,18 @@ describe.skipIf(!URL)('árvore: contra o Postgres', () => {
     expect(await svc.apagarLista(CASA, EU, outra.id, { confirmarNome: 'Lixo' })).toEqual({ id: outra.id, modo: 'arquivada', tarefasArquivadas: 2 });
   });
 
+  it('mover e excluir com campo próprio da lista: a lista é arquivada, e o valor que a tarefa movida guarda fica', async () => {
+    const sai = await lista(CASA, null, 'Propostas', ['Uma']);
+    const destino = await lista(CASA, null, 'Operação');
+    const campo = await prisma.workField.create({ data: { orgId: CASA, listId: sai.id, name: 'Valor', type: 'texto' } });
+    await prisma.workFieldValue.create({ data: { orgId: CASA, taskId: sai.tarefas[0], fieldId: campo.id, value: 'mil' } });
+    await svc.moverTarefasDaLista(CASA, EU, sai.id, { destinoId: destino.id, esperadas: 1 });
+    // Apagar a lista levaria o campo em cascata, e o valor junto: ela é arquivada.
+    expect(await svc.apagarLista(CASA, EU, sai.id, { confirmarNome: 'Propostas' })).toEqual({ id: sai.id, modo: 'arquivada', tarefasArquivadas: 0 });
+    expect(await prisma.workFieldValue.count({ where: { taskId: sai.tarefas[0], fieldId: campo.id } })).toBe(1);
+    expect(await arvore()).toEqual({ pastas: [], listas: ['Sem pasta / Operação'] });
+  });
+
   it('mover tarefas recusa destino arquivado, a lista do comercial, lista de cadastro e a da implantação', async () => {
     const sai = await lista(CASA, null, 'Rotina', ['Um']);
     const arquivada = await lista(CASA, null, 'Arquivada');

@@ -412,14 +412,20 @@ export class WorkService {
     if (nomeParaConfirmar(input.confirmarNome) !== nomeParaConfirmar(lista.name)) {
       throw new BadRequestException('Para excluir, escreva o nome da lista como ele aparece.');
     }
-    const [vivas, arquivadas] = await Promise.all([
+    const [vivas, arquivadas, valoresDosCampos] = await Promise.all([
       this.prisma.workTask.count({ where: { orgId, listId: id, archived: false } }),
       this.prisma.workTask.count({ where: { orgId, listId: id, archived: true } }),
+      // Os campos próprios da lista caem em cascata com ela, e os valores junto. Depois de
+      // "mover as tarefas e excluir" (A3), a tarefa movida ainda guarda valor de campo desta
+      // lista: apagar a lista apagaria esse dado. Com valor guardado, a lista é ARQUIVADA.
+      this.prisma.workFieldValue.count({ where: { orgId, field: { listId: id } } }),
     ]);
     if (vivas > 0) throw new BadRequestException(`A lista tem ${vivas} tarefa${vivas === 1 ? '' : 's'} sem arquivar. Arquive todas antes de excluir.`);
     const antes = { name: lista.name, folderId: lista.folderId };
-    if (arquivadas === 0) {
-      const r = await this.prisma.workList.deleteMany({ where: { id, orgId, arquivadaEm: null, tasks: { none: {} } } }).catch((e: unknown) => {
+    if (arquivadas === 0 && valoresDosCampos === 0) {
+      const r = await this.prisma.workList.deleteMany({
+        where: { id, orgId, arquivadaEm: null, tasks: { none: {} }, fields: { none: { values: { some: {} } } } },
+      }).catch((e: unknown) => {
         if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === 'P2003') throw new ConflictException(LISTA_MUDOU_NO_MEIO);
         throw e;
       });
