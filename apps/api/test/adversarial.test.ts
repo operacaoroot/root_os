@@ -611,6 +611,24 @@ describe('a instrumentação — antes de medir defesa, medir o medidor', () => 
       // pasta do Google Drive das atas (origem `drive:<id>`), e `promptDasSugestoes` (o sexto) à ata
       // do Drive: nenhuma chamada nova, as mesmas duas cercas.
       'src/work/atas/leitor-do-granola.ts': 1,
+      // RODADA DOS AGENTES, 21/10/2026 (lane A3+TR): cinco cercas novas, uma por arquivo, todas
+      // em pedido montado pelo OS (nenhuma cerca o pedido de quem digitou no painel).
+      //   · dossie.ts (IM-02): no pedido do pesquisador pelo laço do agente, as respostas do
+      //     cliente à triagem, o texto público que o sócio colou e os trechos da memória. As
+      //     regras e o formato do dossiê ficam FORA da cerca (são do OS);
+      'src/onboarding/trilho/dossie.ts': 1,
+      //   · kit.ts (IM-07): o manifesto do fechamento (tem as dores do lead, com minuto) e as
+      //     notas do contexto do cliente (respostas dele, notas da conversa) no pedido do kit;
+      'src/onboarding/trilho/kit/kit.ts': 1,
+      //   · cobranca.ts (TR-07): os títulos das tarefas no pedido da frase do cobrador (parte
+      //     deles veio de importação ou de ata). As contagens ficam FORA: são do sistema;
+      'src/work/cobranca/cobranca.ts': 1,
+      //   · delegador.ts (TR-09): o título e a descrição da tarefa repartida. As pessoas e os
+      //     agentes do cadastro, que o modelo escolhe, ficam FORA;
+      'src/work/delegador/delegador.ts': 1,
+      //   · triagem.ts (TR-08): o título e o contexto das pendências sem cliente explícito (o
+      //     contexto pode ter texto de cliente, ex. a mensagem de WhatsApp da CO-16).
+      'src/work/triagem-da-caixa/triagem.ts': 1,
     };
 
     const porArquivo: Record<string, number> = {};

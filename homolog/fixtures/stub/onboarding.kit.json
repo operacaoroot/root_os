@@ -1,0 +1,6 @@
+{
+  "tarefa": "onboarding.kit",
+  "_sobre": "Resposta do stub para o montador do kit (IM-07, rodada dos agentes 21/10/2026). Sem número: o parser descarta item com número que não está no manifesto nem nas notas. Dado fictício.",
+  "respostas": [],
+  "padrao": "{\"resumo\": \"Implantação de uma padaria que quer a lista de produção a partir das encomendas.\", \"objetivos\": [\"Tirar a conferência das encomendas da mão de quem produz.\"], \"entregaveis\": [\"Lista de produção do dia seguinte gerada das encomendas.\", \"Painel com as encomendas por cliente.\"], \"acessos\": [\"Planilha compartilhada das encomendas.\", \"Exportação do caixa da loja.\"], \"agenda\": [\"Primeiro encontro: validar a lista de produção com a equipe.\"], \"riscos\": [\"Encomenda que chega fora do WhatsApp fica de fora da lista.\"], \"perguntas\": [\"Quantas encomendas chegam por dia?\", \"Quem confere a lista antes de produzir?\"]}"
+}

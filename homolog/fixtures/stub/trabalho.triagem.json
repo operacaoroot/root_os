@@ -1,0 +1,6 @@
+{
+  "tarefa": "trabalho.triagem",
+  "_sobre": "Resposta do stub para a triagem da caixa (TR-08): sem regra que case, ninguém ganha cliente (o parser só aceita nome que está no texto do item). A triagem cai nos grupos da regra.",
+  "respostas": [],
+  "padrao": "{\"itens\": []}"
+}

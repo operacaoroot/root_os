@@ -25,6 +25,7 @@ import { BotaoDeFiltros, type DefinicaoDeFiltro, type ValoresDeFiltro } from '@/
 import { IniciarOnboardingDaImplantacao } from './IniciarOnboardingDaImplantacao';
 import { ArvoreDoTrabalho } from './ArvoreDoTrabalho';
 import { QuemTrabalhaNaEtapa } from './QuemTrabalhaNaEtapa';
+import { DelegadorDaTarefa } from './DelegadorDaTarefa';
 import { DatasNoBalao, ProximaDataNoCartao } from './DatasDoCartao';
 import { diaCompleto, diaCurto, diaComSemana, instanteComSemana, instanteCurto } from '@/lib/datas-do-cartao';
 import { AtividadeDaTarefa } from './AtividadeDaTarefa';
@@ -2289,6 +2290,7 @@ function PainelTarefa({ id, estrutura, editable, token, usuarioId, aba = 'tarefa
         ) : null}
         {trilho && <QuemTrabalhaNaEtapa trilhoId={trilho.id} token={token} />}
         <FontesDaTarefa taskId={t.id} />
+        <DelegadorDaTarefa taskId={t.id} aoCriarSubtarefa={onMudou} />
         <EditorialTaskLink taskId={t.id} />
         <OrigemComercialDaTarefa taskId={t.id} />
         {/* linha de propriedades — tudo editável */}

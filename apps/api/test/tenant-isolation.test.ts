@@ -451,6 +451,7 @@ const ALVOS: Alvo[] = [
   { tabela: 'WorkApontamento', escopo: 'filho', chaveSql: '"id"', nota: 'Horas de gente por cliente e por etapa: diz quanto a empresa cobra e quanto gasta. Número comercial que a vizinha não pode ver.' },
   { tabela: 'AtaSugestao', escopo: 'tenant', chaveSql: '"id"', nota: 'A sugestão de tarefa lida de uma ata do Trabalho (rodada do painel P3): o título, o dono sugerido, o prazo e o TRECHO da reunião de onde saiu. Ler a da outra empresa é ler o que ela combinou em reunião e com quem; ESCREVER é pôr tarefa na fila de aceite dela, ou aceitar por ela. Raiz da empresa, não filha: a ata vive em duas tabelas e o orgId vem do insert.' },
   { tabela: 'Pendencia', escopo: 'tenant', chaveSql: '"id"', nota: 'A pendência que um agente ou rotina deixa para uma pessoa (rodada dos agentes, 21/10/2026): o arquivo de cliente sem subpasta, a tarefa vencida, a mensagem de WhatsApp sem dono, a reunião fora do padrão. Ler a da outra empresa é ler o que chegou para ela e de quem; ESCREVER é decidir por ela. Raiz da empresa: o refId aponta para tabelas diferentes, sem FK.' },
+  { tabela: 'DelegacaoSugestao', escopo: 'tenant', chaveSql: '"id"', nota: 'A subtarefa que o Delegador (TR-09, rodada dos agentes, 21/10/2026) propôs para uma tarefa que está com um agente: título, dono sugerido e prazo. Ler a da outra empresa é ler como ela reparte o trabalho e com quem; ESCREVER é pôr subtarefa na fila de aceite dela, ou aceitar por ela. Raiz da empresa: o orgId vem do insert, e a tarefa-mãe entra por chave composta (taskId, orgId).' },
   { tabela: 'VistaSalva', escopo: 'tenant', chaveSql: '"id"', nota: 'A vista salva de uma pessoa (rodada do trabalho T3): ordenação, agrupamento, colunas e filtros de Minhas tarefas e do quadro, com o nome que ela deu. LER a da outra empresa é ler como alguém de lá organiza o trabalho e por quais clientes filtra; ESCREVER é trocar a vista padrão de uma pessoa da outra casa. Raiz da empresa; o serviço ainda filtra por userId.' },
   { tabela: 'CaixaVisto', escopo: 'tenant', chaveSql: '"id"', nota: 'O "limpei isto" da caixa de entrada (rodada do painel P1): quem leu qual evento de qual tarefa, e até quando limpou tudo. Ler a da outra empresa é saber o que cada pessoa dela já viu; ESCREVER é sumir com recado da caixa de alguém de outra casa. Raiz da empresa, não filha: o evento vive em duas tabelas e o orgId vem do insert.' },
 
@@ -1324,6 +1325,13 @@ async function semear(c: PoolClient, rotulo: 'A' | 'B', vec: string): Promise<vo
   reg('AtaSugestao', await ins(c, 'AtaSugestao', {
     id: crypto.randomUUID(), orgId, ataRef: `memoria:ata_${rotulo}_${MARCA}`,
     titulo: `Tarefa combinada na reunião da org ${rotulo}`, trecho: `Trecho privado da ata da org ${rotulo}`,
+    estado: 'rascunho', atualizadaEm: new Date(),
+  }));
+
+  // O delegador (TR-09, rodada dos agentes, 21/10/2026): a subtarefa proposta, à espera de gente.
+  reg('DelegacaoSugestao', await ins(c, 'DelegacaoSugestao', {
+    id: crypto.randomUUID(), orgId, taskId: tarefaId, titulo: `Subtarefa proposta da org ${rotulo}`,
+    descricao: `Descrição privada da org ${rotulo}`, donoTipo: 'pessoa', donoUsuarioId: userId,
     estado: 'rascunho', atualizadaEm: new Date(),
   }));
 

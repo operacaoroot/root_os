@@ -24,6 +24,11 @@
  * O nome do lead leva ao Funil vivo com o painel do lead aberto na aba
  * Decisões: aqui não há o provedor do painel, porque a query `?aba=` já é a
  * aba da caixa.
+ *
+ * RODADA DOS AGENTES (21/10/2026): a aba passa a mostrar também as PENDÊNCIAS
+ * dos agentes (`PendenciasDaCaixa.tsx`), para TODA pessoa da caixa, antes da fila
+ * do comercial. A fila do comercial continua só para quem tem `leads.ver` com o
+ * módulo `leads` ligado; sem isso, a aba traz só as pendências.
  */
 import { useState } from 'react';
 import Link from 'next/link';
@@ -34,6 +39,7 @@ import { useModulos } from '@/components/modulos';
 import { useCarregar } from '../comercial/_ui';
 import { CartaoDeDecisao } from '../comercial/_decisao';
 import { Carregando, ErroComRetentativa, FOCO, ROTULO, Vazio } from './comum';
+import { ListaDePendencias, type PendenciasLidas } from './PendenciasDaCaixa';
 
 /** Quem vê a aba e o contador: `leads.ver` e o módulo `leads` ligado. */
 export function useVeDecisoes(): boolean {
@@ -78,7 +84,17 @@ export function ContadorDeDecisoes({ fila, aoAbrir }: { fila: FilaDoComercial; a
   );
 }
 
-export function AbaDecisoes({ fila }: { fila: FilaDoComercial }) {
+/** A aba: as pendências dos agentes (todos) e, para quem vê, a fila do comercial. */
+export function AbaDecisoes({ fila, pendencias }: { fila: FilaDoComercial | null; pendencias: PendenciasLidas }) {
+  return (
+    <div className="space-y-6">
+      <ListaDePendencias pendencias={pendencias} />
+      {fila && <DecisoesDoComercial fila={fila} />}
+    </div>
+  );
+}
+
+function DecisoesDoComercial({ fila }: { fila: FilaDoComercial }) {
   const { dados, erro, carregando, recarregar } = fila;
   const [aviso, setAviso] = useState<string | null>(null);
   // Os cartões que acabaram de ser respondidos saem com a transição antes da fila reler.
