@@ -14,6 +14,7 @@ import {
   TEMAS_DA_CARGA,
   TEMAS_OBRIGATORIOS,
   chaveDoTema,
+  capacidadesDaEmpresa,
   semearRoster,
   type AgenteDoRoster,
 } from '../src/agents/roster';
@@ -342,7 +343,14 @@ describe('o roteiro é o PROCEDIMENTO do agente, não uma lista da tela', () => 
     const assistente = ROSTER_DE_ENTRADA.find((a) => a.slug === SLUG_DO_ASSISTENTE);
     expect(assistente?.capacidades).not.toContain('whatsapp.mensagem.enviar');
     expect(assistente?.capacidades).not.toContain('financeiro.pagamento.baixar');
-    expect(assistente?.capacidades?.every((c) => c.startsWith('contexto.'))).toBe(true);
+    /*
+     * Desde a rodada dos agentes (21/10/2026, A1) o assistente é UMA definição (a do
+     * cadastro, CE-01) para a casa e para a empresa nova: o que a empresa sem módulo
+     * contratado alcança sai do FILTRO DE MÓDULO, na hora de semear. Sem módulo, sobra
+     * só a espinha, e toda ela é leitura.
+     */
+    const semModulo = capacidadesDaEmpresa(assistente?.capacidades ?? [], []);
+    expect(semModulo).toEqual(['contexto.memoria.buscar', 'numeros.painel.ler']);
   });
 });
 
