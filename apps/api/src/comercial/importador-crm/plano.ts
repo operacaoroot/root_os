@@ -1,4 +1,3 @@
-import { createHash } from 'node:crypto';
 
 import type { ComercialEtapa, ComercialProduto } from '@mktos/shared';
 
@@ -37,14 +36,19 @@ export const LISTAS_SOLTAS_QUE_FICAM = new Set(['operacao']);
  */
 export const LISTA_SOLTA_COMERCIAL = 'comercial';
 /**
- * Listas soltas de um CONTATO que a ata manda tirar (adendo A2), pelo sha256 do nome
- * normalizado (`hashDoNome`): o nome de uma pessoa não entra no código. Os cartões são
- * arquivados e a lista também (a regra da "Teste teste": arquivar, nunca apagar).
+ * Listas soltas de um CONTATO que a ata manda tirar (adendo A2), pelo ID da lista: o
+ * nome é de uma pessoa e não entra no código (um sha256 do nome, sem sal, se desfaz
+ * por tentativa; o id não diz nada). O id é o da cópia de 19/10, que é o da produção
+ * (a cópia é o dump). Os cartões são arquivados e a lista também (a regra da "Teste
+ * teste": arquivar, nunca apagar), e só se ela ainda estiver solta e com no máximo
+ * `MAXIMO_DE_CARTOES_DA_LISTA_DE_CONTATO` cartão ativo: lista que cresceu com trabalho
+ * de verdade fica e vai às sobras.
  */
 export const LISTAS_DE_CONTATO_A_TIRAR: readonly string[] = [
   // a lista solta de um contato, 1 cartão de lixo, a ata de 21/10 manda tirar
-  '9d60c70860d2439aa41c0262e90ba579deb9b51ecbbcbcb9c9558f0b376964dc',
+  '958b54fc-6882-41bd-98b2-b7014ab37797',
 ];
+export const MAXIMO_DE_CARTOES_DA_LISTA_DE_CONTATO = 1;
 
 /** Minúsculas, sem acento, só letras e números separados por um espaço. */
 export function normalizar(s: string | null | undefined): string {
@@ -54,11 +58,6 @@ export function normalizar(s: string | null | undefined): string {
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, ' ')
     .trim();
-}
-
-/** O sha256 do nome normalizado: para achar uma lista sem escrever o nome dela no código. */
-export function hashDoNome(nome: string | null | undefined): string {
-  return createHash('sha256').update(normalizar(nome)).digest('hex');
 }
 
 export type DestinoDoStatus =
@@ -443,8 +442,17 @@ export function citacaoDoTitulo(titulo: string): CitacaoDoTitulo {
 
 export interface ChaveDoLead {
   texto: string;
-  tipo: 'empresa' | 'contato';
+  /**
+   * `empresa`: a empresa da ficha, ou a parte antes de "|" / "(" (a estrutura diz que é
+   * empresa). `nome`: o nome do lead inteiro, que pode ser só o primeiro nome de uma
+   * pessoa ("Ana"). `contato`: o contato ou a parte de dentro. Só a de EMPRESA liga com
+   * uma palavra e só ela serve ao "começa por" (revisão do adendo: "FUP Ana" ligava ao
+   * lead "Ana", e "Proposta Ana Paula…" também).
+   */
+  tipo: 'empresa' | 'nome' | 'contato';
 }
+
+const PESO_DA_CHAVE: Record<ChaveDoLead['tipo'], number> = { empresa: 3, nome: 2, contato: 1 };
 
 /** As chaves de casamento de um lead (passo 3 da regra), normalizadas, com 3+ letras. */
 export function chavesDoLead(l: Pick<LeadExistente, 'nome' | 'empresa' | 'contato'>): ChaveDoLead[] {
@@ -452,12 +460,13 @@ export function chavesDoLead(l: Pick<LeadExistente, 'nome' | 'empresa' | 'contat
   const por = (s: string | null | undefined, tipo: ChaveDoLead['tipo']) => {
     const n = normalizar(s);
     if (n.length < 3) return;
-    // A mesma chave como empresa e como contato vale como empresa (a mais forte).
-    if (!out.has(n) || tipo === 'empresa') out.set(n, { texto: n, tipo });
+    // A mesma chave com dois papéis vale pelo mais forte (empresa > nome > contato).
+    const atual = out.get(n);
+    if (!atual || PESO_DA_CHAVE[tipo] > PESO_DA_CHAVE[atual.tipo]) out.set(n, { texto: n, tipo });
   };
-  for (const s of [l.nome, l.empresa]) {
+  for (const [s, inteira] of [[l.empresa, 'empresa'], [l.nome, 'nome']] as const) {
     if (!s) continue;
-    por(s, 'empresa');
+    por(s, inteira);
     const m = s.match(/^([^|(]*)[|(]\s*([^|)]*)/);
     if (m) {
       por(m[1], 'empresa');
@@ -505,10 +514,12 @@ export function casarCitado(nome: string, leads: readonly LeadParaCasar[]): Casa
   if (iguais.length > 1) return { tipo: 'ambigua', motivo: `mais de um lead com o mesmo nome (${iguais.length})`, candidatos: iguais };
   if (umaPalavra) {
     const soContato = unicos(comChaves.filter((l) => l.chaves.some((k) => k.texto === c)).map((l) => l.id));
-    if (soContato.length) return { tipo: 'ambigua', motivo: 'primeiro nome sozinho: igual só ao contato de um lead', candidatos: soContato };
+    if (soContato.length) return { tipo: 'ambigua', motivo: 'um nome só, igual ao nome ou ao contato de um lead sem ser empresa: pode ser o primeiro nome de alguém', candidatos: soContato };
   }
 
-  const comecam = unicos(comChaves.filter((l) => l.chaves.some((k) => k.tipo === 'empresa' && c.startsWith(`${k.texto} `))).map((l) => l.id));
+  // "Começa por" só com chave de EMPRESA de duas palavras ou mais: uma palavra só ("Casa")
+  // é curta demais para dizer que "Casa do Pão…" é ela.
+  const comecam = unicos(comChaves.filter((l) => l.chaves.some((k) => k.tipo === 'empresa' && k.texto.includes(' ') && c.startsWith(`${k.texto} `))).map((l) => l.id));
   if (comecam.length === 1) return { tipo: 'lead', leadId: comecam[0], como: 'comeca' };
   if (comecam.length > 1) return { tipo: 'ambigua', motivo: `o citado começa pelo nome de mais de um lead (${comecam.length})`, candidatos: comecam };
 

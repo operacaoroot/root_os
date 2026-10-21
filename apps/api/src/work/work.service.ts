@@ -350,7 +350,8 @@ export class WorkService {
 
   /** Mover lista troca só a linha da lista: as tarefas e os IDs delas ficam onde estão. */
   async editarLista(orgId: string, actorId: string, id: string, input: TrabListaUpdateInput) {
-    const antes = await this.prisma.workList.findFirst({ where: { id, orgId }, select: { folderId: true, spaceId: true, name: true } });
+    // A lista do comercial não é da árvore: mora no Funil vivo e não se move, renomeia nem apaga daqui.
+    const antes = await this.prisma.workList.findFirst({ where: { id, orgId, AND: [foraDaArvore()] }, select: { folderId: true, spaceId: true, name: true } });
     if (!antes) throw new NotFoundException('Lista não encontrada');
     const move = input.folderId !== undefined || input.spaceId !== undefined;
     /*
@@ -406,7 +407,7 @@ export class WorkService {
 
   async apagarLista(orgId: string, actorId: string, id: string, input: TrabListaExcluirInput): Promise<TrabListaExcluida> {
     await this.exigirGenteNoTrabalho(orgId, actorId);
-    const lista = await this.prisma.workList.findFirst({ where: { id, orgId, arquivadaEm: null }, select: { id: true, name: true, folderId: true } });
+    const lista = await this.prisma.workList.findFirst({ where: { id, orgId, arquivadaEm: null, AND: [foraDaArvore()] }, select: { id: true, name: true, folderId: true } });
     if (!lista) throw new NotFoundException('Lista não encontrada');
     if (await this.ehListaDaImplantacao(orgId, id)) throw new BadRequestException(LISTA_DA_IMPLANTACAO_FICA);
     if (nomeParaConfirmar(input.confirmarNome) !== nomeParaConfirmar(lista.name)) {
@@ -461,7 +462,7 @@ export class WorkService {
    */
   async arquivarTarefasDaLista(orgId: string, actorId: string, id: string, input: TrabListaArquivarTarefasInput): Promise<TrabListaTarefasArquivadas> {
     await this.exigirGenteNoTrabalho(orgId, actorId);
-    const lista = await this.prisma.workList.findFirst({ where: { id, orgId, arquivadaEm: null }, select: { id: true, name: true } });
+    const lista = await this.prisma.workList.findFirst({ where: { id, orgId, arquivadaEm: null, AND: [foraDaArvore()] }, select: { id: true, name: true } });
     if (!lista) throw new NotFoundException('Lista não encontrada');
     if (await this.ehListaDaImplantacao(orgId, id)) throw new BadRequestException(LISTA_DA_IMPLANTACAO_FICA);
     await exigirAcessoAtual(this.prisma, orgId, actorId, ['tarefas.editar']);
@@ -638,7 +639,7 @@ export class WorkService {
    */
   async moverTarefasDaLista(orgId: string, actorId: string, id: string, input: TrabListaMoverTarefasInput): Promise<TrabListaTarefasMovidas> {
     await this.exigirGenteNoTrabalho(orgId, actorId);
-    const origem = await this.prisma.workList.findFirst({ where: { id, orgId, arquivadaEm: null }, select: { id: true, name: true } });
+    const origem = await this.prisma.workList.findFirst({ where: { id, orgId, arquivadaEm: null, AND: [foraDaArvore()] }, select: { id: true, name: true } });
     if (!origem) throw new NotFoundException('Lista não encontrada');
     if (await this.ehListaDaImplantacao(orgId, id)) throw new BadRequestException(LISTA_DA_IMPLANTACAO_FICA);
     if (input.destinoId === id) throw new BadRequestException('Escolha outra lista para receber as tarefas.');

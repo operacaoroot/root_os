@@ -52,7 +52,11 @@ export async function acharOuCriarListaDoComercial(db: Cliente, orgId: string): 
   const include = { statuses: { orderBy: { order: 'asc' as const }, select: { id: true, name: true, type: true, order: true } } };
   const ja = await db.workList.findFirst({ where: { orgId, externalId: LISTA_DO_COMERCIAL }, include });
   const area = await acharOuCriarAreaDoComercial(db, orgId);
-  if (ja) return { id: ja.id, areaId: ja.areaPadraoId ?? area, statuses: ja.statuses, criada: false };
+  if (ja) {
+    // Arquivada por fora (a árvore não a alcança, mas o banco sim): volta, senão toda tarefa nova nasceria invisível.
+    if (ja.arquivadaEm) await db.workList.updateMany({ where: { id: ja.id, orgId }, data: { arquivadaEm: null } });
+    return { id: ja.id, areaId: ja.areaPadraoId ?? area, statuses: ja.statuses, criada: false };
+  }
   const espaco = await db.workSpace.upsert({
     where: { orgId_name: { orgId, name: 'Tarefas' } },
     update: {},

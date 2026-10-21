@@ -319,6 +319,18 @@ describe.skipIf(!URL)('árvore: contra o Postgres', () => {
     expect(await svc.apagarLista(CASA, EU, outra.id, { confirmarNome: 'Lixo' })).toEqual({ id: outra.id, modo: 'arquivada', tarefasArquivadas: 2 });
   });
 
+  it('a lista do comercial não se edita pela árvore: renomear, mover, arquivar, mover tarefas e excluir = 404', async () => {
+    const comercial = await lista(CASA, null, 'Tarefas do comercial', ['Atualizar o funil'], { externalId: 'comercial:tarefas' });
+    const outra = await lista(CASA, null, 'Operação');
+    expect((await erro(() => svc.editarLista(CASA, EU, comercial.id, { name: 'Outra' }))).status).toBe(404);
+    expect((await erro(() => svc.arquivarTarefasDaLista(CASA, EU, comercial.id, { esperadas: 1 }))).status).toBe(404);
+    expect((await erro(() => svc.moverTarefasDaLista(CASA, EU, comercial.id, { destinoId: outra.id, esperadas: 1 }))).status).toBe(404);
+    expect((await erro(() => svc.apagarLista(CASA, EU, comercial.id, { confirmarNome: 'Tarefas do comercial' }))).status).toBe(404);
+    const l = await prisma.workList.findUniqueOrThrow({ where: { id: comercial.id } });
+    expect([l.name, l.arquivadaEm]).toEqual(['Tarefas do comercial', null]);
+    expect(await prisma.workTask.count({ where: { listId: comercial.id, archived: false } })).toBe(1);
+  });
+
   it('mover e excluir com campo próprio da lista: a lista é arquivada, e o valor que a tarefa movida guarda fica', async () => {
     const sai = await lista(CASA, null, 'Propostas', ['Uma']);
     const destino = await lista(CASA, null, 'Operação');

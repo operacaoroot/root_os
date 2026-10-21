@@ -42,7 +42,7 @@ import {
   destinoDaTarefaDoComercial,
   donoPeloVendedor,
   etapaNoDestino,
-  hashDoNome,
+  MAXIMO_DE_CARTOES_DA_LISTA_DE_CONTATO,
   montarPlano,
   normalizar,
   precisaMover,
@@ -191,7 +191,7 @@ export interface OpcoesDoImportador {
   /** A origem da web para o link do lead no comentário (`https://os...`); sem ela, o caminho relativo. */
   web?: string | null;
   agora?: Date;
-  /** Os sha256 dos nomes das listas de contato a tirar (A2). Padrão: `LISTAS_DE_CONTATO_A_TIRAR`; o teste injeta o seu. */
+  /** Os ids das listas de contato a tirar (A2). Padrão: `LISTAS_DE_CONTATO_A_TIRAR`; o teste injeta o seu. */
   listasDeContatoATirar?: readonly string[];
 }
 
@@ -1089,14 +1089,19 @@ class Execucao {
   }
 
   // ------------------------------------------------------------------ a lista solta de um contato (A2)
-  /** A lista solta de um contato que a ata manda tirar (pelo hash do nome): cartões e lista arquivados, como a "Teste teste". */
+  /** A lista solta de um contato que a ata manda tirar (pelo id): cartões e lista arquivados, como a "Teste teste". */
   private async listasDeContato(): Promise<void> {
-    const hashes = new Set(this.opcoes.listasDeContatoATirar ?? LISTAS_DE_CONTATO_A_TIRAR);
-    if (!hashes.size) return;
-    const listas = (await this.prisma.workList.findMany({ where: { orgId: this.orgId, folderId: null }, select: { id: true, name: true, arquivadaEm: true }, orderBy: [{ createdAt: 'asc' }, { id: 'asc' }] }))
-      .filter((l) => hashes.has(hashDoNome(l.name)));
+    const ids = [...new Set(this.opcoes.listasDeContatoATirar ?? LISTAS_DE_CONTATO_A_TIRAR)];
+    if (!ids.length) return;
+    const listas = await this.prisma.workList.findMany({ where: { orgId: this.orgId, id: { in: ids }, folderId: null }, select: { id: true, name: true, arquivadaEm: true }, orderBy: [{ createdAt: 'asc' }, { id: 'asc' }] });
     for (const l of listas) {
       const tarefas = await this.prisma.workTask.findMany({ where: { orgId: this.orgId, listId: l.id }, select: { id: true, title: true, archived: true }, orderBy: [{ createdAt: 'asc' }, { id: 'asc' }] });
+      // A ata viu um cartão de lixo. Se a lista cresceu, há trabalho de verdade nela: fica, e vai às sobras.
+      const ativos = tarefas.filter((t) => !t.archived).length;
+      if (ativos > MAXIMO_DE_CARTOES_DA_LISTA_DE_CONTATO) {
+        this.sobra(l.id, `(lista) ${l.name}`, 'Sem pasta', `a lista do contato tem ${ativos} cartões ativos, mais do que a ata viu: fica onde está; o Rodrigo decide`);
+        continue;
+      }
       for (const t of tarefas) {
         if (t.archived) {
           this.conta('contato.cartoes', 'ja', t.title, 'cartão arquivado', t.id);
@@ -1240,7 +1245,7 @@ class Execucao {
       const n = normalizar(l.name);
       // No simular, as listas da estrutura ainda soltas seriam movidas pela estrutura sugerida;
       // a de contato e a Comercial (com tarefa que sobrou) já foram tratadas acima.
-      if (tratadas.has(n) || deContato.has(hashDoNome(l.name)) || (!this.valer && daEstrutura.has(n))) continue;
+      if (tratadas.has(n) || deContato.has(l.id) || (!this.valer && daEstrutura.has(n))) continue;
       this.sobra(l.id, `(lista) ${l.name}`, 'Sem pasta', 'lista solta fora da estrutura (parece teste): fica onde está; o Rodrigo decide');
     }
   }

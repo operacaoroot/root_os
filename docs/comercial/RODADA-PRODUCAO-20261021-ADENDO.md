@@ -7,7 +7,7 @@
 
 1. "Gestão" é uma **pasta dentro de Tarefas** (a árvore de pastas do Trabalho), não uma seção do menu. "Só quero uma subdivisão mais coesa." (A rodada principal já fez isso no P3; conferir que nada virou item de menu.)
 2. "**Comercial são leads, vai para dentro do Funil vivo.**" (A lista solta "Comercial" da produção.)
-3. "**Pode apagar o do Jorge.**" (A lista solta "Jorge Tabeliao", 1 cartão de lixo.)
+3. "**Pode apagar o do contato.**" (A lista solta com o nome de um contato, 1 cartão de lixo; o nome saiu deste documento na revisão.)
 4. "Quero uma **forma fácil de editar essas pastas: apagando, editando e criando novas**."
 
 A árvore que ele espera ver em Tarefas depois da importação:
@@ -30,7 +30,7 @@ O que há nela na produção (lido em 21/10 00h; sem nomes aqui): 15 tarefas (13
 - Depois de tudo importado, a lista "Comercial" fica sem tarefa ativa e é **arquivada** (some da árvore, como a pasta CRM).
 - Tudo dentro do mesmo `importar-crm` (`--simular` / `--valer`, idempotente, auditoria `importacao.crm`, cartão de origem arquivado com o link).
 
-## A2 — Jorge Tabeliao sai
+## A2 — A lista do contato sai
 
 No importador, junto com a limpeza: arquivar o único cartão e **excluir a lista** (a mesma regra da Teste teste). Listada no plano.
 
@@ -50,7 +50,7 @@ Na árvore de pastas de Tarefas (a coluna da esquerda do Trabalho), direto onde 
 
 ## A4 — Provas e fechamento
 
-- `importar-crm` provado de novo no banco descartável da cópia de 19/10 (a lista Comercial e a Jorge Tabeliao existem nela? se não, fixture sintética com a mesma forma): `--simular`, `--valer`, `--valer`, `--simular` = zero; contagens no RESULTADO.
+- `importar-crm` provado de novo no banco descartável da cópia de 19/10 (a lista Comercial e a lista do contato existem nela? se não, fixture sintética com a mesma forma): `--simular`, `--valer`, `--valer`, `--simular` = zero; contagens no RESULTADO.
 - e2e `producao21.mjs` ganha os passos da árvore (criar, renomear, apagar, mover) e do bloco "Tarefas do comercial" no funil.
 - Imagem nova nas duas stacks; suítes sem vermelho novo; revisor curto: apagar nunca leva tarefa ativa sem a pessoa escolher; importador não liga tarefa ao lead errado; nada de nome no git.
 - "Para publicar" atualizado: as migrations e variáveis das duas rodadas e a sequência do importador.

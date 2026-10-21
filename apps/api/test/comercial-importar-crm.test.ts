@@ -34,7 +34,7 @@ import {
   donoPeloVendedor,
   empresaEContato,
   etapaNoDestino,
-  hashDoNome,
+  MAXIMO_DE_CARTOES_DA_LISTA_DE_CONTATO,
   montarPlano,
   nomeParecido,
   normalizar,
@@ -208,7 +208,7 @@ describe('importador do CRM: a parte pura', () => {
     expect(citacaoDoTitulo('Fulana — Marcar onboarding')).toEqual({ tipo: 'citado', nome: 'Fulana' });
     expect(citacaoDoTitulo('Fulana Teste — Cobrar preenchimento e marcar nova conversa')).toEqual({ tipo: 'citado', nome: 'Fulana Teste' });
     expect(citacaoDoTitulo('FUP Oficina Sintética')).toEqual({ tipo: 'citado', nome: 'Oficina Sintética' });
-    expect(citacaoDoTitulo('Proposta Lumen e instalação do OS')).toEqual({ tipo: 'citado', nome: 'Lumen e instalação do OS' });
+    expect(citacaoDoTitulo('Proposta Ateliê Sintético e instalação do OS')).toEqual({ tipo: 'citado', nome: 'Ateliê Sintético e instalação do OS' });
     expect(citacaoDoTitulo('Proposta Ciclano Souza — fazer FUP')).toEqual({ tipo: 'citado', nome: 'Ciclano Souza' });
     expect(citacaoDoTitulo('Marcar reunião - Lexidoc')).toEqual({ tipo: 'citado', nome: 'Lexidoc' });
     expect(citacaoDoTitulo('Confirmar reunião com o Beltrano')).toEqual({ tipo: 'citado', nome: 'Beltrano' });
@@ -230,7 +230,7 @@ describe('importador do CRM: a parte pura', () => {
 
   it('A1: o casamento (igual, começa pela chave), as ambíguas que nunca ligam e a tarefa concluída que não cria lead', () => {
     const leads = [
-      { id: 'l-lumen', nome: 'Lumen | Carla Teste', empresa: null },
+      { id: 'l-lumen', nome: 'Ateliê Sintético | Carla Teste', empresa: null },
       { id: 'l-padaria', nome: 'Padaria Sintética', empresa: 'Padaria Sintética', contato: 'Fulana Teste' },
       { id: 'l-oficina', nome: 'Oficina Sintética', empresa: 'Oficina Sintética', contato: 'Beltrano Silva' },
       { id: 'l-lexi', nome: 'Lexidr.', empresa: null },
@@ -238,20 +238,27 @@ describe('importador do CRM: a parte pura', () => {
       { id: 'l-gama2', nome: 'Gama', empresa: null },
       { id: 'l-orion', nome: 'Orion (Rui Teste)', empresa: null },
     ];
-    expect(chavesDoLead(leads[0])).toEqual([{ texto: 'lumen carla teste', tipo: 'empresa' }, { texto: 'lumen', tipo: 'empresa' }, { texto: 'carla teste', tipo: 'contato' }]);
+    expect(chavesDoLead(leads[0])).toEqual([{ texto: 'atelie sintetico carla teste', tipo: 'nome' }, { texto: 'atelie sintetico', tipo: 'empresa' }, { texto: 'carla teste', tipo: 'contato' }]);
     // igual: empresa, contato (duas palavras ou mais), a parte antes de "(" e a de dentro
     expect(casarCitado('Oficina Sintética', leads)).toEqual({ tipo: 'lead', leadId: 'l-oficina', como: 'igual' });
     expect(casarCitado('fulana  TESTE', leads)).toEqual({ tipo: 'lead', leadId: 'l-padaria', como: 'igual' });
     expect(casarCitado('Orion', leads)).toEqual({ tipo: 'lead', leadId: 'l-orion', como: 'igual' });
     expect(casarCitado('Rui Teste', leads)).toEqual({ tipo: 'lead', leadId: 'l-orion', como: 'igual' });
     // começa pela chave de empresa em palavras inteiras
-    expect(casarCitado('Lumen e instalação do OS', leads)).toEqual({ tipo: 'lead', leadId: 'l-lumen', como: 'comeca' });
-    expect(casarCitado('Lumenx e instalação', leads).tipo).not.toBe('lead');
+    expect(casarCitado('Ateliê Sintético e instalação do OS', leads)).toEqual({ tipo: 'lead', leadId: 'l-lumen', como: 'comeca' });
+    expect(casarCitado('Ateliê Sintéticox e instalação', leads).tipo).not.toBe('lead');
     // ambíguas
     expect(casarCitado('Beltrano', leads)).toMatchObject({ tipo: 'ambigua', candidatos: ['l-oficina'] });
     expect(casarCitado('Fulana', leads)).toMatchObject({ tipo: 'ambigua', motivo: expect.stringMatching(/parecido/) });
     expect(casarCitado('Lexidoc', leads)).toMatchObject({ tipo: 'ambigua', candidatos: ['l-lexi'] });
-    expect(casarCitado('Gama', leads)).toMatchObject({ tipo: 'ambigua', motivo: expect.stringMatching(/mais de um lead/) });
+    expect(casarCitado('Gama', leads)).toMatchObject({ tipo: 'ambigua', candidatos: ['l-gama1', 'l-gama2'] });
+    // Revisão do adendo: o nome do lead que é só um primeiro nome não liga com uma palavra,
+    // e o "começa por" pede chave de empresa com duas palavras ou mais.
+    const comPessoa = [...leads, { id: 'l-ana', nome: 'Ana', empresa: null }, { id: 'l-casa', nome: 'Casa', empresa: 'Casa' }];
+    expect(casarCitado('Ana', comPessoa)).toMatchObject({ tipo: 'ambigua', candidatos: ['l-ana'] });
+    expect(casarCitado('Ana Paula Ferreira', comPessoa).tipo).not.toBe('lead');
+    expect(casarCitado('Casa', comPessoa)).toEqual({ tipo: 'lead', leadId: 'l-casa', como: 'igual' });
+    expect(casarCitado('Casa do Pão Sintético', comPessoa).tipo).not.toBe('lead');
     expect(casarCitado('Carla', leads)).toMatchObject({ tipo: 'ambigua' });
     expect(casarCitado('Zeferino', leads)).toMatchObject({ tipo: 'ambigua', motivo: expect.stringMatching(/um nome só/) });
     expect(casarCitado('Oficina Norte', leads)).toMatchObject({ tipo: 'ambigua', candidatos: ['l-oficina'] });
@@ -268,11 +275,10 @@ describe('importador do CRM: a parte pura', () => {
     expect(destinoDaTarefaDoComercial('Atualizar pipe', false, leads)).toMatchObject({ tipo: 'interna' });
   });
 
-  it('A2 e as listas que ficam: a lista de contato pelo hash do nome; a Comercial deixou de ficar', () => {
-    expect(hashDoNome('  CONTATO Fictício ')).toBe(hashDoNome('contato ficticio'));
-    expect(hashDoNome('contato ficticio')).toMatch(/^[0-9a-f]{64}$/);
+  it('A2 e as listas que ficam: a lista de contato pelo id; a Comercial deixou de ficar', () => {
     expect(LISTAS_DE_CONTATO_A_TIRAR).toHaveLength(1);
-    expect(LISTAS_DE_CONTATO_A_TIRAR[0]).toMatch(/^[0-9a-f]{64}$/);
+    expect(LISTAS_DE_CONTATO_A_TIRAR[0]).toMatch(/^[0-9a-f-]{36}$/);
+    expect(MAXIMO_DE_CARTOES_DA_LISTA_DE_CONTATO).toBe(1);
     expect([...LISTAS_SOLTAS_QUE_FICAM]).toEqual(['operacao']);
   });
 });
@@ -300,7 +306,7 @@ describe.skipIf(!URL)('importador do CRM contra o Postgres (fixture sintética)'
   const eu = () => ({ id: euId, nome: 'Rodrigo da Root', papeis: ['admin_master'] });
   // A lista de um contato do teste (nome fictício), injetada pelo hash: a constante do código é a da produção.
   const NOME_DO_CONTATO = 'Contato Fictício Sintético';
-  const rodar = (valer: boolean) => naEmpresa(() => svc.executar(ORG, eu(), { valer, web: 'https://os.exemplo.teste', listasDeContatoATirar: [hashDoNome(NOME_DO_CONTATO)] }));
+  const rodar = (valer: boolean) => naEmpresa(() => svc.executar(ORG, eu(), { valer, web: 'https://os.exemplo.teste', listasDeContatoATirar: [ids.listaContato] }));
   const soma = (r: RelatorioDoImportador, k: 'feitos' | 'aFazer') => PASSOS_DO_IMPORTADOR.reduce((s, p) => s + r.passos[p][k], 0);
 
   async function lista(nome: string, folderId: string | null, natureza: 'tarefas' | 'cadastro', etapas: [string, WorkStatusType][], campos: [string, WorkFieldType, string[]?][] = []) {
@@ -439,7 +445,7 @@ describe.skipIf(!URL)('importador do CRM contra o Postgres (fixture sintética)'
     await lista('Operação', null, 'tarefas', [['A fazer', 'open']]);
 
     // A1: a lista da ÁREA Comercial, solta (espaço, sem pasta), com as formas de título da produção (nomes fictícios).
-    ids.leadLumen = await leadAMao('Lumen | Carla Teste', 'qualificacao');
+    ids.leadLumen = await leadAMao('Ateliê Sintético | Carla Teste', 'qualificacao');
     ids.leadLexi = await leadAMao('Lexidr.', 'qualificacao');
     const area = await prisma.workArea.create({ data: { orgId: ORG, nome: 'Comercial', cor: '#2a78d6' }, select: { id: true } });
     ids.areaComercial = area.id;
@@ -456,7 +462,7 @@ describe.skipIf(!URL)('importador do CRM contra o Postgres (fixture sintética)'
     await tc('cAna', 'Ana Teste — Cobrar preenchimento e marcar nova conversa', 'A fazer'); // contato do lead que o CRM cria: liga
     await tc('cDora', 'Dora — Marcar onboarding', 'A fazer'); // primeiro nome sozinho (contato de um lead): ambígua
     await tc('cBeta', 'FUP Beta Sintética', 'A fazer'); // lead à mão, nome igual: liga
-    await tc('cLumen', 'Proposta Lumen e instalação do OS', 'A fazer'); // "Lumen | Carla Teste": começa pela chave, liga
+    await tc('cLumen', 'Proposta Ateliê Sintético e instalação do OS', 'A fazer'); // "Ateliê Sintético | Carla Teste": começa pela chave, liga
     await tc('cCiclano', 'Proposta Ciclano Souza — fazer FUP', 'A fazer', lucasId); // ninguém parecido: cria o lead
     await tc('cLexi', 'Marcar reunião - Lexidoc', 'A fazer'); // grafia abreviada: ambígua
     await tc('cBruno', 'Confirmar reunião com o Bruno', 'A fazer'); // primeiro nome: ambígua
