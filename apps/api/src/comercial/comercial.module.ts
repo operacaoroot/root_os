@@ -52,6 +52,10 @@ import { FechamentoService } from './fechamento.service';
 import { OnboardingAntecipadoController } from './onboarding-antecipado.controller';
 import { OnboardingAntecipadoService } from './onboarding-antecipado.service';
 import { ImportadorCrmService } from './importador-crm/importador-crm.service';
+// Adendo de 21/10/2026 (§A1): as tarefas do comercial (o bloco do Funil vivo e o do painel do lead).
+import { WorkModule } from '../work/work.module';
+import { TarefasDoComercialController } from './tarefas/tarefas-do-comercial.controller';
+import { TarefasDoComercialService } from './tarefas/tarefas-do-comercial.service';
 
 /*
  * O COCKPIT DO LEAD — módulo comercial (13/10/2026).
@@ -71,8 +75,8 @@ import { ImportadorCrmService } from './importador-crm/importador-crm.service';
  * bloco marcado abaixo.
  */
 @Module({
-  imports: [TenantsModule, AuthModule, LeadsModule, OnboardingModule, FinanceModule, RoutinesModule, ZapsignModule, MemoryModule],
-  controllers: [ComercialController, SalaController, SimuladorController, MensagensController, DinheiroController, WebhooksDoDinheiroController, InteligenciaController, FechadoForaController, OnboardingAntecipadoController, IntegracaoDoDigisacController, WebhookDoDigisacController, IntegracaoDaEvolutionController, SalaEstadoController],
+  imports: [TenantsModule, AuthModule, LeadsModule, OnboardingModule, FinanceModule, RoutinesModule, ZapsignModule, MemoryModule, WorkModule],
+  controllers: [ComercialController, SalaController, SimuladorController, MensagensController, DinheiroController, WebhooksDoDinheiroController, InteligenciaController, FechadoForaController, OnboardingAntecipadoController, IntegracaoDoDigisacController, WebhookDoDigisacController, IntegracaoDaEvolutionController, SalaEstadoController, TarefasDoComercialController],
   providers: [
     // --- orquestrador: o fio (único caminho de escrita de fato) e o registro de reações ---
     ReacoesRegistry,
@@ -116,6 +120,8 @@ import { ImportadorCrmService } from './importador-crm/importador-crm.service';
     OnboardingAntecipadoService,
     // --- rodada de produção 1 (o importador do CRM antigo: só pelo script `importar-crm`, sem rota) ---
     ImportadorCrmService,
+    // --- adendo de 21/10/2026, §A1 (as tarefas do comercial: WorkTask da lista do comercial ou com `leadId`) ---
+    TarefasDoComercialService,
     // --- lane E (inteligência: stub/ponte, diagnóstico, proposta, relator, vigia) ---
     // O provider (stub/ponte) é escolhido em `llm/llm.module.ts`; aqui, o leitor de ata, o
     // construtor e revisor de proposta e o assistente da dúvida (fase mínima).

@@ -34,6 +34,7 @@ import {
 import { BOTAO, BOTAO_PRIMARIO, CARTAO, Carregando, Chip, ErroDaAcao, INPUT, Rotulo } from '../_ui';
 import { IniciarOnboarding } from './IniciarOnboarding';
 import { LeituraEIdeias } from './LeituraEIdeias';
+import { TarefasDoLead } from './TarefasDoLead';
 import { usePainel } from './provedor';
 
 export function AbaFio({ leadId, ficha: f, carregando, aoMudar }: { leadId: string; ficha: FichaDoLead | null; carregando: boolean; aoMudar: () => Promise<void> }) {
@@ -107,6 +108,9 @@ export function AbaFio({ leadId, ficha: f, carregando, aoMudar }: { leadId: stri
           <p className="mt-2 text-[11.5px] text-dim">A etapa anda quando o fato chega. O portão pede o que falta ao próprio lead, pela sala.</p>
         </section>
       </div>
+
+      {/* Adendo de 21/10/2026 (§A1): as tarefas do comercial ligadas a este lead. */}
+      <TarefasDoLead leadId={leadId} />
 
       {f.etapa === 'contrato' && (
         <p className="flex flex-wrap items-center gap-2 text-[12.5px] text-muted">

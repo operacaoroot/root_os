@@ -42,6 +42,8 @@ import { FioService, type EventoGravado } from './fio.service';
 import { produtoAlvo } from './pontuacao';
 import { decisaoSemPrazo } from './decisoes.service';
 import { proximaAcaoDoLead, saudeDoLead, type DecisaoParaProximaAcao } from './proxima-acao';
+import { tarefaDeListaVisivel } from '../work/arquivadas';
+import { diaEmSP, tarefasDosCartoes } from './tarefas/tarefa-do-cartao';
 import { avancar, avancarDepoisDaSessao, pendenciasDasEtapas, pendenciasDoMover, pendenciasQueRestam, podeSair, portoesDaEtapa, type EstadoParaPortao, type Veredicto } from './portoes';
 
 /*
@@ -841,10 +843,13 @@ export class FichaService {
     });
     // P5: o balão de quem moveu com pendência; U4: o aviso de quem moveu à mão. Só dos cartões que vão à tela.
     const ids = cartoes.map((c) => c.leadId);
-    const [baloes, avisos] = await Promise.all([this.baloes(orgId, ids), this.avisosDoMover(orgId, fichas)]);
+    const [baloes, avisos, tarefas] = await Promise.all([this.baloes(orgId, ids), this.avisosDoMover(orgId, fichas), this.tarefasDosCartoes(orgId, cartoes, agora)]);
     for (const c of cartoes) {
       c.balao = baloes.get(c.leadId) ?? null;
       c.avisoDoMover = avisos.get(c.leadId) ?? null;
+      const t = tarefas.get(c.leadId);
+      c.tarefa = t?.tarefa ?? null;
+      c.tarefasAbertas = t?.abertas ?? 0;
     }
     return {
       total,
@@ -857,6 +862,28 @@ export class FichaService {
         { etapa: 'saidas' as const, rotulo: 'Saídas', cartoes: cartoes.filter((c) => (COMERCIAL_SAIDAS as readonly string[]).includes(c.etapa)) },
       ],
     };
+  }
+
+  /**
+   * Adendo de 21/10/2026 (§A1): a tarefa aberta mais antiga de cada lead da tela
+   * e quantas estão abertas, numa consulta só para o funil inteiro (nunca uma por
+   * lead). Só leitura: a próxima ação da ficha não é gravada; o cartão decide qual
+   * das duas mostra primeiro (`tarefa-do-cartao.ts`).
+   */
+  private async tarefasDosCartoes(orgId: string, cartoes: readonly CartaoDoFunil[], agora: Date) {
+    if (!cartoes.length) return new Map<string, { tarefa: NonNullable<CartaoDoFunil['tarefa']>; abertas: number }>();
+    const linhas = await this.prisma.workTask.findMany({
+      where: {
+        orgId, archived: false, leadId: { in: cartoes.map((c) => c.leadId) },
+        AND: [{ status: { type: { not: 'closed' } } }, tarefaDeListaVisivel()],
+      },
+      select: { id: true, leadId: true, title: true, dueDate: true, createdAt: true, assignee: true, assigneeUser: { select: { name: true } } },
+    });
+    return tarefasDosCartoes(
+      linhas.map((l) => ({ id: l.id, leadId: l.leadId!, title: l.title, dueDate: l.dueDate, createdAt: l.createdAt, responsavel: l.assigneeUser?.name ?? l.assignee ?? null })),
+      new Map(cartoes.map((c) => [c.leadId, c.proximaAcao])),
+      diaEmSP(agora),
+    );
   }
 
   /**

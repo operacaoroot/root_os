@@ -8,7 +8,7 @@ import { COMERCIAL_MOTIVOS_DE_SAIDA, COMERCIAL_ROTULO_DA_ETAPA, COMERCIAL_SAIDAS
 import { BotaoDeFiltros } from '@/components/filtros/BotaoDeFiltros';
 import { VistasDoQuadro } from '@/components/trabalho/VistasDoQuadro';
 import { useAuth } from '@/lib/auth';
-import { ROTULO_DO_MOTIVO, ROTULO_DO_PRODUTO, descricaoJaDizQuando, diaSP, quandoRoda } from '@/lib/cockpit';
+import { ROTULO_DO_MOTIVO, ROTULO_DO_PRODUTO, diaSP } from '@/lib/cockpit';
 
 import { Aviso, BarraDaSaude, BOTAO, BOTAO_PRIMARIO, Carregando, Chip, Erro, FOCO, INPUT, useCarregar } from '../_ui';
 import { LinkDoLead, useMudouNoPainel } from '../_painel/provedor';
@@ -16,6 +16,8 @@ import { moverFocoNoFunil } from '../_painel/teclado';
 import { destinoDaColuna, fraseDoErro, moverCartao, opcoesDoMenu, rotuloCurto, voltaEmDoDia } from '../_funil/mover';
 import { caminhoDoFunil, definicoesDosFiltros, escreverEnderecoDoFunil, lerEnderecoDoFunil, valoresDoPainel, type VisaoDoFunil } from '../_funil/filtros-do-funil';
 import { RegistrarFechadoFora } from '../_funil/RegistrarFechadoFora';
+import { BlocoDeTarefasDoComercial } from '../_funil/TarefasDoComercial';
+import { contagemDeTarefas, proximaAcaoDoCartao, type LinhaDaProximaAcao } from '../_funil/proxima-acao-do-cartao';
 
 /*
  * TELA 04 · O FUNIL VIVO (lane C; painel na lane UX; mover na rodada do painel, P5;
@@ -31,6 +33,11 @@ import { RegistrarFechadoFora } from '../_funil/RegistrarFechadoFora';
  * No cabeçalho, o par [Vistas] [Filtros (n)] das tarefas, com o responsável
  * primeiro, e a troca Quadro · Lista. O estado mora no endereço. As colunas
  * rolam para o lado; as setas do teclado andam entre os cartões.
+ *
+ * Adendo de 21/10/2026 (§A1): no topo, o bloco recolhível "Tarefas do comercial"
+ * (as sem lead, com o filtro "Responsável" valendo para ele), nos dois formatos.
+ * No cartão, a tarefa aberta mais antiga do lead: como a próxima ação quando vem
+ * antes da da ficha, senão como segunda linha, e a contagem das abertas.
  */
 
 type Coluna = FunilVivo['colunas'][number];
@@ -185,6 +192,8 @@ export default function FunilVivoPage() {
         {(carregando || !pronto) && !dados && !erro && <Carregando linhas={2} altura="h-32" />}
       </header>
 
+      {pronto && <BlocoDeTarefasDoComercial pessoa={filtros.dono} />}
+
       {dados && visao === 'lista' && <ListaDoFunil cartoes={cartoes} />}
 
       {dados && visao === 'quadro' && (
@@ -249,6 +258,17 @@ export default function FunilVivoPage() {
   );
 }
 
+/** Uma linha de próxima ação: o texto e o tempo, com o atraso da tarefa em destaque. */
+function TextoDaAcao({ linha }: { linha: LinhaDaProximaAcao | null }) {
+  if (!linha) return <>próxima ação ausente</>;
+  return (
+    <>
+      {linha.texto}
+      {linha.quando && <span className={linha.atrasada ? 'text-warn' : 'text-dim'}> · {linha.quando}</span>}
+    </>
+  );
+}
+
 /**
  * O FORMATO LISTA (U4): uma linha por lead, com empresa, contato, etapa, dono,
  * produto, dias na etapa, próxima ação e pendências. A empresa abre o painel do
@@ -270,7 +290,8 @@ function ListaDoFunil({ cartoes }: { cartoes: CartaoDoFunil[] }) {
         </thead>
         <tbody>
           {cartoes.map((c) => {
-            const quando = descricaoJaDizQuando(c.proximaAcao?.descricao) ? '' : quandoRoda(c.proximaAcao?.quando);
+            const { principal, segunda } = proximaAcaoDoCartao(c);
+            const contagem = contagemDeTarefas(c.tarefasAbertas);
             return (
               <tr
                 key={c.leadId}
@@ -291,9 +312,10 @@ function ListaDoFunil({ cartoes }: { cartoes: CartaoDoFunil[] }) {
                 <td className="px-2.5 py-2 text-muted">{c.dono ?? 'sem responsável'}</td>
                 <td className="px-2.5 py-2 text-muted">{c.produto ? ROTULO_DO_PRODUTO[c.produto] : ''}</td>
                 <td className="px-2.5 py-2 tabular-nums">{c.diasNaEtapa}{c.parado ? <span className="text-warn"> · parado</span> : null}</td>
-                <td className="px-2.5 py-2 text-muted">
-                  {c.proximaAcao?.descricao ?? 'próxima ação ausente'}
-                  {quando && <span className="text-dim"> · {quando}</span>}
+                <td className="px-2.5 py-2 text-muted" data-testid={`funil-linha-proxima-${c.leadId}`}>
+                  <TextoDaAcao linha={principal} />
+                  {segunda && <span className="block text-[11.5px] text-dim"><TextoDaAcao linha={segunda} /></span>}
+                  {contagem && <span className="block text-[11px] text-dim">{contagem}</span>}
                 </td>
                 <td className="px-2.5 py-2">
                   {c.balao?.pendencias.length ? <span className="text-warn">{c.balao.pendencias.join('; ')}</span> : null}
@@ -334,7 +356,8 @@ function Cartao({
 }) {
   const [menu, setMenu] = useState(false);
   const botao = useRef<HTMLButtonElement>(null);
-  const quando = descricaoJaDizQuando(c.proximaAcao?.descricao) ? '' : quandoRoda(c.proximaAcao?.quando);
+  const { principal, segunda } = proximaAcaoDoCartao(c);
+  const contagem = contagemDeTarefas(c.tarefasAbertas);
   const naSaida = (COMERCIAL_SAIDAS as readonly string[]).includes(c.etapa);
   const rotuloDaSaida = naSaida && c.motivoSaida ? `${COMERCIAL_ROTULO_DA_ETAPA[c.etapa].replace('Saída · ', '').toLowerCase()} · ${ROTULO_DO_MOTIVO[c.motivoSaida]}` : null;
   const fecharMenu = () => {
@@ -395,11 +418,15 @@ function Cartao({
         />
       )}
       <BarraDaSaude saude={c.saude} />
-      <p className="mt-1.5 text-[12px] text-muted">
-        {rotuloDaSaida ?? c.proximaAcao?.descricao ?? 'próxima ação ausente'}
-        {quando && !rotuloDaSaida && <span className="text-dim"> · {quando}</span>}
+      <p className="mt-1.5 break-words text-[12px] text-muted" data-testid={`funil-proxima-${c.leadId}`}>
+        {rotuloDaSaida ?? <TextoDaAcao linha={principal} />}
         {c.voltaEm && <span className="text-dim"> · volta {diaSP(c.voltaEm)}</span>}
       </p>
+      {!rotuloDaSaida && segunda && (
+        <p className="mt-0.5 break-words text-[11.5px] text-dim" data-testid={`funil-segunda-${c.leadId}`}>
+          <TextoDaAcao linha={segunda} />
+        </p>
+      )}
       <div className="mt-1.5 flex flex-wrap gap-1">
         <span className="font-os-mono text-[10px] text-dim">{rotuloCurto(c.etapa)}</span>
         {c.dono && <Chip title="responsável">{c.dono}</Chip>}
@@ -407,6 +434,7 @@ function Cartao({
         {c.produto && <Chip>{ROTULO_DO_PRODUTO[c.produto]}</Chip>}
         {c.precisaDeDecisao && <Chip tom="brand">decisão sua</Chip>}
         {c.parado && <Chip tom="alerta">parado {c.diasNaEtapa} d</Chip>}
+        {contagem && <Chip title="tarefas do comercial abertas deste lead">{contagem}</Chip>}
       </div>
 
       {c.balao && (
