@@ -246,14 +246,15 @@ describe('P4: ocultar status vazios', () => {
 describe('P3: excluir lista e pasta pela árvore', () => {
   const menu = (id: string) => screen.getByTestId(id);
 
-  it('lista com tarefa: "Excluir lista" desabilitado e "Arquivar" antes, condicionado ao número visto', async () => {
+  it('lista com tarefa: "Arquivar" condicionado ao número visto; "Excluir lista" oferece o destino das tarefas (A3)', async () => {
     window.history.replaceState({}, '', '/trabalho?lista=l-rotina');
     post.mockResolvedValueOnce({ id: 'l-rotina', arquivadas: 1 });
     render(<TrabalhoPage />);
     await screen.findByText('Pagar o aluguel');
     fireEvent.click(menu('trabalho-lista-acoes-l-rotina'));
-    expect(screen.getByTestId('trabalho-lista-acoes-l-rotina-excluir')).toBeDisabled();
-    expect(screen.getByTestId('trabalho-lista-acoes-l-rotina-excluir')).toHaveTextContent('Arquive a tarefa antes.');
+    // Desde o A3 o item fica habilitado: o diálogo pergunta o que fazer com a tarefa.
+    expect(screen.getByTestId('trabalho-lista-acoes-l-rotina-excluir')).toBeEnabled();
+    expect(screen.getByTestId('trabalho-lista-acoes-l-rotina-excluir')).toHaveTextContent('Antes, a tarefa vai para outra lista ou é arquivada.');
     fireEvent.click(screen.getByTestId('trabalho-lista-acoes-l-rotina-arquivar'));
     const dialogo = await screen.findByRole('dialog');
     expect(dialogo).toHaveTextContent('Nada é apagado');
@@ -295,24 +296,30 @@ describe('P3: excluir lista e pasta pela árvore', () => {
     expect(screen.getByRole('dialog')).toBeInTheDocument();
   });
 
-  it('a lista da implantação não tem menu', async () => {
+  it('a lista da implantação tem o menu com Renomear e Excluir desabilitados e o porquê (A3)', async () => {
     window.history.replaceState({}, '', '/trabalho?lista=l-rotina');
     render(<TrabalhoPage />);
     await screen.findByText('Pagar o aluguel');
-    expect(screen.queryByTestId('trabalho-lista-acoes-l-onb')).toBeNull();
+    fireEvent.click(menu('trabalho-lista-acoes-l-onb'));
+    expect(screen.getByTestId('trabalho-lista-acoes-l-onb-renomear')).toBeDisabled();
+    expect(screen.getByTestId('trabalho-lista-acoes-l-onb-excluir')).toBeDisabled();
+    expect(screen.getByTestId('trabalho-lista-acoes-l-onb-excluir')).toHaveTextContent('porta da implantação de clientes');
+    expect(screen.queryByTestId('trabalho-lista-acoes-l-onb-arquivar')).toBeNull();
     expect(screen.getByTestId('trabalho-lista-acoes-l-exec')).toBeInTheDocument();
   });
 
-  it('pasta: só a vazia (sem lista nem pasta dentro) se exclui', async () => {
+  it('pasta: a vazia sai com confirmação simples; com conteúdo o item pede o destino; Clientes é protegida (A3)', async () => {
     del.mockResolvedValueOnce({ id: VAZIA, modo: 'apagada' });
     window.history.replaceState({}, '', '/trabalho?lista=l-rotina');
     render(<TrabalhoPage />);
     await screen.findByText('Pagar o aluguel');
-    // Gestão tem uma pasta dentro; Administrativo tem lista.
+    // Gestão tem uma pasta dentro; Administrativo tem lista: o diálogo pedirá o destino.
     fireEvent.click(menu(`trabalho-pasta-acoes-${GESTAO}`));
-    expect(screen.getByTestId(`trabalho-pasta-acoes-${GESTAO}-excluir`)).toBeDisabled();
+    expect(screen.getByTestId(`trabalho-pasta-acoes-${GESTAO}-excluir`)).toHaveTextContent('Antes, 1 pasta vai para outra pasta ou Sem pasta.');
     fireEvent.click(menu(`trabalho-pasta-acoes-${ADM}`));
-    expect(screen.getByTestId(`trabalho-pasta-acoes-${ADM}-excluir`)).toBeDisabled();
+    expect(screen.getByTestId(`trabalho-pasta-acoes-${ADM}-excluir`)).toBeEnabled();
+    fireEvent.click(menu(`trabalho-pasta-acoes-${CLIENTES}`));
+    expect(screen.getByTestId(`trabalho-pasta-acoes-${CLIENTES}-excluir`)).toBeDisabled();
     fireEvent.click(menu(`trabalho-pasta-acoes-${VAZIA}`));
     fireEvent.click(screen.getByTestId(`trabalho-pasta-acoes-${VAZIA}-excluir`));
     const dialogo = await screen.findByRole('dialog');

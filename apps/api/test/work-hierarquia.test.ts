@@ -422,7 +422,7 @@ describe.skipIf(!URL)('trabalho: espaço, pasta aninhada e lista', () => {
     expect(await erroDe(prisma.workList.update({ where: { id: lista.id }, data: { folderId: mae.id, spaceId: espaco.id } }))).toEqual(check);
   });
 
-  it('mover pasta registra de onde saiu e para onde foi; renomear não registra destino', async () => {
+  it('mover pasta registra de onde saiu e para onde foi; renomear registra só o nome (A3), sem destino', async () => {
     const espaco = await svc.criarEspaco(CASA, EU, { name: 'Operação' });
     const mae = await svc.criarPasta(CASA, EU, { name: 'Mãe' });
     const pasta = await svc.criarPasta(CASA, EU, { name: 'Pasta', spaceId: espaco.id });
@@ -434,7 +434,7 @@ describe.skipIf(!URL)('trabalho: espaço, pasta aninhada e lista', () => {
     expect(trilha).toHaveLength(2);
     expect(trilha).toEqual(expect.arrayContaining([
       { before: { spaceId: espaco.id, parentId: null }, after: { spaceId: null, parentId: mae.id } },
-      { before: null, after: null },
+      { before: { name: 'Pasta' }, after: { name: 'Pasta renomeada' } },
     ]));
   });
 

@@ -5583,6 +5583,8 @@ export interface TrabListaDto {
   /** Só na lista solta no espaço; a que está numa pasta herda o espaço dela. */
   spaceId: string | null;
   statuses: TrabStatusDto[]; fields: TrabCampoDto[];
+  /** `cadastro` não recebe tarefa movida de outra lista (A3); ausente = `tarefas`. */
+  natureza?: 'tarefas' | 'cadastro';
 }
 /**
  * `folders` traz TODAS as pastas, de qualquer nível, numa lista só: quem quiser

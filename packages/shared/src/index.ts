@@ -46,6 +46,9 @@ export * from './leitura-e-reacao.js';
 // A implantação de clientes numa tela só (rodada do trabalho T1, 19/10/2026): a lista
 // "Onboarding de cliente" da pasta "Clientes" — ver o cabeçalho de `implantacao.ts`.
 export * from './implantacao.js';
+// Editar a árvore do Trabalho onde a pessoa está olhando (adendo da rodada de produção 1, A3):
+// ver o cabeçalho de `arvore-do-trabalho.ts`.
+export * from './arvore-do-trabalho.js';
 // Iniciar o onboarding antes do negócio fechado (ajustes A2): ver `onboarding-antecipado.ts`.
 export * from './onboarding-antecipado.js';
 
