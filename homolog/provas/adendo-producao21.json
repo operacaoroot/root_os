@@ -1,0 +1,80 @@
+{
+  "inicio": "2026-10-21T06:52:14.248Z",
+  "web": "http://127.0.0.1:3031",
+  "passos": [
+    {
+      "n": 1,
+      "nome": "A3 · árvore: \"+ nova pasta\" inline (Enter salva), renomear com duplo clique, repetido no mesmo nível recusado",
+      "ok": true,
+      "ms": 2408,
+      "detalhe": {
+        "recusa": "Já existe uma pasta com esse nome neste lugar.",
+        "pastas": 2
+      }
+    },
+    {
+      "n": 2,
+      "nome": "A3 · árvore: arrastar a lista para outra pasta e reordenar com Alt+↓",
+      "ok": true,
+      "ms": 2237,
+      "detalhe": {
+        "listasNaPasta": 2
+      }
+    },
+    {
+      "n": 3,
+      "nome": "A3 · apagar pasta com listas: o diálogo pede o destino (Sem pasta), move as listas e apaga",
+      "ok": true,
+      "ms": 1278,
+      "detalhe": {
+        "listasMovidas": 2
+      }
+    },
+    {
+      "n": 4,
+      "nome": "A3 · apagar lista vazia pelo menu (nome digitado) e a pasta vazia que sobrou; 390 sem rolagem lateral",
+      "ok": true,
+      "ms": 2416,
+      "detalhe": {
+        "listasApagadas": 2
+      }
+    },
+    {
+      "n": 5,
+      "nome": "A1 · Funil vivo: bloco \"Tarefas do comercial\" com contagem, \"+ tarefa\" (Enter salva) e concluir",
+      "ok": true,
+      "ms": 1518,
+      "detalhe": {
+        "contagemAntes": 0
+      }
+    },
+    {
+      "n": 6,
+      "nome": "A1 · painel do lead: bloco \"Tarefas\", \"+ tarefa\" já ligada ao lead, e o cartão mostra a tarefa",
+      "ok": true,
+      "ms": 1993,
+      "detalhe": {
+        "linhaMostra": true
+      }
+    },
+    {
+      "n": 7,
+      "nome": "A1 · o bloco no claro e a 390, sem rolagem lateral",
+      "ok": true,
+      "ms": 1663
+    }
+  ],
+  "screenshots": [
+    "adendo-producao21-adendo-arvore-renomeada-escuro.png",
+    "adendo-producao21-adendo-apagar-pasta-escuro.png",
+    "adendo-producao21-adendo-arvore-390.png",
+    "adendo-producao21-adendo-funil-tarefas-escuro.png",
+    "adendo-producao21-adendo-painel-tarefas-escuro.png",
+    "adendo-producao21-adendo-funil-tarefas-claro.png",
+    "adendo-producao21-adendo-funil-tarefas-390.png"
+  ],
+  "avisos": [],
+  "ok": true,
+  "fim": "2026-10-21T06:52:29.603Z",
+  "duracaoMs": 15355
+}

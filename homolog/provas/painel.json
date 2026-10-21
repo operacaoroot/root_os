@@ -1,82 +1,82 @@
 {
-  "inicio": "2026-10-21T05:50:06.505Z",
+  "inicio": "2026-10-21T06:57:15.519Z",
   "web": "http://127.0.0.1:3031",
-  "sufixo": "055006",
+  "sufixo": "065715",
   "passos": [
     {
       "n": 1,
       "nome": "mesa, sócio e admin entraram pela API",
-      "ms": 239,
+      "ms": 221,
       "detalhe": "Mesa · responsável (homologação) · Sócio titular (homologação) · Admin Root"
     },
     {
       "n": 2,
       "nome": "preparou: tarefa da mesa comentada pelo admin, lista solta e um lead novo em E1",
-      "ms": 541,
-      "tarefaId": "fdad1b7f-6776-4b03-9823-62579dd58ae5",
-      "listaId": "87bef309-1deb-400d-a3f8-0f5f63049944",
-      "leadId": "95b76948-b26b-5897-8964-07e34ce7480a"
+      "ms": 526,
+      "tarefaId": "edcc2d74-2d23-4130-a68d-1963aded0dca",
+      "listaId": "d0583dbf-dafc-4e75-9d6d-f747220e8daf",
+      "leadId": "04d8a0b3-3af0-52ba-8086-19b3c4481f28"
     },
     {
       "n": 3,
       "nome": "na caixa da mesa, Atividade mostra o comentário do admin",
-      "ms": 1526,
-      "detalhe": "comentario:7a45b8c8-b443-438f-ba14-24df6fb1c96d"
+      "ms": 1513,
+      "detalhe": "comentario:33825967-4444-470b-8f70-5a46cf654de8"
     },
     {
       "n": 4,
       "nome": "\"Limpar\" tirou o item da caixa e ele continua no histórico",
-      "ms": 1619
+      "ms": 1604
     },
     {
       "n": 5,
       "nome": "Minhas tarefas mostra a tarefa e os comentários abrem no lugar",
-      "ms": 1825
+      "ms": 1855
     },
     {
       "n": 6,
       "nome": "pasta criada pela tela",
-      "ms": 2620,
-      "detalhe": "Pasta da prova 055006"
+      "ms": 3084,
+      "detalhe": "Pasta da prova 065715"
     },
     {
       "n": 7,
       "nome": "a lista foi movida para a pasta pelo seletor e o chip da pasta a mostra",
-      "ms": 3354
+      "ms": 4220
     },
     {
       "n": 8,
       "nome": "Quadro e Lista alternam sobre a mesma lista",
-      "ms": 3429
+      "ms": 4310
     },
     {
       "n": 9,
       "nome": "ata colada pela tela entrou no banco de atas (pela memória)",
-      "ms": 4799,
-      "detalhe": "memoria:9065bace-aa72-43f3-95ec-dbdc01773eb0"
+      "ms": 5740,
+      "detalhe": "memoria:f2ae3af2-f2b6-430f-a301-91b6a69eb94c"
     },
     {
       "n": 10,
       "nome": "\"Sugerir tarefas\" trouxe rascunhos conferidos contra a ata",
-      "ms": 4961,
+      "ms": 5901,
       "detalhe": "3 rascunho(s)"
     },
     {
       "n": 11,
       "nome": "aceitar com um clique criou a tarefa no Trabalho",
-      "ms": 5726,
+      "ms": 6645,
       "detalhe": "Enviar o relatório mensal da Padaria Exemplo"
     },
     {
       "n": 12,
       "nome": "o admin moveu o lead novo de E1 para E3 sem pedido: a mensagem diz o que ficou sem concluir e o balão fica",
-      "ms": 6730,
+      "ms": 7686,
       "detalhe": "Movido para E3 · Reunião agendada sem as conclusões de E2 · Qualificação: sistema ou ERP em uso (E2); base de dados: sim · MOVIDO COM PENDÊNCIAS sistema ou ERP em uso (E2); base de dados: sim ou não (E2)"
     },
     {
       "n": 13,
       "nome": "fotografou as telas mexidas em escuro, claro e 390 px; nenhuma rola na horizontal no celular",
-      "ms": 34260,
+      "ms": 34983,
       "detalhe": "24 fotos"
     }
   ],
@@ -149,6 +149,6 @@
     }
   ],
   "ok": true,
-  "fim": "2026-10-21T05:50:40.841Z",
-  "duracaoMs": 34336
+  "fim": "2026-10-21T06:57:50.570Z",
+  "duracaoMs": 35051
 }

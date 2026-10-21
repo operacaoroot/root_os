@@ -1,12 +1,12 @@
 {
-  "inicio": "2026-10-21T05:40:24.781Z",
+  "inicio": "2026-10-21T06:53:19.492Z",
   "web": "http://127.0.0.1:3031",
   "passos": [
     {
       "n": 1,
       "nome": "Menu aberto: a logo oficial sem texto ao lado e as subseções da área ativa",
       "ok": true,
-      "ms": 870,
+      "ms": 884,
       "detalhe": {
         "itens": [
           "Visão geral",
@@ -20,13 +20,13 @@
       "n": 2,
       "nome": "/painel continua vivo fora do menu",
       "ok": true,
-      "ms": 716
+      "ms": 703
     },
     {
       "n": 3,
       "nome": "Recolher: só o R, e o balão no hover com as subseções, clicável",
       "ok": true,
-      "ms": 1577,
+      "ms": 1572,
       "detalhe": {
         "largura": 64,
         "links": [
@@ -40,7 +40,7 @@
       "n": 4,
       "nome": "Trabalho: Filtros (n) com responsável e prazo, estado no endereço",
       "ok": true,
-      "ms": 1205,
+      "ms": 1207,
       "detalhe": {
         "endereco": "?assigneeUserId=6a463a3f-8acb-4ba4-8272-306a301d95b2&prazo=atrasada"
       }
@@ -51,27 +51,27 @@
       "ok": true,
       "ms": 78,
       "detalhe": {
-        "nome": "Interface 229383"
+        "nome": "Interface 604174"
       }
     },
     {
       "n": 6,
       "nome": "Todas: /trabalho/todas redireciona para o chip, e as colunas são os status reais",
       "ok": true,
-      "ms": 1226,
+      "ms": 1237,
       "detalhe": {
         "colunas": 16,
         "vazias": 12,
-        "total": 71,
+        "total": 81,
         "rolagem": {
           "scroll": 3480,
           "cliente": 916
         },
         "nomes": [
-          "A fazer · 8 listas",
+          "A fazer · 11 listas",
           "Qualificação · 1 lista",
           "Fechado no comercial · 1 lista",
-          "Em andamento · 8 listas",
+          "Em andamento · 11 listas",
           "Diagnóstico · 1 lista",
           "Contrato · 1 lista",
           "Onboarding · 1 lista",
@@ -82,7 +82,7 @@
           "Contexto carregado · 1 lista",
           "Imersão · 1 lista",
           "Operação assistida · 1 lista",
-          "Concluída · 8 listas",
+          "Concluída · 11 listas",
           "Encerrado · 2 listas"
         ]
       }
@@ -91,19 +91,22 @@
       "n": 7,
       "nome": "Todas as tarefas: segmentos por pasta de topo, e o segmento filtra",
       "ok": true,
-      "ms": 10271,
+      "ms": 13013,
       "detalhe": {
-        "todas": 71,
+        "todas": 81,
         "porSegmento": {
           "Administrativa": 0,
           "Pasta da prova 000508": 0,
           "Pasta da prova 002343": 0,
           "Pasta da prova 030143": 0,
           "Pasta da prova 032250": 0,
+          "Pasta da prova 054753": 0,
+          "Pasta da prova 054859": 0,
+          "Pasta da prova 055006": 0,
           "Pasta da prova 215432": 0,
           "Pasta da prova 221123": 0,
           "Gestão": 0,
-          "Clientes": 71,
+          "Clientes": 81,
           "Sem pasta": 0
         }
       }
@@ -112,31 +115,31 @@
       "n": 8,
       "nome": "Implantação: o par Vistas e Filtros, sem a aba da Rodada",
       "ok": true,
-      "ms": 708
+      "ms": 691
     },
     {
       "n": 9,
       "nome": "WhatsApp como área própria, com a tela; o endereço antigo redireciona",
       "ok": true,
-      "ms": 1489
+      "ms": 1473
     },
     {
       "n": 10,
       "nome": "Funil vivo: sem os chips das etapas, com Vistas e Filtros (responsável primeiro)",
       "ok": true,
-      "ms": 1507
+      "ms": 1491
     },
     {
       "n": 11,
       "nome": "Funil vivo: a Lista, com o clique abrindo o painel do lead",
       "ok": true,
-      "ms": 237
+      "ms": 269
     },
     {
       "n": 12,
       "nome": "Funil vivo: mover para trás sem pedido, com a mensagem; e de volta",
       "ok": true,
-      "ms": 1003,
+      "ms": 1039,
       "detalhe": {
         "de": "reuniao_agendada",
         "para": "qualificacao",
@@ -147,7 +150,7 @@
       "n": 13,
       "nome": "Conexões › Granola: \"Conectar ao Granola\" faz o OAuth (dublê) e volta conectado, ou diz por que não",
       "ok": true,
-      "ms": 2317,
+      "ms": 2312,
       "detalhe": {
         "conectado": false,
         "servidor": "http://127.0.0.1:4791/mcp"
@@ -157,10 +160,10 @@
       "n": 14,
       "nome": "Atas › Reuniões do Granola › Gerar ata (ou, sem conexão, o aviso e a ata colada): decisões, pendências e sugestões",
       "ok": true,
-      "ms": 1475,
+      "ms": 1459,
       "detalhe": {
         "granola": "sem conexão (aviso)",
-        "ata": "memoria:47a3c0c9-9376-4693-953c-d0a23249b67f"
+        "ata": "memoria:71e6211e-c14c-4eb1-929a-3168c56cb500"
       }
     },
     {
@@ -176,7 +179,7 @@
       "n": 16,
       "nome": "Conexões › WhatsApp (Evolution): o cartão com a URL do webhook, sem chave na tela, e sem o DigiSac",
       "ok": true,
-      "ms": 835,
+      "ms": 828,
       "detalhe": {
         "webhook": "http://127.0.0.1:3031/api/approvals/canal/whatsapp/<empresa>",
         "semSegredo": 404
@@ -186,7 +189,7 @@
       "n": 17,
       "nome": "Celular (390 px): o menu abre inteiro e as telas não rolam de lado",
       "ok": true,
-      "ms": 4074,
+      "ms": 4080,
       "detalhe": {
         "trabalho": true,
         "todas": true,
@@ -223,10 +226,10 @@
     "interface-menu-390.png"
   ],
   "avisos": [
-    "no seed as tarefas estão todas num segmento só ({\"Administrativa\":0,\"Pasta da prova 000508\":0,\"Pasta da prova 002343\":0,\"Pasta da prova 030143\":0,\"Pasta da prova 032250\":0,\"Pasta da prova 215432\":0,\"Pasta da prova 221123\":0,\"Gestão\":0,\"Clientes\":71,\"Sem pasta\":0}); o recorte entre pastas está provado na suíte da API",
+    "no seed as tarefas estão todas num segmento só ({\"Administrativa\":0,\"Pasta da prova 000508\":0,\"Pasta da prova 002343\":0,\"Pasta da prova 030143\":0,\"Pasta da prova 032250\":0,\"Pasta da prova 054753\":0,\"Pasta da prova 054859\":0,\"Pasta da prova 055006\":0,\"Pasta da prova 215432\":0,\"Pasta da prova 221123\":0,\"Gestão\":0,\"Clientes\":81,\"Sem pasta\":0}); o recorte entre pastas está provado na suíte da API",
     "Granola direto não conectou na stack do seed (cofre sem chave de 32 bytes nesta homologação); o OAuth, a lista e o Gerar ata com o dublê estão provados na suíte da API"
   ],
   "ok": true,
-  "fim": "2026-10-21T05:40:57.476Z",
-  "duracaoMs": 32695
+  "fim": "2026-10-21T06:53:55.082Z",
+  "duracaoMs": 35590
 }

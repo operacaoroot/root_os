@@ -185,6 +185,13 @@ async function main() {
   const claro = await cClaro.newPage();
   claro.setDefaultTimeout(20_000);
 
+  if (process.env.SO_ADENDO === '1') {
+    await adendo({ p, m, claro, sessao });
+    conferir(!erros.length, `erros de página: ${erros.slice(0, 3).join(' | ')}`);
+    await navegador.close();
+    return;
+  }
+
   // ---------------- P1 · Visão geral ----------------
   await passo('P1 · Visão geral a 1440: os gráficos cabem e o balão da primeira e da última coluna fica dentro', async () => {
     await p.goto(`${WEB}/dia-a-dia`, { waitUntil: 'networkidle' });
@@ -468,8 +475,186 @@ async function main() {
     conferir(await semRolagemLateral(m), 'a aba Sala rola de lado a 390');
   });
 
+  await adendo({ p, m, claro, sessao });
+
   conferir(!erros.length, `erros de página: ${erros.slice(0, 3).join(' | ')}`);
   await navegador.close();
+}
+
+/*
+ * O ADENDO (21/10, madrugada): a árvore de pastas se edita onde a pessoa olha (A3) e as
+ * tarefas do comercial moram no Funil vivo (A1). Os nomes criados aqui levam "e2e 21b"
+ * e um carimbo; o que o passo cria, ele mesmo tira no fim (pela API, como a tela faria).
+ */
+async function adendo({ p, m, claro, sessao }) {
+  const carimbo = Date.now().toString(36);
+  const nome = (s) => `e2e 21b ${s} ${carimbo}`;
+  const estrutura = () => api('GET', '/trabalho/estrutura', undefined, sessao.token);
+  const pastaPorNome = async (n) => (await estrutura()).folders.find((f) => f.name === n);
+  const tarefasDe = (r) => (Array.isArray(r) ? r : r.tarefas ?? []);
+
+  await passo('A3 · árvore: "+ nova pasta" inline (Enter salva), renomear com duplo clique, repetido no mesmo nível recusado', async () => {
+    await p.goto(`${WEB}/trabalho`, { waitUntil: 'networkidle' });
+    await p.getByTestId('trabalho-arvore').waitFor();
+    await p.getByTestId('trabalho-arvore-nova-pasta').click();
+    const campo = p.getByTestId('trabalho-arvore-nova-pasta-nome');
+    await campo.fill(nome('pasta'));
+    await campo.press('Enter');
+    await p.getByText(nome('pasta'), { exact: true }).first().waitFor();
+    const criada = await pastaPorNome(nome('pasta'));
+    conferir(criada, 'a pasta criada não está na estrutura');
+    // Uma segunda pasta para a recusa de nome repetido.
+    const outra = await api('POST', '/trabalho/pastas', { name: nome('outra') }, sessao.token);
+    await p.reload({ waitUntil: 'networkidle' });
+    await p.getByTestId(`trabalho-arvore-pasta-${criada.id}`).dblclick();
+    const ren = p.getByTestId(`trabalho-arvore-renomear-pasta-${criada.id}`);
+    await ren.fill(nome('outra'));
+    await ren.press('Enter');
+    const erro = p.getByTestId(`trabalho-arvore-renomear-pasta-${criada.id}-erro`);
+    await erro.waitFor();
+    const frase = (await erro.innerText()).trim();
+    conferir(/Já existe uma pasta com esse nome/.test(frase), `a recusa veio: ${frase}`);
+    await ren.fill(nome('renomeada'));
+    await ren.press('Enter');
+    await p.getByText(nome('renomeada'), { exact: true }).first().waitFor();
+    conferir(await pastaPorNome(nome('renomeada')), 'o nome novo não chegou à API');
+    await foto(p, 'adendo-arvore-renomeada-escuro');
+    return { detalhe: { recusa: frase, pastas: 2 } };
+  });
+
+  await passo('A3 · árvore: arrastar a lista para outra pasta e reordenar com Alt+↓', async () => {
+    const a = await pastaPorNome(nome('renomeada'));
+    const b = await pastaPorNome(nome('outra'));
+    const l1 = await api('POST', '/trabalho/listas', { name: nome('lista um'), folderId: a.id }, sessao.token);
+    await api('POST', '/trabalho/listas', { name: nome('lista dois'), folderId: b.id }, sessao.token);
+    await p.reload({ waitUntil: 'networkidle' });
+    await p.getByTestId(`trabalho-arvore-lista-${l1.id}`).dragTo(p.getByTestId(`trabalho-arvore-pasta-${b.id}`));
+    let pasta = null;
+    for (let i = 0; i < 20 && pasta !== b.id; i++) {
+      await dormir(250);
+      pasta = (await estrutura()).folders.find((f) => f.lists.some((l) => l.id === l1.id))?.id ?? null;
+    }
+    conferir(pasta === b.id, 'arrastar a lista não a levou para a outra pasta');
+    await p.reload({ waitUntil: 'networkidle' });
+    const ordem = async () => (await estrutura()).folders.find((f) => f.id === b.id).lists.map((l) => l.id);
+    const antes = await ordem();
+    const primeira = antes[0];
+    await p.getByTestId(`trabalho-arvore-lista-${primeira}`).focus();
+    await p.keyboard.press('Alt+ArrowDown');
+    let depois = antes;
+    for (let i = 0; i < 20 && depois[0] === primeira; i++) { await dormir(250); depois = await ordem(); }
+    conferir(depois[1] === primeira, `Alt+↓ não desceu a lista: ${JSON.stringify({ antes, depois })}`);
+    return { detalhe: { listasNaPasta: depois.length } };
+  });
+
+  await passo('A3 · apagar pasta com listas: o diálogo pede o destino (Sem pasta), move as listas e apaga', async () => {
+    const b = await pastaPorNome(nome('outra'));
+    const listas = b.lists.map((l) => l.id);
+    await p.reload({ waitUntil: 'networkidle' });
+    await p.getByTestId(`trabalho-pasta-acoes-${b.id}`).click();
+    await p.getByTestId(`trabalho-pasta-acoes-${b.id}-excluir`).click();
+    const destino = p.getByTestId('trabalho-excluir-pasta-destino');
+    await destino.waitFor();
+    await destino.selectOption('__sem-pasta__');
+    await foto(p, 'adendo-apagar-pasta-escuro');
+    await p.getByTestId('trabalho-excluir-pasta-confirmar').click();
+    let e = await estrutura();
+    for (let i = 0; i < 20 && e.folders.some((f) => f.id === b.id); i++) { await dormir(250); e = await estrutura(); }
+    conferir(!e.folders.some((f) => f.id === b.id), 'a pasta não saiu');
+    const soltas = e.listasSoltas.map((l) => l.id);
+    conferir(listas.every((id) => soltas.includes(id)), 'as listas não foram para Sem pasta');
+    return { detalhe: { listasMovidas: listas.length } };
+  });
+
+  await passo('A3 · apagar lista vazia pelo menu (nome digitado) e a pasta vazia que sobrou; 390 sem rolagem lateral', async () => {
+    const e = await estrutura();
+    const minhas = e.listasSoltas.filter((l) => l.name.endsWith(carimbo));
+    await p.reload({ waitUntil: 'networkidle' });
+    for (const l of minhas) {
+      await p.getByTestId(`trabalho-lista-acoes-${l.id}`).click();
+      await p.getByTestId(`trabalho-lista-acoes-${l.id}-excluir`).click();
+      await p.getByTestId('trabalho-excluir-lista-nome').fill(l.name);
+      await p.getByTestId('trabalho-excluir-lista-confirmar').click();
+      for (let i = 0; i < 20 && (await estrutura()).listasSoltas.some((x) => x.id === l.id); i++) await dormir(250);
+    }
+    const a = await pastaPorNome(nome('renomeada'));
+    if (a) await api('DELETE', `/trabalho/pastas/${a.id}`, undefined, sessao.token);
+    const fim = await estrutura();
+    conferir(!fim.listasSoltas.some((l) => l.name.endsWith(carimbo)) && !fim.folders.some((f) => f.name.endsWith(carimbo)), 'sobrou pasta ou lista do e2e');
+    await m.goto(`${WEB}/trabalho`, { waitUntil: 'networkidle' });
+    conferir(await semRolagemLateral(m), 'o Trabalho rola de lado a 390');
+    await foto(m, 'adendo-arvore-390');
+    return { detalhe: { listasApagadas: minhas.length } };
+  });
+
+  await passo('A1 · Funil vivo: bloco "Tarefas do comercial" com contagem, "+ tarefa" (Enter salva) e concluir', async () => {
+    await p.goto(`${WEB}/comercial/funil`, { waitUntil: 'networkidle' });
+    const bloco = p.getByTestId('funil-tarefas-do-comercial');
+    await bloco.waitFor();
+    const alternar = p.getByTestId('funil-tarefas-alternar');
+    if ((await alternar.getAttribute('aria-expanded')) !== 'true') await alternar.click();
+    const contagem = async () => Number((await p.getByTestId('funil-tarefas-contagem').innerText()).trim());
+    const antes = await contagem();
+    await p.getByTestId('funil-tarefas-mais').click();
+    const titulo = p.getByTestId('funil-tarefas-nova-titulo');
+    await titulo.fill(nome('tarefa'));
+    await titulo.press('Enter');
+    const linha = bloco.locator('li[data-testid^="tarefa-"]').filter({ hasText: nome('tarefa') });
+    await linha.waitFor();
+    let depois = antes;
+    for (let i = 0; i < 20 && depois !== antes + 1; i++) { await dormir(250); depois = await contagem(); }
+    conferir(depois === antes + 1, `a contagem não subiu: ${antes} → ${depois}`);
+    const id = (await linha.getAttribute('data-testid')).replace('tarefa-', '');
+    const itens = tarefasDe(await api('GET', '/comercial/tarefas?semLead=1', undefined, sessao.token));
+    conferir(itens.some((t) => t.id === id && !t.lead), 'a tarefa nova não veio sem lead pela API');
+    await foto(p, 'adendo-funil-tarefas-escuro');
+    await p.getByTestId(`tarefa-concluir-${id}`).click();
+    for (let i = 0; i < 20 && depois !== antes; i++) { await dormir(250); depois = await contagem(); }
+    conferir(depois === antes, `concluir não baixou a contagem: ${depois}`);
+    // A lista do comercial não aparece na árvore do Trabalho.
+    const e = await estrutura();
+    const todas = [...e.listasSoltas, ...e.folders.flatMap((f) => f.lists)];
+    conferir(!todas.some((l) => l.externalId === 'comercial:tarefas'), 'a lista do comercial apareceu na árvore');
+    return { detalhe: { contagemAntes: antes } };
+  });
+
+  await passo('A1 · painel do lead: bloco "Tarefas", "+ tarefa" já ligada ao lead, e o cartão mostra a tarefa', async () => {
+    await p.goto(`${WEB}/comercial/funil?visao=lista`, { waitUntil: 'networkidle' });
+    await p.getByTestId('funil-lista').waitFor();
+    const linha = p.locator('[data-testid^="funil-linha-"]').first();
+    const leadId = (await linha.getAttribute('data-testid')).replace('funil-linha-', '');
+    await linha.click();
+    await p.locator('[role="dialog"]').first().waitFor();
+    const bloco = p.getByTestId('painel-tarefas');
+    await bloco.waitFor();
+    await p.getByTestId('painel-tarefas-lista-mais').click();
+    const titulo = p.getByTestId('painel-tarefas-lista-nova-titulo');
+    await titulo.fill(nome('do lead'));
+    await titulo.press('Enter');
+    const li = bloco.locator('li[data-testid^="tarefa-"]').filter({ hasText: nome('do lead') });
+    await li.waitFor();
+    const id = (await li.getAttribute('data-testid')).replace('tarefa-', '');
+    const itens = tarefasDe(await api('GET', `/comercial/tarefas?leadId=${leadId}`, undefined, sessao.token));
+    const t = itens.find((x) => x.id === id);
+    conferir(t && t.lead?.id === leadId, 'a tarefa do painel não ficou ligada ao lead');
+    await foto(p, 'adendo-painel-tarefas-escuro');
+    await p.keyboard.press('Escape');
+    await p.reload({ waitUntil: 'networkidle' });
+    const textoDaLinha = (await p.getByTestId(`funil-linha-${leadId}`).innerText()).replace(/\s+/g, ' ');
+    conferir(/tarefas? abertas?/i.test(textoDaLinha) || textoDaLinha.includes(nome('do lead')), `a linha do lead não mostra a tarefa: ${textoDaLinha.slice(0, 200)}`);
+    // Conclui para não deixar tarefa aberta no lead da semente.
+    await api('PATCH', `/comercial/tarefas/${id}`, { expectedUpdatedAt: t.updatedAt, etapa: 'concluida' }, sessao.token);
+    return { detalhe: { linhaMostra: true } };
+  });
+
+  await passo('A1 · o bloco no claro e a 390, sem rolagem lateral', async () => {
+    for (const [pg, n] of [[claro, 'adendo-funil-tarefas-claro'], [m, 'adendo-funil-tarefas-390']]) {
+      await pg.goto(`${WEB}/comercial/funil`, { waitUntil: 'networkidle' });
+      await pg.getByTestId('funil-tarefas-do-comercial').waitFor();
+      await foto(pg, n);
+    }
+    conferir(await semRolagemLateral(m), 'o Funil vivo rola de lado a 390');
+  });
 }
 
 main()
