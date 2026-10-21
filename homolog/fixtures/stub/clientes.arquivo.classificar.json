@@ -1,0 +1,42 @@
+{
+  "tarefa": "clientes.arquivo.classificar",
+  "_sobre": "Respostas do stub para o arquivista do cliente (TR-05, rodada dos agentes, lane A4). Casa pelo NOME do arquivo, que vai dentro da cerca depois de 'O ARQUIVO:'. Contrato vai a 02-contrato, proposta a 01-comercial, nota fiscal e boleto a 06-financeiro, ata de kickoff a 03-kickoff, ata a 05-acompanhamento, print a 07-evidencias. Qualquer outro arquivo volta com confiança baixa em _fonte: é a demonstração do 'classificar à mão'.",
+  "respostas": [
+    {
+      "depoisDe": "O ARQUIVO:",
+      "quando": ["contrato"],
+      "texto": "{\"subpasta\":\"02-contrato\",\"tipo\":\"Contrato\",\"titulo\":\"Prestação de serviços\",\"confianca\":0.92}"
+    },
+    {
+      "depoisDe": "O ARQUIVO:",
+      "quando": ["proposta"],
+      "texto": "{\"subpasta\":\"01-comercial\",\"tipo\":\"Proposta\",\"titulo\":\"Proposta comercial\",\"confianca\":0.9}"
+    },
+    {
+      "depoisDe": "O ARQUIVO:",
+      "quando": ["nota fiscal"],
+      "texto": "{\"subpasta\":\"06-financeiro\",\"tipo\":\"Nota fiscal\",\"titulo\":\"Nota fiscal de serviço\",\"confianca\":0.88}"
+    },
+    {
+      "depoisDe": "O ARQUIVO:",
+      "quando": ["boleto"],
+      "texto": "{\"subpasta\":\"06-financeiro\",\"tipo\":\"Boleto\",\"titulo\":\"Cobrança mensal\",\"confianca\":0.85}"
+    },
+    {
+      "depoisDe": "O ARQUIVO:",
+      "quando": ["kickoff"],
+      "texto": "{\"subpasta\":\"03-kickoff\",\"tipo\":\"Ata\",\"titulo\":\"Reunião de kickoff\",\"confianca\":0.86}"
+    },
+    {
+      "depoisDe": "O ARQUIVO:",
+      "quando": ["ata"],
+      "texto": "{\"subpasta\":\"05-acompanhamento\",\"tipo\":\"Ata\",\"titulo\":\"Reunião de acompanhamento\",\"confianca\":0.8}"
+    },
+    {
+      "depoisDe": "O ARQUIVO:",
+      "quando": ["print"],
+      "texto": "{\"subpasta\":\"07-evidencias\",\"tipo\":\"Print\",\"titulo\":\"Captura de tela\",\"confianca\":0.75}"
+    }
+  ],
+  "padrao": "{\"subpasta\":\"_fonte\",\"tipo\":\"Arquivo\",\"titulo\":\"Sem classificação\",\"confianca\":0.2}"
+}

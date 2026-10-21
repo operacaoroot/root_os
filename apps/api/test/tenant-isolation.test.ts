@@ -451,6 +451,8 @@ const ALVOS: Alvo[] = [
   { tabela: 'WorkApontamento', escopo: 'filho', chaveSql: '"id"', nota: 'Horas de gente por cliente e por etapa: diz quanto a empresa cobra e quanto gasta. Número comercial que a vizinha não pode ver.' },
   { tabela: 'AtaSugestao', escopo: 'tenant', chaveSql: '"id"', nota: 'A sugestão de tarefa lida de uma ata do Trabalho (rodada do painel P3): o título, o dono sugerido, o prazo e o TRECHO da reunião de onde saiu. Ler a da outra empresa é ler o que ela combinou em reunião e com quem; ESCREVER é pôr tarefa na fila de aceite dela, ou aceitar por ela. Raiz da empresa, não filha: a ata vive em duas tabelas e o orgId vem do insert.' },
   { tabela: 'Pendencia', escopo: 'tenant', chaveSql: '"id"', nota: 'A pendência que um agente ou rotina deixa para uma pessoa (rodada dos agentes, 21/10/2026): o arquivo de cliente sem subpasta, a tarefa vencida, a mensagem de WhatsApp sem dono, a reunião fora do padrão. Ler a da outra empresa é ler o que chegou para ela e de quem; ESCREVER é decidir por ela. Raiz da empresa: o refId aponta para tabelas diferentes, sem FK.' },
+  { tabela: 'ArquivoDoCliente', escopo: 'tenant', chaveSql: '"id"', nota: 'O arquivo que chegou para um cliente e o que o arquivista fez com ele (rodada dos agentes, TR-05): nome original, hash, a subpasta, a aprovação e o link no Drive. Ler o da outra empresa é ler quais documentos os clientes dela mandaram e onde estão; ESCREVER é mudar a subpasta, o nome ou o cliente de destino de um arquivo alheio, que é o que o efeito do Drive confere. Raiz da empresa: o arquivo pode chegar antes do cliente, só com o lead.' },
+  { tabela: 'WorkAnexo', escopo: 'filho', chaveSql: '"id"', nota: 'O anexo da tarefa (rodada dos agentes, TR-06): o nome, o hash e a chave do binário no storage. Ler o da outra empresa é saber o que ela anexou e baixar pela chave; o gatilho deriva a empresa da tarefa.' },
   { tabela: 'VistaSalva', escopo: 'tenant', chaveSql: '"id"', nota: 'A vista salva de uma pessoa (rodada do trabalho T3): ordenação, agrupamento, colunas e filtros de Minhas tarefas e do quadro, com o nome que ela deu. LER a da outra empresa é ler como alguém de lá organiza o trabalho e por quais clientes filtra; ESCREVER é trocar a vista padrão de uma pessoa da outra casa. Raiz da empresa; o serviço ainda filtra por userId.' },
   { tabela: 'CaixaVisto', escopo: 'tenant', chaveSql: '"id"', nota: 'O "limpei isto" da caixa de entrada (rodada do painel P1): quem leu qual evento de qual tarefa, e até quando limpou tudo. Ler a da outra empresa é saber o que cada pessoa dela já viu; ESCREVER é sumir com recado da caixa de alguém de outra casa. Raiz da empresa, não filha: o evento vive em duas tabelas e o orgId vem do insert.' },
 
@@ -1333,6 +1335,17 @@ async function semear(c: PoolClient, rotulo: 'A' | 'B', vec: string): Promise<vo
     titulo: `Arquivo privado da org ${rotulo}`, contexto: `Contexto privado da org ${rotulo}`,
     opcoes: JSON.stringify([{ chave: 'a', rotulo: 'A' }]), atualizadaEm: new Date(),
   }, { opcoes: 'jsonb' }));
+
+  // O arquivo do cliente e o anexo da tarefa (rodada dos agentes, lane A4).
+  reg('ArquivoDoCliente', await ins(c, 'ArquivoDoCliente', {
+    id: crypto.randomUUID(), orgId, leadId: `lead_${rotulo}_${MARCA}`, origem: 'sala', nomeOriginal: `Contrato privado da org ${rotulo}.pdf`,
+    tipoMime: 'application/pdf', chave: `clientes/arquivos/${orgId}/x`, sha256: (rotulo === 'A' ? 'a' : 'b').repeat(64), bytes: 10,
+    estado: 'na_fila', atualizadoEm: new Date(),
+  }));
+  reg('WorkAnexo', await ins(c, 'WorkAnexo', {
+    id: crypto.randomUUID(), orgId, taskId: tarefaId, nome: `Anexo privado da org ${rotulo}.pdf`, tipoMime: 'application/pdf',
+    bytes: 10, sha256: (rotulo === 'A' ? 'c' : 'd').repeat(64), chave: `trabalho/anexos/${orgId}/x`, autorNome: `Usuário ${rotulo}`,
+  }));
 
   // As vistas salvas (rodada do trabalho T3): a preferência de uma pessoa.
   reg('VistaSalva', await ins(c, 'VistaSalva', {
@@ -3796,6 +3809,10 @@ const LINHA_DE_FILHO: Record<string, (c: PoolClient) => Promise<Record<string, u
     id: crypto.randomUUID(), taskId: sementes.A.ref.workTaskId,
     autorNome: 'Gatilho', minutos: 30, dia: '2026-09-15', etapa: 'Diagnóstico',
   }),
+  WorkAnexo: async () => ({
+    id: crypto.randomUUID(), taskId: sementes.A.ref.workTaskId, nome: 'gatilho.pdf', tipoMime: 'application/pdf',
+    bytes: 1, sha256: 'e'.repeat(64), chave: `gatilho_${MARCA}`, autorNome: 'Gatilho',
+  }),
   OnboardingItem: async () => ({
     id: crypto.randomUUID(), trilhoId: sementes.A.ref.onboardingTrilhoId, temaId: `gatilho_${MARCA}`, bloco: 'D',
     atualizadoEm: new Date(),
@@ -3893,9 +3910,10 @@ describe('orgId em todo filho de tenant (RF-T-01)', () => {
     // + `EnvioAoYoutube` (MD10, 25/09/2026) + `EnvioDeResposta` (MD11, 25/09/2026)
     // + os 8 filhos de Lead do cockpit comercial (13/10/2026)
     // + `LeadReacao` (rodada da implantação I4, 18/10/2026)
-    // + `SalaVersao` (rodada da implantação I3, 18/10/2026).
+    // + `SalaVersao` (rodada da implantação I3, 18/10/2026)
+    // + `WorkAnexo` (rodada dos agentes, 21/10/2026, TR-06).
     // Filho novo sobe este número no mesmo commit.
-    expect(declarados.length).toBe(31);
+    expect(declarados.length).toBe(32);
   });
 
   it.each(FILHOS_COM_ORGID_REDUNDANTE.map((f) => [f.modelo, f] as const))(

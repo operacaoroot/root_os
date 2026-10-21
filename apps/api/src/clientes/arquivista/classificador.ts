@@ -128,8 +128,8 @@ export function lerClassificacao(texto: string): Classificacao | null {
   const confianca = Number.isFinite(c) ? Math.min(1, Math.max(0, c)) : 0;
   const limpar = (v: unknown, max: number) =>
     umaLinha(String(v ?? ''))
-      .replace(/[\\/:*?"<>|]+/g, ' ')
       .replace(/https?:\S+/gi, '')
+      .replace(/[\\/:*?"<>|]+/g, ' ')
       .replace(/\s+/g, ' ')
       .trim()
       .slice(0, max);
