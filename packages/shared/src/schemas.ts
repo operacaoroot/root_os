@@ -5190,6 +5190,48 @@ export const TrabListaUpdateSchema = z.object({
 export type TrabListaCreateInput = z.infer<typeof TrabListaCreateSchema>;
 export type TrabListaUpdateInput = z.infer<typeof TrabListaUpdateSchema>;
 
+/*
+ * EXCLUIR LISTA PELA TELA (rodada de produção 1, P3, 21/10/2026). A pessoa
+ * escreve o nome da lista para confirmar; a comparação ignora maiúscula, acento
+ * não (é o nome que ela vê) e espaço sobrando. A lista só sai vazia ou com todas
+ * as tarefas arquivadas: vazia é apagada; com tarefas arquivadas ela é ARQUIVADA
+ * (`arquivadaEm`), porque apagar levaria as tarefas junto. Na tela, as duas são
+ * "excluir".
+ */
+export const TrabListaExcluirSchema = z.object({
+  confirmarNome: z.string().min(1).max(120),
+}).strict();
+export type TrabListaExcluirInput = z.infer<typeof TrabListaExcluirSchema>;
+
+/** O nome como a confirmação compara: sem espaço nas pontas nem duplicado, sem diferença de maiúscula. */
+export function nomeParaConfirmar(nome: string): string {
+  return nome.normalize('NFC').trim().replace(/\s+/g, ' ').toLocaleLowerCase('pt-BR');
+}
+
+/** O que a exclusão fez: `apagada` (a lista estava vazia) ou `arquivada` (as tarefas arquivadas ficam no banco). */
+export interface TrabListaExcluida {
+  id: string;
+  modo: 'apagada' | 'arquivada';
+  tarefasArquivadas: number;
+}
+
+/** O que a exclusão de pasta fez: `apagada` (vazia) ou `arquivada` (só guardava listas ou pastas já arquivadas). */
+export interface TrabPastaExcluida {
+  id: string;
+  modo: 'apagada' | 'arquivada';
+}
+
+/** "Arquivar todas as tarefas da lista": quantas foram arquivadas agora. */
+export const TrabListaArquivarTarefasSchema = z.object({
+  /** Quantas a tela mostrou. Se o número mudou, nada é arquivado (409): alguém mexeu na lista. */
+  esperadas: z.number().int().min(0).max(100_000),
+}).strict();
+export type TrabListaArquivarTarefasInput = z.infer<typeof TrabListaArquivarTarefasSchema>;
+export interface TrabListaTarefasArquivadas {
+  id: string;
+  arquivadas: number;
+}
+
 /**
  * Limite de trabalho em andamento da etapa (o WIP do kanban). `null` apaga o
  * limite. AVISA, NÃO TRAVA — ver `WorkStatus.limite` no schema do Prisma.

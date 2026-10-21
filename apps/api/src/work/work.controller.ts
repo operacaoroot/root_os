@@ -8,7 +8,7 @@ import {
   TrabOpcaoCreateSchema, TrabOpcaoUpdateSchema, TrabTagCreateSchema, TrabTagUpdateSchema,
   TrabTarefaCreateSchema, TrabTarefaUpdateHttpSchema, TrabTarefaArchiveHttpSchema, TrabComentarioSchema,
   TrabAssumirSchema, TrabSoltarSchema, TrabApontamentoCreateSchema, TrabListaDoModeloSchema,
-  TrabTarefasOrdemSchema,
+  TrabTarefasOrdemSchema, TrabListaExcluirSchema, TrabListaArquivarTarefasSchema,
 } from '@mktos/shared';
 import { WorkService } from './work.service';
 import { CheckoutDeTarefaService } from './checkout-de-tarefa.service';
@@ -118,7 +118,13 @@ export class WorkController {
     return this.svc.editarPasta(u.orgId, u.sub, id, TrabPastaUpdateSchema.parse(body));
   }
 
+  /*
+   * Excluir pasta pela tela (P3, 21/10/2026): só a que não tem lista nem pasta
+   * visível dentro. Vazia de verdade é apagada; a que só guarda o que já foi
+   * arquivado é arquivada (os dados ficam). Ver `WorkService.apagarPasta`.
+   */
   @Delete('pastas/:id')
+  @UseGuards(AcessoAtualGuard)
   @RequirePermissions('tarefas.editar')
   apagarPasta(@CurrentUser() u: JwtUser, @Param('id') id: string) {
     return this.svc.apagarPasta(u.orgId, u.sub, id);
@@ -137,10 +143,25 @@ export class WorkController {
     return this.svc.editarLista(u.orgId, u.sub, id, TrabListaUpdateSchema.parse(body));
   }
 
+  /*
+   * Excluir lista pela tela (P3, 21/10/2026): o corpo traz `{confirmarNome}`, o
+   * nome escrito pela pessoa. Só sai a lista vazia (apagada) ou com todas as
+   * tarefas arquivadas (a lista é arquivada, as tarefas ficam). Auditada com a
+   * contagem. Ver `WorkService.apagarLista`.
+   */
   @Delete('listas/:id')
+  @UseGuards(AcessoAtualGuard)
   @RequirePermissions('tarefas.editar')
-  apagarLista(@CurrentUser() u: JwtUser, @Param('id') id: string) {
-    return this.svc.apagarLista(u.orgId, u.sub, id);
+  apagarLista(@CurrentUser() u: JwtUser, @Param('id') id: string, @Body() body: unknown) {
+    return this.svc.apagarLista(u.orgId, u.sub, id, TrabListaExcluirSchema.parse(body ?? {}));
+  }
+
+  /** Arquivar todas as tarefas da lista, o passo antes de excluir (P3). `{esperadas}` = quantas a tela mostrou. */
+  @Post('listas/:id/arquivar-tarefas')
+  @UseGuards(AcessoAtualGuard)
+  @RequirePermissions('tarefas.editar')
+  arquivarTarefasDaLista(@CurrentUser() u: JwtUser, @Param('id') id: string, @Body() body: unknown) {
+    return this.svc.arquivarTarefasDaLista(u.orgId, u.sub, id, TrabListaArquivarTarefasSchema.parse(body));
   }
 
   // Lista pronta a partir de um modelo versionado (`MODELOS_DE_LISTA`).

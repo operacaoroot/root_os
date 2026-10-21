@@ -3,6 +3,7 @@ import {
   MODELOS_DE_LISTA, TRAB_LISTA_COM_DOIS_PAIS, TRAB_PASTA_COM_DOIS_PAIS, ehValorMonetarioCanonico, TrabTarefaUpdateHttpSchema,
   listaDaImplantacao, LISTA_DA_IMPLANTACAO, PASTA_DA_IMPLANTACAO, PORTA_DA_IMPLANTACAO,
   CARTOES_QUE_NAO_SAO_TAREFA, RecorrenciaSchema, proximaOcorrencia, type RecorrenciaDaTarefa, type TrabTarefasOrdemInput,
+  nomeParaConfirmar,
 } from '@mktos/shared';
 import type {
   TrabEstrutura, TrabListaDto, TrabCampoDto, TrabTarefaLista, TrabTarefaResumo,
@@ -10,6 +11,7 @@ import type {
   TrabApontamentoCreateInput, TrabApontamentoDto, TrabListaDoModeloInput, ModeloDeLista,
   TrabEspacoCreateInput, TrabEspacoUpdateInput, TrabPastaCreateInput, TrabPastaUpdateInput,
   TrabListaCreateInput, TrabListaUpdateInput, TrabEstruturaSugeridaResultado,
+  TrabListaExcluirInput, TrabListaExcluida, TrabPastaExcluida, TrabListaArquivarTarefasInput, TrabListaTarefasArquivadas,
 } from '@mktos/shared';
 import { Prisma, WorkFieldType, WorkPriority, WorkStatusType } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
@@ -20,6 +22,7 @@ import { listarClientes, nomesDosClientes, resolverCliente } from './clientes-da
 import { criarEstruturaSugerida, criarListaDoModeloNoBanco } from './estrutura-sugerida';
 import { SEGMENTO_SEM_PASTA, pastaComSubpastas, type WorkTaskQuery } from './work-task-query';
 import { exigirAcessoAtual } from '../memory/acesso-memoria';
+import { listaVisivel, pastasEscondidas, tarefaDeListaVisivel } from './arquivadas';
 import { activityCursor, activityDto, activityNames, activityPoint, activityWhere, parseActivityQuery } from './work-activity-page';
 
 // Módulo TRABALHO: gestão de tarefas estilo ClickUp, nativa do mkt-os.
@@ -59,6 +62,11 @@ type PaiDaLista = { folderId: string | null; spaceId: string | null };
 const NOME_DE_PASTA_REPETIDO = 'Já existe uma pasta com esse nome neste lugar.';
 const NOME_DE_ESPACO_REPETIDO = 'Já existe um espaço com esse nome.';
 const PASTA_EM_CICLO = 'A pasta não pode ficar dentro dela mesma nem de uma pasta que está dentro dela.';
+const PASTA_COM_LISTAS = 'A pasta tem listas. Mova ou exclua as listas antes.';
+const PASTA_COM_PASTAS = 'A pasta tem pastas dentro. Mova ou exclua essas pastas antes.';
+const LISTA_MUDOU_NO_MEIO = 'A lista mudou enquanto você confirmava. Atualize a tela e tente de novo.';
+const PASTA_MUDOU_NO_MEIO = 'A pasta mudou enquanto você confirmava. Atualize a tela e tente de novo.';
+const LISTA_DA_IMPLANTACAO_FICA = `A lista ${LISTA_DA_IMPLANTACAO} é a porta da implantação de clientes: ela não sai do Trabalho.`;
 
 /**
  * `true` quando o pedido apaga o valor do campo. Num `moeda` só o valor decide:
@@ -124,7 +132,7 @@ export class WorkService {
       this.prisma.workTask.groupBy({ by: ['listId'], where: { orgId, archived: false }, _count: true }),
       this.prisma.workTask.groupBy({ by: ['statusId'], where: { orgId, archived: false }, _count: true }),
       this.prisma.workTask.findMany({
-        where: { orgId, assignee: { not: null } },
+        where: { orgId, assignee: { not: null }, list: listaVisivel() },
         distinct: ['assignee'], select: { assignee: true },
       }),
       /*
@@ -144,6 +152,10 @@ export class WorkService {
     ]);
     const porLista = new Map(counts.map((c) => [c.listId, c._count]));
     const porStatus = new Map(byStatus.map((c) => [c.statusId, c._count]));
+    // Pasta e lista arquivadas saem da árvore (21/10/2026); as tarefas delas ficam no banco.
+    const escondidas = pastasEscondidas(folders);
+    const pastasVivas = folders.filter((fo) => !escondidas.has(fo.id));
+    const listasVivas = lists.filter((l) => !l.arquivadaEm && !(l.folderId && escondidas.has(l.folderId)));
 
     const toLista = (l: (typeof lists)[number]): TrabListaDto => ({
       id: l.id, name: l.name, order: l.order, externalId: l.externalId, spaceId: l.spaceId,
@@ -157,12 +169,12 @@ export class WorkService {
 
     return {
       espacos: spaces.map((s) => ({ id: s.id, name: s.name, order: s.order, externalId: s.externalId })),
-      folders: folders.map((fo) => ({
+      folders: pastasVivas.map((fo) => ({
         id: fo.id, name: fo.name, order: fo.order,
         spaceId: fo.spaceId, parentId: fo.parentId, externalId: fo.externalId,
-        lists: lists.filter((l) => l.folderId === fo.id).map(toLista),
+        lists: listasVivas.filter((l) => l.folderId === fo.id).map(toLista),
       })),
-      listasSoltas: lists.filter((l) => !l.folderId).map(toLista),
+      listasSoltas: listasVivas.filter((l) => !l.folderId).map(toLista),
       camposGlobais: fields.map((f) => this.mapField(f)),
       tags: tags.map((t) => ({ id: t.id, name: t.name, color: t.color })),
       responsaveis: users.map((u) => u.assignee!).sort(),
@@ -241,18 +253,55 @@ export class WorkService {
     );
   }
 
-  /** Pasta com lista ou com pasta dentro não se apaga; as duas contagens só olham esta empresa. */
-  async apagarPasta(orgId: string, actorId: string, id: string) {
-    await this.achar(this.prisma.workFolder, orgId, id, 'Pasta');
+  /*
+   * EXCLUIR PASTA (rodada de produção 1, P3, 21/10/2026). Só sai pasta sem lista
+   * e sem pasta dentro que ainda APAREÇAM. Duas saídas, as duas chamadas
+   * "excluir" na tela:
+   *  - vazia de verdade (nenhuma lista nem pasta, nem arquivada): é apagada;
+   *  - só com listas ou pastas já arquivadas: é ARQUIVADA. Apagá-la levaria junto
+   *    o que foi arquivado (o banco recusa, RESTRICT), e arquivado é dado que fica.
+   * As contagens só olham esta empresa. A escrita é condicionada: se uma lista
+   * viva entrou entre a conferência e a escrita, nada muda (409).
+   */
+  async apagarPasta(orgId: string, actorId: string, id: string): Promise<TrabPastaExcluida> {
+    const pasta = await this.prisma.workFolder.findFirst({ where: { id, orgId, arquivadaEm: null }, select: { id: true, name: true } });
+    if (!pasta) throw new NotFoundException('Pasta não encontrada');
     const [listas, filhas] = await Promise.all([
+      this.prisma.workList.count({ where: { orgId, folderId: id, arquivadaEm: null } }),
+      this.prisma.workFolder.count({ where: { orgId, parentId: id, arquivadaEm: null } }),
+    ]);
+    if (listas > 0) throw new BadRequestException(PASTA_COM_LISTAS);
+    if (filhas > 0) throw new BadRequestException(PASTA_COM_PASTAS);
+    const [guardadas, filhasGuardadas] = await Promise.all([
       this.prisma.workList.count({ where: { orgId, folderId: id } }),
       this.prisma.workFolder.count({ where: { orgId, parentId: id } }),
     ]);
-    if (listas > 0) throw new BadRequestException('Pasta tem listas — mova ou apague antes.');
-    if (filhas > 0) throw new BadRequestException('Pasta tem pastas dentro — mova ou apague antes.');
-    return this.logado(orgId, actorId, 'work.folder.delete', 'work_folder', id, () =>
-      this.prisma.workFolder.delete({ where: { id } }),
-    );
+    if (guardadas + filhasGuardadas === 0) {
+      await this.logado(orgId, actorId, 'work.folder.delete', 'work_folder', id, () =>
+        this.prisma.workFolder.delete({ where: { id } }).catch((e: unknown) => {
+          if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === 'P2003') throw new ConflictException(PASTA_MUDOU_NO_MEIO);
+          throw e;
+        }),
+        { before: { name: pasta.name }, after: { modo: 'apagada' } },
+      );
+      return { id, modo: 'apagada' };
+    }
+    const agora = new Date();
+    const r = await this.prisma.workFolder.updateMany({
+      where: {
+        id, orgId, arquivadaEm: null,
+        lists: { none: { arquivadaEm: null } },
+        children: { none: { arquivadaEm: null } },
+      },
+      data: { arquivadaEm: agora },
+    });
+    if (r.count !== 1) throw new ConflictException(PASTA_MUDOU_NO_MEIO);
+    await this.audit.log({
+      orgId, actorId, action: 'work.folder.archive', entityType: 'work_folder', entityId: id,
+      before: { name: pasta.name, arquivadaEm: null },
+      after: { modo: 'arquivada', arquivadaEm: agora.toISOString(), listasArquivadas: guardadas, pastasArquivadas: filhasGuardadas },
+    });
+    return { id, modo: 'arquivada' };
   }
 
   // ---------- listas ----------
@@ -300,13 +349,95 @@ export class WorkService {
     );
   }
 
-  async apagarLista(orgId: string, actorId: string, id: string) {
-    await this.achar(this.prisma.workList, orgId, id, 'Lista');
-    const tarefas = await this.prisma.workTask.count({ where: { listId: id } });
-    if (tarefas > 0) throw new BadRequestException('Lista tem tarefas — mova ou arquive antes.');
-    return this.logado(orgId, actorId, 'work.list.delete', 'work_list', id, () =>
-      this.prisma.workList.delete({ where: { id } }),
-    );
+  /*
+   * EXCLUIR LISTA (rodada de produção 1, P3, 21/10/2026). A pessoa escreve o nome
+   * da lista para confirmar, e a lista só sai vazia ou com TODAS as tarefas
+   * arquivadas. Duas saídas, as duas chamadas "excluir" na tela:
+   *  - vazia de verdade (nenhuma tarefa, nem arquivada): é apagada, com as etapas
+   *    e os campos dela (cascata do banco); não havia trabalho nenhum ali;
+   *  - com tarefas arquivadas: a LISTA é arquivada (`arquivadaEm`). Apagá-la
+   *    exigiria apagar as tarefas (o banco recusa, RESTRICT), e a regra da casa é
+   *    não apagar trabalho. Ela some da árvore, de Todas e dos contadores; as
+   *    tarefas ficam no banco e a leitura por id continua.
+   * A auditoria leva quantas tarefas arquivadas iam junto. A lista da implantação
+   * não sai nunca. A escrita é condicionada: tarefa viva que entrou no meio = 409.
+   */
+  async apagarLista(orgId: string, actorId: string, id: string, input: TrabListaExcluirInput): Promise<TrabListaExcluida> {
+    const lista = await this.prisma.workList.findFirst({ where: { id, orgId, arquivadaEm: null }, select: { id: true, name: true, folderId: true } });
+    if (!lista) throw new NotFoundException('Lista não encontrada');
+    if (await this.ehListaDaImplantacao(orgId, id)) throw new BadRequestException(LISTA_DA_IMPLANTACAO_FICA);
+    if (nomeParaConfirmar(input.confirmarNome) !== nomeParaConfirmar(lista.name)) {
+      throw new BadRequestException('Para excluir, escreva o nome da lista como ele aparece.');
+    }
+    const [vivas, arquivadas] = await Promise.all([
+      this.prisma.workTask.count({ where: { orgId, listId: id, archived: false } }),
+      this.prisma.workTask.count({ where: { orgId, listId: id, archived: true } }),
+    ]);
+    if (vivas > 0) throw new BadRequestException(`A lista tem ${vivas} tarefa${vivas === 1 ? '' : 's'} sem arquivar. Arquive todas antes de excluir.`);
+    const antes = { name: lista.name, folderId: lista.folderId };
+    if (arquivadas === 0) {
+      const r = await this.prisma.workList.deleteMany({ where: { id, orgId, arquivadaEm: null, tasks: { none: {} } } }).catch((e: unknown) => {
+        if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === 'P2003') throw new ConflictException(LISTA_MUDOU_NO_MEIO);
+        throw e;
+      });
+      if (r.count !== 1) throw new ConflictException(LISTA_MUDOU_NO_MEIO);
+      await this.audit.log({
+        orgId, actorId, action: 'work.list.delete', entityType: 'work_list', entityId: id,
+        before: antes, after: { modo: 'apagada', tarefasArquivadas: 0 },
+      });
+      return { id, modo: 'apagada', tarefasArquivadas: 0 };
+    }
+    const agora = new Date();
+    const r = await this.prisma.workList.updateMany({
+      where: { id, orgId, arquivadaEm: null, tasks: { none: { archived: false } } },
+      data: { arquivadaEm: agora },
+    });
+    if (r.count !== 1) throw new ConflictException(LISTA_MUDOU_NO_MEIO);
+    await this.audit.log({
+      orgId, actorId, action: 'work.list.archive', entityType: 'work_list', entityId: id,
+      before: { ...antes, arquivadaEm: null },
+      after: { modo: 'arquivada', arquivadaEm: agora.toISOString(), tarefasArquivadas: arquivadas },
+    });
+    return { id, modo: 'arquivada', tarefasArquivadas: arquivadas };
+  }
+
+  /*
+   * ARQUIVAR TODAS AS TAREFAS DA LISTA (P3): o passo que a tela oferece antes de
+   * excluir. Arquivar não apaga nada (a tarefa some das listagens e volta pelo
+   * filtro "arquivadas"). Condicionada ao número que a tela mostrou: se a lista
+   * mudou (`esperadas` diferente), nada é arquivado e a resposta é 409. Tudo numa
+   * transação, com uma linha de auditoria por tarefa (a atividade da tarefa mostra)
+   * e uma da lista, com a contagem. A lista da implantação fica de fora: os
+   * cartões dela são clientes, e cada um se arquiva sozinho, de propósito.
+   */
+  async arquivarTarefasDaLista(orgId: string, actorId: string, id: string, input: TrabListaArquivarTarefasInput): Promise<TrabListaTarefasArquivadas> {
+    const lista = await this.prisma.workList.findFirst({ where: { id, orgId, arquivadaEm: null }, select: { id: true, name: true } });
+    if (!lista) throw new NotFoundException('Lista não encontrada');
+    if (await this.ehListaDaImplantacao(orgId, id)) throw new BadRequestException(LISTA_DA_IMPLANTACAO_FICA);
+    await exigirAcessoAtual(this.prisma, orgId, actorId, ['tarefas.editar']);
+    const arquivadas = await this.prisma.$transaction(async (tx) => {
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`work-lista:${id}`}))`;
+      const alvo = await tx.workTask.findMany({ where: { orgId, listId: id, archived: false }, select: { id: true, updatedAt: true } });
+      if (alvo.length !== input.esperadas) throw new ConflictException(LISTA_MUDOU_NO_MEIO);
+      if (alvo.length === 0) return 0;
+      const agora = new Date();
+      for (const t of alvo) {
+        const updatedAt = new Date(Math.max(agora.getTime(), t.updatedAt.getTime() + 1));
+        const r = await tx.workTask.updateMany({ where: { id: t.id, orgId, archived: false, updatedAt: t.updatedAt }, data: { archived: true, updatedAt } });
+        if (r.count !== 1) throw new ConflictException(LISTA_MUDOU_NO_MEIO);
+        await this.audit.log({
+          orgId, actorId, action: 'work.task.update', entityType: 'work_task', entityId: t.id,
+          before: { archived: false }, after: { archived: true }, metadata: { origem: 'lista.arquivar-tarefas', listId: id },
+        }, tx);
+      }
+      await this.audit.log({
+        orgId, actorId, action: 'work.list.tasks.archive', entityType: 'work_list', entityId: id,
+        before: { name: lista.name, vivas: alvo.length }, after: { vivas: 0, arquivadasAgora: alvo.length },
+      }, tx);
+      await exigirAcessoAtual(tx, orgId, actorId, ['tarefas.editar']);
+      return alvo.length;
+    }, { timeout: 60_000 });
+    return { id, arquivadas };
   }
 
   // ---------- statuses (pipeline por lista) ----------
@@ -475,6 +606,8 @@ export class WorkService {
     const page = f.page ?? 1;
     const limit = f.limit ?? 500;
     const where: Prisma.WorkTaskWhereInput = { orgId, archived: f.arquivadas ? undefined : false };
+    // Tarefa de lista arquivada (ou de pasta arquivada) não aparece em listagem nenhuma (21/10/2026).
+    const visivel = tarefaDeListaVisivel();
     if (f.listId) where.listId = f.listId;
     if (f.listIds) where.listId = { in: f.listIds };
     if (f.listExternalIds) where.list = { orgId, externalId: { in: f.listExternalIds } };
@@ -496,6 +629,7 @@ export class WorkService {
       where.AND = [
         { OR: [{ parentId: null }, { parent: { list: { natureza: 'cadastro' } } }] },
         { OR: [{ externalId: null }, { externalId: { notIn: [...CARTOES_QUE_NAO_SAO_TAREFA] } }] },
+        visivel,
       ];
       /*
        * O SEGMENTO (rodada da interface U3): "Todas" recortada por uma pasta de topo,
@@ -508,6 +642,8 @@ export class WorkService {
         const pastas = await this.prisma.workFolder.findMany({ where: { orgId }, select: { id: true, parentId: true } });
         where.list = { ...(where.list as Prisma.WorkListWhereInput), folderId: { in: [...pastaComSubpastas(pastas, f.segmentoId)] } };
       }
+    } else {
+      where.AND = [visivel];
     }
     if (f.tagId) where.tags = { some: { id: f.tagId } };
     if (f.q) where.title = { contains: f.q, mode: 'insensitive' };
