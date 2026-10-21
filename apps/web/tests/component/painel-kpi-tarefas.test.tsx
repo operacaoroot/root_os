@@ -120,6 +120,15 @@ describe('Dia a dia › Visão geral: o dash das tarefas por pasta e lista', () 
     expect(window.location.href).toBe('/trabalho?pasta=f-clientes&lista=l-onb&visao=lista');
   });
 
+  it('P1 (21/10): carga por prazo, por pasta e por lista sem rolagem lateral na caixa', async () => {
+    render(<VisaoGeralPage />);
+    for (const titulo of ['Carga por prazo', 'Tarefas por pasta', 'Tarefas por lista']) {
+      const quadro = (await screen.findByText(titulo)).closest('section') as HTMLElement;
+      expect(quadro.className, titulo).not.toContain('overflow-x-auto');
+      expect(quadro.querySelector('[data-grafico-caixa]'), titulo).toBeTruthy();
+    }
+  });
+
   it('o endereço do Trabalho leva pessoa, sem responsável e prazo', () => {
     expect(urlDoTrabalho({ pessoa: 'p-lucas' })).toBe('/trabalho?pasta=todas&visao=lista&assigneeUserId=p-lucas');
     expect(urlDoTrabalho({ pessoa: 'sem' })).toBe('/trabalho?pasta=todas&visao=lista&semResponsavel=1');

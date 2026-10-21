@@ -9,6 +9,7 @@ import {
 import { ActorType, Prisma } from '@prisma/client';
 
 import { ENVIO_PELO_DIGISAC, type EnvioPeloDigisac } from '../gateway/canais/digisac.port';
+import { ENVIO_PELA_EVOLUTION, type EnvioPelaEvolution } from '../gateway/canais/evolution.port';
 import { EfeitosRegistry, type ContextoDoEfeito } from '../gateway/efeitos.registry';
 import { PortaDoOperador } from '../gateway/porta-do-operador.service';
 import { PrismaService } from '../prisma/prisma.service';
@@ -122,10 +123,10 @@ export function textoComNome(template: ComercialTemplate, nome: string | null, v
     .replace(new RegExp(MARCA_DO_NOME, 'g'), '');
 }
 
-function provedorPorNome(digisac: EnvioPeloDigisac | null): WhatsappPort {
+function provedorPorNome(digisac: EnvioPeloDigisac | null, evolution: EnvioPelaEvolution | null): WhatsappPort {
   const p = provedorDoAmbiente();
   if (p === 'digisac') return new DigisacProvider(digisac);
-  if (p === 'evolution') return new EvolutionProvider();
+  if (p === 'evolution') return new EvolutionProvider(evolution);
   if (p === 'meta') return new MetaProvider();
   return new SimuladoProvider();
 }
@@ -146,8 +147,10 @@ export class WhatsappComercialService implements OnModuleInit {
     @Optional() provedor?: WhatsappPort,
     /** Interface 20/10 (U6): o envio do DigiSac, usado só quando `WHATSAPP_PROVEDOR=digisac`. */
     @Optional() @Inject(ENVIO_PELO_DIGISAC) digisac?: EnvioPeloDigisac,
+    /** Produção 21 (P8): o envio da Evolution da empresa, usado só quando `WHATSAPP_PROVEDOR=evolution`. */
+    @Optional() @Inject(ENVIO_PELA_EVOLUTION) evolution?: EnvioPelaEvolution,
   ) {
-    this.porta = provedor ?? provedorPorNome(digisac ?? null);
+    this.porta = provedor ?? provedorPorNome(digisac ?? null, evolution ?? null);
   }
 
   onModuleInit(): void {
@@ -265,7 +268,7 @@ export class WhatsappComercialService implements OnModuleInit {
   /**
    * Cria o grupo do cliente no provedor. É escrita fora da casa: quem chama é o
    * EFEITO de uma capacidade da porta (o fechamento, lane D), nunca uma rota.
-   * No simulado devolve um jid local; Evolution e Meta dizem por que não.
+   * No simulado devolve um jid local; DigiSac e Evolution criam de verdade; Meta diz por que não.
    */
   async criarGrupo(nome: string, participantes: string[]): Promise<{ jid: string }> {
     return this.porta.criarGrupo(nome, participantes.map(normalizarTelefone));

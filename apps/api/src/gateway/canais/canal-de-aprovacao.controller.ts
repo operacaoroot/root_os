@@ -14,6 +14,7 @@ import { comTenantPublico } from '../../common/tenant-publico';
 import { CABECALHO_DO_SEGREDO, segredoDoCanal } from './configuracao-do-canal';
 import { CanalDeAprovacaoService } from './canal-de-aprovacao.service';
 import { EntradaDeGrupoRegistry } from './entrada-de-grupo.registry';
+import { EntradaDiretaRegistry } from './entrada-direta.registry';
 
 /*
  * ============================================================================
@@ -96,6 +97,14 @@ import { EntradaDeGrupoRegistry } from './entrada-de-grupo.registry';
  * canal como sempre, e o canal continua descartando qualquer outro grupo. O
  * segredo, a resposta constante e o contexto de empresa valem igual para os
  * dois caminhos — a triagem acontece depois de tudo isso, em segundo plano.
+ *
+ * ----------------------------------------------------------------------------
+ * E A PORTA DA CONVERSA DO LEAD (Produção 21, P8)
+ * ----------------------------------------------------------------------------
+ * Depois do grupo, a conversa INDIVIDUAL de um número que é lead do comercial
+ * vai para a entrada do comercial (`EntradaDiretaRegistry`), por registro. Quem
+ * é identidade cadastrada do canal nunca é desviado: o registro confere isso
+ * antes de perguntar ao comercial. O resto segue para o canal como sempre.
  */
 @Controller('approvals/canal')
 export class CanalDeAprovacaoController {
@@ -118,6 +127,8 @@ export class CanalDeAprovacaoController {
      * tudo, como antes do MC1.
      */
     @Optional() private readonly grupos?: EntradaDeGrupoRegistry,
+    /** P8: sem o registro (a suíte do canal), nenhuma conversa é desviada. */
+    @Optional() private readonly diretas?: EntradaDiretaRegistry,
   ) {}
 
   @Post('whatsapp/:orgId')
@@ -158,6 +169,8 @@ export class CanalDeAprovacaoController {
     return comTenantPublico(orgId, async () => {
       const doGrupo = await this.grupos?.despachar(orgId, corpo);
       if (doGrupo != null) return { desfecho: `grupo:${doGrupo}` };
+      const doLead = await this.diretas?.despachar(orgId, corpo);
+      if (doLead != null) return { desfecho: `direta:${doLead}` };
       return this.canal.receber(orgId, corpo);
     })
       .then(({ desfecho }) => {

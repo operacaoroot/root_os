@@ -344,6 +344,8 @@ export const CONNECTORS: ConnectorInfo[] = [
   { key: 'granola', label: 'Granola (reuniões)', category: 'knowledge', phase: 3, authType: 'webhook', requires: 'Zap do Granola com a senha gerada em Conexões' },
   // Interface 20/10 (U6): o WhatsApp do comercial pelo DigiSac. Token e conexão por empresa no cofre.
   { key: 'digisac', label: 'WhatsApp (DigiSac)', category: 'messaging', phase: 6, authType: 'api_key', requires: 'token da API do DigiSac e id da conexão, salvos em Conexões' },
+  // Produção 21 (P8): o WhatsApp do comercial pela Evolution. Endereço, chave e instância por empresa no cofre.
+  { key: 'evolution', label: 'WhatsApp do comercial (Evolution)', category: 'messaging', phase: 6, authType: 'api_key', requires: 'endereço, chave da API e instância da Evolution, salvos em Integrações' },
 ];
 
 export const IntegrationCatalogRowSchema = z.object({

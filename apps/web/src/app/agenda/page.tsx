@@ -9,6 +9,19 @@ import { intervaloDaGrade, prazosDeTrabalho, trabalhoHref } from '@/lib/work-pro
 import type { TrabTarefaResumo } from '@mktos/shared';
 import { Botao, Card, Chip } from '../referencias/ui';
 import { MarcarReuniao } from './MarcarReuniao';
+import { GradeDaSemana, useEhCelular } from './GradeDaSemana';
+import {
+  diaVizinho,
+  diasDaSemana,
+  eventosPorDia,
+  hojeNoFuso,
+  intervaloDosDias,
+  lerEstadoDaAgenda,
+  noFuso,
+  rotulosDoDia,
+  urlDaAgenda,
+  type VisaoDaAgenda,
+} from './semana';
 import {
   chaveDoDia,
   diaDoEvento,
@@ -38,15 +51,30 @@ import {
  *     morre em duas semanas.
  *  3. MARCAR JÁ SAI NO PADRÃO, porque o formulário não tem campo de título.
  *
- * A camada de PRAZOS consulta WorkTask, sem criar evento no Google. FUSO: tudo
- * é desenhado no relógio de quem está olhando. Evento de dia inteiro
- * chega como data pura e é tratado como string (ver `diaDoEvento`) — convertê-lo
- * jogaria o compromisso para o dia anterior em Brasília.
+ * A camada de PRAZOS consulta WorkTask, sem criar evento no Google. FUSO: desde
+ * a rodada de produção 1 (21/10/2026, P2) tudo é desenhado no relógio de
+ * America/Sao_Paulo (ver `semana.ts`), não no do navegador. Evento de dia
+ * inteiro chega como data pura e é tratado como string (ver `diaDoEvento`):
+ * convertê-lo jogaria o compromisso para o dia anterior em Brasília.
+ *
+ * TRÊS VISÕES (P2): Mês, Semana e Dia, com o estado no endereço
+ * (`?visao=semana&dia=AAAA-MM-DD`), setas de anterior e próxima e "Hoje". A
+ * semana é uma grade de horas das 07h às 22h no computador e uma lista por dia
+ * no celular. A fonte é a mesma: `GET /google/calendar/periodo?de=&ate=` com o
+ * intervalo da visão, e os prazos do Trabalho no mesmo intervalo.
  */
 
 const DIAS = ['dom', 'seg', 'ter', 'qua', 'qui', 'sex', 'sáb'];
 
 const primeiroDoMes = (d: Date) => new Date(d.getFullYear(), d.getMonth(), 1);
+
+/** O mês (Date local no dia 1) da chave `AAAA-MM-DD`. */
+const mesDaChave = (dia: string) => {
+  const [a, m] = dia.split('-').map(Number);
+  return new Date(a, m - 1, 1);
+};
+
+const ROTULO_DA_VISAO: Record<VisaoDaAgenda, string> = { mes: 'Mês', semana: 'Semana', dia: 'Dia' };
 
 /** A grade de 6×7 que cobre o mês inteiro, começando no domingo. */
 function gradeDoMes(mes: Date): Date[] {
@@ -66,22 +94,41 @@ export default function AgendaPage() {
   const { token, ready, can } = useAuth();
   const { modulos } = useModulos();
   const podeVerTrabalho = ready && !!token && can('tarefas.ver') && modulos?.includes('trabalho') === true;
-  const [mes, setMes] = useState(() => primeiroDoMes(new Date()));
+  const celular = useEhCelular();
+  // O estado mora no endereço; até lê-lo (depois de montar), nada é buscado.
+  const [estado, setEstado] = useState<{ visao: VisaoDaAgenda; dia: string; lido: boolean }>(() => ({ visao: 'mes', dia: hojeNoFuso(), lido: false }));
+  const { visao, dia: diaAberto } = estado;
+  const mes = useMemo(() => mesDaChave(diaAberto), [diaAberto]);
   const [eventos, setEventos] = useState<EventoDaAgenda[] | null>(null);
   const [erro, setErro] = useState<string | null>(null);
-  const [diaAberto, setDiaAberto] = useState<string>(() => chaveDoDia(new Date()));
   const [filtro, setFiltro] = useState<Filtro>('tudo');
   const [trilhos, setTrilhos] = useState<string[]>([]);
   const [prazos, setPrazos] = useState<TrabTarefaResumo[] | null>(null);
   const [erroPrazos, setErroPrazos] = useState<string | null>(null);
 
+  useEffect(() => {
+    const ler = () => setEstado({ ...lerEstadoDaAgenda(window.location.search, hojeNoFuso()), lido: true });
+    ler();
+    window.addEventListener('popstate', ler);
+    return () => window.removeEventListener('popstate', ler);
+  }, []);
+
+  const mudar = useCallback((proxima: VisaoDaAgenda, dia: string) => {
+    setEstado({ visao: proxima, dia, lido: true });
+    window.history.replaceState(null, '', urlDaAgenda(`${window.location.pathname}${window.location.search}${window.location.hash}`, proxima, dia));
+  }, []);
+
   const grade = useMemo(() => gradeDoMes(mes), [mes]);
+  const diasDaVisao = useMemo(
+    () => (visao === 'semana' ? diasDaSemana(diaAberto) : visao === 'dia' ? [diaAberto] : grade.map(chaveDoDia)),
+    [visao, diaAberto, grade],
+  );
+  // O intervalo [de, ate) da visão, em instantes do fuso da agenda.
+  const intervalo = useMemo(() => intervaloDosDias(diasDaVisao), [diasDaVisao]);
 
   const carregar = useCallback(() => {
-    if (!token) return;
-    const de = grade[0];
-    const ate = new Date(grade[41]);
-    ate.setDate(ate.getDate() + 1);
+    if (!token || !estado.lido) return;
+    const { de, ate } = intervalo;
     setErro(null);
     apiGet<EventoDaAgenda[]>(
       `/google/calendar/periodo?de=${encodeURIComponent(de.toISOString())}&ate=${encodeURIComponent(ate.toISOString())}`,
@@ -89,20 +136,22 @@ export default function AgendaPage() {
     )
       .then(setEventos)
       .catch((e) => { setEventos([]); setErro(e.message); });
-  }, [token, grade]);
+  }, [token, intervalo, estado.lido]);
 
   useEffect(() => { if (ready && token) carregar(); }, [ready, token, carregar]);
 
   useEffect(() => {
     if (!podeVerTrabalho || !token) { setPrazos(null); setErroPrazos(null); return; }
+    if (!estado.lido) return;
     let ativo = true;
     setPrazos(null);
     setErroPrazos(null);
-    prazosDeTrabalho(token, intervaloDaGrade(grade))
+    const range = visao === 'mes' ? intervaloDaGrade(grade) : { dueFrom: intervalo.de.toISOString(), dueTo: intervalo.ate.toISOString() };
+    prazosDeTrabalho(token, range)
       .then((items) => { if (ativo) setPrazos(items); })
       .catch((e) => { if (ativo) setErroPrazos(e.message); });
     return () => { ativo = false; };
-  }, [podeVerTrabalho, token, grade]);
+  }, [podeVerTrabalho, token, grade, visao, intervalo, estado.lido]);
 
   // Os nomes de cliente que o OS já conhece, para o datalist do formulário. Sem
   // permissão de tarefas o pedido nem sai — o campo continua sendo texto livre.
@@ -113,12 +162,20 @@ export default function AgendaPage() {
       .catch(() => {});
   }, [ready, token, can]);
 
+  const filtrados = useMemo(
+    () =>
+      (eventos ?? []).filter((e) => {
+        if (filtro === 'cliente' && e.reuniao?.tipo !== 'cliente') return false;
+        if (filtro === 'interna' && e.reuniao?.tipo !== 'interna') return false;
+        if (filtro === 'fora' && e.reuniao) return false;
+        return true;
+      }),
+    [eventos, filtro],
+  );
+
   const porDia = useMemo(() => {
     const m = new Map<string, EventoDaAgenda[]>();
-    for (const e of eventos ?? []) {
-      if (filtro === 'cliente' && e.reuniao?.tipo !== 'cliente') continue;
-      if (filtro === 'interna' && e.reuniao?.tipo !== 'interna') continue;
-      if (filtro === 'fora' && e.reuniao) continue;
+    for (const e of filtrados) {
       const dia = diaDoEvento(e);
       if (!dia) continue;
       const lista = m.get(dia) ?? [];
@@ -126,13 +183,13 @@ export default function AgendaPage() {
       m.set(dia, lista);
     }
     return m;
-  }, [eventos, filtro]);
+  }, [filtrados]);
 
   const prazosPorDia = useMemo(() => {
     const dias = new Map<string, TrabTarefaResumo[]>();
     for (const tarefa of prazos ?? []) {
       if (!tarefa.dueDate) continue;
-      const dia = chaveDoDia(new Date(tarefa.dueDate));
+      const dia = noFuso(new Date(tarefa.dueDate)).dia;
       dias.set(dia, [...(dias.get(dia) ?? []), tarefa]);
     }
     return dias;
@@ -151,8 +208,19 @@ export default function AgendaPage() {
   }, [eventos]);
 
   const foraDoPadrao = (eventos ?? []).filter((e) => !e.reuniao).length;
-  const doDia = porDia.get(diaAberto) ?? [];
-  const hoje = chaveDoDia(new Date());
+  const doDia = useMemo(() => {
+    if (visao === 'mes') return porDia.get(diaAberto) ?? [];
+    const [d] = eventosPorDia(filtrados, [diaAberto]);
+    return [...d.diaInteiro, ...d.comHora.map((c) => c.evento)];
+  }, [visao, porDia, filtrados, diaAberto]);
+  const hoje = hojeNoFuso();
+  const contagemDePrazos = useMemo(() => new Map([...prazosPorDia].map(([k, v]) => [k, v.length])), [prazosPorDia]);
+  const titulo =
+    visao === 'mes'
+      ? mes.toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' })
+      : visao === 'semana'
+        ? `${rotulosDoDia(diasDaVisao[0]).data} a ${rotulosDoDia(diasDaVisao[6]).data}`
+        : rotulosDoDia(diaAberto).extenso;
 
   return (
     <div className="space-y-6">
@@ -175,13 +243,26 @@ export default function AgendaPage() {
       )}
 
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="flex items-center gap-2">
-          <Botao onClick={() => setMes(new Date(mes.getFullYear(), mes.getMonth() - 1, 1))}><ChevronLeft size={15} /></Botao>
-          <span className="min-w-[10rem] text-center text-sm font-medium capitalize">
-            {mes.toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' })}
+        <div className="flex flex-wrap items-center gap-2">
+          <div role="group" aria-label="Visão da agenda" className="inline-flex overflow-hidden rounded-lg border border-border">
+            {(['mes', 'semana', 'dia'] as const).map((v) => (
+              <button
+                key={v}
+                type="button"
+                aria-pressed={visao === v}
+                onClick={() => mudar(v, diaAberto)}
+                className={`px-2.5 py-1 text-xs ${visao === v ? 'bg-brand/10 text-text' : 'bg-surface-2 text-muted hover:text-text'}`}
+              >
+                {ROTULO_DA_VISAO[v]}
+              </button>
+            ))}
+          </div>
+          <Botao onClick={() => mudar(visao, diaVizinho(visao, diaAberto, -1))} title="Anterior"><ChevronLeft size={15} /></Botao>
+          <span className="min-w-[8rem] text-center text-sm font-medium capitalize" data-titulo-da-agenda="">
+            {titulo}
           </span>
-          <Botao onClick={() => setMes(new Date(mes.getFullYear(), mes.getMonth() + 1, 1))}><ChevronRight size={15} /></Botao>
-          <Botao onClick={() => { const h = new Date(); setMes(primeiroDoMes(h)); setDiaAberto(chaveDoDia(h)); }}>hoje</Botao>
+          <Botao onClick={() => mudar(visao, diaVizinho(visao, diaAberto, 1))} title="Próxima"><ChevronRight size={15} /></Botao>
+          <Botao onClick={() => mudar(visao, hojeNoFuso())}>Hoje</Botao>
         </div>
         <div className="flex flex-wrap items-center gap-1.5">
           {([
@@ -201,7 +282,21 @@ export default function AgendaPage() {
         </div>
       </div>
 
+      {visao !== 'mes' && (
+        <GradeDaSemana
+          dias={diasDaVisao}
+          eventos={eventos === null ? [] : filtrados}
+          prazosPorDia={contagemDePrazos}
+          mostrarPrazos={podeVerTrabalho}
+          hoje={hoje}
+          diaAberto={diaAberto}
+          aoEscolher={(d) => mudar(visao, d)}
+          comoLista={celular && visao === 'semana'}
+        />
+      )}
+
       {/* a grade do mês */}
+      {visao === 'mes' && (
       <div className="overflow-hidden rounded-xl border border-border bg-surface">
         <div className="grid grid-cols-7 border-b border-border">
           {DIAS.map((d) => (
@@ -217,7 +312,7 @@ export default function AgendaPage() {
             return (
               <button
                 key={chave}
-                onClick={() => setDiaAberto(chave)}
+                onClick={() => mudar('mes', chave)}
                 className={`min-h-[6.5rem] border-b border-r border-border p-1.5 text-left align-top transition-colors last:border-r-0 hover:bg-surface-2 ${doMes ? '' : 'opacity-40'} ${chave === diaAberto ? 'bg-surface-2' : ''}`}
               >
                 <div className="mb-1 flex items-center justify-between">
@@ -251,6 +346,8 @@ export default function AgendaPage() {
           })}
         </div>
       </div>
+
+      )}
 
       {/* o dia escolhido, por extenso */}
       <Card titulo={new Date(`${diaAberto}T12:00:00`).toLocaleDateString('pt-BR', { weekday: 'long', day: '2-digit', month: 'long' })}>

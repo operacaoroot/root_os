@@ -7,6 +7,11 @@ import { CanalDeAprovacaoService } from './canal-de-aprovacao.service';
 import { CanalDeAprovacaoController } from './canal-de-aprovacao.controller';
 import { DigisacService } from './digisac.conector';
 import { ADMINISTRACAO_DO_DIGISAC, ENVIO_PELO_DIGISAC } from './digisac.port';
+import { EntradaDiretaRegistry } from './entrada-direta.registry';
+import { ADMINISTRACAO_DA_EVOLUTION, ENVIO_PELA_EVOLUTION } from './evolution.port';
+// Produção 21 (P8): a Evolution da EMPRESA mora no arquivo do conector da Evolution (a catraca de
+// credenciais diz que só ele lê `EVOLUTION_*`); a pasta da porta pode importar conector.
+import { EvolutionDaEmpresaService } from '../../pauta/evolution.service';
 
 /*
  * O CANAL EXTERNO DE APROVAÇÃO — fatia 5.5, RF-A-06.
@@ -66,7 +71,22 @@ import { ADMINISTRACAO_DO_DIGISAC, ENVIO_PELO_DIGISAC } from './digisac.port';
     DigisacService,
     { provide: ENVIO_PELO_DIGISAC, useExisting: DigisacService },
     { provide: ADMINISTRACAO_DO_DIGISAC, useExisting: DigisacService },
+    // Produção 21 (P8): a conversa 1:1 do lead que chega pelo webhook da Evolution vai ao comercial, por registro.
+    EntradaDiretaRegistry,
+    // Produção 21 (P8): a Evolution da empresa, entregue ao comercial pelas duas portas de `evolution.port.ts`.
+    EvolutionDaEmpresaService,
+    { provide: ENVIO_PELA_EVOLUTION, useExisting: EvolutionDaEmpresaService },
+    { provide: ADMINISTRACAO_DA_EVOLUTION, useExisting: EvolutionDaEmpresaService },
   ],
-  exports: [TransporteDeCanalRegistry, EntradaDeGrupoRegistry, EnvioDeAprovacaoService, ENVIO_PELO_DIGISAC, ADMINISTRACAO_DO_DIGISAC],
+  exports: [
+    TransporteDeCanalRegistry,
+    EntradaDeGrupoRegistry,
+    EntradaDiretaRegistry,
+    EnvioDeAprovacaoService,
+    ENVIO_PELO_DIGISAC,
+    ADMINISTRACAO_DO_DIGISAC,
+    ENVIO_PELA_EVOLUTION,
+    ADMINISTRACAO_DA_EVOLUTION,
+  ],
 })
 export class CanaisModule {}

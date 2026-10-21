@@ -15,7 +15,7 @@
  *   reais de todas as listas, e /trabalho/todas redireciona para ele;
  *   Funil sem chips, filtro por responsável, lista, mover para trás com a mensagem;
  *   WhatsApp como área com a tela; Atas › Reuniões do Granola (dublê) › Gerar ata ›
- *   sugestões › aceitar uma vira tarefa; Conexões › DigiSac com a URL do webhook.
+ *   sugestões › aceitar uma vira tarefa; Conexões › WhatsApp (Evolution) com a URL do webhook.
  * E fotografa (escuro, claro e 390 px): menu aberto, recolhido com balão, Trabalho com
  * o painel de filtros, Funil, WhatsApp e Atas.
  *
@@ -523,21 +523,21 @@ async function partesDasOutrasLanes(p, sessao) {
     return { detalhe: { tarefa: t.title } };
   });
 
-  // ---------------- U6 · DigiSac ----------------
-  await passo('Conexões › WhatsApp (DigiSac): o cartão com a URL do webhook, sem token na tela', async () => {
+  // ---------------- U6 · WhatsApp (desde a Produção 21, P8: Evolution no lugar do DigiSac) ----------------
+  await passo('Conexões › WhatsApp (Evolution): o cartão com a URL do webhook, sem chave na tela, e sem o DigiSac', async () => {
     await p.goto(`${WEB}/conexoes`, { waitUntil: 'networkidle' });
-    const url = p.getByTestId('url-do-webhook-digisac');
+    const url = p.getByTestId('url-do-webhook-evolution');
     await url.waitFor();
     const texto = (await url.innerText()).trim();
-    conferir(/\/api\/comercial\/webhooks\/digisac\/[0-9a-f-]{36}/.test(texto), `a URL do webhook veio: ${texto}`);
-    conferir(/segredo=\s*$/.test(texto) || !/segredo=[^\s&]+/.test(texto), 'a URL do webhook mostra um segredo');
+    conferir(/\/api\/approvals\/canal\/whatsapp\/[0-9a-f-]{36}$/.test(texto), `a URL do webhook veio: ${texto}`);
+    conferir((await p.getByTestId('url-do-webhook-digisac').count()) === 0, 'o cartão do DigiSac ainda está na tela');
     const cartao = url.locator('xpath=ancestor::section[1]');
     const alvo = (await cartao.count()) ? cartao : url;
     await alvo.scrollIntoViewIfNeeded();
-    await foto(p, 'conexoes-digisac-escuro');
-    // A entrada recusa sem segredo (a stack do seed não tem DigiSac configurado: 404 para tudo).
-    const orgId = texto.match(/digisac\/([0-9a-f-]{36})/)[1];
-    const r = await http('POST', `${API}/comercial/webhooks/digisac/${orgId}`, { event: 'message.created', data: { id: 'x', isFromMe: false, type: 'chat', text: 'oi' } });
+    await foto(p, 'conexoes-evolution-escuro');
+    // A entrada recusa sem segredo (o webhook é o do canal de aprovação: 404 sem o cabeçalho).
+    const orgId = texto.match(/whatsapp\/([0-9a-f-]{36})/)[1];
+    const r = await http('POST', `${API}/approvals/canal/whatsapp/${orgId}`, { event: 'messages.upsert', data: { key: { remoteJid: '5532900000000@s.whatsapp.net', fromMe: false, id: 'x' }, message: { conversation: 'oi' } } });
     conferir(r.status === 401 || r.status === 403 || r.status === 404, `o webhook sem segredo respondeu ${r.status}`);
     return { detalhe: { webhook: texto.replace(/[0-9a-f-]{36}/, '<empresa>'), semSegredo: r.status } };
   });

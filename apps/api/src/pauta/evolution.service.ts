@@ -1,10 +1,25 @@
 import {
+  BadRequestException,
   Injectable,
   Logger,
   OnModuleInit,
   Optional,
   ServiceUnavailableException,
 } from '@nestjs/common';
+import { lookup } from 'node:dns/promises';
+import { isIP } from 'node:net';
+import type { ConexaoDaEvolution, EstadoDaEvolution, OrigemDaCredencialEvolution, QrDaEvolution } from '@mktos/shared';
+import { CofreService, SegredoIndisponivelError } from '../cofre/cofre.service';
+import { PrismaService } from '../prisma/prisma.service';
+import { InterruptoresRegistry } from '../gateway/interruptores.registry';
+import { CABECALHO_DO_SEGREDO, segredoDoCanal } from '../gateway/canais/configuracao-do-canal';
+import {
+  CONECTOR_EVOLUTION,
+  type AdministracaoDaEvolution,
+  type CredencialDaEvolutionParaGuardar,
+  type EnvioPelaEvolution,
+} from '../gateway/canais/evolution.port';
+import { enderecoInterno } from './pagina-publica';
 import { EfeitosRegistry, type ContextoDoEfeito } from '../gateway/efeitos.registry';
 import { ConectoresConfiguradosRegistry } from '../gateway/conectores-configurados.registry';
 import { TransporteDeCanalRegistry } from '../gateway/canais/transporte.registry';
@@ -14,6 +29,7 @@ import {
 } from '../integrations/conectores.registry';
 import {
   type ConectorDoContrato,
+  type ContextoDoVerbo,
   type ResultadoDeAutorizacao,
   type ResultadoDeRevogacao,
   type ResultadoDeSincronizacao,
@@ -340,5 +356,480 @@ export class EvolutionService implements OnModuleInit {
       text: texto,
     });
     return { id: r.key?.id ?? null };
+  }
+}
+
+// ============================================================================
+// A EVOLUTION DA EMPRESA — o WhatsApp do comercial (Rodada de produção 1, 21/10/2026, P8)
+// ============================================================================
+//
+// A classe de cima é a do PROCESSO: a instância da Root no ambiente, que o
+// canal de aprovação e a publicação da pauta usam. Esta é a da EMPRESA: o
+// comercial de cada empresa fala com o lead pela instância dela, com a
+// credencial (endereço, chave da API e nome da instância) no COFRE, por
+// empresa. As variáveis `EVOLUTION_URL`, `EVOLUTION_API_KEY` e
+// `EVOLUTION_INSTANCIA` ficam como reserva SÓ da empresa da casa (slug `root`):
+// empresa cliente nunca usa a credencial do processo, e credencial revogada no
+// cofre não cai para o ambiente (revogar é parar).
+//
+// POR QUE MORA NESTE ARQUIVO, e não num conector novo em `gateway/canais/`
+// como o DigiSac: a catraca de arquitetura diz que a credencial e o endereço de
+// um fornecedor são lidos só pelo conector dele (`CREDENCIAIS`), e o conector
+// da Evolution é este arquivo. Um segundo arquivo lendo `EVOLUTION_*` (a reserva
+// da casa) seria uma exceção nova na catraca; um segundo cliente HTTP da mesma
+// Evolution, um segundo lugar para errar. A classe é provida por
+// `gateway/canais/canais.module.ts` (a pasta da porta pode importar conector) e
+// chega ao comercial pelas duas portas de `gateway/canais/evolution.port.ts`.
+//
+// O QUE FOI USADO DA API DA EVOLUTION (v2; rotas conferidas no código-fonte do
+// EvolutionAPI/evolution-api: `src/api/routes/instance.router.ts`,
+// `group.router.ts`, `src/validate/group.schema.ts` e `message.schema.ts`):
+//
+//   auth     cabeçalho `apikey: <chave da API>`
+//   estado   GET  /instance/connectionState/{instancia}  → { instance: { state: open|connecting|close } }
+//   QR       GET  /instance/connect/{instancia}          → { pairingCode, code, base64, count }
+//   texto    POST /message/sendText/{instancia}          { number, text }  → { key: { id } }
+//   grupo    POST /group/create/{instancia}              { subject, participants: [dígitos], description? }
+//                                                         → metadata do grupo, `id` termina em `@g.us`
+//   no grupo POST /message/sendText/{instancia}          { number: <jid do grupo>, text }
+//
+// O ENDEREÇO (a regra contra SSRF, `baseDaEvolution` + `enderecosPermitidos`):
+// a Evolution é instalada por quem a usa, então não há domínio oficial para
+// conferir, como há no DigiSac. O endereço é escrito por um admin da empresa e
+// chamado de dentro da rede dos containers; a regra é:
+//
+//   · http ou https, sem usuário e senha na URL, sem query nem fragmento, com
+//     caminho de prefixo opcional (`https://host/evolution`) e nada de `..`;
+//   · nome com ponto (domínio público): só https, e o nome resolvido não pode
+//     cair em rede interna (privada, loopback, link-local, ULA);
+//   · nome sem ponto (o serviço na rede do Docker, como `http://root_evolution:8080`):
+//     só para a EMPRESA DA CASA, em http ou https;
+//   · IP literal: nunca. A única exceção é o loopback em ambiente de TESTE
+//     (`NODE_ENV=test`), onde o dublê escuta;
+//   · link-local (169.254.x.x, fe80::, os metadados da nuvem) e loopback ficam
+//     fora para todo mundo, inclusive para a casa, mesmo atrás de um nome.
+//
+// Redirecionamento não é seguido (`redirect: 'error'`). Fica de fora a troca de
+// DNS entre a conferência e a conexão (rebinding), como em `pagina-publica.ts`.
+//
+// O que a Evolution responde de erro NÃO vai para a tela nem para o log: só o
+// status. O corpo de erro do `sendText` traz o número do destino.
+
+const SLUG_DA_CASA_EVOLUTION = 'root';
+const PRAZO_DO_ENVIO_DA_EMPRESA_MS = 20_000;
+const CAPACIDADE_DO_ENVIO_DO_COMERCIAL = 'comercial.whatsapp.enviar';
+const NOMES_NO_COFRE = { url: 'url', chave: 'chave', instancia: 'instancia' } as const;
+const ORIGEM_NO_COFRE = 'Integrações (WhatsApp pela Evolution)';
+
+type CorpoDaEvolution = Record<string, unknown>;
+
+interface CredencialDaEvolution {
+  base: string;
+  chave: string;
+  instancia: string;
+  origem: Exclude<OrigemDaCredencialEvolution, 'nenhuma'>;
+  daCasa: boolean;
+}
+
+/** A empresa ainda não tem Evolution configurada (ou revogou, ou desligou). */
+export class EvolutionNaoConfiguradaError extends Error {
+  constructor(motivo: string) {
+    super(motivo);
+    this.name = 'EvolutionNaoConfiguradaError';
+  }
+}
+
+/** A Evolution respondeu fora do 2xx. Só o status e a rota: o corpo fica de fora. */
+export class EvolutionRespondeuErro extends Error {
+  constructor(
+    readonly status: number,
+    metodo: string,
+    rota: string,
+  ) {
+    super(`A Evolution respondeu HTTP ${status} em ${metodo} ${rota}.`);
+    this.name = 'EvolutionRespondeuErro';
+  }
+}
+
+const emTeste = () => process.env.NODE_ENV === 'test';
+
+function loopbackLiteral(host: string): boolean {
+  return host === '::1' || /^127\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(host);
+}
+
+/**
+ * O endereço da Evolution, normalizado (esquema, host, porta e o prefixo de
+ * caminho, sem barra no fim), ou `null` quando a regra do cabeçalho recusa.
+ * Esta é a parte que não precisa de DNS; a resolução é conferida a cada
+ * chamada por `enderecosPermitidos`.
+ */
+export function baseDaEvolution(entrada: string | null | undefined, opcoes: { daCasa: boolean; teste?: boolean }): string | null {
+  const cru = String(entrada ?? '').trim();
+  if (!cru) return null;
+  let u: URL;
+  try {
+    u = new URL(cru);
+  } catch {
+    return null;
+  }
+  if (u.protocol !== 'http:' && u.protocol !== 'https:') return null;
+  if (u.username || u.password || u.search || u.hash) return null;
+  const host = u.hostname.replace(/^\[|\]$/g, '').toLowerCase();
+  if (!host) return null;
+  const teste = opcoes.teste ?? emTeste();
+  if (isIP(host)) {
+    if (!(teste && loopbackLiteral(host))) return null;
+  } else if (host === 'localhost' || host.endsWith('.localhost')) {
+    if (!teste) return null;
+  } else if (!host.includes('.')) {
+    // Nome sem ponto: o serviço na rede do Docker. Só a casa chama a rede interna.
+    if (!opcoes.daCasa) return null;
+    if (!/^[a-z0-9]([a-z0-9_-]*[a-z0-9])?$/.test(host)) return null;
+  } else {
+    if (u.protocol !== 'https:') return null;
+    if (!/^[a-z0-9.-]+$/.test(host) || host.startsWith('.') || host.endsWith('.') || host.includes('..')) return null;
+  }
+  const caminho = u.pathname.replace(/\/+$/, '');
+  if (caminho && (!/^(\/[A-Za-z0-9._~-]+)+$/.test(caminho) || caminho.split('/').some((p) => p === '..' || p === '.'))) return null;
+  return `${u.protocol}//${u.host}${caminho}`;
+}
+
+/**
+ * Os endereços resolvidos servem? Link-local, loopback e o "qualquer" ficam
+ * fora para todo mundo (metadados da nuvem, a própria API); rede privada, só
+ * para a casa (é onde mora o `root_evolution`).
+ */
+export function enderecosPermitidos(enderecos: readonly string[], daCasa: boolean): boolean {
+  if (!enderecos.length) return false;
+  return enderecos.every((ip) => {
+    const x = ip.toLowerCase();
+    const v4 = /^::ffff:(\d{1,3}(?:\.\d{1,3}){3})$/.exec(x)?.[1] ?? (isIP(x) === 4 ? x : null);
+    if (v4) {
+      const [a, b] = v4.split('.').map(Number);
+      if (a === 0 || a === 127 || (a === 169 && b === 254) || a >= 224) return false;
+    } else if (x === '::' || x === '::1' || /^fe[89ab]/.test(x) || /^ff/.test(x)) {
+      return false;
+    }
+    return daCasa || !enderecoInterno(ip);
+  });
+}
+
+/** O texto que a Evolution espera de um número: só dígitos, de 10 a 15. */
+function digitosDoNumero(numero: string): string {
+  const d = String(numero ?? '').replace(/\D/g, '');
+  if (d.length < 10 || d.length > 15) throw new Error('número de WhatsApp inválido: nada foi enviado');
+  return d;
+}
+
+/** O QR como `data:` de imagem, ou `null` quando a Evolution não mandou um que sirva. */
+function qrComoImagem(v: unknown): string | null {
+  if (typeof v !== 'string' || !v || v.length > 300_000) return null;
+  if (/^data:image\/(png|jpeg|webp);base64,[A-Za-z0-9+/=]+$/.test(v)) return v;
+  if (/^[A-Za-z0-9+/=]+$/.test(v)) return `data:image/png;base64,${v}`;
+  return null;
+}
+
+const MENSAGEM_DO_ESTADO: Record<'open' | 'connecting' | 'close' | 'desconhecido', string> = {
+  open: 'Instância conectada.',
+  connecting: 'QR pendente: gere o QR e leia com o WhatsApp do número.',
+  close: 'Instância desconectada: gere o QR para ligar o número.',
+  desconhecido: 'A Evolution não disse o estado da instância.',
+};
+
+@Injectable()
+export class EvolutionDaEmpresaService implements OnModuleInit, EnvioPelaEvolution, AdministracaoDaEvolution {
+  private readonly log = new Logger('EvolutionDaEmpresa');
+  /** A reserva da casa. Lida uma vez; trocar exige recriar o container, como toda variável. */
+  private readonly ambiente = {
+    url: (process.env.EVOLUTION_URL ?? '').trim(),
+    chave: (process.env.EVOLUTION_API_KEY ?? '').trim(),
+    instancia: (process.env.EVOLUTION_INSTANCIA ?? '').trim(),
+  };
+
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly cofre: CofreService,
+    /** `@Optional()` porque a suíte monta à mão; sem registro, o conector só não aparece no contrato. */
+    @Optional() private readonly contrato?: RegistroDeConectores,
+    @Optional() private readonly interruptores?: InterruptoresRegistry,
+  ) {}
+
+  /** Resolve o nome do host. Só a suíte troca (para provar a recusa de rede interna sem DNS de verdade). */
+  resolver: (host: string) => Promise<string[]> = async (host) => (await lookup(host, { all: true, verbatim: true })).map((r) => r.address);
+
+  onModuleInit(): void {
+    this.contrato?.registrar(this.descritor(), 'EvolutionDaEmpresaService');
+  }
+
+  // --------------------------------------------------------------- credencial
+
+  private async daCasa(orgId: string): Promise<boolean> {
+    const linha = await this.prisma.org.findFirst({ where: { id: orgId, slug: SLUG_DA_CASA_EVOLUTION }, select: { id: true } });
+    return !!linha;
+  }
+
+  /** Lê um valor do cofre. `undefined` = não existe; `null` = revogado. */
+  private async doCofre(orgId: string, nome: string): Promise<string | null | undefined> {
+    try {
+      return await this.cofre.envolver({ orgId, conector: CONECTOR_EVOLUTION, nome }, (c) => c.usar((v) => v));
+    } catch (e) {
+      if (e instanceof SegredoIndisponivelError) return e.revogado ? null : undefined;
+      throw e;
+    }
+  }
+
+  private async credencial(orgId: string): Promise<CredencialDaEvolution | { motivo: string }> {
+    const casa = await this.daCasa(orgId);
+    const chave = await this.doCofre(orgId, NOMES_NO_COFRE.chave);
+    if (chave === null) return { motivo: 'A chave da Evolution desta empresa foi revogada. Salve uma chave nova em Integrações.' };
+    if (chave) {
+      const base = baseDaEvolution(await this.doCofre(orgId, NOMES_NO_COFRE.url), { daCasa: casa });
+      const instancia = (await this.doCofre(orgId, NOMES_NO_COFRE.instancia)) ?? '';
+      if (!base) return { motivo: 'O endereço da Evolution guardado no cofre não vale mais. Salve de novo em Integrações.' };
+      if (!instancia) return { motivo: 'Falta o nome da instância da Evolution. Salve em Integrações.' };
+      return { base, chave, instancia, origem: 'cofre', daCasa: casa };
+    }
+    if (casa && this.ambiente.chave && this.ambiente.instancia) {
+      const base = baseDaEvolution(this.ambiente.url, { daCasa: true });
+      if (!base) return { motivo: 'EVOLUTION_URL ausente ou fora da regra de endereço no ambiente da API.' };
+      return { base, chave: this.ambiente.chave, instancia: this.ambiente.instancia, origem: 'ambiente', daCasa: true };
+    }
+    return { motivo: 'Evolution não configurada nesta empresa: salve o endereço, a chave e a instância em Integrações.' };
+  }
+
+  private async exigirCredencial(orgId: string): Promise<CredencialDaEvolution> {
+    const c = await this.credencial(orgId);
+    if ('motivo' in c) throw new EvolutionNaoConfiguradaError(c.motivo);
+    return c;
+  }
+
+  /** O botão de emergência: conector desligado nesta empresa não manda nada. */
+  private async exigirLigado(orgId: string): Promise<void> {
+    const recusa = await this.interruptores?.consultar({ orgId, conector: CONECTOR_EVOLUTION, capabilityId: CAPACIDADE_DO_ENVIO_DO_COMERCIAL });
+    if (recusa) throw new EvolutionNaoConfiguradaError(recusa.motivo);
+  }
+
+  /** O host da base resolve para onde a regra deixa? Loopback literal em teste passa direto. */
+  private async conferirDestino(base: string, daCasa: boolean): Promise<void> {
+    const host = new URL(base).hostname.replace(/^\[|\]$/g, '').toLowerCase();
+    if (isIP(host) || host === 'localhost' || host.endsWith('.localhost')) {
+      if (emTeste()) return;
+      throw new EvolutionNaoConfiguradaError('O endereço da Evolution não pode ser um IP: use o nome do servidor.');
+    }
+    let enderecos: string[];
+    try {
+      enderecos = await this.resolver(host);
+    } catch {
+      throw new EvolutionNaoConfiguradaError(`Não achei o endereço ${host}.`);
+    }
+    if (!enderecosPermitidos(enderecos, daCasa)) {
+      throw new EvolutionNaoConfiguradaError('O endereço da Evolution aponta para uma rede que esta empresa não pode chamar.');
+    }
+  }
+
+  // ---------------------------------------------------------------------- HTTP
+
+  private async chamar<T>(c: CredencialDaEvolution, metodo: 'GET' | 'POST', rota: string, corpo?: unknown, prazoMs = PRAZO_DO_ENVIO_DA_EMPRESA_MS): Promise<T | null> {
+    await this.conferirDestino(c.base, c.daCasa);
+    const res = await fetch(`${c.base}${rota}`, {
+      method: metodo,
+      headers: { apikey: c.chave, 'Content-Type': 'application/json', Accept: 'application/json' },
+      ...(corpo === undefined ? {} : { body: JSON.stringify(corpo) }),
+      redirect: 'error',
+      signal: AbortSignal.timeout(prazoMs),
+    });
+    const texto = await res.text().catch(() => '');
+    if (!res.ok) throw new EvolutionRespondeuErro(res.status, metodo, rota.split('/').slice(0, 3).join('/'));
+    if (!texto) return null;
+    try {
+      return JSON.parse(texto) as T;
+    } catch {
+      return null;
+    }
+  }
+
+  private rota(c: CredencialDaEvolution, prefixo: string): string {
+    return `${prefixo}/${encodeURIComponent(c.instancia)}`;
+  }
+
+  private idDaMensagem(r: CorpoDaEvolution | null): string {
+    const key = r && typeof r.key === 'object' && r.key ? (r.key as CorpoDaEvolution) : null;
+    const id = key && typeof key.id === 'string' ? key.id : null;
+    if (!id) throw new Error('a Evolution não devolveu o id da mensagem enviada');
+    return id;
+  }
+
+  // -------------------------------------------------------------------- envio
+
+  async enviarAoNumero(orgId: string, numero: string, texto: string): Promise<{ id: string }> {
+    await this.exigirLigado(orgId);
+    const c = await this.exigirCredencial(orgId);
+    const r = await this.chamar<CorpoDaEvolution>(c, 'POST', this.rota(c, '/message/sendText'), { number: digitosDoNumero(numero), text: texto });
+    return { id: this.idDaMensagem(r) };
+  }
+
+  async abrirGrupo(orgId: string, nome: string, numeros: string[], descricao?: string): Promise<{ jid: string }> {
+    await this.exigirLigado(orgId);
+    const c = await this.exigirCredencial(orgId);
+    const participantes = numeros.map((n) => String(n).replace(/\D/g, '')).filter((n) => n.length >= 10 && n.length <= 15);
+    if (!participantes.length) throw new Error('grupo sem participante com número de WhatsApp: nada foi criado');
+    const corpo: Record<string, unknown> = { subject: nome.trim().slice(0, 100) || 'Grupo', participants: participantes };
+    if (descricao?.trim()) corpo.description = descricao.trim().slice(0, 500);
+    const r = await this.chamar<CorpoDaEvolution>(c, 'POST', this.rota(c, '/group/create'), corpo);
+    const meta = r && typeof r.groupMetadata === 'object' && r.groupMetadata ? (r.groupMetadata as CorpoDaEvolution) : r;
+    const jid = meta && typeof meta.id === 'string' ? meta.id : null;
+    if (!jid || !/^[0-9-]+@g\.us$/.test(jid)) throw new Error('a Evolution não devolveu o grupo criado');
+    return { jid };
+  }
+
+  async enviarAoGrupo(orgId: string, jidDoGrupo: string, texto: string): Promise<{ id: string }> {
+    await this.exigirLigado(orgId);
+    if (!/^[0-9-]+@g\.us$/.test(String(jidDoGrupo ?? ''))) throw new Error('o destino não é um grupo do WhatsApp (@g.us): nada foi enviado');
+    const c = await this.exigirCredencial(orgId);
+    const r = await this.chamar<CorpoDaEvolution>(c, 'POST', this.rota(c, '/message/sendText'), { number: jidDoGrupo, text: texto });
+    return { id: this.idDaMensagem(r) };
+  }
+
+  // ----------------------------------------------------------- administração
+
+  async conexao(orgId: string): Promise<Omit<ConexaoDaEvolution, 'provedorDoComercial'>> {
+    const { items } = await this.cofre.estado(orgId);
+    const chave = items.find((i) => i.conector === CONECTOR_EVOLUTION && i.nome === NOMES_NO_COFRE.chave) ?? null;
+    const c = await this.credencial(orgId);
+    const desligado = await this.prisma.conectorDesligado.findFirst({ where: { orgId, conector: CONECTOR_EVOLUTION }, select: { conector: true } });
+    return {
+      origem: 'motivo' in c ? 'nenhuma' : c.origem,
+      url: 'motivo' in c ? null : c.base,
+      instancia: 'motivo' in c ? null : c.instancia,
+      chaveGuardada: !!chave && !chave.revogadoEm,
+      chaveRevogadaEm: chave?.revogadoEm ?? null,
+      chaveAtualizadaEm: chave && !chave.revogadoEm ? chave.atualizadoEm : null,
+      caminhoDoWebhook: `/api/approvals/canal/whatsapp/${orgId}`,
+      cabecalhoDoSegredo: CABECALHO_DO_SEGREDO,
+      entradaLigada: !!segredoDoCanal(),
+      desligado: !!desligado,
+    };
+  }
+
+  /** Guarda a credencial no cofre. A chave é opcional quando já há uma guardada, e nunca volta. */
+  async guardarCredencial(orgId: string, entrada: CredencialDaEvolutionParaGuardar, actorId: string | null): Promise<Omit<ConexaoDaEvolution, 'provedorDoComercial'>> {
+    const casa = await this.daCasa(orgId);
+    const base = baseDaEvolution(entrada.url, { daCasa: casa });
+    if (!base) {
+      throw new BadRequestException(
+        casa
+          ? 'Endereço da Evolution inválido: use https://<servidor> ou o nome do serviço na rede interna (http://root_evolution:8080).'
+          : 'Endereço da Evolution inválido: use https://<servidor da Evolution>, sem IP, sem usuário na URL.',
+      );
+    }
+    try {
+      await this.conferirDestino(base, casa);
+    } catch (e) {
+      throw new BadRequestException((e as Error).message);
+    }
+    const instancia = String(entrada.instancia ?? '').trim();
+    if (!instancia || instancia.length > 100 || !/^[A-Za-z0-9._ -]+$/.test(instancia)) throw new BadRequestException('Informe o nome da instância da Evolution.');
+    const chave = String(entrada.chave ?? '').trim();
+    if (!chave) {
+      const atual = await this.doCofre(orgId, NOMES_NO_COFRE.chave);
+      if (!atual) throw new BadRequestException('Informe a chave da API da Evolution.');
+    }
+    if (chave) await this.cofre.guardar({ orgId, conector: CONECTOR_EVOLUTION, nome: NOMES_NO_COFRE.chave, valor: chave, origem: ORIGEM_NO_COFRE, actorId });
+    await this.cofre.guardar({ orgId, conector: CONECTOR_EVOLUTION, nome: NOMES_NO_COFRE.url, valor: base, origem: ORIGEM_NO_COFRE, actorId });
+    await this.cofre.guardar({ orgId, conector: CONECTOR_EVOLUTION, nome: NOMES_NO_COFRE.instancia, valor: instancia, origem: ORIGEM_NO_COFRE, actorId });
+    return this.conexao(orgId);
+  }
+
+  async estadoDaInstancia(orgId: string, prazoMs = PRAZO_DA_CONSULTA_DE_INSTANCIA_MS): Promise<EstadoDaEvolution> {
+    const verificadoEm = new Date().toISOString();
+    if (!(await this.ligado(orgId))) return { estado: 'desligada', mensagem: 'Conector desligado nesta empresa: nada sai nem entra.', verificadoEm };
+    const c = await this.credencial(orgId);
+    if ('motivo' in c) return { estado: 'nao_configurada', mensagem: c.motivo, verificadoEm };
+    try {
+      const r = await this.chamar<CorpoDaEvolution>(c, 'GET', this.rota(c, '/instance/connectionState'), undefined, prazoMs);
+      const inst = r && typeof r.instance === 'object' && r.instance ? (r.instance as CorpoDaEvolution) : r;
+      const s = inst && typeof inst.state === 'string' ? inst.state : '';
+      const estado = s === 'open' || s === 'connecting' || s === 'close' ? s : 'desconhecido';
+      return { estado, mensagem: MENSAGEM_DO_ESTADO[estado], verificadoEm };
+    } catch (e) {
+      const msg =
+        e instanceof EvolutionRespondeuErro || e instanceof EvolutionNaoConfiguradaError
+          ? e.message
+          : 'A Evolution não respondeu a tempo.';
+      return { estado: 'erro', mensagem: msg, verificadoEm };
+    }
+  }
+
+  async gerarQr(orgId: string, actorId: string | null): Promise<QrDaEvolution> {
+    const agora = await this.estadoDaInstancia(orgId);
+    if (agora.estado === 'open') return { estado: 'open', base64: null, codigoDePareamento: null, mensagem: 'A instância já está conectada: não há QR para ler.' };
+    if (agora.estado === 'desligada' || agora.estado === 'nao_configurada') return { estado: agora.estado, base64: null, codigoDePareamento: null, mensagem: agora.mensagem };
+    const c = await this.exigirCredencial(orgId);
+    const r = await this.chamar<CorpoDaEvolution>(c, 'GET', this.rota(c, '/instance/connect'));
+    const base64 = qrComoImagem(r?.base64);
+    const codigo = typeof r?.pairingCode === 'string' && /^[A-Z0-9-]{4,16}$/i.test(r.pairingCode) ? r.pairingCode : null;
+    // Só o fato vai ao log: o QR liga o número a quem o ler, e não é guardado em lugar nenhum.
+    this.log.log(`QR da instância pedido (${orgId}) por ${actorId ?? 'desconhecido'}`);
+    return {
+      estado: agora.estado,
+      base64,
+      codigoDePareamento: codigo,
+      mensagem: base64 ? 'Leia o QR com o WhatsApp do número (Aparelhos conectados › Conectar um aparelho). Ele vale por poucos segundos.' : 'A Evolution não mandou um QR agora. Tente de novo em alguns segundos.',
+    };
+  }
+
+  async ligado(orgId: string): Promise<boolean> {
+    const recusa = await this.interruptores?.consultar({ orgId, conector: CONECTOR_EVOLUTION });
+    return !recusa;
+  }
+
+  async instanciaDaEmpresa(orgId: string): Promise<string | null> {
+    const c = await this.credencial(orgId);
+    return 'motivo' in c ? null : c.instancia;
+  }
+
+  // ----------------------------------------------------------------- contrato
+
+  private descritor(): ConectorDoContrato {
+    return {
+      chave: CONECTOR_EVOLUTION,
+      rotulo: 'WhatsApp do comercial (Evolution)',
+      escopoDaCredencial: 'empresa',
+      linhasDoCatalogo: [CONECTOR_EVOLUTION],
+      autorizar: async (): Promise<ResultadoDeAutorizacao> => ({
+        tipo: 'manual',
+        instrucao:
+          'A Evolution não tem OAuth. Em Integrações, no cartão WhatsApp (Evolution), salve o endereço da Evolution, a chave ' +
+          'da API e o nome da instância. Se a instância pedir, gere o QR e leia com o WhatsApp do número. Depois aponte o ' +
+          'webhook da instância para a URL que o cartão mostra, com o cabeçalho do segredo e o evento de mensagem nova.',
+      }),
+      sincronizar: async (): Promise<ResultadoDeSincronizacao> => ({
+        tipo: 'nao_se_aplica',
+        motivo: 'Não há espelho local de WhatsApp para trazer: a conversa com o lead entra pelo webhook e sai pela porta (R3).',
+      }),
+      saude: async (ctx: ContextoDoVerbo): Promise<SaudeDeConector> => {
+        const comecou = Date.now();
+        const e = await this.estadoDaInstancia(ctx.orgId, PRAZO_DA_CHAMADA_DE_SONDA_MS);
+        if (e.estado === 'nao_configurada' || e.estado === 'desligada') return naoConfigurado(e.mensagem);
+        if (e.estado === 'open') return conectado(Date.now() - comecou, e.mensagem);
+        return erroDeConector(e.mensagem, Date.now() - comecou);
+      },
+      revogar: async (ctx: ContextoDoVerbo & { motivo?: string | null }): Promise<ResultadoDeRevogacao> => {
+        const r = await this.cofre.revogar({ orgId: ctx.orgId, conector: CONECTOR_EVOLUTION, motivo: ctx.motivo ?? null, por: ctx.actorId ?? null });
+        if (!r.revogados.length && !r.jaRevogados.length) {
+          return {
+            tipo: 'nao_se_aplica',
+            motivo:
+              'Não há credencial da Evolution no cofre desta empresa. Se a casa usa as variáveis EVOLUTION_*, elas são do ' +
+              'processo: para parar agora, desligue o conector; para queimar, troque a chave no painel da Evolution.',
+          };
+        }
+        return {
+          tipo: 'revogado',
+          segredos: r.revogados,
+          resumo: 'O endereço, a chave e a instância da Evolution foram queimados no cofre. Nada sai até salvar de novo.',
+        };
+      },
+    };
   }
 }
