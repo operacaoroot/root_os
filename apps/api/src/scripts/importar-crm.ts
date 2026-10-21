@@ -110,7 +110,8 @@ async function main(): Promise<number> {
     await dono.$disconnect();
   }
 
-  const app = await NestFactory.createApplicationContext(AppModule, { logger: ['error', 'warn'] });
+  // Só erro: o stdout fica com o JSON de contagens, e aviso de arranque não é deste script.
+  const app = await NestFactory.createApplicationContext(AppModule, { logger: ['error'] });
   try {
     const svc = app.get(ImportadorCrmService);
     const agora = new Date();
