@@ -5,8 +5,208 @@
 > Atualizado em 20/10/2026 pelos ajustes da versão final (`docs/comercial/RODADA-AJUSTES-20261019.md`): sobe a tag `interface-todas-20261020`, que traz o "Iniciar onboarding" antes do fechamento e os textos do Pedro. Os ajustes não trazem migration, variável, capacidade nem permissão nova: a contagem de migrations, a política e as variáveis deste roteiro continuam as mesmas. O `final.bundle` foi refeito com a tag nova (`main..homolog/final-20261019`).
 > Atualizado em 20/10/2026 (noite) pela rodada da interface (`docs/comercial/RODADA-INTERFACE-20261020.md`): sobe a tag `interface-todas-20261020`, que traz o menu novo (logo oficial, subseções no menu, balão), os filtros num botão, Todas as tarefas com segmentos, o funil sem chips com mover livre para gente, a área WhatsApp, o Granola direto nas atas e o WhatsApp pelo DigiSac. Traz **uma** migration nova (`20261020100000_vista_salva_telas`, só a verificação das telas da vista salva) e **seis** variáveis opcionais (`DIGISAC_*` e `GRANOLA_*`, passo 6). Nenhuma capacidade nem permissão nova: a política continua com 77 capacidades. O `final.bundle` foi refeito com a tag nova. A seção "Os dados vivos", antes do passo 10, diz o que a virada não toca.
 > Atualizado em 20/10/2026 (noite, depois da interface) pelo ajuste do Todas (`docs/comercial/RODADA-TODAS-20261020.md`): sobe a tag `interface-todas-20261020`. O item "Todas as tarefas" sai do menu (oculto; `/trabalho/todas` redireciona para `/trabalho?pasta=todas` com a mesma query) e o chip Todas de Tarefas passa a mostrar as colunas dos status reais de todas as pastas. Só tela: nada mais muda, sem migration, variável, capacidade ou permissão nova além do que a rodada da interface já listou. O `final.bundle` foi refeito com a tag nova.
+> **Atualizado em 21/10/2026 pela rodada dos agentes** (`docs/comercial/RODADA-AGENTES-20261021.md`): sobe a tag **`agentes-entrega-20261021`**, que contém tudo o que veio antes (`interface-todas-20261020`, `producao-21-20261021`, `producao-21b-20261021`). A receita desta tag é a seção **"A virada da rodada dos agentes"**, logo abaixo; ela parte do estado que a produção tem hoje (o passo A0 diz qual) e só manda para as seções históricas (passos 0 a 11, escritos para a produção do `10939e1`) quando a produção ainda está lá, ou para reusar um bloco de comandos que não mudou.
 > Onde: a VPS da ROOT (`ssh vps-root`), produção em `https://os.operacaoroot.com`.
 > Este arquivo não tem dado de cliente nem segredo. Onde aparece `<...>`, é um valor que se preenche na hora ou um placeholder que o orquestrador completa antes da virada.
+
+## A virada da rodada dos agentes (tag `agentes-entrega-20261021`)
+
+> Escrito em 21/10/2026 pelo orquestrador do Predator. Validado nas stacks `rootos-final` (3030, cópia da produção de 19/10) e `rootos-final-seed` (3031, seed fictício) com a imagem `rootos-final-app:agentes1`. O resumo do que muda e por quê está em `homolog/RESULTADO-AGENTES.md`, seção "Para publicar"; aqui está a sequência exata.
+> Valores que se preenchem na hora: `<hash-agentes>` = `git -C /c/Users/User/dev/marketing-os rev-parse agentes-entrega-20261021^{commit}`; `<curto>` = os 7 primeiros caracteres; `<quem responde>` = quem assina a política (Rodrigo ou Pedro); `<chave do Rodrigo>` = a `ANTHROPIC_API_KEY` que o Rodrigo põe à mão (nunca em arquivo, chat ou anotação).
+
+### A0. De onde a produção parte (5 min)
+
+Abra a sessão da VPS com o bloco "Variáveis da sessão na VPS" (mais abaixo; troque `FINAL`/`CURTO` por `<hash-agentes>`/`<curto>`) e rode o passo 0 de lá. Depois, só números:
+
+```bash
+psql_prod 'select migration_name from "_prisma_migrations" where finished_at is not null order by migration_name desc limit 1'
+psql_prod 'select count(*) from "_prisma_migrations" where finished_at is not null'
+docker logs mktos_api 2>&1 | grep -E 'capacidades\)' | tail -1
+```
+
+| Última migration na produção | Total | Boot diz | A produção roda | O que fazer |
+|---|---|---|---|---|
+| `20261021200000_tarefa_do_lead` | 102 | 78 capacidades | `producao-21b-20261021` | siga esta seção (A1 em diante) |
+| `20261021140000_ata_sugestao_ref_do_drive` | 101 | 78 | `producao-21-20261021` | siga esta seção; depois do A8, rode o importador do CRM como manda `homolog/RESULTADO-PRODUCAO-21B.md` §5, item 5 (o binário já está nesta imagem) |
+| `20261020100000_vista_salva_telas` | 99 | 77 | `interface-todas-20261020` | siga esta seção; a assinatura da política leva **5** capacidades novas (A4); depois do A8, o importador do CRM como manda `homolog/RESULTADO-PRODUCAO-21B.md` §5, item 5 |
+| `20261019220000_tarefas_varios_responsaveis` | 85 | 71 | `10939e1` (a versão final nunca subiu) | **pare**: faça primeiro a virada histórica (passos 0 a 11, mais abaixo) com esta tag no lugar de `interface-todas-20261020`; ela já leva tudo. Depois volte aqui a partir do A6 |
+| outra | | | | pare e mande o nome ao orquestrador |
+
+### A1. Backup (15 min)
+
+O passo 1 inteiro (dump com `sha256`, contagens de referência, etiqueta e cópia da imagem que está no ar). Some às contagens do 1b, também só números:
+
+```bash
+psql_prod 'select (select count(*) from "Org") empresas, (select count(*) from "SegredoDeConector" where conector = '"'"'digisac'"'"') segredos_digisac, (select count(*) from "User" where email like '"'"'ia-acao@%'"'"' and "isActive") ia_acao_ativa' >> "$VIRADA/contagens-antes.txt"
+```
+
+### A2. O código pelo bundle (10 min)
+
+No Predator, antes: `git -C /c/Users/User/dev/marketing-os bundle verify /c/Users/User/dev/agentes-delta.bundle` (pede a tag `producao-21b-20261021` como pré-requisito) e, de reserva, o completo `rootos-final-completo.bundle` (refeito nesta rodada, só a branch). Leve os dois ao Mac e à VPS como no "Antes de começar".
+
+Na VPS, o passo 2 com estes nomes: `BUNDLE=$VIRADA/agentes-delta.bundle` (se o `verify` pedir um pré-requisito que o checkout não tem, use o completo) e
+
+```bash
+git fetch "$BUNDLE" homolog/final-20261019:virada/agentes-20261021
+git rev-parse virada/agentes-20261021      # tem de imprimir <hash-agentes>
+git checkout virada/agentes-20261021
+ls apps/api/prisma/migrations | tail -12
+```
+
+**Conferir:** a lista termina nas 11 desta rodada, nesta ordem: `20261021300000_pendencia`, `20261021300100_pasta_do_cliente`, `20261021310000_gasto_de_ia_por_funcao`, `20261021320000_minuta_do_contrato`, `20261021330000_arquivo_do_cliente_e_anexo`, `20261021340000_reuniao_do_granola_id`, `20261021340100_delegacao_sugestao`, `20261021350000_agenda_conferencia`, `20261021360000_cofre_sem_digisac`, `20261021370000_dono_da_funcao`, `20261021380000_pasta_do_cliente_unica`.
+
+### A3. A imagem (15 min)
+
+O passo 3, com o nome `rootos-official:agentes-$CURTO` e os mesmos `--build-arg` da imagem de hoje.
+
+### A4. Ensaio num banco descartável, ANTES de tocar a produção (25 min)
+
+O passo 4a inteiro (restore do dump no `virada_ensaio`, `migrate status`, a política, `migrate deploy` duas vezes, o smoke), com a imagem `rootos-official:agentes-$CURTO` e esta assinatura de capacidade nova:
+
+```bash
+-e POLITICA_CAPACIDADE_NOVA_AUTOR='<quem responde>' \
+-e POLITICA_CAPACIDADE_NOVA_MOTIVO='Rodada dos agentes 21/10/2026: comercial.lead.criar (R1, formulário do site e triagem do WhatsApp), drive.pasta.criar e drive.arquivo.enviar (R3, pasta do cliente e arquivista), agenda.evento.padronizar (R3, vigia da agenda); e contexto.arquivo.ler (R0) se ainda não estava' \
+```
+
+A política vai de delta 1.10.0 (ou 1.9.0) para **1.11.0**. Nenhuma capacidade existente muda de nível, de esquema nem de ferramenta. As novas:
+
+| Capacidade | Nível | Por quê |
+|---|---|---|
+| `comercial.lead.criar` | R1 | escreve só dentro do OS (o lead pela entrada idempotente); com sinal aceso (fora das 08h–20h, volume) vira R2 e espera uma pessoa |
+| `drive.pasta.criar` | R3 | sai da casa e desfazer é à mão; pede a segunda pessoa (R4, titular com reautenticação, fora da janela ou no segundo pedido da hora) |
+| `drive.arquivo.enviar` | R3 | idem, e o conteúdo é do cliente |
+| `agenda.evento.padronizar` | R3 | escreve no Google Agenda e voltar o título é à mão |
+| `contexto.arquivo.ler` | R0 | só se a produção estava em `interface-todas` (a 21 a trouxe) |
+
+**Conferir no ensaio:** o seed termina em `capacidades: 4 criadas, 78 atualizadas, 82 no total` (5 criadas e 77 atualizadas partindo de `interface-todas`) e não fala em "Nada foi semeado"; o primeiro `migrate status` lista 11 pendentes (13 partindo da 101 ou 99: as duas de 21/10 da rodada 21 e a da 21B entram junto); o segundo `deploy` não aplica nada; total de migrations **113**; o smoke termina em `SMOKE OK` e cita 82 capacidades; e
+
+```bash
+ens 'select count(*) from "SegredoDeConector" where conector = '"'"'digisac'"'"''   # 0 depois do deploy
+ens 'select "orgId", "pastaDriveId", count(*) from "Partner" where "pastaDriveId" is not null group by 1, 2 having count(*) > 1'   # vazio
+```
+
+Se a migration `20261021360000_cofre_sem_digisac` avisar que o papel não atravessa o isolamento, ela não apagou nada (é o comportamento seguro): siga e registre.
+
+### A5. A política e as migrations em produção (10 min)
+
+O passo 5a com a mesma assinatura do A4 e o passo 5b. **Conferir:** a política termina como no ensaio; 11 migrations aplicadas (ou 13/14 conforme o A0), a mais recente `20261021380000_pasta_do_cliente_unica`.
+
+### A6. As variáveis (10 min)
+
+No easyPanel, serviço `marketing-os`, bloco `environment:` do `api` (linha `NOME: ${NOME:-}`) e aba Ambiente:
+
+| Variável | Valor | Observação |
+|---|---|---|
+| `ANTHROPIC_API_KEY` | `<chave do Rodrigo>` | o Rodrigo cola na aba Ambiente; nunca em arquivo |
+| `LLM_PROVIDER` | `anthropic` | era `stub`/`ponte` só na homologação |
+| `ANTHROPIC_MODEL` | `claude-opus-5-5` | o padrão da chamada sem função; com função, manda o cadastro |
+| `ANTHROPIC_EFFORT` | `high` (ou vazio) | o esforço vai sempre explícito |
+| `LLM_MODELOS_POR_FUNCAO` | vazio | **nova**, opcional; formato `CO-11=claude-sonnet-5-5,TR-11=claude-opus-5-5` (a prova real recomenda a do CO-11; decisão do Rodrigo) |
+| `LLM_ESFORCOS_POR_FUNCAO` | vazio | **nova**, opcional; formato `CO-11=medium` |
+| `WHATSAPP_PROVEDOR` | `simulado` | `evolution` só depois de ligar o número da Root em Integrações; **`digisac` derruba o arranque** |
+| `DIGISAC_URL`, `DIGISAC_TOKEN`, `DIGISAC_SERVICE_ID`, `DIGISAC_WEBHOOK_SEGREDO` | **remover** | do compose do painel e da aba Ambiente (e do `final.env`, se houver) |
+| `MCP_ACTION_PASSWORD`, `MCP_ACTION_EMAIL` | **remover** | ninguém mais lê |
+
+Salve sem Deploy.
+
+**O teto de IA da Root** (sem ele, o gasto do dia não tem corte; sugerido: US$ 10 por dia, ligado, a confirmar pelo Rodrigo). Rode depois do A7, com a API nova no ar:
+
+```bash
+psql_prod "insert into \"TetoDeCustoIa\" (id, \"orgId\", \"tetoDiarioUsd\", \"fusoHorario\", ativo, motivo, \"atualizadoEm\") select gen_random_uuid(), id, 10, 'America/Sao_Paulo', true, 'Rodada dos agentes 21/10/2026: teto inicial da chave da Anthropic', now() from \"Org\" where slug = 'root' on conflict (\"orgId\") do nothing"
+psql_prod "select \"tetoDiarioUsd\", ativo from \"TetoDeCustoIa\" t join \"Org\" o on o.id = t.\"orgId\" where o.slug = 'root'"
+```
+
+Com o teto ligado, modelo fora de `apps/api/src/llm/preco.ts` é recusado; os três 5.5, o `text-embedding-3-small` e o `gpt-4o-transcribe` estão lá.
+
+### A7. Subir api e web (5 min)
+
+O passo 7 com a imagem `rootos-official:agentes-$CURTO`. **Conferir:** o log diz `política base vN carregada DO BANCO (82 capacidades)`; nenhum `ERROR`; nenhum `WHATSAPP_PROVEDOR` recusado; o `health` 200.
+
+### A8. Os passos de dado, dentro do container (15 min)
+
+Todos idempotentes e só contagens no console. `<api>` = `mktos_api`.
+
+```bash
+# 1. A conta de máquina ia-acao@: simula, confere, desativa (nunca apaga).
+docker exec -w /app/apps/api mktos_api node dist/scripts/desativar-ia-acao.js
+docker exec -w /app/apps/api mktos_api node dist/scripts/desativar-ia-acao.js --valer
+docker exec -w /app/apps/api mktos_api node dist/scripts/desativar-ia-acao.js   # "já está desativada: nada mudou"
+
+# 2. A tripulação da casa lê do cadastro único (nome, missão, capacidades; o assistente perde as R3/R5 de demonstração).
+#    Não mexe em dono, estado nem linha de base.
+docker exec -w /app/apps/api mktos_api pnpm db:seed:tripulacao
+```
+
+**Conferir:** "a conta ia-acao@… foi desativada… Nada foi apagado"; a tripulação diz `root: 0 agente(s) criado(s), 8 atualizado(s)`.
+
+**Permissões:** nenhuma nova nesta tag (o `git diff producao-21b-20261021 agentes-entrega-20261021 -- packages/shared/src/permissions.ts` é vazio). Não rode `db:sync-permissions`.
+
+### A9. As notas da memória e a pasta do cliente (20 min)
+
+As notas entram pela API, como gente (procedência `operador`), com um token de sessão de quem tem `obsidian.editar` (o `mktos_token` do navegador, só na memória do terminal):
+
+```bash
+read -rs -p 'token: ' T; echo
+nota() { curl -fsS -X POST https://os.operacaoroot.com/api/memoria -H "authorization: Bearer $T" -H 'content-type: application/json' -d "{\"chave\":\"$1\",\"title\":\"$2\",\"body\":\"$3\",\"sourceType\":\"operador\",\"kind\":\"definicao\"}" | head -c 200; echo; }
+nota clientes.pasta.raiz 'Pasta raiz dos clientes no Drive' '1OYHyKiE7uJlzWf-u9cRtYyvm8hXnYO0H'
+unset T
+```
+
+Nunca marque essas notas como de acesso restrito (o sistema não as leria). As outras notas, cada uma quando a decisão existir (mesmo `nota <chave> <título> <primeira linha>`):
+
+| Nota | Primeira linha | Liga o quê |
+|---|---|---|
+| `comercial.contrato.modelo` | o nome exato do arquivo do modelo de contrato da Root (segunda linha: o id da pasta `70-modelos/contratos`) | o construtor de contrato (CO-13); sem ela, ele responde "[a decidir] O modelo de contrato da Root ainda não foi cadastrado" |
+| `comercial.formulario.site` | `ligado` | o formulário do site (CO-15); sem ela, a rota pública responde 404 para a Root também |
+| `comercial.whatsapp.triagem` | `ligada` | a triagem do WhatsApp (CO-16); só com `WHATSAPP_PROVEDOR=evolution` |
+| `onboarding.pesquisa.web` | `ligada` | a busca na web do pesquisador de conta (IM-02) |
+| `trabalho.cobranca.dias` | um inteiro (padrão 7) | o cobrador de tarefas (TR-07, rotina que nasce desligada) |
+
+**A pasta `10-clientes`.** Antes do script, alguém com acesso ao Drive do Pedro confere que a conta Google da Root conectada no OS (`operacao.root@`) tem permissão de **Editor** na pasta REAL `Root/10-clientes` (id acima; para a Root ela aparece como atalho, e o código resolve o atalho, mas a permissão tem de estar na pasta real) e que `_modelo-cliente` está dentro dela. Sem isso, toda criação de pasta volta `erro` com o motivo do Google.
+
+**As pastas dos clientes que já existem** (dentro do container; o detalhe tem nome de cliente e fica fora de repositório, com modo 600):
+
+```bash
+docker exec -w /app/apps/api mktos_api node dist/scripts/criar-pastas-dos-clientes.js --org root --detalhe /tmp/pastas-simular.md
+# conferir as contagens e o /tmp/pastas-simular.md com o Rodrigo: cada cliente "ligar" a uma pasta que já existe
+# em 10-clientes (ligação só por nome igual: uma pasta "padaria-exemplo" não liga sozinha ao cliente "Padaria Exemplo Ltda"; esses casos o Rodrigo resolve renomeando a pasta ou o cliente) ou "criar".
+docker exec -w /app/apps/api mktos_api node dist/scripts/criar-pastas-dos-clientes.js --org root --como '<e-mail do Rodrigo>' --valer --detalhe /tmp/pastas-valer.md
+# cada cliente vira UM pedido em /atendimento (R3; fora das 08h–20h ou a partir do segundo da hora, R4: titular
+# com reautenticação). Outra pessoa confirma cada um. Rode entre 08h e 20h.
+docker exec -w /app/apps/api mktos_api node dist/scripts/criar-pastas-dos-clientes.js --org root --detalhe /tmp/pastas-depois.md
+# depois das confirmações: "zero a propor".
+```
+
+O Rodrigo decide apagar os `/tmp/pastas-*.md` depois da conferência.
+
+### A10. Conferências (20 min)
+
+Com uma conta de gente:
+
+| O que | Esperado |
+|---|---|
+| IA e automações › Agentes de IA | três abas (Agentes, Rotinas, Automações e integrações) com contagem; padrão "ativos"; cada linha com para que serve, dono, modelo e esforço (cadastro), quando, última e próxima, gasto do mês |
+| Configurações › Equipe | as três pessoas (contas de máquina, de sistema, de teste e sem papel ficam fora da vista, contadas); sob cada uma, as funções de que é dona; cada sócio cadastra o próprio WhatsApp (na forma que o WhatsApp mostra o número) |
+| Configurações › Integrações | um cartão por conector, mesmo vocabulário (Conectado, Não configurado, Erro: motivo, Desligado), quem usa, nenhuma credencial exibida; **nenhum DigiSac**; o ClickUp aparece **Desligado** depois da primeira passagem de `casa.clickup` (o token foi revogado em 25/07; religar é decisão de gente) |
+| Dia a dia › Pendências | a aba de decisões mostra também as pendências dos agentes (vazia no começo) |
+| Dia a dia › Agenda | abre; o selo "fora do padrão" só aparece quando o vigia for ligado em /rotinas (nasce desligado, só na Root) |
+| Trabalho › Implantação | o card com "Quem trabalha nesta etapa", "Montar kit" e "Abrir/Criar pasta do cliente" |
+| Trabalho › Tarefas › pop-up | as seções Anexos e Delegação |
+| Motor Comercial › lead | "Abrir/Criar pasta do cliente" no painel do lead com cliente; a minuta na aba Dinheiro |
+| Rotinas | `trabalho.cobranca` e `agenda.vigia` desligadas; as `casa.*` (clickup, vault, conciliação, bio, metas) com passagem registrada |
+
+E o roteiro automático, só lendo: `BASE_URL=https://os.operacaoroot.com LOGIN_EMAIL='<e-mail>' LOGIN_SENHA='<senha>' node homolog/e2e/final.mjs` (no Predator). Contagens do A1 iguais (tarefas, leads, Partner, usuários), `segredos_digisac` = 0, `ia_acao_ativa` = 0.
+
+### A11. Rollback
+
+- **Só a imagem** (defeito de tela, sem dado novo que dependa da versão): as 11 migrations são aditivas e a imagem anterior as ignora. Volte a linha `image:` para a de `imagem-antes.txt` e **volte também `ANTHROPIC_MODEL` para o valor de antes** (a imagem anterior não conhece `claude-opus-5-5` na tabela de preço e, com o teto ligado, recusaria toda chamada). Ressalvas: a minuta de contrato (`ComercialDocumento` com provedor `minuta`), se já existir, confunde a imagem anterior (ela a trata como o contrato a assinar); a credencial do DigiSac apagada pela `20261021360000` não volta (a Root nunca ligou uma conta DigiSac).
+- **Imagem e banco**: o passo 11 inteiro, com o dump do A1. Perde tudo o que foi gravado depois.
+
+---
+
+# Histórico: a virada da versão final a partir do `10939e1` (passos 0 a 11)
+
+> Escrito para a tag `interface-todas-20261020`. Os blocos de comando continuam valendo e são citados pela seção de cima; os números (migrations, capacidades, variáveis) são os daquela virada.
 
 ## O que já se sabe da produção (confira no passo 0, não confie nesta lista)
 
@@ -507,10 +707,11 @@ Tarefa criada na produção depois da cópia de 19/10 e que não está nos mapas
 
 A virada não apaga nem reescreve nada do que está na produção. Vale para tarefa, lead, lista, pasta, usuário, conexão, nota da memória e linha do RASTRO.
 
-- **As migrations são aditivas.** A única desta rodada troca a verificação de uma coluna de texto (`VistaSalva.tela`) para aceitar mais dois valores; nenhuma linha é lida nem escrita.
+- **As migrations são aditivas.** A única da rodada da interface troca a verificação de uma coluna de texto (`VistaSalva.tela`) para aceitar mais dois valores; nenhuma linha é lida nem escrita.
 - **A interface não mexe em dado.** Menu, filtros, vistas, segmentos, a área WhatsApp e a Rodada no Comercial são telas. Os endereços antigos continuam vivos (`/painel`; `/comercial/simulador` redireciona para `/whatsapp` com a query; `/trabalho/implantacao?aba=rodada` vai a `/comercial/rodada`); nenhum item do menu foi apagado, só ocultado. Prova: na homologação, o organizador em `--simular` depois da imagem nova deu zero mudanças.
 - **O organizador só move o que o mapa de 19/10 diz** (passo 9), e roda simulado antes. O que foi apurado na homologação (classificação dos cartões, leads levados ao funil) entra por ele, e ele é idempotente: rodar de novo não repete nada. Desde esta rodada ele leva o lead à etapa pelo mover livre (gente com `leads.editar`, sem token); o mover à mão não cria cobrança, contrato, card nem cliente.
-- **Granola e DigiSac nascem desligados.** O Zap do Granola continua como está; a conexão direta só existe depois que alguém clica "Conectar ao Granola". O DigiSac só envia com `WHATSAPP_PROVEDOR=digisac` e a credencial salva; a produção sobe com `simulado`.
+- **O Granola nasce desligado.** O Zap do Granola continua como está; a conexão direta só existe depois que alguém clica "Conectar ao Granola". O DigiSac foi **excluído** em 21/10/2026 (rodada dos agentes): `WHATSAPP_PROVEDOR=digisac` derruba o arranque, e a produção sobe com `simulado`.
+- **Desde a rodada dos agentes** (seção de cima): as 11 migrations são aditivas, menos a `20261021360000_cofre_sem_digisac`, que apaga só as credenciais do conector `digisac` no cofre (a Root nunca ligou uma conta DigiSac). Nada mais é apagado.
 
 ## 10. Conferências depois da virada (20 min)
 
@@ -532,7 +733,7 @@ Com uma conta de gente, no navegador:
 | Trabalho › Atas | o bloco "Reuniões do Granola" diz para conectar em Integrações (até alguém conectar); as atas mostram o estado das sugestões |
 | Financeiro | abre como antes, com os números do mês |
 | Cofre | abre e pede a senha do cofre, como antes |
-| Configurações › Integrações | o Granola aparece como antes, com "Conectar ao Granola" a mais; o cartão "WhatsApp (DigiSac)" aparece sem credencial, com a URL do webhook |
+| Configurações › Integrações | o Granola aparece como antes, com "Conectar ao Granola" a mais; desde a rodada dos agentes, um cartão por conector e nenhum DigiSac |
 | Rotinas | nenhuma rotina nova nasceu ligada |
 
 O roteiro automático faz a mesma volta, só lendo (não grava nada), e tira as fotos para a pasta fora do git:
