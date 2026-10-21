@@ -1,136 +1,18 @@
 {
-  "inicio": "2026-10-19T17:38:57.344Z",
-  "web": "http://127.0.0.1:3010",
-  "sufixo": "173857",
+  "inicio": "2026-10-21T05:50:46.578Z",
+  "web": "http://127.0.0.1:3031",
+  "sufixo": "055046",
   "passos": [
     {
       "n": 1,
       "nome": "mesa, sócio e admin entraram pela API",
-      "ms": 263
-    },
-    {
-      "n": 2,
-      "nome": "a jornada fechou um lead de teste pelos dublês (Pix, assinatura, fechamento R4)",
-      "ms": 9281,
-      "leadId": "04ca4cff-4519-5aeb-b1c8-f3cd9841b003"
-    },
-    {
-      "n": 3,
-      "nome": "I1: o card nasceu em Onboarding de cliente · Fechado no comercial, com procedência e retrolinks card ↔ lead ↔ trilho",
-      "ms": 9352,
-      "cardId": "99cc0f14-fd51-5377-adde-75ddc9813bbd",
-      "lista": "Onboarding de cliente",
-      "etapa": "Fechado no comercial"
-    },
-    {
-      "n": 4,
-      "nome": "I1: rodar o fechamento de novo não duplica o card",
-      "ms": 9369,
-      "detalhe": "1 card \"Construtora Alicerce Homolog 7645 Ltda\""
-    },
-    {
-      "n": 5,
-      "nome": "I2: o card no quadro compacto (~64 px), 7 colunas numa linha sem rolar a página, rodapé com a última movimentação",
-      "ms": 10394,
-      "detalhe": "Fechamento comercial · abriu o card · agora · 68 px"
-    },
-    {
-      "n": 6,
-      "nome": "I2: parar o mouse e focar mostram o balão (3 passos, comentário), dentro da tela; Esc fecha",
-      "ms": 11798
-    },
-    {
-      "n": 7,
-      "nome": "I2: mover de coluna funciona e o rodapé passa a dizer \"moveu para Kickoff marcado\"",
-      "ms": 11978
-    },
-    {
-      "n": 8,
-      "nome": "I2: o clique no cartão abre o painel",
-      "ms": 12076
-    },
-    {
-      "n": 9,
-      "nome": "I3: a sala v1 pedida pelo admin, liberada por outra pessoa (R3, mesa@root.homolog)",
-      "ms": 12271
-    },
-    {
-      "n": 10,
-      "nome": "I3: em /atendimento, o cartão mostra a versão inteira da sala antes de assinar",
-      "ms": 13729
-    },
-    {
-      "n": 11,
-      "nome": "I3: v2 editada, pedida e liberada (R4); o cliente vê só a v2",
-      "ms": 13873
-    },
-    {
-      "n": 12,
-      "nome": "I4: \"faz sentido\" e uma ideia pela rota pública chegam ao fio, à bancada e ao relatório",
-      "ms": 13982
-    },
-    {
-      "n": 13,
-      "nome": "I5: a ideia vira UMA tarefa (dois cliques) com a procedência e o trecho",
-      "ms": 14038,
-      "tarefa": "Responder a ideia: Dá para começar pelo fechamento de outubro? (prova 173857)"
-    },
-    {
-      "n": 14,
-      "nome": "fotografou o quadro, a aba Sala, o relatório, a sala publicada e a proposta em escuro, claro e 390 px; nada rola na horizontal no celular",
-      "ms": 33069,
-      "detalhe": "17 fotos"
+      "ms": 233
     }
   ],
-  "screenshots": [
-    "implantacao-quadro-balao-escuro.png",
-    "implantacao-atendimento-sala-escuro.png",
-    "implantacao-quadro-escuro.png",
-    "implantacao-painel-sala-escuro.png",
-    "implantacao-relatorio-escuro.png",
-    "implantacao-sala-publicada-escuro.png",
-    "implantacao-proposta-escuro.png",
-    "implantacao-quadro-celular.png",
-    "implantacao-painel-sala-celular.png",
-    "implantacao-relatorio-celular.png",
-    "implantacao-sala-publicada-celular.png",
-    "implantacao-proposta-celular.png",
-    "implantacao-quadro-claro.png",
-    "implantacao-painel-sala-claro.png",
-    "implantacao-relatorio-claro.png",
-    "implantacao-sala-publicada-claro.png",
-    "implantacao-proposta-claro.png"
-  ],
-  "semRolagemHorizontal": [
-    {
-      "tela": "quadro",
-      "doc": 390,
-      "janela": 390
-    },
-    {
-      "tela": "painel-sala",
-      "doc": 390,
-      "janela": 390
-    },
-    {
-      "tela": "relatorio",
-      "doc": 390,
-      "janela": 390
-    },
-    {
-      "tela": "sala-publicada",
-      "doc": 390,
-      "janela": 390
-    },
-    {
-      "tela": "proposta",
-      "doc": 390,
-      "janela": 390
-    }
-  ],
-  "ok": true,
-  "leadId": "04ca4cff-4519-5aeb-b1c8-f3cd9841b003",
-  "cardId": "99cc0f14-fd51-5377-adde-75ddc9813bbd",
-  "fim": "2026-10-19T17:39:30.463Z",
-  "duracaoMs": 33119
+  "screenshots": [],
+  "semRolagemHorizontal": [],
+  "ok": false,
+  "erro": "a jornada falhou (saída 1): FALHOU: o primeiro horário oferecido está a 31.2 h; a M3 só sai nas 24 h antes. Rode depois das 10h de São Paulo num dia que antecede um dia útil.",
+  "fim": "2026-10-21T05:50:48.077Z",
+  "duracaoMs": 1499
 }

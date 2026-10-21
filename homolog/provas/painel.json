@@ -1,103 +1,86 @@
 {
-  "inicio": "2026-10-19T17:39:30.750Z",
-  "web": "http://127.0.0.1:3010",
-  "sufixo": "173930",
+  "inicio": "2026-10-21T05:50:06.505Z",
+  "web": "http://127.0.0.1:3031",
+  "sufixo": "055006",
   "passos": [
     {
       "n": 1,
       "nome": "mesa, sócio e admin entraram pela API",
-      "ms": 236,
+      "ms": 239,
       "detalhe": "Mesa · responsável (homologação) · Sócio titular (homologação) · Admin Root"
     },
     {
       "n": 2,
       "nome": "preparou: tarefa da mesa comentada pelo admin, lista solta e um lead novo em E1",
-      "ms": 477,
-      "tarefaId": "8ca398a3-83b3-4d0e-8c5c-7641bdf01e78",
-      "listaId": "1d7dd127-381e-4b0e-93a9-eec040a0e0bf",
-      "leadId": "25743d35-62f2-5919-b7d7-07466a399c50"
+      "ms": 541,
+      "tarefaId": "fdad1b7f-6776-4b03-9823-62579dd58ae5",
+      "listaId": "87bef309-1deb-400d-a3f8-0f5f63049944",
+      "leadId": "95b76948-b26b-5897-8964-07e34ce7480a"
     },
     {
       "n": 3,
       "nome": "na caixa da mesa, Atividade mostra o comentário do admin",
-      "ms": 1435,
-      "detalhe": "comentario:03cb0f44-0a2a-4750-a5e2-1078b3e82991"
+      "ms": 1526,
+      "detalhe": "comentario:7a45b8c8-b443-438f-ba14-24df6fb1c96d"
     },
     {
       "n": 4,
       "nome": "\"Limpar\" tirou o item da caixa e ele continua no histórico",
-      "ms": 1514
+      "ms": 1619
     },
     {
       "n": 5,
       "nome": "Minhas tarefas mostra a tarefa e os comentários abrem no lugar",
-      "ms": 1689
+      "ms": 1825
     },
     {
       "n": 6,
       "nome": "pasta criada pela tela",
-      "ms": 2440,
-      "detalhe": "Pasta da prova 173930"
+      "ms": 2620,
+      "detalhe": "Pasta da prova 055006"
     },
     {
       "n": 7,
       "nome": "a lista foi movida para a pasta pelo seletor e o chip da pasta a mostra",
-      "ms": 3562
+      "ms": 3354
     },
     {
       "n": 8,
       "nome": "Quadro e Lista alternam sobre a mesma lista",
-      "ms": 3625
+      "ms": 3429
     },
     {
       "n": 9,
       "nome": "ata colada pela tela entrou no banco de atas (pela memória)",
-      "ms": 4568,
-      "detalhe": "memoria:9eab7357-98a5-4511-9f8b-6ec99d7a9568"
+      "ms": 4799,
+      "detalhe": "memoria:9065bace-aa72-43f3-95ec-dbdc01773eb0"
     },
     {
       "n": 10,
       "nome": "\"Sugerir tarefas\" trouxe rascunhos conferidos contra a ata",
-      "ms": 4812,
+      "ms": 4961,
       "detalhe": "3 rascunho(s)"
     },
     {
       "n": 11,
       "nome": "aceitar com um clique criou a tarefa no Trabalho",
-      "ms": 5533,
+      "ms": 5726,
       "detalhe": "Enviar o relatório mensal da Padaria Exemplo"
     },
     {
       "n": 12,
-      "nome": "o admin pediu para mover o lead novo de E1 para E3 pelo menu do cartão",
-      "ms": 6457
+      "nome": "o admin moveu o lead novo de E1 para E3 sem pedido: a mensagem diz o que ficou sem concluir e o balão fica",
+      "ms": 6730,
+      "detalhe": "Movido para E3 · Reunião agendada sem as conclusões de E2 · Qualificação: sistema ou ERP em uso (E2); base de dados: sim · MOVIDO COM PENDÊNCIAS sistema ou ERP em uso (E2); base de dados: sim ou não (E2)"
     },
     {
       "n": 13,
-      "nome": "a mesa encontrou o pedido em \"Depende de você\", em português",
-      "ms": 7098,
-      "detalhe": "Mover Prova Painel 173930 para Reunião agendada"
-    },
-    {
-      "n": 14,
-      "nome": "a mesa confirmou pela tela nova (as condições apareceram antes do clique)",
-      "ms": 7716
-    },
-    {
-      "n": 15,
-      "nome": "o admin concluiu: o cartão está em E3 com o balão de pendências",
-      "ms": 7835,
-      "detalhe": "MOVIDO COM PENDÊNCIAS sistema ou ERP em uso (E2); base de dados: sim ou não (E2); produto-alvo proposto (E2) por Admin Root · 19/10 · some quando o que falta ch"
-    },
-    {
-      "n": 16,
       "nome": "fotografou as telas mexidas em escuro, claro e 390 px; nenhuma rola na horizontal no celular",
-      "ms": 34952,
-      "detalhe": "25 fotos"
+      "ms": 34260,
+      "detalhe": "24 fotos"
     }
   ],
   "screenshots": [
-    "painel-aprovacoes-aberta-escuro.png",
     "painel-caixa-atividade-escuro.png",
     "painel-caixa-tarefas-escuro.png",
     "painel-trabalho-pastas-escuro.png",
@@ -166,6 +149,6 @@
     }
   ],
   "ok": true,
-  "fim": "2026-10-19T17:40:05.753Z",
-  "duracaoMs": 35003
+  "fim": "2026-10-21T05:50:40.841Z",
+  "duracaoMs": 34336
 }
