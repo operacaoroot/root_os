@@ -55,7 +55,8 @@ describe('cadastro único de agentes', () => {
   it('tem uma linha por linha do levantamento, mais o vigia da agenda', () => {
     const levantamento = json<{ rows: { id: string }[] }>('docs/agentes/catalogo-levantamento-20261021.json').rows.map((r) => r.id);
     const ids = CADASTRO_DE_FUNCOES.map((f) => f.id);
-    expect(ids).toEqual([...levantamento, 'AG-01']);
+    // AG-01 é o vigia da agenda (a ata pede); TR-11 é a segunda leitura do arquivista (a lane do Drive pediu).
+    expect(ids).toEqual([...levantamento, 'AG-01', 'TR-11']);
   });
 
   it('id e slug são únicos, e o slug é minúsculo com hífen', () => {
