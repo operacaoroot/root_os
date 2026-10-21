@@ -32,6 +32,8 @@ import { PendenciasService } from '../pendencias/pendencias.service';
 import { PendenciasRegistry, type RespostaDaPendencia } from '../pendencias/pendencias.registry';
 import { proximaOcorrencia } from '../pauta/cron';
 import { PrismaService } from '../prisma/prisma.service';
+import { foraDaJanela, minutosNoFuso } from '../policy/limites';
+import { PolicyService } from '../policy/policy.service';
 import type { ResultadoDaRotina } from '../routines/rotina.tipos';
 import { TIPO_AGENDA_VIGIA } from '../routines/rotina.tipos';
 import {
@@ -142,7 +144,24 @@ export class VigiaDaAgendaService implements OnModuleInit {
     private readonly registroDePendencias: PendenciasRegistry,
     @Optional() @Inject(LLM_PROVIDER) private readonly llm?: LlmProvider,
     @Optional() private readonly eventos?: EventLogService,
+    @Optional() private readonly politica?: PolicyService,
   ) {}
+
+  /**
+   * A JANELA DA POLÍTICA (08h–20h de São Paulo, `limitesPadrao.janelaHoraria`).
+   * Fora dela a porta acende `fora_da_janela` e a correção, que é R3, sobe para
+   * R4 (titular, reautenticação, motivo escrito). O vigia não força isso: fora
+   * da janela ele confere, grava a proposta e só a manda à porta na primeira
+   * passagem dentro da janela (o ramo "proposta sem aprovação" logo abaixo).
+   */
+  private naJanela(orgId: string, agora: Date): boolean {
+    if (!this.politica) return true;
+    try {
+      return !foraDaJanela(minutosNoFuso(agora), this.politica.limites(orgId).janelaHoraria);
+    } catch {
+      return false;
+    }
+  }
 
   onModuleInit(): void {
     this.registroDePendencias.aoResponder(TIPO_DA_PENDENCIA_DA_AGENDA, (r) => this.aoResponder(r), 'VigiaDaAgendaService');
@@ -228,9 +247,22 @@ export class VigiaDaAgendaService implements OnModuleInit {
       ).map((l) => [l.eventoId, l]),
     );
 
-    const conta = { reunioes: 0, foraDoPadrao: 0, propostas: 0, pendencias: 0, resolvidos: 0, repetidos: 0, adiados: 0, falhas: 0, naoEReuniao: 0 };
+    const conta = {
+      reunioes: 0, foraDoPadrao: 0, propostas: 0, pendencias: 0, resolvidos: 0, repetidos: 0, adiados: 0, falhas: 0, naoEReuniao: 0, esperamJanela: 0,
+    };
     let chamadasDeModelo = 0;
     let propostasNaPorta = 0;
+    const janela = this.naJanela(orgId, agora);
+    /** Pode mandar mais uma proposta do vigia à porta nesta passagem? */
+    const podeMandar = (): boolean => {
+      if (!janela) {
+        conta.esperamJanela++;
+        return false;
+      }
+      if (propostasNaPorta >= TETO_DE_PROPOSTAS_POR_PASSAGEM) return false;
+      propostasNaPorta++;
+      return true;
+    };
 
     for (const e of eventos) {
       if (!e?.id) continue;
@@ -264,12 +296,13 @@ export class VigiaDaAgendaService implements OnModuleInit {
       const problemas = conf.problemas;
 
       // O MESMO EVENTO, SEM MUDANÇA: não paga o modelo de novo, não pergunta de
-      // novo. A única coisa que anda é a proposta que o teto da passagem anterior
-      // deixou sem ir à porta.
+      // novo. A única coisa que anda é a proposta DO VIGIA que ainda não foi à
+      // porta (o teto da passagem anterior, ou a janela fechada). A proposta de
+      // uma pessoa é dela: o vigia nunca a reenvia em nome próprio.
       if (linha && linha.assinatura === assinatura && (ABERTOS as readonly string[]).includes(linha.estado)) {
-        if (linha.estado === 'proposta' && !linha.approvalId && linha.tituloProposto && propostasNaPorta < TETO_DE_PROPOSTAS_POR_PASSAGEM) {
-          propostasNaPorta++;
-          await this.mandar(orgId, e.id, linha.tituloLido, { titulo: linha.tituloProposto, adicionarMeet: linha.adicionarMeet, origem: (linha.origem as OrigemDaProposta) ?? 'modelo' }, VIGIA)
+        const pendenteDoVigia = linha.estado === 'proposta' && !linha.approvalId && !!linha.tituloProposto && linha.origem !== 'pessoa';
+        if (pendenteDoVigia && podeMandar()) {
+          await this.mandar(orgId, e.id, linha.tituloLido, { titulo: linha.tituloProposto!, adicionarMeet: linha.adicionarMeet, origem: (linha.origem as OrigemDaProposta) ?? 'modelo' }, VIGIA)
             .catch((err) => this.anotarFalha(orgId, e.id, err));
           conta.propostas++;
         } else {
@@ -323,8 +356,7 @@ export class VigiaDaAgendaService implements OnModuleInit {
         });
         if (linha?.pendenciaId) await this.fecharPendencia(orgId, linha.pendenciaId, 'o vigia achou proposta segura depois que o evento mudou');
         const viva = mesma && (await this.aprovacaoViva(orgId, salva.approvalId));
-        if (!viva && propostasNaPorta < TETO_DE_PROPOSTAS_POR_PASSAGEM) {
-          propostasNaPorta++;
+        if (!viva && podeMandar()) {
           await this.mandar(orgId, e.id, e.title, proposta, VIGIA).catch((err) => this.anotarFalha(orgId, e.id, err));
         }
         conta.propostas++;
@@ -357,6 +389,7 @@ export class VigiaDaAgendaService implements OnModuleInit {
       (conta.naoEReuniao ? `, ${conta.naoEReuniao} marcada(s) como "não é reunião"` : '') +
       (conta.adiados ? `, ${conta.adiados} para a próxima passagem (teto do modelo)` : '') +
       (conta.falhas ? `, ${conta.falhas} sem resposta do modelo` : '') +
+      (conta.esperamJanela ? `, ${conta.esperamJanela} esperando a janela da política para ir à fila` : '') +
       `. ${chamadasDeModelo} chamada(s) de modelo.`;
     return { status: algo ? 'ok' : 'pulada', resumo: resumo.slice(0, 500) };
   }
@@ -533,6 +566,7 @@ export class VigiaDaAgendaService implements OnModuleInit {
     if (!t.ok) throw new BadRequestException(t.motivo);
     const adicionarMeet = t.reuniao.tipo === 'cliente' && t.reuniao.modalidade === 'online' && !dados.temMeet;
 
+    const antes = await this.prisma.agendaConferencia.findUnique({ where: { orgId_eventoId: { orgId: r.orgId, eventoId } } });
     await this.prisma.agendaConferencia.upsert({
       where: { orgId_eventoId: { orgId: r.orgId, eventoId } },
       create: {
@@ -548,13 +582,31 @@ export class VigiaDaAgendaService implements OnModuleInit {
       },
       update: { estado: 'proposta', tituloProposto: t.titulo, adicionarMeet, origem: 'pessoa', approvalId: null, motivo: null },
     });
-    await this.mandar(
-      r.orgId,
-      eventoId,
-      dados.tituloAtual ?? '',
-      { titulo: t.titulo, adicionarMeet, origem: 'pessoa' },
-      { id: r.usuarioId, tipo: ActorType.user },
-    );
+    try {
+      await this.mandar(
+        r.orgId,
+        eventoId,
+        dados.tituloAtual ?? '',
+        { titulo: t.titulo, adicionarMeet, origem: 'pessoa' },
+        { id: r.usuarioId, tipo: ActorType.user },
+      );
+    } catch (e) {
+      // A porta recusou: a pendência volta a "aberta" (quem chamou desfaz) e a
+      // conferência volta ao que era — senão o vigia veria uma "proposta" que
+      // ninguém conseguiu mandar.
+      await this.prisma.agendaConferencia.updateMany({
+        where: { orgId: r.orgId, eventoId },
+        data: {
+          estado: antes?.estado === 'proposta' || antes?.estado === 'pendencia' ? antes.estado : 'pendencia',
+          tituloProposto: antes?.tituloProposto ?? null,
+          adicionarMeet: antes?.adicionarMeet ?? false,
+          origem: antes?.origem ?? null,
+          approvalId: antes?.approvalId ?? null,
+          motivo: antes?.motivo ?? null,
+        },
+      });
+      throw e;
+    }
   }
 
   // ------------------------------------------------------------------ miúdos

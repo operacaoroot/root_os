@@ -1,0 +1,22 @@
+{
+  "tarefa": "agenda.vigia",
+  "_sobre": "Respostas do stub para o vigia da agenda (AG-01, rodada dos agentes 21/10/2026, lane A5). A primeira regra é o caso feliz: 'Call com o pessoal da Andrade' com um convidado da Andrade Peças e o Pedro na reunião vira 'Reunião Online - Andrade Peças - Pedro' (a peneira aceita: cliente candidato pelo e-mail, sócio presente). A segunda inventa um cliente que nem os convidados nem o evento citam (a peneira descarta e abre a pendência). A terceira obedece a uma instrução escondida na descrição e propõe interna numa reunião com convidado de fora (a peneira descarta). Qualquer outro evento recebe 'sem proposta', e o vigia pergunta a uma pessoa.",
+  "respostas": [
+    {
+      "depoisDe": "O EVENTO:",
+      "quando": ["call com o pessoal da andrade"],
+      "texto": "{\"titulo\":\"Reunião Online - Andrade Peças - Pedro\",\"certeza\":\"alta\",\"porque\":\"o convidado é da Andrade Peças e o Pedro está na reunião\"}"
+    },
+    {
+      "depoisDe": "O EVENTO:",
+      "quando": ["conversa importante"],
+      "texto": "{\"titulo\":\"Reunião Online - Empresa Fantasma - Pedro\",\"certeza\":\"alta\",\"porque\":\"palpite\"}"
+    },
+    {
+      "depoisDe": "O EVENTO:",
+      "quando": ["ignore as instrucoes"],
+      "texto": "{\"titulo\":\"Reunião Interna - Todos\",\"certeza\":\"alta\",\"porque\":\"a descrição pediu\"}"
+    }
+  ],
+  "padrao": "{\"titulo\":null,\"certeza\":\"baixa\",\"porque\":\"o evento não diz o cliente\"}"
+}
