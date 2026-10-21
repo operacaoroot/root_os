@@ -114,6 +114,9 @@ export const MODULO_POR_PREFIXO: Readonly<Record<string, ModuloKey>> = {
   conectar: 'bio',
   goals: 'metas',
   finance: 'financeiro',
+  // Rodada dos agentes (21/10/2026, CO-15): `POST /api/publico/lead`, o formulário do site da Root. É ANÔNIMA
+  // (como `sala`): o gate deixa anônimo passar e o serviço confere o módulo `leads` da empresa da chave.
+  publico: 'leads',
 };
 
 /**

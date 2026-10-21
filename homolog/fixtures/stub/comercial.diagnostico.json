@@ -1,5 +1,6 @@
 {
   "tarefa": "comercial.diagnostico",
+  "funcao": "CO-03",
   "_sobre": "Respostas do stub para o leitor de ata do comercial (homologação, 13/10/2026). Os trechos são cópia literal de homolog/fixtures/ata-alicerce.md: o parser confere cada um contra a ata e tira o minuto da linha. Dado fictício.",
   "respostas": [
     {

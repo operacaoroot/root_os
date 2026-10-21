@@ -1,7 +1,8 @@
-import { Injectable, Logger, NotFoundException, OnModuleInit, Optional } from '@nestjs/common';
+import { Inject, Injectable, Logger, NotFoundException, OnModuleInit, Optional } from '@nestjs/common';
 import { COMERCIAL_FATOS_DA_PRIMEIRA_PAGA, TABELA_DE_PRECO, formatarReais, type ContratoAnexadoNaTela, type ConteudoDoFechamento, type EscritaDoFechamento, type FechamentoDoLead } from '@mktos/shared';
 import { ActorType, FinanceTxType, Prisma } from '@prisma/client';
 
+import { PASTA_DO_CLIENTE, type PastaDoClientePort } from '../clientes/portas';
 import { EfeitosRegistry, type ContextoDoEfeito } from '../gateway/efeitos.registry';
 import { InterruptoresRegistry } from '../gateway/interruptores.registry';
 import { PortaDoOperador } from '../gateway/porta-do-operador.service';
@@ -12,6 +13,7 @@ import { DecisoesRegistry, DecisoesService, type DecisaoResolvida } from './deci
 import { DinheiroService, hojeEmSP, venceComoData, type AceiteDoLead } from './dinheiro.service';
 import { AUTOR_DO_FECHAMENTO, abrirCardDaImplantacao, travarImplantacaoDoLead } from './card-da-implantacao';
 import { eventoIdComercial, uuidDe } from './eventos';
+import { SO_DOCUMENTOS_DE_ASSINATURA } from './documentos';
 import { aceiteDaDeclaracao, chaveDoAnexo, parcelasDoContratoFora } from './fechado-fora';
 import { FioService, ReacoesRegistry } from './fio.service';
 import { RelogioComercialRegistry } from './relogio.registry';
@@ -67,11 +69,24 @@ import { WhatsappComercialService } from './whatsapp.service';
  * com a pessoa marcando (sem marcar, a escrita fica `pulado` com o motivo); e o
  * contrato do Financeiro conta as parcelas do 1º vencimento declarado e guarda
  * o PDF anexado como o documento assinado.
+ *
+ * A PASTA DO CLIENTE (rodada dos agentes, 21/10/2026, CO-10) é a sétima escrita,
+ * DEPOIS do card e fora de qualquer transação do banco: a porta
+ * `PASTA_DO_CLIENTE` (lane do Drive) cria `10-clientes/<nome do cliente>` pela
+ * capacidade `drive.pasta.criar` (R3). Idempotente pelo ponteiro
+ * `Partner.pastaDriveId`: com ele, nem chama a porta. A falha do Drive NÃO
+ * derruba o fechamento: a escrita fica `erro` com o motivo (`aguardando_aprovacao`
+ * quando a porta reteve, `pulado` sem raiz configurada) e o fechamento conclui
+ * com as outras seis; "Criar pasta de novo" é o componente `PastaDoCliente`, pela
+ * rota da lane do Drive. As outras duas portas do card usam a mesma porta:
+ * "Iniciar onboarding" (`onboarding-antecipado.service.ts`, origem
+ * `onboarding-antecipado`) e "Registrar cliente já fechado" (o fechamento de
+ * quem fechou fora roda AQUI, com a origem `fechado-fora`).
  */
 
 export const CAP_FECHAMENTO = 'comercial.fechamento.executar';
 const ATOR = 'comercial';
-const ESCRITAS: EscritaDoFechamento['escrita'][] = ['cliente', 'contrato', 'cobranca', 'kit_e_trilho', 'card', 'grupo'];
+const ESCRITAS: EscritaDoFechamento['escrita'][] = ['cliente', 'contrato', 'cobranca', 'kit_e_trilho', 'card', 'grupo', 'pasta'];
 const ONDE: Record<EscritaDoFechamento['escrita'], string> = {
   cliente: 'CRM do OS',
   contrato: 'Financeiro do OS',
@@ -79,6 +94,7 @@ const ONDE: Record<EscritaDoFechamento['escrita'], string> = {
   kit_e_trilho: 'Implantação',
   card: 'Trabalho',
   grupo: 'WhatsApp',
+  pasta: 'Google Drive',
 };
 const SE_RODAR_DE_NOVO: Record<EscritaDoFechamento['escrita'], string> = {
   cliente: 'reaproveita o da ficha ou pelo CNPJ',
@@ -87,7 +103,10 @@ const SE_RODAR_DE_NOVO: Record<EscritaDoFechamento['escrita'], string> = {
   kit_e_trilho: 'reaproveita',
   card: 'acha o mesmo card (também o iniciado antes do fechamento)',
   grupo: 'não cria outro',
+  pasta: 'liga a que já existe (ponteiro do cliente ou pasta de mesmo nome)',
 };
+/** CO-10: a escrita que não segura o fechamento (o Drive fora do ar não deixa o cliente sem contrato). */
+const ESCRITAS_QUE_NAO_SEGURAM: ReadonlySet<EscritaDoFechamento['escrita']> = new Set(['pasta']);
 const FASES_DO_TRILHO = ['qualificar', 'diagnostico', 'contrato', 'imersao', 'operacao'];
 /**
  * D-7: um fechamento em curso há mais que isto é dado por parado (o processo
@@ -177,6 +196,8 @@ export class FechamentoService implements OnModuleInit {
     @Optional() private readonly whats?: WhatsappComercialService,
     @Optional() private readonly relogio?: RelogioComercialRegistry,
     @Optional() private readonly interruptores?: InterruptoresRegistry,
+    // CO-10 (rodada dos agentes): a porta da pasta do cliente (lane do Drive). Sem ela, a 7ª escrita fica `pulado`.
+    @Optional() @Inject(PASTA_DO_CLIENTE) private readonly pastas?: PastaDoClientePort,
   ) {}
 
   onModuleInit(): void {
@@ -255,7 +276,7 @@ export class FechamentoService implements OnModuleInit {
     if (!a) return { pronto: false, falta: ['aceite com dados'] };
     const referencia = `cob-${leadId}-v${a.versao}`;
     const [documentos, criada, haCobranca] = await Promise.all([
-      this.prisma.comercialDocumento.findMany({ where: { leadId, orgId }, select: { hashConteudo: true, assinadoClienteEm: true, assinadoRootEm: true } }),
+      this.prisma.comercialDocumento.findMany({ where: { leadId, orgId, ...SO_DOCUMENTOS_DE_ASSINATURA }, select: { hashConteudo: true, assinadoClienteEm: true, assinadoRootEm: true } }),
       this.prisma.leadEvent.findUnique({ where: { id: eventoIdComercial(orgId, leadId, 'cobranca.criada', referencia) }, select: { payload: true, leadId: true } }),
       this.prisma.comercialCobranca.count({ where: { leadId, orgId } }),
     ]);
@@ -437,14 +458,14 @@ export class FechamentoService implements OnModuleInit {
     const escritas: EscritaDoFechamento[] = [];
     const refs: Partial<Record<EscritaDoFechamento['escrita'], string | null>> = {};
 
-    const rodar = async (escrita: EscritaDoFechamento['escrita'], fn: () => Promise<{ estado: 'criado' | 'reaproveitado' | 'pulado'; detalhe: string; ref: string | null }>) => {
+    const rodar = async (escrita: EscritaDoFechamento['escrita'], fn: () => Promise<{ estado: 'criado' | 'reaproveitado' | 'pulado' | 'aguardando_aprovacao'; detalhe: string; ref: string | null }>) => {
       const antes = anteriores.get(escrita);
       const comecou = Date.now();
       let e: EscritaDoFechamento;
       try {
         const r = await fn();
         // Já estava pronta numa passada anterior: conta como reaproveitada, com o tempo de agora.
-        const estado = r.estado !== 'pulado' && antes && (antes.estado === 'criado' || antes.estado === 'reaproveitado') ? 'reaproveitado' : r.estado;
+        const estado = r.estado !== 'pulado' && r.estado !== 'aguardando_aprovacao' && antes && (antes.estado === 'criado' || antes.estado === 'reaproveitado') ? 'reaproveitado' : r.estado;
         e = { escrita, onde: ONDE[escrita], estado, detalhe: r.detalhe, ms: Date.now() - comecou, seRodarDeNovo: SE_RODAR_DE_NOVO[escrita], ref: r.ref };
       } catch (erro) {
         e = { escrita, onde: ONDE[escrita], estado: 'erro', detalhe: (erro instanceof Error ? erro.message : String(erro)).slice(0, 400), ms: Date.now() - comecou, seRodarDeNovo: SE_RODAR_DE_NOVO[escrita], ref: antes?.ref ?? null };
@@ -719,8 +740,13 @@ export class FechamentoService implements OnModuleInit {
       return { estado: 'criado', detalhe: kickoff ? 'criado · boas-vindas na fila' : 'criado · boas-vindas sai quando o kickoff for marcado', ref: jid };
     });
 
+    // 7. a pasta do cliente no Drive (CO-10): depois do card, fora de transação, idempotente pelo ponteiro.
+    await rodar('pasta', async () => this.escritaDaPasta(orgId, leadId, refs.cliente ?? null, fora ? 'fechado-fora' : 'fechamento'));
+
     const essenciaisOk = ['cliente', 'contrato', 'cobranca'].every((k) => escritas.find((e) => e.escrita === k)?.estado !== 'erro');
-    const tudoOk = escritas.every((e) => e.estado !== 'erro');
+    // CO-10: a pasta em erro fica à vista na escrita e no `erro`, mas não segura o fechamento.
+    const tudoOk = escritas.every((e) => e.estado !== 'erro' || ESCRITAS_QUE_NAO_SEGURAM.has(e.escrita));
+    const comErro = escritas.filter((e) => e.estado === 'erro');
     const concluidoEm = tudoOk ? new Date() : null;
     const atual = await this.prisma.comercialFechamento.update({
       where: { id: linha.id },
@@ -728,7 +754,7 @@ export class FechamentoService implements OnModuleInit {
         estado: tudoOk ? 'concluido' : 'erro',
         escritas: escritas as unknown as Prisma.InputJsonValue,
         concluidoEm,
-        erro: tudoOk ? null : escritas.filter((e) => e.estado === 'erro').map((e) => `${e.escrita}: ${e.detalhe}`).join(' · ').slice(0, 2000),
+        erro: comErro.length ? comErro.map((e) => `${e.escrita}: ${e.detalhe}`).join(' · ').slice(0, 2000) : null,
       },
     });
     if (essenciaisOk) {
@@ -740,6 +766,37 @@ export class FechamentoService implements OnModuleInit {
       });
     }
     return this.projetar(atual);
+  }
+
+  /**
+   * CO-10: a 7ª escrita. Com o ponteiro no cliente, reaproveita sem chamar a porta; sem a porta nesta
+   * instância, `pulado`; senão pede à porta e traduz: pronta (criada ou ligada a uma de mesmo nome),
+   * retida (R3, a aprovação vai no `ref`), sem raiz (`pulado` com o motivo) ou erro (lança, e o
+   * `rodar` grava a escrita em erro com o motivo).
+   */
+  private async escritaDaPasta(
+    orgId: string,
+    leadId: string,
+    clienteDaEscrita: string | null,
+    origem: 'fechamento' | 'fechado-fora',
+  ): Promise<{ estado: 'criado' | 'reaproveitado' | 'pulado' | 'aguardando_aprovacao'; detalhe: string; ref: string | null }> {
+    const partnerId = clienteDaEscrita ?? (await this.prisma.comercialFicha.findFirst({ where: { leadId, orgId }, select: { partnerId: true } }))?.partnerId ?? null;
+    if (!partnerId) throw new Error('sem cliente: a pasta espera a escrita do cliente');
+    const cliente = await this.prisma.partner.findFirst({ where: { id: partnerId, orgId }, select: { pastaDriveId: true } });
+    if (!cliente) throw new Error('o cliente do fechamento não está nesta empresa');
+    if (cliente.pastaDriveId) return { estado: 'reaproveitado', detalhe: 'a pasta já estava ligada ao cliente', ref: cliente.pastaDriveId };
+    if (!this.pastas) return { estado: 'pulado', detalhe: 'a porta da pasta do cliente não está disponível nesta instância', ref: null };
+    const r = await this.pastas.garantir({ orgId, partnerId, origem, leadId });
+    switch (r.estado) {
+      case 'pronta':
+        return { estado: r.ligada ? 'reaproveitado' : 'criado', detalhe: r.ligada ? 'ligada a uma pasta de mesmo nome que já existia' : 'pasta criada a partir do modelo', ref: r.pastaId };
+      case 'aguardando_aprovacao':
+        return { estado: 'aguardando_aprovacao', detalhe: 'a criação da pasta espera a aprovação de outra pessoa em /atendimento', ref: r.approvalId };
+      case 'sem_raiz':
+        return { estado: 'pulado', detalhe: `sem a raiz dos clientes no Drive: ${r.motivo}`.slice(0, 400), ref: null };
+      default:
+        throw new Error(r.motivo || 'a porta da pasta devolveu erro sem motivo');
+    }
   }
 
   /**

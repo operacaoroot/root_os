@@ -144,7 +144,7 @@ describe('o portão do fechamento', () => {
     expect(prontoParaFechar(new Set(['pix.pago']))).toEqual({ pronto: false, falta: ['contrato assinado pelo cliente', 'contrato assinado pela Root'] });
     expect(prontoParaFechar(new Set(['pix.pago', 'contrato.assinado_cliente', 'contrato.assinado_root'])).pronto).toBe(true);
   });
-  it('a chave casa com o argsSchema da capacidade e as seis escritas nascem pendentes', () => {
+  it('a chave casa com o argsSchema da capacidade e as sete escritas nascem pendentes', () => {
     const chave = chaveDoFechamento('3f2c1a9e-0000-4000-8000-000000000001', 2);
     expect(chave).toMatch(/^fech-[0-9a-f-]{36}-v[0-9]{1,4}$/);
     expect(escritasVazias().map((e) => [e.escrita, e.estado])).toEqual([
@@ -154,6 +154,8 @@ describe('o portão do fechamento', () => {
       ['kit_e_trilho', 'pendente'],
       ['card', 'pendente'],
       ['grupo', 'pendente'],
+      // CO-10 (rodada dos agentes, 21/10/2026): a 7ª escrita, a pasta do cliente no Drive.
+      ['pasta', 'pendente'],
     ]);
   });
 });

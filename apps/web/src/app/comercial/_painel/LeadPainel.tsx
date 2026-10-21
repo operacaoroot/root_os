@@ -18,6 +18,7 @@ import Link from 'next/link';
 import type { DecisaoNaFila, FichaDoLead } from '@mktos/shared';
 import { COMERCIAL_ROTULO_DA_ETAPA, ehSaida } from '@mktos/shared';
 
+import { PastaDoCliente } from '@/components/clientes/PastaDoCliente';
 import { AUSENTE, numeroOuAusente } from '@/lib/cockpit';
 
 import { BarraDaSaude, BOTAO, Chip, Erro, FOCO, NivelDoRotulo, useCarregar } from '../_ui';
@@ -213,6 +214,8 @@ export function LeadPainel({ estado }: { estado: EstadoDoPainel }) {
                   <span className="mt-0.5 text-[11px] text-dim">saúde {numeroOuAusente(f.saude)}</span>
                 </span>
                 <span className="text-muted">dono: <span className="text-text">{f.dono?.nome ?? AUSENTE}</span></span>
+                {/* CO-10 (rodada dos agentes): a pasta do cliente no Drive, ou "Criar pasta" (de novo, se falhou). */}
+                {f.pasta?.partnerId && <PastaDoCliente partnerId={f.pasta.partnerId} url={f.pasta.url} erro={f.pasta.erro} compacto />}
               </>
             ) : (
               <span className="h-5 w-48 animate-pulse rounded bg-surface-2 motion-reduce:animate-none" aria-hidden />

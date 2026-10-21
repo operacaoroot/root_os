@@ -122,3 +122,5 @@ export * from './pasta-do-cliente.js';
 export * from './clientes-arquivos.js';
 // A lane A3+TR da rodada dos agentes (kit, cobrador, triagem da caixa, delegador): ver `agentes-da-implantacao.ts`.
 export * from './agentes-da-implantacao.js';
+// Os agentes do comercial da rodada de 21/10/2026 (lane A2): ver `comercial-agentes.ts`.
+export * from './comercial-agentes.js';

@@ -505,7 +505,8 @@ describe.skipIf(!URL)('a jornada do cockpit de ponta a ponta, contando os toques
     await confirmar('fechamento', f.id, 'o fechamento cria cliente, contrato, cobrança, trilho e grupo (R4)');
     const tela = await naEmpresa(() => fechamento.doLead(ORG, leadId));
     expect(tela.estado, JSON.stringify(tela.escritas)).toBe('concluido');
-    expect(tela.escritas).toHaveLength(6);
+    // CO-10 (rodada dos agentes, 21/10/2026): sete escritas, a 7ª é a pasta do cliente.
+    expect(tela.escritas).toHaveLength(7);
     expect(await etapa()).toBe('fechado');
   });
 

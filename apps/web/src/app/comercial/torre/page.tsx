@@ -7,6 +7,7 @@ import { custoDaTorre, diaSemanaSP, horaSP, percentual, quandoCurtoSP } from '@/
 
 import { CARTAO, Carregando, Chip, Erro, FOCO, Numero, Rotulo, useCarregar } from '../_ui';
 import { LinkDoLead, useMudouNoPainel } from '../_painel/provedor';
+import { ResumoDoVigiaNaTorre } from './ResumoDoVigia';
 
 /*
  * TELA 12 · A TORRE DAS AUTOMAÇÕES (lane C). Cada automação com o nível de
@@ -30,6 +31,7 @@ export default function TorrePage() {
       {carregando && !t && !erro && <Carregando linhas={3} altura="h-24" />}
       {t && (
         <>
+          {t.vigia.resumo?.linhas?.length ? <ResumoDoVigiaNaTorre resumo={t.vigia.resumo} /> : null}
           <PremissasQuebradas premissas={t.vigia.premissas} quebradas={t.vigia.premissasQuebradas} />
           <section aria-label="vigia" className="grid grid-cols-[repeat(2,minmax(0,1fr))] gap-3 md:grid-cols-[repeat(4,minmax(0,1fr))]">
             <Numero valor={t.vigia.ultimaPassagemEm ? horaSP(t.vigia.ultimaPassagemEm) : 'ausente'} legenda={t.vigia.ultimaPassagemEm ? `última passagem do vigia · ${diaSemanaSP(t.vigia.ultimaPassagemEm)}` : 'o vigia ainda não passou'} />

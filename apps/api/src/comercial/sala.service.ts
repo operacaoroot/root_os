@@ -32,6 +32,7 @@ import { ARQUIVISTA_DO_CLIENTE, type ArquivistaDoClientePort } from '../clientes
 import { horarioOferecido, horariosOferecidos } from './agenda-de-homologacao';
 import { hashDoConteudo } from './eventos';
 import { FioService, ReacoesRegistry } from './fio.service';
+import { SO_DOCUMENTOS_DE_ASSINATURA } from './documentos';
 import { publicadaDaSala } from './sala-versao.service';
 import { chaveDaDuvida, projetarSala, type DadosDaSala, type EventoDaSala } from './sala-projecao';
 import {
@@ -550,7 +551,7 @@ export class SalaService implements OnModuleInit {
       this.prisma.comercialFicha.findUnique({ where: { leadId } }),
       this.prisma.leadEvent.findMany({ where: { leadId }, orderBy: { occurredAt: 'asc' }, take: 1000, select: { type: true, payload: true, occurredAt: true } }),
       this.prisma.comercialCobranca.findMany({ where: { leadId } }),
-      this.prisma.comercialDocumento.findMany({ where: { leadId } }),
+      this.prisma.comercialDocumento.findMany({ where: { leadId, ...SO_DOCUMENTOS_DE_ASSINATURA } }),
     ]);
     // I3: a última versão PUBLICADA (nunca o rascunho nem a que espera liberação).
     const publicada = await publicadaDaSala(this.prisma, sala.orgId, leadId);

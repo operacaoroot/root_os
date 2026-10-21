@@ -1,0 +1,38 @@
+{
+  "tarefa": "comercial.whatsapp.triagem",
+  "funcao": "CO-16",
+  "_sobre": "A triagem das mensagens de WhatsApp que chegam pela Evolution (rodada dos agentes, 21/10/2026, CO-16). Só a mensagem decide a regra (depoisDe). Uma regra por classe e uma de confiança baixa; o padrão também é de confiança baixa (vai para uma pessoa). Dado fictício.",
+  "respostas": [
+    {
+      "depoisDe": "MENSAGEM:",
+      "quando": ["quanto custa"],
+      "texto": "{\"classe\":\"lead_novo\",\"confianca\":0.92,\"motivo\":\"pede preço dos serviços\"}"
+    },
+    {
+      "depoisDe": "MENSAGEM:",
+      "quando": ["boleto da proposta"],
+      "texto": "{\"classe\":\"duvida_de_lead\",\"confianca\":0.86,\"motivo\":\"pergunta sobre a proposta\"}"
+    },
+    {
+      "depoisDe": "MENSAGEM:",
+      "quando": ["segue em anexo"],
+      "texto": "{\"classe\":\"documento\",\"confianca\":0.9,\"motivo\":\"diz que mandou um arquivo\"}"
+    },
+    {
+      "depoisDe": "MENSAGEM:",
+      "quando": ["conciliacao do mes"],
+      "texto": "{\"classe\":\"cliente_ativo\",\"confianca\":0.88,\"motivo\":\"fala da operação contratada\"}"
+    },
+    {
+      "depoisDe": "MENSAGEM:",
+      "quando": ["promocao imperdivel"],
+      "texto": "{\"classe\":\"outro\",\"confianca\":0.95,\"motivo\":\"propaganda\"}"
+    },
+    {
+      "depoisDe": "MENSAGEM:",
+      "quando": ["tudo bem por ai"],
+      "texto": "{\"classe\":\"lead_novo\",\"confianca\":0.4,\"motivo\":\"cumprimento sem assunto\"}"
+    }
+  ],
+  "padrao": "{\"classe\":\"outro\",\"confianca\":0.3,\"motivo\":\"mensagem sem assunto claro\"}"
+}

@@ -4,8 +4,9 @@
  * ABA DINHEIRO (eram as telas 08, 10 e 11: `lead/[id]/fechamento` e
  * `contratos/[leadId]`). Do aceite ao contrato vivo, numa coluna só: o aceite
  * e a cobrança, as parcelas com a régua, o documento e as assinaturas (assinar
- * pela Root só para quem a API deixar), as cinco escritas do fechamento e o
- * que acontece depois do sim. Tudo vem do fio e dos provedores; as escritas
+ * pela Root só para quem a API deixar), as escritas do fechamento (sete desde a
+ * rodada dos agentes: a 7ª é a pasta do cliente no Drive), a minuta do contrato
+ * da Root com o laudo (CO-13 e CO-14) e o que acontece depois do sim. Tudo vem do fio e dos provedores; as escritas
  * vão à porta (R4) e esperam a titular em /atendimento.
  */
 import { useState } from 'react';
@@ -18,6 +19,7 @@ import { AUSENTE, ROTULO_DO_PRODUTO, contarParcelas, dataDoDia, ficouRetida, num
 
 import { AguardandoAprovacao, Aviso, BOTAO, BOTAO_PRIMARIO, CARTAO, Carregando, Chip, Erro, ErroDaAcao, INPUT, Rotulo, useCarregar } from '../_ui';
 import { ContratosImportados } from './ContratosImportados';
+import { MinutaDoContrato } from './MinutaDoContrato';
 import { usePainel } from './provedor';
 
 /** T1b: `contratoAnexado` só vem para quem fechou fora do sistema (o PDF assinado, registrado à mão). */
@@ -34,6 +36,17 @@ const ROTULO_DA_ESCRITA: Record<EscritaDoFechamento['escrita'], string> = {
   kit_e_trilho: 'kit e trilho',
   card: 'card da implantação',
   grupo: 'grupo',
+  pasta: 'pasta do cliente',
+};
+
+/** O estado de cada escrita como a tela escreve (o da API tem sublinhado). */
+const ROTULO_DO_ESTADO_DA_ESCRITA: Record<EscritaDoFechamento['estado'], string> = {
+  pendente: 'pendente',
+  criado: 'criado',
+  reaproveitado: 'reaproveitado',
+  pulado: 'pulado',
+  aguardando_aprovacao: 'aguardando aprovação',
+  erro: 'erro',
 };
 
 const ROTULO_DO_ESTADO: Record<FechamentoDoLead['estado'], string> = {
@@ -126,6 +139,10 @@ export function AbaDinheiro({ leadId, ficha: f, aoMudar }: { leadId: string; fic
         </ul>
         {geradoEm && !rootEm && <AssinarPelaRoot leadId={leadId} aoMudar={mudou} />}
         {!geradoEm && <p className="text-[12px] text-dim">O contrato é gerado depois do aceite, pela porta (R4: pede a titular).</p>}
+      </section>
+
+      <section className={`${CARTAO} space-y-2`} aria-label="minuta do contrato da Root">
+        <MinutaDoContrato leadId={leadId} temAceite={Boolean(aceitaEm || quandoNoFio(f, 'aceite.declarado'))} />
       </section>
 
       <section className={`${CARTAO} space-y-2`} aria-label="fechamento">
@@ -342,7 +359,7 @@ function Fechamento({ leadId, f, erro, aoTentar, aoMudar }: { leadId: string; f:
   return (
     <>
       <div className="flex flex-wrap items-center gap-2">
-        <Rotulo>fechamento · as cinco escritas</Rotulo>
+        <Rotulo>fechamento · as escritas</Rotulo>
         <Chip tom={f.estado === 'concluido' ? 'bom' : f.estado === 'erro' ? 'ruim' : 'alerta'}>{ROTULO_DO_ESTADO[f.estado] ?? f.estado}</Chip>
         {f.vetado && <Chip tom="ruim">vetado</Chip>}
         {f.chave && <span className="ml-auto font-os-mono text-[11px] text-dim">chave {f.chave}</span>}
@@ -354,7 +371,9 @@ function Fechamento({ leadId, f, erro, aoTentar, aoMudar }: { leadId: string; f:
           <li key={e.escrita} className="grid gap-1 py-2 text-[13px] sm:grid-cols-[96px_minmax(0,1fr)_64px] sm:gap-3">
             <span className="font-semibold">{ROTULO_DA_ESCRITA[e.escrita] ?? e.escrita}</span>
             <span className="min-w-0 break-words">
-              <Chip tom={e.estado === 'erro' ? 'ruim' : e.estado === 'pendente' || e.estado === 'pulado' ? 'neutro' : 'bom'}>{e.estado}</Chip>
+              <Chip tom={e.estado === 'erro' ? 'ruim' : e.estado === 'aguardando_aprovacao' ? 'alerta' : e.estado === 'pendente' || e.estado === 'pulado' ? 'neutro' : 'bom'}>
+                {ROTULO_DO_ESTADO_DA_ESCRITA[e.estado] ?? e.estado}
+              </Chip>
               <span className="ml-1.5 text-muted">{e.onde}</span>
               {e.detalhe && <span className="ml-1.5 text-muted">· {e.detalhe}</span>}
               <span className="block text-[11.5px] text-dim">se rodar de novo: {e.seRodarDeNovo}</span>
@@ -380,7 +399,10 @@ function Fechamento({ leadId, f, erro, aoTentar, aoMudar }: { leadId: string; f:
           <ErroDaAcao erro={erroDaAcao} />
         </div>
       )}
-      {f.estado === 'concluido' && <Aviso tom="bom">Fechado: as cinco escritas terminaram e o cliente está ativo.</Aviso>}
+      {f.estado === 'concluido' && <Aviso tom="bom">Fechado: as escritas terminaram e o cliente está ativo.</Aviso>}
+      {f.escritas.some((e) => e.escrita === 'pasta' && e.estado === 'erro') && (
+        <p className="text-[12px] text-muted">A pasta do cliente não foi criada e não segura o fechamento: use &quot;Criar pasta de novo&quot; no topo do painel.</p>
+      )}
     </>
   );
 }

@@ -1,5 +1,6 @@
 {
   "tarefa": "comercial.duvida",
+  "funcao": "CO-06",
   "_sobre": "Respostas do stub para o assistente da proposta na sala (homologação). Só a pergunta do cliente decide a regra (depoisDe). Os números citados são os da v1 da Operação ROOT na tabela de 04/10; em outra versão o sistema recusa o número e vale a resposta de segurança.",
   "respostas": [
     {

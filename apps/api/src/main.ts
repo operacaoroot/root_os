@@ -12,6 +12,8 @@ import { ZodExceptionFilter } from './common/zod-exception.filter';
 import { LoggerDeCorrelacao } from './common/logger-correlacao';
 import { instalarCorpoDaMidia } from './common/corpo-da-midia';
 import { ehTokenDeSessao } from './auth/jwt-auth.guard';
+// Rodada dos agentes (21/10/2026, CO-15): o CORS próprio do formulário do site.
+import { corsDoFormularioDoSite } from './comercial/formulario-do-site/cors';
 
 // Credenciais PRÓPRIAS do root (isolamento): ficam em ~/.config/root/*.env,
 // nunca no repo. Carregadas AQUI sem sobrescrever o .env local da API.
@@ -61,6 +63,9 @@ async function bootstrap() {
       return false;
     }
   });
+  // Rodada dos agentes (CO-15): `/api/publico` (o formulário do site) tem CORS só para operacaoroot.com e o
+  // teto do corpo, ANTES do CORS geral, que responderia o preflight sozinho. O resto da API não muda.
+  app.use(`/${prefixo}/publico`, corsDoFormularioDoSite());
   app.enableCors({
     origin: (process.env.WEB_ORIGIN ?? 'http://localhost:4000').split(','),
     credentials: true,

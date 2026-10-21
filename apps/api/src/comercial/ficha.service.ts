@@ -41,6 +41,7 @@ import { guardarAtaEmTransito } from './ata-em-transito';
 import { FioService, type EventoGravado } from './fio.service';
 import { produtoAlvo } from './pontuacao';
 import { decisaoSemPrazo } from './decisoes.service';
+import { SO_DOCUMENTOS_DE_ASSINATURA } from './documentos';
 import { proximaAcaoDoLead, saudeDoLead, type DecisaoParaProximaAcao } from './proxima-acao';
 import { tarefaDeListaVisivel } from '../work/arquivadas';
 import { diaEmSP, tarefasDosCartoes } from './tarefas/tarefa-do-cartao';
@@ -90,8 +91,12 @@ export function camposDoEvento(type: string, payload: unknown, em: Date, ficha: 
   const p = (payload ?? {}) as Record<string, unknown>;
   switch (type) {
     case 'lead.chegou': {
+      const c: CamposDaFicha = {};
       const canal = str(p.canal);
-      return canal && !ficha.canal ? { canal } : null;
+      if (canal && !ficha.canal) c.canal = canal;
+      // Rodada dos agentes (CO-15): a empresa que a pessoa escreveu no formulário do site, só na ficha vazia.
+      if (str(p.empresa) && !ficha.empresa) c.empresa = str(p.empresa);
+      return Object.keys(c).length ? c : null;
     }
     case 'cnpj.enriquecido': {
       const c: CamposDaFicha = {};
@@ -692,7 +697,7 @@ export class FichaService {
     const [eventos, sala, documento, cobranca, decisoes] = await Promise.all([
       this.prisma.leadEvent.findMany({ where: { leadId, orgId }, orderBy: { occurredAt: 'asc' }, take: 500 }),
       this.prisma.salaDoCliente.findFirst({ where: { leadId, orgId }, select: { slug: true } }),
-      this.prisma.comercialDocumento.findFirst({ where: { leadId, orgId }, orderBy: { criadoEm: 'desc' }, select: { externoId: true } }),
+      this.prisma.comercialDocumento.findFirst({ where: { leadId, orgId, ...SO_DOCUMENTOS_DE_ASSINATURA }, orderBy: { criadoEm: 'desc' }, select: { externoId: true } }),
       this.prisma.comercialCobranca.findFirst({ where: { leadId, orgId }, orderBy: { criadoEm: 'desc' }, select: { externoId: true } }),
       this.prisma.comercialDecisao.findMany({ where: { leadId, orgId, estado: 'aberta' }, select: { titulo: true, expiraEm: true, padrao: true } }),
     ]);
@@ -714,6 +719,10 @@ export class FichaService {
     // I1: o retrolink lead → card da implantação (o card é do Trabalho; a empresa é conferida aqui).
     const card = ficha.cardId
       ? await this.prisma.workTask.findFirst({ where: { id: ficha.cardId, orgId }, select: { id: true, listId: true, status: { select: { name: true } } } })
+      : null;
+    // CO-10 (rodada dos agentes): a pasta do cliente no Drive, pelo ponteiro do cliente da ficha.
+    const parceiro = ficha.partnerId
+      ? await this.prisma.partner.findFirst({ where: { id: ficha.partnerId, orgId }, select: { id: true, pastaDriveUrl: true, pastaDriveErro: true } })
       : null;
 
     return {
@@ -757,6 +766,7 @@ export class FichaService {
       },
       fio: linhasDoFio(eventos, lead.enteredAt),
       balao,
+      pasta: { partnerId: parceiro?.id ?? null, url: parceiro?.pastaDriveUrl ?? null, erro: parceiro?.pastaDriveErro ?? null },
     };
   }
 

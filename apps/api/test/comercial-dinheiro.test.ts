@@ -479,6 +479,8 @@ describe('do aceite ao cliente ativo, pela porta e pelos dublês', { timeout: 30
       ['kit_e_trilho', 'criado'],
       ['card', 'criado'],
       ['grupo', 'criado'],
+      // CO-10 (rodada dos agentes, 21/10/2026): a 7ª escrita; sem a porta da pasta nesta montagem, `pulado`.
+      ['pasta', 'pulado'],
     ]);
     expect(await prisma.leadEvent.count({ where: { leadId, type: 'cliente.ativo' } })).toBe(1);
     // I1: o card nasce na lista "Onboarding de cliente" da pasta Clientes, na primeira etapa, com retrolinks e procedência.
@@ -518,7 +520,9 @@ describe('do aceite ao cliente ativo, pela porta e pelos dublês', { timeout: 30
     const a = await dinheiro.aceiteDoLead(ORG, leadId);
     const segunda = await naEmpresa(() => fechamento.executar(ORG, leadId, a!));
     expect(segunda.estado).toBe('concluido');
-    expect(segunda.escritas.every((e) => e.estado === 'reaproveitado')).toBe(true);
+    // CO-10: a pasta não tem porta nesta montagem e fica `pulado` nas duas passadas; as outras seis se reaproveitam.
+    expect(segunda.escritas.filter((e) => e.escrita !== 'pasta').every((e) => e.estado === 'reaproveitado')).toBe(true);
+    expect(segunda.escritas.find((e) => e.escrita === 'pasta')?.estado).toBe('pulado');
     expect(await contar()).toEqual(antes);
 
     // Propor de novo depois de concluído: nada vai à fila.

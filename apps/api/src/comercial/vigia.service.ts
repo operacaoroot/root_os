@@ -11,6 +11,7 @@ import {
   type ComercialEtapa,
   type ComercialProduto,
   type PremissaDoVigia,
+  type ResumoDoVigia,
 } from '@mktos/shared';
 
 import { RegistroDeConectores } from '../integrations/conectores.registry';
@@ -26,6 +27,7 @@ import { CHAVE_DO_VIGIA, corpoComDado, dadoDaNota, gravarNota } from './notas-do
 import { proximaAcaoDoLead } from './proxima-acao';
 import { MarcasDoDia, RelogioComercialRegistry } from './relogio.registry';
 import { MENSAGENS } from './mensagens';
+import { conferirResumoDoVigia, promptDoResumoDoVigia } from './vigia-resumo';
 
 /*
  * O VIGIA DAS 08:00 (lane E, fase 2, 13/10/2026) — mapa C05/C10/K03 e tela 12.
@@ -87,6 +89,12 @@ import { MENSAGENS } from './mensagens';
  *
  * Ele roda como tarefa do relógio comercial (`inteligencia.vigia`), e a
  * autonomia segura: vigia em A0 não confere nada.
+ *
+ * O RESUMO DE TRÊS LINHAS (rodada dos agentes, 21/10/2026, CO-11): depois de
+ * conferir, a função CO-11 do cadastro (Haiku 5.5, esforço baixo) escreve três
+ * linhas para o topo. Os números são os que o vigia contou; linha do modelo com
+ * número que não bate sai e a do sistema entra (`vigia-resumo.ts`). Sem modelo,
+ * as três do sistema. A chamada não passa modelo nem esforço: quem decide é o cadastro.
  */
 
 export const HORA_DO_VIGIA_MIN = 8 * 60;
@@ -103,6 +111,8 @@ export interface PassagemDoVigia {
   naoConferidas: number;
   premissas: PremissaDoVigia[];
   decisoesAbertas: number;
+  /** CO-11: as três linhas do topo (ausente nas passagens gravadas antes da rodada dos agentes). */
+  resumo?: ResumoDoVigia;
 }
 
 /** O texto da premissa de cada automação (tela 12). `[a decidir]` onde o mapa não escreve. */
@@ -240,7 +250,8 @@ export class VigiaService implements OnModuleInit {
       if (d.nova) decisoesAbertas++;
     }
     const c = contarPremissas(premissas);
-    const passagem: PassagemDoVigia = { dia, em: agora.toISOString(), ...c, premissas, decisoesAbertas };
+    const base: PassagemDoVigia = { dia, em: agora.toISOString(), ...c, premissas, decisoesAbertas };
+    const passagem: PassagemDoVigia = { ...base, resumo: await this.resumir(orgId, base) };
     await gravarNota(this.memoria, orgId, CHAVE_DO_VIGIA, {
       title: 'Vigia do comercial',
       body: corpoComDado(this.markdown(passagem), passagem),
@@ -252,12 +263,30 @@ export class VigiaService implements OnModuleInit {
     return passagem;
   }
 
+  /**
+   * CO-11: as três linhas do topo. O modelo escreve a frase; os números são os do sistema
+   * (`conferirResumoDoVigia`). Sem modelo, ou com o modelo falhando, as três do sistema.
+   */
+  async resumir(orgId: string, p: PassagemDoVigia): Promise<ResumoDoVigia> {
+    if (!this.llm) return conferirResumoDoVigia(null, p);
+    try {
+      const { system, user } = promptDoResumoDoVigia(p);
+      const bruta = await this.llm.complete({ funcao: 'CO-11', system, user, orgId, maxTokens: 300 });
+      return conferirResumoDoVigia(bruta, p);
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      const r = conferirResumoDoVigia(null, p);
+      return { ...r, avisos: [`o resumo do modelo não veio (${msg.slice(0, 160)}): as três linhas são do sistema`] };
+    }
+  }
+
   private markdown(p: PassagemDoVigia): string {
     const linha = (x: PremissaDoVigia) =>
       `- ${x.ok === null ? 'não conferida' : x.ok ? 'ok' : 'QUEBRADA'} · ${x.automacao ? COMERCIAL_ROTULO_DA_AUTOMACAO[x.automacao] : 'funil'} · ${x.premissa}: ${x.detalhe}`;
     return [
       `# Vigia do comercial · ${p.dia}`,
       '',
+      ...(p.resumo?.linhas.length ? [...p.resumo.linhas, ''] : []),
       `${p.conferidas} premissas conferidas · ${p.quebradas} quebradas · ${p.naoConferidas} não conferidas.`,
       '',
       ...p.premissas.map(linha),
