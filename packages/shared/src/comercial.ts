@@ -1,6 +1,7 @@
 import { z } from 'zod';
 
 import type { SalaVersaoPublica } from './sala-versao.js';
+import type { TarefaNoCartaoDoFunil } from './comercial-tarefas.js';
 
 /*
  * O COCKPIT DO LEAD — o contrato do módulo comercial (12 e 13/10/2026).
@@ -1080,6 +1081,12 @@ export interface CartaoDoFunil {
   dono?: string | null;
   /** U4: o aviso de quem moveu à mão para onde o mover não faz tudo (E8 e E9, saída sem motivo). */
   avisoDoMover?: ComercialAvisoDoMover | null;
+  /**
+   * Adendo de 21/10/2026 (§A1): a tarefa aberta mais antiga ligada ao lead e quantas
+   * estão abertas. Leitura derivada; a ficha não muda. Ver `comercial-tarefas.ts`.
+   */
+  tarefa?: TarefaNoCartaoDoFunil | null;
+  tarefasAbertas?: number;
 }
 
 /** O fechamento (tela 10): as cinco escritas com chave. */

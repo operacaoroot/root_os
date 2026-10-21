@@ -107,3 +107,5 @@ export * from './ficha-do-cliente.js';
 // Tarefas de todas as áreas (Dia a dia › Tarefas): o que é a MESMA tarefa, o que
 // não parece tarefa e a régua do prazo — a tela e a API leem a mesma regra.
 export * from './tarefas-do-dia.js';
+// As tarefas do comercial (adendo de 21/10/2026, §A1): ver `comercial-tarefas.ts`.
+export * from './comercial-tarefas.js';
