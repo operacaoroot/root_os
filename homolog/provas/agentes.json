@@ -1,0 +1,120 @@
+{
+  "inicio": "2026-10-21T10:14:23.912Z",
+  "web": "http://127.0.0.1:3031",
+  "passos": [
+    {
+      "n": 1,
+      "nome": "CO-15 · o formulário do site cria o lead (CORS de operacaoroot.com, idempotente, isca calada)",
+      "ok": true,
+      "ms": 145,
+      "detalhe": {
+        "leadsAchados": 0,
+        "status": [
+          202,
+          202,
+          202
+        ]
+      }
+    },
+    {
+      "n": 2,
+      "nome": "TR-04 · a pasta do cliente sem a raiz configurada responde sem_raiz com a frase",
+      "ok": true,
+      "ms": 26,
+      "detalhe": {
+        "clientes": 10,
+        "estado": "sem_raiz"
+      }
+    },
+    {
+      "n": 3,
+      "nome": "TR-06 · anexo na tarefa: sobe, aparece na lista e fica no OS/na fila sem pasta",
+      "ok": true,
+      "ms": 1139,
+      "detalhe": {
+        "anexos": 0,
+        "semStorage": true,
+        "estado": null
+      }
+    },
+    {
+      "n": 4,
+      "nome": "AG-01 · a rota do vigia responde e a /agenda carrega sem erro",
+      "ok": true,
+      "ms": 767,
+      "detalhe": {
+        "itens": 0,
+        "motivo": null
+      }
+    },
+    {
+      "n": 5,
+      "nome": "A7 · Equipe com três pessoas e os agentes sob cada uma",
+      "ok": true,
+      "ms": 2433,
+      "detalhe": {
+        "pessoas": [
+          "Lucas",
+          "Pedro",
+          "Rodrigo"
+        ],
+        "funcoes": 77
+      }
+    },
+    {
+      "n": 6,
+      "nome": "A7 · /agentes com as abas Agentes, Rotinas e Automações, filtro no endereço",
+      "ok": true,
+      "ms": 2450,
+      "detalhe": {
+        "abas": [
+          "Agentes 34",
+          "Rotinas 9",
+          "Automações e integrações 13"
+        ],
+        "linhas": 34,
+        "urlRotinas": "?aba=rotinas"
+      }
+    },
+    {
+      "n": 7,
+      "nome": "A6 · /conexoes com o cartão único e sem DigiSac",
+      "ok": true,
+      "ms": 2745,
+      "detalhe": {
+        "cartoes": 20
+      }
+    },
+    {
+      "n": 8,
+      "nome": "Lane 0 · as pendências respondem e a caixa abre",
+      "ok": true,
+      "ms": 678,
+      "detalhe": {
+        "abertas": 0
+      }
+    }
+  ],
+  "screenshots": [
+    "agentes-anexo-na-tarefa.png",
+    "agentes-agenda.png",
+    "agentes-equipe.png",
+    "agentes-equipe-claro.png",
+    "agentes-equipe-390.png",
+    "agentes-agentes.png",
+    "agentes-agentes-rotinas.png",
+    "agentes-agentes-claro.png",
+    "agentes-agentes-390.png",
+    "agentes-conexoes.png",
+    "agentes-conexoes-claro.png",
+    "agentes-conexoes-390.png",
+    "agentes-caixa.png"
+  ],
+  "avisos": [
+    "a busca de leads não devolveu o lead pelo termo; conferido só pelo 202 (o lead pode estar retido pela porta fora das 08h–20h, R1 + sinal)",
+    "stack sem MinIO: o upload respondeu 503 com a frase do storage (o caminho com storage é a suíte work-anexos)"
+  ],
+  "ok": true,
+  "fim": "2026-10-21T10:14:34.668Z",
+  "duracaoMs": 10756
+}

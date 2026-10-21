@@ -188,16 +188,22 @@ async function main() {
     const form = new FormData();
     form.append('file', new Blob([`Anexo de prova fictício ${Date.now()}\n`], { type: 'text/plain' }), 'prova-e2e.txt');
     const up = await fetch(`${API}/trabalho/tarefas/${t.id}/anexos`, { method: 'POST', headers: { authorization: `Bearer ${sessao.token}` }, body: form });
-    conferir(up.status < 300, `upload → ${up.status}: ${(await up.text()).slice(0, 200)}`);
+    const resposta = (await up.text()).slice(0, 200);
+    // As stacks de homologação não têm MinIO: a rota tem de recusar com a frase do storage, sem
+    // guardar nada pela metade. Com storage (a produção, a suíte work-anexos), o anexo entra na lista.
+    const semStorage = up.status === 503 && /storage do OS está indisponível/.test(resposta);
+    if (semStorage) aviso('stack sem MinIO: o upload respondeu 503 com a frase do storage (o caminho com storage é a suíte work-anexos)');
+    else conferir(up.status < 300, `upload → ${up.status}: ${resposta}`);
     const anexos = await api('GET', `/trabalho/tarefas/${t.id}/anexos`, undefined, sessao.token);
     const arr = Array.isArray(anexos) ? anexos : anexos?.itens ?? [];
-    conferir(arr.length > 0, 'a lista de anexos veio vazia depois do upload');
+    if (semStorage) conferir(arr.length === 0, 'sem storage, nenhum anexo pode ter ficado registrado pela metade');
+    else conferir(arr.length > 0, 'a lista de anexos veio vazia depois do upload');
     await p.goto(`${WEB}/trabalho?tarefa=${t.id}`, { waitUntil: 'networkidle' });
     const secao = p.getByRole('region', { name: 'Anexos da tarefa' }).or(p.locator('section[aria-label="Anexos da tarefa"]')).first();
     await secao.waitFor();
     await secao.scrollIntoViewIfNeeded();
     await foto(p, 'anexo-na-tarefa');
-    return { detalhe: { anexos: arr.length, estado: arr[0]?.estado ?? arr[0]?.situacao ?? null } };
+    return { detalhe: { anexos: arr.length, semStorage, estado: arr[0]?.estado ?? arr[0]?.situacao ?? null } };
   });
 
   // 4 · Vigia da agenda
