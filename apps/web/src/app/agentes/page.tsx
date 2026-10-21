@@ -1,98 +1,57 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
-import { apiGet, apiPost } from '@/lib/api';
+import {
+  ABAS_DO_CATALOGO,
+  FILTROS_DE_ESTADO,
+  FILTRO_PADRAO,
+  ROTULO_DO_ESTADO,
+  filtrarCatalogo,
+  filtroParaUrl,
+  lerFiltroDaUrl,
+  type CatalogoDeFuncoes,
+  type FiltroDoCatalogo,
+  type LinhaDoCatalogo,
+} from '@mktos/shared';
+import { apiGet } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 import { KpiCard } from '@/components/KpiCard';
 import { ProntidaoLocal } from '@/components/ProntidaoLocal';
 import { Procedimento } from './Procedimento';
-import { ControleDoAgente } from './ControleDoAgente';
-import { Orcamento } from './Orcamento';
 import { CriarAgente } from './CriarAgente';
-import { ExecucaoLocal } from './ExecucaoLocal';
-import { AgendaManual } from './AgendaManual';
-import { FerramentaLocal } from './FerramentaLocal';
-import type { EstadoDeAgente, SituacaoDeAgente } from './estado';
+import { CartaoDoAgente, type Agente } from './CartaoDoAgente';
+import { rotaNaoExiste } from './rota-ausente';
 
 /*
- * Rótulo em português dos sete campos do procedimento. O nome técnico vem da
- * API (`faltando: ['proposito','dono',...]`); o que a pessoa lê é isto.
+ * A TELA DE AGENTES EM TRÊS ABAS (rodada dos agentes, 21/10/2026, A7)
+ *
+ *  · Agentes: decidem com modelo;
+ *  · Rotinas: rodam no relógio, sem modelo;
+ *  · Automações e integrações: reagem a evento ou sincronizam.
+ *
+ * Cada linha vem do cadastro único com o estado do banco (`GET /agents/cadastro`):
+ * para que serve, estado, dono efetivo, modelo e esforço, gatilho e frequência,
+ * última e próxima execução, gasto do mês e onde mexer. Os filtros (estado,
+ * área, dono e a aba) moram no ENDEREÇO da página, para o link ser
+ * compartilhável; o padrão é "ativos" na aba Agentes.
+ *
+ * O CONTROLE DE HOJE NÃO SUMIU: a linha de um agente que tem registro `Agent`
+ * abre o mesmo cartão de antes (`CartaoDoAgente`: estado, invocar, orçamento,
+ * linha de base, procedimento e o procedimento local do Pedro). Os números de
+ * cima (`GET /agents`) continuam iguais.
+ *
+ * SE O CATÁLOGO NÃO RESPONDER (rota ausente numa API mais velha que a tela, ou
+ * resposta fora da forma), a página volta à grade de cartões de antes e diz
+ * isso, em vez de esconder os agentes.
  */
-const ROTULO: Record<string, string> = {
-  proposito: 'propósito',
-  dono: 'dono',
-  gatilho: 'gatilho',
-  passos: 'passos',
-  definicaoDePronto: 'definição de pronto',
-  escalacao: 'escalação',
-  pilar: 'pilar',
-};
-
-interface Agente {
-  slug: string;
-  nome: string;
-  iniciais: string;
-  missao: string;
-  pilar: string | null;
-  dono: { id: string; nome: string } | null;
-  tipo: 'llm' | 'conector';
-  /* A DECISÃO do dono (coluna). Ver `estado.ts`. */
-  estado: EstadoDeAgente;
-  /* O que ESTÁ ACONTECENDO — derivado no servidor, nunca calculado aqui. */
-  situacao: SituacaoDeAgente;
-  estadoPor: string | null;
-  estadoEm: string | null;
-  estadoMotivo: string | null;
-  transicoes: string[];
-  autonomiaAte: string;
-  rebaixadoAte: string | null;
-  capacidades: string[];
-  cron: string | null;
-  ultimaExecucaoEm: string | null;
-  ultimoStatus: string | null;
-  execucoes: number;
-  falhas: number;
-  /*
-   * AS HORAS, COM A PROCEDÊNCIA (fatia A3). `naSemana` é MEDIDO do log de
-   * passagens — sessões com bom desfecho nos últimos sete dias —, e é o mesmo
-   * cálculo que `/rotinas` faz. O campo `horasDevolvidas` de antes SAIU: ele era
-   * acumulado de vida inteira com as passagens que falharam dentro, publicado
-   * como se fosse semanal.
-   */
-  horas: {
-    estado: 'sem-linha-de-base' | 'sem-historico' | 'medida';
-    naSemana: number | null;
-    passagensNaSemana: number;
-    diasDaJanela: number;
-    janelaCoberta: boolean;
-    cobreDesde: string | null;
-  };
-  /** Vida inteira, e a tela diz isso. Nunca no lugar do semanal. */
-  horasAcumuladas: number | null;
-  passagensBemSucedidas: number;
-  linhaDeBase: { minutosPorExecucao: number; informadaEm: string | null } | null;
-  orcamento: {
-    mensalUsd: number;
-    ativo: boolean;
-    definidoEm: string | null;
-    definidoPor: string | null;
-    motivo: string | null;
-  } | null;
-  temProcedimento: boolean;
-  procedimento: { versao: number; atualizadoEm: string } | null;
-  /** Dos SETE campos do formato fixo, quais faltam neste agente. */
-  faltando: string[];
-}
 
 interface Roster {
   items: Agente[];
   kpis: {
     /* Quantos o dono deixou em operação (decisão) … */
     ativos: number;
-    /* … e quantos têm sessão viva NESTE momento (medição). Ver o bloco de
-       `kpis` em `agents.service.ts`: eram um número só, chamado "Rodando",
-       que contava o estado declarado. */
+    /* … e quantos têm sessão viva NESTE momento (medição). */
     rodandoAgora: number;
     comErro: number;
     pausados: number;
@@ -112,37 +71,88 @@ interface Roster {
   };
 }
 
+const ROTULO_DA_ORIGEM_DO_MODELO: Record<string, string> = {
+  registro: 'ajustado no registro',
+  variavel: 'variável do ambiente',
+  cadastro: 'cadastro',
+  padrao: 'padrão do provedor',
+};
+
+function quando(iso: string | null | undefined): string {
+  return iso ? new Date(iso).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' }) : '';
+}
+
+function dolares(v: number): string {
+  return `US$ ${v.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 4 })}`;
+}
+
+function ondeMexer(l: LinhaDoCatalogo): { href: string; rotulo: string } | null {
+  if (l.aba === 'rotinas' || l.rotina) return { href: '/rotinas', rotulo: 'rotinas' };
+  if (l.area === 'Canais e integrações') return { href: '/conexoes', rotulo: 'integrações' };
+  return null;
+}
+
 export default function AgentesPage() {
   const { token, ready, can, user } = useAuth();
   const [data, setData] = useState<Roster | null>(null);
+  const [catalogo, setCatalogo] = useState<CatalogoDeFuncoes | null>(null);
+  const [semCatalogo, setSemCatalogo] = useState<string | null>(null);
   const [erro, setErro] = useState<string | null>(null);
-  const [editando, setEditando] = useState<string | null>(null);
-  const [minutos, setMinutos] = useState('');
   const [criandoAgente, setCriandoAgente] = useState(false);
   const [procedimentoDe, setProcedimentoDe] = useState<string | null>(null);
+  const [aberto, setAberto] = useState<string | null>(null);
+  const [filtro, setFiltroAgora] = useState<FiltroDoCatalogo>(() =>
+    typeof window === 'undefined' ? FILTRO_PADRAO : lerFiltroDaUrl(window.location.search),
+  );
 
   const carregar = () => {
     if (!token) return;
     apiGet<Roster>('/agents', token).then(setData).catch((e) => setErro(e.message));
+    apiGet<CatalogoDeFuncoes>('/agents/cadastro', token)
+      .then((r) => {
+        if (r && Array.isArray((r as Partial<CatalogoDeFuncoes>).linhas)) {
+          setCatalogo(r);
+          setSemCatalogo(null);
+        } else {
+          setSemCatalogo('a resposta do catálogo veio fora da forma');
+        }
+      })
+      .catch((e) =>
+        setSemCatalogo(
+          rotaNaoExiste(e, 'GET', '/agents/cadastro')
+            ? 'a rota do catálogo não está ligada nesta API'
+            : (e as Error).message,
+        ),
+      );
   };
   useEffect(carregar, [ready, token]);
 
-  async function salvarBase(slug: string) {
-    try {
-      await apiPost(`/agents/${slug}/linha-de-base`, { minutos: Number(minutos) }, token);
-      setEditando(null);
-      setMinutos('');
-      carregar();
-    } catch (e) {
-      setErro((e as Error).message);
+  /* O filtro vai ao endereço sem empilhar histórico (trocar de aba não é navegação). */
+  const mudarFiltro = (parcial: Partial<FiltroDoCatalogo>) => {
+    const novo = { ...filtro, ...parcial };
+    setFiltroAgora(novo);
+    if (typeof window !== 'undefined') {
+      window.history.replaceState(null, '', `${window.location.pathname}${filtroParaUrl(novo)}`);
     }
-  }
+  };
+
+  const linhas = catalogo?.linhas ?? [];
+  const visiveis = useMemo(() => filtrarCatalogo(linhas, filtro), [linhas, filtro]);
+  const contagem = (aba: FiltroDoCatalogo['aba']) => filtrarCatalogo(linhas, { ...filtro, aba }).length;
+  const areas = useMemo(() => [...new Set(linhas.map((l) => l.area))], [linhas]);
+  const donos = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const l of linhas) if (l.dono.efetivo) m.set(l.dono.efetivo.id, l.dono.efetivo.nome);
+    return [...m.entries()].sort((a, b) => a[1].localeCompare(b[1], 'pt-BR'));
+  }, [linhas]);
+  const doRoster = (slug: string) => data?.items.find((i) => i.slug === slug);
 
   return (
     <div className="space-y-5">
       <p className="text-sm text-muted">
-        Cada um com uma missão, um dono humano e as ferramentas que declarou. Fora da declaração, a
-        régua recusa.
+        Agentes decidem com modelo; rotinas rodam no relógio; automações reagem a evento ou
+        sincronizam uma integração. Cada um tem um dono humano e só o que declarou. Fora da
+        declaração, a régua recusa.
       </p>
 
       <ProntidaoLocal tipo="agentes" />
@@ -153,12 +163,6 @@ export default function AgentesPage() {
       {erro && <div className="rounded-root border border-bad/40 bg-bad/10 p-3 text-sm text-bad">{erro}</div>}
 
       <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
-        {/*
-          DOIS CARTÕES ONDE HAVIA UM, e é conserto de mentira: o cartão
-          "Rodando" contava `estado === 'rodando'`, o estado DECLARADO — ou seja,
-          dava o mesmo número para um agente trabalhando agora e para um parado
-          há três semanas. Agora um diz a DECISÃO e o outro a MEDIÇÃO.
-        */}
         <KpiCard
           label="Em operação"
           value={data?.kpis.ativos ?? '—'}
@@ -177,14 +181,6 @@ export default function AgentesPage() {
           icon="Activity"
           tone={data && data.kpis.comErro > 0 ? 'warn' : 'default'}
         />
-        {/*
-          O CARTÃO DEIXOU DE MENTIR (fatia A3). Ele publicava a soma de
-          `linha de base × execuções de vida inteira`, com as passagens que
-          falharam dentro, embaixo do rótulo "Horas devolvidas" — ao lado do
-          cartão de `/rotinas`, que diz "por semana". Agora é a medição da
-          semana, do log real de passagens, e o `hint` diz a janela e quantos
-          agentes ficaram fora da soma.
-        */}
         <KpiCard
           label={`Horas devolvidas · ${data?.kpis.horasSemanaDe.diasDaJanela ?? 7} dias`}
           value={data?.kpis.horasSemana ?? '—'}
@@ -219,197 +215,201 @@ export default function AgentesPage() {
         />
       </div>
 
-      {!data && !erro && <p className="text-sm text-muted">Carregando…</p>}
+      {!data && !erro && !catalogo && <p className="text-sm text-muted">Carregando…</p>}
 
-      <div className="grid gap-4 md:grid-cols-2">
-        {data?.items.map((a) => (
-          <div key={a.slug} className="rounded-root border border-border bg-surface p-4">
-            <div className="flex items-start gap-3">
-              <span className="grid h-8 w-8 flex-none place-items-center rounded-root border border-brand/30 bg-brand/10 font-os-mono text-[10px] font-bold text-brand">
-                {a.iniciais}
-              </span>
-              <div className="min-w-0 flex-1">
-                <p className="text-[13px] font-medium text-text">{a.nome}</p>
-                <p className="text-[11.5px] leading-[1.5] text-muted">{a.missao}</p>
-              </div>
-              <span className="font-os-mono text-[9px] uppercase tracking-[0.1em] text-dim">
-                {a.tipo}
-              </span>
-            </div>
-
-            <dl className="mt-3 grid grid-cols-2 gap-x-3 gap-y-1 font-os-mono text-[10px]">
-              <div>
-                <dt className="inline text-dim">dono </dt>
-                <dd className={`inline ${a.dono ? 'text-muted' : 'text-warn'}`}>
-                  {a.dono?.nome ?? 'sem dono'}
-                </dd>
-              </div>
-              <div>
-                <dt className="inline text-dim">sozinho até </dt>
-                <dd className="inline text-muted">{a.autonomiaAte}</dd>
-              </div>
-              <div>
-                <dt className="inline text-dim">quando </dt>
-                <dd className="inline text-muted">{a.cron ?? 'sob demanda'}</dd>
-              </div>
-              <div>
-                <dt className="inline text-dim">execuções </dt>
-                <dd className="inline text-muted">
-                  {a.execucoes}
-                  {a.falhas > 0 && <span className="text-bad"> · {a.falhas} falha(s)</span>}
-                </dd>
-              </div>
-              <div className="col-span-2">
-                <dt className="inline text-dim">última </dt>
-                <dd className="inline text-muted">
-                  {a.ultimaExecucaoEm
-                    ? `${new Date(a.ultimaExecucaoEm).toLocaleString('pt-BR')} · ${a.ultimoStatus}`
-                    : 'ainda não rodou'}
-                </dd>
-              </div>
-            </dl>
-
-            {a.capacidades.length > 0 && (
-              <p className="mt-2 font-os-mono text-[9.5px] leading-[1.6] text-dim">
-                declara {a.capacidades.length}:{' '}
-                <span className="text-muted">{a.capacidades.slice(0, 4).join(' · ')}</span>
-                {a.capacidades.length > 4 && ` +${a.capacidades.length - 4}`}
-              </p>
-            )}
-
-            {/*
-              O PROCEDIMENTO (RF-N-02). A linha diz o estado real dos sete
-              campos: o que falta aparece com nome, porque "sem procedimento"
-              sozinho não diz o que fazer a respeito.
-            */}
-            <div className="mt-2 flex flex-wrap items-center gap-2">
+      {catalogo && (
+        <section aria-label="Catálogo de agentes, rotinas e automações" className="space-y-3">
+          <div role="tablist" aria-label="Tipo" className="flex flex-wrap gap-2 border-b border-border">
+            {ABAS_DO_CATALOGO.map((a) => (
               <button
+                key={a.chave}
                 type="button"
-                onClick={() => setProcedimentoDe(a.slug)}
-                className="font-os-mono text-[9.5px] uppercase tracking-[0.1em] text-brand hover:underline"
+                role="tab"
+                aria-selected={filtro.aba === a.chave}
+                title={a.dica}
+                onClick={() => { setAberto(null); mudarFiltro({ aba: a.chave }); }}
+                className={`-mb-px border-b-2 px-3 py-2 text-[13px] ${filtro.aba === a.chave ? 'border-brand text-text' : 'border-transparent text-muted hover:text-text'}`}
               >
-                {a.temProcedimento ? 'ver procedimento' : 'escrever procedimento'}
+                {a.rotulo} <span className="font-os-mono text-[10px] text-dim">{contagem(a.chave)}</span>
               </button>
-              {a.procedimento && (
-                <span className="font-os-mono text-[9px] text-dim">v{a.procedimento.versao}</span>
-              )}
-              {a.faltando.length > 0 && (
-                <span className="font-os-mono text-[9px] leading-[1.6] text-warn">
-                  falta {a.faltando.map((c) => ROTULO[c] ?? c).join(', ')}
-                </span>
-              )}
-            </div>
-
-            {a.rebaixadoAte && new Date(a.rebaixadoAte) > new Date() && (
-              <p className="mt-2 font-os-mono text-[9.5px] uppercase tracking-[0.1em] text-warn">
-                autonomia rebaixada até {new Date(a.rebaixadoAte).toLocaleString('pt-BR')}
-              </p>
-            )}
-
-            <div className="mt-3 flex flex-wrap items-baseline gap-2 border-t border-border pt-3">
-              {a.horas.naSemana != null ? (
-                /*
-                  A FÓRMULA CONTINUA NA TELA, e agora ela é a verdadeira: a
-                  linha de base declarada × as passagens com bom desfecho DA
-                  SEMANA. Antes era × `execucoes`, o contador de vida inteira
-                  com as falhas dentro — mesma tela, mesma fórmula visível,
-                  número que nunca aconteceu.
-
-                  O acumulado não desapareceu: ele aparece ao lado, com o nome
-                  "acumulado", que é o que ele é.
-                */
-                <p className="font-os-mono text-[10px] text-muted">
-                  <span className="text-text">{a.horas.naSemana} h</span> devolvidas em{' '}
-                  {a.horas.diasDaJanela} dias
-                  <span className="text-dim">
-                    {' '}
-                    = {a.linhaDeBase!.minutosPorExecucao} min × {a.horas.passagensNaSemana} passagem(ns)
-                  </span>
-                  {a.horasAcumuladas != null && (
-                    <span className="text-dim"> · {a.horasAcumuladas} h acumuladas na vida inteira</span>
-                  )}
-                </p>
-              ) : a.horas.estado === 'sem-historico' ? (
-                <p className="font-os-mono text-[10px] text-warn">
-                  não deu para contar as passagens da semana — horas não medidas
-                </p>
-              ) : editando === a.slug ? (
-                <div className="flex items-center gap-2">
-                  <input
-                    autoFocus
-                    value={minutos}
-                    onChange={(e) => setMinutos(e.target.value)}
-                    placeholder="minutos por execução"
-                    className="w-[150px] rounded-root border border-border bg-bg px-2 py-1 font-os-mono text-[10px] text-text outline-none focus:border-brand"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => salvarBase(a.slug)}
-                    className="rounded-root bg-brand px-2 py-1 font-os-mono text-[9.5px] uppercase text-ink"
-                  >
-                    salvar
-                  </button>
-                  <button type="button" onClick={() => setEditando(null)} className="font-os-mono text-[9.5px] text-muted">
-                    cancelar
-                  </button>
-                </div>
-              ) : (
-                <>
-                  <p className="font-os-mono text-[10px] text-dim">horas devolvidas —</p>
-                  {can('automacoes.executar') && (
-                    <button
-                      type="button"
-                      onClick={() => setEditando(a.slug)}
-                      className="font-os-mono text-[9.5px] uppercase tracking-[0.1em] text-brand hover:underline"
-                    >
-                      informar a linha de base
-                    </button>
-                  )}
-                </>
-              )}
-              <span className="flex-1" />
-              <Link
-                href={`/sessoes?agente=${a.slug}`}
-                className="font-os-mono text-[9.5px] uppercase tracking-[0.1em] text-muted hover:text-text"
-              >
-                sessões
-              </Link>
-            </div>
-
-            {/*
-              O ORÇAMENTO MENSAL DE IA — fatia A3. `podeDefinir` é a MESMA dupla
-              que a API exige em `CONFIGURAR_AGENTE`; cortesia de tela, quem
-              recusa de verdade é a rota.
-            */}
-            <Orcamento
-              slug={a.slug}
-              orcamento={a.orcamento}
-              token={token}
-              podeDefinir={can('automacoes.executar') && can('admin.usuarios')}
-              aoMudar={carregar}
-            />
-
-            {/*
-              O ESTADO E OS BOTÕES — fatia A2.
-              `podeComandar` é `admin.usuarios`, a MESMA chave do interruptor de
-              conector; `podeInvocar` é a dupla que a API exige para fazer um
-              agente rodar (`EXECUTAR_AGENTE` no controlador). As duas aqui são
-              cortesia de tela: quem recusa de verdade é a API.
-            */}
-            {a.slug.startsWith('procedimento-') && user && <ExecucaoLocal slug={a.slug} token={token} pessoaId={user.id} podeExecutar={can('mcp.executar') && can('admin.usuarios') && can('obsidian.ver')} />}
-            {a.slug.startsWith('procedimento-') && user && can('mcp.ver') && can('obsidian.ver') && <AgendaManual slug={a.slug} token={token} pessoaId={user.id} podeLer={can('mcp.ver') && can('obsidian.ver')} podeConfigurar={can('automacoes.executar') && can('admin.usuarios') && can('mcp.ver') && can('obsidian.ver')} podeExecutar={can('mcp.ver') && can('mcp.executar') && can('admin.usuarios') && can('obsidian.ver')} aoMudar={carregar} />}
-            {a.slug.startsWith('procedimento-') && user && <FerramentaLocal slug={a.slug} token={token} pessoaId={user.id} podeLer={can('mcp.ver') && can('obsidian.ver')} podeConfigurar={can('automacoes.executar') && can('admin.usuarios')} podeExecutar={can('mcp.ver') && can('mcp.executar') && can('admin.usuarios') && can('obsidian.ver')} aoMudar={carregar} />}
-            {user && <ControleDoAgente
-              agente={a}
-              token={token}
-              pessoaId={user.id}
-              podeComandar={can('admin.usuarios')}
-              podeInvocar={!a.slug.startsWith('procedimento-') && can('mcp.executar') && can('admin.usuarios')}
-              aoMudar={carregar}
-            />}
+            ))}
           </div>
-        ))}
-      </div>
+
+          <div className="flex flex-wrap items-center gap-3 font-os-mono text-[10px] text-muted">
+            <label className="flex items-center gap-1">
+              estado
+              <select
+                aria-label="Estado"
+                value={filtro.estado}
+                onChange={(e) => mudarFiltro({ estado: e.target.value as FiltroDoCatalogo['estado'] })}
+                className="rounded-root border border-border bg-bg px-2 py-1 text-text"
+              >
+                {FILTROS_DE_ESTADO.map((e) => <option key={e.chave} value={e.chave}>{e.rotulo}</option>)}
+              </select>
+            </label>
+            <label className="flex items-center gap-1">
+              área
+              <select
+                aria-label="Área"
+                value={filtro.area ?? ''}
+                onChange={(e) => mudarFiltro({ area: e.target.value || null })}
+                className="rounded-root border border-border bg-bg px-2 py-1 text-text"
+              >
+                <option value="">todas</option>
+                {areas.map((a) => <option key={a} value={a}>{a}</option>)}
+              </select>
+            </label>
+            <label className="flex items-center gap-1">
+              dono
+              <select
+                aria-label="Dono"
+                value={filtro.dono ?? ''}
+                onChange={(e) => mudarFiltro({ dono: e.target.value || null })}
+                className="rounded-root border border-border bg-bg px-2 py-1 text-text"
+              >
+                <option value="">todos</option>
+                {donos.map(([id, nome]) => <option key={id} value={id}>{nome}</option>)}
+                <option value="sem-dono">sem dono</option>
+              </select>
+            </label>
+            <span className="text-dim">
+              provedor {catalogo.provedor} · padrão {catalogo.padrao.modelo} ({catalogo.padrao.esforco})
+              {catalogo.mes && ` · gasto de ${catalogo.mes}`}
+            </span>
+          </div>
+
+          {visiveis.length === 0 && (
+            <p className="rounded-root border border-border bg-surface p-4 text-sm text-muted">
+              Nada nesta aba com estes filtros.
+            </p>
+          )}
+
+          <ul className="space-y-2">
+            {visiveis.map((l) => {
+              const item = l.registrado ? doRoster(l.slug) : undefined;
+              const link = ondeMexer(l);
+              const expandido = aberto === l.slug;
+              return (
+                <li key={l.slug} data-testid={`linha-${l.slug}`} className="rounded-root border border-border bg-surface p-3">
+                  <div className="flex flex-wrap items-start gap-3">
+                    <div className="min-w-0 flex-1">
+                      <p className="text-[13px] font-medium text-text">
+                        {l.nome}
+                        {l.id && <span className="ml-2 font-os-mono text-[9.5px] text-dim">{l.id}</span>}
+                        {l.soNoPapel && <span className="ml-2 font-os-mono text-[9.5px] text-warn">só no papel</span>}
+                      </p>
+                      <p className="text-[11.5px] leading-[1.5] text-muted">{l.paraQueServe}</p>
+                    </div>
+                    <span
+                      className={`font-os-mono text-[9.5px] uppercase tracking-[0.1em] ${l.estado === 'ativo' ? 'text-brand' : l.estado === 'desligado' ? 'text-warn' : 'text-dim'}`}
+                      title={l.estadoMotivo ?? undefined}
+                    >
+                      {ROTULO_DO_ESTADO[l.estado]}
+                    </span>
+                  </div>
+
+                  <dl className="mt-2 grid grid-cols-1 gap-x-4 gap-y-1 font-os-mono text-[10px] sm:grid-cols-2 lg:grid-cols-3">
+                    <div>
+                      <dt className="inline text-dim">dono </dt>
+                      <dd className={`inline ${l.dono.efetivo ? 'text-muted' : 'text-warn'}`}>
+                        {l.dono.efetivo ? `${l.dono.efetivo.nome}${l.dono.origem === 'padrao' ? ' (padrão)' : ''}` : 'sem dono'}
+                      </dd>
+                    </div>
+                    {l.modelo && (
+                      <div>
+                        <dt className="inline text-dim">modelo </dt>
+                        <dd className="inline text-muted" title={ROTULO_DA_ORIGEM_DO_MODELO[l.modelo.origem]}>
+                          {l.modelo.modelo} · {l.modelo.esforco}
+                          <span className="text-dim"> ({ROTULO_DA_ORIGEM_DO_MODELO[l.modelo.origem]})</span>
+                        </dd>
+                      </div>
+                    )}
+                    {!l.modelo && l.modeloExterno && (
+                      <div>
+                        <dt className="inline text-dim">modelo externo </dt>
+                        <dd className="inline text-muted">{l.modeloExterno}</dd>
+                      </div>
+                    )}
+                    <div>
+                      <dt className="inline text-dim">quando </dt>
+                      <dd className="inline text-muted">{l.gatilho} · {l.frequencia}</dd>
+                    </div>
+                    <div>
+                      <dt className="inline text-dim">última </dt>
+                      <dd className="inline text-muted">
+                        {l.ultima ? `${quando(l.ultima.em)}${l.ultima.status ? ` · ${l.ultima.status}` : ''}` : 'sem registro'}
+                      </dd>
+                    </div>
+                    <div>
+                      <dt className="inline text-dim">próxima </dt>
+                      <dd className="inline text-muted">{l.proxima ? quando(l.proxima.em) : '—'}</dd>
+                    </div>
+                    <div>
+                      <dt className="inline text-dim">gasto no mês </dt>
+                      <dd className="inline text-muted">
+                        {l.gastoMes ? `${dolares(l.gastoMes.totalUsd)} · ${l.gastoMes.chamadas} chamada(s)` : '—'}
+                      </dd>
+                    </div>
+                    {l.estadoMotivo && (
+                      <div className="sm:col-span-2 lg:col-span-3">
+                        <dt className="inline text-dim">estado </dt>
+                        <dd className="inline text-warn">{l.estadoMotivo}</dd>
+                      </div>
+                    )}
+                    <div className="sm:col-span-2 lg:col-span-3">
+                      <dt className="inline text-dim">onde mexer </dt>
+                      <dd className="inline break-all text-muted">
+                        {l.onde}
+                        {link && (
+                          <Link href={link.href} className="ml-2 text-brand hover:underline">
+                            {link.rotulo} →
+                          </Link>
+                        )}
+                      </dd>
+                    </div>
+                  </dl>
+
+                  {item && (
+                    <div className="mt-2">
+                      <button
+                        type="button"
+                        aria-expanded={expandido}
+                        onClick={() => setAberto(expandido ? null : l.slug)}
+                        className="font-os-mono text-[9.5px] uppercase tracking-[0.1em] text-brand hover:underline"
+                      >
+                        {expandido ? 'fechar o controle' : 'abrir o controle'}
+                      </button>
+                      {expandido && (
+                        <div className="mt-2">
+                          <CartaoDoAgente a={item} aoMudar={carregar} aoAbrirProcedimento={setProcedimentoDe} />
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </li>
+              );
+            })}
+          </ul>
+        </section>
+      )}
+
+      {/*
+        O DESVIO: sem catálogo, a grade de cartões de antes, inteira. Nenhum
+        controle some porque a API é mais velha que a tela.
+      */}
+      {!catalogo && semCatalogo && data && (
+        <>
+          <p className="rounded-root border border-warn/40 bg-warn/10 p-3 text-[12px] leading-[1.6] text-warn">
+            Catálogo indisponível ({semCatalogo}): a tela mostra só os agentes registrados, como antes,
+            sem as abas de rotinas e automações.
+          </p>
+          <div className="grid gap-4 md:grid-cols-2">
+            {data.items.map((a) => (
+              <CartaoDoAgente key={a.slug} a={a} aoMudar={carregar} aoAbrirProcedimento={setProcedimentoDe} />
+            ))}
+          </div>
+        </>
+      )}
 
       {procedimentoDe && (
         <Procedimento
@@ -417,10 +417,8 @@ export default function AgentesPage() {
           token={token}
           /*
            * A MESMA DUPLA QUE A API EXIGE PARA CONFIGURAR AGENTE
-           * (`CONFIGURAR_AGENTE` em agents.controller.ts, usada hoje pela linha
-           * de base). Isto aqui é cortesia de tela: quem recusa de verdade é a
-           * API. Sem as duas, o editor abre em leitura em vez de prometer um
-           * botão que a rota vai negar.
+           * (`CONFIGURAR_AGENTE` em agents.controller.ts). Cortesia de tela:
+           * quem recusa de verdade é a API.
            */
           podeEditar={can('automacoes.executar') && can('admin.usuarios')}
           aoFechar={() => setProcedimentoDe(null)}

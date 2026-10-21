@@ -48,6 +48,22 @@ const PESSOAS = [
   { email: 'socio@root.homolog', name: 'Sócio titular (homologação)', papel: 'diretor' },
 ] as const;
 
+/*
+ * AS TRÊS PESSOAS DE EXEMPLO DA EQUIPE (rodada dos agentes, 21/10/2026, A7).
+ *
+ * No ROOT OS a equipe são três pessoas, e a Equipe (`/organograma`) casa o dono
+ * padrão de cada agente (`rodrigo` | `lucas` | `pedro`, no cadastro único) pelo
+ * PRIMEIRO NOME. Na stack fictícia (3031) elas são estas, fictícias, em
+ * `@root.local` (`.local` não é domínio de teste para a regra da Equipe; o
+ * `@root.homolog` da mesa é, e as duas cadeiras de cima ficam fora da vista).
+ * Na cópia (3030) aparecem as pessoas reais, que já estão no banco.
+ */
+const PESSOAS_DE_EXEMPLO = [
+  { email: 'rodrigo@root.local', name: 'Rodrigo (exemplo)', papel: 'admin_master' },
+  { email: 'lucas@root.local', name: 'Lucas (exemplo)', papel: 'diretor' },
+  { email: 'pedro@root.local', name: 'Pedro (exemplo)', papel: 'diretor' },
+] as const;
+
 /**
  * Os números da régua em homologação. A fonte de cada um:
  *  · fupLeuDias 3 e fupSilencioDias 7, prazoDiagnosticoDiasUteis 1: o roteiro (§2.5);
@@ -92,7 +108,7 @@ async function main() {
 
   // 1) As pessoas da mesa.
   const hash = await bcrypt.hash(SENHA!, 10);
-  for (const p of PESSOAS) {
+  for (const p of [...PESSOAS, ...PESSOAS_DE_EXEMPLO]) {
     const papel = await prisma.role.findUniqueOrThrow({ where: { orgId_key: { orgId: org.id, key: p.papel } } });
     const existe = await prisma.user.findFirst({ where: { orgId: org.id, email: p.email } });
     if (existe) {
@@ -129,7 +145,7 @@ async function main() {
     validadePropostaDias: CONFIG_DE_HOMOLOGACAO.validadePropostaDias as number,
   });
 
-  console.log(`seed-comercial: empresa ${org.slug}; pessoas: ${PESSOAS.map((p) => p.email).join(', ')}; config de homologação gravada.`);
+  console.log(`seed-comercial: empresa ${org.slug}; pessoas: ${[...PESSOAS, ...PESSOAS_DE_EXEMPLO].map((p) => p.email).join(', ')}; config de homologação gravada.`);
   console.log('seed-comercial: empresas de demonstração (empresa · etapa · eventos · o que tem):');
   for (const l of relatorio.leads) console.log(`  ${l.empresa.padEnd(22)} ${l.etapa.padEnd(17)} ${String(l.eventos).padStart(2)} eventos · ${l.resumo}`);
   console.log(`seed-comercial: linhas dos leads da demonstração, antes:  ${JSON.stringify(antes)}`);

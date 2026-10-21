@@ -18,6 +18,10 @@ import { PautaModule } from '../pauta/pauta.module';
 import { WorkModule } from '../work/work.module';
 import { ModeloLocalService } from './modelo-local.service';
 import { ProcedimentoDoAgenteService } from './procedimento-do-agente.service';
+import { CadastroController } from './cadastro.controller';
+import { CadastroService } from './cadastro.service';
+import { EquipeController } from './equipe.controller';
+import { EquipeService } from './equipe.service';
 
 @Module({
   imports: [
@@ -36,8 +40,10 @@ import { ProcedimentoDoAgenteService } from './procedimento-do-agente.service';
      */
     WorkModule,
   ],
-  controllers: [AgentsController],
-  providers: [ProcedimentoFerramentaLocalService, AgendaLocalService, ModeloLocalService, ProcedimentoDoAgenteService, AgentsService, AgentRuntime, SessionService, ContextBuilder, VaultVersionadaService, EfeitosService],
+  // A7 (rodada dos agentes): `CadastroController` ANTES do `AgentsController`, senão
+  // `GET agents/:slug` engole `GET agents/cadastro`.
+  controllers: [CadastroController, AgentsController, EquipeController],
+  providers: [CadastroService, EquipeService, ProcedimentoFerramentaLocalService, AgendaLocalService, ModeloLocalService, ProcedimentoDoAgenteService, AgentsService, AgentRuntime, SessionService, ContextBuilder, VaultVersionadaService, EfeitosService],
   exports: [AgentsService, AgentRuntime, SessionService],
 })
 export class AgentsModule {}

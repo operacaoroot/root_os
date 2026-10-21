@@ -263,6 +263,8 @@ model Org {
   gastosDeIaPorFuncao GastoDeIaPorFuncao[]
   /// O que o vigia da agenda (AG-01) concluiu de cada reunião fora do padrão (rodada dos agentes, A5).
   agendaConferencias AgendaConferencia[]
+  /// A7 (rodada dos agentes): o dono trocado na Equipe das funções sem registro `Agent`.
+  donosDeFuncao DonoDaFuncao[]
 }
 
 model User {
@@ -296,6 +298,8 @@ model User {
   localOperationsAuthored AgentLocalOperation[] @relation("LocalOperationActor")
 
   toolReceipts AgentLocalToolReceipt[] @relation("ToolReceiptActor")
+  /// A7 (rodada dos agentes): as funções do cadastro de que a pessoa é dona pela Equipe.
+  donoDeFuncoes DonoDaFuncao[] @relation("DonoDaFuncao")
 }
 
 model Role {
@@ -6111,4 +6115,30 @@ model DelegacaoSugestao {
 
   @@index([orgId, taskId])
   @@index([orgId, estado])
+}
+
+/// O DONO TROCADO NA EQUIPE (rodada dos agentes, 21/10/2026, A7).
+///
+/// Só para as funções do cadastro único (`packages/shared/src/agentes.ts`) que
+/// NÃO têm registro `Agent` (rotinas, automações, agentes que chamam o modelo
+/// direto). As que têm registro guardam o dono em `Agent.donoId`, que é o que o
+/// laço do agente lê. Sem linha aqui (ou com `userId` nulo), vale o dono PADRÃO
+/// do cadastro. A troca é auditada (`equipe.dono.trocado`).
+///
+/// A FK composta `(userId, orgId)` garante que o dono é gente DESTA empresa: o
+/// ponteiro atravessado de `Agent.donoId` não se repete aqui. Raiz da empresa,
+/// RLS FORCE. Migration `20261021370000_dono_da_funcao`.
+model DonoDaFuncao {
+  id            String   @id @default(uuid())
+  orgId         String
+  org           Org      @relation(fields: [orgId], references: [id])
+  /// O id da função no cadastro único (`CO-07`, `RO-02`...).
+  funcaoId      String
+  userId        String?
+  user          User?    @relation("DonoDaFuncao", fields: [userId, orgId], references: [id, orgId], onDelete: Restrict, onUpdate: Restrict)
+  definidoPorId String
+  definidoEm    DateTime @default(now())
+  atualizadoEm  DateTime @updatedAt
+
+  @@unique([orgId, funcaoId])
 }
