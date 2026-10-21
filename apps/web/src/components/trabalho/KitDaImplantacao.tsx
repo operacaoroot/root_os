@@ -64,14 +64,14 @@ export function KitDaImplantacao({ trilhoId, token }: { trilhoId: string; token:
 
   const kit = dados?.kit ?? null;
   return (
-    <div data-testid="kit-da-implantacao" className="mt-2 space-y-1.5 border-t border-border pt-2">
+    <section aria-label="Kit de implantação" data-testid="kit-da-implantacao" className="space-y-1.5 rounded-lg border border-border bg-surface-2 px-3 py-2 text-[12px]">
       {dados?.avisoSemKit && (
         <p role="status" data-testid="kit-aviso" className="rounded border border-warn/40 bg-warn/10 px-2 py-1 text-warn">
           O card está em &quot;Kit montado&quot; e o kit ainda não foi montado. Monte agora ou siga: nada trava.
         </p>
       )}
       <div className="flex flex-wrap items-center gap-2">
-        <span className="font-semibold">Kit de implantação</span>
+        <span className="font-os-mono text-[10.5px] uppercase tracking-[0.14em] text-muted">Kit de implantação · IM-07</span>
         {kit ? (
           <span className="text-muted" data-testid="kit-estado">
             {kit.arquivo} · {diaCurto(kit.montadoEm)} · {kit.secoes.length} seções · {ROTULO_DA_COPIA[kit.copia.estado] ?? kit.copia.estado}
@@ -111,6 +111,6 @@ export function KitDaImplantacao({ trilhoId, token }: { trilhoId: string; token:
           />
         </div>
       )}
-    </div>
+    </section>
   );
 }

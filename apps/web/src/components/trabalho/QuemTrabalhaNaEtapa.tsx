@@ -9,7 +9,8 @@
  *
  * Rodada dos agentes (21/10/2026): o nome, o "para que serve", o estado declarado e o
  * modelo vêm do cadastro único (IM-01, IM-02, IM-03, IM-05 e IM-07, o montador do kit),
- * e no fim da seção mora o kit com a pasta do cliente (`KitDaImplantacao`).
+ * e logo abaixo da seção (fora dela, que segue só leitura) mora o kit com a pasta do
+ * cliente (`KitDaImplantacao`).
  */
 import { useEffect, useState } from 'react';
 import type { QuemTrabalhaNaEtapa as Dados } from '@mktos/shared';
@@ -53,6 +54,7 @@ export function QuemTrabalhaNaEtapa({ trilhoId, token }: { trilhoId: string; tok
   }, [trilhoId, token]);
 
   return (
+    <>
     <section aria-label="Quem trabalha nesta etapa" data-testid="quem-trabalha" className="rounded-lg border border-border bg-surface-2 px-3 py-2 text-[12px]">
       <h3 className="font-os-mono text-[10.5px] uppercase tracking-[0.14em] text-muted">Quem trabalha nesta etapa{dados ? ` · ${dados.faseRotulo}` : ''}</h3>
       {erro && <p className="mt-1 text-muted">Não deu para ler os agentes agora. Abra o trilho para ver os marcos.</p>}
@@ -101,7 +103,9 @@ export function QuemTrabalhaNaEtapa({ trilhoId, token }: { trilhoId: string; tok
           </li>
         </ul>
       )}
-      <KitDaImplantacao trilhoId={trilhoId} token={token} />
     </section>
+    {/* O kit e a pasta do cliente (IM-07) moram ao lado: "Quem trabalha" continua só leitura. */}
+    <KitDaImplantacao trilhoId={trilhoId} token={token} />
+    </>
   );
 }

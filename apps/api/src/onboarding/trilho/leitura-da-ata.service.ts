@@ -562,7 +562,6 @@ export class LeituraDaAtaService {
         pedido: pedidoDoPesquisador(entrada, { buscaNaWeb: web }),
         solicitanteId: quem.id,
         solicitanteRotulo: quem.nome,
-        canalRef: `onboarding:dossie:${trilhoId}`,
         funcao: 'IM-02',
         ...(web ? { servidor: { buscaNaWeb: { maxUsos: USOS_DA_BUSCA_NA_WEB } } } : {}),
       });

@@ -137,23 +137,28 @@ describe('T6: a aba Decisões em Pendências', () => {
     expect(screen.getByText(/Se ninguém responder até/).textContent).toContain('Manter o preço');
   });
 
-  it('sem leads.ver: sem aba, sem contador e sem ler a fila; ?aba=decisoes cai na Atividade', async () => {
+  // Rodada dos agentes (21/10/2026): a aba Decisões passou a ser de TODA pessoa da caixa,
+  // porque traz as pendências dos agentes. A fila do comercial continua só de quem vê.
+  it('sem leads.ver: a aba fica (pendências dos agentes), sem o contador do comercial e sem ler a fila', async () => {
     PERMISSOES = ['dashboard.ver', 'tarefas.ver', 'aprovacoes.decidir'];
     window.history.replaceState(null, '', '/caixa?aba=decisoes');
     renderCaixa();
     await waitFor(() => expect(screen.getByTestId('caixa-aprovacoes')).toBeTruthy());
-    expect(screen.getAllByRole('tab').map((t) => t.textContent)).toEqual(['Atividade', 'Minhas tarefas']);
-    expect(screen.getByTestId('caixa-aba-atividade').getAttribute('aria-selected')).toBe('true');
+    expect(screen.getAllByRole('tab').map((t) => t.textContent)).toEqual(['Atividade', 'Minhas tarefas', 'Decisões']);
+    expect(screen.getByTestId('caixa-aba-decisoes').getAttribute('aria-selected')).toBe('true');
     expect(screen.queryByTestId('caixa-decisoes')).toBeNull();
+    expect(screen.queryByTestId('caixa-decisoes-lista')).toBeNull();
     expect(leuAFila()).toBe(false);
   });
 
-  it('com o módulo leads desligado a aba some, mesmo com leads.ver', async () => {
+  it('com o módulo leads desligado a fila do comercial some da aba, mesmo com leads.ver', async () => {
     MODULOS = ['trabalho'];
+    window.history.replaceState(null, '', '/caixa?aba=decisoes');
     renderCaixa();
-    await waitFor(() => expect(screen.queryByTestId('caixa-aba-decisoes')).toBeNull());
-    expect(screen.getAllByRole('tab')).toHaveLength(2);
+    await waitFor(() => expect(screen.getByTestId('caixa-aprovacoes')).toBeTruthy());
+    expect(screen.getAllByRole('tab')).toHaveLength(3);
     await waitFor(() => expect(screen.queryByTestId('caixa-decisoes')).toBeNull());
+    expect(screen.queryByTestId('caixa-decisoes-lista')).toBeNull();
   });
 
   it('?aba=decisoes abre direto, e as setas andam pelas três abas', async () => {
