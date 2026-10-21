@@ -74,6 +74,7 @@ export class PonteProvider implements LlmProvider {
           user: input.user,
           maxTokens: input.maxTokens,
           model: this.modeloDaChamada(input).modelo,
+          effort: this.modeloDaChamada(input).esforco,
         }),
         signal: controle.signal,
       });

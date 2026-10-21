@@ -164,7 +164,7 @@ export function promptDoVigia(ctx: ContextoDoEvento): { system: string; user: st
     'Você é o vigia da agenda da Root. Recebe UMA reunião cujo título está fora do padrão da casa e',
     'PROPÕE o título no padrão. Quem decide se o título muda é uma pessoa, depois de ler a sua proposta.',
     '',
-    'O PADRÃO (duas formas, e só duas):',
+    'O PADRÃO (estas três linhas, e só elas):',
     '  Reunião Online - <Cliente> - <Responsável>',
     '  Reunião Presencial - <Cliente> - <Responsável>',
     '  Reunião Interna - <Responsável>',

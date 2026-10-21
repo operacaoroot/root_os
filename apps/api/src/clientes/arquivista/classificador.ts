@@ -50,7 +50,7 @@ const SIGNIFICADO: Record<SubpastaDoCliente, string> = {
   '04-entrega': 'o que foi entregue ao cliente: relatório de entrega, documento produzido, manual',
   '05-acompanhamento': 'ata de reunião de acompanhamento, relatório periódico, follow-up',
   '06-financeiro': 'nota fiscal, boleto, comprovante de pagamento, cobrança, extrato',
-  '07-evidencias': 'print, foto, captura de tela, prova de execução',
+  '07-evidencias': 'print, foto ou captura de tela de uma execução, quando o nome ou o texto diz do que ela é prova (sem isso, _fonte)',
   '99-arquivo': 'versão superada ou documento antigo que só se guarda',
   _fonte: 'não dá para saber pelo nome e pelo texto',
 };
@@ -138,5 +138,5 @@ export function lerClassificacao(texto: string): Classificacao | null {
 
 /** A classificação vale sozinha? `_fonte` ou confiança abaixo do limiar: não. */
 export function classificacaoSegura(c: Classificacao | null): c is Classificacao {
-  return !!c && c.subpasta !== '_fonte' && c.confianca >= LIMIAR_DE_CONFIANCA_DO_ARQUIVISTA;
+  return !!c && c.subpasta !== '_fonte' && c.confianca > LIMIAR_DE_CONFIANCA_DO_ARQUIVISTA;
 }

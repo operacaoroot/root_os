@@ -129,10 +129,10 @@ function tokenConfere(recebido) {
 }
 
 /** Chama o CLI: sem shell, sem ferramentas, sem MCP, sem configurações; sistema por arquivo, pergunta pela entrada padrão. */
-function perguntar({ system, user, modelo }) {
+function perguntar({ system, user, modelo, esforco }) {
   return new Promise((resolverPergunta) => {
     const pasta = mkdtempSync(join(tmpdir(), 'ponte-modelo-'));
-    const args = argumentosDoCli(modelo, PROIBIDAS);
+    const args = argumentosDoCli(modelo, PROIBIDAS, esforco);
     if (system && String(system).trim()) {
       const arquivo = join(pasta, 'sistema.txt');
       writeFileSync(arquivo, String(system), 'utf8');
@@ -200,7 +200,7 @@ const servidor = createServer(async (req, res) => {
       const inicio = Date.now();
       let r;
       try {
-        r = await perguntar({ system: pedido.system, user: pedido.user, modelo: escolha.modelo });
+        r = await perguntar({ system: pedido.system, user: pedido.user, modelo: escolha.modelo, esforco: typeof pedido.effort === 'string' ? pedido.effort : undefined });
       } finally {
         emCurso -= 1;
       }
