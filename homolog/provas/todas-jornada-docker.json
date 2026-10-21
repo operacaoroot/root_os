@@ -1,0 +1,9 @@
+{
+  "ok": false,
+  "erro": "POST /auth/login respondeu 401",
+  "detalhe": {
+    "message": "Credenciais inválidas",
+    "error": "Unauthorized",
+    "statusCode": 401
+  }
+}

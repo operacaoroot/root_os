@@ -1,0 +1,187 @@
+{
+  "inicio": "2026-10-21T00:06:42.790Z",
+  "web": "http://127.0.0.1:3031",
+  "sufixo": "000642",
+  "passos": [
+    {
+      "n": 1,
+      "nome": "mesa, sócio e admin entraram pela API",
+      "ms": 941
+    },
+    {
+      "n": 2,
+      "nome": "T4 (API): sem cliente é 400; a implantação recusa cartão solto; com o cliente da casa a tarefa nasce",
+      "ms": 2795,
+      "detalhe": "Root (interno)"
+    },
+    {
+      "n": 3,
+      "nome": "T6: o menu comercial sem Decisões, na ordem Painel geral · Funil vivo · Propostas · Lista de leads · Contratos · Torre · Relatório; /comercial é o Painel geral",
+      "ms": 5032
+    },
+    {
+      "n": 4,
+      "nome": "T1: o menu \"Implantação de clientes\" abre o kanban da lista Onboarding de cliente, sem \"+ adicionar\"; /onboarding redireciona",
+      "ms": 6728
+    },
+    {
+      "n": 5,
+      "nome": "T1: a 1280 px as 7 colunas ficam numa linha, o quadro rola para o lado e o chip leva à última etapa",
+      "ms": 8172,
+      "detalhe": "1518 > 980"
+    },
+    {
+      "n": 6,
+      "nome": "T1: a 1440 px as 7 colunas ficam numa linha, o quadro rola para o lado e o chip leva à última etapa",
+      "ms": 12772,
+      "detalhe": "1518 > 1140"
+    },
+    {
+      "n": 7,
+      "nome": "T1/T2: o canto e o rodapé do cartão abrem o pop-up nas três densidades; Esc e o voltar do navegador fecham",
+      "ms": 15081
+    },
+    {
+      "n": 8,
+      "nome": "T1/T2: o atalho do trilho abre o pop-up na aba Trilho, com a bancada",
+      "ms": 15714
+    },
+    {
+      "n": 9,
+      "nome": "T2: na Atividade de Pendências o clique na linha abre o pop-up sem sair de /caixa",
+      "ms": 16585
+    },
+    {
+      "n": 10,
+      "nome": "T2: em Minhas tarefas o clique na linha abre o pop-up sem sair de /caixa",
+      "ms": 17440
+    },
+    {
+      "n": 11,
+      "nome": "T3: a vista salva no servidor, marcada padrão, volta depois de recarregar (agrupada por vencimento, ordenada por cliente)",
+      "ms": 19584,
+      "detalhe": "Prova 000642"
+    },
+    {
+      "n": 12,
+      "nome": "T4: na tela, \"Criar tarefa\" fica travado até escolher o cliente; a tarefa nasce com ele",
+      "ms": 20999,
+      "detalhe": "Root (interno)"
+    },
+    {
+      "n": 13,
+      "nome": "T5: a sugestão da ata editada (título, o que será executado, responsável de perfil, cliente, pasta e lista) virou a tarefa",
+      "ms": 27297,
+      "detalhe": "Revisar o relatório da prova 000642 · Sócio titular (homologação)"
+    },
+    {
+      "n": 14,
+      "nome": "T8: o contrato concluído com motivo vai para o fim da lista, o painel reconta e o fio registra",
+      "ms": 29985,
+      "detalhe": "Construtora Alicerce Homolog 7826 · concluídos 9 → 10"
+    },
+    {
+      "n": 15,
+      "nome": "fotos das telas mexidas em escuro, claro e 390 px; nenhuma página rola na horizontal no celular",
+      "ms": 48592,
+      "detalhe": "23 fotos"
+    },
+    {
+      "n": 16,
+      "nome": "T7 · 1. mesa, sócio e admin entraram pela API",
+      "ms": 89666
+    },
+    {
+      "n": 17,
+      "nome": "T7 · 2. R4 com senha no mesmo lugar: o clique abriu a caixa ali, e Aprovar foi junto com a senha · ler-e-aprovar · Aprovada e EXECUTADA: comercial.cobranca 871aa70f-12bb-5549-b6d6-ba071dc05f88:v1.",
+      "ms": 89666
+    },
+    {
+      "n": 18,
+      "nome": "T7 · 3. vencida: \"Pedir de novo\" recriou o pedido; quem clicou vira o proponente e não assina · 93980fee-2d4b-4ed8-94a2-010c166547d6 → 2c344ed7-ef98-4c4c-a16c-b42939331f6f · o sócio pode assinar",
+      "ms": 89666
+    },
+    {
+      "n": 19,
+      "nome": "T7 · 4. fotos da fila em escuro, claro e 390 px; nada rola na horizontal no celular",
+      "ms": 89666
+    },
+    {
+      "n": 20,
+      "nome": "T7: trabalho-t7.mjs passou (R3 na linha, R4 com senha no lugar, vencida pedir de novo)",
+      "ms": 89666
+    },
+    {
+      "n": 21,
+      "nome": "T1b: trabalho-t1b.mjs passou SEM storage: o formulário do Funil vivo preenchido, o registro recusou antes de gravar e nenhum lead nasceu",
+      "ms": 122390
+    }
+  ],
+  "screenshots": [
+    "todas-trabalho-implantacao-escuro.png",
+    "todas-trabalho-popup-escuro.png",
+    "todas-trabalho-popup-trilho-escuro.png",
+    "todas-trabalho-minhas-tarefas-vista-escuro.png",
+    "todas-trabalho-ata-aceite-escuro.png",
+    "todas-trabalho-pendencias-decisoes-escuro.png",
+    "todas-trabalho-contratos-escuro.png",
+    "todas-trabalho-implantacao-claro.png",
+    "todas-trabalho-popup-claro.png",
+    "todas-trabalho-pendencias-atividade-claro.png",
+    "todas-trabalho-minhas-tarefas-claro.png",
+    "todas-trabalho-pendencias-decisoes-claro.png",
+    "todas-trabalho-trabalho-claro.png",
+    "todas-trabalho-atas-claro.png",
+    "todas-trabalho-contratos-claro.png",
+    "todas-trabalho-implantacao-390.png",
+    "todas-trabalho-popup-390.png",
+    "todas-trabalho-pendencias-atividade-390.png",
+    "todas-trabalho-minhas-tarefas-390.png",
+    "todas-trabalho-pendencias-decisoes-390.png",
+    "todas-trabalho-trabalho-390.png",
+    "todas-trabalho-atas-390.png",
+    "todas-trabalho-contratos-390.png"
+  ],
+  "semRolagemHorizontal": [
+    {
+      "tela": "implantacao",
+      "rola": false
+    },
+    {
+      "tela": "popup",
+      "rola": false
+    },
+    {
+      "tela": "pendencias-atividade",
+      "rola": false
+    },
+    {
+      "tela": "minhas-tarefas",
+      "rola": false
+    },
+    {
+      "tela": "pendencias-decisoes",
+      "rola": false
+    },
+    {
+      "tela": "trabalho",
+      "rola": false
+    },
+    {
+      "tela": "atas",
+      "rola": false
+    },
+    {
+      "tela": "contratos",
+      "rola": false
+    }
+  ],
+  "avisos": [
+    "Nenhuma decisão do comercial pendente: a resposta pela aba Decisões ficou sem prova no navegador (coberta no teste de tela).",
+    "T7: R3 na linha sem pedido próprio nesta execução: o mover do funil deixou de passar por aprovação (20/10/2026). Passe T7_R3_ID, ou T7_LEAD para a sala dentro da janela.",
+    "T1b: a homologação não tem storage (MinIO sem imagem nesta máquina); o caminho completo (fechamento R4 assinado, card na implantação, contrato vivo) está provado na suíte da API comercial-fechado-fora."
+  ],
+  "ok": true,
+  "fim": "2026-10-21T00:08:45.180Z",
+  "duracaoMs": 122390
+}

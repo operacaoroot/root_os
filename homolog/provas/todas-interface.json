@@ -1,0 +1,232 @@
+{
+  "inicio": "2026-10-21T00:09:09.517Z",
+  "web": "http://127.0.0.1:3031",
+  "passos": [
+    {
+      "n": 1,
+      "nome": "Menu aberto: a logo oficial sem texto ao lado e as subseções da área ativa",
+      "ok": true,
+      "ms": 1132,
+      "detalhe": {
+        "itens": [
+          "Visão geral",
+          "Pendências",
+          "Aprovações",
+          "Agenda"
+        ]
+      }
+    },
+    {
+      "n": 2,
+      "nome": "/painel continua vivo fora do menu",
+      "ok": true,
+      "ms": 701
+    },
+    {
+      "n": 3,
+      "nome": "Recolher: só o R, e o balão no hover com as subseções, clicável",
+      "ok": true,
+      "ms": 1573,
+      "detalhe": {
+        "largura": 64,
+        "links": [
+          "Tarefas",
+          "Implantação de clientes",
+          "Atas"
+        ]
+      }
+    },
+    {
+      "n": 4,
+      "nome": "Trabalho: Filtros (n) com responsável e prazo, estado no endereço",
+      "ok": true,
+      "ms": 1192,
+      "detalhe": {
+        "endereco": "?assigneeUserId=6a463a3f-8acb-4ba4-8272-306a301d95b2&prazo=atrasada"
+      }
+    },
+    {
+      "n": 5,
+      "nome": "Trabalho: salvar a vista com os filtros",
+      "ok": true,
+      "ms": 72,
+      "detalhe": {
+        "nome": "Interface 354328"
+      }
+    },
+    {
+      "n": 6,
+      "nome": "Todas: /trabalho/todas redireciona para o chip, e as colunas são os status reais",
+      "ok": true,
+      "ms": 1204,
+      "detalhe": {
+        "colunas": 16,
+        "vazias": 12,
+        "total": 70,
+        "rolagem": {
+          "scroll": 3480,
+          "cliente": 916
+        },
+        "nomes": [
+          "A fazer · 8 listas",
+          "Qualificação · 1 lista",
+          "Fechado no comercial · 1 lista",
+          "Em andamento · 8 listas",
+          "Diagnóstico · 1 lista",
+          "Contrato · 1 lista",
+          "Onboarding · 1 lista",
+          "Implantação · 1 lista",
+          "Operação · 1 lista",
+          "Kickoff marcado · 1 lista",
+          "Kit montado · 1 lista",
+          "Contexto carregado · 1 lista",
+          "Imersão · 1 lista",
+          "Operação assistida · 1 lista",
+          "Concluída · 8 listas",
+          "Encerrado · 2 listas"
+        ]
+      }
+    },
+    {
+      "n": 7,
+      "nome": "Todas as tarefas: segmentos por pasta de topo, e o segmento filtra",
+      "ok": true,
+      "ms": 10180,
+      "detalhe": {
+        "todas": 70,
+        "porSegmento": {
+          "Administrativa": 0,
+          "Pasta da prova 000508": 0,
+          "Pasta da prova 002343": 0,
+          "Pasta da prova 030143": 0,
+          "Pasta da prova 032250": 0,
+          "Pasta da prova 215432": 0,
+          "Pasta da prova 221123": 0,
+          "Gestão": 0,
+          "Clientes": 70,
+          "Sem pasta": 0
+        }
+      }
+    },
+    {
+      "n": 8,
+      "nome": "Implantação: o par Vistas e Filtros, sem a aba da Rodada",
+      "ok": true,
+      "ms": 693
+    },
+    {
+      "n": 9,
+      "nome": "WhatsApp como área própria, com a tela; o endereço antigo redireciona",
+      "ok": true,
+      "ms": 1490
+    },
+    {
+      "n": 10,
+      "nome": "Funil vivo: sem os chips das etapas, com Vistas e Filtros (responsável primeiro)",
+      "ok": true,
+      "ms": 1439
+    },
+    {
+      "n": 11,
+      "nome": "Funil vivo: a Lista, com o clique abrindo o painel do lead",
+      "ok": true,
+      "ms": 304
+    },
+    {
+      "n": 12,
+      "nome": "Funil vivo: mover para trás sem pedido, com a mensagem; e de volta",
+      "ok": true,
+      "ms": 1013,
+      "detalhe": {
+        "de": "reuniao_agendada",
+        "para": "qualificacao",
+        "mensagem": "Movido para E2 · Qualificação. ok"
+      }
+    },
+    {
+      "n": 13,
+      "nome": "Conexões › Granola: \"Conectar ao Granola\" faz o OAuth (dublê) e volta conectado, ou diz por que não",
+      "ok": true,
+      "ms": 2359,
+      "detalhe": {
+        "conectado": false,
+        "servidor": "http://127.0.0.1:4791/mcp"
+      }
+    },
+    {
+      "n": 14,
+      "nome": "Atas › Reuniões do Granola › Gerar ata (ou, sem conexão, o aviso e a ata colada): decisões, pendências e sugestões",
+      "ok": true,
+      "ms": 1540,
+      "detalhe": {
+        "granola": "sem conexão (aviso)",
+        "ata": "memoria:0139fa7d-be34-49c5-8720-9a628132ec0b"
+      }
+    },
+    {
+      "n": 15,
+      "nome": "Atas: aceitar uma sugestão vira tarefa no Trabalho",
+      "ok": true,
+      "ms": 782,
+      "detalhe": {
+        "tarefa": "Enviar o relatório mensal da Padaria Exemplo"
+      }
+    },
+    {
+      "n": 16,
+      "nome": "Conexões › WhatsApp (DigiSac): o cartão com a URL do webhook, sem token na tela",
+      "ok": true,
+      "ms": 783,
+      "detalhe": {
+        "webhook": "http://127.0.0.1:3031/api/comercial/webhooks/digisac/<empresa>?segredo=",
+        "semSegredo": 404
+      }
+    },
+    {
+      "n": 17,
+      "nome": "Celular (390 px): o menu abre inteiro e as telas não rolam de lado",
+      "ok": true,
+      "ms": 4057,
+      "detalhe": {
+        "trabalho": true,
+        "todas": true,
+        "funil": true,
+        "whatsapp": true,
+        "atas": true
+      }
+    }
+  ],
+  "screenshots": [
+    "todas-interface-menu-aberto-escuro.png",
+    "todas-interface-menu-recolhido-balao-escuro.png",
+    "todas-interface-trabalho-filtros-escuro.png",
+    "todas-interface-trabalho-todas-colunas-escuro.png",
+    "todas-interface-trabalho-todas-segmento-escuro.png",
+    "todas-interface-whatsapp-escuro.png",
+    "todas-interface-funil-filtro-dono-escuro.png",
+    "todas-interface-funil-lista-escuro.png",
+    "todas-interface-funil-movido-escuro.png",
+    "todas-interface-conexoes-granola-escuro.png",
+    "todas-interface-atas-granola-escuro.png",
+    "todas-interface-atas-gerada-escuro.png",
+    "todas-interface-conexoes-digisac-escuro.png",
+    "todas-interface-menu-aberto-claro.png",
+    "todas-interface-trabalho-filtros-claro.png",
+    "todas-interface-menu-aberto-contraste.png",
+    "todas-interface-trabalho-filtros-contraste.png",
+    "todas-interface-trabalho-390.png",
+    "todas-interface-todas-390.png",
+    "todas-interface-todas-quadro-390.png",
+    "todas-interface-funil-390.png",
+    "todas-interface-whatsapp-390.png",
+    "todas-interface-atas-390.png",
+    "todas-interface-menu-390.png"
+  ],
+  "avisos": [
+    "no seed as tarefas estão todas num segmento só ({\"Administrativa\":0,\"Pasta da prova 000508\":0,\"Pasta da prova 002343\":0,\"Pasta da prova 030143\":0,\"Pasta da prova 032250\":0,\"Pasta da prova 215432\":0,\"Pasta da prova 221123\":0,\"Gestão\":0,\"Clientes\":70,\"Sem pasta\":0}); o recorte entre pastas está provado na suíte da API",
+    "Granola direto não conectou na stack do seed (cofre sem chave de 32 bytes nesta homologação); o OAuth, a lista e o Gerar ata com o dublê estão provados na suíte da API"
+  ],
+  "ok": true,
+  "fim": "2026-10-21T00:09:46.893Z",
+  "duracaoMs": 37376
+}

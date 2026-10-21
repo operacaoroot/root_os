@@ -347,6 +347,11 @@ async function main() {
       await p3.goto(`${WEB}${url}`, { waitUntil: 'networkidle' });
       medidas[nome] = await semRolagemLateral(p3);
       await foto(p3, `${nome}-390`);
+      // Todas: a segunda foto já no quadro, com as colunas reais e a rolagem lateral.
+      if (nome === 'todas' && await p3.getByTestId('trabalho-quadro').count()) {
+        await p3.getByTestId('trabalho-quadro').scrollIntoViewIfNeeded();
+        await foto(p3, 'todas-quadro-390');
+      }
     }
     await p3.getByRole('button', { name: 'Abrir navegação' }).click();
     await dormir(300);

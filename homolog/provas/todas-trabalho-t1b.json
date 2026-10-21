@@ -1,0 +1,23 @@
+{
+  "inicio": "2026-10-21T00:08:12.922Z",
+  "web": "http://127.0.0.1:3031",
+  "passos": [
+    {
+      "nome": "sem storage na homologação: o registro recusou antes de gravar, com a frase, e nenhum lead nasceu",
+      "ms": 32164,
+      "semStorage": true,
+      "razaoSocial": "Cliente Já Fechado 000813 Ltda",
+      "mensagem": "Para quem assinou fora do sistema. Digite o que está no contrato e anexe o PDF assinado. O registro fica no fio como declarado por você, e o fechamento vai à assinatura de outra pessoa com alçada titular em /atendimento. Você não assina o próprio registro. | Por que não criar cobrança | O envio de arquivo está indisponível agora: o registro não foi feito.código Service Unavailable · 503"
+    }
+  ],
+  "screenshots": [
+    "todas-trabalho-t1b-formulario.png",
+    "todas-trabalho-t1b-sem-storage.png"
+  ],
+  "ok": true,
+  "avisos": [
+    "A homologação não tem storage (MinIO sem imagem nesta máquina): o caminho completo do registro fica provado pela suíte da API (comercial-fechado-fora, com dublê do storage)."
+  ],
+  "fim": "2026-10-21T00:08:45.162Z",
+  "duracaoMs": 32240
+}
