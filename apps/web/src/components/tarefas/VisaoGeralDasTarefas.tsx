@@ -169,19 +169,20 @@ export function VisaoGeralDasTarefas() {
       </div>
 
       <div className="grid gap-5 lg:grid-cols-2">
-        <Quadro className="min-w-0 overflow-x-auto" titulo="Carga por prazo" nota="tarefas abertas · clique numa coluna">
+        {/* P1 (21/10): sem rolagem lateral; o gráfico se ajusta à caixa e o balão fica dentro dela. */}
+        <Quadro className="min-w-0" titulo="Carga por prazo" nota="tarefas abertas · clique numa coluna">
           <Barras itens={porSituacao} />
         </Quadro>
         <Quadro className="min-w-0 overflow-x-auto" titulo="Tarefas por responsável" nota="abertas · clique numa pessoa">
-          <Barras itens={porPessoa} />
+          <Barras itens={porPessoa} orientacao="colunas" />
         </Quadro>
       </div>
 
       <div className="grid gap-5 lg:grid-cols-2">
-        <Quadro className="min-w-0 overflow-x-auto" titulo="Tarefas por pasta" nota="abertas em cada pasta do Trabalho · clique numa coluna">
+        <Quadro className="min-w-0" titulo="Tarefas por pasta" nota="abertas em cada pasta do Trabalho · clique numa coluna">
           {porPasta.length ? <Barras itens={porPasta} /> : <p className="text-sm text-muted">Nenhuma tarefa aberta.</p>}
         </Quadro>
-        <Quadro className="min-w-0 overflow-x-auto" titulo="Tarefas por lista" nota="abertas em cada lista · clique numa coluna">
+        <Quadro className="min-w-0" titulo="Tarefas por lista" nota="abertas em cada lista · clique numa coluna">
           {porLista.length ? <Barras itens={porLista} /> : <p className="text-sm text-muted">Nenhuma tarefa aberta.</p>}
         </Quadro>
       </div>
