@@ -120,12 +120,13 @@ export async function criarEstruturaSugerida(
         continue;
       }
       const solta = (await db.workList.findMany({
-        where: { orgId, folderId: null, spaceId: null, arquivadaEm: null },
+        // "Sem pasta" na tela é a lista sem pasta, com ou sem espaço (as da produção estão no espaço "Tarefas").
+        where: { orgId, folderId: null, arquivadaEm: null },
         select: { id: true, name: true },
         orderBy: [{ order: 'asc' }, { createdAt: 'asc' }],
       })).find((x) => chaveDoNome(x.name) === chaveDoNome(l.nome));
       if (solta) {
-        await db.workList.update({ where: { id: solta.id }, data: { folderId: pasta.id, order: ordemDaLista++ } });
+        await db.workList.update({ where: { id: solta.id }, data: { folderId: pasta.id, spaceId: null, order: ordemDaLista++ } });
         listas.push({ name: solta.name, order: ordemDaLista - 1 });
         r.movidas!.listas.push(`${pasta.name} / ${solta.name}`);
         continue;
