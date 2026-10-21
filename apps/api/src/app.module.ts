@@ -46,6 +46,7 @@ import { CaixaModule } from './caixa/caixa.module';
 import { PendenciasModule } from './pendencias/pendencias.module';
 import { ClientesModule } from './clientes/clientes.module';
 import { ComercialModule } from './comercial/comercial.module';
+import { AgendaModule } from './agenda/agenda.module';
 
 @Module({
   imports: [
@@ -188,6 +189,12 @@ import { ComercialModule } from './comercial/comercial.module';
     // `RoutinesModule` (o relógio comercial é uma rotina). Sem esta linha toda
     // rota de `/api/comercial` e `/api/sala` responde 404 sem nada acusar.
     ComercialModule,
+    // O VIGIA DA AGENDA (AG-01, rodada dos agentes, 21/10/2026): a rotina
+    // `agenda.vigia` e as rotas `/api/agenda/*` da tela. Depois de
+    // `RoutinesModule` (o registro de executores) e de `PendenciasModule`
+    // (o tratador da pendência "qual é o cliente?"). Sem esta linha a rotina
+    // fica órfã e `GET /api/agenda/fora-do-padrao` responde 404.
+    AgendaModule,
   ],
   controllers: [HealthController],
 })

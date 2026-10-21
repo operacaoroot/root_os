@@ -253,6 +253,8 @@ model Org {
   localOperations AgentLocalOperation[]
 
   toolReceipts AgentLocalToolReceipt[] @relation("ToolReceiptOrg")
+  /// O que o vigia da agenda (AG-01) concluiu de cada reunião fora do padrão (rodada dos agentes, A5).
+  agendaConferencias AgendaConferencia[]
 }
 
 model User {
@@ -5899,4 +5901,41 @@ model CofreItem {
   updatedAt      DateTime @updatedAt
 
   @@index([orgId])
+}
+
+/// O VIGIA DA AGENDA (AG-01, rodada dos agentes, 21/10/2026, lane A5): o que
+/// ele concluiu de UMA reunião fora do padrão de título. NÃO é cópia da agenda
+/// (a agenda é o Google, decisão de 24/09/2026, ver docs/AGENDA.md): guarda só
+/// o título lido, a assinatura do evento (para saber se ele mudou), a proposta
+/// e onde ela está (aprovação na fila ou pendência). É ela que faz o vigia não
+/// repetir: mesmo evento com a mesma assinatura não é proposto de novo, e
+/// "não é reunião" dito por uma pessoa fica dito.
+model AgendaConferencia {
+  id             String    @id @default(uuid())
+  orgId          String
+  org            Org       @relation(fields: [orgId], references: [id])
+  /// O id do evento no Google Agenda.
+  eventoId       String
+  tituloLido     String
+  /// sha256 do título, convidados, Meet, local, descrição e status lidos.
+  assinatura     String
+  inicio         DateTime?
+  /// proposta · pendencia · nao_e_reuniao · resolvido (CHECK na migration).
+  estado         String
+  /// Os problemas de `conferirEvento` (packages/shared/src/agenda.ts).
+  problemas      Json      @default("[]")
+  tituloProposto String?
+  adicionarMeet  Boolean   @default(false)
+  /// gramatica · modelo · pessoa
+  origem         String?
+  approvalId     String?
+  pendenciaId    String?
+  /// Por que não houve proposta segura, ou quem marcou "não é reunião".
+  motivo         String?
+  propostoEm     DateTime?
+  criadoEm       DateTime  @default(now())
+  atualizadoEm   DateTime  @updatedAt
+
+  @@unique([orgId, eventoId])
+  @@index([orgId, estado])
 }

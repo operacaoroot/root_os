@@ -108,6 +108,15 @@ export const TIPO_PAUTA_COMENTARIOS = 'pauta.coletar-comentarios';
  */
 export const TIPO_PAUTA_RELATORIO = 'pauta.relatorio';
 
+/**
+ * O vigia da agenda (AG-01, rodada dos agentes, 21/10/2026): a cada 15 minutos
+ * confere as reuniões da agenda da Root contra o padrão de título e propõe a
+ * correção pela porta. Ver `agenda/vigia-da-agenda.executor.ts`. É o `rotina`
+ * da linha AG-01 do cadastro (`packages/shared/src/agentes.ts`). Não depende de
+ * módulo: a agenda é espinha, como o Google.
+ */
+export const TIPO_AGENDA_VIGIA = 'agenda.vigia';
+
 /** Os tipos que `PAUTA_CRON=off` tira do tique — os da pauta, e só eles. */
 export const TIPOS_DA_PAUTA: readonly string[] = [
   TIPO_PAUTA_RODADA,
