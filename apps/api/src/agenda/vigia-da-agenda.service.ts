@@ -341,8 +341,14 @@ export class VigiaDaAgendaService implements OnModuleInit {
       }
 
       if (proposta) {
+        // A MESMA proposta sobre o MESMO título lido: a aprovação viva continua
+        // valendo (ela assinou `tituloAtual`; título mudado = aprovação velha).
         const mesma =
-          !!linha && linha.estado === 'proposta' && linha.tituloProposto === proposta.titulo && linha.adicionarMeet === proposta.adicionarMeet;
+          !!linha &&
+          linha.estado === 'proposta' &&
+          linha.tituloLido === String(e.title ?? '') &&
+          linha.tituloProposto === proposta.titulo &&
+          linha.adicionarMeet === proposta.adicionarMeet;
         const salva = await this.gravar(orgId, e, {
           assinatura,
           problemas,
