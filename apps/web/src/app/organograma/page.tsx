@@ -2,302 +2,290 @@
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { Bot, User as UserIcon } from 'lucide-react';
-import { apiGet } from '@/lib/api';
+import { User as UserIcon } from 'lucide-react';
+import {
+  ROTULO_DO_ESTADO,
+  ROTULO_DO_MOTIVO,
+  lerWhatsappBr,
+  type EquipeDaEmpresa,
+  type FuncaoNaEquipe,
+  type MotivoForaDaEquipe,
+  type PessoaNaEquipe,
+} from '@mktos/shared';
+import { apiGet, apiPut } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 import { KpiCard } from '@/components/KpiCard';
-import { rotaNaoExiste } from '../agentes/rota-ausente';
 
 /*
- * O ORGANOGRAMA (RF-N-06) — gente e agentes lado a lado, por pilar.
+ * A EQUIPE (rodada dos agentes, 21/10/2026, A7) — `GET /organograma/equipe`
  *
- * QUATRO DECISÕES QUE VALE LER ANTES DE MEXER:
+ * No ROOT OS a equipe são três pessoas, e os agentes aparecem ao lado delas:
+ * sob cada pessoa, os agentes, rotinas e automações de que ela é dona, por área.
  *
- * 1. O PILAR DE UMA PESSOA É DERIVADO. `User` não tem coluna de pilar; o pilar
- *    de alguém é o dos agentes de que ela é dona. Quem não é dona de nenhum
- *    aparece em "ainda sem pilar" — que é informação verdadeira, e melhor do
- *    que inventar um quadrado para caber.
+ * QUEM APARECE é regra da API (`packages/shared/src/equipe-pessoas.ts`): contas
+ * de máquina, do sistema, de teste, de importação, desativadas, a conta de uso
+ * comum e a segunda conta da mesma pessoa ficam FORA DA VISTA, contadas no fim
+ * da página, e nada é apagado.
  *
- * 2. ESTA TELA MOSTRA GENTE, e o isolamento é da API. Os TRÊS métodos que
- *    expõem dono — `roster`, `detalhe` e `organograma` — resolvem o `donoId`
- *    contra a gente DESTA empresa, e não pela relação do Prisma (que não filtra
- *    relação para um e traria o nome de quem estiver do outro lado). Ponteiro
- *    atravessado aparece como "sem dono". A suíte prova nos três, por tentativa
- *    (`apps/api/test/sop.test.ts`). Aqui no web não há trava nenhuma: quem
- *    recusa é o servidor.
+ * O DONO é o efetivo: o que foi trocado aqui (ou no registro do agente) vale
+ * por cima do padrão do cadastro. Trocar é de `admin` ou `controle`, e a API
+ * relê os papéis no banco; esta tela só esconde o seletor de quem não pode.
  *
- *    Isto importa mais do que parece: até 11/09/2026 o roster ainda resolvia o
- *    dono por relação, e a decisão escrita aqui não era verdade na produção.
+ * O WHATSAPP de cada pessoa é a identidade que o canal de aprovação procura. A
+ * própria pessoa cadastra o seu; o de outra, quem administra gente. A tela
+ * confere o número com a mesma regra da API antes de mandar.
  *
- * 3. O DESVIO, QUE HOJE É REDE DE SEGURANÇA. `GET /organograma` é a fonte boa
- *    (traz TODA a gente da empresa, com papel e estado) e está no ar desde a
- *    estabilização da onda 9. O caminho alternativo por `GET /agents` continua
- *    aqui e só acorda se a rota sumir outra vez — quando isso acontece a tela
- *    diz que a lista é parcial, em vez de mostrar menos gente sem avisar.
- *
- * 4. O QUE O DESVIO NÃO SABE, ELE NÃO AFIRMA. O roster não traz papel nem
- *    estado de ninguém, e não traz quem não é dono de agente. Então em modo
- *    parcial `papeis` e `ativo` vêm NULOS e a tela escreve "não vem desta
- *    fonte" — antes ela imprimia "sem papel declarado" para todo mundo, que é
- *    afirmar como fato o que ninguém mediu, e o contador de gente somava só os
- *    donos sem ressalva nenhuma.
+ * `GET /organograma` (o organograma por pilar) continua no ar para o mapa do
+ * Contexto, que o lê.
  */
 
-interface PessoaDto {
-  id: string;
-  nome: string;
-  /** `null` = a fonte não informa (ver decisão 4), diferente de `false`. */
-  ativo: boolean | null;
-  /** `null` = a fonte não informa; `[]` = a pessoa realmente não tem papel. */
-  papeis: string[] | null;
-  pilares: string[];
-  agentes: string[];
-}
+const ROTULO_DO_TIPO: Record<FuncaoNaEquipe['tipo'], string> = {
+  agente: 'agente',
+  rotina: 'rotina',
+  automacao: 'automação',
+};
 
-interface AgenteDto {
-  slug: string;
-  nome: string;
-  iniciais: string;
-  missao: string;
-  pilar: string | null;
-  tipo: string;
-  estado: string;
-  autonomiaAte: string;
-  cron: string | null;
-  dono: { id: string; nome: string } | null;
-}
-
-interface Organograma {
-  pilares: { pilar: string; pessoas: PessoaDto[]; agentes: AgenteDto[] }[];
-  semPilar: { pessoas: PessoaDto[]; agentes: AgenteDto[] };
-  totais: { pessoas: number; agentes: number; agentesSemDono: number; pilares: number };
-}
-
-/** A forma que `GET /agents` devolve, no recorte que este desvio usa. */
-interface ItemDoRoster {
-  slug: string;
-  nome: string;
-  iniciais: string;
-  missao: string;
-  pilar: string | null;
-  dono: { id: string; nome: string } | null;
-  tipo: string;
-  estado: string;
-  autonomiaAte: string;
-  cron: string | null;
-}
-
-/** Monta o organograma possível a partir do roster. Ver as decisões 3 e 4 acima. */
-function doRoster(items: ItemDoRoster[]): Organograma {
-  const agentes: AgenteDto[] = items.map((a) => ({ ...a }));
-
-  const porPessoa = new Map<string, PessoaDto>();
-  for (const a of agentes) {
-    if (!a.dono) continue;
-    const p =
-      porPessoa.get(a.dono.id) ??
-      // `ativo` e `papeis` NULOS: o roster não informa nenhum dos dois, e
-      // chutar `true`/`[]` aqui era o que fazia a tela afirmar o que não sabia.
-      { id: a.dono.id, nome: a.dono.nome, ativo: null, papeis: null, pilares: [], agentes: [] };
-    p.agentes.push(a.slug);
-    if (a.pilar && !p.pilares.includes(a.pilar)) p.pilares.push(a.pilar);
-    porPessoa.set(a.dono.id, p);
-  }
-  const pessoas = [...porPessoa.values()].sort((x, y) => x.nome.localeCompare(y.nome, 'pt-BR'));
-
-  const nomes = [...new Set(agentes.map((a) => a.pilar).filter((p): p is string => !!p))].sort(
-    (x, y) => x.localeCompare(y, 'pt-BR'),
+function SeletorDeDono({
+  f,
+  pessoas,
+  aoTrocar,
+}: {
+  f: FuncaoNaEquipe;
+  pessoas: PessoaNaEquipe[];
+  aoTrocar: (slug: string, userId: string | null) => void;
+}) {
+  const atual = f.dono.origem === 'banco' ? f.dono.efetivo?.id ?? '' : '';
+  return (
+    <select
+      aria-label={`Dono de ${f.nome}`}
+      value={atual}
+      onChange={(e) => aoTrocar(f.slug, e.target.value || null)}
+      className="max-w-[160px] rounded-root border border-border bg-bg px-1 py-0.5 font-os-mono text-[9.5px] text-text"
+    >
+      <option value="">padrão do cadastro{f.dono.padrao ? ` (${f.dono.padrao})` : ''}</option>
+      {pessoas.map((p) => (
+        <option key={p.id} value={p.id}>{p.nome}</option>
+      ))}
+    </select>
   );
-
-  return {
-    pilares: nomes.map((pilar) => ({
-      pilar,
-      pessoas: pessoas.filter((p) => p.pilares.includes(pilar)),
-      agentes: agentes.filter((a) => a.pilar === pilar),
-    })),
-    semPilar: {
-      pessoas: pessoas.filter((p) => p.pilares.length === 0),
-      agentes: agentes.filter((a) => !a.pilar),
-    },
-    totais: {
-      pessoas: pessoas.length,
-      agentes: agentes.length,
-      agentesSemDono: agentes.filter((a) => !a.dono).length,
-      pilares: nomes.length,
-    },
-  };
 }
 
-export default function OrganogramaPage() {
+function LinhaDaFuncao({
+  f,
+  pessoas,
+  podeEditar,
+  aoTrocar,
+}: {
+  f: FuncaoNaEquipe;
+  pessoas: PessoaNaEquipe[];
+  podeEditar: boolean;
+  aoTrocar: (slug: string, userId: string | null) => void;
+}) {
+  return (
+    <li data-testid={`funcao-${f.slug}`} className="flex flex-wrap items-start gap-2 py-1">
+      <div className="min-w-0 flex-1">
+        <p className="text-[12px] text-text" title={f.paraQueServe}>
+          {f.nome}
+          {f.id && <span className="ml-1 font-os-mono text-[9px] text-dim">{f.id}</span>}
+        </p>
+        <p className="font-os-mono text-[9px] leading-[1.6] text-dim">
+          {ROTULO_DO_TIPO[f.tipo]} · {ROTULO_DO_ESTADO[f.estado]}
+          {f.dono.origem === 'padrao' && ' · dono padrão'}
+          {f.dono.bancoForaDaEquipe && ' · o dono gravado não é da equipe'}
+        </p>
+      </div>
+      {podeEditar && <SeletorDeDono f={f} pessoas={pessoas} aoTrocar={aoTrocar} />}
+    </li>
+  );
+}
+
+function Whatsapp({ p, aoSalvar }: { p: PessoaNaEquipe; aoSalvar: (id: string, numero: string | null) => Promise<void> }) {
+  const [numero, setNumero] = useState('');
+  const [erro, setErro] = useState<string | null>(null);
+  const [salvando, setSalvando] = useState(false);
+
+  async function salvar(valor: string | null) {
+    if (valor !== null) {
+      const leitura = lerWhatsappBr(valor);
+      if (!leitura.ok) {
+        setErro(leitura.motivo);
+        return;
+      }
+    }
+    setSalvando(true);
+    try {
+      await aoSalvar(p.id, valor);
+      setNumero('');
+      setErro(null);
+    } catch (e) {
+      setErro((e as Error).message);
+    } finally {
+      setSalvando(false);
+    }
+  }
+
+  return (
+    <div className="mt-2 space-y-1">
+      <p className="font-os-mono text-[10px] text-muted">
+        WhatsApp de aprovação:{' '}
+        {p.whatsapp.cadastrado ? (
+          <span className="text-text">{p.whatsapp.numero ?? p.whatsapp.final}</span>
+        ) : (
+          <span className="text-warn">sem número</span>
+        )}
+      </p>
+      {p.podeEditarWhatsapp && (
+        <>
+          <div className="flex flex-wrap items-center gap-2">
+            <input
+              aria-label={`WhatsApp de ${p.nome}`}
+              value={numero}
+              onChange={(e) => setNumero(e.target.value)}
+              placeholder="+55 (32) 99999-8888"
+              className="w-[170px] rounded-root border border-border bg-bg px-2 py-1 font-os-mono text-[10px] text-text outline-none focus:border-brand"
+            />
+            <button
+              type="button"
+              disabled={salvando || !numero.trim()}
+              onClick={() => salvar(numero)}
+              className="rounded-root bg-brand px-2 py-1 font-os-mono text-[9.5px] uppercase text-ink disabled:opacity-50"
+            >
+              salvar número
+            </button>
+            {p.whatsapp.cadastrado && (
+              <button
+                type="button"
+                disabled={salvando}
+                onClick={() => salvar(null)}
+                className="font-os-mono text-[9.5px] uppercase text-muted hover:text-text"
+              >
+                remover número
+              </button>
+            )}
+          </div>
+          <p className="font-os-mono text-[9px] leading-[1.5] text-dim">
+            Cadastre como o WhatsApp mostra o número (com ou sem o 9): o canal confere por igualdade.
+          </p>
+        </>
+      )}
+      {erro && <p role="alert" className="font-os-mono text-[10px] text-bad">{erro}</p>}
+    </div>
+  );
+}
+
+export default function EquipePage() {
   const { token, ready } = useAuth();
-  const [data, setData] = useState<Organograma | null>(null);
-  const [parcial, setParcial] = useState(false);
+  const [data, setData] = useState<EquipeDaEmpresa | null>(null);
   const [erro, setErro] = useState<string | null>(null);
 
-  useEffect(() => {
+  const carregar = () => {
     if (!token) return;
-    let vivo = true;
-    apiGet<Organograma>('/organograma', token)
+    apiGet<EquipeDaEmpresa>('/organograma/equipe', token)
       .then((r) => {
-        if (!vivo) return;
         setData(r);
-        setParcial(false);
+        setErro(null);
       })
-      .catch((e) => {
-        if (!vivo) return;
-        // Pela CAUSA, não pelo código: ver `agentes/rota-ausente.ts`. Um 404 de
-        // empresa vazia, no dia em que a rota existir, não pode virar "a rota
-        // não está ligada".
-        if (rotaNaoExiste(e, 'GET', '/organograma')) {
-          apiGet<{ items: ItemDoRoster[] }>('/agents', token)
-            .then((r) => {
-              if (!vivo) return;
-              setData(doRoster(r.items));
-              setParcial(true);
-            })
-            .catch((e2) => vivo && setErro((e2 as Error).message));
-          return;
-        }
-        setErro((e as Error).message);
-      });
-    return () => {
-      vivo = false;
-    };
-  }, [ready, token]);
+      .catch((e) => setErro((e as Error).message));
+  };
+  useEffect(carregar, [ready, token]);
 
-  const grupos = data
-    ? [
-        ...data.pilares,
-        ...(data.semPilar.pessoas.length || data.semPilar.agentes.length
-          ? [{ pilar: '', pessoas: data.semPilar.pessoas, agentes: data.semPilar.agentes }]
-          : []),
-      ]
+  async function trocarDono(slug: string, userId: string | null) {
+    try {
+      await apiPut(`/organograma/dono/${encodeURIComponent(slug)}`, { userId }, token);
+      carregar();
+    } catch (e) {
+      setErro((e as Error).message);
+    }
+  }
+
+  async function salvarWhatsapp(id: string, numero: string | null) {
+    await apiPut(`/organograma/pessoas/${encodeURIComponent(id)}/whatsapp`, { numero }, token);
+    carregar();
+  }
+
+  const fora = data
+    ? (Object.entries(data.foraDaVista) as [MotivoForaDaEquipe, number][]).filter(([, n]) => n > 0)
     : [];
 
   return (
     <div className="space-y-5">
       <p className="text-sm text-muted">
-        Quem trabalha aqui, gente e agente na mesma coluna, agrupados pelo pilar que cada um
-        sustenta. O pilar de uma pessoa vem dos agentes de que ela é dona — não há coluna de pilar
-        em ninguém.
+        Quem trabalha aqui: as pessoas e, sob cada uma, os agentes, rotinas e automações de que ela é
+        dona, por área. O dono padrão vem do cadastro; o que for trocado aqui vale por cima dele.
       </p>
 
-      {erro && (
-        <div className="rounded-root border border-bad/40 bg-bad/10 p-3 text-sm text-bad">{erro}</div>
-      )}
-
-      {parcial && (
-        <p className="rounded-root border border-warn/40 bg-warn/10 p-3 text-[12px] leading-[1.6] text-warn">
-          Lista parcial: <span className="font-os-mono">GET /organograma</span> não respondeu e a
-          tela caiu no roster de agentes, então só aparece quem é dono de pelo menos um — e desta
-          fonte não vêm papel nem estado de ninguém, que por isso aparecem como não informados em vez
-          de em branco. A rota existe desde a onda 9: se esta tarja apareceu, ela saiu do ar.
-        </p>
-      )}
+      {erro && <div className="rounded-root border border-bad/40 bg-bad/10 p-3 text-sm text-bad">{erro}</div>}
 
       <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
-        <KpiCard
-          label={parcial ? 'Gente (parcial)' : 'Gente'}
-          value={data?.totais.pessoas ?? '—'}
-          hint={parcial ? 'só quem é dono de agente — o resto não vem desta fonte' : undefined}
-          icon="Users"
-          tone="brand"
-        />
-        <KpiCard label="Agentes" value={data?.totais.agentes ?? '—'} icon="Bot" />
-        <KpiCard label="Pilares" value={data?.totais.pilares ?? '—'} icon="Share2" />
-        <KpiCard
-          label="Agentes sem dono"
-          value={data?.totais.agentesSemDono ?? '—'}
-          hint="sem dono não há para quem escalar"
-          tone={data && data.totais.agentesSemDono > 0 ? 'warn' : 'default'}
-          icon="UserX"
-        />
+        <KpiCard label="Pessoas" value={data?.totais.pessoas ?? '—'} icon="Users" tone="brand" />
+        <KpiCard label="Agentes" value={data?.totais.agentes ?? '—'} hint="decidem com modelo" icon="Bot" />
+        <KpiCard label="Rotinas" value={data?.totais.rotinas ?? '—'} hint="rodam no relógio" icon="Clock" />
+        <KpiCard label="Automações" value={data?.totais.automacoes ?? '—'} hint="reagem a evento ou sincronizam" icon="Cable" />
       </div>
 
       {!data && !erro && <p className="text-sm text-muted">Carregando…</p>}
 
-      {data && grupos.length === 0 && (
+      {data && data.pessoas.length === 0 && (
         <p className="rounded-root border border-border bg-surface p-4 text-sm text-muted">
-          Nenhum agente e nenhum pilar declarado ainda. O organograma aparece quando alguém escrever
-          o primeiro.
+          Nenhuma pessoa ativa na equipe ainda.
         </p>
       )}
 
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-        {grupos.map((g) => (
-          <section key={g.pilar || 'sem-pilar'} className="rounded-root border border-border bg-surface p-4">
-            <header className="flex items-baseline justify-between gap-2 border-b border-border pb-2">
-              <h2 className="font-os-mono text-[10px] uppercase tracking-[0.16em] text-brand">
-                {g.pilar || <span className="text-dim">ainda sem pilar</span>}
-              </h2>
-              <span className="font-os-mono text-[9px] text-dim">
-                {g.pessoas.length} gente · {g.agentes.length} agente(s)
-              </span>
+        {data?.pessoas.map((p) => (
+          <section key={p.id} aria-label={p.nome} className="rounded-root border border-border bg-surface p-4">
+            <header className="border-b border-border pb-2">
+              <div className="flex items-center gap-2">
+                <UserIcon size={13} className="flex-none text-muted" />
+                <h2 className="text-[14px] font-medium text-text">{p.nome}</h2>
+              </div>
+              <p className="font-os-mono text-[9px] text-dim">
+                {p.papeis.join(' · ') || 'sem papel'} · {p.areas.reduce((s, a) => s + a.funcoes.length, 0)} função(ões)
+              </p>
+              <Whatsapp p={p} aoSalvar={salvarWhatsapp} />
             </header>
 
-            <div className="mt-3 space-y-1.5">
-              {g.pessoas.map((p) => (
-                <div key={p.id} className="flex items-start gap-2">
-                  <UserIcon size={12} className="mt-[3px] flex-none text-muted" />
-                  <div className="min-w-0">
-                    {/* `ativo === false` risca; `null` (fonte não informa) não. */}
-                    <p
-                      className={`text-[12px] ${
-                        p.ativo === false ? 'text-dim line-through' : 'text-text'
-                      }`}
-                    >
-                      {p.nome}
-                    </p>
-                    <p className="font-os-mono text-[9px] leading-[1.6] text-dim">
-                      {p.papeis === null
-                        ? 'papel não vem desta fonte'
-                        : p.papeis.length
-                          ? p.papeis.join(' · ')
-                          : 'sem papel declarado'}
-                      {p.agentes.length > 0 && ` · ${p.agentes.length} agente(s)`}
-                    </p>
-                  </div>
-                </div>
-              ))}
-              {g.pessoas.length === 0 && (
-                <p className="font-os-mono text-[9.5px] text-warn">
-                  nenhuma pessoa neste pilar — os agentes daqui não têm dono
-                </p>
-              )}
-            </div>
-
-            <div className="mt-3 space-y-1.5 border-t border-border pt-3">
-              {g.agentes.map((a) => (
-                <div key={a.slug} className="flex items-start gap-2">
-                  <span className="mt-[1px] grid h-5 w-5 flex-none place-items-center rounded-root border border-brand/30 bg-brand/10 font-os-mono text-[8px] font-bold text-brand">
-                    {a.iniciais || <Bot size={10} />}
-                  </span>
-                  <div className="min-w-0 flex-1">
-                    <p className="text-[12px] text-text">{a.nome}</p>
-                    <p className="font-os-mono text-[9px] leading-[1.6] text-dim">
-                      {a.tipo} · {a.estado} · até {a.autonomiaAte} ·{' '}
-                      {a.dono ? (
-                        a.dono.nome
-                      ) : (
-                        <span className="text-warn">sem dono</span>
-                      )}
-                    </p>
-                  </div>
-                </div>
-              ))}
-              {g.agentes.length === 0 && (
-                <p className="font-os-mono text-[9.5px] text-dim">nenhum agente neste pilar</p>
-              )}
-            </div>
+            {p.areas.length === 0 && (
+              <p className="mt-3 font-os-mono text-[9.5px] text-dim">nenhum agente, rotina ou automação</p>
+            )}
+            {p.areas.map((a) => (
+              <div key={a.area} className="mt-3">
+                <h3 className="font-os-mono text-[9.5px] uppercase tracking-[0.14em] text-brand">{a.area}</h3>
+                <ul className="divide-y divide-border">
+                  {a.funcoes.map((f) => (
+                    <LinhaDaFuncao key={f.slug} f={f} pessoas={data.pessoas} podeEditar={data.podeEditarDono} aoTrocar={trocarDono} />
+                  ))}
+                </ul>
+              </div>
+            ))}
           </section>
         ))}
       </div>
+
+      {data && data.semDono.length > 0 && (
+        <section aria-label="Sem dono" className="rounded-root border border-warn/40 bg-surface p-4">
+          <h2 className="font-os-mono text-[10px] uppercase tracking-[0.16em] text-warn">
+            Sem dono ({data.semDono.length}): o padrão do cadastro não casou com ninguém da equipe
+          </h2>
+          <ul className="mt-2 divide-y divide-border">
+            {data.semDono.map((f) => (
+              <LinhaDaFuncao key={f.slug} f={f} pessoas={data.pessoas} podeEditar={data.podeEditarDono} aoTrocar={trocarDono} />
+            ))}
+          </ul>
+        </section>
+      )}
+
+      {fora.length > 0 && (
+        <p className="font-os-mono text-[9.5px] leading-[1.6] text-dim">
+          Fora da vista, sem apagar nada: {fora.map(([m, n]) => `${ROTULO_DO_MOTIVO[m]}: ${n}`).join(' · ')}.
+        </p>
+      )}
 
       <Link
         href="/agentes"
         className="inline-flex font-os-mono text-[9.5px] uppercase tracking-[0.16em] text-muted hover:text-text"
       >
-        ver o roster completo e os procedimentos →
+        ver o catálogo completo de agentes, rotinas e automações →
       </Link>
     </div>
   );
