@@ -281,8 +281,9 @@ export class EvolutionService implements OnModuleInit {
       signal: AbortSignal.timeout(30_000),
     });
     if (!res.ok) {
-      const txt = await res.text().catch(() => '');
-      this.log.error(`Evolution ${path} HTTP ${res.status}: ${txt.slice(0, 300)}`);
+      // Só o status (21/10/2026): o corpo do erro da Evolution leva o número de destino.
+      await res.text().catch(() => '');
+      this.log.error(`Evolution ${path.split('/').slice(0, 3).join('/')} HTTP ${res.status}`);
       throw new ServiceUnavailableException(`Evolution respondeu HTTP ${res.status}.`);
     }
     return (await res.json()) as T;

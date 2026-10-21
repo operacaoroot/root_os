@@ -7,6 +7,7 @@ import {
 import { AuditService } from '../src/audit/audit.service';
 import { EventLogService } from '../src/gateway/event-log.service';
 import { CheckoutDeTarefaService } from '../src/work/checkout-de-tarefa.service';
+import { RECUSA_DE_MAQUINA_NO_TRABALHO, SoGenteNoTrabalhoGuard } from '../src/work/so-gente-no-trabalho.guard';
 import { WorkService } from '../src/work/work.service';
 import type { PrismaService } from '../src/prisma/prisma.service';
 import { exigirBancoDescartavel } from './banco-de-teste';
@@ -64,6 +65,7 @@ describe('trabalho: o que o serviço confere sem banco', () => {
       workFolder: { findFirst: async () => ({ id: 'p1' }), count: conta('workFolder'), delete: async () => ({ id: 'p1' }) },
       workList: { count: conta('workList') },
       auditLog: { create: async () => ({}) },
+      user: { findFirst: async () => ({ id: EU, isActive: true, passwordHash: 'x', roles: [{ key: 'admin_master' }] }) },
     } as unknown as PrismaService;
     const audit = new AuditService(prisma);
     const svc = new WorkService(prisma, audit, new CheckoutDeTarefaService(prisma, audit, new EventLogService(prisma)));
@@ -75,6 +77,24 @@ describe('trabalho: o que o serviço confere sem banco', () => {
       { modelo: 'workList', where: { orgId: CASA, folderId: 'p1' } },
       { modelo: 'workFolder', where: { orgId: CASA, parentId: 'p1' } },
     ]);
+  });
+
+  it('excluir pasta, excluir lista e arquivar todas são de gente: conta de máquina relida no banco é recusada', async () => {
+    const prisma = {
+      workFolder: { findFirst: async () => ({ id: 'p1' }), count: async () => 0, delete: async () => ({ id: 'p1' }) },
+      workList: { findFirst: async () => ({ id: 'l1', name: 'L', folderId: null }), count: async () => 0 },
+      auditLog: { create: async () => ({}) },
+      user: { findFirst: async () => ({ id: EU, isActive: true, passwordHash: 'x', roles: [{ key: 'ia_acao' }] }) },
+    } as unknown as PrismaService;
+    const audit = new AuditService(prisma);
+    const svc = new WorkService(prisma, audit, new CheckoutDeTarefaService(prisma, audit, new EventLogService(prisma)));
+    await expect(svc.apagarPasta(CASA, EU, 'p1')).rejects.toThrow(RECUSA_DE_MAQUINA_NO_TRABALHO);
+    await expect(svc.apagarLista(CASA, EU, 'l1', { confirmarNome: 'L' })).rejects.toThrow(RECUSA_DE_MAQUINA_NO_TRABALHO);
+    await expect(svc.arquivarTarefasDaLista(CASA, EU, 'l1', { esperadas: 0 })).rejects.toThrow(RECUSA_DE_MAQUINA_NO_TRABALHO);
+    const guarda = new SoGenteNoTrabalhoGuard();
+    const ctx = (roles: string[]) => ({ switchToHttp: () => ({ getRequest: () => ({ user: { sub: EU, orgId: CASA, roles } }) }) }) as never;
+    expect(() => guarda.canActivate(ctx(['ia_acao']))).toThrow(RECUSA_DE_MAQUINA_NO_TRABALHO);
+    expect(guarda.canActivate(ctx(['admin_master']))).toBe(true);
   });
 
   it('o corpo com dois pais é recusado antes do serviço', () => {

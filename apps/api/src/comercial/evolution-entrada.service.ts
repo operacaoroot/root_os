@@ -109,7 +109,10 @@ export class EvolutionEntradaService implements OnModuleInit {
     if ('ignorado' in leitura) return `ignorado: ${leitura.ignorado}`;
     const m = leitura.mensagem;
     const instancia = await this.evolution.instanciaDaEmpresa(orgId);
-    if (instancia && m.instancia && m.instancia !== instancia) return 'ignorado: outra instância';
+    // A instância é a prova de empresa (revisão adversarial, 21/10/2026): o segredo do webhook
+    // é do processo, então sem a instância desta empresa no corpo a mensagem não entra.
+    if (!instancia || !m.instancia) return 'ignorado: sem instância';
+    if (m.instancia !== instancia) return 'ignorado: outra instância';
 
     const ultima = await this.prisma.comercialMensagem.findFirst({
       where: { orgId, leadId: lead.id, direcao: 'saida', destino: 'lead', estado: 'enviada' },

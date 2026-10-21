@@ -203,6 +203,24 @@ describe('P1 · toque e teclado', () => {
     expect(clicou).toHaveBeenCalledWith('c4');
   });
 
+  it('no celular de verdade (mouseenter e focus emulados ANTES do click): o primeiro toque ainda só abre', () => {
+    LARGURA = 390;
+    const clicou = vi.fn();
+    render(<Barras itens={itens(5, clicou)} />);
+    const ultimo = screen.getAllByRole('button').at(-1)!;
+    // A ordem do navegador no toque: touchstart, depois os eventos de mouse de compatibilidade, depois o click.
+    fireEvent.touchStart(ultimo);
+    fireEvent.mouseEnter(ultimo);
+    fireEvent.focus(ultimo);
+    fireEvent.click(ultimo);
+    expect(screen.getByRole('tooltip')).toBeTruthy();
+    expect(clicou).not.toHaveBeenCalled();
+    fireEvent.touchStart(ultimo);
+    fireEvent.mouseEnter(ultimo);
+    fireEvent.click(ultimo);
+    expect(clicou).toHaveBeenCalledWith('c4');
+  });
+
   it('o foco do teclado abre o balão e o Esc fecha', () => {
     LARGURA = 1440;
     render(<Barras itens={itens(5)} />);

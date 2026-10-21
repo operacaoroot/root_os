@@ -123,7 +123,8 @@ async function main(): Promise<number> {
     );
     if (detalhe) {
       mkdirSync(path.dirname(path.resolve(detalhe)), { recursive: true });
-      writeFileSync(detalhe, markdownDoDetalhe(r, agora.toISOString()), 'utf8');
+      // Tem dado de cliente: só o dono do arquivo lê (no Windows o modo é ignorado).
+      writeFileSync(detalhe, markdownDoDetalhe(r, agora.toISOString()), { encoding: 'utf8', mode: 0o600 });
     }
     const diferenca = diferencaDosEfeitos(r.efeitos.antes, r.efeitos.depois);
     // Só contagens. Nada de título, nome, telefone, e-mail ou id de pessoa.

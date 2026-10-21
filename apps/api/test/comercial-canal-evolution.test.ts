@@ -442,9 +442,12 @@ describe.skipIf(!URL)('Evolution com banco e dublê HTTP', () => {
     expect(await prisma.lead.count({ where: { orgId: ORG_A, phone: '5532900001111' } })).toBe(0);
   });
 
-  it('mensagem de outra instância e mensagem não textual são ignoradas', async () => {
+  it('mensagem de outra instância, sem instância e não textual são ignoradas', async () => {
     const antes = await prisma.leadEvent.count({ where: { leadId, type: 'whats.recebida' } });
     expect(await em(ORG_A, () => entrada.processar(ORG_A, mensagem('ev-in-3', TELEFONE, 'oi', 'outra-inst'), `55${TELEFONE}`))).toBe('ignorado: outra instância');
+    // Sem a instância no corpo não entra: o segredo do webhook é do processo, a instância é a prova de empresa.
+    const { instance: _semInstancia, ...semInstancia } = mensagem('ev-in-5', TELEFONE, 'oi');
+    expect(await em(ORG_A, () => entrada.processar(ORG_A, semInstancia, `55${TELEFONE}`))).toBe('ignorado: sem instância');
     const imagem = { ...mensagem('ev-in-4', TELEFONE, ''), data: { key: { remoteJid: `55${TELEFONE}@s.whatsapp.net`, fromMe: false, id: 'ev-in-4' }, messageType: 'imageMessage', message: { imageMessage: {} } } };
     expect(await em(ORG_A, () => entrada.processar(ORG_A, imagem, `55${TELEFONE}`))).toBe('ignorado: tipo imageMessage');
     expect(await prisma.leadEvent.count({ where: { leadId, type: 'whats.recebida' } })).toBe(antes);

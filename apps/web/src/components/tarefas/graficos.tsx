@@ -182,14 +182,16 @@ export function Barras({
     onTouchStart: () => {
       toque.current = true;
     },
+    // No celular o navegador emula mouseenter e focus ANTES do click: com o toque marcado,
+    // quem abre o balão é o clique (senão o primeiro toque já navegaria).
     onMouseEnter: () => {
-      if (!aberto?.porToque) abrir(i.chave);
+      if (!toque.current && !aberto?.porToque) abrir(i.chave);
     },
     onMouseLeave: () => {
       if (!aberto?.porToque) fechar();
     },
     onFocus: () => {
-      if (!aberto?.porToque) abrir(i.chave);
+      if (!toque.current && !aberto?.porToque) abrir(i.chave);
     },
     onBlur: () => {
       if (!aberto?.porToque) fechar();

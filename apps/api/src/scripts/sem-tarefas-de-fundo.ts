@@ -18,6 +18,8 @@ const DESLIGADO: Record<string, string> = {
   ASAAS_SYNC_INTERVAL_MIN: '0',
   CLICKUP_SYNC_INTERVAL_MIN: '0',
   OBSIDIAN_REINDEX_MIN: '0',
+  // A varredura de arranque do teto de IA zeraria as reservas em voo da API de produção.
+  TETO_VARREDURA_DE_ARRANQUE: 'off',
 };
 for (const [k, v] of Object.entries(DESLIGADO)) process.env[k] = v;
 

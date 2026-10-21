@@ -253,9 +253,14 @@ export class TetoDeCustoIaService implements OnModuleInit, OnModuleDestroy {
    * um temporizador no construtor as deixaria penduradas.
    */
   async onModuleInit(): Promise<void> {
-    await this.liberarReservasPresas('arranque').catch((e: unknown) =>
-      this.log.error(`varredura de arranque falhou: ${(e as Error).message}`),
-    );
+    // Script que sobe o AppModule ao lado da API viva (o importador do CRM, 21/10/2026) não é
+    // "processo que acabou de nascer no lugar do outro": as reservas abertas são da API em voo.
+    // `sem-tarefas-de-fundo.ts` desliga só a varredura de ARRANQUE; a periódica tem idade mínima.
+    if (process.env.TETO_VARREDURA_DE_ARRANQUE !== 'off') {
+      await this.liberarReservasPresas('arranque').catch((e: unknown) =>
+        this.log.error(`varredura de arranque falhou: ${(e as Error).message}`),
+      );
+    }
     this.varredura = setInterval(() => {
       void this.liberarReservasPresas('varredura').catch((e: unknown) =>
         this.log.error(`varredura falhou: ${(e as Error).message}`),

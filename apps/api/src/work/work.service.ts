@@ -1,4 +1,7 @@
 import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import { temPapelDeMaquina } from '../approvals/alcada';
+import { lerAprovador } from '../auth/aprovador';
+import { RECUSA_DE_MAQUINA_NO_TRABALHO } from './so-gente-no-trabalho.guard';
 import {
   MODELOS_DE_LISTA, TRAB_LISTA_COM_DOIS_PAIS, TRAB_PASTA_COM_DOIS_PAIS, ehValorMonetarioCanonico, TrabTarefaUpdateHttpSchema,
   listaDaImplantacao, LISTA_DA_IMPLANTACAO, PASTA_DA_IMPLANTACAO, PORTA_DA_IMPLANTACAO,
@@ -264,6 +267,7 @@ export class WorkService {
    * viva entrou entre a conferência e a escrita, nada muda (409).
    */
   async apagarPasta(orgId: string, actorId: string, id: string): Promise<TrabPastaExcluida> {
+    await this.exigirGenteNoTrabalho(orgId, actorId);
     const pasta = await this.prisma.workFolder.findFirst({ where: { id, orgId, arquivadaEm: null }, select: { id: true, name: true } });
     if (!pasta) throw new NotFoundException('Pasta não encontrada');
     const [listas, filhas] = await Promise.all([
@@ -362,7 +366,15 @@ export class WorkService {
    * A auditoria leva quantas tarefas arquivadas iam junto. A lista da implantação
    * não sai nunca. A escrita é condicionada: tarefa viva que entrou no meio = 409.
    */
+  /** A segunda conferência de `SoGenteNoTrabalhoGuard`: o papel relido no banco, não o do token. */
+  private async exigirGenteNoTrabalho(orgId: string, actorId: string): Promise<void> {
+    const doBanco = await lerAprovador(this.prisma, actorId, orgId);
+    if (!doBanco || !doBanco.ativo) throw new ForbiddenException('Quem exclui precisa ser um usuário ativo desta empresa.');
+    if (temPapelDeMaquina(doBanco.papeis)) throw new ForbiddenException(RECUSA_DE_MAQUINA_NO_TRABALHO);
+  }
+
   async apagarLista(orgId: string, actorId: string, id: string, input: TrabListaExcluirInput): Promise<TrabListaExcluida> {
+    await this.exigirGenteNoTrabalho(orgId, actorId);
     const lista = await this.prisma.workList.findFirst({ where: { id, orgId, arquivadaEm: null }, select: { id: true, name: true, folderId: true } });
     if (!lista) throw new NotFoundException('Lista não encontrada');
     if (await this.ehListaDaImplantacao(orgId, id)) throw new BadRequestException(LISTA_DA_IMPLANTACAO_FICA);
@@ -411,6 +423,7 @@ export class WorkService {
    * cartões dela são clientes, e cada um se arquiva sozinho, de propósito.
    */
   async arquivarTarefasDaLista(orgId: string, actorId: string, id: string, input: TrabListaArquivarTarefasInput): Promise<TrabListaTarefasArquivadas> {
+    await this.exigirGenteNoTrabalho(orgId, actorId);
     const lista = await this.prisma.workList.findFirst({ where: { id, orgId, arquivadaEm: null }, select: { id: true, name: true } });
     if (!lista) throw new NotFoundException('Lista não encontrada');
     if (await this.ehListaDaImplantacao(orgId, id)) throw new BadRequestException(LISTA_DA_IMPLANTACAO_FICA);

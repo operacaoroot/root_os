@@ -1,4 +1,5 @@
 import { AcessoAtualGuard } from '../memory/acesso-atual.guard';
+import { SoGenteNoTrabalhoGuard } from './so-gente-no-trabalho.guard';
 import { ContextoTrabalhoService } from '../memory/contexto-trabalho.service';
 import { BadRequestException, Body, Controller, Delete, Get, Param, Patch, Post, Query, UseGuards } from '@nestjs/common';
 import {
@@ -124,7 +125,7 @@ export class WorkController {
    * arquivado é arquivada (os dados ficam). Ver `WorkService.apagarPasta`.
    */
   @Delete('pastas/:id')
-  @UseGuards(AcessoAtualGuard)
+  @UseGuards(AcessoAtualGuard, SoGenteNoTrabalhoGuard)
   @RequirePermissions('tarefas.editar')
   apagarPasta(@CurrentUser() u: JwtUser, @Param('id') id: string) {
     return this.svc.apagarPasta(u.orgId, u.sub, id);
@@ -150,7 +151,7 @@ export class WorkController {
    * contagem. Ver `WorkService.apagarLista`.
    */
   @Delete('listas/:id')
-  @UseGuards(AcessoAtualGuard)
+  @UseGuards(AcessoAtualGuard, SoGenteNoTrabalhoGuard)
   @RequirePermissions('tarefas.editar')
   apagarLista(@CurrentUser() u: JwtUser, @Param('id') id: string, @Body() body: unknown) {
     return this.svc.apagarLista(u.orgId, u.sub, id, TrabListaExcluirSchema.parse(body ?? {}));
@@ -158,7 +159,7 @@ export class WorkController {
 
   /** Arquivar todas as tarefas da lista, o passo antes de excluir (P3). `{esperadas}` = quantas a tela mostrou. */
   @Post('listas/:id/arquivar-tarefas')
-  @UseGuards(AcessoAtualGuard)
+  @UseGuards(AcessoAtualGuard, SoGenteNoTrabalhoGuard)
   @RequirePermissions('tarefas.editar')
   arquivarTarefasDaLista(@CurrentUser() u: JwtUser, @Param('id') id: string, @Body() body: unknown) {
     return this.svc.arquivarTarefasDaLista(u.orgId, u.sub, id, TrabListaArquivarTarefasSchema.parse(body));
