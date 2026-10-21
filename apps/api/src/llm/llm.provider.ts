@@ -165,6 +165,13 @@ export interface LlmStepInput {
    */
   agentSlug?: string;
   /**
+   * Ferramentas que rodam NO SERVIDOR do provedor (rodada dos agentes, IM-02): hoje
+   * só a busca na web, e só o provedor `anthropic` sabe (ferramenta `web_search`).
+   * Os outros ignoram e quem chama precisa saber (`LlmProvider.buscaNaWeb`). Quem
+   * liga é a nota da empresa (`onboarding.pesquisa.web` = `ligada`), nunca o modelo.
+   */
+  servidor?: { buscaNaWeb?: { maxUsos: number } };
+  /**
    * A FUNÇÃO do cadastro único (`packages/shared/src/agentes.ts`) em nome de quem
    * esta chamada acontece: `CO-03`, `IM-07`, `AG-01`... (rodada dos agentes, 21/10/2026).
    *
@@ -214,6 +221,8 @@ export interface LlmProvider {
    * Opcional para os dublês de teste não precisarem declará-lo; ausente = não lê.
    */
   readonly leAnexos?: boolean;
+  /** true quando o provider executa `LlmStepInput.servidor.buscaNaWeb`. Ausente = não executa. */
+  readonly buscaNaWeb?: boolean;
   complete(input: LlmMessage): Promise<string>;
   step(input: LlmStepInput): Promise<LlmStepOutput>;
   /**

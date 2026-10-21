@@ -28,3 +28,9 @@
 - **Testes**: banco descartável próprio (`homolog/banco-de-teste.sh rootos_ag_<lane>_test`), suíte da lane verde, `tsc` limpo na API e no web; nada de vermelho novo fora da linha de base (`homolog/final/suites.md`). A catraca `arquitetura.test.ts` já tem 1 vermelho na base (`contexto-movimento-explicito.service.ts importa Obsidian`).
 - **Commits** na worktree da lane, com mensagem `Agentes 21/10 · <lane> · ...` e a identidade do clone. O orquestrador integra.
 - Onde faltar decisão de produto: `[a decidir]` e siga.
+
+## Complemento da Lane 0 (antes de abrir as lanes)
+
+6. **`Partner.pastaDriveId`, `Partner.pastaDriveUrl` e `Partner.pastaDriveErro`** (migration `20261021300100_pasta_do_cliente`, colunas nulas): o ponteiro da pasta do cliente, lido pela ficha, pelo card e pela tela do cliente. Quem ESCREVE é só `clientes/` (lane do Drive).
+7. **`apps/web/src/components/clientes/PastaDoCliente.tsx`** (`<PastaDoCliente partnerId url erro? compacto? />`): o link "Abrir pasta do cliente", ou "Criar pasta do cliente"/"Criar pasta de novo" chamando `POST /clientes/:id/pasta` (resposta `{estado, url?, motivo?, approvalId?}`, a mesma `ResultadoDaPasta` da porta). A lane do Comercial põe na ficha, a da Implantação no card, a do Drive na tela do cliente.
+8. **`LlmStepInput.servidor.buscaNaWeb`** e `LlmProvider.buscaNaWeb` (interface): a busca na web do pesquisador de conta (IM-02). A A1 implementa no provedor `anthropic` (ferramenta de servidor `web_search_20260209`, com `max_uses`); a lane da Implantação liga pela nota `onboarding.pesquisa.web`.

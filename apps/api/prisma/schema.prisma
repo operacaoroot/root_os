@@ -887,6 +887,11 @@ model Partner {
   /// tarefa tem cliente" valer sem exceção. Um por empresa: índice único parcial
   /// `Partner_orgId_interno_unico` (só na migration; o Prisma não descreve índice parcial).
   interno      Boolean  @default(false)
+  /// A PASTA DO CLIENTE NO DRIVE (rodada dos agentes, 21/10/2026, TR-04): o id e o
+  /// link de <raiz>/10-clientes/<nome>, e o motivo da última tentativa que falhou.
+  pastaDriveId   String?
+  pastaDriveUrl  String?
+  pastaDriveErro String?
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
