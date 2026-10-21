@@ -1,6 +1,6 @@
 {
-  "versao": "1.9.0",
-  "atualizadoEm": "2026-10-18",
+  "versao": "1.10.0",
+  "atualizadoEm": "2026-10-21",
   "origem": "o código real deste repositório",
   "descricao": "Capacidades do marketing-os. É um DELTA sobre politica-root.json: herda níveis, gatilhos, escalonamento, invariantes e limites, e declara só o que existe em código aqui. Capacidade sem rota é declarada e não implementada — entra classificada, e a porta recusa antes de qualquer efeito.",
   "estende": "politica-root.json",
@@ -79,6 +79,30 @@
       "rota": "GET /google/docs/:id",
       "descricao": "Lê o conteúdo (texto) de um Google Doc pelo id (use o id vindo do list_drive_files).",
       "nivel": "R0",
+      "efeito": {
+        "escreveForaDoOS": false,
+        "produzArtefato": false,
+        "reversibilidade": "automatica",
+        "exposicaoExterna": false,
+        "impactoFinanceiro": "nenhum",
+        "sensibilidade": "interna",
+        "destruicao": false,
+        "obrigacaoLegal": false
+      }
+    },
+    {
+      "id": "contexto.arquivo.ler",
+      "rota": "GET /trabalho/atas/:ref",
+      "descricao": "Lê o TEXTO de um arquivo do Google Drive da empresa pelo id: Documento Google (exportado como texto), PDF com texto, .txt e .md. Só leitura: nada é escrito no Drive. Quem lê é o banco de atas do Trabalho (a pasta das atas escolhida pela empresa), sem ferramenta de agente. O texto volta marcado como sigiloso: o RASTRO e o registro da chamada guardam o resumo criptográfico e o tamanho, nunca o texto. Existe porque `contexto.documento.ler` lê só Documento Google pela API do Docs e devolve o texto cru ao registro.",
+      "nivel": "R0",
+      "argsSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id"],
+        "properties": {
+          "id": { "type": "string", "pattern": "^[A-Za-z0-9_-]{10,120}$", "description": "o id do arquivo no Drive" }
+        }
+      },
       "efeito": {
         "escreveForaDoOS": false,
         "produzArtefato": false,

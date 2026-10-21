@@ -128,7 +128,7 @@ describe('o mapa capacidade → conector', () => {
    * conector que o desligamento não reconhece e que segue mandando coisa para
    * fora depois de alguém ter mandado parar.
    */
-  it('a união do catálogo é o que a catraca mede — 16 da base + 69 do delta, 8 repetidos', () => {
+  it('a união do catálogo é o que a catraca mede — 16 da base + 70 do delta, 8 repetidos', () => {
     /*
      * Trava a FONTE, não só o resultado: se alguém voltar a ler só o delta, o
      * número cai para o do delta e este caso avisa antes de as oito sumirem
@@ -154,11 +154,14 @@ describe('o mapa capacidade → conector', () => {
      * `youtube.video.enviar` e `youtube.video.publicar`, e a MD11
      * `instagram.resposta_privada.enviar` e `instagram.regra_de_resposta.pausar`.
      * Com a agenda: 63 no delta e 71 na união. Com o cockpit do lead (13/10/2026), 68 e 76.
+     * Com a produção 21 (P7, 21/10/2026), `contexto.arquivo.ler` (R0, o texto de
+     * um arquivo do Drive para o banco de atas): 70 no delta e 78 na união.
      */
     expect(lerCatalogo('politica-root.json')).toHaveLength(16);
-    expect(lerCatalogo('politica-marketing-os.json')).toHaveLength(69);
-    // 76 desde o cockpit do lead (13/10/2026): as cinco escritas do comercial; 77 com a sala publicada por versão (I3, 18/10/2026).
-    expect(capacidadesDoCatalogo()).toHaveLength(77);
+    expect(lerCatalogo('politica-marketing-os.json')).toHaveLength(70);
+    // 76 desde o cockpit do lead (13/10/2026): as cinco escritas do comercial; 77 com a sala publicada por versão (I3, 18/10/2026);
+    // 78 com a leitura do texto de arquivo do Drive (produção 21, P7).
+    expect(capacidadesDoCatalogo()).toHaveLength(78);
     const soNaBase = lerCatalogo('politica-root.json')
       .map((c) => c.id)
       .filter((id) => !lerCatalogo('politica-marketing-os.json').some((d) => d.id === id));
@@ -199,7 +202,7 @@ describe('o mapa capacidade → conector', () => {
     expect(nasDuas, `declaradas duas vezes: ${nasDuas.join(', ')}`).toEqual([]);
   });
 
-  it('o ALCANCE do interruptor é medido, não estimado — 28 capacidades saem da casa', () => {
+  it('o ALCANCE do interruptor é medido, não estimado — 29 capacidades saem da casa', () => {
     /*
      * QUANTAS CAPACIDADES O INTERRUPTOR DE FATO ALCANÇA.
      *
@@ -224,7 +227,9 @@ describe('o mapa capacidade → conector', () => {
     // O cockpit do lead (13/10/2026) somou quatro: a mensagem ao lead
     // (`whatsapp`), a cobrança e o fechamento (`asaas`) e o contrato
     // (`zapsign`); publicar a proposta na sala fica dentro do OS (null).
-    expect(comConector).toHaveLength(28);
+    // A produção 21 (P7) somou uma: `contexto.arquivo.ler`, pela chave `drive`.
+    expect(comConector).toHaveLength(29);
+    expect(CONECTOR_DA_CAPACIDADE['contexto.arquivo.ler']).toBe('drive');
     expect(CONECTOR_DA_CAPACIDADE['instagram.post.publicar']).toBe('instagram');
     expect(CONECTOR_DA_CAPACIDADE['instagram.comentario.ler']).toBe('instagram');
     expect(CONECTOR_DA_CAPACIDADE['instagram.resposta_privada.enviar']).toBe('instagram');
@@ -232,8 +237,9 @@ describe('o mapa capacidade → conector', () => {
     expect(CONECTOR_DA_CAPACIDADE['youtube.video.enviar']).toBe('youtube');
     expect(CONECTOR_DA_CAPACIDADE['youtube.video.publicar']).toBe('youtube');
     expect(CONECTOR_DA_CAPACIDADE['pauta.semana.aprovar']).toBeNull();
-    // 76 desde o cockpit do lead (13/10/2026): as cinco escritas do comercial; 77 com a sala publicada por versão (I3, 18/10/2026).
-    expect(capacidadesDoCatalogo()).toHaveLength(77);
+    // 76 desde o cockpit do lead (13/10/2026): as cinco escritas do comercial; 77 com a sala publicada por versão (I3, 18/10/2026);
+    // 78 com a leitura do texto de arquivo do Drive (produção 21, P7).
+    expect(capacidadesDoCatalogo()).toHaveLength(78);
 
     // E `conectorDaCapacidade` concorda com o mapa, para os dois lados: o que
     // está declarado `null` e o que está em `SEM_INTERRUPTOR` devolve `null`.

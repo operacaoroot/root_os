@@ -12,8 +12,11 @@ import {
   type ModalidadeDeReuniao,
   type ReuniaoDaAgenda,
 } from '@mktos/shared';
+import { arquivoDoDriveEhLegivel } from '@mktos/shared';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
+import { MAX_BYTES_DO_ARQUIVO_LIDO, consultaDoDrive, leituraDoArquivo, type OpcoesDaListaDoDrive } from './drive-das-atas';
+import { PdfIlegivelError, textoDoPdf } from './texto-do-pdf';
 import { EfeitosRegistry, type ContextoDoEfeito } from '../gateway/efeitos.registry';
 import { CofreService, SegredoIndisponivelError } from '../cofre/cofre.service';
 import { NOMES_CONHECIDOS } from '../cofre/segredo';
@@ -185,9 +188,18 @@ export class GoogleService implements OnModuleInit {
       // e não a um mês inteiro de calendário — daí o teto próprio.
       'comunicacao.agenda.periodo': (a, org) =>
         this.calendarPeriodo(org, texto(a.de), texto(a.ate), Math.min(Number(a.limite) || 250, 2500)),
+      // `pasta`, `texto` e `desde` são do banco de atas (produção 21, P7): a lista
+      // dentro da pasta das atas. Sem `pasta`, é a busca por nome de sempre.
       'contexto.arquivo.listar': (a, org) =>
-        this.driveList(org, texto(a.q ?? a.busca), numero(a.limite, 15)),
+        this.driveList(
+          org,
+          texto(a.q ?? a.busca),
+          numero(a.limite, 15),
+          texto(a.pasta) ? { pasta: texto(a.pasta), texto: texto(a.texto) || undefined, desde: texto(a.desde) || undefined } : undefined,
+        ),
       'contexto.documento.ler': (a, org) => this.docGet(org, texto(a.id)),
+      // O texto de um arquivo do Drive para o banco de atas (produção 21, P7): volta sigiloso ao registro.
+      'contexto.arquivo.ler': (a, org) => this.lerTextoDoArquivo(org, texto(a.id)),
 
       // ---------- escrita (R3: só sai depois que uma pessoa confirma) ----------
       'email.enviar': (a, org, ctx: ContextoDoEfeito) =>
@@ -950,14 +962,88 @@ export class GoogleService implements OnModuleInit {
     return { id, from: h('From'), to: h('To'), subject: h('Subject'), date: h('Date'), snippet: m.snippet ?? '', body: extractBody(m.payload), link: permalinkDoGmail(id) };
   }
 
-  async driveList(orgId: string, q = '', pageSize = 15) {
-    const query = q ? `name contains '${q.replace(/'/g, "\\'")}'` : "trashed = false";
+  /**
+   * Lista arquivos do Drive. Sem `opcoes`, é a busca por nome de sempre (a tela
+   * do Google e a ferramenta do agente). Com `opcoes.pasta` (produção 21, P7, o
+   * banco de atas), lista os arquivos DENTRO da pasta, inclusive de drive
+   * compartilhado, com a busca no texto (`fullText contains`) e o corte por data
+   * de modificação; a consulta é montada por `consultaDoDrive`, que escapa cada
+   * valor e recusa id de pasta fora do formato.
+   */
+  async driveList(orgId: string, q = '', pageSize = 15, opcoes?: OpcoesDaListaDoDrive) {
+    const query = opcoes?.pasta
+      ? consultaDoDrive({ pasta: opcoes.pasta, nome: q, texto: opcoes.texto, desde: opcoes.desde })
+      : q ? `name contains '${q.replace(/'/g, "\\'")}'` : "trashed = false";
+    const compartilhados = opcoes?.pasta ? '&supportsAllDrives=true&includeItemsFromAllDrives=true' : '';
     const j = await this.api<{ files: any[] }>(orgId,
-      `https://www.googleapis.com/drive/v3/files?pageSize=${pageSize}&orderBy=modifiedTime desc&q=${encodeURIComponent(query)}&fields=${encodeURIComponent('files(id,name,mimeType,modifiedTime,webViewLink,owners(displayName))')}`);
+      `https://www.googleapis.com/drive/v3/files?pageSize=${pageSize}&orderBy=modifiedTime desc&q=${encodeURIComponent(query)}${compartilhados}&fields=${encodeURIComponent('files(id,name,mimeType,modifiedTime,createdTime,size,webViewLink,owners(displayName))')}`);
     return (j.files ?? []).map((f) => ({
       id: f.id, name: f.name, mimeType: f.mimeType, modifiedTime: f.modifiedTime,
       link: f.webViewLink ?? null, owner: f.owners?.[0]?.displayName ?? null,
+      ...(opcoes?.pasta ? { createdTime: f.createdTime ?? null, size: f.size ? Number(f.size) : null } : {}),
     }));
+  }
+
+  /**
+   * O TEXTO de um arquivo do Drive (capacidade `contexto.arquivo.ler`, R0,
+   * produção 21, P7): Documento Google exportado como texto; `.txt`, `.md` e
+   * legendas baixados como estão; PDF lido por `textoDoPdf`. O texto volta
+   * marcado `sigiloso` (`leituraDoArquivo`): o RASTRO e o registro da chamada
+   * guardam o resumo criptográfico e o tamanho, nunca o texto. Arquivo maior que
+   * o teto nem é baixado.
+   */
+  async lerTextoDoArquivo(orgId: string, fileId: string) {
+    if (!/^[A-Za-z0-9_-]{10,120}$/.test(fileId)) throw new BadRequestException('Esse não é um id de arquivo do Drive.');
+    const id = encodeURIComponent(fileId);
+    const meta = await this.api<{ id: string; name: string; mimeType: string; size?: string; modifiedTime?: string; webViewLink?: string; parents?: string[]; trashed?: boolean }>(
+      orgId,
+      `https://www.googleapis.com/drive/v3/files/${id}?supportsAllDrives=true&fields=${encodeURIComponent('id,name,mimeType,size,modifiedTime,webViewLink,parents,trashed')}`,
+    );
+    if (meta.trashed) throw new BadRequestException('Este arquivo está na lixeira do Drive.');
+    const bytes = meta.size ? Number(meta.size) : null;
+    if (bytes !== null && bytes > MAX_BYTES_DO_ARQUIVO_LIDO) {
+      throw new BadRequestException(`O arquivo passa de ${Math.round(MAX_BYTES_DO_ARQUIVO_LIDO / 1_048_576)} MB e não é lido daqui. Abra no Drive.`);
+    }
+    let texto: string;
+    if (meta.mimeType === 'application/vnd.google-apps.document') {
+      texto = (await this.baixarDoDrive(orgId, `https://www.googleapis.com/drive/v3/files/${id}/export?mimeType=${encodeURIComponent('text/plain')}`)).toString('utf8');
+    } else if (meta.mimeType === 'application/pdf' || /\.pdf$/i.test(meta.name)) {
+      const pdf = await this.baixarDoDrive(orgId, `https://www.googleapis.com/drive/v3/files/${id}?alt=media&supportsAllDrives=true`);
+      try {
+        texto = textoDoPdf(pdf);
+      } catch (e) {
+        if (e instanceof PdfIlegivelError) throw new BadRequestException(`Não deu para ler este PDF: ${e.message}. Abra no Drive.`);
+        throw e;
+      }
+      if (!texto.trim()) throw new BadRequestException('Este PDF não tem texto (é imagem ou escaneado). Abra no Drive.');
+    } else if (arquivoDoDriveEhLegivel(meta.name, meta.mimeType) && !meta.mimeType.startsWith('application/vnd.google-apps.')) {
+      texto = (await this.baixarDoDrive(orgId, `https://www.googleapis.com/drive/v3/files/${id}?alt=media&supportsAllDrives=true`)).toString('utf8');
+    } else {
+      throw new BadRequestException('Este tipo de arquivo não é lido daqui (só Documento Google, PDF com texto, .txt e .md). Abra no Drive.');
+    }
+    return leituraDoArquivo({
+      id: meta.id,
+      nome: meta.name,
+      mimeType: meta.mimeType,
+      modificadoEm: meta.modifiedTime ?? null,
+      link: meta.webViewLink ?? null,
+      pastas: meta.parents ?? [],
+      bytes,
+      texto,
+    });
+  }
+
+  /** Os bytes de um endereço do Drive (export ou `alt=media`), com o token desta empresa e o teto de tamanho. */
+  private async baixarDoDrive(orgId: string, url: string): Promise<Buffer> {
+    const at = await this.token(orgId);
+    const res = await fetch(url, { headers: { Authorization: `Bearer ${at}` } });
+    if (!res.ok) {
+      const corpo = await res.text().catch(() => '');
+      throw new BadRequestException(`O Drive não entregou o arquivo (HTTP ${res.status}). ${corpo.slice(0, 120)}`.trim());
+    }
+    const dados = Buffer.from(await res.arrayBuffer());
+    if (dados.length > MAX_BYTES_DO_ARQUIVO_LIDO) throw new BadRequestException('O arquivo é grande demais para ser lido daqui. Abra no Drive.');
+    return dados;
   }
 
   async docGet(orgId: string, docId: string) {

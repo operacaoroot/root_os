@@ -417,8 +417,14 @@ describe('ferramenta e esquema de argumentos têm direção própria', () => {
     // Vinte e sete desde a rodada da implantação I3 (18/10/2026):
     // `comercial.sala.publicar`. A versão da sala sai pelo clique de gente na
     // bancada e a segunda pessoa libera; agente nenhum publica a sala do cliente.
-    expect(BASE.capacidades.filter((c) => !c.ferramenta)).toHaveLength(27);
+    //
+    // Vinte e oito desde a produção 21 (P7, 21/10/2026): `contexto.arquivo.ler`.
+    // É leitura do texto de um arquivo do Drive para o banco de atas, pedida
+    // pelo clique de gente na tela de Atas; o texto volta sigiloso e não vai ao
+    // contexto de agente nenhum por esta porta.
+    expect(BASE.capacidades.filter((c) => !c.ferramenta)).toHaveLength(28);
     for (const id of [
+      'contexto.arquivo.ler',
       'instagram.post.publicar',
       'pauta.semana.aprovar',
       'instagram.comentario.ler',
