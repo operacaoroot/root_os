@@ -512,6 +512,7 @@ const ALVOS: Alvo[] = [
   { tabela: 'CofreItem', escopo: 'tenant', chaveSql: '"id"', nota: 'O COFRE da casa: título, onde, usuário, segredo e notas cifrados, e o documento guardado. O valor é cifrado, mas ler já entrega o mapa de que acessos a outra empresa guarda e onde; apagar é sumir com a senha dela.' },
   { tabela: 'CofreSenha', escopo: 'tenant', chaveSql: '"id"', nota: 'O hash da senha-mestra do cofre de cada pessoa, com tentativas e bloqueio. Ler o da outra entrega o hash para ataque fora do sistema; escrever zera o bloqueio ou troca a senha-mestra de alguém de outra casa.' },
   { tabela: 'CofreSessao', escopo: 'tenant', chaveSql: '"id"', nota: 'A sessão aberta do cofre (hash do token e validade). Escrever na da outra estende ou abre a sessão de cofre de alguém de outra casa.' },
+  { tabela: 'AgendaConferencia', escopo: 'tenant', chaveSql: '"id"', nota: 'O que o vigia da agenda (AG-01, rodada dos agentes, 21/10/2026) concluiu de uma reunião fora do padrão: o título lido do Google, a proposta e a aprovação ou pendência. Ler a da outra é ler com quem ela se reúne e quando; ESCREVER é pôr título na proposta de correção da agenda dela ou marcar reunião alheia como "não é reunião". Raiz da empresa: approvalId e pendenciaId apontam para outras tabelas, sem FK.' },
 
   // ---- junções implícitas do Prisma (não têm id) ------------------------
   { tabela: '_UserRoles', escopo: 'juncao', chaveSql: `"A" || '|' || "B"`, nota: 'A=Role.id, B=User.id. Sem policy dá para conceder Role de outra org — escalação cross-tenant.' },
@@ -1436,6 +1437,14 @@ async function semear(c: PoolClient, rotulo: 'A' | 'B', vec: string): Promise<vo
     chamadas: rotulo === 'A' ? 3 : 40, chamadasSemPreco: 0, cortes: 0,
     criadoEm: agora, atualizadoEm: agora,
   }));
+
+  // O vigia da agenda (AG-01, rodada dos agentes, 21/10/2026, A5): a conferência de uma reunião.
+  reg('AgendaConferencia', await ins(c, 'AgendaConferencia', {
+    id: crypto.randomUUID(), orgId, eventoId: `ev_${rotulo}_${MARCA}`,
+    tituloLido: `Reunião privada da org ${rotulo}`, assinatura: `assinatura_${rotulo}`,
+    estado: 'proposta', tituloProposto: `Reunião Online - Cliente ${rotulo} - Pedro`,
+    problemas: JSON.stringify(['titulo_fora_da_gramatica']), atualizadoEm: agora,
+  }, { problemas: 'jsonb' }));
 
   await semearEntregasDoMerge(c, rotulo, {
     orgId, suf, userId, agentId, sopId, sop, leadId, leadEventId, contextoId, contextoVersaoId,
