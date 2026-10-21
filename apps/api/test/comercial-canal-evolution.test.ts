@@ -289,7 +289,7 @@ describe.skipIf(!URL)('Evolution com banco e dublê HTTP', () => {
     const fio = new FioService(p, reacoes);
     const sala = new SalaService(p, fio, reacoes);
     sala.onModuleInit();
-    whats = new WhatsappComercialService(p, fio, reacoes, new RelogioComercialRegistry(), sala, efeitos, porta, undefined, undefined, evo);
+    whats = new WhatsappComercialService(p, fio, reacoes, new RelogioComercialRegistry(), sala, efeitos, porta, undefined, evo);
     whats.onModuleInit();
     const diretas = new EntradaDiretaRegistry(p);
     entrada = new EvolutionEntradaService(p, whats, sala, evo, diretas);
