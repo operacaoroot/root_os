@@ -131,8 +131,8 @@ async function main(): Promise<number> {
     );
     if (plano.modo === 'simular') {
       console.log(plano.aPropor ? `${plano.aPropor} pedido(s) de pasta a propor. Nada foi escrito.` : 'Zero a propor: todo cliente tem pasta ou pedido na fila.');
-    } else {
-      console.log('Os pedidos estão na fila de aprovação (/atendimento): outra pessoa confirma cada um.');
+    } else if (plano.resultados.aguardando_aprovacao) {
+      console.log(`${plano.resultados.aguardando_aprovacao} pedido(s) na fila de aprovação (/atendimento): outra pessoa confirma cada um.`);
     }
     if ((plano.resultados.erro ?? 0) > 0 || (plano.resultados.sem_raiz ?? 0) > 0) {
       console.error('Algum pedido não foi feito: o motivo está no arquivo de --detalhe.');
