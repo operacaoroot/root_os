@@ -96,7 +96,7 @@ services:
     networks: [rootos-final-seed-net]
 
   api:
-    image: rootos-final-app:producao21a
+    image: rootos-final-app:producao21c
     container_name: rootos_final_seed_api
     restart: unless-stopped
     working_dir: /app/apps/api
@@ -163,7 +163,7 @@ services:
       retries: 10
 
   web:
-    image: rootos-final-app:producao21a
+    image: rootos-final-app:producao21c
     container_name: rootos_final_seed_web
     restart: unless-stopped
     working_dir: /app/apps/web
