@@ -115,7 +115,8 @@ describe('nenhuma reação nasce da etapa (estático)', () => {
     const chamam = (alvo: RegExp) => arquivos(src).filter((f) => alvo.test(readFileSync(f, 'utf8'))).map((f) => f.slice(src.length + 1).replace(/\\/g, '/')).sort();
     expect(chamam(/\.moverAMao\(/)).toEqual(['comercial/mover.service.ts']);
     // Rodada de produção 1: o importador do CRM antigo é de gente (`--como`, relida no banco) e move pela MESMA porta.
-    expect(chamam(/import[^;]*\bMoverService\b/)).toEqual(['comercial/comercial.controller.ts', 'comercial/comercial.module.ts', 'comercial/importador-crm/importador-crm.service.ts']);
+    expect(chamam(/import[^;]*\bMoverService\b/)).toEqual(['comercial/comercial.controller.ts', 'comercial/comercial.module.ts', 'comercial/importador-crm/importador-crm.service.ts', 'comercial/proposta-do-lead.service.ts']);
+    // Produção 22B (I5): o "Criar lead" da proposta é de gente (SoGenteGuard e releitura no banco) e leva o lead a Qualificação pela MESMA porta.
     // Só o `moverAMao` passa `pessoa` ao `mudarEtapa`: as reações, o relógio e o fechado-fora seguem pelos portões.
     const ficha = readFileSync(join(src, 'comercial', 'ficha.service.ts'), 'utf8');
     const corpoDoMoverAMao = ficha.slice(ficha.indexOf('async moverAMao('), ficha.indexOf('async baloes('));

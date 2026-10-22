@@ -450,6 +450,7 @@ const ALVOS: Alvo[] = [
   { tabela: 'WorkComment', escopo: 'filho', chaveSql: '"id"', nota: 'Texto livre e authorName. Conteúdo de tenant que só a política de linha separa.' },
   { tabela: 'WorkApontamento', escopo: 'filho', chaveSql: '"id"', nota: 'Horas de gente por cliente e por etapa: diz quanto a empresa cobra e quanto gasta. Número comercial que a vizinha não pode ver.' },
   { tabela: 'AtaSugestao', escopo: 'tenant', chaveSql: '"id"', nota: 'A sugestão de tarefa lida de uma ata do Trabalho (rodada do painel P3): o título, o dono sugerido, o prazo e o TRECHO da reunião de onde saiu. Ler a da outra empresa é ler o que ela combinou em reunião e com quem; ESCREVER é pôr tarefa na fila de aceite dela, ou aceitar por ela. Raiz da empresa, não filha: a ata vive em duas tabelas e o orgId vem do insert.' },
+  { tabela: 'PropostaDoLead', escopo: 'tenant', chaveSql: '"id"', nota: 'O vínculo da proposta do serviço de propostas com um lead (Produção 22B, I5): a referência da proposta (o cliente e a chave) e o lead. Ler o da outra empresa é saber a quem ela vendeu e o quê; ESCREVER é ligar a proposta dela ao lead errado ou travar o vínculo com o 409. Raiz da empresa: o orgId vem do insert e o lead entra por chave composta (leadId, orgId).' },
   { tabela: 'Pendencia', escopo: 'tenant', chaveSql: '"id"', nota: 'A pendência que um agente ou rotina deixa para uma pessoa (rodada dos agentes, 21/10/2026): o arquivo de cliente sem subpasta, a tarefa vencida, a mensagem de WhatsApp sem dono, a reunião fora do padrão. Ler a da outra empresa é ler o que chegou para ela e de quem; ESCREVER é decidir por ela. Raiz da empresa: o refId aponta para tabelas diferentes, sem FK.' },
   { tabela: 'ArquivoDoCliente', escopo: 'tenant', chaveSql: '"id"', nota: 'O arquivo que chegou para um cliente e o que o arquivista fez com ele (rodada dos agentes, TR-05): nome original, hash, a subpasta, a aprovação e o link no Drive. Ler o da outra empresa é ler quais documentos os clientes dela mandaram e onde estão; ESCREVER é mudar a subpasta, o nome ou o cliente de destino de um arquivo alheio, que é o que o efeito do Drive confere. Raiz da empresa: o arquivo pode chegar antes do cliente, só com o lead.' },
   { tabela: 'WorkAnexo', escopo: 'filho', chaveSql: '"id"', nota: 'O anexo da tarefa (rodada dos agentes, TR-06): o nome, o hash e a chave do binário no storage. Ler o da outra empresa é saber o que ela anexou e baixar pela chave; o gatilho deriva a empresa da tarefa.' },
@@ -1331,6 +1332,12 @@ async function semear(c: PoolClient, rotulo: 'A' | 'B', vec: string): Promise<vo
     id: crypto.randomUUID(), orgId, ataRef: `memoria:ata_${rotulo}_${MARCA}`,
     titulo: `Tarefa combinada na reunião da org ${rotulo}`, trecho: `Trecho privado da ata da org ${rotulo}`,
     estado: 'rascunho', atualizadaEm: new Date(),
+  }));
+
+  // A proposta do lead (Produção 22B, I5): o vínculo da proposta do serviço com um lead da org.
+  reg('PropostaDoLead', await ins(c, 'PropostaDoLead', {
+    id: crypto.randomUUID(), orgId, proposta: `servico:cliente-${rotulo.toLowerCase()}/escopo-${suf}`.slice(0, 160),
+    leadId, como: 'vinculada', vinculadoPor: userId,
   }));
 
   // O delegador (TR-09, rodada dos agentes, 21/10/2026): a subtarefa proposta, à espera de gente.

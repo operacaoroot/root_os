@@ -104,6 +104,8 @@ export * from './painel-comercial.js';
 // O WhatsApp do comercial pela Evolution em Integrações (Produção 21, P8): ver `evolution.ts`.
 export * from './evolution.js';
 export * from './propostas-da-sala.js';
+// A proposta é do lead: o vínculo da proposta do serviço (Produção 22B, I5): ver `proposta-do-lead.ts`.
+export * from './proposta-do-lead.js';
 // A ficha do cliente (reuniões presas ao cartão): ver `ficha-do-cliente.ts`.
 export * from './ficha-do-cliente.js';
 

@@ -120,6 +120,13 @@ export const VistaFunilSchema = z.object({
     decisao: z.string().max(20),
     q: z.string().max(120),
   }),
+  /**
+   * Produção 22B (I5): as colunas visíveis do formato Lista, na ordem da tela
+   * (`?colunas=`), e a ordenação (`?ordem=coluna:asc|desc`). Opcionais: a vista
+   * salva antes delas continua valendo, e a tela só grava quando fogem do padrão.
+   */
+  colunas: z.array(z.string().max(30)).max(20).optional(),
+  ordem: z.string().max(40).optional(),
 }).strict();
 export type VistaFunil = z.infer<typeof VistaFunilSchema>;
 

@@ -849,6 +849,10 @@ export class FichaService {
         donoId: ficha.donoId ?? null,
         dono: ficha.donoId ? (nomes.get(ficha.donoId) ?? null) : null,
         avisoDoMover: null,
+        // Produção 22B (I5): o que o formato Lista mostra a mais, lido da ficha.
+        valorCentavos: ficha.valorCentavos ?? null,
+        etapaDesde: ficha.etapaDesde.toISOString(),
+        reuniaoEm: ficha.reuniaoEm?.toISOString() ?? null,
       };
     });
     // P5: o balão de quem moveu com pendência; U4: o aviso de quem moveu à mão. Só dos cartões que vão à tela.

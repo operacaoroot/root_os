@@ -1108,6 +1108,13 @@ export interface CartaoDoFunil {
    */
   tarefa?: TarefaNoCartaoDoFunil | null;
   tarefasAbertas?: number;
+  /**
+   * Produção 22B (I5), para o formato Lista: o valor da ficha (centavos), desde
+   * quando o lead está na etapa e a reunião marcada. Leitura da ficha, sem conta nova.
+   */
+  valorCentavos?: number | null;
+  etapaDesde?: string | null;
+  reuniaoEm?: string | null;
 }
 
 /** O fechamento (tela 10): as cinco escritas com chave. */

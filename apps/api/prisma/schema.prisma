@@ -187,6 +187,8 @@ model Org {
   /// Os arquivos do cliente e os anexos das tarefas (rodada dos agentes, lane A4).
   arquivosDoCliente     ArquivoDoCliente[]
   workAnexos            WorkAnexo[]
+  /// Produção 22B (I5): a proposta do serviço de propostas vinculada a um lead.
+  propostasDosLeads     PropostaDoLead[]
 
   // Fatia 3.6 — RF-G-05 (bloco no fim do arquivo). Só o outro lado da relação
   // mora aqui: é o que o Prisma exige, e nada além disso.
@@ -460,6 +462,8 @@ model Lead {
   versoesDaSala     SalaVersao[]
   // Adendo de 21/10/2026: as tarefas do comercial ligadas ao lead.
   tarefas           WorkTask[] @relation("TarefasDoLead")
+  // Produção 22B (I5): as propostas do serviço de propostas vinculadas ao lead.
+  propostasVinculadas PropostaDoLead[] @relation("PropostasDoLead")
 
   @@index([orgId, enteredAt])
   @@index([orgId, campaignId])
@@ -2518,6 +2522,27 @@ model Pendencia {
   @@index([orgId, estado])
   @@index([orgId, paraUsuarioId, estado])
   @@index([textoExpiraEm])
+}
+
+/// Produção 22B (I5): a proposta do serviço de propostas (as antigas da ROOT, que
+/// moram fora do OS) vinculada a um lead da empresa. Uma linha por proposta e
+/// empresa: vincular de novo ao mesmo lead não muda nada, a outro lead é 409.
+/// Raiz da empresa (RLS FORCE, grupo padrão); o lead pelo par (id, orgId).
+model PropostaDoLead {
+  id           String   @id @default(uuid())
+  orgId        String
+  org          Org      @relation(fields: [orgId], references: [id])
+  /// `servico:<cliente>/<chave>` (CHECK no banco).
+  proposta     String
+  leadId       String
+  lead         Lead     @relation("PropostasDoLead", fields: [leadId, orgId], references: [id, orgId], onDelete: Restrict, onUpdate: Restrict)
+  /// `vinculada` (a pessoa escolheu o lead) ou `criada` (o lead nasceu da proposta).
+  como         String
+  vinculadoPor String?
+  criadoEm     DateTime @default(now())
+
+  @@unique([orgId, proposta])
+  @@index([orgId, leadId])
 }
 
 model AtaSugestao {
