@@ -15,6 +15,7 @@ import {
 } from '../src/auth/jwt-auth.guard';
 import { contextoAtual } from '../src/common/contexto-execucao';
 import type { PrismaService } from '../src/prisma/prisma.service';
+import { comTenantNaSessao } from '../src/prisma/sessao-de-banco';
 import { exigirBancoDescartavel } from './banco-de-teste';
 
 /*
@@ -156,5 +157,32 @@ describe.skipIf(!URL)('o guarda contra o banco de verdade', { timeout: 30_000 },
     await prisma.user.update({ where: { id: USUARIO }, data: { isActive: false } });
     esquecerUsuarioAtivo(ORG, USUARIO);
     await expect(guarda.canActivate(contextoCom(sessao(USUARIO, ORG)).ctx)).rejects.toThrow(FRASE_DO_USUARIO_DESATIVADO);
+    await prisma.user.update({ where: { id: USUARIO }, data: { isActive: true } });
   });
+
+  /*
+   * Com o PAPEL RESTRITO e o isolamento por linha (RLS_NO_TESTE=1, banco `_rls`
+   * e `TENANT_DATABASE_URL`): a consulta do guarda roda na empresa do token e
+   * acha o usuário; um token com a empresa trocada não enxerga o usuário de
+   * outra empresa e é recusado.
+   */
+  it.skipIf(!(process.env.RLS_NO_TESTE === '1' && process.env.TENANT_DATABASE_URL))(
+    'sob o papel restrito: a releitura acha o usuário na empresa do token, e não em outra',
+    async () => {
+      const restrito = comTenantNaSessao(new PrismaClient({ datasourceUrl: process.env.TENANT_DATABASE_URL }), { modo: 'impor' });
+      try {
+        esquecerUsuarioAtivo();
+        const guarda = new JwtAuthGuard(jwt, restrito as unknown as PrismaService);
+        await expect(guarda.canActivate(contextoCom(sessao(USUARIO, ORG)).ctx)).resolves.toBe(true);
+        const OUTRA = (await prisma.org.create({ data: { name: `Outra ${MARCA}`, slug: `sessao-outra-${MARCA}` } })).id;
+        try {
+          await expect(guarda.canActivate(contextoCom(sessao(USUARIO, OUTRA)).ctx)).rejects.toThrow(FRASE_DO_USUARIO_DESATIVADO);
+        } finally {
+          await prisma.org.deleteMany({ where: { id: OUTRA } });
+        }
+      } finally {
+        await restrito.$disconnect();
+      }
+    },
+  );
 });
