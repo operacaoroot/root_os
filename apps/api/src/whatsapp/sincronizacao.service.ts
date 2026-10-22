@@ -26,8 +26,9 @@ import { lerChatDaEvolution, lerGrupoDaEvolution, lerRegistroDaEvolution, type C
  *      do GRUPO acompanha o assunto (grupo é renomeado); o do 1:1 só entra
  *      quando a conversa ainda não tem nome;
  *   2. `mensagens` (`chat/findMessages`) das conversas com novidade (a última
- *      mensagem que a Evolution conhece é mais nova que a nossa, ou a conversa
- *      nunca foi sincronizada), a mais recente primeiro, até `TETO_DE_CONVERSAS`
+ *      mensagem que a Evolution conhece é mais nova que a nossa, a conversa
+ *      nunca foi sincronizada, ou a Evolution não diz a última e a conversa não
+ *      é conferida há `REVISITA_MS`), a mais recente primeiro, até `TETO_DE_CONVERSAS`
  *      conversas e `TETO_DE_MENSAGENS` mensagens por passagem; o resto fica para
  *      a próxima. Por conversa, até `TETO_DE_PAGINAS` páginas, e para de
  *      paginar quando a página só traz o que já estava gravado;
@@ -65,6 +66,8 @@ export const TETO_DE_MENSAGENS = 1500;
 export const TETO_DE_PAGINAS = 3;
 /** Mensagens por página pedida à Evolution. */
 export const POR_PAGINA = 50;
+/** Conversa cujo chat não diz a última mensagem é conferida de novo depois disto. */
+export const REVISITA_MS = 30 * 60_000;
 
 export const RESUMO_FORA_DA_CASA = 'A sincronização do WhatsApp só roda na empresa da casa: nada foi lido.';
 
@@ -199,8 +202,11 @@ export class SincronizacaoDoWhatsappService implements OnModuleInit {
           tocadas.add(conversa.id);
         }
         if (conversa.criada) tocadas.add(conversa.id);
-        // Tem novidade? A última da Evolution é mais nova que a nossa, ou nunca sincronizou.
-        const novidade = !antes.sincronizadaEm || (!!chat.ultimaEm && (!antes.ultimaMensagemEm || chat.ultimaEm > antes.ultimaMensagemEm));
+        // Tem novidade? Nunca sincronizou; ou a última da Evolution é mais nova que a nossa; ou a
+        // Evolution não diz quando foi a última e a conversa não é conferida há `REVISITA_MS`.
+        const novidade =
+          !antes.sincronizadaEm ||
+          (chat.ultimaEm ? !antes.ultimaMensagemEm || chat.ultimaEm > antes.ultimaMensagemEm : agora.getTime() - antes.sincronizadaEm.getTime() >= REVISITA_MS);
         if (novidade) {
           candidatas.push({
             id: conversa.id,
@@ -225,6 +231,8 @@ export class SincronizacaoDoWhatsappService implements OnModuleInit {
       if (r.completa) {
         await this.prisma.whatsAppConversa.update({ where: { id: c.id }, data: { sincronizadaEm: agora } });
       }
+      // A Evolution não devolveu as mensagens: as outras conversas ficam para a próxima passagem.
+      if (r.falhou) break;
     }
 
     // 3. O vínculo (lane C) de cada conversa tocada.
@@ -249,7 +257,7 @@ export class SincronizacaoDoWhatsappService implements OnModuleInit {
     c: { id: string; chatJid: string; lidJid: string | null; antes: { sincronizada: Date | null } },
     agora: Date,
     conta: Contagem,
-  ): Promise<{ tocou: boolean; completa: boolean }> {
+  ): Promise<{ tocou: boolean; completa: boolean; falhou?: boolean }> {
     const leitura = this.leitura!;
     let tocou = false;
     const jids = [c.chatJid, ...(c.lidJid && c.lidJid !== c.chatJid ? [c.lidJid] : [])];
@@ -262,7 +270,7 @@ export class SincronizacaoDoWhatsappService implements OnModuleInit {
         } catch (e) {
           conta.falhas++;
           this.log.warn(`empresa ${orgId}: a Evolution não devolveu as mensagens de uma conversa (${(e as Error).name})`);
-          return { tocou, completa: false };
+          return { tocou, completa: false, falhou: true };
         }
         let novasNaPagina = 0;
         for (const reg of lote.registros) {
