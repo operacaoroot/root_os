@@ -1,5 +1,7 @@
 import { z } from 'zod';
 
+import type { WhatsappDoVinculo } from './whatsapp-caixa.js';
+
 /*
  * FICHA DO CLIENTE (18/10/2026). A ficha é um cartão do Trabalho visto como
  * cliente: os campos da lista viram o cadastro, a etapa vira a posição no
@@ -286,3 +288,30 @@ export interface QuadroDaLista {
     proximaTarefa: { titulo: string; prazo: string | null; atrasada: boolean } | null;
   }[];
 }
+
+/*
+ * O WHATSAPP NA FICHA E NO PAINEL DO LEAD (produção 22C, W3). As conversas
+ * ligadas ao lead ou ao cliente, com o telefone gravado nele (o que casa a
+ * conversa 1:1 sozinha). Editar o telefone e pôr o número de uma conversa num
+ * lead são atos de gente, auditados (`/whatsapp/vinculos`).
+ */
+export interface WhatsappDaFicha extends WhatsappDoVinculo {
+  /** O telefone gravado no lead (`Lead.phone`) ou no cliente (`Partner.phone`), como está. */
+  telefone: string | null;
+  /** A pessoa tem `leads.editar` (editar o telefone, vincular)? */
+  podeEditar: boolean;
+}
+
+/** Editar o telefone do lead ou do cliente: o número com DDD (ou vazio/nulo para tirar). */
+export const DefinirTelefoneSchema = z.object({ telefone: z.string().max(40).nullable() }).strict();
+export type DefinirTelefone = z.infer<typeof DefinirTelefoneSchema>;
+
+/** "Este número não está em nenhum lead; pôr no lead X?" */
+export const TelefoneNoLeadSchema = z.object({ leadId: z.string().min(1).max(64), substituir: z.boolean().optional() }).strict();
+export type TelefoneNoLead = z.infer<typeof TelefoneNoLeadSchema>;
+
+/** Marcar ou tirar a conversa da equipe. */
+export const MarcarEquipeSchema = z.object({ equipe: z.boolean() }).strict();
+
+/** O código (`error`) da recusa "o lead já tem outro telefone": a tela pergunta e reenvia com `substituir`. */
+export const CODIGO_LEAD_COM_OUTRO_TELEFONE = 'lead_com_outro_telefone';

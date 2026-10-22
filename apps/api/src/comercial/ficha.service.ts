@@ -764,7 +764,8 @@ export class FichaService {
         cobranca: cobranca?.externoId ?? null,
         implantacao: card ? { cardId: card.id, listId: card.listId, etapa: card.status.name, trilhoId: ficha.trilhoId ?? null } : null,
       },
-      fio: linhasDoFio(eventos, lead.enteredAt),
+      // Produção 22C (W3): o WhatsApp de gente das conversas ligadas ao lead entra no fio, sem duplicar o do comercial.
+      fio: this.fio?.fioDoLead ? await this.fio.fioDoLead(orgId, leadId, eventos, lead.enteredAt) : linhasDoFio(eventos, lead.enteredAt),
       balao,
       pasta: { partnerId: parceiro?.id ?? null, url: parceiro?.pastaDriveUrl ?? null, erro: parceiro?.pastaDriveErro ?? null },
     };

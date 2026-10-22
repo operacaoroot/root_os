@@ -30,6 +30,7 @@ import { AbaSessao } from './AbaSessao';
 import { AbaDinheiro } from './AbaDinheiro';
 import { AbaDecisoes } from './AbaDecisoes';
 import { AbaSala } from './AbaSala';
+import { AbaWhatsapp } from './AbaWhatsapp';
 
 const FOCAVEIS = 'a[href], button:not([disabled]), input:not([disabled]):not([type="hidden"]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
 
@@ -169,7 +170,7 @@ export function LeadPainel({ estado }: { estado: EstadoDoPainel }) {
 
   const nome = f ? f.empresa ?? f.nome : 'Lead';
   const sala = celular.dados?.linkDaSala ?? null;
-  const whats = celular.dados ? `/whatsapp?conversa=${encodeURIComponent(leadId)}` : linkDoWhatsApp(f?.telefone);
+  const whats = celular.dados ? `/whatsapp/simulador?conversa=${encodeURIComponent(leadId)}` : linkDoWhatsApp(f?.telefone);
 
   return createPortal(
     <div data-painel-do-lead data-os-app className="fixed inset-0 z-[60]">
@@ -276,6 +277,7 @@ export function LeadPainel({ estado }: { estado: EstadoDoPainel }) {
             {aba === 'sessao' && <AbaSessao leadId={leadId} aoMudar={aoMudar} irParaDecisoes={() => irParaAba('decisoes')} />}
             {aba === 'dinheiro' && <AbaDinheiro leadId={leadId} ficha={f} aoMudar={aoMudar} />}
             {aba === 'sala' && <AbaSala leadId={leadId} aoMudar={aoMudar} />}
+            {aba === 'whatsapp' && <AbaWhatsapp leadId={leadId} ficha={f} aoMudar={aoMudar} />}
             {aba === 'decisoes' && (
               <AbaDecisoes
                 abertas={abertasDoLead}
