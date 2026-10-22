@@ -5,18 +5,12 @@ import { request as httpsRequest } from 'node:https';
 import { isIP } from 'node:net';
 import type { BrandbookColeta } from '@mktos/shared';
 import { conferirUrlDaMarca } from './brandbook-documento';
+import { enderecoDeDentro } from './endereco-de-dentro';
 
 const TETO = 1024 * 1024;
 const PRAZO = 10000;
-const publica = (ip: string): boolean => {
-  if (isIP(ip) !== 4) return false;
-  const [a, b, c] = ip.split('.').map(Number);
-  return !(a === 0 || a === 10 || a === 127 || a >= 224 ||
-    (a === 100 && b >= 64 && b <= 127) || (a === 169 && b === 254) ||
-    (a === 172 && b >= 16 && b <= 31) || (a === 192 && (b === 168 || b === 0)) ||
-    (a === 198 && (b === 18 || b === 19 || (b === 51 && c === 100))) ||
-    (a === 203 && b === 0 && c === 113));
-};
+// Só IPv4 e fora de toda faixa de dentro (a regra da casa, `endereco-de-dentro.ts`).
+const publica = (ip: string): boolean => isIP(ip) === 4 && !enderecoDeDentro(ip);
 async function resolver(host: string, prazo: number): Promise<string> {
   if (isIP(host)) {
     if (!publica(host)) throw new BadRequestException('O site deve usar um endereço IPv4 público.');

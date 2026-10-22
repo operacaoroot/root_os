@@ -19,7 +19,7 @@ import {
   type CredencialDaEvolutionParaGuardar,
   type EnvioPelaEvolution,
 } from '../gateway/canais/evolution.port';
-import { enderecoInterno } from './pagina-publica';
+import { enderecoDeDentro } from './endereco-de-dentro';
 import { EfeitosRegistry, type ContextoDoEfeito } from '../gateway/efeitos.registry';
 import { ConectoresConfiguradosRegistry } from '../gateway/conectores-configurados.registry';
 import { TransporteDeCanalRegistry } from '../gateway/canais/transporte.registry';
@@ -410,8 +410,11 @@ export class EvolutionService implements OnModuleInit {
 //   · link-local (169.254.x.x, fe80::, os metadados da nuvem) e loopback ficam
 //     fora para todo mundo, inclusive para a casa, mesmo atrás de um nome.
 //
-// Redirecionamento não é seguido (`redirect: 'error'`). Fica de fora a troca de
-// DNS entre a conferência e a conexão (rebinding), como em `pagina-publica.ts`.
+// Redirecionamento não é seguido (`redirect: 'error'`). A regra de "rede
+// interna" é a da casa inteira (`endereco-de-dentro.ts`, Produção 22, M4). Fica
+// de fora, AQUI, a troca de DNS entre a conferência e a conexão (rebinding): o
+// endereço é escrito por um admin da própria empresa, e não por alguém de fora
+// como o link da captura (`pagina-publica.ts`, que já conecta no IP conferido).
 //
 // O que a Evolution responde de erro NÃO vai para a tela nem para o log: só o
 // status. O corpo de erro do `sendText` traz o número do destino.
@@ -511,7 +514,7 @@ export function enderecosPermitidos(enderecos: readonly string[], daCasa: boolea
     } else if (x === '::' || x === '::1' || /^fe[89ab]/.test(x) || /^ff/.test(x)) {
       return false;
     }
-    return daCasa || !enderecoInterno(ip);
+    return daCasa || !enderecoDeDentro(ip);
   });
 }
 
