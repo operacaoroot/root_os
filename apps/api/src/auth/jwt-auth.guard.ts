@@ -2,9 +2,14 @@ import {
   CanActivate,
   ExecutionContext,
   Injectable,
+  Optional,
   UnauthorizedException,
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
+import { randomUUID } from 'node:crypto';
+
+import { comContexto } from '../common/contexto-execucao';
+import { PrismaService } from '../prisma/prisma.service';
 
 /*
  * O GUARDA DE SESSÃO — e por que conferir a assinatura não bastava.
@@ -80,9 +85,64 @@ export function ehTokenDeSessao(
     typeof claims.orgId === 'string' && claims.orgId.length > 0;
 }
 
+/*
+ * O USUÁRIO AINDA ESTÁ ATIVO? (Produção 22, M4)
+ *
+ * A sessão vale oito horas, e até aqui o guarda só conferia a assinatura e o
+ * `typ`. Desativar alguém na tela não tirava dele a sessão que já estava no
+ * navegador: o token seguia abrindo toda rota até vencer. O caso concreto foi a
+ * conta de máquina `ia-acao@`, desativada na rodada dos agentes com tokens
+ * ainda vivos.
+ *
+ * Agora o guarda relê `isActive` no banco, com um cache de 60 s por usuário no
+ * processo para não consultar o banco a cada pedido. O cache guarda as três
+ * respostas: ativo, inativo e inexistente (o `sub` que não existe na empresa do
+ * token). As duas últimas recusam com a mesma frase, de propósito: quem tem um
+ * token de alguém apagado não precisa aprender se a conta existe.
+ *
+ * A consulta roda DENTRO da empresa do token (`comContexto` com o `orgId` da
+ * sessão), como o `AcessoAtualGuard` da memória: com o isolamento por linha
+ * ligado, o usuário só enxerga a própria empresa, e é exatamente essa a
+ * pergunta. Não é caminho de plataforma (a empresa já está no token), então não
+ * entra na lista que o arranque compara (`CoberturaDePlataformaIncompletaError`).
+ *
+ * Usuário ativo segue igual: nenhuma sessão válida cai por causa disto. O que
+ * muda é o prazo de quem foi desativado: de até oito horas para até 60 s.
+ */
+export const PRAZO_DO_CACHE_DE_ATIVO_MS = 60_000;
+
+export const FRASE_DO_USUARIO_DESATIVADO = 'Sessão encerrada: este usuário foi desativado. Fale com quem administra a empresa.';
+
+export type EstadoDoUsuario = 'ativo' | 'inativo' | 'inexistente';
+
+/** O cache do processo: um por API, partilhado por toda instância do guarda. */
+const cacheDeAtivo = new Map<string, { estado: EstadoDoUsuario; ate: number }>();
+
+/** Esquece o que o cache sabe (de um usuário, ou de todos). A suíte usa; a desativação pode usar. */
+export function esquecerUsuarioAtivo(orgId?: string, userId?: string): void {
+  if (orgId && userId) cacheDeAtivo.delete(`${orgId}|${userId}`);
+  else cacheDeAtivo.clear();
+}
+
 @Injectable()
 export class JwtAuthGuard implements CanActivate {
-  constructor(private readonly jwt: JwtService) {}
+  /** O relógio do cache. Só a suíte troca, para provar o prazo de 60 s sem esperar. */
+  agora: () => number = () => Date.now();
+
+  constructor(
+    private readonly jwt: JwtService,
+    /*
+     * `@Optional()` só porque várias suítes montam o guarda à mão com um
+     * argumento (`new JwtAuthGuard(jwt)`). Em produção o `PrismaModule` é
+     * global e o banco sempre chega; fora de teste, guarda sem banco não sobe
+     * (ver abaixo), para a releitura nunca sumir em silêncio.
+     */
+    @Optional() private readonly prisma?: PrismaService,
+  ) {
+    if (!prisma && process.env.NODE_ENV !== 'test') {
+      throw new Error('O guarda de sessão precisa do banco para reler se o usuário está ativo (Produção 22, M4).');
+    }
+  }
 
   async canActivate(ctx: ExecutionContext): Promise<boolean> {
     const req = ctx.switchToHttp().getRequest();
@@ -105,7 +165,29 @@ export class JwtAuthGuard implements CanActivate {
      */
     if (!ehTokenDeSessao(claims)) throw new UnauthorizedException('Token inválido');
 
+    if (this.prisma) {
+      const estado = await this.estadoDoUsuario(claims.orgId ?? '', claims.sub ?? '');
+      if (estado !== 'ativo') throw new UnauthorizedException(FRASE_DO_USUARIO_DESATIVADO);
+    }
+
     req.user = claims;
     return true;
+  }
+
+  /** Ativo, inativo ou inexistente, pelo cache de 60 s ou pelo banco. */
+  async estadoDoUsuario(orgId: string, userId: string): Promise<EstadoDoUsuario> {
+    if (!orgId || !userId || !this.prisma) return 'inexistente';
+    const chave = `${orgId}|${userId}`;
+    const agora = this.agora();
+    const guardado = cacheDeAtivo.get(chave);
+    if (guardado && guardado.ate > agora) return guardado.estado;
+    const prisma = this.prisma;
+    const usuario = await comContexto(
+      { orgId, actorType: 'user', actorId: userId, correlationId: randomUUID(), origem: 'http' },
+      async () => await prisma.user.findFirst({ where: { id: userId, orgId }, select: { isActive: true } }),
+    );
+    const estado: EstadoDoUsuario = !usuario ? 'inexistente' : usuario.isActive ? 'ativo' : 'inativo';
+    cacheDeAtivo.set(chave, { estado, ate: agora + PRAZO_DO_CACHE_DE_ATIVO_MS });
+    return estado;
   }
 }
