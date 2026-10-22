@@ -431,7 +431,7 @@ describe('a barra lateral', () => {
     render(<Topbar />);
     const h1 = screen.getByRole('heading', { level: 1 });
     expect(h1.textContent).toBe('WhatsApp');
-    expect(document.body.textContent).toContain('o celular do lead e o da mesa, no provedor configurado');
+    expect(document.body.textContent).toContain('as conversas do número da empresa com leads, clientes e equipe');
     expect(document.body.textContent?.toLowerCase()).not.toContain('simulador');
   });
 

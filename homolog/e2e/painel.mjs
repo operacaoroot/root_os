@@ -133,7 +133,7 @@ function telas(ids) {
     { nome: 'atas', url: `/trabalho/atas?ata=${encodeURIComponent(ids.ataRef)}`, pronto: '[data-testid="atas-tela"]' }, // P7 (21/10): no celular a ata aberta é tela própria, sem a lista
     { nome: 'aprovacoes', url: '/atendimento', pronto: '[data-testid="aprov-grupo-voce"]' },
     { nome: 'funil', url: '/comercial/funil', pronto: `[data-testid="funil-card-${ids.leadId}"]` },
-    { nome: 'whatsapp', url: '/whatsapp', pronto: '[data-testid="whats-lista"]' },
+    { nome: 'whatsapp', url: '/whatsapp/simulador', pronto: '[data-testid="whats-lista"]' },
   ];
 }
 

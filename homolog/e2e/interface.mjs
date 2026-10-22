@@ -317,11 +317,13 @@ async function main() {
     conferir(await area.count(), 'a área WhatsApp não está no menu');
     await area.click();
     await p.waitForURL(/\/whatsapp/);
-    await p.locator('[data-testid="whats-lista"]').waitFor();
+    // Produção 22C (W2): /whatsapp é a caixa de conversas; os celulares do comercial estão em /whatsapp/simulador.
+    await p.locator('[data-testid="caixa-lista"]').waitFor();
     conferir(!(await p.locator(`${MAIN} h1, ${MAIN} h2`).filter({ hasText: /simulador/i }).count()), 'o título ainda diz simulador');
     await foto(p, 'whatsapp-escuro');
     await p.goto(`${WEB}/comercial/simulador?x=1`, { waitUntil: 'networkidle' });
-    conferir(new URL(p.url()).pathname === '/whatsapp' && new URL(p.url()).searchParams.get('x') === '1', `o simulador foi para ${p.url()}`);
+    conferir(new URL(p.url()).pathname === '/whatsapp/simulador' && new URL(p.url()).searchParams.get('x') === '1', `o simulador foi para ${p.url()}`);
+    await p.locator('[data-testid="whats-lista"]').waitFor();
     const comercial = (await p.locator('#root-os-nav').innerText());
     conferir(!/Simulador de WhatsApp/.test(comercial), 'o Simulador ainda aparece no menu');
   });

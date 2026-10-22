@@ -23,7 +23,7 @@ export const SECOES = [
   { key: 'comercial', label: 'Motor Comercial', hint: 'leads e funil de vendas', tipo: 'principal' },
   // 20/10/2026 (rodada da interface, U1): o WhatsApp vira área própria, logo depois do
   // Comercial. Chave nova, somada; nenhuma chave antiga mudou.
-  { key: 'whatsapp', label: 'WhatsApp', hint: 'conversas do lead e da mesa', tipo: 'principal' },
+  { key: 'whatsapp', label: 'WhatsApp', hint: 'conversas com leads e clientes', tipo: 'principal' },
   { key: 'financeiro', label: 'Motor Financeiro', hint: 'ferramentas e contratos financeiros', tipo: 'principal' },
   { key: 'automacoes', label: 'Motor de IA', hint: 'agentes, rotinas, sessões e custos', tipo: 'principal' },
   { key: 'empresa', label: 'Contexto', hint: 'mapa, conhecimento e marca', tipo: 'principal' },
@@ -281,7 +281,10 @@ export const ROTAS_ABSORVIDAS: { href: string; destino: string; porque: string }
   { href: '/comercial/tarefas', destino: '/trabalho', porque: 'as tarefas do comercial estão no Trabalho (pasta Gestão) na versão final; a tela segue viva' },
   // 20/10/2026, rodada da interface (U1).
   { href: '/painel', destino: '/dia-a-dia', porque: 'a Visão geral é a entrada do dia; o painel antigo segue vivo pela rota' },
-  { href: '/comercial/simulador', destino: '/whatsapp', porque: 'o WhatsApp virou área própria em 20/10/2026; /comercial/simulador redireciona para /whatsapp com a mesma query' },
+  // Produção 22C (22/10/2026, W2): `/whatsapp` virou a caixa de conversas e os celulares do comercial foram para
+  // `/whatsapp/simulador`, dentro da mesma área. O destino aqui é o ITEM do menu que ficou com a função (a área
+  // WhatsApp); a página de `/comercial/simulador` redireciona para `/whatsapp/simulador` (`destinoDoSimulador`).
+  { href: '/comercial/simulador', destino: '/whatsapp', porque: 'o WhatsApp virou área própria em 20/10/2026 e, desde 22/10/2026, /whatsapp é a caixa; /comercial/simulador redireciona para /whatsapp/simulador (os celulares do comercial) com a mesma query' },
   // 20/10/2026 (noite, pedido do Rodrigo): o destino leva a query do chip, e o item é `/trabalho`.
   { href: '/trabalho/todas', destino: '/trabalho?pasta=todas', porque: 'o Todas é uma opção dentro de Tarefas, não uma subseção (20/10/2026); /trabalho/todas redireciona para o chip Todas com a mesma query' },
 ];

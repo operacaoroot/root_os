@@ -45,7 +45,7 @@ const SUBTITULOS: Record<string, string> = {
   leads: 'contatos comerciais',
   funil: 'etapas dos leads',
   'comercial-rodada': 'a rodada semanal do painel da operação',
-  whatsapp: 'o celular do lead e o da mesa, no provedor configurado',
+  whatsapp: 'as conversas do número da empresa com leads, clientes e equipe',
   campanhas: 'campanhas e gastos',
   pixels: 'eventos registrados pelo site',
   relatorios: 'relatórios disponíveis',

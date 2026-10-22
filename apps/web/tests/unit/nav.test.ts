@@ -768,6 +768,8 @@ describe('organização da navegação (ROOT-07 e versão final)', () => {
     expect(navPorSecao(comTodas).flatMap((g) => g.itens.map((i) => i.label)).filter((r) => /simulador/i.test(r))).toEqual([]);
     expect(porKey.get('comercial-simulador')).toMatchObject({ href: '/comercial/simulador', secao: 'comercial', oculto: true, permission: 'leads.ver', modulo: 'leads' });
     expect(ROTAS_ABSORVIDAS.find((r) => r.href === '/comercial/simulador')?.destino).toBe('/whatsapp');
+    // Produção 22C (W2): /whatsapp é a caixa; os celulares do comercial moram em /whatsapp/simulador.
+    expect(paginaExiste('/whatsapp/simulador')).toBe(true);
     expect(paginaExiste('/comercial/simulador')).toBe(true);
     // A rota /whatsapp deixou de redirecionar para /atendimento: a página é que responde.
     expect((ROTAS_ANTIGAS as { de: string }[]).some((r) => r.de === '/whatsapp')).toBe(false);
