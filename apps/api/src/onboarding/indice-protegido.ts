@@ -92,10 +92,14 @@ async function caminhosNegadosNoTx(tx: Prisma.TransactionClient, orgId: string, 
     { acessoRestrito: true, ...(pessoa ? { NOT: { leitores: { has: pessoa } } } : {}) }] }, select: { chave: true } });
   return n.map((v) => v.chave.startsWith('vault:') ? v.chave.slice(6) : v.chave);
 }
-export async function lerNativasNoTx(tx: Prisma.TransactionClient, orgId: string, pessoa: string | null): Promise<LinhaDoIndice[]> {
+export async function lerNativasNoTx(tx: Prisma.TransactionClient, orgId: string, pessoa: string | null,
+  /** Produção 22B (I6): só as notas destas pastas (a Equipe lê duas), com as MESMAS regras de acesso. */
+  filtro?: { pastas: readonly string[] }): Promise<LinhaDoIndice[]> {
   const negadas = await caminhosNegadosNoTx(tx, orgId, pessoa);
+  const pastas = filtro ? filtro.pastas.flatMap((p) => [`${p}/%`, `%/${p}/%`]) : null;
+  const naPasta = pastas ? Prisma.sql`AND kn.path LIKE ANY(${pastas}::text[])` : Prisma.empty;
   const rows = await tx.$queryRaw<Array<KnowledgeNote & { comVetor: boolean }>>`SELECT ${Prisma.raw(COLUNAS)} FROM "KnowledgeNote" kn
-    WHERE kn."orgId"=${orgId} AND ${Prisma.raw(NATIVA)} AND NOT(kn.path=ANY(${negadas}::text[])) ORDER BY kn.id FOR SHARE OF kn`;
+    WHERE kn."orgId"=${orgId} AND ${Prisma.raw(NATIVA)} AND NOT(kn.path=ANY(${negadas}::text[])) ${naPasta} ORDER BY kn.id FOR SHARE OF kn`;
   return rows.map((r) => ({ ...r, fonteCanonica: null }));
 }
 export async function lerPopulacaoDoIndiceNoTx(tx: Prisma.TransactionClient, orgId: string, i: IdentidadeIndice): Promise<LinhaDoIndice[]> {

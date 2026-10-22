@@ -2,12 +2,14 @@
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { User as UserIcon } from 'lucide-react';
 import {
   ROTULO_DO_ESTADO,
   ROTULO_DO_MOTIVO,
   lerWhatsappBr,
+  rotuloDoAniversario,
+  type AtribuicoesDaPessoa,
   type EquipeDaEmpresa,
+  type FuncaoDoVault,
   type FuncaoNaEquipe,
   type MotivoForaDaEquipe,
   type PessoaNaEquipe,
@@ -15,6 +17,7 @@ import {
 import { apiGet, apiPut } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 import { KpiCard } from '@/components/KpiCard';
+import { AvatarDaPessoa } from '@/components/AvatarDaPessoa';
 
 /*
  * A EQUIPE (rodada dos agentes, 21/10/2026, A7) — `GET /organograma/equipe`
@@ -173,8 +176,78 @@ function Whatsapp({ p, aoSalvar }: { p: PessoaNaEquipe; aoSalvar: (id: string, n
   );
 }
 
+/** Uma função do vault, com o link da ficha no Contexto quando a nota existe na memória. */
+function FuncaoDoVaultNaTela({ f }: { f: FuncaoDoVault }) {
+  const extra = [f.estado, f.agentes].filter(Boolean).join(' · ');
+  return (
+    <li className="py-0.5 text-[12px] text-text">
+      {f.notaId ? (
+        <Link href={`/contexto?nota=${encodeURIComponent(f.notaId)}`} className="underline decoration-border underline-offset-2 hover:text-brand">
+          {f.nome}
+        </Link>
+      ) : (
+        <span>{f.nome}</span>
+      )}
+      {extra && <span className="ml-1 font-os-mono text-[9px] text-dim">{extra}</span>}
+    </li>
+  );
+}
+
+/*
+ * O QUE A MEMÓRIA DA ROOT DIZ DA PESSOA (produção 22B, I6): só leitura, do
+ * vault (sócios e papéis, a nota da pessoa, a matriz e as fichas). Nada aqui se
+ * edita nesta tela: a fonte é a nota.
+ */
+function DoVault({ a, podeEditarPerfil, pessoaId }: { a: AtribuicoesDaPessoa; podeEditarPerfil: boolean; pessoaId: string }) {
+  return (
+    <div className="mt-3 rounded-root border border-border bg-bg/40 p-2.5" data-testid={`vault-${pessoaId}`}>
+      <h3 className="font-os-mono text-[9.5px] uppercase tracking-[0.14em] text-muted">Na memória da Root</h3>
+      {a.origemDoNome === 'a_decidir' ? (
+        <p className="mt-1 font-os-mono text-[9.5px] leading-[1.6] text-warn">
+          Nome no vault [a decidir].{' '}
+          {podeEditarPerfil && (
+            <Link href={`/perfil?pessoa=${encodeURIComponent(pessoaId)}`} className="underline">preencher no perfil</Link>
+          )}
+        </p>
+      ) : (
+        <p className="mt-1 font-os-mono text-[9px] text-dim">
+          como {a.nomeNoVault}
+          {a.origemDoNome === 'sugerido' && ' (sugerido pelo primeiro nome; confirme no perfil)'}
+          {a.nota?.notaId && (
+            <>
+              {' · '}
+              <Link href={`/contexto?nota=${encodeURIComponent(a.nota.notaId)}`} className="underline hover:text-brand">nota</Link>
+            </>
+          )}
+        </p>
+      )}
+      {a.conduz && (
+        <p className="mt-1.5 text-[12px] text-text">
+          <span className="font-os-mono text-[9.5px] uppercase tracking-[0.12em] text-muted">Conduz </span>
+          {a.conduz}
+        </p>
+      )}
+      {a.dona.length > 0 && (
+        <div className="mt-1.5">
+          <p className="font-os-mono text-[9.5px] uppercase tracking-[0.12em] text-muted">Dona das funções</p>
+          <ul>{a.dona.map((f) => <FuncaoDoVaultNaTela key={f.nome} f={f} />)}</ul>
+        </div>
+      )}
+      {a.substituta.length > 0 && (
+        <div className="mt-1.5">
+          <p className="font-os-mono text-[9.5px] uppercase tracking-[0.12em] text-muted">Substituta em</p>
+          <ul>{a.substituta.map((f) => <FuncaoDoVaultNaTela key={f.nome} f={f} />)}</ul>
+        </div>
+      )}
+      {a.origemDoNome !== 'a_decidir' && !a.conduz && !a.dona.length && !a.substituta.length && (
+        <p className="mt-1 font-os-mono text-[9.5px] text-dim">nenhuma função com este nome no vault</p>
+      )}
+    </div>
+  );
+}
+
 export default function EquipePage() {
-  const { token, ready } = useAuth();
+  const { token, ready, user, can } = useAuth();
   const [data, setData] = useState<EquipeDaEmpresa | null>(null);
   const [erro, setErro] = useState<string | null>(null);
 
@@ -225,6 +298,12 @@ export default function EquipePage() {
 
       {!data && !erro && <p className="text-sm text-muted">Carregando…</p>}
 
+      {data && data.memoria && !data.memoria.disponivel && (
+        <p role="status" data-testid="memoria-indisponivel" className="rounded-root border border-border bg-surface p-3 text-sm text-muted">
+          {data.memoria.frase ?? 'Memória da Root indisponível.'} As atribuições de cada pessoa aparecem aqui quando o vault estiver indexado.
+        </p>
+      )}
+
       {data && data.pessoas.length === 0 && (
         <p className="rounded-root border border-border bg-surface p-4 text-sm text-muted">
           Nenhuma pessoa ativa na equipe ainda.
@@ -235,15 +314,36 @@ export default function EquipePage() {
         {data?.pessoas.map((p) => (
           <section key={p.id} aria-label={p.nome} className="rounded-root border border-border bg-surface p-4">
             <header className="border-b border-border pb-2">
-              <div className="flex items-center gap-2">
-                <UserIcon size={13} className="flex-none text-muted" />
-                <h2 className="text-[14px] font-medium text-text">{p.nome}</h2>
+              <div className="flex items-center gap-2.5">
+                <AvatarDaPessoa nome={p.nome} fotoUrl={p.fotoUrl ?? null} tamanho="g" />
+                <div className="min-w-0">
+                  <h2 className="text-[14px] font-medium text-text">{p.nome}</h2>
+                  {(p.cargo || p.aniversario) && (
+                    <p className="font-os-mono text-[9.5px] text-muted">
+                      {p.cargo}
+                      {p.cargo && p.aniversario && ' · '}
+                      {p.aniversario && <span data-testid={`aniversario-${p.id}`}>aniversário {rotuloDoAniversario(p.aniversario)}</span>}
+                    </p>
+                  )}
+                </div>
+                {(user?.id === p.id || can('admin.usuarios')) && (
+                  <Link
+                    href={user?.id === p.id ? '/perfil' : `/perfil?pessoa=${encodeURIComponent(p.id)}`}
+                    className="ml-auto font-os-mono text-[9px] uppercase tracking-[0.12em] text-muted hover:text-text"
+                  >
+                    perfil
+                  </Link>
+                )}
               </div>
               <p className="font-os-mono text-[9px] text-dim">
                 {p.papeis.join(' · ') || 'sem papel'} · {p.areas.reduce((s, a) => s + a.funcoes.length, 0)} função(ões)
               </p>
               <Whatsapp p={p} aoSalvar={salvarWhatsapp} />
             </header>
+
+            {data.memoria?.disponivel && p.atribuicoes && (
+              <DoVault a={p.atribuicoes} pessoaId={p.id} podeEditarPerfil={user?.id === p.id || can('admin.usuarios')} />
+            )}
 
             {p.areas.length === 0 && (
               <p className="mt-3 font-os-mono text-[9.5px] text-dim">nenhum agente, rotina ou automação</p>

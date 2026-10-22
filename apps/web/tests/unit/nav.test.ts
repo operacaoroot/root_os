@@ -272,6 +272,8 @@ const MENU_FINAL: LinhaDoMenu[] = [
   ['rastro', 'Registro de ações', '/rastro', 'auditoria.ver', 'registros', null, null, false],
   ['linha-do-tempo', 'Atividade', '/linha-do-tempo', 'auditoria.ver', 'registros', null, 'rastro', false],
   ['config', 'Configurações da conta', '/config', 'dashboard.ver', 'conta', null, null, false],
+  // Produção 22B (I6): o perfil, oculto (a entrada é a engrenagem do topo), dono da rota.
+  ['perfil', 'Perfil', '/perfil', 'dashboard.ver', 'conta', null, null, true],
 ];
 
 /** O que o enxugamento ocultou, e para onde a função foi (ROTAS_ABSORVIDAS). */
@@ -290,6 +292,8 @@ const OCULTOS_E_DESTINO: Record<string, string | null> = {
   'trabalho-todas': '/trabalho?pasta=todas',
   // Sai da barra e da busca por decisão de marca; não tem destino, a rota segue com dono.
   assinatura: null,
+  // Produção 22B (I6): a entrada é a engrenagem do topo; sem destino, a rota segue com dono.
+  perfil: null,
 };
 
 const RAIZ_DO_WEB = join(__dirname, '..', '..');
@@ -822,7 +826,8 @@ describe('organização da navegação (ROOT-07 e versão final)', () => {
     expect(trabalho.itens.map((i) => i.label)).toEqual(['Tarefas', 'Implantação de clientes', 'Atas']);
     // As contagens do menu depois da noite de 20/10/2026.
     expect(NAV.filter((n) => !n.oculto)).toHaveLength(46);
-    expect(NAV.filter((n) => n.oculto)).toHaveLength(11);
+    // 12 desde a produção 22B (I6): o Perfil entrou oculto (a entrada é a engrenagem do topo).
+    expect(NAV.filter((n) => n.oculto)).toHaveLength(12);
     expect(ROTAS_ABSORVIDAS).toHaveLength(12);
   });
 

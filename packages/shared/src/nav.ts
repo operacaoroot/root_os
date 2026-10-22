@@ -245,6 +245,9 @@ export const NAV: NavItem[] = [
   { key: 'linha-do-tempo', label: 'Atividade', href: '/linha-do-tempo', icon: 'History', permission: 'auditoria.ver', secao: 'registros', pai: 'rastro' },
 
   { key: 'config', label: 'Configurações da conta', href: '/config', icon: 'Settings', permission: 'dashboard.ver', secao: 'conta' },
+  // Produção 22B (I6): o perfil da pessoa (foto, cadastro, nome no vault). A entrada é a
+  // engrenagem do topo; o item fica oculto e dono da rota (título da Topbar, módulo).
+  { key: 'perfil', label: 'Perfil', href: '/perfil', icon: 'UserCircle', permission: 'dashboard.ver', secao: 'conta', oculto: true },
 ];
 
 // Páginas que saíram do menu e CONTINUAM VIVAS. Não são rotas mortas: a demo do

@@ -25,6 +25,7 @@ import { WorkModule } from './work/work.module';
 import { LlmModule } from './llm/llm.module';
 import { ReportsModule } from './reports/reports.module';
 import { UsersModule } from './users/users.module';
+import { PerfilModule } from './perfil/perfil.module';
 import { AppConfigModule } from './config/config.module';
 import { IntegrationsModule } from './integrations/integrations.module';
 import { ContentModule } from './content/content.module';
@@ -129,6 +130,7 @@ import { ImplantacaoModule } from './implantacao/implantacao.module';
     LlmModule,
     ReportsModule,
     UsersModule,
+    PerfilModule,
     AppConfigModule,
     IntegrationsModule,
     ContentModule,

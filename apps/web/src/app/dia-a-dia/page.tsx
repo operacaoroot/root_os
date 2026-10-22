@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { useAuth } from '@/lib/auth';
 import { VisaoGeralDasTarefas } from '@/components/tarefas/VisaoGeralDasTarefas';
+import { AniversariosDoDia } from '@/components/AniversariosDoDia';
 
 /*
  * DIA A DIA › VISÃO GERAL (versão final, 19/10/2026): a primeira aba e a entrada
@@ -18,6 +19,8 @@ export default function VisaoGeralPage() {
         <p className="text-sm text-muted">As tarefas de todas as pastas, num dash só. Cada número abre a lista no Trabalho.</p>
         <Link href="/trabalho?pasta=todas&visao=lista" className="text-sm text-muted underline hover:text-brand">todas as tarefas no Trabalho</Link>
       </div>
+      {/* Produção 22B (I6): o aniversário do dia, junto do dash (quem não vê as tarefas não carrega nada aqui). */}
+      {can('tarefas.ver') && <AniversariosDoDia />}
       {can('tarefas.ver') ? <VisaoGeralDasTarefas /> : <p className="text-muted">Sem acesso às tarefas.</p>}
     </div>
   );

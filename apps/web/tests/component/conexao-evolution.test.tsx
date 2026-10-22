@@ -201,6 +201,8 @@ describe('a tela de Integrações', () => {
   it('mostra o cartão da Evolution com o conteúdo dentro, e todo cartão de WhatsApp da tela é da Evolution', async () => {
     render(<IntegracoesPage />);
     const doComercial = await screen.findByRole('region', { name: 'WhatsApp do comercial (Evolution)' });
+    // Produção 22B (I6): o conteúdo próprio mora na gaveta "Configurar" do cartão.
+    await userEvent.click(within(doComercial).getByRole('button', { name: 'Configurar' }));
     expect(await within(doComercial).findByTestId('url-do-webhook-evolution')).toBeInTheDocument();
     expect(screen.getByRole('region', { name: 'WhatsApp (Evolution)' })).toBeInTheDocument();
     const deWhatsapp = screen.queryAllByRole('region').map((r) => r.getAttribute('aria-label') ?? '').filter((n) => /whatsapp/i.test(n));

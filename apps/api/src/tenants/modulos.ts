@@ -216,6 +216,8 @@ export const PREFIXOS_DA_ESPINHA: readonly string[] = [
   'organograma',
   // as pendências que agentes e rotinas deixam para gente (rodada dos agentes, 21/10/2026): a caixa lê
   'pendencias',
+  // o perfil da pessoa e os avatares da empresa (produção 22B, I6): cadastro de gente, não é módulo
+  'perfil',
   'policy',
   'roles',
   'rotinas',
