@@ -4,6 +4,11 @@ import { ProvedorIndisponivelError } from './whatsapp.port';
 /*
  * O PROVEDOR DA CLOUD API DA META — ESQUELETO, sem chamada e sem credencial.
  *
+ * FORA DO ARRANQUE desde a Produção 22 (M4): `WHATSAPP_PROVEDOR=meta` derruba a
+ * API com a frase de `RECUSA_DO_PROVEDOR_META` (`whatsapp.port.ts`), e nada
+ * instancia esta classe. O arquivo fica como o mapa do que falta para o dia em
+ * que a mesa decidir a Cloud API (K08-4).
+ *
  * A C08 recomenda a Cloud API para o 1:1 com o lead (proposta, follow-up,
  * assinatura) e deixa o custo por conversa para a mesa levantar e decidir
  * (K08-4). Até a decisão, este arquivo é o mapa do que falta: nenhum endereço é
