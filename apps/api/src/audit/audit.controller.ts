@@ -125,11 +125,14 @@ export class AuditController {
     @Query('limit') limit?: string,
     @Query('action') action?: string,
     @Query('actorType') actorType?: string,
+    // A Lixeira (produção 3, I2) liga "ver no Registro de ações" a UMA entidade (a tarefa, a lista, a pasta).
+    @Query('entidade') entidade?: string,
   ) {
     return this.svc.list(user.orgId, {
       limit: limit ? Number(limit) : undefined,
       action,
       actorType,
+      entityId: typeof entidade === 'string' && /^[0-9a-zA-Z-]{1,64}$/.test(entidade) ? entidade : undefined,
     });
   }
 }

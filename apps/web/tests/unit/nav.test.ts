@@ -222,6 +222,8 @@ const MENU_FINAL: LinhaDoMenu[] = [
   ['implantacao', 'Implantação de clientes', '/trabalho/implantacao', 'tarefas.ver', 'trabalho', 'trabalho', 'trabalho', false],
   ['onboarding', 'Bancada de onboarding', '/onboarding', 'tarefas.ver', 'trabalho', 'trabalho', 'trabalho', true],
   ['trabalho-atas', 'Atas', '/trabalho/atas', 'tarefas.ver', 'trabalho', 'trabalho', 'trabalho', false],
+  // 22/10/2026 (produção 3, I2): a Lixeira, oculta, aberta pela engrenagem do topo.
+  ['lixeira', 'Lixeira', '/lixeira', 'tarefas.editar', 'trabalho', 'trabalho', null, true],
   ['conteudo', 'Temas do ClickUp', '/conteudo', 'dashboard.ver', 'trabalho', 'conteudo', null, true],
   // Motor de Marketing: a forma da produção (Banco de ideias e Estratégia moram aqui, visíveis).
   ['marketing-ideias', 'Banco de ideias', '/marketing/ideias', 'pauta.ver', 'conteudo', 'pauta', null, false],
@@ -290,6 +292,8 @@ const OCULTOS_E_DESTINO: Record<string, string | null> = {
   'trabalho-todas': '/trabalho?pasta=todas',
   // Sai da barra e da busca por decisão de marca; não tem destino, a rota segue com dono.
   assinatura: null,
+  // A Lixeira (22/10/2026) abre pela engrenagem do topo: não é absorvida, a rota é dela.
+  lixeira: null,
 };
 
 const RAIZ_DO_WEB = join(__dirname, '..', '..');
@@ -822,7 +826,8 @@ describe('organização da navegação (ROOT-07 e versão final)', () => {
     expect(trabalho.itens.map((i) => i.label)).toEqual(['Tarefas', 'Implantação de clientes', 'Atas']);
     // As contagens do menu depois da noite de 20/10/2026.
     expect(NAV.filter((n) => !n.oculto)).toHaveLength(46);
-    expect(NAV.filter((n) => n.oculto)).toHaveLength(11);
+    // +1 oculto em 22/10/2026 (produção 3, I2): a Lixeira, aberta pela engrenagem do topo.
+    expect(NAV.filter((n) => n.oculto)).toHaveLength(12);
     expect(ROTAS_ABSORVIDAS).toHaveLength(12);
   });
 

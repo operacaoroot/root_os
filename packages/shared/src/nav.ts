@@ -174,6 +174,9 @@ export const NAV: NavItem[] = [
   // 18/10/2026 (rodada do painel P3): o banco de atas da operação, pendurado no Trabalho.
   // As atas do vault e as coladas na tela, e as sugestões de tarefa que cada uma rende.
   { key: 'trabalho-atas', label: 'Atas', href: '/trabalho/atas', icon: 'NotebookText', permission: 'tarefas.ver', secao: 'trabalho', modulo: 'trabalho', pai: 'trabalho' },
+  // 22/10/2026 (rodada de produção 3, I2): a Lixeira do Trabalho. Fora do menu de propósito:
+  // abre pela engrenagem do topo. O item é o dono da rota (módulo Trabalho, a permissão de apagar).
+  { key: 'lixeira', label: 'Lixeira', href: '/lixeira', icon: 'Trash2', permission: 'tarefas.editar', secao: 'trabalho', modulo: 'trabalho', oculto: true },
   { key: 'conteudo', label: 'Temas do ClickUp', href: '/conteudo', icon: 'FileText', permission: 'dashboard.ver', secao: 'trabalho', modulo: 'conteudo', oculto: true },
   // Fora do foco vale a forma da produção: Banco de ideias e Estratégia do mês moram
   // no Motor de Marketing (enxugamento.md). A nossa só os tirava do Trabalho.
