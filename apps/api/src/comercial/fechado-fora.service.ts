@@ -1,4 +1,3 @@
-import { createHash } from 'node:crypto';
 import type { Readable } from 'node:stream';
 
 import { BadRequestException, ConflictException, ForbiddenException, Inject, Injectable, NotFoundException, OnModuleInit, Optional, ServiceUnavailableException } from '@nestjs/common';
@@ -8,7 +7,6 @@ import {
   ClienteFechadoForaSchema,
   ehSaida,
   type ComercialEtapa,
-  FECHADO_FORA_MAX_BYTES,
   PROCEDENCIA_DO_FECHADO_FORA,
   type ClienteFechadoForaInput,
   type ClienteFechadoForaResposta,
@@ -20,10 +18,10 @@ import { QuemNaoAssinaRegistry, type QuemNaoAssina } from '../approvals/quem-nao
 import { leadIdDaEntrada } from '../leads/entrada-de-lead';
 import { LeadsService } from '../leads/leads.service';
 import { PrismaService } from '../prisma/prisma.service';
-import { StorageService } from '../storage/storage.service';
+import { ARMAZEM_DO_ANEXO, armazemDisponivel, conferirPdfRecebido, nomeDoPdf, sha256DoArquivo, type ArmazemDoAnexo, type ArquivoRecebido } from './anexo-do-contrato';
 import { hojeEmSP } from './dinheiro.service';
 import { eventoIdComercial, normalizarTelefone } from './eventos';
-import { chaveDoAnexo, camposDaDeclaracao, ehPdf, hashDaDeclaracao, payloadDaDeclaracao } from './fechado-fora';
+import { chaveDoAnexo, camposDaDeclaracao, hashDaDeclaracao, payloadDaDeclaracao } from './fechado-fora';
 import { CAP_FECHAMENTO, FechamentoService, chaveDoFechamento } from './fechamento.service';
 import { FichaService } from './ficha.service';
 import { FioService, ReacoesRegistry } from './fio.service';
@@ -59,12 +57,9 @@ import { FioService, ReacoesRegistry } from './fio.service';
  * diz isso. É o que põe o contrato em Contratos vivos e o card na implantação.
  */
 
-/** O armazém do PDF (o `StorageService`; a suíte troca por um dublê). */
-export interface ArmazemDoAnexo {
-  put(key: string, corpo: Buffer, contentType: string): Promise<void>;
-  get(key: string): Promise<{ stream: Readable; contentType: string; size: number }>;
-}
-export const ARMAZEM_DO_ANEXO = 'ARMAZEM_DO_ANEXO';
+// O armazém e a conferência do PDF moram em `anexo-do-contrato.ts` (produção 22, M2: o anexo do
+// contrato importado usa os mesmos); reexportados aqui para quem já importava deste arquivo.
+export { ARMAZEM_DO_ANEXO, type ArmazemDoAnexo, type ArquivoRecebido };
 
 /** Quem registra: gente da casa, com nome para a procedência. */
 export interface QuemRegistra {
@@ -72,14 +67,6 @@ export interface QuemRegistra {
   nome: string | null;
   papeis: readonly string[];
   permissions: string[];
-}
-
-/** O arquivo como o multer entrega. */
-export interface ArquivoRecebido {
-  buffer: Buffer;
-  originalname: string;
-  mimetype: string;
-  size: number;
 }
 
 const REGRA_DO_DONO = 'registrado à mão: dono é quem registrou o cliente fechado fora do sistema';
@@ -163,16 +150,14 @@ export class FechadoForaService implements OnModuleInit {
 
   async registrar(orgId: string, quem: QuemRegistra, input: ClienteFechadoForaInput, arquivo: ArquivoRecebido | undefined): Promise<ClienteFechadoForaResposta> {
     if (temPapelDeMaquina(quem.papeis)) throw new ForbiddenException('Conta de máquina não registra cliente fechado: quem declara é gente da casa.');
-    if (!arquivo || !arquivo.size) throw new BadRequestException('Anexe o contrato assinado em PDF.');
-    if (arquivo.size > FECHADO_FORA_MAX_BYTES) throw new BadRequestException('PDF acima de 10 MB.');
-    if (arquivo.mimetype !== 'application/pdf' || !ehPdf(arquivo.buffer)) throw new BadRequestException('O contrato assinado precisa ser um PDF.');
+    conferirPdfRecebido(arquivo);
     const armazem = this.armazemDisponivel();
     if (!armazem) throw new ServiceUnavailableException('O envio de arquivo está indisponível agora: o registro não foi feito.');
     const pessoa = await this.prisma.user.findFirst({ where: { id: quem.id, orgId, isActive: true }, select: { id: true, name: true } });
     if (!pessoa) throw new ForbiddenException('Só gente ativa da empresa registra cliente fechado.');
     const nome = pessoa.name || quem.nome;
 
-    const sha = createHash('sha256').update(arquivo.buffer).digest('hex');
+    const sha = sha256DoArquivo(arquivo.buffer);
     const campos = camposDaDeclaracao(input, sha);
     const hash = hashDaDeclaracao(campos);
     const telefone = normalizarTelefone(input.telefone);
@@ -205,7 +190,7 @@ export class FechadoForaService implements OnModuleInit {
 
     // 3. O PDF no storage e no fio.
     const chave = chaveDoAnexo(leadId, sha);
-    const nomeDoArquivo = arquivo.originalname.replace(/[^\p{L}\p{N}._ -]/gu, '_').slice(0, 120) || 'contrato.pdf';
+    const nomeDoArquivo = nomeDoPdf(arquivo.originalname);
     await armazem.put(chave, arquivo.buffer, 'application/pdf');
     await this.fio.registrar(orgId, leadId, 'contrato.anexado', sha, {
       nome: nomeDoArquivo,
@@ -270,14 +255,8 @@ export class FechadoForaService implements OnModuleInit {
   }
 
   private armazemDisponivel(): ArmazemDoAnexo | null {
-    if (this.armazem) return this.armazem;
-    try {
-      // Sem as chaves do S3 o serviço existe mas não grava: conta como indisponível, para o registro
-      // recusar ANTES de criar lead e ficha (na homologação sem MinIO o lead ficava pela metade).
-      const storage = this.moduleRef?.get(StorageService, { strict: false }) ?? null;
-      return storage && storage.configured ? storage : null;
-    } catch {
-      return null;
-    }
+    // Sem as chaves do S3 o serviço existe mas não grava: conta como indisponível, para o registro
+    // recusar ANTES de criar lead e ficha (na homologação sem MinIO o lead ficava pela metade).
+    return armazemDisponivel(this.armazem, this.moduleRef);
   }
 }

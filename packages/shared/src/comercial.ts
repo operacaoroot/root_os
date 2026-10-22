@@ -3,6 +3,7 @@ import { z } from 'zod';
 import type { SalaVersaoPublica } from './sala-versao.js';
 import type { TarefaNoCartaoDoFunil } from './comercial-tarefas.js';
 import type { PastaDoClienteNaFicha, ResumoDoVigia } from './comercial-agentes.js';
+import type { AnexoDoImportado, ParcelasDoImportado, ReguaDoImportado } from './comercial-contrato-importado.js';
 
 /*
  * O COCKPIT DO LEAD — o contrato do módulo comercial (12 e 13/10/2026).
@@ -419,6 +420,10 @@ export const COMERCIAL_EVENTOS = [
   // nenhum dos dois roda reação (nada sai para fora).
   'lead.importado',
   'contrato.importado',
+  // Rodada de produção 2 (22/10/2026, M2): no contrato importado, as parcelas lançadas à mão pela mesa
+  // (cada lançamento uma versão) e a régua de cobrança ligada por uma pessoa. Fato passado: sem reação.
+  'contrato.parcelas_lancadas',
+  'contrato.regua_ligada',
   'kickoff.marcado',
   'parcela.vence',
   'parcela.paga',
@@ -1174,6 +1179,13 @@ export interface ContratoImportadoNaTela {
   /** AAAA-MM-DD, quando o cartão tinha a data de fechamento. */
   fechadoEm: string | null;
   semDocumento: boolean;
+  /** Produção 22 (M2): o PDF anexado (o mais novo) e quantas versões ficaram antes dele no fio. */
+  anexo?: AnexoDoImportado | null;
+  anexosAnteriores?: number;
+  /** Produção 22 (M2): as parcelas lançadas à mão; nulo enquanto a mesa não lançou. */
+  parcelasManuais?: ParcelasDoImportado | null;
+  /** Produção 22 (M2): a régua de cobrança deste contrato (desligada por padrão). */
+  regua?: ReguaDoImportado;
 }
 
 /** A marca de toda escrita do importador do CRM antigo no fio, na auditoria e no RASTRO. */
