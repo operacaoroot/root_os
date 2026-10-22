@@ -9,7 +9,7 @@ import {
   nomeSemColisao,
   subirAteARaiz,
 } from '../src/google/drive-do-cliente';
-import { planoDaPadronizacao } from '../src/google/padronizar-evento';
+import { planoDaPadronizacao, planoDaRestauracao, tituloGuardado } from '../src/google/padronizar-evento';
 import { tipoMimeOuBinario, tipoMimeValido } from '../src/google/tipo-mime';
 
 /*
@@ -370,6 +370,61 @@ describe('agenda.evento.padronizar pelo conector (dublê de HTTP)', () => {
     const r = await google.padronizarEvento(ORG, { eventoId: 'ev4', tituloAtual: 'Reunião Online - Padaria Exemplo - Pedro', tituloNovo: 'Reunião Online - Padaria Exemplo - Pedro', adicionarMeet: true });
     expect(r.mudou).toBe(false);
     expect(pedidos.some((p) => p.metodo === 'PATCH')).toBe(false);
+  });
+});
+
+describe('agenda.evento.restaurar pelo conector (produção 22, dublê de HTTP)', () => {
+  const DA_AGENDA = { email: 'casa@exemplo.invalid', self: true };
+  const comeco = { dateTime: '2026-10-22T14:00:00-03:00' };
+
+  it('o efeito está inscrito pelo conector', () => {
+    expect(efeitos.donoDe('agenda.evento.restaurar')).toBe('GoogleService');
+  });
+
+  it('padronizar e depois restaurar devolve título e descrição de antes; o Meet fica; horário intacto', async () => {
+    eventos.evr1 = { summary: 'call com padaria', description: 'pauta: preços\nlinha 2', start: comeco, status: 'confirmed', organizer: DA_AGENDA };
+    await google.padronizarEvento(ORG, { eventoId: 'evr1', tituloAtual: 'call com padaria', tituloNovo: 'Reunião Online - Padaria Exemplo - Rodrigo', adicionarMeet: true });
+    expect(eventos.evr1.summary).toBe('Reunião Online - Padaria Exemplo - Rodrigo');
+    pedidos.length = 0;
+    const r = (await efeitos.executar(
+      'agenda.evento.restaurar',
+      { eventoId: 'evr1', tituloAtual: 'Reunião Online - Padaria Exemplo - Rodrigo', tituloOriginal: 'call com padaria' },
+      { orgId: ORG, actorId: 'u2' },
+    )) as { titulo: string };
+    expect(r.titulo).toBe('call com padaria');
+    const patch = pedidos.find((p) => p.metodo === 'PATCH')!;
+    expect(patch.url).toContain('sendUpdates=none');
+    expect(Object.keys(patch.corpo as object).sort()).toEqual(['description', 'summary']);
+    expect(eventos.evr1.summary).toBe('call com padaria');
+    expect(eventos.evr1.description).toBe('pauta: preços\nlinha 2');
+    expect(eventos.evr1.hangoutLink).toBeTruthy();
+    expect(eventos.evr1.start).toEqual(comeco);
+    expect(pedidos.some((p) => p.metodo === 'DELETE')).toBe(false);
+  });
+
+  it('recusa quando o título de agora ou a linha guardada não são os do pedido: nada é escrito', async () => {
+    eventos.evr2 = { summary: 'Reunião Online - Padaria Exemplo - Pedro', description: 'Título original: kickoff', organizer: DA_AGENDA };
+    await expect(
+      google.restaurarEvento(ORG, { eventoId: 'evr2', tituloAtual: 'outro título', tituloOriginal: 'kickoff' }),
+    ).rejects.toThrow(/título do evento mudou/);
+    await expect(
+      google.restaurarEvento(ORG, { eventoId: 'evr2', tituloAtual: 'Reunião Online - Padaria Exemplo - Pedro', tituloOriginal: 'outra coisa' }),
+    ).rejects.toThrow(/Título original" mudou/);
+    expect(pedidos.some((p) => p.metodo === 'PATCH')).toBe(false);
+    expect(eventos.evr2.summary).toBe('Reunião Online - Padaria Exemplo - Pedro');
+  });
+
+  it('recusa sem a linha guardada, em convite de outra agenda e em evento cancelado', () => {
+    const pedido = { tituloAtual: 'a', tituloOriginal: 'b' };
+    expect(planoDaRestauracao({ summary: 'a', description: 'qualquer', organizer: DA_AGENDA }, pedido)).toMatchObject({ tipo: 'recusa', motivo: expect.stringMatching(/não há o que restaurar/) });
+    expect(planoDaRestauracao({ summary: 'a', description: 'Título original: b', organizer: { email: 'x@exemplo.invalid' } }, pedido).tipo).toBe('recusa');
+    expect(planoDaRestauracao({ summary: 'a', description: 'Título original: b', organizer: DA_AGENDA, status: 'cancelled' }, pedido).tipo).toBe('recusa');
+  });
+
+  it('a linha "(sem título)" volta a título vazio; descrição só com a linha volta vazia', () => {
+    expect(tituloGuardado('Título original: (sem título)')).toEqual({ titulo: '', resto: '' });
+    expect(planoDaRestauracao({ summary: 'X', description: 'Título original: (sem título)', organizer: DA_AGENDA }, { tituloAtual: 'X', tituloOriginal: '(sem título)' }))
+      .toEqual({ tipo: 'patch', corpo: { summary: '', description: '' } });
   });
 });
 

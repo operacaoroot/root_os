@@ -30,7 +30,7 @@ import {
   type ItemDoDrive,
   type ResultadoDaCopia,
 } from './drive-do-cliente';
-import { planoDaPadronizacao, type EventoLido } from './padronizar-evento';
+import { planoDaPadronizacao, planoDaRestauracao, type EventoLido } from './padronizar-evento';
 import { tipoMimeValido } from './tipo-mime';
 import { EfeitosRegistry, type ContextoDoEfeito } from '../gateway/efeitos.registry';
 import { CofreService, SegredoIndisponivelError } from '../cofre/cofre.service';
@@ -294,6 +294,17 @@ export class GoogleService implements OnModuleInit, DriveDoCliente {
             tituloNovo: texto(a.tituloNovo),
             adicionarMeet: a.adicionarMeet === true,
           },
+          ctx.actorId ?? undefined,
+        ),
+      /*
+       * DESFAZER A PADRONIZAÇÃO (produção 22, 22/10/2026, R3): devolve o título
+       * da linha "Título original" e tira a linha; recusa se o título de agora ou
+       * a linha não são os que a aprovação viu.
+       */
+      'agenda.evento.restaurar': (a, org, ctx: ContextoDoEfeito) =>
+        this.restaurarEvento(
+          org,
+          { eventoId: texto(a.eventoId), tituloAtual: String(a.tituloAtual ?? ''), tituloOriginal: String(a.tituloOriginal ?? '') },
           ctx.actorId ?? undefined,
         ),
     }, 'GoogleService');
@@ -1678,6 +1689,33 @@ export class GoogleService implements OnModuleInit, DriveDoCliente {
       after: { titulo: e.summary ?? pedido.tituloNovo, meet: plano.pedeMeet },
     });
     return { ok: true, id: e.id, mudou: true, titulo: e.summary ?? pedido.tituloNovo, meet: e.hangoutLink ?? null, link: e.htmlLink ?? null };
+  }
+
+  /*
+   * DESFAZER A PADRONIZAÇÃO (capacidade `agenda.evento.restaurar`, R3). Lê o
+   * evento, confere título e linha guardada (`planoDaRestauracao`) e manda UM
+   * patch só com título e descrição. `sendUpdates=none`; o Meet fica; nada é apagado.
+   */
+  async restaurarEvento(orgId: string, pedido: { eventoId: string; tituloAtual: string; tituloOriginal: string }, actorId?: string) {
+    if (!/^[A-Za-z0-9_@.-]{3,1024}$/.test(pedido.eventoId)) throw new BadRequestException('Esse não é um id de evento da Agenda.');
+    const base = `https://www.googleapis.com/calendar/v3/calendars/primary/events/${encodeURIComponent(pedido.eventoId)}`;
+    const evento = await this.api<EventoLido & { id: string }>(orgId, `${base}?fields=${encodeURIComponent('id,summary,description,status,organizer')}`);
+    const plano = planoDaRestauracao(evento, pedido);
+    if (plano.tipo === 'recusa') throw new BadRequestException(plano.motivo);
+    const e = await this.api<{ id: string; summary?: string; htmlLink?: string }>(orgId, `${base}?sendUpdates=none`, {
+      method: 'PATCH',
+      body: JSON.stringify(plano.corpo),
+    });
+    await this.audit.log({
+      orgId,
+      actorId,
+      action: 'google.calendar.restaurar',
+      entityType: 'calendar',
+      entityId: pedido.eventoId,
+      before: { titulo: pedido.tituloAtual },
+      after: { titulo: e.summary ?? plano.corpo.summary },
+    });
+    return { ok: true, id: e.id, titulo: e.summary ?? plano.corpo.summary, link: e.htmlLink ?? null };
   }
 
   async appendDoc(orgId: string, docId: string, text: string, actorId?: string) {

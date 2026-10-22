@@ -266,6 +266,8 @@ export const CONECTOR_DA_CAPACIDADE: Readonly<Record<string, string | null>> = {
   'drive.arquivo.enviar': 'drive',
   // O vigia da agenda (AG-01) troca o título do evento no Google Agenda.
   'agenda.evento.padronizar': 'gcal',
+  // Produção 22 (22/10/2026): desfazer a padronização também escreve no Google Agenda.
+  'agenda.evento.restaurar': 'gcal',
 
   // Daqui para baixo: nada sai da casa.
   'numeros.painel.ler': null,

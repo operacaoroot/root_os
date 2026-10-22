@@ -53,14 +53,29 @@ describe('a sobrescrita assinada do vigia', () => {
     expect(d.versao).toBe('1.2.0');
   });
 
-  it('HOJE a régua recusa: o desfazer não existe; e mesmo em R2 a porta reteria', () => {
+  it('desde a produção 22 a régua ACEITA o documento (o desfazer existe e tem rota); a porta ainda reteria em R2', () => {
     const a = analisarSobrescrita(BASE, delta);
-    expect(a.ageSozinho).toBe(false);
-    expect(a.problemas.join(' ')).toMatch(/agenda\.evento\.padronizar \(R2\): desfazer-inexistente/);
+    expect(a.problemas).toEqual([]);
     expect(a.decisao.nivel).toBe('R2');
     expect(a.decisao.exigeAprovacao).toBe(true);
+    expect(a.ageSozinho).toBe(false);
+    expect(a.porQueNao).toHaveLength(1);
+    expect(a.porQueNao[0]).toMatch(/aprovacaoR2Ligada/);
+  });
+
+  it('sem o desfazer no catálogo (política anterior à 1.12.0) a régua recusaria: desfazer-inexistente', () => {
+    const semRestaurar: Politica = { ...BASE, capacidades: BASE.capacidades.filter((c) => c.id !== CAPACIDADE_DE_DESFAZER) };
+    const a = analisarSobrescrita(semRestaurar, deltaDoVigiaSozinho(semRestaurar, null, '2026-10-21'));
+    expect(a.problemas.join(' ')).toMatch(/agenda\.evento\.padronizar \(R2\): desfazer-inexistente/);
     expect(a.porQueNao).toHaveLength(2);
-    expect(a.porQueNao[1]).toMatch(/aprovacaoR2Ligada/);
+  });
+
+  it('o desfazer é R3 pela escada, tem rota e termina a cadeia (sem desfazer próprio)', () => {
+    const r = BASE.capacidades.find((c) => c.id === CAPACIDADE_DE_DESFAZER)!;
+    expect(r.nivel).toBe('R3');
+    expect(classificar(r.efeito)).toBe('R3');
+    expect(r.desfazer).toBeUndefined();
+    expect(r.rota).toBe('POST /agenda/restaurar/:eventoId');
   });
 
   it('sem sobrescrita nenhuma: R3, exige aprovação', () => {

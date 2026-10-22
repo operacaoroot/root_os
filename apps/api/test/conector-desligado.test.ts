@@ -158,12 +158,14 @@ describe('o mapa capacidade → conector', () => {
      * um arquivo do Drive para o banco de atas): 70 no delta e 78 na união.
      * Com a rodada dos agentes (21/10/2026), `comercial.lead.criar`, `drive.pasta.criar`,
      * `drive.arquivo.enviar` e `agenda.evento.padronizar`: 74 no delta e 82 na união.
+     * Com a produção 22 (22/10/2026), `agenda.evento.restaurar` (R3, o desfazer da
+     * padronização): 75 no delta e 83 na união.
      */
     expect(lerCatalogo('politica-root.json')).toHaveLength(16);
-    expect(lerCatalogo('politica-marketing-os.json')).toHaveLength(74);
+    expect(lerCatalogo('politica-marketing-os.json')).toHaveLength(75);
     // 76 desde o cockpit do lead (13/10/2026): as cinco escritas do comercial; 77 com a sala publicada por versão (I3, 18/10/2026);
     // 78 com a leitura do texto de arquivo do Drive (produção 21, P7).
-    expect(capacidadesDoCatalogo()).toHaveLength(82);
+    expect(capacidadesDoCatalogo()).toHaveLength(83);
     const soNaBase = lerCatalogo('politica-root.json')
       .map((c) => c.id)
       .filter((id) => !lerCatalogo('politica-marketing-os.json').some((d) => d.id === id));
@@ -231,7 +233,8 @@ describe('o mapa capacidade → conector', () => {
     // (`zapsign`); publicar a proposta na sala fica dentro do OS (null).
     // A produção 21 (P7) somou uma: `contexto.arquivo.ler`, pela chave `drive`.
     // A rodada dos agentes (21/10/2026) somou três: as duas do Drive (`drive`) e a da agenda (`gcal`).
-    expect(comConector).toHaveLength(32);
+    // A produção 22 (22/10/2026) somou uma: o desfazer da padronização (`gcal`).
+    expect(comConector).toHaveLength(33);
     expect(CONECTOR_DA_CAPACIDADE['contexto.arquivo.ler']).toBe('drive');
     expect(CONECTOR_DA_CAPACIDADE['instagram.post.publicar']).toBe('instagram');
     expect(CONECTOR_DA_CAPACIDADE['instagram.comentario.ler']).toBe('instagram');
@@ -242,7 +245,7 @@ describe('o mapa capacidade → conector', () => {
     expect(CONECTOR_DA_CAPACIDADE['pauta.semana.aprovar']).toBeNull();
     // 76 desde o cockpit do lead (13/10/2026): as cinco escritas do comercial; 77 com a sala publicada por versão (I3, 18/10/2026);
     // 78 com a leitura do texto de arquivo do Drive (produção 21, P7).
-    expect(capacidadesDoCatalogo()).toHaveLength(82);
+    expect(capacidadesDoCatalogo()).toHaveLength(83);
 
     // E `conectorDaCapacidade` concorda com o mapa, para os dois lados: o que
     // está declarado `null` e o que está em `SEM_INTERRUPTOR` devolve `null`.

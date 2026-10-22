@@ -939,8 +939,8 @@ describe('capacidades da rodada dos agentes (21/10/2026)', () => {
     }
   });
 
-  it('o delta subiu para 1.11.0', () => {
-    expect(json('politica-marketing-os.json').versao).toBe('1.11.0');
+  it('o delta subiu para 1.11.0 (e segue: 1.12.0 na produção 22)', () => {
+    expect(['1.11.0', '1.12.0']).toContain(json('politica-marketing-os.json').versao);
   });
 
   it('os esquemas são fechados e exigem o que a aprovação assina', () => {
@@ -978,5 +978,32 @@ describe('capacidades da rodada dos agentes (21/10/2026)', () => {
       const d = avaliar(c, { sinais: ['volume_atipico'] });
       expect(d.nivel, id).toBe(nivel === 'R1' ? 'R2' : 'R4');
     }
+  });
+});
+
+/*
+ * PRODUÇÃO 22 (22/10/2026): o desfazer da padronização da agenda. R3 pela
+ * escada (escreve no Google; voltar atrás é outra ação à mão, então
+ * reversibilidade manual), com rota, sem ferramenta e sem desfazer próprio: é
+ * a ponta terminal da cadeia que a sobrescrita do vigia aponta.
+ */
+describe('agenda.evento.restaurar (produção 22, 22/10/2026)', () => {
+  it('o delta está em 1.12.0', () => {
+    expect(json('politica-marketing-os.json').versao).toBe('1.12.0');
+  });
+
+  it('é R3 pela escada, com rota, sem ferramenta e sem desfazer', () => {
+    const c = DELTA.capacidades.find((x) => x.id === 'agenda.evento.restaurar')!;
+    expect(c).toBeTruthy();
+    expect(c.nivel).toBe('R3');
+    expect(classificar(c.efeito)).toBe('R3');
+    expect(c.efeito).toMatchObject({ escreveForaDoOS: true, reversibilidade: 'manual', destruicao: false, exposicaoExterna: false });
+    expect(c.rota).toBe('POST /agenda/restaurar/:eventoId');
+    expect(c.ferramenta).toBeUndefined();
+    expect(c.desfazer).toBeUndefined();
+    const s = c.argsSchema as { additionalProperties: boolean; required: string[]; properties: Record<string, unknown> };
+    expect(s.additionalProperties).toBe(false);
+    expect([...s.required].sort()).toEqual(['eventoId', 'tituloAtual', 'tituloOriginal']);
+    expect(Object.keys(s.properties).sort()).toEqual(['eventoId', 'tituloAtual', 'tituloOriginal']);
   });
 });

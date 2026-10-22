@@ -1,4 +1,4 @@
-import { BadRequestException, Controller, Get, Headers, HttpCode, Param, Post, UseGuards } from '@nestjs/common';
+import { BadRequestException, Body, Controller, Get, Headers, HttpCode, Param, Post, UseGuards } from '@nestjs/common';
 import type { ForaDoPadraoDaAgenda } from '@mktos/shared';
 
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
@@ -21,6 +21,9 @@ const ID_DO_EVENTO = /^[A-Za-z0-9_@.-]{3,1024}$/;
  *   abriu, ou abre uma em nome de quem clicou — e aí quem confirma é OUTRA
  *   pessoa, em `/atendimento`. Marcar: `agenda.editar`, a mesma de marcar
  *   reunião.
+ * `POST /api/agenda/restaurar/:eventoId` `{tituloAtual, tituloOriginal}` —
+ *   desfaz a padronização (produção 22, `agenda.evento.restaurar`, R3) pela
+ *   mesma porta: retida, outra pessoa confirma. Mesma permissão.
  *
  * O prefixo `agenda` é espinha (`tenants/modulos.ts`), como o `google`: a
  * agenda da Root não é módulo que uma empresa contrata.
@@ -46,5 +49,23 @@ export class AgendaController {
   ): Promise<Record<string, unknown>> {
     if (!ID_DO_EVENTO.test(eventoId ?? '')) throw new BadRequestException('Esse não é um id de evento do Google Agenda.');
     return this.vigia.pedirAprovacao(user.orgId, eventoId, { id: user.sub }, token);
+  }
+
+  @Post('restaurar/:eventoId')
+  @HttpCode(200)
+  @RequirePermissions('agenda.editar')
+  restaurar(
+    @CurrentUser() user: JwtUser,
+    @Param('eventoId') eventoId: string,
+    @Body() corpo: { tituloAtual?: unknown; tituloOriginal?: unknown },
+    @Headers('x-approval-token') token?: string,
+  ): Promise<Record<string, unknown>> {
+    if (!ID_DO_EVENTO.test(eventoId ?? '')) throw new BadRequestException('Esse não é um id de evento do Google Agenda.');
+    const tituloAtual = typeof corpo?.tituloAtual === 'string' ? corpo.tituloAtual.trim() : '';
+    const tituloOriginal = typeof corpo?.tituloOriginal === 'string' ? corpo.tituloOriginal : '';
+    if (!tituloAtual || tituloAtual.length > 300 || tituloOriginal.length > 500) {
+      throw new BadRequestException('Diga o título de agora (até 300 caracteres) e o título original guardado (até 500).');
+    }
+    return this.vigia.pedirRestauracao(user.orgId, eventoId, { tituloAtual, tituloOriginal }, { id: user.sub }, token);
   }
 }

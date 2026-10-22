@@ -428,7 +428,10 @@ describe('ferramenta e esquema de argumentos têm direção própria', () => {
     // `drive.arquivo.enviar` (a pasta do cliente e o arquivista) e
     // `agenda.evento.padronizar` (o vigia da agenda). Quem as dispara é a rota
     // pública, a reação ou a rotina, pela porta; nenhuma vira ferramenta do laço.
-    expect(BASE.capacidades.filter((c) => !c.ferramenta)).toHaveLength(32);
+    //
+    // Trinta e três desde a produção 22 (22/10/2026): `agenda.evento.restaurar`,
+    // o desfazer da padronização, pedido por gente na rota da agenda.
+    expect(BASE.capacidades.filter((c) => !c.ferramenta)).toHaveLength(33);
     for (const id of [
       'comercial.lead.criar',
       'drive.pasta.criar',

@@ -11,7 +11,7 @@ import {
   type Politica,
 } from '@mktos/policy';
 
-import { CAPACIDADE_DE_PADRONIZAR } from './vigia-da-agenda';
+import { CAPACIDADE_DE_PADRONIZAR, CAPACIDADE_DE_RESTAURAR } from './vigia-da-agenda';
 
 /* ==========================================================================
  * "O VIGIA AGE SOZINHO": A SOBRESCRITA ASSINADA DA POLÍTICA — a parte pura
@@ -34,19 +34,22 @@ import { CAPACIDADE_DE_PADRONIZAR } from './vigia-da-agenda';
  * POR QUE ELE AINDA NÃO FAZ O VIGIA AGIR SOZINHO (medido aqui, não suposto):
  *   1. a escada decide pelo efeito (`nivelBase = maior(declarado, classificar(efeito))`):
  *      com `reversibilidade: manual`, nenhuma sobrescrita desce de R3. Declarar
- *      `automatica` exige um `desfazer` IMPLEMENTADO (`verificarReversibilidade`),
- *      e `agenda.evento.restaurar` ainda não existe no catálogo nem no conector;
+ *      `automatica` exige um `desfazer` IMPLEMENTADO (`verificarReversibilidade`).
+ *      Desde a produção 22 (22/10/2026) ele existe: `agenda.evento.restaurar`
+ *      (R3, `POST /agenda/restaurar/:eventoId`, efeito no conector do Google),
+ *      e a régua aceita o documento da sobrescrita;
  *   2. mesmo em R2, a porta (`ToolGateway`) chama a régua sem
  *      `aprovacaoR2Ligada` (o `avaliar` aceita o campo; ninguém o passa), e R2
  *      fica RETIDO como R3. Desligar a aprovação de R2 por empresa ainda não
  *      tem onde ser escrito.
- * As duas peças são do dono da política e da porta (o orquestrador): o roteiro
- * proíbe esta lane de mexer em `packages/policy/*.json` e no gateway. Quando
- * existirem, o mesmo comando aplica — e a análise passa a dizer "age sozinho".
+ * Resta a segunda peça, e ela é decisão do Rodrigo (se o vigia age sozinho):
+ * enquanto ninguém passar `aprovacaoR2Ligada: false` por empresa, a análise
+ * continua dizendo por que não. O comando aplica a sobrescrita assim mesmo,
+ * com autor e motivo.
  */
 
 /** A capacidade de desfazer que tornaria a padronização reversível de verdade. */
-export const CAPACIDADE_DE_DESFAZER = 'agenda.evento.restaurar';
+export const CAPACIDADE_DE_DESFAZER = CAPACIDADE_DE_RESTAURAR;
 /** O motivo escrito da assinatura (RF-P-06) precisa dizer alguma coisa. */
 export const MOTIVO_MINIMO = 20;
 
@@ -102,8 +105,8 @@ export function analisarSobrescrita(base: Politica, delta: DeltaPolitica): Anali
   const porQueNao: string[] = [];
   if (problemas.length) {
     porQueNao.push(
-      `a régua recusa a sobrescrita: ${problemas.join(' | ')}. Falta a capacidade de desfazer ` +
-        `${CAPACIDADE_DE_DESFAZER} no catálogo e no conector do Google (devolve o título da primeira linha "Título original: …").`,
+      `a régua recusa a sobrescrita: ${problemas.join(' | ')}. Confira se a política do banco tem ` +
+        `${CAPACIDADE_DE_DESFAZER} (1.12.0 em diante: rode db:seed:politica).`,
     );
   }
   if (decisao.exigeAprovacao) {

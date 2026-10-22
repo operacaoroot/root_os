@@ -1,6 +1,6 @@
 {
-  "versao": "1.11.0",
-  "atualizadoEm": "2026-10-21",
+  "versao": "1.12.0",
+  "atualizadoEm": "2026-10-22",
   "origem": "o código real deste repositório",
   "descricao": "Capacidades do marketing-os. É um DELTA sobre politica-root.json: herda níveis, gatilhos, escalonamento, invariantes e limites, e declara só o que existe em código aqui. Capacidade sem rota é declarada e não implementada — entra classificada, e a porta recusa antes de qualquer efeito.",
   "estende": "politica-root.json",
@@ -2180,6 +2180,49 @@
           "adicionarMeet": {
             "type": "boolean",
             "description": "acrescenta o Meet (só reunião online sem link)"
+          }
+        }
+      },
+      "efeito": {
+        "escreveForaDoOS": true,
+        "produzArtefato": false,
+        "reversibilidade": "manual",
+        "exposicaoExterna": false,
+        "impactoFinanceiro": "nenhum",
+        "sensibilidade": "interna",
+        "destruicao": false,
+        "obrigacaoLegal": false
+      }
+    },
+    {
+      "id": "agenda.evento.restaurar",
+      "rota": "POST /agenda/restaurar/:eventoId",
+      "descricao": "Desfaz a padronização de UM evento da Agenda da Root (agenda.evento.padronizar): devolve o título guardado na primeira linha da descrição (\"Título original: ...\") e tira essa linha, deixando a descrição como era. Só em evento que a própria agenda organizou, e só se o título de agora e a linha guardada forem os que a aprovação viu. O Meet acrescentado não é tirado (o link pode já ter sido usado). Nunca apaga o evento, nunca muda horário nem convidados.",
+      "nivel": "R3",
+      "argsSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "eventoId",
+          "tituloAtual",
+          "tituloOriginal"
+        ],
+        "properties": {
+          "eventoId": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9_@.-]{3,1024}$",
+            "description": "o id do evento no Google Agenda"
+          },
+          "tituloAtual": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 300,
+            "description": "o título padronizado de agora (a escrita só vale se ele ainda for este)"
+          },
+          "tituloOriginal": {
+            "type": "string",
+            "maxLength": 500,
+            "description": "o título guardado na linha \"Título original\" (a escrita só vale se a linha ainda disser isto)"
           }
         }
       },

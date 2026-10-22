@@ -231,25 +231,30 @@ O delta declara, **só para esta empresa**, `agenda.evento.padronizar` em **R2**
 com `reversibilidade: automatica` e `desfazer: agenda.evento.restaurar`
 (preservando as outras capacidades que a empresa já tenha sobrescrito).
 
-**Hoje ele não basta, e a simulação diz por quê** (medido em
+**O que já vale e o que ainda falta** (medido em
 `apps/api/test/agenda-vigia-sobrescrita.test.ts`):
 
 1. A escada decide pelo efeito (`nivelBase = maior(declarado,
    classificar(efeito))`): com `reversibilidade: manual`, nenhuma sobrescrita
-   desce de R3. Declarar `automatica` exige um `desfazer` **implementado**, e
-   `agenda.evento.restaurar` (alteração que devolve o título da linha "Título
-   original: …" e tira o Meet acrescentado) ainda não existe no catálogo nem no
-   conector. Sem ele a régua recusa o documento (`desfazer-inexistente`) e o
-   `--valer` não grava nada.
+   desce de R3. Declarar `automatica` exige um `desfazer` **implementado**.
+   Desde a produção 22 (22/10/2026, política 1.12.0) ele existe:
+   `agenda.evento.restaurar` (**R3** pela escada: escreve no Google e voltar
+   atrás é outra ação à mão), rota `POST /agenda/restaurar/:eventoId`
+   `{tituloAtual, tituloOriginal}`, efeito no conector do Google. Ele devolve o
+   título da linha "Título original: …" e tira a linha, deixando a descrição
+   como era; recusa se o título de agora ou a linha não são os que a aprovação
+   viu, se o evento foi cancelado ou é convite de outra agenda. **O Meet
+   acrescentado não é tirado** (o link pode já ter sido mandado): a volta é do
+   título e da descrição. Com isso a régua aceita o documento e o `--valer`
+   grava a sobrescrita assinada.
 2. Mesmo em R2, a porta (`ToolGateway`) chama a régua sem `aprovacaoR2Ligada`,
    então R2 também fica retido. Desligar a aprovação de R2 por empresa ainda
    não tem onde ser escrito.
 
-As duas peças são do dono da política e da porta, não do vigia: **[a decidir]**
-(a capacidade `agenda.evento.restaurar` no catálogo e no conector; e o campo de
-"aprovação de R2 desligada" por empresa, lido pela porta). Com as duas no ar, o
-mesmo comando aplica e a simulação passa a dizer "o vigia corrige o título sem
-passar pela fila". Até lá, o atalho real é o de cima: a proposta do vigia
+Falta a segunda peça, e o vigia agir sozinho é **decisão do Rodrigo** (o
+campo de "aprovação de R2 desligada" por empresa, lido pela porta). Até lá, a
+sobrescrita aplicada desce a padronização a R2 (uma pessoa com alçada de
+operador confirma) e o atalho real continua o de cima: a proposta do vigia
 precisa de uma pessoa só.
 
 ### Ao subir
@@ -258,6 +263,8 @@ precisa de uma pessoa só.
   ignora a tabela).
 - A capacidade `agenda.evento.padronizar` entra pelo seed da política 1.11.0 da
   Lane 0, com a assinatura `POLITICA_CAPACIDADE_NOVA_*` de capacidade nova.
+- `agenda.evento.restaurar` entra pelo seed da política 1.12.0 (produção 22),
+  com a mesma assinatura de capacidade nova.
   Sem o seed, a porta trata a capacidade como sem classificação (R5) e recusa.
 - Nenhuma variável nova, nenhuma permissão nova (`dashboard.ver` para ver,
   `agenda.editar` para pedir a correção).

@@ -85,3 +85,53 @@ export function planoDaPadronizacao(evento: EventoLido, pedido: PedidoDePadroniz
   }
   return { tipo: 'patch', corpo, pedeMeet };
 }
+
+/*
+ * DESFAZER A PADRONIZAÇÃO (produção 22, 22/10/2026, capacidade
+ * `agenda.evento.restaurar`, R3), a parte pura.
+ *
+ * A padronização guarda o título antigo na primeira linha da descrição
+ * ("Título original: <antigo>") e não empilha outra linha se já houver uma, então
+ * essa linha é sempre o título de ANTES da primeira padronização. Restaurar
+ * devolve esse título e tira a linha: a descrição volta a ser a de antes. O Meet
+ * acrescentado fica (o link pode já ter sido mandado a alguém). Recusa quando o
+ * título de agora ou a linha guardada não são os que a aprovação viu, quando o
+ * evento foi cancelado e quando quem organizou não é a própria agenda.
+ */
+
+export interface PedidoDeRestauracao {
+  tituloAtual: string;
+  tituloOriginal: string;
+}
+
+export type PlanoDaRestauracao =
+  | { tipo: 'patch'; corpo: { summary: string; description: string } }
+  | { tipo: 'recusa'; motivo: string };
+
+/** A linha guardada pela padronização, ou `null` quando a descrição não começa por ela. */
+export function tituloGuardado(descricao: string | null | undefined): { titulo: string; resto: string } | null {
+  const d = String(descricao ?? '');
+  if (!d.startsWith(PREFIXO_DO_TITULO_ORIGINAL)) return null;
+  const quebra = d.indexOf('\n');
+  const linha = quebra < 0 ? d : d.slice(0, quebra);
+  const resto = quebra < 0 ? '' : d.slice(quebra + 1);
+  const titulo = linha.slice(PREFIXO_DO_TITULO_ORIGINAL.length).replace(/\r$/, '');
+  return { titulo: titulo === '(sem título)' ? '' : titulo, resto };
+}
+
+export function planoDaRestauracao(evento: EventoLido, pedido: PedidoDeRestauracao): PlanoDaRestauracao {
+  if (evento.status === 'cancelled') return { tipo: 'recusa', motivo: 'o evento foi cancelado na Agenda.' };
+  if (evento.organizer?.self !== true) return { tipo: 'recusa', motivo: FRASE_DE_OUTRO_ORGANIZADOR };
+  if (limpa(evento.summary) !== limpa(pedido.tituloAtual)) {
+    return { tipo: 'recusa', motivo: 'o título do evento mudou depois do pedido: nada foi alterado. Peça de novo a partir do título de agora.' };
+  }
+  const guardado = tituloGuardado(evento.description);
+  if (!guardado) {
+    return { tipo: 'recusa', motivo: 'a descrição não começa pela linha "Título original": não há o que restaurar, nada foi alterado.' };
+  }
+  const original = limpa(pedido.tituloOriginal) === '(sem título)' ? '' : limpa(pedido.tituloOriginal);
+  if (limpa(guardado.titulo) !== original) {
+    return { tipo: 'recusa', motivo: 'a linha "Título original" mudou depois do pedido: nada foi alterado.' };
+  }
+  return { tipo: 'patch', corpo: { summary: guardado.titulo, description: guardado.resto } };
+}

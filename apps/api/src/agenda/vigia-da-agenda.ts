@@ -59,6 +59,8 @@ export const TIPO_DA_PENDENCIA_DA_AGENDA = 'agenda.padrao';
 /** A leitura (R0) e a escrita (R3) do catálogo. */
 export const CAPACIDADE_DE_LEITURA = 'comunicacao.agenda.periodo';
 export const CAPACIDADE_DE_PADRONIZAR = 'agenda.evento.padronizar';
+/** O desfazer da padronização (produção 22, R3): devolve o título da linha "Título original". */
+export const CAPACIDADE_DE_RESTAURAR = 'agenda.evento.restaurar';
 /** O interruptor que cala o vigia em Conexões. */
 export const CONECTOR_DA_AGENDA = 'gcal';
 /** A chave do contrato de conector que responde pelo Google. */

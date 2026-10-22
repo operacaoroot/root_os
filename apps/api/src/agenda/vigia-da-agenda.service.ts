@@ -40,6 +40,7 @@ import { TIPO_AGENDA_VIGIA } from '../routines/rotina.tipos';
 import {
   CAPACIDADE_DE_LEITURA,
   CAPACIDADE_DE_PADRONIZAR,
+  CAPACIDADE_DE_RESTAURAR,
   CONECTOR_DA_AGENDA,
   CONECTOR_DO_CONTRATO,
   DIAS_PARA_FRENTE,
@@ -561,6 +562,33 @@ export class VigiaDaAgendaService implements OnModuleInit {
       approvalToken,
     );
     return { ...(r as Record<string, unknown>), jaNaFila: false };
+  }
+
+  /**
+   * DESFAZER A PADRONIZAÇÃO (produção 22, 22/10/2026): leva `agenda.evento.restaurar`
+   * (R3) à MESMA porta, em nome de quem pediu. Retida, OUTRA pessoa confirma em
+   * `/atendimento`; com o token da aprovação, sai. Quem confere o evento de
+   * agora (título e linha guardada) é o efeito, no Google.
+   */
+  async pedirRestauracao(
+    orgIdBruto: string,
+    eventoId: string,
+    pedido: { tituloAtual: string; tituloOriginal: string },
+    pessoa: { id: string },
+    approvalToken?: string,
+  ): Promise<Record<string, unknown>> {
+    const orgId = exigirTenant(orgIdBruto, 'VigiaDaAgendaService.pedirRestauracao');
+    const r = await this.porta.executar({
+      orgId,
+      actorId: pessoa.id,
+      actorType: ActorType.user,
+      capabilityId: CAPACIDADE_DE_RESTAURAR,
+      args: { eventoId, tituloAtual: pedido.tituloAtual.slice(0, 300), tituloOriginal: pedido.tituloOriginal.slice(0, 500) },
+      resource: { type: CAPACIDADE_DE_RESTAURAR, id: eventoId },
+      ...(approvalToken ? { approvalToken } : {}),
+    });
+    // A linha do vigia não é mexida aqui: a próxima passagem lê o evento de novo pela assinatura.
+    return r as Record<string, unknown>;
   }
 
   // ------------------------------------------------------------------ pendência
