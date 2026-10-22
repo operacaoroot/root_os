@@ -128,3 +128,5 @@ export * from './equipe-whatsapp.js';
 export * from './agentes-tela.js';
 // O cartão único de Conexões (rodada dos agentes, lane A6): ver `cartoes-de-conexao.ts`.
 export * from './cartoes-de-conexao.js';
+// O cartão da implantação: reunião, fase do trilho, Pedir agora e limite (produção 22, M1): ver `implantacao-do-cartao.ts`.
+export * from './implantacao-do-cartao.js';

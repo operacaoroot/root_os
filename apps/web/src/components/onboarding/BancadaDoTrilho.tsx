@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { apiGet, apiPatch, apiPost, apiPut, apiUpload } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 import { Botao, Campo, Card, Chip, inputCls } from '@/app/referencias/ui';
+import { FASES_DE_COSTUME_DO_FOCO, NOME_DA_FASE_DO_TRILHO, ehFocoDaBancada } from '@mktos/shared';
 import {
   ROTULO_DA_FASE,
   ROTULO_DO_BLOCO,
@@ -33,6 +34,36 @@ import {
 
 type Aba = 'fase' | 'formulario' | 'linha-do-tempo';
 
+/*
+ * O PEDIDO QUE CHEGA PRONTO (rodada de produção 2, M1, S3, 22/10/2026): o "Pedir agora"
+ * de "Quem trabalha nesta etapa" abre esta bancada com `?foco=ata` ou `?foco=dossie`.
+ * A seção pedida aparece em destaque e a página rola até ela, mesmo fora da fase em que
+ * a bancada costuma mostrá-la (o trilho importado começa na fase 0 com o cliente já no
+ * kickoff); a tela diz que está fora da fase de costume. Trilho encerrado não força nada.
+ */
+type FocoDaBancada = 'dossie' | 'ata';
+
+function focoDoEndereco(): FocoDaBancada | null {
+  if (typeof window === 'undefined') return null;
+  const v = new URLSearchParams(window.location.search).get('foco');
+  return ehFocoDaBancada(v) ? v : null;
+}
+
+function SecaoEmFoco({ foco, ativo, fase, children }: { foco: FocoDaBancada; ativo: boolean; fase: string; children: React.ReactNode }) {
+  const costume = FASES_DE_COSTUME_DO_FOCO[foco];
+  const fora = ativo && !(costume as readonly string[]).includes(fase);
+  return (
+    <div id={`bancada-${foco}`} data-testid={`bancada-secao-${foco}`} data-em-foco={ativo ? '1' : undefined} className={ativo ? 'scroll-mt-4 rounded-xl ring-2 ring-brand/50' : 'scroll-mt-4'}>
+      {fora && (
+        <p data-testid="bancada-fora-da-fase" className="px-3 pt-2 text-[12px] text-muted">
+          Pedido fora da fase de costume: esta seção é da fase {costume.map((f) => NOME_DA_FASE_DO_TRILHO[f]).join(' ou ')}.
+        </p>
+      )}
+      {children}
+    </div>
+  );
+}
+
 const PERFIS = ['P1', 'P2', 'P3', 'nao-entra'] as const;
 const NIVEIS = ['beaba', 'avancar-junto', 'entregar-pronto'] as const;
 const dataInput = (v: string) => (v ? new Date(`${v}T12:00:00`).toISOString() : null);
@@ -52,6 +83,12 @@ export function BancadaDoTrilho({ id, embutida = false }: { id: string; embutida
   const [aviso, setAviso] = useState<string | null>(null);
   const [ocupado, setOcupado] = useState<string | null>(null);
   const [aba, setAba] = useState<Aba>('fase');
+  const [foco] = useState<FocoDaBancada | null>(() => (embutida ? null : focoDoEndereco()));
+  const focoValido = t && t.fase !== 'encerrado' ? foco : null;
+  useEffect(() => {
+    if (!focoValido) return;
+    document.getElementById(`bancada-${focoValido}`)?.scrollIntoView?.({ behavior: 'smooth', block: 'start' });
+  }, [focoValido, t?.id]);
 
   const carregar = useCallback(() => {
     if (!token) return;
@@ -148,8 +185,12 @@ export function BancadaDoTrilho({ id, embutida = false }: { id: string; embutida
               </Card>
             )}
             {t.fase === 'qualificar' && <SecaoTriagem t={t} editavel={editavel} agir={agir} token={token} />}
-            {(t.fase === 'qualificar' || t.fase === 'diagnostico') && <SecaoDossie t={t} editavel={editavel} agir={agir} token={token} />}
-            {t.fase === 'contrato' && <SecaoAta t={t} editavel={editavel} agir={agir} token={token} setAviso={setAviso} />}
+            {(t.fase === 'qualificar' || t.fase === 'diagnostico' || focoValido === 'dossie') && (
+              <SecaoEmFoco foco="dossie" ativo={focoValido === 'dossie'} fase={t.fase}><SecaoDossie t={t} editavel={editavel} agir={agir} token={token} /></SecaoEmFoco>
+            )}
+            {(t.fase === 'contrato' || focoValido === 'ata') && (
+              <SecaoEmFoco foco="ata" ativo={focoValido === 'ata'} fase={t.fase}><SecaoAta t={t} editavel={editavel} agir={agir} token={token} setAviso={setAviso} /></SecaoEmFoco>
+            )}
             {t.fase === 'contrato' && <SecaoLinkBCD t={t} editavel={editavel} agir={agir} token={token} />}
             {t.fase === 'contrato' && <SecaoBoasVindas t={t} token={token} />}
             {(t.fase === 'contrato' || t.fase === 'imersao' || t.fase === 'operacao') && <SecaoMemoria t={t} editavel={editavel} agir={agir} token={token} setAviso={setAviso} />}

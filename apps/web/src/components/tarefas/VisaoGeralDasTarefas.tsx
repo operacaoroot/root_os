@@ -6,6 +6,7 @@ import { apiGet } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 import { Numero, Quadro } from '@/components/painel';
 import { Barras, type Fatia } from './graficos';
+import { ImplantacaoNoDiaADia } from './ImplantacaoNoDiaADia';
 
 /*
  * DIA A DIA › VISÃO GERAL (versão final, 19/10/2026): o dash das tarefas do
@@ -167,6 +168,9 @@ export function VisaoGeralDasTarefas() {
           </div>
         ))}
       </div>
+
+      {/* Produção 22 (M1, S5): o relógio do onboarding no Dia a dia, cada linha leva à Implantação filtrada. */}
+      <ImplantacaoNoDiaADia token={token} />
 
       <div className="grid gap-5 lg:grid-cols-2">
         {/* P1 (21/10): sem rolagem lateral; o gráfico se ajusta à caixa e o balão fica dentro dela. */}

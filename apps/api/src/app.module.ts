@@ -50,6 +50,7 @@ import { AnexosDaTarefaModule } from './work/anexos/anexos.module';
 import { AgendaModule } from './agenda/agenda.module';
 import { CobrancaDeTarefasModule } from './work/cobranca/cobranca.module';
 import { DelegadorModule } from './work/delegador/delegador.module';
+import { ImplantacaoModule } from './implantacao/implantacao.module';
 
 @Module({
   imports: [
@@ -207,6 +208,9 @@ import { DelegadorModule } from './work/delegador/delegador.module';
     // rotas do delegador respondem 404, sem nada acusar.
     CobrancaDeTarefasModule,
     DelegadorModule,
+    // Produção 22 (M1): o cartão da implantação (reunião, fase do trilho, resumo do Dia a
+    // dia, limite da etapa pelo menu da coluna). Sem a linha, as rotas respondem 404.
+    ImplantacaoModule,
   ],
   controllers: [HealthController],
 })

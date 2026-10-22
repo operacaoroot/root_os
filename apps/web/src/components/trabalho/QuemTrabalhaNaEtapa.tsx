@@ -13,9 +13,11 @@
  * cliente (`KitDaImplantacao`).
  */
 import { useEffect, useState } from 'react';
-import type { QuemTrabalhaNaEtapa as Dados } from '@mktos/shared';
+import Link from 'next/link';
+import { pedidoDoAgente, type QuemTrabalhaNaEtapa as Dados } from '@mktos/shared';
 
 import { apiGet } from '@/lib/api';
+import { useAuth } from '@/lib/auth';
 import { diaCurto, instanteComSemana } from '@/lib/datas-do-cartao';
 import { KitDaImplantacao } from './KitDaImplantacao';
 
@@ -40,7 +42,55 @@ function Fato({ fato }: { fato: { texto: string; em: string } | null }) {
   );
 }
 
+/*
+ * "PEDIR AGORA" (rodada de produção 2, M1, S3, 22/10/2026): o atalho até onde cada agente
+ * é acionado hoje, com o cliente já escolhido. O leitor de ata e o pesquisador de conta
+ * abrem a bancada do trilho na seção deles (`?foco=`), o roteirista abre o roteiro no
+ * botão de personalizar, e o montador do kit leva ao kit logo abaixo, neste painel.
+ * Agente desligado no cadastro ou parado em Agentes: o botão fica desabilitado, com a razão.
+ */
+function PedirAgora({ agente, trilho, podeEditar }: { agente: Dados['agentes'][number]; trilho: { id: string; fase: string }; podeEditar: boolean }) {
+  const pedido = pedidoDoAgente(agente, trilho, podeEditar);
+  if (!pedido) return null;
+  const cls = 'inline-flex items-center rounded border px-2 py-0.5 text-[11.5px] max-md:min-h-[44px]';
+  if (pedido.desabilitado) {
+    return (
+      <p className="flex flex-wrap items-center gap-1.5">
+        <button type="button" disabled aria-describedby={`pedir-razao-${agente.slug}`} data-testid={`pedir-agora-${agente.slug}`} className={`${cls} cursor-not-allowed border-border text-muted opacity-60`}>
+          Pedir agora
+        </button>
+        <span id={`pedir-razao-${agente.slug}`} data-testid={`pedir-agora-razao-${agente.slug}`} className="text-[11px] text-muted">{pedido.desabilitado}</span>
+      </p>
+    );
+  }
+  if (pedido.foco === 'kit') {
+    return (
+      <a
+        href={pedido.href}
+        data-testid={`pedir-agora-${agente.slug}`}
+        className={`${cls} border-brand/40 text-brand hover:bg-brand/10`}
+        onClick={(e) => {
+          // O kit mora logo abaixo, neste painel: rola até ele e põe o foco em "Montar kit".
+          const alvo = document.getElementById('kit-da-implantacao');
+          if (!alvo) return;
+          e.preventDefault();
+          alvo.scrollIntoView?.({ behavior: 'smooth', block: 'center' });
+          alvo.querySelector<HTMLButtonElement>('[data-testid="kit-montar"]')?.focus({ preventScroll: true });
+        }}
+      >
+        Pedir agora
+      </a>
+    );
+  }
+  return (
+    <Link href={pedido.href} data-testid={`pedir-agora-${agente.slug}`} className={`${cls} border-brand/40 text-brand hover:bg-brand/10`}>
+      Pedir agora
+    </Link>
+  );
+}
+
 export function QuemTrabalhaNaEtapa({ trilhoId, token }: { trilhoId: string; token: string | null }) {
+  const { can } = useAuth();
   const [dados, setDados] = useState<Dados | null>(null);
   const [erro, setErro] = useState(false);
   useEffect(() => {
@@ -74,6 +124,7 @@ export function QuemTrabalhaNaEtapa({ trilhoId, token }: { trilhoId: string; tok
                 {a.paraQueServe && <p className="text-muted">{a.paraQueServe}</p>}
                 <Fato fato={a.ultimoFato} />
                 <p className="text-muted">{a.oQueVaiFazer}</p>
+                <PedirAgora agente={a} trilho={{ id: dados.trilhoId, fase: dados.fase }} podeEditar={can('tarefas.editar')} />
               </div>
             </li>
           ))}

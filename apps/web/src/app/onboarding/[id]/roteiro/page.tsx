@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
 import { apiGet, apiPost } from '@/lib/api';
@@ -19,6 +19,14 @@ export default function RoteiroPage() {
   const [r, setR] = useState<RoteiroDoKickoff | null>(null);
   const [erro, setErro] = useState<string | null>(null);
   const [ocupado, setOcupado] = useState(false);
+  // Produção 22 (M1, S3): o "Pedir agora" do roteirista chega com `?foco=personalizar`: o botão vem em destaque.
+  const [focoNoRoteirista] = useState(() => typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('foco') === 'personalizar');
+  const botaoDoRoteirista = useRef<HTMLSpanElement>(null);
+  useEffect(() => {
+    if (!focoNoRoteirista || !r) return;
+    botaoDoRoteirista.current?.scrollIntoView?.({ behavior: 'smooth', block: 'center' });
+    botaoDoRoteirista.current?.querySelector('button')?.focus({ preventScroll: true });
+  }, [focoNoRoteirista, r]);
 
   const carregar = () => {
     if (!token) return;
@@ -52,9 +60,11 @@ export default function RoteiroPage() {
         <Link href={`/onboarding/${id}`} className="text-sm text-muted underline underline-offset-2">← voltar ao trilho</Link>
         <div className="flex gap-2">
           {can('tarefas.editar') && (
-            <Botao onClick={personalizar} disabled={ocupado} title="O roteirista reescreve as perguntas com o vocabulário do cliente">
-              {ocupado ? 'personalizando…' : 'Personalizar com o roteirista'}
-            </Botao>
+            <span ref={botaoDoRoteirista} data-testid="roteiro-personalizar" data-em-foco={focoNoRoteirista ? '1' : undefined} className={focoNoRoteirista ? 'rounded-lg ring-2 ring-brand/50' : undefined}>
+              <Botao onClick={personalizar} disabled={ocupado} title="O roteirista reescreve as perguntas com o vocabulário do cliente">
+                {ocupado ? 'personalizando…' : 'Personalizar com o roteirista'}
+              </Botao>
+            </span>
           )}
           <Botao onClick={() => navigator.clipboard.writeText(r.markdown)}>Copiar markdown</Botao>
           <Botao tone="brand" onClick={() => window.print()}>Imprimir</Botao>
