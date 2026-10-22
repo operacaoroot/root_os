@@ -1,7 +1,7 @@
 import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma, WorkListaNatureza, WorkStatusType } from '@prisma/client';
 import {
-  AREAS_PADRAO, CARTOES_QUE_NAO_SAO_TAREFA, faseDaEtapa, DOMINIO_DAS_CONTAS_DO_SISTEMA, equipeDasContas, mesmaTarefa, naoPareceTarefa, notaDeSemelhanca, situacaoDoPrazo,
+  AREAS_PADRAO, CARTOES_QUE_NAO_SAO_TAREFA, faseDaEtapa, DOMINIO_DAS_CONTAS_DO_SISTEMA, equipeDasContas, mesmaTarefa, naoPareceTarefa, notaDeSemelhanca, situacaoDoPrazo, tarefaIgual,
   type AreaDeTarefa, type PainelDeTarefas, type ResultadoDeCriar, type ResumoDaPessoa, type TarefaDoDia,
   type TarefaDoDiaCriar, type TarefaDoDiaEditar,
   RecorrenciaSchema, proximaOcorrencia, type RecorrenciaDaTarefa,
@@ -278,7 +278,7 @@ export class TarefasDoDiaService {
     const hoje = hojeEmBrasilia();
     // O cliente é o Partner; o pai de cadastro (id de card) não é comparável com ele (revisão final, 1.9).
     const doCliente = (t: Linha) => (t.clienteId ?? null) === (input.clienteId ?? null);
-    const igual = abertas.find((t) => doCliente(t) && mesmaTarefa(t.title, input.titulo) === 'igual');
+    const igual = tarefaIgual(abertas.filter(doCliente), input.titulo, (t) => t.title);
     // Igual e aberta: não cria nunca, nem confirmando. Devolve a que já existe.
     if (igual) return { criada: false, aviso: { tipo: 'igual', tarefa: this.mapear(igual, hoje, await this.equipe(orgId)) } };
     if (!input.confirmar) {

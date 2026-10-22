@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import {
-  descreverRecorrencia, type RecorrenciaDaTarefa,
+  descreverRecorrencia, TAREFA_IGUAL_JA_EXISTE, type RecorrenciaDaTarefa,
   type AreaDeTarefa, type EtapaDaTarefa, type PainelDeTarefas, type ResultadoDeCriar, type SituacaoDoPrazo, type TarefaDoDia,
 } from '@mktos/shared';
 import { apiGet, apiPatch, apiPost } from '@/lib/api';
@@ -1023,7 +1023,7 @@ function AvisoDeCriar({ aviso, criarAssim, abrir, cancelar }: { aviso: Aviso; cr
         </>
       ) : (
         <>
-          <b className="block">{aviso.tipo === 'igual' ? 'Essa tarefa já existe.' : 'Já existe uma parecida.'}</b>
+          <b className="block">{aviso.tipo === 'igual' ? TAREFA_IGUAL_JA_EXISTE : 'Já existe uma parecida.'}</b>
           <span className="text-muted">“{aviso.tarefa.titulo}”{aviso.tarefa.area ? ` · ${aviso.tarefa.area.nome}` : ''}{aviso.tarefa.pessoa ? ` · ${primeiro(aviso.tarefa.pessoa.nome)}` : ''}</span>
           <div className="mt-2 flex flex-wrap gap-1.5">
             <button className="rounded-md border border-brand bg-brand px-2.5 py-1 text-xs font-medium text-ink hover:opacity-90" onClick={() => abrir(aviso.tarefa.id)}>Abrir essa</button>

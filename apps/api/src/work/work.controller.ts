@@ -10,7 +10,7 @@ import {
   TrabTarefaCreateSchema, TrabTarefaUpdateHttpSchema, TrabTarefaArchiveHttpSchema, TrabComentarioSchema,
   TrabAssumirSchema, TrabSoltarSchema, TrabApontamentoCreateSchema, TrabListaDoModeloSchema,
   TrabTarefasOrdemSchema, TrabListaExcluirSchema, TrabListaArquivarTarefasSchema,
-  TrabPastaExcluirComDestinoSchema, TrabListaMoverTarefasSchema, TrabArvoreOrdemSchema,
+  TrabPastaExcluirComDestinoSchema, TrabListaMoverTarefasSchema, TrabArvoreOrdemSchema, TrabPastaMoverSchema,
 } from '@mktos/shared';
 import { WorkService } from './work.service';
 import { CheckoutDeTarefaService } from './checkout-de-tarefa.service';
@@ -143,6 +143,45 @@ export class WorkController {
   @RequirePermissions('tarefas.editar')
   excluirPastaComDestino(@CurrentUser() u: JwtUser, @Param('id') id: string, @Body() body: unknown) {
     return this.svc.excluirPastaComDestino(u.orgId, u.sub, id, TrabPastaExcluirComDestinoSchema.parse(body ?? {}));
+  }
+
+  /*
+   * Mover pasta para dentro de outra (`{parentId}`) ou para o primeiro nível
+   * (`{parentId: null}`): arrastar sobre a pasta, ou "⋯" › Mover para… (M3,
+   * 22/10/2026). Só de gente; ciclo, nível, protegida e nome repetido conferidos
+   * no serviço. Ver `WorkService.moverPasta`.
+   */
+  @Post('pastas/:id/mover')
+  @UseGuards(AcessoAtualGuard, SoGenteNoTrabalhoGuard)
+  @RequirePermissions('tarefas.editar')
+  moverPasta(@CurrentUser() u: JwtUser, @Param('id') id: string, @Body() body: unknown) {
+    return this.svc.moverPasta(u.orgId, u.sub, id, TrabPastaMoverSchema.parse(body));
+  }
+
+  /*
+   * AS ARQUIVADAS E DESARQUIVAR (M3, 22/10/2026). A lista lê com `tarefas.ver`;
+   * desarquivar tem a permissão e os guardas de apagar (só de gente). A lista volta
+   * para a pasta onde estava (ou Sem pasta, se ela continua arquivada); a pasta
+   * volta com o que foi arquivado junto. Ver `WorkService.desarquivarLista/Pasta`.
+   */
+  @Get('arquivadas')
+  @RequirePermissions('tarefas.ver')
+  arquivadas(@CurrentUser() u: JwtUser) {
+    return this.svc.arquivadas(u.orgId);
+  }
+
+  @Post('pastas/:id/desarquivar')
+  @UseGuards(AcessoAtualGuard, SoGenteNoTrabalhoGuard)
+  @RequirePermissions('tarefas.editar')
+  desarquivarPasta(@CurrentUser() u: JwtUser, @Param('id') id: string) {
+    return this.svc.desarquivarPasta(u.orgId, u.sub, id);
+  }
+
+  @Post('listas/:id/desarquivar')
+  @UseGuards(AcessoAtualGuard, SoGenteNoTrabalhoGuard)
+  @RequirePermissions('tarefas.editar')
+  desarquivarLista(@CurrentUser() u: JwtUser, @Param('id') id: string) {
+    return this.svc.desarquivarLista(u.orgId, u.sub, id);
   }
 
   /*

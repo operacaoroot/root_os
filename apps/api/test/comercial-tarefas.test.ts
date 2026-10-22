@@ -6,7 +6,7 @@ import { Reflector } from '@nestjs/core';
 import { JwtService } from '@nestjs/jwt';
 import { Test } from '@nestjs/testing';
 import { PrismaClient } from '@prisma/client';
-import type { CartaoDoFunil, TarefaDoComercial, TarefasDoComercial } from '@mktos/shared';
+import { TAREFA_IGUAL_JA_EXISTE, type CartaoDoFunil, type TarefaDoComercial, type TarefasDoComercial } from '@mktos/shared';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { AuditService } from '../src/audit/audit.service';
@@ -311,5 +311,39 @@ describe.skipIf(!URL)('as tarefas do comercial no banco', { timeout: 60_000 }, (
     expect(ids).toContain(tarefaDoTrabalho);
     expect(ids).not.toContain(doLead.id);
     expect(ids).not.toContain(semLead.id);
+  });
+
+  it('M3: "+ tarefa" recusa título repetido aberto do mesmo lead com a frase do Dia a dia; outro lead e concluída passam', async () => {
+    const antes = await prisma.workTask.count({ where: { orgId: ORG } });
+    // A mesma do lead A em outra grafia (maiúscula, acento, palavras trocadas): igual.
+    const r = await pedir('POST', '/comercial/tarefas', await daAna(), { titulo: '  fazer fup da PROPOSTA ', leadId: leadA });
+    expect(r.status).toBe(409);
+    expect(r.corpo).toMatchObject({ message: TAREFA_IGUAL_JA_EXISTE, code: 'tarefa_igual', tarefaId: doLead.id });
+    const trocada = await pedir('POST', '/comercial/tarefas', await daAna(), { titulo: 'Proposta: fazer FUP', leadId: leadA });
+    expect(trocada.status).toBe(409);
+    expect(await prisma.workTask.count({ where: { orgId: ORG } })).toBe(antes);
+    // Sem lead, a comparação é entre as sem lead.
+    expect((await pedir('POST', '/comercial/tarefas', await daAna(), { titulo: 'Conferir a régua do funil' })).status).toBe(201);
+    expect((await pedir('POST', '/comercial/tarefas', await daAna(), { titulo: 'conferir a REGUA do funil' })).status).toBe(409);
+    expect((await pedir('POST', '/comercial/tarefas', await daAna(), { titulo: 'Conferir a régua do funil', leadId: leadA })).status).toBe(201);
+    // Do lead B, o mesmo título é outra tarefa.
+    expect((await pedir('POST', '/comercial/tarefas', await daAna(), { titulo: 'Fazer FUP da proposta', leadId: leadB })).status).toBe(201);
+    // A concluída do lead B ("Ligar para o contato") não segura uma nova.
+    expect((await pedir('POST', '/comercial/tarefas', await daAna(), { titulo: 'Ligar para o contato', leadId: leadB })).status).toBe(201);
+  });
+
+  it('M3: a tarefa que se repete, ligada a lead e concluída pelo Trabalho, cria a próxima com o mesmo lead', async () => {
+    const criada = (await pedir('POST', '/comercial/tarefas', await daAna(), { titulo: 'Revisar o contrato toda semana', leadId: leadB, prazo: '2026-10-23' })).corpo as TarefaDoComercial;
+    const comRegra = await work.editarTarefa(ORG, ana.id, criada.id, {
+      expectedUpdatedAt: criada.updatedAt, recorrencia: { tipo: 'semanal', dias: [4] },
+    });
+    const lista = await prisma.workList.findFirstOrThrow({ where: { orgId: ORG, externalId: LISTA_DO_COMERCIAL }, include: { statuses: true } });
+    const feito = lista.statuses.find((s) => s.type === 'closed')!;
+    // Concluída pela tela do Trabalho (o `WorkService`, sem passar pelo Comercial).
+    const r = await work.editarTarefa(ORG, ana.id, criada.id, { expectedUpdatedAt: comRegra.updatedAt, statusId: feito.id }) as { proxima?: { id: string } };
+    expect(r.proxima?.id).toBeTruthy();
+    const proxima = await prisma.workTask.findUniqueOrThrow({ where: { id: r.proxima!.id } });
+    expect(proxima.leadId).toBe(leadB);
+    expect(proxima.listId).toBe(lista.id);
   });
 });

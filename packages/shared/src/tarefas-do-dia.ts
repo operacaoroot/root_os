@@ -67,6 +67,18 @@ export function mesmaTarefa(a: string, b: string): 'igual' | 'parecida' | 'difer
   return 'diferente';
 }
 
+/** O que a tela e a API dizem quando a tarefa aberta igual já existe (Dia a dia e "+ tarefa" do Comercial). */
+export const TAREFA_IGUAL_JA_EXISTE = 'Essa tarefa já existe.';
+
+/**
+ * A tarefa aberta IGUAL à que se quer criar (`mesmaTarefa === 'igual'`), entre as
+ * que valem para a comparação (do mesmo cliente no Dia a dia, do mesmo lead no
+ * Comercial). Quem chama já filtrou as abertas e o dono; a regra do título é esta.
+ */
+export function tarefaIgual<T>(abertas: readonly T[], titulo: string, tituloDe: (t: T) => string): T | undefined {
+  return abertas.find((t) => mesmaTarefa(tituloDe(t), titulo) === 'igual');
+}
+
 /** Nota para escolher a MAIS parecida entre várias (mais palavras em comum primeiro). */
 export function notaDeSemelhanca(a: string, b: string): number {
   const pa = palavras(a), pb = palavras(b);
