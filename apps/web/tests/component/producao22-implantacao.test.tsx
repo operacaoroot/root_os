@@ -89,6 +89,18 @@ describe('o cartão: reunião e selo da fase', () => {
     expect(screen.getByTestId('cartao-reuniao')).toHaveTextContent('reunião 24/10');
     expect(screen.getByTestId('cartao-reuniao').getAttribute('title')).toBe('Próxima reunião: sábado, 24/10/2026 (dia inteiro)');
   });
+
+  it('no cartão compacto (a densidade padrão) a reunião e o selo ganham linha própria', () => {
+    const { container } = render(
+      <ImplantacaoDoQuadroContexto.Provider value={{ agenda: 'ok', porCartao: new Map([['c1', { tarefaId: 'c1', reuniao: REUNIAO, fase: DIVERGE }]]) }}>
+        <ReuniaoESeloNoCartao tarefaId="c1" linha />
+      </ImplantacaoDoQuadroContexto.Provider>,
+    );
+    const caixa = container.firstElementChild as HTMLElement;
+    expect(caixa.tagName).toBe('DIV');
+    expect(caixa).toContainElement(screen.getByTestId('cartao-selo-fase'));
+    expect(caixa).toContainElement(screen.getByTestId('cartao-reuniao'));
+  });
 });
 
 describe('o painel do card: agenda e trilho', () => {

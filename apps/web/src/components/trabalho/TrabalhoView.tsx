@@ -1549,6 +1549,8 @@ function Cartao({ t, lista, editable, token, agentes, pessoas = [], onSoltarSobr
         {mov?.proximaAcao?.quando && diaCurto(mov.proximaAcao.quando) && <span className="text-muted" title={diaComSemana(mov.proximaAcao.quando) ?? undefined}> · {diaCurto(mov.proximaAcao.quando)}</span>}
       </p>
       )}
+      {/* Produção 22 (M1): no compacto a reunião e o selo da fase ganham linha própria (no médio e no cheio vão na linha de metadados). */}
+      {compacto && <ReuniaoESeloNoCartao tarefaId={t.id} linha />}
       {!compacto && (
         <>
           {(t.values.some((v) => v.optionName) || t.tags.length > 0) && (

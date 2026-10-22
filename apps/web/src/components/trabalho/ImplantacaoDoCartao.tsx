@@ -75,13 +75,13 @@ export function useImplantacaoDoQuadro(listaId: string | null, token: string | n
 }
 
 /** No cartão: "reunião 23/10" e o selo da fase do trilho. Sem dado, nada. */
-export function ReuniaoESeloNoCartao({ tarefaId }: { tarefaId: string }) {
+export function ReuniaoESeloNoCartao({ tarefaId, linha = false }: { tarefaId: string; linha?: boolean }) {
   const item = useContext(ImplantacaoDoQuadroContexto).porCartao.get(tarefaId);
   if (!item) return null;
   const dia = item.reuniao ? diaDaReuniao(item.reuniao) : null;
   const selo = item.fase?.diverge ? item.fase.selo : null;
   if (!dia && !selo) return null;
-  return (
+  const conteudo = (
     <>
       {item.reuniao && dia && (
         <span data-testid="cartao-reuniao" className="text-text" title={`Próxima reunião: ${quandoDaReuniao(item.reuniao) ?? ''}`}>
@@ -100,6 +100,8 @@ export function ReuniaoESeloNoCartao({ tarefaId }: { tarefaId: string }) {
       )}
     </>
   );
+  // No cartão compacto (a densidade padrão) não há linha de metadados: vira uma linha própria.
+  return linha ? <div className="mt-0.5 flex flex-wrap items-center gap-1 text-[10px]">{conteudo}</div> : conteudo;
 }
 
 /** No painel do card: a reunião por extenso (ou por que não há) e a frase da divergência. */
