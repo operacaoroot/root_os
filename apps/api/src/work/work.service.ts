@@ -1069,8 +1069,14 @@ export class WorkService {
   async editarStatus(orgId: string, actorId: string, id: string, input: { name?: string; type?: WorkStatusType; color?: string; order?: number; limite?: number | null }) {
     const st = await this.prisma.workStatus.findFirst({ where: { id, list: { orgId } } });
     if (!st) throw new NotFoundException('Status não encontrado');
+    // Limite da etapa é de gente por qualquer caminho (produção 22): aqui e no menu da coluna
+    // (`PATCH /trabalho/statuses/:id/limite`). Muda o limite → relê a pessoa no banco e audita antes e depois.
+    const mudaLimite = input.limite !== undefined && (input.limite ?? null) !== (st.limite ?? null);
+    if (mudaLimite) await this.exigirGenteNoTrabalho(orgId, actorId);
+    const trilha = mudaLimite ? { before: { limite: st.limite ?? null }, after: { limite: input.limite ?? null } } : undefined;
     return this.logado(orgId, actorId, 'work.status.update', 'work_status', id, () =>
       this.prisma.workStatus.update({ where: { id }, data: input }),
+      trilha,
     );
   }
 

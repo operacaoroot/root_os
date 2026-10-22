@@ -19,6 +19,9 @@ import { casarReunioes, type CartaoParaCasar, type EventoDaAgenda } from '../src
 import type { PrismaService } from '../src/prisma/prisma.service';
 import { criarEstruturaSugerida } from '../src/work/estrutura-sugerida';
 import { RECUSA_DE_MAQUINA_NO_TRABALHO, SoGenteNoTrabalhoGuard } from '../src/work/so-gente-no-trabalho.guard';
+import { EventLogService } from '../src/gateway/event-log.service';
+import { CheckoutDeTarefaService } from '../src/work/checkout-de-tarefa.service';
+import { WorkService } from '../src/work/work.service';
 import { exigirBancoDescartavel } from './banco-de-teste';
 
 /*
@@ -354,5 +357,20 @@ describe.skipIf(!URL)('o cartão da implantação: contra o Postgres', () => {
     // Tirar o limite volta a nulo, e o quadro só avisa (nada trava aqui).
     expect(await svc.definir(ORG, EU, imersao, { limite: null, esperado: 3 })).toEqual({ statusId: imersao, limite: null });
     expect(await prisma.auditLog.count({ where: { orgId: ORG, action: ACAO_DO_LIMITE } })).toBe(2);
+  });
+
+  it('o PATCH antigo do editor de etapas: mudar o limite também é de gente e audita antes e depois; o resto segue igual', async () => {
+    const audit = new AuditService(p);
+    const work = new WorkService(p, audit, new CheckoutDeTarefaService(p, audit, new EventLogService(p)));
+    const kit = etapa['Kit montado'];
+    await expect(work.editarStatus(ORG, MAQUINA, kit, { limite: 2 })).rejects.toThrow(RECUSA_DE_MAQUINA_NO_TRABALHO);
+    await expect(work.editarStatus(ORG, INATIVO, kit, { limite: 2 })).rejects.toThrow(/usuário ativo/);
+    expect((await prisma.workStatus.findUniqueOrThrow({ where: { id: kit } })).limite).toBeNull();
+    await work.editarStatus(ORG, EU, kit, { limite: 2 });
+    const log = await prisma.auditLog.findFirstOrThrow({ where: { orgId: ORG, action: 'work.status.update', entityId: kit }, orderBy: { createdAt: 'desc' } });
+    expect(log).toMatchObject({ before: { limite: null }, after: { limite: 2 } });
+    // Sem mexer no limite (cor, nome), a conta de máquina segue como antes.
+    await work.editarStatus(ORG, MAQUINA, kit, { color: '#123456', limite: 2 });
+    await work.editarStatus(ORG, EU, kit, { limite: null });
   });
 });
