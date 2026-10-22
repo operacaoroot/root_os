@@ -2,7 +2,7 @@
 import Link from 'next/link';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ComercialAceiteExercicioSchema, ComercialAcompanhamentoExercicioSchema, ComercialEntregaExercicioSchema,
-  ComercialPropostaExercicioSchema, type ComercialExercicioLeitura, type ComercialExercicioResposta, type TrabEstrutura } from '@mktos/shared';
+  ComercialPropostaExercicioSchema, type ComercialExercicioLeitura, type ComercialExercicioResposta, type TrabEstrutura, listasComAsDoComercial } from '@mktos/shared';
 import { apiGet,apiPost } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 import { pedidoDeExercicio } from './pedido-exercicio';
@@ -55,7 +55,8 @@ export function ComercialExercicio({ leadId,onChanged,onIndisponivel }: { leadId
     try { const e = await apiGet<TrabEstrutura>('/trabalho/estrutura',token); if (rodada === ciclo.current) setEstrutura(e); }
     catch (e) { if (rodada !== ciclo.current) return; if ([401,403,404].includes((e as {status?: number}).status ?? 0)) privar(); else setErro((e as Error).message); }
   };
-  const listas = useMemo(() => estrutura ? [...estrutura.folders.flatMap((f) => f.lists),...estrutura.listasSoltas] : [],[estrutura]);
+  // A entrega do comercial pode ir para as listas do Comercial (a pasta Clientes, I3), como antes.
+  const listas = useMemo(() => estrutura ? listasComAsDoComercial(estrutura) : [],[estrutura]);
   if (!dados) return <p className="text-sm text-muted">{erro ?? 'Carregando exercício Comercial…'}</p>;
   const proposta = dados.propostas.find((p) => p.versao === (selecionada ?? dados.versaoAtual)) ?? null;
   const atual = proposta?.versao === dados.versaoAtual;
