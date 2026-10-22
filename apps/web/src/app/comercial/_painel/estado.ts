@@ -2,12 +2,12 @@
  * O ESTADO DO PAINEL DO LEAD NA URL (lane UX, 13/10/2026).
  *
  * O painel não tem rota própria: ele mora na query da tela de fundo,
- * `?lead=<id>&aba=fio|sessao|dinheiro|decisoes`. Assim um link para um lead
+ * `?lead=<id>&aba=fio|sessao|dinheiro|decisoes|sala|whatsapp`. Assim um link para um lead
  * abre a tela com o painel aberto, e fechar devolve a tela como estava.
  * Funções puras: quem mexe no histórico é o provedor.
  */
 
-export const ABAS_DO_PAINEL = ['fio', 'sessao', 'dinheiro', 'decisoes', 'sala'] as const;
+export const ABAS_DO_PAINEL = ['fio', 'sessao', 'dinheiro', 'decisoes', 'sala', 'whatsapp'] as const;
 export type AbaDoPainel = (typeof ABAS_DO_PAINEL)[number];
 
 export const ROTULO_DA_ABA: Record<AbaDoPainel, string> = {
@@ -17,6 +17,8 @@ export const ROTULO_DA_ABA: Record<AbaDoPainel, string> = {
   decisoes: 'Decisões',
   // Rodada da implantação I3: a sala do cliente publicada por versão.
   sala: 'Sala',
+  // Produção 22C (W3): as conversas de WhatsApp ligadas ao lead.
+  whatsapp: 'WhatsApp',
 };
 
 export interface EstadoDoPainel {
