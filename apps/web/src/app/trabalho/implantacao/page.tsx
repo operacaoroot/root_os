@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect } from 'react';
+import { ListasDoComercial } from '@/components/trabalho/ListasDoComercial';
 import { TrabalhoView } from '@/components/trabalho/TrabalhoView';
 import { destinoDaAbaRodada } from '@/lib/rotas-movidas';
 
@@ -21,6 +22,7 @@ export default function ImplantacaoPage() {
 
   return (
     <div className="flex min-w-0 flex-col gap-3">
+      <ListasDoComercial />
       <TrabalhoView modo="implantacao" />
     </div>
   );

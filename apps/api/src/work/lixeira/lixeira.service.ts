@@ -16,7 +16,7 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { LIVRE, estadoDispara, type ResultadoDaRotina } from '../../routines/rotina.tipos';
 import { listaVisivel } from '../arquivadas';
 import { RECUSA_DE_MAQUINA_NO_TRABALHO } from '../so-gente-no-trabalho.guard';
-import { cardsDaImplantacao, nomesDasPessoas, quandoForamArquivadas } from './regras-da-lixeira';
+import { cardsDaImplantacao, idDaListaDaImplantacao, nomesDasPessoas, quandoForamArquivadas } from './regras-da-lixeira';
 
 /** Quantas tarefas a Lixeira traz de uma vez (a busca por nome acha as outras). */
 export const LIMITE_DA_LIXEIRA = 500;
@@ -257,8 +257,20 @@ export class LixeiraService {
   /** Uma passagem do expurgo: apaga de vez as excluídas há mais de 30 dias, desta empresa. */
   async expurgo(orgId: string, agora: Date = new Date()): Promise<ResultadoDaRotina> {
     const corte = new Date(agora.getTime() - TRAB_DIAS_NA_LIXEIRA * 24 * 60 * 60 * 1000);
+    // Revisão (B2): o card da implantação nunca sai de vez; deixá-lo de fora da consulta impede
+    // que 500 cards ocupem toda passagem e as outras vencidas nunca cheguem a vez delas.
+    const [lista, trilhos] = await Promise.all([
+      idDaListaDaImplantacao(this.prisma, orgId),
+      this.prisma.onboardingTrilho.findMany({ where: { orgId, cardId: { not: null } }, select: { cardId: true } }),
+    ]);
+    const comTrilho = trilhos.map((t) => t.cardId).filter((x): x is string => !!x);
     const vencidas = await this.prisma.workTask.findMany({
-      where: { orgId, excluidaEm: { lt: corte } }, select: { id: true }, take: 500, orderBy: { excluidaEm: 'asc' },
+      where: {
+        orgId, excluidaEm: { lt: corte },
+        ...(comTrilho.length ? { id: { notIn: comTrilho } } : {}),
+        ...(lista ? { NOT: { listId: lista, parentId: null } } : {}),
+      },
+      select: { id: true }, take: 500, orderBy: { excluidaEm: 'asc' },
     });
     if (!vencidas.length) return { status: 'pulada', resumo: 'nenhuma tarefa na Lixeira há mais de 30 dias' };
     const r = await this.apagar(orgId, { tipo: 'system' }, vencidas.map((v) => v.id), corte);

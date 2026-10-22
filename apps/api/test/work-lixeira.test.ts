@@ -395,4 +395,37 @@ describe.skipIf(!URL)('I2/I4: contra o Postgres', () => {
     expect((await erro(() => acoes.mesclar(CASA, MAQUINA, filha, { destinoId: destino }))).status).toBe(403);
     expect((await erro(() => acoes.mesclar(VIZINHA, ELA, filha, { destinoId: destino }))).status).toBe(404);
   });
+
+  it('revisão: mesclar recusa destino abaixo da origem; mover recusa lista da Clientes e tirar o card; o expurgo pula o card', async () => {
+    const op = await lista(CASA, null, 'Operação', ['Origem', 'Filha', 'Neta', 'Outra']);
+    const [origem, filha, neta, outra] = op.tarefas;
+    await prisma.workTask.update({ where: { id: filha }, data: { parentId: origem } });
+    await prisma.workTask.update({ where: { id: neta }, data: { parentId: filha } });
+    for (const destinoId of [filha, neta]) {
+      const r = await erro(() => acoes.mesclar(CASA, EU, origem, { destinoId }));
+      expect(r.status).toBe(400);
+      expect(r.mensagem).toMatch(/subtarefa desta/);
+    }
+    expect(await prisma.workTask.findUniqueOrThrow({ where: { id: origem } })).toMatchObject({ archived: false });
+
+    const clientes = (await prisma.workFolder.create({ data: { orgId: CASA, name: PASTA_DA_IMPLANTACAO, doComercial: true } })).id;
+    const impl = await lista(CASA, clientes, LISTA_DA_IMPLANTACAO, ['Cliente Z']);
+    const esteira = await lista(CASA, clientes, 'Esteira de clientes');
+    await prisma.workList.updateMany({ where: { id: { in: [impl.id, esteira.id] } }, data: { doComercial: true } });
+    const paraEsteira = await erro(() => acoes.mover(CASA, EU, outra, { listId: esteira.id, expectedUpdatedAt: '2026-10-22T00:00:00.000Z' }));
+    expect(paraEsteira.status).toBe(400);
+    expect(paraEsteira.mensagem).toMatch(/pasta Clientes/);
+    const card = impl.tarefas[0];
+    const vCard = await versao(card);
+    const tirarCard = await erro(() => acoes.mover(CASA, EU, card, { listId: op.id, expectedUpdatedAt: vCard }));
+    expect(tirarCard.status).toBe(400);
+    expect(tirarCard.mensagem).toMatch(/card de um cliente da Implantação/);
+
+    const agora = new Date('2026-12-01T12:00:00Z');
+    await prisma.workTask.updateMany({ where: { id: { in: [card, outra] } }, data: { archived: true, excluidaEm: new Date('2026-10-20T00:00:00Z') } });
+    expect((await lixeira.expurgo(CASA, agora)).status).toBe('ok');
+    expect(await prisma.workTask.count({ where: { id: outra } })).toBe(0);
+    expect(await prisma.workTask.count({ where: { id: card } })).toBe(1);
+    expect((await lixeira.expurgo(CASA, agora)).status).toBe('pulada');
+  });
 });

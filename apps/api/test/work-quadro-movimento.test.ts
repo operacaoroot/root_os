@@ -131,6 +131,17 @@ describe.skipIf(!URL)('movimento do cartão: contra o Postgres', () => {
     }));
     expect(r2).toMatchObject({ estado: 'reaproveitado', cardId: r.cardId });
     expect(await prisma.workComment.count({ where: { taskId: r.cardId } })).toBe(1);
+    // Revisão M3 (produção 22B): o card na Lixeira (ou arquivado) volta à Implantação quando o
+    // lead fecha de novo, com o comentário e a auditoria; nada é apagado.
+    await prisma.workTask.update({ where: { id: r.cardId }, data: { archived: true, excluidaEm: new Date(), excluidaPor: EU } });
+    const r3 = await prisma.$transaction((tx) => abrirCardDaImplantacao(tx, ORG, {
+      leadId, empresa: 'X', cnpj: '', contato: '', telefone: null, email: null, produto: '', valor: '', parcelas: 1, forma: 'pix', chave: 'k2', trilhoId: null, responsavel: null,
+    }));
+    expect(r3).toMatchObject({ estado: 'reaproveitado', cardId: r.cardId });
+    expect(await prisma.workTask.findUniqueOrThrow({ where: { id: r.cardId } })).toMatchObject({ archived: false, excluidaEm: null, excluidaPor: null });
+    expect((await prisma.workComment.findMany({ where: { taskId: r.cardId } })).map((x) => x.text)).toContainEqual(expect.stringMatching(/^O card voltou da Lixeira em .* porque o lead fechou \(k2\)\.$/));
+    expect(await prisma.auditLog.count({ where: { orgId: ORG, entityId: r.cardId, action: 'work.task.restore' } })).toBe(1);
+    await prisma.auditLog.deleteMany({ where: { orgId: ORG, entityId: r.cardId } });
     await prisma.comercialFicha.deleteMany({ where: { leadId } });
     await prisma.lead.deleteMany({ where: { id: leadId } });
   });

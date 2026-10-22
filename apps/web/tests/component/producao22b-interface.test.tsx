@@ -359,3 +359,31 @@ describe('I3: a pasta Clientes fora do Trabalho', () => {
     expect(screen.queryByTestId('implantacao-sem-lista')).toBeNull();
   });
 });
+
+import { ListasDoComercial } from '@/components/trabalho/ListasDoComercial';
+
+describe('revisão M2: as listas da pasta Clientes abrem pela Implantação', () => {
+  afterEach(() => { cleanup(); get.mockReset(); });
+
+  it('mostra Esteira e Execução (sem a lista da implantação), cada uma levando ao quadro pelo id', async () => {
+    get.mockResolvedValue({
+      folders: [], listasSoltas: [],
+      pastasDoComercial: [{ id: 'p', name: 'Clientes', parentId: null, lists: [
+        { id: 'l-impl', name: 'Onboarding de cliente' }, { id: 'l-est', name: 'Esteira de clientes' }, { id: 'l-exe', name: 'Execução' },
+      ] }],
+    });
+    render(<ListasDoComercial />);
+    const nav = await screen.findByTestId('listas-do-comercial');
+    const links = within(nav).getAllByRole('link');
+    expect(links.map((a) => [a.textContent, a.getAttribute('href')])).toEqual([
+      ['Esteira de clientes', '/trabalho?lista=l-est'], ['Execução', '/trabalho?lista=l-exe'],
+    ]);
+  });
+
+  it('sem pasta do Comercial, ou só com a da implantação, não aparece', async () => {
+    get.mockResolvedValue({ folders: [], listasSoltas: [], pastasDoComercial: [{ id: 'p', name: 'Clientes', parentId: null, lists: [{ id: 'l', name: 'Onboarding de cliente' }] }] });
+    render(<ListasDoComercial />);
+    await waitFor(() => expect(get).toHaveBeenCalled());
+    expect(screen.queryByTestId('listas-do-comercial')).toBeNull();
+  });
+});

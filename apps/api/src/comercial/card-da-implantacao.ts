@@ -234,9 +234,31 @@ export async function abrirCardDaImplantacao(db: Db, orgId: string, d: DadosDoCa
   const cardId = cardIdDoLead(orgId, d.leadId);
   const ja = await db.workTask.findFirst({
     where: { id: cardId, orgId },
-    select: { id: true, listId: true, list: { select: { name: true } }, status: { select: { name: true } } },
+    select: { id: true, listId: true, archived: true, excluidaEm: true, list: { select: { name: true } }, status: { select: { name: true } } },
   });
   if (ja) {
+    // Revisão (M3, produção 22B): o card que alguém arquivou ou mandou à Lixeira volta à
+    // Implantação quando o lead fecha (ou é iniciado) de novo; reaproveitá-lo escondido
+    // deixaria o cliente fechado fora de Comercial › Implantação. Nada é apagado.
+    if (ja.archived || ja.excluidaEm) {
+      const voltou = await db.workTask.updateMany({
+        where: { id: cardId, orgId, OR: [{ archived: true }, { excluidaEm: { not: null } }] },
+        data: { archived: false, excluidaEm: null, excluidaPor: null },
+      });
+      if (voltou.count === 1) {
+        const de = ja.excluidaEm ? 'da Lixeira' : 'das arquivadas';
+        await db.workComment.create({
+          data: { orgId, taskId: cardId, authorId: null, authorName: AUTOR_DO_FECHAMENTO, text: `O card voltou ${de} em ${dataCurta(agora)} porque o lead ${origem === 'fechamento' ? 'fechou' : 'teve o onboarding iniciado'} (${d.chave}).` },
+        });
+        await db.auditLog.create({
+          data: {
+            orgId, actorType: ActorType.system, actorId: 'comercial', action: 'work.task.restore', entityType: 'work_task', entityId: cardId,
+            before: { archived: ja.archived, excluida: !!ja.excluidaEm } as Prisma.InputJsonValue,
+            after: { archived: false, excluida: false, motivo: origem, leadId: d.leadId, chave: d.chave } as Prisma.InputJsonValue,
+          },
+        });
+      }
+    }
     await ligarRetrolinks(db, orgId, d.leadId, cardId, d.trilhoId);
     // Cliente obrigatório no card (T4): o card que ficou sem cliente ganha o do lead; o que já tem, fica.
     if (d.clienteId) await db.workTask.updateMany({ where: { id: cardId, orgId, clienteId: null }, data: { clienteId: d.clienteId } });

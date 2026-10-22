@@ -4,7 +4,7 @@ import { createContext, useCallback, useContext, useEffect, useLayoutEffect, use
 import { createPortal } from 'react-dom';
 import { MoreHorizontal } from 'lucide-react';
 import {
-  ACOES_DO_MENU_DA_TAREFA, ROTULO_DA_ACAO_DA_TAREFA, TRAB_DIAS_NA_LIXEIRA, linkDaTarefa, listaDaImplantacao, razaoParaNaoFazer,
+  ACOES_DO_MENU_DA_TAREFA, ROTULO_DA_ACAO_DA_TAREFA, TRAB_DIAS_NA_LIXEIRA, linkDaTarefa, listaDaImplantacao, pastasComAsDoComercial, razaoParaNaoFazer,
   type AcaoDoMenuDaTarefa, type EstadoParaOMenu, type TrabEstrutura, type TrabListaDto, type TrabTarefaDetalhe,
   type TrabTarefaLista, type TrabTarefaMesclada, type TrabTarefaDuplicada,
 } from '@mktos/shared';
@@ -242,7 +242,7 @@ function PainelDoMenu({ aberto, onFechar, onMudou, onErro, onAbrir }: {
   }, [modo, detalhe]);
 
   const listaId = detalhe?.listId ?? tarefa.listId ?? null;
-  const daImplantacao = estrutura ? listaDaImplantacao(estrutura.folders)?.listaId ?? null : null;
+  const daImplantacao = estrutura ? listaDaImplantacao(pastasComAsDoComercial(estrutura))?.listaId ?? null : null;
   const estado: EstadoParaOMenu = {
     podeEditar: can('tarefas.editar'),
     ehGente: !(user?.roles ?? []).some((r) => PAPEIS_DE_MAQUINA.includes(r)),

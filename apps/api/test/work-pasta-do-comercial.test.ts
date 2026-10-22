@@ -237,6 +237,9 @@ describe.skipIf(!URL)('I1 e I3: contra o Postgres', () => {
     const solta = await lista(CASA, null, 'Clientes');
     const filha = (await prisma.workFolder.create({ data: { orgId: CASA, name: 'Clientes', parentId: (await prisma.workFolder.create({ data: { orgId: CASA, name: 'Gestão' } })).id } })).id;
     const daVizinha = (await prisma.workFolder.create({ data: { orgId: VIZINHA, name: 'Gestão' } })).id;
+    // Revisão M2: a Clientes que uma empresa criou à mão, sem a lista da implantação, fica do Trabalho.
+    const clientesAMao = (await prisma.workFolder.create({ data: { orgId: VIZINHA, name: 'Clientes' } })).id;
+    const execucaoAMao = await lista(VIZINHA, clientesAMao, 'Execução');
     await prisma.$executeRawUnsafe(`UPDATE "WorkFolder" SET "doComercial" = false WHERE "orgId" = ANY(ARRAY['${CASA}','${VIZINHA}'])`);
     // Só os dois UPDATE da migration (o ALTER já rodou neste banco).
     // O banco de teste é dividido com as outras suítes: o UPDATE roda só nas duas empresas daqui
@@ -252,10 +255,12 @@ describe.skipIf(!URL)('I1 e I3: contra o Postgres', () => {
       solta: (await prisma.workList.findUniqueOrThrow({ where: { id: solta.id } })).doComercial,
       filha: (await prisma.workFolder.findUniqueOrThrow({ where: { id: filha } })).doComercial,
       vizinha: (await prisma.workFolder.findUniqueOrThrow({ where: { id: daVizinha } })).doComercial,
+      aMao: (await prisma.workFolder.findUniqueOrThrow({ where: { id: clientesAMao } })).doComercial,
+      execucaoAMao: (await prisma.workList.findUniqueOrThrow({ where: { id: execucaoAMao.id } })).doComercial,
     });
-    expect(await marca()).toEqual({ pasta: true, lista: true, solta: false, filha: false, vizinha: false });
+    expect(await marca()).toEqual({ pasta: true, lista: true, solta: false, filha: false, vizinha: false, aMao: false, execucaoAMao: false });
     for (const sql of updates) expect(await prisma.$executeRawUnsafe(sql)).toBe(0);
-    expect(await marca()).toEqual({ pasta: true, lista: true, solta: false, filha: false, vizinha: false });
+    expect(await marca()).toEqual({ pasta: true, lista: true, solta: false, filha: false, vizinha: false, aMao: false, execucaoAMao: false });
   });
 
   it('Todas, a pessoa em todas as listas e o Dia a dia não veem as listas da Clientes; o quadro pelo id e a tarefa pelo id, sim', async () => {

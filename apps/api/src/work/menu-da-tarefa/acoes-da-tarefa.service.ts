@@ -13,6 +13,7 @@ import { exigirAcessoAtual } from '../../memory/acesso-memoria';
 import { PrismaService } from '../../prisma/prisma.service';
 import { listaVisivel } from '../arquivadas';
 import { ehListaDoComercial } from '../lista-do-comercial';
+import { listaForaDoComercial } from '../pasta-do-comercial';
 import { RECUSA_DE_MAQUINA_NO_TRABALHO } from '../so-gente-no-trabalho.guard';
 import { WorkService } from '../work.service';
 import { cardsDaImplantacao, idDaListaDaImplantacao } from '../lixeira/regras-da-lixeira';
@@ -63,6 +64,10 @@ export class AcoesDaTarefaService {
     if (!t) throw new NotFoundException('Tarefa não encontrada');
     if (t.excluidaEm) throw new ConflictException(TRAB_NA_LIXEIRA);
     if (input.listId !== t.listId) {
+      // Revisão (B1): o card da implantação mora na Implantação; tirá-lo de lá o esconderia do Comercial.
+      if ((await cardsDaImplantacao(this.prisma, orgId, [t])).has(t.id)) {
+        throw new BadRequestException('Este é o card de um cliente da Implantação: ele muda de etapa em Comercial › Implantação, não de lista.');
+      }
       const destino = await this.prisma.workList.findFirst({
         where: { id: input.listId, orgId }, select: { id: true, externalId: true, natureza: true, arquivadaEm: true },
       });
@@ -70,6 +75,10 @@ export class AcoesDaTarefaService {
       const visivel = await this.prisma.workList.count({ where: { id: destino.id, orgId, AND: [listaVisivel()] } });
       if (destino.arquivadaEm || visivel !== 1) throw new BadRequestException('A lista de destino está arquivada. Escolha uma lista que aparece no Trabalho.');
       if (ehListaDoComercial(destino)) throw new BadRequestException('As tarefas do comercial moram no Funil vivo: a lista do comercial não recebe tarefas do Trabalho.');
+      // Revisão (B1): a mesma régua de "mover as tarefas" da árvore; a pasta Clientes é do Comercial (I3).
+      if ((await this.prisma.workList.count({ where: { id: destino.id, orgId, AND: [listaForaDoComercial()] } })) !== 1) {
+        throw new BadRequestException('As listas da pasta Clientes são do Comercial: a tarefa sumiria do Trabalho. Escolha uma lista que aparece no Trabalho.');
+      }
       if (destino.natureza === WorkListaNatureza.cadastro) throw new BadRequestException('A lista de destino é de cadastro, não de tarefas. Escolha uma lista de tarefas.');
       if (!t.parentId && destino.id === (await idDaListaDaImplantacao(this.prisma, orgId))) throw new BadRequestException(PORTA_DA_IMPLANTACAO);
     }
@@ -135,6 +144,12 @@ export class AcoesDaTarefaService {
     if (origem.archived) throw new BadRequestException(JA_ARQUIVADA);
     if (destino.archived) throw new BadRequestException('A tarefa de destino está arquivada. Escolha uma tarefa viva.');
     if (origem.agenteId) throw new ConflictException(TRAB_TAREFA_COM_AGENTE);
+    // Revisão (M1): a destino não pode estar abaixo da origem. Arquivada a origem, a subtarefa
+    // sumiria com ela; e a subtarefa da origem que passasse para a destino faria um ciclo.
+    for (let mae = destino.parentId, nivel = 0; mae && nivel < 20; nivel += 1) {
+      if (mae === origem.id) throw new BadRequestException('A tarefa escolhida é subtarefa desta. Escolha uma tarefa fora dela (ou tire a subtarefa de dentro antes).');
+      mae = (await this.prisma.workTask.findFirst({ where: { id: mae, orgId }, select: { parentId: true } }))?.parentId ?? null;
+    }
     if (input.expectedUpdatedAt !== undefined && new Date(input.expectedUpdatedAt).getTime() !== origem.updatedAt.getTime()) {
       throw new ConflictException(TAREFA_MUDOU);
     }
