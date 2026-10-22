@@ -38,6 +38,7 @@ export function BotaoDeFiltros({
   testId = 'filtros',
   alinhar = 'direita',
   rotulo = 'Filtros',
+  extra,
 }: {
   filtros: readonly DefinicaoDeFiltro[];
   valores: ValoresDeFiltro;
@@ -47,6 +48,12 @@ export function BotaoDeFiltros({
   testId?: string;
   alinhar?: 'esquerda' | 'direita';
   rotulo?: string;
+  /**
+   * Controles da tela que moram no mesmo painel sem serem filtro (as colunas
+   * visíveis da lista do funil, I5): ficam depois dos filtros, não contam no
+   * "(n)" e o "Limpar tudo" não mexe neles.
+   */
+  extra?: React.ReactNode;
 }) {
   const [aberto, setAberto] = useState(false);
   const botao = useRef<HTMLButtonElement>(null);
@@ -146,6 +153,7 @@ export function BotaoDeFiltros({
               {filtros.map((d) => (
                 <CampoDeFiltro key={d.chave} def={d} valor={valores[d.chave] ?? ''} aoMudar={aoMudar} testId={testId} />
               ))}
+              {extra}
             </div>
             <div className="flex items-center justify-between gap-2 border-t border-border px-3 py-2">
               <button

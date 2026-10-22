@@ -14,7 +14,9 @@ import { Aviso, BarraDaSaude, BOTAO, BOTAO_PRIMARIO, Carregando, Chip, Erro, FOC
 import { LinkDoLead, useMudouNoPainel } from '../_painel/provedor';
 import { moverFocoNoFunil } from '../_painel/teclado';
 import { destinoDaColuna, fraseDoErro, moverCartao, opcoesDoMenu, rotuloCurto, voltaEmDoDia } from '../_funil/mover';
-import { caminhoDoFunil, definicoesDosFiltros, escreverEnderecoDoFunil, lerEnderecoDoFunil, valoresDoPainel, type VisaoDoFunil } from '../_funil/filtros-do-funil';
+import { caminhoDoFunil, configDaVistaDoFunil, definicoesDosFiltros, escreverEnderecoDoFunil, lerEnderecoDoFunil, valoresDoPainel, type ListaNoEndereco, type VisaoDoFunil } from '../_funil/filtros-do-funil';
+import { COLUNAS_PADRAO, lerColunas, lerOrdem } from '../_funil/lista-do-funil';
+import { ListaDoFunil, SeletorDeColunas } from '../_funil/ListaDoFunil';
 import { RegistrarFechadoFora } from '../_funil/RegistrarFechadoFora';
 import { BlocoDeTarefasDoComercial } from '../_funil/TarefasDoComercial';
 import { contagemDeTarefas, proximaAcaoDoCartao, type LinhaDaProximaAcao } from '../_funil/proxima-acao-do-cartao';
@@ -38,6 +40,11 @@ import { contagemDeTarefas, proximaAcaoDoCartao, type LinhaDaProximaAcao } from 
  * (as sem lead, com o filtro "Responsável" valendo para ele), nos dois formatos.
  * No cartão, a tarefa aberta mais antiga do lead: como a próxima ação quando vem
  * antes da da ficha, senão como segunda linha, e a contagem das abertas.
+ *
+ * Produção 22B (I5, 22/10/2026): o formato Lista virou tabela de verdade
+ * (`_funil/ListaDoFunil.tsx`): larguras ajustáveis guardadas no navegador,
+ * ordenação pelo cabeçalho e colunas visíveis no painel de Filtros, as duas no
+ * endereço e na vista salva. O quadro não mudou.
  */
 
 type Coluna = FunilVivo['colunas'][number];
@@ -53,25 +60,32 @@ export default function FunilVivoPage() {
   const [enderecoTemFiltro, setEnderecoTemFiltro] = useState(false);
   const [visao, setVisao] = useState<VisaoDoFunil>('quadro');
   const [filtros, setFiltros] = useState<ComercialFiltrosDoFunil>(filtrosDoFunilVazios);
-  const gravar = useCallback((v: VisaoDoFunil, f: ComercialFiltrosDoFunil) => {
-    const busca = escreverEnderecoDoFunil(window.location.search, v, f);
+  // I5: as colunas visíveis e a ordem da lista, também no endereço e na vista salva.
+  const [lista, setLista] = useState<ListaNoEndereco>({ colunas: COLUNAS_PADRAO, ordem: null });
+  const gravar = useCallback((v: VisaoDoFunil, f: ComercialFiltrosDoFunil, l: ListaNoEndereco) => {
+    const busca = escreverEnderecoDoFunil(window.location.search, v, f, l);
     window.history.replaceState(window.history.state, '', `${window.location.pathname}${busca}${window.location.hash}`);
   }, []);
   useEffect(() => {
     const e = lerEnderecoDoFunil(window.location.search);
     setVisao(e.visao);
     setFiltros(e.filtros);
+    setLista({ colunas: e.colunas, ordem: e.ordem });
     setEnderecoTemFiltro(e.temFiltro);
-    if (e.migrou) gravar(e.visao, e.filtros);
+    if (e.migrou) gravar(e.visao, e.filtros, { colunas: e.colunas, ordem: e.ordem });
     setPronto(true);
   }, [gravar]);
   const mudarFiltros = (f: ComercialFiltrosDoFunil) => {
     setFiltros(f);
-    gravar(visao, f);
+    gravar(visao, f, lista);
   };
   const mudarVisao = (v: VisaoDoFunil) => {
     setVisao(v);
-    gravar(v, filtros);
+    gravar(v, filtros, lista);
+  };
+  const mudarLista = (l: ListaNoEndereco) => {
+    setLista(l);
+    gravar(visao, filtros, l);
   };
 
   // A busca por texto espera a pessoa parar de digitar antes de ir à API.
@@ -85,7 +99,7 @@ export default function FunilVivoPage() {
   useMudouNoPainel(recarregar);
 
   const definicoes = useMemo(() => definicoesDosFiltros(dados?.donos ?? []), [dados?.donos]);
-  const vistaAtual: VistaFunil = { visao, filtros };
+  const vistaAtual: VistaFunil = configDaVistaDoFunil(visao, filtros, lista);
 
   const [avisos, setAvisos] = useState<Record<string, AvisoDoCartao>>({});
   const [saidaAberta, setSaidaAberta] = useState<{ leadId: string; saida: ComercialSaida | null } | null>(null);
@@ -155,9 +169,11 @@ export default function FunilVivoPage() {
               enderecoTemFiltro={enderecoTemFiltro}
               aplicar={(v) => {
                 const f = { ...filtrosDoFunilVazios(), ...v.filtros };
+                const l: ListaNoEndereco = { colunas: lerColunas(v.colunas), ordem: lerOrdem(v.ordem) };
                 setVisao(v.visao);
                 setFiltros(f);
-                gravar(v.visao, f);
+                setLista(l);
+                gravar(v.visao, f, l);
               }}
             />
           )}
@@ -168,6 +184,7 @@ export default function FunilVivoPage() {
             valores={valoresDoPainel(filtros)}
             aoMudar={(chave, valor) => mudarFiltros({ ...filtros, [chave]: valor })}
             aoLimparTudo={() => mudarFiltros(filtrosDoFunilVazios())}
+            extra={visao === 'lista' ? <SeletorDeColunas colunas={lista.colunas} aoMudar={(colunas) => mudarLista({ ...lista, colunas })} /> : undefined}
           />
           {editar && (
             <button
@@ -194,7 +211,7 @@ export default function FunilVivoPage() {
 
       {pronto && <BlocoDeTarefasDoComercial pessoa={filtros.dono} />}
 
-      {dados && visao === 'lista' && <ListaDoFunil cartoes={cartoes} />}
+      {dados && visao === 'lista' && <ListaDoFunil cartoes={cartoes} colunas={lista.colunas} ordem={lista.ordem} aoOrdenar={(ordem) => mudarLista({ ...lista, ordem })} />}
 
       {dados && visao === 'quadro' && (
         <div className="relative flex min-h-0 flex-1 snap-x snap-mandatory gap-3 overflow-x-auto pb-2 md:snap-none" onKeyDown={moverFocoNoFunil}>
@@ -266,68 +283,6 @@ function TextoDaAcao({ linha }: { linha: LinhaDaProximaAcao | null }) {
       {linha.texto}
       {linha.quando && <span className={linha.atrasada ? 'text-warn' : 'text-dim'}> · {linha.quando}</span>}
     </>
-  );
-}
-
-/**
- * O FORMATO LISTA (U4): uma linha por lead, com empresa, contato, etapa, dono,
- * produto, dias na etapa, próxima ação e pendências. A empresa abre o painel do
- * lead como no quadro (e a linha inteira também). A tabela rola dentro de si no
- * celular; a página não rola para o lado.
- */
-function ListaDoFunil({ cartoes }: { cartoes: CartaoDoFunil[] }) {
-  if (!cartoes.length) return <p className="text-[12.5px] text-dim">Nenhum lead com estes filtros.</p>;
-  return (
-    <div className="min-h-0 min-w-0 max-w-full flex-1 overflow-auto rounded border border-border" data-testid="funil-lista">
-      <table className="w-full min-w-[56rem] border-collapse text-left text-[12.5px]">
-        <caption className="sr-only">Leads do funil em lista</caption>
-        <thead className="sticky top-0 bg-bg2 font-os-mono text-[10px] uppercase tracking-[0.12em] text-muted">
-          <tr>
-            {['Empresa', 'Contato', 'Etapa', 'Responsável', 'Produto', 'Dias na etapa', 'Próxima ação', 'Pendências'].map((t) => (
-              <th key={t} scope="col" className="px-2.5 py-2 font-normal">{t}</th>
-            ))}
-          </tr>
-        </thead>
-        <tbody>
-          {cartoes.map((c) => {
-            const { principal, segunda } = proximaAcaoDoCartao(c);
-            const contagem = contagemDeTarefas(c.tarefasAbertas);
-            return (
-              <tr
-                key={c.leadId}
-                data-testid={`funil-linha-${c.leadId}`}
-                onClick={(e) => {
-                  if ((e.target as HTMLElement).closest('a, button')) return;
-                  e.currentTarget.querySelector<HTMLAnchorElement>('[data-linha-do-funil]')?.click();
-                }}
-                className="cursor-pointer border-t border-border hover:bg-surface"
-              >
-                <td className="px-2.5 py-2">
-                  <LinkDoLead leadId={c.leadId} aba="fio" data-linha-do-funil className={`rounded-sm font-semibold ${FOCO}`}>
-                    {c.empresa ?? c.nome}
-                  </LinkDoLead>
-                </td>
-                <td className="px-2.5 py-2 text-muted">{c.nome}</td>
-                <td className="whitespace-nowrap px-2.5 py-2">{COMERCIAL_ROTULO_DA_ETAPA[c.etapa]}</td>
-                <td className="px-2.5 py-2 text-muted">{c.dono ?? 'sem responsável'}</td>
-                <td className="px-2.5 py-2 text-muted">{c.produto ? ROTULO_DO_PRODUTO[c.produto] : ''}</td>
-                <td className="px-2.5 py-2 tabular-nums">{c.diasNaEtapa}{c.parado ? <span className="text-warn"> · parado</span> : null}</td>
-                <td className="px-2.5 py-2 text-muted" data-testid={`funil-linha-proxima-${c.leadId}`}>
-                  <TextoDaAcao linha={principal} />
-                  {segunda && <span className="block text-[11.5px] text-dim"><TextoDaAcao linha={segunda} /></span>}
-                  {contagem && <span className="block text-[11px] text-dim">{contagem}</span>}
-                </td>
-                <td className="px-2.5 py-2">
-                  {c.balao?.pendencias.length ? <span className="text-warn">{c.balao.pendencias.join('; ')}</span> : null}
-                  {c.avisoDoMover ? <span className="block text-warn">{c.avisoDoMover.texto}</span> : null}
-                  {!c.balao?.pendencias.length && !c.avisoDoMover ? <span className="text-dim">nenhuma</span> : null}
-                </td>
-              </tr>
-            );
-          })}
-        </tbody>
-      </table>
-    </div>
   );
 }
 

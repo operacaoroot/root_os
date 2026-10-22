@@ -333,7 +333,8 @@ describe('o formato Lista', () => {
     expect(window.location.search).toBe('?visao=lista');
     const lista = await screen.findByTestId('funil-lista');
     const cabecalhos = within(lista).getAllByRole('columnheader').map((c) => c.textContent);
-    expect(cabecalhos).toEqual(['Empresa', 'Contato', 'Etapa', 'Responsável', 'Produto', 'Dias na etapa', 'Próxima ação', 'Pendências']);
+    // I5 (22/10/2026): o valor entrou nas colunas padrão.
+    expect(cabecalhos).toEqual(['Empresa', 'Contato', 'Etapa', 'Responsável', 'Produto', 'Valor', 'Dias na etapa', 'Próxima ação', 'Pendências']);
     const linha = within(lista).getByTestId('funil-linha-a');
     for (const t of ['Construtora Alicerce', 'Marina Duarte', 'E6 · Proposta', 'Ana', 'Operação ROOT', '4', 'ligar para a Marina', 'dono do lead (E1)']) expect(linha).toHaveTextContent(t);
     expect(within(lista).getByTestId('funil-linha-b')).toHaveTextContent('sem responsável');
