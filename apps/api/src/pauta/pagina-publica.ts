@@ -41,6 +41,8 @@ export interface PedidoAoIp {
   method?: string;
   headers?: Record<string, string>;
   signal?: AbortSignal;
+  /** Corpo em texto (o JSON da Evolution). Vai com `Content-Length`. */
+  body?: string;
 }
 
 /**
@@ -144,7 +146,7 @@ export const pedirAoIp: Conectar = (u, ip, init) =>
         {
           method: metodo,
           agent: false,
-          headers: init.headers,
+          headers: init.body === undefined ? init.headers : { ...init.headers, 'Content-Length': String(Buffer.byteLength(init.body)) },
           signal: init.signal,
           lookup: ((_host: string, opcoes: { all?: boolean } | undefined, cb: (...a: unknown[]) => void) => {
             if (opcoes && typeof opcoes === 'object' && opcoes.all) cb(null, [{ address: ip, family: familia }]);
@@ -175,7 +177,8 @@ export const pedirAoIp: Conectar = (u, ip, init) =>
       return;
     }
     req.on('error', reject);
-    req.end();
+    if (init.body !== undefined) req.end(init.body);
+    else req.end();
   });
 
 /** Confere o destino e devolve o IP em que a conexão vai ser aberta. */

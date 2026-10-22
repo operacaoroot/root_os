@@ -30,6 +30,7 @@ import { PortaDoOperador } from '../src/gateway/porta-do-operador.service';
 import { ToolGateway } from '../src/gateway/tool-gateway.service';
 import { RegistroDeConectores } from '../src/integrations/conectores.registry';
 import { ConectoresService } from '../src/integrations/conectores.service';
+import { enderecoDeDentro } from '../src/pauta/endereco-de-dentro';
 import { baseDaEvolution, enderecosPermitidos, EvolutionDaEmpresaService } from '../src/pauta/evolution.service';
 import { PolicyService } from '../src/policy/policy.service';
 import { SinaisService } from '../src/policy/sinais.service';
@@ -111,6 +112,76 @@ describe('Evolution: a regra do endereço (SSRF)', () => {
       }
       expect(espiao).not.toHaveBeenCalled();
       expect(cofre.guardar).not.toHaveBeenCalled();
+    } finally {
+      espiao.mockRestore();
+    }
+  });
+
+  /** Um conector com a credencial no cofre de mentira; `casa` diz se a empresa é a da casa. */
+  const conectorComCofre = (casa: boolean, url: string) => {
+    const valores: Record<string, string> = { url, chave: 'chave-inventada-rebinding', instancia: 'inst-r' };
+    const cofre = {
+      envolver: vi.fn(async (ref: { nome: string }, fn: (c: { usar: (f: (v: string) => string) => string }) => unknown) => fn({ usar: (f) => f(valores[ref.nome]) })),
+      guardar: vi.fn(),
+      estado: vi.fn(),
+    };
+    const prisma = { org: { findFirst: vi.fn(async () => (casa ? { id: 'org-casa' } : null)) } };
+    return new EvolutionDaEmpresaService(prisma as never, cofre as never);
+  };
+
+  it('rebinding (Produção 22, revisão): para quem não é a casa, a conexão vai ao IP conferido e nunca a uma segunda resolução', async () => {
+    const espiao = vi.spyOn(globalThis, 'fetch');
+    try {
+      const conector = conectorComCofre(false, 'https://evo.exemplo.com');
+      const perguntas: string[] = [];
+      // público na conferência; rede privada em qualquer pergunta depois
+      conector.resolver = async (host) => {
+        perguntas.push(host);
+        return perguntas.length === 1 ? ['200.1.2.3'] : ['10.0.0.5'];
+      };
+      const conexoes: Array<{ url: string; ip: string; metodo?: string; body?: string; apikey?: string }> = [];
+      conector.conectar = async (u, ip, init) => {
+        conexoes.push({ url: u.toString(), ip, metodo: init.method, body: init.body, apikey: init.headers?.apikey });
+        return new Response(JSON.stringify({ key: { id: 'msg-1' } }), { status: 201, headers: { 'content-type': 'application/json' } });
+      };
+      expect(await conector.enviarAoNumero('org-x', '5532999990000', 'oi')).toEqual({ id: 'msg-1' });
+      expect(perguntas).toEqual(['evo.exemplo.com']);
+      expect(conexoes).toEqual([
+        { url: 'https://evo.exemplo.com/message/sendText/inst-r', ip: '200.1.2.3', metodo: 'POST', body: JSON.stringify({ number: '5532999990000', text: 'oi' }), apikey: 'chave-inventada-rebinding' },
+      ]);
+      // a chamada seguinte confere de novo: agora o nome cai na rede privada, e nada sai
+      await expect(conector.enviarAoNumero('org-x', '5532999990000', 'oi')).rejects.toThrow(/rede que esta empresa não pode chamar/);
+      expect(conexoes).toHaveLength(1);
+      expect(conexoes.every((c) => !enderecoDeDentro(c.ip))).toBe(true);
+      expect(espiao).not.toHaveBeenCalled();
+    } finally {
+      espiao.mockRestore();
+    }
+  });
+
+  it('rebinding: o 3xx da Evolution de fora não é seguido (vira erro com o status)', async () => {
+    const conector = conectorComCofre(false, 'https://evo.exemplo.com');
+    conector.resolver = async () => ['200.1.2.3'];
+    const ips: string[] = [];
+    conector.conectar = async (_u, ip) => {
+      ips.push(ip);
+      return new Response(null, { status: 302, headers: { location: 'http://10.0.0.5/' } });
+    };
+    await expect(conector.enviarAoNumero('org-x', '5532999990000', 'oi')).rejects.toThrow(/HTTP 302/);
+    expect(ips).toEqual(['200.1.2.3']);
+  });
+
+  it('a casa continua no fetch de sempre (rede privada e nome sem ponto são dela)', async () => {
+    const espiao = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({ key: { id: 'msg-casa' } }), { status: 201 }));
+    try {
+      const conector = conectorComCofre(true, 'http://root_evolution:8080');
+      conector.resolver = async () => ['172.18.0.5'];
+      const conectar = vi.fn();
+      conector.conectar = conectar as never;
+      expect(await conector.enviarAoNumero('org-casa', '5532999990000', 'oi')).toEqual({ id: 'msg-casa' });
+      expect(espiao).toHaveBeenCalledTimes(1);
+      expect(String(espiao.mock.calls[0][0])).toBe('http://root_evolution:8080/message/sendText/inst-r');
+      expect(conectar).not.toHaveBeenCalled();
     } finally {
       espiao.mockRestore();
     }
