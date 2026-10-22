@@ -26,6 +26,12 @@ import { Prisma, WorkFieldType, WorkStatusType } from '@prisma/client';
  * preserva tarefas, etapas e ids. Pasta e lista arquivadas (`arquivadaEm`) não
  * contam: não são a pasta sugerida nem viram destino. O cadeado `work-arvore:<empresa>` (o mesmo de
  * mover pasta) faz dois cliques ao mesmo tempo virarem uma criação só.
+ *
+ * A PASTA DO COMERCIAL (produção 22B, I3, 22/10/2026): a sugerida com `doComercial`
+ * (a Clientes) nasce marcada, e as listas dela também, para nunca aparecerem na
+ * árvore do Trabalho. Se ela já existe sem a marca (banco anterior à migration
+ * `20261022205000`), ganha a marca aqui, ela e as listas dela: marcar é idempotente
+ * e não muda nome, lugar, etapa nem tarefa.
  */
 
 /** O pipeline mínimo de toda lista sem modelo (padrão ClickUp: open → custom → closed). */
@@ -44,7 +50,7 @@ const chaveDoNome = (nome: string) => nome.trim().replace(/\s+/g, ' ').toLocaleL
  * `WorkService.criarListaDoModelo`, extraído para o seed poder usar sem Nest.
  */
 export async function criarListaDoModeloNoBanco(
-  db: Db, orgId: string, pai: { folderId: string | null; spaceId: string | null },
+  db: Db, orgId: string, pai: { folderId: string | null; spaceId: string | null; doComercial?: boolean },
   modelo: ModeloDeLista, nome: string, order?: number,
 ) {
   const list = await db.workList.create({ data: { orgId, ...pai, name: nome, ...(order !== undefined ? { order } : {}) } });
@@ -69,11 +75,17 @@ export async function criarListaDoModeloNoBanco(
 
 /** Lista com o pipeline mínimo. */
 export async function criarListaPadraoNoBanco(
-  db: Db, orgId: string, pai: { folderId: string | null; spaceId: string | null }, nome: string, order?: number,
+  db: Db, orgId: string, pai: { folderId: string | null; spaceId: string | null; doComercial?: boolean }, nome: string, order?: number,
 ) {
   const list = await db.workList.create({ data: { orgId, ...pai, name: nome, ...(order !== undefined ? { order } : {}) } });
   await db.workStatus.createMany({ data: ETAPAS_PADRAO_DA_LISTA.map((s) => ({ ...s, orgId, listId: list.id })) });
   return list;
+}
+
+/** Marca a pasta do Comercial e as listas dela, só onde ainda falta a marca (idempotente). */
+async function marcarDoComercial(db: Db, orgId: string, pastaId: string): Promise<void> {
+  await db.workFolder.updateMany({ where: { id: pastaId, orgId, doComercial: false }, data: { doComercial: true } });
+  await db.workList.updateMany({ where: { orgId, folderId: pastaId, doComercial: false }, data: { doComercial: true } });
 }
 
 /**
@@ -96,6 +108,7 @@ export async function criarEstruturaSugerida(
   let proximaOrdem = deTopo.reduce((m, p) => Math.max(m, p.order + 1), 0);
 
   for (const sugerida of estrutura) {
+    const marca = sugerida.doComercial ? { doComercial: true } : {};
     let pasta = deTopo.find((p) => !p.arquivadaEm && chaveDoNome(p.name) === chaveDoNome(sugerida.nome));
     if (!pasta && deTopo.some((p) => p.arquivadaEm && chaveDoNome(p.name) === chaveDoNome(sugerida.nome))) {
       // Arquivada de propósito: não se recria ao lado (o nome é único entre irmãs) nem se desarquiva sozinha.
@@ -104,8 +117,9 @@ export async function criarEstruturaSugerida(
     }
     if (pasta) {
       r.jaExistiam.pastas.push(pasta.name);
+      if (sugerida.doComercial) await marcarDoComercial(db, orgId, pasta.id);
     } else {
-      const criada = await db.workFolder.create({ data: { orgId, name: sugerida.nome, order: proximaOrdem++ } });
+      const criada = await db.workFolder.create({ data: { orgId, name: sugerida.nome, order: proximaOrdem++, ...marca } });
       pasta = { id: criada.id, name: criada.name, order: criada.order, arquivadaEm: null };
       deTopo.push(pasta);
       r.criadas.pastas.push(criada.name);
@@ -126,12 +140,12 @@ export async function criarEstruturaSugerida(
         orderBy: [{ order: 'asc' }, { createdAt: 'asc' }],
       })).find((x) => chaveDoNome(x.name) === chaveDoNome(l.nome));
       if (solta) {
-        await db.workList.update({ where: { id: solta.id }, data: { folderId: pasta.id, spaceId: null, order: ordemDaLista++ } });
+        await db.workList.update({ where: { id: solta.id }, data: { folderId: pasta.id, spaceId: null, order: ordemDaLista++, ...marca } });
         listas.push({ name: solta.name, order: ordemDaLista - 1 });
         r.movidas!.listas.push(`${pasta.name} / ${solta.name}`);
         continue;
       }
-      const pai = { folderId: pasta.id, spaceId: null };
+      const pai = { folderId: pasta.id, spaceId: null, ...marca };
       if (l.modelo) await criarListaDoModeloNoBanco(db, orgId, pai, MODELOS_DE_LISTA[l.modelo], l.nome, ordemDaLista++);
       else await criarListaPadraoNoBanco(db, orgId, pai, l.nome, ordemDaLista++);
       r.criadas.listas.push(`${pasta.name} / ${l.nome}`);

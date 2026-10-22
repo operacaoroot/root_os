@@ -2,6 +2,7 @@ import type { M05EscopoDto, M05FonteAutorizadaDto } from './fonte-autorizada.js'
 import { z } from 'zod';
 import { IndiceEscopoHumanoSchema, EspelhoOnboardingFonteSchema } from './onboarding-indice.js';
 import { RecorrenciaSchema, type RecorrenciaDaTarefa } from './tarefas-do-dia.js';
+import { TrabCorSchema, TrabIconeSchema, type CorDoTrabalho } from './aparencia-do-trabalho.js';
 
 // --- Auth ---
 export const LoginSchema = z.object({
@@ -5174,6 +5175,9 @@ export const TrabPastaUpdateSchema = z.object({
   order: z.number().int().min(0).optional(),
   spaceId: z.string().uuid().nullish(),
   parentId: z.string().uuid().nullish(),
+  /** Ícone e cor (I1, 22/10/2026): `null` apaga. Ver `aparencia-do-trabalho.ts`. */
+  icone: TrabIconeSchema,
+  cor: TrabCorSchema,
 }).refine((p) => !(p.spaceId && p.parentId), TRAB_PASTA_COM_DOIS_PAIS);
 export type TrabPastaCreateInput = z.infer<typeof TrabPastaCreateSchema>;
 export type TrabPastaUpdateInput = z.infer<typeof TrabPastaUpdateSchema>;
@@ -5188,6 +5192,9 @@ export const TrabListaUpdateSchema = z.object({
   spaceId: z.string().uuid().nullish(),
   name: z.string().min(1).max(80).optional(),
   order: z.number().int().min(0).optional(),
+  /** Ícone e cor (I1, 22/10/2026): `null` apaga. Ver `aparencia-do-trabalho.ts`. */
+  icone: TrabIconeSchema,
+  cor: TrabCorSchema,
 }).refine((l) => !(l.folderId && l.spaceId), TRAB_LISTA_COM_DOIS_PAIS);
 export type TrabListaCreateInput = z.infer<typeof TrabListaCreateSchema>;
 export type TrabListaUpdateInput = z.infer<typeof TrabListaUpdateSchema>;
@@ -5499,7 +5506,11 @@ export const MODELOS_DE_LISTA = {
  * com as etapas padrão (A fazer, Em andamento, Concluída).
  * -------------------------------------------------------------------------- */
 export interface ListaSugerida { nome: string; modelo: ChaveDeModeloDeLista | null }
-export interface PastaSugerida { nome: string; listas: readonly ListaSugerida[] }
+export interface PastaSugerida {
+  nome: string; listas: readonly ListaSugerida[];
+  /** Do Comercial (I3, 22/10/2026): nasce marcada, fora da árvore do Trabalho (ver `pasta-do-comercial.ts`). */
+  doComercial?: boolean;
+}
 
 /*
  * Rodada de produção 1 (21/10/2026, a ata do Rodrigo): Gestão leva Administrativo,
@@ -5518,6 +5529,7 @@ export const ESTRUTURA_SUGERIDA: readonly PastaSugerida[] = [
   },
   {
     nome: 'Clientes',
+    doComercial: true,
     listas: [
       { nome: 'Esteira de clientes', modelo: 'esteira-de-clientes' },
       { nome: 'Onboarding de cliente', modelo: 'onboarding-de-cliente' },
@@ -5585,6 +5597,9 @@ export interface TrabListaDto {
   statuses: TrabStatusDto[]; fields: TrabCampoDto[];
   /** `cadastro` não recebe tarefa movida de outra lista (A3); ausente = `tarefas`. */
   natureza?: 'tarefas' | 'cadastro';
+  /** Ícone e cor na frente do nome (I1, 22/10/2026); ausente ou nulo = sem. */
+  icone?: string | null;
+  cor?: CorDoTrabalho | null;
 }
 /**
  * `folders` traz TODAS as pastas, de qualquer nível, numa lista só: quem quiser
@@ -5594,6 +5609,9 @@ export interface TrabListaDto {
 export interface TrabPastaDto {
   id: string; name: string; order: number; lists: TrabListaDto[];
   spaceId: string | null; parentId: string | null; externalId: string | null;
+  /** Ícone e cor na frente do nome (I1, 22/10/2026); ausente ou nulo = sem. */
+  icone?: string | null;
+  cor?: CorDoTrabalho | null;
 }
 export interface TrabEspacoDto { id: string; name: string; order: number; externalId: string | null }
 export interface TrabTagDto { id: string; name: string; color: string }
@@ -5621,6 +5639,11 @@ export interface TrabEstrutura {
   espacos: TrabEspacoDto[];
   folders: TrabPastaDto[];
   listasSoltas: TrabListaDto[];
+  /**
+   * A pasta Clientes e as listas dela (I3, 22/10/2026): do Comercial, fora da árvore.
+   * Para ACHAR uma lista pelo id, nunca para desenhar; ver `pasta-do-comercial.ts`.
+   */
+  pastasDoComercial?: TrabPastaDto[];
   camposGlobais: TrabCampoDto[];
   tags: TrabTagDto[];
   /** Os responsáveis HUMANOS que aparecem nas tarefas (texto livre). */
