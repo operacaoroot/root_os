@@ -1,12 +1,12 @@
 {
-  "inicio": "2026-10-22T04:00:05.013Z",
+  "inicio": "2026-10-22T05:52:18.778Z",
   "web": "http://127.0.0.1:3031",
   "passos": [
     {
       "n": 1,
       "nome": "P1 · Visão geral a 1440: os gráficos cabem e o balão da primeira e da última coluna fica dentro",
       "ok": true,
-      "ms": 1112,
+      "ms": 1124,
       "detalhe": [
         {
           "titulo": "Carga por prazo",
@@ -42,7 +42,7 @@
       "n": 3,
       "nome": "P2 · Agenda: Semana no endereço, grade de horas no desktop, volta ao Mês",
       "ok": true,
-      "ms": 2030,
+      "ms": 1997,
       "detalhe": {
         "dia": "2026-10-22"
       }
@@ -51,13 +51,13 @@
       "n": 4,
       "nome": "P2 · Agenda a 390: a semana vira lista por dia, sem rolagem lateral",
       "ok": true,
-      "ms": 734
+      "ms": 750
     },
     {
       "n": 5,
       "nome": "P4 · Todas: \"Ocultar status vazios\" alterna, conta, vai ao endereço e some com as colunas vazias",
       "ok": true,
-      "ms": 1642,
+      "ms": 1585,
       "detalhe": {
         "colunasAntes": 3,
         "vazias": 1,
@@ -68,16 +68,16 @@
       "n": 6,
       "nome": "P4 · a vista salva leva \"Ocultar status vazios\"",
       "ok": true,
-      "ms": 1732,
+      "ms": 1632,
       "detalhe": {
-        "nome": "Produção 21 612691"
+        "nome": "Produção 21 346388"
       }
     },
     {
       "n": 7,
       "nome": "P3 · a árvore do Trabalho: o menu da lista oferece excluir (ou arquivar antes) e pede o nome",
       "ok": true,
-      "ms": 876,
+      "ms": 801,
       "detalhe": {
         "itens": [
           "Renomear",
@@ -101,9 +101,9 @@
       "n": 9,
       "nome": "P7 · Atas: duas colunas, a página não rola e a lista rola sozinha",
       "ok": true,
-      "ms": 2084,
+      "ms": 1950,
       "detalhe": {
-        "ata": "memoria:77eefd30-d309-4497-a7ec-3d927c7433d3",
+        "ata": "memoria:66a59db1-20a3-4b67-8521-77c821492b5d",
         "rolavel": true,
         "baixo": 876,
         "janela": 900,
@@ -116,28 +116,28 @@
       "n": 10,
       "nome": "P7 · Atas: busca por palavra e por data vão ao endereço e filtram",
       "ok": true,
-      "ms": 4405,
+      "ms": 4385,
       "detalhe": {
-        "comPalavra": 21,
+        "comPalavra": 22,
         "noPassado": 0,
-        "hoje": 21,
-        "endereco": "?ata=memoria%3A77eefd30-d309-4497-a7ec-3d927c7433d3&q=<palavra>&de=2026-10-16&ate=2026-10-16"
+        "hoje": 22,
+        "endereco": "?ata=memoria%3A66a59db1-20a3-4b67-8521-77c821492b5d&q=<palavra>&de=2026-10-16&ate=2026-10-16"
       }
     },
     {
       "n": 11,
       "nome": "P8 · Integrações: o cartão WhatsApp (Evolution) com estado e webhook, sem chave na tela e sem o DigiSac",
       "ok": true,
-      "ms": 2415,
+      "ms": 2302,
       "detalhe": {
-        "selo": "Não configurado"
+        "selo": "Conectado"
       }
     },
     {
       "n": 12,
       "nome": "P9 · aba Sala: o estado da sala deste lead, a ajuda e o \"Copiar link da sala\"",
       "ok": true,
-      "ms": 2093,
+      "ms": 2010,
       "detalhe": {
         "linkNaAreaDeTransferencia": true,
         "naoEntregueSimulado": false,
@@ -148,13 +148,13 @@
       "n": 13,
       "nome": "P9 · aba Sala no claro e a 390",
       "ok": true,
-      "ms": 2240
+      "ms": 2259
     },
     {
       "n": 14,
       "nome": "A3 · árvore: \"+ nova pasta\" inline (Enter salva), renomear com duplo clique, repetido no mesmo nível recusado",
       "ok": true,
-      "ms": 1879,
+      "ms": 1939,
       "detalhe": {
         "recusa": "Já existe uma pasta com esse nome neste lugar.",
         "pastas": 2
@@ -164,7 +164,7 @@
       "n": 15,
       "nome": "A3 · árvore: arrastar a lista para outra pasta e reordenar com Alt+↓",
       "ok": true,
-      "ms": 2297,
+      "ms": 2210,
       "detalhe": {
         "listasNaPasta": 2
       }
@@ -173,7 +173,7 @@
       "n": 16,
       "nome": "A3 · apagar pasta com listas: o diálogo pede o destino (Sem pasta), move as listas e apaga",
       "ok": true,
-      "ms": 1240,
+      "ms": 1174,
       "detalhe": {
         "listasMovidas": 2
       }
@@ -182,7 +182,7 @@
       "n": 17,
       "nome": "A3 · apagar lista vazia pelo menu (nome digitado) e a pasta vazia que sobrou; 390 sem rolagem lateral",
       "ok": true,
-      "ms": 2443,
+      "ms": 2335,
       "detalhe": {
         "listasApagadas": 2
       }
@@ -191,7 +191,7 @@
       "n": 18,
       "nome": "A1 · Funil vivo: bloco \"Tarefas do comercial\" com contagem, \"+ tarefa\" (Enter salva) e concluir",
       "ok": true,
-      "ms": 1538,
+      "ms": 1604,
       "detalhe": {
         "contagemAntes": 5
       }
@@ -200,7 +200,7 @@
       "n": 19,
       "nome": "A1 · painel do lead: bloco \"Tarefas\", \"+ tarefa\" já ligada ao lead, e o cartão mostra a tarefa",
       "ok": true,
-      "ms": 2048,
+      "ms": 1961,
       "detalhe": {
         "linhaMostra": true
       }
@@ -209,7 +209,7 @@
       "n": 20,
       "nome": "A1 · o bloco no claro e a 390, sem rolagem lateral",
       "ok": true,
-      "ms": 1500
+      "ms": 1455
     }
   ],
   "screenshots": [
@@ -250,6 +250,6 @@
     "Drive e Granola com dublê estão provados na suíte da API (trabalho-atas-fontes, trabalho-atas-granola); a stack do seed não tem conta Google nem o cofre de pé"
   ],
   "ok": true,
-  "fim": "2026-10-22T04:00:43.962Z",
-  "duracaoMs": 38949
+  "fim": "2026-10-22T05:52:56.886Z",
+  "duracaoMs": 38107
 }

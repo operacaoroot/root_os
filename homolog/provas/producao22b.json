@@ -1,12 +1,12 @@
 {
-  "inicio": "2026-10-22T03:58:44.479Z",
+  "inicio": "2026-10-22T05:51:11.184Z",
   "web": "http://127.0.0.1:3031",
   "passos": [
     {
       "n": 1,
       "nome": "01 · botão de recolher à frente da logo: recolhe e volta; recolhido, o R e o botão lado a lado",
       "ok": true,
-      "ms": 3806,
+      "ms": 3603,
       "detalhe": {
         "larguraAberto": 252,
         "larguraRecolhido": 64
@@ -16,7 +16,7 @@
       "n": 2,
       "nome": "02 · acordeão: clicar de novo na área aberta fecha; outra área abre a dela e fecha a anterior",
       "ok": true,
-      "ms": 1929,
+      "ms": 1894,
       "detalhe": {
         "outra": "dia",
         "url": "/dia-a-dia"
@@ -26,7 +26,7 @@
       "n": 3,
       "nome": "03 · engrenagem com Perfil, Lixeira, Registro de ações e Configurações; a Lixeira abre /lixeira",
       "ok": true,
-      "ms": 3920,
+      "ms": 3959,
       "detalhe": {
         "perfil": "Perfil",
         "lixeira": "Lixeira",
@@ -38,7 +38,7 @@
       "n": 4,
       "nome": "04 · árvore: \"⋯\" da lista só no hover/foco; o menu cabe na janela em 1440, 768 e 390; diz por que não exclui",
       "ok": true,
-      "ms": 4816,
+      "ms": 4857,
       "detalhe": {
         "opacidade": {
           "semHover": 0,
@@ -55,7 +55,7 @@
           },
           "768": {
             "x": 476,
-            "y": 460,
+            "y": 494,
             "w": 272,
             "h": 186,
             "lado": "baixo"
@@ -75,7 +75,7 @@
       "n": 5,
       "nome": "05 · ícone e cor na lista: grava, aparece na árvore e no título, apaga",
       "ok": true,
-      "ms": 3240,
+      "ms": 3248,
       "detalhe": {
         "icone": "🚀",
         "cor": "good",
@@ -86,9 +86,9 @@
       "n": 6,
       "nome": "06 · excluir pelo botão direito → some do quadro → Lixeira → Restaurar → volta à lista e ao status",
       "ok": true,
-      "ms": 4318,
+      "ms": 4305,
       "detalhe": {
-        "linha": "e2e 22b excluir mvj0h92q EXCLUÍDA excluída em 22/10/2026, 00:59 · por Admin Root de e2e 22b lista mvj0h92q · etapa Em an",
+        "linha": "e2e 22b excluir mvj4huvf EXCLUÍDA excluída em 22/10/2026, 02:51 · por Admin Root de e2e 22b lista mvj4huvf · etapa Em an",
         "status": "Em andamento",
         "aviso": "1 tarefa restaurada: voltaram para a lista e a etapa de onde saíram."
       }
@@ -97,7 +97,7 @@
       "n": 7,
       "nome": "07 · árvore sem a pasta Clientes e sem Esteira, Onboarding de cliente, Execução; Implantação com cards",
       "ok": true,
-      "ms": 3049,
+      "ms": 2935,
       "detalhe": {
         "cardsNaImplantacao": 10,
         "pastasDoComercial": [
@@ -109,18 +109,18 @@
       "n": 8,
       "nome": "08 · botão direito: as 8 ações; Renomear, Duplicar e Mesclar; Shift+F10 abre o mesmo menu",
       "ok": true,
-      "ms": 10022,
+      "ms": 9814,
       "detalhe": {
-        "duplicar": "Cópia criada: cópia de e2e 22b origem renomeada mvj0h92q.",
-        "mesclar": "Mesclada em e2e 22b destino mvj0h92q: 1 comentário(s), 0 anexo(s) e 0 subtarefa(s) foram junto. A original ficou arquivada.",
-        "notaNaOrigem": "Mesclada em [e2e 22b destino mvj0h92q](/trabalho?lista=973b2c80-ca7f-45e2-88a3-07b8bd00e31a&tarefa=906e30a3-0e68-4a7c-9a"
+        "duplicar": "Cópia criada: cópia de e2e 22b origem renomeada mvj4huvf.",
+        "mesclar": "Mesclada em e2e 22b destino mvj4huvf: 1 comentário(s), 0 anexo(s) e 0 subtarefa(s) foram junto. A original ficou arquivada.",
+        "notaNaOrigem": "Mesclada em [e2e 22b destino mvj4huvf](/trabalho?lista=dd3513f1-97b3-498a-a9ba-150dd48730f7&tarefa=d8a4c387-bd78-4221-84"
       }
     },
     {
       "n": 9,
       "nome": "09 · modo centralizado: \"Abrir no centro\" em duas colunas, Esc fecha, a preferência fica, \"Voltar para o lado\"; 390 tela cheia",
       "ok": true,
-      "ms": 3550,
+      "ms": 3399,
       "detalhe": {
         "centro": {
           "x": 130,
@@ -136,7 +136,7 @@
       "n": 10,
       "nome": "10 · Funil vivo em lista: larguras mínimas, arrastar a borda (persiste), ordenar (aria-sort), esconder coluna; 390 em cartões",
       "ok": true,
-      "ms": 4248,
+      "ms": 4281,
       "detalhe": {
         "larguras": {
           "empresa": 220,
@@ -165,7 +165,7 @@
       "n": 11,
       "nome": "11 · Propostas: a primeira coluna é o lead, sem origem, \"Aparelhos\" antes da lista; linha abre o lead; sem lead → Vincular",
       "ok": true,
-      "ms": 2499,
+      "ms": 2336,
       "detalhe": {
         "cabecalhos": [
           "Lead",
@@ -192,7 +192,7 @@
       "n": 12,
       "nome": "12 · perfil: enviar a foto (PNG 64×64), ela aparece no perfil e na Equipe; a data de nascimento grava",
       "ok": true,
-      "ms": 5403,
+      "ms": 5368,
       "detalhe": {
         "foto": "jpeg",
         "aniversario": "aniversário 9 de março",
@@ -204,7 +204,7 @@
       "n": 13,
       "nome": "13 · Equipe: vault-dublê reindexado; \"Nome no vault\" de três pessoas; o que conduz, dona e substituta, com link ao Contexto",
       "ok": true,
-      "ms": 5941,
+      "ms": 5741,
       "detalhe": {
         "reindex": 12,
         "socios": [
@@ -254,7 +254,7 @@
       "n": 14,
       "nome": "14 · Integrações: sem Asana, Extrato OFX e Zapier; Granola e Evolution no mesmo cartão, \"Configurar\" abre as ações",
       "ok": true,
-      "ms": 3002,
+      "ms": 2959,
       "detalhe": {
         "cartoes": 17,
         "largura": 372,
@@ -337,8 +337,8 @@
   ],
   "defeitos": [],
   "ok": true,
-  "lista": "973b2c80",
+  "lista": "dd3513f1",
   "preparoDoVault": "o vault-dublê já tinha .git",
-  "fim": "2026-10-22T03:59:44.638Z",
-  "duracaoMs": 60159
+  "fim": "2026-10-22T05:52:10.349Z",
+  "duracaoMs": 59165
 }
