@@ -11,6 +11,7 @@ import { useModulos } from './modulos';
 import { textoDoSelo, tituloDoSelo, useCaixa } from './caixa';
 import { LogoRoot } from './LogoRoot';
 import { BalaoDaArea } from './BalaoDaArea';
+import { BolhaDoWhatsapp, useNaoLidasDoWhatsapp } from './whatsapp/bolha-do-whatsapp';
 
 type IconName = keyof typeof Icons;
 
@@ -83,7 +84,7 @@ export function lerTema(): TemaOs {
  *    anterior, como antes. A subseção da rota segue com `aria-current="page"`.
  */
 export function Sidebar() {
-  const { user } = useAuth();
+  const { user, token } = useAuth();
   const { modulos } = useModulos();
   const caixa = useCaixa();
   const pathname = usePathname();
@@ -103,6 +104,8 @@ export function Sidebar() {
   const areas = modulosDeNavegacao(user?.permissions ?? [], modulos ?? undefined, ehPlataforma);
   const seloDaCaixa = { texto: textoDoSelo(caixa), titulo: tituloDoSelo(caixa) };
   const inicio = areas.find((area) => area.key === 'dia')?.entrada.href ?? '/dia-a-dia';
+  // Produção 22C (W4): a bolha de não lidas no item WhatsApp. Só pergunta quando a área aparece no menu.
+  const naoLidasDoWhatsapp = useNaoLidasDoWhatsapp(token, areas.some((area) => area.key === 'whatsapp'), pathname);
 
   // O grupo aberto no menu aberto. Segue a rota; o clique na área abre na hora.
   const [areaAberta, setAreaAberta] = useState<string | undefined>(areaAtiva);
@@ -411,6 +414,7 @@ export function Sidebar() {
                 {area.key === 'dia' && seloDaCaixa.texto &&
                   // Recolhido (só ícones, 64 px), o selo sobe para o canto do ícone em vez de empurrar para fora da barra.
                   <span aria-label={seloDaCaixa.titulo} title={seloDaCaixa.titulo} className={`bg-brand px-1.5 py-0.5 text-[10px] font-bold text-ink ${compacta ? 'min-[820px]:absolute min-[820px]:right-1 min-[820px]:top-1 min-[820px]:px-1 min-[820px]:py-0 min-[820px]:text-[9px]' : ''}`}>{seloDaCaixa.texto}</span>}
+                {area.key === 'whatsapp' && <BolhaDoWhatsapp n={naoLidasDoWhatsapp} compacta={compacta} />}
                 {!compacta && temLista && (aberta ? <Icons.ChevronDown size={14} aria-hidden /> : <Icons.ChevronRight size={14} aria-hidden />)}
               </Link>
               {aberta && (

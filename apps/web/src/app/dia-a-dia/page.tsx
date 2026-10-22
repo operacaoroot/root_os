@@ -4,6 +4,8 @@ import Link from 'next/link';
 import { useAuth } from '@/lib/auth';
 import { VisaoGeralDasTarefas } from '@/components/tarefas/VisaoGeralDasTarefas';
 import { AniversariosDoDia } from '@/components/AniversariosDoDia';
+import { useModulos } from '@/components/modulos';
+import { WhatsappNoDiaADia } from '@/components/whatsapp/WhatsappNoDiaADia';
 
 /*
  * DIA A DIA › VISÃO GERAL (versão final, 19/10/2026): a primeira aba e a entrada
@@ -12,7 +14,8 @@ import { AniversariosDoDia } from '@/components/AniversariosDoDia';
  * Trabalho; cada número abre essa lista já filtrada.
  */
 export default function VisaoGeralPage() {
-  const { can } = useAuth();
+  const { can, token } = useAuth();
+  const { ligado } = useModulos();
   return (
     <div className="com-tema mx-auto max-w-[1240px] space-y-5 text-text">
       <div className="flex flex-wrap items-baseline justify-between gap-3">
@@ -21,6 +24,12 @@ export default function VisaoGeralPage() {
       </div>
       {/* Produção 22B (I6): o aniversário do dia, junto do dash (quem não vê as tarefas não carrega nada aqui). */}
       {can('tarefas.ver') && <AniversariosDoDia />}
+      {/* Produção 22C (W4): o WhatsApp no Dia a dia, só com o comercial contratado e quem vê os leads. */}
+      {can('leads.ver') && ligado('leads') && (
+        <div className="grid gap-5 lg:grid-cols-2">
+          <WhatsappNoDiaADia token={token} />
+        </div>
+      )}
       {can('tarefas.ver') ? <VisaoGeralDasTarefas /> : <p className="text-muted">Sem acesso às tarefas.</p>}
     </div>
   );
