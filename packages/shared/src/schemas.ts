@@ -6141,6 +6141,12 @@ export interface CaixaMinhaTarefa {
   prazo: string | null;
   /** O texto gravado em `assignee` (texto livre herdado do ClickUp). */
   responsavel: string | null;
+  /**
+   * Produção 22B (I6): as CONTAS responsáveis (a principal primeiro, depois as
+   * outras), com id e nome, para a tela desenhar o avatar. Opcional: resposta
+   * antiga não traz, e a tela cai no texto de `responsavel`.
+   */
+  responsaveis?: { id: string; nome: string }[];
   comentarios: number;
   atualizadaEm: string;
   /** Os mesmos motivos de parada da caixa (prazo vencido, sem movimento, presa). */

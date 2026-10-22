@@ -600,6 +600,9 @@ describe.skipIf(!URL_DO_BANCO)('P1: a caixa de entrada contra o Postgres', () =>
     expect(todas.itens.map((t) => t.titulo)).toEqual(['Minha tarefa']);
     expect(todas.itens[0].comentarios).toBe(3);
     expect(todas.itens[0].motivos).toEqual([]);
+    // I6 (produção 22B): a conta responsável com id e nome, para o avatar; o texto herdado continua em `responsavel`.
+    expect(todas.itens[0].responsaveis).toEqual([{ id: EU, nome: 'Pedro Caixa' }]);
+    expect(todas.itens[0].responsavel).toBe('pedro caixa');
 
     const qualquer = await leitura.tarefas({
       ...sessao(EU),

@@ -464,6 +464,8 @@ export class CaixaAtividadeService {
         agenteId: true,
         agenteEm: true,
         assignee: true,
+        assigneeUserId: true,
+        outrosResponsaveisIds: true,
         listId: true,
         clienteId: true,
         priority: true,
@@ -477,6 +479,17 @@ export class CaixaAtividadeService {
     const pagina = truncado ? linhas.slice(0, TETO_MINHAS_TAREFAS) : linhas;
     // T3/T4: o cliente, escopado por empresa (o mesmo ajudante do Trabalho).
     const clientes = await nomesDosClientes(this.prisma, orgId, pagina.map((t) => t.clienteId));
+    // I6 (produção 22B): os nomes das contas responsáveis, numa consulta só e
+    // escopada pela empresa, para a tela desenhar o avatar de cada uma.
+    const idsDasPessoas = [...new Set(pagina.flatMap((t) => [t.assigneeUserId, ...(t.outrosResponsaveisIds ?? [])]).filter((x): x is string => !!x))];
+    const gente = idsDasPessoas.length
+      ? await this.prisma.user.findMany({ where: { orgId, id: { in: idsDasPessoas } }, select: { id: true, name: true } })
+      : [];
+    const nomeDaPessoa = new Map(gente.map((u) => [u.id, u.name]));
+    const responsaveisDa = (t: { assigneeUserId: string | null; outrosResponsaveisIds: string[] | null }) =>
+      [...new Set([t.assigneeUserId, ...(t.outrosResponsaveisIds ?? [])].filter((x): x is string => !!x))]
+        .filter((id) => nomeDaPessoa.has(id))
+        .map((id) => ({ id, nome: nomeDaPessoa.get(id)! }));
 
     return {
       ...base,
@@ -496,6 +509,7 @@ export class CaixaAtividadeService {
         statusTipo: t.status.type,
         prazo: t.dueDate?.toISOString() ?? null,
         responsavel: t.assignee,
+        responsaveis: responsaveisDa(t),
         comentarios: t._count.comments,
         atualizadaEm: t.updatedAt.toISOString(),
         criadaEm: t.createdAt.toISOString(),
