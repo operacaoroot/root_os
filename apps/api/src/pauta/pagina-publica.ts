@@ -3,7 +3,7 @@ import { lookup } from 'node:dns/promises';
 import { request as httpRequest, type IncomingMessage } from 'node:http';
 import { request as httpsRequest } from 'node:https';
 import { isIP } from 'node:net';
-import { Readable } from 'node:stream';
+import { pipeline, Readable } from 'node:stream';
 import { createBrotliDecompress, createGunzip, createInflate } from 'node:zlib';
 
 import { enderecoDeDentro } from './endereco-de-dentro';
@@ -59,12 +59,65 @@ export function ipDaConexao(enderecos: readonly string[]): string {
 
 const STATUS_SEM_CORPO = new Set([101, 103, 204, 205, 304]);
 
+/**
+ * O corpo, descomprimido quando o servidor declarou compressão.
+ *
+ * `pipeline` e não `pipe` (Produção 22, revisão): `pipe` não leva o erro nem o
+ * fechamento da resposta ao descompressor. Um servidor que mandava
+ * `Content-Encoding: gzip`, cinquenta bytes e parava fazia o prazo derrubar o
+ * socket, mas o descompressor ficava aberto para sempre, e quem lia o corpo
+ * (`lerCorpoComTeto`) nunca recebia nem o fim nem o erro. Com `pipeline`, a
+ * resposta que morre destrói o descompressor com o erro, e o descompressor que
+ * é cancelado (o teto de bytes) destrói a resposta e solta o socket.
+ */
 function corpoDescomprimido(res: IncomingMessage): Readable {
   const codificacao = String(res.headers['content-encoding'] ?? '').trim().toLowerCase();
-  if (codificacao === 'gzip' || codificacao === 'x-gzip') return res.pipe(createGunzip());
-  if (codificacao === 'deflate') return res.pipe(createInflate());
-  if (codificacao === 'br') return res.pipe(createBrotliDecompress());
-  return res;
+  const descompressor =
+    codificacao === 'gzip' || codificacao === 'x-gzip'
+      ? createGunzip()
+      : codificacao === 'deflate'
+        ? createInflate()
+        : codificacao === 'br'
+          ? createBrotliDecompress()
+          : null;
+  if (!descompressor) return res;
+  pipeline(res, descompressor, () => undefined);
+  return descompressor;
+}
+
+/** O teto de bytes (já descomprimidos) de uma página ou de um link de fora: 2 MB. */
+export const TETO_DE_BYTES_DA_PAGINA = 2 * 1024 * 1024;
+
+/** O corpo passou do teto. Quem chama traduz para a frase do seu contexto. */
+export class CorpoAcimaDoTetoError extends Error {
+  constructor(readonly teto: number) {
+    super(`o corpo passa de ${Math.round(teto / 1_048_576)} MB`);
+    this.name = 'CorpoAcimaDoTetoError';
+  }
+}
+
+/**
+ * Lê o corpo como texto, parando no teto (contado DEPOIS de descomprimir: uma
+ * bomba gzip de poucos KB que vira gigabytes para no teto, sem ocupar a
+ * memória). Passou do teto, a leitura é cancelada e o socket é solto. O link
+ * da ata e a captura da pauta leem por aqui.
+ */
+export async function lerCorpoComTeto(res: Response, teto = TETO_DE_BYTES_DA_PAGINA): Promise<string> {
+  const leitor = res.body?.getReader();
+  if (!leitor) return '';
+  const partes: Uint8Array[] = [];
+  let total = 0;
+  for (;;) {
+    const { done, value } = await leitor.read();
+    if (done) break;
+    total += value.byteLength;
+    if (total > teto) {
+      await leitor.cancel().catch(() => undefined);
+      throw new CorpoAcimaDoTetoError(teto);
+    }
+    partes.push(value);
+  }
+  return Buffer.concat(partes.map((p) => Buffer.from(p))).toString('utf8');
 }
 
 /**
