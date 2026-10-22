@@ -108,6 +108,18 @@ import { GravacaoDoWhatsappRegistry } from './gravacao-do-whatsapp.registry';
  * vai para a entrada do comercial (`EntradaDiretaRegistry`), por registro. Quem
  * é identidade cadastrada do canal nunca é desviado: o registro confere isso
  * antes de perguntar ao comercial. O resto segue para o canal como sempre.
+ *
+ * ----------------------------------------------------------------------------
+ * E A GRAVAÇÃO (produção 22C, W1)
+ * ----------------------------------------------------------------------------
+ * Antes de qualquer leitor, o corpo passa pelo `GravacaoDoWhatsappRegistry`,
+ * onde o módulo do WhatsApp (`whatsapp/gravador.service.ts`) se inscreve: toda
+ * mensagem, 1:1 e grupo, inclusive `fromMe`, vira `WhatsAppMensagem` (só com a
+ * instância desta empresa no corpo e o conector ligado), e o
+ * `connection.update` faz Conexões medir o estado de novo. A gravação nunca
+ * barra nem altera o que vem depois: o registro não lança, o gravador não mexe
+ * no corpo, e os leitores recebem o MESMO corpo, na mesma ordem (grupo de links
+ * → entrada do lead → canal). Sem inscrito, o webhook é o de antes.
  */
 @Controller('approvals/canal')
 export class CanalDeAprovacaoController {

@@ -435,6 +435,8 @@ const ALVOS: Alvo[] = [
   { tabela: 'ComercialDocumento', escopo: 'filho', chaveSql: '"id"', nota: 'Espelho do contrato no provedor de assinatura, com os links de assinar. LER a da outra entrega o link que assina o contrato alheio.' },
   { tabela: 'LeadReacao', escopo: 'filho', chaveSql: '"id"', nota: 'O que o cliente leu na proposta e o que anotou nela (rodada da implantação I4): seção, tempo por visita, "faz sentido", dúvida e ideia com o texto dele. LER a da outra é ler como o cliente alheio reagiu à proposta e o que ele pensa dela; ESCREVER é pôr palavra na boca do cliente de outra casa ou apagar o termômetro dela. A rota anônima escreve aqui só DEPOIS de achar a empresa pelo hash na sala, então a leitura NÃO aceita a sentinela pública.' },
   { tabela: 'SalaVersao', escopo: 'filho', chaveSql: '"id"', nota: 'A sala do cliente publicada por versão (rodada da implantação I3): o rascunho da bancada e cada versão que o cliente leu, com próximos passos, o combinado e quem cuida da conta. LER a da outra é ver o plano de implantação e o que a casa vizinha combinou com o cliente dela; ESCREVER é trocar o que o cliente alheio lê no link ou publicar por ela. A rota anônima lê aqui só DEPOIS de achar a empresa pelo hash na sala, então a leitura NÃO aceita a sentinela pública.' },
+  { tabela: 'WhatsAppConversa', escopo: 'tenant', chaveSql: '"id"', nota: 'A conversa do número da empresa no WhatsApp (produção 22C, W1): o chat 1:1 ou o grupo, o nome do contato ou o assunto do grupo, a lista de participantes com os números, as não lidas e o vínculo com lead ou cliente. Ler a da outra empresa é ler com quem ela conversa e em que grupos está; ESCREVER é ligar a conversa dela ao lead errado ou zerar as não lidas. Raiz da empresa: o orgId vem do insert (o gravador do webhook, depois da instância conferida).' },
+  { tabela: 'WhatsAppMensagem', escopo: 'filho', chaveSql: '"id"', nota: 'Toda mensagem que passou pelo número da empresa (produção 22C, W1), entrada e saída, 1:1 e grupo: o texto, quem escreveu (número e nome), a mídia só com metadados. LER a da outra é ler a conversa inteira dela com leads e clientes; ESCREVER é pôr palavra na boca do cliente alheio. O gatilho deriva a empresa da conversa.' },
   { tabela: 'OperacaoRodada', escopo: 'tenant', chaveSql: '"id"', nota: 'O painel semanal da operação da ROOT: clientes, o que cada um deve, o que falta cobrar e as decisões em aberto. Em produção só a empresa da plataforma tem linha (o script que grava recusa org de cliente), mas a policy não sabe disso — se ela falhar, um cliente lê a carteira da ROOT com o valor que cada outro cliente paga. ESCREVER é reescrever o painel de outra empresa; apagar não é caminho da aplicação (sem GRANT de DELETE).' },
 
   // ---- trabalho ---------------------------------------------------------
@@ -1450,6 +1452,18 @@ async function semear(c: PoolClient, rotulo: 'A' | 'B', vec: string): Promise<vo
   reg('SalaVersao', await ins(c, 'SalaVersao', {
     id: crypto.randomUUID(), orgId, leadId, numero: 1, estado: 'publicada', publicadaEm: agora,
     conteudo: JSON.stringify({ nome: `Sala privada da org ${rotulo}` }), hash: 'a'.repeat(64), atualizadoEm: agora,
+  }));
+  // O WhatsApp da empresa (produção 22C, W1): a conversa (raiz) e a mensagem (filha), com texto que não pode vazar.
+  const conversaId = await ins(c, 'WhatsAppConversa', {
+    id: crypto.randomUUID(), orgId, instancia: `inst-${rotulo.toLowerCase()}`, chatJid: rotulo === 'A' ? '5532900000071@s.whatsapp.net' : '5532900000072@s.whatsapp.net',
+    nome: `Contato privado da org ${rotulo}`, naoLidas: 1, leadId, ultimaMensagemEm: agora, atualizadoEm: agora,
+  });
+  reg('WhatsAppConversa', conversaId);
+  s.ref.whatsAppConversaId = conversaId;
+  reg('WhatsAppMensagem', await ins(c, 'WhatsAppMensagem', {
+    id: crypto.randomUUID(), orgId, conversaId, instancia: `inst-${rotulo.toLowerCase()}`,
+    chatJid: rotulo === 'A' ? '5532900000071@s.whatsapp.net' : '5532900000072@s.whatsapp.net', direcao: 'entrada', tipo: 'conversation',
+    texto: `Mensagem privada de WhatsApp da org ${rotulo}`, mensagemExternaId: `wa_${rotulo}_${suf}`, timestamp: agora, leadId, origem: 'webhook',
   }));
 
   await c.query('INSERT INTO "_WorkTaskTags" ("A", "B") VALUES ($1, $2)', [tagId, tarefaId]);
@@ -3810,6 +3824,11 @@ const LINHA_DE_FILHO: Record<string, (c: PoolClient) => Promise<Record<string, u
     id: crypto.randomUUID(), leadId: sementes.A.ref.leadId, numero: 900 + Math.floor(Math.random() * 1000), estado: 'substituida', publicadaEm: new Date(),
     conteudo: JSON.stringify({}), hash: 'b'.repeat(64), atualizadoEm: new Date(),
   }),
+  // O WhatsApp da empresa (produção 22C, W1): a mensagem é filha da conversa.
+  WhatsAppMensagem: async () => ({
+    id: crypto.randomUUID(), conversaId: sementes.A.ref.whatsAppConversaId, instancia: 'inst-a', chatJid: '5532900000071@s.whatsapp.net',
+    direcao: 'entrada', tipo: 'conversation', mensagemExternaId: `wa_gatilho_${crypto.randomUUID()}`, timestamp: new Date(), origem: 'webhook',
+  }),
   IntegrationHealth: async (c) => {
     // accountId é @unique: precisa de uma conta nova, senão colide com a semente.
     const conta = await ins(c, 'IntegrationAccount', {
@@ -3957,9 +3976,10 @@ describe('orgId em todo filho de tenant (RF-T-01)', () => {
     // + os 8 filhos de Lead do cockpit comercial (13/10/2026)
     // + `LeadReacao` (rodada da implantação I4, 18/10/2026)
     // + `SalaVersao` (rodada da implantação I3, 18/10/2026)
-    // + `WorkAnexo` (rodada dos agentes, 21/10/2026, TR-06).
+    // + `WorkAnexo` (rodada dos agentes, 21/10/2026, TR-06)
+    // + `WhatsAppMensagem` (produção 22C, W1, 22/10/2026).
     // Filho novo sobe este número no mesmo commit.
-    expect(declarados.length).toBe(32);
+    expect(declarados.length).toBe(33);
   });
 
   it.each(FILHOS_COM_ORGID_REDUNDANTE.map((f) => [f.modelo, f] as const))(

@@ -117,6 +117,14 @@ export const TIPO_PAUTA_RELATORIO = 'pauta.relatorio';
  */
 export const TIPO_AGENDA_VIGIA = 'agenda.vigia';
 
+/**
+ * A sincronização do WhatsApp da empresa (produção 22C, W1, 22/10/2026): a cada
+ * 5 minutos lê pela porta `LEITURA_DA_EVOLUTION` (só leitura) os chats, os
+ * grupos e as mensagens que o webhook perdeu. Ver
+ * `whatsapp/sincronizacao.service.ts`. Semeada só na empresa da casa, LIGADA.
+ */
+export const TIPO_WHATSAPP_SINCRONIZAR = 'whatsapp.sincronizar';
+
 /** Os tipos que `PAUTA_CRON=off` tira do tique — os da pauta, e só eles. */
 export const TIPOS_DA_PAUTA: readonly string[] = [
   TIPO_PAUTA_RODADA,
@@ -171,6 +179,8 @@ export const MODULO_DO_TIPO: Readonly<Record<string, ModuloKey>> = {
   'comercial.relogio': 'leads',
   // A Lixeira do Trabalho (produção 3, I2): o expurgo dos 30 dias. Sem o Trabalho, não há o que expurgar.
   'trabalho.lixeira.expurgo': 'trabalho',
+  // A caixa de WhatsApp (produção 22C): o prefixo `whatsapp` é do comercial (`tenants/modulos.ts`).
+  [TIPO_WHATSAPP_SINCRONIZAR]: 'leads',
 };
 
 /** Como a execução foi disparada. */

@@ -10,6 +10,15 @@ import type { AddressInfo } from 'node:net';
  *   GET  /instance/connect/:inst         → { pairingCode, code, base64, count }
  *   POST /message/sendText/:inst         { number, text } → { key: { id, remoteJid, fromMe } }
  *   POST /group/create/:inst             { subject, participants, description? } → metadata com `id` @g.us
+ * E a leitura da caixa de WhatsApp (produção 22C, W1), com os dados que a suíte
+ * põe em cada instância (`chats`, `grupos`, `mensagens`, `fotos`):
+ *   POST /chat/findChats/:inst               → [chat, ...]
+ *   POST /chat/findMessages/:inst            { where: { key: { remoteJid } }, page, offset }
+ *                                            → { messages: { total, pages, currentPage, records } }
+ *                                              (a página 1 é a mais nova, como na Evolution)
+ *   GET  /group/fetchAllGroups/:inst?getParticipants=true → [grupo, ...]
+ *   POST /chat/fetchProfilePictureUrl/:inst  { number } → { wuid, profilePictureUrl }
+ * `falhar` faz a rota responder 500 (para provar que a falha não derruba nada).
  * Cada chave (`apikey`) é uma CONTA com as suas instâncias; chave que o dublê
  * não conhece leva 401, instância que a conta não tem leva 404. Cada pedido é
  * guardado com a chave que veio, para a suíte conferir.
@@ -27,6 +36,23 @@ export interface PedidoNaEvolution {
 
 export interface InstanciaNoDuble {
   estado: 'open' | 'connecting' | 'close';
+  /** O que `chat/findChats` devolve (cru, como a Evolution). */
+  chats?: unknown[];
+  /** O que `group/fetchAllGroups` devolve (cru). */
+  grupos?: unknown[];
+  /** As mensagens por `remoteJid` (cru; o dublê ordena pela mais nova). */
+  mensagens?: Record<string, unknown[]>;
+  /** A URL da foto por JID. */
+  fotos?: Record<string, string>;
+  /** Rotas de leitura que respondem 500: `findChats`, `findMessages`, `fetchAllGroups`, `fetchProfilePictureUrl`. */
+  falhar?: string[];
+}
+
+/** O instante (ms) de um registro cru de mensagem, para ordenar como a Evolution. */
+function instanteDoRegistro(r: unknown): number {
+  const t = (r as { messageTimestamp?: unknown } | null)?.messageTimestamp;
+  const n = typeof t === 'number' ? t : typeof t === 'string' ? Number(t) : 0;
+  return Number.isFinite(n) ? (n > 1e12 ? n : n * 1000) : 0;
 }
 
 export interface DubleEvolution {
@@ -70,7 +96,7 @@ export async function subirDubleEvolution(contas: Record<string, Record<string, 
     const conta = apikey ? mapa.get(apikey) : undefined;
     if (!conta) return responder(401, { status: 401, error: 'Unauthorized', response: { message: 'Unauthorized' } });
 
-    const m = /^\/(instance\/connectionState|instance\/connect|message\/sendText|group\/create)\/([^/]+)$/.exec(url.pathname);
+    const m = /^\/(instance\/connectionState|instance\/connect|message\/sendText|group\/create|chat\/findChats|chat\/findMessages|group\/fetchAllGroups|chat\/fetchProfilePictureUrl)\/([^/]+)$/.exec(url.pathname);
     if (!m) return responder(404, { message: 'rota não emulada pelo dublê' });
     const [, rota, bruto] = m;
     const inst = conta[decodeURIComponent(bruto)];
@@ -88,6 +114,27 @@ export async function subirDubleEvolution(contas: Record<string, Record<string, 
       if (inst.estado !== 'open') return responder(400, { status: 400, error: 'Bad Request', response: { message: ['Connection Closed'] } });
       const remoteJid = c.number.endsWith('@g.us') ? c.number : `${c.number}@s.whatsapp.net`;
       return responder(201, { key: { remoteJid, fromMe: true, id: `EVO${++n}` }, message: { conversation: c.text }, status: 'PENDING' });
+    }
+    const curta = rota.split('/')[1];
+    if (inst.falhar?.includes(curta)) return responder(500, { status: 500, error: 'Internal Server Error', response: { message: ['falha do dublê'] } });
+    if (req.method === 'POST' && rota === 'chat/findChats') return responder(200, inst.chats ?? []);
+    if (req.method === 'GET' && rota === 'group/fetchAllGroups') {
+      if (url.searchParams.get('getParticipants') !== 'true') return responder(400, { status: 400, error: 'Bad Request', response: { message: ['getParticipants obrigatório'] } });
+      return responder(200, inst.grupos ?? []);
+    }
+    if (req.method === 'POST' && rota === 'chat/findMessages') {
+      const c = (corpo ?? {}) as { where?: { key?: { remoteJid?: unknown } }; page?: unknown; offset?: unknown };
+      const jid = c.where?.key?.remoteJid;
+      if (typeof jid !== 'string') return responder(400, { status: 400, error: 'Bad Request', response: { message: ['where.key.remoteJid obrigatório'] } });
+      const todas = [...(inst.mensagens?.[jid] ?? [])].sort((a, b) => instanteDoRegistro(b) - instanteDoRegistro(a));
+      const porPagina = typeof c.offset === 'number' && c.offset > 0 ? Math.floor(c.offset) : 50;
+      const pagina = typeof c.page === 'number' && c.page > 0 ? Math.floor(c.page) : 1;
+      const paginas = Math.ceil(todas.length / porPagina);
+      return responder(200, { messages: { total: todas.length, pages: paginas, currentPage: pagina, records: todas.slice((pagina - 1) * porPagina, pagina * porPagina) } });
+    }
+    if (req.method === 'POST' && rota === 'chat/fetchProfilePictureUrl') {
+      const numero = typeof (corpo as { number?: unknown } | null)?.number === 'string' ? (corpo as { number: string }).number : '';
+      return responder(200, { wuid: numero, profilePictureUrl: inst.fotos?.[numero] ?? null });
     }
     if (req.method === 'POST' && rota === 'group/create') {
       const c = (corpo ?? {}) as Record<string, unknown>;
