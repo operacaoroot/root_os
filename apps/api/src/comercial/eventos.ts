@@ -118,6 +118,8 @@ export const FONTE_DO_EVENTO: Record<ComercialEvento, ComercialFonte> = {
   'cliente.a_conciliar': 'sistema',
   'lead.importado': 'pessoa',
   'contrato.importado': 'pessoa',
+  'contrato.parcelas_lancadas': 'pessoa',
+  'contrato.regua_ligada': 'pessoa',
   'kickoff.marcado': 'sala',
   'parcela.vence': 'relogio',
   'parcela.paga': 'asaas',
@@ -217,8 +219,12 @@ export interface PayloadsComerciais {
     por: string | null;
     porId: string;
   };
-  /** T1b: o contrato já assinado, anexado em PDF (guardado no storage pela chave, nunca o conteúdo no fio). */
-  'contrato.anexado': { nome: string; bytes: number; tipo: string; sha256: string; chave: string; assinadoEm: string; procedencia: string; por: string | null };
+  /**
+   * T1b: o contrato já assinado, anexado em PDF (guardado no storage pela chave, nunca o conteúdo no fio).
+   * Produção 22 (M2): no contrato importado do CRM antigo, `procedencia: 'importado'`, a origem dele em
+   * `contratoImportado` e a `versao` (outro PDF é versão nova; o anterior fica no fio).
+   */
+  'contrato.anexado': { nome: string; bytes: number; tipo: string; sha256: string; chave: string; assinadoEm: string; procedencia: string; por: string | null; porId?: string | null; contratoImportado?: string | null; versao?: number | null };
   'fechamento.escrita': { chave: string; escrita: string; estado: string; ref?: string | null; ms?: number | null };
   /** `importado`: o cliente veio do CRM antigo (rodada de produção 1); a régua e os marcos não valem para ele. */
   'cliente.ativo': { chave: string; partnerId?: string | null; contractId?: string | null; trilhoId?: string | null; importado?: boolean; origem?: string | null };
@@ -266,10 +272,22 @@ export interface PayloadsComerciais {
     porId: string;
     marca: string;
   };
+  /** Produção 22 (M2): as parcelas do contrato importado, lançadas à mão (cada lançamento uma versão). */
+  'contrato.parcelas_lancadas': {
+    origem: string;
+    versao: number;
+    linhas: { n: number; valorCentavos: number; vence: string; pagaEm: string | null }[];
+    somaCentavos: number;
+    por: string | null;
+    porId: string;
+  };
+  /** Produção 22 (M2): uma pessoa ligou a régua de cobrança do contrato importado. Uma vez por contrato. */
+  'contrato.regua_ligada': { origem: string; versaoDasParcelas: number; parcelasEmAberto: number; vencidas: number; frase: string; nivel: string; por: string | null; porId: string };
   'kickoff.marcado': { horario: string };
-  'parcela.vence': { parcela: number; vence: string; aviso: 'D-3' | 'D0' | 'D+1' | 'D+5' | 'D+10' };
+  /** `contrato`: a origem do contrato importado quando a parcela é das lançadas à mão (produção 22, M2). */
+  'parcela.vence': { parcela: number; vence: string; aviso: 'D-3' | 'D0' | 'D+1' | 'D+5' | 'D+10'; contrato?: string | null };
   'parcela.paga': { parcela: number; pagoEm: string; valorCentavos: number };
-  'parcela.atrasada': { parcela: number; vence: string; dias: number };
+  'parcela.atrasada': { parcela: number; vence: string; dias: number; contrato?: string | null };
   /** D-10: estorno ou chargeback no provedor. A parcela volta a não paga; `evento` é o nome cru do provedor. */
   'parcela.estornada': { parcela: number; externoId: string; evento: string; em: string; valorCentavos: number };
   'marco.contrato': { marco: 'dia_15_indicacao' | 'd_30_continuidade' | 'primeiro_valor'; quando: string };
@@ -439,7 +457,9 @@ export function resumoDoEvento(type: string, payload: unknown): { fonte: Comerci
     case 'aceite.declarado':
       return { fonte, resumo: `fechado fora do sistema, registrado à mão${p.por ? ` por ${String(p.por)}` : ''} · ${reais(Number(p.valorCentavos ?? 0))} em ${String(p.parcelas)}× · ${p.criarCobranca ? 'cobrança nova pedida' : 'sem cobrança nova'}` };
     case 'contrato.anexado':
-      return { fonte, resumo: `contrato assinado fora anexado · ${curto(p.nome, 40)}` };
+      return p.procedencia === 'importado'
+        ? { fonte, resumo: `PDF do contrato importado anexado${typeof p.versao === 'number' && p.versao > 1 ? ` (versão ${p.versao})` : ''} · ${curto(p.nome, 40)}${p.por ? ` · por ${String(p.por)}` : ''}` }
+        : { fonte, resumo: `contrato assinado fora anexado · ${curto(p.nome, 40)}` };
     case 'fechamento.escrita':
       return { fonte, resumo: `fechamento · ${String(p.escrita)}: ${String(p.estado)}` };
     case 'cliente.ativo':
@@ -456,6 +476,12 @@ export function resumoDoEvento(type: string, payload: unknown): { fonte: Comerci
       return { fonte, resumo: `importado do CRM antigo${p.por ? ` por ${String(p.por)}` : ''}${p.status ? ` · status do cartão: ${curto(p.status, 40)}` : ''}` };
     case 'contrato.importado':
       return { fonte, resumo: `contrato importado do CRM antigo${p.titulo ? ` · ${curto(p.titulo, 60)}` : ''}${typeof p.valorCentavos === 'number' ? ` · ${reais(p.valorCentavos)}` : ''} · anexar o PDF` };
+    case 'contrato.parcelas_lancadas': {
+      const n = Array.isArray(p.linhas) ? p.linhas.length : 0;
+      return { fonte, resumo: `parcelas do contrato importado lançadas à mão (versão ${String(p.versao)}) · ${n} parcela${n === 1 ? '' : 's'} · ${reais(Number(p.somaCentavos ?? 0))}${p.por ? ` · por ${String(p.por)}` : ''}` };
+    }
+    case 'contrato.regua_ligada':
+      return { fonte, resumo: `régua de cobrança do contrato importado ligada${p.por ? ` por ${String(p.por)}` : ''} · ${String(p.parcelasEmAberto)} parcela(s) em aberto` };
     case 'kickoff.marcado':
       return { fonte, resumo: `kickoff marcado · ${horarioLegivel(p.horario)}` };
     case 'parcela.vence':

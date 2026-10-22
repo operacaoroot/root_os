@@ -6,6 +6,7 @@ import {
 } from '@mktos/shared';
 
 import { PrismaService } from '../prisma/prisma.service';
+import { chaveDoAvisoImportado, estadoDoImportado, linhasDoFato, type FatoDoFio } from './contrato-importado';
 import { DecisoesService } from './decisoes.service';
 import { hojeEmSP } from './dinheiro.service';
 import { FioService } from './fio.service';
@@ -110,20 +111,28 @@ export function ehClienteImportado(payload: unknown): boolean {
   return ((payload ?? {}) as { importado?: unknown }).importado === true;
 }
 
-/** Os contratos importados do CRM antigo, na ordem do fechamento, como a tela mostra (puro). */
-export function contratosImportados(fatos: readonly { payload: unknown }[]): ContratoImportadoNaTela[] {
+/**
+ * Os contratos importados do CRM antigo, na ordem do fechamento, como a tela mostra (puro).
+ * Produção 22 (M2): com os outros fatos do lead (`extras`), cada um traz o PDF anexado, as
+ * parcelas lançadas à mão e a régua; com o PDF anexado, deixa de estar `semDocumento`.
+ */
+export function contratosImportados(fatos: readonly { payload: unknown }[], extras?: readonly FatoDoFio[], hoje: string = hojeEmSP()): ContratoImportadoNaTela[] {
   const txt = (v: unknown) => (typeof v === 'string' && v.trim() ? v.trim() : null);
   return fatos
     .map((f) => {
       const p = (f.payload ?? {}) as Record<string, unknown>;
-      return {
-        origem: txt(p.origem) ?? '',
+      const origem = txt(p.origem) ?? '';
+      const base = {
+        origem,
         titulo: txt(p.titulo) ?? 'Contrato',
         produtoRotulo: txt(p.produtoRotulo),
         valorCentavos: typeof p.valorCentavos === 'number' && Number.isFinite(p.valorCentavos) ? p.valorCentavos : null,
         fechadoEm: txt(p.fechadoEm),
         semDocumento: p.semDocumento !== false,
       };
+      if (!extras) return base;
+      const estado = estadoDoImportado(origem, extras, hoje);
+      return { ...base, semDocumento: base.semDocumento && !estado.anexo, ...estado };
     })
     .sort((a, b) => (a.fechadoEm ?? '9999').localeCompare(b.fechadoEm ?? '9999') || a.origem.localeCompare(b.origem));
 }
@@ -202,6 +211,73 @@ export class ContratoVivoService implements OnModuleInit {
         this.log.warn(`régua da parcela ${c.externoId}: ${(e as Error).message}`);
       }
     }
+    const importados = await this.reguaDosImportados(orgId, agora);
+    return { avisos: avisos + importados.avisos, decisoes: decisoes + importados.decisoes };
+  }
+
+  /**
+   * Produção 22 (M2): a MESMA régua (mesmos degraus, mesma decisão no D+10, mesma tarefa do relógio
+   * e a mesma guarda da autonomia) para as parcelas lançadas à mão nos contratos importados, e SÓ
+   * nos que uma pessoa ligou (`contrato.regua_ligada`). Régua desligada: nada é lido além do fato
+   * que diz que ela está desligada, e nada é gravado. Parcela com `pagaEm` não avisa; contrato
+   * encerrado não avisa (não há cobrança fora do OS a manter).
+   */
+  async reguaDosImportados(orgId: string, agora: Date): Promise<{ avisos: number; decisoes: number }> {
+    const hoje = diaSP(agora);
+    const ligadas = await this.prisma.leadEvent.findMany({ where: { type: 'contrato.regua_ligada', lead: { orgId } }, select: { leadId: true, payload: true } });
+    if (!ligadas.length) return { avisos: 0, decisoes: 0 };
+    const leads = [...new Set(ligadas.map((e) => e.leadId))];
+    const [lancamentos, encerrados] = await Promise.all([
+      this.prisma.leadEvent.findMany({ where: { leadId: { in: leads }, type: 'contrato.parcelas_lancadas', lead: { orgId } }, select: { leadId: true, payload: true } }),
+      this.prisma.leadEvent.findMany({ where: { leadId: { in: leads }, type: { in: ['contrato.concluido', 'contrato.desativado'] }, lead: { orgId } }, select: { leadId: true } }),
+    ]);
+    const fora = new Set(encerrados.map((e) => e.leadId));
+    const campo = (payload: unknown, k: string): unknown => ((payload ?? {}) as Record<string, unknown>)[k];
+    let avisos = 0;
+    let decisoes = 0;
+    for (const ligada of ligadas) {
+      if (fora.has(ligada.leadId)) continue;
+      const origem = String(campo(ligada.payload, 'origem') ?? '');
+      const vigente = lancamentos
+        .filter((l) => l.leadId === ligada.leadId && campo(l.payload, 'origem') === origem)
+        .sort((a, b) => Number(campo(b.payload, 'versao') ?? 0) - Number(campo(a.payload, 'versao') ?? 0))[0];
+      if (!vigente) continue;
+      const linhas = linhasDoFato(vigente.payload);
+      for (const l of linhas) {
+        if (l.pagaEm) continue;
+        const devido = avisoDevido(l.vence, hoje);
+        if (!devido) continue;
+        try {
+          const chave = chaveDoAvisoImportado(origem, l.n, l.vence, devido.aviso);
+          const r = await this.fio.registrar(orgId, ligada.leadId, 'parcela.vence', chave, { parcela: l.n, vence: l.vence, aviso: devido.aviso, contrato: origem }, { em: agora });
+          if (!r.novo) continue;
+          avisos++;
+          if (devido.dias >= 1) {
+            await this.fio.registrar(orgId, ligada.leadId, 'parcela.atrasada', chave, { parcela: l.n, vence: l.vence, dias: devido.dias, contrato: origem }, { em: agora });
+          }
+          if (devido.aviso === 'D+10') {
+            const d = await this.decisoes.abrir({
+              orgId,
+              leadId: ligada.leadId,
+              tipo: 'excecao_do_vigia',
+              titulo: `Parcela ${l.n}/${linhas.length} do contrato importado atrasada há ${devido.dias} dias`,
+              contexto: `Venceu em ${l.vence} e nenhum pagamento foi registrado. A parcela foi lançada à mão e a régua foi ligada por uma pessoa. Os textos de cobrança ao cliente são [a decidir].`,
+              opcoes: [
+                { chave: 'aguardar', rotulo: 'Aguardar', efeito: 'nada sai; a parcela segue aberta' },
+                { chave: 'conversar', rotulo: 'Conversar com o cliente', efeito: 'o sócio da conta liga' },
+              ],
+              padrao: 'aguardar',
+              chave: `regua:${chave}`,
+              dados: { contrato: origem, parcela: l.n, vence: l.vence },
+              agora,
+            });
+            if (d.nova) decisoes++;
+          }
+        } catch (e) {
+          this.log.warn(`régua do contrato importado ${origem}, parcela ${l.n}: ${(e as Error).message}`);
+        }
+      }
+    }
     return { avisos, decisoes };
   }
 
@@ -245,15 +321,17 @@ export class ContratoVivoService implements OnModuleInit {
   async doLead(orgId: string, leadId: string, agora: Date = new Date()): Promise<ContratoVivo> {
     const lead = await this.prisma.lead.findFirst({ where: { id: leadId, orgId }, select: { name: true } });
     if (!lead) throw new NotFoundException('Lead não encontrado.');
-    const [ficha, cobrancas, marcoValor, fim, doCrm, ativoFato] = await Promise.all([
+    const [ficha, cobrancas, marcoValor, fim, doCrm, ativoFato, doImportado] = await Promise.all([
       this.prisma.comercialFicha.findUnique({ where: { leadId } }),
       this.prisma.comercialCobranca.findMany({ where: { leadId }, orderBy: { parcela: 'asc' } }),
       this.prisma.leadEvent.findFirst({ where: { leadId, type: 'marco.contrato', payload: { path: ['marco'], equals: 'primeiro_valor' } }, select: { occurredAt: true } }),
       this.prisma.leadEvent.findFirst({ where: { leadId, type: { in: ['contrato.concluido', 'contrato.desativado'] } }, orderBy: { occurredAt: 'desc' }, select: { type: true, payload: true, occurredAt: true } }),
       this.prisma.leadEvent.findMany({ where: { leadId, type: 'contrato.importado' }, select: { payload: true } }),
       this.prisma.leadEvent.findFirst({ where: { leadId, type: 'cliente.ativo' }, orderBy: { occurredAt: 'asc' }, select: { occurredAt: true, payload: true } }),
+      // Produção 22 (M2): o PDF, as parcelas lançadas à mão, a régua e os avisos dos contratos importados.
+      this.prisma.leadEvent.findMany({ where: { leadId, type: { in: ['contrato.anexado', 'contrato.parcelas_lancadas', 'contrato.regua_ligada', 'parcela.vence'] } }, select: { type: true, payload: true, occurredAt: true } }),
     ]);
-    const importados = contratosImportados(doCrm);
+    const importados = doCrm.length ? contratosImportados(doCrm, doImportado, diaSP(agora)) : [];
     const clienteImportado = ehClienteImportado(ativoFato?.payload);
     // "Em implantação" (só informativo): ativo com o card da implantação aberto (não arquivado, etapa não fechada).
     const card = ficha?.cardId

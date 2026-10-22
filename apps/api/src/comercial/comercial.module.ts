@@ -45,6 +45,9 @@ import { ContratoVivoService } from './contrato-vivo.service';
 import { DinheiroService } from './dinheiro.service';
 import { FechadoForaController } from './fechado-fora.controller';
 import { FechadoForaService } from './fechado-fora.service';
+// Produção 22 (M2): o contrato importado do CRM antigo (o PDF, as parcelas à mão e a régua).
+import { ContratoImportadoController } from './contrato-importado.controller';
+import { ContratoImportadoService } from './contrato-importado.service';
 import { FechamentoService } from './fechamento.service';
 import { OnboardingAntecipadoController } from './onboarding-antecipado.controller';
 import { OnboardingAntecipadoService } from './onboarding-antecipado.service';
@@ -82,7 +85,7 @@ import { TriagemDoWhatsappService } from './triagem-do-whatsapp/triagem-do-whats
  */
 @Module({
   imports: [TenantsModule, AuthModule, LeadsModule, OnboardingModule, FinanceModule, RoutinesModule, ZapsignModule, MemoryModule, WorkModule],
-  controllers: [ComercialController, SalaController, SimuladorController, MensagensController, DinheiroController, WebhooksDoDinheiroController, InteligenciaController, FechadoForaController, OnboardingAntecipadoController, IntegracaoDaEvolutionController, SalaEstadoController, TarefasDoComercialController, ContratoDaRootController, FormularioDoSiteController],
+  controllers: [ComercialController, SalaController, SimuladorController, MensagensController, DinheiroController, WebhooksDoDinheiroController, InteligenciaController, FechadoForaController, ContratoImportadoController, OnboardingAntecipadoController, IntegracaoDaEvolutionController, SalaEstadoController, TarefasDoComercialController, ContratoDaRootController, FormularioDoSiteController],
   providers: [
     // --- orquestrador: o fio (único caminho de escrita de fato) e o registro de reações ---
     ReacoesRegistry,
@@ -120,6 +123,8 @@ import { TriagemDoWhatsappService } from './triagem-do-whatsapp/triagem-do-whats
     ContratoVivoService,
     // --- rodada do trabalho T1b (registrar cliente já fechado fora do sistema: a mesma transação de fechamento) ---
     FechadoForaService,
+    // --- produção 22, M2 (o contrato importado: o PDF, as parcelas à mão e a régua, fato passado) ---
+    ContratoImportadoService,
     // --- ajustes da versão final A2 (iniciar o onboarding antes do negócio fechado: o mesmo card do fechamento) ---
     OnboardingAntecipadoService,
     // --- rodada de produção 1 (o importador do CRM antigo: só pelo script `importar-crm`, sem rota) ---

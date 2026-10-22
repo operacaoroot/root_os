@@ -59,6 +59,8 @@ export * from './vistas.js';
 // O cliente que fechou fora do sistema (rodada do trabalho T1b, 19/10/2026): a porta
 // "Registrar cliente já fechado" do Funil vivo. Ver o cabeçalho de `comercial-fechado-fora.ts`.
 export * from './comercial-fechado-fora.js';
+// O contrato importado do CRM antigo: o PDF e as parcelas à mão (produção 22, M2). Ver `comercial-contrato-importado.ts`.
+export * from './comercial-contrato-importado.js';
 export * from './comercial-exercicio';
 export * from './fonte-autorizada.js';
 
