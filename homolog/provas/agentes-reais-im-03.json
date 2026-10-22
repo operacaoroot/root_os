@@ -1,0 +1,195 @@
+{
+  "prova": "A8 · agentes com modelo real pela ponte",
+  "geradoEm": "2026-10-22T01:01:56.266Z",
+  "commit": "2e46b874",
+  "ponte": {
+    "url": "http://127.0.0.1:4099",
+    "modeloPadrao": "claude-opus-5-5",
+    "observacao": "a ponte devolve só o texto: tokens não medidos; o esforço do cadastro não é repassado ao `claude -p`"
+  },
+  "rodadas": 3,
+  "regraDePassou": "somando as 3 rodada(s): toda chamada ok, parser aceitou em todas e ao menos 75% dos campos certos contra o esperado do caso",
+  "regraDeTroca": "o modelo de cima acerta mais campos E (a diferença é de 10 pontos percentuais ou mais, OU o do cadastro falhou e o de cima passou)",
+  "duracaoTotalMs": 25760,
+  "sessaoDoClaudeCode": "ok",
+  "funcoes": [
+    {
+      "funcao": "IM-03",
+      "nome": "Roteirista do kickoff",
+      "modeloDoCadastro": "claude-sonnet-5-5",
+      "esforcoDoCadastro": "high",
+      "estadoNoCadastro": "ativo",
+      "cadastro": {
+        "modelo": "claude-sonnet-5-5",
+        "chamadas": 3,
+        "chamadasOk": 3,
+        "parserAceitou": "3/3",
+        "certos": 21,
+        "total": 21,
+        "taxa": 100,
+        "passou": true,
+        "duracaoMs": 19924,
+        "rodadasQuePassaram": 3,
+        "errosPorEntrada": {
+          "roteiro de 6 temas da oficina fictícia": 0
+        },
+        "observacoes": [
+          "6 de 6 reescritas; 6 com o contexto do cliente"
+        ]
+      },
+      "acima": {
+        "modelo": "claude-opus-5-5",
+        "chamadas": 3,
+        "chamadasOk": 3,
+        "parserAceitou": "3/3",
+        "certos": 21,
+        "total": 21,
+        "taxa": 100,
+        "passou": true,
+        "duracaoMs": 25732,
+        "rodadasQuePassaram": 3,
+        "errosPorEntrada": {
+          "roteiro de 6 temas da oficina fictícia": 0
+        },
+        "observacoes": [
+          "6 de 6 reescritas; 6 com o contexto do cliente"
+        ]
+      },
+      "recomendacao": null
+    }
+  ],
+  "chamadas": [
+    {
+      "funcao": "IM-03",
+      "nome": "Roteirista do kickoff",
+      "modelo": "claude-opus-5-5",
+      "papel": "acima",
+      "rodada": 1,
+      "esforcoDoCadastro": "high",
+      "entrada": "roteiro de 6 temas da oficina fictícia",
+      "chamadaOk": true,
+      "erro": null,
+      "duracaoMs": 9988,
+      "tokens": "não medido",
+      "caracteresDaResposta": 1669,
+      "parserAceitou": true,
+      "certos": 7,
+      "total": 7,
+      "observacao": "6 de 6 reescritas; 6 com o contexto do cliente",
+      "extraido": {
+        "reescritas": 6,
+        "comContexto": 6
+      }
+    },
+    {
+      "funcao": "IM-03",
+      "nome": "Roteirista do kickoff",
+      "modelo": "claude-opus-5-5",
+      "papel": "acima",
+      "rodada": 2,
+      "esforcoDoCadastro": "high",
+      "entrada": "roteiro de 6 temas da oficina fictícia",
+      "chamadaOk": true,
+      "erro": null,
+      "duracaoMs": 8046,
+      "tokens": "não medido",
+      "caracteresDaResposta": 1489,
+      "parserAceitou": true,
+      "certos": 7,
+      "total": 7,
+      "observacao": "6 de 6 reescritas; 6 com o contexto do cliente",
+      "extraido": {
+        "reescritas": 6,
+        "comContexto": 6
+      }
+    },
+    {
+      "funcao": "IM-03",
+      "nome": "Roteirista do kickoff",
+      "modelo": "claude-opus-5-5",
+      "papel": "acima",
+      "rodada": 3,
+      "esforcoDoCadastro": "high",
+      "entrada": "roteiro de 6 temas da oficina fictícia",
+      "chamadaOk": true,
+      "erro": null,
+      "duracaoMs": 7698,
+      "tokens": "não medido",
+      "caracteresDaResposta": 1580,
+      "parserAceitou": true,
+      "certos": 7,
+      "total": 7,
+      "observacao": "6 de 6 reescritas; 6 com o contexto do cliente",
+      "extraido": {
+        "reescritas": 6,
+        "comContexto": 6
+      }
+    },
+    {
+      "funcao": "IM-03",
+      "nome": "Roteirista do kickoff",
+      "modelo": "claude-sonnet-5-5",
+      "papel": "cadastro",
+      "rodada": 1,
+      "esforcoDoCadastro": "high",
+      "entrada": "roteiro de 6 temas da oficina fictícia",
+      "chamadaOk": true,
+      "erro": null,
+      "duracaoMs": 7405,
+      "tokens": "não medido",
+      "caracteresDaResposta": 1441,
+      "parserAceitou": true,
+      "certos": 7,
+      "total": 7,
+      "observacao": "6 de 6 reescritas; 6 com o contexto do cliente",
+      "extraido": {
+        "reescritas": 6,
+        "comContexto": 6
+      }
+    },
+    {
+      "funcao": "IM-03",
+      "nome": "Roteirista do kickoff",
+      "modelo": "claude-sonnet-5-5",
+      "papel": "cadastro",
+      "rodada": 2,
+      "esforcoDoCadastro": "high",
+      "entrada": "roteiro de 6 temas da oficina fictícia",
+      "chamadaOk": true,
+      "erro": null,
+      "duracaoMs": 6485,
+      "tokens": "não medido",
+      "caracteresDaResposta": 1465,
+      "parserAceitou": true,
+      "certos": 7,
+      "total": 7,
+      "observacao": "6 de 6 reescritas; 6 com o contexto do cliente",
+      "extraido": {
+        "reescritas": 6,
+        "comContexto": 6
+      }
+    },
+    {
+      "funcao": "IM-03",
+      "nome": "Roteirista do kickoff",
+      "modelo": "claude-sonnet-5-5",
+      "papel": "cadastro",
+      "rodada": 3,
+      "esforcoDoCadastro": "high",
+      "entrada": "roteiro de 6 temas da oficina fictícia",
+      "chamadaOk": true,
+      "erro": null,
+      "duracaoMs": 6034,
+      "tokens": "não medido",
+      "caracteresDaResposta": 1456,
+      "parserAceitou": true,
+      "certos": 7,
+      "total": 7,
+      "observacao": "6 de 6 reescritas; 6 com o contexto do cliente",
+      "extraido": {
+        "reescritas": 6,
+        "comContexto": 6
+      }
+    }
+  ]
+}
