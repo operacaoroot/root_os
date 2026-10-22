@@ -55,6 +55,10 @@ function pessoa(id: string, nome: string, areas: PessoaNaEquipe['areas'], over: 
     whatsapp: { cadastrado: false, final: null, numero: null },
     podeEditarWhatsapp: true,
     areas,
+    fotoUrl: null,
+    aniversario: null,
+    cargo: null,
+    atribuicoes: { nomeNoVault: null, origemDoNome: 'a_decidir', conduz: null, dona: [], substituta: [], nota: null },
     ...over,
   };
 }
@@ -78,6 +82,7 @@ function equipe(over: Partial<EquipeDaEmpresa> = {}): EquipeDaEmpresa {
     foraDaVista: { sistema: 3, teste: 2 },
     podeEditarDono: true,
     totais: { pessoas: 3, agentes: 3, rotinas: 1, automacoes: 1 },
+    memoria: { disponivel: false, motivo: 'ausente', frase: 'Memória da Root indisponível: as notas da Governança e da Organização não estão no vault indexado.', socios: [] },
     ...over,
   };
 }
@@ -173,5 +178,78 @@ describe('o WhatsApp de cada pessoa', () => {
     const rodrigo = await screen.findByRole('region', { name: 'Rodrigo' });
     await userEvent.click(within(rodrigo).getByRole('button', { name: 'remover número' }));
     expect(apiPut).toHaveBeenCalledWith('/organograma/pessoas/u-r/whatsapp', { numero: null }, 'tok');
+  });
+});
+
+/*
+ * Produção 22B (I6): o avatar, o aniversário (só dia e mês) e as atribuições
+ * lidas do vault da Root (só leitura), com o link da ficha para o Contexto.
+ * Os nomes do vault aqui são os do dublê (Alice, Bruno, Clara).
+ */
+describe('a Equipe com o perfil e a memória da Root', () => {
+  const comVault = () =>
+    equipe({
+      memoria: { disponivel: true, motivo: null, frase: null, socios: ['Alice', 'Bruno', 'Clara'] },
+      pessoas: [
+        pessoa('u-l', 'Lucas', [], {
+          cargo: 'Sócio comercial',
+          aniversario: '03-12',
+          atribuicoes: {
+            nomeNoVault: 'Alice',
+            origemDoNome: 'perfil',
+            conduz: 'Comercial e relacionamento',
+            dona: [
+              { nome: 'Comercial', caminho: '30-Organizacao/Função — Comercial.md', notaId: 'n-com', estado: 'ativo', agentes: 'Qualificador' },
+              { nome: 'Governança', caminho: null, notaId: null, estado: null, agentes: null },
+            ],
+            substituta: [{ nome: 'Produto', caminho: null, notaId: 'n-prod', estado: 'ativo', agentes: null }],
+            nota: { caminho: '20-Governanca/Alice.md', notaId: 'n-alice' },
+          },
+        }),
+        pessoa('u-p', 'Pedro', [], {
+          atribuicoes: { nomeNoVault: 'Bruno', origemDoNome: 'sugerido', conduz: 'Produto', dona: [], substituta: [], nota: null },
+        }),
+        pessoa('u-r', 'Rodrigo', [], { papeis: ['admin_master'] }),
+      ],
+    });
+
+  it('cada pessoa tem o avatar (iniciais sem foto) com o nome acessível, o cargo e o aniversário', async () => {
+    apiGet.mockResolvedValue(comVault());
+    render(<EquipePage />);
+    const lucas = await screen.findByRole('region', { name: 'Lucas' });
+    expect(within(lucas).getByRole('img', { name: 'Lucas' })).toHaveTextContent('L');
+    expect(within(lucas).getByText(/Sócio comercial/)).toBeInTheDocument();
+    expect(within(lucas).getByTestId('aniversario-u-l')).toHaveTextContent('aniversário 12 de março');
+  });
+
+  it('o que conduz, as funções de que é dona e as de que é substituta, com o link da ficha no Contexto', async () => {
+    apiGet.mockResolvedValue(comVault());
+    render(<EquipePage />);
+    const lucas = await screen.findByRole('region', { name: 'Lucas' });
+    const vault = within(lucas).getByTestId('vault-u-l');
+    expect(vault).toHaveTextContent('Conduz Comercial e relacionamento');
+    expect(within(vault).getByRole('link', { name: 'Comercial' })).toHaveAttribute('href', '/contexto?nota=n-com');
+    expect(within(vault).getByText('Governança')).toBeInTheDocument();
+    expect(within(vault).queryByRole('link', { name: 'Governança' })).toBeNull();
+    expect(vault).toHaveTextContent('Substituta em');
+    expect(within(vault).getByRole('link', { name: 'Produto' })).toHaveAttribute('href', '/contexto?nota=n-prod');
+    expect(within(vault).getByRole('link', { name: 'nota' })).toHaveAttribute('href', '/contexto?nota=n-alice');
+  });
+
+  it('nome sugerido pelo primeiro nome diz que é sugestão; sem nome fica [a decidir] com o caminho do perfil', async () => {
+    apiGet.mockResolvedValue(comVault());
+    render(<EquipePage />);
+    const pedro = await screen.findByRole('region', { name: 'Pedro' });
+    expect(within(pedro).getByTestId('vault-u-p')).toHaveTextContent('sugerido pelo primeiro nome');
+    const rodrigo = screen.getByRole('region', { name: 'Rodrigo' });
+    expect(within(rodrigo).getByTestId('vault-u-r')).toHaveTextContent('Nome no vault [a decidir]');
+    expect(within(rodrigo).getByRole('link', { name: 'preencher no perfil' })).toHaveAttribute('href', '/perfil?pessoa=u-r');
+  });
+
+  it('sem o vault: "memória da Root indisponível", e a Equipe segue de pé', async () => {
+    render(<EquipePage />);
+    expect(await screen.findByTestId('memoria-indisponivel')).toHaveTextContent('Memória da Root indisponível');
+    expect(screen.queryByTestId('vault-u-l')).toBeNull();
+    expect(screen.getByRole('region', { name: 'Lucas' })).toBeInTheDocument();
   });
 });

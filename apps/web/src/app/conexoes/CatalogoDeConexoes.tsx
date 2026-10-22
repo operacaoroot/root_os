@@ -59,8 +59,6 @@ function destinoSeguro(url: string): string | null {
 }
 
 const GOOGLE = new Set(['gmail', 'gcal', 'gdocs', 'drive']);
-/** Os cartões com conteúdo próprio grande ocupam a linha inteira. */
-const LARGOS = new Set(['evolution', 'granola']);
 
 export function CatalogoDeConexoes({ token, pessoaId, podeGerenciar }: { token: string; pessoaId: string; podeGerenciar: boolean }) {
   const [data, setData] = useState<CartoesDeConexao | null>(null);
@@ -166,9 +164,19 @@ export function CatalogoDeConexoes({ token, pessoaId, podeGerenciar }: { token: 
     };
   };
 
-  const conteudoDe = (l: Linha, gerenciar: boolean): ReactNode => {
+  /*
+   * Produção 22B (I6): o conteúdo próprio da Evolution (QR, estado da instância,
+   * webhook, segredo do webhook, credencial) e do Granola (conectar, senha do Zap,
+   * conexão direta) vai para a gaveta "Configurar" do cartão. Todo cartão fica do
+   * mesmo tamanho na grade; nenhuma ação some.
+   */
+  const configurarDe = (l: Linha, gerenciar: boolean): ReactNode => {
     if (l.key === 'evolution') return <ConexaoEvolution token={token} gerenciar={gerenciar} aoMudar={() => void carregar()} />;
     if (l.key === 'granola') return <ConexaoGranola token={token} gerenciar={gerenciar} desligado={l.desligado} aoMudar={() => void carregar()} />;
+    return undefined;
+  };
+
+  const conteudoDe = (l: Linha): ReactNode => {
     if (GOOGLE.has(l.key)) return <a href="/google" className="text-[11px] text-brand underline">Abrir a página do Google</a>;
     if (l.key === 'instagram') return <a href="/instagram" className="text-[11px] text-brand underline">Abrir a página do Instagram</a>;
     if (l.key === 'obsidian') return <a href="/contexto" className="text-[11px] text-brand underline">Ver a vault em Contexto</a>;
@@ -207,8 +215,8 @@ export function CatalogoDeConexoes({ token, pessoaId, podeGerenciar }: { token: 
 
       <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
         {data?.items.map((l) => (
-          <CartaoDeConexao key={l.key} linha={l} ocupado={ocupado} acoes={acoesDe(l, gerenciar)} largo={LARGOS.has(l.key)}>
-            {conteudoDe(l, gerenciar)}
+          <CartaoDeConexao key={l.key} linha={l} ocupado={ocupado} acoes={acoesDe(l, gerenciar)} configurar={configurarDe(l, gerenciar)}>
+            {conteudoDe(l)}
           </CartaoDeConexao>
         ))}
       </div>

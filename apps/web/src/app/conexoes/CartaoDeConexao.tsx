@@ -69,17 +69,24 @@ export function CartaoDeConexao({
   linha,
   acoes = {},
   ocupado = false,
-  largo = false,
+  configurar,
   children,
 }: {
   linha: Linha;
   acoes?: AcoesDoCartao;
   ocupado?: boolean;
-  /** Ocupa a linha inteira da grade (conectores com conteúdo próprio grande). */
-  largo?: boolean;
+  /**
+   * Produção 22B (I6): as ações próprias do conector (o QR, o webhook e o segredo da
+   * Evolution; a conexão e a senha do Zap do Granola) moram numa GAVETA do próprio
+   * cartão, aberta pelo botão "Configurar". Assim todo cartão tem o mesmo tamanho na
+   * grade, e nada se perde: fechada, a gaveta só não está montada.
+   */
+  configurar?: ReactNode;
   children?: ReactNode;
 }) {
   const [confirmar, setConfirmar] = useState<'desconectar' | 'desligar' | null>(null);
+  const [gaveta, setGaveta] = useState(false);
+  const idDaGaveta = `configurar-${linha.key}`;
   const [motivo, setMotivo] = useState('');
   const estado = textoDoEstadoDoCartao(linha.estado, linha.motivo);
   const daEmpresa = linha.contrato?.escopoDaCredencial === 'empresa';
@@ -94,7 +101,7 @@ export function CartaoDeConexao({
     <section
       aria-label={linha.nome}
       data-conector={linha.key}
-      className={`flex min-w-0 flex-col rounded-xl border bg-surface p-4 ${largo ? 'md:col-span-2 xl:col-span-3' : ''} ${linha.estado === 'desligado' ? 'border-warn/40' : 'border-border'}`}
+      className={`flex min-w-0 flex-col rounded-xl border bg-surface p-4 ${linha.estado === 'desligado' ? 'border-warn/40' : 'border-border'}`}
     >
       {/* 1. nome e estado */}
       <div className="flex flex-wrap items-start justify-between gap-2">
@@ -175,6 +182,17 @@ export function CartaoDeConexao({
           {acoes.conectar && !linha.desligado && (
             <button type="button" disabled={ocupado} onClick={acoes.conectar} className={`${botao} border-brand/50 text-brand`}>Conectar</button>
           )}
+          {configurar && (
+            <button
+              type="button"
+              aria-expanded={gaveta}
+              aria-controls={idDaGaveta}
+              onClick={() => setGaveta((g) => !g)}
+              className={`${botao} ${gaveta ? 'border-brand/50 text-brand' : 'border-border text-text'}`}
+            >
+              {gaveta ? 'Fechar configuração' : 'Configurar'}
+            </button>
+          )}
           {acoes.testar && (
             <button type="button" disabled={ocupado} onClick={acoes.testar} className={`${botao} border-border text-muted`}
               title="Sonda agora. Desligado, nada é chamado.">Testar</button>
@@ -220,6 +238,18 @@ export function CartaoDeConexao({
               </button>
               <button type="button" onClick={fechar} className="text-muted">Cancelar</button>
             </div>
+          </div>
+        )}
+
+        {/* 7. a gaveta "Configurar", com as ações próprias do conector */}
+        {configurar && gaveta && (
+          <div
+            id={idDaGaveta}
+            role="group"
+            aria-label={`Configurar ${linha.nome}`}
+            className="mt-3 max-h-[32rem] overflow-y-auto border-t border-border pt-3"
+          >
+            {configurar}
           </div>
         )}
       </div>

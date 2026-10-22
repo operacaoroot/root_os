@@ -125,6 +125,7 @@ const CARTOES = {
       conta: 'respondeu.', contrato: contratoDe('conector-novo-de-fora', 'empresa'),
     }),
     cartao({ key: 'evolution', nome: 'WhatsApp do comercial (Evolution)', estado: 'nao_configurado', motivo: 'Evolution não configurada nesta empresa.', contrato: contratoDe('evolution', 'empresa') }),
+    cartao({ key: 'granola', nome: 'Granola', estado: 'nao_configurado', motivo: 'Granola não conectado.', contrato: contratoDe('granola', 'empresa') }),
   ],
 };
 
@@ -205,8 +206,34 @@ describe('degradação, quem usa e o cofre', () => {
   it('o conteúdo próprio entra como filho do cartão do conector', async () => {
     render(<ConexoesPage />);
     await telaCarregada();
-    expect(within(card('WhatsApp do comercial (Evolution)')).getByText('conteúdo da Evolution')).toBeInTheDocument();
+    const evolution = card('WhatsApp do comercial (Evolution)');
+    await userEvent.click(within(evolution).getByRole('button', { name: 'Configurar' }));
+    expect(within(evolution).getByText('conteúdo da Evolution')).toBeInTheDocument();
     expect(within(card('Gmail')).getByRole('link', { name: 'Abrir a página do Google' })).toHaveAttribute('href', '/google');
+  });
+
+  /*
+   * Produção 22B (I6): Granola e Evolution no MESMO cartão dos demais, do mesmo
+   * tamanho (nenhum ocupa a linha inteira), com as ações próprias numa gaveta
+   * "Configurar" do próprio cartão. Fechada, a gaveta não monta o conteúdo.
+   */
+  it('Granola e Evolution: mesmo tamanho dos outros, ações próprias na gaveta Configurar', async () => {
+    render(<ConexoesPage />);
+    await telaCarregada();
+    for (const nome of ['Granola', 'WhatsApp do comercial (Evolution)', 'Gmail', 'Asaas (cobranças + conta digital)']) {
+      expect(card(nome).className, nome).not.toMatch(/col-span/);
+    }
+    const granola = card('Granola');
+    expect(within(granola).queryByText('conteúdo do Granola')).toBeNull();
+    const botao = within(granola).getByRole('button', { name: 'Configurar' });
+    expect(botao).toHaveAttribute('aria-expanded', 'false');
+    await userEvent.click(botao);
+    expect(within(granola).getByRole('group', { name: 'Configurar Granola' })).toHaveTextContent('conteúdo do Granola');
+    expect(within(granola).getByRole('button', { name: 'Fechar configuração' })).toHaveAttribute('aria-expanded', 'true');
+    await userEvent.click(within(granola).getByRole('button', { name: 'Fechar configuração' }));
+    expect(within(granola).queryByText('conteúdo do Granola')).toBeNull();
+    // Os outros cartões não têm gaveta.
+    expect(within(card('Gmail')).queryByRole('button', { name: 'Configurar' })).toBeNull();
   });
 });
 
