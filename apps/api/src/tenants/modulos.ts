@@ -117,6 +117,8 @@ export const MODULO_POR_PREFIXO: Readonly<Record<string, ModuloKey>> = {
   // Rodada dos agentes (21/10/2026, CO-15): `POST /api/publico/lead`, o formulário do site da Root. É ANÔNIMA
   // (como `sala`): o gate deixa anônimo passar e o serviço confere o módulo `leads` da empresa da chave.
   publico: 'leads',
+  // Produção 22C (22/10/2026): a caixa de WhatsApp (`/api/whatsapp/*`). Conversa com lead e cliente é do comercial.
+  whatsapp: 'leads',
 };
 
 /**

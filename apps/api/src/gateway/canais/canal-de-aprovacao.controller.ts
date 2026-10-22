@@ -15,6 +15,7 @@ import { CABECALHO_DO_SEGREDO, segredoDoWebhookConfere } from './configuracao-do
 import { CanalDeAprovacaoService } from './canal-de-aprovacao.service';
 import { EntradaDeGrupoRegistry } from './entrada-de-grupo.registry';
 import { EntradaDiretaRegistry } from './entrada-direta.registry';
+import { GravacaoDoWhatsappRegistry } from './gravacao-do-whatsapp.registry';
 
 /*
  * ============================================================================
@@ -138,6 +139,8 @@ export class CanalDeAprovacaoController {
      * derivado de cada empresa.
      */
     @Optional() private readonly prisma?: PrismaService,
+    /** Produção 22C (W1): sem o registro (as suítes que montam à mão), nada é gravado e o webhook é o de antes. */
+    @Optional() private readonly gravacao?: GravacaoDoWhatsappRegistry,
   ) {}
 
   @Post('whatsapp/:orgId')
@@ -176,6 +179,9 @@ export class CanalDeAprovacaoController {
    */
   private emSegundoPlano(orgId: string, corpo: unknown): Promise<void> {
     return comTenantPublico(orgId, async () => {
+      // Produção 22C (W1): grava PRIMEIRO, e nunca barra os leitores (o registro não lança).
+      const gravada = await this.gravacao?.gravar(orgId, corpo);
+      if (gravada) this.log.debug(`webhook do canal (${orgId}): gravação ${gravada}`);
       const doGrupo = await this.grupos?.despachar(orgId, corpo);
       if (doGrupo != null) return { desfecho: `grupo:${doGrupo}` };
       const doLead = await this.diretas?.despachar(orgId, corpo);

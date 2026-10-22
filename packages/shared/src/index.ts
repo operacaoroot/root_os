@@ -143,3 +143,5 @@ export * from './implantacao-do-cartao.js';
 // O perfil da pessoa e as atribuições da Equipe lidas do vault (produção 22B, I6): ver `perfil.ts` e `equipe-atribuicoes.ts`.
 export * from './perfil.js';
 export * from './equipe-atribuicoes.js';
+// O WhatsApp da empresa por dentro do OS: caixa, vínculo e cartão do Dia a dia (produção 22C): ver `whatsapp-caixa.ts`.
+export * from './whatsapp-caixa.js';

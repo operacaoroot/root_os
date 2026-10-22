@@ -18,6 +18,8 @@ import {
   type AdministracaoDaEvolution,
   type CredencialDaEvolutionParaGuardar,
   type EnvioPelaEvolution,
+  type LeituraDaEvolution,
+  type RespostaDeGentePelaEvolution,
 } from '../gateway/canais/evolution.port';
 import { enderecoDeDentro, ipv4Embutido } from './endereco-de-dentro';
 import { ipDaConexao, pedirAoIp, type Conectar } from './pagina-publica';
@@ -49,6 +51,15 @@ import {
  * diferença entre eles é uma decisão, não um descuido (ver `estado`).
  */
 export const PRAZO_DA_CONSULTA_DE_INSTANCIA_MS = 10_000;
+
+/**
+ * Quanto a leitura da caixa de WhatsApp (sincronização, produção 22C) pode
+ * demorar: a lista de grupos com participantes é a mais lenta (numa instância
+ * com centenas de grupos a Evolution passa de um minuto; ver o CLAUDE.md, "O
+ * grupo de estratégia"). Trinta segundos: estourou, a rotina registra e tenta
+ * na próxima passagem.
+ */
+export const PRAZO_DA_LEITURA_DA_CAIXA_MS = 30_000;
 
 // Conector WhatsApp via Evolution API. Instância e número DEDICADOS do root —
 // o ISOLATION.md proíbe reusar o canal do escritório, e um número compartilhado
@@ -549,7 +560,9 @@ const MENSAGEM_DO_ESTADO: Record<'open' | 'connecting' | 'close' | 'desconhecido
 };
 
 @Injectable()
-export class EvolutionDaEmpresaService implements OnModuleInit, EnvioPelaEvolution, AdministracaoDaEvolution {
+export class EvolutionDaEmpresaService
+  implements OnModuleInit, EnvioPelaEvolution, AdministracaoDaEvolution, LeituraDaEvolution, RespostaDeGentePelaEvolution
+{
   private readonly log = new Logger('EvolutionDaEmpresa');
   /** A reserva da casa. Lida uma vez; trocar exige recriar o container, como toda variável. */
   private readonly ambiente = {
@@ -713,6 +726,82 @@ export class EvolutionDaEmpresaService implements OnModuleInit, EnvioPelaEvoluti
     if (!/^[0-9-]+@g\.us$/.test(String(jidDoGrupo ?? ''))) throw new Error('o destino não é um grupo do WhatsApp (@g.us): nada foi enviado');
     const c = await this.exigirCredencial(orgId);
     const r = await this.chamar<CorpoDaEvolution>(c, 'POST', this.rota(c, '/message/sendText'), { number: jidDoGrupo, text: texto });
+    return { id: this.idDaMensagem(r) };
+  }
+
+  // ------------------------------------------- caixa de WhatsApp (produção 22C)
+
+  /** O conector ligado nesta empresa, para quem só LÊ ou responde como pessoa (sem a capacidade do comercial). */
+  private async exigirConectorLigado(orgId: string): Promise<void> {
+    const recusa = await this.interruptores?.consultar({ orgId, conector: CONECTOR_EVOLUTION });
+    if (recusa) throw new EvolutionNaoConfiguradaError(recusa.motivo);
+  }
+
+  /** W1: os chats que a Evolution guarda (cru). Só leitura. */
+  async conversas(orgId: string): Promise<unknown[]> {
+    await this.exigirConectorLigado(orgId);
+    const c = await this.exigirCredencial(orgId);
+    const r = await this.chamar<unknown>(c, 'POST', this.rota(c, '/chat/findChats'), {}, PRAZO_DA_LEITURA_DA_CAIXA_MS);
+    return Array.isArray(r) ? r : [];
+  }
+
+  /** W1: os grupos da instância, com os participantes (cru). Só leitura. */
+  async grupos(orgId: string): Promise<unknown[]> {
+    await this.exigirConectorLigado(orgId);
+    const c = await this.exigirCredencial(orgId);
+    const r = await this.chamar<unknown>(c, 'GET', `${this.rota(c, '/group/fetchAllGroups')}?getParticipants=true`, undefined, PRAZO_DA_LEITURA_DA_CAIXA_MS);
+    return Array.isArray(r) ? r : [];
+  }
+
+  /** W1: uma página de mensagens de uma conversa (cru; a página 1 é a mais nova). Só leitura. */
+  async mensagens(orgId: string, remoteJid: string, pagina: number, porPagina: number): Promise<{ registros: unknown[]; paginas: number }> {
+    if (!/^[0-9A-Za-z._:-]{1,80}@(s\.whatsapp\.net|g\.us|lid|c\.us)$/.test(String(remoteJid ?? ''))) {
+      throw new Error('conversa do WhatsApp inválida: nada foi lido');
+    }
+    await this.exigirConectorLigado(orgId);
+    const c = await this.exigirCredencial(orgId);
+    const corpo = {
+      where: { key: { remoteJid } },
+      page: Math.max(1, Math.floor(pagina)),
+      offset: Math.min(100, Math.max(1, Math.floor(porPagina))),
+    };
+    const r = await this.chamar<CorpoDaEvolution>(c, 'POST', this.rota(c, '/chat/findMessages'), corpo, PRAZO_DA_LEITURA_DA_CAIXA_MS);
+    const msgs = r && typeof r.messages === 'object' && r.messages ? (r.messages as CorpoDaEvolution) : null;
+    const registros = Array.isArray(msgs?.records) ? (msgs!.records as unknown[]) : Array.isArray(r) ? (r as unknown[]) : [];
+    const paginas =
+      typeof msgs?.pages === 'number' && Number.isFinite(msgs.pages) ? Math.max(0, Math.floor(msgs.pages)) : registros.length ? 1 : 0;
+    return { registros, paginas };
+  }
+
+  /** W1: a URL da foto de um contato ou grupo, ou null. Só leitura; falha vira null. */
+  async foto(orgId: string, jid: string): Promise<string | null> {
+    try {
+      await this.exigirConectorLigado(orgId);
+      const c = await this.exigirCredencial(orgId);
+      const r = await this.chamar<CorpoDaEvolution>(c, 'POST', this.rota(c, '/chat/fetchProfilePictureUrl'), { number: jid }, PRAZO_DA_LEITURA_DA_CAIXA_MS);
+      const url = r && typeof r.profilePictureUrl === 'string' ? r.profilePictureUrl : null;
+      return url && /^https:\/\//.test(url) && url.length <= 2000 ? url : null;
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * W2: o texto de uma PESSOA pela caixa. Não é o envio do comercial (que é o
+   * efeito de `comercial.whatsapp.enviar`, R3): quem chama é só o serviço da
+   * caixa, depois da permissão `whatsapp.conversar` e de conferir que é gente.
+   */
+  async responderComoPessoa(orgId: string, chatJid: string, texto: string): Promise<{ id: string }> {
+    const jid = String(chatJid ?? '');
+    let numero: string;
+    if (/^[0-9-]+@g\.us$/.test(jid)) numero = jid;
+    else if (/^\d{10,15}@s\.whatsapp\.net$/.test(jid)) numero = jid.split('@')[0];
+    else if (/^\d{5,30}@lid$/.test(jid)) numero = jid;
+    else throw new Error('o destino não é uma conversa do WhatsApp: nada foi enviado');
+    if (!String(texto ?? '').trim()) throw new Error('mensagem vazia: nada foi enviado');
+    await this.exigirConectorLigado(orgId);
+    const c = await this.exigirCredencial(orgId);
+    const r = await this.chamar<CorpoDaEvolution>(c, 'POST', this.rota(c, '/message/sendText'), { number: numero, text: texto });
     return { id: this.idDaMensagem(r) };
   }
 

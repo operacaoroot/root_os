@@ -52,6 +52,7 @@ import { AgendaModule } from './agenda/agenda.module';
 import { CobrancaDeTarefasModule } from './work/cobranca/cobranca.module';
 import { DelegadorModule } from './work/delegador/delegador.module';
 import { ImplantacaoModule } from './implantacao/implantacao.module';
+import { WhatsappModule } from './whatsapp/whatsapp.module';
 
 @Module({
   imports: [
@@ -213,6 +214,9 @@ import { ImplantacaoModule } from './implantacao/implantacao.module';
     // Produção 22 (M1): o cartão da implantação (reunião, fase do trilho, resumo do Dia a
     // dia, limite da etapa pelo menu da coluna). Sem a linha, as rotas respondem 404.
     ImplantacaoModule,
+    // Produção 22C: o WhatsApp da empresa por dentro do OS (gravação do webhook, sincronização,
+    // caixa, vínculo, resumo). Sem a linha, o webhook não grava e `/api/whatsapp/*` responde 404.
+    WhatsappModule,
   ],
   controllers: [HealthController],
 })

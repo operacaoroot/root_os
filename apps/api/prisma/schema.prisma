@@ -189,6 +189,9 @@ model Org {
   workAnexos            WorkAnexo[]
   /// Produção 22B (I5): a proposta do serviço de propostas vinculada a um lead.
   propostasDosLeads     PropostaDoLead[]
+  /// Produção 22C (W1): o WhatsApp da empresa por dentro do OS.
+  whatsappConversas     WhatsAppConversa[]
+  whatsappMensagens     WhatsAppMensagem[]
 
   // Fatia 3.6 — RF-G-05 (bloco no fim do arquivo). Só o outro lado da relação
   // mora aqui: é o que o Prisma exige, e nada além disso.
@@ -480,6 +483,9 @@ model Lead {
   tarefas           WorkTask[] @relation("TarefasDoLead")
   // Produção 22B (I5): as propostas do serviço de propostas vinculadas ao lead.
   propostasVinculadas PropostaDoLead[] @relation("PropostasDoLead")
+  /// Produção 22C (W3): as conversas e mensagens do WhatsApp ligadas a este lead.
+  whatsappConversas   WhatsAppConversa[] @relation("ConversasDoLead")
+  whatsappMensagens   WhatsAppMensagem[] @relation("MensagensDoLead")
 
   @@index([orgId, enteredAt])
   @@index([orgId, campaignId])
@@ -936,6 +942,9 @@ model Partner {
   contracts    Contract[]
   /// As tarefas do Trabalho ligadas a este cliente (`WorkTask.clienteId`).
   tarefas      WorkTask[]           @relation("TarefasDoCliente")
+  /// Produção 22C (W3): as conversas e mensagens do WhatsApp ligadas a este cliente.
+  whatsappConversas WhatsAppConversa[] @relation("ConversasDoCliente")
+  whatsappMensagens WhatsAppMensagem[] @relation("MensagensDoCliente")
 
   @@index([orgId])
 }
@@ -6233,4 +6242,104 @@ model FotoDePerfil {
   substituidaEm DateTime?
 
   @@index([orgId, userId])
+}
+
+/// Produção 22C (W1): uma conversa do WhatsApp da empresa, 1:1 ou grupo, por
+/// instância da Evolution. Raiz da empresa (o orgId vem do insert). Nasce pelo
+/// webhook (a primeira mensagem) ou pela sincronização (`chat/findChats`,
+/// `group/fetchAllGroups`). `chatJid` é a forma CANÔNICA: no 1:1 com número real,
+/// `<dígitos>@s.whatsapp.net` (também quando a mensagem chegou no modo `@lid` com o
+/// número ao lado); `@lid` só quando o número real nunca veio; grupo `…@g.us`.
+/// O vínculo (W3) é com UM lead OU UM cliente, nunca os dois: CHECK no banco.
+model WhatsAppConversa {
+  id                String    @id @default(uuid())
+  orgId             String
+  org               Org       @relation(fields: [orgId], references: [id])
+  instancia         String
+  chatJid           String
+  /// O `@lid` da mesma conversa 1:1, quando a Evolution mandou os dois (para casar o que vier só com ele).
+  lidJid            String?
+  grupo             Boolean   @default(false)
+  /// Assunto do grupo ou nome do contato (pushName/nome da agenda).
+  nome              String?
+  fotoUrl           String?
+  /// Contagem de participantes (grupo).
+  participantes     Int?
+  /// Grupo: `[{ numero, nome, admin }]`, atualizada pela sincronização.
+  participantesLista Json?
+  /// Conversa da equipe (grupo dos sócios ou 1:1 com gente da casa): chip próprio, sem vínculo de cliente.
+  equipe            Boolean   @default(false)
+  ultimaMensagemEm  DateTime?
+  naoLidas          Int       @default(0)
+  leadId            String?
+  lead              Lead?     @relation("ConversasDoLead", fields: [leadId], references: [id], onDelete: SetNull)
+  clienteId         String?
+  cliente           Partner?  @relation("ConversasDoCliente", fields: [clienteId], references: [id], onDelete: SetNull)
+  /// `{ tipo: 'lead'|'cliente', id, nome, como: 'nome_igual'|'telefone' }`: a sugestão que espera um clique.
+  vinculoSugerido   Json?
+  vinculadoPorId    String?
+  vinculadoEm       DateTime?
+  arquivadaEm       DateTime?
+  sincronizadaEm    DateTime?
+  criadoEm          DateTime  @default(now())
+  atualizadoEm      DateTime  @updatedAt
+
+  mensagens WhatsAppMensagem[]
+
+  @@unique([orgId, instancia, chatJid])
+  @@unique([id, orgId])
+  @@index([orgId, ultimaMensagemEm])
+  @@index([orgId, leadId])
+  @@index([orgId, clienteId])
+}
+
+/// Produção 22C (W1): TODA mensagem que passou pelo número da empresa, entrada e
+/// saída, 1:1 e grupo, inclusive `fromMe` (o que a casa mandou pelo celular, pela
+/// caixa ou pelo comercial). Filha de `WhatsAppConversa`: sentinela + gatilho
+/// `WhatsAppMensagem_orgId_do_pai`. Idempotente por `(orgId, instancia,
+/// mensagemExternaId)`: o webhook e a sincronização gravam a mesma linha uma vez.
+/// Mídia: só metadados (tipo MIME, nome, tamanho); nada é baixado (rodada 22C).
+model WhatsAppMensagem {
+  id                    String    @id @default(uuid())
+  /// Sentinela + gatilho `WhatsAppMensagem_orgId_do_pai`.
+  orgId                 String    @default("")
+  org                   Org       @relation(fields: [orgId], references: [id])
+  conversaId            String
+  conversa              WhatsAppConversa @relation(fields: [conversaId], references: [id], onDelete: Cascade)
+  instancia             String
+  chatJid               String
+  grupo                 Boolean   @default(false)
+  remetenteJid          String?
+  /// Só dígitos, com DDI. No modo `@lid`, o número real (remoteJidAlt/senderPn/participantAlt).
+  remetenteNumero       String?
+  /// pushName de quem escreveu.
+  remetenteNome         String?
+  deMim                 Boolean   @default(false)
+  /// `entrada` ou `saida` (`saida` = deMim).
+  direcao               String
+  /// conversation, extendedText, image, video, audio, document, sticker, reaction, edicao, protocolo, contato, localizacao, enquete, outro.
+  tipo                  String
+  texto                 String?
+  /// `{ mime, nome, tamanho, segundos }` (só metadados; nada baixado).
+  midia                 Json?
+  mensagemExternaId     String
+  citaMensagemExternaId String?
+  timestamp             DateTime
+  leadId                String?
+  lead                  Lead?     @relation("MensagensDoLead", fields: [leadId], references: [id], onDelete: SetNull)
+  clienteId             String?
+  cliente               Partner?  @relation("MensagensDoCliente", fields: [clienteId], references: [id], onDelete: SetNull)
+  lidaEm                DateTime?
+  lidaPorId             String?
+  /// Quem respondeu pela caixa (W2). Nulo no que veio do webhook ou da sincronização.
+  enviadaPorId          String?
+  /// `webhook`, `sincronizacao` ou `caixa`.
+  origem                String
+  criadoEm              DateTime  @default(now())
+
+  @@unique([orgId, instancia, mensagemExternaId])
+  @@index([conversaId, timestamp])
+  @@index([orgId, timestamp])
+  @@index([orgId, leadId, timestamp])
+  @@index([orgId, clienteId, timestamp])
 }

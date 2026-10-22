@@ -78,6 +78,14 @@ export const PERMISSIONS = [
   'agenda.editar',
   'whatsapp.enviar',
   'whatsapp.configurar',
+  /*
+   * Produção 22C (W2): responder pela caixa de WhatsApp (`/whatsapp`) e arquivar
+   * conversa. Ato de GENTE, com o próprio nome, auditado; não passa pela régua.
+   * Nasce nos papéis de gente que têm `leads.editar` (Admin Master, Gestor de
+   * Marketing, Analista), pela migration 20261022230000 (não pelo
+   * db:sync-permissions). `ia_acao` fica de fora: conta de máquina não conversa.
+   */
+  'whatsapp.conversar',
   'drive.ver',
   'drive.editar',
   'obsidian.ver',
@@ -187,6 +195,8 @@ export const ROLES = {
       'relatorios.gerar', 'automacoes.ver', 'mcp.ver', 'mcp.executar',
       'bio.ver', 'bio.editar',
       'pauta.ver', 'pauta.editar', 'pauta.publicar',
+      // Produção 22C (W2): responder pela caixa de WhatsApp.
+      'whatsapp.conversar',
       // Alçada `responsavel` — alcança R3, que é onde vive a única saída externa
       // com efeito ligado hoje (`whatsapp.mensagem.enviar`).
       'aprovacoes.ver', 'aprovacoes.decidir',
@@ -199,6 +209,8 @@ export const ROLES = {
       'instagram.ver', 'tarefas.ver', 'tarefas.editar', 'relatorios.ver',
       'relatorios.gerar', 'automacoes.ver', 'mcp.ver', 'bio.ver',
       'pauta.ver', 'pauta.editar',
+      // Produção 22C (W2): responder pela caixa de WhatsApp.
+      'whatsapp.conversar',
       // Só `ver`: alçada `operador` não sustenta R3 (ver o bloco acima de ROLES).
       'aprovacoes.ver',
     ] as Permission[],

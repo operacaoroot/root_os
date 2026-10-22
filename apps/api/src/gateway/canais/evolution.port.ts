@@ -55,6 +55,50 @@ export interface AdministracaoDaEvolution {
   instanciaDaEmpresa(orgId: string): Promise<string | null>;
 }
 
+/*
+ * AS DUAS PORTAS DA CAIXA DE WHATSAPP (rodada de produção 4, 22/10/2026, W1 e W2).
+ *
+ *   · `LEITURA_DA_EVOLUTION` só LÊ o que a Evolution guarda (chats, grupos com os
+ *     participantes, mensagens, foto). É a sincronização (`whatsapp.sincronizar`)
+ *     que a usa: nada sai do número por ela. Devolve o corpo CRU da Evolution; quem
+ *     interpreta é `whatsapp/leitura-da-evolution.ts`, a mesma regra do webhook.
+ *   · `RESPOSTA_DE_GENTE_PELA_EVOLUTION` manda o texto que uma PESSOA digitou na
+ *     caixa (`/whatsapp`), 1:1 ou grupo. Não é envio de agente: quem chama é só o
+ *     serviço da caixa, depois de conferir a permissão `whatsapp.conversar` e que
+ *     o pedido veio de gente (catraca em `whatsapp-caixa.test.ts`). As mensagens
+ *     de agente (M1 a M8, pauta, aprovação) continuam pela porta de envio abaixo,
+ *     atrás da régua.
+ */
+export interface LeituraDaEvolution {
+  /** `POST /chat/findChats/<instância>`: os chats que a Evolution guarda (cru). */
+  conversas(orgId: string): Promise<unknown[]>;
+  /** `GET /group/fetchAllGroups/<instância>?getParticipants=true` (cru). */
+  grupos(orgId: string): Promise<unknown[]>;
+  /**
+   * `POST /chat/findMessages/<instância>` de UMA conversa, uma página (a 1 é a
+   * mais nova). `registros` cru; `paginas` = quantas páginas a Evolution diz ter.
+   */
+  mensagens(orgId: string, remoteJid: string, pagina: number, porPagina: number): Promise<{ registros: unknown[]; paginas: number }>;
+  /** `POST /chat/fetchProfilePictureUrl/<instância>`: a URL da foto, ou null. */
+  foto(orgId: string, jid: string): Promise<string | null>;
+  /** A instância que esta empresa usa (a prova de empresa do que chega). */
+  instanciaDaEmpresa(orgId: string): Promise<string | null>;
+  /** O conector está ligado nesta empresa? */
+  ligado(orgId: string): Promise<boolean>;
+}
+
+export interface RespostaDeGentePelaEvolution {
+  /**
+   * O texto que uma PESSOA digitou na caixa, para a conversa `chatJid` (1:1
+   * `…@s.whatsapp.net`/`…@lid` ou grupo `…@g.us`), pela instância desta empresa.
+   * Conector desligado ou não configurado lança, com a frase.
+   */
+  responderComoPessoa(orgId: string, chatJid: string, texto: string): Promise<{ id: string }>;
+}
+
+export const LEITURA_DA_EVOLUTION = Symbol('LEITURA_DA_EVOLUTION');
+export const RESPOSTA_DE_GENTE_PELA_EVOLUTION = Symbol('RESPOSTA_DE_GENTE_PELA_EVOLUTION');
+
 export const ENVIO_PELA_EVOLUTION = Symbol('ENVIO_PELA_EVOLUTION');
 export const ADMINISTRACAO_DA_EVOLUTION = Symbol('ADMINISTRACAO_DA_EVOLUTION');
 

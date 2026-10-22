@@ -6,7 +6,13 @@ import { EnvioDeAprovacaoService } from './envio-de-aprovacao.service';
 import { CanalDeAprovacaoService } from './canal-de-aprovacao.service';
 import { CanalDeAprovacaoController } from './canal-de-aprovacao.controller';
 import { EntradaDiretaRegistry } from './entrada-direta.registry';
-import { ADMINISTRACAO_DA_EVOLUTION, ENVIO_PELA_EVOLUTION } from './evolution.port';
+import {
+  ADMINISTRACAO_DA_EVOLUTION,
+  ENVIO_PELA_EVOLUTION,
+  LEITURA_DA_EVOLUTION,
+  RESPOSTA_DE_GENTE_PELA_EVOLUTION,
+} from './evolution.port';
+import { GravacaoDoWhatsappRegistry } from './gravacao-do-whatsapp.registry';
 // Produção 21 (P8): a Evolution da EMPRESA mora no arquivo do conector da Evolution (a catraca de
 // credenciais diz que só ele lê `EVOLUTION_*`); a pasta da porta pode importar conector.
 import { EvolutionDaEmpresaService } from '../../pauta/evolution.service';
@@ -71,6 +77,11 @@ import { EvolutionDaEmpresaService } from '../../pauta/evolution.service';
     EvolutionDaEmpresaService,
     { provide: ENVIO_PELA_EVOLUTION, useExisting: EvolutionDaEmpresaService },
     { provide: ADMINISTRACAO_DA_EVOLUTION, useExisting: EvolutionDaEmpresaService },
+    // Produção 22C (W1, W2): a leitura da sincronização e a resposta de gente pela caixa de WhatsApp.
+    { provide: LEITURA_DA_EVOLUTION, useExisting: EvolutionDaEmpresaService },
+    { provide: RESPOSTA_DE_GENTE_PELA_EVOLUTION, useExisting: EvolutionDaEmpresaService },
+    // Produção 22C (W1): quem grava TODA mensagem do webhook antes dos leitores de sempre.
+    GravacaoDoWhatsappRegistry,
   ],
   exports: [
     TransporteDeCanalRegistry,
@@ -79,6 +90,9 @@ import { EvolutionDaEmpresaService } from '../../pauta/evolution.service';
     EnvioDeAprovacaoService,
     ENVIO_PELA_EVOLUTION,
     ADMINISTRACAO_DA_EVOLUTION,
+    LEITURA_DA_EVOLUTION,
+    RESPOSTA_DE_GENTE_PELA_EVOLUTION,
+    GravacaoDoWhatsappRegistry,
   ],
 })
 export class CanaisModule {}
