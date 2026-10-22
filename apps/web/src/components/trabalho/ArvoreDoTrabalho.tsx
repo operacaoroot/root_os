@@ -3,12 +3,13 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Plus } from 'lucide-react';
 import {
-  chaveDoNomeNoNivel, listaDaImplantacao,
+  chaveDoNomeNoNivel, listaDaImplantacao, motivoParaNaoMoverPasta,
   TRAB_LISTA_DA_IMPLANTACAO_PROTEGIDA, TRAB_NOME_DE_LISTA_REPETIDO, TRAB_NOME_DE_PASTA_REPETIDO, TRAB_PASTA_DA_IMPLANTACAO_PROTEGIDA,
   type TrabEstrutura, type TrabListaDto,
 } from '@mktos/shared';
 import { apiPatch, apiPost } from '@/lib/api';
 import { AcoesDaListaNaArvore, AcoesDaPastaNaArvore, type DestinoDaArvore } from './ExcluirDaArvore';
+import { ArquivadasDaArvore } from './ArquivadasDaArvore';
 
 /*
  * A ÁRVORE DE TAREFAS, EDITÁVEL ONDE A PESSOA ESTÁ OLHANDO (adendo da rodada de
@@ -24,14 +25,24 @@ import { AcoesDaListaNaArvore, AcoesDaPastaNaArvore, type DestinoDaArvore } from
  *    API com a mesma frase, sem diferença de maiúscula nem acento;
  *  · arrastar uma lista para o nome de outra pasta (ou para "Sem pasta") muda a
  *    lista de pasta; soltar sobre outra lista põe antes dela (no mesmo nível,
- *    reordena; em outro, muda de pasta e entra naquela posição). Arrastar uma
- *    pasta sobre uma irmã reordena. HTML5 nativo, como o quadro;
+ *    reordena; em outro, muda de pasta e entra naquela posição). HTML5 nativo,
+ *    como o quadro;
+ *  · arrastar uma pasta SOBRE outra a põe dentro dela; soltar na faixa ENTRE duas
+ *    pastas a põe ali (no mesmo nível, reordena; em outro, muda de mãe e entra
+ *    naquela posição). Ciclo, nível (`motivoParaNaoMoverPasta`) e nome repetido são
+ *    recusados aqui com a frase da API; "⋯" › Mover para… faz o mesmo pelo teclado
+ *    (M3, 22/10/2026);
+ *  · no fim, a seção recolhida "Arquivadas (N)" com Desarquivar (M3);
  *  · Alt+↑ e Alt+↓ no item focado sobem e descem uma posição, e o foco fica nele;
  *  · a lista da implantação não muda de nome nem sai da pasta Clientes, e a pasta
  *    que a guarda não muda de nome nem se exclui: o menu diz por quê.
  * A ordem vai em `POST /trabalho/arvore/ordem` com todos os irmãos do nível, que a
- * API confere; mudar de pasta, em `PATCH /trabalho/listas/:id`.
+ * API confere; mudar a lista de pasta, em `PATCH /trabalho/listas/:id`; mudar a
+ * pasta de mãe, em `POST /trabalho/pastas/:id/mover`.
  */
+
+/** Recusa feita na própria tela (antes da API): vira aviso, não erro de carregar. */
+class RecusaDaTela extends Error {}
 
 type Pasta = TrabEstrutura['folders'][number];
 type Arrastado = { tipo: 'pasta' | 'lista'; id: string; paiId: string | null };
@@ -211,6 +222,44 @@ export function ArvoreDoTrabalho({ estrutura, pastas, mostraSoltas, listaId, edi
       .catch(falhou);
   };
 
+  /**
+   * Mudar a pasta de mãe (soltar sobre outra pasta, na faixa entre pastas de outro
+   * nível, ou "Mover para…"). `parentId` nulo = primeiro nível. As recusas da tela
+   * (protegida, ciclo, nível, nome repetido) saem como `RecusaDaTela`, sem chamar a API.
+   */
+  const pedirMoverPasta = async (id: string, parentId: string | null, antesDe?: string) => {
+    const pasta = estrutura.folders.find((f) => f.id === id);
+    if (!pasta) return;
+    if (parentId && id === implantacao?.pastaId) throw new RecusaDaTela(TRAB_PASTA_DA_IMPLANTACAO_PROTEGIDA);
+    const motivo = motivoParaNaoMoverPasta(estrutura.folders, id, parentId);
+    if (motivo) throw new RecusaDaTela(motivo);
+    let topo = pasta;
+    for (let i = 0; topo.parentId && i < 50; i++) topo = estrutura.folders.find((f) => f.id === topo.parentId) ?? { ...topo, parentId: null };
+    const irmas = parentId ? filhasDe(parentId) : irmasDaPasta(null, topo.spaceId ?? null);
+    if (nomeRepetido(pasta.name, irmas, id)) throw new RecusaDaTela(`No destino já existe uma pasta chamada "${pasta.name}". Renomeie uma delas antes de mover.`);
+    await apiPost(`/trabalho/pastas/${encodeURIComponent(id)}/mover`, { parentId }, token);
+    if (antesDe) {
+      const ids = filhasDe(parentId).map((f) => f.id).filter((f) => f !== id);
+      const pos = ids.indexOf(antesDe);
+      ids.splice(pos < 0 ? ids.length : pos, 0, id);
+      await gravarOrdem('pasta', parentId, ids);
+    }
+    setAviso(`A pasta ${pasta.name} foi para ${parentId ? caminhoDaPasta(estrutura.folders, parentId) : 'o primeiro nível'}.`);
+    setFocarDepois(`pasta:${id}`);
+    onMudou();
+  };
+  /** O arraste: recusa da tela vira aviso; recusa da API vira erro e a árvore volta da API. */
+  const moverPastaArrastada = (id: string, parentId: string | null, antesDe?: string) => {
+    pedirMoverPasta(id, parentId, antesDe).catch((e) => {
+      if (e instanceof RecusaDaTela) setAviso(e.message);
+      else falhou(e);
+    });
+  };
+  /** Para onde a pasta pode ir em "Mover para…": sem ela, sem as de dentro, sem a mãe atual e sem as fundas demais. */
+  const destinosParaMover = (f: Pasta): DestinoDaArvore[] => estrutura.folders
+    .filter((d) => d.id !== (f.parentId ?? null) && !motivoParaNaoMoverPasta(estrutura.folders, f.id, d.id))
+    .map((d) => ({ id: d.id, rotulo: caminhoDaPasta(estrutura.folders, d.id) }));
+
   /** Pôr o item arrastado antes de um irmão do mesmo nível. */
   const reordenarAntesDe = (tipo: 'pasta' | 'lista', id: string, paiId: string | null, antesDe: string) => {
     const irmaos = tipo === 'pasta' ? filhasDe(paiId) : listasDe(paiId);
@@ -336,15 +385,32 @@ export function ArvoreDoTrabalho({ estrutura, pastas, mostraSoltas, listaId, edi
     const conteudo = { listas: f.lists.length, pastas: estrutura.folders.filter((x) => x.parentId === f.id).length };
     return (
       <div key={f.id} data-testid={`trabalho-arvore-no-${f.id}`} className={nivel > 0 ? 'ml-2 border-l border-border pl-1.5' : ''}>
+        {/* A faixa ENTRE pastas: soltar aqui põe a pasta arrastada antes desta (M3). */}
+        {editable && (
+          <div
+            aria-hidden
+            data-testid={`trabalho-arvore-entre-${f.id}`}
+            className={`-mt-1 mb-0.5 h-1.5 rounded ${alvo === `entre:${f.id}` ? 'bg-brand-dim' : ''}`}
+            onDragOver={sobre(`entre:${f.id}`, (a) => a.tipo === 'pasta' && a.id !== f.id)}
+            onDragLeave={() => { if (alvo === `entre:${f.id}`) setAlvo(null); }}
+            onDrop={soltar((a) => {
+              if (a.tipo !== 'pasta') return;
+              const pai = f.parentId ?? null;
+              if (a.paiId === pai) reordenarAntesDe('pasta', a.id, pai, f.id);
+              else moverPastaArrastada(a.id, pai, f.id);
+            })}
+          />
+        )}
         <div
           className={`flex items-start justify-between gap-1 rounded-md ${classeDoAlvo(chave)}`}
           onDragOver={sobre(chave, (a) => (a.tipo === 'lista'
             ? a.paiId !== f.id && a.id !== implantacao?.listaId
-            : a.id !== f.id && a.paiId === (f.parentId ?? null)))}
+            : a.id !== f.id && a.paiId !== f.id))}
           onDragLeave={() => { if (alvo === chave) setAlvo(null); }}
           onDrop={soltar((a) => {
             if (a.tipo === 'lista') moverLista(a.id, f.id);
-            else reordenarAntesDe('pasta', a.id, f.parentId ?? null, f.id);
+            // Pasta solta SOBRE a pasta: vai para dentro dela (M3).
+            else moverPastaArrastada(a.id, f.id);
           })}
         >
           {editando?.tipo === 'pasta' && editando.id === f.id ? (
@@ -374,6 +440,8 @@ export function ArvoreDoTrabalho({ estrutura, pastas, mostraSoltas, listaId, edi
           {editable && (
             <AcoesDaPastaNaArvore
               pasta={f} conteudo={conteudo} protegida={protegida} destinos={destinosDaPasta(f.id)} token={token}
+              destinosParaMover={destinosParaMover(f)} emPrimeiroNivel={!f.parentId}
+              aoMover={(parentId) => pedirMoverPasta(f.id, parentId)}
               aoRenomear={() => setEditando({ tipo: 'pasta', id: f.id })}
               aoErro={(m) => { onErro(m); onMudou(); }} aoAviso={setAviso}
               aoExcluir={() => onPastaSaiu(f.id)}
@@ -436,6 +504,7 @@ export function ArvoreDoTrabalho({ estrutura, pastas, mostraSoltas, listaId, edi
           )}
         </div>
       )}
+      <ArquivadasDaArvore token={token} editable={editable} versao={estrutura} onMudou={onMudou} onAviso={setAviso} />
       <p role="status" data-testid="trabalho-arvore-aviso" className="break-words px-1 text-[11px] text-muted empty:hidden">{aviso ?? ''}</p>
     </div>
   );

@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from 'react';
 import * as Dialog from '@radix-ui/react-dialog';
 import { MoreHorizontal, X } from 'lucide-react';
 import {
-  nomeParaConfirmar,
+  nomeParaConfirmar, fraseDosCamposGuardados,
   type TrabListaExcluida, type TrabListaTarefasArquivadas, type TrabListaTarefasMovidas,
   type TrabPastaExcluida, type TrabPastaExcluidaComDestino,
 } from '@mktos/shared';
@@ -24,6 +24,11 @@ import { apiDelete, apiPost } from '@/lib/api';
  *  · excluir pasta vazia é uma confirmação simples. Com listas ou pastas dentro,
  *    o diálogo pede o destino delas (outra pasta ou Sem pasta) e nenhuma lista
  *    some junto: elas mudam de lugar com as tarefas, e depois a pasta sai;
+ *  · "Mover para…" na pasta (M3, 22/10/2026) é o caminho do teclado para o mesmo
+ *    arraste de pasta sobre pasta: escolhe a pasta de destino ou o primeiro nível;
+ *    os destinos já vêm sem ela, sem as de dentro dela e sem as fundas demais;
+ *  · mover as tarefas leva os campos de mesmo nome e tipo; o aviso conta os que
+ *    ficaram guardados na lista de origem;
  *  · a lista da implantação e a pasta Clientes que a guarda mostram o menu com os
  *    itens desabilitados e a frase do porquê.
  * O menu abre pelo teclado (Enter ou espaço no botão), as setas andam entre os
@@ -184,7 +189,8 @@ export function AcoesDaListaNaArvore({ lista, token, protegida, destinos = [], a
           const etapa = r.mudaramDeEtapa > 0
             ? ` ${r.mudaramDeEtapa === 1 ? '1 mudou' : `${r.mudaramDeEtapa} mudaram`} de etapa (o destino não tem etapa com o mesmo nome).`
             : '';
-          return excluirDepois(`${tarefasNoPlural(r.movidas)} ${r.movidas === 1 ? 'foi' : 'foram'} para ${alvo?.rotulo ?? 'a outra lista'}.${etapa}`);
+          const campos = fraseDosCamposGuardados(r.camposGuardados ?? 0);
+          return excluirDepois(`${tarefasNoPlural(r.movidas)} ${r.movidas === 1 ? 'foi' : 'foram'} para ${alvo?.rotulo ?? 'a outra lista'}.${etapa}${campos ? ` ${campos}` : ''}`);
         })
         .catch((e) => { if (!mudouNoMeio(e)) setErro((e as Error).message); });
     } else {
@@ -300,9 +306,10 @@ export function AcoesDaListaNaArvore({ lista, token, protegida, destinos = [], a
 }
 
 const SEM_PASTA = '__sem-pasta__';
+const PRIMEIRO_NIVEL = '__primeiro-nivel__';
 
-/** O menu da pasta na árvore: renomear e excluir (vazia, ou levando o que está dentro para outro lugar). */
-export function AcoesDaPastaNaArvore({ pasta, conteudo, protegida, destinos = [], token, aoRenomear, aoExcluir, aoErro, aoAviso }: {
+/** O menu da pasta na árvore: renomear, mover para outra pasta e excluir (vazia, ou levando o que está dentro para outro lugar). */
+export function AcoesDaPastaNaArvore({ pasta, conteudo, protegida, destinos = [], destinosParaMover, emPrimeiroNivel = false, token, aoRenomear, aoMover, aoExcluir, aoErro, aoAviso }: {
   pasta: { id: string; name: string };
   /** Listas e pastas que APARECEM dentro dela (as arquivadas não contam). */
   conteudo: { listas: number; pastas: number };
@@ -310,19 +317,36 @@ export function AcoesDaPastaNaArvore({ pasta, conteudo, protegida, destinos = []
   protegida?: string | null;
   /** As pastas que podem receber (sem ela e sem as que estão dentro dela). "Sem pasta" vem sempre. */
   destinos?: DestinoDaArvore[];
+  /** Para onde ela pode ir em "Mover para…" (sem ela, sem as de dentro, sem as fundas demais e sem a mãe atual). */
+  destinosParaMover?: DestinoDaArvore[];
+  /** Já está no primeiro nível: "Primeiro nível" não aparece como destino. */
+  emPrimeiroNivel?: boolean;
   token: string | null;
   aoRenomear?: () => void;
+  /** Move a pasta (nulo = primeiro nível); quem chama fala com a API e avisa. */
+  aoMover?: (parentId: string | null) => Promise<void>;
   aoExcluir: (r: TrabPastaExcluida) => void;
   aoErro: (m: string) => void;
   aoAviso?: (m: string) => void;
 }) {
   const gatilho = useRef<HTMLButtonElement>(null);
   const [confirmando, setConfirmando] = useState(false);
+  const [movendo, setMovendo] = useState(false);
+  const [paraOnde, setParaOnde] = useState('');
   const [destino, setDestino] = useState('');
   const [ocupado, setOcupado] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
   const vazia = conteudo.listas + conteudo.pastas === 0;
-  const fechar = () => { setConfirmando(false); setDestino(''); setErro(null); };
+  const fechar = () => { setConfirmando(false); setMovendo(false); setParaOnde(''); setDestino(''); setErro(null); };
+  const opcoesDeMover = [...(emPrimeiroNivel ? [] : [{ id: PRIMEIRO_NIVEL, rotulo: 'Primeiro nível' }]), ...(destinosParaMover ?? [])];
+  const mover = () => {
+    if (!aoMover || !paraOnde) return;
+    setOcupado(true); setErro(null);
+    aoMover(paraOnde === PRIMEIRO_NIVEL ? null : paraOnde)
+      .then(fechar)
+      .catch((e) => setErro((e as Error).message))
+      .finally(() => setOcupado(false));
+  };
   const recusa = (e: unknown) => {
     if ((e as { status?: number }).status === 409 && /mudou/.test((e as Error).message)) { fechar(); aoErro((e as Error).message); return; }
     setErro((e as Error).message);
@@ -358,6 +382,11 @@ export function AcoesDaPastaNaArvore({ pasta, conteudo, protegida, destinos = []
         testId={`trabalho-pasta-acoes-${pasta.id}`}
         itens={[
           ...(aoRenomear ? [{ chave: 'renomear', texto: 'Renomear', desabilitado: !!protegida, dica: protegida ?? undefined, aoEscolher: aoRenomear }] : []),
+          ...(aoMover ? [{
+            chave: 'mover', texto: 'Mover para…', desabilitado: !!protegida || opcoesDeMover.length === 0,
+            dica: protegida ?? (opcoesDeMover.length === 0 ? 'Não há outra pasta que possa receber esta.' : undefined),
+            aoEscolher: () => setMovendo(true),
+          }] : []),
           {
             chave: 'excluir', texto: 'Excluir pasta', desabilitado: !!protegida,
             dica: protegida ?? (vazia ? undefined : `Antes, ${resumo} ${conteudo.listas + conteudo.pastas === 1 ? 'vai' : 'vão'} para outra pasta ou Sem pasta.`),
@@ -365,6 +394,28 @@ export function AcoesDaPastaNaArvore({ pasta, conteudo, protegida, destinos = []
           },
         ]}
       />
+      {movendo && (
+        <Confirmacao gatilho={gatilho} titulo={`Mover a pasta ${pasta.name}`} aoFechar={fechar}>
+          <p className="text-sm text-muted">A pasta vai com as listas e as pastas de dentro, e as tarefas não mudam.</p>
+          <label className="block space-y-1 text-sm">
+            <span>Para onde</span>
+            <select
+              autoFocus aria-label="Para onde vai a pasta" data-testid="trabalho-mover-pasta-destino"
+              value={paraOnde} onChange={(e) => setParaOnde(e.target.value)} className={SELETOR}
+            >
+              <option value="">Escolha o destino</option>
+              {opcoesDeMover.map((d) => <option key={d.id} value={d.id}>{d.rotulo}</option>)}
+            </select>
+          </label>
+          {erro && <p role="alert" className="text-sm text-bad">{erro}</p>}
+          <div className="flex flex-wrap justify-end gap-2">
+            <Dialog.Close className={`${BOTAO} border-border text-muted`}>Cancelar</Dialog.Close>
+            <button type="button" data-testid="trabalho-mover-pasta-confirmar" disabled={ocupado || !paraOnde} onClick={mover} className={`${BOTAO} border-brand-dim text-brand`}>
+              {ocupado ? 'Movendo…' : 'Mover pasta'}
+            </button>
+          </div>
+        </Confirmacao>
+      )}
       {confirmando && (
         <Confirmacao gatilho={gatilho} titulo={`Excluir a pasta ${pasta.name}?`} aoFechar={fechar}>
           {vazia ? (

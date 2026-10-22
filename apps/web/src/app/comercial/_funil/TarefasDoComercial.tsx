@@ -10,12 +10,14 @@
  *   · o bloco "Tarefas" do painel do lead (`TarefasDoLead`): as ligadas a ele.
  *
  * Nos dois: "+ tarefa" na linha (título, responsável, prazo; Enter salva, Esc
- * desfaz), concluir com um clique e editar título, responsável e prazo. Toda
+ * desfaz), concluir com um clique e editar título, responsável e prazo. A aberta
+ * igual (a regra e a frase do Dia a dia) não nasce de novo: a tela confere com o
+ * que tem à vista e a API confere de novo com todas (M3, 22/10/2026). Toda
  * escrita leva a versão lida; outra aba que salvou no meio dá a frase da API.
  * Por baixo é `WorkTask` (a lista do comercial), mas ela mora e se edita aqui.
  */
 import { useEffect, useId, useRef, useState } from 'react';
-import type { TarefaDoComercial, TarefasDoComercial } from '@mktos/shared';
+import { TAREFA_IGUAL_JA_EXISTE, tarefaIgual, type TarefaDoComercial, type TarefasDoComercial } from '@mktos/shared';
 
 import { apiPatch, apiPost } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
@@ -288,6 +290,7 @@ export function ListaDeTarefasDoComercial({
           rotulo="Nova tarefa"
           testId={`${testId}-nova`}
           aoSalvar={async (c) => {
+            if (tarefaIgual(abertas, c.titulo, (t) => t.titulo)) throw new Error(TAREFA_IGUAL_JA_EXISTE);
             await apiPost('/comercial/tarefas', {
               titulo: c.titulo.trim(),
               ...(leadId ? { leadId } : {}),
