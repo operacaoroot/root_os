@@ -1,4 +1,4 @@
-import {
+import { Optional,
   BadRequestException,
   BadGatewayException,
   ConflictException,
@@ -38,6 +38,7 @@ import {
   projetarConversas,
   projetarMensagens,
 } from './projecao';
+import { ResumoDoWhatsappService } from './resumo.service';
 import { SincronizacaoDoWhatsappService } from './sincronizacao.service';
 
 /*
@@ -165,6 +166,8 @@ export class CaixaDoWhatsappService {
     private readonly prisma: PrismaService,
     private readonly sincronizacao: SincronizacaoDoWhatsappService,
     @Inject(RESPOSTA_DE_GENTE_PELA_EVOLUTION) private readonly resposta: RespostaDeGentePelaEvolution,
+    /** O cartão do Dia a dia e a bolha do menu (W4): ler, arquivar e responder mudam a conta, e o cache de 30 s é esquecido. */
+    @Optional() private readonly resumo?: ResumoDoWhatsappService,
   ) {}
 
   private podeResponder(quem: QuemNaCaixa): boolean {
@@ -274,6 +277,7 @@ export class CaixaDoWhatsappService {
       if (c.naoLidas !== 0 || m.count) await tx.whatsAppConversa.updateMany({ where: { id: c.id, orgId }, data: { naoLidas: 0 } });
       return m.count;
     });
+    this.resumo?.esquecer(orgId);
     return { lidas: r };
   }
 
@@ -304,6 +308,7 @@ export class CaixaDoWhatsappService {
           },
         });
       });
+      this.resumo?.esquecer(orgId);
     }
     return this.projetarUma(orgId, c.id);
   }
@@ -388,6 +393,7 @@ export class CaixaDoWhatsappService {
     });
     const linha = await this.prisma.whatsAppMensagem.findFirstOrThrow({ where: { id: gravada.id, orgId }, select: SELECT_DA_MENSAGEM });
     const [mensagem] = await projetarMensagens(this.prisma, orgId, c.id, [linha]);
+    this.resumo?.esquecer(orgId);
     return { mensagem };
   }
 
