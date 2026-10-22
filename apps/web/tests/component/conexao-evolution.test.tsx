@@ -112,6 +112,33 @@ describe('o cartão da Evolution', () => {
     expect(within(cartao()).getByText(/simulado \(nada sai do sistema\)/)).toBeInTheDocument();
   });
 
+  it('Produção 22: o segredo do webhook desta empresa só aparece a pedido de quem administra, e some ao esconder', async () => {
+    const SEGREDO = 'a1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e5f60718293a4b5c6d7e8f9';
+    apiGet.mockImplementation(async (rota: string) => {
+      if (rota === '/integrations/evolution/conexao') return estado;
+      if (rota === '/integrations/evolution/estado') return instancia;
+      if (rota === '/integrations/evolution/segredo-do-webhook') {
+        return { ligado: true, segredo: SEGREDO, cabecalho: 'x-canal-segredo', caminhoDoWebhook: '/api/approvals/canal/whatsapp/org-1', daCasa: false };
+      }
+      throw new Error(`rota inesperada ${rota}`);
+    });
+    render(<ConexaoEvolution token="tok" gerenciar />);
+    await screen.findByTestId('url-do-webhook-evolution');
+    expect(document.body.textContent).not.toContain(SEGREDO);
+    expect(apiGet).not.toHaveBeenCalledWith('/integrations/evolution/segredo-do-webhook', 'tok');
+    const user = userEvent.setup();
+    await user.click(screen.getByTestId('mostrar-segredo-evolution'));
+    expect((await screen.findByTestId('segredo-do-webhook-evolution')).textContent).toContain(SEGREDO);
+    await user.click(screen.getByRole('button', { name: 'esconder' }));
+    expect(document.body.textContent).not.toContain(SEGREDO);
+  });
+
+  it('Produção 22: quem não administra não vê o botão do segredo', async () => {
+    render(<ConexaoEvolution token="tok" gerenciar={false} />);
+    await screen.findByTestId('url-do-webhook-evolution');
+    expect(screen.queryByTestId('mostrar-segredo-evolution')).toBeNull();
+  });
+
   it('salva endereço, instância e chave no cofre; a chave some do formulário e não volta', async () => {
     apiPut.mockImplementation(async () => conexao({ origem: 'cofre', url: 'https://evolution.exemplo.com', instancia: 'root-comercial', chaveGuardada: true, chaveAtualizadaEm: agora() }));
     render(<ConexaoEvolution token="tok" gerenciar />);

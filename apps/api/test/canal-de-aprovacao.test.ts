@@ -29,6 +29,7 @@ import {
   pareceTentativaDeDecisao,
 } from '../src/gateway/canais/resposta-de-canal';
 import {
+  segredoDoCanalDaEmpresa,
   CAPACIDADES_PADRAO,
   MINIMO_DO_SEGREDO,
   capacidadesDoCanal,
@@ -168,6 +169,13 @@ describe('o endereço do remetente (identidade-de-canal)', () => {
 });
 
 describe('o que vira decisão, e o que NÃO vira (resposta-de-canal)', () => {
+  it('Produção 22: remetente @lid vale pelo número real ao lado; sem ele, continua sem telefone', () => {
+    const lid = (key: Record<string, unknown>) => direta(`APROVAR ${CODIGO}`, { key: { remoteJid: '271828182845904@lid', fromMe: false, id: 'MSG2', ...key } });
+    expect(lerRespostaDeCanal(lid({ senderPn: '5511988887777@s.whatsapp.net' }))).toMatchObject({ tipo: 'decisao', chaveDaIdentidade: '5511988887777' });
+    expect(lerRespostaDeCanal(lid({}))).toEqual({ tipo: 'ignorar', porque: 'remetente-sem-telefone' });
+    expect(lerRespostaDeCanal(lid({ remoteJidAlt: '99887766@lid' }))).toEqual({ tipo: 'ignorar', porque: 'remetente-sem-telefone' });
+  });
+
   it('a linha exata, digitada numa conversa direta, é decisão', () => {
     const r = lerRespostaDeCanal(direta(`APROVAR ${CODIGO}`));
     expect(r).toMatchObject({
@@ -1846,7 +1854,7 @@ describe.skipIf(!URL)('decidir pelo canal, de ponta a ponta', () => {
 
     const resposta = await webhook.whatsapp(
       ORG,
-      SEGREDO_TRANSPORTE,
+      segredoDoCanalDaEmpresa(ORG)!,
       responder(NUMERO_DO_PEDRO, `APROVAR ${codigo}`),
     );
     expect(resposta).toEqual({ ok: true });
@@ -1863,7 +1871,7 @@ describe.skipIf(!URL)('decidir pelo canal, de ponta a ponta', () => {
     // e o corpo é o mesmo para um desconhecido
     const outra = await webhook.whatsapp(
       ORG,
-      SEGREDO_TRANSPORTE,
+      segredoDoCanalDaEmpresa(ORG)!,
       responder(NUMERO_DE_NINGUEM, 'APROVAR ROOT-00000000'),
     );
     expect(outra).toEqual({ ok: true });

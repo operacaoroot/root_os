@@ -198,7 +198,7 @@ export class ArquivistaService implements ArquivistaDoClientePort, OnModuleInit 
       if (!buffer && ['pdf', 'txt', 'md', 'csv'].includes(extensaoDoNome(pedido.nomeOriginal)) && conteudo.bytes <= 15 * 1024 * 1024) {
         buffer = await this.lerBinario(conteudo.chave).catch(() => null);
       }
-      const texto = pedido.texto ?? textoParaClassificar(pedido.nomeOriginal, pedido.tipoMime, buffer);
+      const texto = pedido.texto ?? (await textoParaClassificar(pedido.nomeOriginal, pedido.tipoMime, buffer));
       classificacao = await this.classificar(orgId, { nomeOriginal: pedido.nomeOriginal, tipoMime: pedido.tipoMime, origem: pedido.origem, texto });
     }
     const segura = classificacaoSegura(classificacao);

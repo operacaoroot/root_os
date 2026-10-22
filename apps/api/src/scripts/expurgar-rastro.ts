@@ -60,6 +60,7 @@ import { comTenantNaSessao } from '../prisma/sessao-de-banco';
 import { EventLogService, TIPO_EXPURGO } from '../gateway/event-log.service';
 import { AuditService } from '../audit/audit.service';
 import { ExpurgoService } from '../audit/expurgo.service';
+import { expurgarTextoVencido } from '../pendencias/retencao-do-texto';
 
 /** Valor de uma opção `--nome valor`, ou `undefined`. */
 function opcao(args: string[], nome: string): string | undefined {
@@ -108,6 +109,19 @@ async function main() {
 
   try {
     await expurgo.conferirQuePodeExpurgar();
+
+    /*
+     * Produção 22, M4: o TEXTO vencido das pendências (a mensagem que a triagem
+     * do WhatsApp guarda para a pessoa decidir, 14 dias). Antes do rastro, e
+     * independente dele: sem rastro vencido, o texto vencido sai do mesmo jeito.
+     * Só o texto sai; a pendência fica. Corte no futuro não adianta prazo.
+     */
+    const corteDoTexto = new Date(Math.min(corte.getTime(), Date.now()));
+    const textos = await expurgarTextoVencido(prisma as never, corteDoTexto, { simular });
+    console.log(
+      `\nTexto de pendência vencido: ${textos.pendencias} pendência(s) em ${textos.empresas} empresa(s)` +
+        (simular ? ' (SIMULAÇÃO: nada apagado).' : ' com o texto apagado.'),
+    );
 
     const empresas = umaEmpresa
       ? [umaEmpresa]

@@ -8,10 +8,10 @@ import {
   Param,
   Post,
 } from '@nestjs/common';
-import { timingSafeEqual } from 'node:crypto';
-
 import { comTenantPublico } from '../../common/tenant-publico';
-import { CABECALHO_DO_SEGREDO, segredoDoCanal } from './configuracao-do-canal';
+import { PrismaService } from '../../prisma/prisma.service';
+import { ehEmpresaDaCasa } from '../../tenants/empresa-da-casa';
+import { CABECALHO_DO_SEGREDO, segredoDoWebhookConfere } from './configuracao-do-canal';
 import { CanalDeAprovacaoService } from './canal-de-aprovacao.service';
 import { EntradaDeGrupoRegistry } from './entrada-de-grupo.registry';
 import { EntradaDiretaRegistry } from './entrada-direta.registry';
@@ -44,7 +44,9 @@ import { EntradaDiretaRegistry } from './entrada-direta.registry';
  * A rota é pública no sentido de "não passa pelo guarda de sessão" — não no
  * sentido de aberta:
  *
- *   · o SEGREDO DE TRANSPORTE no cabeçalho, comparado em tempo constante. Ele é
+ *   · o SEGREDO DE TRANSPORTE no cabeçalho, comparado em tempo constante, e
+ *     DESTA empresa (Produção 22, M4): o derivado do `orgId` do caminho, ou o do
+ *     processo só no caminho da casa (`segredoDoWebhookConfere`). Ele é
  *     o único que VIAJA, e é por isso que ele não é o mesmo que deriva o código
  *     das aprovações (ver `configuracao-do-canal.ts`): quem lê um cabeçalho não
  *     ganha com isso o poder de forjar código. Sem o canal configurado por
@@ -129,6 +131,13 @@ export class CanalDeAprovacaoController {
     @Optional() private readonly grupos?: EntradaDeGrupoRegistry,
     /** P8: sem o registro (a suíte do canal), nenhuma conversa é desviada. */
     @Optional() private readonly diretas?: EntradaDiretaRegistry,
+    /*
+     * Produção 22, M4: só para perguntar se a empresa do caminho é a CASA, e só
+     * quando o cabeçalho é o segredo do processo. Sem o banco (as suítes que
+     * montam à mão), o segredo do processo não vale em empresa nenhuma; só o
+     * derivado de cada empresa.
+     */
+    @Optional() private readonly prisma?: PrismaService,
   ) {}
 
   @Post('whatsapp/:orgId')
@@ -137,8 +146,8 @@ export class CanalDeAprovacaoController {
     @Headers(CABECALHO_DO_SEGREDO) apresentado: string | undefined,
     @Body() corpo: unknown,
   ): Promise<{ ok: true }> {
-    if (!this.segredoConfere(apresentado)) throw new NotFoundException('Não encontrado');
     if (!orgId || orgId.trim() === '') throw new NotFoundException('Não encontrado');
+    if (!(await this.segredoConfere(apresentado, orgId.trim()))) throw new NotFoundException('Não encontrado');
 
     /*
      * A empresa abre o contexto ANTES da primeira consulta — RF-T-04. Rota sem
@@ -183,20 +192,20 @@ export class CanalDeAprovacaoController {
   }
 
   /**
-   * Comparação em tempo constante, e recusa quando o canal está desligado.
+   * O segredo do webhook DESTA empresa, em tempo constante, e recusa quando o
+   * canal está desligado (`segredoDoWebhookConfere`, Produção 22, M4): o
+   * derivado da empresa do caminho, ou o segredo do processo só se a empresa do
+   * caminho for a casa.
    *
    * `timingSafeEqual` exige buffers do MESMO tamanho — comparar o tamanho antes
    * vaza o tamanho do segredo, e é o vazamento que se aceita: saber que o
    * segredo tem 40 caracteres não ajuda a adivinhá-lo, e a alternativa (padding)
    * introduziria um caminho novo para errar.
    */
-  private segredoConfere(apresentado: string | undefined): boolean {
-    const esperado = segredoDoCanal();
-    if (!esperado) return false;
-    if (typeof apresentado !== 'string' || apresentado === '') return false;
-    const a = Buffer.from(apresentado, 'utf8');
-    const b = Buffer.from(esperado, 'utf8');
-    if (a.length !== b.length) return false;
-    return timingSafeEqual(a, b);
+  private segredoConfere(apresentado: string | undefined, orgId: string): Promise<boolean> {
+    const prisma = this.prisma;
+    return segredoDoWebhookConfere(apresentado, orgId, async (id) =>
+      prisma ? comTenantPublico(id, () => ehEmpresaDaCasa(prisma, id)) : false,
+    );
   }
 }

@@ -14,9 +14,10 @@ import { LLM_PROVIDER, type LlmProvider } from '../../llm/llm.provider';
 import { MemoriaService } from '../../memory/memoria.service';
 import { PendenciasRegistry, type RespostaDaPendencia } from '../../pendencias/pendencias.registry';
 import { PendenciasService } from '../../pendencias/pendencias.service';
+import { prazoDoTexto } from '../../pendencias/retencao-do-texto';
 import { PrismaService } from '../../prisma/prisma.service';
 import { provedorDoAmbiente } from '../canais/whatsapp.port';
-import { hashDoConteudo, normalizarTelefone } from '../eventos';
+import { eventoIdComercial, hashDoConteudo, normalizarTelefone } from '../eventos';
 import { FioService } from '../fio.service';
 import { ATOR_DA_TRIAGEM, CAP_LEAD_CRIAR, chaveDaRequisicao } from '../lead-criar.service';
 import { decidirTriagem, finalDoTelefone, interpretarTriagem, promptDaTriagem, type ContextoDaTriagem, type DecisaoDaTriagem } from './triagem';
@@ -56,6 +57,28 @@ import { decidirTriagem, finalDoTelefone, interpretarTriagem, promptDaTriagem, t
 
 export const MAX_BYTES_DO_DOCUMENTO_DO_WHATSAPP = 20 * 1024 * 1024;
 
+/*
+ * PRONTA PARA SER LIGADA (Produção 22, M4). Três freios antes do modelo:
+ *
+ *   · DEDUPLICAR POR `mensagemId` ANTES DE TUDO. A Evolution reentrega webhook
+ *     que demora; a segunda entrega da mesma mensagem não chama o modelo nem
+ *     abre pendência nova. Confere a memória do processo (as últimas 24 h) e,
+ *     no banco, a pendência da mensagem e o fato `whats.triada` do lead.
+ *   · TETO POR REMETENTE: 5 mensagens por hora por número. Da 6ª em diante, sem
+ *     modelo: UMA pendência por número e por hora (chave própria), com a razão.
+ *     Um número que dispara cem mensagens não gasta cem chamadas nem enche a
+ *     caixa com cem pendências.
+ *   · O TEXTO NA PENDÊNCIA VENCE EM 14 DIAS (`textoExpiraEm`), e o expurgo do
+ *     rastro o apaga (`pendencias/retencao-do-texto.ts`).
+ *
+ * A memória da dedupe e do teto é do processo (vale com um container da API,
+ * como `umaPorVez`). Continua desligada por padrão (as duas chaves acima).
+ */
+export const TETO_DE_MENSAGENS_POR_HORA = 5;
+const JANELA_DO_TETO_MS = 60 * 60 * 1000;
+const MEMORIA_DA_DEDUPE_MS = 24 * 60 * 60 * 1000;
+export const RAZAO_DO_TETO_DA_TRIAGEM = `mais de ${TETO_DE_MENSAGENS_POR_HORA} mensagens deste número em uma hora: triagem sem modelo`;
+
 export interface DocumentoDoWhatsapp {
   nome: string;
   mime: string;
@@ -85,9 +108,20 @@ const OPCOES_DE_LEAD: OpcaoDaPendencia[] = [
 
 type P = Record<string, unknown>;
 
+/** O id da mensagem na Evolution, ou um resumo do conteúdo quando ela não mandou. */
+function idDaMensagem(m: MensagemParaTriar): string {
+  return m.mensagemId ?? hashDoConteudo({ telefone: normalizarTelefone(m.telefone), texto: m.texto ?? '', doc: m.documento?.nome ?? '' }).slice(0, 40);
+}
+
 @Injectable()
 export class TriagemDoWhatsappService implements OnModuleInit {
   private readonly log = new Logger('ComercialTriagemWhatsapp');
+  /** `empresa|mensagemId` → quando foi vista (dedupe, 24 h). */
+  private readonly vistas = new Map<string, number>();
+  /** `empresa|telefone` → instantes das mensagens de texto na última hora (teto). */
+  private readonly porRemetente = new Map<string, number[]>();
+  /** O relógio da dedupe e do teto. Só a suíte troca. */
+  agora: () => number = () => Date.now();
 
   constructor(
     private readonly prisma: PrismaService,
@@ -120,6 +154,8 @@ export class TriagemDoWhatsappService implements OnModuleInit {
     try {
       return await this.triarNaVez(orgId, m);
     } catch (e) {
+      // A falha não conta como vista: a reentrega da Evolution tenta de novo.
+      this.vistas.delete(`${orgId}|${idDaMensagem(m)}`);
       this.log.warn(`triagem do WhatsApp na empresa ${orgId} falhou: ${(e as Error).message.slice(0, 200)}`);
       return 'triagem: erro';
     }
@@ -137,10 +173,18 @@ export class TriagemDoWhatsappService implements OnModuleInit {
   }
 
   private async triarNaVez(orgId: string, m: MensagemParaTriar): Promise<string> {
+    const mensagemId = idDaMensagem(m);
+    // Produção 22, M4: a segunda entrega da mesma mensagem para aqui, antes do modelo.
+    if (await this.jaVista(orgId, m, mensagemId)) return 'triagem: repetida (ignorada)';
     const ctx = await this.contexto(orgId, m);
-    const mensagemId = m.mensagemId ?? hashDoConteudo({ telefone: normalizarTelefone(m.telefone), texto: m.texto ?? '', doc: m.documento?.nome ?? '' }).slice(0, 40);
 
     if (m.documento) return this.documento(orgId, m, ctx.partnerId, mensagemId);
+
+    if (m.texto && this.passouDoTeto(orgId, m.telefone)) {
+      const semModelo = { ...decidirTriagem(null, ctx), motivo: RAZAO_DO_TETO_DA_TRIAGEM };
+      const hora = Math.floor(this.agora() / JANELA_DO_TETO_MS);
+      return this.paraPessoa(orgId, m, semModelo, mensagemId, `whatsapp:teto:${normalizarTelefone(m.telefone)}:${hora}`);
+    }
 
     let leitura = null;
     if (this.llm && m.texto) {
@@ -167,6 +211,42 @@ export class TriagemDoWhatsappService implements OnModuleInit {
       default:
         return 'triagem: outro (ignorado)';
     }
+  }
+
+  /**
+   * A mensagem já passou por aqui? Marca na mesma hora (duas entregas quase
+   * juntas também param), e confere no banco o que a memória não sabe (outro
+   * arranque da API): a pendência da mensagem e o fato `whats.triada` do lead.
+   */
+  private async jaVista(orgId: string, m: MensagemParaTriar, mensagemId: string): Promise<boolean> {
+    const agora = this.agora();
+    if (this.vistas.size > 5_000) {
+      for (const [k, em] of this.vistas) if (agora - em > MEMORIA_DA_DEDUPE_MS) this.vistas.delete(k);
+    }
+    const chave = `${orgId}|${mensagemId}`;
+    const em = this.vistas.get(chave);
+    if (em !== undefined && agora - em <= MEMORIA_DA_DEDUPE_MS) return true;
+    this.vistas.set(chave, agora);
+    const pendencia = await this.prisma.pendencia.findUnique({ where: { orgId_chave: { orgId, chave: `whatsapp:${mensagemId}` } }, select: { id: true } });
+    if (pendencia) return true;
+    if (m.leadId) {
+      const ids = ['agente', 'pessoa'].map((quem) => eventoIdComercial(orgId, m.leadId!, 'whats.triada', `${mensagemId}:${quem}`));
+      if (await this.prisma.leadEvent.findFirst({ where: { id: { in: ids } }, select: { id: true } })) return true;
+    }
+    return false;
+  }
+
+  /** Conta a mensagem de texto do número e diz se passou de 5 na última hora. */
+  private passouDoTeto(orgId: string, telefoneBruto: string): boolean {
+    const agora = this.agora();
+    if (this.porRemetente.size > 5_000) {
+      for (const [k, v] of this.porRemetente) if (!v.some((t) => agora - t < JANELA_DO_TETO_MS)) this.porRemetente.delete(k);
+    }
+    const chave = `${orgId}|${normalizarTelefone(telefoneBruto)}`;
+    const recentes = (this.porRemetente.get(chave) ?? []).filter((t) => agora - t < JANELA_DO_TETO_MS);
+    recentes.push(agora);
+    this.porRemetente.set(chave, recentes);
+    return recentes.length > TETO_DE_MENSAGENS_POR_HORA;
   }
 
   private async registrar(orgId: string, leadId: string, d: Pick<DecisaoDaTriagem, 'classe' | 'confianca' | 'motivo'> & { origem: 'modelo' | 'regra' | 'pessoa' }, destino: string, mensagemId: string): Promise<void> {
@@ -208,20 +288,22 @@ export class TriagemDoWhatsappService implements OnModuleInit {
   }
 
   /** Confiança baixa ou contradição: a pendência com as opções para a pessoa. */
-  private async paraPessoa(orgId: string, m: MensagemParaTriar, d: DecisaoDaTriagem, mensagemId: string): Promise<string> {
+  private async paraPessoa(orgId: string, m: MensagemParaTriar, d: DecisaoDaTriagem, mensagemId: string, chave = `whatsapp:${mensagemId}`): Promise<string> {
     const telefone = normalizarTelefone(m.telefone);
     const quem = `${m.nome?.trim() ? `${m.nome.trim().slice(0, 60)} ` : ''}(${finalDoTelefone(telefone)})`;
     const trecho = (m.texto ?? '').replace(/\s+/g, ' ').trim().slice(0, 300);
     await this.pendencias.abrir(orgId, {
       funcao: 'CO-16',
       tipo: TIPO_DA_PENDENCIA_DA_TRIAGEM,
-      chave: `whatsapp:${mensagemId}`,
+      chave,
       titulo: m.leadId ? `Mensagem de lead no WhatsApp: qual é o assunto? ${quem}` : `Mensagem nova no WhatsApp: é lead? ${quem}`,
       contexto: `${trecho ? `“${trecho}”. ` : ''}A triagem achou ${ROTULO_DA_CLASSE_DA_TRIAGEM[d.classe]} com confiança ${Math.round(d.confianca * 100)}%${d.motivo ? ` (${d.motivo})` : ''}. Nada foi respondido ao contato.`.slice(0, 1000),
       opcoes: m.leadId ? OPCOES_DE_LEAD : OPCOES_DE_NUMERO_NOVO,
       refTipo: m.leadId ? 'lead' : null,
       refId: m.leadId,
       dados: { telefone, nome: m.nome ?? null, texto: (m.texto ?? '').slice(0, 2000), mensagemId, classe: d.classe, confianca: d.confianca } as Prisma.InputJsonValue,
+      // Produção 22, M4: o texto vence em 14 dias; o expurgo do rastro o apaga e a pendência fica.
+      textoExpiraEm: prazoDoTexto(new Date(this.agora())),
     });
     if (m.leadId) await this.registrar(orgId, m.leadId, d, 'pendência para uma pessoa', mensagemId);
     return 'triagem: pendência';

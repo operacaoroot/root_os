@@ -29,7 +29,8 @@ import { ExecutoresDeRotinaRegistry } from '../src/routines/executores.registry'
 import { LeadCriarService } from '../src/comercial/lead-criar.service';
 import { RelogioComercialRegistry } from '../src/comercial/relogio.registry';
 import { SalaService } from '../src/comercial/sala.service';
-import { TriagemDoWhatsappService } from '../src/comercial/triagem-do-whatsapp/triagem-do-whatsapp.service';
+import { RAZAO_DO_TETO_DA_TRIAGEM, TriagemDoWhatsappService } from '../src/comercial/triagem-do-whatsapp/triagem-do-whatsapp.service';
+import { expurgarTextoVencido } from '../src/pendencias/retencao-do-texto';
 import { WhatsappComercialService } from '../src/comercial/whatsapp.service';
 import { EfeitosRegistry } from '../src/gateway/efeitos.registry';
 import { EventLogService } from '../src/gateway/event-log.service';
@@ -360,5 +361,113 @@ describe.skipIf(!URL)('a entrada de leads dos agentes do comercial, contra o Pos
     const outro = { ...evolucao('5532977770007', { conversation: 'Oi, quanto custa a imersão?' }), instance: 'inst-de-outra-empresa' };
     expect(await naEmpresa(() => entrada.processar(ORG, outro, '5532977770007'))).toBe('ignorado: outra instância');
     expect(await prisma.lead.count({ where: { orgId: ORG, phone: '5532977770007' } })).toBe(0);
+  });
+
+  // -------------------------------------------------------------------------
+  // Produção 22, M4 · a triagem pronta para ser ligada
+  // -------------------------------------------------------------------------
+
+  const espiarModelo = () => {
+    const llm = (triagem as unknown as { llm: { complete: (...a: unknown[]) => Promise<unknown> } }).llm;
+    return vi.spyOn(llm, 'complete');
+  };
+
+  it('Produção 22: a segunda entrega da mesma mensagem não chama o modelo nem abre pendência nova', async () => {
+    const modelo = espiarModelo();
+    try {
+      const corpo = evolucao('5532977770011', { conversation: 'Tudo bem por aí?' }, 'conversation', randomUUID());
+      expect(await naEmpresa(() => entrada.processar(ORG, corpo, '5532977770011'))).toBe('triagem: pendência');
+      expect(modelo).toHaveBeenCalledTimes(1);
+      const antes = await prisma.pendencia.count({ where: { orgId: ORG } });
+      expect(await naEmpresa(() => entrada.processar(ORG, corpo, '5532977770011'))).toBe('triagem: repetida (ignorada)');
+      expect(modelo).toHaveBeenCalledTimes(1);
+      expect(await prisma.pendencia.count({ where: { orgId: ORG } })).toBe(antes);
+    } finally {
+      modelo.mockRestore();
+    }
+  });
+
+  it('Produção 22: a dedupe também vale depois de a API reiniciar (o banco lembra a pendência da mensagem)', async () => {
+    const idDaMensagem = randomUUID();
+    const corpo = evolucao('5532977770012', { conversation: 'Tudo bem por aí?' }, 'conversation', idDaMensagem);
+    expect(await naEmpresa(() => entrada.processar(ORG, corpo, '5532977770012'))).toBe('triagem: pendência');
+    // uma triagem nova (memória vazia), como depois de um arranque
+    const interno = triagem as unknown as { fio: never; memoria: never; porta: never; registroDePendencias: never };
+    const outra = new TriagemDoWhatsappService(
+      prisma as unknown as PrismaService,
+      interno.fio,
+      interno.memoria,
+      interno.porta,
+      pendencias,
+      interno.registroDePendencias,
+      new StubProvider(PASTA_DO_STUB),
+    );
+    const modelo = vi.spyOn((outra as unknown as { llm: { complete: () => Promise<unknown> } }).llm, 'complete');
+    const r = await naEmpresa(() =>
+      outra.triar(ORG, { telefone: '5532977770012', leadId: null, texto: 'Tudo bem por aí?', documento: null, mensagemId: idDaMensagem, nome: null }),
+    );
+    expect(r).toBe('triagem: repetida (ignorada)');
+    expect(modelo).not.toHaveBeenCalled();
+  });
+
+  it('Produção 22: da 6ª mensagem do mesmo número na hora em diante, pendência SEM modelo e com a razão (uma por hora)', async () => {
+    const modelo = espiarModelo();
+    try {
+      const numero = '5532977770013';
+      for (let i = 1; i <= 5; i++) {
+        expect(await naEmpresa(() => entrada.processar(ORG, evolucao(numero, { conversation: `Promoção imperdível número ${i}` }), numero))).toBe('triagem: outro (ignorado)');
+      }
+      expect(modelo).toHaveBeenCalledTimes(5);
+      expect(await naEmpresa(() => entrada.processar(ORG, evolucao(numero, { conversation: 'Promoção imperdível número 6' }), numero))).toBe('triagem: pendência');
+      expect(await naEmpresa(() => entrada.processar(ORG, evolucao(numero, { conversation: 'Promoção imperdível número 7' }), numero))).toBe('triagem: pendência');
+      expect(modelo).toHaveBeenCalledTimes(5);
+      const doTeto = await prisma.pendencia.findMany({ where: { orgId: ORG, chave: { startsWith: `whatsapp:teto:${numero}:` } } });
+      expect(doTeto).toHaveLength(1);
+      expect(doTeto[0].contexto).toContain(RAZAO_DO_TETO_DA_TRIAGEM);
+      expect(doTeto[0].textoExpiraEm).not.toBeNull();
+      // outro número não é afetado
+      expect(await naEmpresa(() => entrada.processar(ORG, evolucao('5532977770014', { conversation: 'Promoção imperdível' }), '5532977770014'))).toBe('triagem: outro (ignorado)');
+      expect(modelo).toHaveBeenCalledTimes(6);
+    } finally {
+      modelo.mockRestore();
+    }
+  });
+
+  it('Produção 22: o texto da pendência vence em 14 dias; o expurgo limpa o vencido e não o novo, e a pendência fica', async () => {
+    const DIA_MS = 24 * 60 * 60 * 1000;
+    const idVelha = randomUUID();
+    const corpo = evolucao('5532977770015', { conversation: 'Tudo bem por aí? texto que vai vencer' }, 'conversation', idVelha);
+    expect(await naEmpresa(() => entrada.processar(ORG, corpo, '5532977770015'))).toBe('triagem: pendência');
+    const velha = await prisma.pendencia.findUniqueOrThrow({ where: { orgId_chave: { orgId: ORG, chave: `whatsapp:${idVelha}` } } });
+    expect(velha.textoExpiraEm!.getTime()).toBe(Date.now() + 14 * DIA_MS);
+    expect((velha.dados as { texto: string }).texto).toContain('texto que vai vencer');
+    expect(velha.contexto).toContain('texto que vai vencer');
+    try {
+      // uma nova, aberta 10 dias depois
+      vi.setSystemTime(new Date(Date.now() + 10 * DIA_MS));
+      const idNova = randomUUID();
+      const nova = evolucao('5532977770016', { conversation: 'Tudo bem por aí? texto novo' }, 'conversation', idNova);
+      expect(await naEmpresa(() => entrada.processar(ORG, nova, '5532977770016'))).toBe('triagem: pendência');
+      // 15 dias depois da primeira: só ela venceu
+      vi.setSystemTime(new Date(Date.now() + 5 * DIA_MS));
+      const simulado = await expurgarTextoVencido(prisma, new Date(), { simular: true });
+      expect(simulado.pendencias).toBeGreaterThanOrEqual(1);
+      expect((await prisma.pendencia.findUniqueOrThrow({ where: { id: velha.id } })).textoExpiraEm).not.toBeNull();
+      const r = await expurgarTextoVencido(prisma, new Date());
+      expect(r.pendencias).toBeGreaterThanOrEqual(1);
+      const limpa = await prisma.pendencia.findUniqueOrThrow({ where: { id: velha.id } });
+      expect(limpa.textoExpiraEm).toBeNull();
+      expect((limpa.dados as Record<string, unknown>).texto).toBeUndefined();
+      expect((limpa.dados as Record<string, unknown>).telefone).toBe('5532977770015');
+      expect(JSON.stringify(limpa)).not.toContain('texto que vai vencer');
+      expect([limpa.estado, limpa.titulo]).toEqual([velha.estado, velha.titulo]);
+      const intacta = await prisma.pendencia.findUniqueOrThrow({ where: { orgId_chave: { orgId: ORG, chave: `whatsapp:${idNova}` } } });
+      expect((intacta.dados as { texto: string }).texto).toContain('texto novo');
+      expect(intacta.textoExpiraEm).not.toBeNull();
+      // rodar de novo não apaga nada a mais
+      expect((await expurgarTextoVencido(prisma, new Date())).pendencias).toBe(0);
+    } finally {
+      vi.setSystemTime(new Date('2026-10-21T14:00:00-03:00'));
+    }
   });
 });

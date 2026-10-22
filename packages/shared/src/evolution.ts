@@ -36,6 +36,22 @@ export interface ConexaoDaEvolution {
   desligado: boolean;
 }
 
+/**
+ * O segredo do webhook DESTA empresa (Produção 22, M4): a casa usa o segredo do
+ * processo; cada outra empresa, o HMAC-SHA256 dele com o id da empresa. Só sai
+ * para quem administra a empresa (`admin.usuarios`), sem cache, e nunca vai ao
+ * log (a auditoria registra que foi visto, sem o valor).
+ */
+export interface SegredoDoWebhookDaEvolution {
+  /** O canal está configurado no servidor? Sem ele, `segredo` é nulo e nada entra. */
+  ligado: boolean;
+  segredo: string | null;
+  cabecalho: string;
+  caminhoDoWebhook: string;
+  /** A empresa é a casa (o segredo é o do processo)? */
+  daCasa: boolean;
+}
+
 /** O estado da instância, sondado agora. */
 export interface EstadoDaEvolution {
   estado: EstadoDaInstanciaEvolution;

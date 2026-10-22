@@ -14,7 +14,6 @@ import { PortaDoOperador } from '../gateway/porta-do-operador.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { dataCurtaSP, rotuloDoHorario } from './agenda-de-homologacao';
 import { EvolutionProvider } from './canais/evolution.provider';
-import { MetaProvider } from './canais/meta.provider';
 import { SimuladoProvider } from './canais/simulado.provider';
 import { provedorDoAmbiente, type BotaoInterativo, type EnvioFeito, type Interativo, type WhatsappPort } from './canais/whatsapp.port';
 import { hashDoConteudo, leadIdDoTelefone, normalizarTelefone, uuidDe } from './eventos';
@@ -122,10 +121,9 @@ export function textoComNome(template: ComercialTemplate, nome: string | null, v
 }
 
 function provedorPorNome(evolution: EnvioPelaEvolution | null): WhatsappPort {
-  // Lança no arranque se o ambiente ainda pedir o provedor excluído (ver `provedorDoAmbiente`).
+  // Lança no arranque se o ambiente pedir o provedor excluído ou `meta` (ver `provedorDoAmbiente`).
   const p = provedorDoAmbiente();
   if (p === 'evolution') return new EvolutionProvider(evolution);
-  if (p === 'meta') return new MetaProvider();
   return new SimuladoProvider();
 }
 

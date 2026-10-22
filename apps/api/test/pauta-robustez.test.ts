@@ -34,7 +34,7 @@ import { planoDaPagina } from '../src/pauta/pagina-de-links-do-episodio';
 import { entradaDaNewsletter, montarNewsletter } from '../src/pauta/newsletter-do-episodio';
 import { SAIDA_DA_GERACAO_LONGA } from '../src/pauta/saida-da-geracao';
 import { MSG_EM_ANDAMENTO, umaPorVez } from '../src/pauta/uma-por-vez';
-import { buscarPaginaPublica, enderecoInterno } from '../src/pauta/pagina-publica';
+import { buscarPaginaPublica, enderecoInterno, type Conectar } from '../src/pauta/pagina-publica';
 import { PublicacaoService } from '../src/pauta/publicacao.service';
 import { RodadaService } from '../src/pauta/rodada.service';
 import { VozService } from '../src/pauta/voz.service';
@@ -652,32 +652,34 @@ describe('MC-R 5: processar a captura só busca fora da casa', () => {
 
   it('o 302 para o endereço de metadados e o nome que resolve para 127.0.0.1 são recusados antes do GET interno', async () => {
     const pedidos: string[] = [];
-    const falso = (async (url: string) => {
+    const falso: Conectar = async (u) => {
+      const url = u.toString();
       pedidos.push(url);
       if (url.startsWith('https://atacante.exemplo/')) return new Response(null, { status: 302, headers: { location: 'http://169.254.169.254/latest/meta-data/' } });
       return new Response('<p>ok</p>', { status: 200 });
-    }) as unknown as typeof fetch;
-    await expect(buscarPaginaPublica('https://atacante.exemplo/r', {}, { resolver, fetch: falso })).rejects.toThrow(/endereço interno/);
-    await expect(buscarPaginaPublica('http://127.0.0.1.nip.io/', {}, { resolver, fetch: falso })).rejects.toThrow(/endereço interno/);
-    await expect(buscarPaginaPublica('http://[fd00::1]:5432/', {}, { resolver, fetch: falso })).rejects.toThrow(/endereço interno/);
-    await expect(buscarPaginaPublica('http://172.17.0.1:5432/', {}, { resolver, fetch: falso })).rejects.toThrow(/endereço interno/);
+    };
+    await expect(buscarPaginaPublica('https://atacante.exemplo/r', {}, { resolver, conectar: falso })).rejects.toThrow(/endereço interno/);
+    await expect(buscarPaginaPublica('http://127.0.0.1.nip.io/', {}, { resolver, conectar: falso })).rejects.toThrow(/endereço interno/);
+    await expect(buscarPaginaPublica('http://[fd00::1]:5432/', {}, { resolver, conectar: falso })).rejects.toThrow(/endereço interno/);
+    await expect(buscarPaginaPublica('http://172.17.0.1:5432/', {}, { resolver, conectar: falso })).rejects.toThrow(/endereço interno/);
     expect(pedidos).toEqual(['https://atacante.exemplo/r']);
   });
 
   it('o redirecionamento público é seguido à mão, relativo inclusive, até o teto de saltos', async () => {
     const pedidos: string[] = [];
-    const falso = (async (url: string, init: RequestInit) => {
+    const falso: Conectar = async (u, ip) => {
+      const url = u.toString();
       pedidos.push(url);
-      expect(init.redirect).toBe('manual');
+      expect(ip).toBe('93.184.216.34');
       if (url === 'https://noticia.exemplo/a') return new Response(null, { status: 301, headers: { location: '/b' } });
       return new Response('<p>ok</p>', { status: 200 });
-    }) as unknown as typeof fetch;
-    const r = await buscarPaginaPublica('https://noticia.exemplo/a', {}, { resolver, fetch: falso });
+    };
+    const r = await buscarPaginaPublica('https://noticia.exemplo/a', {}, { resolver, conectar: falso });
     expect(await r.text()).toBe('<p>ok</p>');
     expect(pedidos).toEqual(['https://noticia.exemplo/a', 'https://noticia.exemplo/b']);
 
-    const emLaco = (async () => new Response(null, { status: 302, headers: { location: '/de-novo' } })) as unknown as typeof fetch;
-    await expect(buscarPaginaPublica('https://noticia.exemplo/x', {}, { resolver, fetch: emLaco })).rejects.toThrow(/mais de 5 vezes/);
-    await expect(buscarPaginaPublica('ftp://noticia.exemplo/x', {}, { resolver, fetch: emLaco })).rejects.toThrow(/http ou https/);
+    const emLaco: Conectar = async () => new Response(null, { status: 302, headers: { location: '/de-novo' } });
+    await expect(buscarPaginaPublica('https://noticia.exemplo/x', {}, { resolver, conectar: emLaco })).rejects.toThrow(/mais de 5 vezes/);
+    await expect(buscarPaginaPublica('ftp://noticia.exemplo/x', {}, { resolver, conectar: emLaco })).rejects.toThrow(/http ou https/);
   });
 });

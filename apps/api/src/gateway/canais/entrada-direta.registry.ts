@@ -1,7 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 
 import { PrismaService } from '../../prisma/prisma.service';
-import { chaveDeIdentidadeWhatsapp, ehGrupoDeWhatsapp, formasDaChave } from './identidade-de-canal';
+import { ehGrupoDeWhatsapp, formasDaChave, remetenteDaKey } from './identidade-de-canal';
 import { CANAL } from './quem-decide';
 import { EVENTO_ACEITO } from './resposta-de-canal';
 
@@ -64,8 +64,14 @@ export class EntradaDiretaRegistry {
    */
   async despachar(orgId: string, evento: unknown): Promise<string | null> {
     if (!this.entrada) return null;
-    const remetente = remetenteDireto(evento);
-    if (!remetente) return null;
+    const leitura = lerRemetenteDireto(evento);
+    if (!leitura) return null;
+    if ('ignorado' in leitura) {
+      // Produção 22, M4: segue para o canal como antes; a razão fica no registro (sem número).
+      this.log.log(`entrada direta (${orgId}): ${leitura.ignorado}`);
+      return null;
+    }
+    const remetente = leitura.remetente;
     const identidade = await this.prisma.channelIdentity.findFirst({
       where: { orgId, canal: CANAL, ativo: true, externalId: { in: formasDaChave(remetente) } },
       select: { id: true },
@@ -84,17 +90,29 @@ function objeto(v: unknown): Record<string, unknown> | null {
   return v !== null && typeof v === 'object' && !Array.isArray(v) ? (v as Record<string, unknown>) : null;
 }
 
+/** A razão de uma conversa `@lid` não ser desviada (Produção 22, M4). */
+export const RAZAO_DO_LID_SEM_NUMERO = 'ignorado: remetente @lid sem número real';
+
 /**
- * A chave (dígitos) de quem mandou uma mensagem NOVA numa conversa individual,
- * ou `null`: evento que não é `messages.upsert`, eco da própria instância,
- * grupo (também pelo `participant`) e remetente que não é telefone.
+ * Quem mandou uma mensagem NOVA numa conversa individual: a chave (dígitos), a
+ * razão de não ter (o `@lid` sem número real ao lado), ou `null` para evento
+ * que não é `messages.upsert`, eco da própria instância, grupo (também pelo
+ * `participant`) e remetente que não é telefone.
  */
-export function remetenteDireto(evento: unknown): string | null {
+export function lerRemetenteDireto(evento: unknown): { remetente: string } | { ignorado: string } | null {
   const raiz = objeto(evento);
   if (typeof raiz?.event !== 'string' || raiz.event.trim().toLowerCase() !== EVENTO_ACEITO) return null;
   const key = objeto(objeto(raiz.data)?.key);
   if (!key || key.fromMe === true) return null;
   if (ehGrupoDeWhatsapp(key.remoteJid)) return null;
   if (typeof key.participant === 'string' && key.participant.trim() !== '') return null;
-  return chaveDeIdentidadeWhatsapp(key.remoteJid);
+  const r = remetenteDaKey(key);
+  if (!r) return null;
+  return 'lid' in r ? { ignorado: RAZAO_DO_LID_SEM_NUMERO } : { remetente: r.chave };
+}
+
+/** A chave (dígitos) do remetente 1:1, ou `null` (ver `lerRemetenteDireto`). */
+export function remetenteDireto(evento: unknown): string | null {
+  const r = lerRemetenteDireto(evento);
+  return r && 'remetente' in r ? r.remetente : null;
 }

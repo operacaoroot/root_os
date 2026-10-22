@@ -3,7 +3,7 @@ import type { ComercialProvedorDeWhatsapp } from '@mktos/shared';
 /*
  * A PORTA DO WHATSAPP DO COMERCIAL — Lane B (13/10/2026).
  *
- * Uma interface, três provedores (`WHATSAPP_PROVEDOR`, padrão `simulado`):
+ * Uma interface, dois provedores (`WHATSAPP_PROVEDOR`, padrão `simulado`):
  *
  *   · `simulado` — nada sai da máquina. A mensagem fica em `ComercialMensagem`
  *     e a tela `/comercial/simulador` é o celular do lead e o da mesa;
@@ -11,8 +11,13 @@ import type { ComercialProvedorDeWhatsapp } from '@mktos/shared';
  *     classe da empresa do conector (`pauta/evolution.service.ts`) pela porta
  *     `ENVIO_PELA_EVOLUTION`; credencial no cofre da empresa, com a reserva de
  *     ambiente só da casa (ver `evolution.provider.ts`);
- *   · `meta` — a Cloud API oficial. Só a interface e o esqueleto documentado;
- *     sem credencial não sobe, e a credencial é decisão da mesa (K08-4);
+ *
+ * `meta` SAIU da lista (Produção 22, M4): era só um esqueleto da Cloud API que
+ * recusava todo envio (`meta.provider.ts`, que fica como mapa do que falta, fora
+ * do arranque). Com `WHATSAPP_PROVEDOR=meta` a API não sobe e diz por quê
+ * (`RECUSA_DO_PROVEDOR_META`): subir com um provedor que recusa tudo faria a
+ * mesa achar que o comercial estava ligado. A Cloud API continua decisão da
+ * mesa (K08-4).
  *
  * O provedor do DigiSac foi EXCLUÍDO em 21/10/2026 (rodada dos agentes, A6):
  * o valor antigo é recusado no arranque, com a frase de `PROVEDOR_EXCLUIDO`.
@@ -98,10 +103,26 @@ export class ProvedorExcluidoError extends Error {
   }
 }
 
-export function provedorDoAmbiente(valor = process.env.WHATSAPP_PROVEDOR): ComercialProvedorDeWhatsapp {
+/** A frase do arranque com `WHATSAPP_PROVEDOR=meta` (Produção 22, M4). */
+export const RECUSA_DO_PROVEDOR_META =
+  'WHATSAPP_PROVEDOR=meta não é aceito: os provedores do comercial são só simulado e evolution. ' +
+  'A Cloud API da Meta não foi implementada (decisão K08-4 da mesa) e a API não sobe com esse valor.';
+
+export class ProvedorNaoAceitoError extends Error {
+  constructor() {
+    super(RECUSA_DO_PROVEDOR_META);
+    this.name = 'ProvedorNaoAceitoError';
+  }
+}
+
+/** Os provedores que o ambiente pode escolher. */
+export type ProvedorDoAmbiente = Exclude<ComercialProvedorDeWhatsapp, 'meta'>;
+
+export function provedorDoAmbiente(valor = process.env.WHATSAPP_PROVEDOR): ProvedorDoAmbiente {
   const v = String(valor ?? '').trim().toLowerCase();
   if (v === PROVEDOR_EXCLUIDO) throw new ProvedorExcluidoError();
-  if (v === 'evolution' || v === 'meta') return v;
+  if (v === 'meta') throw new ProvedorNaoAceitoError();
+  if (v === 'evolution') return v;
   return 'simulado';
 }
 

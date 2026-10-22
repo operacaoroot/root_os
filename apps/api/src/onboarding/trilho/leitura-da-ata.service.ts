@@ -2,7 +2,6 @@ import { BadRequestException, Inject, Injectable, Logger, Optional } from '@nest
 import { Prisma, SessionCanal, SessionStatus } from '@prisma/client';
 import { createHash } from 'node:crypto';
 import { isIP } from 'node:net';
-import { lookup } from 'node:dns/promises';
 
 import { AgentRuntime } from '../../agents/agent-runtime.service';
 import {
@@ -36,6 +35,8 @@ import {
 } from './leitor-de-ata';
 import { lerPerguntasDoRoteirista, promptDoRoteirista, RoteiroIlegivelError } from './roteirista';
 import { varrerSegredos } from './segredos';
+import { enderecoDeDentro } from '../../pauta/endereco-de-dentro';
+import { ipDaConexao, pedirAoIp, resolverDoSistema, type Conectar, type Resolver } from '../../pauta/pagina-publica';
 import { TrilhoService, type AtaNaBancada, type Quem } from './trilho.service';
 
 /** A marca do stub para o roteirista: mora em `roteirista.ts` (parte pura do IM-03) e é reexportada aqui. */
@@ -121,22 +122,12 @@ export function htmlParaTexto(html: string): string {
  */
 const TETO_DE_BYTES_DO_LINK = 2 * 1024 * 1024;
 
-function enderecoPrivado(ip: string): boolean {
-  if (isIP(ip) === 4) {
-    const [a, b] = ip.split('.').map(Number);
-    return (
-      a === 10 || a === 127 || a === 0 ||
-      (a === 172 && b >= 16 && b <= 31) ||
-      (a === 192 && b === 168) ||
-      (a === 169 && b === 254) ||
-      (a === 100 && b >= 64 && b <= 127)
-    );
-  }
-  const v6 = ip.toLowerCase();
-  return v6 === '::1' || v6 === '::' || v6.startsWith('fc') || v6.startsWith('fd') || v6.startsWith('fe80') || v6.startsWith('::ffff:');
-}
-
-async function conferirDestino(bruto: string): Promise<URL> {
+/**
+ * Confere o destino e devolve a URL e o IP em que a conexão vai ser aberta.
+ * A regra de endereço é a da casa inteira (`enderecoDeDentro`, Produção 22,
+ * M4); as regras daqui (porta padrão, sem credencial, sem nome local) ficam.
+ */
+async function conferirDestino(bruto: string, resolver: Resolver): Promise<{ url: URL; ip: string }> {
   let u: URL;
   try {
     u = new URL(bruto);
@@ -151,19 +142,19 @@ async function conferirDestino(bruto: string): Promise<URL> {
     throw new FonteIndisponivelError('o link aponta para dentro da casa; só endereço público.');
   }
   if (isIP(host)) {
-    if (enderecoPrivado(host)) throw new FonteIndisponivelError('o link aponta para dentro da casa; só endereço público.');
-    return u;
+    if (enderecoDeDentro(host)) throw new FonteIndisponivelError('o link aponta para dentro da casa; só endereço público.');
+    return { url: u, ip: host };
   }
-  let enderecos: { address: string }[];
+  let enderecos: string[];
   try {
-    enderecos = await lookup(host, { all: true });
+    enderecos = await resolver(host);
   } catch {
     throw new FonteIndisponivelError(`não consegui resolver ${host}.`);
   }
-  if (!enderecos.length || enderecos.some((e) => enderecoPrivado(e.address))) {
+  if (!enderecos.length || enderecos.some(enderecoDeDentro)) {
     throw new FonteIndisponivelError('o link aponta para dentro da casa; só endereço público.');
   }
-  return u;
+  return { url: u, ip: ipDaConexao(enderecos) };
 }
 
 async function lerComTeto(res: Response): Promise<string> {
@@ -184,13 +175,22 @@ async function lerComTeto(res: Response): Promise<string> {
   return Buffer.concat(partes.map((p) => Buffer.from(p))).toString('utf8');
 }
 
-export async function buscarLinkDeFora(bruto: string): Promise<{ corpo: string; tipo: string; url: string }> {
-  let alvo = await conferirDestino(bruto);
+/**
+ * O link de fora, com o rebinding fechado (Produção 22, M4): cada salto é
+ * conferido e a conexão vai ao IP dessa conferência (`pedirAoIp`), nunca a uma
+ * segunda resolução do nome. `deps` é só da suíte.
+ */
+export async function buscarLinkDeFora(
+  bruto: string,
+  deps: { resolver?: Resolver; conectar?: Conectar } = {},
+): Promise<{ corpo: string; tipo: string; url: string }> {
+  const resolver = deps.resolver ?? resolverDoSistema;
+  const conectar = deps.conectar ?? pedirAoIp;
+  let alvo = await conferirDestino(bruto, resolver);
   for (let salto = 0; salto < 4; salto++) {
     let res: Response;
     try {
-      res = await fetch(alvo, {
-        redirect: 'manual',
+      res = await conectar(alvo.url, alvo.ip, {
         headers: { accept: 'text/html,text/plain,application/json;q=0.8,*/*;q=0.5', 'user-agent': 'ROOT-OS/onboarding' },
         signal: AbortSignal.timeout(15_000),
       });
@@ -199,12 +199,13 @@ export async function buscarLinkDeFora(bruto: string): Promise<{ corpo: string; 
     }
     if (res.status >= 300 && res.status < 400) {
       const para = res.headers.get('location');
+      await res.body?.cancel().catch(() => undefined);
       if (!para) throw new FonteIndisponivelError('o link redireciona sem destino.');
-      alvo = await conferirDestino(new URL(para, alvo).toString());
+      alvo = await conferirDestino(new URL(para, alvo.url).toString(), resolver);
       continue;
     }
     if (!res.ok) throw new FonteIndisponivelError(`o link respondeu ${res.status}. Cole a transcrição ou envie o PDF.`);
-    return { corpo: await lerComTeto(res), tipo: res.headers.get('content-type') ?? '', url: alvo.toString() };
+    return { corpo: await lerComTeto(res), tipo: res.headers.get('content-type') ?? '', url: alvo.url.toString() };
   }
   throw new FonteIndisponivelError('o link redireciona demais.');
 }

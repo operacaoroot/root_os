@@ -122,6 +122,50 @@ export function chaveDeIdentidadeWhatsapp(jid: unknown): string | null {
  * duas por igualdade NÃO é casamento frouxo: são dois valores literais, não um
  * padrão.
  */
+/*
+ * O REMETENTE `@lid` E O NÚMERO REAL (Produção 22, M4)
+ *
+ * A Evolution 2.3.x (Baileys) entrega algumas conversas 1:1 com o
+ * `remoteJid` no espaço `@lid` (opaco, ver o topo). Nesses casos o telefone de
+ * verdade vem num campo próprio da `key`: `remoteJidAlt` ou `senderPn` (em
+ * grupo, `participantAlt`/`participantPn`, que não interessam aqui, porque
+ * grupo nunca é conversa 1:1). O `@lid` continua não sendo identidade; o que
+ * vale é o telefone que vem ao lado dele, e só na forma de telefone:
+ * `<dígitos>@s.whatsapp.net`, de 8 a 15 dígitos, sem aparelho e sem `+`.
+ */
+const NUMERO_REAL = /^(\d{8,15})@s\.whatsapp\.net$/;
+
+/** O identificador é do espaço `@lid`? */
+export function ehLidDoWhatsapp(jid: unknown): boolean {
+  return typeof jid === 'string' && jid.trim().toLowerCase().endsWith('@lid');
+}
+
+/** O telefone (só dígitos) que a Evolution manda ao lado de um remetente `@lid`, ou `null`. */
+export function numeroRealDoLid(key: Record<string, unknown> | null | undefined): string | null {
+  if (!key) return null;
+  for (const campo of ['remoteJidAlt', 'senderPn'] as const) {
+    const v = key[campo];
+    if (typeof v !== 'string') continue;
+    const m = NUMERO_REAL.exec(v.trim().toLowerCase());
+    if (m) return m[1];
+  }
+  return null;
+}
+
+/**
+ * A chave (dígitos) do remetente 1:1 de uma `key` da Evolution: o telefone do
+ * `remoteJid`, ou, quando ele é `@lid`, o número real do campo próprio. `lid`
+ * = era `@lid` e o número real não veio; `null` = não é telefone.
+ */
+export function remetenteDaKey(key: Record<string, unknown> | null | undefined): { chave: string } | { lid: true } | null {
+  if (!key) return null;
+  const chave = chaveDeIdentidadeWhatsapp(key.remoteJid);
+  if (chave) return { chave };
+  if (!ehLidDoWhatsapp(key.remoteJid)) return null;
+  const real = numeroRealDoLid(key);
+  return real ? { chave: real } : { lid: true };
+}
+
 export function formasDaChave(chave: string): string[] {
   return [chave, `${chave}@s.whatsapp.net`, `${chave}@c.us`];
 }

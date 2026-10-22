@@ -6,7 +6,8 @@ import {
 } from '@mktos/shared';
 
 import { blocoExterno } from '../../agents/context-builder.service';
-import { PdfIlegivelError, textoDoPdf } from '../../google/texto-do-pdf';
+import { PdfIlegivelError } from '../../google/texto-do-pdf';
+import { textoDoPdfEmThread } from '../../google/texto-do-pdf-em-thread';
 import { varrerSegredos } from '../../onboarding/trilho/segredos';
 
 /*
@@ -62,13 +63,17 @@ export interface Classificacao {
   confianca: number;
 }
 
-/** O texto que o classificador lê: até ~2 páginas, com os segredos mascarados. Nunca lança. */
-export function textoParaClassificar(nome: string, tipoMime: string, buffer: Buffer | null): string {
+/**
+ * O texto que o classificador lê: até ~2 páginas, com os segredos mascarados.
+ * Nunca lança por PDF ruim. O PDF é lido fora da thread da API, com prazo
+ * (Produção 22, M4); PDF que demora ou passa do tamanho vira texto vazio.
+ */
+export async function textoParaClassificar(nome: string, tipoMime: string, buffer: Buffer | null): Promise<string> {
   if (!buffer) return '';
   const ext = extensaoDoNome(nome);
   let texto = '';
   try {
-    if (tipoMime === 'application/pdf' || ext === 'pdf') texto = textoDoPdf(buffer, MAX_CARACTERES_LIDOS);
+    if (tipoMime === 'application/pdf' || ext === 'pdf') texto = await textoDoPdfEmThread(buffer, MAX_CARACTERES_LIDOS);
     else if (['text/plain', 'text/markdown', 'text/csv'].includes(tipoMime) || ['txt', 'md', 'csv'].includes(ext)) {
       texto = buffer.subarray(0, MAX_CARACTERES_LIDOS * 4).toString('utf8');
     }
