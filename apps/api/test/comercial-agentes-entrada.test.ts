@@ -375,7 +375,7 @@ describe.skipIf(!URL)('a entrada de leads dos agentes do comercial, contra o Pos
   it('Produção 22: a segunda entrega da mesma mensagem não chama o modelo nem abre pendência nova', async () => {
     const modelo = espiarModelo();
     try {
-      const corpo = evolucao('5532977770011', { conversation: 'Tudo bem por aí?' }, 'conversation', `dup-${MARCA}`);
+      const corpo = evolucao('5532977770011', { conversation: 'Tudo bem por aí?' }, 'conversation', randomUUID());
       expect(await naEmpresa(() => entrada.processar(ORG, corpo, '5532977770011'))).toBe('triagem: pendência');
       expect(modelo).toHaveBeenCalledTimes(1);
       const antes = await prisma.pendencia.count({ where: { orgId: ORG } });
@@ -388,7 +388,8 @@ describe.skipIf(!URL)('a entrada de leads dos agentes do comercial, contra o Pos
   });
 
   it('Produção 22: a dedupe também vale depois de a API reiniciar (o banco lembra a pendência da mensagem)', async () => {
-    const corpo = evolucao('5532977770012', { conversation: 'Tudo bem por aí?' }, 'conversation', `dup2-${MARCA}`);
+    const idDaMensagem = randomUUID();
+    const corpo = evolucao('5532977770012', { conversation: 'Tudo bem por aí?' }, 'conversation', idDaMensagem);
     expect(await naEmpresa(() => entrada.processar(ORG, corpo, '5532977770012'))).toBe('triagem: pendência');
     // uma triagem nova (memória vazia), como depois de um arranque
     const interno = triagem as unknown as { fio: never; memoria: never; porta: never; registroDePendencias: never };
@@ -403,7 +404,7 @@ describe.skipIf(!URL)('a entrada de leads dos agentes do comercial, contra o Pos
     );
     const modelo = vi.spyOn((outra as unknown as { llm: { complete: () => Promise<unknown> } }).llm, 'complete');
     const r = await naEmpresa(() =>
-      outra.triar(ORG, { telefone: '5532977770012', leadId: null, texto: 'Tudo bem por aí?', documento: null, mensagemId: `dup2-${MARCA}`, nome: null }),
+      outra.triar(ORG, { telefone: '5532977770012', leadId: null, texto: 'Tudo bem por aí?', documento: null, mensagemId: idDaMensagem, nome: null }),
     );
     expect(r).toBe('triagem: repetida (ignorada)');
     expect(modelo).not.toHaveBeenCalled();
@@ -434,16 +435,18 @@ describe.skipIf(!URL)('a entrada de leads dos agentes do comercial, contra o Pos
 
   it('Produção 22: o texto da pendência vence em 14 dias; o expurgo limpa o vencido e não o novo, e a pendência fica', async () => {
     const DIA_MS = 24 * 60 * 60 * 1000;
-    const corpo = evolucao('5532977770015', { conversation: 'Tudo bem por aí? texto que vai vencer' }, 'conversation', `ret-${MARCA}`);
+    const idVelha = randomUUID();
+    const corpo = evolucao('5532977770015', { conversation: 'Tudo bem por aí? texto que vai vencer' }, 'conversation', idVelha);
     expect(await naEmpresa(() => entrada.processar(ORG, corpo, '5532977770015'))).toBe('triagem: pendência');
-    const velha = await prisma.pendencia.findUniqueOrThrow({ where: { orgId_chave: { orgId: ORG, chave: `whatsapp:ret-${MARCA}` } } });
+    const velha = await prisma.pendencia.findUniqueOrThrow({ where: { orgId_chave: { orgId: ORG, chave: `whatsapp:${idVelha}` } } });
     expect(velha.textoExpiraEm!.getTime()).toBe(Date.now() + 14 * DIA_MS);
     expect((velha.dados as { texto: string }).texto).toContain('texto que vai vencer');
     expect(velha.contexto).toContain('texto que vai vencer');
     try {
       // uma nova, aberta 10 dias depois
       vi.setSystemTime(new Date(Date.now() + 10 * DIA_MS));
-      const nova = evolucao('5532977770016', { conversation: 'Tudo bem por aí? texto novo' }, 'conversation', `ret2-${MARCA}`);
+      const idNova = randomUUID();
+      const nova = evolucao('5532977770016', { conversation: 'Tudo bem por aí? texto novo' }, 'conversation', idNova);
       expect(await naEmpresa(() => entrada.processar(ORG, nova, '5532977770016'))).toBe('triagem: pendência');
       // 15 dias depois da primeira: só ela venceu
       vi.setSystemTime(new Date(Date.now() + 5 * DIA_MS));
@@ -458,7 +461,7 @@ describe.skipIf(!URL)('a entrada de leads dos agentes do comercial, contra o Pos
       expect((limpa.dados as Record<string, unknown>).telefone).toBe('5532977770015');
       expect(JSON.stringify(limpa)).not.toContain('texto que vai vencer');
       expect([limpa.estado, limpa.titulo]).toEqual([velha.estado, velha.titulo]);
-      const intacta = await prisma.pendencia.findUniqueOrThrow({ where: { orgId_chave: { orgId: ORG, chave: `whatsapp:ret2-${MARCA}` } } });
+      const intacta = await prisma.pendencia.findUniqueOrThrow({ where: { orgId_chave: { orgId: ORG, chave: `whatsapp:${idNova}` } } });
       expect((intacta.dados as { texto: string }).texto).toContain('texto novo');
       expect(intacta.textoExpiraEm).not.toBeNull();
       // rodar de novo não apaga nada a mais
