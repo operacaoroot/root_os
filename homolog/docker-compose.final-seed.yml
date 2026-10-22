@@ -7,6 +7,7 @@
 # rootos-final (3030). Tudo publicado só em 127.0.0.1 (sem Tailscale).
 #
 #   web 3031 · api 4031 · db 5444 · redis 6394 · dublê Asaas 4032 · dublê ZapSign 4033
+#   dublê Evolution 4034 (produção 22C)
 #
 # Banco NOVO, sem dado real: as migrations sobem no command da api e o seed entra depois,
 # dentro do container api (tsx da própria imagem), na ordem db:seed, db:seed:politica,
@@ -95,6 +96,27 @@ services:
       PORT: "4013"
     networks: [rootos-final-seed-net]
 
+  # Produção 22C (W5): dublê da Evolution para a caixa de WhatsApp (homolog/mocks/evolution).
+  # O nome do serviço não tem ponto de propósito: a API da casa aceita `http://evolution_duble:8080`
+  # (regra `baseDaEvolution`), e é esse endereço que o e2e grava na credencial da empresa root.
+  # O webhook simulado vai a http://api:4001 com o segredo DERIVADO da empresa, calculado a partir
+  # de CANAL_APROVACAO_SEGREDO (a mesma variável da api, lida do .env; nunca no código).
+  # Porta 4034 só em 127.0.0.1: o e2e chama /simular/mensagem e /enviadas pelo host.
+  evolution_duble:
+    build: ./mocks/evolution
+    image: rootos-final-seed-evolution-duble:latest
+    container_name: rootos_final_seed_evolution
+    restart: unless-stopped
+    environment:
+      PORT: "8080"
+      EVOLUTION_INSTANCIA: ${EVOLUTION_DUBLE_INSTANCIA:-rootos}
+      EVOLUTION_CHAVE: ${EVOLUTION_DUBLE_CHAVE:-chave-do-duble-evolution}
+      API_URL: http://api:4001
+      CANAL_APROVACAO_SEGREDO: ${CANAL_APROVACAO_SEGREDO:-}
+    ports:
+      - "127.0.0.1:${EVOLUTION_DUBLE_PORT:-4034}:8080"
+    networks: [rootos-final-seed-net]
+
   api:
     image: rootos-final-app:producao22b
     container_name: rootos_final_seed_api
@@ -136,6 +158,11 @@ services:
       ZAPSIGN_BASE_URL: http://zapsign-mock:4012/api/v1
       ZAPSIGN_WEBHOOK_TOKEN: ${ZAPSIGN_WEBHOOK_TOKEN}
       WHATSAPP_PROVEDOR: simulado
+      # Produção 22C: o webhook da Evolution (canal de aprovação + gravação da caixa). Vazios =
+      # canal desligado, como antes; os dois com 32+ caracteres e DIFERENTES ligam o webhook
+      # que o dublê da Evolution usa. Valores só no homolog/.env.final-seed.
+      CANAL_APROVACAO_SEGREDO: ${CANAL_APROVACAO_SEGREDO:-}
+      CANAL_APROVACAO_CODIGO_SEGREDO: ${CANAL_APROVACAO_CODIGO_SEGREDO:-}
       PROPOSTAS_URL: http://propostas-mock:4013
       PROPOSTAS_API_TOKEN: ${PROPOSTAS_API_TOKEN:-dublê-propostas}
       COMERCIAL_SEED_DEMONSTRACAO: "sim"
