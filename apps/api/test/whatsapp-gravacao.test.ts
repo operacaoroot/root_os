@@ -234,7 +234,11 @@ describe.skipIf(!URL)('whatsapp: o webhook grava antes dos leitores', () => {
 
     // e o que vier só com o lid de novo cai na conversa do número
     await em(ORG_A, () => gravador.gravar(ORG_A, corpo({ id: `${MARCA}-l3`, remoteJid: LID }, { conversation: 'de novo só lid' })));
-    expect((await mensagens(ORG_A)).find((x) => x.mensagemExternaId === `${MARCA}-l3`)!.conversaId).toBe(antes.id);
+    expect((await mensagens(ORG_A)).find((x) => x.mensagemExternaId === `${MARCA}-l3`)).toMatchObject({
+      conversaId: antes.id,
+      chatJid: '5532900000003@s.whatsapp.net',
+      remetenteNumero: '5532900000003',
+    });
     expect((await conversas(ORG_A)).filter((x) => x.chatJid === LID || x.lidJid === LID)).toHaveLength(1);
   });
 

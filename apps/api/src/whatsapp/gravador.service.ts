@@ -230,6 +230,8 @@ export class GravadorDoWhatsappService implements OnModuleInit {
     });
     if (ja) return { conversaId: ja.conversaId, nova: false };
 
+    // Chegou só o lid, mas a conversa já é a do número: o remetente do 1:1 de entrada é esse número.
+    const doNumero = !m.grupo && !m.deMim && !m.remetenteNumero ? /^(\d{8,15})@s\.whatsapp\.net$/.exec(conversa.chatJid) : null;
     try {
       await this.prisma.whatsAppMensagem.create({
         data: {
@@ -238,8 +240,8 @@ export class GravadorDoWhatsappService implements OnModuleInit {
           instancia,
           chatJid: conversa.chatJid,
           grupo: m.grupo,
-          remetenteJid: m.remetenteJid,
-          remetenteNumero: m.remetenteNumero,
+          remetenteJid: doNumero ? conversa.chatJid : m.remetenteJid,
+          remetenteNumero: doNumero ? doNumero[1] : m.remetenteNumero,
           remetenteNome: m.remetenteNome,
           deMim: m.deMim,
           direcao: m.direcao,
