@@ -16,6 +16,7 @@ import {
 } from '../src/pauta/entrada-de-links.service';
 import { EntradaDeGrupoRegistry, grupoDoEvento } from '../src/gateway/canais/entrada-de-grupo.registry';
 import { CanalDeAprovacaoController } from '../src/gateway/canais/canal-de-aprovacao.controller';
+import { segredoDoCanalDaEmpresa } from '../src/gateway/canais/configuracao-do-canal';
 import type { CanalDeAprovacaoService } from '../src/gateway/canais/canal-de-aprovacao.service';
 import { lerRespostaDeCanal } from '../src/gateway/canais/resposta-de-canal';
 import { AuditService } from '../src/audit/audit.service';
@@ -370,7 +371,7 @@ describe('grupo de links: o webhook único do canal', () => {
 
   it('o grupo de links vai para a pauta, dentro da empresa do caminho, e não chega ao canal', async () => {
     const { webhook, receber, entrada, orgsDaEntrada } = montar();
-    expect(await webhook.whatsapp(ORG, SEGREDO, payload({ texto: 'https://a.com' }))).toEqual({ ok: true });
+    expect(await webhook.whatsapp(ORG, segredoDoCanalDaEmpresa(ORG)!, payload({ texto: 'https://a.com' }))).toEqual({ ok: true });
     await webhook.trabalhoEmCurso;
     expect(entrada).toHaveBeenCalledTimes(1);
     expect(orgsDaEntrada).toEqual([ORG]);
@@ -379,7 +380,7 @@ describe('grupo de links: o webhook único do canal', () => {
 
   it('qualquer outro grupo cai no canal, que continua recusando grupo', async () => {
     const { webhook, receber, entrada } = montar();
-    await webhook.whatsapp(ORG, SEGREDO, payload({ texto: 'APROVAR ROOT-AB12CD34', jid: OUTRO_GRUPO }));
+    await webhook.whatsapp(ORG, segredoDoCanalDaEmpresa(ORG)!, payload({ texto: 'APROVAR ROOT-AB12CD34', jid: OUTRO_GRUPO }));
     await webhook.trabalhoEmCurso;
     expect(entrada).not.toHaveBeenCalled();
     expect(receber).toHaveBeenCalledTimes(1);
@@ -395,7 +396,7 @@ describe('grupo de links: o webhook único do canal', () => {
 
   it('conversa direta segue para o canal como antes', async () => {
     const { webhook, receber, entrada } = montar();
-    await webhook.whatsapp(ORG, SEGREDO, payload({ texto: 'https://a.com', jid: '5561999990000@s.whatsapp.net' }));
+    await webhook.whatsapp(ORG, segredoDoCanalDaEmpresa(ORG)!, payload({ texto: 'https://a.com', jid: '5561999990000@s.whatsapp.net' }));
     await webhook.trabalhoEmCurso;
     expect(entrada).not.toHaveBeenCalled();
     expect(receber).toHaveBeenCalledTimes(1);
@@ -714,9 +715,9 @@ describe('grupo de links: o serviço de entrada', () => {
       const receber = vi.fn(async () => ({ desfecho: 'nao-devia' }));
       const webhook = new CanalDeAprovacaoController({ receber } as unknown as CanalDeAprovacaoService, reg);
 
-      await webhook.whatsapp(ORG, process.env.CANAL_APROVACAO_SEGREDO, payload({ texto: 'https://a.com/post' }));
+      await webhook.whatsapp(ORG, segredoDoCanalDaEmpresa(ORG)!, payload({ texto: 'https://a.com/post' }));
       await webhook.trabalhoEmCurso;
-      await webhook.whatsapp(ORG, process.env.CANAL_APROVACAO_SEGREDO, payload({ texto: 'https://a.com/post' }));
+      await webhook.whatsapp(ORG, segredoDoCanalDaEmpresa(ORG)!, payload({ texto: 'https://a.com/post' }));
       await webhook.trabalhoEmCurso;
 
       expect(banco.capturas).toHaveLength(1);

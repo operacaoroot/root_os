@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
-import type { ConexaoDaEvolution, EstadoDaEvolution, QrDaEvolution } from '@mktos/shared';
+import type { ConexaoDaEvolution, EstadoDaEvolution, QrDaEvolution, SegredoDoWebhookDaEvolution } from '@mktos/shared';
 import { apiGet, apiPost, apiPut } from '@/lib/api';
 
 /*
@@ -33,7 +33,6 @@ const INSTANCIA: Record<EstadoDaEvolution['estado'], string> = {
 const PROVEDOR: Record<string, string> = {
   evolution: 'evolution (esta conexão)',
   simulado: 'simulado (nada sai do sistema)',
-  meta: 'meta',
 };
 
 const quando = (iso: string | null) =>
@@ -75,6 +74,8 @@ export function ConexaoEvolution({ token, gerenciar, aoMudar }: { token: string;
   const [aviso, setAviso] = useState<string | null>(null);
   const [ocupado, setOcupado] = useState(false);
   const [form, setForm] = useState({ url: '', chave: '', instancia: '' });
+  // Produção 22, M4: o segredo do webhook DESTA empresa, só a pedido e só em memória (some ao esconder).
+  const [segredo, setSegredo] = useState<SegredoDoWebhookDaEvolution | null>(null);
 
   const consultarInstancia = useCallback(() => {
     apiGet<EstadoDaEvolution>('/integrations/evolution/estado', token)
@@ -130,6 +131,12 @@ export function ConexaoEvolution({ token, gerenciar, aoMudar }: { token: string;
       const r = await apiPost<QrDaEvolution>('/integrations/evolution/qr', {}, token);
       setQr(r);
       setEstado((s) => (s ? { ...s, estado: r.estado } : s));
+    });
+
+  const mostrarSegredo = () =>
+    fazer(async () => {
+      const r = await apiGet<SegredoDoWebhookDaEvolution>('/integrations/evolution/segredo-do-webhook', token);
+      setSegredo(r && typeof r === 'object' && 'ligado' in r ? r : null);
     });
 
   if (!c) return erro ? <p className="text-xs text-bad">{erro}</p> : null;
@@ -238,10 +245,31 @@ export function ConexaoEvolution({ token, gerenciar, aoMudar }: { token: string;
         </div>
         <p className="text-muted">
           Ligue o webhook da instância com o evento de mensagem nova (MESSAGES_UPSERT) e o cabeçalho{' '}
-          <code className="font-mono">{c.cabecalhoDoSegredo}</code> com o segredo do canal de aprovação. Quem administra o servidor
-          tem o valor; ele não aparece nesta tela. A resposta de quem já é lead vai para o comercial; o resto segue para o canal
-          de aprovação.
+          <code className="font-mono">{c.cabecalhoDoSegredo}</code> com o segredo do webhook desta empresa. Cada empresa tem o
+          seu; o de uma não vale para outra. A resposta de quem já é lead vai para o comercial; o resto segue para o canal de
+          aprovação.
         </p>
+        {gerenciar && c.entradaLigada && !segredo && (
+          <button
+            type="button"
+            disabled={ocupado}
+            onClick={() => void mostrarSegredo()}
+            className="rounded border border-border px-2 py-0.5 text-[11px] text-brand disabled:opacity-50"
+            data-testid="mostrar-segredo-evolution"
+          >
+            Mostrar o segredo do webhook
+          </button>
+        )}
+        {segredo?.segredo && (
+          <div className="flex items-center gap-2" data-testid="segredo-do-webhook-evolution">
+            <span className="w-12 shrink-0 text-muted">Segredo</span>
+            <code className="min-w-0 flex-1 truncate rounded bg-surface-2 px-2 py-1 font-mono text-[11px] text-text">{segredo.segredo}</code>
+            <Copiar texto={segredo.segredo} />
+            <button type="button" onClick={() => setSegredo(null)} className="shrink-0 rounded border border-border px-2 py-0.5 text-[11px] text-muted">
+              esconder
+            </button>
+          </div>
+        )}
         {!c.entradaLigada && (
           <p className="rounded-lg border border-warn/40 bg-warn/5 px-3 py-2 text-warn">
             A entrada está fechada: o segredo do canal de aprovação não está configurado no servidor. As respostas do lead não entram.

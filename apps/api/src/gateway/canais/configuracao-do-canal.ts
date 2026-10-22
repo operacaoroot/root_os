@@ -1,3 +1,5 @@
+import { createHmac, timingSafeEqual } from 'node:crypto';
+
 /*
  * ============================================================================
  * O INTERRUPTOR DO CANAL — desligado é o padrão (RF-A-06)
@@ -43,6 +45,10 @@
  * mas isso não é o mesmo que segredo POR EMPRESA — e segredo por empresa exige
  * guardá-lo no cofre e lê-lo por tenant, que é decisão de produto, não de fatia.
  * Está no relatório como pergunta.
+ *
+ * Produção 22, M4: o segredo de TRANSPORTE passou a ser por empresa sem cofre,
+ * por derivação (`segredoDoCanalDaEmpresa`, abaixo). O do código continua do
+ * processo, com o `orgId` na derivação de cada código.
  *
  * ----------------------------------------------------------------------------
  * TAMANHO MÍNIMO, e a recusa é BARULHENTA
@@ -98,6 +104,68 @@ function segredoValido(ambiente: NodeJS.ProcessEnv, variavel: string): string | 
  */
 export function segredoDoCanal(ambiente: NodeJS.ProcessEnv = process.env): string | null {
   return canalConfigurado(ambiente) ? segredoValido(ambiente, VARIAVEL_DO_TRANSPORTE) : null;
+}
+
+/*
+ * ----------------------------------------------------------------------------
+ * O SEGREDO DO WEBHOOK POR EMPRESA (Produção 22, M4)
+ * ----------------------------------------------------------------------------
+ * Até aqui o cabeçalho era o MESMO para toda empresa: quem configurava o
+ * webhook da Evolution de uma empresa cliente recebia o segredo do processo, e
+ * com ele falava pelo webhook de QUALQUER empresa, a casa inclusive. A instância
+ * no corpo segurava a entrada do comercial, mas não o canal de aprovação nem o
+ * grupo de links.
+ *
+ * Agora cada empresa tem o seu: HMAC-SHA256 do segredo do processo com o
+ * `orgId` da empresa, em hexadecimal. A casa continua com o segredo do processo
+ * (é o que já está configurado na instância dela). Três regras, conferidas em
+ * `segredoDoWebhookConfere`:
+ *
+ *   · o derivado de uma empresa só vale no caminho dela (o `orgId` da rota);
+ *   · o segredo do processo só vale no caminho da CASA; em outra empresa, não;
+ *   · as comparações são em tempo constante.
+ *
+ * O derivado não abre nada que o segredo do processo não abrisse: quem tem o do
+ * processo calcula todos; quem tem o de uma empresa não calcula o de outra nem
+ * o do processo.
+ */
+export function segredoDoCanalDaEmpresa(orgId: string, ambiente: NodeJS.ProcessEnv = process.env): string | null {
+  const global = segredoDoCanal(ambiente);
+  const empresa = String(orgId ?? '').trim();
+  if (!global || !empresa) return null;
+  return createHmac('sha256', global).update(empresa, 'utf8').digest('hex');
+}
+
+/** Comparação em tempo constante (o tamanho vaza, e é o vazamento aceito: ver o controlador). */
+function iguaisEmTempoConstante(apresentado: string, esperado: string): boolean {
+  const a = Buffer.from(apresentado, 'utf8');
+  const b = Buffer.from(esperado, 'utf8');
+  if (a.length !== b.length) return false;
+  return timingSafeEqual(a, b);
+}
+
+/**
+ * O cabeçalho apresentado vale para o webhook DESTA empresa? `ehDaCasa` só é
+ * perguntado quando o apresentado é o segredo do processo: quem não o tem nunca
+ * provoca a consulta, e a resposta não vira oráculo de "esta empresa é a casa".
+ */
+export async function segredoDoWebhookConfere(
+  apresentado: string | undefined,
+  orgId: string,
+  ehDaCasa: (orgId: string) => Promise<boolean>,
+  ambiente: NodeJS.ProcessEnv = process.env,
+): Promise<boolean> {
+  const global = segredoDoCanal(ambiente);
+  const derivado = segredoDoCanalDaEmpresa(orgId, ambiente);
+  if (!global || !derivado) return false;
+  if (typeof apresentado !== 'string' || apresentado === '') return false;
+  if (iguaisEmTempoConstante(apresentado, derivado)) return true;
+  if (!iguaisEmTempoConstante(apresentado, global)) return false;
+  try {
+    return await ehDaCasa(orgId.trim());
+  } catch {
+    return false;
+  }
 }
 
 /** O segredo de DERIVAÇÃO do código, ou `null`. Mesma regra de tudo-ou-nada. */

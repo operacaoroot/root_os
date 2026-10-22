@@ -29,6 +29,7 @@ import {
   pareceTentativaDeDecisao,
 } from '../src/gateway/canais/resposta-de-canal';
 import {
+  segredoDoCanalDaEmpresa,
   CAPACIDADES_PADRAO,
   MINIMO_DO_SEGREDO,
   capacidadesDoCanal,
@@ -1846,7 +1847,7 @@ describe.skipIf(!URL)('decidir pelo canal, de ponta a ponta', () => {
 
     const resposta = await webhook.whatsapp(
       ORG,
-      SEGREDO_TRANSPORTE,
+      segredoDoCanalDaEmpresa(ORG)!,
       responder(NUMERO_DO_PEDRO, `APROVAR ${codigo}`),
     );
     expect(resposta).toEqual({ ok: true });
@@ -1863,7 +1864,7 @@ describe.skipIf(!URL)('decidir pelo canal, de ponta a ponta', () => {
     // e o corpo é o mesmo para um desconhecido
     const outra = await webhook.whatsapp(
       ORG,
-      SEGREDO_TRANSPORTE,
+      segredoDoCanalDaEmpresa(ORG)!,
       responder(NUMERO_DE_NINGUEM, 'APROVAR ROOT-00000000'),
     );
     expect(outra).toEqual({ ok: true });

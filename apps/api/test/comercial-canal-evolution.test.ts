@@ -19,6 +19,7 @@ import { RelogioComercialRegistry } from '../src/comercial/relogio.registry';
 import { SalaService } from '../src/comercial/sala.service';
 import { WhatsappComercialService } from '../src/comercial/whatsapp.service';
 import { AcoesService } from '../src/gateway/acoes.service';
+import { segredoDoCanalDaEmpresa } from '../src/gateway/canais/configuracao-do-canal';
 import { CanalDeAprovacaoController } from '../src/gateway/canais/canal-de-aprovacao.controller';
 import { EntradaDeGrupoRegistry } from '../src/gateway/canais/entrada-de-grupo.registry';
 import { EntradaDiretaRegistry, remetenteDireto } from '../src/gateway/canais/entrada-direta.registry';
@@ -396,7 +397,7 @@ describe.skipIf(!URL)('Evolution com banco e dublê HTTP', () => {
     vi.setSystemTime(new Date(`${DIA}T15:10:00-03:00`));
     canal.receber.mockClear();
     const recebidas = await prisma.leadEvent.count({ where: { leadId, type: 'whats.recebida' } });
-    expect(await entregar(ORG_A, mensagem('ev-in-1', TELEFONE, '1. Omie\n2. sim\n3. fechamento leva 9 dias\n4. 3'), SEGREDO_DO_CANAL)).toEqual({ ok: true });
+    expect(await entregar(ORG_A, mensagem('ev-in-1', TELEFONE, '1. Omie\n2. sim\n3. fechamento leva 9 dias\n4. 3'), segredoDoCanalDaEmpresa(ORG_A)!)).toEqual({ ok: true });
     expect(canal.receber).not.toHaveBeenCalled();
     expect(await prisma.leadEvent.count({ where: { leadId, type: 'whats.recebida' } })).toBe(recebidas + 1);
     const form = await prisma.leadEvent.findFirstOrThrow({ where: { leadId, type: 'form.respondido' } });
@@ -408,7 +409,7 @@ describe.skipIf(!URL)('Evolution com banco e dublê HTTP', () => {
     const botoes = (m2.interativo as { botoes: Array<{ chave: string; rotulo: string }> }).botoes;
     const corpo = doTipo('POST', '/message/sendText/inst-a').at(-1)!.corpo as Record<string, string>;
     expect(corpo.text).toContain(`1. ${botoes[0].rotulo}\n2. ${botoes[1].rotulo}`);
-    await entregar(ORG_A, mensagem('ev-in-2', TELEFONE, '2'), SEGREDO_DO_CANAL);
+    await entregar(ORG_A, mensagem('ev-in-2', TELEFONE, '2'), segredoDoCanalDaEmpresa(ORG_A)!);
     const escolha = await prisma.leadEvent.findFirstOrThrow({ where: { leadId, type: 'agenda.escolhida' } });
     expect(escolha.payload).toMatchObject({ horario: botoes[1].chave });
   });
@@ -422,7 +423,7 @@ describe.skipIf(!URL)('Evolution com banco e dublê HTTP', () => {
     const segredo = process.env.CANAL_APROVACAO_CODIGO_SEGREDO;
     delete process.env.CANAL_APROVACAO_CODIGO_SEGREDO;
     try {
-      await expect(entregar(ORG_A, corpo, SEGREDO_DO_CANAL)).rejects.toMatchObject({ status: 404 });
+      await expect(entregar(ORG_A, corpo, segredoDoCanalDaEmpresa(ORG_A)!)).rejects.toMatchObject({ status: 404 });
     } finally {
       process.env.CANAL_APROVACAO_CODIGO_SEGREDO = segredo;
     }
@@ -434,10 +435,10 @@ describe.skipIf(!URL)('Evolution com banco e dublê HTTP', () => {
     const doOperador = await prisma.lead.findFirstOrThrow({ where: { orgId: ORG_A, phone: `55${TELEFONE_DO_OPERADOR}` }, select: { id: true } });
     const antes = await prisma.leadEvent.count({ where: { leadId: doOperador.id, type: 'whats.recebida' } });
     canal.receber.mockClear();
-    await entregar(ORG_A, mensagem('ev-in-op', TELEFONE_DO_OPERADOR, 'ROOT-ABCD1234 aprovar'), SEGREDO_DO_CANAL);
+    await entregar(ORG_A, mensagem('ev-in-op', TELEFONE_DO_OPERADOR, 'ROOT-ABCD1234 aprovar'), segredoDoCanalDaEmpresa(ORG_A)!);
     expect(canal.receber).toHaveBeenCalledTimes(1);
     expect(await prisma.leadEvent.count({ where: { leadId: doOperador.id, type: 'whats.recebida' } })).toBe(antes);
-    await entregar(ORG_A, mensagem('ev-in-novo', '32900001111', 'oi, quero saber mais'), SEGREDO_DO_CANAL);
+    await entregar(ORG_A, mensagem('ev-in-novo', '32900001111', 'oi, quero saber mais'), segredoDoCanalDaEmpresa(ORG_A)!);
     expect(canal.receber).toHaveBeenCalledTimes(2);
     expect(await prisma.lead.count({ where: { orgId: ORG_A, phone: '5532900001111' } })).toBe(0);
   });
