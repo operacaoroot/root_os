@@ -27,8 +27,12 @@ export function esquecerAvatares(): void {
 
 function carregarLista(token: string): Promise<AvatarDaEmpresa[]> {
   if (!lista || lista.token !== token) {
-    const promessa = apiGet<AvataresDaEmpresa>('/perfil/pessoas', token)
-      .then((r) => r.pessoas)
+    // `Promise.resolve().then` e a conferência do formato: o avatar é enfeite da
+    // linha, e nem uma resposta fora do formato nem um erro síncrono podem
+    // derrubar a tela que o desenha (I6, responsável só com a imagem).
+    const promessa = Promise.resolve()
+      .then(() => apiGet<AvataresDaEmpresa>('/perfil/pessoas', token))
+      .then((r) => (Array.isArray(r?.pessoas) ? r.pessoas : []))
       .catch(() => {
         // Falhou (sem permissão, API fora): as telas seguem com as iniciais.
         if (lista?.promessa === promessa) lista = null;

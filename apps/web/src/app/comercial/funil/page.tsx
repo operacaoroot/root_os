@@ -5,6 +5,7 @@ import Link from 'next/link';
 import type { CartaoDoFunil, ComercialDestinoDoMover, ComercialFiltrosDoFunil, ComercialMotivoDeSaida, ComercialSaida, FunilVivo, VistaFunil } from '@mktos/shared';
 import { COMERCIAL_MOTIVOS_DE_SAIDA, COMERCIAL_ROTULO_DA_ETAPA, COMERCIAL_SAIDAS, filtrosDoFunilVazios } from '@mktos/shared';
 
+import { AvatarDaPessoa } from '@/components/AvatarDaPessoa';
 import { BotaoDeFiltros } from '@/components/filtros/BotaoDeFiltros';
 import { VistasDoQuadro } from '@/components/trabalho/VistasDoQuadro';
 import { useAuth } from '@/lib/auth';
@@ -384,7 +385,8 @@ function Cartao({
       )}
       <div className="mt-1.5 flex flex-wrap gap-1">
         <span className="font-os-mono text-[10px] text-dim">{rotuloCurto(c.etapa)}</span>
-        {c.dono && <Chip title="responsável">{c.dono}</Chip>}
+        {/* O responsável só com a imagem, o nome no balão (I6). */}
+        {c.dono && <AvatarDaPessoa nome={c.dono} pessoaId={c.donoId ?? null} tamanho="p" rotulo={`Responsável: ${c.dono}`} />}
         {c.perfil && <Chip>{c.perfil}</Chip>}
         {c.produto && <Chip>{ROTULO_DO_PRODUTO[c.produto]}</Chip>}
         {c.precisaDeDecisao && <Chip tom="brand">decisão sua</Chip>}

@@ -286,6 +286,21 @@ describe('P1: a aba Minhas tarefas', () => {
     expect(within(linha).getByText('Em andamento')).toBeTruthy();
     expect(within(linha).getByText('prazo vencido')).toBeTruthy();
     expect(within(linha).getByTestId('caixa-comentarios-t-9').textContent).toContain('2');
+    // I6 (produção 22B): o responsável é o avatar, o nome no balão. Sem as contas na resposta, o texto herdado vira as iniciais.
+    const resp = within(linha).getByTestId('caixa-responsaveis-t-9');
+    expect(within(resp).getByRole('img', { name: 'Responsável: Pedro' })).toHaveAttribute('title', 'Responsável: Pedro');
+    expect(resp).not.toHaveTextContent('Pedro');
+  });
+
+  it('I6: com as contas responsáveis na resposta, um avatar por conta (a principal primeiro)', async () => {
+    TAREFAS = tarefas([{ ...TAREFA, responsaveis: [{ id: 'u-eu', nome: 'Pedro Magnago' }, { id: 'u-2', nome: 'Lucas Fernandes' }] }]);
+    render(<CaixaPage />);
+    fireEvent.click(screen.getByTestId('caixa-aba-tarefas'));
+    const resp = await screen.findByTestId('caixa-responsaveis-t-9');
+    expect(within(resp).getAllByRole('img').map((a) => a.getAttribute('aria-label'))).toEqual([
+      'Responsável: Pedro Magnago',
+      'Responsável: Lucas Fernandes',
+    ]);
   });
 
   it('o filtro vai para a rota', async () => {

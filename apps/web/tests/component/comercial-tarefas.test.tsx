@@ -118,7 +118,9 @@ describe('o bloco "Tarefas do comercial" no Funil vivo', () => {
     await waitFor(() => expect(within(bloco).getByTestId('funil-tarefas-contagem')).toHaveTextContent('2'));
     expect(gets).toContain('/comercial/tarefas?semLead=1');
     expect(within(bloco).getByText('Atualizar o pipe')).toBeInTheDocument();
-    expect(within(bloco).getByText('Ana Sintética · prazo 19/10 · atrasada')).toHaveClass('text-warn');
+    // I6 (produção 22B): o responsável é o avatar (o nome no balão), e a linha diz o prazo.
+    expect(within(bloco).getByText('prazo 19/10 · atrasada').closest('p')).toHaveClass('text-warn');
+    expect(within(within(bloco).getByTestId('tarefa-responsavel-t1')).getByRole('img', { name: 'Responsável: Ana Sintética' })).toHaveAttribute('title', 'Responsável: Ana Sintética');
     expect(within(bloco).getByText('1 atrasada')).toBeInTheDocument();
     // A concluída fica recolhida, como histórico.
     expect(within(bloco).queryByText('Colher feedback')).toBeNull();

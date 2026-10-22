@@ -5,6 +5,7 @@ import type { PainelDeTarefas, SituacaoDoPrazo, TarefaDoDia, TrabEstrutura } fro
 import { apiGet } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 import { Numero, Quadro } from '@/components/painel';
+import { AvatarDaPessoa } from '@/components/AvatarDaPessoa';
 import { Barras, type Fatia } from './graficos';
 import { ImplantacaoNoDiaADia } from './ImplantacaoNoDiaADia';
 
@@ -218,7 +219,8 @@ export function VisaoGeralDasTarefas() {
                 );
                 return (
                   <tr key={id}>
-                    <td className="py-2">{r.pessoa?.nome ?? 'Sem responsável'}</td>
+                    {/* O nome é a informação da linha: fica, com o avatar ao lado (I6). */}
+                    <td className="py-2">{r.pessoa ? <AvatarDaPessoa nome={r.pessoa.nome} pessoaId={r.pessoa.id} tamanho="p" mostrarNome /> : 'Sem responsável'}</td>
                     {celula(r.atrasadas, 'atrasada', true)}
                     {celula(r.emDia, 'emdia')}
                     {celula(r.semPrazo, 'sem_prazo')}

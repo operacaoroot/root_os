@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import type { TrabTarefaResumo } from '@mktos/shared';
+import { PilhaDeAvatares, type PessoaNoAvatar } from '@/components/PilhaDeAvatares';
 
 type Vinculo = Pick<TrabTarefaResumo, 'assigneeUserId' | 'assigneeUserName' | 'assigneeUserEmail' | 'assigneeUserIsActive'>;
 type Pessoa = { id: string; name: string; email: string; isActive: boolean };
@@ -12,6 +13,29 @@ export function ResponsavelDaTarefa({ tarefa }: { tarefa: Vinculo }) {
   if (!tarefa.assigneeUserId) return <span className="text-muted">Sem vínculo de pessoa</span>;
   if (!tarefa.assigneeUserName || !tarefa.assigneeUserEmail) return <span className="text-muted">Vínculo de pessoa indisponível</span>;
   return <span>{rotuloDaPessoa({ name: tarefa.assigneeUserName, email: tarefa.assigneeUserEmail })}{tarefa.assigneeUserIsActive === false ? ' (inativo)' : ''}</span>;
+}
+
+/*
+ * O RESPONSÁVEL NO CARTÃO E NA LINHA (produção 22B, I6): só o avatar, com o
+ * nome (e o e-mail, como no seletor) no balão. O principal vem primeiro; os
+ * outros responsáveis se sobrepõem, com "+N" passando de três. As frases de
+ * quando não há pessoa são as mesmas do texto de antes, agora no balão.
+ */
+export function AvataresDaTarefa({ tarefa, pessoas, testId }: {
+  tarefa: Vinculo & Pick<TrabTarefaResumo, 'outrosResponsaveisIds'>; pessoas: Pessoa[]; testId?: string;
+}) {
+  const lista: PessoaNoAvatar[] = [];
+  if (tarefa.assigneeUserId && tarefa.assigneeUserName) {
+    const email = tarefa.assigneeUserEmail ? rotuloDaPessoa({ name: tarefa.assigneeUserName, email: tarefa.assigneeUserEmail }) : tarefa.assigneeUserName;
+    lista.push({ id: tarefa.assigneeUserId, nome: tarefa.assigneeUserName, rotulo: `${email}${tarefa.assigneeUserIsActive === false ? ' (inativo)' : ''}` });
+  }
+  for (const id of tarefa.outrosResponsaveisIds ?? []) {
+    if (id === tarefa.assigneeUserId) continue;
+    const p = pessoas.find((x) => x.id === id);
+    lista.push(p ? { id, nome: p.name, rotulo: `${rotuloDaPessoa(p)}${p.isActive ? '' : ' (inativo)'}` } : { id, nome: '?', rotulo: 'Pessoa indisponível' });
+  }
+  const vazio = tarefa.assigneeUserId && !tarefa.assigneeUserName ? 'Vínculo de pessoa indisponível' : 'Sem vínculo de pessoa';
+  return <PilhaDeAvatares pessoas={lista} vazio={vazio} prefixo={lista.length ? 'Responsável' : undefined} testId={testId} />;
 }
 
 export function SeletorResponsavel({ tarefa, pessoas, disabled, onChange }: {

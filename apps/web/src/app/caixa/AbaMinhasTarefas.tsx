@@ -21,6 +21,8 @@ import { useTarefaNaUrl } from '@/lib/tarefa-na-url';
 import { useAuth } from '@/lib/auth';
 import { TarefaFlutuante } from '@/components/trabalho/TrabalhoView';
 import { BotaoDoMenuDaTarefa, alvoDoMenu, useMenuDaTarefaProprio } from '@/components/trabalho/MenuDaTarefa';
+import { AvatarDaPessoa } from '@/components/AvatarDaPessoa';
+import { PilhaDeAvatares, type PessoaNoAvatar } from '@/components/PilhaDeAvatares';
 import { CalendarioDeTarefas, prazoDoDia } from '@/components/trabalho/CalendarioDeTarefas';
 import {
   BOTAO_PEQUENO,
@@ -86,6 +88,15 @@ function lerColunas(): Set<Coluna> {
 
 /** Os filtros que vão à API; o de cliente filtra aqui, sobre o que chegou. */
 type Filtros = VistaMinhasTarefas['filtros'];
+
+/*
+ * Os responsáveis da linha (produção 22B, I6): as contas, com id para a foto;
+ * resposta antiga sem `responsaveis` cai no texto herdado (só as iniciais).
+ */
+function responsaveisDaLinha(t: Pick<CaixaMinhaTarefa, 'responsaveis' | 'responsavel'>): PessoaNoAvatar[] {
+  if (Array.isArray(t.responsaveis) && t.responsaveis.length) return t.responsaveis.map((p) => ({ id: p.id, nome: p.nome }));
+  return t.responsavel ? [{ nome: t.responsavel }] : [];
+}
 
 function caminho(f: Filtros): string {
   const q = new URLSearchParams();
@@ -527,7 +538,11 @@ export function AbaMinhasTarefas({ token }: { token: string }) {
       )}
       {ver('vencimento') && <td className="whitespace-nowrap px-3 py-2">{prazo(t)}</td>}
       {ver('prioridade') && <td className="px-3 py-2 capitalize text-muted">{t.prioridade}</td>}
-      {ver('responsaveis') && <td className="px-3 py-2 text-muted">{t.responsavel ?? 'ninguém'}</td>}
+      {ver('responsaveis') && (
+        <td className="px-3 py-2 text-muted">
+          <PilhaDeAvatares pessoas={responsaveisDaLinha(t)} prefixo="Responsável" vazio="ninguém" testId={`caixa-responsaveis-${t.id}`} />
+        </td>
+      )}
       {ver('criadaEm') && <td className="whitespace-nowrap px-3 py-2 text-muted">{dia(t.criadaEm)}</td>}
       {ver('comentarios') && <td className="px-3 py-2" onClick={(e) => e.stopPropagation()}>{botaoDeComentarios(t)}</td>}
     </tr>
@@ -803,7 +818,12 @@ export function AbaMinhasTarefas({ token }: { token: string }) {
                         {ver('responsaveis') && (
                           <>
                             <dt className="text-muted">Responsáveis</dt>
-                            <dd className="break-words">{t.responsavel ?? 'ninguém'}</dd>
+                            {/* No celular não há balão: o avatar vai com o nome ao lado. */}
+                            <dd className="flex min-w-0 flex-wrap gap-x-2 gap-y-1">
+                              {responsaveisDaLinha(t).length
+                                ? responsaveisDaLinha(t).map((p, i) => <AvatarDaPessoa key={`${p.id ?? p.nome}-${i}`} nome={p.nome} pessoaId={p.id ?? null} tamanho="p" mostrarNome />)
+                                : 'ninguém'}
+                            </dd>
                           </>
                         )}
                       </dl>
