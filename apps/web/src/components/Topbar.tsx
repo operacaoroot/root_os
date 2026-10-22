@@ -1,5 +1,6 @@
 'use client';
 
+import { AvatarDaPessoa } from '@/components/AvatarDaPessoa';
 import { useEffect, useRef, useState } from 'react';
 import { usePathname } from 'next/navigation';
 import { areaDoDestino, destinoDaRota, rotuloDoDestino } from './navegacao-modulos';
@@ -90,13 +91,6 @@ export function Topbar({ titulo, subtitulo }: { titulo?: string; subtitulo?: str
   const h1 = titulo ?? rotulo.titulo;
   const sub = subtitulo ?? rotulo.subtitulo;
 
-  const initials = (user?.name ?? '?')
-    .split(' ')
-    .map((s) => s[0])
-    .slice(0, 2)
-    .join('')
-    .toUpperCase();
-
   useEffect(() => {
     if (!BUSCA_ATIVA) return;
     function atalho(e: KeyboardEvent) {
@@ -166,9 +160,8 @@ export function Topbar({ titulo, subtitulo }: { titulo?: string; subtitulo?: str
             {user?.roles.join(', ')}
           </div>
         </div>
-        <div className="grid h-[26px] w-[26px] flex-none place-items-center rounded-root border border-brand/30 bg-brand/10 text-[10px] font-bold text-brand">
-          {initials}
-        </div>
+        {/* A foto do perfil (22B, I6); sem foto, as iniciais. O nome já está ao lado: o avatar não repete. */}
+        {user ? <AvatarDaPessoa nome={user.name ?? '?'} pessoaId={user.id} tamanho="m" decorativo /> : null}
         {/* A engrenagem ao lado da identificação (22B, I1): Perfil, Lixeira, Registro de ações, Configurações. */}
         <EngrenagemDoUsuario />
         <button

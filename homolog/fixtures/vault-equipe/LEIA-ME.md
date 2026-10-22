@@ -13,3 +13,5 @@ Na homologação: copiar o conteúdo desta pasta para a raiz do volume
 `rootos_final_vault` (montado em `/vault`), reindexar o vault e preencher o
 "Nome no vault" de três pessoas da casa com Alice, Bruno e Clara no `/perfil`.
 A suíte `apps/api/test/equipe-atribuicoes.test.ts` lê estes mesmos arquivos.
+
+A reindexação recusa vault sem rastreamento (503, "rastreamento não verificável"): o volume precisa de um `.git` com um commit destes mesmos arquivos (`git init`, `git -c core.autocrlf=false add .`, `git commit`). O `homolog/e2e/producao22b.mjs` faz isso sozinho no container da stack do seed, só num vault marcado `dublê: true`.

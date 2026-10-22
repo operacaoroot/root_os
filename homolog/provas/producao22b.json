@@ -1,0 +1,345 @@
+{
+  "inicio": "2026-10-22T03:12:26.071Z",
+  "web": "http://127.0.0.1:3031",
+  "passos": [
+    {
+      "n": 1,
+      "nome": "01 · botão de recolher à frente da logo: recolhe e volta; recolhido, o R e o botão lado a lado",
+      "ok": true,
+      "ms": 3545,
+      "detalhe": {
+        "larguraAberto": 252,
+        "larguraRecolhido": 64
+      }
+    },
+    {
+      "n": 2,
+      "nome": "02 · acordeão: clicar de novo na área aberta fecha; outra área abre a dela e fecha a anterior",
+      "ok": true,
+      "ms": 1814,
+      "detalhe": {
+        "outra": "dia",
+        "url": "/dia-a-dia"
+      }
+    },
+    {
+      "n": 3,
+      "nome": "03 · engrenagem com Perfil, Lixeira, Registro de ações e Configurações; a Lixeira abre /lixeira",
+      "ok": true,
+      "ms": 3851,
+      "detalhe": {
+        "perfil": "Perfil",
+        "lixeira": "Lixeira",
+        "rastro": "Registro de ações",
+        "configuracoes": "Configurações"
+      }
+    },
+    {
+      "n": 4,
+      "nome": "04 · árvore: \"⋯\" da lista só no hover/foco; o menu cabe na janela em 1440, 768 e 390; diz por que não exclui",
+      "ok": true,
+      "ms": 4606,
+      "detalhe": {
+        "opacidade": {
+          "semHover": 0,
+          "comHover": 1,
+          "comFoco": 1
+        },
+        "medidas": {
+          "390": {
+            "x": 98,
+            "y": 448,
+            "w": 272,
+            "h": 186,
+            "lado": "baixo"
+          },
+          "768": {
+            "x": 476,
+            "y": 358,
+            "w": 272,
+            "h": 186,
+            "lado": "baixo"
+          },
+          "1440": {
+            "x": 208,
+            "y": 613,
+            "w": 272,
+            "h": 186,
+            "lado": "cima"
+          }
+        },
+        "dica": "Excluir lista Tem 1 tarefa ativa: antes de sair, ela vai para outra lista ou é arquivada."
+      }
+    },
+    {
+      "n": 5,
+      "nome": "05 · ícone e cor na lista: grava, aparece na árvore e no título, apaga",
+      "ok": true,
+      "ms": 3081,
+      "detalhe": {
+        "icone": "🚀",
+        "cor": "good",
+        "classeNoTitulo": "inline-flex shrink-0 items-center leading-none text-good mr-"
+      }
+    },
+    {
+      "n": 6,
+      "nome": "06 · excluir pelo botão direito → some do quadro → Lixeira → Restaurar → volta à lista e ao status",
+      "ok": true,
+      "ms": 4244,
+      "detalhe": {
+        "linha": "e2e 22b excluir mviytp86 EXCLUÍDA excluída em 22/10/2026, 00:12 · por Admin Root de e2e 22b lista mviytp86 · etapa Em an",
+        "status": "Em andamento",
+        "aviso": "1 tarefa restaurada: voltaram para a lista e a etapa de onde saíram."
+      }
+    },
+    {
+      "n": 7,
+      "nome": "07 · árvore sem a pasta Clientes e sem Esteira, Onboarding de cliente, Execução; Implantação com cards",
+      "ok": true,
+      "ms": 2837,
+      "detalhe": {
+        "cardsNaImplantacao": 10,
+        "pastasDoComercial": [
+          "Clientes: Esteira de clientes, Onboarding de cliente, Execução"
+        ]
+      }
+    },
+    {
+      "n": 8,
+      "nome": "08 · botão direito: as 8 ações; Renomear, Duplicar e Mesclar; Shift+F10 abre o mesmo menu",
+      "ok": true,
+      "ms": 10097,
+      "detalhe": {
+        "duplicar": "Cópia criada: cópia de e2e 22b origem renomeada mviytp86.",
+        "mesclar": "Mesclada em e2e 22b destino mviytp86: 1 comentário(s), 0 anexo(s) e 0 subtarefa(s) foram junto. A original ficou arquivada.",
+        "notaNaOrigem": "Mesclada em [e2e 22b destino mviytp86](/trabalho?lista=5006a279-9449-4d3c-86d7-bac2f7a3a23a&tarefa=f7907ab9-6513-41c6-ad"
+      }
+    },
+    {
+      "n": 9,
+      "nome": "09 · modo centralizado: \"Abrir no centro\" em duas colunas, Esc fecha, a preferência fica, \"Voltar para o lado\"; 390 tela cheia",
+      "ok": true,
+      "ms": 3366,
+      "detalhe": {
+        "centro": {
+          "x": 130,
+          "w": 1180
+        },
+        "colunas390": {
+          "esq": 390,
+          "dir": 390
+        }
+      }
+    },
+    {
+      "n": 10,
+      "nome": "10 · Funil vivo em lista: larguras mínimas, arrastar a borda (persiste), ordenar (aria-sort), esconder coluna; 390 em cartões",
+      "ok": true,
+      "ms": 3993,
+      "detalhe": {
+        "larguras": {
+          "empresa": 220,
+          "contato": 160,
+          "etapa": 170,
+          "responsavel": 112,
+          "produto": 150,
+          "valor": 128,
+          "dias": 112,
+          "proxima": 280,
+          "pendencias": 220
+        },
+        "contato": {
+          "antes": 160,
+          "depois": 240,
+          "recarregada": 240
+        },
+        "sort": [
+          "none",
+          "ascending",
+          "descending"
+        ]
+      }
+    },
+    {
+      "n": 11,
+      "nome": "11 · Propostas: a primeira coluna é o lead, sem origem, \"Aparelhos\" antes da lista; linha abre o lead; sem lead → Vincular",
+      "ok": true,
+      "ms": 2563,
+      "detalhe": {
+        "cabecalhos": [
+          "Lead",
+          "Situação",
+          "Aberturas",
+          "Pessoas",
+          "Reações",
+          "Última atividade",
+          "Detalhe da proposta"
+        ],
+        "comLead": 24,
+        "semLead": 0,
+        "aparelhos": {
+          "antesDaLista": true,
+          "temPainelAntes": true,
+          "yA": 332.71875,
+          "yL": 481.75
+        },
+        "abriu": "/comercial/lead/871aa70f-12bb-5549-b6d6-ba071dc05f88",
+        "vinculo": null
+      }
+    },
+    {
+      "n": 12,
+      "nome": "12 · perfil: enviar a foto (PNG 64×64), ela aparece no perfil e na Equipe; a data de nascimento grava",
+      "ok": true,
+      "ms": 4561,
+      "detalhe": {
+        "foto": "jpeg",
+        "aniversario": "aniversário 9 de março",
+        "avatarNoTopo": false,
+        "avataresNoQuadro": 0
+      }
+    },
+    {
+      "n": 13,
+      "nome": "13 · Equipe: vault-dublê reindexado; \"Nome no vault\" de três pessoas; o que conduz, dona e substituta, com link ao Contexto",
+      "ok": true,
+      "ms": 5781,
+      "detalhe": {
+        "reindex": 12,
+        "socios": [
+          "Alice",
+          "Bruno",
+          "Clara"
+        ],
+        "vistos": {
+          "Alice": {
+            "dona": [
+              "Comercial",
+              "Governança",
+              "Implantação"
+            ],
+            "substituta": [
+              "Produto"
+            ],
+            "links": 5
+          },
+          "Bruno": {
+            "dona": [
+              "Conteúdo",
+              "Governança",
+              "Produto"
+            ],
+            "substituta": [
+              "Comercial",
+              "Financeiro"
+            ],
+            "links": 6
+          },
+          "Clara": {
+            "dona": [
+              "Financeiro",
+              "Governança"
+            ],
+            "substituta": [
+              "Conteúdo",
+              "Implantação"
+            ],
+            "links": 5
+          }
+        }
+      }
+    },
+    {
+      "n": 14,
+      "nome": "14 · Integrações: sem Asana, Extrato OFX e Zapier; Granola e Evolution no mesmo cartão, \"Configurar\" abre as ações",
+      "ok": true,
+      "ms": 3019,
+      "detalhe": {
+        "cartoes": 17,
+        "largura": 372,
+        "gavetas": {
+          "granola": "A nota que cai na pasta do Granola vai pelo Zapier até o OS, que grava a reunião na ficha do cliente",
+          "evolution": "Provedor do comercial agora: simulado (nada sai do sistema). O envio ao lead continua pedindo a assi"
+        }
+      }
+    }
+  ],
+  "screenshots": [
+    "producao22b-menu-aberto-escuro.png",
+    "producao22b-menu-recolhido-escuro.png",
+    "producao22b-menu-aberto-claro.png",
+    "producao22b-menu-390.png",
+    "producao22b-acordeao-fechado-escuro.png",
+    "producao22b-acordeao-outra-escuro.png",
+    "producao22b-acordeao-fechado-claro.png",
+    "producao22b-engrenagem-escuro.png",
+    "producao22b-lixeira-escuro.png",
+    "producao22b-engrenagem-claro.png",
+    "producao22b-engrenagem-390.png",
+    "producao22b-lixeira-claro.png",
+    "producao22b-lixeira-390.png",
+    "producao22b-arvore-hover-escuro.png",
+    "producao22b-arvore-menu-1440-escuro.png",
+    "producao22b-arvore-menu-768-escuro.png",
+    "producao22b-arvore-menu-390.png",
+    "producao22b-arvore-menu-claro.png",
+    "producao22b-icone-dialogo-escuro.png",
+    "producao22b-icone-gravado-escuro.png",
+    "producao22b-icone-gravado-claro.png",
+    "producao22b-icone-gravado-390.png",
+    "producao22b-excluir-confirmar-escuro.png",
+    "producao22b-lixeira-com-tarefa-escuro.png",
+    "producao22b-lixeira-com-tarefa-claro.png",
+    "producao22b-lixeira-com-tarefa-390.png",
+    "producao22b-restaurada-no-quadro-escuro.png",
+    "producao22b-arvore-sem-clientes-escuro.png",
+    "producao22b-implantacao-escuro.png",
+    "producao22b-implantacao-claro.png",
+    "producao22b-implantacao-390.png",
+    "producao22b-menu-da-tarefa-escuro.png",
+    "producao22b-menu-mesclar-escuro.png",
+    "producao22b-menu-shift-f10-escuro.png",
+    "producao22b-menu-da-tarefa-claro.png",
+    "producao22b-menu-da-tarefa-390.png",
+    "producao22b-tarefa-centro-escuro.png",
+    "producao22b-tarefa-lado-escuro.png",
+    "producao22b-tarefa-centro-claro.png",
+    "producao22b-tarefa-centro-390.png",
+    "producao22b-funil-lista-escuro.png",
+    "producao22b-funil-lista-ordenada-escuro.png",
+    "producao22b-funil-lista-colunas-escuro.png",
+    "producao22b-funil-lista-claro.png",
+    "producao22b-funil-lista-390.png",
+    "producao22b-propostas-escuro.png",
+    "producao22b-propostas-claro.png",
+    "producao22b-propostas-390.png",
+    "producao22b-propostas-lead-aberto-escuro.png",
+    "producao22b-perfil-escuro.png",
+    "producao22b-perfil-de-outra-pessoa-escuro.png",
+    "producao22b-equipe-avatar-escuro.png",
+    "producao22b-perfil-claro.png",
+    "producao22b-perfil-390.png",
+    "producao22b-perfil-nome-no-vault-escuro.png",
+    "producao22b-equipe-vault-escuro.png",
+    "producao22b-equipe-claro.png",
+    "producao22b-equipe-390.png",
+    "producao22b-equipe-link-contexto-escuro.png",
+    "producao22b-conexoes-escuro.png",
+    "producao22b-conexoes-granola-configurar-escuro.png",
+    "producao22b-conexoes-evolution-configurar-escuro.png",
+    "producao22b-conexoes-claro.png",
+    "producao22b-conexoes-390.png"
+  ],
+  "avisos": [
+    "a stack não tem proposta sem lead: Vincular/Criar lead não foi exercitado na tela",
+    "o topo ainda mostra as iniciais, não a foto (a troca por avatar nas outras telas entra numa imagem posterior)",
+    "os cartões da Implantação ainda não mostram o responsável por avatar"
+  ],
+  "defeitos": [],
+  "ok": true,
+  "lista": "5006a279",
+  "preparoDoVault": "o vault-dublê já tinha .git",
+  "fim": "2026-10-22T03:13:23.825Z",
+  "duracaoMs": 57754
+}
