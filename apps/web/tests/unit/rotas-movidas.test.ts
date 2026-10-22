@@ -8,11 +8,12 @@ import { comQuery, destinoDaAbaRodada, destinoDeTodas, destinoDoSimulador } from
 const ler = (...p: string[]) => readFileSync(join(__dirname, '..', '..', 'src', ...p), 'utf8');
 
 describe('rotas movidas', () => {
-  it('/comercial/simulador vai para /whatsapp com a mesma query', () => {
-    expect(destinoDoSimulador({})).toBe('/whatsapp');
-    expect(destinoDoSimulador({ conversa: 'lead-1' })).toBe('/whatsapp?conversa=lead-1');
-    expect(destinoDoSimulador({ conversa: 'lead-1', lead: 'lead-1', aba: 'resumo' })).toBe('/whatsapp?conversa=lead-1&lead=lead-1&aba=resumo');
-    expect(destinoDoSimulador({ x: ['1', '2'], vazio: undefined })).toBe('/whatsapp?x=1&x=2');
+  // Produção 22C (W2): /whatsapp virou a caixa; os celulares moram em /whatsapp/simulador.
+  it('/comercial/simulador vai para /whatsapp/simulador com a mesma query', () => {
+    expect(destinoDoSimulador({})).toBe('/whatsapp/simulador');
+    expect(destinoDoSimulador({ conversa: 'lead-1' })).toBe('/whatsapp/simulador?conversa=lead-1');
+    expect(destinoDoSimulador({ conversa: 'lead-1', lead: 'lead-1', aba: 'resumo' })).toBe('/whatsapp/simulador?conversa=lead-1&lead=lead-1&aba=resumo');
+    expect(destinoDoSimulador({ x: ['1', '2'], vazio: undefined })).toBe('/whatsapp/simulador?x=1&x=2');
   });
 
   // 20/10/2026 (noite, pedido do Rodrigo): o Todas é o chip de Tarefas.
@@ -41,10 +42,11 @@ describe('rotas movidas', () => {
     expect(implantacao).toMatch(/<TrabalhoView modo="implantacao" \/>/);
   });
 
-  it('a área WhatsApp: título sem "simulador" e o texto de apoio do que a tela é hoje', () => {
-    const pagina = ler('app', 'whatsapp', 'page.tsx');
+  it('a área WhatsApp: a caixa em /whatsapp e os celulares, inteiros, em /whatsapp/simulador', () => {
+    const pagina = ler('app', 'whatsapp', 'simulador', 'page.tsx');
     expect(pagina).toContain('O celular do lead e o da mesa, no provedor configurado.');
     expect(pagina).not.toMatch(/export default function Simulador/);
+    expect(ler('app', 'whatsapp', 'page.tsx')).toMatch(/<CaixaDoWhatsapp \/>/);
     // A rodada da semana no Comercial é a tela de /operacao, com a mesma trava.
     expect(ler('app', 'comercial', 'rodada', 'page.tsx')).toMatch(/import Operacao from '\.\.\/\.\.\/operacao\/page'/);
   });

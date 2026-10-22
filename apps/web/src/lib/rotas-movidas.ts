@@ -16,9 +16,12 @@ export function comQuery(base: string, query: Query, tirar: readonly string[] = 
   return q ? `${base}?${q}` : base;
 }
 
-/** `/comercial/simulador` virou a área WhatsApp. */
+/**
+ * `/comercial/simulador` virou a área WhatsApp (20/10/2026) e, desde a produção 22C
+ * (22/10/2026), os celulares moram em `/whatsapp/simulador`: `/whatsapp` é a caixa.
+ */
 export function destinoDoSimulador(query: Query): string {
-  return comQuery('/whatsapp', query);
+  return comQuery('/whatsapp/simulador', query);
 }
 
 /**
