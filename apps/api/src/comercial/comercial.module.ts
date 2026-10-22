@@ -48,6 +48,8 @@ import { FechadoForaService } from './fechado-fora.service';
 // Produção 22 (M2): o contrato importado do CRM antigo (o PDF, as parcelas à mão e a régua).
 import { ContratoImportadoController } from './contrato-importado.controller';
 import { ContratoImportadoService } from './contrato-importado.service';
+import { PropostaDoLeadController } from './proposta-do-lead.controller';
+import { PropostaDoLeadService } from './proposta-do-lead.service';
 import { FechamentoService } from './fechamento.service';
 import { OnboardingAntecipadoController } from './onboarding-antecipado.controller';
 import { OnboardingAntecipadoService } from './onboarding-antecipado.service';
@@ -85,7 +87,7 @@ import { TriagemDoWhatsappService } from './triagem-do-whatsapp/triagem-do-whats
  */
 @Module({
   imports: [TenantsModule, AuthModule, LeadsModule, OnboardingModule, FinanceModule, RoutinesModule, ZapsignModule, MemoryModule, WorkModule],
-  controllers: [ComercialController, SalaController, SimuladorController, MensagensController, DinheiroController, WebhooksDoDinheiroController, InteligenciaController, FechadoForaController, ContratoImportadoController, OnboardingAntecipadoController, IntegracaoDaEvolutionController, SalaEstadoController, TarefasDoComercialController, ContratoDaRootController, FormularioDoSiteController],
+  controllers: [ComercialController, SalaController, SimuladorController, MensagensController, DinheiroController, WebhooksDoDinheiroController, InteligenciaController, FechadoForaController, ContratoImportadoController, PropostaDoLeadController, OnboardingAntecipadoController, IntegracaoDaEvolutionController, SalaEstadoController, TarefasDoComercialController, ContratoDaRootController, FormularioDoSiteController],
   providers: [
     // --- orquestrador: o fio (único caminho de escrita de fato) e o registro de reações ---
     ReacoesRegistry,
@@ -125,6 +127,7 @@ import { TriagemDoWhatsappService } from './triagem-do-whatsapp/triagem-do-whats
     FechadoForaService,
     // --- produção 22, M2 (o contrato importado: o PDF, as parcelas à mão e a régua, fato passado) ---
     ContratoImportadoService,
+    PropostaDoLeadService,
     // --- ajustes da versão final A2 (iniciar o onboarding antes do negócio fechado: o mesmo card do fechamento) ---
     OnboardingAntecipadoService,
     // --- rodada de produção 1 (o importador do CRM antigo: só pelo script `importar-crm`, sem rota) ---
