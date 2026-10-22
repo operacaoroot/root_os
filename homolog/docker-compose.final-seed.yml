@@ -147,8 +147,13 @@ services:
       ANTHROPIC_API_KEY: ""
       OPENAI_API_KEY: ""
       APIFY_TOKEN: ""
-      EVOLUTION_URL: ""
-      EVOLUTION_API_KEY: ""
+      # Produção 22C: a reserva da casa aponta para o dublê da Evolution (nome sem ponto, na rede
+      # da stack). O cofre desta stack não grava: a ENCRYPTION_KEY dela tem 48 bytes desde a montagem
+      # (e trocá-la quebraria o link cifrado das 44 salas da semente), então a credencial da casa vem
+      # do ambiente, como a regra do conector deixa para a empresa da casa.
+      EVOLUTION_URL: http://evolution_duble:8080
+      EVOLUTION_API_KEY: ${EVOLUTION_DUBLE_CHAVE:-chave-do-duble-evolution}
+      EVOLUTION_INSTANCIA: ${EVOLUTION_DUBLE_INSTANCIA:-rootos}
       YOUTUBE_AUDITORIA: pendente
       QUADRO_DE_CUSTOS_EXEMPLO: /app/homolog/fixtures/quadro-de-custos-exemplo.json
       ASAAS_API_KEY: $$aact_hmlg_dublê

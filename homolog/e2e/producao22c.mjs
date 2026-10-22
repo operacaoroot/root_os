@@ -281,8 +281,14 @@ async function main() {
     const saude = await duble('GET', '/');
     conferir(saude.segredo === 'configurado', 'o dublê está sem CANAL_APROVACAO_SEGREDO: ponha os dois segredos do canal no .env.final-seed e recrie api e evolution_duble');
     await duble('POST', '/simular/reiniciar', {});
-    const conexao = await api('PUT', '/integrations/evolution/credencial', { url: URL_DO_DUBLE_NA_REDE, chave: CHAVE_DO_DUBLE, instancia: INSTANCIA }, tok);
-    conferir(conexao.origem === 'cofre', `a credencial não ficou no cofre: ${conexao.origem}`);
+    // A 3031 não grava no cofre (a ENCRYPTION_KEY dela tem 48 bytes desde a montagem): a casa usa a
+    // reserva do ambiente (EVOLUTION_* no compose, apontando para o dublê). Com o cofre bom, vale o PUT.
+    let conexao = await api('GET', '/integrations/evolution/conexao', undefined, tok);
+    if (conexao.origem !== 'ambiente') {
+      conexao = await api('PUT', '/integrations/evolution/credencial', { url: URL_DO_DUBLE_NA_REDE, chave: CHAVE_DO_DUBLE, instancia: INSTANCIA }, tok);
+    }
+    conferir(['cofre', 'ambiente'].includes(conexao.origem), `a credencial da Evolution não está configurada: ${conexao.origem}`);
+    conferir(conexao.url === URL_DO_DUBLE_NA_REDE && conexao.instancia === INSTANCIA, 'a credencial da casa não aponta para o dublê');
     const estado = await api('GET', '/integrations/evolution/estado', undefined, tok);
     conferir(JSON.stringify(estado).includes('open'), `a instância do dublê não abriu: ${JSON.stringify(estado).slice(0, 200)}`);
     const seg = await api('GET', '/integrations/evolution/segredo-do-webhook', undefined, tok);
@@ -407,7 +413,8 @@ async function main() {
     await abrirCaixa(p);
     const item = await abrirConversa(p, C.contato.nome);
     const hist = p.getByTestId('caixa-historico');
-    conferir((await hist.innerText()).includes(texto('1:1')), 'o histórico não mostra a mensagem simulada');
+    // O contêiner do histórico aparece antes de a conversa carregar: espera o texto.
+    conferir(await esperar(async () => (await hist.innerText()).includes(texto('1:1')), 15_000, 500), 'o histórico não mostra a mensagem simulada');
     const lida = await esperar(async () => {
       const l = await listaPelaApi(tok);
       if (l) return l.conversas.find((c) => c.nome === C.contato.nome)?.naoLidas === 0;
@@ -516,8 +523,8 @@ async function main() {
   // ---------------- 11 · ficha do cliente ----------------
   await passo('11 · o bloco WhatsApp da ficha do cliente mostra o grupo ligado e as últimas mensagens', async () => {
     await abrirConversa(p, C.cliente.nome);
-    const link = p.getByTestId('whats-vinculo').locator('a').first();
-    conferir(await link.isVisible().catch(() => false), 'o cabeçalho do vínculo não tem link para a ficha do cliente');
+    const link = p.getByTestId('whats-vinculo-link');
+    conferir(await link.waitFor({ timeout: 15_000 }).then(() => true, () => false), 'o cabeçalho do vínculo não tem link para a ficha do cliente');
     await link.click();
     const ficha = p.getByRole('dialog', { name: 'Ficha do cliente' });
     const naFicha = await esperar(async () => {
@@ -558,7 +565,7 @@ async function main() {
     const n = await p.locator('[data-testid^="caixa-conversa-"]').filter({ hasText: C.lid.nome }).count();
     conferir(n === 1, `o contato @lid aparece ${n} vezes na lista`);
     await abrirConversa(p, C.lid.nome);
-    conferir((await p.getByTestId('caixa-historico').innerText()).includes(texto('lid')), 'o histórico do @lid não mostra a mensagem do webhook');
+    conferir(await esperar(async () => (await p.getByTestId('caixa-historico').innerText()).includes(texto('lid')), 15_000, 500), 'o histórico do @lid não mostra a mensagem do webhook');
     // O número real (fictício) do @lid, em qualquer formatação: só os dígitos da tela.
     const digitos = (await p.locator('main').innerText()).replace(/\D/g, '');
     if (!digitos.includes(C.lid.numero.slice(2))) aviso('a conversa @lid não mostra o número real na tela (conferir o cabeçalho)');

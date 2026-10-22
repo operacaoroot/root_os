@@ -1,0 +1,233 @@
+{
+  "inicio": "2026-10-22T05:50:10.975Z",
+  "web": "http://127.0.0.1:3031",
+  "passos": [
+    {
+      "n": 1,
+      "nome": "00 · o dublê está de pé com o segredo; a credencial da Evolution da root aponta para ele e a instância abre",
+      "ok": true,
+      "ms": 44,
+      "detalhe": {
+        "org": "4798178d",
+        "origem": "ambiente",
+        "daCasa": true
+      }
+    },
+    {
+      "n": 2,
+      "nome": "01 · \"Rodar agora\" da rotina whatsapp.sincronizar traz as 7 conversas do dublê para a caixa",
+      "ok": true,
+      "ms": 1178,
+      "detalhe": {
+        "rotina": "3a704f74",
+        "execucao": "ok",
+        "conversas": 7
+      }
+    },
+    {
+      "n": 3,
+      "nome": "02 · o webhook grava 1:1, grupo (participante @lid) e o 1:1 @lid: as mensagens simuladas aparecem na caixa",
+      "ok": true,
+      "ms": 2705,
+      "detalhe": {
+        "entregas": [
+          "contato:201",
+          "cliente:201",
+          "lid:201",
+          "equipe:201",
+          "sem-prefixo:201"
+        ]
+      }
+    },
+    {
+      "n": 4,
+      "nome": "03 · a caixa: chips Todas · Leads · Clientes · Grupos · Sem vínculo · Equipe com contagem que bate com a lista; busca por nome e por texto",
+      "ok": true,
+      "ms": 7235,
+      "detalhe": {
+        "todas": {
+          "chip": 7,
+          "lista": 7
+        },
+        "leads": {
+          "chip": 1,
+          "lista": 1
+        },
+        "clientes": {
+          "chip": 0,
+          "lista": 0
+        },
+        "grupos": {
+          "chip": 4,
+          "lista": 4
+        },
+        "sem_vinculo": {
+          "chip": 5,
+          "lista": 5
+        },
+        "equipe": {
+          "chip": 1,
+          "lista": 1
+        }
+      }
+    },
+    {
+      "n": 5,
+      "nome": "04 · o Dia a dia: cartão WhatsApp com as não lidas por Leads, Clientes e Sem vínculo, a chamada para ligar e a bolha no menu",
+      "ok": true,
+      "ms": 8029,
+      "detalhe": {
+        "semVinculo": 4,
+        "bolha": "5"
+      }
+    },
+    {
+      "n": 6,
+      "nome": "05 · abrir a conversa marca lida: o histórico mostra a mensagem e a bolha da conversa some",
+      "ok": true,
+      "ms": 1255
+    },
+    {
+      "n": 7,
+      "nome": "06 · responder 1:1: o dublê recebe pelo sendText e o balão diz quem enviou",
+      "ok": true,
+      "ms": 1186,
+      "detalhe": {
+        "para": "5532900000001"
+      }
+    },
+    {
+      "n": 8,
+      "nome": "07 · responder no grupo: o dublê recebe com o JID do grupo",
+      "ok": true,
+      "ms": 1196
+    },
+    {
+      "n": 9,
+      "nome": "08 · vincular o grupo \"ROOT | Rede Pão Bom\" ao cliente pela sugestão, num clique",
+      "ok": true,
+      "ms": 483,
+      "detalhe": {
+        "refeito": false
+      }
+    },
+    {
+      "n": 10,
+      "nome": "09 · vincular o 1:1 \"Contato Exemplo\" à mão ao lead \"Studio Lume\" pela busca",
+      "ok": true,
+      "ms": 1178
+    },
+    {
+      "n": 11,
+      "nome": "10 · a aba WhatsApp do painel do lead mostra a conversa ligada, com link para a caixa",
+      "ok": true,
+      "ms": 2250,
+      "detalhe": {
+        "lead": "e08a38b1"
+      }
+    },
+    {
+      "n": 12,
+      "nome": "11 · o bloco WhatsApp da ficha do cliente mostra o grupo ligado e as últimas mensagens",
+      "ok": true,
+      "ms": 1809
+    },
+    {
+      "n": 13,
+      "nome": "12 · arquivar a conversa: some de Todas, aparece em Arquivadas; desarquivar volta",
+      "ok": true,
+      "ms": 1822
+    },
+    {
+      "n": 14,
+      "nome": "13 · o 1:1 no modo @lid aparece como uma conversa só, com o número real",
+      "ok": true,
+      "ms": 1208
+    },
+    {
+      "n": 15,
+      "nome": "14 · o grupo da equipe fica no chip Equipe, sem vínculo de cliente e fora de Sem vínculo",
+      "ok": true,
+      "ms": 989
+    },
+    {
+      "n": 16,
+      "nome": "15 · o simulador de celulares mudou para /whatsapp/simulador e continua de pé",
+      "ok": true,
+      "ms": 2757
+    },
+    {
+      "n": 17,
+      "nome": "16 · a caixa a 390 px: lista e conversa em telas separadas, com Voltar, sem rolagem lateral",
+      "ok": true,
+      "ms": 1454
+    },
+    {
+      "n": 18,
+      "nome": "17 · depois de ler, o Dia a dia e a bolha descem (o resumo é medido de novo em até 30 s)",
+      "ok": true,
+      "ms": 731,
+      "detalhe": {
+        "antes": 4,
+        "depois": 0
+      }
+    }
+  ],
+  "screenshots": [
+    "producao22c-caixa-sincronizada-escuro.png",
+    "producao22c-caixa-mensagens-novas-escuro.png",
+    "producao22c-caixa-filtro-equipe-escuro.png",
+    "producao22c-caixa-escuro.png",
+    "producao22c-caixa-claro.png",
+    "producao22c-caixa-390.png",
+    "producao22c-dia-a-dia-whatsapp-escuro.png",
+    "producao22c-dia-a-dia-claro.png",
+    "producao22c-dia-a-dia-390.png",
+    "producao22c-conversa-1a1-escuro.png",
+    "producao22c-resposta-1a1-escuro.png",
+    "producao22c-resposta-grupo-escuro.png",
+    "producao22c-vinculo-sugestao-escuro.png",
+    "producao22c-vinculo-cliente-escuro.png",
+    "producao22c-vinculo-busca-escuro.png",
+    "producao22c-lead-aba-whatsapp-escuro.png",
+    "producao22c-lead-aba-whatsapp-claro.png",
+    "producao22c-lead-aba-whatsapp-390.png",
+    "producao22c-ficha-cliente-whatsapp-escuro.png",
+    "producao22c-caixa-arquivadas-escuro.png",
+    "producao22c-conversa-lid-escuro.png",
+    "producao22c-simulador-escuro.png",
+    "producao22c-simulador-claro.png",
+    "producao22c-simulador-390.png",
+    "producao22c-caixa-lista-390.png",
+    "producao22c-caixa-conversa-390.png",
+    "producao22c-caixa-conversa-claro.png",
+    "producao22c-dia-a-dia-depois-escuro.png"
+  ],
+  "avisos": [],
+  "ok": true,
+  "carimbo": "mvj4gkef",
+  "webhooks": [
+    {
+      "status": 201,
+      "erro": null
+    },
+    {
+      "status": 201,
+      "erro": null
+    },
+    {
+      "status": 201,
+      "erro": null
+    },
+    {
+      "status": 201,
+      "erro": null
+    },
+    {
+      "status": 201,
+      "erro": null
+    }
+  ],
+  "fim": "2026-10-22T05:50:48.831Z",
+  "duracaoMs": 37856
+}
