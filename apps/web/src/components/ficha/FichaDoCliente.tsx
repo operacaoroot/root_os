@@ -21,6 +21,7 @@ import {
   type TrabEstrutura,
   type TrabListaDto,
   type TrabTarefaDetalhe,
+  listasComAsDoComercial,
 } from '@mktos/shared';
 import { apiDelete, apiGet, apiPatch, apiPost } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
@@ -55,7 +56,8 @@ function paraEditar(f: TrabCampoDto, v: Valor | undefined): string {
 }
 
 function acharLista(e: TrabEstrutura, listId: string): TrabListaDto | undefined {
-  return [...e.folders.flatMap((f) => f.lists), ...e.listasSoltas].find((l) => l.id === listId);
+  // A lista da implantação mora em pastasDoComercial desde a 22B (I3): achar pelo id olha as duas.
+  return listasComAsDoComercial(e).find((l) => l.id === listId);
 }
 
 interface Evento {

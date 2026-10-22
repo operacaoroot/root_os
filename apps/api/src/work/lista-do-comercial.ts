@@ -1,5 +1,6 @@
 import { Prisma, WorkListaNatureza, WorkStatusType, type PrismaClient } from '@prisma/client';
 import { AREAS_PADRAO } from '@mktos/shared';
+import { listaForaDoComercial } from './pasta-do-comercial';
 
 /*
  * A LISTA DO COMERCIAL (adendo da rodada de produção 1, 21/10/2026).
@@ -24,9 +25,13 @@ const STATUS_DA_LISTA_DO_COMERCIAL = [
   { name: 'Feito', type: WorkStatusType.closed, color: '#30a46c' },
 ];
 
-/** O recorte que tira a lista do comercial (o `externalId` nulo tem ramo próprio: NULL <> x é desconhecido). */
+/**
+ * O recorte que tira da árvore o que é do Comercial: a lista do comercial (o `externalId`
+ * nulo tem ramo próprio: NULL <> x é desconhecido) e, desde a produção 22B (I3), a pasta
+ * Clientes com as listas dela (`pasta-do-comercial.ts`).
+ */
 export function foraDaArvore(): Prisma.WorkListWhereInput {
-  return { OR: [{ externalId: null }, { externalId: { not: LISTA_DO_COMERCIAL } }] };
+  return { AND: [{ OR: [{ externalId: null }, { externalId: { not: LISTA_DO_COMERCIAL } }] }, listaForaDoComercial()] };
 }
 
 export function ehListaDoComercial(l: { externalId: string | null }): boolean {

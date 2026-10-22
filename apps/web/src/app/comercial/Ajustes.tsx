@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
-import type { TrabCampoDto, TrabEstrutura } from '@mktos/shared';
+import { listasComAsDoComercial, type TrabCampoDto, type TrabEstrutura } from '@mktos/shared';
 import { apiDelete, apiGet, apiPatch, apiPost } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 
@@ -28,7 +28,7 @@ export function Ajustes({ listaId }: { listaId: string }) {
     if (!token) return;
     try {
       const e = await apiGet<TrabEstrutura>('/trabalho/estrutura', token);
-      const l = [...e.folders.flatMap((f) => f.lists), ...e.listasSoltas].find((x) => x.id === listaId);
+      const l = listasComAsDoComercial(e).find((x) => x.id === listaId);
       setCampos((l?.fields ?? []).filter((f) => f.type === 'drop_down').sort((a, b) => posicao(a.name) - posicao(b.name)));
     } catch (e) {
       setErro((e as Error).message);

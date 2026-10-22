@@ -7,6 +7,7 @@ import { useEhPlataforma } from '@/lib/plataforma';
 import { Search, LogOut } from 'lucide-react';
 import { useAuth } from '@/lib/auth';
 import { Paleta } from './Paleta';
+import { EngrenagemDoUsuario } from './EngrenagemDoUsuario';
 
 /*
  * O ⌘K estava atrás deste booleano desde a Fase 5, com o campo desabilitado e
@@ -168,6 +169,8 @@ export function Topbar({ titulo, subtitulo }: { titulo?: string; subtitulo?: str
         <div className="grid h-[26px] w-[26px] flex-none place-items-center rounded-root border border-brand/30 bg-brand/10 text-[10px] font-bold text-brand">
           {initials}
         </div>
+        {/* A engrenagem ao lado da identificação (22B, I1): Perfil, Lixeira, Registro de ações, Configurações. */}
+        <EngrenagemDoUsuario />
         <button
           type="button"
           onClick={logout}

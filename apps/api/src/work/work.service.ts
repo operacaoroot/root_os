@@ -9,7 +9,7 @@ import {
   nomeParaConfirmar, chaveDoNomeNoNivel, etapaNoDestino,
   TRAB_NOME_DE_PASTA_REPETIDO, TRAB_NOME_DE_LISTA_REPETIDO, TRAB_PASTA_DA_IMPLANTACAO_PROTEGIDA, TRAB_ORDEM_FORA_DO_NIVEL,
   TRAB_LISTA_VOLTOU_SEM_PASTA, TRAB_PASTA_VOLTOU_AO_TOPO, IMPORTACAO_CRM_MARCA,
-  motivoParaNaoMoverPasta, destinoDoValorDoCampo,
+  motivoParaNaoMoverPasta, destinoDoValorDoCampo, TRAB_DO_COMERCIAL,
 } from '@mktos/shared';
 import type {
   TrabEstrutura, TrabListaDto, TrabCampoDto, TrabTarefaLista, TrabTarefaResumo,
@@ -32,6 +32,8 @@ import { SEGMENTO_SEM_PASTA, pastaComSubpastas, type WorkTaskQuery } from './wor
 import { exigirAcessoAtual } from '../memory/acesso-memoria';
 import { listaVisivel, pastasEscondidas, tarefaDeListaVisivel } from './arquivadas';
 import { ehListaDoComercial, foraDaArvore } from './lista-do-comercial';
+import { PASTA_DO_TRABALHO, ehDoComercial, idsDasPastasDoComercial, listaForaDoComercial, recusarPastaDoComercial, tarefaForaDoComercial } from './pasta-do-comercial';
+import { aparenciaDoNo, mudancaDeAparencia } from './aparencia-do-trabalho';
 import { activityCursor, activityDto, activityNames, activityPoint, activityWhere, parseActivityQuery } from './work-activity-page';
 
 // Módulo TRABALHO: gestão de tarefas estilo ClickUp, nativa do mkt-os.
@@ -52,7 +54,7 @@ import { activityCursor, activityDto, activityNames, activityPoint, activityWher
  */
 const TASK_INCLUDE = {
   status: true,
-  list: { select: { name: true } },
+  list: { select: { name: true, icone: true, cor: true } },
   assigneeUser: { select: { id: true, name: true, email: true, isActive: true } },
   tags: true,
   values: { include: { field: true, option: true } },
@@ -179,13 +181,17 @@ export class WorkService {
     const porStatus = new Map(byStatus.map((c) => [c.statusId, c._count]));
     // Pasta e lista arquivadas saem da árvore (21/10/2026); as tarefas delas ficam no banco.
     const escondidas = pastasEscondidas(folders);
-    const pastasVivas = folders.filter((fo) => !escondidas.has(fo.id));
+    // A pasta Clientes e as listas dela são do Comercial (I3, 22/10/2026): vêm à parte, fora da árvore.
+    const doComercial = idsDasPastasDoComercial(folders);
+    const pastasVivas = folders.filter((fo) => !escondidas.has(fo.id) && !doComercial.has(fo.id));
     // A lista do comercial mora no Funil vivo, não na árvore (adendo de 21/10/2026).
-    const listasVivas = lists.filter((l) => !l.arquivadaEm && !(l.folderId && escondidas.has(l.folderId)) && !ehListaDoComercial(l));
+    const listasVivas = lists.filter((l) => !l.arquivadaEm && !(l.folderId && escondidas.has(l.folderId)) && !ehListaDoComercial(l) && !ehDoComercial(l, doComercial));
+    const listasDoComercial = lists.filter((l) => !l.arquivadaEm && !!l.folderId && doComercial.has(l.folderId) && !escondidas.has(l.folderId));
 
     const toLista = (l: (typeof lists)[number]): TrabListaDto => ({
       id: l.id, name: l.name, order: l.order, externalId: l.externalId, spaceId: l.spaceId,
       natureza: l.natureza,
+      ...aparenciaDoNo(l),
       total: porLista.get(l.id) ?? 0,
       statuses: l.statuses.map((s) => ({
         id: s.id, name: s.name, type: s.type, color: s.color, order: s.order,
@@ -198,10 +204,15 @@ export class WorkService {
       espacos: spaces.map((s) => ({ id: s.id, name: s.name, order: s.order, externalId: s.externalId })),
       folders: pastasVivas.map((fo) => ({
         id: fo.id, name: fo.name, order: fo.order,
-        spaceId: fo.spaceId, parentId: fo.parentId, externalId: fo.externalId,
+        spaceId: fo.spaceId, parentId: fo.parentId, externalId: fo.externalId, ...aparenciaDoNo(fo),
         lists: listasVivas.filter((l) => l.folderId === fo.id).map(toLista),
       })),
       listasSoltas: listasVivas.filter((l) => !l.folderId).map(toLista),
+      pastasDoComercial: folders.filter((fo) => doComercial.has(fo.id) && !escondidas.has(fo.id)).map((fo) => ({
+        id: fo.id, name: fo.name, order: fo.order,
+        spaceId: fo.spaceId, parentId: fo.parentId, externalId: fo.externalId, ...aparenciaDoNo(fo),
+        lists: listasDoComercial.filter((l) => l.folderId === fo.id).map(toLista),
+      })),
       camposGlobais: fields.map((f) => this.mapField(f)),
       tags: tags.map((t) => ({ id: t.id, name: t.name, color: t.color })),
       responsaveis: users.map((u) => u.assignee!).sort(),
@@ -264,7 +275,7 @@ export class WorkService {
    * cada um na sua conferência e fechariam o ciclo juntos.
    */
   async editarPasta(orgId: string, actorId: string, id: string, input: TrabPastaUpdateInput) {
-    const antes = await this.prisma.workFolder.findFirst({ where: { id, orgId }, select: { spaceId: true, parentId: true, name: true, lists: { select: { id: true, name: true } } } });
+    const antes = await this.prisma.workFolder.findFirst({ where: { id, orgId, ...PASTA_DO_TRABALHO }, select: { spaceId: true, parentId: true, name: true, icone: true, cor: true, lists: { select: { id: true, name: true } } } });
     if (!antes) throw new NotFoundException('Pasta não encontrada');
     const move = input.spaceId !== undefined || input.parentId !== undefined;
     // A pasta Clientes que guarda a lista da implantação não muda de nome nem desce de nível (T1, revisão P2-4).
@@ -274,14 +285,15 @@ export class WorkService {
     }
     const pai = move ? await this.paiDaPasta(orgId, input) : null;
     const nome = input.name === undefined ? undefined : nomeDoNo(input.name);
-    const data = { name: nome, order: input.order, ...pai };
+    const aparencia = mudancaDeAparencia(antes, input);
+    const data = { name: nome, order: input.order, ...pai, ...aparencia.data };
     const renomeia = nome !== undefined && nome !== antes.name;
     const mudaDeNivel = !!pai && (pai.spaceId !== antes.spaceId || pai.parentId !== antes.parentId);
     // Mover pasta é de gente (M3, 22/10/2026), por qualquer caminho: aqui e em `moverPasta`.
     if (mudaDeNivel) await this.exigirGenteNoTrabalho(orgId, actorId);
-    const trilha = (pai || renomeia) ? {
-      before: { ...(pai ? { spaceId: antes.spaceId, parentId: antes.parentId } : {}), ...(renomeia ? { name: antes.name } : {}) },
-      after: { ...(pai ?? {}), ...(renomeia ? { name: nome } : {}) },
+    const trilha = (pai || renomeia || aparencia.muda) ? {
+      before: { ...(pai ? { spaceId: antes.spaceId, parentId: antes.parentId } : {}), ...(renomeia ? { name: antes.name } : {}), ...aparencia.before },
+      after: { ...(pai ?? {}), ...(renomeia ? { name: nome } : {}), ...aparencia.after },
     } : undefined;
     return this.logado(orgId, actorId, 'work.folder.update', 'work_folder', id, () =>
       this.semNomeRepetido(NOME_DE_PASTA_REPETIDO, () => this.naArvore(orgId, async (tx) => {
@@ -308,7 +320,7 @@ export class WorkService {
    */
   async apagarPasta(orgId: string, actorId: string, id: string): Promise<TrabPastaExcluida> {
     await this.exigirGenteNoTrabalho(orgId, actorId);
-    const pasta = await this.prisma.workFolder.findFirst({ where: { id, orgId, arquivadaEm: null }, select: { id: true, name: true } });
+    const pasta = await this.prisma.workFolder.findFirst({ where: { id, orgId, arquivadaEm: null, ...PASTA_DO_TRABALHO }, select: { id: true, name: true } });
     if (!pasta) throw new NotFoundException('Pasta não encontrada');
     const [listas, filhas] = await Promise.all([
       this.prisma.workList.count({ where: { orgId, folderId: id, arquivadaEm: null } }),
@@ -364,7 +376,7 @@ export class WorkService {
   /** Mover lista troca só a linha da lista: as tarefas e os IDs delas ficam onde estão. */
   async editarLista(orgId: string, actorId: string, id: string, input: TrabListaUpdateInput) {
     // A lista do comercial não é da árvore: mora no Funil vivo e não se move, renomeia nem apaga daqui.
-    const antes = await this.prisma.workList.findFirst({ where: { id, orgId, AND: [foraDaArvore()] }, select: { folderId: true, spaceId: true, name: true } });
+    const antes = await this.prisma.workList.findFirst({ where: { id, orgId, AND: [foraDaArvore()] }, select: { folderId: true, spaceId: true, name: true, icone: true, cor: true } });
     if (!antes) throw new NotFoundException('Lista não encontrada');
     const move = input.folderId !== undefined || input.spaceId !== undefined;
     /*
@@ -384,9 +396,10 @@ export class WorkService {
     const nome = input.name === undefined ? undefined : nomeDoNo(input.name);
     const renomeia = nome !== undefined && nome !== antes.name;
     const mudaDeNivel = !!pai && (pai.folderId !== antes.folderId || pai.spaceId !== antes.spaceId);
-    const trilha = (pai || renomeia) ? {
-      before: { ...(pai ? { folderId: antes.folderId, spaceId: antes.spaceId } : {}), ...(renomeia ? { name: antes.name } : {}) },
-      after: { ...(pai ?? {}), ...(renomeia ? { name: nome } : {}) },
+    const aparencia = mudancaDeAparencia(antes, input);
+    const trilha = (pai || renomeia || aparencia.muda) ? {
+      before: { ...(pai ? { folderId: antes.folderId, spaceId: antes.spaceId } : {}), ...(renomeia ? { name: antes.name } : {}), ...aparencia.before },
+      after: { ...(pai ?? {}), ...(renomeia ? { name: nome } : {}), ...aparencia.after },
     } : undefined;
     return this.logado(orgId, actorId, 'work.list.update', 'work_list', id, () => this.naArvore(orgId, async (tx) => {
       if (renomeia || mudaDeNivel) {
@@ -394,7 +407,7 @@ export class WorkService {
       }
       // Lista que muda de lugar sem ordem pedida vai para o fim do nível novo (arrastar para a pasta, A3).
       const order = input.order ?? (mudaDeNivel ? await this.fimDoNivelDeLista(tx, orgId, pai!.folderId) : undefined);
-      return tx.workList.update({ where: { id }, data: { name: nome, order, ...pai } });
+      return tx.workList.update({ where: { id }, data: { name: nome, order, ...pai, ...aparencia.data } });
     }), trilha);
   }
 
@@ -523,7 +536,7 @@ export class WorkService {
     await this.exigirGenteNoTrabalho(orgId, actorId);
     return this.naArvore(orgId, async (tx) => {
       const todas = await tx.workFolder.findMany({
-        where: { orgId }, select: { id: true, name: true, parentId: true, spaceId: true, arquivadaEm: true },
+        where: { orgId, ...PASTA_DO_TRABALHO }, select: { id: true, name: true, parentId: true, spaceId: true, arquivadaEm: true },
       });
       const escondidas = pastasEscondidas(todas);
       const pasta = todas.find((p) => p.id === id);
@@ -663,6 +676,7 @@ export class WorkService {
     if (!destino) throw new NotFoundException('Lista de destino não encontrada');
     const visivel = await this.prisma.workList.count({ where: { id: destino.id, orgId, AND: [listaVisivel()] } });
     if (destino.arquivadaEm || visivel !== 1) throw new BadRequestException('A lista de destino está arquivada. Escolha uma lista que aparece no Trabalho.');
+    if (await this.prisma.workList.count({ where: { id: destino.id, orgId, AND: [listaForaDoComercial()] } }) !== 1) throw new BadRequestException(TRAB_DO_COMERCIAL);
     if (ehListaDoComercial(destino)) throw new BadRequestException('As tarefas do comercial moram no Funil vivo: a lista do comercial não recebe tarefas do Trabalho.');
     if (destino.natureza === WorkListaNatureza.cadastro) throw new BadRequestException('A lista de destino é de cadastro, não de tarefas. Escolha uma lista de tarefas.');
     if (await this.ehListaDaImplantacao(orgId, destino.id)) throw new BadRequestException(PORTA_DA_IMPLANTACAO);
@@ -750,7 +764,7 @@ export class WorkService {
   async ordenarArvore(orgId: string, actorId: string, input: TrabArvoreOrdemInput): Promise<{ ok: true }> {
     if (new Set(input.ids).size !== input.ids.length) throw new BadRequestException(TRAB_ORDEM_FORA_DO_NIVEL);
     await this.naArvore(orgId, async (tx) => {
-      const todas = await tx.workFolder.findMany({ where: { orgId }, select: { id: true, parentId: true, arquivadaEm: true, order: true, name: true } });
+      const todas = await tx.workFolder.findMany({ where: { orgId, ...PASTA_DO_TRABALHO }, select: { id: true, parentId: true, arquivadaEm: true, order: true, name: true } });
       const escondidas = pastasEscondidas(todas);
       if (input.paiId && (!todas.some((p) => p.id === input.paiId) || escondidas.has(input.paiId))) throw new NotFoundException('Pasta não encontrada');
       let irmaos: { id: string; order: number; name: string }[];
@@ -794,7 +808,7 @@ export class WorkService {
     await this.exigirGenteNoTrabalho(orgId, actorId);
     return this.semNomeRepetido(NOME_DE_PASTA_REPETIDO, () => this.naArvore(orgId, async (tx) => {
       const todas = await tx.workFolder.findMany({
-        where: { orgId },
+        where: { orgId, ...PASTA_DO_TRABALHO },
         select: { id: true, name: true, parentId: true, spaceId: true, arquivadaEm: true, lists: { where: { arquivadaEm: null }, select: { id: true, name: true } } },
       });
       const escondidas = pastasEscondidas(todas);
@@ -838,7 +852,7 @@ export class WorkService {
    */
   async arquivadas(orgId: string): Promise<TrabArquivadas> {
     const [pastas, listasArquivadas] = await Promise.all([
-      this.prisma.workFolder.findMany({ where: { orgId }, select: { id: true, name: true, parentId: true, arquivadaEm: true } }),
+      this.prisma.workFolder.findMany({ where: { orgId, ...PASTA_DO_TRABALHO }, select: { id: true, name: true, parentId: true, arquivadaEm: true } }),
       this.prisma.workList.findMany({
         where: { orgId, arquivadaEm: { not: null }, AND: [foraDaArvore()] },
         select: { id: true, name: true, folderId: true, arquivadaEm: true },
@@ -965,7 +979,7 @@ export class WorkService {
   async desarquivarPasta(orgId: string, actorId: string, id: string): Promise<TrabDesarquivada> {
     await this.exigirGenteNoTrabalho(orgId, actorId);
     return this.semNomeRepetido(NOME_DE_PASTA_REPETIDO, () => this.naArvore(orgId, async (tx) => {
-      const todas = await tx.workFolder.findMany({ where: { orgId }, select: { id: true, name: true, parentId: true, spaceId: true, arquivadaEm: true } });
+      const todas = await tx.workFolder.findMany({ where: { orgId, ...PASTA_DO_TRABALHO }, select: { id: true, name: true, parentId: true, spaceId: true, arquivadaEm: true } });
       const pasta = todas.find((p) => p.id === id);
       if (!pasta?.arquivadaEm) throw new NotFoundException('Pasta arquivada não encontrada');
       const instante = pasta.arquivadaEm.getTime();
@@ -1213,6 +1227,8 @@ export class WorkService {
       outrosResponsaveisIds: t.outrosResponsaveisIds ?? [],
       recorrencia: regraDeRepeticao(t.recorrencia),
       listName: t.list?.name,
+      listIcone: t.list ? aparenciaDoNo(t.list).icone : null,
+      listCor: t.list ? aparenciaDoNo(t.list).cor : null,
     };
   }
 
@@ -1263,6 +1279,8 @@ export class WorkService {
       }
     } else {
       where.AND = [visivel];
+      // A pessoa em todas as listas não vê as listas do Comercial (I3); o quadro de uma lista pedida pelo id, sim.
+      if (!f.listId && !f.listIds && !f.listExternalIds) where.AND.push(tarefaForaDoComercial());
     }
     if (f.tagId) where.tags = { some: { id: f.tagId } };
     if (f.q) where.title = { contains: f.q, mode: 'insensitive' };
@@ -1951,6 +1969,7 @@ export class WorkService {
     if (input.spaceId && input.parentId) throw new BadRequestException(TRAB_PASTA_COM_DOIS_PAIS);
     if (input.spaceId) await this.acharEspaco(orgId, input.spaceId);
     if (input.parentId) await this.achar(this.prisma.workFolder, orgId, input.parentId, 'Pasta');
+    await recusarPastaDoComercial(this.prisma, orgId, input.parentId);
     return { spaceId: input.spaceId ?? null, parentId: input.parentId ?? null };
   }
 
@@ -1958,6 +1977,7 @@ export class WorkService {
     if (input.folderId && input.spaceId) throw new BadRequestException(TRAB_LISTA_COM_DOIS_PAIS);
     if (input.folderId) await this.achar(this.prisma.workFolder, orgId, input.folderId, 'Pasta');
     if (input.spaceId) await this.acharEspaco(orgId, input.spaceId);
+    await recusarPastaDoComercial(this.prisma, orgId, input.folderId);
     return { folderId: input.folderId ?? null, spaceId: input.spaceId ?? null };
   }
 

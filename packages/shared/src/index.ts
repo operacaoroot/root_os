@@ -49,6 +49,9 @@ export * from './implantacao.js';
 // Editar a árvore do Trabalho onde a pessoa está olhando (adendo da rodada de produção 1, A3):
 // ver o cabeçalho de `arvore-do-trabalho.ts`.
 export * from './arvore-do-trabalho.js';
+// Ícone e cor da lista e da pasta (I1) e a pasta Clientes fora do Trabalho (I3), produção 22B.
+export * from './aparencia-do-trabalho.js';
+export * from './pasta-do-comercial.js';
 // Iniciar o onboarding antes do negócio fechado (ajustes A2): ver `onboarding-antecipado.ts`.
 export * from './onboarding-antecipado.js';
 

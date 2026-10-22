@@ -254,7 +254,7 @@ describe('P3: excluir lista e pasta pela árvore', () => {
     fireEvent.click(menu('trabalho-lista-acoes-l-rotina'));
     // Desde o A3 o item fica habilitado: o diálogo pergunta o que fazer com a tarefa.
     expect(screen.getByTestId('trabalho-lista-acoes-l-rotina-excluir')).toBeEnabled();
-    expect(screen.getByTestId('trabalho-lista-acoes-l-rotina-excluir')).toHaveTextContent('Antes, a tarefa vai para outra lista ou é arquivada.');
+    expect(screen.getByTestId('trabalho-lista-acoes-l-rotina-excluir')).toHaveTextContent('Tem 1 tarefa ativa: antes de sair, ela vai para outra lista ou é arquivada.');
     fireEvent.click(screen.getByTestId('trabalho-lista-acoes-l-rotina-arquivar'));
     const dialogo = await screen.findByRole('dialog');
     expect(dialogo).toHaveTextContent('Nada é apagado');
@@ -315,7 +315,7 @@ describe('P3: excluir lista e pasta pela árvore', () => {
     await screen.findByText('Pagar o aluguel');
     // Gestão tem uma pasta dentro; Administrativo tem lista: o diálogo pedirá o destino.
     fireEvent.click(menu(`trabalho-pasta-acoes-${GESTAO}`));
-    expect(screen.getByTestId(`trabalho-pasta-acoes-${GESTAO}-excluir`)).toHaveTextContent('Antes, 1 pasta vai para outra pasta ou Sem pasta.');
+    expect(screen.getByTestId(`trabalho-pasta-acoes-${GESTAO}-excluir`)).toHaveTextContent('Tem 1 pasta dentro: antes de sair, vai para outra pasta ou Sem pasta.');
     fireEvent.click(menu(`trabalho-pasta-acoes-${ADM}`));
     expect(screen.getByTestId(`trabalho-pasta-acoes-${ADM}-excluir`)).toBeEnabled();
     fireEvent.click(menu(`trabalho-pasta-acoes-${CLIENTES}`));

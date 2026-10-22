@@ -4,7 +4,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { ForbiddenException } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { PrismaClient } from '@prisma/client';
-import { ESTRUTURA_SUGERIDA, MODELOS_DE_LISTA } from '@mktos/shared';
+import { ESTRUTURA_SUGERIDA, MODELOS_DE_LISTA, pastasComAsDoComercial } from '@mktos/shared';
 import { AuditService } from '../src/audit/audit.service';
 import { PermissionsGuard } from '../src/auth/permissions.guard';
 import { EventLogService } from '../src/gateway/event-log.service';
@@ -138,9 +138,14 @@ describe.skipIf(!URL)('estrutura sugerida: contra o Postgres', () => {
     expect(r.movidas).toEqual({ listas: [] });
 
     const e = await svc.estrutura(ORG);
-    expect(e.folders.map((f) => f.name)).toEqual(['Gestão', 'Clientes']);
-    expect(e.folders.every((f) => f.parentId === null && f.spaceId === null)).toBe(true);
-    const clientes = e.folders.find((f) => f.name === 'Clientes')!;
+    // A Clientes é do Comercial (I3, 22/10/2026): fora da árvore, à parte em `pastasDoComercial`, e marcada no banco.
+    expect(e.folders.map((f) => f.name)).toEqual(['Gestão']);
+    expect(e.pastasDoComercial?.map((f) => f.name)).toEqual(['Clientes']);
+    expect(pastasComAsDoComercial(e).every((f) => f.parentId === null && f.spaceId === null)).toBe(true);
+    const clientes = e.pastasDoComercial!.find((f) => f.name === 'Clientes')!;
+    expect((await prisma.workFolder.findUniqueOrThrow({ where: { id: clientes.id } })).doComercial).toBe(true);
+    expect(await prisma.workList.count({ where: { folderId: clientes.id, doComercial: true } })).toBe(3);
+    expect(await prisma.workList.count({ where: { orgId: ORG, doComercial: false } })).toBe(3);
     expect(clientes.lists.map((l) => l.name)).toEqual(['Esteira de clientes', 'Onboarding de cliente', 'Execução']);
     const etapas = (nome: string) => clientes.lists.find((l) => l.name === nome)!.statuses.map((s) => s.name);
     expect(etapas('Esteira de clientes')).toEqual(MODELOS_DE_LISTA['esteira-de-clientes'].etapas.map((x) => x.name));
@@ -226,6 +231,7 @@ describe.skipIf(!URL)('estrutura sugerida: contra o Postgres', () => {
     expect(await prisma.workFolder.count({ where: { orgId: VIZINHA } })).toBe(1);
     expect(await prisma.workList.count({ where: { orgId: VIZINHA } })).toBe(0);
     const daVizinha = await svc.estrutura(VIZINHA);
+    // Criada à mão pelo Trabalho, a Clientes da vizinha não é do Comercial: ninguém rodou a estrutura sugerida lá.
     expect(daVizinha.folders.map((f) => f.name)).toEqual(['Clientes']);
     expect(daVizinha.folders[0].lists).toEqual([]);
     // as listas criadas na ORG pertencem à ORG, com as etapas carimbadas nela

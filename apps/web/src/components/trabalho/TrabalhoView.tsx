@@ -6,6 +6,7 @@ import { Archive, Bot, Clock, DoorOpen, ExternalLink, Flag, Hourglass, MessageSq
 import {
   MODELOS_DE_LISTA, MOEDA_PADRAO, ehValorMonetarioCanonico, formatarValorMonetario, lerValorDigitadoPtBr,
   listaDaImplantacao, moedaDoValor, paraDigitarPtBr, LISTA_DA_IMPLANTACAO, PASTA_DA_IMPLANTACAO, PORTA_DA_IMPLANTACAO,
+  listasComAsDoComercial, pastasComAsDoComercial,
   DICA_DO_NOME_DA_TAREFA, AGRUPAMENTOS, ROTULO_DO_AGRUPAMENTO, agruparTarefas, descreverRecorrencia,
   ROTULO_DA_REGUA_DE_PRAZO, reguaDePrazo, GRUPOS_DA_REGUA_DE_PRAZO,
 } from '@mktos/shared';
@@ -24,6 +25,7 @@ import { VistasDoQuadro } from './VistasDoQuadro';
 import { BotaoDeFiltros, type DefinicaoDeFiltro, type ValoresDeFiltro } from '@/components/filtros/BotaoDeFiltros';
 import { IniciarOnboardingDaImplantacao } from './IniciarOnboardingDaImplantacao';
 import { ArvoreDoTrabalho } from './ArvoreDoTrabalho';
+import { IconeDaLista } from './IconeDaLista';
 import { QuemTrabalhaNaEtapa } from './QuemTrabalhaNaEtapa';
 import { DelegadorDaTarefa } from './DelegadorDaTarefa';
 import { DatasNoBalao, ProximaDataNoCartao } from './DatasDoCartao';
@@ -422,11 +424,11 @@ function TrabalhoConteudo({ visaoInicial, modo, aoSairDeTodas }: { visaoInicial:
         if (!ativa) return;
         setEstrutura(e);
         if (!listaAtual.current && implantacao) {
-          const achada = listaDaImplantacao(e.folders);
+          const achada = listaDaImplantacao(pastasComAsDoComercial(e));
           setSemImplantacao(!achada);
           if (achada) trocarLista(achada.listaId);
         } else if (!listaAtual.current && !geralNoEndereco()) {
-          const todas = [...e.folders.flatMap((f) => f.lists), ...e.listasSoltas];
+          const todas = listasComAsDoComercial(e);
           const endereco = new URLSearchParams(window.location.search);
           const solicitada = endereco.get('lista');
           // Com uma pasta escolhida e sem lista no link, abre a primeira lista dela.
@@ -578,7 +580,7 @@ function TrabalhoConteudo({ visaoInicial, modo, aoSairDeTodas }: { visaoInicial:
 
   const lista: TrabListaDto | null = useMemo(() => {
     if (!estrutura || !listaId) return null;
-    return [...estrutura.folders.flatMap((f) => f.lists), ...estrutura.listasSoltas].find((l) => l.id === listaId) ?? null;
+    return listasComAsDoComercial(estrutura).find((l) => l.id === listaId) ?? null;
   }, [estrutura, listaId]);
 
   // Resposta antiga nunca publica itens nem erros na consulta seguinte.
@@ -771,7 +773,7 @@ function TrabalhoConteudo({ visaoInicial, modo, aoSairDeTodas }: { visaoInicial:
   if (ready && !readable) return <p className="text-muted">Sem permissão para ver tarefas.</p>;
 
   // A lista da implantação não recebe cartão solto, em nenhuma tela (a API também recusa).
-  const listaEhImplantacao = !!lista && !!estrutura && listaDaImplantacao(estrutura.folders)?.listaId === lista.id;
+  const listaEhImplantacao = !!lista && !!estrutura && listaDaImplantacao(pastasComAsDoComercial(estrutura))?.listaId === lista.id;
   const pastaDaLista = lista && estrutura ? estrutura.folders.find((f) => f.lists.some((l) => l.id === lista.id))?.id ?? '' : '';
 
   /*
@@ -945,7 +947,7 @@ function TrabalhoConteudo({ visaoInicial, modo, aoSairDeTodas }: { visaoInicial:
       <div className={`min-w-0 flex-1 ${visao === 'board' && (lista || geral) ? 'flex min-h-0 flex-col gap-3' : 'space-y-4'}`}>
         <div className="flex flex-wrap items-end justify-between gap-3">
           <div>
-            <h1 className="text-xl font-semibold">{implantacao ? 'Implantação de clientes' : geral ? 'Todas as tarefas' : todasListas ? 'Tarefas da pessoa em todas as listas' : lista?.name ?? 'Trabalho'}</h1>
+            <h1 className="text-xl font-semibold">{!implantacao && !geral && !todasListas && lista && <IconeDaLista icone={lista.icone} cor={lista.cor} tamanho={18} className="mr-2 inline-block align-[-2px]" />}{implantacao ? 'Implantação de clientes' : geral ? 'Todas as tarefas' : todasListas ? 'Tarefas da pessoa em todas as listas' : lista?.name ?? 'Trabalho'}</h1>
             <p className="text-sm text-muted">
               {implantacao && lista ? `${PASTA_DA_IMPLANTACAO} · ${lista.name} · ` : ''}
               {geral ? 'Todas as pastas e listas, sem card repetido e sem cadastro como tarefa · ' : ''}
@@ -1542,7 +1544,7 @@ function Cartao({ t, lista, editable, token, agentes, pessoas = [], onSoltarSobr
         </span>
       </div>
       {semMovimento ? (
-        <p className="mt-0.5 truncate text-[11.5px] text-muted" title={t.listName}>{t.listName ?? ''}</p>
+        <p className="mt-0.5 truncate text-[11.5px] text-muted" title={t.listName}><IconeDaLista icone={t.listIcone} cor={t.listCor} tamanho={11} className="mr-1 inline-block align-[-1px]" />{t.listName ?? ''}</p>
       ) : (
       <p className={`mt-0.5 truncate text-[11.5px] ${mov?.proximaAcao ? 'text-text' : 'text-muted'}`} title={mov?.proximaAcao?.texto ?? undefined}>
         {mov?.proximaAcao ? mov.proximaAcao.texto : 'sem próxima ação'}
@@ -1925,7 +1927,7 @@ function Tabela({ tarefas, campos, trilhos, onAbrir, mostrarLista = false, pesso
                   {t.recorrencia && <span title={descreverRecorrencia(t.recorrencia)} className="ml-1 inline-flex align-middle text-muted"><Repeat size={11} /><span className="sr-only">{descreverRecorrencia(t.recorrencia)}</span></span>}
                   {trilhos.get(t.id) && <AtalhoDoTrilho trilho={trilhos.get(t.id)!} onAbrir={() => onAbrir(t.id, 'trilho')} />}
                 </td>
-                {mostrarLista && <td className="px-3 py-2 text-muted">{t.listName ?? '—'}</td>}
+                {mostrarLista && <td className="px-3 py-2 text-muted"><IconeDaLista icone={t.listIcone} cor={t.listCor} tamanho={12} className="mr-1 inline-block align-[-2px]" />{t.listName ?? '—'}</td>}
                 <td className="px-3 py-2">{t.clienteNome ?? <span className="font-os-mono text-[10px] text-warn">sem cliente</span>}</td>
                 <td className="px-3 py-2">
                   <span className="rounded px-1.5 py-0.5 text-[11px] capitalize" style={{ background: `${t.statusColor}26`, color: t.statusColor }}>
@@ -2130,7 +2132,7 @@ function PainelTarefa({ id, estrutura, editable, token, usuarioId, aba = 'tarefa
   }, [recarregar]);
 
   const todasListas = useMemo(
-    () => [...estrutura.folders.flatMap((f) => f.lists), ...estrutura.listasSoltas],
+    () => listasComAsDoComercial(estrutura),
     [estrutura],
   );
   const lista = todasListas.find((l) => l.id === t?.listId);
@@ -2304,10 +2306,10 @@ function PainelTarefa({ id, estrutura, editable, token, usuarioId, aba = 'tarefa
           <button type="button" onClick={() => onTrocarAba?.('trilho')} className="block w-full rounded-lg border border-border bg-surface-2 px-3 py-2 text-left text-[12px] underline-offset-2 hover:underline">
             Trilho de onboarding · {trilho.faseRotulo}{trilho.faltando.length ? ` · falta ${trilho.faltando.length}` : ' · portão cumprido'}
           </button>
-        ) : trilho === null && listaDaImplantacao(estrutura.folders)?.listaId === t.listId ? (
+        ) : trilho === null && listaDaImplantacao(pastasComAsDoComercial(estrutura))?.listaId === t.listId ? (
           <p className="rounded-lg border border-border bg-surface-2 px-3 py-2 text-[12px] text-muted">Sem trilho de onboarding ligado a este cartão.</p>
         ) : null}
-        {(trilho || listaDaImplantacao(estrutura.folders)?.listaId === t.listId) && <ImplantacaoNoPainel tarefaId={t.id} listId={t.listId} token={token} />}
+        {(trilho || listaDaImplantacao(pastasComAsDoComercial(estrutura))?.listaId === t.listId) && <ImplantacaoNoPainel tarefaId={t.id} listId={t.listId} token={token} />}
         {trilho && <QuemTrabalhaNaEtapa trilhoId={trilho.id} token={token} />}
         <FontesDaTarefa taskId={t.id} />
         <AnexosDaTarefa taskId={t.id} />

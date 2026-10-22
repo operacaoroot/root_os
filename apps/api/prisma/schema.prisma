@@ -2071,6 +2071,11 @@ model WorkFolder {
   externalId String? // id da pasta no ClickUp
   /// Arquivada (21/10/2026): fora da árvore e de Todas; nunca apagada pelo importador.
   arquivadaEm DateTime?
+  /// Ícone (emoji curto ou nome do catálogo do app) e cor (token do tema), 22/10/2026. Nulo = sem.
+  icone      String?
+  cor        String?
+  /// Do Comercial (22/10/2026): a pasta existe, mas mora fora do Trabalho (a pasta Clientes).
+  doComercial Boolean    @default(false)
   createdAt  DateTime    @default(now())
   updatedAt  DateTime    @updatedAt
 
@@ -2100,6 +2105,11 @@ model WorkList {
   externalId String? // id da lista no ClickUp (ex.: Gestão de Temas = 901327640001)
   /// Arquivada (21/10/2026): fora da árvore, de Todas e dos contadores; as tarefas ficam.
   arquivadaEm DateTime?
+  /// Ícone (emoji curto ou nome do catálogo do app) e cor (token do tema), 22/10/2026. Nulo = sem.
+  icone      String?
+  cor        String?
+  /// Do Comercial (22/10/2026): a lista existe e alimenta a Implantação, fora da árvore do Trabalho.
+  doComercial Boolean    @default(false)
   createdAt  DateTime    @default(now())
   updatedAt  DateTime    @updatedAt
 

@@ -188,6 +188,9 @@ describe('A3: criar e renomear na árvore', () => {
     const menu = screen.getByRole('menu');
     expect(screen.getByTestId('trabalho-lista-acoes-l-fin-renomear')).toHaveFocus();
     fireEvent.keyDown(menu, { key: 'ArrowDown' });
+    // "Ícone e cor" entrou depois de Renomear na produção 22B (I1).
+    expect(screen.getByTestId('trabalho-lista-acoes-l-fin-aparencia')).toHaveFocus();
+    fireEvent.keyDown(menu, { key: 'ArrowDown' });
     expect(screen.getByTestId('trabalho-lista-acoes-l-fin-arquivar')).toHaveFocus();
     fireEvent.keyDown(menu, { key: 'End' });
     expect(screen.getByTestId('trabalho-lista-acoes-l-fin-excluir')).toHaveFocus();

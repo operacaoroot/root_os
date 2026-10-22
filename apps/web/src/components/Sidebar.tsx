@@ -38,6 +38,19 @@ function iconeDaArea(chave: string): HTMLAnchorElement | null {
   return document.querySelector<HTMLAnchorElement>(`#root-os-nav a[data-area="${chave}"]`);
 }
 
+/**
+ * O que o clique na área faz no menu aberto (I1, 22/10/2026). `fechar`: a área está
+ * aberta e recolhe. `abrir`: é a área da tela atual, recolhida, e reabre sem sair da
+ * tela. `navegar`: vai para a entrada da área (que abre o grupo dela e fecha o outro).
+ * Área de um item só e o menu recolhido sempre navegam.
+ */
+export function passoDoAcordeao(a: { compacta: boolean; temLista: boolean; aberta: boolean; ativa: boolean }): 'fechar' | 'abrir' | 'navegar' {
+  if (a.compacta || !a.temLista) return 'navegar';
+  if (a.aberta) return 'fechar';
+  if (a.ativa) return 'abrir';
+  return 'navegar';
+}
+
 export function lerTema(): TemaOs {
   try {
     const v = localStorage.getItem(CHAVE_TEMA);
@@ -59,7 +72,15 @@ export function lerTema(): TemaOs {
  * abre o `BalaoDaArea` ao lado, por hover, foco ou toque, um balão por vez.
  *
  * No topo, a logo oficial (`LogoRoot`): só o R no recolhido, a palavra inteira no
- * aberto, com o R no mesmo lugar. Ela é o link para a entrada do Dia a dia.
+ * aberto. Ela é o link para a entrada do Dia a dia.
+ *
+ * Produção 22B, I1 (22/10/2026), pedidos do Rodrigo:
+ *  · o botão de recolher saiu do rodapé e fica logo à frente da logo, no topo
+ *    esquerdo; no recolhido, o R e o botão ficam lado a lado;
+ *  · o acordeão também FECHA: clicar de novo na área aberta recolhe as
+ *    subseções, sem navegar; clicar na área da tela atual que estava recolhida
+ *    reabre, sem navegar; clicar noutra área navega, abre a dela e fecha a
+ *    anterior, como antes. A subseção da rota segue com `aria-current="page"`.
  */
 export function Sidebar() {
   const { user } = useAuth();
@@ -291,8 +312,8 @@ export function Sidebar() {
           abertaNoMovel ? 'translate-x-0 visible' : '-translate-x-full invisible min-[820px]:visible',
         ].join(' ')}
       >
-      {/* marca: a logo oficial, link para a entrada do Dia a dia */}
-      <div className="flex min-h-[56px] items-center gap-2 border-b border-border pl-[17px] pr-2">
+      {/* marca: a logo oficial, link para a entrada do Dia a dia, e logo à frente o botão de recolher (I1) */}
+      <div className={`flex min-h-[56px] items-center gap-2 border-b border-border pl-[17px] pr-2 ${compacta ? 'min-[820px]:gap-[3px] min-[820px]:pl-[6px] min-[820px]:pr-0' : ''}`}>
         <Link
           href={inicio}
           onClick={aoNavegar}
@@ -303,6 +324,18 @@ export function Sidebar() {
         >
           <LogoRoot recolhida={compacta} />
         </Link>
+        <button
+          type="button"
+          onClick={alternarRecolhida}
+          aria-label={compacta ? 'Expandir menu' : 'Recolher menu'}
+          aria-pressed={compacta}
+          aria-controls="root-os-destinos"
+          title={compacta ? 'Expandir menu' : 'Recolher menu'}
+          data-testid="menu-recolher"
+          className="hidden h-8 w-6 shrink-0 place-items-center rounded-root text-muted hover:bg-surface-2 hover:text-text focus-visible:outline focus-visible:outline-2 focus-visible:outline-brand min-[820px]:grid"
+        >
+          {compacta ? <Icons.ChevronsRight size={16} aria-hidden /> : <Icons.ChevronsLeft size={16} aria-hidden />}
+        </button>
         <span className="flex-1" />
         <button ref={botaoFechar} type="button" aria-label="Fechar navegação" onClick={() => { setAbertaNoMovel(false); botaoAbrir.current?.focus(); }} className="grid h-11 w-11 place-items-center text-muted focus-visible:outline focus-visible:outline-2 focus-visible:outline-brand min-[820px]:hidden"><Icons.X size={18} aria-hidden /></button>
       </div>
@@ -360,6 +393,13 @@ export function Sidebar() {
                     abrirBalao(area.key);
                     return;
                   }
+                  // O acordeão que fecha (I1): a área aberta recolhe; a da tela atual, recolhida, reabre. Sem navegar.
+                  const passo = passoDoAcordeao({ compacta, temLista, aberta, ativa: ativo });
+                  if (passo !== 'navegar') {
+                    e.preventDefault();
+                    setAreaAberta(passo === 'fechar' ? undefined : area.key);
+                    return;
+                  }
                   setAreaAberta(area.key);
                   aoNavegar();
                 }}
@@ -410,8 +450,8 @@ export function Sidebar() {
         })}
       </nav>
 
-      {/* rodapé: os três temas e o botão de recolher (no recolhido, só o botão) */}
-      <div className={`flex items-center gap-[6px] border-t border-border px-3 py-[9px] ${compacta ? 'min-[820px]:justify-center min-[820px]:px-0' : ''}`}>
+      {/* rodapé: os três temas (o botão de recolher subiu para perto da logo em 22/10/2026; no recolhido, o rodapé some) */}
+      <div className={`flex items-center gap-[6px] border-t border-border px-3 py-[9px] ${compacta ? 'min-[820px]:hidden' : ''}`}>
         <div
           role="group"
           aria-label="Tema da interface"
@@ -437,16 +477,6 @@ export function Sidebar() {
             );
           })}
         </div>
-        <button
-          type="button"
-          onClick={alternarRecolhida}
-          aria-label={compacta ? 'Expandir menu' : 'Recolher menu'}
-          aria-pressed={compacta}
-          title={compacta ? 'Expandir menu' : 'Recolher menu'}
-          className="hidden h-8 w-8 shrink-0 place-items-center text-muted hover:text-text focus-visible:outline focus-visible:outline-2 focus-visible:outline-brand min-[820px]:grid"
-        >
-          {compacta ? <Icons.ChevronsRight size={16} aria-hidden /> : <Icons.ChevronsLeft size={16} aria-hidden />}
-        </button>
       </div>
       </aside>
     </>
