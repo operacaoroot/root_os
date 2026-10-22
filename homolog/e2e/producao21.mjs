@@ -475,8 +475,10 @@ async function main() {
   await passo('P9 · aba Sala no claro e a 390', async () => {
     for (const [pg, nome] of [[claro, 'sala-estado-claro'], [m, 'sala-estado-390']]) {
       await pg.goto(`${WEB}/comercial/funil?visao=lista`, { waitUntil: 'networkidle' });
-      await pg.getByTestId('funil-lista').waitFor();
-      await pg.getByTestId(`funil-linha-${leadComSala}`).click();
+      // Abaixo de 640 px a lista do funil vira cartões empilhados (22B, I5).
+      const estreita = pg === m;
+      await pg.getByTestId(estreita ? 'funil-lista-cartoes' : 'funil-lista').waitFor();
+      await pg.getByTestId(estreita ? `funil-lista-cartao-${leadComSala}` : `funil-linha-${leadComSala}`).click();
       const painel = pg.locator('[role="dialog"]').first();
       await painel.waitFor();
       await painel.getByRole('tab', { name: /Sala/ }).click();
