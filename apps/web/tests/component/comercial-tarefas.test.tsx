@@ -15,12 +15,14 @@
 import { cleanup, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { COMERCIAL_ETAPAS, type CartaoDoFunil, type FichaDoLead, type FunilVivo, type TarefaDoComercial, type TarefasDoComercial } from '@mktos/shared';
+import { COMERCIAL_ETAPAS, TAREFA_IGUAL_JA_EXISTE, type CartaoDoFunil, type FichaDoLead, type FunilVivo, type TarefaDoComercial, type TarefasDoComercial } from '@mktos/shared';
 
 let RESPOSTAS: Record<string, unknown> = {};
 const gets: string[] = [];
 const posts: { caminho: string; corpo: unknown }[] = [];
 const patches: { caminho: string; corpo: unknown }[] = [];
+/** A recusa da API no próximo POST (M3: título repetido que a tela não via). */
+let RECUSA_DO_POST: { corpo: Record<string, unknown>; status: number } | null = null;
 
 vi.mock('@/lib/auth', () => ({ useAuth: () => ({ token: 'tok', ready: true, user: { id: 'eu' }, can: () => true }) }));
 vi.mock('next/navigation', () => ({
@@ -44,6 +46,7 @@ vi.mock('@/lib/api', async (original) => {
     }),
     apiPost: vi.fn(async (caminho: string, corpo: unknown) => {
       posts.push({ caminho, corpo });
+      if (RECUSA_DO_POST) { const r = RECUSA_DO_POST; RECUSA_DO_POST = null; throw real.erroDaResposta(r.corpo, r.status); }
       return {};
     }),
     apiPatch: vi.fn(async (caminho: string, corpo: unknown) => {
@@ -90,6 +93,7 @@ function irPara(url: string) {
 
 beforeEach(() => {
   RESPOSTAS = {};
+  RECUSA_DO_POST = null;
   gets.length = 0;
   posts.length = 0;
   patches.length = 0;
@@ -177,6 +181,28 @@ describe('o bloco "Tarefas do comercial" no Funil vivo', () => {
     }]));
     // Sem lead: o bloco do funil nunca liga a tarefa a um lead.
     expect((posts[0].corpo as Record<string, unknown>).leadId).toBeUndefined();
+  });
+
+  it('M3: "+ tarefa" com título igual a uma aberta à vista dá a frase do Dia a dia sem chamar a API; a recusa da API também aparece', async () => {
+    RESPOSTAS['/comercial/funil'] = funil([]);
+    RESPOSTAS['/comercial/tarefas'] = lista([
+      tarefa('t1', 'Fazer FUP da proposta'),
+      tarefa('t2', 'Colher feedback', { status: { nome: 'Feito', tipo: 'concluida' }, situacao: 'feita' }),
+    ]);
+    render(<FunilPage />);
+    const u = userEvent.setup();
+    await u.click(await screen.findByTestId('funil-tarefas-mais'));
+    await u.type(screen.getByTestId('funil-tarefas-nova-titulo'), 'proposta: fazer FUP{Enter}');
+    const form = screen.getByTestId('funil-tarefas-nova');
+    expect(await within(form).findByRole('alert')).toHaveTextContent(TAREFA_IGUAL_JA_EXISTE);
+    expect(posts).toEqual([]);
+
+    // A concluída não segura: vai à API, e a recusa dela (outra aba criou) também aparece com a frase.
+    RECUSA_DO_POST = { corpo: { message: TAREFA_IGUAL_JA_EXISTE, code: 'tarefa_igual' }, status: 409 };
+    await u.clear(screen.getByTestId('funil-tarefas-nova-titulo'));
+    await u.type(screen.getByTestId('funil-tarefas-nova-titulo'), 'Colher feedback{Enter}');
+    await waitFor(() => expect(posts).toHaveLength(1));
+    expect(await within(screen.getByTestId('funil-tarefas-nova')).findByRole('alert')).toHaveTextContent(TAREFA_IGUAL_JA_EXISTE);
   });
 
   it('concluir é um clique, com a versão lida; editar manda só o que mudou', async () => {

@@ -301,7 +301,7 @@ describe.skipIf(!URL)('árvore: contra o Postgres', () => {
     expect((await erro(() => svc.moverTarefasDaLista(CASA, EU, sai.id, { destinoId: destino.id, esperadas: 2 }))).status).toBe(409);
     expect((await erro(() => svc.moverTarefasDaLista(CASA, EU, sai.id, { destinoId: sai.id, esperadas: 3 }))).status).toBe(400);
     expect(await svc.moverTarefasDaLista(CASA, EU, sai.id, { destinoId: destino.id, esperadas: 3 }))
-      .toEqual({ id: sai.id, destinoId: destino.id, movidas: 3, mudaramDeEtapa: 2 });
+      .toEqual({ id: sai.id, destinoId: destino.id, movidas: 3, mudaramDeEtapa: 2, camposCopiados: 0, camposGuardados: 0 });
     const movidas = await prisma.workTask.findMany({ where: { id: { in: sai.tarefas } }, select: { listId: true, statusId: true, title: true }, orderBy: { title: 'asc' } });
     expect(movidas).toEqual([
       { listId: destino.id, statusId: fazendo.id, title: 'Dois' },

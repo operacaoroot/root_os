@@ -1,7 +1,7 @@
 import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma, WorkStatusType } from '@prisma/client';
 import {
-  COMERCIAL_TETO_DE_CONCLUIDAS, DOMINIO_DAS_CONTAS_DO_SISTEMA, equipeDasContas, situacaoDoPrazo,
+  COMERCIAL_TETO_DE_CONCLUIDAS, DOMINIO_DAS_CONTAS_DO_SISTEMA, TAREFA_IGUAL_JA_EXISTE, equipeDasContas, situacaoDoPrazo, tarefaIgual,
   type TarefaDoComercial, type TarefaDoComercialCriar, type TarefaDoComercialEditar, type TarefasDoComercial,
 } from '@mktos/shared';
 
@@ -170,6 +170,18 @@ export class TarefasDoComercialService {
 
   async criar(orgId: string, actorId: string, input: TarefaDoComercialCriar): Promise<TarefaDoComercial> {
     await this.conferirLead(orgId, input.leadId);
+    /*
+     * TÍTULO REPETIDO (rodada de produção 2, M3, 22/10/2026): a mesma regra e a
+     * mesma frase do Dia a dia. Aberta IGUAL (mesmo título normalizado, ou as
+     * mesmas palavras em outra ordem) e do mesmo lead (ou as duas sem lead) não
+     * nasce de novo; a resposta aponta a que já existe.
+     */
+    const abertas = await this.prisma.workTask.findMany({
+      where: { AND: [this.onde(orgId), { leadId: input.leadId ?? null }, { status: { type: { not: WorkStatusType.closed } } }] },
+      select: { id: true, title: true },
+    });
+    const igual = tarefaIgual(abertas, input.titulo, (t) => t.title);
+    if (igual) throw new ConflictException({ code: 'tarefa_igual', message: TAREFA_IGUAL_JA_EXISTE, tarefaId: igual.id });
     const lista = await acharOuCriarListaDoComercial(this.prisma, orgId);
     const aberto = lista.statuses.find((s) => s.type === WorkStatusType.open) ?? lista.statuses.find((s) => s.type !== WorkStatusType.closed);
     if (!aberto) throw new BadRequestException('A lista do comercial não tem etapa aberta.');
@@ -209,10 +221,8 @@ export class TarefasDoComercialService {
     };
     if (Object.keys(doTrabalho).length) {
       const d = await this.trabalho.editarTarefaHttp(orgId, actorId, id, { ...doTrabalho, expectedUpdatedAt: versao });
+      // Concluir a que se repete cria a próxima pelo Trabalho, que já copia o lead (M3, 22/10/2026).
       versao = d.updatedAt;
-      // Concluir a que se repete cria a próxima pelo Trabalho; ela continua do mesmo lead.
-      const proxima = (d as { proxima?: { id: string } }).proxima;
-      if (proxima && antes.leadId) await this.prisma.workTask.updateMany({ where: { id: proxima.id, orgId, leadId: null }, data: { leadId: antes.leadId } });
     }
     if (input.leadId !== undefined && input.leadId !== antes.leadId) {
       const r = await this.prisma.workTask.updateMany({

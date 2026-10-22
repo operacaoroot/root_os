@@ -397,11 +397,11 @@ describe('A3: ordem e arraste', () => {
     await waitFor(() => expect(post).toHaveBeenCalledWith('/trabalho/arvore/ordem', { tipo: 'lista', paiId: GESTAO, ids: ['l-fin', 'l-avulsa', 'l-pes'] }, 'tok'));
   });
 
-  it('arrastar uma pasta sobre uma irmã reordena as pastas daquele nível', async () => {
+  it('arrastar uma pasta para a faixa entre as irmãs reordena as pastas daquele nível (M3: sobre a pasta, ela entra)', async () => {
     await abrir();
     const dt = dataTransfer();
     fireEvent.dragStart(screen.getByTestId(`trabalho-arvore-pasta-${VAZIA}`), { dataTransfer: dt });
-    const alvo = screen.getByTestId(`trabalho-arvore-pasta-${GESTAO}`).parentElement as HTMLElement;
+    const alvo = screen.getByTestId(`trabalho-arvore-entre-${GESTAO}`);
     fireEvent.dragOver(alvo, { dataTransfer: dt });
     await act(async () => { fireEvent.drop(alvo, { dataTransfer: dt }); });
     expect(post).toHaveBeenCalledWith('/trabalho/arvore/ordem', { tipo: 'pasta', paiId: null, ids: [VAZIA, GESTAO, CLIENTES] }, 'tok');
