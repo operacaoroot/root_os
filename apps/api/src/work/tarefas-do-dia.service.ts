@@ -10,8 +10,8 @@ import { PrismaService } from '../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
 import { WorkService, hojeEmBrasilia } from './work.service';
 import { acharOuCriarClientePorNome } from './clientes-da-casa';
-import { tarefaDeListaVisivel } from './arquivadas';
 import { tarefaForaDoComercial } from './pasta-do-comercial';
+import { tarefaDeListaVisivel, tarefaViva } from './arquivadas';
 
 /*
  * TAREFAS DE TODAS AS ÁREAS — a visão "Tudo" do Trabalho (19/10/2026).
@@ -124,6 +124,7 @@ export class TarefasDoDiaService {
         tarefaDeListaVisivel(),
         // A pasta Clientes é do Comercial (I3, 22/10/2026): os cards da implantação ficam na Implantação.
         tarefaForaDoComercial(),
+        tarefaViva(),
       ],
     };
   }

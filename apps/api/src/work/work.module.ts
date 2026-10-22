@@ -16,6 +16,9 @@ import { VistasController } from './vistas.controller';
 import { VistasService } from './vistas.service';
 import { TarefasDoDiaController } from './tarefas-do-dia.controller';
 import { TarefasDoDiaService } from './tarefas-do-dia.service';
+import { LixeiraController } from './lixeira/lixeira.controller';
+import { LixeiraService } from './lixeira/lixeira.service';
+import { AcoesDaTarefaService } from './menu-da-tarefa/acoes-da-tarefa.service';
 
 /**
  * O CHECKOUT É EXPORTADO, e a exportação é a fatia A4 pela metade.
@@ -44,8 +47,9 @@ import { TarefasDoDiaService } from './tarefas-do-dia.service';
 @Module({
   // GranolaModule (20/10/2026): o Granola direto, que o banco de atas lê por `FONTE_DO_GRANOLA`.
   imports: [AuditModule, MemoryModule, GranolaModule],
-  controllers: [VistasController, WorkController, WorkFilesController, AtasController, TarefasDoDiaController],
-  providers: [WorkService, CheckoutDeTarefaService, WorkFilesService, AtasService, AtasDoGranolaService, DriveDasAtasService, MovimentoDoQuadroService, VistasService, TarefasDoDiaService],
+  // LixeiraController (produção 3, I2 e I4): a Lixeira e as ações do menu da tarefa.
+  controllers: [VistasController, WorkController, WorkFilesController, AtasController, TarefasDoDiaController, LixeiraController],
+  providers: [WorkService, CheckoutDeTarefaService, WorkFilesService, AtasService, AtasDoGranolaService, DriveDasAtasService, MovimentoDoQuadroService, VistasService, TarefasDoDiaService, LixeiraService, AcoesDaTarefaService],
   exports: [CheckoutDeTarefaService, WorkService],
 })
 export class WorkModule {}

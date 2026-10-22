@@ -20,6 +20,7 @@ import { apiGet, apiPatch, apiPost } from '@/lib/api';
 import { useTarefaNaUrl } from '@/lib/tarefa-na-url';
 import { useAuth } from '@/lib/auth';
 import { TarefaFlutuante } from '@/components/trabalho/TrabalhoView';
+import { BotaoDoMenuDaTarefa, alvoDoMenu, useMenuDaTarefaProprio } from '@/components/trabalho/MenuDaTarefa';
 import { CalendarioDeTarefas, prazoDoDia } from '@/components/trabalho/CalendarioDeTarefas';
 import {
   BOTAO_PEQUENO,
@@ -388,6 +389,9 @@ export function AbaMinhasTarefas({ token }: { token: string }) {
     void buscar();
   }, [buscar]);
 
+  // O menu da tarefa (produção 3, I4): botão direito, Shift+F10, tecla Menu e o "⋯".
+  const { menu, elemento: menuDaTarefa } = useMenuDaTarefaProprio({ onMudou: () => void buscar(), onErro: setErro, onAbrir: (id) => popup.abrir(id) });
+
   const pastas = useMemo(() => {
     const m = new Map<string, string>();
     for (const l of resposta?.listas ?? []) if (l.pastaId && l.pasta) m.set(l.pastaId, l.pasta);
@@ -490,7 +494,7 @@ export function AbaMinhasTarefas({ token }: { token: string }) {
   const colunasVisiveis = COLUNAS.filter(ver);
 
   const linhaDaTabela = (t: CaixaMinhaTarefa) => (
-    <tr key={t.id} data-testid={`caixa-tarefa-${t.id}`} onClick={() => popup.abrir(t.id)} className="cursor-pointer align-top hover:bg-surface-2">
+    <tr {...alvoDoMenu(menu, { id: t.id, title: t.titulo })} key={t.id} data-testid={`caixa-tarefa-${t.id}`} onClick={() => popup.abrir(t.id)} className="cursor-pointer align-top hover:bg-surface-2">
       <td className="max-w-[320px] px-3 py-2">
         <a
           href={`?aba=tarefas&tarefa=${encodeURIComponent(t.id)}`}
@@ -499,6 +503,7 @@ export function AbaMinhasTarefas({ token }: { token: string }) {
         >
           {t.titulo}
         </a>
+        <BotaoDoMenuDaTarefa tarefa={{ id: t.id, title: t.titulo }} menu={menu} className="ml-1 inline-grid align-middle" />
         {t.motivos.length > 0 && (
           <span className="mt-0.5 block text-[11px] text-warn">
             {t.motivos.map((m) => FRASE_DO_MOTIVO[m]).join(' · ')}
@@ -756,14 +761,17 @@ export function AbaMinhasTarefas({ token }: { token: string }) {
                 {config.agrupamento !== 'nenhum' && <p className={`${ROTULO} mb-1`}>{g.rotulo} · {g.itens.length}</p>}
                 <ul className="space-y-2">
                   {g.itens.map((t) => (
-                    <li key={t.id} data-testid={`caixa-tarefa-cartao-${t.id}`} className={`${CARTAO} relative space-y-1.5 p-3`}>
-                      <a
-                        href={`?aba=tarefas&tarefa=${encodeURIComponent(t.id)}`}
-                        onClick={abrirNoClique(t.id)}
-                        className={`block break-words text-[13px] font-medium text-text after:absolute after:inset-0 after:content-[''] hover:text-brand ${FOCO}`}
-                      >
-                        {t.titulo}
-                      </a>
+                    <li {...alvoDoMenu(menu, { id: t.id, title: t.titulo })} key={t.id} data-testid={`caixa-tarefa-cartao-${t.id}`} className={`${CARTAO} relative space-y-1.5 p-3`}>
+                      <span className="flex items-start justify-between gap-1">
+                        <a
+                          href={`?aba=tarefas&tarefa=${encodeURIComponent(t.id)}`}
+                          onClick={abrirNoClique(t.id)}
+                          className={`block break-words text-[13px] font-medium text-text after:absolute after:inset-0 after:content-[''] hover:text-brand ${FOCO}`}
+                        >
+                          {t.titulo}
+                        </a>
+                        <BotaoDoMenuDaTarefa tarefa={{ id: t.id, title: t.titulo }} menu={menu} />
+                      </span>
                       {t.motivos.length > 0 && (
                         <p className="text-[11px] text-warn">{t.motivos.map((m) => FRASE_DO_MOTIVO[m]).join(' · ')}</p>
                       )}
@@ -819,6 +827,7 @@ export function AbaMinhasTarefas({ token }: { token: string }) {
         <BalaoDeComentarios tarefa={balao.tarefa} token={token} ancora={balao.ancora} origem={balao.origem} onFechar={fecharBalao} />
       )}
       <TarefaFlutuante tarefa={popup} onMudou={() => void buscar()} />
+      {menuDaTarefa}
     </div>
   );
 }

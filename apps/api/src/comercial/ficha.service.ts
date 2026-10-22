@@ -43,7 +43,7 @@ import { produtoAlvo } from './pontuacao';
 import { decisaoSemPrazo } from './decisoes.service';
 import { SO_DOCUMENTOS_DE_ASSINATURA } from './documentos';
 import { proximaAcaoDoLead, saudeDoLead, type DecisaoParaProximaAcao } from './proxima-acao';
-import { tarefaDeListaVisivel } from '../work/arquivadas';
+import { tarefaDeListaVisivel, tarefaViva } from '../work/arquivadas';
 import { diaEmSP, tarefasDosCartoes } from './tarefas/tarefa-do-cartao';
 import { avancar, avancarDepoisDaSessao, pendenciasDasEtapas, pendenciasDoMover, pendenciasQueRestam, podeSair, portoesDaEtapa, type EstadoParaPortao, type Veredicto } from './portoes';
 
@@ -889,7 +889,7 @@ export class FichaService {
     const linhas = await this.prisma.workTask.findMany({
       where: {
         orgId, archived: false, leadId: { in: cartoes.map((c) => c.leadId) },
-        AND: [{ status: { type: { not: 'closed' } } }, tarefaDeListaVisivel()],
+        AND: [{ status: { type: { not: 'closed' } } }, tarefaDeListaVisivel(), tarefaViva()],
       },
       select: { id: true, leadId: true, title: true, dueDate: true, createdAt: true, assignee: true, assigneeUser: { select: { name: true } } },
     });

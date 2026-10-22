@@ -14,6 +14,7 @@ import {
 import { WorkStatusType } from '@prisma/client';
 
 import { PrismaService } from '../prisma/prisma.service';
+import { tarefaViva } from '../work/arquivadas';
 import { AgendaDaImplantacaoService } from './agenda-da-implantacao.service';
 import { casarReunioes, type CartaoParaCasar } from './proxima-reuniao';
 
@@ -120,7 +121,7 @@ export class ImplantacaoDoQuadroService {
 
   private async cardsDaLista(orgId: string, listId: string): Promise<CardLido[]> {
     const tarefas = await this.prisma.workTask.findMany({
-      where: { orgId, listId, archived: false, parentId: null },
+      where: { orgId, listId, archived: false, parentId: null, AND: [tarefaViva()] },
       orderBy: [{ updatedAt: 'desc' }],
       take: TETO_DE_CARTOES_DA_IMPLANTACAO,
       select: { id: true, title: true, clienteId: true, status: { select: { name: true, type: true } } },

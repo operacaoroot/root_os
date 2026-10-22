@@ -5706,6 +5706,8 @@ export interface TrabTarefaResumo {
   /** O ícone e a cor da lista (I1, 22/10/2026), ao lado do nome dela no cartão; nulo = sem. */
   listIcone?: string | null;
   listCor?: CorDoTrabalho | null;
+  /** Na Lixeira desde (I2, 22/10/2026); nulo = viva. Só a leitura por id a devolve preenchida. */
+  excluidaEm?: string | null;
 }
 /* ----------------------------------------------------------------------------
  * O MOVIMENTO DO CARTÃO no quadro denso (rodada da implantação I2, 18/10/2026)

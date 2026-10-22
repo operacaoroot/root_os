@@ -12,7 +12,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { ModulosService } from '../tenants/modulos.service';
 import { exigirTenant } from '../common/contexto-execucao';
 import { nomesDosClientes } from '../work/clientes-da-casa';
-import { listaVisivel, tarefaDeListaVisivel } from '../work/arquivadas';
+import { listaVisivel, tarefaDeListaVisivel, tarefaViva } from '../work/arquivadas';
 import {
   ESTADO_DO_EIXO,
   ehDeOutraPessoa,
@@ -172,7 +172,7 @@ export class CaixaAtividadeService {
 
     // As minhas tarefas — o responsável de AGORA, pela regra de `o-que-espera`.
     const tarefas = await this.prisma.workTask.findMany({
-      where: { orgId, archived: false, OR: condicoesDaConta(eu.id), AND: [tarefaDeListaVisivel()] },
+      where: { orgId, archived: false, OR: condicoesDaConta(eu.id), AND: [tarefaDeListaVisivel(), tarefaViva()] },
       orderBy: { updatedAt: 'desc' },
       take: TETO_TAREFAS_DA_ATIVIDADE + 1,
       select: { id: true, title: true, list: { select: { name: true } } },
@@ -449,7 +449,7 @@ export class CaixaAtividadeService {
       ...(Object.keys(status).length ? { status } : {}),
       ...(f.vencimento ? { dueDate: filtroDoVencimento(f.vencimento, agora) } : {}),
       // Lista ou pasta arquivada sai das minhas tarefas (21/10/2026).
-      AND: [tarefaDeListaVisivel()],
+      AND: [tarefaDeListaVisivel(), tarefaViva()],
     };
 
     const linhas = await this.prisma.workTask.findMany({

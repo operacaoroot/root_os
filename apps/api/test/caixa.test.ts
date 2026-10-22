@@ -773,10 +773,12 @@ describe('A7: o que é uma tarefa PARADA', () => {
     await b.svc.montar(SESSAO);
     const w = b.consultas.find((c) => c.modelo === 'workTask.findMany')!.where;
     const ands = w.AND as { OR: unknown[] }[];
-    expect(ands).toHaveLength(3);
+    expect(ands).toHaveLength(4);
     expect(ands[1].OR).toHaveLength(3);
     // Lista ou pasta arquivada (21/10/2026) também sai no banco.
     expect(ands[2]).toEqual(tarefaDeListaVisivel());
+    // E a tarefa na Lixeira (I2, 22/10/2026).
+    expect(ands[3]).toEqual({ excluidaEm: null });
     // Tarefa arquivada e status encerrado não esperam ninguém.
     expect(w.archived).toBe(false);
     expect(w.status).toEqual({ type: { not: 'closed' } });

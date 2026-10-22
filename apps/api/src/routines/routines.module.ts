@@ -10,6 +10,8 @@ import { ExecutorDePublicacaoDaPauta } from './executores/pauta-publicar.executo
 import { ExecutorDeComentariosDaPauta } from './executores/pauta-comentarios.executor';
 import { ExecutorDaLimpezaDasVencidas } from './executores/aprovacoes-vencidas.executor';
 import { ExecutorDasRotinasDaCasa } from './executores/casa.executor';
+import { ExecutorDoExpurgoDaLixeira } from './executores/lixeira-expurgo.executor';
+import { LixeiraService } from '../work/lixeira/lixeira.service';
 import { RotinasController } from './rotinas.controller';
 import { RotinasScheduler } from './rotinas.scheduler';
 import { RotinasService } from './rotinas.service';
@@ -60,6 +62,9 @@ import { RotinasService } from './rotinas.service';
     ExecutorDaLimpezaDasVencidas,
     // Rodada dos agentes (A1): o "Rodar agora" das rotinas da casa (casa.*).
     ExecutorDasRotinasDaCasa,
+    // Produção 3 (I2): o expurgo dos 30 dias da Lixeira do Trabalho. Nasce desligado.
+    LixeiraService,
+    ExecutorDoExpurgoDaLixeira,
     RotinasService,
     RotinasScheduler,
   ],

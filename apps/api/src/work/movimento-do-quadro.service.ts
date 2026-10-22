@@ -5,6 +5,7 @@ import { WorkStatusType } from '@prisma/client';
 import { ACOES_DA_ATIVIDADE, ENTIDADE_DA_TAREFA } from '../caixa/atividade-da-caixa';
 import { seloDoCard } from '../comercial/card-da-implantacao';
 import { PrismaService } from '../prisma/prisma.service';
+import { tarefaViva } from './arquivadas';
 import { PASSOS_NO_BALAO, passoDaAuditoria, passoDoComentario, ultimoPasso } from './movimento-do-quadro';
 
 /*
@@ -32,7 +33,7 @@ export class MovimentoDoQuadroService {
     const lista = await this.prisma.workList.findFirst({ where: { id: listId, orgId }, select: { id: true } });
     if (!lista) throw new NotFoundException('Lista não encontrada');
     const tarefas = await this.prisma.workTask.findMany({
-      where: { orgId, listId, archived: false, parentId: null },
+      where: { orgId, listId, archived: false, parentId: null, AND: [tarefaViva()] },
       orderBy: [{ updatedAt: 'desc' }],
       take: TETO_DE_CARTOES,
       select: { id: true, createdAt: true },
@@ -63,7 +64,7 @@ export class MovimentoDoQuadroService {
         select: { cardId: true, leadId: true, kickoffEm: true, etapa: true, motivoSaida: true, clienteAtivoEm: true },
       }),
       this.prisma.workTask.findMany({
-        where: { orgId, parentId: { in: ids }, archived: false, status: { type: { not: WorkStatusType.closed } } },
+        where: { orgId, parentId: { in: ids }, archived: false, AND: [tarefaViva()], status: { type: { not: WorkStatusType.closed } } },
         orderBy: [{ order: 'asc' }, { createdAt: 'asc' }],
         select: { parentId: true, title: true, assignee: true, dueDate: true },
       }),

@@ -48,11 +48,12 @@ export class AuditService {
 
   async list(
     orgId: string,
-    filter: { limit?: number; action?: string; actorType?: string } = {},
+    filter: { limit?: number; action?: string; actorType?: string; entityId?: string } = {},
   ): Promise<AuditList> {
     const take = Math.min(Math.max(filter.limit ?? 100, 1), 500);
     const where: Prisma.AuditLogWhereInput = { orgId };
     if (filter.action) where.action = { contains: filter.action };
+    if (filter.entityId) where.entityId = filter.entityId;
     if (filter.actorType && ['user', 'ai', 'system'].includes(filter.actorType)) {
       where.actorType = filter.actorType as ActorType;
     }

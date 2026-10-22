@@ -52,6 +52,9 @@ export * from './arvore-do-trabalho.js';
 // Ícone e cor da lista e da pasta (I1) e a pasta Clientes fora do Trabalho (I3), produção 22B.
 export * from './aparencia-do-trabalho.js';
 export * from './pasta-do-comercial.js';
+// A Lixeira do Trabalho e o menu da tarefa (rodada de produção 3, I2 e I4, 22/10/2026).
+export * from './lixeira-do-trabalho.js';
+export * from './menu-da-tarefa.js';
 // Iniciar o onboarding antes do negócio fechado (ajustes A2): ver `onboarding-antecipado.ts`.
 export * from './onboarding-antecipado.js';
 

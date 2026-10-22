@@ -19,7 +19,7 @@ import {
   exigeMotivo,
 } from '../approvals/alcada';
 import { agentesDaCasa } from '../work/agentes-da-casa';
-import { tarefaDeListaVisivel } from '../work/arquivadas';
+import { tarefaDeListaVisivel, tarefaViva } from '../work/arquivadas';
 import {
   DIAS_DE_CONVERSA,
   DIAS_SEM_MOVIMENTO,
@@ -506,6 +506,7 @@ export class CaixaService {
           { OR: condicoesDeParada(agora) },
           // Lista ou pasta arquivada não espera ninguém (21/10/2026).
           tarefaDeListaVisivel(),
+          tarefaViva(),
         ],
       },
       orderBy: [{ dueDate: 'asc' }, { updatedAt: 'asc' }],

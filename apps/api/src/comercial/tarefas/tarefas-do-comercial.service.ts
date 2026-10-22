@@ -7,7 +7,7 @@ import {
 
 import { AuditService } from '../../audit/audit.service';
 import { PrismaService } from '../../prisma/prisma.service';
-import { tarefaDeListaVisivel } from '../../work/arquivadas';
+import { tarefaDeListaVisivel, tarefaViva } from '../../work/arquivadas';
 import { LISTA_DO_COMERCIAL, acharOuCriarListaDoComercial } from '../../work/lista-do-comercial';
 import { WorkService } from '../../work/work.service';
 import { antesNaFila, diaEmSP } from './tarefa-do-cartao';
@@ -70,6 +70,7 @@ export class TarefasDoComercialService {
       AND: [
         { OR: [{ list: { externalId: LISTA_DO_COMERCIAL } }, { leadId: { not: null } }] },
         tarefaDeListaVisivel(),
+        tarefaViva(),
       ],
     };
   }

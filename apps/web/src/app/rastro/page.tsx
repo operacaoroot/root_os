@@ -24,15 +24,25 @@ export default function AuditoriaPage() {
   const [error, setError] = useState<string | null>(null);
   const [actorType, setActorType] = useState('');
   const [action, setAction] = useState('');
+  // A Lixeira (produção 3, I2) abre esta tela já filtrada por UMA entidade: `?entidade=<id>`.
+  const [entidade, setEntidade] = useState('');
+  useEffect(() => {
+    const p = new URLSearchParams(window.location.search);
+    const e = p.get('entidade');
+    if (e && /^[0-9a-zA-Z-]{1,64}$/.test(e)) setEntidade(e);
+    const a = p.get('acao');
+    if (a) setAction(a.slice(0, 80));
+  }, []);
 
   useEffect(() => {
     if (!ready || !token) return;
     const params = new URLSearchParams({ limit: '150' });
     if (actorType) params.set('actorType', actorType);
     if (action.trim()) params.set('action', action.trim());
+    if (entidade) params.set('entidade', entidade);
     setData(null);
     apiGet<AuditList>(`/audit?${params}`, token).then(setData).catch((e) => setError(e.message));
-  }, [ready, token, actorType, action]);
+  }, [ready, token, actorType, action, entidade]);
 
   return (
     <div className="space-y-5">
@@ -60,6 +70,16 @@ export default function AuditoriaPage() {
             placeholder="filtrar por ação…"
             className="rounded-lg border border-border bg-surface px-3 py-1.5 text-sm outline-none focus:border-brand-dim"
           />
+          {entidade && (
+            <button
+              type="button"
+              data-testid="rastro-entidade"
+              onClick={() => { setEntidade(''); window.history.replaceState(window.history.state, '', '/rastro'); }}
+              className="rounded-lg border border-border px-3 py-1.5 text-sm text-muted hover:text-text"
+            >
+              Só a entidade {entidade.slice(0, 8)} · mostrar tudo
+            </button>
+          )}
         </div>
       </div>
 
