@@ -122,7 +122,7 @@ export function AbaDinheiro({ leadId, ficha: f, aoMudar }: { leadId: string; fic
         ) : !vivo.dados ? (
           <div className="mt-2"><Carregando linhas={2} altura="h-6" /></div>
         ) : vivo.dados.parcelas.length === 0 && vivo.dados.importados?.length ? (
-          <ContratosImportados itens={vivo.dados.importados} />
+          <ContratosImportados itens={vivo.dados.importados} leadId={leadId} aoMudar={mudou} />
         ) : vivo.dados.parcelas.length === 0 ? (
           <p className="mt-2 text-[12.5px] text-muted">Nenhuma parcela ainda: elas nascem com a cobrança.</p>
         ) : (

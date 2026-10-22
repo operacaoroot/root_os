@@ -146,7 +146,7 @@ export default function ContratosPage() {
                 {c.socioDaConta ? ` · sócio ${c.socioDaConta}` : ''}
               </p>
               {c.importados?.length && p.total === 0 ? (
-                <ContratosImportados itens={c.importados} />
+                <ContratosImportados itens={c.importados} leadId={c.leadId} compacto aoMudar={recarregar} />
               ) : (
                 <p className="mt-1 text-[12.5px] tabular-nums">
                   {p.pagas}/{p.total} parcelas pagas{proxima ? ` · próxima vence ${dataDoDia(proxima.vence)}` : ''}

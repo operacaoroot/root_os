@@ -131,6 +131,39 @@ export function linhasDoLancamento(input: Pick<ParcelasDoImportadoInput, 'serie'
   return numerarParcelas((input.linhas ?? []).map((l) => ({ valorCentavos: l.valorCentavos, vence: l.vence, pagaEm: l.pagaEm ?? null })));
 }
 
+/** O dia de hoje (AAAA-MM-DD) em São Paulo: o mesmo calendário da régua. */
+export function diaEmSaoPaulo(agora: Date = new Date()): string {
+  return new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Sao_Paulo', year: 'numeric', month: '2-digit', day: '2-digit' }).format(agora);
+}
+
+/**
+ * O valor digitado em reais ("1.234,56", "1234,5", "800") em centavos inteiros, sem passar por
+ * ponto flutuante: texto e expressão regular. Nulo quando não é um valor (ponto como decimal, letras).
+ */
+export function centavosDigitados(texto: string): number | null {
+  const t = String(texto ?? '').replace(/^R\$\s*/i, '').trim();
+  const m = /^(\d{1,3}(?:\.\d{3})+|\d+)(?:,(\d{1,2}))?$/.exec(t);
+  if (!m) return null;
+  const inteiro = m[1].replace(/\./g, '');
+  if (inteiro.length > 9) return null;
+  const c = Number(inteiro) * 100 + Number((m[2] ?? '').padEnd(2, '0') || '0');
+  return Number.isSafeInteger(c) ? c : null;
+}
+
+/** Centavos como o campo mostra para editar ("1234,56"). */
+export function textoDosCentavos(c: number): string {
+  return `${Math.trunc(c / 100)},${String(Math.abs(c) % 100).padStart(2, '0')}`;
+}
+
+/** O tamanho do arquivo legível ("850 KB", "1,2 MB"). */
+export function tamanhoLegivel(bytes: number): string {
+  if (!Number.isFinite(bytes) || bytes < 0) return '';
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${Math.max(1, Math.round(bytes / 1024))} KB`;
+  const decimos = Math.round((bytes * 10) / (1024 * 1024));
+  return `${Math.trunc(decimos / 10)},${decimos % 10} MB`;
+}
+
 function reais(c: number): string {
   const inteiro = Math.trunc(Math.abs(c) / 100).toString().replace(/\B(?=(\d{3})+(?!\d))/g, '.');
   return `R$ ${inteiro},${(Math.abs(c) % 100).toString().padStart(2, '0')}`;
