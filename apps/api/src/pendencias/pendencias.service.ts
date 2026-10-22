@@ -21,6 +21,8 @@ export interface AbrirPendencia {
   refTipo?: string | null;
   refId?: string | null;
   dados?: Prisma.InputJsonValue | null;
+  /** Produção 22, M4: quando o texto guardado em `dados` vence (`retencao-do-texto.ts`). */
+  textoExpiraEm?: Date | null;
 }
 
 const TETO_DA_LISTA = 200;
@@ -83,6 +85,7 @@ export class PendenciasService {
           refTipo: p.refTipo ?? null,
           refId: p.refId ?? null,
           dados: p.dados ?? Prisma.JsonNull,
+          textoExpiraEm: p.textoExpiraEm ?? null,
         },
         select: { id: true },
       });

@@ -2504,6 +2504,9 @@ model Pendencia {
   refTipo       String?
   refId         String?
   dados         Json?
+  /// Produção 22, M4: quando o texto guardado em `dados` (a mensagem da triagem do WhatsApp)
+  /// vence. O expurgo do rastro apaga o texto e anula este campo; a pendência fica.
+  textoExpiraEm DateTime?
   estado        String    @default("aberta")
   escolha       String?
   decididaPor   String?
@@ -2514,6 +2517,7 @@ model Pendencia {
   @@unique([orgId, chave])
   @@index([orgId, estado])
   @@index([orgId, paraUsuarioId, estado])
+  @@index([textoExpiraEm])
 }
 
 model AtaSugestao {
