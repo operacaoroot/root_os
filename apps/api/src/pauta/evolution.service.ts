@@ -920,7 +920,9 @@ export class EvolutionDaEmpresaService
       }),
       sincronizar: async (): Promise<ResultadoDeSincronizacao> => ({
         tipo: 'nao_se_aplica',
-        motivo: 'Não há espelho local de WhatsApp para trazer: a conversa com o lead entra pelo webhook e sai pela porta (R3).',
+        motivo:
+          'O espelho do WhatsApp da empresa (a caixa) é mantido pelo webhook, que grava tudo o que chega, e pela rotina ' +
+          '"whatsapp.sincronizar" (em /rotinas, a cada 5 minutos, só leitura). Não há o que puxar por aqui.',
       }),
       saude: async (ctx: ContextoDoVerbo): Promise<SaudeDeConector> => {
         const comecou = Date.now();
