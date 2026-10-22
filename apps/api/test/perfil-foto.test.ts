@@ -143,3 +143,61 @@ describe('o cadastro', () => {
     expect(sugerirNomeNoVault('Davi Exemplo', ['Alice', 'Bruno'], ['Davi Exemplo'])).toBeNull();
   });
 });
+
+describe('o que se guarda vai sem metadados (revisão do orquestrador)', () => {
+  const app = (marca: number, dados: Buffer) => {
+    const cab = Buffer.from([0xff, marca, 0, 0]);
+    cab.writeUInt16BE(dados.length + 2, 2);
+    return Buffer.concat([cab, dados]);
+  };
+  it('JPEG: o APP1 (EXIF com GPS), o APP13 e o COM saem; o quadro fica', () => {
+    const base = jpegDe(64, 64);
+    const exif = app(0xe1, Buffer.from('Exif\0\0GPSLatitude -21.76', 'latin1'));
+    const iptc = app(0xed, Buffer.from('Photoshop 3.0 legenda', 'latin1'));
+    const com = app(0xfe, Buffer.from('comentario', 'latin1'));
+    const sos = Buffer.from([0xff, 0xda, 0x00, 0x08, 1, 1, 0, 0, 0x3f, 0, 0xab, 0xcd]);
+    const comMeta = Buffer.concat([base.subarray(0, 8), exif, iptc, com, base.subarray(8, base.length - 2), sos, Buffer.from([0xff, 0xd9])]);
+    const c = conferirFotoDePerfil(arquivo(comMeta, 'image/jpeg'));
+    expect(c.ok).toBe(true);
+    if (!c.ok) return;
+    expect(c.conteudo.includes(Buffer.from('GPS'))).toBe(false);
+    expect(c.conteudo.includes(Buffer.from('Photoshop'))).toBe(false);
+    expect(c.conteudo.includes(Buffer.from('comentario'))).toBe(false);
+    expect(c.conteudo.length).toBe(comMeta.length - exif.length - iptc.length - com.length);
+    expect(c.largura).toBe(64);
+    expect(c.tamanho).toBe(c.conteudo.length);
+  });
+  it('PNG: tEXt e eXIf saem; IHDR, IDAT e IEND ficam', () => {
+    const base = pngDe(32, 32, 10);
+    const chunk = (tipo: string, dados: Buffer) => {
+      const len = Buffer.alloc(4);
+      len.writeUInt32BE(dados.length);
+      return Buffer.concat([len, Buffer.from(tipo, 'latin1'), dados, Buffer.alloc(4)]);
+    };
+    const texto = chunk('tEXt', Buffer.from('Author\0Fulano', 'latin1'));
+    const exif = chunk('eXIf', Buffer.from('GPS', 'latin1'));
+    const comMeta = Buffer.concat([base.subarray(0, 33), texto, exif, base.subarray(33)]);
+    const c = conferirFotoDePerfil(arquivo(comMeta));
+    expect(c.ok).toBe(true);
+    if (!c.ok) return;
+    expect(c.conteudo.equals(base)).toBe(true);
+  });
+  it('WebP: o chunk EXIF sai, o bit do VP8X apaga e o RIFF acerta o tamanho', () => {
+    const base = webpVp8xDe(40, 40);
+    base[20] = 0x08;
+    const exif = Buffer.concat([Buffer.from('EXIF', 'latin1'), Buffer.from([4, 0, 0, 0]), Buffer.from('GPS!', 'latin1')]);
+    const comMeta = Buffer.concat([base, exif]);
+    comMeta.writeUInt32LE(comMeta.length - 8, 4);
+    const c = conferirFotoDePerfil(arquivo(comMeta, 'image/webp'));
+    expect(c.ok).toBe(true);
+    if (!c.ok) return;
+    expect(c.conteudo.includes(Buffer.from('GPS!'))).toBe(false);
+    expect(c.conteudo.readUInt32LE(4)).toBe(c.conteudo.length - 8);
+    expect(c.conteudo[20] & 0x08).toBe(0);
+  });
+  it('sem metadado, o conteúdo é o mesmo que chegou', () => {
+    const png = pngDe(20, 20, 5);
+    const c = conferirFotoDePerfil(arquivo(png));
+    expect(c.ok && c.conteudo.equals(png)).toBe(true);
+  });
+});

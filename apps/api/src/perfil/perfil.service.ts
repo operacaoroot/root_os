@@ -261,7 +261,7 @@ export class PerfilService {
     this.exigirEdicao(ator, alvo);
     const c = conferirFotoDePerfil(arquivo);
     if (!c.ok) throw new BadRequestException(c.motivo);
-    const conteudo = new Uint8Array(arquivo!.buffer);
+    const conteudo = new Uint8Array(c.conteudo);
 
     await this.prisma.$transaction(async (tx) => {
       await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`perfil-foto:${orgId}:${alvo.id}`}))`;

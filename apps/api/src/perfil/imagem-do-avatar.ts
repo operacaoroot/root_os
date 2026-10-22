@@ -33,7 +33,7 @@ import { dimensoesDoJpeg } from '../pauta/imagem-jpeg';
  */
 
 export type FotoConferida =
-  | { ok: true; tipo: TipoDaFoto; mime: string; largura: number; altura: number; tamanho: number; sha256: string }
+  | { ok: true; tipo: TipoDaFoto; mime: string; largura: number; altura: number; tamanho: number; sha256: string; conteudo: Buffer }
   | { ok: false; motivo: string };
 
 const ASSINATURA_PNG = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a];
@@ -126,7 +126,10 @@ export function conferirFotoDePerfil(arquivo: { buffer: Buffer; mimetype?: strin
   if (d.largura < PERFIL_FOTO_LADO_MINIMO || d.altura < PERFIL_FOTO_LADO_MINIMO) {
     return { ok: false, motivo: `A foto tem ${d.largura}×${d.altura} px; o mínimo é ${PERFIL_FOTO_LADO_MINIMO} px de lado.` };
   }
-  if (b.length > PERFIL_FOTO_MAX_BYTES_GUARDADOS) {
+  // O que se guarda é a imagem SEM metadados: o envio direto pela API (sem o canvas da
+  // tela) traria o EXIF de uma foto de celular, com o GPS de onde ela foi tirada.
+  const limpo = semMetadados(tipo, b);
+  if (limpo.length > PERFIL_FOTO_MAX_BYTES_GUARDADOS) {
     return { ok: false, motivo: 'A foto passa de 256 KB. Envie pela tela do perfil, que reduz antes de enviar.' };
   }
   return {
@@ -135,9 +138,87 @@ export function conferirFotoDePerfil(arquivo: { buffer: Buffer; mimetype?: strin
     mime: MIME_DA_FOTO[tipo],
     largura: d.largura,
     altura: d.altura,
-    tamanho: b.length,
-    sha256: createHash('sha256').update(b).digest('hex'),
+    tamanho: limpo.length,
+    sha256: createHash('sha256').update(limpo).digest('hex'),
+    conteudo: limpo,
   };
+}
+
+/*
+ * Os metadados saem antes de guardar (revisão do orquestrador, produção 22B).
+ * Sem biblioteca: só se tiram blocos inteiros que o decodificador ignora.
+ *   · JPEG: APP1 (EXIF e XMP), APP13 (IPTC) e COM, até o SOS; o resto fica (APP0,
+ *     APP2 com o perfil de cor, APP14 da Adobe, tabelas e o quadro).
+ *   · PNG: eXIf, tEXt, zTXt, iTXt e tIME.
+ *   · WebP: os chunks EXIF e XMP, com os bits do VP8X e o tamanho do RIFF acertados.
+ * Arquivo que não se deixa percorrer volta como veio: a conferência de cima já
+ * recusou o que não é imagem, e o erro é para o lado de guardar a foto.
+ */
+export function semMetadados(tipo: TipoDaFoto, b: Buffer): Buffer {
+  try {
+    if (tipo === 'jpeg') return jpegSemMetadados(b);
+    if (tipo === 'png') return pngSemMetadados(b);
+    return webpSemMetadados(b);
+  } catch {
+    return b;
+  }
+}
+
+function jpegSemMetadados(b: Buffer): Buffer {
+  const partes: Buffer[] = [b.subarray(0, 2)];
+  let i = 2;
+  while (i + 4 <= b.length) {
+    if (b[i] !== 0xff) return b;
+    const marca = b[i + 1];
+    if (marca === 0xff) { i += 1; continue; }
+    if (marca === 0xda || marca === 0xd9) { partes.push(b.subarray(i)); return Buffer.concat(partes); }
+    if (marca === 0xd8 || (marca >= 0xd0 && marca <= 0xd7) || marca === 0x01) { partes.push(b.subarray(i, i + 2)); i += 2; continue; }
+    const fim = i + 2 + b.readUInt16BE(i + 2);
+    if (fim > b.length) return b;
+    if (!(marca === 0xe1 || marca === 0xed || marca === 0xfe)) partes.push(b.subarray(i, fim));
+    i = fim;
+  }
+  return b;
+}
+
+const CHUNKS_DE_TEXTO_DO_PNG = new Set(['eXIf', 'tEXt', 'zTXt', 'iTXt', 'tIME']);
+
+function pngSemMetadados(b: Buffer): Buffer {
+  const partes: Buffer[] = [b.subarray(0, 8)];
+  let i = 8;
+  while (i + 12 <= b.length) {
+    const fim = i + 12 + b.readUInt32BE(i);
+    if (fim > b.length) return b;
+    const tipo = b.toString('latin1', i + 4, i + 8);
+    if (!CHUNKS_DE_TEXTO_DO_PNG.has(tipo)) partes.push(b.subarray(i, fim));
+    i = fim;
+    if (tipo === 'IEND') return Buffer.concat(partes);
+  }
+  return b;
+}
+
+function webpSemMetadados(b: Buffer): Buffer {
+  const partes: Buffer[] = [];
+  let i = 12;
+  let tirou = false;
+  while (i + 8 <= b.length) {
+    const tamanho = b.readUInt32LE(i + 4);
+    const fim = i + 8 + tamanho + (tamanho % 2);
+    if (fim > b.length) return b;
+    const tipo = b.toString('latin1', i, i + 4);
+    if (tipo === 'EXIF' || tipo === 'XMP ') tirou = true;
+    else partes.push(Buffer.from(b.subarray(i, fim)));
+    i = fim;
+  }
+  if (!tirou) return b;
+  const vp8x = partes.find((p) => p.toString('latin1', 0, 4) === 'VP8X');
+  if (vp8x) vp8x[8] &= ~0x0c;
+  const corpo = Buffer.concat(partes);
+  const cabecalho = Buffer.alloc(12);
+  cabecalho.write('RIFF', 0, 'latin1');
+  cabecalho.writeUInt32LE(corpo.length + 4, 4);
+  cabecalho.write('WEBP', 8, 'latin1');
+  return Buffer.concat([cabecalho, corpo]);
 }
 
 /** O leitor do JPEG da pauta, com a frase do perfil (a da pauta fala da Meta). */
