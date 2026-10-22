@@ -33,6 +33,19 @@ export function tarefaDeListaVisivel(): Prisma.WorkTaskWhereInput {
   return { list: listaVisivel() };
 }
 
+/**
+ * A TAREFA NÃO ESTÁ NA LIXEIRA (rodada de produção 3, I2, 22/10/2026).
+ *
+ * Excluir grava `excluidaEm` e também arquiva, então a listagem que já pede
+ * `archived: false` a tira sozinha. Esta função é para as que MOSTRAM arquivada
+ * (o filtro "arquivadas" do quadro, a Implantação, a contagem por lista) e para
+ * deixar o recorte escrito onde a listagem não passa pelo `archived`. Vai num
+ * `AND`, como `tarefaDeListaVisivel`. A leitura por id não usa: os dados ficam.
+ */
+export function tarefaViva(): Prisma.WorkTaskWhereInput {
+  return { excluidaEm: null };
+}
+
 /** As pastas que somem da árvore: as arquivadas e tudo o que está dentro delas. */
 export function pastasEscondidas(pastas: readonly { id: string; parentId: string | null; arquivadaEm: Date | null }[]): Set<string> {
   const escondidas = new Set(pastas.filter((p) => p.arquivadaEm).map((p) => p.id));

@@ -14,7 +14,7 @@ import { PendenciasService } from '../../pendencias/pendencias.service';
 import { PrismaService } from '../../prisma/prisma.service';
 import { ExecutoresDeRotinaRegistry } from '../../routines/executores.registry';
 import type { ContextoDaRotina, ResultadoDaRotina } from '../../routines/rotina.tipos';
-import { tarefaDeListaVisivel } from '../arquivadas';
+import { tarefaDeListaVisivel, tarefaViva } from '../arquivadas';
 import {
   chaveDaCobranca,
   cobrancasPorPessoa,
@@ -111,6 +111,7 @@ export class CobrancaDeTarefasService implements OnModuleInit {
           status: { type: { not: 'closed' } },
           AND: [
             tarefaDeListaVisivel(),
+            tarefaViva(),
             {
               OR: [
                 { dueDate: { lt: agora } },

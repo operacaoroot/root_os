@@ -9,7 +9,7 @@ import {
   nomeParaConfirmar, chaveDoNomeNoNivel, etapaNoDestino,
   TRAB_NOME_DE_PASTA_REPETIDO, TRAB_NOME_DE_LISTA_REPETIDO, TRAB_PASTA_DA_IMPLANTACAO_PROTEGIDA, TRAB_ORDEM_FORA_DO_NIVEL,
   TRAB_LISTA_VOLTOU_SEM_PASTA, TRAB_PASTA_VOLTOU_AO_TOPO, IMPORTACAO_CRM_MARCA,
-  motivoParaNaoMoverPasta, destinoDoValorDoCampo,
+  motivoParaNaoMoverPasta, destinoDoValorDoCampo, TRAB_NA_LIXEIRA,
 } from '@mktos/shared';
 import type {
   TrabEstrutura, TrabListaDto, TrabCampoDto, TrabTarefaLista, TrabTarefaResumo,
@@ -30,7 +30,7 @@ import { listarClientes, nomesDosClientes, resolverCliente } from './clientes-da
 import { criarEstruturaSugerida, criarListaDoModeloNoBanco, criarListaPadraoNoBanco } from './estrutura-sugerida';
 import { SEGMENTO_SEM_PASTA, pastaComSubpastas, type WorkTaskQuery } from './work-task-query';
 import { exigirAcessoAtual } from '../memory/acesso-memoria';
-import { listaVisivel, pastasEscondidas, tarefaDeListaVisivel } from './arquivadas';
+import { listaVisivel, pastasEscondidas, tarefaDeListaVisivel, tarefaViva } from './arquivadas';
 import { ehListaDoComercial, foraDaArvore } from './lista-do-comercial';
 import { activityCursor, activityDto, activityNames, activityPoint, activityWhere, parseActivityQuery } from './work-activity-page';
 
@@ -1213,6 +1213,7 @@ export class WorkService {
       outrosResponsaveisIds: t.outrosResponsaveisIds ?? [],
       recorrencia: regraDeRepeticao(t.recorrencia),
       listName: t.list?.name,
+      excluidaEm: t.excluidaEm?.toISOString() ?? null,
     };
   }
 
@@ -1247,6 +1248,8 @@ export class WorkService {
         { OR: [{ parentId: null }, { parent: { list: { natureza: 'cadastro' } } }] },
         { OR: [{ externalId: null }, { externalId: { notIn: [...CARTOES_QUE_NAO_SAO_TAREFA] } }] },
         visivel,
+        // Tarefa na Lixeira não aparece nem com o filtro de arquivadas (I2, 22/10/2026).
+        tarefaViva(),
         // As tarefas do comercial moram no Funil vivo, fora da árvore e de Todas (adendo de 21/10/2026).
         { list: foraDaArvore() },
       ];
@@ -1262,7 +1265,7 @@ export class WorkService {
         where.list = { ...(where.list as Prisma.WorkListWhereInput), folderId: { in: [...pastaComSubpastas(pastas, f.segmentoId)] } };
       }
     } else {
-      where.AND = [visivel];
+      where.AND = [visivel, tarefaViva()];
     }
     if (f.tagId) where.tags = { some: { id: f.tagId } };
     if (f.q) where.title = { contains: f.q, mode: 'insensitive' };
@@ -1326,7 +1329,7 @@ export class WorkService {
         ...TASK_INCLUDE,
         list: true,
         comments: { orderBy: { createdAt: 'desc' } },
-        subtasks: { include: { status: true } },
+        subtasks: { where: { excluidaEm: null }, include: { status: true } },
       },
     });
     if (!t) throw new NotFoundException('Tarefa não encontrada');
@@ -1503,6 +1506,8 @@ export class WorkService {
     const conflito = () => new ConflictException({
       error: 'work_task_conflict', code: 'work_task_conflict', message: 'A tarefa mudou. Confira a versão atual antes de salvar.',
     });
+    // Na Lixeira não se edita (I2, 22/10/2026): restaurar é o caminho de volta.
+    if (antes.excluidaEm) throw new ConflictException(TRAB_NA_LIXEIRA);
     if (new Date(input.expectedUpdatedAt).getTime() !== antes.updatedAt.getTime()) {
       throw conflito();
     }
@@ -1583,6 +1588,7 @@ export class WorkService {
           status: antes.status.name, title: antes.title, assignee: antes.assignee,
           assigneeUserId: antes.assigneeUserId, priority: antes.priority,
           dueDate: antes.dueDate?.toISOString() ?? null,
+          ...(input.archived !== undefined ? { archived: antes.archived } : {}),
           ...(clienteId !== undefined ? { clienteId: antes.clienteId } : {}),
           ...(outrosResponsaveisIds !== undefined ? { outrosResponsaveisIds: antes.outrosResponsaveisIds } : {}),
           ...(repeticaoMuda ? { recorrencia: antes.recorrencia ?? null } : {}),
@@ -1592,6 +1598,7 @@ export class WorkService {
           status: depois.status.name, title: depois.title, assignee: depois.assignee,
           assigneeUserId: depois.assigneeUserId, priority: depois.priority,
           dueDate: depois.dueDate?.toISOString() ?? null,
+          ...(input.archived !== undefined ? { archived: depois.archived } : {}),
           ...(clienteId !== undefined ? { clienteId: depois.clienteId } : {}),
           ...(outrosResponsaveisIds !== undefined ? { outrosResponsaveisIds: depois.outrosResponsaveisIds } : {}),
           ...(repeticaoMuda ? { recorrencia: depois.recorrencia ?? null } : {}),
@@ -1803,6 +1810,7 @@ export class WorkService {
 
   async comentar(orgId: string, actorId: string, taskId: string, text: string) {
     const t = await this.prisma.workTask.findFirst({ where: { id: taskId, orgId } });
+    if (t?.excluidaEm) throw new ConflictException(TRAB_NA_LIXEIRA);
     if (!t) throw new NotFoundException('Tarefa não encontrada');
     const autor = await this.prisma.user.findUnique({ where: { id: actorId }, select: { name: true } });
     const c = await this.prisma.workComment.create({

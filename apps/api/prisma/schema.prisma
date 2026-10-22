@@ -2264,6 +2264,13 @@ model WorkTask {
   externalId  String? // id da task no ClickUp (fotografia); reconciliação futura
   externalUrl String?
   archived    Boolean      @default(false)
+  /// NA LIXEIRA (rodada de produção 3, I2, 22/10/2026). Excluir grava a hora aqui E arquiva
+  /// (`archived`): toda listagem que já filtra arquivada a tira, e as que mostram arquivada
+  /// pedem `tarefaViva()` (`src/work/arquivadas.ts`). Restaurar limpa as duas. A leitura por
+  /// id continua valendo. Migration `20261022210000_trabalho_lixeira`.
+  excluidaEm  DateTime?
+  /// Quem excluiu (id de `User` desta empresa; sem chave estrangeira de propósito).
+  excluidaPor String?
   order       Int          @default(0)
   createdAt   DateTime     @default(now())
   updatedAt   DateTime     @updatedAt
@@ -2316,6 +2323,7 @@ model WorkTask {
   @@index([orgId, clienteId])
   @@index([orgId, serieId])
   @@index([orgId, leadId])
+  @@index([orgId, excluidaEm])
 }
 
 /// As áreas da empresa para separar tarefas (Comercial, Marketing, Operação…).

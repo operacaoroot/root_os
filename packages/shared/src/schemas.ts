@@ -5680,6 +5680,8 @@ export interface TrabTarefaResumo {
   recorrencia?: RecorrenciaDaTarefa | null;
   /** O nome da lista, para a visão "Todas" (tarefas de várias listas juntas). */
   listName?: string;
+  /** Na Lixeira desde (I2, 22/10/2026); nulo = viva. Só a leitura por id a devolve preenchida. */
+  excluidaEm?: string | null;
 }
 /* ----------------------------------------------------------------------------
  * O MOVIMENTO DO CARTÃO no quadro denso (rodada da implantação I2, 18/10/2026)

@@ -49,6 +49,9 @@ export * from './implantacao.js';
 // Editar a árvore do Trabalho onde a pessoa está olhando (adendo da rodada de produção 1, A3):
 // ver o cabeçalho de `arvore-do-trabalho.ts`.
 export * from './arvore-do-trabalho.js';
+// A Lixeira do Trabalho e o menu da tarefa (rodada de produção 3, I2 e I4, 22/10/2026).
+export * from './lixeira-do-trabalho.js';
+export * from './menu-da-tarefa.js';
 // Iniciar o onboarding antes do negócio fechado (ajustes A2): ver `onboarding-antecipado.ts`.
 export * from './onboarding-antecipado.js';
 

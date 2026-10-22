@@ -169,6 +169,8 @@ export const MODULO_DO_TIPO: Readonly<Record<string, ModuloKey>> = {
   // O relógio do cockpit do lead (comercial, 13/10/2026): semeado por empresa no
   // primeiro lead; o tipo vive em `comercial/relogio-da-espinha.ts`.
   'comercial.relogio': 'leads',
+  // A Lixeira do Trabalho (produção 3, I2): o expurgo dos 30 dias. Sem o Trabalho, não há o que expurgar.
+  'trabalho.lixeira.expurgo': 'trabalho',
 };
 
 /** Como a execução foi disparada. */
