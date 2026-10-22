@@ -1,5 +1,5 @@
 import { BadRequestException, ConflictException, Injectable, Logger, NotFoundException } from '@nestjs/common';
-import { OnboardingFase, type OnboardingItem, type OnboardingTrilho } from '@prisma/client';
+import { OnboardingFase, type OnboardingItem, type OnboardingTrilho, type Prisma } from '@prisma/client';
 
 import { comTenantPublico, resolverTenantDoConvite } from '../../common/tenant-publico';
 import { env } from '../../llm/env';
@@ -181,12 +181,35 @@ export class LinkPublicoService {
     };
   }
 
+  /**
+   * Produção 22C (W3): as conversas de WhatsApp ligadas ao cliente do trilho
+   * (pelo cliente do card ou pelo lead cuja ficha aponta o trilho). Só
+   * contagem, para a teia; nunca texto. Falhar não derruba o link.
+   */
+  private async whatsappDoTrilho(t: OnboardingTrilho): Promise<{ conversas: number; mensagens: number } | null> {
+    try {
+      const card = t.cardId ? await this.prisma.workTask.findFirst({ where: { id: t.cardId, orgId: t.orgId }, select: { clienteId: true, leadId: true } }) : null;
+      const ficha = await this.prisma.comercialFicha.findFirst({ where: { orgId: t.orgId, trilhoId: t.id }, select: { leadId: true } });
+      const ou: Prisma.WhatsAppConversaWhereInput[] = [];
+      if (card?.clienteId) ou.push({ clienteId: card.clienteId });
+      const leadId = card?.leadId ?? ficha?.leadId ?? null;
+      if (leadId) ou.push({ leadId });
+      if (!ou.length) return null;
+      const conversas = await this.prisma.whatsAppConversa.findMany({ where: { orgId: t.orgId, OR: ou }, select: { id: true } });
+      if (!conversas.length) return null;
+      const mensagens = await this.prisma.whatsAppMensagem.count({ where: { orgId: t.orgId, conversaId: { in: conversas.map((c) => c.id) } } });
+      return { conversas: conversas.length, mensagens };
+    } catch {
+      return null;
+    }
+  }
+
   private async montarEstadoCompleto(
     t: OnboardingTrilho & { itens: OnboardingItem[] },
     r: Resolvido,
   ): Promise<EstadoDoLink> {
     const { perguntas, notas } = await this.marcosDoLink(t.id);
-    return this.montarEstado(t, r, perguntas, notas);
+    return this.montarEstado(t, r, perguntas, notas, await this.whatsappDoTrilho(t));
   }
 
   private montarEstado(
@@ -194,6 +217,7 @@ export class LinkPublicoService {
     r: Resolvido,
     perguntas: Record<string, string> = {},
     notasDaConversa: NotaDaConversa[] = [],
+    whatsapp: { conversas: number; mensagens: number } | null = null,
   ): EstadoDoLink {
     const nivel: Nivel | null = ehNivel(t.nivel) ? t.nivel : null;
     const temas = temasDoConvite(r.blocos, nivel);
@@ -239,6 +263,7 @@ export class LinkPublicoService {
         blocosDoLink: r.blocos,
         itens: t.itens.map((i) => ({ temaId: i.temaId, status: i.status, proposta: i.proposta, textoFinal: i.textoFinal })),
         notasDaConversa,
+        whatsapp,
       }),
       progresso: {
         confirmados: itens.filter((i) => i.status === 'confirmado' || i.status === 'corrigido').length,

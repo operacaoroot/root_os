@@ -84,6 +84,12 @@ export interface EstadoParaTeia {
   blocosDoLink: BlocosDoConvite;
   itens: readonly ItemParaTeia[];
   notasDaConversa: readonly NotaDaConversa[];
+  /**
+   * Produção 22C (W3): a conversa de WhatsApp ligada ao cliente (o grupo
+   * `ROOT | <cliente>` ou o 1:1). Só a CONTAGEM entra na teia: o link é do
+   * cliente e nunca mostra texto de mensagem. Ausente ou zero = sem nó.
+   */
+  whatsapp?: { conversas: number; mensagens: number } | null;
 }
 
 export const PASTA_DO_BLOCO: Record<Bloco, string> = {
@@ -95,6 +101,8 @@ export const PASTA_DO_BLOCO: Record<Bloco, string> = {
 
 export const PASTA_DA_CONVERSA = 'Da conversa';
 export const ID_DO_INDICE = 'indice';
+/** O nó da conversa de WhatsApp com a casa (produção 22C): uma nota "da conversa", ligada aos canais. */
+export const ID_DO_WHATSAPP = 'conversa:whatsapp';
 
 /** O que uma nota puxa da outra. Simétrico; a ordem dos pares não importa. */
 export const LIGACOES_DA_ESPINHA: readonly [string, string][] = [
@@ -178,6 +186,23 @@ export function montarTeia(e: EstadoParaTeia): TeiaDoCliente {
     });
   }
 
+  const zap = e.whatsapp;
+  if (zap && zap.conversas > 0) {
+    const m = Math.max(0, Math.floor(zap.mensagens));
+    nos.push({
+      id: ID_DO_WHATSAPP,
+      tipo: 'conversa',
+      titulo: 'WhatsApp com a Root',
+      pasta: PASTA_DA_CONVERSA,
+      estado: 'conversa',
+      bloco: null,
+      temaId: null,
+      minuto: null,
+      corpo: `${zap.conversas === 1 ? 'Uma conversa' : `${zap.conversas} conversas`} com a Root no WhatsApp${m ? `, ${m === 1 ? '1 mensagem' : `${m} mensagens`} guardadas` : ''}.`,
+      ligacoes: [],
+    });
+  }
+
   nos.push({
     id: ID_DO_INDICE,
     tipo: 'indice',
@@ -206,6 +231,9 @@ export function montarTeia(e: EstadoParaTeia): TeiaDoCliente {
   for (const n of e.notasDaConversa) {
     for (const alvo of n.liga ?? []) ligar(idDaNotaDaConversa(n.id), alvo);
   }
+  // A conversa de WhatsApp puxa os canais e o dia a dia (quando o tema existe no convite).
+  ligar(ID_DO_WHATSAPP, 'canais');
+  ligar(ID_DO_WHATSAPP, 'c-dia-a-dia');
   // O índice liga o que EXISTE: nota pronta e nota da conversa. É ele que cresce a cada resposta.
   for (const n of nos) {
     if (n.estado === 'pronta' || n.estado === 'conversa') ligar(ID_DO_INDICE, n.id);

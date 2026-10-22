@@ -1,9 +1,9 @@
 import { Injectable, Logger } from '@nestjs/common';
-import type { ComercialEvento } from '@mktos/shared';
+import { rotuloDoTipoDeMensagem, type ComercialEvento, type LinhaDoFio } from '@mktos/shared';
 import { Prisma } from '@prisma/client';
 
 import { PrismaService } from '../prisma/prisma.service';
-import { montarEvento, reacaoId, type PayloadDe } from './eventos';
+import { diaRelativo, linhasDoFio, montarEvento, reacaoId, type PayloadDe } from './eventos';
 
 /*
  * O FIO DO LEAD — o ÚNICO caminho de escrita de um fato do comercial (orquestrador, 13/10/2026).
@@ -294,6 +294,68 @@ export class FioService {
       await this.prisma.comercialReacao.update({ where: { id }, data: { estado: 'erro', erro: msg.slice(0, 2000), resultado: { tentativas, desistiu } } });
       return { erro: msg };
     }
+  }
+
+  /**
+   * O FIO NA TELA, COM O WHATSAPP DE GENTE (produção 22C, W3). Os fatos do lead
+   * (`LeadEvent`) e, das conversas de WhatsApp ligadas a ele, as mensagens como
+   * linhas `whatsapp.mensagem` (entrada e saída). UMA FONTE POR MENSAGEM: a que
+   * já está no fio pelo comercial (`ComercialMensagem` do lead, ou o
+   * `whats.recebida` com o mesmo id do provedor) não entra de novo. Nenhum
+   * `LeadEvent` é gravado por mensagem: a fonte é a tabela, o fio só projeta.
+   */
+  async fioDoLead(
+    orgId: string,
+    leadId: string,
+    eventos: readonly { id: string; type: string; payload: unknown; occurredAt: Date }[],
+    entrada: Date,
+  ): Promise<LinhaDoFio[]> {
+    const base = linhasDoFio(eventos, entrada);
+    const doWhatsapp = await this.linhasDoWhatsapp(orgId, leadId, eventos, entrada);
+    if (!doWhatsapp.length) return base;
+    return [...base, ...doWhatsapp].sort((a, b) => a.em.localeCompare(b.em));
+  }
+
+  private async linhasDoWhatsapp(
+    orgId: string,
+    leadId: string,
+    eventos: readonly { type: string; payload: unknown }[],
+    entrada: Date,
+  ): Promise<LinhaDoFio[]> {
+    const mensagens = await this.prisma.whatsAppMensagem.findMany({
+      where: { orgId, leadId, tipo: { notIn: ['protocolo', 'reaction', 'edicao'] } },
+      orderBy: { timestamp: 'desc' },
+      take: 200,
+      select: { id: true, mensagemExternaId: true, deMim: true, grupo: true, tipo: true, texto: true, remetenteNome: true, timestamp: true },
+    });
+    if (!mensagens.length) return [];
+    const doComercial = await this.prisma.comercialMensagem.findMany({
+      where: { orgId, leadId, mensagemExternaId: { in: mensagens.map((m) => m.mensagemExternaId) } },
+      select: { mensagemExternaId: true },
+    });
+    const jaNoFio = new Set<string>(doComercial.map((m) => m.mensagemExternaId).filter((x): x is string => !!x));
+    for (const e of eventos) {
+      if (e.type !== 'whats.recebida') continue;
+      const id = (e.payload as { mensagemId?: unknown } | null)?.mensagemId;
+      if (typeof id === 'string' && id) jaNoFio.add(id);
+    }
+    const curto = (t: string, n: number) => (t.length > n ? `${t.slice(0, n - 1)}…` : t);
+    return mensagens
+      .filter((m) => !jaNoFio.has(m.mensagemExternaId))
+      .reverse()
+      .map((m) => {
+        const quem = m.deMim ? 'enviada' : m.grupo && m.remetenteNome ? `de ${curto(m.remetenteNome, 30)}` : 'recebida';
+        const onde = m.grupo ? ' no grupo' : '';
+        const texto = m.texto?.trim() ? `“${curto(m.texto.trim(), 80)}”` : `[${rotuloDoTipoDeMensagem(m.tipo)}]`;
+        return {
+          eventoId: `whatsapp:${m.id}`,
+          type: 'whatsapp.mensagem',
+          fonte: 'whats' as const,
+          resumo: `WhatsApp${onde} · ${quem} · ${texto}`,
+          em: m.timestamp.toISOString(),
+          dia: diaRelativo(entrada, m.timestamp),
+        };
+      });
   }
 
   /** A-3: o registro das reações (a decisão inscreve ali como achar as suas para o retry). */
