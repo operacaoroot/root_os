@@ -1,5 +1,5 @@
 {
-  "inicio": "2026-10-21T06:52:37.571Z",
+  "inicio": "2026-10-22T01:28:49.222Z",
   "web": "http://127.0.0.1:3031",
   "passos": [
     {
@@ -15,7 +15,7 @@
         },
         {
           "titulo": "Tarefas por lista",
-          "barras": 3,
+          "barras": 4,
           "orientacao": "colunas"
         }
       ]
@@ -24,7 +24,7 @@
       "n": 2,
       "nome": "P1 · Visão geral a 390 (toque): sem rolagem lateral, balão dentro, tocar fora fecha",
       "ok": true,
-      "ms": 1796,
+      "ms": 1786,
       "detalhe": [
         {
           "titulo": "Carga por prazo",
@@ -33,7 +33,7 @@
         },
         {
           "titulo": "Tarefas por lista",
-          "barras": 3,
+          "barras": 4,
           "orientacao": "colunas"
         }
       ]
@@ -42,7 +42,7 @@
       "n": 3,
       "nome": "P2 · Agenda: Semana no endereço, grade de horas no desktop, volta ao Mês",
       "ok": true,
-      "ms": 2147,
+      "ms": 2043,
       "detalhe": {
         "dia": "2026-10-21"
       }
@@ -51,13 +51,13 @@
       "n": 4,
       "nome": "P2 · Agenda a 390: a semana vira lista por dia, sem rolagem lateral",
       "ok": true,
-      "ms": 703
+      "ms": 783
     },
     {
       "n": 5,
       "nome": "P4 · Todas: \"Ocultar status vazios\" alterna, conta, vai ao endereço e some com as colunas vazias",
       "ok": true,
-      "ms": 1536,
+      "ms": 1605,
       "detalhe": {
         "colunasAntes": 16,
         "vazias": 12,
@@ -68,16 +68,16 @@
       "n": 6,
       "nome": "P4 · a vista salva leva \"Ocultar status vazios\"",
       "ok": true,
-      "ms": 1513,
+      "ms": 1651,
       "detalhe": {
-        "nome": "Produção 21 565160"
+        "nome": "Produção 21 536850"
       }
     },
     {
       "n": 7,
       "nome": "P3 · a árvore do Trabalho: o menu da lista oferece excluir (ou arquivar antes) e pede o nome",
       "ok": true,
-      "ms": 770,
+      "ms": 840,
       "detalhe": {
         "itens": [
           "Renomear",
@@ -89,7 +89,7 @@
       "n": 8,
       "nome": "P6 · Implantação: o cartão diz há quantos dias está na etapa, e o painel mostra quem trabalha nela",
       "ok": true,
-      "ms": 2387,
+      "ms": 2416,
       "detalhe": {
         "naEtapa": true,
         "quemTrabalha": true,
@@ -100,9 +100,9 @@
       "n": 9,
       "nome": "P7 · Atas: duas colunas, a página não rola e a lista rola sozinha",
       "ok": true,
-      "ms": 2010,
+      "ms": 1958,
       "detalhe": {
-        "ata": "memoria:1bae5815-216c-44c2-a135-1e8d91753e97",
+        "ata": "memoria:75ef8b6c-8430-4c68-9900-9ac9219ebeef",
         "rolavel": true,
         "baixo": 876,
         "janela": 900,
@@ -115,28 +115,28 @@
       "n": 10,
       "nome": "P7 · Atas: busca por palavra e por data vão ao endereço e filtram",
       "ok": true,
-      "ms": 4438,
+      "ms": 4488,
       "detalhe": {
-        "comPalavra": 9,
+        "comPalavra": 14,
         "noPassado": 0,
-        "hoje": 9,
-        "endereco": "?ata=memoria%3A1bae5815-216c-44c2-a135-1e8d91753e97&q=<palavra>&de=2026-10-16&ate=2026-10-16"
+        "hoje": 14,
+        "endereco": "?ata=memoria%3A75ef8b6c-8430-4c68-9900-9ac9219ebeef&q=<palavra>&de=2026-10-16&ate=2026-10-16"
       }
     },
     {
       "n": 11,
       "nome": "P8 · Integrações: o cartão WhatsApp (Evolution) com estado e webhook, sem chave na tela e sem o DigiSac",
       "ok": true,
-      "ms": 2315,
+      "ms": 2362,
       "detalhe": {
-        "selo": "não configurada"
+        "selo": "Não configurado"
       }
     },
     {
       "n": 12,
       "nome": "P9 · aba Sala: o estado da sala deste lead, a ajuda e o \"Copiar link da sala\"",
       "ok": true,
-      "ms": 2033,
+      "ms": 2068,
       "detalhe": {
         "linkNaAreaDeTransferencia": true,
         "naoEntregueSimulado": false,
@@ -147,13 +147,13 @@
       "n": 13,
       "nome": "P9 · aba Sala no claro e a 390",
       "ok": true,
-      "ms": 2301
+      "ms": 2271
     },
     {
       "n": 14,
       "nome": "A3 · árvore: \"+ nova pasta\" inline (Enter salva), renomear com duplo clique, repetido no mesmo nível recusado",
       "ok": true,
-      "ms": 1707,
+      "ms": 1749,
       "detalhe": {
         "recusa": "Já existe uma pasta com esse nome neste lugar.",
         "pastas": 2
@@ -163,7 +163,7 @@
       "n": 15,
       "nome": "A3 · árvore: arrastar a lista para outra pasta e reordenar com Alt+↓",
       "ok": true,
-      "ms": 2055,
+      "ms": 2159,
       "detalhe": {
         "listasNaPasta": 2
       }
@@ -172,7 +172,7 @@
       "n": 16,
       "nome": "A3 · apagar pasta com listas: o diálogo pede o destino (Sem pasta), move as listas e apaga",
       "ok": true,
-      "ms": 1134,
+      "ms": 1196,
       "detalhe": {
         "listasMovidas": 2
       }
@@ -181,7 +181,7 @@
       "n": 17,
       "nome": "A3 · apagar lista vazia pelo menu (nome digitado) e a pasta vazia que sobrou; 390 sem rolagem lateral",
       "ok": true,
-      "ms": 1983,
+      "ms": 2250,
       "detalhe": {
         "listasApagadas": 2
       }
@@ -190,16 +190,16 @@
       "n": 18,
       "nome": "A1 · Funil vivo: bloco \"Tarefas do comercial\" com contagem, \"+ tarefa\" (Enter salva) e concluir",
       "ok": true,
-      "ms": 1495,
+      "ms": 1469,
       "detalhe": {
-        "contagemAntes": 0
+        "contagemAntes": 3
       }
     },
     {
       "n": 19,
       "nome": "A1 · painel do lead: bloco \"Tarefas\", \"+ tarefa\" já ligada ao lead, e o cartão mostra a tarefa",
       "ok": true,
-      "ms": 1956,
+      "ms": 2072,
       "detalhe": {
         "linhaMostra": true
       }
@@ -208,7 +208,7 @@
       "n": 20,
       "nome": "A1 · o bloco no claro e a 390, sem rolagem lateral",
       "ok": true,
-      "ms": 1465
+      "ms": 1513
     }
   ],
   "screenshots": [
@@ -249,6 +249,6 @@
     "Drive e Granola com dublê estão provados na suíte da API (trabalho-atas-fontes, trabalho-atas-granola); a stack do seed não tem conta Google nem o cofre de pé"
   ],
   "ok": true,
-  "fim": "2026-10-21T06:53:14.839Z",
-  "duracaoMs": 37268
+  "fim": "2026-10-22T01:29:27.372Z",
+  "duracaoMs": 38150
 }

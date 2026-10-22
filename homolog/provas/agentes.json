@@ -1,12 +1,12 @@
 {
-  "inicio": "2026-10-21T11:03:02.128Z",
+  "inicio": "2026-10-22T01:26:18.498Z",
   "web": "http://127.0.0.1:3031",
   "passos": [
     {
       "n": 1,
       "nome": "CO-15 · o formulário do site cria o lead (CORS de operacaoroot.com, idempotente, isca calada)",
       "ok": true,
-      "ms": 245,
+      "ms": 151,
       "detalhe": {
         "leadsAchados": 0,
         "status": [
@@ -20,7 +20,7 @@
       "n": 2,
       "nome": "TR-04 · a pasta do cliente sem a raiz configurada responde sem_raiz com a frase",
       "ok": true,
-      "ms": 24,
+      "ms": 25,
       "detalhe": {
         "clientes": 10,
         "estado": "sem_raiz"
@@ -30,7 +30,7 @@
       "n": 3,
       "nome": "TR-06 · anexo na tarefa: sobe, aparece na lista e fica no OS/na fila sem pasta",
       "ok": true,
-      "ms": 1948,
+      "ms": 1075,
       "detalhe": {
         "anexos": 0,
         "semStorage": true,
@@ -41,7 +41,7 @@
       "n": 4,
       "nome": "AG-01 · a rota do vigia responde e a /agenda carrega sem erro",
       "ok": true,
-      "ms": 806,
+      "ms": 754,
       "detalhe": {
         "itens": 0,
         "motivo": null
@@ -51,7 +51,7 @@
       "n": 5,
       "nome": "A7 · Equipe com três pessoas e os agentes sob cada uma",
       "ok": true,
-      "ms": 2647,
+      "ms": 2416,
       "detalhe": {
         "pessoas": [
           "Lucas",
@@ -65,7 +65,7 @@
       "n": 6,
       "nome": "A7 · /agentes com as abas Agentes, Rotinas e Automações, filtro no endereço",
       "ok": true,
-      "ms": 2700,
+      "ms": 2489,
       "detalhe": {
         "abas": [
           "Agentes 33",
@@ -80,7 +80,7 @@
       "n": 7,
       "nome": "A6 · /conexoes com o cartão único e sem DigiSac",
       "ok": true,
-      "ms": 2230,
+      "ms": 2276,
       "detalhe": {
         "cartoes": 20
       }
@@ -89,7 +89,7 @@
       "n": 8,
       "nome": "Lane 0 · as pendências respondem e a caixa abre",
       "ok": true,
-      "ms": 708,
+      "ms": 728,
       "detalhe": {
         "abertas": 0
       }
@@ -115,6 +115,6 @@
     "stack sem MinIO: o upload respondeu 503 com a frase do storage (o caminho com storage é a suíte work-anexos)"
   ],
   "ok": true,
-  "fim": "2026-10-21T11:03:15.313Z",
-  "duracaoMs": 13185
+  "fim": "2026-10-22T01:26:28.767Z",
+  "duracaoMs": 10269
 }

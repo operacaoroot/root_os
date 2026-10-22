@@ -450,6 +450,8 @@ async function main() {
     const estado = (await p.getByTestId('sala-estado').innerText()).replace(/\s+/g, ' ').trim();
     conferir(estado.length > 0 && !/Invalid date|NaN/i.test(estado), `o estado da sala veio: ${estado.slice(0, 200)}`);
     const botao = p.getByTestId('sala-copiar-link');
+    // O botão depende da permissão da sessão, que chega um instante depois do estado (produção 22: esperar, não contar na hora).
+    await botao.waitFor({ timeout: 10_000 }).catch(() => null);
     conferir(await botao.count(), 'o botão "Copiar link da sala" não apareceu para o admin');
     await botao.click();
     await dormir(800);

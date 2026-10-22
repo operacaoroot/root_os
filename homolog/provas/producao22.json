@@ -1,0 +1,145 @@
+{
+  "inicio": "2026-10-22T01:25:33.767Z",
+  "web": "http://127.0.0.1:3031",
+  "passos": [
+    {
+      "n": 1,
+      "nome": "M1 · Implantação: o cartão mostra o selo da fase quando diverge; o painel diz da agenda e da fase",
+      "ok": true,
+      "ms": 1819,
+      "detalhe": {
+        "cartoes": 10,
+        "selos": 6,
+        "reunioes": 0,
+        "agenda": "indisponivel",
+        "indisponivel": true
+      }
+    },
+    {
+      "n": 2,
+      "nome": "M1 · \"Pedir agora\": cada agente tem o botão (ou a razão), e o link leva à bancada no ponto certo",
+      "ok": true,
+      "ms": 230,
+      "detalhe": {
+        "botoes": 4,
+        "razoes": 0,
+        "href": "/onboarding/7331b112-0f50-4b98-a0b2-971f5c499fbf?foco=ata",
+        "destino": "/onboarding/7331b112-0f50-4b98-a0b2-971f5c499fbf?foco=ata"
+      }
+    },
+    {
+      "n": 3,
+      "nome": "M1 · limite pelo menu da coluna: define, a coluna fica marcada, e tira",
+      "ok": true,
+      "ms": 3351,
+      "detalhe": {
+        "marca": "passou",
+        "pagina390SemRolagem": true
+      }
+    },
+    {
+      "n": 4,
+      "nome": "M1 · Dia a dia › Visão geral: o cartão \"Implantação\" e a linha leva à Implantação com o filtro",
+      "ok": true,
+      "ms": 2542,
+      "detalhe": {
+        "emDia": false,
+        "filtro": "sem-proximo-passo"
+      }
+    },
+    {
+      "n": 5,
+      "nome": "M2 · Contratos vivos: anexar o PDF do contrato importado e o aviso some",
+      "ok": true,
+      "ms": 2868,
+      "detalhe": {
+        "avisoAntes": 0,
+        "resultado": "sem-storage",
+        "anexo": null
+      }
+    },
+    {
+      "n": 6,
+      "nome": "M2 · painel do lead: lançar as parcelas à mão (série mensal), a soma aparece, a régua segue desligada",
+      "ok": true,
+      "ms": 1152,
+      "detalhe": {
+        "soma": "soma R$ 3.000",
+        "regua": "nao"
+      }
+    },
+    {
+      "n": 7,
+      "nome": "M2 · ligar a régua deste contrato: a frase, a ciência e a confirmação de gente",
+      "ok": true,
+      "ms": 2080,
+      "detalhe": {
+        "frase": "Ao ligar, a régua de cobrança passa a valer para 3 parcelas em aberto, somando R$ 3.000,00. Os avisos ficam no fio e na ",
+        "editarDepoisDeLigar": 0
+      }
+    },
+    {
+      "n": 8,
+      "nome": "M3 · Arquivadas: a lista arquivada aparece com quem e quando, e \"Desarquivar\" a devolve à pasta",
+      "ok": true,
+      "ms": 2034,
+      "detalhe": {
+        "rotulo": "▸\nARQUIVADAS (1)",
+        "item": "e2e 22 lista arq mviv0al1 arquivada em 21/10/2026 · por Admin Root 1 tarefa · estava em e2e 22 pasta arq mviv0al1 Desarq"
+      }
+    },
+    {
+      "n": 9,
+      "nome": "M3 · arrastar pasta para dentro de outra pasta (e o nível volta pela API)",
+      "ok": true,
+      "ms": 2366,
+      "detalhe": {
+        "ciclo": 400,
+        "pagina390SemRolagem": true
+      }
+    },
+    {
+      "n": 10,
+      "nome": "M3 · \"+ tarefa\" do Comercial recusa o título repetido, com a frase do Dia a dia",
+      "ok": true,
+      "ms": 1094,
+      "detalhe": {
+        "frase": "Essa tarefa já existe."
+      }
+    }
+  ],
+  "screenshots": [
+    "producao22-implantacao-quadro-escuro.png",
+    "producao22-implantacao-painel-escuro.png",
+    "producao22-implantacao-pedir-agora-escuro.png",
+    "producao22-bancada-pedir-agora-escuro.png",
+    "producao22-implantacao-limite-menu-escuro.png",
+    "producao22-implantacao-limite-marcado-escuro.png",
+    "producao22-implantacao-limite-claro.png",
+    "producao22-implantacao-390.png",
+    "producao22-dia-a-dia-implantacao-escuro.png",
+    "producao22-implantacao-filtro-escuro.png",
+    "producao22-dia-a-dia-implantacao-claro.png",
+    "producao22-dia-a-dia-implantacao-390.png",
+    "producao22-contratos-importado-antes-escuro.png",
+    "producao22-contratos-importado-anexado-escuro.png",
+    "producao22-contratos-importado-claro.png",
+    "producao22-contratos-importado-390.png",
+    "producao22-parcelas-editando-escuro.png",
+    "producao22-parcelas-salvas-escuro.png",
+    "producao22-regua-frase-escuro.png",
+    "producao22-parcelas-claro.png",
+    "producao22-parcelas-390.png",
+    "producao22-arquivadas-escuro.png",
+    "producao22-arquivadas-claro.png",
+    "producao22-arvore-pasta-dentro-escuro.png",
+    "producao22-arvore-390.png",
+    "producao22-funil-tarefa-repetida-escuro.png"
+  ],
+  "avisos": [
+    "a stack não tem storage: o anexo foi recusado com a frase e nada foi gravado (caminho com armazém provado na suíte da API)"
+  ],
+  "ok": true,
+  "fim": "2026-10-22T01:25:55.129Z",
+  "duracaoMs": 21362
+}
