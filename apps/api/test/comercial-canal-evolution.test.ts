@@ -94,6 +94,11 @@ describe('Evolution: a regra do endereço (SSRF)', () => {
     expect(enderecosPermitidos(['fe80::1'], true)).toBe(false);
     expect(enderecosPermitidos(['172.18.0.5'], true)).toBe(true);
     expect(enderecosPermitidos(['172.18.0.5'], false)).toBe(false);
+    // Produção 22, revisão: o loopback e o link-local escritos em outra forma de IPv6 também ficam fora para a casa.
+    for (const ip of ['::ffff:7f00:1', '::ffff:0:127.0.0.1', '::ffff:0:7f00:1', '::127.0.0.1', '64:ff9b::7f00:1', '2002:7f00:1::', '::ffff:a9fe:a9fe']) {
+      expect(enderecosPermitidos([ip], true), ip).toBe(false);
+    }
+    expect(enderecosPermitidos(['::ffff:ac12:5'], true)).toBe(true);
     expect(enderecosPermitidos(['10.0.0.5', '200.1.2.3'], false)).toBe(false);
     expect(enderecosPermitidos(['200.1.2.3'], false)).toBe(true);
     expect(enderecosPermitidos([], true)).toBe(false);

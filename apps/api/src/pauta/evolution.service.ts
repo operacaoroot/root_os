@@ -19,7 +19,7 @@ import {
   type CredencialDaEvolutionParaGuardar,
   type EnvioPelaEvolution,
 } from '../gateway/canais/evolution.port';
-import { enderecoDeDentro } from './endereco-de-dentro';
+import { enderecoDeDentro, ipv4Embutido } from './endereco-de-dentro';
 import { ipDaConexao, pedirAoIp, type Conectar } from './pagina-publica';
 import { EfeitosRegistry, type ContextoDoEfeito } from '../gateway/efeitos.registry';
 import { ConectoresConfiguradosRegistry } from '../gateway/conectores-configurados.registry';
@@ -514,7 +514,8 @@ export function enderecosPermitidos(enderecos: readonly string[], daCasa: boolea
   if (!enderecos.length) return false;
   return enderecos.every((ip) => {
     const x = ip.toLowerCase();
-    const v4 = /^::ffff:(\d{1,3}(?:\.\d{1,3}){3})$/.exec(x)?.[1] ?? (isIP(x) === 4 ? x : null);
+    // O IPv4 embutido em qualquer forma (mapeado em texto ou em hexadecimal, SIIT, compatível, NAT64, 6to4).
+    const v4 = isIP(x) === 4 ? x : ipv4Embutido(x);
     if (v4) {
       const [a, b] = v4.split('.').map(Number);
       if (a === 0 || a === 127 || (a === 169 && b === 254) || a >= 224) return false;

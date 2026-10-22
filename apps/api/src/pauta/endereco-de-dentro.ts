@@ -129,6 +129,23 @@ function ipv6DeDentro(b: number[]): boolean {
   return false;
 }
 
+/**
+ * O IPv4 que um IPv6 carrega (mapeado, traduzido/SIIT, compatível, NAT64 bem-conhecido
+ * ou 6to4), em texto, ou `null`. Para quem precisa julgar o IPv4 com regra própria
+ * (a casa na Evolution, que aceita rede privada mas nunca loopback).
+ */
+export function ipv4Embutido(ip: string): string | null {
+  const b = bytesDoIpv6(String(ip ?? '').trim().replace(/^[|]$/g, ''));
+  if (!b) return null;
+  const v4 = (i: number) => b.slice(i, i + 4).join('.');
+  if (zerados(b, 10) && b[10] === 0xff && b[11] === 0xff) return v4(12);
+  if (zerados(b, 8) && b[8] === 0xff && b[9] === 0xff && b[10] === 0 && b[11] === 0) return v4(12);
+  if (zerados(b, 12) && !(b[12] === 0 && b[13] === 0 && b[14] === 0 && b[15] <= 1)) return v4(12);
+  if (b[0] === 0x00 && b[1] === 0x64 && b[2] === 0xff && b[3] === 0x9b && zerados(b.slice(4), 8)) return v4(12);
+  if (b[0] === 0x20 && b[1] === 0x02) return v4(2);
+  return null;
+}
+
 /** O endereço (IPv4 ou IPv6, em texto) é de dentro? Ver o cabeçalho. */
 export function enderecoDeDentro(ip: string): boolean {
   const texto = String(ip ?? '').trim().replace(/^\[|\]$/g, '');
