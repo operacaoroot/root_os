@@ -54,7 +54,7 @@ import { activityCursor, activityDto, activityNames, activityPoint, activityWher
  */
 const TASK_INCLUDE = {
   status: true,
-  list: { select: { name: true } },
+  list: { select: { name: true, icone: true, cor: true } },
   assigneeUser: { select: { id: true, name: true, email: true, isActive: true } },
   tags: true,
   values: { include: { field: true, option: true } },
@@ -1227,6 +1227,8 @@ export class WorkService {
       outrosResponsaveisIds: t.outrosResponsaveisIds ?? [],
       recorrencia: regraDeRepeticao(t.recorrencia),
       listName: t.list?.name,
+      listIcone: t.list ? aparenciaDoNo(t.list).icone : null,
+      listCor: t.list ? aparenciaDoNo(t.list).cor : null,
     };
   }
 

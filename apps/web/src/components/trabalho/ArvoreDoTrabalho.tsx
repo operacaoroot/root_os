@@ -10,6 +10,7 @@ import {
 import { apiPatch, apiPost } from '@/lib/api';
 import { AcoesDaListaNaArvore, AcoesDaPastaNaArvore, type DestinoDaArvore } from './ExcluirDaArvore';
 import { ArquivadasDaArvore } from './ArquivadasDaArvore';
+import { DialogoDeIcone, IconeDaLista } from './IconeDaLista';
 
 /*
  * A ÁRVORE DE TAREFAS, EDITÁVEL ONDE A PESSOA ESTÁ OLHANDO (adendo da rodada de
@@ -35,7 +36,11 @@ import { ArquivadasDaArvore } from './ArquivadasDaArvore';
  *  · no fim, a seção recolhida "Arquivadas (N)" com Desarquivar (M3);
  *  · Alt+↑ e Alt+↓ no item focado sobem e descem uma posição, e o foco fica nele;
  *  · a lista da implantação não muda de nome nem sai da pasta Clientes, e a pasta
- *    que a guarda não muda de nome nem se exclui: o menu diz por quê.
+ *    que a guarda não muda de nome nem se exclui: o menu diz por quê;
+ *  · ícone e cor na frente do nome ("⋯" › Ícone e cor), gravados pelo mesmo PATCH
+ *    da renomeação (produção 22B, I1). O "⋯" só aparece com o mouse ou o foco na
+ *    linha (`group/arvore`); no toque, sempre. A pasta Clientes é do Comercial
+ *    desde a 22B (I3) e não chega mais aqui: a API a manda em `pastasDoComercial`.
  * A ordem vai em `POST /trabalho/arvore/ordem` com todos os irmãos do nível, que a
  * API confere; mudar a lista de pasta, em `PATCH /trabalho/listas/:id`; mudar a
  * pasta de mãe, em `POST /trabalho/pastas/:id/mover`.
@@ -47,6 +52,7 @@ class RecusaDaTela extends Error {}
 type Pasta = TrabEstrutura['folders'][number];
 type Arrastado = { tipo: 'pasta' | 'lista'; id: string; paiId: string | null };
 type Editando = { tipo: 'pasta' | 'lista'; id: string } | { tipo: 'nova-pasta' };
+type Aparencia = { tipo: 'pasta' | 'lista'; id: string; nome: string; icone?: string | null; cor?: string | null };
 
 const CHAVE_DO_ARRASTE = 'application/x-trabalho-arvore';
 
@@ -135,6 +141,7 @@ export function ArvoreDoTrabalho({ estrutura, pastas, mostraSoltas, listaId, edi
   onPastaSaiu: (id: string) => void;
 }) {
   const [editando, setEditando] = useState<Editando | null>(null);
+  const [aparencia, setAparencia] = useState<Aparencia | null>(null);
   const [aviso, setAviso] = useState<string | null>(null);
   const [alvo, setAlvo] = useState<string | null>(null);
   const [focarDepois, setFocarDepois] = useState<string | null>(null);
@@ -310,6 +317,13 @@ export function ArvoreDoTrabalho({ estrutura, pastas, mostraSoltas, listaId, edi
     await apiPatch(`/trabalho/listas/${encodeURIComponent(l.id)}`, { name: nome }, token);
     setEditando(null); setFocarDepois(`lista:${l.id}`); setAviso(`A lista ${l.name} agora se chama ${nome}.`); onMudou();
   };
+  const salvarAparencia = (a: Aparencia) => async (v: { icone: string | null; cor: string | null }) => {
+    const rota = a.tipo === 'lista' ? `/trabalho/listas/${encodeURIComponent(a.id)}` : `/trabalho/pastas/${encodeURIComponent(a.id)}`;
+    await apiPatch(rota, v, token);
+    setFocarDepois(`${a.tipo}:${a.id}`);
+    setAviso(v.icone || v.cor ? `${a.tipo === 'lista' ? 'A lista' : 'A pasta'} ${a.nome} ganhou ícone e cor novos.` : `${a.tipo === 'lista' ? 'A lista' : 'A pasta'} ${a.nome} ficou sem ícone.`);
+    onMudou();
+  };
   const paiDaNovaPasta = pastaEscolhida && estrutura.folders.some((f) => f.id === pastaEscolhida) ? pastaEscolhida : null;
   const criarPasta = async (nome: string) => {
     const criada = await apiPost<{ id: string }>('/trabalho/pastas', paiDaNovaPasta ? { name: nome, parentId: paiDaNovaPasta } : { name: nome }, token);
@@ -330,7 +344,7 @@ export function ArvoreDoTrabalho({ estrutura, pastas, mostraSoltas, listaId, edi
     return (
       <div
         key={l.id}
-        className={`flex items-center gap-0.5 rounded-md ${classeDoAlvo(chave)}`}
+        className={`group/arvore flex items-center gap-0.5 rounded-md ${classeDoAlvo(chave)}`}
         onDragOver={sobre(chave, (a) => a.tipo === 'lista' && a.id !== l.id && (a.paiId === paiId || a.id !== implantacao?.listaId))}
         onDragLeave={() => { if (alvo === chave) setAlvo(null); }}
         onDrop={soltar((a) => {
@@ -363,7 +377,10 @@ export function ArvoreDoTrabalho({ estrutura, pastas, mostraSoltas, listaId, edi
               l.id === listaId ? 'bg-brand/15 text-text' : 'text-muted hover:bg-surface-2 hover:text-text',
             ].join(' ')}
           >
-            <span title={l.name} className="min-w-0 break-words">{l.name}</span>
+            <span className="flex min-w-0 items-center gap-1.5">
+              <IconeDaLista icone={l.icone} cor={l.cor} />
+              <span title={l.name} className="min-w-0 break-words">{l.name}</span>
+            </span>
             <span className="ml-1 text-[10px] text-muted">{l.total}</span>
           </button>
         )}
@@ -371,6 +388,7 @@ export function ArvoreDoTrabalho({ estrutura, pastas, mostraSoltas, listaId, edi
           <AcoesDaListaNaArvore
             lista={l} token={token} protegida={protegida} destinos={destinosDaLista(l.id)}
             aoRenomear={() => setEditando({ tipo: 'lista', id: l.id })}
+            aoAparencia={() => setAparencia({ tipo: 'lista', id: l.id, nome: l.name, icone: l.icone, cor: l.cor })}
             aoExcluir={() => onListaSaiu(l.id)} aoMudar={onMudou} aoErro={onErro} aoAviso={setAviso}
           />
         )}
@@ -402,7 +420,7 @@ export function ArvoreDoTrabalho({ estrutura, pastas, mostraSoltas, listaId, edi
           />
         )}
         <div
-          className={`flex items-start justify-between gap-1 rounded-md ${classeDoAlvo(chave)}`}
+          className={`group/arvore flex items-start justify-between gap-1 rounded-md ${classeDoAlvo(chave)}`}
           onDragOver={sobre(chave, (a) => (a.tipo === 'lista'
             ? a.paiId !== f.id && a.id !== implantacao?.listaId
             : a.id !== f.id && a.paiId !== f.id))}
@@ -434,6 +452,7 @@ export function ArvoreDoTrabalho({ estrutura, pastas, mostraSoltas, listaId, edi
               onKeyDown={teclas('pasta', f.id)}
               className="min-w-0 flex-1 break-words rounded px-1 text-[11px] font-semibold uppercase tracking-wide text-muted focus:outline-none focus-visible:ring-1 focus-visible:ring-brand-dim"
             >
+              <IconeDaLista icone={f.icone} cor={f.cor} tamanho={12} className="mr-1.5 inline-block align-[-2px]" />
               {f.name}
             </div>
           )}
@@ -443,6 +462,7 @@ export function ArvoreDoTrabalho({ estrutura, pastas, mostraSoltas, listaId, edi
               destinosParaMover={destinosParaMover(f)} emPrimeiroNivel={!f.parentId}
               aoMover={(parentId) => pedirMoverPasta(f.id, parentId)}
               aoRenomear={() => setEditando({ tipo: 'pasta', id: f.id })}
+              aoAparencia={() => setAparencia({ tipo: 'pasta', id: f.id, nome: f.name, icone: f.icone, cor: f.cor })}
               aoErro={(m) => { onErro(m); onMudou(); }} aoAviso={setAviso}
               aoExcluir={() => onPastaSaiu(f.id)}
             />
@@ -505,6 +525,13 @@ export function ArvoreDoTrabalho({ estrutura, pastas, mostraSoltas, listaId, edi
         </div>
       )}
       <ArquivadasDaArvore token={token} editable={editable} versao={estrutura} onMudou={onMudou} onAviso={setAviso} />
+      {aparencia && (
+        <DialogoDeIcone
+          titulo={`Ícone e cor ${aparencia.tipo === 'lista' ? 'da lista' : 'da pasta'} ${aparencia.nome}`}
+          inicial={aparencia} aoSalvar={salvarAparencia(aparencia)}
+          aoFechar={() => { const a = aparencia; setAparencia(null); setFocarDepois(`${a.tipo}:${a.id}`); }}
+        />
+      )}
       <p role="status" data-testid="trabalho-arvore-aviso" className="break-words px-1 text-[11px] text-muted empty:hidden">{aviso ?? ''}</p>
     </div>
   );

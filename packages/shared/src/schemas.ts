@@ -5703,6 +5703,9 @@ export interface TrabTarefaResumo {
   recorrencia?: RecorrenciaDaTarefa | null;
   /** O nome da lista, para a visão "Todas" (tarefas de várias listas juntas). */
   listName?: string;
+  /** O ícone e a cor da lista (I1, 22/10/2026), ao lado do nome dela no cartão; nulo = sem. */
+  listIcone?: string | null;
+  listCor?: CorDoTrabalho | null;
 }
 /* ----------------------------------------------------------------------------
  * O MOVIMENTO DO CARTÃO no quadro denso (rodada da implantação I2, 18/10/2026)

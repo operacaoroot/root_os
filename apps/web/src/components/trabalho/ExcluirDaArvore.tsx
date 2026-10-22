@@ -1,6 +1,7 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import * as Dialog from '@radix-ui/react-dialog';
 import { MoreHorizontal, X } from 'lucide-react';
 import {
@@ -9,6 +10,7 @@ import {
   type TrabPastaExcluida, type TrabPastaExcluidaComDestino,
 } from '@mktos/shared';
 import { apiDelete, apiPost } from '@/lib/api';
+import { posicaoDoMenu, type PosicaoDoMenu } from '@/lib/posicao-do-menu';
 
 /*
  * O MENU "⋯" DA ÁRVORE E OS DIÁLOGOS DE EXCLUIR (P3 e A3, 21/10/2026).
@@ -33,11 +35,28 @@ import { apiDelete, apiPost } from '@/lib/api';
  *    itens desabilitados e a frase do porquê.
  * O menu abre pelo teclado (Enter ou espaço no botão), as setas andam entre os
  * itens, Esc fecha e o foco volta para o botão "⋯".
+ *
+ * Produção 22B, I1 (22/10/2026): o menu abre por PORTAL, fixo na janela e
+ * posicionado pelo botão (`posicaoDoMenu`): vira para cima ou para a esquerda
+ * quando falta espaço e nunca é mais largo que a janela, com o texto inteiro
+ * quebrando linha em vez de cortar. O "⋯" só aparece com o mouse sobre a linha
+ * ou com o foco nela (quem desenha a linha marca `group/arvore`); em tela de
+ * toque, sem hover, ele fica sempre visível. Aberto, continua visível.
  */
 
 type Acao = 'excluir-lista' | 'arquivar-tarefas' | 'excluir-pasta';
 
 export interface ItemDoMenu { chave: string; texto: string; dica?: string; desabilitado?: boolean; aoEscolher: () => void }
+
+/** A largura pedida do menu do "⋯" (cabe o texto das dicas sem cortar; a janela estreita encolhe). */
+export const LARGURA_DO_MENU_DA_ARVORE = 272;
+
+/**
+ * As classes do "⋯": escondido até o mouse passar pela linha ou o foco entrar nela;
+ * sempre visível no toque (sem hover) e enquanto o menu estiver aberto.
+ */
+export const CLASSE_DO_GATILHO_DA_ARVORE =
+  'opacity-0 group-hover/arvore:opacity-100 group-focus-within/arvore:opacity-100 focus-visible:opacity-100 aria-expanded:opacity-100 [@media(hover:none)]:opacity-100';
 
 function MenuDaArvore({ rotulo, testId, itens, gatilho }: {
   rotulo: string; testId: string; itens: ItemDoMenu[];
@@ -45,20 +64,38 @@ function MenuDaArvore({ rotulo, testId, itens, gatilho }: {
   gatilho: React.RefObject<HTMLButtonElement | null>;
 }) {
   const [aberto, setAberto] = useState(false);
-  const caixa = useRef<HTMLSpanElement>(null);
+  const [posicao, setPosicao] = useState<PosicaoDoMenu | null>(null);
   const menu = useRef<HTMLDivElement>(null);
   const habilitados = () => [...(menu.current?.querySelectorAll<HTMLButtonElement>('[role="menuitem"]:not([disabled])') ?? [])];
+  // Mede o menu já desenhado e o põe onde cabe, antes de pintar.
+  useLayoutEffect(() => {
+    if (!aberto) { setPosicao(null); return; }
+    const b = gatilho.current?.getBoundingClientRect();
+    if (!b) return;
+    setPosicao(posicaoDoMenu(b, { largura: LARGURA_DO_MENU_DA_ARVORE, altura: menu.current?.scrollHeight ?? 0 }, { largura: window.innerWidth, altura: window.innerHeight }));
+  }, [aberto, itens.length, gatilho]);
   useEffect(() => {
     if (!aberto) return;
     habilitados()[0]?.focus();
-    const fora = (e: MouseEvent) => { if (!caixa.current?.contains(e.target as Node)) setAberto(false); };
+    const dentro = (alvo: EventTarget | null) => alvo instanceof Node && (!!menu.current?.contains(alvo) || !!gatilho.current?.contains(alvo));
+    const fora = (e: MouseEvent) => { if (!dentro(e.target)) setAberto(false); };
+    // Fixo na janela: rolar a página ou mudar a janela tiraria o menu de perto do botão. Fecha.
+    const rolou = (e: Event) => { if (!dentro(e.target)) setAberto(false); };
+    const mudouAJanela = () => setAberto(false);
     document.addEventListener('mousedown', fora);
-    return () => document.removeEventListener('mousedown', fora);
-  }, [aberto]);
+    document.addEventListener('scroll', rolou, true);
+    window.addEventListener('resize', mudouAJanela);
+    return () => {
+      document.removeEventListener('mousedown', fora);
+      document.removeEventListener('scroll', rolou, true);
+      window.removeEventListener('resize', mudouAJanela);
+    };
+  }, [aberto, gatilho]);
   const fechar = () => { setAberto(false); gatilho.current?.focus(); };
   const andar = (e: React.KeyboardEvent) => {
     if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); fechar(); return; }
-    if (e.key === 'Tab') { setAberto(false); return; }
+    // O menu mora no fim da página (portal): o Tab volta ao "⋯" em vez de fugir para lá.
+    if (e.key === 'Tab') { e.preventDefault(); fechar(); return; }
     if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp' && e.key !== 'Home' && e.key !== 'End') return;
     e.preventDefault();
     const lista = habilitados();
@@ -69,7 +106,7 @@ function MenuDaArvore({ rotulo, testId, itens, gatilho }: {
     lista[proximo]?.focus();
   };
   return (
-    <span ref={caixa} className="relative shrink-0">
+    <span className="relative shrink-0">
       <button
         ref={gatilho}
         type="button"
@@ -80,12 +117,20 @@ function MenuDaArvore({ rotulo, testId, itens, gatilho }: {
         aria-haspopup="menu"
         aria-expanded={aberto}
         onClick={(e) => { e.stopPropagation(); setAberto((a) => !a); }}
-        className="rounded p-0.5 text-muted hover:bg-surface-2 hover:text-text max-md:min-h-[44px] max-md:min-w-[44px]"
+        className={`rounded p-0.5 text-muted transition-opacity hover:bg-surface-2 hover:text-text max-md:min-h-[44px] max-md:min-w-[44px] ${CLASSE_DO_GATILHO_DA_ARVORE}`}
       >
         <MoreHorizontal size={14} />
       </button>
-      {aberto && (
-        <div ref={menu} role="menu" aria-label={rotulo} onKeyDown={andar} className="absolute right-0 top-full z-30 mt-1 w-56 max-w-[calc(100vw-2rem)] rounded-lg border border-border bg-surface p-1 shadow-lg">
+      {aberto && typeof document !== 'undefined' && createPortal(
+        <div
+          ref={menu} role="menu" aria-label={rotulo} onKeyDown={andar} data-testid={`${testId}-menu`} data-lado={posicao?.lado}
+          style={{
+            position: 'fixed', top: posicao?.top ?? 0, left: posicao?.left ?? 0,
+            width: posicao?.largura ?? LARGURA_DO_MENU_DA_ARVORE, maxWidth: 'calc(100vw - 16px)',
+            maxHeight: posicao?.maxAltura ?? undefined, opacity: posicao ? 1 : 0,
+          }}
+          className="z-50 overflow-y-auto rounded-lg border border-border bg-surface p-1 shadow-lg"
+        >
           {itens.map((it) => (
             <button
               key={it.chave}
@@ -94,13 +139,14 @@ function MenuDaArvore({ rotulo, testId, itens, gatilho }: {
               data-testid={`${testId}-${it.chave}`}
               disabled={it.desabilitado}
               onClick={() => { setAberto(false); it.aoEscolher(); }}
-              className="block w-full rounded-md px-2 py-1.5 text-left text-[13px] hover:bg-surface-2 focus:bg-surface-2 focus:outline-none disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:bg-transparent"
+              className="block w-full whitespace-normal break-words rounded-md px-2 py-1.5 text-left text-[13px] hover:bg-surface-2 focus:bg-surface-2 focus:outline-none disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:bg-transparent"
             >
               {it.texto}
               {it.dica && <span className="block text-[11px] text-muted">{it.dica}</span>}
             </button>
           ))}
-        </div>
+        </div>,
+        document.body,
       )}
     </span>
   );
@@ -138,8 +184,30 @@ export interface DestinoDaArvore { id: string; rotulo: string }
 
 const tarefasNoPlural = (n: number) => (n === 1 ? '1 tarefa' : `${n} tarefas`);
 
+/**
+ * A frase do porquê a lista não sai direto (I3): ela tem tarefa ativa. O mesmo menu
+ * oferece "Arquivar todas as N tarefas", e o excluir pergunta para onde elas vão.
+ */
+export function porqueNaoSaiDireto(vivas: number): string | undefined {
+  if (vivas <= 0) return undefined;
+  return vivas === 1
+    ? 'Tem 1 tarefa ativa: antes de sair, ela vai para outra lista ou é arquivada.'
+    : `Tem ${vivas} tarefas ativas: antes de sair, elas vão para outra lista ou são arquivadas.`;
+}
+
+/** A frase do porquê a pasta não sai direto: o que aparece dentro dela. */
+export function porqueAPastaNaoSaiDireto(conteudo: { listas: number; pastas: number }): string | undefined {
+  const partes = [
+    conteudo.listas ? (conteudo.listas === 1 ? '1 lista' : `${conteudo.listas} listas`) : null,
+    conteudo.pastas ? (conteudo.pastas === 1 ? '1 pasta' : `${conteudo.pastas} pastas`) : null,
+  ].filter(Boolean).join(' e ');
+  if (!partes) return undefined;
+  const um = conteudo.listas + conteudo.pastas === 1;
+  return `Tem ${partes} dentro: antes de sair, ${um ? 'vai' : 'vão'} para outra pasta ou Sem pasta.`;
+}
+
 /** O menu da lista na árvore: renomear, arquivar todas, excluir (movendo ou arquivando as tarefas antes). */
-export function AcoesDaListaNaArvore({ lista, token, protegida, destinos = [], aoRenomear, aoExcluir, aoMudar, aoErro, aoAviso }: {
+export function AcoesDaListaNaArvore({ lista, token, protegida, destinos = [], aoRenomear, aoAparencia, aoExcluir, aoMudar, aoErro, aoAviso }: {
   lista: { id: string; name: string; total: number };
   token: string | null;
   /** A frase do porquê, quando a lista é protegida (a da implantação): renomear e excluir ficam desabilitados. */
@@ -147,6 +215,8 @@ export function AcoesDaListaNaArvore({ lista, token, protegida, destinos = [], a
   /** As listas que podem receber as tarefas (sem ela, sem a da implantação, sem as de cadastro). */
   destinos?: DestinoDaArvore[];
   aoRenomear?: () => void;
+  /** "Ícone e cor" (I1): quem chama abre o seletor. */
+  aoAparencia?: () => void;
   /** A lista saiu do Trabalho: quem chama fecha a lista se ela estava aberta. */
   aoExcluir: (r: TrabListaExcluida) => void;
   aoMudar: () => void;
@@ -219,10 +289,11 @@ export function AcoesDaListaNaArvore({ lista, token, protegida, destinos = [], a
         testId={`trabalho-lista-acoes-${lista.id}`}
         itens={[
           ...(aoRenomear ? [{ chave: 'renomear', texto: 'Renomear', desabilitado: !!protegida, dica: protegida ?? undefined, aoEscolher: aoRenomear }] : []),
+          ...(aoAparencia ? [{ chave: 'aparencia', texto: 'Ícone e cor', aoEscolher: aoAparencia }] : []),
           ...(vivas > 0 && !protegida ? [{ chave: 'arquivar', texto: vivas === 1 ? 'Arquivar a única tarefa' : `Arquivar todas as ${vivas} tarefas`, dica: 'Elas saem das listas e continuam guardadas.', aoEscolher: () => setAcao('arquivar-tarefas') }] : []),
           {
             chave: 'excluir', texto: 'Excluir lista', desabilitado: !!protegida,
-            dica: protegida ?? (vivas > 0 ? `Antes, ${vivas === 1 ? 'a tarefa vai' : `as ${vivas} tarefas vão`} para outra lista ou ${vivas === 1 ? 'é arquivada' : 'são arquivadas'}.` : undefined),
+            dica: protegida ?? porqueNaoSaiDireto(vivas),
             aoEscolher: () => setAcao('excluir-lista'),
           },
         ]}
@@ -309,7 +380,7 @@ const SEM_PASTA = '__sem-pasta__';
 const PRIMEIRO_NIVEL = '__primeiro-nivel__';
 
 /** O menu da pasta na árvore: renomear, mover para outra pasta e excluir (vazia, ou levando o que está dentro para outro lugar). */
-export function AcoesDaPastaNaArvore({ pasta, conteudo, protegida, destinos = [], destinosParaMover, emPrimeiroNivel = false, token, aoRenomear, aoMover, aoExcluir, aoErro, aoAviso }: {
+export function AcoesDaPastaNaArvore({ pasta, conteudo, protegida, destinos = [], destinosParaMover, emPrimeiroNivel = false, token, aoRenomear, aoAparencia, aoMover, aoExcluir, aoErro, aoAviso }: {
   pasta: { id: string; name: string };
   /** Listas e pastas que APARECEM dentro dela (as arquivadas não contam). */
   conteudo: { listas: number; pastas: number };
@@ -323,6 +394,8 @@ export function AcoesDaPastaNaArvore({ pasta, conteudo, protegida, destinos = []
   emPrimeiroNivel?: boolean;
   token: string | null;
   aoRenomear?: () => void;
+  /** "Ícone e cor" (I1): quem chama abre o seletor. */
+  aoAparencia?: () => void;
   /** Move a pasta (nulo = primeiro nível); quem chama fala com a API e avisa. */
   aoMover?: (parentId: string | null) => Promise<void>;
   aoExcluir: (r: TrabPastaExcluida) => void;
@@ -382,6 +455,7 @@ export function AcoesDaPastaNaArvore({ pasta, conteudo, protegida, destinos = []
         testId={`trabalho-pasta-acoes-${pasta.id}`}
         itens={[
           ...(aoRenomear ? [{ chave: 'renomear', texto: 'Renomear', desabilitado: !!protegida, dica: protegida ?? undefined, aoEscolher: aoRenomear }] : []),
+          ...(aoAparencia ? [{ chave: 'aparencia', texto: 'Ícone e cor', aoEscolher: aoAparencia }] : []),
           ...(aoMover ? [{
             chave: 'mover', texto: 'Mover para…', desabilitado: !!protegida || opcoesDeMover.length === 0,
             dica: protegida ?? (opcoesDeMover.length === 0 ? 'Não há outra pasta que possa receber esta.' : undefined),
@@ -389,7 +463,7 @@ export function AcoesDaPastaNaArvore({ pasta, conteudo, protegida, destinos = []
           }] : []),
           {
             chave: 'excluir', texto: 'Excluir pasta', desabilitado: !!protegida,
-            dica: protegida ?? (vazia ? undefined : `Antes, ${resumo} ${conteudo.listas + conteudo.pastas === 1 ? 'vai' : 'vão'} para outra pasta ou Sem pasta.`),
+            dica: protegida ?? porqueAPastaNaoSaiDireto(conteudo),
             aoEscolher: () => setConfirmando(true),
           },
         ]}
