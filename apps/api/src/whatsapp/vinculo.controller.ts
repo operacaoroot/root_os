@@ -1,4 +1,4 @@
-import { Body, CanActivate, Controller, ExecutionContext, ForbiddenException, Get, HttpCode, Injectable, Param, Post, Put, Query, UseGuards } from '@nestjs/common';
+import { Body, CanActivate, Controller, ExecutionContext, ForbiddenException, Get, HttpCode, Injectable, Optional, Param, Post, Put, Query, UseGuards } from '@nestjs/common';
 import type { CandidatoDeVinculo, WhatsappDaFicha } from '@mktos/shared';
 
 import { temPapelDeMaquina } from '../approvals/alcada';
@@ -7,6 +7,7 @@ import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RequirePermissions } from '../auth/permissions.decorator';
 import { PermissionsGuard } from '../auth/permissions.guard';
 import { VinculoDoWhatsappService, type ResultadoDoVinculo } from './vinculo.service';
+import { ResumoDoWhatsappService } from './resumo.service';
 
 /*
  * `/whatsapp/vinculos` (rodada de produção 4, W3, 22/10/2026): o vínculo da
@@ -41,7 +42,17 @@ function podeEditar(user: JwtUser): boolean {
 @UseGuards(JwtAuthGuard, PermissionsGuard)
 @Controller('whatsapp/vinculos')
 export class VinculoDoWhatsappController {
-  constructor(private readonly svc: VinculoDoWhatsappService) {}
+  constructor(
+    private readonly svc: VinculoDoWhatsappService,
+    /** O cartão do Dia a dia (W4): o vínculo muda a faixa das não lidas, e o cache de 30 s é esquecido. */
+    @Optional() private readonly resumo?: ResumoDoWhatsappService,
+  ) {}
+
+  private async eEsquece<T>(orgId: string, p: Promise<T>): Promise<T> {
+    const r = await p;
+    this.resumo?.esquecer(orgId);
+    return r;
+  }
 
   /** A busca de vínculo (`tipo` = lead ou cliente, opcional): o igual ao nome da conversa primeiro, até 20. */
   @Get('candidatos')
@@ -76,7 +87,7 @@ export class VinculoDoWhatsappController {
   @RequirePermissions('leads.editar')
   @UseGuards(SoGenteNoVinculoGuard)
   telefoneDoLead(@CurrentUser() user: JwtUser, @Param('leadId') leadId: string, @Body() body: unknown) {
-    return this.svc.definirTelefone(user.orgId, 'lead', leadId, body, quem(user));
+    return this.eEsquece(user.orgId, this.svc.definirTelefone(user.orgId, 'lead', leadId, body, quem(user)));
   }
 
   /** Editar o telefone do cliente (`Partner.phone`). */
@@ -84,7 +95,7 @@ export class VinculoDoWhatsappController {
   @RequirePermissions('leads.editar')
   @UseGuards(SoGenteNoVinculoGuard)
   telefoneDoCliente(@CurrentUser() user: JwtUser, @Param('clienteId') clienteId: string, @Body() body: unknown) {
-    return this.svc.definirTelefone(user.orgId, 'cliente', clienteId, body, quem(user));
+    return this.eEsquece(user.orgId, this.svc.definirTelefone(user.orgId, 'cliente', clienteId, body, quem(user)));
   }
 
   /** Vincular a lead ou a cliente: `{ tipo, id }`. */
@@ -93,7 +104,7 @@ export class VinculoDoWhatsappController {
   @RequirePermissions('leads.editar')
   @UseGuards(SoGenteNoVinculoGuard)
   vincular(@CurrentUser() user: JwtUser, @Param('conversaId') conversaId: string, @Body() body: unknown): Promise<ResultadoDoVinculo> {
-    return this.svc.vincular(user.orgId, conversaId, body, quem(user));
+    return this.eEsquece(user.orgId, this.svc.vincular(user.orgId, conversaId, body, quem(user)));
   }
 
   /** Aceitar a sugestão gravada (um clique). */
@@ -102,7 +113,7 @@ export class VinculoDoWhatsappController {
   @RequirePermissions('leads.editar')
   @UseGuards(SoGenteNoVinculoGuard)
   aceitarSugestao(@CurrentUser() user: JwtUser, @Param('conversaId') conversaId: string): Promise<ResultadoDoVinculo> {
-    return this.svc.aceitarSugestao(user.orgId, conversaId, quem(user));
+    return this.eEsquece(user.orgId, this.svc.aceitarSugestao(user.orgId, conversaId, quem(user)));
   }
 
   @Post(':conversaId/desvincular')
@@ -110,7 +121,7 @@ export class VinculoDoWhatsappController {
   @RequirePermissions('leads.editar')
   @UseGuards(SoGenteNoVinculoGuard)
   desvincular(@CurrentUser() user: JwtUser, @Param('conversaId') conversaId: string): Promise<ResultadoDoVinculo> {
-    return this.svc.desvincular(user.orgId, conversaId, quem(user));
+    return this.eEsquece(user.orgId, this.svc.desvincular(user.orgId, conversaId, quem(user)));
   }
 
   /** Marcar ou tirar da equipe: `{ equipe }`. */
@@ -119,7 +130,7 @@ export class VinculoDoWhatsappController {
   @RequirePermissions('leads.editar')
   @UseGuards(SoGenteNoVinculoGuard)
   equipe(@CurrentUser() user: JwtUser, @Param('conversaId') conversaId: string, @Body() body: unknown): Promise<ResultadoDoVinculo> {
-    return this.svc.marcarEquipe(user.orgId, conversaId, body, quem(user));
+    return this.eEsquece(user.orgId, this.svc.marcarEquipe(user.orgId, conversaId, body, quem(user)));
   }
 
   /** "Este número não está em nenhum lead; pôr no lead X?": `{ leadId, substituir? }`. */
@@ -128,6 +139,6 @@ export class VinculoDoWhatsappController {
   @RequirePermissions('leads.editar')
   @UseGuards(SoGenteNoVinculoGuard)
   telefoneNoLead(@CurrentUser() user: JwtUser, @Param('conversaId') conversaId: string, @Body() body: unknown): Promise<ResultadoDoVinculo> {
-    return this.svc.telefoneNoLead(user.orgId, conversaId, body, quem(user));
+    return this.eEsquece(user.orgId, this.svc.telefoneNoLead(user.orgId, conversaId, body, quem(user)));
   }
 }

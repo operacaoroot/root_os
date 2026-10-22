@@ -1,4 +1,4 @@
-import { Optional,
+import {
   BadRequestException,
   BadGatewayException,
   ConflictException,
@@ -7,6 +7,7 @@ import { Optional,
   Injectable,
   Logger,
   NotFoundException,
+  Optional,
   ServiceUnavailableException,
 } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
