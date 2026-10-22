@@ -87,7 +87,7 @@ services:
     networks: [rootos-final-net]
 
   api:
-    image: rootos-final-app:producao22
+    image: rootos-final-app:producao22b
     container_name: rootos_final_api
     restart: unless-stopped
     working_dir: /app/apps/api
@@ -149,7 +149,7 @@ services:
       retries: 10
 
   web:
-    image: rootos-final-app:producao22
+    image: rootos-final-app:producao22b
     container_name: rootos_final_web
     restart: unless-stopped
     working_dir: /app/apps/web
