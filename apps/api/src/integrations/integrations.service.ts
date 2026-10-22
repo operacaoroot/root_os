@@ -1,5 +1,5 @@
 import { BadRequestException, ForbiddenException, Injectable, Logger } from '@nestjs/common';
-import { CONNECTORS, CartoesDeConexaoSchema, PARA_QUE_SERVE_DO_CONECTOR, type CartaoDeConexao, type CartoesDeConexao, ConexoesDeclarativasSchema, type ConexoesDeclarativas, type ConexaoDeclarativaLinha, type IntegrationCatalog, type IntegrationCatalogRow } from '@mktos/shared';
+import { CONNECTORS, CartoesDeConexaoSchema, FORA_DA_TELA_DE_CONEXOES, PARA_QUE_SERVE_DO_CONECTOR, type CartaoDeConexao, type CartoesDeConexao, ConexoesDeclarativasSchema, type ConexoesDeclarativas, type ConexaoDeclarativaLinha, type IntegrationCatalog, type IntegrationCatalogRow } from '@mktos/shared';
 import { PrismaService } from '../prisma/prisma.service';
 import { exigirAcessoAtual } from '../memory/acesso-memoria';
 import { AuditService } from '../audit/audit.service';
@@ -231,7 +231,10 @@ export class IntegrationsService {
     ]);
     const noCofre = new Set(segredos.map((s) => s.conector));
     const permissoes = new Set(pessoa?.roles.flatMap((r) => r.permissions.map((p) => p.key)) ?? []);
-    const items = catalogo.items.map((l) => this.cartaoDaLinha(l, noCofre));
+    // Produção 22B (I6): Asana, Extrato OFX e Zapier saem da tela; o catálogo e o contrato não mudam.
+    const items = catalogo.items
+      .filter((l) => !FORA_DA_TELA_DE_CONEXOES.includes(l.key))
+      .map((l) => this.cartaoDaLinha(l, noCofre));
     await exigirAcessoAtual(this.prisma, orgId, pessoaId, ['dashboard.ver']);
     return CartoesDeConexaoSchema.parse({
       autoridadeGerenciar: permissoes.has('admin.usuarios'),

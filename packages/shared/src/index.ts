@@ -132,3 +132,6 @@ export * from './agentes-tela.js';
 export * from './cartoes-de-conexao.js';
 // O cartão da implantação: reunião, fase do trilho, Pedir agora e limite (produção 22, M1): ver `implantacao-do-cartao.ts`.
 export * from './implantacao-do-cartao.js';
+// O perfil da pessoa e as atribuições da Equipe lidas do vault (produção 22B, I6): ver `perfil.ts` e `equipe-atribuicoes.ts`.
+export * from './perfil.js';
+export * from './equipe-atribuicoes.js';

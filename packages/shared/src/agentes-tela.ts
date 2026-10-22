@@ -5,6 +5,7 @@ import type {
   TipoDaFuncao,
 } from './agentes.js';
 import type { MotivoForaDaEquipe } from './equipe-pessoas.js';
+import type { AtribuicoesDaPessoa, MemoriaDaEquipe } from './equipe-atribuicoes.js';
 
 /*
  * O CATÁLOGO NA TELA E A EQUIPE (rodada dos agentes, 21/10/2026, A7)
@@ -196,6 +197,13 @@ export interface PessoaNaEquipe {
   podeEditarWhatsapp: boolean;
   /** As funções de que ela é dona (dono efetivo), por área, na ordem do cadastro. */
   areas: { area: string; funcoes: FuncaoNaEquipe[] }[];
+  /** Produção 22B (I6): a rota da foto (sem `/api`), ou nulo para as iniciais. */
+  fotoUrl: string | null;
+  /** Produção 22B (I6): `MM-DD`, só dia e mês. */
+  aniversario: string | null;
+  cargo: string | null;
+  /** Produção 22B (I6): o que o vault da Root diz desta pessoa, só leitura. */
+  atribuicoes: AtribuicoesDaPessoa;
 }
 
 export interface EquipeDaEmpresa {
@@ -206,4 +214,6 @@ export interface EquipeDaEmpresa {
   foraDaVista: Partial<Record<MotivoForaDaEquipe, number>>;
   podeEditarDono: boolean;
   totais: { pessoas: number; agentes: number; rotinas: number; automacoes: number };
+  /** Produção 22B (I6): se a memória da Root (o vault) pôde ser lida para as atribuições. */
+  memoria: MemoriaDaEquipe;
 }

@@ -22,6 +22,7 @@ import { CadastroController } from './cadastro.controller';
 import { CadastroService } from './cadastro.service';
 import { EquipeController } from './equipe.controller';
 import { EquipeService } from './equipe.service';
+import { AtribuicoesDoVaultService } from './atribuicoes-do-vault.service';
 
 @Module({
   imports: [
@@ -43,7 +44,7 @@ import { EquipeService } from './equipe.service';
   // A7 (rodada dos agentes): `CadastroController` ANTES do `AgentsController`, senão
   // `GET agents/:slug` engole `GET agents/cadastro`.
   controllers: [CadastroController, AgentsController, EquipeController],
-  providers: [CadastroService, EquipeService, ProcedimentoFerramentaLocalService, AgendaLocalService, ModeloLocalService, ProcedimentoDoAgenteService, AgentsService, AgentRuntime, SessionService, ContextBuilder, VaultVersionadaService, EfeitosService],
+  providers: [CadastroService, EquipeService, AtribuicoesDoVaultService, ProcedimentoFerramentaLocalService, AgendaLocalService, ModeloLocalService, ProcedimentoDoAgenteService, AgentsService, AgentRuntime, SessionService, ContextBuilder, VaultVersionadaService, EfeitosService],
   exports: [AgentsService, AgentRuntime, SessionService],
 })
 export class AgentsModule {}

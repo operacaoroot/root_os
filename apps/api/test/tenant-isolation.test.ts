@@ -517,6 +517,7 @@ const ALVOS: Alvo[] = [
   { tabela: 'CofreSenha', escopo: 'tenant', chaveSql: '"id"', nota: 'O hash da senha-mestra do cofre de cada pessoa, com tentativas e bloqueio. Ler o da outra entrega o hash para ataque fora do sistema; escrever zera o bloqueio ou troca a senha-mestra de alguém de outra casa.' },
   { tabela: 'CofreSessao', escopo: 'tenant', chaveSql: '"id"', nota: 'A sessão aberta do cofre (hash do token e validade). Escrever na da outra estende ou abre a sessão de cofre de alguém de outra casa.' },
   { tabela: 'AgendaConferencia', escopo: 'tenant', chaveSql: '"id"', nota: 'O que o vigia da agenda (AG-01, rodada dos agentes, 21/10/2026) concluiu de uma reunião fora do padrão: o título lido do Google, a proposta e a aprovação ou pendência. Ler a da outra é ler com quem ela se reúne e quando; ESCREVER é pôr título na proposta de correção da agenda dela ou marcar reunião alheia como "não é reunião". Raiz da empresa: approvalId e pendenciaId apontam para outras tabelas, sem FK.' },
+  { tabela: 'FotoDePerfil', escopo: 'tenant', chaveSql: '"id"', nota: 'A foto de perfil de uma pessoa (produção 22B, I6), guardada no banco. Ler a da outra empresa é ver o rosto de quem trabalha lá; ESCREVER é trocar a foto de alguém de outra casa. Raiz da empresa, com FK composta (userId, orgId) para User e uma foto em uso por pessoa (índice único parcial).' },
   { tabela: 'DonoDaFuncao', escopo: 'tenant', chaveSql: '"id"', nota: 'O dono trocado na Equipe de uma função do cadastro sem registro Agent (rodada dos agentes, 21/10/2026, A7). Ler o da outra empresa é ver quem responde por cada rotina e automação de lá; ESCREVER é tirar ou dar a função de alguém de outra casa. Raiz da empresa, com FK composta (userId, orgId) para User.' },
 
   // ---- junções implícitas do Prisma (não têm id) ------------------------
@@ -1479,6 +1480,13 @@ async function semear(c: PoolClient, rotulo: 'A' | 'B', vec: string): Promise<vo
   reg('DonoDaFuncao', await ins(c, 'DonoDaFuncao', {
     id: crypto.randomUUID(), orgId, funcaoId: rotulo === 'A' ? 'CO-07' : 'RO-02', userId, definidoPorId: userId,
     atualizadoEm: agora,
+  }));
+
+  // A foto de perfil (produção 22B, I6): um PNG mínimo de 16 px, guardado no banco.
+  const fotoPng = Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), Buffer.from(`foto-${rotulo}-${MARCA}`)]);
+  reg('FotoDePerfil', await ins(c, 'FotoDePerfil', {
+    id: crypto.randomUUID(), orgId, userId, tipo: 'png', largura: 16, altura: 16,
+    tamanho: fotoPng.length, sha256: hex64(`foto-${rotulo}-${MARCA}`), conteudo: fotoPng, enviadaPorId: userId,
   }));
 
   await semearEntregasDoMerge(c, rotulo, {

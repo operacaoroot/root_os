@@ -42,7 +42,17 @@ export const PARA_QUE_SERVE_DO_CONECTOR: Readonly<Record<string, string>> = {
   meta: 'Conta Meta da empresa (Instagram).',
 };
 
-export const ESTADOS_DO_CARTAO = ['conectado', 'nao_configurado', 'erro', 'desligado', 'nao_verificado'] as const;
+/*
+ * FORA DA TELA DE CONEXÕES (produção 22B, I6, 22/10/2026, pedido da ata de 21/10).
+ * Asana e Zapier nunca foram ligados, e o Extrato OFX é leitor embutido do
+ * Financeiro, sem credencial: os três saem do catálogo da TELA. O código fica,
+ * o catálogo da API (`GET /integrations`) continua com as linhas, e o `ofx`
+ * continua inscrito no contrato e cobrado no arranque (a sonda local segue
+ * valendo). Só `GET /integrations/cartoes` deixa de devolvê-los.
+ */
+export const FORA_DA_TELA_DE_CONEXOES: readonly string[] = ['asana', 'ofx', 'zapier'];
+
+export const ESTADOS_DO_CARTAO =['conectado', 'nao_configurado', 'erro', 'desligado', 'nao_verificado'] as const;
 export type EstadoDoCartao = (typeof ESTADOS_DO_CARTAO)[number];
 
 export const ROTULO_DO_ESTADO_DO_CARTAO: Readonly<Record<EstadoDoCartao, string>> = {

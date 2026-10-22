@@ -113,9 +113,18 @@ describe('GET /integrations/cartoes', () => {
   it('linha sem conector do contrato não ganha verde: "Não configurado" ou "Não verificado"', async () => {
     const { svc } = montar();
     const r = await svc.cartoes(EMPRESA, PESSOA, { prazoDeSondaMs: 500 });
-    const asana = r.items.find((i) => i.key === 'asana')!;
-    expect(asana.contrato).toBeNull();
-    expect(['nao_configurado', 'nao_verificado']).toContain(asana.estado);
+    // Produção 22B (I6): a Asana saiu da tela; o Telegram segue como linha sem conector do contrato.
+    const telegram = r.items.find((i) => i.key === 'telegram')!;
+    expect(telegram.contrato).toBeNull();
+    expect(['nao_configurado', 'nao_verificado']).toContain(telegram.estado);
+  });
+
+  it('Asana, Extrato OFX e Zapier saem da tela; Granola e Evolution continuam, no mesmo cartão', async () => {
+    const { svc } = montar();
+    const r = await svc.cartoes(EMPRESA, PESSOA, { prazoDeSondaMs: 500 });
+    const chaves = r.items.map((i) => i.key);
+    for (const fora of ['asana', 'ofx', 'zapier']) expect(chaves, fora).not.toContain(fora);
+    expect(chaves).toEqual(expect.arrayContaining(['granola', 'evolution', 'asaas']));
   });
 
   it('todo cartão diz para que serve e quem usa vem do cadastro', async () => {

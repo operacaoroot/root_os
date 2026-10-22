@@ -4,9 +4,15 @@ import {
   ForbiddenException,
   Injectable,
   NotFoundException,
+  Optional,
 } from '@nestjs/common';
 import { Prisma, SessionCanal } from '@prisma/client';
 import {
+  ATRIBUICOES_VAZIAS,
+  aniversarioDaData,
+  rotaDaFoto,
+  sugerirNomeNoVault,
+  tituloNormalizado,
   CADASTRO_DE_FUNCOES,
   PAPEIS_DE_MAQUINA,
   PERMISSAO_DE_CADASTRAR_WHATSAPP_DE_OUTRO,
@@ -25,6 +31,8 @@ import {
 import { AuditService } from '../audit/audit.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { formasDaChave, sufixoVisivel } from '../gateway/canais/identidade-de-canal';
+import { AtribuicoesDoVaultService } from './atribuicoes-do-vault.service';
+import { atribuicoesDaPessoa } from './atribuicoes-do-vault';
 import {
   carregarEquipe,
   donoDaFuncao,
@@ -66,10 +74,16 @@ interface QuemAge {
 
 @Injectable()
 export class EquipeService {
+  private readonly vault: AtribuicoesDoVaultService;
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly audit: AuditService,
-  ) {}
+    // Produção 22B (I6): as atribuições lidas do vault. Opcional para as suítes que montam à mão.
+    @Optional() vault?: AtribuicoesDoVaultService,
+  ) {
+    this.vault = vault ?? new AtribuicoesDoVaultService(prisma);
+  }
 
   /** A pessoa que age, RELIDA no banco: ativa, desta empresa, com papéis e permissões de agora. */
   private async quemAge(orgId: string, userId: string): Promise<QuemAge> {
@@ -103,6 +117,35 @@ export class EquipeService {
     ]);
     const donos = await donosDosAgentes(this.prisma, orgId, agentes);
     const verTudo = !!quem?.permissoes.includes(PERMISSAO_DE_CADASTRAR_WHATSAPP_DE_OUTRO);
+
+    // Produção 22B (I6): o perfil (foto, aniversário, cargo, nome no vault) e o vault da Root.
+    const idsDaEquipe = ctx.equipe.pessoas.map((p) => p.id);
+    const [perfis, doVault] = await Promise.all([
+      this.prisma.user.findMany({
+        where: { orgId, id: { in: idsDaEquipe } },
+        select: {
+          id: true,
+          cargo: true,
+          dataNascimento: true,
+          nomeNoVault: true,
+          fotosDePerfil: { where: { substituidaEm: null }, select: { sha256: true }, take: 1 },
+        },
+      }),
+      this.vault.ler(orgId, viewerId),
+    ]);
+    const perfilDe = new Map(perfis.map((u) => [u.id, u]));
+    const explicitos = perfis.map((u) => u.nomeNoVault?.trim()).filter((n): n is string => !!n);
+    const nomeNoVaultDe = (p: { id: string; nome: string }) => {
+      const proprio = perfilDe.get(p.id)?.nomeNoVault?.trim();
+      if (proprio) return { nome: proprio, origem: 'perfil' as const };
+      if (!doVault.memoria.disponivel) return { nome: null, origem: 'a_decidir' as const };
+      const sugerido = sugerirNomeNoVault(
+        p.nome,
+        doVault.memoria.socios.filter((s) => !explicitos.some((e) => tituloNormalizado(e) === tituloNormalizado(s))),
+        ctx.equipe.pessoas.map((x) => x.nome),
+      );
+      return sugerido ? { nome: sugerido, origem: 'sugerido' as const } : { nome: null, origem: 'a_decidir' as const };
+    };
 
     const funcoes: FuncaoNaEquipe[] = [];
     for (const f of CADASTRO_DE_FUNCOES) {
@@ -145,6 +188,9 @@ export class EquipeService {
       }
       const ident = identidades.find((i) => i.userId && ctx.equipe.canonica.get(i.userId) === p.id);
       const proprio = quem?.id ? ctx.equipe.canonica.get(quem.id) === p.id : false;
+      const perfil = perfilDe.get(p.id);
+      const foto = perfil?.fotosDePerfil[0];
+      const vinculo = nomeNoVaultDe(p);
       return {
         id: p.id,
         nome: p.nome,
@@ -152,6 +198,12 @@ export class EquipeService {
         whatsapp: this.whatsappNaTela(ident?.externalId ?? null, proprio || verTudo),
         podeEditarWhatsapp: proprio || verTudo,
         areas,
+        fotoUrl: foto ? rotaDaFoto(p.id, foto.sha256) : null,
+        aniversario: perfil?.dataNascimento ? aniversarioDaData(perfil.dataNascimento.toISOString().slice(0, 10)) : null,
+        cargo: perfil?.cargo ?? null,
+        atribuicoes: doVault.leitura
+          ? atribuicoesDaPessoa(doVault.leitura, vinculo.nome, vinculo.origem)
+          : { ...ATRIBUICOES_VAZIAS, nomeNoVault: vinculo.nome, origemDoNome: vinculo.origem },
       };
     });
 
@@ -169,6 +221,7 @@ export class EquipeService {
         rotinas: funcoes.filter((f) => f.tipo === 'rotina').length,
         automacoes: funcoes.filter((f) => f.tipo === 'automacao').length,
       },
+      memoria: doVault.memoria,
     };
   }
 

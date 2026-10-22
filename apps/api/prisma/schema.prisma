@@ -265,6 +265,8 @@ model Org {
   agendaConferencias AgendaConferencia[]
   /// A7 (rodada dos agentes): o dono trocado na Equipe das funções sem registro `Agent`.
   donosDeFuncao DonoDaFuncao[]
+  /// Produção 22B (I6): as fotos de perfil das pessoas.
+  fotosDePerfil FotoDePerfil[]
 }
 
 model User {
@@ -280,7 +282,21 @@ model User {
   createdAt    DateTime  @default(now())
   updatedAt    DateTime  @updatedAt
 
+  /// Produção 22B (I6): o cadastro da pessoa, editado em `/perfil`. Todos opcionais.
+  apelido        String?
+  cargo          String?
+  cidade         String?
+  /// Fuso IANA (`America/Sao_Paulo`).
+  fuso           String?
+  /// Só a data civil (sem hora): o aniversário é dia e mês.
+  dataNascimento DateTime? @db.Date
+  /// O nome da pessoa como está nas notas da Governança do vault (a Equipe casa por ele).
+  nomeNoVault    String?
+  /// A versão do perfil (o `esperado` do salvar); muda só quando o perfil ou a foto mudam.
+  perfilAtualizadoEm DateTime @default(now())
+
   roles      Role[] @relation("UserRoles")
+  fotosDePerfil FotoDePerfil[] @relation("FotoDePerfil")
   ownedLeads Lead[] @relation("LeadOwner")
   workTasksResponsavel WorkTask[] @relation("WorkTaskResponsavel")
   demoInstallations DemoInstallation[]
@@ -6148,4 +6164,30 @@ model DonoDaFuncao {
   atualizadoEm  DateTime @updatedAt
 
   @@unique([orgId, funcaoId])
+}
+
+/// Produção 22B (I6): a foto de perfil, guardada no banco (a homologação não tem
+/// armazém de arquivos). A tela reduz a 256 px antes de enviar; o servidor confere
+/// o tipo pelos bytes (JPEG/PNG/WebP), o lado até 512 px e guarda até 256 KB
+/// (CHECK no banco). Trocar ou tirar a foto NÃO apaga: a anterior ganha
+/// `substituidaEm`, e só a linha sem ela é a foto em uso (índice único parcial).
+/// Raiz da empresa, com FK composta (userId, orgId) para User.
+model FotoDePerfil {
+  id            String    @id @default(uuid())
+  orgId         String
+  org           Org       @relation(fields: [orgId], references: [id])
+  userId        String
+  user          User      @relation("FotoDePerfil", fields: [userId, orgId], references: [id, orgId], onDelete: Restrict, onUpdate: Restrict)
+  /// `jpeg`, `png` ou `webp`, conferido pela assinatura.
+  tipo          String
+  largura       Int
+  altura        Int
+  tamanho       Int
+  sha256        String
+  conteudo      Bytes
+  enviadaPorId  String
+  enviadaEm     DateTime  @default(now())
+  substituidaEm DateTime?
+
+  @@index([orgId, userId])
 }
