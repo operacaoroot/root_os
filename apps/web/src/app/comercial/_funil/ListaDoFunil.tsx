@@ -200,7 +200,7 @@ export function ListaDoFunil({
 
   return (
     <>
-      <div className="min-h-0 min-w-0 max-w-full flex-1 overflow-auto rounded border border-border max-[639px]:hidden" data-testid="funil-lista">
+      <div className="relative min-h-0 min-w-0 max-w-full flex-1 overflow-auto rounded border border-border max-[639px]:hidden" data-testid="funil-lista">
         <table className="table-fixed border-separate border-spacing-0 text-left text-[12.5px]" style={{ width: larguraDaTabela(larguras, colunas), minWidth: '100%' }}>
           <caption className="sr-only">Leads do funil em lista. As bordas do cabeçalho ajustam a largura; o nome da coluna ordena.</caption>
           <colgroup>

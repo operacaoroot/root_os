@@ -1547,6 +1547,12 @@ function Cartao({ t, lista, editable, token, agentes, pessoas = [], onSoltarSobr
               <ExternalLink size={12} />
             </a>
           )}
+          {/* No compacto (o padrão da Implantação) o responsável vai na linha do título, só se houver pessoa ligada (22B, I6). */}
+          {compacto && (t.assigneeUserId || (t.outrosResponsaveisIds?.length ?? 0) > 0) && (
+            <span className="relative z-10 flex">
+              <AvataresDaTarefa tarefa={t} pessoas={pessoas} testId={`trabalho-responsaveis-${t.id}`} />
+            </span>
+          )}
           <BotaoDoMenuDaTarefa tarefa={t} />
         </span>
       </div>

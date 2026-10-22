@@ -881,9 +881,22 @@ async function main() {
     await foto(p, 'equipe-avatar-escuro');
     const perfil = proprio;
     // Responsável por avatar nas outras telas (aviso, não falha).
+    // Os cards do seed só têm o responsável em texto antigo (sem pessoa ligada: círculo tracejado,
+    // como antes). Para provar o avatar, um card fictício ganha a pessoa da sessão como responsável.
     await p.goto(`${WEB}/trabalho/implantacao`, { waitUntil: 'networkidle' });
+    await p.locator('[data-work-task-id]').first().waitFor({ timeout: 15_000 });
+    const cardId = await p.locator('[data-work-task-id]').first().getAttribute('data-work-task-id');
+    const card = await api('GET', `/trabalho/tarefas/${cardId}`, undefined, tok);
+    if (card.assigneeUserId !== sessao.user.id) {
+      await api('PATCH', `/trabalho/tarefas/${cardId}`, { assigneeUserId: sessao.user.id, expectedUpdatedAt: card.updatedAt }, tok);
+    }
+    await p.reload({ waitUntil: 'networkidle' });
+    const noCard = p.locator(`[data-work-task-id="${cardId}"] [data-testid="avatar-da-pessoa"]`).first();
+    conferir(await esperar(async () => (await noCard.count()) > 0, 10_000), 'o card da Implantação com pessoa ligada não mostra o avatar');
+    const balao = (await noCard.getAttribute('title')) ?? (await noCard.getAttribute('aria-label')) ?? '';
+    conferir(balao.includes(sessao.user.name), `o balão do avatar não traz o nome: "${balao}"`);
     const avataresNoQuadro = await p.locator('[data-work-task-id] [data-testid="avatar-da-pessoa"]').count();
-    if (!avataresNoQuadro) aviso('os cartões da Implantação ainda não mostram o responsável por avatar');
+    await foto(p, 'implantacao-avatar-escuro');
     await tresFotos({ claro, m }, '/perfil', 'perfil');
     return { detalhe: { foto: perfil.foto?.tipo ?? 'sim', aniversario, avatarNoTopo: !!topo, avataresNoQuadro } };
   });

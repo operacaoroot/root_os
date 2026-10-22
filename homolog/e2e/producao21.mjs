@@ -406,6 +406,14 @@ async function main() {
   // ---------------- P8 · Evolution ----------------
   await passo('P8 · Integrações: o cartão WhatsApp (Evolution) com estado e webhook, sem chave na tela e sem o DigiSac', async () => {
     await p.goto(`${WEB}/conexoes`, { waitUntil: 'networkidle' });
+    // Desde a 22B (I6) o conteúdo próprio da Evolution mora na gaveta "Configurar" do cartão.
+    const abrirGaveta = async (pg) => {
+      const c = pg.locator('[data-conector="evolution"]').first();
+      await c.waitFor();
+      const botao = c.getByRole('button', { name: 'Configurar' });
+      if (await botao.count()) await botao.first().click();
+    };
+    await abrirGaveta(p);
     const url = p.getByTestId('url-do-webhook-evolution');
     await url.waitFor();
     conferir(/\/api\/approvals\/canal\/whatsapp\/[0-9a-f-]{36}$/.test((await url.innerText()).trim()), 'a URL do webhook da Evolution veio torta');
@@ -416,6 +424,7 @@ async function main() {
     await cartao.scrollIntoViewIfNeeded();
     await foto(p, 'conexoes-evolution-escuro');
     await claro.goto(`${WEB}/conexoes`, { waitUntil: 'networkidle' });
+    await abrirGaveta(claro);
     await claro.locator('[data-conector="evolution"]').first().scrollIntoViewIfNeeded();
     await foto(claro, 'conexoes-evolution-claro');
     await m.goto(`${WEB}/conexoes`, { waitUntil: 'networkidle' });

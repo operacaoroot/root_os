@@ -321,7 +321,7 @@ export default function Propostas() {
         {visiveis.length === 0 ? (
           <p className="text-muted">Nenhuma proposta aqui.</p>
         ) : (
-          <div className="overflow-x-auto">
+          <div className="relative overflow-x-auto">
             <table className="w-full min-w-[760px] text-sm" data-testid="propostas-lista">
               <thead>
                 <tr className="text-left">
