@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import * as Dialog from '@radix-ui/react-dialog';
-import { Archive, Bot, Clock, DoorOpen, ExternalLink, Flag, Hourglass, MessageSquare, Plus, Repeat, Settings2, Unlock, X } from 'lucide-react';
+import { Archive, Bot, Clock, DoorOpen, ExternalLink, Flag, Hourglass, Maximize2, MessageSquare, PanelRight, Plus, Repeat, Settings2, Unlock, X } from 'lucide-react';
 import {
   MODELOS_DE_LISTA, MOEDA_PADRAO, ehValorMonetarioCanonico, formatarValorMonetario, lerValorDigitadoPtBr,
   listaDaImplantacao, moedaDoValor, paraDigitarPtBr, LISTA_DA_IMPLANTACAO, PASTA_DA_IMPLANTACAO, PORTA_DA_IMPLANTACAO,
@@ -29,6 +29,7 @@ import { DelegadorDaTarefa } from './DelegadorDaTarefa';
 import { DatasNoBalao, ProximaDataNoCartao } from './DatasDoCartao';
 import { ImplantacaoDoQuadroContexto, ImplantacaoNoPainel, ReuniaoESeloNoCartao, useImplantacaoDoQuadro } from './ImplantacaoDoCartao';
 import { LimiteDaColuna } from './LimiteDaColuna';
+import { BotaoDoMenuDaTarefa, MenuDaTarefaProvider, alvoDoMenu, useMenuDaTarefa } from './MenuDaTarefa';
 import { useFiltroDaPendencia } from './PendenciaDaImplantacao';
 import { diaCompleto, diaCurto, diaComSemana, instanteComSemana, instanteCurto } from '@/lib/datas-do-cartao';
 import { AtividadeDaTarefa } from './AtividadeDaTarefa';
@@ -904,6 +905,7 @@ function TrabalhoConteudo({ visaoInicial, modo, aoSairDeTodas }: { visaoInicial:
   };
 
   return (
+    <MenuDaTarefaProvider onMudou={refresh} onErro={setErro} onAbrir={(id) => abrirTarefa(id)}>
     <div className="flex min-w-0 flex-col gap-3">
       {/* Na rota de Todas os segmentos ocupam o lugar das pastas; em /trabalho as pastas ficam como estão. */}
       {estrutura && !implantacao && !todasFixa && (
@@ -1225,6 +1227,7 @@ function TrabalhoConteudo({ visaoInicial, modo, aoSairDeTodas }: { visaoInicial:
         <ConfigLista lista={lista} token={token} onFechar={() => { setConfigAberta(false); refresh(); }} onErro={setErro} />
       )}
     </div>
+    </MenuDaTarefaProvider>
   );
 }
 
@@ -1501,8 +1504,11 @@ function Cartao({ t, lista, editable, token, agentes, pessoas = [], onSoltarSobr
   const compacto = densidade === 'compacto';
   const cheio = densidade === 'cheio';
   const ultimo = mov?.ultimo ?? null;
+  // O menu da tarefa (produção 3, I4): botão direito, Shift+F10, tecla Menu e o "⋯".
+  const menu = useMenuDaTarefa();
   return (
     <div
+      {...alvoDoMenu(menu, t)}
       ref={ref}
       className={`group relative rounded-lg border bg-surface px-2 py-1.5 transition focus-within:border-brand hover:border-brand-dim ${mov?.procedencia ? `border-border border-l-2 ${mov.procedencia.tipo === 'saiu_do_funil' ? 'border-l-warn' : 'border-l-brand'}` : 'border-border'}`}
       data-work-task-id={t.id}
@@ -1539,6 +1545,7 @@ function Cartao({ t, lista, editable, token, agentes, pessoas = [], onSoltarSobr
               <ExternalLink size={12} />
             </a>
           )}
+          <BotaoDoMenuDaTarefa tarefa={t} />
         </span>
       </div>
       {semMovimento ? (
@@ -1844,6 +1851,7 @@ function Tabela({ tarefas, campos, trilhos, onAbrir, mostrarLista = false, pesso
   onReordenar?: ((ids: string[]) => Promise<void>) | null;
 }) {
   const [arrastando, setArrastando] = useState<string | null>(null);
+  const menu = useMenuDaTarefa();
   const grupos = useMemo(() => {
     const vista = tarefas.map((t) => ({
       t, titulo: t.title, status: t.statusName, statusTipo: t.statusType, lista: t.listName ?? '',
@@ -1904,6 +1912,7 @@ function Tabela({ tarefas, campos, trilhos, onAbrir, mostrarLista = false, pesso
             )}
             {g.itens.map((t) => (
               <tr
+                {...alvoDoMenu(menu, t)}
                 key={t.id} data-work-task-id={t.id} onClick={() => onAbrir(t.id)}
                 draggable={!!onReordenar}
                 onDragStart={onReordenar ? (e) => { setArrastando(t.id); e.dataTransfer.setData('text/plain', t.id); e.dataTransfer.effectAllowed = 'move'; } : undefined}
@@ -1924,6 +1933,7 @@ function Tabela({ tarefas, campos, trilhos, onAbrir, mostrarLista = false, pesso
                   <button onClick={(e) => { e.stopPropagation(); onAbrir(t.id); }} className="text-left hover:text-brand focus-visible:outline-brand">{t.title}</button>
                   {t.recorrencia && <span title={descreverRecorrencia(t.recorrencia)} className="ml-1 inline-flex align-middle text-muted"><Repeat size={11} /><span className="sr-only">{descreverRecorrencia(t.recorrencia)}</span></span>}
                   {trilhos.get(t.id) && <AtalhoDoTrilho trilho={trilhos.get(t.id)!} onAbrir={() => onAbrir(t.id, 'trilho')} />}
+                  <BotaoDoMenuDaTarefa tarefa={t} className="ml-1 inline-grid align-middle" />
                 </td>
                 {mostrarLista && <td className="px-3 py-2 text-muted">{t.listName ?? '—'}</td>}
                 <td className="px-3 py-2">{t.clienteNome ?? <span className="font-os-mono text-[10px] text-warn">sem cliente</span>}</td>
@@ -1991,6 +2001,15 @@ function BarraDoLote({ quantas, pessoas, etapas, onLimpar, onEtapa, onConcluir, 
 }
 
 // ---------- painel da tarefa (drawer): TODO campo editável ----------
+
+/** A preferência do pop-up da tarefa (produção 3, I4): no centro ou ao lado. Fica no navegador. */
+export const CHAVE_DO_MODO_DA_TAREFA = 'rootos.tarefa.modo';
+export function lerModoDaTarefa(): 'centro' | 'lado' {
+  try { return typeof window !== 'undefined' && window.localStorage.getItem(CHAVE_DO_MODO_DA_TAREFA) === 'centro' ? 'centro' : 'lado'; } catch { return 'lado'; }
+}
+function gravarModoDaTarefa(modo: 'centro' | 'lado'): void {
+  try { window.localStorage.setItem(CHAVE_DO_MODO_DA_TAREFA, modo); } catch { /* navegador sem armazenamento: vale só nesta abertura */ }
+}
 
 function separarAnexos(description: string | null): {
   texto: string; sufixo: string; anexos: Array<{ nome: string; caminho: string }>;
@@ -2107,6 +2126,9 @@ function PainelTarefa({ id, estrutura, editable, token, usuarioId, aba = 'tarefa
   const [conflito, setConflito] = useState<{ mudanca: Record<string, unknown>; recarregado: boolean; gravado?: boolean; indeterminado?: boolean } | null>(null);
   const focoAnterior = useRef<HTMLElement | null>(null);
   const fecharRef = useRef<HTMLButtonElement | null>(null);
+  // O modo centralizado (produção 3, I4): a preferência fica no navegador; o endereço não muda.
+  const [centro, setCentro] = useState<boolean>(() => lerModoDaTarefa() === 'centro');
+  const trocarModo = (noCentro: boolean) => { setCentro(noCentro); gravarModoDaTarefa(noCentro ? 'centro' : 'lado'); };
   useEffect(() => { focoAnterior.current = document.activeElement as HTMLElement; }, []);
   useEffect(() => setEdicaoDescricao(false), [id]);
   const leitura = useRef(0), operacao = useRef(0), ativo = useRef(true);
@@ -2205,6 +2227,41 @@ function PainelTarefa({ id, estrutura, editable, token, usuarioId, aba = 'tarefa
 
   if (!t) return null;
   const ro = !editable || salvando || !!(conflito && !conflito.recarregado);
+  const comentariosEAtividade = (
+    <>
+      {/* comentários (mais novo primeiro, como no ClickUp) */}
+      <div>
+        <div className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-muted">
+          Comentários ({t.comentarios.length})
+        </div>
+        {editable && (
+          <div className="mb-2 flex gap-1.5">
+            <input
+              value={comentario}
+              onChange={(e) => setComentario(e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && comentar()}
+              placeholder="Escrever comentário…"
+              className="w-full rounded-lg border border-border bg-surface-2 px-2 py-1.5 text-sm outline-none focus:border-brand-dim"
+            />
+            <button onClick={comentar} className="rounded-lg bg-brand/15 px-3 text-sm text-brand hover:bg-brand/25">Enviar</button>
+          </div>
+        )}
+        <div className="space-y-2">
+          {t.comentarios.map((c) => (
+            <div key={c.id} className="rounded-lg bg-surface-2 px-2.5 py-1.5">
+              <div className="text-[11px] text-muted">
+                {c.authorName} · {new Date(c.createdAt).toLocaleString('pt-BR')}
+              </div>
+              <div className="whitespace-pre-wrap text-[13px]">{c.text}</div>
+            </div>
+          ))}
+          {t.comentarios.length === 0 && <p className="text-xs text-muted">Sem comentários.</p>}
+        </div>
+      </div>
+
+      <AtividadeDaTarefa taskId={t.id} token={token} userId={usuarioId} />
+    </>
+  );
   const anexos = separarAnexos(t.description);
   const dependencias = separarDependencias(anexos.texto);
   const nomesListas = new Map([
@@ -2244,7 +2301,10 @@ function PainelTarefa({ id, estrutura, editable, token, usuarioId, aba = 'tarefa
             else document.getElementById('root-os-main')?.focus();
           }}
           data-testid="tarefa-popup"
-          className={`fixed z-50 flex flex-col border-border bg-surface shadow-2xl max-md:inset-x-0 max-md:bottom-0 max-md:h-[92dvh] max-md:rounded-t-xl max-md:border-t md:inset-y-0 md:right-0 md:border-l ${aba === 'trilho' && trilho ? 'md:w-[min(1040px,100vw)]' : 'md:w-[520px]'} w-full md:max-w-full`}
+          data-modo={centro ? 'centro' : 'lado'}
+          className={centro
+            ? 'fixed z-50 flex flex-col border-border bg-surface shadow-2xl inset-0 h-[100dvh] w-full md:inset-auto md:left-1/2 md:top-[4vh] md:h-[92vh] md:w-[min(1180px,96vw)] md:-translate-x-1/2 md:rounded-xl md:border'
+            : `fixed z-50 flex flex-col border-border bg-surface shadow-2xl max-md:inset-x-0 max-md:bottom-0 max-md:h-[92dvh] max-md:rounded-t-xl max-md:border-t md:inset-y-0 md:right-0 md:border-l ${aba === 'trilho' && trilho ? 'md:w-[min(1040px,100vw)]' : 'md:w-[520px]'} w-full md:max-w-full`}
         >
       <Dialog.Title className="sr-only">Detalhes da tarefa</Dialog.Title>
       <div className="flex items-start justify-between gap-2 border-b border-border px-4 py-3">
@@ -2257,6 +2317,21 @@ function PainelTarefa({ id, estrutura, editable, token, usuarioId, aba = 'tarefa
           className="w-full bg-transparent text-sm font-semibold outline-none focus:text-brand"
         />
         <div className="flex shrink-0 items-center gap-1">
+          {centro && trilho && (
+            <a href={`/onboarding/${trilho.id}`} data-testid="tarefa-ver-trilho" className="rounded border border-border px-2 py-1 text-[11px] text-muted hover:border-brand-dim hover:text-text max-md:hidden">
+              Ver trilho do onboarding
+            </a>
+          )}
+          <button
+            type="button"
+            data-testid={centro ? 'tarefa-modo-lado' : 'tarefa-modo-centro'}
+            title={centro ? 'Voltar para o lado' : 'Abrir no centro'}
+            aria-label={centro ? 'Voltar para o lado' : 'Abrir no centro'}
+            onClick={() => trocarModo(!centro)}
+            className="grid min-h-11 min-w-11 place-items-center text-muted hover:text-text focus-visible:outline-brand"
+          >
+            {centro ? <PanelRight size={15} /> : <Maximize2 size={15} />}
+          </button>
           {editable && !t.archived && (
             <button title="Arquivar" aria-label="Arquivar tarefa" disabled={ro} onClick={() => void arquivar()} className="p-1 text-muted hover:text-bad disabled:opacity-50">
               <Archive size={15} />
@@ -2288,7 +2363,8 @@ function PainelTarefa({ id, estrutura, editable, token, usuarioId, aba = 'tarefa
           <BancadaDoTrilho id={trilho.id} embutida />
         </div>
       ) : (
-      <div key={t.updatedAt} className="flex-1 space-y-4 overflow-y-auto px-4 py-3 text-sm">
+      <div data-testid={centro ? 'tarefa-duas-colunas' : undefined} className={centro ? 'flex min-h-0 flex-1 flex-col overflow-y-auto md:flex-row md:overflow-hidden' : 'contents'}>
+      <div key={t.updatedAt} data-testid={centro ? 'tarefa-coluna-esquerda' : undefined} className={`space-y-4 px-4 py-3 text-sm ${centro ? 'min-w-0 md:flex-1 md:overflow-y-auto' : 'flex-1 overflow-y-auto'}`}>
         {conflito && <div role="alert" className="space-y-2 rounded-lg border border-warn/40 bg-warn/10 p-3 text-sm">
           <p>{conflito.indeterminado
             ? conflito.recarregado ? 'A versão atual foi carregada. Confira o resultado antes de decidir sobre a alteração abaixo.' : 'Não foi possível confirmar a alteração. Recarregue a tarefa antes de tentar novamente.'
@@ -2591,37 +2667,8 @@ function PainelTarefa({ id, estrutura, editable, token, usuarioId, aba = 'tarefa
           </div>
         )}
 
-        {/* comentários (mais novo primeiro, como no ClickUp) */}
-        <div>
-          <div className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-muted">
-            Comentários ({t.comentarios.length})
-          </div>
-          {editable && (
-            <div className="mb-2 flex gap-1.5">
-              <input
-                value={comentario}
-                onChange={(e) => setComentario(e.target.value)}
-                onKeyDown={(e) => e.key === 'Enter' && comentar()}
-                placeholder="Escrever comentário…"
-                className="w-full rounded-lg border border-border bg-surface-2 px-2 py-1.5 text-sm outline-none focus:border-brand-dim"
-              />
-              <button onClick={comentar} className="rounded-lg bg-brand/15 px-3 text-sm text-brand hover:bg-brand/25">Enviar</button>
-            </div>
-          )}
-          <div className="space-y-2">
-            {t.comentarios.map((c) => (
-              <div key={c.id} className="rounded-lg bg-surface-2 px-2.5 py-1.5">
-                <div className="text-[11px] text-muted">
-                  {c.authorName} · {new Date(c.createdAt).toLocaleString('pt-BR')}
-                </div>
-                <div className="whitespace-pre-wrap text-[13px]">{c.text}</div>
-              </div>
-            ))}
-            {t.comentarios.length === 0 && <p className="text-xs text-muted">Sem comentários.</p>}
-          </div>
-        </div>
-
-        <AtividadeDaTarefa taskId={t.id} token={token} userId={usuarioId} />
+        {/* comentários e atividade: no modo centralizado, a coluna da direita (produção 3, I4) */}
+        {!centro && comentariosEAtividade}
 
         {/* identidade (ids) */}
         <div className="rounded-lg border border-border/60 px-2.5 py-2 text-[11px] text-muted">
@@ -2632,6 +2679,12 @@ function PainelTarefa({ id, estrutura, editable, token, usuarioId, aba = 'tarefa
           )}
           <div>criada {new Date(t.createdAt).toLocaleString('pt-BR')} · atualizada {new Date(t.updatedAt).toLocaleString('pt-BR')}</div>
         </div>
+      </div>
+      {centro && (
+        <div data-testid="tarefa-coluna-direita" className="space-y-4 border-t border-border px-4 py-3 text-sm md:w-[min(420px,40%)] md:shrink-0 md:overflow-y-auto md:border-l md:border-t-0">
+          {comentariosEAtividade}
+        </div>
+      )}
       </div>
       )}
         </Dialog.Content>

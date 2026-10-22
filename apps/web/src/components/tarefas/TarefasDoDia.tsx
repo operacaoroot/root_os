@@ -11,6 +11,7 @@ import { useAuth } from '@/lib/auth';
 import { abrirFicha } from '@/lib/ficha';
 import { Numero, Quadro } from '@/components/painel';
 import { Barras, type Fatia } from './graficos';
+import { BotaoDoMenuDaTarefa, MenuDaTarefaProvider, alvoDoMenu, useMenuDaTarefa } from '@/components/trabalho/MenuDaTarefa';
 
 /*
  * DIA A DIA › TAREFAS: todas as tarefas de todas as áreas num lugar (19/10/2026).
@@ -235,6 +236,7 @@ export function TarefasDoDia({ area: nomeDaArea }: { area?: string } = {}) {
   const agruparNaTela: Agrupar = areaFixa && agrupar === 'area' ? 'pessoa' : agrupar;
 
   return (
+    <MenuDaTarefaProvider onMudou={carregar} onErro={setErro} onAbrir={abrirTarefa}>
     <div className="com-tema mx-auto max-w-[1240px] space-y-5 text-text">
       <div className="flex flex-wrap items-end justify-between gap-3 border-b border-border">
         <div className="flex gap-1">
@@ -315,6 +317,7 @@ export function TarefasDoDia({ area: nomeDaArea }: { area?: string } = {}) {
         </div>
       )}
     </div>
+    </MenuDaTarefaProvider>
   );
 }
 
@@ -614,6 +617,7 @@ function QuadroDeTarefas(props: {
   reordenar: (ids: string[]) => void;
 }) {
   const { p, tarefas, agrupar, areaFixa } = props;
+  const menu = useMenuDaTarefa();
   const [antesDe, setAntesDe] = useState<string | null>(null);
   const ref = useRef<HTMLDivElement>(null);
   const altura = useAlturaAteOFim(ref);
@@ -721,6 +725,7 @@ function QuadroDeTarefas(props: {
                 ))}
                 {c.itens.map((t) => (
                   <div
+                    {...alvoDoMenu(menu, { id: t.id, title: t.titulo })}
                     key={t.id}
                     draggable={props.podeEditar}
                     onDragStart={() => setArrastando(t)}
@@ -737,6 +742,7 @@ function QuadroDeTarefas(props: {
                       <Meta t={t} mostrarArea={agrupar !== 'area' && !areaFixa} mostrarPessoa={agrupar !== 'pessoa'} />
                       {t.status.tipo !== 'aberta' && <div className="mt-1.5"><SeloDoStatus t={t} /></div>}
                     </div>
+                    <BotaoDoMenuDaTarefa tarefa={{ id: t.id, title: t.titulo }} className="self-start" />
                   </div>
                 ))}
               </div>
@@ -759,6 +765,7 @@ function ListaDeTarefas({ p, tarefas, abrir, podeEditar, mostrarArea = true, sel
 }) {
   const [arrastando, setArrastando] = useState<string | null>(null);
   const [antesDe, setAntesDe] = useState<string | null>(null);
+  const menu = useMenuDaTarefa();
   /*
    * Cada célula se edita sozinha (prazo, responsável, cliente, área, status),
    * sem abrir a tarefa: o clique na célula não abre a janela; o no título abre.
@@ -815,6 +822,7 @@ function ListaDeTarefas({ p, tarefas, abrir, podeEditar, mostrarArea = true, sel
         <tbody className="divide-y divide-border">
           {linhas.map((t) => (
             <tr
+              {...alvoDoMenu(menu, { id: t.id, title: t.titulo })}
               key={t.id}
               onClick={() => abrir(t.id)}
               draggable={manual}
@@ -831,7 +839,9 @@ function ListaDeTarefas({ p, tarefas, abrir, podeEditar, mostrarArea = true, sel
                   {podeEditar && <Selecao id={t.id} titulo={t.titulo} sel={sel} marcar={marcar} />}
                 </span>
               </td>
-              <td className={`py-2 pr-3 font-medium hover:text-brand ${t.situacao === 'feita' ? 'text-muted line-through' : ''}`}>{t.titulo}</td>
+              <td className={`py-2 pr-3 font-medium hover:text-brand ${t.situacao === 'feita' ? 'text-muted line-through' : ''}`}>
+                <span className="flex items-center justify-between gap-1">{t.titulo}<BotaoDoMenuDaTarefa tarefa={{ id: t.id, title: t.titulo }} /></span>
+              </td>
               {mostrarArea && (
                 <td className="py-1.5 pr-2" onClick={parar}>
                   <select disabled={!podeEditar} value={t.area?.id ?? ''} onChange={(e) => e.target.value && editar(t, { areaId: e.target.value })} className={celula} aria-label="Área">

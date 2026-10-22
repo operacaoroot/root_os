@@ -25,6 +25,7 @@ import { dataDoDia } from '@/lib/cockpit';
 
 import { BOTAO, BOTAO_PRIMARIO, Chip, Erro, ErroDaAcao, FOCO, INPUT, useCarregar } from '../_ui';
 import { useMudouNoPainel } from '../_painel/provedor';
+import { BotaoDoMenuDaTarefa, MenuDaTarefaProvider, alvoDoMenu, useMenuDaTarefa } from '@/components/trabalho/MenuDaTarefa';
 
 /** Onde o bloco do funil guarda se está aberto ou recolhido. */
 export const CHAVE_DO_BLOCO_RECOLHIDO = 'mktos.funil.tarefas-do-comercial.recolhido';
@@ -169,6 +170,8 @@ function LinhaDaTarefa({
   const [erro, setErro] = useState<unknown>(null);
   const editar = useRef<HTMLButtonElement>(null);
   const feita = t.status.tipo === 'concluida';
+  // O menu da tarefa (produção 3, I4): botão direito, Shift+F10, tecla Menu e o "⋯".
+  const menu = useMenuDaTarefa();
 
   async function alternar() {
     if (ocupado) return;
@@ -212,7 +215,7 @@ function LinhaDaTarefa({
   }
 
   return (
-    <li data-testid={`tarefa-${t.id}`} className="flex min-w-0 items-start gap-2 py-1.5">
+    <li {...alvoDoMenu(menu, { id: t.id, title: t.titulo })} data-testid={`tarefa-${t.id}`} className="flex min-w-0 items-start gap-2 py-1.5">
       <button
         type="button"
         role="checkbox"
@@ -243,6 +246,7 @@ function LinhaDaTarefa({
           editar
         </button>
       )}
+      <BotaoDoMenuDaTarefa tarefa={{ id: t.id, title: t.titulo }} className="mt-0.5" />
     </li>
   );
 }
@@ -276,6 +280,7 @@ export function ListaDeTarefasDoComercial({
   const feitas = tarefas.filter((t) => t.status.tipo === 'concluida');
 
   return (
+    <MenuDaTarefaProvider onMudou={() => void aoMudar()}>
     <div className="min-w-0 space-y-1.5" data-testid={testId}>
       {abertas.length === 0 && !criando && <p className="text-[12px] text-dim">{vazio}</p>}
       {abertas.length > 0 && (
@@ -330,6 +335,7 @@ export function ListaDeTarefasDoComercial({
         </div>
       )}
     </div>
+    </MenuDaTarefaProvider>
   );
 }
 
