@@ -76,11 +76,20 @@ function MenuDaArvore({ rotulo, testId, itens, gatilho }: {
   }, [aberto, itens.length, gatilho]);
   useEffect(() => {
     if (!aberto) return;
-    habilitados()[0]?.focus();
+    habilitados()[0]?.focus({ preventScroll: true });
     const dentro = (alvo: EventTarget | null) => alvo instanceof Node && (!!menu.current?.contains(alvo) || !!gatilho.current?.contains(alvo));
     const fora = (e: MouseEvent) => { if (!dentro(e.target)) setAberto(false); };
-    // Fixo na janela: rolar a página ou mudar a janela tiraria o menu de perto do botão. Fecha.
-    const rolou = (e: Event) => { if (!dentro(e.target)) setAberto(false); };
+    // Fixo na janela: rolar a página ou mudar a janela tiraria o menu de perto do botão. Fecha,
+    // mas só se o botão saiu do lugar: o evento da rolagem que trouxe o "⋯" à vista chega um quadro
+    // depois do clique (roda do mouse, rolagem suave, o foco no primeiro item) e fecharia o menu
+    // que acabou de abrir.
+    const onde = gatilho.current?.getBoundingClientRect();
+    const rolou = (e: Event) => {
+      if (dentro(e.target)) return;
+      const agora = gatilho.current?.getBoundingClientRect();
+      if (onde && agora && Math.abs(agora.top - onde.top) < 2 && Math.abs(agora.left - onde.left) < 2) return;
+      setAberto(false);
+    };
     const mudouAJanela = () => setAberto(false);
     document.addEventListener('mousedown', fora);
     document.addEventListener('scroll', rolou, true);
