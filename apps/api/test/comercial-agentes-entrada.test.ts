@@ -442,6 +442,31 @@ describe.skipIf(!URL)('a entrada de leads dos agentes do comercial, contra o Pos
     }
   });
 
+  it('Produção 22, revisão: acima do teto cada mensagem deixa registro (contagem e texto da última), e a pendência decidida não engole as seguintes', async () => {
+    const numero = '5532977770017';
+    const mandar = (n: number) => naEmpresa(() => entrada.processar(ORG, evolucao(numero, { conversation: `Promoção imperdível número ${n}` }), numero));
+    for (let i = 1; i <= 5; i++) expect(await mandar(i)).toBe('triagem: outro (ignorado)');
+    for (let i = 6; i <= 8; i++) expect(await mandar(i)).toBe('triagem: pendência');
+    const daHora = () => prisma.pendencia.findMany({ where: { orgId: ORG, chave: { startsWith: `whatsapp:teto:${numero}:` } }, orderBy: { criadaEm: 'asc' } });
+    const [primeira] = await daHora();
+    expect((await daHora()).length).toBe(1);
+    expect(primeira.dados).toMatchObject({ contagem: 3, texto: 'Promoção imperdível número 8' });
+    expect(primeira.contexto).toContain('número 8');
+    expect(primeira.contexto).toContain('acima do teto nesta pendência: 3');
+    expect(primeira.textoExpiraEm).not.toBeNull();
+
+    // a pessoa descarta a pendência da hora; a próxima mensagem abre OUTRA, não some
+    await naEmpresa(() => pendencias.descartar(ORG, primeira.id, pessoaId));
+    expect(await mandar(9)).toBe('triagem: pendência');
+    expect(await mandar(10)).toBe('triagem: pendência');
+    const depois = await daHora();
+    expect(depois).toHaveLength(2);
+    expect(depois[0]).toMatchObject({ id: primeira.id, estado: 'descartada' });
+    expect(depois[0].dados).toMatchObject({ contagem: 3, texto: 'Promoção imperdível número 8' });
+    expect(depois[1]).toMatchObject({ estado: 'aberta', chave: `${primeira.chave}:2` });
+    expect(depois[1].dados).toMatchObject({ contagem: 2, texto: 'Promoção imperdível número 10' });
+  });
+
   it('Produção 22: o texto da pendência vence em 14 dias; o expurgo limpa o vencido e não o novo, e a pendência fica', async () => {
     const DIA_MS = 24 * 60 * 60 * 1000;
     const idVelha = randomUUID();
