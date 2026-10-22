@@ -12,6 +12,7 @@ import { LinkDoLead } from '../_painel/provedor';
 import { CelulaDoResponsavel } from './CelulaDoResponsavel';
 import {
   CHAVE_DAS_LARGURAS,
+  LARGURA_MAXIMA,
   COLUNAS_DA_LISTA,
   COLUNAS_PADRAO,
   alternarColuna,
@@ -239,7 +240,7 @@ export function ListaDoFunil({
                         aria-label={`Largura da coluna ${def.rotulo}`}
                         aria-valuenow={larguraDa(larguras, k)}
                         aria-valuemin={def.minimo}
-                        aria-valuemax={640}
+                        aria-valuemax={LARGURA_MAXIMA}
                         tabIndex={0}
                         data-testid={`funil-lista-borda-${k}`}
                         title="Arraste para ajustar a largura · dois cliques voltam ao padrão"
