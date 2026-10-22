@@ -67,7 +67,11 @@ export const MAX_BYTES_DO_DOCUMENTO_DO_WHATSAPP = 20 * 1024 * 1024;
  *   · TETO POR REMETENTE: 5 mensagens por hora por número. Da 6ª em diante, sem
  *     modelo: UMA pendência por número e por hora (chave própria), com a razão.
  *     Um número que dispara cem mensagens não gasta cem chamadas nem enche a
- *     caixa com cem pendências.
+ *     caixa com cem pendências. Cada mensagem acima do teto deixa registro na
+ *     pendência aberta (`dados.contagem` e o texto da ÚLTIMA, que vence em 14
+ *     dias contados dela); e se a pendência da hora já foi decidida ou
+ *     descartada, a mensagem seguinte abre OUTRA (`…:2`, `…:3`), em vez de
+ *     sumir dentro de uma decisão que já foi tomada (Produção 22, revisão).
  *   · O TEXTO NA PENDÊNCIA VENCE EM 14 DIAS (`textoExpiraEm`), e o expurgo do
  *     rastro o apaga (`pendencias/retencao-do-texto.ts`).
  *
@@ -182,8 +186,7 @@ export class TriagemDoWhatsappService implements OnModuleInit {
 
     if (m.texto && this.passouDoTeto(orgId, m.telefone)) {
       const semModelo = { ...decidirTriagem(null, ctx), motivo: RAZAO_DO_TETO_DA_TRIAGEM };
-      const hora = Math.floor(this.agora() / JANELA_DO_TETO_MS);
-      return this.paraPessoa(orgId, m, semModelo, mensagemId, `whatsapp:teto:${normalizarTelefone(m.telefone)}:${hora}`);
+      return this.paraPessoaPorTeto(orgId, m, semModelo, mensagemId);
     }
 
     let leitura = null;
@@ -287,26 +290,82 @@ export class TriagemDoWhatsappService implements OnModuleInit {
     return 'triagem: lead_novo';
   }
 
+  /**
+   * O contexto da pendência. O trecho da mensagem vem primeiro, entre aspas,
+   * e a frase do sistema começa com "A triagem achou": é o formato que o
+   * expurgo do texto (`contextoSemTrecho`) reconhece.
+   */
+  private contextoDaPendencia(m: MensagemParaTriar, d: DecisaoDaTriagem, contagem?: number): string {
+    const trecho = (m.texto ?? '').replace(/\s+/g, ' ').trim().slice(0, 300);
+    const acimaDoTeto = contagem ? ` Mensagens acima do teto nesta pendência: ${contagem} (o trecho é da última).` : '';
+    return `${trecho ? `“${trecho}”. ` : ''}A triagem achou ${ROTULO_DA_CLASSE_DA_TRIAGEM[d.classe]} com confiança ${Math.round(d.confianca * 100)}%${d.motivo ? ` (${d.motivo})` : ''}.${acimaDoTeto} Nada foi respondido ao contato.`.slice(0, 1000);
+  }
+
+  private dadosDaPendencia(m: MensagemParaTriar, d: DecisaoDaTriagem, mensagemId: string, contagem?: number): Prisma.InputJsonValue {
+    const telefone = normalizarTelefone(m.telefone);
+    const base = { telefone, nome: m.nome ?? null, texto: (m.texto ?? '').slice(0, 2000), mensagemId, classe: d.classe, confianca: d.confianca };
+    return (contagem ? { ...base, contagem, ultimaEm: new Date(this.agora()).toISOString() } : base) as Prisma.InputJsonValue;
+  }
+
   /** Confiança baixa ou contradição: a pendência com as opções para a pessoa. */
-  private async paraPessoa(orgId: string, m: MensagemParaTriar, d: DecisaoDaTriagem, mensagemId: string, chave = `whatsapp:${mensagemId}`): Promise<string> {
+  private async paraPessoa(orgId: string, m: MensagemParaTriar, d: DecisaoDaTriagem, mensagemId: string, chave = `whatsapp:${mensagemId}`, contagem?: number): Promise<string> {
     const telefone = normalizarTelefone(m.telefone);
     const quem = `${m.nome?.trim() ? `${m.nome.trim().slice(0, 60)} ` : ''}(${finalDoTelefone(telefone)})`;
-    const trecho = (m.texto ?? '').replace(/\s+/g, ' ').trim().slice(0, 300);
     await this.pendencias.abrir(orgId, {
       funcao: 'CO-16',
       tipo: TIPO_DA_PENDENCIA_DA_TRIAGEM,
       chave,
       titulo: m.leadId ? `Mensagem de lead no WhatsApp: qual é o assunto? ${quem}` : `Mensagem nova no WhatsApp: é lead? ${quem}`,
-      contexto: `${trecho ? `“${trecho}”. ` : ''}A triagem achou ${ROTULO_DA_CLASSE_DA_TRIAGEM[d.classe]} com confiança ${Math.round(d.confianca * 100)}%${d.motivo ? ` (${d.motivo})` : ''}. Nada foi respondido ao contato.`.slice(0, 1000),
+      contexto: this.contextoDaPendencia(m, d, contagem),
       opcoes: m.leadId ? OPCOES_DE_LEAD : OPCOES_DE_NUMERO_NOVO,
       refTipo: m.leadId ? 'lead' : null,
       refId: m.leadId,
-      dados: { telefone, nome: m.nome ?? null, texto: (m.texto ?? '').slice(0, 2000), mensagemId, classe: d.classe, confianca: d.confianca } as Prisma.InputJsonValue,
+      dados: this.dadosDaPendencia(m, d, mensagemId, contagem),
       // Produção 22, M4: o texto vence em 14 dias; o expurgo do rastro o apaga e a pendência fica.
       textoExpiraEm: prazoDoTexto(new Date(this.agora())),
     });
     if (m.leadId) await this.registrar(orgId, m.leadId, d, 'pendência para uma pessoa', mensagemId);
     return 'triagem: pendência';
+  }
+
+  /**
+   * Acima do teto (Produção 22, revisão): a mensagem SOMA na pendência aberta
+   * da hora (contagem, o texto da última e o prazo do texto contado dela), por
+   * escrita condicionada ao estado e ao `atualizadaEm` lidos (duas mensagens
+   * juntas não perdem uma conta). Sem pendência aberta na hora (nenhuma, ou a
+   * da hora já decidida ou descartada), abre uma nova com o próximo número.
+   */
+  private async paraPessoaPorTeto(orgId: string, m: MensagemParaTriar, d: DecisaoDaTriagem, mensagemId: string): Promise<string> {
+    const telefone = normalizarTelefone(m.telefone);
+    const hora = Math.floor(this.agora() / JANELA_DO_TETO_MS);
+    const base = `whatsapp:teto:${telefone}:${hora}`;
+    for (let tentativa = 0; tentativa < 3; tentativa++) {
+      const daHora = await this.prisma.pendencia.findMany({
+        where: { orgId, OR: [{ chave: base }, { chave: { startsWith: `${base}:` } }] },
+        select: { id: true, estado: true, dados: true, atualizadaEm: true },
+        orderBy: { criadaEm: 'asc' },
+      });
+      const aberta = daHora.find((p) => p.estado === 'aberta');
+      if (!aberta) {
+        const chave = daHora.length ? `${base}:${daHora.length + 1}` : base;
+        return this.paraPessoa(orgId, m, d, mensagemId, chave, 1);
+      }
+      const anterior = aberta.dados && typeof aberta.dados === 'object' && !Array.isArray(aberta.dados) ? (aberta.dados as P) : {};
+      const contagem = (Number(anterior.contagem) || 1) + 1;
+      const r = await this.prisma.pendencia.updateMany({
+        where: { id: aberta.id, orgId, estado: 'aberta', atualizadaEm: aberta.atualizadaEm },
+        data: {
+          contexto: this.contextoDaPendencia(m, d, contagem),
+          dados: this.dadosDaPendencia(m, d, mensagemId, contagem),
+          textoExpiraEm: prazoDoTexto(new Date(this.agora())),
+        },
+      });
+      if (r.count === 1) {
+        if (m.leadId) await this.registrar(orgId, m.leadId, d, 'pendência para uma pessoa', mensagemId);
+        return 'triagem: pendência';
+      }
+    }
+    throw new Error('a pendência do teto mudou três vezes seguidas; a reentrega tenta de novo');
   }
 
   /** Documento: o arquivista do cliente. Sem o binário no corpo (webhook base64 desligado), o motivo fica. */

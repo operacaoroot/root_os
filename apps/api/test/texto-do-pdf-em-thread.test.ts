@@ -7,6 +7,8 @@ import { PdfIlegivelError, textoDoPdf } from '../src/google/texto-do-pdf';
 import {
   PdfDemorouError,
   PdfGrandeDemaisError,
+  leiturasNaFila,
+  MAX_THREADS_DE_PDF,
   rodarEmThread,
   textoDoPdfEmThread,
   threadsVivas,
@@ -100,6 +102,59 @@ describe('o leitor de PDF numa thread', { timeout: 30_000 }, () => {
     const codigo = "require('node:worker_threads').parentPort.postMessage({ ok: false, nome: 'TypeError', mensagem: 'quebrou' });";
     await expect(rodarEmThread(codigo, {}, { prazoMs: 5_000 })).rejects.toThrow('quebrou');
     expect(threadsVivas()).toBe(0);
+  });
+
+  /** Mede o maior número de threads vivas enquanto `p` roda. */
+  async function picoDeThreads<T>(p: Promise<T>): Promise<{ pico: number; filaVista: number; resultado: PromiseSettledResult<T> }> {
+    let pico = 0;
+    let filaVista = 0;
+    const amostra = setInterval(() => {
+      pico = Math.max(pico, threadsVivas());
+      filaVista = Math.max(filaVista, typeof leiturasNaFila === 'function' ? leiturasNaFila() : 0);
+    }, 2);
+    try {
+      const [resultado] = await Promise.allSettled([p]);
+      return { pico, filaVista, resultado };
+    } finally {
+      clearInterval(amostra);
+    }
+  }
+
+  it('Produção 22, revisão: 4 leituras ao mesmo tempo nunca têm mais de 2 threads vivas, e todas terminam', async () => {
+    // cada thread fica 250 ms parada antes de responder: as quatro juntas se sobreporiam
+    const codigo =
+      "const { parentPort, workerData } = require('node:worker_threads');" +
+      'Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 250);' +
+      'parentPort.postMessage({ ok: true, valor: workerData.n });';
+    const { pico, filaVista, resultado } = await picoDeThreads(Promise.all([1, 2, 3, 4].map((n) => rodarEmThread<number>(codigo, { n }, { prazoMs: 5_000 }))));
+    expect(resultado).toEqual({ status: 'fulfilled', value: [1, 2, 3, 4] });
+    expect(pico).toBeGreaterThan(0);
+    expect(pico).toBeLessThanOrEqual(2);
+    expect(MAX_THREADS_DE_PDF).toBe(2);
+    expect(filaVista).toBe(2);
+    expect(threadsVivas()).toBe(0);
+    expect(leiturasNaFila()).toBe(0);
+  });
+
+  it('Produção 22, revisão: a leitura que falha (ou estoura o prazo) devolve a vaga, e a fila anda até o fim', async () => {
+    const quebra = "require('node:worker_threads').parentPort.postMessage({ ok: false, nome: 'TypeError', mensagem: 'quebrou' });";
+    const ok = "require('node:worker_threads').parentPort.postMessage({ ok: true, valor: 'ok' });";
+    const leituras = [
+      rodarEmThread(quebra, {}, { prazoMs: 5_000 }),
+      rodarEmThread('for (;;) {}', {}, { prazoMs: 200 }),
+      rodarEmThread('isto não é javascript (', {}, { prazoMs: 5_000 }),
+      rodarEmThread(quebra, {}, { prazoMs: 5_000 }),
+      rodarEmThread(ok, {}, { prazoMs: 5_000 }),
+      rodarEmThread(ok, {}, { prazoMs: 5_000 }),
+    ];
+    const { pico, resultado } = await picoDeThreads(Promise.allSettled(leituras));
+    const estados = (resultado as PromiseFulfilledResult<PromiseSettledResult<unknown>[]>).value.map((r) => r.status);
+    expect(estados).toEqual(['rejected', 'rejected', 'rejected', 'rejected', 'fulfilled', 'fulfilled']);
+    expect(pico).toBeLessThanOrEqual(2);
+    expect(threadsVivas()).toBe(0);
+    expect(leiturasNaFila()).toBe(0);
+    // e a vaga está livre: uma leitura nova roda na hora
+    await expect(rodarEmThread(ok, {}, { prazoMs: 5_000 })).resolves.toBe('ok');
   });
 });
 

@@ -36,7 +36,16 @@ import {
 import { lerPerguntasDoRoteirista, promptDoRoteirista, RoteiroIlegivelError } from './roteirista';
 import { varrerSegredos } from './segredos';
 import { enderecoDeDentro } from '../../pauta/endereco-de-dentro';
-import { ipDaConexao, pedirAoIp, resolverDoSistema, type Conectar, type Resolver } from '../../pauta/pagina-publica';
+import {
+  CorpoAcimaDoTetoError,
+  ipDaConexao,
+  lerCorpoComTeto,
+  pedirAoIp,
+  resolverDoSistema,
+  TETO_DE_BYTES_DA_PAGINA,
+  type Conectar,
+  type Resolver,
+} from '../../pauta/pagina-publica';
 import { TrilhoService, type AtaNaBancada, type Quem } from './trilho.service';
 
 /** A marca do stub para o roteirista: mora em `roteirista.ts` (parte pura do IM-03) e é reexportada aqui. */
@@ -120,7 +129,7 @@ export function htmlParaTexto(html: string): string {
  * o dia em que o Granola for conector; até lá, é isto que impede a bancada de
  * virar sonda da rede interna.
  */
-const TETO_DE_BYTES_DO_LINK = 2 * 1024 * 1024;
+const TETO_DE_BYTES_DO_LINK = TETO_DE_BYTES_DA_PAGINA;
 
 /**
  * Confere o destino e devolve a URL e o IP em que a conexão vai ser aberta.
@@ -157,22 +166,20 @@ async function conferirDestino(bruto: string, resolver: Resolver): Promise<{ url
   return { url: u, ip: ipDaConexao(enderecos) };
 }
 
+/**
+ * O corpo com o teto de 2 MB, pela leitura comum (`lerCorpoComTeto`, a mesma
+ * da captura da pauta). Resposta que morre no meio (o prazo, um gzip cortado)
+ * vira a frase de link indisponível, em vez de ficar pendurada.
+ */
 async function lerComTeto(res: Response): Promise<string> {
-  const leitor = res.body?.getReader();
-  if (!leitor) return '';
-  const partes: Uint8Array[] = [];
-  let total = 0;
-  for (;;) {
-    const { done, value } = await leitor.read();
-    if (done) break;
-    total += value.byteLength;
-    if (total > TETO_DE_BYTES_DO_LINK) {
-      await leitor.cancel().catch(() => undefined);
+  try {
+    return await lerCorpoComTeto(res, TETO_DE_BYTES_DO_LINK);
+  } catch (e) {
+    if (e instanceof CorpoAcimaDoTetoError) {
       throw new FonteIndisponivelError('a página passa de 2 MB — isso não é uma transcrição. Cole o texto.');
     }
-    partes.push(value);
+    throw new FonteIndisponivelError(`não consegui ler o link até o fim: ${(e as Error).message}`);
   }
-  return Buffer.concat(partes.map((p) => Buffer.from(p))).toString('utf8');
 }
 
 /**

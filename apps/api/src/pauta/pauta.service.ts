@@ -71,7 +71,7 @@ import { LLM_PROVIDER, type LlmProvider } from '../llm/llm.provider';
 import { MedidorDeGastoExterno, tokensDaRespostaDeEmbedding } from '../llm/gasto-externo';
 import { RecusaDeCustoDeIaError } from '../llm/recusa-de-custo';
 import { umaPorVez } from './uma-por-vez';
-import { buscarPaginaPublica } from './pagina-publica';
+import { buscarPaginaPublica, CorpoAcimaDoTetoError, lerCorpoComTeto } from './pagina-publica';
 
 const EMBED_MODEL = 'text-embedding-3-small';
 /** A função do cadastro em nome de quem o acervo vetoriza (a ficha da referência, CT-02). */
@@ -316,7 +316,12 @@ export class PautaService implements OnModuleInit {
       signal: AbortSignal.timeout(20_000),
     });
     if (!res.ok) throw new BadRequestException(`A página respondeu HTTP ${res.status}.`);
-    const html = await res.text();
+    // Com teto de 2 MB depois de descomprimir, e sem ficar pendurado numa
+    // resposta que morre no meio (Produção 22, revisão; `lerCorpoComTeto`).
+    const html = await lerCorpoComTeto(res).catch((e: unknown) => {
+      if (e instanceof CorpoAcimaDoTetoError) throw new BadRequestException('A página passa de 2 MB: cole o texto na captura.');
+      throw new BadRequestException(`Não consegui ler a página até o fim: ${(e as Error).message}`);
+    });
     const texto = html
       .replace(/<script[\s\S]*?<\/script>/gi, ' ')
       .replace(/<style[\s\S]*?<\/style>/gi, ' ')

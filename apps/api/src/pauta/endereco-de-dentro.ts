@@ -24,6 +24,7 @@ import { isIP } from 'node:net';
  *          (NAT64 de uso local).
  *   IPv6 que carrega um IPv4 e é julgado pelo IPv4 embutido:
  *          ::ffff:a.b.c.d (mapeado, também na forma hexadecimal ::ffff:7f00:1),
+ *          ::ffff:0:a.b.c.d (IPv4 traduzido, SIIT, RFC 6052/7915),
  *          ::a.b.c.d (IPv4-compatível, obsoleto), 64:ff9b::/96 (NAT64) e
  *          2002::/16 (6to4: o IPv4 vem nos bits 16 a 48).
  *
@@ -103,6 +104,8 @@ function ipv6DeDentro(b: number[]): boolean {
   if (zerados(b, 15) && (b[15] === 0 || b[15] === 1)) return true;
   // ::ffff:a.b.c.d (mapeado)
   if (zerados(b, 10) && b[10] === 0xff && b[11] === 0xff) return ipv4DeDentro(b[12], b[13], b[14]);
+  // ::ffff:0:a.b.c.d (IPv4 traduzido, SIIT)
+  if (zerados(b, 8) && b[8] === 0xff && b[9] === 0xff && b[10] === 0 && b[11] === 0) return ipv4DeDentro(b[12], b[13], b[14]);
   // ::a.b.c.d (IPv4-compatível)
   if (zerados(b, 12)) return ipv4DeDentro(b[12], b[13], b[14]);
   // 64:ff9b::/96 (NAT64 bem-conhecido): o IPv4 nos últimos 32 bits

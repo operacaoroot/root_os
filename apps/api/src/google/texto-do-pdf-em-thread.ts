@@ -65,6 +65,47 @@ export function threadsVivas(): number {
   return vivas.size;
 }
 
+/*
+ * NO MÁXIMO DUAS THREADS AO MESMO TEMPO (Produção 22, revisão). Sem limite,
+ * dez PDFs pedidos juntos abriam dez threads de 256 MB cada, e o processo da
+ * API caía por memória antes de qualquer prazo valer. Aqui um semáforo do
+ * processo deixa `MAX_THREADS_DE_PDF` rodando; as outras ESPERAM A VEZ, em
+ * ordem de chegada.
+ *
+ * O PRAZO CONTA DE QUANDO A LEITURA COMEÇA A RODAR, não de quando entrou na
+ * fila: o prazo mede o trabalho da thread (é ele que encerra o PDF construído
+ * para demorar), e contar a espera faria um PDF bom perder a vez por culpa de
+ * dois ruins na frente. A espera tem fim porque cada thread na frente tem o
+ * seu próprio prazo.
+ *
+ * A VAGA SEMPRE VOLTA: ela é tomada antes de abrir a thread e devolvida no
+ * `finally`, depois de a thread sair, também quando a leitura falha ou a
+ * thread nem chega a abrir. Quem estava esperando recebe a vaga direto.
+ */
+export const MAX_THREADS_DE_PDF = 2;
+let ocupadas = 0;
+const naFila: Array<() => void> = [];
+
+/** Quantas leituras esperam a vez agora. A suíte confere que volta a zero. */
+export function leiturasNaFila(): number {
+  return naFila.length;
+}
+
+function tomarVaga(): Promise<void> {
+  if (ocupadas < MAX_THREADS_DE_PDF) {
+    ocupadas++;
+    return Promise.resolve();
+  }
+  return new Promise<void>((ok) => naFila.push(ok));
+}
+
+function soltarVaga(): void {
+  const proxima = naFila.shift();
+  // a vaga passa direto para quem espera; sem ninguém, ela fica livre
+  if (proxima) proxima();
+  else ocupadas--;
+}
+
 /** O arquivo do leitor que a thread carrega: o compilado ao lado deste, ou o `.ts` na suíte. */
 function arquivoDoLeitor(): string {
   const base = join(__dirname, 'texto-do-pdf');
@@ -92,10 +133,24 @@ type Resposta = { ok: true; valor: unknown } | { ok: false; nome: string; mensag
 
 /**
  * Roda um código numa thread com prazo, e só devolve depois de a thread sair.
- * Genérico de propósito: a suíte prova o encerramento com um código que nunca
+ * Espera a vez quando já há `MAX_THREADS_DE_PDF` rodando. Genérico de propósito: a suíte prova o encerramento com um código que nunca
  * termina. O código responde UMA mensagem `{ ok, valor | nome, mensagem }`.
  */
-export function rodarEmThread<T>(
+export async function rodarEmThread<T>(
+  codigo: string,
+  dados: Record<string, unknown>,
+  opcoes: { prazoMs: number; transferir?: ArrayBuffer[] },
+): Promise<T> {
+  await tomarVaga();
+  try {
+    return await rodarUmaThread<T>(codigo, dados, opcoes);
+  } finally {
+    soltarVaga();
+  }
+}
+
+/** Uma thread, com prazo contado de agora; só devolve depois de a thread sair. */
+function rodarUmaThread<T>(
   codigo: string,
   dados: Record<string, unknown>,
   opcoes: { prazoMs: number; transferir?: ArrayBuffer[] },

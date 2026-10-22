@@ -20,6 +20,7 @@ import {
   type EnvioPelaEvolution,
 } from '../gateway/canais/evolution.port';
 import { enderecoDeDentro } from './endereco-de-dentro';
+import { ipDaConexao, pedirAoIp, type Conectar } from './pagina-publica';
 import { EfeitosRegistry, type ContextoDoEfeito } from '../gateway/efeitos.registry';
 import { ConectoresConfiguradosRegistry } from '../gateway/conectores-configurados.registry';
 import { TransporteDeCanalRegistry } from '../gateway/canais/transporte.registry';
@@ -410,11 +411,17 @@ export class EvolutionService implements OnModuleInit {
 //   · link-local (169.254.x.x, fe80::, os metadados da nuvem) e loopback ficam
 //     fora para todo mundo, inclusive para a casa, mesmo atrás de um nome.
 //
-// Redirecionamento não é seguido (`redirect: 'error'`). A regra de "rede
-// interna" é a da casa inteira (`endereco-de-dentro.ts`, Produção 22, M4). Fica
-// de fora, AQUI, a troca de DNS entre a conferência e a conexão (rebinding): o
-// endereço é escrito por um admin da própria empresa, e não por alguém de fora
-// como o link da captura (`pagina-publica.ts`, que já conecta no IP conferido).
+// Redirecionamento não é seguido. A regra de "rede interna" é a da casa
+// inteira (`endereco-de-dentro.ts`, Produção 22, M4).
+//
+// O REBINDING (Produção 22, revisão): para empresa que NÃO é a casa, a conexão
+// vai ao IP que foi conferido (`pedirAoIp` de `pagina-publica.ts`, com o
+// `Host` e o nome do TLS originais), como a captura da pauta faz. Antes o
+// `fetch` resolvia o nome de novo: um DNS com TTL zero respondia público na
+// conferência e rede privada na conexão, e a chamada (com a chave da Evolution
+// no cabeçalho) ia para dentro. A ÚNICA exceção é a casa: ela pode chamar rede
+// privada e nome sem ponto (o `root_evolution` na rede do Docker), então segue
+// no `fetch` de sempre, com a conferência antes (loopback e link-local fora).
 //
 // O que a Evolution responde de erro NÃO vai para a tela nem para o log: só o
 // status. O corpo de erro do `sendText` traz o número do destino.
@@ -613,11 +620,22 @@ export class EvolutionDaEmpresaService implements OnModuleInit, EnvioPelaEvoluti
     if (recusa) throw new EvolutionNaoConfiguradaError(recusa.motivo);
   }
 
-  /** O host da base resolve para onde a regra deixa? Loopback literal em teste passa direto. */
-  private async conferirDestino(base: string, daCasa: boolean): Promise<void> {
+  /**
+   * Quem conecta no IP conferido (empresa que não é a casa). Só a suíte troca,
+   * para provar que a conexão vai ao IP da conferência e nunca a uma segunda
+   * resolução do nome.
+   */
+  conectar: Conectar = pedirAoIp;
+
+  /**
+   * O host da base resolve para onde a regra deixa? Devolve o IP em que a
+   * conexão vai ser aberta. Loopback literal (ou `localhost`) só em teste, onde
+   * o dublê escuta.
+   */
+  private async conferirDestino(base: string, daCasa: boolean): Promise<string> {
     const host = new URL(base).hostname.replace(/^\[|\]$/g, '').toLowerCase();
     if (isIP(host) || host === 'localhost' || host.endsWith('.localhost')) {
-      if (emTeste()) return;
+      if (emTeste()) return isIP(host) ? host : '127.0.0.1';
       throw new EvolutionNaoConfiguradaError('O endereço da Evolution não pode ser um IP: use o nome do servidor.');
     }
     let enderecos: string[];
@@ -629,19 +647,22 @@ export class EvolutionDaEmpresaService implements OnModuleInit, EnvioPelaEvoluti
     if (!enderecosPermitidos(enderecos, daCasa)) {
       throw new EvolutionNaoConfiguradaError('O endereço da Evolution aponta para uma rede que esta empresa não pode chamar.');
     }
+    return ipDaConexao(enderecos);
   }
 
   // ---------------------------------------------------------------------- HTTP
 
   private async chamar<T>(c: CredencialDaEvolution, metodo: 'GET' | 'POST', rota: string, corpo?: unknown, prazoMs = PRAZO_DO_ENVIO_DA_EMPRESA_MS): Promise<T | null> {
-    await this.conferirDestino(c.base, c.daCasa);
-    const res = await fetch(`${c.base}${rota}`, {
-      method: metodo,
-      headers: { apikey: c.chave, 'Content-Type': 'application/json', Accept: 'application/json' },
-      ...(corpo === undefined ? {} : { body: JSON.stringify(corpo) }),
-      redirect: 'error',
-      signal: AbortSignal.timeout(prazoMs),
-    });
+    const ip = await this.conferirDestino(c.base, c.daCasa);
+    const headers = { apikey: c.chave, 'Content-Type': 'application/json', Accept: 'application/json' };
+    const body = corpo === undefined ? undefined : JSON.stringify(corpo);
+    const signal = AbortSignal.timeout(prazoMs);
+    // A casa segue no `fetch` (rede privada e nome sem ponto são dela); quem não
+    // é a casa conecta no IP conferido, sem segunda resolução (rebinding).
+    // `pedirAoIp` nunca segue redirecionamento: o 3xx volta como resposta fora do 2xx.
+    const res = c.daCasa
+      ? await fetch(`${c.base}${rota}`, { method: metodo, headers, ...(body === undefined ? {} : { body }), redirect: 'error', signal })
+      : await this.conectar(new URL(`${c.base}${rota}`), ip, { method: metodo, headers, body, signal });
     const texto = await res.text().catch(() => '');
     if (!res.ok) throw new EvolutionRespondeuErro(res.status, metodo, rota.split('/').slice(0, 3).join('/'));
     if (!texto) return null;
