@@ -21,6 +21,9 @@ const ORIGEM = `cartao:e2e-producao22-${SUFIXO}`;
 
 (async () => {
   if (process.env.NODE_ENV === 'production' && process.env.PERMITIR_SEMENTE_E2E !== '1') throw new Error('semente de e2e não roda em produção');
+  // Revisão: só no banco da stack do seed (nome com `seed` ou `test`), nunca no da casa por engano.
+  const banco = ((process.env.DATABASE_URL ?? '').split('?')[0].split('/').pop() ?? '');
+  if (!/seed|test/i.test(banco)) throw new Error('semente de e2e só roda no banco da stack do seed (nome com seed ou test)');
   const prisma = new PrismaClient();
   try {
     const org = await prisma.org.findFirst({ where: { slug: 'root' }, select: { id: true } });

@@ -91,7 +91,7 @@ describe('o mapa etapa → fase do trilho (sem banco)', () => {
 
 describe('a regra que casa evento com card (sem banco)', () => {
   const cards: CartaoParaCasar[] = [
-    { cardId: 'lume', emails: ['marina@studiolume.com.br', null], nomes: ['Studio Lume'] },
+    { cardId: 'lume', emails: ['marina@studiolume.invalid', null], nomes: ['Studio Lume'] },
     { cardId: 'alicerce', emails: [], nomes: ['Construtora Alicerce', 'Alicerce'] },
     { cardId: 'gemeo-1', emails: [], nomes: ['Padaria Sol'] },
     { cardId: 'gemeo-2', emails: [], nomes: ['Padaria Sol'] },
@@ -99,7 +99,7 @@ describe('a regra que casa evento com card (sem banco)', () => {
   const ev = (e: Partial<EventoDaAgenda> & { id: string }): EventoDaAgenda => ({ title: null, start: emHoras(24), end: emHoras(25), attendees: [], ...e });
 
   it('casa pelo e-mail do contato entre os participantes, sem olhar o título', () => {
-    const r = casarReunioes([ev({ id: 'e1', title: 'Conversa de alinhamento', attendees: ['operacao.root@gmail.com', 'MARINA@studiolume.com.br'] })], cards, AGORA);
+    const r = casarReunioes([ev({ id: 'e1', title: 'Conversa de alinhamento', attendees: ['casa@exemplo.invalid', 'MARINA@studiolume.invalid'] })], cards, AGORA);
     expect(r.get('lume')).toEqual({ inicio: emHoras(24), diaInteiro: false, titulo: 'Conversa de alinhamento', casadoPor: 'email' });
   });
 
@@ -119,10 +119,10 @@ describe('a regra que casa evento com card (sem banco)', () => {
   });
 
   it('e-mail de um card e título de outro é dúvida; e-mail de dois cards também', () => {
-    const doisCards: CartaoParaCasar[] = [...cards, { cardId: 'outro', emails: ['marina@studiolume.com.br'], nomes: ['Outro'] }];
-    expect(casarReunioes([ev({ id: 'x1', title: 'Reunião Online - Construtora Alicerce - Pedro', attendees: ['marina@studiolume.com.br'] })], cards, AGORA).size).toBe(0);
-    expect(casarReunioes([ev({ id: 'x2', title: 'Reunião Online - Studio Lume - Pedro', attendees: ['marina@studiolume.com.br'] })], cards, AGORA).get('lume')?.casadoPor).toBe('email');
-    expect(casarReunioes([ev({ id: 'x3', attendees: ['marina@studiolume.com.br'] })], doisCards, AGORA).size).toBe(0);
+    const doisCards: CartaoParaCasar[] = [...cards, { cardId: 'outro', emails: ['marina@studiolume.invalid'], nomes: ['Outro'] }];
+    expect(casarReunioes([ev({ id: 'x1', title: 'Reunião Online - Construtora Alicerce - Pedro', attendees: ['marina@studiolume.invalid'] })], cards, AGORA).size).toBe(0);
+    expect(casarReunioes([ev({ id: 'x2', title: 'Reunião Online - Studio Lume - Pedro', attendees: ['marina@studiolume.invalid'] })], cards, AGORA).get('lume')?.casadoPor).toBe('email');
+    expect(casarReunioes([ev({ id: 'x3', attendees: ['marina@studiolume.invalid'] })], doisCards, AGORA).size).toBe(0);
   });
 
   it('fica a mais cedo; cancelado, passado e além de 14 dias ficam de fora; dia inteiro vem marcado', () => {
@@ -262,11 +262,11 @@ describe.skipIf(!URL)('o cartão da implantação: contra o Postgres', () => {
       return t.id;
     };
     // Lume: trilho atrás do card (Imersão × contrato), contato por e-mail, passo vencido.
-    await prisma.onboardingTrilho.create({ data: { orgId: ORG, cliente: 'Studio Lume', slug: 'studio-lume', fase: 'contrato', cardId: await card('Studio Lume', 'Imersão'), contatoEmail: 'marina@studiolume.com.br', proximoPasso: 'mandar o kit', proximoPassoEm: new Date(AGORA.getTime() - 86_400_000) } });
+    await prisma.onboardingTrilho.create({ data: { orgId: ORG, cliente: 'Studio Lume', slug: 'studio-lume', fase: 'contrato', cardId: await card('Studio Lume', 'Imersão'), contatoEmail: 'marina@studiolume.invalid', proximoPasso: 'mandar o kit', proximoPassoEm: new Date(AGORA.getTime() - 86_400_000) } });
     // Alicerce: trilho na fase certa, sem próximo passo, casa pelo nome do título.
     await prisma.onboardingTrilho.create({ data: { orgId: ORG, cliente: 'Construtora Alicerce', slug: 'construtora-alicerce', fase: 'contrato', cardId: await card('Construtora Alicerce', 'Kickoff marcado') } });
     // Padaria: só a ficha do comercial (sem trilho), e-mail no lead; nenhuma reunião.
-    await prisma.lead.create({ data: { id: LEAD, orgId: ORG, name: 'Padaria Sol', email: 'dono@padariasol.com.br' } });
+    await prisma.lead.create({ data: { id: LEAD, orgId: ORG, name: 'Padaria Sol', email: 'dono@padariasol.invalid' } });
     await prisma.comercialFicha.create({ data: { orgId: ORG, leadId: LEAD, empresa: 'Padaria Sol', cardId: await card('Padaria Sol', 'Fechado no comercial') } });
     // Encerrado: fora do resumo; um card solto sem trilho nem ficha: fora do quadro.
     await prisma.onboardingTrilho.create({ data: { orgId: ORG, cliente: 'Antigo', slug: 'antigo', fase: 'operacao', cardId: await card('Antigo', 'Encerrado') } });
@@ -282,7 +282,7 @@ describe.skipIf(!URL)('o cartão da implantação: contra o Postgres', () => {
   });
 
   const eventos: EventoDaAgenda[] = [
-    { id: 'e1', title: 'Conversa', start: emHoras(26), end: emHoras(27), attendees: ['marina@studiolume.com.br'] },
+    { id: 'e1', title: 'Conversa', start: emHoras(26), end: emHoras(27), attendees: ['marina@studiolume.invalid'] },
     { id: 'e2', title: 'Reunião Presencial - Construtora Alicerce - Rodrigo', start: emHoras(50), end: emHoras(51), attendees: [] },
   ];
   const quem = { sub: EU, permissions: ['tarefas.ver', 'dashboard.ver'] };
