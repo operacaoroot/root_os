@@ -19,7 +19,8 @@ export default function VisaoGeralPage() {
         <p className="text-sm text-muted">As tarefas de todas as pastas, num dash só. Cada número abre a lista no Trabalho.</p>
         <Link href="/trabalho?pasta=todas&visao=lista" className="text-sm text-muted underline hover:text-brand">todas as tarefas no Trabalho</Link>
       </div>
-      <AniversariosDoDia />
+      {/* Produção 22B (I6): o aniversário do dia, junto do dash (quem não vê as tarefas não carrega nada aqui). */}
+      {can('tarefas.ver') && <AniversariosDoDia />}
       {can('tarefas.ver') ? <VisaoGeralDasTarefas /> : <p className="text-muted">Sem acesso às tarefas.</p>}
     </div>
   );

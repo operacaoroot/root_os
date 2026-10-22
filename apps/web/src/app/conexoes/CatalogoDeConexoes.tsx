@@ -21,6 +21,11 @@ import { ConexaoGranola } from './ConexaoGranola';
  * (o QR e o webhook da Evolution, a senha do Zap e a conexão direta do Granola, o
  * atalho para as páginas do Google e do Instagram) entra como FILHO do cartão
  * dele, nunca como cartão à parte.
+ *
+ * Produção 22B (I6): todo cartão tem o mesmo tamanho na grade. As ações próprias
+ * da Evolution e do Granola moram na gaveta "Configurar" do cartão; os atalhos
+ * pequenos (Google, Instagram, vault) seguem à vista. Asana, Extrato OFX e Zapier
+ * não chegam mais aqui: a API os tira de `GET /integrations/cartoes`.
  */
 
 const ROTA = '/integrations/cartoes';
