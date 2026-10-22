@@ -15,8 +15,9 @@ import {
 import { arquivoDoDriveEhLegivel } from '@mktos/shared';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
-import { MAX_BYTES_DO_ARQUIVO_LIDO, consultaDoDrive, leituraDoArquivo, type OpcoesDaListaDoDrive } from './drive-das-atas';
-import { PdfIlegivelError, textoDoPdf } from './texto-do-pdf';
+import { ArquivoGrandeDemaisError, MAX_BYTES_DO_ARQUIVO_LIDO, consultaDoDrive, lerComTeto, leituraDoArquivo, type OpcoesDaListaDoDrive } from './drive-das-atas';
+import { PdfIlegivelError } from './texto-do-pdf';
+import { textoDoPdfEmThread } from './texto-do-pdf-em-thread';
 import {
   LIMITE_DO_ENVIO_MULTIPART,
   MIME_DA_PASTA,
@@ -1023,7 +1024,8 @@ export class GoogleService implements OnModuleInit, DriveDoCliente {
   /**
    * O TEXTO de um arquivo do Drive (capacidade `contexto.arquivo.ler`, R0,
    * produção 21, P7): Documento Google exportado como texto; `.txt`, `.md` e
-   * legendas baixados como estão; PDF lido por `textoDoPdf`. O texto volta
+   * legendas baixados como estão; PDF lido por `textoDoPdf` numa thread à parte,
+   * com prazo (`textoDoPdfEmThread`, Produção 22, M4). O texto volta
    * marcado `sigiloso` (`leituraDoArquivo`): o RASTRO e o registro da chamada
    * guardam o resumo criptográfico e o tamanho, nunca o texto. Arquivo maior que
    * o teto nem é baixado.
@@ -1046,7 +1048,7 @@ export class GoogleService implements OnModuleInit, DriveDoCliente {
     } else if (meta.mimeType === 'application/pdf' || /\.pdf$/i.test(meta.name)) {
       const pdf = await this.baixarDoDrive(orgId, `https://www.googleapis.com/drive/v3/files/${id}?alt=media&supportsAllDrives=true`);
       try {
-        texto = textoDoPdf(pdf);
+        texto = await textoDoPdfEmThread(pdf, undefined, { tetoBytes: MAX_BYTES_DO_ARQUIVO_LIDO });
       } catch (e) {
         if (e instanceof PdfIlegivelError) throw new BadRequestException(`Não deu para ler este PDF: ${e.message}. Abra no Drive.`);
         throw e;
@@ -1077,9 +1079,13 @@ export class GoogleService implements OnModuleInit, DriveDoCliente {
       const corpo = await res.text().catch(() => '');
       throw new BadRequestException(`O Drive não entregou o arquivo (HTTP ${res.status}). ${corpo.slice(0, 120)}`.trim());
     }
-    const dados = Buffer.from(await res.arrayBuffer());
-    if (dados.length > MAX_BYTES_DO_ARQUIVO_LIDO) throw new BadRequestException('O arquivo é grande demais para ser lido daqui. Abra no Drive.');
-    return dados;
+    // Lido em pedaços, abortado ao passar do teto (Produção 22, M4): nunca inteiro na memória antes da recusa.
+    try {
+      return await lerComTeto(res.body, MAX_BYTES_DO_ARQUIVO_LIDO, res.headers.get('content-length'));
+    } catch (e) {
+      if (e instanceof ArquivoGrandeDemaisError) throw new BadRequestException('O arquivo é grande demais para ser lido daqui. Abra no Drive.');
+      throw e;
+    }
   }
 
   async docGet(orgId: string, docId: string) {

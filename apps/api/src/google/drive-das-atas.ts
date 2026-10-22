@@ -12,6 +12,48 @@ import { sigiloso } from '../gateway/event-log.service';
 /** O teto do arquivo lido: 15 MB (uma ata em PDF com algumas páginas cabe com folga). */
 export const MAX_BYTES_DO_ARQUIVO_LIDO = 15 * 1024 * 1024;
 
+/** O arquivo baixado passou do teto no meio do download (Produção 22, M4). */
+export class ArquivoGrandeDemaisError extends Error {
+  constructor(readonly teto: number) {
+    super(`o arquivo passa de ${Math.round(teto / 1_048_576)} MB`);
+    this.name = 'ArquivoGrandeDemaisError';
+  }
+}
+
+/**
+ * Lê o corpo de um download em pedaços e ABORTA ao passar do teto (Produção
+ * 22, M4). Antes, o arquivo era lido inteiro na memória e só depois comparado
+ * com o teto: um arquivo de 2 GB ocupava 2 GB antes da recusa. O `Content-Length`
+ * declarado acima do teto nem começa a ser lido; o que mente sobre o tamanho é
+ * cortado no primeiro pedaço que passa.
+ */
+export async function lerComTeto(
+  corpo: ReadableStream<Uint8Array> | null | undefined,
+  teto: number,
+  tamanhoDeclarado?: string | null,
+): Promise<Buffer> {
+  const declarado = tamanhoDeclarado != null && tamanhoDeclarado !== '' ? Number(tamanhoDeclarado) : NaN;
+  if (Number.isFinite(declarado) && declarado > teto) {
+    await corpo?.cancel().catch(() => undefined);
+    throw new ArquivoGrandeDemaisError(teto);
+  }
+  if (!corpo) return Buffer.alloc(0);
+  const leitor = corpo.getReader();
+  const partes: Buffer[] = [];
+  let total = 0;
+  for (;;) {
+    const { done, value } = await leitor.read();
+    if (done) break;
+    total += value.byteLength;
+    if (total > teto) {
+      await leitor.cancel().catch(() => undefined);
+      throw new ArquivoGrandeDemaisError(teto);
+    }
+    partes.push(Buffer.from(value));
+  }
+  return Buffer.concat(partes, total);
+}
+
 const ID_DO_DRIVE = /^[A-Za-z0-9_-]{10,120}$/;
 const DIA = /^\d{4}-\d{2}-\d{2}$/;
 
