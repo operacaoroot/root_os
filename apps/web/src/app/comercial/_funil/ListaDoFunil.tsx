@@ -73,7 +73,7 @@ function Conteudo({ c, chave, testId }: { c: CartaoDoFunil; chave: ChaveDaColuna
     case 'etapa':
       return <Chip tom={tomDaEtapa(c.etapa)} title={COMERCIAL_ROTULO_DA_ETAPA[c.etapa]}>{COMERCIAL_ROTULO_DA_ETAPA[c.etapa]}</Chip>;
     case 'responsavel':
-      return <CelulaDoResponsavel nome={c.dono} testId={testId ? `${testId}-responsavel` : undefined} />;
+      return <CelulaDoResponsavel nome={c.dono} pessoaId={c.donoId} testId={testId ? `${testId}-responsavel` : undefined} />;
     case 'produto':
       return c.produto ? <span className="text-muted">{ROTULO_DO_PRODUTO[c.produto]}</span> : <span className="text-dim">sem produto</span>;
     case 'perfil':
@@ -308,7 +308,7 @@ export function ListaDoFunil({
                       <dd className="min-w-0 break-words">
                         {k === 'responsavel' ? (
                           <span className="inline-flex items-center gap-1.5">
-                            <CelulaDoResponsavel nome={c.dono} />
+                            <CelulaDoResponsavel nome={c.dono} pessoaId={c.donoId} />
                             <span className="text-muted">{c.dono ?? 'sem responsável'}</span>
                           </span>
                         ) : (

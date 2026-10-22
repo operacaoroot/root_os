@@ -26,6 +26,7 @@ import { dataDoDia } from '@/lib/cockpit';
 import { BOTAO, BOTAO_PRIMARIO, Chip, Erro, ErroDaAcao, FOCO, INPUT, useCarregar } from '../_ui';
 import { useMudouNoPainel } from '../_painel/provedor';
 import { BotaoDoMenuDaTarefa, MenuDaTarefaProvider, alvoDoMenu, useMenuDaTarefa } from '@/components/trabalho/MenuDaTarefa';
+import { PilhaDeAvatares } from '@/components/PilhaDeAvatares';
 
 /** Onde o bloco do funil guarda se está aberto ou recolhido. */
 export const CHAVE_DO_BLOCO_RECOLHIDO = 'mktos.funil.tarefas-do-comercial.recolhido';
@@ -53,9 +54,14 @@ const ROTULO_DA_SITUACAO: Partial<Record<TarefaDoComercial['situacao'], string>>
   hoje: 'hoje',
 };
 
-/** "Ana · prazo 22/10 · atrasada": o que a linha diz embaixo do título. */
+/** "Ana · prazo 22/10 · atrasada": o que a linha diz embaixo do título (em texto, para onde não há avatar). */
 export function detalheDaTarefa(t: Pick<TarefaDoComercial, 'pessoa' | 'responsavelTexto' | 'prazo' | 'situacao'>): string {
-  const partes = [t.pessoa?.nome ?? t.responsavelTexto ?? 'sem responsável', t.prazo ? `prazo ${dataDoDia(t.prazo)}` : 'sem prazo'];
+  return [t.pessoa?.nome ?? t.responsavelTexto ?? 'sem responsável', prazoDaTarefa(t)].join(' · ');
+}
+
+/** "prazo 22/10 · atrasada": o detalhe sem o responsável, que na linha vai como avatar (I6). */
+export function prazoDaTarefa(t: Pick<TarefaDoComercial, 'prazo' | 'situacao'>): string {
+  const partes = [t.prazo ? `prazo ${dataDoDia(t.prazo)}` : 'sem prazo'];
   const s = ROTULO_DA_SITUACAO[t.situacao];
   if (s) partes.push(s);
   return partes.join(' · ');
@@ -231,7 +237,15 @@ function LinhaDaTarefa({
       </button>
       <div className="min-w-0 flex-1">
         <p className={`break-words text-[12.5px] ${feita ? 'text-dim line-through' : ''}`}>{t.titulo}</p>
-        <p className={`text-[11px] ${t.situacao === 'atrasada' ? 'text-warn' : 'text-dim'}`}>{detalheDaTarefa(t)}</p>
+        <p className={`flex min-w-0 items-center gap-1.5 text-[11px] ${t.situacao === 'atrasada' ? 'text-warn' : 'text-dim'}`}>
+          {/* O responsável só com a imagem, o nome no balão (I6); o texto antigo sem conta vira as iniciais. */}
+          <PilhaDeAvatares
+            pessoas={t.pessoa ? [{ id: t.pessoa.id, nome: t.pessoa.nome }] : t.responsavelTexto ? [{ nome: t.responsavelTexto, rotulo: `${t.responsavelTexto} (sem conta)` }] : []}
+            prefixo="Responsável"
+            testId={`tarefa-responsavel-${t.id}`}
+          />
+          <span>{prazoDaTarefa(t)}</span>
+        </p>
         <ErroDaAcao erro={erro} />
       </div>
       {podeEditar && !feita && (

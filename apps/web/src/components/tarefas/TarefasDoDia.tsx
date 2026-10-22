@@ -12,6 +12,8 @@ import { abrirFicha } from '@/lib/ficha';
 import { Numero, Quadro } from '@/components/painel';
 import { Barras, type Fatia } from './graficos';
 import { BotaoDoMenuDaTarefa, MenuDaTarefaProvider, alvoDoMenu, useMenuDaTarefa } from '@/components/trabalho/MenuDaTarefa';
+import { AvatarDaPessoa } from '@/components/AvatarDaPessoa';
+import { PilhaDeAvatares, type PessoaNoAvatar } from '@/components/PilhaDeAvatares';
 
 /*
  * DIA A DIA › TAREFAS: todas as tarefas de todas as áreas num lugar (19/10/2026).
@@ -491,7 +493,7 @@ export function ResumoDeTarefas() {
                 );
                 return (
                   <tr key={id}>
-                    <td className="py-2">{r.pessoa?.nome ?? 'Sem responsável'}</td>
+                    <td className="py-2">{r.pessoa ? <AvatarDaPessoa nome={r.pessoa.nome} pessoaId={r.pessoa.id} tamanho="p" mostrarNome /> : 'Sem responsável'}</td>
                     {celula(r.atrasadas, 'atrasada', true)}
                     {celula(r.emDia, 'emdia')}
                     {celula(r.semPrazo, 'sem_prazo')}
@@ -570,6 +572,19 @@ function Selecao({ id, titulo, sel, marcar }: { id: string; titulo: string; sel:
   );
 }
 
+/*
+ * Os responsáveis da tarefa como avatares (produção 22B, I6): a conta com o id
+ * (a foto vem da lista da empresa); o texto antigo sem conta vira as iniciais,
+ * com "(sem conta)" no balão, como dizia o texto de antes.
+ */
+function avataresDaTarefa(t: Pick<TarefaDoDia, 'pessoas' | 'responsavelTexto'>): PessoaNoAvatar[] {
+  if (t.pessoas.length) return t.pessoas.map((x) => ({ id: x.id, nome: x.nome }));
+  return t.responsavelTexto ? [{ nome: t.responsavelTexto, rotulo: `${t.responsavelTexto} (sem conta)` }] : [];
+}
+
+const nomesDosResponsaveis = (t: Pick<TarefaDoDia, 'pessoas' | 'responsavelTexto'>) =>
+  avataresDaTarefa(t).map((x) => x.rotulo ?? x.nome).join(', ') || 'ninguém';
+
 function Meta({ t, mostrarArea, mostrarPessoa }: { t: TarefaDoDia; mostrarArea: boolean; mostrarPessoa: boolean }) {
   return (
     <div className="mt-1 flex flex-wrap items-center gap-x-2.5 gap-y-1 text-xs text-muted">
@@ -584,8 +599,10 @@ function Meta({ t, mostrarArea, mostrarPessoa }: { t: TarefaDoDia; mostrarArea: 
           {t.cliente.titulo}
         </span>
       )}
-      {mostrarPessoa && <span>{t.pessoas.length ? t.pessoas.map((x) => primeiro(x.nome)).join(', ') : t.responsavelTexto ?? 'sem responsável'}</span>}
-      {!mostrarPessoa && t.pessoas.length > 1 && <span title="Também responsáveis">com {t.pessoas.slice(1).map((x) => primeiro(x.nome)).join(', ')}</span>}
+      {mostrarPessoa && <PilhaDeAvatares pessoas={avataresDaTarefa(t)} prefixo="Responsável" vazio="sem responsável" testId={`dia-responsaveis-${t.id}`} />}
+      {!mostrarPessoa && t.pessoas.length > 1 && (
+        <PilhaDeAvatares pessoas={t.pessoas.slice(1).map((x) => ({ id: x.id, nome: x.nome }))} prefixo="Também responsável" testId={`dia-tambem-${t.id}`} />
+      )}
       {t.recorrencia && <span title={descreverRecorrencia(t.recorrencia)} aria-label={`Repete: ${descreverRecorrencia(t.recorrencia)}`}>↻</span>}
       {t.prazo && <span className={`com-num ${t.situacao === 'atrasada' ? 'font-semibold text-bad' : ''}`}>{dd(t.prazo)}</span>}
     </div>
@@ -699,7 +716,9 @@ function QuadroDeTarefas(props: {
             >
               <div className={`shrink-0 border-b border-t-[3px] border-b-border px-3 py-2.5 ${c.chave === 'atrasada' ? 'border-t-bad' : 'border-t-brand'}`}>
                 <div className="flex items-baseline justify-between gap-2">
-                  <span className="font-medium">{c.nome}</span>
+                  {agrupar === 'pessoa' && c.chave !== SEM
+                    ? <AvatarDaPessoa nome={c.nome} pessoaId={c.chave} tamanho="p" mostrarNome className="font-medium" />
+                    : <span className="font-medium">{c.nome}</span>}
                   <span className="flex items-center gap-2">
                     {c.itens.length > 0 && (
                       <button onClick={() => props.marcarVarias(c.itens.map((t) => t.id))} className="text-xs text-muted hover:text-brand" title="Selecionar as tarefas desta coluna">
@@ -858,8 +877,8 @@ function ListaDeTarefas({ p, tarefas, abrir, podeEditar, mostrarArea = true, sel
               </td>
               <td className="py-1.5 pr-2" onClick={parar}>
                 <details className="relative">
-                  <summary className={`${celula} list-none`} aria-label="Responsáveis">
-                    {t.pessoas.length ? t.pessoas.map((x) => primeiro(x.nome)).join(', ') : t.responsavelTexto ? `${t.responsavelTexto} (sem conta)` : '—'}
+                  <summary className={`${celula} list-none`} aria-label={`Responsáveis: ${nomesDosResponsaveis(t)}`} title={nomesDosResponsaveis(t)}>
+                    {avataresDaTarefa(t).length ? <PilhaDeAvatares pessoas={avataresDaTarefa(t)} /> : '—'}
                   </summary>
                   <div className="absolute left-0 z-20 mt-1 w-56 rounded-md border border-border bg-surface p-2 shadow-lg">
                     <SeletorDePessoas t={t} p={p} podeEditar={podeEditar} editar={(m) => editar(t, m)} />

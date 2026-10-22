@@ -2,7 +2,7 @@
 
 import { useId } from 'react';
 
-import { iniciais } from './lista-do-funil';
+import { AvatarDaPessoa } from '@/components/AvatarDaPessoa';
 
 /*
  * O RESPONSÁVEL COMO AVATAR (rodada de produção 3, I5, 22/10/2026).
@@ -11,8 +11,12 @@ import { iniciais } from './lista-do-funil';
  * no foco do teclado (o leitor de tela lê o nome pelo rótulo). Isolado aqui,
  * pequeno, para a troca pelo avatar com foto (lane D) ser uma linha só.
  * Sem responsável: o círculo tracejado e a frase "sem responsável".
+ *
+ * Produção 22B (I6): o círculo é o `AvatarDaPessoa` (a foto da conta, achada
+ * pelo `pessoaId` na lista da empresa; sem foto ou sem permissão, as
+ * iniciais). O balão e o nome acessível continuam os desta célula.
  */
-export function CelulaDoResponsavel({ nome, testId }: { nome: string | null | undefined; testId?: string }) {
+export function CelulaDoResponsavel({ nome, pessoaId, testId }: { nome: string | null | undefined; pessoaId?: string | null; testId?: string }) {
   const id = useId();
   const n = nome?.trim() || null;
   const texto = n ?? 'sem responsável';
@@ -25,14 +29,16 @@ export function CelulaDoResponsavel({ nome, testId }: { nome: string | null | un
       aria-describedby={id}
       data-testid={testId}
     >
-      <span
-        aria-hidden
-        className={`grid h-7 w-7 shrink-0 place-items-center rounded-full font-os-mono text-[10.5px] font-semibold ${
-          n ? 'bg-brand/15 text-brand' : 'border border-dashed border-border text-dim'
-        } group-focus-visible:ring-2 group-focus-visible:ring-brand`}
-      >
-        {n ? iniciais(n) : '?'}
-      </span>
+      {n ? (
+        <AvatarDaPessoa nome={n} pessoaId={pessoaId ?? null} decorativo className="group-focus-visible:ring-2 group-focus-visible:ring-brand" />
+      ) : (
+        <span
+          aria-hidden
+          className="grid h-7 w-7 shrink-0 place-items-center rounded-full border border-dashed border-border font-os-mono text-[10.5px] font-semibold text-dim group-focus-visible:ring-2 group-focus-visible:ring-brand"
+        >
+          ?
+        </span>
+      )}
       <span
         id={id}
         role="tooltip"

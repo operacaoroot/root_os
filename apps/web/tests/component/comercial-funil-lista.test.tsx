@@ -296,4 +296,16 @@ describe('a lista do funil na tela', () => {
     expect(within(a).getByRole('link', { name: 'Construtora Alicerce' })).toBeInTheDocument();
     for (const t of ['Contato', 'Marina Duarte', 'Valor', 'Ana Paula Souza', 'E6 · Proposta']) expect(a).toHaveTextContent(t);
   });
+
+  it('produção 22B (I6): no quadro, o cartão mostra o responsável só como avatar, o nome no balão', async () => {
+    RESPOSTAS['/comercial/funil'] = funil(TRES);
+    irPara('/comercial/funil');
+    render(<FunilPage />);
+    const card = await screen.findByTestId('funil-card-a');
+    const avatar = within(card).getByRole('img', { name: 'Responsável: Ana Paula Souza' });
+    expect(avatar).toHaveAttribute('title', 'Responsável: Ana Paula Souza');
+    expect(avatar).toHaveTextContent('AS');
+    expect(card).not.toHaveTextContent('Ana Paula Souza');
+    expect(within(screen.getByTestId('funil-card-b')).queryByTestId('avatar-da-pessoa')).toBeNull();
+  });
 });
