@@ -38,12 +38,15 @@ import { exigirBancoDescartavel } from './banco-de-teste';
  */
 
 describe('caixa de WhatsApp: rotas e regras puras', () => {
-  it('ler é leads.ver; arquivar e responder são whatsapp.conversar e só de gente', () => {
+  it('ler é leads.ver; marcar lida é leads.ver e só de gente; arquivar e responder são whatsapp.conversar e só de gente', () => {
     const h = CaixaDoWhatsappController.prototype;
-    for (const m of [h.listar, h.abrir, h.lida]) {
+    for (const m of [h.listar, h.abrir]) {
       expect(Reflect.getMetadata(PERMISSIONS_KEY, m)).toEqual(['leads.ver']);
       expect(Reflect.getMetadata('__guards__', m)).toBeUndefined();
     }
+    // Revisão 22C (A5): conta de máquina (o MCP tem leads.ver) não zera as não lidas da equipe.
+    expect(Reflect.getMetadata(PERMISSIONS_KEY, h.lida)).toEqual(['leads.ver']);
+    expect(Reflect.getMetadata('__guards__', h.lida)).toEqual([SoGenteNaCaixaGuard]);
     for (const m of [h.arquivar, h.responder]) {
       expect(Reflect.getMetadata(PERMISSIONS_KEY, m)).toEqual(['whatsapp.conversar']);
       expect(Reflect.getMetadata('__guards__', m)).toEqual([SoGenteNaCaixaGuard]);
@@ -484,6 +487,10 @@ describe.skipIf(!URL)('caixa de WhatsApp contra o Postgres', () => {
     await expect(svc.responder(ORG, id, { texto: 'oi' }, gente)).rejects.toThrow(BadGatewayException);
     falhar = new Error('fetch failed');
     await expect(svc.responder(ORG, id, { texto: 'oi' }, gente)).rejects.toThrow(/não respondeu/);
+    // Revisão 22C (A1): estourar o prazo NÃO diz "nada foi enviado" (pode ter saído): manda conferir antes de repetir.
+    falhar = erro('TimeoutError', 'The operation was aborted due to timeout');
+    await expect(svc.responder(ORG, id, { texto: 'oi' }, gente)).rejects.toThrow(BadGatewayException);
+    await expect(svc.responder(ORG, id, { texto: 'oi' }, gente)).rejects.toThrow(/Confira no celular antes de repetir/);
     expect(await prisma.whatsAppMensagem.count({ where: { orgId: ORG, origem: 'caixa' } })).toBe(0);
     expect(await prisma.comercialMensagem.count({ where: { orgId: ORG } })).toBe(0);
     expect(await prisma.auditLog.count({ where: { orgId: ORG, action: 'whatsapp.mensagem.enviada_por_pessoa' } })).toBe(0);

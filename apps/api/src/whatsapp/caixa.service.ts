@@ -74,6 +74,8 @@ const TETO_DAS_MENSAGENS = 200;
 /** A busca no texto das mensagens só a partir de 3 letras (ILIKE em toda a caixa custa). */
 const MINIMO_PARA_BUSCAR_NO_TEXTO = 3;
 const TETO_DA_BUSCA = 100;
+/** Quantas conversas a busca acha no máximo (a lista e as contagens contam dentro disso; revisão 22C, A4). */
+const TETO_DAS_ACHADAS = 2000;
 
 export interface QuemNaCaixa {
   id: string;
@@ -216,7 +218,12 @@ export class CaixaDoWhatsappService {
     const filtro = lerFiltroDaCaixa(consulta.filtro);
     const limite = inteiro(consulta.limite, LIMITE_DA_LISTA, TETO_DA_LISTA);
     const busca = ondeDaBusca(orgId, consulta.q);
-    const com = (w: Prisma.WhatsAppConversaWhereInput): Prisma.WhatsAppConversaWhereInput => (busca ? { AND: [w, busca] } : w);
+    // Revisão 22C (A4): a busca (com o ILIKE no texto das mensagens) roda UMA vez e devolve os ids;
+    // a lista e as oito contagens filtram por eles, em vez de refazer a busca em cada uma.
+    const achadas = busca
+      ? (await this.prisma.whatsAppConversa.findMany({ where: { AND: [{ orgId }, busca] }, select: { id: true }, take: TETO_DAS_ACHADAS })).map((c) => c.id)
+      : null;
+    const com = (w: Prisma.WhatsAppConversaWhereInput): Prisma.WhatsAppConversaWhereInput => (achadas ? { AND: [w, { id: { in: achadas } }] } : w);
 
     const [linhas, ...numeros] = await Promise.all([
       this.prisma.whatsAppConversa.findMany({
@@ -416,6 +423,11 @@ export class CaixaDoWhatsappService {
     if (/não é uma conversa do WhatsApp/.test(msg)) {
       return new BadRequestException('Esta conversa não tem um destino de WhatsApp válido. Nada foi enviado.');
     }
-    return new ServiceUnavailableException('A Evolution não respondeu. Nada foi enviado; tente de novo.');
+    // Revisão 22C (A1): estourou o prazo, a Evolution pode ter entregado sem responder a tempo.
+    // Dizer "nada foi enviado" levava a pessoa a repetir e o cliente a receber duas vezes.
+    if (nome === 'TimeoutError' || nome === 'AbortError') {
+      return new BadGatewayException('A Evolution não confirmou o envio a tempo. Confira no celular antes de repetir.');
+    }
+        return new ServiceUnavailableException('A Evolution não respondeu. Nada foi enviado; tente de novo.');
   }
 }

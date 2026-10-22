@@ -106,8 +106,8 @@ export interface DecisaoDoUmAUm {
 }
 
 /**
- * O 1:1: número da equipe = equipe (sem vínculo); senão o lead e o cliente que
- * têm o telefone, cada um só quando é ÚNICO.
+ * O 1:1: número da equipe = equipe (sem vínculo); senão o cliente ou, sem
+ * cliente, o lead que tem o telefone, cada um só quando é ÚNICO. Nunca os dois.
  */
 export function decidirUmAUm(ehDaEquipe: boolean, leadsComONumero: readonly string[], clientesComONumero: readonly string[]): DecisaoDoUmAUm {
   if (ehDaEquipe) return { equipe: true, leadId: null, clienteId: null };
@@ -115,7 +115,11 @@ export function decidirUmAUm(ehDaEquipe: boolean, leadsComONumero: readonly stri
     const s = [...new Set(ids)];
     return s.length === 1 ? s[0] : null;
   };
-  return { equipe: false, leadId: unico(leadsComONumero), clienteId: unico(clientesComONumero) };
+  // Revisão 22C (A2): o lead que fechou vira cliente com o MESMO telefone (`cliente-do-lead.ts`
+  // copia o número para o `Partner`), e a conversa só pode ter um vínculo (CHECK no banco).
+  // Achando os dois, vale o cliente: é a relação que segue depois do fechamento.
+  const clienteId = unico(clientesComONumero);
+  return { equipe: false, leadId: clienteId ? null : unico(leadsComONumero), clienteId };
 }
 
 /** Os pares de letras de um nome normalizado (sem espaço). */

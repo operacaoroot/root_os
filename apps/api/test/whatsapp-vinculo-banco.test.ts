@@ -170,6 +170,16 @@ describe.skipIf(!URL)('o vínculo da conversa contra o Postgres', () => {
     expect(await daConversa(c3)).toMatchObject({ clienteId: null });
   });
 
+  it('revisão 22C (A2): o lead que fechou e o cliente com o mesmo telefone: a conversa liga ao cliente, sem violar o CHECK', async () => {
+    await lead('Lead Que Fechou Ficticio', '5532988880009');
+    const p = await cliente('Cliente Que Era Lead Ficticio', '5532988880009');
+    const c = await conversa(jid('5532988880009'), null);
+    await mensagem(c, jid('5532988880009'));
+    await expect(svc.casar(ORG, c)).resolves.toMatchObject({ mudou: true, clienteId: p, leadId: null });
+    expect(await daConversa(c)).toMatchObject({ clienteId: p, leadId: null });
+    expect((await mensagensDe(c)).every((m) => m.clienteId === p && m.leadId === null)).toBe(true);
+  });
+
   it('dois leads com o mesmo telefone: não casa nem sugere', async () => {
     await lead('Lead A', '5532988880005');
     await lead('Lead B', '32988880005');
@@ -427,6 +437,9 @@ describe.skipIf(!URL)('o vínculo da conversa contra o Postgres', () => {
     const eq = await conversa('120363000000000104@g.us', 'FullBPO | Operação Fictícia', true);
     const l1 = await lead('Lead Do Um A Um', '5532988880105');
     const c1 = await conversa(jid('5532988880105'), null);
+    // Revisão 22C (A7): lead de nome de uma palavra só fica para o clique (primeiro nome sozinho não liga sem gente).
+    await lead('Ficticiano');
+    const g5 = await conversa('120363000000000105@g.us', 'ROOT | Ficticiano', true);
     await mensagem(g1, '120363000000000101@g.us', { grupo: true });
 
     await expect(vincularConversas(prisma, { org: ORG, como: null, valer: true })).rejects.toThrow(/--como/);
@@ -435,7 +448,7 @@ describe.skipIf(!URL)('o vínculo da conversa contra o Postgres', () => {
     await expect(vincularConversas(prisma, { org: ORG, como: 'leitor_w3-w3@vinculo.teste', valer: true })).rejects.toThrow(/leads.editar/);
 
     const sim = await vincularConversas(prisma, { org: ORG, como: null, valer: false });
-    expect(sim).toMatchObject({ modo: 'simular', conversas: 5, aplicadas: 2, casamentos: 1, equipe: 1 });
+    expect(sim).toMatchObject({ modo: 'simular', conversas: 6, aplicadas: 2, casamentos: 1, equipe: 1, soNoClique: 1, erros: 0 });
     expect(sim.ids.aplicadas.every((id) => id.length === 8)).toBe(true);
     // Nada foi escrito.
     expect(await daConversa(g1)).toMatchObject({ clienteId: null, vinculoSugerido: null, vinculadoPorId: null });
@@ -448,6 +461,8 @@ describe.skipIf(!URL)('o vínculo da conversa contra o Postgres', () => {
     expect(await daConversa(g3)).toMatchObject({ clienteId: null, leadId: null, vinculadoPorId: null });
     expect(await daConversa(eq)).toMatchObject({ equipe: true, clienteId: null });
     expect(await daConversa(c1)).toMatchObject({ leadId: l1, vinculadoPorId: null });
+    expect(await daConversa(g5)).toMatchObject({ leadId: null, vinculadoPorId: null });
+    expect((await daConversa(g5)).vinculoSugerido).toMatchObject({ tipo: 'lead', como: 'nome_igual' });
     expect((await mensagensDe(g1)).every((m) => m.clienteId === p)).toBe(true);
     const audit = await prisma.auditLog.findMany({ where: { orgId: ORG, action: ACAO_DE_AUDITORIA.vinculada } });
     expect(audit).toHaveLength(2);

@@ -34,6 +34,7 @@ import { mkdirSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 
 import { ActorType, PrismaClient } from '@prisma/client';
+import { normalizarNomeDeVinculo } from '@mktos/shared';
 
 import { temPapelDeMaquina } from '../approvals/alcada';
 import { dentroDeGit } from '../comercial/importador-crm/detalhe';
@@ -68,6 +69,13 @@ export interface ResultadoDoVinculoEmLote {
   sugestoesDeNomeIgual: number;
   /** As sugestões aplicadas (ou que seriam). */
   aplicadas: number;
+  /**
+   * Revisão 22C (A7): sugestões de LEAD com nome de uma palavra só ("ROOT | Pedro") ficam
+   * para o clique na caixa: primeiro nome sozinho não liga sem gente, como no importador do CRM.
+   */
+  soNoClique: number;
+  /** Conversas em que o casamento falhou (a passagem segue; o motivo vai ao log sem nome nem número). */
+  erros: number;
   equipe: number;
   ids: { casamentos: string[]; aplicadas: string[] };
   detalhe: LinhaDoDetalhe[];
@@ -103,12 +111,21 @@ export async function vincularConversas(prisma: PrismaClient, p: PedidoDeVinculo
         casamentos: 0,
         sugestoesDeNomeIgual: 0,
         aplicadas: 0,
+        soNoClique: 0,
+        erros: 0,
         equipe: 0,
         ids: { casamentos: [], aplicadas: [] },
         detalhe: [],
       };
       for (const c of conversas) {
-        const d = await svc.casar(orgId, c.id, { simular: !p.valer });
+        let d: Awaited<ReturnType<VinculoDoWhatsappService['casar']>>;
+        try {
+          d = await svc.casar(orgId, c.id, { simular: !p.valer });
+        } catch (e) {
+          r.erros++;
+          console.error(`conversa ${idCurtoDaConversa(c.id)}: o casamento falhou (${(e as { name?: string }).name ?? 'erro'}); seguindo.`);
+          continue;
+        }
         if (d.manual) {
           r.manuais++;
           continue;
@@ -121,6 +138,10 @@ export async function vincularConversas(prisma: PrismaClient, p: PedidoDeVinculo
         }
         if (c.grupo && d.sugestao?.como === 'nome_igual') {
           r.sugestoesDeNomeIgual++;
+          if (d.sugestao.tipo === 'lead' && normalizarNomeDeVinculo(d.sugestao.nome).split(' ').filter(Boolean).length < 2) {
+            r.soNoClique++;
+            continue;
+          }
           const alvo = { tipo: d.sugestao.tipo, id: d.sugestao.id };
           if (p.valer) {
             const ligou = await prisma.$transaction((tx) => svc.vincularNaTransacao(tx, orgId, c.id, alvo, pessoaId!, 'script'));

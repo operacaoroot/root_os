@@ -8,6 +8,7 @@ import {
   TelefoneNoLeadSchema,
   VincularConversaSchema,
   lerWhatsappBr,
+  ehGrupoDaEquipePeloNome,
   nomeDoGrupoSemPrefixo,
   type CandidatoDeVinculo,
   type ComercialEtapa,
@@ -68,6 +69,12 @@ import {
  * Nada de número, nome ou texto no log: só ids curtos e contagens.
  */
 
+/**
+ * Quanto o webhook espera o casamento de uma conversa antes de seguir para os
+ * leitores de sempre (revisão 22C, A3). O casamento continua sozinho depois.
+ */
+export const PRAZO_DO_CASAMENTO_NO_WEBHOOK_MS = 2_000;
+
 const RECUSA_DE_MAQUINA = 'Vincular conversa é de gente: conta de serviço (IA) não liga conversa a lead ou cliente.';
 
 export type QuemVincula = { id: string; papeis: readonly string[] };
@@ -112,11 +119,20 @@ export class VinculoDoWhatsappService {
    * Idempotente; nunca lança.
    */
   async casarConversa(orgId: string, conversaId: string): Promise<void> {
-    try {
-      await this.casar(orgId, conversaId);
-    } catch (e) {
-      this.log.warn(`casar a conversa ${conversaId.slice(0, 8)} falhou: ${(e as Error).message?.slice(0, 200)}`);
-    }
+    // Revisão 22C (A3): o gravador chama isto DENTRO do webhook, antes dos leitores de sempre
+    // (o canal de aprovação). Com banco lento, o casamento não pode segurar a aprovação: espera
+    // no máximo PRAZO_DO_CASAMENTO_NO_WEBHOOK_MS e segue; o casamento termina sozinho.
+    // A9: só o nome e o código do erro vão ao log (a mensagem crua do Postgres traz a linha).
+    const trabalho = this.casar(orgId, conversaId).then(
+      () => undefined,
+      (e: unknown) => {
+        const erro = e as { name?: string; code?: string };
+        this.log.warn(`casar a conversa ${conversaId.slice(0, 8)} falhou: ${erro?.name ?? 'erro'}${erro?.code ? ` (${erro.code})` : ''}`);
+      },
+    );
+    let relogio: NodeJS.Timeout | undefined;
+    await Promise.race([trabalho, new Promise<void>((ok) => (relogio = setTimeout(ok, PRAZO_DO_CASAMENTO_NO_WEBHOOK_MS)))]);
+    if (relogio) clearTimeout(relogio);
   }
 
   /**
@@ -144,7 +160,12 @@ export class VinculoDoWhatsappService {
 
     let novo: { equipe: boolean; leadId: string | null; clienteId: string | null; sugestao: SugestaoDeVinculo | null };
     if (c.grupo) {
-      const d = decidirGrupo(c.nome, await this.clientesPorNome(orgId), await this.leadsPorNome(orgId));
+      // Revisão 22C (A3): grupo da equipe ou sem o prefixo da casa não casa com ninguém; não carrega
+      // as listas de clientes e leads a cada mensagem dele (a comunidade fala o dia inteiro).
+      const precisaDasListas = !ehGrupoDaEquipePeloNome(c.nome) && !!nomeDoGrupoSemPrefixo(c.nome);
+      const d = precisaDasListas
+        ? decidirGrupo(c.nome, await this.clientesPorNome(orgId), await this.leadsPorNome(orgId))
+        : decidirGrupo(c.nome, [], []);
       // Grupo NUNCA liga sozinho: o vínculo de grupo só existe com `vinculadoPorId` (o clique).
       novo = { equipe: d.equipe, leadId: null, clienteId: null, sugestao: d.sugestao };
     } else {
@@ -441,14 +462,14 @@ export class VinculoDoWhatsappService {
     const antes =
       tipo === 'lead'
         ? await this.prisma.lead.findFirst({ where: { id, orgId }, select: { phone: true } })
-        : await this.prisma.partner.findFirst({ where: { id, orgId }, select: { phone: true } });
+        : await this.prisma.partner.findFirst({ where: { id, orgId, isCliente: true }, select: { phone: true } });
     if (!antes) throw new NotFoundException(tipo === 'lead' ? 'Lead não encontrado nesta empresa.' : 'Cliente não encontrado nesta empresa.');
     if ((antes.phone ?? null) === novo) return { telefone: novo, mudou: false, conversasCasadas: 0 };
     await this.prisma.$transaction(async (tx) => {
       const r =
         tipo === 'lead'
           ? await tx.lead.updateMany({ where: { id, orgId, phone: antes.phone }, data: { phone: novo } })
-          : await tx.partner.updateMany({ where: { id, orgId, phone: antes.phone }, data: { phone: novo } });
+          : await tx.partner.updateMany({ where: { id, orgId, isCliente: true, phone: antes.phone }, data: { phone: novo } });
       if (r.count !== 1) throw new ConflictException('O telefone mudou enquanto você editava. Recarregue e tente de novo.');
       await this.auditar(
         tx, orgId, quem.id,

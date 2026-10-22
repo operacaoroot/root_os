@@ -1,4 +1,4 @@
-import type { Prisma } from '@prisma/client';
+import { Prisma } from '@prisma/client';
 import {
   formatarWhatsappBr,
   type CitacaoDaMensagem,
@@ -99,12 +99,15 @@ export function lerMidia(v: Prisma.JsonValue | null): MidiaDaMensagem | null {
 export async function projetarConversas(prisma: PrismaService, orgId: string, linhas: LinhaDaConversa[]): Promise<ConversaDaCaixa[]> {
   if (!linhas.length) return [];
   const ids = linhas.map((l) => l.id);
-  const ultimas = await prisma.whatsAppMensagem.findMany({
-    where: { orgId, conversaId: { in: ids } },
-    distinct: ['conversaId'],
-    orderBy: [{ conversaId: 'asc' }, { timestamp: 'desc' }],
-    select: { conversaId: true, texto: true, tipo: true, deMim: true, remetenteNome: true, timestamp: true },
-  });
+  // Revisão 22C (A4): a última mensagem de cada conversa por DISTINCT ON no banco. O `distinct`
+  // do Prisma deduplica em memória e trazia TODAS as mensagens das conversas listadas a cada leitura.
+  const ultimas = await prisma.$queryRaw<
+    { conversaId: string; texto: string | null; tipo: string; deMim: boolean; remetenteNome: string | null; timestamp: Date }[]
+  >(Prisma.sql`
+    SELECT DISTINCT ON ("conversaId") "conversaId", "texto", "tipo", "deMim", "remetenteNome", "timestamp"
+      FROM "WhatsAppMensagem"
+     WHERE "orgId" = ${orgId} AND "conversaId" IN (${Prisma.join(ids)})
+     ORDER BY "conversaId", "timestamp" DESC, "id" DESC`);
   const ultimaDe = new Map(ultimas.map((u) => [u.conversaId, u]));
   const pessoas = [...new Set(linhas.map((l) => l.vinculadoPorId).filter((x): x is string => !!x))];
   const nomes = pessoas.length

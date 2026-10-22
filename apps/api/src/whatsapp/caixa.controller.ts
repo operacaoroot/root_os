@@ -73,6 +73,8 @@ export class CaixaDoWhatsappController {
   @Post(':id/lida')
   @HttpCode(200)
   @RequirePermissions('leads.ver')
+  // Revisão 22C (A5): marcar como lida é de gente; conta de máquina (o MCP tem leads.ver) não zera as não lidas da equipe.
+  @UseGuards(SoGenteNaCaixaGuard)
   lida(@CurrentUser() user: JwtUser, @Param('id') id: string): Promise<{ lidas: number }> {
     return this.svc.marcarLida(user.orgId, id, { id: user.sub });
   }

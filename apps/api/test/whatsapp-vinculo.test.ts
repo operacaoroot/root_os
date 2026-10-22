@@ -116,7 +116,9 @@ describe('o 1:1 casa pelo telefone, por igualdade', () => {
 
   it('um candidato casa; dois com o mesmo telefone não casam; equipe não liga', () => {
     expect(decidirUmAUm(false, ['l1'], [])).toEqual({ equipe: false, leadId: 'l1', clienteId: null });
-    expect(decidirUmAUm(false, ['l1'], ['c1'])).toEqual({ equipe: false, leadId: 'l1', clienteId: 'c1' });
+    // Revisão 22C (A2): o lead que fechou vira cliente com o mesmo telefone; a conversa liga só ao cliente (CHECK no banco).
+    expect(decidirUmAUm(false, ['l1'], ['c1'])).toEqual({ equipe: false, leadId: null, clienteId: 'c1' });
+    expect(decidirUmAUm(false, ['l1'], ['c1', 'c2'])).toEqual({ equipe: false, leadId: 'l1', clienteId: null });
     expect(decidirUmAUm(false, ['l1', 'l2'], ['c1', 'c2'])).toEqual({ equipe: false, leadId: null, clienteId: null });
     expect(decidirUmAUm(false, ['l1', 'l1'], [])).toEqual({ equipe: false, leadId: 'l1', clienteId: null });
     expect(decidirUmAUm(true, ['l1'], ['c1'])).toEqual({ equipe: true, leadId: null, clienteId: null });
