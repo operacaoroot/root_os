@@ -215,7 +215,8 @@ describe('A4: o quadro mostra qual agente está com a tarefa', () => {
     expect(screen.getByRole('columnheader', { name: 'Responsável' })).toBeTruthy();
     expect(screen.getByRole('columnheader', { name: 'Agente' })).toBeTruthy();
     const linha = screen.getByText('Fechar o mês').closest('tr') as HTMLElement;
-    expect(within(linha).getByText('Lucas (lucas@qa.local)')).toBeTruthy();
+    // I6 (produção 22B): o responsável é só o avatar; o nome e o e-mail vão no balão e no nome acessível.
+    expect(within(linha).getByRole('img', { name: 'Responsável: Lucas (lucas@qa.local)' })).toHaveAttribute('title', 'Responsável: Lucas (lucas@qa.local)');
     expect(within(linha).getByText('Analista de dados')).toBeTruthy();
   });
 

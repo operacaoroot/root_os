@@ -32,6 +32,8 @@ export function AvatarDaPessoa({
   fotoUrl,
   tamanho = 'm',
   mostrarNome = false,
+  rotulo,
+  decorativo = false,
   className = '',
 }: {
   nome: string;
@@ -41,6 +43,10 @@ export function AvatarDaPessoa({
   tamanho?: TamanhoDoAvatar;
   /** Escreve o nome ao lado (onde o nome é a única informação da linha). */
   mostrarNome?: boolean;
+  /** O texto do balão e do nome acessível, quando diz mais que o nome ("Ana (inativo)"). As iniciais saem sempre do `nome`. */
+  rotulo?: string;
+  /** Sem balão nem nome acessível: quem envolve o avatar já diz de quem é (a célula do Funil em lista tem balão próprio). */
+  decorativo?: boolean;
   className?: string;
 }) {
   const { token } = useAuth();
@@ -50,14 +56,16 @@ export function AvatarDaPessoa({
   const url = useFoto(rota, token);
   const lado = LADOS[tamanho];
   const iniciais = iniciaisDoNome(nome);
+  const balao = rotulo ?? nome;
+  const mudo = mostrarNome || decorativo;
 
   const circulo = (
     <span
       // Com o nome escrito ao lado, o círculo é decorativo (o leitor de tela não lê o nome duas vezes).
-      role={mostrarNome ? undefined : 'img'}
-      aria-label={mostrarNome ? undefined : nome}
-      aria-hidden={mostrarNome ? true : undefined}
-      title={nome}
+      role={mudo ? undefined : 'img'}
+      aria-label={mudo ? undefined : balao}
+      aria-hidden={mudo ? true : undefined}
+      title={decorativo ? undefined : balao}
       data-testid="avatar-da-pessoa"
       data-com-foto={url ? 'sim' : 'nao'}
       style={{ width: lado, height: lado, fontSize: Math.max(9, Math.round(lado * 0.38)) }}

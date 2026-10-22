@@ -39,7 +39,7 @@ import { EditorialTaskLink } from './EditorialTaskLink';
 import { OrigemComercialDaTarefa } from '@/app/leads/OrigemComercialDaTarefa';
 import { FontesDaTarefa } from './FontesDaTarefa';
 import { AnexosDaTarefa } from './AnexosDaTarefa';
-import { OutrosResponsaveis, ResponsavelDaTarefa, SeletorOutrosResponsaveis, SeletorResponsavel, rotuloDaPessoa } from './ResponsavelDaTarefa';
+import { AvataresDaTarefa, SeletorOutrosResponsaveis, SeletorResponsavel, rotuloDaPessoa } from './ResponsavelDaTarefa';
 import { CalendarioDeTarefas, diaDoPrazo, prazoDoDia } from './CalendarioDeTarefas';
 import { colunasDeTodas, destinoNaLista, idDaColuna } from './colunas-de-todas';
 import { diasDesde, formatarHoras, hojeEmBrasilia, minutosDeTexto } from '@/lib/horas';
@@ -1583,9 +1583,8 @@ function Cartao({ t, lista, editable, token, agentes, pessoas = [], onSoltarSobr
           </p>
           <div className="mt-1 flex flex-wrap items-center gap-2 text-[11px] text-muted">
             {t.priority !== 'normal' && pr && <Flag size={11} style={{ color: pr.cor }} />}
-            {/* O responsável é a CONTA (produção, 14/10); o nome antigo em texto fica só no painel. */}
-            <ResponsavelDaTarefa tarefa={t} />
-            <OutrosResponsaveis ids={t.outrosResponsaveisIds ?? []} pessoas={pessoas} />
+            {/* O responsável é a CONTA (produção, 14/10); o nome antigo em texto fica só no painel. Só o avatar, com o nome no balão (I6). */}
+            <AvataresDaTarefa tarefa={t} pessoas={pessoas} testId={`trabalho-responsaveis-${t.id}`} />
             {t.recorrencia && <span title={descreverRecorrencia(t.recorrencia)} className="flex items-center"><Repeat size={10} /><span className="sr-only">{descreverRecorrencia(t.recorrencia)}</span></span>}
             <ProximaDataNoCartao dueDate={t.dueDate} proximoPassoEm={mov?.proximaAcao?.quando ?? null} concluida={t.statusType === 'closed'} />
             <ReuniaoESeloNoCartao tarefaId={t.id} />
@@ -1945,7 +1944,7 @@ function Tabela({ tarefas, campos, trilhos, onAbrir, mostrarLista = false, pesso
                   </span>
                 </td>
                 <td className="px-3 py-2 capitalize">{t.priority}</td>
-                <td className="px-3 py-2"><ResponsavelDaTarefa tarefa={t} /> <OutrosResponsaveis ids={t.outrosResponsaveisIds ?? []} pessoas={pessoas} /></td>
+                <td className="px-3 py-2"><AvataresDaTarefa tarefa={t} pessoas={pessoas} testId={`trabalho-responsaveis-${t.id}`} /></td>
                 <td className="px-3 py-2" title={t.agenteId ? `Assumida em ${dataHoraBR(t.agenteEm)}` : undefined}>
                   {nomeDoAgente(t) ?? '—'}
                 </td>

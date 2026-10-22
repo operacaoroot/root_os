@@ -264,6 +264,8 @@ describe('F4: agrupamento, concluídas e "meus"', () => {
     window.history.replaceState({}, '', '/trabalho?lista=l-b&visao=lista&escopo=meus');
     render(<TrabalhoPage />);
     await waitFor(() => expect([...document.querySelectorAll('tr[data-work-task-id]')].map((e) => e.getAttribute('data-work-task-id'))).toEqual([T2]));
-    expect(screen.getByTestId('outros-responsaveis')).toHaveTextContent('+ Rodrigo QA');
+    // I6 (produção 22B): os demais responsáveis entram na pilha de avatares, o nome no balão.
+    const linha = document.querySelector(`tr[data-work-task-id="${T2}"]`) as HTMLElement;
+    expect(within(linha).getByRole('img', { name: 'Responsável: Rodrigo QA (eu@qa.local)' })).toBeTruthy();
   });
 });
