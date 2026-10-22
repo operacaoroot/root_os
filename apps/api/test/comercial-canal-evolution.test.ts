@@ -22,7 +22,7 @@ import { AcoesService } from '../src/gateway/acoes.service';
 import { segredoDoCanalDaEmpresa } from '../src/gateway/canais/configuracao-do-canal';
 import { CanalDeAprovacaoController } from '../src/gateway/canais/canal-de-aprovacao.controller';
 import { EntradaDeGrupoRegistry } from '../src/gateway/canais/entrada-de-grupo.registry';
-import { EntradaDiretaRegistry, remetenteDireto } from '../src/gateway/canais/entrada-direta.registry';
+import { EntradaDiretaRegistry, RAZAO_DO_LID_SEM_NUMERO, lerRemetenteDireto, remetenteDireto } from '../src/gateway/canais/entrada-direta.registry';
 import { EfeitosRegistry } from '../src/gateway/efeitos.registry';
 import { EventLogService } from '../src/gateway/event-log.service';
 import { InterruptoresRegistry } from '../src/gateway/interruptores.registry';
@@ -132,6 +132,21 @@ describe('Evolution: as partes puras da entrada e do provedor', () => {
     expect(remetenteDireto(evento({}, { participant: '5532911112222@s.whatsapp.net' }))).toBeNull();
     expect(remetenteDireto(evento({}, { remoteJid: '123456@lid' }))).toBeNull();
     expect(remetenteDireto(null)).toBeNull();
+  });
+
+  it('Produção 22: o remetente @lid vale pelo número real do campo próprio (remoteJidAlt, senderPn)', () => {
+    const lid = { remoteJid: '271828182845904@lid' };
+    expect(lerRemetenteDireto(evento({}, { ...lid, remoteJidAlt: '5532988880001@s.whatsapp.net' }))).toEqual({ remetente: '5532988880001' });
+    expect(lerRemetenteDireto(evento({}, { ...lid, senderPn: '5532988880002@s.whatsapp.net' }))).toEqual({ remetente: '5532988880002' });
+    // remoteJidAlt vem antes de senderPn
+    expect(remetenteDireto(evento({}, { ...lid, remoteJidAlt: '5532988880001@s.whatsapp.net', senderPn: '5532988880002@s.whatsapp.net' }))).toBe('5532988880001');
+    // sem o campo, ou com o campo fora da forma de telefone: a razão, não o número
+    expect(lerRemetenteDireto(evento({}, lid))).toEqual({ ignorado: RAZAO_DO_LID_SEM_NUMERO });
+    for (const ruim of ['271828@lid', '5532988880001@c.us', '5532988880001:3@s.whatsapp.net', '+5532988880001@s.whatsapp.net', '123@s.whatsapp.net', '120363000000000000@g.us', 5532988880001]) {
+      expect(lerRemetenteDireto(evento({}, { ...lid, remoteJidAlt: ruim, senderPn: ruim })), String(ruim)).toEqual({ ignorado: RAZAO_DO_LID_SEM_NUMERO });
+    }
+    // o número real nunca substitui um remoteJid que já é telefone
+    expect(remetenteDireto(evento({}, { remoteJidAlt: '5532900000000@s.whatsapp.net' }))).toBe('5532988880001');
   });
 
   it('a mensagem do lead: só texto digitado, com a instância do corpo', () => {
@@ -441,6 +456,25 @@ describe.skipIf(!URL)('Evolution com banco e dublê HTTP', () => {
     await entregar(ORG_A, mensagem('ev-in-novo', '32900001111', 'oi, quero saber mais'), segredoDoCanalDaEmpresa(ORG_A)!);
     expect(canal.receber).toHaveBeenCalledTimes(2);
     expect(await prisma.lead.count({ where: { orgId: ORG_A, phone: '5532900001111' } })).toBe(0);
+  });
+
+  it('Produção 22: remetente @lid com o número real ao lado vai ao comercial pelo número real; sem ele, fica no canal', async () => {
+    const comLid = (id: string, key: Record<string, unknown>) => {
+      const m = mensagem(id, TELEFONE, 'oi pelo lid');
+      return { ...m, data: { ...m.data, key: { fromMe: false, id, remoteJid: '271828182845904@lid', ...key } } };
+    };
+    const contar = () => prisma.leadEvent.count({ where: { leadId, type: 'whats.recebida' } });
+    canal.receber.mockClear();
+    const antes = await contar();
+    await entregar(ORG_A, comLid('ev-lid-1', { remoteJidAlt: `55${TELEFONE}@s.whatsapp.net` }), segredoDoCanalDaEmpresa(ORG_A)!);
+    expect(await contar()).toBe(antes + 1);
+    expect(canal.receber).not.toHaveBeenCalled();
+    await entregar(ORG_A, comLid('ev-lid-2', { senderPn: `55${TELEFONE}@s.whatsapp.net` }), segredoDoCanalDaEmpresa(ORG_A)!);
+    expect(await contar()).toBe(antes + 2);
+    // sem o número real: segue para o canal como antes, e nada entra no lead
+    await entregar(ORG_A, comLid('ev-lid-3', {}), segredoDoCanalDaEmpresa(ORG_A)!);
+    expect(canal.receber).toHaveBeenCalledTimes(1);
+    expect(await contar()).toBe(antes + 2);
   });
 
   it('mensagem de outra instância, sem instância e não textual são ignoradas', async () => {

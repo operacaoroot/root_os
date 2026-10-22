@@ -1,6 +1,6 @@
 import { createHmac, timingSafeEqual } from 'node:crypto';
 
-import { chaveDeIdentidadeWhatsapp, ehGrupoDeWhatsapp } from './identidade-de-canal';
+import { ehGrupoDeWhatsapp, remetenteDaKey } from './identidade-de-canal';
 
 /*
  * ============================================================================
@@ -377,7 +377,9 @@ export function lerRespostaDeCanal(
     return { tipo: 'ignorar', porque: 'mensagem-de-grupo' };
   }
 
-  const chaveDaIdentidade = chaveDeIdentidadeWhatsapp(remoteJid);
+  // `@lid` com o número real ao lado vale pelo número real (Produção 22, M4); sem ele, não há telefone.
+  const remetente = remetenteDaKey(key);
+  const chaveDaIdentidade = remetente && 'chave' in remetente ? remetente.chave : null;
   if (!chaveDaIdentidade) return { tipo: 'ignorar', porque: 'remetente-sem-telefone' };
 
   const message = objeto(data.message);
