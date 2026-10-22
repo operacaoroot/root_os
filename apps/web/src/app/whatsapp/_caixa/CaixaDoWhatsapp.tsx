@@ -565,8 +565,10 @@ export function CaixaDoWhatsapp() {
                     )}
                   </div>
                   {aberta && podeResponder && (
-                    <button type="button" data-testid="caixa-arquivar" onClick={() => void alternarArquivo()} disabled={arquivando} className={`${BOTAO} shrink-0`}>
-                      {aberta.conversa.arquivada ? 'Voltar para a caixa' : 'Arquivar conversa'}
+                    <button type="button" data-testid="caixa-arquivar" aria-label={aberta.conversa.arquivada ? 'Voltar para a caixa' : 'Arquivar conversa'} onClick={() => void alternarArquivo()} disabled={arquivando} className={`${BOTAO} shrink-0`}>
+                      {/* No celular o rótulo encolhe, para o nome da conversa caber ao lado do Voltar. */}
+                      <span className="max-md:hidden">{aberta.conversa.arquivada ? 'Voltar para a caixa' : 'Arquivar conversa'}</span>
+                      <span className="md:hidden">{aberta.conversa.arquivada ? 'Desarquivar' : 'Arquivar'}</span>
                     </button>
                   )}
                 </div>
