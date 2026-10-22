@@ -63,6 +63,10 @@ describe('caixa de WhatsApp: rotas e regras puras', () => {
     expect(ondeDoFiltro('o', 'todas')).toEqual({ orgId: 'o', arquivadaEm: null });
     expect(ondeDoFiltro('o', 'arquivadas')).toEqual({ orgId: 'o', arquivadaEm: { not: null } });
     expect(ondeDoFiltro('o', 'sem_vinculo')).toEqual({ orgId: 'o', arquivadaEm: null, leadId: null, clienteId: null, equipe: false });
+    // A mesma regra do resumo do Dia a dia: Leads e Clientes saem só do que não é equipe.
+    expect(ondeDoFiltro('o', 'leads')).toEqual({ orgId: 'o', arquivadaEm: null, equipe: false, leadId: { not: null } });
+    expect(ondeDoFiltro('o', 'clientes')).toEqual({ orgId: 'o', arquivadaEm: null, equipe: false, clienteId: { not: null } });
+    expect(ondeDoFiltro('o', 'equipe')).toEqual({ orgId: 'o', arquivadaEm: null, equipe: true });
   });
 
   it('a busca: número só com termo de número; texto só a partir de 3 letras', () => {
@@ -442,6 +446,10 @@ describe.skipIf(!URL)('caixa de WhatsApp contra o Postgres', () => {
     await svc.responder(ORG, ids[jid], { texto: 'para o grupo do lead' }, gente);
     const fio = await prisma.comercialMensagem.findMany({ where: { orgId: ORG, leadId } });
     expect(fio.map((f) => f.destino)).toEqual(['grupo']);
+    // Conversa da equipe com lead conta em Equipe, nunca em Leads (a regra do resumo do Dia a dia).
+    const l = await svc.listar(ORG, {}, gente);
+    expect(l.contagens).toMatchObject({ leads: 1, equipe: 1 });
+    expect((await svc.listar(ORG, { filtro: 'leads' }, gente)).conversas.map((c) => c.nome)).toEqual(['Contato Ficticio Um']);
   });
 
   it('o eco que chegou antes cai na mesma linha e passa a dizer quem escreveu', async () => {

@@ -97,14 +97,19 @@ function inteiro(v: unknown, padrao: number, teto: number): number {
   return Math.min(teto, Math.floor(n));
 }
 
-/** O filtro de cada chip. Arquivada só aparece em Arquivadas. */
+/**
+ * O filtro de cada chip, a MESMA regra do resumo do Dia a dia (lane D), para o
+ * cartão e a caixa não discordarem: Equipe = `equipe` verdadeiro, seja qual for
+ * o vínculo; Leads, Clientes e Sem vínculo saem só do resto (`equipe` falso).
+ * Arquivada só aparece em Arquivadas.
+ */
 export function ondeDoFiltro(orgId: string, filtro: FiltroDaCaixa): Prisma.WhatsAppConversaWhereInput {
   const viva = { orgId, arquivadaEm: null };
   switch (filtro) {
     case 'leads':
-      return { ...viva, leadId: { not: null } };
+      return { ...viva, equipe: false, leadId: { not: null } };
     case 'clientes':
-      return { ...viva, clienteId: { not: null } };
+      return { ...viva, equipe: false, clienteId: { not: null } };
     case 'grupos':
       return { ...viva, grupo: true };
     case 'sem_vinculo':
