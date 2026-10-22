@@ -170,7 +170,7 @@ export function LeadPainel({ estado }: { estado: EstadoDoPainel }) {
 
   const nome = f ? f.empresa ?? f.nome : 'Lead';
   const sala = celular.dados?.linkDaSala ?? null;
-  const whats = celular.dados ? `/whatsapp?conversa=${encodeURIComponent(leadId)}` : linkDoWhatsApp(f?.telefone);
+  const whats = celular.dados ? `/whatsapp/simulador?conversa=${encodeURIComponent(leadId)}` : linkDoWhatsApp(f?.telefone);
 
   return createPortal(
     <div data-painel-do-lead data-os-app className="fixed inset-0 z-[60]">
