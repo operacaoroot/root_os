@@ -64,7 +64,16 @@ import { exigirBancoDescartavel } from './banco-de-teste';
  *
  * A hora é fixada às 14:00 de São Paulo num dia útil: fora da janela da política
  * (08h-20h) o R1 vira R2 e o pedido fica retido, que é outro caso (também medido).
+ *
+ * O DIA é o de AMANHÃ, não uma data fixa (produção 22, 22/10/2026): o relógio falso só
+ * vale para o código, e o banco carimba `ToolCall.criadoEm` com o relógio real. Com a
+ * data fixa de 21/10, depois das 14h reais as chamadas da própria suíte caíam "no
+ * futuro" da hora falsa, o sinal `volume_atipico` (que conta `criadoEm >= agora - 1h`)
+ * acendia e o R1 virava R2: sete casos vermelhos só pela hora em que a suíte rodava.
  */
+const DIA_DA_SUITE = new Date(Date.now() + 86_400_000).toLocaleDateString('sv-SE', { timeZone: 'America/Sao_Paulo' });
+const AS_14H = `${DIA_DA_SUITE}T14:00:00-03:00`;
+const AS_23H30 = `${DIA_DA_SUITE}T23:30:00-03:00`;
 
 const URL = process.env.TEST_DATABASE_URL;
 exigirBancoDescartavel(URL ?? '', 'ESCREVE nele (leads, fichas, fio, pendências, auditoria e o registro da porta)');
@@ -99,7 +108,7 @@ describe.skipIf(!URL)('a entrada de leads dos agentes do comercial, contra o Pos
 
   beforeAll(async () => {
     vi.useFakeTimers({ toFake: ['Date'] });
-    vi.setSystemTime(new Date('2026-10-21T14:00:00-03:00'));
+    vi.setSystemTime(new Date(AS_14H));
     prisma = new PrismaClient({ datasources: { db: { url: URL } } });
     const p = prisma as unknown as PrismaService;
     await prisma.org.create({ data: { id: ORG, name: `Agentes A2 entrada ${MARCA}`, slug: `a2-entrada-${MARCA}` } });
@@ -273,14 +282,14 @@ describe.skipIf(!URL)('a entrada de leads dos agentes do comercial, contra o Pos
   });
 
   it('CO-15: fora da janela da política (23h) o R1 sobe para R2 e fica retido; o site ouve o mesmo "recebido"', async () => {
-    vi.setSystemTime(new Date('2026-10-21T23:30:00-03:00'));
+    vi.setSystemTime(new Date(AS_23H30));
     try {
       const r = await controlador.lead(corpo({ email: `noite-${MARCA}@exemplo.test` }), { ip: '10.1.1.6' } as never);
       expect(r).toEqual(RESPOSTA_DO_FORMULARIO);
       expect(await prisma.lead.count({ where: { orgId: ORG, email: `noite-${MARCA}@exemplo.test` } })).toBe(0);
       expect(await prisma.approval.count({ where: { orgId: ORG, capabilityId: 'comercial.lead.criar' } })).toBe(1);
     } finally {
-      vi.setSystemTime(new Date('2026-10-21T14:00:00-03:00'));
+      vi.setSystemTime(new Date(AS_14H));
     }
   });
 
@@ -467,7 +476,7 @@ describe.skipIf(!URL)('a entrada de leads dos agentes do comercial, contra o Pos
       // rodar de novo não apaga nada a mais
       expect((await expurgarTextoVencido(prisma, new Date())).pendencias).toBe(0);
     } finally {
-      vi.setSystemTime(new Date('2026-10-21T14:00:00-03:00'));
+      vi.setSystemTime(new Date(AS_14H));
     }
   });
 });
