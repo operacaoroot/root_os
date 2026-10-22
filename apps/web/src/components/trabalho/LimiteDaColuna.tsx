@@ -28,15 +28,37 @@ export function LimiteDaColuna({ status, token, onMudou, onErro }: {
   const [salvando, setSalvando] = useState(false);
   const [aviso, setAviso] = useState<string | null>(null);
   const caixa = useRef<HTMLDivElement>(null);
+  const botao = useRef<HTMLButtonElement>(null);
+  /** Onde o menu abre: fixo na janela, porque a coluna e o quadro cortam o que passa da borda deles. */
+  const [posicao, setPosicao] = useState<{ top: number; left: number } | null>(null);
   const atual = status.limite ?? null;
+
+  function abrirOuFechar() {
+    if (aberto) { fechar(); return; }
+    const r = botao.current?.getBoundingClientRect();
+    const largura = Math.min(256, window.innerWidth * 0.8);
+    setPosicao(r ? { top: r.bottom + 4, left: Math.max(8, Math.min(r.right - largura, window.innerWidth - largura - 8)) } : null);
+    setAberto(true);
+    setEditando(false);
+    setAviso(null);
+  }
 
   useEffect(() => {
     if (!aberto) return;
     const fora = (e: MouseEvent) => { if (caixa.current && !caixa.current.contains(e.target as Node)) fechar(); };
     const esc = (e: KeyboardEvent) => { if (e.key === 'Escape') fechar(); };
+    // Rolar o quadro ou mudar a janela tira o menu do lugar: fecha.
+    const sai = (e: Event) => { if (!(caixa.current && e.target instanceof Node && caixa.current.contains(e.target))) fechar(); };
     document.addEventListener('mousedown', fora);
     document.addEventListener('keydown', esc);
-    return () => { document.removeEventListener('mousedown', fora); document.removeEventListener('keydown', esc); };
+    window.addEventListener('resize', fechar);
+    document.addEventListener('scroll', sai, true);
+    return () => {
+      document.removeEventListener('mousedown', fora);
+      document.removeEventListener('keydown', esc);
+      window.removeEventListener('resize', fechar);
+      document.removeEventListener('scroll', sai, true);
+    };
   }, [aberto]);
 
   function fechar() { setAberto(false); setEditando(false); setAviso(null); }
@@ -75,8 +97,9 @@ export function LimiteDaColuna({ status, token, onMudou, onErro }: {
         aria-label={`Menu da etapa ${status.name}`}
         aria-haspopup="menu"
         aria-expanded={aberto}
+        ref={botao}
         data-testid={`coluna-menu-${status.id}`}
-        onClick={() => { setAberto((a) => !a); setEditando(false); setAviso(null); }}
+        onClick={abrirOuFechar}
         className="grid h-6 w-6 place-items-center rounded text-muted hover:bg-surface-2 hover:text-text max-md:h-11 max-md:w-11"
       >
         <MoreHorizontal size={14} />
@@ -85,7 +108,8 @@ export function LimiteDaColuna({ status, token, onMudou, onErro }: {
         <div
           role="menu"
           data-testid="coluna-menu"
-          className="absolute right-0 top-full z-30 mt-1 w-[min(16rem,80vw)] rounded-md border border-border bg-surface p-1.5 text-[12px] shadow-lg"
+          style={posicao ? { position: 'fixed', top: posicao.top, left: posicao.left } : undefined}
+          className={`${posicao ? '' : 'absolute right-0 top-full mt-1 '}z-50 w-[min(16rem,80vw)] rounded-md border border-border bg-surface p-1.5 text-[12px] shadow-lg`}
         >
           {!editando ? (
             <button
