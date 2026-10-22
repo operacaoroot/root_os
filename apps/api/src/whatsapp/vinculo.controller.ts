@@ -64,6 +64,13 @@ export class VinculoDoWhatsappController {
     return this.svc.doCliente(user.orgId, clienteId, podeEditar(user));
   }
 
+  /** A ficha (cartão) do cliente, para o link "Cliente: <nome>" da caixa: `{ taskId }` ou nulo. */
+  @Get('cliente/:clienteId/ficha')
+  @RequirePermissions('leads.ver')
+  fichaDoCliente(@CurrentUser() user: JwtUser, @Param('clienteId') clienteId: string): Promise<{ taskId: string | null }> {
+    return this.svc.fichaDoCliente(user.orgId, clienteId);
+  }
+
   /** Editar o telefone do lead (`Lead.phone`); depois as conversas 1:1 do número casam de novo. */
   @Put('lead/:leadId/telefone')
   @RequirePermissions('leads.editar')

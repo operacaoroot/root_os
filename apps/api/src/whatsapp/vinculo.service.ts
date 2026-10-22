@@ -541,6 +541,28 @@ export class VinculoDoWhatsappService {
     return { ...(await this.doVinculo(orgId, { leadId })), telefone: lead.phone ?? null, podeEditar };
   }
 
+  /**
+   * A ficha (o cartão do Trabalho) de um cliente, para o link "Cliente: <nome>":
+   * a ficha do Trabalho é por cartão, não por cliente. Primeiro o card da
+   * implantação que o comercial ligou ao cliente; senão o cartão mais recente do
+   * CRM (`crm-root-lista`) com este cliente. Nenhum = null (a tela diz).
+   */
+  async fichaDoCliente(orgId: string, clienteId: string): Promise<{ taskId: string | null }> {
+    const p = await this.prisma.partner.findFirst({ where: { id: clienteId, orgId }, select: { id: true } });
+    if (!p) throw new NotFoundException('Cliente não encontrado nesta empresa.');
+    const fichas = await this.prisma.comercialFicha.findMany({ where: { orgId, partnerId: clienteId, cardId: { not: null } }, select: { cardId: true }, orderBy: { etapaDesde: 'desc' }, take: 5 });
+    for (const f of fichas) {
+      const t = await this.prisma.workTask.findFirst({ where: { id: f.cardId!, orgId, excluidaEm: null }, select: { id: true } });
+      if (t) return { taskId: t.id };
+    }
+    const doCrm = await this.prisma.workTask.findFirst({
+      where: { orgId, clienteId, excluidaEm: null, list: { externalId: 'crm-root-lista' } },
+      orderBy: { updatedAt: 'desc' },
+      select: { id: true },
+    });
+    return { taskId: doCrm?.id ?? null };
+  }
+
   async doCliente(orgId: string, clienteId: string, podeEditar: boolean): Promise<WhatsappDaFicha> {
     const p = await this.prisma.partner.findFirst({ where: { id: clienteId, orgId }, select: { id: true, phone: true } });
     if (!p) throw new NotFoundException('Cliente não encontrado nesta empresa.');
