@@ -73,8 +73,9 @@ export class ImplantacaoDoQuadroService {
     const { trilhoDe, paraCasar } = await this.dadosDosCards(orgId, cards);
     // Só os cards de cliente (com trilho ou ficha) pedem a agenda; lista sem nenhum não a lê.
     const { estado, reunioes } = paraCasar.length ? await this.reunioes(orgId, quem, paraCasar) : { estado: 'ok' as const, reunioes: new Map() };
+    const deCliente = new Set(paraCasar.map((x) => x.cardId));
     const itens: ImplantacaoDoCartao[] = cards
-      .filter((c) => trilhoDe.has(c.id) || paraCasar.some((p) => p.cardId === c.id))
+      .filter((c) => trilhoDe.has(c.id) || deCliente.has(c.id))
       .map((c) => ({
         tarefaId: c.id,
         reuniao: reunioes.get(c.id) ?? null,

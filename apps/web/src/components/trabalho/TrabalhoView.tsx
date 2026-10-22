@@ -27,6 +27,9 @@ import { ArvoreDoTrabalho } from './ArvoreDoTrabalho';
 import { QuemTrabalhaNaEtapa } from './QuemTrabalhaNaEtapa';
 import { DelegadorDaTarefa } from './DelegadorDaTarefa';
 import { DatasNoBalao, ProximaDataNoCartao } from './DatasDoCartao';
+import { ImplantacaoDoQuadroContexto, ImplantacaoNoPainel, ReuniaoESeloNoCartao, useImplantacaoDoQuadro } from './ImplantacaoDoCartao';
+import { LimiteDaColuna } from './LimiteDaColuna';
+import { useFiltroDaPendencia } from './PendenciaDaImplantacao';
 import { diaCompleto, diaCurto, diaComSemana, instanteComSemana, instanteCurto } from '@/lib/datas-do-cartao';
 import { AtividadeDaTarefa } from './AtividadeDaTarefa';
 import { EditorialTaskLink } from './EditorialTaskLink';
@@ -635,8 +638,11 @@ function TrabalhoConteudo({ visaoInicial, modo, aoSairDeTodas }: { visaoInicial:
    * identidade por ID, não por nome). Só a tarefa ainda sem vínculo de pessoa
    * cai no nome antigo em texto, para o legado do ClickUp não sumir do recorte.
    */
+  // Produção 22 (M1, S5): `?pendencia=` na Implantação mostra só os cards daquela pendência.
+  const filtroDaPendencia = useFiltroDaPendencia(implantacao, token);
+  const idsDaPendencia = filtroDaPendencia.ids;
   const visiveis = useMemo(() => {
-    const itens = tarefas?.items ?? [];
+    const itens = (tarefas?.items ?? []).filter((t) => !idsDaPendencia || idsDaPendencia.has(t.id));
     const agora = new Date();
     // Vários responsáveis (versão final): "meus" é ser a principal OU uma das demais, sempre pela conta.
     const meu = (t: TrabTarefaResumo) => (t.assigneeUserId || t.outrosResponsaveisIds?.length
@@ -647,8 +653,10 @@ function TrabalhoConteudo({ visaoInicial, modo, aoSairDeTodas }: { visaoInicial:
       (fConcluidas !== 'ocultar' || t.statusType !== 'closed') &&
       (!fPrazo || cabeNoRecorte(fPrazo, reguaDePrazo(t.dueDate, t.statusType, agora))) &&
       (!fAgente || (fAgente === 'livres' ? !t.agenteId : t.agenteSlug === fAgente)));
-  }, [tarefas, fAgente, fEscopo, fConcluidas, fPrazo, user?.id, user?.name]);
+  }, [tarefas, fAgente, fEscopo, fConcluidas, fPrazo, user?.id, user?.name, idsDaPendencia]);
   const geral = fPasta === PASTA_TODAS;
+  // Produção 22 (M1, S1 e S2): a próxima reunião e o selo da fase do trilho, uma leitura por lista aberta no quadro.
+  const implantacaoDoQuadro = useImplantacaoDoQuadro(lista && !geral && visao === 'board' ? lista.id : null, token, bump);
   // Sem uma lista aberta: "Todas as tarefas" ou o "todas as listas" da pessoa.
   const semLista = geral || todasListas;
   const todasAsListas = useMemo(() => (estrutura ? [...estrutura.folders.flatMap((f) => f.lists), ...estrutura.listasSoltas] : []), [estrutura]);
@@ -1095,6 +1103,7 @@ function TrabalhoConteudo({ visaoInicial, modo, aoSairDeTodas }: { visaoInicial:
         {listaEhImplantacao && editable && (
           <p className="text-[12px] text-muted" data-testid="implantacao-porta">{PORTA_DA_IMPLANTACAO}</p>
         )}
+        {filtroDaPendencia.faixa}
         {/* A2: a terceira porta, sempre a partir de um lead do funil (nunca cartão solto). */}
         {implantacao && (
           <IniciarOnboardingDaImplantacao onIniciado={(r) => { refresh(); tarefaUrl.abrir(r.cardId); }} />
@@ -1131,12 +1140,14 @@ function TrabalhoConteudo({ visaoInicial, modo, aoSairDeTodas }: { visaoInicial:
           <button className="underline" onClick={() => { recargaEtapa.current = bump + 1; refresh(); }}>Recarregar lista</button>
         </div>}
         {lista && !geral && tarefas && visao === 'board' && (
+          <ImplantacaoDoQuadroContexto.Provider value={implantacaoDoQuadro}>
           <Board
             lista={{ ...lista, statuses: statusesDoQuadro }} ocultarVazias={ocultarVazias}
             tarefas={visiveis} editable={quadroEditavel} podeCriar={quadroEditavel && !listaEhImplantacao} token={token}
             agentes={estrutura?.agentes ?? []} pessoas={estrutura?.pessoas ?? []} trilhos={trilhos} movimento={movimento} densidade={densidade}
             onAbrir={abrirTarefa} onMudou={refresh} onErro={setErro} onMoverEtapa={moverEtapa} onReordenar={reordenar}
           />
+          </ImplantacaoDoQuadroContexto.Provider>
         )}
         {/* "Todas as tarefas" no quadro: os status reais de todas as listas; soltar cai no de mesmo nome da lista da tarefa. */}
         {geral && tarefas && visao === 'board' && avisoDoQuadro && (
@@ -1402,7 +1413,11 @@ function Board({ lista, tarefas, editable, podeCriar, token, agentes, pessoas = 
                   </span>
                 )}
               </span>
-              <span className="font-os-mono"><ContagemDaEtapa quantas={itens.length} limite={st.limite} /></span>
+              <span className="flex shrink-0 items-center gap-0.5 font-os-mono">
+                <ContagemDaEtapa quantas={itens.length} limite={st.limite} />
+                {/* Produção 22 (M1, S4): o limite pelo menu da coluna; em Todas a coluna junta listas e não tem menu. */}
+                {editable && !listasPorColuna && <LimiteDaColuna status={st} token={token} onMudou={onMudou} onErro={onErro} />}
+              </span>
             </header>
             <div className="min-h-0 flex-1 space-y-1.5 overflow-y-auto p-1.5" data-rolagem-da-coluna>
               {itens.map((t) => (
@@ -1562,6 +1577,7 @@ function Cartao({ t, lista, editable, token, agentes, pessoas = [], onSoltarSobr
             <OutrosResponsaveis ids={t.outrosResponsaveisIds ?? []} pessoas={pessoas} />
             {t.recorrencia && <span title={descreverRecorrencia(t.recorrencia)} className="flex items-center"><Repeat size={10} /><span className="sr-only">{descreverRecorrencia(t.recorrencia)}</span></span>}
             <ProximaDataNoCartao dueDate={t.dueDate} proximoPassoEm={mov?.proximaAcao?.quando ?? null} concluida={t.statusType === 'closed'} />
+            <ReuniaoESeloNoCartao tarefaId={t.id} />
             {t.comments > 0 && <span className="flex items-center gap-0.5"><MessageSquare size={10} />{t.comments}</span>}
             {t.subtasks > 0 && <span>{t.subtasks} sub</span>}
             {minutos > 0 && (
@@ -2289,6 +2305,7 @@ function PainelTarefa({ id, estrutura, editable, token, usuarioId, aba = 'tarefa
         ) : trilho === null && listaDaImplantacao(estrutura.folders)?.listaId === t.listId ? (
           <p className="rounded-lg border border-border bg-surface-2 px-3 py-2 text-[12px] text-muted">Sem trilho de onboarding ligado a este cartão.</p>
         ) : null}
+        {(trilho || listaDaImplantacao(estrutura.folders)?.listaId === t.listId) && <ImplantacaoNoPainel tarefaId={t.id} listId={t.listId} token={token} />}
         {trilho && <QuemTrabalhaNaEtapa trilhoId={trilho.id} token={token} />}
         <FontesDaTarefa taskId={t.id} />
         <AnexosDaTarefa taskId={t.id} />
