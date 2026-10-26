@@ -7,30 +7,29 @@ import { EVENTO_ACEITO } from '../../gateway/canais/resposta-de-canal';
 /*
  * O AGENTE DE TAREFAS (TR-12) — a parte que não fala com banco nem com modelo.
  *
- * O grupo da equipe é conversa. O agente só olha a mensagem que COMEÇA com
- * "tarefa" ou "tarefas" (com ou sem barra, maiúscula ou acento tanto faz):
+ * O grupo da equipe é conversa, e "tarefa" aparece nela o tempo todo. Por isso
+ * o agente só olha a mensagem que MARCA o número comercial com @ (pedido do
+ * Lucas, 26/10/2026). O resto do texto é o pedido:
  *
- *   tarefa pro Pedro: revisar contrato da Custeio até sexta
- *   tarefas atrasadas
- *   tarefas do Rodrigo
- *   tarefa concluída: revisar contrato da Custeio
- *   minhas tarefas
- *   tarefa confirmar            (cria a parecida que ele segurou)
+ *   @Root tarefa pro Pedro: revisar contrato da Custeio até sexta
+ *   @Root tarefas atrasadas
+ *   @Root minhas tarefas
+ *   @Root tarefa concluída: revisar contrato da Custeio
+ *   @Root confirmar             (cria a parecida que ele segurou)
  *
- * O resto do grupo passa direto, sem custo de modelo.
+ * O WhatsApp marca pelo telefone ou pelo código interno do grupo (`@lid`);
+ * `AGENTE_TAREFAS_MENCOES` traz os dois. Sem marcação, nada, e sem custo.
  */
 
-export const GATILHO = /^\s*\/?\s*(minhas\s+)?tarefas?\b[\s:,.\-–]*/i;
-
 export interface PedidoDoGrupo {
-  /** O que vem depois de "tarefa". Pode ser vazio ("tarefas" sozinho = ajuda). */
+  /** O texto sem a marcação. Vazio = ajuda. */
   texto: string;
   /** Telefone de quem escreveu, só dígitos, ou `null` quando o WhatsApp não mostrou. */
   telefone: string | null;
   /** O nome que aparece no WhatsApp (pushName), só para a resposta e o registro. */
   nome: string | null;
   mensagemId: string | null;
-  /** "tarefas" no plural e nada depois: pedido de lista. */
+  /** Só "tarefas" depois da marcação: pedido de lista. */
   plural: boolean;
 }
 
@@ -54,31 +53,50 @@ function telefoneDoParticipante(key: Record<string, unknown>): string | null {
   return null;
 }
 
+/** A parte antes do @ de um JID (`5532…@s.whatsapp.net`, `6361…@lid`) ou o número cru. */
+function idDoJid(v: unknown): string | null {
+  if (typeof v !== 'string') return null;
+  const id = v.trim().toLowerCase().split('@')[0].split(':')[0];
+  return /^\d{5,30}$/.test(id) ? id : null;
+}
+
+/** Quem a mensagem marcou: o `mentionedJid` da mensagem ou o do corpo do webhook. */
+function marcados(data: Record<string, unknown> | null): string[] {
+  const listas = [
+    objeto(objeto(objeto(data?.message)?.extendedTextMessage)?.contextInfo)?.mentionedJid,
+    objeto(data?.contextInfo)?.mentionedJid,
+  ];
+  return listas.flatMap((l) => (Array.isArray(l) ? l : [])).map(idDoJid).filter((x): x is string => !!x);
+}
+
+/** `AGENTE_TAREFAS_MENCOES` ("5532936180013,63617827360770") em ids. */
+export function idsDoAgente(lista: string | undefined): string[] {
+  return (lista ?? '').split(/[,\s]+/).map(idDoJid).filter((x): x is string => !!x);
+}
+
 /**
- * A mensagem nova do grupo `jid` que é um pedido ao agente, ou `null`: outro
- * evento, outro grupo, eco da própria instância (a resposta do agente) ou texto
- * que não começa com o gatilho.
+ * A mensagem nova do grupo `jid` que marca o agente, ou `null`: outro evento,
+ * outro grupo, eco da própria instância (a resposta do agente) ou mensagem que
+ * não marcou nenhum dos `ids`.
  */
-export function lerPedidoDoGrupo(evento: unknown, jid: string): PedidoDoGrupo | null {
+export function lerPedidoDoGrupo(evento: unknown, jid: string, ids: string[]): PedidoDoGrupo | null {
+  if (ids.length === 0) return null;
   const raiz = objeto(evento);
   if (typeof raiz?.event !== 'string' || raiz.event.trim().toLowerCase() !== EVENTO_ACEITO) return null;
   const data = objeto(raiz.data);
   const key = objeto(data?.key);
   if (!key || key.fromMe === true) return null;
   if (typeof key.remoteJid !== 'string' || key.remoteJid.trim().toLowerCase() !== jid.trim().toLowerCase()) return null;
-  const bruto = textoDigitado(objeto(data?.message));
-  if (!bruto) return null;
-  const m = GATILHO.exec(bruto);
-  if (!m) return null;
-  const resto = bruto.slice(m[0].length).trim().slice(0, 1000);
-  // "minhas tarefas" leva o "minhas" adiante: é o que diz de quem são.
-  const texto = m[1] ? `minhas tarefas ${resto}`.trim() : resto;
+  if (!marcados(data).some((m) => ids.includes(m))) return null;
+  const bruto = textoDigitado(objeto(data?.message)) ?? '';
+  // Tira só as marcações do agente; as de outras pessoas ("@Pedro") ficam, são parte do pedido.
+  const texto = ids.reduce((t, id) => t.split(`@${id}`).join(' '), bruto).replace(/\s+/g, ' ').trim().slice(0, 1000);
   return {
     texto,
     telefone: telefoneDoParticipante(key),
     nome: typeof data?.pushName === 'string' && data.pushName.trim() ? data.pushName.trim() : null,
     mensagemId: typeof key.id === 'string' ? key.id : null,
-    plural: /tarefas/i.test(m[0]) && resto === '',
+    plural: /^\/?tarefas[.!]?$/i.test(texto),
   };
 }
 
@@ -199,11 +217,11 @@ export function linhaDaTarefa(t: Pick<TarefaDoDia, 'titulo' | 'prazo' | 'pessoa'
 }
 
 export const AJUDA = [
-  'Sou o agente de tarefas. Comece a mensagem com "tarefa":',
-  '• tarefa pro Pedro: revisar contrato da Custeio até sexta',
-  '• tarefas atrasadas  /  tarefas do Rodrigo  /  minhas tarefas',
-  '• tarefa concluída: revisar contrato da Custeio',
-  '• tarefa: mudar o prazo de revisar contrato para dia 30',
+  'Sou o agente de tarefas. Me marque com @ e diga o que precisa:',
+  '• @Root tarefa pro Pedro: revisar contrato da Custeio até sexta',
+  '• @Root tarefas atrasadas  /  tarefas do Rodrigo  /  minhas tarefas',
+  '• @Root tarefa concluída: revisar contrato da Custeio',
+  '• @Root muda o prazo de revisar contrato para dia 30',
 ].join('\n');
 
 export const LIMITE_DA_LISTA = 15;

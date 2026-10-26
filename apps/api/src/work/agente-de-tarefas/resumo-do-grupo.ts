@@ -89,7 +89,7 @@ export function montarResumo(
     : `🌙 *Fechamento do dia (${diaCurto(hoje)}): ${pendentes ? `${pendentes} ${pendentes > 1 ? 'tarefas ficaram' : 'tarefa ficou'} sem fazer` : 'tudo feito 🎉'}*`;
   const pe = [
     semDono ? `Sem responsável, vencendo: ${semDono}. Veja no Dia a dia.` : null,
-    turno === 'noite' ? 'Concluiu? Responda: tarefa concluída: <nome da tarefa>' : null,
+    turno === 'noite' ? 'Concluiu? Marque o @Root: tarefa concluída: <nome da tarefa>' : null,
   ].filter(Boolean).join('\n');
   return [cabeca, '', blocos.join('\n\n'), pe ? `\n${pe}` : ''].join('\n').trim();
 }
