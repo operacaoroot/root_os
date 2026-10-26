@@ -52,6 +52,10 @@ interface Filtro {
 }
 const CHAVES: (keyof Filtro)[] = ['etapa', 'canal', 'vendedor', 'situacao', 'fechado', 'entrada'];
 type Aba = 'painel' | 'negocios';
+/** Integração 26/10: o tipo do acordo no singular e no plural. */
+const ROTULO_DO_TIPO: Record<string, [string, string]> = {
+  pagante: ['pagante', 'pagantes'], parceria: ['parceria', 'parcerias'], permuta: ['permuta', 'permutas'], repasse: ['repasse', 'repasses'],
+};
 const SITUACAO: Record<Situacao, string> = { aberta: 'Em negociação', ganho: 'Fechados', perdido: 'Perdidos', pausa: 'Na geladeira' };
 
 function lerUrl(): { ver: Aba; filtro: Filtro } {
@@ -288,7 +292,26 @@ function Destaque({ p, abrir }: { p: PainelComercial; abrir: (f: Filtro) => void
           />
         </div>
         <div className="mt-5 grid gap-4 border-t border-border pt-4 sm:grid-cols-3">
-          <Numero rotulo="Clientes ativos" valor={String(p.totais.clientesAtivos)} nota="fecharam e seguem com contrato" tamanho="medio" onClick={() => abrir({ situacao: 'ganho' })} />
+          {/* Integração 26/10: clientes pelos acordos do Financeiro (pagante, parceria, permuta, repasse); o funil só vê quem fechou nele. */}
+          {p.totais.clientesPorAcordo && p.totais.clientesPorAcordo.total > 0 ? (
+            <div className="rounded-md p-1">
+              <Numero
+                rotulo="Clientes ativos" valor={String(p.totais.clientesPorAcordo.total)} tamanho="medio"
+                nota={p.totais.clientesPorAcordo.porTipo.map((t) => `${t.clientes.length} ${ROTULO_DO_TIPO[t.tipo]?.[t.clientes.length === 1 ? 0 : 1] ?? t.tipo}`).join(' · ')}
+                onClick={() => abrir({ situacao: 'ganho' })}
+              />
+              <details className="mt-1 text-[12px] text-muted">
+                <summary className="cursor-pointer hover:text-text">quem são · {p.totais.clientesAtivos} fecharam no funil</summary>
+                <ul className="mt-1 space-y-0.5">
+                  {p.totais.clientesPorAcordo.porTipo.map((t) => (
+                    <li key={t.tipo}><b className="font-medium text-text">{ROTULO_DO_TIPO[t.tipo]?.[1] ?? t.tipo}:</b> {t.clientes.join(', ')}</li>
+                  ))}
+                </ul>
+              </details>
+            </div>
+          ) : (
+            <Numero rotulo="Clientes ativos" valor={String(p.totais.clientesAtivos)} nota="fecharam e seguem com contrato" tamanho="medio" onClick={() => abrir({ situacao: 'ganho' })} />
+          )}
           <Link href="/comercial/contratos" className="group rounded-md p-1 hover:bg-surface-2">
             <div className="com-rotulo">Contratos vivos</div>
             <div className="com-num mt-1.5 text-[1.5rem] font-bold leading-none">{p.totais.contratosVivos}</div>

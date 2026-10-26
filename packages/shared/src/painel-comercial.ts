@@ -101,6 +101,12 @@ export interface PainelComercial {
     clientesAtivos: number;
     /** Contratos vivos: `cliente.ativo` sem encerramento (a mesma conta de Contratos vivos). */
     contratosVivos: number;
+    /**
+     * INTEGRAÇÃO (26/10/2026): os clientes pelos ACORDOS do Financeiro (pagante,
+     * parceria, permuta, repasse), um por cliente (o cadastro duplicado conta no
+     * principal). É o "clientes ativos" de verdade: o funil só vê quem fechou nele.
+     */
+    clientesPorAcordo?: { total: number; porTipo: { tipo: string; clientes: string[] }[] };
   };
   etapas: PainelComercialEtapa[];
   fechadosPorMes: PainelComercialMes[];
@@ -153,6 +159,8 @@ export interface LinhaDaListaDeLeads {
   entrouEm: string;
   /** O último fato do fio do lead ou a última mudança da ficha. */
   ultimaAtividade: string;
+  /** Valor da proposta na ficha (R$), o mesmo do Painel; nulo sem proposta. */
+  valor?: number | null;
 }
 
 export interface ListaDeLeads {

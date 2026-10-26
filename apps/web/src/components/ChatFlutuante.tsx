@@ -44,6 +44,10 @@ const CHIPS = [
 export function ChatFlutuante() {
   const { token, can } = useAuth();
   const [aberto, setAberto] = useState(false);
+  // Layout 26/10 (P-27): a aba WhatsApp mostra a caixa de conversas aqui mesmo, de qualquer tela.
+  // Ela só monta na primeira vez que a aba abre (não pesa o resto) e depois fica montada.
+  const [aba, setAba] = useState<'central' | 'whatsapp'>('central');
+  const [whatsMontado, setWhatsMontado] = useState(false);
   const [texto, setTexto] = useState('');
   const [trocas, setTrocas] = useState<Troca[]>([]);
   const [rodando, setRodando] = useState(false);
@@ -59,7 +63,11 @@ export function ChatFlutuante() {
   // do agente continua rodando — e gastando — para ninguém.
   useEffect(() => () => cancelar.current?.(), []);
 
-  if (!can('mcp.executar')) return null;
+  const podeCentral = can('mcp.executar');
+  const podeWhats = can('leads.ver');
+  if (!podeCentral && !podeWhats) return null;
+  const abaAtual = !podeCentral ? 'whatsapp' : !podeWhats ? 'central' : aba;
+  if (abaAtual === 'whatsapp' && aberto && !whatsMontado) setWhatsMontado(true);
 
   async function perguntar(pergunta: string) {
     if (!pergunta.trim() || rodando) return;
@@ -140,12 +148,27 @@ export function ChatFlutuante() {
   }
 
   return (
-    <div className="fixed bottom-5 right-5 z-40 flex h-[min(620px,80vh)] w-[min(440px,92vw)] flex-col rounded-root border border-border bg-bg2 shadow-2xl">
-      <header className="flex flex-none items-center gap-2 border-b border-border px-3 py-2 font-os-mono">
-        <span className="text-[11px] uppercase tracking-[0.14em] text-text">a central</span>
-        <span className="text-[9.5px] text-muted">pergunte em português</span>
+    <div className={`fixed bottom-5 right-5 z-40 flex flex-col rounded-root border border-border bg-bg2 shadow-2xl ${abaAtual === 'whatsapp' ? 'h-[min(680px,85vh)] w-[min(460px,94vw)]' : 'h-[min(620px,80vh)] w-[min(440px,92vw)]'}`}>
+      <header className="flex flex-none items-center gap-1 border-b border-border px-2 py-1.5 font-os-mono">
+        <div role="tablist" aria-label="O que abrir" className="flex items-center gap-1">
+          {podeCentral && (
+            <button type="button" role="tab" aria-selected={abaAtual === 'central'} onClick={() => setAba('central')} className={`rounded-root px-2 py-1 text-[11px] uppercase tracking-[0.14em] transition-colors ${abaAtual === 'central' ? 'bg-surface-2 text-text' : 'text-muted hover:text-text'}`}>
+              a central
+            </button>
+          )}
+          {podeWhats && (
+            <button type="button" role="tab" aria-selected={abaAtual === 'whatsapp'} onClick={() => setAba('whatsapp')} className={`rounded-root px-2 py-1 text-[11px] uppercase tracking-[0.14em] transition-colors ${abaAtual === 'whatsapp' ? 'bg-surface-2 text-text' : 'text-muted hover:text-text'}`}>
+              whatsapp
+            </button>
+          )}
+        </div>
         <span className="flex-1" />
-        {sessionId && (
+        {abaAtual === 'whatsapp' && (
+          <Link href="/whatsapp" title="Abrir a caixa inteira" className="text-[9.5px] uppercase tracking-[0.1em] text-brand hover:underline">
+            abrir inteira
+          </Link>
+        )}
+        {abaAtual === 'central' && sessionId && (
           <Link
             href={`/sessoes/${sessionId}`}
             title="Abrir esta sessão no registro"
@@ -159,7 +182,15 @@ export function ChatFlutuante() {
         </button>
       </header>
 
-      <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-3 py-3">
+      {whatsMontado && (
+        <iframe
+          src="/whatsapp"
+          title="Conversas do WhatsApp"
+          className={`min-h-0 w-full flex-1 rounded-b-root border-0 bg-bg ${abaAtual === 'whatsapp' ? '' : 'hidden'}`}
+        />
+      )}
+
+      <div className={`min-h-0 flex-1 space-y-4 overflow-y-auto px-3 py-3 ${abaAtual === 'central' ? '' : 'hidden'}`}>
         {trocas.length === 0 && (
           <div className="space-y-3">
             <p className="text-[12px] leading-[1.6] text-muted">
@@ -248,7 +279,7 @@ export function ChatFlutuante() {
           e.preventDefault();
           perguntar(texto);
         }}
-        className="flex flex-none items-center gap-2 border-t border-border px-3 py-2"
+        className={`flex flex-none items-center gap-2 border-t border-border px-3 py-2 ${abaAtual === 'central' ? '' : 'hidden'}`}
       >
         <input
           value={texto}

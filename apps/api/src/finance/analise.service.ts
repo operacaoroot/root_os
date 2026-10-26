@@ -33,6 +33,8 @@ export const AcordoInputSchema = z.object({
   tipo: z.enum(TIPOS_DE_ACORDO),
   observacao: z.string().trim().max(300).nullable().optional(),
   apelidos: z.string().trim().max(300).nullable().optional(),
+  // Integração 26/10: o cliente do Financeiro deste acordo (nulo = ainda não ligado).
+  partnerId: z.string().uuid().nullable().optional(),
 });
 export const AcordoUpdateSchema = AcordoInputSchema.partial();
 export const LeituraInputSchema = z.object({ refazer: z.boolean().optional() }).default({});
@@ -61,11 +63,19 @@ export class AnaliseService {
   ) {}
 
   // ---------------- acordos ----------------
+  /** Integração 26/10: o cliente escolhido no acordo tem de ser desta empresa. */
+  private async clienteDaEmpresa(orgId: string, partnerId: string | null | undefined): Promise<void> {
+    if (!partnerId) return;
+    const p = await this.prisma.partner.findFirst({ where: { id: partnerId, orgId }, select: { id: true } });
+    if (!p) throw new NotFoundException('Cliente não encontrado nesta empresa.');
+  }
+
   listAcordos(orgId: string) {
-    return this.prisma.acordoComercial.findMany({ where: { orgId }, orderBy: [{ tipo: 'asc' }, { cliente: 'asc' }] });
+    return this.prisma.acordoComercial.findMany({ where: { orgId }, orderBy: [{ tipo: 'asc' }, { cliente: 'asc' }], include: { partner: { select: { razaoSocial: true, nomeFantasia: true } } } });
   }
 
   async createAcordo(orgId: string, input: z.infer<typeof AcordoInputSchema>, actorId: string) {
+    await this.clienteDaEmpresa(orgId, input.partnerId);
     const a = await this.prisma.acordoComercial.create({
       data: { orgId, ...input, valor: new Prisma.Decimal(input.valor), observacao: input.observacao ?? null, apelidos: input.apelidos ?? null },
     });
@@ -74,6 +84,7 @@ export class AnaliseService {
   }
 
   async updateAcordo(orgId: string, id: string, input: z.infer<typeof AcordoUpdateSchema>, actorId: string) {
+    await this.clienteDaEmpresa(orgId, input.partnerId);
     const antes = await this.prisma.acordoComercial.findFirst({ where: { id, orgId } });
     if (!antes) throw new NotFoundException('Acordo não encontrado');
     const data: Prisma.AcordoComercialUpdateInput = { ...input, valor: input.valor !== undefined ? new Prisma.Decimal(input.valor) : undefined };
@@ -140,6 +151,8 @@ export class AnaliseService {
       const esperaCaixa = a.tipo === 'pagante';
       return {
         id: a.id, cliente: a.cliente, produto: a.produto, tipo: a.tipo, valor, observacao: a.observacao, apelidos: a.apelidos,
+        // Integração 26/10: o cliente cadastrado a que o acordo está ligado.
+        partnerId: a.partnerId ?? null, partnerNome: a.partner ? (a.partner.nomeFantasia || a.partner.razaoSocial) : null,
         recebido, aReceber, semRastro: esperaCaixa ? r2(Math.max(0, valor - recebido - aReceber)) : 0,
       };
     });

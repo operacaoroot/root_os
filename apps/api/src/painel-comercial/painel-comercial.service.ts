@@ -76,6 +76,35 @@ export function rotuloDoProduto(produto: string | null | undefined): string | nu
 export class PainelComercialService {
   constructor(private readonly prisma: PrismaService) {}
 
+  /**
+   * INTEGRAÇÃO (26/10/2026): quem é cliente pelos acordos do Financeiro, por tipo.
+   * Um cliente conta uma vez: pelo cadastro do Financeiro (o principal, quando há
+   * duplicado) ou, no acordo ainda não ligado, pelo nome escrito. Só lê.
+   */
+  private async clientesPorAcordo(orgId: string): Promise<{ total: number; porTipo: { tipo: string; clientes: string[] }[] }> {
+    const acordos = await this.prisma.acordoComercial.findMany({
+      where: { orgId },
+      select: {
+        cliente: true, tipo: true, partnerId: true,
+        partner: { select: { principalId: true, razaoSocial: true, nomeFantasia: true, principal: { select: { razaoSocial: true, nomeFantasia: true } } } },
+      },
+    });
+    const ORDEM = ['pagante', 'parceria', 'permuta', 'repasse'];
+    const porTipo = new Map<string, Map<string, string>>();
+    const todos = new Set<string>();
+    for (const a of acordos) {
+      const p = a.partner;
+      const chave = p ? (p.principalId ?? a.partnerId!) : `nome:${a.cliente.trim().toLowerCase()}`;
+      const nome = p ? (p.principal?.nomeFantasia || p.principal?.razaoSocial || p.nomeFantasia || p.razaoSocial) : a.cliente.trim();
+      const tipo = (a.tipo || 'outro').toLowerCase();
+      if (!porTipo.has(tipo)) porTipo.set(tipo, new Map());
+      porTipo.get(tipo)!.set(chave, nome);
+      todos.add(chave);
+    }
+    const tipos = [...porTipo.keys()].sort((x, y) => (ORDEM.indexOf(x) + 1 || 99) - (ORDEM.indexOf(y) + 1 || 99));
+    return { total: todos.size, porTipo: tipos.map((t) => ({ tipo: t, clientes: [...porTipo.get(t)!.values()].sort((a, b) => a.localeCompare(b, 'pt')) })) };
+  }
+
   async painel(orgId: string, agora = new Date()): Promise<PainelComercial> {
     const ano = Number(mesDe(agora).slice(0, 4));
 
@@ -242,6 +271,7 @@ export class PainelComercialService {
         ganhosSemValor: ganhosAno.length - ganhosComValor.length,
         clientesAtivos: cards.filter((c) => c.clienteAtivo).length,
         contratosVivos: cards.filter((c) => c.contratoVivo).length,
+        clientesPorAcordo: await this.clientesPorAcordo(orgId),
       },
       etapas,
       fechadosPorMes: porMes(
@@ -271,7 +301,7 @@ export class PainelComercialService {
         select: {
           id: true, name: true, email: true, phone: true, ownerId: true, enteredAt: true, updatedAt: true,
           source: { select: { name: true } },
-          ficha: { select: { etapa: true, empresa: true, canal: true, donoId: true, atualizadoEm: true } },
+          ficha: { select: { etapa: true, empresa: true, canal: true, donoId: true, atualizadoEm: true, valorCentavos: true } },
         },
       }),
     ]);
@@ -302,6 +332,8 @@ export class PainelComercialService {
         canal: rotuloDoCanal(l.ficha?.canal) ?? l.source?.name ?? null,
         dono: nomeDoDono.get(l.ficha?.donoId ?? '') ?? nomeDoDono.get(l.ownerId ?? '') ?? null,
         entrouEm: l.enteredAt.toISOString(),
+        // Layout 26/10 (P-33): o valor da ficha, o mesmo do Painel e de Negócios.
+        valor: l.ficha?.valorCentavos != null ? l.ficha.valorCentavos / 100 : null,
         ultimaAtividade: ultima.toISOString(),
       };
     });

@@ -12,7 +12,7 @@ import { apiDelete, apiGet, apiPatch, apiPost } from '@/lib/api';
  */
 
 type Tipo = 'pagante' | 'permuta' | 'repasse' | 'parceria';
-type Linha = { id: string; cliente: string; produto: string; tipo: Tipo; valor: number; observacao: string | null; apelidos: string | null; recebido: number; aReceber: number; semRastro: number };
+type Linha = { id: string; cliente: string; produto: string; tipo: Tipo; valor: number; observacao: string | null; apelidos: string | null; recebido: number; aReceber: number; semRastro: number; partnerId?: string | null; partnerNome?: string | null };
 type Recorrente = {
   id: string; tipo: 'entrada' | 'saida'; descricao: string; quem: string | null; valor: number; periodicidade: string; dia: number; porMes: number;
   noMes: { pago: number; previsto: number; vence: string | null };
@@ -93,6 +93,17 @@ export function AnaliseView({ token, canEdit, onError }: { token: string | null;
   const [mediaMensal, setMediaMensal] = useState(false);
   const [porMes, setPorMes] = useState(false);
   const [tipoFiltro, setTipoFiltro] = useState<Tipo | null>(null);
+  // Integração 26/10: os cadastros de cliente do Financeiro, para ligar cada acordo ao seu.
+  const [clientes, setClientes] = useState<{ id: string; nome: string }[]>([]);
+  const [partnerDoForm, setPartnerDoForm] = useState('');
+  useEffect(() => {
+    if (!token) return;
+    apiGet<{ items: { id: string; razaoSocial: string; nomeFantasia: string | null; isCliente: boolean }[] }>('/finance/partners', token)
+      .then((x) => setClientes(x.items.map((p) => ({ id: p.id, nome: p.nomeFantasia || p.razaoSocial })).sort((a, b) => a.nome.localeCompare(b.nome, 'pt'))))
+      .catch(() => setClientes([]));
+  }, [token]);
+  const ligar = (id: string, partnerId: string) =>
+    apiPatch(`/finance/analise/acordos/`, { partnerId: partnerId || null }, token).then(carregar).catch(onError);
 
   const carregar = useCallback(() => {
     if (!token) return;
@@ -115,7 +126,7 @@ export function AnaliseView({ token, canEdit, onError }: { token: string | null;
     if (!form.cliente || !form.produto || !form.valor) { onError(new Error('Preencha cliente, produto e valor.')); return; }
     apiPost('/finance/analise/acordos', {
       cliente: form.cliente, produto: form.produto, valor: Number(form.valor), tipo: form.tipo,
-      observacao: form.observacao || null, apelidos: form.apelidos || null,
+      observacao: form.observacao || null, apelidos: form.apelidos || null, partnerId: partnerDoForm || null,
     }, token)
       .then(() => { setForm({ cliente: '', produto: '', valor: '', tipo: 'pagante', observacao: '', apelidos: '' }); setAberto(false); carregar(); })
       .catch(onError);
@@ -348,7 +359,16 @@ export function AnaliseView({ token, canEdit, onError }: { token: string | null;
               {r.acordos.linhas.length === 0 && <tr><td colSpan={8} className="py-4 text-center text-muted">Nenhum acordo cadastrado.</td></tr>}
               {r.acordos.linhas.filter((l) => !tipoFiltro || l.tipo === tipoFiltro).map((l) => (
                 <tr key={l.id} className="border-t border-border">
-                  <td className="py-2 pr-3">{l.cliente}</td>
+                  <td className="py-2 pr-3">
+                    {l.cliente}
+                    {/* Integração 26/10: a qual cadastro de cliente este acordo está ligado. */}
+                    {canEdit ? (
+                      <select aria-label={`Cliente cadastrado de `} value={l.partnerId ?? ''} onChange={(e) => ligar(l.id, e.target.value)} className="mt-0.5 block max-w-[14rem] rounded border border-transparent bg-transparent px-0 text-[12px] text-muted hover:border-border">
+                        <option value="">não ligado a um cadastro</option>
+                        {clientes.map((c) => <option key={c.id} value={c.id}>ligado a {c.nome}</option>)}
+                      </select>
+                    ) : l.partnerNome ? <span className="block text-[12px] text-muted">ligado a {l.partnerNome}</span> : null}
+                  </td>
                   <td className="py-2 pr-3 text-muted">{l.produto}{l.observacao && <span className="block text-[12px]">{l.observacao}</span>}</td>
                   <td className="py-2 pr-3"><span className="inline-flex items-center gap-1.5"><span className={`h-2 w-2 rounded-full ${COR[l.tipo]}`} />{ROTULO[l.tipo]}</span></td>
                   <td className="py-2 pr-3 text-right tabular-nums">{brl(l.valor)}</td>
@@ -371,6 +391,10 @@ export function AnaliseView({ token, canEdit, onError }: { token: string | null;
             ) : (
               <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
                 <input className={inputCls} placeholder="Cliente" value={form.cliente} onChange={(e) => setForm({ ...form, cliente: e.target.value })} />
+                <select className={inputCls} value={partnerDoForm} onChange={(e) => setPartnerDoForm(e.target.value)} aria-label="Cliente cadastrado">
+                  <option value="">Cliente cadastrado (opcional)…</option>
+                  {clientes.map((c) => <option key={c.id} value={c.id}>{c.nome}</option>)}
+                </select>
                 <input className={inputCls} placeholder="Produto (ex.: Operação ROOT)" value={form.produto} onChange={(e) => setForm({ ...form, produto: e.target.value })} />
                 <input className={inputCls} type="number" step="0.01" placeholder="Valor" value={form.valor} onChange={(e) => setForm({ ...form, valor: e.target.value })} />
                 <select className={inputCls} value={form.tipo} onChange={(e) => setForm({ ...form, tipo: e.target.value as Tipo })}>

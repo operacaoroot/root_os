@@ -283,7 +283,8 @@ export class VinculoDoWhatsappService {
       const l = await db.lead.findFirst({ where: { id, orgId }, select: { id: true } });
       if (!l) throw new NotFoundException('Lead não encontrado nesta empresa.');
     } else {
-      const p = await db.partner.findFirst({ where: { id, orgId, isCliente: true }, select: { id: true } });
+      // Integração 26/10: cliente também é quem tem acordo (parceria, permuta, repasse).
+      const p = await db.partner.findFirst({ where: { id, orgId, OR: [{ isCliente: true }, { acordos: { some: {} } }] }, select: { id: true } });
       if (!p) throw new NotFoundException('Cliente não encontrado nesta empresa.');
     }
   }
@@ -353,6 +354,25 @@ export class VinculoDoWhatsappService {
     await this.conversaOu404(this.prisma, orgId, conversaId);
     await this.alvoOu404(this.prisma, orgId, e.tipo, e.id);
     const mudou = await this.prisma.$transaction((tx) => this.vincularNaTransacao(tx, orgId, conversaId, e, quem.id, 'manual'));
+    return { conversa: await this.projetada(orgId, conversaId), mudou };
+  }
+
+  /**
+   * Integração 26/10: a conversa é de um cliente que ainda não existe no OS (o Lucas
+   * Rezende, por exemplo). Cria o cadastro de cliente com o nome digitado e vincula,
+   * numa transação só. O cadastro nasce como cliente, o mesmo que o Financeiro usa.
+   */
+  async cadastrarClienteEVincular(orgId: string, conversaId: string, corpo: unknown, quem: QuemVincula): Promise<ResultadoDoVinculo> {
+    const nome = typeof corpo === 'object' && corpo !== null && typeof (corpo as { nome?: unknown }).nome === 'string' ? (corpo as { nome: string }).nome.trim().slice(0, 160) : '';
+    if (nome.length < 2) throw new BadRequestException('Escreva o nome do cliente (pelo menos 2 letras).');
+    await this.exigirGente(orgId, quem);
+    await this.conversaOu404(this.prisma, orgId, conversaId);
+    const mudou = await this.prisma.$transaction(async (tx) => {
+      const igual = await tx.partner.findFirst({ where: { orgId, interno: false, OR: [{ razaoSocial: { equals: nome, mode: 'insensitive' } }, { nomeFantasia: { equals: nome, mode: 'insensitive' } }] }, select: { id: true, isCliente: true, principalId: true } });
+      const id = igual ? (igual.principalId ?? igual.id) : (await tx.partner.create({ data: { orgId, razaoSocial: nome, isCliente: true }, select: { id: true } })).id;
+      if (igual && !igual.isCliente && !igual.principalId) await tx.partner.update({ where: { id }, data: { isCliente: true } });
+      return this.vincularNaTransacao(tx, orgId, conversaId, { tipo: 'cliente', id }, quem.id, 'manual');
+    });
     return { conversa: await this.projetada(orgId, conversaId), mudou };
   }
 
@@ -510,7 +530,9 @@ export class VinculoDoWhatsappService {
     const alvos: AlvoDaBusca[] = [];
     if (tipo !== 'lead') {
       const clientes = await this.prisma.partner.findMany({
-        where: { orgId, isCliente: true, ativo: true, interno: false },
+        // Integração 26/10: também quem é cliente pelos acordos (parceria, permuta, repasse),
+        // e só o cadastro principal (o duplicado aponta para ele e não aparece de novo).
+        where: { orgId, ativo: true, interno: false, principalId: null, OR: [{ isCliente: true }, { acordos: { some: {} } }] },
         select: { id: true, razaoSocial: true, nomeFantasia: true },
         take: 5000,
       });

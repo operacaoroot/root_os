@@ -32,6 +32,12 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
   const publica = PUBLICAS.some((p) => pathname === p || pathname.startsWith(`${p}/`));
+  // Layout 26/10 (P-27): a caixa do WhatsApp aberta dentro do "Perguntar" vem num quadro (iframe)
+  // da própria tela /whatsapp. Ali dentro a casca some (sem menu, barra e balão): só a tela.
+  const [embutido, setEmbutido] = useState(false);
+  useEffect(() => {
+    try { setEmbutido(window.self !== window.top); } catch { setEmbutido(true); }
+  }, []);
 
   // Layout 26/10 (P-17): o campo de data abre o calendário no clique em qualquer
   // parte dele, não só no ícone. Vale para todo campo de data, hora e mês do OS.
@@ -80,6 +86,17 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   // motivo: ele depende do token, e nas superfícies públicas não há sessão nem
   // caixa pessoal para medir. Ele alimenta o selo da barra lateral e a própria
   // tela `/caixa` — as duas lendo o mesmo número, medido uma vez por navegação.
+  if (embutido) {
+    return (
+      <ModulosProvider>
+        <CaixaProvider>
+          <div data-os-app data-os-embutido className="flex h-screen min-h-0 flex-col p-2">
+            <PortaDoModulo>{children}</PortaDoModulo>
+          </div>
+        </CaixaProvider>
+      </ModulosProvider>
+    );
+  }
   return (
     <ModulosProvider>
       <CaixaProvider>

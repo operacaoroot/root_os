@@ -376,3 +376,7 @@ body {
   select optgroup { color: rgb(var(--os-tx3)); font-size: 11px; }
   select::picker-icon { color: rgb(var(--os-tx3)); }
 }
+
+/* Layout 26/10 (P-27): a caixa do WhatsApp dentro do "Perguntar" ocupa o quadro inteiro, sem a conta do topo do OS. */
+[data-os-embutido] [data-testid="caixa"] { height: 100%; min-height: 0; }
+[data-os-embutido] [data-testid="caixa"] > header { display: none; }

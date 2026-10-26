@@ -5,6 +5,7 @@ import Link from 'next/link';
 import type { ListaDeLeads, LinhaDaListaDeLeads, QuadroDaLista, ReuniaoSemCliente } from '@mktos/shared';
 import { apiGet, apiPost } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
+import { partesDoLead } from '@/lib/nome-do-lead';
 import { abrirFicha } from '@/lib/ficha';
 import { NovaOportunidadeExercicio } from './NovaOportunidadeExercicio';
 
@@ -43,6 +44,9 @@ function celula(v: string | null): string {
   return /[";\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
 }
 const CABECALHO = ['Contato', 'Empresa', 'Telefone', 'E-mail', 'Etapa', 'Canal', 'Dono', 'Última atividade'];
+// Layout 26/10 (P-33): na tela entra o Valor da ficha (o mesmo do Painel); o copiar e o CSV ficam como eram.
+const CABECALHO_DA_TELA = ['Contato', 'Empresa', 'Telefone', 'E-mail', 'Etapa', 'Valor', 'Canal', 'Dono', 'Última atividade'];
+const reais = (v: number | null | undefined) => (v == null ? null : v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL', maximumFractionDigits: 0 }));
 const linhaDoRecorte = (l: LinhaDaListaDeLeads) => [l.contato, l.empresa, l.telefone, l.email, l.etapa, l.canal, l.dono, dia(l.ultimaAtividade)];
 
 export default function ListaDeLeadsPage() {
@@ -140,24 +144,25 @@ export default function ListaDeLeadsPage() {
           <table className="w-full min-w-[980px] text-sm">
             <thead>
               <tr className="text-left">
-                {CABECALHO.map((h) => (
+                {CABECALHO_DA_TELA.map((h) => (
                   <th key={h} className="com-rotulo px-3 pb-2 pt-3 font-normal">{h}</th>
                 ))}
               </tr>
             </thead>
             <tbody className="divide-y divide-border">
               {recorte.length === 0 && (
-                <tr><td colSpan={CABECALHO.length} className="px-3 py-4 text-muted">{leads.length ? 'Nenhum lead com esse filtro.' : 'Ainda não há leads.'}</td></tr>
+                <tr><td colSpan={CABECALHO_DA_TELA.length} className="px-3 py-4 text-muted">{leads.length ? 'Nenhum lead com esse filtro.' : 'Ainda não há leads.'}</td></tr>
               )}
               {recorte.map((l) => (
                 <tr key={l.id} className="hover:bg-surface-2">
                   <td className="px-3 py-2">
-                    <Link href={`/comercial/lead/${l.id}`} className="font-medium hover:text-brand">{l.contato}</Link>
+                    <Link href={`/comercial/lead/${l.id}`} className="font-medium hover:text-brand">{partesDoLead(l.contato, l.empresa).pessoa ?? l.contato}</Link>
                   </td>
-                  <td className="px-3 py-2">{l.empresa ?? <span className="text-muted">—</span>}</td>
+                  <td className="px-3 py-2">{partesDoLead(l.contato, l.empresa).pessoa ? partesDoLead(l.contato, l.empresa).titulo : l.empresa ?? <span className="text-muted">—</span>}</td>
                   <td className="com-num whitespace-nowrap px-3 py-2">{l.telefone ?? <span className="text-muted">—</span>}</td>
                   <td className="px-3 py-2">{l.email ?? <span className="text-muted">—</span>}</td>
                   <td className="whitespace-nowrap px-3 py-2 text-muted">{l.etapa}</td>
+                  <td className="com-num whitespace-nowrap px-3 py-2 text-right">{reais(l.valor) ?? <span className="text-muted">—</span>}</td>
                   <td className="px-3 py-2 text-muted">{l.canal ?? '—'}</td>
                   <td className="px-3 py-2 text-muted">{l.dono ?? '—'}</td>
                   <td className="whitespace-nowrap px-3 py-2 text-muted">{dia(l.ultimaAtividade)}</td>

@@ -231,6 +231,19 @@ export function VinculoDaConversa({ conversa, podeVincular, aoMudar }: { convers
               ))}
             </ul>
           )}
+          {/* Integração 26/10: o cliente ainda não existe no OS? Cadastra com o nome digitado e já vincula. */}
+          {modo.tipo === 'cliente' && !trocar && q.trim().length >= 2 && (
+            <button
+              type="button"
+              disabled={!podeVincular || ocupado}
+              title={razao}
+              onClick={() => void acao('/cliente-novo', { nome: q.trim() })}
+              data-testid="whats-cadastrar-cliente"
+              className="mt-2 w-full rounded border border-dashed border-brand/60 px-2 py-1.5 text-left text-[12.5px] text-brand hover:bg-brand/10 disabled:opacity-50"
+            >
+              + cadastrar &ldquo;{q.trim()}&rdquo; como cliente e vincular
+            </button>
+          )}
         </div>
       )}
 

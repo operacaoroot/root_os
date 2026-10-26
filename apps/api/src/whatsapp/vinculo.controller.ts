@@ -107,6 +107,15 @@ export class VinculoDoWhatsappController {
     return this.eEsquece(user.orgId, this.svc.vincular(user.orgId, conversaId, body, quem(user)));
   }
 
+  /** Integração 26/10: cadastrar o cliente que ainda não existe e vincular a conversa: `{ nome }`. */
+  @Post(':conversaId/cliente-novo')
+  @HttpCode(200)
+  @RequirePermissions('leads.editar')
+  @UseGuards(SoGenteNoVinculoGuard)
+  cadastrarCliente(@CurrentUser() user: JwtUser, @Param('conversaId') conversaId: string, @Body() body: unknown): Promise<ResultadoDoVinculo> {
+    return this.eEsquece(user.orgId, this.svc.cadastrarClienteEVincular(user.orgId, conversaId, body, quem(user)));
+  }
+
   /** Aceitar a sugestão gravada (um clique). */
   @Post(':conversaId/sugestao')
   @HttpCode(200)

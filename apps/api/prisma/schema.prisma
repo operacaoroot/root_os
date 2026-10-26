@@ -945,6 +945,14 @@ model Partner {
   /// Produção 22C (W3): as conversas e mensagens do WhatsApp ligadas a este cliente.
   whatsappConversas WhatsAppConversa[] @relation("ConversasDoCliente")
   whatsappMensagens WhatsAppMensagem[] @relation("MensagensDoCliente")
+  /// INTEGRAÇÃO (26/10/2026): o mesmo cliente cadastrado duas vezes aponta para o
+  /// cadastro principal (Curral × "Curral (Marcelo Alves Meroto)"). Nada é apagado nem
+  /// fundido: as telas mostram o principal e somam os dois. Nulo = é o principal.
+  principalId  String?
+  principal    Partner?  @relation("CadastroPrincipal", fields: [principalId], references: [id], onDelete: SetNull)
+  duplicados   Partner[] @relation("CadastroPrincipal")
+  /// Os acordos comerciais deste cliente (`AcordoComercial.partnerId`).
+  acordos      AcordoComercial[] @relation("AcordosDoCliente")
 
   @@index([orgId])
 }
@@ -5900,6 +5908,11 @@ model AcordoComercial {
   observacao      String?
   /// Textos que identificam o pagador no extrato (separados por vírgula).
   apelidos        String?
+  /// INTEGRAÇÃO (26/10/2026): o cliente do Financeiro deste acordo. O nome em
+  /// `cliente` continua (é o que a Análise já usa para casar o extrato); este
+  /// vínculo é o que liga o acordo ao resto do OS. Nulo = acordo ainda não ligado.
+  partnerId       String?
+  partner         Partner? @relation("AcordosDoCliente", fields: [partnerId], references: [id], onDelete: SetNull)
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 
