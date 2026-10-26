@@ -97,6 +97,30 @@ describe('agente de tarefas: sem modelo', () => {
     expect(entenderSemModelo('minhas tarefas', ABERTAS, PESSOAS)).toEqual({ acao: 'listar', filtro: 'todas', pessoa: 'eu' });
     expect(entenderSemModelo('o que tá atrasado?', ABERTAS, PESSOAS)).toMatchObject({ acao: 'listar', filtro: 'atrasadas' });
     expect(entenderSemModelo('tarefas do Pedro', ABERTAS, PESSOAS)).toMatchObject({ acao: 'listar', pessoa: 'Pedro Magnago' });
-    expect(entenderSemModelo('tarefa pro Pedro: revisar contrato até sexta', ABERTAS, PESSOAS)).toBeNull();
+    expect(entenderSemModelo('tarefa pro Pedro: revisar contrato até sexta', ABERTAS, PESSOAS)).toMatchObject({ acao: 'criar', pessoa: 'Pedro Magnago' });
+  });
+});
+
+describe('agente de tarefas: mudar e criar sem modelo', () => {
+  const ABERTAS = [{ titulo: 'Manutenção wpp | Cultural & Clube' }, { titulo: 'FUP Dispropan' }, { titulo: 'Proposta Juma — fazer FUP' }];
+  const PESSOAS = [{ nome: 'Lucas Fernandes' }, { nome: 'Pedro Magnago' }, { nome: 'Rodrigo Saggioro' }];
+  const HOJE = '2026-10-26'; // segunda
+
+  it('muda o dia e o responsável', () => {
+    expect(entenderSemModelo('muda a da juma pra sexta', ABERTAS, PESSOAS, HOJE)).toEqual({ acao: 'alterar', tarefa: 3, prazo: '2026-10-30', pessoa: null });
+    expect(entenderSemModelo('joga dispropan pra amanhã', ABERTAS, PESSOAS, HOJE)).toMatchObject({ tarefa: 2, prazo: '2026-10-27' });
+    expect(entenderSemModelo('adia a proposta juma para 05/11', ABERTAS, PESSOAS, HOJE)).toMatchObject({ tarefa: 3, prazo: '2026-11-05' });
+    expect(entenderSemModelo('muda juma pro dia 30', ABERTAS, PESSOAS, HOJE)).toMatchObject({ tarefa: 3, prazo: '2026-10-30' });
+    expect(entenderSemModelo('passa a juma pro pedro na quarta', ABERTAS, PESSOAS, HOJE)).toEqual({ acao: 'alterar', tarefa: 3, prazo: '2026-10-28', pessoa: 'Pedro Magnago' });
+    expect(entenderSemModelo('muda o prazo do fup pra sexta-feira', ABERTAS, PESSOAS, HOJE)).toEqual({ acao: 'escolher', opcoes: [2, 3] });
+    expect(entenderSemModelo('muda relatório pra sexta', ABERTAS, PESSOAS, HOJE)).toMatchObject({ acao: 'nao-achou' });
+  });
+
+  it('cria com pessoa e data fora do título', () => {
+    expect(entenderSemModelo('tarefa pro Pedro: revisar contrato da Custeio até sexta', ABERTAS, PESSOAS, HOJE))
+      .toEqual({ acao: 'criar', titulo: 'Revisar contrato da Custeio', pessoa: 'Pedro Magnago', prazo: '2026-10-30' });
+    expect(entenderSemModelo('nova tarefa ligar pro contador amanhã', ABERTAS, PESSOAS, HOJE))
+      .toEqual({ acao: 'criar', titulo: 'Ligar pro contador', pessoa: null, prazo: '2026-10-27' });
+    expect(entenderSemModelo('anota: comprar café', ABERTAS, PESSOAS, HOJE)).toEqual({ acao: 'criar', titulo: 'Comprar café', pessoa: null, prazo: null });
   });
 });
