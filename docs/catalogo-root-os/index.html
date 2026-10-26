@@ -216,6 +216,36 @@
     </table></div>
   </section>
 
+  <section class="secao" id="mapa" aria-labelledby="t-mapa">
+    <header>
+      <h2 id="t-mapa">Mapa: onde cada cliente está (26/10, cópia da produção)</h2>
+      <p>Lido numa cópia do banco de hoje, num ambiente de teste isolado. Cada linha é um cliente ou lead; as colunas são os lugares onde ele deveria estar.</p>
+    </header>
+    <div class="tabela"><table>
+      <thead><tr><th>Cliente</th><th>Comercial (funil)</th><th>Financeiro (cadastro)</th><th>Acordo (tipo)</th><th>O que está solto</th></tr></thead>
+      <tbody>
+        <tr><td>Affari</td><td>Fechado · R$ 3.970</td><td>sim</td><td>pagante · R$ 3.970</td><td>nada</td></tr>
+        <tr><td>Curral</td><td>Fechado · R$ 7.700</td><td><b>2 cadastros</b></td><td>pagante · R$ 7.700</td><td>cliente duplicado no Financeiro</td></tr>
+        <tr><td>Custeio</td><td>Fechado · R$ 12.000</td><td><b>2 cadastros</b> (um como Lucas Martins da Costa Moreira)</td><td>pagante · R$ 12.000 + Imersão R$ 2.997</td><td>duplicado; a Imersão não aparece no Comercial</td></tr>
+        <tr><td>ProMedical</td><td>Fechado · R$ 12.000</td><td><b>2 cadastros</b></td><td>pagante · R$ 12.000</td><td>cliente duplicado no Financeiro</td></tr>
+        <tr><td>Cartório de Descoberto</td><td>Fechado · <b>sem valor</b></td><td>sim</td><td>repasse · R$ 16.000</td><td>valor só no acordo</td></tr>
+        <tr><td>Campo Bom</td><td><b>Qualificação (lead)</b></td><td>sim</td><td>parceria · R$ 12.000</td><td>é cliente de parceria, mas o funil trata como lead</td></tr>
+        <tr><td>Mais Q Contabilidade</td><td><b>Follow-up (lead)</b> · R$ 11.997</td><td>sim</td><td>parceria · R$ 12.000</td><td>é cliente de parceria, mas o funil trata como lead</td></tr>
+        <tr><td>Cultural</td><td><b>Qualificação (lead)</b>, como "Cultural | Juliano Rodrigues"</td><td>como fornecedor ("permuta da sala")</td><td>permuta · R$ 12.000</td><td>permuta aparece como lead</td></tr>
+        <tr><td>Dispropan</td><td>Follow-up · R$ 15.000</td><td><b>não</b></td><td>repasse · R$ 4.997 (2x Imersão)</td><td>valores diferentes; sem cadastro no Financeiro</td></tr>
+        <tr><td>Lucas da Guiando</td><td><b>não</b></td><td><b>não</b></td><td>parceria · R$ 2.997</td><td>só existe no acordo</td></tr>
+        <tr><td>Lucas Rezende</td><td><b>não</b></td><td><b>não</b></td><td><b>não</b></td><td>não existe no sistema; só a conversa do WhatsApp</td></tr>
+        <tr><td>Senhor aGranel</td><td>Contrato · R$ 26.000</td><td>sim</td><td>—</td><td>valor negociado é R$ 56.000</td></tr>
+        <tr><td>Papeleira Santa Rita</td><td>Contrato · R$ 10.000</td><td>—</td><td>—</td><td>em andamento</td></tr>
+        <tr><td>Paula Jaques</td><td>—</td><td>—</td><td>—</td><td>conversa do WhatsApp sem vínculo</td></tr>
+      </tbody>
+    </table></div>
+    <div class="regra">
+      <span class="rotulo">Clientes ativos de verdade</span>
+      <p><b>10 relações</b>, pelos acordos: 4 empresas pagantes (Affari, Curral, Custeio, ProMedical), 3 parcerias (Campo Bom, Mais Q, Lucas da Guiando), 1 permuta (Cultural) e 2 repasses (Cartório, Dispropan). O Comercial mostra 5 porque conta só quem fechou no funil.</p>
+    </div>
+  </section>
+
   <section class="secao" id="relatados" aria-labelledby="t-relatados">
     <header>
       <h2 id="t-relatados">Problemas relatados</h2>
@@ -307,7 +337,7 @@
         <p><b>O que acontece:</b> clicar no texto da data não abre o calendário.</p>
         <p><b>Feito:</b> clique em qualquer parte de um campo de data, hora ou mês abre o calendário, no OS inteiro.</p></article>
 
-      <article class="p" id="P-18"><div class="linha-id"><span class="id">P-18</span><span class="chip medio">função</span><span class="chip">Tarefas</span><span class="chip">a fazer</span></div>
+      <article class="p" id="P-18"><div class="linha-id"><span class="id">P-18</span><span class="chip medio">função</span><span class="chip">Tarefas</span><span class="chip">no teste · leva 4</span></div>
         <h3>"Repetir" sem opção personalizada</h3>
         <p><b>O que acontece:</b> só há Todo dia, Dias úteis, Toda semana, Todo mês e A cada N dias.</p>
         <p><b>Esperado:</b> um "Personalizar" como o do ClickUp (a cada N semanas em dias escolhidos, todo mês em tal dia da semana, até tal data). Mexe na regra de repetição: próxima leva.</p></article>
@@ -353,7 +383,7 @@
         <p><b>O que acontece:</b> a mensagem chega ao cliente só como "Root | Comercial", sem o nome de quem enviou; o "registro" era o Registro de ações do OS.</p>
         <p><b>Feito:</b> o aviso agora diz "Sai pelo número da empresa, sem o seu nome na mensagem. O OS guarda no Registro de ações que foi você quem enviou." Assinar a mensagem com o nome ("*Lucas:* …") muda o envio: a decidir.</p></article>
 
-      <article class="p" id="P-27"><div class="linha-id"><span class="id">P-27</span><span class="chip medio">função</span><span class="chip">sistema todo</span><span class="chip">a fazer</span></div>
+      <article class="p" id="P-27"><div class="linha-id"><span class="id">P-27</span><span class="chip medio">função</span><span class="chip">sistema todo</span><span class="chip">no teste · leva 4</span></div>
         <h3>Chat do WhatsApp dentro do "Perguntar", em pop-up</h3>
         <p><b>Proposta:</b> o botão "Perguntar" ganha uma aba "WhatsApp" com a caixa de conversas em tamanho compacto, para responder de qualquer tela. Só carrega quando abre, então não pesa o resto.</p></article>
 
@@ -361,12 +391,12 @@
         <h3>Negócios em ordem cronológica</h3>
         <p><b>Feito:</b> a lista de Negócios vai do negócio atualizado mais recentemente para o mais antigo (antes era por valor).</p></article>
 
-      <article class="p" id="P-29"><div class="linha-id"><span class="id">P-29</span><span class="chip alto">layout</span><span class="chip">Trabalho</span><span class="chip">a fazer</span></div>
+      <article class="p" id="P-29"><div class="linha-id"><span class="id">P-29</span><span class="chip alto">layout</span><span class="chip">Trabalho</span><span class="chip">no teste · leva 4</span></div>
         <h3>Responsável, Agente e Prazo editáveis direto na lista, com foto</h3>
         <p><b>O que acontece:</b> na lista do Trabalho essas colunas só mostram; para mudar é preciso abrir a tarefa. O responsável aparece só com as iniciais.</p>
         <p><b>Proposta:</b> clicar na célula abre a escolha ali mesmo, como no ClickUp. Foto: o avatar já mostra a foto de quem sobe uma em Perfil; o login pelo Google não guarda a foto da conta. Guardar a foto do Google no login mexe no login: leva própria.</p></article>
 
-      <article class="p" id="P-30"><div class="linha-id"><span class="id">P-30</span><span class="chip alto">layout</span><span class="chip">Trabalho</span><span class="chip">a fazer</span></div>
+      <article class="p" id="P-30"><div class="linha-id"><span class="id">P-30</span><span class="chip alto">layout</span><span class="chip">Trabalho</span><span class="chip">no teste · leva 4</span></div>
         <h3>Topo da tarefa no formato do ClickUp</h3>
         <p><b>Proposta:</b> uma grade compacta com Status, Datas, Responsáveis, Prioridade, Etiquetas e Tempo, cada um clicável, e a descrição logo abaixo, com mais espaço. A leva 2 já subiu status e prazo para o topo (P-14); falta a grade compacta.</p></article>
 
@@ -380,11 +410,36 @@
         <p><b>O que acontecia:</b> o quadro tinha a altura da tela e cada coluna rolava por dentro; a página não descia.</p>
         <p><b>Feito:</b> as colunas crescem com os cards e a página rola até o fim; o quadro ocupa no mínimo a altura da tela. Os chips de etapa no topo continuam levando até a coluna.</p></article>
 
-      <article class="p" id="P-33"><div class="linha-id"><span class="id">P-33</span><span class="chip alto">layout + dado</span><span class="chip">Comercial</span><span class="chip">a fazer</span></div>
+      <article class="p" id="P-33"><div class="linha-id"><span class="id">P-33</span><span class="chip alto">layout + dado</span><span class="chip">Comercial</span><span class="chip">no teste · leva 4</span></div>
         <h3>Lista de leads e "Em negociação agora" parecem desligadas; valor do aGranel desatualizado</h3>
         <p><b>Diagnóstico:</b> as duas leem o mesmo cadastro (lead + ficha). A lista mostra todos os leads sem valor; o painel mostra só os abertos com valor. O valor do Sr. aGranel (R$ 26.000) é o que está na ficha, vindo da proposta; os R$ 56/58/62 mil só existem no texto da Rodada da semana.</p>
         <p><b>Proposta:</b> coluna "Valor" na Lista de leads e empresa/contato separados (como nos cards). O valor do aGranel muda por uma proposta nova ou por um ajuste pelos serviços do OS, com backup, quando o valor fechado for confirmado.</p>
         <p><b>26/10:</b> o Lucas confirmou que o aGranel segue em Contrato com R$ 56.000 negociados. No modelo atual o valor da ficha só muda por "proposta publicada", "proposta aceita" ou "aceite declarado", e todos disparam automações (sala e mensagens, ou fechamento com cobrança e implantação). Nada foi alterado. Caminho: publicar a proposta de R$ 56.000 pelo OS. <b>Decisão para o Rodrigo:</b> um campo "valor negociado" na ficha, ajustável sem disparar proposta nem fechamento.</p></article>
+      <article class="p" id="P-34"><div class="linha-id"><span class="id">P-34</span><span class="chip medio">layout</span><span class="chip">sistema todo</span><span class="chip">no teste · leva 4</span></div>
+        <h3>Mãozinha: clicar e arrastar para chegar à direita</h3>
+        <p><b>O que acontecia:</b> nos quadros largos (Implantação, Trabalho, funil) era preciso descer até a barra de rolagem para ir para a direita.</p>
+        <p><b>Feito:</b> em toda área larga do OS, clicar num espaço livre e arrastar leva a tela junto. Cartões, botões, campos e tabelas continuam como eram. <b>Não muda:</b> nenhuma etapa, nenhum dado.</p></article>
+      <article class="p" id="P-35"><div class="linha-id"><span class="id">P-35</span><span class="chip medio">layout</span><span class="chip">sistema todo</span><span class="chip">no teste · leva 4</span></div>
+        <h3>Concluir e Fechar no mesmo lugar do Financeiro</h3>
+        <p><b>Feito:</b> a janela da tarefa do Trabalho (e da Implantação) ganhou o rodapé da janela do Financeiro: "As mudanças acima são salvas na hora." à esquerda; "Fechar" e "✓ Marcar como concluída" à direita. O Concluir saiu do topo. São as duas únicas janelas do OS com concluir. <b>Não muda:</b> o que concluir faz (etapa fechada, repetição).</p></article>
+      <article class="p" id="P-36"><div class="linha-id"><span class="id">P-36</span><span class="chip alto">layout</span><span class="chip">Comercial</span><span class="chip">no teste · leva 4</span></div>
+        <h3>Funil: não dava para arrastar nem escolher a etapa direto</h3>
+        <p><b>Diagnóstico:</b> o menu "mover" abria dentro da coluna, que rola por dentro: só duas etapas apareciam. O quadro ficava baixo, espremido pelo bloco de tarefas, e arrastar não levava o quadro para as colunas da direita.</p>
+        <p><b>Feito:</b> o menu "mover" abre por cima da tela, com todas as etapas e saídas à vista; a página cresce com o quadro (como o Trabalho, P-32); arrastando perto da borda, o quadro anda para o lado. <b>Não muda:</b> as regras do mover (pendências, saídas com motivo).</p></article>
+      <article class="p" id="P-37"><div class="linha-id"><span class="id">P-37</span><span class="chip medio">layout</span><span class="chip">Comercial</span><span class="chip">no teste · leva 4</span></div>
+        <h3>Tarefas do comercial: clicar na tarefa</h3>
+        <p><b>Feito:</b> no bloco "Tarefas do comercial" do funil, o título abre a tarefa no Trabalho (comentários, subtarefas, tudo). Concluir e editar na linha continuam.</p></article>
+      <article class="p" id="P-38"><div class="linha-id"><span class="id">P-38</span><span class="chip alto">conceito</span><span class="chip">Comercial · Implantação</span><span class="chip">decisão do Rodrigo</span></div>
+        <h3>Sr. aGranel aparece no funil (Contrato) e na Implantação</h3>
+        <p><b>Diagnóstico:</b> não é cadastro repetido. É o "Iniciar onboarding" (a implantação que começa antes do fechamento): o card da Implantação diz "Iniciado antes do fechamento · lead em Contrato". Para quem olha, parece duplicidade.</p>
+        <p><b>Proposta para o Rodrigo:</b> o card do funil mostrar "onboarding já iniciado" com o link para a Implantação, e o da Implantação o link para o lead. Nada foi mudado.</p></article>
+      <article class="p" id="P-39"><div class="linha-id"><span class="id">P-39</span><span class="chip alto">layout</span><span class="chip">Trabalho</span><span class="chip">no teste · leva 4</span></div>
+        <h3>Tarefas concluídas somem, como no ClickUp</h3>
+        <p><b>O que acontecia:</b> o Financeiro mostrava 3 tarefas, todas já feitas. Confundia quem abria.</p>
+        <p><b>Feito:</b> no Trabalho, concluída sai da lista e do quadro (a coluna de concluídas também); o botão "Mostrar concluídas" traz de volta. O número ao lado de cada lista conta só as abertas. "Feitas" da Visão geral continua mostrando as feitas. <b>Não muda:</b> nenhuma tarefa é apagada ou arquivada.</p></article>
+      <article class="p" id="P-40"><div class="linha-id"><span class="id">P-40</span><span class="chip medio">layout</span><span class="chip">sistema todo</span><span class="chip">no teste · leva 4</span></div>
+        <h3>Foto do Google na equipe</h3>
+        <p><b>Feito:</b> quem entra pelo Google e nunca teve foto no OS passa a ter a foto da conta Google (aparece nos avatares de responsável, Trabalho, funil). Quem já enviou ou tirou a própria foto continua mandando nela.</p></article>
     </div>
   </section>
 
