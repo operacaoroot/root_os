@@ -10,7 +10,7 @@ import { LLM_PROVIDER, type LlmProvider } from '../../llm/llm.provider';
 import { exigirAcessoAtual } from '../../memory/acesso-memoria';
 import { TarefasDoDiaService } from '../tarefas-do-dia.service';
 import {
-  AJUDA, LIMITE_DA_LISTA, MAXIMO_DE_ABERTAS_NO_CONTEXTO, acharPorNome, idsDoAgente, lerComando, lerPedidoDoGrupo,
+  AJUDA, LIMITE_DA_LISTA, MAXIMO_DE_ABERTAS_NO_CONTEXTO, acharPorNome, entenderSemModelo, idsDoAgente, lerComando, lerPedidoDoGrupo,
   linhaDaTarefa, mesmoTelefone, promptDoSistema, type Comando, type PedidoDoGrupo,
 } from './pedido-do-grupo';
 
@@ -139,7 +139,20 @@ export class AgenteDeTarefasService implements OnModuleInit {
     const painel = await this.tarefas.painel(orgId);
     const abertas = painel.tarefas.filter((t) => t.status.tipo !== 'concluida');
     const hoje = painel.hoje;
-    const comando = await this.entender(orgId, pedido, quem.nome, painel.pessoas.map((p) => p.nome), painel.areas.map((a) => a.nome), abertas, hoje);
+    // O de todo dia ("X feita", "minhas tarefas") sem modelo; o resto (criar, mudar prazo) com ele.
+    let comando = entenderSemModelo(pedido.texto, abertas, painel.pessoas);
+    if (!comando) {
+      try {
+        comando = await this.entender(orgId, pedido, quem.nome, painel.pessoas.map((p) => p.nome), painel.areas.map((a) => a.nome), abertas, hoje);
+      } catch (e) {
+        this.log.warn(`modelo indisponível (${orgId}): ${(e as Error).message.slice(0, 200)}`);
+        return {
+          resposta: 'Não consegui entender este pedido agora (a IA do OS está fora do ar). ' +
+            'Concluir e listar funcionam: "Nome da tarefa feita", "minhas tarefas", "tarefas atrasadas". Criar, por enquanto, pela tela de Tarefas.',
+          desfecho: 'modelo-indisponivel',
+        };
+      }
+    }
     if (!comando) return { resposta: `Não entendi o pedido.\n\n${AJUDA}`, desfecho: 'nao-entendido' };
 
     const pessoaDe = (nome: string | null | undefined) =>
