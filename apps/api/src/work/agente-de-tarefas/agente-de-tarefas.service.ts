@@ -10,7 +10,7 @@ import { LLM_PROVIDER, type LlmProvider } from '../../llm/llm.provider';
 import { exigirAcessoAtual } from '../../memory/acesso-memoria';
 import { TarefasDoDiaService } from '../tarefas-do-dia.service';
 import {
-  AJUDA, LIMITE_DA_LISTA, MAXIMO_DE_ABERTAS_NO_CONTEXTO, acharPorNome, lerComando, lerPedidoDoGrupo,
+  AJUDA, LIMITE_DA_LISTA, MAXIMO_DE_ABERTAS_NO_CONTEXTO, acharPorNome, idsDoAgente, lerComando, lerPedidoDoGrupo,
   linhaDaTarefa, mesmoTelefone, promptDoSistema, type Comando, type PedidoDoGrupo,
 } from './pedido-do-grupo';
 
@@ -41,6 +41,8 @@ const DIAS = ['domingo', 'segunda', 'terça', 'quarta', 'quinta', 'sexta', 'sáb
 export class AgenteDeTarefasService implements OnModuleInit {
   private readonly log = new Logger('AgenteDeTarefas');
   private readonly jid = (process.env.AGENTE_TAREFAS_JID ?? '').trim().toLowerCase();
+  /** O número comercial no grupo, pelo telefone e pelo `@lid`: só a mensagem que marca um deles é pedido. */
+  private readonly ids = idsDoAgente(process.env.AGENTE_TAREFAS_MENCOES);
   private fila: Promise<unknown> = Promise.resolve();
   private readonly seguradas = new Map<string, { titulo: string; areaId: string; pessoaId: string | null; prazo: string | null; actorId: string; ate: number }>();
 
@@ -74,7 +76,7 @@ export class AgenteDeTarefasService implements OnModuleInit {
   }
 
   private async processar(orgId: string, evento: unknown): Promise<string> {
-    const pedido = lerPedidoDoGrupo(evento, this.jid);
+    const pedido = lerPedidoDoGrupo(evento, this.jid, this.ids);
     if (!pedido) return 'ignorado:nao-e-pedido';
     const agente = await this.prisma.agent.findFirst({
       where: { orgId, slug: SLUG_DO_AGENTE_DE_TAREFAS }, select: { id: true, estado: true },
@@ -224,7 +226,7 @@ export class AgenteDeTarefasService implements OnModuleInit {
     const porque = aviso.tipo === 'nao_parece_tarefa'
       ? `Isso parece ${aviso.casa}, não tarefa (${aviso.motivo}).`
       : `Já existe uma parecida:\n${linhaDaTarefa(aviso.tarefa)}`;
-    return { resposta: `${porque}\n\nPara criar "${dados.titulo}" mesmo assim, responda: *tarefa confirmar*`, desfecho: `segurada:${r.aviso.tipo}` };
+    return { resposta: `${porque}\n\nPara criar "${dados.titulo}" mesmo assim, marque o @Root e escreva: *confirmar*`, desfecho: `segurada:${r.aviso.tipo}` };
   }
 
   private async confirmar(orgId: string, quem: { id: string; nome: string }): Promise<{ resposta: string; desfecho: string }> {

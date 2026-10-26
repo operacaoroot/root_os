@@ -1,41 +1,48 @@
 import { describe, expect, it } from 'vitest';
 
-import { acharPorNome, lerComando, lerPedidoDoGrupo, mesmoTelefone } from '../src/work/agente-de-tarefas/pedido-do-grupo';
+import { acharPorNome, idsDoAgente, lerComando, lerPedidoDoGrupo, mesmoTelefone } from '../src/work/agente-de-tarefas/pedido-do-grupo';
 
 const GRUPO = '120363407836726219@g.us';
+const IDS = idsDoAgente('5532936180013, 63617827360770');
 
-function evento(texto: string, extra: Record<string, unknown> = {}) {
+function evento(texto: string, extra: Record<string, unknown> = {}, marcados: string[] = ['63617827360770@lid']) {
   return {
     event: 'messages.upsert',
     data: {
       key: { remoteJid: GRUPO, fromMe: false, id: 'ABC', participant: '553291486277@s.whatsapp.net', ...extra },
       pushName: 'Lucas',
-      message: { conversation: texto },
+      message: { extendedTextMessage: { text: texto, contextInfo: { mentionedJid: marcados } } },
     },
   };
 }
 
 describe('agente de tarefas: o pedido do grupo', () => {
-  it('só lê mensagem que começa com "tarefa"', () => {
-    expect(lerPedidoDoGrupo(evento('bom dia, pessoal'), GRUPO)).toBeNull();
-    expect(lerPedidoDoGrupo(evento('a tarefa de ontem'), GRUPO)).toBeNull();
-    expect(lerPedidoDoGrupo(evento('Tarefa pro Pedro: revisar contrato até sexta'), GRUPO)?.texto).toBe('pro Pedro: revisar contrato até sexta');
-    expect(lerPedidoDoGrupo(evento('/tarefas atrasadas'), GRUPO)?.texto).toBe('atrasadas');
-    expect(lerPedidoDoGrupo(evento('minhas tarefas'), GRUPO)?.texto).toBe('minhas tarefas');
-    expect(lerPedidoDoGrupo(evento('tarefas'), GRUPO)?.plural).toBe(true);
+  it('só lê mensagem que marca o número comercial', () => {
+    expect(lerPedidoDoGrupo(evento('tarefa pro Pedro: revisar contrato', {}, []), GRUPO, IDS)).toBeNull();
+    expect(lerPedidoDoGrupo({ ...evento('a tarefa de ontem'), data: { ...evento('x').data, message: { conversation: 'tarefas atrasadas' } } }, GRUPO, IDS)).toBeNull();
+    expect(lerPedidoDoGrupo(evento('@227990520782943 tarefas', {}, ['227990520782943@lid']), GRUPO, IDS)).toBeNull();
+    expect(lerPedidoDoGrupo(evento('@63617827360770 tarefa pro Pedro: revisar contrato até sexta'), GRUPO, IDS)?.texto)
+      .toBe('tarefa pro Pedro: revisar contrato até sexta');
+    expect(lerPedidoDoGrupo(evento('@5532936180013 tarefas', {}, ['5532936180013@s.whatsapp.net']), GRUPO, IDS)?.plural).toBe(true);
+    expect(lerPedidoDoGrupo(evento('minhas tarefas @63617827360770'), GRUPO, IDS)?.texto).toBe('minhas tarefas');
+    expect(lerPedidoDoGrupo(evento('@63617827360770'), GRUPO, IDS)?.texto).toBe('');
+  });
+
+  it('sem ids configurados, nada é pedido', () => {
+    expect(lerPedidoDoGrupo(evento('@63617827360770 tarefas'), GRUPO, [])).toBeNull();
   });
 
   it('ignora outro grupo, eco da instância e evento que não é mensagem nova', () => {
-    expect(lerPedidoDoGrupo(evento('tarefas'), '999@g.us')).toBeNull();
-    expect(lerPedidoDoGrupo(evento('tarefas', { fromMe: true }), GRUPO)).toBeNull();
-    expect(lerPedidoDoGrupo({ ...evento('tarefas'), event: 'messages.update' }, GRUPO)).toBeNull();
+    expect(lerPedidoDoGrupo(evento('tarefas'), '999@g.us', IDS)).toBeNull();
+    expect(lerPedidoDoGrupo(evento('tarefas', { fromMe: true }), GRUPO, IDS)).toBeNull();
+    expect(lerPedidoDoGrupo({ ...evento('tarefas'), event: 'messages.update' }, GRUPO, IDS)).toBeNull();
   });
 
   it('acha o telefone do participante, também atrás de um @lid', () => {
-    expect(lerPedidoDoGrupo(evento('tarefas'), GRUPO)?.telefone).toBe('553291486277');
-    const lid = lerPedidoDoGrupo(evento('tarefas', { participant: '123@lid', participantAlt: '553299413766@s.whatsapp.net' }), GRUPO);
+    expect(lerPedidoDoGrupo(evento('tarefas'), GRUPO, IDS)?.telefone).toBe('553291486277');
+    const lid = lerPedidoDoGrupo(evento('tarefas', { participant: '123@lid', participantAlt: '553299413766@s.whatsapp.net' }), GRUPO, IDS);
     expect(lid?.telefone).toBe('553299413766');
-    expect(lerPedidoDoGrupo(evento('tarefas', { participant: '123@lid' }), GRUPO)?.telefone).toBeNull();
+    expect(lerPedidoDoGrupo(evento('tarefas', { participant: '123@lid' }), GRUPO, IDS)?.telefone).toBeNull();
   });
 });
 
