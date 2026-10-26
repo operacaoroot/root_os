@@ -244,26 +244,50 @@ export function equipeDasContas(
  * fica no histórico. `serieId` liga as ocorrências: uma série nunca tem duas
  * abertas, então concluir de novo, reabrir e concluir não duplica a próxima.
  */
+/*
+ * Layout 26/10 (P-18): o "Personalizar" do ClickUp. Dois campos opcionais, sem
+ * mexer no que já estava gravado (regra sem eles se comporta como antes):
+ *   · `intervalo` na semanal e na mensal: a cada N semanas / N meses (sem ele, 1);
+ *   · `ate` em qualquer tipo: o último dia da série (AAAA-MM-DD). A próxima
+ *     ocorrência que cairia depois dele não nasce.
+ * "A cada N dias" continua sendo o tipo `intervalo`.
+ */
+const ATE_DA_SERIE = { ate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional() };
 export const RecorrenciaSchema = z.discriminatedUnion('tipo', [
-  z.object({ tipo: z.literal('diaria') }),
+  z.object({ tipo: z.literal('diaria'), ...ATE_DA_SERIE }),
   /** dias da semana: 0 = domingo … 6 = sábado (pelo menos um). */
-  z.object({ tipo: z.literal('semanal'), dias: z.array(z.number().int().min(0).max(6)).min(1).max(7) }),
+  z.object({ tipo: z.literal('semanal'), dias: z.array(z.number().int().min(0).max(6)).min(1).max(7), intervalo: z.number().int().min(1).max(52).optional(), ...ATE_DA_SERIE }),
   /** dia do mês (1–31); em mês mais curto, o último dia. */
-  z.object({ tipo: z.literal('mensal'), dia: z.number().int().min(1).max(31) }),
-  z.object({ tipo: z.literal('intervalo'), dias: z.number().int().min(1).max(365) }),
+  z.object({ tipo: z.literal('mensal'), dia: z.number().int().min(1).max(31), intervalo: z.number().int().min(1).max(24).optional(), ...ATE_DA_SERIE }),
+  z.object({ tipo: z.literal('intervalo'), dias: z.number().int().min(1).max(365), ...ATE_DA_SERIE }),
 ]);
 export type RecorrenciaDaTarefa = z.infer<typeof RecorrenciaSchema>;
 
 const DIAS = ['domingo', 'segunda', 'terça', 'quarta', 'quinta', 'sexta', 'sábado'];
 
 export function descreverRecorrencia(r: RecorrenciaDaTarefa): string {
+  // Layout 26/10 (P-18): o fim da série vai no final da frase ("…, até 31/12/2026").
+  const ate = r.ate ? `, até ${r.ate.slice(8, 10)}/${r.ate.slice(5, 7)}/${r.ate.slice(0, 4)}` : '';
+  return `${descreverSemFim(r)}${ate}`;
+}
+
+function descreverSemFim(r: RecorrenciaDaTarefa): string {
   if (r.tipo === 'diaria') return 'Todo dia';
   if (r.tipo === 'intervalo') return r.dias === 1 ? 'Todo dia' : `A cada ${r.dias} dias`;
-  if (r.tipo === 'mensal') return `Todo mês, dia ${r.dia}`;
+  if (r.tipo === 'mensal') return (r.intervalo ?? 1) > 1 ? `A cada ${r.intervalo} meses, dia ${r.dia}` : `Todo mês, dia ${r.dia}`;
   const d = [...new Set(r.dias)].sort((a, b) => a - b);
+  if ((r.intervalo ?? 1) > 1) return `A cada ${r.intervalo} semanas: ${d.map((x) => DIAS[x]).join(', ')}`;
   if (d.length === 7) return 'Todo dia';
   if (d.join() === '1,2,3,4,5') return 'Dias úteis';
   return `Toda semana: ${d.map((x) => DIAS[x]).join(', ')}`;
+}
+
+/**
+ * Layout 26/10 (P-18): a série terminou? `dia` é o prazo que a próxima teria.
+ * Sem `ate`, nunca termina (o comportamento de antes).
+ */
+export function serieTerminou(r: RecorrenciaDaTarefa, dia: string): boolean {
+  return !!r.ate && dia > r.ate;
 }
 
 /**
@@ -276,6 +300,15 @@ export function proximaOcorrencia(r: RecorrenciaDaTarefa, prazoAtual: string | n
   const soma = (dia: string, n: number) => { const d = new Date(`${dia}T12:00:00Z`); d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0, 10); };
   if (r.tipo === 'diaria') return soma(base, 1);
   if (r.tipo === 'intervalo') return soma(base, r.dias);
+  if (r.tipo === 'semanal' && (r.intervalo ?? 1) > 1) {
+    // Layout 26/10 (P-18), a cada N semanas: os dias marcados que ainda faltam na
+    // semana da base (domingo a sábado); senão, o primeiro dia marcado N semanas depois.
+    const naSemana = new Date(`${base}T12:00:00Z`).getUTCDay();
+    const dias = [...new Set(r.dias)].sort((x, y) => x - y);
+    const aindaNestaSemana = dias.find((d) => d > naSemana);
+    if (aindaNestaSemana !== undefined) return soma(base, aindaNestaSemana - naSemana);
+    return soma(base, 7 * (r.intervalo ?? 1) - naSemana + dias[0]);
+  }
   if (r.tipo === 'semanal') {
     for (let i = 1; i <= 7; i++) {
       const dia = soma(base, i);
@@ -291,5 +324,7 @@ export function proximaOcorrencia(r: RecorrenciaDaTarefa, prazoAtual: string | n
   };
   const esteMes = noMes(a, m);
   if (esteMes > base) return esteMes;
-  return m === 12 ? noMes(a + 1, 1) : noMes(a, m + 1);
+  // Layout 26/10 (P-18): a cada N meses (sem `intervalo`, o mês seguinte, como antes).
+  const salto = m - 1 + (r.intervalo ?? 1);
+  return noMes(a + Math.floor(salto / 12), (salto % 12) + 1);
 }

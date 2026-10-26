@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { descreverRecorrencia, equipeDasContas, mesmaTarefa, proximaOcorrencia, naoPareceTarefa, situacaoDoPrazo, tituloNormalizado } from '@mktos/shared';
+import { RecorrenciaSchema, descreverRecorrencia, equipeDasContas, mesmaTarefa, proximaOcorrencia, naoPareceTarefa, serieTerminou, situacaoDoPrazo, tituloNormalizado } from '@mktos/shared';
 
 describe('tarefas do dia — o que é a mesma tarefa', () => {
   it('título igual com caixa, acento e pontuação diferentes é a MESMA tarefa', () => {
@@ -88,5 +88,53 @@ describe('tarefas que se repetem — o próximo prazo', () => {
     expect(descreverRecorrencia({ tipo: 'semanal', dias: [5, 1, 2, 3, 4] })).toBe('Dias úteis');
     expect(descreverRecorrencia({ tipo: 'semanal', dias: [1, 4] })).toBe('Toda semana: segunda, quinta');
     expect(descreverRecorrencia({ tipo: 'mensal', dia: 5 })).toBe('Todo mês, dia 5');
+  });
+});
+
+/* Layout 26/10 (P-18): o "Personalizar" — a cada N semanas/meses e o fim da série. */
+describe('tarefas que se repetem — personalizar', () => {
+  const hoje = '2026-10-19'; // segunda
+  it('regra gravada antes (sem os campos novos) continua valendo igual', () => {
+    for (const antiga of [{ tipo: 'diaria' }, { tipo: 'semanal', dias: [1, 3] }, { tipo: 'mensal', dia: 5 }, { tipo: 'intervalo', dias: 3 }]) {
+      const lida = RecorrenciaSchema.parse(antiga);
+      expect(lida).toEqual(antiga);
+      expect(serieTerminou(lida, '2099-12-31')).toBe(false);
+    }
+    // intervalo 1 é o mesmo que não ter intervalo
+    expect(proximaOcorrencia({ tipo: 'semanal', dias: [1], intervalo: 1 }, '2026-10-19', hoje)).toBe('2026-10-26');
+    expect(proximaOcorrencia({ tipo: 'mensal', dia: 5, intervalo: 1 }, '2026-10-05', '2026-10-05')).toBe('2026-11-05');
+  });
+  it('a cada N semanas: os dias que faltam na semana; depois, N semanas à frente', () => {
+    // segunda e quarta, a cada 2 semanas: da segunda vai para a quarta da mesma semana
+    expect(proximaOcorrencia({ tipo: 'semanal', dias: [1, 3], intervalo: 2 }, '2026-10-19', hoje)).toBe('2026-10-21');
+    // da quarta (último dia marcado) pula para a segunda de duas semanas depois
+    expect(proximaOcorrencia({ tipo: 'semanal', dias: [3, 1], intervalo: 2 }, '2026-10-21', hoje)).toBe('2026-11-02');
+    // só segunda, a cada 3 semanas
+    expect(proximaOcorrencia({ tipo: 'semanal', dias: [1], intervalo: 3 }, '2026-10-19', hoje)).toBe('2026-11-09');
+    // domingo, a cada 2 semanas, a partir de um sábado (a semana vai de domingo a sábado: o domingo dela foi 18/10)
+    expect(proximaOcorrencia({ tipo: 'semanal', dias: [0], intervalo: 2 }, '2026-10-24', hoje)).toBe('2026-11-01');
+  });
+  it('a cada N meses: o dia escolhido N meses depois, virando o ano e no mês curto', () => {
+    expect(proximaOcorrencia({ tipo: 'mensal', dia: 5, intervalo: 3 }, '2026-10-05', '2026-10-05')).toBe('2027-01-05');
+    expect(proximaOcorrencia({ tipo: 'mensal', dia: 10, intervalo: 2 }, '2026-12-10', '2026-12-10')).toBe('2027-02-10');
+    expect(proximaOcorrencia({ tipo: 'mensal', dia: 31, intervalo: 1 }, '2027-01-31', '2027-01-31')).toBe('2027-02-28');
+    expect(proximaOcorrencia({ tipo: 'mensal', dia: 31, intervalo: 2 }, '2026-12-31', '2026-12-31')).toBe('2027-02-28');
+    expect(proximaOcorrencia({ tipo: 'mensal', dia: 1, intervalo: 12 }, '2026-10-01', '2026-10-01')).toBe('2027-10-01');
+    // o dia ainda não chegou neste mês: fica neste mês
+    expect(proximaOcorrencia({ tipo: 'mensal', dia: 25, intervalo: 2 }, '2026-10-19', hoje)).toBe('2026-10-25');
+  });
+  it('o fim da série: a próxima depois do último dia não nasce', () => {
+    const r = RecorrenciaSchema.parse({ tipo: 'intervalo', dias: 7, ate: '2026-10-31' });
+    expect(serieTerminou(r, proximaOcorrencia(r, '2026-10-20', hoje))).toBe(false); // 27/10
+    expect(serieTerminou(r, proximaOcorrencia(r, '2026-10-27', hoje))).toBe(true); // 03/11
+    expect(serieTerminou(r, '2026-10-31')).toBe(false); // o próprio último dia ainda vale
+    expect(RecorrenciaSchema.safeParse({ tipo: 'diaria', ate: '31/10/2026' }).success).toBe(false);
+    expect(RecorrenciaSchema.safeParse({ tipo: 'semanal', dias: [1], intervalo: 0 }).success).toBe(false);
+  });
+  it('o nome da regra diz o intervalo e o fim', () => {
+    expect(descreverRecorrencia({ tipo: 'semanal', dias: [3, 1], intervalo: 2 })).toBe('A cada 2 semanas: segunda, quarta');
+    expect(descreverRecorrencia({ tipo: 'mensal', dia: 5, intervalo: 3 })).toBe('A cada 3 meses, dia 5');
+    expect(descreverRecorrencia({ tipo: 'intervalo', dias: 10, ate: '2026-12-31' })).toBe('A cada 10 dias, até 31/12/2026');
+    expect(descreverRecorrencia({ tipo: 'semanal', dias: [1, 2, 3, 4, 5], ate: '2027-01-15' })).toBe('Dias úteis, até 15/01/2027');
   });
 });

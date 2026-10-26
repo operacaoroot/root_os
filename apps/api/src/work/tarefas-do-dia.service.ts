@@ -4,7 +4,7 @@ import {
   AREAS_PADRAO, CARTOES_QUE_NAO_SAO_TAREFA, faseDaEtapa, DOMINIO_DAS_CONTAS_DO_SISTEMA, equipeDasContas, mesmaTarefa, naoPareceTarefa, notaDeSemelhanca, situacaoDoPrazo, tarefaIgual,
   type AreaDeTarefa, type PainelDeTarefas, type ResultadoDeCriar, type ResumoDaPessoa, type TarefaDoDia,
   type TarefaDoDiaCriar, type TarefaDoDiaEditar,
-  RecorrenciaSchema, proximaOcorrencia, type RecorrenciaDaTarefa,
+  RecorrenciaSchema, proximaOcorrencia, serieTerminou, type RecorrenciaDaTarefa,
 } from '@mktos/shared';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
@@ -402,7 +402,7 @@ export class TarefasDoDiaService {
     orgId: string, actorId: string,
     t: { id: string; serieId: string | null; listId: string; title: string; description: string | null; areaId: string | null; clienteId: string | null; assigneeUserId: string | null; outrosResponsaveisIds: string[]; dueDate: Date | null; recorrencia: Prisma.JsonValue },
     regra: RecorrenciaDaTarefa,
-  ): Promise<{ id: string; prazo: string }> {
+  ): Promise<{ id: string; prazo: string } | null> {
     const serie = t.serieId ?? t.id;
     if (!t.serieId) await this.prisma.workTask.update({ where: { id: t.id }, data: { serieId: serie } });
     const aberta = await this.prisma.workTask.findFirst({
@@ -411,6 +411,8 @@ export class TarefasDoDiaService {
     });
     if (aberta) return { id: aberta.id, prazo: aberta.dueDate ? diaEmBrasilia(aberta.dueDate) : '' };
     const prazo = proximaOcorrencia(regra, t.dueDate ? diaEmBrasilia(t.dueDate) : null, hojeEmBrasilia());
+    // Layout 26/10 (P-18): a próxima que cairia depois do fim da série (`ate`) não nasce.
+    if (serieTerminou(regra, prazo)) return null;
     const lista = await this.prisma.workList.findFirst({ where: { id: t.listId, orgId }, include: { statuses: { orderBy: { order: 'asc' } } } });
     const aFazer = lista?.statuses.find((s) => s.type === WorkStatusType.open) ?? lista?.statuses[0];
     if (!lista || !aFazer) throw new BadRequestException('A lista da tarefa não tem status aberto para a próxima ocorrência.');

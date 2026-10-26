@@ -5,7 +5,7 @@ import { RECUSA_DE_MAQUINA_NO_TRABALHO } from './so-gente-no-trabalho.guard';
 import {
   MODELOS_DE_LISTA, TRAB_LISTA_COM_DOIS_PAIS, TRAB_PASTA_COM_DOIS_PAIS, ehValorMonetarioCanonico, TrabTarefaUpdateHttpSchema,
   listaDaImplantacao, LISTA_DA_IMPLANTACAO, PASTA_DA_IMPLANTACAO, PORTA_DA_IMPLANTACAO,
-  CARTOES_QUE_NAO_SAO_TAREFA, RecorrenciaSchema, proximaOcorrencia, type RecorrenciaDaTarefa, type TrabTarefasOrdemInput,
+  CARTOES_QUE_NAO_SAO_TAREFA, RecorrenciaSchema, proximaOcorrencia, serieTerminou, type RecorrenciaDaTarefa, type TrabTarefasOrdemInput,
   nomeParaConfirmar, chaveDoNomeNoNivel, etapaNoDestino,
   TRAB_NOME_DE_PASTA_REPETIDO, TRAB_NOME_DE_LISTA_REPETIDO, TRAB_PASTA_DA_IMPLANTACAO_PROTEGIDA, TRAB_ORDEM_FORA_DO_NIVEL,
   TRAB_LISTA_VOLTOU_SEM_PASTA, TRAB_PASTA_VOLTOU_AO_TOPO, IMPORTACAO_CRM_MARCA,
@@ -1669,7 +1669,7 @@ export class WorkService {
    */
   private async criarProximaOcorrencia(
     orgId: string, actorId: string, id: string, regra: RecorrenciaDaTarefa,
-  ): Promise<{ id: string; dueDate: string | null }> {
+  ): Promise<{ id: string; dueDate: string | null } | null> {
     const t = await this.prisma.workTask.findFirst({
       where: { id, orgId },
       include: { tags: { select: { id: true } }, assigneeUser: { select: { isActive: true } } },
@@ -1685,6 +1685,8 @@ export class WorkService {
     if (aberta) return { id: aberta.id, dueDate: aberta.dueDate?.toISOString() ?? null };
     const dia = (d: Date) => d.toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' });
     const prazo = proximaOcorrencia(regra, t.dueDate ? dia(t.dueDate) : null, hojeEmBrasilia());
+    // Layout 26/10 (P-18): a próxima que cairia depois do fim da série (`ate`) não nasce.
+    if (serieTerminou(regra, prazo)) return null;
     // Meio-dia de São Paulo: o mesmo instante que o campo Prazo e o calendário gravam.
     const vence = new Date(`${prazo}T15:00:00.000Z`).toISOString();
     const statuses = await this.prisma.workStatus.findMany({ where: { listId: t.listId, orgId }, orderBy: { order: 'asc' } });

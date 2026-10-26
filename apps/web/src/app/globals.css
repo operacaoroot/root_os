@@ -380,3 +380,10 @@ body {
 /* Layout 26/10 (P-27): a caixa do WhatsApp dentro do "Perguntar" ocupa o quadro inteiro, sem a conta do topo do OS. */
 [data-os-embutido] [data-testid="caixa"] { height: 100%; min-height: 0; }
 [data-os-embutido] [data-testid="caixa"] > header { display: none; }
+
+/* Layout 26/10: a mãozinha. Área larga que rola de lado: arrastar um espaço livre leva a tela (ArrastarParaRolar). */
+[data-arrastavel] { cursor: grab; }
+[data-arrastavel] :is(a, button, summary, label, [role="button"], [role="tab"]) { cursor: pointer; }
+[data-arrastavel] :is(input, textarea, [contenteditable="true"]) { cursor: text; }
+[data-arrastavel] :is(table, pre) { cursor: auto; }
+[data-arrastando], [data-arrastando] * { cursor: grabbing !important; user-select: none !important; }

@@ -8,6 +8,7 @@ import { useAuth } from '@/lib/auth';
 import { Sidebar } from './Sidebar';
 import { Topbar } from './Topbar';
 import { ChatFlutuante } from './ChatFlutuante';
+import { ArrastarParaRolar } from './ArrastarParaRolar';
 import { ModulosProvider, useModulos } from './modulos';
 import { CaixaProvider } from './caixa';
 import { FichaEmJanela } from './ficha/FichaEmJanela';
@@ -120,6 +121,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           </div>
           {/* Conversar acontece aqui; o REGISTRO do que foi conversado é /sessoes.
               Nunca nas superfícies públicas — o AppShell devolve os filhos crus lá. */}
+          {/* A mãozinha: arrastar um espaço livre rola as áreas largas (quadro, funil). */}
+          <ArrastarParaRolar />
           <ChatFlutuante />
           {/* A ficha do cliente abre por cima de qualquer tela (?ficha=<id>). */}
           <FichaEmJanela />

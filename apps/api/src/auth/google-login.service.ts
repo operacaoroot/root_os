@@ -10,6 +10,7 @@ import bcrypt from 'bcryptjs';
 import { PrismaService } from '../prisma/prisma.service';
 import { comContextoDePlataforma, comContextoDaEmpresaResolvida } from '../prisma/contexto-de-plataforma';
 import { AuthService } from './auth.service';
+import { conferirFotoDePerfil } from '../perfil/imagem-do-avatar';
 
 // Login com a conta Google ("Entrar com o Gmail"). Usa a MESMA credencial OAuth do
 // conector (google.env), mas pede só openid/email/profile — nenhum acesso a dados.
@@ -150,6 +151,10 @@ export class GoogleLoginService {
       throw new LoginRecusado('nao-autorizado', `Usuário ${email} está inativo.`);
     }
 
+    // Layout 26/10: a foto da conta Google vira a foto do OS de quem ainda não tem nenhuma.
+    // Sem esperar: o login não fica mais lento nem falha por causa da foto.
+    if (profile.picture) void this.fotoDoGoogle(user.id, user.orgId, profile.picture);
+
     return this.auth.issueSession(user, ip, 'auth.login.google');
   }
 
@@ -195,7 +200,44 @@ export class GoogleLoginService {
       headers: { Authorization: `Bearer ${accessToken}` },
     });
     if (!r.ok) throw new Error(`userinfo falhou: HTTP ${r.status}`);
-    return (await r.json()) as { email?: string; email_verified?: boolean; name?: string };
+    return (await r.json()) as { email?: string; email_verified?: boolean; name?: string; picture?: string };
+  }
+
+  /**
+   * A foto da conta Google (o `picture` do perfil), guardada como a foto de perfil do OS.
+   * Só para quem NUNCA teve foto no OS: quem enviou ou tirou a sua continua mandando nela.
+   * Só baixa do domínio de fotos do Google, e a imagem passa pela mesma conferência do envio
+   * pela tela (tipo pelos bytes, tamanho, sem metadados). Qualquer falha só fica no log.
+   */
+  private async fotoDoGoogle(userId: string, orgId: string, picture: string): Promise<void> {
+    try {
+      const url = new URL(picture);
+      if (url.protocol !== 'https:' || !url.hostname.endsWith('.googleusercontent.com')) return;
+      await comContextoDaEmpresaResolvida(orgId, async () => {
+        const jaTeve = await this.prisma.fotoDePerfil.count({ where: { orgId, userId } });
+        if (jaTeve > 0) return;
+        // `=s96-c` no fim pede 96 px recortado; 256 px é o tamanho que a tela do perfil guarda.
+        const grande = url.toString().replace(/=s\d+(-c)?$/, '') + '=s256-c';
+        const r = await fetch(grande, { signal: AbortSignal.timeout(5000) });
+        if (!new URL(r.url).hostname.endsWith('.googleusercontent.com')) throw new Error('a foto saiu do domínio do Google');
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        const buffer = Buffer.from(await r.arrayBuffer());
+        const c = conferirFotoDePerfil({ buffer, mimetype: r.headers.get('content-type') ?? undefined, size: buffer.length });
+        if (!c.ok) throw new Error(c.motivo);
+        await this.prisma.$transaction(async (tx) => {
+          await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`perfil-foto:${orgId}:${userId}`}))`;
+          if ((await tx.fotoDePerfil.count({ where: { orgId, userId } })) > 0) return;
+          const agora = new Date();
+          await tx.fotoDePerfil.create({
+            data: { orgId, userId, tipo: c.tipo, largura: c.largura, altura: c.altura, tamanho: c.tamanho, sha256: c.sha256, conteudo: new Uint8Array(c.conteudo), enviadaPorId: userId, enviadaEm: agora },
+          });
+          await tx.user.updateMany({ where: { id: userId, orgId }, data: { perfilAtualizadoEm: agora } });
+        });
+        this.log.log(`Foto do Google guardada como foto de perfil (${userId}).`);
+      }, { origem: 'http' });
+    } catch (e) {
+      this.log.warn(`Foto do Google não guardada (${userId}): ${(e as Error).message}`);
+    }
   }
 
   private findUser(email: string) {

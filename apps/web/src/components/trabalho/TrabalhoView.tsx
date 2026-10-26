@@ -2,13 +2,13 @@
 
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import * as Dialog from '@radix-ui/react-dialog';
-import { Archive, Bot, Check, Clock, DoorOpen, ExternalLink, Flag, Hourglass, Maximize2, MessageSquare, PanelRight, Plus, Repeat, Settings2, Trash2, Unlock, X } from 'lucide-react';
+import { Archive, Bot, CalendarDays, Check, ChevronRight, CircleDot, Clock, DoorOpen, ExternalLink, Flag, Hourglass, Maximize2, MessageSquare, PanelRight, Plus, Repeat, Settings2, Tag, Trash2, Unlock, Users, X } from 'lucide-react';
 import {
   MODELOS_DE_LISTA, MOEDA_PADRAO, ehValorMonetarioCanonico, formatarValorMonetario, lerValorDigitadoPtBr,
   listaDaImplantacao, moedaDoValor, paraDigitarPtBr, LISTA_DA_IMPLANTACAO, PASTA_DA_IMPLANTACAO, PORTA_DA_IMPLANTACAO,
   listasComAsDoComercial, pastasComAsDoComercial,
   DICA_DO_NOME_DA_TAREFA, AGRUPAMENTOS, ROTULO_DO_AGRUPAMENTO, agruparTarefas, descreverRecorrencia,
-  ROTULO_DA_REGUA_DE_PRAZO, reguaDePrazo, GRUPOS_DA_REGUA_DE_PRAZO,
+  ROTULO_DA_REGUA_DE_PRAZO, reguaDePrazo, GRUPOS_DA_REGUA_DE_PRAZO, tituloNormalizado,
 } from '@mktos/shared';
 import type {
   VistaQuadro, TrabClienteDto, TrabAgenteDto, TrabEstrutura, TrabListaDto, TrabTarefaLista, TrabTarefaResumo,
@@ -39,7 +39,9 @@ import { EditorialTaskLink } from './EditorialTaskLink';
 import { OrigemComercialDaTarefa } from '@/app/leads/OrigemComercialDaTarefa';
 import { FontesDaTarefa } from './FontesDaTarefa';
 import { AnexosDaTarefa } from './AnexosDaTarefa';
-import { AvataresDaTarefa, SeletorOutrosResponsaveis, SeletorResponsavel, rotuloDaPessoa, soDaEquipe, useIdsDaEquipe } from './ResponsavelDaTarefa';
+import { AvataresDaTarefa, SeletorOutrosResponsaveis, SeletorResponsavel, rotuloDaPessoa, rotuloNaLista, soDaEquipe, useIdsDaEquipe } from './ResponsavelDaTarefa';
+import { EscolhaNaCelula } from './EscolhaNaCelula';
+import { AvatarDaPessoa } from '@/components/AvatarDaPessoa';
 import { CalendarioDeTarefas, diaDoPrazo, prazoDoDia } from './CalendarioDeTarefas';
 import { colunasDeTodas, destinoNaLista, idDaColuna } from './colunas-de-todas';
 import { diasDesde, formatarHoras, hojeEmBrasilia, minutosDeTexto } from '@/lib/horas';
@@ -726,18 +728,24 @@ function TrabalhoConteudo({ visaoInicial, modo, aoSairDeTodas }: { visaoInicial:
     }
   };
 
-  /** O prazo pelo calendário: um PATCH com a versão lida, como o campo Prazo do pop-up. */
-  const mudarPrazo = async (id: string, dia: string) => {
+  /**
+   * Um campo da tarefa sem abrir o pop-up: um PATCH com a versão lida, como os campos
+   * do pop-up. Layout 26/10 (P-29): o calendário e as células da Lista (responsável,
+   * prazo) passam todos por aqui; `oQue` diz na mensagem de conflito o que não foi gravado.
+   */
+  const editarNaLinha = async (id: string, mudanca: Record<string, unknown>, oQue: string) => {
     const t = tarefas?.items.find((x) => x.id === id);
     if (!editable || !t) return;
     if (!t.updatedAt) { setErro('Recarregue a lista antes de alterar esta tarefa: a versão não está disponível.'); return; }
     try {
-      await apiPatch(`/trabalho/tarefas/${t.id}`, { dueDate: prazoDoDia(dia), expectedUpdatedAt: t.updatedAt }, token);
+      await apiPatch(`/trabalho/tarefas/${t.id}`, { ...mudanca, expectedUpdatedAt: t.updatedAt }, token);
       refresh();
     } catch (e) {
-      setErro((e as { status?: number }).status === 409 ? `A tarefa "${t.title}" mudou desde que a lista foi lida. O prazo não foi gravado; recarregue a lista.` : (e as Error).message);
+      setErro((e as { status?: number }).status === 409 ? `A tarefa "${t.title}" mudou desde que a lista foi lida. ${oQue} não foi gravado; recarregue a lista.` : (e as Error).message);
     }
   };
+  /** O prazo pelo calendário: um PATCH com a versão lida, como o campo Prazo do pop-up. */
+  const mudarPrazo = (id: string, dia: string) => editarNaLinha(id, { dueDate: prazoDoDia(dia) }, 'O prazo');
 
   /**
    * O LOTE (versão final, F4): uma escrita por tarefa, em sequência, cada uma com a
@@ -1208,6 +1216,11 @@ function TrabalhoConteudo({ visaoInicial, modo, aoSairDeTodas }: { visaoInicial:
               mostrarLista={semLista} pessoas={estrutura?.pessoas ?? []} agrupamento={fAgrupar}
               selecao={editable ? { marcadas: selecionadas, mudar: setSelecionadas } : null}
               onReordenar={editable && !conflitoEtapa ? reordenar : null}
+              edicao={quadroEditavel ? {
+                idsDaEquipe, agentes: estrutura?.agentes ?? [], token, onMudou: refresh, onErro: setErro,
+                onResponsavel: (id, pessoa) => editarNaLinha(id, { assigneeUserId: pessoa }, 'O responsável'),
+                onPrazo: (id, dia) => editarNaLinha(id, { dueDate: dia ? prazoDoDia(dia) : null }, 'O prazo'),
+              } : null}
             />
           </>
         )}
@@ -1776,7 +1789,7 @@ function ControleDoAgente({ t, agentes, token, onMudou, onErro }: {
  * `title`. É a gaveta que alguém abre para decidir se solta.
  */
 function ControleDoAgenteNaGaveta({ t, agentes, editable, token, onMudou, onErro }: {
-  t: TrabTarefaDetalhe; agentes: TrabAgenteDto[]; editable: boolean; token: string | null;
+  t: TrabTarefaResumo; agentes: TrabAgenteDto[]; editable: boolean; token: string | null;
   onMudou: () => void; onErro: (m: string) => void;
 }) {
   const agente = nomeDoAgente(t);
@@ -1858,12 +1871,14 @@ type PessoaDaEstrutura = NonNullable<TrabEstrutura['pessoas']>[number];
  * agrupamento das vistas (inclusive a régua de prazo do Lucas) e ordem manual
  * (arrastar a linha sobre outra grava a sequência da lista, ou do grupo).
  */
-function Tabela({ tarefas, campos, trilhos, onAbrir, mostrarLista = false, pessoas = [], agrupamento = 'nenhum', selecao = null, onReordenar = null }: {
+function Tabela({ tarefas, campos, trilhos, onAbrir, mostrarLista = false, pessoas = [], agrupamento = 'nenhum', selecao = null, onReordenar = null, edicao = null }: {
   tarefas: TrabTarefaResumo[]; campos: string[]; trilhos: Map<string, TrilhoDoCartao>;
   onAbrir: (id: string, aba?: AbaDaTarefa) => void;
   mostrarLista?: boolean; pessoas?: PessoaDaEstrutura[]; agrupamento?: Agrupamento;
   selecao?: { marcadas: Set<string>; mudar: (s: Set<string>) => void } | null;
   onReordenar?: ((ids: string[]) => Promise<void>) | null;
+  /** Layout 26/10 (P-29): sem `edicao` (só leitura), as três células são texto como antes. */
+  edicao?: EdicaoNaLinha | null;
 }) {
   const [arrastando, setArrastando] = useState<string | null>(null);
   const menu = useMenuDaTarefa();
@@ -1958,11 +1973,21 @@ function Tabela({ tarefas, campos, trilhos, onAbrir, mostrarLista = false, pesso
                   </span>
                 </td>
                 <td className="px-3 py-2 capitalize">{t.priority}</td>
-                <td className="px-3 py-2"><AvataresDaTarefa tarefa={t} pessoas={pessoas} testId={`trabalho-responsaveis-${t.id}`} /></td>
-                <td className="px-3 py-2" title={t.agenteId ? `Assumida em ${dataHoraBR(t.agenteEm)}` : undefined}>
-                  {nomeDoAgente(t) ?? '—'}
+                {/* Layout 26/10 (P-29): as três células editam ali mesmo; o clique nelas não abre a tarefa. */}
+                <td className="px-3 py-2" onClick={edicao ? (e) => e.stopPropagation() : undefined}>
+                  {edicao ? (
+                    <ResponsavelNaLinha
+                      t={t} pessoas={pessoas} equipe={soDaEquipe(pessoas, edicao.idsDaEquipe, [t.assigneeUserId])}
+                      onEscolher={(pessoa) => edicao.onResponsavel(t.id, pessoa)}
+                    />
+                  ) : <AvataresDaTarefa tarefa={t} pessoas={pessoas} testId={`trabalho-responsaveis-${t.id}`} />}
                 </td>
-                <td className={`px-3 py-2 ${atrasada(t) ? 'text-bad' : ''}`}>{dataBR(t.dueDate)}</td>
+                <td className="px-3 py-2" title={t.agenteId ? `Assumida em ${dataHoraBR(t.agenteEm)}` : undefined} onClick={edicao ? (e) => e.stopPropagation() : undefined}>
+                  {edicao ? <AgenteNaLinha t={t} edicao={edicao} /> : nomeDoAgente(t) ?? '—'}
+                </td>
+                <td className={`px-3 py-2 ${atrasada(t) ? 'text-bad' : ''}`} onClick={edicao ? (e) => e.stopPropagation() : undefined}>
+                  {edicao ? <PrazoNaLinha t={t} onMudar={(dia) => edicao.onPrazo(t.id, dia)} /> : dataBR(t.dueDate)}
+                </td>
                 {campos.map((c) => {
                   const v = t.values.find((x) => x.fieldName === c);
                   const valor = v?.type === 'moeda' && v.value ? formatarValorMonetario(v.value) : v?.value;
@@ -1977,6 +2002,119 @@ function Tabela({ tarefas, campos, trilhos, onAbrir, mostrarLista = false, pesso
         )}
       </table>
     </div>
+  );
+}
+
+/*
+ * Layout 26/10 (P-29): AS CÉLULAS QUE EDITAM NA LISTA, como no ClickUp. Nenhuma
+ * regra nova: responsável e prazo vão pelo mesmo PATCH com a versão lida do
+ * calendário e do lote (`editarNaLinha`); o agente, pelo mesmo checkout
+ * (`/assumir`, `/soltar`) do cartão e do pop-up (`ControleDoAgenteNaGaveta`).
+ */
+type EdicaoNaLinha = {
+  idsDaEquipe: Set<string> | null; agentes: TrabAgenteDto[]; token: string | null;
+  onMudou: () => void; onErro: (m: string) => void;
+  onResponsavel: (id: string, pessoa: string | null) => Promise<void>;
+  onPrazo: (id: string, dia: string | null) => Promise<void>;
+};
+
+/** O responsável principal: as pessoas da equipe (`soDaEquipe`), com a foto de cada uma. */
+function ResponsavelNaLinha({ t, pessoas, equipe, onEscolher }: {
+  t: TrabTarefaResumo; pessoas: PessoaDaEstrutura[]; equipe: PessoaDaEstrutura[];
+  onEscolher: (pessoa: string | null) => Promise<void>;
+}) {
+  const [busca, setBusca] = useState('');
+  const disponiveis = equipe.filter((p) => p.isActive || p.id === t.assigneeUserId);
+  const termo = tituloNormalizado(busca);
+  const achadas = termo ? disponiveis.filter((p) => tituloNormalizado(p.name).includes(termo)) : disponiveis;
+  const item = 'flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-[13px] hover:bg-surface-2 disabled:opacity-50';
+  return (
+    <EscolhaNaCelula
+      rotulo={`Responsável de ${t.title}`} testId={`trabalho-celula-responsavel-${t.id}`}
+      gatilho={<AvataresDaTarefa tarefa={t} pessoas={pessoas} testId={`trabalho-responsaveis-${t.id}`} />}
+    >
+      {(fechar) => {
+        const escolher = (pessoa: string | null) => { fechar(); if (pessoa !== (t.assigneeUserId ?? null)) void onEscolher(pessoa); };
+        return (
+          <div className="space-y-0.5">
+            {/* Com muita gente, a busca vem primeiro (e já com o cursor). */}
+            {disponiveis.length > 6 && (
+              <input autoFocus aria-label="Buscar pessoa" placeholder="Buscar pessoa…" value={busca} onChange={(e) => setBusca(e.target.value)} className={`${INP} mb-1`} />
+            )}
+            <button type="button" aria-pressed={!t.assigneeUserId} onClick={() => escolher(null)} className={item}>
+              <span aria-hidden className="grid h-5 w-5 shrink-0 place-items-center rounded-full border border-dashed border-border font-os-mono text-[9px] text-dim">?</span>
+              <span className="min-w-0 flex-1 truncate text-muted">Sem vínculo de pessoa</span>
+              {!t.assigneeUserId && <Check size={13} className="shrink-0 text-brand" />}
+            </button>
+            {achadas.map((p) => {
+              const atual = p.id === t.assigneeUserId;
+              return (
+                <button key={p.id} type="button" aria-pressed={atual} disabled={!p.isActive} title={p.email} onClick={() => escolher(p.id)} className={item}>
+                  <AvatarDaPessoa nome={p.name} pessoaId={p.id} tamanho="p" decorativo />
+                  <span className="min-w-0 flex-1 truncate">{rotuloNaLista(p, disponiveis)}{p.isActive ? '' : ' (inativo)'}</span>
+                  {atual && <Check size={13} className="shrink-0 text-brand" />}
+                </button>
+              );
+            })}
+            {termo && achadas.length === 0 && <p className="px-2 py-1.5 text-[12px] text-muted">Ninguém com esse nome.</p>}
+            {(t.outrosResponsaveisIds ?? []).length > 0 && <p className="px-2 pt-1 text-[11px] text-muted">Os outros responsáveis mudam no pop-up da tarefa.</p>}
+          </div>
+        );
+      }}
+    </EscolhaNaCelula>
+  );
+}
+
+/** O agente: o nome (ou "—") abre o mesmo controle de entregar/soltar do pop-up. */
+function AgenteNaLinha({ t, edicao }: { t: TrabTarefaResumo; edicao: EdicaoNaLinha }) {
+  const agente = nomeDoAgente(t);
+  return (
+    <EscolhaNaCelula
+      rotulo={`Agente de ${t.title}`} testId={`trabalho-celula-agente-${t.id}`} largura={260}
+      gatilho={agente ? <><Bot size={12} className="shrink-0 text-muted" /><span className="truncate">{agente}</span></> : <span className="text-muted">—</span>}
+    >
+      {(fechar) => (
+        <div className="p-1.5">
+          <ControleDoAgenteNaGaveta
+            t={t} agentes={edicao.agentes} editable token={edicao.token}
+            onMudou={() => { fechar(); edicao.onMudou(); }} onErro={(m) => { fechar(); edicao.onErro(m); }}
+          />
+        </div>
+      )}
+    </EscolhaNaCelula>
+  );
+}
+
+/**
+ * O prazo: o dia escrito, como antes; o clique troca por um campo de data e já abre o
+ * calendário. Grava ao sair do campo, e só se o dia mudou (como o campo Prazo do pop-up).
+ */
+function PrazoNaLinha({ t, onMudar }: { t: TrabTarefaResumo; onMudar: (dia: string | null) => Promise<void> }) {
+  const [editando, setEditando] = useState(false);
+  const campo = useRef<HTMLInputElement>(null);
+  const dia = diaDoPrazo(t.dueDate) ?? '';
+  useEffect(() => {
+    if (!editando || !campo.current) return;
+    campo.current.focus();
+    try { campo.current.showPicker(); } catch { /* navegador sem showPicker: o campo já está com o foco */ }
+  }, [editando]);
+  if (!editando) {
+    return (
+      <button type="button" aria-label={`Prazo de ${t.title}`} title="Mudar o prazo" data-testid={`trabalho-celula-prazo-${t.id}`} onClick={() => setEditando(true)} className="-mx-1 rounded px-1 py-0.5 hover:bg-surface-2 focus-visible:outline-brand">
+        {dataBR(t.dueDate)}
+      </button>
+    );
+  }
+  return (
+    <input
+      ref={campo} type="date" aria-label={`Prazo de ${t.title}`} defaultValue={dia}
+      onBlur={(e) => { const novo = e.target.value; setEditando(false); if (novo !== dia) void onMudar(novo || null); }}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter') e.currentTarget.blur();
+        if (e.key === 'Escape') { e.currentTarget.value = dia; e.currentTarget.blur(); }
+      }}
+      className="w-[8.75rem] rounded border border-brand-dim bg-surface-2 px-1 py-0.5 text-[13px] text-text outline-none"
+    />
   );
 }
 
@@ -2217,6 +2355,22 @@ function PainelTarefa({ id, estrutura, editable, token, usuarioId, aba = 'tarefa
   const idsDaEquipe = useIdsDaEquipe(token);
   const [confirmandoExclusao, setConfirmandoExclusao] = useState(false);
   useEffect(() => setConfirmandoExclusao(false), [id]);
+  /*
+   * Layout 26/10 (P-30): o que está aberto na grade (responsáveis) e o "Mais detalhes"
+   * moram aqui, fora da coluna que remonta a cada gravação (`key={t.updatedAt}`):
+   * trocar o cliente lá dentro não fecha a seção na cara de quem está mexendo.
+   */
+  const [responsaveisAbertos, setResponsaveisAbertos] = useState(false);
+  const [detalhesAbertos, setDetalhesAbertos] = useState(false);
+  const horasRef = useRef<HTMLDivElement>(null);
+  const irParaHoras = () => {
+    setDetalhesAbertos(true);
+    window.requestAnimationFrame(() => {
+      const secao = horasRef.current;
+      secao?.scrollIntoView?.({ block: 'nearest' });
+      secao?.querySelector<HTMLInputElement>('input[aria-label="Horas gastas"]')?.focus();
+    });
+  };
   const etapaFechada = lista?.statuses.find((s) => s.type === 'closed') ?? null;
   const etapaAberta = lista?.statuses.find((s) => s.type !== 'closed') ?? null;
   const estaConcluida = !!etapaFechada && t?.statusId === etapaFechada.id;
@@ -2440,6 +2594,116 @@ function PainelTarefa({ id, estrutura, editable, token, usuarioId, aba = 'tarefa
           <button className="underline disabled:opacity-50" disabled={salvando} onClick={async () => { const epoch = operacao.current; const atual = await recarregar(epoch); if (atual && vigente(epoch)) { setEdicaoDescricao(false); setConflito((c) => c ? { ...c, recarregado: true } : c); if (atual.listId !== t.listId) onMoverLista(atual.listId); onMudou(); } }}>Recarregar tarefa</button>
           <button className="ml-3 underline disabled:opacity-50" disabled={salvando || !conflito.recarregado} onClick={() => setConflito(null)}>Descartar alteração</button>
         </div>}
+        {/*
+          Layout 26/10 (P-30): A GRADE DE PROPRIEDADES, como no ClickUp. Logo abaixo do
+          título, duas colunas de "rótulo → valor": Status, Datas e Responsáveis; Prioridade,
+          Etiquetas e Tempo. Cada valor é o próprio controle de antes (o mesmo `salvar`, o
+          mesmo PATCH com a versão lida), só mais enxuto. O que é raro (lista, cliente,
+          agente, repetir, lançar horas) foi para "Mais detalhes", abaixo da descrição.
+        */}
+        <div data-testid="tarefa-propriedades" className={`grid gap-x-6 gap-y-0.5 ${centro ? 'xl:grid-flow-col xl:grid-cols-2 xl:grid-rows-[repeat(3,auto)]' : ''}`}>
+          <Propriedade rotulo="Status" icone={<CircleDot size={13} />}>
+            <span className="flex min-w-0 items-center gap-1.5">
+              <span aria-hidden className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ background: lista?.statuses.find((s) => s.id === t.statusId)?.color ?? t.statusColor }} />
+              <select aria-label="Status" disabled={ro} value={t.statusId} onChange={(e) => salvar({ statusId: e.target.value })} className={PROPRIEDADE}>
+                {(lista?.statuses ?? []).map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+              </select>
+            </span>
+          </Propriedade>
+          {/*
+            Sem mudança de dia, nada vai à API. Reenviar o mesmo dia como
+            meio-dia local trocava o instante importado (em São Paulo, 03:00Z
+            virava 15:00Z) e, com ele, a hora em que a tarefa passa a contar
+            como vencida.
+          */}
+          <Propriedade rotulo="Datas" icone={<CalendarDays size={13} />}>
+            <span className="flex min-w-0 flex-wrap items-center gap-1">
+              <input type="date" aria-label="Início" title="Início" disabled={ro} defaultValue={paraInputDate(t.startDate)} onBlur={(e) => e.target.value !== paraInputDate(t.startDate) && salvar({ startDate: deInputDate(e.target.value) })} className={`${PROPRIEDADE} w-[7.25rem] flex-none`} />
+              <span aria-hidden className="text-muted">→</span>
+              <input type="date" aria-label="Prazo" title="Prazo" disabled={ro} defaultValue={paraInputDate(t.dueDate)} onBlur={(e) => e.target.value !== paraInputDate(t.dueDate) && salvar({ dueDate: deInputDate(e.target.value) })} className={`${PROPRIEDADE} w-[7.25rem] flex-none ${atrasada(t) ? 'text-bad' : ''}`} />
+            </span>
+          </Propriedade>
+          <Propriedade rotulo="Responsáveis" icone={<Users size={13} />}>
+            <button
+              type="button" aria-expanded={responsaveisAbertos} aria-controls="tarefa-responsaveis-editar" data-testid="tarefa-responsaveis"
+              onClick={() => setResponsaveisAbertos((a) => !a)}
+              className="-mx-1.5 flex min-h-8 w-full min-w-0 items-center gap-2 rounded px-1.5 text-left hover:bg-surface-2"
+            >
+              <AvataresDaTarefa tarefa={t} pessoas={estrutura.pessoas ?? []} />
+              <span className="min-w-0 truncate text-[13px]">
+                {t.assigneeUserName ?? <span className="text-muted">Sem vínculo de pessoa</span>}
+                {(t.outrosResponsaveisIds ?? []).length > 0 && <span className="text-muted"> + {(t.outrosResponsaveisIds ?? []).length}</span>}
+              </span>
+            </button>
+            {/*
+              DOIS CAMPOS, DOIS EIXOS (fatia A4). "Responsável (pessoa)" é quem
+              responde pela tarefa; "Agente executor" (em Mais detalhes) é quem a tem
+              na mão agora. Os dois seletores de sempre, abertos pelo clique nos avatares.
+            */}
+            <div id="tarefa-responsaveis-editar" hidden={!responsaveisAbertos} className="mt-1 space-y-2 rounded-lg border border-border p-2">
+              <Campo rotulo="Responsável (pessoa)">
+                <SeletorResponsavel tarefa={t} pessoas={soDaEquipe(estrutura.pessoas ?? [], idsDaEquipe, [t.assigneeUserId])} disabled={ro} onChange={(assigneeUserId) => salvar({ assigneeUserId })} />
+              </Campo>
+              {/* Vários responsáveis (versão final, F4): o primeiro é o principal, acima; os demais aqui. */}
+              <Campo rotulo="Outros responsáveis">
+                <SeletorOutrosResponsaveis
+                  principal={t.assigneeUserId ?? null} ids={t.outrosResponsaveisIds ?? []} pessoas={soDaEquipe(estrutura.pessoas ?? [], idsDaEquipe, [t.assigneeUserId, ...(t.outrosResponsaveisIds ?? [])])}
+                  disabled={ro} onChange={(outrosResponsaveisIds) => salvar({ outrosResponsaveisIds })}
+                />
+              </Campo>
+            </div>
+          </Propriedade>
+          <Propriedade rotulo="Prioridade" icone={<Flag size={13} />}>
+            <span className="flex min-w-0 items-center gap-1.5">
+              <Flag aria-hidden size={12} className="shrink-0" style={{ color: PRIORIDADES.find((p) => p.key === t.priority)?.cor }} />
+              <select aria-label="Prioridade" disabled={ro} value={t.priority} onChange={(e) => salvar({ priority: e.target.value })} className={`${PROPRIEDADE} capitalize`}>
+                {PRIORIDADES.map((p) => <option key={p.key} value={p.key}>{p.key}</option>)}
+              </select>
+            </span>
+          </Propriedade>
+          <Propriedade rotulo="Etiquetas" icone={<Tag size={13} />}>
+            <div className="flex min-h-8 flex-wrap items-center gap-1.5">
+              {t.tags.map((tg) => (
+                <span key={tg.id} className="flex items-center gap-1 rounded px-1.5 py-0.5 text-[11px]" style={{ background: `${tg.color}26`, color: tg.color }}>
+                  {tg.name}
+                  {!ro && (
+                    <button aria-label={`Tirar a etiqueta ${tg.name}`} onClick={() => salvar({ tagIds: t.tags.filter((x) => x.id !== tg.id).map((x) => x.id) })}>
+                      <X size={10} />
+                    </button>
+                  )}
+                </span>
+              ))}
+              {editable && (
+                <input
+                  disabled={ro}
+                  value={novaTag}
+                  onChange={(e) => setNovaTag(e.target.value)}
+                  onKeyDown={(e) => e.key === 'Enter' && criarEAnexarTag()}
+                  list="trab-tags"
+                  aria-label="Nova etiqueta"
+                  placeholder="+ etiqueta"
+                  className="w-24 rounded border border-dashed border-border bg-transparent px-1.5 py-0.5 text-[11px] outline-none"
+                />
+              )}
+              {!editable && t.tags.length === 0 && <span className="text-[13px] text-muted">Sem etiquetas</span>}
+              <datalist id="trab-tags">
+                {estrutura.tags.map((tg) => <option key={tg.id} value={tg.name} />)}
+              </datalist>
+            </div>
+          </Propriedade>
+          <Propriedade rotulo="Tempo" icone={<Clock size={13} />}>
+            <button type="button" data-testid="tarefa-tempo" onClick={irParaHoras} title={editable ? 'Apontar horas' : 'Ver as horas apontadas'} className="-mx-1.5 flex min-h-8 items-center gap-2 rounded px-1.5 text-left text-[13px] hover:bg-surface-2">
+              <span className={(t.minutos ?? 0) > 0 ? 'font-os-mono' : 'text-muted'}>{(t.minutos ?? 0) > 0 ? formatarHoras(t.minutos) : 'nenhuma hora'}</span>
+              {editable && <span className="text-[12px] text-brand">Apontar</span>}
+            </button>
+          </Propriedade>
+        </div>
+        {proxima && (
+          <p role="status" data-testid="tarefa-proxima" className="rounded-lg border border-border bg-surface-2 px-3 py-2 text-[12px]">
+            Próxima ocorrência criada para {dataBR(proxima.dueDate)}.{' '}
+            <button type="button" className="text-brand underline" onClick={() => onAbrirOutra?.(proxima.id)}>Abrir</button>
+          </p>
+        )}
         {trilho ? (
           <button type="button" onClick={() => onTrocarAba?.('trilho')} className="block w-full rounded-lg border border-border bg-surface-2 px-3 py-2 text-left text-[12px] underline-offset-2 hover:underline">
             Trilho de onboarding · {trilho.faseRotulo}{trilho.faltando.length ? ` · falta ${trilho.faltando.length}` : ' · portão cumprido'}
@@ -2449,91 +2713,136 @@ function PainelTarefa({ id, estrutura, editable, token, usuarioId, aba = 'tarefa
         ) : null}
         {(trilho || listaDaImplantacao(pastasComAsDoComercial(estrutura))?.listaId === t.listId) && <ImplantacaoNoPainel tarefaId={t.id} listId={t.listId} token={token} />}
         {trilho && <QuemTrabalhaNaEtapa trilhoId={trilho.id} token={token} />}
-        {/* linha de propriedades — tudo editável */}
-        <div className="grid grid-cols-2 gap-2">
-          <Campo rotulo="Lista">
-            <select disabled={ro} value={t.listId} onChange={(e) => moverLista(e.target.value)} className={INP}>
-              {todasListas.map((l) => <option key={l.id} value={l.id}>{nomesListas.get(l.id)}</option>)}
-            </select>
-            {!ro && <p className="mt-1 text-[11px] text-muted">Mover mantém este card; a lista de destino define a primeira etapa.</p>}
-          </Campo>
-          <Campo rotulo="Status">
-            <select disabled={ro} value={t.statusId} onChange={(e) => salvar({ statusId: e.target.value })} className={INP}>
-              {(lista?.statuses ?? []).map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
-            </select>
-          </Campo>
-          <Campo rotulo="Cliente">
-            <SeletorDeCliente
-              valor={t.clienteId ? { id: t.clienteId, nome: t.clienteNome ?? '' } : null}
-              token={token}
-              desabilitado={ro}
-              testid="tarefa-cliente"
-              onEscolher={(c) => { if (c.id !== t.clienteId) void salvar({ clienteId: c.id }); }}
+        {/* descrição */}
+        <div>
+          <div className="mb-1 flex items-center justify-between gap-2">
+            <div className="text-[11px] font-semibold uppercase tracking-wide text-muted">Descrição e material vigente</div>
+            {(edicaoDescricao || !ro) && <button type="button" disabled={ro} onClick={async () => {
+              if (!edicaoDescricao) { setDescricaoRascunho(dependencias.texto); setEdicaoDescricao(true); return; }
+              const novo = [descricaoRascunho.trimEnd(), dependencias.sufixo, anexos.sufixo].filter(Boolean).join('\n\n') || null;
+              if (novo === t.description || await salvar({ description: novo })) setEdicaoDescricao(false);
+            }} className="text-[11px] text-brand hover:underline">{edicaoDescricao ? 'Concluir edição' : 'Editar texto'}</button>}
+          </div>
+          {edicaoDescricao ? (
+            <textarea
+              aria-label="Descrição e material vigente"
+              disabled={ro}
+              value={descricaoRascunho}
+              onChange={(e) => setDescricaoRascunho(e.target.value)}
+              onBlur={(e) => {
+                const novo = [e.target.value.trimEnd(), dependencias.sufixo, anexos.sufixo].filter(Boolean).join('\n\n') || null;
+                if (novo !== t.description) salvar({ description: novo });
+              }}
+              rows={12}
+              autoFocus
+              className="min-h-[240px] w-full rounded-lg border border-border bg-surface-2 px-2 py-1.5 text-sm outline-none focus:border-brand-dim"
+              placeholder="—"
             />
-            {!t.clienteId && <p className="mt-1 text-[11px] text-warn">Sem cliente. Toda tarefa nova tem; escolha um para esta.</p>}
-          </Campo>
-          <Campo rotulo="Prioridade">
-            <select disabled={ro} value={t.priority} onChange={(e) => salvar({ priority: e.target.value })} className={`${INP} capitalize`}>
-              {PRIORIDADES.map((p) => <option key={p.key} value={p.key}>{p.key}</option>)}
-            </select>
-          </Campo>
-          {/*
-            DOIS CAMPOS, DOIS EIXOS (fatia A4). "Responsável (pessoa)" é quem
-            responde pela tarefa; "Agente executor" é quem a tem na mão agora.
-            O rótulo diz "(pessoa)" porque sem isso os dois campos lado a lado
-            pareciam a mesma pergunta feita duas vezes.
-          */}
-          <Campo rotulo="Responsável (pessoa)">
-            <SeletorResponsavel tarefa={t} pessoas={soDaEquipe(estrutura.pessoas ?? [], idsDaEquipe, [t.assigneeUserId])} disabled={ro} onChange={(assigneeUserId) => salvar({ assigneeUserId })} />
-          </Campo>
-          {/* Vários responsáveis (versão final, F4): o primeiro é o principal, acima; os demais aqui. */}
-          <Campo rotulo="Outros responsáveis">
-            <SeletorOutrosResponsaveis
-              principal={t.assigneeUserId ?? null} ids={t.outrosResponsaveisIds ?? []} pessoas={soDaEquipe(estrutura.pessoas ?? [], idsDaEquipe, [t.assigneeUserId, ...(t.outrosResponsaveisIds ?? [])])}
-              disabled={ro} onChange={(outrosResponsaveisIds) => salvar({ outrosResponsaveisIds })}
-            />
-          </Campo>
-          <Campo rotulo="Responsável antigo (texto)">
-            <p className="text-[13px] text-muted">{t.assignee ?? 'Sem registro antigo'}</p>
-          </Campo>
-          <Campo rotulo="Agente executor">
-            {/*
-              NÃO é `salvar({...})`: entregar a tarefa a um agente passa pelo
-              CHECKOUT (`/assumir`), não pelo PATCH que edita campo. Um `PATCH
-              agenteId` seria a escrita sem corrida que a fatia veio proibir —
-              ela sobrescreveria o dono atual e devolveria sucesso.
-            */}
-            <ControleDoAgenteNaGaveta
-              t={t} agentes={estrutura.agentes} editable={editable} token={token}
-              onMudou={() => { recarregar(); onMudou(); }} onErro={onErro}
-            />
-          </Campo>
-          {/*
-            Sem mudança de dia, nada vai à API. Reenviar o mesmo dia como
-            meio-dia local trocava o instante importado (em São Paulo, 03:00Z
-            virava 15:00Z) e, com ele, a hora em que a tarefa passa a contar
-            como vencida.
-          */}
-          <Campo rotulo="Início">
-            <input type="date" disabled={ro} defaultValue={paraInputDate(t.startDate)} onBlur={(e) => e.target.value !== paraInputDate(t.startDate) && salvar({ startDate: deInputDate(e.target.value) })} className={INP} />
-          </Campo>
-          <Campo rotulo="Prazo">
-            <input type="date" disabled={ro} defaultValue={paraInputDate(t.dueDate)} onBlur={(e) => e.target.value !== paraInputDate(t.dueDate) && salvar({ dueDate: deInputDate(e.target.value) })} className={INP} />
-          </Campo>
+          ) : (
+            /*
+             * Layout 26/10 (P-30): a descrição ganhou espaço (logo abaixo da grade, mais
+             * alta) e o clique no texto já abre a edição, como no ClickUp. Selecionar um
+             * trecho para copiar não conta como clique de editar.
+             */
+            <div
+              data-testid="tarefa-descricao"
+              title={ro ? undefined : 'Clique para editar'}
+              onClick={ro ? undefined : () => {
+                if (window.getSelection?.()?.toString()) return;
+                setDescricaoRascunho(dependencias.texto); setEdicaoDescricao(true);
+              }}
+              className={`min-h-[120px] max-h-[60vh] overflow-y-auto whitespace-pre-wrap break-words rounded-lg border border-border bg-surface-2 px-3 py-2 text-[13px] leading-6 ${ro ? '' : 'cursor-text hover:border-brand-dim'}`}
+            >
+              {dependencias.texto || <span className="text-muted">{ro ? 'Sem descrição.' : 'Sem descrição. Clique para escrever.'}</span>}
+            </div>
+          )}
+          {dependencias.itens.length > 0 && (
+            <div className="mt-3 rounded-lg border border-border px-3 py-2">
+              <div className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-muted">Dependências ({dependencias.itens.length})</div>
+              <ul className="space-y-1">
+                {dependencias.itens.map((item, i) => <li key={`${item.nome}:${i}`} className="break-words text-[13px]">
+                  <span className="text-muted">{item.tipo}: </span>
+                  {item.href ? <a href={item.href} className="text-brand hover:underline">{item.nome}</a> : item.nome}
+                </li>)}
+              </ul>
+            </div>
+          )}
+          {anexos.anexos.length > 0 && (
+            <div className="mt-3 rounded-lg border border-border px-3 py-2">
+              <div className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-muted">Anexos preservados ({anexos.anexos.length})</div>
+              <div className="space-y-1">
+                {anexos.anexos.map((a) => (
+                  <button key={a.caminho} type="button" onClick={() => void baixarAnexo(a.nome, a.caminho)}
+                    className="block max-w-full break-all text-left text-[13px] text-brand hover:underline">
+                    Baixar {a.nome}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
-        <RepetirTarefa regra={t.recorrencia ?? null} prazo={t.dueDate} disabled={ro} onChange={(recorrencia) => salvar({ recorrencia })} />
-        {/* Layout 26/10 (P-14): anexos e ligações depois dos campos; antes eles abriam a tarefa e empurravam status e prazo para baixo. */}
-        <FontesDaTarefa taskId={t.id} />
-        <AnexosDaTarefa taskId={t.id} />
-        <DelegadorDaTarefa taskId={t.id} aoCriarSubtarefa={onMudou} />
-        <EditorialTaskLink taskId={t.id} />
-        <OrigemComercialDaTarefa taskId={t.id} />
-        {proxima && (
-          <p role="status" data-testid="tarefa-proxima" className="rounded-lg border border-border bg-surface-2 px-3 py-2 text-[12px]">
-            Próxima ocorrência criada para {dataBR(proxima.dueDate)}.{' '}
-            <button type="button" className="text-brand underline" onClick={() => onAbrirOutra?.(proxima.id)}>Abrir</button>
-          </p>
-        )}
+
+        {/*
+          Layout 26/10 (P-30): MAIS DETALHES. Os campos que existem e quase não mudam
+          ficam aqui, a um clique, sem sair da tarefa: lista, cliente, responsável
+          antigo, agente executor, repetir e o lançamento de horas. Nada saiu.
+        */}
+        <details
+          open={detalhesAbertos}
+          onToggle={(e) => setDetalhesAbertos(e.currentTarget.open)}
+          data-testid="tarefa-mais-detalhes"
+          className="rounded-lg border border-border"
+        >
+          <summary className="flex min-h-10 cursor-pointer list-none items-center gap-2 px-3 text-[12px] font-medium hover:bg-surface-2 [&::-webkit-details-marker]:hidden">
+            <ChevronRight aria-hidden size={14} className={`shrink-0 text-muted transition-transform ${detalhesAbertos ? 'rotate-90' : ''}`} />
+            Mais detalhes
+            <span className="min-w-0 truncate font-normal text-muted">lista, cliente, agente, repetir e horas</span>
+            {!t.clienteId && <span className="ml-auto shrink-0 font-os-mono text-[10px] text-warn">sem cliente</span>}
+            {t.recorrencia && <Repeat aria-hidden size={12} className={`${t.clienteId ? 'ml-auto' : ''} shrink-0 text-muted`} />}
+          </summary>
+          <div className="space-y-3 border-t border-border px-3 py-3">
+            <div className="grid grid-cols-2 gap-2">
+              <Campo rotulo="Lista">
+                <select disabled={ro} value={t.listId} onChange={(e) => moverLista(e.target.value)} className={INP}>
+                  {todasListas.map((l) => <option key={l.id} value={l.id}>{nomesListas.get(l.id)}</option>)}
+                </select>
+                {!ro && <p className="mt-1 text-[11px] text-muted">Mover mantém este card; a lista de destino define a primeira etapa.</p>}
+              </Campo>
+              <Campo rotulo="Cliente">
+                <SeletorDeCliente
+                  valor={t.clienteId ? { id: t.clienteId, nome: t.clienteNome ?? '' } : null}
+                  token={token}
+                  desabilitado={ro}
+                  testid="tarefa-cliente"
+                  onEscolher={(c) => { if (c.id !== t.clienteId) void salvar({ clienteId: c.id }); }}
+                />
+                {!t.clienteId && <p className="mt-1 text-[11px] text-warn">Sem cliente. Toda tarefa nova tem; escolha um para esta.</p>}
+              </Campo>
+              <Campo rotulo="Responsável antigo (texto)">
+                <p className="text-[13px] text-muted">{t.assignee ?? 'Sem registro antigo'}</p>
+              </Campo>
+              <Campo rotulo="Agente executor">
+                {/*
+                  NÃO é `salvar({...})`: entregar a tarefa a um agente passa pelo
+                  CHECKOUT (`/assumir`), não pelo PATCH que edita campo. Um `PATCH
+                  agenteId` seria a escrita sem corrida que a fatia veio proibir —
+                  ela sobrescreveria o dono atual e devolveria sucesso.
+                */}
+                <ControleDoAgenteNaGaveta
+                  t={t} agentes={estrutura.agentes} editable={editable} token={token}
+                  onMudou={() => { recarregar(); onMudou(); }} onErro={onErro}
+                />
+              </Campo>
+            </div>
+            <RepetirTarefa regra={t.recorrencia ?? null} prazo={t.dueDate} disabled={ro} onChange={(recorrencia) => salvar({ recorrencia })} />
+            <div ref={horasRef}>
+              <HorasDaTarefa
+                t={t} editable={editable} token={token} usuarioId={usuarioId}
+                onMudou={() => { recarregar(); onMudou(); }} onErro={onErro}
+              />
+            </div>
+          </div>
+        </details>
 
         {/* campos personalizados (as 4 colunas reais da Gestão de Temas + os que criarem) */}
         {campos.length > 0 && (
@@ -2628,96 +2937,12 @@ function PainelTarefa({ id, estrutura, editable, token, usuarioId, aba = 'tarefa
           </div>
         )}
 
-        <HorasDaTarefa
-          t={t} editable={editable} token={token} usuarioId={usuarioId}
-          onMudou={() => { recarregar(); onMudou(); }} onErro={onErro}
-        />
-
-        {/* etiquetas */}
-        <div>
-          <div className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-muted">Etiquetas</div>
-          <div className="flex flex-wrap items-center gap-1.5">
-            {t.tags.map((tg) => (
-              <span key={tg.id} className="flex items-center gap-1 rounded px-1.5 py-0.5 text-[11px]" style={{ background: `${tg.color}26`, color: tg.color }}>
-                {tg.name}
-                {!ro && (
-                  <button onClick={() => salvar({ tagIds: t.tags.filter((x) => x.id !== tg.id).map((x) => x.id) })}>
-                    <X size={10} />
-                  </button>
-                )}
-              </span>
-            ))}
-            {editable && (
-              <input
-                disabled={ro}
-                value={novaTag}
-                onChange={(e) => setNovaTag(e.target.value)}
-                onKeyDown={(e) => e.key === 'Enter' && criarEAnexarTag()}
-                list="trab-tags"
-                placeholder="+ etiqueta"
-                className="w-24 rounded border border-dashed border-border bg-transparent px-1.5 py-0.5 text-[11px] outline-none"
-              />
-            )}
-            <datalist id="trab-tags">
-              {estrutura.tags.map((tg) => <option key={tg.id} value={tg.name} />)}
-            </datalist>
-          </div>
-        </div>
-
-        {/* descrição */}
-        <div>
-          <div className="mb-1 flex items-center justify-between gap-2">
-            <div className="text-[11px] font-semibold uppercase tracking-wide text-muted">Descrição e material vigente</div>
-            {(edicaoDescricao || !ro) && <button type="button" disabled={ro} onClick={async () => {
-              if (!edicaoDescricao) { setDescricaoRascunho(dependencias.texto); setEdicaoDescricao(true); return; }
-              const novo = [descricaoRascunho.trimEnd(), dependencias.sufixo, anexos.sufixo].filter(Boolean).join('\n\n') || null;
-              if (novo === t.description || await salvar({ description: novo })) setEdicaoDescricao(false);
-            }} className="text-[11px] text-brand hover:underline">{edicaoDescricao ? 'Concluir edição' : 'Editar texto'}</button>}
-          </div>
-          {edicaoDescricao ? (
-            <textarea
-              aria-label="Descrição e material vigente"
-              disabled={ro}
-              value={descricaoRascunho}
-              onChange={(e) => setDescricaoRascunho(e.target.value)}
-              onBlur={(e) => {
-                const novo = [e.target.value.trimEnd(), dependencias.sufixo, anexos.sufixo].filter(Boolean).join('\n\n') || null;
-                if (novo !== t.description) salvar({ description: novo });
-              }}
-              rows={12}
-              className="w-full rounded-lg border border-border bg-surface-2 px-2 py-1.5 text-sm outline-none focus:border-brand-dim"
-              placeholder="—"
-            />
-          ) : (
-            <div className="max-h-[480px] overflow-y-auto whitespace-pre-wrap break-words rounded-lg border border-border bg-surface-2 px-3 py-2 text-[13px] leading-6">
-              {dependencias.texto || <span className="text-muted">Sem descrição.</span>}
-            </div>
-          )}
-          {dependencias.itens.length > 0 && (
-            <div className="mt-3 rounded-lg border border-border px-3 py-2">
-              <div className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-muted">Dependências ({dependencias.itens.length})</div>
-              <ul className="space-y-1">
-                {dependencias.itens.map((item, i) => <li key={`${item.nome}:${i}`} className="break-words text-[13px]">
-                  <span className="text-muted">{item.tipo}: </span>
-                  {item.href ? <a href={item.href} className="text-brand hover:underline">{item.nome}</a> : item.nome}
-                </li>)}
-              </ul>
-            </div>
-          )}
-          {anexos.anexos.length > 0 && (
-            <div className="mt-3 rounded-lg border border-border px-3 py-2">
-              <div className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-muted">Anexos preservados ({anexos.anexos.length})</div>
-              <div className="space-y-1">
-                {anexos.anexos.map((a) => (
-                  <button key={a.caminho} type="button" onClick={() => void baixarAnexo(a.nome, a.caminho)}
-                    className="block max-w-full break-all text-left text-[13px] text-brand hover:underline">
-                    Baixar {a.nome}
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
-        </div>
+        {/* Layout 26/10 (P-14): anexos e ligações depois dos campos; antes eles abriam a tarefa e empurravam status e prazo para baixo. */}
+        <FontesDaTarefa taskId={t.id} />
+        <AnexosDaTarefa taskId={t.id} />
+        <DelegadorDaTarefa taskId={t.id} aoCriarSubtarefa={onMudou} />
+        <EditorialTaskLink taskId={t.id} />
+        <OrigemComercialDaTarefa taskId={t.id} />
 
         {/* subtarefas */}
         {t.filhos.length > 0 && (
@@ -2886,11 +3111,17 @@ function RepetirTarefa({ regra, prazo, disabled, onChange }: {
   regra: RecorrenciaDaTarefa | null; prazo: string | null; disabled: boolean;
   onChange: (r: RecorrenciaDaTarefa | null) => Promise<unknown>;
 }) {
-  const modo = !regra ? '' : regra.tipo === 'semanal' && [...regra.dias].sort().join() === '1,2,3,4,5' ? 'uteis' : regra.tipo;
+  // Layout 26/10 (P-18): regra com "a cada N semanas/meses" ou com fim é a personalizada.
+  const personalizada = !!regra && (!!regra.ate || ((regra.tipo === 'semanal' || regra.tipo === 'mensal') && (regra.intervalo ?? 1) > 1));
+  const [personalizando, setPersonalizando] = useState(false);
+  const modo = personalizando || personalizada ? 'personalizar'
+    : !regra ? '' : regra.tipo === 'semanal' && [...regra.dias].sort().join() === '1,2,3,4,5' ? 'uteis' : regra.tipo;
   const dia = paraInputDate(prazo);
   const diaDoMes = dia ? Number(dia.slice(8)) : 1;
   const diaDaSemana = dia ? new Date(`${dia}T12:00:00Z`).getUTCDay() : 1;
   const mudarModo = (m: string) => {
+    if (m === 'personalizar') return setPersonalizando(true);
+    setPersonalizando(false);
     if (!m) return void onChange(null);
     if (m === 'diaria') return void onChange({ tipo: 'diaria' });
     if (m === 'uteis') return void onChange({ tipo: 'semanal', dias: [1, 2, 3, 4, 5] });
@@ -2911,6 +3142,7 @@ function RepetirTarefa({ regra, prazo, disabled, onChange }: {
             <option value="semanal">Toda semana…</option>
             <option value="mensal">Todo mês…</option>
             <option value="intervalo">A cada N dias…</option>
+            <option value="personalizar">Personalizar…</option>
           </select>
           {regra?.tipo === 'semanal' && modo === 'semanal' && (
             <span className="flex gap-1">
@@ -2928,7 +3160,7 @@ function RepetirTarefa({ regra, prazo, disabled, onChange }: {
               })}
             </span>
           )}
-          {regra?.tipo === 'mensal' && (
+          {regra?.tipo === 'mensal' && modo === 'mensal' && (
             <label className="flex items-center gap-1.5 text-[12px] text-muted">
               no dia
               <input type="number" min={1} max={31} disabled={disabled} defaultValue={regra.dia} aria-label="Dia do mês"
@@ -2936,7 +3168,7 @@ function RepetirTarefa({ regra, prazo, disabled, onChange }: {
                 className={`${INP} w-16`} />
             </label>
           )}
-          {regra?.tipo === 'intervalo' && (
+          {regra?.tipo === 'intervalo' && modo === 'intervalo' && (
             <label className="flex items-center gap-1.5 text-[12px] text-muted">
               a cada
               <input type="number" min={1} max={365} disabled={disabled} defaultValue={regra.dias} aria-label="Intervalo em dias"
@@ -2947,11 +3179,125 @@ function RepetirTarefa({ regra, prazo, disabled, onChange }: {
           )}
         </div>
       </Campo>
+      {modo === 'personalizar' && (
+        <PersonalizarRepeticao
+          regra={regra} diaDoMes={diaDoMes} diaDaSemana={diaDaSemana} disabled={disabled}
+          onAplicar={(r) => { void onChange(r).then(() => setPersonalizando(false)); }}
+          onCancelar={personalizada ? null : () => setPersonalizando(false)}
+        />
+      )}
       {regra && (
         <p className="mt-1 text-[11px] text-muted">
           {descreverRecorrencia(regra)}. Ao concluir, a próxima nasce sozinha{prazo ? '' : ' (sem prazo, conta a partir do dia em que for concluída)'}.
         </p>
       )}
+    </div>
+  );
+}
+
+/*
+ * Layout 26/10 (P-18): O "PERSONALIZAR" DO REPETIR, como no ClickUp. A cada N dias,
+ * semanas (com os dias da semana) ou meses (com o dia do mês) e, se quiser, até quando.
+ * Nada vai à API enquanto a pessoa mexe: só no "Aplicar", pelo mesmo `onChange` do select.
+ * "A cada N dias" grava o tipo `intervalo` de sempre; semanas e meses ganham `intervalo`
+ * só quando N passa de 1, e `ate` só quando há fim — a regra simples continua simples.
+ */
+function PersonalizarRepeticao({ regra, diaDoMes, diaDaSemana, disabled, onAplicar, onCancelar }: {
+  regra: RecorrenciaDaTarefa | null; diaDoMes: number; diaDaSemana: number; disabled: boolean;
+  onAplicar: (r: RecorrenciaDaTarefa) => void;
+  /** Só enquanto a regra personalizada ainda não foi gravada. */
+  onCancelar: (() => void) | null;
+}) {
+  type Unidade = 'dias' | 'semanas' | 'meses';
+  const inicial: { unidade: Unidade; n: number } = !regra ? { unidade: 'semanas', n: 1 }
+    : regra.tipo === 'diaria' ? { unidade: 'dias', n: 1 }
+    : regra.tipo === 'intervalo' ? { unidade: 'dias', n: regra.dias }
+    : { unidade: regra.tipo === 'semanal' ? 'semanas' : 'meses', n: regra.intervalo ?? 1 };
+  const [unidade, setUnidade] = useState<Unidade>(inicial.unidade);
+  const [n, setN] = useState(String(inicial.n));
+  const [dias, setDias] = useState<number[]>(regra?.tipo === 'semanal' ? regra.dias : [diaDaSemana]);
+  const [dia, setDia] = useState(String(regra?.tipo === 'mensal' ? regra.dia : diaDoMes));
+  const [ate, setAte] = useState(regra?.ate ?? '');
+  const maximo = unidade === 'dias' ? 365 : unidade === 'semanas' ? 52 : 24;
+  const quantos = Number(n), diaDoMesEscolhido = Number(dia);
+  const valido = Number.isInteger(quantos) && quantos >= 1 && quantos <= maximo
+    && (unidade !== 'semanas' || dias.length > 0)
+    && (unidade !== 'meses' || (Number.isInteger(diaDoMesEscolhido) && diaDoMesEscolhido >= 1 && diaDoMesEscolhido <= 31));
+  const aplicar = () => {
+    if (!valido) return;
+    const fim = ate ? { ate } : {};
+    const salto = quantos > 1 ? { intervalo: quantos } : {};
+    if (unidade === 'dias') return onAplicar({ tipo: 'intervalo', dias: quantos, ...fim });
+    if (unidade === 'semanas') return onAplicar({ tipo: 'semanal', dias: [...dias].sort((a, b) => a - b), ...salto, ...fim });
+    onAplicar({ tipo: 'mensal', dia: diaDoMesEscolhido, ...salto, ...fim });
+  };
+  const LETRAS = ['D', 'S', 'T', 'Q', 'Q', 'S', 'S'];
+  const NOMES = ['domingo', 'segunda', 'terça', 'quarta', 'quinta', 'sexta', 'sábado'];
+  return (
+    <div data-testid="tarefa-repetir-personalizar" className="mt-2 space-y-2 rounded-lg border border-border p-2 text-[12px] text-muted">
+      <div className="flex flex-wrap items-center gap-1.5">
+        A cada
+        <input type="number" min={1} max={maximo} disabled={disabled} value={n} aria-label="Repetir a cada" onChange={(e) => setN(e.target.value)} className={`${INP} w-16`} />
+        <select aria-label="Unidade da repetição" disabled={disabled} value={unidade} onChange={(e) => setUnidade(e.target.value as Unidade)} className={`${INP} w-auto`}>
+          <option value="dias">dias</option>
+          <option value="semanas">semanas</option>
+          <option value="meses">meses</option>
+        </select>
+      </div>
+      {unidade === 'semanas' && (
+        <div className="flex flex-wrap items-center gap-1">
+          <span className="mr-1">nos dias</span>
+          {LETRAS.map((l, i) => {
+            const marcado = dias.includes(i);
+            return (
+              <button
+                key={i} type="button" disabled={disabled} title={NOMES[i]} aria-label={NOMES[i]} aria-pressed={marcado}
+                onClick={() => setDias(marcado ? dias.filter((x) => x !== i) : [...dias, i])}
+                className={`h-7 w-7 rounded-full text-xs ${marcado ? 'bg-brand/25 text-text' : 'border border-border text-muted hover:border-brand-dim'}`}
+              >
+                {l}
+              </button>
+            );
+          })}
+        </div>
+      )}
+      {unidade === 'meses' && (
+        <label className="flex items-center gap-1.5">
+          no dia
+          <input type="number" min={1} max={31} disabled={disabled} value={dia} aria-label="Dia do mês" onChange={(e) => setDia(e.target.value)} className={`${INP} w-16`} />
+          <span>(em mês mais curto, o último dia)</span>
+        </label>
+      )}
+      <label className="flex flex-wrap items-center gap-1.5">
+        Termina em
+        <input type="date" disabled={disabled} value={ate} aria-label="Termina em" onChange={(e) => setAte(e.target.value)} className={`${INP} w-auto`} />
+        {ate ? <button type="button" disabled={disabled} onClick={() => setAte('')} className="text-brand hover:underline">nunca</button> : <span>(vazio = nunca)</span>}
+      </label>
+      <div className="flex items-center gap-2">
+        <button type="button" data-testid="tarefa-repetir-aplicar" disabled={disabled || !valido} onClick={aplicar} className="rounded-lg bg-brand/15 px-3 py-1 text-[12px] text-brand enabled:hover:bg-brand/25 disabled:opacity-40">
+          Aplicar
+        </button>
+        {onCancelar && <button type="button" onClick={onCancelar} className="text-muted hover:text-text">Cancelar</button>}
+        {!valido && <span className="text-warn">{unidade === 'semanas' && !dias.length ? 'Marque pelo menos um dia.' : `Use um número de 1 a ${maximo}.`}</span>}
+      </div>
+    </div>
+  );
+}
+
+/*
+ * Layout 26/10 (P-30): uma linha da grade de propriedades: o rótulo com ícone à
+ * esquerda, o valor (o controle) à direita. Não é `<label>`: o valor pode ter mais de
+ * um campo (início → prazo) e cada controle já tem o próprio nome acessível.
+ */
+const PROPRIEDADE = 'min-w-0 flex-1 rounded border border-transparent bg-transparent px-1.5 py-1 text-[13px] outline-none hover:border-border hover:bg-surface-2 focus:border-brand-dim disabled:opacity-60 disabled:hover:border-transparent disabled:hover:bg-transparent';
+function Propriedade({ rotulo, icone, children }: { rotulo: string; icone: React.ReactNode; children: React.ReactNode }) {
+  return (
+    <div className="grid min-h-9 grid-cols-[6rem_minmax(0,1fr)] items-start gap-2 py-0.5" data-propriedade={rotulo}>
+      <span className="flex min-h-8 items-center gap-1.5 text-[12px] text-muted">
+        <span aria-hidden className="shrink-0">{icone}</span>
+        {rotulo}
+      </span>
+      <div className="flex min-h-8 min-w-0 flex-col justify-center">{children}</div>
     </div>
   );
 }
