@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import type { TarefaDoDia } from '@mktos/shared';
+import { mesmaTarefa, notaDeSemelhanca, tituloNormalizado, type TarefaDoDia } from '@mktos/shared';
 
 import { chaveDeIdentidadeWhatsapp } from '../../gateway/canais/identidade-de-canal';
 import { EVENTO_ACEITO } from '../../gateway/canais/resposta-de-canal';
@@ -225,3 +225,39 @@ export const AJUDA = [
 ].join('\n');
 
 export const LIMITE_DA_LISTA = 15;
+
+// ---------------------------------------------------------------- sem modelo
+
+const FEITA = /\b(feit[ao]s?|conclui(d[ao]s?)?|concluid[ao]s?|pront[ao]s?|finalizad[ao]s?|entregue|resolvid[ao]s?|ok)\b/;
+
+/**
+ * Os pedidos de todo dia, entendidos sem chamar o modelo (26/10/2026: a IA da
+ * produção recusou a chave e o "X feita" do Lucas voltou erro). Só devolve
+ * comando quando a leitura é segura; o resto segue para o modelo.
+ *
+ *   "<título> feita" / "concluí <título>"   → concluir (a aberta mais parecida)
+ *   "tarefas", "minhas tarefas", "tarefas atrasadas", "tarefas do Pedro" → listar
+ */
+export function entenderSemModelo(
+  texto: string, abertas: Pick<TarefaDoDia, 'titulo'>[], pessoas: { nome: string }[],
+): Comando | null {
+  const norm = tituloNormalizado(texto);
+  if (!norm) return null;
+  if (FEITA.test(norm)) {
+    const semVerbo = norm.replace(new RegExp(FEITA.source, 'g'), ' ').replace(/\b(tarefa|a|o)\b/g, ' ').replace(/\s+/g, ' ').trim();
+    if (!semVerbo) return null;
+    const candidatas = abertas.slice(0, MAXIMO_DE_ABERTAS_NO_CONTEXTO)
+      .map((t, i) => ({ i, t, contida: semVerbo.includes(tituloNormalizado(t.titulo)) || tituloNormalizado(t.titulo).includes(semVerbo), nota: notaDeSemelhanca(t.titulo, semVerbo), quanto: mesmaTarefa(t.titulo, semVerbo) }))
+      .filter((c) => c.contida || c.quanto !== 'diferente')
+      .sort((a, b) => Number(b.contida) - Number(a.contida) || b.nota - a.nota);
+    // Duas igualmente boas = ambíguo: quem decide é o modelo (ou a pessoa, com o nome inteiro).
+    if (!candidatas.length || (candidatas[1] && candidatas[1].contida === candidatas[0].contida && candidatas[1].nota === candidatas[0].nota)) return null;
+    return { acao: 'concluir', tarefa: candidatas[0].i + 1 };
+  }
+  if (/\btarefas\b/.test(norm) && !/\b(cria|criar|nova|novo|muda|mudar|troca|trocar|passa|passar)\b/.test(norm)) {
+    const filtro = /\batrasad/.test(norm) ? 'atrasadas' : /\bhoje\b/.test(norm) ? 'hoje' : /\bsemana\b/.test(norm) ? 'semana' : 'todas';
+    const pessoa = /\bminhas?\b/.test(norm) ? 'eu' : pessoas.find((p) => norm.split(' ').includes(tituloNormalizado(p.nome).split(' ')[0]))?.nome ?? null;
+    return { acao: 'listar', filtro, pessoa };
+  }
+  return null;
+}

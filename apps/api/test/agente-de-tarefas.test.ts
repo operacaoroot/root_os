@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { acharPorNome, idsDoAgente, lerComando, lerPedidoDoGrupo, mesmoTelefone } from '../src/work/agente-de-tarefas/pedido-do-grupo';
+import { acharPorNome, entenderSemModelo, idsDoAgente, lerComando, lerPedidoDoGrupo, mesmoTelefone } from '../src/work/agente-de-tarefas/pedido-do-grupo';
 
 const GRUPO = '120363407836726219@g.us';
 const IDS = idsDoAgente('5532936180013, 63617827360770');
@@ -72,5 +72,24 @@ describe('agente de tarefas: o comando do modelo', () => {
     expect(lerComando('{"acao":"apagar"}')).toBeNull();
     expect(lerComando('{"acao":"criar","prazo":"30/10"}')).toBeNull();
     expect(lerComando('não sei')).toBeNull();
+  });
+});
+
+describe('agente de tarefas: sem modelo', () => {
+  const ABERTAS = [{ titulo: 'Manutenção wpp | Cultural & Clube' }, { titulo: 'FUP Dispropan' }, { titulo: 'Proposta Juma — fazer FUP' }];
+  const PESSOAS = [{ nome: 'Lucas Fernandes' }, { nome: 'Pedro Magnago' }];
+
+  it('"<título> feita" conclui a aberta certa', () => {
+    expect(entenderSemModelo('Manutenção wpp | Cultural & Clube feita', ABERTAS, PESSOAS)).toEqual({ acao: 'concluir', tarefa: 1 });
+    expect(entenderSemModelo('concluí o FUP Dispropan', ABERTAS, PESSOAS)).toEqual({ acao: 'concluir', tarefa: 2 });
+    expect(entenderSemModelo('tarefa feita', ABERTAS, PESSOAS)).toBeNull();
+    expect(entenderSemModelo('Relatório mensal feito', ABERTAS, PESSOAS)).toBeNull();
+  });
+
+  it('listas do dia a dia', () => {
+    expect(entenderSemModelo('minhas tarefas', ABERTAS, PESSOAS)).toEqual({ acao: 'listar', filtro: 'todas', pessoa: 'eu' });
+    expect(entenderSemModelo('tarefas atrasadas', ABERTAS, PESSOAS)).toMatchObject({ acao: 'listar', filtro: 'atrasadas' });
+    expect(entenderSemModelo('tarefas do Pedro', ABERTAS, PESSOAS)).toMatchObject({ acao: 'listar', pessoa: 'Pedro Magnago' });
+    expect(entenderSemModelo('tarefa pro Pedro: revisar contrato até sexta', ABERTAS, PESSOAS)).toBeNull();
   });
 });
