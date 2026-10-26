@@ -393,22 +393,17 @@ body {
 /* Layout 26/10 (Lucas): as conversas com a cara do WhatsApp (balão branco de quem chega, verde-claro do que sai,
    hora dentro do balão, resposta citada com barra colorida). O papel de parede é o da ROOT, não o do WhatsApp. */
 :root {
-  --wz-fundo: #efece4; --wz-padrao: rgba(105, 140, 40, 0.07);
+  --wz-fundo: #f0f2f5;
   --wz-entra: #ffffff; --wz-sai: #d9fdd3; --wz-texto: #111b21; --wz-meta: #667781;
   --wz-citacao: rgba(11, 20, 26, 0.05); --wz-dia: #ffffff;
 }
 :root[data-os-theme='dark'] {
-  --wz-fundo: #0e1512; --wz-padrao: rgba(170, 220, 70, 0.05);
+  --wz-fundo: #0b141a;
   --wz-entra: #202c33; --wz-sai: #005c4b; --wz-texto: #e9edef; --wz-meta: #8696a0;
   --wz-citacao: rgba(255, 255, 255, 0.07); --wz-dia: #182229;
 }
-.wz-fundo {
-  background-color: var(--wz-fundo);
-  background-image:
-    radial-gradient(circle at 12px 12px, var(--wz-padrao) 2.2px, transparent 2.6px),
-    linear-gradient(135deg, transparent 46%, var(--wz-padrao) 46%, var(--wz-padrao) 54%, transparent 54%);
-  background-size: 28px 28px, 56px 56px;
-}
+/* Layout 26/10: sem papel de parede (pedido do Lucas): só a cor lisa atrás dos balões. */
+.wz-fundo { background-color: var(--wz-fundo); }
 .wz-balao { color: var(--wz-texto); box-shadow: 0 1px 0.5px rgba(11, 20, 26, 0.13); }
 .wz-entra { background: var(--wz-entra); }
 .wz-sai { background: var(--wz-sai); }
