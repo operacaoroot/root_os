@@ -189,7 +189,8 @@ export function VisaoGeralDasTarefas({ meio }: { meio?: ReactNode } = {}) {
     <div className="space-y-5">
       <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
         {[
-          { r: 'Tarefas abertas', v: abertas.length, n: 'todas as pastas', f: {} as FiltroDaVisaoGeral },
+          // Layout 26/10: o total de abertas saiu (não ajuda a decidir); no lugar, o que vence hoje.
+          { r: 'Para hoje', v: conta('hoje'), n: 'vencem hoje', f: { situacao: 'hoje' } as FiltroDaVisaoGeral },
           { r: 'Atrasadas', v: conta('atrasada'), n: 'prazo já passou', f: { situacao: 'atrasada' } as FiltroDaVisaoGeral },
           { r: 'Não atribuídas', v: semDono, n: 'sem responsável', f: { pessoa: SEM } as FiltroDaVisaoGeral },
           { r: 'Feitas na semana', v: feitas, n: 'últimos 7 dias', f: { situacao: 'feita' } as FiltroDaVisaoGeral },
