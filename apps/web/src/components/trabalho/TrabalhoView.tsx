@@ -2513,17 +2513,6 @@ function PainelTarefa({ id, estrutura, editable, token, usuarioId, aba = 'tarefa
           className="w-full bg-transparent text-sm font-semibold outline-none focus:text-brand"
         />
         <div className="flex shrink-0 items-center gap-1">
-          {editable && !t.archived && etapaFechada && !confirmandoExclusao && (
-            <button
-              type="button"
-              data-testid="tarefa-concluir"
-              disabled={ro}
-              onClick={concluirOuReabrir}
-              className={`flex min-h-9 items-center gap-1.5 rounded border px-2.5 text-[12px] font-medium disabled:opacity-50 ${estaConcluida ? 'border-border text-muted hover:text-text' : 'border-brand bg-brand text-ink hover:opacity-90'}`}
-            >
-              <Check size={14} />{estaConcluida ? 'Reabrir' : 'Concluir'}
-            </button>
-          )}
           {editable && !t.archived && (confirmandoExclusao ? (
             <span className="flex items-center gap-1.5 text-[12px]" data-testid="tarefa-excluir-confirmar">
               <span className="text-muted">Enviar para a Lixeira?</span>
@@ -2977,6 +2966,24 @@ function PainelTarefa({ id, estrutura, editable, token, usuarioId, aba = 'tarefa
       )}
       </div>
       )}
+      {/* Layout 26/10: Fechar e Concluir no rodapé, à direita, como a janela de tarefa do Financeiro (a regra vale para o OS todo). */}
+      <div data-testid="tarefa-rodape" className="flex flex-none flex-wrap items-center justify-between gap-3 border-t border-border px-4 py-3">
+        <span className="text-xs text-muted">As mudanças acima são salvas na hora.</span>
+        <span className="flex gap-2">
+          <button type="button" onClick={onFechar} className="rounded-md border border-border px-4 py-2 text-sm hover:border-brand">Fechar</button>
+          {editable && !t.archived && etapaFechada && !confirmandoExclusao && (
+            <button
+              type="button"
+              data-testid="tarefa-concluir"
+              disabled={ro}
+              onClick={concluirOuReabrir}
+              className={`rounded-md px-4 py-2 text-sm font-medium disabled:opacity-50 ${estaConcluida ? 'border border-border hover:border-brand' : 'bg-brand text-ink hover:opacity-90'}`}
+            >
+              {estaConcluida ? 'Reabrir tarefa' : '✓ Marcar como concluída'}
+            </button>
+          )}
+        </span>
+      </div>
         </Dialog.Content>
       </Dialog.Portal>
     </Dialog.Root>
