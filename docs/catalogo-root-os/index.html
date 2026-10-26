@@ -45,6 +45,17 @@
   .regra p { color: var(--texto-2); max-width: 75ch; }
   .regra b { color: var(--texto); }
   .mantem dd { color: var(--texto); }
+  .tabela { overflow-x: auto; border: 1px solid var(--linha); }
+  .tabela table { width: 100%; min-width: 640px; border-collapse: collapse; font-size: 14px; }
+  .tabela th { text-align: left; font: 500 10.5px/1.4 var(--mono); letter-spacing: .12em; text-transform: uppercase; color: var(--texto-3); padding: 10px 12px; border-bottom: 1px solid var(--linha); background: var(--chapa); }
+  .tabela td { padding: 10px 12px; border-bottom: 1px solid var(--linha); vertical-align: top; color: var(--texto-2); }
+  .tabela td b { color: var(--texto); }
+  .tabela td:first-child { color: var(--texto); white-space: nowrap; }
+  .tabela tr:last-child td { border-bottom: 0; }
+  .lista-p { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 1px; background: var(--linha); border: 1px solid var(--linha); }
+  .p { background: var(--chapa); padding: 18px 20px; display: grid; gap: 8px; align-content: start; min-width: 0; }
+  .p p { color: var(--texto-2); font-size: 15px; }
+  .p p b { color: var(--texto); font-weight: 600; }
   .vazio { border: 1px dashed var(--linha); padding: 28px 24px; display: grid; gap: 8px; color: var(--texto-2); }
   .vazio b { color: var(--texto); }
 
@@ -78,7 +89,7 @@
     <p class="abre">Lista viva para quem desenvolve o OS. Em cima, os problemas que a equipe encontra no uso. Embaixo, o comparativo de usabilidade com o ClickUp: o que mudar no layout para o OS ficar tão fácil de usar quanto ele, sem mexer no conceito do sistema.</p>
     <div class="meta">
       <span>Aberto em <b>26/10/2026</b></span>
-      <span>Relatados <b class="num">0</b></span>
+      <span>Relatados <b class="num">16</b></span>
       <span>Comparativo <b class="num">9</b> pontos</span>
       <span>Código: branch <code>root-os/layout-comparativo</code>, nada alterado no ar</span>
     </div>
@@ -122,14 +133,126 @@
     </article>
   </section>
 
+  <section class="secao" id="diagnostico" aria-labelledby="t-diag">
+    <header>
+      <h2 id="t-diag">Diagnóstico: por que as telas não batem</h2>
+      <p>Levantado no código em produção (26/10). A conferência nos dados ainda depende de liberar a leitura do banco.</p>
+    </header>
+    <div class="regra">
+      <span class="rotulo">A causa principal</span>
+      <p><b>O "cliente" existe em cinco lugares que não se ligam.</b> Cada tela lê de um deles. Por isso o mesmo cliente aparece num lugar e some no outro, e o mesmo valor muda de tela para tela.</p>
+    </div>
+    <div class="tabela"><table>
+      <thead><tr><th>Onde o cliente mora</th><th>Quem cria</th><th>Quem lê</th></tr></thead>
+      <tbody>
+        <tr><td><b>Lead + ficha comercial</b> (etapa, valor, canal, dono)</td><td>Site, WhatsApp, importação do CRM antigo, eventos do funil</td><td>Painel geral, Funil, Propostas</td></tr>
+        <tr><td><b>Cliente do Financeiro</b> (Partner)</td><td>Fechamento automático, Financeiro (nasce como "não cliente" por padrão), "novo cliente" nas tarefas</td><td>Financeiro, tarefas, <b>vínculo do WhatsApp</b></td></tr>
+        <tr><td><b>Card do CRM antigo</b> (lista crm-root-lista)</td><td>Ficha do cliente, importador</td><td>Ficha do cliente, reuniões do Granola</td></tr>
+        <tr><td><b>Acordo comercial</b> (pagante, permuta, parceria)</td><td>Digitado à mão em Financeiro › Análise, com o nome do cliente em texto</td><td>Só a Análise do Financeiro</td></tr>
+        <tr><td><b>Trilho e card da Implantação</b></td><td>Fechamento, "Iniciar onboarding"</td><td>Implantação (nome do cliente em texto)</td></tr>
+      </tbody>
+    </table></div>
+    <div class="tabela"><table>
+      <thead><tr><th>Ponto</th><th>Causa no código</th><th>Caminho</th><th>Tipo</th></tr></thead>
+      <tbody>
+        <tr><td>P-03</td><td>"Vincular a cliente" só busca o cliente do Financeiro marcado como cliente e ativo. Quem só existe como lead, card, acordo ou trilho não aparece.</td><td>Buscar também nos leads fechados e acordos; botão "cadastrar como cliente" usando a função que o fechamento já usa.</td><td>ponte</td></tr>
+        <tr><td>P-05</td><td>Nenhuma automação move o card da Implantação depois que ele nasce: só arrastando. O trilho anda separado e só mostra o selo "fase X de 5".</td><td>Arrastar os cards hoje não quebra nada. Decidir se o card deve seguir o trilho sozinho (muda automação: Rodrigo).</td><td>decisão</td></tr>
+        <tr><td>P-06</td><td>A ata não tem campo de cliente. Só as do Granola que reconhecem um card do CRM antigo viram "reunião" na ficha; as do Drive não.</td><td>Botão "ligar a cliente ou lead" na ata, aparecendo na ficha. O entendimento do Lucas está certo.</td><td>ponte</td></tr>
+        <tr><td>P-07</td><td>"Clientes ativos" conta só leads que fecharam no funil. Parceria e permuta só existem no Acordo, que não se liga a nada.</td><td>Ligar o Acordo ao cliente e contar todos, separados por tipo.</td><td>ponte</td></tr>
+        <tr><td>P-08</td><td>Vendedor vem do "dono" do lead, que a regra põe automaticamente no primeiro diretor (Rodrigo). Canal só é gravado quando o lead vem do site. Não há tela que edite os dois (existe um "Ajustes" pronto e esquecido no código).</td><td>Editar canal e dono pelo lead, gravando como evento, do jeito que as automações já entendem.</td><td>ponte</td></tr>
+        <tr><td>P-10</td><td>Propostas soma só leads com proposta ligada (R$ 53.970); o Painel soma todos os leads abertos com valor (R$ 79.936). Os dois estão certos, mas dizem coisas diferentes com o mesmo nome.</td><td>Renomear: "em negociação com proposta" e "em negociação no funil".</td><td>layout</td></tr>
+        <tr><td>P-11</td><td>A Rodada da semana não lê o banco: é um resumo escrito toda segunda a partir de <code>11-operacao/painel-root.md</code> e importado como texto.</td><td>Marcar na tela que é um resumo de DD/MM, ou fazer os números virem do sistema.</td><td>decisão</td></tr>
+        <tr><td>P-04</td><td>Não há sincronização viva com o ClickUp desde 21/10 (o token foi revogado). Os status vieram de cargas únicas em 30/09 e 19/10. O Marketing do OS usa outras tabelas (Pauta). A Produção do Marketing depende do status de algumas dessas tarefas.</td><td>Tirar a pasta do ClickUp da visão "Todas" sem apagar nada (apagar status ou mover cards quebra a Produção).</td><td>layout</td></tr>
+        <tr><td>P-12</td><td>Financeiro › Tarefas lê <b>as mesmas tarefas</b> do Trabalho, mas não mostra etapas, trilho, horas, agente, comentários nem subtarefas. O link "ficha de X" desta tela abre o cadastro errado (bug).</td><td>Levar o desenho dessa janela para a tarefa do Trabalho, com os recursos do Rodrigo em "Mais detalhes".</td><td>layout</td></tr>
+      </tbody>
+    </table></div>
+  </section>
+
   <section class="secao" id="relatados" aria-labelledby="t-relatados">
     <header>
       <h2 id="t-relatados">Problemas relatados</h2>
       <p>Cada problema entra com a tela, o que acontece, o que deveria acontecer e o arquivo onde mexer.</p>
     </header>
-    <div class="vazio">
-      <b>Nenhum problema registrado ainda.</b>
-      <p>O Lucas vai mandando os problemas, e cada um entra aqui como P-01, P-02 e assim por diante.</p>
+    <div class="lista-p">
+      <article class="p" id="P-01"><div class="linha-id"><span class="id">P-01</span><span class="chip alto">layout</span><span class="chip">todas as telas</span><span class="chip">em análise</span></div>
+        <h3>Tema claro difícil de ler</h3>
+        <p><b>O que acontece:</b> o claro tem fundo esverdeado, verde-claro em botões e etiquetas e pouco contraste; fica difícil ler e assimilar.</p>
+        <p><b>Esperado:</b> claro no padrão do ClickUp: fundo branco e cinza neutro, texto escuro, uma cor de destaque só para ação.</p></article>
+
+      <article class="p" id="P-02"><div class="linha-id"><span class="id">P-02</span><span class="chip alto">dado solto</span><span class="chip">sistema todo</span><span class="chip">em análise</span></div>
+        <h3>Dia a dia, Trabalho, Marketing, Comercial, WhatsApp e Financeiro não conversam</h3>
+        <p><b>O que acontece:</b> quem é cliente no Financeiro não é cliente no Comercial; quem é lead no Dia a dia não é lead no Atendimento. A mesma informação precisa ser posta em vários lugares.</p>
+        <p><b>Esperado:</b> um cadastro só de cliente e lead, visto de todas as áreas, sem quebrar as automações do Rodrigo.</p></article>
+
+      <article class="p" id="P-03"><div class="linha-id"><span class="id">P-03</span><span class="chip alto">dado solto</span><span class="chip">WhatsApp</span><span class="chip">em análise</span></div>
+        <h3>Cliente existente aparece "sem vínculo" e não dá para vincular</h3>
+        <p><b>O que acontece:</b> o grupo "ROOT | Lucas Rezende" está sem vínculo, e a busca de "Vincular a cliente" não acha o Lucas Rezende, que já é cliente. Não há botão para cadastrar o cliente dali.</p>
+        <p><b>Esperado:</b> achar o cliente onde quer que ele esteja cadastrado, e um botão para cadastrar quando ele ainda não existe, valendo para todas as áreas.</p></article>
+
+      <article class="p" id="P-04"><div class="linha-id"><span class="id">P-04</span><span class="chip alto">dado solto</span><span class="chip">Trabalho · Marketing</span><span class="chip">em análise</span></div>
+        <h3>Status e listas do ClickUp misturados nas tarefas</h3>
+        <p><b>O que acontece:</b> "Todas as tarefas" mostra 18 status (insights, redigir criativo, sugestão IA, agendar post…) e listas importadas do ClickUp (Gestão de Temas, Copy, Rotina de stories, Design &amp; Gravação). O Marketing do OS não tem nada disso.</p>
+        <p><b>Esperado:</b> decidir se o ClickUp ainda é fonte de verdade; filtrar ou tirar essas listas sem perder tarefa.</p></article>
+
+      <article class="p" id="P-05"><div class="linha-id"><span class="id">P-05</span><span class="chip alto">dado solto</span><span class="chip">Implantação</span><span class="chip">em análise</span></div>
+        <h3>Implantação de clientes desatualizada</h3>
+        <p><b>O que acontece:</b> Mais Q em "Kickoff marcado" (já passou), ProMedical em "Kit montado" (está quase encerrando), Sr. aGranel em "Contexto carregado" (não está).</p>
+        <p><b>Esperado:</b> a etapa refletir onde o cliente está, e saber de onde ela vem.</p></article>
+
+      <article class="p" id="P-06"><div class="linha-id"><span class="id">P-06</span><span class="chip medio">dado solto</span><span class="chip">Atas</span><span class="chip">em análise</span></div>
+        <h3>Ata não se liga a cliente, lead nem atendimento</h3>
+        <p><b>O que acontece:</b> a aba Atas lista reuniões soltas.</p>
+        <p><b>Esperado:</b> ligar a ata ao cliente ou lead e ver "nossas reuniões" dentro da gestão do cliente.</p></article>
+
+      <article class="p" id="P-07"><div class="linha-id"><span class="id">P-07</span><span class="chip alto">dado solto</span><span class="chip">Comercial · Financeiro</span><span class="chip">em análise</span></div>
+        <h3>"Clientes ativos: 5" está errado</h3>
+        <p><b>O que acontece:</b> há mais clientes; parte é parceria ou permuta. Essa informação está no Financeiro e não no Comercial.</p>
+        <p><b>Esperado:</b> clientes ativos contando todos, com o tipo (pagante, parceria, permuta) vindo de um lugar só.</p></article>
+
+      <article class="p" id="P-08"><div class="linha-id"><span class="id">P-08</span><span class="chip alto">dado solto</span><span class="chip">Comercial · Painel</span><span class="chip">em análise</span></div>
+        <h3>Canal de aquisição e vendedor não dão para editar</h3>
+        <p><b>O que acontece:</b> "Por vendedor" põe quase tudo no Rodrigo (R$ 69.936 em negociação, R$ 35.670 fechado), o que não aconteceu. Canal "Sem informação" em 13 de 14 leads. Nenhum dos dois tem onde mudar.</p>
+        <p><b>Esperado:</b> editar canal e vendedor no lead, e o painel recalcular.</p></article>
+
+      <article class="p" id="P-09"><div class="linha-id"><span class="id">P-09</span><span class="chip">nome</span><span class="chip">Comercial</span><span class="chip">em análise</span></div>
+        <h3>Trocar "Funil vivo" por "Funil de vendas"</h3>
+        <p><b>O que acontece:</b> nomes de efeito atrapalham a entender a tela.</p>
+        <p><b>Esperado:</b> "Funil de vendas" no menu, na aba e no título.</p></article>
+
+      <article class="p" id="P-10"><div class="linha-id"><span class="id">P-10</span><span class="chip alto">dado solto</span><span class="chip">Comercial</span><span class="chip">em análise</span></div>
+        <h3>"Em negociação" com dois valores no próprio Comercial</h3>
+        <p><b>O que acontece:</b> Propostas diz R$ 53.970 em negociação; o Painel geral diz R$ 79.936.</p>
+        <p><b>Esperado:</b> um número só, ou cada um dizendo claramente o que soma.</p></article>
+
+      <article class="p" id="P-11"><div class="linha-id"><span class="id">P-11</span><span class="chip alto">dado solto</span><span class="chip">Rodada da semana · Painel</span><span class="chip">em análise</span></div>
+        <h3>Valor do Sr. aGranel diferente em cada tela</h3>
+        <p><b>O que acontece:</b> a Rodada da semana pergunta se são R$ 56, 58 ou 62 mil; o Painel geral mostra outro valor de contrato.</p>
+        <p><b>Esperado:</b> o valor do negócio num lugar só, e todas as telas lendo dele.</p></article>
+
+      <article class="p" id="P-12"><div class="linha-id"><span class="id">P-12</span><span class="chip alto">layout</span><span class="chip">Tarefas</span><span class="chip">em análise</span></div>
+        <h3>Usar a janela de tarefa do Financeiro como padrão, sem perder as automações</h3>
+        <p><b>O que acontece:</b> Financeiro › Tarefas é o layout certo (responsáveis, prazo, cliente ou lead, repetir, descrição, janela no meio da tela), mas parece não puxar nada do que o Rodrigo automatizou.</p>
+        <p><b>Esperado:</b> esse layout em todas as tarefas, lendo e respeitando as automações.</p></article>
+
+      <article class="p" id="P-13"><div class="linha-id"><span class="id">P-13</span><span class="chip alto">layout</span><span class="chip">Trabalho</span><span class="chip">pronto para fazer</span></div>
+        <h3>A tarefa deve abrir já no meio da tela</h3>
+        <p><b>O que acontece:</b> abre como painel do lado; o modo central existe, mas só fica se a pessoa trocar, e vale por navegador.</p>
+        <p><b>Diagnóstico:</b> o padrão está fixo em "lado" (<code>TrabalhoView.tsx:2014</code>). Trocar o padrão para "centro" resolve, e quem preferir o lado continua podendo trocar.</p></article>
+
+      <article class="p" id="P-14"><div class="linha-id"><span class="id">P-14</span><span class="chip alto">layout</span><span class="chip">Trabalho</span><span class="chip">pronto para fazer</span></div>
+        <h3>Dentro da tarefa não dá para decidir rápido o que fazer, nem excluir</h3>
+        <p><b>O que acontece:</b> a tarefa aberta começa por Anexos e não tem concluir, excluir, mover nem compartilhar à vista; só o ícone de arquivar.</p>
+        <p><b>Diagnóstico:</b> essas ações já existem no menu ⋯ do card e no botão direito (<code>MenuDaTarefa.tsx</code>), com Excluir indo para a Lixeira. Falta trazer o mesmo menu e um botão "Concluir" para o topo da tarefa aberta, e pôr status e prazo antes dos anexos.</p></article>
+
+      <article class="p" id="P-15"><div class="linha-id"><span class="id">P-15</span><span class="chip medio">layout</span><span class="chip">sistema todo</span><span class="chip">pronto para fazer</span></div>
+        <h3>Não se acha a lixeira</h3>
+        <p><b>O que acontece:</b> parece não haver lixeira; algo excluído sem querer não teria volta.</p>
+        <p><b>Diagnóstico:</b> a Lixeira existe desde 22/10 (<code>/lixeira</code>): guarda tarefas excluídas e arquivadas, listas e pastas, com restaurar em lote. Ela só está escondida no menu da engrenagem. Proposta: um link "Lixeira" fixo no pé da árvore do Trabalho e no menu da tarefa ("Excluir · dá para restaurar na Lixeira").</p></article>
+
+      <article class="p" id="P-16"><div class="linha-id"><span class="id">P-16</span><span class="chip alto">layout</span><span class="chip">Trabalho</span><span class="chip">pronto para fazer</span></div>
+        <h3>Contas demais em "Responsável" e "Outros responsáveis"</h3>
+        <p><b>O que acontece:</b> as duas listas mostram Admin Root, MCP Service, Root e o Pedro duas vezes, com e-mail. Tem que ser uma pessoa por usuário.</p>
+        <p><b>Diagnóstico:</b> a regra de quem é da equipe já existe (<code>packages/shared/src/equipe-pessoas.ts</code>, usada na tela Equipe) e esconde contas de sistema, de teste, a da empresa e a segunda conta da mesma pessoa. O seletor do Trabalho (<code>TrabalhoView.tsx:1996</code>, <code>2435</code>) não usa essa regra. Proposta: usar a regra e mostrar só o nome (Lucas, Pedro, Rodrigo). Tarefa já ligada a uma conta escondida continua mostrando o nome.</p></article>
     </div>
   </section>
 
