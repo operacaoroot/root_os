@@ -89,7 +89,7 @@
     <p class="abre">Lista viva para quem desenvolve o OS. Em cima, os problemas que a equipe encontra no uso. Embaixo, o comparativo de usabilidade com o ClickUp: o que mudar no layout para o OS ficar tão fácil de usar quanto ele, sem mexer no conceito do sistema.</p>
     <div class="meta">
       <span>Aberto em <b>26/10/2026</b></span>
-      <span>Relatados <b class="num">25</b></span>
+      <span>Relatados <b class="num">30</b></span>
       <span>Comparativo <b class="num">9</b> pontos</span>
       <span>Código: branch <code>root-os/layout-comparativo</code>, nada alterado no ar</span>
     </div>
@@ -112,6 +112,29 @@
       <h2 id="t-publicado">Publicado em os.operacaoroot.com</h2>
       <p>Cada leva entra no ar sozinha e pode ser desfeita. O ponto zero é o OS como estava em 26/10/2026 às 13:50 (UTC), antes de qualquer mudança de layout.</p>
     </header>
+    <article class="registro" id="leva-3">
+      <div class="texto">
+        <div class="linha-id"><span class="id">Leva 3</span><span class="chip alto">no ar</span><span class="chip">26/10 · 15:22 UTC</span></div>
+        <h3>Financeiro, lead, Negócios e listas</h3>
+        <dl>
+          <div><dt class="rotulo">O que mudou</dt><dd>
+            P-23 A Pagar/Receber com "+ A receber", "+ A pagar", "Editar" em cada linha e "Baixar" pedindo data e valor pago.
+            P-24 Conciliação com "+ criar título" a partir do movimento, já conciliando.
+            P-25 Fluxo de caixa dos próximos 6 meses em barras (entradas, saídas e saldo no fim de cada mês), abaixo do de 30 dias.
+            P-22 Card do lead com a empresa no título e o representante embaixo (também separa nomes antigos "Empresa | Pessoa").
+            P-28 Negócios do mais recente para o mais antigo.
+            P-19 Listas que abrem sem o azul do Windows, no tema do OS.
+            P-26 Aviso do envio no WhatsApp corrigido.
+            Correção da leva 1: o cartão do WhatsApp no Dia a dia não some mais se as tarefas demorarem ou derem erro.
+          </dd></div>
+          <div class="mantem"><dt class="rotulo">Não muda</dt><dd>Nenhuma regra do Financeiro (aprovação acima do limite, rateio, sincronização do banco), nenhum dado de lead regravado, nenhuma tabela.</dd></div>
+          <div><dt class="rotulo">Código</dt><dd>Commit <code>3821de9a</code>; imagem <code>rootos-official:layout-leva3-3821de9</code>.</dd></div>
+          <div><dt class="rotulo">Voltar</dt><dd>Para a leva 2 ou ao ponto zero, sem perder dados.</dd></div>
+        </dl>
+      </div>
+      <figure><img src="fotos/producao22c-dia-a-dia-depois-escuro.png" alt="Dia a dia antes das mudanças de layout" loading="lazy" width="1440" height="900"><figcaption>Referência: o Dia a dia antes da leva 1.</figcaption></figure>
+    </article>
+
     <article class="registro" id="leva-2">
       <div class="texto">
         <div class="linha-id"><span class="id">Leva 2</span><span class="chip alto">no ar</span><span class="chip">26/10 · 14:42 UTC</span></div>
@@ -289,7 +312,7 @@
         <p><b>O que acontece:</b> só há Todo dia, Dias úteis, Toda semana, Todo mês e A cada N dias.</p>
         <p><b>Esperado:</b> um "Personalizar" como o do ClickUp (a cada N semanas em dias escolhidos, todo mês em tal dia da semana, até tal data). Mexe na regra de repetição: próxima leva.</p></article>
 
-      <article class="p" id="P-19"><div class="linha-id"><span class="id">P-19</span><span class="chip medio">layout</span><span class="chip">sistema todo</span><span class="chip">a fazer</span></div>
+      <article class="p" id="P-19"><div class="linha-id"><span class="id">P-19</span><span class="chip medio">layout</span><span class="chip">sistema todo</span><span class="chip alto">no ar · leva 3</span></div>
         <h3>Azul de seleção nas listas parece amador</h3>
         <p><b>O que acontece:</b> as listas que abrem (Repetir, Status, Responsável) mostram o azul padrão do Windows.</p>
         <p><b>Diagnóstico:</b> são listas nativas do navegador, que pintam com a cor do sistema. Dá para trocar pelo verde da ROOT usando o seletor personalizável do Chrome; como muda todas as listas do OS, vai numa leva própria, testada.</p></article>
@@ -304,26 +327,48 @@
         <p><b>Causa:</b> "Tarefas abertas" não escondia as concluídas e "Feitas na semana" mostrava as concluídas junto com as abertas.</p>
         <p><b>Feito:</b> abertas abre sem as concluídas; feitas abre só as concluídas. A diferença de contagem das atrasadas é o P-20.</p></article>
 
-      <article class="p" id="P-22"><div class="linha-id"><span class="id">P-22</span><span class="chip alto">função</span><span class="chip">Comercial</span><span class="chip">a fazer</span></div>
+      <article class="p" id="P-22"><div class="linha-id"><span class="id">P-22</span><span class="chip alto">função</span><span class="chip">Comercial</span><span class="chip alto">no ar · leva 3</span></div>
         <h3>Lead: o nome principal é a empresa; o representante fica no card</h3>
         <p><b>O que acontece:</b> o lead é salvo como "Empresa | Pessoa" num nome só (ex.: "Cultural | Juliano Rodrigues").</p>
         <p><b>Esperado:</b> como em qualquer CRM: cadastrar só com um nome, empresa como título do card e o representante embaixo; completar a empresa depois. O cadastro do lead já tem os dois campos (nome e empresa), então o primeiro passo é de tela.</p></article>
 
-      <article class="p" id="P-23"><div class="linha-id"><span class="id">P-23</span><span class="chip alto">layout</span><span class="chip">Financeiro</span><span class="chip">a fazer</span></div>
+      <article class="p" id="P-23"><div class="linha-id"><span class="id">P-23</span><span class="chip alto">layout</span><span class="chip">Financeiro</span><span class="chip alto">no ar · leva 3</span></div>
         <h3>A Pagar/Receber sem criar nem editar</h3>
         <p><b>O que acontece:</b> só há "Baixar". O Lucas, da Custeio, mudou a entrada para R$ 4.000 e já pagou, mas a tela segue com R$ 6.000 atrasado e não há como corrigir ali.</p>
         <p><b>Diagnóstico:</b> a API já cria lançamento e edita valor, vencimento, descrição, cliente e status (<code>POST/PATCH /finance/transactions</code>); falta a tela. O lançamento já aponta para o cliente do Financeiro, o mesmo que o fechamento do Comercial cria.</p>
         <p><b>Proposta:</b> "+ A receber" e "+ A pagar" no topo, "Editar" em cada linha e "Baixar" pedindo data e valor pago. Se o pagamento veio pelo Asaas, casar na Conciliação para não contar duas vezes.</p></article>
 
-      <article class="p" id="P-24"><div class="linha-id"><span class="id">P-24</span><span class="chip alto">layout</span><span class="chip">Financeiro · Conciliação</span><span class="chip">a fazer</span></div>
+      <article class="p" id="P-24"><div class="linha-id"><span class="id">P-24</span><span class="chip alto">layout</span><span class="chip">Financeiro · Conciliação</span><span class="chip alto">no ar · leva 3</span></div>
         <h3>Conciliação sem "criar título" a partir do movimento</h3>
         <p><b>O que acontece:</b> o Pix de R$ 1.000,00 de 22/10 (1ª parcela do iPhone do Lucas, que a ROOT paga em parte) não tem título, e "Escolher título" só lista os que já existem.</p>
         <p><b>Proposta:</b> "+ criar título a partir deste movimento", com data, valor e descrição preenchidos; escolher conta e parceiro; nasce já conciliado. Para o iPhone, usar o rateio que o sistema já tem: parte como despesa da ROOT, parte a receber do Lucas (ou adiantamento ao sócio). A conta de cada parte é regra do Pedro.</p></article>
 
-      <article class="p" id="P-25"><div class="linha-id"><span class="id">P-25</span><span class="chip alto">layout</span><span class="chip">Financeiro</span><span class="chip">a fazer</span></div>
+      <article class="p" id="P-25"><div class="linha-id"><span class="id">P-25</span><span class="chip alto">layout</span><span class="chip">Financeiro</span><span class="chip alto">no ar · leva 3</span></div>
         <h3>Fluxo de caixa projetado para 6 meses, em barras</h3>
         <p><b>O que acontece:</b> só 30 dias, numa linha que quase não mostra subida e queda.</p>
         <p><b>Proposta:</b> barras por mês nos próximos 6 meses: entradas para cima (verde), saídas para baixo (vermelho) e o saldo do fim de cada mês marcado; clique no mês abre o detalhe. A API já aceita qualquer período (<code>/finance/cashflow?from&amp;to</code>), então é só tela. A projeção só mostra o que está lançado: mês sem parcela gerada aparece sinalizado.</p></article>
+
+      <article class="p" id="P-26"><div class="linha-id"><span class="id">P-26</span><span class="chip medio">texto</span><span class="chip">WhatsApp</span><span class="chip alto">no ar · leva 3</span></div>
+        <h3>"Sai com o seu nome no registro" engana</h3>
+        <p><b>O que acontece:</b> a mensagem chega ao cliente só como "Root | Comercial", sem o nome de quem enviou; o "registro" era o Registro de ações do OS.</p>
+        <p><b>Feito:</b> o aviso agora diz "Sai pelo número da empresa, sem o seu nome na mensagem. O OS guarda no Registro de ações que foi você quem enviou." Assinar a mensagem com o nome ("*Lucas:* …") muda o envio: a decidir.</p></article>
+
+      <article class="p" id="P-27"><div class="linha-id"><span class="id">P-27</span><span class="chip medio">função</span><span class="chip">sistema todo</span><span class="chip">a fazer</span></div>
+        <h3>Chat do WhatsApp dentro do "Perguntar", em pop-up</h3>
+        <p><b>Proposta:</b> o botão "Perguntar" ganha uma aba "WhatsApp" com a caixa de conversas em tamanho compacto, para responder de qualquer tela. Só carrega quando abre, então não pesa o resto.</p></article>
+
+      <article class="p" id="P-28"><div class="linha-id"><span class="id">P-28</span><span class="chip">layout</span><span class="chip">Comercial</span><span class="chip alto">no ar · leva 3</span></div>
+        <h3>Negócios em ordem cronológica</h3>
+        <p><b>Feito:</b> a lista de Negócios vai do negócio atualizado mais recentemente para o mais antigo (antes era por valor).</p></article>
+
+      <article class="p" id="P-29"><div class="linha-id"><span class="id">P-29</span><span class="chip alto">layout</span><span class="chip">Trabalho</span><span class="chip">a fazer</span></div>
+        <h3>Responsável, Agente e Prazo editáveis direto na lista, com foto</h3>
+        <p><b>O que acontece:</b> na lista do Trabalho essas colunas só mostram; para mudar é preciso abrir a tarefa. O responsável aparece só com as iniciais.</p>
+        <p><b>Proposta:</b> clicar na célula abre a escolha ali mesmo, como no ClickUp. Foto: o avatar já mostra a foto de quem sobe uma em Perfil; o login pelo Google não guarda a foto da conta. Guardar a foto do Google no login mexe no login: leva própria.</p></article>
+
+      <article class="p" id="P-30"><div class="linha-id"><span class="id">P-30</span><span class="chip alto">layout</span><span class="chip">Trabalho</span><span class="chip">a fazer</span></div>
+        <h3>Topo da tarefa no formato do ClickUp</h3>
+        <p><b>Proposta:</b> uma grade compacta com Status, Datas, Responsáveis, Prioridade, Etiquetas e Tempo, cada um clicável, e a descrição logo abaixo, com mais espaço. A leva 2 já subiu status e prazo para o topo (P-14); falta a grade compacta.</p></article>
     </div>
   </section>
 
