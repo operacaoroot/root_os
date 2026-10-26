@@ -34,6 +34,7 @@ import {
   type OrdemDaLista,
 } from './lista-do-funil';
 import { contagemDeTarefas, proximaAcaoDoCartao, type LinhaDaProximaAcao } from './proxima-acao-do-cartao';
+import { partesDoLead } from '@/lib/nome-do-lead';
 
 /*
  * O FORMATO LISTA DO FUNIL VIVO (U4; refeita na rodada de produção 3, I5, 22/10/2026).
@@ -67,7 +68,7 @@ function TextoDaAcao({ linha }: { linha: LinhaDaProximaAcao | null }) {
 function Conteudo({ c, chave, testId }: { c: CartaoDoFunil; chave: ChaveDaColuna; testId?: string }) {
   switch (chave) {
     case 'empresa':
-      return <>{c.empresa ?? c.nome}</>;
+      return <>{partesDoLead(c.nome, c.empresa).titulo}</>;
     case 'contato':
       return <span className="text-muted">{c.nome}</span>;
     case 'etapa':
@@ -112,7 +113,7 @@ function Conteudo({ c, chave, testId }: { c: CartaoDoFunil; chave: ChaveDaColuna
 
 /** O texto do balão de uma célula que pode ser cortada. */
 function tituloDa(c: CartaoDoFunil, chave: ChaveDaColuna): string | undefined {
-  if (chave === 'empresa') return c.empresa ?? c.nome;
+  if (chave === 'empresa') return partesDoLead(c.nome, c.empresa).titulo;
   if (chave === 'contato') return c.nome;
   if (chave === 'produto' && c.produto) return ROTULO_DO_PRODUTO[c.produto];
   return undefined;
@@ -271,7 +272,7 @@ export function ListaDoFunil({
                   >
                     {k === 'empresa' ? (
                       <LinkDoLead leadId={c.leadId} aba="fio" data-linha-do-funil className={`rounded-sm font-semibold ${FOCO}`}>
-                        {c.empresa ?? c.nome}
+                        {partesDoLead(c.nome, c.empresa).titulo}
                       </LinkDoLead>
                     ) : (
                       <Conteudo c={c} chave={k} testId={`funil-linha-${c.leadId}`} />
@@ -295,7 +296,7 @@ export function ListaDoFunil({
             >
               <div className="flex items-start justify-between gap-2">
                 <LinkDoLead leadId={c.leadId} aba="fio" data-cartao-da-lista className={`min-w-0 flex-1 rounded-sm text-[13.5px] font-semibold ${FOCO}`}>
-                  <span className="block truncate">{c.empresa ?? c.nome}</span>
+                  <span className="block truncate">{partesDoLead(c.nome, c.empresa).titulo}</span>
                 </LinkDoLead>
                 {colunas.includes('etapa') && <Conteudo c={c} chave="etapa" />}
               </div>

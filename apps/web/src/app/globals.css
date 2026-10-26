@@ -353,3 +353,26 @@ body {
   font-variant-numeric: tabular-nums;
   letter-spacing: -0.02em;
 }
+
+/* Layout 26/10/2026 (P-19): as listas que abrem (status, responsável, repetir...)
+   deixam o azul do sistema operacional e seguem o tema do OS: fundo da superfície,
+   cinza no passar do mouse, a opção escolhida em verde claro com ✓. Só em navegador
+   que tem o seletor personalizável; nos outros fica a lista nativa de sempre. */
+@supports (appearance: base-select) {
+  select, ::picker(select) { appearance: base-select; }
+  ::picker(select) {
+    border: 1px solid rgb(var(--os-line-strong));
+    background: rgb(var(--os-s1));
+    color: rgb(var(--os-tx));
+    border-radius: 8px;
+    padding: 4px;
+    box-shadow: 0 8px 24px rgb(0 0 0 / 0.14);
+  }
+  select option { padding: 6px 10px; border-radius: 6px; color: rgb(var(--os-tx)); }
+  select option:hover, select option:focus-visible { background: rgb(var(--os-s2)); outline: none; }
+  select option:checked { background: rgb(var(--os-ac) / 0.12); font-weight: 600; }
+  select option:disabled { color: rgb(var(--os-tx3)); }
+  select option::checkmark { color: rgb(var(--os-ac)); }
+  select optgroup { color: rgb(var(--os-tx3)); font-size: 11px; }
+  select::picker-icon { color: rgb(var(--os-tx3)); }
+}

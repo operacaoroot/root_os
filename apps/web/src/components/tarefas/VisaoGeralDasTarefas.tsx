@@ -102,8 +102,10 @@ export function VisaoGeralDasTarefas({ meio }: { meio?: ReactNode } = {}) {
     // Sem a estrutura o dash mostra as listas, e as pastas ficam sem nome (não some número).
     apiGet<TrabEstrutura>('/trabalho/estrutura', token).then(setEstrutura).catch(() => setEstrutura(null));
   }, [ready, token]);
-  if (erro) return <div className="rounded-lg border border-bad/30 bg-bad/10 px-4 py-2 text-sm text-bad">{erro}</div>;
-  if (!p) return <p className="text-muted">Carregando…</p>;
+  // O que vem em `meio` (WhatsApp e Implantação) não espera as tarefas: aparece mesmo com
+  // as tarefas carregando ou com erro (antes, o erro do dash derrubava o cartão do WhatsApp).
+  if (erro) return <div className="space-y-5"><div className="rounded-lg border border-bad/30 bg-bad/10 px-4 py-2 text-sm text-bad">{erro}</div>{meio}</div>;
+  if (!p) return <div className="space-y-5"><p className="text-muted">Carregando as tarefas…</p>{meio}</div>;
   const abrir = (f: FiltroDaVisaoGeral) => { window.location.href = urlDoTrabalho(f); };
 
   const abertas = p.tarefas.filter((t) => t.situacao !== 'feita');

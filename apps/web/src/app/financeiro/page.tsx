@@ -28,6 +28,8 @@ import { AnaliseView } from './Analise';
 // financeira com o visual antigo ao lado do novo. Mesmas props, um só cartão.
 import { KpiCard } from '@/components/KpiCard';
 import { NovaInscricaoFinanceira } from './inscricoes/NovaInscricaoFinanceira';
+import { JanelaDeTitulo, type ModoDaJanela } from './JanelaDeTitulo';
+import { FluxoSeisMeses } from './FluxoSeisMeses';
 
 const brl = (n: number) =>
   n.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
@@ -261,6 +263,8 @@ function FinanceiroSessao() {
         <ConciliacaoView
           concil={concil}
           accounts={accounts}
+          partners={partners}
+          chart={chart}
           accountId={concilAcc}
           setAccountId={setConcilAcc}
           canBank={canBank}
@@ -464,6 +468,8 @@ function Visao({ summary, kpis, cashflow, txs, payables, ir }: {
             <KpiBotao onClick={() => ir('conciliacao')} label="Índice de acurácia" value={`${kpis.acuracidade.toFixed(0)}%`} hint={`${kpis.bankConciliado}/${kpis.bankTotal} conciliados`} tone={kpis.acuracidade >= 90 ? 'good' : 'warn'} />
           </div>
           <CashflowChart cashflow={cashflow} txs={txs} payables={payables} />
+          {/* Layout 26/10 (P-25): a projeção de 6 meses em barras, por mês. */}
+          <FluxoSeisMeses />
         </>
       )}
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
@@ -623,6 +629,8 @@ function PlanoContas({ chart }: { chart: ChartAccountList | null }) {
 function ConciliacaoView(props: {
   concil: Conciliacao | null;
   accounts: FinanceAccountList | null;
+  partners: PartnerList | null;
+  chart: ChartAccountList | null;
   accountId: string;
   setAccountId: (a: string) => void;
   canBank: boolean;
@@ -631,8 +639,10 @@ function ConciliacaoView(props: {
   onError: (e: unknown) => void;
   onFlash: (m: string) => void;
 }) {
-  const { concil, accounts, accountId, setAccountId, canBank, token, onChange, onError, onFlash } = props;
+  const { concil, accounts, partners, chart, accountId, setAccountId, canBank, token, onChange, onError, onFlash } = props;
   const [sel, setSel] = useState<Record<string, string>>({});
+  // Layout 26/10 (P-24): sem título para casar, cria a partir do próprio movimento e já concilia.
+  const [janela, setJanela] = useState<ModoDaJanela | null>(null);
   const [busy, setBusy] = useState(false);
 
   const auto = () => {
@@ -650,6 +660,14 @@ function ConciliacaoView(props: {
   const titulos = concil?.titulos ?? [];
   return (
     <div className="space-y-4">
+      {janela && (
+        <JanelaDeTitulo
+          modo={janela} partners={partners} chart={chart} accounts={accounts} token={token}
+          onFechar={() => setJanela(null)}
+          onSalvo={(msg) => { setJanela(null); onFlash(msg); onChange(); }}
+          onError={onError}
+        />
+      )}
       <div className="flex flex-wrap items-center gap-3">
         <select className={inputCls} value={accountId} onChange={(e) => setAccountId(e.target.value)}>
           <option value="">Todas as contas</option>
@@ -702,7 +720,8 @@ function ConciliacaoView(props: {
                     </select>
                   </td>
                   {canBank && (
-                    <td className="px-3 py-2 text-right">
+                    <td className="px-3 py-2 text-right whitespace-nowrap">
+                      <button type="button" onClick={() => setJanela({ tipo: 'movimento', movimentoId: m.id, lado: m.type, descricao: m.description, valor: m.amount, data: m.date, contaId: accountId })} className="mr-1 rounded border border-border px-2 py-0.5 text-[11px] text-brand hover:bg-surface-2">+ criar título</button>
                       <button onClick={() => conciliar(m.id, chosen)} className="rounded border border-border px-2 py-0.5 text-[11px] hover:bg-surface-2">Conciliar</button>
                     </td>
                   )}
@@ -746,13 +765,12 @@ function ApAr(props: {
   });
   const [gerando, setGerando] = useState<string | null>(null);
   const lancaveis = (chart?.items ?? []).filter((c) => c.permiteLancamento && c.ativo);
+  // Layout 26/10 (P-23): criar, editar e baixar pela mesma janela (a API já fazia tudo).
+  const [janela, setJanela] = useState<ModoDaJanela | null>(null);
 
   const doApprove = (id: string, aprovar: boolean) =>
     apiPost(`/finance/transactions/${id}/approve`, { aprovar }, token)
       .then(() => { onFlash(aprovar ? 'Aprovado.' : 'Rejeitado.'); onChange(); }).catch((e) => onError(e));
-  const baixar = (id: string) =>
-    apiPatch(`/finance/transactions/${id}`, { status: 'realizado' }, token)
-      .then(() => { onFlash('Baixado (realizado).'); onChange(); }).catch((e) => onError(e));
   // O vencimento vai no pedido: repetir o mesmo devolve o lançamento já gravado
   // (`replayed`) em vez de gerar a parcela seguinte.
   const gerar = (c: Contract) => {
@@ -816,7 +834,21 @@ function ApAr(props: {
         <span className="ml-auto text-muted">
           {linhas.length} {linhas.length === 1 ? 'item' : 'itens'} · {brl(linhas.reduce((s, r) => s + r.amount, 0))}
         </span>
+        {canEdit && (
+          <>
+            <button type="button" data-testid="apar-novo-receber" onClick={() => setJanela({ tipo: 'novo', lado: 'entrada' })} className="rounded-lg border border-border px-3 py-1.5 text-sm font-medium text-good hover:bg-surface-2">+ A receber</button>
+            <button type="button" data-testid="apar-novo-pagar" onClick={() => setJanela({ tipo: 'novo', lado: 'saida' })} className="rounded-lg border border-border px-3 py-1.5 text-sm font-medium text-bad hover:bg-surface-2">+ A pagar</button>
+          </>
+        )}
       </div>
+      {janela && (
+        <JanelaDeTitulo
+          modo={janela} partners={partners} chart={chart} accounts={accounts} token={token}
+          onFechar={() => setJanela(null)}
+          onSalvo={(m) => { setJanela(null); onFlash(m); onChange(); }}
+          onError={onError}
+        />
+      )}
 
       <div className="overflow-x-auto rounded-xl border border-border">
         <table className="w-full min-w-[820px] text-sm">
@@ -857,7 +889,10 @@ function ApAr(props: {
                         <button onClick={() => doApprove(r.id, false)} className="ml-1 rounded border border-border px-2 py-0.5 text-[11px] text-bad hover:bg-surface-2">Rejeitar</button>
                       </>
                     ) : r.approvalStatus !== 'rejeitado' ? (
-                      <button onClick={() => baixar(r.id)} className="rounded border border-border px-2 py-0.5 text-[11px] hover:bg-surface-2">Baixar</button>
+                      <>
+                        <button onClick={() => setJanela({ tipo: 'editar', id: r.id, lado: r.tipo, descricao: r.description, valor: r.amount, vencimento: r.dueDate, parceiro: r.partnerName })} className="rounded border border-border px-2 py-0.5 text-[11px] hover:bg-surface-2">Editar</button>
+                        <button onClick={() => setJanela({ tipo: 'baixar', id: r.id, descricao: r.description, valor: r.amount })} className="ml-1 rounded border border-border px-2 py-0.5 text-[11px] hover:bg-surface-2">Baixar</button>
+                      </>
                     ) : null}
                   </td>
                 )}

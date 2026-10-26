@@ -43,7 +43,9 @@ vi.mock('next/link', () => ({
     </a>
   ),
 }));
-vi.mock('@/components/tarefas/VisaoGeralDasTarefas', () => ({ VisaoGeralDasTarefas: () => <div data-testid="visao-geral-tarefas" /> }));
+// Layout 26/10: WhatsApp e Implantação entram pelo `meio` da Visão geral.
+vi.mock('@/components/tarefas/VisaoGeralDasTarefas', () => ({ VisaoGeralDasTarefas: ({ meio }: { meio?: React.ReactNode }) => <div data-testid="visao-geral-tarefas">{meio}</div> }));
+vi.mock('@/components/tarefas/ImplantacaoNoDiaADia', () => ({ ImplantacaoNoDiaADia: () => null }));
 vi.mock('@/components/AniversariosDoDia', () => ({ AniversariosDoDia: () => null }));
 vi.mock('@/lib/api', async (original) => {
   const real = await original<typeof import('@/lib/api')>();

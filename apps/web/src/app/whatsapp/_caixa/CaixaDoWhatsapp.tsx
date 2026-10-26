@@ -657,7 +657,7 @@ export function CaixaDoWhatsapp() {
                       {tamanho}/{TETO_DA_RESPOSTA_DA_CAIXA}
                     </span>
                   </div>
-                  {!razao && <p className="text-[11px] text-muted">Sai pelo número da empresa, com o seu nome no registro.</p>}
+                  {!razao && <p className="text-[11px] text-muted">Sai pelo número da empresa, sem o seu nome na mensagem. O OS guarda no Registro de ações que foi você quem enviou.</p>}
                 </form>
               )}
             </>

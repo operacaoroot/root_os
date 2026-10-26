@@ -15,6 +15,7 @@ import {
 } from '@mktos/shared';
 import { apiGet, apiPost } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
+import { partesDoLead } from '@/lib/nome-do-lead';
 import { BarraDividida, COR_DO_TOM, Colunas, Numero, Quadro, brl, curto, type Tom } from '@/components/painel';
 
 /*
@@ -390,7 +391,8 @@ function Grupos(props: { grupos: PainelComercialGrupo[]; primeira: string; abrir
 
 function Negocios(props: { p: PainelComercial; filtro: Filtro; tirar: (k: keyof Filtro) => void; limpar: () => void }) {
   const { p, filtro } = props;
-  const itens = useMemo(() => p.negocios.filter((n) => passa(n, filtro)), [p, filtro]);
+  // Layout 26/10 (P-28): do mais recente para o mais antigo (última atualização do negócio).
+  const itens = useMemo(() => p.negocios.filter((n) => passa(n, filtro)).sort((a, b) => b.atualizadoEm.localeCompare(a.atualizadoEm)), [p, filtro]);
   const ativos = CHAVES.filter((k) => filtro[k]);
   const total = itens.reduce((s, n) => s + (n.valor ?? 0), 0);
   return (
@@ -430,7 +432,9 @@ function ListaDeNegocios({ itens, vazio, completa }: { itens: PainelComercialNeg
     <div className="divide-y divide-border">
       {itens.map((n) => (
         <Link key={n.id} href={linkDoLead(n.id)} className="group flex w-full flex-wrap items-baseline gap-x-4 gap-y-1 py-2.5 text-left hover:bg-surface-2">
-          <span className="min-w-0 flex-1 font-medium group-hover:text-brand">{n.titulo}</span>
+          <span className="min-w-0 flex-1">
+            <TituloDoLead nome={n.titulo} />
+          </span>
           <span className="flex items-center gap-1.5 text-sm text-muted">
             <span className="inline-block h-2 w-2 rounded-full" style={{ background: n.etapaCor }} />
             {n.etapa}
@@ -446,5 +450,16 @@ function ListaDeNegocios({ itens, vazio, completa }: { itens: PainelComercialNeg
         </Link>
       ))}
     </div>
+  );
+}
+
+/** Layout 26/10 (P-22): empresa em destaque e o representante ao lado, menor. */
+function TituloDoLead({ nome }: { nome: string }) {
+  const { titulo, pessoa } = partesDoLead(nome);
+  return (
+    <>
+      <span className="font-medium group-hover:text-brand">{titulo}</span>
+      {pessoa && <span className="ml-2 text-sm text-muted">{pessoa}</span>}
+    </>
   );
 }

@@ -21,6 +21,7 @@ import { ListaDoFunil, SeletorDeColunas } from '../_funil/ListaDoFunil';
 import { RegistrarFechadoFora } from '../_funil/RegistrarFechadoFora';
 import { BlocoDeTarefasDoComercial } from '../_funil/TarefasDoComercial';
 import { contagemDeTarefas, proximaAcaoDoCartao, type LinhaDaProximaAcao } from '../_funil/proxima-acao-do-cartao';
+import { partesDoLead } from '@/lib/nome-do-lead';
 
 /*
  * TELA 04 · O FUNIL VIVO (lane C; painel na lane UX; mover na rodada do painel, P5;
@@ -340,8 +341,9 @@ function Cartao({
     >
       <div className="flex items-start gap-2">
         <LinkDoLead leadId={c.leadId} aba="fio" data-cartao-do-funil className={`min-w-0 flex-1 rounded-sm ${FOCO}`}>
-          <p className="truncate text-[13.5px] font-semibold" title={c.empresa ?? c.nome}>{c.empresa ?? c.nome}</p>
-          {c.empresa && c.empresa !== c.nome && <p className="truncate text-[11.5px] text-muted" title={c.nome}>{c.nome}</p>}
+          {/* Layout 26/10 (P-22): empresa no título, representante embaixo. */}
+          <p className="truncate text-[13.5px] font-semibold" title={partesDoLead(c.nome, c.empresa).titulo}>{partesDoLead(c.nome, c.empresa).titulo}</p>
+          {partesDoLead(c.nome, c.empresa).pessoa && <p className="truncate text-[11.5px] text-muted">{partesDoLead(c.nome, c.empresa).pessoa}</p>}
         </LinkDoLead>
         {podeMover && (
           <button
