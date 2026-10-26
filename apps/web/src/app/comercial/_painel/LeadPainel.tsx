@@ -174,6 +174,7 @@ export function LeadPainel({ estado }: { estado: EstadoDoPainel }) {
 
   return createPortal(
     <div data-painel-do-lead data-os-app className="fixed inset-0 z-[60]">
+      {/* Layout 26/10: no computador abre no centro, como a janela do Financeiro (antes era gaveta à direita). */}
       <div
         aria-hidden
         data-fundo-do-painel
@@ -188,7 +189,7 @@ export function LeadPainel({ estado }: { estado: EstadoDoPainel }) {
         aria-modal="true"
         aria-labelledby={idTitulo}
         onKeyDown={prenderFoco}
-        className="absolute inset-0 flex flex-col bg-bg text-text shadow-2xl motion-safe:animate-[folha-sobe_220ms_ease-out] md:inset-y-0 md:left-auto md:right-0 md:w-[min(720px,90vw)] md:border-l md:border-border md:motion-safe:animate-[painel-entra_200ms_ease-out]"
+        className="absolute inset-0 flex flex-col bg-bg text-text shadow-2xl motion-safe:animate-[folha-sobe_220ms_ease-out] md:inset-auto md:left-1/2 md:top-[4vh] md:h-[92vh] md:w-[min(1040px,94vw)] md:-translate-x-1/2 md:overflow-hidden md:rounded-xl md:border md:border-border md:motion-safe:animate-[fundo-entra_160ms_ease-out]"
       >
         <header className="shrink-0 border-b border-border bg-bg2 px-4 pt-3 md:px-5">
           <div className="flex items-start gap-3">
