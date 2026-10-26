@@ -17,17 +17,30 @@
     },
     "identidade": {
       "nome": "ROOT",
-      "descricao": "A ROOT ajuda essa parte a ganhar forma, a partir do conhecimento do próprio negócio. O que é construído passa a fazer parte da empresa.",
-      "assinatura": "",
+      "descricao": "Tem uma parte da empresa que só existe na cabeça de quem a criou. A ROOT ajuda essa parte a ganhar forma, a partir do conhecimento do próprio negócio. O que é construído passa a fazer parte da empresa.",
+      "assinatura": "“By ROOT”: uma vez por entrega, no rodapé ou num canto da barra lateral. “By” em JetBrains Mono 400, cor de texto secundária; ROOT no wordmark reduzido, alinhado pela linha de base, a ~0,5 em. Não vira selo repetido nem expressão em texto corrido.",
       "nicho": "B2B",
       "handle": "@operacao.root"
     },
     "voz": {
       "descricao": "Falamos em português do Brasil, de forma próxima, observadora e concreta. O texto de referência começa com uma percepção e a desenvolve por meio de exemplos cotidianos. Esse ritmo de conversa orienta a voz: reconhecer algo que a pessoa vive, permitir que ela acompanhe a história e chegar a uma possibilidade compreensível. A personalidade dos sócios pode aparecer; não precisamos fazer os três falarem do mesmo jeito.",
       "eixos": [],
-      "permitidas": [],
+      "permitidas": [
+        "Próxima: Vocabulário natural, situações reconhecíveis e espaço para a reação humana.",
+        "Curiosa: Perguntas que movem uma experiência e interesse pelo que ela revela.",
+        "Ambiciosa: A vontade de realizar algo relevante para o próprio negócio e fazer planos apoiados no trabalho realizado.",
+        "Específica: Uma tela, uma decisão, uma ferramenta ou uma mudança que conseguimos apontar.",
+        "Honesta: Clareza sobre o que funcionou, o que está em teste e o que ainda falta.",
+        "Bem-humorada: Situações do trabalho e da convivência tratadas com leveza."
+      ],
       "evitar": [
-        "revolucionar o seu negócio"
+        "revolucionar o seu negócio",
+        "texto que qualquer empresa de IA publicaria sem mudar uma palavra",
+        "ameaça genérica de substituição",
+        "superioridade sobre quem sabe menos",
+        "promessa de riqueza fácil",
+        "dramatizar cansaço ou virar noites como condição para construir",
+        "luz verde falsa: chamar de pronto o que não foi conferido"
       ]
     },
     "visual": {
@@ -63,6 +76,26 @@
         {
           "papel": "fundo",
           "hex": "#070A08"
+        },
+        {
+          "papel": "papel · fundo",
+          "hex": "#ECE7D8"
+        },
+        {
+          "papel": "papel · primaria",
+          "hex": "#4D7208"
+        },
+        {
+          "papel": "papel · erro",
+          "hex": "#C2185B"
+        },
+        {
+          "papel": "papel · confirmacao",
+          "hex": "#00806A"
+        },
+        {
+          "papel": "papel · atencao",
+          "hex": "#9A6B00"
         }
       ],
       "fontes": [
@@ -77,9 +110,13 @@
         {
           "papel": "dados e comandos",
           "familia": "JetBrains Mono"
+        },
+        {
+          "papel": "wordmark (exclusivo)",
+          "familia": "JetBrains Mono itálico 800"
         }
       ],
-      "logoDataUrl": null,
+      "logoDataUrl": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAWgAAABpCAMAAAAgEEn2AAADAFBMVEVMaXGb2x6b2x7/Fm4K/+dH/Fb/AH8F/67/A1r7CUv/E2/9FHH/EnD/GWwf/67+HHMp+5yb2x4l/KCa2CBJ8nj9IGst+pds6VIg/qge/6pw500g/qgd/6h45UVB9IEh/qcg/6j/HWxF831o6Vb/IWn/H2wg/6gk/qP/Hmwh/6cf/6kf/6kg/6gf/6kZ/7Z05kkc/7Gi2Bf/HWz/H2z8Imkf/qj/Hmz/HW3+IWwg/6i1rDL/H2z/HW3/Hmz/H2wf/6kh/6f/HGv/Hmz/H2ya2yD/H2wg/6hQ8HAh/qf/HWzxN2H/Hmz/H2vgWVP1MGTUckqH4TX9Hm3/HGz+IGv/HG9N8XR/5D7/HW3/HW4f/6j/HWyk2BQa/7Mh/6cg/qj/Hmth7V8g/af/Hmz/Gm6g2Rkg/6X+H2v9I2s594oe/6pX72of/qiU5xke/6oX/7Qx+ZOY3x0Z/67/Gm3/F2+cxDP7J2ge/6eZ2x4b/6nRdUc1+Y9c7WRm51sT/7TNfUV94z6bxDOc1CO9mzjRdUg+94XdXlDuP163nj9y50uV2CtF8IG4qDVz6E2JyEx81FFd6mRe6mJC9IBX72k+9oTKgkKX5hmE00mS3iiJ3zIq/JtM8XinyScv/JfyN2Kb2x+a2yCc2SCZ2yGc2CD/I3Gb2h+i2ReV5xoa/7qn7CGf2huh2hgZ/7SZ4B2a3h4d/7T/I26W5Rv/HWyd2hyX4xz/IW3/IW6Y4hz/H2yc2h+j2RWM3y8f/7CU6BmlySYa/7AY/7mc3B6izyT/Gm2Q3isd/67FjT+pwSn6Jmif0yK5pDWS3iinxCjnS1m/mDrkUFeV3iaW3CX3LGW8nTgc/7fbYlCk4Bz/G3T5KWfdXlHIh0HuPV7iVVUg/6quuC2rvCuwsy/YZ07Ckjyl6CDqRlv/FXX0NGLLgkOE8UTZbUye4yGn4yXQeEZG/oivzyqh6SDWjUYa/8Ca6BzqYFeW7DBx9Vg1/5pc/HGY3CP+MWqQ8Dm+tzXxR1/HpTut6xqk9B76SGIzNUMPAAAA+HRSTlMAbPr9AQICAwMB/AT9/Q4K/f3+Ifz9/f3eVP5GFP78pWNP/P0Q1en+R6ta803kCv4Y/XXO/u7cPxey/unvWvjZl23igv6QkP2dm/44rf7+/f0ficov/P6iNGzD/R8dy339BpYn/CVkLPy7/Sv8gTz8/HW1+Em/+rY00ui32Jyc7hjt7GR0vZ+I2f2XbGyfrYzmuefL5Wxew9W7XclbeP///////////////////////////////////////////////////////////////////////////////////////v///////////////////////////////q/NFFUAAAAJcEhZcwAACxMAAAsTAQCanBgAABjeSURBVHja3Z15fBPVvsBHmqZJ01LrswoKVxDKIpuVClgqUES5gEALiGyy2IqAZZOnz/Xqc7tXvfvy9k8ynaRBSkLTpqQDLVBAoRVBoFARgcqjAhUQWcXlXt/vTLpkMr8zcyaTuLz5x89H4+nM7/zO9/zObzscp/WYOH2PxWaxcnqf+IR48o+BT/R/7Q/P/+al3O17x7hqt+5ofOWvr78x795pKfDfzDZ9w5riE6RX7/hM59eeD47pEGo3Hc165dnX37irT76FvKslet9t+BnYbeZvr9N+3n771Vf7DJVEwnH6ZG1KSCACuXXpn/5886lLXxw8uKa8psZut3u9nsCF5nPfnD+U/mBOHsdZdYjaJM3cnZ2X/umPg76+1Nw+picQuHDw3DcnJw4e170nTJ+FJubHZs68LjrP317NyblX64UTuFvrq77++zuaz+eff37uXNZ7k58ad9cEkLaVWdSSSDrecdtz809dOlhSUJA6ZswYh116XC5eSF3hL/SfO//9qie72ziLmXVM0Mc5K//zoctfN8vHdAXHLKz27Dh/LXvcNNBqK/7dD3x59p3oPP840OR8WFvQD2z5RUEHhmcFPP7qCwe/OX949MN9bIyiJiJJWPbic1dPNc8GeRQ5WmTc/oBgeE/hirpvm9K7W60WJg6ZYOYWL7p8aU0GkTE6pstTWPvxtcQHp3FmM6bQA0eu7ZHRIRrPik37RlQO1QQ0+YMbiuyaj8slKQu/orDQnnVxW3pOT86sLWmAxoLOc5df/hCkXOSgDy64fCtOpjU8mMdpSxpWSJeVnc6eqpldMIY+pksUvNVbDzSNuM+GjAkL+d3eG9c47MYfwb07bn16ijY5qm7Q9wdhZfoKs75tGnIvp6V/8QlcfOeRVy67ZotFGn/CxdurG8c3DO/D2TSnruPKXmenZ2S4NMcUPL7j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",
       "regras": "Base neutra, tipografia legível e cor com função. Space Grotesk 400, 500, 600 e 700 em títulos, texto corrido, legendas e botões; JetBrains Mono 400, 500, 700 e 800 em etiquetas, números, comandos e dados. Itálico 800 exclusivamente no wordmark. Conferir contraste no tamanho e fundo reais de uso. O verde-limão identifica ação ou seleção e não confirma sucesso automaticamente. Estados precisam de texto ou símbolo além da cor. Gradientes, brilho neon, sombras coloridas e efeitos decorativos dispersos ficam fora do sistema geral. Wordmark v2 especifica 10°; vetores anteriores documentam 19,2°. O novo conjunto oficial ainda exige compatibilização e não é fornecido por esta referência. By ROOT identifica a autoria no sistema entregue uma vez, no rodapé ou canto da barra lateral; não é slogan.",
       "texturas": "Grade de fundo de 48 px, muito discreta; dispensada no tema mono. Não competir com o conteúdo.",
       "capas": "Títulos, legendas e chamadas mantêm tipografia de leitura. O deslocamento de canais é exclusivo do wordmark. Preservar uma área livre equivalente à altura do R em todos os lados da marca."
