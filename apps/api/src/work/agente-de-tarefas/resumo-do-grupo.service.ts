@@ -2,12 +2,13 @@ import { Inject, Injectable, Logger, OnModuleInit, Optional } from '@nestjs/comm
 import { AgentEstado, EstadoDeAgente, Prisma } from '@prisma/client';
 
 import { PrismaService } from '../../prisma/prisma.service';
-import { ENVIO_PELA_EVOLUTION, type EnvioPelaEvolution } from '../../gateway/canais/evolution.port';
+import { MENSAGEM_DO_AGENTE_NO_GRUPO, type MensagemDoAgenteNoGrupo } from '../../gateway/canais/evolution.port';
 import { ExecutoresDeRotinaRegistry } from '../../routines/executores.registry';
 import { LIVRE, type ContextoDaRotina, type ResultadoDaRotina } from '../../routines/rotina.tipos';
 import { proximaOcorrencia } from '../../pauta/cron';
 import { TarefasDoDiaService } from '../tarefas-do-dia.service';
 import { SLUG_DO_AGENTE_DE_TAREFAS } from './agente-de-tarefas.service';
+import { mesmoTelefone, nomeComparavel } from './pedido-do-grupo';
 import {
   CRON_DO_RESUMO, FUSO_DO_RESUMO, SLUG_DA_ROTINA_DO_RESUMO, TIPO_DO_RESUMO_DO_GRUPO, montarResumo, turnoDe,
 } from './resumo-do-grupo';
@@ -26,7 +27,7 @@ export class ResumoDoGrupoService implements OnModuleInit {
     private readonly prisma: PrismaService,
     private readonly tarefas: TarefasDoDiaService,
     @Optional() private readonly executores?: ExecutoresDeRotinaRegistry,
-    @Optional() @Inject(ENVIO_PELA_EVOLUTION) private readonly envio?: EnvioPelaEvolution,
+    @Optional() @Inject(MENSAGEM_DO_AGENTE_NO_GRUPO) private readonly envio?: MensagemDoAgenteNoGrupo,
   ) {}
 
   onModuleInit(): void {
@@ -53,6 +54,30 @@ export class ResumoDoGrupoService implements OnModuleInit {
     return 'criada';
   }
 
+  /**
+   * O número de WhatsApp de cada pessoa, para o @. Vale o número EXATO com que
+   * ela já escreveu no grupo (o WhatsApp de conta antiga não tem o 9 da frente,
+   * e a menção só notifica com o número dele); sem mensagem no grupo, o telefone
+   * do cadastro com o 55. Sem telefone no cadastro, sem @ — o nome, como antes.
+   */
+  private async comMencao(orgId: string, pessoas: { id: string; nome: string }[]) {
+    const [contas, remetentes] = await Promise.all([
+      this.prisma.user.findMany({ where: { orgId, isActive: true, phone: { not: null } }, select: { name: true, phone: true } }),
+      this.prisma.whatsAppMensagem.findMany({
+        where: { orgId, chatJid: this.jid, deMim: false, remetenteNumero: { not: null } },
+        distinct: ['remetenteNumero'], select: { remetenteNumero: true }, take: 200,
+      }),
+    ]);
+    return pessoas.map((p) => {
+      // A pessoa com duas contas (Pedro) aparece uma vez: qualquer conta com o mesmo nome serve.
+      const telefone = contas.find((c) => nomeComparavel(c.name) === nomeComparavel(p.nome))?.phone ?? null;
+      if (!telefone) return { ...p, mencao: null };
+      const doGrupo = remetentes.map((r) => r.remetenteNumero!).find((n) => mesmoTelefone(n, telefone));
+      const digitos = telefone.replace(/\D/g, '');
+      return { ...p, mencao: doGrupo ?? (digitos.length <= 11 ? `55${digitos}` : digitos) };
+    });
+  }
+
   async passagem(ctx: Pick<ContextoDaRotina, 'orgId' | 'agora'>): Promise<ResultadoDaRotina> {
     if (!this.jid) return { status: 'pulada', resumo: 'AGENTE_TAREFAS_JID não configurado: nada foi enviado.' };
     if (!this.envio) return { status: 'pulada', resumo: 'Sem o envio pela Evolution neste processo.' };
@@ -60,9 +85,11 @@ export class ResumoDoGrupoService implements OnModuleInit {
     if (agente?.estado !== EstadoDeAgente.ativo) return { status: 'pulada', resumo: 'Agente de tarefas pausado em Agentes: nada foi enviado.' };
     const painel = await this.tarefas.painel(ctx.orgId);
     const turno = turnoDe(ctx.agora);
-    const texto = montarResumo(turno, painel.hoje, painel.pessoas, painel.tarefas);
+    const pessoas = await this.comMencao(ctx.orgId, painel.pessoas);
+    const texto = montarResumo(turno, painel.hoje, pessoas, painel.tarefas);
+    const mencoes = pessoas.map((p) => p.mencao).filter((m): m is string => !!m);
     try {
-      await this.envio.enviarAoGrupo(ctx.orgId, this.jid, texto);
+      await this.envio.falarNoGrupoDoAgente(ctx.orgId, texto, mencoes);
     } catch (e) {
       this.log.warn(`resumo não saiu (${ctx.orgId}): ${(e as Error).message}`);
       return { status: 'erro', resumo: `O WhatsApp recusou o envio: ${(e as Error).message}`.slice(0, 200) };

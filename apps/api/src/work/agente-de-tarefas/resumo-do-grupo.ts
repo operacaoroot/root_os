@@ -45,32 +45,48 @@ function linha(t: TarefaDoDia): string {
   return t.situacao === 'atrasada' ? `• ${t.titulo} — venceu ${diaCurto(t.prazo)} ⚠️` : `• ${t.titulo}`;
 }
 
+/**
+ * `mencao` é o número de WhatsApp da pessoa (só dígitos, como o WhatsApp o
+ * escreve). Com ele, o bloco começa com `@número`, que o WhatsApp mostra como o
+ * nome do contato e notifica mesmo com o grupo silenciado. Sem ele, o nome em
+ * negrito, como antes.
+ */
 export function montarResumo(
-  turno: Turno, hoje: string, pessoas: { id: string; nome: string }[], todas: TarefaDoDia[],
+  turno: Turno, hoje: string, pessoas: { id: string; nome: string; mencao?: string | null }[], todas: TarefaDoDia[],
 ): string {
   const abertas = todas.filter((t) => t.status.tipo !== 'concluida');
   const amanha = amanhaDe(hoje);
   const blocos = pessoas.map((p) => {
     const dela = abertas.filter((t) => t.pessoas.some((x) => x.id === p.id));
     const lista = doDia(dela);
-    const atrasadas = lista.filter((t) => t.situacao === 'atrasada').length;
-    const deHoje = lista.length - atrasadas;
-    const primeiroNome = p.nome.split(/\s+/)[0];
+    const atrasadas = lista.filter((t) => t.situacao === 'atrasada');
+    const deHoje = lista.filter((t) => t.situacao === 'hoje');
+    const quem = p.mencao ? `@${p.mencao}` : `*${p.nome.split(/\s+/)[0]}*`;
     if (lista.length === 0) {
-      const vazio = turno === 'manha' ? 'nada vencendo hoje ✅' : 'tudo de hoje fechado ✅';
-      return `*${primeiroNome}* — ${vazio}`;
+      const vazio = turno === 'manha' ? 'nada em atraso nem para hoje ✅' : 'tudo de hoje feito ✅';
+      return `${quem} — ${vazio}`;
     }
-    const conta = [atrasadas ? `${atrasadas} atrasada${atrasadas > 1 ? 's' : ''}` : null, deHoje ? `${deHoje} para hoje` : null]
-      .filter(Boolean).join(', ');
-    const resto = lista.length > POR_PESSOA ? `\n  …e mais ${lista.length - POR_PESSOA}` : '';
-    const vencemAmanha = turno === 'noite' ? dela.filter((t) => t.prazo === amanha).length : 0;
-    const rodape = vencemAmanha ? `\n  Amanhã: ${vencemAmanha}` : '';
-    return `*${primeiroNome}* — ${conta}\n${lista.slice(0, POR_PESSOA).map(linha).join('\n')}${resto}${rodape}`;
+    const corte = (ts: TarefaDoDia[]) =>
+      ts.slice(0, POR_PESSOA).map(linha).join('\n') + (ts.length > POR_PESSOA ? `\n  …e mais ${ts.length - POR_PESSOA}` : '');
+    if (turno === 'manha') {
+      // 07h: primeiro o que ficou de dias anteriores, depois o de hoje.
+      const partes = [
+        atrasadas.length ? `_Em atraso (${atrasadas.length}):_\n${corte(atrasadas)}` : null,
+        deHoje.length ? `_Para hoje (${deHoje.length}):_\n${corte(deHoje)}` : null,
+      ].filter(Boolean);
+      return `${quem}\n${partes.join('\n')}`;
+    }
+    // 18h: o resumo do que não foi feito — quanto ficou, de onde veio, e a lista.
+    const deOntem = atrasadas.length ? `, ${atrasadas.length} já vinha${atrasadas.length > 1 ? 'm' : ''} atrasada${atrasadas.length > 1 ? 's' : ''}` : '';
+    const vencemAmanha = dela.filter((t) => t.prazo === amanha).length;
+    const rodape = vencemAmanha ? `\n  Amanhã vencem mais ${vencemAmanha}.` : '';
+    return `${quem} — não ${lista.length > 1 ? 'foram feitas' : 'foi feita'} ${lista.length} (${deHoje.length} de hoje${deOntem})\n${corte(lista)}${rodape}`;
   });
   const semDono = doDia(abertas.filter((t) => t.pessoas.length === 0)).length;
+  const pendentes = pessoas.reduce((n, p) => n + doDia(abertas.filter((t) => t.pessoas.some((x) => x.id === p.id))).length, 0);
   const cabeca = turno === 'manha'
-    ? `☀️ *Bom dia! Tarefas de hoje (${diaCurto(hoje)})*`
-    : `🌙 *Fechamento do dia (${diaCurto(hoje)}): o que ainda está aberto*`;
+    ? `☀️ *Bom dia! Começo do dia (${diaCurto(hoje)})*`
+    : `🌙 *Fechamento do dia (${diaCurto(hoje)}): ${pendentes ? `${pendentes} ${pendentes > 1 ? 'tarefas ficaram' : 'tarefa ficou'} sem fazer` : 'tudo feito 🎉'}*`;
   const pe = [
     semDono ? `Sem responsável, vencendo: ${semDono}. Veja no Dia a dia.` : null,
     turno === 'noite' ? 'Concluiu? Responda: tarefa concluída: <nome da tarefa>' : null,

@@ -5,7 +5,7 @@ import type { TarefaDoDia } from '@mktos/shared';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuditService } from '../../audit/audit.service';
 import { EntradaDeGrupoRegistry } from '../../gateway/canais/entrada-de-grupo.registry';
-import { ENVIO_PELA_EVOLUTION, type EnvioPelaEvolution } from '../../gateway/canais/evolution.port';
+import { MENSAGEM_DO_AGENTE_NO_GRUPO, type MensagemDoAgenteNoGrupo } from '../../gateway/canais/evolution.port';
 import { LLM_PROVIDER, type LlmProvider } from '../../llm/llm.provider';
 import { exigirAcessoAtual } from '../../memory/acesso-memoria';
 import { TarefasDoDiaService } from '../tarefas-do-dia.service';
@@ -49,7 +49,7 @@ export class AgenteDeTarefasService implements OnModuleInit {
     private readonly audit: AuditService,
     private readonly tarefas: TarefasDoDiaService,
     @Optional() private readonly grupos?: EntradaDeGrupoRegistry,
-    @Optional() @Inject(ENVIO_PELA_EVOLUTION) private readonly envio?: EnvioPelaEvolution,
+    @Optional() @Inject(MENSAGEM_DO_AGENTE_NO_GRUPO) private readonly envio?: MensagemDoAgenteNoGrupo,
     @Optional() @Inject(LLM_PROVIDER) private readonly llm?: LlmProvider,
   ) {}
 
@@ -104,7 +104,7 @@ export class AgenteDeTarefasService implements OnModuleInit {
       this.log.warn('sem envio pela Evolution: resposta não saiu');
       return;
     }
-    await this.envio.enviarAoGrupo(orgId, this.jid, texto);
+    await this.envio.falarNoGrupoDoAgente(orgId, texto);
   }
 
   /** Quem é da equipe pelo telefone; `null` quando não dá para saber. */

@@ -28,21 +28,33 @@ describe('resumo do grupo', () => {
     expect(turnoDe(new Date('2026-10-27T21:00:00Z'))).toBe('noite');
   });
 
-  it('um bloco por pessoa, atrasada marcada, concluída e futura fora', () => {
+  it('de manhã: primeiro o atraso, depois o de hoje; concluída e futura fora', () => {
     const m = montarResumo('manha', '2026-10-27', EQUIPE, QUADRO);
-    expect(m).toContain('Bom dia');
-    expect(m).toContain('*Lucas* — 1 para hoje\n• Gravar reels');
-    expect(m).toContain('*Rodrigo* — nada vencendo hoje ✅');
-    expect(m).toContain('*Pedro* — 1 atrasada\n• Revisar contrato Custeio — venceu 24/10 ⚠️');
+    expect(m).toContain('Bom dia! Começo do dia (27/10)');
+    expect(m).toContain('*Lucas*
+_Para hoje (1):_
+• Gravar reels');
+    expect(m).toContain('*Rodrigo* — nada em atraso nem para hoje ✅');
+    expect(m).toContain('*Pedro*
+_Em atraso (1):_
+• Revisar contrato Custeio — venceu 24/10 ⚠️');
     expect(m).not.toContain('Enviar NF');
     expect(m).not.toContain('Proposta Affari');
     expect(m).toContain('Sem responsável, vencendo: 1');
   });
 
-  it('à noite fala do que ficou aberto e do que vence amanhã', () => {
+  it('à noite: o resumo do que não foi feito', () => {
     const n = montarResumo('noite', '2026-10-27', EQUIPE, QUADRO);
-    expect(n).toContain('Fechamento do dia (27/10)');
-    expect(n).toContain('Amanhã: 1');
-    expect(n).toContain('tarefa concluída');
+    expect(n).toContain('Fechamento do dia (27/10): 2 tarefas ficaram sem fazer');
+    expect(n).toContain('*Pedro* — não foi feita 1 (0 de hoje, 1 já vinha atrasada)');
+    expect(n).toContain('*Lucas* — não foi feita 1 (1 de hoje)');
+    expect(n).toContain('Amanhã vencem mais 1.');
+    expect(n).toContain('*Rodrigo* — tudo de hoje feito ✅');
+  });
+
+  it('com o número, o bloco começa com o @ da pessoa', () => {
+    const m = montarResumo('manha', '2026-10-27', [{ ...EQUIPE[0], mencao: '553291486277' }], QUADRO);
+    expect(m).toContain('@553291486277
+_Para hoje (1):_');
   });
 });
