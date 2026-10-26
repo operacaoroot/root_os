@@ -50,6 +50,7 @@ import { ComercialModule } from './comercial/comercial.module';
 import { AnexosDaTarefaModule } from './work/anexos/anexos.module';
 import { AgendaModule } from './agenda/agenda.module';
 import { CobrancaDeTarefasModule } from './work/cobranca/cobranca.module';
+import { AgenteDeTarefasModule } from './work/agente-de-tarefas/agente-de-tarefas.module';
 import { DelegadorModule } from './work/delegador/delegador.module';
 import { ImplantacaoModule } from './implantacao/implantacao.module';
 import { WhatsappModule } from './whatsapp/whatsapp.module';
@@ -210,6 +211,7 @@ import { WhatsappModule } from './whatsapp/whatsapp.module';
     // `/trabalho/tarefas/:id/delegacao`). Sem as linhas, a rotina fica "sem executor" e as
     // rotas do delegador respondem 404, sem nada acusar.
     CobrancaDeTarefasModule,
+    AgenteDeTarefasModule,
     DelegadorModule,
     // Produção 22 (M1): o cartão da implantação (reunião, fase do trilho, resumo do Dia a
     // dia, limite da etapa pelo menu da coluna). Sem a linha, as rotas respondem 404.
