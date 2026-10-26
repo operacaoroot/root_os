@@ -31,13 +31,9 @@ describe('resumo do grupo', () => {
   it('de manhã: primeiro o atraso, depois o de hoje; concluída e futura fora', () => {
     const m = montarResumo('manha', '2026-10-27', EQUIPE, QUADRO);
     expect(m).toContain('Bom dia! Começo do dia (27/10)');
-    expect(m).toContain('*Lucas*
-_Para hoje (1):_
-• Gravar reels');
+    expect(m).toContain('*Lucas*\n_Para hoje (1):_\n• Gravar reels');
     expect(m).toContain('*Rodrigo* — nada em atraso nem para hoje ✅');
-    expect(m).toContain('*Pedro*
-_Em atraso (1):_
-• Revisar contrato Custeio — venceu 24/10 ⚠️');
+    expect(m).toContain('*Pedro*\n_Em atraso (1):_\n• Revisar contrato Custeio — venceu 24/10 ⚠️');
     expect(m).not.toContain('Enviar NF');
     expect(m).not.toContain('Proposta Affari');
     expect(m).toContain('Sem responsável, vencendo: 1');
@@ -54,7 +50,6 @@ _Em atraso (1):_
 
   it('com o número, o bloco começa com o @ da pessoa', () => {
     const m = montarResumo('manha', '2026-10-27', [{ ...EQUIPE[0], mencao: '553291486277' }], QUADRO);
-    expect(m).toContain('@553291486277
-_Para hoje (1):_');
+    expect(m).toContain('@553291486277\n_Para hoje (1):_');
   });
 });
