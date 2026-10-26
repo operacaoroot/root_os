@@ -140,7 +140,7 @@ export class AgenteDeTarefasService implements OnModuleInit {
     const abertas = painel.tarefas.filter((t) => t.status.tipo !== 'concluida');
     const hoje = painel.hoje;
     // O de todo dia ("X feita", "minhas tarefas") sem modelo; o resto (criar, mudar prazo) com ele.
-    const leitura = entenderSemModelo(pedido.texto, abertas, painel.pessoas);
+    const leitura = entenderSemModelo(pedido.texto, abertas, painel.pessoas, painel.hoje);
     if (leitura?.acao === 'escolher') {
       const lista = leitura.opcoes.map((n) => linhaDaTarefa(abertas[n - 1])).join('\n');
       return { resposta: `Qual delas?\n${lista}\n\nMarque o @Root de novo com um pedaço do nome + "feita".`, desfecho: 'ambigua' };
@@ -155,8 +155,7 @@ export class AgenteDeTarefasService implements OnModuleInit {
       } catch (e) {
         this.log.warn(`modelo indisponível (${orgId}): ${(e as Error).message.slice(0, 200)}`);
         return {
-          resposta: 'Não consegui entender este pedido agora (a IA do OS está fora do ar). ' +
-            'Concluir e listar funcionam: "Nome da tarefa feita", "minhas tarefas", "tarefas atrasadas". Criar, por enquanto, pela tela de Tarefas.',
+          resposta: `Não entendi o pedido. Tente assim:\n${AJUDA.split('\n').slice(1).join('\n')}`,
           desfecho: 'modelo-indisponivel',
         };
       }

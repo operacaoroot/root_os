@@ -3,6 +3,7 @@ import { mesmaTarefa, notaDeSemelhanca, tituloNormalizado, type TarefaDoDia } fr
 
 import { chaveDeIdentidadeWhatsapp } from '../../gateway/canais/identidade-de-canal';
 import { EVENTO_ACEITO } from '../../gateway/canais/resposta-de-canal';
+import { DIAS_DA_SEMANA, VERBO_DE_CRIAR, VERBO_DE_MUDAR, dataDoTexto, pessoaDoTexto, tituloDaNova } from './datas-e-pedidos';
 
 /*
  * O AGENTE DE TAREFAS (TR-12) — a parte que não fala com banco nem com modelo.
@@ -219,9 +220,9 @@ export function linhaDaTarefa(t: Pick<TarefaDoDia, 'titulo' | 'prazo' | 'pessoa'
 export const AJUDA = [
   'Sou o agente de tarefas. Me marque com @ e diga o que precisa:',
   '• @Root tarefa pro Pedro: revisar contrato da Custeio até sexta',
-  '• @Root tarefas atrasadas  /  tarefas do Rodrigo  /  minhas tarefas',
-  '• @Root tarefa concluída: revisar contrato da Custeio',
-  '• @Root muda o prazo de revisar contrato para dia 30',
+  '• @Root contrato custeio feito',
+  '• @Root muda o contrato custeio pra sexta  /  passa pro Rodrigo',
+  '• @Root minhas tarefas  /  tarefas atrasadas  /  tarefas do Pedro',
 ].join('\n');
 
 export const LIMITE_DA_LISTA = 15;
@@ -230,7 +231,7 @@ export const LIMITE_DA_LISTA = 15;
 
 /** "Feito" em qualquer jeito de dizer: feita, concluí, terminei, finalizei, pronto, ok… */
 const FEITA = /\b(feit[ao]s?|fiz|conclui(d[ao]s?)?|concluid[ao]s?|pront[ao]s?|finaliz\w*|termin\w*|acab\w*|encerr\w*|entregue|resolv\w*|ok)\b/;
-const VAZIAS = new Set(['tarefa', 'tarefas', 'para', 'pra', 'com', 'que', 'dos', 'das', 'por', 'uma', 'ja', 'hoje', 'agora', 'aqui', 'essa', 'esta', 'isso', 'fazer', 'the']);
+const VAZIAS = new Set(['tarefa', 'tarefas', 'para', 'pra', 'pro', 'ate', 'dia', 'dela', 'dele', 'com', 'que', 'dos', 'das', 'por', 'uma', 'ja', 'hoje', 'agora', 'aqui', 'essa', 'esta', 'isso', 'fazer', 'the']);
 
 function palavrasDe(s: string): string[] {
   return tituloNormalizado(s).split(' ').filter((w) => w.length > 2 && !VAZIAS.has(w));
@@ -256,6 +257,18 @@ function cobertura(titulo: string, doTexto: string[]): { achadas: number; total:
   return { achadas: doTitulo.filter((w) => doTexto.some((t) => quaseIgual(w, t))).length, total: doTitulo.length };
 }
 
+/** A aberta que o pedaço de texto aponta: uma, empate (opções) ou nenhuma. */
+function escolherTarefa(abertas: Pick<TarefaDoDia, 'titulo'>[], doTexto: string[]): { tarefa: number } | { opcoes: number[] } | null {
+  if (!doTexto.length) return null;
+  const notas = abertas.slice(0, MAXIMO_DE_ABERTAS_NO_CONTEXTO)
+    .map((t, i) => ({ i, ...cobertura(t.titulo, doTexto) }))
+    .filter((c) => c.achadas > 0 && (c.achadas >= 2 || c.achadas / Math.max(1, c.total) >= 0.5 || doTexto.length === 1))
+    .sort((a, b) => b.achadas - a.achadas || b.achadas / b.total - a.achadas / a.total);
+  if (!notas.length) return null;
+  const empatadas = notas.filter((c) => c.achadas === notas[0].achadas);
+  return empatadas.length > 1 ? { opcoes: empatadas.slice(0, 5).map((c) => c.i + 1) } : { tarefa: notas[0].i + 1 };
+}
+
 export type Leitura = Comando | { acao: 'escolher'; opcoes: number[] } | { acao: 'nao-achou'; pedaco: string };
 
 /**
@@ -268,10 +281,28 @@ export type Leitura = Comando | { acao: 'escolher'; opcoes: number[] } | { acao:
  *   "o que tá atrasado?", "tarefas do Pedro"  → listar
  */
 export function entenderSemModelo(
-  texto: string, abertas: Pick<TarefaDoDia, 'titulo'>[], pessoas: { nome: string }[],
+  texto: string, abertas: Pick<TarefaDoDia, 'titulo'>[], pessoas: { nome: string }[], hoje = '',
 ): Leitura | null {
   const norm = tituloNormalizado(texto);
   if (!norm) return null;
+  const data = hoje ? dataDoTexto(norm, hoje, texto) : null;
+  // Criar: "tarefa pro Pedro: revisar contrato até sexta" (o "tarefa concluída: X" é concluir, logo abaixo).
+  if (VERBO_DE_CRIAR.test(norm) && !FEITA.test(norm)) {
+    const pessoa = pessoaDoTexto(norm, pessoas);
+    const titulo = tituloDaNova(texto, pessoa, data?.trecho ?? null);
+    return titulo.length >= 3 ? { acao: 'criar', titulo, pessoa, prazo: data?.dia ?? null } : null;
+  }
+  // Mudar: "muda a da Juma pra sexta", "passa o FUP Dispropan pro Rodrigo".
+  if (VERBO_DE_MUDAR.test(norm) && !FEITA.test(norm)) {
+    const pessoa = pessoaDoTexto(norm, pessoas);
+    if (!data && !pessoa) return null;
+    const fora = new Set([...(pessoa ? [tituloNormalizado(pessoa).split(' ')[0]] : []), 'prazo', 'data', 'dia', 'responsavel', 'semana', 'vem', 'proxima', 'amanha', 'depois', 'feira', ...Object.keys(DIAS_DA_SEMANA)]);
+    const doTexto = palavrasDe(norm.replace(new RegExp(VERBO_DE_MUDAR.source, 'g'), ' ')).filter((w) => !fora.has(w) && !/^\d+$/.test(w));
+    const alvo = escolherTarefa(abertas, doTexto);
+    if (!alvo) return { acao: 'nao-achou', pedaco: doTexto.join(' ') };
+    if ('opcoes' in alvo) return { acao: 'escolher', opcoes: alvo.opcoes };
+    return { acao: 'alterar', tarefa: alvo.tarefa, prazo: data?.dia ?? null, pessoa };
+  }
   if (FEITA.test(norm)) {
     const doTexto = palavrasDe(norm.replace(new RegExp(FEITA.source, 'g'), ' '));
     if (!doTexto.length) return null;
