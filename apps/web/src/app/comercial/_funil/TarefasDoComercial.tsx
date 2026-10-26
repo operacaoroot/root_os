@@ -17,6 +17,7 @@
  * Por baixo é `WorkTask` (a lista do comercial), mas ela mora e se edita aqui.
  */
 import { useEffect, useId, useRef, useState } from 'react';
+import Link from 'next/link';
 import { TAREFA_IGUAL_JA_EXISTE, tarefaIgual, type TarefaDoComercial, type TarefasDoComercial } from '@mktos/shared';
 
 import { apiPatch, apiPost } from '@/lib/api';
@@ -236,7 +237,8 @@ function LinhaDaTarefa({
         <span aria-hidden className={`flex h-4 w-4 items-center justify-center rounded-sm border text-[10px] leading-none ${feita ? 'border-good bg-good/20 text-good' : 'border-border group-hover:border-brand'}`}>{feita ? '✓' : ''}</span>
       </button>
       <div className="min-w-0 flex-1">
-        <p className={`break-words text-[12.5px] ${feita ? 'text-dim line-through' : ''}`}>{t.titulo}</p>
+        {/* Layout 26/10: o título abre a tarefa no Trabalho (comentários, subtarefas, tudo). */}
+        <Link href={`/trabalho?tarefa=${encodeURIComponent(t.id)}`} data-testid={`tarefa-abrir-${t.id}`} className={`block break-words rounded-sm text-[12.5px] hover:text-brand hover:underline ${FOCO} ${feita ? 'text-dim line-through' : ''}`}>{t.titulo}</Link>
         <p className={`flex min-w-0 items-center gap-1.5 text-[11px] ${t.situacao === 'atrasada' ? 'text-warn' : 'text-dim'}`}>
           {/* O responsável só com a imagem, o nome no balão (I6); o texto antigo sem conta vira as iniciais. */}
           <PilhaDeAvatares

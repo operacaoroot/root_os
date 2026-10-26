@@ -1,6 +1,7 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import Link from 'next/link';
 import type { CartaoDoFunil, ComercialDestinoDoMover, ComercialFiltrosDoFunil, ComercialMotivoDeSaida, ComercialSaida, FunilVivo, VistaFunil } from '@mktos/shared';
 import { COMERCIAL_MOTIVOS_DE_SAIDA, COMERCIAL_ROTULO_DA_ETAPA, COMERCIAL_SAIDAS, filtrosDoFunilVazios } from '@mktos/shared';
@@ -145,7 +146,7 @@ export default function FunilVivoPage() {
   const editar = can('leads.editar');
 
   return (
-    <div className="flex min-w-0 flex-col gap-3 md:h-[calc(100dvh-52px-2rem)] min-[820px]:h-[calc(100dvh-46px-3rem)]">
+    <div className="flex min-w-0 flex-col gap-3 md:min-h-[calc(100dvh-52px-2rem)] min-[820px]:min-h-[calc(100dvh-46px-3rem)]">
       <header className="min-w-0 shrink-0 space-y-2">
         <div className="flex flex-wrap items-center gap-1.5">
           <div role="group" aria-label="formato de visualização" className="inline-flex overflow-hidden rounded border border-border">
@@ -216,7 +217,16 @@ export default function FunilVivoPage() {
       {dados && visao === 'lista' && <ListaDoFunil cartoes={cartoes} colunas={lista.colunas} ordem={lista.ordem} aoOrdenar={(ordem) => mudarLista({ ...lista, ordem })} />}
 
       {dados && visao === 'quadro' && (
-        <div className="relative flex min-h-0 flex-1 snap-x snap-mandatory gap-3 overflow-x-auto pb-2 md:snap-none" onKeyDown={moverFocoNoFunil}>
+        <div className="relative flex min-h-0 flex-1 snap-x snap-mandatory gap-3 overflow-x-auto pb-2 md:snap-none" onKeyDown={moverFocoNoFunil}
+          onDragOver={(e) => {
+            // Layout 26/10: arrastando um cartão perto da borda, o quadro anda para o lado (as colunas da direita chegam).
+            if (!arrastando) return;
+            const q = e.currentTarget.getBoundingClientRect();
+            const borda = 90;
+            if (e.clientX > q.right - borda) e.currentTarget.scrollLeft += 18;
+            else if (e.clientX < q.left + borda) e.currentTarget.scrollLeft -= 18;
+          }}
+        >
           {colunas.map((col) => {
             const alvo = arrastando && arrastando.etapa !== col.etapa;
             return (
@@ -225,7 +235,7 @@ export default function FunilVivoPage() {
                 aria-label={col.etapa === 'saidas' ? 'Saídas' : COMERCIAL_ROTULO_DA_ETAPA[col.etapa]}
                 data-coluna-do-funil
                 data-testid={`funil-coluna-${col.etapa}`}
-                className={`flex w-[17rem] min-w-0 shrink-0 snap-start flex-col rounded border bg-bg2 p-2 max-md:max-h-[72dvh] max-md:w-[86%] md:min-h-0 ${sobre === col.etapa && alvo ? 'border-brand' : 'border-border'}`}
+                className={`flex w-[17rem] min-w-0 shrink-0 snap-start flex-col rounded border bg-bg2 p-2 max-md:max-h-[72dvh] max-md:w-[86%] ${sobre === col.etapa && alvo ? 'border-brand' : 'border-border'}`}
                 onDragOver={(e) => {
                   if (!arrastando) return;
                   e.preventDefault();
@@ -245,7 +255,7 @@ export default function FunilVivoPage() {
                   <span className="truncate" title={col.rotulo}>{col.etapa === 'saidas' ? 'Saídas' : COMERCIAL_ROTULO_DA_ETAPA[col.etapa]}</span>
                   <span className="tabular-nums">{col.cartoes.length}</span>
                 </h2>
-                <ul className="relative min-h-0 flex-1 space-y-2 overflow-y-auto pr-0.5">
+                <ul className="relative min-h-0 flex-1 space-y-2 pr-0.5 max-md:overflow-y-auto">
                   {col.cartoes.map((c) => (
                     <li key={c.leadId}>
                       <Cartao
@@ -444,11 +454,30 @@ function MenuMover({
   aoSair: () => void;
 }) {
   const caixa = useRef<HTMLDivElement>(null);
+  // Layout 26/10: o menu abre por cima da tela (fixo, junto do botão), não dentro da coluna, que cortava as etapas.
+  const [pos, setPos] = useState<{ top: number; left: number; maxH: number } | null>(null);
+  useLayoutEffect(() => {
+    const medir = () => {
+      const b = botao.current?.getBoundingClientRect();
+      if (!b) return;
+      const largura = 256;
+      const left = Math.max(8, Math.min(b.right - largura, window.innerWidth - largura - 8));
+      const embaixo = window.innerHeight - b.bottom - 12;
+      const emCima = b.top - 12;
+      if (embaixo >= 320 || embaixo >= emCima) setPos({ top: b.bottom + 4, left, maxH: embaixo });
+      else setPos({ top: Math.max(8, b.top - 4 - Math.min(emCima, 560)), left, maxH: Math.min(emCima, 560) });
+    };
+    medir();
+    window.addEventListener('resize', medir);
+    window.addEventListener('scroll', medir, true);
+    return () => { window.removeEventListener('resize', medir); window.removeEventListener('scroll', medir, true); };
+  }, [botao]);
   useEffect(() => {
-    caixa.current?.querySelector<HTMLElement>('[role="menuitem"]:not([aria-disabled="true"])')?.focus();
-  }, []);
+    caixa.current?.querySelector<HTMLElement>('[role="menuitem"]:not([aria-disabled="true"])')?.focus({ preventScroll: true });
+  }, [pos !== null]);
   const opcoes = opcoesDoMenu(c);
-  return (
+  if (typeof document === 'undefined') return null;
+  return createPortal(
     <div
       ref={caixa}
       role="menu"
@@ -472,7 +501,8 @@ function MenuMover({
         const i = itens.indexOf(document.activeElement as HTMLElement);
         itens[(i + (e.key === 'ArrowDown' ? 1 : itens.length - 1)) % itens.length]?.focus();
       }}
-      className="mt-2 max-h-[60dvh] overflow-y-auto rounded border border-border bg-surface-2 p-1"
+      style={pos ? { position: 'fixed', top: pos.top, left: pos.left, width: 256, maxHeight: pos.maxH } : { position: 'fixed', visibility: 'hidden' }}
+      className="z-50 overflow-y-auto rounded border border-border bg-surface-2 p-1 shadow-2xl"
     >
       <p className="px-2 pb-1 pt-0.5 font-os-mono text-[9.5px] uppercase tracking-[0.14em] text-muted">mover para</p>
       {opcoes.map((d) => (
@@ -499,7 +529,8 @@ function MenuMover({
           )}
         </button>
       ))}
-    </div>
+    </div>,
+    document.body,
   );
 }
 
