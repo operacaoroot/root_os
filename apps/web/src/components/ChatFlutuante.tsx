@@ -47,7 +47,8 @@ export function ChatFlutuante() {
   const [aberto, setAberto] = useState(false);
   // Layout 26/10 (P-27): a aba WhatsApp mostra a caixa de conversas aqui mesmo, de qualquer tela.
   // Ela só monta na primeira vez que a aba abre (não pesa o resto) e depois fica montada.
-  const [aba, setAba] = useState<'central' | 'whatsapp'>('central');
+  // Layout 26/10: o chat vem primeiro (pedido do Lucas); a central fica na segunda aba.
+  const [aba, setAba] = useState<'central' | 'whatsapp'>('whatsapp');
   const [whatsMontado, setWhatsMontado] = useState(false);
   const [texto, setTexto] = useState('');
   const [trocas, setTrocas] = useState<Troca[]>([]);
@@ -161,14 +162,14 @@ export function ChatFlutuante() {
     <div className={`fixed bottom-5 right-5 z-40 flex flex-col rounded-root border border-border bg-bg2 shadow-2xl ${abaAtual === 'whatsapp' ? 'h-[min(680px,85vh)] w-[min(460px,94vw)]' : 'h-[min(620px,80vh)] w-[min(440px,92vw)]'}`}>
       <header className="flex flex-none items-center gap-1 border-b border-border px-2 py-1.5 font-os-mono">
         <div role="tablist" aria-label="O que abrir" className="flex items-center gap-1">
-          {podeCentral && (
-            <button type="button" role="tab" aria-selected={abaAtual === 'central'} onClick={() => setAba('central')} className={`rounded-root px-2 py-1 text-[11px] uppercase tracking-[0.14em] transition-colors ${abaAtual === 'central' ? 'bg-surface-2 text-text' : 'text-muted hover:text-text'}`}>
-              a central
-            </button>
-          )}
           {podeWhats && (
             <button type="button" role="tab" aria-selected={abaAtual === 'whatsapp'} onClick={() => setAba('whatsapp')} className={`rounded-root px-2 py-1 text-[11px] uppercase tracking-[0.14em] transition-colors ${abaAtual === 'whatsapp' ? 'bg-surface-2 text-text' : 'text-muted hover:text-text'}`}>
               <span className="inline-flex items-center gap-1.5">chat{seloVermelho('')}</span>
+            </button>
+          )}
+          {podeCentral && (
+            <button type="button" role="tab" aria-selected={abaAtual === 'central'} onClick={() => setAba('central')} className={`rounded-root px-2 py-1 text-[11px] uppercase tracking-[0.14em] transition-colors ${abaAtual === 'central' ? 'bg-surface-2 text-text' : 'text-muted hover:text-text'}`}>
+              a central
             </button>
           )}
         </div>
