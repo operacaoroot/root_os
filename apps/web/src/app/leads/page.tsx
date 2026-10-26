@@ -8,6 +8,7 @@ import { useAuth } from '@/lib/auth';
 import { partesDoLead } from '@/lib/nome-do-lead';
 import { abrirFicha } from '@/lib/ficha';
 import { NovaOportunidadeExercicio } from './NovaOportunidadeExercicio';
+import { NovoLead } from '@/app/comercial/_funil/NovoLead';
 
 /*
  * LISTA DE LEADS (versão final, decisão 2 do Rodrigo, 19/10/2026): a tabela
@@ -96,6 +97,7 @@ export default function ListaDeLeadsPage() {
 
   return (
     <div className="com-tema mx-auto max-w-[1240px] space-y-5 text-text">
+      <div className="flex justify-end"><NovoLead origem="lista-de-leads" /></div>
       <ReunioesSemCliente />
 
       <section className="rounded-md border border-border bg-surface px-5 py-4">

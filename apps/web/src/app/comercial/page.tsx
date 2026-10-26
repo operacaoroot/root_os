@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
+import { NovoLead } from './_funil/NovoLead';
 import {
   COMERCIAL_ROTULO_DA_ETAPA,
   SEM_INFORMACAO,
@@ -13,7 +13,7 @@ import {
   type PainelComercialNegocio,
   type ResultadoDaEtapa,
 } from '@mktos/shared';
-import { apiGet, apiPost } from '@/lib/api';
+import { apiGet } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 import { partesDoLead } from '@/lib/nome-do-lead';
 import { BarraDividida, COR_DO_TOM, Colunas, Numero, Quadro, brl, curto, type Tom } from '@/components/painel';
@@ -99,12 +99,10 @@ function rotuloDoFiltro(k: keyof Filtro, v: string) {
 
 export default function ComercialPage() {
   const { token, ready, can } = useAuth();
-  const router = useRouter();
   const [p, setP] = useState<PainelComercial | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [ver, setVer] = useState<Aba>('painel');
   const [filtro, setFiltro] = useState<Filtro>({});
-  const [criando, setCriando] = useState(false);
 
   useEffect(() => {
     const ler = () => {
@@ -139,22 +137,6 @@ export default function ComercialPage() {
     escreverUrl(ver, f, false);
   };
 
-  /** O lead novo entra pela entrada idempotente do cockpit (origem manual) e abre no painel dele. */
-  const novoLead = async () => {
-    if (!token) return;
-    const nome = window.prompt('Nome do lead:');
-    if (!nome?.trim()) return;
-    setCriando(true);
-    try {
-      const ref = `painel-geral:${typeof crypto !== 'undefined' && 'randomUUID' in crypto ? crypto.randomUUID() : Date.now().toString(36)}`;
-      const l = await apiPost<{ id: string }>('/leads/entrada', { origem: { tipo: 'manual', ref }, nome: nome.trim() }, token);
-      router.push(linkDoLead(l.id));
-    } catch (e) {
-      setError((e as Error).message);
-      setCriando(false);
-    }
-  };
-
   return (
     <div className="com-tema mx-auto max-w-[1180px] space-y-6 text-text">
       <div className="flex flex-wrap items-end justify-between gap-3 border-b border-border">
@@ -173,15 +155,7 @@ export default function ComercialPage() {
         </div>
         <div className="mb-2 flex items-center gap-3">
           <Link href="/comercial/funil" className="text-sm text-muted underline hover:text-brand">abrir o Funil de vendas</Link>
-          {can('leads.editar') && (
-            <button
-              onClick={novoLead}
-              disabled={criando}
-              className="rounded-md bg-brand px-4 py-2 text-sm font-medium text-ink hover:opacity-90 disabled:opacity-50"
-            >
-              + Novo lead
-            </button>
-          )}
+          <NovoLead origem="painel-geral" />
         </div>
       </div>
 

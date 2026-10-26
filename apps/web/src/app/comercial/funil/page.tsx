@@ -20,6 +20,7 @@ import { caminhoDoFunil, configDaVistaDoFunil, definicoesDosFiltros, escreverEnd
 import { COLUNAS_PADRAO, lerColunas, lerOrdem } from '../_funil/lista-do-funil';
 import { ListaDoFunil, SeletorDeColunas } from '../_funil/ListaDoFunil';
 import { RegistrarFechadoFora } from '../_funil/RegistrarFechadoFora';
+import { NovoLead } from '../_funil/NovoLead';
 import { BlocoDeTarefasDoComercial } from '../_funil/TarefasDoComercial';
 import { contagemDeTarefas, proximaAcaoDoCartao, type LinhaDaProximaAcao } from '../_funil/proxima-acao-do-cartao';
 import { partesDoLead } from '@/lib/nome-do-lead';
@@ -194,18 +195,19 @@ export default function FunilVivoPage() {
             aoLimparTudo={() => mudarFiltros(filtrosDoFunilVazios())}
             extra={visao === 'lista' ? <SeletorDeColunas colunas={lista.colunas} aoMudar={(colunas) => mudarLista({ ...lista, colunas })} /> : undefined}
           />
+          <NovoLead origem="funil" className="min-[820px]:ml-auto" />
           {editar && (
             <button
               type="button"
               data-testid="funil-registrar-fechado-fora"
               aria-expanded={registrando}
               onClick={() => setRegistrando((v) => !v)}
-              className={`min-[820px]:ml-auto ${BOTAO}`}
+              className={BOTAO}
             >
               Registrar cliente já fechado
             </button>
           )}
-          <Link href="/caixa?aba=decisoes" className={`${editar ? '' : 'min-[820px]:ml-auto '}${BOTAO}`}>decisões em Pendências</Link>
+          <Link href="/caixa?aba=decisoes" className={BOTAO}>decisões em Pendências</Link>
         </div>
         <p className="text-[12.5px] text-muted">
           O cartão anda sozinho com os fatos. Para mover à mão, arraste para outra coluna ou use &quot;mover&quot;: a etapa muda na hora, para qualquer etapa. Etapa que fica para trás sem as conclusões aparece no cartão até os fatos chegarem. Setas do teclado andam entre os cartões, Enter abre o lead.

@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
+import { NovoLead } from '@/app/comercial/_funil/NovoLead';
 import type {
   DetalheDaPropostaDaSala,
   PainelComercial,
@@ -273,6 +274,7 @@ export default function Propostas() {
 
   return (
     <div className="com-tema mx-auto max-w-[1180px] space-y-6 text-text">
+      <div className="flex justify-end"><NovoLead origem="propostas" /></div>
       {erro && <div role="alert" className="rounded-lg border border-bad/30 bg-bad/10 px-4 py-2 text-sm text-bad">{erro}</div>}
       {aviso && <div role="status" className="rounded-lg border border-good/30 bg-good/10 px-4 py-2 text-sm text-good">{aviso}</div>}
       {avisoDoServico && (
