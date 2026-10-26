@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Plus } from 'lucide-react';
+import { Plus, Trash2 } from 'lucide-react';
 import {
   chaveDoNomeNoNivel, listaDaImplantacao, motivoParaNaoMoverPasta,
   TRAB_LISTA_DA_IMPLANTACAO_PROTEGIDA, TRAB_NOME_DE_LISTA_REPETIDO, TRAB_NOME_DE_PASTA_REPETIDO, TRAB_PASTA_DA_IMPLANTACAO_PROTEGIDA,
@@ -525,6 +525,12 @@ export function ArvoreDoTrabalho({ estrutura, pastas, mostraSoltas, listaId, edi
         </div>
       )}
       <ArquivadasDaArvore token={token} editable={editable} versao={estrutura} onMudou={onMudou} onAviso={setAviso} />
+      {/* Layout 26/10 (P-15): a Lixeira à vista, no pé da árvore (antes só pela engrenagem do topo). */}
+      {editable && (
+        <a href="/lixeira" data-testid="trabalho-arvore-lixeira" className="flex items-center gap-1.5 px-1 text-xs text-muted hover:text-brand">
+          <Trash2 size={12} /> Lixeira <span className="text-[11px] text-muted/80">· excluídas e arquivadas, dá para restaurar</span>
+        </a>
+      )}
       {aparencia && (
         <DialogoDeIcone
           titulo={`Ícone e cor ${aparencia.tipo === 'lista' ? 'da lista' : 'da pasta'} ${aparencia.nome}`}

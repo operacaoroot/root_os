@@ -1,13 +1,47 @@
 'use client';
 
-import { useState } from 'react';
-import type { TrabTarefaResumo } from '@mktos/shared';
+import { useEffect, useState } from 'react';
+import type { EquipeDaEmpresa, TrabTarefaResumo } from '@mktos/shared';
+import { apiGet } from '@/lib/api';
 import { PilhaDeAvatares, type PessoaNoAvatar } from '@/components/PilhaDeAvatares';
 
 type Vinculo = Pick<TrabTarefaResumo, 'assigneeUserId' | 'assigneeUserName' | 'assigneeUserEmail' | 'assigneeUserIsActive'>;
 type Pessoa = { id: string; name: string; email: string; isActive: boolean };
 
-export const rotuloDaPessoa = (pessoa: Pick<Pessoa, 'name' | 'email'>) => `${pessoa.name} (${pessoa.email})`;
+/** Layout 26/10 (P-16): só o nome; o e-mail fica no título (passar o mouse). */
+export const rotuloDaPessoa = (pessoa: Pick<Pessoa, 'name' | 'email'>) => `${pessoa.name}`;
+
+/*
+ * QUEM PODE SER RESPONSÁVEL (layout 26/10, P-16): a mesma regra da tela Equipe
+ * (`packages/shared/src/equipe-pessoas.ts`), servida em `/organograma/equipe`. Fora
+ * ficam contas de sistema, de teste, a conta da empresa e a segunda conta da mesma
+ * pessoa. Nada é apagado: quem já é responsável de uma tarefa continua aparecendo nela.
+ * Sem a resposta (erro ou sem permissão), a lista volta a ser a de todas as contas.
+ */
+let equipeEmCache: Promise<Set<string> | null> | null = null;
+export function useIdsDaEquipe(token: string | null): Set<string> | null {
+  const [ids, setIds] = useState<Set<string> | null>(null);
+  useEffect(() => {
+    if (!token) return;
+    equipeEmCache ??= apiGet<EquipeDaEmpresa>('/organograma/equipe', token)
+      .then((e) => (e.pessoas.length ? new Set(e.pessoas.map((p) => p.id)) : null))
+      .catch(() => { equipeEmCache = null; return null; });
+    let vivo = true;
+    void equipeEmCache.then((s) => { if (vivo) setIds(s); });
+    return () => { vivo = false; };
+  }, [token]);
+  return ids;
+}
+/** As pessoas que aparecem para escolher: as da equipe, mais quem já está na tarefa. */
+/** Nome sozinho; com o e-mail só quando há outra pessoa com o mesmo nome na lista (homônimos, regra do Rodrigo). */
+export function rotuloNaLista(pessoa: Pick<Pessoa, 'name' | 'email'>, lista: readonly Pick<Pessoa, 'name'>[]): string {
+  const repetido = lista.filter((p) => p.name.trim().toLowerCase() === pessoa.name.trim().toLowerCase()).length > 1;
+  return repetido ? `${pessoa.name} (${pessoa.email})` : pessoa.name;
+}
+export function soDaEquipe<P extends { id: string }>(pessoas: P[], equipe: Set<string> | null, manter: (string | null | undefined)[] = []): P[] {
+  if (!equipe) return pessoas;
+  return pessoas.filter((p) => equipe.has(p.id) || manter.includes(p.id));
+}
 
 export function ResponsavelDaTarefa({ tarefa }: { tarefa: Vinculo }) {
   if (!tarefa.assigneeUserId) return <span className="text-muted">Sem vínculo de pessoa</span>;
@@ -53,7 +87,7 @@ export function SeletorResponsavel({ tarefa, pessoas, disabled, onChange }: {
   return <select aria-label="Responsável (pessoa)" disabled={disabled || salvando} value={atual} onChange={(e) => { void mudar(e.target.value); }} className="w-full rounded-lg border border-border bg-surface-2 px-2 py-1 text-[13px] outline-none focus:border-brand-dim disabled:opacity-60">
     <option value="">Sem vínculo de pessoa</option>
     {atualAusente && <option value={atual} disabled>Vínculo de pessoa indisponível</option>}
-    {disponiveis.map((pessoa) => <option key={pessoa.id} value={pessoa.id} disabled={!pessoa.isActive}>{rotuloDaPessoa(pessoa)}{!pessoa.isActive ? ' (inativo)' : ''}</option>)}
+    {disponiveis.map((pessoa) => <option key={pessoa.id} value={pessoa.id} disabled={!pessoa.isActive}>{rotuloNaLista(pessoa, disponiveis)}{!pessoa.isActive ? ' (inativo)' : ''}</option>)}
   </select>;
 }
 
@@ -104,7 +138,7 @@ export function SeletorOutrosResponsaveis({ principal, ids, pessoas, disabled, o
         className="w-full rounded-lg border border-border bg-surface-2 px-2 py-1 text-[13px] outline-none focus:border-brand-dim disabled:opacity-60"
       >
         <option value="">{candidatas.length ? 'Adicionar pessoa…' : ids.length ? 'Todas as pessoas ativas já estão' : 'Nenhuma outra pessoa ativa'}</option>
-        {candidatas.map((p) => <option key={p.id} value={p.id}>{rotuloDaPessoa(p)}</option>)}
+        {candidatas.map((p) => <option key={p.id} value={p.id}>{rotuloNaLista(p, candidatas)}</option>)}
       </select>
     </div>
   );

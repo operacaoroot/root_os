@@ -43,7 +43,7 @@ describe('responsável por conta, sem associação por texto', () => {
   it('mantém inativo atual visível sem oferecer outro inativo', () => {
     render(<SeletorResponsavel tarefa={{ ...semVinculo, assigneeUserId: 'qa-inativo' }} pessoas={[...pessoas, { id: 'qa-outro-inativo', name: 'Outro QA', email: 'outro@qa.local', isActive: false }]} disabled={false} onChange={vi.fn()} />);
     expect(screen.getByRole('combobox')).toHaveValue('qa-inativo');
-    expect(screen.getByRole('option', { name: 'Antiga QA (inativa@qa.local) (inativo)' })).toBeDisabled();
+    expect(screen.getByRole('option', { name: 'Antiga QA (inativo)' })).toBeDisabled();
     expect(screen.queryByRole('option', { name: /Outro QA/ })).toBeNull();
   });
   it('desvincula explicitamente por null, omissão não chama salvamento', async () => {

@@ -129,7 +129,7 @@ function DecisoesDoComercial({ fila }: { fila: FilaDoComercial }) {
           padrão.
         </p>
         <Link href="/comercial/funil" className={`text-xs text-brand hover:underline ${FOCO}`}>
-          abrir o Funil vivo
+          abrir o Funil de vendas
         </Link>
       </div>
       <p aria-live="polite" className="text-xs text-good empty:hidden" data-testid="caixa-decisoes-aviso">

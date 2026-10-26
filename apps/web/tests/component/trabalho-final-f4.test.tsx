@@ -266,6 +266,6 @@ describe('F4: agrupamento, concluídas e "meus"', () => {
     await waitFor(() => expect([...document.querySelectorAll('tr[data-work-task-id]')].map((e) => e.getAttribute('data-work-task-id'))).toEqual([T2]));
     // I6 (produção 22B): os demais responsáveis entram na pilha de avatares, o nome no balão.
     const linha = document.querySelector(`tr[data-work-task-id="${T2}"]`) as HTMLElement;
-    expect(within(linha).getByRole('img', { name: 'Responsável: Rodrigo QA (eu@qa.local)' })).toBeTruthy();
+    expect(within(linha).getByRole('img', { name: 'Responsável: Rodrigo QA' })).toBeTruthy();
   });
 });

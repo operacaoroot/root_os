@@ -241,7 +241,7 @@ const MENU_FINAL: LinhaDoMenu[] = [
   // Motor Comercial: Painel geral · Funil vivo · Propostas · Lista de leads · Contratos vivos · Torre · Relatório.
   // O Simulador de WhatsApp virou a área WhatsApp em 20/10/2026: oculto, a rota redireciona.
   ['comercial-painel', 'Painel geral', '/comercial', 'leads.ver', 'comercial', 'leads', null, false],
-  ['comercial-funil', 'Funil vivo', '/comercial/funil', 'leads.ver', 'comercial', 'leads', null, false],
+  ['comercial-funil', 'Funil de vendas', '/comercial/funil', 'leads.ver', 'comercial', 'leads', null, false],
   ['propostas', 'Propostas', '/propostas', 'leads.ver', 'comercial', 'leads', null, false],
   ['leads', 'Lista de leads', '/leads', 'leads.ver', 'comercial', 'leads', null, false],
   ['comercial-contratos', 'Contratos vivos', '/comercial/contratos', 'leads.ver', 'comercial', 'leads', null, false],
@@ -727,7 +727,7 @@ describe('organização da navegação (ROOT-07 e versão final)', () => {
     // A Rodada da semana entra depois dos Contratos vivos só para a plataforma, fora do NAV
     // (navegacao-modulos.test.ts cobra). O Simulador virou a área WhatsApp em 20/10/2026.
     expect(comercial.itens.map((no) => no.item.label)).toEqual([
-      'Painel geral', 'Funil vivo', 'Propostas', 'Lista de leads', 'Contratos vivos',
+      'Painel geral', 'Funil de vendas', 'Propostas', 'Lista de leads', 'Contratos vivos',
       'Torre das automações', 'Relatório da semana',
     ]);
     for (const no of comercial.itens) {

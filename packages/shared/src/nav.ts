@@ -203,7 +203,7 @@ export const NAV: NavItem[] = [
   // a Lista de leads lê a tabela `Lead`. Saem do Comercial (ocultos, vivos): o funil
   // antigo, Clientes e Tarefas (duplicados do Funil vivo, da Implantação e do Trabalho).
   { key: 'comercial-painel', label: 'Painel geral', href: '/comercial', icon: 'TrendingUp', permission: 'leads.ver', secao: 'comercial', modulo: 'leads' },
-  { key: 'comercial-funil', label: 'Funil vivo', href: '/comercial/funil', icon: 'Columns3', permission: 'leads.ver', secao: 'comercial', modulo: 'leads' },
+  { key: 'comercial-funil', label: 'Funil de vendas', href: '/comercial/funil', icon: 'Columns3', permission: 'leads.ver', secao: 'comercial', modulo: 'leads' },
   { key: 'propostas', label: 'Propostas', href: '/propostas', icon: 'Handshake', permission: 'leads.ver', secao: 'comercial', modulo: 'leads' },
   { key: 'leads', label: 'Lista de leads', href: '/leads', icon: 'UserPlus', permission: 'leads.ver', secao: 'comercial', modulo: 'leads' },
   { key: 'comercial-contratos', label: 'Contratos vivos', href: '/comercial/contratos', icon: 'FileSignature', permission: 'leads.ver', secao: 'comercial', modulo: 'leads' },

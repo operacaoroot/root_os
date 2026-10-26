@@ -215,10 +215,14 @@ describe('I4: o modo centralizado', () => {
   };
 
   it('abre no centro em duas colunas, volta para o lado, guarda a preferência e não muda o endereço', async () => {
+    // Layout 26/10 (P-13): o padrão passou a ser o centro; o lado fica para quem escolher.
     render(<TrabalhoPage />);
     let popup = await abrir();
-    expect(popup).toHaveAttribute('data-modo', 'lado');
+    expect(popup).toHaveAttribute('data-modo', 'centro');
     const endereco = window.location.search;
+    fireEvent.click(screen.getByTestId('tarefa-modo-lado'));
+    expect(screen.getByTestId('tarefa-popup')).toHaveAttribute('data-modo', 'lado');
+    expect(window.localStorage.getItem(CHAVE_DO_MODO_DA_TAREFA)).toBe('lado');
     fireEvent.click(screen.getByTestId('tarefa-modo-centro'));
     popup = screen.getByTestId('tarefa-popup');
     expect(popup).toHaveAttribute('data-modo', 'centro');

@@ -77,7 +77,7 @@ describe('o balão da área', () => {
     fireEvent.mouseEnter(grupo('comercial'));
     const g = balao('Comercial');
     expect(within(g).getAllByRole('link').map((a) => a.textContent)).toEqual([
-      'Painel geral', 'Funil vivo', 'Propostas', 'Lista de leads', 'Contratos vivos', 'Torre das automações', 'Relatório da semana',
+      'Painel geral', 'Funil de vendas', 'Propostas', 'Lista de leads', 'Contratos vivos', 'Torre das automações', 'Relatório da semana',
     ]);
     expect(within(g).getByRole('link', { name: 'Painel geral' })).toHaveAttribute('aria-current', 'page');
     expect(icone('comercial')).toHaveAttribute('aria-expanded', 'true');

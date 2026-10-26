@@ -33,6 +33,19 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const publica = PUBLICAS.some((p) => pathname === p || pathname.startsWith(`${p}/`));
 
+  // Layout 26/10 (P-17): o campo de data abre o calendário no clique em qualquer
+  // parte dele, não só no ícone. Vale para todo campo de data, hora e mês do OS.
+  useEffect(() => {
+    const abrirCalendario = (e: MouseEvent) => {
+      const alvo = e.target;
+      if (!(alvo instanceof HTMLInputElement) || alvo.disabled || alvo.readOnly) return;
+      if (!['date', 'datetime-local', 'time', 'month', 'week'].includes(alvo.type)) return;
+      try { alvo.showPicker(); } catch { /* navegador sem showPicker ou já aberto: segue o clique normal */ }
+    };
+    document.addEventListener('click', abrirCalendario);
+    return () => document.removeEventListener('click', abrirCalendario);
+  }, []);
+
   useEffect(() => {
     if (ready && !user && !publica && !token) router.replace('/login');
   }, [ready, user, publica, router, token]);

@@ -56,8 +56,11 @@ export function urlDoTrabalho(f: FiltroDaVisaoGeral): string {
   if (f.pessoa === SEM) q.set('semResponsavel', '1');
   else if (f.pessoa) q.set('assigneeUserId', f.pessoa);
   if (f.situacao === 'atrasada') q.set('overdue', '1');
-  else if (f.situacao === 'feita') q.set('concluidas', '1');
+  // Layout 26/10 (P-21): "feitas" abre só as concluídas (antes mostrava as concluídas JUNTO com as abertas)
+  // e o número de abertas abre sem as concluídas.
+  else if (f.situacao === 'feita') q.set('prazo', 'feita');
   else if (f.situacao) q.set('prazo', f.situacao);
+  if (f.situacao !== 'feita') q.set('concluidas', 'ocultar');
   return `/trabalho?${q}`;
 }
 

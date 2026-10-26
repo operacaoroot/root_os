@@ -83,20 +83,23 @@
 :root[data-os-theme='mono'] {
   /* Tema "claro": a paleta clara da Máquina de Conteúdo (conteudo.operacaoroot.com,
      html[data-tema="claro"]). O id continua 'mono' para quem já tinha escolhido. */
+  /* Layout 26/10/2026 (P-01): neutro como o claro do ClickUp. Fundo branco e cinza
+     sem tom verde, texto escuro, verde só em ação e item ativo. O texto fraco
+     (--os-tx3) era 3,3:1 sobre o fundo; agora passa de 4,5:1. */
   color-scheme: light;
-  --os-bg: 243 245 240;
-  --os-bg2: 238 242 234;
+  --os-bg: 247 248 250;
+  --os-bg2: 251 251 252;
   --os-s1: 255 255 255;
-  --os-s2: 238 242 234;
-  --os-s3: 226 232 220;
-  --os-line: 216 223 208;
-  --os-line-strong: 197 208 186;
-  --os-tx: 23 33 22;
-  --os-tx2: 91 105 86;
-  --os-tx3: 125 139 112;
+  --os-s2: 242 243 245;
+  --os-s3: 232 234 238;
+  --os-line: 227 229 233;
+  --os-line-strong: 205 209 215;
+  --os-tx: 30 34 40;
+  --os-tx2: 78 84 94;
+  --os-tx3: 102 108 118;
   --os-ac: 74 122 0;
   --os-ac2: 59 99 0;
-  --os-ac-dim: 168 180 156;
+  --os-ac-dim: 196 201 209;
   --os-ac-ink: 255 255 255;
   --os-mag: 208 20 90;
   --os-cy: 10 138 95;

@@ -570,7 +570,7 @@ function Funil(props: {
       </div>
       <div className="grid grid-cols-2 gap-4 border-border lg:grid-cols-1 lg:border-l lg:pl-5">
         <div className="p-1">
-          <div className="com-rotulo">Em negociação no funil</div>
+          <div className="com-rotulo">Em negociação · só com proposta</div>
           <div className="com-num mt-1.5 text-[1.5rem] font-bold leading-none">{props.comCrm ? brl(props.emJogo) : '—'}</div>
           <div className="mt-1.5 text-sm text-muted">valor dos leads abertos com proposta</div>
         </div>

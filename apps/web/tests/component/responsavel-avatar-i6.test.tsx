@@ -144,8 +144,8 @@ describe('o responsável no cartão e na linha do Trabalho', () => {
       />,
     );
     const pilha = screen.getByTestId('resp');
-    expect(within(pilha).getByRole('img', { name: 'Responsável: Ana Lima (ana@qa.local)' })).toBeInTheDocument();
-    expect(within(pilha).getByRole('img', { name: 'Responsável: Bruno Melo (bruno@qa.local) (inativo)' })).toHaveTextContent('BM');
+    expect(within(pilha).getByRole('img', { name: 'Responsável: Ana Lima' })).toBeInTheDocument();
+    expect(within(pilha).getByRole('img', { name: 'Responsável: Bruno Melo (inativo)' })).toHaveTextContent('BM');
   });
 
   it('sem pessoa e com vínculo que não resolve: as frases de antes, agora no balão', () => {

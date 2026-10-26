@@ -167,7 +167,7 @@ export default function ComercialPage() {
           ))}
         </div>
         <div className="mb-2 flex items-center gap-3">
-          <Link href="/comercial/funil" className="text-sm text-muted underline hover:text-brand">abrir o Funil vivo</Link>
+          <Link href="/comercial/funil" className="text-sm text-muted underline hover:text-brand">abrir o Funil de vendas</Link>
           {can('leads.editar') && (
             <button
               onClick={novoLead}
@@ -205,7 +205,7 @@ function Painel({ p, abrir }: { p: PainelComercial; abrir: (f: Filtro) => void }
       <Destaque p={p} abrir={abrir} />
 
       <div className="grid gap-6 lg:grid-cols-2">
-        <Quadro titulo="Funil geral" nota="negócios em cada etapa · clique numa etapa" acao={<Link href="/comercial/funil" className="text-sm text-muted underline hover:text-brand">Funil vivo</Link>}>
+        <Quadro titulo="Funil geral" nota="negócios em cada etapa · clique numa etapa" acao={<Link href="/comercial/funil" className="text-sm text-muted underline hover:text-brand">Funil de vendas</Link>}>
           <Colunas chamada="clique para ver os negócios"
             itens={p.etapas.map((e) => ({
               chave: e.id,
@@ -274,7 +274,7 @@ function Destaque({ p, abrir }: { p: PainelComercial; abrir: (f: Filtro) => void
       <div>
         <div className="grid gap-4 sm:grid-cols-2">
           <Numero rotulo={`Fechado em ${p.ano}`} valor={brl(fechado)} nota={`${p.totais.ganhosNoAno} contrato(s)`} cor={COR_DO_TOM.forte} onClick={verFechados} />
-          <Numero rotulo="Em negociação" valor={brl(aberto)} nota={`${p.totais.abertos} aberto(s)`} cor={COR_DO_TOM.medio} onClick={verAbertos} />
+          <Numero rotulo="Em negociação · funil todo" valor={brl(aberto)} nota={`${p.totais.abertos} aberto(s), com ou sem proposta`} cor={COR_DO_TOM.medio} onClick={verAbertos} />
         </div>
         <div className="mt-5">
           <BarraDividida
@@ -411,7 +411,7 @@ function Negocios(props: { p: PainelComercial; filtro: Filtro; tirar: (k: keyof 
           <button onClick={props.limpar} className="text-sm text-muted underline hover:text-text">limpar</button>
         )}
         {filtro.etapa && (
-          <Link href="/comercial/funil" className="text-sm text-muted underline hover:text-brand">ver no Funil vivo</Link>
+          <Link href="/comercial/funil" className="text-sm text-muted underline hover:text-brand">ver no Funil de vendas</Link>
         )}
         <span className="ml-auto text-sm text-muted">
           {negocios(itens.length)} · <span className="com-num text-text">{brl(total)}</span>

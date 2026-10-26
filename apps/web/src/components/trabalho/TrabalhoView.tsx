@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import * as Dialog from '@radix-ui/react-dialog';
-import { Archive, Bot, Clock, DoorOpen, ExternalLink, Flag, Hourglass, Maximize2, MessageSquare, PanelRight, Plus, Repeat, Settings2, Unlock, X } from 'lucide-react';
+import { Archive, Bot, Check, Clock, DoorOpen, ExternalLink, Flag, Hourglass, Maximize2, MessageSquare, PanelRight, Plus, Repeat, Settings2, Trash2, Unlock, X } from 'lucide-react';
 import {
   MODELOS_DE_LISTA, MOEDA_PADRAO, ehValorMonetarioCanonico, formatarValorMonetario, lerValorDigitadoPtBr,
   listaDaImplantacao, moedaDoValor, paraDigitarPtBr, LISTA_DA_IMPLANTACAO, PASTA_DA_IMPLANTACAO, PORTA_DA_IMPLANTACAO,
@@ -39,7 +39,7 @@ import { EditorialTaskLink } from './EditorialTaskLink';
 import { OrigemComercialDaTarefa } from '@/app/leads/OrigemComercialDaTarefa';
 import { FontesDaTarefa } from './FontesDaTarefa';
 import { AnexosDaTarefa } from './AnexosDaTarefa';
-import { AvataresDaTarefa, SeletorOutrosResponsaveis, SeletorResponsavel, rotuloDaPessoa } from './ResponsavelDaTarefa';
+import { AvataresDaTarefa, SeletorOutrosResponsaveis, SeletorResponsavel, rotuloDaPessoa, soDaEquipe, useIdsDaEquipe } from './ResponsavelDaTarefa';
 import { CalendarioDeTarefas, diaDoPrazo, prazoDoDia } from './CalendarioDeTarefas';
 import { colunasDeTodas, destinoNaLista, idDaColuna } from './colunas-de-todas';
 import { diasDesde, formatarHoras, hojeEmBrasilia, minutosDeTexto } from '@/lib/horas';
@@ -277,6 +277,8 @@ function TrabalhoConteudo({ visaoInicial, modo, aoSairDeTodas }: { visaoInicial:
     return todasFixa || (p.get('pasta') === PASTA_TODAS && !p.get('lista'));
   };
   const { token, ready, can, user } = useAuth();
+  // Layout 26/10 (P-16): para escolher responsável, só a equipe (a regra da tela Equipe).
+  const idsDaEquipe = useIdsDaEquipe(token);
   const editable = can('tarefas.editar');
   const readable = can('tarefas.ver');
   const [erro, setErro] = useState<string | null>(null);
@@ -668,8 +670,13 @@ function TrabalhoConteudo({ visaoInicial, modo, aoSairDeTodas }: { visaoInicial:
    * status reais das listas do recorte (todas, ou as do segmento), unidos pelo nome, com
    * as vazias. As tarefas entram só para nenhuma ficar sem coluna.
    */
+  /*
+   * Layout 26/10 (P-04): sem segmento, as colunas vêm só das listas de TAREFA. As listas
+   * de cadastro (as do ClickUp de marketing) já não mostram cards em "Todas", mas os
+   * status delas viravam colunas vazias. Escolhendo a pasta no segmento, tudo volta.
+   */
   const listasDoRecorte = useMemo(
-    () => (estrutura ? (fSegmento ? listasDaPasta(estrutura, fSegmento) : todasAsListas) : []),
+    () => (estrutura ? (fSegmento ? listasDaPasta(estrutura, fSegmento) : todasAsListas.filter((l) => l.natureza !== 'cadastro')) : []),
     [estrutura, fSegmento, todasAsListas],
   );
   const colunasGerais = useMemo(() => colunasDeTodas(listasDoRecorte, visiveis), [listasDoRecorte, visiveis]);
@@ -1181,7 +1188,7 @@ function TrabalhoConteudo({ visaoInicial, modo, aoSairDeTodas }: { visaoInicial:
             )}
             {editable && selecionadas.size > 0 && estrutura && (
               <BarraDoLote
-                quantas={selecionadas.size} pessoas={estrutura.pessoas ?? []}
+                quantas={selecionadas.size} pessoas={soDaEquipe(estrutura.pessoas ?? [], idsDaEquipe)}
                 etapas={semLista ? null : lista?.statuses ?? null}
                 onLimpar={() => setSelecionadas(new Set())}
                 onEtapa={(destino) => void aplicarLote((t) => {
@@ -2011,8 +2018,9 @@ function BarraDoLote({ quantas, pessoas, etapas, onLimpar, onEtapa, onConcluir, 
 
 /** A preferência do pop-up da tarefa (produção 3, I4): no centro ou ao lado. Fica no navegador. */
 export const CHAVE_DO_MODO_DA_TAREFA = 'rootos.tarefa.modo';
+/** Layout 26/10 (P-13): o padrão passou a ser o centro; o lado fica para quem escolher. */
 export function lerModoDaTarefa(): 'centro' | 'lado' {
-  try { return typeof window !== 'undefined' && window.localStorage.getItem(CHAVE_DO_MODO_DA_TAREFA) === 'centro' ? 'centro' : 'lado'; } catch { return 'lado'; }
+  try { return typeof window !== 'undefined' && window.localStorage.getItem(CHAVE_DO_MODO_DA_TAREFA) === 'lado' ? 'lado' : 'centro'; } catch { return 'centro'; }
 }
 function gravarModoDaTarefa(modo: 'centro' | 'lado'): void {
   try { window.localStorage.setItem(CHAVE_DO_MODO_DA_TAREFA, modo); } catch { /* navegador sem armazenamento: vale só nesta abertura */ }
@@ -2200,6 +2208,32 @@ function PainelTarefa({ id, estrutura, editable, token, usuarioId, aba = 'tarefa
     const epoch = operacao.current + 1;
     if (await salvar({ archived: true }) && vigente(epoch)) onFechar();
   };
+  /*
+   * Layout 26/10 (P-14): decidir a tarefa no topo, sem procurar. Concluir troca o
+   * status para a etapa "concluída" da lista (o mesmo que escolher no select de
+   * Status); Excluir manda para a Lixeira pela mesma rota do menu ⋯ do card.
+   */
+  const idsDaEquipe = useIdsDaEquipe(token);
+  const [confirmandoExclusao, setConfirmandoExclusao] = useState(false);
+  useEffect(() => setConfirmandoExclusao(false), [id]);
+  const etapaFechada = lista?.statuses.find((s) => s.type === 'closed') ?? null;
+  const etapaAberta = lista?.statuses.find((s) => s.type !== 'closed') ?? null;
+  const estaConcluida = !!etapaFechada && t?.statusId === etapaFechada.id;
+  const concluirOuReabrir = () => {
+    const destino = estaConcluida ? etapaAberta : etapaFechada;
+    if (destino) void salvar({ statusId: destino.id });
+  };
+  const excluir = async () => {
+    if (!t || !editable) return;
+    try {
+      await apiPost(`/trabalho/tarefas/${encodeURIComponent(t.id)}/excluir`, { expectedUpdatedAt: t.updatedAt }, token);
+      onMudou();
+      onFechar();
+    } catch (e) {
+      setConfirmandoExclusao(false);
+      onErro(e instanceof Error ? e.message : 'Não foi possível excluir a tarefa.');
+    }
+  };
 
   const baixarAnexo = async (nome: string, caminho: string) => {
     try {
@@ -2324,6 +2358,28 @@ function PainelTarefa({ id, estrutura, editable, token, usuarioId, aba = 'tarefa
           className="w-full bg-transparent text-sm font-semibold outline-none focus:text-brand"
         />
         <div className="flex shrink-0 items-center gap-1">
+          {editable && !t.archived && etapaFechada && !confirmandoExclusao && (
+            <button
+              type="button"
+              data-testid="tarefa-concluir"
+              disabled={ro}
+              onClick={concluirOuReabrir}
+              className={`flex min-h-9 items-center gap-1.5 rounded border px-2.5 text-[12px] font-medium disabled:opacity-50 ${estaConcluida ? 'border-border text-muted hover:text-text' : 'border-brand bg-brand text-ink hover:opacity-90'}`}
+            >
+              <Check size={14} />{estaConcluida ? 'Reabrir' : 'Concluir'}
+            </button>
+          )}
+          {editable && !t.archived && (confirmandoExclusao ? (
+            <span className="flex items-center gap-1.5 text-[12px]" data-testid="tarefa-excluir-confirmar">
+              <span className="text-muted">Enviar para a Lixeira?</span>
+              <button type="button" disabled={ro} onClick={() => void excluir()} className="rounded bg-bad/15 px-2 py-1 font-medium text-bad hover:bg-bad/25 disabled:opacity-50">Excluir</button>
+              <button type="button" onClick={() => setConfirmandoExclusao(false)} className="rounded px-2 py-1 text-muted hover:text-text">Cancelar</button>
+            </span>
+          ) : (
+            <button type="button" title="Excluir (vai para a Lixeira, dá para restaurar)" aria-label="Excluir tarefa" data-testid="tarefa-excluir" disabled={ro} onClick={() => setConfirmandoExclusao(true)} className="grid min-h-11 min-w-11 place-items-center text-muted hover:text-bad disabled:opacity-50">
+              <Trash2 size={15} />
+            </button>
+          ))}
           {centro && trilho && (
             <a href={`/onboarding/${trilho.id}`} data-testid="tarefa-ver-trilho" className="rounded border border-border px-2 py-1 text-[11px] text-muted hover:border-brand-dim hover:text-text max-md:hidden">
               Ver trilho do onboarding
@@ -2392,11 +2448,6 @@ function PainelTarefa({ id, estrutura, editable, token, usuarioId, aba = 'tarefa
         ) : null}
         {(trilho || listaDaImplantacao(pastasComAsDoComercial(estrutura))?.listaId === t.listId) && <ImplantacaoNoPainel tarefaId={t.id} listId={t.listId} token={token} />}
         {trilho && <QuemTrabalhaNaEtapa trilhoId={trilho.id} token={token} />}
-        <FontesDaTarefa taskId={t.id} />
-        <AnexosDaTarefa taskId={t.id} />
-        <DelegadorDaTarefa taskId={t.id} aoCriarSubtarefa={onMudou} />
-        <EditorialTaskLink taskId={t.id} />
-        <OrigemComercialDaTarefa taskId={t.id} />
         {/* linha de propriedades — tudo editável */}
         <div className="grid grid-cols-2 gap-2">
           <Campo rotulo="Lista">
@@ -2432,12 +2483,12 @@ function PainelTarefa({ id, estrutura, editable, token, usuarioId, aba = 'tarefa
             pareciam a mesma pergunta feita duas vezes.
           */}
           <Campo rotulo="Responsável (pessoa)">
-            <SeletorResponsavel tarefa={t} pessoas={estrutura.pessoas ?? []} disabled={ro} onChange={(assigneeUserId) => salvar({ assigneeUserId })} />
+            <SeletorResponsavel tarefa={t} pessoas={soDaEquipe(estrutura.pessoas ?? [], idsDaEquipe, [t.assigneeUserId])} disabled={ro} onChange={(assigneeUserId) => salvar({ assigneeUserId })} />
           </Campo>
           {/* Vários responsáveis (versão final, F4): o primeiro é o principal, acima; os demais aqui. */}
           <Campo rotulo="Outros responsáveis">
             <SeletorOutrosResponsaveis
-              principal={t.assigneeUserId ?? null} ids={t.outrosResponsaveisIds ?? []} pessoas={estrutura.pessoas ?? []}
+              principal={t.assigneeUserId ?? null} ids={t.outrosResponsaveisIds ?? []} pessoas={soDaEquipe(estrutura.pessoas ?? [], idsDaEquipe, [t.assigneeUserId, ...(t.outrosResponsaveisIds ?? [])])}
               disabled={ro} onChange={(outrosResponsaveisIds) => salvar({ outrosResponsaveisIds })}
             />
           </Campo>
@@ -2470,6 +2521,12 @@ function PainelTarefa({ id, estrutura, editable, token, usuarioId, aba = 'tarefa
           </Campo>
         </div>
         <RepetirTarefa regra={t.recorrencia ?? null} prazo={t.dueDate} disabled={ro} onChange={(recorrencia) => salvar({ recorrencia })} />
+        {/* Layout 26/10 (P-14): anexos e ligações depois dos campos; antes eles abriam a tarefa e empurravam status e prazo para baixo. */}
+        <FontesDaTarefa taskId={t.id} />
+        <AnexosDaTarefa taskId={t.id} />
+        <DelegadorDaTarefa taskId={t.id} aoCriarSubtarefa={onMudou} />
+        <EditorialTaskLink taskId={t.id} />
+        <OrigemComercialDaTarefa taskId={t.id} />
         {proxima && (
           <p role="status" data-testid="tarefa-proxima" className="rounded-lg border border-border bg-surface-2 px-3 py-2 text-[12px]">
             Próxima ocorrência criada para {dataBR(proxima.dueDate)}.{' '}

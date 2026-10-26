@@ -92,7 +92,7 @@ describe('Dia a dia › Visão geral: o dash das tarefas por pasta e lista', () 
     render(<VisaoGeralPage />);
     const numero = await screen.findByRole('button', { name: /^Atrasadas\s*2/ });
     fireEvent.click(numero);
-    expect(window.location.href).toBe('/trabalho?pasta=todas&visao=lista&overdue=1');
+    expect(window.location.href).toBe('/trabalho?pasta=todas&visao=lista&overdue=1&concluidas=ocultar');
   });
 
   it('as colunas de responsável são as pessoas da equipe, com Pedro e Rodrigo mesmo zerados', async () => {
@@ -110,14 +110,14 @@ describe('Dia a dia › Visão geral: o dash das tarefas por pasta e lista', () 
     expect(screen.getByRole('button', { name: 'Clientes: 2' })).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Administrativa: 1' })).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: 'Sem pasta: 1' }));
-    expect(window.location.href).toBe('/trabalho?pasta=sem-pasta&visao=lista');
+    expect(window.location.href).toBe('/trabalho?pasta=sem-pasta&visao=lista&concluidas=ocultar');
   });
 
   it('por lista: cada coluna abre a lista na pasta dela', async () => {
     render(<VisaoGeralPage />);
     await screen.findByText('Tarefas por lista');
     fireEvent.click(screen.getByRole('button', { name: 'Onboarding de cliente: 1' }));
-    expect(window.location.href).toBe('/trabalho?pasta=f-clientes&lista=l-onb&visao=lista');
+    expect(window.location.href).toBe('/trabalho?pasta=f-clientes&lista=l-onb&visao=lista&concluidas=ocultar');
   });
 
   it('P1 (21/10): carga por prazo, por pasta e por lista sem rolagem lateral na caixa', async () => {
@@ -130,10 +130,10 @@ describe('Dia a dia › Visão geral: o dash das tarefas por pasta e lista', () 
   });
 
   it('o endereço do Trabalho leva pessoa, sem responsável e prazo', () => {
-    expect(urlDoTrabalho({ pessoa: 'p-lucas' })).toBe('/trabalho?pasta=todas&visao=lista&assigneeUserId=p-lucas');
-    expect(urlDoTrabalho({ pessoa: 'sem' })).toBe('/trabalho?pasta=todas&visao=lista&semResponsavel=1');
-    expect(urlDoTrabalho({ situacao: 'sem_prazo' })).toBe('/trabalho?pasta=todas&visao=lista&prazo=sem_prazo');
-    expect(urlDoTrabalho({ situacao: 'feita' })).toBe('/trabalho?pasta=todas&visao=lista&concluidas=1');
+    expect(urlDoTrabalho({ pessoa: 'p-lucas' })).toBe('/trabalho?pasta=todas&visao=lista&assigneeUserId=p-lucas&concluidas=ocultar');
+    expect(urlDoTrabalho({ pessoa: 'sem' })).toBe('/trabalho?pasta=todas&visao=lista&semResponsavel=1&concluidas=ocultar');
+    expect(urlDoTrabalho({ situacao: 'sem_prazo' })).toBe('/trabalho?pasta=todas&visao=lista&prazo=sem_prazo&concluidas=ocultar');
+    expect(urlDoTrabalho({ situacao: 'feita' })).toBe('/trabalho?pasta=todas&visao=lista&prazo=feita');
   });
 
   it('sem tarefas.ver, sem dash', async () => {
