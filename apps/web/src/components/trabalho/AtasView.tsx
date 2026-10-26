@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { createContext, useCallback, useContext, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { ATA_MAX_CARACTERES, ATA_MIN_CARACTERES, DICA_DO_NOME_DA_TAREFA } from '@mktos/shared';
 import type {
   TrabAtaDetalhe, TrabAtaDriveEstado, TrabAtaGeracao, TrabAtaLista, TrabAtaResumo, TrabAtaSugestaoDto, TrabEstrutura,
@@ -10,6 +10,9 @@ import { apiGet, apiPost, apiPut } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 import { RoteiroMarkdown } from '@/app/pauta/roteiro-markdown';
 import { SeletorDeCliente, type ClienteEscolhido } from './SeletorDeCliente';
+import { TarefaFlutuante } from './TrabalhoView';
+import { abrirAquiNoClique, useTarefaNaUrl } from '@/lib/tarefa-na-url';
+import { LigacaoDaAta, resumoDaLigacao } from './AtasLigadas';
 
 /*
  * O BANCO DE ATAS DO TRABALHO (rodada do painel P3, 18/10/2026).
@@ -146,8 +149,15 @@ function useAlturaAteOFim(ref: React.RefObject<HTMLElement | null>, ativo: boole
 
 const ROTULO_DA_FONTE: Record<TrabAtaResumo['fonte'], string> = { vault: 'vault', colada: 'colada', granola: 'Granola', drive: 'Drive' };
 
+/**
+ * Layout 26/10: a tarefa que nasceu da ata abre no pop-up único da tarefa AQUI MESMO
+ * (o `href` para /trabalho fica, para abrir em outra aba). As partes da ata leem daqui.
+ */
+const AbrirTarefaAqui = createContext<((id: string) => void) | null>(null);
+
 export function AtasView() {
   const { token, ready, can } = useAuth();
+  const popup = useTarefaNaUrl();
   const podeVer = can('tarefas.ver');
   const podeEditar = can('tarefas.editar');
   // Colar escreve nota da memória: pede o mesmo que o POST /memoria (PA-2).
@@ -362,6 +372,7 @@ export function AtasView() {
   const temFiltro = CHAVES_DOS_FILTROS.some((k) => !!filtros[k]);
 
   return (
+    <AbrirTarefaAqui.Provider value={popup.abrir}>
     <div
       ref={raiz}
       data-testid="atas-tela"
@@ -542,6 +553,16 @@ export function AtasView() {
                   {ehTranscricao && !podeColar && (
                     <p className="text-[12px] text-muted">Gerar ata grava uma nota na memória e pede as permissões de editar o Trabalho e a memória.</p>
                   )}
+                  {/* Layout 26/10: a que lead e a que cliente esta ata está ligada; ligar e desligar daqui. */}
+                  <LigacaoDaAta
+                    ata={aberta}
+                    podeEditar={podeEditar}
+                    onMudou={(l) => {
+                      const id = aberta.id;
+                      setAberta((a) => (a && a.id === id ? { ...a, ligadaA: l } : a));
+                      setLista((ls) => (ls ? { ...ls, atas: ls.atas.map((x) => (x.id === id ? { ...x, ligadaA: l } : x)) } : ls));
+                    }}
+                  />
                 </header>
 
                 {avisos.length > 0 && (
@@ -634,7 +655,7 @@ export function AtasView() {
                                 {s.decididaPor ? ` por ${s.decididaPor}` : ''}
                               </span>
                               {s.estado === 'aceita' && s.workTaskId && s.listaId && (
-                                <a className={`text-[12px] text-brand underline underline-offset-2 ${ALVO} max-md:inline-flex max-md:items-center`} href={`/trabalho?lista=${s.listaId}&tarefa=${s.workTaskId}`}>abrir a tarefa</a>
+                                <a className={`text-[12px] text-brand underline underline-offset-2 ${ALVO} max-md:inline-flex max-md:items-center`} href={`/trabalho?lista=${s.listaId}&tarefa=${s.workTaskId}`} onClick={abrirAquiNoClique(popup.abrir, s.workTaskId)}>abrir a tarefa</a>
                               )}
                             </li>
                           ))}
@@ -661,7 +682,9 @@ export function AtasView() {
           </section>
         )}
       </div>
+      <TarefaFlutuante tarefa={popup} />
     </div>
+    </AbrirTarefaAqui.Provider>
   );
 }
 
@@ -809,6 +832,10 @@ function ItemDaAta({ ata, ativa, onAbrir }: { ata: TrabAtaResumo; ativa: boolean
         {rascunho > 0 && <span className="rounded bg-brand/10 px-1.5 py-0.5 text-brand">{rascunho} para decidir</span>}
         {aceitas > 0 && <span className="rounded bg-surface-2 px-1.5 py-0.5">{aceitas} {aceitas === 1 ? 'virou tarefa' : 'viraram tarefas'}</span>}
         {descartadas > 0 && <span className="rounded bg-surface-2 px-1.5 py-0.5">{descartadas} {descartadas === 1 ? 'descartada' : 'descartadas'}</span>}
+        {/* Layout 26/10: a ligação com lead e cliente, ou "sem ligação". */}
+        <span data-testid={`ata-ligada-a-${ata.id}`} className={`min-w-0 truncate rounded px-1.5 py-0.5 ${ata.ligadaA ? 'bg-brand/10 text-brand' : 'bg-surface-2'}`} title={resumoDaLigacao(ata.ligadaA) ?? undefined}>
+          {resumoDaLigacao(ata.ligadaA) ?? 'sem ligação'}
+        </span>
       </span>
     </button>
   );
@@ -895,6 +922,17 @@ function PastaDoDrive({ token, estado, onSalva, onErro }: {
 
 const linkDaTarefa = (listaId: string | null, tarefaId: string) => (listaId ? `/trabalho?lista=${listaId}&tarefa=${tarefaId}` : `/trabalho?tarefa=${tarefaId}`);
 
+/** Layout 26/10: o clique comum abre o pop-up aqui; sem o provedor (fora de Atas), o link segue. */
+function useAbrirAqui(tarefaId: string) {
+  const abrir = useContext(AbrirTarefaAqui);
+  return abrir ? abrirAquiNoClique(abrir, tarefaId) : undefined;
+}
+
+function LinkDaTarefa({ listaId, tarefaId, className, children }: { listaId: string | null; tarefaId: string; className: string; children: React.ReactNode }) {
+  const onClick = useAbrirAqui(tarefaId);
+  return <a className={className} href={linkDaTarefa(listaId, tarefaId)} onClick={onClick}>{children}</a>;
+}
+
 /** Abaixo do item da lista: quem decidiu as sugestões e o link da tarefa criada (fora do botão). */
 function DecididasDaAta({ ata }: { ata: TrabAtaResumo }) {
   const decididas = ata.decididas ?? [];
@@ -906,7 +944,7 @@ function DecididasDaAta({ ata }: { ata: TrabAtaResumo }) {
           <span className={d.estado === 'aceita' ? 'text-text' : 'line-through'}>{d.titulo}</span>
           <span>{d.estado === 'aceita' ? 'aceita' : 'descartada'}{d.decididaPor ? ` por ${d.decididaPor}` : ''}</span>
           {d.estado === 'aceita' && d.workTaskId && (
-            <a className={`text-brand underline underline-offset-2 ${ALVO} max-md:inline-flex max-md:items-center`} href={linkDaTarefa(d.listaId, d.workTaskId)}>abrir a tarefa</a>
+            <LinkDaTarefa className={`text-brand underline underline-offset-2 ${ALVO} max-md:inline-flex max-md:items-center`} listaId={d.listaId} tarefaId={d.workTaskId}>abrir a tarefa</LinkDaTarefa>
           )}
         </li>
       ))}
@@ -942,7 +980,7 @@ function DecisoesEPendencias({ ata }: { ata: TrabAtaDetalhe }) {
               <li key={i} data-testid={`ata-pendencia-${i}`} className="flex flex-wrap items-baseline gap-x-2 break-words">
                 <span className={p.workTaskId ? 'text-text' : 'text-muted'}>{p.texto}</span>
                 {p.workTaskId ? (
-                  <a className={`text-[12px] text-brand underline underline-offset-2 ${ALVO} max-md:inline-flex max-md:items-center`} href={linkDaTarefa(null, p.workTaskId)}>virou tarefa</a>
+                  <LinkDaTarefa className={`text-[12px] text-brand underline underline-offset-2 ${ALVO} max-md:inline-flex max-md:items-center`} listaId={null} tarefaId={p.workTaskId}>virou tarefa</LinkDaTarefa>
                 ) : p.estado === 'rascunho' ? (
                   <span className="text-[12px] text-muted">sugestão para decidir</span>
                 ) : p.estado === 'descartada' ? (

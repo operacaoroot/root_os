@@ -31,6 +31,8 @@ import {
   reaisOuAusente,
 } from '@/lib/cockpit';
 
+import { LinhaDaAtaLigada, useAtasLigadas } from '@/components/trabalho/AtasLigadas';
+
 import { BOTAO, BOTAO_PRIMARIO, CARTAO, Carregando, Chip, ErroDaAcao, INPUT, Rotulo } from '../_ui';
 import { IniciarOnboarding } from './IniciarOnboarding';
 import { LeituraEIdeias } from './LeituraEIdeias';
@@ -39,6 +41,8 @@ import { usePainel } from './provedor';
 
 export function AbaFio({ leadId, ficha: f, carregando, aoMudar }: { leadId: string; ficha: FichaDoLead | null; carregando: boolean; aoMudar: () => Promise<void> }) {
   const painel = usePainel();
+  // Layout 26/10: as atas ligadas a este lead na tela Atas (a ligação não é o `ata.chegou` do E4).
+  const atasLigadas = useAtasLigadas({ leadId });
   if (carregando) return <Carregando linhas={4} />;
   if (!f) return null;
 
@@ -150,7 +154,11 @@ export function AbaFio({ leadId, ficha: f, carregando, aoMudar }: { leadId: stri
         <Rotulo>ligado a</Rotulo>
         <ul className="mt-2 flex flex-wrap gap-1.5">
           <li><Chip tom={f.ligadoA.sala ? 'bom' : 'neutro'}>sala {f.ligadoA.sala ? '· aberta' : '· ainda não'}</Chip></li>
-          <li><Chip tom={f.ligadoA.ata ? 'bom' : 'neutro'}>ata {f.ligadoA.ata ? '· recebida' : '· ainda não'}</Chip></li>
+          <li>
+            <Chip tom={f.ligadoA.ata || atasLigadas?.length ? 'bom' : 'neutro'}>
+              {atasLigadas?.length ? `ata · ${atasLigadas.length === 1 ? '1 ligada' : `${atasLigadas.length} ligadas`}` : `ata ${f.ligadoA.ata ? '· recebida' : '· ainda não'}`}
+            </Chip>
+          </li>
           <li><Chip tom={f.ligadoA.proposta ? 'bom' : 'neutro'}>{f.ligadoA.proposta ? `proposta v${f.ligadoA.proposta}` : 'proposta · ainda não'}</Chip></li>
           <li><Chip tom={f.ligadoA.contrato ? 'bom' : 'neutro'}>contrato {f.ligadoA.contrato ? `· ${f.ligadoA.contrato}` : '· ainda não'}</Chip></li>
           <li><Chip tom={f.ligadoA.cobranca ? 'bom' : 'neutro'}>Asaas {f.ligadoA.cobranca ? `· ${f.ligadoA.cobranca}` : '· ainda não'}</Chip></li>
@@ -171,6 +179,12 @@ export function AbaFio({ leadId, ficha: f, carregando, aoMudar }: { leadId: stri
             <li><Chip tom="neutro">implantação · ainda não</Chip></li>
           )}
         </ul>
+        {/* Layout 26/10: as reuniões ligadas a este lead (data e título; abre na tela Atas). */}
+        {!!atasLigadas?.length && (
+          <ul data-testid="lead-atas-ligadas" aria-label="atas ligadas" className="mt-2 space-y-1 text-[12.5px]">
+            {atasLigadas.map((a) => <LinhaDaAtaLigada key={a.ataRef} a={a} />)}
+          </ul>
+        )}
       </section>
 
       {/* A2: o onboarding pode começar antes do fechamento; o fechamento depois reaproveita o mesmo card. */}

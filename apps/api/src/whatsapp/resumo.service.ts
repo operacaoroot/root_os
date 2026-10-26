@@ -19,6 +19,8 @@ import { PrismaService } from '../prisma/prisma.service';
  *                    conversa ter lead e cliente: `WhatsAppConversa_vinculo_check`;
  *                    o `leadId: null` aqui só repete a regra);
  *   · sem vínculo  = fora da equipe, sem lead e sem cliente.
+ * Layout 26/10: e a quinta, comunidade = `comunidade = true` fora da equipe; as
+ * três de cima saem também do que é comunidade.
  * Conversa arquivada não conta em nenhuma: arquivar é "isto não me interessa".
  *
  * LEVE DE PROPÓSITO: quatro agregações no banco, nenhuma linha trazida. A bolha
@@ -72,15 +74,19 @@ export class ResumoDoWhatsappService {
 
   private async medir(orgId: string, t: number): Promise<ResumoDoWhatsapp> {
     const base: Prisma.WhatsAppConversaWhereInput = { orgId, arquivadaEm: null };
-    const [equipe, leads, clientes, semVinculo] = await Promise.all([
+    // Layout 26/10: a comunidade é a quinta faixa, tratada como a equipe: fora de leads,
+    // clientes e sem vínculo, e somada no total. Equipe vence (as faixas não se sobrepõem).
+    const resto: Prisma.WhatsAppConversaWhereInput = { ...base, equipe: false, comunidade: false };
+    const [equipe, comunidade, leads, clientes, semVinculo] = await Promise.all([
       this.prisma.whatsAppConversa.aggregate({ where: { ...base, equipe: true }, _sum: { naoLidas: true } }),
-      this.prisma.whatsAppConversa.aggregate({ where: { ...base, equipe: false, leadId: { not: null } }, _sum: { naoLidas: true } }),
+      this.prisma.whatsAppConversa.aggregate({ where: { ...base, equipe: false, comunidade: true }, _sum: { naoLidas: true } }),
+      this.prisma.whatsAppConversa.aggregate({ where: { ...resto, leadId: { not: null } }, _sum: { naoLidas: true } }),
       this.prisma.whatsAppConversa.aggregate({
-        where: { ...base, equipe: false, leadId: null, clienteId: { not: null } },
+        where: { ...resto, leadId: null, clienteId: { not: null } },
         _sum: { naoLidas: true },
       }),
       this.prisma.whatsAppConversa.aggregate({
-        where: { ...base, equipe: false, leadId: null, clienteId: null },
+        where: { ...resto, leadId: null, clienteId: null },
         _sum: { naoLidas: true },
         _count: { _all: true },
       }),
@@ -91,8 +97,10 @@ export class ResumoDoWhatsappService {
       clientes: n(clientes._sum.naoLidas),
       semVinculo: n(semVinculo._sum.naoLidas),
       equipe: n(equipe._sum.naoLidas),
+      comunidade: n(comunidade._sum.naoLidas),
       total: 0,
     };
+    // Layout 26/10: a comunidade (grupo grande, não é trabalho) fica fora do total do selo "Chat" e do menu.
     naoLidas.total = naoLidas.leads + naoLidas.clientes + naoLidas.semVinculo + naoLidas.equipe;
     return { naoLidas, conversasSemVinculo: n(semVinculo._count._all), geradoEm: new Date(t).toISOString() };
   }

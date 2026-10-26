@@ -78,20 +78,39 @@ describe('Implantação sem a Rodada da semana', () => {
   });
 });
 
+/*
+ * Layout 26/10: a Rodada da semana deixou de ser a tela de `/operacao` (a nota escrita à
+ * mão). Os números vêm de `GET /comercial/rodada-da-semana`, contados no banco da empresa
+ * da sessão (leads.ver); a nota, só na plataforma, vira um bloco à parte de texto
+ * (`comercial-rodada-da-semana.test.tsx`). `/operacao` segue viva, com a trava dela.
+ */
+const RODADA_VAZIA = {
+  semana: { de: '2026-10-26', ate: '2026-11-01', anterior: '2026-10-19', proxima: null, atual: true },
+  geradoEm: '2026-10-28T15:00:00.000Z',
+  entraram: [], movimentos: [], fechados: [], valorFechado: 0, propostas: [], saidas: [], tarefasAtrasadas: [],
+  negociacao: { total: 0, abertos: 0, pagante: 0, semCaixa: 0 },
+};
+
 describe('a Rodada da semana no Comercial', () => {
-  it('a ROOT vê a tela do /operacao em /comercial/rodada', async () => {
-    render(<RodadaPage />);
-    expect(await screen.findByText('Operação da Root')).toBeInTheDocument();
-    await waitFor(() => expect(apiGet.mock.calls.some(([r]) => String(r).startsWith('/tenants/plataforma/operacao/painel'))).toBe(true));
+  beforeEach(() => {
+    const base = apiGet.getMockImplementation()!;
+    apiGet.mockImplementation((rota: string) => (rota.startsWith('/comercial/rodada-da-semana') ? Promise.resolve(RODADA_VAZIA) : base(rota)));
   });
 
-  it('fora da plataforma devolve o mesmo aviso que o /operacao', async () => {
+  it('a ROOT vê os números contados pelo sistema, não a tela do /operacao', async () => {
+    render(<RodadaPage />);
+    expect(await screen.findByRole('region', { name: 'Números da semana' })).toBeInTheDocument();
+    expect(screen.queryByText('Operação da Root')).toBeNull();
+    expect(apiGet).toHaveBeenCalledWith('/comercial/rodada-da-semana', 'tok');
+  });
+
+  it('fora da plataforma a rodada abre com os números da própria empresa; o /operacao segue com o aviso', async () => {
     plataforma = false;
     const { unmount } = render(<RodadaPage />);
-    const aviso = (await screen.findByText('Esta área é da ROOT.')).parentElement!.textContent;
+    expect(await screen.findByRole('region', { name: 'Números da semana' })).toBeInTheDocument();
+    expect(screen.queryByText('Esta área é da ROOT.')).toBeNull();
     unmount();
     render(<OperacaoPage />);
-    expect((await screen.findByText('Esta área é da ROOT.')).parentElement!.textContent).toBe(aviso);
-    expect(apiGet.mock.calls.some(([r]) => String(r).startsWith('/tenants/plataforma/operacao/painel'))).toBe(false);
+    expect(await screen.findByText('Esta área é da ROOT.')).toBeInTheDocument();
   });
 });

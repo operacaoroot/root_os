@@ -16,6 +16,7 @@ import {
   type PainelComercialMes,
   type PainelComercialNegocio,
   type ResultadoDaEtapa,
+  tipoDeNegocio,
 } from '@mktos/shared';
 import { PrismaService } from '../prisma/prisma.service';
 
@@ -81,6 +82,26 @@ export class PainelComercialService {
    * Um cliente conta uma vez: pelo cadastro do Financeiro (o principal, quando há
    * duplicado) ou, no acordo ainda não ligado, pelo nome escrito. Só lê.
    */
+  /**
+   * Layout 26/10/2026: "Contratos fechados por mês" pelos ACORDOS do Financeiro (os mesmos
+   * de "Clientes ativos" e da Análise), pelo mês em que cada um fechou (`fechadoEm`). Valor
+   * = pagante + sem caixa; `valorSemCaixa` separa parceria, permuta e repasse. Enquanto
+   * nenhum acordo tiver data, fica o cálculo antigo (quem fechou no funil).
+   */
+  private async fechadosPorMes(orgId: string, ano: number, antigo: PainelComercialMes[]): Promise<PainelComercialMes[]> {
+    const acordos = await this.prisma.acordoComercial.findMany({
+      where: { orgId, fechadoEm: { gte: new Date(`${ano}-01-01T00:00:00.000Z`), lt: new Date(`${ano + 1}-01-01T00:00:00.000Z`) } },
+      select: { fechadoEm: true, tipo: true, valor: true },
+    });
+    if (!acordos.length) return antigo;
+    return antigo.map(({ mes }) => {
+      const doMes = acordos.filter((a) => a.fechadoEm!.toISOString().slice(0, 7) === mes);
+      const valor = doMes.reduce((s, a) => s + Number(a.valor), 0);
+      const semCaixa = doMes.filter((a) => a.tipo !== 'pagante').reduce((s, a) => s + Number(a.valor), 0);
+      return { mes, qtd: doMes.length, valor, valorSemCaixa: semCaixa };
+    });
+  }
+
   private async clientesPorAcordo(orgId: string): Promise<{ total: number; porTipo: { tipo: string; clientes: string[] }[] }> {
     const acordos = await this.prisma.acordoComercial.findMany({
       where: { orgId },
@@ -132,6 +153,9 @@ export class PainelComercialService {
               donoId: true,
               produto: true,
               valorCentavos: true,
+              valorNegociadoCentavos: true,
+              vendedorId: true,
+              tipoNegocio: true,
               clienteAtivoEm: true,
               atualizadoEm: true,
             },
@@ -150,7 +174,7 @@ export class PainelComercialService {
           })
         : Promise.resolve([]),
       (async () => {
-        const quem = [...new Set(leads.flatMap((l) => [l.ficha?.donoId, l.ownerId]).filter((x): x is string => !!x))];
+        const quem = [...new Set(leads.flatMap((l) => [l.ficha?.donoId, l.ownerId, l.ficha?.vendedorId]).filter((x): x is string => !!x))];
         // A empresa vai no filtro: o dono se resolve na empresa da sessão, nunca por relação.
         return quem.length ? this.prisma.user.findMany({ where: { orgId, id: { in: quem } }, select: { id: true, name: true } }) : [];
       })(),
@@ -174,7 +198,9 @@ export class PainelComercialService {
       const fim = encerradoEm.get(l.id);
       const clienteAtivo = !!fechouEm && !(fim && fim >= fechouEm);
       const contratoVivo = ativoEm.has(l.id) && clienteAtivo;
-      const valor = l.ficha?.valorCentavos != null ? l.ficha.valorCentavos / 100 : null;
+      // Layout 26/10: o valor negociado vale mais que o da proposta, quando existe.
+      const centavos = l.ficha?.valorNegociadoCentavos ?? l.ficha?.valorCentavos;
+      const valor = centavos != null ? centavos / 100 : null;
       const perdidoEm = resultado === 'perdido' ? etapaDesde : null;
       return {
         l,
@@ -187,9 +213,11 @@ export class PainelComercialService {
         clienteAtivo,
         contratoVivo,
         canal: rotuloDoCanal(l.ficha?.canal) ?? l.source?.name ?? null,
-        vendedor: nomeDoDono.get(l.ficha?.donoId ?? '') ?? nomeDoDono.get(l.ownerId ?? '') ?? null,
+        // Layout 26/10: vendedor é quem VENDEU (campo próprio), não o dono do lead.
+        vendedor: nomeDoDono.get(l.ficha?.vendedorId ?? '') ?? null,
         produto: rotuloDoProduto(l.ficha?.produto),
         entrada: mesDe(l.enteredAt),
+        tipoNegocio: tipoDeNegocio(l.ficha?.tipoNegocio),
       };
     });
 
@@ -261,6 +289,9 @@ export class PainelComercialService {
       geradoEm: agora.toISOString(),
       totais: {
         emNegociacao: soma(abertos),
+        // Layout 26/10: a negociação separada entre o que gera caixa (pagante) e o que não gera.
+        emNegociacaoPagante: soma(abertos.filter((c) => c.tipoNegocio === 'pagante')),
+        emNegociacaoSemCaixa: soma(abertos.filter((c) => c.tipoNegocio !== 'pagante')),
         abertos: abertos.length,
         ganhosNoAno: ganhosAno.length,
         valorGanhoNoAno,
@@ -274,10 +305,10 @@ export class PainelComercialService {
         clientesPorAcordo: await this.clientesPorAcordo(orgId),
       },
       etapas,
-      fechadosPorMes: porMes(
+      fechadosPorMes: await this.fechadosPorMes(orgId, ano, porMes(
         meses(12, `${ano}-12`),
         cards.filter((c) => c.fechouEm).map((c) => ({ mes: mesDe(c.fechouEm!), valor: c.valor })),
-      ),
+      )),
       entradasPorMes: porMes(meses(12, mesDe(agora)), cards.map((c) => ({ mes: c.entrada, valor: c.valor }))),
       canais: agrupar((c) => c.canal),
       vendedores: agrupar((c) => c.vendedor),
@@ -301,7 +332,7 @@ export class PainelComercialService {
         select: {
           id: true, name: true, email: true, phone: true, ownerId: true, enteredAt: true, updatedAt: true,
           source: { select: { name: true } },
-          ficha: { select: { etapa: true, empresa: true, canal: true, donoId: true, atualizadoEm: true, valorCentavos: true } },
+          ficha: { select: { etapa: true, empresa: true, canal: true, donoId: true, atualizadoEm: true, valorCentavos: true, valorNegociadoCentavos: true } },
         },
       }),
     ]);
@@ -333,7 +364,7 @@ export class PainelComercialService {
         dono: nomeDoDono.get(l.ficha?.donoId ?? '') ?? nomeDoDono.get(l.ownerId ?? '') ?? null,
         entrouEm: l.enteredAt.toISOString(),
         // Layout 26/10 (P-33): o valor da ficha, o mesmo do Painel e de Negócios.
-        valor: l.ficha?.valorCentavos != null ? l.ficha.valorCentavos / 100 : null,
+        valor: (l.ficha?.valorNegociadoCentavos ?? l.ficha?.valorCentavos) != null ? (l.ficha!.valorNegociadoCentavos ?? l.ficha!.valorCentavos)! / 100 : null,
         ultimaAtividade: ultima.toISOString(),
       };
     });

@@ -4,6 +4,7 @@ import {
   TrabAtaColarSchema,
   TrabAtaDrivePastaSchema,
   TrabAtaFiltrosSchema,
+  TrabAtaLigarSchema,
   lerRefDaAta,
   type TrabAtaFiltros,
 } from '@mktos/shared';
@@ -15,6 +16,7 @@ import { CurrentUser, JwtUser } from '../../auth/current-user.decorator';
 import { AtasDoGranolaService } from './atas-do-granola.service';
 import { AtasService, type AcessoAsAtas, type QuemDecide } from './atas.service';
 import { DriveDasAtasService } from './fonte-do-drive';
+import { LigacoesDasAtasService } from './ligacoes-das-atas.service';
 import { SoGenteNasAtasGuard } from './so-gente-nas-atas.guard';
 
 /*
@@ -62,6 +64,14 @@ import { SoGenteNasAtasGuard } from './so-gente-nas-atas.guard';
  *   · "Reprocessar" (`POST :ref/reprocessar`) é `tarefas.editar`; quando a ata
  *     veio do Granola ele reescreve a nota, e aí `obsidian.editar` é conferido
  *     aqui, porque a rota serve às duas fontes.
+ *
+ * Layout 26/10: A ATA LIGADA A UM LEAD OU A UM CLIENTE (`LigacoesDasAtasService`).
+ *   · a lista e a ata aberta trazem `ligadaA`;
+ *   · `GET ligadas?lead=|cliente=` é `tarefas.ver` (o painel do lead e a ficha
+ *     do cliente leem daqui; vault e Drive só para quem os lê);
+ *   · `GET alvos?tipo=lead|cliente&q=` é a busca: lead pede também `leads.ver`;
+ *   · `PUT :ref/ligacao` é `tarefas.editar`, pelo guarda de gente. Não é o
+ *     `ata.chegou` do comercial: nenhuma reação roda.
  */
 const RECUSA_SEM_EDITAR_MEMORIA = 'Reprocessar uma ata do Granola reescreve a nota da memória, e isso pede a permissão "obsidian.editar".';
 const acessoDe = (u: JwtUser): AcessoAsAtas => ({
@@ -79,6 +89,7 @@ export class AtasController {
     private readonly atas: AtasService,
     private readonly doGranola: AtasDoGranolaService,
     private readonly drive: DriveDasAtasService,
+    private readonly ligacoes: LigacoesDasAtasService,
   ) {}
 
   @Get()
@@ -88,7 +99,24 @@ export class AtasController {
     // As reuniões do Granola só são pedidas quando a busca pode trazê-las (transcrição do Granola).
     const comGranola = (!filtros.fonte || filtros.fonte === 'granola') && (!filtros.tipo || filtros.tipo === 'transcricao');
     const granola = comGranola ? await this.doGranola.reunioes(u.orgId) : null;
-    return this.atas.listar(u.orgId, acessoDe(u), filtros, { granola });
+    const lista = await this.atas.listar(u.orgId, acessoDe(u), filtros, { granola });
+    // Layout 26/10: cada ata diz a que lead e a que cliente está ligada.
+    return { ...lista, atas: await this.ligacoes.anotar(u.orgId, lista.atas) };
+  }
+
+  /** Layout 26/10: as atas ligadas a um lead (`?lead=`) ou a um cliente (`?cliente=`). */
+  @Get('ligadas')
+  @RequirePermissions('tarefas.ver')
+  ligadas(@CurrentUser() u: JwtUser, @Query('lead') lead?: string, @Query('cliente') cliente?: string) {
+    return this.ligacoes.ligadas(u.orgId, { leadId: lead || null, clienteId: cliente || null }, acessoDe(u));
+  }
+
+  /** Layout 26/10: a busca de lead ou cliente para ligar a ata. */
+  @Get('alvos')
+  @RequirePermissions('tarefas.ver')
+  alvos(@CurrentUser() u: JwtUser, @Query('tipo') tipo?: string, @Query('q') q?: string) {
+    const t = tipo === 'lead' ? 'lead' : 'cliente';
+    return this.ligacoes.candidatos(u.orgId, t, q, (u.permissions ?? []).includes('leads.ver'));
   }
 
   /** A pasta do Google Drive das atas (P7): qual é e se quem pede pode ler o Drive. */
@@ -158,11 +186,20 @@ export class AtasController {
 
   @Get(':ref')
   @RequirePermissions('tarefas.ver')
-  ler(@CurrentUser() u: JwtUser, @Param('ref') ref: string) {
+  async ler(@CurrentUser() u: JwtUser, @Param('ref') ref: string) {
     // A transcrição de uma reunião do Granola é lida agora pelo conector e não fica guardada.
     const lida = lerRefDaAta(ref);
-    if (lida?.fonte === 'granola') return this.doGranola.lerTranscricao(u.orgId, lida.id);
-    return this.atas.ler(u.orgId, ref, acessoDe(u));
+    const ata = lida?.fonte === 'granola' ? await this.doGranola.lerTranscricao(u.orgId, lida.id) : await this.atas.ler(u.orgId, ref, acessoDe(u));
+    return (await this.ligacoes.anotar(u.orgId, [ata]))[0];
+  }
+
+  /** Layout 26/10: liga a ata a um lead e/ou a um cliente (`null` desliga). Só a ligação: nenhuma reação. */
+  @Put(':ref/ligacao')
+  @UseGuards(SoGenteNasAtasGuard)
+  @RequirePermissions('tarefas.editar')
+  ligar(@CurrentUser() u: JwtUser, @Param('ref') ref: string, @Body() body: unknown) {
+    const input = TrabAtaLigarSchema.parse(body ?? {});
+    return this.ligacoes.ligar(u.orgId, quemE(u), ref, input, { ...acessoDe(u), leads: (u.permissions ?? []).includes('leads.ver') });
   }
 
   @Post(':ref/sugestoes')

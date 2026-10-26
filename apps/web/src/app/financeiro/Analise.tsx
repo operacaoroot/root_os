@@ -12,7 +12,7 @@ import { apiDelete, apiGet, apiPatch, apiPost } from '@/lib/api';
  */
 
 type Tipo = 'pagante' | 'permuta' | 'repasse' | 'parceria';
-type Linha = { id: string; cliente: string; produto: string; tipo: Tipo; valor: number; observacao: string | null; apelidos: string | null; recebido: number; aReceber: number; semRastro: number; partnerId?: string | null; partnerNome?: string | null };
+type Linha = { id: string; cliente: string; produto: string; tipo: Tipo; valor: number; observacao: string | null; apelidos: string | null; recebido: number; aReceber: number; semRastro: number; partnerId?: string | null; partnerNome?: string | null; fechadoEm?: string | null };
 type Recorrente = {
   id: string; tipo: 'entrada' | 'saida'; descricao: string; quem: string | null; valor: number; periodicidade: string; dia: number; porMes: number;
   noMes: { pago: number; previsto: number; vence: string | null };
@@ -103,7 +103,10 @@ export function AnaliseView({ token, canEdit, onError }: { token: string | null;
       .catch(() => setClientes([]));
   }, [token]);
   const ligar = (id: string, partnerId: string) =>
-    apiPatch(`/finance/analise/acordos/`, { partnerId: partnerId || null }, token).then(carregar).catch(onError);
+    apiPatch(`/finance/analise/acordos/${id}`, { partnerId: partnerId || null }, token).then(carregar).catch(onError);
+  // Layout 26/10: o mês em que o acordo fechou (alimenta "Contratos fechados por mês" do Comercial).
+  const fechadoEm = (id: string, mes: string) =>
+    apiPatch(`/finance/analise/acordos/${id}`, { fechadoEm: mes || null }, token).then(carregar).catch(onError);
 
   const carregar = useCallback(() => {
     if (!token) return;
@@ -363,13 +366,20 @@ export function AnaliseView({ token, canEdit, onError }: { token: string | null;
                     {l.cliente}
                     {/* Integração 26/10: a qual cadastro de cliente este acordo está ligado. */}
                     {canEdit ? (
-                      <select aria-label={`Cliente cadastrado de `} value={l.partnerId ?? ''} onChange={(e) => ligar(l.id, e.target.value)} className="mt-0.5 block max-w-[14rem] rounded border border-transparent bg-transparent px-0 text-[12px] text-muted hover:border-border">
+                      <select aria-label={`Cliente cadastrado de ${l.cliente}`} value={l.partnerId ?? ''} onChange={(e) => ligar(l.id, e.target.value)} className="mt-0.5 block max-w-[14rem] rounded border border-transparent bg-transparent px-0 text-[12px] text-muted hover:border-border">
                         <option value="">não ligado a um cadastro</option>
                         {clientes.map((c) => <option key={c.id} value={c.id}>ligado a {c.nome}</option>)}
                       </select>
                     ) : l.partnerNome ? <span className="block text-[12px] text-muted">ligado a {l.partnerNome}</span> : null}
                   </td>
-                  <td className="py-2 pr-3 text-muted">{l.produto}{l.observacao && <span className="block text-[12px]">{l.observacao}</span>}</td>
+                  <td className="py-2 pr-3 text-muted">
+                    {l.produto}{l.observacao && <span className="block text-[12px]">{l.observacao}</span>}
+                    {canEdit ? (
+                      <label className="mt-0.5 block text-[12px]">fechou em{' '}
+                        <input type="month" aria-label={`Mês em que fechou: ${l.cliente}`} defaultValue={l.fechadoEm?.slice(0, 7) ?? ''} onBlur={(e) => { if (e.target.value !== (l.fechadoEm?.slice(0, 7) ?? '')) fechadoEm(l.id, e.target.value); }} className="rounded border border-transparent bg-transparent px-0 text-[12px] hover:border-border" />
+                      </label>
+                    ) : l.fechadoEm ? <span className="block text-[12px]">fechou em {l.fechadoEm.slice(5, 7)}/{l.fechadoEm.slice(0, 4)}</span> : null}
+                  </td>
                   <td className="py-2 pr-3"><span className="inline-flex items-center gap-1.5"><span className={`h-2 w-2 rounded-full ${COR[l.tipo]}`} />{ROTULO[l.tipo]}</span></td>
                   <td className="py-2 pr-3 text-right tabular-nums">{brl(l.valor)}</td>
                   <td className="py-2 pr-3 text-right tabular-nums">{l.recebido ? brl(l.recebido) : '—'}</td>

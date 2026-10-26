@@ -14,6 +14,9 @@ import {
   filtroDoFunil,
   filtrosDoFiltroAntigo,
   filtrosDoFunilVazios,
+  tipoDeNegocio,
+  COMERCIAL_TIPOS_DE_NEGOCIO,
+  COMERCIAL_CANAIS_DE_ENTRADA,
   mensagemDoMover,
   proximaEtapa,
   type ComercialAvisoDoMover,
@@ -688,6 +691,77 @@ export class FichaService {
     return this.projecao(orgId, leadId);
   }
 
+  /**
+   * Layout 26/10/2026: ajustar o VALOR NEGOCIADO (reais), o VENDEDOR (quem vendeu, diferente
+   * do dono) e o CANAL DE AQUISIÇÃO. Fato `negocio.ajustado` no fio com cada antes/depois e
+   * quem fez, SEM reação: não move etapa, não dispara proposta nem automação.
+   */
+  async ajustarNegocio(orgId: string, leadId: string, corpo: unknown, por: QuemFez | null, agora = new Date()): Promise<FichaDoLead> {
+    const c = (corpo ?? {}) as { valorNegociado?: unknown; vendedorId?: unknown; canal?: unknown };
+    const ficha = await this.garantir(orgId, leadId);
+    const data: Prisma.ComercialFichaUpdateInput = {};
+    const mudancas: { campo: string; antes: string | null; depois: string | null }[] = [];
+    const reais = (centavos: number | null) => (centavos == null ? null : (centavos / 100).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }));
+    if (c.valorNegociado !== undefined) {
+      const v = c.valorNegociado === null || c.valorNegociado === '' ? null : Number(c.valorNegociado);
+      if (v !== null && (!Number.isFinite(v) || v < 0 || v > 100_000_000)) throw new BadRequestException('Valor negociado inválido.');
+      const centavos = v === null ? null : Math.round(v * 100);
+      if (centavos !== ficha.valorNegociadoCentavos) {
+        data.valorNegociadoCentavos = centavos;
+        mudancas.push({ campo: 'valor negociado', antes: reais(ficha.valorNegociadoCentavos), depois: reais(centavos) });
+      }
+    }
+    if (c.vendedorId !== undefined) {
+      const id = c.vendedorId === null || c.vendedorId === '' ? null : String(c.vendedorId);
+      if (id) {
+        const u = await this.prisma.user.findFirst({ where: { id, orgId }, select: { id: true } });
+        if (!u) throw new BadRequestException('Vendedor não é uma pessoa desta empresa.');
+      }
+      if (id !== ficha.vendedorId) {
+        const nomes = await this.prisma.user.findMany({ where: { orgId, id: { in: [ficha.vendedorId, id].filter((x): x is string => !!x) } }, select: { id: true, name: true } });
+        const nome = (x: string | null) => (x ? nomes.find((n) => n.id === x)?.name ?? x : null);
+        data.vendedorId = id;
+        mudancas.push({ campo: 'vendedor', antes: nome(ficha.vendedorId), depois: nome(id) });
+      }
+    }
+    if (c.canal !== undefined) {
+      const canal = c.canal === null || c.canal === '' ? null : String(c.canal);
+      if (canal && !(COMERCIAL_CANAIS_DE_ENTRADA as readonly string[]).includes(canal)) throw new BadRequestException(`Canal inválido: use ${COMERCIAL_CANAIS_DE_ENTRADA.join(', ')}.`);
+      if (canal !== ficha.canal) {
+        data.canal = canal;
+        mudancas.push({ campo: 'canal', antes: ficha.canal, depois: canal });
+      }
+    }
+    if (!mudancas.length) return this.projecao(orgId, leadId);
+    await this.prisma.$transaction(async (tx) => {
+      await tx.comercialFicha.update({ where: { id: ficha.id }, data });
+      await this.fio.gravarNaTransacao(tx, orgId, leadId, 'negocio.ajustado', `${agora.getTime()}`, { mudancas, por: por?.nome ?? por?.id ?? null }, agora);
+    });
+    return this.projecao(orgId, leadId);
+  }
+
+  /**
+   * Layout 26/10/2026: o TIPO DO NEGÓCIO (pagante, parceria, permuta, repasse), o mesmo
+   * dos acordos da Análise. Fato `negocio.tipo_definido` no fio com o antes e quem fez,
+   * SEM reação: não move etapa nem dispara automação. Sem tipo gravado = pagante.
+   */
+  async definirTipoDoNegocio(orgId: string, leadId: string, corpo: unknown, por: QuemFez | null, agora = new Date()): Promise<FichaDoLead> {
+    const tipo = (corpo as { tipo?: unknown } | null)?.tipo;
+    if (typeof tipo !== 'string' || !(COMERCIAL_TIPOS_DE_NEGOCIO as readonly string[]).includes(tipo)) {
+      throw new BadRequestException(`Tipo do negócio inválido: use ${COMERCIAL_TIPOS_DE_NEGOCIO.join(', ')}.`);
+    }
+    const ficha = await this.garantir(orgId, leadId);
+    const antes = tipoDeNegocio(ficha.tipoNegocio);
+    if (antes === tipo && ficha.tipoNegocio) return this.projecao(orgId, leadId);
+    await this.prisma.$transaction(async (tx) => {
+      await tx.comercialFicha.update({ where: { id: ficha.id }, data: { tipoNegocio: tipo } });
+      await this.fio.gravarNaTransacao(tx, orgId, leadId, 'negocio.tipo_definido', `${agora.getTime()}`, {
+        tipo, antes, por: por?.nome ?? por?.id ?? null,
+      }, agora);
+    });
+    return this.projecao(orgId, leadId);
+  }
+
   async registrarSaida(orgId: string, leadId: string, corpo: unknown, por: QuemFez | null, agora = new Date()): Promise<FichaDoLead> {
     const r = ComercialSaidaSchema.safeParse(corpo);
     if (!r.success) throw new BadRequestException({ message: 'Saída inválida.', erros: r.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`) });
@@ -742,7 +816,7 @@ export class FichaService {
     const etapa = ficha.etapa as ComercialEtapa;
     const proxima = etapa === 'sessao' ? avancarDepoisDaSessao(estado).para ?? 'diagnostico' : proximaEtapa(etapa);
     const itens = portoesDaEtapa(estado);
-    const nomes = await this.nomesDeUsuarios(orgId, [ficha.donoId]);
+    const nomes = await this.nomesDeUsuarios(orgId, [ficha.donoId, ficha.vendedorId]);
     // E-24: o sócio da conta é a pessoa da ata que gravou o nome (a primeira com `por`), achada pelo id
     // que a ata trouxe e conferida na empresa. Dois usuários com o mesmo nome não se confundem.
     const ataDoSocio = ficha.socioDaConta ? eventos.find((e) => e.type === 'ata.chegou' && (e.payload as { por?: unknown } | null)?.por === ficha.socioDaConta) : undefined;
@@ -764,6 +838,7 @@ export class FichaService {
       telefone: lead.phone,
       email: lead.email,
       empresa: ficha.empresa,
+      tipoNegocio: tipoDeNegocio(ficha.tipoNegocio),
       cnpj: ficha.cnpj,
       canal: (ficha.canal as ComercialCanalDeEntrada | null) ?? null,
       origemIndicacao: ficha.origemIndicacao,
@@ -772,6 +847,8 @@ export class FichaService {
       sistemaErp: ficha.sistemaErp,
       baseDados: ficha.baseDados,
       dono: ficha.donoId ? { id: ficha.donoId, nome: nomes.get(ficha.donoId) ?? ficha.donoId } : null,
+      vendedor: ficha.vendedorId ? { id: ficha.vendedorId, nome: nomes.get(ficha.vendedorId) ?? ficha.vendedorId } : null,
+      valorNegociadoCentavos: ficha.valorNegociadoCentavos ?? null,
       // A ficha guarda o NOME de quem conduziu a sessão (o `por` da ata); o id vem da ata. Sem ele, nulo.
       socioDaConta: ficha.socioDaConta ? { id: socio?.id ?? null, nome: ficha.socioDaConta } : null,
       produto: (ficha.produto as ComercialProduto | null) ?? null,
@@ -834,6 +911,9 @@ export class FichaService {
     else if (f.dono) e.push({ donoId: f.dono });
     if (f.produto) e.push({ produto: f.produto });
     if (f.perfil) e.push({ perfil: f.perfil });
+    // Layout 26/10: o tipo do negócio; "pagante" inclui a ficha sem tipo gravado.
+    if (f.tipo === 'pagante') e.push({ OR: [{ tipoNegocio: null }, { tipoNegocio: 'pagante' }] });
+    else if (f.tipo) e.push({ tipoNegocio: f.tipo });
     if (f.etapa === 'saidas') e.push({ etapa: { in: [...COMERCIAL_SAIDAS] as EtapaDoBanco[] } });
     else if (f.etapa && ((COMERCIAL_ETAPAS as readonly string[]).includes(f.etapa) || (COMERCIAL_SAIDAS as readonly string[]).includes(f.etapa))) e.push({ etapa: f.etapa as EtapaDoBanco });
     else if (f.etapa) e.push({ leadId: { in: [] } });
@@ -868,6 +948,9 @@ export class FichaService {
         leadId: ficha.leadId,
         nome: ficha.lead.name,
         empresa: ficha.empresa,
+        tipoNegocio: tipoDeNegocio(ficha.tipoNegocio),
+        // Layout 26/10: o card da Implantação já existe antes do fechamento ("Iniciar onboarding").
+        onboardingCardId: ficha.etapa !== 'fechado' ? ficha.cardId ?? null : null,
         etapa,
         saude: saudeDoLead(),
         proximaAcao: proximaAcaoDoLead(ficha, cfg, decisoesDo(ficha.leadId), agora),

@@ -184,6 +184,19 @@ describe('Atas › Reuniões do Granola', () => {
     expect(screen.getByTestId('ata-pendencia-1')).toHaveTextContent('sugestão para decidir');
   });
 
+  it('Layout 26/10: o clique em "virou tarefa" abre o pop-up da tarefa aqui mesmo, sem sair de Atas', async () => {
+    comAta = true;
+    render(<AtasPage />);
+    const virou = await screen.findByTestId('ata-pendencia-0');
+    const link = within(virou).getByRole('link', { name: 'virou tarefa' });
+    // O href para /trabalho fica (abrir em outra aba, copiar); o clique comum abre aqui.
+    expect(link).toHaveAttribute('href', `/trabalho?tarefa=${TAREFA}`);
+    fireEvent.click(link);
+    expect(window.location.pathname).toBe('/trabalho/atas');
+    expect(new URLSearchParams(window.location.search).get('tarefa')).toBe(TAREFA);
+    await waitFor(() => expect(get).toHaveBeenCalledWith(`/trabalho/tarefas/${TAREFA}`, 'tok'));
+  });
+
   it('a lista mostra pendentes, aceitas e descartadas, quem aceitou e o link da tarefa', async () => {
     comAta = true;
     render(<AtasPage />);

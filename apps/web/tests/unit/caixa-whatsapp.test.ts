@@ -89,7 +89,7 @@ describe('caixa de WhatsApp: o endereço e as rotas', () => {
   });
 
   it('os chips na ordem da tela, com Arquivadas no fim', () => {
-    expect([...CHIPS_DA_CAIXA]).toEqual(['todas', 'leads', 'clientes', 'grupos', 'sem_vinculo', 'equipe', 'arquivadas']);
+    expect([...CHIPS_DA_CAIXA]).toEqual(['todas', 'leads', 'clientes', 'grupos', 'sem_vinculo', 'equipe', 'comunidade', 'arquivadas']);
   });
 });
 

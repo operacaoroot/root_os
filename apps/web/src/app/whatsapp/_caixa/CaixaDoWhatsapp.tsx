@@ -49,8 +49,9 @@ import { BOTAO, BOTAO_PRIMARIO, Chip, ErroDaAcao, FOCO, INPUT } from '../../come
  *
  * Toda conversa do número da empresa, 1:1 e grupo, com quem falou, o quê e
  * quando. À esquerda as conversas (mais recente primeiro), com os chips
- * Todas · Leads · Clientes · Grupos · Sem vínculo · Equipe (e Arquivadas no
- * fim) e a busca por nome, número e texto. À direita o histórico, com rolagem
+ * Todas · Leads · Clientes · Grupos · Sem vínculo · Equipe · Comunidade (layout
+ * 26/10), Arquivadas no fim, e a busca por nome, número e texto. À direita o
+ * histórico, com rolagem
  * própria, o cabeçalho com o vínculo (componente da lane C) e a caixa de
  * resposta.
  *
@@ -95,6 +96,8 @@ function rotuloDoVinculo(c: ConversaDaCaixa): { texto: string; tom: 'brand' | 'i
   if (c.vinculo?.tipo === 'lead') return { texto: 'lead', tom: 'brand' };
   if (c.vinculo?.tipo === 'cliente') return { texto: 'cliente', tom: 'info' };
   if (c.equipe) return { texto: 'equipe', tom: 'neutro' };
+  // Layout 26/10: o quarto tipo de conversa, com o selo pequeno na lista.
+  if (c.comunidade) return { texto: 'comunidade', tom: 'neutro' };
   return null;
 }
 
@@ -471,7 +474,7 @@ export function CaixaDoWhatsapp() {
     // a página não rola, cada coluna rola por dentro.
     <div data-testid="caixa" className="flex h-[calc(100dvh-52px-2rem-3.75rem)] min-h-[30rem] min-w-0 flex-col gap-3 min-[820px]:h-[calc(100dvh-46px-3rem-3.5rem)]">
       <header className="flex shrink-0 flex-wrap items-baseline gap-x-3 gap-y-1">
-        <p className="text-[13px] text-muted">As conversas do número da empresa com leads, clientes e equipe.</p>
+        <p className="text-[13px] text-muted">As conversas do número da empresa com leads, clientes, equipe e comunidade.</p>
         <Link href="/whatsapp/simulador" data-testid="caixa-ir-para-celulares" className={`text-[12.5px] text-muted underline underline-offset-2 hover:text-brand ${FOCO}`}>
           Celulares do comercial
         </Link>
@@ -663,7 +666,12 @@ export function CaixaDoWhatsapp() {
                       {tamanho}/{TETO_DA_RESPOSTA_DA_CAIXA}
                     </span>
                   </div>
-                  {!razao && <p className="text-[11px] text-muted">Sai pelo número da empresa, sem o seu nome na mensagem. O OS guarda no Registro de ações que foi você quem enviou.</p>}
+                  {/* Layout 26/10: a mensagem sai como ROOT; o nome de quem enviou fica só aqui dentro. */}
+                  {!razao && (
+                    <p data-testid="caixa-aviso-envio" className="text-[11px] text-muted">
+                      Sai pelo número da empresa, com o seu nome em negrito no topo, para o cliente saber quem está falando.
+                    </p>
+                  )}
                 </form>
               )}
             </>

@@ -29,13 +29,9 @@ vi.mock('next/navigation', () => ({
 }));
 
 // eslint-disable-next-line import/first
-import ConteudoPage from '@/app/conteudo/page';
-// eslint-disable-next-line import/first
 import TarefasPage from '@/app/tarefas/page';
 // eslint-disable-next-line import/first
 import TrabalhoPage from '@/app/trabalho/page';
-
-const hrefs = (el: HTMLElement) => Array.from(el.querySelectorAll('a')).map((a) => a.getAttribute('href'));
 
 const lista = {
   id: 'lista-1', name: 'Operação', externalId: null, spaceId: null, order: 0, total: 1,
@@ -54,6 +50,8 @@ const tarefa = {
   parentId: null, subtasks: 0, comments: 0, externalId: null, externalUrl: null, order: 0, tags: [], values: [],
 };
 
+// Layout 26/10: `/conteudo` (Temas do ClickUp) foi aposentado e redireciona para `/marketing`
+// (`rotas-antigas.mjs`); a trava do redirect está em `tests/unit/nav.test.ts`.
 describe('texto de orientação das telas legadas', () => {
   beforeEach(() => {
     window.localStorage.removeItem('root-os:trabalho:densidade');
@@ -65,20 +63,8 @@ describe('texto de orientação das telas legadas', () => {
     apiGet.mockImplementation(async (rota: string) => {
       if (rota === '/trabalho/estrutura') return estrutura;
       if (rota.startsWith('/trabalho/tarefas?')) return { total: 1, items: [tarefa] };
-      if (rota.startsWith('/content')) return {
-        total: 1, statuses: ['ideia'], eixos: [], formatos: [],
-        items: [{ id: 'c1', title: 'Tema', status: 'ideia', statusType: 'open' }],
-      };
       throw new Error(`Rota sem fixture: ${rota}`);
     });
-  });
-
-  it('/conteudo diz que é espelho do ClickUp, sem dizer leitura, e aponta Tarefas, Pauta e Banco de ideias', async () => {
-    render(<ConteudoPage />);
-    const nota = await screen.findByTestId('conteudo-orientacao');
-    expect(hrefs(nota)).toEqual(['/trabalho', '/pauta', '/marketing/ideias']);
-    expect(screen.getByText(/espelho da lista Gestão de/)).toBeTruthy();
-    expect(document.body.textContent).not.toContain('para consulta');
   });
 
   /*
@@ -115,11 +101,6 @@ describe('texto de orientação das telas legadas', () => {
 
   it('com permissão de editar, os seletores de etapa existem e o texto não promete só leitura', async () => {
     PODE_EDITAR = true;
-    const conteudo = render(<ConteudoPage />);
-    await waitFor(() => expect(conteudo.container.querySelector('select[title]')).not.toBeNull());
-    expect(conteudo.container.textContent).not.toContain('para consulta');
-    expect(conteudo.container.textContent?.toLowerCase()).not.toContain('somente leitura');
-    conteudo.unmount();
     window.history.replaceState({}, '', '/trabalho?visao=lista&concluidas=mostrar'); // a etapa fechada (Feita) só entra no seletor com as concluídas à vista
     // Rodada da implantação I2: o seletor de etapa no cartão é da densidade cheia (no compacto, o cartão abre o painel).
     window.localStorage.setItem('root-os:trabalho:densidade', 'cheio');

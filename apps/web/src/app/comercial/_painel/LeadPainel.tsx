@@ -32,6 +32,8 @@ import { AbaDecisoes } from './AbaDecisoes';
 import { AbaSala } from './AbaSala';
 import { AbaWhatsapp } from './AbaWhatsapp';
 import { EditarIdentidade } from './EditarIdentidade';
+import { TipoDoNegocio } from './TipoDoNegocio';
+import { NegocioDoLead } from './NegocioDoLead';
 
 const FOCAVEIS = 'a[href], button:not([disabled]), input:not([disabled]):not([type="hidden"]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
 
@@ -208,7 +210,18 @@ export function LeadPainel({ estado }: { estado: EstadoDoPainel }) {
             </button>
           </div>
           {/* Layout 26/10: corrigir nome e empresa (depois do "fechar" na ordem do teclado: ele segue o primeiro). */}
-          {f && <EditarIdentidade key={`${f.nome}|${f.empresa ?? ''}`} leadId={leadId} nome={f.nome} empresa={f.empresa ?? null} aoMudar={aoMudar} />}
+          {f && (
+            <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
+              <EditarIdentidade key={`${f.nome}|${f.empresa ?? ''}`} leadId={leadId} nome={f.nome} empresa={f.empresa ?? null} aoMudar={aoMudar} />
+              {/* Layout 26/10: o tipo do negócio (pagante, parceria, permuta, repasse). */}
+              <TipoDoNegocio leadId={leadId} tipo={f.tipoNegocio ?? 'pagante'} aoMudar={aoMudar} />
+              {/* Layout 26/10: valor negociado, vendedor (≠ dono) e canal de aquisição. */}
+              <NegocioDoLead
+                key={`${f.valorNegociadoCentavos ?? ''}|${f.vendedor?.id ?? ''}|${f.canal ?? ''}`}
+                leadId={leadId} valorNegociadoCentavos={f.valorNegociadoCentavos ?? null} vendedorId={f.vendedor?.id ?? null} canal={f.canal ?? null} aoMudar={aoMudar}
+              />
+            </div>
+          )}
 
           <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-2 text-[12px]">
             {f ? (

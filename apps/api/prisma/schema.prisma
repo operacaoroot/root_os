@@ -180,6 +180,8 @@ model Org {
   caixaVistos           CaixaVisto[]
   /// As sugestões de tarefa lidas das atas do Trabalho (rodada do painel P3).
   ataSugestoes          AtaSugestao[]
+  /// Layout 26/10: a ata ligada à mão a um lead e/ou a um cliente.
+  ataLigacoes           AtaLigacao[]
   pendencias            Pendencia[]
   /// TR-09, o Delegador (rodada dos agentes, 21/10/2026): as subtarefas propostas, à espera de gente.
   delegacaoSugestoes    DelegacaoSugestao[]
@@ -2618,6 +2620,38 @@ model AtaSugestao {
   @@index([orgId, estado])
 }
 
+/// Layout 26/10: A ATA LIGADA A UM LEAD OU A UM CLIENTE. Uma linha por ata e
+/// empresa (`ataRef`: `memoria:`, `vault:`, `drive:` ou `granola:`), ligada à mão
+/// na tela Atas a um lead e/ou a um cliente (`Partner` cliente, o principal).
+/// O título, a data e o tipo são copiados ao ligar: o painel do lead e a ficha
+/// do cliente mostram "a reunião de tal dia" sem reabrir a fonte.
+///
+/// NÃO é o fato `ata.chegou` do comercial: ligar não roda o leitor de ata, o
+/// diagnóstico nem o avanço de etapa. `leadId` e `clienteId` sem chave
+/// estrangeira, como o `ataRef`: a ligação de um lead ou cliente apagado some
+/// na leitura. Raiz da empresa, RLS FORCE no grupo padrão.
+/// Migration `20261026230000_ata_ligada`.
+model AtaLigacao {
+  id           String   @id @default(uuid())
+  orgId        String
+  org          Org      @relation(fields: [orgId], references: [id])
+  ataRef       String
+  leadId       String?
+  clienteId    String?
+  titulo       String
+  /// AAAA-MM-DD, quando a ata diz.
+  data         String?
+  /// `ata` ou `transcricao`.
+  tipo         String   @default("ata")
+  ligadaPor    String?
+  criadaEm     DateTime @default(now())
+  atualizadaEm DateTime @updatedAt
+
+  @@unique([orgId, ataRef])
+  @@index([orgId, leadId])
+  @@index([orgId, clienteId])
+}
+
 // ============================================================================
 // Régua, porta e rastro — a escada R0-R5 saindo do papel.
 //
@@ -4849,6 +4883,12 @@ model ComercialFicha {
 
   // C07 — os campos, na ordem em que viram obrigatórios
   empresa                       String?
+  /// Layout 26/10: pagante | parceria | permuta | repasse (nulo = pagante). Muda pelo fato `negocio.tipo_definido`, sem automação.
+  tipoNegocio                   String?
+  /// Layout 26/10: o valor negociado (pode diferir da proposta); muda pelo fato `negocio.ajustado`, sem automação.
+  valorNegociadoCentavos        Int?
+  /// Layout 26/10: quem VENDEU (diferente do dono, que é quem cuida agora). Id de User, sem chave estrangeira.
+  vendedorId                    String?
   cnpj                          String?
   canal                         String?
   origemIndicacao               String?
@@ -5911,6 +5951,8 @@ model AcordoComercial {
   /// INTEGRAÇÃO (26/10/2026): o cliente do Financeiro deste acordo. O nome em
   /// `cliente` continua (é o que a Análise já usa para casar o extrato); este
   /// vínculo é o que liga o acordo ao resto do OS. Nulo = acordo ainda não ligado.
+  /// Layout 26/10: quando o acordo fechou; alimenta "Contratos fechados por mês" do Comercial.
+  fechadoEm       DateTime? @db.Date
   partnerId       String?
   partner         Partner? @relation("AcordosDoCliente", fields: [partnerId], references: [id], onDelete: SetNull)
   createdAt       DateTime @default(now())
@@ -6282,6 +6324,9 @@ model WhatsAppConversa {
   participantesLista Json?
   /// Conversa da equipe (grupo dos sócios ou 1:1 com gente da casa): chip próprio, sem vínculo de cliente.
   equipe            Boolean   @default(false)
+  /// Layout 26/10: conversa da comunidade da casa (ex.: "Operação Root | IA para Negócios"). Marcada à mão;
+  /// exclui equipe e vínculo com lead ou cliente. Fora das não lidas de leads, clientes e sem vínculo.
+  comunidade        Boolean   @default(false)
   ultimaMensagemEm  DateTime?
   naoLidas          Int       @default(0)
   leadId            String?

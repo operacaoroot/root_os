@@ -459,6 +459,10 @@ export const COMERCIAL_EVENTOS = [
   // CO-16: a classe que a triagem do WhatsApp deu a uma mensagem (e para onde ela foi).
   // Layout 26/10: uma pessoa corrigiu o nome do contato e/ou a empresa do lead (sem reação: não move etapa nem dispara automação).
   'identidade.editada',
+  // Layout 26/10: uma pessoa definiu o tipo do negócio (pagante, parceria, permuta, repasse), sem reação.
+  'negocio.tipo_definido',
+  // Layout 26/10: uma pessoa ajustou valor negociado, vendedor ou canal de aquisição, sem reação.
+  'negocio.ajustado',
   'whats.triada',
 ] as const;
 export type ComercialEvento = (typeof COMERCIAL_EVENTOS)[number];
@@ -864,6 +868,8 @@ export interface FichaDoLead {
   telefone: string | null;
   email: string | null;
   empresa: string | null;
+  /** Layout 26/10: pagante (padrão), parceria, permuta ou repasse. O mesmo tipo dos acordos da Análise. */
+  tipoNegocio?: ComercialTipoDeNegocio;
   cnpj: string | null;
   canal: ComercialCanalDeEntrada | null;
   origemIndicacao: string | null;
@@ -872,6 +878,10 @@ export interface FichaDoLead {
   sistemaErp: string | null;
   baseDados: boolean | null;
   dono: { id: string; nome: string } | null;
+  /** Layout 26/10: quem VENDEU (diferente do dono, que cuida agora). */
+  vendedor?: { id: string; nome: string } | null;
+  /** Layout 26/10: o valor negociado, em centavos (pode diferir da proposta). */
+  valorNegociadoCentavos?: number | null;
   /** E-24: `id` é o da pessoa que subiu a ata, conferido na empresa; nulo quando a ata não o trouxe (nunca o nome no lugar do id). */
   socioDaConta: { id: string | null; nome: string } | null;
   produto: ComercialProduto | null;
@@ -1028,12 +1038,22 @@ export interface ComercialFiltrosDoFunil {
   parado: string;
   decisao: string;
   q: string;
+  /** Layout 26/10: pagante, parceria, permuta ou repasse (vazio = todos). */
+  tipo: string;
 }
 
-export const COMERCIAL_CHAVES_DOS_FILTROS_DO_FUNIL = ['dono', 'produto', 'perfil', 'etapa', 'parado', 'decisao', 'q'] as const;
+export const COMERCIAL_CHAVES_DOS_FILTROS_DO_FUNIL = ['dono', 'produto', 'perfil', 'etapa', 'parado', 'decisao', 'q', 'tipo'] as const;
+
+/** Layout 26/10: o tipo do negócio, o mesmo dos acordos da Análise. Sem tipo gravado = pagante. */
+export const COMERCIAL_TIPOS_DE_NEGOCIO = ['pagante', 'parceria', 'permuta', 'repasse'] as const;
+export type ComercialTipoDeNegocio = (typeof COMERCIAL_TIPOS_DE_NEGOCIO)[number];
+export const ROTULO_DO_TIPO_DE_NEGOCIO: Record<ComercialTipoDeNegocio, string> = { pagante: 'Pagante', parceria: 'Parceria', permuta: 'Permuta', repasse: 'Repasse' };
+export function tipoDeNegocio(v: string | null | undefined): ComercialTipoDeNegocio {
+  return (COMERCIAL_TIPOS_DE_NEGOCIO as readonly string[]).includes(v ?? '') ? (v as ComercialTipoDeNegocio) : 'pagante';
+}
 
 export function filtrosDoFunilVazios(): ComercialFiltrosDoFunil {
-  return { dono: '', produto: '', perfil: '', etapa: '', parado: '', decisao: '', q: '' };
+  return { dono: '', produto: '', perfil: '', etapa: '', parado: '', decisao: '', q: '', tipo: '' };
 }
 
 /**
@@ -1085,6 +1105,10 @@ export interface CartaoDoFunil {
   leadId: string;
   nome: string;
   empresa: string | null;
+  /** Layout 26/10: o card da Implantação, quando o onboarding começou antes do fechamento. */
+  onboardingCardId?: string | null;
+  /** Layout 26/10: o tipo do negócio (sem tipo gravado = pagante). */
+  tipoNegocio?: ComercialTipoDeNegocio;
   etapa: ComercialEtapa;
   saude: number | null;
   proximaAcao: ComercialProximaAcao | null;

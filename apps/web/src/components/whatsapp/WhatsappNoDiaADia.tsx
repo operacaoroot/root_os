@@ -112,6 +112,22 @@ export function WhatsappNoDiaADia({ token }: { token: string | null }) {
                   </a>
                 </li>
               )}
+              {/* Layout 26/10: a comunidade aparece como a equipe, só quando tem não lida. */}
+              {(r.naoLidas.comunidade ?? 0) > 0 && (
+                <li>
+                  <a
+                    href={urlDaCaixa('comunidade')}
+                    data-testid="whatsapp-linha-comunidade"
+                    className="flex min-h-[44px] items-center justify-between gap-3 rounded px-1 py-2 text-muted hover:bg-surface-2 md:min-h-0"
+                  >
+                    <span>Comunidade</span>
+                    <span>
+                      <span className="com-num">{r.naoLidas.comunidade}</span> {rotuloDeNaoLidas(r.naoLidas.comunidade)}
+                      <span aria-hidden className="ml-2">→</span>
+                    </span>
+                  </a>
+                </li>
+              )}
             </ul>
             {r.conversasSemVinculo > 0 && (
               <a

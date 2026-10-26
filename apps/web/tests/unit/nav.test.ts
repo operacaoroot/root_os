@@ -81,7 +81,11 @@ const DESTINO: Record<string, { paraKey: string; absorvido?: string }> = {
     paraKey: 'pixels',
     absorvido: 'é o manual de instalação do pixel; a rota /vendas segue viva fora do menu',
   },
-  conteudo: { paraKey: 'conteudo' },
+  // Layout 26/10: Temas do ClickUp aposentado; /conteudo redireciona para o Marketing.
+  conteudo: {
+    paraKey: 'marketing',
+    absorvido: 'o espelho dos Temas do ClickUp foi aposentado em 26/10/2026; o conteúdo mora no Marketing, que pede pauta.ver',
+  },
   pauta: { paraKey: 'pauta' },
   referencias: { paraKey: 'referencias' },
   instagram: { paraKey: 'instagram' },
@@ -176,7 +180,7 @@ describe('não se perdeu funcionalidade', () => {
       expect(filasDuplicadas.has(r.destino), `${r.href} → ${r.destino} é fila duplicada`).toBe(false);
     }
     // 18/10/2026 (rodada do painel P0): /conteudo saiu do menu e entrou como ORIGEM.
-    // Ele continua item do NAV, oculto: a tela segue viva e a rota segue com dono.
+    // Layout 26/10: /conteudo foi aposentado (redirect para /marketing, teste abaixo).
     for (const h of filasDuplicadas) {
       const absorvida = ROTAS_ABSORVIDAS.some((r) => r.href === h);
       const item = NAV.find((n) => n.href === h);
@@ -191,6 +195,17 @@ describe('não se perdeu funcionalidade', () => {
         false,
       );
     }
+  });
+
+  // Layout 26/10: "Temas do ClickUp" aposentado. A rota responde com o redirect para o
+  // Marketing, sem item no NAV, sem página e fora das rotas absorvidas.
+  it('/conteudo redireciona para /marketing e não tem mais tela nem item', () => {
+    const r = (ROTAS_ANTIGAS as { de: string; para: string }[]).find((x) => x.de === '/conteudo');
+    expect(r?.para).toBe('/marketing');
+    expect(NAV.find((n) => n.href === '/marketing')?.key).toBe('marketing');
+    expect(NAV.some((n) => n.href === '/conteudo')).toBe(false);
+    expect(ROTAS_ABSORVIDAS.some((x) => x.href === '/conteudo')).toBe(false);
+    expect(existsSync(join(__dirname, '..', '..', 'src', 'app', 'conteudo', 'page.tsx'))).toBe(false);
   });
 });
 
@@ -224,7 +239,6 @@ const MENU_FINAL: LinhaDoMenu[] = [
   ['trabalho-atas', 'Atas', '/trabalho/atas', 'tarefas.ver', 'trabalho', 'trabalho', 'trabalho', false],
   // 22/10/2026 (produção 3, I2): a Lixeira, oculta, aberta pela engrenagem do topo.
   ['lixeira', 'Lixeira', '/lixeira', 'tarefas.editar', 'trabalho', 'trabalho', null, true],
-  ['conteudo', 'Temas do ClickUp', '/conteudo', 'dashboard.ver', 'trabalho', 'conteudo', null, true],
   // Motor de Marketing: a forma da produção (Banco de ideias e Estratégia moram aqui, visíveis).
   ['marketing-ideias', 'Banco de ideias', '/marketing/ideias', 'pauta.ver', 'conteudo', 'pauta', null, false],
   ['marketing-estrategia', 'Estratégia do mês', '/marketing/estrategia', 'pauta.ver', 'conteudo', 'pauta', null, false],
@@ -282,7 +296,6 @@ const MENU_FINAL: LinhaDoMenu[] = [
 const OCULTOS_E_DESTINO: Record<string, string | null> = {
   tarefas: '/trabalho',
   onboarding: '/trabalho/implantacao',
-  conteudo: '/trabalho',
   funil: '/comercial/funil',
   clientes: '/trabalho/implantacao',
   'comercial-tarefas': '/trabalho',
@@ -599,7 +612,8 @@ describe('organização da navegação (ROOT-07 e versão final)', () => {
     caixa: 'dashboard.ver', atendimento: 'aprovacoes.ver', agenda: 'dashboard.ver', console: 'dashboard.ver',
     contexto: 'obsidian.ver', marca: 'pauta.ver', organograma: 'dashboard.ver',
     tarefas: 'tarefas.ver', trabalho: 'tarefas.ver', onboarding: 'tarefas.ver',
-    conteudo: 'dashboard.ver', pauta: 'pauta.ver', referencias: 'pauta.ver', marketing: 'pauta.ver',
+    // Layout 26/10: `conteudo` (Temas do ClickUp) saiu do NAV; a rota redireciona para o Marketing.
+    pauta: 'pauta.ver', referencias: 'pauta.ver', marketing: 'pauta.ver',
     'marketing-ideias': 'pauta.ver', 'marketing-estrategia': 'pauta.ver', 'marketing-performance': 'pauta.ver',
     'marketing-relatorio': 'pauta.ver', instagram: 'instagram.ver', bio: 'bio.ver',
     'comercial-painel': 'leads.ver', clientes: 'tarefas.ver', 'tarefas-todas': 'tarefas.ver', leads: 'leads.ver',
@@ -833,8 +847,9 @@ describe('organização da navegação (ROOT-07 e versão final)', () => {
     // As contagens do menu depois da noite de 20/10/2026.
     expect(NAV.filter((n) => !n.oculto)).toHaveLength(46);
     // 13 desde a produção 22B: o Perfil (I6) e a Lixeira (I2) entraram ocultos (a entrada é a engrenagem do topo).
-    expect(NAV.filter((n) => n.oculto)).toHaveLength(13);
-    expect(ROTAS_ABSORVIDAS).toHaveLength(12);
+    // Layout 26/10: 12 e 11, `/conteudo` (Temas do ClickUp) aposentado, com redirect para o Marketing.
+    expect(NAV.filter((n) => n.oculto)).toHaveLength(12);
+    expect(ROTAS_ABSORVIDAS).toHaveLength(11);
   });
 
   it('as Atas ficam no Trabalho, sob Tarefas, com tarefas.ver e o módulo trabalho', () => {

@@ -19,7 +19,7 @@ describe('Perguntar: a aba Chat com as não lidas do WhatsApp', () => {
   it('o botão fechado e a aba "chat" mostram o selo vermelho com a quantidade', async () => {
     render(<ChatFlutuante />);
     expect((await screen.findByTestId('chat-nao-lidas')).textContent).toBe('3');
-    await userEvent.setup().click(screen.getByTitle('Perguntar à central'));
+    await userEvent.setup().click(screen.getByTitle('Chat: a central e as conversas do WhatsApp'));
     const aba = screen.getByRole('tab', { name: /chat/i });
     expect(aba.textContent).toContain('chat');
     expect(aba.querySelector('[data-testid="chat-nao-lidas"]')?.textContent).toBe('3');

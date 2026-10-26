@@ -177,7 +177,8 @@ export const NAV: NavItem[] = [
   // 22/10/2026 (rodada de produção 3, I2): a Lixeira do Trabalho. Fora do menu de propósito:
   // abre pela engrenagem do topo. O item é o dono da rota (módulo Trabalho, a permissão de apagar).
   { key: 'lixeira', label: 'Lixeira', href: '/lixeira', icon: 'Trash2', permission: 'tarefas.editar', secao: 'trabalho', modulo: 'trabalho', oculto: true },
-  { key: 'conteudo', label: 'Temas do ClickUp', href: '/conteudo', icon: 'FileText', permission: 'dashboard.ver', secao: 'trabalho', modulo: 'conteudo', oculto: true },
+  // Layout 26/10: "Temas do ClickUp" (`/conteudo`, o espelho ContentItem) foi aposentado. O item
+  // sai do NAV e a rota redireciona para o Marketing (`rotas-antigas.mjs`). A API e a tabela ficam.
   // Fora do foco vale a forma da produção: Banco de ideias e Estratégia do mês moram
   // no Motor de Marketing (enxugamento.md). A nossa só os tirava do Trabalho.
   { key: 'marketing-ideias', label: 'Banco de ideias', href: '/marketing/ideias', icon: 'Lightbulb', permission: 'pauta.ver', secao: 'conteudo', modulo: 'pauta' },
@@ -267,7 +268,8 @@ export const ROTAS_ABSORVIDAS: { href: string; destino: string; porque: string }
   // 18/10/2026, rodada do painel P0: itens OCULTOS do NAV (continuam donos da rota e
   // do módulo). Apagar de vez é decisão do Pedro (ROOT-10, MK7-telas-repetidas §3.1).
   { href: '/funil', destino: '/comercial/funil', porque: 'o cockpit absorve o MVP: o Funil vivo substitui o funil de antes; a tela segue viva' },
-  { href: '/conteudo', destino: '/trabalho', porque: 'cortada do menu por decisão de 18/10/2026; a tela (espelho dos Temas do ClickUp) segue viva' },
+  // Layout 26/10: `/conteudo` saiu daqui. A tela foi aposentada e a rota redireciona para
+  // `/marketing` (`apps/web/rotas-antigas.mjs`).
   // 18/10/2026, rodada do painel P2: a lista de tarefas virou a visão Lista do Trabalho.
   { href: '/tarefas', destino: '/trabalho', porque: 'quadro e lista viraram uma tela só em 18/10/2026; /tarefas abre a visão de lista' },
   // 19/10/2026, rodada do trabalho T6: a fila de decisões do comercial virou a aba

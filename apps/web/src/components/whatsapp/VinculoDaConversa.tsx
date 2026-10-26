@@ -19,6 +19,8 @@ import { useAuth } from '@/lib/auth';
  *   · sem vínculo: "Vincular a lead", "Vincular a cliente" (busca, o igual
  *     primeiro) e, no 1:1, "este número não está em nenhum lead; pôr no lead X?";
  *   · "Marcar como equipe" / "Tirar da equipe".
+ *   · Layout 26/10: "Marcar como comunidade" / "Tirar da comunidade" (o grupo da
+ *     comunidade da casa). As mesmas regras da equipe; marcar uma tira da outra.
  *
  * Sem `podeVincular` (sem `leads.editar`), tudo aparece desabilitado com a razão.
  */
@@ -138,6 +140,22 @@ export function VinculoDaConversa({ conversa, podeVincular, aoMudar }: { convers
             <button type="button" className={BOTAO} disabled={!podeVincular || ocupado} title={razao} onClick={() => void acao('/equipe', { equipe: false })} data-testid="whats-tirar-equipe">
               Tirar da equipe
             </button>
+            {/* Layout 26/10: o grupo da comunidade que caiu em equipe pelo nome passa direto, num clique. */}
+            <button type="button" className={BOTAO} disabled={!podeVincular || ocupado} title={razao} onClick={() => void acao('/comunidade', { comunidade: true })} data-testid="whats-marcar-comunidade">
+              Marcar como comunidade
+            </button>
+          </>
+        ) : conversa.comunidade ? (
+          <>
+            <span className="rounded border border-border px-1.5 text-[11px] uppercase tracking-wide text-muted" data-testid="whats-selo-comunidade">
+              Comunidade
+            </span>
+            <button type="button" className={BOTAO} disabled={!podeVincular || ocupado} title={razao} onClick={() => void acao('/comunidade', { comunidade: false })} data-testid="whats-tirar-comunidade">
+              Tirar da comunidade
+            </button>
+            <button type="button" className={BOTAO} disabled={!podeVincular || ocupado} title={razao} onClick={() => void acao('/equipe', { equipe: true })} data-testid="whats-marcar-equipe">
+              Marcar como equipe
+            </button>
           </>
         ) : (
           <>
@@ -163,11 +181,14 @@ export function VinculoDaConversa({ conversa, podeVincular, aoMudar }: { convers
             <button type="button" className={BOTAO} disabled={!podeVincular || ocupado} title={razao} onClick={() => void acao('/equipe', { equipe: true })} data-testid="whats-marcar-equipe">
               Marcar como equipe
             </button>
+            <button type="button" className={BOTAO} disabled={!podeVincular || ocupado} title={razao} onClick={() => void acao('/comunidade', { comunidade: true })} data-testid="whats-marcar-comunidade">
+              Marcar como comunidade
+            </button>
           </>
         )}
       </div>
 
-      {!v && !conversa.equipe && umAUmComNumero && (
+      {!v && !conversa.equipe && !conversa.comunidade && umAUmComNumero && (
         <p className="text-[12px] text-muted" data-testid="whats-convite-telefone">
           Este número não está em nenhum lead.{' '}
           <button type="button" className="text-brand underline disabled:cursor-not-allowed disabled:opacity-50" disabled={!podeVincular} title={razao} onClick={() => abrir('telefone')} data-testid="whats-telefone-no-lead">

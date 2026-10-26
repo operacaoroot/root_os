@@ -147,11 +147,11 @@ export function ChatFlutuante() {
       <button
         type="button"
         onClick={() => setAberto(true)}
-        title="Perguntar à central"
+        title="Chat: a central e as conversas do WhatsApp"
         className="fixed bottom-5 right-5 z-40 flex h-11 items-center gap-2 rounded-root border border-brand/30 bg-brand px-4 font-os-mono text-[11px] uppercase tracking-[0.14em] text-ink shadow-lg transition-transform hover:scale-[1.02]"
       >
         <MessageSquare size={15} />
-        perguntar
+        chat
         {seloVermelho('absolute -right-2 -top-2 shadow')}
       </button>
     );

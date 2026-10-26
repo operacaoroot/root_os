@@ -25,7 +25,7 @@ import { useAuth } from '@/lib/auth';
 import { dataDoDia } from '@/lib/cockpit';
 
 import { BOTAO, BOTAO_PRIMARIO, Chip, Erro, ErroDaAcao, FOCO, INPUT, useCarregar } from '../_ui';
-import { useMudouNoPainel } from '../_painel/provedor';
+import { useMudouNoPainel, usePainel } from '../_painel/provedor';
 import { BotaoDoMenuDaTarefa, MenuDaTarefaProvider, alvoDoMenu, useMenuDaTarefa } from '@/components/trabalho/MenuDaTarefa';
 import { PilhaDeAvatares } from '@/components/PilhaDeAvatares';
 import { TarefaFlutuante } from '@/components/trabalho/TrabalhoView';
@@ -386,6 +386,8 @@ export function BlocoDeTarefasDoComercial({ pessoa }: { pessoa: string }) {
   const { dados, erro, recarregar } = useCarregar<TarefasDoComercial>(caminhoDasTarefas({ pessoa }), 60_000);
   // Layout 26/10: a tarefa abre por cima do funil; fechar volta para o funil, no mesmo lugar.
   const popup = useTarefaNaUrl();
+  // Layout 26/10: com o painel de um lead aberto, a tarefa abre pelo painel (TarefasDoLead), por cima dele; aqui não.
+  const comPainelDoLead = !!usePainel().estado;
   // A tarefa mudada no painel de um lead pode ter sido desligada dele e cair aqui.
   useMudouNoPainel(recarregar);
   const corpo = useId();
@@ -430,7 +432,7 @@ export function BlocoDeTarefasDoComercial({ pessoa }: { pessoa: string }) {
           vazio="Nenhuma tarefa do comercial sem lead aberta. As de um lead aparecem no cartão e no painel dele."
         />
       </div>
-      <TarefaFlutuante tarefa={popup} onMudou={() => void recarregar()} />
+      {!comPainelDoLead && <TarefaFlutuante tarefa={popup} onMudou={() => void recarregar()} />}
     </section>
   );
 }

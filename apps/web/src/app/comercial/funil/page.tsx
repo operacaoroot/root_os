@@ -4,7 +4,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import { createPortal } from 'react-dom';
 import Link from 'next/link';
 import type { CartaoDoFunil, ComercialDestinoDoMover, ComercialFiltrosDoFunil, ComercialMotivoDeSaida, ComercialSaida, FunilVivo, VistaFunil } from '@mktos/shared';
-import { COMERCIAL_MOTIVOS_DE_SAIDA, COMERCIAL_ROTULO_DA_ETAPA, COMERCIAL_SAIDAS, filtrosDoFunilVazios } from '@mktos/shared';
+import { COMERCIAL_MOTIVOS_DE_SAIDA, COMERCIAL_ROTULO_DA_ETAPA, COMERCIAL_SAIDAS, ROTULO_DO_TIPO_DE_NEGOCIO, filtrosDoFunilVazios } from '@mktos/shared';
 
 import { AvatarDaPessoa } from '@/components/AvatarDaPessoa';
 import { BotaoDeFiltros } from '@/components/filtros/BotaoDeFiltros';
@@ -413,6 +413,19 @@ function Cartao({
         {c.dono && <AvatarDaPessoa nome={c.dono} pessoaId={c.donoId ?? null} tamanho="p" rotulo={`Responsável: ${c.dono}`} />}
         {c.perfil && <Chip>{c.perfil}</Chip>}
         {c.produto && <Chip>{ROTULO_DO_PRODUTO[c.produto]}</Chip>}
+        {/* Layout 26/10: o negócio que não gera caixa ganha selo (pagante, o padrão, não). */}
+        {c.tipoNegocio && c.tipoNegocio !== 'pagante' && <Chip tom="info" title="Tipo do negócio: não gera caixa para a ROOT">{ROTULO_DO_TIPO_DE_NEGOCIO[c.tipoNegocio].toLowerCase()}</Chip>}
+        {/* Layout 26/10: o onboarding já começou (card na Implantação antes do fechamento): não é card repetido. */}
+        {c.onboardingCardId && (
+          <Link
+            href={`/trabalho/implantacao?tarefa=${encodeURIComponent(c.onboardingCardId)}`}
+            data-testid={`funil-onboarding-${c.leadId}`}
+            title="O onboarding começou antes do fechamento: abrir o card na Implantação"
+            className="rounded border border-brand/50 px-1.5 font-os-mono text-[10px] text-brand hover:bg-brand/10"
+          >
+            onboarding iniciado →
+          </Link>
+        )}
         {c.precisaDeDecisao && <Chip tom="brand">decisão sua</Chip>}
         {c.parado && <Chip tom="alerta">parado {c.diasNaEtapa} d</Chip>}
         {contagem && <Chip title="tarefas do comercial abertas deste lead">{contagem}</Chip>}

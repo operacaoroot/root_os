@@ -137,6 +137,8 @@ export const FONTE_DO_EVENTO: Record<ComercialEvento, ComercialFonte> = {
   'etapa.movida_a_mao': 'pessoa',
   'saida.registrada': 'pessoa',
   'identidade.editada': 'pessoa',
+  'negocio.tipo_definido': 'pessoa',
+  'negocio.ajustado': 'pessoa',
   'vigia.premissa': 'relogio',
   // Rodada dos agentes (21/10/2026, lane A2).
   'contrato.assinado': 'zapsign',
@@ -323,6 +325,10 @@ export interface PayloadsComerciais {
   /** CO-16: a classe da triagem e o destino. `regra` quando o sistema corrigiu o modelo; `pessoa` quando veio da pendência. */
   /** Layout 26/10: nome do contato e/ou empresa corrigidos por uma pessoa (o antes vai junto). Sem reação: não move etapa. */
   'identidade.editada': { nome: string | null; empresa: string | null; nomeAntes: string | null; empresaAntes: string | null; por: string | null };
+  /** Layout 26/10: o tipo do negócio definido por uma pessoa (o antes vai junto). Sem reação. */
+  'negocio.tipo_definido': { tipo: string; antes: string; por: string | null };
+  /** Layout 26/10: valor negociado, vendedor ou canal ajustados por uma pessoa (cada mudança com o antes). Sem reação. */
+  'negocio.ajustado': { mudancas: { campo: string; antes: string | null; depois: string | null }[]; por: string | null };
   'whats.triada': { classe: string; confianca: number; destino: string; origem: 'modelo' | 'regra' | 'pessoa'; motivo?: string | null; mensagemId?: string | null };
 }
 
@@ -521,6 +527,12 @@ export function resumoDoEvento(type: string, payload: unknown): { fonte: Comerci
     }
     case 'saida.registrada':
       return { fonte, resumo: `saída: ${String(p.saida)} · ${String(p.motivo)}` };
+    case 'negocio.ajustado': {
+      const m = Array.isArray(p.mudancas) ? (p.mudancas as { campo: string; antes: string | null; depois: string | null }[]) : [];
+      return { fonte, resumo: `${m.map((x) => `${x.campo}: ${x.antes ?? '—'} → ${x.depois ?? '—'}`).join(' · ') || 'negócio conferido'}${p.por ? ` · por ${String(p.por)}` : ''}` };
+    }
+    case 'negocio.tipo_definido':
+      return { fonte, resumo: `tipo do negócio: ${String(p.antes)} → ${String(p.tipo)}${p.por ? ` · por ${String(p.por)}` : ''}` };
     case 'identidade.editada': {
       const partes = [
         p.nome != null && p.nome !== p.nomeAntes ? `contato: ${String(p.nomeAntes ?? '—')} → ${String(p.nome)}` : null,

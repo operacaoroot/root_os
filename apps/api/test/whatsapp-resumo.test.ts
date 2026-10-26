@@ -84,7 +84,7 @@ describe.skipIf(!URL)('GET /whatsapp/resumo', () => {
 
   it('empresa sem conversa: tudo zero', async () => {
     const r = await servico.doResumo(ORG);
-    expect(r.naoLidas).toEqual({ leads: 0, clientes: 0, semVinculo: 0, equipe: 0, total: 0 });
+    expect(r.naoLidas).toEqual({ leads: 0, clientes: 0, semVinculo: 0, equipe: 0, comunidade: 0, total: 0 });
     expect(r.conversasSemVinculo).toBe(0);
     expect(new Date(r.geradoEm).getTime()).toBe(relogio);
   });
@@ -103,7 +103,7 @@ describe.skipIf(!URL)('GET /whatsapp/resumo', () => {
     await conversa(ORG, { naoLidas: 8, arquivada: true, equipe: true });
 
     const r = await servico.doResumo(ORG);
-    expect(r.naoLidas).toEqual({ leads: 5, clientes: 4, semVinculo: 5, equipe: 8, total: 22 });
+    expect(r.naoLidas).toEqual({ leads: 5, clientes: 4, semVinculo: 5, equipe: 8, comunidade: 0, total: 22 });
     // Conversas sem vínculo: as duas fora da equipe, sem lead e sem cliente, não arquivadas.
     expect(r.conversasSemVinculo).toBe(2);
   });
@@ -175,9 +175,9 @@ describe.skipIf(!URL)('GET /whatsapp/resumo', () => {
 
     const minha = await servico.doResumo(ORG);
     const dela = await servico.doResumo(VIZINHA);
-    expect(minha.naoLidas).toEqual({ leads: 0, clientes: 0, semVinculo: 2, equipe: 0, total: 2 });
+    expect(minha.naoLidas).toEqual({ leads: 0, clientes: 0, semVinculo: 2, equipe: 0, comunidade: 0, total: 2 });
     expect(minha.conversasSemVinculo).toBe(1);
-    expect(dela.naoLidas).toEqual({ leads: 0, clientes: 0, semVinculo: 10, equipe: 1, total: 11 });
+    expect(dela.naoLidas).toEqual({ leads: 0, clientes: 0, semVinculo: 10, equipe: 1, comunidade: 0, total: 11 });
     expect(dela.conversasSemVinculo).toBe(1);
     // A empresa sem conversa nenhuma não herda o guardado da outra.
     expect((await servico.doResumo('org-teste-whatsapp-resumo-inexistente')).naoLidas.total).toBe(0);

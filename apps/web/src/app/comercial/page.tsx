@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { NovoLead } from './_funil/NovoLead';
+import { EntregueViraCaixa } from './_painel/EntregueViraCaixa';
 import {
   COMERCIAL_ROTULO_DA_ETAPA,
   SEM_INFORMACAO,
@@ -171,6 +172,8 @@ export default function ComercialPage() {
       )}
 
       {p && p.negocios.length > 0 && ver === 'painel' && <Painel p={p} abrir={abrir} />}
+      {/* Layout 26/10: parcerias, permutas e repasses com visibilidade, sem misturar com o caixa. */}
+      {p && ver === 'painel' && <EntregueViraCaixa />}
       {p && ver === 'negocios' && <Negocios p={p} filtro={filtro} tirar={tirar} limpar={() => abrir({})} />}
     </div>
   );
@@ -213,7 +216,7 @@ function Painel({ p, abrir }: { p: PainelComercial; abrir: (f: Filtro) => void }
       </div>
 
       <div className="grid gap-6 lg:grid-cols-2">
-        <Quadro titulo={`Contratos fechados por mês · ${p.ano}`} nota="valor da proposta dos negócios fechados · clique num mês">
+        <Quadro titulo={`Contratos fechados por mês · ${p.ano}`} nota={p.fechadosPorMes.some((m) => m.valorSemCaixa !== undefined) ? 'os acordos pelo mês em que fecharam (pagante + sem caixa) · clique num mês' : 'valor da proposta dos negócios fechados · clique num mês'}>
           <Meses meses={p.fechadosPorMes} medida="valor" onClick={(m) => abrir({ situacao: 'ganho', fechado: m })} verbo="fechados" />
         </Quadro>
         <Quadro titulo="Oportunidades geradas por mês" nota="leads que entraram, últimos 12 meses">
@@ -225,7 +228,7 @@ function Painel({ p, abrir }: { p: PainelComercial; abrir: (f: Filtro) => void }
         <Quadro titulo="Por canal de aquisição" nota="de onde vem o lead e de onde vem o contrato">
           <Grupos grupos={p.canais} primeira="Canal" abrir={(nome, extra) => abrir({ canal: nome, ...extra })} />
         </Quadro>
-        <Quadro titulo="Por vendedor" nota="o dono do lead · quem carrega o quê">
+        <Quadro titulo="Por vendedor" nota="quem vendeu (marcado no painel do lead) · diferente do dono e do canal">
           <Grupos grupos={p.vendedores} primeira="Vendedor" abrir={(nome, extra) => abrir({ vendedor: nome, ...extra })} />
         </Quadro>
       </div>
@@ -253,7 +256,7 @@ function Destaque({ p, abrir }: { p: PainelComercial; abrir: (f: Filtro) => void
       <div>
         <div className="grid gap-4 sm:grid-cols-2">
           <Numero rotulo={`Fechado em ${p.ano}`} valor={brl(fechado)} nota={`${p.totais.ganhosNoAno} contrato(s)`} cor={COR_DO_TOM.forte} onClick={verFechados} />
-          <Numero rotulo="Em negociação · funil todo" valor={brl(aberto)} nota={`${p.totais.abertos} aberto(s), com ou sem proposta`} cor={COR_DO_TOM.medio} onClick={verAbertos} />
+          <Numero rotulo="Em negociação · funil todo" valor={brl(aberto)} nota={p.totais.emNegociacaoSemCaixa ? `${brl(p.totais.emNegociacaoPagante ?? 0)} pagantes · ${brl(p.totais.emNegociacaoSemCaixa)} sem caixa (parceria, permuta, repasse)` : `${p.totais.abertos} aberto(s), com ou sem proposta`} cor={COR_DO_TOM.medio} onClick={verAbertos} />
         </div>
         <div className="mt-5">
           <BarraDividida
@@ -265,7 +268,7 @@ function Destaque({ p, abrir }: { p: PainelComercial; abrir: (f: Filtro) => void
             ]}
           />
         </div>
-        <div className="mt-5 grid gap-4 border-t border-border pt-4 sm:grid-cols-3">
+        <div className="mt-5 grid items-start gap-4 border-t border-border pt-4 sm:grid-cols-3">
           {/* Integração 26/10: clientes pelos acordos do Financeiro (pagante, parceria, permuta, repasse); o funil só vê quem fechou nele. */}
           {p.totais.clientesPorAcordo && p.totais.clientesPorAcordo.total > 0 ? (
             <div className="rounded-md p-1">
@@ -286,7 +289,7 @@ function Destaque({ p, abrir }: { p: PainelComercial; abrir: (f: Filtro) => void
           ) : (
             <Numero rotulo="Clientes ativos" valor={String(p.totais.clientesAtivos)} nota="fecharam e seguem com contrato" tamanho="medio" onClick={() => abrir({ situacao: 'ganho' })} />
           )}
-          <Link href="/comercial/contratos" className="group rounded-md p-1 hover:bg-surface-2">
+          <Link href="/comercial/contratos" className="group self-start rounded-md p-1 hover:bg-surface-2">
             <div className="com-rotulo">Contratos vivos</div>
             <div className="com-num mt-1.5 text-[1.5rem] font-bold leading-none">{p.totais.contratosVivos}</div>
             <div className="mt-1.5 text-sm text-muted">em acompanhamento<span className="opacity-0 transition group-hover:opacity-100"> · ver →</span></div>
@@ -326,7 +329,7 @@ function Meses(props: { meses: PainelComercialMes[]; medida: 'valor' | 'qtd'; ve
           v: m[medida],
           mostra: medida === 'valor' ? curto(m.valor) : String(m.qtd),
           tom: 'forte',
-          dica: [mesPorExtenso(m.mes), `${negocios(m.qtd)} ${props.verbo}`, ...(m.valor ? [brl(m.valor)] : [])],
+          dica: [mesPorExtenso(m.mes), `${negocios(m.qtd)} ${props.verbo}`, ...(m.valor ? [brl(m.valor)] : []), ...(m.valorSemCaixa ? [`pagante ${brl(m.valor - m.valorSemCaixa)} · sem caixa ${brl(m.valorSemCaixa)}`] : [])],
           onClick: () => props.onClick(m.mes),
         }))}
       />

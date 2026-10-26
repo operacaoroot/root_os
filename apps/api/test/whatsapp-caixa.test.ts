@@ -65,10 +65,10 @@ describe('caixa de WhatsApp: rotas e regras puras', () => {
   it('cada filtro: arquivada só em Arquivadas; sem vínculo exclui lead, cliente e equipe', () => {
     expect(ondeDoFiltro('o', 'todas')).toEqual({ orgId: 'o', arquivadaEm: null });
     expect(ondeDoFiltro('o', 'arquivadas')).toEqual({ orgId: 'o', arquivadaEm: { not: null } });
-    expect(ondeDoFiltro('o', 'sem_vinculo')).toEqual({ orgId: 'o', arquivadaEm: null, leadId: null, clienteId: null, equipe: false });
+    expect(ondeDoFiltro('o', 'sem_vinculo')).toEqual({ orgId: 'o', arquivadaEm: null, leadId: null, clienteId: null, equipe: false, comunidade: false });
     // A mesma regra do resumo do Dia a dia: Leads e Clientes saem só do que não é equipe.
-    expect(ondeDoFiltro('o', 'leads')).toEqual({ orgId: 'o', arquivadaEm: null, equipe: false, leadId: { not: null } });
-    expect(ondeDoFiltro('o', 'clientes')).toEqual({ orgId: 'o', arquivadaEm: null, equipe: false, clienteId: { not: null } });
+    expect(ondeDoFiltro('o', 'leads')).toEqual({ orgId: 'o', arquivadaEm: null, equipe: false, comunidade: false, leadId: { not: null } });
+    expect(ondeDoFiltro('o', 'clientes')).toEqual({ orgId: 'o', arquivadaEm: null, equipe: false, comunidade: false, clienteId: { not: null } });
     expect(ondeDoFiltro('o', 'equipe')).toEqual({ orgId: 'o', arquivadaEm: null, equipe: true });
   });
 
@@ -299,7 +299,7 @@ describe.skipIf(!URL)('caixa de WhatsApp contra o Postgres', () => {
     ]);
     expect(r.conversas[3].numero).toBe('5500000000009');
     expect(r.conversas[3].previa).toMatchObject({ tipo: 'image', texto: null });
-    expect(r.contagens).toEqual({ todas: 5, leads: 1, clientes: 1, grupos: 2, sem_vinculo: 2, equipe: 1, arquivadas: 1 });
+    expect(r.contagens).toEqual({ todas: 5, leads: 1, clientes: 1, grupos: 2, sem_vinculo: 2, equipe: 1, comunidade: 0, arquivadas: 1 });
     expect(r.podeResponder).toBe(true);
     expect(r.podeVincular).toBe(true);
     expect(r.mais).toBe(false);

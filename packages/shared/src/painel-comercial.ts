@@ -36,6 +36,8 @@ export interface PainelComercialMes {
   mes: string;
   qtd: number;
   valor: number;
+  /** Layout 26/10: a parte do valor que não gera caixa (parceria, permuta, repasse), quando vem dos acordos. */
+  valorSemCaixa?: number;
 }
 
 export interface PainelComercialGrupo {
@@ -85,6 +87,9 @@ export interface PainelComercial {
   geradoEm: string;
   totais: {
     emNegociacao: number;
+    /** Layout 26/10: a parte pagante e a sem caixa (parceria, permuta, repasse) da negociação. */
+    emNegociacaoPagante?: number;
+    emNegociacaoSemCaixa?: number;
     abertos: number;
     ganhosNoAno: number;
     valorGanhoNoAno: number;

@@ -47,7 +47,10 @@ describe('rotas movidas', () => {
     expect(pagina).toContain('O celular do lead e o da mesa, no provedor configurado.');
     expect(pagina).not.toMatch(/export default function Simulador/);
     expect(ler('app', 'whatsapp', 'page.tsx')).toMatch(/<CaixaDoWhatsapp \/>/);
-    // A rodada da semana no Comercial é a tela de /operacao, com a mesma trava.
-    expect(ler('app', 'comercial', 'rodada', 'page.tsx')).toMatch(/import Operacao from '\.\.\/\.\.\/operacao\/page'/);
+    // Layout 26/10: a rodada da semana no Comercial deixou de ser a tela de /operacao (a nota
+    // escrita à mão); os números vêm da API que conta no banco.
+    const rodada = ler('app', 'comercial', 'rodada', 'page.tsx');
+    expect(rodada).not.toMatch(/import Operacao from/);
+    expect(rodada).toMatch(/\/comercial\/rodada-da-semana/);
   });
 });

@@ -3,23 +3,23 @@ import { fireEvent, render, screen, waitFor, within } from '@testing-library/rea
 import type {
   CaixaAtividade,
   CaixaAtividadeResposta,
-  CaixaMinhaTarefa,
   CaixaResposta,
-  CaixaTarefasResposta,
+  TrabTarefaResumo,
 } from '@mktos/shared';
 
 /*
  * ==========================================================================
- * A CAIXA DE ENTRADA — as abas, o Limpar e o balão de comentários (P1)
+ * A CAIXA DE ENTRADA — as abas, o Limpar e Minhas tarefas (P1)
  * ==========================================================================
  *
  *  1. AS ABAS são um tablist de verdade, e a aba vai na query (`?aba=`);
  *  2. ATIVIDADE mostra quem fez, o que mudou (de → para) e o trecho do
  *     comentário; Limpar tira o item da caixa e grava SÓ a marca (`POST
  *     /caixa/limpar` com o id do item); Limpar tudo manda o instante da leitura;
- *  3. MINHAS TAREFAS: filtros vão para a rota, colunas se escondem e a escolha
- *     fica no localStorage, os comentários abrem num balão lido da rota dona
- *     (`/trabalho/tarefas/:id`), sem sair da tela;
+ *  3. MINHAS TAREFAS (layout 26/10): a Lista do Trabalho com as tarefas da pessoa;
+ *     lista, pasta e vencimento filtram o que chegou, o responsável muda a consulta,
+ *     o motivo e os comentários ficam embaixo do nome e o clique abre o pop-up
+ *     da tarefa, sem sair da tela;
  *  4. ERRO tem "tentar de novo".
  */
 
@@ -46,8 +46,6 @@ vi.mock('@/lib/auth', () => ({
 
 // eslint-disable-next-line import/first
 import CaixaPage from '@/app/caixa/page';
-// eslint-disable-next-line import/first
-import { CHAVE_DAS_COLUNAS } from '@/app/caixa/AbaMinhasTarefas';
 
 const AGORA = new Date();
 const haMin = (m: number) => new Date(AGORA.getTime() - m * 60_000).toISOString();
@@ -98,43 +96,54 @@ function atividade(itens: CaixaAtividade[], over: Partial<CaixaAtividadeResposta
   };
 }
 
-const TAREFA: CaixaMinhaTarefa = {
+/*
+ * Layout 26/10: Minhas tarefas lê as tarefas da pessoa como o Trabalho
+ * (`/trabalho/tarefas?assigneeUserId=`) e mostra a Lista do Trabalho.
+ */
+const TAREFA: TrabTarefaResumo = {
   id: 't-9',
-  titulo: 'Revisar contrato da Ana',
-  listaId: 'l-1',
-  lista: 'Operacional',
-  pastaId: 'p-1',
-  pasta: 'Clientes',
-  status: 'Em andamento',
-  statusCor: '#9bdb1f',
-  statusTipo: 'open',
-  prazo: new Date(AGORA.getTime() - 86_400_000).toISOString(),
-  responsavel: 'Pedro',
-  comentarios: 2,
-  atualizadaEm: haMin(60),
-  motivos: ['prazo_vencido'],
-  criadaEm: haMin(600),
-  prioridade: 'normal',
+  title: 'Revisar contrato da Ana',
+  listId: 'l-1',
+  listName: 'Operacional',
+  statusId: 's-andamento',
+  statusName: 'Em andamento',
+  statusColor: '#9bdb1f',
+  statusType: 'custom',
+  priority: 'normal',
+  assignee: 'Pedro',
+  assigneeUserId: 'u-eu',
+  assigneeUserName: 'Pedro',
+  assigneeUserEmail: 'p@x.com',
+  assigneeUserIsActive: true,
+  outrosResponsaveisIds: [],
+  agenteId: null, agenteSlug: null, agenteNome: null, agenteEm: null, statusDesde: null, minutos: 0,
+  dueDate: new Date(AGORA.getTime() - 86_400_000).toISOString(),
+  startDate: null,
+  overdue: true,
+  parentId: null, subtasks: 0,
+  comments: 2,
+  externalId: null, externalUrl: null, archived: false, order: 0, tags: [], values: [],
   clienteId: 'c-ana',
-  cliente: 'Ana Consultoria',
+  clienteNome: 'Ana Consultoria',
+  recorrencia: null,
+  updatedAt: haMin(60),
 };
 
-function tarefas(itens: CaixaMinhaTarefa[]): CaixaTarefasResposta {
-  return {
-    estado: 'ok',
-    itens,
-    truncado: false,
-    teto: 200,
-    identidades: ['Pedro'],
-    listas: [{ id: 'l-1', nome: 'Operacional', pastaId: 'p-1', pasta: 'Clientes' }],
-    status: ['A fazer', 'Em andamento'],
-    filtros: { responsavel: 'eu', encerradas: false },
-    agora: AGORA.toISOString(),
-  };
-}
+const st = (id: string, name: string, type: string, order: number) => ({ id, name, type, color: '#999', order, total: 0, limite: null });
+const ESTRUTURA = {
+  espacos: [], listasSoltas: [], camposGlobais: [], tags: [], responsaveis: [], agentes: [],
+  folders: [{ id: 'p-1', name: 'Clientes', order: 0, spaceId: null, parentId: null, externalId: null, lists: [
+    { id: 'l-1', name: 'Operacional', externalId: null, spaceId: null, order: 0, total: 1, fields: [], statuses: [st('s-aberta', 'A fazer', 'open', 0), st('s-andamento', 'Em andamento', 'custom', 1), st('s-feita', 'Feito', 'closed', 2)] },
+    { id: 'l-2', name: 'Interno', externalId: null, spaceId: null, order: 1, total: 1, fields: [], statuses: [st('s2-aberta', 'Aberta', 'open', 0)] },
+  ] }],
+  pessoas: [
+    { id: 'u-eu', name: 'Pedro Magnago', email: 'p@x.com', isActive: true },
+    { id: 'u-2', name: 'Lucas Fernandes', email: 'lucas@x.com', isActive: true },
+  ],
+};
 
 let ATIVIDADE: CaixaAtividadeResposta;
-let TAREFAS: CaixaTarefasResposta;
+let TAREFAS: TrabTarefaResumo[];
 
 beforeEach(() => {
   apiGet.mockReset();
@@ -153,13 +162,16 @@ beforeEach(() => {
       quando: haMin(30),
     }),
   ]);
-  TAREFAS = tarefas([TAREFA]);
+  TAREFAS = [TAREFA];
   apiGet.mockImplementation((caminho: string) => {
     if (caminho === '/caixa') return Promise.resolve(CAIXA);
     if (caminho.startsWith('/caixa/atividade')) return Promise.resolve(ATIVIDADE);
-    if (caminho.startsWith('/caixa/tarefas')) return Promise.resolve(TAREFAS);
+    if (caminho.startsWith('/trabalho/vistas')) return Promise.resolve([]);
+    if (caminho === '/trabalho/estrutura') return Promise.resolve(ESTRUTURA);
+    if (caminho.startsWith('/trabalho/tarefas?')) return Promise.resolve({ total: TAREFAS.length, items: TAREFAS });
     if (caminho.startsWith('/trabalho/tarefas/')) {
       return Promise.resolve({
+        ...TAREFA, description: null, createdAt: haMin(600), atividade: [], filhos: [], apontamentos: [], minutosPorEtapa: [],
         comentarios: [
           { id: 'k2', authorId: 'u-2', authorName: 'Lucas', text: 'último recado', createdAt: haMin(10) },
           { id: 'k1', authorId: 'u-3', authorName: 'Ana', text: 'primeiro recado', createdAt: haMin(90) },
@@ -284,102 +296,67 @@ describe('P1: a aba Minhas tarefas', () => {
     expect(within(linha).getByText('Revisar contrato da Ana')).toBeTruthy();
     expect(within(linha).getByText('Operacional')).toBeTruthy();
     expect(within(linha).getByText('Em andamento')).toBeTruthy();
-    expect(within(linha).getByText('prazo vencido')).toBeTruthy();
-    expect(within(linha).getByTestId('caixa-comentarios-t-9').textContent).toContain('2');
-    // I6 (produção 22B): o responsável é o avatar, o nome no balão. Sem as contas na resposta, o texto herdado vira as iniciais.
-    const resp = within(linha).getByTestId('caixa-responsaveis-t-9');
-    expect(within(resp).getByRole('img', { name: 'Responsável: Pedro' })).toHaveAttribute('title', 'Responsável: Pedro');
+    // Layout 26/10: o motivo e os comentários numa linha curta embaixo do nome.
+    expect(within(linha).getByTestId('caixa-motivos-t-9')).toHaveTextContent('prazo vencido · 2 comentários');
+    // I6 (produção 22B): o responsável é o avatar, o nome no balão (a célula da Lista do Trabalho).
+    const resp = within(linha).getByTestId('trabalho-responsaveis-t-9');
+    expect(within(resp).getByRole('img', { name: /Responsável: Pedro/ })).toBeTruthy();
     expect(resp).not.toHaveTextContent('Pedro');
   });
 
-  it('I6: com as contas responsáveis na resposta, um avatar por conta (a principal primeiro)', async () => {
-    TAREFAS = tarefas([{ ...TAREFA, responsaveis: [{ id: 'u-eu', nome: 'Pedro Magnago' }, { id: 'u-2', nome: 'Lucas Fernandes' }] }]);
+  it('I6: com mais de um responsável, um avatar por conta (a principal primeiro)', async () => {
+    TAREFAS = [{ ...TAREFA, assigneeUserName: 'Pedro Magnago', outrosResponsaveisIds: ['u-2'] }];
     render(<CaixaPage />);
     fireEvent.click(screen.getByTestId('caixa-aba-tarefas'));
-    const resp = await screen.findByTestId('caixa-responsaveis-t-9');
+    const resp = await screen.findByTestId('trabalho-responsaveis-t-9');
     expect(within(resp).getAllByRole('img').map((a) => a.getAttribute('aria-label'))).toEqual([
-      'Responsável: Pedro Magnago',
-      'Responsável: Lucas Fernandes',
+      expect.stringContaining('Responsável: Pedro Magnago'),
+      expect.stringContaining('Responsável: Lucas Fernandes'),
     ]);
   });
 
-  it('o filtro vai para a rota', async () => {
+  it('os filtros de vencimento e de lista filtram o que chegou; o responsável muda a consulta', async () => {
+    TAREFAS = [TAREFA, { ...TAREFA, id: 't-8', title: 'Pagar fornecedor', listId: 'l-2', listName: 'Interno', statusId: 's2-aberta', statusName: 'Aberta', statusType: 'open', dueDate: null, overdue: false, comments: 0 }];
     render(<CaixaPage />);
     fireEvent.click(screen.getByTestId('caixa-aba-tarefas'));
-    await screen.findByTestId('caixa-tarefa-t-9');
-    fireEvent.change(screen.getByTestId('caixa-filtro-vencimento'), { target: { value: 'hoje' } });
-    await waitFor(() => expect(apiGet).toHaveBeenCalledWith('/caixa/tarefas?vencimento=hoje', 'tok'));
+    await screen.findByTestId('caixa-tarefa-t-8');
+    await waitFor(() => expect(apiGet).toHaveBeenCalledWith(expect.stringMatching(/^\/trabalho\/tarefas\?assigneeUserId=u-eu&/), 'tok'));
+    fireEvent.change(screen.getByTestId('caixa-filtro-vencimento'), { target: { value: 'vencidas' } });
+    expect(screen.queryByTestId('caixa-tarefa-t-8')).toBeNull();
+    expect(screen.getByTestId('caixa-tarefa-t-9')).toBeTruthy();
+    fireEvent.change(screen.getByTestId('caixa-filtro-vencimento'), { target: { value: '' } });
+    fireEvent.change(screen.getByTestId('caixa-filtro-lista'), { target: { value: 'lista:l-2' } });
+    expect(screen.queryByTestId('caixa-tarefa-t-9')).toBeNull();
+    expect(screen.getByTestId('caixa-tarefa-t-8')).toBeTruthy();
     fireEvent.change(screen.getByTestId('caixa-filtro-lista'), { target: { value: 'pasta:p-1' } });
-    await waitFor(() =>
-      expect(apiGet).toHaveBeenCalledWith('/caixa/tarefas?pastaId=p-1&vencimento=hoje', 'tok'),
-    );
+    expect(screen.getByTestId('caixa-tarefa-t-9')).toBeTruthy();
     fireEvent.change(screen.getByTestId('caixa-filtro-responsavel'), { target: { value: 'qualquer' } });
-    await waitFor(() =>
-      expect(apiGet).toHaveBeenCalledWith('/caixa/tarefas?pastaId=p-1&vencimento=hoje&responsavel=qualquer', 'tok'),
-    );
+    await waitFor(() => expect(apiGet).toHaveBeenCalledWith(expect.stringMatching(/^\/trabalho\/tarefas\?todas=1&/), 'tok'));
   });
 
-  it('esconder uma coluna tira a coluna e guarda a escolha', async () => {
+  it('a tabela é a Lista do Trabalho, com a caixa de seleção e as colunas dela', async () => {
     render(<CaixaPage />);
     fireEvent.click(screen.getByTestId('caixa-aba-tarefas'));
     await screen.findByTestId('caixa-tarefa-t-9');
-    expect(screen.getAllByRole('columnheader').map((c) => c.textContent)).toContain('Responsáveis');
-    fireEvent.click(screen.getByTestId('caixa-coluna-responsaveis'));
-    expect(screen.getAllByRole('columnheader').map((c) => c.textContent)).not.toContain('Responsáveis');
-    // Rodada do trabalho T3/T4: Cliente entrou nas colunas padrão.
-    expect(JSON.parse(window.localStorage.getItem(CHAVE_DAS_COLUNAS) ?? '[]')).toEqual([
-      'cliente',
-      'lista',
-      'status',
-      'vencimento',
-      'comentarios',
+    expect(screen.getAllByRole('columnheader').map((c) => c.textContent?.replace(/ [↑↓]$/, ''))).toEqual([
+      '', 'Tarefa', 'Lista', 'Cliente', 'Status', 'Prioridade', 'Responsável', 'Agente', 'Prazo',
     ]);
+    expect(screen.getByTestId('trabalho-selecionar-t-9')).toBeTruthy();
   });
 
-  it('a preferência de colunas volta na próxima visita', async () => {
-    window.localStorage.setItem(CHAVE_DAS_COLUNAS, JSON.stringify(['status']));
+  it('o clique na linha abre o pop-up da tarefa, sem sair da tela', async () => {
     render(<CaixaPage />);
     fireEvent.click(screen.getByTestId('caixa-aba-tarefas'));
-    await screen.findByTestId('caixa-tarefa-t-9');
-    expect(screen.getAllByRole('columnheader').map((c) => c.textContent)).toEqual(['Nome', 'Status']);
-  });
-
-  it('o clique nos comentários abre o balão com os últimos, sem sair da tela', async () => {
-    render(<CaixaPage />);
-    fireEvent.click(screen.getByTestId('caixa-aba-tarefas'));
-    fireEvent.click(await screen.findByTestId('caixa-comentarios-t-9'));
-    const balao = await screen.findByRole('dialog', { name: /Comentários de Revisar contrato/ });
-    await waitFor(() => expect(within(balao).getByText('último recado')).toBeTruthy());
-    expect(within(balao).getByText('primeiro recado')).toBeTruthy();
+    fireEvent.click(await screen.findByTestId('caixa-tarefa-t-9'));
+    expect(await screen.findByTestId('tarefa-popup')).toBeTruthy();
+    expect(new URLSearchParams(window.location.search).get('tarefa')).toBe('t-9');
     expect(apiGet).toHaveBeenCalledWith('/trabalho/tarefas/t-9', 'tok');
-    // Esc fecha e devolve o foco ao botão que abriu.
-    fireEvent.keyDown(document, { key: 'Escape' });
-    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
-    expect(document.activeElement).toBe(screen.getByTestId('caixa-comentarios-t-9'));
     // A tabela continua ali: não saiu da tela.
     expect(screen.getByTestId('caixa-tarefa-t-9')).toBeTruthy();
   });
 
-  it('o botão dos comentários alterna o balão: com ele aberto, o clique fecha (e não reabre)', async () => {
-    render(<CaixaPage />);
-    fireEvent.click(screen.getByTestId('caixa-aba-tarefas'));
-    const botao = await screen.findByTestId('caixa-comentarios-t-9');
-    fireEvent.click(botao);
-    await screen.findByRole('dialog', { name: /Comentários de Revisar contrato/ });
-    expect(botao).toHaveAttribute('aria-expanded', 'true');
-    fireEvent.mouseDown(botao);
-    fireEvent.click(botao);
-    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
-    expect(botao).toHaveAttribute('aria-expanded', 'false');
-    // O botão "fechar" de dentro também devolve o foco.
-    fireEvent.click(botao);
-    fireEvent.click(await screen.findByRole('button', { name: 'Fechar comentários' }));
-    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
-    expect(document.activeElement).toBe(botao);
-  });
-
   it('sem tarefas, a frase diz isso', async () => {
-    TAREFAS = tarefas([]);
+    TAREFAS = [];
     render(<CaixaPage />);
     fireEvent.click(screen.getByTestId('caixa-aba-tarefas'));
     await waitFor(() => expect(screen.getByText(/Nenhuma tarefa aberta com você/)).toBeTruthy());

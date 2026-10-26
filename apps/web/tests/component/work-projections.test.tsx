@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { chaveDoDia } from '@/app/agenda/tipos';
 import { intervaloDaGrade, prazosDeTrabalho } from '@/lib/work-projection';
 
@@ -75,6 +75,19 @@ describe('projeções do mesmo card Work', () => {
     const linkPauta = await screen.findByRole('link', { name: 'ROOT-001' });
     expect(linkPauta.getAttribute('href')).toBe(linkAgenda.getAttribute('href'));
     expect(apiGet.mock.calls.some(([path]) => String(path).startsWith('/trabalho/tarefas?listExternalIds='))).toBe(true);
+  });
+
+  it('Layout 26/10: na Agenda, o clique no prazo abre o pop-up da tarefa aqui mesmo (o href fica para outra aba)', async () => {
+    const padrao = apiGet.getMockImplementation()!;
+    apiGet.mockImplementation((path: string) => (path === '/trabalho/estrutura'
+      ? Promise.resolve({ espacos: [], folders: [], listasSoltas: [], camposGlobais: [], tags: [], responsaveis: [], agentes: [], pessoas: [] })
+      : path === `/trabalho/tarefas/${ID}` ? new Promise(() => {}) : padrao(path)));
+    render(<AgendaPage />);
+    const link = await screen.findByRole('link', { name: 'ROOT-001' });
+    fireEvent.click(link);
+    expect(window.location.pathname).toBe('/');
+    expect(new URLSearchParams(window.location.search).get('tarefa')).toBe(ID);
+    await waitFor(() => expect(apiGet).toHaveBeenCalledWith('/trabalho/estrutura', 'tok'));
   });
 
   it('não consulta nem mostra Work sem permissão ou módulo confirmado', async () => {

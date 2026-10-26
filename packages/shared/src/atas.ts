@@ -92,7 +92,75 @@ export interface TrabAtaResumo {
   decididas?: TrabAtaDecidida[];
   /** O id da reunião no Granola, quando a ata veio de lá (é por ele que "Reprocessar" busca de novo). */
   granolaId?: string | null;
+  /** Layout 26/10: o lead e o cliente a que a ata foi ligada à mão (ausente = sem ligação). */
+  ligadaA?: TrabAtaLigacao | null;
   atualizadaEm: string;
+}
+
+/* ==========================================================================
+ * A ATA LIGADA A UM LEAD OU A UM CLIENTE (Layout 26/10)
+ * ==========================================================================
+ *
+ * Cada ata (ou transcrição) da lista pode ser ligada à mão a UM lead e a UM
+ * cliente (cadastro `Partner` cliente, o principal). A ligação mora em
+ * `AtaLigacao`, presa à REFERÊNCIA da ata (`memoria:`, `vault:`, `drive:`,
+ * `granola:`), com o título e a data da ata copiados no momento de ligar: é
+ * o que o painel do lead e a ficha do cliente mostram ("a reunião de tal
+ * dia") sem reabrir a fonte.
+ *
+ * Ligar NÃO é o fato `ata.chegou` do comercial: ligar não dispara o leitor
+ * da ata, o diagnóstico nem o avanço de etapa. É só a ligação.
+ */
+export interface TrabAtaAlvo {
+  id: string;
+  nome: string;
+}
+
+export interface TrabAtaLigacao {
+  lead: TrabAtaAlvo | null;
+  cliente: TrabAtaAlvo | null;
+  ligadaEm: string;
+  ligadaPor: string | null;
+}
+
+/** Uma ata ligada, como o painel do lead e a ficha do cliente a mostram. */
+export interface TrabAtaLigadaItem {
+  /** A referência da ata (abre em `/trabalho/atas?ata=<ref>`). */
+  ataRef: string;
+  titulo: string;
+  /** AAAA-MM-DD, quando a ata diz. */
+  data: string | null;
+  tipo: TrabAtaTipo;
+  ligadaEm: string;
+}
+
+/** Um candidato da busca de ligação (lead ou cliente). */
+export interface TrabAtaCandidato {
+  tipo: 'lead' | 'cliente';
+  id: string;
+  nome: string;
+  /** A empresa do lead e a etapa; o nome fantasia ou a razão social do cliente. */
+  detalhe: string | null;
+}
+
+/**
+ * O corpo de `PUT /trabalho/atas/:ref/ligacao`. Ausente = não mexe; `null` =
+ * desliga. `titulo` e `data` são os da lista (valem para o Drive e o Granola,
+ * que não se reabrem para ligar; as notas da memória e do vault são relidas).
+ */
+export const TrabAtaLigarSchema = z
+  .object({
+    leadId: z.string().uuid().nullable().optional(),
+    clienteId: z.string().uuid().nullable().optional(),
+    titulo: z.string().trim().min(1).max(300).optional(),
+    data: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'data no formato AAAA-MM-DD').nullish(),
+  })
+  .refine((v) => v.leadId !== undefined || v.clienteId !== undefined, { message: 'Diga o lead ou o cliente (ou null para desligar).' });
+export type TrabAtaLigarInput = z.infer<typeof TrabAtaLigarSchema>;
+
+/** O endereço que abre a ata na tela de Atas. */
+export function hrefDaAta(ref: string): string {
+  return `/trabalho/atas?ata=${encodeURIComponent(ref)}`;
 }
 
 export interface TrabAtaDecidida {

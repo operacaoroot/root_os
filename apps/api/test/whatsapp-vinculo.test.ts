@@ -164,7 +164,7 @@ describe('as rotas', () => {
   it('ler é leads.ver; toda escrita é leads.editar e só de gente', () => {
     const h = VinculoDoWhatsappController.prototype;
     for (const m of [h.candidatos, h.doLead, h.doCliente]) expect(Reflect.getMetadata(PERMISSIONS_KEY, m)).toEqual(['leads.ver']);
-    for (const m of [h.vincular, h.aceitarSugestao, h.desvincular, h.equipe, h.telefoneNoLead, h.telefoneDoLead, h.telefoneDoCliente]) {
+    for (const m of [h.vincular, h.aceitarSugestao, h.desvincular, h.equipe, h.comunidade, h.telefoneNoLead, h.telefoneDoLead, h.telefoneDoCliente]) {
       expect(Reflect.getMetadata(PERMISSIONS_KEY, m)).toEqual(['leads.editar']);
       expect(Reflect.getMetadata('__guards__', m)).toEqual([SoGenteNoVinculoGuard]);
     }

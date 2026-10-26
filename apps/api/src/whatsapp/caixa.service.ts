@@ -53,7 +53,10 @@ import { SincronizacaoDoWhatsappService } from './sincronizacao.service';
  * não: a releitura vale na hora.
  *
  * RESPONDER NÃO PASSA PELA RÉGUA NEM PELA `PortaDoOperador`: é uma pessoa
- * escrevendo com o próprio nome, e a régua é para agente. O texto sai pela
+ * escrevendo, e a régua é para agente. Layout 26/10: o texto sai como ROOT (o
+ * número da empresa), EXATAMENTE como foi digitado: nenhum nome de pessoa entra
+ * na mensagem. Quem enviou fica só dentro do OS (`enviadaPorId`, a linha
+ * "enviada por" da caixa e a auditoria). O texto sai pela
  * porta `RESPOSTA_DE_GENTE_PELA_EVOLUTION` (o conector nunca é importado aqui),
  * e este é o ÚNICO arquivo que a chama (catraca em `whatsapp-caixa.test.ts`).
  *
@@ -106,20 +109,24 @@ function inteiro(v: unknown, padrao: number, teto: number): number {
  * cartão e a caixa não discordarem: Equipe = `equipe` verdadeiro, seja qual for
  * o vínculo; Leads, Clientes e Sem vínculo saem só do resto (`equipe` falso).
  * Arquivada só aparece em Arquivadas.
+ * Layout 26/10: Comunidade = `comunidade` verdadeiro (e fora da equipe, para as
+ * faixas não se sobreporem); Leads, Clientes e Sem vínculo saem também dela.
  */
 export function ondeDoFiltro(orgId: string, filtro: FiltroDaCaixa): Prisma.WhatsAppConversaWhereInput {
   const viva = { orgId, arquivadaEm: null };
   switch (filtro) {
     case 'leads':
-      return { ...viva, equipe: false, leadId: { not: null } };
+      return { ...viva, equipe: false, comunidade: false, leadId: { not: null } };
     case 'clientes':
-      return { ...viva, equipe: false, clienteId: { not: null } };
+      return { ...viva, equipe: false, comunidade: false, clienteId: { not: null } };
     case 'grupos':
       return { ...viva, grupo: true };
     case 'sem_vinculo':
-      return { ...viva, leadId: null, clienteId: null, equipe: false };
+      return { ...viva, leadId: null, clienteId: null, equipe: false, comunidade: false };
     case 'equipe':
       return { ...viva, equipe: true };
+    case 'comunidade':
+      return { ...viva, equipe: false, comunidade: true };
     case 'arquivadas':
       return { orgId, arquivadaEm: { not: null } };
     default:
@@ -331,9 +338,13 @@ export class CaixaDoWhatsappService {
     const c = await this.conversa(orgId, id);
     if (c.arquivadaEm) throw new ConflictException('Conversa arquivada: volte-a para a caixa antes de responder.');
 
+    // Layout 26/10 (Lucas): o cliente vê QUEM está falando: o nome de quem enviou, em negrito, na primeira
+    // linha (como no WhatsApp de grupo). No OS a mensagem fica só com o texto; quem enviou vai em `enviadaPorId`.
+    const [pessoa] = await this.prisma.user.findMany({ where: { id: quem.id, orgId }, select: { name: true }, take: 1 });
+    const assinado = pessoa?.name?.trim() ? `*${pessoa.name.trim()}*\n${texto}` : texto;
     let externo: string;
     try {
-      externo = (await this.resposta.responderComoPessoa(orgId, c.chatJid, texto)).id;
+      externo = (await this.resposta.responderComoPessoa(orgId, c.chatJid, assinado)).id;
     } catch (e) {
       throw this.falhaDoEnvio(e);
     }

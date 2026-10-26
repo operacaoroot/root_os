@@ -26,6 +26,13 @@ import { ehReceita, grupoDaSaida, mesAMes, mesDe, mesesAte, naturezaDaConta, nat
 
 export const TIPOS_DE_ACORDO = ['pagante', 'permuta', 'repasse', 'parceria'] as const;
 
+/** Layout 26/10: "AAAA-MM" vira o dia 1 do mês; undefined = não mexe; null = sem data. */
+function diaDoFechamento(v: string | null | undefined): Date | null | undefined {
+  if (v === undefined) return undefined;
+  if (v === null) return null;
+  return new Date(`${v.length === 7 ? `${v}-01` : v}T12:00:00.000Z`);
+}
+
 export const AcordoInputSchema = z.object({
   cliente: z.string().trim().min(1).max(120),
   produto: z.string().trim().min(1).max(120),
@@ -35,6 +42,8 @@ export const AcordoInputSchema = z.object({
   apelidos: z.string().trim().max(300).nullable().optional(),
   // Integração 26/10: o cliente do Financeiro deste acordo (nulo = ainda não ligado).
   partnerId: z.string().uuid().nullable().optional(),
+  // Layout 26/10: quando o acordo fechou (AAAA-MM ou AAAA-MM-DD); alimenta "Contratos fechados por mês" do Comercial.
+  fechadoEm: z.string().regex(/^\d{4}-\d{2}(-\d{2})?$/).nullable().optional(),
 });
 export const AcordoUpdateSchema = AcordoInputSchema.partial();
 export const LeituraInputSchema = z.object({ refazer: z.boolean().optional() }).default({});
@@ -77,7 +86,7 @@ export class AnaliseService {
   async createAcordo(orgId: string, input: z.infer<typeof AcordoInputSchema>, actorId: string) {
     await this.clienteDaEmpresa(orgId, input.partnerId);
     const a = await this.prisma.acordoComercial.create({
-      data: { orgId, ...input, valor: new Prisma.Decimal(input.valor), observacao: input.observacao ?? null, apelidos: input.apelidos ?? null },
+      data: { orgId, ...input, valor: new Prisma.Decimal(input.valor), observacao: input.observacao ?? null, apelidos: input.apelidos ?? null, fechadoEm: diaDoFechamento(input.fechadoEm) ?? null },
     });
     await this.audit.log({ orgId, actorId, action: 'finance.acordo.create', entityType: 'acordo_comercial', entityId: a.id, after: { cliente: a.cliente, tipo: a.tipo, valor: num(a.valor) } });
     return { ok: true, id: a.id };
@@ -87,7 +96,7 @@ export class AnaliseService {
     await this.clienteDaEmpresa(orgId, input.partnerId);
     const antes = await this.prisma.acordoComercial.findFirst({ where: { id, orgId } });
     if (!antes) throw new NotFoundException('Acordo não encontrado');
-    const data: Prisma.AcordoComercialUpdateInput = { ...input, valor: input.valor !== undefined ? new Prisma.Decimal(input.valor) : undefined };
+    const data: Prisma.AcordoComercialUpdateInput = { ...input, valor: input.valor !== undefined ? new Prisma.Decimal(input.valor) : undefined, fechadoEm: diaDoFechamento(input.fechadoEm) };
     const a = await this.prisma.acordoComercial.update({ where: { id }, data });
     await this.audit.log({ orgId, actorId, action: 'finance.acordo.update', entityType: 'acordo_comercial', entityId: id, before: { tipo: antes.tipo, valor: num(antes.valor) }, after: { tipo: a.tipo, valor: num(a.valor) } });
     return { ok: true, id };
@@ -153,6 +162,7 @@ export class AnaliseService {
         id: a.id, cliente: a.cliente, produto: a.produto, tipo: a.tipo, valor, observacao: a.observacao, apelidos: a.apelidos,
         // Integração 26/10: o cliente cadastrado a que o acordo está ligado.
         partnerId: a.partnerId ?? null, partnerNome: a.partner ? (a.partner.nomeFantasia || a.partner.razaoSocial) : null,
+        fechadoEm: a.fechadoEm ? a.fechadoEm.toISOString().slice(0, 10) : null,
         recebido, aReceber, semRastro: esperaCaixa ? r2(Math.max(0, valor - recebido - aReceber)) : 0,
       };
     });

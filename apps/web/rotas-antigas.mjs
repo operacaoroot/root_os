@@ -21,6 +21,9 @@ export const ROTAS_ANTIGAS = [
   // voltou a ter tela própria, a área WhatsApp (os celulares do lead e da mesa).
   // absorvidas: viraram conteúdo dentro de outra tela
   { de: '/documentos', para: '/contexto?aba=arquivos' },
+  // aposentadas
+  // Layout 26/10: "Temas do ClickUp" (o espelho ContentItem) saiu de vez; o conteúdo mora no Marketing.
+  { de: '/conteudo', para: '/marketing' },
 ];
 
 export default ROTAS_ANTIGAS;

@@ -4,6 +4,7 @@ import {
   CODIGO_LEAD_COM_OUTRO_TELEFONE,
   COMERCIAL_ROTULO_DA_ETAPA,
   DefinirTelefoneSchema,
+  MarcarComunidadeSchema,
   MarcarEquipeSchema,
   TelefoneNoLeadSchema,
   VincularConversaSchema,
@@ -147,13 +148,14 @@ export class VinculoDoWhatsappService {
   ): Promise<{ mudou: boolean; manual: boolean; grupo: boolean; equipe: boolean; leadId: string | null; clienteId: string | null; sugestao: SugestaoDeVinculo | null }> {
     const c = await this.prisma.whatsAppConversa.findFirst({
       where: { id: conversaId, orgId },
-      select: { id: true, grupo: true, chatJid: true, nome: true, equipe: true, leadId: true, clienteId: true, vinculoSugerido: true, vinculadoPorId: true, arquivadaEm: true },
+      select: { id: true, grupo: true, chatJid: true, nome: true, equipe: true, comunidade: true, leadId: true, clienteId: true, vinculoSugerido: true, vinculadoPorId: true, arquivadaEm: true },
     });
     if (!c) return { mudou: false, manual: false, grupo: false, equipe: false, leadId: null, clienteId: null, sugestao: null };
     const atual = { grupo: c.grupo, equipe: c.equipe, leadId: c.leadId, clienteId: c.clienteId, sugestao: (c.vinculoSugerido as SugestaoDeVinculo | null) ?? null };
     const simular = !!opcoes.simular;
     // O que a pessoa decidiu e a conversa arquivada ficam como estão; só as mensagens novas recebem o vínculo.
-    if (c.vinculadoPorId || c.arquivadaEm) {
+    // Layout 26/10: a comunidade é sempre decisão de pessoa; mesmo sem `vinculadoPorId`, o casamento não a toca.
+    if (c.vinculadoPorId || c.arquivadaEm || c.comunidade) {
       if (!simular) await this.propagar(this.prisma, orgId, c.id, c.leadId, c.clienteId);
       return { mudou: false, manual: true, ...atual };
     }
@@ -185,7 +187,7 @@ export class VinculoDoWhatsappService {
     if (mudou) {
       // Escrita condicionada: só se ninguém decidiu nem ligou nada no meio.
       const r = await this.prisma.whatsAppConversa.updateMany({
-        where: { id: c.id, orgId, vinculadoPorId: null, arquivadaEm: null, leadId: c.leadId, clienteId: c.clienteId },
+        where: { id: c.id, orgId, vinculadoPorId: null, arquivadaEm: null, comunidade: false, leadId: c.leadId, clienteId: c.clienteId },
         data: {
           equipe: novo.equipe,
           leadId: novo.leadId,
@@ -272,7 +274,7 @@ export class VinculoDoWhatsappService {
   private async conversaOu404(db: Db, orgId: string, conversaId: string) {
     const c = await db.whatsAppConversa.findFirst({
       where: { id: conversaId, orgId },
-      select: { id: true, grupo: true, chatJid: true, nome: true, equipe: true, leadId: true, clienteId: true, vinculoSugerido: true, vinculadoPorId: true, atualizadoEm: true },
+      select: { id: true, grupo: true, chatJid: true, nome: true, equipe: true, comunidade: true, leadId: true, clienteId: true, vinculoSugerido: true, vinculadoPorId: true, atualizadoEm: true },
     });
     if (!c) throw new NotFoundException('Conversa não encontrada nesta empresa.');
     return c;
@@ -335,7 +337,8 @@ export class VinculoDoWhatsappService {
     const clienteId = alvo.tipo === 'cliente' ? alvo.id : null;
     const r = await tx.whatsAppConversa.updateMany({
       where: { id: c.id, orgId, atualizadoEm: c.atualizadoEm, leadId: c.leadId, clienteId: c.clienteId },
-      data: { leadId, clienteId, vinculadoPorId: porId, vinculadoEm: new Date(), vinculoSugerido: Prisma.DbNull, equipe: false },
+      // Layout 26/10: ligada a lead ou cliente, deixa de ser equipe e de ser comunidade.
+      data: { leadId, clienteId, vinculadoPorId: porId, vinculadoEm: new Date(), vinculoSugerido: Prisma.DbNull, equipe: false, comunidade: false },
     });
     if (r.count !== 1) throw new ConflictException(FRASE.mudou);
     const mensagens = await this.propagar(tx, orgId, c.id, leadId, clienteId);
@@ -423,11 +426,45 @@ export class VinculoDoWhatsappService {
       if (e.equipe && (c.leadId || c.clienteId)) throw new ConflictException(FRASE.equipeLigada);
       const r = await tx.whatsAppConversa.updateMany({
         where: { id: c.id, orgId, atualizadoEm: c.atualizadoEm },
-        data: { equipe: e.equipe, vinculadoPorId: quem.id, vinculadoEm: new Date(), ...(e.equipe ? { vinculoSugerido: Prisma.DbNull } : {}) },
+        // Layout 26/10: marcar como equipe tira da comunidade (são tipos que se excluem).
+        data: { equipe: e.equipe, vinculadoPorId: quem.id, vinculadoEm: new Date(), ...(e.equipe ? { vinculoSugerido: Prisma.DbNull, comunidade: false } : {}) },
       });
       if (r.count !== 1) throw new ConflictException(FRASE.mudou);
-      await this.auditar(tx, orgId, quem.id, ACAO_DE_AUDITORIA.equipe, 'whatsapp_conversa', c.id, { equipe: c.equipe }, { equipe: e.equipe });
+      await this.auditar(
+        tx, orgId, quem.id, ACAO_DE_AUDITORIA.equipe, 'whatsapp_conversa', c.id,
+        { equipe: c.equipe, ...(c.comunidade ? { comunidade: true } : {}) },
+        { equipe: e.equipe, ...(c.comunidade && e.equipe ? { comunidade: false } : {}) },
+      );
       return c.equipe !== e.equipe || !c.vinculadoPorId;
+    });
+    return { conversa: await this.projetada(orgId, conversaId), mudou };
+  }
+
+  /**
+   * Layout 26/10: marcar ou tirar da comunidade, o quarto tipo de conversa (grupo
+   * da comunidade da casa, como o "Operação Root | IA para Negócios"). As mesmas
+   * regras da equipe: só gente, auditado, escrita condicionada; ligada a lead ou
+   * cliente, marcar é 409 (desvincule antes). Marcar tira da equipe. A decisão
+   * fica em `vinculadoPorId`: o casamento automático não a põe de volta na equipe.
+   */
+  async marcarComunidade(orgId: string, conversaId: string, corpo: unknown, quem: QuemVincula): Promise<ResultadoDoVinculo> {
+    const e = ler(MarcarComunidadeSchema, corpo);
+    await this.exigirGente(orgId, quem);
+    const mudou = await this.prisma.$transaction(async (tx) => {
+      const c = await this.conversaOu404(tx, orgId, conversaId);
+      if (c.comunidade === e.comunidade && c.vinculadoPorId) return false;
+      if (e.comunidade && (c.leadId || c.clienteId)) throw new ConflictException(FRASE.comunidadeLigada);
+      const r = await tx.whatsAppConversa.updateMany({
+        where: { id: c.id, orgId, atualizadoEm: c.atualizadoEm },
+        data: { comunidade: e.comunidade, vinculadoPorId: quem.id, vinculadoEm: new Date(), ...(e.comunidade ? { vinculoSugerido: Prisma.DbNull, equipe: false } : {}) },
+      });
+      if (r.count !== 1) throw new ConflictException(FRASE.mudou);
+      await this.auditar(
+        tx, orgId, quem.id, ACAO_DE_AUDITORIA.comunidade, 'whatsapp_conversa', c.id,
+        { comunidade: c.comunidade, ...(c.equipe ? { equipe: true } : {}) },
+        { comunidade: e.comunidade, ...(c.equipe && e.comunidade ? { equipe: false } : {}) },
+      );
+      return c.comunidade !== e.comunidade || !c.vinculadoPorId;
     });
     return { conversa: await this.projetada(orgId, conversaId), mudou };
   }

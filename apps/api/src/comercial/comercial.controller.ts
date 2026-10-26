@@ -179,6 +179,24 @@ export class ComercialController {
     return this.fichas.editarIdentidade(user.orgId, id, body, { id: user.sub, nome: user.name });
   }
 
+  /** Layout 26/10: o tipo do negócio (pagante, parceria, permuta, repasse); fato no fio, sem automação. */
+  /** Layout 26/10: valor negociado, vendedor (≠ dono) e canal de aquisição; fato no fio, sem automação. */
+  @Post('lead/:id/negocio')
+  @HttpCode(200)
+  @RequirePermissions('leads.editar')
+  @UseGuards(SoGenteGuard)
+  ajustarNegocio(@CurrentUser() user: JwtUser, @Param('id') id: string, @Body() body: unknown) {
+    return this.fichas.ajustarNegocio(user.orgId, id, body, { id: user.sub, nome: user.name });
+  }
+
+  @Post('lead/:id/tipo')
+  @HttpCode(200)
+  @RequirePermissions('leads.editar')
+  @UseGuards(SoGenteGuard)
+  tipoDoNegocio(@CurrentUser() user: JwtUser, @Param('id') id: string, @Body() body: unknown) {
+    return this.fichas.definirTipoDoNegocio(user.orgId, id, body, { id: user.sub, nome: user.name });
+  }
+
   /** Saída com motivo e dono (desqualificado, geladeira, perdido, parceiro). */
   @Post('lead/:id/saida')
   @RequirePermissions('leads.editar')

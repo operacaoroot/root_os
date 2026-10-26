@@ -39,6 +39,19 @@ export function urlComTarefa(href: string, id: string | null, aba: AbaDaTarefa =
   return `${url.pathname}${url.search}${url.hash}`;
 }
 
+/**
+ * Layout 26/10: o link de uma tarefa (o `href` para /trabalho continua, para abrir em
+ * outra aba e para copiar) abre o pop-up AQUI MESMO no clique comum. Ctrl, ⌘, Shift,
+ * Alt e o botão do meio seguem o link, como o navegador faz.
+ */
+export function abrirAquiNoClique(abrir: (id: string) => void, id: string) {
+  return (e: { metaKey: boolean; ctrlKey: boolean; shiftKey: boolean; altKey: boolean; button: number; preventDefault: () => void }) => {
+    if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey || e.button !== 0) return;
+    e.preventDefault();
+    abrir(id);
+  };
+}
+
 export function useTarefaNaUrl(): TarefaNaUrl {
   const [estado, setEstado] = useState<{ tarefaId: string | null; aba: AbaDaTarefa }>({ tarefaId: null, aba: 'tarefa' });
   // A entrada do histórico é nossa (abrimos por clique): fechar volta em vez de reescrever.

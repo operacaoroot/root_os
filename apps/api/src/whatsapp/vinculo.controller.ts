@@ -142,6 +142,15 @@ export class VinculoDoWhatsappController {
     return this.eEsquece(user.orgId, this.svc.marcarEquipe(user.orgId, conversaId, body, quem(user)));
   }
 
+  /** Layout 26/10: marcar ou tirar da comunidade: `{ comunidade }`. As mesmas regras da equipe. */
+  @Post(':conversaId/comunidade')
+  @HttpCode(200)
+  @RequirePermissions('leads.editar')
+  @UseGuards(SoGenteNoVinculoGuard)
+  comunidade(@CurrentUser() user: JwtUser, @Param('conversaId') conversaId: string, @Body() body: unknown): Promise<ResultadoDoVinculo> {
+    return this.eEsquece(user.orgId, this.svc.marcarComunidade(user.orgId, conversaId, body, quem(user)));
+  }
+
   /** "Este número não está em nenhum lead; pôr no lead X?": `{ leadId, substituir? }`. */
   @Post(':conversaId/telefone-no-lead')
   @HttpCode(200)

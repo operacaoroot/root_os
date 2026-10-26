@@ -176,6 +176,8 @@ export function VisaoGeralDasTarefas({ meio }: { meio?: ReactNode } = {}) {
     return base.filter((t) =>
       (!f.pessoa || (f.pessoa === SEM ? !t.pessoa : t.pessoas.some((x) => x.id === f.pessoa))) &&
       (!f.situacao || f.situacao === 'feita' || (f.situacao === 'emdia' ? ['hoje', 'proximos_7', 'mais_tarde'].includes(t.situacao) : t.situacao === f.situacao)) &&
+      // "Sem prazo" não inclui a tarefa recorrente (ela tem regra, não falta prazo).
+      (f.situacao !== 'sem_prazo' || !t.recorrencia) &&
       (!f.pasta || (pastaDe.get(t.lista.id)?.id ?? SEM_PASTA) === f.pasta) &&
       (!f.lista || t.lista.id === f.lista));
   };
@@ -187,12 +189,14 @@ export function VisaoGeralDasTarefas({ meio }: { meio?: ReactNode } = {}) {
 
   return (
     <div className="space-y-5">
-      <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+      <div className="grid grid-cols-2 gap-3 md:grid-cols-5">
         {[
           // Layout 26/10: o total de abertas saiu (não ajuda a decidir); no lugar, o que vence hoje.
           { r: 'Para hoje', v: conta('hoje'), n: 'vencem hoje', f: { situacao: 'hoje' } as FiltroDaVisaoGeral },
           { r: 'Atrasadas', v: conta('atrasada'), n: 'prazo já passou', f: { situacao: 'atrasada' } as FiltroDaVisaoGeral },
           { r: 'Não atribuídas', v: semDono, n: 'sem responsável', f: { pessoa: SEM } as FiltroDaVisaoGeral },
+          // Layout 26/10: toda tarefa deve ter prazo; recorrente não conta como "sem prazo".
+          { r: 'Sem prazo', v: abertas.filter((t) => t.situacao === 'sem_prazo' && !t.recorrencia).length, n: 'dê um prazo a cada uma', f: { situacao: 'sem_prazo' } as FiltroDaVisaoGeral },
           { r: 'Feitas na semana', v: feitas, n: 'últimos 7 dias', f: { situacao: 'feita' } as FiltroDaVisaoGeral },
         ].map((c) => (
           <div key={c.r} className="rounded-md border border-border bg-surface px-4 py-3">

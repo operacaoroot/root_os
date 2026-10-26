@@ -304,4 +304,36 @@ describe('o bloco "Tarefas" do painel do lead', () => {
     await u.keyboard('{Escape}');
     expect(screen.getByRole('dialog', { name: 'Empresa Sintética' })).toBeInTheDocument();
   });
+
+  it('Layout 26/10: a tarefa abre no pop-up único POR CIMA do painel, sem sair para /trabalho; Esc fecha só a tarefa', async () => {
+    const T1 = '33333333-3333-4333-8333-333333333333';
+    irPara('/comercial/funil?lead=l1&aba=fio');
+    RESPOSTAS['/comercial/lead/l1'] = ficha();
+    RESPOSTAS['/comercial/decisoes'] = [];
+    RESPOSTAS['/comercial/tarefas'] = lista([tarefa(T1, 'Fazer FUP da proposta', { lead: { id: 'l1', nome: 'Empresa Sintética' } })]);
+    RESPOSTAS['/trabalho/estrutura'] = { espacos: [], folders: [], listasSoltas: [], camposGlobais: [], tags: [], responsaveis: [], agentes: [], pessoas: [] };
+    RESPOSTAS['/trabalho/tarefas/'] = {
+      id: T1, listId: 'l-com', listName: 'Comercial', title: 'Fazer FUP da proposta', statusId: 's1', statusName: 'A fazer', statusType: 'open', statusColor: '#888',
+      priority: 'normal', assignee: null, assigneeUserId: null, assigneeUserName: null, assigneeUserEmail: null, assigneeUserIsActive: null,
+      agenteId: null, agenteSlug: null, agenteNome: null, agenteEm: null, statusDesde: null, minutos: 0, dueDate: null, startDate: null, overdue: false,
+      parentId: null, subtasks: 0, comments: 0, externalId: null, externalUrl: null, archived: false, order: 0, tags: [], values: [],
+      clienteId: null, clienteNome: null, outrosResponsaveisIds: [], recorrencia: null, updatedAt: '2026-10-20T12:00:00.000Z',
+      description: null, createdAt: '2026-10-20T12:00:00.000Z', comentarios: [], atividade: [], filhos: [], apontamentos: [], minutosPorEtapa: [],
+    };
+    render(<ProvedorDoPainel><main id="root-os-main" tabIndex={-1}>a tela de trás</main></ProvedorDoPainel>);
+    const dialogo = await screen.findByRole('dialog', { name: 'Empresa Sintética' });
+    const abrir = await within(dialogo).findByTestId(`tarefa-abrir-${T1}`);
+    // Um botão, não um link para /trabalho.
+    expect(abrir.tagName).toBe('BUTTON');
+    const u = userEvent.setup();
+    await u.click(abrir);
+    const popup = await screen.findByTestId('tarefa-popup');
+    expect(new URLSearchParams(window.location.search).get('tarefa')).toBe(T1);
+    expect(new URLSearchParams(window.location.search).get('lead')).toBe('l1');
+    // Acima do painel do lead (z-[60]).
+    expect(popup.style.zIndex).toBe('65');
+    await u.keyboard('{Escape}');
+    await waitFor(() => expect(screen.queryByTestId('tarefa-popup')).toBeNull());
+    expect(screen.getByRole('dialog', { name: 'Empresa Sintética' })).toBeInTheDocument();
+  });
 });

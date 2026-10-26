@@ -357,7 +357,10 @@ describe('desligar um módulo de cada vez', () => {
 describe('menu e API concordam', () => {
   it('todo módulo do catálogo aparece em pelo menos um item do menu', () => {
     const noMenu = new Set(NAV.map((n) => n.modulo).filter(Boolean));
-    expect(MODULOS.filter((m) => !noMenu.has(m))).toEqual([]);
+    // Layout 26/10: a tela "Temas do ClickUp" (`/conteudo`) foi aposentada e redireciona para o
+    // Marketing; o módulo `conteudo` segue governando a API `/content`, que não foi apagada.
+    const soNaApi = new Set<string>(['conteudo']);
+    expect(MODULOS.filter((m) => !noMenu.has(m) && !soNaApi.has(m))).toEqual([]);
   });
 
   it('todo módulo citado no menu existe no catálogo', () => {

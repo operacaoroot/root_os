@@ -18,6 +18,8 @@ import { LeadsModule } from './leads/leads.module';
 import { EventsModule } from './events/events.module';
 import { FunnelModule } from './funnel/funnel.module';
 import { PainelComercialModule } from './painel-comercial/painel-comercial.module';
+// Layout 26/10: a Rodada da semana do Comercial, contada pelo banco.
+import { RodadaDaSemanaModule } from './comercial/rodada/rodada-da-semana.module';
 import { FichaModule } from './ficha/ficha.module';
 import { CampaignsModule } from './campaigns/campaigns.module';
 import { TasksModule } from './tasks/tasks.module';
@@ -124,6 +126,7 @@ import { WhatsappModule } from './whatsapp/whatsapp.module';
     EventsModule,
     FunnelModule,
     PainelComercialModule,
+    RodadaDaSemanaModule,
     FichaModule,
     CampaignsModule,
     TasksModule,

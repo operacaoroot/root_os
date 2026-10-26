@@ -22,7 +22,8 @@ import { z } from 'zod';
 // Filtros da lista
 // ---------------------------------------------------------------------------
 
-export const FILTROS_DA_CAIXA = ['todas', 'leads', 'clientes', 'grupos', 'sem_vinculo', 'equipe', 'arquivadas'] as const;
+// Layout 26/10: Comunidade é o quarto tipo de conversa (grupo da comunidade da casa, como o "Operação Root | IA para Negócios"), ao lado de lead, cliente e equipe.
+export const FILTROS_DA_CAIXA = ['todas', 'leads', 'clientes', 'grupos', 'sem_vinculo', 'equipe', 'comunidade', 'arquivadas'] as const;
 export type FiltroDaCaixa = (typeof FILTROS_DA_CAIXA)[number];
 
 export const ROTULO_DO_FILTRO: Record<FiltroDaCaixa, string> = {
@@ -32,6 +33,7 @@ export const ROTULO_DO_FILTRO: Record<FiltroDaCaixa, string> = {
   grupos: 'Grupos',
   sem_vinculo: 'Sem vínculo',
   equipe: 'Equipe',
+  comunidade: 'Comunidade',
   arquivadas: 'Arquivadas',
 };
 
@@ -134,6 +136,8 @@ export interface ConversaDaCaixa {
   fotoUrl: string | null;
   participantes: number | null;
   equipe: boolean;
+  /** Layout 26/10: conversa da comunidade da casa (fora de lead, cliente e equipe; marcada à mão). */
+  comunidade: boolean;
   ultimaMensagemEm: string | null;
   previa: PreviaDaConversa | null;
   naoLidas: number;
@@ -222,8 +226,9 @@ export interface WhatsappDoVinculo {
 
 /** O cartão do Dia a dia e a bolha do menu (W4). */
 export interface ResumoDoWhatsapp {
-  naoLidas: { leads: number; clientes: number; semVinculo: number; equipe: number; total: number };
-  /** Conversas (não arquivadas, fora da equipe) sem lead nem cliente. */
+  /** Layout 26/10: `comunidade` é uma faixa própria, como `equipe`, e entra no total do mesmo jeito. */
+  naoLidas: { leads: number; clientes: number; semVinculo: number; equipe: number; comunidade: number; total: number };
+  /** Conversas (não arquivadas, fora da equipe e da comunidade) sem lead nem cliente. */
   conversasSemVinculo: number;
   geradoEm: string;
 }
@@ -249,6 +254,9 @@ export const VincularConversaSchema = z.object({
 export type VincularConversa = z.infer<typeof VincularConversaSchema>;
 
 export const ArquivarConversaSchema = z.object({ arquivada: z.boolean() });
+
+/** Layout 26/10: marcar ou tirar da comunidade (`POST /whatsapp/vinculos/:id/comunidade`). */
+export const MarcarComunidadeSchema = z.object({ comunidade: z.boolean() }).strict();
 
 // ---------------------------------------------------------------------------
 // Regras puras de nome (o casamento de grupo por nome, W3)
@@ -282,6 +290,8 @@ export function nomeDoGrupoSemPrefixo(assunto: string | null | undefined): strin
  * próprio, sem vínculo. Por padrão: "Estratégia e Produto" (com ou sem o
  * prefixo da casa), os grupos da FullBPO e os da "Operação Root" (a comunidade).
  * Também é equipe a conversa marcada à mão (`WhatsAppConversa.equipe`).
+ * Layout 26/10: o grupo da comunidade segue caindo em equipe pelo nome; "Marcar como
+ * comunidade" o tira dali, e a decisão da pessoa o casamento automático não refaz.
  */
 const PADROES_DA_EQUIPE: readonly RegExp[] = [
   /^estrategia e produto$/,

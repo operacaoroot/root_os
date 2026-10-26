@@ -64,7 +64,8 @@ export function Numero(props: {
   );
   if (!props.onClick) return <div className="p-1">{corpo}</div>;
   return (
-    <button onClick={props.onClick} className="group rounded-md p-1 text-left hover:bg-surface-2">
+    // Layout 26/10: conteúdo preso no topo (botão esticado na grade centralizava e desalinhava a linha).
+    <button onClick={props.onClick} className="group flex flex-col justify-start self-start rounded-md p-1 text-left hover:bg-surface-2">
       {corpo}
     </button>
   );

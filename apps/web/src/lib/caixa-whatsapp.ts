@@ -165,7 +165,7 @@ export function rotaDaConversa(id: string, antes?: Pick<MensagemDaCaixa, 'timest
   return `/whatsapp/conversas/${encodeURIComponent(id)}?${p.toString()}`;
 }
 
-/** Os chips na ordem da tela: Todas · Leads · Clientes · Grupos · Sem vínculo · Equipe e, no fim, Arquivadas. */
+/** Os chips na ordem da tela: Todas · Leads · Clientes · Grupos · Sem vínculo · Equipe · Comunidade (layout 26/10) e, no fim, Arquivadas. */
 export const CHIPS_DA_CAIXA: readonly FiltroDaCaixa[] = FILTROS_DA_CAIXA;
 
 // ---------------------------------------------------------------------------

@@ -64,6 +64,7 @@ function conversa(o: Partial<ConversaDaCaixa> = {}): ConversaDaCaixa {
     fotoUrl: null,
     participantes: 5,
     equipe: false,
+    comunidade: false,
     ultimaMensagemEm: '2026-10-21T15:00:00.000Z',
     previa: { texto: 'bom dia fictício', tipo: 'conversation', deMim: false, remetenteNome: 'Contato Fictício', timestamp: '2026-10-21T15:00:00.000Z' },
     naoLidas: 2,
@@ -172,9 +173,36 @@ describe('o vínculo no cabeçalho da caixa', () => {
     expect(posts.at(-1)).toEqual({ caminho: '/whatsapp/vinculos/conv-1/equipe', corpo: { equipe: false } });
   });
 
+  // Layout 26/10: Comunidade, o quarto tipo de conversa (ao lado de lead, cliente e equipe).
+  it('comunidade: marcar e tirar; o selo aparece e os botões de vínculo somem', async () => {
+    const { rerender } = render(<VinculoDaConversa conversa={conversa()} podeVincular aoMudar={vi.fn()} />);
+    await userEvent.click(screen.getByTestId('whats-marcar-comunidade'));
+    expect(posts.at(-1)).toEqual({ caminho: '/whatsapp/vinculos/conv-1/comunidade', corpo: { comunidade: true } });
+    rerender(<VinculoDaConversa conversa={conversa({ comunidade: true })} podeVincular aoMudar={vi.fn()} />);
+    expect(screen.getByTestId('whats-selo-comunidade')).toHaveTextContent('Comunidade');
+    expect(screen.queryByTestId('whats-vincular-lead')).toBeNull();
+    expect(screen.queryByTestId('whats-vincular-cliente')).toBeNull();
+    await userEvent.click(screen.getByTestId('whats-tirar-comunidade'));
+    expect(posts.at(-1)).toEqual({ caminho: '/whatsapp/vinculos/conv-1/comunidade', corpo: { comunidade: false } });
+  });
+
+  it('comunidade: o grupo que caiu em equipe passa para comunidade num clique, e volta para equipe', async () => {
+    const { rerender } = render(<VinculoDaConversa conversa={conversa({ nome: 'Operação Root | IA para Negócios', participantes: 55, equipe: true })} podeVincular aoMudar={vi.fn()} />);
+    await userEvent.click(screen.getByTestId('whats-marcar-comunidade'));
+    expect(posts.at(-1)).toEqual({ caminho: '/whatsapp/vinculos/conv-1/comunidade', corpo: { comunidade: true } });
+    rerender(<VinculoDaConversa conversa={conversa({ nome: 'Operação Root | IA para Negócios', participantes: 55, comunidade: true })} podeVincular aoMudar={vi.fn()} />);
+    await userEvent.click(screen.getByTestId('whats-marcar-equipe'));
+    expect(posts.at(-1)).toEqual({ caminho: '/whatsapp/vinculos/conv-1/equipe', corpo: { equipe: true } });
+  });
+
+  it('comunidade 1:1 não mostra o convite de pôr o número num lead', () => {
+    render(<VinculoDaConversa conversa={conversa({ grupo: false, numero: '5532999990001', participantes: null, comunidade: true })} podeVincular aoMudar={vi.fn()} />);
+    expect(screen.queryByTestId('whats-convite-telefone')).toBeNull();
+  });
+
   it('sem leads.editar: tudo desabilitado, com a razão; nada é chamado', async () => {
     render(<VinculoDaConversa conversa={conversa({ sugestao: { tipo: 'lead', id: 'l1', nome: 'Lead Fictício', como: 'nome_igual' } })} podeVincular={false} aoMudar={vi.fn()} />);
-    for (const id of ['whats-vinculo-sugestao', 'whats-vincular-lead', 'whats-vincular-cliente', 'whats-marcar-equipe']) {
+    for (const id of ['whats-vinculo-sugestao', 'whats-vincular-lead', 'whats-vincular-cliente', 'whats-marcar-equipe', 'whats-marcar-comunidade']) {
       expect(screen.getByTestId(id)).toBeDisabled();
       expect(screen.getByTestId(id)).toHaveAttribute('title', expect.stringMatching(/leads\.editar/));
     }

@@ -68,8 +68,8 @@ import { Sidebar } from '@/components/Sidebar';
 import VisaoGeralPage from '@/app/dia-a-dia/page';
 
 function resumo(n: Partial<ResumoDoWhatsapp['naoLidas']>, semVinculo = 0): ResumoDoWhatsapp {
-  const naoLidas = { leads: 0, clientes: 0, semVinculo: 0, equipe: 0, ...n, total: 0 };
-  naoLidas.total = naoLidas.leads + naoLidas.clientes + naoLidas.semVinculo + naoLidas.equipe;
+  const naoLidas = { leads: 0, clientes: 0, semVinculo: 0, equipe: 0, comunidade: 0, ...n, total: 0 };
+  naoLidas.total = naoLidas.leads + naoLidas.clientes + naoLidas.semVinculo + naoLidas.equipe + naoLidas.comunidade;
   return { naoLidas, conversasSemVinculo: semVinculo, geradoEm: '2026-10-22T13:05:00.000Z' };
 }
 
@@ -129,6 +129,25 @@ describe('o cartão "WhatsApp" do Dia a dia', () => {
     expect(equipe.getAttribute('href')).toBe('/whatsapp?filtro=equipe');
     expect(screen.queryByTestId('whatsapp-nada-novo')).toBeNull();
     expect(screen.queryByTestId('whatsapp-sem-vinculo-chamada')).toBeNull();
+  });
+
+  // Layout 26/10: a comunidade é uma faixa própria, como a equipe, fora de leads, clientes e sem vínculo.
+  it('a comunidade aparece só quando tem não lida, com o link do filtro, e não deixa o cartão calmo', async () => {
+    RESUMO = resumo({ comunidade: 12 });
+    render(<WhatsappNoDiaADia token="tok" />);
+    const comunidade = await screen.findByTestId('whatsapp-linha-comunidade');
+    expect(comunidade.getAttribute('href')).toBe('/whatsapp?filtro=comunidade');
+    expect(comunidade.textContent).toMatch(/Comunidade\s*12 não lidas/);
+    expect(screen.getByTestId('whatsapp-linha-sem_vinculo').textContent).toMatch(/Sem vínculo\s*0 não lidas/);
+    expect(screen.queryByTestId('whatsapp-linha-equipe')).toBeNull();
+    expect(screen.queryByTestId('whatsapp-nada-novo')).toBeNull();
+  });
+
+  it('sem comunidade com não lida, a linha não aparece', async () => {
+    RESUMO = resumo({ leads: 1 });
+    render(<WhatsappNoDiaADia token="tok" />);
+    await screen.findByTestId('whatsapp-linha-leads');
+    expect(screen.queryByTestId('whatsapp-linha-comunidade')).toBeNull();
   });
 
   it('tudo zero: uma linha calma, sem linhas nem chamada', async () => {

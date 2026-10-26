@@ -7,6 +7,8 @@ import { instanteNoFuso } from '@mktos/shared';
 import { apiGet, ErroDaApi } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 import { usePedidoMarketing, type ReciboMarketing } from './pedido-recuperacao';
+import { abrirAquiNoClique, useTarefaNaUrl } from '@/lib/tarefa-na-url';
+import { TarefaFlutuante } from '@/components/trabalho/TrabalhoView';
 
 type Account = { id: string; handle: string; ownerId: string; operators: string[]; revision: number; active: boolean; canPrepare: boolean; status: string; pending: string };
 type Preparation = { id: string; accountId: string; handle: string; taskId: string; versionId: string; decisionId: string; contentHash: string; scheduledAt: string; timezone: string; state: string };
@@ -26,6 +28,8 @@ export default function PreparacaoMarketingPage() {
   return <PreparacaoAutorizada key={user.id + ':' + token} actorId={user.id} token={token} can={can} />;
 }
 function PreparacaoAutorizada({ actorId, token, can }: { actorId: string; token: string; can: (p: string) => boolean }) {
+  // Layout 26/10: "Abrir tarefa" abre o pop-up único da tarefa aqui mesmo, sem sair da Preparação.
+  const popup = useTarefaNaUrl();
   const query = useSearchParams();
   const geracao = useRef(0), privada = useRef(false), viva = useRef(true);
   const [catalog, setCatalog] = useState<Catalog | null>(null), [config, setConfig] = useState<Config | null>(null);
@@ -161,7 +165,8 @@ function PreparacaoAutorizada({ actorId, token, can }: { actorId: string; token:
     </form>}
     {catalog && !completeSource && <section aria-label="Escolher versão para o preparo" className="space-y-3 rounded border border-border p-4"><h2 className="font-semibold">Comece pela versão aprovada</h2><p className="text-sm text-muted">Abra o material de uma tarefa, confira a aprovação e escolha “Preparar conta e horário”. Esse caminho traz a tarefa, a versão e a decisão corretas.</p>{can('tarefas.ver') ? <Link href={sourceHref} className="inline-flex min-h-11 items-center rounded border border-brand-dim px-3 text-sm text-brand">{fonte.taskId ? 'Abrir material da tarefa' : 'Escolher tarefa em Trabalho'}</Link> : <p className="text-sm text-muted">Sua conta também precisa de acesso a Trabalho para escolher a tarefa.</p>}</section>}
     {catalog && !mayPrepare && <p className="text-sm text-muted">Sua conta pode consultar os preparos. Salvar um preparo exige acesso para editar e publicar na Pauta e editar a tarefa.</p>}
-    {catalog && <section aria-label="Preparos salvos" className="space-y-2"><h2 className="font-semibold">Preparos salvos</h2>{!catalog.preparations.length && <p className="text-sm text-muted">Nenhum preparo salvo está disponível para sua conta.</p>}{catalog.preparations.map(p => <article key={p.id} className="rounded border border-border p-3"><p>@{p.handle} · {formatarHorario(p.scheduledAt, p.timezone)} · {p.timezone}</p><p>Preparado. Publicação e métricas externas pendentes.</p><Link className="underline" href={'/pauta/producao?taskId=' + encodeURIComponent(p.taskId) + '&versionId=' + encodeURIComponent(p.versionId)}>Abrir versão preparada</Link>{' · '}<Link className="underline" href={'/trabalho?tarefa=' + encodeURIComponent(p.taskId)}>Abrir tarefa</Link></article>)}</section>}
+    {catalog && <section aria-label="Preparos salvos" className="space-y-2"><h2 className="font-semibold">Preparos salvos</h2>{!catalog.preparations.length && <p className="text-sm text-muted">Nenhum preparo salvo está disponível para sua conta.</p>}{catalog.preparations.map(p => <article key={p.id} className="rounded border border-border p-3"><p>@{p.handle} · {formatarHorario(p.scheduledAt, p.timezone)} · {p.timezone}</p><p>Preparado. Publicação e métricas externas pendentes.</p><Link className="underline" href={'/pauta/producao?taskId=' + encodeURIComponent(p.taskId) + '&versionId=' + encodeURIComponent(p.versionId)}>Abrir versão preparada</Link>{' · '}<Link className="underline" href={'/trabalho?tarefa=' + encodeURIComponent(p.taskId)} onClick={abrirAquiNoClique(popup.abrir, p.taskId)}>Abrir tarefa</Link></article>)}</section>}
+    <TarefaFlutuante tarefa={popup} />
   </div>;
 }
 function EstadoDoPedido({ pedido: p, busy }: { pedido: ReturnType<typeof usePedidoMarketing>; busy: boolean }) {

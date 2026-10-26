@@ -6,6 +6,8 @@ import { apiGet } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 import { useModulos } from '@/components/modulos';
 import { intervaloDaGrade, prazosDeTrabalho, trabalhoHref } from '@/lib/work-projection';
+import { abrirAquiNoClique, useTarefaNaUrl } from '@/lib/tarefa-na-url';
+import { TarefaFlutuante } from '@/components/trabalho/TrabalhoView';
 import type { ForaDoPadraoDaAgenda, TrabTarefaResumo } from '@mktos/shared';
 import { Botao, Card, Chip } from '../referencias/ui';
 import { MarcarReuniao } from './MarcarReuniao';
@@ -96,6 +98,8 @@ export default function AgendaPage() {
   const { token, ready, can } = useAuth();
   const { modulos } = useModulos();
   const podeVerTrabalho = ready && !!token && can('tarefas.ver') && modulos?.includes('trabalho') === true;
+  // Layout 26/10: o prazo de trabalho abre o pop-up único da tarefa aqui mesmo, sem sair da Agenda.
+  const popup = useTarefaNaUrl();
   const celular = useEhCelular();
   // O estado mora no endereço; até lê-lo (depois de montar), nada é buscado.
   const [estado, setEstado] = useState<{ visao: VisaoDaAgenda; dia: string; lido: boolean }>(() => ({ visao: 'mes', dia: hojeNoFuso(), lido: false }));
@@ -107,6 +111,8 @@ export default function AgendaPage() {
   const [trilhos, setTrilhos] = useState<string[]>([]);
   const [prazos, setPrazos] = useState<TrabTarefaResumo[] | null>(null);
   const [erroPrazos, setErroPrazos] = useState<string | null>(null);
+  // Layout 26/10: mudar a tarefa no pop-up relê os prazos (o prazo pode ter mudado de dia).
+  const [recargaDosPrazos, setRecargaDosPrazos] = useState(0);
   // O vigia da agenda (AG-01): o selo "N fora do padrão" e a lista com as propostas.
   const [vigia, setVigia] = useState<ForaDoPadraoDaAgenda | null>(null);
   const [erroVigia, setErroVigia] = useState<string | null>(null);
@@ -165,7 +171,7 @@ export default function AgendaPage() {
       .then((items) => { if (ativo) setPrazos(items); })
       .catch((e) => { if (ativo) setErroPrazos(e.message); });
     return () => { ativo = false; };
-  }, [podeVerTrabalho, token, grade, visao, intervalo, estado.lido]);
+  }, [podeVerTrabalho, token, grade, visao, intervalo, estado.lido, recargaDosPrazos]);
 
   // Os nomes de cliente que o OS já conhece, para o datalist do formulário. Sem
   // permissão de tarefas o pedido nem sai — o campo continua sendo texto livre.
@@ -445,7 +451,7 @@ export default function AgendaPage() {
             <ul className="divide-y divide-border">
               {(prazosPorDia.get(diaAberto) ?? []).map((t) => (
                 <li key={t.id} className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1 py-2 text-sm">
-                  <a href={trabalhoHref(t.id)} className="min-w-0 font-medium text-brand underline">{t.title}</a>
+                  <a href={trabalhoHref(t.id)} onClick={abrirAquiNoClique(popup.abrir, t.id)} className="min-w-0 font-medium text-brand underline">{t.title}</a>
                   <span className="text-xs text-muted">{t.statusName} · {t.dueDate ? new Date(t.dueDate).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }) : ''}</span>
                 </li>
               ))}
@@ -461,6 +467,7 @@ export default function AgendaPage() {
         vigia da agenda propõe a correção (que espera a confirmação na fila de aprovações). Compromisso que não é
         reunião, como bloqueio e lembrete sem convidado, fica neutro.
       </p>
+      {podeVerTrabalho && <TarefaFlutuante tarefa={popup} onMudou={() => setRecargaDosPrazos((n) => n + 1)} />}
     </div>
   );
 }

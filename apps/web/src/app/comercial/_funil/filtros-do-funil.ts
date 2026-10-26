@@ -16,6 +16,8 @@ import {
   COMERCIAL_ESTAGIOS,
   COMERCIAL_FILTROS_DO_FUNIL,
   COMERCIAL_PERFIS,
+  COMERCIAL_TIPOS_DE_NEGOCIO,
+  ROTULO_DO_TIPO_DE_NEGOCIO,
   COMERCIAL_PRODUTOS,
   COMERCIAL_ROTULO_DA_ETAPA,
   filtrosDoFiltroAntigo,
@@ -65,6 +67,8 @@ export function definicoesDosFiltros(donos: readonly { id: string; nome: string 
     },
     { chave: 'produto', rotulo: 'Produto', tipo: 'opcoes', opcoes: COMERCIAL_PRODUTOS.map((p) => ({ valor: p, rotulo: ROTULO_DO_PRODUTO[p] })) },
     { chave: 'perfil', rotulo: 'Perfil', tipo: 'opcoes', opcoes: COMERCIAL_PERFIS.map((p) => ({ valor: p, rotulo: p })) },
+    // Layout 26/10: pagante, parceria, permuta ou repasse (o mesmo tipo dos acordos da Análise).
+    { chave: 'tipo', rotulo: 'Tipo do negócio', tipo: 'opcoes', opcoes: COMERCIAL_TIPOS_DE_NEGOCIO.map((t) => ({ valor: t, rotulo: ROTULO_DO_TIPO_DE_NEGOCIO[t] })), dica: 'Pagante gera caixa; parceria, permuta e repasse não. Sem tipo marcado conta como pagante.' },
     {
       chave: 'etapa',
       rotulo: 'Etapa',

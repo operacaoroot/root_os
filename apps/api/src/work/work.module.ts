@@ -10,6 +10,7 @@ import { AtasController } from './atas/atas.controller';
 import { AtasDoGranolaService } from './atas/atas-do-granola.service';
 import { AtasService } from './atas/atas.service';
 import { DriveDasAtasService } from './atas/fonte-do-drive';
+import { LigacoesDasAtasService } from './atas/ligacoes-das-atas.service';
 import { GranolaModule } from '../granola/granola.module';
 import { MovimentoDoQuadroService } from './movimento-do-quadro.service';
 import { VistasController } from './vistas.controller';
@@ -49,7 +50,7 @@ import { AcoesDaTarefaService } from './menu-da-tarefa/acoes-da-tarefa.service';
   imports: [AuditModule, MemoryModule, GranolaModule],
   // LixeiraController (produção 3, I2 e I4): a Lixeira e as ações do menu da tarefa.
   controllers: [VistasController, WorkController, WorkFilesController, AtasController, TarefasDoDiaController, LixeiraController],
-  providers: [WorkService, CheckoutDeTarefaService, WorkFilesService, AtasService, AtasDoGranolaService, DriveDasAtasService, MovimentoDoQuadroService, VistasService, TarefasDoDiaService, LixeiraService, AcoesDaTarefaService],
+  providers: [WorkService, CheckoutDeTarefaService, WorkFilesService, AtasService, AtasDoGranolaService, DriveDasAtasService, LigacoesDasAtasService, MovimentoDoQuadroService, VistasService, TarefasDoDiaService, LixeiraService, AcoesDaTarefaService],
   exports: [CheckoutDeTarefaService, WorkService],
 })
 export class WorkModule {}

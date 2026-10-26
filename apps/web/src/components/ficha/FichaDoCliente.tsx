@@ -27,6 +27,7 @@ import { apiDelete, apiGet, apiPatch, apiPost } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 import { avisarQueAFichaMudou, fecharFicha } from '@/lib/ficha';
 import { WhatsappDoCliente } from '@/components/whatsapp/WhatsappDoCliente';
+import { AtasDoCliente } from '@/components/trabalho/AtasLigadas';
 
 /*
  * FICHA DO CLIENTE. Um card por lead/cliente, da primeira conversa ao pós-venda:
@@ -398,6 +399,8 @@ export function FichaDoCliente(props: {
           <Contratos taskId={taskId} contratos={contratos} podeEditar={podeEditar} mudou={async () => { await carregar(); avisarQueAFichaMudou(); }} erro={setErro} />
           {/* Produção 22C (W3): o WhatsApp do cliente (grupo ligado, últimas mensagens, telefone). */}
           {t?.clienteId && <WhatsappDoCliente clienteId={t.clienteId} />}
+          {/* Layout 26/10: as atas ligadas a este cliente na tela Atas (data e título). */}
+          {t?.clienteId && <AtasDoCliente clienteId={t.clienteId} />}
           {podeEditar && (
             <button onClick={salvar} disabled={salvando} className="rounded-md bg-brand px-5 py-2 text-sm font-medium text-ink hover:opacity-90 disabled:opacity-50">
               {salvando ? 'Salvando…' : 'Salvar ficha'}

@@ -69,6 +69,7 @@ function conversa(id: string, extra: Partial<ConversaDaCaixa> = {}): ConversaDaC
     fotoUrl: null,
     participantes: null,
     equipe: false,
+    comunidade: false,
     ultimaMensagemEm: AGORA,
     previa: { texto: 'mensagem inventada', tipo: 'conversation', deMim: false, remetenteNome: null, timestamp: AGORA },
     naoLidas: 0,
@@ -115,7 +116,7 @@ const C3 = conversa('c3', { nome: 'Sem Nome Ficticio', fotoUrl: 'https://exemplo
 
 const LISTA: ListaDaCaixa = {
   conversas: [C2, C1, C3],
-  contagens: { todas: 3, leads: 1, clientes: 1, grupos: 1, sem_vinculo: 1, equipe: 0, arquivadas: 2 },
+  contagens: { todas: 3, leads: 1, clientes: 1, grupos: 1, sem_vinculo: 1, equipe: 0, comunidade: 0, arquivadas: 2 },
   podeResponder: true,
   podeVincular: true,
   mais: false,
@@ -178,6 +179,23 @@ describe('caixa de WhatsApp: a lista', () => {
     await u.type(screen.getByTestId('caixa-busca'), 'abacaxi');
     await waitFor(() => expect(gets).toContain('/whatsapp/conversas?q=abacaxi'));
     expect(window.location.search).toBe('?q=abacaxi');
+  });
+
+  // Layout 26/10: Comunidade, o quarto tipo de conversa, com chip, contagem e selo.
+  it('comunidade: o chip com a contagem vem depois de Equipe, filtra pela API, e a conversa leva o selo', async () => {
+    const COM = conversa('c4', { grupo: true, numero: null, nome: 'Operação Root | IA para Negócios', participantes: 55, comunidade: true });
+    RESPOSTAS['/whatsapp/conversas'] = { ...LISTA, conversas: [...LISTA.conversas, COM], contagens: { ...LISTA.contagens, todas: 4, grupos: 2, comunidade: 1 } };
+    const u = userEvent.setup();
+    render(<CaixaPage />);
+    await screen.findByTestId('caixa-conversa-c4');
+    expect(screen.getByTestId('caixa-filtro-comunidade')).toHaveTextContent('Comunidade1');
+    const chips = within(screen.getByRole('group', { name: 'Filtros' })).getAllByRole('button').map((b) => b.dataset.testid);
+    expect(chips.indexOf('caixa-filtro-comunidade')).toBe(chips.indexOf('caixa-filtro-equipe') + 1);
+    expect(screen.getByTestId('caixa-conversa-c4')).toHaveTextContent('comunidade');
+    expect(screen.getByTestId('caixa-conversa-c3')).not.toHaveTextContent('comunidade');
+    await u.click(screen.getByTestId('caixa-filtro-comunidade'));
+    expect(window.location.search).toBe('?filtro=comunidade');
+    await waitFor(() => expect(gets).toContain('/whatsapp/conversas?filtro=comunidade'));
   });
 
   it('lista vazia diz o porquê', async () => {
@@ -251,6 +269,20 @@ describe('caixa de WhatsApp: abrir, ler, responder, arquivar', () => {
     expect(await screen.findByTestId('caixa-balao-m9')).toHaveTextContent('linha um');
     expect(screen.getByTestId('caixa-enviada-por-m9')).toHaveTextContent('enviada por Eu Ficticio');
     expect(caixa).toHaveValue('');
+  });
+
+  // Layout 26/10: a mensagem sai como ROOT; o nome de quem enviou não vai no texto (fica só no OS).
+  it('responder: vai à API só o texto digitado, sem nome, e o aviso diz que sai como ROOT', async () => {
+    respostasDaConversa();
+    RESPOSTAS['POST /whatsapp/conversas/c1/responder'] = { mensagem: msg('m8', { deMim: true, texto: 'oi', enviadaPor: { id: 'eu', nome: 'Eu Ficticio' } }) };
+    window.history.replaceState(null, '', '/whatsapp?conversa=c1');
+    const u = userEvent.setup();
+    render(<CaixaPage />);
+    const caixa = await screen.findByTestId('caixa-resposta');
+    expect(screen.getByTestId('caixa-aviso-envio')).toHaveTextContent('com o seu nome em negrito no topo');
+    expect(screen.getByTestId('caixa-aviso-envio')).toHaveTextContent('para o cliente saber quem está falando');
+    await u.type(caixa, 'oi{Enter}');
+    await waitFor(() => expect(posts.find((p) => p.caminho === '/whatsapp/conversas/c1/responder')?.corpo).toEqual({ texto: 'oi' }));
   });
 
   it('a falha do envio aparece ao lado da caixa, e o texto fica', async () => {

@@ -26,6 +26,7 @@ import {
  *      sugere: aparece só na busca. Empate não sugere.
  *   3. O que a pessoa decidiu (`vinculadoPorId` preenchido: ligou, desligou ou
  *      marcou como equipe) nunca é refeito pelo casamento automático.
+ *      Layout 26/10: a conversa marcada como comunidade também (é sempre decisão de pessoa).
  */
 
 /** Os dígitos do telefone na forma da casa: só dígitos, com o 55 quando veio com DDD + número (10 ou 11). */
@@ -212,6 +213,8 @@ export const ACAO_DE_AUDITORIA = {
   vinculada: 'whatsapp.conversa.vinculada',
   desvinculada: 'whatsapp.conversa.desvinculada',
   equipe: 'whatsapp.conversa.equipe',
+  // Layout 26/10: marcar ou tirar da comunidade.
+  comunidade: 'whatsapp.conversa.comunidade',
   telefoneDoLead: 'lead.telefone.definido',
   telefoneDoCliente: 'cliente.telefone.definido',
 } as const;
@@ -222,6 +225,7 @@ export const FRASE = {
   mudou: 'A conversa mudou enquanto você vinculava. Recarregue e tente de novo.',
   semSugestao: 'Esta conversa não tem sugestão de vínculo para aceitar.',
   equipeLigada: 'Esta conversa está ligada a um lead ou cliente. Desvincule antes de marcar como equipe.',
+  comunidadeLigada: 'Esta conversa está ligada a um lead ou cliente. Desvincule antes de marcar como comunidade.',
   naoEUmAUm: 'Só a conversa 1:1 com número conhecido põe o telefone no lead.',
   leadComOutroTelefone: 'Este lead já tem outro telefone. Confirme a troca para gravar o número desta conversa.',
   numeroDeOutroLead: 'Este número já está em outro lead. Um número em dois leads deixaria a conversa sem dono.',
