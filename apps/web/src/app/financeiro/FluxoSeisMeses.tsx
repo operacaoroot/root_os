@@ -30,6 +30,19 @@ export function FluxoSeisMeses() {
   const [fluxo, setFluxo] = useState<Cashflow | null>(null);
   const [erro, setErro] = useState(false);
   const [foco, setFoco] = useState<string | null>(null);
+  // Layout 26/10: o desenho usa a largura real da caixa (1 unidade = 1 px). Antes o SVG esticava
+  // junto com a tela e os textos e barras ficavam gigantes em monitor largo.
+  const [caixa, setCaixa] = useState<HTMLDivElement | null>(null);
+  const [larguraDaCaixa, setLarguraDaCaixa] = useState(720);
+  useEffect(() => {
+    if (!caixa) return;
+    const medir = () => setLarguraDaCaixa(Math.max(520, Math.round(caixa.clientWidth)));
+    medir();
+    if (typeof ResizeObserver === 'undefined') return;
+    const ro = new ResizeObserver(medir);
+    ro.observe(caixa);
+    return () => ro.disconnect();
+  }, [caixa]);
 
   useEffect(() => {
     if (!ready || !token) return;
@@ -57,8 +70,8 @@ export function FluxoSeisMeses() {
 
   // Escala: barras de entrada para cima e de saída para baixo, a partir da linha do zero.
   const maior = Math.max(1, ...meses.map((m) => Math.max(m.entradas, m.saidas)));
-  const L = 720, A = 260, topo = 44, base = 34, meio = topo + (A - topo - base) / 2, meiaAltura = (A - topo - base) / 2 - 6;
-  const passo = L / Math.max(1, meses.length), largura = Math.min(56, passo * 0.42);
+  const L = larguraDaCaixa, A = 190, topo = 40, base = 26, meio = topo + (A - topo - base) / 2, meiaAltura = (A - topo - base) / 2 - 6;
+  const passo = L / Math.max(1, meses.length), largura = Math.min(36, passo * 0.3);
   const alt = (v: number) => (v / maior) * meiaAltura;
   const sel = meses.find((m) => m.chave === foco) ?? null;
 
@@ -71,8 +84,8 @@ export function FluxoSeisMeses() {
         </div>
         {meses.length > 0 && <span className="text-sm text-muted">saldo em {meses[meses.length - 1].rotulo}: <b className="font-os-mono text-text">{brl(meses[meses.length - 1].saldo)}</b></span>}
       </div>
-      <div className="overflow-x-auto">
-        <svg viewBox={`0 0 ${L} ${A}`} className="w-full min-w-[520px]" role="img" aria-label="Entradas, saídas e saldo por mês nos próximos 6 meses">
+      <div ref={setCaixa} className="overflow-x-auto">
+        <svg viewBox={`0 0 ${L} ${A}`} width={L} height={A} className="block max-w-none" role="img" aria-label="Entradas, saídas e saldo por mês nos próximos 6 meses">
           <line x1="0" x2={L} y1={meio} y2={meio} stroke="rgb(var(--os-line-strong))" strokeWidth="1" />
           {meses.map((m, i) => {
             const cx = passo * i + passo / 2;

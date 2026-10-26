@@ -28,6 +28,8 @@ import { BOTAO, BOTAO_PRIMARIO, Chip, Erro, ErroDaAcao, FOCO, INPUT, useCarregar
 import { useMudouNoPainel } from '../_painel/provedor';
 import { BotaoDoMenuDaTarefa, MenuDaTarefaProvider, alvoDoMenu, useMenuDaTarefa } from '@/components/trabalho/MenuDaTarefa';
 import { PilhaDeAvatares } from '@/components/PilhaDeAvatares';
+import { TarefaFlutuante } from '@/components/trabalho/TrabalhoView';
+import { useTarefaNaUrl } from '@/lib/tarefa-na-url';
 
 /** Onde o bloco do funil guarda se está aberto ou recolhido. */
 export const CHAVE_DO_BLOCO_RECOLHIDO = 'mktos.funil.tarefas-do-comercial.recolhido';
@@ -165,11 +167,14 @@ function LinhaDaTarefa({
   pessoas,
   podeEditar,
   aoMudar,
+  aoAbrir,
 }: {
   t: TarefaDoComercial;
   pessoas: { id: string; nome: string }[];
   podeEditar: boolean;
   aoMudar: () => Promise<void>;
+  /** Abre a tarefa numa janela por cima da tela (sem sair dela). Sem isto, o título leva ao Trabalho. */
+  aoAbrir?: (id: string) => void;
 }) {
   const { token } = useAuth();
   const [editando, setEditando] = useState(false);
@@ -237,8 +242,12 @@ function LinhaDaTarefa({
         <span aria-hidden className={`flex h-4 w-4 items-center justify-center rounded-sm border text-[10px] leading-none ${feita ? 'border-good bg-good/20 text-good' : 'border-border group-hover:border-brand'}`}>{feita ? '✓' : ''}</span>
       </button>
       <div className="min-w-0 flex-1">
-        {/* Layout 26/10: o título abre a tarefa no Trabalho (comentários, subtarefas, tudo). */}
-        <Link href={`/trabalho?tarefa=${encodeURIComponent(t.id)}`} data-testid={`tarefa-abrir-${t.id}`} className={`block break-words rounded-sm text-[12.5px] hover:text-brand hover:underline ${FOCO} ${feita ? 'text-dim line-through' : ''}`}>{t.titulo}</Link>
+        {/* Layout 26/10: o título abre a tarefa por cima da tela (fechar volta para cá); sem janela, leva ao Trabalho. */}
+        {aoAbrir ? (
+          <button type="button" onClick={() => aoAbrir(t.id)} data-testid={`tarefa-abrir-${t.id}`} className={`block break-words rounded-sm text-left text-[12.5px] hover:text-brand hover:underline ${FOCO} ${feita ? 'text-dim line-through' : ''}`}>{t.titulo}</button>
+        ) : (
+          <Link href={`/trabalho?tarefa=${encodeURIComponent(t.id)}`} data-testid={`tarefa-abrir-${t.id}`} className={`block break-words rounded-sm text-[12.5px] hover:text-brand hover:underline ${FOCO} ${feita ? 'text-dim line-through' : ''}`}>{t.titulo}</Link>
+        )}
         <p className={`flex min-w-0 items-center gap-1.5 text-[11px] ${t.situacao === 'atrasada' ? 'text-warn' : 'text-dim'}`}>
           {/* O responsável só com a imagem, o nome no balão (I6); o texto antigo sem conta vira as iniciais. */}
           <PilhaDeAvatares
@@ -278,12 +287,14 @@ export function ListaDeTarefasDoComercial({
   testId,
   aoMudar,
   vazio,
+  aoAbrir,
 }: {
   dados: TarefasDoComercial | null;
   leadId?: string | null;
   testId: string;
   aoMudar: () => Promise<void>;
   vazio: string;
+  aoAbrir?: (id: string) => void;
 }) {
   const { token, can } = useAuth();
   const podeEditar = can('leads.editar') && can('tarefas.editar');
@@ -301,7 +312,7 @@ export function ListaDeTarefasDoComercial({
       {abertas.length === 0 && !criando && <p className="text-[12px] text-dim">{vazio}</p>}
       {abertas.length > 0 && (
         <ul className="divide-y divide-border">
-          {abertas.map((t) => <LinhaDaTarefa key={t.id} t={t} pessoas={pessoas} podeEditar={podeEditar} aoMudar={aoMudar} />)}
+          {abertas.map((t) => <LinhaDaTarefa key={t.id} t={t} pessoas={pessoas} podeEditar={podeEditar} aoMudar={aoMudar} aoAbrir={aoAbrir} />)}
         </ul>
       )}
       {podeEditar && (criando ? (
@@ -345,7 +356,7 @@ export function ListaDeTarefasDoComercial({
           </button>
           {verFeitas && (
             <ul className="mt-1 divide-y divide-border">
-              {feitas.map((t) => <LinhaDaTarefa key={t.id} t={t} pessoas={pessoas} podeEditar={podeEditar} aoMudar={aoMudar} />)}
+              {feitas.map((t) => <LinhaDaTarefa key={t.id} t={t} pessoas={pessoas} podeEditar={podeEditar} aoMudar={aoMudar} aoAbrir={aoAbrir} />)}
             </ul>
           )}
         </div>
@@ -373,6 +384,8 @@ export function BlocoDeTarefasDoComercial({ pessoa }: { pessoa: string }) {
   const [recolhido, setRecolhido] = useState(false);
   useEffect(() => setRecolhido(lerRecolhido()), []);
   const { dados, erro, recarregar } = useCarregar<TarefasDoComercial>(caminhoDasTarefas({ pessoa }), 60_000);
+  // Layout 26/10: a tarefa abre por cima do funil; fechar volta para o funil, no mesmo lugar.
+  const popup = useTarefaNaUrl();
   // A tarefa mudada no painel de um lead pode ter sido desligada dele e cair aqui.
   useMudouNoPainel(recarregar);
   const corpo = useId();
@@ -413,9 +426,11 @@ export function BlocoDeTarefasDoComercial({ pessoa }: { pessoa: string }) {
           dados={dados}
           testId="funil-tarefas"
           aoMudar={recarregar}
+          aoAbrir={popup.abrir}
           vazio="Nenhuma tarefa do comercial sem lead aberta. As de um lead aparecem no cartão e no painel dele."
         />
       </div>
+      <TarefaFlutuante tarefa={popup} onMudou={() => void recarregar()} />
     </section>
   );
 }
