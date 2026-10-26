@@ -140,7 +140,15 @@ export class AgenteDeTarefasService implements OnModuleInit {
     const abertas = painel.tarefas.filter((t) => t.status.tipo !== 'concluida');
     const hoje = painel.hoje;
     // O de todo dia ("X feita", "minhas tarefas") sem modelo; o resto (criar, mudar prazo) com ele.
-    let comando = entenderSemModelo(pedido.texto, abertas, painel.pessoas);
+    const leitura = entenderSemModelo(pedido.texto, abertas, painel.pessoas);
+    if (leitura?.acao === 'escolher') {
+      const lista = leitura.opcoes.map((n) => linhaDaTarefa(abertas[n - 1])).join('\n');
+      return { resposta: `Qual delas?\n${lista}\n\nMarque o @Root de novo com um pedaço do nome + "feita".`, desfecho: 'ambigua' };
+    }
+    if (leitura?.acao === 'nao-achou') {
+      return { resposta: `Não achei tarefa aberta parecida com "${leitura.pedaco}". Ela já foi concluída ou tem outro nome? Veja com "@Root minhas tarefas".`, desfecho: 'tarefa-nao-achada' };
+    }
+    let comando: Comando | null = leitura;
     if (!comando) {
       try {
         comando = await this.entender(orgId, pedido, quem.nome, painel.pessoas.map((p) => p.nome), painel.areas.map((a) => a.nome), abertas, hoje);
