@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import type { PainelDeTarefas, SituacaoDoPrazo, TarefaDoDia, TrabEstrutura } from '@mktos/shared';
 import { apiGet } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
@@ -84,7 +84,11 @@ export function pastasDasListas(e: TrabEstrutura): Map<string, { id: string; nom
   return out;
 }
 
-export function VisaoGeralDasTarefas() {
+/**
+ * `meio`: o que entra logo abaixo dos quatro números (a página do Dia a dia põe
+ * ali WhatsApp e Implantação lado a lado). Sem `meio`, fica a Implantação, como antes.
+ */
+export function VisaoGeralDasTarefas({ meio }: { meio?: ReactNode } = {}) {
   const { token, ready } = useAuth();
   const [p, setP] = useState<PainelDeTarefas | null>(null);
   const [estrutura, setEstrutura] = useState<TrabEstrutura | null>(null);
@@ -171,7 +175,7 @@ export function VisaoGeralDasTarefas() {
       </div>
 
       {/* Produção 22 (M1, S5): o relógio do onboarding no Dia a dia, cada linha leva à Implantação filtrada. */}
-      <ImplantacaoNoDiaADia token={token} />
+      {meio ?? <ImplantacaoNoDiaADia token={token} />}
 
       <div className="grid gap-5 lg:grid-cols-2">
         {/* P1 (21/10): sem rolagem lateral; o gráfico se ajusta à caixa e o balão fica dentro dela. */}

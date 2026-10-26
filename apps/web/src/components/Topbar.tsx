@@ -104,12 +104,12 @@ export function Topbar({ titulo, subtitulo }: { titulo?: string; subtitulo?: str
   }, []);
 
   return (
-    <header className="flex h-[52px] flex-none items-center gap-[13px] border-b border-border bg-bg2 pl-14 pr-4 font-os-mono min-[820px]:h-[46px] min-[820px]:pl-4">
-      <h1 className="m-0 truncate text-[12.5px] font-bold uppercase tracking-[0.02em] text-text">
+    <header className="flex h-[52px] flex-none items-center gap-[13px] border-b border-border bg-bg2 pl-14 pr-4 font-os-sans min-[820px]:h-[46px] min-[820px]:pl-4">
+      <h1 className="m-0 truncate text-[15px] font-semibold tracking-[-0.01em] text-text">
         {h1}
       </h1>
       {sub && (
-        <span className="hidden truncate text-[10px] uppercase tracking-[0.12em] text-muted min-[1280px]:inline">
+        <span className="hidden truncate text-[13px] text-muted min-[1280px]:inline">
           {sub}
         </span>
       )}
@@ -155,8 +155,8 @@ export function Topbar({ titulo, subtitulo }: { titulo?: string; subtitulo?: str
 
       <div className="flex items-center gap-[10px]">
         <div className="hidden text-right leading-[1.25] min-[560px]:block">
-          <div className="text-[11px] text-text">{user?.name}</div>
-          <div className="text-[9px] uppercase tracking-[0.12em] text-muted">
+          <div className="text-[13px] text-text">{user?.name}</div>
+          <div className="font-os-mono text-[9px] uppercase tracking-[0.12em] text-muted">
             {user?.roles.join(', ')}
           </div>
         </div>

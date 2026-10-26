@@ -310,7 +310,7 @@ export function Sidebar() {
         className={[
           // `transform-none` no desktop: com `transform` o menu viraria a referência do
           // `position: fixed` e o balão da área sairia do lugar.
-          'fixed inset-y-0 left-0 z-50 flex h-dvh w-[min(288px,calc(100vw-48px))] flex-col border-r border-border bg-bg2 font-os-mono transition-transform duration-200 min-[820px]:sticky min-[820px]:h-screen min-[820px]:shrink-0 min-[820px]:transform-none min-[820px]:transition-[width]',
+          'fixed inset-y-0 left-0 z-50 flex h-dvh w-[min(288px,calc(100vw-48px))] flex-col border-r border-border bg-bg2 font-os-sans transition-transform duration-200 min-[820px]:sticky min-[820px]:h-screen min-[820px]:shrink-0 min-[820px]:transform-none min-[820px]:transition-[width]',
           compacta ? 'min-[820px]:w-[64px]' : 'min-[820px]:w-[252px]',
           abertaNoMovel ? 'translate-x-0 visible' : '-translate-x-full invisible min-[820px]:visible',
         ].join(' ')}
@@ -344,7 +344,7 @@ export function Sidebar() {
       </div>
 
       <nav id="root-os-destinos" aria-label="Destinos" onKeyDownCapture={() => { toque.current = false; }} className="min-h-0 flex-1 overflow-y-auto px-2 py-4">
-        <p className={`px-3 pb-3 text-[10px] uppercase tracking-[0.14em] text-muted ${compacta ? 'min-[820px]:sr-only' : ''}`}>Áreas da empresa</p>
+        <p className={`px-3 pb-3 font-os-mono text-[10px] uppercase tracking-[0.14em] text-muted ${compacta ? 'min-[820px]:sr-only' : ''}`}>Áreas da empresa</p>
         {areas.map((area) => {
           const Icon = (Icons[area.icon as IconName] ?? Icons.Circle) as React.ElementType;
           const ativo = area.key === areaAtiva;
@@ -406,7 +406,7 @@ export function Sidebar() {
                   setAreaAberta(area.key);
                   aoNavegar();
                 }}
-                className={`relative flex min-h-11 items-center gap-3 rounded-root px-3 py-3 text-[12px] transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-brand ${ativo ? 'bg-brand/10 font-semibold text-brand' : 'text-muted hover:bg-surface-2 hover:text-text'}`}
+                className={`relative flex min-h-11 items-center gap-3 rounded-root px-3 py-3 text-[14px] transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-brand ${ativo ? 'bg-brand/10 font-semibold text-brand' : 'text-muted hover:bg-surface-2 hover:text-text'}`}
               >
                 <Icon size={18} aria-hidden className="shrink-0" />
                 <span className={`flex-1 ${compacta ? 'min-[820px]:sr-only' : ''}`}>{area.label}</span>
@@ -428,7 +428,7 @@ export function Sidebar() {
                           onClick={aoNavegar}
                           aria-current={aqui ? 'page' : undefined}
                           title={item.key === 'fluxos' ? 'Processos: em preparação' : undefined}
-                          className={`flex min-h-9 items-center gap-2 rounded-root px-3 py-2 text-[12px] transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-brand max-[819px]:min-h-11 ${aqui ? 'font-semibold text-brand' : 'text-muted hover:bg-surface-2 hover:text-text'}`}
+                          className={`flex min-h-9 items-center gap-2 rounded-root px-3 py-2 text-[13px] transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-brand max-[819px]:min-h-11 ${aqui ? 'font-semibold text-brand' : 'text-muted hover:bg-surface-2 hover:text-text'}`}
                         >
                           {rotuloDoDestino(item)}
                           {item.key === 'fluxos' && <span className="text-[10px]">em preparação</span>}
