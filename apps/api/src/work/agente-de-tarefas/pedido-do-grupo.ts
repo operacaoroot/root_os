@@ -228,35 +228,68 @@ export const LIMITE_DA_LISTA = 15;
 
 // ---------------------------------------------------------------- sem modelo
 
-const FEITA = /\b(feit[ao]s?|conclui(d[ao]s?)?|concluid[ao]s?|pront[ao]s?|finalizad[ao]s?|entregue|resolvid[ao]s?|ok)\b/;
+/** "Feito" em qualquer jeito de dizer: feita, concluí, terminei, finalizei, pronto, ok… */
+const FEITA = /\b(feit[ao]s?|fiz|conclui(d[ao]s?)?|concluid[ao]s?|pront[ao]s?|finaliz\w*|termin\w*|acab\w*|encerr\w*|entregue|resolv\w*|ok)\b/;
+const VAZIAS = new Set(['tarefa', 'tarefas', 'para', 'pra', 'com', 'que', 'dos', 'das', 'por', 'uma', 'ja', 'hoje', 'agora', 'aqui', 'essa', 'esta', 'isso', 'fazer', 'the']);
+
+function palavrasDe(s: string): string[] {
+  return tituloNormalizado(s).split(' ').filter((w) => w.length > 2 && !VAZIAS.has(w));
+}
+
+/** Uma letra a mais, a menos ou trocada ("cultral" × "cultural"). */
+function quaseIgual(a: string, b: string): boolean {
+  if (a === b) return true;
+  if (Math.min(a.length, b.length) < 4 || Math.abs(a.length - b.length) > 1) return false;
+  if (a.length >= 5 && b.length >= 5 && (a.startsWith(b) || b.startsWith(a))) return true;
+  let i = 0, j = 0, erros = 0;
+  while (i < a.length && j < b.length) {
+    if (a[i] === b[j]) { i++; j++; continue; }
+    if (++erros > 1) return false;
+    if (a.length > b.length) i++; else if (b.length > a.length) j++; else { i++; j++; }
+  }
+  return erros + (a.length - i) + (b.length - j) <= 1;
+}
+
+/** Quanto do título o texto cobre: palavras do título que aparecem (mesmo com erro de digitação). */
+function cobertura(titulo: string, doTexto: string[]): { achadas: number; total: number } {
+  const doTitulo = [...new Set(palavrasDe(titulo))];
+  return { achadas: doTitulo.filter((w) => doTexto.some((t) => quaseIgual(w, t))).length, total: doTitulo.length };
+}
+
+export type Leitura = Comando | { acao: 'escolher'; opcoes: number[] } | { acao: 'nao-achou'; pedaco: string };
 
 /**
- * Os pedidos de todo dia, entendidos sem chamar o modelo (26/10/2026: a IA da
- * produção recusou a chave e o "X feita" do Lucas voltou erro). Só devolve
- * comando quando a leitura é segura; o resto segue para o modelo.
+ * Os pedidos de todo dia, entendidos sem chamar o modelo, e sem exigir o
+ * título certinho: basta um pedaço reconhecível ("cultural feita", "dispropan
+ * ok", "terminei a do clube"), com ou sem acento e com uma letra errada. Duas
+ * tarefas empatadas viram pergunta ("qual delas?"), nunca um chute.
  *
- *   "<título> feita" / "concluí <título>"   → concluir (a aberta mais parecida)
- *   "tarefas", "minhas tarefas", "tarefas atrasadas", "tarefas do Pedro" → listar
+ *   "<pedaço do título> feita" → concluir     "tarefas", "minhas tarefas",
+ *   "o que tá atrasado?", "tarefas do Pedro"  → listar
  */
 export function entenderSemModelo(
   texto: string, abertas: Pick<TarefaDoDia, 'titulo'>[], pessoas: { nome: string }[],
-): Comando | null {
+): Leitura | null {
   const norm = tituloNormalizado(texto);
   if (!norm) return null;
   if (FEITA.test(norm)) {
-    const semVerbo = norm.replace(new RegExp(FEITA.source, 'g'), ' ').replace(/\b(tarefa|a|o)\b/g, ' ').replace(/\s+/g, ' ').trim();
-    if (!semVerbo) return null;
-    const candidatas = abertas.slice(0, MAXIMO_DE_ABERTAS_NO_CONTEXTO)
-      .map((t, i) => ({ i, t, contida: semVerbo.includes(tituloNormalizado(t.titulo)) || tituloNormalizado(t.titulo).includes(semVerbo), nota: notaDeSemelhanca(t.titulo, semVerbo), quanto: mesmaTarefa(t.titulo, semVerbo) }))
-      .filter((c) => c.contida || c.quanto !== 'diferente')
-      .sort((a, b) => Number(b.contida) - Number(a.contida) || b.nota - a.nota);
-    // Duas igualmente boas = ambíguo: quem decide é o modelo (ou a pessoa, com o nome inteiro).
-    if (!candidatas.length || (candidatas[1] && candidatas[1].contida === candidatas[0].contida && candidatas[1].nota === candidatas[0].nota)) return null;
-    return { acao: 'concluir', tarefa: candidatas[0].i + 1 };
+    const doTexto = palavrasDe(norm.replace(new RegExp(FEITA.source, 'g'), ' '));
+    if (!doTexto.length) return null;
+    const notas = abertas.slice(0, MAXIMO_DE_ABERTAS_NO_CONTEXTO)
+      .map((t, i) => ({ i, ...cobertura(t.titulo, doTexto) }))
+      .filter((c) => c.achadas > 0 && (c.achadas >= 2 || c.achadas / Math.max(1, c.total) >= 0.5 || doTexto.length === 1))
+      .sort((a, b) => b.achadas - a.achadas || b.achadas / b.total - a.achadas / a.total);
+    if (!notas.length) return { acao: 'nao-achou', pedaco: doTexto.join(' ') };
+    // Mesmo número de palavras achadas = empate ("fup feito" com dois FUPs abertos): pergunta.
+    const empatadas = notas.filter((c) => c.achadas === notas[0].achadas);
+    if (empatadas.length > 1) return { acao: 'escolher', opcoes: empatadas.slice(0, 5).map((c) => c.i + 1) };
+    return { acao: 'concluir', tarefa: notas[0].i + 1 };
   }
-  if (/\btarefas\b/.test(norm) && !/\b(cria|criar|nova|novo|muda|mudar|troca|trocar|passa|passar)\b/.test(norm)) {
-    const filtro = /\batrasad/.test(norm) ? 'atrasadas' : /\bhoje\b/.test(norm) ? 'hoje' : /\bsemana\b/.test(norm) ? 'semana' : 'todas';
-    const pessoa = /\bminhas?\b/.test(norm) ? 'eu' : pessoas.find((p) => norm.split(' ').includes(tituloNormalizado(p.nome).split(' ')[0]))?.nome ?? null;
+  const atraso = /\b(atrasad\w*|vencid\w*|em atraso)\b/.test(norm);
+  if ((/\btarefas?\b/.test(norm) || atraso) && !/\b(cria|criar|crie|nova|novo|muda|mudar|troca|trocar|passa|passar|adiciona)\b/.test(norm)) {
+    if (/\btarefa\b/.test(norm) && !/\btarefas\b/.test(norm) && !atraso) return null;
+    const filtro = atraso ? 'atrasadas' : /\bhoje\b/.test(norm) ? 'hoje' : /\bsemana\b/.test(norm) ? 'semana' : 'todas';
+    const pessoa = /\b(minhas?|meus?|eu|tenho)\b/.test(norm) ? 'eu' : pessoas.find((p) => norm.split(' ').includes(tituloNormalizado(p.nome).split(' ')[0]))?.nome ?? null;
     return { acao: 'listar', filtro, pessoa };
   }
   return null;
