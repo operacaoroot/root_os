@@ -5,7 +5,7 @@ import type { TrabEstrutura, TrabTarefaLista, TrabTarefaResumo } from '@mktos/sh
 
 import {
   CAMPOS_DE_ORDEM, COLUNAS_DE_MINHAS_TAREFAS, ROTULO_DO_CAMPO_DE_ORDEM, AGRUPAMENTOS, ROTULO_DO_AGRUPAMENTO,
-  VISTA_PADRAO_DE_MINHAS_TAREFAS, ordenarTarefas,
+  VISTA_PADRAO_DE_MINHAS_TAREFAS, ordenarTarefas, listaDaImplantacao, listasComAsDoComercial, pastasComAsDoComercial,
   type Agrupamento, type CampoDeOrdem, type ColunaDeMinhasTarefas, type VistaMinhasTarefas, type VistaSalvaDto,
 } from '@mktos/shared';
 import { apiGet, apiPatch, apiPost } from '@/lib/api';
@@ -18,6 +18,9 @@ import { MenuDaTarefaProvider } from '@/components/trabalho/MenuDaTarefa';
 import { soDaEquipe, useIdsDaEquipe } from '@/components/trabalho/ResponsavelDaTarefa';
 import { CalendarioDeTarefas, diaDoPrazo, prazoDoDia } from '@/components/trabalho/CalendarioDeTarefas';
 import { AvisoDoLote, BarraDoLote, Tabela, atrasada, useEscritaDasTarefas } from '@/components/trabalho/TabelaDeTarefas';
+// Layout 26/10 (Lucas): o quadro por etapa e a nova tarefa rápida.
+import { QuadroPorEtapa } from '@/components/trabalho/QuadroPorEtapa';
+import { NovaTarefaRapida } from '@/components/trabalho/NovaTarefaRapida';
 import {
   BOTAO_PEQUENO,
   Carregando,
@@ -81,9 +84,10 @@ const CHAVE_DA_MIGRACAO = 'caixa.tarefas.vistas.migrado.v1';
  * PATCH com a versão lida; a preferência fica neste navegador.
  */
 export const CHAVE_DA_FORMA = 'caixa.tarefas.forma.v1';
-type Forma = 'tabela' | 'calendario';
+// Layout 26/10 (Lucas): e o QUADRO, por etapa, das tarefas de várias listas (`QuadroPorEtapa`).
+type Forma = 'tabela' | 'quadro' | 'calendario';
 function lerForma(): Forma {
-  try { return window.localStorage.getItem(CHAVE_DA_FORMA) === 'calendario' ? 'calendario' : 'tabela'; } catch { return 'tabela'; }
+  try { const f = window.localStorage.getItem(CHAVE_DA_FORMA); return f === 'calendario' || f === 'quadro' ? f : 'tabela'; } catch { return 'tabela'; }
 }
 
 /*
@@ -275,7 +279,8 @@ export function AbaMinhasTarefas({ token }: { token: string }) {
     const n = ++pedido.current;
     setCarregando(true);
     setErro(null);
-    const p = new URLSearchParams(filtros.responsavel === 'qualquer' ? { todas: '1' } : { assigneeUserId: eu! });
+    // Layout 26/10 (Lucas): ou as de uma pessoa da equipe, pelo id da conta ("ver as tarefas de outras pessoas").
+    const p = new URLSearchParams(filtros.responsavel === 'qualquer' ? { todas: '1' } : { assigneeUserId: filtros.responsavel === 'eu' ? eu! : filtros.responsavel });
     tarefasDeTrabalho(token, p, () => n === pedido.current)
       .then((r) => { if (n === pedido.current) { setTarefas(r); setSelecionadas(new Set()); } })
       .catch((e) => { if (n === pedido.current) setErro((e as Error).message); })
@@ -362,6 +367,26 @@ export function AbaMinhasTarefas({ token }: { token: string }) {
 
   const algumFiltro = !!(filtros.lista || filtros.status || filtros.vencimento || filtros.cliente);
 
+  // Layout 26/10 (Lucas): as pessoas da equipe para o filtro de responsável (sem você, que é "Eu").
+  const equipe = useMemo(() => (estrutura ? soDaEquipe((estrutura.pessoas ?? []).filter((p) => p.isActive), idsDaEquipe) : []), [estrutura, idsDaEquipe]);
+  const outrasPessoas = useMemo(() => {
+    const lista = equipe.filter((p) => p.id !== eu);
+    // A pessoa da vista salva aparece mesmo fora da equipe lida, para o seletor não ficar em branco.
+    const daVista = filtros.responsavel !== 'eu' && filtros.responsavel !== 'qualquer' && !lista.some((p) => p.id === filtros.responsavel)
+      ? (estrutura?.pessoas ?? []).find((p) => p.id === filtros.responsavel) : undefined;
+    return [...lista, ...(daVista ? [daVista] : [])].sort((a, b) => a.name.localeCompare(b.name, 'pt-BR'));
+  }, [equipe, eu, filtros.responsavel, estrutura]);
+  const nomeDoResponsavel = (estrutura?.pessoas ?? []).find((p) => p.id === filtros.responsavel)?.name ?? 'essa pessoa';
+  // Layout 26/10 (Lucas): criar daqui ("+ Adicionar tarefa" nos grupos por prazo), nas listas de tarefa; responsável, você.
+  const daImplantacao = estrutura ? listaDaImplantacao(pastasComAsDoComercial(estrutura))?.listaId ?? null : null;
+  const listasParaCriar = editable ? todasAsListas.filter((l) => l.natureza !== 'cadastro' && l.id !== daImplantacao) : [];
+  const novaNoGrupo = listasParaCriar.length > 0 ? (dia: string | null) => (
+    <NovaTarefaRapida
+      autoFocus listas={listasParaCriar} prazoInicial={dia ?? ''} pessoas={equipe} token={token}
+      onDone={refresh} onErro={setAvisoDeEscrita} testid="caixa-nova-form"
+    />
+  ) : null;
+
   return (
     <MenuDaTarefaProvider onMudou={refresh} onErro={setAvisoDeEscrita} onAbrir={(id) => popup.abrir(id)}>
     <div className="space-y-3">
@@ -419,7 +444,7 @@ export function AbaMinhasTarefas({ token }: { token: string }) {
           </select>
         </label>
         <div className="flex overflow-hidden rounded-lg border border-border" role="group" aria-label="Forma de ver as tarefas">
-          {(['tabela', 'calendario'] as const).map((f) => (
+          {(['tabela', 'quadro', 'calendario'] as const).map((f) => (
             <button
               key={f}
               type="button"
@@ -428,7 +453,7 @@ export function AbaMinhasTarefas({ token }: { token: string }) {
               onClick={() => escolherForma(f)}
               className={`px-3 py-1.5 text-[12.5px] max-md:min-h-[44px] ${forma === f ? 'bg-brand/15 text-text' : 'bg-surface text-muted hover:text-text'} ${FOCO}`}
             >
-              {f === 'tabela' ? 'Tabela' : 'Calendário'}
+              {f === 'tabela' ? 'Tabela' : f === 'quadro' ? 'Quadro' : 'Calendário'}
             </button>
           ))}
         </div>
@@ -488,11 +513,13 @@ export function AbaMinhasTarefas({ token }: { token: string }) {
           <select
             data-testid="caixa-filtro-responsavel"
             value={filtros.responsavel}
-            onChange={(e) => mudarFiltro({ responsavel: e.target.value as VistaMinhasTarefas['filtros']['responsavel'] })}
+            onChange={(e) => mudarFiltro({ responsavel: e.target.value })}
             className={SELECT}
           >
             <option value="eu">Eu</option>
             <option value="qualquer">Qualquer pessoa</option>
+            {/* Layout 26/10 (Lucas): cada pessoa da equipe, pelo nome. */}
+            {outrasPessoas.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
           </select>
         </label>
         <label className="flex flex-col gap-1">
@@ -518,11 +545,24 @@ export function AbaMinhasTarefas({ token }: { token: string }) {
       ) : carregando && !tarefas ? (
         <Carregando texto="Lendo as suas tarefas..." />
       ) : !tarefas || visiveis.length === 0 ? (
-        <Vazio>
-          {algumFiltro
-            ? 'Nenhuma tarefa com estes filtros.'
-            : filtros.responsavel === 'qualquer' ? 'Nenhuma tarefa aberta.' : 'Nenhuma tarefa aberta com você como responsável.'}
-        </Vazio>
+        <>
+          <Vazio>
+            {algumFiltro
+              ? 'Nenhuma tarefa com estes filtros.'
+              : filtros.responsavel === 'qualquer' ? 'Nenhuma tarefa aberta.'
+              : filtros.responsavel === 'eu' ? 'Nenhuma tarefa aberta com você como responsável.'
+              : `Nenhuma tarefa aberta com ${nomeDoResponsavel} como responsável.`}
+          </Vazio>
+          {/* Layout 26/10: mesmo sem nenhuma, dá para criar a próxima daqui. */}
+          {novaNoGrupo && tarefas && novaNoGrupo(null)}
+        </>
+      ) : forma === 'quadro' ? (
+        <QuadroPorEtapa
+          tarefas={visiveis} listas={estrutura ? listasComAsDoComercial(estrutura) : []} pessoas={estrutura?.pessoas ?? []}
+          podeEditar={editable} onAbrir={(id) => popup.abrir(id)}
+          onMudarEtapa={(id, statusId) => escrita.editarNaLinha(id, { statusId }, 'A etapa')}
+          testid="caixa-quadro"
+        />
       ) : forma === 'calendario' ? (
         <CalendarioDeTarefas
           itens={visiveis.map((t) => ({
@@ -553,6 +593,7 @@ export function AbaMinhasTarefas({ token }: { token: string }) {
             ordenacao={{ campo: ordemManual ? null : config.ordenacao.campo, direcao: config.ordenacao.direcao, aoOrdenar: ordenarPor, testId: 'caixa-ordenar' }}
             abaixoDoTitulo={abaixoDoTitulo}
             testIdDaLinha={(id) => `caixa-tarefa-${id}`}
+            novaNoGrupo={novaNoGrupo}
           />
           <p className="text-xs text-muted" data-testid="caixa-tarefas-rodape">
             {visiveis.length} {visiveis.length === 1 ? 'tarefa' : 'tarefas'}

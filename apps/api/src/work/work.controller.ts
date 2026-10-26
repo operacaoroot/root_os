@@ -1,7 +1,7 @@
 import { AcessoAtualGuard } from '../memory/acesso-atual.guard';
 import { SoGenteNoTrabalhoGuard } from './so-gente-no-trabalho.guard';
 import { ContextoTrabalhoService } from '../memory/contexto-trabalho.service';
-import { BadRequestException, Body, Controller, Delete, Get, Param, Patch, Post, Query, UseGuards } from '@nestjs/common';
+import { BadRequestException, Body, Controller, Delete, ForbiddenException, Get, Param, Patch, Post, Query, UseGuards } from '@nestjs/common';
 import {
   TrabEspacoCreateSchema, TrabEspacoUpdateSchema,
   TrabPastaCreateSchema, TrabPastaUpdateSchema, TrabListaCreateSchema, TrabListaUpdateSchema,
@@ -20,6 +20,15 @@ import { PermissionsGuard } from '../auth/permissions.guard';
 import { RequirePermissions } from '../auth/permissions.decorator';
 import { CurrentUser, JwtUser } from '../auth/current-user.decorator';
 import { parseWorkTaskQuery } from './work-task-query';
+
+/**
+ * Layout 26/10: ligar ou desligar o lead da tarefa pelo Trabalho pede também ver os leads
+ * (`leads.ver`), a mesma régua da busca de lead (`/trabalho/atas/alvos?tipo=lead`).
+ */
+function exigirVerLeads(u: JwtUser, mexeNoLead: boolean): void {
+  if (!mexeNoLead) return;
+  if (!(u.permissions ?? []).includes('leads.ver')) throw new ForbiddenException('Ligar a tarefa a um lead pede a permissão de ver os leads (leads.ver).');
+}
 
 // Módulo TRABALHO (ClickUp-like). Escritas são INTERNAS ao mkt-os (sem efeito
 // externo), então ficam fora do fluxo de approvals — o gate é o RBAC
@@ -356,7 +365,9 @@ export class WorkController {
   @RequirePermissions('tarefas.editar')
   criarTarefa(@CurrentUser() u: JwtUser, @Body() body: unknown) {
     // T4: a tarefa criada pela tela sempre tem cliente (subtarefa herda o da mãe).
-    return this.svc.criarTarefa(u.orgId, u.sub, TrabTarefaCreateSchema.parse(body), { exigirCliente: true });
+    const input = TrabTarefaCreateSchema.parse(body);
+    exigirVerLeads(u, !!input.leadId);
+    return this.svc.criarTarefa(u.orgId, u.sub, input, { exigirCliente: true });
   }
 
   /** Ordem manual (versão final, F4): arrastar na lista ou na coluna grava `order`, com versão. */
@@ -371,7 +382,9 @@ export class WorkController {
   @UseGuards(AcessoAtualGuard)
   @RequirePermissions('tarefas.editar')
   editarTarefa(@CurrentUser() u: JwtUser, @Param('id') id: string, @Body() body: unknown) {
-    return this.svc.editarTarefaHttp(u.orgId, u.sub, id, TrabTarefaUpdateHttpSchema.parse(body));
+    const input = TrabTarefaUpdateHttpSchema.parse(body);
+    exigirVerLeads(u, input.leadId !== undefined);
+    return this.svc.editarTarefaHttp(u.orgId, u.sub, id, input);
   }
 
   // "apagar" = arquivar (nada some de verdade; auditoria fica)

@@ -4,7 +4,7 @@ import { createContext, useCallback, useContext, useEffect, useLayoutEffect, use
 import { createPortal } from 'react-dom';
 import { MoreHorizontal } from 'lucide-react';
 import {
-  ACOES_DO_MENU_DA_TAREFA, ROTULO_DA_ACAO_DA_TAREFA, TRAB_DIAS_NA_LIXEIRA, linkDaTarefa, listaDaImplantacao, pastasComAsDoComercial, razaoParaNaoFazer,
+  ACOES_DO_MENU_DA_TAREFA, ROTULO_DA_ACAO_DA_TAREFA, TRAB_DIAS_NA_LIXEIRA, ehAListaDoComercial, linkDaTarefa, listaDaImplantacao, pastasComAsDoComercial, razaoParaNaoFazer,
   type AcaoDoMenuDaTarefa, type EstadoParaOMenu, type TrabEstrutura, type TrabListaDto, type TrabTarefaDetalhe,
   type TrabTarefaLista, type TrabTarefaMesclada, type TrabTarefaDuplicada,
 } from '@mktos/shared';
@@ -406,8 +406,9 @@ function MoverPara({ detalhe, estrutura, daImplantacao, ocupado, onCancelar, onM
   const [busca, setBusca] = useState('');
   const [escolhida, setEscolhida] = useState<string | null>(null);
   // As listas que recebem: de tarefas, fora da implantação (porta única), além da atual.
+  // Layout 26/10: a lista do comercial (agora na árvore) só recebe tarefa criada nela.
   const opcoes = listasDaEstrutura(estrutura).filter(({ lista }) =>
-    lista.id === detalhe.listId || (lista.natureza !== 'cadastro' && (lista.id !== daImplantacao || !!detalhe.parentId)));
+    lista.id === detalhe.listId || (lista.natureza !== 'cadastro' && !ehAListaDoComercial(lista) && (lista.id !== daImplantacao || !!detalhe.parentId)));
   const visiveis = opcoes.filter((o) => !busca.trim() || o.rotulo.toLowerCase().includes(busca.trim().toLowerCase()));
   const lista = opcoes.find((o) => o.lista.id === escolhida)?.lista ?? null;
   if (!estrutura) return <p className="p-2 text-muted">Carregando as listas…</p>;

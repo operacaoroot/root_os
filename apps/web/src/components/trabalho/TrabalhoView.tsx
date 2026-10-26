@@ -3,12 +3,12 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import * as Dialog from '@radix-ui/react-dialog';
 import { SeletorDeDensidade } from '@/components/SeletorDeDensidade';
-import { Archive, Bot, CalendarDays, ChevronRight, CircleDot, Clock, ExternalLink, Flag, Hourglass, Maximize2, MessageSquare, PanelRight, Plus, Repeat, Settings2, Tag, Trash2, Users, X } from 'lucide-react';
+import { Archive, Bot, CalendarDays, ChevronRight, CircleDot, Clock, ExternalLink, Flag, Handshake, Hourglass, Maximize2, MessageSquare, PanelRight, Plus, Repeat, Settings2, Tag, Trash2, Users, X } from 'lucide-react';
 import {
   MODELOS_DE_LISTA, MOEDA_PADRAO, ehValorMonetarioCanonico, lerValorDigitadoPtBr,
   listaDaImplantacao, moedaDoValor, paraDigitarPtBr, LISTA_DA_IMPLANTACAO, PASTA_DA_IMPLANTACAO, PORTA_DA_IMPLANTACAO,
-  listasComAsDoComercial, pastasComAsDoComercial,
-  DICA_DO_NOME_DA_TAREFA, AGRUPAMENTOS, ROTULO_DO_AGRUPAMENTO, descreverRecorrencia,
+  listasComAsDoComercial, pastasComAsDoComercial, ehAListaDoComercial,
+  AGRUPAMENTOS, ROTULO_DO_AGRUPAMENTO, AGRUPAMENTO_PADRAO_DAS_TAREFAS, descreverRecorrencia,
   ROTULO_DA_REGUA_DE_PRAZO, reguaDePrazo, GRUPOS_DA_REGUA_DE_PRAZO,
 } from '@mktos/shared';
 import type {
@@ -21,7 +21,10 @@ import { useAuth } from '@/lib/auth';
 import { tarefasDeTrabalho } from '@/lib/work-projection';
 import { useTarefaNaUrl, type AbaDaTarefa } from '@/lib/tarefa-na-url';
 import { BancadaDoTrilho } from '@/components/onboarding/BancadaDoTrilho';
-import { SeletorDeCliente, type ClienteEscolhido } from './SeletorDeCliente';
+import { SeletorDeCliente } from './SeletorDeCliente';
+// Layout 26/10: a nova tarefa rápida (quadro, Lista e Calendário) e o lead da tarefa.
+import { NovaTarefaRapida } from './NovaTarefaRapida';
+import { SeletorDeLead, type LeadEscolhido } from './SeletorDeLead';
 import { VistasDoQuadro } from './VistasDoQuadro';
 import { BotaoDeFiltros, type DefinicaoDeFiltro, type ValoresDeFiltro } from '@/components/filtros/BotaoDeFiltros';
 import { IniciarOnboardingDaImplantacao } from './IniciarOnboardingDaImplantacao';
@@ -105,6 +108,18 @@ function assinaturaSemTarefa(): string {
   const p = new URLSearchParams(window.location.search);
   p.delete('tarefa'); p.delete('tarefaAba');
   return `${window.location.pathname}?${p.toString()}`;
+}
+
+/** Layout 26/10 (Lucas): o agrupamento da Lista lembrado neste navegador; sem escolha, "Por prazo". */
+const CHAVE_DO_AGRUPAMENTO = 'trabalho-agrupar';
+export function lerAgrupamento(): Agrupamento {
+  try {
+    const a = window.localStorage.getItem(CHAVE_DO_AGRUPAMENTO);
+    return a && (AGRUPAMENTOS as readonly string[]).includes(a) ? a as Agrupamento : AGRUPAMENTO_PADRAO_DAS_TAREFAS;
+  } catch { return AGRUPAMENTO_PADRAO_DAS_TAREFAS; }
+}
+function gravarAgrupamento(a: Agrupamento): void {
+  try { window.localStorage.setItem(CHAVE_DO_AGRUPAMENTO, a); } catch { /* sem armazenamento: vale só nesta visita */ }
 }
 
 function mudarEndereco(listaId: string | null, tarefaId: string | null) {
@@ -273,7 +288,7 @@ function TrabalhoConteudo({ visaoInicial, modo, aoSairDeTodas }: { visaoInicial:
   const [fConcluidas, setFConcluidas] = useState<'mostrar' | 'ocultar'>('ocultar');
   // P4 (21/10/2026): esconder as colunas sem cartão; `?vazios=ocultar`, como `concluidas`.
   const [fVazios, setFVazios] = useState<'mostrar' | 'ocultar'>('mostrar');
-  const [fAgrupar, setFAgrupar] = useState<Agrupamento>('nenhum');
+  const [fAgrupar, setFAgrupar] = useState<Agrupamento>(AGRUPAMENTO_PADRAO_DAS_TAREFAS);
   const [fPrazo, setFPrazo] = useState<RecorteDePrazo | ''>('');
   const [fEtiqueta, setFEtiqueta] = useState('');
   const [fSegmento, setFSegmento] = useState('');
@@ -311,7 +326,8 @@ function TrabalhoConteudo({ visaoInicial, modo, aoSairDeTodas }: { visaoInicial:
       setFPrazo(recorteDePrazo(p.get('prazo')));
       setFEtiqueta(p.get('tagId') ?? ''); setFSegmento(p.get('segmento') ?? '');
       const agrupar = p.get('agrupar');
-      setFAgrupar((AGRUPAMENTOS as readonly string[]).includes(agrupar ?? '') ? agrupar as Agrupamento : 'nenhum');
+      // Layout 26/10 (Lucas): sem `?agrupar=`, a escolha lembrada neste navegador, senão "Por prazo".
+      setFAgrupar((AGRUPAMENTOS as readonly string[]).includes(agrupar ?? '') ? agrupar as Agrupamento : lerAgrupamento());
       setSelecionadas(new Set());
       /*
        * DOIS ESCOPOS NA MESMA CHAVE, SEM SE PISAR. `escopo=todos|meus|atrasados`
@@ -699,6 +715,18 @@ function TrabalhoConteudo({ visaoInicial, modo, aoSairDeTodas }: { visaoInicial:
 
   // A lista da implantação não recebe cartão solto, em nenhuma tela (a API também recusa).
   const listaEhImplantacao = !!lista && !!estrutura && listaDaImplantacao(pastasComAsDoComercial(estrutura))?.listaId === lista.id;
+  /*
+   * Layout 26/10 (Lucas): ONDE NASCE A TAREFA criada na Lista e no Calendário. Numa lista,
+   * nela (a da implantação não recebe cartão solto); em Todas (ou numa pasta escolhida no
+   * segmento) e no "todas as listas" da pessoa, nas listas de tarefa do recorte, com o
+   * seletor de lista do formulário. Sem permissão de editar, nenhuma.
+   */
+  const daImplantacao = estrutura ? listaDaImplantacao(pastasComAsDoComercial(estrutura))?.listaId ?? null : null;
+  const listasParaCriar: TrabListaDto[] = !estrutura || !quadroEditavel ? []
+    : lista ? (listaEhImplantacao ? [] : [lista])
+    : semLista ? (geral ? listasDoRecorte : todasAsListas).filter((l) => l.natureza !== 'cadastro' && l.id !== daImplantacao)
+    : [];
+  const pessoasParaCriar = estrutura ? soDaEquipe(estrutura.pessoas ?? [], idsDaEquipe) : [];
   const pastaDaLista = lista && estrutura ? estrutura.folders.find((f) => f.lists.some((l) => l.id === lista.id))?.id ?? '' : '';
 
   /*
@@ -961,7 +989,7 @@ function TrabalhoConteudo({ visaoInicial, modo, aoSairDeTodas }: { visaoInicial:
                 aria-label="Agrupar a lista"
                 data-testid="trabalho-agrupar"
                 value={fAgrupar}
-                onChange={(e) => { const a = e.target.value as Agrupamento; setFAgrupar(a); filtroNoEndereco('agrupar', a === 'nenhum' ? '' : a); }}
+                onChange={(e) => { const a = e.target.value as Agrupamento; setFAgrupar(a); gravarAgrupamento(a); filtroNoEndereco('agrupar', a); }}
                 className="rounded-lg border border-border bg-surface px-2 py-1.5 text-sm outline-none max-md:min-h-[44px]"
               >
                 {AGRUPAMENTOS.map((a) => <option key={a} value={a}>{a === 'nenhum' ? 'Sem grupos' : `Agrupar: ${ROTULO_DO_AGRUPAMENTO[a]}`}</option>)}
@@ -999,7 +1027,7 @@ function TrabalhoConteudo({ visaoInicial, modo, aoSairDeTodas }: { visaoInicial:
                 setFAgrupar(v.agrupamento ?? 'nenhum'); setFConcluidas(v.concluidas ?? 'ocultar'); setFVazios(v.vazios ?? 'mostrar');
                 const url = new URL(window.location.href);
                 for (const [k, val] of [['assignee', v.filtros.assignee], ['agente', v.filtros.agente], ['statusId', v.filtros.statusId], ['cliente', v.filtros.cliente], ['escopo', v.filtros.escopo === 'todos' ? '' : v.filtros.escopo], ['q', v.filtros.q], ['visao', v.visao === 'board' ? '' : v.visao === 'calendario' ? 'calendario' : 'lista'],
-                  ['agrupar', v.agrupamento && v.agrupamento !== 'nenhum' ? v.agrupamento : ''], ['concluidas', v.concluidas === 'mostrar' ? 'mostrar' : ''], ['vazios', v.vazios === 'ocultar' ? 'ocultar' : ''],
+                  ['agrupar', v.agrupamento ?? 'nenhum'], ['concluidas', v.concluidas === 'mostrar' ? 'mostrar' : ''], ['vazios', v.vazios === 'ocultar' ? 'ocultar' : ''],
                   ['assigneeUserId', pessoa && pessoa !== 'sem-vinculo' ? pessoa : ''], ['semResponsavel', pessoa === 'sem-vinculo' ? '1' : ''],
                   ['prazo', v.filtros.prazo ?? ''], ['tagId', v.filtros.etiqueta ?? ''], ['opcao', v.filtros.opcao ?? ''], ['arquivadas', v.filtros.arquivadas ? '1' : ''], ['overdue', '']] as const) {
                   if (val) url.searchParams.set(k, val); else url.searchParams.delete(k);
@@ -1110,15 +1138,30 @@ function TrabalhoConteudo({ visaoInicial, modo, aoSairDeTodas }: { visaoInicial:
                 {...escrita.acoesDoLote(todasAsListas)}
               />
             )}
+            {/* Layout 26/10 (Lucas): "Em lista eu não consigo adicionar tarefa": a linha de nova tarefa no topo da Lista. */}
+            {/* No "Por prazo" a nova tarefa mora no pé de cada grupo, com o dia dele; nos outros agrupamentos, no topo. */}
+            {listasParaCriar.length > 0 && fAgrupar !== 'datas' && (
+              <NovaTarefaRapida
+                listas={listasParaCriar} pessoas={pessoasParaCriar} token={token} onDone={refresh} onErro={setErro}
+                testid="trabalho-lista-nova"
+              />
+            )}
             <Tabela
               tarefas={visiveis} campos={semLista ? [] : camposDaLista.map((c) => c.name)} trilhos={trilhos} onAbrir={abrirTarefa}
               mostrarLista={semLista} pessoas={estrutura?.pessoas ?? []} agrupamento={fAgrupar}
               selecao={editable ? { marcadas: selecionadas, mudar: setSelecionadas } : null}
               onReordenar={editable && !conflitoEtapa ? reordenar : null}
               edicao={quadroEditavel ? escrita.edicao(idsDaEquipe, estrutura?.agentes ?? []) : null}
+              novaNoGrupo={listasParaCriar.length > 0 ? (dia) => (
+                <NovaTarefaRapida
+                  autoFocus listas={listasParaCriar} prazoInicial={dia ?? ''} pessoas={pessoasParaCriar} token={token}
+                  onDone={refresh} onErro={setErro} testid="trabalho-grupo-nova-form"
+                />
+              ) : null}
             />
           </>
         )}
+        {/* Layout 26/10 (Lucas): no Calendário, o "+" de cada dia abre a mesma nova tarefa, com o prazo naquele dia. */}
         {(lista || semLista) && tarefas && visao === 'calendario' && (
           <CalendarioDeTarefas
             itens={visiveis.map((t) => ({
@@ -1127,6 +1170,12 @@ function TrabalhoConteudo({ visaoInicial, modo, aoSairDeTodas }: { visaoInicial:
             }))}
             podeEditar={quadroEditavel} onAbrir={(id) => abrirTarefa(id)} onMudarPrazo={mudarPrazo}
             testid="trabalho-calendario"
+            novaTarefa={listasParaCriar.length > 0 ? (dia) => (
+              <NovaTarefaRapida
+                key={dia} autoFocus listas={listasParaCriar} prazoInicial={dia} pessoas={pessoasParaCriar} token={token}
+                onDone={refresh} onErro={setErro} testid="trabalho-calendario-nova-form"
+              />
+            ) : undefined}
           />
         )}
       </div>
@@ -1224,7 +1273,6 @@ function Board({ lista, tarefas, editable, podeCriar, token, agentes, pessoas = 
    */
   const [sobre, setSobre] = useState<string | null>(null);
   const [balao, setBalao] = useState<{ id: string; ancora: DOMRect } | null>(null);
-  const [ultimoCliente, setUltimoCliente] = useState<ClienteEscolhido | null>(null);
   /*
    * O ARRASTE MOSTRA AS VAZIAS (P4). Sem isso, com "Ocultar status vazios" ligado não
    * daria para mover um cartão para uma etapa sem nenhum. A troca vem um tique depois
@@ -1352,7 +1400,13 @@ function Board({ lista, tarefas, editable, podeCriar, token, agentes, pessoas = 
                   onMoverEtapa={onMoverEtapa}
                 />
               ))}
-              {podeCriar && <QuickAdd listaId={lista.id} statusId={st.id} token={token} clienteInicial={ultimoCliente} onCliente={setUltimoCliente} onDone={onMudou} onErro={onErro} />}
+              {/* Layout 26/10: a nova tarefa rápida (nome, responsável, prazo, cliente ou lead), a mesma da Lista e do Calendário. */}
+              {podeCriar && (
+                <NovaTarefaRapida
+                  compacto listas={[lista]} statusId={st.id} pessoas={pessoas} token={token} onDone={onMudou} onErro={onErro}
+                  testid={`trabalho-nova-${st.id}`} testidCliente={`trabalho-nova-cliente-${st.id}`}
+                />
+              )}
               {itens.length === 0 && !editable && <p className="px-1 text-xs text-muted">Nada nesta etapa.</p>}
             </div>
           </section>
@@ -1614,52 +1668,6 @@ function BalaoDoCartao({ t, mov, ancora }: { t: TrabTarefaResumo; mov: TrabMovim
         <p className="mt-0.5 text-muted">Sem comentário.</p>
       )}
       <p className="mt-2 border-t border-border pt-1.5 font-os-mono text-[10px] text-muted">clique abre o painel · Esc fecha</p>
-    </div>
-  );
-}
-
-/*
- * NOVA TAREFA NA COLUNA (rodada do trabalho T4): o nome no padrão imperativo
- * (verbo + objeto) e o CLIENTE obrigatório, escolhido no seletor. O último
- * cliente escolhido fica marcado para a próxima, na mesma visita.
- */
-function QuickAdd({ listaId, statusId, token, clienteInicial, onCliente, onDone, onErro }: {
-  listaId: string; statusId: string; token: string | null;
-  clienteInicial: ClienteEscolhido | null; onCliente: (c: ClienteEscolhido) => void;
-  onDone: () => void; onErro: (m: string) => void;
-}) {
-  const [titulo, setTitulo] = useState('');
-  const [cliente, setCliente] = useState<ClienteEscolhido | null>(clienteInicial);
-  const enviar = () => {
-    if (!titulo.trim()) return;
-    if (!cliente) { onErro('Escolha o cliente da tarefa. O trabalho da própria empresa vai para o cliente interno.'); return; }
-    apiPost('/trabalho/tarefas', { listId: listaId, statusId, title: titulo.trim(), clienteId: cliente.id }, token)
-      .then(() => { setTitulo(''); onDone(); })
-      .catch((e) => onErro(e.message));
-  };
-  return (
-    <div className="space-y-1 rounded-lg border border-dashed border-border px-2 py-1.5" data-testid={`trabalho-nova-${statusId}`}>
-      <div className="flex items-center gap-1">
-        <Plus size={12} className="shrink-0 text-muted" />
-        <input
-          value={titulo}
-          aria-label="Nome da nova tarefa"
-          title={DICA_DO_NOME_DA_TAREFA}
-          onChange={(e) => setTitulo(e.target.value)}
-          onKeyDown={(e) => e.key === 'Enter' && enviar()}
-          placeholder="Nova tarefa…"
-          className="w-full bg-transparent text-xs outline-none placeholder:text-muted"
-        />
-      </div>
-      {titulo.trim() && (
-        <>
-          <p className="text-[10.5px] leading-snug text-muted">{DICA_DO_NOME_DA_TAREFA}</p>
-          <SeletorDeCliente valor={cliente} token={token} obrigatorio onEscolher={(c) => { setCliente(c); onCliente(c); }} testid={`trabalho-nova-cliente-${statusId}`} />
-          <button type="button" onClick={enviar} disabled={!cliente} className="w-full rounded bg-brand/15 px-2 py-1 text-[11px] text-brand hover:bg-brand/25 disabled:opacity-50">
-            Criar tarefa
-          </button>
-        </>
-      )}
     </div>
   );
 }
@@ -2205,6 +2213,20 @@ function PainelTarefa({ id, estrutura, editable, token, usuarioId, aba = 'tarefa
               </datalist>
             </div>
           </Propriedade>
+          {/*
+            Layout 26/10 (Lucas): O LEAD DA TAREFA. Na tarefa ligada a um lead, ou na lista
+            "Tarefas do comercial": o nome leva ao lead no Funil (aba Fio); "Trocar" abre a
+            mesma busca da nova tarefa (com "+ criar lead" e "Sem lead"), gravada pelo PATCH
+            com a versão lida, como os outros campos.
+          */}
+          {(t.lead || ehAListaDoComercial(lista)) && (
+            <Propriedade rotulo="Lead" icone={<Handshake size={13} />}>
+              <LeadDaTarefa
+                lead={t.lead ?? null} ro={ro} token={token}
+                onTrocar={(novo) => { if ((novo?.id ?? null) !== (t.lead?.id ?? null)) void salvar({ leadId: novo?.id ?? null }); }}
+              />
+            </Propriedade>
+          )}
           <Propriedade rotulo="Tempo" icone={<Clock size={13} />}>
             <button type="button" data-testid="tarefa-tempo" onClick={irParaHoras} title={editable ? 'Apontar horas' : 'Ver as horas apontadas'} className="-mx-1.5 flex min-h-8 items-center gap-2 rounded px-1.5 text-left text-[13px] hover:bg-surface-2">
               <span className={(t.minutos ?? 0) > 0 ? 'font-os-mono' : 'text-muted'}>{(t.minutos ?? 0) > 0 ? formatarHoras(t.minutos) : 'nenhuma hora'}</span>
@@ -2318,7 +2340,8 @@ function PainelTarefa({ id, estrutura, editable, token, usuarioId, aba = 'tarefa
             <div className="grid grid-cols-2 gap-2">
               <Campo rotulo="Lista">
                 <select disabled={ro} value={t.listId} onChange={(e) => moverLista(e.target.value)} className={INP}>
-                  {todasListas.map((l) => <option key={l.id} value={l.id}>{nomesListas.get(l.id)}</option>)}
+                  {/* Layout 26/10: a lista do comercial só recebe tarefa criada nela (a API recusa a movida). */}
+                  {todasListas.filter((l) => l.id === t.listId || !ehAListaDoComercial(l)).map((l) => <option key={l.id} value={l.id}>{nomesListas.get(l.id)}</option>)}
                 </select>
                 {!ro && <p className="mt-1 text-[11px] text-muted">Mover mantém este card; a lista de destino define a primeira etapa.</p>}
               </Campo>
@@ -2822,6 +2845,38 @@ function PersonalizarRepeticao({ regra, diaDoMes, diaDaSemana, disabled, onAplic
  * um campo (início → prazo) e cada controle já tem o próprio nome acessível.
  */
 const PROPRIEDADE = 'min-w-0 flex-1 rounded border border-transparent bg-transparent px-1.5 py-1 text-[13px] outline-none hover:border-border hover:bg-surface-2 focus:border-brand-dim disabled:opacity-60 disabled:hover:border-transparent disabled:hover:bg-transparent';
+/** Layout 26/10: o lead no pop-up da tarefa: "Lead: <empresa/nome>" com o link ao Funil e "Trocar" (a busca de lead). */
+function LeadDaTarefa({ lead, ro, token, onTrocar }: {
+  lead: { id: string; nome: string; empresa: string | null } | null;
+  ro: boolean; token: string | null;
+  onTrocar: (novo: LeadEscolhido | null) => void;
+}) {
+  const [trocando, setTrocando] = useState(false);
+  const nome = lead ? lead.empresa && lead.empresa !== lead.nome ? `${lead.empresa} · ${lead.nome}` : lead.nome : null;
+  return (
+    <div className="min-w-0 space-y-1" data-testid="tarefa-lead">
+      <div className="flex min-h-8 min-w-0 items-center gap-2 text-[13px]">
+        {lead ? (
+          <a href={`/comercial/funil?lead=${encodeURIComponent(lead.id)}&aba=fio`} data-testid="tarefa-lead-link" className="min-w-0 truncate text-brand hover:underline" title="Abrir o lead no Funil">
+            {nome}
+          </a>
+        ) : <span className="text-muted">Sem lead</span>}
+        {!ro && (
+          <button type="button" data-testid="tarefa-lead-trocar" onClick={() => setTrocando((v) => !v)} className="shrink-0 text-[12px] text-brand hover:underline">
+            {trocando ? 'Cancelar' : lead ? 'Trocar' : 'Ligar a um lead'}
+          </button>
+        )}
+      </div>
+      {trocando && !ro && (
+        <SeletorDeLead
+          valor={null} token={token} permiteTirar={!!lead} testid="tarefa-lead-busca"
+          onEscolher={(novo) => { setTrocando(false); onTrocar(novo); }}
+        />
+      )}
+    </div>
+  );
+}
+
 function Propriedade({ rotulo, icone, children }: { rotulo: string; icone: React.ReactNode; children: React.ReactNode }) {
   return (
     <div className="grid min-h-9 grid-cols-[6rem_minmax(0,1fr)] items-start gap-2 py-0.5" data-propriedade={rotulo}>

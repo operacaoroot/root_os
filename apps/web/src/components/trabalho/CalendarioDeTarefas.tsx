@@ -47,15 +47,21 @@ function somaDias(dia: string, n: number): string {
   return d.toISOString().slice(0, 10);
 }
 
-export function CalendarioDeTarefas({ itens, podeEditar, onAbrir, onMudarPrazo, hoje = hojeEmBrasilia(), testid = 'calendario-de-tarefas' }: {
+export function CalendarioDeTarefas({ itens, podeEditar, onAbrir, onMudarPrazo, hoje = hojeEmBrasilia(), testid = 'calendario-de-tarefas', novaTarefa }: {
   itens: ItemDoCalendario[];
   podeEditar: boolean;
   onAbrir: (id: string) => void;
   onMudarPrazo: (id: string, dia: string) => void | Promise<void>;
   hoje?: string;
   testid?: string;
+  /**
+   * Layout 26/10 (Lucas): criar pelo calendário. Com ela, cada dia ganha um "+" que abre,
+   * acima da grade, o formulário de nova tarefa com o prazo naquele dia.
+   */
+  novaTarefa?: (dia: string) => React.ReactNode;
 }) {
   const [mes, setMes] = useState(hoje.slice(0, 7));
+  const [criandoEm, setCriandoEm] = useState<string | null>(null);
   const [arrastando, setArrastando] = useState<string | null>(null);
   const [sobre, setSobre] = useState<string | null>(null);
   const [ano, m] = mes.split('-').map(Number);
@@ -108,8 +114,17 @@ export function CalendarioDeTarefas({ itens, podeEditar, onAbrir, onMudarPrazo, 
           <button type="button" onClick={() => irMes(1)} className={botao} aria-label="Próximo mês">›</button>
         </div>
         <span className="text-[1.05rem] font-semibold" data-testid={`${testid}-mes`}>{MESES[m - 1]} {ano}</span>
-        {podeEditar && <span className="ml-auto text-sm text-muted">Arraste uma tarefa para outro dia para mudar o prazo.</span>}
+        {podeEditar && <span className="ml-auto text-sm text-muted">Arraste uma tarefa para outro dia para mudar o prazo.{novaTarefa ? ' O + do dia cria uma tarefa nele.' : ''}</span>}
       </div>
+      {novaTarefa && criandoEm && (
+        <div className="space-y-1 rounded-md border border-border bg-surface px-3 py-2" data-testid={`${testid}-nova`}>
+          <div className="flex items-center justify-between gap-2 text-[12px]">
+            <span className="font-medium">Nova tarefa em {Number(criandoEm.slice(8))} de {MESES[Number(criandoEm.slice(5, 7)) - 1]}</span>
+            <button type="button" onClick={() => setCriandoEm(null)} className="text-muted hover:text-text" aria-label="Fechar a nova tarefa">Fechar</button>
+          </div>
+          {novaTarefa(criandoEm)}
+        </div>
+      )}
       <div className="overflow-x-auto">
         <div className="grid min-w-[640px] grid-cols-7 overflow-hidden rounded-md border border-border bg-surface">
           {SEMANA.map((d) => (
@@ -128,8 +143,19 @@ export function CalendarioDeTarefas({ itens, podeEditar, onAbrir, onMudarPrazo, 
                 onDrop={podeEditar ? (e) => { e.preventDefault(); soltar(dia, arrastando ?? e.dataTransfer.getData('text/plain')); } : undefined}
                 className={`min-h-[6.5rem] border-b border-r border-border p-1.5 ${foraDoMes ? 'bg-surface-2/40' : ''} ${sobre === dia ? 'bg-brand/10' : ''}`}
               >
-                <span className={`font-os-mono text-xs ${dia === hoje ? 'rounded-full bg-brand px-1.5 text-ink' : foraDoMes ? 'text-muted/60' : 'text-muted'}`}>
-                  {Number(dia.slice(8))}
+                <span className="flex items-center justify-between gap-1">
+                  <span className={`font-os-mono text-xs ${dia === hoje ? 'rounded-full bg-brand px-1.5 text-ink' : foraDoMes ? 'text-muted/60' : 'text-muted'}`}>
+                    {Number(dia.slice(8))}
+                  </span>
+                  {novaTarefa && (
+                    <button
+                      type="button" onClick={() => setCriandoEm(dia)} data-testid={`${testid}-mais-${dia}`}
+                      aria-label={`Nova tarefa em ${Number(dia.slice(8))} de ${MESES[Number(dia.slice(5, 7)) - 1]}`}
+                      className={`rounded px-1 text-xs leading-none text-muted hover:bg-brand/15 hover:text-brand ${criandoEm === dia ? 'bg-brand/15 text-brand' : ''}`}
+                    >
+                      +
+                    </button>
+                  )}
                 </span>
                 <div className="mt-1 max-h-28 space-y-1 overflow-y-auto">{doDia.map((t) => tarefa(t, dia))}</div>
               </div>

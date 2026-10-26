@@ -33,11 +33,18 @@ export const ROTULO_DO_CAMPO_DE_ORDEM: Record<CampoDeOrdem, string> = {
  * Próximos 7 dias · Mais tarde · Sem prazo · Concluídas, a mesma `situacaoDoPrazo` do
  * Dia a dia. Entrou NO FIM da lista: as vistas salvas antes continuam valendo como estão.
  */
-export const AGRUPAMENTOS = ['nenhum', 'vencimento', 'status', 'cliente', 'lista', 'prazo'] as const;
+/*
+ * Layout 26/10 (Lucas): `datas` é o "POR PRAZO" no estilo do ClickUp, o padrão das listas
+ * de tarefa: Atrasadas · Hoje · Amanhã · os dias que sobram da semana pelo nome · Próxima
+ * semana · Mais tarde · Sem prazo · Concluídas (`grupoPorPrazo`). Também entrou no fim.
+ */
+export const AGRUPAMENTOS = ['nenhum', 'vencimento', 'status', 'cliente', 'lista', 'prazo', 'datas', 'responsavel'] as const;
 export type Agrupamento = (typeof AGRUPAMENTOS)[number];
 export const ROTULO_DO_AGRUPAMENTO: Record<Agrupamento, string> = {
-  nenhum: 'Sem grupos', vencimento: 'Vencimento', status: 'Status', cliente: 'Cliente', lista: 'Lista', prazo: 'Régua de prazo',
+  nenhum: 'Sem grupos', vencimento: 'Vencimento', status: 'Status', cliente: 'Cliente', lista: 'Lista', prazo: 'Régua de prazo', datas: 'Por prazo', responsavel: 'Por responsável',
 };
+/** Layout 26/10: o agrupamento de saída das listas de tarefa (o Trabalho e Minhas tarefas sem vista salva). */
+export const AGRUPAMENTO_PADRAO_DAS_TAREFAS: Agrupamento = 'datas';
 
 export const COLUNAS_DE_MINHAS_TAREFAS = ['cliente', 'lista', 'status', 'vencimento', 'prioridade', 'responsaveis', 'criadaEm', 'comentarios'] as const;
 export type ColunaDeMinhasTarefas = (typeof COLUNAS_DE_MINHAS_TAREFAS)[number];
@@ -53,7 +60,8 @@ export const VistaMinhasTarefasSchema = z.object({
     lista: z.string().max(80),
     status: z.string().max(120),
     vencimento: z.enum(['', 'vencidas', 'hoje', 'semana']),
-    responsavel: z.enum(['eu', 'qualquer']),
+    // Layout 26/10 (Lucas): também uma pessoa da equipe pelo id da conta; as vistas antigas ("eu", "qualquer") seguem valendo.
+    responsavel: z.union([z.enum(['eu', 'qualquer']), z.string().uuid()]),
     cliente: z.string().max(80),
   }),
 }).strict();
@@ -61,7 +69,8 @@ export type VistaMinhasTarefas = z.infer<typeof VistaMinhasTarefasSchema>;
 
 export const VISTA_PADRAO_DE_MINHAS_TAREFAS: VistaMinhasTarefas = {
   ordenacao: { campo: 'vencimento', direcao: 'asc' },
-  agrupamento: 'nenhum',
+  // Layout 26/10 (Lucas): por prazo, no estilo do ClickUp; a vista salva guarda o dela.
+  agrupamento: 'datas',
   colunas: ['cliente', 'lista', 'status', 'vencimento', 'responsaveis', 'comentarios'],
   filtros: { lista: '', status: '', vencimento: '', responsavel: 'eu', cliente: '' },
 };
@@ -182,6 +191,8 @@ export interface TarefaParaVista {
   prioridade: string;
   prazo: string | null;
   criadaEm: string;
+  /** Layout 26/10: o nome do responsável principal (o "Por responsável"); ausente = sem. */
+  responsavel?: string | null;
 }
 
 const ORDEM_DA_PRIORIDADE: Record<string, number> = { urgente: 0, alta: 1, normal: 2, baixa: 3 };
@@ -264,11 +275,88 @@ export function reguaDePrazo(prazo: string | null, statusTipo: string | undefine
   return situacaoDoPrazo(dia, diaEmSaoPaulo(agora), statusTipo === 'closed');
 }
 
-export interface GrupoDeTarefas<T> { chave: string; rotulo: string; itens: T[] }
+const NOMES_DOS_DIAS = ['domingo', 'segunda-feira', 'terça-feira', 'quarta-feira', 'quinta-feira', 'sexta-feira', 'sábado'];
+
+/** Um grupo do "Por prazo": a chave (estável de um dia para o outro), o rótulo e o dia que a tarefa nova nele recebe. */
+export interface GrupoPorPrazo { chave: string; rotulo: string; dia: string | null; ordem: number }
+
+/**
+ * Layout 26/10 (Lucas): OS GRUPOS "POR PRAZO", no estilo do ClickUp, por DIA no relógio de
+ * São Paulo (semana de segunda a domingo): Atrasadas · Hoje · Amanhã · cada dia que sobra
+ * desta semana pelo nome ("quinta-feira") · Próxima semana · Mais tarde · Sem prazo, e as
+ * concluídas num grupo à parte no fim. `dia` é o prazo da tarefa criada no grupo: o próprio
+ * dia; a segunda da próxima semana; a segunda da outra; nenhum em Sem prazo e Concluídas.
+ */
+export function gruposPorPrazoDaSemana(agora: Date): GrupoPorPrazo[] {
+  const hoje = diaEmSaoPaulo(agora);
+  const [a, m, d] = hoje.split('-').map(Number);
+  const dow = new Date(Date.UTC(a, m - 1, d)).getUTCDay();
+  const ateDomingo = dow === 0 ? 0 : 7 - dow;
+  const proximaSegunda = somarDias(hoje, ateDomingo + 1);
+  const grupos: GrupoPorPrazo[] = [
+    // Atrasadas e Concluídas não recebem tarefa nova (`GRUPOS_POR_PRAZO_SEM_NOVA`).
+    { chave: 'atrasadas', rotulo: 'Atrasadas', dia: null, ordem: 0 },
+    { chave: 'hoje', rotulo: 'Hoje', dia: hoje, ordem: 1 },
+  ];
+  if (ateDomingo >= 1) grupos.push({ chave: 'amanha', rotulo: 'Amanhã', dia: somarDias(hoje, 1), ordem: 2 });
+  for (let n = 2; n <= ateDomingo; n++) {
+    const dia = somarDias(hoje, n);
+    const [ya, ym, yd] = dia.split('-').map(Number);
+    const semana = new Date(Date.UTC(ya, ym - 1, yd)).getUTCDay();
+    grupos.push({ chave: `semana-${semana}`, rotulo: NOMES_DOS_DIAS[semana], dia, ordem: 2 + n });
+  }
+  grupos.push(
+    { chave: 'proxima-semana', rotulo: 'Próxima semana', dia: proximaSegunda, ordem: 20 },
+    { chave: 'mais-tarde', rotulo: 'Mais tarde', dia: somarDias(proximaSegunda, 7), ordem: 21 },
+    { chave: 'sem-prazo', rotulo: 'Sem prazo', dia: null, ordem: 22 },
+    { chave: 'concluidas', rotulo: 'Concluídas', dia: null, ordem: 23 },
+  );
+  return grupos;
+}
+
+/** Os grupos "Por prazo" sem a linha "+ Adicionar tarefa": criar atrasada ou já concluída não faz sentido. */
+export const GRUPOS_POR_PRAZO_SEM_NOVA: readonly string[] = ['atrasadas', 'concluidas'];
+
+/** O grupo "Por prazo" de uma tarefa (a chave de `gruposPorPrazoDaSemana`). Concluída vai para Concluídas. */
+export function grupoPorPrazo(prazo: string | null, statusTipo: string | undefined, agora: Date): string {
+  if (statusTipo === 'closed') return 'concluidas';
+  const p = prazo ? new Date(prazo) : null;
+  if (!p || Number.isNaN(p.getTime())) return 'sem-prazo';
+  const hoje = diaEmSaoPaulo(agora);
+  const dia = diaEmSaoPaulo(p);
+  if (dia < hoje) return 'atrasadas';
+  if (dia === hoje) return 'hoje';
+  const [a, m, d] = hoje.split('-').map(Number);
+  const dow = new Date(Date.UTC(a, m - 1, d)).getUTCDay();
+  const domingo = somarDias(hoje, dow === 0 ? 0 : 7 - dow);
+  if (dia === somarDias(hoje, 1) && dia <= domingo) return 'amanha';
+  if (dia <= domingo) {
+    const [ya, ym, yd] = dia.split('-').map(Number);
+    return `semana-${new Date(Date.UTC(ya, ym - 1, yd)).getUTCDay()}`;
+  }
+  return dia <= somarDias(domingo, 7) ? 'proxima-semana' : 'mais-tarde';
+}
+
+export interface GrupoDeTarefas<T> {
+  chave: string; rotulo: string; itens: T[];
+  /** Layout 26/10 ("Por prazo"): o dia que a tarefa criada no grupo recebe (nulo = sem prazo). */
+  dia?: string | null;
+}
 
 /** Agrupa preservando a ordem de dentro de cada grupo. Vencimento segue a ordem fixa; os outros, a alfabética, com o vazio no fim. */
 export function agruparTarefas<T extends TarefaParaVista>(itens: readonly T[], agrupamento: Agrupamento, agora: Date): GrupoDeTarefas<T>[] {
   if (agrupamento === 'nenhum') return [{ chave: 'todas', rotulo: 'Todas', itens: [...itens] }];
+  // Layout 26/10: "Por prazo". Grupo vazio some, menos Hoje (sempre há onde criar a de hoje).
+  if (agrupamento === 'datas') {
+    const por = new Map<string, T[]>();
+    for (const t of itens) {
+      const g = grupoPorPrazo(t.prazo, t.statusTipo, agora);
+      por.set(g, [...(por.get(g) ?? []), t]);
+    }
+    return gruposPorPrazoDaSemana(agora)
+      .filter((g) => por.has(g.chave) || g.chave === 'hoje')
+      .map((g) => ({ chave: g.chave, rotulo: g.rotulo, dia: g.dia, itens: por.get(g.chave) ?? [] }));
+  }
   if (agrupamento === 'prazo') {
     const por = new Map<SituacaoDoPrazo, T[]>();
     for (const t of itens) {
@@ -286,13 +374,13 @@ export function agruparTarefas<T extends TarefaParaVista>(itens: readonly T[], a
     return GRUPOS_DE_VENCIMENTO.filter((g) => por.has(g)).map((g) => ({ chave: g, rotulo: ROTULO_DO_GRUPO_DE_VENCIMENTO[g], itens: por.get(g)! }));
   }
   const rotuloDe = (t: T): string | null =>
-    agrupamento === 'status' ? t.status : agrupamento === 'cliente' ? t.cliente : t.pasta ? `${t.pasta} / ${t.lista}` : t.lista;
+    agrupamento === 'status' ? t.status : agrupamento === 'cliente' ? t.cliente : agrupamento === 'responsavel' ? t.responsavel ?? null : t.pasta ? `${t.pasta} / ${t.lista}` : t.lista;
   const por = new Map<string, T[]>();
   for (const t of itens) {
     const r = rotuloDe(t) ?? '';
     por.set(r, [...(por.get(r) ?? []), t]);
   }
-  const vazio = agrupamento === 'cliente' ? 'Sem cliente' : 'Sem valor';
+  const vazio = agrupamento === 'cliente' ? 'Sem cliente' : agrupamento === 'responsavel' ? 'Sem responsável' : 'Sem valor';
   return [...por.keys()]
     .sort((a, b) => (a === '' ? 1 : b === '' ? -1 : a.localeCompare(b, 'pt-BR')))
     .map((r) => ({ chave: r || '__vazio__', rotulo: r || vazio, itens: por.get(r)! }));

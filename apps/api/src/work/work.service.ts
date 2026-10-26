@@ -10,6 +10,7 @@ import {
   TRAB_NOME_DE_PASTA_REPETIDO, TRAB_NOME_DE_LISTA_REPETIDO, TRAB_PASTA_DA_IMPLANTACAO_PROTEGIDA, TRAB_ORDEM_FORA_DO_NIVEL,
   TRAB_LISTA_VOLTOU_SEM_PASTA, TRAB_PASTA_VOLTOU_AO_TOPO, IMPORTACAO_CRM_MARCA,
   motivoParaNaoMoverPasta, destinoDoValorDoCampo, TRAB_DO_COMERCIAL, TRAB_NA_LIXEIRA,
+  TRAB_LISTA_DO_COMERCIAL_SO_TAREFA_NOVA, TRAB_PASTA_COM_A_LISTA_DO_COMERCIAL,
 } from '@mktos/shared';
 import type {
   TrabEstrutura, TrabListaDto, TrabCampoDto, TrabTarefaLista, TrabTarefaResumo,
@@ -26,7 +27,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
 import { CheckoutDeTarefaService } from './checkout-de-tarefa.service';
 import { agentesDaCasa, type AgenteDaCasa } from './agentes-da-casa';
-import { listarClientes, nomesDosClientes, resolverCliente } from './clientes-da-casa';
+import { clienteInterno, listarClientes, nomesDosClientes, resolverCliente } from './clientes-da-casa';
 import { criarEstruturaSugerida, criarListaDoModeloNoBanco, criarListaPadraoNoBanco } from './estrutura-sugerida';
 import { SEGMENTO_SEM_PASTA, pastaComSubpastas, type WorkTaskQuery } from './work-task-query';
 import { exigirAcessoAtual } from '../memory/acesso-memoria';
@@ -74,6 +75,9 @@ export interface TarefaPreparada {
   clienteId: string | null;
   campos: CampoConferido[];
   input: TrabTarefaCreateInput;
+  /** Layout 26/10: o lead conferido (opcional) e a área padrão da lista do comercial. */
+  leadId?: string | null;
+  areaId?: string | null;
 }
 
 /** O pai imediato de cada nó da árvore; os dois nulos = fora de espaço. */
@@ -185,7 +189,10 @@ export class WorkService {
     const doComercial = idsDasPastasDoComercial(folders);
     const pastasVivas = folders.filter((fo) => !escondidas.has(fo.id) && !doComercial.has(fo.id));
     // A lista do comercial mora no Funil vivo, não na árvore (adendo de 21/10/2026).
-    const listasVivas = lists.filter((l) => !l.arquivadaEm && !(l.folderId && escondidas.has(l.folderId)) && !ehListaDoComercial(l) && !ehDoComercial(l, doComercial));
+    // Layout 26/10 (Lucas): numa pasta, ela aparece (a pasta "Comercial"); solta, segue fora.
+    const naArvore = (l: (typeof lists)[number]) => !ehListaDoComercial(l) || !!l.folderId;
+    const listasVivas = lists.filter((l) => !l.arquivadaEm && !(l.folderId && escondidas.has(l.folderId)) && naArvore(l) && !ehDoComercial(l, doComercial));
+    const naTela = new Set(listasVivas.map((l) => l.id));
     const listasDoComercial = lists.filter((l) => !l.arquivadaEm && !!l.folderId && doComercial.has(l.folderId) && !escondidas.has(l.folderId));
 
     const toLista = (l: (typeof lists)[number]): TrabListaDto => ({
@@ -214,7 +221,8 @@ export class WorkService {
         lists: listasDoComercial.filter((l) => l.folderId === fo.id).map(toLista),
       })),
       // Layout 26/10: a lista "Tarefas do comercial" (sem pasta), para a janela da tarefa achar as etapas (status e Concluir).
-      listasDoComercial: lists.filter((l) => !l.arquivadaEm && ehListaDoComercial(l)).map(toLista),
+      // Layout 26/10: a que já aparece na árvore (na pasta Comercial) não vem duas vezes.
+      listasDoComercial: lists.filter((l) => !l.arquivadaEm && ehListaDoComercial(l) && !naTela.has(l.id)).map(toLista),
       camposGlobais: fields.map((f) => this.mapField(f)),
       tags: tags.map((t) => ({ id: t.id, name: t.name, color: t.color })),
       responsaveis: users.map((u) => u.assignee!).sort(),
@@ -550,8 +558,9 @@ export class WorkService {
       const listasVivas = listas.filter((l) => !l.arquivadaEm);
       if (!pasta.parentId && listaDaImplantacao([{ ...pasta, lists: listasVivas }])) throw new BadRequestException(TRAB_PASTA_DA_IMPLANTACAO_PROTEGIDA);
       const filhasVivas = todas.filter((p) => p.parentId === id && !p.arquivadaEm);
-      // A tela não vê a lista do comercial, então ela não entra na conta (mas muda de lugar junto).
-      const listasNaTela = listasVivas.filter((l) => !ehListaDoComercial(l));
+      // Layout 26/10: a lista do comercial aparece na pasta dela e não sai de lá, então a pasta que a guarda fica.
+      if (listasVivas.some((l) => ehListaDoComercial(l))) throw new BadRequestException(TRAB_PASTA_COM_A_LISTA_DO_COMERCIAL);
+      const listasNaTela = listasVivas;
       if (listasNaTela.length !== input.esperadas.listas || filhasVivas.length !== input.esperadas.pastas) {
         throw new ConflictException(PASTA_MUDOU_NO_MEIO);
       }
@@ -679,7 +688,8 @@ export class WorkService {
     const visivel = await this.prisma.workList.count({ where: { id: destino.id, orgId, AND: [listaVisivel()] } });
     if (destino.arquivadaEm || visivel !== 1) throw new BadRequestException('A lista de destino está arquivada. Escolha uma lista que aparece no Trabalho.');
     if (await this.prisma.workList.count({ where: { id: destino.id, orgId, AND: [listaForaDoComercial()] } }) !== 1) throw new BadRequestException(TRAB_DO_COMERCIAL);
-    if (ehListaDoComercial(destino)) throw new BadRequestException('As tarefas do comercial moram no Funil vivo: a lista do comercial não recebe tarefas do Trabalho.');
+    // Layout 26/10: criar nela pelo Trabalho vale; trazer as tarefas de outra lista, não.
+    if (ehListaDoComercial(destino)) throw new BadRequestException(TRAB_LISTA_DO_COMERCIAL_SO_TAREFA_NOVA);
     if (destino.natureza === WorkListaNatureza.cadastro) throw new BadRequestException('A lista de destino é de cadastro, não de tarefas. Escolha uma lista de tarefas.');
     if (await this.ehListaDaImplantacao(orgId, destino.id)) throw new BadRequestException(PORTA_DA_IMPLANTACAO);
     await exigirAcessoAtual(this.prisma, orgId, actorId, ['tarefas.editar']);
@@ -776,7 +786,8 @@ export class WorkService {
         const listas = await tx.workList.findMany({
           where: { orgId, folderId: input.paiId, arquivadaEm: null }, select: { id: true, order: true, name: true, externalId: true },
         });
-        irmaos = listas.filter((l) => !ehListaDoComercial(l));
+        // Layout 26/10: dentro de uma pasta a lista do comercial aparece e entra na ordem; solta, não.
+        irmaos = input.paiId ? listas : listas.filter((l) => !ehListaDoComercial(l));
       }
       const conjunto = new Set(irmaos.map((i) => i.id));
       if (irmaos.length !== input.ids.length || input.ids.some((i) => !conjunto.has(i))) throw new BadRequestException(TRAB_ORDEM_FORA_DO_NIVEL);
@@ -1361,7 +1372,7 @@ export class WorkService {
     });
     const nomePorAtor = await activityNames(this.prisma, orgId, atividade);
     const now = new Date();
-    const [agentes, clientes, apontamentos, porEtapa] = await Promise.all([
+    const [agentes, clientes, apontamentos, porEtapa, lead] = await Promise.all([
       agentesDaCasa(this.prisma, orgId, [t.agenteId]),
       nomesDosClientes(this.prisma, orgId, [t.clienteId]),
       this.prisma.workApontamento.findMany({
@@ -1380,6 +1391,10 @@ export class WorkService {
         _sum: { minutos: true },
         _min: { createdAt: true },
       }),
+      // Layout 26/10: o lead da tarefa, lido escopado por empresa (ponteiro atravessado = sem lead).
+      t.leadId
+        ? this.prisma.lead.findFirst({ where: { id: t.leadId, orgId }, select: { id: true, name: true, ficha: { select: { empresa: true } } } })
+        : Promise.resolve(null),
     ]);
     const minutosDaTarefa = porEtapa.reduce((soma, g) => soma + (g._sum.minutos ?? 0), 0);
     if (solicitanteId !== undefined) await exigirAcessoAtual(this.prisma, orgId, solicitanteId, ['tarefas.ver']);
@@ -1395,6 +1410,7 @@ export class WorkService {
       filhos: t.subtasks.map((s) => ({
         id: s.id, title: s.title, statusName: s.status.name, statusColor: s.status.color,
       })),
+      lead: lead ? { id: lead.id, nome: lead.name, empresa: lead.ficha?.empresa?.trim() || null } : null,
       apontamentos: apontamentos.map((a) => this.mapApontamento(a)),
       minutosPorEtapa: porEtapa
         .slice()
@@ -1464,12 +1480,23 @@ export class WorkService {
     if (!clienteId && input.parentId) {
       clienteId = (await this.prisma.workTask.findFirst({ where: { id: input.parentId, orgId }, select: { clienteId: true } }))?.clienteId ?? null;
     }
+    // Layout 26/10 (Lucas): a tarefa da lista "Tarefas do comercial" é trabalho da casa: sem cliente escolhido, vai
+    // para o cliente interno ("Root (interno)"). Vale pela tela do Trabalho e pelo Funil (`TarefasDoComercialService`).
+    const doComercial = ehListaDoComercial(list);
+    if (!clienteId && doComercial) clienteId = (await clienteInterno(this.prisma, orgId)).id;
     if (!clienteId && opcoes.exigirCliente) {
       throw new BadRequestException('Escolha o cliente da tarefa. O trabalho da própria empresa vai para o cliente interno.');
     }
     await this.conferirResponsavel(orgId, input.assigneeUserId);
+    // Layout 26/10: o lead (opcional) é desta empresa; a frase vem daqui, antes da chave composta do banco.
+    if (input.leadId) await this.conferirLead(orgId, input.leadId);
     const campos = input.campos ? await this.conferirCampos(orgId, list.id, input.campos) : [];
-    return { orgId, listId: list.id, statusId, clienteId, campos, input };
+    return {
+      orgId, listId: list.id, statusId, clienteId, campos, input,
+      leadId: input.leadId ?? null,
+      // Na lista do comercial, a área Comercial dela, como a tarefa criada pelo Funil.
+      areaId: doComercial ? list.areaPadraoId ?? null : null,
+    };
   }
 
   /** Grava a tarefa preparada dentro da transação de quem chama (ver acima). */
@@ -1486,6 +1513,8 @@ export class WorkService {
         startDate: input.startDate ? new Date(input.startDate) : null,
         parentId: input.parentId ?? null,
         clienteId: p.clienteId,
+        ...(p.leadId ? { leadId: p.leadId } : {}),
+        ...(p.areaId ? { areaId: p.areaId } : {}),
         tags: input.tagIds ? { connect: input.tagIds.map((id) => ({ id })) } : undefined,
       },
     });
@@ -1496,6 +1525,12 @@ export class WorkService {
   /** A auditoria `work.task.create`, depois do commit de quem gravou pela variante transacional. */
   async auditarCriacaoDeTarefa(orgId: string, actorId: string, taskId: string): Promise<void> {
     await this.audit.log({ orgId, actorId, action: 'work.task.create', entityType: 'work_task', entityId: taskId });
+  }
+
+  /** Layout 26/10: o lead é desta empresa? (a chave composta do banco também recusaria; a frase vem daqui) */
+  private async conferirLead(orgId: string, leadId: string): Promise<void> {
+    const lead = await this.prisma.lead.findFirst({ where: { id: leadId, orgId }, select: { id: true } });
+    if (!lead) throw new BadRequestException('Lead não encontrado nesta empresa.');
   }
 
   /** A lista é a da implantação (Onboarding de cliente na pasta Clientes)? Porta única do T1. */
@@ -1543,6 +1578,13 @@ export class WorkService {
     if (!paiDepois && (entraNaLista || viraCartao) && (await this.ehListaDaImplantacao(orgId, listId))) {
       throw new BadRequestException(PORTA_DA_IMPLANTACAO);
     }
+    // Layout 26/10: pela tela, a lista do comercial (agora na árvore) só recebe tarefa criada nela, não movida.
+    if (acessoHttp && entraNaLista) {
+      const destino = await this.prisma.workList.findFirst({ where: { id: listId, orgId }, select: { externalId: true } });
+      if (destino && ehListaDoComercial(destino)) throw new BadRequestException(TRAB_LISTA_DO_COMERCIAL_SO_TAREFA_NOVA);
+    }
+    if (input.leadId) await this.conferirLead(orgId, input.leadId);
+    const leadMuda = input.leadId !== undefined && input.leadId !== antes.leadId;
     let statusId = input.statusId;
     if (input.listId && input.listId !== antes.listId && !statusId) {
       const primeiro = await this.prisma.workStatus.findFirst({ where: { listId, orgId }, orderBy: { order: 'asc' } });
@@ -1581,6 +1623,7 @@ export class WorkService {
           startDate: input.startDate === undefined ? undefined : input.startDate ? new Date(input.startDate) : null,
           parentId: input.parentId === undefined ? undefined : input.parentId,
           clienteId,
+          ...(leadMuda ? { leadId: input.leadId } : {}),
           archived: input.archived, order: input.order, updatedAt,
           outrosResponsaveisIds,
           ...(repeticaoMuda ? {
@@ -1611,6 +1654,7 @@ export class WorkService {
           dueDate: antes.dueDate?.toISOString() ?? null,
           ...(input.archived !== undefined ? { archived: antes.archived } : {}),
           ...(clienteId !== undefined ? { clienteId: antes.clienteId } : {}),
+          ...(leadMuda ? { leadId: antes.leadId } : {}),
           ...(outrosResponsaveisIds !== undefined ? { outrosResponsaveisIds: antes.outrosResponsaveisIds } : {}),
           ...(repeticaoMuda ? { recorrencia: antes.recorrencia ?? null } : {}),
           ...(camposAntes ? { campos: camposAntes } : {}),
@@ -1621,6 +1665,7 @@ export class WorkService {
           dueDate: depois.dueDate?.toISOString() ?? null,
           ...(input.archived !== undefined ? { archived: depois.archived } : {}),
           ...(clienteId !== undefined ? { clienteId: depois.clienteId } : {}),
+          ...(leadMuda ? { leadId: depois.leadId } : {}),
           ...(outrosResponsaveisIds !== undefined ? { outrosResponsaveisIds: depois.outrosResponsaveisIds } : {}),
           ...(repeticaoMuda ? { recorrencia: depois.recorrencia ?? null } : {}),
           ...(camposDepois ? { campos: camposDepois } : {}),

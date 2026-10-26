@@ -37,6 +37,28 @@ export function listasComAsDoComercial<P extends PastaComListas<L>, L extends Li
   return [...pastasComAsDoComercial<P, L>(e).flatMap((f) => f.lists), ...e.listasSoltas, ...(e.listasDoComercial ?? [])];
 }
 
+/*
+ * Layout 26/10: A LISTA "TAREFAS DO COMERCIAL" NA ÁRVORE (decisão do Lucas, 26/10).
+ * A lista de chave `comercial:tarefas` (a mesma de `apps/api/src/work/lista-do-comercial.ts`)
+ * aparece na árvore dentro da pasta de topo "Comercial", para ver, abrir e criar tarefa.
+ * Ela continua sendo a do Funil vivo e do painel do lead: não se renomeia, não sai da
+ * pasta, não se apaga nem se arquiva pelo Trabalho. A tarefa nova nela pede o LEAD
+ * (opcional) em vez do cliente; o cliente é sempre o da casa ("Root (interno)").
+ */
+export const LISTA_DO_COMERCIAL = 'comercial:tarefas';
+
+/** A lista é a "Tarefas do comercial"? (pela chave, nunca pelo nome) */
+export function ehAListaDoComercial(l: { externalId?: string | null } | null | undefined): boolean {
+  return l?.externalId === LISTA_DO_COMERCIAL;
+}
+
+export const TRAB_LISTA_DO_COMERCIAL_PROTEGIDA =
+  'A lista Tarefas do comercial é a mesma do Funil vivo e do painel do lead: ela fica na pasta Comercial, com este nome, e não se apaga nem se arquiva.';
+export const TRAB_LISTA_DO_COMERCIAL_SO_TAREFA_NOVA =
+  'A lista Tarefas do comercial (a do Funil vivo) só recebe tarefa criada nela: mover tarefa de outra lista para ela não vale.';
+export const TRAB_PASTA_COM_A_LISTA_DO_COMERCIAL =
+  'Esta pasta guarda a lista Tarefas do comercial, a do Funil vivo: a lista não sai dela, então a pasta não se apaga.';
+
 /** A frase de quem tenta mexer pelo Trabalho numa pasta ou lista do Comercial. */
 export const TRAB_DO_COMERCIAL =
   'Esta pasta e as listas dela são do Comercial: aparecem em Comercial › Implantação, não na árvore do Trabalho.';

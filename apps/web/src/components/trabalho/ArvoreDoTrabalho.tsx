@@ -3,8 +3,9 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { ChevronDown, ChevronRight, GripVertical, Plus, Trash2 } from 'lucide-react';
 import {
-  chaveDoNomeNoNivel, listaDaImplantacao, motivoParaNaoMoverPasta,
-  TRAB_LISTA_DA_IMPLANTACAO_PROTEGIDA, TRAB_NOME_DE_LISTA_REPETIDO, TRAB_NOME_DE_PASTA_REPETIDO, TRAB_PASTA_DA_IMPLANTACAO_PROTEGIDA,
+  chaveDoNomeNoNivel, ehAListaDoComercial, listaDaImplantacao, motivoParaNaoMoverPasta,
+  TRAB_LISTA_DA_IMPLANTACAO_PROTEGIDA, TRAB_LISTA_DO_COMERCIAL_PROTEGIDA,
+  TRAB_NOME_DE_LISTA_REPETIDO, TRAB_NOME_DE_PASTA_REPETIDO, TRAB_PASTA_DA_IMPLANTACAO_PROTEGIDA,
   type TrabEstrutura, type TrabListaDto,
 } from '@mktos/shared';
 import { apiPatch, apiPost } from '@/lib/api';
@@ -40,7 +41,11 @@ import { DialogoDeIcone, IconeDaLista } from './IconeDaLista';
  *  · ícone e cor na frente do nome ("⋯" › Ícone e cor), gravados pelo mesmo PATCH
  *    da renomeação (produção 22B, I1). O "⋯" só aparece com o mouse ou o foco na
  *    linha (`group/arvore`); no toque, sempre. A pasta Clientes é do Comercial
- *    desde a 22B (I3) e não chega mais aqui: a API a manda em `pastasDoComercial`.
+ *    desde a 22B (I3) e não chega mais aqui: a API a manda em `pastasDoComercial`;
+ *  · Layout 26/10 (Lucas): a lista "Tarefas do comercial" (a do Funil vivo) aparece na
+ *    pasta Comercial. Abre e recebe tarefa nova como as outras; não se renomeia, não sai
+ *    da pasta, não ganha ícone, não se apaga nem arquiva: o menu diz por quê. Dentro da
+ *    pasta ela troca de posição com as irmãs.
  * A ordem vai em `POST /trabalho/arvore/ordem` com todos os irmãos do nível, que a
  * API confere; mudar a lista de pasta, em `PATCH /trabalho/listas/:id`; mudar a
  * pasta de mãe, em `POST /trabalho/pastas/:id/mover`.
@@ -158,6 +163,9 @@ export function ArvoreDoTrabalho({ estrutura, pastas, mostraSoltas, listaId, edi
   const arrastado = useRef<Arrastado | null>(null);
   const raiz = useRef<HTMLDivElement>(null);
   const implantacao = useMemo(() => listaDaImplantacao(estrutura.folders), [estrutura]);
+  // Layout 26/10: a lista do comercial (na pasta Comercial) não sai da pasta; a da implantação também não.
+  const comercialId = useMemo(() => estrutura.folders.flatMap((f) => f.lists).find((l) => ehAListaDoComercial(l))?.id ?? null, [estrutura]);
+  const naoSaiDaPasta = (id: string) => id === implantacao?.listaId || id === comercialId;
 
   // Depois de gravar, a árvore volta da API e o foco fica no item que se moveu ou mudou de nome.
   useEffect(() => {
@@ -180,7 +188,7 @@ export function ArvoreDoTrabalho({ estrutura, pastas, mostraSoltas, listaId, edi
   const destinosDaLista = (id: string): DestinoDaArvore[] => [
     ...estrutura.folders.flatMap((f) => f.lists.map((l) => ({ l, rotulo: `${caminhoDaPasta(estrutura.folders, f.id)} / ${l.name}` }))),
     ...estrutura.listasSoltas.map((l) => ({ l, rotulo: `Sem pasta / ${l.name}` })),
-  ].filter(({ l }) => l.id !== id && l.id !== implantacao?.listaId && l.natureza !== 'cadastro').map(({ l, rotulo }) => ({ id: l.id, rotulo }));
+  ].filter(({ l }) => l.id !== id && l.id !== implantacao?.listaId && l.id !== comercialId && l.natureza !== 'cadastro').map(({ l, rotulo }) => ({ id: l.id, rotulo }));
   const destinosDaPasta = (id: string): DestinoDaArvore[] => {
     const fora = pastaEDescendentes(estrutura.folders, id);
     return estrutura.folders.filter((f) => !fora.has(f.id)).map((f) => ({ id: f.id, rotulo: caminhoDaPasta(estrutura.folders, f.id) }));
@@ -213,7 +221,7 @@ export function ArvoreDoTrabalho({ estrutura, pastas, mostraSoltas, listaId, edi
   const teclas = (tipo: 'pasta' | 'lista', id: string) => (e: React.KeyboardEvent) => {
     if (!editable) return;
     if (e.altKey && (e.key === 'ArrowUp' || e.key === 'ArrowDown')) { e.preventDefault(); subirOuDescer(tipo, id, e.key === 'ArrowUp' ? -1 : 1); return; }
-    if (e.key === 'F2' && !(tipo === 'lista' ? id === implantacao?.listaId : id === implantacao?.pastaId)) { e.preventDefault(); setEditando({ tipo, id }); }
+    if (e.key === 'F2' && !(tipo === 'lista' ? naoSaiDaPasta(id) : id === implantacao?.pastaId)) { e.preventDefault(); setEditando({ tipo, id }); }
   };
 
   /** Mudar a lista de pasta (soltar no nome da pasta, em "Sem pasta" ou sobre uma lista de outro nível). */
@@ -221,6 +229,8 @@ export function ArvoreDoTrabalho({ estrutura, pastas, mostraSoltas, listaId, edi
     const lista = [...estrutura.folders.flatMap((f) => f.lists), ...estrutura.listasSoltas].find((l) => l.id === id);
     if (!lista) return;
     if (id === implantacao?.listaId) { setAviso(TRAB_LISTA_DA_IMPLANTACAO_PROTEGIDA); return; }
+    // Layout 26/10: soltar a lista do comercial em outro lugar nunca a tira da pasta dela.
+    if (id === comercialId) { setAviso(TRAB_LISTA_DO_COMERCIAL_PROTEGIDA); return; }
     const destino = listasDe(folderId);
     if (nomeRepetido(lista.name, destino, id)) { setAviso(`No destino já existe uma lista chamada "${lista.name}". Renomeie uma delas antes de mover.`); return; }
     const nomeDoDestino = folderId ? caminhoDaPasta(estrutura.folders, folderId) : 'Sem pasta';
@@ -348,14 +358,16 @@ export function ArvoreDoTrabalho({ estrutura, pastas, mostraSoltas, listaId, edi
   const classeDoAlvo = (chave: string) => (alvo === chave ? 'ring-1 ring-brand-dim' : '');
 
   const linhaDaLista = (l: TrabListaDto, paiId: string | null) => {
-    const protegida = l.id === implantacao?.listaId ? TRAB_LISTA_DA_IMPLANTACAO_PROTEGIDA : null;
+    const doComercial = l.id === comercialId;
+    const protegida = l.id === implantacao?.listaId ? TRAB_LISTA_DA_IMPLANTACAO_PROTEGIDA : doComercial ? TRAB_LISTA_DO_COMERCIAL_PROTEGIDA : null;
     const chave = `lista:${l.id}`;
     const irmaos = listasDe(paiId);
     return (
       <div
         key={l.id}
+        data-lista-do-comercial={doComercial ? '' : undefined}
         className={`group/arvore flex items-center gap-0.5 rounded-md ${classeDoAlvo(chave)}`}
-        onDragOver={sobre(chave, (a) => a.tipo === 'lista' && a.id !== l.id && (a.paiId === paiId || a.id !== implantacao?.listaId))}
+        onDragOver={sobre(chave, (a) => a.tipo === 'lista' && a.id !== l.id && (a.paiId === paiId || !naoSaiDaPasta(a.id)))}
         onDragLeave={() => { if (alvo === chave) setAlvo(null); }}
         onDrop={soltar((a) => {
           if (a.tipo !== 'lista') return;
@@ -394,11 +406,12 @@ export function ArvoreDoTrabalho({ estrutura, pastas, mostraSoltas, listaId, edi
             <span className="ml-1 text-[10px] text-muted" title="tarefas abertas (as concluídas não contam)">{l.statuses?.length ? l.statuses.filter((s) => s.type !== 'closed').reduce((n, s) => n + (s.total ?? 0), 0) : l.total}</span>
           </button>
         )}
+        {/* Layout 26/10: a lista do comercial não muda pela árvore (a API recusa): sem Ícone e cor; Renomear e Excluir dizem por quê. */}
         {editable && (
           <AcoesDaListaNaArvore
             lista={l} token={token} protegida={protegida} destinos={destinosDaLista(l.id)}
             aoRenomear={() => setEditando({ tipo: 'lista', id: l.id })}
-            aoAparencia={() => setAparencia({ tipo: 'lista', id: l.id, nome: l.name, icone: l.icone, cor: l.cor })}
+            aoAparencia={doComercial ? undefined : () => setAparencia({ tipo: 'lista', id: l.id, nome: l.name, icone: l.icone, cor: l.cor })}
             aoExcluir={() => onListaSaiu(l.id)} aoMudar={onMudou} aoErro={onErro} aoAviso={setAviso}
           />
         )}
@@ -432,7 +445,7 @@ export function ArvoreDoTrabalho({ estrutura, pastas, mostraSoltas, listaId, edi
         <div
           className={`group/arvore flex items-start justify-between gap-1 rounded-md ${classeDoAlvo(chave)}`}
           onDragOver={sobre(chave, (a) => (a.tipo === 'lista'
-            ? a.paiId !== f.id && a.id !== implantacao?.listaId
+            ? a.paiId !== f.id && !naoSaiDaPasta(a.id)
             : a.id !== f.id && a.paiId !== f.id))}
           onDragLeave={() => { if (alvo === chave) setAlvo(null); }}
           onDrop={soltar((a) => {
@@ -516,7 +529,7 @@ export function ArvoreDoTrabalho({ estrutura, pastas, mostraSoltas, listaId, edi
           <div
             data-testid="trabalho-arvore-sem-pasta"
             className={`rounded-md px-1 text-[11px] font-semibold uppercase tracking-wide text-muted ${classeDoAlvo('sem-pasta')}`}
-            onDragOver={sobre('sem-pasta', (a) => a.tipo === 'lista' && a.paiId !== null && a.id !== implantacao?.listaId)}
+            onDragOver={sobre('sem-pasta', (a) => a.tipo === 'lista' && a.paiId !== null && !naoSaiDaPasta(a.id))}
             onDragLeave={() => { if (alvo === 'sem-pasta') setAlvo(null); }}
             onDrop={soltar((a) => { if (a.tipo === 'lista') moverLista(a.id, null); })}
           >

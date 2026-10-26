@@ -1,8 +1,8 @@
 'use client';
 
 import { useMemo, useState, useEffect, useRef } from 'react';
-import { Bot, Check, DoorOpen, Repeat, Unlock, X } from 'lucide-react';
-import { formatarValorMonetario, agruparTarefas, descreverRecorrencia, tituloNormalizado } from '@mktos/shared';
+import { Bot, Check, ChevronDown, ChevronRight, DoorOpen, Repeat, Unlock, X } from 'lucide-react';
+import { formatarValorMonetario, agruparTarefas, descreverRecorrencia, tituloNormalizado, GRUPOS_POR_PRAZO_SEM_NOVA } from '@mktos/shared';
 import type { Agrupamento, CampoDeOrdem, RecorrenciaDaTarefa, TrabAgenteDto, TrabEstrutura, TrabListaDto, TrabTarefaResumo } from '@mktos/shared';
 import { apiPatch, apiPost } from '@/lib/api';
 import type { AbaDaTarefa } from '@/lib/tarefa-na-url';
@@ -219,6 +219,9 @@ export function ControleDoAgenteNaGaveta({ t, agentes, editable, token, onMudou,
 
 // ---------- visão tabela ----------
 
+/** Layout 26/10: os grupos recolhidos da Lista (as chaves), lembrados neste navegador. */
+const CHAVE_DOS_GRUPOS_RECOLHIDOS = 'tabela-grupos-recolhidos';
+
 export type PessoaDaEstrutura = NonNullable<TrabEstrutura['pessoas']>[number];
 
 /*
@@ -227,7 +230,12 @@ export type PessoaDaEstrutura = NonNullable<TrabEstrutura['pessoas']>[number];
  * agrupamento das vistas (inclusive a régua de prazo do Lucas) e ordem manual
  * (arrastar a linha sobre outra grava a sequência da lista, ou do grupo).
  */
-export function Tabela({ tarefas, campos, trilhos, onAbrir, mostrarLista = false, pessoas = [], agrupamento = 'nenhum', selecao = null, onReordenar = null, edicao = null, ordenacao = null, abaixoDoTitulo, testIdDaLinha, vazio = 'Nada por aqui.' }: {
+export function Tabela({ tarefas, campos, trilhos, onAbrir, mostrarLista = false, pessoas = [], agrupamento = 'nenhum', selecao = null, onReordenar = null, edicao = null, ordenacao = null, abaixoDoTitulo, testIdDaLinha, vazio = 'Nada por aqui.', novaNoGrupo = null }: {
+  /**
+   * Layout 26/10 (Lucas): "+ Adicionar tarefa" no pé de cada grupo (menos Atrasadas e
+   * Concluídas). Recebe o dia do grupo ("Por prazo"; nulo = sem prazo) e devolve o formulário.
+   */
+  novaNoGrupo?: ((dia: string | null) => React.ReactNode) | null;
   tarefas: TrabTarefaResumo[]; campos: string[]; trilhos: Map<string, TrilhoDoCartao>;
   onAbrir: (id: string, aba?: AbaDaTarefa) => void;
   mostrarLista?: boolean; pessoas?: PessoaDaEstrutura[]; agrupamento?: Agrupamento;
@@ -250,10 +258,24 @@ export function Tabela({ tarefas, campos, trilhos, onAbrir, mostrarLista = false
   const grupos = useMemo(() => {
     const vista = tarefas.map((t) => ({
       t, titulo: t.title, status: t.statusName, statusTipo: t.statusType, lista: t.listName ?? '',
-      cliente: t.clienteNome, prioridade: t.priority, prazo: t.dueDate, criadaEm: '',
+      cliente: t.clienteNome, prioridade: t.priority, prazo: t.dueDate, criadaEm: '', responsavel: t.assigneeUserName ?? null,
     }));
     return agruparTarefas(vista, agrupamento, new Date()).map((g) => ({ ...g, itens: g.itens.map((x) => x.t) }));
   }, [tarefas, agrupamento]);
+  // Layout 26/10 (Lucas): o grupo recolhe e abre (▾/▸), lembrado neste navegador; e a nova tarefa no pé dele.
+  const [recolhidos, setRecolhidos] = useState<Set<string>>(() => {
+    try { return new Set(JSON.parse(window.localStorage.getItem(CHAVE_DOS_GRUPOS_RECOLHIDOS) ?? '[]') as string[]); } catch { return new Set(); }
+  });
+  const alternarGrupo = (chave: string) => setRecolhidos((r) => {
+    const n = new Set(r);
+    if (n.has(chave)) n.delete(chave); else n.add(chave);
+    try { window.localStorage.setItem(CHAVE_DOS_GRUPOS_RECOLHIDOS, JSON.stringify([...n])); } catch { /* sem armazenamento: vale só nesta visita */ }
+    return n;
+  });
+  const [adicionandoEm, setAdicionandoEm] = useState<string | null>(null);
+  const agrupada = agrupamento !== 'nenhum';
+  // Só no "Por prazo": cada grupo tem um dia. Nos outros agrupamentos, a linha de nova tarefa fica no topo (quem usa a Tabela).
+  const recebeNova = (chave: string) => agrupamento === 'datas' && !!novaNoGrupo && !GRUPOS_POR_PRAZO_SEM_NOVA.includes(chave);
   const colunas = 7 + campos.length + (mostrarLista ? 1 : 0) + (selecao ? 1 : 0);
   const todasMarcadas = !!selecao && tarefas.length > 0 && tarefas.every((t) => selecao.marcadas.has(t.id));
   const marcar = (id: string, sim: boolean) => {
@@ -309,14 +331,20 @@ export function Tabela({ tarefas, campos, trilhos, onAbrir, mostrarLista = false
         </thead>
         {grupos.map((g) => (
           <tbody key={g.chave} data-grupo={g.chave}>
-            {agrupamento !== 'nenhum' && (
+            {agrupada && (
               <tr className="border-b border-border bg-surface-2/60">
-                <th colSpan={colunas} scope="colgroup" className="px-3 py-1.5 text-left font-os-mono text-[11px] uppercase tracking-wide text-muted">
-                  {g.rotulo} · {g.itens.length}
+                <th colSpan={colunas} scope="colgroup" className="px-3 py-1.5 text-left">
+                  <button
+                    type="button" onClick={() => alternarGrupo(g.chave)} aria-expanded={!recolhidos.has(g.chave)} data-testid={`tabela-grupo-${g.chave}`}
+                    className={`flex items-center gap-1.5 font-os-mono text-[11px] uppercase tracking-wide hover:text-text ${g.chave === 'atrasadas' ? 'text-bad' : 'text-muted'}`}
+                  >
+                    {recolhidos.has(g.chave) ? <ChevronRight size={12} aria-hidden /> : <ChevronDown size={12} aria-hidden />}
+                    <span>{g.rotulo} · {g.itens.length}</span>
+                  </button>
                 </th>
               </tr>
             )}
-            {g.itens.map((t) => (
+            {!(agrupada && recolhidos.has(g.chave)) && g.itens.map((t) => (
               <tr
                 {...alvoDoMenu(menu, t)}
                 key={t.id} data-work-task-id={t.id} data-testid={testIdDaLinha?.(t.id)} onClick={() => onAbrir(t.id)}
@@ -372,6 +400,22 @@ export function Tabela({ tarefas, campos, trilhos, onAbrir, mostrarLista = false
                 })}
               </tr>
             ))}
+            {agrupada && !recolhidos.has(g.chave) && recebeNova(g.chave) && (
+              <tr className="border-b border-border/50" data-testid={`tabela-grupo-${g.chave}-nova`}>
+                <td colSpan={colunas} className="px-3 py-1">
+                  {adicionandoEm === g.chave ? (
+                    <div className="space-y-1">
+                      {novaNoGrupo!(g.dia ?? null)}
+                      <button type="button" onClick={() => setAdicionandoEm(null)} className="text-[11px] text-muted hover:text-text">Fechar</button>
+                    </div>
+                  ) : (
+                    <button type="button" onClick={() => setAdicionandoEm(g.chave)} data-testid={`tabela-grupo-${g.chave}-adicionar`} className="text-[12px] text-muted hover:text-brand">
+                      + Adicionar tarefa
+                    </button>
+                  )}
+                </td>
+              </tr>
+            )}
           </tbody>
         ))}
         {tarefas.length === 0 && (

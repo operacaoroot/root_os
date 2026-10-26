@@ -156,6 +156,8 @@ describe.skipIf(!URL)('as tarefas do comercial no banco', { timeout: 60_000 }, (
     if (app) await app.close();
     for (const orgId of [ORG, VIZINHA].filter(Boolean)) {
       await prisma.workTask.deleteMany({ where: { orgId } });
+      // Layout 26/10: a tarefa do comercial nasce com o cliente da casa (o Partner interno).
+      await prisma.partner.deleteMany({ where: { orgId } });
       await prisma.workStatus.deleteMany({ where: { orgId } });
       await prisma.workList.deleteMany({ where: { orgId } });
       await prisma.workSpace.deleteMany({ where: { orgId } });
@@ -194,6 +196,35 @@ describe.skipIf(!URL)('as tarefas do comercial no banco', { timeout: 60_000 }, (
     const acoes = await prisma.auditLog.findMany({ where: { orgId: ORG, entityId: doLead.id }, select: { action: true, after: true } });
     expect(acoes.map((a) => a.action)).toEqual(expect.arrayContaining(['work.task.create', 'work.task.update']));
     expect(acoes.some((a) => (a.after as { leadId?: string } | null)?.leadId === leadA)).toBe(true);
+  });
+
+  it('Layout 26/10: a tarefa do comercial nasce com o cliente da casa, pelo Funil e pelo Trabalho (com lead), e o Trabalho troca e tira o lead', async () => {
+    const interno = await prisma.partner.findFirstOrThrow({ where: { orgId: ORG, interno: true } });
+    const pelosDois = await prisma.workTask.findMany({ where: { id: { in: [semLead.id, doLead.id] } }, select: { clienteId: true } });
+    expect(pelosDois.map((t) => t.clienteId)).toEqual([interno.id, interno.id]);
+
+    // Pelo Trabalho: a rota de criação exige cliente, e na lista do comercial ele vem sozinho.
+    const lista = await prisma.workList.findFirstOrThrow({ where: { orgId: ORG, externalId: LISTA_DO_COMERCIAL } });
+    const criada = await work.criarTarefa(ORG, ana.id, { listId: lista.id, title: 'Mandar o contrato', leadId: leadB }, { exigirCliente: true });
+    expect(criada.clienteId).toBe(interno.id);
+    expect(criada.lead).toEqual({ id: leadB, nome: 'Contato B', empresa: 'Empresa B Sintética' });
+    const gravada = await prisma.workTask.findUniqueOrThrow({ where: { id: criada.id }, include: { area: true } });
+    expect([gravada.leadId, gravada.area?.nome]).toEqual([leadB, 'Comercial']);
+    // E aparece no Funil, no lead B.
+    const doB = (await pedir('GET', `/comercial/tarefas?leadId=${leadB}`, await daAna())).corpo as TarefasDoComercial;
+    expect(doB.tarefas.map((t) => t.id)).toContain(criada.id);
+    // Lead de outra empresa: recusado com a frase, nada nasce.
+    await expect(work.criarTarefa(ORG, ana.id, { listId: lista.id, title: 'Errada', leadId: leadDeFora }, { exigirCliente: true })).rejects.toThrow('Lead não encontrado');
+
+    // O pop-up troca e tira o lead pelo PATCH com a versão lida, com auditoria.
+    const trocada = await work.editarTarefaHttp(ORG, ana.id, criada.id, { expectedUpdatedAt: criada.updatedAt, leadId: leadA });
+    expect(trocada.lead?.id).toBe(leadA);
+    const sem = await work.editarTarefaHttp(ORG, ana.id, criada.id, { expectedUpdatedAt: trocada.updatedAt, leadId: null });
+    expect(sem.lead).toBeNull();
+    const linhas = await prisma.auditLog.findMany({ where: { orgId: ORG, entityId: criada.id, action: 'work.task.update' }, select: { before: true, after: true } });
+    expect(linhas.some((l) => (l.before as { leadId?: string })?.leadId === leadB && (l.after as { leadId?: string })?.leadId === leadA)).toBe(true);
+    // Fora do caminho dos testes seguintes (que contam as do lead B e as sem lead).
+    await prisma.workTask.update({ where: { id: criada.id }, data: { archived: true } });
   });
 
   it('lead de outra empresa e lead que não existe são recusados, sem criar nada', async () => {

@@ -1,5 +1,5 @@
 import { Prisma, WorkListaNatureza, WorkStatusType, type PrismaClient } from '@prisma/client';
-import { AREAS_PADRAO } from '@mktos/shared';
+import { AREAS_PADRAO, LISTA_DO_COMERCIAL as LISTA_DO_COMERCIAL_CHAVE } from '@mktos/shared';
 import { listaForaDoComercial } from './pasta-do-comercial';
 
 /*
@@ -14,8 +14,14 @@ import { listaForaDoComercial } from './pasta-do-comercial';
  *
  * A regra mora aqui, num lugar só: o Comercial cria por ela, o importador move
  * para ela, e a árvore e Todas a tiram por `foraDaArvore`.
+ *
+ * Layout 26/10 (decisão do Lucas): a lista APARECE na árvore quando mora numa pasta
+ * (a pasta de topo "Comercial", posta lá por `deploy/layout/comercial-na-arvore.js`),
+ * para ver, abrir e criar tarefa. `foraDaArvore` continua guardando o resto: renomear,
+ * mover, apagar, arquivar e desarquivar pelo Trabalho seguem recusados (404).
+ * A chave mora no `shared` (a tela também a usa).
  */
-export const LISTA_DO_COMERCIAL = 'comercial:tarefas';
+export const LISTA_DO_COMERCIAL = LISTA_DO_COMERCIAL_CHAVE;
 export const NOME_DA_LISTA_DO_COMERCIAL = 'Tarefas do comercial';
 export const AREA_DO_COMERCIAL = 'Comercial';
 
