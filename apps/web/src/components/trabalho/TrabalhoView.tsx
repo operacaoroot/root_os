@@ -1277,8 +1277,9 @@ function ContagemDaEtapa({ quantas, limite }: { quantas: number; limite: number 
  *    arrasto do trackpad rolam de lado. Nunca quebra coluna para baixo. Os
  *    chips de etapa no topo levam até a coluna, como no funil. A coluna de
  *    saída (etapa fechada) fica esmaecida.
- *  · ROLAGEM POR COLUNA: cada uma tem o próprio `overflow-y` e a altura da
- *    janela; a página não rola inteira (o mesmo arranjo do funil do comercial).
+ *  · ROLAGEM DA PÁGINA (layout 26/10, P-32): as colunas crescem com os cards e a
+ *    página rola até o fim; o quadro ocupa no mínimo a altura da janela. Antes
+ *    cada coluna rolava por dentro e a página não descia.
  *    No celular as colunas viram uma faixa com encaixe, uma por vez.
  *  · O CARTÃO INTEIRO ABRE: o título é um botão cujo `::after` cobre o cartão
  *    (o "link esticado"). O nome acessível continua sendo o título, o Tab para
@@ -1371,7 +1372,7 @@ function Board({ lista, tarefas, editable, podeCriar, token, agentes, pessoas = 
   return (
     <div
       ref={caixaDoQuadro} data-testid="trabalho-quadro-caixa" data-arrastando={arrastando ? '1' : undefined}
-      className="flex min-h-0 min-w-0 flex-1 flex-col gap-1.5" style={altura ? { height: altura, flex: 'none' } : undefined}
+      className="flex min-w-0 flex-1 flex-col gap-1.5" style={altura ? { minHeight: altura, flex: 'none' } : undefined}
       onDragStart={editable ? comecouArraste : undefined} onDragEnd={editable ? acabouArraste : undefined}
     >
     <nav aria-label="Ir para a etapa" data-testid="trabalho-chips-de-etapa" className="flex shrink-0 gap-1 overflow-x-auto pb-0.5">
@@ -1394,7 +1395,7 @@ function Board({ lista, tarefas, editable, podeCriar, token, agentes, pessoas = 
       data-densidade={densidade}
       tabIndex={0}
       aria-label={`Quadro de ${lista.name}: role para o lado para ver todas as etapas`}
-      className="quadro-rolagem-lateral flex min-h-0 flex-1 snap-x snap-mandatory flex-nowrap gap-2 overflow-x-auto overflow-y-hidden pb-2 outline-none focus-visible:ring-2 focus-visible:ring-brand md:snap-none"
+      className="quadro-rolagem-lateral flex flex-1 snap-x snap-mandatory flex-nowrap gap-2 overflow-x-auto pb-2 outline-none focus-visible:ring-2 focus-visible:ring-brand md:snap-none"
       style={{ '--largura-da-coluna': `${LARGURA_DA_COLUNA[densidade]}px` } as React.CSSProperties}
     >
       {ocultarVazias && colunas.length === 0 && (
@@ -1410,7 +1411,7 @@ function Board({ lista, tarefas, editable, podeCriar, token, agentes, pessoas = 
             key={st.id}
             data-coluna={st.id}
             aria-label={`${st.name}: ${itens.length} ${itens.length === 1 ? 'tarefa' : 'tarefas'}`}
-            className={`flex w-[86%] min-w-0 shrink-0 grow-0 snap-start flex-col rounded border bg-bg2 max-md:max-h-[72dvh] md:w-[var(--largura-da-coluna)] md:min-h-0 ${sobre === st.id ? 'border-brand' : 'border-border'} ${saida ? 'opacity-60 focus-within:opacity-100 hover:opacity-100' : ''}`}
+            className={`flex w-[86%] min-w-0 shrink-0 grow-0 snap-start flex-col rounded border bg-bg2 max-md:max-h-[72dvh] md:w-[var(--largura-da-coluna)] ${sobre === st.id ? 'border-brand' : 'border-border'} ${saida ? 'opacity-60 focus-within:opacity-100 hover:opacity-100' : ''}`}
             onDragOver={editable ? (e) => { e.preventDefault(); if (sobre !== st.id) setSobre(st.id); } : undefined}
             onDragLeave={editable ? (e) => { if (!e.currentTarget.contains(e.relatedTarget as Node)) setSobre(null); } : undefined}
             onDrop={editable ? (e) => soltar(st.id, e) : undefined}
@@ -1431,7 +1432,7 @@ function Board({ lista, tarefas, editable, podeCriar, token, agentes, pessoas = 
                 {editable && !listasPorColuna && <LimiteDaColuna status={st} token={token} onMudou={onMudou} onErro={onErro} />}
               </span>
             </header>
-            <div className="min-h-0 flex-1 space-y-1.5 overflow-y-auto p-1.5" data-rolagem-da-coluna>
+            <div className="flex-1 space-y-1.5 p-1.5 max-md:min-h-0 max-md:overflow-y-auto" data-rolagem-da-coluna>
               {itens.map((t) => (
                 <Cartao
                   key={t.id} t={t} lista={lista} editable={editable} token={token} agentes={agentes} pessoas={pessoas} semMovimento={semMovimento}

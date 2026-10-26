@@ -118,7 +118,8 @@ describe('F4: "Todas as tarefas"', () => {
     render(<TrabalhoPage />);
     const caixa = await screen.findByTestId('trabalho-quadro-caixa');
     // No jsdom o topo é 0: a altura é a janela menos a folga de baixo.
-    expect(caixa.style.height).toBe(`${window.innerHeight - 24}px`);
+    // Layout 26/10 (P-32): é altura MÍNIMA; com mais cards o quadro cresce e a página rola.
+    expect(caixa.style.minHeight).toBe(`${window.innerHeight - 24}px`);
   });
 });
 
