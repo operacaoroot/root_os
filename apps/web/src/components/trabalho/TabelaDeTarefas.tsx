@@ -376,7 +376,7 @@ export function Tabela({ tarefas, campos, trilhos, onAbrir, mostrarLista = false
                 {mostrarLista && <td className="px-3 py-2.5 text-muted"><IconeDaLista icone={t.listIcone} cor={t.listCor} tamanho={12} className="mr-1 inline-block align-[-2px]" />{t.listName ?? '—'}</td>}
                 <td className="px-3 py-2.5">{t.clienteNome ?? <span className="font-os-mono text-[10px] text-warn">sem cliente</span>}</td>
                 <td className="px-3 py-2.5">
-                  <span className="rounded px-1.5 py-0.5 text-[11px] capitalize" style={{ background: `${t.statusColor}26`, color: t.statusColor }}>
+                  <span className="whitespace-nowrap rounded px-1.5 py-0.5 text-[11px] capitalize" style={{ background: `${t.statusColor}26`, color: t.statusColor }}>
                     {t.statusName}
                   </span>
                 </td>

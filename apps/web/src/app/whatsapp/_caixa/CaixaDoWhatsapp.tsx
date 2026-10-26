@@ -110,26 +110,26 @@ function ItemDaLista({ conversa, ativa, onAbrir }: { conversa: ConversaDaCaixa; 
       data-testid={`caixa-conversa-${conversa.id}`}
       aria-current={ativa ? 'true' : undefined}
       onClick={onAbrir}
-      className={`flex w-full min-w-0 items-center gap-2.5 rounded px-2 py-2 text-left transition hover:bg-surface-2 max-md:min-h-[56px] ${ativa ? 'bg-surface-2' : ''} ${FOCO}`}
+      className={`flex w-full min-w-0 items-center gap-3 rounded-lg px-2.5 py-3 text-left transition hover:bg-surface-2 max-md:min-h-[64px] ${ativa ? 'bg-surface-2' : ''} ${FOCO}`}
     >
-      <Avatar conversa={conversa} />
+      <Avatar conversa={conversa} tamanho="h-12 w-12" />
       <span className="min-w-0 flex-1">
         <span className="flex min-w-0 items-baseline gap-1.5">
-          <span title={conversa.nome} className={`min-w-0 flex-1 truncate text-[13.5px] ${conversa.naoLidas ? 'font-semibold text-text' : 'text-text'}`}>
+          <span title={conversa.nome} className={`min-w-0 flex-1 truncate text-[14.5px] ${conversa.naoLidas ? 'font-semibold text-text' : 'text-text'}`}>
             {conversa.nome}
           </span>
           <span className={`shrink-0 font-os-mono text-[10.5px] tabular-nums ${conversa.naoLidas ? 'text-brand' : 'text-muted'}`}>
             {horaDaLista(conversa.ultimaMensagemEm ?? conversa.previa?.timestamp)}
           </span>
         </span>
-        <span className="mt-0.5 flex min-w-0 items-center gap-1.5">
+        <span className="mt-1 flex min-w-0 items-center gap-1.5">
           {conversa.grupo && (
             <span data-testid={`caixa-selo-grupo-${conversa.id}`} className="shrink-0">
               <Chip title="Conversa em grupo">grupo{conversa.participantes != null ? ` · ${conversa.participantes}` : ''}</Chip>
             </span>
           )}
           {selo && <span className="shrink-0"><Chip tom={selo.tom}>{selo.texto}</Chip></span>}
-          <span data-testid={`caixa-previa-${conversa.id}`} title={previa} className="min-w-0 flex-1 truncate text-[12.5px] text-muted">
+          <span data-testid={`caixa-previa-${conversa.id}`} title={previa} className="min-w-0 flex-1 truncate text-[13px] text-muted">
             {previa}
           </span>
           {conversa.naoLidas > 0 && (
@@ -558,7 +558,7 @@ export function CaixaDoWhatsapp() {
                 {estado.q ? 'Nada com essa busca.' : estado.filtro === 'todas' ? 'Nenhuma conversa ainda. As mensagens que chegarem ao número aparecem aqui.' : `Nenhuma conversa em ${ROTULO_DO_FILTRO[estado.filtro]}.`}
               </p>
             )}
-            <ul data-testid="caixa-lista" className="space-y-0.5">
+            <ul data-testid="caixa-lista" className="space-y-1">
               {lista?.conversas.map((c) => (
                 <li key={c.id}>
                   <ItemDaLista conversa={c} ativa={c.id === estado.conversa} onAbrir={() => irPara({ ...estado, conversa: c.id }, 'push')} />
