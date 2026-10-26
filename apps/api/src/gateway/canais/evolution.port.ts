@@ -107,3 +107,16 @@ export const CONECTOR_EVOLUTION = 'evolution';
 
 /** O prefixo do "jid" de grupo que a Evolution do comercial criou (o resto é o JID `@g.us`). */
 export const PREFIXO_DO_GRUPO_EVOLUTION = 'evolution:';
+
+/**
+ * A voz do AGENTE DE TAREFAS (TR-12) no grupo da equipe. Não é o envio do
+ * comercial (`ENVIO_PELA_EVOLUTION`, R3) nem a resposta de gente da caixa: só
+ * manda texto para o grupo de `AGENTE_TAREFAS_JID`, e qualquer outro destino
+ * é recusado na própria porta. `mencoes` são telefones (só dígitos) marcados
+ * com @ no texto; o WhatsApp notifica cada um mesmo com o grupo silenciado.
+ */
+export interface MensagemDoAgenteNoGrupo {
+  falarNoGrupoDoAgente(orgId: string, texto: string, mencoes?: string[]): Promise<{ id: string }>;
+}
+
+export const MENSAGEM_DO_AGENTE_NO_GRUPO = Symbol('MENSAGEM_DO_AGENTE_NO_GRUPO');

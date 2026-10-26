@@ -51,6 +51,6 @@ import { AcoesDaTarefaService } from './menu-da-tarefa/acoes-da-tarefa.service';
   // LixeiraController (produção 3, I2 e I4): a Lixeira e as ações do menu da tarefa.
   controllers: [VistasController, WorkController, WorkFilesController, AtasController, TarefasDoDiaController, LixeiraController],
   providers: [WorkService, CheckoutDeTarefaService, WorkFilesService, AtasService, AtasDoGranolaService, DriveDasAtasService, LigacoesDasAtasService, MovimentoDoQuadroService, VistasService, TarefasDoDiaService, LixeiraService, AcoesDaTarefaService],
-  exports: [CheckoutDeTarefaService, WorkService],
+  exports: [CheckoutDeTarefaService, WorkService, TarefasDoDiaService],
 })
 export class WorkModule {}

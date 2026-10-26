@@ -19,6 +19,7 @@ import {
   type CredencialDaEvolutionParaGuardar,
   type EnvioPelaEvolution,
   type LeituraDaEvolution,
+  type MensagemDoAgenteNoGrupo,
   type RespostaDeGentePelaEvolution,
 } from '../gateway/canais/evolution.port';
 import { enderecoDeDentro, ipv4Embutido } from './endereco-de-dentro';
@@ -561,7 +562,7 @@ const MENSAGEM_DO_ESTADO: Record<'open' | 'connecting' | 'close' | 'desconhecido
 
 @Injectable()
 export class EvolutionDaEmpresaService
-  implements OnModuleInit, EnvioPelaEvolution, AdministracaoDaEvolution, LeituraDaEvolution, RespostaDeGentePelaEvolution
+  implements OnModuleInit, EnvioPelaEvolution, AdministracaoDaEvolution, LeituraDaEvolution, RespostaDeGentePelaEvolution, MensagemDoAgenteNoGrupo
 {
   private readonly log = new Logger('EvolutionDaEmpresa');
   /** A reserva da casa. Lida uma vez; trocar exige recriar o container, como toda variável. */
@@ -802,6 +803,25 @@ export class EvolutionDaEmpresaService
     await this.exigirConectorLigado(orgId);
     const c = await this.exigirCredencial(orgId);
     const r = await this.chamar<CorpoDaEvolution>(c, 'POST', this.rota(c, '/message/sendText'), { number: numero, text: texto });
+    return { id: this.idDaMensagem(r) };
+  }
+
+  /**
+   * O agente de tarefas (TR-12) no grupo da equipe — e só nele: o destino é o
+   * `AGENTE_TAREFAS_JID` do processo, não um argumento. Menção vira o
+   * `mentioned` da Evolution (telefone@s.whatsapp.net); o texto já leva o @.
+   */
+  async falarNoGrupoDoAgente(orgId: string, texto: string, mencoes: string[] = []): Promise<{ id: string }> {
+    const jid = (process.env.AGENTE_TAREFAS_JID ?? '').trim().toLowerCase();
+    if (!/^[0-9-]+@g\.us$/.test(jid)) throw new Error('AGENTE_TAREFAS_JID não é um grupo do WhatsApp: nada foi enviado');
+    if (!String(texto ?? '').trim()) throw new Error('mensagem vazia: nada foi enviado');
+    await this.exigirConectorLigado(orgId);
+    const c = await this.exigirCredencial(orgId);
+    const mentioned = [...new Set(mencoes.map((m) => String(m).replace(/\D/g, '')).filter((m) => m.length >= 10 && m.length <= 15))]
+      .map((m) => `${m}@s.whatsapp.net`);
+    const r = await this.chamar<CorpoDaEvolution>(c, 'POST', this.rota(c, '/message/sendText'), {
+      number: jid, text: texto, ...(mentioned.length ? { mentioned } : {}),
+    });
     return { id: this.idDaMensagem(r) };
   }
 
