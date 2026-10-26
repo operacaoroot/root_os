@@ -168,6 +168,23 @@ export const COMPLEMENTOS_DOS_AGENTES: Readonly<Record<string, ComplementoDoAgen
       definicaoDePronto: 'o texto cabe numa tela de celular e cada número cita de onde veio',
     },
   },
+  // Sem cron: quem chama é a mensagem do grupo (work/agente-de-tarefas/).
+  'agente-de-tarefas': {
+    iniciais: 'AT',
+    pilar: 'Operação',
+    autonomiaAte: RiskLevel.R1,
+    sop: {
+      proposito: 'deixar a equipe criar e acompanhar tarefas pelo grupo do WhatsApp, sem abrir o OS',
+      gatilho: 'mensagem começando com "tarefa" no grupo da equipe',
+      passos: [
+        'confira que quem escreveu é da equipe, pelo telefone do cadastro',
+        'entenda o pedido: criar, listar, concluir ou mudar prazo e responsável',
+        'aplique as regras do Dia a dia: tarefa igual não nasce, parecida pede confirmação',
+        'responda no grupo em poucas linhas, dizendo o que foi feito',
+      ],
+      definicaoDePronto: 'a tarefa está no Dia a dia como foi pedida e o grupo recebeu a confirmação',
+    },
+  },
 };
 
 /** O registro `Agent` que uma linha do cadastro vira, antes do filtro de módulo. */

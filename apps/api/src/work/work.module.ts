@@ -16,6 +16,7 @@ import { VistasController } from './vistas.controller';
 import { VistasService } from './vistas.service';
 import { TarefasDoDiaController } from './tarefas-do-dia.controller';
 import { TarefasDoDiaService } from './tarefas-do-dia.service';
+import { AgenteDeTarefasService } from './agente-de-tarefas/agente-de-tarefas.service';
 import { LixeiraController } from './lixeira/lixeira.controller';
 import { LixeiraService } from './lixeira/lixeira.service';
 import { AcoesDaTarefaService } from './menu-da-tarefa/acoes-da-tarefa.service';
@@ -49,7 +50,7 @@ import { AcoesDaTarefaService } from './menu-da-tarefa/acoes-da-tarefa.service';
   imports: [AuditModule, MemoryModule, GranolaModule],
   // LixeiraController (produção 3, I2 e I4): a Lixeira e as ações do menu da tarefa.
   controllers: [VistasController, WorkController, WorkFilesController, AtasController, TarefasDoDiaController, LixeiraController],
-  providers: [WorkService, CheckoutDeTarefaService, WorkFilesService, AtasService, AtasDoGranolaService, DriveDasAtasService, MovimentoDoQuadroService, VistasService, TarefasDoDiaService, LixeiraService, AcoesDaTarefaService],
+  providers: [WorkService, CheckoutDeTarefaService, WorkFilesService, AtasService, AtasDoGranolaService, DriveDasAtasService, MovimentoDoQuadroService, VistasService, TarefasDoDiaService, LixeiraService, AcoesDaTarefaService, AgenteDeTarefasService],
   exports: [CheckoutDeTarefaService, WorkService],
 })
 export class WorkModule {}
