@@ -157,6 +157,8 @@ export async function listarClientes(db: Db, orgId: string, q?: string, limite =
   const rows = await db.partner.findMany({
     where: {
       orgId, isCliente: true, ativo: true, interno: false,
+      // Layout 26/10: cadastro repetido (apontado para o principal na integração) não aparece no seletor.
+      principalId: null,
       ...(busca ? { OR: [
         { razaoSocial: { contains: busca, mode: 'insensitive' } },
         { nomeFantasia: { contains: busca, mode: 'insensitive' } },
