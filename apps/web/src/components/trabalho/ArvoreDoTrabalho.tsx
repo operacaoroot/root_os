@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Plus, Trash2 } from 'lucide-react';
+import { ChevronDown, ChevronRight, GripVertical, Plus, Trash2 } from 'lucide-react';
 import {
   chaveDoNomeNoNivel, listaDaImplantacao, motivoParaNaoMoverPasta,
   TRAB_LISTA_DA_IMPLANTACAO_PROTEGIDA, TRAB_NOME_DE_LISTA_REPETIDO, TRAB_NOME_DE_PASTA_REPETIDO, TRAB_PASTA_DA_IMPLANTACAO_PROTEGIDA,
@@ -141,6 +141,16 @@ export function ArvoreDoTrabalho({ estrutura, pastas, mostraSoltas, listaId, edi
   onPastaSaiu: (id: string) => void;
 }) {
   const [editando, setEditando] = useState<Editando | null>(null);
+  // Layout 26/10: pasta recolhe e abre (a seta ao lado do nome), como no ClickUp; fica lembrado neste navegador.
+  const [recolhidas, setRecolhidas] = useState<Set<string>>(() => {
+    try { return new Set(JSON.parse(window.localStorage.getItem('trabalho-arvore-recolhidas') ?? '[]') as string[]); } catch { return new Set(); }
+  });
+  const alternarPasta = (id: string) => setRecolhidas((r) => {
+    const n = new Set(r);
+    if (n.has(id)) n.delete(id); else n.add(id);
+    try { window.localStorage.setItem('trabalho-arvore-recolhidas', JSON.stringify([...n])); } catch { /* sem armazenamento: vale só nesta visita */ }
+    return n;
+  });
   const [aparencia, setAparencia] = useState<Aparencia | null>(null);
   const [aviso, setAviso] = useState<string | null>(null);
   const [alvo, setAlvo] = useState<string | null>(null);
@@ -438,8 +448,19 @@ export function ArvoreDoTrabalho({ estrutura, pastas, mostraSoltas, listaId, edi
               aoSalvar={renomearPasta(f)} aoSair={() => { setEditando(null); setFocarDepois(chave); }}
             />
           ) : (
+            <>
+            <button
+              type="button"
+              onClick={() => alternarPasta(f.id)}
+              aria-expanded={!recolhidas.has(f.id)}
+              aria-label={recolhidas.has(f.id) ? `Abrir a pasta ${f.name}` : `Recolher a pasta ${f.name}`}
+              data-testid={`trabalho-arvore-recolher-${f.id}`}
+              className="mt-px grid h-4 w-4 shrink-0 place-items-center rounded text-muted hover:bg-surface-2 hover:text-text"
+            >
+              {recolhidas.has(f.id) ? <ChevronRight size={12} /> : <ChevronDown size={12} />}
+            </button>
             <div
-              title={f.name}
+              title={editable ? `${f.name} · arraste para mover (ou ⋯ › Mover para…)` : f.name}
               data-arvore-item={chave}
               data-testid={`trabalho-arvore-pasta-${f.id}`}
               tabIndex={editable ? 0 : undefined}
@@ -450,11 +471,13 @@ export function ArvoreDoTrabalho({ estrutura, pastas, mostraSoltas, listaId, edi
               onDragEnd={terminar}
               onDoubleClick={() => { if (editable && !protegida) setEditando({ tipo: 'pasta', id: f.id }); }}
               onKeyDown={teclas('pasta', f.id)}
-              className="min-w-0 flex-1 break-words rounded px-1 text-[11px] font-semibold uppercase tracking-wide text-muted focus:outline-none focus-visible:ring-1 focus-visible:ring-brand-dim"
+              className={`min-w-0 flex-1 break-words rounded px-1 text-[11px] font-semibold uppercase tracking-wide text-muted focus:outline-none focus-visible:ring-1 focus-visible:ring-brand-dim ${editable ? 'cursor-grab active:cursor-grabbing' : ''}`}
             >
+              {editable && <GripVertical size={11} aria-hidden className="-ml-1 mr-0.5 inline-block align-[-2px] opacity-0 transition group-hover/arvore:opacity-60" />}
               <IconeDaLista icone={f.icone} cor={f.cor} tamanho={12} className="mr-1.5 inline-block align-[-2px]" />
               {f.name}
             </div>
+            </>
           )}
           {editable && (
             <AcoesDaPastaNaArvore
@@ -468,11 +491,13 @@ export function ArvoreDoTrabalho({ estrutura, pastas, mostraSoltas, listaId, edi
             />
           )}
         </div>
+        {!recolhidas.has(f.id) && <>
         <div className="mt-1 space-y-0.5">
           {f.lists.length === 0 && conteudo.pastas === 0 && <p className="px-2 text-[11px] text-muted">Pasta vazia. Crie uma lista nela ou arraste uma para cá.</p>}
           {f.lists.map((l) => linhaDaLista(l, f.id))}
         </div>
         {filhas.length > 0 && <div className="mt-2 space-y-2">{filhas.map((x) => noDaPasta(x, nivel + 1))}</div>}
+        </>}
       </div>
     );
   };

@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, within } from '@testing-library/react';
 import type { PainelDeTarefas, TarefaDoDia, TrabEstrutura } from '@mktos/shared';
 
 /*
@@ -88,11 +88,12 @@ describe('Dia a dia › Visão geral: o dash das tarefas por pasta e lista', () 
     Object.defineProperty(window, 'location', { configurable: true, value: location });
   });
 
-  it('o número de atrasadas leva a Todas no Trabalho, filtrada por atrasadas', async () => {
+  it('o número de atrasadas abre a lista delas ali, com o caminho para Todas no Trabalho filtrada', async () => {
     render(<VisaoGeralPage />);
     const numero = await screen.findByRole('button', { name: /^Atrasadas\s*2/ });
     fireEvent.click(numero);
-    expect(window.location.href).toBe('/trabalho?pasta=todas&visao=lista&overdue=1&concluidas=ocultar');
+    // Layout 26/10: o clique abre ali a lista exata; o caminho para o Trabalho fica no rodapé dela.
+    expect(within(await screen.findByTestId('visao-geral-recorte')).getByRole('link', { name: 'ver no Trabalho →' }).getAttribute('href')).toBe('/trabalho?pasta=todas&visao=lista&overdue=1&concluidas=ocultar');
   });
 
   it('as colunas de responsável são as pessoas da equipe, com Pedro e Rodrigo mesmo zerados', async () => {
@@ -110,14 +111,16 @@ describe('Dia a dia › Visão geral: o dash das tarefas por pasta e lista', () 
     expect(screen.getByRole('button', { name: 'Clientes: 2' })).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Administrativa: 1' })).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: 'Sem pasta: 1' }));
-    expect(window.location.href).toBe('/trabalho?pasta=sem-pasta&visao=lista&concluidas=ocultar');
+    // Layout 26/10: o clique abre ali a lista exata; o caminho para o Trabalho fica no rodapé dela.
+    expect(within(await screen.findByTestId('visao-geral-recorte')).getByRole('link', { name: 'ver no Trabalho →' }).getAttribute('href')).toBe('/trabalho?pasta=sem-pasta&visao=lista&concluidas=ocultar');
   });
 
   it('por lista: cada coluna abre a lista na pasta dela', async () => {
     render(<VisaoGeralPage />);
     await screen.findByText('Tarefas por lista');
     fireEvent.click(screen.getByRole('button', { name: 'Onboarding de cliente: 1' }));
-    expect(window.location.href).toBe('/trabalho?pasta=f-clientes&lista=l-onb&visao=lista&concluidas=ocultar');
+    // Layout 26/10: o clique abre ali a lista exata; o caminho para o Trabalho fica no rodapé dela.
+    expect(within(await screen.findByTestId('visao-geral-recorte')).getByRole('link', { name: 'ver no Trabalho →' }).getAttribute('href')).toBe('/trabalho?pasta=f-clientes&lista=l-onb&visao=lista&concluidas=ocultar');
   });
 
   it('P1 (21/10): carga por prazo, por pasta e por lista sem rolagem lateral na caixa', async () => {

@@ -8,6 +8,8 @@ import { Numero, Quadro } from '@/components/painel';
 import { AvatarDaPessoa } from '@/components/AvatarDaPessoa';
 import { Barras, type Fatia } from './graficos';
 import { ImplantacaoNoDiaADia } from './ImplantacaoNoDiaADia';
+import { TarefaFlutuante } from '@/components/trabalho/TrabalhoView';
+import { useTarefaNaUrl } from '@/lib/tarefa-na-url';
 
 /*
  * DIA A DIA › VISÃO GERAL (versão final, 19/10/2026): o dash das tarefas do
@@ -95,18 +97,23 @@ export function VisaoGeralDasTarefas({ meio }: { meio?: ReactNode } = {}) {
   const { token, ready } = useAuth();
   const [p, setP] = useState<PainelDeTarefas | null>(null);
   const [estrutura, setEstrutura] = useState<TrabEstrutura | null>(null);
+  // Layout 26/10: clicar num número abre AQUI a lista exata das tarefas contadas (as do comercial
+  // inclusas, que o Trabalho não mostra); cada uma abre por cima e fechar volta para cá.
+  const [recorte, setRecorte] = useState<FiltroDaVisaoGeral | null>(null);
+  const popup = useTarefaNaUrl();
+  const [versao, setVersao] = useState(0);
   const [erro, setErro] = useState<string | null>(null);
   useEffect(() => {
     if (!ready || !token) return;
     apiGet<PainelDeTarefas>('/trabalho/todas', token).then(setP).catch((e) => setErro(e.message));
     // Sem a estrutura o dash mostra as listas, e as pastas ficam sem nome (não some número).
     apiGet<TrabEstrutura>('/trabalho/estrutura', token).then(setEstrutura).catch(() => setEstrutura(null));
-  }, [ready, token]);
+  }, [ready, token, versao]);
   // O que vem em `meio` (WhatsApp e Implantação) não espera as tarefas: aparece mesmo com
   // as tarefas carregando ou com erro (antes, o erro do dash derrubava o cartão do WhatsApp).
   if (erro) return <div className="space-y-5"><div className="rounded-lg border border-bad/30 bg-bad/10 px-4 py-2 text-sm text-bad">{erro}</div>{meio}</div>;
   if (!p) return <div className="space-y-5"><p className="text-muted">Carregando as tarefas…</p>{meio}</div>;
-  const abrir = (f: FiltroDaVisaoGeral) => { window.location.href = urlDoTrabalho(f); };
+  const abrir = (f: FiltroDaVisaoGeral) => setRecorte(f);
 
   const abertas = p.tarefas.filter((t) => t.situacao !== 'feita');
   const conta = (s: SituacaoDoPrazo) => abertas.filter((t) => t.situacao === s).length;
@@ -163,6 +170,20 @@ export function VisaoGeralDasTarefas({ meio }: { meio?: ReactNode } = {}) {
       ? [{ chave: 'outras', rotulo: `Outras ${resto.length} listas`, valor: resto.reduce((s, [, g]) => s + g.tarefas.length, 0), cor: FRACO, onClick: () => abrir({}) }]
       : []),
   ];
+
+  const doRecorte = (f: FiltroDaVisaoGeral): TarefaDoDia[] => {
+    const base = f.situacao === 'feita' ? p.tarefas.filter((t) => t.situacao === 'feita' && t.updatedAt >= seteDiasAtras) : abertas;
+    return base.filter((t) =>
+      (!f.pessoa || (f.pessoa === SEM ? !t.pessoa : t.pessoas.some((x) => x.id === f.pessoa))) &&
+      (!f.situacao || f.situacao === 'feita' || (f.situacao === 'emdia' ? ['hoje', 'proximos_7', 'mais_tarde'].includes(t.situacao) : t.situacao === f.situacao)) &&
+      (!f.pasta || (pastaDe.get(t.lista.id)?.id ?? SEM_PASTA) === f.pasta) &&
+      (!f.lista || t.lista.id === f.lista));
+  };
+  const tituloDoRecorte = (f: FiltroDaVisaoGeral) => [
+    f.situacao === 'feita' ? 'Feitas nos últimos 7 dias' : f.situacao === 'emdia' ? 'Em dia' : f.situacao ? NOME_DA_SITUACAO[f.situacao] : 'Tarefas abertas',
+    f.pessoa === SEM ? 'sem responsável' : f.pessoa ? p.pessoas.find((x) => x.id === f.pessoa)?.nome : null,
+    f.lista ? abertas.find((t) => t.lista.id === f.lista)?.lista.nome : f.pasta ? (f.pasta === SEM_PASTA ? 'sem pasta' : pastas.get(f.pasta)?.nome) : null,
+  ].filter(Boolean).join(' · ');
 
   return (
     <div className="space-y-5">
@@ -241,6 +262,51 @@ export function VisaoGeralDasTarefas({ meio }: { meio?: ReactNode } = {}) {
           </table>
         </div>
       </Quadro>
+      {recorte && <JanelaDoRecorte titulo={tituloDoRecorte(recorte)} tarefas={doRecorte(recorte)} trabalho={urlDoTrabalho(recorte)} aoAbrir={popup.abrir} aoFechar={() => setRecorte(null)} />}
+      <TarefaFlutuante tarefa={popup} onMudou={() => setVersao((v) => v + 1)} />
+    </div>
+  );
+}
+
+/** A lista exata do número clicado: título, lista, prazo e responsável; clicar abre a tarefa por cima. */
+function JanelaDoRecorte({ titulo, tarefas, trabalho, aoAbrir, aoFechar }: {
+  titulo: string; tarefas: TarefaDoDia[]; trabalho: string; aoAbrir: (id: string) => void; aoFechar: () => void;
+}) {
+  useEffect(() => {
+    const esc = (e: KeyboardEvent) => { if (e.key === 'Escape' && !document.querySelector('[data-testid="tarefa-popup"]')) aoFechar(); };
+    window.addEventListener('keydown', esc);
+    return () => window.removeEventListener('keydown', esc);
+  }, [aoFechar]);
+  return (
+    <div className="fixed inset-0 z-40 flex items-start justify-center bg-black/40 p-3 pt-[8vh]" onClick={aoFechar}>
+      <div role="dialog" aria-modal="true" aria-label={titulo} data-testid="visao-geral-recorte" onClick={(e) => e.stopPropagation()}
+        className="flex max-h-[80vh] w-full max-w-[640px] flex-col rounded-lg border border-border bg-bg shadow-2xl">
+        <header className="flex items-baseline justify-between gap-3 border-b border-border px-4 py-3">
+          <h2 className="text-[15px] font-semibold">{titulo} <span className="font-os-mono text-[12px] text-muted">· {tarefas.length}</span></h2>
+          <button type="button" onClick={aoFechar} className="text-sm text-muted hover:text-text">Fechar</button>
+        </header>
+        <ul className="min-h-0 flex-1 divide-y divide-border overflow-y-auto">
+          {tarefas.length === 0 && <li className="px-4 py-6 text-sm text-muted">Nenhuma tarefa aqui.</li>}
+          {tarefas.map((t) => (
+            <li key={t.id}>
+              <button type="button" onClick={() => aoAbrir(t.id)} data-testid={`recorte-tarefa-${t.id}`} className="flex w-full items-start gap-3 px-4 py-2.5 text-left hover:bg-surface-2">
+                <span className="min-w-0 flex-1">
+                  <span className="block break-words text-[13.5px]">{t.titulo}</span>
+                  <span className="block text-[12px] text-muted">
+                    {t.lista.nome}{t.cliente ? ` · ${t.cliente.titulo}` : ''} · {t.prazo ? `prazo ${t.prazo.slice(8, 10)}/${t.prazo.slice(5, 7)}` : 'sem prazo'}
+                    {t.situacao === 'atrasada' && <span className="text-bad"> · atrasada</span>}
+                  </span>
+                </span>
+                {t.pessoa ? <AvatarDaPessoa nome={t.pessoa.nome} pessoaId={t.pessoa.id} tamanho="p" /> : <span className="text-[11px] text-muted">sem responsável</span>}
+              </button>
+            </li>
+          ))}
+        </ul>
+        <footer className="flex items-center justify-between gap-3 border-t border-border px-4 py-2.5 text-[12px] text-muted">
+          <span>As do comercial ficam no Funil de vendas; aqui aparecem todas.</span>
+          <a href={trabalho} className="text-brand hover:underline">ver no Trabalho →</a>
+        </footer>
+      </div>
     </div>
   );
 }
