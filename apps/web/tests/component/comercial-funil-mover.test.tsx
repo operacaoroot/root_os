@@ -77,6 +77,8 @@ function irPara(url: string) {
 }
 
 beforeEach(() => {
+  // Layout 26/10: estes testes conferem o card inteiro (avisos por extenso), que é a densidade "cheio".
+  window.localStorage.setItem('root-os:trabalho:densidade', 'cheio');
   RESPOSTAS = {};
   gets.length = 0;
   posts.length = 0;

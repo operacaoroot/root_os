@@ -23,6 +23,8 @@ import { RegistrarFechadoFora } from '../_funil/RegistrarFechadoFora';
 import { BlocoDeTarefasDoComercial } from '../_funil/TarefasDoComercial';
 import { contagemDeTarefas, proximaAcaoDoCartao, type LinhaDaProximaAcao } from '../_funil/proxima-acao-do-cartao';
 import { partesDoLead } from '@/lib/nome-do-lead';
+import { SeletorDeDensidade, useDensidade } from '@/components/SeletorDeDensidade';
+import type { Densidade } from '@/lib/quadro-denso';
 
 /*
  * TELA 04 · O FUNIL VIVO (lane C; painel na lane UX; mover na rodada do painel, P5;
@@ -110,6 +112,8 @@ export default function FunilVivoPage() {
   const ocupar = (leadId: string, sim: boolean) => setOcupados(({ [leadId]: _, ...resto }) => (sim ? { ...resto, [leadId]: true } : resto));
   const [arrastando, setArrastando] = useState<CartaoDoFunil | null>(null);
   const [sobre, setSobre] = useState<string | null>(null);
+  // Layout 26/10: a mesma densidade de todo quadro do OS (compacto · médio · cheio).
+  const [densidade, escolherDensidade] = useDensidade();
 
   const avisar = (leadId: string, texto: string, tom: AvisoDoCartao['tom'] = 'neutro') => setAvisos((a) => ({ ...a, [leadId]: { texto, tom } }));
   const calar = (leadId: string) => setAvisos(({ [leadId]: _, ...resto }) => resto);
@@ -180,6 +184,7 @@ export default function FunilVivoPage() {
               }}
             />
           )}
+          {visao === 'quadro' && <SeletorDeDensidade densidade={densidade} aoEscolher={escolherDensidade} testId="funil-densidade" />}
           <BotaoDeFiltros
             testId="funil-filtros"
             alinhar="esquerda"
@@ -263,6 +268,7 @@ export default function FunilVivoPage() {
                         aviso={avisos[c.leadId] ?? null}
                         ocupado={!!ocupados[c.leadId]}
                         podeMover={editar}
+                        densidade={densidade}
                         saida={saidaAberta?.leadId === c.leadId ? saidaAberta : null}
                         aoEscolher={(d) => void agir(c, d)}
                         aoFecharSaida={() => setSaidaAberta(null)}
@@ -309,7 +315,9 @@ function Cartao({
   aoSairFeito,
   aoArrastar,
   aoCalar,
+  densidade = 'cheio',
 }: {
+  densidade?: Densidade;
   c: CartaoDoFunil;
   aviso: AvisoDoCartao | null;
   ocupado: boolean;
@@ -386,6 +394,7 @@ function Cartao({
         />
       )}
       <BarraDaSaude saude={c.saude} />
+      {densidade !== 'compacto' && <>
       <p className="mt-1.5 break-words text-[12px] text-muted" data-testid={`funil-proxima-${c.leadId}`}>
         {rotuloDaSaida ?? <TextoDaAcao linha={principal} />}
         {c.voltaEm && <span className="text-dim"> · volta {diaSP(c.voltaEm)}</span>}
@@ -395,6 +404,7 @@ function Cartao({
           <TextoDaAcao linha={segunda} />
         </p>
       )}
+      </>}
       <div className="mt-1.5 flex flex-wrap gap-1">
         <span className="font-os-mono text-[10px] text-dim">{rotuloCurto(c.etapa)}</span>
         {/* O responsável só com a imagem, o nome no balão (I6). */}
@@ -404,9 +414,12 @@ function Cartao({
         {c.precisaDeDecisao && <Chip tom="brand">decisão sua</Chip>}
         {c.parado && <Chip tom="alerta">parado {c.diasNaEtapa} d</Chip>}
         {contagem && <Chip title="tarefas do comercial abertas deste lead">{contagem}</Chip>}
+        {/* No compacto e no médio os avisos viram selo; no cheio vêm por extenso. */}
+        {densidade !== 'cheio' && c.balao && <Chip tom="alerta" title={`movido com pendências: ${c.balao.pendencias.join('; ')}`}>pendências {c.balao.pendencias.length}</Chip>}
+        {densidade !== 'cheio' && c.avisoDoMover && <Chip tom="alerta" title={c.avisoDoMover.texto}>movido à mão</Chip>}
       </div>
 
-      {c.balao && (
+      {densidade === 'cheio' && c.balao && (
         <div role="note" data-testid={`funil-balao-${c.leadId}`} className="mt-2 rounded border border-warn/50 bg-warn/10 px-2 py-1.5 text-[11.5px] leading-snug">
           <p className="font-os-mono text-[9.5px] uppercase tracking-[0.12em] text-warn">movido com pendências</p>
           <p className="mt-0.5 text-text">{c.balao.pendencias.join('; ')}</p>
@@ -414,7 +427,7 @@ function Cartao({
         </div>
       )}
 
-      {c.avisoDoMover && (
+      {densidade === 'cheio' && c.avisoDoMover && (
         <div role="note" data-testid={`funil-aviso-mao-${c.leadId}`} className="mt-2 rounded border border-warn/50 bg-warn/10 px-2 py-1.5 text-[11.5px] leading-snug">
           <p className="font-os-mono text-[9.5px] uppercase tracking-[0.12em] text-warn">movido à mão</p>
           <p className="mt-0.5 text-text">{c.avisoDoMover.texto}</p>

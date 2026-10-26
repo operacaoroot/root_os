@@ -98,6 +98,8 @@ beforeEach(() => {
   posts.length = 0;
   patches.length = 0;
   window.localStorage.clear();
+  // Layout 26/10: estes testes conferem o card inteiro (avisos por extenso), que é a densidade "cheio".
+  window.localStorage.setItem('root-os:trabalho:densidade', 'cheio');
   irPara('/comercial/funil');
 });
 afterEach(() => {

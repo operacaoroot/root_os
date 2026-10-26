@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import * as Dialog from '@radix-ui/react-dialog';
+import { SeletorDeDensidade } from '@/components/SeletorDeDensidade';
 import { Archive, Bot, CalendarDays, Check, ChevronRight, CircleDot, Clock, DoorOpen, ExternalLink, Flag, Hourglass, Maximize2, MessageSquare, PanelRight, Plus, Repeat, Settings2, Tag, Trash2, Unlock, Users, X } from 'lucide-react';
 import {
   MODELOS_DE_LISTA, MOEDA_PADRAO, ehValorMonetarioCanonico, formatarValorMonetario, lerValorDigitadoPtBr,
@@ -381,6 +382,7 @@ function TrabalhoConteudo({ visaoInicial, modo, aoSairDeTodas }: { visaoInicial:
   const escolherDensidade = (d: Densidade) => {
     setDensidade(d);
     try { window.localStorage.setItem(CHAVE_DA_DENSIDADE, d); } catch { /* sem armazenamento: vale só nesta visita */ }
+    window.dispatchEvent(new Event('root-os:densidade'));
   };
 
   const filtroNoEndereco = (chave: string, valor: string) => {
@@ -1060,20 +1062,7 @@ function TrabalhoConteudo({ visaoInicial, modo, aoSairDeTodas }: { visaoInicial:
               </select>
             )}
             {visao === 'board' && (
-              <div className="flex overflow-hidden rounded-lg border border-border" role="group" aria-label="Densidade do quadro">
-                {DENSIDADES.map((d) => (
-                  <button
-                    key={d.chave}
-                    type="button"
-                    data-testid={`trabalho-densidade-${d.chave}`}
-                    aria-pressed={densidade === d.chave}
-                    onClick={() => escolherDensidade(d.chave)}
-                    className={`px-2.5 py-1.5 font-os-mono text-[11px] max-md:min-h-[44px] ${densidade === d.chave ? 'bg-brand/15 text-text' : 'bg-surface text-muted hover:text-text'}`}
-                  >
-                    {d.rotulo}
-                  </button>
-                ))}
-              </div>
+              <SeletorDeDensidade densidade={densidade} aoEscolher={escolherDensidade} testId="trabalho-densidade" />
             )}
             {/* T3: a vista salva (filtros, densidade e visão), por pessoa, no servidor. A Implantação tem as dela. */}
             <VistasDoQuadro
