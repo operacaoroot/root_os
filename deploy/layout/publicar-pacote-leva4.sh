@@ -26,6 +26,11 @@ log "backup $(du -h "$R/banco-antes.dump" | cut -f1) · contagens (tarefas|leads
 
 log "2. imagem nova"
 bash "$Z/publicar-layout.sh" "$IMG" "$NOME-imagem" || { echo "a imagem não ficou de pé e já voltou sozinha; dados não foram tocados"; exit 1; }
+# Na produção a API parte com `node dist/main.js` (sem migrate): a migration roda à parte, como nas releases de 18/10.
+# (26/10: este passo faltava na primeira versão; foi rodado à mão 30 s depois da imagem subir.)
+( cd /etc/easypanel/projects/root/marketing-os/code && docker compose --project-name root_marketing-os $(cat /srv/rootos/releases/$NOME-imagem/cadeia-depois.txt) \
+    run --rm --no-deps -T --entrypoint sh api -c 'pnpm exec prisma migrate deploy' < /dev/null > "$R/migration.log" 2>&1 )
+grep -E "Applying|applied|No pending" "$R/migration.log"
 M=$(psql_prod -Atc "select count(*) from _prisma_migrations where migration_name like '%integracao_cliente' and finished_at is not null")
 log "migration integracao_cliente aplicada: $M"
 [ "$M" = 1 ] || { echo "migration não aplicada: confira antes dos dados"; exit 1; }
