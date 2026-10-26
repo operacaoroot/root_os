@@ -167,48 +167,61 @@ function Balao({ m, grupo }: { m: MensagemDaCaixa; grupo: boolean }) {
       </li>
     );
   }
+  // Layout 26/10 (Lucas): balões com a cara do WhatsApp (branco de quem chega, verde-claro do que sai,
+  // nome colorido por pessoa, resposta citada com barra colorida, hora no canto do balão).
   const lado = m.deMim ? 'ml-auto items-end' : 'mr-auto items-start';
-  const cor = m.deMim ? 'border-brand/30 bg-brand/10' : 'border-border bg-surface-2';
+  const hora = (
+    <span className="wz-meta float-right ml-2 mt-1.5 translate-y-0.5 whitespace-nowrap text-[10.5px] tabular-nums leading-none">
+      {m.tipo === 'edicao' ? 'editada · ' : ''}
+      {horaDoBalao(m.timestamp)}
+    </span>
+  );
+  const nomeDaCitacao = m.cita ? (m.cita.deMim ? 'Você' : m.cita.remetenteNome?.trim() || 'mensagem citada') : '';
   return (
-    <li data-testid={`caixa-balao-${m.id}`} data-de-mim={m.deMim ? 'sim' : 'nao'} className={`flex max-w-[85%] flex-col md:max-w-[70%] ${lado}`}>
-      <div className={`min-w-0 max-w-full rounded border px-2.5 py-1.5 text-[13px] ${cor}`}>
+    <li data-testid={`caixa-balao-${m.id}`} data-de-mim={m.deMim ? 'sim' : 'nao'} className={`flex max-w-[85%] flex-col md:max-w-[65%] ${lado}`}>
+      <div className={`wz-balao min-w-0 max-w-full rounded-lg px-2 pb-1.5 pt-1 text-[13.5px] leading-[1.35] ${m.deMim ? 'wz-sai rounded-tr-sm' : 'wz-entra rounded-tl-sm'}`}>
         {grupo && !m.deMim && (
-          <p className="mb-0.5 flex min-w-0 items-baseline justify-between gap-3 text-[11.5px]">
-            <span className="truncate font-semibold text-brand">{remetenteDoBalao(m)}</span>
-            {m.remetenteNome?.trim() && numeroDoBalao(m.remetenteNumero) && <span data-testid={`caixa-numero-${m.id}`} className="shrink-0 font-os-mono text-[10.5px] text-muted">{numeroDoBalao(m.remetenteNumero)}</span>}
+          <p className="mb-0.5 flex min-w-0 items-baseline justify-between gap-3 text-[12.5px]">
+            <span className="truncate font-semibold" style={{ color: corDaPessoa(remetenteDoBalao(m)) }}>{remetenteDoBalao(m)}</span>
+            {m.remetenteNome?.trim() && numeroDoBalao(m.remetenteNumero) && <span data-testid={`caixa-numero-${m.id}`} className="wz-meta shrink-0 text-[11px]">{numeroDoBalao(m.remetenteNumero)}</span>}
           </p>
         )}
         {m.cita && (
-          <p data-testid={`caixa-citacao-${m.id}`} className="mb-1 line-clamp-3 border-l-2 border-brand/50 pl-2 text-[12px] text-muted">
-            <span className="font-semibold">{m.cita.deMim ? 'Você' : m.cita.remetenteNome?.trim() || 'mensagem citada'}</span>
-            {': '}
-            {m.cita.texto?.trim() || (m.cita.tipo ? rotuloDoTipoDeMensagem(m.cita.tipo) : 'mensagem que não está gravada')}
-          </p>
+          <div data-testid={`caixa-citacao-${m.id}`} className="wz-citacao mb-1 overflow-hidden rounded-md border-l-4 px-2 py-1 text-[12.5px]" style={{ borderLeftColor: corDaPessoa(nomeDaCitacao) }}>
+            <p className="truncate font-semibold" style={{ color: corDaPessoa(nomeDaCitacao) }}>{nomeDaCitacao}</p>
+            <p className="wz-meta line-clamp-3 break-words">
+              {m.cita.texto?.trim() || (m.cita.tipo ? rotuloDoTipoDeMensagem(m.cita.tipo) : 'mensagem que não está gravada')}
+            </p>
+          </div>
         )}
         {m.tipo === 'reaction' ? (
-          <p className="text-[12.5px] text-muted">reagiu com {m.texto?.trim() || 'uma reação'}</p>
+          <p className="wz-meta text-[13px]">reagiu com {m.texto?.trim() || 'uma reação'}{hora}</p>
         ) : (
           <>
             {ehMidia(m.tipo) && <CartaoDaMidia m={m} />}
             {m.texto?.trim() ? (
-              <p className={`whitespace-pre-wrap break-words [overflow-wrap:anywhere] ${ehMidia(m.tipo) ? 'mt-1' : ''}`}>{m.texto}</p>
+              <p className={`whitespace-pre-wrap break-words [overflow-wrap:anywhere] ${ehMidia(m.tipo) ? 'mt-1' : ''}`}>{m.texto}{hora}</p>
             ) : (
-              !ehMidia(m.tipo) && <p className="text-muted">{rotuloDoTipoDeMensagem(m.tipo)}</p>
+              <p className="wz-meta">{!ehMidia(m.tipo) && rotuloDoTipoDeMensagem(m.tipo)}{hora}</p>
             )}
           </>
         )}
-        <p className="mt-0.5 text-right font-os-mono text-[10px] tabular-nums text-muted">
-          {m.tipo === 'edicao' ? 'editada · ' : ''}
-          {horaDoBalao(m.timestamp)}
-        </p>
       </div>
       {m.enviadaPor && (
-        <p data-testid={`caixa-enviada-por-${m.id}`} className="mt-0.5 text-[11px] text-muted">
+        <p data-testid={`caixa-enviada-por-${m.id}`} className="wz-meta mt-0.5 text-[11px]">
           enviada por {m.enviadaPor.nome}
         </p>
       )}
     </li>
   );
+}
+
+/** Layout 26/10: cada pessoa com uma cor fixa no nome, como no WhatsApp de grupo. */
+const CORES_DAS_PESSOAS = ['#1f7aec', '#c2228e', '#028a6b', '#c4532d', '#7f66ff', '#a62c71', '#0a7d8c', '#b8860b'];
+function corDaPessoa(nome: string): string {
+  let h = 0;
+  for (const ch of nome) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
+  return CORES_DAS_PESSOAS[h % CORES_DAS_PESSOAS.length];
 }
 
 function Historico({ mensagens, grupo }: { mensagens: MensagemDaCaixa[]; grupo: boolean }) {
@@ -219,7 +232,7 @@ function Historico({ mensagens, grupo }: { mensagens: MensagemDaCaixa[]; grupo: 
     if (dia && dia !== diaAnterior) {
       itens.push(
         <li key={`dia-${dia}`} className="my-2 text-center">
-          <span className="rounded bg-surface-2 px-2 py-0.5 font-os-mono text-[10.5px] text-muted">{rotuloDoDia(dia)}</span>
+          <span className="wz-dia rounded-lg px-2.5 py-1 text-[11.5px]">{rotuloDoDia(dia)}</span>
         </li>,
       );
       diaAnterior = dia;
@@ -607,7 +620,7 @@ export function CaixaDoWhatsapp() {
                 ref={historico}
                 data-testid="caixa-historico"
                 onScroll={aoRolar}
-                className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-2.5 py-2"
+                className="wz-fundo min-h-0 flex-1 overflow-y-auto overscroll-contain px-3 py-2"
               >
                 {naoAchou ? (
                   <p className="p-4 text-center text-[13px] text-muted">Esta conversa não existe ou não é desta empresa.</p>

@@ -88,9 +88,9 @@ export class PainelComercialService {
    * = pagante + sem caixa; `valorSemCaixa` separa parceria, permuta e repasse. Enquanto
    * nenhum acordo tiver data, fica o cálculo antigo (quem fechou no funil).
    */
-  private async fechadosPorMes(orgId: string, ano: number, antigo: PainelComercialMes[]): Promise<PainelComercialMes[]> {
+  private async fechadosPorMes(orgId: string, ano: number, tudo: boolean, antigo: PainelComercialMes[]): Promise<PainelComercialMes[]> {
     const acordos = await this.prisma.acordoComercial.findMany({
-      where: { orgId, fechadoEm: { gte: new Date(`${ano}-01-01T00:00:00.000Z`), lt: new Date(`${ano + 1}-01-01T00:00:00.000Z`) } },
+      where: { orgId, ...(tudo ? {} : { tipo: 'pagante' }), fechadoEm: { gte: new Date(`${ano}-01-01T00:00:00.000Z`), lt: new Date(`${ano + 1}-01-01T00:00:00.000Z`) } },
       select: { fechadoEm: true, tipo: true, valor: true },
     });
     if (!acordos.length) return antigo;
@@ -102,9 +102,9 @@ export class PainelComercialService {
     });
   }
 
-  private async clientesPorAcordo(orgId: string): Promise<{ total: number; porTipo: { tipo: string; clientes: string[] }[] }> {
+  private async clientesPorAcordo(orgId: string, tudo = true): Promise<{ total: number; porTipo: { tipo: string; clientes: string[] }[] }> {
     const acordos = await this.prisma.acordoComercial.findMany({
-      where: { orgId },
+      where: { orgId, ...(tudo ? {} : { tipo: 'pagante' }) },
       select: {
         cliente: true, tipo: true, partnerId: true,
         partner: { select: { principalId: true, razaoSocial: true, nomeFantasia: true, principal: { select: { razaoSocial: true, nomeFantasia: true } } } },
@@ -126,7 +126,8 @@ export class PainelComercialService {
     return { total: todos.size, porTipo: tipos.map((t) => ({ tipo: t, clientes: [...porTipo.get(t)!.values()].sort((a, b) => a.localeCompare(b, 'pt')) })) };
   }
 
-  async painel(orgId: string, agora = new Date()): Promise<PainelComercial> {
+  /** Layout 26/10 (Lucas): `tudo` = false conta só os negócios pagantes; true conta também parceria, permuta e repasse. */
+  async painel(orgId: string, agora = new Date(), tudo = false): Promise<PainelComercial> {
     const ano = Number(mesDe(agora).slice(0, 4));
 
     const [total, leads] = await Promise.all([
@@ -188,7 +189,7 @@ export class PainelComercialService {
       } else encerradoEm.set(f.leadId, f.occurredAt);
     }
 
-    const cards = leads.map((l) => {
+    const todosOsCards = leads.map((l) => {
       const etapa = (l.ficha?.etapa ?? 'novo_lead') as ComercialEtapa;
       const etapaDesde = l.ficha?.etapaDesde ?? l.enteredAt;
       let resultado = resultadoDaEtapaDoCockpit(etapa);
@@ -220,6 +221,8 @@ export class PainelComercialService {
         tipoNegocio: tipoDeNegocio(l.ficha?.tipoNegocio),
       };
     });
+    // Layout 26/10: o botão do Painel geral. Desligado: só pagantes (o que vira caixa); ligado: tudo.
+    const cards = tudo ? todosOsCards : todosOsCards.filter((c) => c.tipoNegocio === 'pagante');
 
     const doAno = (d: Date | null) => !!d && mesDe(d).startsWith(`${ano}-`);
     const soma = (xs: { valor: number | null }[]) => xs.reduce((s, x) => s + (x.valor ?? 0), 0);
@@ -293,7 +296,7 @@ export class PainelComercialService {
         emNegociacao: soma(abertos),
         // Layout 26/10: a negociação separada entre o que gera caixa (pagante) e o que não gera.
         emNegociacaoPagante: soma(abertos.filter((c) => c.tipoNegocio === 'pagante')),
-        emNegociacaoSemCaixa: soma(abertos.filter((c) => c.tipoNegocio !== 'pagante')),
+        emNegociacaoSemCaixa: soma(todosOsCards.filter((c) => c.resultado === 'aberta' && c.tipoNegocio !== 'pagante')),
         abertos: abertos.length,
         ganhosNoAno: ganhosAno.length,
         valorGanhoNoAno,
@@ -306,10 +309,10 @@ export class PainelComercialService {
         ganhosSemValor: ganhosAno.length - ganhosComValor.length,
         clientesAtivos: cards.filter((c) => c.clienteAtivo).length,
         contratosVivos: cards.filter((c) => c.contratoVivo).length,
-        clientesPorAcordo: await this.clientesPorAcordo(orgId),
+        clientesPorAcordo: await this.clientesPorAcordo(orgId, tudo),
       },
       etapas,
-      fechadosPorMes: await this.fechadosPorMes(orgId, ano, porMes(
+      fechadosPorMes: await this.fechadosPorMes(orgId, ano, tudo, porMes(
         meses(12, `${ano}-12`),
         cards.filter((c) => c.fechouEm).map((c) => ({ mes: mesDe(c.fechouEm!), valor: c.valor })),
       )),

@@ -1,4 +1,4 @@
-import { BadRequestException, Controller, Get, Param, UseGuards } from '@nestjs/common';
+import { BadRequestException, Controller, Get, Param, Query, UseGuards } from '@nestjs/common';
 import { PainelComercialService } from './painel-comercial.service';
 import { PropostasDaSalaService } from './propostas-da-sala.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
@@ -19,8 +19,9 @@ export class PainelComercialController {
 
   @Get('painel')
   @RequirePermissions('leads.ver')
-  painel(@CurrentUser() user: JwtUser) {
-    return this.svc.painel(user.orgId);
+  painel(@CurrentUser() user: JwtUser, @Query('tudo') tudo?: string) {
+    // Layout 26/10: sem `tudo=1`, só os negócios pagantes; com ele, também parceria, permuta e repasse.
+    return this.svc.painel(user.orgId, new Date(), tudo === '1');
   }
 
   @Get('lista-de-leads')

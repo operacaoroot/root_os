@@ -101,6 +101,10 @@ function rotuloDoFiltro(k: keyof Filtro, v: string) {
 export default function ComercialPage() {
   const { token, ready, can } = useAuth();
   const [p, setP] = useState<PainelComercial | null>(null);
+  // Layout 26/10 (Lucas): desligado = só os negócios pagantes (o que vira caixa); ligado = também parceria, permuta e repasse.
+  const [tudo, setTudo] = useState(false);
+  useEffect(() => { try { setTudo(window.localStorage.getItem('root-os:comercial:tudo') === '1'); } catch { /* sem armazenamento */ } }, []);
+  const trocarTudo = () => setTudo((t) => { try { window.localStorage.setItem('root-os:comercial:tudo', t ? '0' : '1'); } catch { /* sem armazenamento */ } return !t; });
   const [error, setError] = useState<string | null>(null);
   const [ver, setVer] = useState<Aba>('painel');
   const [filtro, setFiltro] = useState<Filtro>({});
@@ -118,8 +122,8 @@ export default function ComercialPage() {
 
   useEffect(() => {
     if (!ready || !token) return;
-    apiGet<PainelComercial>('/comercial/painel', token).then(setP).catch((e) => setError(e.message));
-  }, [ready, token]);
+    apiGet<PainelComercial>(`/comercial/painel${tudo ? '?tudo=1' : ''}`, token).then(setP).catch((e) => setError(e.message));
+  }, [ready, token, tudo]);
 
   const abrir = useCallback((f: Filtro) => {
     setFiltro(f);
@@ -156,6 +160,20 @@ export default function ComercialPage() {
         </div>
         <div className="mb-2 flex items-center gap-3">
           <Link href="/comercial/funil" className="text-sm text-muted underline hover:text-brand">abrir o Funil de vendas</Link>
+          <button
+            type="button"
+            role="switch"
+            aria-checked={tudo}
+            data-testid="painel-tudo"
+            onClick={trocarTudo}
+            title={tudo ? 'Mostrando também parceria, permuta e repasse: clique para ver só os pagantes' : 'Mostrando só os pagantes: clique para incluir parceria, permuta e repasse'}
+            className="inline-flex items-center gap-2 rounded-md border border-border px-3 py-1.5 text-sm text-muted hover:text-text"
+          >
+            <span className={`relative inline-block h-4 w-7 rounded-full transition ${tudo ? 'bg-brand' : 'bg-border'}`}>
+              <span className={`absolute top-0.5 h-3 w-3 rounded-full bg-white shadow transition-all ${tudo ? 'left-3.5' : 'left-0.5'}`} />
+            </span>
+            parceria, permuta e repasse
+          </button>
           <NovoLead origem="painel-geral" />
         </div>
       </div>
@@ -171,7 +189,7 @@ export default function ComercialPage() {
         </div>
       )}
 
-      {p && p.negocios.length > 0 && ver === 'painel' && <Painel p={p} abrir={abrir} />}
+      {p && p.negocios.length > 0 && ver === 'painel' && <Painel p={p} abrir={abrir} tudo={tudo} />}
       {/* Layout 26/10: parcerias, permutas e repasses com visibilidade, sem misturar com o caixa. */}
       {p && ver === 'painel' && <EntregueViraCaixa />}
       {p && ver === 'negocios' && <Negocios p={p} filtro={filtro} tirar={tirar} limpar={() => abrir({})} />}
@@ -181,10 +199,10 @@ export default function ComercialPage() {
 
 // ---------------- Painel ----------------
 
-function Painel({ p, abrir }: { p: PainelComercial; abrir: (f: Filtro) => void }) {
+function Painel({ p, abrir, tudo = false }: { p: PainelComercial; abrir: (f: Filtro) => void; tudo?: boolean }) {
   return (
     <>
-      <Destaque p={p} abrir={abrir} />
+      <Destaque p={p} abrir={abrir} tudo={tudo} />
 
       <div className="grid gap-6 lg:grid-cols-2">
         <Quadro titulo="Funil geral" nota="negócios em cada etapa · clique numa etapa" acao={<Link href="/comercial/funil" className="text-sm text-muted underline hover:text-brand">Funil de vendas</Link>}>
@@ -245,7 +263,7 @@ function Painel({ p, abrir }: { p: PainelComercial; abrir: (f: Filtro) => void }
  * negociação (lima claro) lado a lado, na proporção do valor; somados são o
  * potencial do ano. Cada parte abre os negócios dela.
  */
-function Destaque({ p, abrir }: { p: PainelComercial; abrir: (f: Filtro) => void }) {
+function Destaque({ p, abrir, tudo = false }: { p: PainelComercial; abrir: (f: Filtro) => void; tudo?: boolean }) {
   const ano = String(p.ano);
   const fechado = p.totais.valorGanhoNoAno;
   const aberto = p.totais.emNegociacao;
@@ -255,16 +273,14 @@ function Destaque({ p, abrir }: { p: PainelComercial; abrir: (f: Filtro) => void
     <section className="grid gap-5 rounded-md border border-border bg-surface p-5 lg:grid-cols-[1fr_15rem]">
       <div>
         <div className="grid gap-4 sm:grid-cols-2">
-          {/* Layout 26/10 (Lucas): grande = o que veio pro bolso (pagantes); pequeno = o total geral fechado. */}
+          {/* Layout 26/10 (Lucas): com o botão desligado, só pagantes (o que veio pro bolso); ligado, tudo. */}
           <Numero
-            rotulo={`Fechado em ${p.ano} · veio pro bolso`}
-            valor={brl(p.totais.valorGanhoPaganteNoAno ?? fechado)}
-            nota={p.totais.valorGanhoPaganteNoAno !== undefined
-              ? `${p.totais.ganhosPagantesNoAno ?? 0} pagante(s) · total geral ${brl(fechado)} em ${p.totais.ganhosNoAno} contrato(s), com parceria, permuta e repasse`
-              : `${p.totais.ganhosNoAno} contrato(s)`}
+            rotulo={`Fechado em ${p.ano}`}
+            valor={brl(fechado)}
+            nota={tudo ? `${p.totais.ganhosNoAno} contrato(s), com parceria, permuta e repasse` : `${p.totais.ganhosNoAno} pagante(s) · o que veio pro bolso`}
             cor={COR_DO_TOM.forte} onClick={verFechados}
           />
-          <Numero rotulo="Em negociação · funil todo" valor={brl(aberto)} nota={p.totais.emNegociacaoSemCaixa ? `${brl(p.totais.emNegociacaoPagante ?? 0)} pagantes · ${brl(p.totais.emNegociacaoSemCaixa)} sem caixa (parceria, permuta, repasse)` : `${p.totais.abertos} aberto(s), com ou sem proposta`} cor={COR_DO_TOM.medio} onClick={verAbertos} />
+          <Numero rotulo="Em negociação · funil todo" valor={brl(aberto)} nota={tudo && p.totais.emNegociacaoSemCaixa ? `${brl(p.totais.emNegociacaoPagante ?? 0)} pagantes · ${brl(p.totais.emNegociacaoSemCaixa)} sem caixa (parceria, permuta, repasse)` : `${p.totais.abertos} aberto(s)${tudo ? ', com ou sem proposta' : ' pagantes'}`} cor={COR_DO_TOM.medio} onClick={verAbertos} />
         </div>
         <div className="mt-5">
           <BarraDividida
