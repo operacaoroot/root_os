@@ -228,6 +228,8 @@ export class PainelComercialService {
     const perdidosAno = cards.filter((c) => c.resultado === 'perdido' && doAno(c.perdidoEm));
     const ganhosComValor = ganhosAno.filter((c) => c.valor != null);
     const valorGanhoNoAno = soma(ganhosAno);
+    // Layout 26/10 (Lucas): o que veio pro bolso = só os negócios pagantes; parceria, permuta e repasse ficam no total geral.
+    const ganhosPagantesAno = ganhosAno.filter((c) => c.tipoNegocio === 'pagante');
     const fechamentos = ganhosAno.length + perdidosAno.length;
 
     const porMes = (lista: string[], itens: { mes: string | null; valor: number | null }[]): PainelComercialMes[] =>
@@ -295,6 +297,8 @@ export class PainelComercialService {
         abertos: abertos.length,
         ganhosNoAno: ganhosAno.length,
         valorGanhoNoAno,
+        ganhosPagantesNoAno: ganhosPagantesAno.length,
+        valorGanhoPaganteNoAno: soma(ganhosPagantesAno),
         perdidosNoAno: perdidosAno.length,
         naGeladeira: cards.filter((c) => c.resultado === 'pausa').length,
         conversao: fechamentos ? Math.round((ganhosAno.length / fechamentos) * 100) : null,

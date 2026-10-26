@@ -255,7 +255,15 @@ function Destaque({ p, abrir }: { p: PainelComercial; abrir: (f: Filtro) => void
     <section className="grid gap-5 rounded-md border border-border bg-surface p-5 lg:grid-cols-[1fr_15rem]">
       <div>
         <div className="grid gap-4 sm:grid-cols-2">
-          <Numero rotulo={`Fechado em ${p.ano}`} valor={brl(fechado)} nota={`${p.totais.ganhosNoAno} contrato(s)`} cor={COR_DO_TOM.forte} onClick={verFechados} />
+          {/* Layout 26/10 (Lucas): grande = o que veio pro bolso (pagantes); pequeno = o total geral fechado. */}
+          <Numero
+            rotulo={`Fechado em ${p.ano} · veio pro bolso`}
+            valor={brl(p.totais.valorGanhoPaganteNoAno ?? fechado)}
+            nota={p.totais.valorGanhoPaganteNoAno !== undefined
+              ? `${p.totais.ganhosPagantesNoAno ?? 0} pagante(s) · total geral ${brl(fechado)} em ${p.totais.ganhosNoAno} contrato(s), com parceria, permuta e repasse`
+              : `${p.totais.ganhosNoAno} contrato(s)`}
+            cor={COR_DO_TOM.forte} onClick={verFechados}
+          />
           <Numero rotulo="Em negociação · funil todo" valor={brl(aberto)} nota={p.totais.emNegociacaoSemCaixa ? `${brl(p.totais.emNegociacaoPagante ?? 0)} pagantes · ${brl(p.totais.emNegociacaoSemCaixa)} sem caixa (parceria, permuta, repasse)` : `${p.totais.abertos} aberto(s), com ou sem proposta`} cor={COR_DO_TOM.medio} onClick={verAbertos} />
         </div>
         <div className="mt-5">
