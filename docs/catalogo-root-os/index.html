@@ -89,7 +89,7 @@
     <p class="abre">Lista viva para quem desenvolve o OS. Em cima, os problemas que a equipe encontra no uso. Embaixo, o comparativo de usabilidade com o ClickUp: o que mudar no layout para o OS ficar tão fácil de usar quanto ele, sem mexer no conceito do sistema.</p>
     <div class="meta">
       <span>Aberto em <b>26/10/2026</b></span>
-      <span>Relatados <b class="num">16</b></span>
+      <span>Relatados <b class="num">25</b></span>
       <span>Comparativo <b class="num">9</b> pontos</span>
       <span>Código: branch <code>root-os/layout-comparativo</code>, nada alterado no ar</span>
     </div>
@@ -112,6 +112,31 @@
       <h2 id="t-publicado">Publicado em os.operacaoroot.com</h2>
       <p>Cada leva entra no ar sozinha e pode ser desfeita. O ponto zero é o OS como estava em 26/10/2026 às 13:50 (UTC), antes de qualquer mudança de layout.</p>
     </header>
+    <article class="registro" id="leva-2">
+      <div class="texto">
+        <div class="linha-id"><span class="id">Leva 2</span><span class="chip alto">no ar</span><span class="chip">26/10 · 14:42 UTC</span></div>
+        <h3>Tema claro, tarefas, nomes e atalhos</h3>
+        <dl>
+          <div><dt class="rotulo">O que mudou</dt><dd>
+            P-01 tema Claro neutro (branco e cinza, verde só em ação e item ativo; texto fraco agora passa de 4,5:1).
+            P-09 "Funil vivo" virou "Funil de vendas".
+            P-10 "Em negociação · funil todo" no Painel e "Em negociação · só com proposta" em Propostas.
+            P-13 a tarefa abre no meio da tela.
+            P-14 Concluir e Excluir no topo da tarefa; status e prazo antes dos anexos.
+            P-15 link da Lixeira no pé da árvore do Trabalho.
+            P-16 Responsável e Outros responsáveis só com a equipe, pelo nome (e-mail só entre homônimos).
+            P-04 em "Todas", sem as colunas vazias dos status do ClickUp.
+            P-17 o campo de data abre no clique.
+            P-21 "Tarefas abertas" sem as concluídas; "Feitas na semana" só as concluídas.
+          </dd></div>
+          <div class="mantem"><dt class="rotulo">Não muda</dt><dd>Nenhuma tabela, regra, automação, status ou lista. O tema Escuro e o Papel ficaram iguais. A pasta do ClickUp continua na árvore e no segmento.</dd></div>
+          <div><dt class="rotulo">Código</dt><dd>Commit <code>2915ec8a</code>; imagem <code>rootos-official:layout-leva2-2915ec8</code>.</dd></div>
+          <div><dt class="rotulo">Voltar</dt><dd>Para a leva 1 ou ao ponto zero (<code>voltar-ao-ponto-zero.sh</code>), sem perder dados.</dd></div>
+        </dl>
+      </div>
+      <figure><img src="fotos/producao22b-tarefa-lado-escuro.png" alt="Tarefa antes da leva 2: painel do lado começando pelos anexos" loading="lazy" width="1440" height="900"><figcaption>Antes: a tarefa abria do lado e começava pelos anexos.</figcaption></figure>
+    </article>
+
     <article class="registro" id="leva-1">
       <div class="texto">
         <div class="linha-id"><span class="id">Leva 1</span><span class="chip alto">no ar</span><span class="chip">26/10 · 13:57 UTC</span></div>
@@ -174,7 +199,7 @@
       <p>Cada problema entra com a tela, o que acontece, o que deveria acontecer e o arquivo onde mexer.</p>
     </header>
     <div class="lista-p">
-      <article class="p" id="P-01"><div class="linha-id"><span class="id">P-01</span><span class="chip alto">layout</span><span class="chip">todas as telas</span><span class="chip">em análise</span></div>
+      <article class="p" id="P-01"><div class="linha-id"><span class="id">P-01</span><span class="chip alto">layout</span><span class="chip">todas as telas</span><span class="chip alto">no ar · leva 2</span></div>
         <h3>Tema claro difícil de ler</h3>
         <p><b>O que acontece:</b> o claro tem fundo esverdeado, verde-claro em botões e etiquetas e pouco contraste; fica difícil ler e assimilar.</p>
         <p><b>Esperado:</b> claro no padrão do ClickUp: fundo branco e cinza neutro, texto escuro, uma cor de destaque só para ação.</p></article>
@@ -189,7 +214,7 @@
         <p><b>O que acontece:</b> o grupo "ROOT | Lucas Rezende" está sem vínculo, e a busca de "Vincular a cliente" não acha o Lucas Rezende, que já é cliente. Não há botão para cadastrar o cliente dali.</p>
         <p><b>Esperado:</b> achar o cliente onde quer que ele esteja cadastrado, e um botão para cadastrar quando ele ainda não existe, valendo para todas as áreas.</p></article>
 
-      <article class="p" id="P-04"><div class="linha-id"><span class="id">P-04</span><span class="chip alto">dado solto</span><span class="chip">Trabalho · Marketing</span><span class="chip">em análise</span></div>
+      <article class="p" id="P-04"><div class="linha-id"><span class="id">P-04</span><span class="chip alto">dado solto</span><span class="chip">Trabalho · Marketing</span><span class="chip alto">no ar · leva 2</span></div>
         <h3>Status e listas do ClickUp misturados nas tarefas</h3>
         <p><b>O que acontece:</b> "Todas as tarefas" mostra 18 status (insights, redigir criativo, sugestão IA, agendar post…) e listas importadas do ClickUp (Gestão de Temas, Copy, Rotina de stories, Design &amp; Gravação). O Marketing do OS não tem nada disso.</p>
         <p><b>Esperado:</b> decidir se o ClickUp ainda é fonte de verdade; filtrar ou tirar essas listas sem perder tarefa.</p></article>
@@ -214,12 +239,12 @@
         <p><b>O que acontece:</b> "Por vendedor" põe quase tudo no Rodrigo (R$ 69.936 em negociação, R$ 35.670 fechado), o que não aconteceu. Canal "Sem informação" em 13 de 14 leads. Nenhum dos dois tem onde mudar.</p>
         <p><b>Esperado:</b> editar canal e vendedor no lead, e o painel recalcular.</p></article>
 
-      <article class="p" id="P-09"><div class="linha-id"><span class="id">P-09</span><span class="chip">nome</span><span class="chip">Comercial</span><span class="chip">em análise</span></div>
+      <article class="p" id="P-09"><div class="linha-id"><span class="id">P-09</span><span class="chip">nome</span><span class="chip">Comercial</span><span class="chip alto">no ar · leva 2</span></div>
         <h3>Trocar "Funil vivo" por "Funil de vendas"</h3>
         <p><b>O que acontece:</b> nomes de efeito atrapalham a entender a tela.</p>
         <p><b>Esperado:</b> "Funil de vendas" no menu, na aba e no título.</p></article>
 
-      <article class="p" id="P-10"><div class="linha-id"><span class="id">P-10</span><span class="chip alto">dado solto</span><span class="chip">Comercial</span><span class="chip">em análise</span></div>
+      <article class="p" id="P-10"><div class="linha-id"><span class="id">P-10</span><span class="chip alto">dado solto</span><span class="chip">Comercial</span><span class="chip alto">no ar · leva 2</span></div>
         <h3>"Em negociação" com dois valores no próprio Comercial</h3>
         <p><b>O que acontece:</b> Propostas diz R$ 53.970 em negociação; o Painel geral diz R$ 79.936.</p>
         <p><b>Esperado:</b> um número só, ou cada um dizendo claramente o que soma.</p></article>
@@ -234,25 +259,71 @@
         <p><b>O que acontece:</b> Financeiro › Tarefas é o layout certo (responsáveis, prazo, cliente ou lead, repetir, descrição, janela no meio da tela), mas parece não puxar nada do que o Rodrigo automatizou.</p>
         <p><b>Esperado:</b> esse layout em todas as tarefas, lendo e respeitando as automações.</p></article>
 
-      <article class="p" id="P-13"><div class="linha-id"><span class="id">P-13</span><span class="chip alto">layout</span><span class="chip">Trabalho</span><span class="chip">pronto para fazer</span></div>
+      <article class="p" id="P-13"><div class="linha-id"><span class="id">P-13</span><span class="chip alto">layout</span><span class="chip">Trabalho</span><span class="chip alto">no ar · leva 2</span></div>
         <h3>A tarefa deve abrir já no meio da tela</h3>
         <p><b>O que acontece:</b> abre como painel do lado; o modo central existe, mas só fica se a pessoa trocar, e vale por navegador.</p>
         <p><b>Diagnóstico:</b> o padrão está fixo em "lado" (<code>TrabalhoView.tsx:2014</code>). Trocar o padrão para "centro" resolve, e quem preferir o lado continua podendo trocar.</p></article>
 
-      <article class="p" id="P-14"><div class="linha-id"><span class="id">P-14</span><span class="chip alto">layout</span><span class="chip">Trabalho</span><span class="chip">pronto para fazer</span></div>
+      <article class="p" id="P-14"><div class="linha-id"><span class="id">P-14</span><span class="chip alto">layout</span><span class="chip">Trabalho</span><span class="chip alto">no ar · leva 2</span></div>
         <h3>Dentro da tarefa não dá para decidir rápido o que fazer, nem excluir</h3>
         <p><b>O que acontece:</b> a tarefa aberta começa por Anexos e não tem concluir, excluir, mover nem compartilhar à vista; só o ícone de arquivar.</p>
         <p><b>Diagnóstico:</b> essas ações já existem no menu ⋯ do card e no botão direito (<code>MenuDaTarefa.tsx</code>), com Excluir indo para a Lixeira. Falta trazer o mesmo menu e um botão "Concluir" para o topo da tarefa aberta, e pôr status e prazo antes dos anexos.</p></article>
 
-      <article class="p" id="P-15"><div class="linha-id"><span class="id">P-15</span><span class="chip medio">layout</span><span class="chip">sistema todo</span><span class="chip">pronto para fazer</span></div>
+      <article class="p" id="P-15"><div class="linha-id"><span class="id">P-15</span><span class="chip medio">layout</span><span class="chip">sistema todo</span><span class="chip alto">no ar · leva 2</span></div>
         <h3>Não se acha a lixeira</h3>
         <p><b>O que acontece:</b> parece não haver lixeira; algo excluído sem querer não teria volta.</p>
         <p><b>Diagnóstico:</b> a Lixeira existe desde 22/10 (<code>/lixeira</code>): guarda tarefas excluídas e arquivadas, listas e pastas, com restaurar em lote. Ela só está escondida no menu da engrenagem. Proposta: um link "Lixeira" fixo no pé da árvore do Trabalho e no menu da tarefa ("Excluir · dá para restaurar na Lixeira").</p></article>
 
-      <article class="p" id="P-16"><div class="linha-id"><span class="id">P-16</span><span class="chip alto">layout</span><span class="chip">Trabalho</span><span class="chip">pronto para fazer</span></div>
+      <article class="p" id="P-16"><div class="linha-id"><span class="id">P-16</span><span class="chip alto">layout</span><span class="chip">Trabalho</span><span class="chip alto">no ar · leva 2</span></div>
         <h3>Contas demais em "Responsável" e "Outros responsáveis"</h3>
         <p><b>O que acontece:</b> as duas listas mostram Admin Root, MCP Service, Root e o Pedro duas vezes, com e-mail. Tem que ser uma pessoa por usuário.</p>
         <p><b>Diagnóstico:</b> a regra de quem é da equipe já existe (<code>packages/shared/src/equipe-pessoas.ts</code>, usada na tela Equipe) e esconde contas de sistema, de teste, a da empresa e a segunda conta da mesma pessoa. O seletor do Trabalho (<code>TrabalhoView.tsx:1996</code>, <code>2435</code>) não usa essa regra. Proposta: usar a regra e mostrar só o nome (Lucas, Pedro, Rodrigo). Tarefa já ligada a uma conta escondida continua mostrando o nome.</p></article>
+
+      <article class="p" id="P-17"><div class="linha-id"><span class="id">P-17</span><span class="chip alto">layout</span><span class="chip">sistema todo</span><span class="chip alto">no ar · leva 2</span></div>
+        <h3>Campo de data só abre clicando no ícone</h3>
+        <p><b>O que acontece:</b> clicar no texto da data não abre o calendário.</p>
+        <p><b>Feito:</b> clique em qualquer parte de um campo de data, hora ou mês abre o calendário, no OS inteiro.</p></article>
+
+      <article class="p" id="P-18"><div class="linha-id"><span class="id">P-18</span><span class="chip medio">função</span><span class="chip">Tarefas</span><span class="chip">a fazer</span></div>
+        <h3>"Repetir" sem opção personalizada</h3>
+        <p><b>O que acontece:</b> só há Todo dia, Dias úteis, Toda semana, Todo mês e A cada N dias.</p>
+        <p><b>Esperado:</b> um "Personalizar" como o do ClickUp (a cada N semanas em dias escolhidos, todo mês em tal dia da semana, até tal data). Mexe na regra de repetição: próxima leva.</p></article>
+
+      <article class="p" id="P-19"><div class="linha-id"><span class="id">P-19</span><span class="chip medio">layout</span><span class="chip">sistema todo</span><span class="chip">a fazer</span></div>
+        <h3>Azul de seleção nas listas parece amador</h3>
+        <p><b>O que acontece:</b> as listas que abrem (Repetir, Status, Responsável) mostram o azul padrão do Windows.</p>
+        <p><b>Diagnóstico:</b> são listas nativas do navegador, que pintam com a cor do sistema. Dá para trocar pelo verde da ROOT usando o seletor personalizável do Chrome; como muda todas as listas do OS, vai numa leva própria, testada.</p></article>
+
+      <article class="p" id="P-20"><div class="linha-id"><span class="id">P-20</span><span class="chip alto">dado solto</span><span class="chip">Dia a dia · Trabalho</span><span class="chip">a decidir</span></div>
+        <h3>Dia a dia e Trabalho › Todas mostram tarefas diferentes (10 atrasadas viram 2)</h3>
+        <p><b>Causa:</b> os dois leem as mesmas tarefas com regras diferentes. O Dia a dia conta também as subtarefas penduradas nos cards de cliente (as antigas da ficha) e a lista "Tarefas do comercial"; o Trabalho › Todas esconde as duas.</p>
+        <p><b>Caminho:</b> uma regra só de "o que é tarefa", usada pelos dois. Mexe em lógica: junto da decisão de fonte de verdade.</p></article>
+
+      <article class="p" id="P-21"><div class="linha-id"><span class="id">P-21</span><span class="chip alto">layout</span><span class="chip">Dia a dia</span><span class="chip alto">no ar · leva 2</span></div>
+        <h3>Abertas, atrasadas e feitas abrem a mesma lista</h3>
+        <p><b>Causa:</b> "Tarefas abertas" não escondia as concluídas e "Feitas na semana" mostrava as concluídas junto com as abertas.</p>
+        <p><b>Feito:</b> abertas abre sem as concluídas; feitas abre só as concluídas. A diferença de contagem das atrasadas é o P-20.</p></article>
+
+      <article class="p" id="P-22"><div class="linha-id"><span class="id">P-22</span><span class="chip alto">função</span><span class="chip">Comercial</span><span class="chip">a fazer</span></div>
+        <h3>Lead: o nome principal é a empresa; o representante fica no card</h3>
+        <p><b>O que acontece:</b> o lead é salvo como "Empresa | Pessoa" num nome só (ex.: "Cultural | Juliano Rodrigues").</p>
+        <p><b>Esperado:</b> como em qualquer CRM: cadastrar só com um nome, empresa como título do card e o representante embaixo; completar a empresa depois. O cadastro do lead já tem os dois campos (nome e empresa), então o primeiro passo é de tela.</p></article>
+
+      <article class="p" id="P-23"><div class="linha-id"><span class="id">P-23</span><span class="chip alto">layout</span><span class="chip">Financeiro</span><span class="chip">a fazer</span></div>
+        <h3>A Pagar/Receber sem criar nem editar</h3>
+        <p><b>O que acontece:</b> só há "Baixar". O Lucas, da Custeio, mudou a entrada para R$ 4.000 e já pagou, mas a tela segue com R$ 6.000 atrasado e não há como corrigir ali.</p>
+        <p><b>Diagnóstico:</b> a API já cria lançamento e edita valor, vencimento, descrição, cliente e status (<code>POST/PATCH /finance/transactions</code>); falta a tela. O lançamento já aponta para o cliente do Financeiro, o mesmo que o fechamento do Comercial cria.</p>
+        <p><b>Proposta:</b> "+ A receber" e "+ A pagar" no topo, "Editar" em cada linha e "Baixar" pedindo data e valor pago. Se o pagamento veio pelo Asaas, casar na Conciliação para não contar duas vezes.</p></article>
+
+      <article class="p" id="P-24"><div class="linha-id"><span class="id">P-24</span><span class="chip alto">layout</span><span class="chip">Financeiro · Conciliação</span><span class="chip">a fazer</span></div>
+        <h3>Conciliação sem "criar título" a partir do movimento</h3>
+        <p><b>O que acontece:</b> o Pix de R$ 1.000,00 de 22/10 (1ª parcela do iPhone do Lucas, que a ROOT paga em parte) não tem título, e "Escolher título" só lista os que já existem.</p>
+        <p><b>Proposta:</b> "+ criar título a partir deste movimento", com data, valor e descrição preenchidos; escolher conta e parceiro; nasce já conciliado. Para o iPhone, usar o rateio que o sistema já tem: parte como despesa da ROOT, parte a receber do Lucas (ou adiantamento ao sócio). A conta de cada parte é regra do Pedro.</p></article>
+
+      <article class="p" id="P-25"><div class="linha-id"><span class="id">P-25</span><span class="chip alto">layout</span><span class="chip">Financeiro</span><span class="chip">a fazer</span></div>
+        <h3>Fluxo de caixa projetado para 6 meses, em barras</h3>
+        <p><b>O que acontece:</b> só 30 dias, numa linha que quase não mostra subida e queda.</p>
+        <p><b>Proposta:</b> barras por mês nos próximos 6 meses: entradas para cima (verde), saídas para baixo (vermelho) e o saldo do fim de cada mês marcado; clique no mês abre o detalhe. A API já aceita qualquer período (<code>/finance/cashflow?from&amp;to</code>), então é só tela. A projeção só mostra o que está lançado: mês sem parcela gerada aparece sinalizado.</p></article>
     </div>
   </section>
 
