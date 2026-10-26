@@ -106,6 +106,8 @@ function dataTransfer() {
   return { setData: (k: string, v: string) => { dados[k] = v; }, getData: (k: string) => dados[k] ?? '', effectAllowed: 'all', dropEffect: 'move' };
 }
 const TODAS_AS_COLUNAS = ['nome:a fazer', 'nome:kickoff marcado', 'nome:fazendo', 'nome:imersao', 'nome:operacao assistida', 'nome:feito'];
+// Layout 26/10: as concluídas (e a coluna "Feito") somem por padrão; estes testes as querem à vista.
+const COM_CONCLUIDAS = 'concluidas=mostrar';
 
 describe('P4: ocultar status vazios', () => {
   it('o texto da contagem', () => {
@@ -115,7 +117,7 @@ describe('P4: ocultar status vazios', () => {
   });
 
   it('em Todas, o botão do cabeçalho alterna, conta os ocultos e escreve no endereço', async () => {
-    window.history.replaceState({}, '', '/trabalho?pasta=todas');
+    window.history.replaceState({}, '', `/trabalho?pasta=todas&${COM_CONCLUIDAS}`);
     render(<TrabalhoPage />);
     await waitFor(() => expect(colunas()).toEqual(TODAS_AS_COLUNAS));
     const botao = screen.getByTestId('trabalho-vazios');
@@ -137,7 +139,7 @@ describe('P4: ocultar status vazios', () => {
   });
 
   it('o painel de Filtros tem o mesmo booleano, e o link com ?vazios=ocultar chega ligado', async () => {
-    window.history.replaceState({}, '', '/trabalho?pasta=todas&vazios=ocultar');
+    window.history.replaceState({}, '', `/trabalho?pasta=todas&vazios=ocultar&${COM_CONCLUIDAS}`);
     render(<TrabalhoPage />);
     await waitFor(() => expect(colunas()).toEqual(['nome:a fazer', 'nome:kickoff marcado']));
     expect(screen.getByTestId('trabalho-vazios')).toHaveAttribute('aria-pressed', 'true');
@@ -155,8 +157,8 @@ describe('P4: ocultar status vazios', () => {
     expect(query().has('vazios')).toBe(false);
   });
 
-  it('combina com "Ocultar concluídas": a concluída sai pela regra dela e não entra na conta dos vazios', async () => {
-    window.history.replaceState({}, '', '/trabalho?pasta=todas&concluidas=ocultar&vazios=ocultar');
+  it('combina com as concluídas ocultas (o padrão): a concluída sai pela regra dela e não entra na conta dos vazios', async () => {
+    window.history.replaceState({}, '', '/trabalho?pasta=todas&vazios=ocultar');
     render(<TrabalhoPage />);
     await waitFor(() => expect(colunas()).toEqual(['nome:a fazer', 'nome:kickoff marcado']));
     expect(screen.getByTestId('trabalho-vazios-contagem')).toHaveTextContent('3 vazios ocultos');
@@ -164,14 +166,14 @@ describe('P4: ocultar status vazios', () => {
 
   it('a coluna concluída com tarefa aberta continua (a exceção do Todas) e não é vazia', async () => {
     tarefas.push(tarefa(T4, 'Revisar a entrega', rotina, rotina.statuses[2]));
-    window.history.replaceState({}, '', '/trabalho?pasta=todas&vazios=ocultar');
+    window.history.replaceState({}, '', `/trabalho?pasta=todas&vazios=ocultar&${COM_CONCLUIDAS}`);
     render(<TrabalhoPage />);
     await waitFor(() => expect(colunas()).toEqual(['nome:a fazer', 'nome:kickoff marcado', 'nome:feito']));
     expect(screen.getByTestId('trabalho-vazios-contagem')).toHaveTextContent('3 vazios ocultos');
   });
 
   it('durante o arraste as vazias voltam como destino, e soltar numa delas grava', async () => {
-    window.history.replaceState({}, '', '/trabalho?pasta=todas&vazios=ocultar');
+    window.history.replaceState({}, '', `/trabalho?pasta=todas&vazios=ocultar&${COM_CONCLUIDAS}`);
     render(<TrabalhoPage />);
     await waitFor(() => expect(colunas()).toEqual(['nome:a fazer', 'nome:kickoff marcado']));
     const dt = dataTransfer();
@@ -186,7 +188,7 @@ describe('P4: ocultar status vazios', () => {
   });
 
   it('o arraste cancelado (dragend sem drop) também esconde de novo', async () => {
-    window.history.replaceState({}, '', '/trabalho?pasta=todas&vazios=ocultar');
+    window.history.replaceState({}, '', `/trabalho?pasta=todas&vazios=ocultar&${COM_CONCLUIDAS}`);
     render(<TrabalhoPage />);
     await waitFor(() => expect(cartao(T1)).toBeTruthy());
     fireEvent.dragStart(cartao(T1), { dataTransfer: dataTransfer() });
@@ -205,6 +207,8 @@ describe('P4: ocultar status vazios', () => {
     await waitFor(() => expect(post).toHaveBeenCalled());
     const [, corpo] = post.mock.calls[0] as [string, { config: Record<string, unknown> }];
     expect(corpo.config.vazios).toBe('ocultar');
+    // Layout 26/10: a vista sempre grava a chave das concluídas (aqui, o padrão: ocultas).
+    expect(corpo.config.concluidas).toBe('ocultar');
     cleanup();
 
     // Reaplicar: sem filtro no endereço, a vista padrão vale ao abrir.
@@ -217,7 +221,7 @@ describe('P4: ocultar status vazios', () => {
   });
 
   it('vale no quadro de uma lista', async () => {
-    window.history.replaceState({}, '', '/trabalho?lista=l-rotina');
+    window.history.replaceState({}, '', `/trabalho?lista=l-rotina&${COM_CONCLUIDAS}`);
     render(<TrabalhoPage />);
     await waitFor(() => expect(colunas()).toEqual(['l-rotina-aberta', 'l-rotina-andamento', 'l-rotina-feita']));
     fireEvent.click(screen.getByTestId('trabalho-vazios'));

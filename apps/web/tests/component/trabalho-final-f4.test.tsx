@@ -88,7 +88,8 @@ const arrasto = (id: string) => ({ dataTransfer: { getData: () => id, setData: (
 
 describe('F4: "Todas as tarefas"', () => {
   it('o chip Todas grava ?pasta=todas, consulta todas=1 sem lista e mostra a lista de cada tarefa', async () => {
-    window.history.replaceState({}, '', '/trabalho?visao=lista');
+    // Layout 26/10: concluídas à vista, para a feita (T3) contar entre as três.
+    window.history.replaceState({}, '', '/trabalho?visao=lista&concluidas=mostrar');
     render(<TrabalhoPage />);
     fireEvent.click(await screen.findByTestId('trabalho-pasta-todas'));
     expect(query().get('pasta')).toBe('todas');
@@ -100,7 +101,7 @@ describe('F4: "Todas as tarefas"', () => {
   });
 
   it('no quadro, as colunas são os status reais das listas e, sem o mesmo nome, soltar vai à primeira etapa do tipo, com aviso', async () => {
-    window.history.replaceState({}, '', '/trabalho?pasta=todas');
+    window.history.replaceState({}, '', '/trabalho?pasta=todas&concluidas=mostrar');
     render(<TrabalhoPage />);
     // Ajuste do Todas (20/10/2026): uma coluna por status real, não mais uma por tipo.
     const aberta = await screen.findByRole('region', { name: 'Aberta: 1 tarefa' });
@@ -139,7 +140,7 @@ describe('F4: seleção em lote na Lista', () => {
   });
 
   it('numa lista, a etapa do lote é a da lista; o responsável vai pela conta', async () => {
-    window.history.replaceState({}, '', '/trabalho?lista=l-a&visao=lista');
+    window.history.replaceState({}, '', '/trabalho?lista=l-a&visao=lista&concluidas=mostrar');
     render(<TrabalhoPage />);
     fireEvent.click(await screen.findByTestId('trabalho-selecionar-todas'));
     fireEvent.change(screen.getByLabelText('Responsável das selecionadas'), { target: { value: ANA } });
@@ -164,7 +165,7 @@ describe('F4: calendário e ordem manual', () => {
   });
 
   it('arrastar a linha sobre outra grava a sequência inteira com as versões', async () => {
-    window.history.replaceState({}, '', '/trabalho?lista=l-a&visao=lista');
+    window.history.replaceState({}, '', '/trabalho?lista=l-a&visao=lista&concluidas=mostrar');
     render(<TrabalhoPage />);
     await waitFor(() => expect(document.querySelectorAll('tr[data-work-task-id]')).toHaveLength(2));
     const [linha1, linha3] = [...document.querySelectorAll('tr[data-work-task-id]')];
@@ -242,22 +243,29 @@ describe('F4: os links da Visão geral do Dia a dia', () => {
 describe('F4: agrupamento, concluídas e "meus"', () => {
   it('a régua de prazo agrupa a lista: Atrasadas · Concluídas', async () => {
     tarefas[0] = { ...tarefas[0], dueDate: '2020-01-01T15:00:00.000Z' };
-    window.history.replaceState({}, '', '/trabalho?lista=l-a&visao=lista&agrupar=prazo');
+    window.history.replaceState({}, '', '/trabalho?lista=l-a&visao=lista&agrupar=prazo&concluidas=mostrar');
     render(<TrabalhoPage />);
     expect(await screen.findByRole('columnheader', { name: 'Atrasadas · 1' })).toBeInTheDocument();
     expect(screen.getByRole('columnheader', { name: 'Concluídas · 1' })).toBeInTheDocument();
     expect(screen.getByTestId('trabalho-agrupar')).toHaveValue('prazo');
   });
 
-  it('ocultar concluídas tira a concluída da lista e grava no endereço', async () => {
+  it('a concluída fica fora da lista por padrão; "Mostrar concluídas" traz de volta e grava no endereço', async () => {
     window.history.replaceState({}, '', '/trabalho?lista=l-a&visao=lista');
     render(<TrabalhoPage />);
-    await waitFor(() => expect(document.querySelectorAll('tr[data-work-task-id]')).toHaveLength(2));
-    // Rodada da interface (U2): "Ocultar concluídas" mora no painel de "Filtros" e conta como filtro ativo.
+    // Layout 26/10: como no ClickUp, a concluída some sem filtro nenhum.
+    await waitFor(() => expect([...document.querySelectorAll('tr[data-work-task-id]')].map((e) => e.getAttribute('data-work-task-id'))).toEqual([T1]));
+    expect(query().has('concluidas')).toBe(false);
+    expect(screen.queryByTestId('trabalho-filtros-contagem')).toBeNull();
+    // Rodada da interface (U2): o booleano mora no painel de "Filtros" e conta como filtro ativo.
     fireEvent.click(screen.getByTestId('trabalho-filtros-botao'));
     fireEvent.click(screen.getByTestId('trabalho-filtros-concluidas'));
-    expect(query().get('concluidas')).toBe('ocultar');
+    expect(query().get('concluidas')).toBe('mostrar');
     expect(screen.getByTestId('trabalho-filtros-contagem')).toHaveTextContent('(1)');
+    await waitFor(() => expect(document.querySelectorAll('tr[data-work-task-id]')).toHaveLength(2));
+    // Desmarcar volta ao padrão: a chave sai do endereço e a concluída some de novo.
+    fireEvent.click(screen.getByTestId('trabalho-filtros-concluidas'));
+    expect(query().has('concluidas')).toBe(false);
     expect([...document.querySelectorAll('tr[data-work-task-id]')].map((e) => e.getAttribute('data-work-task-id'))).toEqual([T1]);
   });
 

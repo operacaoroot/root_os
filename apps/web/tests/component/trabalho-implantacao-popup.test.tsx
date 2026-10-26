@@ -108,6 +108,8 @@ describe('T1: a implantação numa tela só', () => {
   });
 
   it('colunas numa linha só, largura fixa por densidade, e chips que levam à coluna', async () => {
+    // Layout 26/10: a etapa concluída (s-3) só vira coluna com as concluídas à vista.
+    window.history.replaceState(null, '', '/trabalho/implantacao?concluidas=mostrar');
     render(<ImplantacaoPage />);
     await screen.findByText('Construtora Alicerce');
     const quadro = screen.getByTestId('trabalho-quadro');

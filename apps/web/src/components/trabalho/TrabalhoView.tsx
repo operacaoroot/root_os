@@ -920,7 +920,7 @@ function TrabalhoConteudo({ visaoInicial, modo, aoSairDeTodas }: { visaoInicial:
   const limparFiltros = () => {
     setSelecionadas(new Set());
     setTodasListas(false); setFPessoa(''); setFAssignee(''); setFEscopo('todos'); setFPrazo(''); setFStatus(''); setFOpcao('');
-    setFCliente(''); setFEtiqueta(''); setFAgente(''); setFConcluidas('mostrar'); setFVazios('mostrar'); setFArquivadas(false); setFBusca('');
+    setFCliente(''); setFEtiqueta(''); setFAgente(''); setFConcluidas('ocultar'); setFVazios('mostrar'); setFArquivadas(false); setFBusca('');
     const url = new URL(window.location.href);
     for (const k of CHAVES_DOS_FILTROS) url.searchParams.delete(k);
     window.history.replaceState(window.history.state, '', `${url.pathname}${url.search}${url.hash}`);

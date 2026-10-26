@@ -81,6 +81,18 @@ BEGIN
       INSERT INTO "_diario_integracao_20261026" (acao, tabela, registro, coluna, antes, depois) VALUES ('update', 'AcordoComercial', a, 'partnerId', NULL, p);
     END LOOP;
   END LOOP;
+
+  -- 5. O roteiro do onboarding (01–37, fases Onboarding / Durante a reunião / Pós-reunião) saiu da lista
+  --    "Operação": virou documento (fluxograma). As tarefas vão para a Lixeira, como o "Excluir" da tela
+  --    (arquivada + excluidaEm), e dá para restaurar por lá ou pelo desfazer.
+  SELECT id INTO p FROM "User" WHERE "orgId" = org AND name = 'Lucas Fernandes' AND "isActive" ORDER BY "createdAt" LIMIT 1;
+  FOR r IN SELECT t.id, t.archived FROM "WorkTask" t JOIN "WorkList" l ON l.id = t."listId"
+           WHERE t."orgId" = org AND l.name = 'Operação' AND t.title ~ '^\d\d\. '
+             AND t.description IN ('Onboarding', 'Durante a reunião', 'Pós-reunião') AND t."excluidaEm" IS NULL LOOP
+    UPDATE "WorkTask" SET archived = true, "excluidaEm" = date_trunc('second', now()), "excluidaPor" = p WHERE id = r.id;
+    INSERT INTO "_diario_integracao_20261026" (acao, tabela, registro, coluna, antes, depois)
+    VALUES ('update', 'WorkTask', r.id, 'lixeira', r.archived::text, to_char(date_trunc('second', now()), 'YYYY-MM-DD"T"HH24:MI:SS'));
+  END LOOP;
 END $$;
 
 SELECT acao, tabela, coalesce(coluna, '-') AS coluna, count(*) FROM "_diario_integracao_20261026" GROUP BY 1, 2, 3 ORDER BY 2, 1;

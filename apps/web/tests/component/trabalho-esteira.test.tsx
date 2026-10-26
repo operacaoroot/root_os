@@ -263,6 +263,8 @@ describe('esteira: idade e horas no cartão', () => {
   });
 
   it('sem data não há idade, e etapa fechada não envelhece', async () => {
+    // Layout 26/10: a concluída some por padrão; aqui ela precisa estar à vista.
+    window.history.replaceState({}, '', '/trabalho?concluidas=mostrar');
     servir();
     render(<TrabalhoPage />);
     await waitFor(() => cartao('Cliente BSB'));

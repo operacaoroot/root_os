@@ -116,7 +116,9 @@ describe('U2: os filtros do Trabalho num botão só', () => {
     for (const rotulo of ['Buscar tarefas', 'Filtrar por responsável', 'Filtrar por cliente', 'Filtrar por status', 'Filtrar por agente']) {
       expect(screen.queryByLabelText(rotulo)).toBeNull();
     }
-    expect(screen.queryByTestId('trabalho-concluidas')).toBeNull();
+    // Layout 26/10: as concluídas somem por padrão (como no ClickUp); o botão que as traz de volta mora no cabeçalho.
+    expect(screen.getByTestId('trabalho-concluidas')).toHaveTextContent('Mostrar concluídas');
+    expect(screen.getByTestId('trabalho-concluidas')).toHaveAttribute('aria-pressed', 'false');
     expect(screen.queryByTestId('trabalho-escopo-meus')).toBeNull();
     // As formas de ver continuam no cabeçalho.
     expect(screen.getByTestId('trabalho-visao-quadro')).toBeInTheDocument();
@@ -131,7 +133,7 @@ describe('U2: os filtros do Trabalho num botão só', () => {
     const painel = screen.getByRole('dialog', { name: 'Filtros' });
     expect(within(painel).getByLabelText('Responsável')).toBeInTheDocument();
     expect(within(painel).getByLabelText('Prazo')).toBeInTheDocument();
-    for (const rotulo of ['Recorte', 'Status', 'Cliente', 'Etiqueta', 'Agente', 'Ocultar concluídas', 'Incluir arquivadas', 'Busca']) {
+    for (const rotulo of ['Recorte', 'Status', 'Cliente', 'Etiqueta', 'Agente', 'Mostrar concluídas', 'Incluir arquivadas', 'Busca']) {
       expect(within(painel).getByLabelText(rotulo)).toBeInTheDocument();
     }
 
@@ -274,7 +276,8 @@ describe('Ajuste do Todas: o quadro com os status reais de todas as listas', () 
   }
 
   it('o chip Todas marcado mostra uma coluna por status real, com as vazias e em quantas listas cada uma existe', async () => {
-    window.history.replaceState({}, '', '/trabalho?pasta=todas');
+    // Layout 26/10: com as concluídas à vista, para a coluna "Feito" (tipo concluído) entrar no quadro.
+    window.history.replaceState({}, '', '/trabalho?pasta=todas&concluidas=mostrar');
     render(<TrabalhoPage />);
     await waitFor(() => expect(document.querySelectorAll('[data-work-task-id]')).toHaveLength(3));
     expect(screen.getByTestId('trabalho-pasta-todas')).toHaveAttribute('aria-pressed', 'true');
@@ -292,7 +295,7 @@ describe('Ajuste do Todas: o quadro com os status reais de todas as listas', () 
   });
 
   it('o segmento recorta as colunas pelas listas da pasta', async () => {
-    window.history.replaceState({}, '', `/trabalho?pasta=todas&segmento=${ADM}`);
+    window.history.replaceState({}, '', `/trabalho?pasta=todas&segmento=${ADM}&concluidas=mostrar`);
     render(<TrabalhoPage />);
     await waitFor(() => expect(colunas()).toEqual(['nome:a fazer', 'nome:feito']));
     fireEvent.click(screen.getByTestId(`trabalho-segmento-${CLIENTES}`));
@@ -301,7 +304,7 @@ describe('Ajuste do Todas: o quadro com os status reais de todas as listas', () 
   });
 
   it('soltar numa coluna move para o status de mesmo nome da lista da tarefa', async () => {
-    window.history.replaceState({}, '', '/trabalho?pasta=todas');
+    window.history.replaceState({}, '', '/trabalho?pasta=todas&concluidas=mostrar');
     render(<TrabalhoPage />);
     await waitFor(() => expect(cartao(T1)).toBeTruthy());
     arrastar(T1, 'nome:feito');
@@ -312,7 +315,7 @@ describe('Ajuste do Todas: o quadro com os status reais de todas as listas', () 
   it('sem o mesmo nome, cai no primeiro status do mesmo tipo e avisa; sem o tipo, nada muda e diz por quê', async () => {
     comEntregue();
     tarefas.push(tarefa('44444444-4444-4444-8444-444444444444', 'Fazer o kickoff', onboarding as ReturnType<typeof lista>));
-    window.history.replaceState({}, '', '/trabalho?pasta=todas');
+    window.history.replaceState({}, '', '/trabalho?pasta=todas&concluidas=mostrar');
     render(<TrabalhoPage />);
     await waitFor(() => expect(colunas()).toContain('nome:entregue'));
     arrastar('44444444-4444-4444-8444-444444444444', 'nome:feito');
@@ -325,19 +328,20 @@ describe('Ajuste do Todas: o quadro com os status reais de todas as listas', () 
     expect(patch).not.toHaveBeenCalled();
   });
 
-  it('"Ocultar concluídas" esconde as colunas de tipo concluído', async () => {
-    window.history.replaceState({}, '', '/trabalho?pasta=todas&concluidas=ocultar');
+  it('por padrão (sem ?concluidas=) as colunas de tipo concluído ficam ocultas', async () => {
+    window.history.replaceState({}, '', '/trabalho?pasta=todas');
     render(<TrabalhoPage />);
     await waitFor(() => expect(colunas()).toEqual(['nome:a fazer', 'nome:kickoff marcado', 'nome:imersao']));
+    expect(query().has('concluidas')).toBe(false);
   });
 
-  it('"Ocultar concluídas" não esconde a tarefa aberta cujo status tem o nome de uma etapa concluída de outra lista', async () => {
+  it('as concluídas ocultas (o padrão) não escondem a tarefa aberta cujo status tem o nome de uma etapa concluída de outra lista', async () => {
     const antes = get.getMockImplementation()!;
     const exec = { ...execucao, statuses: [st('exec-feito-aberto', 'Feito', 'open', 0)] };
     const e = { ...estrutura, folders: estrutura.folders.map((f) => (f.id === CLIENTES ? { ...f, lists: [exec, onboarding] } : f)) };
     get.mockImplementation((rota: string) => (rota === '/trabalho/estrutura' ? Promise.resolve(e) : antes(rota)));
     tarefas.push(tarefa('55555555-5555-4555-8555-555555555555', 'Revisar a entrega', exec as ReturnType<typeof lista>));
-    window.history.replaceState({}, '', '/trabalho?pasta=todas&concluidas=ocultar');
+    window.history.replaceState({}, '', '/trabalho?pasta=todas');
     render(<TrabalhoPage />);
     await waitFor(() => expect(document.querySelectorAll('[data-work-task-id]')).toHaveLength(4));
     expect(colunas()).toContain('nome:feito');

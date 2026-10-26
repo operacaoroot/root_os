@@ -13,6 +13,10 @@ BEGIN
       UPDATE "AcordoComercial" SET "partnerId" = d.antes WHERE id = d.registro AND "partnerId" IS NOT DISTINCT FROM d.depois;
     ELSIF d.acao = 'update' AND d.tabela = 'Partner' AND d.coluna = 'principalId' THEN
       UPDATE "Partner" SET "principalId" = d.antes WHERE id = d.registro AND "principalId" IS NOT DISTINCT FROM d.depois;
+    ELSIF d.acao = 'update' AND d.tabela = 'WorkTask' AND d.coluna = 'lixeira' THEN
+      -- volta da Lixeira só se ainda está lá desde o script (ninguém restaurou nem mexeu depois)
+      UPDATE "WorkTask" SET archived = d.antes::boolean, "excluidaEm" = NULL, "excluidaPor" = NULL
+        WHERE id = d.registro AND to_char("excluidaEm", 'YYYY-MM-DD"T"HH24:MI:SS') = d.depois;
     ELSIF d.acao = 'insert' AND d.tabela = 'AcordoComercial' THEN
       DELETE FROM "AcordoComercial" WHERE id = d.registro;
     ELSIF d.acao = 'insert' AND d.tabela = 'Partner' THEN

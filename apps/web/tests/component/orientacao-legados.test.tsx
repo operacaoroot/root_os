@@ -120,7 +120,7 @@ describe('texto de orientação das telas legadas', () => {
     expect(conteudo.container.textContent).not.toContain('para consulta');
     expect(conteudo.container.textContent?.toLowerCase()).not.toContain('somente leitura');
     conteudo.unmount();
-    window.history.replaceState({}, '', '/trabalho?visao=lista');
+    window.history.replaceState({}, '', '/trabalho?visao=lista&concluidas=mostrar'); // a etapa fechada (Feita) só entra no seletor com as concluídas à vista
     // Rodada da implantação I2: o seletor de etapa no cartão é da densidade cheia (no compacto, o cartão abre o painel).
     window.localStorage.setItem('root-os:trabalho:densidade', 'cheio');
     render(<TrabalhoPage />);
