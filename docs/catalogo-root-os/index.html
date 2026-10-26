@@ -89,7 +89,7 @@
     <p class="abre">Lista viva para quem desenvolve o OS. Em cima, os problemas que a equipe encontra no uso. Embaixo, o comparativo de usabilidade com o ClickUp: o que mudar no layout para o OS ficar tão fácil de usar quanto ele, sem mexer no conceito do sistema.</p>
     <div class="meta">
       <span>Aberto em <b>26/10/2026</b></span>
-      <span>Relatados <b class="num">30</b></span>
+      <span>Relatados <b class="num">33</b></span>
       <span>Comparativo <b class="num">9</b> pontos</span>
       <span>Código: branch <code>root-os/layout-comparativo</code>, nada alterado no ar</span>
     </div>
@@ -369,6 +369,22 @@
       <article class="p" id="P-30"><div class="linha-id"><span class="id">P-30</span><span class="chip alto">layout</span><span class="chip">Trabalho</span><span class="chip">a fazer</span></div>
         <h3>Topo da tarefa no formato do ClickUp</h3>
         <p><b>Proposta:</b> uma grade compacta com Status, Datas, Responsáveis, Prioridade, Etiquetas e Tempo, cada um clicável, e a descrição logo abaixo, com mais espaço. A leva 2 já subiu status e prazo para o topo (P-14); falta a grade compacta.</p></article>
+
+      <article class="p" id="P-31"><div class="linha-id"><span class="id">P-31</span><span class="chip alto">layout</span><span class="chip">Comercial</span><span class="chip alto">no ar · 26/10 15:38 UTC</span></div>
+        <h3>Painel do lead abre centralizado</h3>
+        <p><b>O que acontecia:</b> o painel do lead (Fio, Sessão, Dinheiro, Decisões, Sala, WhatsApp) abria como gaveta à direita.</p>
+        <p><b>Feito:</b> no computador abre no meio da tela, largo, como a janela do Financeiro. No celular continua em tela cheia. Nenhuma aba ou informação mudou.</p></article>
+
+      <article class="p" id="P-32"><div class="linha-id"><span class="id">P-32</span><span class="chip alto">layout</span><span class="chip">Trabalho · Implantação</span><span class="chip alto">no ar · 26/10 15:44 UTC</span></div>
+        <h3>A página do quadro chega até o fim</h3>
+        <p><b>O que acontecia:</b> o quadro tinha a altura da tela e cada coluna rolava por dentro; a página não descia.</p>
+        <p><b>Feito:</b> as colunas crescem com os cards e a página rola até o fim; o quadro ocupa no mínimo a altura da tela. Os chips de etapa no topo continuam levando até a coluna.</p></article>
+
+      <article class="p" id="P-33"><div class="linha-id"><span class="id">P-33</span><span class="chip alto">layout + dado</span><span class="chip">Comercial</span><span class="chip">a fazer</span></div>
+        <h3>Lista de leads e "Em negociação agora" parecem desligadas; valor do aGranel desatualizado</h3>
+        <p><b>Diagnóstico:</b> as duas leem o mesmo cadastro (lead + ficha). A lista mostra todos os leads sem valor; o painel mostra só os abertos com valor. O valor do Sr. aGranel (R$ 26.000) é o que está na ficha, vindo da proposta; os R$ 56/58/62 mil só existem no texto da Rodada da semana.</p>
+        <p><b>Proposta:</b> coluna "Valor" na Lista de leads e empresa/contato separados (como nos cards). O valor do aGranel muda por uma proposta nova ou por um ajuste pelos serviços do OS, com backup, quando o valor fechado for confirmado.</p>
+        <p><b>26/10:</b> o Lucas confirmou que o aGranel segue em Contrato com R$ 56.000 negociados. No modelo atual o valor da ficha só muda por "proposta publicada", "proposta aceita" ou "aceite declarado", e todos disparam automações (sala e mensagens, ou fechamento com cobrança e implantação). Nada foi alterado. Caminho: publicar a proposta de R$ 56.000 pelo OS. <b>Decisão para o Rodrigo:</b> um campo "valor negociado" na ficha, ajustável sem disparar proposta nem fechamento.</p></article>
     </div>
   </section>
 
