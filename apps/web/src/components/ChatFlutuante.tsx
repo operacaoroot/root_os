@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { MessageSquare, X, CornerDownLeft, Square } from 'lucide-react';
 import { apiStream } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
+import { fraseDaBolha, textoDaBolha, useNaoLidasDoWhatsapp } from './whatsapp/bolha-do-whatsapp';
 
 /*
  * O balão de conversa da central.
@@ -62,6 +63,14 @@ export function ChatFlutuante() {
   // Sair da tela no meio de uma resposta aborta a requisição: sem isso o laço
   // do agente continua rodando — e gastando — para ninguém.
   useEffect(() => () => cancelar.current?.(), []);
+
+  // Layout 26/10: as mensagens não abertas do WhatsApp, no selo vermelho da aba "Chat" e do botão fechado
+  // (a mesma conta da bolha do menu, relida a cada 30 s).
+  const naoLidas = useNaoLidasDoWhatsapp(token, can('leads.ver'), aba);
+  const selo = textoDaBolha(naoLidas);
+  const seloVermelho = (cls: string) => selo && naoLidas != null ? (
+    <span role="img" aria-label={fraseDaBolha(naoLidas)} title={fraseDaBolha(naoLidas)} data-testid="chat-nao-lidas" className={`min-w-[18px] rounded-full bg-bad px-1 text-center font-os-mono text-[10px] font-semibold leading-[18px] tracking-normal text-white ${cls}`}>{selo}</span>
+  ) : null;
 
   const podeCentral = can('mcp.executar');
   const podeWhats = can('leads.ver');
@@ -143,6 +152,7 @@ export function ChatFlutuante() {
       >
         <MessageSquare size={15} />
         perguntar
+        {seloVermelho('absolute -right-2 -top-2 shadow')}
       </button>
     );
   }
@@ -158,7 +168,7 @@ export function ChatFlutuante() {
           )}
           {podeWhats && (
             <button type="button" role="tab" aria-selected={abaAtual === 'whatsapp'} onClick={() => setAba('whatsapp')} className={`rounded-root px-2 py-1 text-[11px] uppercase tracking-[0.14em] transition-colors ${abaAtual === 'whatsapp' ? 'bg-surface-2 text-text' : 'text-muted hover:text-text'}`}>
-              whatsapp
+              <span className="inline-flex items-center gap-1.5">chat{seloVermelho('')}</span>
             </button>
           )}
         </div>
