@@ -2316,7 +2316,8 @@ function PainelTarefa({ id, estrutura, editable, token, usuarioId, aba = 'tarefa
     () => listasComAsDoComercial(estrutura),
     [estrutura],
   );
-  const lista = todasListas.find((l) => l.id === t?.listId);
+  // Layout 26/10: a tarefa do comercial (aberta pela Visão geral ou pelo Funil) acha as etapas da lista dela.
+  const lista = todasListas.find((l) => l.id === t?.listId) ?? estrutura.listasDoComercial?.find((l) => l.id === t?.listId);
   const campos = [...(lista?.fields ?? []), ...estrutura.camposGlobais];
 
   const salvar = async (mudanca: Record<string, unknown>) => {

@@ -23,7 +23,8 @@ import { useAvatares, useFoto } from '@/lib/avatares';
  * nada do arquivo roda; o servidor já mandou o tipo conferido com `nosniff`.
  */
 
-const LADOS = { p: 20, m: 28, g: 40, gg: 96 } as const;
+// Layout 26/10: um pouco maiores, na escala do ClickUp (24 px nas listas, 32 nos cartões).
+const LADOS = { p: 24, m: 32, g: 40, gg: 96 } as const;
 export type TamanhoDoAvatar = keyof typeof LADOS;
 
 export function AvatarDaPessoa({

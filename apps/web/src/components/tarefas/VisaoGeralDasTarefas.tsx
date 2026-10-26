@@ -303,7 +303,7 @@ function JanelaDoRecorte({ titulo, tarefas, trabalho, aoAbrir, aoFechar }: {
           ))}
         </ul>
         <footer className="flex items-center justify-between gap-3 border-t border-border px-4 py-2.5 text-[12px] text-muted">
-          <span>As do comercial ficam no Funil de vendas; aqui aparecem todas.</span>
+          <span>As mesmas tarefas de "Todas" no Trabalho.</span>
           <a href={trabalho} className="text-brand hover:underline">ver no Trabalho →</a>
         </footer>
       </div>

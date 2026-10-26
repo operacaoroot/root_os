@@ -213,6 +213,8 @@ export class WorkService {
         spaceId: fo.spaceId, parentId: fo.parentId, externalId: fo.externalId, ...aparenciaDoNo(fo),
         lists: listasDoComercial.filter((l) => l.folderId === fo.id).map(toLista),
       })),
+      // Layout 26/10: a lista "Tarefas do comercial" (sem pasta), para a janela da tarefa achar as etapas (status e Concluir).
+      listasDoComercial: lists.filter((l) => !l.arquivadaEm && ehListaDoComercial(l)).map(toLista),
       camposGlobais: fields.map((f) => this.mapField(f)),
       tags: tags.map((t) => ({ id: t.id, name: t.name, color: t.color })),
       responsaveis: users.map((u) => u.assignee!).sort(),
@@ -1266,8 +1268,9 @@ export class WorkService {
         visivel,
         // Tarefa na Lixeira não aparece nem com o filtro de arquivadas (I2, 22/10/2026).
         tarefaViva(),
-        // As tarefas do comercial moram no Funil vivo, fora da árvore e de Todas (adendo de 21/10/2026).
-        { list: foraDaArvore() },
+        // Layout 26/10 (Lucas): "Todas" tem TODAS as tarefas do OS, o mesmo recorte do Dia a dia. As do comercial
+        // entram (seguem também no Funil); só a pasta Clientes (cards da Implantação) fica fora, como no Dia a dia.
+        tarefaForaDoComercial(),
       ];
       /*
        * O SEGMENTO (rodada da interface U3): "Todas" recortada por uma pasta de topo,

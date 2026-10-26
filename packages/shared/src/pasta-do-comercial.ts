@@ -23,6 +23,7 @@ interface EstruturaComComercial<P extends PastaComListas<L>, L extends ListaComI
   folders: P[];
   listasSoltas: L[];
   pastasDoComercial?: P[];
+  listasDoComercial?: L[];
 }
 
 /** As pastas do Trabalho e as do Comercial juntas (para achar, nunca para desenhar a árvore). */
@@ -32,7 +33,8 @@ export function pastasComAsDoComercial<P extends PastaComListas<L>, L extends Li
 
 /** Todas as listas, do Trabalho e do Comercial (para achar uma lista pelo id). */
 export function listasComAsDoComercial<P extends PastaComListas<L>, L extends ListaComId>(e: EstruturaComComercial<P, L>): L[] {
-  return [...pastasComAsDoComercial<P, L>(e).flatMap((f) => f.lists), ...e.listasSoltas];
+  // Layout 26/10: e a lista "Tarefas do comercial" (sem pasta), que agora entra em "Todas" do Trabalho.
+  return [...pastasComAsDoComercial<P, L>(e).flatMap((f) => f.lists), ...e.listasSoltas, ...(e.listasDoComercial ?? [])];
 }
 
 /** A frase de quem tenta mexer pelo Trabalho numa pasta ou lista do Comercial. */

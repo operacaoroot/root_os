@@ -5644,6 +5644,8 @@ export interface TrabEstrutura {
    * Para ACHAR uma lista pelo id, nunca para desenhar; ver `pasta-do-comercial.ts`.
    */
   pastasDoComercial?: TrabPastaDto[];
+  /** Layout 26/10: a lista "Tarefas do comercial" (sem pasta, mora no Funil). Só para a janela da tarefa achar as etapas dela. */
+  listasDoComercial?: TrabListaDto[];
   camposGlobais: TrabCampoDto[];
   tags: TrabTagDto[];
   /** Os responsáveis HUMANOS que aparecem nas tarefas (texto livre). */
