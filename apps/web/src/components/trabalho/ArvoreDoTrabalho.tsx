@@ -381,7 +381,7 @@ export function ArvoreDoTrabalho({ estrutura, pastas, mostraSoltas, listaId, edi
               <IconeDaLista icone={l.icone} cor={l.cor} />
               <span title={l.name} className="min-w-0 break-words">{l.name}</span>
             </span>
-            <span className="ml-1 text-[10px] text-muted">{l.total}</span>
+            <span className="ml-1 text-[10px] text-muted" title="tarefas abertas (as concluídas não contam)">{l.statuses?.length ? l.statuses.filter((s) => s.type !== 'closed').reduce((n, s) => n + (s.total ?? 0), 0) : l.total}</span>
           </button>
         )}
         {editable && (

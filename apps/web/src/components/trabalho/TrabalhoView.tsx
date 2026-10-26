@@ -308,7 +308,8 @@ function TrabalhoConteudo({ visaoInicial, modo, aoSairDeTodas }: { visaoInicial:
   const [fCliente, setFCliente] = useState('');
   const [clientes, setClientes] = useState<TrabClienteDto[]>([]);
   const [fArquivadas, setFArquivadas] = useState(false);
-  const [fConcluidas, setFConcluidas] = useState<'mostrar' | 'ocultar'>('mostrar');
+  // Layout 26/10: como no ClickUp, concluída some; só volta pelo botão "Mostrar concluídas" (`?concluidas=mostrar`).
+  const [fConcluidas, setFConcluidas] = useState<'mostrar' | 'ocultar'>('ocultar');
   // P4 (21/10/2026): esconder as colunas sem cartão; `?vazios=ocultar`, como `concluidas`.
   const [fVazios, setFVazios] = useState<'mostrar' | 'ocultar'>('mostrar');
   const [fAgrupar, setFAgrupar] = useState<Agrupamento>('nenhum');
@@ -344,8 +345,8 @@ function TrabalhoConteudo({ visaoInicial, modo, aoSairDeTodas }: { visaoInicial:
       setTodasListas(p.get('escopo') === 'pessoal' && !!p.get('assigneeUserId'));
       setFOpcao(p.get('opcao') ?? ''); setFAgente(p.get('agente') ?? '');
       setFStatus(p.get('statusId') ?? ''); setFArquivadas(p.get('arquivadas') === '1'); setFCliente(p.get('cliente') ?? '');
-      // `concluidas=1` (o link da Visão geral) e a ausência da chave mostram; `ocultar` esconde.
-      setFConcluidas(p.get('concluidas') === 'ocultar' ? 'ocultar' : 'mostrar');
+      // Layout 26/10: a ausência da chave esconde as concluídas; `mostrar` (ou o `1` antigo da Visão geral) mostra.
+      setFConcluidas(p.get('concluidas') === 'mostrar' || p.get('concluidas') === '1' ? 'mostrar' : 'ocultar');
       setFVazios(p.get('vazios') === 'ocultar' ? 'ocultar' : 'mostrar');
       setFPrazo(recorteDePrazo(p.get('prazo')));
       setFEtiqueta(p.get('tagId') ?? ''); setFSegmento(p.get('segmento') ?? '');
@@ -657,7 +658,7 @@ function TrabalhoConteudo({ visaoInicial, modo, aoSairDeTodas }: { visaoInicial:
       : ehMeu(t.assignee, user?.name));
     return itens.filter((t) => (fEscopo !== 'atrasados' || atrasada(t)) &&
       (fEscopo !== 'meus' || meu(t)) &&
-      (fConcluidas !== 'ocultar' || t.statusType !== 'closed') &&
+      (fConcluidas !== 'ocultar' || fPrazo === 'feita' || t.statusType !== 'closed') &&
       (!fPrazo || cabeNoRecorte(fPrazo, reguaDePrazo(t.dueDate, t.statusType, agora))) &&
       (!fAgente || (fAgente === 'livres' ? !t.agenteId : t.agenteSlug === fAgente)));
   }, [tarefas, fAgente, fEscopo, fConcluidas, fPrazo, user?.id, user?.name, idsDaPendencia]);
@@ -804,6 +805,10 @@ function TrabalhoConteudo({ visaoInicial, modo, aoSairDeTodas }: { visaoInicial:
   const tarefasDoQuadro = geral ? visiveisNoQuadroGeral : visiveis;
   const vaziasNoQuadro = statusesDoQuadro.filter((st) => !tarefasDoQuadro.some((t) => t.statusId === st.id)).length;
   const ocultarVazias = fVazios === 'ocultar';
+  const alternarConcluidas = () => {
+    const novo = fConcluidas === 'ocultar' ? 'mostrar' : 'ocultar';
+    setFConcluidas(novo); filtroNoEndereco('concluidas', novo === 'mostrar' ? 'mostrar' : '');
+  };
   const alternarVazias = () => {
     const novo = ocultarVazias ? 'mostrar' : 'ocultar';
     setFVazios(novo); filtroNoEndereco('vazios', novo === 'ocultar' ? 'ocultar' : '');
@@ -859,7 +864,7 @@ function TrabalhoConteudo({ visaoInicial, modo, aoSairDeTodas }: { visaoInicial:
     // O agente é outro eixo (fatia A4): quem tem a tarefa NA MÃO, não quem responde por ela.
     { chave: 'agente', rotulo: 'Agente', tipo: 'opcoes', vazio: 'Todos os agentes', opcoes: [{ valor: 'livres', rotulo: 'Sem agente (livres)' }, ...(estrutura?.agentes ?? []).map((a) => ({ valor: a.slug, rotulo: `${a.nome}${a.tarefas > 0 ? ` (${a.tarefas})` : ''}` }))] },
     ...((estrutura?.responsaveis ?? []).length ? [{ chave: 'assignee', rotulo: 'Responsável (texto antigo)', tipo: 'opcoes' as const, vazio: 'Todos', opcoes: (estrutura?.responsaveis ?? []).map((r) => ({ valor: r, rotulo: r })), dica: 'O nome escrito nas tarefas importadas, antes do vínculo com a conta.' }] : []),
-    { chave: 'concluidas', rotulo: 'Ocultar concluídas', tipo: 'booleano', valorMarcado: 'ocultar' },
+    { chave: 'concluidas', rotulo: 'Mostrar concluídas', tipo: 'booleano', valorMarcado: 'mostrar' },
     filtroDosVazios,
     { chave: 'arquivadas', rotulo: 'Incluir arquivadas', tipo: 'booleano' },
     filtroDaBusca,
@@ -875,7 +880,7 @@ function TrabalhoConteudo({ visaoInicial, modo, aoSairDeTodas }: { visaoInicial:
     opcao: fOpcao,
     agente: fAgente,
     assignee: fAssignee,
-    concluidas: fConcluidas === 'ocultar' ? 'ocultar' : '',
+    concluidas: fConcluidas === 'mostrar' ? 'mostrar' : '',
     vazios: fVazios === 'ocultar' ? 'ocultar' : '',
     arquivadas: fArquivadas ? '1' : '',
     q: fBusca,
@@ -905,7 +910,7 @@ function TrabalhoConteudo({ visaoInicial, modo, aoSairDeTodas }: { visaoInicial:
         if (valor) { sairDoPessoal(); setFPessoa(''); filtroNoEndereco('assigneeUserId', ''); filtroNoEndereco('semResponsavel', ''); }
         setFAssignee(valor); filtroNoEndereco('assignee', valor);
         return;
-      case 'concluidas': setFConcluidas(valor === 'ocultar' ? 'ocultar' : 'mostrar'); filtroNoEndereco('concluidas', valor === 'ocultar' ? 'ocultar' : ''); return;
+      case 'concluidas': setFConcluidas(valor === 'mostrar' ? 'mostrar' : 'ocultar'); filtroNoEndereco('concluidas', valor === 'mostrar' ? 'mostrar' : ''); return;
       case 'vazios': setFVazios(valor === 'ocultar' ? 'ocultar' : 'mostrar'); filtroNoEndereco('vazios', valor === 'ocultar' ? 'ocultar' : ''); return;
       case 'arquivadas': setFArquivadas(!!valor); filtroNoEndereco('arquivadas', valor ? '1' : ''); return;
       case 'q': setFBusca(valor); filtroNoEndereco('q', valor); return;
@@ -1014,6 +1019,19 @@ function TrabalhoConteudo({ visaoInicial, modo, aoSairDeTodas }: { visaoInicial:
                 </button>
               ))}
             </div>
+            {/* Layout 26/10: concluídas escondidas por padrão, como no ClickUp; este botão traz de volta. */}
+            {(lista || geral) && (
+              <button
+                type="button"
+                data-testid="trabalho-concluidas"
+                aria-pressed={fConcluidas === 'mostrar'}
+                onClick={alternarConcluidas}
+                title={fConcluidas === 'mostrar' ? 'Esconder de novo as tarefas concluídas' : 'Ver também as tarefas já concluídas'}
+                className={`rounded-lg border px-3 py-1.5 text-sm max-md:min-h-[44px] ${fConcluidas === 'mostrar' ? 'border-brand-dim bg-brand/15 text-text' : 'border-border bg-surface text-muted hover:text-text'}`}
+              >
+                {fConcluidas === 'mostrar' ? 'Ocultar concluídas' : 'Mostrar concluídas'}
+              </button>
+            )}
             {/* P4: recolher os status vazios do quadro; o mesmo booleano do painel de Filtros (`?vazios=ocultar`). */}
             {visao === 'board' && (lista || geral) && (
               <button
@@ -1071,7 +1089,7 @@ function TrabalhoConteudo({ visaoInicial, modo, aoSairDeTodas }: { visaoInicial:
                   ...(fPessoa ? { pessoa: fPessoa } : {}), ...(fPrazo ? { prazo: fPrazo } : {}), ...(fEtiqueta ? { etiqueta: fEtiqueta } : {}),
                   ...(fOpcao ? { opcao: fOpcao } : {}), ...(fArquivadas ? { arquivadas: true } : {}),
                 },
-                ...(fAgrupar !== 'nenhum' ? { agrupamento: fAgrupar } : {}), ...(fConcluidas === 'ocultar' ? { concluidas: 'ocultar' as const } : {}),
+                ...(fAgrupar !== 'nenhum' ? { agrupamento: fAgrupar } : {}), concluidas: fConcluidas,
                 ...(fVazios === 'ocultar' ? { vazios: 'ocultar' as const } : {}),
               }}
               aplicar={(v: VistaQuadro) => {
@@ -1083,10 +1101,10 @@ function TrabalhoConteudo({ visaoInicial, modo, aoSairDeTodas }: { visaoInicial:
                 setFCliente(v.filtros.cliente); setFEscopo(v.filtros.escopo); setFBusca(v.filtros.q);
                 setFPessoa(pessoa); setFPrazo(recorteDePrazo(v.filtros.prazo ?? null)); setFEtiqueta(v.filtros.etiqueta ?? '');
                 setFOpcao(v.filtros.opcao ?? ''); setFArquivadas(!!v.filtros.arquivadas);
-                setFAgrupar(v.agrupamento ?? 'nenhum'); setFConcluidas(v.concluidas ?? 'mostrar'); setFVazios(v.vazios ?? 'mostrar');
+                setFAgrupar(v.agrupamento ?? 'nenhum'); setFConcluidas(v.concluidas ?? 'ocultar'); setFVazios(v.vazios ?? 'mostrar');
                 const url = new URL(window.location.href);
                 for (const [k, val] of [['assignee', v.filtros.assignee], ['agente', v.filtros.agente], ['statusId', v.filtros.statusId], ['cliente', v.filtros.cliente], ['escopo', v.filtros.escopo === 'todos' ? '' : v.filtros.escopo], ['q', v.filtros.q], ['visao', v.visao === 'board' ? '' : v.visao === 'calendario' ? 'calendario' : 'lista'],
-                  ['agrupar', v.agrupamento && v.agrupamento !== 'nenhum' ? v.agrupamento : ''], ['concluidas', v.concluidas === 'ocultar' ? 'ocultar' : ''], ['vazios', v.vazios === 'ocultar' ? 'ocultar' : ''],
+                  ['agrupar', v.agrupamento && v.agrupamento !== 'nenhum' ? v.agrupamento : ''], ['concluidas', v.concluidas === 'mostrar' ? 'mostrar' : ''], ['vazios', v.vazios === 'ocultar' ? 'ocultar' : ''],
                   ['assigneeUserId', pessoa && pessoa !== 'sem-vinculo' ? pessoa : ''], ['semResponsavel', pessoa === 'sem-vinculo' ? '1' : ''],
                   ['prazo', v.filtros.prazo ?? ''], ['tagId', v.filtros.etiqueta ?? ''], ['opcao', v.filtros.opcao ?? ''], ['arquivadas', v.filtros.arquivadas ? '1' : ''], ['overdue', '']] as const) {
                   if (val) url.searchParams.set(k, val); else url.searchParams.delete(k);
