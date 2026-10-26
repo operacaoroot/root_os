@@ -457,6 +457,8 @@ export const COMERCIAL_EVENTOS = [
   // CO-15: um envio do formulário do site (cada envio, idempotente pela chave da requisição);
   'site.formulario',
   // CO-16: a classe que a triagem do WhatsApp deu a uma mensagem (e para onde ela foi).
+  // Layout 26/10: uma pessoa corrigiu o nome do contato e/ou a empresa do lead (sem reação: não move etapa nem dispara automação).
+  'identidade.editada',
   'whats.triada',
 ] as const;
 export type ComercialEvento = (typeof COMERCIAL_EVENTOS)[number];

@@ -162,6 +162,25 @@ export class AprService {
     return { ok: true, id: p.id };
   }
 
+  /** Layout 26/10: renomear o cadastro (razão social e/ou nome fantasia). Só o nome muda; o antes fica na auditoria. */
+  async renomearPartner(orgId: string, id: string, corpo: unknown, actorId: string) {
+    const c = (corpo ?? {}) as { razaoSocial?: unknown; nomeFantasia?: unknown };
+    const limpo = (v: unknown) => (typeof v === 'string' ? v.replace(/\s+/g, ' ').trim().slice(0, 200) : undefined);
+    const razaoSocial = limpo(c.razaoSocial);
+    const nomeFantasia = c.nomeFantasia === null ? null : limpo(c.nomeFantasia);
+    if (razaoSocial === '') throw new BadRequestException('O nome do cadastro não pode ficar vazio.');
+    if (razaoSocial === undefined && nomeFantasia === undefined) throw new BadRequestException('Diga o novo nome.');
+    const antes = await this.prisma.partner.findFirst({ where: { id, orgId }, select: { razaoSocial: true, nomeFantasia: true } });
+    if (!antes) throw new NotFoundException('Cadastro não encontrado.');
+    const data = {
+      ...(razaoSocial !== undefined ? { razaoSocial } : {}),
+      ...(nomeFantasia !== undefined ? { nomeFantasia: nomeFantasia || null } : {}),
+    };
+    await this.prisma.partner.updateMany({ where: { id, orgId }, data });
+    await this.audit.log({ orgId, actorId, action: 'finance.partner.rename', entityType: 'partner', entityId: id, before: antes, after: data });
+    return { ok: true, id };
+  }
+
   // ---------- Dimensões (departamentos / projetos) ----------
   async listDimensions(orgId: string, kind: 'departamento' | 'projeto'): Promise<DimensionList> {
     const rows = kind === 'departamento'

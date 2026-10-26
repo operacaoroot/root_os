@@ -136,6 +136,7 @@ export const FONTE_DO_EVENTO: Record<ComercialEvento, ComercialFonte> = {
   'etapa.movida_com_pendencia': 'pessoa',
   'etapa.movida_a_mao': 'pessoa',
   'saida.registrada': 'pessoa',
+  'identidade.editada': 'pessoa',
   'vigia.premissa': 'relogio',
   // Rodada dos agentes (21/10/2026, lane A2).
   'contrato.assinado': 'zapsign',
@@ -320,6 +321,8 @@ export interface PayloadsComerciais {
   /** CO-15: um envio do formulário do site. Texto de quem escreveu: dado, nunca instrução. */
   'site.formulario': { nome: string; empresa: string | null; email: string | null; telefone: string | null; mensagem: string | null; chave: string };
   /** CO-16: a classe da triagem e o destino. `regra` quando o sistema corrigiu o modelo; `pessoa` quando veio da pendência. */
+  /** Layout 26/10: nome do contato e/ou empresa corrigidos por uma pessoa (o antes vai junto). Sem reação: não move etapa. */
+  'identidade.editada': { nome: string | null; empresa: string | null; nomeAntes: string | null; empresaAntes: string | null; por: string | null };
   'whats.triada': { classe: string; confianca: number; destino: string; origem: 'modelo' | 'regra' | 'pessoa'; motivo?: string | null; mensagemId?: string | null };
 }
 
@@ -518,6 +521,13 @@ export function resumoDoEvento(type: string, payload: unknown): { fonte: Comerci
     }
     case 'saida.registrada':
       return { fonte, resumo: `saída: ${String(p.saida)} · ${String(p.motivo)}` };
+    case 'identidade.editada': {
+      const partes = [
+        p.nome != null && p.nome !== p.nomeAntes ? `contato: ${String(p.nomeAntes ?? '—')} → ${String(p.nome)}` : null,
+        p.empresa !== p.empresaAntes ? `empresa: ${String(p.empresaAntes ?? '—')} → ${String(p.empresa ?? '—')}` : null,
+      ].filter(Boolean);
+      return { fonte, resumo: `${partes.join(' · ') || 'nome conferido'}${p.por ? ` · por ${String(p.por)}` : ''}` };
+    }
     case 'vigia.premissa':
       return { fonte, resumo: `vigia · ${String(p.automacao)}: ${p.ok ? 'ok' : 'QUEBRADA'} · ${curto(p.premissa, 50)}` };
     case 'contrato.assinado':

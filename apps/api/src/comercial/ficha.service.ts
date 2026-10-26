@@ -655,6 +655,39 @@ export class FichaService {
    * recusada não entra no fio. A reação da espinha ao `saida.registrada` aplica
    * os campos e move a etapa.
    */
+  /**
+   * Layout 26/10/2026: corrigir o NOME DO CONTATO (`Lead.name`) e/ou a EMPRESA
+   * (`ComercialFicha.empresa`). Grava o fato `identidade.editada` no fio, com o
+   * antes e quem fez, SEM reação: não projeta, não move etapa, não dispara
+   * automação. Nome e empresa mudam na mesma transação do fato.
+   */
+  async editarIdentidade(orgId: string, leadId: string, corpo: unknown, por: QuemFez | null, agora = new Date()): Promise<FichaDoLead> {
+    const c = (corpo ?? {}) as { nome?: unknown; empresa?: unknown };
+    const limpo = (v: unknown, max: number) => (typeof v === 'string' ? v.replace(/\s+/g, ' ').trim().slice(0, max) : undefined);
+    const nome = limpo(c.nome, 120);
+    const empresa = c.empresa === null ? null : limpo(c.empresa, 200);
+    if (nome === undefined && empresa === undefined) throw new BadRequestException('Diga o nome do contato ou a empresa.');
+    if (nome === '') throw new BadRequestException('O nome do contato não pode ficar vazio.');
+    const ficha = await this.garantir(orgId, leadId);
+    const lead = await this.prisma.lead.findFirst({ where: { id: leadId, orgId }, select: { name: true } });
+    if (!lead) throw new NotFoundException('Lead não encontrado.');
+    const novaEmpresa = empresa === undefined ? ficha.empresa : empresa || null;
+    const novoNome = nome ?? lead.name;
+    if (novoNome === lead.name && novaEmpresa === ficha.empresa) return this.projecao(orgId, leadId);
+    await this.prisma.$transaction(async (tx) => {
+      if (novoNome !== lead.name) await tx.lead.updateMany({ where: { id: leadId, orgId }, data: { name: novoNome } });
+      if (novaEmpresa !== ficha.empresa) await tx.comercialFicha.update({ where: { id: ficha.id }, data: { empresa: novaEmpresa } });
+      await this.fio.gravarNaTransacao(tx, orgId, leadId, 'identidade.editada', `${agora.getTime()}`, {
+        nome: novoNome !== lead.name ? novoNome : null,
+        empresa: novaEmpresa,
+        nomeAntes: lead.name,
+        empresaAntes: ficha.empresa,
+        por: por?.nome ?? por?.id ?? null,
+      }, agora);
+    });
+    return this.projecao(orgId, leadId);
+  }
+
   async registrarSaida(orgId: string, leadId: string, corpo: unknown, por: QuemFez | null, agora = new Date()): Promise<FichaDoLead> {
     const r = ComercialSaidaSchema.safeParse(corpo);
     if (!r.success) throw new BadRequestException({ message: 'Saída inválida.', erros: r.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`) });

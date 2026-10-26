@@ -194,3 +194,17 @@ export function juntarMensagens(a: MensagemDaCaixa[], b: MensagemDaCaixa[]): Men
   for (const m of [...a, ...b]) porId.set(m.id, m);
   return [...porId.values()].sort((x, y) => (x.timestamp === y.timestamp ? (x.id < y.id ? -1 : x.id > y.id ? 1 : 0) : x.timestamp < y.timestamp ? -1 : 1));
 }
+
+/**
+ * Layout 26/10: o número de quem escreveu no grupo, como o WhatsApp mostra
+ * ("+55 61 9862-8541"). Fora do Brasil, só com o "+".
+ */
+export function numeroDoBalao(numero: string | null | undefined): string | null {
+  const n = (numero ?? '').replace(/\D/g, '');
+  if (!n) return null;
+  if (n.startsWith('55') && (n.length === 12 || n.length === 13)) {
+    const resto = n.slice(4);
+    return `+55 ${n.slice(2, 4)} ${resto.slice(0, -4)}-${resto.slice(-4)}`;
+  }
+  return `+${n}`;
+}

@@ -33,6 +33,7 @@ import {
   previaDaLista,
   razaoParaNaoResponder,
   remetenteDoBalao,
+  numeroDoBalao,
   rotaDaConversa,
   rotaDaLista,
   rotuloDoDia,
@@ -168,7 +169,12 @@ function Balao({ m, grupo }: { m: MensagemDaCaixa; grupo: boolean }) {
   return (
     <li data-testid={`caixa-balao-${m.id}`} data-de-mim={m.deMim ? 'sim' : 'nao'} className={`flex max-w-[85%] flex-col md:max-w-[70%] ${lado}`}>
       <div className={`min-w-0 max-w-full rounded border px-2.5 py-1.5 text-[13px] ${cor}`}>
-        {grupo && !m.deMim && <p className="mb-0.5 truncate text-[11.5px] font-semibold text-brand">{remetenteDoBalao(m)}</p>}
+        {grupo && !m.deMim && (
+          <p className="mb-0.5 flex min-w-0 items-baseline justify-between gap-3 text-[11.5px]">
+            <span className="truncate font-semibold text-brand">{remetenteDoBalao(m)}</span>
+            {m.remetenteNome?.trim() && numeroDoBalao(m.remetenteNumero) && <span data-testid={`caixa-numero-${m.id}`} className="shrink-0 font-os-mono text-[10.5px] text-muted">{numeroDoBalao(m.remetenteNumero)}</span>}
+          </p>
+        )}
         {m.cita && (
           <p data-testid={`caixa-citacao-${m.id}`} className="mb-1 line-clamp-3 border-l-2 border-brand/50 pl-2 text-[12px] text-muted">
             <span className="font-semibold">{m.cita.deMim ? 'Você' : m.cita.remetenteNome?.trim() || 'mensagem citada'}</span>

@@ -31,6 +31,7 @@ import { AbaDinheiro } from './AbaDinheiro';
 import { AbaDecisoes } from './AbaDecisoes';
 import { AbaSala } from './AbaSala';
 import { AbaWhatsapp } from './AbaWhatsapp';
+import { EditarIdentidade } from './EditarIdentidade';
 
 const FOCAVEIS = 'a[href], button:not([disabled]), input:not([disabled]):not([type="hidden"]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
 
@@ -206,6 +207,8 @@ export function LeadPainel({ estado }: { estado: EstadoDoPainel }) {
               fechar
             </button>
           </div>
+          {/* Layout 26/10: corrigir nome e empresa (depois do "fechar" na ordem do teclado: ele segue o primeiro). */}
+          {f && <EditarIdentidade key={`${f.nome}|${f.empresa ?? ''}`} leadId={leadId} nome={f.nome} empresa={f.empresa ?? null} aoMudar={aoMudar} />}
 
           <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-2 text-[12px]">
             {f ? (

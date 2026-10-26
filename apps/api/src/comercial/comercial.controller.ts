@@ -170,6 +170,15 @@ export class ComercialController {
     return this.fichas.registrarAta(user.orgId, id, body, { id: user.sub, nome: user.name });
   }
 
+  /** Layout 26/10: corrigir o nome do contato e/ou a empresa do lead (fato no fio, sem automação). */
+  @Post('lead/:id/identidade')
+  @HttpCode(200)
+  @RequirePermissions('leads.editar')
+  @UseGuards(SoGenteGuard)
+  identidade(@CurrentUser() user: JwtUser, @Param('id') id: string, @Body() body: unknown) {
+    return this.fichas.editarIdentidade(user.orgId, id, body, { id: user.sub, nome: user.name });
+  }
+
   /** Saída com motivo e dono (desqualificado, geladeira, perdido, parceiro). */
   @Post('lead/:id/saida')
   @RequirePermissions('leads.editar')

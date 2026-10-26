@@ -89,6 +89,13 @@ export class FinanceController {
     return this.apr.createPartner(user.orgId, CreatePartnerSchema.parse(body), user.sub);
   }
 
+  /** Layout 26/10: renomear o cadastro (o nome que aparece no Financeiro e ao vincular o WhatsApp). */
+  @Patch('partners/:id')
+  @RequirePermissions('financeiro.editar')
+  renomearPartner(@CurrentUser() user: JwtUser, @Param('id') id: string, @Body() body: unknown) {
+    return this.apr.renomearPartner(user.orgId, id, body, user.sub);
+  }
+
   @Get('departamentos')
   @RequirePermissions('financeiro.ver')
   listDepartamentos(@CurrentUser() user: JwtUser) {

@@ -964,9 +964,7 @@ function ApAr(props: {
         <div className="flex flex-wrap gap-2">
           {partners?.items.length === 0 && <span className="text-sm text-muted">Nenhum parceiro.</span>}
           {partners?.items.map((p) => (
-            <span key={p.id} className="rounded-lg border border-border px-2 py-1 text-[12px]">
-              {p.razaoSocial} <span className="text-[10px] text-muted">{[p.isFornecedor && 'forn.', p.isCliente && 'cli.'].filter(Boolean).join('/')}</span>
-            </span>
+            <ChipDoParceiro key={p.id} p={p} canEdit={canEdit} token={token} onChange={onChange} onError={onError} onFlash={onFlash} />
           ))}
         </div>
       </div>
@@ -1406,5 +1404,44 @@ function Bancos(props: {
         )}
       </div>
     </div>
+  );
+}
+
+/** Layout 26/10: o cadastro na lista; com permissão, um clique renomeia ali mesmo (Enter grava, Esc desiste). */
+function ChipDoParceiro({ p, canEdit, token, onChange, onError, onFlash }: {
+  p: { id: string; razaoSocial: string; isCliente: boolean; isFornecedor: boolean };
+  canEdit: boolean; token: string | null; onChange: () => void; onError: (e: unknown) => void; onFlash: (m: string) => void;
+}) {
+  const [editando, setEditando] = useState(false);
+  const [nome, setNome] = useState(p.razaoSocial);
+  const papeis = <span className="text-[10px] text-muted">{[p.isFornecedor && 'forn.', p.isCliente && 'cli.'].filter(Boolean).join('/')}</span>;
+  const salvar = () => {
+    const n = nome.replace(/\s+/g, ' ').trim();
+    if (!n || n === p.razaoSocial) { setEditando(false); return; }
+    apiPatch(`/finance/partners/${p.id}`, { razaoSocial: n }, token)
+      .then(() => { onFlash('Cadastro renomeado.'); setEditando(false); onChange(); })
+      .catch(onError);
+  };
+  if (editando) {
+    return (
+      <span className="inline-flex items-center gap-1 rounded-lg border border-brand px-1.5 py-0.5 text-[12px]">
+        <input
+          autoFocus value={nome} aria-label={`Novo nome de ${p.razaoSocial}`}
+          onChange={(e) => setNome(e.target.value)}
+          onKeyDown={(e) => { if (e.key === 'Enter') salvar(); if (e.key === 'Escape') { setNome(p.razaoSocial); setEditando(false); } }}
+          onBlur={salvar}
+          className="w-56 bg-transparent outline-none"
+        />
+        {papeis}
+      </span>
+    );
+  }
+  return canEdit ? (
+    <button type="button" title="Clique para renomear" onClick={() => { setNome(p.razaoSocial); setEditando(true); }}
+      className="rounded-lg border border-border px-2 py-1 text-left text-[12px] hover:border-brand">
+      {p.razaoSocial} {papeis}
+    </button>
+  ) : (
+    <span className="rounded-lg border border-border px-2 py-1 text-[12px]">{p.razaoSocial} {papeis}</span>
   );
 }
