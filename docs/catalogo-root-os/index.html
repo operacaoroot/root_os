@@ -1,0 +1,245 @@
+<title>Catálogo do ROOT OS</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@500;700&family=Space+Grotesk:wght@400;500;600;700&display=swap">
+<style>
+  /* Layout: uma coluna de leitura; cada registro = ficha com etiqueta mono, texto em sans, foto ao lado. Visual do próprio ROOT OS (escuro, um acento lima). */
+  :root {
+    --fundo: #0b0e0c; --chapa: #111712; --linha: #223026; --texto: #e7eee8; --texto-2: #a0b2a6; --texto-3: #6f8276;
+    --lima: #a3e635; --lima-fundo: rgba(163, 230, 53, 0.09); --alerta: #fbbf24;
+    --sans: 'Space Grotesk', ui-sans-serif, system-ui, sans-serif;
+    --mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+    color-scheme: dark;
+  }
+  @media (prefers-color-scheme: light) {
+    :root:not([data-theme="dark"]) { --fundo: #f2f5ef; --chapa: #ffffff; --linha: #d9e1d5; --texto: #162015; --texto-2: #4b5a4e; --texto-3: #738478; --lima: #4d7c0f; --lima-fundo: rgba(77, 124, 15, 0.08); --alerta: #a16207; color-scheme: light; }
+  }
+  :root[data-theme="light"] { --fundo: #f2f5ef; --chapa: #ffffff; --linha: #d9e1d5; --texto: #162015; --texto-2: #4b5a4e; --texto-3: #738478; --lima: #4d7c0f; --lima-fundo: rgba(77, 124, 15, 0.08); --alerta: #a16207; color-scheme: light; }
+
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--fundo); color: var(--texto); font: 16px/1.6 var(--sans); }
+  .pagina { max-width: 1120px; margin: 0 auto; padding-block: 40px 96px; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); display: grid; gap: 48px; }
+  .rotulo { font: 500 11px/1.4 var(--mono); letter-spacing: .14em; text-transform: uppercase; color: var(--texto-3); }
+  .num { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+  h1, h2, h3 { text-wrap: balance; margin: 0; letter-spacing: -.015em; }
+  h1 { font-size: clamp(30px, 4.4vw, 44px); line-height: 1.08; font-weight: 700; }
+  h2 { font-size: 24px; line-height: 1.2; }
+  h3 { font-size: 19px; line-height: 1.3; font-weight: 600; }
+  p { margin: 0; }
+  code { font-family: var(--mono); font-size: .82em; color: var(--texto); background: var(--lima-fundo); padding: 1px 5px; overflow-wrap: anywhere; }
+
+  header.topo { display: grid; gap: 14px; }
+  header.topo .abre { font-size: 18px; color: var(--texto-2); max-width: 64ch; }
+  .meta { display: flex; flex-wrap: wrap; gap: 8px 20px; color: var(--texto-2); font-size: 14px; }
+  .meta b { color: var(--texto); font-weight: 600; }
+
+  .como { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 1px; background: var(--linha); border: 1px solid var(--linha); }
+  .como div { background: var(--chapa); padding: 14px 16px; display: grid; gap: 4px; }
+  .como p { color: var(--texto-2); font-size: 14px; }
+
+  .secao { display: grid; gap: 20px; }
+  .secao > header { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 8px 16px; border-bottom: 1px solid var(--linha); padding-bottom: 12px; }
+  .secao > header p { color: var(--texto-2); font-size: 15px; max-width: 70ch; }
+
+  .vazio { border: 1px dashed var(--linha); padding: 28px 24px; display: grid; gap: 8px; color: var(--texto-2); }
+  .vazio b { color: var(--texto); }
+
+  .registro { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.15fr); gap: 28px; padding-block: 28px; border-bottom: 1px solid var(--linha); }
+  .registro:last-child { border-bottom: 0; }
+  @media (max-width: 860px) { .registro { grid-template-columns: 1fr; } }
+  .registro .texto { display: grid; gap: 14px; align-content: start; min-width: 0; }
+  .linha-id { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+  .id { font: 700 13px var(--mono); color: var(--lima); }
+  .chip { font: 500 10px/1 var(--mono); letter-spacing: .12em; text-transform: uppercase; padding: 5px 8px; border: 1px solid var(--linha); color: var(--texto-2); }
+  .chip.alto { border-color: var(--lima); color: var(--lima); }
+  .chip.medio { border-color: var(--alerta); color: var(--alerta); }
+  dl { margin: 0; display: grid; gap: 12px; }
+  dl div { display: grid; gap: 2px; }
+  dd { margin: 0; color: var(--texto-2); }
+  dd b { color: var(--texto); font-weight: 600; }
+  figure { margin: 0; min-width: 0; display: grid; gap: 8px; align-content: start; }
+  figure img { width: 100%; max-width: 100%; height: auto; display: block; border: 1px solid var(--linha); }
+  figcaption { color: var(--texto-3); font-size: 13px; }
+
+  .fica { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 6px 32px; padding: 0; margin: 0; list-style: none; color: var(--texto-2); }
+  .fica li::before { content: "✓  "; color: var(--lima); }
+  a { color: var(--lima); }
+  a:focus-visible { outline: 2px solid var(--lima); outline-offset: 2px; }
+</style>
+
+<div class="pagina">
+  <header class="topo">
+    <p class="rotulo">ROOT OS · versão em produção 686704a</p>
+    <h1>Catálogo de problemas e melhorias do ROOT OS</h1>
+    <p class="abre">Lista viva para quem desenvolve o OS. Em cima, os problemas que a equipe encontra no uso. Embaixo, o comparativo de usabilidade com o ClickUp: o que mudar para o OS ficar tão fácil quanto ele, sem perder a cara da ROOT.</p>
+    <div class="meta">
+      <span>Aberto em <b>26/10/2026</b></span>
+      <span>Relatados <b class="num">0</b></span>
+      <span>Comparativo <b class="num">9</b> pontos</span>
+      <span>Código: branch <code>root-os/layout-comparativo</code>, nada alterado no ar</span>
+    </div>
+  </header>
+
+  <div class="como" aria-label="Como ler cada registro">
+    <div><span class="rotulo">P-01, P-02…</span><p>Problema relatado no uso, na ordem em que chegou.</p></div>
+    <div><span class="rotulo">L-01, L-02…</span><p>Melhoria de usabilidade vinda do comparativo com o ClickUp.</p></div>
+    <div><span class="rotulo">Impacto</span><p>Alto: atrapalha todo dia ou em toda tela. Médio: atrapalha numa tela. Baixo: acabamento.</p></div>
+    <div><span class="rotulo">Onde</span><p>Arquivo do código (apps/web) para quem for mexer.</p></div>
+  </div>
+
+  <section class="secao" id="relatados" aria-labelledby="t-relatados">
+    <header>
+      <h2 id="t-relatados">Problemas relatados</h2>
+      <p>Cada problema entra com a tela, o que acontece, o que deveria acontecer e o arquivo onde mexer.</p>
+    </header>
+    <div class="vazio">
+      <b>Nenhum problema registrado ainda.</b>
+      <p>O Lucas vai mandando os problemas, e cada um entra aqui como P-01, P-02 e assim por diante.</p>
+    </div>
+  </section>
+
+  <section class="secao" id="comparativo" aria-labelledby="t-comp">
+    <header>
+      <h2 id="t-comp">Comparativo de usabilidade: ClickUp × ROOT OS</h2>
+      <p>Levantado no código que está em produção. As fotos são das provas automáticas da rodada 22B/22C, com dados de teste. Ordem: impacto, do maior para o menor.</p>
+    </header>
+
+    <article class="registro" id="L-01">
+      <div class="texto">
+        <div class="linha-id"><span class="id">L-01</span><span class="chip alto">impacto alto</span><span class="chip">todas as telas</span></div>
+        <h3>Menu lateral e barra de cima em fonte mono</h3>
+        <dl>
+          <div><dt class="rotulo">ClickUp</dt><dd>Fonte comum em tudo. Mono só em código.</dd></div>
+          <div><dt class="rotulo">ROOT OS hoje</dt><dd>O menu lateral inteiro e a barra de cima usam JetBrains Mono, inclusive o caminho em maiúsculas ("TRABALHO / TAREFAS"). A regra da marca é mono só em etiqueta e número.</dd></div>
+          <div><dt class="rotulo">Proposta</dt><dd><b>Itens do menu e título da página em Space Grotesk</b>, sem caixa alta. Mono fica no rótulo "Áreas da empresa", nos contadores e no atalho ⌘K.</dd></div>
+          <div><dt class="rotulo">Onde</dt><dd><code>components/Sidebar.tsx:313</code> e <code>components/Topbar.tsx:107</code> (classe <code>font-os-mono</code> no contêiner).</dd></div>
+        </dl>
+      </div>
+      <figure><img src="fotos/producao22b-menu-aberto-escuro.png" alt="Menu lateral, caminho e subtítulo da página em fonte mono" loading="lazy" width="1440" height="900"><figcaption>Trabalho › Tarefas: menu, caminho e subtítulo em mono.</figcaption></figure>
+    </article>
+
+    <article class="registro" id="L-02">
+      <div class="texto">
+        <div class="linha-id"><span class="id">L-02</span><span class="chip alto">impacto alto</span><span class="chip">todas as telas</span></div>
+        <h3>Menu lateral longo, com Configurações duas vezes</h3>
+        <dl>
+          <div><dt class="rotulo">ClickUp</dt><dd>Em cima, o que é da pessoa (Início, Caixa de entrada, Minhas tarefas). Embaixo, os espaços. Configurações fica no avatar.</dd></div>
+          <div><dt class="rotulo">ROOT OS hoje</dt><dd>São 10 áreas com o mesmo peso. A área aberta mostra até 8 subitens, e com o Comercial aberto Configurações sai da tela. O WhatsApp funciona como caixa de entrada, mas aparece como área. Configurações está na engrenagem do topo e de novo no menu.</dd></div>
+          <div><dt class="rotulo">Proposta</dt><dd><b>Bloco pessoal no topo</b> (Dia a dia e WhatsApp), <b>áreas embaixo</b>, Configurações só na engrenagem. Os subitens já existem como abas no alto da página, então o menu mostra só a área.</dd></div>
+          <div><dt class="rotulo">Onde</dt><dd><code>components/Sidebar.tsx</code> e <code>components/navegacao-modulos.ts</code> (<code>AREAS_DE_NAVEGACAO</code>).</dd></div>
+        </dl>
+      </div>
+      <figure><img src="fotos/producao22b-funil-lista-escuro.png" alt="Menu lateral com o Comercial aberto em oito subitens" loading="lazy" width="1440" height="900"><figcaption>Com o Comercial aberto, Configurações desce até a borda da tela.</figcaption></figure>
+    </article>
+
+    <article class="registro" id="L-03">
+      <div class="texto">
+        <div class="linha-id"><span class="id">L-03</span><span class="chip alto">impacto alto</span><span class="chip">Trabalho</span></div>
+        <h3>Pastas em dois lugares ao mesmo tempo</h3>
+        <dl>
+          <div><dt class="rotulo">ClickUp</dt><dd>Pastas e listas só na árvore da lateral. A página mostra a lista escolhida.</dd></div>
+          <div><dt class="rotulo">ROOT OS hoje</dt><dd>As pastas aparecem como uma parede de etiquetas no topo <b>e</b> outra vez na árvore à esquerda da lista. Com muitas pastas, a lista só começa na metade da tela.</dd></div>
+          <div><dt class="rotulo">Proposta</dt><dd><b>Deixar só a árvore.</b> A pasta em uso vai para o título ("Comercial › Tarefas do comercial"), e a lista sobe para o topo.</dd></div>
+          <div><dt class="rotulo">Onde</dt><dd><code>components/trabalho/TrabalhoView.tsx</code>, componente <code>BarraDePastas</code> (linha 3241, usado na 914).</dd></div>
+        </dl>
+      </div>
+      <figure><img src="fotos/producao22b-menu-aberto-escuro.png" alt="Etiquetas de pasta acima da lista e árvore de pastas ao lado" loading="lazy" width="1440" height="900"><figcaption>Etiquetas de pasta no topo e as mesmas pastas na coluna da esquerda.</figcaption></figure>
+    </article>
+
+    <article class="registro" id="L-04">
+      <div class="texto">
+        <div class="linha-id"><span class="id">L-04</span><span class="chip alto">impacto alto</span><span class="chip">Trabalho · Implantação</span></div>
+        <h3>Dez controles antes da primeira tarefa</h3>
+        <dl>
+          <div><dt class="rotulo">ClickUp</dt><dd>As vistas são abas (Lista, Quadro, Calendário). Uma linha só com Filtro, Agrupar, Eu e Busca. Densidade, colunas e salvar vista ficam em "Personalizar".</dd></div>
+          <div><dt class="rotulo">ROOT OS hoje</dt><dd>Seletor de pasta, ajustes, Quadro/Lista/Calendário, Ocultar status vazios, compacto/médio/cheio, seletor de vista, Salvar vista, Atualizar e Filtros, em duas linhas. Por cima ainda vem a faixa "Conteúdo a partir de uma tarefa".</dd></div>
+          <div><dt class="rotulo">Proposta</dt><dd><b>Linha 1:</b> abas de vista. <b>Linha 2:</b> Busca, Minhas, Filtros e "Vista ⋯". Densidade, ocultar vazios, salvar e atualizar vão para o menu "Vista ⋯". A faixa de conteúdo vira item do menu ⋯ do card.</dd></div>
+          <div><dt class="rotulo">Onde</dt><dd><code>components/trabalho/TrabalhoView.tsx</code> (barra da lista; faixa de conteúdo na linha 1121).</dd></div>
+        </dl>
+      </div>
+      <figure><img src="fotos/producao22b-implantacao-escuro.png" alt="Barra com muitos controles acima do quadro de implantação" loading="lazy" width="1440" height="900"><figcaption>Implantação: barra de controles, texto, botão e contadores antes do quadro.</figcaption></figure>
+    </article>
+
+    <article class="registro" id="L-05">
+      <div class="texto">
+        <div class="linha-id"><span class="id">L-05</span><span class="chip medio">impacto médio</span><span class="chip">Trabalho</span></div>
+        <h3>Painel da tarefa abre pelos anexos</h3>
+        <dl>
+          <div><dt class="rotulo">ClickUp</dt><dd>Título grande e editável, uma faixa de propriedades (status, responsáveis, datas, prioridade), depois descrição, subtarefas e anexos. Comentários na lateral.</dd></div>
+          <div><dt class="rotulo">ROOT OS hoje</dt><dd>O painel começa por Anexos e um link, e só depois vêm os campos, em selects grandes de duas colunas. Ficam à vista campos técnicos ("Responsável antigo (texto)", "Agente executor") e o apontamento de horas no meio.</dd></div>
+          <div><dt class="rotulo">Proposta</dt><dd><b>Título, propriedades, descrição, subtarefas, anexos.</b> Horas, agente e campos antigos vão para "Mais detalhes". A janela feita em 19/10 (na homologação v2) já segue esse desenho e pode ser reaproveitada.</dd></div>
+          <div><dt class="rotulo">Onde</dt><dd><code>components/trabalho/TrabalhoView.tsx:2396</code> (<code>AnexosDaTarefa</code> no topo do detalhe).</dd></div>
+        </dl>
+      </div>
+      <figure><img src="fotos/producao22b-tarefa-lado-escuro.png" alt="Painel lateral da tarefa começando pelos anexos" loading="lazy" width="1440" height="900"><figcaption>O painel abre em Anexos; status e prazo aparecem depois.</figcaption></figure>
+    </article>
+
+    <article class="registro" id="L-06">
+      <div class="texto">
+        <div class="linha-id"><span class="id">L-06</span><span class="chip medio">impacto médio</span><span class="chip">Comercial</span></div>
+        <h3>No Funil vivo, o funil fica abaixo da dobra</h3>
+        <dl>
+          <div><dt class="rotulo">ClickUp</dt><dd>A lista é a primeira coisa da tela. O que é relacionado fica em outra aba ou recolhido.</dd></div>
+          <div><dt class="rotulo">ROOT OS hoje</dt><dd>Um parágrafo de instrução e o bloco "Tarefas do comercial" vêm antes da tabela de leads. Numa tela de 900 px de altura sobram 5 linhas de funil, e os nomes das colunas são cortados ("RESPONSÁV…", "DIAS NA E…").</dd></div>
+          <div><dt class="rotulo">Proposta</dt><dd><b>Tarefas do comercial numa linha recolhida</b> ("5 tarefas ▸") ou na aba Tarefas que já existe. A instrução vai para um "?". As colunas ganham largura mínima e nome curto (Dono, Dias).</dd></div>
+          <div><dt class="rotulo">Onde</dt><dd><code>app/comercial/funil/page.tsx:213</code> e <code>app/comercial/_funil/TarefasDoComercial.tsx</code>.</dd></div>
+        </dl>
+      </div>
+      <figure><img src="fotos/producao22b-funil-lista-escuro.png" alt="Funil vivo com bloco de tarefas acima da tabela de leads" loading="lazy" width="1440" height="900"><figcaption>O funil começa na metade de baixo da tela.</figcaption></figure>
+    </article>
+
+    <article class="registro" id="L-07">
+      <div class="texto">
+        <div class="linha-id"><span class="id">L-07</span><span class="chip medio">impacto médio</span><span class="chip">várias telas</span></div>
+        <h3>Texto de instrução fixo no topo das telas</h3>
+        <dl>
+          <div><dt class="rotulo">ClickUp</dt><dd>A ajuda aparece com a tela vazia ou num ícone de dica. Com dados na tela, aparecem só os dados.</dd></div>
+          <div><dt class="rotulo">ROOT OS hoje</dt><dd>Funil, Implantação, WhatsApp e Visão geral abrem com uma frase que explica a tela. No WhatsApp ela repete o subtítulo da barra de cima. Quem usa todo dia lê a mesma frase todo dia.</dd></div>
+          <div><dt class="rotulo">Proposta</dt><dd><b>Frase só quando responde algo</b> ("3 conversas sem vínculo"). A explicação vai para o estado vazio da tela ou para um "?" ao lado do título.</dd></div>
+          <div><dt class="rotulo">Onde</dt><dd>Por exemplo <code>app/whatsapp/_caixa/CaixaDoWhatsapp.tsx:468</code>; o mesmo padrão aparece no Funil e na Implantação.</dd></div>
+        </dl>
+      </div>
+      <figure><img src="fotos/producao22c-caixa-escuro.png" alt="Caixa do WhatsApp com frase de explicação no topo" loading="lazy" width="1440" height="900"><figcaption>WhatsApp: a frase do topo repete o subtítulo da barra.</figcaption></figure>
+    </article>
+
+    <article class="registro" id="L-08">
+      <div class="texto">
+        <div class="linha-id"><span class="id">L-08</span><span class="chip medio">impacto médio</span><span class="chip">Dia a dia</span></div>
+        <h3>Visão geral com espaço vazio e número repetido</h3>
+        <dl>
+          <div><dt class="rotulo">ClickUp</dt><dd>Painel em grade cheia. Cada cartão responde uma pergunta diferente.</dd></div>
+          <div><dt class="rotulo">ROOT OS hoje</dt><dd>O cartão do WhatsApp ocupa meia linha, e a outra metade fica vazia. "Tarefas abertas" e "Não atribuídas" podem mostrar o mesmo número. Os gráficos de carga às vezes têm uma barra só.</dd></div>
+          <div><dt class="rotulo">Proposta</dt><dd><b>WhatsApp e Implantação lado a lado.</b> Dos quatro números ficam os que pedem ação (Atrasadas, Sem responsável, Feitas na semana). Gráfico de uma barra só vira uma frase.</dd></div>
+          <div><dt class="rotulo">Onde</dt><dd><code>components/tarefas/VisaoGeralDasTarefas.tsx</code>.</dd></div>
+        </dl>
+      </div>
+      <figure><img src="fotos/producao22c-dia-a-dia-depois-escuro.png" alt="Visão geral com meia linha vazia ao lado do cartão do WhatsApp" loading="lazy" width="1440" height="900"><figcaption>Dia a dia › Visão geral.</figcaption></figure>
+    </article>
+
+    <article class="registro" id="L-09">
+      <div class="texto">
+        <div class="linha-id"><span class="id">L-09</span><span class="chip">impacto baixo</span><span class="chip">Implantação · quadros</span></div>
+        <h3>Colunas vazias com largura cheia</h3>
+        <dl>
+          <div><dt class="rotulo">ClickUp</dt><dd>Grupo vazio recolhido numa faixa estreita.</dd></div>
+          <div><dt class="rotulo">ROOT OS hoje</dt><dd>A Implantação mostra 5 etapas vazias com a mesma largura das cheias, e a faixa de contadores repete o cabeçalho das colunas. "Ocultar status vazios" resolve, mas fica desligado e perdido na barra.</dd></div>
+          <div><dt class="rotulo">Proposta</dt><dd><b>Etapa vazia vira faixa fina</b> com o nome na vertical, como no Funil da homologação v2, e a faixa de contadores sai.</dd></div>
+          <div><dt class="rotulo">Onde</dt><dd><code>components/trabalho/TrabalhoView.tsx:1370</code> (chips de etapa) e o quadro da mesma tela.</dd></div>
+        </dl>
+      </div>
+      <figure><img src="fotos/producao22b-implantacao-escuro.png" alt="Quadro de implantação com colunas vazias largas" loading="lazy" width="1440" height="900"><figcaption>Kit montado, Contexto carregado, Imersão: colunas vazias com largura cheia.</figcaption></figure>
+    </article>
+  </section>
+
+  <section class="secao" aria-labelledby="t-fica">
+    <header><h2 id="t-fica">Já está no padrão do ClickUp</h2></header>
+    <ul class="fica">
+      <li>Funil em lista com colunas ordenáveis e vistas salvas</li>
+      <li>Painel lateral da tarefa sem sair da lista</li>
+      <li>Botão direito e menu ⋯ no card</li>
+      <li>Lixeira com restauração de tarefa</li>
+      <li>Caixa do WhatsApp com filtro por tipo de conversa</li>
+      <li>Opção de ocultar status vazios no quadro</li>
+    </ul>
+  </section>
+</div>
