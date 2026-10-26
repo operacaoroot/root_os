@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { acharPorNome, idsDoAgente, lerComando, lerPedidoDoGrupo, mesmoTelefone } from '../src/work/agente-de-tarefas/pedido-do-grupo';
+import { acharPorNome, entenderSemModelo, idsDoAgente, lerComando, lerPedidoDoGrupo, mesmoTelefone } from '../src/work/agente-de-tarefas/pedido-do-grupo';
 
 const GRUPO = '120363407836726219@g.us';
 const IDS = idsDoAgente('5532936180013, 63617827360770');
@@ -72,5 +72,31 @@ describe('agente de tarefas: o comando do modelo', () => {
     expect(lerComando('{"acao":"apagar"}')).toBeNull();
     expect(lerComando('{"acao":"criar","prazo":"30/10"}')).toBeNull();
     expect(lerComando('não sei')).toBeNull();
+  });
+});
+
+describe('agente de tarefas: sem modelo', () => {
+  const ABERTAS = [{ titulo: 'Manutenção wpp | Cultural & Clube' }, { titulo: 'FUP Dispropan' }, { titulo: 'Proposta Juma — fazer FUP' }];
+  const PESSOAS = [{ nome: 'Lucas Fernandes' }, { nome: 'Pedro Magnago' }];
+
+  it('conclui sem precisar do nome certinho', () => {
+    for (const f of ['Manutenção wpp | Cultural & Clube feita', 'manutencao cultural feita', 'terminei a do clube', 'manutençao cultral feita', 'finalizei a manutenção do wpp da cultural']) {
+      expect(entenderSemModelo(f, ABERTAS, PESSOAS), f).toEqual({ acao: 'concluir', tarefa: 1 });
+    }
+    expect(entenderSemModelo('dispropan ok', ABERTAS, PESSOAS)).toEqual({ acao: 'concluir', tarefa: 2 });
+    expect(entenderSemModelo('juma feita', ABERTAS, PESSOAS)).toEqual({ acao: 'concluir', tarefa: 3 });
+  });
+
+  it('empate pergunta, e o que não existe diz que não achou', () => {
+    expect(entenderSemModelo('fup feito', ABERTAS, PESSOAS)).toEqual({ acao: 'escolher', opcoes: [2, 3] });
+    expect(entenderSemModelo('relatório mensal feito', ABERTAS, PESSOAS)).toMatchObject({ acao: 'nao-achou' });
+    expect(entenderSemModelo('tarefa feita', ABERTAS, PESSOAS)).toBeNull();
+  });
+
+  it('listas do dia a dia', () => {
+    expect(entenderSemModelo('minhas tarefas', ABERTAS, PESSOAS)).toEqual({ acao: 'listar', filtro: 'todas', pessoa: 'eu' });
+    expect(entenderSemModelo('o que tá atrasado?', ABERTAS, PESSOAS)).toMatchObject({ acao: 'listar', filtro: 'atrasadas' });
+    expect(entenderSemModelo('tarefas do Pedro', ABERTAS, PESSOAS)).toMatchObject({ acao: 'listar', pessoa: 'Pedro Magnago' });
+    expect(entenderSemModelo('tarefa pro Pedro: revisar contrato até sexta', ABERTAS, PESSOAS)).toBeNull();
   });
 });
