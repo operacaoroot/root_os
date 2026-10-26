@@ -1,7 +1,7 @@
 'use client';
 
 import { useMemo, useState, useEffect, useRef } from 'react';
-import { Bot, Check, ChevronDown, ChevronRight, DoorOpen, Repeat, Unlock, X } from 'lucide-react';
+import { Bot, Check, ChevronDown, ChevronRight, DoorOpen, Plus, Repeat, Unlock, X } from 'lucide-react';
 import { formatarValorMonetario, agruparTarefas, descreverRecorrencia, tituloNormalizado, GRUPOS_POR_PRAZO_SEM_NOVA } from '@mktos/shared';
 import type { Agrupamento, CampoDeOrdem, RecorrenciaDaTarefa, TrabAgenteDto, TrabEstrutura, TrabListaDto, TrabTarefaResumo } from '@mktos/shared';
 import { apiPatch, apiPost } from '@/lib/api';
@@ -331,15 +331,18 @@ export function Tabela({ tarefas, campos, trilhos, onAbrir, mostrarLista = false
         </thead>
         {grupos.map((g) => (
           <tbody key={g.chave} data-grupo={g.chave}>
+            {/* Layout 26/10 (respiro, como no ClickUp): o título do grupo solto, com espaço acima, sem faixa. */}
             {agrupada && (
-              <tr className="border-b border-border bg-surface-2/60">
-                <th colSpan={colunas} scope="colgroup" className="px-3 py-1.5 text-left">
+              <tr className="border-b border-border">
+                <th colSpan={colunas} scope="colgroup" className="px-3 pb-2 pt-7 text-left">
                   <button
                     type="button" onClick={() => alternarGrupo(g.chave)} aria-expanded={!recolhidos.has(g.chave)} data-testid={`tabela-grupo-${g.chave}`}
-                    className={`flex items-center gap-1.5 font-os-mono text-[11px] uppercase tracking-wide hover:text-text ${g.chave === 'atrasadas' ? 'text-bad' : 'text-muted'}`}
+                    className={`flex items-center gap-2 text-[14px] font-semibold normal-case tracking-normal hover:opacity-80 ${g.chave === 'atrasadas' ? 'text-bad' : 'text-text'}`}
                   >
-                    {recolhidos.has(g.chave) ? <ChevronRight size={12} aria-hidden /> : <ChevronDown size={12} aria-hidden />}
-                    <span>{g.rotulo} · {g.itens.length}</span>
+                    {recolhidos.has(g.chave) ? <ChevronRight size={14} aria-hidden className="text-muted" /> : <ChevronDown size={14} aria-hidden className="text-muted" />}
+                    <span>{g.rotulo}</span>
+                    <span className="sr-only"> · </span>
+                    <span className="text-[12px] font-normal text-muted">{g.itens.length}</span>
                   </button>
                 </th>
               </tr>
@@ -356,30 +359,30 @@ export function Tabela({ tarefas, campos, trilhos, onAbrir, mostrarLista = false
                 className={`cursor-pointer border-b border-border/50 hover:bg-surface-2/50 ${arrastando === t.id ? 'opacity-50' : ''}`}
               >
                 {selecao && (
-                  <td className="px-2 py-2" onClick={(e) => e.stopPropagation()}>
+                  <td className="px-2 py-2.5" onClick={(e) => e.stopPropagation()}>
                     <input
                       type="checkbox" aria-label={`Selecionar ${t.title}`} data-testid={`trabalho-selecionar-${t.id}`}
                       checked={selecao.marcadas.has(t.id)} onChange={(e) => marcar(t.id, e.target.checked)}
                     />
                   </td>
                 )}
-                <td className="px-3 py-2">
+                <td className="px-3 py-2.5">
                   <button onClick={(e) => { e.stopPropagation(); onAbrir(t.id); }} className="text-left hover:text-brand focus-visible:outline-brand">{t.title}</button>
                   {t.recorrencia && <span title={descreverRecorrencia(t.recorrencia)} className="ml-1 inline-flex align-middle text-muted"><Repeat size={11} /><span className="sr-only">{descreverRecorrencia(t.recorrencia)}</span></span>}
                   {trilhos.get(t.id) && <AtalhoDoTrilho trilho={trilhos.get(t.id)!} onAbrir={() => onAbrir(t.id, 'trilho')} />}
                   <BotaoDoMenuDaTarefa tarefa={t} className="ml-1 inline-grid align-middle" />
                   {abaixoDoTitulo?.(t)}
                 </td>
-                {mostrarLista && <td className="px-3 py-2 text-muted"><IconeDaLista icone={t.listIcone} cor={t.listCor} tamanho={12} className="mr-1 inline-block align-[-2px]" />{t.listName ?? '—'}</td>}
-                <td className="px-3 py-2">{t.clienteNome ?? <span className="font-os-mono text-[10px] text-warn">sem cliente</span>}</td>
-                <td className="px-3 py-2">
+                {mostrarLista && <td className="px-3 py-2.5 text-muted"><IconeDaLista icone={t.listIcone} cor={t.listCor} tamanho={12} className="mr-1 inline-block align-[-2px]" />{t.listName ?? '—'}</td>}
+                <td className="px-3 py-2.5">{t.clienteNome ?? <span className="font-os-mono text-[10px] text-warn">sem cliente</span>}</td>
+                <td className="px-3 py-2.5">
                   <span className="rounded px-1.5 py-0.5 text-[11px] capitalize" style={{ background: `${t.statusColor}26`, color: t.statusColor }}>
                     {t.statusName}
                   </span>
                 </td>
-                <td className="px-3 py-2 capitalize">{t.priority}</td>
+                <td className="px-3 py-2.5 capitalize">{t.priority}</td>
                 {/* Layout 26/10 (P-29): as três células editam ali mesmo; o clique nelas não abre a tarefa. */}
-                <td className="px-3 py-2" onClick={edicao ? (e) => e.stopPropagation() : undefined}>
+                <td className="px-3 py-2.5" onClick={edicao ? (e) => e.stopPropagation() : undefined}>
                   {edicao ? (
                     <ResponsavelNaLinha
                       t={t} pessoas={pessoas} equipe={soDaEquipe(pessoas, edicao.idsDaEquipe, [t.assigneeUserId])}
@@ -387,30 +390,30 @@ export function Tabela({ tarefas, campos, trilhos, onAbrir, mostrarLista = false
                     />
                   ) : <AvataresDaTarefa tarefa={t} pessoas={pessoas} testId={`trabalho-responsaveis-${t.id}`} />}
                 </td>
-                <td className="px-3 py-2" title={t.agenteId ? `Assumida em ${dataHoraBR(t.agenteEm)}` : undefined} onClick={edicao ? (e) => e.stopPropagation() : undefined}>
+                <td className="px-3 py-2.5" title={t.agenteId ? `Assumida em ${dataHoraBR(t.agenteEm)}` : undefined} onClick={edicao ? (e) => e.stopPropagation() : undefined}>
                   {edicao ? <AgenteNaLinha t={t} edicao={edicao} /> : nomeDoAgente(t) ?? '—'}
                 </td>
-                <td className={`px-3 py-2 ${atrasada(t) ? 'text-bad' : ''}`} onClick={edicao ? (e) => e.stopPropagation() : undefined}>
+                <td className={`px-3 py-2.5 ${atrasada(t) ? 'text-bad' : ''}`} onClick={edicao ? (e) => e.stopPropagation() : undefined}>
                   {edicao ? <PrazoNaLinha t={t} onMudar={(dia) => edicao.onPrazo(t.id, dia)} /> : <PrazoComRepeticao texto={t.dueDate ? dataBR(t.dueDate) : null} recorrencia={t.recorrencia} semPrazo="—" testId={`trabalho-prazo-repete-${t.id}`} />}
                 </td>
                 {campos.map((c) => {
                   const v = t.values.find((x) => x.fieldName === c);
                   const valor = v?.type === 'moeda' && v.value ? formatarValorMonetario(v.value) : v?.value;
-                  return <td key={c} className="px-3 py-2 text-muted">{v?.optionName ?? valor ?? '—'}</td>;
+                  return <td key={c} className="px-3 py-2.5 text-muted">{v?.optionName ?? valor ?? '—'}</td>;
                 })}
               </tr>
             ))}
             {agrupada && !recolhidos.has(g.chave) && recebeNova(g.chave) && (
               <tr className="border-b border-border/50" data-testid={`tabela-grupo-${g.chave}-nova`}>
-                <td colSpan={colunas} className="px-3 py-1">
+                <td colSpan={colunas} className="px-3 py-2.5">
                   {adicionandoEm === g.chave ? (
                     <div className="space-y-1">
                       {novaNoGrupo!(g.dia ?? null)}
                       <button type="button" onClick={() => setAdicionandoEm(null)} className="text-[11px] text-muted hover:text-text">Fechar</button>
                     </div>
                   ) : (
-                    <button type="button" onClick={() => setAdicionandoEm(g.chave)} data-testid={`tabela-grupo-${g.chave}-adicionar`} className="text-[12px] text-muted hover:text-brand">
-                      + Adicionar tarefa
+                    <button type="button" onClick={() => setAdicionandoEm(g.chave)} data-testid={`tabela-grupo-${g.chave}-adicionar`} className="flex items-center gap-2 text-[13px] text-muted hover:text-brand">
+                      <Plus size={14} aria-hidden /> Adicionar tarefa
                     </button>
                   )}
                 </td>

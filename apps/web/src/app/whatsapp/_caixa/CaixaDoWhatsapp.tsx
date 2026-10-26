@@ -159,7 +159,7 @@ function CartaoDaMidia({ m }: { m: MensagemDaCaixa }) {
   );
 }
 
-function Balao({ m, grupo }: { m: MensagemDaCaixa; grupo: boolean }) {
+function Balao({ m, grupo, continua = false }: { m: MensagemDaCaixa; grupo: boolean; continua?: boolean }) {
   if (m.tipo === 'protocolo') {
     return (
       <li data-testid={`caixa-balao-${m.id}`} className="my-1 text-center text-[11.5px] text-muted">
@@ -169,7 +169,10 @@ function Balao({ m, grupo }: { m: MensagemDaCaixa; grupo: boolean }) {
   }
   // Layout 26/10 (Lucas): balões com a cara do WhatsApp (branco de quem chega, verde-claro do que sai,
   // nome colorido por pessoa, resposta citada com barra colorida, hora no canto do balão).
-  const lado = m.deMim ? 'ml-auto items-end' : 'mr-auto items-start';
+  // Layout 26/10 (respiro): mensagens seguidas da mesma pessoa ficam juntas (2 px, sem repetir o nome);
+  // quando muda quem fala, um respiro maior, como no WhatsApp.
+  const lado = `${m.deMim ? 'ml-auto items-end' : 'mr-auto items-start'} ${continua ? 'mt-0.5' : 'mt-3'}`;
+  const ponta = continua ? '' : m.deMim ? 'rounded-tr-sm' : 'rounded-tl-sm';
   const hora = (
     <span className="wz-meta float-right ml-2 mt-1.5 translate-y-0.5 whitespace-nowrap text-[10.5px] tabular-nums leading-none">
       {m.tipo === 'edicao' ? 'editada · ' : ''}
@@ -178,9 +181,9 @@ function Balao({ m, grupo }: { m: MensagemDaCaixa; grupo: boolean }) {
   );
   const nomeDaCitacao = m.cita ? (m.cita.deMim ? 'Você' : m.cita.remetenteNome?.trim() || 'mensagem citada') : '';
   return (
-    <li data-testid={`caixa-balao-${m.id}`} data-de-mim={m.deMim ? 'sim' : 'nao'} className={`flex max-w-[85%] flex-col md:max-w-[65%] ${lado}`}>
-      <div className={`wz-balao min-w-0 max-w-full rounded-lg px-2 pb-1.5 pt-1 text-[13.5px] leading-[1.35] ${m.deMim ? 'wz-sai rounded-tr-sm' : 'wz-entra rounded-tl-sm'}`}>
-        {grupo && !m.deMim && (
+    <li data-testid={`caixa-balao-${m.id}`} data-de-mim={m.deMim ? 'sim' : 'nao'} className={`flex max-w-[80%] flex-col md:max-w-[62%] ${lado}`}>
+      <div className={`wz-balao min-w-0 max-w-full rounded-lg px-2.5 pb-2 pt-1.5 text-[14px] leading-[1.4] ${m.deMim ? 'wz-sai' : 'wz-entra'} ${ponta}`}>
+        {grupo && !m.deMim && !continua && (
           <p className="mb-0.5 flex min-w-0 items-baseline justify-between gap-3 text-[12.5px]">
             <span className="truncate font-semibold" style={{ color: corDaPessoa(remetenteDoBalao(m)) }}>{remetenteDoBalao(m)}</span>
             {m.remetenteNome?.trim() && numeroDoBalao(m.remetenteNumero) && <span data-testid={`caixa-numero-${m.id}`} className="wz-meta shrink-0 text-[11px]">{numeroDoBalao(m.remetenteNumero)}</span>}
@@ -224,22 +227,34 @@ function corDaPessoa(nome: string): string {
   return CORES_DAS_PESSOAS[h % CORES_DAS_PESSOAS.length];
 }
 
+/** Layout 26/10 (respiro): a mensagem continua a vez de quem falou antes (mesma pessoa, até 10 min depois). */
+function mesmaVez(anterior: MensagemDaCaixa | null, m: MensagemDaCaixa): boolean {
+  if (!anterior || m.tipo === 'protocolo' || anterior.deMim !== m.deMim) return false;
+  if (!m.deMim && remetenteDoBalao(anterior) !== remetenteDoBalao(m)) return false;
+  if (m.deMim && (anterior.enviadaPor?.nome ?? '') !== (m.enviadaPor?.nome ?? '')) return false;
+  const ms = new Date(m.timestamp).getTime() - new Date(anterior.timestamp).getTime();
+  return Number.isFinite(ms) && ms >= 0 && ms <= 10 * 60_000;
+}
+
 function Historico({ mensagens, grupo }: { mensagens: MensagemDaCaixa[]; grupo: boolean }) {
   const itens: React.ReactNode[] = [];
   let diaAnterior = '';
+  let anterior: MensagemDaCaixa | null = null;
   for (const m of mensagens) {
     const dia = diaDoInstante(m.timestamp);
     if (dia && dia !== diaAnterior) {
       itens.push(
-        <li key={`dia-${dia}`} className="my-2 text-center">
+        <li key={`dia-${dia}`} className="mb-1 mt-4 text-center first:mt-1">
           <span className="wz-dia rounded-lg px-2.5 py-1 text-[11.5px]">{rotuloDoDia(dia)}</span>
         </li>,
       );
       diaAnterior = dia;
+      anterior = null;
     }
-    itens.push(<Balao key={m.id} m={m} grupo={grupo} />);
+    itens.push(<Balao key={m.id} m={m} grupo={grupo} continua={mesmaVez(anterior, m)} />);
+    anterior = m.tipo === 'protocolo' ? null : m;
   }
-  return <ol className="flex flex-col gap-1.5">{itens}</ol>;
+  return <ol className="flex flex-col">{itens}</ol>;
 }
 
 function lerEndereco(): EstadoDaCaixa {
@@ -620,7 +635,7 @@ export function CaixaDoWhatsapp() {
                 ref={historico}
                 data-testid="caixa-historico"
                 onScroll={aoRolar}
-                className="wz-fundo min-h-0 flex-1 overflow-y-auto overscroll-contain px-3 py-2"
+                className="wz-fundo min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 py-3 md:px-[5%]"
               >
                 {naoAchou ? (
                   <p className="p-4 text-center text-[13px] text-muted">Esta conversa não existe ou não é desta empresa.</p>
