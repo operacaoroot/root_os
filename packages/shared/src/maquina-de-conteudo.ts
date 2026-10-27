@@ -159,7 +159,8 @@ export const MaquinaPostSalvarSchema = z.object({
   slides: z.array(z.string().trim().max(2_000)).max(20).default([]),
   design: texto(4_000),
   legenda: texto(6_000),
-  cta: texto(600),
+  // Na Comunidade Wpp o cta é o Material da isca (texto do grupo, pode passar de 600). 27/10.
+  cta: texto(4_000),
   porque: texto(2_000),
   fontes: z
     .array(z.object({

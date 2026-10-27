@@ -112,6 +112,17 @@ describe('Comunidade Wpp', () => {
     expect(e).toMatchObject({ subtipo: 'Enquete', opcoes: ['Atendimento', 'Financeiro', 'Estoque'] });
     expect(lerArquivoDaComunidade('exemplo-ESCRITA.md', '```\nx\n```')).toBeNull();
   });
+  it('o Material da isca vai para o cta; sem a seção, fica vazio', () => {
+    const md = [
+      '# ROOT SEMANAL #02', '```', '▓▓ ROOT SEMANAL · #02', 'chegar a 30 corações libera o material', '```', '',
+      '## Material da isca (vai no CTA da peça)', '', '```', '*O material*', 'link: os.operacaoroot.com/central', '```', '',
+      '## Para a enquete de quarta', '```', 'não é isca', '```',
+    ].join('\n');
+    const s = lerArquivoDaComunidade('2026-10-27-root-semanal-02.md', md);
+    expect(s!.texto).toBe('▓▓ ROOT SEMANAL · #02\nchegar a 30 corações libera o material');
+    expect(s!.isca).toBe('*O material*\nlink: os.operacaoroot.com/central');
+    expect(lerArquivoDaComunidade('2026-10-27-root-semanal-03.md', '```\nsó a news\n```')!.isca).toBe('');
+  });
 });
 
 describe('Abas do Marketing', () => {

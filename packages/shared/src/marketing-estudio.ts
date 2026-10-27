@@ -348,7 +348,7 @@ export function problemaDaEnquete(pergunta: string, opcoes: string[]): string | 
  * AAAA-MM-DD-root-semanal-NN.md e AAAA-MM-DD-enquete-quarta.md. O texto é o primeiro
  * bloco entre ```. Arquivo de outro nome devolve null (não é peça).
  */
-export function lerArquivoDaComunidade(nome: string, conteudo: string): { numero: string; data: string; subtipo: ComunidadeSubtipo; titulo: string; texto: string; opcoes: string[] } | null {
+export function lerArquivoDaComunidade(nome: string, conteudo: string): { numero: string; data: string; subtipo: ComunidadeSubtipo; titulo: string; texto: string; opcoes: string[]; isca: string } | null {
   const m = /^(\d{4}-\d{2}-\d{2})-(root-semanal-(\d+)|enquete-quarta|debate[\w-]*)\.md$/i.exec(nome.trim());
   if (!m) return null;
   const bloco = /```[^\n]*\n([\s\S]*?)```/.exec(conteudo);
@@ -360,5 +360,9 @@ export function lerArquivoDaComunidade(nome: string, conteudo: string): { numero
     : [];
   const primeira = texto.split(/\r?\n/).map((l) => l.replace(/[*_~]/g, '').trim()).find(Boolean) ?? '';
   const titulo = subtipo === 'News semanal' ? `ROOT Semanal ${m[3]}` : `${subtipo}: ${primeira.slice(0, 80)}`;
-  return { numero: nome.replace(/\.md$/i, ''), data: m[1], subtipo, titulo, texto, opcoes };
+  // "## Material da isca (vai no CTA da peça)": o 1º bloco entre ``` dessa seção vai para o cta
+  // (27/10, pedido do agente da comunidade: a rotina solta a isca quando a news bate N corações).
+  const secaoIsca = /^##\s+Material da isca[^\n]*\n([\s\S]*?)(?=^##\s|$(?![\s\S]))/im.exec(conteudo)?.[1] ?? '';
+  const isca = (/```[^\n]*\n([\s\S]*?)```/.exec(secaoIsca)?.[1] ?? '').trim();
+  return { numero: nome.replace(/\.md$/i, ''), data: m[1], subtipo, titulo, texto, opcoes, isca };
 }

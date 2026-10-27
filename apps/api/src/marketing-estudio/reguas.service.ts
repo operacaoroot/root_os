@@ -229,6 +229,7 @@ export class ReguasService {
           subtipo: lido.subtipo,
           tipoCard: 'arte',
           roteiro: lido.texto.slice(0, 20_000),
+          ...(lido.isca ? { cta: lido.isca.slice(0, 4_000) } : {}),
           slides: lido.opcoes,
           porque: `Importado de ${PASTA_DA_COMUNIDADE.join('/')}/${a.nome} (data do arquivo: ${lido.data}).`,
           fontes: [{ tipo: 'referencia', nome: a.nome.slice(0, 200), ...(a.url ? { link: a.url.slice(0, 500) } : {}) }],

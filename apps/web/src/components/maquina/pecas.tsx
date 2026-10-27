@@ -450,7 +450,7 @@ export function PostAberto(props: { m: Maquina; post: MaquinaPost; onEditar: () 
         {p.tipoCard === 'arte' && p.design && <Bloco rotulo="Orientação de design">{texto(p.design)}</Bloco>}
         {p.roteiro && <Bloco rotulo="Roteiro">{texto(p.roteiro)}</Bloco>}
         {p.legenda && <Bloco rotulo="Legenda">{texto(p.legenda)}</Bloco>}
-        {p.cta && <Bloco rotulo="CTA">{texto(p.cta)}</Bloco>}
+        {p.cta && <Bloco rotulo={p.formato === 'Comunidade Wpp' ? 'Material da isca' : 'CTA'}>{texto(p.cta)}</Bloco>}
         {p.porque && <Bloco rotulo="Por que este post">{texto(p.porque)}</Bloco>}
         {p.fontes.length > 0 && (
           <Bloco rotulo="Fontes">
@@ -736,8 +736,8 @@ export function EditorDePost(props: {
           {area('legenda', 5)}
         </label>
         <label className="block">
-          {rotulo('CTA')}
-          {area('cta', 2)}
+          {rotulo(f.formato === 'Comunidade Wpp' ? 'Material da isca (sai no grupo quando a news bate a meta)' : 'CTA')}
+          {area('cta', f.formato === 'Comunidade Wpp' ? 8 : 2)}
         </label>
         <label className="block">
           {rotulo('Por que este post')}
