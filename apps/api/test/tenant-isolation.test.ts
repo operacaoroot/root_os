@@ -454,6 +454,10 @@ const ALVOS: Alvo[] = [
   { tabela: 'AtaSugestao', escopo: 'tenant', chaveSql: '"id"', nota: 'A sugestão de tarefa lida de uma ata do Trabalho (rodada do painel P3): o título, o dono sugerido, o prazo e o TRECHO da reunião de onde saiu. Ler a da outra empresa é ler o que ela combinou em reunião e com quem; ESCREVER é pôr tarefa na fila de aceite dela, ou aceitar por ela. Raiz da empresa, não filha: a ata vive em duas tabelas e o orgId vem do insert.' },
   { tabela: 'PropostaDoLead', escopo: 'tenant', chaveSql: '"id"', nota: 'O vínculo da proposta do serviço de propostas com um lead (Produção 22B, I5): a referência da proposta (o cliente e a chave) e o lead. Ler o da outra empresa é saber a quem ela vendeu e o quê; ESCREVER é ligar a proposta dela ao lead errado ou travar o vínculo com o 409. Raiz da empresa: o orgId vem do insert e o lead entra por chave composta (leadId, orgId).' },
   { tabela: 'AtaLigacao', escopo: 'tenant', chaveSql: '"id"', nota: 'Layout 26/10: a ata da tela Atas ligada a um lead e/ou a um cliente, com o título e a data da reunião copiados. Ler a da outra empresa é saber com quem ela se reuniu e quando; ESCREVER é pendurar a reunião dela no lead ou no cliente errado. Raiz da empresa: o orgId vem do insert; leadId e clienteId sem chave estrangeira.' },
+  { tabela: 'FrotaCasa', escopo: 'tenant', chaveSql: '"id"', nota: 'Frota (27/10/2026): o servidor de cliente que a ROOT opera, com hostname, IP, estado e o hash do token do relator. Ler o da outra empresa é ver a infraestrutura dela; ESCREVER é trocar o token e desligar o relator. Raiz da empresa: o orgId vem do insert.' },
+  { tabela: 'FrotaAcesso', escopo: 'tenant', chaveSql: '"id"', nota: 'Frota: quem tem chave SSH em cada servidor (pessoa, impressão digital, último login). Ler o da outra empresa é saber quem entra nos servidores dela; escrever é marcar revogado quem não foi. O orgId vem do insert, com a casa conferida pela chave estrangeira.' },
+  { tabela: 'FrotaEvento', escopo: 'tenant', chaveSql: '"id"', nota: 'Frota: o registro do que aconteceu em cada servidor (login, chave, deploy, sonda, ordem do painel). Só recebe linha nova pela API. Ler o da outra empresa é ler o diário da operação dela. O orgId vem do insert.' },
+  { tabela: 'FrotaOrdem', escopo: 'tenant', chaveSql: '"id"', nota: 'Frota: a ordem que a casa puxa (revogar chave, desligar automação, rodar verificar, pedir backup). Escrever na da outra empresa é mandar o servidor dela revogar uma chave. O orgId vem do insert.' },
   { tabela: 'Pendencia', escopo: 'tenant', chaveSql: '"id"', nota: 'A pendência que um agente ou rotina deixa para uma pessoa (rodada dos agentes, 21/10/2026): o arquivo de cliente sem subpasta, a tarefa vencida, a mensagem de WhatsApp sem dono, a reunião fora do padrão. Ler a da outra empresa é ler o que chegou para ela e de quem; ESCREVER é decidir por ela. Raiz da empresa: o refId aponta para tabelas diferentes, sem FK.' },
   { tabela: 'ArquivoDoCliente', escopo: 'tenant', chaveSql: '"id"', nota: 'O arquivo que chegou para um cliente e o que o arquivista fez com ele (rodada dos agentes, TR-05): nome original, hash, a subpasta, a aprovação e o link no Drive. Ler o da outra empresa é ler quais documentos os clientes dela mandaram e onde estão; ESCREVER é mudar a subpasta, o nome ou o cliente de destino de um arquivo alheio, que é o que o efeito do Drive confere. Raiz da empresa: o arquivo pode chegar antes do cliente, só com o lead.' },
   { tabela: 'WorkAnexo', escopo: 'filho', chaveSql: '"id"', nota: 'O anexo da tarefa (rodada dos agentes, TR-06): o nome, o hash e a chave do binário no storage. Ler o da outra empresa é saber o que ela anexou e baixar pela chave; o gatilho deriva a empresa da tarefa.' },
@@ -1348,6 +1352,26 @@ async function semear(c: PoolClient, rotulo: 'A' | 'B', vec: string): Promise<vo
   reg('AtaLigacao', await ins(c, 'AtaLigacao', {
     id: crypto.randomUUID(), orgId, ataRef: `memoria:ata_lig_${rotulo}_${MARCA}`, leadId,
     titulo: `Reunião privada da org ${rotulo}`, data: '2026-10-26', tipo: 'ata', atualizadaEm: new Date(),
+  }));
+
+  // Frota (27/10/2026): a casa (raiz), a chave, o evento e a ordem, todos com o orgId do insert.
+  const frotaCasaId = crypto.randomUUID();
+  reg('FrotaCasa', await ins(c, 'FrotaCasa', {
+    id: frotaCasaId, orgId, casa: `casa-${rotulo.toLowerCase()}-${suf}`.slice(0, 40), cliente: `Cliente privado da org ${rotulo}`,
+    hostname: `srv-${rotulo.toLowerCase()}`, tokenHash: hex64(`frota_${rotulo}_${MARCA}_${crypto.randomUUID()}`),
+    updatedAt: new Date(),
+  }));
+  reg('FrotaAcesso', await ins(c, 'FrotaAcesso', {
+    id: crypto.randomUUID(), orgId, casaId: frotaCasaId, pessoa: `pessoa@${rotulo.toLowerCase()}`, fingerprint: `SHA256:${rotulo}${MARCA}`,
+    estado: 'ativa', updatedAt: new Date(),
+  }));
+  reg('FrotaEvento', await ins(c, 'FrotaEvento', {
+    id: crypto.randomUUID(), orgId, casaId: frotaCasaId, quando: new Date(), quem: 'relator', acao: `Evento privado da org ${rotulo}`,
+    origem: 'relator', tipo: 'kit', chave: `evento_${rotulo}_${MARCA}`,
+  }));
+  reg('FrotaOrdem', await ins(c, 'FrotaOrdem', {
+    id: crypto.randomUUID(), orgId, casaId: frotaCasaId, tipo: 'rodar_verificar', estado: 'pendente', criadaPor: `pessoa@${rotulo.toLowerCase()}`,
+    updatedAt: new Date(),
   }));
 
   // O delegador (TR-09, rodada dos agentes, 21/10/2026): a subtarefa proposta, à espera de gente.

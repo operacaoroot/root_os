@@ -26,6 +26,9 @@ export const SECOES = [
   { key: 'whatsapp', label: 'WhatsApp', hint: 'conversas com leads e clientes', tipo: 'principal' },
   { key: 'financeiro', label: 'Motor Financeiro', hint: 'ferramentas e contratos financeiros', tipo: 'principal' },
   { key: 'automacoes', label: 'Motor de IA', hint: 'agentes, rotinas, sessões e custos', tipo: 'principal' },
+  // 27/10/2026: a Frota (os servidores de cliente que a ROOT opera) vira área própria. Chave nova,
+  // somada; o item é da plataforma (ITENS_DA_ROOT no web), por isso o NAV não o lista.
+  { key: 'frota', label: 'Frota', hint: 'servidores de cliente, acessos e políticas', tipo: 'principal' },
   { key: 'empresa', label: 'Contexto', hint: 'mapa, conhecimento e marca', tipo: 'principal' },
   { key: 'resultados', label: 'Resultados', hint: 'relatórios e metas', tipo: 'principal' },
   { key: 'controle', label: 'Configurações da empresa', hint: 'equipe, ferramentas, integrações e regras', tipo: 'apoio' },
