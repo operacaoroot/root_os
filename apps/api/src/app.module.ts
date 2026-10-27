@@ -4,6 +4,7 @@ import { ContextoModule } from './common/contexto.module';
 import { PrismaModule } from './prisma/prisma.module';
 import { TenantsModule } from './tenants/tenants.module';
 import { AuditModule } from './audit/audit.module';
+import { FrotaModule } from './frota/frota.module';
 import { ApprovalsModule } from './approvals/approvals.module';
 import { PolicyModule } from './policy/policy.module';
 import { GatewayModule } from './gateway/gateway.module';
@@ -72,6 +73,7 @@ import { WhatsappModule } from './whatsapp/whatsapp.module';
     // para esta empresa.
     TenantsModule,
     AuditModule,
+    FrotaModule,
     // A régua carrega antes da porta, e a porta antes de qualquer módulo de
     // domínio: ADR-004 — nenhum agente alcança conector sem passar por ela.
     PolicyModule,

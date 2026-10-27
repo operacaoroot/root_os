@@ -106,12 +106,23 @@ describe('projeção do NAV em módulos', () => {
     expect(deCliente?.itens.some((item) => item.key === 'comercial-rodada')).toBe(false);
     // Nem com todas as permissões do NAV, nem só com a de plataforma sem módulo leads.
     expect(modulosDeNavegacao(permissoes, ['trabalho'], true).flatMap((a) => a.itens).some((i) => i.key === 'comercial-rodada')).toBe(false);
-    expect(ITENS_DA_ROOT.map((item) => item.key)).toEqual(['comercial-rodada']);
+    expect(ITENS_DA_ROOT.map((item) => item.key)).toEqual(['comercial-rodada', 'frota']);
     expect(NAV.some((item) => item.key === 'comercial-rodada' || item.href === '/comercial/rodada')).toBe(false);
     // A rota: na plataforma é a Rodada; fora dela cai no Comercial pelo prefixo, sem item próprio.
     expect(destinoDaRota('/comercial/rodada', true)?.key).toBe('comercial-rodada');
     expect(destinoDaRota('/comercial/rodada', false)?.key).toBe('comercial-painel');
     expect(areaDoDestino(destinoDaRota('/comercial/rodada', true)!)?.key).toBe('comercial');
+  });
+
+  it('a Frota é área própria, só para a plataforma, depois da IA (27/10/2026)', () => {
+    const semPlataforma = modulosDeNavegacao(permissoes).map((area) => area.key);
+    expect(semPlataforma).not.toContain('frota');
+    const comPlataforma = modulosDeNavegacao(permissoes, undefined, true);
+    const frota = comPlataforma.find((area) => area.key === 'frota');
+    expect(frota?.itens.map((item) => item.key)).toEqual(['frota']);
+    expect(frota?.entrada?.href).toBe('/frota');
+    const chaves = comPlataforma.map((area) => area.key);
+    expect(chaves.indexOf('frota')).toBe(chaves.indexOf('automacoes') + 1);
   });
 
   it('Comercial abre no Painel geral', () => {

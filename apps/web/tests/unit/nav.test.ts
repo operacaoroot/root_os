@@ -670,6 +670,8 @@ describe('organização da navegação (ROOT-07 e versão final)', () => {
       ['whatsapp', 'WhatsApp', 'principal'],
       ['financeiro', 'Motor Financeiro', 'principal'],
       ['automacoes', 'Motor de IA', 'principal'],
+      // 27/10/2026: a Frota (servidores de cliente que a ROOT opera) entrou como área própria, depois da IA.
+      ['frota', 'Frota', 'principal'],
       ['empresa', 'Contexto', 'principal'],
       ['resultados', 'Resultados', 'principal'],
       ['controle', 'Configurações da empresa', 'apoio'],
