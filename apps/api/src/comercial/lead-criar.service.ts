@@ -1,12 +1,13 @@
 import { createHash } from 'node:crypto';
 
-import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
+import { Injectable, Logger, OnModuleInit, Optional } from '@nestjs/common';
 
 import { EfeitosRegistry } from '../gateway/efeitos.registry';
 import { LeadsService } from '../leads/leads.service';
 import { canonico, normalizarTelefone } from './eventos';
 import { FichaService } from './ficha.service';
 import { FioService } from './fio.service';
+import { SalaService } from './sala.service';
 import { WhatsappComercialService } from './whatsapp.service';
 
 /*
@@ -29,6 +30,12 @@ import { WhatsappComercialService } from './whatsapp.service';
  *     escreve para a Root: a M1 é preparada e vai à fila (R3), como antes.
  *
  * O texto (nome, empresa, mensagem) é DADO: vai ao fio e à tela, nunca a prompt.
+ *
+ * A SALA NASCE COM O LEAD (leva 5, L6, 27/10/2026): nos dois caminhos o
+ * `lead.chegou` já dispara a reação `sala.abrir`; aqui o efeito garante a sala
+ * de novo, pelo MESMO `SalaService.garantir` (idempotente pelo `leadId` único),
+ * para o lead não ficar sem sala quando a reação é pulada ou falha e espera o
+ * relógio. Falha ao garantir a sala nunca derruba a criação do lead.
  */
 
 export const CAP_LEAD_CRIAR = 'comercial.lead.criar';
@@ -62,10 +69,22 @@ export class LeadCriarService implements OnModuleInit {
     private readonly fichas: FichaService,
     private readonly fio: FioService,
     private readonly whats: WhatsappComercialService,
+    // L6: opcional para a suíte que monta o serviço à mão sem a sala; em produção o Nest injeta.
+    @Optional() private readonly sala?: SalaService,
   ) {}
 
   onModuleInit(): void {
     this.efeitos.registrar({ [CAP_LEAD_CRIAR]: (args, orgId) => this.efeito(args, orgId) }, 'comercial/lead-criar.service');
+  }
+
+  /** L6: a sala do lead, garantida pelo mesmo caminho da reação. Nunca lança: a sala é derivada, o lead é o fato. */
+  private async garantirSala(orgId: string, leadId: string): Promise<void> {
+    if (!this.sala) return;
+    try {
+      await this.sala.garantir(orgId, leadId);
+    } catch (e) {
+      this.log.warn(`sala do lead ${leadId} não garantida ao criar: ${(e as Error).message}`);
+    }
   }
 
   async efeito(args: P, orgId: string): Promise<{ leadId: string; criado: boolean }> {
@@ -104,6 +123,7 @@ export class LeadCriarService implements OnModuleInit {
       empresa,
     });
     await this.fio.registrar(orgId, e.id, 'site.formulario', chave, { nome, empresa, email, telefone, mensagem, chave });
+    await this.garantirSala(orgId, e.id);
     if (e.criado) this.log.log(`lead novo pelo formulário do site na empresa ${orgId}`);
     return { leadId: e.id, criado: e.criado };
   }
@@ -119,6 +139,7 @@ export class LeadCriarService implements OnModuleInit {
       ...(nome ? { nome } : {}),
       mensagemId: String(args.chave ?? '').slice(0, 120) || undefined,
     });
+    await this.garantirSala(orgId, r.leadId);
     return { leadId: r.leadId, criado: r.leadNovo };
   }
 }

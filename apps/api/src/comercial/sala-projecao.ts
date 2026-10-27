@@ -1,9 +1,13 @@
 import {
+  COMERCIAL_ETAPAS,
   SALA_BLOCOS_DA_PROPOSTA,
   SALA_ESTAGIOS,
   SALA_ROTULO_DO_ESTAGIO,
   TABELA_DE_PRECO,
+  ehSaida,
+  ordemDaEtapa,
   type AceiteNaSala,
+  type ComercialEtapa,
   type ComercialFormaDePagamento,
   type ComercialProduto,
   type EstadoDaSala,
@@ -60,6 +64,8 @@ export interface DocumentoParaSala {
   assinadoClienteEm: Date | null;
   assinadoRootEm: Date | null;
   criadoEm: Date;
+  /** L6 (leva 5): `zapsign`, `anexo`... A minuta (`minuta`) nunca chega aqui (o filtro é na consulta), mas a lista confere de novo. */
+  provedor?: string;
 }
 
 export interface DadosDaSala {
@@ -345,5 +351,226 @@ export function projetarSala(e: EntradaDaProjecao): EstadoDaSala {
     aceite,
     comeco,
     validoAte: e.validoAte.toISOString(),
+  };
+}
+
+/*
+ * O ACOMPANHAMENTO DO CLIENTE (leva 5, L6, 27/10/2026): "o cliente acompanha
+ * tudo pela sala".
+ *
+ * Quatro blocos DERIVADOS em tempo de leitura, a partir do que a projeção já
+ * tem (a ficha, o fio, as cobranças, os documentos) e nunca gravados em
+ * `SalaVersao`: a sala antiga ganha os blocos sem republicar, e o conteúdo das
+ * versões publicadas não muda.
+ *
+ *   · ETAPA ATUAL: a etapa da ficha em palavras de cliente (nunca o enum nem o
+ *     "E3"). A etapa é o que a equipe move no funil; a posição da sala
+ *     (`estagio`) continua vindo dos fatos, e os dois convivem.
+ *   · PRÓXIMOS PASSOS: o que vem agora, de quem (você ou a Root) e quando há
+ *     data gravada. Sai do estágio e do que o estágio ainda pede; nenhuma data é
+ *     inventada.
+ *   · DOCUMENTOS TROCADOS: a proposta (por versão), o contrato (só os de
+ *     assinatura; a minuta é rascunho interno e fica fora), o diagnóstico
+ *     aprovado e os arquivos que o cliente mandou. Link só o que o cliente já
+ *     tem direito de abrir (a página da proposta e o link de assinatura dele).
+ *   · CONTATO: o WhatsApp da Root, quando a mesa o escreveu na nota
+ *     `comercial.whatsapp.numero`; sem a nota, nulo (a tela mostra o marcador,
+ *     nunca um número inventado).
+ */
+
+export interface EtapaParaOCliente {
+  /** A etapa do funil (o enum fica aqui só para a tela do painel casar; o cliente lê `rotulo`). */
+  chave: ComercialEtapa;
+  rotulo: string;
+  descricao: string;
+  /** Posição no funil (1 a 9) e o total; nulo nas saídas. */
+  ordem: number | null;
+  total: number;
+  saida: boolean;
+}
+
+export interface PassoParaOCliente {
+  texto: string;
+  /** ISO, só quando há data gravada (horário escolhido, validade da proposta, kickoff). */
+  quando: string | null;
+  /** `em` = horário marcado (a tela mostra dia e hora); `ate` = prazo (a tela mostra "até dd/mm"). Nulo sem `quando`. */
+  quandoTipo: 'em' | 'ate' | null;
+  deQuem: 'voce' | 'root';
+}
+
+export interface DocumentoParaOCliente {
+  tipo: 'proposta' | 'contrato' | 'diagnostico' | 'arquivo';
+  titulo: string;
+  estado: string;
+  /** Quem entregou. */
+  de: 'voce' | 'root';
+  em: string;
+  /** A versão da proposta (a página monta o link `/s/<token>/proposta` com o token que já tem). */
+  versao?: number;
+  /** Link que o cliente pode abrir agora (o de assinatura dele). Nunca link interno da Root. */
+  link?: string | null;
+}
+
+export interface AcompanhamentoDaSala {
+  etapa: EtapaParaOCliente | null;
+  proximosPassos: PassoParaOCliente[];
+  documentos: DocumentoParaOCliente[];
+  contato: { whatsapp: string | null; rotulo: string };
+}
+
+/** O rótulo do contato quando a mesa ainda não escreveu o número (a nota `comercial.whatsapp.numero`). */
+export const CONTATO_SEM_NUMERO = 'WhatsApp da Root: o número chega em breve nesta sala';
+
+/** A etapa do funil em palavras de cliente. Sem "E3", sem enum, sem travessão. */
+export const ETAPA_PARA_O_CLIENTE: Record<ComercialEtapa, { rotulo: string; descricao: string }> = {
+  novo_lead: { rotulo: 'Primeiro contato', descricao: 'Recebemos o seu contato e estamos organizando a conversa.' },
+  qualificacao: { rotulo: 'Entendendo o seu cenário', descricao: 'Estamos conhecendo a sua operação para a conversa começar pelos seus números.' },
+  reuniao_agendada: { rotulo: 'Conversa marcada', descricao: 'A conversa com um dos sócios está marcada.' },
+  sessao: { rotulo: 'Sessão estratégica', descricao: 'A conversa com um dos sócios é a base do seu diagnóstico.' },
+  diagnostico: { rotulo: 'Diagnóstico em preparo', descricao: 'A Root está escrevendo o diagnóstico com o que ouviu de você.' },
+  proposta: { rotulo: 'Proposta publicada', descricao: 'A proposta está nesta sala para você ler.' },
+  follow_up: { rotulo: 'Proposta em avaliação', descricao: 'A proposta está com você. A Root acompanha e responde dúvidas por aqui.' },
+  contrato: { rotulo: 'Contrato', descricao: 'Aceite feito: cobrança e contrato estão sendo preparados ou assinados.' },
+  fechado: { rotulo: 'Negócio fechado', descricao: 'Bem-vindo. O começo da operação se organiza aqui.' },
+  desqualificado: { rotulo: 'Conversa encerrada', descricao: 'Esta conversa foi encerrada pela Root.' },
+  geladeira: { rotulo: 'Conversa pausada', descricao: 'Combinamos retomar mais adiante.' },
+  perdido: { rotulo: 'Conversa encerrada', descricao: 'Esta conversa foi encerrada.' },
+  parceiro: { rotulo: 'Encaminhado a um parceiro', descricao: 'A Root indicou um parceiro para o seu caso.' },
+};
+
+function ehEtapa(v: unknown): v is ComercialEtapa {
+  return typeof v === 'string' && v in ETAPA_PARA_O_CLIENTE;
+}
+
+export function etapaParaOCliente(etapa: unknown): EtapaParaOCliente | null {
+  if (!ehEtapa(etapa)) return null;
+  const t = ETAPA_PARA_O_CLIENTE[etapa];
+  return { chave: etapa, rotulo: t.rotulo, descricao: t.descricao, ordem: ordemDaEtapa(etapa), total: COMERCIAL_ETAPAS.length, saida: ehSaida(etapa) };
+}
+
+const kb = (bytes: unknown): string => {
+  const b = num(bytes);
+  if (b === null) return '';
+  return b >= 1_048_576 ? `${(b / 1_048_576).toFixed(1).replace('.', ',')} MB` : `${Math.max(1, Math.round(b / 1024))} KB`;
+};
+
+/**
+ * O que vem agora, para o cliente. Sai do estágio dos fatos e do que ele ainda
+ * pede; a etapa de saída fala por si (a geladeira volta na data gravada, as
+ * outras não têm passo). Até três linhas.
+ */
+export function proximosPassosParaOCliente(estado: EstadoDaSala, e: Pick<EntradaDaProjecao, 'ficha' | 'agora'> & { voltaEm?: Date | null }): PassoParaOCliente[] {
+  const etapa = e.ficha?.etapa;
+  if (ehEtapa(etapa) && ehSaida(etapa)) {
+    return etapa === 'geladeira' ? [{ texto: 'Retomamos a conversa', quando: e.voltaEm ? e.voltaEm.toISOString() : null, quandoTipo: e.voltaEm ? 'em' : null, deQuem: 'root' }] : [];
+  }
+  const agora = (e.agora ?? new Date()).getTime();
+  const passo = (deQuem: 'voce' | 'root', texto: string, quando: string | null = null, quandoTipo: 'em' | 'ate' = 'em'): PassoParaOCliente => ({ texto, quando, quandoTipo: quando ? quandoTipo : null, deQuem });
+  const voce = (texto: string, quando: string | null = null, quandoTipo: 'em' | 'ate' = 'em') => passo('voce', texto, quando, quandoTipo);
+  const root = (texto: string, quando: string | null = null, quandoTipo: 'em' | 'ate' = 'em') => passo('root', texto, quando, quandoTipo);
+  const passos: PassoParaOCliente[] = [];
+  switch (estado.estagio) {
+    case 'conversa': {
+      const c = estado.conversa;
+      if (!c.oQueContou.length) passos.push(voce('Responder as quatro perguntas aqui na sala'));
+      else if (!c.horario) passos.push(c.horariosOferecidos.length ? voce('Escolher um horário para a conversa com um dos sócios') : root('A Root oferece os horários da conversa'));
+      else passos.push(new Date(c.horario).getTime() > agora ? voce('Conversa com um dos sócios', c.horario) : root('A Root prepara o seu diagnóstico'));
+      break;
+    }
+    case 'diagnostico':
+      passos.push(estado.diagnostico ? root('A Root publica a proposta') : root('A Root prepara o seu diagnóstico'));
+      break;
+    case 'proposta': {
+      const p = estado.proposta;
+      if (p?.ajustePendente) passos.push(root('A Root responde ao seu pedido de ajuste'));
+      const abertas = (p?.duvidas ?? []).filter((d) => !d.resposta).length;
+      if (abertas) passos.push(root(abertas === 1 ? 'A Root responde a sua dúvida' : `A Root responde as suas ${abertas} dúvidas`));
+      passos.push(p && p.blocosLidos.length === 0 ? voce('Ler a proposta', p.validaAte, 'ate') : voce('Aceitar a proposta ou pedir um ajuste', p?.validaAte ?? null, 'ate'));
+      break;
+    }
+    case 'contrato': {
+      const a = estado.aceite;
+      if (!a?.forma) {
+        passos.push(voce('Confirmar os seus dados e aceitar a forma de pagamento'));
+        break;
+      }
+      if (!a.cobranca) passos.push(root('A Root gera a cobrança da primeira parcela'));
+      else if (a.cobranca.estado !== 'paga') passos.push(voce('Pagar a primeira parcela'));
+      if (!a.contrato) passos.push(root('A Root gera o contrato com os seus dados'));
+      else if (!a.contrato.assinadoClienteEm) passos.push(voce('Assinar o contrato pelo celular'));
+      else if (!a.contrato.assinadoRootEm) passos.push(root('A Root assina o contrato'));
+      if (!passos.length) passos.push(root('A Root confirma o pagamento e abre o começo'));
+      break;
+    }
+    case 'comeco': {
+      const c = estado.comeco;
+      if (!c?.kickoffEm) passos.push(voce('Escolher o horário do kickoff'));
+      else if (new Date(c.kickoffEm).getTime() > agora) passos.push(voce('Kickoff com a Root', c.kickoffEm));
+      else passos.push(root('A Root monta o seu kit de implantação'));
+      if (c && !c.grupoCriado) passos.push(root('A Root cria o grupo da sua empresa no WhatsApp'));
+      break;
+    }
+  }
+  return passos.slice(0, 3);
+}
+
+/** Os documentos trocados, do mais novo ao mais antigo. A minuta nunca entra. */
+export function documentosParaOCliente(e: Pick<EntradaDaProjecao, 'eventos' | 'documentos'>, estado: EstadoDaSala): DocumentoParaOCliente[] {
+  const out: DocumentoParaOCliente[] = [];
+  const aceitaV = new Set(e.eventos.filter((x) => x.type === 'proposta.aceita').map((x) => num(((x.payload ?? {}) as P).versao)));
+  for (const ev of e.eventos) {
+    const p = (ev.payload ?? {}) as P;
+    if (ev.type === 'proposta.publicada') {
+      const versao = num(p.versao) ?? 1;
+      const vigente = estado.proposta?.versao === versao;
+      out.push({
+        tipo: 'proposta',
+        titulo: `Proposta v${versao}`,
+        estado: aceitaV.has(versao) ? 'aceita por você' : vigente ? 'publicada para você ler' : 'substituída por uma versão mais nova',
+        de: 'root',
+        em: ev.occurredAt.toISOString(),
+        versao,
+      });
+    } else if (ev.type === 'arquivo.enviado') {
+      const nome = str(p.nome) ?? 'arquivo';
+      const tamanho = kb(p.bytes);
+      out.push({ tipo: 'arquivo', titulo: nome, estado: tamanho ? `${tamanho}, recebido pela Root` : 'recebido pela Root', de: 'voce', em: ev.occurredAt.toISOString() });
+    } else if (ev.type === 'diagnostico.pronto' && str(p.aprovadoEm)) {
+      out.push({ tipo: 'diagnostico', titulo: 'O seu diagnóstico', estado: 'publicado nesta sala', de: 'root', em: ev.occurredAt.toISOString() });
+    }
+  }
+  for (const d of e.documentos) {
+    if (d.provedor === 'minuta') continue;
+    const assinadoPorVoce = Boolean(d.assinadoClienteEm);
+    const assinadoPelaRoot = Boolean(d.assinadoRootEm);
+    const anexo = d.provedor === 'anexo';
+    out.push({
+      tipo: 'contrato',
+      titulo: 'Contrato',
+      estado: anexo
+        ? 'assinado, guardado pela Root'
+        : assinadoPorVoce && assinadoPelaRoot
+          ? 'assinado pelos dois'
+          : assinadoPorVoce
+            ? 'assinado por você, falta a Root'
+            : 'aguardando a sua assinatura',
+      de: 'root',
+      em: d.criadoEm.toISOString(),
+      link: !anexo && !assinadoPorVoce ? d.linkCliente : null,
+    });
+  }
+  return out.sort((a, b) => b.em.localeCompare(a.em)).slice(0, 12);
+}
+
+export function acompanhamentoDaSala(
+  e: Pick<EntradaDaProjecao, 'ficha' | 'eventos' | 'documentos' | 'agora'> & { voltaEm?: Date | null; whatsappDaRoot?: string | null },
+  estado: EstadoDaSala,
+): AcompanhamentoDaSala {
+  const numero = e.whatsappDaRoot && /^\d{10,15}$/.test(e.whatsappDaRoot) ? e.whatsappDaRoot : null;
+  return {
+    etapa: etapaParaOCliente(e.ficha?.etapa),
+    proximosPassos: proximosPassosParaOCliente(estado, e),
+    documentos: documentosParaOCliente(e, estado),
+    contato: { whatsapp: numero, rotulo: numero ? 'Falar com a Root no WhatsApp' : CONTATO_SEM_NUMERO },
   };
 }

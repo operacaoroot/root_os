@@ -1,4 +1,4 @@
-import { Inject, Injectable, OnModuleInit, Optional } from '@nestjs/common';
+import { Inject, Injectable, Logger, OnModuleInit, Optional } from '@nestjs/common';
 import { SalaFormSchema } from '@mktos/shared';
 
 import { EntradaDiretaRegistry } from '../gateway/canais/entrada-direta.registry';
@@ -48,6 +48,12 @@ import { WhatsappComercialService } from './whatsapp.service';
  * caminho de sempre e, depois, ganha a classe no fio. Com a triagem desligada,
  * tudo é exatamente como antes. Conector desligado e instância de outra empresa
  * barram a triagem do mesmo jeito.
+ *
+ * A SALA NA PRIMEIRA MENSAGEM (leva 5, L6, 27/10/2026): quem já é lead e escreve
+ * ganha a sala ali, pelo MESMO `SalaService.garantir` da reação `sala.abrir`
+ * (idempotente pelo `leadId` único: a segunda mensagem não cria outra). É o
+ * caminho do lead importado do CRM antigo ou criado à mão, que nunca teve o
+ * `lead.chegou`. Falha ao garantir a sala nunca segura a mensagem.
  */
 
 const ISO_COM_FUSO = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?(?:Z|[+-]\d{2}:\d{2})$/;
@@ -124,6 +130,8 @@ export function lerMensagemDaEvolution(evento: unknown): LeituraDaEvolution {
 
 @Injectable()
 export class EvolutionEntradaService implements OnModuleInit {
+  private readonly log = new Logger('ComercialEvolutionEntrada');
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly whats: WhatsappComercialService,
@@ -176,6 +184,12 @@ export class EvolutionEntradaService implements OnModuleInit {
       select: { interativo: true },
     });
     await this.whats.receberDoLead(orgId, lead.id, m.texto, m.mensagemId);
+    // L6: a sala nasce na primeira mensagem de quem já é lead (idempotente). Só o id do lead vai ao log.
+    try {
+      await this.sala.garantir(orgId, lead.id);
+    } catch (e) {
+      this.log.warn(`sala do lead ${lead.id} não garantida na entrada: ${(e as Error).message}`);
+    }
 
     const inter = (ultima?.interativo ?? null) as Interativo | null;
     if (inter?.botoes?.length) {

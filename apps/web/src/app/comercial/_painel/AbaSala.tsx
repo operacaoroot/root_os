@@ -9,6 +9,13 @@
  * combinado; quem cuida da conta) e vê, ao lado, o que sai do fio sozinho (as
  * estações e os publicados). "Publicar" pede a liberação de outra pessoa em
  * /atendimento (R3): até ela assinar, o cliente continua na versão anterior.
+ *
+ * L6 (leva 5, 27/10/2026): a aba diz o que falta e oferece o botão que resolve.
+ * Lead sem sala: "criar a sala agora" (o mesmo caminho da reação `sala.abrir`).
+ * Sala vencida, revogada ou com cifra que este ambiente não abre: "gerar link
+ * novo" (o link antigo deixa de abrir; o novo sai uma vez, para a área de
+ * transferência). Sem próximo passo escrito, a aba avisa antes do clique em
+ * publicar, em vez de deixar a API recusar.
  */
 import { useEffect, useState } from 'react';
 import {
@@ -100,12 +107,25 @@ export function AbaSala({ leadId, aoMudar }: { leadId: string; aoMudar: () => Pr
   const r = dados.rascunho;
   const pub = dados.publicada;
   const mudar = <T,>(f: (v: T) => void) => (v: T) => { setSujo(true); f(v); };
+  const semPasso = passos.filter((p) => p.oque.trim()).length === 0;
 
   return (
     <div className="space-y-4" data-testid="aba-sala">
       {/* A chave muda quando a versão anda (publicar, pedir liberação): o quadro relê o estado. */}
-      <EstadoDaSala key={`${r.versao}:${r.estado}:${pub?.versao ?? 0}`} leadId={leadId} />
-      {!dados.temSala && <Aviso tom="ruim">Este lead ainda não tem sala: o link nasce no primeiro contato.</Aviso>}
+      <EstadoDaSala
+        key={`${r.versao}:${r.estado}:${pub?.versao ?? 0}:${dados.temSala ? 1 : 0}`}
+        leadId={leadId}
+        temSala={dados.temSala}
+        aoMudar={async () => {
+          await recarregar();
+          await aoMudar();
+        }}
+      />
+      {!dados.temSala && (
+        <Aviso tom="ruim">
+          Este lead ainda não tem sala, e sem sala não há link para o cliente nem versão para publicar. Use "criar a sala agora" no quadro acima.
+        </Aviso>
+      )}
       <section className={CARTAO} aria-label="o que o cliente vê agora">
         <Rotulo>no ar para o cliente</Rotulo>
         {pub ? (
@@ -172,15 +192,28 @@ export function AbaSala({ leadId, aoMudar }: { leadId: string; aoMudar: () => Pr
         </fieldset>
 
         <p className="mt-3 text-[12px] text-muted">
-          WhatsApp na sala: {SALA_WHATSAPP_PLACEHOLDER} (o número é decisão da mesa; o botão aparece com o marcador até lá).
+          WhatsApp na sala: {SALA_WHATSAPP_PLACEHOLDER} na versão; o número que o cliente vê vem da nota da memória <span className="font-os-mono">comercial.whatsapp.numero</span> (primeira linha, só dígitos com o 55), sem republicar.
         </p>
+
+        {dados.temSala && semPasso && (
+          <p className="mt-3 text-[12.5px] text-muted" data-testid="sala-falta-passo" role="status">
+            Para publicar a primeira versão, escreva ao menos um próximo passo (o quê, quando e com quem) em "acrescentar passo".
+          </p>
+        )}
 
         <div className="mt-4 flex flex-wrap items-center gap-2">
           <button type="button" data-testid="sala-salvar" className={BOTAO} disabled={!!ocupado || !sujo} onClick={() => void salvar()}>
             {ocupado === 'salvar' ? 'gravando…' : 'gravar rascunho'}
           </button>
-          <button type="button" data-testid="sala-publicar" className={BOTAO_PRIMARIO} disabled={!!ocupado || !dados.temSala} onClick={() => void publicar()}>
-            {ocupado === 'publicar' ? 'pedindo…' : `publicar a versão ${r.versao}`}
+          <button
+            type="button"
+            data-testid="sala-publicar"
+            className={BOTAO_PRIMARIO}
+            disabled={!!ocupado || !dados.temSala || semPasso}
+            title={!dados.temSala ? 'Crie a sala antes de publicar.' : semPasso ? 'Escreva ao menos um próximo passo antes de publicar.' : undefined}
+            onClick={() => void publicar()}
+          >
+            {ocupado === 'publicar' ? 'pedindo…' : pub ? `publicar a versão ${r.versao}` : `publicar a primeira versão (${r.versao})`}
           </button>
           {sujo && <span className="text-[12px] text-muted">há mudança não gravada</span>}
         </div>
@@ -213,48 +246,108 @@ export function AbaSala({ leadId, aoMudar }: { leadId: string; aoMudar: () => Pr
  * sala deste lead, lida do que está gravado. "Copiar link da sala" só aparece
  * para quem tem `leads.editar`; o link sai da API só nessa resposta, vai para a
  * área de transferência e não fica guardado na tela.
+ *
+ * L6: com `leads.editar`, o quadro oferece também "criar a sala agora" (sem
+ * sala) e "gerar link novo" (sala com link que não abre). Os dois recarregam a
+ * linha do tempo e avisam a bancada (`aoMudar`), que relê as versões.
  */
-function EstadoDaSala({ leadId }: { leadId: string }) {
+function EstadoDaSala({ leadId, temSala, aoMudar }: { leadId: string; temSala: boolean; aoMudar: () => Promise<void> }) {
   const { can } = useAuth();
   const { dados, erro, token, recarregar } = useCarregar<EstadoDaSalaNoPainel>(`/comercial/lead/${encodeURIComponent(leadId)}/sala/estado`);
-  const [copiando, setCopiando] = useState(false);
+  const [ocupado, setOcupado] = useState<'copiar' | 'criar' | 'renovar' | null>(null);
   const [copiado, setCopiado] = useState<string | null>(null);
   const [manual, setManual] = useState<string | null>(null);
   const [erroDaCopia, setErroDaCopia] = useState<unknown>(null);
   const podeCopiar = can('leads.editar');
+  const base = `/comercial/lead/${encodeURIComponent(leadId)}/sala`;
+
+  /** O link que a API devolveu uma vez vai à área de transferência; sem ela, aparece para copiar à mão. */
+  async function entregarLink(r: LinkDaSalaCopiado, frase: string) {
+    try {
+      await navigator.clipboard.writeText(r.link);
+      setCopiado(`${frase} Ele vale até ${quandoCurtoSP(r.validaAte)}.`);
+    } catch {
+      // Sem área de transferência (navegador sem permissão): o link aparece para copiar à mão.
+      setManual(r.link);
+    }
+  }
 
   async function copiar() {
-    setCopiando(true);
+    setOcupado('copiar');
     setErroDaCopia(null);
     setCopiado(null);
     setManual(null);
     try {
-      const r = await apiPost<LinkDaSalaCopiado>(`/comercial/lead/${encodeURIComponent(leadId)}/sala/link`, {}, token);
-      try {
-        await navigator.clipboard.writeText(r.link);
-        setCopiado(`Link copiado. Ele vale até ${quandoCurtoSP(r.validaAte)}.`);
-      } catch {
-        // Sem área de transferência (navegador sem permissão): o link aparece para copiar à mão.
-        setManual(r.link);
-      }
+      await entregarLink(await apiPost<LinkDaSalaCopiado>(`${base}/link`, {}, token), 'Link copiado.');
     } catch (e) {
       setErroDaCopia(e);
     } finally {
-      setCopiando(false);
+      setOcupado(null);
     }
   }
+
+  async function criar() {
+    setOcupado('criar');
+    setErroDaCopia(null);
+    setCopiado(null);
+    try {
+      await apiPost<EstadoDaSalaNoPainel>(base, {}, token);
+      await recarregar();
+      await aoMudar();
+      setCopiado('Sala criada. Copie o link e mande ao cliente; a primeira versão pode ser publicada agora.');
+    } catch (e) {
+      setErroDaCopia(e);
+    } finally {
+      setOcupado(null);
+    }
+  }
+
+  async function renovar() {
+    if (!window.confirm('Gerar um link novo? O link antigo, se o cliente o tiver, deixa de abrir. Nada mais muda na sala.')) return;
+    setOcupado('renovar');
+    setErroDaCopia(null);
+    setCopiado(null);
+    setManual(null);
+    try {
+      const r = await apiPost<LinkDaSalaCopiado>(`${base}/renovar`, {}, token);
+      await recarregar();
+      await aoMudar();
+      await entregarLink(r, 'Link novo copiado. Mande ao cliente.');
+    } catch (e) {
+      setErroDaCopia(e);
+    } finally {
+      setOcupado(null);
+    }
+  }
+
+  const linkNaoAbre = Boolean(dados && dados.temSala && !dados.linkDisponivel);
 
   return (
     <section className={CARTAO} aria-label="estado da sala" data-testid="sala-estado">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <Rotulo>quando a sala entra</Rotulo>
-        {podeCopiar && dados?.linkDisponivel && (
-          <button type="button" data-testid="sala-copiar-link" className={BOTAO} disabled={copiando} onClick={() => void copiar()}>
-            {copiando ? 'copiando…' : 'Copiar link da sala'}
-          </button>
-        )}
+        <div className="flex flex-wrap gap-2">
+          {podeCopiar && dados && !dados.temSala && (
+            <button type="button" data-testid="sala-criar" className={BOTAO_PRIMARIO} disabled={!!ocupado} onClick={() => void criar()}>
+              {ocupado === 'criar' ? 'criando…' : 'criar a sala agora'}
+            </button>
+          )}
+          {podeCopiar && dados?.linkDisponivel && (
+            <button type="button" data-testid="sala-copiar-link" className={BOTAO} disabled={!!ocupado} onClick={() => void copiar()}>
+              {ocupado === 'copiar' ? 'copiando…' : 'Copiar link da sala'}
+            </button>
+          )}
+          {podeCopiar && linkNaoAbre && (
+            <button type="button" data-testid="sala-renovar-link" className={BOTAO} disabled={!!ocupado} onClick={() => void renovar()}>
+              {ocupado === 'renovar' ? 'gerando…' : 'gerar link novo'}
+            </button>
+          )}
+        </div>
       </div>
       <p className="mt-1 text-[12.5px] text-muted" data-testid="sala-ajuda">{SALA_AJUDA_DO_PAINEL}</p>
+      {!podeCopiar && temSala && (
+        <p className="mt-1 text-[12px] text-dim">Copiar o link, criar a sala e gerar link novo pedem a permissão de editar leads.</p>
+      )}
       {!dados && !erro && <p className="mt-2 text-[12.5px] text-dim">carregando…</p>}
       {dados && (
         <ol className="mt-3 space-y-2" data-testid="sala-marcos">

@@ -26,6 +26,7 @@ import {
 import { Prisma } from '@prisma/client';
 
 import { comTenantPublico, resolverTenantDaSala } from '../common/tenant-publico';
+import { MemoriaService } from '../memory/memoria.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { StorageService } from '../storage/storage.service';
 import { ARQUIVISTA_DO_CLIENTE, type ArquivistaDoClientePort } from '../clientes/portas';
@@ -34,7 +35,7 @@ import { hashDoConteudo } from './eventos';
 import { FioService, ReacoesRegistry } from './fio.service';
 import { SO_DOCUMENTOS_DE_ASSINATURA } from './documentos';
 import { publicadaDaSala } from './sala-versao.service';
-import { chaveDaDuvida, projetarSala, type DadosDaSala, type EventoDaSala } from './sala-projecao';
+import { acompanhamentoDaSala, chaveDaDuvida, projetarSala, type AcompanhamentoDaSala, type DadosDaSala, type EventoDaSala } from './sala-projecao';
 import {
   cifrarTokenDaSala,
   decifrarTokenDaSala,
@@ -73,6 +74,18 @@ import {
 
 export const SALA_NAO_ENCONTRADA = 'sala não encontrada';
 const ATOR_DA_SALA = 'comercial-sala';
+/**
+ * L6 (leva 5): a nota da memória com o WhatsApp da Root que a sala mostra ao
+ * cliente (primeira linha = o número, só dígitos, com o 55). É a "decisão da
+ * mesa" que a I3 deixou pendente: escrita só pelo `MemoriaService` (a tela
+ * Contexto), lida aqui sem exigir permissão (a sala é anônima). Sem a nota, a
+ * sala segue com o marcador e nunca inventa número.
+ */
+export const NOTA_DO_NUMERO_DA_ROOT = 'comercial.whatsapp.numero';
+const MEMORIA_DO_NUMERO_MS = 60_000;
+
+/** O estado da sala com os blocos derivados do acompanhamento (L6). */
+export type EstadoDaSalaComAcompanhamento = EstadoDaSala & { acompanhamento: AcompanhamentoDaSala };
 const MAX_BYTES_DO_ARQUIVO = 10 * 1024 * 1024;
 const TIPOS_DE_ARQUIVO = new Set([
   'application/pdf',
@@ -111,6 +124,8 @@ export function ehPreVisualizacao(userAgent: string | null | undefined): boolean
 @Injectable()
 export class SalaService implements OnModuleInit {
   private readonly log = new Logger('ComercialSala');
+  /** O número da Root por empresa, lembrado por um minuto (a sala pública relê o estado a cada ação). */
+  private readonly numeroDaRootLembrado = new Map<string, { numero: string | null; ate: number }>();
 
   constructor(
     private readonly prisma: PrismaService,
@@ -176,6 +191,48 @@ export class SalaService implements OnModuleInit {
   async linkDoLead(orgId: string, leadId: string): Promise<string | null> {
     const sala = await this.prisma.salaDoCliente.findFirst({ where: { leadId, orgId } });
     return sala ? this.linkDe(sala) : null;
+  }
+
+  /**
+   * L6 (leva 5): um LINK NOVO para a sala que já existe. Troca o token (hash e
+   * cifra), devolve a validade aos `SALA_VALIDADE_DIAS` e limpa a revogação;
+   * nada mais muda (dados, visitas, versões publicadas e o fio ficam). O link
+   * antigo, se alguém o tiver, deixa de abrir: quem chama diz isso na tela e
+   * grava a auditoria. É o conserto para a sala vencida, revogada, nascida sem a
+   * chave de cifra ou cifrada com a chave de outro ambiente (o banco que veio da
+   * homologação). O token em claro sai SÓ na resposta de quem chamou.
+   */
+  async renovarLink(orgId: string, leadId: string, agora: Date = new Date()): Promise<{ salaId: string; link: string; validoAte: Date; tokenGuardado: boolean }> {
+    const sala = await this.prisma.salaDoCliente.findFirst({ where: { leadId, orgId }, select: { id: true } });
+    if (!sala) throw new NotFoundException('o lead não tem sala');
+    const { token, hash } = gerarTokenDaSala();
+    const segredo = segredoDoAmbiente();
+    const validoAte = validadeDaSala(agora);
+    await this.prisma.salaDoCliente.update({
+      where: { id: sala.id },
+      data: { tokenHash: hash, tokenCifrado: segredo ? cifrarTokenDaSala(token, segredo, sala.id) : null, validoAte, revogadoEm: null },
+    });
+    return { salaId: sala.id, link: linkDaSala(token), validoAte, tokenGuardado: Boolean(segredo) };
+  }
+
+  /** O WhatsApp da Root para a sala (L6): a primeira linha da nota `comercial.whatsapp.numero`, só dígitos; sem nota, nulo. */
+  async numeroDaRoot(orgId: string, agora: Date = new Date()): Promise<string | null> {
+    const lembrado = this.numeroDaRootLembrado.get(orgId);
+    if (lembrado && lembrado.ate > agora.getTime()) return lembrado.numero;
+    let numero: string | null = null;
+    try {
+      const memoria = this.moduleRef?.get(MemoriaService, { strict: false });
+      const nota = memoria ? await memoria.porChave(orgId, NOTA_DO_NUMERO_DA_ROOT, null) : null;
+      const primeira = String(nota?.body ?? '').split(/\r?\n/).map((l) => l.trim()).find(Boolean) ?? '';
+      const digitos = primeira.replace(/\D/g, '');
+      numero = /^\d{10,15}$/.test(digitos) ? digitos : null;
+    } catch {
+      // Memória fora do ar não derruba a sala: o cliente vê o marcador, como antes.
+      numero = null;
+    }
+    if (this.numeroDaRootLembrado.size > 500) this.numeroDaRootLembrado.clear();
+    this.numeroDaRootLembrado.set(orgId, { numero, ate: agora.getTime() + MEMORIA_DO_NUMERO_MS });
+    return numero;
   }
 
   /** Os horários oferecidos ao lead, gravados na sala na primeira vez (agenda de homologação). */
@@ -544,7 +601,7 @@ export class SalaService implements OnModuleInit {
     return alt && alt.produto === produto ? { valorCentavos: alt.valorCentavos, parcelas: alt.parcelas, formas: alt.formas } : null;
   }
 
-  private async projetar(salaId: string, leadId: string, agora: Date): Promise<EstadoDaSala> {
+  private async projetar(salaId: string, leadId: string, agora: Date): Promise<EstadoDaSalaComAcompanhamento> {
     const [sala, lead, ficha, eventos, cobrancas, documentos] = await Promise.all([
       this.prisma.salaDoCliente.findUniqueOrThrow({ where: { id: salaId } }),
       this.prisma.lead.findUniqueOrThrow({ where: { id: leadId }, select: { name: true } }),
@@ -555,7 +612,7 @@ export class SalaService implements OnModuleInit {
     ]);
     // I3: a última versão PUBLICADA (nunca o rascunho nem a que espera liberação).
     const publicada = await publicadaDaSala(this.prisma, sala.orgId, leadId);
-    const estado = projetarSala({
+    const entrada = {
       slug: sala.slug,
       nomeDoLead: lead.name,
       validoAte: sala.validoAte,
@@ -580,10 +637,14 @@ export class SalaService implements OnModuleInit {
         assinadoClienteEm: d.assinadoClienteEm,
         assinadoRootEm: d.assinadoRootEm,
         criadoEm: d.criadoEm,
+        provedor: d.provedor,
       })),
       agora,
-    });
-    return { ...estado, publicada };
+    };
+    const estado = projetarSala(entrada);
+    // L6: os blocos do acompanhamento são derivados AGORA, do mesmo material; nenhuma versão nova é gravada.
+    const acompanhamento = acompanhamentoDaSala({ ...entrada, voltaEm: ficha?.voltaEm ?? null, whatsappDaRoot: await this.numeroDaRoot(sala.orgId, agora) }, estado);
+    return { ...estado, publicada, acompanhamento };
   }
 }
 
