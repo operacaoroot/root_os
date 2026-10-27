@@ -87,17 +87,21 @@ describe('lupa da Topbar', () => {
 });
 
 describe('temas da gaveta', () => {
-  it('os três botões moram no mesmo contêiner, em linha, e trocar escreve root-os:tema', async () => {
+  // Layout do Estúdio (27/10/2026): dois temas, estúdio (padrão) e escuro.
+  it('os dois botões moram no mesmo contêiner, em linha; o padrão é o estúdio e trocar grava o escuro', async () => {
     const user = userEvent.setup();
     render(<Sidebar />);
     const grupo = screen.getByRole('group', { name: 'Tema da interface' });
     expect(grupo.className).toContain('flex-row');
     expect(grupo.className).not.toContain('flex-col');
     const botoes = grupo.querySelectorAll('button');
-    expect(botoes).toHaveLength(3);
+    expect(botoes).toHaveLength(2);
+    expect(botoes[0]).toHaveAttribute('aria-pressed', 'true');
+    expect(document.documentElement.getAttribute('data-os-theme')).toBe('estudio');
 
     await user.click(botoes[1]);
-    expect(localStorage.getItem(CHAVE_TEMA)).toBe('light');
+    expect(localStorage.getItem(CHAVE_TEMA)).toBe('dark');
     expect(botoes[1]).toHaveAttribute('aria-pressed', 'true');
+    expect(document.documentElement.getAttribute('data-os-theme')).toBe('dark');
   });
 });

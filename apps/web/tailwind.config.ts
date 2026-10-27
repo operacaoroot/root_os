@@ -75,7 +75,17 @@ const config: Config = {
       // aplica a moldura ROOT nas 37 telas sem tocar em nenhuma das 211
       // ocorrências de rounded-lg/rounded-xl. `rounded-full` (avatar) não é
       // afetado — é chave própria. /central e /b não usam nenhuma delas.
-      borderRadius: { DEFAULT: '3px', sm: '2px', md: '3px', lg: '3px', xl: '3px', '2xl': '4px', root: '3px' },
+      // Layout do Estúdio (27/10/2026): o canto vira variável do tema. O escuro segue
+      // com 3px (o fallback); o tema "estúdio" arredonda como o Root Estúdio V1.
+      borderRadius: {
+        DEFAULT: 'var(--os-r, 3px)',
+        sm: 'var(--os-r-sm, 2px)',
+        md: 'var(--os-r, 3px)',
+        lg: 'var(--os-r-lg, 3px)',
+        xl: 'var(--os-r-xl, 3px)',
+        '2xl': 'var(--os-r-2xl, 4px)',
+        root: 'var(--os-r, 3px)',
+      },
     },
   },
   plugins: [],
