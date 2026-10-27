@@ -88,7 +88,8 @@ export function tituloDaNova(original: string, pessoa: string | null, trechoDaDa
     const primeiro = pessoa.split(/\s+/)[0];
     t = t.replace(new RegExp('(^|\\s)((pr[oa]|para( o| a)?|com)\\s+)?' + primeiro + '(?=$|[\\s:,.])', 'i'), ' ');
   }
-  if (trechoDaData) t = t.replace(new RegExp('((at[ée]|pra|para|pro|na|no|em|de)\\s+)?((o|a)\\s+)?' + trechoDaData.source, 'i'), ' ');
+  // O "(^|\\s)" impede de comer a última letra da palavra de antes ("proposta amanhã" virava "propost").
+  if (trechoDaData) t = t.replace(new RegExp('(^|\\s)((at[ée]|pra|para|pro|na|no|em|de)\\s+)?((o|a)\\s+)?' + trechoDaData.source, 'i'), ' ');
   t = t.replace(/\s+/g, ' ').replace(/^[\s:,.\-–—]+|[\s:,.\-–—]+$/g, '').trim();
   return t ? t[0].toUpperCase() + t.slice(1) : '';
 }

@@ -124,3 +124,17 @@ describe('agente de tarefas: mudar e criar sem modelo', () => {
     expect(entenderSemModelo('anota: comprar café', ABERTAS, PESSOAS, HOJE)).toEqual({ acao: 'criar', titulo: 'Comprar café', pessoa: null, prazo: null });
   });
 });
+
+describe('agente de tarefas: ordem direta vira tarefa', () => {
+  const ABERTAS = [{ titulo: 'Proposta Juma — fazer FUP' }];
+  const PESSOAS = [{ nome: 'Lucas Fernandes' }, { nome: 'Pedro Magnago' }];
+
+  it('"fazer contrato da juma" cria para quem pediu; pergunta e cumprimento não', () => {
+    expect(entenderSemModelo('fazer contrato da juma', ABERTAS, PESSOAS, '2026-10-27'))
+      .toEqual({ acao: 'criar', titulo: 'Fazer contrato da juma', pessoa: 'eu', prazo: null });
+    expect(entenderSemModelo('revisar proposta pro Lucas amanhã', ABERTAS, PESSOAS, '2026-10-27'))
+      .toEqual({ acao: 'criar', titulo: 'Revisar proposta', pessoa: 'Lucas Fernandes', prazo: '2026-10-28' });
+    expect(entenderSemModelo('quem fez o contrato?', ABERTAS, PESSOAS, '2026-10-27')).toBeNull();
+    expect(entenderSemModelo('bom dia pessoal', ABERTAS, PESSOAS, '2026-10-27')).toBeNull();
+  });
+});
