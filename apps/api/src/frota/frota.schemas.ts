@@ -36,8 +36,9 @@ export const CriarCasaSchema = z.object({
 });
 export type CriarCasaDto = z.infer<typeof CriarCasaSchema>;
 
-export const EditarCasaSchema = CriarCasaSchema.omit({ casa: true })
-  .partial()
+// O nome da casa entra na edição para corrigir erro de digitação da Nova casa. O serviço
+// só aceita a troca antes do primeiro relato: depois disso o servidor já usa o nome no CASA=.
+export const EditarCasaSchema = CriarCasaSchema.partial()
   .extend({ arquivada: z.boolean().optional() });
 export type EditarCasaDto = z.infer<typeof EditarCasaSchema>;
 
