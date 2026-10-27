@@ -279,7 +279,8 @@ describe('o bloco "Tarefas" do painel do lead', () => {
   }
 
   it('lista as do lead (abertas; concluídas recolhidas) e a nova já nasce ligada a ele', async () => {
-    irPara('/comercial/funil?lead=l1&aba=fio');
+    // Leva 5 (L4): o bloco de tarefas mora na aba Pendências e sugestões.
+    irPara('/comercial/funil?lead=l1&aba=pendencias');
     RESPOSTAS['/comercial/lead/l1'] = ficha();
     RESPOSTAS['/comercial/decisoes'] = [];
     RESPOSTAS['/comercial/tarefas'] = lista([
@@ -307,7 +308,7 @@ describe('o bloco "Tarefas" do painel do lead', () => {
 
   it('Layout 26/10: a tarefa abre no pop-up único POR CIMA do painel, sem sair para /trabalho; Esc fecha só a tarefa', async () => {
     const T1 = '33333333-3333-4333-8333-333333333333';
-    irPara('/comercial/funil?lead=l1&aba=fio');
+    irPara('/comercial/funil?lead=l1&aba=pendencias');
     RESPOSTAS['/comercial/lead/l1'] = ficha();
     RESPOSTAS['/comercial/decisoes'] = [];
     RESPOSTAS['/comercial/tarefas'] = lista([tarefa(T1, 'Fazer FUP da proposta', { lead: { id: 'l1', nome: 'Empresa Sintética' } })]);

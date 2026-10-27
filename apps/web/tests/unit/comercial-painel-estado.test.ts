@@ -3,16 +3,37 @@
  */
 import { describe, expect, it } from 'vitest';
 
-import { destinoDaRotaAntiga, lerPainel, linkDoWhatsApp, urlComPainel, urlSemPainel } from '@/app/comercial/_painel/estado';
+import { ABAS_DO_PAINEL, abaDaUrl, abasNaTela, destinoDaRotaAntiga, lerPainel, linkDoWhatsApp, urlComPainel, urlSemPainel } from '@/app/comercial/_painel/estado';
 import { chavesLegiveis, comNivelExplicado, prazoEmPalavras, quandoCurtoSP } from '@/lib/cockpit';
 
 describe('estado do painel na query', () => {
-  it('lê lead e aba; aba desconhecida vira Fio; sem lead ou com id torto, fechado', () => {
+  it('lê lead e aba; aba desconhecida (e o Fio de antes) vira a Geral; sem lead ou com id torto, fechado', () => {
+    // Leva 5 (L4): a Geral é a primeira tela; Dinheiro e Sessão ainda abrem por link direto.
     expect(lerPainel('?lead=abc-123&aba=dinheiro')).toEqual({ leadId: 'abc-123', aba: 'dinheiro' });
-    expect(lerPainel('?lead=abc&aba=qualquer')).toEqual({ leadId: 'abc', aba: 'fio' });
+    expect(lerPainel('?lead=abc&aba=qualquer')).toEqual({ leadId: 'abc', aba: 'geral' });
+    expect(lerPainel('?lead=abc&aba=fio')).toEqual({ leadId: 'abc', aba: 'geral' });
+    expect(lerPainel('?lead=abc')).toEqual({ leadId: 'abc', aba: 'geral' });
+    expect(lerPainel('?lead=abc&aba=pendencias')).toEqual({ leadId: 'abc', aba: 'pendencias' });
     expect(lerPainel('?aba=fio')).toBeNull();
     expect(lerPainel('?lead=../../x')).toBeNull();
     expect(lerPainel(`?lead=${'a'.repeat(65)}`)).toBeNull();
+  });
+
+  it('o campo a focar viaja na query, só com chave limpa; trocar de aba o apaga', () => {
+    expect(lerPainel('?lead=abc&aba=geral&campo=telefone')).toEqual({ leadId: 'abc', aba: 'geral', campo: 'telefone' });
+    expect(lerPainel('?lead=abc&aba=geral&campo=<x>')).toEqual({ leadId: 'abc', aba: 'geral' });
+    expect(urlComPainel('/comercial/funil', '', 'l1', 'geral', 'valorNegociado')).toBe('/comercial/funil?lead=l1&aba=geral&campo=valorNegociado');
+    expect(urlComPainel('/comercial/funil', '?lead=l1&aba=geral&campo=telefone', 'l1', 'sala')).toBe('/comercial/funil?lead=l1&aba=sala');
+    expect(urlSemPainel('/comercial/funil', '?lead=l1&aba=geral&campo=telefone')).toBe('/comercial/funil');
+  });
+
+  it('a fila de abas: as quatro da leva 5, mais a antiga aberta por link (e desfazer = devolver os nomes a ABAS_DO_PAINEL)', () => {
+    expect([...ABAS_DO_PAINEL]).toEqual(['geral', 'pendencias', 'sala', 'whatsapp']);
+    expect(abasNaTela('sala')).toEqual(['geral', 'pendencias', 'sala', 'whatsapp']);
+    expect(abasNaTela('dinheiro')).toEqual(['geral', 'pendencias', 'sala', 'whatsapp', 'dinheiro']);
+    expect(abaDaUrl('fio')).toBe('geral');
+    expect(abaDaUrl('sessao')).toBe('sessao');
+    expect(abaDaUrl(null)).toBe('geral');
   });
 
   it('abrir e fechar preservam o resto da query (o filtro da tela de trás)', () => {
@@ -23,7 +44,7 @@ describe('estado do painel na query', () => {
   });
 
   it('as rotas antigas vão para a tela de fundo com o painel na aba certa', () => {
-    expect(destinoDaRotaAntiga('fio', 'l1')).toBe('/comercial/funil?lead=l1&aba=fio');
+    expect(destinoDaRotaAntiga('fio', 'l1')).toBe('/comercial/funil?lead=l1&aba=geral');
     expect(destinoDaRotaAntiga('sessao', 'l1')).toBe('/comercial/funil?lead=l1&aba=sessao');
     expect(destinoDaRotaAntiga('fechamento', 'l1')).toBe('/comercial/funil?lead=l1&aba=dinheiro');
     expect(destinoDaRotaAntiga('contrato', 'l1')).toBe('/comercial/contratos?lead=l1&aba=dinheiro');

@@ -148,6 +148,8 @@ export const FONTE_DO_EVENTO: Record<ComercialEvento, ComercialFonte> = {
   'minuta.revisada': 'agente',
   'site.formulario': 'form',
   'whats.triada': 'agente',
+  // Leva 5 (L4, 27/10/2026): a nota que uma pessoa escreve no fio pela aba Pendências.
+  'nota.manual': 'pessoa',
 };
 
 /** Os payloads esperados por tipo. Só o que a projeção lê; o resto é livre. */
@@ -330,6 +332,12 @@ export interface PayloadsComerciais {
   /** Layout 26/10: valor negociado, vendedor ou canal ajustados por uma pessoa (cada mudança com o antes). Sem reação. */
   'negocio.ajustado': { mudancas: { campo: string; antes: string | null; depois: string | null }[]; por: string | null };
   'whats.triada': { classe: string; confianca: number; destino: string; origem: 'modelo' | 'regra' | 'pessoa'; motivo?: string | null; mensagemId?: string | null };
+  /**
+   * Leva 5 (L4): uma pessoa escreveu no fio. `feito` é a chave do passo da aba
+   * Pendências que ela deu por feito (a lista o esconde); `referencia` é livre
+   * (um link, um id). Sem reação: não move etapa nem dispara automação.
+   */
+  'nota.manual': { texto: string; feito: string | null; referencia: string | null; por: string | null; porId: string | null };
 }
 
 export type PayloadDe<T extends ComercialEvento> = PayloadsComerciais[T];
@@ -556,6 +564,8 @@ export function resumoDoEvento(type: string, payload: unknown): { fonte: Comerci
       return { fonte, resumo: `formulário do site${p.empresa ? ` · ${curto(p.empresa, 40)}` : ''}${p.mensagem ? ` · “${curto(p.mensagem, 60)}”` : ''}` };
     case 'whats.triada':
       return { fonte, resumo: `triagem do WhatsApp: ${String(p.classe).replace(/_/g, ' ')} (${Math.round(Number(p.confianca) * 100)}%) · ${String(p.destino)}` };
+    case 'nota.manual':
+      return { fonte, resumo: `${p.feito ? 'feito à mão: ' : 'nota: '}${curto(p.texto, 140)}${p.por ? ` · por ${String(p.por)}` : ''}` };
   }
 }
 

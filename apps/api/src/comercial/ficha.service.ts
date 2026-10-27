@@ -16,7 +16,7 @@ import {
   filtrosDoFunilVazios,
   tipoDeNegocio,
   COMERCIAL_TIPOS_DE_NEGOCIO,
-  COMERCIAL_CANAIS_DE_ENTRADA,
+  CANAIS_ACEITOS_NA_FICHA,
   mensagemDoMover,
   proximaEtapa,
   type ComercialAvisoDoMover,
@@ -726,7 +726,8 @@ export class FichaService {
     }
     if (c.canal !== undefined) {
       const canal = c.canal === null || c.canal === '' ? null : String(c.canal);
-      if (canal && !(COMERCIAL_CANAIS_DE_ENTRADA as readonly string[]).includes(canal)) throw new BadRequestException(`Canal inválido: use ${COMERCIAL_CANAIS_DE_ENTRADA.join(', ')}.`);
+      // Leva 5 (L4): a lista fechada "Como conheceu" entrou na mesma coluna; os três canais do C07 seguem valendo.
+      if (canal && !CANAIS_ACEITOS_NA_FICHA.includes(canal)) throw new BadRequestException(`Canal inválido: use ${CANAIS_ACEITOS_NA_FICHA.join(', ')}.`);
       if (canal !== ficha.canal) {
         data.canal = canal;
         mudancas.push({ campo: 'canal', antes: ficha.canal, depois: canal });

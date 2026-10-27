@@ -9,6 +9,7 @@ import { partesDoLead } from '@/lib/nome-do-lead';
 import { abrirFicha } from '@/lib/ficha';
 import { NovaOportunidadeExercicio } from './NovaOportunidadeExercicio';
 import { NovoLead } from '@/app/comercial/_funil/NovoLead';
+import { BotaoDoMenuDoLead, alvoDoMenuDoLead, useMenuDoLeadProprio } from '@/app/comercial/_funil/MenuDoLead';
 
 /*
  * LISTA DE LEADS (versão final, decisão 2 do Rodrigo, 19/10/2026): a tabela
@@ -17,6 +18,10 @@ import { NovoLead } from '@/app/comercial/_funil/NovoLead';
  * recorte copiado ou exportado em CSV: é a base para a lista de transmissão e
  * de e-mail. Daqui NADA é enviado; o envio continua pelos caminhos que passam
  * pela porta. Cada linha abre o painel do lead (`/comercial/lead/<id>`).
+ *
+ * Leva 5 (L2, 27/10/2026): botão direito na linha e o "⋯" ao lado do contato
+ * abrem o menu do lead (abrir, mover de etapa, copiar link da sala, vincular
+ * WhatsApp, editar valor negociado, histórico). Mover relê a lista.
  */
 
 const TODOS = '';
@@ -57,10 +62,13 @@ export default function ListaDeLeadsPage() {
   const [filtro, setFiltro] = useState<Filtro>({ q: '', etapa: TODOS, canal: TODOS, dono: TODOS });
   const [aviso, setAviso] = useState<string | null>(null);
 
-  useEffect(() => {
+  const carregar = useCallback(() => {
     if (!ready || !token) return;
     apiGet<ListaDeLeads>('/comercial/lista-de-leads', token).then(setDados).catch((e) => setErro(e.message));
   }, [ready, token]);
+  useEffect(() => carregar(), [carregar]);
+  // L2: o menu do lead na linha; mover pelo menu relê a lista.
+  const { menu, elemento: menuDoLead } = useMenuDoLeadProprio({ onMudou: carregar });
 
   const leads = useMemo(() => dados?.leads ?? [], [dados]);
   const recorte = useMemo(() => leads.filter((l) => passa(l, filtro)), [leads, filtro]);
@@ -156,9 +164,12 @@ export default function ListaDeLeadsPage() {
                 <tr><td colSpan={CABECALHO_DA_TELA.length} className="px-3 py-4 text-muted">{leads.length ? 'Nenhum lead com esse filtro.' : 'Ainda não há leads.'}</td></tr>
               )}
               {recorte.map((l) => (
-                <tr key={l.id} className="hover:bg-surface-2">
+                <tr key={l.id} data-testid={`lista-de-leads-linha-${l.id}`} className="hover:bg-surface-2" {...alvoDoMenuDoLead(menu, { id: l.id, nome: l.contato, empresa: l.empresa, etapa: l.etapaChave })}>
                   <td className="px-3 py-2">
-                    <Link href={`/comercial/lead/${l.id}`} className="font-medium hover:text-brand">{partesDoLead(l.contato, l.empresa).pessoa ?? l.contato}</Link>
+                    <span className="flex items-center gap-1">
+                      <Link href={`/comercial/lead/${l.id}`} className="font-medium hover:text-brand">{partesDoLead(l.contato, l.empresa).pessoa ?? l.contato}</Link>
+                      <BotaoDoMenuDoLead lead={{ id: l.id, nome: l.contato, empresa: l.empresa, etapa: l.etapaChave }} menu={menu} />
+                    </span>
                   </td>
                   <td className="px-3 py-2">{partesDoLead(l.contato, l.empresa).pessoa ? partesDoLead(l.contato, l.empresa).titulo : l.empresa ?? <span className="text-muted">—</span>}</td>
                   <td className="com-num whitespace-nowrap px-3 py-2">{l.telefone ?? <span className="text-muted">—</span>}</td>
@@ -174,6 +185,8 @@ export default function ListaDeLeadsPage() {
           </table>
         </div>
       )}
+
+      {menuDoLead}
 
       <details className="rounded-md border border-border bg-surface px-5 py-3">
         <summary className="cursor-pointer text-sm text-muted">Exercício de QA</summary>

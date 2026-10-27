@@ -22,7 +22,7 @@ import Link from 'next/link';
 import { usePathname, useSearchParams } from 'next/navigation';
 
 import { FOCO } from '../_ui';
-import { lerPainel, urlComPainel, urlSemPainel, type AbaDoPainel, type EstadoDoPainel } from './estado';
+import { ABA_PADRAO, lerPainel, urlComPainel, urlSemPainel, type AbaDoPainel, type EstadoDoPainel } from './estado';
 import { LeadPainel } from './LeadPainel';
 import { podeSairSemPerder } from './texto-nao-salvo';
 
@@ -34,9 +34,10 @@ export interface AvisoDoCanto {
 
 export interface Painel {
   estado: EstadoDoPainel | null;
-  /** Abre o painel do lead. `origem` é quem recebe o foco de volta ao fechar. */
-  abrir: (leadId: string, aba?: AbaDoPainel, origem?: Element | null) => void;
-  trocarAba: (aba: AbaDoPainel) => void;
+  /** Abre o painel do lead. `origem` é quem recebe o foco de volta ao fechar; `campo` é o campo da Geral a focar (leva 5). */
+  abrir: (leadId: string, aba?: AbaDoPainel, origem?: Element | null, campo?: string | null) => void;
+  /** Troca de aba; `campo` leva o foco a um campo da Geral (leva 5: "um clique leva ao campo"). */
+  trocarAba: (aba: AbaDoPainel, campo?: string | null) => void;
   fechar: () => void;
   /** O aviso curto no canto (toast), com o texto da API. */
   avisar: (texto: string, tom?: AvisoDoCanto['tom']) => void;
@@ -50,16 +51,16 @@ export interface Painel {
   dispensar: (id: number) => void;
 }
 
-function hrefPadrao(leadId: string, aba: AbaDoPainel = 'fio') {
-  return `/comercial/funil?lead=${encodeURIComponent(leadId)}&aba=${aba}`;
+function hrefPadrao(leadId: string, aba: AbaDoPainel = ABA_PADRAO, campo?: string | null) {
+  return `/comercial/funil?lead=${encodeURIComponent(leadId)}&aba=${aba}${campo ? `&campo=${encodeURIComponent(campo)}` : ''}`;
 }
 
 // Fora do provedor (um teste que monta só a página), os links continuam
 // funcionando como links comuns para a tela com o painel.
 const SEM_PROVEDOR: Painel = {
   estado: null,
-  abrir: (leadId, aba) => {
-    if (typeof window !== 'undefined') window.location.assign(hrefPadrao(leadId, aba));
+  abrir: (leadId, aba, _origem, campo) => {
+    if (typeof window !== 'undefined') window.location.assign(hrefPadrao(leadId, aba, campo));
   },
   trocarAba: () => {},
   fechar: () => {},
@@ -115,7 +116,7 @@ export function ProvedorDoPainel({ children }: { children: React.ReactNode }) {
     const lido = lerPainel(buscaAtual());
     setEstado((antes) => {
       if (!lido) return null;
-      if (antes && antes.leadId === lido.leadId && antes.aba === lido.aba) return antes;
+      if (antes && antes.leadId === lido.leadId && antes.aba === lido.aba && (antes.campo ?? null) === (lido.campo ?? null)) return antes;
       return lido;
     });
     if (lido) urlAberta.current = `${caminhoAtual()}${buscaAtual()}`;
@@ -138,10 +139,10 @@ export function ProvedorDoPainel({ children }: { children: React.ReactNode }) {
     return () => window.removeEventListener('popstate', aoVoltar);
   }, [sincronizar]);
 
-  const abrir = useCallback<Painel['abrir']>((leadId, aba = 'fio', de) => {
+  const abrir = useCallback<Painel['abrir']>((leadId, aba = ABA_PADRAO, de, campo) => {
     origem.current = de ?? (typeof document !== 'undefined' ? document.activeElement : null);
     const jaAberto = !!lerPainel(buscaAtual());
-    const url = urlComPainel(caminhoAtual(), buscaAtual(), leadId, aba);
+    const url = urlComPainel(caminhoAtual(), buscaAtual(), leadId, aba, campo);
     if (jaAberto) {
       window.history.replaceState(null, '', url);
     } else {
@@ -149,16 +150,16 @@ export function ProvedorDoPainel({ children }: { children: React.ReactNode }) {
       porClique.current = true;
     }
     urlAberta.current = url;
-    setEstado({ leadId, aba });
+    setEstado({ leadId, aba, ...(campo ? { campo } : {}) });
   }, []);
 
-  const trocarAba = useCallback<Painel['trocarAba']>((aba) => {
+  const trocarAba = useCallback<Painel['trocarAba']>((aba, campo) => {
     const atual = lerPainel(buscaAtual());
     if (!atual) return;
-    const url = urlComPainel(caminhoAtual(), buscaAtual(), atual.leadId, aba);
+    const url = urlComPainel(caminhoAtual(), buscaAtual(), atual.leadId, aba, campo);
     window.history.replaceState(null, '', url);
     urlAberta.current = url;
-    setEstado({ leadId: atual.leadId, aba });
+    setEstado({ leadId: atual.leadId, aba, ...(campo ? { campo } : {}) });
   }, []);
 
   const fechar = useCallback(() => {
@@ -182,7 +183,7 @@ export function ProvedorDoPainel({ children }: { children: React.ReactNode }) {
   const mudou = useCallback(() => setVersao((v) => v + 1), []);
   const dispensar = useCallback((id: number) => setAvisos((l) => l.filter((a) => a.id !== id)), []);
 
-  const hrefDoLead = useCallback((leadId: string, aba: AbaDoPainel = 'fio') => {
+  const hrefDoLead = useCallback((leadId: string, aba: AbaDoPainel = ABA_PADRAO) => {
     if (typeof window === 'undefined') return hrefPadrao(leadId, aba);
     return urlComPainel(caminhoAtual(), buscaAtual(), leadId, aba);
   }, []);
@@ -287,7 +288,7 @@ function AvisosNoCanto({ avisos, aoFechar }: { avisos: AvisoDoCanto[]; aoFechar:
  */
 export function LinkDoLead({
   leadId,
-  aba = 'fio',
+  aba = ABA_PADRAO,
   children,
   className,
   title,

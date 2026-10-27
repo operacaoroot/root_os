@@ -307,7 +307,7 @@ describe('torre e relatório dizem o que quebrou e o que falta (C-15, E-20)', ()
     render(<TorrePage />);
     expect(await screen.findByText(/2 formulário\(s\) respondido\(s\)/)).toBeInTheDocument();
     // Lane UX: o lead abre no painel; fora do provedor o link leva ao funil com o painel aberto.
-    expect(screen.getByRole('link', { name: 'lead-aaa' })).toHaveAttribute('href', '/comercial/funil?lead=lead-aaaa-1111&aba=fio');
+    expect(screen.getByRole('link', { name: 'lead-aaa' })).toHaveAttribute('href', '/comercial/funil?lead=lead-aaaa-1111&aba=geral');
     expect(screen.getByText(/1 premissa não pôde ser conferida/)).toBeInTheDocument();
     expect(screen.getByText('sugere A2')).toBeInTheDocument();
     expect(screen.getByText('da régua')).toBeInTheDocument();

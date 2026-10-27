@@ -464,6 +464,8 @@ export const COMERCIAL_EVENTOS = [
   // Layout 26/10: uma pessoa ajustou valor negociado, vendedor ou canal de aquisição, sem reação.
   'negocio.ajustado',
   'whats.triada',
+  // Leva 5 (L4, 27/10/2026): nota escrita por uma pessoa no fio ("marcar como feito" na aba Pendências), sem reação.
+  'nota.manual',
 ] as const;
 export type ComercialEvento = (typeof COMERCIAL_EVENTOS)[number];
 export const ComercialEventoSchema = z.enum(COMERCIAL_EVENTOS);

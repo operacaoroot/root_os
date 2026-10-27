@@ -54,7 +54,7 @@ export function NovoLead({ origem, className = '' }: { origem: string; className
       }
       setAberto(false);
       setEmpresa(''); setContato(''); setTelefone(''); setEmail('');
-      router.push(`/comercial/funil?lead=${encodeURIComponent(l.id)}&aba=fio`);
+      router.push(`/comercial/funil?lead=${encodeURIComponent(l.id)}&aba=geral`);
     } catch (e) {
       setErro(e);
     } finally {
