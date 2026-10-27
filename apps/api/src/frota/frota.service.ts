@@ -342,93 +342,99 @@ export class FrotaService {
   async receberRelato(token: string | undefined, corpo: unknown) {
     const orgId = await this.orgDaPlataforma();
     return comTenantPublico(orgId, async () => {
-      const casa = await this.casaDoToken(orgId, token);
+      const autenticada = await this.casaDoToken(orgId, token);
       const r = RelatoSchema.parse(corpo);
-      if (r.casa !== casa.casa) throw new BadRequestException(`O token é da casa ${casa.casa}; o relato diz ${r.casa}.`);
+      if (r.casa !== autenticada.casa) throw new BadRequestException(`O token é da casa ${autenticada.casa}; o relato diz ${r.casa}.`);
       const agora = new Date();
-      const anterior = relatoGuardado(casa.relato);
-      const eventos: Prisma.FrotaEventoCreateManyInput[] = [];
-      const ev = (e: Omit<Prisma.FrotaEventoCreateManyInput, 'orgId' | 'casaId'>) => eventos.push({ orgId, casaId: casa.id, ...e });
+      // Um relato por vez por casa. Na instalação o timer e a mão mandam dois ao mesmo tempo
+      // (na affari, 27/10/2026, dois relatos a 21 ms gravaram cada acesso duas vezes): o cadeado
+      // serializa, e a casa é RELIDA dentro dele, com os acessos de agora.
+      const resultado = await this.prisma.$transaction(async (tx) => {
+        await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`frota-relato:${autenticada.id}`}))`;
+        const casa = await tx.frotaCasa.findUnique({ where: { id: autenticada.id }, include: { acessos: true } });
+        if (!casa || casa.arquivadaEm) throw new UnauthorizedException('Token não reconhecido.');
+        const anterior = relatoGuardado(casa.relato);
+        const eventos: Prisma.FrotaEventoCreateManyInput[] = [];
+        const ev = (e: Omit<Prisma.FrotaEventoCreateManyInput, 'orgId' | 'casaId'>) => eventos.push({ orgId, casaId: casa.id, ...e });
 
-      // chaves: quem entrou, quem saiu, quem voltou
-      const porFp = new Map(casa.acessos.filter((a) => a.fingerprint).map((a) => [a.fingerprint as string, a]));
-      const vistas = new Set<string>();
-      const novas: Prisma.FrotaAcessoCreateManyInput[] = [];
-      const atualizacoes: { id: string; data: Prisma.FrotaAcessoUpdateInput }[] = [];
-      const nomeDaChave = (fp: string | undefined) =>
-        (fp && (porFp.get(fp)?.pessoa ?? r.chaves.find((c) => c.fingerprint === fp)?.comentario?.trim())) || null;
-      for (const ch of r.chaves) {
-        vistas.add(ch.fingerprint);
-        const pessoa = ch.comentario?.trim() || `sem dono (${ch.fingerprint.slice(-12)})`;
-        const via = ch.restricoes ? `ssh · ${ch.restricoes}` : 'ssh';
-        const ex = porFp.get(ch.fingerprint);
-        if (!ex) {
-          novas.push({ orgId, casaId: casa.id, pessoa, fingerprint: ch.fingerprint, tipo: ch.tipo, via, desde: agora, estado: 'ativa' });
-          ev({ chave: `chave+:${casa.id}:${ch.fingerprint}`, quando: agora, quem: 'relator', acao: `Chave ${pessoa}${ch.tipo ? ` (${ch.tipo})` : ''} presente no authorized_keys.`, origem: 'relator', tipo: 'acesso' });
-        } else if (ex.estado === 'removida' || ex.estado === 'revogada') {
-          // Chave que voltou depois de removida ou revogada: alguém a pôs de novo. Volta a ativa, com o registro gritando.
-          atualizacoes.push({ id: ex.id, data: { estado: 'ativa', desde: agora, pessoa, via, revogadoEm: null, revogadoPor: null, motivo: null } });
-          ev({ chave: `chave+:${casa.id}:${ch.fingerprint}:${agora.toISOString().slice(0, 10)}`, quando: agora, quem: 'relator', acao: `ATENÇÃO: chave ${pessoa} VOLTOU ao authorized_keys depois de ${ex.estado}. Confira quem a pôs.`, origem: 'relator', tipo: 'acesso' });
-        } else if (ex.pessoa !== pessoa || ex.via !== via) {
-          atualizacoes.push({ id: ex.id, data: { pessoa, via } });
+        // chaves: quem entrou, quem saiu, quem voltou
+        const porFp = new Map(casa.acessos.filter((a) => a.fingerprint).map((a) => [a.fingerprint as string, a]));
+        const vistas = new Set<string>();
+        const novas: Prisma.FrotaAcessoCreateManyInput[] = [];
+        const atualizacoes: { id: string; data: Prisma.FrotaAcessoUpdateInput }[] = [];
+        const nomeDaChave = (fp: string | undefined) =>
+          (fp && (porFp.get(fp)?.pessoa ?? r.chaves.find((c) => c.fingerprint === fp)?.comentario?.trim())) || null;
+        for (const ch of r.chaves) {
+          vistas.add(ch.fingerprint);
+          const pessoa = ch.comentario?.trim() || `sem dono (${ch.fingerprint.slice(-12)})`;
+          const via = ch.restricoes ? `ssh · ${ch.restricoes}` : 'ssh';
+          const ex = porFp.get(ch.fingerprint);
+          if (!ex) {
+            novas.push({ orgId, casaId: casa.id, pessoa, fingerprint: ch.fingerprint, tipo: ch.tipo, via, desde: agora, estado: 'ativa' });
+            ev({ chave: `chave+:${casa.id}:${ch.fingerprint}`, quando: agora, quem: 'relator', acao: `Chave ${pessoa}${ch.tipo ? ` (${ch.tipo})` : ''} presente no authorized_keys.`, origem: 'relator', tipo: 'acesso' });
+          } else if (ex.estado === 'removida' || ex.estado === 'revogada') {
+            // Chave que voltou depois de removida ou revogada: alguém a pôs de novo. Volta a ativa, com o registro gritando.
+            atualizacoes.push({ id: ex.id, data: { estado: 'ativa', desde: agora, pessoa, via, revogadoEm: null, revogadoPor: null, motivo: null } });
+            ev({ chave: `chave+:${casa.id}:${ch.fingerprint}:${agora.toISOString().slice(0, 10)}`, quando: agora, quem: 'relator', acao: `ATENÇÃO: chave ${pessoa} VOLTOU ao authorized_keys depois de ${ex.estado}. Confira quem a pôs.`, origem: 'relator', tipo: 'acesso' });
+          } else if (ex.pessoa !== pessoa || ex.via !== via) {
+            atualizacoes.push({ id: ex.id, data: { pessoa, via } });
+          }
         }
-      }
-      for (const a of casa.acessos) {
-        if (!a.fingerprint || vistas.has(a.fingerprint)) continue;
-        if (a.estado !== 'ativa' && a.estado !== 'revogando') continue;
-        const estado = a.estado === 'revogando' ? 'revogada' : 'removida';
-        atualizacoes.push({ id: a.id, data: { estado, revogadoEm: agora } });
-        ev({ chave: `chave-:${casa.id}:${a.fingerprint}:${agora.toISOString().slice(0, 10)}`, quando: agora, quem: 'relator', acao: estado === 'revogada' ? `Chave ${a.pessoa} revogada: não está mais no authorized_keys.` : `Chave ${a.pessoa} saiu do authorized_keys (fora do painel).`, origem: 'relator', tipo: 'acesso' });
-      }
+        for (const a of casa.acessos) {
+          if (!a.fingerprint || vistas.has(a.fingerprint)) continue;
+          if (a.estado !== 'ativa' && a.estado !== 'revogando') continue;
+          const estado = a.estado === 'revogando' ? 'revogada' : 'removida';
+          atualizacoes.push({ id: a.id, data: { estado, revogadoEm: agora } });
+          ev({ chave: `chave-:${casa.id}:${a.fingerprint}:${agora.toISOString().slice(0, 10)}`, quando: agora, quem: 'relator', acao: estado === 'revogada' ? `Chave ${a.pessoa} revogada: não está mais no authorized_keys.` : `Chave ${a.pessoa} saiu do authorized_keys (fora do painel).`, origem: 'relator', tipo: 'acesso' });
+        }
 
-      // logins
-      const ultimoLoginPorFp = new Map<string, Date>();
-      for (const l of r.logins) {
-        const quando = dataOu(l.quando, agora);
-        const pessoa = nomeDaChave(l.fingerprint) ?? (l.fingerprint ? `chave desconhecida (${l.fingerprint.slice(-12)})` : l.usuario ?? '?');
-        ev({ chave: `login:${casa.id}:${quando.toISOString()}:${l.fingerprint ?? l.de ?? ''}`, quando, quem: pessoa, acao: `Login SSH aceito${l.de ? ` de ${l.de}` : ''}.`, origem: 'sshd', tipo: 'acesso' });
-        if (l.fingerprint) {
-          const atual = ultimoLoginPorFp.get(l.fingerprint);
-          if (!atual || atual < quando) ultimoLoginPorFp.set(l.fingerprint, quando);
+        // logins
+        const ultimoLoginPorFp = new Map<string, Date>();
+        for (const l of r.logins) {
+          const quando = dataOu(l.quando, agora);
+          const pessoa = nomeDaChave(l.fingerprint) ?? (l.fingerprint ? `chave desconhecida (${l.fingerprint.slice(-12)})` : l.usuario ?? '?');
+          ev({ chave: `login:${casa.id}:${quando.toISOString()}:${l.fingerprint ?? l.de ?? ''}`, quando, quem: pessoa, acao: `Login SSH aceito${l.de ? ` de ${l.de}` : ''}.`, origem: 'sshd', tipo: 'acesso' });
+          if (l.fingerprint) {
+            const atual = ultimoLoginPorFp.get(l.fingerprint);
+            if (!atual || atual < quando) ultimoLoginPorFp.set(l.fingerprint, quando);
+          }
         }
-      }
 
-      // diário da casa
-      for (const d of r.diario) {
-        ev({ chave: `diario:${casa.id}:${d.quando}:${hash8(d.texto)}`, quando: dataDoDiario(d.quando, agora), quem: d.quem, acao: d.texto, origem: 'kit-diario', tipo: tipoDoDiario(d.texto) });
-      }
+        // diário da casa
+        for (const d of r.diario) {
+          ev({ chave: `diario:${casa.id}:${d.quando}:${hash8(d.texto)}`, quando: dataDoDiario(d.quando, agora), quem: d.quem, acao: d.texto, origem: 'kit-diario', tipo: tipoDoDiario(d.texto) });
+        }
 
-      // o que mudou desde o relato anterior
-      if (!anterior) {
-        ev({ chave: `primeiro:${casa.id}`, quando: agora, quem: 'relator', acao: `Primeiro relato recebido de ${casa.casa}${r.maquina.kitVersao ? ` (kit ${r.maquina.kitVersao})` : ''}.`, origem: 'relator', tipo: 'kit' });
-      } else {
-        if (r.sonda && anterior.sonda?.estado !== r.sonda.estado) {
-          ev({ chave: `sonda:${casa.id}:${r.quando}`, quando: agora, quem: 'kit-sonda', acao: r.sonda.estado === 'ok' ? 'Sonda: voltou ao normal.' : `Sonda: ${r.sonda.estado}`, origem: 'kit-sonda', tipo: 'sonda' });
+        // o que mudou desde o relato anterior
+        if (!anterior) {
+          ev({ chave: `primeiro:${casa.id}`, quando: agora, quem: 'relator', acao: `Primeiro relato recebido de ${casa.casa}${r.maquina.kitVersao ? ` (kit ${r.maquina.kitVersao})` : ''}.`, origem: 'relator', tipo: 'kit' });
+        } else {
+          if (r.sonda && anterior.sonda?.estado !== r.sonda.estado) {
+            ev({ chave: `sonda:${casa.id}:${r.quando}`, quando: agora, quem: 'kit-sonda', acao: r.sonda.estado === 'ok' ? 'Sonda: voltou ao normal.' : `Sonda: ${r.sonda.estado}`, origem: 'kit-sonda', tipo: 'sonda' });
+          }
+          if (r.maquina.kitVersao && anterior.maquina.kitVersao !== r.maquina.kitVersao) {
+            ev({ chave: `kit:${casa.id}:${r.maquina.kitVersao}`, quando: agora, quem: 'relator', acao: `Kit atualizado: ${anterior.maquina.kitVersao ?? '?'} → ${r.maquina.kitVersao}.`, origem: 'relator', tipo: 'kit' });
+          }
+          const antes = new Map(anterior.containers.map((c) => [c.nome, c.imagem]));
+          for (const c of r.containers) {
+            if (antes.get(c.nome) === c.imagem) continue;
+            ev({ chave: `deploy:${casa.id}:${c.nome}:${c.imagem}`, quando: agora, quem: 'docker', acao: `${c.nome}: imagem ${c.imagem}${antes.has(c.nome) ? ` (antes ${antes.get(c.nome)})` : ' (container novo)'}.`, origem: 'docker', tipo: 'deploy' });
+          }
+          const fAntes = anterior.verificar.filter((v) => v.n === 'fa').length;
+          const fAgora = r.verificar.filter((v) => v.n === 'fa').length;
+          if (fAntes !== fAgora) {
+            ev({ chave: `verificar:${casa.id}:${r.quando}`, quando: agora, quem: 'kit-verificar', acao: `kit-verificar: ${fAgora} falha(s), antes ${fAntes}.`, origem: 'kit-verificar', tipo: 'kit' });
+          }
+          const bAntes = anterior.backup?.ultimoOk ?? null;
+          if (r.backup?.ultimoOk && r.backup.ultimoOk !== bAntes) {
+            ev({ chave: `backup:${casa.id}:${r.backup.ultimoOk}`, quando: dataOu(r.backup.ultimoOk, agora), quem: 'kit-backup', acao: `Backup ok${r.backup.remoto ? ' (local e cópia fora)' : ' (só local)'}.`, origem: 'kit-backup', tipo: 'sonda' });
+          }
         }
-        if (r.maquina.kitVersao && anterior.maquina.kitVersao !== r.maquina.kitVersao) {
-          ev({ chave: `kit:${casa.id}:${r.maquina.kitVersao}`, quando: agora, quem: 'relator', acao: `Kit atualizado: ${anterior.maquina.kitVersao ?? '?'} → ${r.maquina.kitVersao}.`, origem: 'relator', tipo: 'kit' });
-        }
-        const antes = new Map(anterior.containers.map((c) => [c.nome, c.imagem]));
-        for (const c of r.containers) {
-          if (antes.get(c.nome) === c.imagem) continue;
-          ev({ chave: `deploy:${casa.id}:${c.nome}:${c.imagem}`, quando: agora, quem: 'docker', acao: `${c.nome}: imagem ${c.imagem}${antes.has(c.nome) ? ` (antes ${antes.get(c.nome)})` : ' (container novo)'}.`, origem: 'docker', tipo: 'deploy' });
-        }
-        const fAntes = anterior.verificar.filter((v) => v.n === 'fa').length;
-        const fAgora = r.verificar.filter((v) => v.n === 'fa').length;
-        if (fAntes !== fAgora) {
-          ev({ chave: `verificar:${casa.id}:${r.quando}`, quando: agora, quem: 'kit-verificar', acao: `kit-verificar: ${fAgora} falha(s), antes ${fAntes}.`, origem: 'kit-verificar', tipo: 'kit' });
-        }
-        const bAntes = anterior.backup?.ultimoOk ?? null;
-        if (r.backup?.ultimoOk && r.backup.ultimoOk !== bAntes) {
-          ev({ chave: `backup:${casa.id}:${r.backup.ultimoOk}`, quando: dataOu(r.backup.ultimoOk, agora), quem: 'kit-backup', acao: `Backup ok${r.backup.remoto ? ' (local e cópia fora)' : ' (só local)'}.`, origem: 'kit-backup', tipo: 'sonda' });
-        }
-      }
 
-      const { estado, texto } = estadoDaCasa(r, casa.etapa);
-      const m = r.maquina;
-      const maquina = [m.vcpu ? `${m.vcpu} vCPU` : null, m.memoriaGb ? `${m.memoriaGb} GB` : null, m.discoGb ? `${m.discoGb} GB` : null].filter(Boolean).join(' · ') || casa.maquina;
+        const { estado, texto } = estadoDaCasa(r, casa.etapa);
+        const m = r.maquina;
+        const maquina = [m.vcpu ? `${m.vcpu} vCPU` : null, m.memoriaGb ? `${m.memoriaGb} GB` : null, m.discoGb ? `${m.discoGb} GB` : null].filter(Boolean).join(' · ') || casa.maquina;
 
-      const ordens = await this.prisma.$transaction(async (tx) => {
         await tx.frotaCasa.update({
           where: { id: casa.id },
           data: {
@@ -446,7 +452,7 @@ export class FrotaService {
             etapa: casa.etapa === 'pre' ? 'preparar' : casa.etapa,
           },
         });
-        if (novas.length) await tx.frotaAcesso.createMany({ data: novas });
+        if (novas.length) await tx.frotaAcesso.createMany({ data: novas, skipDuplicates: true });
         for (const u of atualizacoes) await tx.frotaAcesso.update({ where: { id: u.id }, data: u.data });
         for (const [fp, quando] of ultimoLoginPorFp) {
           await tx.frotaAcesso.updateMany({ where: { casaId: casa.id, fingerprint: fp, OR: [{ ultimoLogin: null }, { ultimoLogin: { lt: quando } }] }, data: { ultimoLogin: quando } });
@@ -456,12 +462,13 @@ export class FrotaService {
         if (pendentes.length) {
           await tx.frotaOrdem.updateMany({ where: { id: { in: pendentes.map((p) => p.id) } }, data: { estado: 'entregue', entregueEm: agora } });
         }
-        return pendentes;
-      });
-      this.log.log(`relato de ${casa.casa}: ${estado} · ${eventos.length} evento(s) · ${ordens.length} ordem(ns) entregue(s)`);
+        return { estado, eventos: eventos.length, ordens: pendentes };
+      }, { timeout: 20_000 });
+      const { estado, ordens } = resultado;
+      this.log.log(`relato de ${autenticada.casa}: ${estado} · ${resultado.eventos} evento(s) · ${ordens.length} ordem(ns) entregue(s)`);
       return {
         ok: true,
-        casa: casa.casa,
+        casa: autenticada.casa,
         recebidoEm: agora.toISOString(),
         estado,
         ordens: ordens.map((o) => ({ id: o.id, tipo: o.tipo, parametros: (o.parametros as Record<string, unknown> | null) ?? {} })),

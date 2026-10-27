@@ -6535,7 +6535,8 @@ model FrotaAcesso {
   updatedAt   DateTime  @updatedAt
 
   @@index([orgId, casaId, estado])
-  @@index([orgId, casaId, fingerprint])
+  /// Uma linha por chave em cada casa: chave que volta reativa a mesma linha, nunca cria outra.
+  @@unique([orgId, casaId, fingerprint])
 }
 
 /// Só recebe linha nova. `chave` deduplica o que o relato repete (login, mudança de estado).
