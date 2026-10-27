@@ -1,4 +1,4 @@
-import { ConflictException, Inject, Injectable, Logger, NotFoundException, ServiceUnavailableException } from '@nestjs/common';
+import { ConflictException, Inject, Injectable, Logger, NotFoundException, Optional, ServiceUnavailableException } from '@nestjs/common';
 import type { MarketingIdeiaCard, Prisma } from '@prisma/client';
 import {
   FORMATOS_COM_REGUA,
@@ -7,6 +7,8 @@ import {
   pesoDaFonte,
   scoreDaIdeia,
   semTravessao,
+  chaveDaEstrategia,
+  type TriagemBase,
   type TriagemCard,
   type TriagemDecisaoInput,
   type TriagemPainel,
@@ -15,7 +17,9 @@ import {
 import { PrismaService } from '../prisma/prisma.service';
 import { LLM_PROVIDER, type LlmProvider } from '../llm/llm.provider';
 import { MarcaService } from '../pauta/marca.service';
-import { jsonDaIa, textoLimpo } from './leitura-de-link';
+import { MemoriaService } from '../memory/memoria.service';
+import { GoogleService } from '../google/google.service';
+import { jsonDaIa, lerMetaDoLink, textoLimpo } from './leitura-de-link';
 import { REGRAS_DE_PARTIDA, SYSTEM_TRIAGEM } from './prompts';
 
 /*
@@ -64,8 +68,8 @@ function paraTela(c: MarketingIdeiaCard, peso: number | null): TriagemCard {
   const como = (c.como && typeof c.como === 'object' ? c.como : {}) as Record<string, unknown>;
   return {
     id: c.id,
-    titulo: c.titulo,
-    resumo: c.resumo,
+    titulo: textoLimpo(c.titulo),
+    resumo: textoLimpo(c.resumo),
     porque: c.porque,
     como: {
       formato: String(como.formato ?? c.formatoSugerido),
@@ -81,6 +85,10 @@ function paraTela(c: MarketingIdeiaCard, peso: number | null): TriagemCard {
     fonte: c.fonteId || c.fonteNome ? { id: c.fonteId, nome: c.fonteNome || 'Fonte', peso: peso ?? 1 } : null,
     publicadoEm: c.publicadoEm?.toISOString() ?? null,
     postId: c.postId,
+    origem: c.notaId ? 'salvo' : 'fonte',
+    motivo: c.motivo,
+    comentario: c.comentario,
+    decididaEm: c.decididaEm?.toISOString() ?? null,
   };
 }
 
@@ -94,6 +102,8 @@ export class TriagemService {
     private readonly prisma: PrismaService,
     private readonly marcas: MarcaService,
     @Inject(LLM_PROVIDER) private readonly llm: LlmProvider,
+    @Optional() private readonly memoria?: MemoriaService,
+    @Optional() private readonly google?: GoogleService,
   ) {}
 
   async painel(orgId: string): Promise<TriagemPainel> {
@@ -126,11 +136,11 @@ export class TriagemService {
   }
 
   async decidir(orgId: string, id: string, por: string, entrada: TriagemDecisaoInput): Promise<{ card: TriagemCard; postId: string | null }> {
-    return this.prisma.$transaction(async (tx) => {
+    const r = await this.prisma.$transaction(async (tx) => {
       const c = await tx.marketingIdeiaCard.findFirst({ where: { id, orgId } });
       if (!c) throw new NotFoundException('Card não encontrado.');
       if (c.status !== 'nova') throw new ConflictException('Esse card já foi decidido. Recarregue a página.');
-      const data: Prisma.MarketingIdeiaCardUpdateInput = { status: entrada.decisao, decididaEm: new Date(), decididaPor: por };
+      const data: Prisma.MarketingIdeiaCardUpdateInput = { status: entrada.decisao, decididaEm: new Date(), decididaPor: por, comentario: entrada.comentario || null };
       let postId: string | null = null;
       if (entrada.decisao === 'recusada') data.motivo = entrada.motivo || null;
       else {
@@ -162,6 +172,20 @@ export class TriagemService {
       const salvo = await tx.marketingIdeiaCard.update({ where: { id }, data });
       return { card: paraTela(salvo, null), postId };
     });
+    // O algoritmo no Obsidian: regravado a cada decisão comentada (ou recusada com motivo).
+    if (entrada.comentario || entrada.motivo) void this.gravarAlgoritmo(orgId);
+    return r;
+  }
+
+  /** Base: o que foi aprovado (das fontes e o que você salvou na Memória), mais recente primeiro. */
+  async base(orgId: string, q: string, origem: string): Promise<TriagemBase> {
+    const where: Prisma.MarketingIdeiaCardWhereInput = { orgId, status: 'aprovada' };
+    const busca = lim(q, 100);
+    if (busca) where.OR = [{ titulo: { contains: busca, mode: 'insensitive' } }, { resumo: { contains: busca, mode: 'insensitive' } }, { url: { contains: busca, mode: 'insensitive' } }];
+    const todos = await this.prisma.marketingIdeiaCard.findMany({ where, orderBy: { decididaEm: 'desc' }, take: 300 });
+    const cards = todos.map((c) => paraTela(c, null));
+    const contagem = { fonte: cards.filter((c) => c.origem === 'fonte').length, salvo: cards.filter((c) => c.origem === 'salvo').length };
+    return { cards: origem === 'fonte' || origem === 'salvo' ? cards.filter((c) => c.origem === origem) : cards, contagem };
   }
 
   /** Desfaz a última decisão. O post criado vai para Arquivado (a Máquina não apaga post). */
@@ -178,7 +202,7 @@ export class TriagemService {
           await tx.marketingPost.update({ where: { id: p.id }, data: { etapa: 'arquivado', hist: hist as Prisma.InputJsonValue } });
         }
       }
-      await tx.marketingIdeiaCard.update({ where: { id }, data: { status: 'nova', motivo: null, decididaEm: null, decididaPor: null, postId: null } });
+      await tx.marketingIdeiaCard.update({ where: { id }, data: { status: 'nova', motivo: null, comentario: null, decididaEm: null, decididaPor: null, postId: null } });
     });
     return { ok: true };
   }
@@ -196,6 +220,11 @@ export class TriagemService {
       if (p && p.etapa !== 'ideia') return null;
     }
     return c;
+  }
+
+  /** O peso de cada fonte (sobe quando aprova, desce quando recusa), para a tela Fontes. */
+  pesosDasFontes(orgId: string): Promise<Record<string, number>> {
+    return this.pesos(orgId);
   }
 
   /** Peso de cada fonte pelas decisões dos cards dela. */
@@ -243,7 +272,7 @@ export class TriagemService {
       titulo: textoLimpo(c.titulo ?? '') || c.url || 'Sem título',
       texto: [c.nota, bruto(c.bruto, 'descricao'), bruto(c.bruto, 'description'), bruto(c.bruto, 'resumo'), bruto(c.bruto, 'texto')].filter(Boolean).map((t) => textoLimpo(t as string)).join('\n').slice(0, 1200),
       url: c.url,
-      imagemUrl: bruto(c.bruto, 'imagem') || bruto(c.bruto, 'image') || null,
+      imagemUrl: ['imagem', 'image', 'displayUrl', 'thumbnailUrl', 'imageUrl', 'coverUrl'].map((k) => bruto(c.bruto, k)).find((u) => /^https?:\/\//.test(u)) || null,
       publicadoEm: (() => {
         const p = bruto(c.bruto, 'publicadoEm') || bruto(c.bruto, 'isoDate') || bruto(c.bruto, 'pubDate');
         const d = p ? new Date(p) : c.capturadoEm;
@@ -273,8 +302,10 @@ export class TriagemService {
     const pesos = await this.pesos(orgId);
     const resultado = { lidos: lista.length, cards: 0, descartados: 0, falharam: 0 };
     if (!lista.length) return resultado;
-    const [marca, reguas, aprovadas, recusadas] = await Promise.all([
+    const [marca, estrategia, algoritmo, reguas, aprovadas, recusadas] = await Promise.all([
       this.marcas.bloco(orgId).catch(() => ''),
+      this.estrategiaDoMes(orgId),
+      this.prisma.marketingIdeiaCard.findMany({ where: { orgId, comentario: { not: null } }, orderBy: { decididaEm: 'desc' }, take: 40, select: { titulo: true, status: true, motivo: true, comentario: true } }),
       this.prisma.marketingRegua.findMany({ where: { orgId }, select: { formato: true, regras: true } }),
       this.prisma.marketingIdeiaCard.findMany({ where: { orgId, status: 'aprovada' }, orderBy: { decididaEm: 'desc' }, take: 20, select: { titulo: true, formatoSugerido: true } }),
       this.prisma.marketingIdeiaCard.findMany({ where: { orgId, status: 'recusada' }, orderBy: { decididaEm: 'desc' }, take: 20, select: { titulo: true, motivo: true } }),
@@ -282,9 +313,10 @@ export class TriagemService {
     const regras = FORMATOS.map((f) => `${f}: ${(reguas.find((r) => r.formato === f)?.regras || REGRAS_DE_PARTIDA[f] || '').slice(0, 700)}`).join('\n');
     for (let i = 0; i < lista.length; i += LOTE) {
       const lote = lista.slice(i, i + LOTE);
+      await Promise.all(lote.map((m) => this.completarComAPagina(m)));
       let itens: SaidaDoCard[];
       try {
-        itens = simulada() ? this.simular(lote) : await this.perguntar(orgId, marca, regras, aprovadas, recusadas, lote);
+        itens = simulada() ? this.simular(lote) : await this.perguntar(orgId, { marca, estrategia, regras, aprovadas, recusadas, algoritmo }, lote);
       } catch (e) {
         this.log.warn(`lote da triagem: ${e instanceof Error ? e.message : e}`);
         resultado.falharam += lote.length;
@@ -335,23 +367,93 @@ export class TriagemService {
 
   private async perguntar(
     orgId: string,
-    marca: string,
-    regras: string,
-    aprovadas: { titulo: string; formatoSugerido: string }[],
-    recusadas: { titulo: string; motivo: string | null }[],
+    ctx: {
+      marca: string;
+      estrategia: string;
+      regras: string;
+      aprovadas: { titulo: string; formatoSugerido: string }[];
+      recusadas: { titulo: string; motivo: string | null }[];
+      algoritmo: { titulo: string; status: string; motivo: string | null; comentario: string | null }[];
+    },
     lote: Materia[],
   ): Promise<SaidaDoCard[]> {
+    const { marca, estrategia, regras, aprovadas, recusadas, algoritmo } = ctx;
     const user = [
-      '## Marca', marca || '(marca ainda sem descrição)',
+      '## A ROOT (brandbook e pilares aprovados)', marca || '(marca ainda sem descrição)',
+      estrategia ? '## Estratégia do mês' : '', estrategia ? estrategia.slice(0, 3000) : '',
+      '## O algoritmo do Lucas: o que ele explicou ao aprovar ou recusar (siga isto acima de tudo)',
+      algoritmo.length
+        ? algoritmo.map((a) => `- ${a.status === 'aprovada' ? 'APROVOU' : 'RECUSOU'} "${a.titulo}"${a.motivo ? ` (${a.motivo})` : ''}: ${a.comentario}`).join('\n')
+        : '(sem comentários ainda)',
       '## Réguas dos formatos', regras,
       '## Últimas pautas aprovadas', aprovadas.length ? aprovadas.map((a) => `- ${a.titulo} (${a.formatoSugerido})`).join('\n') : '(nenhuma ainda)',
       '## Últimas pautas recusadas e o motivo', recusadas.length ? recusadas.map((r) => `- ${r.titulo} → motivo: ${r.motivo || 'sem motivo informado'}`).join('\n') : '(nenhuma ainda)',
       `## Itens para avaliar (${lote.length})`,
       lote.map((m, idx) => [`[${idx}] Fonte: ${m.fonteNome}${m.publicadoEm ? ` · ${m.publicadoEm.toISOString().slice(0, 10)}` : ''}`, `Título: ${lim(m.titulo, 300)}`, m.url && `Link: ${m.url}`, m.texto && `Texto: ${lim(m.texto, 900)}`].filter(Boolean).join('\n')).join('\n\n'),
-    ].join('\n\n');
+    ].filter(Boolean).join('\n\n');
     const saida = await this.llm.complete({ funcao: 'CT-21', system: SYSTEM_TRIAGEM, user, orgId, maxTokens: 6000 });
     const j = jsonDaIa<{ items?: SaidaDoCard[] }>(saida);
     return Array.isArray(j.items) ? j.items : [];
+  }
+
+  private async estrategiaDoMes(orgId: string): Promise<string> {
+    if (!this.memoria) return '';
+    try {
+      const agora = new Date();
+      const mes = `${agora.getUTCFullYear()}-${String(agora.getUTCMonth() + 1).padStart(2, '0')}`;
+      const n = await this.memoria.porChave(orgId, chaveDaEstrategia(mes));
+      return n && !n.arquivadoEm ? n.body : '';
+    } catch {
+      return '';
+    }
+  }
+
+  /** Item sem imagem ou com pouco texto: lê a página do link (og:image e descrição). Nunca falha. */
+  private async completarComAPagina(m: Materia): Promise<void> {
+    if (!m.url || (m.imagemUrl && m.texto.length > 120)) return;
+    try {
+      const meta = await lerMetaDoLink(m.url);
+      if (!m.imagemUrl && meta.imagem) m.imagemUrl = meta.imagem;
+      if (m.texto.length < 120 && meta.descricao) m.texto = `${m.texto}\n${textoLimpo(meta.descricao)}`.trim().slice(0, 1200);
+    } catch {
+      /* página fora do ar: segue com o que tem */
+    }
+  }
+
+  /**
+   * O ALGORITMO NO OBSIDIAN: cada decisão comentada (ou recusada com motivo) vira uma linha em
+   * 40-marca-e-conteudo/Memória/Algoritmo/Decisões da triagem.md, no Drive Root. O arquivo é
+   * regravado inteiro a partir do banco, mais recente primeiro. É o que a IA lê nas próximas
+   * triagens e o que a equipe usa para ajustar os prompts e as réguas.
+   */
+  private async gravarAlgoritmo(orgId: string): Promise<void> {
+    if (!this.google || process.env.MEMORIA_DRIVE_DESLIGADO === '1') return;
+    try {
+      const linhas = await this.prisma.marketingIdeiaCard.findMany({
+        where: { orgId, OR: [{ comentario: { not: null } }, { motivo: { not: null } }] },
+        orderBy: { decididaEm: 'desc' },
+        take: 500,
+        select: { titulo: true, status: true, motivo: true, comentario: true, decididaEm: true, fonteNome: true, url: true },
+      });
+      const corpo = [
+        '---', 'titulo: "Decisões da triagem"', 'tipo: nota', 'pasta: Algoritmo', 'tags: ["algoritmo", "triagem"]', `atualizado_em: ${new Date().toISOString()}`, '---', '',
+        '# Decisões da triagem', '',
+        'O que foi aprovado ou recusado em Marketing › Ideias de conteúdo, e por quê. A IA lê esta lista antes de montar os próximos cards.', '',
+        ...linhas.map((l) => [
+          `- **${l.status === 'aprovada' ? 'Aprovou' : 'Recusou'}** · ${l.decididaEm?.toISOString().slice(0, 10) ?? ''} · ${l.titulo}${l.motivo ? ` · motivo: ${l.motivo}` : ''}`,
+          l.comentario ? `  - ${l.comentario.replace(/\s*\n+\s*/g, ' ')}` : '',
+          l.url ? `  - fonte: ${l.fonteNome} ${l.url}` : '',
+        ].filter(Boolean).join('\n')),
+      ].join('\n') + '\n';
+      let pai = (process.env.MEMORIA_DRIVE_RAIZ_ID || '1WqCqI0gOxvVEhTPUQktATvj1lH1pOPSt').trim();
+      for (const nome of ['40-marca-e-conteudo', 'Memória', 'Algoritmo']) {
+        const achada = (await this.google.filhosDaPasta(orgId, pai, { nome, soPastas: true }))[0];
+        pai = achada?.id ?? (await this.google.criarPasta(orgId, pai, nome)).id;
+      }
+      await this.google.gravarArquivoNoDrive(orgId, { folderId: pai, nome: 'Decisões da triagem.md', conteudo: corpo, mimeType: 'text/markdown' });
+    } catch (e) {
+      this.log.warn(`algoritmo no Drive: ${e instanceof Error ? e.message : e}`);
+    }
   }
 
   /** Resposta simulada realista (MARKETING_IA_SIMULADA=1): descarta promoção, alterna formato. */

@@ -7,8 +7,8 @@ import { NAV } from './nav.js';
  * permissão e o módulo continuam os do item, e a aba some para quem não pode vê-la.
  */
 export const ABAS_DO_MARKETING: Record<string, readonly string[]> = {
-  'marketing-triagem': ['marketing-triagem', 'maquina-banco', 'marketing-estrategia', 'referencias', 'marketing-ideias'],
-  'maquina-producao': ['maquina-producao', 'maquina-agendar', 'maquina-calendario', 'marketing-formatos', 'pauta'],
+  'marketing-triagem': ['marketing-triagem', 'marketing-base', 'marketing-fontes', 'referencias', 'marketing-estrategia', 'marketing-ideias'],
+  'maquina-producao': ['maquina-producao', 'maquina-banco', 'maquina-agendar', 'maquina-calendario', 'marketing-formatos', 'pauta'],
   'marketing-performance': ['marketing-performance', 'maquina-analise', 'marketing-relatorio', 'instagram'],
 };
 
@@ -17,7 +17,7 @@ const ROTULO_DA_ABA: Record<string, string> = {
   'marketing-triagem': 'Para aprovar',
   'maquina-producao': 'Quadro',
   'marketing-performance': 'Painel',
-  referencias: 'Fontes e referências',
+  referencias: 'Referências',
 };
 
 export interface AbaDoMarketing {

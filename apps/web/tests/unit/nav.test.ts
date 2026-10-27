@@ -243,11 +243,13 @@ const MENU_FINAL: LinhaDoMenu[] = [
   ['marketing', 'Início', '/marketing', 'pauta.ver', 'conteudo', 'pauta', null, false],
   ['marketing-memoria', 'Memória', '/marketing/memoria', 'pauta.ver', 'conteudo', 'pauta', null, false],
   ['marketing-triagem', 'Ideias de conteúdo', '/marketing/triagem', 'pauta.ver', 'conteudo', 'pauta', null, false],
-  ['maquina-banco', 'Banco de ideias', '/marketing/banco', 'pauta.ver', 'conteudo', 'pauta', 'marketing-triagem', true],
+  ['marketing-base', 'Base', '/marketing/base', 'pauta.ver', 'conteudo', 'pauta', 'marketing-triagem', true],
+  ['marketing-fontes', 'Fontes', '/marketing/fontes', 'pauta.ver', 'conteudo', 'pauta', 'marketing-triagem', true],
   ['marketing-estrategia', 'Estratégia do mês', '/marketing/estrategia', 'pauta.ver', 'conteudo', 'pauta', 'marketing-triagem', true],
   ['referencias', 'Referências', '/referencias', 'pauta.ver', 'conteudo', 'pauta', 'marketing-triagem', true],
   ['marketing-ideias', 'Ideias da pauta', '/marketing/ideias', 'pauta.ver', 'conteudo', 'pauta', 'marketing-triagem', true],
   ['maquina-producao', 'Produção', '/marketing/producao', 'pauta.ver', 'conteudo', 'pauta', null, false],
+  ['maquina-banco', 'Banco de ideias', '/marketing/banco', 'pauta.ver', 'conteudo', 'pauta', 'maquina-producao', true],
   ['maquina-agendar', 'Agendar', '/marketing/agendar', 'pauta.ver', 'conteudo', 'pauta', 'maquina-producao', true],
   ['maquina-calendario', 'Calendário', '/marketing/calendario', 'pauta.ver', 'conteudo', 'pauta', 'maquina-producao', true],
   ['marketing-formatos', 'Formatos', '/marketing/formatos', 'pauta.ver', 'conteudo', 'pauta', 'maquina-producao', true],
@@ -322,6 +324,8 @@ const OCULTOS_E_DESTINO: Record<string, string | null> = {
   // 26/10/2026 (aba Marketing no jeito do ROOT Estúdio): abas das seções Ideias, Produção e
   // Performance. Não são absorvidas: cada uma segue sendo a dona da rota, aberta pela aba.
   'maquina-banco': null,
+  'marketing-base': null,
+  'marketing-fontes': null,
   'marketing-estrategia': null,
   referencias: null,
   'marketing-ideias': null,
@@ -564,8 +568,8 @@ describe('o bloco Marketing (MK7)', () => {
     const visiveis = NAV.filter((n) => n.secao === 'conteudo' && !n.oculto).map((n) => n.label);
     expect(visiveis).toEqual(['Início', 'Memória', 'Ideias de conteúdo', 'Produção', 'Performance', 'Página de links', 'Campanhas', 'Eventos do site', 'Tarefas']);
     const abas: Record<string, string[]> = {
-      'marketing-triagem': ['maquina-banco', 'marketing-estrategia', 'referencias', 'marketing-ideias'],
-      'maquina-producao': ['maquina-agendar', 'maquina-calendario', 'marketing-formatos', 'pauta'],
+      'marketing-triagem': ['marketing-base', 'marketing-fontes', 'referencias', 'marketing-estrategia', 'marketing-ideias'],
+      'maquina-producao': ['maquina-banco', 'maquina-agendar', 'maquina-calendario', 'marketing-formatos', 'pauta'],
       'marketing-performance': ['maquina-analise', 'marketing-relatorio', 'instagram'],
     };
     for (const [pai, filhos] of Object.entries(abas)) for (const k of filhos) {
@@ -860,11 +864,11 @@ describe('organização da navegação (ROOT-07 e versão final)', () => {
     const trabalho = navPorSecao(todas).find((g) => g.secao.key === 'trabalho')!;
     expect(trabalho.itens.map((i) => i.label)).toEqual(['Tarefas', 'Implantação de clientes', 'Atas']);
     // As contagens do menu depois da noite de 20/10/2026.
-    // 26/10/2026 (aba Marketing no jeito do Estúdio): 43 visíveis e 23 ocultos (11 viraram aba).
+    // 26/10/2026 (aba Marketing no jeito do Estúdio): 43 visíveis e 25 ocultos (13 são abas).
     expect(NAV.filter((n) => !n.oculto)).toHaveLength(43);
     // 13 desde a produção 22B: o Perfil (I6) e a Lixeira (I2) entraram ocultos (a entrada é a engrenagem do topo).
     // Layout 26/10: 12 e 11, `/conteudo` (Temas do ClickUp) aposentado, com redirect para o Marketing.
-    expect(NAV.filter((n) => n.oculto)).toHaveLength(23);
+    expect(NAV.filter((n) => n.oculto)).toHaveLength(25);
     expect(ROTAS_ABSORVIDAS).toHaveLength(11);
   });
 

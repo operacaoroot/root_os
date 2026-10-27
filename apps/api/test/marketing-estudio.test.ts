@@ -118,7 +118,7 @@ describe('Abas do Marketing', () => {
   const todas = ['pauta.ver', 'instagram.ver', 'tarefas.ver'];
   it('a aba ativa e as irmãs da seção, filtradas pela permissão', () => {
     const a = abasDoMarketing('/marketing/agendar', todas, ['pauta']);
-    expect(a.map((x) => x.label)).toEqual(['Quadro', 'Agendar', 'Calendário', 'Formatos', 'Pauta (episódios)']);
+    expect(a.map((x) => x.label)).toEqual(['Quadro', 'Banco de ideias', 'Agendar', 'Calendário', 'Formatos', 'Pauta (episódios)']);
     expect(a.find((x) => x.ativa)?.key).toBe('maquina-agendar');
     expect(abasDoMarketing('/marketing/performance', ['pauta.ver'], ['pauta']).map((x) => x.key)).toEqual(['marketing-performance', 'maquina-analise', 'marketing-relatorio']);
     expect(abasDoMarketing('/bio', todas)).toEqual([]);

@@ -38,6 +38,7 @@ export default function TriagemPage() {
   const [montando, setMontando] = useState(false);
   const [ocupado, setOcupado] = useState(false);
   const [edicao, setEdicao] = useState<{ titulo: string; resumo: string; gancho: string; formato: string } | null>(null);
+  const [comentario, setComentario] = useState('');
   const [ref, setRef] = useState({ url: '', nota: '' });
   const [enviando, setEnviando] = useState(false);
 
@@ -58,6 +59,7 @@ export default function TriagemPage() {
   const card: TriagemCard | undefined = painel?.cards[0];
   useEffect(() => {
     setEdicao(card ? { titulo: card.titulo, resumo: card.resumo, gancho: card.como.gancho, formato: card.como.formato } : null);
+    setComentario('');
   }, [card?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const decidir = useCallback(
@@ -65,7 +67,7 @@ export default function TriagemPage() {
       if (!card || ocupado) return;
       setOcupado(true);
       try {
-        const corpo = decisao === 'aprovada' ? { decisao, titulo: edicao?.titulo, resumo: edicao?.resumo, gancho: edicao?.gancho, formato: edicao?.formato } : { decisao, motivo };
+        const corpo = decisao === 'aprovada' ? { decisao, titulo: edicao?.titulo, resumo: edicao?.resumo, gancho: edicao?.gancho, formato: edicao?.formato, comentario: comentario.trim() || undefined } : { decisao, motivo, comentario: comentario.trim() || undefined };
         await apiPost(`/marketing/estudio/triagem/${card.id}/decisao`, corpo, token);
         setAviso(decisao === 'aprovada' ? 'Aprovada. Está no Banco de ideias.' : 'Recusada. A fonte pesa um pouco menos na próxima.');
         await carregar();
@@ -75,7 +77,7 @@ export default function TriagemPage() {
         setOcupado(false);
       }
     },
-    [card, ocupado, edicao, token, carregar],
+    [card, ocupado, edicao, comentario, token, carregar],
   );
 
   useEffect(() => {
@@ -277,6 +279,10 @@ export default function TriagemPage() {
             </article>
             {editavel && (
               <div className="ideias-actions">
+                <label className="ideias-label" style={{ margin: '0 0 12px' }}>
+                  Seu comentário (ensina a IA e vai para o Obsidian)
+                  <textarea className="ideias-input" rows={2} maxLength={2000} value={comentario} onChange={(e) => setComentario(e.target.value)} placeholder="Por que aprova ou recusa? Ex.: notícia de game não tem a ver com dono de PME." />
+                </label>
                 <div className="ideias-buttons">
                   <button className="ideias-btn ideias-no" title="Recusar (←)" disabled={ocupado} onClick={() => void decidir('recusada')}>
                     <span aria-hidden="true">✕</span> Recusar

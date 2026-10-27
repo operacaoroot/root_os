@@ -6516,6 +6516,8 @@ model MarketingIdeiaCard {
   score           Float     @default(0)
   status          String    @default("nova")
   motivo          String?
+  /// Por que aprovou ou recusou, nas palavras de quem decidiu. Vai para o Obsidian e para o prompt.
+  comentario      String?
   decididaEm      DateTime?
   decididaPor     String?
   postId          String?

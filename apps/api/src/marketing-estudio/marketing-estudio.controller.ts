@@ -16,6 +16,7 @@ import { CurrentUser, JwtUser } from '../auth/current-user.decorator';
 import { MemoriaDoMarketingService } from './memoria-do-marketing.service';
 import { TriagemService } from './triagem.service';
 import { ReguasService } from './reguas.service';
+import { detectarFonte } from './deteccao-de-fonte';
 
 // Marketing no jeito do ROOT Estúdio (26/10/2026): Memória, Triagem de ideias e Formatos.
 // Mesmas permissões da Máquina: ver = pauta.ver, mexer = pauta.editar. Rotas fixas antes das com `:id`.
@@ -90,6 +91,27 @@ export class MarketingEstudioController {
   @RequirePermissions('pauta.ver')
   triagemPainel(@CurrentUser() u: JwtUser) {
     return this.triagem.painel(u.orgId);
+  }
+
+  // ---------- Fontes (o cadastro é o da Pauta: /pauta/fontes) ----------
+
+  @Post('fontes/detectar')
+  @HttpCode(200)
+  @RequirePermissions('pauta.editar')
+  detectar(@Body() body: { url?: string; nome?: string }) {
+    return detectarFonte(String(body?.url ?? ''), body?.nome ? String(body.nome).slice(0, 120) : undefined);
+  }
+
+  @Get('fontes/pesos')
+  @RequirePermissions('pauta.ver')
+  pesos(@CurrentUser() u: JwtUser) {
+    return this.triagem.pesosDasFontes(u.orgId);
+  }
+
+  @Get('triagem/base')
+  @RequirePermissions('pauta.ver')
+  base(@CurrentUser() u: JwtUser, @Query('q') q?: string, @Query('origem') origem?: string) {
+    return this.triagem.base(u.orgId, q ?? '', origem ?? '');
   }
 
   @Post('triagem/montar')

@@ -242,6 +242,16 @@ export interface TriagemCard {
   fonte: { id: string | null; nome: string; peso: number } | null;
   publicadoEm: string | null;
   postId: string | null;
+  /** salvo = veio da Memória (você guardou); fonte = o robô coletou. */
+  origem: 'fonte' | 'salvo';
+  motivo: string | null;
+  comentario: string | null;
+  decididaEm: string | null;
+}
+
+export interface TriagemBase {
+  cards: TriagemCard[];
+  contagem: { fonte: number; salvo: number };
 }
 
 export interface TriagemPainel {
@@ -259,6 +269,8 @@ export const TriagemDecisaoSchema = z.object({
   titulo: z.string().trim().max(200).optional(),
   gancho: z.string().trim().max(500).optional(),
   resumo: z.string().trim().max(1000).optional(),
+  /** Por que aprovou ou recusou. Vira o "algoritmo": vai para o Obsidian e para as próximas triagens. */
+  comentario: z.string().trim().max(2000).optional(),
   formato: z.string().trim().max(40).optional(),
 });
 export type TriagemDecisaoInput = z.infer<typeof TriagemDecisaoSchema>;
