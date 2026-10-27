@@ -41,7 +41,7 @@ type Referencia = ReguaDoFormato['referencias'][number];
 @Injectable()
 export class ReguasService {
   private readonly log = new Logger('ReguasDoMarketing');
-  private readonly raizNoDrive = (process.env.MEMORIA_DRIVE_RAIZ_ID ?? RAIZ_PADRAO_NO_DRIVE).trim();
+  private readonly raizNoDrive = (process.env.MEMORIA_DRIVE_RAIZ_ID || RAIZ_PADRAO_NO_DRIVE).trim();
 
   constructor(
     private readonly prisma: PrismaService,

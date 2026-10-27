@@ -83,7 +83,7 @@ export class MemoriaDoMarketingService implements OnModuleInit {
   private readonly log = new Logger('MemoriaDoMarketing');
   private readonly jid = (process.env.MEMORIA_GRUPO_JID ?? '').trim();
   private readonly orgDoGrupo = (process.env.MEMORIA_GRUPO_ORG_ID ?? '').trim();
-  private readonly raizNoDrive = (process.env.MEMORIA_DRIVE_RAIZ_ID ?? RAIZ_PADRAO_NO_DRIVE).trim();
+  private readonly raizNoDrive = (process.env.MEMORIA_DRIVE_RAIZ_ID || RAIZ_PADRAO_NO_DRIVE).trim();
   /** Uma nota por vez neste processo: Apify, transcrição e IA custam e demoram. */
   private fila: Promise<unknown> = Promise.resolve();
   private readonly pastasNoDrive = new Map<string, string>();
