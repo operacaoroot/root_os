@@ -16,6 +16,7 @@ import { CurrentUser, JwtUser } from '../auth/current-user.decorator';
 import { MemoriaDoMarketingService } from './memoria-do-marketing.service';
 import { TriagemService } from './triagem.service';
 import { ReguasService } from './reguas.service';
+import { ImportacaoDaComunidadeService } from './importacao-da-comunidade.service';
 import { detectarFonte } from './deteccao-de-fonte';
 
 // Marketing no jeito do ROOT Estúdio (26/10/2026): Memória, Triagem de ideias e Formatos.
@@ -27,6 +28,7 @@ export class MarketingEstudioController {
     private readonly memoria: MemoriaDoMarketingService,
     private readonly triagem: TriagemService,
     private readonly reguas: ReguasService,
+    private readonly importacao: ImportacaoDaComunidadeService,
   ) {}
 
   // ---------- Memória ----------
@@ -185,7 +187,10 @@ export class MarketingEstudioController {
   @Post('comunidade/importar')
   @HttpCode(200)
   @RequirePermissions('pauta.editar')
-  importar(@CurrentUser() u: JwtUser) {
-    return this.reguas.importarComunidade(u.orgId, u.name ?? u.sub);
+  async importar(@CurrentUser() u: JwtUser) {
+    const r = await this.reguas.importarComunidade(u.orgId, u.name ?? u.sub);
+    // A primeira importação pela tela liga a de hora em hora (só cria se faltar; pausa em /rotinas).
+    await this.importacao.garantirRotina(u.orgId);
+    return r;
   }
 }
