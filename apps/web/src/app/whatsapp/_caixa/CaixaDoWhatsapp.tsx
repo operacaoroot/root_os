@@ -6,8 +6,11 @@ import {
   ROTULO_DO_FILTRO,
   TETO_DA_RESPOSTA_DA_CAIXA,
   formatarWhatsappBr,
+  fraseDoTetoDaMidia,
   iniciaisDaConversa,
   rotuloDoTipoDeMensagem,
+  tetoDaMidiaParaEnviar,
+  tipoDaMidiaParaEnviar,
   type ConversaAberta,
   type ConversaDaCaixa,
   type FiltroDaCaixa,
@@ -17,13 +20,12 @@ import {
 } from '@mktos/shared';
 
 import { VinculoDaConversa } from '@/components/whatsapp/VinculoDaConversa';
-import { ErroDaApi, apiGet, apiPost } from '@/lib/api';
+import { ErroDaApi, apiFormulario, apiGet, apiPost } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 import {
   CHIPS_DA_CAIXA,
   RELEITURA_DA_CAIXA_MS,
   diaDoInstante,
-  duracaoLegivel,
   ehMidia,
   enderecoDaCaixa,
   estadoDoEndereco,
@@ -43,6 +45,7 @@ import {
 } from '@/lib/caixa-whatsapp';
 
 import { BOTAO, BOTAO_PRIMARIO, Chip, ErroDaAcao, FOCO, INPUT } from '../../comercial/_ui';
+import { MidiaDoBalao } from './MidiaDoBalao';
 
 /*
  * A CAIXA DE WHATSAPP (produção 22C, W2, 22/10/2026).
@@ -147,18 +150,6 @@ function ItemDaLista({ conversa, ativa, onAbrir }: { conversa: ConversaDaCaixa; 
   );
 }
 
-function CartaoDaMidia({ m }: { m: MensagemDaCaixa }) {
-  const partes = [rotuloDoTipoDeMensagem(m.tipo), m.midia?.nome, m.midia?.mime, tamanhoLegivel(m.midia?.tamanho), duracaoLegivel(m.midia?.segundos)].filter(
-    (x): x is string => !!x,
-  );
-  return (
-    <span data-testid={`caixa-midia-${m.id}`} className="block rounded border border-dashed border-border bg-bg/40 px-2 py-1.5 text-[12px]">
-      <span className="block break-words">{partes.join(' · ')}</span>
-      <span className="block font-os-mono text-[10px] uppercase tracking-[0.1em] text-muted">mídia não baixada</span>
-    </span>
-  );
-}
-
 function Balao({ m, grupo, continua = false }: { m: MensagemDaCaixa; grupo: boolean; continua?: boolean }) {
   if (m.tipo === 'protocolo') {
     return (
@@ -201,7 +192,8 @@ function Balao({ m, grupo, continua = false }: { m: MensagemDaCaixa; grupo: bool
           <p className="wz-meta text-[13px]">reagiu com {m.texto?.trim() || 'uma reação'}{hora}</p>
         ) : (
           <>
-            {ehMidia(m.tipo) && <CartaoDaMidia m={m} />}
+            {/* Layout 27/10: o arquivo de verdade (foto, áudio, vídeo, documento), no lugar do cartão "mídia não baixada". */}
+            {ehMidia(m.tipo) && <MidiaDoBalao m={m} />}
             {m.texto?.trim() ? (
               <p className={`whitespace-pre-wrap break-words [overflow-wrap:anywhere] ${ehMidia(m.tipo) ? 'mt-1' : ''}`}>{m.texto}{hora}</p>
             ) : (
@@ -279,6 +271,12 @@ export function CaixaDoWhatsapp() {
   const [texto, setTexto] = useState('');
   const [enviando, setEnviando] = useState(false);
   const [erroDoEnvio, setErroDoEnvio] = useState<unknown>(null);
+  // Layout 27/10: o arquivo escolhido para mandar (clipe, colar imagem ou arrastar para a conversa); o texto vira a legenda.
+  const [anexo, setAnexo] = useState<File | null>(null);
+  const [previaDoAnexo, setPreviaDoAnexo] = useState<string | null>(null);
+  const [erroDoAnexo, setErroDoAnexo] = useState<string | null>(null);
+  const [arrastando, setArrastando] = useState(false);
+  const seletorDeArquivo = useRef<HTMLInputElement | null>(null);
   const [arquivando, setArquivando] = useState(false);
   const [erroDaAcao, setErroDaAcao] = useState<unknown>(null);
 
@@ -393,6 +391,8 @@ export function CaixaDoWhatsapp() {
     setErroDoEnvio(null);
     setErroDaAcao(null);
     setTexto('');
+    setAnexo(null);
+    setErroDoAnexo(null);
     if (!ready || !token || !estado.conversa) return;
     const id = estado.conversa;
     void carregarConversa(id, true);
@@ -437,15 +437,61 @@ export function CaixaDoWhatsapp() {
 
   // ------------------------------------------------------------------- ações
 
+  // Layout 27/10: a miniatura da foto escolhida, solta quando o arquivo sai ou muda.
+  useEffect(() => {
+    if (!anexo || !anexo.type.startsWith('image/')) {
+      setPreviaDoAnexo(null);
+      return;
+    }
+    const url = URL.createObjectURL(anexo);
+    setPreviaDoAnexo(url);
+    return () => URL.revokeObjectURL(url);
+  }, [anexo]);
+
+  /** Layout 27/10: confere o teto do WhatsApp antes de aceitar o arquivo (a API confere de novo). */
+  function escolherArquivo(f: File | null | undefined) {
+    if (!f) return;
+    const tipo = tipoDaMidiaParaEnviar(f.type);
+    if (!f.size) {
+      setErroDoAnexo('O arquivo está vazio.');
+      return;
+    }
+    if (f.size > tetoDaMidiaParaEnviar(tipo)) {
+      setErroDoAnexo(fraseDoTetoDaMidia(tipo));
+      return;
+    }
+    setErroDoAnexo(null);
+    setErroDoEnvio(null);
+    setAnexo(f);
+  }
+
+  function tirarAnexo() {
+    setAnexo(null);
+    setErroDoAnexo(null);
+    if (seletorDeArquivo.current) seletorDeArquivo.current.value = '';
+  }
+
   async function responder() {
     const id = estado.conversa;
-    if (!token || !id || !aberta || enviando || !textoEnviavel(texto)) return;
+    const comArquivo = anexo;
+    const legendaCabe = texto.replace(/\r\n/g, '\n').trim().length <= TETO_DA_RESPOSTA_DA_CAIXA;
+    if (!token || !id || !aberta || enviando || (comArquivo ? !legendaCabe : !textoEnviavel(texto))) return;
     setEnviando(true);
     setErroDoEnvio(null);
     try {
-      const r = await apiPost<RespostaEnviada>(`/whatsapp/conversas/${encodeURIComponent(id)}/responder`, { texto }, token);
+      let r: RespostaEnviada;
+      if (comArquivo) {
+        const form = new FormData();
+        form.append('arquivo', comArquivo, comArquivo.name);
+        form.append('legenda', texto);
+        r = await apiFormulario<RespostaEnviada>(`/whatsapp/conversas/${encodeURIComponent(id)}/midia`, form, token);
+      } else {
+        r = await apiPost<RespostaEnviada>(`/whatsapp/conversas/${encodeURIComponent(id)}/responder`, { texto }, token);
+      }
       if (conversaAtual.current === id) {
-        setTexto('');
+        // O áudio sai sem legenda: o que estava escrito fica na caixa para mandar depois.
+        if (!comArquivo || tipoDaMidiaParaEnviar(comArquivo.type) !== 'audio') setTexto('');
+        if (comArquivo) tirarAnexo();
         rolar.current = 'fim';
         setMensagens((atuais) => juntarMensagens(atuais, [r.mensagem]));
       }
@@ -494,6 +540,28 @@ export function CaixaDoWhatsapp() {
   const razao = conversa ? razaoParaNaoResponder(conversa, podeResponder) : null;
   const naoAchou = erroDaConversa instanceof ErroDaApi && erroDaConversa.status === 404;
   const tamanho = texto.replace(/\r\n/g, '\n').trim().length;
+  // Layout 27/10: com arquivo, o texto é a legenda (pode ficar vazia); o áudio sai sem legenda.
+  const tipoDoAnexo = anexo ? tipoDaMidiaParaEnviar(anexo.type) : null;
+  const podeEnviar = !razao && !enviando && (anexo ? tamanho <= TETO_DA_RESPOSTA_DA_CAIXA : textoEnviavel(texto));
+  const recebeArquivo = !!aberta && !razao;
+
+  /** Layout 27/10: arrastar um arquivo para a conversa o deixa pronto para mandar. */
+  const arrasto = {
+    onDragOver: (e: React.DragEvent) => {
+      if (!recebeArquivo || !Array.from(e.dataTransfer?.types ?? []).includes('Files')) return;
+      e.preventDefault();
+      if (!arrastando) setArrastando(true);
+    },
+    onDragLeave: (e: React.DragEvent) => {
+      if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setArrastando(false);
+    },
+    onDrop: (e: React.DragEvent) => {
+      if (!recebeArquivo) return;
+      e.preventDefault();
+      setArrastando(false);
+      escolherArquivo(e.dataTransfer?.files?.[0]);
+    },
+  };
 
   const chips = CHIPS_DA_CAIXA;
 
@@ -570,7 +638,18 @@ export function CaixaDoWhatsapp() {
         </section>
 
         {/* --------------------------------------------------------- conversa */}
-        <section aria-label="Conversa aberta" data-testid="caixa-coluna-conversa" className={`${COLUNA} ${vista === 'conversa' ? '' : 'max-md:hidden'}`}>
+        <section
+          aria-label="Conversa aberta"
+          data-testid="caixa-coluna-conversa"
+          data-arrastando={arrastando ? 'sim' : undefined}
+          className={`${COLUNA} relative ${vista === 'conversa' ? '' : 'max-md:hidden'}`}
+          {...arrasto}
+        >
+          {arrastando && (
+            <div className="pointer-events-none absolute inset-2 z-10 flex items-center justify-center rounded border-2 border-dashed border-brand bg-surface/85 text-[14px] font-semibold">
+              Solte o arquivo para mandar nesta conversa
+            </div>
+          )}
           {!estado.conversa && (
             <p className="m-auto max-w-xs p-4 text-center text-[13px] text-muted">Escolha uma conversa à esquerda.</p>
           )}
@@ -669,9 +748,39 @@ export function CaixaDoWhatsapp() {
                       {razao}
                     </p>
                   )}
+                  {/* Layout 27/10: o arquivo escolhido, com a miniatura da foto e o "x" para tirar. */}
+                  {anexo && (
+                    <div data-testid="caixa-anexo" className="flex min-w-0 items-center gap-2 rounded border border-border bg-bg/40 p-1.5">
+                      {previaDoAnexo ? (
+                        <img data-testid="caixa-anexo-previa" src={previaDoAnexo} alt="" className="h-12 w-12 shrink-0 rounded object-cover" />
+                      ) : (
+                        <span aria-hidden className="flex h-12 w-10 shrink-0 items-center justify-center rounded bg-surface-2 font-os-mono text-[9px] uppercase text-muted">
+                          {(anexo.name.split('.').pop() ?? 'arq').slice(0, 4)}
+                        </span>
+                      )}
+                      <span className="min-w-0 flex-1">
+                        <span data-testid="caixa-anexo-nome" className="block truncate text-[13px]" title={anexo.name}>
+                          {anexo.name}
+                        </span>
+                        <span className="block text-[11px] text-muted">
+                          {rotuloDoTipoDeMensagem(tipoDoAnexo ?? 'document')} · {tamanhoLegivel(anexo.size)}
+                        </span>
+                      </span>
+                      <button
+                        type="button"
+                        data-testid="caixa-anexo-tirar"
+                        aria-label="Tirar o arquivo"
+                        onClick={tirarAnexo}
+                        disabled={enviando}
+                        className={`flex h-8 w-8 shrink-0 items-center justify-center rounded text-[18px] leading-none text-muted hover:text-text disabled:opacity-50 ${FOCO}`}
+                      >
+                        ×
+                      </button>
+                    </div>
+                  )}
                   <div className="flex items-end gap-2">
                     <label className="min-w-0 flex-1">
-                      <span className="sr-only">Mensagem</span>
+                      <span className="sr-only">{anexo ? 'Legenda' : 'Mensagem'}</span>
                       <textarea
                         data-testid="caixa-resposta"
                         rows={2}
@@ -680,16 +789,61 @@ export function CaixaDoWhatsapp() {
                         disabled={!!razao || enviando}
                         onChange={(e) => setTexto(e.target.value)}
                         onKeyDown={aoTeclar}
-                        placeholder={razao ? '' : 'Escreva a resposta. Enter envia, Shift+Enter quebra a linha.'}
+                        onPaste={(e) => {
+                          // Layout 27/10: colar uma imagem (print) a deixa pronta para mandar.
+                          const f = e.clipboardData?.files?.[0];
+                          if (f && !razao) {
+                            e.preventDefault();
+                            escolherArquivo(f);
+                          }
+                        }}
+                        placeholder={
+                          razao
+                            ? ''
+                            : tipoDoAnexo === 'audio'
+                              ? 'O áudio sai como mensagem de voz, sem legenda.'
+                              : anexo
+                                ? 'Legenda (opcional). Enter envia.'
+                                : 'Escreva a resposta. Enter envia, Shift+Enter quebra a linha.'
+                        }
                         className={`${INPUT} max-h-40 min-h-[44px] resize-y disabled:cursor-not-allowed disabled:opacity-60`}
                       />
                     </label>
-                    <button type="submit" data-testid="caixa-enviar" disabled={!!razao || enviando || !textoEnviavel(texto)} className={BOTAO_PRIMARIO}>
+                    <input
+                      ref={seletorDeArquivo}
+                      type="file"
+                      data-testid="caixa-anexo-input"
+                      className="hidden"
+                      tabIndex={-1}
+                      aria-hidden
+                      onChange={(e) => escolherArquivo(e.target.files?.[0])}
+                    />
+                    <button
+                      type="button"
+                      data-testid="caixa-anexar"
+                      aria-label="Anexar arquivo"
+                      title="Anexar foto, vídeo, áudio ou documento"
+                      onClick={() => seletorDeArquivo.current?.click()}
+                      disabled={!!razao || enviando}
+                      className={`${BOTAO} shrink-0 px-2.5`}
+                    >
+                      <svg aria-hidden viewBox="0 0 24 24" className="h-[18px] w-[18px]" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M21.44 11.05l-9.19 9.19a6 6 0 01-8.49-8.49l9.19-9.19a4 4 0 015.66 5.66l-9.2 9.19a2 2 0 01-2.83-2.83l8.49-8.48" />
+                      </svg>
+                    </button>
+                    <button type="submit" data-testid="caixa-enviar" disabled={!podeEnviar} className={BOTAO_PRIMARIO}>
                       {enviando ? 'Enviando…' : 'Enviar'}
                     </button>
                   </div>
                   <div className="flex items-start justify-between gap-2">
-                    <ErroDaAcao erro={erroDoEnvio} />
+                    <div className="min-w-0">
+                      {erroDoAnexo && (
+                        <p role="alert" data-testid="caixa-anexo-erro" className="text-[12.5px] text-bad">
+                          {erroDoAnexo}
+                        </p>
+                      )}
+                      <ErroDaAcao erro={erroDoEnvio} />
+                    </div>
                     <span data-testid="caixa-contador" className={`ml-auto shrink-0 font-os-mono text-[10.5px] tabular-nums ${tamanho > TETO_DA_RESPOSTA_DA_CAIXA ? 'text-bad' : 'text-muted'}`}>
                       {tamanho}/{TETO_DA_RESPOSTA_DA_CAIXA}
                     </span>
@@ -697,7 +851,11 @@ export function CaixaDoWhatsapp() {
                   {/* Layout 26/10: a mensagem sai como ROOT; o nome de quem enviou fica só aqui dentro. */}
                   {!razao && (
                     <p data-testid="caixa-aviso-envio" className="text-[11px] text-muted">
-                      Sai pelo número da empresa, com o seu nome em negrito no topo, para o cliente saber quem está falando.
+                      {tipoDoAnexo === 'audio'
+                        ? 'O áudio sai pelo número da empresa como mensagem de voz, sem o seu nome.'
+                        : anexo
+                          ? 'O arquivo sai pelo número da empresa, com o seu nome em negrito na legenda.'
+                          : 'Sai pelo número da empresa, com o seu nome em negrito no topo, para o cliente saber quem está falando. O clipe manda foto, vídeo, áudio ou documento.'}
                     </p>
                   )}
                 </form>

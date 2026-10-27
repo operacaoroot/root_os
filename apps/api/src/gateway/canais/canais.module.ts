@@ -11,6 +11,7 @@ import {
   ENVIO_PELA_EVOLUTION,
   MENSAGEM_DO_AGENTE_NO_GRUPO,
   LEITURA_DA_EVOLUTION,
+  MIDIA_DA_CAIXA_PELA_EVOLUTION,
   RESPOSTA_DE_GENTE_PELA_EVOLUTION,
 } from './evolution.port';
 import { GravacaoDoWhatsappRegistry } from './gravacao-do-whatsapp.registry';
@@ -81,6 +82,8 @@ import { EvolutionDaEmpresaService } from '../../pauta/evolution.service';
     // Produção 22C (W1, W2): a leitura da sincronização e a resposta de gente pela caixa de WhatsApp.
     { provide: LEITURA_DA_EVOLUTION, useExisting: EvolutionDaEmpresaService },
     { provide: RESPOSTA_DE_GENTE_PELA_EVOLUTION, useExisting: EvolutionDaEmpresaService },
+    // Layout 27/10: abrir o arquivo de uma mensagem e mandar arquivo pela caixa de WhatsApp.
+    { provide: MIDIA_DA_CAIXA_PELA_EVOLUTION, useExisting: EvolutionDaEmpresaService },
     // 26/10/2026: o agente de tarefas (TR-12) fala só no grupo da equipe.
     { provide: MENSAGEM_DO_AGENTE_NO_GRUPO, useExisting: EvolutionDaEmpresaService },
     // Produção 22C (W1): quem grava TODA mensagem do webhook antes dos leitores de sempre.
@@ -95,6 +98,7 @@ import { EvolutionDaEmpresaService } from '../../pauta/evolution.service';
     ADMINISTRACAO_DA_EVOLUTION,
     LEITURA_DA_EVOLUTION,
     RESPOSTA_DE_GENTE_PELA_EVOLUTION,
+    MIDIA_DA_CAIXA_PELA_EVOLUTION,
     MENSAGEM_DO_AGENTE_NO_GRUPO,
     GravacaoDoWhatsappRegistry,
   ],

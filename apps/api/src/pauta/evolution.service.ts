@@ -19,11 +19,15 @@ import {
   type CredencialDaEvolutionParaGuardar,
   type EnvioPelaEvolution,
   type LeituraDaEvolution,
+  type ChaveDaMensagemNaEvolution,
   type MensagemDoAgenteNoGrupo,
+  type MidiaBaixadaDaEvolution,
+  type MidiaDaCaixaPelaEvolution,
+  type MidiaParaEnviarPelaEvolution,
   type RespostaDeGentePelaEvolution,
 } from '../gateway/canais/evolution.port';
 import { enderecoDeDentro, ipv4Embutido } from './endereco-de-dentro';
-import { ipDaConexao, pedirAoIp, type Conectar } from './pagina-publica';
+import { ipDaConexao, lerCorpoComTeto, pedirAoIp, type Conectar } from './pagina-publica';
 import { EfeitosRegistry, type ContextoDoEfeito } from '../gateway/efeitos.registry';
 import { ConectoresConfiguradosRegistry } from '../gateway/conectores-configurados.registry';
 import { TransporteDeCanalRegistry } from '../gateway/canais/transporte.registry';
@@ -440,6 +444,8 @@ export class EvolutionService implements OnModuleInit {
 
 const SLUG_DA_CASA_EVOLUTION = 'root';
 const PRAZO_DO_ENVIO_DA_EMPRESA_MS = 20_000;
+/** Layout 27/10: baixar ou mandar um arquivo de até 100 MB leva mais que um texto. */
+const PRAZO_DA_MIDIA_DA_CAIXA_MS = 120_000;
 const CAPACIDADE_DO_ENVIO_DO_COMERCIAL = 'comercial.whatsapp.enviar';
 const NOMES_NO_COFRE = { url: 'url', chave: 'chave', instancia: 'instancia' } as const;
 const ORIGEM_NO_COFRE = 'Integrações (WhatsApp pela Evolution)';
@@ -562,7 +568,14 @@ const MENSAGEM_DO_ESTADO: Record<'open' | 'connecting' | 'close' | 'desconhecido
 
 @Injectable()
 export class EvolutionDaEmpresaService
-  implements OnModuleInit, EnvioPelaEvolution, AdministracaoDaEvolution, LeituraDaEvolution, RespostaDeGentePelaEvolution, MensagemDoAgenteNoGrupo
+  implements
+    OnModuleInit,
+    EnvioPelaEvolution,
+    AdministracaoDaEvolution,
+    LeituraDaEvolution,
+    RespostaDeGentePelaEvolution,
+    MidiaDaCaixaPelaEvolution,
+    MensagemDoAgenteNoGrupo
 {
   private readonly log = new Logger('EvolutionDaEmpresa');
   /** A reserva da casa. Lida uma vez; trocar exige recriar o container, como toda variável. */
@@ -667,7 +680,15 @@ export class EvolutionDaEmpresaService
 
   // ---------------------------------------------------------------------- HTTP
 
-  private async chamar<T>(c: CredencialDaEvolution, metodo: 'GET' | 'POST', rota: string, corpo?: unknown, prazoMs = PRAZO_DO_ENVIO_DA_EMPRESA_MS): Promise<T | null> {
+  /** Layout 27/10: `tetoDaResposta` corta a leitura da resposta (o base64 de um arquivo) nesse tanto de bytes. */
+  private async chamar<T>(
+    c: CredencialDaEvolution,
+    metodo: 'GET' | 'POST',
+    rota: string,
+    corpo?: unknown,
+    prazoMs = PRAZO_DO_ENVIO_DA_EMPRESA_MS,
+    tetoDaResposta?: number,
+  ): Promise<T | null> {
     const ip = await this.conferirDestino(c.base, c.daCasa);
     const headers = { apikey: c.chave, 'Content-Type': 'application/json', Accept: 'application/json' };
     const body = corpo === undefined ? undefined : JSON.stringify(corpo);
@@ -678,8 +699,11 @@ export class EvolutionDaEmpresaService
     const res = c.daCasa
       ? await fetch(`${c.base}${rota}`, { method: metodo, headers, ...(body === undefined ? {} : { body }), redirect: 'error', signal })
       : await this.conectar(new URL(`${c.base}${rota}`), ip, { method: metodo, headers, body, signal });
-    const texto = await res.text().catch(() => '');
-    if (!res.ok) throw new EvolutionRespondeuErro(res.status, metodo, rota.split('/').slice(0, 3).join('/'));
+    if (!res.ok) {
+      await res.text().catch(() => '');
+      throw new EvolutionRespondeuErro(res.status, metodo, rota.split('/').slice(0, 3).join('/'));
+    }
+    const texto = tetoDaResposta === undefined ? await res.text().catch(() => '') : await lerCorpoComTeto(res, tetoDaResposta);
     if (!texto) return null;
     try {
       return JSON.parse(texto) as T;
@@ -793,16 +817,81 @@ export class EvolutionDaEmpresaService
    * caixa, depois da permissão `whatsapp.conversar` e de conferir que é gente.
    */
   async responderComoPessoa(orgId: string, chatJid: string, texto: string): Promise<{ id: string }> {
-    const jid = String(chatJid ?? '');
-    let numero: string;
-    if (/^[0-9-]+@g\.us$/.test(jid)) numero = jid;
-    else if (/^\d{10,15}@s\.whatsapp\.net$/.test(jid)) numero = jid.split('@')[0];
-    else if (/^\d{5,30}@lid$/.test(jid)) numero = jid;
-    else throw new Error('o destino não é uma conversa do WhatsApp: nada foi enviado');
+    const numero = this.destinoDaCaixa(chatJid);
     if (!String(texto ?? '').trim()) throw new Error('mensagem vazia: nada foi enviado');
     await this.exigirConectorLigado(orgId);
     const c = await this.exigirCredencial(orgId);
     const r = await this.chamar<CorpoDaEvolution>(c, 'POST', this.rota(c, '/message/sendText'), { number: numero, text: texto });
+    return { id: this.idDaMensagem(r) };
+  }
+
+  /** O `number` da Evolution para uma conversa da caixa (grupo, telefone ou lid), ou lança. */
+  private destinoDaCaixa(chatJid: string): string {
+    const jid = String(chatJid ?? '');
+    if (/^[0-9-]+@g\.us$/.test(jid)) return jid;
+    if (/^\d{10,15}@s\.whatsapp\.net$/.test(jid)) return jid.split('@')[0];
+    if (/^\d{5,30}@lid$/.test(jid)) return jid;
+    throw new Error('o destino não é uma conversa do WhatsApp: nada foi enviado');
+  }
+
+  /**
+   * Layout 27/10: o arquivo de uma mensagem, para abrir na caixa. Só leitura.
+   * A Evolution v2 acha a mensagem guardada pelo `key.id` e baixa a mídia do
+   * WhatsApp; o que ela não guarda mais (ou o WhatsApp já apagou) volta fora
+   * do 2xx. A resposta é lida até `teto` bytes.
+   */
+  async baixarMidia(orgId: string, chave: ChaveDaMensagemNaEvolution, teto: number): Promise<MidiaBaixadaDaEvolution> {
+    const id = String(chave?.id ?? '');
+    if (!id || id.length > 200 || /[\u0000-\u001f\s]/.test(id)) throw new Error('mensagem do WhatsApp inválida: nada foi baixado');
+    await this.exigirConectorLigado(orgId);
+    const c = await this.exigirCredencial(orgId);
+    const key: Record<string, unknown> = { id, remoteJid: chave.remoteJid, fromMe: chave.fromMe === true };
+    if (chave.participant) key.participant = chave.participant;
+    // O base64 ocupa 4/3 do arquivo, mais o resto do JSON.
+    const tetoDoCorpo = Math.ceil((teto * 4) / 3) + 64 * 1024;
+    const r = await this.chamar<CorpoDaEvolution>(
+      c,
+      'POST',
+      this.rota(c, '/chat/getBase64FromMediaMessage'),
+      { message: { key }, convertToMp4: false },
+      PRAZO_DA_MIDIA_DA_CAIXA_MS,
+      tetoDoCorpo,
+    );
+    const base64 = r && typeof r.base64 === 'string' ? r.base64.replace(/^data:[^,]*,/, '') : '';
+    return {
+      base64,
+      mime: r && typeof r.mimetype === 'string' ? r.mimetype : null,
+      nome: r && typeof r.fileName === 'string' ? r.fileName : null,
+    };
+  }
+
+  /**
+   * Layout 27/10: o arquivo que uma PESSOA mandou pela caixa. Foto, vídeo e
+   * documento por `sendMedia` (com legenda e nome); áudio por
+   * `sendWhatsAppAudio` (chega como mensagem de voz, sem legenda).
+   */
+  async responderMidiaComoPessoa(orgId: string, chatJid: string, midia: MidiaParaEnviarPelaEvolution): Promise<{ id: string }> {
+    const numero = this.destinoDaCaixa(chatJid);
+    if (!midia?.base64) throw new Error('arquivo vazio: nada foi enviado');
+    await this.exigirConectorLigado(orgId);
+    const c = await this.exigirCredencial(orgId);
+    const r =
+      midia.tipo === 'audio'
+        ? await this.chamar<CorpoDaEvolution>(c, 'POST', this.rota(c, '/message/sendWhatsAppAudio'), { number: numero, audio: midia.base64 }, PRAZO_DA_MIDIA_DA_CAIXA_MS)
+        : await this.chamar<CorpoDaEvolution>(
+            c,
+            'POST',
+            this.rota(c, '/message/sendMedia'),
+            {
+              number: numero,
+              mediatype: midia.tipo,
+              mimetype: midia.mime,
+              media: midia.base64,
+              fileName: midia.nome,
+              ...(midia.legenda ? { caption: midia.legenda } : {}),
+            },
+            PRAZO_DA_MIDIA_DA_CAIXA_MS,
+          );
     return { id: this.idDaMensagem(r) };
   }
 

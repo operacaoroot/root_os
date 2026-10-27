@@ -1,25 +1,51 @@
 import {
+  ArgumentsHost,
   Body,
   CanActivate,
+  Catch,
   Controller,
+  ExceptionFilter,
   ExecutionContext,
   ForbiddenException,
   Get,
   HttpCode,
   Injectable,
+  Logger,
   Param,
+  PayloadTooLargeException,
   Post,
   Query,
+  Res,
+  UploadedFile,
+  UseFilters,
   UseGuards,
+  UseInterceptors,
 } from '@nestjs/common';
-import type { ConversaAberta, ConversaDaCaixa, ListaDaCaixa, RespostaEnviada } from '@mktos/shared';
+import { FileInterceptor } from '@nestjs/platform-express';
+import type { Response } from 'express';
+import { TETO_DO_DOCUMENTO_DO_WHATSAPP, type ConversaAberta, type ConversaDaCaixa, type ListaDaCaixa, type RespostaEnviada } from '@mktos/shared';
 
 import { temPapelDeMaquina } from '../approvals/alcada';
 import { CurrentUser, type JwtUser } from '../auth/current-user.decorator';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RequirePermissions } from '../auth/permissions.decorator';
 import { PermissionsGuard } from '../auth/permissions.guard';
+import { entregarArquivo } from '../common/entregar-arquivo';
 import { CaixaDoWhatsappService, type QuemNaCaixa } from './caixa.service';
+import { cabecalhoDoArquivo, nomeDoUpload } from './midia-da-caixa';
+
+/**
+ * Layout 27/10: o multer recusa o arquivo acima do teto com "File too large", em inglês.
+ * Na caixa a frase é a do WhatsApp (o maior que ele aceita é o documento de 100 MB).
+ */
+@Catch(PayloadTooLargeException)
+export class ArquivoGrandeDemaisFilter implements ExceptionFilter {
+  catch(e: PayloadTooLargeException, host: ArgumentsHost): void {
+    const res = host.switchToHttp().getResponse<Response>();
+    const propria = e.message && e.message !== 'File too large' ? e.message : 'Arquivo acima de 100 MB: o WhatsApp não aceita.';
+    res.status(413).json({ statusCode: 413, message: propria, error: 'Payload Too Large' });
+  }
+}
 
 /** Recusa conta de máquina pelo token, antes de qualquer leitura (o serviço relê no banco). */
 @Injectable()
@@ -93,6 +119,54 @@ export class CaixaDoWhatsappController {
   @UseGuards(SoGenteNaCaixaGuard)
   responder(@CurrentUser() user: JwtUser, @Param('id') id: string, @Body() body: unknown): Promise<RespostaEnviada> {
     return this.svc.responder(user.orgId, id, body, quem(user));
+  }
+
+  /**
+   * Layout 27/10: um arquivo (foto, vídeo, áudio, documento) de uma pessoa pela Evolution. Multipart com
+   * o arquivo em `arquivo` e a legenda em `legenda`. Os guardas rodam antes do multer: quem não pode
+   * responder não chega a mandar o arquivo para a memória.
+   */
+  @Post(':id/midia')
+  @HttpCode(200)
+  @RequirePermissions('whatsapp.conversar')
+  @UseGuards(SoGenteNaCaixaGuard)
+  @UseFilters(ArquivoGrandeDemaisFilter)
+  @UseInterceptors(FileInterceptor('arquivo', { limits: { fileSize: TETO_DO_DOCUMENTO_DO_WHATSAPP, files: 1 } }))
+  midia(
+    @CurrentUser() user: JwtUser,
+    @Param('id') id: string,
+    @UploadedFile() arquivo: Express.Multer.File | undefined,
+    @Body('legenda') legenda: unknown,
+  ): Promise<RespostaEnviada> {
+    const recebido = arquivo ? { buffer: arquivo.buffer, originalname: nomeDoUpload(arquivo.originalname), mimetype: arquivo.mimetype, size: arquivo.size } : undefined;
+    return this.svc.responderComMidia(user.orgId, id, recebido, legenda, quem(user));
+  }
+}
+
+/**
+ * Layout 27/10: `GET /whatsapp/mensagens/:id/midia`, o arquivo de uma mensagem (foto, áudio, vídeo,
+ * documento, figurinha). Pede o mesmo que ler a conversa (`leads.ver`) e só acha mensagem da
+ * empresa de quem pede. Foto, áudio, vídeo e PDF abrem no navegador; o resto baixa com o nome.
+ */
+@UseGuards(JwtAuthGuard, PermissionsGuard)
+@Controller('whatsapp/mensagens')
+export class MidiaDoWhatsappController {
+  private readonly log = new Logger('WhatsappMidia');
+
+  constructor(private readonly svc: CaixaDoWhatsappService) {}
+
+  @Get(':id/midia')
+  @RequirePermissions('leads.ver')
+  async midia(@CurrentUser() user: JwtUser, @Param('id') id: string, @Res() res: Response): Promise<void> {
+    const a = await this.svc.abrirMidia(user.orgId, id);
+    res.setHeader('Content-Type', a.mime);
+    res.setHeader('Content-Length', a.tamanho);
+    res.setHeader('Content-Disposition', cabecalhoDoArquivo(a.nome, a.inline));
+    res.setHeader('Cache-Control', 'private, no-store');
+    // O arquivo vem de fora: o tipo declarado vale (nada de adivinhar HTML), e SVG/HTML nunca abrem inline (`abreNoNavegador`).
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    if (Buffer.isBuffer(a.corpo)) res.end(a.corpo);
+    else entregarArquivo(a.corpo, res, this.log, `arquivo da mensagem ${id}`);
   }
 }
 

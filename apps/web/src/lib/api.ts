@@ -179,6 +179,18 @@ export function apiPost<T>(
 }
 
 /**
+ * Layout 27/10: multipart com mais de um campo (o arquivo e a legenda do
+ * WhatsApp). Mesma regra do `apiUpload`: sem `Content-Type`, o browser monta o boundary.
+ */
+export function apiFormulario<T>(path: string, form: FormData, token?: string | null): Promise<T> {
+  return fetch(`${API_BASE}${path}`, {
+    method: 'POST',
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+    body: form,
+  }).then((r) => handle<T>(r, path, token));
+}
+
+/**
  * Upload de arquivo. Sem `Content-Type` de propósito: o browser precisa montar
  * o boundary do multipart sozinho — definir o header à mão quebra o parse.
  */

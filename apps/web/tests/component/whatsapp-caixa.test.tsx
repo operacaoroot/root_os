@@ -232,7 +232,7 @@ describe('caixa de WhatsApp: abrir, ler, responder, arquivar', () => {
     await waitFor(() => expect(screen.queryByTestId('caixa-nao-lidas-c1')).toBeNull());
   });
 
-  it('grupo: nome de quem escreveu, participantes, citação e mídia não baixada', async () => {
+  it('grupo: nome de quem escreveu, participantes, citação e o documento com nome, tamanho, Abrir e Baixar', async () => {
     const msgs = [
       msg('g1', { remetenteNome: 'Pessoa Ficticia', texto: 'oi grupo' }),
       msg('g2', { tipo: 'document', texto: null, remetenteNumero: '5500000000003', midia: { mime: 'application/pdf', nome: 'contrato-ficticio.pdf', tamanho: 2048, segundos: null } }),
@@ -244,8 +244,12 @@ describe('caixa de WhatsApp: abrir, ler, responder, arquivar', () => {
     const g1 = await screen.findByTestId('caixa-balao-g1');
     expect(g1).toHaveTextContent('Pessoa Ficticia');
     expect(screen.getByTestId('caixa-balao-g2')).toHaveTextContent('+5500000000003');
-    expect(screen.getByTestId('caixa-midia-g2')).toHaveTextContent(/documento · contrato-ficticio\.pdf · application\/pdf · 2 KB/);
-    expect(screen.getByTestId('caixa-midia-g2')).toHaveTextContent(/mídia não baixada/);
+    // Layout 27/10: o cartão "mídia não baixada" virou o documento de verdade (o arquivo só vem no clique).
+    expect(screen.getByTestId('caixa-midia-nome-g2')).toHaveTextContent('contrato-ficticio.pdf');
+    expect(screen.getByTestId('caixa-midia-g2')).toHaveTextContent(/2 KB · PDF/);
+    expect(screen.getByTestId('caixa-midia-abrir-g2')).toBeInTheDocument();
+    expect(screen.getByTestId('caixa-midia-baixar-g2')).toBeInTheDocument();
+    expect(screen.queryByText(/mídia não baixada/)).toBeNull();
     expect(screen.getByTestId('caixa-citacao-g3')).toHaveTextContent('Pessoa Ficticiaoi grupo');
     expect(screen.getByTestId('caixa-subtitulo')).toHaveTextContent('grupo · 6 participantes');
     expect(screen.getByTestId('caixa-participantes')).toHaveTextContent('Pessoa Ficticia · +55 (00) 00000-0002 · admin');

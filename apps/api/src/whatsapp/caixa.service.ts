@@ -3,19 +3,28 @@ import {
   BadGatewayException,
   ConflictException,
   ForbiddenException,
+  GoneException,
   Inject,
   Injectable,
   Logger,
   NotFoundException,
   Optional,
+  PayloadTooLargeException,
   ServiceUnavailableException,
 } from '@nestjs/common';
+import type { Readable } from 'node:stream';
 import { Prisma } from '@prisma/client';
 import {
   ArquivarConversaSchema,
   FILTROS_DA_CAIXA,
+  LegendaDaMidiaSchema,
   ResponderNaCaixaSchema,
+  TETO_DA_MIDIA_BAIXADA,
+  fraseDoTetoDaMidia,
   lerFiltroDaCaixa,
+  rotuloDoTipoDeMensagem,
+  tetoDaMidiaParaEnviar,
+  tipoDaMidiaParaEnviar,
   type ConversaAberta,
   type ConversaDaCaixa,
   type FiltroDaCaixa,
@@ -28,14 +37,25 @@ import { temPapelDeMaquina } from '../approvals/alcada';
 import { lerAprovador } from '../auth/aprovador';
 import { uuidDe } from '../comercial/eventos';
 import {
+  MIDIA_DA_CAIXA_PELA_EVOLUTION,
   RESPOSTA_DE_GENTE_PELA_EVOLUTION,
+  type MidiaDaCaixaPelaEvolution,
   type RespostaDeGentePelaEvolution,
 } from '../gateway/canais/evolution.port';
 import { exigirAcessoAtual } from '../memory/acesso-memoria';
 import { PrismaService } from '../prisma/prisma.service';
+import { StorageService } from '../storage/storage.service';
+import {
+  abreNoNavegador,
+  chaveDaMidiaNoStorage,
+  mimeLimpo,
+  nomeDoArquivo,
+  temArquivo,
+} from './midia-da-caixa';
 import {
   SELECT_DA_CONVERSA,
   SELECT_DA_MENSAGEM,
+  lerMidia,
   projetarConversas,
   projetarMensagens,
 } from './projecao';
@@ -65,7 +85,37 @@ import { SincronizacaoDoWhatsappService } from './sincronizacao.service';
  * webhook ou pela sincronização cai na mesma linha, pelo índice único), a
  * `ComercialMensagem` quando a conversa é de um lead (o fio do lead segue
  * completo) e a linha de auditoria SEM o texto e SEM o número.
+ *
+ * Layout 27/10: O ARQUIVO. Abrir o arquivo de uma mensagem pede o mesmo que ler
+ * a conversa (`leads.ver`, da mesma empresa): ele vem do storage do OS, ou da
+ * Evolution na primeira vez (e fica no storage). Mandar arquivo (foto, vídeo,
+ * áudio, documento) é como responder: `whatsapp.conversar`, gente, a mesma
+ * assinatura na legenda (o áudio não tem legenda e sai sem nada a mais), a
+ * mesma gravação, e o arquivo entra no storage na hora. A porta é
+ * `MIDIA_DA_CAIXA_PELA_EVOLUTION`, também só chamada daqui.
  */
+
+/** O arquivo como o multer entrega (`FileInterceptor`, memória). */
+export interface ArquivoDaCaixa {
+  buffer: Buffer;
+  originalname: string;
+  mimetype: string;
+  size: number;
+}
+
+/** O arquivo de uma mensagem, pronto para a resposta HTTP. */
+export interface ArquivoDaMensagem {
+  /** Os bytes (veio da Evolution agora) ou o stream do storage. */
+  corpo: Buffer | Readable;
+  tamanho: number;
+  mime: string;
+  nome: string;
+  /** Abre no navegador (foto, áudio, vídeo, PDF) em vez de baixar. */
+  inline: boolean;
+}
+
+const MENSAGEM_NAO_ACHADA = 'Mensagem não encontrada.';
+const SEM_ARQUIVO_NO_WHATSAPP = 'O WhatsApp não guarda mais esse arquivo. Peça para mandarem de novo.';
 
 const RECUSA_DE_MAQUINA = 'Responder pelo WhatsApp é de gente: conta de serviço (IA) não conversa pela caixa.';
 const NAO_ACHOU = 'Conversa não encontrada.';
@@ -178,7 +228,16 @@ export class CaixaDoWhatsappService {
     @Inject(RESPOSTA_DE_GENTE_PELA_EVOLUTION) private readonly resposta: RespostaDeGentePelaEvolution,
     /** O cartão do Dia a dia e a bolha do menu (W4): ler, arquivar e responder mudam a conta, e o cache de 30 s é esquecido. */
     @Optional() private readonly resumo?: ResumoDoWhatsappService,
+    /** Layout 27/10: abrir e mandar arquivo. Sem ela, a caixa segue de texto e o arquivo responde 503. */
+    @Optional() @Inject(MIDIA_DA_CAIXA_PELA_EVOLUTION) private readonly midiaPelaEvolution?: MidiaDaCaixaPelaEvolution,
+    /** Layout 27/10: onde o arquivo fica depois de aberto ou mandado. Sem as chaves do S3, abre sempre pela Evolution. */
+    @Optional() private readonly storage?: StorageService,
   ) {}
+
+  /** O storage que grava agora (configurado), ou `null`. */
+  private armazem(): StorageService | null {
+    return this.storage && this.storage.configured ? this.storage : null;
+  }
 
   private podeResponder(quem: QuemNaCaixa): boolean {
     return quem.permissoes.includes('whatsapp.conversar') && !temPapelDeMaquina(quem.papeis);
@@ -414,6 +473,198 @@ export class CaixaDoWhatsappService {
     const [mensagem] = await projetarMensagens(this.prisma, orgId, c.id, [linha]);
     this.resumo?.esquecer(orgId);
     return { mensagem };
+  }
+
+  // ------------------------------------------------- Layout 27/10: o arquivo
+
+  /**
+   * O arquivo de uma mensagem desta empresa: do storage, ou da Evolution na
+   * primeira vez (e então guardado no storage). Quem pode ler a conversa
+   * (`leads.ver`) pode abrir. Mensagem de outra empresa é 404 igual à inexistente.
+   */
+  async abrirMidia(orgId: string, mensagemId: string): Promise<ArquivoDaMensagem> {
+    if (typeof mensagemId !== 'string' || !/^[0-9a-zA-Z-]{1,64}$/.test(mensagemId)) throw new NotFoundException(MENSAGEM_NAO_ACHADA);
+    const m = await this.prisma.whatsAppMensagem.findFirst({
+      where: { id: mensagemId, orgId },
+      select: { id: true, tipo: true, midia: true, mensagemExternaId: true, chatJid: true, deMim: true, grupo: true, remetenteJid: true, timestamp: true },
+    });
+    if (!m) throw new NotFoundException(MENSAGEM_NAO_ACHADA);
+    if (!temArquivo(m.tipo)) throw new NotFoundException('Esta mensagem não tem arquivo.');
+    const meta = lerMidia(m.midia);
+    const chave = chaveDaMidiaNoStorage(orgId, m.id);
+    const nomeDe = (mime: string | null) => nomeDoArquivo(meta?.nome, m.tipo, mime, m.timestamp);
+
+    const armazem = this.armazem();
+    if (armazem) {
+      try {
+        const g = await armazem.get(chave);
+        const mime = mimeLimpo(g.contentType) ?? mimeLimpo(meta?.mime) ?? 'application/octet-stream';
+        return { corpo: g.stream, tamanho: g.size, mime, nome: nomeDe(mime), inline: abreNoNavegador(mime) };
+      } catch {
+        // Ainda não está no storage (ou o storage não respondeu): vai à Evolution.
+      }
+    }
+
+    if (meta?.tamanho != null && meta.tamanho > TETO_DA_MIDIA_BAIXADA) {
+      throw new PayloadTooLargeException('Arquivo acima de 50 MB: abra pelo celular.');
+    }
+    if (!this.midiaPelaEvolution) throw new ServiceUnavailableException('Abrir arquivo do WhatsApp não está disponível agora.');
+    let base64: string;
+    let mimeDaEvolution: string | null;
+    try {
+      const b = await this.midiaPelaEvolution.baixarMidia(
+        orgId,
+        { id: m.mensagemExternaId, remoteJid: m.chatJid, fromMe: m.deMim, participant: m.grupo && !m.deMim ? m.remetenteJid : null },
+        TETO_DA_MIDIA_BAIXADA,
+      );
+      base64 = b.base64;
+      mimeDaEvolution = b.mime;
+    } catch (e) {
+      throw this.falhaDoDownload(e);
+    }
+    const corpo = Buffer.from(base64 ?? '', 'base64');
+    if (!corpo.length) throw new GoneException(SEM_ARQUIVO_NO_WHATSAPP);
+    if (corpo.length > TETO_DA_MIDIA_BAIXADA) throw new PayloadTooLargeException('Arquivo acima de 50 MB: abra pelo celular.');
+    const mime = mimeLimpo(meta?.mime) ?? mimeLimpo(mimeDaEvolution) ?? 'application/octet-stream';
+    if (armazem) {
+      await armazem.put(chave, corpo, mime).catch((e: Error) => this.log.warn(`arquivo da mensagem não ficou no storage: ${e.name}`));
+    }
+    return { corpo, tamanho: corpo.length, mime, nome: nomeDe(mime), inline: abreNoNavegador(mime) };
+  }
+
+  /**
+   * Manda um arquivo (foto, vídeo, áudio, documento) pela caixa. As mesmas
+   * regras de `responder`: gente com `whatsapp.conversar`, conversa não
+   * arquivada, o nome de quem enviou em negrito na legenda (o áudio sai sem
+   * nada a mais), a mesma gravação. O arquivo entra no storage na hora, para
+   * abrir na caixa sem ir à Evolution.
+   */
+  async responderComMidia(orgId: string, id: string, arquivo: ArquivoDaCaixa | undefined, legendaCrua: unknown, quem: QuemNaCaixa): Promise<RespostaEnviada> {
+    if (!arquivo || !arquivo.buffer?.length) throw new BadRequestException('Escolha o arquivo.');
+    const l = LegendaDaMidiaSchema.safeParse(typeof legendaCrua === 'string' ? legendaCrua : undefined);
+    if (!l.success) throw new BadRequestException(l.error.issues[0]?.message ?? 'Legenda inválida.');
+    const legenda = l.data;
+    const mime = mimeLimpo(arquivo.mimetype) ?? 'application/octet-stream';
+    const tipo = tipoDaMidiaParaEnviar(mime);
+    if (arquivo.buffer.length > tetoDaMidiaParaEnviar(tipo)) throw new PayloadTooLargeException(fraseDoTetoDaMidia(tipo));
+    await this.exigirGente(orgId, quem);
+    const c = await this.conversa(orgId, id);
+    if (c.arquivadaEm) throw new ConflictException('Conversa arquivada: volte-a para a caixa antes de responder.');
+    if (!this.midiaPelaEvolution) throw new ServiceUnavailableException('Mandar arquivo pelo WhatsApp não está disponível agora. Nada foi enviado.');
+
+    const agora = new Date();
+    const nome = nomeDoArquivo(arquivo.originalname, tipo, mime, agora);
+    // A mesma assinatura do texto (layout 26/10): o nome de quem enviou, em negrito, na primeira linha da legenda.
+    const [pessoa] = await this.prisma.user.findMany({ where: { id: quem.id, orgId }, select: { name: true }, take: 1 });
+    const assinatura = pessoa?.name?.trim() ? `*${pessoa.name.trim()}*` : '';
+    const legendaQueSai = tipo === 'audio' ? null : [assinatura, legenda].filter(Boolean).join('\n') || null;
+    let externo: string;
+    try {
+      externo = (
+        await this.midiaPelaEvolution.responderMidiaComoPessoa(orgId, c.chatJid, {
+          tipo,
+          mime,
+          base64: arquivo.buffer.toString('base64'),
+          nome,
+          legenda: legendaQueSai,
+        })
+      ).id;
+    } catch (e) {
+      throw this.falhaDoEnvio(e);
+    }
+
+    const textoNoOs = tipo === 'audio' ? null : legenda || null;
+    const midia = { mime, nome, tamanho: arquivo.buffer.length, segundos: null };
+    const gravada = await this.prisma.$transaction(async (tx) => {
+      const m = await tx.whatsAppMensagem.upsert({
+        where: { orgId_instancia_mensagemExternaId: { orgId, instancia: c.instancia, mensagemExternaId: externo } },
+        create: {
+          orgId,
+          conversaId: c.id,
+          instancia: c.instancia,
+          chatJid: c.chatJid,
+          grupo: c.grupo,
+          deMim: true,
+          direcao: 'saida',
+          tipo,
+          texto: textoNoOs,
+          midia,
+          mensagemExternaId: externo,
+          timestamp: agora,
+          leadId: c.leadId,
+          clienteId: c.clienteId,
+          enviadaPorId: quem.id,
+          origem: 'caixa',
+        },
+        // O eco chegou antes: a linha é a mesma, passa a dizer quem enviou, e fica com a legenda sem a assinatura.
+        update: { enviadaPorId: quem.id, origem: 'caixa', texto: textoNoOs, midia },
+        select: { id: true, timestamp: true },
+      });
+      await tx.whatsAppConversa.updateMany({
+        where: { id: c.id, orgId, OR: [{ ultimaMensagemEm: null }, { ultimaMensagemEm: { lt: m.timestamp } }] },
+        data: { ultimaMensagemEm: m.timestamp },
+      });
+      if (c.leadId) {
+        await tx.comercialMensagem.createMany({
+          data: [
+            {
+              id: uuidDe([orgId, 'comercial-mensagem-caixa', c.instancia, externo]),
+              orgId,
+              leadId: c.leadId,
+              direcao: 'saida',
+              provedor: 'evolution',
+              destino: c.grupo ? 'grupo' : 'lead',
+              // O fio do lead é de texto: o arquivo entra como "documento: proposta.pdf", com a legenda embaixo.
+              texto: [`${rotuloDoTipoDeMensagem(tipo)}: ${nome}`, textoNoOs].filter(Boolean).join('\n'),
+              estado: 'enviada',
+              enviadaEm: agora,
+              mensagemExternaId: externo,
+            },
+          ],
+          skipDuplicates: true,
+        });
+      }
+      await tx.auditLog.create({
+        data: {
+          orgId,
+          actorId: quem.id,
+          action: 'whatsapp.midia.enviada_por_pessoa',
+          entityType: 'whatsapp_conversa',
+          entityId: c.id,
+          // Sem o nome do arquivo, sem a legenda e sem o número: só o tipo e o tamanho.
+          after: { mensagemId: m.id, tipo, bytes: arquivo.buffer.length, grupo: c.grupo, doLead: !!c.leadId, doCliente: !!c.clienteId },
+        },
+      });
+      return m;
+    });
+
+    const armazem = this.armazem();
+    if (armazem) {
+      await armazem
+        .put(chaveDaMidiaNoStorage(orgId, gravada.id), arquivo.buffer, mime)
+        .catch((e: Error) => this.log.warn(`arquivo enviado não ficou no storage (abre pela Evolution): ${e.name}`));
+    }
+    const linha = await this.prisma.whatsAppMensagem.findFirstOrThrow({ where: { id: gravada.id, orgId }, select: SELECT_DA_MENSAGEM });
+    const [mensagem] = await projetarMensagens(this.prisma, orgId, c.id, [linha]);
+    this.resumo?.esquecer(orgId);
+    return { mensagem };
+  }
+
+  /** A frase de quando o arquivo não veio da Evolution. Nunca leva número nem nome de arquivo. */
+  private falhaDoDownload(e: unknown): Error {
+    const nome = e instanceof Error ? e.name : '';
+    const msg = e instanceof Error ? e.message : '';
+    this.log.warn(`arquivo da mensagem não veio da Evolution: ${nome || 'erro'}`);
+    if (nome === 'EvolutionNaoConfiguradaError') return new ServiceUnavailableException(msg || 'O WhatsApp não está configurado nesta empresa.');
+    if (nome === 'CorpoAcimaDoTetoError') return new PayloadTooLargeException('Arquivo acima de 50 MB: abra pelo celular.');
+    if (nome === 'EvolutionRespondeuErro') {
+      const status = (e as { status?: unknown }).status;
+      // A Evolution responde 400 (ou 404) quando não acha a mensagem ou o WhatsApp já apagou a mídia.
+      if (status === 400 || status === 404 || status === 410) return new GoneException(SEM_ARQUIVO_NO_WHATSAPP);
+      return new BadGatewayException(`A Evolution não entregou o arquivo${typeof status === 'number' ? ` (HTTP ${status})` : ''}. Tente de novo.`);
+    }
+    if (nome === 'TimeoutError' || nome === 'AbortError') return new BadGatewayException('A Evolution não entregou o arquivo a tempo. Tente de novo.');
+    return new ServiceUnavailableException('A Evolution não respondeu. Tente de novo.');
   }
 
   /** A frase da falha do envio. Nada é gravado como enviado. Nunca leva número nem texto. */

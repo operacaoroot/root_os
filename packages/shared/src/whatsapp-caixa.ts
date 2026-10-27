@@ -85,12 +85,62 @@ export function rotuloDoTipoDeMensagem(tipo: string): string {
   return ROTULO_DO_TIPO[tipo as TipoDeMensagemDoWhatsapp] ?? 'mensagem';
 }
 
-/** Os metadados de mídia guardados (nada é baixado nesta rodada). */
+/**
+ * Os metadados de mídia guardados na linha. Layout 27/10: o arquivo em si é
+ * baixado da Evolution só quando alguém abre (`GET /whatsapp/mensagens/:id/midia`)
+ * e fica no storage do OS; a linha continua só com os metadados.
+ */
 export interface MidiaDaMensagem {
   mime: string | null;
   nome: string | null;
   tamanho: number | null;
   segundos: number | null;
+}
+
+// ---------------------------------------------------------------------------
+// Layout 27/10: abrir e mandar arquivo pela caixa
+// ---------------------------------------------------------------------------
+
+const MB = 1024 * 1024;
+
+/** O teto do WhatsApp para foto, áudio e vídeo: 16 MB. */
+export const TETO_DA_MIDIA_DO_WHATSAPP = 16 * MB;
+/** O teto do WhatsApp para documento: 100 MB. */
+export const TETO_DO_DOCUMENTO_DO_WHATSAPP = 100 * MB;
+/** O maior arquivo que o OS busca na Evolution para abrir (o que já está no storage abre de qualquer tamanho). */
+export const TETO_DA_MIDIA_BAIXADA = 50 * MB;
+
+/** Como o arquivo sai pelo WhatsApp. */
+export type TipoDaMidiaParaEnviar = 'image' | 'video' | 'audio' | 'document';
+
+/**
+ * O tipo de envio pelo tipo do arquivo. Foto só JPEG e PNG, vídeo só MP4 e
+ * 3GP (o que o WhatsApp mostra no balão); áudio qualquer `audio/*` (a Evolution
+ * converte em mensagem de voz). O resto vai como documento, com o nome.
+ */
+export function tipoDaMidiaParaEnviar(mime: string | null | undefined): TipoDaMidiaParaEnviar {
+  const m = String(mime ?? '').toLowerCase().split(';')[0].trim();
+  if (m === 'image/jpeg' || m === 'image/png') return 'image';
+  if (m === 'video/mp4' || m === 'video/3gpp') return 'video';
+  if (m.startsWith('audio/')) return 'audio';
+  return 'document';
+}
+
+/** O teto de cada tipo de envio. */
+export function tetoDaMidiaParaEnviar(tipo: TipoDaMidiaParaEnviar): number {
+  return tipo === 'document' ? TETO_DO_DOCUMENTO_DO_WHATSAPP : TETO_DA_MIDIA_DO_WHATSAPP;
+}
+
+/** A frase de quando o arquivo passa do teto (a tela e a API dizem igual). */
+export function fraseDoTetoDaMidia(tipo: TipoDaMidiaParaEnviar): string {
+  return tipo === 'document'
+    ? 'Documento acima de 100 MB: o WhatsApp não aceita.'
+    : `${tipo === 'image' ? 'Foto' : tipo === 'video' ? 'Vídeo' : 'Áudio'} acima de 16 MB: o WhatsApp não aceita. Mande como documento compactado ou um arquivo menor.`;
+}
+
+/** O caminho da API que entrega o arquivo de uma mensagem. */
+export function rotaDaMidiaDaMensagem(mensagemId: string): string {
+  return `/whatsapp/mensagens/${encodeURIComponent(mensagemId)}/midia`;
 }
 
 // ---------------------------------------------------------------------------
@@ -251,6 +301,16 @@ export const ResponderNaCaixaSchema = z.object({
     .pipe(z.string().min(1, 'Escreva a mensagem.').max(TETO_DA_RESPOSTA_DA_CAIXA, `Até ${TETO_DA_RESPOSTA_DA_CAIXA} caracteres.`)),
 });
 export type ResponderNaCaixa = z.infer<typeof ResponderNaCaixaSchema>;
+
+/**
+ * Layout 27/10: a legenda de um arquivo mandado pela caixa (o campo `legenda`
+ * do multipart). Vazia vale: o arquivo sai sem legenda.
+ */
+export const LegendaDaMidiaSchema = z
+  .string()
+  .optional()
+  .transform((s) => (s ?? '').replace(/\r\n/g, '\n').trim())
+  .pipe(z.string().max(TETO_DA_RESPOSTA_DA_CAIXA, `Até ${TETO_DA_RESPOSTA_DA_CAIXA} caracteres.`));
 
 export const VincularConversaSchema = z.object({
   tipo: z.enum(['lead', 'cliente']),

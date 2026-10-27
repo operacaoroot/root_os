@@ -13,10 +13,19 @@ const API_TARGET = process.env.API_PROXY_TARGET ?? 'http://localhost:4001';
  */
 export const PRAZO_DO_PROXY_DA_API_MS = 600_000;
 
+/**
+ * Layout 27/10: o `middleware.ts` roda também em `/api`, e com middleware o
+ * Next guarda só os primeiros 10 MB do corpo de cada pedido: o documento de
+ * 100 MB que a caixa de WhatsApp manda chegava cortado à API. 110 MB cobre o
+ * teto do WhatsApp (100 MB) mais o envelope do multipart. Mudar exige refazer
+ * a imagem do `web`.
+ */
+export const TETO_DO_CORPO_PELO_MIDDLEWARE = '110mb';
+
 const nextConfig = {
   reactStrictMode: true,
   transpilePackages: ['@mktos/shared'],
-  experimental: { proxyTimeout: PRAZO_DO_PROXY_DA_API_MS },
+  experimental: { proxyTimeout: PRAZO_DO_PROXY_DA_API_MS, middlewareClientMaxBodySize: TETO_DO_CORPO_PELO_MIDDLEWARE },
   // Proxy da API pelo próprio Next → o browser fala sempre com a MESMA origem
   // (funciona em localhost, LAN e túnel; sem CORS e sem URL fixa no build).
   async rewrites() {

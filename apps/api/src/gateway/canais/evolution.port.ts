@@ -96,8 +96,57 @@ export interface RespostaDeGentePelaEvolution {
   responderComoPessoa(orgId: string, chatJid: string, texto: string): Promise<{ id: string }>;
 }
 
+/*
+ * Layout 27/10 (Lucas: "não consigo nem abrir, nem enviar documentos pelo wpp do OS").
+ * A TERCEIRA PORTA DA CAIXA, `MIDIA_DA_CAIXA_PELA_EVOLUTION`: o arquivo de uma
+ * mensagem (baixar, para abrir na caixa) e o arquivo que uma PESSOA manda pela
+ * caixa. Como a resposta de texto, quem chama é só o serviço da caixa, depois
+ * da permissão (`leads.ver` para abrir; `whatsapp.conversar` e gente para
+ * mandar). Catraca em `whatsapp-midia.test.ts`.
+ */
+
+/** A `key` da mensagem na Evolution (a v2 acha a mensagem pelo `id`; o resto vai junto por garantia). */
+export interface ChaveDaMensagemNaEvolution {
+  id: string;
+  remoteJid: string;
+  fromMe: boolean;
+  participant?: string | null;
+}
+
+export interface MidiaBaixadaDaEvolution {
+  /** O arquivo em base64, como a Evolution devolve. */
+  base64: string;
+  mime: string | null;
+  nome: string | null;
+}
+
+export interface MidiaParaEnviarPelaEvolution {
+  tipo: 'image' | 'video' | 'audio' | 'document';
+  mime: string;
+  base64: string;
+  nome: string;
+  /** A legenda que sai (já com a assinatura); o áudio não leva. */
+  legenda: string | null;
+}
+
+export interface MidiaDaCaixaPelaEvolution {
+  /**
+   * `POST /chat/getBase64FromMediaMessage/<instância>`: o arquivo de uma
+   * mensagem. Passou de `teto` bytes, lança `CorpoAcimaDoTetoError`; a
+   * Evolution que não acha mais a mídia responde fora do 2xx (`EvolutionRespondeuErro`).
+   */
+  baixarMidia(orgId: string, chave: ChaveDaMensagemNaEvolution, teto: number): Promise<MidiaBaixadaDaEvolution>;
+  /**
+   * O arquivo que uma PESSOA mandou pela caixa: `POST /message/sendMedia` (foto,
+   * vídeo, documento) ou `POST /message/sendWhatsAppAudio` (áudio). Mesmo
+   * destino e mesmas recusas de `responderComoPessoa`.
+   */
+  responderMidiaComoPessoa(orgId: string, chatJid: string, midia: MidiaParaEnviarPelaEvolution): Promise<{ id: string }>;
+}
+
 export const LEITURA_DA_EVOLUTION = Symbol('LEITURA_DA_EVOLUTION');
 export const RESPOSTA_DE_GENTE_PELA_EVOLUTION = Symbol('RESPOSTA_DE_GENTE_PELA_EVOLUTION');
+export const MIDIA_DA_CAIXA_PELA_EVOLUTION = Symbol('MIDIA_DA_CAIXA_PELA_EVOLUTION');
 
 export const ENVIO_PELA_EVOLUTION = Symbol('ENVIO_PELA_EVOLUTION');
 export const ADMINISTRACAO_DA_EVOLUTION = Symbol('ADMINISTRACAO_DA_EVOLUTION');

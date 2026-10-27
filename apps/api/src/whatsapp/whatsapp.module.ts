@@ -2,7 +2,8 @@ import { Module } from '@nestjs/common';
 
 import { AuditModule } from '../audit/audit.module';
 import { RoutinesModule } from '../routines/routines.module';
-import { CaixaDoWhatsappController } from './caixa.controller';
+import { StorageModule } from '../storage/storage.module';
+import { CaixaDoWhatsappController, MidiaDoWhatsappController } from './caixa.controller';
 import { CaixaDoWhatsappService } from './caixa.service';
 import { GravadorDoWhatsappService } from './gravador.service';
 import { ResumoDoWhatsappController } from './resumo.controller';
@@ -20,6 +21,9 @@ import { VinculoDoWhatsappService } from './vinculo.service';
  *     (só leitura, pela porta `LEITURA_DA_EVOLUTION`).
  *   · W2 · `/whatsapp/conversas`: a caixa (lista, conversa, lida, arquivar,
  *     responder como pessoa pela porta `RESPOSTA_DE_GENTE_PELA_EVOLUTION`).
+ *     Layout 27/10: `POST /whatsapp/conversas/:id/midia` manda arquivo e
+ *     `GET /whatsapp/mensagens/:id/midia` abre o de uma mensagem (porta
+ *     `MIDIA_DA_CAIXA_PELA_EVOLUTION`; o arquivo fica no `StorageService`).
  *   · W3 · `/whatsapp/vinculos`: o vínculo com lead e cliente.
  *   · W4 · `/whatsapp/resumo`: o cartão do Dia a dia e a bolha do menu.
  *
@@ -31,8 +35,8 @@ import { VinculoDoWhatsappService } from './vinculo.service';
  * toda rota `/api/whatsapp/*` responde 404, sem nada acusar.
  */
 @Module({
-  imports: [AuditModule, RoutinesModule],
-  controllers: [CaixaDoWhatsappController, VinculoDoWhatsappController, ResumoDoWhatsappController],
+  imports: [AuditModule, RoutinesModule, StorageModule],
+  controllers: [CaixaDoWhatsappController, MidiaDoWhatsappController, VinculoDoWhatsappController, ResumoDoWhatsappController],
   providers: [
     GravadorDoWhatsappService,
     SincronizacaoDoWhatsappService,
