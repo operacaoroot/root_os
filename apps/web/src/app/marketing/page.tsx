@@ -1,130 +1,187 @@
 'use client';
 
 import Link from 'next/link';
+import { useEffect, useState } from 'react';
+import type { MaquinaPainel, MemoriaPainel, TriagemPainel } from '@mktos/shared';
+import { apiGet } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 
 /*
- * MK7 — a porta do bloco Marketing.
- *
- * A organização segue a do app que virou o modelo desta frente: marca, banco de
- * ideias, agenda, estratégia, performance, relatório e concorrentes. O que MUDA
- * aqui é que cada uma dessas coisas mora onde ela já tem dono no OS — a agenda
- * é a aba Semana da Pauta, os concorrentes são o acervo de Referências ganhando
- * número, e a marca é contexto da empresa. Repetir cada uma como tela própria
- * criaria a segunda verdade que a decisão do Pedro manda evitar.
- *
- * Por isso esta página é um MAPA, e não um painel: ela diz onde cada coisa está
- * e o que ainda não existe, com o nome da fatia que traz. Painel de números
- * aqui competiria com a Central, que já é a home do OS.
+ * Marketing › INÍCIO. Cópia da Home do ROOT Estúdio (public/pages/home.js): a faixa
+ * escura com "Bora <palavra>" e os quatro cartões vivos que levam para cada parte.
+ * Os números vêm da Triagem, da Máquina (Banco e esteira) e da Memória.
  */
 
-interface Destino {
-  titulo: string;
-  o_que: string;
-  href: string | null;
-  onde: string;
-  /** Quando ainda não existe, a fatia que traz. */
-  falta?: string;
+const PALAVRAS = ['aprovar', 'gravar', 'revisar', 'publicar'];
+const plural = (n: number, um: string, varios: string) => `${n} ${n === 1 ? um : varios}`;
+const Seta = () => (
+  <svg className="icon" viewBox="0 0 24 24" aria-hidden="true">
+    <path d="M5 12h14M13 6l6 6-6 6" />
+  </svg>
+);
+
+function useDigitando(palavras: string[]) {
+  const [texto, setTexto] = useState(palavras[0]);
+  useEffect(() => {
+    if (typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+    let wi = 0;
+    let ci = palavras[0].length;
+    let apagando = true;
+    let t: ReturnType<typeof setTimeout>;
+    const passo = () => {
+      const w = palavras[wi];
+      if (!apagando) {
+        ci++;
+        setTexto(w.slice(0, ci));
+        if (ci === w.length) {
+          apagando = true;
+          t = setTimeout(passo, 1600);
+          return;
+        }
+        t = setTimeout(passo, 70 + Math.random() * 60);
+      } else {
+        ci--;
+        setTexto(w.slice(0, ci));
+        if (ci === 0) {
+          apagando = false;
+          wi = (wi + 1) % palavras.length;
+          t = setTimeout(passo, 350);
+          return;
+        }
+        t = setTimeout(passo, 36);
+      }
+    };
+    t = setTimeout(passo, 1600);
+    return () => clearTimeout(t);
+  }, [palavras]);
+  return texto;
 }
 
-const DESTINOS: Destino[] = [
-  { titulo: "Contas e preparação", o_que: "Dono, operadores, versão aprovada e horário para cada destino.", href: "/marketing/preparacao", onde: "Marketing" },
-  {
-    titulo: 'Marca e pilares',
-    o_que: 'Quem a casa é e sobre o que fala. Entra nos pedidos que a pauta faz à IA, ao lado da voz.',
-    href: '/contexto/marca',
-    onde: 'Contexto',
-  },
-  {
-    titulo: 'Banco de ideias',
-    o_que: 'As ideias por pilar, com gancho, roteiro e legenda. Aprovada, vira peça na agenda da semana.',
-    href: '/marketing/ideias',
-    onde: 'Marketing',
-  },
-  {
-    titulo: 'Agenda do mês',
-    o_que: 'O que vai ao ar e quando, com a grade da semana, os feriados e a aprovação em lote.',
-    href: '/pauta?aba=semana',
-    onde: 'Pauta · aba Semana',
-  },
-  {
-    titulo: 'Estratégia do mês',
-    o_que: 'Os pilares da vez, a cadência, as metas, as apostas e o que parar. A IA propõe, você decide.',
-    href: '/marketing/estrategia',
-    onde: 'Marketing',
-  },
-  {
-    titulo: 'Performance',
-    o_que: 'O desempenho da conta e de cada post contra a mediana da própria casa.',
-    href: '/marketing/performance',
-    onde: 'Marketing',
-  },
-  {
-    titulo: 'Relatório do mês',
-    o_que: 'O fechamento: o que foi ao ar, o que decidimos, como rendeu e o que vem.',
-    href: '/marketing/relatorio',
-    onde: 'Marketing',
-  },
-  {
-    titulo: 'Concorrentes',
-    o_que: 'Os perfis observados com número: a mediana de cada um e o índice de cada post contra ela.',
-    href: '/referencias#concorrentes',
-    onde: 'Referências · aba Concorrentes',
-  },
-];
+export default function MarketingInicioPage() {
+  const { user, token, ready, can } = useAuth();
+  const palavra = useDigitando(PALAVRAS);
+  const [triagem, setTriagem] = useState<TriagemPainel | null>(null);
+  const [maquina, setMaquina] = useState<MaquinaPainel | null>(null);
+  const [memoria, setMemoria] = useState<MemoriaPainel | null>(null);
 
-export default function MarketingPage() {
-  const { ready, can } = useAuth();
-  if (!ready) return <p className="text-muted">Carregando…</p>;
-  if (!can('pauta.ver')) return <p className="text-muted">Acesso insuficiente para Marketing.</p>;
+  useEffect(() => {
+    if (!ready || !token) return;
+    void apiGet<TriagemPainel>('/marketing/estudio/triagem', token).then(setTriagem).catch(() => undefined);
+    void apiGet<MaquinaPainel>('/marketing/maquina', token).then(setMaquina).catch(() => undefined);
+    void apiGet<MemoriaPainel>('/marketing/estudio/memoria', token).then(setMemoria).catch(() => undefined);
+  }, [ready, token]);
+
+  if (ready && !can('pauta.ver')) return <div className="estudio"><p className="muted">Acesso insuficiente para Marketing.</p></div>;
+
+  const primeiroNome = String(user?.name ?? '').split(/\s+/)[0];
+  const paraAprovar = triagem?.contagem.nova ?? 0;
+  const posts = maquina?.posts ?? [];
+  const noBanco = posts.filter((p) => p.etapa === 'ideia').length;
+  const emProducao = posts.filter((p) => p.etapa === 'producao' || p.etapa === 'a_agendar').length;
+  const agendados = posts.filter((p) => p.etapa === 'agendado').length;
+  const hoje = new Date().toISOString().slice(0, 10);
+  const notasHoje = (memoria?.notas ?? []).filter((n) => n.criadaEm.slice(0, 10) === hoje).length;
+  const resumo = [
+    paraAprovar ? (
+      <span key="a">
+        <b>{plural(paraAprovar, 'ideia', 'ideias')}</b> para aprovar
+      </span>
+    ) : (
+      <span key="a">nenhuma ideia esperando</span>
+    ),
+    emProducao ? (
+      <span key="p">
+        <b>{plural(emProducao, 'peça', 'peças')}</b> em produção
+      </span>
+    ) : (
+      <span key="p">nada em produção</span>
+    ),
+    <span key="b">
+      <b>{plural(noBanco, 'ideia', 'ideias')}</b> no Banco
+    </span>,
+  ];
+  const cta = paraAprovar ? { href: '/marketing/triagem', label: 'Aprovar ideias' } : { href: '/marketing/memoria', label: 'Abrir a Memória' };
 
   return (
-    <div className="space-y-5">
-      <div>
-        <h1 className="text-xl font-semibold">Marketing</h1>
-        <p className="mt-1 max-w-2xl text-sm text-muted">
-          Marca, ideias, planejamento e preparação das contas. O preparo de uma versão fica salvo;
-          a publicação depende da integração e da autorização da ação.
+    <div className="estudio">
+      <section className="home-hero" style={{ marginTop: 14 }}>
+        <div className="home-grid-bg" aria-hidden="true" />
+        <p className="home-eyebrow">ROOT · Marketing</p>
+        <p className="home-hello">Bem-vindo de volta{primeiroNome ? `, ${primeiroNome}` : ''}</p>
+        <h1 className="home-title">
+          Bora{' '}
+          <span className="home-tw" aria-hidden="true">
+            {palavra}
+          </span>
+          <span className="home-cur" aria-hidden="true" />
+          <span className="sr-only">criar conteúdo</span>
+        </h1>
+        <p className="home-sub">
+          Hoje você tem{' '}
+          {resumo.map((r, i) => (
+            <span key={i}>
+              {r}
+              {i < resumo.length - 1 ? ', ' : ''}
+            </span>
+          ))}
+          .
         </p>
+        <div className="row home-hero-actions">
+          <Link className="home-btn" href={cta.href}>
+            {cta.label} <Seta />
+          </Link>
+          {notasHoje > 0 && <span className="home-today-pill">{plural(notasHoje, 'nota chegou', 'notas chegaram')} hoje na Memória</span>}
+        </div>
+      </section>
+      <div className="home-cards">
+        <Link className="home-card" href="/marketing/triagem">
+          <span className="home-k">Ideias para aprovar</span>
+          <span className="home-v">{paraAprovar}</span>
+          <span className="home-d">{triagem ? `${triagem.contagem.aprovada} aprovadas até hoje` : '…'}</span>
+          <span className="home-go">
+            Aprovar ideias <Seta />
+          </span>
+        </Link>
+        <Link className="home-card" href="/marketing/banco">
+          <span className="home-k">Ideias de conteúdo</span>
+          <span className="home-v">{noBanco}</span>
+          <span className="home-d">no Banco, esperando formato</span>
+          <span className="home-go">
+            Ver o Banco <Seta />
+          </span>
+        </Link>
+        <Link className="home-card" href="/marketing/producao">
+          <span className="home-k">Em produção</span>
+          <span className="home-v">{emProducao}</span>
+          <span className="home-d">{agendados ? `${plural(agendados, 'post agendado', 'posts agendados')}` : 'Aprove uma ideia para começar uma peça.'}</span>
+          <span className="home-go">
+            Produção <Seta />
+          </span>
+        </Link>
+        <Link className="home-card" href="/marketing/memoria">
+          <span className="home-k">Memória</span>
+          <span className="home-v">{memoria?.total ?? 0}</span>
+          <span className="home-d">{memoria ? `${memoria.pastas.find((p) => p.nome === 'Vídeos')?.n ?? 0} vídeos · ${memoria.pastas.find((p) => p.nome === 'Links')?.n ?? 0} links` : '…'}</span>
+          <span className="home-go">
+            Abrir a Memória <Seta />
+          </span>
+        </Link>
       </div>
-
-      {can('tarefas.ver') && <section aria-label="Percurso da tarefa ao preparo" className="space-y-3 rounded-xl border border-border bg-surface p-4">
-        <h2 className="font-medium">Da tarefa ao preparo</h2>
-        <p className="text-sm text-muted">Em Trabalho, abra a tarefa e escolha “Abrir material e Produção”. Confira a versão e a aprovação; depois use “Preparar conta e horário” para levar a origem exata ao destino.</p>
-        <div className="flex flex-wrap gap-3 text-sm"><Link href="/trabalho" className="text-brand underline">Escolher tarefa em Trabalho</Link><Link href="/marketing/preparacao" className="text-brand underline">Conferir contas e preparos</Link></div>
-      </section>}
-
-      <div className="grid gap-3 md:grid-cols-2">
-        {DESTINOS.map((d) => {
-          const corpo = (
-            <>
-              <div className="flex flex-wrap items-baseline justify-between gap-2">
-                <h2 className="font-medium">{d.titulo}</h2>
-                <span className="font-os-mono text-[10px] uppercase tracking-[0.16em] text-muted">
-                  {d.onde}
-                </span>
-              </div>
-              <p className="mt-1 text-sm text-muted">{d.o_que}</p>
-              {d.falta && (
-                <p className="mt-2 font-os-mono text-[11px] text-warn">ainda não existe · fatia {d.falta}</p>
-              )}
-            </>
-          );
-
-          return d.href ? (
-            <Link
-              key={d.titulo}
-              href={d.href}
-              className="rounded-xl border border-border bg-surface p-4 transition hover:border-brand-dim"
-            >
-              {corpo}
-            </Link>
-          ) : (
-            <div key={d.titulo} className="rounded-xl border border-border bg-surface p-4 opacity-60">
-              {corpo}
-            </div>
-          );
-        })}
+      <div className="home-shortcuts">
+        <Link className="home-shortcut" href="/marketing/formatos">
+          <div className="grow">
+            <span className="home-k">Formatos</span>
+            <p>A régua de cada formato, que a IA segue ao escrever os posts.</p>
+          </div>
+          <Seta />
+        </Link>
+        <Link className="home-shortcut" href="/contexto/marca">
+          <div className="grow">
+            <span className="home-k">Marca</span>
+            <p>Cores, fontes, voz e pilares que a IA usa nas peças.</p>
+          </div>
+          <Seta />
+        </Link>
       </div>
     </div>
   );

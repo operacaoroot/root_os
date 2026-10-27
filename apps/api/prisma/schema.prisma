@@ -106,6 +106,11 @@ model Org {
   salasDoCliente       SalaDoCliente[]
   leadReacoes          LeadReacao[]
   salaVersoes          SalaVersao[]
+  marketingPosts       MarketingPost[]
+  marketingMaquina     MarketingMaquinaAjuste?
+  marketingNotas       MarketingNota[]
+  marketingCards       MarketingIdeiaCard[]
+  marketingReguas      MarketingRegua[]
 
   // A régua e a porta (ver "Régua, porta e rastro" no fim do arquivo)
   policyVersions  PolicyVersion[]
@@ -6111,8 +6116,7 @@ model CofreItem {
   @@index([orgId])
 }
 
-// ===========================================================================
-// RODADA DOS AGENTES (21/10/2026, A1) — O GASTO DE IA POR FUNÇÃO
+// ====================================================================// RODADA DOS AGENTES (21/10/2026, A1) — O GASTO DE IA POR FUNÇÃO
 // ===========================================================================
 //
 // O livro do dia (`GastoDeIaNoDia`) diz QUANTO a empresa gastou; o log de passos
@@ -6453,8 +6457,7 @@ model WhatsAppMensagem {
   @@index([orgId, clienteId, timestamp])
 }
 
-// ============================================================================
-// FROTA (27/10/2026): os servidores de cliente que a ROOT opera.
+// =====================================================================// FROTA (27/10/2026): os servidores de cliente que a ROOT opera.
 //
 // Uma CASA é um servidor preparado pelo kit-instalacao-vps (`/srv/<casa>`). O
 // relator do kit (`kit-relatar`, timer de 5 min) manda um JSON com o estado da
@@ -6582,4 +6585,141 @@ model FrotaOrdem {
   updatedAt   DateTime  @updatedAt
 
   @@index([orgId, casaId, estado])
+}
+
+/// MÁQUINA DE CONTEÚDO DA EMPRESA (Marketing, 19/10/2026): o post da própria
+/// empresa, da ideia ao postado, numa esteira só. Regras em
+/// `packages/shared/src/maquina-de-conteudo.ts`. Não confundir com PautaIdeia/
+/// PautaPeca (a pauta que parte do que o mundo publicou e publica pela API).
+model MarketingPost {
+  id            String    @id @default(uuid())
+  orgId         String
+  org           Org       @relation(fields: [orgId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  /// Rótulo livre (`ROOT-025`). A ordem é `ordem`.
+  numero        String    @default("")
+  ordem         Int       @default(0)
+  titulo        String
+  pilar         String    @default("")
+  formato       String    @default("Reel")
+  tipoCard      String    @default("video")
+  prioridade    String    @default("media")
+  headline      String    @default("")
+  subHeadline   String    @default("")
+  roteiro       String    @default("")
+  slides        Json      @default("[]")
+  design        String    @default("")
+  legenda       String    @default("")
+  cta           String    @default("")
+  porque        String    @default("")
+  fontes        Json      @default("[]")
+  recursos      Json      @default("[]")
+  etapa         String    @default("ideia")
+  /// Dia (sem hora) em que vai ao ar ou foi ao ar.
+  data          DateTime? @db.Date
+  linkPublicado String    @default("")
+  metricas      Json      @default("{}")
+  hist          Json      @default("[]")
+  comentarios   Json      @default("[]")
+  criadoPor     String?
+  criadoEm      DateTime  @default(now())
+  atualizadoEm  DateTime  @updatedAt
+
+  /// Comunidade Wpp: News semanal | Enquete | Debate (26/10/2026). Vazio nos outros formatos.
+  subtipo       String    @default("")
+  /// O card da triagem que virou este post (Ideias › Triagem), quando veio de lá.
+  cardId        String?
+
+  @@index([orgId, etapa])
+  @@index([orgId, data])
+}
+
+/// Ajustes da Máquina por empresa: os dias da semana em que ela posta.
+model MarketingMaquinaAjuste {
+  orgId        String   @id
+  org          Org      @relation(fields: [orgId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  cadencia     Int[]    @default([2, 4])
+  atualizadoEm DateTime @updatedAt
+}
+
+// ---------- Marketing no jeito do ROOT Estúdio (26/10/2026) ----------
+// Lógica portada do Estúdio V1. Só tabelas novas; nada da Pauta muda.
+
+/// Memória do Marketing: o que se guarda pelo grupo "Memória ROOT" do WhatsApp ou pela tela.
+/// Link vira nota resumida; Reel/TikTok é baixado, transcrito e destrinchado. Cada nota
+/// também vira .md no Drive Root (40-marca-e-conteudo/Memória/<pasta>), que é o Obsidian.
+model MarketingNota {
+  id            String    @id @default(uuid())
+  orgId         String
+  org           Org       @relation(fields: [orgId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  pasta         String    @default("Conhecimento")
+  titulo        String
+  tipo          String    @default("nota")
+  tags          String[]  @default([])
+  url           String?
+  autor         String?
+  resumo        String    @default("")
+  corpo         String    @default("")
+  status        String    @default("pronto")
+  erro          String?
+  via           String    @default("app")
+  /// Quem mandou: o usuário do OS, ou o número no grupo do WhatsApp.
+  enviadaPor    String?
+  driveFileId   String?
+  driveEm       DateTime?
+  custoUsd      Decimal?  @db.Decimal(10, 4)
+  criadaEm      DateTime  @default(now())
+  atualizadaEm  DateTime  @updatedAt
+
+  @@index([orgId, pasta, atualizadaEm])
+  @@index([orgId, url])
+  @@index([orgId, status])
+}
+
+/// Card da triagem (Ideias): uma captura lida pela IA vira um card; aprovar cria o post no Banco.
+model MarketingIdeiaCard {
+  id              String    @id @default(uuid())
+  orgId           String
+  org             Org       @relation(fields: [orgId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  /// A captura de origem (PautaCaptura) ou a nota da Memória. Sem chave estrangeira: apagar a
+  /// origem não apaga a decisão (é ela que ensina o peso da fonte).
+  capturaId       String?
+  notaId          String?
+  fonteId         String?
+  fonteNome       String    @default("")
+  titulo          String
+  resumo          String    @default("")
+  porque          String    @default("")
+  como            Json      @default("{}")
+  formatoSugerido String    @default("Carrossel")
+  url             String?
+  imagemUrl       String?
+  publicadoEm     DateTime?
+  relevancia      Int       @default(0)
+  score           Float     @default(0)
+  status          String    @default("nova")
+  motivo          String?
+  /// Por que aprovou ou recusou, nas palavras de quem decidiu. Vai para o Obsidian e para o prompt.
+  comentario      String?
+  decididaEm      DateTime?
+  decididaPor     String?
+  postId          String?
+  criadaEm        DateTime  @default(now())
+
+  @@unique([orgId, capturaId])
+  @@unique([orgId, notaId])
+  @@index([orgId, status, score])
+  @@index([orgId, fonteId])
+}
+
+/// Régua de cada formato (Produção › Formatos): referências, regras em tópicos e parâmetros.
+model MarketingRegua {
+  orgId        String
+  org          Org      @relation(fields: [orgId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  formato      String
+  regras       String   @default("")
+  params       Json     @default("{}")
+  referencias  Json     @default("[]")
+  atualizadaEm DateTime @updatedAt
+
+  @@id([orgId, formato])
 }

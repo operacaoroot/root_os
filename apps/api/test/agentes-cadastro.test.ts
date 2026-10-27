@@ -56,7 +56,8 @@ describe('cadastro único de agentes', () => {
     const levantamento = json<{ rows: { id: string }[] }>('docs/agentes/catalogo-levantamento-20261021.json').rows.map((r) => r.id);
     const ids = CADASTRO_DE_FUNCOES.map((f) => f.id);
     // AG-01 é o vigia da agenda (a ata pede); TR-11 é a segunda leitura do arquivista (a lane do Drive pediu).
-    expect(ids).toEqual([...levantamento, 'AG-01', 'TR-11', 'TR-12']);
+    // CT-20 a CT-22: Memória, Triagem e Redator pela régua da aba Marketing no jeito do Estúdio (26/10/2026).
+    expect(ids).toEqual([...levantamento, 'AG-01', 'TR-11', 'TR-12', 'CT-20', 'CT-21', 'CT-22']);
   });
 
   it('id e slug são únicos, e o slug é minúsculo com hífen', () => {

@@ -203,6 +203,15 @@ services:
       # A empresa dona do grupo (o id da org). O JID é global e o webhook tem
       # uma URL por empresa: sem ela, o grupo fica desligado.
       EVOLUTION_LINKS_ORG_ID: ${EVOLUTION_LINKS_ORG_ID:-}
+      # Grupo "Memória ROOT" (Marketing › Memória, 26/10/2026): link ou Reel mandado lá vira nota
+      # (lido, transcrito e destrinchado). Mesmo webhook do canal. Vazio = desligado.
+      MEMORIA_GRUPO_JID: ${MEMORIA_GRUPO_JID:-}
+      MEMORIA_GRUPO_ORG_ID: ${MEMORIA_GRUPO_ORG_ID:-}
+      # A pasta Root no Drive (o .md de cada nota vai em 40-marca-e-conteudo/Memória). Vazio = a Root de sempre.
+      MEMORIA_DRIVE_RAIZ_ID: ${MEMORIA_DRIVE_RAIZ_ID:-}
+      MEMORIA_DRIVE_DESLIGADO: ${MEMORIA_DRIVE_DESLIGADO:-}
+      # Só para teste: Memória, Triagem e Gerar com a régua respondem sem chamar a IA.
+      MARKETING_IA_SIMULADA: ${MARKETING_IA_SIMULADA:-}
       # APROVAR PELO WHATSAPP (fatia 5.5, RF-A-06). DESLIGADO É O PADRÃO: sem as
       # duas variáveis abaixo o webhook responde 404, nenhum pedido de aprovação
       # sai e nenhum código é gerado. Precisam estar NESTE bloco — o container não

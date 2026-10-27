@@ -472,6 +472,35 @@ interface Excecao {
  * A catraca `toda exceção diz qual fatia a remove` recusa fatia já executada.
  */
 const EXCECOES: Excecao[] = [
+  // --- marketing no jeito do ROOT Estúdio (26/10/2026): o mesmo desenho do espelho e da coleta da pauta
+  {
+    arquivo: 'src/marketing-estudio/memoria-do-marketing.service.ts',
+    conector: 'src/google/google.service.ts',
+    motivo:
+      'Mesmo caso do espelho da pauta: escrita do OS no Drive DELE (o .md de cada nota da Memória em 40-marca-e-conteudo/Memória), por rotina, com destino e método fixos (gravarArquivoNoDrive, filhosDaPasta, criarPasta). Não é ação proposta por agente; para virar capacidade precisa de entrada nova no catálogo, que só entra por semente assinada.',
+    fatia: 'onda 8 — resto da 3.3: passa-tudo já fechado; o import só sai com capacidade NOVA no catálogo',
+  },
+  {
+    arquivo: 'src/marketing-estudio/memoria-do-marketing.service.ts',
+    conector: 'src/pauta/apify.service.ts',
+    motivo:
+      'Mesmo caso da coleta da pauta: o Reel ou TikTok mandado para a Memória é lido pelo Apify (scrapeUrl, um run por link que a própria equipe mandou), sem teto decidido pela porta. O run fica registrado na nota (status, erro) e o gasto no Apify.',
+    fatia: 'onda 8 — resto da 3.3: passa-tudo já fechado; o import só sai com capacidade NOVA no catálogo',
+  },
+  {
+    arquivo: 'src/marketing-estudio/reguas.service.ts',
+    conector: 'src/google/google.service.ts',
+    motivo:
+      'Leitura do Drive DELE: importa os .md que o agente da comunidade grava em 11-operacao/canal-whatsapp/semanas (filhosDaPasta, baixarTextoDoDrive), só cria post que falta. Leitura de pasta fixa da casa, não ação de agente.',
+    fatia: 'onda 8 — resto da 3.3: passa-tudo já fechado; o import só sai com capacidade NOVA no catálogo',
+  },
+  {
+    arquivo: 'src/marketing-estudio/triagem.service.ts',
+    conector: 'src/google/google.service.ts',
+    motivo:
+      'Mesmo caso do espelho da pauta: regrava o .md Memória/Algoritmo/Decisões da triagem.md no Drive DELE a partir do banco, a cada decisão comentada (gravarArquivoNoDrive), destino e método fixos.',
+    fatia: 'onda 8 — resto da 3.3: passa-tudo já fechado; o import só sai com capacidade NOVA no catálogo',
+  },
   /*
    * --------------------------------------------------------------------------
    * O QUE A FATIA 3.3 PAGOU AQUI (11/09/2026) — está escrito para que ninguém
@@ -976,6 +1005,13 @@ const HOSTS: Array<{ padrao: RegExp; conector: string }> = [
  * saiu desta lista.
  */
 const EXCECOES_HOST: Excecao[] = [
+  {
+    arquivo: 'src/marketing-estudio/deteccao-de-fonte.ts',
+    conector: 'src/youtube/youtube.service.ts',
+    motivo:
+      'Monta o endereço PÚBLICO do feed RSS do canal (videos.xml?channel_id=…) para cadastrar a fonte da pauta, como o Estúdio fazia. Sem API, sem credencial e sem escrita: quem lê o feed depois é a coleta RSS da pauta. O lugar certo é uma função do conector do YouTube que devolva o endereço do feed.',
+    fatia: 'onda 8 — resto da 3.3: o endereço do feed passa para o conector do YouTube',
+  },
   {
     arquivo: 'src/auth/google-login.service.ts',
     conector: 'src/google/google.service.ts',

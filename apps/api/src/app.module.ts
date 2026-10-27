@@ -41,6 +41,8 @@ import { GoalsModule } from './goals/goals.module';
 import { BioModule } from './bio/bio.module';
 import { PautaModule } from './pauta/pauta.module';
 import { MarketingPreparacaoModule } from './marketing-preparacao/marketing-preparacao.module';
+import { MaquinaDeConteudoModule } from './maquina-de-conteudo/maquina-de-conteudo.module';
+import { MarketingEstudioModule } from './marketing-estudio/marketing-estudio.module';
 import { MemoryModule } from './memory/memoria.module';
 import { RoutinesModule } from './routines/routines.module';
 import { PublicMapModule } from './public-map/public-map.module';
@@ -150,6 +152,8 @@ import { WhatsappModule } from './whatsapp/whatsapp.module';
     BioModule,
     PautaModule,
     MarketingPreparacaoModule,
+    MaquinaDeConteudoModule,
+    MarketingEstudioModule,
     // O RELÓGIO DO PRODUTO (RF-N-04). Depois do PautaModule porque o executor da
     // pauta precisa do `RodadaService` que aquele módulo exporta. Sem esta linha
     // NENHUMA rotina dispara — nem a da pauta —, e a API RECUSA SUBIR: a

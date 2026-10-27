@@ -149,3 +149,6 @@ export * from './whatsapp-caixa.js';
 export * from './ficha-geral.js';
 // As listas importadas do ClickUp na pasta "Arquivo do ClickUp" (leva 5, L1, 27/10/2026): ver `arquivo-do-clickup.ts`.
 export * from './arquivo-do-clickup.js';
+export * from './maquina-de-conteudo.js';
+export * from './marketing-abas.js';
+export * from './marketing-estudio.js';

@@ -1,0 +1,184 @@
+import { Body, Controller, Delete, Get, HttpCode, Param, ParseUUIDPipe, Post, Put, Query, UseGuards } from '@nestjs/common';
+import {
+  GerarPostSchema,
+  MemoriaCapturaSchema,
+  MemoriaNotaCriarSchema,
+  MemoriaNotaSalvarSchema,
+  ReguaReferenciaSchema,
+  ReguaSalvarSchema,
+  TriagemDecisaoSchema,
+  TriagemMontarSchema,
+} from '@mktos/shared';
+import { JwtAuthGuard } from '../auth/jwt-auth.guard';
+import { PermissionsGuard } from '../auth/permissions.guard';
+import { RequirePermissions } from '../auth/permissions.decorator';
+import { CurrentUser, JwtUser } from '../auth/current-user.decorator';
+import { MemoriaDoMarketingService } from './memoria-do-marketing.service';
+import { TriagemService } from './triagem.service';
+import { ReguasService } from './reguas.service';
+import { detectarFonte } from './deteccao-de-fonte';
+
+// Marketing no jeito do ROOT Estúdio (26/10/2026): Memória, Triagem de ideias e Formatos.
+// Mesmas permissões da Máquina: ver = pauta.ver, mexer = pauta.editar. Rotas fixas antes das com `:id`.
+@UseGuards(JwtAuthGuard, PermissionsGuard)
+@Controller('marketing/estudio')
+export class MarketingEstudioController {
+  constructor(
+    private readonly memoria: MemoriaDoMarketingService,
+    private readonly triagem: TriagemService,
+    private readonly reguas: ReguasService,
+  ) {}
+
+  // ---------- Memória ----------
+
+  @Get('memoria')
+  @RequirePermissions('pauta.ver')
+  painel(@CurrentUser() u: JwtUser, @Query('q') q?: string, @Query('tag') tag?: string, @Query('pasta') pasta?: string) {
+    return this.memoria.painel(u.orgId, { q, tag, pasta });
+  }
+
+  @Get('memoria/grafo')
+  @RequirePermissions('pauta.ver')
+  grafo(@CurrentUser() u: JwtUser) {
+    return this.memoria.grafo(u.orgId);
+  }
+
+  @Post('memoria/captura')
+  @RequirePermissions('pauta.editar')
+  capturar(@CurrentUser() u: JwtUser, @Body() body: unknown) {
+    return this.memoria.capturar(u.orgId, MemoriaCapturaSchema.parse(body).texto, 'app', u.name ?? u.sub);
+  }
+
+  @Post('memoria/drive/sincronizar')
+  @RequirePermissions('pauta.editar')
+  sincronizarDrive(@CurrentUser() u: JwtUser) {
+    return this.memoria.sincronizarDrive(u.orgId);
+  }
+
+  @Post('memoria/notas')
+  @RequirePermissions('pauta.editar')
+  criarNota(@CurrentUser() u: JwtUser, @Body() body: unknown) {
+    return this.memoria.criar(u.orgId, u.name ?? u.sub, MemoriaNotaCriarSchema.parse(body));
+  }
+
+  @Get('memoria/notas/:id')
+  @RequirePermissions('pauta.ver')
+  nota(@CurrentUser() u: JwtUser, @Param('id', ParseUUIDPipe) id: string) {
+    return this.memoria.nota(u.orgId, id);
+  }
+
+  @Put('memoria/notas/:id')
+  @RequirePermissions('pauta.editar')
+  salvarNota(@CurrentUser() u: JwtUser, @Param('id', ParseUUIDPipe) id: string, @Body() body: unknown) {
+    return this.memoria.salvar(u.orgId, id, MemoriaNotaSalvarSchema.parse(body));
+  }
+
+  @Delete('memoria/notas/:id')
+  @RequirePermissions('pauta.editar')
+  apagarNota(@CurrentUser() u: JwtUser, @Param('id', ParseUUIDPipe) id: string) {
+    return this.memoria.apagar(u.orgId, id);
+  }
+
+  @Post('memoria/notas/:id/tentar')
+  @RequirePermissions('pauta.editar')
+  tentar(@CurrentUser() u: JwtUser, @Param('id', ParseUUIDPipe) id: string) {
+    return this.memoria.tentarDeNovo(u.orgId, id);
+  }
+
+  // ---------- Triagem ----------
+
+  @Get('triagem')
+  @RequirePermissions('pauta.ver')
+  triagemPainel(@CurrentUser() u: JwtUser) {
+    return this.triagem.painel(u.orgId);
+  }
+
+  // ---------- Fontes (o cadastro é o da Pauta: /pauta/fontes) ----------
+
+  @Post('fontes/detectar')
+  @HttpCode(200)
+  @RequirePermissions('pauta.editar')
+  detectar(@Body() body: { url?: string; nome?: string }) {
+    return detectarFonte(String(body?.url ?? ''), body?.nome ? String(body.nome).slice(0, 120) : undefined);
+  }
+
+  @Get('fontes/pesos')
+  @RequirePermissions('pauta.ver')
+  pesos(@CurrentUser() u: JwtUser) {
+    return this.triagem.pesosDasFontes(u.orgId);
+  }
+
+  @Get('triagem/base')
+  @RequirePermissions('pauta.ver')
+  base(@CurrentUser() u: JwtUser, @Query('q') q?: string, @Query('origem') origem?: string) {
+    return this.triagem.base(u.orgId, q ?? '', origem ?? '');
+  }
+
+  @Post('triagem/montar')
+  @HttpCode(200)
+  @RequirePermissions('pauta.editar')
+  montar(@CurrentUser() u: JwtUser, @Body() body: unknown) {
+    return this.triagem.montar(u.orgId, TriagemMontarSchema.parse(body ?? {}).quantas);
+  }
+
+  @Post('triagem/:id/decisao')
+  @HttpCode(200)
+  @RequirePermissions('pauta.editar')
+  decidir(@CurrentUser() u: JwtUser, @Param('id', ParseUUIDPipe) id: string, @Body() body: unknown) {
+    return this.triagem.decidir(u.orgId, id, u.name ?? u.sub, TriagemDecisaoSchema.parse(body));
+  }
+
+  @Post('triagem/:id/desfazer')
+  @HttpCode(200)
+  @RequirePermissions('pauta.editar')
+  desfazer(@CurrentUser() u: JwtUser, @Param('id', ParseUUIDPipe) id: string) {
+    return this.triagem.desfazer(u.orgId, id, u.name ?? u.sub);
+  }
+
+  // ---------- Formatos e geração ----------
+
+  @Get('formatos')
+  @RequirePermissions('pauta.ver')
+  formatos(@CurrentUser() u: JwtUser) {
+    return this.reguas.listar(u.orgId);
+  }
+
+  @Put('formatos/:formato')
+  @RequirePermissions('pauta.editar')
+  salvarRegua(@CurrentUser() u: JwtUser, @Param('formato') formato: string, @Body() body: unknown) {
+    return this.reguas.salvar(u.orgId, formato, ReguaSalvarSchema.parse(body));
+  }
+
+  @Post('formatos/:formato/referencias')
+  @RequirePermissions('pauta.editar')
+  referencia(@CurrentUser() u: JwtUser, @Param('formato') formato: string, @Body() body: unknown) {
+    return this.reguas.adicionarReferencia(u.orgId, formato, ReguaReferenciaSchema.parse(body));
+  }
+
+  @Delete('formatos/:formato/referencias/:ref')
+  @RequirePermissions('pauta.editar')
+  tirarReferencia(@CurrentUser() u: JwtUser, @Param('formato') formato: string, @Param('ref', ParseUUIDPipe) ref: string) {
+    return this.reguas.removerReferencia(u.orgId, formato, ref);
+  }
+
+  @Post('formatos/:formato/extrair')
+  @HttpCode(200)
+  @RequirePermissions('pauta.editar')
+  extrair(@CurrentUser() u: JwtUser, @Param('formato') formato: string) {
+    return this.reguas.extrair(u.orgId, formato);
+  }
+
+  @Post('posts/:id/gerar')
+  @HttpCode(200)
+  @RequirePermissions('pauta.editar')
+  gerar(@CurrentUser() u: JwtUser, @Param('id', ParseUUIDPipe) id: string, @Body() body: unknown) {
+    return this.reguas.gerarPost(u.orgId, id, u.name ?? u.sub, GerarPostSchema.parse(body ?? {}).instrucao);
+  }
+
+  @Post('comunidade/importar')
+  @HttpCode(200)
+  @RequirePermissions('pauta.editar')
+  importar(@CurrentUser() u: JwtUser) {
+    return this.reguas.importarComunidade(u.orgId, u.name ?? u.sub);
+  }
+}
