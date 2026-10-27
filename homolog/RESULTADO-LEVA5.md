@@ -1,6 +1,8 @@
 # Leva 5 · resultado (27/10/2026)
 
-Roteiro: `docs/comercial/RODADA-LEVA5-20261027.md` (reunião Rodrigo + Lucas + Pedro de 26/10 e as respostas do Rodrigo item a item). Base: produção `c88be864` (layout-leva4o, 26/10 20:55 BRT) + `main` 6a9be2a5, na branch `leva5/20261027`. Quatro frentes em paralelo, cada uma com relatório próprio em `homolog/leva5/`:
+Roteiro: `docs/comercial/RODADA-LEVA5-20261027.md` (reunião Rodrigo + Lucas + Pedro de 26/10 e as respostas do Rodrigo item a item). Base: produção `c88be864` (layout-leva4o, 26/10 20:55 BRT) + `main` 6a9be2a5, na branch `leva5/20261027`.
+
+**Enquanto a leva era montada, a outra sessão (chave do Pedro) publicou `frota-f41461c-20261027` na produção às 04:31Z de 27/10** (a Frota: servidores de cliente que a ROOT opera, seção própria do OS, migration `20261027040000_frota`), construída sobre o merge `85eff404` desta mesma leva (ela leu o `leva5.bundle` em `/srv/rootos/bundles`). A leva 5 absorveu esses dois commits no merge `c4b2f2ac` (conflitos só de forma: alinhamento no schema e fim de linha em `nav.ts`/`nav.test.ts`; a área `frota` entrou somada), e a imagem publicada parte daí. Nota deixada para a outra sessão em `/srv/rootos/bundles/LEIA-ME-leva5.txt`: a próxima leva deve partir de `leva5/20261027`, senão apaga a leva 5 da produção. Quatro frentes em paralelo, cada uma com relatório próprio em `homolog/leva5/`:
 
 | Frente | Itens da reunião | Relatório | Commit |
 |---|---|---|---|
@@ -11,7 +13,14 @@ Roteiro: `docs/comercial/RODADA-LEVA5-20261027.md` (reunião Rodrigo + Lucas + P
 
 Regra da casa mantida nas quatro: dado nenhum apagado, migrations só aditivas, scripts simulam por padrão, cada frente com desfazer, nenhuma permissão, capacidade ou variável de ambiente nova (`db:seed:politica` não precisa rodar).
 
-## Para publicar
+## Publicado em 27/10/2026, 04:52Z (01:52 BRT)
+
+- Release **`leva5-c4b2f2ac-20261027`** (`/srv/rootos/releases/leva5-c4b2f2ac-20261027/`): imagem `rootos-official:leva5-c4b2f2ac` (sha256 `5f7d5313…`), antes `rootos-official:frota-f41461c` (`0a78ce78…`). Backup do banco de antes em `banco-antes.dump` (105 MB) na pasta da release; cadeia de antes e de depois ali também (`REPORT.txt` diz como voltar). Migrations `20261027010000_arquivo_do_clickup` e `20261027020000_ficha_geral` aplicadas; API saudável em 18 s; `/login` 200; `conector "anthropic" implementa o contrato (por AnthropicConector)` no arranque.
+- Passos de dado na produção (ensaio e depois para valer; logs `dados-*.log` e os "antes" em `antes-dos-scripts/*.json` na pasta da release): **Arquivo do ClickUp** criado (`5a48bfda`) com Gestão de Temas, Rotina de stories, Design & Gravação e Copy; Análise, Calendário de conteúdo e Demandas gerais ficaram; 39 tarefas abertas em Todas/Dia a dia antes e depois. **Implantação**: 8 trilhos ativos, 6 já tinham card, 2 cards criados em "Fechado no comercial" (Lucas Rezende, Campo Bom). **Salas**: 22 leads, 3 em saída, nenhum lead ativo tinha sala; 19 salas criadas (`--como rodrigo.saggioro@gmail.com`).
+- Imagens presas contra o prune diário: `guarda-frota-f41461c` e `guarda-leva5-c4b2f2ac` (`sleep infinity`).
+- Código: branch `leva5/20261027` e tag `leva5-20261027` no GitHub (operacaoroot/marketing-os); `main` avançada por fast-forward até o mesmo commit.
+
+## Para publicar (como foi feito)
 
 1. **Imagem nova do api e do web** (uma imagem só, como as levas do Lucas). Build na VPS a partir do bundle: `/srv/rootos/bundles/build-leva5.sh <sha>`.
 2. **Migrations aditivas, duas**, rodadas à parte pelo `publicar-leva-com-migration.sh` (na produção a API parte com `node dist/main.js`, sem migrate):
