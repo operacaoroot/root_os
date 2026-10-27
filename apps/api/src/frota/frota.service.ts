@@ -366,8 +366,9 @@ export class FrotaService {
           novas.push({ orgId, casaId: casa.id, pessoa, fingerprint: ch.fingerprint, tipo: ch.tipo, via, desde: agora, estado: 'ativa' });
           ev({ chave: `chave+:${casa.id}:${ch.fingerprint}`, quando: agora, quem: 'relator', acao: `Chave ${pessoa}${ch.tipo ? ` (${ch.tipo})` : ''} presente no authorized_keys.`, origem: 'relator', tipo: 'acesso' });
         } else if (ex.estado === 'removida' || ex.estado === 'revogada') {
+          // Chave que voltou depois de removida ou revogada: alguém a pôs de novo. Volta a ativa, com o registro gritando.
           atualizacoes.push({ id: ex.id, data: { estado: 'ativa', desde: agora, pessoa, via, revogadoEm: null, revogadoPor: null, motivo: null } });
-          ev({ chave: `chave+:${casa.id}:${ch.fingerprint}:${agora.toISOString().slice(0, 10)}`, quando: agora, quem: 'relator', acao: `Chave ${pessoa} VOLTOU ao authorized_keys depois de ${ex.estado}.`, origem: 'relator', tipo: 'acesso' });
+          ev({ chave: `chave+:${casa.id}:${ch.fingerprint}:${agora.toISOString().slice(0, 10)}`, quando: agora, quem: 'relator', acao: `ATENÇÃO: chave ${pessoa} VOLTOU ao authorized_keys depois de ${ex.estado}. Confira quem a pôs.`, origem: 'relator', tipo: 'acesso' });
         } else if (ex.pessoa !== pessoa || ex.via !== via) {
           atualizacoes.push({ id: ex.id, data: { pessoa, via } });
         }
@@ -486,7 +487,7 @@ export class FrotaService {
           if (ordem.tipo === 'revogar_chave' && p.acessoId) {
             await tx.frotaAcesso.updateMany({ where: { id: p.acessoId }, data: res.ok ? { estado: 'revogada', revogadoEm: agora } : { estado: 'ativa' } });
           }
-          const alvo = ordem.tipo === 'revogar_chave' ? `chave de ${p.pessoa ?? p.fingerprint ?? '?'}` : ordem.tipo === 'desligar_automacao' ? `automação ${p.unidade ?? '?'}` : ordem.tipo.replace('_', ' ');
+          const alvo = ordem.tipo === 'revogar_chave' ? `chave de ${p.pessoa ?? p.fingerprint ?? '?'} ${res.ok ? 'revogada' : 'NÃO revogada'}` : ordem.tipo === 'desligar_automacao' ? `automação ${p.unidade ?? '?'}` : ordem.tipo.replace('_', ' ');
           await tx.frotaEvento.create({
             data: {
               orgId,
