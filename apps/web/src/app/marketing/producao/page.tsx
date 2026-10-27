@@ -95,62 +95,6 @@ function Quadro({ m, painel, abrir, novo, levar, token, gerando, setGerando }: C
             <div className="production-board producao-board">
               {MAQUINA_ESTEIRA.map((etapa) => (
                 <Fragment key={etapa}>
-                <section className={`production-column producao-col-${etapa}`}>
-                  <header>
-                    <h2>{ROTULO_DA_ETAPA[etapa]}</h2>
-                    <span>{por[etapa].length}</span>
-                  </header>
-                  <p className="tiny muted">{DICA[etapa]}</p>
-                  {por[etapa].length === 0 && <p className="board-empty">Nada aqui.</p>}
-                  {por[etapa].map((p) => {
-                    const semTexto = !p.roteiro && !p.legenda && p.slides.length === 0;
-                    return (
-                      <div
-                        key={p.id}
-                        className="content-card board-card producao-card"
-                        onClick={(e) => {
-                          if ((e.target as HTMLElement).closest('button, a')) return;
-                          abrir(p.id);
-                        }}
-                        style={{ cursor: 'pointer' }}
-                      >
-                        <div className={`card-art ${FAIXA[p.formato] ?? ''}`}>
-                          <span>
-                            {p.formato}
-                            {p.subtipo ? ` · ${p.subtipo}` : ''}
-                          </span>
-                        </div>
-                        <div className="card-body">
-                          <h3>{p.titulo}</h3>
-                          {(p.headline || p.porque) && <p>{p.headline || p.porque}</p>}
-                          {etapa === 'ideia' && semTexto && m.editavel && (
-                            <div className="producao-formats">
-                              {FORMATOS_COM_REGUA.map((f) => (
-                                <button key={f} className={`small${f === p.formato ? ' primary' : ''}`} disabled={gerando === p.id} onClick={() => void escolher(p, f)} title={f === p.formato ? 'Formato sugerido' : ''}>
-                                  {f}
-                                </button>
-                              ))}
-                            </div>
-                          )}
-                          {gerando === p.id && <span className="badge running">Escrevendo pela régua…</span>}
-                          <div className="card-meta">
-                            <span>{p.data ? `vai ao ar ${p.data.slice(8, 10)}/${p.data.slice(5, 7)}` : dataCurta(p.atualizadoEm)}</span>
-                            <a
-                              className="board-open"
-                              href={`?post=${p.id}`}
-                              onClick={(e) => {
-                                e.preventDefault();
-                                abrir(p.id);
-                              }}
-                            >
-                              Abrir →
-                            </a>
-                          </div>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </section>
                 {etapa === 'ideia' && (
                   <section className="production-column producao-col-comunidade">
                     <header>
@@ -212,6 +156,62 @@ function Quadro({ m, painel, abrir, novo, levar, token, gerando, setGerando }: C
                     })}
                   </section>
                 )}
+                <section className={`production-column producao-col-${etapa}`}>
+                  <header>
+                    <h2>{ROTULO_DA_ETAPA[etapa]}</h2>
+                    <span>{por[etapa].length}</span>
+                  </header>
+                  <p className="tiny muted">{DICA[etapa]}</p>
+                  {por[etapa].length === 0 && <p className="board-empty">Nada aqui.</p>}
+                  {por[etapa].map((p) => {
+                    const semTexto = !p.roteiro && !p.legenda && p.slides.length === 0;
+                    return (
+                      <div
+                        key={p.id}
+                        className="content-card board-card producao-card"
+                        onClick={(e) => {
+                          if ((e.target as HTMLElement).closest('button, a')) return;
+                          abrir(p.id);
+                        }}
+                        style={{ cursor: 'pointer' }}
+                      >
+                        <div className={`card-art ${FAIXA[p.formato] ?? ''}`}>
+                          <span>
+                            {p.formato}
+                            {p.subtipo ? ` · ${p.subtipo}` : ''}
+                          </span>
+                        </div>
+                        <div className="card-body">
+                          <h3>{p.titulo}</h3>
+                          {(p.headline || p.porque) && <p>{p.headline || p.porque}</p>}
+                          {etapa === 'ideia' && semTexto && m.editavel && (
+                            <div className="producao-formats">
+                              {FORMATOS_COM_REGUA.map((f) => (
+                                <button key={f} className={`small${f === p.formato ? ' primary' : ''}`} disabled={gerando === p.id} onClick={() => void escolher(p, f)} title={f === p.formato ? 'Formato sugerido' : ''}>
+                                  {f}
+                                </button>
+                              ))}
+                            </div>
+                          )}
+                          {gerando === p.id && <span className="badge running">Escrevendo pela régua…</span>}
+                          <div className="card-meta">
+                            <span>{p.data ? `vai ao ar ${p.data.slice(8, 10)}/${p.data.slice(5, 7)}` : dataCurta(p.atualizadoEm)}</span>
+                            <a
+                              className="board-open"
+                              href={`?post=${p.id}`}
+                              onClick={(e) => {
+                                e.preventDefault();
+                                abrir(p.id);
+                              }}
+                            >
+                              Abrir →
+                            </a>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </section>
                 </Fragment>
               ))}
             </div>
