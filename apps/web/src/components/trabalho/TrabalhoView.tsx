@@ -731,6 +731,7 @@ function TrabalhoConteudo({ visaoInicial, modo, aoSairDeTodas }: { visaoInicial:
     : lista ? (listaEhImplantacao ? [] : [lista])
     : semLista ? (geral ? listasDoRecorte : todasAsListas).filter((l) => l.natureza !== 'cadastro' && l.id !== daImplantacao)
     : [];
+  const pastasDoSeletor = estrutura ? pastasComAsDoComercial(estrutura) : undefined;
   const pessoasParaCriar = estrutura ? soDaEquipe(estrutura.pessoas ?? [], idsDaEquipe) : [];
   const pastaDaLista = lista && estrutura ? estrutura.folders.find((f) => f.lists.some((l) => l.id === lista.id))?.id ?? '' : '';
 
@@ -1147,7 +1148,7 @@ function TrabalhoConteudo({ visaoInicial, modo, aoSairDeTodas }: { visaoInicial:
             {/* No "Por prazo" a nova tarefa mora no pé de cada grupo, com o dia dele; nos outros agrupamentos, no topo. */}
             {listasParaCriar.length > 0 && fAgrupar !== 'datas' && (
               <NovaTarefaRapida
-                listas={listasParaCriar} pessoas={pessoasParaCriar} token={token} onDone={refresh} onErro={setErro}
+                listas={listasParaCriar} pastas={pastasDoSeletor} pessoas={pessoasParaCriar} token={token} onDone={refresh} onErro={setErro}
                 testid="trabalho-lista-nova"
               />
             )}
@@ -1159,7 +1160,7 @@ function TrabalhoConteudo({ visaoInicial, modo, aoSairDeTodas }: { visaoInicial:
               edicao={quadroEditavel ? escrita.edicao(idsDaEquipe, estrutura?.agentes ?? []) : null}
               novaNoGrupo={listasParaCriar.length > 0 ? (dia) => (
                 <NovaTarefaRapida
-                  autoFocus listas={listasParaCriar} prazoInicial={dia ?? ''} pessoas={pessoasParaCriar} token={token}
+                  autoFocus listas={listasParaCriar} pastas={pastasDoSeletor} prazoInicial={dia ?? ''} pessoas={pessoasParaCriar} token={token}
                   onDone={refresh} onErro={setErro} testid="trabalho-grupo-nova-form"
                 />
               ) : null}
@@ -1177,7 +1178,7 @@ function TrabalhoConteudo({ visaoInicial, modo, aoSairDeTodas }: { visaoInicial:
             testid="trabalho-calendario"
             novaTarefa={listasParaCriar.length > 0 ? (dia) => (
               <NovaTarefaRapida
-                key={dia} autoFocus listas={listasParaCriar} prazoInicial={dia} pessoas={pessoasParaCriar} token={token}
+                key={dia} autoFocus listas={listasParaCriar} pastas={pastasDoSeletor} prazoInicial={dia} pessoas={pessoasParaCriar} token={token}
                 onDone={refresh} onErro={setErro} testid="trabalho-calendario-nova-form"
               />
             ) : undefined}

@@ -378,11 +378,12 @@ export function AbaMinhasTarefas({ token }: { token: string }) {
   }, [equipe, eu, filtros.responsavel, estrutura]);
   const nomeDoResponsavel = (estrutura?.pessoas ?? []).find((p) => p.id === filtros.responsavel)?.name ?? 'essa pessoa';
   // Layout 26/10 (Lucas): criar daqui ("+ Adicionar tarefa" nos grupos por prazo), nas listas de tarefa; responsável, você.
+  const pastasDoSeletor = estrutura ? pastasComAsDoComercial(estrutura) : undefined;
   const daImplantacao = estrutura ? listaDaImplantacao(pastasComAsDoComercial(estrutura))?.listaId ?? null : null;
   const listasParaCriar = editable ? todasAsListas.filter((l) => l.natureza !== 'cadastro' && l.id !== daImplantacao) : [];
   const novaNoGrupo = listasParaCriar.length > 0 ? (dia: string | null) => (
     <NovaTarefaRapida
-      autoFocus listas={listasParaCriar} prazoInicial={dia ?? ''} pessoas={equipe} token={token}
+      autoFocus listas={listasParaCriar} pastas={pastasDoSeletor} prazoInicial={dia ?? ''} pessoas={equipe} token={token}
       onDone={refresh} onErro={setAvisoDeEscrita} testid="caixa-nova-form"
     />
   ) : null;

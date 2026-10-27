@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Plus } from 'lucide-react';
-import { DICA_DO_NOME_DA_TAREFA, TRAB_CLIENTE_INTERNO, ehAListaDoComercial, type TrabClienteDto, type TrabListaDto } from '@mktos/shared';
+import { DICA_DO_NOME_DA_TAREFA, TRAB_CLIENTE_INTERNO, ehAListaDoComercial, listasForaDoArquivoDoClickUp, type TrabClienteDto, type TrabListaDto } from '@mktos/shared';
 import { apiGet, apiPost } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 import { prazoDoDia } from './CalendarioDeTarefas';
@@ -22,6 +22,9 @@ import { SeletorDeLead, type LeadEscolhido } from './SeletorDeLead';
  *    campo é o LEAD (opcional, com "+ criar lead");
  *  · com mais de uma lista possível (Todas, uma pasta), um seletor pequeno de lista; a
  *    última usada nesta visita vem marcada, senão a primeira.
+ *  · Layout 27/10 (Lucas: "as pastas daqui são diferentes das de Tarefas"): com `pastas`, o
+ *    seletor agrupa as listas pela pasta da árvore do Trabalho ("Operação", "Comercial"…),
+ *    na ordem dela, e deixa de fora as do Arquivo do ClickUp, que a árvore guarda recolhidas.
  * Cria por `POST /trabalho/tarefas` (`assigneeUserId`, `dueDate` ao meio-dia de São Paulo,
  * como o calendário grava, `clienteId`, `leadId`).
  */
@@ -46,11 +49,16 @@ export function useNomeDoClienteInterno(token: string | null): string {
   return nome;
 }
 
+/** A pasta como a árvore a mostra: o nome e o pai (para "Pai › Filha"). */
+export type PastaDoSeletor = { id: string; name: string; parentId: string | null; lists: { id: string }[] };
+
 const CAMPO = 'min-w-0 rounded border border-border bg-surface-2 px-1.5 py-1 text-[12px] outline-none focus:border-brand-dim';
 
-export function NovaTarefaRapida({ listas, statusId, prazoInicial = '', pessoas, token, onDone, onErro, testid, testidCliente, compacto = false, autoFocus = false }: {
+export function NovaTarefaRapida({ listas, pastas, statusId, prazoInicial = '', pessoas, token, onDone, onErro, testid, testidCliente, compacto = false, autoFocus = false }: {
   /** As listas onde a tarefa pode nascer; com mais de uma, aparece o seletor de lista. */
   listas: TrabListaDto[];
+  /** As pastas da árvore do Trabalho: com elas, o seletor de lista agrupa por pasta. */
+  pastas?: PastaDoSeletor[];
   /** A etapa (a coluna do quadro); sem ela, a primeira da lista. Só vale com uma lista. */
   statusId?: string;
   /** AAAA-MM-DD (o dia do calendário). */
@@ -90,6 +98,34 @@ export function NovaTarefaRapida({ listas, statusId, prazoInicial = '', pessoas,
   }, [eu, gente, responsavelMexido]);
 
   const lista = listas.find((l) => l.id === listaId) ?? null;
+  // O seletor: sem as listas do Arquivo do ClickUp (salvo se só houver elas) e, com as pastas, agrupado como a árvore.
+  const grupos = useMemo(() => {
+    const fora = listasForaDoArquivoDoClickUp(listas);
+    const visiveis = fora.length ? fora : listas;
+    if (!pastas?.length) return [{ rotulo: "", listas: visiveis }];
+    const porId = new Map(pastas.map((p) => [p.id, p]));
+    const caminho = (p: PastaDoSeletor) => {
+      const nomes: string[] = [];
+      for (let a: PastaDoSeletor | undefined = p, n = 0; a && n < 6; a = a.parentId ? porId.get(a.parentId) : undefined, n++) nomes.unshift(a.name);
+      return nomes.join(" › ");
+    };
+    const daLista = new Map<string, string>();
+    const ordem: string[] = [];
+    for (const p of pastas) {
+      const r = caminho(p);
+      if (!ordem.includes(r)) ordem.push(r);
+      for (const l of p.lists) if (!daLista.has(l.id)) daLista.set(l.id, r);
+    }
+    const comercial = pastas.find((p) => !p.parentId && p.name.trim().toLowerCase() === "comercial");
+    const porGrupo = new Map<string, TrabListaDto[]>();
+    for (const l of visiveis) {
+      const r = daLista.get(l.id) ?? (ehAListaDoComercial(l) ? (comercial ? caminho(comercial) : "Comercial") : "Sem pasta");
+      porGrupo.set(r, [...(porGrupo.get(r) ?? []), l]);
+    }
+    return [...porGrupo.keys()]
+      .sort((a, b) => (ordem.indexOf(a) < 0 ? 999 : ordem.indexOf(a)) - (ordem.indexOf(b) < 0 ? 999 : ordem.indexOf(b)))
+      .map((rotulo) => ({ rotulo, listas: porGrupo.get(rotulo)! }));
+  }, [listas, pastas]);
   const doComercial = ehAListaDoComercial(lista);
   const casa = useNomeDoClienteInterno(doComercial ? token : null);
   const pronto = !!titulo.trim() && !!lista && (doComercial || !!cliente) && !criando;
@@ -146,7 +182,10 @@ export function NovaTarefaRapida({ listas, statusId, prazoInicial = '', pessoas,
           <div className={compacto ? 'space-y-1' : 'flex flex-wrap items-center gap-1.5'}>
             {listas.length > 1 && (
               <select aria-label="Lista da nova tarefa" data-testid={`${testid}-lista`} value={listaId} onChange={(e) => setListaId(e.target.value)} className={`${CAMPO} max-w-[12rem]`}>
-                {listas.map((l) => <option key={l.id} value={l.id}>{l.name}</option>)}
+                {lista && !grupos.some((g) => g.listas.includes(lista)) && <option value={lista.id}>{lista.name}</option>}
+                {grupos.map((g) => g.rotulo
+                  ? <optgroup key={g.rotulo} label={g.rotulo}>{g.listas.map((l) => <option key={l.id} value={l.id}>{l.name}</option>)}</optgroup>
+                  : g.listas.map((l) => <option key={l.id} value={l.id}>{l.name}</option>))}
               </select>
             )}
             <select
