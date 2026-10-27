@@ -304,7 +304,7 @@ export function Tabela({ tarefas, campos, trilhos, onAbrir, mostrarLista = false
     );
   };
   return (
-    <div className="overflow-x-auto rounded-xl border border-border">
+    <div className="overflow-x-auto rounded-xl border border-border bg-surface">
       <table className="w-full min-w-[720px] text-sm">
         <thead>
           <tr className="border-b border-border bg-surface text-left text-[11px] uppercase tracking-wide text-muted">
@@ -356,7 +356,7 @@ export function Tabela({ tarefas, campos, trilhos, onAbrir, mostrarLista = false
                 onDragEnd={() => setArrastando(null)}
                 onDragOver={onReordenar ? (e) => { if (arrastando) e.preventDefault(); } : undefined}
                 onDrop={onReordenar ? (e) => { e.preventDefault(); soltar(g.itens, t.id); } : undefined}
-                className={`cursor-pointer border-b border-border/50 hover:bg-surface-2/50 ${arrastando === t.id ? 'opacity-50' : ''}`}
+                className={`cursor-pointer border-b border-border hover:bg-surface-2/60 ${arrastando === t.id ? 'opacity-50' : ''}`}
               >
                 {selecao && (
                   <td className="px-2 py-2.5" onClick={(e) => e.stopPropagation()}>
@@ -404,7 +404,7 @@ export function Tabela({ tarefas, campos, trilhos, onAbrir, mostrarLista = false
               </tr>
             ))}
             {agrupada && !recolhidos.has(g.chave) && recebeNova(g.chave) && (
-              <tr className="border-b border-border/50" data-testid={`tabela-grupo-${g.chave}-nova`}>
+              <tr className="border-b border-border" data-testid={`tabela-grupo-${g.chave}-nova`}>
                 <td colSpan={colunas} className="px-3 py-2.5">
                   {adicionandoEm === g.chave ? (
                     <div className="space-y-1">
