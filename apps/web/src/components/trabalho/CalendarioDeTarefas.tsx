@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { hojeEmBrasilia } from '@/lib/horas';
+import { alvoDoMenu, useMenuDaTarefa } from './MenuDaTarefa';
 
 /*
  * O CALENDÁRIO DAS TAREFAS (versão final, F4, 19/10/2026). Trazido do Dia a dia do
@@ -89,6 +90,8 @@ export function CalendarioDeTarefas({ itens, podeEditar, onAbrir, onMudarPrazo, 
     onDragEnd: () => { setArrastando(null); setSobre(null); },
   });
   const botao = 'rounded-md border border-border px-2.5 py-1 text-sm hover:border-brand max-md:min-h-[44px]';
+  // Leva 5, L2: o botão direito (e Shift+F10) na tarefa do calendário abre o menu da superfície, quando há um.
+  const menu = useMenuDaTarefa();
   const tarefa = (t: ItemDoCalendario, dia: string | null) => {
     const atrasada = !t.concluida && !!dia && dia < hoje;
     return (
@@ -96,6 +99,7 @@ export function CalendarioDeTarefas({ itens, podeEditar, onAbrir, onMudarPrazo, 
         key={t.id}
         type="button"
         {...arrastavel(t)}
+        {...alvoDoMenu(menu, { id: t.id, title: t.titulo })}
         onClick={() => onAbrir(t.id)}
         data-testid={`${testid}-tarefa-${t.id}`}
         title={[t.titulo, t.detalhe].filter(Boolean).join(' · ')}

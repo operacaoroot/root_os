@@ -187,6 +187,11 @@ export const AuditLogRowSchema = z.object({
   entityId: z.string().nullable(),
   ip: z.string().nullable(),
   createdAt: z.string(), // ISO
+  // Leva 5, L2 (27/10/2026): o antes, o depois e os metadados vêm SÓ quando a lista é de uma entidade
+  // (`GET /audit?entidade=`), para o Histórico da tarefa; a listagem geral do Registro de ações segue leve.
+  before: z.unknown().optional(),
+  after: z.unknown().optional(),
+  metadata: z.unknown().optional(),
 });
 export type AuditLogRow = z.infer<typeof AuditLogRowSchema>;
 
@@ -5604,6 +5609,8 @@ export interface TrabListaDto {
   /** Ícone e cor na frente do nome (I1, 22/10/2026); ausente ou nulo = sem. */
   icone?: string | null;
   cor?: CorDoTrabalho | null;
+  /** Do Arquivo do ClickUp (leva 5, L1): a lista (ou a pasta dela) saiu de Todas e do Dia a dia; ausente = não. */
+  arquivoDoClickUp?: boolean;
 }
 /**
  * `folders` traz TODAS as pastas, de qualquer nível, numa lista só: quem quiser
@@ -5616,6 +5623,8 @@ export interface TrabPastaDto {
   /** Ícone e cor na frente do nome (I1, 22/10/2026); ausente ou nulo = sem. */
   icone?: string | null;
   cor?: CorDoTrabalho | null;
+  /** A pasta "Arquivo do ClickUp" (leva 5, L1): fica na árvore, recolhida por padrão; ausente = não. */
+  arquivoDoClickUp?: boolean;
 }
 export interface TrabEspacoDto { id: string; name: string; order: number; externalId: string | null }
 export interface TrabTagDto { id: string; name: string; color: string }

@@ -31,7 +31,7 @@ import { clienteInterno, listarClientes, nomesDosClientes, resolverCliente } fro
 import { criarEstruturaSugerida, criarListaDoModeloNoBanco, criarListaPadraoNoBanco } from './estrutura-sugerida';
 import { SEGMENTO_SEM_PASTA, pastaComSubpastas, type WorkTaskQuery } from './work-task-query';
 import { exigirAcessoAtual } from '../memory/acesso-memoria';
-import { listaVisivel, pastasEscondidas, tarefaDeListaVisivel, tarefaViva } from './arquivadas';
+import { ehDoArquivoDoClickUp, idsDasPastasDoArquivoDoClickUp, listaVisivel, pastasEscondidas, tarefaDeListaVisivel, tarefaForaDoArquivoDoClickUp, tarefaViva } from './arquivadas';
 import { ehListaDoComercial, foraDaArvore } from './lista-do-comercial';
 import { PASTA_DO_TRABALHO, ehDoComercial, idsDasPastasDoComercial, listaForaDoComercial, recusarPastaDoComercial, tarefaForaDoComercial } from './pasta-do-comercial';
 import { aparenciaDoNo, mudancaDeAparencia } from './aparencia-do-trabalho';
@@ -194,11 +194,15 @@ export class WorkService {
     const listasVivas = lists.filter((l) => !l.arquivadaEm && !(l.folderId && escondidas.has(l.folderId)) && naArvore(l) && !ehDoComercial(l, doComercial));
     const naTela = new Set(listasVivas.map((l) => l.id));
     const listasDoComercial = lists.filter((l) => !l.arquivadaEm && !!l.folderId && doComercial.has(l.folderId) && !escondidas.has(l.folderId));
+    // O Arquivo do ClickUp (leva 5, L1) fica na árvore: a marca vai na pasta e em cada lista dela, para a
+    // tela recolher a pasta por padrão e deixar os status dessas listas fora das colunas de "Todas".
+    const doArquivo = idsDasPastasDoArquivoDoClickUp(folders);
 
     const toLista = (l: (typeof lists)[number]): TrabListaDto => ({
       id: l.id, name: l.name, order: l.order, externalId: l.externalId, spaceId: l.spaceId,
       natureza: l.natureza,
       ...aparenciaDoNo(l),
+      ...(ehDoArquivoDoClickUp(l, doArquivo) ? { arquivoDoClickUp: true } : {}),
       total: porLista.get(l.id) ?? 0,
       statuses: l.statuses.map((s) => ({
         id: s.id, name: s.name, type: s.type, color: s.color, order: s.order,
@@ -212,6 +216,7 @@ export class WorkService {
       folders: pastasVivas.map((fo) => ({
         id: fo.id, name: fo.name, order: fo.order,
         spaceId: fo.spaceId, parentId: fo.parentId, externalId: fo.externalId, ...aparenciaDoNo(fo),
+        ...(doArquivo.has(fo.id) ? { arquivoDoClickUp: true } : {}),
         lists: listasVivas.filter((l) => l.folderId === fo.id).map(toLista),
       })),
       listasSoltas: listasVivas.filter((l) => !l.folderId).map(toLista),
@@ -1282,6 +1287,8 @@ export class WorkService {
         // Layout 26/10 (Lucas): "Todas" tem TODAS as tarefas do OS, o mesmo recorte do Dia a dia. As do comercial
         // entram (seguem também no Funil); só a pasta Clientes (cards da Implantação) fica fora, como no Dia a dia.
         tarefaForaDoComercial(),
+        // Leva 5, L1: as listas do Arquivo do ClickUp ficam fora de "Todas" (com ou sem segmento), como no Dia a dia.
+        tarefaForaDoArquivoDoClickUp(),
       ];
       /*
        * O SEGMENTO (rodada da interface U3): "Todas" recortada por uma pasta de topo,
@@ -1296,8 +1303,9 @@ export class WorkService {
       }
     } else {
       where.AND = [visivel, tarefaViva()];
-      // A pessoa em todas as listas não vê as listas do Comercial (I3); o quadro de uma lista pedida pelo id, sim.
-      if (!f.listId && !f.listIds && !f.listExternalIds) where.AND.push(tarefaForaDoComercial());
+      // A pessoa em todas as listas não vê as listas do Comercial (I3) nem as do Arquivo do ClickUp (L1);
+      // o quadro de uma lista pedida pelo id, sim.
+      if (!f.listId && !f.listIds && !f.listExternalIds) where.AND.push(tarefaForaDoComercial(), tarefaForaDoArquivoDoClickUp());
     }
     if (f.tagId) where.tags = { some: { id: f.tagId } };
     if (f.q) where.title = { contains: f.q, mode: 'insensitive' };

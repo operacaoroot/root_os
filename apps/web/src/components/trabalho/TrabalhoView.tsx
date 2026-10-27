@@ -7,7 +7,7 @@ import { Archive, Bot, CalendarDays, ChevronRight, CircleDot, Clock, ExternalLin
 import {
   MODELOS_DE_LISTA, MOEDA_PADRAO, ehValorMonetarioCanonico, lerValorDigitadoPtBr,
   listaDaImplantacao, moedaDoValor, paraDigitarPtBr, LISTA_DA_IMPLANTACAO, PASTA_DA_IMPLANTACAO, PORTA_DA_IMPLANTACAO,
-  listasComAsDoComercial, pastasComAsDoComercial, ehAListaDoComercial,
+  listasComAsDoComercial, pastasComAsDoComercial, ehAListaDoComercial, listasForaDoArquivoDoClickUp,
   AGRUPAMENTOS, ROTULO_DO_AGRUPAMENTO, AGRUPAMENTO_PADRAO_DAS_TAREFAS, descreverRecorrencia,
   ROTULO_DA_REGUA_DE_PRAZO, reguaDePrazo, GRUPOS_DA_REGUA_DE_PRAZO,
 } from '@mktos/shared';
@@ -655,8 +655,13 @@ function TrabalhoConteudo({ visaoInicial, modo, aoSairDeTodas }: { visaoInicial:
    * de cadastro (as do ClickUp de marketing) já não mostram cards em "Todas", mas os
    * status delas viravam colunas vazias. Escolhendo a pasta no segmento, tudo volta.
    */
+  /*
+   * Leva 5, L1 (27/10/2026): as listas do Arquivo do ClickUp NUNCA dão coluna em "Todas", com ou sem
+   * segmento. A API já tira as tarefas delas; sem este recorte os 18 status herdados do ClickUp
+   * voltariam como colunas vazias. A regra é a do shared (`listasForaDoArquivoDoClickUp`).
+   */
   const listasDoRecorte = useMemo(
-    () => (estrutura ? (fSegmento ? listasDaPasta(estrutura, fSegmento) : todasAsListas.filter((l) => l.natureza !== 'cadastro')) : []),
+    () => (estrutura ? listasForaDoArquivoDoClickUp(fSegmento ? listasDaPasta(estrutura, fSegmento) : todasAsListas.filter((l) => l.natureza !== 'cadastro')) : []),
     [estrutura, fSegmento, todasAsListas],
   );
   const colunasGerais = useMemo(() => colunasDeTodas(listasDoRecorte, visiveis), [listasDoRecorte, visiveis]);

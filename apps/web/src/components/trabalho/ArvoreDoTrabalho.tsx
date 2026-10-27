@@ -3,9 +3,9 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { ChevronDown, ChevronRight, GripVertical, Plus, Trash2 } from 'lucide-react';
 import {
-  chaveDoNomeNoNivel, ehAListaDoComercial, listaDaImplantacao, motivoParaNaoMoverPasta,
-  TRAB_LISTA_DA_IMPLANTACAO_PROTEGIDA, TRAB_LISTA_DO_COMERCIAL_PROTEGIDA,
-  TRAB_NOME_DE_LISTA_REPETIDO, TRAB_NOME_DE_PASTA_REPETIDO, TRAB_PASTA_DA_IMPLANTACAO_PROTEGIDA,
+  chaveDoNomeNoNivel, ehAListaDoComercial, ehDoArquivoDoClickUp, ehPastaDoComercial, listaDaImplantacao, motivoParaNaoMoverPasta, pastasNaArvoreDoTrabalho,
+  TRAB_ARQUIVO_DO_CLICKUP, TRAB_LISTA_DA_IMPLANTACAO_PROTEGIDA, TRAB_LISTA_DO_COMERCIAL_PROTEGIDA,
+  TRAB_NOME_DE_LISTA_REPETIDO, TRAB_NOME_DE_PASTA_REPETIDO, TRAB_PASTA_DA_IMPLANTACAO_PROTEGIDA, TRAB_PASTA_DO_COMERCIAL_NA_ARVORE,
   type TrabEstrutura, type TrabListaDto,
 } from '@mktos/shared';
 import { apiPatch, apiPost } from '@/lib/api';
@@ -45,7 +45,14 @@ import { DialogoDeIcone, IconeDaLista } from './IconeDaLista';
  *  · Layout 26/10 (Lucas): a lista "Tarefas do comercial" (a do Funil vivo) aparece na
  *    pasta Comercial. Abre e recebe tarefa nova como as outras; não se renomeia, não sai
  *    da pasta, não ganha ícone, não se apaga nem arquiva: o menu diz por quê. Dentro da
- *    pasta ela troca de posição com as irmãs.
+ *    pasta ela troca de posição com as irmãs;
+ *  · Leva 5, L3 (27/10/2026, pedido do Rodrigo em 26/10): a pasta Clientes VOLTA à árvore,
+ *    no fim, recolhida por padrão, só para abrir as listas (a Implantação saiu do menu e a
+ *    lista Onboarding de cliente ficaria sem porta). Ela continua do Comercial: não se
+ *    renomeia, não se move, não recebe nem solta lista, não se apaga; as tarefas dela
+ *    seguem fora de Todas e do Dia a dia. A API não mudou (`pastasDoComercial`);
+ *  · Leva 5, L1: a pasta "Arquivo do ClickUp" (dentro de Marketing) vem recolhida por
+ *    padrão e com a frase do porquê; abrir e fechar fica lembrado como nas outras.
  * A ordem vai em `POST /trabalho/arvore/ordem` com todos os irmãos do nível, que a
  * API confere; mudar a lista de pasta, em `PATCH /trabalho/listas/:id`; mudar a
  * pasta de mãe, em `POST /trabalho/pastas/:id/mover`.
@@ -150,22 +157,47 @@ export function ArvoreDoTrabalho({ estrutura, pastas, mostraSoltas, listaId, edi
   const [recolhidas, setRecolhidas] = useState<Set<string>>(() => {
     try { return new Set(JSON.parse(window.localStorage.getItem('trabalho-arvore-recolhidas') ?? '[]') as string[]); } catch { return new Set(); }
   });
-  const alternarPasta = (id: string) => setRecolhidas((r) => {
-    const n = new Set(r);
-    if (n.has(id)) n.delete(id); else n.add(id);
-    try { window.localStorage.setItem('trabalho-arvore-recolhidas', JSON.stringify([...n])); } catch { /* sem armazenamento: vale só nesta visita */ }
-    return n;
+  /*
+   * Leva 5 (L1 e L3): a pasta Clientes e a "Arquivo do ClickUp" nascem RECOLHIDAS. Para elas o que
+   * se lembra é o contrário (quem abriu), senão a primeira visita as mostraria abertas até alguém
+   * recolher. `estaRecolhida` junta as duas memórias; `alternarPasta` grava na certa.
+   */
+  const [abertas, setAbertas] = useState<Set<string>>(() => {
+    try { return new Set(JSON.parse(window.localStorage.getItem('trabalho-arvore-abertas') ?? '[]') as string[]); } catch { return new Set(); }
   });
+  const recolhidaPorPadrao = (f: Pasta) => ehDoArquivoDoClickUp(f) || ehPastaDoComercial(estrutura, f.id);
+  const estaRecolhida = (f: Pasta) => (recolhidaPorPadrao(f) ? !abertas.has(f.id) : recolhidas.has(f.id));
+  const alternarPasta = (f: Pasta) => {
+    if (recolhidaPorPadrao(f)) {
+      setAbertas((a) => {
+        const n = new Set(a);
+        if (n.has(f.id)) n.delete(f.id); else n.add(f.id);
+        try { window.localStorage.setItem('trabalho-arvore-abertas', JSON.stringify([...n])); } catch { /* sem armazenamento: vale só nesta visita */ }
+        return n;
+      });
+      return;
+    }
+    setRecolhidas((r) => {
+      const n = new Set(r);
+      if (n.has(f.id)) n.delete(f.id); else n.add(f.id);
+      try { window.localStorage.setItem('trabalho-arvore-recolhidas', JSON.stringify([...n])); } catch { /* sem armazenamento: vale só nesta visita */ }
+      return n;
+    });
+  };
   const [aparencia, setAparencia] = useState<Aparencia | null>(null);
   const [aviso, setAviso] = useState<string | null>(null);
   const [alvo, setAlvo] = useState<string | null>(null);
   const [focarDepois, setFocarDepois] = useState<string | null>(null);
   const arrastado = useRef<Arrastado | null>(null);
   const raiz = useRef<HTMLDivElement>(null);
-  const implantacao = useMemo(() => listaDaImplantacao(estrutura.folders), [estrutura]);
+  // L3: a lista da implantação mora na pasta Clientes, que volta à árvore por `pastasDoComercial`.
+  const implantacao = useMemo(() => listaDaImplantacao(pastasNaArvoreDoTrabalho(estrutura)), [estrutura]);
   // Layout 26/10: a lista do comercial (na pasta Comercial) não sai da pasta; a da implantação também não.
   const comercialId = useMemo(() => estrutura.folders.flatMap((f) => f.lists).find((l) => ehAListaDoComercial(l))?.id ?? null, [estrutura]);
-  const naoSaiDaPasta = (id: string) => id === implantacao?.listaId || id === comercialId;
+  // L3: as pastas do Comercial (a Clientes) na árvore, no fim, só para abrir; nada entra nem sai delas por aqui.
+  const pastasDoComercial = useMemo(() => (estrutura.pastasDoComercial ?? []).filter((p) => !p.parentId), [estrutura]);
+  const listaDoComercialNaArvore = (id: string) => pastasDoComercial.some((p) => p.lists.some((l) => l.id === id));
+  const naoSaiDaPasta = (id: string) => id === implantacao?.listaId || id === comercialId || listaDoComercialNaArvore(id);
 
   // Depois de gravar, a árvore volta da API e o foco fica no item que se moveu ou mudou de nome.
   useEffect(() => {
@@ -359,15 +391,23 @@ export function ArvoreDoTrabalho({ estrutura, pastas, mostraSoltas, listaId, edi
 
   const linhaDaLista = (l: TrabListaDto, paiId: string | null) => {
     const doComercial = l.id === comercialId;
-    const protegida = l.id === implantacao?.listaId ? TRAB_LISTA_DA_IMPLANTACAO_PROTEGIDA : doComercial ? TRAB_LISTA_DO_COMERCIAL_PROTEGIDA : null;
+    // L3: as listas da pasta Clientes abrem, e só: a API recusa o resto pelo Trabalho (a frase diz por quê).
+    const daPastaDoComercial = !!paiId && ehPastaDoComercial(estrutura, paiId);
+    const protegida = l.id === implantacao?.listaId ? TRAB_LISTA_DA_IMPLANTACAO_PROTEGIDA
+      : doComercial ? TRAB_LISTA_DO_COMERCIAL_PROTEGIDA
+      : daPastaDoComercial ? TRAB_PASTA_DO_COMERCIAL_NA_ARVORE
+      : null;
     const chave = `lista:${l.id}`;
-    const irmaos = listasDe(paiId);
+    const irmaos = daPastaDoComercial ? pastasDoComercial.find((p) => p.id === paiId)?.lists ?? [] : listasDe(paiId);
     return (
       <div
         key={l.id}
         data-lista-do-comercial={doComercial ? '' : undefined}
+        data-lista-da-pasta-do-comercial={daPastaDoComercial ? '' : undefined}
+        data-lista-do-arquivo-do-clickup={ehDoArquivoDoClickUp(l) ? '' : undefined}
+        title={ehDoArquivoDoClickUp(l) ? TRAB_ARQUIVO_DO_CLICKUP : undefined}
         className={`group/arvore flex items-center gap-0.5 rounded-md ${classeDoAlvo(chave)}`}
-        onDragOver={sobre(chave, (a) => a.tipo === 'lista' && a.id !== l.id && (a.paiId === paiId || !naoSaiDaPasta(a.id)))}
+        onDragOver={sobre(chave, (a) => !daPastaDoComercial && a.tipo === 'lista' && a.id !== l.id && (a.paiId === paiId || !naoSaiDaPasta(a.id)))}
         onDragLeave={() => { if (alvo === chave) setAlvo(null); }}
         onDrop={soltar((a) => {
           if (a.tipo !== 'lista') return;
@@ -386,7 +426,7 @@ export function ArvoreDoTrabalho({ estrutura, pastas, mostraSoltas, listaId, edi
             type="button"
             data-arvore-item={chave}
             data-testid={`trabalho-arvore-lista-${l.id}`}
-            draggable={editable}
+            draggable={editable && !daPastaDoComercial}
             onDragStart={comecar({ tipo: 'lista', id: l.id, paiId })}
             onDragEnd={terminar}
             onClick={() => onSelecionarLista(l.id)}
@@ -407,11 +447,12 @@ export function ArvoreDoTrabalho({ estrutura, pastas, mostraSoltas, listaId, edi
           </button>
         )}
         {/* Layout 26/10: a lista do comercial não muda pela árvore (a API recusa): sem Ícone e cor; Renomear e Excluir dizem por quê. */}
+        {/* L3: as listas da pasta Clientes idem (a API responde 404 pela árvore). */}
         {editable && (
           <AcoesDaListaNaArvore
-            lista={l} token={token} protegida={protegida} destinos={destinosDaLista(l.id)}
+            lista={l} token={token} protegida={protegida} destinos={daPastaDoComercial ? [] : destinosDaLista(l.id)}
             aoRenomear={() => setEditando({ tipo: 'lista', id: l.id })}
-            aoAparencia={doComercial ? undefined : () => setAparencia({ tipo: 'lista', id: l.id, nome: l.name, icone: l.icone, cor: l.cor })}
+            aoAparencia={doComercial || daPastaDoComercial ? undefined : () => setAparencia({ tipo: 'lista', id: l.id, nome: l.name, icone: l.icone, cor: l.cor })}
             aoExcluir={() => onListaSaiu(l.id)} aoMudar={onMudou} aoErro={onErro} aoAviso={setAviso}
           />
         )}
@@ -421,13 +462,22 @@ export function ArvoreDoTrabalho({ estrutura, pastas, mostraSoltas, listaId, edi
 
   const noDaPasta = (f: Pasta, nivel: number): React.ReactNode => {
     const filhas = pastas.filter((p) => p.parentId === f.id);
-    const protegida = f.id === implantacao?.pastaId ? TRAB_PASTA_DA_IMPLANTACAO_PROTEGIDA : null;
+    // L3: a pasta Clientes (do Comercial) só abre; L1: a "Arquivo do ClickUp" leva a frase do porquê.
+    const doComercial = ehPastaDoComercial(estrutura, f.id);
+    const doArquivo = ehDoArquivoDoClickUp(f);
+    const protegida = f.id === implantacao?.pastaId || doComercial ? (doComercial ? TRAB_PASTA_DO_COMERCIAL_NA_ARVORE : TRAB_PASTA_DA_IMPLANTACAO_PROTEGIDA) : null;
     const chave = `pasta:${f.id}`;
     const conteudo = { listas: f.lists.length, pastas: estrutura.folders.filter((x) => x.parentId === f.id).length };
+    const recolhida = estaRecolhida(f);
     return (
-      <div key={f.id} data-testid={`trabalho-arvore-no-${f.id}`} className={nivel > 0 ? 'ml-2 border-l border-border pl-1.5' : ''}>
-        {/* A faixa ENTRE pastas: soltar aqui põe a pasta arrastada antes desta (M3). */}
-        {editable && (
+      <div
+        key={f.id} data-testid={`trabalho-arvore-no-${f.id}`}
+        data-pasta-do-comercial={doComercial ? '' : undefined}
+        data-pasta-do-arquivo-do-clickup={doArquivo ? '' : undefined}
+        className={nivel > 0 ? 'ml-2 border-l border-border pl-1.5' : ''}
+      >
+        {/* A faixa ENTRE pastas: soltar aqui põe a pasta arrastada antes desta (M3). A Clientes não entra na ordem. */}
+        {editable && !doComercial && (
           <div
             aria-hidden
             data-testid={`trabalho-arvore-entre-${f.id}`}
@@ -444,7 +494,8 @@ export function ArvoreDoTrabalho({ estrutura, pastas, mostraSoltas, listaId, edi
         )}
         <div
           className={`group/arvore flex items-start justify-between gap-1 rounded-md ${classeDoAlvo(chave)}`}
-          onDragOver={sobre(chave, (a) => (a.tipo === 'lista'
+          title={doArquivo ? TRAB_ARQUIVO_DO_CLICKUP : undefined}
+          onDragOver={sobre(chave, (a) => !doComercial && (a.tipo === 'lista'
             ? a.paiId !== f.id && !naoSaiDaPasta(a.id)
             : a.id !== f.id && a.paiId !== f.id))}
           onDragLeave={() => { if (alvo === chave) setAlvo(null); }}
@@ -464,47 +515,48 @@ export function ArvoreDoTrabalho({ estrutura, pastas, mostraSoltas, listaId, edi
             <>
             <button
               type="button"
-              onClick={() => alternarPasta(f.id)}
-              aria-expanded={!recolhidas.has(f.id)}
-              aria-label={recolhidas.has(f.id) ? `Abrir a pasta ${f.name}` : `Recolher a pasta ${f.name}`}
+              onClick={() => alternarPasta(f)}
+              aria-expanded={!recolhida}
+              aria-label={recolhida ? `Abrir a pasta ${f.name}` : `Recolher a pasta ${f.name}`}
               data-testid={`trabalho-arvore-recolher-${f.id}`}
               className="mt-px grid h-4 w-4 shrink-0 place-items-center rounded text-muted hover:bg-surface-2 hover:text-text"
             >
-              {recolhidas.has(f.id) ? <ChevronRight size={12} /> : <ChevronDown size={12} />}
+              {recolhida ? <ChevronRight size={12} /> : <ChevronDown size={12} />}
             </button>
             <div
-              title={editable ? `${f.name} · arraste para mover (ou ⋯ › Mover para…)` : f.name}
+              title={doComercial ? TRAB_PASTA_DO_COMERCIAL_NA_ARVORE : doArquivo ? TRAB_ARQUIVO_DO_CLICKUP : editable ? `${f.name} · arraste para mover (ou ⋯ › Mover para…)` : f.name}
               data-arvore-item={chave}
               data-testid={`trabalho-arvore-pasta-${f.id}`}
               tabIndex={editable ? 0 : undefined}
               aria-label={editable ? `Pasta ${f.name}` : undefined}
-              aria-keyshortcuts={editable ? 'Alt+ArrowUp Alt+ArrowDown F2' : undefined}
-              draggable={editable}
+              aria-keyshortcuts={editable && !doComercial ? 'Alt+ArrowUp Alt+ArrowDown F2' : undefined}
+              draggable={editable && !doComercial}
               onDragStart={comecar({ tipo: 'pasta', id: f.id, paiId: f.parentId ?? null })}
               onDragEnd={terminar}
               onDoubleClick={() => { if (editable && !protegida) setEditando({ tipo: 'pasta', id: f.id }); }}
-              onKeyDown={teclas('pasta', f.id)}
-              className={`min-w-0 flex-1 break-words rounded px-1 text-[11px] font-semibold uppercase tracking-wide text-muted focus:outline-none focus-visible:ring-1 focus-visible:ring-brand-dim ${editable ? 'cursor-grab active:cursor-grabbing' : ''}`}
+              onKeyDown={doComercial ? undefined : teclas('pasta', f.id)}
+              className={`min-w-0 flex-1 break-words rounded px-1 text-[11px] font-semibold uppercase tracking-wide text-muted focus:outline-none focus-visible:ring-1 focus-visible:ring-brand-dim ${editable && !doComercial ? 'cursor-grab active:cursor-grabbing' : ''}`}
             >
-              {editable && <GripVertical size={11} aria-hidden className="-ml-1 mr-0.5 inline-block align-[-2px] opacity-0 transition group-hover/arvore:opacity-60" />}
+              {editable && !doComercial && <GripVertical size={11} aria-hidden className="-ml-1 mr-0.5 inline-block align-[-2px] opacity-0 transition group-hover/arvore:opacity-60" />}
               <IconeDaLista icone={f.icone} cor={f.cor} tamanho={12} className="mr-1.5 inline-block align-[-2px]" />
               {f.name}
+              {doComercial && <span className="ml-1.5 font-normal normal-case tracking-normal text-[10px]" data-testid={`trabalho-arvore-selo-comercial-${f.id}`}>· Comercial</span>}
             </div>
             </>
           )}
           {editable && (
             <AcoesDaPastaNaArvore
-              pasta={f} conteudo={conteudo} protegida={protegida} destinos={destinosDaPasta(f.id)} token={token}
-              destinosParaMover={destinosParaMover(f)} emPrimeiroNivel={!f.parentId}
+              pasta={f} conteudo={conteudo} protegida={protegida} destinos={doComercial ? [] : destinosDaPasta(f.id)} token={token}
+              destinosParaMover={doComercial ? [] : destinosParaMover(f)} emPrimeiroNivel={!f.parentId}
               aoMover={(parentId) => pedirMoverPasta(f.id, parentId)}
               aoRenomear={() => setEditando({ tipo: 'pasta', id: f.id })}
-              aoAparencia={() => setAparencia({ tipo: 'pasta', id: f.id, nome: f.name, icone: f.icone, cor: f.cor })}
+              aoAparencia={doComercial ? undefined : () => setAparencia({ tipo: 'pasta', id: f.id, nome: f.name, icone: f.icone, cor: f.cor })}
               aoErro={(m) => { onErro(m); onMudou(); }} aoAviso={setAviso}
               aoExcluir={() => onPastaSaiu(f.id)}
             />
           )}
         </div>
-        {!recolhidas.has(f.id) && <>
+        {!recolhida && <>
         <div className="mt-1 space-y-0.5">
           {f.lists.length === 0 && conteudo.pastas === 0 && <p className="px-2 text-[11px] text-muted">Pasta vazia. Crie uma lista nela ou arraste uma para cá.</p>}
           {f.lists.map((l) => linhaDaLista(l, f.id))}
@@ -518,6 +570,11 @@ export function ArvoreDoTrabalho({ estrutura, pastas, mostraSoltas, listaId, edi
   return (
     <div ref={raiz} className="space-y-3" data-testid="trabalho-arvore">
       {raizes.map((f) => noDaPasta(f, 0))}
+      {/*
+        L3 (27/10/2026): a pasta Clientes do Comercial, no fim e recolhida, só quando a árvore está
+        inteira (sem pasta escolhida no topo). Abre as listas dela; o resto a API recusa.
+      */}
+      {mostraSoltas && pastas.length === estrutura.folders.length && pastasDoComercial.map((f) => noDaPasta(f, 0))}
       {/*
         LISTAS SEM PASTA também aparecem na árvore. Antes da esteira elas só
         existiam por importação; com o modelo, uma empresa sem pastas cria a

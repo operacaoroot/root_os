@@ -234,7 +234,8 @@ const MENU_FINAL: LinhaDoMenu[] = [
   // Todas as tarefas (20/10/2026, rodada da interface, U1/U3): a rota pendurada no Trabalho.
   // Na mesma noite saiu do menu (pedido do Rodrigo): oculto, a rota redireciona para o chip Todas.
   ['trabalho-todas', 'Todas as tarefas', '/trabalho/todas', 'tarefas.ver', 'trabalho', 'trabalho', 'trabalho', true],
-  ['implantacao', 'Implantação de clientes', '/trabalho/implantacao', 'tarefas.ver', 'trabalho', 'trabalho', 'trabalho', false],
+  // Leva 5, L3 (27/10/2026, decisão do Rodrigo em 26/10): a Implantação sai do menu; oculta, a rota segue viva.
+  ['implantacao', 'Implantação de clientes', '/trabalho/implantacao', 'tarefas.ver', 'trabalho', 'trabalho', 'trabalho', true],
   ['onboarding', 'Bancada de onboarding', '/onboarding', 'tarefas.ver', 'trabalho', 'trabalho', 'trabalho', true],
   ['trabalho-atas', 'Atas', '/trabalho/atas', 'tarefas.ver', 'trabalho', 'trabalho', 'trabalho', false],
   // 22/10/2026 (produção 3, I2): a Lixeira, oculta, aberta pela engrenagem do topo.
@@ -305,6 +306,9 @@ const OCULTOS_E_DESTINO: Record<string, string | null> = {
   'comercial-simulador': '/whatsapp',
   // 20/10/2026 (noite, pedido do Rodrigo): o Todas é o chip de Tarefas.
   'trabalho-todas': '/trabalho?pasta=todas',
+  // Leva 5, L3 (27/10/2026): a Implantação sai do menu; os clientes ficam na lista Onboarding de cliente,
+  // na pasta Clientes da árvore do Trabalho. A rota do kanban segue viva pelo link.
+  implantacao: '/trabalho',
   // Sai da barra e da busca por decisão de marca; não tem destino, a rota segue com dono.
   assinatura: null,
   // Produção 22B (I6): a entrada é a engrenagem do topo; sem destino, a rota segue com dono.
@@ -814,11 +818,15 @@ describe('organização da navegação (ROOT-07 e versão final)', () => {
     expect(porKey.get('trabalho')).toMatchObject({ label: 'Tarefas', href: '/trabalho' });
     expect(porKey.get('onboarding')).toMatchObject({ pai: 'trabalho', secao: 'trabalho', href: '/onboarding', oculto: true });
     expect(ROTAS_ABSORVIDAS.find((r) => r.href === '/onboarding')?.destino).toBe('/trabalho/implantacao');
-    expect(porKey.get('implantacao')).toMatchObject({ pai: 'trabalho', secao: 'trabalho', href: '/trabalho/implantacao', label: 'Implantação de clientes' });
+    // Leva 5, L3 (27/10/2026): a Implantação fica oculta (a rota segue viva); só as Atas ficam penduradas em Tarefas.
+    expect(porKey.get('implantacao')).toMatchObject({ pai: 'trabalho', secao: 'trabalho', href: '/trabalho/implantacao', label: 'Implantação de clientes', oculto: true });
+    expect(ROTAS_ABSORVIDAS.find((r) => r.href === '/trabalho/implantacao')?.destino).toBe('/trabalho');
+    expect(ROTAS_ABSORVIDAS.find((r) => r.href === '/trabalho/implantacao')?.porque).toMatch(/Onboarding de cliente/);
+    expect(paginaExiste('/trabalho/implantacao')).toBe(true);
     const todas = new Set(NAV.map((n) => n.permission));
     const trabalho = navEmArvore(todas).find((g) => g.secao.key === 'trabalho')!;
     const raiz = trabalho.itens.find((no) => no.item.key === 'trabalho')!;
-    expect(raiz.filhos.map((f) => f.key)).toEqual(['implantacao', 'trabalho-atas']);
+    expect(raiz.filhos.map((f) => f.key)).toEqual(['trabalho-atas']);
     expect(navPorSecao(todas).flatMap((g) => g.itens.map((i) => i.key))).not.toContain('tarefas');
     expect(moduloDaRotaDoWeb('/tarefas')).toBe('trabalho');
   });
@@ -843,13 +851,15 @@ describe('organização da navegação (ROOT-07 e versão final)', () => {
     expect(paginaExiste('/trabalho/todas')).toBe(true);
     const todas = new Set(NAV.map((n) => n.permission));
     const trabalho = navPorSecao(todas).find((g) => g.secao.key === 'trabalho')!;
-    expect(trabalho.itens.map((i) => i.label)).toEqual(['Tarefas', 'Implantação de clientes', 'Atas']);
+    // Leva 5, L3: a Implantação saiu do menu (oculta, viva).
+    expect(trabalho.itens.map((i) => i.label)).toEqual(['Tarefas', 'Atas']);
     // As contagens do menu depois da noite de 20/10/2026.
-    expect(NAV.filter((n) => !n.oculto)).toHaveLength(46);
+    // Leva 5, L3 (27/10/2026): 45 visíveis, 13 ocultos e 12 absorvidas, com a Implantação oculta.
+    expect(NAV.filter((n) => !n.oculto)).toHaveLength(45);
     // 13 desde a produção 22B: o Perfil (I6) e a Lixeira (I2) entraram ocultos (a entrada é a engrenagem do topo).
     // Layout 26/10: 12 e 11, `/conteudo` (Temas do ClickUp) aposentado, com redirect para o Marketing.
-    expect(NAV.filter((n) => n.oculto)).toHaveLength(12);
-    expect(ROTAS_ABSORVIDAS).toHaveLength(11);
+    expect(NAV.filter((n) => n.oculto)).toHaveLength(13);
+    expect(ROTAS_ABSORVIDAS).toHaveLength(12);
   });
 
   it('as Atas ficam no Trabalho, sob Tarefas, com tarefas.ver e o módulo trabalho', () => {

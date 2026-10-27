@@ -10,6 +10,7 @@ import {
 } from '@mktos/shared';
 import { apiDelete, apiGet, apiPatch, apiPost } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
+import { HistoricoDaEntidade } from '@/components/historico/HistoricoDaEntidade';
 
 /*
  * O MENU DA TAREFA (rodada de produção 3, I4, 22/10/2026).
@@ -17,7 +18,11 @@ import { useAuth } from '@/lib/auth';
  * Um componente só, em toda tarefa do OS: botão direito no cartão ou na linha, o
  * "⋯" do cartão (toque e teclado) e Shift+F10 ou a tecla Menu com o foco na
  * tarefa. Ações: Renomear, Copiar ID, Mover para, Mesclar com outra, Duplicar,
- * Arquivar, Excluir (vai para a Lixeira) e Compartilhar (copia o link `?tarefa=`).
+ * Arquivar, Excluir (vai para a Lixeira), Compartilhar (copia o link `?tarefa=`) e,
+ * desde a leva 5 (L2, 27/10/2026), Histórico: as entradas do AuditLog da tarefa
+ * (quem, quando, antes e depois), em `HistoricoDaEntidade`. O histórico abre numa
+ * janela própria e o menu fecha: quem guarda o estado é o dono do portal
+ * (`useMenuDaTarefaProprio`), porque o painel do menu morre no clique fora.
  * O que a pessoa não pode fazer aparece desabilitado com a razão
  * (`razaoParaNaoFazer`, no shared). O menu abre por portal, sempre dentro da janela.
  *
@@ -142,6 +147,8 @@ interface OpcoesDoMenu {
  */
 export function useMenuDaTarefaProprio({ onMudou, onErro, onAbrir }: OpcoesDoMenu): { menu: ContextoDoMenu; elemento: React.ReactNode } {
   const [aberto, setAberto] = useState<MenuAberto | null>(null);
+  // L2: a tarefa cujo histórico está aberto. Vive aqui, e não no painel, para sobreviver ao menu fechar.
+  const [historico, setHistorico] = useState<TarefaParaOMenu | null>(null);
   const abrir = useCallback<ContextoDoMenu['abrir']>((tarefa, ponto, origem) => setAberto({ tarefa, ...ponto, origem }), []);
   const menu = useMemo(() => ({ abrir }), [abrir]);
   const fechar = useCallback(() => {
@@ -151,10 +158,18 @@ export function useMenuDaTarefaProprio({ onMudou, onErro, onAbrir }: OpcoesDoMen
       return null;
     });
   }, []);
-  const elemento = aberto && typeof document !== 'undefined'
-    ? createPortal(
-      <PainelDoMenu key={`${aberto.tarefa.id}:${aberto.x}:${aberto.y}`} aberto={aberto} onFechar={fechar} onMudou={onMudou} onErro={onErro} onAbrir={onAbrir} />,
-      document.body,
+  const fecharHistorico = useCallback(() => setHistorico(null), []);
+  const elemento = typeof document !== 'undefined'
+    ? (
+      <>
+        {aberto && createPortal(
+          <PainelDoMenu key={`${aberto.tarefa.id}:${aberto.x}:${aberto.y}`} aberto={aberto} onFechar={fechar} onMudou={onMudou} onErro={onErro} onAbrir={onAbrir} onHistorico={setHistorico} />,
+          document.body,
+        )}
+        {historico && (
+          <HistoricoDaEntidade entityId={historico.id} entityType="work_task" titulo={historico.title} aberto onFechar={fecharHistorico} />
+        )}
+      </>
     )
     : null;
   return { menu, elemento };
@@ -181,8 +196,10 @@ function listasDaEstrutura(e: TrabEstrutura | null): { lista: TrabListaDto; rotu
   ];
 }
 
-function PainelDoMenu({ aberto, onFechar, onMudou, onErro, onAbrir }: {
+function PainelDoMenu({ aberto, onFechar, onMudou, onErro, onAbrir, onHistorico }: {
   aberto: MenuAberto; onFechar: () => void; onMudou: () => void; onErro?: (m: string) => void; onAbrir?: (id: string) => void;
+  /** L2: abre o histórico da tarefa (a janela é do dono do portal; o menu fecha). */
+  onHistorico?: (tarefa: TarefaParaOMenu) => void;
 }) {
   const { token, can, user } = useAuth();
   const { tarefa } = aberto;
@@ -251,7 +268,7 @@ function PainelDoMenu({ aberto, onFechar, onMudou, onErro, onAbrir }: {
     cardDaImplantacao: comTrilho || (!!daImplantacao && listaId === daImplantacao && !detalhe?.parentId),
     comAgente: !!detalhe?.agenteId,
   };
-  const precisaDeVersao = (a: AcaoDoMenuDaTarefa) => !['copiar-id', 'compartilhar'].includes(a);
+  const precisaDeVersao = (a: AcaoDoMenuDaTarefa) => !['copiar-id', 'compartilhar', 'historico'].includes(a);
 
   const concluir = (mensagem: string, abrirId?: string) => {
     setFeito(mensagem);
@@ -276,6 +293,8 @@ function PainelDoMenu({ aberto, onFechar, onMudou, onErro, onAbrir }: {
     switch (acao) {
       case 'copiar-id': void copiar(tarefa.id, 'ID copiado.'); return;
       case 'compartilhar': void copiar(linkDaTarefa(window.location.origin, { id: tarefa.id, listId: listaId }), 'Link copiado.'); return;
+      // L2: o histórico abre na janela própria; o menu sai do caminho.
+      case 'historico': onHistorico?.({ id: tarefa.id, title: detalhe?.title ?? tarefa.title, listId: listaId }); onFechar(); return;
       case 'renomear': case 'mover': case 'mesclar': case 'excluir': setModo(acao); return;
       case 'duplicar':
         void executar(async () => {

@@ -3,7 +3,6 @@
 import Link from 'next/link';
 import { useAuth } from '@/lib/auth';
 import { VisaoGeralDasTarefas } from '@/components/tarefas/VisaoGeralDasTarefas';
-import { ImplantacaoNoDiaADia } from '@/components/tarefas/ImplantacaoNoDiaADia';
 import { AniversariosDoDia } from '@/components/AniversariosDoDia';
 import { useModulos } from '@/components/modulos';
 import { WhatsappNoDiaADia } from '@/components/whatsapp/WhatsappNoDiaADia';
@@ -17,6 +16,11 @@ import { WhatsappNoDiaADia } from '@/components/whatsapp/WhatsappNoDiaADia';
  * LAYOUT (26/10/2026, só arrumação, nada sai): os quatro números abrem a tela,
  * WhatsApp e Implantação dividem a mesma linha (antes o WhatsApp ocupava meia
  * linha e a outra metade ficava vazia) e a frase que explica a tela mora no "?".
+ *
+ * LEVA 5, L3 (27/10/2026, decisão do Rodrigo em 26/10): o cartão "Implantação"
+ * sai do Dia a dia; os clientes ficam na lista Onboarding de cliente (pasta
+ * Clientes, na árvore do Trabalho). O WhatsApp fica sozinho na linha, em largura
+ * inteira. `ImplantacaoNoDiaADia` segue no código, sem uso, para o módulo voltar.
  */
 const EXPLICACAO = 'As tarefas de todas as pastas, num dash só. Cada número abre a lista no Trabalho.';
 
@@ -44,14 +48,7 @@ export default function VisaoGeralPage() {
       {/* Produção 22B (I6): o aniversário do dia, junto do dash (quem não vê as tarefas não carrega nada aqui). */}
       {can('tarefas.ver') && <AniversariosDoDia />}
       {can('tarefas.ver') ? (
-        <VisaoGeralDasTarefas
-          meio={
-            <div className={`grid items-start gap-5 ${whatsapp ? 'lg:grid-cols-2' : ''}`}>
-              {whatsapp}
-              <ImplantacaoNoDiaADia token={token} />
-            </div>
-          }
-        />
+        <VisaoGeralDasTarefas meio={whatsapp} />
       ) : (
         <>
           {whatsapp && <div className="grid gap-5 lg:grid-cols-2">{whatsapp}</div>}

@@ -64,10 +64,11 @@ describe('projeção do NAV em módulos', () => {
 
   // 20/10/2026 (noite, pedido do Rodrigo): o Todas é o chip de Tarefas, e o item sai do menu.
   // `/trabalho/todas` segue com dono (o item oculto), como `/painel` e `/comercial/simulador`.
-  it('Trabalho: Tarefas · Implantação de clientes · Atas, e /trabalho/todas segue com dono', () => {
+  // Leva 5, L3 (27/10/2026): a Implantação saiu do menu (oculta, a rota segue viva); ficam Tarefas e Atas.
+  it('Trabalho: Tarefas · Atas, e /trabalho/todas segue com dono', () => {
     const trabalho = modulosDeNavegacao(permissoes).find((area) => area.key === 'trabalho');
     expect(trabalho?.entrada?.key).toBe('trabalho');
-    expect(trabalho?.itens.map((item) => item.label)).toEqual(['Tarefas', 'Implantação de clientes', 'Atas']);
+    expect(trabalho?.itens.map((item) => item.label)).toEqual(['Tarefas', 'Atas']);
     // A rota mais longa vence: a rota antiga de Todas não se confunde com /trabalho.
     expect(destinoDaRota('/trabalho/todas')?.key).toBe('trabalho-todas');
     expect(destinoDaRota('/trabalho/todas?segmento=f1&pasta=todas')?.key).toBe('trabalho-todas');

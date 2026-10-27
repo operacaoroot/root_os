@@ -2111,6 +2111,8 @@ model WorkFolder {
   cor        String?
   /// Do Comercial (22/10/2026): a pasta existe, mas mora fora do Trabalho (a pasta Clientes).
   doComercial Boolean    @default(false)
+  /// Arquivo do ClickUp (leva 5, L1, 27/10/2026): a pasta fica na árvore, recolhida; o que está nela sai de Todas e do Dia a dia.
+  arquivoDoClickUp Boolean @default(false)
   createdAt  DateTime    @default(now())
   updatedAt  DateTime    @updatedAt
 
@@ -2145,6 +2147,8 @@ model WorkList {
   cor        String?
   /// Do Comercial (22/10/2026): a lista existe e alimenta a Implantação, fora da árvore do Trabalho.
   doComercial Boolean    @default(false)
+  /// Arquivo do ClickUp (leva 5, L1, 27/10/2026): lista importada do ClickUp, fora de Todas e do Dia a dia; tarefas e status ficam.
+  arquivoDoClickUp Boolean @default(false)
   createdAt  DateTime    @default(now())
   updatedAt  DateTime    @updatedAt
 
@@ -4944,6 +4948,12 @@ model ComercialFicha {
   /// Sem chave estrangeira, como `trilhoId`: o card é do Trabalho e pode ser
   /// arquivado lá sem a ficha saber; a leitura confere a empresa.
   cardId                        String?
+  /// Leva 5 (L4, 27/10/2026), a aba Geral do painel: PJ ou PF (`TIPOS_DE_PESSOA` no shared).
+  tipoDePessoa                  String?
+  /// Leva 5 (L4): texto curto com como o lead prefere ser atendido (horário, canal, quem fala).
+  preferenciasDeAtendimento     String?
+  /// Leva 5 (L4): o link da proposta escrito à mão (https). O da sala nunca fica aqui; o do serviço vem de `PropostaDoLead`.
+  linkDaProposta                String?
 
   criadoEm     DateTime @default(now())
   atualizadoEm DateTime @updatedAt

@@ -169,7 +169,11 @@ export const NAV: NavItem[] = [
   // lista "Onboarding de cliente" (pasta Clientes), com rolagem lateral. A bancada antiga
   // `/onboarding` deixa de ser porta: o item fica oculto e a rota redireciona para o kanban;
   // o trilho de cada cliente virou a aba "Trilho" do pop-up do cartão.
-  { key: 'implantacao', label: 'Implantação de clientes', href: '/trabalho/implantacao', icon: 'DoorOpen', permission: 'tarefas.ver', secao: 'trabalho', modulo: 'trabalho', pai: 'trabalho' },
+  // Leva 5, L3 (27/10/2026, decisão do Rodrigo em 26/10): a subseção Implantação sai do menu e do
+  // Dia a dia "por enquanto"; os clientes ficam na lista "Onboarding de cliente" (pasta Clientes, de
+  // volta à árvore do Trabalho, recolhida). O item fica oculto e dono da rota: `/trabalho/implantacao`
+  // continua respondendo pelo link (ROTAS_ABSORVIDAS). O módulo volta quando os contratos tiverem padrão.
+  { key: 'implantacao', label: 'Implantação de clientes', href: '/trabalho/implantacao', icon: 'DoorOpen', permission: 'tarefas.ver', secao: 'trabalho', modulo: 'trabalho', pai: 'trabalho', oculto: true },
   { key: 'onboarding', label: 'Bancada de onboarding', href: '/onboarding', icon: 'DoorOpen', permission: 'tarefas.ver', secao: 'trabalho', modulo: 'trabalho', pai: 'trabalho', oculto: true },
   // 18/10/2026 (rodada do painel P3): o banco de atas da operação, pendurado no Trabalho.
   // As atas do vault e as coladas na tela, e as sugestões de tarefa que cada uma rende.
@@ -289,6 +293,10 @@ export const ROTAS_ABSORVIDAS: { href: string; destino: string; porque: string }
   { href: '/comercial/simulador', destino: '/whatsapp', porque: 'o WhatsApp virou área própria em 20/10/2026 e, desde 22/10/2026, /whatsapp é a caixa; /comercial/simulador redireciona para /whatsapp/simulador (os celulares do comercial) com a mesma query' },
   // 20/10/2026 (noite, pedido do Rodrigo): o destino leva a query do chip, e o item é `/trabalho`.
   { href: '/trabalho/todas', destino: '/trabalho?pasta=todas', porque: 'o Todas é uma opção dentro de Tarefas, não uma subseção (20/10/2026); /trabalho/todas redireciona para o chip Todas com a mesma query' },
+  // Leva 5, L3 (27/10/2026): a Implantação sai do menu e do Dia a dia "por enquanto". Os clientes ficam na
+  // lista "Onboarding de cliente" (pasta Clientes), que volta à árvore de /trabalho recolhida; a rota do
+  // kanban continua respondendo pelo link. O id da lista é de cada empresa, por isso o destino é a árvore.
+  { href: '/trabalho/implantacao', destino: '/trabalho', porque: 'a Implantação de clientes saiu do menu em 27/10/2026 (decisão de 26/10): os clientes ficam na lista Onboarding de cliente, na pasta Clientes da árvore do Trabalho; o kanban segue vivo pelo link e o módulo volta quando os contratos tiverem padrão' },
 ];
 
 // Rotas de detalhe que NÃO entram no menu: herdam o módulo pai e são protegidas
