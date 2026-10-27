@@ -323,5 +323,12 @@ export function entenderSemModelo(
     const pessoa = /\b(minhas?|meus?|eu|tenho)\b/.test(norm) ? 'eu' : pessoas.find((p) => norm.split(' ').includes(tituloNormalizado(p.nome).split(' ')[0]))?.nome ?? null;
     return { acao: 'listar', filtro, pessoa };
   }
+  // Ordem direta sem palavra-chave ("@Root fazer contrato da juma", 27/10): vira tarefa nova,
+  // de quem foi citado ou, sem ninguém, de quem pediu. Pergunta e conversa curta não viram tarefa.
+  if (!/[?]\s*$/.test(texto) && norm.split(' ').filter((w) => w.length > 2).length >= 2 && !/^(oi|ola|bom dia|boa tarde|boa noite|obrigad\w*|valeu|kkk\w*)\b/.test(norm)) {
+    const pessoa = pessoaDoTexto(norm, pessoas);
+    const titulo = tituloDaNova(texto, pessoa, data?.trecho ?? null);
+    if (titulo.length >= 3) return { acao: 'criar', titulo, pessoa: pessoa ?? 'eu', prazo: data?.dia ?? null };
+  }
   return null;
 }
