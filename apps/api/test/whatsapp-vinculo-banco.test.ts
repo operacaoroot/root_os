@@ -327,6 +327,32 @@ describe.skipIf(!URL)('o vínculo da conversa contra o Postgres', () => {
     await expect(svc.passarParaCliente(ORG, c2, { clienteId: outro }, leitor)).rejects.toBeInstanceOf(ForbiddenException);
   });
 
+  it('lead em Negócio fechado sem cadastro: aparece como cliente, vira cliente num clique e a ficha passa a apontar o cadastro', async () => {
+    const l = await lead('Contato da Papeleira');
+    await prisma.comercialFicha.create({ data: { leadId: l, etapa: 'fechado', empresa: 'Papeleira Fechada Ficticia' } });
+    const aberto = await lead('Lead Ainda Aberto');
+    await prisma.comercialFicha.create({ data: { leadId: aberto, etapa: 'qualificacao', empresa: 'Aberta Ficticia' } });
+    const g = await conversa('120363000000000061@g.us', 'ROOT | Papeleira Fechada Ficticia', true);
+
+    const cands = await svc.candidatos(ORG, { conversaId: g, tipo: 'cliente' });
+    expect(cands[0]).toMatchObject({ tipo: 'cliente', nome: 'Papeleira Fechada Ficticia', leadId: l, igual: true });
+    expect(cands.some((c) => c.nome === 'Aberta Ficticia')).toBe(false);
+
+    const r = await svc.vincularAoClienteDoLead(ORG, g, { leadId: l }, gente);
+    expect(r.conversa.vinculo).toMatchObject({ tipo: 'cliente', nome: 'Papeleira Fechada Ficticia' });
+    const ficha = await prisma.comercialFicha.findUniqueOrThrow({ where: { leadId: l } });
+    expect(ficha.partnerId).toBe(r.conversa.vinculo!.id);
+    // De novo não cria outro cadastro: a busca agora traz o cliente, não o lead.
+    expect((await svc.candidatos(ORG, { conversaId: g, tipo: 'cliente' })).filter((c) => c.nome === 'Papeleira Fechada Ficticia')).toHaveLength(1);
+    await expect(svc.vincularAoClienteDoLead(ORG, g, { leadId: aberto }, gente)).rejects.toBeInstanceOf(ConflictException);
+
+    // Ligada ao lead fechado, "Passar para cliente" sem nada usa o mesmo cadastro.
+    const c = await conversa(jid('5532988880062'), null);
+    await svc.vincular(ORG, c, { tipo: 'lead', id: l }, gente);
+    expect((await svc.vincular(ORG, c, { tipo: 'lead', id: l }, gente)).conversa.vinculo).toMatchObject({ clienteDoLead: { id: ficha.partnerId } });
+    expect((await svc.passarParaCliente(ORG, c, {}, gente)).conversa.vinculo).toMatchObject({ tipo: 'cliente', id: ficha.partnerId });
+  });
+
   it('403 para conta de máquina e para quem só lê (relido no banco)', async () => {
     const l = await lead('Lead Qualquer');
     const c = await conversa(jid('5532988880041'), null);

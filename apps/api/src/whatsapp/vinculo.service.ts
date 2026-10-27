@@ -24,6 +24,7 @@ import { temPapelDeMaquina } from '../approvals/alcada';
 import { lerAprovador } from '../auth/aprovador';
 import { formasDaChave } from '../gateway/canais/identidade-de-canal';
 import { exigirAcessoAtual } from '../memory/acesso-memoria';
+import { acharOuCriarClienteDoLead } from '../comercial/cliente-do-lead';
 import { PrismaService } from '../prisma/prisma.service';
 import {
   SELECT_DA_CONVERSA,
@@ -101,6 +102,9 @@ function diferente(campo: 'leadId' | 'clienteId', valor: string | null): Prisma.
   if (valor === null) return { [campo]: { not: null } };
   return { OR: [{ [campo]: null }, { [campo]: { not: valor } }] };
 }
+
+/** Layout 27/10: as etapas do funil em que o lead já conta como cliente (Contrato e Negócio fechado). */
+const ETAPAS_QUE_JA_SAO_CLIENTE = ['contrato', 'fechado'] as const;
 
 @Injectable()
 export class VinculoDoWhatsappService {
@@ -399,8 +403,10 @@ export class VinculoDoWhatsappService {
       if (!c.leadId) throw new ConflictException(FRASE.mudou);
       let id = clienteId;
       if (!id) {
-        const ficha = await tx.comercialFicha.findUnique({ where: { leadId: c.leadId }, select: { partnerId: true } });
+        const ficha = await tx.comercialFicha.findUnique({ where: { leadId: c.leadId }, select: { partnerId: true, etapa: true } });
         if (ficha?.partnerId) id = (await tx.partner.findFirst({ where: { id: ficha.partnerId, orgId }, select: { id: true, principalId: true } }).then((p) => p && (p.principalId ?? p.id))) ?? null;
+        // Layout 27/10: em Contrato ou Negócio fechado, o lead vira cliente aqui mesmo.
+        if (!id && !nome && ficha && (ETAPAS_QUE_JA_SAO_CLIENTE as readonly string[]).includes(ficha.etapa)) id = await this.clienteDoLeadNaTransacao(tx, orgId, c.leadId, quem.id);
       }
       if (!id) {
         if (nome.length < 2) throw new BadRequestException('Escolha o cliente ou escreva o nome dele.');
@@ -415,6 +421,62 @@ export class VinculoDoWhatsappService {
       });
       if (r.count !== 1) throw new ConflictException(FRASE.mudou);
       await this.auditar(tx, orgId, quem.id, ACAO_DE_AUDITORIA.desvinculada, 'whatsapp_conversa', c.id, { leadId: c.leadId, clienteId: c.clienteId }, { leadId: null, clienteId: null }, { motivo: 'passou_para_cliente', grupo: c.grupo });
+      return this.vincularNaTransacao(tx, orgId, conversaId, { tipo: 'cliente', id }, quem.id, 'manual');
+    });
+    return { conversa: await this.projetada(orgId, conversaId), mudou };
+  }
+
+  /**
+   * Layout 27/10: o cadastro de cliente do lead em Contrato ou Negócio fechado, pela régua
+   * que o "Iniciar onboarding" já usa (`acharOuCriarClienteDoLead`: o da ficha, o CNPJ, o
+   * nome, ou um novo). A ficha passa a apontar o cliente, e o fechamento depois reaproveita
+   * esse ponteiro (não cria outro). Cobrança, contrato e implantação continuam nascendo do
+   * fechamento.
+   */
+  private async clienteDoLeadNaTransacao(tx: Prisma.TransactionClient, orgId: string, leadId: string, porId: string): Promise<string> {
+    const lead = await tx.lead.findFirst({
+      where: { id: leadId, orgId },
+      select: { id: true, name: true, phone: true, email: true, ficha: { select: { etapa: true, partnerId: true, empresa: true, cnpj: true, cadastro: true } } },
+    });
+    if (!lead) throw new NotFoundException('Lead não encontrado nesta empresa.');
+    const f = lead.ficha;
+    if (!f || (!f.partnerId && !(ETAPAS_QUE_JA_SAO_CLIENTE as readonly string[]).includes(f.etapa))) {
+      throw new ConflictException('Este lead ainda não está em Contrato nem em Negócio fechado: ele vira cliente quando chegar lá.');
+    }
+    const cadastro = (f.cadastro ?? {}) as Record<string, unknown>;
+    const str = (v: unknown) => (typeof v === 'string' && v.trim() ? v.trim() : null);
+    const r = await acharOuCriarClienteDoLead(tx, orgId, {
+      partnerIdDaFicha: f.partnerId,
+      nome: f.empresa ?? str(cadastro.razaoSocial) ?? lead.name,
+      cnpj: f.cnpj ?? str(cadastro.cnpj),
+      telefone: lead.phone,
+      email: str(cadastro.email) ?? lead.email ?? null,
+    });
+    if (r.como !== 'ficha') {
+      await tx.comercialFicha.updateMany({ where: { leadId, orgId }, data: { partnerId: r.id } });
+      await this.auditar(tx, orgId, porId, 'whatsapp.cliente_do_lead', 'lead', leadId, { partnerId: f.partnerId }, { partnerId: r.id, como: r.como }, { etapa: f.etapa });
+    }
+    return r.id;
+  }
+
+  /**
+   * Layout 27/10: liga a conversa ao cliente do lead em Contrato ou Negócio fechado (o
+   * candidato "vira cliente ao escolher"). Ligada a um lead, passa direto; ligada a outro
+   * cliente, 409 como no vincular.
+   */
+  async vincularAoClienteDoLead(orgId: string, conversaId: string, corpo: unknown, quem: QuemVincula): Promise<ResultadoDoVinculo> {
+    const leadId = typeof corpo === 'object' && corpo !== null && typeof (corpo as { leadId?: unknown }).leadId === 'string' ? (corpo as { leadId: string }).leadId : '';
+    if (!leadId) throw new BadRequestException('Escolha o lead.');
+    await this.exigirGente(orgId, quem);
+    await this.conversaOu404(this.prisma, orgId, conversaId);
+    const mudou = await this.prisma.$transaction(async (tx) => {
+      const id = await this.clienteDoLeadNaTransacao(tx, orgId, leadId, quem.id);
+      const c = await this.conversaOu404(tx, orgId, conversaId);
+      if (c.leadId && !c.clienteId) {
+        const r = await tx.whatsAppConversa.updateMany({ where: { id: c.id, orgId, atualizadoEm: c.atualizadoEm, leadId: c.leadId, clienteId: null }, data: { leadId: null } });
+        if (r.count !== 1) throw new ConflictException(FRASE.mudou);
+        await this.auditar(tx, orgId, quem.id, ACAO_DE_AUDITORIA.desvinculada, 'whatsapp_conversa', c.id, { leadId: c.leadId, clienteId: null }, { leadId: null, clienteId: null }, { motivo: 'passou_para_cliente', grupo: c.grupo });
+      }
       return this.vincularNaTransacao(tx, orgId, conversaId, { tipo: 'cliente', id }, quem.id, 'manual');
     });
     return { conversa: await this.projetada(orgId, conversaId), mudou };
@@ -617,6 +679,20 @@ export class VinculoDoWhatsappService {
       for (const p of clientes) {
         const nome = nomeDoCliente(p);
         alvos.push({ tipo: 'cliente', id: p.id, nome, nomes: [p.nomeFantasia, p.razaoSocial], detalhe: nome !== p.razaoSocial ? p.razaoSocial : 'cliente' });
+      }
+      // Layout 27/10 (Lucas: "se coloquei como contrato fechado, tem que virar cliente"): o lead em
+      // Contrato ou Negócio fechado que ainda não tem cadastro de cliente aparece como cliente.
+      const jaClientes = new Set(clientes.map((p) => p.id));
+      const fechando = await this.prisma.comercialFicha.findMany({
+        where: { orgId, etapa: { in: [...ETAPAS_QUE_JA_SAO_CLIENTE] } },
+        select: { leadId: true, empresa: true, etapa: true, partnerId: true, lead: { select: { name: true } } },
+        take: 2000,
+      });
+      for (const f of fechando) {
+        if (f.partnerId && jaClientes.has(f.partnerId)) continue;
+        const nome = f.empresa?.trim() || f.lead.name;
+        const etapa = COMERCIAL_ROTULO_DA_ETAPA[f.etapa as ComercialEtapa] ?? '';
+        alvos.push({ tipo: 'cliente', id: f.leadId, nome, nomes: [nome, f.lead.name], detalhe: `${etapa} · vira cliente ao escolher`, leadId: f.leadId });
       }
     }
     if (tipo !== 'cliente') {

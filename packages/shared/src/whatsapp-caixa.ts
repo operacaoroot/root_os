@@ -157,7 +157,7 @@ export interface VinculoDaConversa {
   vinculadoPor: { id: string; nome: string } | null;
   vinculadoEm: string | null;
   /** Layout 27/10: ligada a um lead que o fechamento já virou cliente, o cliente dele ("Passar para <cliente>"). */
-  clienteDoLead?: { id: string; nome: string } | null;
+  clienteDoLead?: { id: string | null; nome: string } | null;
 }
 
 /** `nome_igual` = o nome do grupo sem o prefixo é igual ao do cliente/lead; `telefone` = o número do 1:1. */
@@ -267,6 +267,11 @@ export interface CandidatoDeVinculo {
   detalhe: string | null;
   /** O nome normalizado é igual ao do grupo (sem o prefixo). */
   igual: boolean;
+  /**
+   * Layout 27/10: cliente que ainda é só o lead em Contrato ou Negócio fechado. Escolher
+   * cria (ou acha) o cadastro do cliente pela régua do onboarding antecipado e liga.
+   */
+  leadId?: string;
 }
 
 /** As conversas de um lead ou de um cliente (aba WhatsApp do lead, bloco da ficha do cliente). */

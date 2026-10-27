@@ -97,6 +97,11 @@ export function VinculoDaConversa({ conversa, podeVincular, aoMudar }: { convers
   }
 
   async function escolher(c: CandidatoDeVinculo) {
+    // Layout 27/10: o lead em Contrato ou Negócio fechado ("vira cliente ao escolher").
+    if (c.leadId && (modo?.tipo === 'cliente' || modo?.tipo === 'passar')) {
+      await acao('/cliente-do-lead', { leadId: c.leadId });
+      return;
+    }
     if (modo?.tipo === 'passar') {
       await acao('/passar-para-cliente', { clienteId: c.id });
       return;
@@ -141,8 +146,8 @@ export function VinculoDaConversa({ conversa, podeVincular, aoMudar }: { convers
                   type="button"
                   className={`${BOTAO} border-brand/60 text-brand`}
                   disabled={!podeVincular || ocupado}
-                  title={razao ?? `O fechamento já criou o cliente ${v.clienteDoLead.nome}. Um clique passa a conversa para ele.`}
-                  onClick={() => void acao('/passar-para-cliente', { clienteId: v.clienteDoLead!.id })}
+                  title={razao ?? (v.clienteDoLead.id ? `O cliente ${v.clienteDoLead.nome} já existe. Um clique passa a conversa para ele.` : `O lead está em Contrato ou Negócio fechado: um clique cria o cliente ${v.clienteDoLead.nome} e passa a conversa.`)}
+                  onClick={() => void acao('/passar-para-cliente', v.clienteDoLead!.id ? { clienteId: v.clienteDoLead!.id } : {})}
                   data-testid="whats-passar-para-cliente"
                 >
                   Passar para cliente

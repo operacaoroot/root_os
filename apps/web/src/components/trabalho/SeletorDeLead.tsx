@@ -14,14 +14,18 @@ import { useAuth } from '@/lib/auth';
  * editar leads vê também "+ criar lead “texto”", que cria pelo mesmo caminho do botão
  * "+ lead" do Comercial (`POST /leads/entrada`, origem manual) e já escolhe o lead criado.
  *
+ * Layout 27/10 (Lucas: "Lucas Rezende" não aparecia): com `comClientes`, a busca traz também
+ * quem JÁ É CLIENTE (`tipo=cliente` da mesma busca das atas), marcado "cliente". Escolher um
+ * cliente devolve `tipo: "cliente"`: a tarefa nasce com esse cliente, sem lead.
+ *
  * Combobox do teclado, como o seletor de cliente: setas andam, Enter escolhe, Esc fecha.
  */
 
-export interface LeadEscolhido { id: string; nome: string }
+export interface LeadEscolhido { id: string; nome: string; /** Ausente = lead. */ tipo?: "lead" | "cliente" }
 
 type Opcao = { tipo: 'lead'; lead: TrabAtaCandidato } | { tipo: 'criar'; nome: string } | { tipo: 'tirar' };
 
-export function SeletorDeLead({ valor, onEscolher, token, rotulo = 'Lead', permiteTirar = false, desabilitado = false, testid = 'seletor-de-lead' }: {
+export function SeletorDeLead({ valor, onEscolher, token, rotulo = 'Lead', permiteTirar = false, desabilitado = false, comClientes = false, testid = 'seletor-de-lead' }: {
   valor: LeadEscolhido | null;
   /** `null` = tirar o lead (só com `permiteTirar`, que quem chama liga quando há lead para tirar). */
   onEscolher: (l: LeadEscolhido | null) => void;
@@ -29,6 +33,8 @@ export function SeletorDeLead({ valor, onEscolher, token, rotulo = 'Lead', permi
   rotulo?: string;
   permiteTirar?: boolean;
   desabilitado?: boolean;
+  /** Também os clientes (a tarefa nova do comercial pode ser de quem já é cliente). */
+  comClientes?: boolean;
   testid?: string;
 }) {
   const { can } = useAuth();
@@ -47,12 +53,14 @@ export function SeletorDeLead({ valor, onEscolher, token, rotulo = 'Lead', permi
     if (!aberto || !token || !podeVer) return;
     let vivo = true;
     const t = setTimeout(() => {
-      apiGet<TrabAtaCandidato[]>(`/trabalho/atas/alvos?tipo=lead${busca.trim() ? `&q=${encodeURIComponent(busca.trim())}` : ''}`, token)
-        .then((r) => { if (vivo) { setLeads(Array.isArray(r) ? r : []); setAtivo(0); setErro(null); } })
+      const q = busca.trim() ? `&q=${encodeURIComponent(busca.trim())}` : '';
+      const buscar = (tipo: 'lead' | 'cliente') => apiGet<TrabAtaCandidato[]>(`/trabalho/atas/alvos?tipo=${tipo}${q}`, token).then((r) => (Array.isArray(r) ? r : []));
+      Promise.all([buscar('lead'), comClientes ? buscar('cliente').catch(() => []) : Promise.resolve([])])
+        .then(([l, c]) => { if (vivo) { setLeads([...l, ...c.map((x) => ({ ...x, tipo: 'cliente' as const }))]); setAtivo(0); setErro(null); } })
         .catch((e: Error) => { if (vivo) setErro(e.message); });
     }, 150);
     return () => { vivo = false; clearTimeout(t); };
-  }, [aberto, busca, token, podeVer]);
+  }, [aberto, busca, token, podeVer, comClientes]);
 
   useEffect(() => {
     if (!aberto) return;
@@ -83,6 +91,7 @@ export function SeletorDeLead({ valor, onEscolher, token, rotulo = 'Lead', permi
     }
   };
   const escolher = (o: Opcao) => {
+    if (o.tipo === 'lead' && o.lead.tipo === 'cliente') { onEscolher({ id: o.lead.id, nome: o.lead.nome, tipo: 'cliente' }); fechar(); return; }
     if (o.tipo === 'lead') { onEscolher({ id: o.lead.id, nome: o.lead.detalhe ? `${o.lead.detalhe} · ${o.lead.nome}` : o.lead.nome }); fechar(); return; }
     if (o.tipo === 'tirar') { onEscolher(null); fechar(); return; }
     void criar(o.nome);
@@ -99,7 +108,7 @@ export function SeletorDeLead({ valor, onEscolher, token, rotulo = 'Lead', permi
         aria-label={rotulo}
         disabled={desabilitado || criando}
         value={aberto ? busca : valor?.nome ?? ''}
-        placeholder="Lead (nome ou empresa), opcional"
+        placeholder={comClientes ? "Lead ou cliente, opcional" : "Lead (nome ou empresa), opcional"}
         onFocus={() => setAberto(true)}
         onClick={() => setAberto(true)}
         onChange={(e) => { setBusca(e.target.value); setAberto(true); }}
@@ -114,18 +123,19 @@ export function SeletorDeLead({ valor, onEscolher, token, rotulo = 'Lead', permi
       {aberto && (
         <ul id={idLista} role="listbox" aria-label={`${rotulo}: opções`} className="absolute left-0 right-0 z-[60] mt-1 max-h-56 overflow-y-auto rounded-lg border border-border bg-surface shadow-lg">
           {erro && <li className="px-2 py-1.5 text-[12px] text-bad">{erro}</li>}
-          {!erro && opcoes.length === 0 && <li className="px-2 py-1.5 text-[12px] text-muted">{texto ? 'Nenhum lead com esse nome.' : 'Escreva o nome ou a empresa do lead.'}</li>}
+          {!erro && opcoes.length === 0 && <li className="px-2 py-1.5 text-[12px] text-muted">{texto ? comClientes ? 'Nenhum lead nem cliente com esse nome.' : 'Nenhum lead com esse nome.' : 'Escreva o nome ou a empresa do lead.'}</li>}
           {opcoes.map((o, i) => (
             <li
-              key={o.tipo === 'lead' ? o.lead.id : o.tipo}
+              key={o.tipo === 'lead' ? `${o.lead.tipo}:${o.lead.id}` : o.tipo}
               role="option"
               aria-selected={i === ativo}
-              data-testid={o.tipo === 'lead' ? `opcao-lead-${o.lead.id}` : `opcao-lead-${o.tipo}`}
+              data-testid={o.tipo === 'lead' ? `opcao-${o.lead.tipo === 'cliente' ? 'cliente' : 'lead'}-${o.lead.id}` : `opcao-lead-${o.tipo}`}
               onMouseDown={(e) => { e.preventDefault(); escolher(o); }}
               onMouseEnter={() => setAtivo(i)}
               className={`cursor-pointer px-2 py-1.5 text-[13px] ${i === ativo ? 'bg-brand/15 text-text' : 'text-text'}`}
             >
-              {o.tipo === 'lead' && <>{o.lead.detalhe ?? o.lead.nome}{o.lead.detalhe && <span className="ml-1 text-[11px] text-muted">· {o.lead.nome}</span>}</>}
+              {o.tipo === 'lead' && o.lead.tipo === 'cliente' && <>{o.lead.nome}<span className="ml-1 rounded bg-brand/15 px-1 text-[10.5px] text-brand">cliente</span></>}
+              {o.tipo === 'lead' && o.lead.tipo !== 'cliente' && <>{o.lead.detalhe ?? o.lead.nome}{o.lead.detalhe && <span className="ml-1 text-[11px] text-muted">· {o.lead.nome}</span>}</>}
               {o.tipo === 'criar' && <span className="text-brand">+ criar lead “{o.nome}”</span>}
               {o.tipo === 'tirar' && <span className="text-muted">Sem lead (tirar o lead da tarefa)</span>}
             </li>

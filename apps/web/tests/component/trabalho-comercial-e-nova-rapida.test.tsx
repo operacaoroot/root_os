@@ -101,6 +101,7 @@ beforeEach(() => {
     if (rota.startsWith('/trabalho/estrutura')) return Promise.resolve(ESTRUTURA);
     if (rota.startsWith('/organograma/equipe')) return Promise.reject(new Error('sem equipe'));
     if (rota.startsWith('/trabalho/clientes')) return Promise.resolve([{ id: 'p-casa', nome: 'Root (interno)', cnpj: null, interno: true }, { id: CLIENTE, nome: 'Construtora Alicerce', cnpj: null, interno: false }]);
+    if (rota.startsWith('/trabalho/atas/alvos?tipo=cliente')) return Promise.resolve([]);
     if (rota.startsWith('/trabalho/atas/alvos')) return Promise.resolve([{ tipo: 'lead', id: LEAD, nome: 'Ana', detalhe: 'Padaria Lua' }]);
     if (rota.startsWith('/trabalho/quadro/movimento')) return Promise.resolve({ itens: [] });
     if (rota.startsWith('/trabalho/tarefas?')) {

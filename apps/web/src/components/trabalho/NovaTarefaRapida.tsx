@@ -140,8 +140,9 @@ export function NovaTarefaRapida({ listas, pastas, statusId, prazoInicial = '', 
       ...(statusId && listas.length === 1 ? { statusId } : {}),
       title: titulo.trim(),
       // Na lista do comercial o cliente é o interno (a API também o põe); o lead vai junto, se escolhido.
-      clienteId: doComercial ? TRAB_CLIENTE_INTERNO : cliente!.id,
-      ...(doComercial && lead ? { leadId: lead.id } : {}),
+      // Layout 27/10: na do comercial, quem já é cliente vai como o cliente da tarefa (sem lead).
+      clienteId: doComercial ? (lead?.tipo === 'cliente' ? lead.id : TRAB_CLIENTE_INTERNO) : cliente!.id,
+      ...(doComercial && lead && lead.tipo !== 'cliente' ? { leadId: lead.id } : {}),
       ...(responsavel ? { assigneeUserId: responsavel } : {}),
       ...(prazo ? { dueDate: prazoDoDia(prazo) } : {}),
     };
@@ -204,9 +205,9 @@ export function NovaTarefaRapida({ listas, pastas, statusId, prazoInicial = '', 
             {doComercial ? (
               <>
                 <span className={compacto ? 'block' : 'min-w-[12rem]'}>
-                  <SeletorDeLead valor={lead} token={token} onEscolher={setLead} testid={`${testid}-lead`} />
+                  <SeletorDeLead valor={lead} token={token} onEscolher={setLead} comClientes testid={`${testid}-lead`} />
                 </span>
-                <span data-testid={`${testid}-cliente-fixo`} className="text-[10.5px] text-muted">cliente: {casa}</span>
+                <span data-testid={`${testid}-cliente-fixo`} className="text-[10.5px] text-muted">cliente: {lead?.tipo === 'cliente' ? lead.nome : casa}</span>
               </>
             ) : (
               <span className={compacto ? 'block' : 'min-w-[12rem]'}>

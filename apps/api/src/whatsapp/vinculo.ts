@@ -167,6 +167,8 @@ export const PISO_DE_SEMELHANCA = 0.3;
 
 export interface AlvoDaBusca extends NomesDoAlvo {
   detalhe: string | null;
+  /** Layout 27/10: o cliente que ainda é só o lead em Contrato ou fechado (escolher cria o cadastro). */
+  leadId?: string;
 }
 
 /**
@@ -197,7 +199,7 @@ export function ordenarCandidatos(
       nota = base ? Math.max(0, ...nomes.map((n) => semelhanca(n, base))) : 0;
       if (base && !igual && nota < PISO_DE_SEMELHANCA) continue;
     }
-    pontuados.push({ c: { tipo: a.tipo, id: a.id, nome: a.nome, detalhe: a.detalhe, igual }, igual, nota });
+    pontuados.push({ c: { tipo: a.tipo, id: a.id, nome: a.nome, detalhe: a.detalhe, igual, ...(a.leadId ? { leadId: a.leadId } : {}) }, igual, nota });
   }
   pontuados.sort((x, y) => Number(y.igual) - Number(x.igual) || y.nota - x.nota || x.c.nome.localeCompare(y.c.nome, 'pt-BR'));
   return pontuados.slice(0, teto).map((p) => p.c);
