@@ -23,7 +23,12 @@ const RESERVADOS = new Set(['p', 'reel', 'reels', 'tv', 'stories', 'explore', 'a
 async function ler(url: string): Promise<{ texto: string; tipo: string; final: string }> {
   const r = await buscarPaginaPublica(url, { headers: { 'user-agent': 'Mozilla/5.0 (compatible; RootOS/1.0)', cookie: 'CONSENT=YES+1; SOCS=CAI' }, signal: AbortSignal.timeout(15_000) });
   if (!r.ok) throw new BadRequestException(`O link respondeu ${r.status}. Confira se está certo e é público.`);
-  return { texto: await lerCorpoComTeto(r), tipo: r.headers.get('content-type') ?? '', final: url };
+  // A página de um canal do YouTube passa dos 2 MB do teto padrão: aqui o teto é 8 MB.
+  try {
+    return { texto: await lerCorpoComTeto(r, 8 * 1024 * 1024), tipo: r.headers.get('content-type') ?? '', final: url };
+  } catch {
+    throw new BadRequestException('A página é grande demais para ler. Cole o link do feed RSS direto.');
+  }
 }
 
 const pareceFeed = (texto: string, tipo: string) => /xml|rss|atom/i.test(tipo) || /^\s*<\?xml[\s\S]{0,400}<(rss|feed)\b/i.test(texto) || /^\s*<(rss|feed)\b/i.test(texto);
