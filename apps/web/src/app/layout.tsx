@@ -1,6 +1,6 @@
 import './globals.css';
 import type { Metadata } from 'next';
-import { JetBrains_Mono, Space_Grotesk } from 'next/font/google';
+import { Inter, JetBrains_Mono, Space_Grotesk } from 'next/font/google';
 import { AuthProvider } from '@/lib/auth';
 import { AppShell } from '@/components/AppShell';
 
@@ -24,6 +24,15 @@ const spaceGrotesk = Space_Grotesk({
   display: 'swap',
 });
 
+// Layout do Estúdio (27/10/2026): o texto do painel é Inter, como no Root Estúdio V1.
+// Space Grotesk segue carregada para a Central e a bio, que usam --font-space.
+const inter = Inter({
+  subsets: ['latin'],
+  weight: ['400', '500', '600', '700'],
+  variable: '--font-inter',
+  display: 'swap',
+});
+
 export const metadata: Metadata = {
   title: 'ROOT OS',
   description: 'A central de contexto da operação — painel único, ferramentas e conexões.',
@@ -37,12 +46,14 @@ export const metadata: Metadata = {
  * Escrever no <html> é seguro em qualquer rota: /central usa data-theme e o
  * namespace --central-*, e /b usa cores próprias — nenhuma das duas lê --os-*.
  */
-const scriptTema = `(function(){try{var t=localStorage.getItem("root-os:tema");if(t==="dark"||t==="light"||t==="mono"){document.documentElement.setAttribute("data-os-theme",t)}}catch(e){}})()`;
+// Layout do Estúdio (27/10/2026): o padrão é "estudio" para todos (chave nova, então a
+// escolha antiga de escuro não vale mais); só quem escolher "escuro" de novo fica nele.
+const scriptTema = `(function(){var t="estudio";try{if(localStorage.getItem("root-os:tema-estudio")==="dark"){t="dark"}}catch(e){}document.documentElement.setAttribute("data-os-theme",t)})()`;
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     // O script de tema escreve data-os-theme no <html> antes da hidratação.
-    <html lang="pt-BR" suppressHydrationWarning className={`${jetbrains.variable} ${spaceGrotesk.variable}`}>
+    <html lang="pt-BR" suppressHydrationWarning className={`${inter.variable} ${jetbrains.variable} ${spaceGrotesk.variable}`}>
       <head>
         <script dangerouslySetInnerHTML={{ __html: scriptTema }} />
       </head>

@@ -115,7 +115,115 @@
    tempo de valor computado — e não cai na próxima da lista. */
 :root {
   --os-mono: var(--font-jetbrains, 'JetBrains Mono'), ui-monospace, SFMono-Regular, Menlo, monospace;
-  --os-sans: var(--font-space, 'Space Grotesk'), ui-sans-serif, system-ui, sans-serif;
+  /* Layout do Estúdio (27/10/2026): o texto do OS passa a ser Inter, como no Root
+     Estúdio V1 (decisão do Lucas). JetBrains Mono segue só em etiquetas e números. */
+  --os-sans: var(--font-inter, 'Inter'), ui-sans-serif, system-ui, sans-serif;
+}
+
+/* ============================================================
+   Tema "estúdio" (27/10/2026): o layout do Root Estúdio V1
+   (estudio-v1…sslip.io) como padrão do OS; o escuro fica opcional.
+   Papel #ECE7D8 no fundo, cards brancos, tinta #23281E. O limão
+   (#9BDB1F) só preenche (botão principal, seleção); como texto o
+   acento é o verde #46651F, que passa de 5:1 no papel e no branco.
+   A barra lateral é escura: o bloco [data-os-casca] redeclara os
+   tokens só dentro dela, e as classes de sempre (bg-bg2, text-muted,
+   text-brand…) já pintam o escuro sem editar o componente.
+
+   UMA SÓ PALETA (27/10/2026, pedido do Lucas: "cuidado para o layout de lá
+   não ser diferente do layout daqui"): os valores são os do Estúdio V1
+   (--muted #697061, hover #F0F3E9, linha #DFE3D7) e os mesmos que a aba
+   Marketing usa em .estudio-area. O seletor também cobre .estudio-area, então
+   dentro do Marketing vale esta paleta, e não uma cópia dela.
+   ============================================================ */
+:root[data-os-theme='estudio'],
+:root[data-os-theme='estudio'] .estudio-area {
+  color-scheme: light;
+  --os-bg: 236 231 216;
+  --os-bg2: 236 231 216;
+  --os-s1: 255 255 255;
+  --os-s2: 240 243 233;
+  --os-s3: 239 235 222;
+  --os-line: 223 227 215;
+  --os-line-strong: 207 213 199;
+  --os-tx: 35 40 30;
+  --os-tx2: 105 112 97;
+  --os-tx3: 92 98 80;
+  --os-ac: 70 101 31;
+  --os-ac2: 50 74 5;
+  --os-ac-dim: 143 173 96;
+  --os-ac-ink: 30 43 14;
+  --os-mag: 173 16 78;
+  --os-cy: 0 100 82;
+  --os-ok: 0 100 82;
+  --os-warn: 122 84 0;
+  --os-err: 163 53 53;
+  --os-grid: transparent;
+  --os-logo-shadow: none;
+  --os-r: 8px;
+  --os-r-sm: 6px;
+  --os-r-lg: 12px;
+  --os-r-xl: 14px;
+  --os-r-2xl: 16px;
+}
+/* A barra escura do Estúdio (#070A08), com o item ativo em limão. */
+:root[data-os-theme='estudio'] [data-os-casca] {
+  color-scheme: dark;
+  --os-bg: 7 10 8;
+  --os-bg2: 7 10 8;
+  --os-s1: 20 26 18;
+  --os-s2: 41 51 34;
+  --os-s3: 52 64 44;
+  --os-line: 30 38 27;
+  --os-line-strong: 53 65 46;
+  --os-tx: 236 241 230;
+  --os-tx2: 174 186 165;
+  --os-tx3: 147 158 139;
+  --os-ac: 155 219 31;
+  --os-ac2: 196 255 46;
+  --os-ac-dim: 78 110 16;
+  --os-ac-ink: 30 43 14;
+  --os-mag: 255 31 107;
+  --os-cy: 31 255 168;
+}
+/* Preenchimento sólido do acento = limão do Estúdio, com tinta escura por cima.
+   Só o sólido: os tons (bg-brand/10, /15…) seguem o verde do texto. */
+:root[data-os-theme='estudio'] .bg-brand {
+  background-color: rgb(155 219 31);
+}
+:root[data-os-theme='estudio'] .hover\:bg-brand-2:hover {
+  background-color: rgb(166 221 66);
+}
+/* Botão, campo e seleção ganham o canto do Estúdio. :where() deixa a regra
+   sem peso: qualquer rounded-* escrito na tela continua valendo. */
+:where(:root[data-os-theme='estudio'] [data-os-app]) :where(button, input, select, textarea) {
+  border-radius: var(--os-r);
+}
+/* Título da página com a medida exata do Estúdio V1 (36px; 29px no celular),
+   a mesma do .estudio h1 do Marketing. Ficam de fora: o título da barra do topo
+   (Topbar), os rótulos em mono e os títulos das telas do Estúdio (.estudio), que
+   têm medida própria, como o "Bora publicar" do Início. */
+:root[data-os-theme='estudio'] #root-os-main h1:not([class*='font-os-mono']):not([class*='font-central']):not(.estudio h1) {
+  font-size: 36px;
+  line-height: 1.14;
+  letter-spacing: -1.5px;
+  font-weight: 650;
+}
+@media (max-width: 760px) {
+  :root[data-os-theme='estudio'] #root-os-main h1:not([class*='font-os-mono']):not([class*='font-central']):not(.estudio h1) {
+    font-size: 29px;
+  }
+}
+/* A letra do Marketing é a mesma do resto. O CSS do Estúdio pede "Inter" pelo nome,
+   mas o OS carrega a Inter pelo next/font (--font-inter); sem isto o Marketing cairia
+   na letra do sistema. Vale em qualquer tema. */
+[data-os-app] :is(.estudio, .estudio-area) {
+  font-family: var(--os-sans);
+}
+@media (min-width: 1024px) {
+  :root[data-os-theme='estudio'] #root-os-main {
+    padding: 28px 36px;
+  }
 }
 
 html,

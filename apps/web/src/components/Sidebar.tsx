@@ -15,9 +15,12 @@ import { BolhaDoWhatsapp, useNaoLidasDoWhatsapp } from './whatsapp/bolha-do-what
 
 type IconName = keyof typeof Icons;
 
-export type TemaOs = 'dark' | 'light' | 'mono';
+// Layout do Estúdio (27/10/2026): 'estudio' é o padrão e o escuro fica opcional.
+// 'light' e 'mono' continuam no tipo e no CSS para não quebrar quem lê o atributo.
+export type TemaOs = 'estudio' | 'dark' | 'light' | 'mono';
 
-export const CHAVE_TEMA = 'root-os:tema';
+// Chave nova: quem tinha 'dark' gravado pela chave antiga começa no Estúdio.
+export const CHAVE_TEMA = 'root-os:tema-estudio';
 // Menu lateral recolhido no desktop (só ícones). Preferência deste navegador.
 const CHAVE_RECOLHIDO = 'root-os:menu-recolhido';
 
@@ -28,9 +31,8 @@ export const CHAVE_MENU = 'root-os:menu-fechado';
 export const PONTE_DO_BALAO_MS = 150;
 
 const TEMAS: { id: TemaOs; rotulo: string }[] = [
+  { id: 'estudio', rotulo: 'estúdio' },
   { id: 'dark', rotulo: 'escuro' },
-  { id: 'light', rotulo: 'papel' },
-  { id: 'mono', rotulo: 'claro' },
 ];
 
 /** O ícone de uma área no menu: âncora do balão e destino do foco quando ele fecha pelo Esc. */
@@ -54,12 +56,11 @@ export function passoDoAcordeao(a: { compacta: boolean; temLista: boolean; abert
 
 export function lerTema(): TemaOs {
   try {
-    const v = localStorage.getItem(CHAVE_TEMA);
-    if (v === 'dark' || v === 'light' || v === 'mono') return v;
+    if (localStorage.getItem(CHAVE_TEMA) === 'dark') return 'dark';
   } catch {
-    /* localStorage bloqueado (janela privada, cookies off) — cai no escuro */
+    /* localStorage bloqueado (janela privada, cookies off) — cai no padrão */
   }
-  return 'dark';
+  return 'estudio';
 }
 
 /*
@@ -88,7 +89,7 @@ export function Sidebar() {
   const { modulos } = useModulos();
   const caixa = useCaixa();
   const pathname = usePathname();
-  const [tema, setTema] = useState<TemaOs>('dark');
+  const [tema, setTema] = useState<TemaOs>('estudio');
   const [abertaNoMovel, setAbertaNoMovel] = useState(false);
   const [recolhida, setRecolhida] = useState(false);
   const botaoAbrir = useRef<HTMLButtonElement>(null);
@@ -304,6 +305,7 @@ export function Sidebar() {
       )}
       <aside
         id="root-os-nav"
+        data-os-casca
         role={abertaNoMovel ? 'dialog' : undefined}
         aria-modal={abertaNoMovel ? true : undefined}
         aria-label="Navegação do ROOT OS"
@@ -454,7 +456,7 @@ export function Sidebar() {
         })}
       </nav>
 
-      {/* rodapé: os três temas (o botão de recolher subiu para perto da logo em 22/10/2026; no recolhido, o rodapé some) */}
+      {/* rodapé: os temas (estúdio e escuro) (o botão de recolher subiu para perto da logo em 22/10/2026; no recolhido, o rodapé some) */}
       <div className={`flex items-center gap-[6px] border-t border-border px-3 py-[9px] ${compacta ? 'min-[820px]:hidden' : ''}`}>
         <div
           role="group"
