@@ -363,6 +363,11 @@ export function lerArquivoDaComunidade(nome: string, conteudo: string): { numero
   // "## Material da isca (vai no CTA da peça)": o 1º bloco entre ``` dessa seção vai para o cta
   // (27/10, pedido do agente da comunidade: a rotina solta a isca quando a news bate N corações).
   const secaoIsca = /^##\s+Material da isca[^\n]*\n([\s\S]*?)(?=^##\s|$(?![\s\S]))/im.exec(conteudo)?.[1] ?? '';
-  const isca = (/```[^\n]*\n([\s\S]*?)```/.exec(secaoIsca)?.[1] ?? '').trim();
+  // A cerca pode ser ``` ou ~~~. Com ~~~ (o material tem ``` próprio, o monoespaçado do WhatsApp),
+  // vale tudo até o ~~~ que fecha, com os ``` de dentro.
+  const cerca = /^(```|~~~)[^\n]*\n/m.exec(secaoIsca);
+  const resto = cerca ? secaoIsca.slice(cerca.index + cerca[0].length) : '';
+  const fim = cerca ? new RegExp(`^${cerca[1]}\\s*$`, 'm').exec(resto) : null;
+  const isca = (cerca ? (fim ? resto.slice(0, fim.index) : '') : '').trim();
   return { numero: nome.replace(/\.md$/i, ''), data: m[1], subtipo, titulo, texto, opcoes, isca };
 }

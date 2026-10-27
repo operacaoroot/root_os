@@ -122,6 +122,10 @@ describe('Comunidade Wpp', () => {
     expect(s!.texto).toBe('▓▓ ROOT SEMANAL · #02\nchegar a 30 corações libera o material');
     expect(s!.isca).toBe('*O material*\nlink: os.operacaoroot.com/central');
     expect(lerArquivoDaComunidade('2026-10-27-root-semanal-03.md', '```\nsó a news\n```')!.isca).toBe('');
+    // Cerca ~~~: o material tem ``` próprio (monoespaçado do WhatsApp) e ele vem junto.
+    const til = ['```', 'a news', '```', '## Material da isca (vai no CTA da peça)', '~~~', 'Cole no seu Claude:', '```', 'prompt aqui', '```', 'fim', '~~~', '## Bastidor', 'x'].join('\n');
+    expect(lerArquivoDaComunidade('2026-10-27-root-semanal-01.md', til)!.isca).toBe('Cole no seu Claude:\n```\nprompt aqui\n```\nfim');
+    expect(lerArquivoDaComunidade('2026-10-27-root-semanal-01.md', til)!.texto).toBe('a news');
   });
 });
 
