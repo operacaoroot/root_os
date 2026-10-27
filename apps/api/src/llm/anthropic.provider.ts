@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, Optional } from '@nestjs/common';
 import Anthropic from '@anthropic-ai/sdk';
 import type {
   ChamadaParaTeto,
@@ -21,6 +21,7 @@ import {
   modeloDaChamada,
   tipoDaBuscaNaWeb,
 } from './modelo-da-chamada';
+import { ChaveDaAnthropicService, type ChaveEfetiva } from './chave-da-anthropic.service';
 
 // Provider Claude (SDK oficial @anthropic-ai/sdk). Credencial PRÓPRIA do root.
 //
@@ -45,6 +46,16 @@ import {
 //    `server-side-fallback-2026-07-01` vai para Opus 5.5, Opus 5, Sonnet 5.5
 //    (só essa forma) e Fable 5.1. O Haiku 5.5 não tem fallback de servidor:
 //    o parâmetro não vai, e a recusa chega como recusa.
+//
+// A CHAVE POR EMPRESA (leva 5, L8, 27/10/2026). A chave de cada chamada é
+// resolvida por `ChaveDaAnthropicService`: cofre da empresa da chamada (`orgId`,
+// que toda chamada já leva) → senão a variável de ambiente, como sempre. Com a
+// chave do cofre o pedido sai por um cliente daquela chave; com a da variável,
+// pelo cliente de sempre. Enquanto ninguém gravar chave em Conexões, nada muda.
+
+const SEM_CHAVE =
+  'ANTHROPIC_API_KEY ausente. Defina no .env (ver .env.example) e reinicie a API, ' +
+  'ou grave a chave em Conexões › Claude (Anthropic). ANTHROPIC_AUTH_TOKEN (perfil OAuth) também serve.';
 
 /*
  * O teto de saída quando a chamada é em STREAMING. Nomeado porque ganhou um
@@ -73,13 +84,54 @@ export class AnthropicProvider implements LlmProvider {
   private readonly maxTokens = envNumero('ANTHROPIC_MAX_TOKENS', 16000);
 
   // Sem credencial no env o cliente sobe assim mesmo (o SDK resolve sozinho se
-  // houver perfil); quem barra a chamada é `configured`.
+  // houver perfil); quem barra a chamada é a resolução da chave em cada pedido.
   private readonly client = new Anthropic(
     this.apiKey ? { apiKey: this.apiKey } : {},
   );
+  /** Um cliente por chave do cofre, para não refazer o SDK a cada pedido. Esvazia ao passar do teto. */
+  private readonly clientesDoCofre = new Map<string, Anthropic>();
 
+  constructor(
+    /** `@Optional()` porque a suíte monta à mão; sem ele vale só a variável de ambiente. */
+    @Optional() private readonly chaves?: ChaveDaAnthropicService,
+  ) {}
+
+  /**
+   * Há como falar com a Anthropic? A variável, o perfil OAuth, ou uma chave do
+   * cofre já vista neste processo. É leitura rápida para quem decide cair numa
+   * regra sem modelo (triagem, cobrança, atas); a resposta por empresa é a da
+   * chamada, em `clienteDaChamada`.
+   */
   get configured(): boolean {
-    return this.apiKey.length > 0 || this.authToken.length > 0;
+    return this.apiKey.length > 0 || this.authToken.length > 0 || this.chaves?.jaViuCofre === true;
+  }
+
+  /** A chave desta chamada, pelo serviço quando ele está de pé; senão a da variável. */
+  private async chaveDaChamada(orgId?: string): Promise<ChaveEfetiva | null> {
+    if (this.chaves) return this.chaves.chaveEfetiva(orgId);
+    return this.apiKey ? { chave: this.apiKey, origem: 'ambiente' } : null;
+  }
+
+  /** O cliente de uma chave do cofre. Separado para a suíte trocar por um dublê. */
+  clientePara(chave: string): Anthropic {
+    const pronto = this.clientesDoCofre.get(chave);
+    if (pronto) return pronto;
+    if (this.clientesDoCofre.size >= 50) this.clientesDoCofre.clear();
+    const novo = new Anthropic({ apiKey: chave });
+    this.clientesDoCofre.set(chave, novo);
+    return novo;
+  }
+
+  /**
+   * O cliente que vai mandar este pedido: o da chave do cofre da empresa, ou o
+   * de sempre (variável ou perfil OAuth). Sem nenhuma das três, a frase diz onde
+   * pôr a chave.
+   */
+  private async clienteDaChamada(orgId?: string): Promise<Anthropic> {
+    const efetiva = await this.chaveDaChamada(orgId);
+    if (efetiva?.origem === 'cofre') return this.clientePara(efetiva.chave);
+    if (efetiva?.origem === 'ambiente' || this.authToken.length > 0) return this.client;
+    throw new Error(SEM_CHAVE);
   }
 
   /** Ver `LlmProvider.modeloDaChamada` e `modelo-da-chamada.ts`. */
@@ -110,15 +162,10 @@ export class AnthropicProvider implements LlmProvider {
 
   async complete(input: LlmMessage): Promise<string> {
     const { system, user, maxTokens } = input;
-    if (!this.configured) {
-      throw new Error(
-        'ANTHROPIC_API_KEY ausente. Defina no .env (ver .env.example) e reinicie a API. ' +
-          'ANTHROPIC_AUTH_TOKEN (perfil OAuth) também serve.',
-      );
-    }
+    const cliente = await this.clienteDaChamada(input.orgId);
 
     const { modelo, esforco } = this.modeloDaChamada(input);
-    const res = await this.client.beta.messages.create({
+    const res = await cliente.beta.messages.create({
       model: modelo,
       max_tokens: this.tetoDeSaida({ tipo: 'completa', maxTokens }),
       // Pensamento adaptativo: o modelo decide quanto pensar por tarefa.
@@ -164,12 +211,7 @@ export class AnthropicProvider implements LlmProvider {
    * usuário precisa ver que o modelo se recusou, com a categoria, e não um 500.
    */
   async step(input: LlmStepInput): Promise<LlmStepOutput> {
-    if (!this.configured) {
-      throw new Error(
-        'ANTHROPIC_API_KEY ausente. Defina no .env (ver .env.example) e reinicie a API. ' +
-          'ANTHROPIC_AUTH_TOKEN (perfil OAuth) também serve.',
-      );
-    }
+    const cliente = await this.clienteDaChamada(input.orgId);
 
     const { modelo, esforco } = this.modeloDaChamada(input);
     /*
@@ -217,8 +259,8 @@ export class AnthropicProvider implements LlmProvider {
     };
 
     const res = input.onTextDelta
-      ? await this.comStream(pedido, input.onTextDelta, input.signal)
-      : await this.client.beta.messages.create(pedido, { signal: input.signal });
+      ? await this.comStream(cliente, pedido, input.onTextDelta, input.signal)
+      : await cliente.beta.messages.create(pedido, { signal: input.signal });
 
     const texto = res.content
       .filter((b): b is Anthropic.Beta.BetaTextBlock => b.type === 'text')
@@ -251,11 +293,12 @@ export class AnthropicProvider implements LlmProvider {
   }
 
   private async comStream(
+    cliente: Anthropic,
     pedido: Parameters<typeof this.client.beta.messages.create>[0],
     onTextDelta: (d: string) => void,
     signal?: AbortSignal,
   ) {
-    const fluxo = this.client.beta.messages.stream(
+    const fluxo = cliente.beta.messages.stream(
       pedido as Parameters<typeof this.client.beta.messages.stream>[0],
       { signal },
     );

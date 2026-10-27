@@ -4,6 +4,7 @@ import { ToggleIntegrationSchema } from '@mktos/shared';
 import { IntegrationsService } from './integrations.service';
 import { ClickupService } from './clickup.service';
 import { ConectoresService } from './conectores.service';
+import { AnthropicConector } from './anthropic.conector';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { PermissionsGuard } from '../auth/permissions.guard';
 import { RequirePermissions } from '../auth/permissions.decorator';
@@ -30,6 +31,14 @@ const RevogacaoSchema = z.object({
   motivo: z.string().trim().max(500).optional(),
 });
 
+/**
+ * O corpo da chave do Claude (leva 5, L8). Só o tamanho aqui: o formato
+ * (`sk-ant-…`) é conferido por quem guarda, com a frase em português.
+ */
+const ChaveDaAnthropicSchema = z.object({
+  chave: z.string().max(400),
+});
+
 @UseGuards(JwtAuthGuard, PermissionsGuard)
 @Controller('integrations')
 export class IntegrationsController {
@@ -37,7 +46,51 @@ export class IntegrationsController {
     private readonly svc: IntegrationsService,
     private readonly clickup: ClickupService,
     private readonly conectores: ConectoresService,
+    private readonly anthropic: AnthropicConector,
   ) {}
+
+  /*
+   * ==========================================================================
+   * CLAUDE (ANTHROPIC): a chave pela tela — leva 5, L8 (27/10/2026)
+   * ==========================================================================
+   *
+   * Quatro rotas próprias, antes dos verbos genéricos porque são DUAS pernas de
+   * caminho (`anthropic/estado`) e não colidem com `:chave/<verbo>`. Ler o estado
+   * é `dashboard.ver` (nunca devolve a chave: origem, data e os 4 últimos);
+   * gravar, testar e remover são `admin.usuarios`, como toda administração de
+   * conexão. A chave nunca é escrita em log nem em auditoria.
+   */
+
+  @Get('anthropic/estado')
+  @RequirePermissions('dashboard.ver')
+  async estadoDoClaude(@CurrentUser() user: JwtUser) {
+    await this.svc.verificarPessoaAtual(user.orgId, user.sub, ['dashboard.ver']);
+    return this.anthropic.estado(user.orgId);
+  }
+
+  @Put('anthropic/chave')
+  @RequirePermissions('admin.usuarios')
+  async gravarChaveDoClaude(@CurrentUser() user: JwtUser, @Body() body: unknown) {
+    await this.svc.verificarPessoaAtual(user.orgId, user.sub, ['admin.usuarios']);
+    const { chave } = ChaveDaAnthropicSchema.parse(body ?? {});
+    return this.anthropic.gravarChave(user.orgId, chave, user.sub);
+  }
+
+  /** UMA chamada mínima à Anthropic com a chave efetiva (cofre, senão variável). Sem gastar token. */
+  @Post('anthropic/testar')
+  @RequirePermissions('admin.usuarios')
+  async testarClaude(@CurrentUser() user: JwtUser) {
+    await this.svc.verificarPessoaAtual(user.orgId, user.sub, ['admin.usuarios']);
+    return this.anthropic.testar(user.orgId, user.sub);
+  }
+
+  /** Tira a chave do cofre desta empresa: volta a valer a variável de ambiente. */
+  @Delete('anthropic/chave')
+  @RequirePermissions('admin.usuarios')
+  async removerChaveDoClaude(@CurrentUser() user: JwtUser) {
+    await this.svc.verificarPessoaAtual(user.orgId, user.sub, ['admin.usuarios']);
+    return this.anthropic.removerChave(user.orgId, user.sub, 'removida em Conexões');
+  }
 
   /**
    * A tela de Conexões. `?sondar=0` devolve a lista sem sondar ninguém — ver

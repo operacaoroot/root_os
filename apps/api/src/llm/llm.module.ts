@@ -13,6 +13,7 @@ import { StubProvider } from './stub.provider';
 import { PonteProvider } from './ponte.provider';
 import { GastoPorFuncaoService } from './gasto-por-funcao.service';
 import { MedidorDeGastoExterno } from './gasto-externo';
+import { ChaveDaAnthropicService } from './chave-da-anthropic.service';
 
 // Escolhe o provider por env LLM_PROVIDER: anthropic | openrouter | openai | stub | ponte.
 //
@@ -71,10 +72,16 @@ import { MedidorDeGastoExterno } from './gasto-externo';
 // (o livro do gasto por função do cadastro, somado pelo envelope em toda
 // chamada e lido pela tela de Agentes em `doMes`) e `MedidorDeGastoExterno`
 // (vetorização e transcrição passando pelo teto do dia, com o mesmo livro).
+//
+// O QUE ENTROU NA LEVA 5 (27/10/2026, L8): `ChaveDaAnthropicService`, a chave
+// da Anthropic por empresa (cofre → variável de ambiente), lida pelo
+// `AnthropicProvider` em cada chamada e exportada para o conector "Claude
+// (Anthropic)" de Conexões gravar, testar e remover a chave sem nunca vê-la.
 @Global()
 @Module({
   providers: [
     OpenAiProvider,
+    ChaveDaAnthropicService,
     AnthropicProvider,
     OpenRouterProvider,
     TetoDeCustoIaService,
@@ -134,6 +141,7 @@ import { MedidorDeGastoExterno } from './gasto-externo';
     TranscricaoService,
     GastoPorFuncaoService,
     MedidorDeGastoExterno,
+    ChaveDaAnthropicService,
   ],
 })
 export class LlmModule {}
