@@ -42,6 +42,7 @@ import { IntegracaoDaEvolutionController } from './evolution.controller';
 // lane D
 import { ZapsignModule } from './conectores/zapsign.module';
 import { ContratoVivoService } from './contrato-vivo.service';
+import { ClientesAtivosController, ClientesAtivosService } from './clientes-ativos.service';
 import { DinheiroService } from './dinheiro.service';
 import { FechadoForaController } from './fechado-fora.controller';
 import { FechadoForaService } from './fechado-fora.service';
@@ -90,7 +91,7 @@ import { FichaGeralService } from './ficha-geral.service';
  */
 @Module({
   imports: [TenantsModule, AuthModule, LeadsModule, OnboardingModule, FinanceModule, RoutinesModule, ZapsignModule, MemoryModule, WorkModule],
-  controllers: [ComercialController, SalaController, SimuladorController, MensagensController, DinheiroController, WebhooksDoDinheiroController, InteligenciaController, FechadoForaController, ContratoImportadoController, PropostaDoLeadController, OnboardingAntecipadoController, IntegracaoDaEvolutionController, SalaEstadoController, TarefasDoComercialController, ContratoDaRootController, FormularioDoSiteController, FichaGeralController],
+  controllers: [ComercialController, SalaController, SimuladorController, MensagensController, DinheiroController, WebhooksDoDinheiroController, InteligenciaController, FechadoForaController, ContratoImportadoController, PropostaDoLeadController, OnboardingAntecipadoController, IntegracaoDaEvolutionController, SalaEstadoController, TarefasDoComercialController, ContratoDaRootController, FormularioDoSiteController, FichaGeralController, ClientesAtivosController],
   providers: [
     // --- orquestrador: o fio (único caminho de escrita de fato) e o registro de reações ---
     ReacoesRegistry,
@@ -128,6 +129,8 @@ import { FichaGeralService } from './ficha-geral.service';
     DinheiroService,
     FechamentoService,
     ContratoVivoService,
+    // --- P-84 (27/10/2026): clientes ativos numa lista só ---
+    ClientesAtivosService,
     // --- rodada do trabalho T1b (registrar cliente já fechado fora do sistema: a mesma transação de fechamento) ---
     FechadoForaService,
     // --- produção 22, M2 (o contrato importado: o PDF, as parcelas à mão e a régua, fato passado) ---

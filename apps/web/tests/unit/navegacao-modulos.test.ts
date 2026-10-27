@@ -98,7 +98,7 @@ describe('projeção do NAV em módulos', () => {
   it('a Rodada da semana fica no Comercial, depois dos Contratos vivos, só para a plataforma', () => {
     const daPlataforma = modulosDeNavegacao(permissoes, undefined, true).find((area) => area.key === 'comercial');
     expect(daPlataforma?.itens.map((item) => item.label)).toEqual([
-      'Painel geral', 'Funil de vendas', 'Propostas', 'Lista de leads', 'Contratos vivos',
+      'Painel geral', 'Funil de vendas', 'Propostas', 'Lista de leads', 'Clientes ativos', 'Contratos vivos',
       'Rodada da semana', 'Torre das automações', 'Relatório da semana',
     ]);
     expect(daPlataforma?.itens.find((item) => item.key === 'comercial-rodada')?.href).toBe('/comercial/rodada');

@@ -226,6 +226,8 @@ export const NAV: NavItem[] = [
   { key: 'comercial-funil', label: 'Funil de vendas', href: '/comercial/funil', icon: 'Columns3', permission: 'leads.ver', secao: 'comercial', modulo: 'leads' },
   { key: 'propostas', label: 'Propostas', href: '/propostas', icon: 'Handshake', permission: 'leads.ver', secao: 'comercial', modulo: 'leads' },
   { key: 'leads', label: 'Lista de leads', href: '/leads', icon: 'UserPlus', permission: 'leads.ver', secao: 'comercial', modulo: 'leads' },
+  // P-84 (27/10/2026): os clientes ativos numa lista só, com o que falta em cada um.
+  { key: 'comercial-clientes-ativos', label: 'Clientes ativos', href: '/comercial/clientes-ativos', icon: 'Users', permission: 'leads.ver', secao: 'comercial', modulo: 'leads' },
   { key: 'comercial-contratos', label: 'Contratos vivos', href: '/comercial/contratos', icon: 'FileSignature', permission: 'leads.ver', secao: 'comercial', modulo: 'leads' },
   // Cockpit do lead (lane B, 13/10/2026): os celulares simulados do lead e da mesa, provedor `simulado`.
   // 20/10/2026 (rodada da interface, U1, item 18 da ata): a tela mudou para a área

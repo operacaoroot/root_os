@@ -6,8 +6,10 @@ import { NovoLead } from './_funil/NovoLead';
 import { EntregueViraCaixa } from './_painel/EntregueViraCaixa';
 import {
   COMERCIAL_ROTULO_DA_ETAPA,
+  ROTULO_DO_TIPO_DE_NEGOCIO,
   SEM_INFORMACAO,
   type ComercialEtapa,
+  type ListaDeClientesAtivos,
   type PainelComercial,
   type PainelComercialGrupo,
   type PainelComercialMes,
@@ -264,6 +266,13 @@ function Painel({ p, abrir, tudo = false }: { p: PainelComercial; abrir: (f: Fil
  * potencial do ano. Cada parte abre os negócios dela.
  */
 function Destaque({ p, abrir, tudo = false }: { p: PainelComercial; abrir: (f: Filtro) => void; tudo?: boolean }) {
+  // P-84 (27/10/2026): o número "Clientes ativos" é o da lista única (Comercial › Clientes ativos).
+  const { token } = useAuth();
+  const [ativos, setAtivos] = useState<ListaDeClientesAtivos | null>(null);
+  useEffect(() => {
+    if (!token) return;
+    apiGet<ListaDeClientesAtivos>('/comercial/clientes-ativos', token).then(setAtivos).catch(() => setAtivos(null));
+  }, [token]);
   const ano = String(p.ano);
   const fechado = p.totais.valorGanhoNoAno;
   const aberto = p.totais.emNegociacao;
@@ -294,7 +303,17 @@ function Destaque({ p, abrir, tudo = false }: { p: PainelComercial; abrir: (f: F
         </div>
         <div className="mt-5 grid items-start gap-4 border-t border-border pt-4 sm:grid-cols-3">
           {/* Integração 26/10: clientes pelos acordos do Financeiro (pagante, parceria, permuta, repasse); o funil só vê quem fechou nele. */}
-          {p.totais.clientesPorAcordo && p.totais.clientesPorAcordo.total > 0 ? (
+          {ativos ? (
+            <Link href="/comercial/clientes-ativos" className="group self-start rounded-md p-1 hover:bg-surface-2" data-testid="painel-clientes-ativos">
+              <div className="com-rotulo">Clientes ativos</div>
+              <div className="com-num mt-1.5 text-[1.5rem] font-bold leading-none">{ativos.clientes.length}</div>
+              <div className="mt-1.5 text-sm text-muted">
+                {ativos.porTipo.map((t) => `${t.total} ${ROTULO_DO_TIPO_DE_NEGOCIO[t.tipo].toLowerCase()}`).join(' · ')}
+                {ativos.comLacuna > 0 && <> · <span className="text-warn">{ativos.comLacuna} com algo faltando</span></>}
+                <span className="opacity-0 transition group-hover:opacity-100"> · ver →</span>
+              </div>
+            </Link>
+          ) : p.totais.clientesPorAcordo && p.totais.clientesPorAcordo.total > 0 ? (
             <div className="rounded-md p-1">
               <Numero
                 rotulo="Clientes ativos" valor={String(p.totais.clientesPorAcordo.total)} tamanho="medio"

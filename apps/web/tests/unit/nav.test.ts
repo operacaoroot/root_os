@@ -269,6 +269,7 @@ const MENU_FINAL: LinhaDoMenu[] = [
   ['comercial-funil', 'Funil de vendas', '/comercial/funil', 'leads.ver', 'comercial', 'leads', null, false],
   ['propostas', 'Propostas', '/propostas', 'leads.ver', 'comercial', 'leads', null, false],
   ['leads', 'Lista de leads', '/leads', 'leads.ver', 'comercial', 'leads', null, false],
+  ['comercial-clientes-ativos', 'Clientes ativos', '/comercial/clientes-ativos', 'leads.ver', 'comercial', 'leads', null, false],
   ['comercial-contratos', 'Contratos vivos', '/comercial/contratos', 'leads.ver', 'comercial', 'leads', null, false],
   ['comercial-simulador', 'Simulador de WhatsApp', '/comercial/simulador', 'leads.ver', 'comercial', 'leads', null, true],
   ['comercial-torre', 'Torre das automações', '/comercial/torre', 'leads.ver', 'comercial', 'leads', null, false],
@@ -426,7 +427,7 @@ describe('navPorSecao', () => {
     expect(grupos.map((g) => g.secao.key)).toEqual(['comercial', 'whatsapp']);
     expect(grupos[0].itens.map((i) => i.key)).toEqual([
       'comercial-painel', 'comercial-funil', 'propostas', 'leads',
-      'comercial-contratos', 'comercial-torre', 'comercial-relatorio',
+      'comercial-clientes-ativos', 'comercial-contratos', 'comercial-torre', 'comercial-relatorio',
     ]);
     expect(grupos[1].itens.map((i) => i.key)).toEqual(['whatsapp']);
   });
@@ -767,7 +768,7 @@ describe('organização da navegação (ROOT-07 e versão final)', () => {
     // A Rodada da semana entra depois dos Contratos vivos só para a plataforma, fora do NAV
     // (navegacao-modulos.test.ts cobra). O Simulador virou a área WhatsApp em 20/10/2026.
     expect(comercial.itens.map((no) => no.item.label)).toEqual([
-      'Painel geral', 'Funil de vendas', 'Propostas', 'Lista de leads', 'Contratos vivos',
+      'Painel geral', 'Funil de vendas', 'Propostas', 'Lista de leads', 'Clientes ativos', 'Contratos vivos',
       'Torre das automações', 'Relatório da semana',
     ]);
     for (const no of comercial.itens) {
@@ -878,7 +879,8 @@ describe('organização da navegação (ROOT-07 e versão final)', () => {
     // As contagens do menu depois da noite de 20/10/2026.
     // Leva única de 27/10 (leva 5 L3 + Marketing no jeito do Estúdio): 42 visíveis, 26 ocultos (13 abas do Marketing) e 12 absorvidas.
     // 27/10 (P-79): Mensagens automáticas entrou no Motor de IA: 43.
-    expect(NAV.filter((n) => !n.oculto)).toHaveLength(43);
+    // 27/10 (P-84): Clientes ativos entrou no Comercial: 44.
+    expect(NAV.filter((n) => !n.oculto)).toHaveLength(44);
     // 13 desde a produção 22B: o Perfil (I6) e a Lixeira (I2) entraram ocultos (a entrada é a engrenagem do topo).
     // Layout 26/10: 12 e 11, `/conteudo` (Temas do ClickUp) aposentado, com redirect para o Marketing.
     expect(NAV.filter((n) => n.oculto)).toHaveLength(26);
