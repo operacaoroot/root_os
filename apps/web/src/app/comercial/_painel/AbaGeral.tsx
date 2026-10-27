@@ -601,7 +601,7 @@ export function AbaGeral({
   const opcoesDePessoas = daEquipe.map((p) => ({ valor: p.id, rotulo: p.nome }));
   const opcoesDeNomes = daEquipe.map((p) => ({ valor: p.nome, rotulo: p.nome }));
   if (f.socioDaConta?.nome && !opcoesDeNomes.some((o) => o.valor === f.socioDaConta?.nome)) opcoesDeNomes.push({ valor: f.socioDaConta.nome, rotulo: f.socioDaConta.nome });
-  const opcoesDeCanal = COMO_CONHECEU.map((c) => ({ valor: c, rotulo: ROTULO_DO_COMO_CONHECEU[c] }));
+  const opcoesDeCanal: { valor: string; rotulo: string }[] = COMO_CONHECEU.map((c) => ({ valor: c, rotulo: ROTULO_DO_COMO_CONHECEU[c] }));
   if (f.canal && !opcoesDeCanal.some((o) => o.valor === f.canal)) opcoesDeCanal.unshift({ valor: f.canal, rotulo: rotuloDoCanal(f.canal) ?? f.canal });
   const negocioTravado = !!extra?.negocioTravado;
   const avisoDoNegocio = negocioTravado ? 'Depois do aceite, produto, parcelas e 1ª parcela são do contrato (aba Dinheiro).' : null;

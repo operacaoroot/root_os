@@ -4,6 +4,7 @@ import type { SalaVersaoPublica } from './sala-versao.js';
 import type { TarefaNoCartaoDoFunil } from './comercial-tarefas.js';
 import type { PastaDoClienteNaFicha, ResumoDoVigia } from './comercial-agentes.js';
 import type { AnexoDoImportado, ParcelasDoImportado, ReguaDoImportado } from './comercial-contrato-importado.js';
+import type { ComoConheceu } from './ficha-geral.js';
 
 /*
  * O COCKPIT DO LEAD — o contrato do módulo comercial (12 e 13/10/2026).
@@ -873,7 +874,8 @@ export interface FichaDoLead {
   /** Layout 26/10: pagante (padrão), parceria, permuta ou repasse. O mesmo tipo dos acordos da Análise. */
   tipoNegocio?: ComercialTipoDeNegocio;
   cnpj: string | null;
-  canal: ComercialCanalDeEntrada | null;
+  /** Leva 5 (27/10/2026): a mesma coluna leva os seis canais de entrada do C07 e a lista "Como conheceu" da aba Geral. */
+  canal: ComercialCanalDeEntrada | ComoConheceu | null;
   origemIndicacao: string | null;
   perfil: ComercialPerfil | null;
   pontuacao: number | null;

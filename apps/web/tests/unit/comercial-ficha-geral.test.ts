@@ -31,7 +31,7 @@ import { destinosDoMenuDoLead, razaoParaNaoFazerNoLead } from '@/app/comercial/_
 import { lerReais } from '@/app/comercial/_painel/AbaGeral';
 
 const ficha = {
-  nome: 'Marina Duarte', empresa: 'Construtora Alicerce', telefone: null, email: null, canal: 'indicacao_cliente', origemIndicacao: null,
+  nome: 'Marina Duarte', empresa: 'Construtora Alicerce', telefone: null, email: null, canal: 'indicacao_cliente' as const, origemIndicacao: null,
   vendedor: null, socioDaConta: null, produto: null, tipoNegocio: 'pagante' as const, valorNegociadoCentavos: null, parcelas: null, etapa: 'follow_up' as const,
 };
 const extra: FichaGeralExtra = { leadId: 'l1', tipoDePessoa: null, preferenciasDeAtendimento: null, parcelaCentavos: null, proposta: { origem: 'sala', link: null, ref: null, versao: 2 }, negocioTravado: false };
