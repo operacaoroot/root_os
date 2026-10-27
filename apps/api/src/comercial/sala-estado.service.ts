@@ -37,6 +37,66 @@ import { MARCADOR_DO_LINK_DA_SALA, salaAtiva, segredoDoAmbiente } from './sala-t
 
 export const RECUSA_DE_MAQUINA_NA_SALA = 'Copiar o link da sala é de gente: conta de serviço (IA) não recebe o link do cliente.';
 
+/*
+ * L6 (leva 5, 27/10/2026): "a sala não abre" e "há lead sem sala".
+ *
+ * O painel passa a dizer EXATAMENTE o que falta e a oferecer o botão que
+ * resolve, em vez de esconder o botão de copiar e deixar a frase genérica:
+ *   · sem sala: "criar a sala agora" (`POST /comercial/lead/:id/sala`), pelo
+ *     MESMO `SalaService.garantir` que a reação `sala.abrir` usa; o fato
+ *     `sala.aberta` vai ao fio e a auditoria `sala.criada_a_mao` diz quem;
+ *   · sala vencida, revogada, nascida sem a chave de cifra ou cifrada com a
+ *     chave de OUTRO ambiente (banco que veio da homologação): "gerar link novo"
+ *     (`POST /comercial/lead/:id/sala/renovar`), que troca o token, devolve a
+ *     validade e limpa a revogação, com auditoria `sala.link.renovado` e o link
+ *     em claro só na resposta (como copiar).
+ * `linkDisponivel` deixa de ser "há token cifrado e há chave" e passa a ser "a
+ * chave deste ambiente ABRE o token desta sala": antes a tela mostrava o botão e
+ * o clique morria num 409 que culpava a falta da chave.
+ */
+
+export type MotivoDoLinkIndisponivel = 'sem_sala' | 'vencida' | 'revogada' | 'sem_chave_no_ambiente' | 'token_nao_guardado' | 'chave_de_outro_ambiente';
+
+/** Por que o link não pode ser reescrito agora, ou nulo quando pode (função pura). */
+export function motivoDoLinkIndisponivel(
+  sala: { validoAte: Date; revogadoEm: Date | null; tokenCifrado: string | null } | null,
+  ambiente: { temChave: boolean; linkAbre: boolean },
+  agora: Date = new Date(),
+): MotivoDoLinkIndisponivel | null {
+  if (!sala) return 'sem_sala';
+  if (sala.revogadoEm) return 'revogada';
+  if (sala.validoAte.getTime() <= agora.getTime()) return 'vencida';
+  if (!ambiente.temChave) return 'sem_chave_no_ambiente';
+  if (!sala.tokenCifrado) return 'token_nao_guardado';
+  if (!ambiente.linkAbre) return 'chave_de_outro_ambiente';
+  return null;
+}
+
+/** O marco do painel para um link que não abre (o `tipo` é `validade`: um só por vez). */
+export function marcoDoLinkIndisponivel(motivo: Exclude<MotivoDoLinkIndisponivel, 'sem_sala'>, sala: { validoAte: Date; revogadoEm: Date | null }): MarcoDaSala {
+  switch (motivo) {
+    case 'revogada':
+      return { tipo: 'validade', rotulo: 'Sala revogada', em: (sala.revogadoEm ?? sala.validoAte).toISOString(), detalhe: 'O link não abre mais para o cliente. "Gerar link novo" reabre a sala com outro endereço.', tom: 'ruim' };
+    case 'vencida':
+      return { tipo: 'validade', rotulo: 'Sala vencida', em: sala.validoAte.toISOString(), detalhe: 'O link não abre mais para o cliente. "Gerar link novo" renova a validade com outro endereço.', tom: 'ruim' };
+    case 'sem_chave_no_ambiente':
+      return { tipo: 'validade', rotulo: 'Link não pode ser reescrito', em: null, detalhe: 'Falta a chave de cifra (ENCRYPTION_KEY) neste ambiente: o OS não consegue montar o link de nenhuma sala. Isso se resolve na configuração, não aqui.', tom: 'ruim' };
+    case 'token_nao_guardado':
+      return { tipo: 'validade', rotulo: 'Link não pode ser reescrito', em: null, detalhe: 'A sala nasceu sem a chave de cifra e o token não foi guardado: só o cliente que recebeu o link o tem. "Gerar link novo" cria um endereço que o OS consegue reescrever (o antigo deixa de abrir).', tom: 'alerta' };
+    case 'chave_de_outro_ambiente':
+      return { tipo: 'validade', rotulo: 'Link não pode ser reescrito', em: null, detalhe: 'A chave de cifra deste ambiente não abre o token desta sala (ela nasceu com outra chave, em outro ambiente). "Gerar link novo" cria um endereço que este ambiente consegue reescrever (o antigo deixa de abrir).', tom: 'alerta' };
+  }
+}
+
+/** O marco "ainda não criada", com o caminho que resolve. */
+export const MARCO_SEM_SALA: MarcoDaSala = {
+  tipo: 'criada',
+  rotulo: 'Sala ainda não criada',
+  em: null,
+  detalhe: 'Ela nasce sozinha quando o lead entra pelo WhatsApp ou pelo site, e na primeira mensagem de quem já é lead. Lead criado à mão, importado do CRM antigo ou anterior a 13/10 pode não ter sala: crie agora pelo botão.',
+  tom: 'alerta',
+};
+
 /** Conta de máquina não copia o link (pelo token, antes do serviço). O serviço confere de novo pelo banco. */
 @Injectable()
 export class SoGenteNaSalaGuard implements CanActivate {
@@ -167,15 +227,7 @@ export class SalaEstadoService {
         validaAte: null,
         entrega: 'sem_sala',
         linkDisponivel: false,
-        marcos: [
-          {
-            tipo: 'criada',
-            rotulo: 'Sala ainda não criada',
-            em: null,
-            detalhe: 'Ela nasce quando o lead entra pelo fio (o fato "lead.chegou").',
-            tom: 'neutro',
-          },
-        ],
+        marcos: [MARCO_SEM_SALA],
       };
     }
 
@@ -202,7 +254,7 @@ export class SalaEstadoService {
       em: (aberta?.occurredAt ?? sala.criadoEm).toISOString(),
       detalhe: chegada
         ? `Na chegada do lead (o fato "${chegada.type}").`
-        : 'Fora da chegada do lead: o OS abriu a sala ao preparar uma mensagem ou a agenda.',
+        : 'Fora da chegada do lead: aberta ao preparar uma mensagem ou a agenda, na primeira mensagem dele, pelo botão do painel ou pelo script de salas faltantes.',
       tom: 'bom',
     });
 
@@ -274,15 +326,11 @@ export class SalaEstadoService {
     );
 
     const ativa = salaAtiva(sala, agora);
-    if (!ativa) {
-      marcos.push({
-        tipo: 'validade',
-        rotulo: sala.revogadoEm ? 'Sala revogada' : 'Sala vencida',
-        em: (sala.revogadoEm ?? sala.validoAte).toISOString(),
-        detalhe: 'O link não abre mais para o cliente.',
-        tom: 'ruim',
-      });
-    }
+    // L6: "disponível" é medido de verdade (a chave deste ambiente abre o token desta sala?). Só a
+    // existência do link conta; o link em claro não sai daqui.
+    const linkAbre = sala.tokenCifrado ? (await this.sala.linkDoLead(orgId, leadId)) !== null : false;
+    const motivo = motivoDoLinkIndisponivel(sala, { temChave: !!segredoDoAmbiente(), linkAbre }, agora);
+    if (motivo && motivo !== 'sem_sala') marcos.push(marcoDoLinkIndisponivel(motivo, sala));
 
     return {
       leadId,
@@ -290,9 +338,71 @@ export class SalaEstadoService {
       ativa,
       validaAte: sala.validoAte.toISOString(),
       entrega,
-      linkDisponivel: ativa && !!sala.tokenCifrado && !!segredoDoAmbiente(),
+      linkDisponivel: motivo === null,
       marcos,
     };
+  }
+
+  /**
+   * L6: "criar a sala agora" (o lead sem sala). Gente relida no banco com
+   * `leads.editar`, pelo MESMO `garantir` da reação `sala.abrir` (idempotente:
+   * a sala que já existe volta igual, sem segunda sala). Auditoria
+   * `sala.criada_a_mao` só quando nasce. Nenhum `lead.chegou` é fabricado: a
+   * M1 e a espinha não disparam por aqui.
+   */
+  async criar(orgId: string, leadId: string, quem: { id: string; papeis: readonly string[] }): Promise<EstadoDaSalaNoPainel> {
+    await this.exigirGente(orgId, quem, 'Criar a sala é de gente: conta de serviço (IA) não abre sala de cliente.');
+    const lead = await this.prisma.lead.findFirst({ where: { id: leadId, orgId }, select: { id: true } });
+    if (!lead) throw new NotFoundException('Lead não encontrado.');
+    const r = await this.sala.garantir(orgId, leadId);
+    if (r.nova) {
+      await this.audit.log({
+        orgId,
+        actorId: quem.id,
+        action: 'sala.criada_a_mao',
+        entityType: 'sala_do_cliente',
+        entityId: r.salaId,
+        after: { leadId, origem: 'painel' },
+      });
+    }
+    return this.estado(orgId, leadId);
+  }
+
+  /**
+   * L6: "gerar link novo". Para a sala vencida, revogada, sem token guardado ou
+   * cifrada com a chave de outro ambiente. Gente relida no banco; o link em claro
+   * sai só nesta resposta (`no-store`), e a auditoria `sala.link.renovado` leva o
+   * motivo e a validade nova, nunca o token. Sem chave no ambiente a renovação é
+   * recusada: o link novo também não poderia ser reescrito depois.
+   */
+  async renovarLink(orgId: string, leadId: string, quem: { id: string; papeis: readonly string[] }): Promise<LinkDaSalaCopiado> {
+    await this.exigirGente(orgId, quem, RECUSA_DE_MAQUINA_NA_SALA);
+    const sala = await this.prisma.salaDoCliente.findFirst({ where: { leadId, orgId }, select: { id: true, validoAte: true, revogadoEm: true, tokenCifrado: true } });
+    if (!sala) throw new NotFoundException('Este lead ainda não tem sala: crie a sala antes de gerar o link.');
+    if (!segredoDoAmbiente()) throw new ConflictException('Falta a chave de cifra (ENCRYPTION_KEY) neste ambiente: o link novo também não poderia ser reescrito. Configure a chave antes.');
+    const linkAbre = sala.tokenCifrado ? (await this.sala.linkDoLead(orgId, leadId)) !== null : false;
+    const motivo = motivoDoLinkIndisponivel(sala, { temChave: true, linkAbre }) ?? 'pedido';
+    const r = await this.sala.renovarLink(orgId, leadId);
+    await this.audit.log({
+      orgId,
+      actorId: quem.id,
+      action: 'sala.link.renovado',
+      entityType: 'sala_do_cliente',
+      entityId: r.salaId,
+      before: { validaAte: sala.validoAte.toISOString(), revogadaEm: sala.revogadoEm?.toISOString() ?? null, tokenGuardado: !!sala.tokenCifrado },
+      // O motivo e a validade nova. Nunca o token nem o link.
+      after: { leadId, motivo, validaAte: r.validoAte.toISOString(), tokenGuardado: r.tokenGuardado },
+    });
+    return { link: r.link, validaAte: r.validoAte.toISOString() };
+  }
+
+  /** Gente ativa desta empresa, sem papel de máquina e com `leads.editar` AGORA (o token já passou pelo guarda). */
+  private async exigirGente(orgId: string, quem: { id: string; papeis: readonly string[] }, recusaDeMaquina: string): Promise<void> {
+    if (temPapelDeMaquina(quem.papeis)) throw new ForbiddenException(recusaDeMaquina);
+    const doBanco = await lerAprovador(this.prisma, quem.id, orgId);
+    if (!doBanco || !doBanco.ativo) throw new ForbiddenException('Quem faz isso precisa ser um usuário ativo desta empresa.');
+    if (temPapelDeMaquina(doBanco.papeis)) throw new ForbiddenException(recusaDeMaquina);
+    await exigirAcessoAtual(this.prisma, orgId, quem.id, ['leads.editar']);
   }
 
   /**
@@ -301,17 +411,23 @@ export class SalaEstadoService {
    * agora), sala ativa, e a auditoria diz quem e quando, sem o token.
    */
   async copiarLink(orgId: string, leadId: string, quem: { id: string; papeis: readonly string[] }): Promise<LinkDaSalaCopiado> {
-    if (temPapelDeMaquina(quem.papeis)) throw new ForbiddenException(RECUSA_DE_MAQUINA_NA_SALA);
-    const doBanco = await lerAprovador(this.prisma, quem.id, orgId);
-    if (!doBanco || !doBanco.ativo) throw new ForbiddenException('Quem copia o link precisa ser um usuário ativo desta empresa.');
-    if (temPapelDeMaquina(doBanco.papeis)) throw new ForbiddenException(RECUSA_DE_MAQUINA_NA_SALA);
-    await exigirAcessoAtual(this.prisma, orgId, quem.id, ['leads.editar']);
+    await this.exigirGente(orgId, quem, RECUSA_DE_MAQUINA_NA_SALA);
 
-    const sala = await this.prisma.salaDoCliente.findFirst({ where: { leadId, orgId }, select: { id: true, validoAte: true, revogadoEm: true } });
-    if (!sala) throw new NotFoundException('Este lead ainda não tem sala: ela nasce quando o lead entra.');
-    if (!salaAtiva(sala)) throw new ConflictException('A sala deste lead venceu ou foi revogada: o link não abre mais.');
+    const sala = await this.prisma.salaDoCliente.findFirst({ where: { leadId, orgId }, select: { id: true, validoAte: true, revogadoEm: true, tokenCifrado: true } });
+    if (!sala) throw new NotFoundException('Este lead ainda não tem sala: crie a sala pelo botão "criar a sala agora".');
+    if (!salaAtiva(sala)) throw new ConflictException('A sala deste lead venceu ou foi revogada: o link não abre mais. Use "gerar link novo".');
     const link = await this.sala.linkDoLead(orgId, leadId);
-    if (!link) throw new ConflictException('O link desta sala não pode ser reescrito agora (falta a chave de cifra do ambiente).');
+    if (!link) {
+      // L6: a frase diz o motivo real. Antes culpava sempre a falta da chave, mesmo com a chave presente.
+      const motivo = motivoDoLinkIndisponivel(sala, { temChave: !!segredoDoAmbiente(), linkAbre: false });
+      throw new ConflictException(
+        motivo === 'sem_chave_no_ambiente'
+          ? 'O link desta sala não pode ser reescrito: falta a chave de cifra (ENCRYPTION_KEY) neste ambiente.'
+          : motivo === 'token_nao_guardado'
+            ? 'O link desta sala não pode ser reescrito: a sala nasceu sem a chave de cifra e o token não foi guardado. Use "gerar link novo".'
+            : 'O link desta sala não pode ser reescrito: a chave de cifra deste ambiente não abre o token desta sala (ela nasceu em outro ambiente). Use "gerar link novo".',
+      );
+    }
 
     await this.audit.log({
       orgId,

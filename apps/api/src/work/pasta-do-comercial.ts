@@ -16,6 +16,12 @@ import type { Prisma } from '@prisma/client';
  *
  * As regras moram aqui, em funções próprias, para quem lê `work.service.ts`
  * achar uma linha só em cada lugar que muda.
+ *
+ * LEVA 5, L3 (27/10/2026): a pasta Clientes voltou a APARECER na árvore, recolhida,
+ * só para abrir as listas (a Implantação saiu do menu). Isso é da TELA
+ * (`ArvoreDoTrabalho.tsx` desenha `pastasDoComercial`): nada aqui mudou. Renomear,
+ * mover, apagar e receber lista pelo Trabalho continuam recusados por estas regras,
+ * e as tarefas dela continuam fora de Todas e do Dia a dia.
  */
 
 /** A pasta é do Trabalho (não do Comercial). Vai no `where` das pastas da árvore. */

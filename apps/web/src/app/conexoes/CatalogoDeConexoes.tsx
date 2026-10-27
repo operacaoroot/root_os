@@ -12,6 +12,7 @@ import { apiDelete, apiGet, apiPost } from '@/lib/api';
 import { CartaoDeConexao, type AcoesDoCartao } from './CartaoDeConexao';
 import { ConexaoEvolution } from './ConexaoEvolution';
 import { ConexaoGranola } from './ConexaoGranola';
+import { ConexaoClaude } from './ConexaoClaude';
 
 /*
  * A TELA DE CONEXÕES NUM PADRÃO SÓ — rodada dos agentes, lane A6 (21/10/2026).
@@ -132,6 +133,14 @@ export function CatalogoDeConexoes({ token, pessoaId, podeGerenciar }: { token: 
   const acoesDe = (l: Linha, gerenciar: boolean): AcoesDoCartao => {
     const contrato = l.contrato ? encodeURIComponent(l.contrato.chave) : null;
     const alvo = encodeURIComponent(l.grupo ?? l.key);
+    /*
+     * Leva 5 (L8): o Claude (Anthropic) só tem Testar e a gaveta. Não há OAuth
+     * (Conectar), não há o que sincronizar, a remoção da chave mora na gaveta com
+     * a frase certa ("volta à variável de ambiente", não "queima sem volta"), e o
+     * interruptor de desligamento não conhece a linha (ela é declarada pelo
+     * conector, fora de `CONNECTORS`): desligar o modelo é a variável LLM_PROVIDER.
+     */
+    if (l.key === 'anthropic') return { testar: contrato ? () => testar(l) : undefined };
     return {
       testar: contrato ? () => testar(l) : undefined,
       // No Granola, o "Conectar ao Granola" do conteúdo é a mesma rota (autorização do contrato): não duplica.
@@ -178,6 +187,8 @@ export function CatalogoDeConexoes({ token, pessoaId, podeGerenciar }: { token: 
   const configurarDe = (l: Linha, gerenciar: boolean): ReactNode => {
     if (l.key === 'evolution') return <ConexaoEvolution token={token} gerenciar={gerenciar} aoMudar={() => void carregar()} />;
     if (l.key === 'granola') return <ConexaoGranola token={token} gerenciar={gerenciar} desligado={l.desligado} aoMudar={() => void carregar()} />;
+    // Leva 5 (L8): a chave do Claude pela tela, o modelo por função e o teto diário.
+    if (l.key === 'anthropic') return <ConexaoClaude token={token} gerenciar={gerenciar} aoMudar={() => void carregar()} />;
     return undefined;
   };
 

@@ -66,6 +66,22 @@ import { MidiaDoBalao } from './MidiaDoBalao';
  * (`/whatsapp?filtro=leads&conversa=<id>`), para o Dia a dia linkar direto.
  * Desktop: duas colunas, a página não rola, cada coluna rola. Celular
  * (< 768 px): lista e conversa em telas separadas, com "Voltar".
+ *
+ * EMBUTIDA NO CHAT (leva 5, L7, 27/10/2026): o popup do canto inferior monta
+ * esta mesma caixa com `embutida`. Ali o estado (filtro, busca, conversa) fica
+ * em memória e NUNCA vai ao endereço da página (a pessoa pode estar em qualquer
+ * tela), é sempre uma coluna por vez (o popup tem 460 px) e a altura é a do
+ * popup, não a da janela. `visivel` diz se o popup está aberto nesta aba: fechado,
+ * a caixa para de reler a API e, ao reaparecer, relê e rola ao fim antes do
+ * primeiro quadro. Antes era um iframe de `/whatsapp`, que recarregava a tela
+ * inteira a cada abertura e deixava a roda do mouse escapar para a página.
+ *
+ * ROLAGEM (L7): ao abrir e ao trocar de conversa a lista vai ao FIM num
+ * `useLayoutEffect` (antes de pintar, sem animação), e a caixa de texto recebe
+ * o foco. Mensagem própria rola ao fim; mensagem nova de fora só rola se a
+ * pessoa já estava no fim, senão aparece "novas mensagens" para descer. Trocar
+ * de conversa não desmonta a lista: a anterior fica, esmaecida, até a nova
+ * chegar.
  */
 
 const COLUNA = 'flex min-h-0 min-w-0 flex-col overflow-hidden rounded border border-border bg-surface';
@@ -249,17 +265,41 @@ function Historico({ mensagens, grupo }: { mensagens: MensagemDaCaixa[]; grupo: 
   return <ol className="flex flex-col">{itens}</ol>;
 }
 
+const ESTADO_INICIAL: EstadoDaCaixa = { filtro: 'todas', q: '', conversa: null };
+
 function lerEndereco(): EstadoDaCaixa {
-  return typeof window === 'undefined' ? { filtro: 'todas', q: '', conversa: null } : estadoDoEndereco(window.location.search);
+  return typeof window === 'undefined' ? ESTADO_INICIAL : estadoDoEndereco(window.location.search);
 }
 
 function visivel(): boolean {
   return typeof document === 'undefined' || document.visibilityState !== 'hidden';
 }
 
-export function CaixaDoWhatsapp() {
+/** Quantas mensagens novas chegaram enquanto a pessoa lia mais acima. */
+function contarNovas(antes: MensagemDaCaixa[], depois: MensagemDaCaixa[]): number {
+  const ids = new Set(antes.map((m) => m.id));
+  return depois.filter((m) => !ids.has(m.id)).length;
+}
+
+/** A pessoa está lendo o fim da conversa (ou perto dele)? */
+function pertoDoFim(el: HTMLElement | null): boolean {
+  return !el || el.scrollHeight - el.scrollTop - el.clientHeight < 80;
+}
+
+export function CaixaDoWhatsapp({
+  embutida = false,
+  visivel: estaVisivel = true,
+  aoMudarEstado,
+}: {
+  /** Dentro do Chat flutuante: estado em memória, uma coluna, altura do popup. */
+  embutida?: boolean;
+  /** O popup está aberto nesta aba? Fechado, a caixa não relê a API. */
+  visivel?: boolean;
+  /** Para o popup montar o link "abrir inteira" com a conversa de agora. */
+  aoMudarEstado?: (estado: EstadoDaCaixa) => void;
+} = {}) {
   const { token, ready } = useAuth();
-  const [estado, setEstado] = useState<EstadoDaCaixa>(lerEndereco);
+  const [estado, setEstado] = useState<EstadoDaCaixa>(() => (embutida ? ESTADO_INICIAL : lerEndereco()));
   const [busca, setBusca] = useState(estado.q);
   const [lista, setLista] = useState<ListaDaCaixa | null>(null);
   const [erroDaLista, setErroDaLista] = useState<unknown>(null);
@@ -279,25 +319,39 @@ export function CaixaDoWhatsapp() {
   const seletorDeArquivo = useRef<HTMLInputElement | null>(null);
   const [arquivando, setArquivando] = useState(false);
   const [erroDaAcao, setErroDaAcao] = useState<unknown>(null);
+  // L7: a conversa anterior continua na tela, esmaecida, enquanto a nova não chega.
+  const [trocando, setTrocando] = useState(false);
+  // L7: mensagens de fora que chegaram com a pessoa lendo mais acima.
+  const [novasAbaixo, setNovasAbaixo] = useState(0);
 
   const historico = useRef<HTMLDivElement | null>(null);
+  const caixaDeTexto = useRef<HTMLTextAreaElement | null>(null);
   const pedidoDaLista = useRef(0);
   const conversaAtual = useRef<string | null>(estado.conversa);
   conversaAtual.current = estado.conversa;
+  const visivelAgora = useRef(estaVisivel);
+  visivelAgora.current = estaVisivel;
   // A rolagem a refazer depois de pintar: 'fim' (abriu, chegou mensagem, respondeu) ou a altura de antes (mais antigas).
   const rolar = useRef<'fim' | { altura: number; topo: number } | null>(null);
 
   // ------------------------------------------------------------------ endereço
 
-  const irPara = useCallback((novo: EstadoDaCaixa, modo: 'push' | 'replace' = 'replace') => {
-    setEstado(novo);
-    const url = enderecoDaCaixa(novo);
-    if (typeof window !== 'undefined' && `${window.location.pathname}${window.location.search}` !== url) {
-      window.history[modo === 'push' ? 'pushState' : 'replaceState'](null, '', url);
-    }
-  }, []);
+  const irPara = useCallback(
+    (novo: EstadoDaCaixa, modo: 'push' | 'replace' = 'replace') => {
+      setEstado(novo);
+      aoMudarEstado?.(novo);
+      // Embutida, a caixa não é dona do endereço: a pessoa está em outra tela.
+      if (embutida || typeof window === 'undefined') return;
+      const url = enderecoDaCaixa(novo);
+      if (`${window.location.pathname}${window.location.search}` !== url) {
+        window.history[modo === 'push' ? 'pushState' : 'replaceState'](null, '', url);
+      }
+    },
+    [embutida, aoMudarEstado],
+  );
 
   useEffect(() => {
+    if (embutida) return;
     const aoVoltar = () => {
       const e = lerEndereco();
       setEstado(e);
@@ -305,7 +359,7 @@ export function CaixaDoWhatsapp() {
     };
     window.addEventListener('popstate', aoVoltar);
     return () => window.removeEventListener('popstate', aoVoltar);
-  }, []);
+  }, [embutida]);
 
   // A busca vai ao endereço e à API depois de uma pausa na digitação.
   useEffect(() => {
@@ -333,7 +387,7 @@ export function CaixaDoWhatsapp() {
     if (!ready || !token) return;
     void carregarLista();
     const t = window.setInterval(() => {
-      if (visivel()) void carregarLista();
+      if (visivel() && visivelAgora.current) void carregarLista();
     }, RELEITURA_DA_CAIXA_MS);
     return () => window.clearInterval(t);
   }, [ready, token, carregarLista]);
@@ -360,32 +414,40 @@ export function CaixaDoWhatsapp() {
       try {
         const r = await apiGet<ConversaAberta>(rotaDaConversa(id), token);
         if (conversaAtual.current !== id) return;
-        const el = historico.current;
-        const pertoDoFim = !el || el.scrollHeight - el.scrollTop - el.clientHeight < 80;
+        const noFim = pertoDoFim(historico.current);
         setAberta(r);
         setErroDaConversa(null);
         if (primeira) {
           setMensagens(r.mensagens);
           setMaisAntigas(r.maisAntigas);
+          setTrocando(false);
+          setNovasAbaixo(0);
           rolar.current = 'fim';
         } else {
           setMensagens((atuais) => {
             const juntas = juntarMensagens(atuais, r.mensagens);
-            if (juntas.length !== atuais.length && pertoDoFim) rolar.current = 'fim';
+            if (juntas.length === atuais.length) return juntas;
+            // No fim, a lista acompanha; mais acima, só o aviso "novas mensagens" aparece.
+            if (noFim) rolar.current = 'fim';
+            else setNovasAbaixo((n) => n + contarNovas(atuais, juntas));
             return juntas;
           });
         }
         if (primeira || r.conversa.naoLidas > 0) void marcarLida(id);
       } catch (e) {
-        if (conversaAtual.current === id) setErroDaConversa(e);
+        if (conversaAtual.current === id) {
+          setErroDaConversa(e);
+          setTrocando(false);
+        }
       }
     },
     [token, marcarLida],
   );
 
   useEffect(() => {
+    // Trocar de conversa não limpa a lista: a anterior fica esmaecida até a nova chegar (L7).
+    // Voltar à lista (sem conversa) limpa tudo.
     setAberta(null);
-    setMensagens([]);
     setMaisAntigas(false);
     setErroDaConversa(null);
     setErroDoEnvio(null);
@@ -393,14 +455,35 @@ export function CaixaDoWhatsapp() {
     setTexto('');
     setAnexo(null);
     setErroDoAnexo(null);
-    if (!ready || !token || !estado.conversa) return;
+    setNovasAbaixo(0);
+    if (!estado.conversa) {
+      setMensagens([]);
+      setTrocando(false);
+      return;
+    }
+    setTrocando(true);
+    if (!ready || !token) return;
     const id = estado.conversa;
     void carregarConversa(id, true);
     const t = window.setInterval(() => {
-      if (visivel()) void carregarConversa(id, false);
+      if (visivel() && visivelAgora.current) void carregarConversa(id, false);
     }, RELEITURA_DA_CAIXA_MS);
     return () => window.clearInterval(t);
   }, [ready, token, estado.conversa, carregarConversa]);
+
+  // L7: ao REAPARECER (popup reaberto, aba trocada), relê na hora o que ficou parado.
+  // Na montagem quem lê são os efeitos acima; este só vale da segunda vez em diante.
+  const jaMontou = useRef(false);
+  useEffect(() => {
+    if (!jaMontou.current) {
+      jaMontou.current = true;
+      return;
+    }
+    if (!estaVisivel || !ready || !token) return;
+    void carregarLista();
+    if (estado.conversa) void carregarConversa(estado.conversa, false);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [estaVisivel]);
 
   const carregarAntigas = useCallback(async () => {
     const id = estado.conversa;
@@ -430,9 +513,36 @@ export function CaixaDoWhatsapp() {
     else el.scrollTop = el.scrollHeight - r.altura + r.topo;
   }, [mensagens]);
 
+  /*
+   * L7: a conversa abre no FIM e com a caixa de texto em foco. Antes de pintar
+   * (`useLayoutEffect`), sem animação: `scrollIntoView smooth` depois do render
+   * era o que fazia a conversa aparecer no começo e descer rolando. Vale ao
+   * trocar de conversa, ao popup reaparecer e ao a lista chegar pela primeira
+   * vez. O foco só vai sozinho onde há teclado físico (desktop ou o popup): no
+   * celular, abrir o teclado por conta própria cobre metade da conversa.
+   */
+  const idAberta = aberta?.conversa.id ?? null;
+  useLayoutEffect(() => {
+    if (!estaVisivel || !idAberta) return;
+    const el = historico.current;
+    if (el) el.scrollTop = el.scrollHeight;
+    const comTeclado = embutida || (typeof window !== 'undefined' && window.matchMedia?.('(min-width: 768px)')?.matches);
+    if (comTeclado && caixaDeTexto.current && !caixaDeTexto.current.disabled) {
+      caixaDeTexto.current.focus({ preventScroll: true });
+    }
+  }, [estaVisivel, idAberta, embutida]);
+
   function aoRolar() {
     const el = historico.current;
-    if (el && el.scrollTop < 40 && maisAntigas && !carregandoAntigas) void carregarAntigas();
+    if (!el) return;
+    if (el.scrollTop < 40 && maisAntigas && !carregandoAntigas) void carregarAntigas();
+    if (novasAbaixo > 0 && pertoDoFim(el)) setNovasAbaixo(0);
+  }
+
+  function descerAoFim() {
+    const el = historico.current;
+    if (el) el.scrollTop = el.scrollHeight;
+    setNovasAbaixo(0);
   }
 
   // ------------------------------------------------------------------- ações
@@ -564,25 +674,42 @@ export function CaixaDoWhatsapp() {
   };
 
   const chips = CHIPS_DA_CAIXA;
+  // Embutida no popup é sempre UMA coluna por vez, seja qual for a largura da janela;
+  // na página, as duas colunas a partir de 768 px (`max-md:hidden`).
+  const esconder = embutida ? 'hidden' : 'max-md:hidden';
 
   return (
-    // A altura é a da tela menos o topo do OS e a faixa do botão flutuante "Perguntar":
-    // a página não rola, cada coluna rola por dentro.
-    <div data-testid="caixa" className="flex h-[calc(100dvh-52px-2rem-3.75rem)] min-h-[30rem] min-w-0 flex-col gap-3 min-[820px]:h-[calc(100dvh-46px-3rem-3.5rem)]">
-      <header className="flex shrink-0 flex-wrap items-baseline gap-x-3 gap-y-1">
-        <p className="text-[13px] text-muted">As conversas do número da empresa com leads, clientes, equipe e comunidade.</p>
-        <Link href="/whatsapp/simulador" data-testid="caixa-ir-para-celulares" className={`text-[12.5px] text-muted underline underline-offset-2 hover:text-brand ${FOCO}`}>
-          Celulares do comercial
-        </Link>
-      </header>
+    // Na página, a altura é a da tela menos o topo do OS e a faixa do botão flutuante:
+    // a página não rola, cada coluna rola por dentro. No popup, a altura é a que o popup der.
+    <div
+      data-testid="caixa"
+      data-embutida={embutida ? 'sim' : undefined}
+      className={
+        embutida
+          ? 'flex min-h-0 min-w-0 flex-1 flex-col'
+          : 'flex h-[calc(100dvh-52px-2rem-3.75rem)] min-h-[30rem] min-w-0 flex-col gap-3 min-[820px]:h-[calc(100dvh-46px-3rem-3.5rem)]'
+      }
+    >
+      {!embutida && (
+        <header className="flex shrink-0 flex-wrap items-baseline gap-x-3 gap-y-1">
+          <p className="text-[13px] text-muted">As conversas do número da empresa com leads, clientes, equipe e comunidade.</p>
+          <Link href="/whatsapp/simulador" data-testid="caixa-ir-para-celulares" className={`text-[12.5px] text-muted underline underline-offset-2 hover:text-brand ${FOCO}`}>
+            Celulares do comercial
+          </Link>
+        </header>
+      )}
 
       <div
         data-testid="caixa-grade"
         data-vista={vista}
-        className="grid min-h-0 flex-1 grid-cols-[minmax(0,1fr)] gap-3 md:grid-cols-[minmax(16rem,22rem)_minmax(0,1fr)]"
+        className={
+          embutida
+            ? 'grid min-h-0 flex-1 grid-cols-[minmax(0,1fr)] grid-rows-[minmax(0,1fr)]'
+            : 'grid min-h-0 flex-1 grid-cols-[minmax(0,1fr)] gap-3 md:grid-cols-[minmax(16rem,22rem)_minmax(0,1fr)]'
+        }
       >
         {/* ------------------------------------------------------------ lista */}
-        <section aria-label="Conversas" data-testid="caixa-coluna-lista" className={`${COLUNA} ${vista === 'lista' ? '' : 'max-md:hidden'}`}>
+        <section aria-label="Conversas" data-testid="caixa-coluna-lista" className={`${COLUNA} ${embutida ? 'rounded-none border-0' : ''} ${vista === 'lista' ? '' : esconder}`}>
           <div className="shrink-0 space-y-2 border-b border-border p-2">
             <label className="block">
               <span className="sr-only">Buscar por nome, número ou texto</span>
@@ -642,7 +769,7 @@ export function CaixaDoWhatsapp() {
           aria-label="Conversa aberta"
           data-testid="caixa-coluna-conversa"
           data-arrastando={arrastando ? 'sim' : undefined}
-          className={`${COLUNA} relative ${vista === 'conversa' ? '' : 'max-md:hidden'}`}
+          className={`${COLUNA} relative ${embutida ? 'rounded-none border-0' : ''} ${vista === 'conversa' ? '' : esconder}`}
           {...arrasto}
         >
           {arrastando && (
@@ -661,7 +788,7 @@ export function CaixaDoWhatsapp() {
                     type="button"
                     data-testid="caixa-voltar"
                     onClick={() => irPara({ ...estado, conversa: null }, 'push')}
-                    className={`${BOTAO} md:hidden`}
+                    className={`${BOTAO} ${embutida ? '' : 'md:hidden'}`}
                   >
                     Voltar
                   </button>
@@ -682,9 +809,9 @@ export function CaixaDoWhatsapp() {
                   </div>
                   {aberta && podeResponder && (
                     <button type="button" data-testid="caixa-arquivar" aria-label={aberta.conversa.arquivada ? 'Voltar para a caixa' : 'Arquivar conversa'} onClick={() => void alternarArquivo()} disabled={arquivando} className={`${BOTAO} shrink-0`}>
-                      {/* No celular o rótulo encolhe, para o nome da conversa caber ao lado do Voltar. */}
-                      <span className="max-md:hidden">{aberta.conversa.arquivada ? 'Voltar para a caixa' : 'Arquivar conversa'}</span>
-                      <span className="md:hidden">{aberta.conversa.arquivada ? 'Desarquivar' : 'Arquivar'}</span>
+                      {/* No celular (e no popup) o rótulo encolhe, para o nome da conversa caber ao lado do Voltar. */}
+                      <span className={embutida ? 'hidden' : 'max-md:hidden'}>{aberta.conversa.arquivada ? 'Voltar para a caixa' : 'Arquivar conversa'}</span>
+                      <span className={embutida ? '' : 'md:hidden'}>{aberta.conversa.arquivada ? 'Desarquivar' : 'Arquivar'}</span>
                     </button>
                   )}
                 </div>
@@ -710,28 +837,49 @@ export function CaixaDoWhatsapp() {
                 <ErroDaAcao erro={erroDaAcao} />
               </header>
 
-              <div
-                ref={historico}
-                data-testid="caixa-historico"
-                onScroll={aoRolar}
-                className="wz-fundo min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 py-3 md:px-[5%]"
-              >
-                {naoAchou ? (
-                  <p className="p-4 text-center text-[13px] text-muted">Esta conversa não existe ou não é desta empresa.</p>
-                ) : (
-                  <>
-                    {erroDaConversa ? <ErroDaAcao erro={erroDaConversa} /> : null}
-                    {maisAntigas && (
-                      <div className="mb-2 text-center">
-                        <button type="button" data-testid="caixa-mais-antigas" onClick={() => void carregarAntigas()} disabled={carregandoAntigas} className={BOTAO}>
-                          {carregandoAntigas ? 'Carregando…' : 'Carregar mais antigas'}
-                        </button>
+              {/* O envelope é `relative` para o aviso de novas mensagens flutuar sobre a lista sem entrar na rolagem. */}
+              <div className="relative flex min-h-0 flex-1 flex-col">
+                <div
+                  ref={historico}
+                  data-testid="caixa-historico"
+                  onScroll={aoRolar}
+                  aria-busy={trocando || undefined}
+                  className={`wz-fundo min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 py-3 ${embutida ? '' : 'md:px-[5%]'}`}
+                >
+                  {naoAchou ? (
+                    <p className="p-4 text-center text-[13px] text-muted">Esta conversa não existe ou não é desta empresa.</p>
+                  ) : (
+                    <>
+                      {erroDaConversa ? <ErroDaAcao erro={erroDaConversa} /> : null}
+                      {maisAntigas && (
+                        <div className="mb-2 text-center">
+                          <button type="button" data-testid="caixa-mais-antigas" onClick={() => void carregarAntigas()} disabled={carregandoAntigas} className={BOTAO}>
+                            {carregandoAntigas ? 'Carregando…' : 'Carregar mais antigas'}
+                          </button>
+                        </div>
+                      )}
+                      {aberta && mensagens.length === 0 && <p className="p-4 text-center text-[13px] text-muted">Sem mensagens gravadas nesta conversa.</p>}
+                      {/* L7: a lista anterior fica, esmaecida, até a nova chegar; nada desmonta. */}
+                      {trocando && !erroDaConversa && (
+                        <p data-testid="caixa-abrindo" className="sticky top-0 z-[1] mx-auto mb-2 w-fit rounded-lg bg-surface/90 px-2.5 py-1 text-center text-[11.5px] text-muted">
+                          {mensagens.length ? 'Abrindo a conversa…' : 'Abrindo…'}
+                        </p>
+                      )}
+                      <div className={trocando && mensagens.length ? 'opacity-40 transition-opacity' : 'transition-opacity'}>
+                        <Historico mensagens={mensagens} grupo={!!aberta?.conversa.grupo} />
                       </div>
-                    )}
-                    {aberta && mensagens.length === 0 && <p className="p-4 text-center text-[13px] text-muted">Sem mensagens gravadas nesta conversa.</p>}
-                    {!aberta && !erroDaConversa && <p className="p-4 text-center text-[13px] text-muted">Abrindo a conversa…</p>}
-                    <Historico mensagens={mensagens} grupo={!!aberta?.conversa.grupo} />
-                  </>
+                    </>
+                  )}
+                </div>
+                {novasAbaixo > 0 && (
+                  <button
+                    type="button"
+                    data-testid="caixa-novas-mensagens"
+                    onClick={descerAoFim}
+                    className={`absolute bottom-2 right-3 z-[1] rounded-full border border-border bg-surface px-3 py-1 text-[12px] font-medium text-text shadow ${FOCO}`}
+                  >
+                    {novasAbaixo === 1 ? '1 nova mensagem ↓' : `${novasAbaixo} novas mensagens ↓`}
+                  </button>
                 )}
               </div>
 
@@ -782,6 +930,7 @@ export function CaixaDoWhatsapp() {
                     <label className="min-w-0 flex-1">
                       <span className="sr-only">{anexo ? 'Legenda' : 'Mensagem'}</span>
                       <textarea
+                        ref={caixaDeTexto}
                         data-testid="caixa-resposta"
                         rows={2}
                         value={texto}

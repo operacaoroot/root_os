@@ -4,16 +4,20 @@ import userEvent from '@testing-library/user-event';
 
 vi.mock('@/lib/auth', () => ({ useAuth: () => ({ token: 'tok', can: () => true }) }));
 vi.mock('next/link', () => ({ default: ({ children, href, ...p }: any) => <a href={href} {...p}>{children}</a> }));
-vi.mock('@/lib/api', () => ({
-  apiGet: vi.fn(async (rota: string) => (rota === '/whatsapp/resumo'
-    ? { naoLidas: { total: 3, leads: 1, clientes: 2, semVinculo: 0, equipe: 0 }, conversasSemVinculo: 0 }
-    : {})),
-  apiStream: vi.fn(),
-}));
+// Leva 5 (L7): o popup monta a caixa do WhatsApp de verdade (sem iframe), então o mock
+// precisa do resto do módulo (`ErroDaApi`) e de uma lista vazia com o formato da API.
+vi.mock('@/lib/api', async (original) => {
+  const real = await original<typeof import('@/lib/api')>();
+  return {
+    ...real,
+    apiGet: vi.fn(async (rota: string) => (rota === '/whatsapp/resumo'
+      ? { naoLidas: { total: 3, leads: 1, clientes: 2, semVinculo: 0, equipe: 0 }, conversasSemVinculo: 0 }
+      : { conversas: [], contagens: {}, podeResponder: false, podeVincular: false, mais: false })),
+    apiPost: vi.fn(async () => ({})),
+    apiStream: vi.fn(),
+  };
+});
 import { ChatFlutuante } from '@/components/ChatFlutuante';
-
-// jsdom não tem scrollIntoView (o balão rola até a última troca ao abrir).
-Element.prototype.scrollIntoView = vi.fn();
 
 describe('Perguntar: a aba Chat com as não lidas do WhatsApp', () => {
   it('o botão fechado e a aba "chat" mostram o selo vermelho com a quantidade', async () => {

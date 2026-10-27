@@ -986,6 +986,9 @@ function CalendarioDeTarefas({ tarefas, hoje, podeEditar, abrir, mudarPrazo, reo
   const [mes, setMes] = useState(hoje.slice(0, 7));
   const [arrastando, setArrastando] = useState<TarefaDoDia | null>(null);
   const [sobre, setSobre] = useState<string | null>(null);
+  // Leva 5, L2: o botão direito (e Shift+F10) também no calendário, o mesmo menu do quadro e da lista.
+  const menu = useMenuDaTarefa();
+  const noMenu = (t: TarefaDoDia) => alvoDoMenu(menu, { id: t.id, title: t.titulo, listId: t.lista?.id ?? null });
   const [ano, m] = mes.split('-').map(Number);
   const primeiroDia = `${mes}-01`;
   const diaDaSemana = new Date(`${primeiroDia}T12:00:00Z`).getUTCDay();
@@ -1047,6 +1050,7 @@ function CalendarioDeTarefas({ tarefas, hoje, podeEditar, abrir, mudarPrazo, reo
                   <div
                     key={t.id}
                     {...arrastavel(t)}
+                    {...noMenu(t)}
                     onDragOver={(e) => { if (arrastando) { e.preventDefault(); e.stopPropagation(); setSobre(dia); } }}
                     onDrop={(e) => {
                       e.stopPropagation();
@@ -1074,7 +1078,7 @@ function CalendarioDeTarefas({ tarefas, hoje, podeEditar, abrir, mudarPrazo, reo
           <div className="com-rotulo mb-2">Sem prazo · {semPrazo.length}{podeEditar ? ' · arraste para um dia' : ''}</div>
           <div className="flex flex-wrap gap-2">
             {semPrazo.map((t) => (
-              <div key={t.id} {...arrastavel(t)} className="cursor-pointer rounded-md border border-border bg-surface-2 px-2.5 py-1 text-sm hover:border-brand/60">
+              <div key={t.id} {...arrastavel(t)} {...noMenu(t)} className="cursor-pointer rounded-md border border-border bg-surface-2 px-2.5 py-1 text-sm hover:border-brand/60">
                 {t.titulo}
               </div>
             ))}
@@ -1086,7 +1090,7 @@ function CalendarioDeTarefas({ tarefas, hoje, podeEditar, abrir, mudarPrazo, reo
           <div className="com-rotulo mb-2">Repetem, sem data marcada · {repetemSemData.length}{podeEditar ? ' · arraste para um dia' : ''}</div>
           <div className="flex flex-wrap gap-2">
             {repetemSemData.map((t) => (
-              <div key={t.id} {...arrastavel(t)} className="cursor-pointer rounded-md border border-border bg-surface-2 px-2.5 py-1 text-sm hover:border-brand/60">
+              <div key={t.id} {...arrastavel(t)} {...noMenu(t)} className="cursor-pointer rounded-md border border-border bg-surface-2 px-2.5 py-1 text-sm hover:border-brand/60">
                 {t.titulo} <span className="text-xs text-muted"><PrazoComRepeticao texto={null} recorrencia={t.recorrencia} semPrazo={null} /></span>
               </div>
             ))}

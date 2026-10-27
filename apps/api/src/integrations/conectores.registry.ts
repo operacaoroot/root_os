@@ -65,6 +65,8 @@ const DEVEM_IMPLEMENTAR: ReadonlyArray<{ chave: string; servico: string }> = [
   { chave: 'pluggy', servico: 'PluggyService' },
   { chave: 'ofx', servico: 'OfxConector' },
   { chave: 'apify', servico: 'ApifyService' },
+  // Leva 5 (27/10/2026, L8): a chave da Anthropic pela tela, no cofre por empresa, com queda para a variável.
+  { chave: 'anthropic', servico: 'AnthropicConector' },
 ];
 
 /** A lista cobrada, para a suíte poder afirmar sobre ela. */

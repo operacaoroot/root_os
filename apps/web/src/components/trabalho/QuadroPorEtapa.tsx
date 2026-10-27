@@ -3,6 +3,7 @@
 import { useMemo, useState } from 'react';
 import type { TrabListaDto, TrabTarefaResumo } from '@mktos/shared';
 import { colunasDeTodas, destinoNaLista, idDaColuna } from './colunas-de-todas';
+import { alvoDoMenu, useMenuDaTarefa } from './MenuDaTarefa';
 import { AvataresDaTarefa } from './ResponsavelDaTarefa';
 import { atrasada, dataBR, type PessoaDaEstrutura } from './TabelaDeTarefas';
 
@@ -30,6 +31,8 @@ export function QuadroPorEtapa({ tarefas, listas, pessoas, podeEditar, onAbrir, 
   const [arrastando, setArrastando] = useState<string | null>(null);
   const [sobre, setSobre] = useState<string | null>(null);
   const [aviso, setAviso] = useState<string | null>(null);
+  // Leva 5, L2: o botão direito (e Shift+F10) do cartão abre o menu da tarefa da superfície, quando há um.
+  const menu = useMenuDaTarefa();
   const listaPorId = useMemo(() => new Map(listas.map((l) => [l.id, l])), [listas]);
   const colunas = useMemo(() => {
     const dasTarefas = [...new Set(tarefas.map((t) => t.listId))].map((id) => listaPorId.get(id)).filter((l): l is TrabListaDto => !!l);
@@ -73,6 +76,7 @@ export function QuadroPorEtapa({ tarefas, listas, pessoas, podeEditar, onAbrir, 
                   onDragStart={(e) => { setArrastando(t.id); e.dataTransfer.setData('text/plain', t.id); e.dataTransfer.effectAllowed = 'move'; }}
                   onDragEnd={() => { setArrastando(null); setSobre(null); }}
                   onClick={() => onAbrir(t.id)}
+                  {...alvoDoMenu(menu, t)}
                   className={`space-y-1 rounded-md border border-border bg-surface-2 px-2 py-1.5 text-left text-[13px] hover:border-brand-dim ${arrastando === t.id ? 'opacity-50' : ''}`}
                 >
                   <span className="block break-words">{t.title}</span>

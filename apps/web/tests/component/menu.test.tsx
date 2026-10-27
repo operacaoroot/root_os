@@ -192,8 +192,9 @@ describe('a barra lateral', () => {
     expect(area('Dia a dia')).toHaveAttribute('aria-expanded', 'false');
     expect(area('Trabalho')).toHaveAttribute('aria-expanded', 'true');
     // 20/10/2026 (noite, pedido do Rodrigo): o Todas é o chip de Tarefas, não uma subseção.
+    // Leva 5, L3 (27/10/2026): a Implantação saiu do menu; a rota segue viva pelo link.
     expect(subsecoes('Trabalho').getAllByRole('link').map((el) => el.textContent)).toEqual([
-      'Tarefas', 'Implantação de clientes', 'Atas',
+      'Tarefas', 'Atas',
     ]);
     expect(subsecoes('Trabalho').queryByRole('link', { name: 'Todas as tarefas' })).toBeNull();
     expect(link('/trabalho/todas')).toBeNull();

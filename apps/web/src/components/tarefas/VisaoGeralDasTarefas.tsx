@@ -7,7 +7,6 @@ import { useAuth } from '@/lib/auth';
 import { Numero, Quadro } from '@/components/painel';
 import { AvatarDaPessoa } from '@/components/AvatarDaPessoa';
 import { Barras, type Fatia } from './graficos';
-import { ImplantacaoNoDiaADia } from './ImplantacaoNoDiaADia';
 import { TarefaFlutuante } from '@/components/trabalho/TrabalhoView';
 import { useTarefaNaUrl } from '@/lib/tarefa-na-url';
 
@@ -205,8 +204,12 @@ export function VisaoGeralDasTarefas({ meio }: { meio?: ReactNode } = {}) {
         ))}
       </div>
 
-      {/* Produção 22 (M1, S5): o relógio do onboarding no Dia a dia, cada linha leva à Implantação filtrada. */}
-      {meio ?? <ImplantacaoNoDiaADia token={token} />}
+      {/*
+        Leva 5, L3 (27/10/2026): o cartão "Implantação" (produção 22, M1, S5) saiu do Dia a dia por decisão do
+        Rodrigo em 26/10; os clientes ficam na lista Onboarding de cliente. O componente `ImplantacaoNoDiaADia`
+        fica no código, sem uso, para o módulo voltar. Aqui só entra o que a página mandar (`meio`).
+      */}
+      {meio}
 
       <div className="grid gap-5 lg:grid-cols-2">
         {/* P1 (21/10): sem rolagem lateral; o gráfico se ajusta à caixa e o balão fica dentro dela. */}

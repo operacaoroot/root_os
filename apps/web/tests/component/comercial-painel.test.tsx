@@ -3,6 +3,9 @@
  * empilha histórico), Esc e o fundo fecham, o foco volta a quem abriu e fica
  * preso dentro, a ação dentro do painel atualiza o fio sem navegar, e as rotas
  * antigas redirecionam para a tela de fundo com o painel aberto.
+ *
+ * Leva 5 (L4, 27/10/2026): a primeira aba é a Geral (e o `aba=fio` de antes cai
+ * nela); Fio, Dinheiro e Decisões saíram da fila mas abrem por link direto.
  */
 import { act, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
@@ -28,6 +31,11 @@ vi.mock('next/navigation', () => ({
 vi.mock('next/link', () => ({
   __esModule: true,
   default: ({ href, children, ...resto }: { href: string; children: React.ReactNode }) => <a href={href} {...resto}>{children}</a>,
+}));
+// O Histórico (AuditLog) é do agente do L2: aqui um dublê que só diz se está aberto.
+vi.mock('@/app/comercial/_painel/historico', () => ({
+  HistoricoDaEntidade: ({ aberto, entityId }: { aberto: boolean; entityId: string }) => (aberto ? <div data-testid="historico-dublê">histórico de {entityId}</div> : null),
+  TIPO_DA_ENTIDADE_DO_LEAD: 'lead',
 }));
 vi.mock('@/lib/api', async (original) => {
   const real = await original<typeof import('@/lib/api')>();
@@ -85,6 +93,9 @@ function irPara(url: string) {
 beforeEach(() => {
   RESPOSTAS = {
     '/comercial/lead/l1/sessao': { diagnostico: null, leitorDeAta: [], proposta: null, versoes: [] },
+    // Leva 5 (L4): o extra da Geral e as pendências.
+    '/comercial/lead/l1/geral': { leadId: 'l1', tipoDePessoa: null, preferenciasDeAtendimento: null, parcelaCentavos: null, proposta: { origem: 'sala', link: null, ref: null, versao: 1 }, negocioTravado: false },
+    '/comercial/lead/l1/pendencias': { leadId: 'l1', etapa: 'follow_up', passos: [], feitos: 0, geradoEm: '2026-10-13T13:00:00.000Z' },
     '/comercial/lead/l1': ficha([linha('whats.recebida', 'oi, quero saber da Operação ROOT', '2026-10-12T13:00:00.000Z')]),
     '/comercial/decisoes': [decisao],
     '/comercial/fechamentos/l1': { chave: '', versao: 0, estado: 'pendente', iniciadoEm: null, concluidoEm: null, escritas: [], copiadoSemRedigitar: [], aprovacao: null, vetado: false },
@@ -107,6 +118,7 @@ function Fundo() {
     <main id="root-os-main" tabIndex={-1}>
       <p>a tela de trás</p>
       <LinkDoLead leadId="l1" aba="decisoes">abrir a Alicerce</LinkDoLead>
+      <LinkDoLead leadId="l1" aba="sessao">abrir a sessão</LinkDoLead>
     </main>
   );
 }
@@ -134,10 +146,14 @@ describe('painel do lead', () => {
     expect(window.location.pathname).toBe('/comercial/funil');
     expect(window.location.search).toBe('?filtro=parados&lead=l1&aba=decisoes');
     expect(window.history.length).toBe(antes + 1);
-    await u.click(within(dialogo).getByRole('tab', { name: 'Dinheiro' }));
-    expect(window.location.search).toBe('?filtro=parados&lead=l1&aba=dinheiro');
+    // A aba antiga (Decisões) aberta por link fica no fim da fila; a Geral é a primeira.
+    expect(within(dialogo).getAllByRole('tab').map((t) => t.textContent)).toEqual(['Geral', 'Pendências e sugestões', 'Sala', 'WhatsApp', 'Decisões1']);
+    await u.click(within(dialogo).getByRole('tab', { name: 'Pendências e sugestões' }));
+    expect(window.location.search).toBe('?filtro=parados&lead=l1&aba=pendencias');
     expect(window.history.length).toBe(antes + 1);
-    expect(within(dialogo).getByRole('tab', { name: 'Dinheiro' })).toHaveAttribute('aria-selected', 'true');
+    expect(within(dialogo).getByRole('tab', { name: 'Pendências e sugestões' })).toHaveAttribute('aria-selected', 'true');
+    // Fora da fila, a Decisões some quando a pessoa sai dela.
+    expect(within(dialogo).queryByRole('tab', { name: /Decisões/ })).toBeNull();
   });
 
   it('Esc fecha, o foco volta ao link que abriu e o filtro fica na URL', async () => {
@@ -184,11 +200,11 @@ describe('painel do lead', () => {
   });
 
   it('o foco fica preso: Tab no último volta ao primeiro, Shift+Tab no primeiro vai ao último', async () => {
-    irPara('/comercial/funil?lead=l1&aba=fio');
+    irPara('/comercial/funil?lead=l1&aba=geral');
     render(<ProvedorDoPainel><Fundo /></ProvedorDoPainel>);
     const u = userEvent.setup();
     const dialogo = await screen.findByRole('dialog');
-    await within(dialogo).findByText(/oi, quero saber/);
+    await within(dialogo).findByTestId('ficha-cartao-quem');
     const fechar = within(dialogo).getByRole('button', { name: 'fechar o painel do lead' });
     const focaveis = Array.from(dialogo.querySelectorAll<HTMLElement>('a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])')).filter((el) => el.tabIndex >= 0);
     const ultimo = focaveis[focaveis.length - 1];
@@ -202,6 +218,8 @@ describe('painel do lead', () => {
 
   it('decidir dentro do painel atualiza o fio e as decisões sem navegar, com o aviso no canto', async () => {
     irPara('/comercial/funil?lead=l1&aba=decisoes');
+    // Leva 5: o fio resumido mora na variante B da Geral (a linha do tempo); o inteiro, no Histórico.
+    window.localStorage.setItem('painel.variante', 'B');
     render(<ProvedorDoPainel><Fundo /></ProvedorDoPainel>);
     const u = userEvent.setup();
     const dialogo = await screen.findByRole('dialog');
@@ -221,10 +239,15 @@ describe('painel do lead', () => {
     // O aviso aparece no canto com o efeito escrito pela API.
     expect(await screen.findByText('Respondido: Manter o preço. Nada muda.')).toBeInTheDocument();
     await waitFor(() => expect(within(dialogo).queryByRole('button', { name: /Manter o preço/ })).toBeNull());
-    await u.click(within(dialogo).getByRole('tab', { name: 'Fio' }));
-    expect(await within(dialogo).findByText('decisão tomada: manter o preço')).toBeInTheDocument();
+    await u.click(within(dialogo).getByRole('tab', { name: 'Geral' }));
+    const linhaDoTempo = await within(dialogo).findByTestId('ficha-linha-do-tempo');
+    expect(await within(linhaDoTempo).findByText('decisão tomada: manter o preço')).toBeInTheDocument();
     expect(window.location.pathname).toBe(caminho);
-    expect(window.location.search).toBe('?lead=l1&aba=fio');
+    expect(window.location.search).toBe('?lead=l1&aba=geral');
+    // "ver tudo" abre o Histórico (o AuditLog do lead).
+    await u.click(within(linhaDoTempo).getByTestId('ficha-ver-tudo'));
+    expect(await screen.findByTestId('historico-dublê')).toHaveTextContent('histórico de l1');
+    window.localStorage.removeItem('painel.variante');
   });
 
   it('o voltar do navegador fecha o painel aberto por clique', async () => {
@@ -248,7 +271,7 @@ describe('o texto digitado não se perde calado (revisão da lane UX)', () => {
     const dialogo = await screen.findByRole('dialog');
     await u.type(await within(dialogo).findByPlaceholderText(/transcrição da conversa/), 'ata pela metade');
     const confirmar = vi.spyOn(window, 'confirm').mockReturnValue(false);
-    await u.click(within(dialogo).getByRole('tab', { name: 'Fio' }));
+    await u.click(within(dialogo).getByRole('tab', { name: 'Geral' }));
     expect(confirmar).toHaveBeenCalledTimes(1);
     expect(within(dialogo).getByRole('tab', { name: 'Sessão' })).toHaveAttribute('aria-selected', 'true');
     expect(window.location.search).toBe('?lead=l1&aba=sessao');
@@ -258,9 +281,8 @@ describe('o texto digitado não se perde calado (revisão da lane UX)', () => {
     irPara('/comercial/funil');
     render(<ProvedorDoPainel><Fundo /></ProvedorDoPainel>);
     const u = userEvent.setup();
-    await u.click(await screen.findByRole('link', { name: 'abrir a Alicerce' }));
+    await u.click(await screen.findByRole('link', { name: 'abrir a sessão' }));
     const dialogo = await screen.findByRole('dialog');
-    await u.click(within(dialogo).getByRole('tab', { name: 'Sessão' }));
     await u.type(await within(dialogo).findByPlaceholderText(/transcrição da conversa/), 'ata pela metade');
     const confirmar = vi.spyOn(window, 'confirm').mockReturnValue(false);
     await act(async () => {
@@ -273,10 +295,10 @@ describe('o texto digitado não se perde calado (revisão da lane UX)', () => {
   });
 
   it('dentro do painel as seções são h3: o nome do lead é o único h2', async () => {
-    irPara('/comercial/funil?lead=l1&aba=fio');
+    irPara('/comercial/funil?lead=l1&aba=geral');
     render(<ProvedorDoPainel><Fundo /></ProvedorDoPainel>);
     const dialogo = await screen.findByRole('dialog', { name: 'Construtora Alicerce' });
-    await within(dialogo).findByText(/oi, quero saber/);
+    await within(dialogo).findByTestId('ficha-cartao-quem');
     expect(within(dialogo).getAllByRole('heading', { level: 2 })).toHaveLength(1);
     expect(within(dialogo).getByRole('tabpanel')).toHaveAttribute('tabindex', '0');
   });
@@ -308,7 +330,7 @@ describe('o funil abre o painel pelo teclado', () => {
     parado: false, diasNaEtapa: 0, motivoSaida: null, voltaEm: null, perfil: null, produto: null,
   });
 
-  it('setas andam entre os cartões e Enter abre o painel na aba Fio', async () => {
+  it('setas andam entre os cartões e Enter abre o painel na aba Geral', async () => {
     irPara('/comercial/funil');
     RESPOSTAS['/comercial/funil'] = { colunas: [{ etapa: 'follow_up', rotulo: 'Follow-up', cartoes: [cartao('l0', 'Lead Zero'), cartao('l1', 'Construtora Alicerce')] }] };
     render(<ProvedorDoPainel><FunilPage /></ProvedorDoPainel>);
@@ -319,14 +341,14 @@ describe('o funil abre o painel pelo teclado', () => {
     expect(document.activeElement).toHaveTextContent('Construtora Alicerce');
     await u.keyboard('{Enter}');
     const dialogo = await screen.findByRole('dialog', { name: 'Construtora Alicerce' });
-    expect(within(dialogo).getByRole('tab', { name: 'Fio' })).toHaveAttribute('aria-selected', 'true');
-    expect(window.location.search).toBe('?lead=l1&aba=fio');
+    expect(within(dialogo).getByRole('tab', { name: 'Geral' })).toHaveAttribute('aria-selected', 'true');
+    expect(window.location.search).toBe('?lead=l1&aba=geral');
   });
 });
 
 describe('rotas antigas do lead redirecionam para o painel (nada de 404)', () => {
   it.each([
-    ['fio', FioAntigo, { id: 'l1' }, '/comercial/funil?lead=l1&aba=fio'],
+    ['fio', FioAntigo, { id: 'l1' }, '/comercial/funil?lead=l1&aba=geral'],
     ['sessão', SessaoAntiga, { id: 'l1' }, '/comercial/funil?lead=l1&aba=sessao'],
     ['fechamento', FechamentoAntigo, { id: 'l1' }, '/comercial/funil?lead=l1&aba=dinheiro'],
     ['contrato vivo', ContratoAntigo, { leadId: 'l1' }, '/comercial/contratos?lead=l1&aba=dinheiro'],

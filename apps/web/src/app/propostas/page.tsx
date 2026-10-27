@@ -27,6 +27,7 @@ import {
   type PropostaNaLista,
 } from './tipos';
 import { leadsDaBusca, semAcento } from './lead-da-proposta';
+import { BotaoDoMenuDoLead, alvoDoMenuDoLead, useMenuDoLeadProprio } from '@/app/comercial/_funil/MenuDoLead';
 
 /*
  * ============================================================================
@@ -51,6 +52,10 @@ import { leadsDaBusca, semAcento } from './lead-da-proposta';
  * lead" (busca entre os leads da empresa) e "Criar lead" (nasce em Qualificação
  * com o nome da proposta); o vínculo fica gravado (`/comercial/vinculos-de-propostas`).
  * O bloco "Aparelhos da equipe" subiu para entre o painel e a lista.
+ *
+ * Leva 5 (L2, 27/10/2026): botão direito na linha com lead e o "⋯" ao lado dele
+ * abrem o menu do lead (abrir, mover de etapa, copiar link da sala, vincular
+ * WhatsApp, editar valor negociado, histórico).
  */
 
 const BASE_DO_SERVICO = '/tenants/plataforma/propostas';
@@ -176,6 +181,8 @@ export default function Propostas() {
   const [vinculando, setVinculando] = useState<string | null>(null);
   /** Filtro do funil: só as propostas que chegaram até esta etapa. */
   const [chegou, setChegou] = useState<number | null>(null);
+  // L2: o menu do lead na linha da proposta; mover pelo menu relê o painel (a etapa do negócio).
+  const { menu: menuDoLead, elemento: elementoDoMenuDoLead } = useMenuDoLeadProprio({ onMudou: () => void carregar() });
 
   const lerVinculos = useCallback(async () => {
     if (!token || !verSala) return;
@@ -342,6 +349,7 @@ export default function Propostas() {
                   const lead = leadDe(l);
                   const ref = refDaLinha(l);
                   const institucional = !!l.servico && ehInstitucional(l.servico);
+                  const leadParaOMenu = lead ? { id: lead.id, nome: lead.contato ?? lead.empresa, empresa: lead.empresa, etapa: lead.negocio?.etapaChave ?? null } : null;
                   return (
                     <tr
                       key={l.chave}
@@ -352,18 +360,22 @@ export default function Propostas() {
                         if (lead) router.push(`/comercial/lead/${lead.id}`);
                         else setSelecionada(l);
                       }}
+                      {...(leadParaOMenu ? alvoDoMenuDoLead(menuDoLead, leadParaOMenu) : {})}
                       className={`cursor-pointer align-top ${ativa ? 'bg-brand/10' : 'hover:bg-surface-2'}`}
                     >
                       <td className="py-2.5 pr-3">
-                        {lead ? (
-                          <Link
-                            href={`/comercial/lead/${lead.id}`}
-                            title={lead.contato ? `Contato: ${lead.contato}` : 'Abrir o lead'}
-                            className="font-medium hover:text-brand"
-                            data-testid={`proposta-lead-${l.chave}`}
-                          >
-                            {lead.empresa}
-                          </Link>
+                        {lead && leadParaOMenu ? (
+                          <span className="flex items-center gap-1">
+                            <Link
+                              href={`/comercial/lead/${lead.id}`}
+                              title={lead.contato ? `Contato: ${lead.contato}` : 'Abrir o lead'}
+                              className="font-medium hover:text-brand"
+                              data-testid={`proposta-lead-${l.chave}`}
+                            >
+                              {lead.empresa}
+                            </Link>
+                            <BotaoDoMenuDoLead lead={leadParaOMenu} menu={menuDoLead} />
+                          </span>
                         ) : (
                           <span className="font-medium text-muted" data-testid={`proposta-sem-lead-${l.chave}`}>
                             {institucional ? 'apresentação institucional' : 'sem lead'}
@@ -416,6 +428,8 @@ export default function Propostas() {
           </div>
         )}
       </Quadro>
+
+      {elementoDoMenuDoLead}
 
       {selecionada && (
         <Janela fechar={() => setSelecionada(null)}>

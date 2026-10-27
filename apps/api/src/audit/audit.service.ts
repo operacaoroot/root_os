@@ -48,12 +48,14 @@ export class AuditService {
 
   async list(
     orgId: string,
-    filter: { limit?: number; action?: string; actorType?: string; entityId?: string } = {},
+    filter: { limit?: number; action?: string; actorType?: string; entityId?: string; entityType?: string } = {},
   ): Promise<AuditList> {
     const take = Math.min(Math.max(filter.limit ?? 100, 1), 500);
     const where: Prisma.AuditLogWhereInput = { orgId };
     if (filter.action) where.action = { contains: filter.action };
     if (filter.entityId) where.entityId = filter.entityId;
+    // Leva 5, L2: o tipo da entidade (`work_task`, `lead`) junto do id, para o Histórico de uma coisa só.
+    if (filter.entityType) where.entityType = filter.entityType;
     if (filter.actorType && ['user', 'ai', 'system'].includes(filter.actorType)) {
       where.actorType = filter.actorType as ActorType;
     }
@@ -85,6 +87,11 @@ export class AuditService {
         entityId: r.entityId,
         ip: r.ip,
         createdAt: r.createdAt.toISOString(),
+        // O antes, o depois e os metadados só quando a lista é de UMA entidade (leva 5, L2): é o que o
+        // Histórico mostra; a listagem geral do Registro de ações continua sem o corpo das linhas.
+        ...(filter.entityId
+          ? { before: r.before ?? undefined, after: r.after ?? undefined, metadata: r.metadata ?? undefined }
+          : {}),
       })),
       total,
       source: { tool: 'banco-interno', generatedAt: new Date().toISOString() },

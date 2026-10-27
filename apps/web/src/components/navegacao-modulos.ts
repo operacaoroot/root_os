@@ -14,6 +14,7 @@ export const AREAS_DE_NAVEGACAO = [
   { key: 'whatsapp', label: 'WhatsApp', icon: 'MessageCircle', secoes: ['whatsapp'], principal: 'whatsapp' },
   { key: 'financeiro', label: 'Financeiro', icon: 'Wallet', secoes: ['financeiro'], principal: 'financeiro' },
   { key: 'automacoes', label: 'IA e automações', icon: 'Bot', secoes: ['automacoes'], principal: 'agentes' },
+  { key: 'frota', label: 'Frota', icon: 'Server', secoes: ['frota'], principal: 'frota' },
   { key: 'empresa', label: 'Contexto', icon: 'Network', secoes: ['empresa'], principal: 'contexto' },
   { key: 'resultados', label: 'Resultados', icon: 'BarChart3', secoes: ['resultados'], principal: 'relatorios' },
   { key: 'configuracoes', label: 'Configurações', icon: 'Settings', secoes: ['controle', 'registros', 'conta'], principal: 'config' },
@@ -44,8 +45,19 @@ export const RODADA_DA_SEMANA: NavItem = {
  * vem antes dele); sem o vizinho visível, ele vai para o fim da área.
  * Propostas saiu daqui na versão final: virou item do NAV (Comercial, `leads.ver`).
  */
+/**
+ * A Frota (27/10/2026): os servidores de cliente que a ROOT opera — estado, apps,
+ * acessos com revogação, políticas/LGPD e registro. Tela da ROOT: só a sessão da
+ * plataforma a vê, e a API recusa as outras. Área própria no menu.
+ */
+export const FROTA: NavItem = {
+  key: 'frota', label: 'Servidores', href: '/frota', icon: 'Server',
+  permission: 'dashboard.ver', secao: 'frota',
+};
+
 export const ITENS_DA_ROOT: readonly (NavItem & { depoisDe?: string })[] = [
   { ...RODADA_DA_SEMANA, depoisDe: 'comercial-contratos' },
+  FROTA,
 ];
 
 export function rotuloDoDestino(item: NavItem): string {

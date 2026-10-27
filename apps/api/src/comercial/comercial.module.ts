@@ -67,6 +67,9 @@ import { FormularioDoSiteController } from './formulario-do-site/formulario-do-s
 import { FormularioDoSiteService } from './formulario-do-site/formulario-do-site.service';
 import { LeadCriarService } from './lead-criar.service';
 import { TriagemDoWhatsappService } from './triagem-do-whatsapp/triagem-do-whatsapp.service';
+// Leva 5 (L4, 27/10/2026): a ficha geral e as pendências do painel do lead.
+import { FichaGeralController } from './ficha-geral.controller';
+import { FichaGeralService } from './ficha-geral.service';
 
 /*
  * O COCKPIT DO LEAD — módulo comercial (13/10/2026).
@@ -87,7 +90,7 @@ import { TriagemDoWhatsappService } from './triagem-do-whatsapp/triagem-do-whats
  */
 @Module({
   imports: [TenantsModule, AuthModule, LeadsModule, OnboardingModule, FinanceModule, RoutinesModule, ZapsignModule, MemoryModule, WorkModule],
-  controllers: [ComercialController, SalaController, SimuladorController, MensagensController, DinheiroController, WebhooksDoDinheiroController, InteligenciaController, FechadoForaController, ContratoImportadoController, PropostaDoLeadController, OnboardingAntecipadoController, IntegracaoDaEvolutionController, SalaEstadoController, TarefasDoComercialController, ContratoDaRootController, FormularioDoSiteController],
+  controllers: [ComercialController, SalaController, SimuladorController, MensagensController, DinheiroController, WebhooksDoDinheiroController, InteligenciaController, FechadoForaController, ContratoImportadoController, PropostaDoLeadController, OnboardingAntecipadoController, IntegracaoDaEvolutionController, SalaEstadoController, TarefasDoComercialController, ContratoDaRootController, FormularioDoSiteController, FichaGeralController],
   providers: [
     // --- orquestrador: o fio (único caminho de escrita de fato) e o registro de reações ---
     ReacoesRegistry,
@@ -103,6 +106,8 @@ import { TriagemDoWhatsappService } from './triagem-do-whatsapp/triagem-do-whats
     // --- mover o cartão pela tela (P5, 18/10; sem limitação e sem aprovação desde a U4, 20/10) ---
     MoverService,
     SoGenteGuard,
+    // --- leva 5 (L4): a ficha geral e as pendências do painel do lead ---
+    FichaGeralService,
     // --- rodada do trabalho T7 ("pedir de novo" a vencida em /atendimento, pelo caminho de cada pedido) ---
     RepedidosDoComercial,
     // --- lane B (sala, WhatsApp por porta, simulador) ---

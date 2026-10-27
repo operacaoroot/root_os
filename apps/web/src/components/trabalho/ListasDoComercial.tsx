@@ -14,6 +14,10 @@ import { useAuth } from '@/lib/auth';
  * implantação é esta tela; as outras (Esteira de clientes, Execução) continuam abrindo
  * pelo quadro de sempre (`/trabalho?lista=<id>`), e a porta para elas é esta linha.
  * Sem pasta do Comercial (ou só com a lista da implantação), a linha não aparece.
+ *
+ * Leva 5, L3 (27/10/2026): a pasta Clientes voltou à árvore do Trabalho, recolhida, e
+ * a Implantação saiu do menu; esta linha segue valendo para quem chega a
+ * `/trabalho/implantacao` pelo link.
  */
 export function ListasDoComercial() {
   const { token } = useAuth();

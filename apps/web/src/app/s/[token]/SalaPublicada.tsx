@@ -18,8 +18,10 @@ import { dataCurta } from '@/lib/sala-do-cliente';
  * No celular (prancheta 3) é uma coluna só: estações na vertical, passos,
  * publicados, e o botão do WhatsApp fixo embaixo com alvo de 48 px.
  *
- * O número do WhatsApp da Root é decisão pendente da mesa: até lá o botão
- * mostra o marcador e não abre conversa com número inventado.
+ * O número do WhatsApp da Root é decisão da mesa: a versão publicada guarda o
+ * marcador, e desde a leva 5 (L6) o número vem DERIVADO da nota
+ * `comercial.whatsapp.numero` (`whatsapp`, lido a cada leitura). Sem a nota, o
+ * botão mostra o marcador e não abre conversa com número inventado.
  */
 
 const FOCO = 'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-offset-2 focus-visible:ring-offset-bg';
@@ -35,15 +37,17 @@ function linkDoPublicado(tipo: string, token: string, estado: EstadoDaSala): str
   return null;
 }
 
-export function SalaPublicada({ publicada, estado, token, marca, children }: {
+export function SalaPublicada({ publicada, estado, token, marca, children, whatsapp = null }: {
   publicada: SalaVersaoPublica;
   estado: EstadoDaSala;
   token: string;
   marca: React.ReactNode;
   children: React.ReactNode;
+  /** L6: o número da Root derivado na leitura (a nota da mesa); vence o marcador congelado na versão. */
+  whatsapp?: string | null;
 }) {
   const c = publicada.conteudo;
-  const numero = c.whatsapp.numero;
+  const numero = whatsapp ?? c.whatsapp.numero;
   return (
     <div data-os-app data-testid="sala-publicada" className="min-h-screen bg-bg p-4 pb-24 text-text [overflow-wrap:anywhere] md:pb-6">
       <div className="mx-auto w-full min-w-0 max-w-md py-6 md:max-w-3xl lg:max-w-5xl">

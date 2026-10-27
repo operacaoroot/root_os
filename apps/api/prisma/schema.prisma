@@ -182,6 +182,11 @@ model Org {
   ataSugestoes          AtaSugestao[]
   /// Layout 26/10: a ata ligada à mão a um lead e/ou a um cliente.
   ataLigacoes           AtaLigacao[]
+  /// Frota (27/10/2026): os servidores de cliente que a ROOT opera, os acessos, as ordens e o registro.
+  frotaCasas            FrotaCasa[]
+  frotaAcessos          FrotaAcesso[]
+  frotaEventos          FrotaEvento[]
+  frotaOrdens           FrotaOrdem[]
   pendencias            Pendencia[]
   /// TR-09, o Delegador (rodada dos agentes, 21/10/2026): as subtarefas propostas, à espera de gente.
   delegacaoSugestoes    DelegacaoSugestao[]
@@ -210,10 +215,10 @@ model Org {
 
   // Fatia 4.1+4.2 — A MEMÓRIA, RF-M-01/RF-M-06 (bloco no fim do arquivo, e
   // ADR-011). Mesma regra das de cima: só o outro lado da relação mora aqui.
-  contextItems    ContextItem[]
-  contextVersions ContextItemVersion[]
+  contextItems                ContextItem[]
+  contextVersions             ContextItemVersion[]
   contextCollectionSelections ContextCollectionSelection[]
-  contextCollectionMembers ContextCollectionMember[]
+  contextCollectionMembers    ContextCollectionMember[]
 
   // Fatia 5.1 — ROTINAS POR EMPRESA, RF-N-04 (bloco no fim do arquivo). Mesma
   // regra das de cima: só o outro lado da relação mora aqui, porque é o que o
@@ -249,31 +254,31 @@ model Org {
 
   // O ONBOARDING DO CLIENTE (bloco no fim do arquivo, 23/09/2026). Mesma regra
   // das de cima: só o outro lado da relação mora aqui.
-  onboardingTrilhos  OnboardingTrilho[]
-  onboardingItens    OnboardingItem[]
-  onboardingConvites OnboardingConvite[]
-  onboardingAtas     OnboardingAta[]
-  onboardingMarcos   OnboardingMarco[]
-  backContextMovementIntent_org_fk ContextMovementIntent[] @relation("ContextMovementIntent_org_fk")
-  backContextKeyClaim_org_fk ContextKeyClaim[] @relation("ContextKeyClaim_org_fk")
+  onboardingTrilhos                   OnboardingTrilho[]
+  onboardingItens                     OnboardingItem[]
+  onboardingConvites                  OnboardingConvite[]
+  onboardingAtas                      OnboardingAta[]
+  onboardingMarcos                    OnboardingMarco[]
+  backContextMovementIntent_org_fk    ContextMovementIntent[]    @relation("ContextMovementIntent_org_fk")
+  backContextKeyClaim_org_fk          ContextKeyClaim[]          @relation("ContextKeyClaim_org_fk")
   backContextMovementCandidate_org_fk ContextMovementCandidate[] @relation("ContextMovementCandidate_org_fk")
-  backContextAlias_org_fk ContextAlias[] @relation("ContextAlias_org_fk")
-  backContextMovementReceipt_org_fk ContextMovementReceipt[] @relation("ContextMovementReceipt_org_fk")
-  localAgendas AgentLocalAgenda[]
-  localAgendaRevisions AgentLocalAgendaRevision[]
-  localAgendaDispatches AgentLocalAgendaDispatch[]
-  localOperations AgentLocalOperation[]
+  backContextAlias_org_fk             ContextAlias[]             @relation("ContextAlias_org_fk")
+  backContextMovementReceipt_org_fk   ContextMovementReceipt[]   @relation("ContextMovementReceipt_org_fk")
+  localAgendas                        AgentLocalAgenda[]
+  localAgendaRevisions                AgentLocalAgendaRevision[]
+  localAgendaDispatches               AgentLocalAgendaDispatch[]
+  localOperations                     AgentLocalOperation[]
 
   toolReceipts AgentLocalToolReceipt[] @relation("ToolReceiptOrg")
 
   // Rodada dos agentes (21/10/2026, A1): o gasto de IA por função do cadastro.
   gastosDeIaPorFuncao GastoDeIaPorFuncao[]
   /// O que o vigia da agenda (AG-01) concluiu de cada reunião fora do padrão (rodada dos agentes, A5).
-  agendaConferencias AgendaConferencia[]
+  agendaConferencias  AgendaConferencia[]
   /// A7 (rodada dos agentes): o dono trocado na Equipe das funções sem registro `Agent`.
-  donosDeFuncao DonoDaFuncao[]
+  donosDeFuncao       DonoDaFuncao[]
   /// Produção 22B (I6): as fotos de perfil das pessoas.
-  fotosDePerfil FotoDePerfil[]
+  fotosDePerfil       FotoDePerfil[]
 }
 
 model User {
@@ -290,39 +295,39 @@ model User {
   updatedAt    DateTime  @updatedAt
 
   /// Produção 22B (I6): o cadastro da pessoa, editado em `/perfil`. Todos opcionais.
-  apelido        String?
-  cargo          String?
-  cidade         String?
+  apelido            String?
+  cargo              String?
+  cidade             String?
   /// Fuso IANA (`America/Sao_Paulo`).
-  fuso           String?
+  fuso               String?
   /// Só a data civil (sem hora): o aniversário é dia e mês.
-  dataNascimento DateTime? @db.Date
+  dataNascimento     DateTime? @db.Date
   /// O nome da pessoa como está nas notas da Governança do vault (a Equipe casa por ele).
-  nomeNoVault    String?
+  nomeNoVault        String?
   /// A versão do perfil (o `esperado` do salvar); muda só quando o perfil ou a foto mudam.
-  perfilAtualizadoEm DateTime @default(now())
+  perfilAtualizadoEm DateTime  @default(now())
 
-  roles      Role[] @relation("UserRoles")
-  fotosDePerfil FotoDePerfil[] @relation("FotoDePerfil")
-  ownedLeads Lead[] @relation("LeadOwner")
-  workTasksResponsavel WorkTask[] @relation("WorkTaskResponsavel")
-  demoInstallations DemoInstallation[]
+  roles                Role[]             @relation("UserRoles")
+  fotosDePerfil        FotoDePerfil[]     @relation("FotoDePerfil")
+  ownedLeads           Lead[]             @relation("LeadOwner")
+  workTasksResponsavel WorkTask[]         @relation("WorkTaskResponsavel")
+  demoInstallations    DemoInstallation[]
 
-  agentesQueDono Agent[]           @relation("AgentDono")
-  identidades    ChannelIdentity[]
+  agentesQueDono                  Agent[]                    @relation("AgentDono")
+  identidades                     ChannelIdentity[]
+  backIntent_actor_fk             ContextMovementIntent[]    @relation("Intent_actor_fk")
+  localAgendasCreated             AgentLocalAgenda[]         @relation("LocalAgendaCreator")
+  localAgendaRevisionsAuthored    AgentLocalAgendaRevision[] @relation("LocalRevisionActor")
+  localAgendaRevisionsResponsible AgentLocalAgendaRevision[] @relation("LocalRevisionResponsible")
+  localAgendaDispatchesAuthored   AgentLocalAgendaDispatch[] @relation("LocalDispatchActor")
+  localOperationsAuthored         AgentLocalOperation[]      @relation("LocalOperationActor")
+
+  toolReceipts  AgentLocalToolReceipt[] @relation("ToolReceiptActor")
+  /// A7 (rodada dos agentes): as funções do cadastro de que a pessoa é dona pela Equipe.
+  donoDeFuncoes DonoDaFuncao[]          @relation("DonoDaFuncao")
 
   @@unique([id, orgId])
   @@index([orgId])
-  backIntent_actor_fk ContextMovementIntent[] @relation("Intent_actor_fk")
-  localAgendasCreated AgentLocalAgenda[] @relation("LocalAgendaCreator")
-  localAgendaRevisionsAuthored AgentLocalAgendaRevision[] @relation("LocalRevisionActor")
-  localAgendaRevisionsResponsible AgentLocalAgendaRevision[] @relation("LocalRevisionResponsible")
-  localAgendaDispatchesAuthored AgentLocalAgendaDispatch[] @relation("LocalDispatchActor")
-  localOperationsAuthored AgentLocalOperation[] @relation("LocalOperationActor")
-
-  toolReceipts AgentLocalToolReceipt[] @relation("ToolReceiptActor")
-  /// A7 (rodada dos agentes): as funções do cadastro de que a pessoa é dona pela Equipe.
-  donoDeFuncoes DonoDaFuncao[] @relation("DonoDaFuncao")
 }
 
 model Role {
@@ -469,30 +474,30 @@ model Lead {
   events LeadEvent[]
 
   // O cockpit do lead (módulo comercial): a ficha 1:1, a sala e os filhos do fio.
-  ficha             ComercialFicha?
-  sala              SalaDoCliente?
-  decisoes          ComercialDecisao[]
-  mensagens         ComercialMensagem[]
-  reacoes           ComercialReacao[]
-  fechamentos       ComercialFechamento[]
-  cobrancas         ComercialCobranca[]
-  documentos        ComercialDocumento[]
+  ficha               ComercialFicha?
+  sala                SalaDoCliente?
+  decisoes            ComercialDecisao[]
+  mensagens           ComercialMensagem[]
+  reacoes             ComercialReacao[]
+  fechamentos         ComercialFechamento[]
+  cobrancas           ComercialCobranca[]
+  documentos          ComercialDocumento[]
   // Rodada da implantação I4: leitura e reação na página da proposta.
-  reacoesDaProposta LeadReacao[]
+  reacoesDaProposta   LeadReacao[]
   // Rodada da implantação I3: a sala do cliente publicada por versão.
-  versoesDaSala     SalaVersao[]
+  versoesDaSala       SalaVersao[]
   // Adendo de 21/10/2026: as tarefas do comercial ligadas ao lead.
-  tarefas           WorkTask[] @relation("TarefasDoLead")
+  tarefas             WorkTask[]            @relation("TarefasDoLead")
   // Produção 22B (I5): as propostas do serviço de propostas vinculadas ao lead.
-  propostasVinculadas PropostaDoLead[] @relation("PropostasDoLead")
+  propostasVinculadas PropostaDoLead[]      @relation("PropostasDoLead")
   /// Produção 22C (W3): as conversas e mensagens do WhatsApp ligadas a este lead.
-  whatsappConversas   WhatsAppConversa[] @relation("ConversasDoLead")
-  whatsappMensagens   WhatsAppMensagem[] @relation("MensagensDoLead")
+  whatsappConversas   WhatsAppConversa[]    @relation("ConversasDoLead")
+  whatsappMensagens   WhatsAppMensagem[]    @relation("MensagensDoLead")
 
+  @@unique([id, orgId])
   @@index([orgId, enteredAt])
   @@index([orgId, campaignId])
   @@index([anonymousId])
-  @@unique([id, orgId])
 }
 
 model LeadEvent {
@@ -506,9 +511,9 @@ model LeadEvent {
   payload    Json?
   occurredAt DateTime @default(now())
 
+  @@unique([id, orgId])
   @@index([leadId])
   @@index([orgId, occurredAt])
-  @@unique([id, orgId])
 }
 
 // ---------- Campanhas ----------
@@ -665,30 +670,31 @@ model GoalWeek {
 
 // ---------- Base de conhecimento (Obsidian → embeddings/pgvector) ----------
 model KnowledgeNote {
-  id        String @id @default(uuid())
+  id        String                       @id @default(uuid())
   orgId     String
-  org       Org @relation(fields: [orgId], references: [id])
+  org       Org                          @relation(fields: [orgId], references: [id])
   path      String
   folder    String?
   title     String
   tags      String[]
   content   String
   links     String[]
-  wordCount Int @default(0)
+  wordCount Int                          @default(0)
   fileTime  DateTime
-  indexedAt DateTime @default(now())
+  indexedAt DateTime                     @default(now())
   embedding Unsupported("vector(1536)")?
 
-  mirrorOrigin String?
-  canonicalItemId String?
-  canonicalVersionId String?
-  canonicalVersion Int?
-  canonicalKey String?
-  canonicalSourceType ContextSource?
-  canonicalSourceRef String?
+  mirrorOrigin         String?
+  canonicalItemId      String?
+  canonicalVersionId   String?
+  canonicalVersion     Int?
+  canonicalKey         String?
+  canonicalSourceType  ContextSource?
+  canonicalSourceRef   String?
   canonicalContentHash String?
-  canonicalItem ContextItem? @relation("EspelhoOnboardingItem", fields: [canonicalItemId, orgId], references: [id, orgId], onDelete: Restrict, onUpdate: Restrict)
-  canonicalSnapshot ContextItemVersion? @relation("EspelhoOnboardingVersao", fields: [canonicalVersionId, orgId, canonicalItemId, canonicalVersion], references: [id, orgId, itemId, versao], onDelete: Restrict, onUpdate: Restrict)
+  canonicalItem        ContextItem?        @relation("EspelhoOnboardingItem", fields: [canonicalItemId, orgId], references: [id, orgId], onDelete: Restrict, onUpdate: Restrict)
+  canonicalSnapshot    ContextItemVersion? @relation("EspelhoOnboardingVersao", fields: [canonicalVersionId, orgId, canonicalItemId, canonicalVersion], references: [id, orgId, itemId, versao], onDelete: Restrict, onUpdate: Restrict)
+
   @@unique([orgId, path])
   @@unique([orgId, canonicalItemId])
   @@index([orgId])
@@ -888,13 +894,13 @@ model FinanceTransaction {
   updatedAt      DateTime           @updatedAt
 
   @@unique([orgId, accountId, externalId])
+  @@unique([id, orgId])
   @@index([orgId, date])
   @@index([orgId, status])
   @@index([orgId, approvalStatus])
   @@index([accountId])
   @@index([chartAccountId])
   @@index([partnerId])
-  @@unique([id, orgId])
 }
 
 // ---------- FinOps AP/AR: fornecedores/clientes, rateio, contratos, aprovação ----------
@@ -913,22 +919,22 @@ enum ContractStatus {
 
 // Fornecedor/cliente unificado (fornecedores_clientes do FinOps).
 model Partner {
-  id           String   @id @default(uuid())
-  orgId        String
-  org          Org      @relation(fields: [orgId], references: [id])
-  isCliente    Boolean  @default(false)
-  isFornecedor Boolean  @default(false)
-  razaoSocial  String
-  nomeFantasia String?
-  cnpjCpf      String?
-  email        String?
-  phone        String?
-  ativo        Boolean  @default(true)
+  id             String   @id @default(uuid())
+  orgId          String
+  org            Org      @relation(fields: [orgId], references: [id])
+  isCliente      Boolean  @default(false)
+  isFornecedor   Boolean  @default(false)
+  razaoSocial    String
+  nomeFantasia   String?
+  cnpjCpf        String?
+  email          String?
+  phone          String?
+  ativo          Boolean  @default(true)
   /// O CLIENTE DA CASA (rodada do trabalho T4, 19/10/2026): o trabalho da própria
   /// empresa (pastas Administrativa e Gestão) fica ligado a ele, para a regra "toda
   /// tarefa tem cliente" valer sem exceção. Um por empresa: índice único parcial
   /// `Partner_orgId_interno_unico` (só na migration; o Prisma não descreve índice parcial).
-  interno      Boolean  @default(false)
+  interno        Boolean  @default(false)
   /// A PASTA DO CLIENTE NO DRIVE (rodada dos agentes, 21/10/2026, TR-04): o id e o
   /// link de <raiz>/10-clientes/<nome>, e o motivo da última tentativa que falhou.
   /// Uma pasta, um cliente: índice único parcial `Partner_orgId_pastaDriveId_unica`
@@ -937,24 +943,24 @@ model Partner {
   pastaDriveId   String?
   pastaDriveUrl  String?
   pastaDriveErro String?
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
 
-  transactions FinanceTransaction[]
-  contracts    Contract[]
+  transactions      FinanceTransaction[]
+  contracts         Contract[]
   /// As tarefas do Trabalho ligadas a este cliente (`WorkTask.clienteId`).
-  tarefas      WorkTask[]           @relation("TarefasDoCliente")
+  tarefas           WorkTask[]           @relation("TarefasDoCliente")
   /// Produção 22C (W3): as conversas e mensagens do WhatsApp ligadas a este cliente.
-  whatsappConversas WhatsAppConversa[] @relation("ConversasDoCliente")
-  whatsappMensagens WhatsAppMensagem[] @relation("MensagensDoCliente")
+  whatsappConversas WhatsAppConversa[]   @relation("ConversasDoCliente")
+  whatsappMensagens WhatsAppMensagem[]   @relation("MensagensDoCliente")
   /// INTEGRAÇÃO (26/10/2026): o mesmo cliente cadastrado duas vezes aponta para o
   /// cadastro principal (Curral × "Curral (Marcelo Alves Meroto)"). Nada é apagado nem
   /// fundido: as telas mostram o principal e somam os dois. Nulo = é o principal.
-  principalId  String?
-  principal    Partner?  @relation("CadastroPrincipal", fields: [principalId], references: [id], onDelete: SetNull)
-  duplicados   Partner[] @relation("CadastroPrincipal")
+  principalId       String?
+  principal         Partner?             @relation("CadastroPrincipal", fields: [principalId], references: [id], onDelete: SetNull)
+  duplicados        Partner[]            @relation("CadastroPrincipal")
   /// Os acordos comerciais deste cliente (`AcordoComercial.partnerId`).
-  acordos      AcordoComercial[] @relation("AcordosDoCliente")
+  acordos           AcordoComercial[]    @relation("AcordosDoCliente")
 
   @@index([orgId])
 }
@@ -1013,8 +1019,8 @@ model Contract {
 
   transactions FinanceTransaction[]
 
-  @@index([orgId, status])
   @@unique([id, orgId])
+  @@index([orgId, status])
 }
 
 // Rateio de um lançamento (lancamento_rateios): divide o valor por conta/dep/projeto.
@@ -1730,17 +1736,17 @@ model PautaEpisodio {
 
   /// Uma rodada vira no máximo um episódio. `Restrict`: apagar a rodada não
   /// pode levar junto roteiro, mídia e transcrição.
-  rodadaId String              @unique
-  rodada   PautaRodada         @relation(fields: [rodadaId], references: [id], onDelete: Restrict)
+  rodadaId    String              @unique
+  rodada      PautaRodada         @relation(fields: [rodadaId], references: [id], onDelete: Restrict)
   /// Sequencial por empresa (ep-01, ep-02…), dado sob cadeado na criação.
-  numero   Int
-  titulo   String
-  status   PautaEpisodioStatus @default(roteiro)
+  numero      Int
+  titulo      String
+  status      PautaEpisodioStatus @default(roteiro)
   /// MD2: desde quando está no status atual. Quem carimba é o GATILHO
   /// `PautaEpisodio_statusDesde`, em toda troca de status por qualquer caminho
   /// (mídia, transcrição, roteiro, semana, o passo à mão). O vigia do Mac só
   /// aceita bruto do OBS gravado depois da entrada em Gravação.
-  statusDesde DateTime @default(now())
+  statusDesde DateTime            @default(now())
 
   roteiro          String  @default("")
   /// D-MC2: a palavra dita a cada erro na gravação, só deste episódio. Nula =
@@ -2094,23 +2100,25 @@ model WorkSpace {
 }
 
 model WorkFolder {
-  id         String      @id @default(uuid())
-  orgId      String
-  org        Org         @relation(fields: [orgId], references: [id])
-  spaceId    String?
-  space      WorkSpace?  @relation(fields: [spaceId, orgId], references: [id, orgId], onDelete: Restrict, onUpdate: Restrict)
-  parentId   String?
-  parent     WorkFolder? @relation("PastaDentroDePasta", fields: [parentId, orgId], references: [id, orgId], onDelete: Restrict, onUpdate: Restrict)
-  name       String
-  order      Int         @default(0)
-  externalId String? // id da pasta no ClickUp
+  id          String      @id @default(uuid())
+  orgId       String
+  org         Org         @relation(fields: [orgId], references: [id])
+  spaceId     String?
+  space       WorkSpace?  @relation(fields: [spaceId, orgId], references: [id, orgId], onDelete: Restrict, onUpdate: Restrict)
+  parentId    String?
+  parent      WorkFolder? @relation("PastaDentroDePasta", fields: [parentId, orgId], references: [id, orgId], onDelete: Restrict, onUpdate: Restrict)
+  name        String
+  order       Int         @default(0)
+  externalId  String? // id da pasta no ClickUp
   /// Arquivada (21/10/2026): fora da árvore e de Todas; nunca apagada pelo importador.
   arquivadaEm DateTime?
   /// Ícone (emoji curto ou nome do catálogo do app) e cor (token do tema), 22/10/2026. Nulo = sem.
-  icone      String?
-  cor        String?
+  icone       String?
+  cor         String?
   /// Do Comercial (22/10/2026): a pasta existe, mas mora fora do Trabalho (a pasta Clientes).
   doComercial Boolean    @default(false)
+  /// Arquivo do ClickUp (leva 5, L1, 27/10/2026): a pasta fica na árvore, recolhida; o que está nela sai de Todas e do Dia a dia.
+  arquivoDoClickUp Boolean @default(false)
   createdAt  DateTime    @default(now())
   updatedAt  DateTime    @updatedAt
 
@@ -2126,35 +2134,37 @@ model WorkFolder {
 }
 
 model WorkList {
-  id         String      @id @default(uuid())
-  orgId      String
-  org        Org         @relation(fields: [orgId], references: [id])
-  folderId   String?
+  id          String      @id @default(uuid())
+  orgId       String
+  org         Org         @relation(fields: [orgId], references: [id])
+  folderId    String?
   /// RESTRICT, não mais SET NULL: pasta com lista não se apaga (o serviço já
   /// recusava), e a chave composta não poderia anular `orgId` junto.
-  folder     WorkFolder? @relation(fields: [folderId, orgId], references: [id, orgId], onDelete: Restrict, onUpdate: Restrict)
-  spaceId    String?
-  space      WorkSpace?  @relation(fields: [spaceId, orgId], references: [id, orgId], onDelete: Restrict, onUpdate: Restrict)
-  name       String
-  order      Int         @default(0)
-  externalId String? // id da lista no ClickUp (ex.: Gestão de Temas = 901327640001)
+  folder      WorkFolder? @relation(fields: [folderId, orgId], references: [id, orgId], onDelete: Restrict, onUpdate: Restrict)
+  spaceId     String?
+  space       WorkSpace?  @relation(fields: [spaceId, orgId], references: [id, orgId], onDelete: Restrict, onUpdate: Restrict)
+  name        String
+  order       Int         @default(0)
+  externalId  String? // id da lista no ClickUp (ex.: Gestão de Temas = 901327640001)
   /// Arquivada (21/10/2026): fora da árvore, de Todas e dos contadores; as tarefas ficam.
   arquivadaEm DateTime?
   /// Ícone (emoji curto ou nome do catálogo do app) e cor (token do tema), 22/10/2026. Nulo = sem.
-  icone      String?
-  cor        String?
+  icone       String?
+  cor         String?
   /// Do Comercial (22/10/2026): a lista existe e alimenta a Implantação, fora da árvore do Trabalho.
   doComercial Boolean    @default(false)
+  /// Arquivo do ClickUp (leva 5, L1, 27/10/2026): lista importada do ClickUp, fora de Todas e do Dia a dia; tarefas e status ficam.
+  arquivoDoClickUp Boolean @default(false)
   createdAt  DateTime    @default(now())
   updatedAt  DateTime    @updatedAt
 
-  statuses WorkStatus[]
-  fields   WorkField[]
-  tasks    WorkTask[]
-  natureza WorkListaNatureza @default(tarefas)
+  statuses     WorkStatus[]
+  fields       WorkField[]
+  tasks        WorkTask[]
+  natureza     WorkListaNatureza @default(tarefas)
   /// Área que a tarefa recebe ao nascer nesta lista; a tarefa guarda a sua.
   areaPadraoId String?
-  areaPadrao   WorkArea? @relation("AreaPadraoDaLista", fields: [areaPadraoId, orgId], references: [id, orgId], onDelete: Restrict, onUpdate: Restrict)
+  areaPadrao   WorkArea?         @relation("AreaPadraoDaLista", fields: [areaPadraoId, orgId], references: [id, orgId], onDelete: Restrict, onUpdate: Restrict)
 
   @@unique([orgId, externalId])
   @@unique([id, orgId])
@@ -2235,16 +2245,16 @@ model WorkFieldOption {
 }
 
 model WorkTask {
-  id          String       @id @default(uuid())
-  orgId       String
-  org         Org          @relation(fields: [orgId], references: [id])
-  listId      String
-  list        WorkList     @relation(fields: [listId], references: [id])
-  statusId    String
-  status      WorkStatus   @relation(fields: [statusId], references: [id])
-  title       String
-  description String?
-  priority    WorkPriority @default(normal)
+  id             String       @id @default(uuid())
+  orgId          String
+  org            Org          @relation(fields: [orgId], references: [id])
+  listId         String
+  list           WorkList     @relation(fields: [listId], references: [id])
+  statusId       String
+  status         WorkStatus   @relation(fields: [statusId], references: [id])
+  title          String
+  description    String?
+  priority       WorkPriority @default(normal)
   /// RESPONSÁVEL HUMANO — texto livre, herdado da fotografia do ClickUp.
   ///
   /// NÃO é o executor, e a diferença é a fatia A4 inteira: `assignee` diz de
@@ -2255,10 +2265,10 @@ model WorkTask {
   /// (a pessoa responde, o agente executa). Colapsar os dois num campo só
   /// faria "atribuir a alguém" e "travar para execução" virarem a mesma
   /// escrita — e é justamente essa segunda que precisa ser atômica.
-  assignee    String?
+  assignee       String?
   /// Conta responsável, independente do texto importado e do agente executor.
   assigneeUserId String?
-  assigneeUser User? @relation("WorkTaskResponsavel", fields: [assigneeUserId, orgId], references: [id, orgId], onDelete: Restrict, onUpdate: Restrict)
+  assigneeUser   User?        @relation("WorkTaskResponsavel", fields: [assigneeUserId, orgId], references: [id, orgId], onDelete: Restrict, onUpdate: Restrict)
   /// AGENTE EXECUTOR — o DONO ÚNICO da tarefa, conquistado por checkout
   /// atômico (fatia A4, `src/work/checkout-de-tarefa.service.ts`).
   ///
@@ -2278,12 +2288,12 @@ model WorkTask {
   /// de uma empresa em tarefa de outra — a chave estrangeira simples não vê
   /// isso, e `include: { agente: ... }` traria o nome de quem estiver do outro
   /// lado (mesma armadilha de `donos-da-casa.ts`, ver `agentes-da-casa.ts`).
-  agenteId    String?
-  agente      Agent?       @relation("TarefasDoAgente", fields: [agenteId], references: [id], onDelete: SetNull)
+  agenteId       String?
+  agente         Agent?       @relation("TarefasDoAgente", fields: [agenteId], references: [id], onDelete: SetNull)
   /// QUANDO o checkout aconteceu. Responde "desde quando esta tarefa está
   /// travada?", que é a pergunta de quem procura trabalho parado; nulo sempre
   /// que `agenteId` é nulo, e os dois são escritos e apagados juntos.
-  agenteEm    DateTime?
+  agenteEm       DateTime?
   /// DESDE QUANDO a tarefa está na etapa atual. Responde "há quantos dias este
   /// cliente está parado aqui?" — a idade do cartão no kanban.
   ///
@@ -2297,58 +2307,58 @@ model WorkTask {
   /// Nulo = tarefa anterior à fatia. A data real de entrada na etapa não existe
   /// para elas, e a tela não inventa uma: preencher com `updatedAt` publicaria
   /// "parada há 2 dias" para o que está parado há dois meses.
-  statusDesde DateTime?
+  statusDesde    DateTime?
   /// O CLIENTE DA TAREFA (rodada do trabalho T4, 19/10/2026). Aponta para o cadastro
   /// que o fechamento comercial já escreve (`Partner` com `isCliente`); o da casa é o
   /// `Partner.interno`. Obrigatório em toda tarefa NOVA (a rota confere); as antigas
   /// ficam nulas, com o selo "sem cliente". O gatilho `WorkTask_orgId_confere_cliente`
   /// recusa cliente de outra empresa.
-  clienteId   String?
-  cliente     Partner?     @relation("TarefasDoCliente", fields: [clienteId], references: [id], onDelete: SetNull)
-  dueDate     DateTime?
-  startDate   DateTime?
-  parentId    String?
-  parent      WorkTask?    @relation("WorkSubtasks", fields: [parentId], references: [id], onDelete: SetNull)
-  subtasks    WorkTask[]   @relation("WorkSubtasks")
-  externalId  String? // id da task no ClickUp (fotografia); reconciliação futura
-  externalUrl String?
-  archived    Boolean      @default(false)
+  clienteId      String?
+  cliente        Partner?     @relation("TarefasDoCliente", fields: [clienteId], references: [id], onDelete: SetNull)
+  dueDate        DateTime?
+  startDate      DateTime?
+  parentId       String?
+  parent         WorkTask?    @relation("WorkSubtasks", fields: [parentId], references: [id], onDelete: SetNull)
+  subtasks       WorkTask[]   @relation("WorkSubtasks")
+  externalId     String? // id da task no ClickUp (fotografia); reconciliação futura
+  externalUrl    String?
+  archived       Boolean      @default(false)
   /// NA LIXEIRA (rodada de produção 3, I2, 22/10/2026). Excluir grava a hora aqui E arquiva
   /// (`archived`): toda listagem que já filtra arquivada a tira, e as que mostram arquivada
   /// pedem `tarefaViva()` (`src/work/arquivadas.ts`). Restaurar limpa as duas. A leitura por
   /// id continua valendo. Migration `20261022210000_trabalho_lixeira`.
-  excluidaEm  DateTime?
+  excluidaEm     DateTime?
   /// Quem excluiu (id de `User` desta empresa; sem chave estrangeira de propósito).
-  excluidaPor String?
-  order       Int          @default(0)
-  createdAt   DateTime     @default(now())
-  updatedAt   DateTime     @updatedAt
+  excluidaPor    String?
+  order          Int          @default(0)
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
 
-  tags              WorkTag[]          @relation("WorkTaskTags")
-  values            WorkFieldValue[]
-  comments          WorkComment[]
-  fontesContexto    WorkContextSource[]
-  apontamentos      WorkApontamento[]
+  tags                  WorkTag[]           @relation("WorkTaskTags")
+  values                WorkFieldValue[]
+  comments              WorkComment[]
+  fontesContexto        WorkContextSource[]
+  apontamentos          WorkApontamento[]
   /// Os anexos da tarefa (rodada dos agentes, TR-06).
-  anexos            WorkAnexo[]
+  anexos                WorkAnexo[]
   /// O trilho de onboarding pendurado neste cartão da esteira (23/09/2026).
-  onboardingTrilhos OnboardingTrilho[] @relation("OnboardingDoCartao")
+  onboardingTrilhos     OnboardingTrilho[]  @relation("OnboardingDoCartao")
   /// As reuniões da ficha do cliente (transcrição do Granola, link ou texto).
-  reunioes ReuniaoDoCartao[]
+  reunioes              ReuniaoDoCartao[]
   /// ÁREA da tarefa — UMA só (Comercial, Marketing…). Cliente não é área.
-  areaId   String?
-  area     WorkArea? @relation("AreaDaTarefa", fields: [areaId, orgId], references: [id, orgId], onDelete: Restrict, onUpdate: Restrict)
+  areaId                String?
+  area                  WorkArea?           @relation("AreaDaTarefa", fields: [areaId, orgId], references: [id, orgId], onDelete: Restrict, onUpdate: Restrict)
   // Versão final (19/10/2026): o `clienteId` da produção (outra WorkTask de lista
   // `cadastro`) foi conciliado com o nosso (Partner, campo acima) pela migration
   // `20261019230000_conciliacao_cliente_da_tarefa`. Um campo só, uma verdade só.
   /// REPETIÇÃO (como no ClickUp): a regra (RecorrenciaDaTarefa em @mktos/shared). Ao concluir,
   /// nasce a próxima ocorrência com o prazo seguinte; a concluída fica no histórico.
-  recorrencia Json?
+  recorrencia           Json?
   /// A série de uma tarefa que se repete: o id da primeira. Uma série nunca tem duas abertas.
-  serieId     String?
+  serieId               String?
   /// RESPONSÁVEIS ALÉM DO PRIMEIRO (vários, como no ClickUp). O primeiro continua em
   /// assigneeUserId, que o resto do OS lê; aqui ficam os demais, ids de User da empresa.
-  outrosResponsaveisIds String[] @default([])
+  outrosResponsaveisIds String[]            @default([])
 
   /// A tarefa do lead (adendo de 21/10/2026): o Comercial mostra no painel do lead e no
   /// cartão do funil. Nula = tarefa do Trabalho (ou do comercial sem lead). Chave composta
@@ -3148,23 +3158,23 @@ model Agent {
   criadoEm     DateTime @default(now())
   atualizadoEm DateTime @updatedAt
 
-  sop      Sop?
-  sessions Session[]
+  sop                   Sop?
+  sessions              Session[]
   /// As tarefas do quadro que este agente tem NA MÃO agora (fatia A4). Só as
   /// travadas: soltar a tarefa apaga o ponteiro, e o histórico de quem a teve
   /// mora no RASTRO. Lado inverso de `WorkTask.agente`.
-  tarefas  WorkTask[] @relation("TarefasDoAgente")
-
-  @@unique([orgId, slug])
-  @@index([orgId, estado])
-  @@index([ativo, cron])
-  localAgendas AgentLocalAgenda[] @relation("LocalAgendaAgent")
-  localAgendaRevisions AgentLocalAgendaRevision[] @relation("LocalRevisionAgent")
+  tarefas               WorkTask[]                 @relation("TarefasDoAgente")
+  localAgendas          AgentLocalAgenda[]         @relation("LocalAgendaAgent")
+  localAgendaRevisions  AgentLocalAgendaRevision[] @relation("LocalRevisionAgent")
   localAgendaDispatches AgentLocalAgendaDispatch[] @relation("LocalDispatchAgent")
-  localOperations AgentLocalOperation[] @relation("LocalOperationAgent")
-  @@unique([id,orgId], map: "Agent_id_orgId_key")
+  localOperations       AgentLocalOperation[]      @relation("LocalOperationAgent")
 
   toolReceipts AgentLocalToolReceipt[] @relation("ToolReceiptAgent")
+
+  @@unique([orgId, slug])
+  @@unique([id, orgId], map: "Agent_id_orgId_key")
+  @@index([orgId, estado])
+  @@index([ativo, cron])
 }
 
 /// RF-N-02: formato fixo. A ESCALAÇÃO e as regras da casa NÃO moram aqui —
@@ -3182,15 +3192,16 @@ model Sop {
   definicaoDePronto String
   observacoes       String?
 
-  versao        Int      @default(1)
-  atualizadoPor String?
-  atualizadoEm  DateTime @updatedAt
-  criadoEm      DateTime @default(now())
+  versao               Int                        @default(1)
+  atualizadoPor        String?
+  atualizadoEm         DateTime                   @updatedAt
+  criadoEm             DateTime                   @default(now())
   localAgendaRevisions AgentLocalAgendaRevision[] @relation("LocalRevisionSop")
-  @@unique([id,orgId,agentId], map: "Sop_id_orgId_agentId_key")
 
   ferramentaLocal Json?
-  toolReceipts AgentLocalToolReceipt[] @relation("ToolReceiptSop")
+  toolReceipts    AgentLocalToolReceipt[] @relation("ToolReceiptSop")
+
+  @@unique([id, orgId, agentId], map: "Sop_id_orgId_agentId_key")
 }
 
 enum SessionCanal {
@@ -3256,8 +3267,13 @@ model Session {
   encerradaEm       DateTime?
   criadaEm          DateTime  @default(now())
 
-  steps SessionStep[]
+  steps                 SessionStep[]
+  localAgendaDispatches AgentLocalAgendaDispatch[] @relation("LocalDispatchSession")
+  localOperations       AgentLocalOperation[]      @relation("LocalOperationSession")
 
+  toolReceipts AgentLocalToolReceipt[] @relation("ToolReceiptSession")
+
+  @@unique([id, orgId, agentId], map: "Session_id_orgId_agentId_key")
   @@index([orgId, criadaEm])
   @@index([orgId, canal, criadaEm])
   @@index([orgId, agentId, criadaEm])
@@ -3270,11 +3286,6 @@ model Session {
   /// acima são por `criadaEm`; este filtro é por `semProcedencia` +
   /// `encerradaEm`, e sem ele a consulta varre a tabela de sessões inteira.
   @@index([orgId, semProcedencia, encerradaEm])
-  localAgendaDispatches AgentLocalAgendaDispatch[] @relation("LocalDispatchSession")
-  localOperations AgentLocalOperation[] @relation("LocalOperationSession")
-  @@unique([id,orgId,agentId], map: "Session_id_orgId_agentId_key")
-
-  toolReceipts AgentLocalToolReceipt[] @relation("ToolReceiptSession")
 }
 
 enum SessionStepTipo {
@@ -3340,15 +3351,15 @@ model SessionStep {
   texto         String?
   erro          String?
 
-  duracaoMs Int      @default(0)
-  criadoEm  DateTime @default(now())
+  duracaoMs          Int                     @default(0)
+  criadoEm           DateTime                @default(now())
+  toolPedidoReceipts AgentLocalToolReceipt[] @relation("ToolReceiptPedidoStep")
+  toolFinalReceipts  AgentLocalToolReceipt[] @relation("ToolReceiptFinalStep")
 
   @@unique([sessionId, ordem])
+  @@unique([id, orgId, sessionId], map: "SessionStep_id_org_session_unique")
   @@index([sessionId, ordem])
   @@index([orgId, criadoEm])
-  toolPedidoReceipts AgentLocalToolReceipt[] @relation("ToolReceiptPedidoStep")
-  toolFinalReceipts AgentLocalToolReceipt[] @relation("ToolReceiptFinalStep")
-  @@unique([id,orgId,sessionId], map:"SessionStep_id_org_session_unique")
 }
 
 /// Quem é a pessoa do outro lado do canal.
@@ -3849,11 +3860,19 @@ model ContextItem {
   atualizadoPor String?
 
   /// Restrição local por pessoa; lista vazia em fonte restrita nega todos.
-  acessoRestrito Boolean @default(false)
-  leitores String[] @default([])
-  fontesDeTrabalho WorkContextSource[]
-  membrosDeColecao ContextCollectionMember[] @relation("MembroItem")
-  versoes ContextItemVersion[]
+  acessoRestrito       Boolean                    @default(false)
+  leitores             String[]                   @default([])
+  fontesDeTrabalho     WorkContextSource[]
+  membrosDeColecao     ContextCollectionMember[]  @relation("MembroItem")
+  versoes              ContextItemVersion[]
+  backIntent_item_fk   ContextMovementIntent[]    @relation("Intent_item_fk")
+  backClaim_item_fk    ContextKeyClaim[]          @relation("Claim_item_fk")
+  backAlias_item_fk    ContextAlias[]             @relation("Alias_item_fk")
+  localAgendaRevisions AgentLocalAgendaRevision[] @relation("LocalRevisionItem")
+
+  espelhosOnboarding KnowledgeNote[] @relation("EspelhoOnboardingItem")
+
+  toolReceipts AgentLocalToolReceipt[] @relation("ToolReceiptItem")
 
   /// Uma nota por (empresa, chave). É o que torna a reindexação idempotente.
   @@unique([id, orgId])
@@ -3863,14 +3882,6 @@ model ContextItem {
   /// "quem substituiu esta regra?" — a consulta de RF-M-08. Índice comum desde
   /// que a aresta virou muitos-para-um: sem `@unique` não sobra índice de graça.
   @@index([supersedesId])
-  backIntent_item_fk ContextMovementIntent[] @relation("Intent_item_fk")
-  backClaim_item_fk ContextKeyClaim[] @relation("Claim_item_fk")
-  backAlias_item_fk ContextAlias[] @relation("Alias_item_fk")
-  localAgendaRevisions AgentLocalAgendaRevision[] @relation("LocalRevisionItem")
-
-  espelhosOnboarding KnowledgeNote[] @relation("EspelhoOnboardingItem")
-
-  toolReceipts AgentLocalToolReceipt[] @relation("ToolReceiptItem")
 }
 
 /// UMA LINHA POR MUDANÇA — a projeção do evento `memoria.item.*`.
@@ -3944,8 +3955,17 @@ model ContextItemVersion {
 
   criadoEm DateTime @default(now())
 
-  fontesDeTrabalho WorkContextSource[]
-  membrosDeColecao ContextCollectionMember[] @relation("MembroVersao")
+  fontesDeTrabalho               WorkContextSource[]
+  membrosDeColecao               ContextCollectionMember[]  @relation("MembroVersao")
+  backIntent_current_version_fk  ContextMovementIntent[]    @relation("Intent_current_version_fk")
+  backIntent_selected_version_fk ContextMovementIntent[]    @relation("Intent_selected_version_fk")
+  backReceipt_new_version_fk     ContextMovementReceipt[]   @relation("Receipt_new_version_fk")
+  backReceipt_cancel_version_fk  ContextMovementReceipt[]   @relation("Receipt_cancel_version_fk")
+  localAgendaRevisions           AgentLocalAgendaRevision[] @relation("LocalRevisionSourceVersion")
+
+  espelhosOnboarding KnowledgeNote[] @relation("EspelhoOnboardingVersao")
+
+  toolReceipts AgentLocalToolReceipt[] @relation("ToolReceiptVersion")
 
   @@unique([id, orgId, itemId])
   @@unique([id, orgId, itemId, versao])
@@ -3955,15 +3975,6 @@ model ContextItemVersion {
   /// O `SET NULL` do expurgo procura por aqui. Sem índice, apagar uma faixa de
   /// rastro varreria a tabela inteira de versões por linha apagada.
   @@index([eventoId])
-  backIntent_current_version_fk ContextMovementIntent[] @relation("Intent_current_version_fk")
-  backIntent_selected_version_fk ContextMovementIntent[] @relation("Intent_selected_version_fk")
-  backReceipt_new_version_fk ContextMovementReceipt[] @relation("Receipt_new_version_fk")
-  backReceipt_cancel_version_fk ContextMovementReceipt[] @relation("Receipt_cancel_version_fk")
-  localAgendaRevisions AgentLocalAgendaRevision[] @relation("LocalRevisionSourceVersion")
-
-  espelhosOnboarding KnowledgeNote[] @relation("EspelhoOnboardingVersao")
-
-  toolReceipts AgentLocalToolReceipt[] @relation("ToolReceiptVersion")
 }
 
 // ===========================================================================
@@ -4944,6 +4955,12 @@ model ComercialFicha {
   /// Sem chave estrangeira, como `trilhoId`: o card é do Trabalho e pode ser
   /// arquivado lá sem a ficha saber; a leitura confere a empresa.
   cardId                        String?
+  /// Leva 5 (L4, 27/10/2026), a aba Geral do painel: PJ ou PF (`TIPOS_DE_PESSOA` no shared).
+  tipoDePessoa                  String?
+  /// Leva 5 (L4): texto curto com como o lead prefere ser atendido (horário, canal, quem fala).
+  preferenciasDeAtendimento     String?
+  /// Leva 5 (L4): o link da proposta escrito à mão (https). O da sala nunca fica aqui; o do serviço vem de `PropostaDoLead`.
+  linkDaProposta                String?
 
   criadoEm     DateTime @default(now())
   atualizadoEm DateTime @updatedAt
@@ -5249,141 +5266,151 @@ model SalaVersao {
 
 /// Versão efetivamente usada ao criar uma tarefa. Pedido e citação não se editam.
 model WorkContextSource {
-  id String @id @default(uuid())
-  orgId String
-  taskId String @unique
-  task WorkTask @relation(fields: [taskId, orgId], references: [id, orgId], onDelete: Restrict, onUpdate: Restrict)
-  itemId String
-  item ContextItem @relation(fields: [itemId, orgId], references: [id, orgId], onDelete: Restrict, onUpdate: Restrict)
-  versionId String
-  version ContextItemVersion @relation(fields: [versionId, orgId, itemId], references: [id, orgId, itemId], onDelete: Restrict, onUpdate: Restrict)
-  requestId String
+  id          String             @id @default(uuid())
+  orgId       String
+  taskId      String             @unique
+  task        WorkTask           @relation(fields: [taskId, orgId], references: [id, orgId], onDelete: Restrict, onUpdate: Restrict)
+  itemId      String
+  item        ContextItem        @relation(fields: [itemId, orgId], references: [id, orgId], onDelete: Restrict, onUpdate: Restrict)
+  versionId   String
+  version     ContextItemVersion @relation(fields: [versionId, orgId, itemId], references: [id, orgId, itemId], onDelete: Restrict, onUpdate: Restrict)
+  requestId   String
   fingerprint String
-  actorId String
-  chave String
-  versao Int
+  actorId     String
+  chave       String
+  versao      Int
   contentHash String
-  sourceType ContextSource
-  sourceRef String?
-  title String
-  createdAt DateTime @default(now())
+  sourceType  ContextSource
+  sourceRef   String?
+  title       String
+  createdAt   DateTime           @default(now())
+
   @@unique([orgId, requestId])
   @@index([orgId, taskId])
   @@index([orgId, itemId])
 }
 
 model EditorialMaterial {
-  id String @id
-  orgId String
-  taskId String
-  title String
-  releaseStatusId String
+  id                String   @id
+  orgId             String
+  taskId            String
+  title             String
+  releaseStatusId   String
   selectedVersionId String?
-  revision Int @default(1)
-  requestId String
-  actorId String
-  fingerprint String
-  createdAt DateTime @default(now())
+  revision          Int      @default(1)
+  requestId         String
+  actorId           String
+  fingerprint       String
+  createdAt         DateTime @default(now())
+
   @@unique([id, orgId])
   @@unique([orgId, taskId])
   @@unique([orgId, requestId])
 }
+
 model EditorialVersion {
-  id String @id
-  orgId String
-  materialId String
-  number Int
-  title String
-  body String
-  files Json @default("[]")
-  sourceRef String
+  id          String   @id
+  orgId       String
+  materialId  String
+  number      Int
+  title       String
+  body        String
+  files       Json     @default("[]")
+  sourceRef   String
   contentHash String
-  requestId String
-  actorId String
+  requestId   String
+  actorId     String
   fingerprint String
-  createdAt DateTime @default(now())
+  createdAt   DateTime @default(now())
+
   @@unique([id, orgId])
   @@unique([orgId, materialId, number])
   @@unique([orgId, requestId])
 }
+
 model EditorialDecision {
-  id String @id
-  orgId String
-  versionId String
-  state String
-  reason String
-  minimumAuthority String @default("responsavel")
-  authority String
-  requestId String
-  actorId String
-  fingerprint String
-  revokedAt DateTime?
-  revokedBy String?
-  revokedReason String?
-  createdAt DateTime @default(now())
+  id               String    @id
+  orgId            String
+  versionId        String
+  state            String
+  reason           String
+  minimumAuthority String    @default("responsavel")
+  authority        String
+  requestId        String
+  actorId          String
+  fingerprint      String
+  revokedAt        DateTime?
+  revokedBy        String?
+  revokedReason    String?
+  createdAt        DateTime  @default(now())
+
   @@unique([id, orgId])
   @@unique([orgId, requestId])
   @@unique([orgId, versionId])
 }
+
 model EditorialProduction {
-  id String @id
-  orgId String
-  taskId String
-  materialId String
-  versionId String
-  decisionId String
-  title String
-  body String
-  files Json @default("[]")
-  sourceRef String
+  id          String   @id
+  orgId       String
+  taskId      String
+  materialId  String
+  versionId   String
+  decisionId  String
+  title       String
+  body        String
+  files       Json     @default("[]")
+  sourceRef   String
   contentHash String
-  requestId String
-  actorId String
+  requestId   String
+  actorId     String
   fingerprint String
-  createdAt DateTime @default(now())
+  createdAt   DateTime @default(now())
+
   @@unique([id, orgId])
   @@unique([orgId, requestId])
   @@index([orgId, taskId])
 }
 
 model MarketingAccountConfig {
-  id String @id
-  orgId String
+  id           String   @id
+  orgId        String
   connectionId String
-  externalId String
-  handle String
-  ownerId String
-  operators String[] @default([])
-  revision Int @default(1)
-  active Boolean @default(true)
-  requestId String
-  actorId String
-  fingerprint String
-  createdAt DateTime @default(now())
+  externalId   String
+  handle       String
+  ownerId      String
+  operators    String[] @default([])
+  revision     Int      @default(1)
+  active       Boolean  @default(true)
+  requestId    String
+  actorId      String
+  fingerprint  String
+  createdAt    DateTime @default(now())
+
   @@unique([id, orgId])
   @@unique([orgId, connectionId])
   @@unique([orgId, requestId])
 }
 
 model MarketingPreparation {
-  id String @id
-  orgId String
-  accountId String
+  id              String   @id
+  orgId           String
+  accountId       String
   accountRevision Int
-  connectionId String
-  externalId String
-  handle String
-  taskId String
-  versionId String
-  decisionId String
-  contentHash String
-  scheduledAt DateTime
-  timezone String
-  state String @default("prepared")
-  requestId String
-  actorId String
-  fingerprint String
-  createdAt DateTime @default(now())
+  connectionId    String
+  externalId      String
+  handle          String
+  taskId          String
+  versionId       String
+  decisionId      String
+  contentHash     String
+  scheduledAt     DateTime
+  timezone        String
+  state           String   @default("prepared")
+  requestId       String
+  actorId         String
+  fingerprint     String
+  createdAt       DateTime @default(now())
+
   @@unique([id, orgId])
   @@unique([orgId, requestId])
   @@index([orgId, accountId])
@@ -5391,19 +5418,20 @@ model MarketingPreparation {
 
 // Exercício local: inscrição explícita e histórico imutável.
 model FinanceExerciseObligation {
-  id String @id @default(uuid())
-  orgId String
-  transactionId String
-  contractId String
-  versionId String
-  contentHash String
-  snapshot Json
-  createdById String
-  createdAt DateTime @default(now())
+  id                  String   @id @default(uuid())
+  orgId               String
+  transactionId       String
+  contractId          String
+  versionId           String
+  contentHash         String
+  snapshot            Json
+  createdById         String
+  createdAt           DateTime @default(now())
   // Recibo da geração explícita. Inscrições anteriores conservam os três nulos.
-  requestId String?
+  requestId           String?
   creationFingerprint String?
-  generationResponse Json?
+  generationResponse  Json?
+
   @@unique([id, orgId])
   @@unique([orgId, transactionId])
   @@unique([orgId, versionId])
@@ -5412,20 +5440,21 @@ model FinanceExerciseObligation {
 }
 
 model FinanceExerciseDecision {
-  id String @id @default(uuid())
-  orgId String
-  obligationId String
-  requestId String
-  actorId String
-  fingerprint String
-  versionId String
-  contentHash String
-  aprovar Boolean
-  motivo String
-  alcada String
+  id                String   @id @default(uuid())
+  orgId             String
+  obligationId      String
+  requestId         String
+  actorId           String
+  fingerprint       String
+  versionId         String
+  contentHash       String
+  aprovar           Boolean
+  motivo            String
+  alcada            String
   expectedUpdatedAt DateTime
-  response Json
-  createdAt DateTime @default(now())
+  response          Json
+  createdAt         DateTime @default(now())
+
   @@unique([id, orgId])
   @@unique([orgId, requestId])
   @@unique([orgId, obligationId])
@@ -5433,68 +5462,75 @@ model FinanceExerciseDecision {
 
 // Ponte local QA: projeto operacional, obrigação manual e decisões imutáveis.
 model CommercialExerciseProject {
-  id String @id
-  orgId String
-  leadId String
-  aceiteId String
-  propostaId String
-  propostaVersao Int
-  documentoHash String
-  condicoesHash String
-  taskId String
-  configuration Json
+  id                  String   @id
+  orgId               String
+  leadId              String
+  aceiteId            String
+  propostaId          String
+  propostaVersao      Int
+  documentoHash       String
+  condicoesHash       String
+  taskId              String
+  configuration       Json
   creationFingerprint String
-  createdById String
-  createdAt DateTime @default(now())
+  createdById         String
+  createdAt           DateTime @default(now())
+
   @@unique([id, orgId])
   @@unique([orgId, aceiteId])
   @@unique([orgId, taskId])
 }
+
 model CommercialExerciseObligation {
-  id String @id
-  orgId String
-  projectId String
-  transactionId String
-  versionId String
-  contentHash String
-  snapshot Json
+  id                  String   @id
+  orgId               String
+  projectId           String
+  transactionId       String
+  versionId           String
+  contentHash         String
+  snapshot            Json
   creationFingerprint String
-  createdById String
-  createdAt DateTime @default(now())
+  createdById         String
+  createdAt           DateTime @default(now())
+
   @@unique([id, orgId])
   @@unique([orgId, projectId])
   @@unique([orgId, transactionId])
   @@unique([orgId, versionId])
   @@unique([id, orgId, versionId, contentHash])
 }
+
 model CommercialExerciseRequest {
-  id String @id
-  orgId String
-  requestId String
-  actorId String
-  action String
-  entityId String
+  id          String   @id
+  orgId       String
+  requestId   String
+  actorId     String
+  action      String
+  entityId    String
   fingerprint String
-  response Json
-  createdAt DateTime @default(now())
+  response    Json
+  createdAt   DateTime @default(now())
+
   @@unique([id, orgId])
   @@unique([orgId, requestId])
 }
+
 model CommercialExerciseDecision {
-  id String @id
-  orgId String
-  obligationId String
-  requestId String
-  actorId String
-  fingerprint String
-  versionId String
-  contentHash String
+  id                String   @id
+  orgId             String
+  obligationId      String
+  requestId         String
+  actorId           String
+  fingerprint       String
+  versionId         String
+  contentHash       String
   expectedUpdatedAt DateTime
-  aprovar Boolean
-  motivo String
-  alcada String
-  response Json
-  createdAt DateTime @default(now())
+  aprovar           Boolean
+  motivo            String
+  alcada            String
+  response          Json
+  createdAt         DateTime @default(now())
+
   @@unique([id, orgId])
   @@unique([orgId, requestId])
   @@unique([orgId, obligationId])
@@ -5502,431 +5538,445 @@ model CommercialExerciseDecision {
 
 // Catálogo da seleção produzida pelo integrador Obsidian. Não autoriza movimento.
 model ContextCollectionSelection {
-  id String @id @default(uuid())
-  orgId String
-  org Org @relation(fields: [orgId], references: [id], onDelete: Restrict)
-  collectionId String
-  sourceKind String @default("vault_pasta")
-  generation BigInt
-  marcaAntes Json
-  marcaDepois Json?
-  membershipDigest String?
-  estado String
-  criadoEm DateTime @default(dbgenerated("(CURRENT_TIMESTAMP AT TIME ZONE 'UTC')"))
-  verificadaEm DateTime?
-  membros ContextCollectionMember[]
-  demoInstallations DemoInstallation[]
+  id                          String                     @id @default(uuid())
+  orgId                       String
+  org                         Org                        @relation(fields: [orgId], references: [id], onDelete: Restrict)
+  collectionId                String
+  sourceKind                  String                     @default("vault_pasta")
+  generation                  BigInt
+  marcaAntes                  Json
+  marcaDepois                 Json?
+  membershipDigest            String?
+  estado                      String
+  criadoEm                    DateTime                   @default(dbgenerated("(CURRENT_TIMESTAMP AT TIME ZONE 'UTC')"))
+  verificadaEm                DateTime?
+  membros                     ContextCollectionMember[]
+  demoInstallations           DemoInstallation[]
+  movementIntentId            String?
+  backIntent_old_selection_fk ContextMovementIntent[]    @relation("Intent_old_selection_fk")
+  backCandidate_selection_fk  ContextMovementCandidate[] @relation("Candidate_selection_fk")
+  linkSelection_intent_fk     ContextMovementIntent?     @relation("Selection_intent_fk", fields: [movementIntentId, orgId], references: [id, orgId], onDelete: NoAction, onUpdate: NoAction)
+
   @@unique([id, orgId])
   @@unique([orgId, collectionId, generation])
-  movementIntentId String?
   @@unique([id, orgId, collectionId, movementIntentId], map: "Selection_movement_identity_u")
-  backIntent_old_selection_fk ContextMovementIntent[] @relation("Intent_old_selection_fk")
-  backCandidate_selection_fk ContextMovementCandidate[] @relation("Candidate_selection_fk")
-  linkSelection_intent_fk ContextMovementIntent? @relation("Selection_intent_fk", fields: [movementIntentId, orgId], references: [id, orgId], onDelete: NoAction, onUpdate: NoAction)
 }
+
 model ContextCollectionMember {
-  id String @id @default(uuid())
-  orgId String
-  org Org @relation(fields: [orgId], references: [id], onDelete: Restrict)
-  selectionId String
-  selection ContextCollectionSelection @relation(fields: [selectionId, orgId], references: [id, orgId], onDelete: Restrict, onUpdate: Restrict)
-  chave String
-  caminhoBytes Bytes
-  blobGit String
-  hashArquivo String
-  contentHash String
-  metadataHash String
-  metadata Json
-  itemId String?
-  item ContextItem? @relation("MembroItem", fields: [itemId, orgId], references: [id, orgId], onDelete: Restrict, onUpdate: Restrict)
-  versionId String?
-  version ContextItemVersion? @relation("MembroVersao", fields: [versionId, orgId, itemId, versao], references: [id, orgId, itemId, versao], onDelete: Restrict, onUpdate: Restrict)
-  versao Int?
-  estado String
+  id                                String                     @id @default(uuid())
+  orgId                             String
+  org                               Org                        @relation(fields: [orgId], references: [id], onDelete: Restrict)
+  selectionId                       String
+  selection                         ContextCollectionSelection @relation(fields: [selectionId, orgId], references: [id, orgId], onDelete: Restrict, onUpdate: Restrict)
+  chave                             String
+  caminhoBytes                      Bytes
+  blobGit                           String
+  hashArquivo                       String
+  contentHash                       String
+  metadataHash                      String
+  metadata                          Json
+  itemId                            String?
+  item                              ContextItem?               @relation("MembroItem", fields: [itemId, orgId], references: [id, orgId], onDelete: Restrict, onUpdate: Restrict)
+  versionId                         String?
+  version                           ContextItemVersion?        @relation("MembroVersao", fields: [versionId, orgId, itemId, versao], references: [id, orgId, itemId, versao], onDelete: Restrict, onUpdate: Restrict)
+  versao                            Int?
+  estado                            String
+  backIntent_old_member_version_fk  ContextMovementIntent[]    @relation("Intent_old_member_version_fk")
+  backReceipt_new_member_version_fk ContextMovementReceipt[]   @relation("Receipt_new_member_version_fk")
+  backReceipt_cancel_member_fk      ContextMovementReceipt[]   @relation("Receipt_cancel_member_fk")
+
   @@unique([id, orgId])
   @@unique([selectionId, caminhoBytes])
   @@unique([selectionId, chave])
-  @@index([orgId, itemId])
   @@unique([id, orgId, selectionId], map: "Member_selection_identity_u")
   @@unique([id, orgId, selectionId, itemId, versionId, versao], map: "Member_version_identity_u")
-  backIntent_old_member_version_fk ContextMovementIntent[] @relation("Intent_old_member_version_fk")
-  backReceipt_new_member_version_fk ContextMovementReceipt[] @relation("Receipt_new_member_version_fk")
-  backReceipt_cancel_member_fk ContextMovementReceipt[] @relation("Receipt_cancel_member_fk")
+  @@index([orgId, itemId])
 }
 
 /// Recibo imutável de instalação sintética; objetos normais podem mudar depois.
 model DemoInstallation {
-  id String @id
-  orgId String
-  org Org @relation(fields: [orgId], references: [id], onDelete: Restrict, onUpdate: Restrict)
-  actorId String
-  actor User @relation(fields: [actorId, orgId], references: [id, orgId], onDelete: Restrict, onUpdate: Restrict)
-  dataset String
-  requestId String
-  manifestHash String
-  sourceHash String
-  inputFingerprint String
+  id                       String                     @id
+  orgId                    String
+  org                      Org                        @relation(fields: [orgId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  actorId                  String
+  actor                    User                       @relation(fields: [actorId, orgId], references: [id, orgId], onDelete: Restrict, onUpdate: Restrict)
+  dataset                  String
+  requestId                String
+  manifestHash             String
+  sourceHash               String
+  inputFingerprint         String
   destinationSignatureHash String
-  selectionId String
-  selection ContextCollectionSelection @relation(fields: [selectionId, orgId], references: [id, orgId], onDelete: Restrict, onUpdate: Restrict)
-  receipt Json
-  receiptHash String
-  createdAt DateTime @default(now())
+  selectionId              String
+  selection                ContextCollectionSelection @relation(fields: [selectionId, orgId], references: [id, orgId], onDelete: Restrict, onUpdate: Restrict)
+  receipt                  Json
+  receiptHash              String
+  createdAt                DateTime                   @default(now())
+
   @@unique([id, orgId])
   @@unique([orgId, dataset])
   @@unique([orgId, requestId])
 }
 
-
 model ContextMovementIntent {
-  id String @id @default(uuid())
-  orgId String
-  actorId String
-  itemId String
-  collectionId String
-  requestId String
-  inputFingerprint String
-  serverMarkHash String
-  intentMarkHash String
-  currentVersionId String
-  currentVersionNo Int
-  expectedItemVersion Int
-  currentContentHash String
-  selectedVersionId String
-  selectedVersionNo Int
-  selectedContentHash String
-  oldSelectionId String
-  oldMemberId String
-  oldGeneration BigInt
-  oldMembershipDigest String
-  oldMarca Json
-  originKey String
-  originPathBytes Bytes
-  originSourceRef String
-  destinationKey String
-  destinationPathBytes Bytes
-  destinationSourceRef String
-  motivo String
-  creationAuditIds String[]
-  estado String
-  revision Int
-  terminalReceiptId String?
-  criadoEm DateTime @default(now())
-  encerradoEm DateTime?
+  id                               String                       @id @default(uuid())
+  orgId                            String
+  actorId                          String
+  itemId                           String
+  collectionId                     String
+  requestId                        String
+  inputFingerprint                 String
+  serverMarkHash                   String
+  intentMarkHash                   String
+  currentVersionId                 String
+  currentVersionNo                 Int
+  expectedItemVersion              Int
+  currentContentHash               String
+  selectedVersionId                String
+  selectedVersionNo                Int
+  selectedContentHash              String
+  oldSelectionId                   String
+  oldMemberId                      String
+  oldGeneration                    BigInt
+  oldMembershipDigest              String
+  oldMarca                         Json
+  originKey                        String
+  originPathBytes                  Bytes
+  originSourceRef                  String
+  destinationKey                   String
+  destinationPathBytes             Bytes
+  destinationSourceRef             String
+  motivo                           String
+  creationAuditIds                 String[]
+  estado                           String
+  revision                         Int
+  terminalReceiptId                String?
+  criadoEm                         DateTime                     @default(now())
+  encerradoEm                      DateTime?
+  linkContextMovementIntent_org_fk Org                          @relation("ContextMovementIntent_org_fk", fields: [orgId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  linkIntent_actor_fk              User                         @relation("Intent_actor_fk", fields: [actorId, orgId], references: [id, orgId], onDelete: NoAction, onUpdate: NoAction)
+  linkIntent_item_fk               ContextItem                  @relation("Intent_item_fk", fields: [itemId, orgId], references: [id, orgId], onDelete: NoAction, onUpdate: NoAction)
+  linkIntent_current_version_fk    ContextItemVersion           @relation("Intent_current_version_fk", fields: [currentVersionId, orgId, itemId, currentVersionNo], references: [id, orgId, itemId, versao], onDelete: NoAction, onUpdate: NoAction)
+  linkIntent_selected_version_fk   ContextItemVersion           @relation("Intent_selected_version_fk", fields: [selectedVersionId, orgId, itemId, selectedVersionNo], references: [id, orgId, itemId, versao], onDelete: NoAction, onUpdate: NoAction)
+  linkIntent_old_selection_fk      ContextCollectionSelection   @relation("Intent_old_selection_fk", fields: [oldSelectionId, orgId], references: [id, orgId], onDelete: NoAction, onUpdate: NoAction)
+  linkIntent_old_member_version_fk ContextCollectionMember      @relation("Intent_old_member_version_fk", fields: [oldMemberId, orgId, oldSelectionId, itemId, currentVersionId, currentVersionNo], references: [id, orgId, selectionId, itemId, versionId, versao], onDelete: NoAction, onUpdate: NoAction)
+  linkIntent_terminal_receipt_fk   ContextMovementReceipt?      @relation("Intent_terminal_receipt_fk", fields: [terminalReceiptId, orgId, id, actorId, itemId, requestId, estado], references: [id, orgId, intentId, actorId, itemId, requestId, tipo], onDelete: NoAction, onUpdate: NoAction)
+  backClaim_intent_fk              ContextKeyClaim[]            @relation("Claim_intent_fk")
+  backCandidate_scope_fk           ContextMovementCandidate[]   @relation("Candidate_scope_fk")
+  backAlias_intent_fk              ContextAlias[]               @relation("Alias_intent_fk")
+  backReceipt_intent_scope_fk      ContextMovementReceipt[]     @relation("Receipt_intent_scope_fk")
+  backSelection_intent_fk          ContextCollectionSelection[] @relation("Selection_intent_fk")
+
   @@unique([id, orgId], map: "ContextMovementIntent_u0")
   @@unique([orgId, requestId], map: "ContextMovementIntent_u1")
   @@unique([id, orgId, actorId, itemId, collectionId], map: "ContextMovementIntent_u2")
   @@unique([id, orgId, actorId, itemId, requestId], map: "ContextMovementIntent_u3")
-  linkContextMovementIntent_org_fk Org @relation("ContextMovementIntent_org_fk", fields: [orgId], references: [id], onDelete: NoAction, onUpdate: NoAction)
-  linkIntent_actor_fk User @relation("Intent_actor_fk", fields: [actorId, orgId], references: [id, orgId], onDelete: NoAction, onUpdate: NoAction)
-  linkIntent_item_fk ContextItem @relation("Intent_item_fk", fields: [itemId, orgId], references: [id, orgId], onDelete: NoAction, onUpdate: NoAction)
-  linkIntent_current_version_fk ContextItemVersion @relation("Intent_current_version_fk", fields: [currentVersionId, orgId, itemId, currentVersionNo], references: [id, orgId, itemId, versao], onDelete: NoAction, onUpdate: NoAction)
-  linkIntent_selected_version_fk ContextItemVersion @relation("Intent_selected_version_fk", fields: [selectedVersionId, orgId, itemId, selectedVersionNo], references: [id, orgId, itemId, versao], onDelete: NoAction, onUpdate: NoAction)
-  linkIntent_old_selection_fk ContextCollectionSelection @relation("Intent_old_selection_fk", fields: [oldSelectionId, orgId], references: [id, orgId], onDelete: NoAction, onUpdate: NoAction)
-  linkIntent_old_member_version_fk ContextCollectionMember @relation("Intent_old_member_version_fk", fields: [oldMemberId, orgId, oldSelectionId, itemId, currentVersionId, currentVersionNo], references: [id, orgId, selectionId, itemId, versionId, versao], onDelete: NoAction, onUpdate: NoAction)
-  linkIntent_terminal_receipt_fk ContextMovementReceipt? @relation("Intent_terminal_receipt_fk", fields: [terminalReceiptId, orgId, id, actorId, itemId, requestId, estado], references: [id, orgId, intentId, actorId, itemId, requestId, tipo], onDelete: NoAction, onUpdate: NoAction)
-  backClaim_intent_fk ContextKeyClaim[] @relation("Claim_intent_fk")
-  backCandidate_scope_fk ContextMovementCandidate[] @relation("Candidate_scope_fk")
-  backAlias_intent_fk ContextAlias[] @relation("Alias_intent_fk")
-  backReceipt_intent_scope_fk ContextMovementReceipt[] @relation("Receipt_intent_scope_fk")
-  backSelection_intent_fk ContextCollectionSelection[] @relation("Selection_intent_fk")
 }
 
 model ContextKeyClaim {
-  id String @id @default(uuid())
-  orgId String
-  key String
-  itemId String
-  tipo String
-  intentId String?
-  criadoEm DateTime @default(now())
+  id                         String                 @id @default(uuid())
+  orgId                      String
+  key                        String
+  itemId                     String
+  tipo                       String
+  intentId                   String?
+  criadoEm                   DateTime               @default(now())
+  linkContextKeyClaim_org_fk Org                    @relation("ContextKeyClaim_org_fk", fields: [orgId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  linkClaim_item_fk          ContextItem            @relation("Claim_item_fk", fields: [itemId, orgId], references: [id, orgId], onDelete: NoAction, onUpdate: NoAction)
+  linkClaim_intent_fk        ContextMovementIntent? @relation("Claim_intent_fk", fields: [intentId, orgId], references: [id, orgId], onDelete: NoAction, onUpdate: NoAction)
+  backAlias_claim_fk         ContextAlias[]         @relation("Alias_claim_fk")
+
   @@unique([id, orgId], map: "ContextKeyClaim_u0")
   @@unique([orgId, key], map: "ContextKeyClaim_u1")
   @@unique([id, orgId, key, itemId], map: "ContextKeyClaim_u2")
-  linkContextKeyClaim_org_fk Org @relation("ContextKeyClaim_org_fk", fields: [orgId], references: [id], onDelete: NoAction, onUpdate: NoAction)
-  linkClaim_item_fk ContextItem @relation("Claim_item_fk", fields: [itemId, orgId], references: [id, orgId], onDelete: NoAction, onUpdate: NoAction)
-  linkClaim_intent_fk ContextMovementIntent? @relation("Claim_intent_fk", fields: [intentId, orgId], references: [id, orgId], onDelete: NoAction, onUpdate: NoAction)
-  backAlias_claim_fk ContextAlias[] @relation("Alias_claim_fk")
 }
 
 model ContextMovementCandidate {
-  id String @id @default(uuid())
-  orgId String
-  intentId String
-  actorId String
-  itemId String
-  collectionId String
-  selectionId String
-  purpose String
-  captureFingerprint String
-  captureMarkHash String
-  membershipDigest String
-  marca Json
-  auditIds String[]
-  criadoEm DateTime @default(now())
+  id                                  String                     @id @default(uuid())
+  orgId                               String
+  intentId                            String
+  actorId                             String
+  itemId                              String
+  collectionId                        String
+  selectionId                         String
+  purpose                             String
+  captureFingerprint                  String
+  captureMarkHash                     String
+  membershipDigest                    String
+  marca                               Json
+  auditIds                            String[]
+  criadoEm                            DateTime                   @default(now())
+  linkContextMovementCandidate_org_fk Org                        @relation("ContextMovementCandidate_org_fk", fields: [orgId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  linkCandidate_scope_fk              ContextMovementIntent      @relation("Candidate_scope_fk", fields: [intentId, orgId, actorId, itemId, collectionId], references: [id, orgId, actorId, itemId, collectionId], onDelete: NoAction, onUpdate: NoAction)
+  linkCandidate_selection_fk          ContextCollectionSelection @relation("Candidate_selection_fk", fields: [selectionId, orgId, collectionId, intentId], references: [id, orgId, collectionId, movementIntentId], onDelete: NoAction, onUpdate: NoAction)
+  backReceipt_candidate_fk            ContextMovementReceipt[]   @relation("Receipt_candidate_fk")
+  backReceipt_cancel_candidate_fk     ContextMovementReceipt[]   @relation("Receipt_cancel_candidate_fk")
+
   @@unique([id, orgId], map: "ContextMovementCandidate_u0")
   @@unique([id, orgId, intentId, selectionId], map: "ContextMovementCandidate_u1")
   @@unique([selectionId, orgId], map: "ContextMovementCandidate_u2")
   @@unique([orgId, intentId, purpose, captureFingerprint], map: "ContextMovementCandidate_u3")
-  linkContextMovementCandidate_org_fk Org @relation("ContextMovementCandidate_org_fk", fields: [orgId], references: [id], onDelete: NoAction, onUpdate: NoAction)
-  linkCandidate_scope_fk ContextMovementIntent @relation("Candidate_scope_fk", fields: [intentId, orgId, actorId, itemId, collectionId], references: [id, orgId, actorId, itemId, collectionId], onDelete: NoAction, onUpdate: NoAction)
-  linkCandidate_selection_fk ContextCollectionSelection @relation("Candidate_selection_fk", fields: [selectionId, orgId, collectionId, intentId], references: [id, orgId, collectionId, movementIntentId], onDelete: NoAction, onUpdate: NoAction)
-  backReceipt_candidate_fk ContextMovementReceipt[] @relation("Receipt_candidate_fk")
-  backReceipt_cancel_candidate_fk ContextMovementReceipt[] @relation("Receipt_cancel_candidate_fk")
 }
 
 model ContextAlias {
-  id String @id @default(uuid())
-  orgId String
-  collectionId String
-  aliasKey String
-  aliasPathBytes Bytes
-  itemId String
-  claimId String
-  intentId String
-  criadoEm DateTime @default(now())
+  id                      String                   @id @default(uuid())
+  orgId                   String
+  collectionId            String
+  aliasKey                String
+  aliasPathBytes          Bytes
+  itemId                  String
+  claimId                 String
+  intentId                String
+  criadoEm                DateTime                 @default(now())
+  linkContextAlias_org_fk Org                      @relation("ContextAlias_org_fk", fields: [orgId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  linkAlias_item_fk       ContextItem              @relation("Alias_item_fk", fields: [itemId, orgId], references: [id, orgId], onDelete: NoAction, onUpdate: NoAction)
+  linkAlias_intent_fk     ContextMovementIntent    @relation("Alias_intent_fk", fields: [intentId, orgId], references: [id, orgId], onDelete: NoAction, onUpdate: NoAction)
+  linkAlias_claim_fk      ContextKeyClaim          @relation("Alias_claim_fk", fields: [claimId, orgId, aliasKey, itemId], references: [id, orgId, key, itemId], onDelete: NoAction, onUpdate: NoAction)
+  backReceipt_alias_fk    ContextMovementReceipt[] @relation("Receipt_alias_fk")
+
   @@unique([id, orgId], map: "ContextAlias_u0")
   @@unique([orgId, collectionId, aliasKey], map: "ContextAlias_u1")
   @@unique([orgId, claimId], map: "ContextAlias_u2")
   @@unique([orgId, intentId], map: "ContextAlias_u3")
-  linkContextAlias_org_fk Org @relation("ContextAlias_org_fk", fields: [orgId], references: [id], onDelete: NoAction, onUpdate: NoAction)
-  linkAlias_item_fk ContextItem @relation("Alias_item_fk", fields: [itemId, orgId], references: [id, orgId], onDelete: NoAction, onUpdate: NoAction)
-  linkAlias_intent_fk ContextMovementIntent @relation("Alias_intent_fk", fields: [intentId, orgId], references: [id, orgId], onDelete: NoAction, onUpdate: NoAction)
-  linkAlias_claim_fk ContextKeyClaim @relation("Alias_claim_fk", fields: [claimId, orgId, aliasKey, itemId], references: [id, orgId, key, itemId], onDelete: NoAction, onUpdate: NoAction)
-  backReceipt_alias_fk ContextMovementReceipt[] @relation("Receipt_alias_fk")
 }
 
 model ContextMovementReceipt {
-  id String @id @default(uuid())
-  orgId String
-  actorId String
-  itemId String
-  intentId String
-  requestId String
-  tipo String
-  inputFingerprint String
-  commitFingerprint String
-  candidateId String
-  newSelectionId String?
-  newMemberId String?
-  newVersionId String?
-  newVersionNo Int?
-  aliasId String?
-  cancelSelectionId String?
-  cancelMemberId String?
-  cancelVersionId String?
-  cancelVersionNo Int?
-  cancelContentHash String?
-  eventSnapshot Json?
-  auditIds String[]
-  receipt Json
-  receiptHash String
-  criadoEm DateTime @default(now())
+  id                                String                    @id @default(uuid())
+  orgId                             String
+  actorId                           String
+  itemId                            String
+  intentId                          String
+  requestId                         String
+  tipo                              String
+  inputFingerprint                  String
+  commitFingerprint                 String
+  candidateId                       String
+  newSelectionId                    String?
+  newMemberId                       String?
+  newVersionId                      String?
+  newVersionNo                      Int?
+  aliasId                           String?
+  cancelSelectionId                 String?
+  cancelMemberId                    String?
+  cancelVersionId                   String?
+  cancelVersionNo                   Int?
+  cancelContentHash                 String?
+  eventSnapshot                     Json?
+  auditIds                          String[]
+  receipt                           Json
+  receiptHash                       String
+  criadoEm                          DateTime                  @default(now())
+  linkContextMovementReceipt_org_fk Org                       @relation("ContextMovementReceipt_org_fk", fields: [orgId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  linkReceipt_intent_scope_fk       ContextMovementIntent     @relation("Receipt_intent_scope_fk", fields: [intentId, orgId, actorId, itemId, requestId], references: [id, orgId, actorId, itemId, requestId], onDelete: NoAction, onUpdate: NoAction)
+  linkReceipt_candidate_fk          ContextMovementCandidate? @relation("Receipt_candidate_fk", fields: [candidateId, orgId, intentId, newSelectionId], references: [id, orgId, intentId, selectionId], onDelete: NoAction, onUpdate: NoAction)
+  linkReceipt_cancel_candidate_fk   ContextMovementCandidate? @relation("Receipt_cancel_candidate_fk", fields: [candidateId, orgId, intentId, cancelSelectionId], references: [id, orgId, intentId, selectionId], onDelete: NoAction, onUpdate: NoAction)
+  linkReceipt_new_version_fk        ContextItemVersion?       @relation("Receipt_new_version_fk", fields: [newVersionId, orgId, itemId, newVersionNo], references: [id, orgId, itemId, versao], onDelete: NoAction, onUpdate: NoAction)
+  linkReceipt_new_member_version_fk ContextCollectionMember?  @relation("Receipt_new_member_version_fk", fields: [newMemberId, orgId, newSelectionId, itemId, newVersionId, newVersionNo], references: [id, orgId, selectionId, itemId, versionId, versao], onDelete: NoAction, onUpdate: NoAction)
+  linkReceipt_cancel_member_fk      ContextCollectionMember?  @relation("Receipt_cancel_member_fk", fields: [cancelMemberId, orgId, cancelSelectionId, itemId, cancelVersionId, cancelVersionNo], references: [id, orgId, selectionId, itemId, versionId, versao], onDelete: NoAction, onUpdate: NoAction)
+  linkReceipt_cancel_version_fk     ContextItemVersion?       @relation("Receipt_cancel_version_fk", fields: [cancelVersionId, orgId, itemId, cancelVersionNo], references: [id, orgId, itemId, versao], onDelete: NoAction, onUpdate: NoAction)
+  linkReceipt_alias_fk              ContextAlias?             @relation("Receipt_alias_fk", fields: [aliasId, orgId], references: [id, orgId], onDelete: NoAction, onUpdate: NoAction)
+  backIntent_terminal_receipt_fk    ContextMovementIntent[]   @relation("Intent_terminal_receipt_fk")
+
   @@unique([id, orgId], map: "ContextMovementReceipt_u0")
   @@unique([orgId, requestId], map: "ContextMovementReceipt_u1")
   @@unique([orgId, intentId], map: "ContextMovementReceipt_u2")
   @@unique([id, orgId, intentId, actorId, itemId, requestId, tipo], map: "ContextMovementReceipt_u3")
-  linkContextMovementReceipt_org_fk Org @relation("ContextMovementReceipt_org_fk", fields: [orgId], references: [id], onDelete: NoAction, onUpdate: NoAction)
-  linkReceipt_intent_scope_fk ContextMovementIntent @relation("Receipt_intent_scope_fk", fields: [intentId, orgId, actorId, itemId, requestId], references: [id, orgId, actorId, itemId, requestId], onDelete: NoAction, onUpdate: NoAction)
-  linkReceipt_candidate_fk ContextMovementCandidate? @relation("Receipt_candidate_fk", fields: [candidateId, orgId, intentId, newSelectionId], references: [id, orgId, intentId, selectionId], onDelete: NoAction, onUpdate: NoAction)
-  linkReceipt_cancel_candidate_fk ContextMovementCandidate? @relation("Receipt_cancel_candidate_fk", fields: [candidateId, orgId, intentId, cancelSelectionId], references: [id, orgId, intentId, selectionId], onDelete: NoAction, onUpdate: NoAction)
-  linkReceipt_new_version_fk ContextItemVersion? @relation("Receipt_new_version_fk", fields: [newVersionId, orgId, itemId, newVersionNo], references: [id, orgId, itemId, versao], onDelete: NoAction, onUpdate: NoAction)
-  linkReceipt_new_member_version_fk ContextCollectionMember? @relation("Receipt_new_member_version_fk", fields: [newMemberId, orgId, newSelectionId, itemId, newVersionId, newVersionNo], references: [id, orgId, selectionId, itemId, versionId, versao], onDelete: NoAction, onUpdate: NoAction)
-  linkReceipt_cancel_member_fk ContextCollectionMember? @relation("Receipt_cancel_member_fk", fields: [cancelMemberId, orgId, cancelSelectionId, itemId, cancelVersionId, cancelVersionNo], references: [id, orgId, selectionId, itemId, versionId, versao], onDelete: NoAction, onUpdate: NoAction)
-  linkReceipt_cancel_version_fk ContextItemVersion? @relation("Receipt_cancel_version_fk", fields: [cancelVersionId, orgId, itemId, cancelVersionNo], references: [id, orgId, itemId, versao], onDelete: NoAction, onUpdate: NoAction)
-  linkReceipt_alias_fk ContextAlias? @relation("Receipt_alias_fk", fields: [aliasId, orgId], references: [id, orgId], onDelete: NoAction, onUpdate: NoAction)
-  backIntent_terminal_receipt_fk ContextMovementIntent[] @relation("Intent_terminal_receipt_fk")
 }
 
 // Agenda manual: CHECKs, triggers append-only e FKs DEFERRABLE ficam na migration SQL.
 
 model AgentLocalAgenda {
-  id String @id @default(uuid())
-  orgId String
-  agentId String
-  criadaPorId String
-  criacaoRequestId String
+  id                 String                     @id @default(uuid())
+  orgId              String
+  agentId            String
+  criadaPorId        String
+  criacaoRequestId   String
   criacaoFingerprint String
-  criacaoTipo String @default("agenda_criar")
-  criadaEm DateTime @default(now()) @db.Timestamp(3)
-  org Org @relation(fields: [orgId], references: [id], onDelete: Restrict, onUpdate: Restrict, map: "Agenda_org_fk")
-  agent Agent @relation("LocalAgendaAgent", fields: [agentId,orgId], references: [id,orgId], onDelete: Restrict, onUpdate: Restrict, map: "Agenda_agent_tenant_fk")
-  criadaPor User @relation("LocalAgendaCreator", fields: [criadaPorId,orgId], references: [id,orgId], onDelete: Restrict, onUpdate: Restrict, map: "Agenda_actor_tenant_fk")
-  creationOperation AgentLocalOperation @relation("AgendaCreationCause", fields: [orgId,criacaoRequestId,criadaPorId,agentId,criacaoTipo,criacaoFingerprint], references: [orgId,requestId,actorId,agentId,tipo,inputFingerprint], onDelete: Restrict, onUpdate: Restrict, map: "Agenda_creation_cause_fk")
-  revisions AgentLocalAgendaRevision[] @relation("RevisionAgenda")
-  dispatches AgentLocalAgendaDispatch[] @relation("DispatchAgenda")
-  operations AgentLocalOperation[] @relation("OperationAgenda")
-  @@unique([id,orgId], map: "Agenda_id_org_unique")
-  @@unique([id,orgId,agentId], map: "Agenda_id_org_agent_unique")
-  @@unique([orgId,criacaoRequestId], map: "Agenda_creation_request_unique")
-  @@index([orgId,agentId,criadaEm,id], map: "Agenda_org_agent_created_idx")
+  criacaoTipo        String                     @default("agenda_criar")
+  criadaEm           DateTime                   @default(now()) @db.Timestamp(3)
+  org                Org                        @relation(fields: [orgId], references: [id], onDelete: Restrict, onUpdate: Restrict, map: "Agenda_org_fk")
+  agent              Agent                      @relation("LocalAgendaAgent", fields: [agentId, orgId], references: [id, orgId], onDelete: Restrict, onUpdate: Restrict, map: "Agenda_agent_tenant_fk")
+  criadaPor          User                       @relation("LocalAgendaCreator", fields: [criadaPorId, orgId], references: [id, orgId], onDelete: Restrict, onUpdate: Restrict, map: "Agenda_actor_tenant_fk")
+  creationOperation  AgentLocalOperation        @relation("AgendaCreationCause", fields: [orgId, criacaoRequestId, criadaPorId, agentId, criacaoTipo, criacaoFingerprint], references: [orgId, requestId, actorId, agentId, tipo, inputFingerprint], onDelete: Restrict, onUpdate: Restrict, map: "Agenda_creation_cause_fk")
+  revisions          AgentLocalAgendaRevision[] @relation("RevisionAgenda")
+  dispatches         AgentLocalAgendaDispatch[] @relation("DispatchAgenda")
+  operations         AgentLocalOperation[]      @relation("OperationAgenda")
+
+  @@unique([id, orgId], map: "Agenda_id_org_unique")
+  @@unique([id, orgId, agentId], map: "Agenda_id_org_agent_unique")
+  @@unique([orgId, criacaoRequestId], map: "Agenda_creation_request_unique")
+  @@index([orgId, agentId, criadaEm, id], map: "Agenda_org_agent_created_idx")
 }
 
 model AgentLocalAgendaRevision {
-  id String @id @default(uuid())
-  orgId String
-  agendaId String
-  agentId String
-  numero Int
-  estado String
-  tipo String
-  nome String
-  previstoPara DateTime? @db.Timestamp(3)
-  pedido String
-  itemId String
-  versionId String
-  sourceVersionNumber Int
-  sourceHash String
-  expectedItemVersion Int
-  sopId String
-  sopVersion Int
-  responsavelId String
-  modeloConfigurado String?
+  id                   String                     @id @default(uuid())
+  orgId                String
+  agendaId             String
+  agentId              String
+  numero               Int
+  estado               String
+  tipo                 String
+  nome                 String
+  previstoPara         DateTime?                  @db.Timestamp(3)
+  pedido               String
+  itemId               String
+  versionId            String
+  sourceVersionNumber  Int
+  sourceHash           String
+  expectedItemVersion  Int
+  sopId                String
+  sopVersion           Int
+  responsavelId        String
+  modeloConfigurado    String?
   configuracaoSnapshot Json
-  snapshotHash String
-  motivo String?
-  actorId String
-  requestId String
-  inputFingerprint String
-  criadaEm DateTime @default(now()) @db.Timestamp(3)
-  org Org @relation(fields: [orgId], references: [id], onDelete: Restrict, onUpdate: Restrict, map: "Revision_org_fk")
-  agent Agent @relation("LocalRevisionAgent", fields: [agentId,orgId], references: [id,orgId], onDelete: Restrict, onUpdate: Restrict, map: "Revision_agent_tenant_fk")
-  actor User @relation("LocalRevisionActor", fields: [actorId,orgId], references: [id,orgId], onDelete: Restrict, onUpdate: Restrict, map: "Revision_actor_tenant_fk")
-  responsavel User @relation("LocalRevisionResponsible", fields: [responsavelId,orgId], references: [id,orgId], onDelete: Restrict, onUpdate: Restrict, map: "Revision_responsible_tenant_fk")
-  agenda AgentLocalAgenda @relation("RevisionAgenda", fields: [agendaId,orgId,agentId], references: [id,orgId,agentId], onDelete: Restrict, onUpdate: Restrict, map: "Revision_agenda_agent_fk")
-  item ContextItem @relation("LocalRevisionItem", fields: [itemId,orgId], references: [id,orgId], onDelete: Restrict, onUpdate: Restrict, map: "Revision_item_tenant_fk")
-  version ContextItemVersion @relation("LocalRevisionSourceVersion", fields: [versionId,orgId,itemId,sourceVersionNumber], references: [id,orgId,itemId,versao], onDelete: Restrict, onUpdate: Restrict, map: "Revision_version_full_fk")
-  sop Sop @relation("LocalRevisionSop", fields: [sopId,orgId,agentId], references: [id,orgId,agentId], onDelete: Restrict, onUpdate: Restrict, map: "Revision_sop_agent_fk")
-  operation AgentLocalOperation @relation("RevisionCause", fields: [orgId,requestId,actorId,agentId,tipo,inputFingerprint], references: [orgId,requestId,actorId,agentId,tipo,inputFingerprint], onDelete: Restrict, onUpdate: Restrict, map: "Revision_operation_cause_fk")
-  dispatches AgentLocalAgendaDispatch[] @relation("DispatchRevision")
-  operations AgentLocalOperation[] @relation("OperationRevision")
-  @@unique([id,orgId], map: "Revision_id_org_unique")
-  @@unique([orgId,agendaId,numero], map: "Revision_agenda_number_unique")
-  @@unique([orgId,requestId], map: "Revision_request_unique")
-  @@unique([id,orgId,agendaId,agentId], map: "Revision_full_identity_unique")
+  snapshotHash         String
+  motivo               String?
+  actorId              String
+  requestId            String
+  inputFingerprint     String
+  criadaEm             DateTime                   @default(now()) @db.Timestamp(3)
+  org                  Org                        @relation(fields: [orgId], references: [id], onDelete: Restrict, onUpdate: Restrict, map: "Revision_org_fk")
+  agent                Agent                      @relation("LocalRevisionAgent", fields: [agentId, orgId], references: [id, orgId], onDelete: Restrict, onUpdate: Restrict, map: "Revision_agent_tenant_fk")
+  actor                User                       @relation("LocalRevisionActor", fields: [actorId, orgId], references: [id, orgId], onDelete: Restrict, onUpdate: Restrict, map: "Revision_actor_tenant_fk")
+  responsavel          User                       @relation("LocalRevisionResponsible", fields: [responsavelId, orgId], references: [id, orgId], onDelete: Restrict, onUpdate: Restrict, map: "Revision_responsible_tenant_fk")
+  agenda               AgentLocalAgenda           @relation("RevisionAgenda", fields: [agendaId, orgId, agentId], references: [id, orgId, agentId], onDelete: Restrict, onUpdate: Restrict, map: "Revision_agenda_agent_fk")
+  item                 ContextItem                @relation("LocalRevisionItem", fields: [itemId, orgId], references: [id, orgId], onDelete: Restrict, onUpdate: Restrict, map: "Revision_item_tenant_fk")
+  version              ContextItemVersion         @relation("LocalRevisionSourceVersion", fields: [versionId, orgId, itemId, sourceVersionNumber], references: [id, orgId, itemId, versao], onDelete: Restrict, onUpdate: Restrict, map: "Revision_version_full_fk")
+  sop                  Sop                        @relation("LocalRevisionSop", fields: [sopId, orgId, agentId], references: [id, orgId, agentId], onDelete: Restrict, onUpdate: Restrict, map: "Revision_sop_agent_fk")
+  operation            AgentLocalOperation        @relation("RevisionCause", fields: [orgId, requestId, actorId, agentId, tipo, inputFingerprint], references: [orgId, requestId, actorId, agentId, tipo, inputFingerprint], onDelete: Restrict, onUpdate: Restrict, map: "Revision_operation_cause_fk")
+  dispatches           AgentLocalAgendaDispatch[] @relation("DispatchRevision")
+  operations           AgentLocalOperation[]      @relation("OperationRevision")
+
+  @@unique([id, orgId], map: "Revision_id_org_unique")
+  @@unique([orgId, agendaId, numero], map: "Revision_agenda_number_unique")
+  @@unique([orgId, requestId], map: "Revision_request_unique")
+  @@unique([id, orgId, agendaId, agentId], map: "Revision_full_identity_unique")
 }
 
 model AgentLocalAgendaDispatch {
-  id String @id @default(uuid())
-  orgId String
-  agendaId String
-  agentId String
-  revisionId String
-  actorId String
-  requestId String
+  id               String                   @id @default(uuid())
+  orgId            String
+  agendaId         String
+  agentId          String
+  revisionId       String
+  actorId          String
+  requestId        String
   inputFingerprint String
-  tipo String @default("agenda_disparar")
-  sessionId String
-  criadaEm DateTime @default(now()) @db.Timestamp(3)
-  org Org @relation(fields: [orgId], references: [id], onDelete: Restrict, onUpdate: Restrict, map: "Dispatch_org_fk")
-  agent Agent @relation("LocalDispatchAgent", fields: [agentId,orgId], references: [id,orgId], onDelete: Restrict, onUpdate: Restrict, map: "Dispatch_agent_tenant_fk")
-  actor User @relation("LocalDispatchActor", fields: [actorId,orgId], references: [id,orgId], onDelete: Restrict, onUpdate: Restrict, map: "Dispatch_actor_tenant_fk")
-  agenda AgentLocalAgenda @relation("DispatchAgenda", fields: [agendaId,orgId,agentId], references: [id,orgId,agentId], onDelete: Restrict, onUpdate: Restrict, map: "Dispatch_agenda_agent_fk")
-  revision AgentLocalAgendaRevision @relation("DispatchRevision", fields: [revisionId,orgId,agendaId,agentId], references: [id,orgId,agendaId,agentId], onDelete: Restrict, onUpdate: Restrict, map: "Dispatch_revision_full_fk")
-  session Session @relation("LocalDispatchSession", fields: [sessionId,orgId,agentId], references: [id,orgId,agentId], onDelete: Restrict, onUpdate: Restrict, map: "Dispatch_session_agent_fk")
-  operation AgentLocalOperation @relation("DispatchCause", fields: [orgId,requestId,actorId,agentId,tipo,inputFingerprint], references: [orgId,requestId,actorId,agentId,tipo,inputFingerprint], onDelete: Restrict, onUpdate: Restrict, map: "Dispatch_operation_cause_fk")
-  operations AgentLocalOperation[] @relation("OperationDispatch")
-  @@unique([id,orgId], map: "Dispatch_id_org_unique")
-  @@unique([orgId,requestId], map: "Dispatch_request_unique")
-  @@unique([orgId,sessionId], map: "Dispatch_session_unique")
-  @@unique([id,orgId,agendaId,agentId,revisionId,sessionId,requestId,actorId,inputFingerprint], map: "Dispatch_operation_identity_unique")
-  @@index([orgId,agendaId,criadaEm], map: "Dispatch_org_agenda_idx")
+  tipo             String                   @default("agenda_disparar")
+  sessionId        String
+  criadaEm         DateTime                 @default(now()) @db.Timestamp(3)
+  org              Org                      @relation(fields: [orgId], references: [id], onDelete: Restrict, onUpdate: Restrict, map: "Dispatch_org_fk")
+  agent            Agent                    @relation("LocalDispatchAgent", fields: [agentId, orgId], references: [id, orgId], onDelete: Restrict, onUpdate: Restrict, map: "Dispatch_agent_tenant_fk")
+  actor            User                     @relation("LocalDispatchActor", fields: [actorId, orgId], references: [id, orgId], onDelete: Restrict, onUpdate: Restrict, map: "Dispatch_actor_tenant_fk")
+  agenda           AgentLocalAgenda         @relation("DispatchAgenda", fields: [agendaId, orgId, agentId], references: [id, orgId, agentId], onDelete: Restrict, onUpdate: Restrict, map: "Dispatch_agenda_agent_fk")
+  revision         AgentLocalAgendaRevision @relation("DispatchRevision", fields: [revisionId, orgId, agendaId, agentId], references: [id, orgId, agendaId, agentId], onDelete: Restrict, onUpdate: Restrict, map: "Dispatch_revision_full_fk")
+  session          Session                  @relation("LocalDispatchSession", fields: [sessionId, orgId, agentId], references: [id, orgId, agentId], onDelete: Restrict, onUpdate: Restrict, map: "Dispatch_session_agent_fk")
+  operation        AgentLocalOperation      @relation("DispatchCause", fields: [orgId, requestId, actorId, agentId, tipo, inputFingerprint], references: [orgId, requestId, actorId, agentId, tipo, inputFingerprint], onDelete: Restrict, onUpdate: Restrict, map: "Dispatch_operation_cause_fk")
+  operations       AgentLocalOperation[]    @relation("OperationDispatch")
+
+  @@unique([id, orgId], map: "Dispatch_id_org_unique")
+  @@unique([orgId, requestId], map: "Dispatch_request_unique")
+  @@unique([orgId, sessionId], map: "Dispatch_session_unique")
+  @@unique([id, orgId, agendaId, agentId, revisionId, sessionId, requestId, actorId, inputFingerprint], map: "Dispatch_operation_identity_unique")
+  @@index([orgId, agendaId, criadaEm], map: "Dispatch_org_agenda_idx")
 }
 
 model AgentLocalOperation {
-  id String @id @default(uuid())
-  orgId String
-  actorId String
-  agentId String
-  requestId String
-  tipo String
-  inputFingerprint String
-  agendaId String?
-  revisionId String?
-  sessionId String?
-  dispatchId String?
-  receipt Json
-  receiptHash String
-  auditIds String[]
-  eventSnapshot Json
-  criadaEm DateTime @default(now()) @db.Timestamp(3)
-  org Org @relation(fields: [orgId], references: [id], onDelete: Restrict, onUpdate: Restrict, map: "Operation_org_fk")
-  actor User @relation("LocalOperationActor", fields: [actorId,orgId], references: [id,orgId], onDelete: Restrict, onUpdate: Restrict, map: "Operation_actor_tenant_fk")
-  agent Agent @relation("LocalOperationAgent", fields: [agentId,orgId], references: [id,orgId], onDelete: Restrict, onUpdate: Restrict, map: "Operation_agent_tenant_fk")
-  agenda AgentLocalAgenda? @relation("OperationAgenda", fields: [agendaId,orgId,agentId], references: [id,orgId,agentId], onDelete: Restrict, onUpdate: Restrict, map: "Operation_agenda_agent_fk")
-  revision AgentLocalAgendaRevision? @relation("OperationRevision", fields: [revisionId,orgId,agendaId,agentId], references: [id,orgId,agendaId,agentId], onDelete: Restrict, onUpdate: Restrict, map: "Operation_revision_full_fk")
-  session Session? @relation("LocalOperationSession", fields: [sessionId,orgId,agentId], references: [id,orgId,agentId], onDelete: Restrict, onUpdate: Restrict, map: "Operation_session_agent_fk")
-  dispatch AgentLocalAgendaDispatch? @relation("OperationDispatch", fields: [dispatchId,orgId,agendaId,agentId,revisionId,sessionId,requestId,actorId,inputFingerprint], references: [id,orgId,agendaId,agentId,revisionId,sessionId,requestId,actorId,inputFingerprint], onDelete: Restrict, onUpdate: Restrict, map: "Operation_dispatch_full_fk")
-  creationHeaders AgentLocalAgenda[] @relation("AgendaCreationCause")
-  writtenRevisions AgentLocalAgendaRevision[] @relation("RevisionCause")
+  id                String                     @id @default(uuid())
+  orgId             String
+  actorId           String
+  agentId           String
+  requestId         String
+  tipo              String
+  inputFingerprint  String
+  agendaId          String?
+  revisionId        String?
+  sessionId         String?
+  dispatchId        String?
+  receipt           Json
+  receiptHash       String
+  auditIds          String[]
+  eventSnapshot     Json
+  criadaEm          DateTime                   @default(now()) @db.Timestamp(3)
+  org               Org                        @relation(fields: [orgId], references: [id], onDelete: Restrict, onUpdate: Restrict, map: "Operation_org_fk")
+  actor             User                       @relation("LocalOperationActor", fields: [actorId, orgId], references: [id, orgId], onDelete: Restrict, onUpdate: Restrict, map: "Operation_actor_tenant_fk")
+  agent             Agent                      @relation("LocalOperationAgent", fields: [agentId, orgId], references: [id, orgId], onDelete: Restrict, onUpdate: Restrict, map: "Operation_agent_tenant_fk")
+  agenda            AgentLocalAgenda?          @relation("OperationAgenda", fields: [agendaId, orgId, agentId], references: [id, orgId, agentId], onDelete: Restrict, onUpdate: Restrict, map: "Operation_agenda_agent_fk")
+  revision          AgentLocalAgendaRevision?  @relation("OperationRevision", fields: [revisionId, orgId, agendaId, agentId], references: [id, orgId, agendaId, agentId], onDelete: Restrict, onUpdate: Restrict, map: "Operation_revision_full_fk")
+  session           Session?                   @relation("LocalOperationSession", fields: [sessionId, orgId, agentId], references: [id, orgId, agentId], onDelete: Restrict, onUpdate: Restrict, map: "Operation_session_agent_fk")
+  dispatch          AgentLocalAgendaDispatch?  @relation("OperationDispatch", fields: [dispatchId, orgId, agendaId, agentId, revisionId, sessionId, requestId, actorId, inputFingerprint], references: [id, orgId, agendaId, agentId, revisionId, sessionId, requestId, actorId, inputFingerprint], onDelete: Restrict, onUpdate: Restrict, map: "Operation_dispatch_full_fk")
+  creationHeaders   AgentLocalAgenda[]         @relation("AgendaCreationCause")
+  writtenRevisions  AgentLocalAgendaRevision[] @relation("RevisionCause")
   claimedDispatches AgentLocalAgendaDispatch[] @relation("DispatchCause")
-  @@unique([id,orgId], map: "Operation_id_org_unique")
-  @@unique([orgId,requestId], map: "Operation_request_global_unique")
-  @@unique([orgId,requestId,actorId,agentId,tipo,inputFingerprint], map: "Operation_cause_unique")
+
+  @@unique([id, orgId], map: "Operation_id_org_unique")
+  @@unique([orgId, requestId], map: "Operation_request_global_unique")
+  @@unique([orgId, requestId, actorId, agentId, tipo, inputFingerprint], map: "Operation_cause_unique")
 }
 
 /// Recibo imutável da busca literal local, ligado a versões e passos reais.
 model AgentLocalToolReceipt {
-  id String @id @default(uuid())
-  orgId String
-  actorId String
-  agentId String
-  agentSlug String
-  requestId String
-  sessionId String
-  entradaContrato Int @default(3)
-  capacidade String
-  modo String
-  status String
-  inputCanonico String
-  entrada Json
-  inputFingerprint String
-  sopId String
-  sopVersion Int
-  sopSnapshot Json
-  toolConfigHash String
-  itemId String
-  versionId String
-  versionNo Int
-  contentHash String
-  sourceSnapshot Json
-  passoPedidoId String
-  passoFinalId String
-  auditIds String[]
+  id                String             @id @default(uuid())
+  orgId             String
+  actorId           String
+  agentId           String
+  agentSlug         String
+  requestId         String
+  sessionId         String
+  entradaContrato   Int                @default(3)
+  capacidade        String
+  modo              String
+  status            String
+  inputCanonico     String
+  entrada           Json
+  inputFingerprint  String
+  sopId             String
+  sopVersion        Int
+  sopSnapshot       Json
+  toolConfigHash    String
+  itemId            String
+  versionId         String
+  versionNo         Int
+  contentHash       String
+  sourceSnapshot    Json
+  passoPedidoId     String
+  passoFinalId      String
+  auditIds          String[]
   resultadoCanonico String?
-  resultado Json?
-  resultHash String?
-  receiptCanonico String
-  receipt Json
-  receiptHash String
-  criadaEm DateTime @db.Timestamp(3)
-  encerradaEm DateTime @db.Timestamp(3)
-  org Org @relation("ToolReceiptOrg", fields:[orgId], references:[id], onDelete:Restrict, onUpdate:Restrict, map:"ToolReceipt_org_fk")
-  actor User @relation("ToolReceiptActor", fields:[actorId,orgId], references:[id,orgId], onDelete:Restrict, onUpdate:Restrict, map:"ToolReceipt_actor_fk")
-  agent Agent @relation("ToolReceiptAgent", fields:[agentId,orgId], references:[id,orgId], onDelete:Restrict, onUpdate:Restrict, map:"ToolReceipt_agent_fk")
-  sop Sop @relation("ToolReceiptSop", fields:[sopId,orgId,agentId], references:[id,orgId,agentId], onDelete:Restrict, onUpdate:Restrict, map:"ToolReceipt_sop_fk")
-  session Session @relation("ToolReceiptSession", fields:[sessionId,orgId,agentId], references:[id,orgId,agentId], onDelete:Restrict, onUpdate:Restrict, map:"ToolReceipt_session_fk")
-  item ContextItem @relation("ToolReceiptItem", fields:[itemId,orgId], references:[id,orgId], onDelete:Restrict, onUpdate:Restrict, map:"ToolReceipt_item_fk")
-  version ContextItemVersion @relation("ToolReceiptVersion", fields:[versionId,orgId,itemId,versionNo], references:[id,orgId,itemId,versao], onDelete:Restrict, onUpdate:Restrict, map:"ToolReceipt_version_fk")
-  pedidoStep SessionStep @relation("ToolReceiptPedidoStep", fields:[passoPedidoId,orgId,sessionId], references:[id,orgId,sessionId], onDelete:Restrict, onUpdate:Restrict, map:"ToolReceipt_step1_fk")
-  finalStep SessionStep @relation("ToolReceiptFinalStep", fields:[passoFinalId,orgId,sessionId], references:[id,orgId,sessionId], onDelete:Restrict, onUpdate:Restrict, map:"ToolReceipt_step2_fk")
-  @@unique([orgId,requestId], map:"ToolReceipt_org_request_unique")
-  @@unique([orgId,sessionId], map:"ToolReceipt_org_session_unique")
-  @@unique([id,orgId], map:"ToolReceipt_id_org_unique")
+  resultado         Json?
+  resultHash        String?
+  receiptCanonico   String
+  receipt           Json
+  receiptHash       String
+  criadaEm          DateTime           @db.Timestamp(3)
+  encerradaEm       DateTime           @db.Timestamp(3)
+  org               Org                @relation("ToolReceiptOrg", fields: [orgId], references: [id], onDelete: Restrict, onUpdate: Restrict, map: "ToolReceipt_org_fk")
+  actor             User               @relation("ToolReceiptActor", fields: [actorId, orgId], references: [id, orgId], onDelete: Restrict, onUpdate: Restrict, map: "ToolReceipt_actor_fk")
+  agent             Agent              @relation("ToolReceiptAgent", fields: [agentId, orgId], references: [id, orgId], onDelete: Restrict, onUpdate: Restrict, map: "ToolReceipt_agent_fk")
+  sop               Sop                @relation("ToolReceiptSop", fields: [sopId, orgId, agentId], references: [id, orgId, agentId], onDelete: Restrict, onUpdate: Restrict, map: "ToolReceipt_sop_fk")
+  session           Session            @relation("ToolReceiptSession", fields: [sessionId, orgId, agentId], references: [id, orgId, agentId], onDelete: Restrict, onUpdate: Restrict, map: "ToolReceipt_session_fk")
+  item              ContextItem        @relation("ToolReceiptItem", fields: [itemId, orgId], references: [id, orgId], onDelete: Restrict, onUpdate: Restrict, map: "ToolReceipt_item_fk")
+  version           ContextItemVersion @relation("ToolReceiptVersion", fields: [versionId, orgId, itemId, versionNo], references: [id, orgId, itemId, versao], onDelete: Restrict, onUpdate: Restrict, map: "ToolReceipt_version_fk")
+  pedidoStep        SessionStep        @relation("ToolReceiptPedidoStep", fields: [passoPedidoId, orgId, sessionId], references: [id, orgId, sessionId], onDelete: Restrict, onUpdate: Restrict, map: "ToolReceipt_step1_fk")
+  finalStep         SessionStep        @relation("ToolReceiptFinalStep", fields: [passoFinalId, orgId, sessionId], references: [id, orgId, sessionId], onDelete: Restrict, onUpdate: Restrict, map: "ToolReceipt_step2_fk")
+
+  @@unique([orgId, requestId], map: "ToolReceipt_org_request_unique")
+  @@unique([orgId, sessionId], map: "ToolReceipt_org_session_unique")
+  @@unique([id, orgId], map: "ToolReceipt_id_org_unique")
 }
 
 /// Uma rodada do painel da operação da Root (`painel-root-semanal`). Só a org da
 /// plataforma escreve aqui, por script; a tela só lê. Ver `operacao-painel.ts` no shared.
 model OperacaoRodada {
-  id String @id @default(uuid())
-  orgId String
-  org Org @relation(fields: [orgId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  id        String   @id @default(uuid())
+  orgId     String
+  org       Org      @relation(fields: [orgId], references: [id], onDelete: Restrict, onUpdate: Restrict)
   /// AAAA-MM-DD da rodada. Texto, e não data, para não andar um dia com o fuso.
-  rodadaEm String
-  conteudo Json
-  origem String
+  rodadaEm  String
+  conteudo  Json
+  origem    String
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+
   @@unique([id, orgId])
   @@unique([orgId, rodadaEm])
 }
@@ -5936,27 +5986,27 @@ model OperacaoRodada {
 // (pagante, permuta, repasse, parceria). O financeiro só vê dinheiro; o acordo
 // é o que diz quanto deveria ter entrado e por quê não entrou.
 model AcordoComercial {
-  id              String   @id @default(uuid())
-  orgId           String
-  org             Org      @relation(fields: [orgId], references: [id], onDelete: Restrict, onUpdate: Restrict)
-  cliente         String
-  produto         String
-  valor           Decimal  @db.Decimal(14, 2)
+  id         String    @id @default(uuid())
+  orgId      String
+  org        Org       @relation(fields: [orgId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  cliente    String
+  produto    String
+  valor      Decimal   @db.Decimal(14, 2)
   /// pagante | permuta | repasse | parceria
-  tipo            String
+  tipo       String
   /// Para repasse: quem recebeu o dinheiro. Para permuta: o que veio em troca.
-  observacao      String?
+  observacao String?
   /// Textos que identificam o pagador no extrato (separados por vírgula).
-  apelidos        String?
+  apelidos   String?
   /// INTEGRAÇÃO (26/10/2026): o cliente do Financeiro deste acordo. O nome em
   /// `cliente` continua (é o que a Análise já usa para casar o extrato); este
   /// vínculo é o que liga o acordo ao resto do OS. Nulo = acordo ainda não ligado.
   /// Layout 26/10: quando o acordo fechou; alimenta "Contratos fechados por mês" do Comercial.
-  fechadoEm       DateTime? @db.Date
-  partnerId       String?
-  partner         Partner? @relation("AcordosDoCliente", fields: [partnerId], references: [id], onDelete: SetNull)
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  fechadoEm  DateTime? @db.Date
+  partnerId  String?
+  partner    Partner?  @relation("AcordosDoCliente", fields: [partnerId], references: [id], onDelete: SetNull)
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
 
   @@index([orgId])
 }
@@ -5974,6 +6024,7 @@ model AnaliseLeitura {
 
   @@unique([orgId, dia, hash])
 }
+
 /// REUNIÃO DA FICHA DO CLIENTE (18/10/2026). Presa ao cartão do Trabalho, então
 /// serve igual para o lead do comercial, o trilho de onboarding e o sucesso do
 /// cliente. A transcrição vem do Granola (link público da nota), de outro link
@@ -6011,15 +6062,15 @@ model ReuniaoDoCartao {
 
 /// A senha do cofre de cada usuário (hash bcrypt) e o bloqueio por tentativas.
 model CofreSenha {
-  id            String    @id @default(uuid())
-  orgId         String
-  org           Org       @relation(fields: [orgId], references: [id], onDelete: Restrict, onUpdate: Restrict)
-  userId        String
-  hash          String
-  tentativas    Int       @default(0)
-  bloqueadoAte  DateTime?
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
+  id           String    @id @default(uuid())
+  orgId        String
+  org          Org       @relation(fields: [orgId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  userId       String
+  hash         String
+  tentativas   Int       @default(0)
+  bloqueadoAte DateTime?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
 
   @@unique([orgId, userId])
 }
@@ -6307,40 +6358,40 @@ model FotoDePerfil {
 /// número ao lado); `@lid` só quando o número real nunca veio; grupo `…@g.us`.
 /// O vínculo (W3) é com UM lead OU UM cliente, nunca os dois: CHECK no banco.
 model WhatsAppConversa {
-  id                String    @id @default(uuid())
-  orgId             String
-  org               Org       @relation(fields: [orgId], references: [id])
-  instancia         String
-  chatJid           String
+  id                 String    @id @default(uuid())
+  orgId              String
+  org                Org       @relation(fields: [orgId], references: [id])
+  instancia          String
+  chatJid            String
   /// O `@lid` da mesma conversa 1:1, quando a Evolution mandou os dois (para casar o que vier só com ele).
-  lidJid            String?
-  grupo             Boolean   @default(false)
+  lidJid             String?
+  grupo              Boolean   @default(false)
   /// Assunto do grupo ou nome do contato (pushName/nome da agenda).
-  nome              String?
-  fotoUrl           String?
+  nome               String?
+  fotoUrl            String?
   /// Contagem de participantes (grupo).
-  participantes     Int?
+  participantes      Int?
   /// Grupo: `[{ numero, nome, admin }]`, atualizada pela sincronização.
   participantesLista Json?
   /// Conversa da equipe (grupo dos sócios ou 1:1 com gente da casa): chip próprio, sem vínculo de cliente.
-  equipe            Boolean   @default(false)
+  equipe             Boolean   @default(false)
   /// Layout 26/10: conversa da comunidade da casa (ex.: "Operação Root | IA para Negócios"). Marcada à mão;
   /// exclui equipe e vínculo com lead ou cliente. Fora das não lidas de leads, clientes e sem vínculo.
-  comunidade        Boolean   @default(false)
-  ultimaMensagemEm  DateTime?
-  naoLidas          Int       @default(0)
-  leadId            String?
-  lead              Lead?     @relation("ConversasDoLead", fields: [leadId], references: [id], onDelete: SetNull)
-  clienteId         String?
-  cliente           Partner?  @relation("ConversasDoCliente", fields: [clienteId], references: [id], onDelete: SetNull)
+  comunidade         Boolean   @default(false)
+  ultimaMensagemEm   DateTime?
+  naoLidas           Int       @default(0)
+  leadId             String?
+  lead               Lead?     @relation("ConversasDoLead", fields: [leadId], references: [id], onDelete: SetNull)
+  clienteId          String?
+  cliente            Partner?  @relation("ConversasDoCliente", fields: [clienteId], references: [id], onDelete: SetNull)
   /// `{ tipo: 'lead'|'cliente', id, nome, como: 'nome_igual'|'telefone' }`: a sugestão que espera um clique.
-  vinculoSugerido   Json?
-  vinculadoPorId    String?
-  vinculadoEm       DateTime?
-  arquivadaEm       DateTime?
-  sincronizadaEm    DateTime?
-  criadoEm          DateTime  @default(now())
-  atualizadoEm      DateTime  @updatedAt
+  vinculoSugerido    Json?
+  vinculadoPorId     String?
+  vinculadoEm        DateTime?
+  arquivadaEm        DateTime?
+  sincronizadaEm     DateTime?
+  criadoEm           DateTime  @default(now())
+  atualizadoEm       DateTime  @updatedAt
 
   mensagens WhatsAppMensagem[]
 
@@ -6358,21 +6409,21 @@ model WhatsAppConversa {
 /// mensagemExternaId)`: o webhook e a sincronização gravam a mesma linha uma vez.
 /// Mídia: só metadados (tipo MIME, nome, tamanho); nada é baixado (rodada 22C).
 model WhatsAppMensagem {
-  id                    String    @id @default(uuid())
+  id                    String           @id @default(uuid())
   /// Sentinela + gatilho `WhatsAppMensagem_orgId_do_pai`.
-  orgId                 String    @default("")
-  org                   Org       @relation(fields: [orgId], references: [id])
+  orgId                 String           @default("")
+  org                   Org              @relation(fields: [orgId], references: [id])
   conversaId            String
   conversa              WhatsAppConversa @relation(fields: [conversaId], references: [id], onDelete: Cascade)
   instancia             String
   chatJid               String
-  grupo                 Boolean   @default(false)
+  grupo                 Boolean          @default(false)
   remetenteJid          String?
   /// Só dígitos, com DDI. No modo `@lid`, o número real (remoteJidAlt/senderPn/participantAlt).
   remetenteNumero       String?
   /// pushName de quem escreveu.
   remetenteNome         String?
-  deMim                 Boolean   @default(false)
+  deMim                 Boolean          @default(false)
   /// `entrada` ou `saida` (`saida` = deMim).
   direcao               String
   /// conversation, extendedText, image, video, audio, document, sticker, reaction, edicao, protocolo, contato, localizacao, enquete, outro.
@@ -6384,20 +6435,151 @@ model WhatsAppMensagem {
   citaMensagemExternaId String?
   timestamp             DateTime
   leadId                String?
-  lead                  Lead?     @relation("MensagensDoLead", fields: [leadId], references: [id], onDelete: SetNull)
+  lead                  Lead?            @relation("MensagensDoLead", fields: [leadId], references: [id], onDelete: SetNull)
   clienteId             String?
-  cliente               Partner?  @relation("MensagensDoCliente", fields: [clienteId], references: [id], onDelete: SetNull)
+  cliente               Partner?         @relation("MensagensDoCliente", fields: [clienteId], references: [id], onDelete: SetNull)
   lidaEm                DateTime?
   lidaPorId             String?
   /// Quem respondeu pela caixa (W2). Nulo no que veio do webhook ou da sincronização.
   enviadaPorId          String?
   /// `webhook`, `sincronizacao` ou `caixa`.
   origem                String
-  criadoEm              DateTime  @default(now())
+  criadoEm              DateTime         @default(now())
 
   @@unique([orgId, instancia, mensagemExternaId])
   @@index([conversaId, timestamp])
   @@index([orgId, timestamp])
   @@index([orgId, leadId, timestamp])
   @@index([orgId, clienteId, timestamp])
+}
+
+// ============================================================================
+// FROTA (27/10/2026): os servidores de cliente que a ROOT opera.
+//
+// Uma CASA é um servidor preparado pelo kit-instalacao-vps (`/srv/<casa>`). O
+// relator do kit (`kit-relatar`, timer de 5 min) manda um JSON com o estado da
+// máquina (kit-verificar, sonda, containers, chaves SSH, logins, diário) para
+// `POST /api/frota/relator/relato`, autenticado por um token só daquela casa
+// (guardado aqui como hash). O painel lê; as ordens (revogar chave, desligar
+// automação, rodar verificar, pedir backup) ficam na fila e a casa as puxa no
+// relato seguinte. `FrotaEvento` só recebe linha nova: ninguém edita nem apaga.
+// Tudo é da empresa da plataforma (raiz, `orgId` no insert), com isolamento por
+// linha como as demais tabelas de empresa.
+// ============================================================================
+
+model FrotaCasa {
+  id             String    @id @default(uuid())
+  orgId          String
+  org            Org       @relation(fields: [orgId], references: [id])
+  /// Nome curto da casa, o mesmo do kit (a-z, 0-9, hífen).
+  casa           String
+  cliente        String
+  dono           String?
+  responsavel    String?
+  /// preparar · subir · manter · acompanhar · encerrada · fora-do-kit · pre
+  etapa          String    @default("preparar")
+  provedor       String?
+  hostname       String?
+  ip             String?
+  vpn            String?
+  sistema        String?
+  maquina        String?
+  kitVersao      String?
+  /// publico · vpn
+  acesso         String    @default("publico")
+  /// ok · at (atenção) · er (erro) · ne (sem dado)
+  estado         String    @default("ne")
+  estadoTexto    String?
+  /// sha256 do token do relator; o token em claro só aparece ao criar ou girar.
+  tokenHash      String    @unique
+  ultimoRelatoEm DateTime?
+  /// O último relato inteiro, como chegou.
+  relato         Json?
+  /// Campos da FICHA que não vêm do relato (contrato, custos, contatos).
+  ficha          Json?
+  /// Registro de tratamento LGPD da casa.
+  lgpd           Json?
+  observacoes    String?
+  arquivadaEm    DateTime?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  acessos FrotaAcesso[]
+  eventos FrotaEvento[]
+  ordens  FrotaOrdem[]
+
+  @@unique([orgId, casa])
+  @@index([orgId, estado])
+}
+
+model FrotaAcesso {
+  id          String    @id @default(uuid())
+  orgId       String
+  org         Org       @relation(fields: [orgId], references: [id])
+  casaId      String
+  casa        FrotaCasa @relation(fields: [casaId], references: [id])
+  /// Quem é a pessoa (o comentário da chave, ex.: antonio@affari).
+  pessoa      String
+  /// SHA256:… da chave pública. Nulo quando ainda é pedido.
+  fingerprint String?
+  tipo        String?
+  via         String?
+  desde       DateTime?
+  ultimoLogin DateTime?
+  /// ativa · revogando · revogada · removida · pedido
+  estado      String    @default("ativa")
+  revogadoEm  DateTime?
+  revogadoPor String?
+  motivo      String?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@index([orgId, casaId, estado])
+  /// Uma linha por chave em cada casa: chave que volta reativa a mesma linha, nunca cria outra.
+  @@unique([orgId, casaId, fingerprint])
+}
+
+/// Só recebe linha nova. `chave` deduplica o que o relato repete (login, mudança de estado).
+model FrotaEvento {
+  id        String     @id @default(uuid())
+  orgId     String
+  org       Org        @relation(fields: [orgId], references: [id])
+  casaId    String?
+  casa      FrotaCasa? @relation(fields: [casaId], references: [id])
+  quando    DateTime
+  quem      String
+  acao      String
+  /// kit-diario · sshd · kit-sonda · kit-verificar · docker · painel · relator
+  origem    String
+  /// acesso · deploy · kit · sonda · painel
+  tipo      String
+  chave     String?
+  dados     Json?
+  createdAt DateTime   @default(now())
+
+  @@unique([orgId, chave])
+  @@index([orgId, quando])
+  @@index([orgId, casaId, quando])
+}
+
+model FrotaOrdem {
+  id          String    @id @default(uuid())
+  orgId       String
+  org         Org       @relation(fields: [orgId], references: [id])
+  casaId      String
+  casa        FrotaCasa @relation(fields: [casaId], references: [id])
+  /// revogar_chave · desligar_automacao · rodar_verificar · pedir_backup
+  tipo        String
+  parametros  Json?
+  /// pendente · entregue · aplicada · falhou · cancelada
+  estado      String    @default("pendente")
+  criadaPor   String
+  motivo      String?
+  entregueEm  DateTime?
+  concluidaEm DateTime?
+  resultado   Json?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@index([orgId, casaId, estado])
 }

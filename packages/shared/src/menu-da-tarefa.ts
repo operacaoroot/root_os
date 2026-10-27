@@ -12,8 +12,9 @@ import { TRAB_CARD_DA_IMPLANTACAO_NAO_DUPLICA, TRAB_CARD_DA_IMPLANTACAO_NAO_MESC
  * desabilitado com a razão, nunca some sem explicação.
  */
 
+// Leva 5, L2 (27/10/2026): "Histórico" abre as entradas do AuditLog da tarefa (quem, quando, antes e depois).
 export const ACOES_DO_MENU_DA_TAREFA = [
-  'renomear', 'copiar-id', 'mover', 'mesclar', 'duplicar', 'arquivar', 'excluir', 'compartilhar',
+  'renomear', 'copiar-id', 'mover', 'mesclar', 'duplicar', 'arquivar', 'excluir', 'compartilhar', 'historico',
 ] as const;
 export type AcaoDoMenuDaTarefa = (typeof ACOES_DO_MENU_DA_TAREFA)[number];
 
@@ -26,6 +27,7 @@ export const ROTULO_DA_ACAO_DA_TAREFA: Record<AcaoDoMenuDaTarefa, string> = {
   arquivar: 'Arquivar',
   excluir: 'Excluir',
   compartilhar: 'Compartilhar (copiar link)',
+  historico: 'Histórico',
 };
 
 export interface EstadoParaOMenu {
@@ -47,7 +49,8 @@ export const JA_ARQUIVADA = 'A tarefa já está arquivada.';
 
 /** A razão de a ação estar desabilitada, ou `null` quando ela pode. */
 export function razaoParaNaoFazer(acao: AcaoDoMenuDaTarefa, e: EstadoParaOMenu): string | null {
-  if (acao === 'copiar-id' || acao === 'compartilhar') return null;
+  // Só leitura: ver o histórico não pede permissão de editar (a tela pede `auditoria.ver` ao abrir).
+  if (acao === 'copiar-id' || acao === 'compartilhar' || acao === 'historico') return null;
   if (!e.podeEditar) return SEM_PERMISSAO_DE_EDITAR;
   if (!e.ehGente) return SO_GENTE_NO_MENU;
   if (e.excluida) return TRAB_NA_LIXEIRA;

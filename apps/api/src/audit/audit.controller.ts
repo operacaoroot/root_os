@@ -127,12 +127,16 @@ export class AuditController {
     @Query('actorType') actorType?: string,
     // A Lixeira (produção 3, I2) liga "ver no Registro de ações" a UMA entidade (a tarefa, a lista, a pasta).
     @Query('entidade') entidade?: string,
+    // Leva 5, L2 (27/10/2026): o Histórico da tarefa e do lead pede a entidade E o tipo (`work_task`, `lead`),
+    // porque o mesmo id pode ter sido entidade de mais de um tipo. Mesma permissão, mesma validação.
+    @Query('tipo') tipo?: string,
   ) {
     return this.svc.list(user.orgId, {
       limit: limit ? Number(limit) : undefined,
       action,
       actorType,
       entityId: typeof entidade === 'string' && /^[0-9a-zA-Z-]{1,64}$/.test(entidade) ? entidade : undefined,
+      entityType: typeof tipo === 'string' && /^[0-9a-zA-Z_.:-]{1,64}$/.test(tipo) ? tipo : undefined,
     });
   }
 }

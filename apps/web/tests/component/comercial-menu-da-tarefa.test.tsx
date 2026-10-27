@@ -1,6 +1,6 @@
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { TarefasDoComercial } from '@mktos/shared';
+import { ACOES_DO_MENU_DA_TAREFA, type TarefasDoComercial } from '@mktos/shared';
 
 /*
  * O MENU DA TAREFA NAS TAREFAS DO COMERCIAL (rodada de produção 3, I4): o bloco do
@@ -42,7 +42,8 @@ describe('I4: o menu nas tarefas do comercial', () => {
     render(<ListaDeTarefasDoComercial dados={dados} testId="lista" aoMudar={aoMudar} vazio="nada" />);
     fireEvent.click(screen.getByTestId(`menu-da-tarefa-botao-${T}`));
     let menu = await screen.findByTestId('menu-da-tarefa');
-    expect(within(menu).getAllByRole('menuitem')).toHaveLength(8);
+    // Leva 5, L2: as 8 ações mais "Histórico"; a conta é a do shared, para a lista crescer num lugar só.
+    expect(within(menu).getAllByRole('menuitem')).toHaveLength(ACOES_DO_MENU_DA_TAREFA.length);
     fireEvent.keyDown(document, { key: 'Escape' });
     await waitFor(() => expect(screen.queryByTestId('menu-da-tarefa')).toBeNull());
 

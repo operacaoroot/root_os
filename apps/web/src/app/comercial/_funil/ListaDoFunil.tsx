@@ -10,6 +10,7 @@ import { ROTULO_DO_PRODUTO } from '@/lib/cockpit';
 import { Chip, FOCO } from '../_ui';
 import { LinkDoLead } from '../_painel/provedor';
 import { CelulaDoResponsavel } from './CelulaDoResponsavel';
+import { BotaoDoMenuDoLead, alvoDoMenuDoLead, useMenuDoLead, type LeadParaOMenu } from './MenuDoLead';
 import {
   CHAVE_DAS_LARGURAS,
   LARGURA_MAXIMA,
@@ -50,6 +51,10 @@ import { partesDoLead } from '@/lib/nome-do-lead';
  *
  * Abaixo de 640 px a tabela vira cartões empilhados com as mesmas colunas.
  * A linha inteira abre o painel do lead, como o cartão do quadro.
+ *
+ * Leva 5 (L2, 27/10/2026): botão direito na linha (e no cartão do celular) e o
+ * "⋯" ao lado da empresa abrem o menu do lead (`MenuDoLead`), quando a tela de
+ * cima o provê (o funil provê).
  */
 
 const PASSO_DO_TECLADO = 16;
@@ -153,6 +158,8 @@ export function ListaDoFunil({
   };
 
   const ordenados = useMemo(() => ordenarCartoes(cartoes, ordem), [cartoes, ordem]);
+  const menuDoLead = useMenuDoLead();
+  const paraOMenu = (c: CartaoDoFunil): LeadParaOMenu => ({ id: c.leadId, nome: c.nome, empresa: c.empresa, etapa: c.etapa, voltaPara: c.voltaPara ?? null });
 
   function arrastar(e: React.PointerEvent<HTMLSpanElement>, chave: ChaveDaColuna) {
     if (e.button !== 0) return;
@@ -262,6 +269,7 @@ export function ListaDoFunil({
                 key={c.leadId}
                 data-testid={`funil-linha-${c.leadId}`}
                 onClick={(e) => abrirDaLinha(e, '[data-linha-do-funil]')}
+                {...alvoDoMenuDoLead(menuDoLead, paraOMenu(c))}
                 className="cursor-pointer hover:bg-surface"
               >
                 {colunas.map((k) => (
@@ -271,9 +279,12 @@ export function ListaDoFunil({
                     className={`h-12 border-b border-border px-3 py-2 align-middle ${colunaDa(k).numerica ? 'text-right' : ''} ${k === 'proxima' || k === 'pendencias' ? '' : 'truncate'}`}
                   >
                     {k === 'empresa' ? (
-                      <LinkDoLead leadId={c.leadId} aba="fio" data-linha-do-funil className={`rounded-sm font-semibold ${FOCO}`}>
-                        {partesDoLead(c.nome, c.empresa).titulo}
-                      </LinkDoLead>
+                      <span className="flex min-w-0 items-center gap-1">
+                        <LinkDoLead leadId={c.leadId} aba="geral" data-linha-do-funil className={`min-w-0 truncate rounded-sm font-semibold ${FOCO}`}>
+                          {partesDoLead(c.nome, c.empresa).titulo}
+                        </LinkDoLead>
+                        <BotaoDoMenuDoLead lead={paraOMenu(c)} />
+                      </span>
                     ) : (
                       <Conteudo c={c} chave={k} testId={`funil-linha-${c.leadId}`} />
                     )}
@@ -292,13 +303,15 @@ export function ListaDoFunil({
             <div
               data-testid={`funil-lista-cartao-${c.leadId}`}
               onClick={(e) => abrirDaLinha(e, '[data-cartao-da-lista]')}
+              {...alvoDoMenuDoLead(menuDoLead, paraOMenu(c))}
               className="cursor-pointer rounded border border-border bg-surface p-3"
             >
               <div className="flex items-start justify-between gap-2">
-                <LinkDoLead leadId={c.leadId} aba="fio" data-cartao-da-lista className={`min-w-0 flex-1 rounded-sm text-[13.5px] font-semibold ${FOCO}`}>
+                <LinkDoLead leadId={c.leadId} aba="geral" data-cartao-da-lista className={`min-w-0 flex-1 rounded-sm text-[13.5px] font-semibold ${FOCO}`}>
                   <span className="block truncate">{partesDoLead(c.nome, c.empresa).titulo}</span>
                 </LinkDoLead>
                 {colunas.includes('etapa') && <Conteudo c={c} chave="etapa" />}
+                <BotaoDoMenuDoLead lead={paraOMenu(c)} />
               </div>
               <dl className="mt-2 grid grid-cols-[auto_1fr] gap-x-3 gap-y-1.5 text-[12px]">
                 {colunas

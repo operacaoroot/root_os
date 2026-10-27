@@ -1,6 +1,23 @@
-import { escolherModelo, funcaoPorId, type EsforcoDaFuncao } from '@mktos/shared';
+import {
+  CADASTRO_DE_FUNCOES,
+  MODELOS_DO_CADASTRO,
+  escolherModelo,
+  funcaoPorId,
+  type EsforcoDaFuncao,
+  type FuncaoDoCadastro,
+} from '@mktos/shared';
 
 import type { LlmEffort } from './llm.provider';
+
+/**
+ * A chave do conector "Claude (Anthropic)" em Conexões e no cofre (leva 5, L8,
+ * 27/10/2026). Mora aqui, e não no conector, porque `usado-por.ts` e o cofre
+ * precisam do nome sem importar o serviço que fala com a Anthropic.
+ */
+export const CONECTOR_ANTHROPIC = 'anthropic';
+
+/** Os modelos que uma função do cadastro pode receber: a lista do shared, e só ela. */
+export const MODELOS_PERMITIDOS: readonly string[] = MODELOS_DO_CADASTRO;
 
 /*
  * O MODELO E O ESFORÇO DE UMA CHAMADA (rodada dos agentes, 21/10/2026, A1).
@@ -75,6 +92,40 @@ export function modeloDaChamada(
     esforco: (effort ?? escolha.esforco) as LlmEffort,
     origem: model || effort ? 'explicito' : escolha.origem,
   };
+}
+
+/** Uma linha do bloco "Modelo por função" do cartão Claude (Anthropic), só leitura. */
+export interface ModeloEmVigor {
+  id: string;
+  nome: string;
+  area: string;
+  tipo: FuncaoDoCadastro['tipo'];
+  estado: FuncaoDoCadastro['estado'];
+  modelo: string;
+  esforco: EsforcoDaFuncao;
+  origem: 'cadastro' | 'variavel' | 'padrao';
+}
+
+/**
+ * O modelo e o esforço que CADA função do cadastro recebe hoje, pela mesma regra
+ * de `modeloDaChamada` (variável por função > cadastro > padrão do provedor) e
+ * com as mesmas listas do compose (`LLM_MODELOS_POR_FUNCAO`/`LLM_ESFORCOS_POR_FUNCAO`).
+ * Só as funções com modelo da Anthropic entram: rotina, automação e modelo
+ * externo não gastam o Claude. Função aposentada fica fora, como em todo cartão.
+ * Só leitura: trocar continua sendo pelo ambiente da API, por decisão (L8).
+ */
+export function modelosPorFuncaoEmVigor(
+  padrao: PadraoDoProvedor,
+  ambiente: Readonly<Record<string, string | undefined>> = process.env,
+  cadastro: readonly FuncaoDoCadastro[] = CADASTRO_DE_FUNCOES,
+): ModeloEmVigor[] {
+  const env = ambienteDosModelos(ambiente);
+  return cadastro
+    .filter((f) => !!f.modelo && f.estado !== 'aposentado')
+    .map((f) => {
+      const e = escolherModelo(f.id, { modelo: padrao.modelo, esforco: padrao.esforco as EsforcoDaFuncao }, env);
+      return { id: f.id, nome: f.nome, area: f.area, tipo: f.tipo, estado: f.estado, modelo: e.modelo, esforco: e.esforco, origem: e.origem };
+    });
 }
 
 /**

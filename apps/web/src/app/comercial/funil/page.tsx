@@ -3,19 +3,35 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import Link from 'next/link';
-import type { CartaoDoFunil, ComercialDestinoDoMover, ComercialFiltrosDoFunil, ComercialMotivoDeSaida, ComercialSaida, FunilVivo, VistaFunil } from '@mktos/shared';
+import type { CartaoDoFunil, ComercialDestinoDoMover, ComercialFiltrosDoFunil, ComercialMotivoDeSaida, ComercialResultadoDoMover, ComercialSaida, FichaDoLead, FunilVivo, VistaFunil } from '@mktos/shared';
 import { COMERCIAL_MOTIVOS_DE_SAIDA, COMERCIAL_ROTULO_DA_ETAPA, COMERCIAL_SAIDAS, ROTULO_DO_TIPO_DE_NEGOCIO, filtrosDoFunilVazios } from '@mktos/shared';
 
 import { AvatarDaPessoa } from '@/components/AvatarDaPessoa';
 import { BotaoDeFiltros } from '@/components/filtros/BotaoDeFiltros';
 import { VistasDoQuadro } from '@/components/trabalho/VistasDoQuadro';
 import { useAuth } from '@/lib/auth';
+import { apiGet } from '@/lib/api';
 import { ROTULO_DO_MOTIVO, ROTULO_DO_PRODUTO, diaSP } from '@/lib/cockpit';
 
 import { Aviso, BarraDaSaude, BOTAO, BOTAO_PRIMARIO, Carregando, Chip, Erro, FOCO, INPUT, useCarregar } from '../_ui';
 import { LinkDoLead, useMudouNoPainel } from '../_painel/provedor';
 import { moverFocoNoFunil } from '../_painel/teclado';
-import { destinoDaColuna, fraseDoErro, moverCartao, opcoesDoMenu, rotuloCurto, voltaEmDoDia } from '../_funil/mover';
+import {
+  aplicarMovimentosLocais,
+  avisoDaConfirmacao,
+  cartaoDepoisDoMover,
+  cartaoOtimista,
+  destinoDaColuna,
+  fraseDoErro,
+  locaisQueAindaValem,
+  moverCartao,
+  opcoesDoMenu,
+  precisaDeConfirmacao,
+  rotuloCurto,
+  voltaEmDoDia,
+  type MovimentosLocais,
+} from '../_funil/mover';
+import { BotaoDoMenuDoLead, MenuDoLeadProvider, alvoDoMenuDoLead, useMenuDoLead } from '../_funil/MenuDoLead';
 import { caminhoDoFunil, configDaVistaDoFunil, definicoesDosFiltros, escreverEnderecoDoFunil, lerEnderecoDoFunil, valoresDoPainel, type ListaNoEndereco, type VisaoDoFunil } from '../_funil/filtros-do-funil';
 import { COLUNAS_PADRAO, lerColunas, lerOrdem } from '../_funil/lista-do-funil';
 import { ListaDoFunil, SeletorDeColunas } from '../_funil/ListaDoFunil';
@@ -51,6 +67,15 @@ import type { Densidade } from '@/lib/quadro-denso';
  * (`_funil/ListaDoFunil.tsx`): larguras ajustáveis guardadas no navegador,
  * ordenação pelo cabeçalho e colunas visíveis no painel de Filtros, as duas no
  * endereço e na vista salva. O quadro não mudou.
+ *
+ * Leva 5 (L5, 27/10/2026): o funil ficou fluido. O cartão ANDA NA HORA
+ * (`MovimentosLocais` por cima do que a API deu) e volta com o aviso se a API
+ * negar; a coluna não recarrega inteira: o cartão é refeito com a resposta do
+ * mover e relido sozinho (`GET /comercial/lead/:id`); a entrada na coluna nova
+ * tem 150 ms de transição. Arrastar ou escolher E8/E9 abre a confirmação com o
+ * aviso da regra em vez de mover calado. Leva 5 (L2): botão direito e "⋯" no
+ * cartão e na linha abrem o `MenuDoLead` (abrir, mover, copiar link da sala,
+ * vincular WhatsApp, editar valor, histórico). `mover.service.ts` não mudou.
  */
 
 type Coluna = FunilVivo['colunas'][number];
@@ -113,22 +138,71 @@ export default function FunilVivoPage() {
   const ocupar = (leadId: string, sim: boolean) => setOcupados(({ [leadId]: _, ...resto }) => (sim ? { ...resto, [leadId]: true } : resto));
   const [arrastando, setArrastando] = useState<CartaoDoFunil | null>(null);
   const [sobre, setSobre] = useState<string | null>(null);
+  // L5: os cartões que a tela moveu e a API ainda não devolveu na lista; a confirmação de E8/E9 aberta.
+  const [locais, setLocais] = useState<MovimentosLocais>({});
+  const [confirmacao, setConfirmacao] = useState<{ leadId: string; destino: ComercialDestinoDoMover } | null>(null);
+  useEffect(() => {
+    if (dados) setLocais((l) => locaisQueAindaValem(dados.colunas, l));
+  }, [dados]);
   // Layout 26/10: a mesma densidade de todo quadro do OS (compacto · médio · cheio).
   const [densidade, escolherDensidade] = useDensidade();
 
   const avisar = (leadId: string, texto: string, tom: AvisoDoCartao['tom'] = 'neutro') => setAvisos((a) => ({ ...a, [leadId]: { texto, tom } }));
   const calar = (leadId: string) => setAvisos(({ [leadId]: _, ...resto }) => resto);
 
-  async function agir(c: CartaoDoFunil, d: ComercialDestinoDoMover) {
+  /** L5: relê SÓ o cartão (a ficha do lead) e refaz o que a etapa nova muda: próxima ação, saúde, balão. */
+  async function refrescarCartao(leadId: string) {
+    try {
+      const f = await apiGet<FichaDoLead>(`/comercial/lead/${encodeURIComponent(leadId)}`, token);
+      // Resposta fora do formato (dublê, rota antiga) não derruba o quadro: o tique de 30 s refaz o cartão.
+      if (!f || typeof f !== 'object' || typeof (f as { etapa?: unknown }).etapa !== 'string') return;
+      setLocais((l) => {
+        const atual = l[leadId];
+        if (!atual || atual.etapa !== f.etapa) return l;
+        return {
+          ...l,
+          [leadId]: {
+            ...atual,
+            etapaDesde: f.etapaDesde,
+            proximaAcao: f.proximaAcao,
+            saude: f.saude,
+            balao: f.balao ?? atual.balao ?? null,
+            motivoSaida: f.motivoSaida,
+            voltaEm: f.voltaEm,
+            produto: f.produto,
+            perfil: f.perfil,
+            donoId: f.dono?.id ?? atual.donoId ?? null,
+            dono: f.dono?.nome ?? atual.dono ?? null,
+          },
+        };
+      });
+    } catch {
+      /* a leitura de 30 s refaz o cartão inteiro; aqui nada quebra */
+    }
+  }
+
+  /** L5: o resultado do mover entra no cartão na hora (pelo quadro, pelo menu do lead ou pela saída). */
+  function aplicarMover(c: CartaoDoFunil, r: ComercialResultadoDoMover) {
+    setLocais((l) => ({ ...l, [c.leadId]: cartaoDepoisDoMover(c, r) }));
+    void refrescarCartao(c.leadId);
+  }
+
+  async function agir(c: CartaoDoFunil, d: ComercialDestinoDoMover, confirmado = false) {
     calar(c.leadId);
     if (!d.permitido) return avisar(c.leadId, d.motivo ? `${d.motivo}.` : 'Não deu para mover.');
     if (d.caminho === 'saida') return setSaidaAberta({ leadId: c.leadId, saida: (COMERCIAL_SAIDAS as readonly string[]).includes(d.para) ? (d.para as ComercialSaida) : null });
+    // L5: E8 e E9 abrem a confirmação com o aviso da regra em vez de mover calado.
+    if (precisaDeConfirmacao(d) && !confirmado) return setConfirmacao({ leadId: c.leadId, destino: d });
+    setConfirmacao(null);
+    // L5: o cartão anda na hora; se a API negar, volta.
+    setLocais((l) => ({ ...l, [c.leadId]: cartaoOtimista(c, d.para) }));
     ocupar(c.leadId, true);
     try {
       const r = await moverCartao(c.leadId, { para: d.para }, token);
+      aplicarMover(c, r);
       avisar(c.leadId, r.mensagem || `Movido para ${COMERCIAL_ROTULO_DA_ETAPA[r.para]}.`, r.pendencias?.length ? 'neutro' : 'bom');
-      await recarregar();
     } catch (e) {
+      setLocais(({ [c.leadId]: _, ...resto }) => resto);
       avisar(c.leadId, fraseDoErro(e), 'ruim');
     } finally {
       ocupar(c.leadId, false);
@@ -146,12 +220,22 @@ export default function FunilVivoPage() {
     void agir(c, destinoDaColuna(c, coluna.etapa));
   }
 
-  const colunas = dados?.colunas ?? [];
+  // L5: as colunas da tela são as da API com os movimentos locais por cima.
+  const colunas = aplicarMovimentosLocais(dados?.colunas ?? [], locais);
   const cartoes = colunas.flatMap((c) => c.cartoes);
   const editar = can('leads.editar');
 
   return (
+    <MenuDoLeadProvider
+      onMovido={(leadId, r) => {
+        const c = cartoes.find((x) => x.leadId === leadId);
+        if (c) aplicarMover(c, r);
+        else void recarregar();
+      }}
+    >
     <div className="flex min-w-0 flex-col gap-3 md:min-h-[calc(100dvh-52px-2rem)] min-[820px]:min-h-[calc(100dvh-46px-3rem)]">
+      {/* L5: a entrada do cartão na coluna nova, em 150 ms (com movimento reduzido a classe motion-safe nem aplica). */}
+      <style>{`@keyframes funil-cartao-entra { from { transform: translateY(-6px) scale(0.98); opacity: 0.35; } to { transform: none; opacity: 1; } }`}</style>
       <header className="min-w-0 shrink-0 space-y-2">
         <div className="flex flex-wrap items-center gap-1.5">
           <div role="group" aria-label="formato de visualização" className="inline-flex overflow-hidden rounded border border-border">
@@ -271,13 +355,19 @@ export default function FunilVivoPage() {
                         ocupado={!!ocupados[c.leadId]}
                         podeMover={editar}
                         densidade={densidade}
+                        recemMovido={!!locais[c.leadId]}
                         saida={saidaAberta?.leadId === c.leadId ? saidaAberta : null}
+                        confirmacao={confirmacao?.leadId === c.leadId ? confirmacao.destino : null}
                         aoEscolher={(d) => void agir(c, d)}
+                        aoConfirmar={(d) => void agir(c, d, true)}
+                        aoCancelarConfirmacao={() => setConfirmacao(null)}
                         aoFecharSaida={() => setSaidaAberta(null)}
-                        aoSairFeito={(mensagem) => {
+                        aoSairFeito={(mensagem, r) => {
                           setSaidaAberta(null);
                           avisar(c.leadId, mensagem, 'bom');
-                          void recarregar();
+                          // L5: a saída também anda na hora; sem a resposta (dublê antigo), relê a lista.
+                          if (r) aplicarMover(c, r);
+                          else void recarregar();
                         }}
                         aoArrastar={(sim) => setArrastando(sim ? c : null)}
                         aoCalar={() => calar(c.leadId)}
@@ -292,6 +382,7 @@ export default function FunilVivoPage() {
         </div>
       )}
     </div>
+    </MenuDoLeadProvider>
   );
 }
 
@@ -312,7 +403,11 @@ function Cartao({
   ocupado,
   podeMover,
   saida,
+  confirmacao,
+  recemMovido = false,
   aoEscolher,
+  aoConfirmar,
+  aoCancelarConfirmacao,
   aoFecharSaida,
   aoSairFeito,
   aoArrastar,
@@ -324,15 +419,24 @@ function Cartao({
   aviso: AvisoDoCartao | null;
   ocupado: boolean;
   podeMover: boolean;
+  /** L5: o cartão acabou de ser movido pela tela (anima a entrada na coluna). */
+  recemMovido?: boolean;
   saida: { leadId: string; saida: ComercialSaida | null } | null;
+  /** L5: o destino E8/E9 à espera de confirmação neste cartão. */
+  confirmacao: ComercialDestinoDoMover | null;
   aoEscolher: (d: ComercialDestinoDoMover) => void;
+  aoConfirmar: (d: ComercialDestinoDoMover) => void;
+  aoCancelarConfirmacao: () => void;
   aoFecharSaida: () => void;
-  aoSairFeito: (mensagem: string) => void;
+  aoSairFeito: (mensagem: string, resultado?: ComercialResultadoDoMover) => void;
   aoArrastar: (sim: boolean) => void;
   aoCalar: () => void;
 }) {
   const [menu, setMenu] = useState(false);
   const botao = useRef<HTMLButtonElement>(null);
+  // L2: o menu do lead (botão direito, Shift+F10, tecla Menu e o "⋯").
+  const menuDoLead = useMenuDoLead();
+  const paraOMenu = { id: c.leadId, nome: c.nome, empresa: c.empresa, etapa: c.etapa, voltaPara: c.voltaPara ?? null };
   const { principal, segunda } = proximaAcaoDoCartao(c);
   const contagem = contagemDeTarefas(c.tarefasAbertas);
   const naSaida = (COMERCIAL_SAIDAS as readonly string[]).includes(c.etapa);
@@ -345,7 +449,9 @@ function Cartao({
   return (
     <div
       data-testid={`funil-card-${c.leadId}`}
+      data-recem-movido={recemMovido || undefined}
       draggable={podeMover && !ocupado}
+      {...alvoDoMenuDoLead(menuDoLead, paraOMenu)}
       onDragStart={(e) => {
         e.dataTransfer?.setData('text/plain', c.leadId);
         if (e.dataTransfer) e.dataTransfer.effectAllowed = 'move';
@@ -357,10 +463,10 @@ function Cartao({
         if ((e.target as HTMLElement).closest('a, button, input, select, textarea, label, [role="menu"]')) return;
         e.currentTarget.querySelector<HTMLAnchorElement>('[data-cartao-do-funil]')?.click();
       }}
-      className={`cursor-pointer rounded border bg-surface p-2.5 transition hover:border-brand/70 ${c.balao || c.avisoDoMover ? 'border-warn/70' : c.precisaDeDecisao ? 'border-brand/60' : c.parado ? 'border-warn/60' : 'border-border'}`}
+      className={`cursor-pointer rounded border bg-surface p-2.5 transition-[border-color,transform,opacity,box-shadow] duration-150 hover:border-brand/70 ${recemMovido ? 'motion-safe:animate-[funil-cartao-entra_150ms_ease-out]' : ''} ${ocupado ? 'opacity-80' : ''} ${c.balao || c.avisoDoMover ? 'border-warn/70' : c.precisaDeDecisao ? 'border-brand/60' : c.parado ? 'border-warn/60' : 'border-border'}`}
     >
       <div className="flex items-start gap-2">
-        <LinkDoLead leadId={c.leadId} aba="fio" data-cartao-do-funil className={`min-w-0 flex-1 rounded-sm ${FOCO}`}>
+        <LinkDoLead leadId={c.leadId} aba="geral" data-cartao-do-funil className={`min-w-0 flex-1 rounded-sm ${FOCO}`}>
           {/* Layout 26/10 (P-22): empresa no título, representante embaixo. */}
           <p className="truncate text-[13.5px] font-semibold" title={partesDoLead(c.nome, c.empresa).titulo}>{partesDoLead(c.nome, c.empresa).titulo}</p>
           {partesDoLead(c.nome, c.empresa).pessoa && <p className="truncate text-[11.5px] text-muted">{partesDoLead(c.nome, c.empresa).pessoa}</p>}
@@ -382,7 +488,18 @@ function Cartao({
             mover
           </button>
         )}
+        <BotaoDoMenuDoLead lead={paraOMenu} className="mt-0.5" />
       </div>
+      {confirmacao && (
+        <div data-testid={`funil-confirmar-${c.leadId}`} role="group" aria-label={`confirmar mover ${c.empresa ?? c.nome}`} className="mt-2 space-y-1.5 rounded border border-warn/50 bg-warn/10 p-2 text-[12px]">
+          <p>Mover para <strong>{COMERCIAL_ROTULO_DA_ETAPA[confirmacao.para]}</strong>?</p>
+          <p className="text-[11.5px] text-warn">{avisoDaConfirmacao(confirmacao)}</p>
+          <div className="flex flex-wrap gap-1.5">
+            <button type="button" autoFocus data-testid={`funil-confirmar-mover-${c.leadId}`} onClick={() => aoConfirmar(confirmacao)} className={BOTAO_PRIMARIO}>mover mesmo assim</button>
+            <button type="button" onClick={aoCancelarConfirmacao} className={BOTAO}>cancelar</button>
+          </div>
+        </div>
+      )}
       {menu && (
         <MenuMover
           c={c}
@@ -568,7 +685,7 @@ function MenuMover({
  * cartão ganha o aviso. O tipo do motivo (para o relatório de perdas), a data
  * de volta da geladeira e o parceiro são opcionais.
  */
-function FormDaSaida({ c, inicial, aoFechar, aoFeito }: { c: CartaoDoFunil; inicial: ComercialSaida | null; aoFechar: () => void; aoFeito: (mensagem: string) => void }) {
+function FormDaSaida({ c, inicial, aoFechar, aoFeito }: { c: CartaoDoFunil; inicial: ComercialSaida | null; aoFechar: () => void; aoFeito: (mensagem: string, resultado?: ComercialResultadoDoMover) => void }) {
   const { token } = useAuth();
   const opcoes = COMERCIAL_SAIDAS.filter((s) => s !== c.etapa);
   const [saida, setSaida] = useState<ComercialSaida | ''>(inicial && inicial !== c.etapa ? inicial : '');
@@ -597,7 +714,7 @@ function FormDaSaida({ c, inicial, aoFechar, aoFeito }: { c: CartaoDoFunil; inic
         },
         token,
       );
-      aoFeito(r.mensagem || `Movido para ${COMERCIAL_ROTULO_DA_ETAPA[saida]}.`);
+      aoFeito(r.mensagem || `Movido para ${COMERCIAL_ROTULO_DA_ETAPA[saida]}.`, r && typeof r === 'object' && 'para' in r ? r : undefined);
     } catch (er) {
       setErro(er);
     } finally {

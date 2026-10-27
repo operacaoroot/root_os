@@ -15,6 +15,15 @@
  * `folders` e deixa de vê-las sem mudar nada; quem só precisa ACHAR uma lista
  * pelo id (o quadro da Implantação, o painel da tarefa, a ficha do cliente)
  * usa as duas funções abaixo.
+ *
+ * LEVA 5, L3 (27/10/2026, pedido do Rodrigo em 26/10): a pasta Clientes VOLTA À
+ * ÁRVORE do Trabalho, visível e recolhida por padrão, porque a subseção
+ * "Implantação de clientes" saiu do menu e a lista "Onboarding de cliente" ficaria
+ * inalcançável. Isto reverte SÓ a parte "fora da árvore" da decisão I3 da 22B: a
+ * pasta continua marcada `doComercial`, continua fora de Todas, das contagens e do
+ * Dia a dia, e continua sem se renomear, mover ou apagar pelo Trabalho. A API não
+ * mudou: ela segue mandando a pasta em `pastasDoComercial`, e é a ÁRVORE
+ * (`ArvoreDoTrabalho.tsx`) que a desenha, por `pastasNaArvoreDoTrabalho`.
  */
 
 interface ListaComId { id: string }
@@ -30,6 +39,24 @@ interface EstruturaComComercial<P extends PastaComListas<L>, L extends ListaComI
 export function pastasComAsDoComercial<P extends PastaComListas<L>, L extends ListaComId>(e: EstruturaComComercial<P, L>): P[] {
   return [...e.folders, ...(e.pastasDoComercial ?? [])];
 }
+
+/**
+ * As pastas que a ÁRVORE desenha (leva 5, L3): as do Trabalho e, no fim, a pasta
+ * Clientes do Comercial, recolhida por padrão. Só a árvore usa; segmentos, chips,
+ * seletores e "Todas" continuam lendo `folders`.
+ */
+export function pastasNaArvoreDoTrabalho<P extends PastaComListas<L>, L extends ListaComId>(e: EstruturaComComercial<P, L>): P[] {
+  return pastasComAsDoComercial<P, L>(e);
+}
+
+/** A pasta é do Comercial (está em `pastasDoComercial`)? A árvore pergunta para recolher e proteger. */
+export function ehPastaDoComercial<P extends PastaComListas<L> & { id: string }, L extends ListaComId>(e: EstruturaComComercial<P, L>, pastaId: string): boolean {
+  return (e.pastasDoComercial ?? []).some((p) => p.id === pastaId);
+}
+
+/** A frase da árvore para a pasta Clientes e as listas dela (leva 5, L3). */
+export const TRAB_PASTA_DO_COMERCIAL_NA_ARVORE =
+  'A pasta Clientes é do Comercial: aparece aqui para abrir as listas, mas não se renomeia, não se move nem se apaga pelo Trabalho, e as tarefas dela ficam fora de Todas e do Dia a dia.';
 
 /** Todas as listas, do Trabalho e do Comercial (para achar uma lista pelo id). */
 export function listasComAsDoComercial<P extends PastaComListas<L>, L extends ListaComId>(e: EstruturaComComercial<P, L>): L[] {

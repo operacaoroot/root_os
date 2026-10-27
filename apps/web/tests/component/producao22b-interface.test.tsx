@@ -319,12 +319,14 @@ describe('I3: a pasta Clientes fora do Trabalho', () => {
     patch.mockResolvedValue({});
   });
 
-  it('a árvore não mostra a Clientes nem as listas dela; mostra o ícone da lista e da pasta', async () => {
+  // Leva 5 (L3, 27/10/2026): a Clientes VOLTA à árvore, recolhida, só para abrir a lista Onboarding
+  // (a subseção Implantação saiu do menu); continua fora de Todas, das contagens e do Dia a dia.
+  it('a árvore mostra a Clientes recolhida (sem as listas dela até abrir); mostra o ícone da lista e da pasta', async () => {
     window.history.replaceState({}, '', '/trabalho?lista=l-avulsa');
     render(<TrabalhoPage />);
     await screen.findByTestId(`trabalho-arvore-pasta-${GESTAO}`);
     const arvore = screen.getByTestId('trabalho-arvore');
-    expect(within(arvore).queryByText('Clientes')).toBeNull();
+    expect(within(arvore).getByText('Clientes')).toBeInTheDocument();
     expect(within(arvore).queryByText('Esteira de clientes')).toBeNull();
     expect(within(arvore).queryByText('Onboarding de cliente')).toBeNull();
     expect(within(screen.getByTestId('trabalho-arvore-lista-l-fin')).getByTestId('icone-da-lista')).toHaveTextContent('💰');

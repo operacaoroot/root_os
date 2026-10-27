@@ -5,6 +5,7 @@ import { useParams } from 'next/navigation';
 import type { EstadoDaSala, OfertaNaSala, SalaBlocoDaProposta } from '@mktos/shared';
 
 import { apiPost, apiUpload } from '@/lib/api';
+import { Acompanhamento, type EstadoDaSalaComAcompanhamento } from './Acompanhamento';
 import { SalaPublicada } from './SalaPublicada';
 import { abrirSalaMarcando, dataCurta, localSPParaIso, reais, ROTULO_DA_FORMA, rotuloDoHorario, soDigitos } from '@/lib/sala-do-cliente';
 
@@ -19,6 +20,12 @@ import { abrirSalaMarcando, dataCurta, localSPParaIso, reais, ROTULO_DA_FORMA, r
  * tela por um segundo conta como lido, uma vez por visita).
  *
  * Produto da Operação ROOT: tema e componentes do próprio OS, claro e escuro.
+ *
+ * L6 (leva 5): o bloco "acompanhamento" (etapa em palavras de cliente, o que
+ * vem agora, documentos trocados, contato da Root) vem DERIVADO da API a cada
+ * leitura, com ou sem versão publicada. Sem versão publicada o contato entra no
+ * bloco; com versão, o botão fixo do WhatsApp da `SalaPublicada` usa o número
+ * derivado quando a mesa já o escreveu.
  */
 
 const FOCO = 'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-offset-2 focus-visible:ring-offset-bg';
@@ -31,7 +38,7 @@ const ROTULO = 'font-os-mono text-[10px] uppercase tracking-[0.16em] text-muted'
 export default function SalaPage() {
   const { token } = useParams<{ token: string }>();
   const base = `/sala/${token}`;
-  const [estado, setEstado] = useState<EstadoDaSala | null>(null);
+  const [estado, setEstado] = useState<EstadoDaSalaComAcompanhamento | null>(null);
   const [erro, setErro] = useState<string | null>(null);
   const [ocupado, setOcupado] = useState<string | null>(null);
   const [erroDe, setErroDe] = useState<Record<string, string>>({});
@@ -54,9 +61,9 @@ export default function SalaPage() {
   // B-11: abrir a página é a visita (POST, uma vez); o GET da sala só lê.
   useEffect(() => {
     // I4: a sala marca a visita na aba, para a página da proposta não contar a mesma visita de novo.
-    abrirSalaMarcando<EstadoDaSala>(base, (caminho, corpo) => apiPost<EstadoDaSala>(caminho, corpo))
+    abrirSalaMarcando<EstadoDaSalaComAcompanhamento>(base, (caminho, corpo) => apiPost<EstadoDaSalaComAcompanhamento>(caminho, corpo))
       .then(setEstado)
-      .catch((e: Error & { status?: number }) => setErro(e.status === 404 || /não encontrada/.test(e.message) ? 'Esta sala não existe ou já expirou. Fale com a Root pelo WhatsApp.' : e.message));
+      .catch((e: Error & { status?: number }) => setErro(e.status === 404 || /não encontrada/.test(e.message) ? 'Este endereço não abre: a sala não existe, venceu ou ganhou um link novo. Peça à Root o link atual pelo WhatsApp.' : e.message));
   }, [base]);
 
   const agir = useCallback(
@@ -64,7 +71,7 @@ export default function SalaPage() {
       setOcupado(chave);
       setErroDe((x) => ({ ...x, [chave]: '' }));
       try {
-        const novo = await apiPost<EstadoDaSala>(`${base}/${caminho}`, corpo);
+        const novo = await apiPost<EstadoDaSalaComAcompanhamento>(`${base}/${caminho}`, corpo);
         setEstado(novo);
         return true;
       } catch (e) {
@@ -101,6 +108,8 @@ export default function SalaPage() {
 
   const blocos = (
     <div className="mt-5 space-y-4">
+      {/* L6: o acompanhamento vem primeiro; com versão publicada o contato é o botão fixo da SalaPublicada. */}
+      <Acompanhamento estado={estado} token={token} semContato={Boolean(estado.publicada)} />
       {estado.estagio === 'comeco' && <Comeco estado={estado} agir={agir} ocupado={ocupado} erro={erroDe.kickoff} />}
       {aceiteAntes && <Aceite estado={estado} agir={agir} ocupado={ocupado} erroDe={erroDe} />}
       {chegou('proposta') && estado.proposta && <Proposta estado={estado} base={base} token={token} agir={agir} ocupado={ocupado} erroDe={erroDe} aoAceitar={() => setQuerAceitar(true)} />}
@@ -115,7 +124,7 @@ export default function SalaPage() {
   // o que é ação dele continua logo abaixo. Sem versão, a sala de antes.
   if (estado.publicada) {
     return (
-      <SalaPublicada publicada={estado.publicada} estado={estado} token={token} marca={<Marca />}>
+      <SalaPublicada publicada={estado.publicada} estado={estado} token={token} marca={<Marca />} whatsapp={estado.acompanhamento?.contato.whatsapp ?? null}>
         {blocos}
       </SalaPublicada>
     );

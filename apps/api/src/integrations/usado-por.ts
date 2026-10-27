@@ -1,4 +1,5 @@
 import { CADASTRO_DE_FUNCOES, type FuncaoDoCadastro, type QuemUsaOConector } from '@mktos/shared';
+import { CONECTOR_ANTHROPIC } from '../llm/modelo-da-chamada';
 import { CONECTOR_DA_CAPACIDADE } from './conectores';
 
 /*
@@ -15,7 +16,11 @@ import { CONECTOR_DA_CAPACIDADE } from './conectores';
  *   2. À MÃO, abaixo: o que não passa por capacidade (rotina que fala com o
  *      fornecedor direto, entrada por webhook, leitura de vetores). Cada linha
  *      diz por quê. Função que não existe mais no cadastro é ignorada (e a
- *      suíte acusa), para o mapa não segurar nome velho.
+ *      suíte acusa), para o mapa não segurar nome velho;
+ *   3. PELO MODELO (leva 5, L8): o cartão "Claude (Anthropic)" é usado por toda
+ *      função do cadastro que tem `modelo` (os agentes que decidem com o Claude).
+ *      Não entra no mapa à mão porque a linha não está em `CONNECTORS` (ela é
+ *      declarada pelo conector) e porque a lista mudaria a cada agente novo.
  *
  * Função aposentada não aparece: ela não usa mais nada.
  */
@@ -52,8 +57,9 @@ function resumo(f: FuncaoDoCadastro): QuemUsaOConector {
 /** As funções vivas que usam a linha `chave` do catálogo, na ordem do cadastro. */
 export function quemUsa(chave: string, cadastro: readonly FuncaoDoCadastro[] = CADASTRO_DE_FUNCOES): QuemUsaOConector[] {
   const aMao = new Set(USO_SEM_CAPACIDADE[chave] ?? []);
+  const peloModelo = chave === CONECTOR_ANTHROPIC;
   return cadastro
     .filter((f) => f.estado !== 'aposentado')
-    .filter((f) => aMao.has(f.id) || (f.capacidades ?? []).some((c) => CONECTOR_DA_CAPACIDADE[c] === chave))
+    .filter((f) => aMao.has(f.id) || (peloModelo && !!f.modelo) || (f.capacidades ?? []).some((c) => CONECTOR_DA_CAPACIDADE[c] === chave))
     .map(resumo);
 }
