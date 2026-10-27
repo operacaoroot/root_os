@@ -242,7 +242,7 @@ const MENU_FINAL: LinhaDoMenu[] = [
   // Aba Marketing no jeito do ROOT Estúdio (26/10/2026): só as seções no menu; o resto é aba (oculto, com pai).
   ['marketing', 'Início', '/marketing', 'pauta.ver', 'conteudo', 'pauta', null, false],
   ['marketing-memoria', 'Memória', '/marketing/memoria', 'pauta.ver', 'conteudo', 'pauta', null, false],
-  ['marketing-triagem', 'Ideias', '/marketing/triagem', 'pauta.ver', 'conteudo', 'pauta', null, false],
+  ['marketing-triagem', 'Ideias de conteúdo', '/marketing/triagem', 'pauta.ver', 'conteudo', 'pauta', null, false],
   ['maquina-banco', 'Banco de ideias', '/marketing/banco', 'pauta.ver', 'conteudo', 'pauta', 'marketing-triagem', true],
   ['marketing-estrategia', 'Estratégia do mês', '/marketing/estrategia', 'pauta.ver', 'conteudo', 'pauta', 'marketing-triagem', true],
   ['referencias', 'Referências', '/referencias', 'pauta.ver', 'conteudo', 'pauta', 'marketing-triagem', true],
@@ -562,7 +562,7 @@ describe('o bloco Marketing (MK7)', () => {
 
   it('26/10/2026: o menu mostra só as seções do Estúdio; o resto é aba da seção, oculto e vivo', () => {
     const visiveis = NAV.filter((n) => n.secao === 'conteudo' && !n.oculto).map((n) => n.label);
-    expect(visiveis).toEqual(['Início', 'Memória', 'Ideias', 'Produção', 'Performance', 'Página de links', 'Campanhas', 'Eventos do site', 'Tarefas']);
+    expect(visiveis).toEqual(['Início', 'Memória', 'Ideias de conteúdo', 'Produção', 'Performance', 'Página de links', 'Campanhas', 'Eventos do site', 'Tarefas']);
     const abas: Record<string, string[]> = {
       'marketing-triagem': ['maquina-banco', 'marketing-estrategia', 'referencias', 'marketing-ideias'],
       'maquina-producao': ['maquina-agendar', 'maquina-calendario', 'marketing-formatos', 'pauta'],

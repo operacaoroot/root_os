@@ -139,7 +139,7 @@ export class TriagemService {
         const formato = entrada.formato && FORMATOS.includes(entrada.formato) ? entrada.formato : c.formatoSugerido;
         const gancho = entrada.gancho ?? String(como.gancho ?? '');
         const pontos = Array.isArray(como.pontos) ? (como.pontos as unknown[]).map(String) : [];
-        const porque = [c.porque, c.resumo && `Resumo: ${c.resumo}`, pontos.length ? `Pontos:\n${pontos.map((p) => `- ${p}`).join('\n')}` : '', como.clipe ? `Clipe de abertura: ${como.clipe}` : '']
+        const porque = [c.porque, (entrada.resumo ?? c.resumo) && `Resumo: ${entrada.resumo ?? c.resumo}`, pontos.length ? `Pontos:\n${pontos.map((p) => `- ${p}`).join('\n')}` : '', como.clipe ? `Clipe de abertura: ${como.clipe}` : '']
           .filter(Boolean).join('\n\n');
         const post = await tx.marketingPost.create({
           data: {

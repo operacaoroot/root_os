@@ -258,6 +258,7 @@ export const TriagemDecisaoSchema = z.object({
   motivo: z.string().trim().max(200).optional(),
   titulo: z.string().trim().max(200).optional(),
   gancho: z.string().trim().max(500).optional(),
+  resumo: z.string().trim().max(1000).optional(),
   formato: z.string().trim().max(40).optional(),
 });
 export type TriagemDecisaoInput = z.infer<typeof TriagemDecisaoSchema>;

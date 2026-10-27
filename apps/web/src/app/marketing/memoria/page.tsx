@@ -11,19 +11,20 @@ import {
 } from '@mktos/shared';
 import { apiDelete, apiGet, apiPost, apiPut } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
-import { btn, btnPrimario } from '@/components/maquina/pecas';
 import { GrafoDaMemoria, COR_DO_TIPO } from '@/components/marketing/GrafoDaMemoria';
 import { markdownDaMemoria } from '@/components/marketing/markdown-da-memoria';
 
 /*
- * Marketing › MEMÓRIA, a do ROOT Estúdio dentro do OS (26/10/2026).
- * Captura no topo; abas Notas, Grafo, Vídeos e Obsidian. Links e Reels mandados
- * no grupo "Memória ROOT" do WhatsApp chegam aqui sozinhos; cada nota pronta
- * vira .md no Drive Root (40-marca-e-conteudo/Memória), que é o Obsidian.
+ * Marketing › MEMÓRIA. Cópia da tela do ROOT Estúdio (public/pages/memoria.js), com as
+ * mesmas classes (memoria-*) e o CSS do Estúdio preso a `.estudio`.
+ * Captura no topo; abas Notas, Grafo, Vídeos e Obsidian. Links e Reels mandados no
+ * grupo "Memória ROOT" do WhatsApp chegam aqui sozinhos; cada nota pronta vira .md no
+ * Drive Root (40-marca-e-conteudo/Memória), que é o Obsidian.
  */
 
 type Aba = 'notas' | 'grafo' | 'videos' | 'obsidian';
 const ICONE: Record<string, string> = { video: '🎬', link: '🔗', ideia: '💡', nota: '📝' };
+const ST: Record<string, [string, string]> = { fila: ['running', 'na fila'], processando: ['running', 'processando'], pronto: ['success', 'pronto'], erro: ['error', 'erro'] };
 const quando = (s: string) => {
   try {
     return new Date(s).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' });
@@ -31,16 +32,10 @@ const quando = (s: string) => {
     return '';
   }
 };
-const campo = 'w-full rounded border border-border bg-bg px-2.5 py-1.5 text-sm outline-none focus:border-brand';
-const chip = (on: boolean) => `rounded-full border px-2.5 py-0.5 text-xs transition ${on ? 'border-brand bg-brand/10 text-brand' : 'border-border text-muted hover:text-text'}`;
-const PROSA =
-  'text-[0.95rem] leading-relaxed [&_a]:text-brand [&_a]:underline [&_blockquote]:my-2 [&_blockquote]:border-l-2 [&_blockquote]:border-border [&_blockquote]:pl-3 [&_blockquote]:text-muted [&_code]:font-os-mono [&_code]:text-[0.85em] [&_h2]:mt-5 [&_h2]:text-base [&_h2]:font-semibold [&_h3]:mt-4 [&_h3]:font-semibold [&_hr]:my-4 [&_hr]:border-border [&_li]:my-0.5 [&_ol]:list-decimal [&_ol]:pl-5 [&_p]:my-2 [&_pre]:overflow-x-auto [&_pre]:rounded [&_pre]:bg-surface-2 [&_pre]:p-3 [&_ul]:list-disc [&_ul]:pl-5';
-
-function Status({ s }: { s: string }) {
-  if (s === 'pronto') return null;
-  const tom = s === 'erro' ? 'border-bad/40 text-bad' : 'border-brand-dim text-brand';
-  const texto = s === 'fila' ? 'na fila' : s === 'processando' ? 'processando' : 'erro';
-  return <span className={`ml-1 rounded border px-1.5 py-px font-os-mono text-[0.62rem] uppercase ${tom}`}>{texto}</span>;
+function Badge({ s }: { s: string }) {
+  if (!s || s === 'pronto') return null;
+  const [cls, txt] = ST[s] ?? ['', s];
+  return <span className={`badge ${cls}`}>{txt}</span>;
 }
 
 export default function MemoriaPage() {
@@ -71,16 +66,21 @@ export default function MemoriaPage() {
 
   useEffect(() => {
     if (!ready) return;
-    const t = setTimeout(() => void carregar(), busca ? 300 : 0);
+    const t = setTimeout(() => void carregar(), busca ? 350 : 0);
     return () => clearTimeout(t);
   }, [ready, carregar, busca, versao]);
 
-  // Atualiza sozinho enquanto há link ou vídeo sendo lido.
   useEffect(() => {
     if (!painel?.notas.some((n) => n.status === 'fila' || n.status === 'processando')) return;
     const t = setTimeout(() => setVersao((v) => v + 1), 6000);
     return () => clearTimeout(t);
   }, [painel]);
+
+  useEffect(() => {
+    if (!aviso) return;
+    const t = setTimeout(() => setAviso(null), 4000);
+    return () => clearTimeout(t);
+  }, [aviso]);
 
   const capturar = async () => {
     const texto = captura.trim();
@@ -106,48 +106,45 @@ export default function MemoriaPage() {
     }
   };
 
-  if (ready && !can('pauta.ver')) return <p className="text-muted">Acesso insuficiente para Marketing.</p>;
+  if (ready && !can('pauta.ver')) return <div className="estudio"><p className="muted">Acesso insuficiente para Marketing.</p></div>;
 
   return (
-    <div className="com-tema space-y-4">
+    <div className="estudio">
+      <div className="pagehead">
+        <div>
+          <h1>Memória</h1>
+          <p>Suas ideias, links e Reels guardados, em notas que a IA organiza.</p>
+        </div>
+      </div>
       {editavel && (
-        <div className="space-y-1.5">
-          <div className="flex gap-2">
-            <textarea
-              rows={1}
-              value={captura}
-              onChange={(e) => setCaptura(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
-                  e.preventDefault();
-                  void capturar();
-                }
-              }}
-              placeholder="Link, Reel ou ideia…"
-              aria-label="Guardar na Memória"
-              className={`${campo} min-h-[2.4rem] resize-y`}
-            />
-            <button className={btnPrimario} onClick={() => void capturar()} disabled={salvando}>
-              {salvando ? 'Salvando…' : 'Salvar'}
-            </button>
-          </div>
-          {painel?.ligacoes.grupo && (
-            <p className="text-xs text-muted">Mande links e Reels no grupo Memória ROOT do WhatsApp: eles chegam aqui sozinhos.</p>
-          )}
+        <div className="memoria-captura">
+          <textarea
+            rows={1}
+            value={captura}
+            onChange={(e) => {
+              setCaptura(e.target.value);
+              e.target.style.height = 'auto';
+              e.target.style.height = `${Math.min(e.target.scrollHeight, 200)}px`;
+            }}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+                e.preventDefault();
+                void capturar();
+              }
+            }}
+            placeholder="Link, Reel ou ideia…"
+            aria-label="Guardar na Memória"
+          />
+          <button className="primary" onClick={() => void capturar()} disabled={salvando}>
+            Salvar
+          </button>
         </div>
       )}
-      {aviso && (
-        <p role="status" className="rounded border border-brand-dim bg-brand/5 px-3 py-2 text-sm" onClick={() => setAviso(null)}>
-          {aviso}
-        </p>
-      )}
-      {erro && (
-        <p role="alert" className="rounded border border-bad/40 bg-bad/10 px-3 py-2 text-sm text-bad">
-          {erro}
-        </p>
-      )}
+      {painel?.ligacoes.grupo && <p className="memoria-dica">Mande links e Reels para o grupo Memória ROOT no WhatsApp: eles chegam aqui sozinhos.</p>}
+      {aviso && <div className="notice">{aviso}</div>}
+      {erro && <div className="notice warn">{erro}</div>}
 
-      <div role="tablist" className="flex gap-1 border-b border-border">
+      <div className="memoria-abas" role="tablist">
         {(
           [
             ['notas', 'Notas'],
@@ -156,67 +153,64 @@ export default function MemoriaPage() {
             ['obsidian', 'Obsidian'],
           ] as [Aba, string][]
         ).map(([k, l]) => (
-          <button
-            key={k}
-            role="tab"
-            aria-selected={aba === k}
-            onClick={() => setAba(k)}
-            className={`-mb-px border-b-2 px-3 py-2 text-sm ${aba === k ? 'border-brand font-medium text-text' : 'border-transparent text-muted hover:text-text'}`}
-          >
+          <button key={k} role="tab" aria-selected={aba === k} className={aba === k ? 'active' : ''} onClick={() => setAba(k)}>
             {l}
           </button>
         ))}
       </div>
 
-      {!painel ? (
-        <p className="text-muted">Carregando…</p>
-      ) : aba === 'notas' ? (
-        <AbaNotas
-          painel={painel}
-          editavel={editavel}
-          token={token}
-          busca={busca}
-          setBusca={setBusca}
-          tag={tag}
-          setTag={setTag}
-          pasta={pasta}
-          setPasta={setPasta}
-          aberta={aberta}
-          setAberta={setAberta}
-          mudou={() => setVersao((v) => v + 1)}
-          setErro={setErro}
-        />
-      ) : aba === 'grafo' ? (
-        <AbaGrafo
-          token={token}
-          onNota={(id) => {
-            setPasta('');
-            setTag('');
-            setAberta(id);
-            setAba('notas');
-          }}
-          onTag={(t) => {
-            setTag(t);
-            setAberta(null);
-            setAba('notas');
-          }}
-        />
-      ) : aba === 'videos' ? (
-        <AbaVideos
-          notas={painel.notas}
-          editavel={editavel}
-          token={token}
-          onAbrir={(id) => {
-            setPasta('');
-            setAberta(id);
-            setAba('notas');
-          }}
-          mudou={() => setVersao((v) => v + 1)}
-          setErro={setErro}
-        />
-      ) : (
-        <AbaObsidian painel={painel} editavel={editavel} token={token} mudou={() => setVersao((v) => v + 1)} setAviso={setAviso} setErro={setErro} />
-      )}
+      <div id="memoria-corpo">
+        {!painel ? (
+          <p className="muted">Carregando…</p>
+        ) : aba === 'notas' ? (
+          <AbaNotas
+            painel={painel}
+            editavel={editavel}
+            token={token}
+            busca={busca}
+            setBusca={setBusca}
+            tag={tag}
+            setTag={setTag}
+            pasta={pasta}
+            setPasta={setPasta}
+            aberta={aberta}
+            setAberta={setAberta}
+            mudou={() => setVersao((v) => v + 1)}
+            setErro={setErro}
+            setAviso={setAviso}
+          />
+        ) : aba === 'grafo' ? (
+          <AbaGrafo
+            token={token}
+            onNota={(id) => {
+              setPasta('');
+              setTag('');
+              setAberta(id);
+              setAba('notas');
+            }}
+            onTag={(t) => {
+              setTag(t);
+              setAberta(null);
+              setAba('notas');
+            }}
+          />
+        ) : aba === 'videos' ? (
+          <AbaVideos
+            notas={painel.notas}
+            editavel={editavel}
+            token={token}
+            onAbrir={(id) => {
+              setPasta('');
+              setAberta(id);
+              setAba('notas');
+            }}
+            mudou={() => setVersao((v) => v + 1)}
+            setErro={setErro}
+          />
+        ) : (
+          <AbaObsidian painel={painel} editavel={editavel} token={token} mudou={() => setVersao((v) => v + 1)} setAviso={setAviso} setErro={setErro} />
+        )}
+      </div>
     </div>
   );
 }
@@ -235,52 +229,50 @@ function AbaNotas(props: {
   setAberta: (s: string | null) => void;
   mudou: () => void;
   setErro: (s: string | null) => void;
+  setAviso: (s: string | null) => void;
 }) {
   const { painel } = props;
   const [nova, setNova] = useState(false);
   const filtrando = !!(props.busca || props.tag || props.pasta);
   return (
-    <div className="grid gap-4 min-[900px]:grid-cols-[minmax(260px,340px)_1fr]">
-      <div className="space-y-2">
-        <div className="flex gap-2">
-          <input type="search" value={props.busca} onChange={(e) => props.setBusca(e.target.value)} placeholder="Buscar nas notas" aria-label="Buscar nas notas" className={campo} />
-          {props.editavel && (
-            <button className={btn} onClick={() => setNova(true)}>
-              + Nota
-            </button>
-          )}
+    <div className="memoria-grade">
+      <div className="memoria-lista">
+        <div className="memoria-busca">
+          <input type="search" value={props.busca} onChange={(e) => props.setBusca(e.target.value)} placeholder="Buscar nas notas" aria-label="Buscar nas notas" />
+          {props.editavel && <button onClick={() => setNova(true)}>+ Nota</button>}
         </div>
-        <div className="flex flex-wrap gap-1.5">
-          <button className={chip(!props.pasta)} onClick={() => props.setPasta('')}>
-            Todas <span className="font-os-mono">{painel.total}</span>
+        <div className="memoria-chips">
+          <button className={`memoria-chip ${props.pasta ? '' : 'on'}`} onClick={() => props.setPasta('')}>
+            Todas <span>{painel.total}</span>
           </button>
           {painel.pastas.map((p) => (
-            <button key={p.nome} className={chip(props.pasta === p.nome)} onClick={() => props.setPasta(p.nome)}>
-              {p.nome} <span className="font-os-mono">{p.n}</span>
+            <button key={p.nome} className={`memoria-chip ${props.pasta === p.nome ? 'on' : ''}`} onClick={() => props.setPasta(p.nome)}>
+              {p.nome} <span>{p.n}</span>
             </button>
           ))}
         </div>
         {painel.tags.length > 0 && (
-          <div className="flex flex-wrap gap-1.5">
+          <div className="memoria-chips memoria-tags">
             {painel.tags.slice(0, 30).map((t) => (
-              <button key={t.t} className={chip(props.tag === t.t)} onClick={() => props.setTag(props.tag === t.t ? '' : t.t)}>
-                #{t.t} <span className="font-os-mono">{t.n}</span>
+              <button key={t.t} className={`memoria-chip tag ${props.tag === t.t ? 'on' : ''}`} onClick={() => props.setTag(props.tag === t.t ? '' : t.t)}>
+                #{t.t} <span>{t.n}</span>
               </button>
             ))}
           </div>
         )}
-        <div className="divide-y divide-border rounded border border-border">
-          {painel.notas.length === 0 && (
-            <p className="p-4 text-sm text-muted">{filtrando ? 'Nada com esse filtro.' : 'A Memória está vazia. Cole um link, um Reel ou uma ideia aí em cima.'}</p>
-          )}
+        <div id="memoria-itens">
+          {painel.notas.length === 0 && <div className="memoria-vazio">{filtrando ? 'Nada com esse filtro.' : 'Sua Memória está vazia. Cole um link, um Reel ou uma ideia aí em cima.'}</div>}
           {painel.notas.map((n) => (
-            <button key={n.id} onClick={() => props.setAberta(n.id)} className={`block w-full px-3 py-2 text-left hover:bg-surface-2 ${props.aberta === n.id ? 'bg-surface-2' : ''}`}>
-              <span className="block text-sm">
-                {ICONE[n.tipo] ?? '📝'} {n.titulo}
-                <Status s={n.status} />
+            <button key={n.id} className={`memoria-item ${props.aberta === n.id ? 'on' : ''}`} onClick={() => props.setAberta(n.id)}>
+              <span className="memoria-item-t">
+                {ICONE[n.tipo] ?? '📝'} {n.titulo} <Badge s={n.status} />
               </span>
-              <span className="mt-0.5 block text-xs text-muted">
-                {n.via === 'whatsapp' && <span className="text-brand">WhatsApp · </span>}
+              <span className="memoria-item-m">
+                {n.via === 'whatsapp' && (
+                  <>
+                    <span className="memoria-wa">WhatsApp</span>{' '}
+                  </>
+                )}
                 {n.pasta} · {quando(n.atualizadaEm)}
                 {n.tags.length > 0 && ` · ${n.tags.slice(0, 3).map((t) => `#${t}`).join(' ')}`}
               </span>
@@ -288,7 +280,7 @@ function AbaNotas(props: {
           ))}
         </div>
       </div>
-      <div className="min-w-0 rounded border border-border p-4">
+      <div className="memoria-leitor" id="memoria-leitor">
         {props.aberta ? (
           <Leitor
             key={props.aberta}
@@ -302,9 +294,10 @@ function AbaNotas(props: {
             }}
             mudou={props.mudou}
             setErro={props.setErro}
+            setAviso={props.setAviso}
           />
         ) : (
-          <p className="text-sm text-muted">Escolha uma nota.</p>
+          <div className="memoria-vazio">Escolha uma nota.</div>
         )}
       </div>
       {nova && (
@@ -323,7 +316,7 @@ function AbaNotas(props: {
   );
 }
 
-function Leitor(props: { id: string; token: string | null; editavel: boolean; onAbrir: (id: string | null) => void; onTag: (t: string) => void; mudou: () => void; setErro: (s: string | null) => void }) {
+function Leitor(props: { id: string; token: string | null; editavel: boolean; onAbrir: (id: string | null) => void; onTag: (t: string) => void; mudou: () => void; setErro: (s: string | null) => void; setAviso: (s: string | null) => void }) {
   const [n, setN] = useState<MemoriaNota | null>(null);
   const [sumiu, setSumiu] = useState(false);
   const [editando, setEditando] = useState(false);
@@ -350,7 +343,7 @@ function Leitor(props: { id: string; token: string | null; editavel: boolean; on
     return () => clearTimeout(t);
   }, [n, editando, abrir]);
 
-  // Links internos do markdown: [[Nota]] abre a nota; #tag filtra.
+  // [[Nota]] abre a nota (ou oferece criar); #tag filtra a lista.
   useEffect(() => {
     const a = artigo.current;
     if (!a) return;
@@ -363,13 +356,17 @@ function Leitor(props: { id: string; token: string | null; editavel: boolean; on
       } else if (alvo.dataset.wiki) {
         e.preventDefault();
         const nome = alvo.dataset.wiki;
-        const r = await apiGet<MemoriaPainel>(`/marketing/estudio/memoria?q=${encodeURIComponent(nome)}`, props.token);
-        const achou = r.notas.find((x) => x.titulo.toLowerCase() === nome.toLowerCase());
-        if (achou) props.onAbrir(achou.id);
-        else if (props.editavel && confirm(`A nota "${nome}" ainda não existe. Criar agora?`)) {
-          const c = await apiPost<MemoriaNotaBreve>('/marketing/estudio/memoria/notas', { titulo: nome, pasta: 'Conhecimento', corpo: '' }, props.token);
-          props.mudou();
-          props.onAbrir(c.id);
+        try {
+          const r = await apiGet<MemoriaPainel>(`/marketing/estudio/memoria?q=${encodeURIComponent(nome)}`, props.token);
+          const achou = r.notas.find((x) => x.titulo.toLowerCase() === nome.toLowerCase());
+          if (achou) props.onAbrir(achou.id);
+          else if (props.editavel && confirm(`A nota "${nome}" ainda não existe. Criar agora?`)) {
+            const c = await apiPost<MemoriaNotaBreve>('/marketing/estudio/memoria/notas', { titulo: nome, pasta: 'Conhecimento', corpo: '' }, props.token);
+            props.mudou();
+            props.onAbrir(c.id);
+          }
+        } catch (err) {
+          props.setErro((err as Error).message);
         }
       }
     };
@@ -377,8 +374,8 @@ function Leitor(props: { id: string; token: string | null; editavel: boolean; on
     return () => a.removeEventListener('click', clique);
   });
 
-  if (sumiu) return <p className="text-sm text-muted">Essa nota não existe mais.</p>;
-  if (!n) return <p className="text-sm text-muted">Abrindo…</p>;
+  if (sumiu) return <div className="memoria-vazio">Essa nota não existe mais.</div>;
+  if (!n) return <p className="muted">Abrindo…</p>;
 
   const agir = async (fn: () => Promise<unknown>) => {
     try {
@@ -388,35 +385,36 @@ function Leitor(props: { id: string; token: string | null; editavel: boolean; on
       props.setErro((e as Error).message);
     }
   };
+  const pronta = n.status === 'pronto';
+  const fonte = n.url && /^https?:\/\//i.test(n.url) ? n.url : '';
 
   return (
-    <div className="space-y-3">
-      <div className="flex flex-wrap items-start justify-between gap-2">
-        <div className="min-w-0 flex-1">
+    <>
+      <div className="memoria-leitor-head">
+        <div className="grow">
           {editando ? (
-            <input value={rascunho.titulo} onChange={(e) => setRascunho({ ...rascunho, titulo: e.target.value })} className={`${campo} text-lg font-semibold`} aria-label="Título" />
+            <input className="memoria-titulo-in" value={rascunho.titulo} onChange={(e) => setRascunho({ ...rascunho, titulo: e.target.value })} aria-label="Título" />
           ) : (
-            <h2 className="text-lg font-semibold leading-snug">{n.titulo}</h2>
+            <h2 className="memoria-titulo">{n.titulo}</h2>
           )}
-          <p className="mt-0.5 text-xs text-muted">
+          <div className="memoria-item-m">
             {n.pasta} · {quando(n.atualizadaEm)}
-            {n.via === 'whatsapp' && <span className="text-brand"> · WhatsApp</span>}
-            {n.noDrive && <span> · no Drive</span>}
-          </p>
+            {n.noDrive ? ' · no Drive' : ''}
+          </div>
+          {n.via === 'whatsapp' && <span className="memoria-wa">WhatsApp</span>}
         </div>
         {props.editavel && (
-          <div className="flex gap-2">
+          <div className="row">
             {editando ? (
               <>
-                <button className={btn} onClick={() => setEditando(false)}>
-                  Cancelar
-                </button>
+                <button onClick={() => setEditando(false)}>Cancelar</button>
                 <button
-                  className={btnPrimario}
+                  className="primary"
                   onClick={() =>
                     void agir(async () => {
                       await apiPut(`/marketing/estudio/memoria/notas/${n.id}`, rascunho, props.token);
                       setEditando(false);
+                      props.setAviso('Nota salva.');
                       await abrir();
                       props.mudou();
                     })
@@ -427,18 +425,15 @@ function Leitor(props: { id: string; token: string | null; editavel: boolean; on
               </>
             ) : (
               <>
-                {n.status === 'pronto' && (
-                  <button className={btn} onClick={() => setEditando(true)}>
-                    Editar
-                  </button>
-                )}
+                {pronta && <button onClick={() => setEditando(true)}>Editar</button>}
                 <button
-                  className={`${btn} hover:border-bad hover:text-bad`}
+                  className="danger"
                   onClick={() => {
                     if (!confirm('Apagar esta nota do OS? O arquivo no Drive continua lá.')) return;
                     void agir(async () => {
                       await apiDelete(`/marketing/estudio/memoria/notas/${n.id}`, props.token);
                       props.onAbrir(null);
+                      props.setAviso('Nota apagada.');
                       props.mudou();
                     });
                   }}
@@ -450,22 +445,28 @@ function Leitor(props: { id: string; token: string | null; editavel: boolean; on
           </div>
         )}
       </div>
-      {!editando && (n.autor || n.url) && (
-        <div className="flex flex-wrap gap-1.5">
-          {n.autor && <span className={chip(false)}>{n.tipo === 'video' ? '@' : ''}{n.autor}</span>}
-          {n.url && /^https?:\/\//i.test(n.url) && (
-            <a className={chip(false)} href={n.url} target="_blank" rel="noopener noreferrer">
+      {!editando && (n.autor || fonte || !pronta) && (
+        <div className="memoria-chips">
+          <Badge s={n.status} />
+          {n.autor && (
+            <span className="memoria-chip">
+              {n.tipo === 'video' ? '@' : ''}
+              {n.autor}
+            </span>
+          )}
+          {fonte && (
+            <a className="memoria-chip" href={fonte} target="_blank" rel="noopener noreferrer">
               Abrir fonte ↗
             </a>
           )}
         </div>
       )}
       {n.status === 'erro' && (
-        <div className="flex flex-wrap items-center gap-2 rounded border border-bad/40 bg-bad/10 px-3 py-2 text-sm text-bad">
-          <span>{n.erro || 'Não deu para processar este link.'}</span>
+        <div className="notice warn memoria-aviso">
+          {n.erro || 'Não deu para processar este link.'}{' '}
           {props.editavel && (
             <button
-              className={btn}
+              className="small"
               onClick={() =>
                 void agir(async () => {
                   await apiPost(`/marketing/estudio/memoria/notas/${n.id}/tentar`, {}, props.token);
@@ -479,36 +480,36 @@ function Leitor(props: { id: string; token: string | null; editavel: boolean; on
           )}
         </div>
       )}
-      {(n.status === 'fila' || n.status === 'processando') && <p className="text-sm text-muted">A IA está lendo este link. A nota completa aparece aqui em instantes.</p>}
+      {(n.status === 'fila' || n.status === 'processando') && <p className="muted memoria-aviso">A IA está lendo este link. A nota completa aparece aqui em instantes.</p>}
       {editando ? (
         <>
-          <label className="block text-sm">
-            <span className="com-rotulo mb-1 block">Pasta</span>
-            <select value={rascunho.pasta} onChange={(e) => setRascunho({ ...rascunho, pasta: e.target.value as MemoriaPasta })} className={campo}>
+          <label className="memoria-pasta-in">
+            Pasta
+            <select value={rascunho.pasta} onChange={(e) => setRascunho({ ...rascunho, pasta: e.target.value as MemoriaPasta })}>
               {MEMORIA_PASTAS.map((p) => (
                 <option key={p}>{p}</option>
               ))}
             </select>
           </label>
-          <textarea rows={18} value={rascunho.corpo} onChange={(e) => setRascunho({ ...rascunho, corpo: e.target.value })} className={`${campo} font-os-mono text-[0.85rem]`} aria-label="Texto da nota" spellCheck />
-          <p className="text-xs text-muted">Markdown. Ligue notas com [[Nome da nota]] e marque assuntos com #tag.</p>
+          <textarea className="memoria-editor" aria-label="Texto da nota" spellCheck value={rascunho.corpo} onChange={(e) => setRascunho({ ...rascunho, corpo: e.target.value })} />
+          <p className="tiny muted">Markdown. Ligue notas com [[Nome da nota]] e marque assuntos com #tag.</p>
         </>
       ) : (
-        <article ref={artigo} className={PROSA} dangerouslySetInnerHTML={{ __html: markdownDaMemoria(n.corpo) || (n.status === 'pronto' ? '<p class="text-muted">Nota vazia.</p>' : '') }} />
+        <article ref={artigo} className="memoria-md" dangerouslySetInnerHTML={{ __html: markdownDaMemoria(n.corpo) || (pronta ? '<p class="muted">Nota vazia.</p>' : '') }} />
       )}
       {n.citadaEm.length > 0 && (
-        <div>
-          <h3 className="com-rotulo mb-1">Citada em</h3>
-          <div className="flex flex-wrap gap-1.5">
+        <>
+          <h3 className="memoria-sec">Citada em</h3>
+          <div className="memoria-back">
             {n.citadaEm.map((c) => (
-              <button key={c.id} className={chip(false)} onClick={() => props.onAbrir(c.id)}>
-                {c.titulo}
+              <button key={c.id} className="memoria-item" onClick={() => props.onAbrir(c.id)}>
+                <span className="memoria-item-t">{c.titulo}</span>
               </button>
             ))}
           </div>
-        </div>
+        </>
       )}
-    </div>
+    </>
   );
 }
 
@@ -516,43 +517,46 @@ function NovaNota(props: { token: string | null; onFechar: () => void; onCriada:
   const [titulo, setTitulo] = useState('');
   const [pasta, setPasta] = useState<MemoriaPasta>('Conhecimento');
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" role="dialog" aria-modal="true" onClick={props.onFechar}>
-      <form
-        className="w-full max-w-md space-y-3 rounded border border-border bg-surface p-4"
-        onClick={(e) => e.stopPropagation()}
-        onSubmit={async (e) => {
-          e.preventDefault();
-          if (!titulo.trim()) return;
-          try {
-            const r = await apiPost<MemoriaNotaBreve>('/marketing/estudio/memoria/notas', { titulo: titulo.trim(), pasta, corpo: '' }, props.token);
-            props.onCriada(r.id);
-          } catch (err) {
-            props.setErro((err as Error).message);
-          }
-        }}
-      >
-        <h2 className="text-lg font-semibold">Nova nota</h2>
-        <label className="block text-sm">
-          <span className="com-rotulo mb-1 block">Título</span>
-          <input autoFocus value={titulo} onChange={(e) => setTitulo(e.target.value)} placeholder="Ex.: Ideias para o livro" className={campo} />
-        </label>
-        <label className="block text-sm">
-          <span className="com-rotulo mb-1 block">Pasta</span>
-          <select value={pasta} onChange={(e) => setPasta(e.target.value as MemoriaPasta)} className={campo}>
-            {MEMORIA_PASTAS.map((p) => (
-              <option key={p}>{p}</option>
-            ))}
-          </select>
-        </label>
-        <div className="flex justify-end gap-2">
-          <button type="button" className={btn} onClick={props.onFechar}>
+    <div style={{ position: 'fixed', inset: 0, zIndex: 60, background: '#16200f80', display: 'grid', placeItems: 'center', padding: 14 }} onClick={props.onFechar}>
+      <dialog open style={{ position: 'static' }} onClick={(e) => e.stopPropagation()}>
+        <div className="dialog-head">
+          <h2>Nova nota</h2>
+          <button className="ghost" onClick={props.onFechar}>
             Fechar
           </button>
-          <button type="submit" className={btnPrimario} disabled={!titulo.trim()}>
-            Criar
-          </button>
         </div>
-      </form>
+        <form
+          className="dialog-body"
+          onSubmit={async (e) => {
+            e.preventDefault();
+            if (!titulo.trim()) return;
+            try {
+              const r = await apiPost<MemoriaNotaBreve>('/marketing/estudio/memoria/notas', { titulo: titulo.trim(), pasta, corpo: '' }, props.token);
+              props.onCriada(r.id);
+            } catch (err) {
+              props.setErro((err as Error).message);
+            }
+          }}
+        >
+          <label>
+            Título
+            <input autoFocus autoComplete="off" required value={titulo} onChange={(e) => setTitulo(e.target.value)} placeholder="Ex.: Ideias para o livro" />
+          </label>
+          <label>
+            Pasta
+            <select value={pasta} onChange={(e) => setPasta(e.target.value as MemoriaPasta)}>
+              {MEMORIA_PASTAS.map((p) => (
+                <option key={p}>{p}</option>
+              ))}
+            </select>
+          </label>
+          <div className="dialog-actions">
+            <button className="primary" type="submit">
+              Criar
+            </button>
+          </div>
+        </form>
+      </dialog>
     </div>
   );
 }
@@ -562,54 +566,52 @@ function AbaGrafo(props: { token: string | null; onNota: (id: string) => void; o
   useEffect(() => {
     void apiGet<MemoriaGrafo>('/marketing/estudio/memoria/grafo', props.token).then(setG).catch(() => setG({ nodes: [], links: [] }));
   }, [props.token]);
-  if (!g) return <p className="text-muted">Carregando…</p>;
+  if (!g) return <p className="muted">Carregando…</p>;
   return (
-    <div className="space-y-2">
-      <p className="text-sm text-muted">
+    <>
+      <p className="muted memoria-dica">
         Cada ponto é uma nota. As linhas ligam notas às tags, às notas citadas com [[título]] e a notas do mesmo autor ou site. Arraste para mexer, use a roda do mouse para aproximar e clique numa nota para abrir.
       </p>
-      <div className="flex flex-wrap gap-3 text-xs text-muted">
+      <div className="memoria-legenda">
         {Object.values(COR_DO_TIPO).map((t) => (
-          <span key={t.nome} className="inline-flex items-center gap-1">
-            <i className="inline-block h-2.5 w-2.5 rounded-full" style={{ background: t.cor }} />
+          <span key={t.nome}>
+            <i style={{ background: t.cor }} />
             {t.nome}
           </span>
         ))}
       </div>
-      {g.nodes.length ? <GrafoDaMemoria grafo={g} onNota={props.onNota} onTag={props.onTag} /> : <p className="text-sm text-muted">Sem notas ainda. Guarde um link ou uma ideia para ver o grafo.</p>}
-    </div>
+      {g.nodes.length ? <GrafoDaMemoria grafo={g} onNota={props.onNota} onTag={props.onTag} /> : <div className="memoria-grafo"><div className="memoria-vazio">Sem notas ainda. Guarde um link ou uma ideia para ver o grafo.</div></div>}
+    </>
   );
 }
 
 function AbaVideos(props: { notas: MemoriaNotaBreve[]; editavel: boolean; token: string | null; onAbrir: (id: string) => void; mudou: () => void; setErro: (s: string | null) => void }) {
   return (
-    <div className="space-y-2">
-      <p className="text-sm text-muted">
-        No Instagram: Compartilhar → grupo Memória ROOT no WhatsApp (ou cole o link aí em cima). A Memória baixa o vídeo, transcreve e destrincha gancho, estrutura, formato e CTA.
-      </p>
-      <div className="divide-y divide-border rounded border border-border">
-        {props.notas.length === 0 && <p className="p-4 text-sm text-muted">Nenhum vídeo ainda.</p>}
+    <>
+      <p className="muted memoria-dica">No Instagram: Compartilhar → grupo Memória ROOT no WhatsApp (ou cole o link aí em cima). A Memória baixa o vídeo, transcreve e destrincha gancho, estrutura, formato e CTA.</p>
+      <div className="memoria-videos">
+        {props.notas.length === 0 && <div className="memoria-vazio">Nenhum vídeo ainda.</div>}
         {props.notas.map((v) => (
-          <div key={v.id} className="flex flex-wrap items-center gap-3 px-3 py-2">
-            <div className="min-w-0 flex-1">
-              <p className="text-sm">
-                {v.titulo}
-                <Status s={v.status} />
-              </p>
-              <p className="truncate text-xs text-muted">
+          <div key={v.id} className="memoria-video">
+            <div className="grow">
+              <div className="memoria-item-t">{v.titulo}</div>
+              <div className="memoria-item-m">
                 {quando(v.criadaEm)}
-                {v.url && ` · ${v.url.replace(/^https?:\/\/(www\.)?/, '').slice(0, 60)}`}
-                {v.erro && <span className="text-bad"> · {v.erro}</span>}
-              </p>
+                {v.url && /^https?:\/\//.test(v.url) && (
+                  <>
+                    {' · '}
+                    <a href={v.url} target="_blank" rel="noopener noreferrer">
+                      {v.url.replace(/^https?:\/\/(www\.)?/, '').slice(0, 60)}
+                    </a>
+                  </>
+                )}
+                {v.erro && <span className="memoria-erro"> · {v.erro}</span>}
+              </div>
             </div>
-            {v.status === 'pronto' && (
-              <button className={btn} onClick={() => props.onAbrir(v.id)}>
-                Abrir nota
-              </button>
-            )}
+            {v.status === 'pronto' ? <span className="badge success">pronto</span> : <Badge s={v.status} />}
             {v.status === 'erro' && props.editavel && (
               <button
-                className={btn}
+                className="small"
                 onClick={async () => {
                   try {
                     await apiPost(`/marketing/estudio/memoria/notas/${v.id}/tentar`, {}, props.token);
@@ -622,36 +624,37 @@ function AbaVideos(props: { notas: MemoriaNotaBreve[]; editavel: boolean; token:
                 Tentar de novo
               </button>
             )}
+            {v.status === 'pronto' && (
+              <button className="small" onClick={() => props.onAbrir(v.id)}>
+                Abrir nota
+              </button>
+            )}
           </div>
         ))}
       </div>
-    </div>
+    </>
   );
 }
 
-function AbaObsidian(props: { painel: MemoriaPainel; editavel: boolean; token: string | null; mudou: () => void; setAviso: (s: string) => void; setErro: (s: string | null) => void }) {
+function AbaObsidian(props: { painel: MemoriaPainel; editavel: boolean; token: string | null; mudou: () => void; setAviso: (s: string | null) => void; setErro: (s: string | null) => void }) {
   const [enviando, setEnviando] = useState(false);
   const faltam = props.painel.notas.filter((n) => n.status === 'pronto' && !n.noDrive).length;
   return (
-    <div className="max-w-2xl space-y-3 text-sm">
-      <h2 className="text-lg font-semibold">A Memória no Obsidian</h2>
-      <p className="text-muted">
-        Cada nota pronta vira um arquivo .md no Drive Root, em <span className="font-os-mono">40-marca-e-conteudo/Memória/&lt;pasta&gt;</span> (Ideias, Links, Vídeos, Conhecimento, Diário), com título, tags, fonte e datas no cabeçalho. O Drive Root já está no cofre do Obsidian, então as notas aparecem lá sozinhas.
+    <div className="memoria-obs">
+      <h2>Abrir a Memória no Obsidian</h2>
+      <p className="muted">
+        Cada nota pronta vira um arquivo .md no Drive Root, em 40-marca-e-conteudo/Memória, separado por pasta (Ideias, Links, Vídeos, Conhecimento, Diário), com título, tags, fonte e datas no cabeçalho. O Drive Root já está no seu
+        Obsidian, então as notas aparecem lá sozinhas.
       </p>
-      <ol className="list-decimal space-y-1 pl-5 text-muted">
-        <li>No Obsidian, abra a pasta Root › 40-marca-e-conteudo › Memória.</li>
-        <li>Editar no Obsidian não volta para o OS: para mudar uma nota, edite aqui, e o arquivo é regravado.</li>
-        <li>Apagar no OS não apaga o arquivo do Drive.</li>
-      </ol>
       {props.editavel && faltam > 0 && (
         <button
-          className={btn}
+          className="memoria-obs-btn"
           disabled={enviando}
           onClick={async () => {
             setEnviando(true);
             try {
               const r = await apiPost<{ enviadas: number; falharam: number }>('/marketing/estudio/memoria/drive/sincronizar', {}, props.token);
-              props.setAviso(r.falharam ? `${r.enviadas} enviadas, ${r.falharam} falharam. Confira a conexão do Google em Conexões.` : `${r.enviadas} notas enviadas para o Drive.`);
+              props.setAviso(r.falharam ? `${r.enviadas} enviadas, ${r.falharam} falharam. Confira a conexão do Google.` : `${r.enviadas} notas enviadas para o Drive.`);
               props.mudou();
             } catch (e) {
               props.setErro((e as Error).message);
@@ -663,6 +666,11 @@ function AbaObsidian(props: { painel: MemoriaPainel; editavel: boolean; token: s
           {enviando ? 'Enviando…' : `Mandar para o Drive as ${faltam} que faltam`}
         </button>
       )}
+      <ol>
+        <li>No Obsidian, abra a pasta Root › 40-marca-e-conteudo › Memória.</li>
+        <li>Para mudar uma nota, edite aqui: o arquivo do Drive é regravado.</li>
+        <li>Apagar aqui não apaga o arquivo do Drive.</li>
+      </ol>
     </div>
   );
 }

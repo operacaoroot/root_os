@@ -186,7 +186,7 @@ export const NAV: NavItem[] = [
   // Nenhuma tela foi apagada; a Pauta do Rodrigo (/pauta, episódios e rodadas) segue igual.
   { key: 'marketing', label: 'Início', href: '/marketing', icon: 'Megaphone', permission: 'pauta.ver', secao: 'conteudo', modulo: 'pauta' },
   { key: 'marketing-memoria', label: 'Memória', href: '/marketing/memoria', icon: 'Brain', permission: 'pauta.ver', secao: 'conteudo', modulo: 'pauta' },
-  { key: 'marketing-triagem', label: 'Ideias', href: '/marketing/triagem', icon: 'Lightbulb', permission: 'pauta.ver', secao: 'conteudo', modulo: 'pauta' },
+  { key: 'marketing-triagem', label: 'Ideias de conteúdo', href: '/marketing/triagem', icon: 'Lightbulb', permission: 'pauta.ver', secao: 'conteudo', modulo: 'pauta' },
   { key: 'maquina-banco', label: 'Banco de ideias', href: '/marketing/banco', icon: 'Lightbulb', permission: 'pauta.ver', secao: 'conteudo', modulo: 'pauta', pai: 'marketing-triagem', oculto: true },
   { key: 'marketing-estrategia', label: 'Estratégia do mês', href: '/marketing/estrategia', icon: 'Compass', permission: 'pauta.ver', secao: 'conteudo', modulo: 'pauta', pai: 'marketing-triagem', oculto: true },
   { key: 'referencias', label: 'Referências', href: '/referencias', icon: 'Library', permission: 'pauta.ver', secao: 'conteudo', modulo: 'pauta', pai: 'marketing-triagem', oculto: true },

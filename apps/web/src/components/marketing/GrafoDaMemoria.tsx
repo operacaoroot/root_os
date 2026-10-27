@@ -54,7 +54,7 @@ export function GrafoDaMemoria(props: { grafo: MemoriaGrafo; onNota: (id: string
     });
     const ligacoes = g.links.map((l) => ({ s: porId.get(l.source)!, t: porId.get(l.target)! })).filter((l) => l.s && l.t);
 
-    const svg = el('svg', { viewBox: `0 0 ${W} ${H}`, class: 'w-full touch-none select-none', role: 'img', 'aria-label': 'Grafo das notas' }) as SVGSVGElement;
+    const svg = el('svg', { viewBox: `0 0 ${W} ${H}`, class: 'memoria-grafo-svg', role: 'img', 'aria-label': 'Grafo das notas' }) as SVGSVGElement;
     const raiz = el('g');
     const gl = el('g');
     const gn = el('g');
@@ -63,14 +63,14 @@ export function GrafoDaMemoria(props: { grafo: MemoriaGrafo; onNota: (id: string
     box.innerHTML = '';
     box.append(svg);
     const linhas = ligacoes.map((l) => {
-      const e = el('line', { stroke: 'currentColor', 'stroke-opacity': l.s.type === 'tag' || l.t.type === 'tag' ? 0.18 : 0.35, 'stroke-width': 1 });
+      const e = el('line', { class: l.s.type === 'tag' || l.t.type === 'tag' ? 'memoria-g-lt' : 'memoria-g-ln' });
       gl.append(e);
       return e;
     });
     const grupos = nos.map((n) => {
-      const grp = el('g', { class: 'cursor-pointer' });
+      const grp = el('g', { class: `memoria-g-node ${n.type}` });
       grp.append(el('circle', { r: n.r, fill: COR_DO_TIPO[n.type]?.cor ?? '#888' }));
-      const t = el('text', { x: n.r + 4, y: 4, 'font-size': 11, fill: 'currentColor', 'fill-opacity': n.type === 'tag' ? 0.55 : 0.85 });
+      const t = el('text', { x: n.r + 4, y: 4 });
       t.textContent = n.label.length > 30 ? n.label.slice(0, 28) + '…' : n.label;
       grp.append(t);
       const titulo = el('title');
@@ -215,5 +215,5 @@ export function GrafoDaMemoria(props: { grafo: MemoriaGrafo; onNota: (id: string
     };
   }, [props.grafo]);
 
-  return <div ref={caixa} className="rounded border border-border bg-surface text-text" />;
+  return <div ref={caixa} className="memoria-grafo" />;
 }

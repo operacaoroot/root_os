@@ -12,7 +12,8 @@ import { ArrastarParaRolar } from './ArrastarParaRolar';
 import { ModulosProvider, useModulos } from './modulos';
 import { CaixaProvider } from './caixa';
 import { FichaEmJanela } from './ficha/FichaEmJanela';
-import { AbasDoMarketing } from './marketing/AbasDoMarketing';
+import { AbasDoMarketing, ehAreaDoMarketing } from './marketing/AbasDoMarketing';
+import './marketing/estudio.css';
 
 // Superfícies que NÃO passam pelo shell autenticado: o login e tudo que é
 // público por natureza (página da bio, a Central da comunidade e os textos
@@ -112,7 +113,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           <Sidebar />
           <div className="flex min-w-0 flex-1 flex-col">
             <Topbar />
-            <main id="root-os-main" tabIndex={-1} className="flex-1 min-w-0 p-4 min-[820px]:p-6">
+            <main id="root-os-main" tabIndex={-1} className={`flex-1 min-w-0 p-4 min-[820px]:p-6${ehAreaDoMarketing(pathname) ? ' estudio-area min-[820px]:px-10' : ''}`}>
               <PortaDaAssinatura>
                 {/* As subseções de cada área moram só no menu lateral desde 20/10/2026
                     (rodada da interface, U1): o campo principal é todo da tela. */}

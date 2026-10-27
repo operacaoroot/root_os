@@ -5,16 +5,29 @@ import { useCallback, useEffect, useState } from 'react';
 import { FORMATOS_COM_REGUA, MOTIVOS_RAPIDOS, type TriagemCard, type TriagemPainel } from '@mktos/shared';
 import { apiGet, apiPost } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
-import { btn, btnPrimario } from '@/components/maquina/pecas';
 
 /*
- * Marketing › IDEIAS (Triagem), a do ROOT Estúdio (26/10/2026): um card por vez.
- * A IA lê o que o OS junta (capturas da Pauta e notas da Memória) e escreve o
- * card. Aprovar manda para o Banco da Máquina; recusar ensina (o peso da fonte
- * desce). Teclas: ← recusa, → aprova. "Desfazer" volta a última decisão.
+ * Marketing › IDEIAS DE CONTEÚDO › Para aprovar. Cópia da tela do ROOT Estúdio
+ * (public/pages/ideias.js): "Mandar referência", um card por vez com a imagem à
+ * esquerda e o texto editável, Recusar/Aprovar e os motivos rápidos. Teclas ← e →.
+ * O cabeçalho e as abas vêm do AppShell (AbasDoMarketing).
+ *
+ * A referência mandada aqui entra na Memória (vira nota e depois card). Aprovar
+ * manda para o Banco da Produção; recusar ensina (o peso da fonte desce).
  */
 
-const campo = 'w-full rounded border border-border bg-bg px-2.5 py-1.5 text-sm outline-none focus:border-brand';
+const firstLine = (v: string, n = 90) => {
+  const s = String(v || '').replace(/\s+/g, ' ').trim();
+  return s.length > n ? s.slice(0, n - 1) + '…' : s;
+};
+const dataCurta = (s: string | null) => {
+  if (!s) return '';
+  try {
+    return new Date(s).toLocaleDateString('pt-BR', { day: 'numeric', month: 'short' });
+  } catch {
+    return '';
+  }
+};
 
 export default function TriagemPage() {
   const { token, ready, can } = useAuth();
@@ -23,9 +36,10 @@ export default function TriagemPage() {
   const [erro, setErro] = useState<string | null>(null);
   const [aviso, setAviso] = useState<string | null>(null);
   const [montando, setMontando] = useState(false);
-  const [recusando, setRecusando] = useState(false);
-  const [edicao, setEdicao] = useState<{ titulo: string; gancho: string; formato: string } | null>(null);
   const [ocupado, setOcupado] = useState(false);
+  const [edicao, setEdicao] = useState<{ titulo: string; resumo: string; gancho: string; formato: string } | null>(null);
+  const [ref, setRef] = useState({ url: '', nota: '' });
+  const [enviando, setEnviando] = useState(false);
 
   const carregar = useCallback(async () => {
     if (!token) return;
@@ -43,8 +57,7 @@ export default function TriagemPage() {
 
   const card: TriagemCard | undefined = painel?.cards[0];
   useEffect(() => {
-    setRecusando(false);
-    setEdicao(card ? { titulo: card.titulo, gancho: card.como.gancho, formato: card.como.formato } : null);
+    setEdicao(card ? { titulo: card.titulo, resumo: card.resumo, gancho: card.como.gancho, formato: card.como.formato } : null);
   }, [card?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const decidir = useCallback(
@@ -52,9 +65,9 @@ export default function TriagemPage() {
       if (!card || ocupado) return;
       setOcupado(true);
       try {
-        const corpo = decisao === 'aprovada' ? { decisao, titulo: edicao?.titulo, gancho: edicao?.gancho, formato: edicao?.formato } : { decisao, motivo };
+        const corpo = decisao === 'aprovada' ? { decisao, titulo: edicao?.titulo, resumo: edicao?.resumo, gancho: edicao?.gancho, formato: edicao?.formato } : { decisao, motivo };
         await apiPost(`/marketing/estudio/triagem/${card.id}/decisao`, corpo, token);
-        setAviso(decisao === 'aprovada' ? 'Aprovada: está no Banco de ideias da Produção.' : 'Recusada. A fonte pesa um pouco menos na próxima.');
+        setAviso(decisao === 'aprovada' ? 'Aprovada. Está no Banco de ideias.' : 'Recusada. A fonte pesa um pouco menos na próxima.');
         await carregar();
       } catch (e) {
         setErro((e as Error).message);
@@ -68,10 +81,9 @@ export default function TriagemPage() {
   useEffect(() => {
     if (!editavel) return;
     const tecla = (e: KeyboardEvent) => {
-      const t = e.target as HTMLElement;
-      if (t.closest('input, textarea, select')) return;
+      if ((e.target as HTMLElement).closest('input, textarea, select')) return;
       if (e.key === 'ArrowRight') void decidir('aprovada');
-      if (e.key === 'ArrowLeft') setRecusando(true);
+      if (e.key === 'ArrowLeft') void decidir('recusada');
     };
     window.addEventListener('keydown', tecla);
     return () => window.removeEventListener('keydown', tecla);
@@ -79,20 +91,30 @@ export default function TriagemPage() {
 
   const montar = async () => {
     setMontando(true);
-    setAviso('A IA está lendo o que chegou. Pode levar um minuto.');
+    setAviso(null);
     try {
       const r = await apiPost<{ lidos: number; cards: number; descartados: number; falharam: number }>('/marketing/estudio/triagem/montar', { quantas: 12 }, token);
-      setAviso(
-        r.lidos === 0
-          ? 'Nada novo para ler. Guarde links na Memória ou cadastre fontes em Fontes e referências.'
-          : `${r.lidos} lidos: ${r.cards} cards novos${r.descartados ? `, ${r.descartados} fora do tema` : ''}${r.falharam ? `, ${r.falharam} falharam` : ''}.`,
-      );
+      setAviso(r.lidos === 0 ? 'Nada novo para ler.' : `${r.cards} ideias novas${r.descartados ? ` (${r.descartados} fora do tema)` : ''}${r.falharam ? `, ${r.falharam} falharam` : ''}.`);
       await carregar();
     } catch (e) {
       setErro((e as Error).message);
-      setAviso(null);
     } finally {
       setMontando(false);
+    }
+  };
+
+  const mandarReferencia = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!ref.url.trim()) return;
+    setEnviando(true);
+    try {
+      await apiPost('/marketing/estudio/memoria/captura', { texto: `${ref.url.trim()} ${ref.nota.trim()}`.trim() }, token);
+      setRef({ url: '', nota: '' });
+      setAviso('Entrou na Memória. Quando a IA terminar de ler, vira ideia aqui.');
+    } catch (err) {
+      setErro((err as Error).message);
+    } finally {
+      setEnviando(false);
     }
   };
 
@@ -100,167 +122,183 @@ export default function TriagemPage() {
     if (!painel?.ultima) return;
     try {
       await apiPost(`/marketing/estudio/triagem/${painel.ultima.id}/desfazer`, {}, token);
-      setAviso('Desfeito. O card voltou para a fila.');
       await carregar();
     } catch (e) {
       setErro((e as Error).message);
     }
   };
 
-  if (ready && !can('pauta.ver')) return <p className="text-muted">Acesso insuficiente para Marketing.</p>;
-  if (!painel) return erro ? <p className="text-bad">{erro}</p> : <p className="text-muted">Carregando…</p>;
+  if (ready && !can('pauta.ver')) return <div className="estudio"><p className="muted">Acesso insuficiente para Marketing.</p></div>;
+
+  const restantes = painel?.contagem.nova ?? 0;
+  const pendentes = painel ? (painel.pendentes >= 500 ? 'mais de 500' : String(painel.pendentes)) : '0';
 
   return (
-    <div className="com-tema mx-auto max-w-3xl space-y-4">
-      <div className="flex flex-wrap items-center justify-between gap-2 text-sm text-muted">
-        <span>
-          <span className="font-os-mono">{painel.contagem.nova}</span> na fila · <span className="font-os-mono">{painel.contagem.aprovada}</span> aprovadas ·{' '}
-          <span className="font-os-mono">{painel.contagem.recusada}</span> recusadas · <span className="font-os-mono">{painel.pendentes >= 500 ? '500+' : painel.pendentes}</span> itens ainda não lidos
-        </span>
-        <span className="flex gap-2">
-          {editavel && painel.ultima && (
-            <button className={btn} onClick={() => void desfazer()}>
-              Desfazer: {painel.ultima.titulo.slice(0, 30)}
-              {painel.ultima.titulo.length > 30 ? '…' : ''}
-            </button>
-          )}
-          {editavel && painel.ia && painel.pendentes > 0 && (
-            <button className={btn} onClick={() => void montar()} disabled={montando}>
-              {montando ? 'Lendo…' : 'Buscar ideias agora'}
-            </button>
-          )}
-        </span>
-      </div>
-      {aviso && (
-        <p role="status" className="rounded border border-brand-dim bg-brand/5 px-3 py-2 text-sm">
-          {aviso}
-        </p>
+    <div className="estudio">
+      {editavel && (
+        <form className="ideias-ref" onSubmit={mandarReferencia}>
+          <strong>Mandar referência</strong>
+          <input type="url" required value={ref.url} onChange={(e) => setRef({ ...ref, url: e.target.value })} placeholder="Cole o link (post, vídeo, matéria)" aria-label="Link da referência" />
+          <input value={ref.nota} onChange={(e) => setRef({ ...ref, nota: e.target.value })} placeholder="Nota (opcional)" aria-label="Nota" />
+          <button className="primary" type="submit" disabled={enviando}>
+            {enviando ? 'Enviando…' : 'Enviar'}
+          </button>
+        </form>
       )}
-      {erro && (
-        <p role="alert" className="rounded border border-bad/40 bg-bad/10 px-3 py-2 text-sm text-bad">
-          {erro}
-        </p>
-      )}
-
-      {!card ? (
-        <div className="rounded border border-border p-8 text-center">
-          <p className="text-lg font-semibold">Sem ideias na fila.</p>
-          <p className="mt-1 text-sm text-muted">
-            {painel.pendentes > 0 ? `Há ${painel.pendentes >= 500 ? 'mais de 500' : painel.pendentes} itens esperando a IA ler.` : 'Guarde links e Reels na Memória, ou cadastre fontes, para a fila encher.'}
-          </p>
-          {editavel && painel.ia && painel.pendentes > 0 && (
-            <button className={`${btnPrimario} mt-4`} onClick={() => void montar()} disabled={montando}>
-              {montando ? 'Lendo…' : 'Buscar ideias agora'}
+      <div className="row between" style={{ margin: '0 0 14px' }}>
+        <span className="ideias-counter">{restantes ? `${restantes} ${restantes === 1 ? 'ideia' : 'ideias'} para avaliar` : ''}</span>
+        <div className="row">
+          {editavel && painel?.ultima && (
+            <button className="ghost" onClick={() => void desfazer()} title={`Desfazer: ${painel.ultima.status === 'aprovada' ? 'aprovou' : 'recusou'} "${painel.ultima.titulo}"`}>
+              ↶ Desfazer
             </button>
           )}
-          <p className="mt-4 text-sm">
-            <Link href="/marketing/memoria" className="text-brand underline">
-              Abrir a Memória
-            </Link>{' '}
-            ·{' '}
-            <Link href="/referencias" className="text-brand underline">
-              Fontes e referências
-            </Link>
-          </p>
+          {editavel && painel?.ia && (painel?.pendentes ?? 0) > 0 && card && (
+            <button className="small" onClick={() => void montar()} disabled={montando}>
+              {montando ? 'Buscando…' : 'Buscar mais ideias'}
+            </button>
+          )}
         </div>
-      ) : (
-        <article className="overflow-hidden rounded border border-border bg-surface">
-          {card.imagemUrl && /^https?:\/\//.test(card.imagemUrl) && (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img src={card.imagemUrl} alt="" className="max-h-64 w-full object-cover" referrerPolicy="no-referrer" />
-          )}
-          <div className="space-y-4 p-5">
-            <p className="text-xs text-muted">
-              {card.fonte?.nome}
-              {card.fonte && card.fonte.peso !== 1 && <span className="font-os-mono"> · peso {card.fonte.peso.toFixed(2)}</span>}
-              {card.publicadoEm && ` · ${new Date(card.publicadoEm).toLocaleDateString('pt-BR')}`}
-              {card.url && (
-                <>
-                  {' · '}
-                  <a href={card.url} target="_blank" rel="noopener noreferrer" className="text-brand underline">
-                    abrir a fonte ↗
-                  </a>
-                </>
-              )}
-            </p>
-            {edicao && editavel ? (
-              <textarea rows={2} value={edicao.titulo} onChange={(e) => setEdicao({ ...edicao, titulo: e.target.value })} className={`${campo} text-xl font-semibold`} aria-label="Título" />
-            ) : (
-              <h2 className="text-xl font-semibold leading-snug">{card.titulo}</h2>
-            )}
-            {card.resumo && <p className="text-[0.95rem]">{card.resumo}</p>}
-            {card.porque && (
-              <div>
-                <h3 className="com-rotulo mb-1">Por que tem a ver</h3>
-                <p className="text-sm">{card.porque}</p>
-              </div>
-            )}
-            <div className="space-y-2">
-              <h3 className="com-rotulo">Como fazer</h3>
-              {edicao && editavel ? (
-                <>
-                  <div className="flex flex-wrap gap-1.5">
-                    {FORMATOS_COM_REGUA.map((f) => (
-                      <button key={f} onClick={() => setEdicao({ ...edicao, formato: f })} className={`${btn} ${edicao.formato === f ? 'border-brand bg-brand/10 text-brand' : ''}`}>
-                        {f}
-                        {f === card.formatoSugerido ? ' · sugerido' : ''}
-                      </button>
-                    ))}
-                  </div>
-                  <label className="block text-sm">
-                    <span className="com-rotulo mb-1 block">Gancho</span>
-                    <textarea rows={2} value={edicao.gancho} onChange={(e) => setEdicao({ ...edicao, gancho: e.target.value })} className={campo} />
-                  </label>
-                </>
-              ) : (
-                <p className="text-sm">
-                  <span className="font-medium">{card.como.formato}</span>
-                  {card.como.gancho && ` · ${card.como.gancho}`}
-                </p>
-              )}
-              {card.como.clipe && <p className="text-sm text-muted">Clipe de abertura: {card.como.clipe}</p>}
-              {card.como.pontos.length > 0 && (
-                <ul className="list-disc space-y-0.5 pl-5 text-sm text-muted">
-                  {card.como.pontos.map((p, i) => (
-                    <li key={i}>{p}</li>
-                  ))}
-                </ul>
-              )}
-            </div>
+      </div>
+      {aviso && <div className="notice">{aviso}</div>}
+      {erro && <div className="notice warn">{erro}</div>}
 
-            {editavel && (
-              <div className="space-y-2 border-t border-border pt-4">
-                {recusando ? (
-                  <div className="flex flex-wrap items-center gap-2">
-                    <span className="text-sm text-muted">Motivo:</span>
-                    {MOTIVOS_RAPIDOS.map((m) => (
-                      <button key={m} className={btn} onClick={() => void decidir('recusada', m)} disabled={ocupado}>
-                        {m}
-                      </button>
-                    ))}
-                    <button className={btn} onClick={() => void decidir('recusada')} disabled={ocupado}>
-                      Sem motivo
-                    </button>
-                    <button className={btn} onClick={() => setRecusando(false)}>
-                      Voltar
-                    </button>
-                  </div>
-                ) : (
-                  <div className="flex flex-wrap items-center justify-between gap-2">
-                    <button className={`${btn} hover:border-bad hover:text-bad`} onClick={() => setRecusando(true)} disabled={ocupado}>
-                      ← Recusar
-                    </button>
-                    <span className="font-os-mono text-xs text-muted">score {card.score.toFixed(1)}</span>
-                    <button className={btnPrimario} onClick={() => void decidir('aprovada')} disabled={ocupado}>
-                      Aprovar →
-                    </button>
-                  </div>
+      <div className="ideias-stage" style={{ minHeight: 480 }}>
+        {!painel ? (
+          <p className="muted">Carregando…</p>
+        ) : montando && !card ? (
+          <div className="empty ideias-empty">
+            <h3>Buscando ideias…</h3>
+            <p>A IA está lendo o que chegou. As ideias aparecem aqui quando ficarem prontas.</p>
+            <div className="ideias-progress">
+              <span />
+            </div>
+          </div>
+        ) : !card ? (
+          <div className="empty">
+            <h3>Nenhuma ideia para avaliar</h3>
+            <p>{painel.pendentes > 0 ? `Há ${pendentes} itens das fontes e da Memória esperando a IA ler.` : 'Guarde links e Reels na Memória ou cadastre fontes de tema.'}</p>
+            <div className="row ideias-empty-actions" style={{ justifyContent: 'center' }}>
+              {editavel && painel.ia && painel.pendentes > 0 && (
+                <button className="primary" onClick={() => void montar()}>
+                  Buscar ideias agora
+                </button>
+              )}
+              <Link className="ideias-link-btn" href="/referencias">
+                Ver fontes
+              </Link>
+            </div>
+          </div>
+        ) : (
+          <>
+            <article className="ideias-card" key={card.id}>
+              {card.imagemUrl && /^https?:\/\//.test(card.imagemUrl) && (
+                <div className="ideias-media">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img src={card.imagemUrl} alt="" referrerPolicy="no-referrer" onError={(e) => (e.currentTarget.parentElement!.style.display = 'none')} />
+                </div>
+              )}
+              <form className="ideias-body ideias-edit" onSubmit={(e) => e.preventDefault()}>
+                <div className="ideias-source">
+                  <span className={`ideias-origin ideias-origin-${card.fonte?.id === 'memoria' ? 'salvo' : 'fonte'}`}>{card.fonte?.id === 'memoria' ? 'Salvo' : 'Da fonte'}</span>
+                  <span className="ideias-origin-line">
+                    {card.fonte?.id === 'memoria' ? (
+                      <>Você guardou na Memória{card.publicadoEm ? ` em ${dataCurta(card.publicadoEm)}` : ''}</>
+                    ) : (
+                      <>
+                        <strong>{card.fonte?.nome ?? 'Uma fonte'}</strong>
+                        {card.publicadoEm ? ` postou em ${dataCurta(card.publicadoEm)}` : ''} · extraído pela Root
+                      </>
+                    )}
+                  </span>
+                  {card.url && (
+                    <a href={card.url} target="_blank" rel="noopener noreferrer">
+                      ver original ↗
+                    </a>
+                  )}
+                </div>
+                <label className="sr-only" htmlFor="ideias-f-title">
+                  Título
+                </label>
+                <textarea id="ideias-f-title" className="ideias-title ideias-input" rows={2} maxLength={300} value={edicao?.titulo ?? ''} onChange={(e) => setEdicao((x) => x && { ...x, titulo: e.target.value })} readOnly={!editavel} />
+                <label className="ideias-label">
+                  Resumo
+                  <textarea className="ideias-input ideias-summary" rows={3} maxLength={1000} value={edicao?.resumo ?? ''} onChange={(e) => setEdicao((x) => x && { ...x, resumo: e.target.value })} readOnly={!editavel} />
+                </label>
+                <div className="ideias-edit-row">
+                  <label className="ideias-label">
+                    Gancho
+                    <textarea className="ideias-input" rows={2} maxLength={500} value={edicao?.gancho ?? ''} onChange={(e) => setEdicao((x) => x && { ...x, gancho: e.target.value })} readOnly={!editavel} />
+                  </label>
+                  <label className="ideias-label">
+                    Formato sugerido
+                    <select value={edicao?.formato ?? card.formatoSugerido} onChange={(e) => setEdicao((x) => x && { ...x, formato: e.target.value })} disabled={!editavel}>
+                      {FORMATOS_COM_REGUA.map((f) => (
+                        <option key={f} value={f}>
+                          {f}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                </div>
+                {card.porque && (
+                  <details className="ideias-fold">
+                    <summary>
+                      <strong>Por que tem a ver com você</strong> <span className="muted">{firstLine(card.porque, 70)}</span>
+                    </summary>
+                    <p>{card.porque}</p>
+                  </details>
                 )}
+                {card.como.pontos.length > 0 && (
+                  <details className="ideias-fold">
+                    <summary>
+                      <strong>Pontos principais</strong>{' '}
+                      <span className="muted">
+                        {firstLine(card.como.pontos[0], 70)}
+                        {card.como.pontos.length > 1 ? ` (+${card.como.pontos.length - 1})` : ''}
+                      </span>
+                    </summary>
+                    <ul>
+                      {card.como.pontos.map((p, i) => (
+                        <li key={i}>{p}</li>
+                      ))}
+                    </ul>
+                  </details>
+                )}
+                {card.como.clipe && (
+                  <details className="ideias-fold">
+                    <summary>
+                      <strong>Clipe de abertura</strong> <span className="muted">{firstLine(card.como.clipe, 70)}</span>
+                    </summary>
+                    <p>{card.como.clipe}</p>
+                  </details>
+                )}
+              </form>
+            </article>
+            {editavel && (
+              <div className="ideias-actions">
+                <div className="ideias-buttons">
+                  <button className="ideias-btn ideias-no" title="Recusar (←)" disabled={ocupado} onClick={() => void decidir('recusada')}>
+                    <span aria-hidden="true">✕</span> Recusar
+                  </button>
+                  <button className="ideias-btn ideias-yes primary" title="Aprovar (→)" disabled={ocupado} onClick={() => void decidir('aprovada')}>
+                    <span aria-hidden="true">✓</span> Aprovar
+                  </button>
+                </div>
+                <div className="ideias-reasons">
+                  <span className="muted tiny">Recusar com motivo:</span>
+                  {MOTIVOS_RAPIDOS.map((r) => (
+                    <button key={r} className="small" disabled={ocupado} onClick={() => void decidir('recusada', r)}>
+                      {r}
+                    </button>
+                  ))}
+                </div>
+                <p className="ideias-keys tiny muted">Teclado: ← recusar · → aprovar</p>
               </div>
             )}
-          </div>
-        </article>
-      )}
+          </>
+        )}
+      </div>
     </div>
   );
 }

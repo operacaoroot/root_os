@@ -14,8 +14,8 @@ export const ABAS_DO_MARKETING: Record<string, readonly string[]> = {
 
 /** Rótulo da aba quando difere do item (a primeira aba é a própria seção). */
 const ROTULO_DA_ABA: Record<string, string> = {
-  'marketing-triagem': 'Triagem',
-  'maquina-producao': 'Design & Gravação',
+  'marketing-triagem': 'Para aprovar',
+  'maquina-producao': 'Quadro',
   'marketing-performance': 'Painel',
   referencias: 'Fontes e referências',
 };
@@ -47,4 +47,20 @@ export function abasDoMarketing(
     .map((key) => NAV.find((n) => n.key === key))
     .filter((n): n is (typeof NAV)[number] => !!n && perms.has(n.permission) && (!ligados || !n.modulo || ligados.has(n.modulo)))
     .map((n) => ({ key: n.key, label: ROTULO_DA_ABA[n.key] ?? n.label, href: n.href, ativa: n.key === destino.key }));
+}
+
+/** O cabeçalho de cada seção com abas, com as frases do ROOT Estúdio. */
+export const CABECALHO_DA_SECAO: Record<string, { titulo: string; lead: string }> = {
+  'marketing-triagem': { titulo: 'Ideias de conteúdo', lead: 'Aprove temas e guarde referências para criar conteúdo.' },
+  'maquina-producao': { titulo: 'Produção', lead: 'Cada ideia aprovada vira uma peça. Acompanhe aqui do formato até o pronto.' },
+  'marketing-performance': { titulo: 'Performance', lead: 'Como cada post rendeu contra a mediana da própria casa.' },
+};
+
+/** A seção com abas a que a rota pertence (a chave do item da seção), ou null. */
+export function secaoComAbas(pathname: string): string | null {
+  const caminho = pathname.split(/[?#]/)[0].replace(/\/+$/, '') || '/';
+  const destino = NAV.filter((n) => caminho === n.href || caminho.startsWith(`${n.href}/`)).sort((a, b) => b.href.length - a.href.length)[0];
+  if (!destino) return null;
+  if (ABAS_DO_MARKETING[destino.key]) return destino.key;
+  return destino.pai && ABAS_DO_MARKETING[destino.pai] ? destino.pai : null;
 }
