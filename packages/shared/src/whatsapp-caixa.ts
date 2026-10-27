@@ -230,6 +230,11 @@ export interface ResumoDoWhatsapp {
   naoLidas: { leads: number; clientes: number; semVinculo: number; equipe: number; comunidade: number; total: number };
   /** Conversas (não arquivadas, fora da equipe e da comunidade) sem lead nem cliente. */
   conversasSemVinculo: number;
+  /**
+   * Layout 27/10 (Lucas): quantas CONVERSAS têm mensagem não lida (fora a comunidade). É o número
+   * do selo vermelho do Chat e da bolha do menu; contar mensagens de grupo inflava o selo.
+   */
+  conversasNaoLidas?: number;
   geradoEm: string;
 }
 

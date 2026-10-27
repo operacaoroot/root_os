@@ -220,16 +220,24 @@ describe('a bolha de não lidas no item WhatsApp do menu', () => {
     render(<Sidebar />);
     const bolha = await screen.findByTestId('whatsapp-bolha');
     expect(bolha.textContent).toBe('6');
-    expect(bolha.getAttribute('aria-label')).toBe('6 mensagens não lidas no WhatsApp');
-    expect(bolha.getAttribute('title')).toBe('6 mensagens não lidas no WhatsApp');
+    expect(bolha.getAttribute('aria-label')).toBe('6 conversas com mensagem nova no WhatsApp');
+    expect(bolha.getAttribute('title')).toBe('6 conversas com mensagem nova no WhatsApp');
     expect(itemDoWhatsapp()!.contains(bolha)).toBe(true);
-    expect(screen.getByLabelText('6 mensagens não lidas no WhatsApp')).toBe(bolha);
+    expect(screen.getByLabelText('6 conversas com mensagem nova no WhatsApp')).toBe(bolha);
+  });
+
+  it('Layout 27/10: com a contagem de conversas, a bolha mostra conversas (3), não mensagens (26)', async () => {
+    RESUMO = { ...resumo({ leads: 2, clientes: 3, equipe: 21 }), conversasNaoLidas: 3 };
+    render(<Sidebar />);
+    const bolha = await screen.findByTestId('whatsapp-bolha');
+    expect(bolha.textContent).toBe('3');
+    expect(bolha.getAttribute('aria-label')).toBe('3 conversas com mensagem nova no WhatsApp');
   });
 
   it('uma só: frase no singular', async () => {
     RESUMO = resumo({ semVinculo: 1 });
     render(<Sidebar />);
-    expect((await screen.findByTestId('whatsapp-bolha')).getAttribute('aria-label')).toBe('1 mensagem não lida no WhatsApp');
+    expect((await screen.findByTestId('whatsapp-bolha')).getAttribute('aria-label')).toBe('1 conversa com mensagem nova no WhatsApp');
   });
 
   it('acima de 99 escreve 99+, e o aria-label diz o número inteiro', async () => {
@@ -237,7 +245,7 @@ describe('a bolha de não lidas no item WhatsApp do menu', () => {
     render(<Sidebar />);
     const bolha = await screen.findByTestId('whatsapp-bolha');
     expect(bolha.textContent).toBe('99+');
-    expect(bolha.getAttribute('aria-label')).toBe('150 mensagens não lidas no WhatsApp');
+    expect(bolha.getAttribute('aria-label')).toBe('150 conversas com mensagem nova no WhatsApp');
   });
 
   it('zero: sem bolha', async () => {

@@ -77,7 +77,7 @@ export class ResumoDoWhatsappService {
     // Layout 26/10: a comunidade é a quinta faixa, tratada como a equipe: fora de leads,
     // clientes e sem vínculo, e somada no total. Equipe vence (as faixas não se sobrepõem).
     const resto: Prisma.WhatsAppConversaWhereInput = { ...base, equipe: false, comunidade: false };
-    const [equipe, comunidade, leads, clientes, semVinculo] = await Promise.all([
+    const [equipe, comunidade, leads, clientes, semVinculo, conversasNaoLidas] = await Promise.all([
       this.prisma.whatsAppConversa.aggregate({ where: { ...base, equipe: true }, _sum: { naoLidas: true } }),
       this.prisma.whatsAppConversa.aggregate({ where: { ...base, equipe: false, comunidade: true }, _sum: { naoLidas: true } }),
       this.prisma.whatsAppConversa.aggregate({ where: { ...resto, leadId: { not: null } }, _sum: { naoLidas: true } }),
@@ -90,6 +90,8 @@ export class ResumoDoWhatsappService {
         _sum: { naoLidas: true },
         _count: { _all: true },
       }),
+      // Layout 27/10 (Lucas): o selo conta conversas com mensagem nova, não mensagens (grupo inflava o número).
+      this.prisma.whatsAppConversa.count({ where: { ...base, naoLidas: { gt: 0 }, OR: [{ equipe: true }, { comunidade: false }] } }),
     ]);
     const n = (x: number | null | undefined) => (typeof x === 'number' && x > 0 ? x : 0);
     const naoLidas = {
@@ -102,6 +104,6 @@ export class ResumoDoWhatsappService {
     };
     // Layout 26/10: a comunidade (grupo grande, não é trabalho) fica fora do total do selo "Chat" e do menu.
     naoLidas.total = naoLidas.leads + naoLidas.clientes + naoLidas.semVinculo + naoLidas.equipe;
-    return { naoLidas, conversasSemVinculo: n(semVinculo._count._all), geradoEm: new Date(t).toISOString() };
+    return { naoLidas, conversasSemVinculo: n(semVinculo._count._all), conversasNaoLidas: n(conversasNaoLidas), geradoEm: new Date(t).toISOString() };
   }
 }

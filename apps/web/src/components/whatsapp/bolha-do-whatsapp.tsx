@@ -31,7 +31,8 @@ export function textoDaBolha(n: number | null | undefined): string | null {
 
 /** A frase da bolha para leitor de tela e `title`. */
 export function fraseDaBolha(n: number): string {
-  return n === 1 ? '1 mensagem não lida no WhatsApp' : `${n} mensagens não lidas no WhatsApp`;
+  // Layout 27/10: o número é de conversas com mensagem nova, não de mensagens.
+  return n === 1 ? '1 conversa com mensagem nova no WhatsApp' : `${n} conversas com mensagem nova no WhatsApp`;
 }
 
 function abaVisivel(): boolean {
@@ -58,7 +59,8 @@ export function useNaoLidasDoWhatsapp(token: string | null | undefined, ativo: b
         .then(() => apiGet<ResumoDoWhatsapp>('/whatsapp/resumo', token))
         .then((r) => {
           if (!vivo) return;
-          const total = r?.naoLidas?.total;
+          // Layout 27/10 (Lucas): conta conversas com mensagem nova; a API antiga só manda o total de mensagens.
+          const total = r?.conversasNaoLidas ?? r?.naoLidas?.total;
           setN(typeof total === 'number' && Number.isFinite(total) ? total : null);
         })
         .catch(() => {
