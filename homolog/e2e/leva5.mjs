@@ -147,7 +147,7 @@ try {
 
   // ---------- L8 · cartão Claude (API) ----------
   const cartoes = await api('GET', '/integrations/cartoes', undefined, sessao.token);
-  const lista = Array.isArray(cartoes) ? cartoes : cartoes.cartoes ?? cartoes.itens ?? [];
+  const lista = Array.isArray(cartoes) ? cartoes : cartoes.items ?? cartoes.cartoes ?? cartoes.itens ?? [];
   const claude = lista.find((c) => (c.chave ?? c.key ?? c.id) === 'anthropic' || /anthropic/i.test(JSON.stringify(c)));
   conferir(claude, 'cartão anthropic ausente em GET /integrations/cartoes');
   const estadoClaude = await api('GET', '/integrations/anthropic/estado', undefined, sessao.token);
@@ -214,6 +214,7 @@ try {
     passo(`L4 · variante B com linha do tempo e volta à A (${tema})`);
     await tid(p, 'painel-historico').click();
     await tid(p, 'historico-da-entidade').waitFor({ timeout: 8000 });
+    await p.locator('[data-testid="historico-linhas"], [data-testid="historico-vazio"], [data-testid="historico-sem-permissao"]').first().waitFor({ timeout: 10000 });
     await foto(p, `painel-historico-${tema}`);
     passo(`L2 · Histórico do lead abre (${tema})`, {
       detalhe: (await tid(p, 'historico-linhas').count()) ? 'com linhas' : (await tid(p, 'historico-vazio').count()) ? 'vazio' : (await tid(p, 'historico-sem-permissao').count()) ? 'sem permissão' : '?',
@@ -238,7 +239,13 @@ try {
     await tid(p, 'chat-popup').waitFor({ timeout: 8000 });
     const abaWhats = tid(p, 'chat-aba-whatsapp');
     if (await abaWhats.count()) await abaWhats.click();
-    await p.waitForTimeout(1500);
+    await p.waitForTimeout(1200);
+    const primeiraConversa = tid(p, 'chat-popup').locator('[data-testid="caixa-lista"] button, [data-testid="caixa-lista"] [role="button"], [data-testid="caixa-lista"] li').first();
+    if (await primeiraConversa.count()) {
+      await primeiraConversa.click();
+      await tid(p, 'caixa-historico').waitFor({ timeout: 10000 }).catch(() => null);
+      await p.waitForTimeout(1200);
+    }
     const temHistorico = await tid(p, 'caixa-historico').count();
     if (temHistorico) {
       const m = await medirRolagem(p, '[data-testid="caixa-historico"]');
@@ -273,8 +280,9 @@ try {
     const menuTexto = await p.locator('nav').first().innerText().catch(() => '');
     conferir(!/Implantação de clientes/.test(menuTexto), 'o menu ainda mostra "Implantação de clientes"');
     passo(`L1/L3 · árvore do Trabalho (${tema})`, {
-      detalhe: `Arquivo do ClickUp ${/Arquivo do ClickUp/.test(arvore) ? 'presente' : 'AUSENTE (rodar arquivo-do-clickup.js --valer)'} · Clientes ${/Clientes/.test(arvore) ? 'presente' : 'ausente'}`,
+      detalhe: `Arquivo do ClickUp ${/arquivo do clickup/i.test(arvore) ? 'presente' : 'AUSENTE (rodar arquivo-do-clickup.js --valer)'} · Clientes ${/clientes/i.test(arvore) ? 'presente' : 'ausente'}`,
     });
+    conferir(/clientes/i.test(arvore), 'a pasta Clientes não está na árvore do Trabalho');
     await foto(p, `trabalho-${tema}`);
     const rImpl = await p.goto(`${WEB}/trabalho/implantacao`, { waitUntil: 'domcontentloaded' });
     conferir(rImpl && rImpl.status() < 400, `/trabalho/implantacao respondeu ${rImpl?.status()}`);

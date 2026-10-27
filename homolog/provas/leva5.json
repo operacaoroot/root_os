@@ -1,0 +1,188 @@
+{
+  "inicio": "2026-10-27T04:36:59.593Z",
+  "web": "http://127.0.0.1:4180",
+  "passos": [
+    {
+      "n": 1,
+      "nome": "login do usuário de teste",
+      "ms": 1430,
+      "detalhe": "teste-leva5@root.test"
+    },
+    {
+      "n": 2,
+      "nome": "L8 · cartão Claude (Anthropic) no catálogo e estado respondem",
+      "ms": 2124,
+      "detalhe": "{\"chave\":{\"origem\":\"nenhuma\",\"gravadaEm\":null,\"versao\":null,\"final\":null,\"ambienteTemChave\":false},\"modelosPermitidos\":[\"claude-opus-5-5\",\"claude-sonnet-5-5\",\"c"
+    },
+    {
+      "n": 3,
+      "nome": "L6 · GET sala/estado de um lead",
+      "ms": 2496,
+      "detalhe": "4a712f2d · {\"leadId\":\"4a712f2d-e410-51b7-a0e5-e93f3bf90136\",\"temSala\":true,\"ativa\":true,\"validaAte\":\"2027-01-25T04:33:49.268Z\",\"entrega\":\"nao_preparado\",\"linkDisponivel\":t"
+    },
+    {
+      "n": 4,
+      "nome": "L2 · menu do lead no funil com Histórico (dark)",
+      "ms": 8729,
+      "detalhe": "22 cartões com menu"
+    },
+    {
+      "n": 5,
+      "nome": "L4 · painel abre na Geral, variante A (dark)",
+      "ms": 12665,
+      "detalhe": "17 campos"
+    },
+    {
+      "n": 6,
+      "nome": "L4 · variante B com linha do tempo e volta à A (dark)",
+      "ms": 13246
+    },
+    {
+      "n": 7,
+      "nome": "L2 · Histórico do lead abre (dark)",
+      "ms": 14227,
+      "detalhe": "com linhas"
+    },
+    {
+      "n": 8,
+      "nome": "L4 · aba Pendências e sugestões (dark)",
+      "ms": 18082,
+      "detalhe": "preencher 11 · passos 3"
+    },
+    {
+      "n": 9,
+      "nome": "L6 · aba Sala do painel (dark)",
+      "ms": 21853,
+      "detalhe": "com estado"
+    },
+    {
+      "n": 10,
+      "nome": "L7 · popup do Chat: rolagem no fim · foco textarea[caixa-resposta] (dark)",
+      "ms": 27200,
+      "detalhe": "{\"achou\":true,\"scrollTop\":1723,\"clientHeight\":404,\"scrollHeight\":2127,\"noFim\":true,\"overscroll\":\"contain\"}"
+    },
+    {
+      "n": 11,
+      "nome": "L1/L3 · árvore do Trabalho (dark)",
+      "ms": 30423,
+      "detalhe": "Arquivo do ClickUp presente · Clientes presente"
+    },
+    {
+      "n": 12,
+      "nome": "L8 · cartão Claude (Anthropic) na tela de Conexões (dark)",
+      "ms": 34926
+    },
+    {
+      "n": 13,
+      "nome": "L2 · menu do lead no funil com Histórico (light)",
+      "ms": 41493,
+      "detalhe": "22 cartões com menu"
+    },
+    {
+      "n": 14,
+      "nome": "L4 · painel abre na Geral, variante A (light)",
+      "ms": 45410,
+      "detalhe": "17 campos"
+    },
+    {
+      "n": 15,
+      "nome": "L4 · variante B com linha do tempo e volta à A (light)",
+      "ms": 45963
+    },
+    {
+      "n": 16,
+      "nome": "L2 · Histórico do lead abre (light)",
+      "ms": 46904,
+      "detalhe": "com linhas"
+    },
+    {
+      "n": 17,
+      "nome": "L4 · aba Pendências e sugestões (light)",
+      "ms": 50912,
+      "detalhe": "preencher 11 · passos 3"
+    },
+    {
+      "n": 18,
+      "nome": "L6 · aba Sala do painel (light)",
+      "ms": 54548,
+      "detalhe": "com estado"
+    },
+    {
+      "n": 19,
+      "nome": "L7 · popup do Chat: rolagem no fim · foco textarea[caixa-resposta] (light)",
+      "ms": 59942,
+      "detalhe": "{\"achou\":true,\"scrollTop\":1721,\"clientHeight\":406,\"scrollHeight\":2127,\"noFim\":true,\"overscroll\":\"contain\"}"
+    },
+    {
+      "n": 20,
+      "nome": "L1/L3 · árvore do Trabalho (light)",
+      "ms": 63207,
+      "detalhe": "Arquivo do ClickUp presente · Clientes presente"
+    },
+    {
+      "n": 21,
+      "nome": "L8 · cartão Claude (Anthropic) na tela de Conexões (light)",
+      "ms": 67763
+    },
+    {
+      "n": 22,
+      "nome": "celular 390 px sem rolagem horizontal (funil, painel, trabalho)",
+      "ms": 79924
+    },
+    {
+      "n": 23,
+      "nome": "L6 · sala pública responde 200",
+      "ms": 82822,
+      "detalhe": "com Acompanhamento"
+    }
+  ],
+  "screenshots": [
+    "leva5-funil-dark.png",
+    "leva5-menu-do-lead-dark.png",
+    "leva5-painel-geral-A-dark.png",
+    "leva5-painel-geral-B-dark.png",
+    "leva5-painel-historico-dark.png",
+    "leva5-painel-pendencias-dark.png",
+    "leva5-painel-sala-dark.png",
+    "leva5-chat-popup-dark.png",
+    "leva5-trabalho-dark.png",
+    "leva5-conexoes-dark.png",
+    "leva5-funil-light.png",
+    "leva5-menu-do-lead-light.png",
+    "leva5-painel-geral-A-light.png",
+    "leva5-painel-geral-B-light.png",
+    "leva5-painel-historico-light.png",
+    "leva5-painel-pendencias-light.png",
+    "leva5-painel-sala-light.png",
+    "leva5-chat-popup-light.png",
+    "leva5-trabalho-light.png",
+    "leva5-conexoes-light.png",
+    "leva5-funil-390.png",
+    "leva5-painel-geral-390.png",
+    "leva5-trabalho-390.png",
+    "leva5-sala-publica.png"
+  ],
+  "semRolagemHorizontal": [
+    {
+      "nome": "funil-390",
+      "scrollWidth": 390,
+      "clientWidth": 390,
+      "ok": true
+    },
+    {
+      "nome": "painel-geral-390",
+      "scrollWidth": 390,
+      "clientWidth": 390,
+      "ok": true
+    },
+    {
+      "nome": "trabalho-390",
+      "scrollWidth": 390,
+      "clientWidth": 390,
+      "ok": true
+    }
+  ],
+  "ok": true,
+  "fim": "2026-10-27T04:38:22.424Z",
+  "duracaoMs": 82826
+}
