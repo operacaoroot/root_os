@@ -249,6 +249,7 @@ export const NAV: NavItem[] = [
 
   { key: 'agentes', label: 'Agentes de IA', href: '/agentes', icon: 'Users', permission: 'mcp.ver', secao: 'automacoes' },
   { key: 'rotinas', label: 'Rotinas automáticas', href: '/rotinas', icon: 'Repeat', permission: 'automacoes.ver', secao: 'automacoes' },
+  { key: 'mensagens-automaticas', label: 'Mensagens automáticas', href: '/mensagens-automaticas', icon: 'MessageCircle', permission: 'automacoes.ver', secao: 'automacoes' },
   { key: 'sessoes', label: 'Sessões de IA', href: '/sessoes', icon: 'Bot', permission: 'mcp.ver', secao: 'automacoes' },
   { key: 'fluxos', label: 'Processos', href: '/fluxos', icon: 'Workflow', permission: 'automacoes.ver', secao: 'automacoes', estado: 'parcial', parcial: 'em preparação: esta rota ainda não oferece um editor de processos' },
   { key: 'custo-ia', label: 'Custos de IA', href: '/painel/custo-ia', icon: 'DollarSign', permission: 'dashboard.ver', secao: 'automacoes' },

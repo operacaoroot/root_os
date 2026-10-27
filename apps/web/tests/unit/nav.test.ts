@@ -285,6 +285,7 @@ const MENU_FINAL: LinhaDoMenu[] = [
   ['financeiro-tarefas', 'Tarefas', '/financeiro/tarefas', 'tarefas.ver', 'financeiro', 'trabalho', null, false],
   ['agentes', 'Agentes de IA', '/agentes', 'mcp.ver', 'automacoes', null, null, false],
   ['rotinas', 'Rotinas automáticas', '/rotinas', 'automacoes.ver', 'automacoes', null, null, false],
+  ['mensagens-automaticas', 'Mensagens automáticas', '/mensagens-automaticas', 'automacoes.ver', 'automacoes', null, null, false],
   ['sessoes', 'Sessões de IA', '/sessoes', 'mcp.ver', 'automacoes', null, null, false],
   ['fluxos', 'Processos', '/fluxos', 'automacoes.ver', 'automacoes', null, null, false],
   ['custo-ia', 'Custos de IA', '/painel/custo-ia', 'dashboard.ver', 'automacoes', null, null, false],
@@ -876,7 +877,8 @@ describe('organização da navegação (ROOT-07 e versão final)', () => {
     expect(trabalho.itens.map((i) => i.label)).toEqual(['Tarefas', 'Atas']);
     // As contagens do menu depois da noite de 20/10/2026.
     // Leva única de 27/10 (leva 5 L3 + Marketing no jeito do Estúdio): 42 visíveis, 26 ocultos (13 abas do Marketing) e 12 absorvidas.
-    expect(NAV.filter((n) => !n.oculto)).toHaveLength(42);
+    // 27/10 (P-79): Mensagens automáticas entrou no Motor de IA: 43.
+    expect(NAV.filter((n) => !n.oculto)).toHaveLength(43);
     // 13 desde a produção 22B: o Perfil (I6) e a Lixeira (I2) entraram ocultos (a entrada é a engrenagem do topo).
     // Layout 26/10: 12 e 11, `/conteudo` (Temas do ClickUp) aposentado, com redirect para o Marketing.
     expect(NAV.filter((n) => n.oculto)).toHaveLength(26);

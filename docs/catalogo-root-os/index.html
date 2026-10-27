@@ -89,7 +89,7 @@
     <p class="abre">Lista viva para quem desenvolve o OS. Em cima, os problemas que a equipe encontra no uso. Embaixo, o comparativo de usabilidade com o ClickUp: o que mudar no layout para o OS ficar tão fácil de usar quanto ele, sem mexer no conceito do sistema.</p>
     <div class="meta">
       <span>Aberto em <b>26/10/2026</b></span>
-      <span>Relatados <b class="num">33</b></span>
+      <span>Relatados <b class="num">35</b></span>
       <span>Comparativo <b class="num">9</b> pontos</span>
       <span>Código: branch <code>root-os/layout-comparativo</code>, nada alterado no ar</span>
     </div>
@@ -551,6 +551,12 @@
       <article class="p" id="P-77"><div class="linha-id"><span class="id">P-77</span><span class="chip alto">layout</span><span class="chip">OS inteiro</span><span class="chip">no ar · leva única 27/10</span></div>
         <h3>O OS inteiro com o layout do Root Estúdio</h3>
         <p><b>Feito:</b> o tema "estúdio" virou o padrão de todos e o escuro ficou opcional no seletor. O fundo é papel, os cards são brancos e a barra lateral é escura, com o item ativo em limão. O texto usa Inter (decisão do Lucas) e o mono fica só nas etiquetas. Os cantos são arredondados e o botão principal é limão com texto escuro. O título da página ficou grande, com mais respiro em volta. Tudo veio pela casca (tema, barra, fonte), sem editar as telas. O Lucas validou no teste em 27/10 ("Curti"). <b>Não muda:</b> menu, rotas, permissões e o que cada tela mostra. Trabalho, Comercial e Financeiro mantêm as linhas compactas. O papel e o claro antigos saem do seletor.</p></article>
+      <article class="p" id="P-78"><div class="linha-id"><span class="id">P-78</span><span class="chip alto">usabilidade</span><span class="chip">Marketing · Produção</span><span class="chip">pronto no teste · espera OK</span></div>
+        <h3>Os textos da Comunidade se perdiam no meio das ideias do Banco</h3>
+        <p><b>Feito no teste:</b> uma coluna "Comunidade · para aprovar" ao lado do Banco. Mostra os textos do agente da comunidade na ordem do dia em que vão ao grupo, com o dia por extenso e o tipo (por exemplo "seg, 02/11 · News semanal"). "Aprovar para seg, 02/11" agenda direto para aquele dia. Se o dia já passou, o botão pede outra data. "Arquivar" tira o texto da fila. O dia vem do nome do arquivo que o agente grava no Drive. Junto vão o .md da isca dentro da peça e a importação do Drive de hora em hora, que pausa em Rotinas. <b>Não muda:</b> as etapas da esteira e o Banco das outras ideias. A ideia ainda sem texto continua no Banco, com os botões de formato.</p></article>
+      <article class="p" id="P-79"><div class="linha-id"><span class="id">P-79</span><span class="chip alto">estrutura</span><span class="chip">OS inteiro</span><span class="chip">desenho para validar</span></div>
+        <h3>Não há um lugar para ver, mudar e parar as mensagens que o OS manda sozinho</h3>
+        <p><b>O que acontece:</b> o OS já fala sozinho no WhatsApp: resumo de tarefas às 07h e às 18h, mensagens do comercial e, quando for ao ar, a comunidade às 08h. O desligamento está espalhado entre Rotinas, Agentes e variáveis do servidor, e o texto quase sempre está fixo no código. <b>Esperado</b> (pedido do Lucas, 27/10): uma tela "Mensagens automáticas" com cada fluxo, o destino, o próximo envio, o texto editável, o liga/desliga e o registro do que saiu. Também um botão "parar tudo" que funcione sem deploy. <b>Não muda:</b> o que cada fluxo faz e quando roda.</p></article>
     </div>
   </section>
 
