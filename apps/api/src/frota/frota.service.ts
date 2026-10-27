@@ -362,9 +362,17 @@ export class FrotaService {
         const vistas = new Set<string>();
         const novas: Prisma.FrotaAcessoCreateManyInput[] = [];
         const atualizacoes: { id: string; data: Prisma.FrotaAcessoUpdateInput }[] = [];
-        const nomeDaChave = (fp: string | undefined) =>
-          (fp && (porFp.get(fp)?.pessoa ?? r.chaves.find((c) => c.fingerprint === fp)?.comentario?.trim())) || null;
+        // A mesma chave pode estar em mais de uma linha do authorized_keys (na VPS da ROOT: 15 linhas, 9 chaves).
+        // Uma entrada por impressão digital, ficando com a linha que tem comentário.
+        const chavesPorFp = new Map<string, (typeof r.chaves)[number]>();
         for (const ch of r.chaves) {
+          const ja = chavesPorFp.get(ch.fingerprint);
+          if (!ja || (!ja.comentario?.trim() && ch.comentario?.trim())) chavesPorFp.set(ch.fingerprint, ch);
+        }
+        const chaves = [...chavesPorFp.values()];
+        const nomeDaChave = (fp: string | undefined) =>
+          (fp && (porFp.get(fp)?.pessoa ?? chaves.find((c) => c.fingerprint === fp)?.comentario?.trim())) || null;
+        for (const ch of chaves) {
           vistas.add(ch.fingerprint);
           const pessoa = ch.comentario?.trim() || `sem dono (${ch.fingerprint.slice(-12)})`;
           const via = ch.restricoes ? `ssh · ${ch.restricoes}` : 'ssh';
