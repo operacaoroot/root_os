@@ -63,21 +63,10 @@ export async function lerMetaDoLink(url: string): Promise<MetaDoLink> {
   } catch {
     return m;
   }
+  // Só a página pública que a pessoa colou (og:title, og:image, autor). O oEmbed do YouTube e
+  // do TikTok, que o Estúdio usava, é endpoint de fornecedor: pela regra do OS ele mora no
+  // conector, e a página já traz o que a nota precisa.
   const youtube = /(^|\.)youtube\.com$|^youtu\.be$/.test(host);
-  if (youtube || /(^|\.)tiktok\.com$/.test(host)) {
-    const oembed = youtube
-      ? `https://www.youtube.com/oembed?format=json&url=${encodeURIComponent(url)}`
-      : `https://www.tiktok.com/oembed?url=${encodeURIComponent(url)}`;
-    try {
-      const r = await buscarPaginaPublica(oembed, { signal: AbortSignal.timeout(10_000) });
-      const o = JSON.parse(await lerCorpoComTeto(r)) as Record<string, string>;
-      m.titulo = limpo(o.title, 300);
-      m.imagem = o.thumbnail_url || null;
-      m.autor = youtube ? limpo(o.author_name, 120) || null : o.author_unique_id ? '@' + o.author_unique_id : null;
-    } catch {
-      /* cai para a página */
-    }
-  }
   try {
     const r = await buscarPaginaPublica(url, {
       headers: { 'user-agent': 'Mozilla/5.0 (compatible; RootOS/1.0)', ...(youtube ? { cookie: 'CONSENT=YES+1; SOCS=CAI' } : {}) },
