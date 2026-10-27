@@ -17,11 +17,22 @@ export interface MetaDoLink {
 const limpo = (v: unknown, max: number) => (typeof v === 'string' ? v.replace(/\s+/g, ' ').trim().slice(0, max) : '');
 const RESERVADOS = new Set(['p', 'reel', 'reels', 'tv', 'stories', 'explore', 'watch', 'shorts', 'channel', 'c', 'user', 'video']);
 
-function entidades(s: string): string {
+/** As entidades nomeadas que os feeds RSS em português mais usam. */
+const NOMEADAS: Record<string, string> = {
+  nbsp: ' ', ldquo: '“', rdquo: '”', lsquo: '‘', rsquo: '’', hellip: '…', ndash: '-', mdash: ',', laquo: '«', raquo: '»',
+  aacute: 'á', eacute: 'é', iacute: 'í', oacute: 'ó', uacute: 'ú', acirc: 'â', ecirc: 'ê', ocirc: 'ô', atilde: 'ã', otilde: 'õ',
+  agrave: 'à', ccedil: 'ç', uuml: 'ü',
+};
+
+/** Texto de feed ou página: tira as tags HTML e decodifica as entidades. */
+export const textoLimpo = (s: string): string => entidades(String(s ?? '').replace(/<[^>]+>/g, ' ')).replace(/\s+/g, ' ').trim();
+
+export function entidades(s: string): string {
   return s
     .replace(/&amp;/g, '&').replace(/&quot;/g, '"').replace(/&#39;|&#x27;/g, "'").replace(/&lt;/g, '<').replace(/&gt;/g, '>')
     .replace(/&#(\d+);/g, (_, n) => String.fromCodePoint(Number(n)))
-    .replace(/&#x([0-9a-f]+);/gi, (_, n) => String.fromCodePoint(parseInt(n, 16)));
+    .replace(/&#x([0-9a-f]+);/gi, (_, n) => String.fromCodePoint(parseInt(n, 16)))
+    .replace(/&([a-z]+);/gi, (m, nome: string) => NOMEADAS[nome.toLowerCase()] ?? m);
 }
 
 function meta(html: string, nome: string): string {

@@ -387,7 +387,7 @@ export function PostAberto(props: { m: Maquina; post: MaquinaPost; onEditar: () 
     <Janela titulo={rotuloDoPost(p)} onFechar={props.onFechar}>
       <div className="flex flex-wrap items-center gap-2 text-sm text-muted">
         <EtapaChip etapa={p.etapa} />
-        <span>{p.formato}</span>
+        <span>{p.formato}{p.subtipo ? ` · ${p.subtipo}` : ''}</span>
         {pilar && <span>· {pilar}</span>}
         <span className="font-os-mono">· {dataCurta(p.data)}</span>
       </div>

@@ -115,7 +115,7 @@ export default function TriagemPage() {
       <div className="flex flex-wrap items-center justify-between gap-2 text-sm text-muted">
         <span>
           <span className="font-os-mono">{painel.contagem.nova}</span> na fila · <span className="font-os-mono">{painel.contagem.aprovada}</span> aprovadas ·{' '}
-          <span className="font-os-mono">{painel.contagem.recusada}</span> recusadas · <span className="font-os-mono">{painel.pendentes}</span> itens ainda não lidos
+          <span className="font-os-mono">{painel.contagem.recusada}</span> recusadas · <span className="font-os-mono">{painel.pendentes >= 500 ? '500+' : painel.pendentes}</span> itens ainda não lidos
         </span>
         <span className="flex gap-2">
           {editavel && painel.ultima && (
@@ -146,7 +146,7 @@ export default function TriagemPage() {
         <div className="rounded border border-border p-8 text-center">
           <p className="text-lg font-semibold">Sem ideias na fila.</p>
           <p className="mt-1 text-sm text-muted">
-            {painel.pendentes > 0 ? `Há ${painel.pendentes} itens esperando a IA ler.` : 'Guarde links e Reels na Memória, ou cadastre fontes, para a fila encher.'}
+            {painel.pendentes > 0 ? `Há ${painel.pendentes >= 500 ? 'mais de 500' : painel.pendentes} itens esperando a IA ler.` : 'Guarde links e Reels na Memória, ou cadastre fontes, para a fila encher.'}
           </p>
           {editavel && painel.ia && painel.pendentes > 0 && (
             <button className={`${btnPrimario} mt-4`} onClick={() => void montar()} disabled={montando}>

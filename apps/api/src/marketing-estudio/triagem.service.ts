@@ -15,7 +15,7 @@ import {
 import { PrismaService } from '../prisma/prisma.service';
 import { LLM_PROVIDER, type LlmProvider } from '../llm/llm.provider';
 import { MarcaService } from '../pauta/marca.service';
-import { jsonDaIa } from './leitura-de-link';
+import { jsonDaIa, textoLimpo } from './leitura-de-link';
 import { REGRAS_DE_PARTIDA, SYSTEM_TRIAGEM } from './prompts';
 
 /*
@@ -240,8 +240,8 @@ export class TriagemService {
       notaId: null,
       fonteId: c.fonteId ?? '',
       fonteNome: c.fonte?.nome ?? 'Captura',
-      titulo: c.titulo ?? c.url ?? 'Sem título',
-      texto: [c.nota, bruto(c.bruto, 'descricao'), bruto(c.bruto, 'description'), bruto(c.bruto, 'resumo'), bruto(c.bruto, 'texto')].filter(Boolean).join('\n').slice(0, 1200),
+      titulo: textoLimpo(c.titulo ?? '') || c.url || 'Sem título',
+      texto: [c.nota, bruto(c.bruto, 'descricao'), bruto(c.bruto, 'description'), bruto(c.bruto, 'resumo'), bruto(c.bruto, 'texto')].filter(Boolean).map((t) => textoLimpo(t as string)).join('\n').slice(0, 1200),
       url: c.url,
       imagemUrl: bruto(c.bruto, 'imagem') || bruto(c.bruto, 'image') || null,
       publicadoEm: (() => {

@@ -21,7 +21,8 @@ export default function TarefasMarketingPage() {
   useEffect(() => {
     if (!ready || !token) return;
     apiGet<TrabEstrutura>('/trabalho/estrutura', token)
-      .then((e) => setPastaId(e.folders.find((f) => !f.parentId && f.name.trim().toLowerCase() === 'marketing')?.id ?? null))
+      // A pasta da área: "Marketing" (ou o nome antigo, "Demandas internas / Marketing").
+      .then((e) => setPastaId(e.folders.find((f) => !f.parentId && (f.name.split('/').pop() ?? '').trim().toLowerCase() === 'marketing')?.id ?? null))
       .catch(() => setPastaId(null));
   }, [ready, token]);
 
