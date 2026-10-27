@@ -196,7 +196,7 @@ export function AbaSala({ leadId, aoMudar }: { leadId: string; aoMudar: () => Pr
         </p>
 
         {dados.temSala && semPasso && (
-          <p className="mt-3 text-[12.5px] text-muted" data-testid="sala-falta-passo" role="status">
+          <p className="mt-3 text-[12.5px] text-muted" data-testid="sala-falta-passo">
             Para publicar a primeira versão, escreva ao menos um próximo passo (o quê, quando e com quem) em "acrescentar passo".
           </p>
         )}

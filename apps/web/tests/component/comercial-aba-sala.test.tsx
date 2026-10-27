@@ -139,9 +139,14 @@ describe('aba Sala', () => {
     expect((chamadas[0].corpo as { proximosPassos: unknown[] }).proximosPassos).toEqual([{ oque: 'marcar o kickoff', quando: '2026-10-21', comQuem: 'Marina' }]);
   });
 
-  it('publicar pede a liberação de outra pessoa', async () => {
+  it('publicar pede a liberação de outra pessoa (leva 5: só com um próximo passo escrito)', async () => {
     render(<AbaSala leadId="l1" aoMudar={async () => undefined} />);
-    await userEvent.click(await screen.findByTestId('sala-publicar'));
+    // Sem passo o botão fica apagado e diz por quê (L6); com um passo escrito, publica.
+    expect(await screen.findByTestId('sala-publicar')).toBeDisabled();
+    expect(screen.getByTestId('sala-falta-passo')).toBeInTheDocument();
+    await userEvent.click(screen.getByTestId('sala-passo-novo'));
+    await userEvent.type(screen.getByLabelText('passo 1: o quê'), 'marcar o kickoff');
+    await userEvent.click(screen.getByTestId('sala-publicar'));
     await waitFor(() => expect(chamadas.some((c) => c.metodo === 'POST' && c.caminho === '/comercial/lead/l1/sala/publicar')).toBe(true));
   });
 });
