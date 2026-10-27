@@ -450,7 +450,25 @@ export function PostAberto(props: { m: Maquina; post: MaquinaPost; onEditar: () 
         {p.tipoCard === 'arte' && p.design && <Bloco rotulo="Orientação de design">{texto(p.design)}</Bloco>}
         {p.roteiro && <Bloco rotulo="Roteiro">{texto(p.roteiro)}</Bloco>}
         {p.legenda && <Bloco rotulo="Legenda">{texto(p.legenda)}</Bloco>}
-        {p.cta && <Bloco rotulo={p.formato === 'Comunidade Wpp' ? 'Material da isca' : 'CTA'}>{texto(p.cta)}</Bloco>}
+        {(p.cta || p.arquivos.length > 0) && (
+          <Bloco rotulo={p.formato === 'Comunidade Wpp' ? 'Material da isca' : 'CTA'}>
+            {p.cta && texto(p.cta)}
+            {p.arquivos.length > 0 && (
+              <ul className="mt-2 space-y-1.5 text-sm">
+                {p.arquivos.map((a) => (
+                  <li key={a.nome}>
+                    <details>
+                      <summary className="cursor-pointer">
+                        📎 <span className="font-medium">{a.nome}</span> <span className="text-muted">· ver ({a.conteudo.length.toLocaleString('pt-BR')} caracteres; vai como documento)</span>
+                      </summary>
+                      <pre className="mt-1.5 max-h-80 overflow-auto whitespace-pre-wrap rounded border border-border bg-surface-2 p-2.5 text-xs">{a.conteudo}</pre>
+                    </details>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </Bloco>
+        )}
         {p.porque && <Bloco rotulo="Por que este post">{texto(p.porque)}</Bloco>}
         {p.fontes.length > 0 && (
           <Bloco rotulo="Fontes">
@@ -570,7 +588,7 @@ export function PostAberto(props: { m: Maquina; post: MaquinaPost; onEditar: () 
 const VAZIO: MaquinaPostSalvarInput = {
   numero: '', titulo: '', pilar: '', formato: 'Reel', subtipo: '', tipoCard: 'video', prioridade: 'media',
   headline: '', subHeadline: '', roteiro: '', slides: [], design: '', legenda: '', cta: '', porque: '',
-  fontes: [], recursos: [],
+  fontes: [], recursos: [], arquivos: [],
 };
 
 /** Criar ou editar um post. Vídeo pede roteiro; Arte/Carrossel pede slides e orientação de design. */
@@ -590,7 +608,7 @@ export function EditorDePost(props: {
           tipoCard: props.post.tipoCard, prioridade: props.post.prioridade, headline: props.post.headline,
           subHeadline: props.post.subHeadline, roteiro: props.post.roteiro, slides: props.post.slides, design: props.post.design,
           legenda: props.post.legenda, cta: props.post.cta, porque: props.post.porque, fontes: props.post.fontes,
-          recursos: props.post.recursos,
+          recursos: props.post.recursos, arquivos: props.post.arquivos,
         }
       : { ...VAZIO, ...props.inicial },
   );
@@ -739,6 +757,17 @@ export function EditorDePost(props: {
           {rotulo(f.formato === 'Comunidade Wpp' ? 'Material da isca (sai no grupo quando a news bate a meta)' : 'CTA')}
           {area('cta', f.formato === 'Comunidade Wpp' ? 8 : 2)}
         </label>
+        {(f.arquivos ?? []).map((a, i) => (
+          <label key={a.nome} className="block">
+            {rotulo(`Arquivo da isca: ${a.nome}`)}
+            <textarea
+              rows={10}
+              value={a.conteudo}
+              onChange={(e) => set('arquivos', (f.arquivos ?? []).map((x, k) => (k === i ? { ...x, conteudo: e.target.value } : x)))}
+              className={`${campo} font-os-mono text-xs`}
+            />
+          </label>
+        ))}
         <label className="block">
           {rotulo('Por que este post')}
           {area('porque', 2)}

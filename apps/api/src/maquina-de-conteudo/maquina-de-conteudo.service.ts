@@ -7,6 +7,7 @@ import {
   type MaquinaComentario,
   type MaquinaEtapa,
   type MaquinaEtapaInput,
+  type MaquinaArquivo,
   type MaquinaHist,
   type MaquinaPainel,
   type MaquinaPost,
@@ -30,6 +31,18 @@ const paraDia = (s: string | null | undefined) => (s ? new Date(`${s}T00:00:00Z`
 const lista = <T>(v: Prisma.JsonValue): T[] => (Array.isArray(v) ? (v as unknown as T[]) : []);
 const objeto = (v: Prisma.JsonValue) => (v && typeof v === 'object' && !Array.isArray(v) ? (v as Record<string, number>) : {});
 
+/** Os arquivos guardados em `recursos` (objetos { tipo: 'arquivo', nome, conteudo }). */
+function arquivosDe(v: Prisma.JsonValue): MaquinaArquivo[] {
+  return lista<Record<string, unknown>>(v)
+    .filter((r) => r && typeof r === 'object' && r.tipo === 'arquivo' && typeof r.nome === 'string')
+    .map((r) => ({ nome: String(r.nome), conteudo: String(r.conteudo ?? '') }));
+}
+
+/** `recursos` no banco: as linhas de texto e os arquivos juntos. */
+function recursosParaGravar(textos: string[], arquivos: MaquinaArquivo[]): Prisma.InputJsonValue {
+  return [...textos, ...arquivos.map((a) => ({ tipo: 'arquivo', nome: a.nome, conteudo: a.conteudo }))] as unknown as Prisma.InputJsonValue;
+}
+
 function paraTela(p: MarketingPost): MaquinaPost {
   return {
     id: p.id,
@@ -50,7 +63,8 @@ function paraTela(p: MarketingPost): MaquinaPost {
     cta: p.cta,
     porque: p.porque,
     fontes: lista(p.fontes),
-    recursos: lista<string>(p.recursos),
+    recursos: lista<unknown>(p.recursos).filter((r): r is string => typeof r === 'string'),
+    arquivos: arquivosDe(p.recursos),
     etapa: ((MAQUINA_ETAPAS as readonly string[]).includes(p.etapa) ? p.etapa : 'ideia') as MaquinaEtapa,
     data: dia(p.data),
     linkPublicado: p.linkPublicado,
@@ -96,11 +110,12 @@ export class MaquinaDeConteudoService {
     const etapa: MaquinaEtapa = input.etapa ?? 'ideia';
     if (etapaPrecisaDeData(etapa) && !input.data) throw new BadRequestException('Escolha a data.');
     const ultimo = await this.prisma.marketingPost.aggregate({ where: { orgId }, _max: { ordem: true } });
-    const { etapa: _e, data, ...campos } = input;
+    const { etapa: _e, data, arquivos, ...campos } = input;
     const hist: MaquinaHist[] = [{ em: new Date().toISOString(), de: null, para: etapa, por: por.nome }];
     const p = await this.prisma.marketingPost.create({
       data: {
         ...campos,
+        recursos: recursosParaGravar(campos.recursos, arquivos ?? []),
         orgId,
         etapa,
         data: paraDia(data),
@@ -113,10 +128,14 @@ export class MaquinaDeConteudoService {
   }
 
   async salvar(orgId: string, id: string, input: MaquinaPostSalvarInput): Promise<MaquinaPost> {
-    await this.achar(orgId, id);
+    const atual = await this.achar(orgId, id);
     // Editar o conteúdo não muda a etapa: isso é só pelo PATCH de etapa, que grava o histórico.
-    const { etapa: _e, data: _d, ...campos } = input;
-    const p = await this.prisma.marketingPost.update({ where: { id }, data: campos });
+    // Sem `arquivos` no corpo, os arquivos que a peça já tem ficam (o editor antigo não os conhece).
+    const { etapa: _e, data: _d, arquivos, ...campos } = input;
+    const p = await this.prisma.marketingPost.update({
+      where: { id },
+      data: { ...campos, recursos: recursosParaGravar(campos.recursos, arquivos ?? arquivosDe(atual.recursos)) },
+    });
     return paraTela(p);
   }
 

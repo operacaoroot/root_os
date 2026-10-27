@@ -202,7 +202,9 @@ export class ReguasService {
       if (!achada) throw new NotFoundException(`Não achei a pasta ${PASTA_DA_COMUNIDADE.join('/')} no Drive Root.`);
       pai = achada.id;
     }
-    const arquivos = (await this.google.filhosDaPasta(orgId, pai)).filter((a) => a.nome.toLowerCase().endsWith('.md'));
+    const filhos = await this.google.filhosDaPasta(orgId, pai);
+    const arquivos = filhos.filter((a) => a.nome.toLowerCase().endsWith('.md'));
+    const pastas = filhos.filter((a) => a.mimeType === 'application/vnd.google-apps.folder');
     const existentes = new Set((await this.prisma.marketingPost.findMany({ where: { orgId, formato: 'Comunidade Wpp' }, select: { numero: true } })).map((p) => p.numero));
     const r = { lidos: arquivos.length, criados: 0, jaExistiam: 0, ignorados: 0 };
     for (const a of arquivos) {
@@ -220,9 +222,17 @@ export class ReguasService {
         r.ignorados++;
         continue;
       }
+      // Os arquivos da isca: semanas/<nome do arquivo sem .md>-isca/*.md (o agente/skill que vai como documento).
+      const pastaDaIsca = pastas.find((p) => p.nome === `${base}-isca`);
+      const daIsca = pastaDaIsca
+        ? (await this.google.filhosDaPasta(orgId, pastaDaIsca.id)).filter((a) => a.nome.toLowerCase().endsWith('.md')).slice(0, 10)
+        : [];
+      const recursos = [];
+      for (const a of daIsca) recursos.push({ tipo: 'arquivo', nome: a.nome.slice(0, 120), conteudo: (await this.google.baixarTextoDoDrive(orgId, a.id)).slice(0, 200_000) });
       await this.prisma.marketingPost.create({
         data: {
           orgId,
+          ...(recursos.length ? { recursos } : {}),
           numero: lido.numero.slice(0, 40),
           titulo: lido.titulo.slice(0, 200),
           formato: 'Comunidade Wpp',

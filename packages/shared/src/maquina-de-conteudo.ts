@@ -86,6 +86,12 @@ export interface MaquinaFonte {
   detalhe?: string;
 }
 
+/** Arquivo da peça, guardado em `recursos` como { tipo: 'arquivo', nome, conteudo } (27/10/2026). */
+export interface MaquinaArquivo {
+  nome: string;
+  conteudo: string;
+}
+
 export interface MaquinaHist {
   em: string;
   de: MaquinaEtapa | null;
@@ -121,6 +127,8 @@ export interface MaquinaPost {
   porque: string;
   fontes: MaquinaFonte[];
   recursos: string[];
+  /** Arquivos que vão junto com a peça (Comunidade Wpp: o .md da isca, mandado como documento). */
+  arquivos: MaquinaArquivo[];
   etapa: MaquinaEtapa;
   /** AAAA-MM-DD, no fuso de São Paulo. Agendado = quando vai ao ar; postado = quando foi. */
   data: string | null;
@@ -172,6 +180,8 @@ export const MaquinaPostSalvarSchema = z.object({
     .max(15)
     .default([]),
   recursos: z.array(z.string().trim().min(1).max(200)).max(20).default([]),
+  /** Ausente = não mexe nos arquivos que a peça já tem. */
+  arquivos: z.array(z.object({ nome: z.string().trim().min(1).max(120), conteudo: z.string().max(200_000) })).max(10).optional(),
   /** Só na criação: nasce direto no calendário (agendado/postado) quando vem do "+" do dia. */
   etapa: z.enum(MAQUINA_ETAPAS).optional(),
   data: data.nullish(),
