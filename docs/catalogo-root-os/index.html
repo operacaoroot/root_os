@@ -1,3 +1,4 @@
+
 <title>Catálogo do ROOT OS</title>
 <meta name="claude:viewport-fit-sides" content="cover">
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -89,7 +90,7 @@
     <p class="abre">Lista viva para quem desenvolve o OS. Em cima, os problemas que a equipe encontra no uso. Embaixo, o comparativo de usabilidade com o ClickUp: o que mudar no layout para o OS ficar tão fácil de usar quanto ele, sem mexer no conceito do sistema.</p>
     <div class="meta">
       <span>Aberto em <b>26/10/2026</b></span>
-      <span>Relatados <b class="num">35</b></span>
+      <span>Relatados <b class="num">82</b></span>
       <span>Comparativo <b class="num">9</b> pontos</span>
       <span>Código: branch <code>root-os/layout-comparativo</code>, nada alterado no ar</span>
     </div>
@@ -551,12 +552,21 @@
       <article class="p" id="P-77"><div class="linha-id"><span class="id">P-77</span><span class="chip alto">layout</span><span class="chip">OS inteiro</span><span class="chip">no ar · leva única 27/10</span></div>
         <h3>O OS inteiro com o layout do Root Estúdio</h3>
         <p><b>Feito:</b> o tema "estúdio" virou o padrão de todos e o escuro ficou opcional no seletor. O fundo é papel, os cards são brancos e a barra lateral é escura, com o item ativo em limão. O texto usa Inter (decisão do Lucas) e o mono fica só nas etiquetas. Os cantos são arredondados e o botão principal é limão com texto escuro. O título da página ficou grande, com mais respiro em volta. Tudo veio pela casca (tema, barra, fonte), sem editar as telas. O Lucas validou no teste em 27/10 ("Curti"). <b>Não muda:</b> menu, rotas, permissões e o que cada tela mostra. Trabalho, Comercial e Financeiro mantêm as linhas compactas. O papel e o claro antigos saem do seletor.</p></article>
-      <article class="p" id="P-78"><div class="linha-id"><span class="id">P-78</span><span class="chip alto">usabilidade</span><span class="chip">Marketing · Produção</span><span class="chip">pronto no teste · espera OK</span></div>
+      <article class="p" id="P-78"><div class="linha-id"><span class="id">P-78</span><span class="chip alto">usabilidade</span><span class="chip">Marketing · Produção</span><span class="chip alto">no ar · 27/10 18:08 UTC</span></div>
         <h3>Os textos da Comunidade se perdiam no meio das ideias do Banco</h3>
-        <p><b>Feito no teste:</b> uma coluna "Comunidade · para aprovar" ao lado do Banco. Mostra os textos do agente da comunidade na ordem do dia em que vão ao grupo, com o dia por extenso e o tipo (por exemplo "seg, 02/11 · News semanal"). "Aprovar para seg, 02/11" agenda direto para aquele dia. Se o dia já passou, o botão pede outra data. "Arquivar" tira o texto da fila. O dia vem do nome do arquivo que o agente grava no Drive. Junto vão o .md da isca dentro da peça e a importação do Drive de hora em hora, que pausa em Rotinas. <b>Não muda:</b> as etapas da esteira e o Banco das outras ideias. A ideia ainda sem texto continua no Banco, com os botões de formato.</p></article>
-      <article class="p" id="P-79"><div class="linha-id"><span class="id">P-79</span><span class="chip alto">estrutura</span><span class="chip">OS inteiro</span><span class="chip">desenho para validar</span></div>
-        <h3>Não há um lugar para ver, mudar e parar as mensagens que o OS manda sozinho</h3>
-        <p><b>O que acontece:</b> o OS já fala sozinho no WhatsApp: resumo de tarefas às 07h e às 18h, mensagens do comercial e, quando for ao ar, a comunidade às 08h. O desligamento está espalhado entre Rotinas, Agentes e variáveis do servidor, e o texto quase sempre está fixo no código. <b>Esperado</b> (pedido do Lucas, 27/10): uma tela "Mensagens automáticas" com cada fluxo, o destino, o próximo envio, o texto editável, o liga/desliga e o registro do que saiu. Também um botão "parar tudo" que funcione sem deploy. <b>Não muda:</b> o que cada fluxo faz e quando roda.</p></article>
+        <p><b>Feito:</b> a coluna "Comunidade · para aprovar" é a primeira do quadro, à esquerda do Banco. Ela mostra os textos do agente da comunidade na ordem do dia em que vão ao grupo, com o dia e o tipo (por exemplo "seg, 02/11 · News semanal"). "Aprovar para seg, 02/11" agenda a peça para aquele dia. Se o dia já passou, o botão pede outra data. "Arquivar" tira o texto da fila. O dia vem do nome do arquivo que o agente grava no Drive. Junto entraram o .md da isca dentro da peça e a importação do Drive de hora em hora, que começa na primeira importação feita pela tela e pausa em Rotinas. Aprovar só agenda: o envio ao grupo não está nesta versão. <b>Não muda:</b> as etapas da esteira e o Banco das outras ideias. A ideia ainda sem texto continua no Banco, com os botões de formato.</p></article>
+      <article class="p" id="P-79"><div class="linha-id"><span class="id">P-79</span><span class="chip alto">estrutura</span><span class="chip">IA e automações</span><span class="chip alto">no ar · 27/10 18:08 UTC</span></div>
+        <h3>Não havia um lugar para ver e parar as mensagens que o OS manda sozinho</h3>
+        <p><b>O que acontecia:</b> o resumo de tarefas das 07h e das 18h, a leitura de comentários com DM do Instagram e, quando forem ao ar, a comunidade e a isca se ligavam e desligavam em lugares diferentes. <b>Feito:</b> a tela IA e automações › Mensagens automáticas lista cada envio com o destino, o horário e se o texto é fixo. Cada um tem o interruptor, "ver o que saiu" e o aviso "ainda não existe nesta empresa" quando a rotina falta. O "Parar todas" pede confirmação e desliga um por um, sem deploy. As respostas do agente pelo @ seguem em Agentes. <b>Falta:</b> editar o texto pela tela. <b>Não muda:</b> o que cada fluxo faz e quando roda.</p></article>
+      <article class="p" id="P-80"><div class="linha-id"><span class="id">P-80</span><span class="chip medio">layout</span><span class="chip">Trabalho · Comercial</span><span class="chip">no teste · leva 4r</span></div>
+        <h3>Lista sem linhas: parecia escrito direto no fundo</h3>
+        <p><b>O que acontecia:</b> a lista de tarefas, o bloco "Tarefas do comercial" e as colunas do Funil ficavam no mesmo bege do fundo, com linhas fracas entre as tarefas. <b>Feito no teste:</b> a lista, o bloco do comercial e as colunas do Funil e do quadro de tarefas ficaram brancos, com as linhas inteiras entre as tarefas e os cartões com borda mais firme. <b>Não muda:</b> o que cada tela mostra, a ordem e os grupos por prazo.</p></article>
+      <article class="p" id="P-81"><div class="linha-id"><span class="id">P-81</span><span class="chip alto">usabilidade</span><span class="chip">WhatsApp · Comercial</span><span class="chip">no teste · leva 4r</span></div>
+        <h3>A conversa do lead que fechou não passava para o cliente</h3>
+        <p><b>O que acontecia:</b> o grupo "ROOT | Papeleira Santa Rita" continuava como lead depois do contrato, e para trocar era preciso desvincular e vincular de novo. <b>Feito no teste:</b> o botão "Passar para cliente" ao lado do lead. Se o fechamento do funil já criou o cliente, um clique passa a conversa e as mensagens para ele. Se não criou (fechado por fora), abre a busca de clientes com o nome do lead, e dá para escolher ou cadastrar. Fica no registro de ações. <b>Não muda:</b> o lead, a etapa no funil e o fechamento.</p></article>
+      <article class="p" id="P-82"><div class="linha-id"><span class="id">P-82</span><span class="chip medio">usabilidade</span><span class="chip">Trabalho · Pendências</span><span class="chip">no teste · leva 4r</span></div>
+        <h3>As listas da nova tarefa não batiam com as pastas de Tarefas</h3>
+        <p><b>O que acontecia:</b> o seletor da nova tarefa rápida mostrava só os nomes das listas, soltos (Onboarding, Tarefas do comercial, Administrativo…), sem a pasta de cada uma, e incluía as listas guardadas do ClickUp. <b>Feito no teste:</b> o seletor agrupa as listas pela pasta da árvore do Trabalho, na mesma ordem e com o mesmo nome (por exemplo "Operação › Clientes"). As listas do Arquivo do ClickUp ficam de fora. Vale para Minhas tarefas e para a Lista, o Quadro e o Calendário do Trabalho. <b>Não muda:</b> as pastas, as listas e onde a tarefa nasce.</p></article>
     </div>
   </section>
 
@@ -714,3 +724,4 @@
     </ul>
   </section>
 </div>
+
