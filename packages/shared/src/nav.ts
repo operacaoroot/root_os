@@ -179,17 +179,27 @@ export const NAV: NavItem[] = [
   { key: 'lixeira', label: 'Lixeira', href: '/lixeira', icon: 'Trash2', permission: 'tarefas.editar', secao: 'trabalho', modulo: 'trabalho', oculto: true },
   // Layout 26/10: "Temas do ClickUp" (`/conteudo`, o espelho ContentItem) foi aposentado. O item
   // sai do NAV e a rota redireciona para o Marketing (`rotas-antigas.mjs`). A API e a tabela ficam.
-  // Fora do foco vale a forma da produção: Banco de ideias e Estratégia do mês moram
-  // no Motor de Marketing (enxugamento.md). A nossa só os tirava do Trabalho.
-  { key: 'marketing-ideias', label: 'Banco de ideias', href: '/marketing/ideias', icon: 'Lightbulb', permission: 'pauta.ver', secao: 'conteudo', modulo: 'pauta' },
-  { key: 'marketing-estrategia', label: 'Estratégia do mês', href: '/marketing/estrategia', icon: 'Compass', permission: 'pauta.ver', secao: 'conteudo', modulo: 'pauta' },
-
-  { key: 'pauta', label: 'Produção de conteúdo', href: '/pauta', icon: 'CalendarClock', permission: 'pauta.ver', secao: 'conteudo', modulo: 'pauta' },
-  { key: 'referencias', label: 'Referências', href: '/referencias', icon: 'Library', permission: 'pauta.ver', secao: 'conteudo', modulo: 'pauta', pai: 'pauta' },
-  { key: 'marketing', label: 'Marketing', href: '/marketing', icon: 'Megaphone', permission: 'pauta.ver', secao: 'conteudo', modulo: 'pauta' },
-  { key: 'marketing-performance', label: 'Performance', href: '/marketing/performance', icon: 'TrendingUp', permission: 'pauta.ver', secao: 'conteudo', modulo: 'pauta', pai: 'marketing' },
-  { key: 'marketing-relatorio', label: 'Relatório do mês', href: '/marketing/relatorio', icon: 'FileBarChart', permission: 'pauta.ver', secao: 'conteudo', modulo: 'pauta', pai: 'marketing' },
-  { key: 'instagram', label: 'Instagram', href: '/instagram', icon: 'Instagram', permission: 'instagram.ver', secao: 'conteudo', modulo: 'instagram' },
+  // Aba Marketing no jeito do ROOT Estúdio (26/10/2026, decisão do Lucas): o menu mostra só as
+  // seções, na ordem dele (Início, Memória, Ideias, Produção, Performance, Página de links,
+  // Campanhas, Eventos do site, Tarefas). O resto vira aba dentro da seção (`ABAS_DO_MARKETING`,
+  // em `marketing-abas.ts`): oculto aqui, vivo pela rota, com o `pai` dizendo de que seção é.
+  // Nenhuma tela foi apagada; a Pauta do Rodrigo (/pauta, episódios e rodadas) segue igual.
+  { key: 'marketing', label: 'Início', href: '/marketing', icon: 'Megaphone', permission: 'pauta.ver', secao: 'conteudo', modulo: 'pauta' },
+  { key: 'marketing-memoria', label: 'Memória', href: '/marketing/memoria', icon: 'Brain', permission: 'pauta.ver', secao: 'conteudo', modulo: 'pauta' },
+  { key: 'marketing-triagem', label: 'Ideias', href: '/marketing/triagem', icon: 'Lightbulb', permission: 'pauta.ver', secao: 'conteudo', modulo: 'pauta' },
+  { key: 'maquina-banco', label: 'Banco de ideias', href: '/marketing/banco', icon: 'Lightbulb', permission: 'pauta.ver', secao: 'conteudo', modulo: 'pauta', pai: 'marketing-triagem', oculto: true },
+  { key: 'marketing-estrategia', label: 'Estratégia do mês', href: '/marketing/estrategia', icon: 'Compass', permission: 'pauta.ver', secao: 'conteudo', modulo: 'pauta', pai: 'marketing-triagem', oculto: true },
+  { key: 'referencias', label: 'Referências', href: '/referencias', icon: 'Library', permission: 'pauta.ver', secao: 'conteudo', modulo: 'pauta', pai: 'marketing-triagem', oculto: true },
+  { key: 'marketing-ideias', label: 'Ideias da pauta', href: '/marketing/ideias', icon: 'Lightbulb', permission: 'pauta.ver', secao: 'conteudo', modulo: 'pauta', pai: 'marketing-triagem', oculto: true },
+  { key: 'maquina-producao', label: 'Produção', href: '/marketing/producao', icon: 'Clapperboard', permission: 'pauta.ver', secao: 'conteudo', modulo: 'pauta' },
+  { key: 'maquina-agendar', label: 'Agendar', href: '/marketing/agendar', icon: 'CalendarPlus', permission: 'pauta.ver', secao: 'conteudo', modulo: 'pauta', pai: 'maquina-producao', oculto: true },
+  { key: 'maquina-calendario', label: 'Calendário', href: '/marketing/calendario', icon: 'CalendarDays', permission: 'pauta.ver', secao: 'conteudo', modulo: 'pauta', pai: 'maquina-producao', oculto: true },
+  { key: 'marketing-formatos', label: 'Formatos', href: '/marketing/formatos', icon: 'Ruler', permission: 'pauta.ver', secao: 'conteudo', modulo: 'pauta', pai: 'maquina-producao', oculto: true },
+  { key: 'pauta', label: 'Pauta (episódios)', href: '/pauta', icon: 'CalendarClock', permission: 'pauta.ver', secao: 'conteudo', modulo: 'pauta', pai: 'maquina-producao', oculto: true },
+  { key: 'marketing-performance', label: 'Performance', href: '/marketing/performance', icon: 'TrendingUp', permission: 'pauta.ver', secao: 'conteudo', modulo: 'pauta' },
+  { key: 'maquina-analise', label: 'Análise dos posts', href: '/marketing/analise', icon: 'BarChart3', permission: 'pauta.ver', secao: 'conteudo', modulo: 'pauta', pai: 'marketing-performance', oculto: true },
+  { key: 'marketing-relatorio', label: 'Relatório do mês', href: '/marketing/relatorio', icon: 'FileBarChart', permission: 'pauta.ver', secao: 'conteudo', modulo: 'pauta', pai: 'marketing-performance', oculto: true },
+  { key: 'instagram', label: 'Instagram', href: '/instagram', icon: 'Instagram', permission: 'instagram.ver', secao: 'conteudo', modulo: 'instagram', pai: 'marketing-performance', oculto: true },
   { key: 'bio', label: 'Página de links', href: '/bio', icon: 'Link2', permission: 'bio.ver', secao: 'conteudo', modulo: 'bio' },
   { key: 'campanhas', label: 'Campanhas', href: '/campanhas', icon: 'Megaphone', permission: 'campanhas.ver', secao: 'conteudo', modulo: 'campanhas' },
   { key: 'pixels', label: 'Eventos do site', href: '/pixels', icon: 'Activity', permission: 'dashboard.ver', secao: 'conteudo', modulo: 'pixels' },

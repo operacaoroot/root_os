@@ -59,6 +59,7 @@ export function useMaquina() {
     podeVer: can('pauta.ver'),
     editavel: can('pauta.editar'),
     recarregar: carregar,
+    agir,
     criar: (input: MaquinaPostSalvarInput) =>
       agir(async () => trocar(await apiPost<MaquinaPost>('/marketing/maquina/posts', input, token))),
     salvar: (id: string, input: MaquinaPostSalvarInput) =>

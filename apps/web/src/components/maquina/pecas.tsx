@@ -4,10 +4,11 @@ import { useEffect, useMemo, useState } from 'react';
 import {
   MAQUINA_ESTEIRA,
   MAQUINA_FORMATOS,
+  COMUNIDADE_SUBTIPOS,
   MAQUINA_METRICAS,
   MAQUINA_PRIORIDADES,
   MAQUINA_TIPOS_DE_FONTE,
-  PROXIMO_PASSO,
+  proximoPassoDoPost,
   ROTULO_DA_ETAPA,
   datasLivres,
   etapaPrecisaDeData,
@@ -17,6 +18,7 @@ import {
   type MaquinaPostSalvarInput,
 } from '@mktos/shared';
 import type { Maquina } from './useMaquina';
+import { GerarComRegua } from './GerarComRegua';
 
 /*
  * AS PEÇAS DA MÁQUINA DE CONTEÚDO (Marketing). O vocabulário da Máquina dos
@@ -190,7 +192,7 @@ export function PostLinha(props: {
   onSoltar?: (e: React.DragEvent) => void;
 }) {
   const p = props.post;
-  const passo = PROXIMO_PASSO[p.etapa];
+  const passo = proximoPassoDoPost(p);
   return (
     <li
       draggable={props.arrastavel}
@@ -209,7 +211,7 @@ export function PostLinha(props: {
         <div className="truncate font-medium hover:text-brand">{p.titulo}</div>
         <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted">
           {!props.semEtapa && <EtapaChip etapa={p.etapa} />}
-          <span>{p.formato}</span>
+          <span>{p.formato}{p.subtipo ? ` · ${p.subtipo}` : ''}</span>
           {props.pilar && <span>· {props.pilar}</span>}
           {p.data && <span className="font-os-mono">· {dataCurta(p.data)}</span>}
           {p.prioridade === 'alta' && <span className="font-os-mono text-warn">· prioridade alta</span>}
@@ -258,7 +260,7 @@ export function ListaDePosts(props: {
           onSoltar={() => soltarSobre(p.id)}
           onAbrir={() => props.onAbrir(p.id)}
           onProximo={() => {
-            const passo = PROXIMO_PASSO[p.etapa];
+            const passo = proximoPassoDoPost(p);
             if (passo) props.levar(p, passo.para);
           }}
         />
@@ -374,7 +376,7 @@ export function PostAberto(props: { m: Maquina; post: MaquinaPost; onEditar: () 
   const [comentario, setComentario] = useState('');
   const [metricas, setMetricas] = useState<Record<string, string>>({});
   const [link, setLink] = useState(p.linkPublicado);
-  const passo = PROXIMO_PASSO[p.etapa];
+  const passo = proximoPassoDoPost(p);
   const pilar = m.painel?.pilares.find((x) => x.chave === p.pilar)?.nome ?? p.pilar;
   useEffect(() => {
     setMetricas(Object.fromEntries(MAQUINA_METRICAS.map((x) => [x.chave, p.metricas[x.chave]?.toString() ?? ''])));
@@ -408,6 +410,7 @@ export function PostAberto(props: { m: Maquina; post: MaquinaPost; onEditar: () 
           <button className={btn} onClick={props.onEditar}>
             Editar
           </button>
+          <GerarComRegua m={m} post={p} />
           {p.etapa !== 'ideia' && p.etapa !== 'arquivado' && (
             <button className={btn} onClick={() => levar(p, 'ideia')}>
               Voltar ao banco
@@ -565,7 +568,7 @@ export function PostAberto(props: { m: Maquina; post: MaquinaPost; onEditar: () 
 }
 
 const VAZIO: MaquinaPostSalvarInput = {
-  numero: '', titulo: '', pilar: '', formato: 'Reel', tipoCard: 'video', prioridade: 'media',
+  numero: '', titulo: '', pilar: '', formato: 'Reel', subtipo: '', tipoCard: 'video', prioridade: 'media',
   headline: '', subHeadline: '', roteiro: '', slides: [], design: '', legenda: '', cta: '', porque: '',
   fontes: [], recursos: [],
 };
@@ -583,7 +586,7 @@ export function EditorDePost(props: {
   const [f, setF] = useState<MaquinaPostSalvarInput>(() =>
     props.post
       ? {
-          numero: props.post.numero, titulo: props.post.titulo, pilar: props.post.pilar, formato: props.post.formato,
+          numero: props.post.numero, titulo: props.post.titulo, pilar: props.post.pilar, formato: props.post.formato, subtipo: props.post.subtipo,
           tipoCard: props.post.tipoCard, prioridade: props.post.prioridade, headline: props.post.headline,
           subHeadline: props.post.subHeadline, roteiro: props.post.roteiro, slides: props.post.slides, design: props.post.design,
           legenda: props.post.legenda, cta: props.post.cta, porque: props.post.porque, fontes: props.post.fontes,
@@ -649,7 +652,15 @@ export function EditorDePost(props: {
           </label>
           <label>
             {rotulo('Formato')}
-            <select value={f.formato} onChange={(e) => set('formato', e.target.value)} className={campo}>
+            <select
+              value={f.formato}
+              onChange={(e) => {
+                const formato = e.target.value;
+                // Comunidade Wpp é texto do grupo: usa slides como opções da enquete e não passa por gravação.
+                setF((a) => ({ ...a, formato, ...(formato === 'Comunidade Wpp' ? { tipoCard: 'arte' as const, subtipo: a.subtipo || 'News semanal' } : { subtipo: '' }) }));
+              }}
+              className={campo}
+            >
               {MAQUINA_FORMATOS.map((x) => (
                 <option key={x}>{x}</option>
               ))}
@@ -674,6 +685,22 @@ export function EditorDePost(props: {
           {rotulo('Sub headline')}
           <input value={f.subHeadline} onChange={(e) => set('subHeadline', e.target.value)} className={campo} />
         </label>
+        {f.formato === 'Comunidade Wpp' && (
+          <>
+            <div className="flex flex-wrap gap-2">
+              {COMUNIDADE_SUBTIPOS.map((t) => (
+                <button key={t} type="button" onClick={() => set('subtipo', t)} className={`${btn} ${f.subtipo === t ? 'border-brand bg-brand/10 text-brand' : ''}`}>
+                  {t}
+                </button>
+              ))}
+            </div>
+            <label className="block">
+              {rotulo(f.subtipo === 'Enquete' ? 'Mensagem antes da enquete' : 'Mensagem do grupo (*negrito*, _itálico_)')}
+              {area('roteiro', 12)}
+            </label>
+            {f.subtipo === 'Enquete' && <p className="text-xs text-muted">A pergunta vai em Sub headline (até 100 caracteres) e as opções em Slides (3 ou 4, até 25 cada).</p>}
+          </>
+        )}
         {f.tipoCard === 'arte' ? (
           <>
             <div>

@@ -190,6 +190,6 @@ import { DmAutomaticaService } from './dm-automatica.service';
   // rotinas (RoutinesModule).
   // MK6: `RelatorioService` sai daqui porque o executor da rotina mensal vive
   // no RoutinesModule, como o da coleta já fazia com o RodadaService.
-  exports: [EditorialService, PautaService, RodadaService, EvolutionService, EncadeamentoService, PublicacaoInstagramService, ComentariosService, EnvioAoYoutubeService, DmAutomaticaService, RelatorioService, MarcaService],
+  exports: [EditorialService, PautaService, ApifyService, RodadaService, EvolutionService, EncadeamentoService, PublicacaoInstagramService, ComentariosService, EnvioAoYoutubeService, DmAutomaticaService, RelatorioService, MarcaService],
 })
 export class PautaModule {}

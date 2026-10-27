@@ -38,6 +38,7 @@ function paraTela(p: MarketingPost): MaquinaPost {
     titulo: p.titulo,
     pilar: p.pilar,
     formato: p.formato,
+    subtipo: p.subtipo,
     tipoCard: p.tipoCard === 'arte' ? 'arte' : 'video',
     prioridade: (['alta', 'media', 'baixa'].includes(p.prioridade) ? p.prioridade : 'media') as MaquinaPost['prioridade'],
     headline: p.headline,

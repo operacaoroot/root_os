@@ -239,15 +239,23 @@ const MENU_FINAL: LinhaDoMenu[] = [
   ['trabalho-atas', 'Atas', '/trabalho/atas', 'tarefas.ver', 'trabalho', 'trabalho', 'trabalho', false],
   // 22/10/2026 (produção 3, I2): a Lixeira, oculta, aberta pela engrenagem do topo.
   ['lixeira', 'Lixeira', '/lixeira', 'tarefas.editar', 'trabalho', 'trabalho', null, true],
-  // Motor de Marketing: a forma da produção (Banco de ideias e Estratégia moram aqui, visíveis).
-  ['marketing-ideias', 'Banco de ideias', '/marketing/ideias', 'pauta.ver', 'conteudo', 'pauta', null, false],
-  ['marketing-estrategia', 'Estratégia do mês', '/marketing/estrategia', 'pauta.ver', 'conteudo', 'pauta', null, false],
-  ['pauta', 'Produção de conteúdo', '/pauta', 'pauta.ver', 'conteudo', 'pauta', null, false],
-  ['referencias', 'Referências', '/referencias', 'pauta.ver', 'conteudo', 'pauta', 'pauta', false],
-  ['marketing', 'Marketing', '/marketing', 'pauta.ver', 'conteudo', 'pauta', null, false],
-  ['marketing-performance', 'Performance', '/marketing/performance', 'pauta.ver', 'conteudo', 'pauta', 'marketing', false],
-  ['marketing-relatorio', 'Relatório do mês', '/marketing/relatorio', 'pauta.ver', 'conteudo', 'pauta', 'marketing', false],
-  ['instagram', 'Instagram', '/instagram', 'instagram.ver', 'conteudo', 'instagram', null, false],
+  // Aba Marketing no jeito do ROOT Estúdio (26/10/2026): só as seções no menu; o resto é aba (oculto, com pai).
+  ['marketing', 'Início', '/marketing', 'pauta.ver', 'conteudo', 'pauta', null, false],
+  ['marketing-memoria', 'Memória', '/marketing/memoria', 'pauta.ver', 'conteudo', 'pauta', null, false],
+  ['marketing-triagem', 'Ideias', '/marketing/triagem', 'pauta.ver', 'conteudo', 'pauta', null, false],
+  ['maquina-banco', 'Banco de ideias', '/marketing/banco', 'pauta.ver', 'conteudo', 'pauta', 'marketing-triagem', true],
+  ['marketing-estrategia', 'Estratégia do mês', '/marketing/estrategia', 'pauta.ver', 'conteudo', 'pauta', 'marketing-triagem', true],
+  ['referencias', 'Referências', '/referencias', 'pauta.ver', 'conteudo', 'pauta', 'marketing-triagem', true],
+  ['marketing-ideias', 'Ideias da pauta', '/marketing/ideias', 'pauta.ver', 'conteudo', 'pauta', 'marketing-triagem', true],
+  ['maquina-producao', 'Produção', '/marketing/producao', 'pauta.ver', 'conteudo', 'pauta', null, false],
+  ['maquina-agendar', 'Agendar', '/marketing/agendar', 'pauta.ver', 'conteudo', 'pauta', 'maquina-producao', true],
+  ['maquina-calendario', 'Calendário', '/marketing/calendario', 'pauta.ver', 'conteudo', 'pauta', 'maquina-producao', true],
+  ['marketing-formatos', 'Formatos', '/marketing/formatos', 'pauta.ver', 'conteudo', 'pauta', 'maquina-producao', true],
+  ['pauta', 'Pauta (episódios)', '/pauta', 'pauta.ver', 'conteudo', 'pauta', 'maquina-producao', true],
+  ['marketing-performance', 'Performance', '/marketing/performance', 'pauta.ver', 'conteudo', 'pauta', null, false],
+  ['maquina-analise', 'Análise dos posts', '/marketing/analise', 'pauta.ver', 'conteudo', 'pauta', 'marketing-performance', true],
+  ['marketing-relatorio', 'Relatório do mês', '/marketing/relatorio', 'pauta.ver', 'conteudo', 'pauta', 'marketing-performance', true],
+  ['instagram', 'Instagram', '/instagram', 'instagram.ver', 'conteudo', 'instagram', 'marketing-performance', true],
   ['bio', 'Página de links', '/bio', 'bio.ver', 'conteudo', 'bio', null, false],
   ['campanhas', 'Campanhas', '/campanhas', 'campanhas.ver', 'conteudo', 'campanhas', null, false],
   ['pixels', 'Eventos do site', '/pixels', 'dashboard.ver', 'conteudo', 'pixels', null, false],
@@ -311,6 +319,19 @@ const OCULTOS_E_DESTINO: Record<string, string | null> = {
   perfil: null,
   // A Lixeira (22/10/2026) abre pela engrenagem do topo: não é absorvida, a rota é dela.
   lixeira: null,
+  // 26/10/2026 (aba Marketing no jeito do ROOT Estúdio): abas das seções Ideias, Produção e
+  // Performance. Não são absorvidas: cada uma segue sendo a dona da rota, aberta pela aba.
+  'maquina-banco': null,
+  'marketing-estrategia': null,
+  referencias: null,
+  'marketing-ideias': null,
+  'maquina-agendar': null,
+  'maquina-calendario': null,
+  'marketing-formatos': null,
+  pauta: null,
+  'maquina-analise': null,
+  'marketing-relatorio': null,
+  instagram: null,
 };
 
 const RAIZ_DO_WEB = join(__dirname, '..', '..');
@@ -469,10 +490,11 @@ describe('navEmArvore', () => {
   });
 
   it('o filho vem dentro do pai, e não no topo da seção', () => {
-    const conteudo = navEmArvore(todas).find((g) => g.secao.key === 'conteudo')!;
-    expect(conteudo.itens.map((no) => no.item.key)).not.toContain('referencias');
-    const pauta = conteudo.itens.find((no) => no.item.key === 'pauta')!;
-    expect(pauta.filhos.map((f) => f.key)).toEqual(['referencias']);
+    // 26/10/2026: o Marketing não tem mais filho visível (as abas são ocultas); o exemplo é o Trabalho.
+    const trabalho = navEmArvore(todas).find((g) => g.secao.key === 'trabalho')!;
+    expect(trabalho.itens.map((no) => no.item.key)).not.toContain('implantacao');
+    const raiz = trabalho.itens.find((no) => no.item.key === 'trabalho')!;
+    expect(raiz.filhos.map((f) => f.key)).toContain('implantacao');
   });
 
   /*
@@ -497,8 +519,6 @@ describe('navEmArvore', () => {
 
   it('preserva a ordem do NAV dentro de cada seção', () => {
     const conteudo = navEmArvore(todas).find((g) => g.secao.key === 'conteudo')!;
-    const pauta = conteudo.itens.find((no) => no.item.key === 'pauta')!;
-    expect(pauta.filhos.map((f) => f.key)).toEqual(['referencias']);
     expect(conteudo.itens.map((no) => no.item.key)).toEqual(
       NAV.filter((n) => n.secao === 'conteudo' && !n.pai && !n.oculto).map((n) => n.key),
     );
@@ -540,24 +560,21 @@ describe('o bloco Marketing (MK7)', () => {
     expect(m!.pai, 'o bloco é raiz, não filho da Pauta').toBeUndefined();
   });
 
-  it('Performance e Relatório do mês penduram no bloco; Banco de ideias e Estratégia ficam visíveis no Marketing', () => {
-    for (const k of ['marketing-performance', 'marketing-relatorio']) {
+  it('26/10/2026: o menu mostra só as seções do Estúdio; o resto é aba da seção, oculto e vivo', () => {
+    const visiveis = NAV.filter((n) => n.secao === 'conteudo' && !n.oculto).map((n) => n.label);
+    expect(visiveis).toEqual(['Início', 'Memória', 'Ideias', 'Produção', 'Performance', 'Página de links', 'Campanhas', 'Eventos do site', 'Tarefas']);
+    const abas: Record<string, string[]> = {
+      'marketing-triagem': ['maquina-banco', 'marketing-estrategia', 'referencias', 'marketing-ideias'],
+      'maquina-producao': ['maquina-agendar', 'maquina-calendario', 'marketing-formatos', 'pauta'],
+      'marketing-performance': ['maquina-analise', 'marketing-relatorio', 'instagram'],
+    };
+    for (const [pai, filhos] of Object.entries(abas)) for (const k of filhos) {
       const n = item(k);
-      expect(n, `${k} sumiu do menu`).toBeDefined();
-      expect(n!.pai).toBe('marketing');
-      expect(n!.secao).toBe('conteudo');
-      expect(n!.permission).toBe('pauta.ver');
-    }
-    for (const k of ['marketing-ideias', 'marketing-estrategia']) {
-      const n = item(k);
-      expect(n, `${k} sumiu do menu`).toBeDefined();
-      // A forma da produção (fora do foco): moram no Marketing e aparecem no menu.
-      expect(n!.secao, `${k}: mora no Marketing`).toBe('conteudo');
-      expect(n!.oculto, `${k}: a produção os mostra no Marketing`).toBeFalsy();
-      expect(n!.pai, `${k}: o pai estaria em outra seção`).toBeUndefined();
-      expect(n!.permission).toBe('pauta.ver');
-      expect(n!.modulo).toBe('pauta');
-      expect(ROTAS_ABSORVIDAS.some((r) => r.href === n!.href), `${k}: item visível não é rota absorvida`).toBe(false);
+      expect(n, `${k} sumiu do NAV`).toBeDefined();
+      expect(n!.pai, k).toBe(pai);
+      expect(n!.oculto, k).toBe(true);
+      expect(n!.secao, k).toBe('conteudo');
+      expect(ROTAS_ABSORVIDAS.some((r) => r.href === n!.href), `${k}: aba não é rota absorvida`).toBe(false);
     }
   });
 
@@ -584,11 +601,9 @@ describe('o bloco Marketing (MK7)', () => {
     const conteudo = comModulo.find((g) => g.secao.key === 'conteudo');
     const bloco = conteudo?.itens.find((i) => i.item.key === 'marketing');
     expect(bloco, 'o bloco não apareceu para quem tem pauta.ver').toBeDefined();
-    expect(bloco!.filhos.map((f) => f.key).sort()).toEqual([
-      'marketing-performance',
-      'marketing-relatorio',
-    ]);
-    expect(conteudo!.itens.map((i) => i.item.key)).toEqual(expect.arrayContaining(['marketing-ideias', 'marketing-estrategia']));
+    // 26/10/2026: as seções do Estúdio aparecem para quem tem pauta.ver; as abas ficam fora do menu.
+    expect(conteudo!.itens.map((i) => i.item.key)).toEqual(expect.arrayContaining(['marketing-memoria', 'marketing-triagem', 'maquina-producao', 'marketing-performance']));
+    expect(conteudo!.itens.map((i) => i.item.key)).not.toContain('marketing-ideias');
     const trabalho = comModulo.find((g) => g.secao.key === 'trabalho');
     expect(trabalho?.itens.map((i) => i.item.key) ?? []).not.toContain('marketing-ideias');
 
@@ -845,10 +860,11 @@ describe('organização da navegação (ROOT-07 e versão final)', () => {
     const trabalho = navPorSecao(todas).find((g) => g.secao.key === 'trabalho')!;
     expect(trabalho.itens.map((i) => i.label)).toEqual(['Tarefas', 'Implantação de clientes', 'Atas']);
     // As contagens do menu depois da noite de 20/10/2026.
-    expect(NAV.filter((n) => !n.oculto)).toHaveLength(46);
+    // 26/10/2026 (aba Marketing no jeito do Estúdio): 43 visíveis e 23 ocultos (11 viraram aba).
+    expect(NAV.filter((n) => !n.oculto)).toHaveLength(43);
     // 13 desde a produção 22B: o Perfil (I6) e a Lixeira (I2) entraram ocultos (a entrada é a engrenagem do topo).
     // Layout 26/10: 12 e 11, `/conteudo` (Temas do ClickUp) aposentado, com redirect para o Marketing.
-    expect(NAV.filter((n) => n.oculto)).toHaveLength(12);
+    expect(NAV.filter((n) => n.oculto)).toHaveLength(23);
     expect(ROTAS_ABSORVIDAS).toHaveLength(11);
   });
 

@@ -43,11 +43,21 @@ export const PROXIMO_PASSO: Partial<Record<MaquinaEtapa, { para: MaquinaEtapa; r
  * Qualquer etapa pode voltar a qualquer outra (o kanban arrasta livre), com duas
  * regras: agendado exige data, e postado exige data (o dia em que foi ao ar).
  */
+/**
+ * O próximo passo DO POST: Comunidade Wpp é texto de WhatsApp e não passa por
+ * Design & Gravação (vai do Banco direto para Agendar).
+ */
+export function proximoPassoDoPost(p: { etapa: MaquinaEtapa; formato: string }): { para: MaquinaEtapa; rotulo: string } | undefined {
+  if (p.etapa === 'ideia' && p.formato === 'Comunidade Wpp') return { para: 'a_agendar', rotulo: 'Aprovar → Agendar' };
+  return PROXIMO_PASSO[p.etapa];
+}
+
 export function etapaPrecisaDeData(etapa: MaquinaEtapa): boolean {
   return etapa === 'agendado' || etapa === 'publicado';
 }
 
-export const MAQUINA_FORMATOS = ['Reel', 'Carrossel', 'Arte única', 'Foto', 'Story'] as const;
+// 26/10/2026: LinkedIn e Comunidade Wpp (texto do grupo de WhatsApp) entram com as réguas do Estúdio.
+export const MAQUINA_FORMATOS = ['Reel', 'Carrossel', 'Arte única', 'Foto', 'Story', 'LinkedIn', 'Comunidade Wpp'] as const;
 export type MaquinaFormato = (typeof MAQUINA_FORMATOS)[number];
 export const MAQUINA_TIPOS_DE_CARD = ['video', 'arte'] as const;
 export type MaquinaTipoDeCard = (typeof MAQUINA_TIPOS_DE_CARD)[number];
@@ -97,6 +107,8 @@ export interface MaquinaPost {
   titulo: string;
   pilar: string;
   formato: string;
+  /** Comunidade Wpp: News semanal | Enquete | Debate. Vazio nos outros formatos. */
+  subtipo: string;
   tipoCard: MaquinaTipoDeCard;
   prioridade: MaquinaPrioridade;
   headline: string;
@@ -138,6 +150,7 @@ export const MaquinaPostSalvarSchema = z.object({
   titulo: z.string().trim().min(1, 'O post precisa de título.').max(200),
   pilar: texto(60),
   formato: z.string().trim().min(1).max(40).default('Reel'),
+  subtipo: texto(40),
   tipoCard: z.enum(MAQUINA_TIPOS_DE_CARD).default('video'),
   prioridade: z.enum(MAQUINA_PRIORIDADES).default('media'),
   headline: texto(600),

@@ -12,6 +12,7 @@ import { ArrastarParaRolar } from './ArrastarParaRolar';
 import { ModulosProvider, useModulos } from './modulos';
 import { CaixaProvider } from './caixa';
 import { FichaEmJanela } from './ficha/FichaEmJanela';
+import { AbasDoMarketing } from './marketing/AbasDoMarketing';
 
 // Superfícies que NÃO passam pelo shell autenticado: o login e tudo que é
 // público por natureza (página da bio, a Central da comunidade e os textos
@@ -115,6 +116,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               <PortaDaAssinatura>
                 {/* As subseções de cada área moram só no menu lateral desde 20/10/2026
                     (rodada da interface, U1): o campo principal é todo da tela. */}
+                <AbasDoMarketing />
                 <PortaDoModulo>{children}</PortaDoModulo>
               </PortaDaAssinatura>
             </main>
