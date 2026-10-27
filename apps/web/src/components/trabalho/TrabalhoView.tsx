@@ -1372,7 +1372,7 @@ function Board({ lista, tarefas, editable, podeCriar, token, agentes, pessoas = 
             key={st.id}
             data-coluna={st.id}
             aria-label={`${st.name}: ${itens.length} ${itens.length === 1 ? 'tarefa' : 'tarefas'}`}
-            className={`flex w-[86%] min-w-0 shrink-0 grow-0 snap-start flex-col rounded border bg-bg2 max-md:max-h-[72dvh] md:w-[var(--largura-da-coluna)] ${sobre === st.id ? 'border-brand' : 'border-border'} ${saida ? 'opacity-60 focus-within:opacity-100 hover:opacity-100' : ''}`}
+            className={`flex w-[86%] min-w-0 shrink-0 grow-0 snap-start flex-col rounded border bg-surface max-md:max-h-[72dvh] md:w-[var(--largura-da-coluna)] ${sobre === st.id ? 'border-brand' : 'border-border'} ${saida ? 'opacity-60 focus-within:opacity-100 hover:opacity-100' : ''}`}
             onDragOver={editable ? (e) => { e.preventDefault(); if (sobre !== st.id) setSobre(st.id); } : undefined}
             onDragLeave={editable ? (e) => { if (!e.currentTarget.contains(e.relatedTarget as Node)) setSobre(null); } : undefined}
             onDrop={editable ? (e) => soltar(st.id, e) : undefined}
@@ -1487,7 +1487,7 @@ function Cartao({ t, lista, editable, token, agentes, pessoas = [], onSoltarSobr
     <div
       {...alvoDoMenu(menu, t)}
       ref={ref}
-      className={`group relative rounded-lg border bg-surface px-2 py-1.5 transition focus-within:border-brand hover:border-brand-dim ${mov?.procedencia ? `border-border border-l-2 ${mov.procedencia.tipo === 'saiu_do_funil' ? 'border-l-warn' : 'border-l-brand'}` : 'border-border'}`}
+      className={`group relative rounded-lg border bg-surface px-2 py-1.5 transition focus-within:border-brand hover:border-brand-dim ${mov?.procedencia ? `border-border-strong shadow-sm border-l-2 ${mov.procedencia.tipo === 'saiu_do_funil' ? 'border-l-warn' : 'border-l-brand'}` : 'border-border-strong shadow-sm'}`}
       data-work-task-id={t.id}
       data-densidade={densidade}
       draggable={editable}

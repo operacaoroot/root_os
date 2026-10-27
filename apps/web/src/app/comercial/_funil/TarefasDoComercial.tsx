@@ -405,7 +405,7 @@ export function BlocoDeTarefasDoComercial({ pessoa }: { pessoa: string }) {
   };
 
   return (
-    <section aria-label="Tarefas do comercial" data-testid="funil-tarefas-do-comercial" className="min-w-0 shrink-0 rounded border border-border bg-bg2">
+    <section aria-label="Tarefas do comercial" data-testid="funil-tarefas-do-comercial" className="min-w-0 shrink-0 rounded border border-border bg-surface">
       <h2 className="m-0">
         <button
           type="button"

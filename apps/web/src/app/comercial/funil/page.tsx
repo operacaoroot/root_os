@@ -326,7 +326,7 @@ export default function FunilVivoPage() {
                 aria-label={col.etapa === 'saidas' ? 'Saídas' : COMERCIAL_ROTULO_DA_ETAPA[col.etapa]}
                 data-coluna-do-funil
                 data-testid={`funil-coluna-${col.etapa}`}
-                className={`flex w-[17rem] min-w-0 shrink-0 snap-start flex-col rounded border bg-bg2 p-2 max-md:max-h-[72dvh] max-md:w-[86%] ${sobre === col.etapa && alvo ? 'border-brand' : 'border-border'}`}
+                className={`flex w-[17rem] min-w-0 shrink-0 snap-start flex-col rounded border bg-surface p-2 max-md:max-h-[72dvh] max-md:w-[86%] ${sobre === col.etapa && alvo ? 'border-brand' : 'border-border'}`}
                 onDragOver={(e) => {
                   if (!arrastando) return;
                   e.preventDefault();
@@ -463,7 +463,7 @@ function Cartao({
         if ((e.target as HTMLElement).closest('a, button, input, select, textarea, label, [role="menu"]')) return;
         e.currentTarget.querySelector<HTMLAnchorElement>('[data-cartao-do-funil]')?.click();
       }}
-      className={`cursor-pointer rounded border bg-surface p-2.5 transition-[border-color,transform,opacity,box-shadow] duration-150 hover:border-brand/70 ${recemMovido ? 'motion-safe:animate-[funil-cartao-entra_150ms_ease-out]' : ''} ${ocupado ? 'opacity-80' : ''} ${c.balao || c.avisoDoMover ? 'border-warn/70' : c.precisaDeDecisao ? 'border-brand/60' : c.parado ? 'border-warn/60' : 'border-border'}`}
+      className={`cursor-pointer rounded border bg-surface p-2.5 transition-[border-color,transform,opacity,box-shadow] duration-150 hover:border-brand/70 ${recemMovido ? 'motion-safe:animate-[funil-cartao-entra_150ms_ease-out]' : ''} ${ocupado ? 'opacity-80' : ''} ${c.balao || c.avisoDoMover ? 'border-warn/70' : c.precisaDeDecisao ? 'border-brand/60' : c.parado ? 'border-warn/60' : 'border-border-strong shadow-sm'}`}
     >
       <div className="flex items-start gap-2">
         <LinkDoLead leadId={c.leadId} aba="geral" data-cartao-do-funil className={`min-w-0 flex-1 rounded-sm ${FOCO}`}>
