@@ -19,6 +19,10 @@ for (const f of files) {
   });
   root.walkAtRules('keyframes', (a) => { a.params = `estudio-${a.params}`; });
   root.walkDecls(/^animation/, (d) => { d.value = d.value.replace(/\b([a-z][\w-]*)\b/g, (m) => (fs.readFileSync(`${src}/${f}`, 'utf8').includes(`@keyframes ${m}`) ? `estudio-${m}` : m)); });
+  // As etiquetas em mono usam a JetBrains Mono do OS (var(--os-mono)), como no resto do sistema.
+  root.walkDecls(/^font(-family)?$/, (d) => {
+    d.value = d.value.replace(/ui-monospace(,\s*SFMono-Regular)?(,\s*Menlo)?,\s*monospace/g, 'var(--os-mono)');
+  });
   out += `/* ${f} */\n${root.toString()}\n`;
 }
 process.stdout.write(out);
