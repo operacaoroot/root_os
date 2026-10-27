@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { apiDelete, apiGet, apiPatch, apiPost } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
+import { UsoDoApify } from '@/components/marketing/UsoDoApify';
 
 /*
  * Marketing › IDEIAS DE CONTEÚDO › Fontes. Cópia da tela Fontes do ROOT Estúdio
@@ -111,8 +112,9 @@ export default function FontesPage() {
         </div>
         <div className="notice fontes-notice">
           YouTube e sites com RSS são grátis. Instagram e TikTok são lidos pelo Apify, que é pago por coleta.
-          {apify ? '' : ' O Apify ainda não está configurado no servidor (APIFY_TOKEN), então esses perfis ficam parados até lá.'}
+          {apify ? ' O OS usa só os créditos grátis do mês: com 90% usados, para até o próximo ciclo.' : ' O Apify ainda não está configurado no servidor (APIFY_TOKEN), então esses perfis ficam parados até lá.'}
         </div>
+        <UsoDoApify />
         {editavel && (
           <>
             <form

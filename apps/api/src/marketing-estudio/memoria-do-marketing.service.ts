@@ -110,6 +110,11 @@ export class MemoriaDoMarketingService implements OnModuleInit {
 
   // ---------- leitura ----------
 
+  /** O uso do mês no Apify (créditos grátis) ou nulo, sem Apify ou sem leitura. */
+  async usoDoApify() {
+    return { uso: this.apify?.configured ? await this.apify.usoDoMes() : null, configurado: !!this.apify?.configured };
+  }
+
   async painel(orgId: string, filtro: { q?: string; tag?: string; pasta?: string }): Promise<MemoriaPainel> {
     const where: Prisma.MarketingNotaWhereInput = { orgId };
     if (filtro.pasta && (MEMORIA_PASTAS as readonly string[]).includes(filtro.pasta)) where.pasta = filtro.pasta;

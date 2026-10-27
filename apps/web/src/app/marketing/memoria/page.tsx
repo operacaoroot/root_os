@@ -13,6 +13,7 @@ import { apiDelete, apiGet, apiPost, apiPut } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 import { GrafoDaMemoria, COR_DO_TIPO } from '@/components/marketing/GrafoDaMemoria';
 import { markdownDaMemoria } from '@/components/marketing/markdown-da-memoria';
+import { UsoDoApify } from '@/components/marketing/UsoDoApify';
 
 /*
  * Marketing › MEMÓRIA. Cópia da tela do ROOT Estúdio (public/pages/memoria.js), com as
@@ -141,6 +142,7 @@ export default function MemoriaPage() {
         </div>
       )}
       {painel?.ligacoes.grupo && <p className="memoria-dica">Mande links e Reels para o grupo Memória ROOT no WhatsApp: eles chegam aqui sozinhos.</p>}
+      <UsoDoApify />
       {aviso && <div className="notice">{aviso}</div>}
       {erro && <div className="notice warn">{erro}</div>}
 

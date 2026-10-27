@@ -83,6 +83,37 @@ export interface ApifyRun {
   custoUsd: number | null;
 }
 
+/** O uso do mês na conta do Apify (o ciclo de cobrança dele), para a trava e para a tela. */
+export interface UsoDoApify {
+  usadoUsd: number;
+  tetoUsd: number;
+  /** Fim do ciclo do mês (ISO), quando os créditos voltam. */
+  voltaEm: string | null;
+}
+
+/*
+ * TRAVA DE CRÉDITO (27/10/2026, pedido do Lucas: "não quero pagar, atente-se ao uso dos
+ * créditos que eles mesmo disponibilizam"). Antes de cada run, o uso do mês é lido em
+ * /users/me/limits (guardado por alguns minutos). Com 90% ou mais do teto do mês, não roda.
+ * Sem conseguir ler o uso, também não roda: na dúvida, não gasta. Cada run vai com teto de
+ * itens e de custo (maxItems, maxTotalChargeUsd) e prazo curto.
+ */
+const PARAR_EM = Number(process.env.APIFY_PARAR_EM ?? 0.9);
+const TETO_DO_MES_SEM_LEITURA = Number(process.env.APIFY_TETO_MES_USD ?? 5);
+const TETO_POR_RUN_USD = Number(process.env.APIFY_TETO_RUN_USD ?? 0.05);
+const TETO_POR_RUN_DE_PERFIL_USD = Number(process.env.APIFY_TETO_RUN_PERFIL_USD ?? 0.15);
+const POSTS_POR_PERFIL = Number(process.env.APIFY_POSTS_POR_PERFIL ?? 6);
+const GUARDA_O_USO_MS = 5 * 60_000;
+
+export class CreditoDoApifyEsgotadoError extends ServiceUnavailableException {}
+
+const diaDaVolta = (iso: string | null) => {
+  if (!iso) return 'no começo do próximo ciclo';
+  const d = new Date(iso);
+  return Number.isNaN(d.getTime()) ? 'no começo do próximo ciclo' : `dia ${String(d.getUTCDate()).padStart(2, '0')}/${String(d.getUTCMonth() + 1).padStart(2, '0')}`;
+};
+const usd = (n: number) => n.toFixed(2).replace('.', ',');
+
 @Injectable()
 export class ApifyService implements OnModuleInit {
   private readonly log = new Logger('ApifyService');
@@ -91,6 +122,7 @@ export class ApifyService implements OnModuleInit {
   // Um run síncrono do Apify pode demorar; o teto evita segurar a requisição HTTP
   // do painel indefinidamente quando o actor trava.
   private readonly timeoutSec = Number(process.env.APIFY_TIMEOUT_SEC ?? 120);
+  private usoGuardado: { lidoEm: number; uso: UsoDoApify } | null = null;
 
   constructor(
     /** Rodada dos agentes (A6): o Apify implementa o contrato único de conector. */
@@ -173,7 +205,7 @@ export class ApifyService implements OnModuleInit {
   async scrapeUrl(url: string): Promise<ApifyRun> {
     const plataforma = ApifyService.plataformaDaUrl(url);
     const actor = plataforma === 'instagram' || plataforma === 'tiktok' ? ACTORS[plataforma] : ACTORS.web;
-    return this.run(actor, this.input(plataforma, url));
+    return this.run(actor, this.input(plataforma, url), { maxItems: 1, maxUsd: TETO_POR_RUN_USD, timeoutSec: Math.min(this.timeoutSec, 90) });
   }
 
   /**
@@ -181,7 +213,8 @@ export class ApifyService implements OnModuleInit {
    * já lido por `lerHandleDoPerfil`; o input de cada actor mora em `inputDoPerfil`.
    */
   async scrapePerfil(handle: string, limite = 12, plataforma: PautaPerfilPlataforma = 'instagram'): Promise<ApifyRun> {
-    return this.run(ACTORS[plataforma], inputDoPerfil(plataforma, handle.replace(/^@/, '').trim(), limite));
+    const n = Math.min(limite, POSTS_POR_PERFIL);
+    return this.run(ACTORS[plataforma], inputDoPerfil(plataforma, handle.replace(/^@/, '').trim(), n), { maxItems: n, maxUsd: TETO_POR_RUN_DE_PERFIL_USD });
   }
 
   /**
@@ -202,23 +235,68 @@ export class ApifyService implements OnModuleInit {
     });
   }
 
-  private async run(actor: string, input: Record<string, unknown>): Promise<ApifyRun> {
+  /** O uso do mês na conta do Apify, guardado por 5 minutos. Nulo quando não deu para ler. */
+  async usoDoMes(forcar = false): Promise<UsoDoApify | null> {
+    if (!this.configured) return null;
+    if (!forcar && this.usoGuardado && Date.now() - this.usoGuardado.lidoEm < GUARDA_O_USO_MS) return this.usoGuardado.uso;
+    try {
+      const r = await fetch(`${this.base}/users/me/limits`, {
+        headers: { Authorization: `Bearer ${this.token}` },
+        signal: AbortSignal.timeout(10_000),
+      });
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      const j = (await r.json()) as {
+        data?: { monthlyUsageCycle?: { endAt?: string }; limits?: { maxMonthlyUsageUsd?: number }; current?: { monthlyUsageUsd?: number } };
+      };
+      const teto = Number(j.data?.limits?.maxMonthlyUsageUsd) > 0 ? Number(j.data!.limits!.maxMonthlyUsageUsd) : TETO_DO_MES_SEM_LEITURA;
+      const uso: UsoDoApify = { usadoUsd: Number(j.data?.current?.monthlyUsageUsd ?? 0), tetoUsd: teto, voltaEm: j.data?.monthlyUsageCycle?.endAt ?? null };
+      this.usoGuardado = { lidoEm: Date.now(), uso };
+      return uso;
+    } catch (e) {
+      this.log.warn(`uso do Apify ilegível: ${e instanceof Error ? e.message : e}`);
+      return null;
+    }
+  }
+
+  /** A trava: lança quando o mês passou de 90% do teto, ou quando não dá para saber. */
+  private async exigirCredito(): Promise<void> {
+    const uso = await this.usoDoMes();
+    if (!uso) {
+      throw new CreditoDoApifyEsgotadoError('Não consegui ler o uso do Apify agora. Para não gastar sem saber, a coleta não rodou. Tente de novo em alguns minutos.');
+    }
+    if (uso.usadoUsd >= uso.tetoUsd * PARAR_EM) {
+      throw new CreditoDoApifyEsgotadoError(
+        `Os créditos grátis do Apify deste mês acabaram (US$ ${usd(uso.usadoUsd)} de ${usd(uso.tetoUsd)}). Volta ${diaDaVolta(uso.voltaEm)}.`,
+      );
+    }
+  }
+
+  private async run(
+    actor: string,
+    input: Record<string, unknown>,
+    opcoes: { maxItems?: number; maxUsd?: number; timeoutSec?: number } = {},
+  ): Promise<ApifyRun> {
     if (!this.configured) {
       throw new ServiceUnavailableException(
         'APIFY_TOKEN ausente. Defina no .env (ver .env.example) e reinicie a API.',
       );
     }
+    await this.exigirCredito();
 
-    // run-sync-get-dataset-items: dispara e já devolve os itens numa chamada só.
+    // run-sync-get-dataset-items: dispara e já devolve os itens numa chamada só,
+    // com teto de itens e de custo por run (o actor para quando bate o teto).
+    const prazo = opcoes.timeoutSec ?? this.timeoutSec;
     const url =
       `${this.base}/acts/${actor}/run-sync-get-dataset-items` +
-      `?token=${encodeURIComponent(this.token)}&timeout=${this.timeoutSec}`;
+      `?token=${encodeURIComponent(this.token)}&timeout=${prazo}` +
+      (opcoes.maxItems ? `&maxItems=${opcoes.maxItems}` : '') +
+      `&maxTotalChargeUsd=${opcoes.maxUsd ?? TETO_POR_RUN_USD}`;
 
     const res = await fetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(input),
-      signal: AbortSignal.timeout((this.timeoutSec + 15) * 1000),
+      signal: AbortSignal.timeout((prazo + 15) * 1000),
     });
 
     if (!res.ok) {
@@ -243,6 +321,8 @@ export class ApifyService implements OnModuleInit {
       }
     }
 
+    // O run gastou: a próxima leitura do uso do mês vai ao Apify de novo.
+    this.usoGuardado = null;
     return { runId, items: Array.isArray(items) ? items : [], custoUsd };
   }
 }

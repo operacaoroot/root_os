@@ -93,6 +93,13 @@ export class MarketingEstudioController {
     return this.triagem.painel(u.orgId);
   }
 
+  // O uso do mês no Apify (créditos grátis), para o cantinho da Memória e de Fontes.
+  @Get('apify/uso')
+  @RequirePermissions('pauta.ver')
+  usoDoApify() {
+    return this.memoria.usoDoApify();
+  }
+
   // ---------- Fontes (o cadastro é o da Pauta: /pauta/fontes) ----------
 
   @Post('fontes/detectar')
