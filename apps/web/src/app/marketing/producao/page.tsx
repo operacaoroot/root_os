@@ -64,7 +64,9 @@ function Quadro({ m, painel, abrir, novo, levar, token, gerando, setGerando }: C
         const por = Object.fromEntries(MAQUINA_ESTEIRA.map((e) => [e, [] as MaquinaPost[]])) as Record<MaquinaEtapa, MaquinaPost[]>;
         const comunidade: MaquinaPost[] = [];
         for (const p of [...painel.posts].sort((a, b) => a.ordem - b.ordem)) {
-          if (p.etapa === 'ideia' && p.formato === 'Comunidade Wpp') comunidade.push(p);
+          // Só texto já escrito (o do agente); a ideia vazia com formato sugerido fica no Banco, com os botões de formato.
+          const escrita = !!(p.roteiro || p.legenda || p.slides.length);
+          if (p.etapa === 'ideia' && p.formato === 'Comunidade Wpp' && escrita) comunidade.push(p);
           else if (por[p.etapa]) por[p.etapa].push(p);
         }
         comunidade.sort((a, b) => (diaDaComunidade(a) ?? '9').localeCompare(diaDaComunidade(b) ?? '9'));
