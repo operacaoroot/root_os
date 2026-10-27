@@ -1,11 +1,12 @@
 'use client';
 
 import Link from 'next/link';
-import { useState } from 'react';
+import { Fragment, useState } from 'react';
 import { FORMATOS_COM_REGUA, FORMATOS_SEM_DESIGN, MAQUINA_ESTEIRA, ROTULO_DA_ETAPA, type MaquinaEtapa, type MaquinaPost, type MaquinaPostSalvarInput } from '@mktos/shared';
 import { apiPost } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
-import { MaquinaPagina } from '@/components/maquina/MaquinaPagina';
+import { MaquinaPagina, type Contexto } from '@/components/maquina/MaquinaPagina';
+import { hojeSP } from '@/components/maquina/pecas';
 
 /*
  * Marketing › PRODUÇÃO › Quadro. Cópia do quadro do ROOT Estúdio (public/pages/producao.js):
@@ -14,7 +15,17 @@ import { MaquinaPagina } from '@/components/maquina/MaquinaPagina';
  * Agendado → Postado). No Banco, o cartão sem texto tem os botões de formato, como o
  * "Escolher formato" do Estúdio: escolher grava o formato, escreve o post pela régua e
  * leva para a etapa seguinte (Comunidade Wpp vai direto para A agendar).
+ *
+ * COMUNIDADE (27/10/2026, pedido do Lucas: "crie uma coluna só para o banco de ideias
+ * para a comunidade"): os textos do agente da comunidade saem do Banco e ficam numa
+ * coluna própria, na ordem do dia em que vão ao grupo (o dia vem do nome do arquivo).
+ * Aprovar agenda para aquele dia; dia já passado pede outra data; Arquivar tira da fila.
  */
+
+const SEMANA = ['dom', 'seg', 'ter', 'qua', 'qui', 'sex', 'sáb'];
+/** O dia sugerido: a data da peça ou, sem ela, o AAAA-MM-DD do nome do arquivo. */
+const diaDaComunidade = (p: MaquinaPost) => p.data ?? (/^(\d{4}-\d{2}-\d{2})/.exec(p.numero)?.[1] ?? null);
+const diaPorExtenso = (d: string) => `${SEMANA[new Date(`${d}T12:00:00Z`).getUTCDay()]}, ${d.slice(8, 10)}/${d.slice(5, 7)}`;
 
 const DICA: Record<string, string> = {
   ideia: 'Escolha como a ideia vira conteúdo.',
@@ -44,9 +55,20 @@ export default function ProducaoPage() {
   const [gerando, setGerando] = useState<string | null>(null);
   return (
     <MaquinaPagina titulo="Produção" semCabecalho>
-      {({ m, painel, abrir, novo }) => {
+      {(ctx) => <Quadro {...ctx} token={token} gerando={gerando} setGerando={setGerando} />}
+    </MaquinaPagina>
+  );
+}
+
+function Quadro({ m, painel, abrir, novo, levar, token, gerando, setGerando }: Contexto & { token: string | null; gerando: string | null; setGerando: (id: string | null) => void }) {
         const por = Object.fromEntries(MAQUINA_ESTEIRA.map((e) => [e, [] as MaquinaPost[]])) as Record<MaquinaEtapa, MaquinaPost[]>;
-        for (const p of [...painel.posts].sort((a, b) => a.ordem - b.ordem)) if (por[p.etapa]) por[p.etapa].push(p);
+        const comunidade: MaquinaPost[] = [];
+        for (const p of [...painel.posts].sort((a, b) => a.ordem - b.ordem)) {
+          if (p.etapa === 'ideia' && p.formato === 'Comunidade Wpp') comunidade.push(p);
+          else if (por[p.etapa]) por[p.etapa].push(p);
+        }
+        comunidade.sort((a, b) => (diaDaComunidade(a) ?? '9').localeCompare(diaDaComunidade(b) ?? '9'));
+        const hoje = hojeSP();
         const escolher = async (p: MaquinaPost, formato: string) => {
           setGerando(p.id);
           const salvo = await m.salvar(p.id, entrada(p, formato));
@@ -70,7 +92,8 @@ export default function ProducaoPage() {
             </div>
             <div className="production-board producao-board">
               {MAQUINA_ESTEIRA.map((etapa) => (
-                <section key={etapa} className={`production-column producao-col-${etapa}`}>
+                <Fragment key={etapa}>
+                <section className={`production-column producao-col-${etapa}`}>
                   <header>
                     <h2>{ROTULO_DA_ETAPA[etapa]}</h2>
                     <span>{por[etapa].length}</span>
@@ -126,11 +149,70 @@ export default function ProducaoPage() {
                     );
                   })}
                 </section>
+                {etapa === 'ideia' && (
+                  <section className="production-column producao-col-comunidade">
+                    <header>
+                      <h2>Comunidade · para aprovar</h2>
+                      <span>{comunidade.length}</span>
+                    </header>
+                    <p className="tiny muted">Textos do agente do grupo, na ordem do dia em que vão ao ar.</p>
+                    {comunidade.length === 0 && <p className="board-empty">Nenhum texto novo do agente.</p>}
+                    {comunidade.map((p) => {
+                      const dia = diaDaComunidade(p);
+                      const passou = !dia || dia < hoje;
+                      return (
+                        <div
+                          key={p.id}
+                          className="content-card board-card producao-card"
+                          onClick={(e) => {
+                            if ((e.target as HTMLElement).closest('button, a')) return;
+                            abrir(p.id);
+                          }}
+                          style={{ cursor: 'pointer' }}
+                        >
+                          <div className="card-art artigo">
+                            <span>{dia ? diaPorExtenso(dia) : 'sem dia'}{p.subtipo ? ` · ${p.subtipo}` : ''}</span>
+                          </div>
+                          <div className="card-body">
+                            <h3>{p.titulo}</h3>
+                            {p.roteiro && <p>{p.roteiro}</p>}
+                            {passou && <span className="badge">{dia ? 'O dia já passou' : 'Sem dia no arquivo'}</span>}
+                            {m.editavel && (
+                              <div className="producao-formats">
+                                <button
+                                  className="small primary"
+                                  onClick={() => (passou ? levar(p, 'agendado') : void m.mudarEtapa(p.id, 'agendado', dia))}
+                                  title="Agenda a peça. O envio da comunidade manda às 08h do dia."
+                                >
+                                  {passou ? 'Aprovar e escolher o dia' : `Aprovar para ${diaPorExtenso(dia!)}`}
+                                </button>
+                                <button className="small" onClick={() => void m.mudarEtapa(p.id, 'arquivado')}>
+                                  Arquivar
+                                </button>
+                              </div>
+                            )}
+                            <div className="card-meta">
+                              <span>{dataCurta(p.atualizadoEm)}</span>
+                              <a
+                                className="board-open"
+                                href={`?post=${p.id}`}
+                                onClick={(e) => {
+                                  e.preventDefault();
+                                  abrir(p.id);
+                                }}
+                              >
+                                Ler e editar →
+                              </a>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </section>
+                )}
+                </Fragment>
               ))}
             </div>
           </div>
         );
-      }}
-    </MaquinaPagina>
-  );
 }

@@ -244,6 +244,8 @@ export class ReguasService {
           porque: `Importado de ${PASTA_DA_COMUNIDADE.join('/')}/${a.nome} (data do arquivo: ${lido.data}).`,
           fontes: [{ tipo: 'referencia', nome: a.nome.slice(0, 200), ...(a.url ? { link: a.url.slice(0, 500) } : {}) }],
           etapa: 'ideia',
+          // O dia do nome do arquivo: a coluna Comunidade mostra e o Aprovar agenda para ele.
+          ...(/^\d{4}-\d{2}-\d{2}$/.test(lido.data) ? { data: new Date(`${lido.data}T00:00:00Z`) } : {}),
           criadoPor: por,
           hist: [{ em: new Date().toISOString(), de: null, para: 'ideia', por: `${por} (importou da Comunidade)` }],
         },
