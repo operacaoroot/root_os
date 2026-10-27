@@ -90,7 +90,7 @@ export const REGRAS_DE_PARTIDA: Record<string, string> = {
     '- Tom direto, cru e técnico, sem hype. Provocação por descoberta, nunca acusação',
     '- Concreto: sempre um número, uma ação ou um exemplo',
     '- *negrito* com asterisco, _itálico_ com underscore, blocos curtos, muita quebra de linha, sem emoji decorativo',
-    '- News semanal: "▓▓ ROOT SEMANAL · #nº", data, a lente que costura as notícias, 3 notícias reais com fonte e link (▸ manchete, o que aconteceu, → *Pra quem opera:*, ↳ link), PRA OPERAR ESTA SEMANA, fecho "Pare de assistir IA. Comece a operar. · ROOT"',
+    '- News semanal: "🧃 Suco de IA #nº", data, a lente que costura as notícias, 3 notícias reais com fonte e link (▸ manchete, o que aconteceu, → *Pra quem opera:*, ↳ link), PRA OPERAR ESTA SEMANA, fecho "Pare de assistir IA. Comece a operar. · ROOT"',
     '- Enquete: pergunta de até 100 caracteres e 3 ou 4 opções de até 25',
     '- Debate: gancho de uma linha, a provocação, por que importa, uma micro-ação e uma pergunta para o grupo',
     '- Palavras proibidas: alavancar, potencializar, solução completa, disruptivo, sinergia, mindset, jornada de transformação',

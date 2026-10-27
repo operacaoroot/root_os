@@ -359,7 +359,7 @@ export function lerArquivoDaComunidade(nome: string, conteudo: string): { numero
     ? texto.split(/\r?\n/).map((l) => /^\s*(?:[-*•▸]|\d+[.)]|[a-d][.)])\s+(.+)$/i.exec(l)?.[1]?.trim() ?? '').filter(Boolean).slice(0, 4)
     : [];
   const primeira = texto.split(/\r?\n/).map((l) => l.replace(/[*_~]/g, '').trim()).find(Boolean) ?? '';
-  const titulo = subtipo === 'News semanal' ? `ROOT Semanal ${m[3]}` : `${subtipo}: ${primeira.slice(0, 80)}`;
+  const titulo = subtipo === 'News semanal' ? `Suco de IA ${Number(m[3])}` : `${subtipo}: ${primeira.slice(0, 80)}`;
   // "## Material da isca (vai no CTA da peça)": o 1º bloco entre ``` dessa seção vai para o cta
   // (27/10, pedido do agente da comunidade: a rotina solta a isca quando a news bate N corações).
   const secaoIsca = /^##\s+Material da isca[^\n]*\n([\s\S]*?)(?=^##\s|$(?![\s\S]))/im.exec(conteudo)?.[1] ?? '';

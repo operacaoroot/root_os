@@ -106,7 +106,7 @@ describe('Comunidade Wpp', () => {
   });
   it('lê os arquivos da pasta semanas', () => {
     const s = lerArquivoDaComunidade('2026-10-27-root-semanal-07.md', '---\nx: 1\n---\n# Semanal\n```\n▓▓ ROOT SEMANAL · #07\nconteúdo\n```\n');
-    expect(s).toMatchObject({ numero: '2026-10-27-root-semanal-07', data: '2026-10-27', subtipo: 'News semanal', titulo: 'ROOT Semanal 07' });
+    expect(s).toMatchObject({ numero: '2026-10-27-root-semanal-07', data: '2026-10-27', subtipo: 'News semanal', titulo: 'Suco de IA 7' });
     expect(s!.texto).toBe('▓▓ ROOT SEMANAL · #07\nconteúdo');
     const e = lerArquivoDaComunidade('2026-10-29-enquete-quarta.md', '```\n*Qual área você automatiza primeiro?*\n▸ Atendimento\n▸ Financeiro\n▸ Estoque\n```');
     expect(e).toMatchObject({ subtipo: 'Enquete', opcoes: ['Atendimento', 'Financeiro', 'Estoque'] });
