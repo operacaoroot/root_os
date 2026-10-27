@@ -500,9 +500,9 @@ describe('navEmArvore', () => {
   it('o filho vem dentro do pai, e não no topo da seção', () => {
     // 26/10/2026: o Marketing não tem mais filho visível (as abas são ocultas); o exemplo é o Trabalho.
     const trabalho = navEmArvore(todas).find((g) => g.secao.key === 'trabalho')!;
-    expect(trabalho.itens.map((no) => no.item.key)).not.toContain('implantacao');
+    expect(trabalho.itens.map((no) => no.item.key)).not.toContain('trabalho-atas');
     const raiz = trabalho.itens.find((no) => no.item.key === 'trabalho')!;
-    expect(raiz.filhos.map((f) => f.key)).toContain('implantacao');
+    expect(raiz.filhos.map((f) => f.key)).toContain('trabalho-atas');
   });
 
   /*
@@ -875,12 +875,12 @@ describe('organização da navegação (ROOT-07 e versão final)', () => {
     // Leva 5, L3: a Implantação saiu do menu (oculta, viva).
     expect(trabalho.itens.map((i) => i.label)).toEqual(['Tarefas', 'Atas']);
     // As contagens do menu depois da noite de 20/10/2026.
-    // 26/10/2026 (aba Marketing no jeito do Estúdio): 43 visíveis e 25 ocultos (13 são abas).
-    expect(NAV.filter((n) => !n.oculto)).toHaveLength(43);
+    // Leva única de 27/10 (leva 5 L3 + Marketing no jeito do Estúdio): 42 visíveis, 26 ocultos (13 abas do Marketing) e 12 absorvidas.
+    expect(NAV.filter((n) => !n.oculto)).toHaveLength(42);
     // 13 desde a produção 22B: o Perfil (I6) e a Lixeira (I2) entraram ocultos (a entrada é a engrenagem do topo).
     // Layout 26/10: 12 e 11, `/conteudo` (Temas do ClickUp) aposentado, com redirect para o Marketing.
-    expect(NAV.filter((n) => n.oculto)).toHaveLength(25);
-    expect(ROTAS_ABSORVIDAS).toHaveLength(11);
+    expect(NAV.filter((n) => n.oculto)).toHaveLength(26);
+    expect(ROTAS_ABSORVIDAS).toHaveLength(12);
   });
 
   it('as Atas ficam no Trabalho, sob Tarefas, com tarefas.ver e o módulo trabalho', () => {

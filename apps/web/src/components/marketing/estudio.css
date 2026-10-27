@@ -32,9 +32,10 @@
   --os-warn: 122 84 0;
   --os-err: 163 53 53;
   --os-grid: transparent;
-  background: #ECE7D8;
-  color: #23281e;
-  font-family: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  /* Fundo, tinta e fonte vêm do tema global (P-77). Os tokens acima seguram o Marketing no claro
+     quando alguém escolhe o tema escuro, para as telas do OS e as do .estudio não se misturarem. */
+  background: rgb(var(--os-bg));
+  color: rgb(var(--os-tx));
 }
 .estudio { background: transparent; }
 .estudio .pagehead + .ideias-tabs, .estudio .estudio-abas { margin-top: 4px; }
