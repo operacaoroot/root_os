@@ -106,6 +106,8 @@ model Org {
   salasDoCliente       SalaDoCliente[]
   leadReacoes          LeadReacao[]
   salaVersoes          SalaVersao[]
+  marketingPosts       MarketingPost[]
+  marketingMaquina     MarketingMaquinaAjuste?
 
   // A régua e a porta (ver "Régua, porta e rastro" no fim do arquivo)
   policyVersions  PolicyVersion[]
@@ -6060,8 +6062,7 @@ model CofreItem {
   @@index([orgId])
 }
 
-// ===========================================================================
-// RODADA DOS AGENTES (21/10/2026, A1) — O GASTO DE IA POR FUNÇÃO
+// ====================================================================// RODADA DOS AGENTES (21/10/2026, A1) — O GASTO DE IA POR FUNÇÃO
 // ===========================================================================
 //
 // O livro do dia (`GastoDeIaNoDia`) diz QUANTO a empresa gastou; o log de passos
@@ -6400,4 +6401,52 @@ model WhatsAppMensagem {
   @@index([orgId, timestamp])
   @@index([orgId, leadId, timestamp])
   @@index([orgId, clienteId, timestamp])
+=======
+/// MÁQUINA DE CONTEÚDO DA EMPRESA (Marketing, 19/10/2026): o post da própria
+/// empresa, da ideia ao postado, numa esteira só. Regras em
+/// `packages/shared/src/maquina-de-conteudo.ts`. Não confundir com PautaIdeia/
+/// PautaPeca (a pauta que parte do que o mundo publicou e publica pela API).
+model MarketingPost {
+  id            String    @id @default(uuid())
+  orgId         String
+  org           Org       @relation(fields: [orgId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  /// Rótulo livre (`ROOT-025`). A ordem é `ordem`.
+  numero        String    @default("")
+  ordem         Int       @default(0)
+  titulo        String
+  pilar         String    @default("")
+  formato       String    @default("Reel")
+  tipoCard      String    @default("video")
+  prioridade    String    @default("media")
+  headline      String    @default("")
+  subHeadline   String    @default("")
+  roteiro       String    @default("")
+  slides        Json      @default("[]")
+  design        String    @default("")
+  legenda       String    @default("")
+  cta           String    @default("")
+  porque        String    @default("")
+  fontes        Json      @default("[]")
+  recursos      Json      @default("[]")
+  etapa         String    @default("ideia")
+  /// Dia (sem hora) em que vai ao ar ou foi ao ar.
+  data          DateTime? @db.Date
+  linkPublicado String    @default("")
+  metricas      Json      @default("{}")
+  hist          Json      @default("[]")
+  comentarios   Json      @default("[]")
+  criadoPor     String?
+  criadoEm      DateTime  @default(now())
+  atualizadoEm  DateTime  @updatedAt
+
+  @@index([orgId, etapa])
+  @@index([orgId, data])
+}
+
+/// Ajustes da Máquina por empresa: os dias da semana em que ela posta.
+model MarketingMaquinaAjuste {
+  orgId        String   @id
+  org          Org      @relation(fields: [orgId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  cadencia     Int[]    @default([2, 4])
+  atualizadoEm DateTime @updatedAt
 }

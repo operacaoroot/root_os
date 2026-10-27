@@ -145,3 +145,4 @@ export * from './perfil.js';
 export * from './equipe-atribuicoes.js';
 // O WhatsApp da empresa por dentro do OS: caixa, vínculo e cartão do Dia a dia (produção 22C): ver `whatsapp-caixa.ts`.
 export * from './whatsapp-caixa.js';
+export * from './maquina-de-conteudo.js';
