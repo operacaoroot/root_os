@@ -125,27 +125,27 @@
     "pilares": [
       {
         "nome": "A empresa que ainda está na ideia",
-        "cor": "",
+        "cor": "#9BDB1F",
         "descricao": "Gerar identificação com o que o empresário gostaria de realizar."
       },
       {
         "nome": "Ideias ganhando forma",
-        "cor": "",
+        "cor": "#C4FF2E",
         "descricao": "Tornar um caminho de realização compreensível."
       },
       {
         "nome": "Construção compartilhada",
-        "cor": "",
+        "cor": "#1FFFA8",
         "descricao": "Criar vínculo com as pessoas e o processo."
       },
       {
         "nome": "Mudanças no negócio",
-        "cor": "",
+        "cor": "#E8B90F",
         "descricao": "Mostrar consequências fora do discurso da marca."
       },
       {
         "nome": "Critério de quem constrói",
-        "cor": "",
+        "cor": "#A9BCAD",
         "descricao": "Sustentar confiança na capacidade de entrega."
       }
     ],

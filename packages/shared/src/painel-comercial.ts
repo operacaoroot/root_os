@@ -93,6 +93,9 @@ export interface PainelComercial {
     abertos: number;
     ganhosNoAno: number;
     valorGanhoNoAno: number;
+    /** Layout 26/10: o que veio pro bolso no ano (só pagantes). */
+    ganhosPagantesNoAno?: number;
+    valorGanhoPaganteNoAno?: number;
     perdidosNoAno: number;
     /** Na geladeira agora. */
     naGeladeira: number;

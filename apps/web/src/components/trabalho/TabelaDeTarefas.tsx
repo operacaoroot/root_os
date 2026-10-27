@@ -1,8 +1,8 @@
 'use client';
 
 import { useMemo, useState, useEffect, useRef } from 'react';
-import { Bot, Check, DoorOpen, Repeat, Unlock, X } from 'lucide-react';
-import { formatarValorMonetario, agruparTarefas, descreverRecorrencia, tituloNormalizado } from '@mktos/shared';
+import { Bot, Check, ChevronDown, ChevronRight, DoorOpen, Plus, Repeat, Unlock, X } from 'lucide-react';
+import { formatarValorMonetario, agruparTarefas, descreverRecorrencia, tituloNormalizado, GRUPOS_POR_PRAZO_SEM_NOVA } from '@mktos/shared';
 import type { Agrupamento, CampoDeOrdem, RecorrenciaDaTarefa, TrabAgenteDto, TrabEstrutura, TrabListaDto, TrabTarefaResumo } from '@mktos/shared';
 import { apiPatch, apiPost } from '@/lib/api';
 import type { AbaDaTarefa } from '@/lib/tarefa-na-url';
@@ -219,6 +219,9 @@ export function ControleDoAgenteNaGaveta({ t, agentes, editable, token, onMudou,
 
 // ---------- visão tabela ----------
 
+/** Layout 26/10: os grupos recolhidos da Lista (as chaves), lembrados neste navegador. */
+const CHAVE_DOS_GRUPOS_RECOLHIDOS = 'tabela-grupos-recolhidos';
+
 export type PessoaDaEstrutura = NonNullable<TrabEstrutura['pessoas']>[number];
 
 /*
@@ -227,7 +230,12 @@ export type PessoaDaEstrutura = NonNullable<TrabEstrutura['pessoas']>[number];
  * agrupamento das vistas (inclusive a régua de prazo do Lucas) e ordem manual
  * (arrastar a linha sobre outra grava a sequência da lista, ou do grupo).
  */
-export function Tabela({ tarefas, campos, trilhos, onAbrir, mostrarLista = false, pessoas = [], agrupamento = 'nenhum', selecao = null, onReordenar = null, edicao = null, ordenacao = null, abaixoDoTitulo, testIdDaLinha, vazio = 'Nada por aqui.' }: {
+export function Tabela({ tarefas, campos, trilhos, onAbrir, mostrarLista = false, pessoas = [], agrupamento = 'nenhum', selecao = null, onReordenar = null, edicao = null, ordenacao = null, abaixoDoTitulo, testIdDaLinha, vazio = 'Nada por aqui.', novaNoGrupo = null }: {
+  /**
+   * Layout 26/10 (Lucas): "+ Adicionar tarefa" no pé de cada grupo (menos Atrasadas e
+   * Concluídas). Recebe o dia do grupo ("Por prazo"; nulo = sem prazo) e devolve o formulário.
+   */
+  novaNoGrupo?: ((dia: string | null) => React.ReactNode) | null;
   tarefas: TrabTarefaResumo[]; campos: string[]; trilhos: Map<string, TrilhoDoCartao>;
   onAbrir: (id: string, aba?: AbaDaTarefa) => void;
   mostrarLista?: boolean; pessoas?: PessoaDaEstrutura[]; agrupamento?: Agrupamento;
@@ -250,10 +258,24 @@ export function Tabela({ tarefas, campos, trilhos, onAbrir, mostrarLista = false
   const grupos = useMemo(() => {
     const vista = tarefas.map((t) => ({
       t, titulo: t.title, status: t.statusName, statusTipo: t.statusType, lista: t.listName ?? '',
-      cliente: t.clienteNome, prioridade: t.priority, prazo: t.dueDate, criadaEm: '',
+      cliente: t.clienteNome, prioridade: t.priority, prazo: t.dueDate, criadaEm: '', responsavel: t.assigneeUserName ?? null,
     }));
     return agruparTarefas(vista, agrupamento, new Date()).map((g) => ({ ...g, itens: g.itens.map((x) => x.t) }));
   }, [tarefas, agrupamento]);
+  // Layout 26/10 (Lucas): o grupo recolhe e abre (▾/▸), lembrado neste navegador; e a nova tarefa no pé dele.
+  const [recolhidos, setRecolhidos] = useState<Set<string>>(() => {
+    try { return new Set(JSON.parse(window.localStorage.getItem(CHAVE_DOS_GRUPOS_RECOLHIDOS) ?? '[]') as string[]); } catch { return new Set(); }
+  });
+  const alternarGrupo = (chave: string) => setRecolhidos((r) => {
+    const n = new Set(r);
+    if (n.has(chave)) n.delete(chave); else n.add(chave);
+    try { window.localStorage.setItem(CHAVE_DOS_GRUPOS_RECOLHIDOS, JSON.stringify([...n])); } catch { /* sem armazenamento: vale só nesta visita */ }
+    return n;
+  });
+  const [adicionandoEm, setAdicionandoEm] = useState<string | null>(null);
+  const agrupada = agrupamento !== 'nenhum';
+  // Só no "Por prazo": cada grupo tem um dia. Nos outros agrupamentos, a linha de nova tarefa fica no topo (quem usa a Tabela).
+  const recebeNova = (chave: string) => agrupamento === 'datas' && !!novaNoGrupo && !GRUPOS_POR_PRAZO_SEM_NOVA.includes(chave);
   const colunas = 7 + campos.length + (mostrarLista ? 1 : 0) + (selecao ? 1 : 0);
   const todasMarcadas = !!selecao && tarefas.length > 0 && tarefas.every((t) => selecao.marcadas.has(t.id));
   const marcar = (id: string, sim: boolean) => {
@@ -309,14 +331,23 @@ export function Tabela({ tarefas, campos, trilhos, onAbrir, mostrarLista = false
         </thead>
         {grupos.map((g) => (
           <tbody key={g.chave} data-grupo={g.chave}>
-            {agrupamento !== 'nenhum' && (
-              <tr className="border-b border-border bg-surface-2/60">
-                <th colSpan={colunas} scope="colgroup" className="px-3 py-1.5 text-left font-os-mono text-[11px] uppercase tracking-wide text-muted">
-                  {g.rotulo} · {g.itens.length}
+            {/* Layout 26/10 (respiro, como no ClickUp): o título do grupo solto, com espaço acima, sem faixa. */}
+            {agrupada && (
+              <tr className="border-b border-border">
+                <th colSpan={colunas} scope="colgroup" className="px-3 pb-2 pt-7 text-left">
+                  <button
+                    type="button" onClick={() => alternarGrupo(g.chave)} aria-expanded={!recolhidos.has(g.chave)} data-testid={`tabela-grupo-${g.chave}`}
+                    className={`flex items-center gap-2 text-[14px] font-semibold normal-case tracking-normal hover:opacity-80 ${g.chave === 'atrasadas' ? 'text-bad' : 'text-text'}`}
+                  >
+                    {recolhidos.has(g.chave) ? <ChevronRight size={14} aria-hidden className="text-muted" /> : <ChevronDown size={14} aria-hidden className="text-muted" />}
+                    <span>{g.rotulo}</span>
+                    <span className="sr-only"> · </span>
+                    <span className="text-[12px] font-normal text-muted">{g.itens.length}</span>
+                  </button>
                 </th>
               </tr>
             )}
-            {g.itens.map((t) => (
+            {!(agrupada && recolhidos.has(g.chave)) && g.itens.map((t) => (
               <tr
                 {...alvoDoMenu(menu, t)}
                 key={t.id} data-work-task-id={t.id} data-testid={testIdDaLinha?.(t.id)} onClick={() => onAbrir(t.id)}
@@ -328,30 +359,30 @@ export function Tabela({ tarefas, campos, trilhos, onAbrir, mostrarLista = false
                 className={`cursor-pointer border-b border-border/50 hover:bg-surface-2/50 ${arrastando === t.id ? 'opacity-50' : ''}`}
               >
                 {selecao && (
-                  <td className="px-2 py-2" onClick={(e) => e.stopPropagation()}>
+                  <td className="px-2 py-2.5" onClick={(e) => e.stopPropagation()}>
                     <input
                       type="checkbox" aria-label={`Selecionar ${t.title}`} data-testid={`trabalho-selecionar-${t.id}`}
                       checked={selecao.marcadas.has(t.id)} onChange={(e) => marcar(t.id, e.target.checked)}
                     />
                   </td>
                 )}
-                <td className="px-3 py-2">
+                <td className="px-3 py-2.5">
                   <button onClick={(e) => { e.stopPropagation(); onAbrir(t.id); }} className="text-left hover:text-brand focus-visible:outline-brand">{t.title}</button>
                   {t.recorrencia && <span title={descreverRecorrencia(t.recorrencia)} className="ml-1 inline-flex align-middle text-muted"><Repeat size={11} /><span className="sr-only">{descreverRecorrencia(t.recorrencia)}</span></span>}
                   {trilhos.get(t.id) && <AtalhoDoTrilho trilho={trilhos.get(t.id)!} onAbrir={() => onAbrir(t.id, 'trilho')} />}
                   <BotaoDoMenuDaTarefa tarefa={t} className="ml-1 inline-grid align-middle" />
                   {abaixoDoTitulo?.(t)}
                 </td>
-                {mostrarLista && <td className="px-3 py-2 text-muted"><IconeDaLista icone={t.listIcone} cor={t.listCor} tamanho={12} className="mr-1 inline-block align-[-2px]" />{t.listName ?? '—'}</td>}
-                <td className="px-3 py-2">{t.clienteNome ?? <span className="font-os-mono text-[10px] text-warn">sem cliente</span>}</td>
-                <td className="px-3 py-2">
-                  <span className="rounded px-1.5 py-0.5 text-[11px] capitalize" style={{ background: `${t.statusColor}26`, color: t.statusColor }}>
+                {mostrarLista && <td className="px-3 py-2.5 text-muted"><IconeDaLista icone={t.listIcone} cor={t.listCor} tamanho={12} className="mr-1 inline-block align-[-2px]" />{t.listName ?? '—'}</td>}
+                <td className="px-3 py-2.5">{t.clienteNome ?? <span className="font-os-mono text-[10px] text-warn">sem cliente</span>}</td>
+                <td className="px-3 py-2.5">
+                  <span className="whitespace-nowrap rounded px-1.5 py-0.5 text-[11px] capitalize" style={{ background: `${t.statusColor}26`, color: t.statusColor }}>
                     {t.statusName}
                   </span>
                 </td>
-                <td className="px-3 py-2 capitalize">{t.priority}</td>
+                <td className="px-3 py-2.5 capitalize">{t.priority}</td>
                 {/* Layout 26/10 (P-29): as três células editam ali mesmo; o clique nelas não abre a tarefa. */}
-                <td className="px-3 py-2" onClick={edicao ? (e) => e.stopPropagation() : undefined}>
+                <td className="px-3 py-2.5" onClick={edicao ? (e) => e.stopPropagation() : undefined}>
                   {edicao ? (
                     <ResponsavelNaLinha
                       t={t} pessoas={pessoas} equipe={soDaEquipe(pessoas, edicao.idsDaEquipe, [t.assigneeUserId])}
@@ -359,19 +390,35 @@ export function Tabela({ tarefas, campos, trilhos, onAbrir, mostrarLista = false
                     />
                   ) : <AvataresDaTarefa tarefa={t} pessoas={pessoas} testId={`trabalho-responsaveis-${t.id}`} />}
                 </td>
-                <td className="px-3 py-2" title={t.agenteId ? `Assumida em ${dataHoraBR(t.agenteEm)}` : undefined} onClick={edicao ? (e) => e.stopPropagation() : undefined}>
+                <td className="px-3 py-2.5" title={t.agenteId ? `Assumida em ${dataHoraBR(t.agenteEm)}` : undefined} onClick={edicao ? (e) => e.stopPropagation() : undefined}>
                   {edicao ? <AgenteNaLinha t={t} edicao={edicao} /> : nomeDoAgente(t) ?? '—'}
                 </td>
-                <td className={`px-3 py-2 ${atrasada(t) ? 'text-bad' : ''}`} onClick={edicao ? (e) => e.stopPropagation() : undefined}>
+                <td className={`px-3 py-2.5 ${atrasada(t) ? 'text-bad' : ''}`} onClick={edicao ? (e) => e.stopPropagation() : undefined}>
                   {edicao ? <PrazoNaLinha t={t} onMudar={(dia) => edicao.onPrazo(t.id, dia)} /> : <PrazoComRepeticao texto={t.dueDate ? dataBR(t.dueDate) : null} recorrencia={t.recorrencia} semPrazo="—" testId={`trabalho-prazo-repete-${t.id}`} />}
                 </td>
                 {campos.map((c) => {
                   const v = t.values.find((x) => x.fieldName === c);
                   const valor = v?.type === 'moeda' && v.value ? formatarValorMonetario(v.value) : v?.value;
-                  return <td key={c} className="px-3 py-2 text-muted">{v?.optionName ?? valor ?? '—'}</td>;
+                  return <td key={c} className="px-3 py-2.5 text-muted">{v?.optionName ?? valor ?? '—'}</td>;
                 })}
               </tr>
             ))}
+            {agrupada && !recolhidos.has(g.chave) && recebeNova(g.chave) && (
+              <tr className="border-b border-border/50" data-testid={`tabela-grupo-${g.chave}-nova`}>
+                <td colSpan={colunas} className="px-3 py-2.5">
+                  {adicionandoEm === g.chave ? (
+                    <div className="space-y-1">
+                      {novaNoGrupo!(g.dia ?? null)}
+                      <button type="button" onClick={() => setAdicionandoEm(null)} className="text-[11px] text-muted hover:text-text">Fechar</button>
+                    </div>
+                  ) : (
+                    <button type="button" onClick={() => setAdicionandoEm(g.chave)} data-testid={`tabela-grupo-${g.chave}-adicionar`} className="flex items-center gap-2 text-[13px] text-muted hover:text-brand">
+                      <Plus size={14} aria-hidden /> Adicionar tarefa
+                    </button>
+                  )}
+                </td>
+              </tr>
+            )}
           </tbody>
         ))}
         {tarefas.length === 0 && (

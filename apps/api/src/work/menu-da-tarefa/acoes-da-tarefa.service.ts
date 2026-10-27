@@ -1,7 +1,7 @@
 import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import {
   PORTA_DA_IMPLANTACAO, TRAB_CARD_DA_IMPLANTACAO_NAO_DUPLICA, TRAB_CARD_DA_IMPLANTACAO_NAO_MESCLA, TRAB_NA_LIXEIRA,
-  TRAB_TAREFA_COM_AGENTE, JA_ARQUIVADA, caminhoDaTarefa, destinoDoValorDoCampo, tituloDaCopia,
+  TRAB_TAREFA_COM_AGENTE, JA_ARQUIVADA, TRAB_LISTA_DO_COMERCIAL_SO_TAREFA_NOVA, caminhoDaTarefa, destinoDoValorDoCampo, tituloDaCopia,
   type TrabTarefaDuplicada, type TrabTarefaMesclada, type TrabTarefaMesclarInput, type TrabTarefaMoverInput,
 } from '@mktos/shared';
 import { WorkListaNatureza } from '@prisma/client';
@@ -74,7 +74,8 @@ export class AcoesDaTarefaService {
       if (!destino) throw new NotFoundException('Lista de destino não encontrada');
       const visivel = await this.prisma.workList.count({ where: { id: destino.id, orgId, AND: [listaVisivel()] } });
       if (destino.arquivadaEm || visivel !== 1) throw new BadRequestException('A lista de destino está arquivada. Escolha uma lista que aparece no Trabalho.');
-      if (ehListaDoComercial(destino)) throw new BadRequestException('As tarefas do comercial moram no Funil vivo: a lista do comercial não recebe tarefas do Trabalho.');
+      // Layout 26/10: a lista do comercial aparece na árvore e recebe tarefa nova, mas não tarefa movida de outra lista.
+      if (ehListaDoComercial(destino)) throw new BadRequestException(TRAB_LISTA_DO_COMERCIAL_SO_TAREFA_NOVA);
       // Revisão (B1): a mesma régua de "mover as tarefas" da árvore; a pasta Clientes é do Comercial (I3).
       if ((await this.prisma.workList.count({ where: { id: destino.id, orgId, AND: [listaForaDoComercial()] } })) !== 1) {
         throw new BadRequestException('As listas da pasta Clientes são do Comercial: a tarefa sumiria do Trabalho. Escolha uma lista que aparece no Trabalho.');

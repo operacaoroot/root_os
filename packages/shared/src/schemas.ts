@@ -5326,6 +5326,8 @@ export const TrabTarefaCreateSchema = z.object({
    * A rota de criação exige; subtarefa sem cliente herda o da mãe.
    */
   clienteId: TrabClienteIdSchema.nullish(),
+  /** Layout 26/10: o lead da tarefa (a lista "Tarefas do comercial" pede o lead em vez do cliente). */
+  leadId: z.string().uuid().nullish(),
 });
 
 export const TrabTarefaUpdateSchema = z.object({
@@ -5353,6 +5355,8 @@ export const TrabTarefaUpdateSchema = z.object({
   outrosResponsaveisIds: z.array(z.string().uuid()).max(20).optional(),
   /** A regra de repetição; nulo tira. Concluir a tarefa cria a próxima ocorrência. */
   recorrencia: RecorrenciaSchema.nullable().optional(),
+  /** Layout 26/10: ligar a tarefa a um lead (o id) ou desligar (null); ausente não mexe. */
+  leadId: z.string().uuid().nullable().optional(),
 });
 // HTTP e escritores de WorkTask usam o schema com versão obrigatória; o schema-base permanece exportado.
 export const TrabTarefaUpdateHttpSchema = TrabTarefaUpdateSchema.extend({
@@ -5784,6 +5788,8 @@ export interface TrabTarefaDetalhe extends TrabTarefaResumo {
   /** Soma por etapa, na ordem em que as etapas apareceram pela primeira vez. Cobre TODOS os lançamentos, não só os 200 listados. */
   minutosPorEtapa: Array<{ etapa: string; minutos: number }>;
   filhos: Array<{ id: string; title: string; statusName: string; statusColor: string }>;
+  /** Layout 26/10: o lead ligado à tarefa (`WorkTask.leadId`), lido desta empresa; nulo = sem lead. */
+  lead?: { id: string; nome: string; empresa: string | null } | null;
   /** Devolvido pela edição que concluiu uma tarefa que se repete: a próxima ocorrência. */
   proxima?: { id: string; dueDate: string | null } | null;
 }

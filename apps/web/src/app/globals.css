@@ -378,7 +378,9 @@ body {
 }
 
 /* Layout 26/10 (P-27): a caixa do WhatsApp dentro do "Perguntar" ocupa o quadro inteiro, sem a conta do topo do OS. */
-[data-os-embutido] [data-testid="caixa"] { height: 100%; min-height: 0; }
+[data-os-embutido] { overflow: hidden; }
+[data-os-embutido] > * { flex: 1 1 0%; min-height: 0; display: flex; flex-direction: column; }
+[data-os-embutido] [data-testid="caixa"] { flex: 1 1 0%; height: auto; min-height: 0; }
 [data-os-embutido] [data-testid="caixa"] > header { display: none; }
 
 /* Layout 26/10: a mãozinha. Área larga que rola de lado: arrastar um espaço livre leva a tela (ArrastarParaRolar). */
@@ -387,3 +389,24 @@ body {
 [data-arrastavel] :is(input, textarea, [contenteditable="true"]) { cursor: text; }
 [data-arrastavel] :is(table, pre) { cursor: auto; }
 [data-arrastando], [data-arrastando] * { cursor: grabbing !important; user-select: none !important; }
+
+/* Layout 26/10 (Lucas): as conversas com a cara do WhatsApp (balão branco de quem chega, verde-claro do que sai,
+   hora dentro do balão, resposta citada com barra colorida). O papel de parede é o da ROOT, não o do WhatsApp. */
+:root {
+  --wz-fundo: #f0f2f5;
+  --wz-entra: #ffffff; --wz-sai: #d9fdd3; --wz-texto: #111b21; --wz-meta: #667781;
+  --wz-citacao: rgba(11, 20, 26, 0.05); --wz-dia: #ffffff;
+}
+:root[data-os-theme='dark'] {
+  --wz-fundo: #0b141a;
+  --wz-entra: #202c33; --wz-sai: #005c4b; --wz-texto: #e9edef; --wz-meta: #8696a0;
+  --wz-citacao: rgba(255, 255, 255, 0.07); --wz-dia: #182229;
+}
+/* Layout 26/10: sem papel de parede (pedido do Lucas): só a cor lisa atrás dos balões. */
+.wz-fundo { background-color: var(--wz-fundo); }
+.wz-balao { color: var(--wz-texto); box-shadow: 0 1px 0.5px rgba(11, 20, 26, 0.13); }
+.wz-entra { background: var(--wz-entra); }
+.wz-sai { background: var(--wz-sai); }
+.wz-meta { color: var(--wz-meta); }
+.wz-citacao { background: var(--wz-citacao); }
+.wz-dia { background: var(--wz-dia); color: var(--wz-meta); box-shadow: 0 1px 0.5px rgba(11, 20, 26, 0.13); }

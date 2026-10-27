@@ -165,7 +165,8 @@ describe('F4: calendário e ordem manual', () => {
   });
 
   it('arrastar a linha sobre outra grava a sequência inteira com as versões', async () => {
-    window.history.replaceState({}, '', '/trabalho?lista=l-a&visao=lista&concluidas=mostrar');
+    // Layout 26/10: sem grupos (o padrão da Lista agora é "Por prazo", e arrastar só vale dentro do grupo).
+    window.history.replaceState({}, '', '/trabalho?lista=l-a&visao=lista&concluidas=mostrar&agrupar=nenhum');
     render(<TrabalhoPage />);
     await waitFor(() => expect(document.querySelectorAll('tr[data-work-task-id]')).toHaveLength(2));
     const [linha1, linha3] = [...document.querySelectorAll('tr[data-work-task-id]')];

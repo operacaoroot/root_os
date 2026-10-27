@@ -110,26 +110,26 @@ function ItemDaLista({ conversa, ativa, onAbrir }: { conversa: ConversaDaCaixa; 
       data-testid={`caixa-conversa-${conversa.id}`}
       aria-current={ativa ? 'true' : undefined}
       onClick={onAbrir}
-      className={`flex w-full min-w-0 items-center gap-2.5 rounded px-2 py-2 text-left transition hover:bg-surface-2 max-md:min-h-[56px] ${ativa ? 'bg-surface-2' : ''} ${FOCO}`}
+      className={`flex w-full min-w-0 items-center gap-3 rounded-lg px-2.5 py-3 text-left transition hover:bg-surface-2 max-md:min-h-[64px] ${ativa ? 'bg-surface-2' : ''} ${FOCO}`}
     >
-      <Avatar conversa={conversa} />
+      <Avatar conversa={conversa} tamanho="h-12 w-12" />
       <span className="min-w-0 flex-1">
         <span className="flex min-w-0 items-baseline gap-1.5">
-          <span title={conversa.nome} className={`min-w-0 flex-1 truncate text-[13.5px] ${conversa.naoLidas ? 'font-semibold text-text' : 'text-text'}`}>
+          <span title={conversa.nome} className={`min-w-0 flex-1 truncate text-[14.5px] ${conversa.naoLidas ? 'font-semibold text-text' : 'text-text'}`}>
             {conversa.nome}
           </span>
           <span className={`shrink-0 font-os-mono text-[10.5px] tabular-nums ${conversa.naoLidas ? 'text-brand' : 'text-muted'}`}>
             {horaDaLista(conversa.ultimaMensagemEm ?? conversa.previa?.timestamp)}
           </span>
         </span>
-        <span className="mt-0.5 flex min-w-0 items-center gap-1.5">
+        <span className="mt-1 flex min-w-0 items-center gap-1.5">
           {conversa.grupo && (
             <span data-testid={`caixa-selo-grupo-${conversa.id}`} className="shrink-0">
               <Chip title="Conversa em grupo">grupo{conversa.participantes != null ? ` · ${conversa.participantes}` : ''}</Chip>
             </span>
           )}
           {selo && <span className="shrink-0"><Chip tom={selo.tom}>{selo.texto}</Chip></span>}
-          <span data-testid={`caixa-previa-${conversa.id}`} title={previa} className="min-w-0 flex-1 truncate text-[12.5px] text-muted">
+          <span data-testid={`caixa-previa-${conversa.id}`} title={previa} className="min-w-0 flex-1 truncate text-[13px] text-muted">
             {previa}
           </span>
           {conversa.naoLidas > 0 && (
@@ -159,7 +159,7 @@ function CartaoDaMidia({ m }: { m: MensagemDaCaixa }) {
   );
 }
 
-function Balao({ m, grupo }: { m: MensagemDaCaixa; grupo: boolean }) {
+function Balao({ m, grupo, continua = false }: { m: MensagemDaCaixa; grupo: boolean; continua?: boolean }) {
   if (m.tipo === 'protocolo') {
     return (
       <li data-testid={`caixa-balao-${m.id}`} className="my-1 text-center text-[11.5px] text-muted">
@@ -167,43 +167,51 @@ function Balao({ m, grupo }: { m: MensagemDaCaixa; grupo: boolean }) {
       </li>
     );
   }
-  const lado = m.deMim ? 'ml-auto items-end' : 'mr-auto items-start';
-  const cor = m.deMim ? 'border-brand/30 bg-brand/10' : 'border-border bg-surface-2';
+  // Layout 26/10 (Lucas): balões com a cara do WhatsApp (branco de quem chega, verde-claro do que sai,
+  // nome colorido por pessoa, resposta citada com barra colorida, hora no canto do balão).
+  // Layout 26/10 (respiro): mensagens seguidas da mesma pessoa ficam juntas (2 px, sem repetir o nome);
+  // quando muda quem fala, um respiro maior, como no WhatsApp.
+  const lado = `${m.deMim ? 'ml-auto items-end' : 'mr-auto items-start'} ${continua ? 'mt-0.5' : 'mt-3'}`;
+  const ponta = continua ? '' : m.deMim ? 'rounded-tr-sm' : 'rounded-tl-sm';
+  const hora = (
+    <span className="wz-meta float-right ml-2 mt-1.5 translate-y-0.5 whitespace-nowrap text-[10.5px] tabular-nums leading-none">
+      {m.tipo === 'edicao' ? 'editada · ' : ''}
+      {horaDoBalao(m.timestamp)}
+    </span>
+  );
+  const nomeDaCitacao = m.cita ? (m.cita.deMim ? 'Você' : m.cita.remetenteNome?.trim() || 'mensagem citada') : '';
   return (
-    <li data-testid={`caixa-balao-${m.id}`} data-de-mim={m.deMim ? 'sim' : 'nao'} className={`flex max-w-[85%] flex-col md:max-w-[70%] ${lado}`}>
-      <div className={`min-w-0 max-w-full rounded border px-2.5 py-1.5 text-[13px] ${cor}`}>
-        {grupo && !m.deMim && (
-          <p className="mb-0.5 flex min-w-0 items-baseline justify-between gap-3 text-[11.5px]">
-            <span className="truncate font-semibold text-brand">{remetenteDoBalao(m)}</span>
-            {m.remetenteNome?.trim() && numeroDoBalao(m.remetenteNumero) && <span data-testid={`caixa-numero-${m.id}`} className="shrink-0 font-os-mono text-[10.5px] text-muted">{numeroDoBalao(m.remetenteNumero)}</span>}
+    <li data-testid={`caixa-balao-${m.id}`} data-de-mim={m.deMim ? 'sim' : 'nao'} className={`flex max-w-[80%] flex-col md:max-w-[62%] ${lado}`}>
+      <div className={`wz-balao min-w-0 max-w-full rounded-lg px-2.5 pb-2 pt-1.5 text-[14px] leading-[1.4] ${m.deMim ? 'wz-sai' : 'wz-entra'} ${ponta}`}>
+        {grupo && !m.deMim && !continua && (
+          <p className="mb-0.5 flex min-w-0 items-baseline justify-between gap-3 text-[12.5px]">
+            <span className="truncate font-semibold" style={{ color: corDaPessoa(remetenteDoBalao(m)) }}>{remetenteDoBalao(m)}</span>
+            {m.remetenteNome?.trim() && numeroDoBalao(m.remetenteNumero) && <span data-testid={`caixa-numero-${m.id}`} className="wz-meta shrink-0 text-[11px]">{numeroDoBalao(m.remetenteNumero)}</span>}
           </p>
         )}
         {m.cita && (
-          <p data-testid={`caixa-citacao-${m.id}`} className="mb-1 line-clamp-3 border-l-2 border-brand/50 pl-2 text-[12px] text-muted">
-            <span className="font-semibold">{m.cita.deMim ? 'Você' : m.cita.remetenteNome?.trim() || 'mensagem citada'}</span>
-            {': '}
-            {m.cita.texto?.trim() || (m.cita.tipo ? rotuloDoTipoDeMensagem(m.cita.tipo) : 'mensagem que não está gravada')}
-          </p>
+          <div data-testid={`caixa-citacao-${m.id}`} className="wz-citacao mb-1 overflow-hidden rounded-md border-l-4 px-2 py-1 text-[12.5px]" style={{ borderLeftColor: corDaPessoa(nomeDaCitacao) }}>
+            <p className="truncate font-semibold" style={{ color: corDaPessoa(nomeDaCitacao) }}>{nomeDaCitacao}</p>
+            <p className="wz-meta line-clamp-3 break-words">
+              {m.cita.texto?.trim() || (m.cita.tipo ? rotuloDoTipoDeMensagem(m.cita.tipo) : 'mensagem que não está gravada')}
+            </p>
+          </div>
         )}
         {m.tipo === 'reaction' ? (
-          <p className="text-[12.5px] text-muted">reagiu com {m.texto?.trim() || 'uma reação'}</p>
+          <p className="wz-meta text-[13px]">reagiu com {m.texto?.trim() || 'uma reação'}{hora}</p>
         ) : (
           <>
             {ehMidia(m.tipo) && <CartaoDaMidia m={m} />}
             {m.texto?.trim() ? (
-              <p className={`whitespace-pre-wrap break-words [overflow-wrap:anywhere] ${ehMidia(m.tipo) ? 'mt-1' : ''}`}>{m.texto}</p>
+              <p className={`whitespace-pre-wrap break-words [overflow-wrap:anywhere] ${ehMidia(m.tipo) ? 'mt-1' : ''}`}>{m.texto}{hora}</p>
             ) : (
-              !ehMidia(m.tipo) && <p className="text-muted">{rotuloDoTipoDeMensagem(m.tipo)}</p>
+              <p className="wz-meta">{!ehMidia(m.tipo) && rotuloDoTipoDeMensagem(m.tipo)}{hora}</p>
             )}
           </>
         )}
-        <p className="mt-0.5 text-right font-os-mono text-[10px] tabular-nums text-muted">
-          {m.tipo === 'edicao' ? 'editada · ' : ''}
-          {horaDoBalao(m.timestamp)}
-        </p>
       </div>
       {m.enviadaPor && (
-        <p data-testid={`caixa-enviada-por-${m.id}`} className="mt-0.5 text-[11px] text-muted">
+        <p data-testid={`caixa-enviada-por-${m.id}`} className="wz-meta mt-0.5 text-[11px]">
           enviada por {m.enviadaPor.nome}
         </p>
       )}
@@ -211,22 +219,42 @@ function Balao({ m, grupo }: { m: MensagemDaCaixa; grupo: boolean }) {
   );
 }
 
+/** Layout 26/10: cada pessoa com uma cor fixa no nome, como no WhatsApp de grupo. */
+const CORES_DAS_PESSOAS = ['#1f7aec', '#c2228e', '#028a6b', '#c4532d', '#7f66ff', '#a62c71', '#0a7d8c', '#b8860b'];
+function corDaPessoa(nome: string): string {
+  let h = 0;
+  for (const ch of nome) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
+  return CORES_DAS_PESSOAS[h % CORES_DAS_PESSOAS.length];
+}
+
+/** Layout 26/10 (respiro): a mensagem continua a vez de quem falou antes (mesma pessoa, até 10 min depois). */
+function mesmaVez(anterior: MensagemDaCaixa | null, m: MensagemDaCaixa): boolean {
+  if (!anterior || m.tipo === 'protocolo' || anterior.deMim !== m.deMim) return false;
+  if (!m.deMim && remetenteDoBalao(anterior) !== remetenteDoBalao(m)) return false;
+  if (m.deMim && (anterior.enviadaPor?.nome ?? '') !== (m.enviadaPor?.nome ?? '')) return false;
+  const ms = new Date(m.timestamp).getTime() - new Date(anterior.timestamp).getTime();
+  return Number.isFinite(ms) && ms >= 0 && ms <= 10 * 60_000;
+}
+
 function Historico({ mensagens, grupo }: { mensagens: MensagemDaCaixa[]; grupo: boolean }) {
   const itens: React.ReactNode[] = [];
   let diaAnterior = '';
+  let anterior: MensagemDaCaixa | null = null;
   for (const m of mensagens) {
     const dia = diaDoInstante(m.timestamp);
     if (dia && dia !== diaAnterior) {
       itens.push(
-        <li key={`dia-${dia}`} className="my-2 text-center">
-          <span className="rounded bg-surface-2 px-2 py-0.5 font-os-mono text-[10.5px] text-muted">{rotuloDoDia(dia)}</span>
+        <li key={`dia-${dia}`} className="mb-1 mt-4 text-center first:mt-1">
+          <span className="wz-dia rounded-lg px-2.5 py-1 text-[11.5px]">{rotuloDoDia(dia)}</span>
         </li>,
       );
       diaAnterior = dia;
+      anterior = null;
     }
-    itens.push(<Balao key={m.id} m={m} grupo={grupo} />);
+    itens.push(<Balao key={m.id} m={m} grupo={grupo} continua={mesmaVez(anterior, m)} />);
+    anterior = m.tipo === 'protocolo' ? null : m;
   }
-  return <ol className="flex flex-col gap-1.5">{itens}</ol>;
+  return <ol className="flex flex-col">{itens}</ol>;
 }
 
 function lerEndereco(): EstadoDaCaixa {
@@ -530,7 +558,7 @@ export function CaixaDoWhatsapp() {
                 {estado.q ? 'Nada com essa busca.' : estado.filtro === 'todas' ? 'Nenhuma conversa ainda. As mensagens que chegarem ao número aparecem aqui.' : `Nenhuma conversa em ${ROTULO_DO_FILTRO[estado.filtro]}.`}
               </p>
             )}
-            <ul data-testid="caixa-lista" className="space-y-0.5">
+            <ul data-testid="caixa-lista" className="space-y-1">
               {lista?.conversas.map((c) => (
                 <li key={c.id}>
                   <ItemDaLista conversa={c} ativa={c.id === estado.conversa} onAbrir={() => irPara({ ...estado, conversa: c.id }, 'push')} />
@@ -607,7 +635,7 @@ export function CaixaDoWhatsapp() {
                 ref={historico}
                 data-testid="caixa-historico"
                 onScroll={aoRolar}
-                className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-2.5 py-2"
+                className="wz-fundo min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 py-3 md:px-[5%]"
               >
                 {naoAchou ? (
                   <p className="p-4 text-center text-[13px] text-muted">Esta conversa não existe ou não é desta empresa.</p>

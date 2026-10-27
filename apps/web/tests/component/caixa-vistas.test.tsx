@@ -123,6 +123,8 @@ describe('T3: vistas salvas em Minhas tarefas', () => {
   it('o cabeçalho ordena e inverte; o filtro de cliente filtra o que chegou', async () => {
     render(<AbaMinhasTarefas token="tok" />);
     await screen.findByTestId('caixa-tarefa-t-1');
+    // Layout 26/10: sem grupos (o padrão agora é "Por prazo", que ordena dentro de cada grupo).
+    fireEvent.change(screen.getByTestId('caixa-agrupar'), { target: { value: 'nenhum' } });
     expect(nomes()).toEqual(['Enviar proposta revisada', 'Marcar kickoff', 'Pagar o contador']);
     fireEvent.click(screen.getByTestId('caixa-ordenar-cliente'));
     expect(nomes()).toEqual(['Enviar proposta revisada', 'Marcar kickoff', 'Pagar o contador']);
@@ -225,6 +227,8 @@ describe('Layout 26/10: Minhas tarefas é a Lista do Trabalho', () => {
     apiPost.mockResolvedValue({});
     render(<AbaMinhasTarefas token="tok" />);
     await screen.findByTestId('caixa-tarefa-t-1');
+    // Layout 26/10: sem grupos (arrastar só vale dentro do grupo).
+    fireEvent.change(screen.getByTestId('caixa-agrupar'), { target: { value: 'nenhum' } });
     fireEvent.change(screen.getByTestId('caixa-ordem-campo'), { target: { value: 'manual' } });
     expect(window.localStorage.getItem('caixa.tarefas.ordem-manual.v1')).toBe('1');
     // A ordem em que a consulta trouxe (a do Trabalho), não a do prazo.

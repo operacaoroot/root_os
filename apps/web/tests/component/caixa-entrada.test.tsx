@@ -338,6 +338,8 @@ describe('P1: a aba Minhas tarefas', () => {
     render(<CaixaPage />);
     fireEvent.click(screen.getByTestId('caixa-aba-tarefas'));
     await screen.findByTestId('caixa-tarefa-t-9');
+    // Layout 26/10: sem grupos (o padrão agora é "Por prazo", e o cabeçalho de cada grupo também é cabeçalho).
+    fireEvent.change(screen.getByTestId('caixa-agrupar'), { target: { value: 'nenhum' } });
     expect(screen.getAllByRole('columnheader').map((c) => c.textContent?.replace(/ [↑↓]$/, ''))).toEqual([
       '', 'Tarefa', 'Lista', 'Cliente', 'Status', 'Prioridade', 'Responsável', 'Agente', 'Prazo',
     ]);

@@ -1,10 +1,11 @@
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { HttpException } from '@nestjs/common';
 import { PrismaClient } from '@prisma/client';
 import {
   TrabArvoreOrdemSchema, TrabPastaExcluirComDestinoSchema, TrabListaMoverTarefasSchema,
   TRAB_NOME_DE_LISTA_REPETIDO, TRAB_NOME_DE_PASTA_REPETIDO, TRAB_ORDEM_FORA_DO_NIVEL, TRAB_PASTA_DA_IMPLANTACAO_PROTEGIDA,
   PORTA_DA_IMPLANTACAO, chaveDoNomeNoNivel, etapaNoDestino,
+  TRAB_PASTA_COM_A_LISTA_DO_COMERCIAL, TRAB_LISTA_DO_COMERCIAL_SO_TAREFA_NOVA,
 } from '@mktos/shared';
 import { AuditService } from '../src/audit/audit.service';
 import { EventLogService } from '../src/gateway/event-log.service';
@@ -71,6 +72,19 @@ describe('árvore: as regras sem banco', () => {
     expect(TrabArvoreOrdemSchema.safeParse({ tipo: 'lista', paiId: null, ids: [id] }).success).toBe(true);
     expect(TrabArvoreOrdemSchema.safeParse({ tipo: 'tarefa', paiId: null, ids: [id] }).success).toBe(false);
     expect(TrabArvoreOrdemSchema.safeParse({ tipo: 'pasta', paiId: null, ids: [] }).success).toBe(false);
+  });
+
+  it('Layout 26/10: ligar a tarefa a um lead pelo Trabalho pede leads.ver; sem lead, não', async () => {
+    const id = '11111111-1111-4111-8111-111111111111';
+    const svcFalso = { criarTarefa: vi.fn(async () => 'criada'), editarTarefaHttp: vi.fn(async () => 'editada') };
+    const ctl = new WorkController(svcFalso as never, {} as never, {} as never, {} as never);
+    const quem = (permissions: string[]) => ({ sub: 'u', orgId: 'o', permissions }) as never;
+    expect(() => ctl.criarTarefa(quem(['tarefas.editar']), { listId: id, title: 'Ligar', leadId: id })).toThrow('leads.ver');
+    expect(() => ctl.editarTarefa(quem(['tarefas.editar']), id, { expectedUpdatedAt: '2026-10-26T10:00:00.000Z', leadId: null })).toThrow('leads.ver');
+    await ctl.criarTarefa(quem(['tarefas.editar']), { listId: id, title: 'Sem lead' });
+    await ctl.criarTarefa(quem(['tarefas.editar', 'leads.ver']), { listId: id, title: 'Com lead', leadId: id });
+    expect(svcFalso.criarTarefa).toHaveBeenLastCalledWith('o', 'u', expect.objectContaining({ leadId: id }), { exigirCliente: true });
+    expect(svcFalso.criarTarefa).toHaveBeenCalledTimes(2);
   });
 
   it('apagar pasta com destino e mover tarefas são de gente: o guarda está na rota', () => {
@@ -329,6 +343,32 @@ describe.skipIf(!URL)('árvore: contra o Postgres', () => {
     const l = await prisma.workList.findUniqueOrThrow({ where: { id: comercial.id } });
     expect([l.name, l.arquivadaEm]).toEqual(['Tarefas do comercial', null]);
     expect(await prisma.workTask.count({ where: { listId: comercial.id, archived: false } })).toBe(1);
+  });
+
+  it('Layout 26/10: na pasta Comercial a lista do comercial aparece, entra na ordem da pasta, segura a pasta e segue protegida', async () => {
+    const comercialPasta = await pasta(CASA, 'Comercial');
+    const comercial = await lista(CASA, comercialPasta, 'Tarefas do comercial', ['Ligar para o lead'], { externalId: LISTA_DO_COMERCIAL, order: 0 });
+    const propostas = await lista(CASA, comercialPasta, 'Propostas', [], { order: 1 });
+    const fora = await lista(CASA, null, 'Operação', ['Uma']);
+    const e = await svc.estrutura(CASA);
+    expect(e.folders.find((f) => f.id === comercialPasta)!.lists.map((l) => l.name)).toEqual(['Tarefas do comercial', 'Propostas']);
+    // Já na árvore, ela não vem de novo à parte.
+    expect(e.listasDoComercial ?? []).toEqual([]);
+    await svc.ordenarArvore(CASA, EU, { tipo: 'lista', paiId: comercialPasta, ids: [propostas.id, comercial.id] });
+    expect((await svc.estrutura(CASA)).folders.find((f) => f.id === comercialPasta)!.lists.map((l) => l.name)).toEqual(['Propostas', 'Tarefas do comercial']);
+    // Renomear, tirar da pasta, arquivar as tarefas e excluir continuam recusados (404).
+    expect((await erro(() => svc.editarLista(CASA, EU, comercial.id, { name: 'Outra' }))).status).toBe(404);
+    expect((await erro(() => svc.editarLista(CASA, EU, comercial.id, { folderId: null }))).status).toBe(404);
+    expect((await erro(() => svc.arquivarTarefasDaLista(CASA, EU, comercial.id, { esperadas: 1 }))).status).toBe(404);
+    expect((await erro(() => svc.apagarLista(CASA, EU, comercial.id, { confirmarNome: 'Tarefas do comercial' }))).status).toBe(404);
+    // A pasta que a guarda não sai (nem levando as listas para "Sem pasta").
+    expect(await erro(() => svc.excluirPastaComDestino(CASA, EU, comercialPasta, { destino: { semPasta: true }, esperadas: { listas: 2, pastas: 0 } })))
+      .toEqual({ status: 400, mensagem: TRAB_PASTA_COM_A_LISTA_DO_COMERCIAL });
+    // Trazer as tarefas de outra lista para ela continua recusado.
+    expect(await erro(() => svc.moverTarefasDaLista(CASA, EU, fora.id, { destinoId: comercial.id, esperadas: 1 })))
+      .toEqual({ status: 400, mensagem: TRAB_LISTA_DO_COMERCIAL_SO_TAREFA_NOVA });
+    const l = await prisma.workList.findUniqueOrThrow({ where: { id: comercial.id } });
+    expect([l.name, l.folderId, l.arquivadaEm]).toEqual(['Tarefas do comercial', comercialPasta, null]);
   });
 
   it('mover e excluir com campo próprio da lista: a lista é arquivada, e o valor que a tarefa movida guarda fica', async () => {

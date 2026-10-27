@@ -246,7 +246,7 @@ describe('caixa de WhatsApp: abrir, ler, responder, arquivar', () => {
     expect(screen.getByTestId('caixa-balao-g2')).toHaveTextContent('+5500000000003');
     expect(screen.getByTestId('caixa-midia-g2')).toHaveTextContent(/documento · contrato-ficticio\.pdf · application\/pdf · 2 KB/);
     expect(screen.getByTestId('caixa-midia-g2')).toHaveTextContent(/mídia não baixada/);
-    expect(screen.getByTestId('caixa-citacao-g3')).toHaveTextContent('Pessoa Ficticia: oi grupo');
+    expect(screen.getByTestId('caixa-citacao-g3')).toHaveTextContent('Pessoa Ficticiaoi grupo');
     expect(screen.getByTestId('caixa-subtitulo')).toHaveTextContent('grupo · 6 participantes');
     expect(screen.getByTestId('caixa-participantes')).toHaveTextContent('Pessoa Ficticia · +55 (00) 00000-0002 · admin');
   });
