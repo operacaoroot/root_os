@@ -29,7 +29,7 @@ const BOTAO =
   'inline-flex items-center justify-center rounded border border-border px-2.5 py-1 text-[12px] transition hover:border-brand disabled:cursor-not-allowed disabled:opacity-50 max-md:min-h-[40px]';
 const RAZAO_SEM_PERMISSAO = 'Vincular pede a permissão leads.editar.';
 
-type Modo = { tipo: TipoDeVinculo | 'telefone' } | null;
+type Modo = { tipo: TipoDeVinculo | 'telefone' | 'passar' } | null;
 
 /** O painel do lead aberto na aba WhatsApp. */
 export function hrefDoLeadDaConversa(leadId: string): string {
@@ -63,7 +63,7 @@ export function VinculoDaConversa({ conversa, podeVincular, aoMudar }: { convers
   useEffect(() => {
     if (!modo || !token) return;
     let vivo = true;
-    const tipo = modo.tipo === 'telefone' ? 'lead' : modo.tipo;
+    const tipo = modo.tipo === 'telefone' ? 'lead' : modo.tipo === 'passar' ? 'cliente' : modo.tipo;
     const t = setTimeout(() => {
       const qs = new URLSearchParams({ conversaId: conversa.id, tipo });
       if (q.trim()) qs.set('q', q.trim());
@@ -97,6 +97,10 @@ export function VinculoDaConversa({ conversa, podeVincular, aoMudar }: { convers
   }
 
   async function escolher(c: CandidatoDeVinculo) {
+    if (modo?.tipo === 'passar') {
+      await acao('/passar-para-cliente', { clienteId: c.id });
+      return;
+    }
     if (modo?.tipo === 'telefone') {
       const feito = await acao('/telefone-no-lead', { leadId: c.id });
       if (!feito) setTrocar(c);
@@ -105,9 +109,9 @@ export function VinculoDaConversa({ conversa, podeVincular, aoMudar }: { convers
     await acao('', { tipo: c.tipo, id: c.id });
   }
 
-  function abrir(tipo: TipoDeVinculo | 'telefone') {
+  function abrir(tipo: TipoDeVinculo | 'telefone' | 'passar', inicial = '') {
     setCandidatos(null);
-    setQ('');
+    setQ(inicial);
     setErro(null);
     setTrocar(null);
     setModo(modo?.tipo === tipo ? null : { tipo });
@@ -130,6 +134,32 @@ export function VinculoDaConversa({ conversa, podeVincular, aoMudar }: { convers
               {v.nome}
             </Link>
             {!v.vinculadoPor && <span className="text-[11px] text-muted" title="casou pelo telefone gravado">pelo telefone</span>}
+            {/* Layout 27/10: o lead virou cliente; a conversa passa ao cliente num passo, sem desvincular antes. */}
+            {v.tipo === 'lead' &&
+              (v.clienteDoLead ? (
+                <button
+                  type="button"
+                  className={`${BOTAO} border-brand/60 text-brand`}
+                  disabled={!podeVincular || ocupado}
+                  title={razao ?? `O fechamento já criou o cliente ${v.clienteDoLead.nome}. Um clique passa a conversa para ele.`}
+                  onClick={() => void acao('/passar-para-cliente', { clienteId: v.clienteDoLead!.id })}
+                  data-testid="whats-passar-para-cliente"
+                >
+                  Passar para cliente
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  className={BOTAO}
+                  disabled={!podeVincular}
+                  title={razao ?? 'O lead fechou? Escolha o cliente (ou cadastre) e a conversa passa para ele.'}
+                  aria-expanded={modo?.tipo === 'passar'}
+                  onClick={() => abrir('passar', v.nome)}
+                  data-testid="whats-passar-para-cliente"
+                >
+                  Passar para cliente
+                </button>
+              ))}
             <button type="button" className={BOTAO} disabled={!podeVincular || ocupado} title={razao} onClick={() => void acao('/desvincular')} data-testid="whats-desvincular">
               Desvincular
             </button>
@@ -202,7 +232,7 @@ export function VinculoDaConversa({ conversa, podeVincular, aoMudar }: { convers
       {modo && (
         <div className="rounded border border-border bg-bg p-2" data-testid="whats-vinculo-painel">
           <label className="sr-only" htmlFor={`busca-vinculo-${conversa.id}`}>
-            {modo.tipo === 'cliente' ? 'buscar cliente' : 'buscar lead'}
+            {modo.tipo === 'lead' || modo.tipo === 'telefone' ? 'buscar lead' : 'buscar cliente'}
           </label>
           <input
             id={`busca-vinculo-${conversa.id}`}
@@ -210,10 +240,11 @@ export function VinculoDaConversa({ conversa, podeVincular, aoMudar }: { convers
             autoFocus
             value={q}
             onChange={(e) => setQ(e.target.value)}
-            placeholder={modo.tipo === 'cliente' ? 'Buscar cliente pelo nome' : 'Buscar lead pelo nome ou empresa'}
+            placeholder={modo.tipo !== 'lead' && modo.tipo !== 'telefone' ? 'Buscar cliente pelo nome' : 'Buscar lead pelo nome ou empresa'}
             className="w-full rounded border border-border bg-bg px-2.5 py-1.5 text-[13px] outline-none focus:border-brand"
           />
           {modo.tipo === 'telefone' && <p className="mt-1 text-[11.5px] text-muted">O número desta conversa vai para o lead escolhido, e a conversa fica ligada a ele.</p>}
+          {modo.tipo === 'passar' && <p className="mt-1 text-[11.5px] text-muted">A conversa sai do lead e passa para o cliente escolhido. O lead e o funil não mudam.</p>}
           {trocar ? (
             <div className="mt-2 space-y-1.5" role="alertdialog" aria-label="trocar o telefone do lead">
               <p className="text-[12.5px]">{trocar.nome} já tem outro telefone. Trocar pelo número desta conversa?</p>
@@ -253,16 +284,16 @@ export function VinculoDaConversa({ conversa, podeVincular, aoMudar }: { convers
             </ul>
           )}
           {/* Integração 26/10: o cliente ainda não existe no OS? Cadastra com o nome digitado e já vincula. */}
-          {modo.tipo === 'cliente' && !trocar && q.trim().length >= 2 && (
+          {(modo.tipo === 'cliente' || modo.tipo === 'passar') && !trocar && q.trim().length >= 2 && (
             <button
               type="button"
               disabled={!podeVincular || ocupado}
               title={razao}
-              onClick={() => void acao('/cliente-novo', { nome: q.trim() })}
+              onClick={() => void acao(modo.tipo === 'passar' ? '/passar-para-cliente' : '/cliente-novo', { nome: q.trim() })}
               data-testid="whats-cadastrar-cliente"
               className="mt-2 w-full rounded border border-dashed border-brand/60 px-2 py-1.5 text-left text-[12.5px] text-brand hover:bg-brand/10 disabled:opacity-50"
             >
-              + cadastrar &ldquo;{q.trim()}&rdquo; como cliente e vincular
+              + cadastrar &ldquo;{q.trim()}&rdquo; como cliente e {modo.tipo === 'passar' ? 'passar a conversa' : 'vincular'}
             </button>
           )}
         </div>

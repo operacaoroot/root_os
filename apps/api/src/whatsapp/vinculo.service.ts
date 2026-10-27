@@ -379,6 +379,47 @@ export class VinculoDoWhatsappService {
     return { conversa: await this.projetada(orgId, conversaId), mudou };
   }
 
+  /**
+   * Layout 27/10 (pedido do Lucas, Papeleira Santa Rita): a conversa ligada a um
+   * lead que virou cliente passa ao cliente num passo só, sem "Desvincular" antes.
+   * O alvo: `clienteId` escolhido; sem ele, o cliente que o fechamento gravou na
+   * ficha do lead; sem os dois, o `nome` (o cadastro igual ou um novo, como no
+   * "cadastrar e vincular"). O lead e o funil não mudam: só a conversa troca de dono.
+   */
+  async passarParaCliente(orgId: string, conversaId: string, corpo: unknown, quem: QuemVincula): Promise<ResultadoDoVinculo> {
+    const e = (typeof corpo === 'object' && corpo !== null ? corpo : {}) as { clienteId?: unknown; nome?: unknown };
+    const clienteId = typeof e.clienteId === 'string' && e.clienteId ? e.clienteId : null;
+    const nome = typeof e.nome === 'string' ? e.nome.trim().slice(0, 160) : '';
+    await this.exigirGente(orgId, quem);
+    const antes = await this.conversaOu404(this.prisma, orgId, conversaId);
+    if (!antes.leadId) throw new ConflictException('Esta conversa não está ligada a um lead.');
+    if (clienteId) await this.alvoOu404(this.prisma, orgId, 'cliente', clienteId);
+    const mudou = await this.prisma.$transaction(async (tx) => {
+      const c = await this.conversaOu404(tx, orgId, conversaId);
+      if (!c.leadId) throw new ConflictException(FRASE.mudou);
+      let id = clienteId;
+      if (!id) {
+        const ficha = await tx.comercialFicha.findUnique({ where: { leadId: c.leadId }, select: { partnerId: true } });
+        if (ficha?.partnerId) id = (await tx.partner.findFirst({ where: { id: ficha.partnerId, orgId }, select: { id: true, principalId: true } }).then((p) => p && (p.principalId ?? p.id))) ?? null;
+      }
+      if (!id) {
+        if (nome.length < 2) throw new BadRequestException('Escolha o cliente ou escreva o nome dele.');
+        const igual = await tx.partner.findFirst({ where: { orgId, interno: false, OR: [{ razaoSocial: { equals: nome, mode: 'insensitive' } }, { nomeFantasia: { equals: nome, mode: 'insensitive' } }] }, select: { id: true, isCliente: true, principalId: true } });
+        id = igual ? (igual.principalId ?? igual.id) : (await tx.partner.create({ data: { orgId, razaoSocial: nome, isCliente: true }, select: { id: true } })).id;
+        if (igual && !igual.isCliente && !igual.principalId) await tx.partner.update({ where: { id }, data: { isCliente: true } });
+      }
+      // Solta o lead (sem auditar à parte: a auditoria do vínculo guarda o "antes" com o lead).
+      const r = await tx.whatsAppConversa.updateMany({
+        where: { id: c.id, orgId, atualizadoEm: c.atualizadoEm, leadId: c.leadId, clienteId: c.clienteId },
+        data: { leadId: null, clienteId: null },
+      });
+      if (r.count !== 1) throw new ConflictException(FRASE.mudou);
+      await this.auditar(tx, orgId, quem.id, ACAO_DE_AUDITORIA.desvinculada, 'whatsapp_conversa', c.id, { leadId: c.leadId, clienteId: c.clienteId }, { leadId: null, clienteId: null }, { motivo: 'passou_para_cliente', grupo: c.grupo });
+      return this.vincularNaTransacao(tx, orgId, conversaId, { tipo: 'cliente', id }, quem.id, 'manual');
+    });
+    return { conversa: await this.projetada(orgId, conversaId), mudou };
+  }
+
   /** "Vincular a <nome>?": um clique aceita a sugestão gravada (o alvo é relido na empresa). */
   async aceitarSugestao(orgId: string, conversaId: string, quem: QuemVincula): Promise<ResultadoDoVinculo> {
     await this.exigirGente(orgId, quem);

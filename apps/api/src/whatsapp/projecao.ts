@@ -37,7 +37,7 @@ export const SELECT_DA_CONVERSA = {
   vinculadoPorId: true,
   vinculadoEm: true,
   arquivadaEm: true,
-  lead: { select: { id: true, name: true } },
+  lead: { select: { id: true, name: true, ficha: { select: { partnerId: true } } } },
   cliente: { select: { id: true, razaoSocial: true, nomeFantasia: true } },
 } satisfies Prisma.WhatsAppConversaSelect;
 
@@ -114,11 +114,16 @@ export async function projetarConversas(prisma: PrismaService, orgId: string, li
   const nomes = pessoas.length
     ? new Map((await prisma.user.findMany({ where: { orgId, id: { in: pessoas } }, select: { id: true, name: true } })).map((u) => [u.id, u.name]))
     : new Map<string, string>();
+  // Layout 27/10: o lead que o fechamento já virou cliente oferece "Passar para <cliente>".
+  const fechados = [...new Set(linhas.map((l) => l.lead?.ficha?.partnerId).filter((x): x is string => !!x))];
+  const clientesDosLeads = fechados.length
+    ? new Map((await prisma.partner.findMany({ where: { orgId, id: { in: fechados } }, select: { id: true, razaoSocial: true, nomeFantasia: true } })).map((p) => [p.id, { id: p.id, nome: nomeDoCliente(p) }]))
+    : new Map<string, { id: string; nome: string }>();
   return linhas.map((l) => {
     const u = ultimaDe.get(l.id);
     const numero = numeroDoChat(l.chatJid, l.grupo);
     const vinculo = l.lead
-      ? { tipo: 'lead' as const, id: l.lead.id, nome: l.lead.name }
+      ? { tipo: 'lead' as const, id: l.lead.id, nome: l.lead.name, clienteDoLead: (l.lead.ficha?.partnerId && clientesDosLeads.get(l.lead.ficha.partnerId)) || null }
       : l.cliente
         ? { tipo: 'cliente' as const, id: l.cliente.id, nome: nomeDoCliente(l.cliente) }
         : null;

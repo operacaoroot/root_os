@@ -5,7 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
-import { ConflictException, ForbiddenException, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, ForbiddenException, NotFoundException } from '@nestjs/common';
 import { PrismaClient } from '@prisma/client';
 import { CODIGO_LEAD_COM_OUTRO_TELEFONE } from '@mktos/shared';
 
@@ -291,6 +291,40 @@ describe.skipIf(!URL)('o vínculo da conversa contra o Postgres', () => {
     const c = await conversa(jid('5532988880032'), null);
     await svc.vincular(ORG, c, { tipo: 'lead', id: l }, gente);
     await expect(svc.marcarEquipe(ORG, c, { equipe: true }, gente)).rejects.toBeInstanceOf(ConflictException);
+  });
+
+  it('passar para cliente: o cliente do fechamento num clique; sem ele, o escolhido ou o cadastrado pelo nome', async () => {
+    const fechado = await lead('Papeleira Ficticia');
+    const p = await cliente('Papeleira Ficticia');
+    await prisma.comercialFicha.create({ data: { leadId: fechado, partnerId: p } });
+    const g = await conversa('120363000000000051@g.us', 'ROOT | Papeleira Ficticia', true);
+    await mensagem(g, '120363000000000051@g.us', { grupo: true });
+    await svc.vincular(ORG, g, { tipo: 'lead', id: fechado }, gente);
+    const lida = await svc.vincular(ORG, g, { tipo: 'lead', id: fechado }, gente);
+    expect(lida.conversa.vinculo).toMatchObject({ tipo: 'lead', clienteDoLead: { id: p } });
+    const r = await svc.passarParaCliente(ORG, g, {}, gente);
+    expect(r.mudou).toBe(true);
+    expect(r.conversa.vinculo).toMatchObject({ tipo: 'cliente', id: p });
+    expect(await daConversa(g)).toMatchObject({ leadId: null, clienteId: p, vinculadoPorId: gente.id });
+    expect((await mensagensDe(g)).every((m) => m.leadId === null && m.clienteId === p)).toBe(true);
+    // Já é do cliente: passar de novo é 409 (não está ligada a lead).
+    await expect(svc.passarParaCliente(ORG, g, {}, gente)).rejects.toBeInstanceOf(ConflictException);
+
+    // Lead sem fechamento no sistema: sem cliente nem nome é 400; com nome cadastra e passa.
+    const fora = await lead('Fechado Por Fora');
+    const c = await conversa(jid('5532988880052'), null);
+    await svc.vincular(ORG, c, { tipo: 'lead', id: fora }, gente);
+    await expect(svc.passarParaCliente(ORG, c, {}, gente)).rejects.toBeInstanceOf(BadRequestException);
+    const n = await svc.passarParaCliente(ORG, c, { nome: 'Fechado Por Fora' }, gente);
+    expect(n.conversa.vinculo).toMatchObject({ tipo: 'cliente', nome: 'Fechado Por Fora' });
+    // O lead continua no funil.
+    expect(await prisma.lead.count({ where: { id: fora } })).toBe(1);
+    // Com o cliente escolhido, vai para ele.
+    const outro = await cliente('Escolhido Na Busca');
+    const c2 = await conversa(jid('5532988880053'), null);
+    await svc.vincular(ORG, c2, { tipo: 'lead', id: fora }, gente);
+    expect((await svc.passarParaCliente(ORG, c2, { clienteId: outro }, gente)).conversa.vinculo).toMatchObject({ tipo: 'cliente', id: outro });
+    await expect(svc.passarParaCliente(ORG, c2, { clienteId: outro }, leitor)).rejects.toBeInstanceOf(ForbiddenException);
   });
 
   it('403 para conta de máquina e para quem só lê (relido no banco)', async () => {

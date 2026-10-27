@@ -156,6 +156,8 @@ export interface VinculoDaConversa {
   /** Quem ligou (null = casou sozinho pelo telefone) e quando. */
   vinculadoPor: { id: string; nome: string } | null;
   vinculadoEm: string | null;
+  /** Layout 27/10: ligada a um lead que o fechamento já virou cliente, o cliente dele ("Passar para <cliente>"). */
+  clienteDoLead?: { id: string; nome: string } | null;
 }
 
 /** `nome_igual` = o nome do grupo sem o prefixo é igual ao do cliente/lead; `telefone` = o número do 1:1. */

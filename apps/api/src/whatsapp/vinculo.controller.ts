@@ -116,6 +116,15 @@ export class VinculoDoWhatsappController {
     return this.eEsquece(user.orgId, this.svc.cadastrarClienteEVincular(user.orgId, conversaId, body, quem(user)));
   }
 
+  /** Layout 27/10: o lead virou cliente; a conversa passa do lead ao cliente: `{ clienteId }` ou `{ nome }`. */
+  @Post(':conversaId/passar-para-cliente')
+  @HttpCode(200)
+  @RequirePermissions('leads.editar')
+  @UseGuards(SoGenteNoVinculoGuard)
+  passarParaCliente(@CurrentUser() user: JwtUser, @Param('conversaId') conversaId: string, @Body() body: unknown): Promise<ResultadoDoVinculo> {
+    return this.eEsquece(user.orgId, this.svc.passarParaCliente(user.orgId, conversaId, body, quem(user)));
+  }
+
   /** Aceitar a sugestão gravada (um clique). */
   @Post(':conversaId/sugestao')
   @HttpCode(200)
