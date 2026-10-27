@@ -51,7 +51,10 @@ COPY . .
 
 # Instala tudo (com devDeps: precisa de tsc/next/prisma no build e o CLI do
 # Prisma no runtime para `migrate deploy`) e builda os pacotes na ordem certa.
-RUN pnpm install --frozen-lockfile \
+# Heap do Node só nesta etapa: o tsc da api estourou o limite padrão (~2 GB em VPS de 8 GB) em 27/10/2026.
+# Vale para a cadeia inteira do RUN (export), não para a imagem que roda.
+RUN export NODE_OPTIONS=--max-old-space-size=4096 \
+ && pnpm install --frozen-lockfile \
  && pnpm --filter @mktos/shared build \
  && pnpm --filter @mktos/policy build \
  && pnpm --filter @mktos/api db:generate \
