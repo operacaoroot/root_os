@@ -21,6 +21,103 @@ export type MemoriaVia = (typeof MEMORIA_VIAS)[number];
 /** Onde as notas viram .md no Drive Root (decisão do Lucas, 26/10): já está no Obsidian dele. */
 export const MEMORIA_PASTA_NO_DRIVE = ['40-marca-e-conteudo', 'Memória'] as const;
 
+/*
+ * DESTINO DA NOTA (29/10/2026, pedido do Lucas). Tudo que chega (grupo do WhatsApp,
+ * caixa da tela, importação) cai na Entrada. Ao abrir a nota, a equipe decide:
+ * vira Ideia de conteúdo (card em Marketing › Ideias), vira Referência externa
+ * (material de fora para consultar, que NÃO é memória da empresa), ou as duas.
+ * Apagar continua sendo o descarte. Os nomes da tela moram aqui.
+ */
+export const MEMORIA_DESTINOS = ['entrada', 'conteudo', 'referencia', 'conteudo_e_referencia'] as const;
+export type MemoriaDestino = (typeof MEMORIA_DESTINOS)[number];
+export const NOME_DO_DESTINO: Record<MemoriaDestino, string> = {
+  entrada: 'Para decidir',
+  conteudo: 'Ideia de conteúdo',
+  referencia: 'Referência externa',
+  conteudo_e_referencia: 'Conteúdo e referência',
+};
+export const vaiParaIdeias = (d: string | null | undefined): boolean => d === 'conteudo' || d === 'conteudo_e_referencia';
+export const ficaComoReferencia = (d: string | null | undefined): boolean => d === 'referencia' || d === 'conteudo_e_referencia';
+
+/** Do que o material trata. A IA sugere ao ler o link; a equipe confirma ao decidir. */
+export const MEMORIA_ASSUNTOS = ['ferramenta', 'produto', 'conteudo', 'negocio'] as const;
+export type MemoriaAssunto = (typeof MEMORIA_ASSUNTOS)[number];
+export const NOME_DO_ASSUNTO: Record<MemoriaAssunto, string> = { ferramenta: 'Ferramenta', produto: 'Produto', conteudo: 'Conteúdo', negocio: 'Negócio' };
+export const assuntoValido = (v: unknown): MemoriaAssunto | null =>
+  (MEMORIA_ASSUNTOS as readonly string[]).includes(String(v ?? '').trim().toLowerCase()) ? (String(v).trim().toLowerCase() as MemoriaAssunto) : null;
+
+export const MemoriaDestinoSchema = z.object({
+  destino: z.enum(MEMORIA_DESTINOS),
+  assunto: z.enum(MEMORIA_ASSUNTOS).nullable().optional(),
+});
+export type MemoriaDestinoInput = z.infer<typeof MemoriaDestinoSchema>;
+
+/** Parâmetros que só rastreiam quem compartilhou: saem da chave do link. */
+const RASTREIO = /^(utm_\w+|igsh|igshid|fbclid|gclid|si|exln|dlrf|feature|ref|ref_src|s|t|_r|share_id|is_from_webapp|sender_device)$/i;
+
+/**
+ * A chave que diz se dois links são o mesmo material. Post do Instagram vale pelo
+ * código (/p/, /reel/, /tv/, com ou sem perfil, www ou barra no fim); TikTok pelo
+ * id do vídeo; YouTube pelo id. O resto: site sem www, caminho sem barra no fim e
+ * sem os parâmetros de rastreio. Em 27/10 o grupo mandou instagram.com/p/X e a
+ * Memória já tinha www.instagram.com/p/X/: virou nota repetida.
+ */
+export function chaveDoLink(raw: string): string {
+  let u: URL;
+  try {
+    u = new URL(String(raw || '').trim());
+  } catch {
+    return String(raw || '').trim().toLowerCase();
+  }
+  const h = u.hostname.toLowerCase().replace(/^(www|m)\./, '');
+  const p = u.pathname;
+  const ig = /instagram\.com$/.test(h) ? /^\/(?:[\w.]+\/)?(?:p|reel|reels|tv)\/([\w-]+)/.exec(p) : null;
+  if (ig) return `instagram:${ig[1]}`;
+  const tt = /tiktok\.com$/.test(h) ? /\/video\/(\d+)/.exec(p) : null;
+  if (tt) return `tiktok:${tt[1]}`;
+  if (h === 'youtu.be' && p.length > 1) return `youtube:${p.slice(1).split('/')[0]}`;
+  if (/youtube\.com$/.test(h)) {
+    const v = u.searchParams.get('v') || /^\/(?:shorts|live|embed)\/([\w-]+)/.exec(p)?.[1];
+    if (v) return `youtube:${v}`;
+  }
+  const qs = [...u.searchParams.entries()].filter(([k]) => !RASTREIO.test(k)).sort(([a], [b]) => a.localeCompare(b));
+  const busca = qs.length ? `?${qs.map(([k, v]) => `${k}=${v}`).join('&')}` : '';
+  return `${h}${p.replace(/\/+$/, '')}${busca}`;
+}
+
+/** O pedaço do link que com certeza aparece em qualquer forma dele (para a busca no banco). */
+export function nucleoDoLink(raw: string): string {
+  const k = chaveDoLink(raw);
+  const m = /^(?:instagram|tiktok|youtube):(.+)$/.exec(k);
+  return m ? m[1] : k.split('?')[0];
+}
+
+/** Texto de uma seção "## Título" do corpo da nota (até a próxima seção). */
+export function secaoDoCorpo(corpo: string, titulo: string): string {
+  const linhas = String(corpo || '').split(/\r?\n/);
+  const i = linhas.findIndex((l) => new RegExp(`^##\\s+${titulo.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`, 'i').test(l.trim()));
+  if (i < 0) return '';
+  const fim = linhas.findIndex((l, j) => j > i && /^##\s/.test(l.trim()));
+  return linhas.slice(i + 1, fim < 0 ? undefined : fim).join('\n').trim();
+}
+
+/**
+ * O card de Ideias montado só com o que a nota já tem, para quando a IA não responde.
+ * A nota de vídeo já traz gancho e "Como adaptar"; a de link traz pontos e "Como usar".
+ */
+export function cardDaNotaSemIa(n: { titulo: string; resumo: string; corpo: string; tipo: string }): { title: string; summary: string; why: string; how: { format: string; hook: string }; key_points: string[] } {
+  const topicosDe = (t: string) => t.split(/\n/).map((l) => /^\s*[-*]\s+(.+)$/.exec(l)?.[1]?.trim() ?? '').filter(Boolean);
+  const adaptar = topicosDe(secaoDoCorpo(n.corpo, 'Como adaptar') || secaoDoCorpo(n.corpo, 'Como usar'));
+  const pontos = topicosDe(secaoDoCorpo(n.corpo, 'Pontos principais') || secaoDoCorpo(n.corpo, 'Estrutura'));
+  return {
+    title: n.titulo,
+    summary: duasFrases(n.resumo || secaoDoCorpo(n.corpo, 'Resumo') || n.corpo),
+    why: adaptar.length ? `Como usar: ${adaptar.slice(0, 2).join(' ')}` : '',
+    how: { format: n.tipo === 'video' ? 'Reel' : 'Carrossel', hook: linha(secaoDoCorpo(n.corpo, 'Gancho')).slice(0, 300) },
+    key_points: [...pontos, ...adaptar].slice(0, 5),
+  };
+}
+
 export interface MemoriaNotaBreve {
   id: string;
   titulo: string;
@@ -34,6 +131,10 @@ export interface MemoriaNotaBreve {
   erro: string | null;
   via: MemoriaVia;
   noDrive: boolean;
+  destino: MemoriaDestino;
+  assunto: MemoriaAssunto | null;
+  /** Quem mandou: o usuário do OS ou o nome no grupo do WhatsApp. */
+  enviadaPor: string | null;
   criadaEm: string;
   atualizadaEm: string;
 }
@@ -41,11 +142,18 @@ export interface MemoriaNotaBreve {
 export interface MemoriaNota extends MemoriaNotaBreve {
   corpo: string;
   citadaEm: { id: string; titulo: string }[];
+  /** O card em Marketing › Ideias, quando a nota foi mandada para lá. */
+  ideia: { id: string; status: TriagemStatus } | null;
+  decididaPor: string | null;
+  decididaEm: string | null;
 }
 
 export interface MemoriaPainel {
   notas: MemoriaNotaBreve[];
   total: number;
+  /** Quantas notas em cada destino e, nas referências, em cada assunto. */
+  destinos: { destino: MemoriaDestino; n: number }[];
+  assuntos: { assunto: MemoriaAssunto; n: number }[];
   pastas: { nome: MemoriaPasta; n: number }[];
   tags: { t: string; n: number }[];
   /** O que a captura pelo grupo e o espelho no Drive precisam para funcionar. */
@@ -120,6 +228,7 @@ export interface AnaliseDeVideo {
   why_works?: string;
   adapt?: string[];
   tags?: string[];
+  subject?: string;
 }
 export interface AnaliseDeLink {
   title?: string;
@@ -127,6 +236,7 @@ export interface AnaliseDeLink {
   key_points?: string[];
   adapt?: string[];
   tags?: string[];
+  subject?: string;
 }
 
 /** Corpo da nota de vídeo destrinchado (lente de marketing), igual ao do Estúdio. */
@@ -163,12 +273,14 @@ export const nomeDeArquivo = (s: string): string =>
   (String(s || 'nota').replace(/[\\/:*?"<>|#^[\]]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 80) || 'nota');
 
 /** O .md do Obsidian: YAML no topo, título e corpo. */
-export function arquivoDaNota(n: { titulo: string; tipo: string; pasta: string; tags: string[]; url?: string | null; autor?: string | null; via: string; criadaEm: string; atualizadaEm: string; corpo: string; id: string }): string {
+export function arquivoDaNota(n: { titulo: string; tipo: string; pasta: string; tags: string[]; url?: string | null; autor?: string | null; via: string; criadaEm: string; atualizadaEm: string; corpo: string; id: string; destino?: string | null; assunto?: string | null }): string {
   const fm = [
     '---',
     `titulo: ${yaml(n.titulo)}`,
     `tipo: ${n.tipo}`,
     `pasta: ${n.pasta}`,
+    n.destino ? `destino: ${n.destino}` : '',
+    n.assunto ? `assunto: ${n.assunto}` : '',
     `tags: [${(n.tags || []).map(yaml).join(', ')}]`,
     n.url ? `url: ${yaml(n.url)}` : '',
     n.autor ? `autor: ${yaml(n.autor)}` : '',

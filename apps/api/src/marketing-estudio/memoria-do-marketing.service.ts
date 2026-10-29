@@ -1,21 +1,30 @@
 import { BadRequestException, ConflictException, Inject, Injectable, Logger, NotFoundException, OnModuleInit, Optional } from '@nestjs/common';
 import type { MarketingNota, Prisma } from '@prisma/client';
 import {
+  MEMORIA_ASSUNTOS,
   MEMORIA_PASTAS,
   MEMORIA_PASTA_NO_DRIVE,
   arquivoDaNota,
+  assuntoValido,
+  chaveDoLink,
   corpoDoLink,
   corpoDoVideo,
+  ficaComoReferencia,
   grafoDasNotas,
   limparTags,
   nomeDeArquivo,
+  nucleoDoLink,
   primeiraUrl,
   semTravessao,
   tagsDoTexto,
   tipoDeVideo,
   tituloDaIdeia,
+  vaiParaIdeias,
   type AnaliseDeLink,
   type AnaliseDeVideo,
+  type MemoriaAssunto,
+  type MemoriaDestino,
+  type MemoriaDestinoInput,
   type MemoriaGrafo,
   type MemoriaNota,
   type MemoriaNotaBreve,
@@ -25,6 +34,7 @@ import {
   type MemoriaStatus,
   type MemoriaTipo,
   type MemoriaVia,
+  type TriagemStatus,
 } from '@mktos/shared';
 import { PrismaService } from '../prisma/prisma.service';
 import { LLM_PROVIDER, type LlmProvider } from '../llm/llm.provider';
@@ -51,6 +61,11 @@ import { SYSTEM_LINK, SYSTEM_VIDEO } from './prompts';
  * que já está no Obsidian do Lucas. O Drive é espelho: a nota vale no OS mesmo
  * quando o Drive falha, e a tela diz que ela ainda não foi para lá.
  *
+ * Tudo chega na Entrada (29/10/2026). A equipe abre a nota e decide o destino:
+ * Ideia de conteúdo (card em Ideias, pela Triagem), Referência externa (material de
+ * fora para consultar, separado por assunto; não é memória da empresa) ou as duas.
+ * A Triagem não puxa mais nota sozinha: só o que foi mandado.
+ *
  * Variáveis: MEMORIA_GRUPO_JID (o grupo, @g.us) e MEMORIA_GRUPO_ORG_ID (a empresa dona);
  * MEMORIA_DRIVE_RAIZ_ID (a pasta Root no Drive); MARKETING_IA_SIMULADA=1 nos testes.
  */
@@ -73,9 +88,20 @@ function breve(n: MarketingNota): MemoriaNotaBreve {
     erro: n.erro,
     via: n.via as MemoriaVia,
     noDrive: !!n.driveFileId,
+    destino: n.destino as MemoriaDestino,
+    assunto: assuntoValido(n.assunto),
+    enviadaPor: n.enviadaPor,
     criadaEm: n.criadaEm.toISOString(),
     atualizadaEm: n.atualizadaEm.toISOString(),
   };
+}
+
+/** As três vistas da tela: Para decidir, Ideias de conteúdo e Referências (a nota "as duas" aparece nas duas). */
+function noDestino(vista: string): Prisma.MarketingNotaWhereInput | null {
+  if (vista === 'entrada') return { destino: 'entrada' };
+  if (vista === 'conteudo') return { destino: { in: ['conteudo', 'conteudo_e_referencia'] } };
+  if (vista === 'referencia') return { destino: { in: ['referencia', 'conteudo_e_referencia'] } };
+  return null;
 }
 
 @Injectable()
@@ -115,22 +141,33 @@ export class MemoriaDoMarketingService implements OnModuleInit {
     return { uso: this.apify?.configured ? await this.apify.usoDoMes() : null, configurado: !!this.apify?.configured };
   }
 
-  async painel(orgId: string, filtro: { q?: string; tag?: string; pasta?: string }): Promise<MemoriaPainel> {
-    const where: Prisma.MarketingNotaWhereInput = { orgId };
+  async painel(orgId: string, filtro: { q?: string; tag?: string; pasta?: string; destino?: string; assunto?: string }): Promise<MemoriaPainel> {
+    const vista = noDestino(filtro.destino ?? '');
+    const where: Prisma.MarketingNotaWhereInput = { orgId, ...vista };
     if (filtro.pasta && (MEMORIA_PASTAS as readonly string[]).includes(filtro.pasta)) where.pasta = filtro.pasta;
     if (filtro.tag) where.tags = { has: filtro.tag.toLowerCase() };
+    const assunto = assuntoValido(filtro.assunto);
+    if (assunto) where.assunto = assunto;
     const q = lim(filtro.q, 200);
     if (q) where.OR = ['titulo', 'resumo', 'corpo', 'url'].map((c) => ({ [c]: { contains: q, mode: 'insensitive' } }));
     const [notas, todas] = await Promise.all([
       this.prisma.marketingNota.findMany({ where, orderBy: { atualizadaEm: 'desc' }, take: 500 }),
-      this.prisma.marketingNota.findMany({ where: { orgId }, select: { pasta: true, tags: true } }),
+      this.prisma.marketingNota.findMany({ where: { orgId }, select: { pasta: true, tags: true, destino: true, assunto: true } }),
     ]);
+    // Pastas, tags e assuntos contam dentro da vista aberta (Para decidir, Ideias ou Referências).
+    const naVista = todas.filter((r) => (filtro.destino === 'entrada' ? r.destino === 'entrada' : filtro.destino === 'conteudo' ? vaiParaIdeias(r.destino) : filtro.destino === 'referencia' ? ficaComoReferencia(r.destino) : true));
     const tags: Record<string, number> = {};
-    for (const n of todas) for (const t of n.tags) tags[t] = (tags[t] ?? 0) + 1;
+    for (const n of naVista) for (const t of n.tags) tags[t] = (tags[t] ?? 0) + 1;
     return {
       notas: notas.map(breve),
-      total: todas.length,
-      pastas: MEMORIA_PASTAS.map((nome) => ({ nome, n: todas.filter((r) => r.pasta === nome).length })),
+      total: naVista.length,
+      destinos: [
+        { destino: 'entrada', n: todas.filter((r) => r.destino === 'entrada').length },
+        { destino: 'conteudo', n: todas.filter((r) => vaiParaIdeias(r.destino)).length },
+        { destino: 'referencia', n: todas.filter((r) => ficaComoReferencia(r.destino)).length },
+      ],
+      assuntos: MEMORIA_ASSUNTOS.map((a) => ({ assunto: a, n: naVista.filter((r) => r.assunto === a).length })),
+      pastas: MEMORIA_PASTAS.map((nome) => ({ nome, n: naVista.filter((r) => r.pasta === nome).length })),
       tags: Object.entries(tags).sort((a, b) => b[1] - a[1]).map(([t, n]) => ({ t, n })),
       ligacoes: {
         grupo: this.grupoLigado,
@@ -144,13 +181,23 @@ export class MemoriaDoMarketingService implements OnModuleInit {
 
   async nota(orgId: string, id: string): Promise<MemoriaNota> {
     const n = await this.achar(orgId, id);
-    const citadaEm = await this.prisma.marketingNota.findMany({
-      where: { orgId, id: { not: n.id }, corpo: { contains: `[[${n.titulo}`, mode: 'insensitive' } },
-      select: { id: true, titulo: true },
-      orderBy: { atualizadaEm: 'desc' },
-      take: 30,
-    });
-    return { ...breve(n), corpo: n.corpo, citadaEm };
+    const [citadaEm, card] = await Promise.all([
+      this.prisma.marketingNota.findMany({
+        where: { orgId, id: { not: n.id }, corpo: { contains: `[[${n.titulo}`, mode: 'insensitive' } },
+        select: { id: true, titulo: true },
+        orderBy: { atualizadaEm: 'desc' },
+        take: 30,
+      }),
+      this.prisma.marketingIdeiaCard.findFirst({ where: { orgId, notaId: n.id }, select: { id: true, status: true } }),
+    ]);
+    return {
+      ...breve(n),
+      corpo: n.corpo,
+      citadaEm,
+      ideia: card ? { id: card.id, status: card.status as TriagemStatus } : null,
+      decididaPor: n.decididaPor,
+      decididaEm: n.decididaEm?.toISOString() ?? null,
+    };
   }
 
   async grafo(orgId: string): Promise<MemoriaGrafo> {
@@ -198,6 +245,33 @@ export class MemoriaDoMarketingService implements OnModuleInit {
     return breve(salva);
   }
 
+  /**
+   * O destino da nota. Ideia de conteúdo: quem chama pede o card à Triagem logo depois
+   * (o controller faz isso). Tirar de Ideias apaga o card que ainda está em "nova" ou
+   * que a IA descartou; o card já aprovado ou recusado fica, porque virou post ou ensinou
+   * o algoritmo. Referência pede o assunto, para a biblioteca ficar separada.
+   */
+  async decidir(orgId: string, id: string, por: string, entrada: MemoriaDestinoInput): Promise<MemoriaNota> {
+    const n = await this.achar(orgId, id);
+    if (entrada.destino !== 'entrada' && n.status !== 'pronto') {
+      throw new ConflictException('Espere a nota ficar pronta (ou tente de novo) antes de decidir para onde ela vai.');
+    }
+    const assunto: MemoriaAssunto | null = entrada.assunto === undefined ? assuntoValido(n.assunto) : entrada.assunto;
+    if (ficaComoReferencia(entrada.destino) && !assunto) {
+      throw new BadRequestException('Diga do que a referência trata: ferramenta, produto, conteúdo ou negócio.');
+    }
+    if (!vaiParaIdeias(entrada.destino)) {
+      await this.prisma.marketingIdeiaCard.deleteMany({ where: { orgId, notaId: n.id, status: { in: ['nova', 'descartada_ia'] } } });
+    }
+    const decidida = entrada.destino !== 'entrada';
+    await this.prisma.marketingNota.update({
+      where: { id: n.id },
+      data: { destino: entrada.destino, assunto, decididaEm: decidida ? new Date() : null, decididaPor: decidida ? por : null },
+    });
+    void this.espelharNoDrive(orgId, n.id);
+    return this.nota(orgId, n.id);
+  }
+
   /** Apaga a nota do OS. O .md do Drive fica (o Drive é do Lucas; apagar lá é com ele). */
   async apagar(orgId: string, id: string): Promise<{ ok: true }> {
     const n = await this.achar(orgId, id);
@@ -216,7 +290,15 @@ export class MemoriaDoMarketingService implements OnModuleInit {
       void this.espelharNoDrive(orgId, n.id);
       return { nota: breve(n), repetida: false };
     }
-    const existente = await this.prisma.marketingNota.findFirst({ where: { orgId, url }, orderBy: { criadaEm: 'asc' } });
+    // Repetida pela chave do link, não pela URL exata: www, barra no fim, /reel/ ou /p/ e
+    // ?igsh= não fazem outra nota (nem gastam Apify de novo).
+    const chave = chaveDoLink(url);
+    const parecidas = await this.prisma.marketingNota.findMany({
+      where: { orgId, url: { contains: nucleoDoLink(url), mode: 'insensitive' } },
+      orderBy: { criadaEm: 'asc' },
+      take: 50,
+    });
+    const existente = parecidas.find((p) => p.url && chaveDoLink(p.url) === chave);
     if (existente) return { nota: breve(existente), repetida: true };
     const video = tipoDeVideo(url);
     const comentario = texto.replace(url, '').trim();
@@ -327,6 +409,7 @@ export class MemoriaDoMarketingService implements OnModuleInit {
             autor: lim(autor.replace(/^@/, ''), 80) || null,
             resumo: lim(a.summary, 600),
             tags: limparTags([...n.tags, ...(a.tags ?? [])]),
+            assunto: n.assunto ?? assuntoValido(a.subject),
             corpo: corpoDoVideo({ url: n.url, autor, analise: a, transcricao, legenda, marca: nomeDaMarca, semTranscricao }) + (comentario ? `\n## Comentário de quem guardou\n${comentario}\n` : ''),
           },
         });
@@ -343,6 +426,7 @@ export class MemoriaDoMarketingService implements OnModuleInit {
             autor: lim(m.autor, 80) || null,
             resumo: lim(a.summary, 600) || lim(m.descricao, 600),
             tags: limparTags([...n.tags, ...(a.tags ?? [])]),
+            assunto: n.assunto ?? assuntoValido(a.subject),
             corpo: corpoDoLink({ url: n.url, autor: m.autor, analise: a, descricao: m.descricao, marca: nomeDaMarca }) + (comentario ? `\n## Comentário de quem guardou\n${comentario}\n` : ''),
           },
         });

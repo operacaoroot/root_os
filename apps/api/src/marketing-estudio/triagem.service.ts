@@ -1,8 +1,9 @@
 import { ConflictException, Inject, Injectable, Logger, NotFoundException, Optional, ServiceUnavailableException } from '@nestjs/common';
-import type { MarketingIdeiaCard, Prisma } from '@prisma/client';
+import type { MarketingIdeiaCard, MarketingNota, Prisma } from '@prisma/client';
 import {
   FORMATOS_COM_REGUA,
   TRIAGEM_STATUS,
+  cardDaNotaSemIa,
   duasFrases,
   pesoDaFonte,
   scoreDaIdeia,
@@ -31,6 +32,9 @@ import { REGRAS_DE_PARTIDA, SYSTEM_TRIAGEM } from './prompts';
  * relevância × peso da fonte + bônus de recência; o peso da fonte sobe quando a
  * equipe aprova e desce quando recusa (2 × (a+2)/(a+r+4), entre 0,3 e 2). É a
  * retroalimentação do Estúdio. Aprovar cria o post no Banco da Máquina.
+ *
+ * Da Memória só entra o que a equipe mandou para Ideias (29/10/2026): o card nasce
+ * na hora em `cardDaNota`, e a IA não pode descartar o que foi escolhido à mão.
  *
  * Nada aqui mexe na captura nem na nota: o card só aponta para elas.
  */
@@ -62,6 +66,29 @@ interface SaidaDoCard {
   how?: { format?: string; hook?: string; opening_clip?: unknown };
   key_points?: unknown[];
   relevance?: number;
+}
+
+interface Contexto {
+  marca: string;
+  estrategia: string;
+  regras: string;
+  aprovadas: { titulo: string; formatoSugerido: string }[];
+  recusadas: { titulo: string; motivo: string | null }[];
+  algoritmo: { titulo: string; status: string; motivo: string | null; comentario: string | null }[];
+}
+
+function materiaDaNota(n: Pick<MarketingNota, 'id' | 'titulo' | 'resumo' | 'corpo' | 'url' | 'criadaEm'>): Materia {
+  return {
+    capturaId: null,
+    notaId: n.id,
+    fonteId: FONTE_DA_MEMORIA,
+    fonteNome: 'Memória',
+    titulo: n.titulo,
+    texto: `${n.resumo}\n${n.corpo}`.slice(0, 1200),
+    url: n.url,
+    imagemUrl: null,
+    publicadoEm: n.criadaEm,
+  };
 }
 
 function paraTela(c: MarketingIdeiaCard, peso: number | null): TriagemCard {
@@ -133,6 +160,37 @@ export class TriagemService {
       if (this.travas.get(orgId) === vez) this.travas.delete(orgId);
     }).catch(() => undefined);
     return vez;
+  }
+
+  /**
+   * A equipe mandou a nota da Memória para Ideias: o card nasce na hora. A IA escreve como
+   * na triagem (marca, réguas, algoritmo), mas não descarta e o card entra com relevância
+   * de pelo menos 80. Sem IA, ou se ela falhar, o card sai do que a nota já tem.
+   */
+  async cardDaNota(orgId: string, notaId: string): Promise<{ id: string; status: TriagemStatus; comIa: boolean | null }> {
+    const ja = await this.prisma.marketingIdeiaCard.findFirst({ where: { orgId, notaId } });
+    if (ja) {
+      // A IA tinha descartado antes de a equipe escolher: a escolha vale. comIa null = o card já existia.
+      if (ja.status === 'descartada_ia') await this.prisma.marketingIdeiaCard.update({ where: { id: ja.id }, data: { status: 'nova' } });
+      return { id: ja.id, status: ja.status === 'descartada_ia' ? 'nova' : (ja.status as TriagemStatus), comIa: null };
+    }
+    const n = await this.prisma.marketingNota.findFirst({ where: { id: notaId, orgId } });
+    if (!n) throw new NotFoundException('Nota não encontrada.');
+    const m = materiaDaNota(n);
+    let o: SaidaDoCard | undefined;
+    if (simulada() || this.llm.configured) {
+      try {
+        await this.completarComAPagina(m);
+        o = simulada() ? this.simular([m])[0] : (await this.perguntar(orgId, await this.contexto(orgId), [m]))[0];
+      } catch (e) {
+        this.log.warn(`card da nota ${notaId}: ${e instanceof Error ? e.message : e}`);
+      }
+    }
+    const pesos = await this.pesos(orgId);
+    const c = await this.gravarCard(orgId, m, o ?? { ...cardDaNotaSemIa(n), relevance: 80 }, pesos[FONTE_DA_MEMORIA] ?? 1, true);
+    const final = c ?? (await this.prisma.marketingIdeiaCard.findFirst({ where: { orgId, notaId } }));
+    if (!final) throw new ConflictException('Não deu para criar o card em Ideias. Tente de novo.');
+    return { id: final.id, status: final.status as TriagemStatus, comIa: !!o && !!c };
   }
 
   async decidir(orgId: string, id: string, por: string, entrada: TriagemDecisaoInput): Promise<{ card: TriagemCard; postId: string | null }> {
@@ -244,7 +302,11 @@ export class TriagemService {
     return Object.fromEntries(Object.entries(conta).map(([k, v]) => [k, pesoDaFonte(v.a, v.r)]));
   }
 
-  /** O que ainda não virou card: capturas em rascunho da Pauta e notas prontas da Memória. */
+  /**
+   * O que ainda não virou card: capturas em rascunho da Pauta e notas da Memória que a
+   * equipe mandou para Ideias (normalmente o card já nasceu em `cardDaNota`; aqui entra
+   * a que ficou sem card porque a criação falhou).
+   */
   private async materia(orgId: string, teto: number): Promise<Materia[]> {
     const [comCard, capturas, notas] = await Promise.all([
       this.prisma.marketingIdeiaCard.findMany({ where: { orgId }, select: { capturaId: true, notaId: true } }),
@@ -255,7 +317,7 @@ export class TriagemService {
         select: { id: true, titulo: true, nota: true, url: true, capturadoEm: true, fonteId: true, bruto: true, fonte: { select: { nome: true } } },
       }),
       this.prisma.marketingNota.findMany({
-        where: { orgId, status: 'pronto', tipo: { in: ['link', 'video', 'ideia'] } },
+        where: { orgId, status: 'pronto', destino: { in: ['conteudo', 'conteudo_e_referencia'] } },
         orderBy: { criadaEm: 'desc' },
         take: teto,
         select: { id: true, titulo: true, resumo: true, corpo: true, url: true, criadaEm: true, autor: true },
@@ -279,17 +341,7 @@ export class TriagemService {
         return Number.isNaN(d.getTime()) ? c.capturadoEm : d;
       })(),
     }));
-    const deNotas: Materia[] = notas.filter((n) => !usadasN.has(n.id)).map((n) => ({
-      capturaId: null,
-      notaId: n.id,
-      fonteId: FONTE_DA_MEMORIA,
-      fonteNome: 'Memória',
-      titulo: n.titulo,
-      texto: `${n.resumo}\n${n.corpo}`.slice(0, 1200),
-      url: n.url,
-      imagemUrl: null,
-      publicadoEm: n.criadaEm,
-    }));
+    const deNotas: Materia[] = notas.filter((n) => !usadasN.has(n.id)).map(materiaDaNota);
     // O que a equipe guardou na Memória vem antes do que o robô coletou.
     return [...deNotas, ...deCapturas].slice(0, teto);
   }
@@ -302,21 +354,13 @@ export class TriagemService {
     const pesos = await this.pesos(orgId);
     const resultado = { lidos: lista.length, cards: 0, descartados: 0, falharam: 0 };
     if (!lista.length) return resultado;
-    const [marca, estrategia, algoritmo, reguas, aprovadas, recusadas] = await Promise.all([
-      this.marcas.bloco(orgId).catch(() => ''),
-      this.estrategiaDoMes(orgId),
-      this.prisma.marketingIdeiaCard.findMany({ where: { orgId, comentario: { not: null } }, orderBy: { decididaEm: 'desc' }, take: 40, select: { titulo: true, status: true, motivo: true, comentario: true } }),
-      this.prisma.marketingRegua.findMany({ where: { orgId }, select: { formato: true, regras: true } }),
-      this.prisma.marketingIdeiaCard.findMany({ where: { orgId, status: 'aprovada' }, orderBy: { decididaEm: 'desc' }, take: 20, select: { titulo: true, formatoSugerido: true } }),
-      this.prisma.marketingIdeiaCard.findMany({ where: { orgId, status: 'recusada' }, orderBy: { decididaEm: 'desc' }, take: 20, select: { titulo: true, motivo: true } }),
-    ]);
-    const regras = FORMATOS.map((f) => `${f}: ${(reguas.find((r) => r.formato === f)?.regras || REGRAS_DE_PARTIDA[f] || '').slice(0, 700)}`).join('\n');
+    const ctx = await this.contexto(orgId);
     for (let i = 0; i < lista.length; i += LOTE) {
       const lote = lista.slice(i, i + LOTE);
       await Promise.all(lote.map((m) => this.completarComAPagina(m)));
       let itens: SaidaDoCard[];
       try {
-        itens = simulada() ? this.simular(lote) : await this.perguntar(orgId, { marca, estrategia, regras, aprovadas, recusadas, algoritmo }, lote);
+        itens = simulada() ? this.simular(lote) : await this.perguntar(orgId, ctx, lote);
       } catch (e) {
         this.log.warn(`lote da triagem: ${e instanceof Error ? e.message : e}`);
         resultado.falharam += lote.length;
@@ -328,55 +372,66 @@ export class TriagemService {
           resultado.falharam++;
           continue;
         }
-        const formato = FORMATOS.includes(String(o.how?.format)) ? String(o.how?.format) : 'Carrossel';
-        const relevancia = Math.max(0, Math.min(100, Math.round(Number(o.relevance) || 0)));
-        const manter = o.keep !== false && o.keep !== 'false';
-        const clipe = formato === 'Reel' && o.how?.opening_clip ? lim(typeof o.how.opening_clip === 'string' ? o.how.opening_clip : JSON.stringify(o.how.opening_clip), 400) : null;
-        try {
-          await this.prisma.marketingIdeiaCard.create({
-            data: {
-              orgId,
-              capturaId: m.capturaId,
-              notaId: m.notaId,
-              fonteId: m.fonteId || null,
-              fonteNome: m.fonteNome,
-              titulo: semTravessao(lim(o.title, 160) || lim(m.titulo, 160) || 'Sem título'),
-              resumo: semTravessao(duasFrases(o.summary) || duasFrases(m.texto)),
-              porque: semTravessao(lim(o.why, 400)),
-              como: { formato, gancho: semTravessao(lim(o.how?.hook, 300)), clipe, pontos: (Array.isArray(o.key_points) ? o.key_points : []).map((p) => semTravessao(lim(p, 240))).filter(Boolean).slice(0, 5) },
-              formatoSugerido: formato,
-              url: m.url,
-              imagemUrl: m.imagemUrl,
-              publicadoEm: m.publicadoEm,
-              relevancia,
-              score: scoreDaIdeia(relevancia, pesos[m.fonteId] ?? 1, m.publicadoEm),
-              status: manter ? 'nova' : 'descartada_ia',
-            },
-          });
-          if (manter) resultado.cards++;
-          else resultado.descartados++;
-        } catch (e) {
-          // Outro clique montou o mesmo card entre a leitura e a escrita.
-          if ((e as { code?: string }).code === 'P2002') continue;
-          throw e;
-        }
+        // Nota da Memória só chega aqui se a equipe mandou para Ideias: a IA não descarta.
+        const c = await this.gravarCard(orgId, m, o, pesos[m.fonteId] ?? 1, !!m.notaId);
+        if (!c) continue;
+        if (c.status === 'nova') resultado.cards++;
+        else resultado.descartados++;
       }
     }
     return resultado;
   }
 
-  private async perguntar(
-    orgId: string,
-    ctx: {
-      marca: string;
-      estrategia: string;
-      regras: string;
-      aprovadas: { titulo: string; formatoSugerido: string }[];
-      recusadas: { titulo: string; motivo: string | null }[];
-      algoritmo: { titulo: string; status: string; motivo: string | null; comentario: string | null }[];
-    },
-    lote: Materia[],
-  ): Promise<SaidaDoCard[]> {
+  /** Grava o card da saída da IA. `escolhida` = a equipe mandou: não descarta e relevância mínima 80. Null se já existia. */
+  private async gravarCard(orgId: string, m: Materia, o: SaidaDoCard, peso: number, escolhida: boolean): Promise<MarketingIdeiaCard | null> {
+    const formato = FORMATOS.includes(String(o.how?.format)) ? String(o.how?.format) : 'Carrossel';
+    const daIa = Math.max(0, Math.min(100, Math.round(Number(o.relevance) || 0)));
+    const relevancia = escolhida ? Math.max(daIa, 80) : daIa;
+    const manter = escolhida || (o.keep !== false && o.keep !== 'false');
+    const clipe = formato === 'Reel' && o.how?.opening_clip ? lim(typeof o.how.opening_clip === 'string' ? o.how.opening_clip : JSON.stringify(o.how.opening_clip), 400) : null;
+    try {
+      return await this.prisma.marketingIdeiaCard.create({
+        data: {
+          orgId,
+          capturaId: m.capturaId,
+          notaId: m.notaId,
+          fonteId: m.fonteId || null,
+          fonteNome: m.fonteNome,
+          titulo: semTravessao(lim(o.title, 160) || lim(m.titulo, 160) || 'Sem título'),
+          resumo: semTravessao(duasFrases(o.summary) || duasFrases(m.texto)),
+          porque: semTravessao(lim(o.why, 400)),
+          como: { formato, gancho: semTravessao(lim(o.how?.hook, 300)), clipe, pontos: (Array.isArray(o.key_points) ? o.key_points : []).map((p) => semTravessao(lim(p, 240))).filter(Boolean).slice(0, 5) },
+          formatoSugerido: formato,
+          url: m.url,
+          imagemUrl: m.imagemUrl,
+          publicadoEm: m.publicadoEm,
+          relevancia,
+          score: scoreDaIdeia(relevancia, peso, m.publicadoEm),
+          status: manter ? 'nova' : 'descartada_ia',
+        },
+      });
+    } catch (e) {
+      // Outro clique montou o mesmo card entre a leitura e a escrita.
+      if ((e as { code?: string }).code === 'P2002') return null;
+      throw e;
+    }
+  }
+
+  /** O que a IA lê antes de escrever cards: marca, estratégia do mês, réguas e o algoritmo do Lucas. */
+  private async contexto(orgId: string): Promise<Contexto> {
+    const [marca, estrategia, algoritmo, reguas, aprovadas, recusadas] = await Promise.all([
+      this.marcas.bloco(orgId).catch(() => ''),
+      this.estrategiaDoMes(orgId),
+      this.prisma.marketingIdeiaCard.findMany({ where: { orgId, comentario: { not: null } }, orderBy: { decididaEm: 'desc' }, take: 40, select: { titulo: true, status: true, motivo: true, comentario: true } }),
+      this.prisma.marketingRegua.findMany({ where: { orgId }, select: { formato: true, regras: true } }),
+      this.prisma.marketingIdeiaCard.findMany({ where: { orgId, status: 'aprovada' }, orderBy: { decididaEm: 'desc' }, take: 20, select: { titulo: true, formatoSugerido: true } }),
+      this.prisma.marketingIdeiaCard.findMany({ where: { orgId, status: 'recusada' }, orderBy: { decididaEm: 'desc' }, take: 20, select: { titulo: true, motivo: true } }),
+    ]);
+    const regras = FORMATOS.map((f) => `${f}: ${(reguas.find((r) => r.formato === f)?.regras || REGRAS_DE_PARTIDA[f] || '').slice(0, 700)}`).join('\n');
+    return { marca, estrategia, regras, aprovadas, recusadas, algoritmo };
+  }
+
+  private async perguntar(orgId: string, ctx: Contexto, lote: Materia[]): Promise<SaidaDoCard[]> {
     const { marca, estrategia, regras, aprovadas, recusadas, algoritmo } = ctx;
     const user = [
       '## A ROOT (brandbook e pilares aprovados)', marca || '(marca ainda sem descrição)',

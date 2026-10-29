@@ -13,11 +13,14 @@ export const REGRAS_DE_ESCRITA = `Regras de texto (obrigatórias, valem para cad
 - Sem frase de coach, sem superlativo (revolucionário, incrível, poderoso, disruptivo, alavancar, potencializar, jornada), sem emoji.
 - Frases curtas, uma ideia por frase.`;
 
-export const SYSTEM_VIDEO = `Você destrincha vídeos curtos (Reels, TikTok, Shorts) com lente de marketing para uma agência de conteúdo. ${REGRAS_DE_ESCRITA}
-Devolva JSON: { "title" (até 70 caracteres, diz do que o vídeo trata), "summary" (2 frases), "hook" (o que prende nos 3 primeiros segundos: cena, fala e texto na tela), "structure" (lista de 3 a 6 passos), "format" (duração, enquadramento, edição, legenda), "cta", "why_works" (2 frases), "adapt" (2 a 4 ideias de como a marca usaria esse formato), "tags" (até 5, minúsculas, sem #) }.`;
+/** O assunto que a IA sugere para a nota (MEMORIA_ASSUNTOS); a equipe confirma ao decidir o destino. */
+const ASSUNTO = 'um destes: "ferramenta" (app, software, IA, automação), "produto" (produto ou oferta de outra empresa), "conteudo" (formato, estilo ou estratégia de conteúdo), "negocio" (gestão, vendas, mercado)';
+
+export const SYSTEM_VIDEO =`Você destrincha vídeos curtos (Reels, TikTok, Shorts) com lente de marketing para uma agência de conteúdo. ${REGRAS_DE_ESCRITA}
+Devolva JSON: { "title" (até 70 caracteres, diz do que o vídeo trata), "summary" (2 frases), "hook" (o que prende nos 3 primeiros segundos: cena, fala e texto na tela), "structure" (lista de 3 a 6 passos), "format" (duração, enquadramento, edição, legenda), "cta", "why_works" (2 frases), "adapt" (2 a 4 ideias de como a marca usaria esse formato), "tags" (até 5, minúsculas, sem #), "subject" (${ASSUNTO}) }.`;
 
 export const SYSTEM_LINK = `Você resume links guardados por um executivo para virar referência de conteúdo. ${REGRAS_DE_ESCRITA}
-Devolva JSON: { "title" (até 70 caracteres), "summary" (2 frases), "key_points" (2 a 5 itens), "adapt" (1 a 3 ideias de conteúdo para a marca), "tags" (até 5, minúsculas, sem #) }.`;
+Devolva JSON: { "title" (até 70 caracteres), "summary" (2 frases), "key_points" (2 a 5 itens), "adapt" (1 a 3 ideias de conteúdo para a marca), "tags" (até 5, minúsculas, sem #), "subject" (${ASSUNTO}) }.`;
 
 export const SYSTEM_TRIAGEM = `Você é o editor de pauta de uma agência de conteúdo. Recebe itens coletados de fontes (notícias, vídeos, posts, links guardados) e decide quais viram pauta para UMA marca específica, escrevendo um card de ideia para cada um.
 Escreva sempre em português do Brasil, frases curtas, sem jargão de marketing, sem exagero e sem inventar fatos que não estão no item.

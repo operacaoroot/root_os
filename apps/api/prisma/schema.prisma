@@ -6667,12 +6667,19 @@ model MarketingNota {
   driveFileId   String?
   driveEm       DateTime?
   custoUsd      Decimal?  @db.Decimal(10, 4)
+  /// entrada (para decidir) | conteudo | referencia | conteudo_e_referencia. Ver MEMORIA_DESTINOS.
+  destino       String    @default("entrada")
+  /// ferramenta | produto | conteudo | negocio. A IA sugere ao ler; a equipe confirma ao decidir.
+  assunto       String?
+  decididaEm    DateTime?
+  decididaPor   String?
   criadaEm      DateTime  @default(now())
   atualizadaEm  DateTime  @updatedAt
 
   @@index([orgId, pasta, atualizadaEm])
   @@index([orgId, url])
   @@index([orgId, status])
+  @@index([orgId, destino, atualizadaEm])
 }
 
 /// Card da triagem (Ideias): uma captura lida pela IA vira um card; aprovar cria o post no Banco.

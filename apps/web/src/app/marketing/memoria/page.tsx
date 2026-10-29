@@ -1,13 +1,21 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
+import Link from 'next/link';
 import {
+  MEMORIA_ASSUNTOS,
   MEMORIA_PASTAS,
+  NOME_DO_ASSUNTO,
+  NOME_DO_DESTINO,
+  ficaComoReferencia,
+  type MemoriaAssunto,
+  type MemoriaDestino,
   type MemoriaGrafo,
   type MemoriaNota,
   type MemoriaNotaBreve,
   type MemoriaPainel,
   type MemoriaPasta,
+  type TriagemStatus,
 } from '@mktos/shared';
 import { apiDelete, apiGet, apiPost, apiPut } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
@@ -21,9 +29,26 @@ import { UsoDoApify } from '@/components/marketing/UsoDoApify';
  * Captura no topo; abas Notas, Grafo, Vídeos e Obsidian. Links e Reels mandados no
  * grupo "Memória ROOT" do WhatsApp chegam aqui sozinhos; cada nota pronta vira .md no
  * Drive Root (40-marca-e-conteudo/Memória), que é o Obsidian.
+ *
+ * Tudo chega em "Para decidir" (29/10/2026). Ao abrir a nota, a equipe escolhe o destino:
+ * Ideia de conteúdo (card em Ideias), Referência externa (material de fora, por assunto,
+ * que não é memória da empresa) ou as duas. Decidida uma, a próxima abre sozinha.
  */
 
 type Aba = 'notas' | 'grafo' | 'videos' | 'obsidian';
+type Vista = 'entrada' | 'conteudo' | 'referencia' | '';
+const VISTAS: [Vista, string, string][] = [
+  ['entrada', 'Para decidir', 'Tudo que chega cai aqui. Abra a nota e decida para onde ela vai.'],
+  ['conteudo', 'Ideias de conteúdo', 'Notas que viraram card em Ideias de conteúdo.'],
+  ['referencia', 'Referências externas', 'Material de fora guardado para consultar. Não é memória da empresa.'],
+  ['', 'Todas', 'Todas as notas, decididas ou não.'],
+];
+const OPCOES: [MemoriaDestino, string, string][] = [
+  ['conteudo', 'Ideia de conteúdo', 'Vira card em Ideias de conteúdo para aprovar.'],
+  ['conteudo_e_referencia', 'Conteúdo e referência', 'Vira card e também fica guardada como referência.'],
+  ['referencia', 'Referência externa', 'Material de fora para consultar. Não entra na memória da empresa.'],
+];
+const CARD: Record<TriagemStatus, string> = { nova: 'esperando aprovação', aprovada: 'aprovada', recusada: 'recusada', descartada_ia: 'descartada' };
 const ICONE: Record<string, string> = { video: '🎬', link: '🔗', ideia: '💡', nota: '📝' };
 const ST: Record<string, [string, string]> = { fila: ['running', 'na fila'], processando: ['running', 'processando'], pronto: ['success', 'pronto'], erro: ['error', 'erro'] };
 const quando = (s: string) => {
@@ -47,6 +72,8 @@ export default function MemoriaPage() {
   const [busca, setBusca] = useState('');
   const [tag, setTag] = useState('');
   const [pasta, setPasta] = useState('');
+  const [destino, setDestino] = useState<Vista>('entrada');
+  const [assunto, setAssunto] = useState('');
   const [aberta, setAberta] = useState<string | null>(null);
   const [erro, setErro] = useState<string | null>(null);
   const [aviso, setAviso] = useState<string | null>(null);
@@ -57,13 +84,14 @@ export default function MemoriaPage() {
   const carregar = useCallback(async () => {
     if (!token) return;
     try {
-      const q = new URLSearchParams({ q: busca, tag, pasta: aba === 'videos' ? 'Vídeos' : pasta });
+      const videos = aba === 'videos';
+      const q = new URLSearchParams({ q: busca, tag, pasta: videos ? 'Vídeos' : pasta, destino: videos ? '' : destino, assunto: videos ? '' : assunto });
       setPainel(await apiGet<MemoriaPainel>(`/marketing/estudio/memoria?${q}`, token));
       setErro(null);
     } catch (e) {
       setErro((e as Error).message);
     }
-  }, [token, busca, tag, pasta, aba]);
+  }, [token, busca, tag, pasta, aba, destino, assunto]);
 
   useEffect(() => {
     if (!ready) return;
@@ -97,6 +125,8 @@ export default function MemoriaPage() {
       if (r.nota.tipo === 'video' && !r.repetida) setAba('videos');
       else {
         setAba('notas');
+        // A repetida pode já ter sido decidida: abre em Todas para ela aparecer na lista.
+        if (r.repetida) setDestino('');
         setAberta(r.nota.id);
       }
       setVersao((v) => v + 1);
@@ -114,7 +144,7 @@ export default function MemoriaPage() {
       <div className="pagehead">
         <div>
           <h1>Memória</h1>
-          <p>Suas ideias, links e Reels guardados, em notas que a IA organiza.</p>
+          <p>Links, Reels e ideias que chegam dos sócios. Abra cada nota e decida: vira ideia de conteúdo, vira referência externa ou as duas.</p>
         </div>
       </div>
       {editavel && (
@@ -175,6 +205,10 @@ export default function MemoriaPage() {
             setTag={setTag}
             pasta={pasta}
             setPasta={setPasta}
+            destino={destino}
+            setDestino={setDestino}
+            assunto={assunto}
+            setAssunto={setAssunto}
             aberta={aberta}
             setAberta={setAberta}
             mudou={() => setVersao((v) => v + 1)}
@@ -187,6 +221,8 @@ export default function MemoriaPage() {
             onNota={(id) => {
               setPasta('');
               setTag('');
+              setDestino('');
+              setAssunto('');
               setAberta(id);
               setAba('notas');
             }}
@@ -203,6 +239,8 @@ export default function MemoriaPage() {
             token={token}
             onAbrir={(id) => {
               setPasta('');
+              setDestino('');
+              setAssunto('');
               setAberta(id);
               setAba('notas');
             }}
@@ -227,6 +265,10 @@ function AbaNotas(props: {
   setTag: (s: string) => void;
   pasta: string;
   setPasta: (s: string) => void;
+  destino: Vista;
+  setDestino: (s: Vista) => void;
+  assunto: string;
+  setAssunto: (s: string) => void;
   aberta: string | null;
   setAberta: (s: string | null) => void;
   mudou: () => void;
@@ -235,17 +277,51 @@ function AbaNotas(props: {
 }) {
   const { painel } = props;
   const [nova, setNova] = useState(false);
-  const filtrando = !!(props.busca || props.tag || props.pasta);
+  const filtrando = !!(props.busca || props.tag || props.pasta || props.assunto);
+  const nDaVista = (v: Vista) => painel.destinos.find((d) => d.destino === v)?.n;
+  const vista = VISTAS.find(([k]) => k === props.destino) ?? VISTAS[0];
+  // Decidida uma nota em "Para decidir", abre a de baixo (ou a de cima, se era a última).
+  const depoisDe = (id: string) => {
+    const i = painel.notas.findIndex((x) => x.id === id);
+    return i < 0 ? null : (painel.notas[i + 1]?.id ?? painel.notas[i - 1]?.id ?? null);
+  };
   return (
     <div className="memoria-grade">
       <div className="memoria-lista">
+        <div className="memoria-vistas" role="tablist" aria-label="Destino das notas">
+          {VISTAS.map(([k, l]) => (
+            <button
+              key={k || 'todas'}
+              role="tab"
+              aria-selected={props.destino === k}
+              className={`memoria-vista ${props.destino === k ? 'on' : ''}`}
+              onClick={() => {
+                props.setDestino(k);
+                props.setAssunto('');
+                props.setPasta('');
+              }}
+            >
+              {l} {nDaVista(k) !== undefined && <span>{nDaVista(k)}</span>}
+            </button>
+          ))}
+        </div>
+        <p className="memoria-dica memoria-vista-dica">{vista[2]}</p>
         <div className="memoria-busca">
           <input type="search" value={props.busca} onChange={(e) => props.setBusca(e.target.value)} placeholder="Buscar nas notas" aria-label="Buscar nas notas" />
           {props.editavel && <button onClick={() => setNova(true)}>+ Nota</button>}
         </div>
+        {painel.assuntos.some((a) => a.n > 0) && (
+          <div className="memoria-chips">
+            {painel.assuntos.map((a) => (
+              <button key={a.assunto} className={`memoria-chip ${props.assunto === a.assunto ? 'on' : ''}`} onClick={() => props.setAssunto(props.assunto === a.assunto ? '' : a.assunto)}>
+                {NOME_DO_ASSUNTO[a.assunto]} <span>{a.n}</span>
+              </button>
+            ))}
+          </div>
+        )}
         <div className="memoria-chips">
           <button className={`memoria-chip ${props.pasta ? '' : 'on'}`} onClick={() => props.setPasta('')}>
-            Todas <span>{painel.total}</span>
+            Todos os tipos <span>{painel.total}</span>
           </button>
           {painel.pastas.map((p) => (
             <button key={p.nome} className={`memoria-chip ${props.pasta === p.nome ? 'on' : ''}`} onClick={() => props.setPasta(p.nome)}>
@@ -263,7 +339,17 @@ function AbaNotas(props: {
           </div>
         )}
         <div id="memoria-itens">
-          {painel.notas.length === 0 && <div className="memoria-vazio">{filtrando ? 'Nada com esse filtro.' : 'Sua Memória está vazia. Cole um link, um Reel ou uma ideia aí em cima.'}</div>}
+          {painel.notas.length === 0 && (
+            <div className="memoria-vazio">
+              {filtrando
+                ? 'Nada com esse filtro.'
+                : props.destino === 'entrada'
+                  ? 'Nada para decidir. Tudo que chegou já tem destino.'
+                  : props.destino
+                    ? 'Nenhuma nota aqui ainda.'
+                    : 'Sua Memória está vazia. Cole um link, um Reel ou uma ideia aí em cima.'}
+            </div>
+          )}
           {painel.notas.map((n) => (
             <button key={n.id} className={`memoria-item ${props.aberta === n.id ? 'on' : ''}`} onClick={() => props.setAberta(n.id)}>
               <span className="memoria-item-t">
@@ -276,6 +362,8 @@ function AbaNotas(props: {
                   </>
                 )}
                 {n.pasta} · {quando(n.atualizadaEm)}
+                {n.assunto && ` · ${NOME_DO_ASSUNTO[n.assunto]}`}
+                {!props.destino && n.destino !== 'entrada' && ` · ${NOME_DO_DESTINO[n.destino]}`}
                 {n.tags.length > 0 && ` · ${n.tags.slice(0, 3).map((t) => `#${t}`).join(' ')}`}
               </span>
             </button>
@@ -293,6 +381,20 @@ function AbaNotas(props: {
             onTag={(t) => {
               props.setTag(t);
               props.setAberta(null);
+            }}
+            onDecidida={(destino, comIa) => {
+              const semIa = comIa === false ? ' A IA não respondeu: o card saiu do resumo da nota.' : '';
+              props.setAviso(
+                destino === 'entrada'
+                  ? 'A nota voltou para Para decidir.'
+                  : destino === 'referencia'
+                    ? 'Guardada como referência externa.'
+                    : destino === 'conteudo'
+                      ? `Mandada para Ideias de conteúdo.${semIa}`
+                      : `Mandada para Ideias e guardada como referência.${semIa}`,
+              );
+              if (props.destino === 'entrada' && destino !== 'entrada' && props.aberta) props.setAberta(depoisDe(props.aberta));
+              props.mudou();
             }}
             mudou={props.mudou}
             setErro={props.setErro}
@@ -318,7 +420,17 @@ function AbaNotas(props: {
   );
 }
 
-function Leitor(props: { id: string; token: string | null; editavel: boolean; onAbrir: (id: string | null) => void; onTag: (t: string) => void; mudou: () => void; setErro: (s: string | null) => void; setAviso: (s: string | null) => void }) {
+function Leitor(props: {
+  id: string;
+  token: string | null;
+  editavel: boolean;
+  onAbrir: (id: string | null) => void;
+  onTag: (t: string) => void;
+  onDecidida: (destino: MemoriaDestino, comIa: boolean | null) => void;
+  mudou: () => void;
+  setErro: (s: string | null) => void;
+  setAviso: (s: string | null) => void;
+}) {
   const [n, setN] = useState<MemoriaNota | null>(null);
   const [sumiu, setSumiu] = useState(false);
   const [editando, setEditando] = useState(false);
@@ -483,6 +595,18 @@ function Leitor(props: { id: string; token: string | null; editavel: boolean; on
         </div>
       )}
       {(n.status === 'fila' || n.status === 'processando') && <p className="muted memoria-aviso">A IA está lendo este link. A nota completa aparece aqui em instantes.</p>}
+      {pronta && !editando && (
+        <DestinoDaNota
+          n={n}
+          token={props.token}
+          editavel={props.editavel}
+          onDecidida={(r) => {
+            setN(r.nota);
+            props.onDecidida(r.nota.destino, r.comIa);
+          }}
+          setErro={props.setErro}
+        />
+      )}
       {editando ? (
         <>
           <label className="memoria-pasta-in">
@@ -512,6 +636,95 @@ function Leitor(props: { id: string; token: string | null; editavel: boolean; on
         </>
       )}
     </>
+  );
+}
+
+/**
+ * "Para onde vai isso?": o assunto (a IA sugere, a equipe confirma) e as três saídas.
+ * Nota já decidida mostra o destino numa linha, com o card de Ideias quando houver, e "Mudar".
+ */
+function DestinoDaNota(props: {
+  n: MemoriaNota;
+  token: string | null;
+  editavel: boolean;
+  onDecidida: (r: { nota: MemoriaNota; comIa: boolean | null }) => void;
+  setErro: (s: string | null) => void;
+}) {
+  const { n } = props;
+  const [mudando, setMudando] = useState(n.destino === 'entrada');
+  const [assunto, setAssunto] = useState<MemoriaAssunto | null>(n.assunto);
+  const [enviando, setEnviando] = useState<MemoriaDestino | null>(null);
+
+  const mandar = async (destino: MemoriaDestino) => {
+    if (ficaComoReferencia(destino) && !assunto) return props.setErro('Escolha do que a referência trata: ferramenta, produto, conteúdo ou negócio.');
+    setEnviando(destino);
+    props.setErro(null);
+    try {
+      const r = await apiPost<{ nota: MemoriaNota; comIa: boolean | null }>(`/marketing/estudio/memoria/notas/${n.id}/destino`, { destino, assunto }, props.token);
+      setMudando(r.nota.destino === 'entrada');
+      props.onDecidida(r);
+    } catch (e) {
+      props.setErro((e as Error).message);
+    } finally {
+      setEnviando(null);
+    }
+  };
+
+  if (!props.editavel && n.destino === 'entrada') return null;
+  if (!mudando || !props.editavel) {
+    return (
+      <div className="memoria-destino feito">
+        <strong>{NOME_DO_DESTINO[n.destino]}</strong>
+        {n.assunto && <span className="memoria-chip">{NOME_DO_ASSUNTO[n.assunto]}</span>}
+        {n.ideia && (
+          <Link className="memoria-chip" href="/marketing/triagem">
+            Card em Ideias: {CARD[n.ideia.status]} ↗
+          </Link>
+        )}
+        {n.decididaPor && (
+          <span className="tiny muted">
+            {n.decididaPor}
+            {n.decididaEm ? `, ${quando(n.decididaEm)}` : ''}
+          </span>
+        )}
+        {props.editavel && (
+          <button className="small" onClick={() => setMudando(true)}>
+            Mudar
+          </button>
+        )}
+      </div>
+    );
+  }
+  return (
+    <div className="memoria-destino">
+      <h3>Para onde vai isso?</h3>
+      <div className="memoria-destino-assunto">
+        <span className="tiny muted">Do que se trata{n.assunto && n.destino === 'entrada' ? ' (sugestão da IA)' : ''}:</span>
+        {MEMORIA_ASSUNTOS.map((a) => (
+          <button key={a} type="button" className={`memoria-chip ${assunto === a ? 'on' : ''}`} aria-pressed={assunto === a} onClick={() => setAssunto(assunto === a ? null : a)}>
+            {NOME_DO_ASSUNTO[a]}
+          </button>
+        ))}
+      </div>
+      <div className="memoria-destino-opcoes">
+        {OPCOES.map(([d, titulo, explica]) => (
+          <button key={d} className={n.destino === d ? 'atual' : ''} disabled={!!enviando} onClick={() => void mandar(d)}>
+            <strong>{enviando === d ? 'Mandando…' : titulo}</strong>
+            <span>{explica}</span>
+          </button>
+        ))}
+      </div>
+      {n.destino !== 'entrada' && (
+        <div className="row">
+          <button className="small ghost" disabled={!!enviando} onClick={() => void mandar('entrada')}>
+            Voltar para Para decidir
+          </button>
+          <button className="small ghost" onClick={() => setMudando(false)}>
+            Cancelar
+          </button>
+        </div>
+      )}
+    </div>
   );
 }
 

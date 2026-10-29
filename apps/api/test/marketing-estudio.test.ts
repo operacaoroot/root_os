@@ -2,9 +2,17 @@ import { describe, expect, it } from 'vitest';
 import {
   abasDoMarketing,
   arquivoDaNota,
+  assuntoValido,
   bonusDeRecencia,
+  cardDaNotaSemIa,
+  chaveDoLink,
+  corpoDoLink,
   corpoDoVideo,
+  ficaComoReferencia,
   grafoDasNotas,
+  nucleoDoLink,
+  secaoDoCorpo,
+  vaiParaIdeias,
   lerArquivoDaComunidade,
   limparTags,
   pesoDaFonte,
@@ -72,6 +80,65 @@ describe('Memória: captura e notas', () => {
     expect(autorDoInstagram('https://www.instagram.com/lucasrezen.de/p/abc/')).toBe('@lucasrezen.de');
     expect(autorDoInstagram('https://www.instagram.com/reel/abc/', '', 'Fulano - @fulano.op on Instagram')).toBe('@fulano.op');
     expect(jsonDaIa('aqui:\n```json\n{"a":1}\n```')).toEqual({ a: 1 });
+  });
+});
+
+describe('Memória: link repetido e destino da nota (29/10/2026)', () => {
+  it('o mesmo post do Instagram em formas diferentes tem a mesma chave', () => {
+    // O caso de 27/10: o grupo mandou a forma curta e a Memória tinha a com www e barra.
+    const k = chaveDoLink('https://www.instagram.com/p/DblR4fOkVYw/');
+    expect(chaveDoLink('https://instagram.com/p/DblR4fOkVYw')).toBe(k);
+    expect(chaveDoLink('https://www.instagram.com/reel/DblR4fOkVYw/?igsh=MWR0Njd4')).toBe(k);
+    expect(chaveDoLink('https://instagram.com/fulano/p/DblR4fOkVYw/?exln=cTE2')).toBe(k);
+    expect(chaveDoLink('https://m.instagram.com/tv/DblR4fOkVYw')).toBe(k);
+    // O código do post diferencia maiúscula de minúscula.
+    expect(chaveDoLink('https://instagram.com/p/dblr4fokvyw')).not.toBe(k);
+    expect(nucleoDoLink('https://instagram.com/p/DblR4fOkVYw?igsh=x')).toBe('DblR4fOkVYw');
+  });
+
+  it('perfil, TikTok, YouTube e site comum', () => {
+    expect(chaveDoLink('https://instagram.com/unicornsummit_official')).toBe(chaveDoLink('https://www.instagram.com/unicornsummit_official/?igsh=abc'));
+    expect(chaveDoLink('https://instagram.com/unicornsummit_official')).not.toBe(chaveDoLink('https://instagram.com/outro_perfil'));
+    expect(chaveDoLink('https://www.tiktok.com/@x/video/123?is_from_webapp=1')).toBe('tiktok:123');
+    expect(chaveDoLink('https://youtu.be/abc?si=zz')).toBe(chaveDoLink('https://www.youtube.com/watch?v=abc'));
+    expect(chaveDoLink('https://www.youtube.com/shorts/abc')).toBe('youtube:abc');
+    expect(chaveDoLink('https://thefounderos.com/')).toBe(chaveDoLink('https://www.thefounderos.com?utm_source=wpp'));
+    expect(chaveDoLink('https://site.com/a?id=1')).not.toBe(chaveDoLink('https://site.com/a?id=2'));
+    expect(chaveDoLink('https://bit.ly/AbC')).not.toBe(chaveDoLink('https://bit.ly/abc'));
+    expect(nucleoDoLink('https://www.thefounderos.com/blog/?utm_source=x')).toBe('thefounderos.com/blog');
+  });
+
+  it('destinos e assuntos', () => {
+    expect(vaiParaIdeias('conteudo')).toBe(true);
+    expect(vaiParaIdeias('conteudo_e_referencia')).toBe(true);
+    expect(vaiParaIdeias('referencia')).toBe(false);
+    expect(vaiParaIdeias('entrada')).toBe(false);
+    expect(ficaComoReferencia('conteudo_e_referencia')).toBe(true);
+    expect(ficaComoReferencia('conteudo')).toBe(false);
+    expect(assuntoValido(' Ferramenta ')).toBe('ferramenta');
+    expect(assuntoValido('outra coisa')).toBeNull();
+    expect(assuntoValido(null)).toBeNull();
+  });
+
+  it('o card de Ideias sai da nota quando a IA não responde', () => {
+    const corpo = corpoDoVideo({ url: 'https://i.com/reel/1', autor: 'perfil', analise: { summary: 'Mostra o robô. Depois explica.', hook: 'Abre com a tela', structure: ['Cena', 'Fala'], adapt: ['Gravar a operação'] }, marca: 'a ROOT' });
+    expect(secaoDoCorpo(corpo, 'Gancho')).toBe('Abre com a tela');
+    expect(secaoDoCorpo(corpo, 'Nada')).toBe('');
+    const v = cardDaNotaSemIa({ titulo: 'Robô no estoque', resumo: 'Mostra o robô. Depois explica. E mais.', corpo, tipo: 'video' });
+    expect(v.title).toBe('Robô no estoque');
+    expect(v.summary).toBe('Mostra o robô. Depois explica.');
+    expect(v.how).toEqual({ format: 'Reel', hook: 'Abre com a tela' });
+    expect(v.key_points).toEqual(['Cena', 'Fala', 'Gravar a operação']);
+    expect(v.why).toBe('Como usar: Gravar a operação');
+    const l = cardDaNotaSemIa({ titulo: 'Artigo', resumo: '', corpo: corpoDoLink({ url: 'https://x.com', analise: { summary: 'Resumo do link.', key_points: ['Ponto A'], adapt: ['Post sobre A'] } }), tipo: 'link' });
+    expect(l.summary).toBe('Resumo do link.');
+    expect(l.how.format).toBe('Carrossel');
+    expect(l.key_points).toEqual(['Ponto A', 'Post sobre A']);
+  });
+
+  it('o .md do Obsidian leva destino e assunto quando a nota foi decidida', () => {
+    const md = arquivoDaNota({ id: 'n1', titulo: 'X', tipo: 'link', pasta: 'Links', tags: [], via: 'app', criadaEm: 'a', atualizadaEm: 'b', corpo: '', destino: 'referencia', assunto: 'ferramenta' });
+    expect(md).toContain('\ndestino: referencia\nassunto: ferramenta\n');
   });
 });
 

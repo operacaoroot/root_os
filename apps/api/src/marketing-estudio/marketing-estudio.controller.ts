@@ -2,12 +2,15 @@ import { Body, Controller, Delete, Get, HttpCode, Param, ParseUUIDPipe, Post, Pu
 import {
   GerarPostSchema,
   MemoriaCapturaSchema,
+  MemoriaDestinoSchema,
   MemoriaNotaCriarSchema,
   MemoriaNotaSalvarSchema,
   ReguaReferenciaSchema,
   ReguaSalvarSchema,
   TriagemDecisaoSchema,
   TriagemMontarSchema,
+  vaiParaIdeias,
+  type MemoriaNota,
 } from '@mktos/shared';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { PermissionsGuard } from '../auth/permissions.guard';
@@ -35,8 +38,15 @@ export class MarketingEstudioController {
 
   @Get('memoria')
   @RequirePermissions('pauta.ver')
-  painel(@CurrentUser() u: JwtUser, @Query('q') q?: string, @Query('tag') tag?: string, @Query('pasta') pasta?: string) {
-    return this.memoria.painel(u.orgId, { q, tag, pasta });
+  painel(
+    @CurrentUser() u: JwtUser,
+    @Query('q') q?: string,
+    @Query('tag') tag?: string,
+    @Query('pasta') pasta?: string,
+    @Query('destino') destino?: string,
+    @Query('assunto') assunto?: string,
+  ) {
+    return this.memoria.painel(u.orgId, { q, tag, pasta, destino, assunto });
   }
 
   @Get('memoria/grafo')
@@ -85,6 +95,19 @@ export class MarketingEstudioController {
   @RequirePermissions('pauta.editar')
   tentar(@CurrentUser() u: JwtUser, @Param('id', ParseUUIDPipe) id: string) {
     return this.memoria.tentarDeNovo(u.orgId, id);
+  }
+
+  // Para onde a nota vai: Ideia de conteúdo, Referência externa, as duas, ou de volta para decidir.
+  // Mandar para Ideias já cria o card (com a IA quando ela responde). `comIa`: a IA escreveu (true),
+  // o card saiu do resumo da nota (false), o card já existia ou a nota não foi para Ideias (null).
+  @Post('memoria/notas/:id/destino')
+  @HttpCode(200)
+  @RequirePermissions('pauta.editar')
+  async destino(@CurrentUser() u: JwtUser, @Param('id', ParseUUIDPipe) id: string, @Body() body: unknown): Promise<{ nota: MemoriaNota; comIa: boolean | null }> {
+    const nota = await this.memoria.decidir(u.orgId, id, u.name ?? u.sub, MemoriaDestinoSchema.parse(body));
+    if (!vaiParaIdeias(nota.destino)) return { nota, comIa: null };
+    const card = await this.triagem.cardDaNota(u.orgId, id);
+    return { nota: { ...nota, ideia: { id: card.id, status: card.status } }, comIa: card.comIa };
   }
 
   // ---------- Triagem ----------
