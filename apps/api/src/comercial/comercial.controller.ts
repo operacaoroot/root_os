@@ -5,9 +5,11 @@ import { CurrentUser, type JwtUser } from '../auth/current-user.decorator';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RequirePermissions } from '../auth/permissions.decorator';
 import { PermissionsGuard } from '../auth/permissions.guard';
+import { AcessoAtualGuard } from '../memory/acesso-atual.guard';
 import { ConfigComercialService } from './config.service';
 import { DecisoesService } from './decisoes.service';
 import { FichaService } from './ficha.service';
+import { LeadRepetidoService } from './lead-repetido.service';
 import { MoverService, PEDIDO_DE_MOVER_APOSENTADO, SoGenteGuard } from './mover.service';
 import { LeituraEReacaoService } from './leitura-e-reacao.service';
 import { ReacoesDaPropostaService } from './reacoes-da-proposta.service';
@@ -39,6 +41,7 @@ export class ComercialController {
     private readonly reacoesSvc: ReacoesDaPropostaService,
     private readonly salaVersoes: SalaVersaoService,
     private readonly leitura: LeituraEReacaoService,
+    private readonly leadRepetido: LeadRepetidoService,
   ) {}
 
   /** Tela 03: a fila de decisões, o que rodou sozinho hoje e os contadores. */
@@ -177,6 +180,23 @@ export class ComercialController {
   @UseGuards(SoGenteGuard)
   identidade(@CurrentUser() user: JwtUser, @Param('id') id: string, @Body() body: unknown) {
     return this.fichas.editarIdentidade(user.orgId, id, body, { id: user.sub, nome: user.name });
+  }
+
+  /** 29/10: o "+ lead" pergunta antes de criar: já há lead com esta empresa, telefone, e-mail ou contato? Só leitura. */
+  @Get('leads/parecidos')
+  @RequirePermissions('leads.ver')
+  parecidos(@CurrentUser() user: JwtUser, @Query() query: Record<string, unknown>) {
+    const lido = (k: string) => (typeof query[k] === 'string' ? (query[k] as string) : undefined);
+    return this.leadRepetido.parecidos(user.orgId, { empresa: lido('empresa'), contato: lido('contato'), telefone: lido('telefone'), email: lido('email') });
+  }
+
+  /** 29/10: venda nova de quem já é cliente: lead novo ligado ao MESMO cadastro do lead `:id` (sem mover, cobrar nem mandar mensagem). */
+  @Post('lead/:id/venda-nova')
+  @HttpCode(200)
+  @RequirePermissions('leads.editar')
+  @UseGuards(SoGenteGuard, AcessoAtualGuard)
+  vendaNova(@CurrentUser() user: JwtUser, @Param('id') id: string, @Body() body: unknown) {
+    return this.leadRepetido.vendaNova(user.orgId, id, body, { id: user.sub, nome: user.name ?? null, papeis: user.roles ?? [], permissoes: user.permissions });
   }
 
   /** Layout 26/10: o tipo do negócio (pagante, parceria, permuta, repasse); fato no fio, sem automação. */

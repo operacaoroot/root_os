@@ -149,6 +149,8 @@ export * from './equipe-atribuicoes.js';
 export * from './whatsapp-caixa.js';
 // A ficha geral do lead e as pendências do painel (leva 5, L4, 27/10/2026): ver `ficha-geral.ts`.
 export * from './ficha-geral.js';
+// O lead que já existe, no "+ lead" (29/10/2026): abrir o card ou venda nova ligada ao mesmo cliente. Ver `lead-parecido.ts`.
+export * from './lead-parecido.js';
 // As listas importadas do ClickUp na pasta "Arquivo do ClickUp" (leva 5, L1, 27/10/2026): ver `arquivo-do-clickup.ts`.
 export * from './arquivo-do-clickup.js';
 export * from './maquina-de-conteudo.js';
