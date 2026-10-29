@@ -254,6 +254,7 @@ const MENU_FINAL: LinhaDoMenu[] = [
   ['maquina-agendar', 'Agendar', '/marketing/agendar', 'pauta.ver', 'conteudo', 'pauta', 'maquina-producao', true],
   ['maquina-calendario', 'Calendário', '/marketing/calendario', 'pauta.ver', 'conteudo', 'pauta', 'maquina-producao', true],
   ['marketing-formatos', 'Formatos', '/marketing/formatos', 'pauta.ver', 'conteudo', 'pauta', 'maquina-producao', true],
+  ['maquina-aprovacao-video', 'Aprovação de vídeo', '/marketing/aprovacao-de-video', 'pauta.ver', 'conteudo', 'pauta', 'maquina-producao', true],
   ['pauta', 'Pauta (episódios)', '/pauta', 'pauta.ver', 'conteudo', 'pauta', 'maquina-producao', true],
   ['marketing-performance', 'Performance', '/marketing/performance', 'pauta.ver', 'conteudo', 'pauta', null, false],
   ['maquina-analise', 'Análise dos posts', '/marketing/analise', 'pauta.ver', 'conteudo', 'pauta', 'marketing-performance', true],
@@ -575,7 +576,7 @@ describe('o bloco Marketing (MK7)', () => {
     expect(visiveis).toEqual(['Início', 'Memória', 'Ideias de conteúdo', 'Produção', 'Performance', 'Página de links', 'Campanhas', 'Eventos do site', 'Tarefas']);
     const abas: Record<string, string[]> = {
       'marketing-triagem': ['marketing-base', 'marketing-fontes', 'referencias', 'marketing-estrategia', 'marketing-ideias'],
-      'maquina-producao': ['maquina-banco', 'maquina-agendar', 'maquina-calendario', 'marketing-formatos', 'pauta'],
+      'maquina-producao': ['maquina-banco', 'maquina-agendar', 'maquina-calendario', 'marketing-formatos', 'maquina-aprovacao-video', 'pauta'],
       'marketing-performance': ['maquina-analise', 'marketing-relatorio', 'instagram'],
     };
     for (const [pai, filhos] of Object.entries(abas)) for (const k of filhos) {

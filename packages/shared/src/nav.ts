@@ -204,6 +204,7 @@ export const NAV: NavItem[] = [
   { key: 'maquina-agendar', label: 'Agendar', href: '/marketing/agendar', icon: 'CalendarPlus', permission: 'pauta.ver', secao: 'conteudo', modulo: 'pauta', pai: 'maquina-producao', oculto: true },
   { key: 'maquina-calendario', label: 'Calendário', href: '/marketing/calendario', icon: 'CalendarDays', permission: 'pauta.ver', secao: 'conteudo', modulo: 'pauta', pai: 'maquina-producao', oculto: true },
   { key: 'marketing-formatos', label: 'Formatos', href: '/marketing/formatos', icon: 'Ruler', permission: 'pauta.ver', secao: 'conteudo', modulo: 'pauta', pai: 'maquina-producao', oculto: true },
+  { key: 'maquina-aprovacao-video', label: 'Aprovação de vídeo', href: '/marketing/aprovacao-de-video', icon: 'Clapperboard', permission: 'pauta.ver', secao: 'conteudo', modulo: 'pauta', pai: 'maquina-producao', oculto: true },
   { key: 'pauta', label: 'Pauta (episódios)', href: '/pauta', icon: 'CalendarClock', permission: 'pauta.ver', secao: 'conteudo', modulo: 'pauta', pai: 'maquina-producao', oculto: true },
   { key: 'marketing-performance', label: 'Performance', href: '/marketing/performance', icon: 'TrendingUp', permission: 'pauta.ver', secao: 'conteudo', modulo: 'pauta' },
   { key: 'maquina-analise', label: 'Análise dos posts', href: '/marketing/analise', icon: 'BarChart3', permission: 'pauta.ver', secao: 'conteudo', modulo: 'pauta', pai: 'marketing-performance', oculto: true },

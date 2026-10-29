@@ -8,7 +8,7 @@ import { NAV } from './nav.js';
  */
 export const ABAS_DO_MARKETING: Record<string, readonly string[]> = {
   'marketing-triagem': ['marketing-triagem', 'marketing-base', 'marketing-fontes', 'referencias', 'marketing-estrategia', 'marketing-ideias'],
-  'maquina-producao': ['maquina-producao', 'maquina-banco', 'maquina-agendar', 'maquina-calendario', 'marketing-formatos', 'pauta'],
+  'maquina-producao': ['maquina-producao', 'maquina-banco', 'maquina-agendar', 'maquina-calendario', 'marketing-formatos', 'maquina-aprovacao-video', 'pauta'],
   'marketing-performance': ['marketing-performance', 'maquina-analise', 'marketing-relatorio', 'instagram'],
 };
 
