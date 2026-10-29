@@ -4,7 +4,10 @@ import { z } from 'zod';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
 import type { AsaasFinancialTransaction, AsaasPayment } from './asaas.service';
-import { chavesDoAcordo, documentoComoChave, escolherParcela, type ParcelaCandidata } from './parcelas';
+import {
+  acordoDaCobranca, chavesDoAcordo, documentoComoChave, escolherParcela, ordemDasParcelas, parcelaMaisPerto,
+  type AcordoCandidato, type ParcelaCandidata,
+} from './parcelas';
 
 /*
  * PARCELAS DO ACORDO (29/10/2026): o Financeiro como dado ligado.
@@ -28,33 +31,41 @@ export function nomeDaParcela(a: { produto: string; cliente: string }, numero: n
   return `${produto} - ${a.cliente} - Parcela ${numero}/${total}`;
 }
 
-interface Livre extends ParcelaCandidata { partnerId: string | null }
+interface Livre extends ParcelaCandidata { partnerId: string | null; acordoId: string }
 interface PrevistoDeContrato extends ParcelaCandidata { contractId: string; partnerId: string | null }
+interface AcordoParaVestir extends AcordoCandidato { partnerId: string | null; proximoNumero: number }
 
 export interface Vestir {
   /** Parcelas já vestidas, por id da cobrança. */
   porPagamento: Map<string, { id: string; partnerId: string | null; pagaEm: Date | null }>;
   livres: Livre[];
+  /** Acordos pagantes: a cobrança que é de um deles e não acha parcela cria a sua. */
+  acordos: AcordoParaVestir[];
   previstosDeContrato: PrevistoDeContrato[];
 }
 
 /** Uma vez por passagem do sync: as parcelas livres e os previstos de contrato que uma cobrança pode vestir. */
 export async function prepararVestir(db: Db, orgId: string): Promise<Vestir> {
-  const acordos = await db.acordoComercial.findMany({
+  const linhas = await db.acordoComercial.findMany({
     where: { orgId },
     select: {
-      cliente: true, apelidos: true, partnerId: true, partner: { select: { cnpjCpf: true } },
-      parcelas: { select: { id: true, valor: true, vencimento: true, asaasPaymentId: true, pagaEm: true } },
+      id: true, cliente: true, apelidos: true, tipo: true, partnerId: true, partner: { select: { cnpjCpf: true } },
+      parcelas: { select: { id: true, numero: true, valor: true, vencimento: true, asaasPaymentId: true, pagaEm: true } },
     },
   });
   const porPagamento: Vestir['porPagamento'] = new Map();
   const livres: Livre[] = [];
-  for (const a of acordos) {
+  const acordos: AcordoParaVestir[] = [];
+  for (const a of linhas) {
     // Cliente é a empresa do contrato: o CNPJ dela casa mesmo quando o Asaas mostra o nome da pessoa.
-    const chaves = [...chavesDoAcordo(a), ...documentoComoChave(a.partner?.cnpjCpf)];
+    const chavesNome = chavesDoAcordo(a);
+    const chavesDoc = documentoComoChave(a.partner?.cnpjCpf);
+    if (a.tipo === 'pagante') {
+      acordos.push({ id: a.id, chavesNome, chavesDoc, partnerId: a.partnerId, proximoNumero: Math.max(0, ...a.parcelas.map((p) => p.numero)) + 1 });
+    }
     for (const p of a.parcelas) {
       if (p.asaasPaymentId) porPagamento.set(p.asaasPaymentId, { id: p.id, partnerId: a.partnerId, pagaEm: p.pagaEm });
-      else if (!p.pagaEm) livres.push({ id: p.id, valor: num(p.valor), vencimento: p.vencimento, chaves, partnerId: a.partnerId });
+      else if (!p.pagaEm) livres.push({ id: p.id, acordoId: a.id, valor: num(p.valor), vencimento: p.vencimento, chaves: [...chavesNome, ...chavesDoc], partnerId: a.partnerId });
     }
   }
   // O previsto que um contrato recorrente de ENTRADA gerou também é vestido pela cobrança
@@ -75,7 +86,7 @@ export async function prepararVestir(db: Db, orgId: string): Promise<Vestir> {
       ...documentoComoChave(t.partner?.cnpjCpf),
     ],
   }));
-  return { porPagamento, livres, previstosDeContrato };
+  return { porPagamento, livres, acordos, previstosDeContrato };
 }
 
 export interface Vestimenta { parcelaId: string | null; contractId: string | null; partnerId: string | null }
@@ -83,18 +94,44 @@ export interface Vestimenta { parcelaId: string | null; contractId: string | nul
 /**
  * A cobrança aberta veste uma parcela (ou o previsto de um contrato). Grava a
  * ligação e apaga o previsto que ela substitui; devolve o que o `pay_` herda.
+ *
+ * Regra do Lucas (29/10/2026): o que está no Asaas entra no OS sozinho. A
+ * cobrança que é de um acordo e não acha parcela livre CRIA a parcela; a parcela
+ * vestida acompanha o valor e o vencimento da cobrança, porque o Asaas manda.
  */
-export async function vestirCobranca(db: Db, orgId: string, v: Vestir, p: AsaasPayment, nomeDoPagador: string | null): Promise<Vestimenta> {
+export async function vestirCobranca(db: Db, orgId: string, v: Vestir, p: AsaasPayment, textoDoPagador: string | null): Promise<Vestimenta> {
+  const vence = dia(p.originalDueDate || p.dueDate || p.dateCreated || new Date().toISOString());
+  const valor = new Prisma.Decimal(p.value);
   const ja = v.porPagamento.get(p.id);
-  if (ja) return { parcelaId: ja.id, contractId: null, partnerId: ja.partnerId };
-  const cobranca = { valor: p.value, vence: dia(p.originalDueDate || p.dueDate || p.dateCreated || new Date().toISOString()), texto: `${nomeDoPagador ?? ''} ${p.description ?? ''}` };
-  const parcela = escolherParcela(cobranca, v.livres);
+  if (ja) {
+    if (!ja.pagaEm) {
+      await db.acordoParcela.updateMany({
+        where: { id: ja.id, OR: [{ valor: { not: valor } }, { vencimento: { not: vence } }] },
+        data: { valor, vencimento: vence },
+      });
+    }
+    return { parcelaId: ja.id, contractId: null, partnerId: ja.partnerId };
+  }
+  const texto = `${textoDoPagador ?? ''} ${p.description ?? ''}`;
+  const cobranca = { valor: p.value, vence, texto };
+  // 1) a parcela livre de mesmo valor e nome; 2) a do acordo dela com o vencimento mais
+  // perto (o valor pode ter mudado); 3) nenhuma: a cobrança cria a parcela no acordo.
+  const acordo = acordoDaCobranca(texto, v.acordos);
+  const parcela = escolherParcela(cobranca, v.livres)
+    ?? (acordo ? parcelaMaisPerto(vence, v.livres.filter((l) => l.acordoId === acordo.id)) : null);
   if (parcela) {
-    await db.acordoParcela.update({ where: { id: parcela.id }, data: { asaasPaymentId: p.id } });
+    await db.acordoParcela.update({ where: { id: parcela.id }, data: { asaasPaymentId: p.id, valor, vencimento: vence } });
     await db.financeTransaction.deleteMany({ where: { orgId, externalId: `${PREFIXO}${parcela.id}`, status: 'previsto' } });
     v.livres.splice(v.livres.indexOf(parcela), 1);
     v.porPagamento.set(p.id, { id: parcela.id, partnerId: parcela.partnerId, pagaEm: null });
     return { parcelaId: parcela.id, contractId: null, partnerId: parcela.partnerId };
+  }
+  if (acordo) {
+    const nova = await db.acordoParcela.create({
+      data: { orgId, acordoId: acordo.id, numero: acordo.proximoNumero++, valor, vencimento: vence, asaasPaymentId: p.id },
+    });
+    v.porPagamento.set(p.id, { id: nova.id, partnerId: acordo.partnerId, pagaEm: null });
+    return { parcelaId: nova.id, contractId: null, partnerId: acordo.partnerId };
   }
   const doContrato = escolherParcela(cobranca, v.previstosDeContrato);
   if (doContrato) {
@@ -181,8 +218,9 @@ export async function materializarParcelas(db: Db, orgId: string): Promise<void>
     ?? (await db.financeAccount.findFirst({ where: { orgId }, orderBy: { createdAt: 'asc' }, select: { id: true } }));
   const parcelas = await db.acordoParcela.findMany({
     where: { orgId },
-    include: { acordo: { select: { cliente: true, produto: true, partnerId: true, _count: { select: { parcelas: true } } } } },
+    include: { acordo: { select: { cliente: true, produto: true, partnerId: true } } },
   });
+  const ordem = ordemDasParcelas(parcelas);
   const linhas = await db.financeTransaction.findMany({
     where: { orgId, externalId: { startsWith: PREFIXO } },
     select: { id: true, externalId: true, status: true, amount: true, dueDate: true, date: true, paidAt: true, description: true, partnerId: true },
@@ -202,8 +240,9 @@ export async function materializarParcelas(db: Db, orgId: string): Promise<void>
       continue;
     }
     if (!conta) continue;
+    const o = ordem.get(p.id)!;
     const dados = {
-      description: nomeDaParcela(p.acordo, p.numero, p.acordo._count.parcelas),
+      description: nomeDaParcela(p.acordo, o.n, o.total),
       amount: p.valor, date: p.vencimento, dueDate: p.vencimento, partnerId: p.acordo.partnerId,
     };
     if (!linha) {
@@ -237,8 +276,10 @@ export type ParcelasInput = z.infer<typeof ParcelasInputSchema>;
 
 export type EstadoDaParcela = 'paga' | 'cobranca_gerada' | 'a_gerar';
 export interface ParcelaDaTela {
-  id: string; numero: number; valor: number; vencimento: string; pagaEm: string | null;
+  id: string; numero: number; posicao: number; valor: number; vencimento: string; pagaEm: string | null;
   asaasPaymentId: string | null; notaFiscal: string | null; estado: EstadoDaParcela; vencida: boolean;
+  /** Da cobrança no Asaas: quando o dinheiro cai e quanto (no cartão, o líquido na data de crédito). */
+  caiEm: string | null; liquido: number | null;
 }
 export interface ParcelaSemCobranca {
   id: string; acordoId: string; cliente: string; produto: string; numero: number; total: number;
@@ -252,11 +293,18 @@ export interface Rotina { aGerar: ParcelaSemCobranca[]; atrasados: Atrasado[]; n
 const iso = (d: Date) => d.toISOString().slice(0, 10);
 const hoje = () => dia(new Date(Date.now() - 3 * 3600_000).toISOString()); // dia em Brasília
 
-function daTela(p: { id: string; numero: number; valor: Prisma.Decimal; vencimento: Date; pagaEm: Date | null; asaasPaymentId: string | null; notaFiscal: string | null }): ParcelaDaTela {
+function daTela(
+  p: { id: string; numero: number; valor: Prisma.Decimal; vencimento: Date; pagaEm: Date | null; asaasPaymentId: string | null; notaFiscal: string | null },
+  posicao: number, cobranca?: { caiEm: Date | null; liquido: number },
+): ParcelaDaTela {
   const estado: EstadoDaParcela = p.pagaEm ? 'paga' : p.asaasPaymentId ? 'cobranca_gerada' : 'a_gerar';
+  const caiEm = cobranca?.caiEm ?? null;
   return {
-    id: p.id, numero: p.numero, valor: num(p.valor), vencimento: iso(p.vencimento), pagaEm: p.pagaEm ? iso(p.pagaEm) : null,
-    asaasPaymentId: p.asaasPaymentId, notaFiscal: p.notaFiscal, estado, vencida: !p.pagaEm && p.vencimento < hoje(),
+    id: p.id, numero: p.numero, posicao, valor: num(p.valor), vencimento: iso(p.vencimento), pagaEm: p.pagaEm ? iso(p.pagaEm) : null,
+    asaasPaymentId: p.asaasPaymentId, notaFiscal: p.notaFiscal, estado,
+    // Cartão aprovado não está "vencido": o cliente já pagou, falta o Asaas repassar.
+    vencida: !p.pagaEm && (caiEm ?? p.vencimento) < hoje(),
+    caiEm: caiEm ? iso(caiEm) : null, liquido: cobranca ? cobranca.liquido : null,
   };
 }
 
@@ -272,8 +320,13 @@ export class ParcelasService {
 
   async listar(orgId: string, acordoId: string): Promise<{ parcelas: ParcelaDaTela[] }> {
     await this.acordo(orgId, acordoId);
-    const rows = await this.prisma.acordoParcela.findMany({ where: { orgId, acordoId }, orderBy: { numero: 'asc' } });
-    return { parcelas: rows.map(daTela) };
+    const rows = await this.prisma.acordoParcela.findMany({ where: { orgId, acordoId }, orderBy: [{ vencimento: 'asc' }, { numero: 'asc' }] });
+    const ids = rows.map((p) => p.asaasPaymentId).filter((x): x is string => !!x).map((x) => `pay_${x}`);
+    const cobrancas = ids.length
+      ? await this.prisma.financeTransaction.findMany({ where: { orgId, externalId: { in: ids }, status: 'previsto' }, select: { externalId: true, dueDate: true, amount: true } })
+      : [];
+    const porCobranca = new Map(cobrancas.map((c) => [c.externalId!.slice(4), { caiEm: c.dueDate, liquido: num(c.amount) }]));
+    return { parcelas: rows.map((p, i) => daTela(p, i + 1, p.asaasPaymentId ? porCobranca.get(p.asaasPaymentId) : undefined)) };
   }
 
   /**
@@ -337,7 +390,7 @@ export class ParcelasService {
           OR: [{ pagaEm: { gte: ha60 } }, { pagaEm: null, asaasPaymentId: { not: null } }, { pagaEm: null, vencimento: { lte: em15 } }],
         },
         orderBy: { vencimento: 'asc' },
-        include: { acordo: { select: { id: true, cliente: true, produto: true, _count: { select: { parcelas: true } } } } },
+        include: { acordo: { select: { id: true, cliente: true, produto: true } } },
       }),
       this.prisma.contract.findMany({
         where: { orgId, status: 'ativo' },
@@ -347,6 +400,7 @@ export class ParcelasService {
         },
       }),
     ]);
+    const ordem = await this.ordem(orgId);
     return {
       aGerar: aGerar.parcelas,
       atrasados: vencidos.map((t) => {
@@ -358,7 +412,7 @@ export class ParcelasService {
         };
       }),
       nfPendente: semNf.map((p) => ({
-        id: p.id, acordoId: p.acordo.id, descricao: nomeDaParcela(p.acordo, p.numero, p.acordo._count.parcelas), valor: num(p.valor),
+        id: p.id, acordoId: p.acordo.id, descricao: nomeDaParcela(p.acordo, ordem.get(p.id)?.n ?? p.numero, ordem.get(p.id)?.total ?? p.numero), valor: num(p.valor),
         vencimento: iso(p.vencimento), pagaEm: p.pagaEm ? iso(p.pagaEm) : null, cobrancaGerada: !!p.asaasPaymentId,
       })),
       // Valor diferente em mais de 1% (e mais de R$ 1): a conta subiu, caiu ou a de dólar variou.
@@ -377,16 +431,25 @@ export class ParcelasService {
     const rows = await this.prisma.acordoParcela.findMany({
       where: { orgId, asaasPaymentId: null, pagaEm: null },
       orderBy: { vencimento: 'asc' },
-      include: { acordo: { select: { id: true, cliente: true, produto: true, _count: { select: { parcelas: true } } } } },
+      include: { acordo: { select: { id: true, cliente: true, produto: true } } },
     });
+    const ordem = await this.ordem(orgId);
     const h = hoje().getTime();
     return {
-      parcelas: rows.map((p) => ({
-        id: p.id, acordoId: p.acordo.id, cliente: p.acordo.cliente, produto: p.acordo.produto, numero: p.numero,
-        total: p.acordo._count.parcelas, valor: num(p.valor), vencimento: iso(p.vencimento),
-        diasParaVencer: Math.round((p.vencimento.getTime() - h) / 86400_000),
-        descricao: nomeDaParcela(p.acordo, p.numero, p.acordo._count.parcelas),
-      })),
+      parcelas: rows.map((p) => {
+        const o = ordem.get(p.id) ?? { n: p.numero, total: p.numero };
+        return {
+          id: p.id, acordoId: p.acordo.id, cliente: p.acordo.cliente, produto: p.acordo.produto, numero: o.n,
+          total: o.total, valor: num(p.valor), vencimento: iso(p.vencimento),
+          diasParaVencer: Math.round((p.vencimento.getTime() - h) / 86400_000),
+          descricao: nomeDaParcela(p.acordo, o.n, o.total),
+        };
+      }),
     };
+  }
+
+  /** A posição de cada parcela no seu acordo, pela ordem dos vencimentos. */
+  private async ordem(orgId: string) {
+    return ordemDasParcelas(await this.prisma.acordoParcela.findMany({ where: { orgId }, select: { id: true, acordoId: true, vencimento: true, numero: true } }));
   }
 }

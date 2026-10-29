@@ -927,6 +927,12 @@ function ApAr(props: {
                         <button onClick={() => doApprove(r.id, true)} className="rounded border border-border px-2 py-0.5 text-[11px] text-good hover:bg-surface-2">Aprovar</button>
                         <button onClick={() => doApprove(r.id, false)} className="ml-1 rounded border border-border px-2 py-0.5 text-[11px] text-bad hover:bg-surface-2">Rejeitar</button>
                       </>
+                    ) : r.origem === 'asaas' ? (
+                      // O Asaas manda: valor e data acompanham a cobrança, e a baixa vem do extrato.
+                      <span className="text-[11px] text-muted" title="Valor e data acompanham a cobrança no Asaas; a baixa vem do extrato, pelo id.">vem do Asaas</span>
+                    ) : r.origem === 'acordo' ? (
+                      // Parcela do acordo sem cobrança: valor e data se acertam no acordo; aqui só a baixa do que entrou por fora.
+                      <button onClick={() => setJanela({ tipo: 'baixar', id: r.id, descricao: r.description, valor: r.amount })} title="Valor e data se acertam em Análise → Acordos → parcelas." className="rounded border border-border px-2 py-0.5 text-[11px] hover:bg-surface-2">Baixar</button>
                     ) : r.approvalStatus !== 'rejeitado' ? (
                       <>
                         <button onClick={() => setJanela({ tipo: 'editar', id: r.id, lado: r.tipo, descricao: r.description, valor: r.amount, vencimento: r.dueDate, parceiro: r.partnerName })} className="rounded border border-border px-2 py-0.5 text-[11px] hover:bg-surface-2">Editar</button>

@@ -323,6 +323,7 @@ export class AprService {
         id: r.id, tipo: r.type, description: r.description, partnerName: r.partner?.razaoSocial ?? null,
         chartCodigo: r.chartAccount?.codigo ?? null, amount: v, dueDate: due.toISOString(),
         status: r.status, approvalStatus: r.approvalStatus, exercicioFinanceiro: exercicios.has(r.id),
+        origem: r.source === 'asaas' ? 'asaas' as const : r.source === 'acordo' ? 'acordo' as const : r.contractId ? 'contrato' as const : 'manual' as const,
         ...{ exercicioComercial: comerciais.has(r.id), exercicioComercialHref: comerciais.has(r.id) ? `/finance/exercicio/comercial/obrigacoes/${r.id}` : null }, vencido, diasAtraso: dias,
       };
     });

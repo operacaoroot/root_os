@@ -3,8 +3,10 @@
  * origem, e o fluxo é calculado a partir dela.
  *
  *   - o que vamos receber vem do ACORDO, parcela a parcela, e cada parcela aponta
- *     para a sua cobrança no Asaas (o sync veste a parcela pela cobrança: nome,
- *     CNPJ, valor e vencimento). Parcela sem cobrança aparece como "a gerar";
+ *     para a sua cobrança no Asaas. O que o Asaas já sabe entra SOZINHO: o sync
+ *     cria (ou veste) a parcela a partir da cobrança aberta. Esta carga só cadastra
+ *     o que o Asaas não sabe: parcela já paga (histórico) e parcela que ainda não
+ *     virou cobrança ("a gerar");
  *   - o que vamos pagar vem das CONTAS FIXAS (contratos) e das avulsas;
  *   - nada fica lançado à mão em paralelo: o previsto manual que um acordo ou uma
  *     conta fixa passou a cobrir sai.
@@ -24,12 +26,6 @@ const APLICAR = flag === '--aplicar';
 const dia = (s: string) => new Date(`${s}T00:00:00Z`);
 
 type P = { valor: number; vence: string; paga?: string; nota?: string };
-const mensais = (n: number, valor: number, primeira: string, ultimoValor = valor): P[] =>
-  Array.from({ length: n }, (_, k) => {
-    const [a, m, d] = primeira.split('-').map(Number);
-    const v = new Date(Date.UTC(a, m - 1 + k, d)).toISOString().slice(0, 10);
-    return { valor: k === n - 1 ? ultimoValor : valor, vence: v };
-  });
 
 interface Acordo {
   /** Acordo que já existe (id) ou que nasce agora (sem id, procurado pelo cliente). */
@@ -41,36 +37,36 @@ interface Acordo {
 
 const ACORDOS: Acordo[] = [
   {
-    // Contrato v5: R$ 56.000 = R$ 8.000 de entrada + 12 x R$ 4.000, a 1ª 30 dias depois da assinatura (27/10).
+    // Contrato v5: R$ 56.000 = R$ 8.000 de entrada + 12 x R$ 4.000. As 12 estão no Asaas
+    // (parcelamento, boleto, dia 26): o sync cria as parcelas. Aqui só a entrada, já paga.
     cliente: 'Senhor aGranel', produto: 'Operação ROOT', valor: 56000, partnerId: '7fe7f957-5bb6-4ff8-8576-8096c6a21a10',
     apelidos: 'Felipe Fortes,SR A GRANEL', fechadoEm: '2026-10-27', cnpj: '35.751.273/0001-52',
     observacao: 'Contrato v5: R$ 8.000 de entrada + 12 x R$ 4.000 no boleto, dia 26 (parcelamento no Asaas).',
-    parcelas: [{ valor: 8000, vence: '2026-10-29', paga: '2026-10-28' }, ...mensais(12, 4000, '2026-11-26')],
+    parcelas: [{ valor: 8000, vence: '2026-10-29', paga: '2026-10-28' }],
   },
   {
-    // Contrato final: R$ 4.000 de entrada (21/10) + 5 x 1.333,33 + 1.333,35, todo dia 20.
+    // Contrato final: R$ 4.000 de entrada (21/10) + 6 boletos no Asaas (5 x 1.333,33 + 1.333,35, dia 20).
     id: 'a4a3b64a-5308-4d8d-a80b-341f677a296a',
     cliente: 'Custeio', produto: 'Operação ROOT (upsell)', valor: 12000, partnerId: '263e3543-9149-43e1-821a-f7cec4224c0a',
     apelidos: 'upsell,CUSTEIO TECHNOLOGY', cnpj: '06.236.539/0001-20',
-    parcelas: [{ valor: 4000, vence: '2026-10-20', paga: '2026-10-21' }, ...mensais(6, 1333.33, '2026-11-20', 1333.35)],
+    parcelas: [{ valor: 4000, vence: '2026-10-20', paga: '2026-10-21' }],
   },
   {
-    // Imersão no cartão em 3x, juros por conta do cliente (3 x 1.024,67).
+    // Imersão no cartão em 3x (3 x 1.024,67, juros do cliente). A 3ª está no Asaas: o sync cria.
     id: '4c0d0925-2737-43bd-b66b-8d5368dfd935',
     cliente: 'Custeio (Lucas Moreira)', produto: 'Imersão ROOT', valor: 2997, partnerId: '263e3543-9149-43e1-821a-f7cec4224c0a',
     apelidos: 'Lucas Martins,Lucas Moreira',
     parcelas: [
       { valor: 1024.67, vence: '2026-09-02', paga: '2026-09-28' },
       { valor: 1024.67, vence: '2026-10-02', paga: '2026-10-29' },
-      { valor: 1024.67, vence: '2026-11-02' },
     ],
   },
   {
-    // Cartão em 10 x R$ 397, aprovado em 20/10; o Asaas repassa mês a mês.
+    // Cartão em 10 x R$ 397, aprovado em 20/10: as 10 vêm do Asaas, com crédito e líquido. Nada a cadastrar.
     id: '8e808bfb-195b-4b2c-b329-94d1ae1496f7',
     cliente: 'Affari', produto: 'Imersão ROOT', valor: 3970, partnerId: '25e335f5-ca8a-4adc-9fb8-9ff5d8268838',
     apelidos: 'Affari,Antonio f junior',
-    parcelas: mensais(10, 397, '2026-10-20'),
+    parcelas: [],
   },
   {
     // Contrato v2: R$ 5.000 de entrada (28/10) + R$ 5.000 na entrega; 10/12 é a data que o Lucas definiu.
@@ -83,8 +79,8 @@ const ACORDOS: Acordo[] = [
     // Contrato v3: R$ 4.500 = R$ 2.250 em até 48h da assinatura + R$ 2.250 em até 30 dias.
     cliente: 'Juma Consultoria Ambiental', produto: 'Imersão ROOT', valor: 4500, partnerId: '665c5a9d-911d-4c7a-b5b2-119346b12993',
     apelidos: 'Juma,Tarcilla',
-    observacao: 'Contrato v3: 2 x R$ 2.250. Vencimento da parcela 2 PROVISÓRIO (30/11) até saber a data da assinatura.',
-    parcelas: [{ valor: 2250, vence: '2026-11-02' }, { valor: 2250, vence: '2026-11-30', nota: 'PROVISÓRIO: 30 dias da assinatura, data a confirmar' }],
+    observacao: 'Contrato v3: 2 x R$ 2.250. A 1ª está no Asaas (02/11). Vencimento da 2ª PROVISÓRIO (30/11) até saber a data da assinatura.',
+    parcelas: [{ valor: 2250, vence: '2026-11-30', nota: 'saldo a gerar; PROVISÓRIO: 30 dias da assinatura, data a confirmar' }],
   },
   {
     // Quitado: R$ 6.000 em 11/09 + R$ 6.000 em 16/10 (o contrato previa 10/11).
@@ -151,28 +147,27 @@ async function main() {
         if (APLICAR) await prisma.partner.update({ where: { id: a.partnerId }, data: { cnpjCpf: a.cnpj } });
       }
     }
+    // A parcela é achada pelo valor e pelo vencimento, não pelo número: o sync pode ter
+    // criado antes as que vêm do Asaas, e o número é só a ordem em que cada uma nasceu.
     const atuais = acordo ? await prisma.acordoParcela.findMany({ where: { acordoId: acordo.id } }) : [];
-    for (const [i, p] of a.parcelas.entries()) {
-      const numero = i + 1;
-      const atual = atuais.find((x) => x.numero === numero);
-      const rotulo = `${a.cliente} ${numero}/${a.parcelas.length}: R$ ${brl(p.valor)} vence ${p.vence}${p.paga ? `, paga ${p.paga}` : ''}${p.nota ? ` (${p.nota})` : ''}`;
+    let proximo = Math.max(0, ...atuais.map((x) => x.numero)) + 1;
+    for (const p of a.parcelas) {
+      const atual = atuais.find((x) => Number(x.valor) === p.valor && x.vencimento.toISOString().slice(0, 10) === p.vence);
+      const rotulo = `${a.cliente}: R$ ${brl(p.valor)} vence ${p.vence}${p.paga ? `, paga ${p.paga}` : ', a gerar'}${p.nota ? ` (${p.nota})` : ''}`;
       if (!atual) {
         fala(`  + parcela ${rotulo}`);
         if (APLICAR && acordo) {
           await prisma.acordoParcela.create({
-            data: { orgId, acordoId: acordo.id, numero, valor: new Prisma.Decimal(p.valor), vencimento: dia(p.vence), pagaEm: p.paga ? dia(p.paga) : null },
+            data: { orgId, acordoId: acordo.id, numero: proximo++, valor: new Prisma.Decimal(p.valor), vencimento: dia(p.vence), pagaEm: p.paga ? dia(p.paga) : null },
           });
         }
-      } else if (!atual.asaasPaymentId && !atual.recebimentoId && (Number(atual.valor) !== p.valor || atual.vencimento.toISOString().slice(0, 10) !== p.vence)) {
+      } else if (p.paga && !atual.pagaEm) {
         fala(`  ~ parcela ${rotulo}`);
-        if (APLICAR) await prisma.acordoParcela.update({ where: { id: atual.id }, data: { valor: new Prisma.Decimal(p.valor), vencimento: dia(p.vence) } });
-      }
-      if (atual && p.paga && !atual.pagaEm) {
-        fala(`  ~ parcela ${a.cliente} ${numero}: paga em ${p.paga}`);
         if (APLICAR) await prisma.acordoParcela.update({ where: { id: atual.id }, data: { pagaEm: dia(p.paga) } });
       }
     }
-    if (Math.abs(soma - a.valor) > 0.05) fala(`  ! ${a.cliente}: parcelas somam R$ ${brl(soma)}, o acordo é de R$ ${brl(a.valor)}`);
+    const noAsaas = atuais.filter((x) => x.asaasPaymentId).length;
+    fala(`  = ${a.cliente}: ${a.parcelas.length} parcela(s) desta carga (R$ ${brl(soma)}); ${noAsaas} já ligada(s) ao Asaas; o resto do acordo (R$ ${brl(a.valor)}) vem das cobranças abertas no próximo sync`);
   }
 
   // Conta fixa anual da Hostinger.

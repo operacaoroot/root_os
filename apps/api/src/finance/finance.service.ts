@@ -761,7 +761,9 @@ export class FinanceService implements OnModuleInit {
 
       // 2) Cobranças em aberto → contas a receber (previsto entrada).
       const clientes = await this.asaas.clientes();
-      const open = await this.asaas.listOpenPayments();
+      // Pela data: a parcela que a cobrança cria no acordo nasce na ordem do contrato.
+      const open = (await this.asaas.listOpenPayments())
+        .sort((a, b) => (a.originalDueDate || a.dueDate || '').localeCompare(b.originalDueDate || b.dueDate || ''));
       const openIds: string[] = [];
       let recvCount = 0;
       for (const p of open) {

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { chavesDoAcordo, documentoComoChave, escolherParcela, ocorrenciasDoContrato } from '../src/finance/parcelas';
+import { acordoDaCobranca, chavesDoAcordo, documentoComoChave, escolherParcela, ocorrenciasDoContrato, ordemDasParcelas, parcelaMaisPerto } from '../src/finance/parcelas';
 import { proximoVencimentoDoContrato } from '../src/finance/apr.service';
 import { nomeDaParcela } from '../src/finance/parcelas.service';
 
@@ -30,6 +30,41 @@ describe('a cobrança do Asaas veste a parcela do acordo', () => {
 
   it('o nome segue o padrão "Produto - Cliente - Parcela n/N"', () => {
     expect(nomeDaParcela({ produto: 'Operação ROOT (upsell)', cliente: 'Custeio' }, 2, 7)).toBe('Operação ROOT - Custeio - Parcela 2/7');
+  });
+});
+
+describe('o que está no Asaas entra sozinho no acordo certo', () => {
+  const cnpjCusteio = documentoComoChave('06.236.539/0001-20');
+  const acordos = [
+    { id: 'upsell', chavesNome: chavesDoAcordo({ cliente: 'Custeio', apelidos: 'upsell,CUSTEIO TECHNOLOGY' }), chavesDoc: cnpjCusteio },
+    { id: 'imersao', chavesNome: chavesDoAcordo({ cliente: 'Custeio (Lucas Moreira)', apelidos: 'Lucas Martins,Lucas Moreira' }), chavesDoc: cnpjCusteio },
+    { id: 'affari', chavesNome: chavesDoAcordo({ cliente: 'Affari', apelidos: 'Affari,Antonio f junior' }), chavesDoc: [] },
+  ];
+
+  it('o nome pesa mais que o CNPJ que dois acordos dividem', () => {
+    expect(acordoDaCobranca('CUSTEIO TECHNOLOGY S/S LTDA 06236539000120', acordos)?.id).toBe('upsell');
+    expect(acordoDaCobranca('LUCAS MOREIRA 12345678901', acordos)?.id).toBe('imersao');
+    expect(acordoDaCobranca('Antonio f junior', acordos)?.id).toBe('affari');
+  });
+
+  it('só o CNPJ, com dois acordos nele, não decide: nada é criado sozinho', () => {
+    expect(acordoDaCobranca('Fulano 06236539000120', acordos)).toBeNull();
+    expect(acordoDaCobranca('Ninguém conhecido', acordos)).toBeNull();
+  });
+
+  it('a parcela livre mais perto da data veste a cobrança mesmo com o valor mudado no Asaas', () => {
+    const livres = [{ id: 'a', vencimento: dia('2026-11-30') }, { id: 'b', vencimento: dia('2026-12-30') }];
+    expect(parcelaMaisPerto(dia('2026-11-28'), livres)?.id).toBe('a');
+    expect(parcelaMaisPerto(dia('2027-02-28'), livres)).toBeNull();
+  });
+
+  it('"Parcela n/N" segue a ordem das datas, não a de criação', () => {
+    const o = ordemDasParcelas([
+      { id: 'saldo', acordoId: 'juma', numero: 1, vencimento: dia('2026-11-30') },
+      { id: 'entrada', acordoId: 'juma', numero: 2, vencimento: dia('2026-11-02') },
+    ]);
+    expect(o.get('entrada')).toEqual({ n: 1, total: 2 });
+    expect(o.get('saldo')).toEqual({ n: 2, total: 2 });
   });
 });
 

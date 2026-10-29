@@ -45,6 +45,43 @@ export function escolherParcela<T extends ParcelaCandidata>(c: CobrancaParaCasar
   return melhor?.p ?? null;
 }
 
+export interface AcordoCandidato { id: string; chavesNome: string[]; chavesDoc: string[] }
+
+/**
+ * De que acordo é esta cobrança. O nome (cliente ou apelido) pesa mais que o CNPJ,
+ * porque dois acordos do mesmo cliente dividem o CNPJ. Empate = não se sabe: nada
+ * é criado sozinho, e a cobrança fica no fluxo como avulsa.
+ */
+export function acordoDaCobranca<T extends AcordoCandidato>(texto: string, acordos: T[]): T | null {
+  const peso = (a: T) => (nomeCasa(a.chavesNome, texto) ? 2 : nomeCasa(a.chavesDoc, texto) ? 1 : 0);
+  const pesos = acordos.map((a) => ({ a, p: peso(a) }));
+  const max = Math.max(0, ...pesos.map((x) => x.p));
+  const melhores = pesos.filter((x) => x.p === max && max > 0);
+  return melhores.length === 1 ? melhores[0].a : null;
+}
+
+/** A parcela livre do acordo com o vencimento mais perto, dentro da janela (o valor pode ter mudado no Asaas). */
+export function parcelaMaisPerto<T extends { vencimento: Date }>(vence: Date, livres: T[]): T | null {
+  let melhor: { p: T; dias: number } | null = null;
+  for (const p of livres) {
+    const dias = Math.abs(p.vencimento.getTime() - vence.getTime()) / DIA;
+    if (dias <= JANELA_PARCELA_DIAS && (!melhor || dias < melhor.dias)) melhor = { p, dias };
+  }
+  return melhor?.p ?? null;
+}
+
+/** "Parcela n/N" segue a ordem dos vencimentos dentro do acordo, não a ordem em que a parcela nasceu. */
+export function ordemDasParcelas(ps: Array<{ id: string; acordoId: string; vencimento: Date; numero: number }>): Map<string, { n: number; total: number }> {
+  const porAcordo = new Map<string, typeof ps>();
+  for (const p of ps) porAcordo.set(p.acordoId, [...(porAcordo.get(p.acordoId) ?? []), p]);
+  const out = new Map<string, { n: number; total: number }>();
+  for (const lista of porAcordo.values()) {
+    lista.sort((a, b) => a.vencimento.getTime() - b.vencimento.getTime() || a.numero - b.numero);
+    lista.forEach((p, i) => out.set(p.id, { n: i + 1, total: lista.length }));
+  }
+  return out;
+}
+
 /**
  * As datas em que um contrato ativo ainda vai vencer dentro da janela, a partir
  * do próximo vencimento que NÃO foi gerado como previsto. O que já foi gerado

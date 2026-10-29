@@ -899,6 +899,8 @@ export const PayableRowSchema = z.object({
   vencido: z.boolean(),
   diasAtraso: z.number().int(),
   exercicioFinanceiro: z.boolean().optional(),
+  /** De onde vem: o que vem do Asaas e a parcela do acordo não se editam aqui (29/10/2026). */
+  origem: z.enum(['asaas', 'acordo', 'contrato', 'manual']).optional(),
 });
 export type PayableRow = z.infer<typeof PayableRowSchema>;
 

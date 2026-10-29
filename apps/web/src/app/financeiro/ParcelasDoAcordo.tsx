@@ -5,14 +5,18 @@ import { apiGet, apiPut } from '@/lib/api';
 
 /*
  * PARCELAS DO ACORDO (29/10/2026). O que o contrato manda receber, parcela a
- * parcela. A parcela "a gerar" entra no fluxo projetado na data dela; quando a
- * cobrança do Asaas chega, ela veste a parcela (não vira outra linha) e o
- * recebimento do extrato a dá como paga. Parcela já vestida ou paga não muda
- * valor nem data aqui: o que vale é o que o Asaas e o extrato disseram.
+ * parcela. A cobrança que existe no Asaas cria ou veste a parcela sozinha (não
+ * vira outra linha) e o recebimento do extrato a dá como paga. Aqui só se
+ * cadastra o que o Asaas não sabe: a parcela que ainda não virou cobrança ("a
+ * gerar", entra no fluxo na data dela) e o que entrou por fora. Parcela com
+ * cobrança ou paga não muda valor nem data aqui: o Asaas manda.
  */
 
 type Estado = 'paga' | 'cobranca_gerada' | 'a_gerar';
-type Parcela = { id?: string; numero: number; valor: number; vencimento: string; pagaEm: string | null; notaFiscal: string | null; estado: Estado; vencida?: boolean };
+type Parcela = {
+  id?: string; numero: number; posicao?: number; valor: number; vencimento: string; pagaEm: string | null; notaFiscal: string | null;
+  estado: Estado; vencida?: boolean; caiEm?: string | null; liquido?: number | null;
+};
 
 const brl = (n: number) => n.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 const dataBR = (d: string) => `${d.slice(8, 10)}/${d.slice(5, 7)}/${d.slice(0, 4)}`;
@@ -85,7 +89,7 @@ export function ParcelasDoAcordo({ acordoId, valorDoAcordo, token, canEdit, onEr
           {linhas.length === 0 && <tr><td colSpan={6} className="py-2 text-muted">Nenhuma parcela. Gere a série do contrato abaixo.</td></tr>}
           {linhas.map((p, i) => (
             <tr key={p.id ?? `nova-${p.numero}`} className="border-t border-border">
-              <td className="py-1 pr-2 tabular-nums">{p.numero}</td>
+              <td className="py-1 pr-2 tabular-nums">{p.posicao ?? '·'}</td>
               <td className="py-1 pr-2">
                 {canEdit && !travada(p)
                   ? <input aria-label={`Valor da parcela ${p.numero}`} className={`${cls} w-28`} type="number" step="0.01" value={p.valor} onChange={(e) => mudar(i, { valor: Number(e.target.value) })} />
@@ -99,6 +103,9 @@ export function ParcelasDoAcordo({ acordoId, valorDoAcordo, token, canEdit, onEr
               <td className="py-1 pr-2">
                 {p.estado === 'paga' && p.pagaEm ? <span className="text-good">paga em {dataBR(p.pagaEm)}</span>
                   : <span className={p.vencida ? 'text-warn' : p.estado === 'a_gerar' ? 'text-muted' : ''}>{ROTULO[p.estado]}{p.vencida ? ', vencida' : ''}</span>}
+                {p.estado === 'cobranca_gerada' && p.caiEm && p.liquido != null && (p.caiEm !== p.vencimento || p.liquido !== p.valor) && (
+                  <span className="block text-[11px] text-muted">cai em {dataBR(p.caiEm)}, {brl(p.liquido)} líquido</span>
+                )}
                 {canEdit && p.estado !== 'paga' && (
                   <label className="ml-2 text-[11px] text-muted">entrou por fora em{' '}
                     <input aria-label={`Paga em (parcela ${p.numero})`} className={`${cls} py-0`} type="date" value={p.pagaEm ?? ''} onChange={(e) => mudar(i, { pagaEm: e.target.value || null })} />
