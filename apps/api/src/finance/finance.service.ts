@@ -19,7 +19,9 @@ import { PluggyService } from './pluggy.service';
 import { AsaasService } from './asaas.service';
 import type { BankConnection as BankConnectionRow } from '@prisma/client';
 import { parseOfx } from './ofx';
-import { APPROVAL_LIMIT, conferirReferencias } from './apr.service';
+import { APPROVAL_LIMIT, conferirReferencias, proximoVencimentoDoContrato } from './apr.service';
+import { ocorrenciasDoContrato } from './parcelas';
+import { prepararVestir, vestirCobranca, conciliarPeloId, fecharParcelasQueSairam, materializarParcelas } from './parcelas.service';
 import { exigirAcessoAtual } from '../memory/acesso-memoria';
 import { travarFinanceiro, travarLancamentoFinanceiro, exigirNaoExercicio } from './financeiro-exercicio.service';
 import { comContexto, novaCorrelacao } from '../common/contexto-execucao';
@@ -45,6 +47,16 @@ function iso(d: Date | null): string | null {
   return d ? d.toISOString() : null;
 }
 
+let pedirSync: (() => void) | null = null;
+
+/**
+ * O webhook do Asaas chama isto (29/10/2026): uma passagem do sync logo, em vez de
+ * esperar o intervalo. Sem o Asaas configurado, não faz nada.
+ */
+export function pedirSyncDoAsaas(): void {
+  pedirSync?.();
+}
+
 @Injectable()
 export class FinanceService implements OnModuleInit {
   private readonly log = new Logger('FinanceService');
@@ -66,26 +78,35 @@ export class FinanceService implements OnModuleInit {
   onModuleInit(): void {
     if (!this.pluggy.configured && !this.asaas.configured) return;
     const min = Number(process.env.PLUGGY_SYNC_INTERVAL_MIN ?? process.env.ASAAS_SYNC_INTERVAL_MIN ?? 360);
-    if (!(min > 0)) return;
+    // O webhook do Asaas (29/10/2026) pede uma passagem logo, e o intervalo fica como
+    // rede de segurança. Os avisos de poucos segundos juntam-se numa passagem só.
+    if (this.asaas.configured) {
+      let marcado: ReturnType<typeof setTimeout> | null = null;
+      pedirSync = () => {
+        if (marcado) return;
+        marcado = setTimeout(() => { marcado = null; void run('webhook'); }, 15_000);
+      };
+      this.asaas.aoMudarCobranca(pedirSyncDoAsaas);
+    }
     // O "Rodar agora" da tela /rotinas roda a mesma passagem (executor `casa.conciliacao`).
     inscreverTarefaDaCasa(TIPO_CASA_CONCILIACAO, (orgId) => this.passagemDaConciliacao(orgId), 'FinanceService');
-    const run = async () => {
+    const run = async (origem: 'cron' | 'webhook' = 'cron') => {
       try {
         const conns = await this.prisma.bankConnection.findMany({
-          where: { provider: { in: ['pluggy', 'asaas'] }, status: { in: ['connected', 'error'] }, externalId: { not: null } },
+          where: { provider: { in: origem === 'webhook' ? ['asaas'] : ['pluggy', 'asaas'] }, status: { in: ['connected', 'error'] }, externalId: { not: null } },
           select: { orgId: true },
         });
         for (const orgId of [...new Set(conns.map((c) => c.orgId))]) {
           try {
             // O contexto da empresa (não o de plataforma): a passagem roda como uma rota dela.
             const r = await comContexto(
-              { orgId, actorType: 'system', correlationId: novaCorrelacao('cron'), origem: 'cron' },
+              { orgId, actorType: 'system', correlationId: novaCorrelacao(origem), origem: 'cron' },
               () =>
                 registrarPassagemDeFundo(
                   this.prisma,
                   { orgId, tipo: TIPO_CASA_CONCILIACAO },
                   () => this.passagemDaConciliacao(orgId),
-                  { criar: 'sempre', intervaloMin: min },
+                  { criar: 'sempre', intervaloMin: min > 0 ? min : 360 },
                 ),
             );
             this.log.log(`sync bancário da empresa ${orgId}: ${r.status} (${r.resumo})`);
@@ -97,8 +118,9 @@ export class FinanceService implements OnModuleInit {
         this.log.warn(`Auto-sync bancário falhou: ${(e as Error).message}`);
       }
     };
-    setTimeout(run, 30_000);
-    setInterval(run, min * 60_000);
+    if (!(min > 0)) return;
+    setTimeout(() => void run(), 30_000);
+    setInterval(() => void run(), min * 60_000);
     this.log.log(`Sync bancário agendado a cada ${min} min (pluggy=${this.pluggy.configured} asaas=${this.asaas.configured})`);
   }
 
@@ -537,7 +559,7 @@ export class FinanceService implements OnModuleInit {
     const to = range.to ? startOfDay(parseDate(range.to)) : startOfDay(new Date(from.getTime() + 30 * 86400_000));
 
     // saldo de abertura da janela = openingBalance das contas + realizados antes de `from`
-    const [accounts, realizedBefore, windowTx, vencidosGroup] = await Promise.all([
+    const [accounts, realizedBefore, windowTx, vencidosGroup, contratosAtivos] = await Promise.all([
       this.prisma.financeAccount.aggregate({ where: { orgId }, _sum: { openingBalance: true } }),
       this.prisma.financeTransaction.groupBy({
         by: ['type'], where: { orgId, status: { in: EFFECTIVE }, date: { lt: from } }, _sum: { amount: true },
@@ -561,6 +583,10 @@ export class FinanceService implements OnModuleInit {
           OR: [{ dueDate: { lt: from } }, { dueDate: null, date: { lt: from } }],
         },
         _sum: { amount: true },
+      }),
+      this.prisma.contract.findMany({
+        where: { orgId, status: 'ativo' },
+        select: { tipo: true, descricao: true, valor: true, periodicidade: true, proximoVencimento: true, dataFim: true },
       }),
     ]);
 
@@ -586,6 +612,20 @@ export class FinanceService implements OnModuleInit {
       buckets.set(key, b);
     }
 
+    // Contrato recorrente gera previsto só 3 meses à frente. Daí em diante a projeção
+    // desenha cada vencimento que falta, sem gravar, até a data de fim do contrato.
+    const contratos: Cashflow['contratos'] = [];
+    for (const c of contratosAtivos) {
+      for (const d of ocorrenciasDoContrato(c, from, to, proximoVencimentoDoContrato)) {
+        const key = startOfDay(d).toISOString().slice(0, 10);
+        const b = buckets.get(key) ?? { entradas: 0, saidas: 0 };
+        if (c.tipo === 'entrada') b.entradas += num(c.valor);
+        else b.saidas += num(c.valor);
+        buckets.set(key, b);
+        contratos.push({ date: key, tipo: c.tipo, descricao: c.descricao, valor: num(c.valor) });
+      }
+    }
+
     const days: Cashflow['days'] = [];
     let acumulado = openingBalance;
     for (let d = new Date(from); d <= to; d = new Date(d.getTime() + 86400_000)) {
@@ -600,6 +640,7 @@ export class FinanceService implements OnModuleInit {
       window: { from: from.toISOString().slice(0, 10), to: to.toISOString().slice(0, 10) },
       openingBalance,
       vencidos,
+      contratos,
       days,
       source: this.meta(),
     };
@@ -697,11 +738,13 @@ export class FinanceService implements OnModuleInit {
       // 1) Extrato financeiro (movimento de caixa real) → lançamentos realizados.
       const since = new Date(Date.now() - 365 * 86400_000).toISOString();
       const fin = await this.asaas.listFinancialTransactions(since);
+      // As parcelas dos acordos e os previstos de contrato que as cobranças vestem (29/10/2026).
+      const vest = await prepararVestir(this.prisma, orgId);
       let txCount = 0;
       for (const t of fin) {
         const type: FinanceTxType = t.value < 0 ? 'saida' : 'entrada';
         const desc = t.description || t.type || 'Lançamento Asaas';
-        await this.prisma.financeTransaction.upsert({
+        const linha = await this.prisma.financeTransaction.upsert({
           where: { orgId_accountId_externalId: { orgId, accountId: account.id, externalId: `fin_${t.id}` } },
           update: { amount: new Prisma.Decimal(Math.abs(t.value)), description: desc, date: new Date(t.date) },
           create: {
@@ -709,12 +752,15 @@ export class FinanceService implements OnModuleInit {
             description: desc, amount: new Prisma.Decimal(Math.abs(t.value)),
             date: new Date(t.date), source: 'asaas', externalId: `fin_${t.id}`,
           },
+          select: { id: true, partnerId: true, contractId: true, status: true, matchType: true },
         });
+        // Conciliação pelo id da cobrança: recebimento e taxa de cobrança conhecida não passam pela pontuação.
+        await conciliarPeloId(this.prisma, orgId, vest, t, linha);
         txCount++;
       }
 
       // 2) Cobranças em aberto → contas a receber (previsto entrada).
-      const custMap = await this.asaas.customerMap();
+      const clientes = await this.asaas.clientes();
       const open = await this.asaas.listOpenPayments();
       const openIds: string[] = [];
       let recvCount = 0;
@@ -728,20 +774,31 @@ export class FinanceService implements OnModuleInit {
         const cartaoAprovado = p.billingType === 'CREDIT_CARD' && p.status === 'CONFIRMED';
         const caiEm = (cartaoAprovado ? p.estimatedCreditDate || p.creditDate : null) || p.dueDate;
         const valor = cartaoAprovado && p.netValue != null ? p.netValue : p.value;
+        const cliente = p.customer ? clientes.get(p.customer) : undefined;
+        const pagador = p.customer ? cliente?.nome ?? p.customer : null;
+        // A cobrança veste a parcela do acordo (ou o previsto do contrato) em vez de virar outra
+        // linha. O CNPJ do cliente no Asaas casa com o da empresa do acordo, mesmo quando o nome é o da pessoa.
+        const veste = await vestirCobranca(this.prisma, orgId, vest, p, [pagador, cliente?.documento].filter(Boolean).join(' '));
+        const herda = {
+          ...(veste.partnerId ? { partnerId: veste.partnerId } : {}),
+          ...(veste.contractId ? { contractId: veste.contractId } : {}),
+        };
         await this.prisma.financeTransaction.upsert({
           where: { orgId_accountId_externalId: { orgId, accountId: account.id, externalId: extId } },
           update: {
             amount: new Prisma.Decimal(valor), description: desc,
             dueDate: caiEm ? new Date(caiEm) : null,
-            counterparty: p.customer ? custMap.get(p.customer) ?? p.customer : null,
+            counterparty: pagador,
+            ...herda,
           },
           create: {
             orgId, accountId: account.id, type: 'entrada', status: 'previsto',
             description: desc, amount: new Prisma.Decimal(valor), date: when,
             dueDate: caiEm ? new Date(caiEm) : null,
-            counterparty: p.customer ? custMap.get(p.customer) ?? p.customer : null,
+            counterparty: pagador,
             documentNumber: p.invoiceNumber ?? null,
             source: 'asaas', externalId: extId,
+            ...herda,
           },
         });
         recvCount++;
@@ -749,12 +806,17 @@ export class FinanceService implements OnModuleInit {
 
       // 3) Reconcilia: cobranças que saíram do "aberto" já foram pagas (aparecem no
       //    extrato como realizado) → removemos o previsto p/ não contar em dobro.
+      //    A parcela vestida por uma delas fica paga, ou volta a "cobrança a gerar"
+      //    se a cobrança foi apagada ou estornada.
+      await fecharParcelasQueSairam(this.prisma, orgId, vest, new Set(open.map((p) => p.id)), (id) => this.asaas.getPayment(id));
       await this.prisma.financeTransaction.deleteMany({
         where: {
           orgId, accountId: account.id, source: 'asaas', status: 'previsto',
           externalId: { startsWith: 'pay_', notIn: openIds.length ? openIds : ['__none__'] },
         },
       });
+      // A parcela que ficou sem cobrança e sem pagamento volta ao fluxo como previsto próprio.
+      await materializarParcelas(this.prisma, orgId);
 
       // 4) Casa o saldo exibido com o saldo real do Asaas (independe da janela do extrato).
       const bal = await this.asaas.balance();

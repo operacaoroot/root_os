@@ -25,6 +25,7 @@ import type {
 import { apiGet, apiPost, apiPatch, ErroDaApi } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 import { AnaliseView } from './Analise';
+import { RotinaDaSemana } from './RotinaDaSemana';
 // O cartão local que existia aqui sombreava o compartilhado e deixava a tela
 // financeira com o visual antigo ao lado do novo. Mesmas props, um só cartão.
 import { KpiCard } from '@/components/KpiCard';
@@ -53,6 +54,7 @@ const ACCOUNT_TYPES = [
 
 const TABS = [
   { key: 'visao', label: 'Visão geral' },
+  { key: 'rotina', label: 'Rotina da semana' },
   { key: 'analise', label: 'Análise' },
   { key: 'dre', label: 'DRE' },
   { key: 'apar', label: 'A Pagar/Receber' },
@@ -241,6 +243,7 @@ function FinanceiroSessao() {
       {error && <div className="rounded-lg border border-bad/30 bg-bad/10 px-4 py-2 text-sm text-bad">{error}</div>}
       {msg && <div className="rounded-lg border border-good/30 bg-good/10 px-4 py-2 text-sm text-good">{msg}</div>}
 
+      {tab === 'rotina' && <RotinaDaSemana token={token} onError={onMutationError} irParaAcordos={() => setTab('analise')} />}
       {tab === 'analise' && <AnaliseView token={token} canEdit={canEdit} onError={onMutationError} />}
       {tab === 'visao' && <Visao summary={summary} kpis={kpis} cashflow={cashflow} txs={txs} payables={payables} ir={ir} />}
       {tab === 'dre' && <DreView dre={dre} month={dreMonth} setMonth={setDreMonth} />}
@@ -386,6 +389,10 @@ function CashflowChart({ cashflow, txs, payables }: {
         return venceEm === d || (d === inicio && p.tipo === 'saida' && !!venceEm && venceEm < inicio);
       })
       .map((p) => ({ id: p.id, tipo: p.tipo, desc: p.description, quem: p.partnerName, valor: p.amount, previsto: true, vencido: (p.dueDate?.slice(0, 10) ?? d) < inicio })),
+    // Conta fixa que ainda não virou previsto: a projeção desenha a partir do contrato.
+    ...(cashflow.contratos ?? [])
+      .filter((c) => c.date === d)
+      .map((c, k) => ({ id: `contrato-${d}-${k}`, tipo: c.tipo, desc: c.descricao, quem: 'conta fixa', valor: c.valor, previsto: true, vencido: false })),
   ];
   const itens = dia ? doDia(dia) : [];
   const diaSel = dia ? days.find((d) => d.date === dia) : null;
@@ -434,7 +441,7 @@ function CashflowChart({ cashflow, txs, payables }: {
       {(venc.aPagar > 0 || venc.aReceber > 0) && (
         <p className="mt-2 text-[11px] text-muted">
           {venc.aPagar > 0 && <><span className="text-warn">{brl(venc.aPagar)} a pagar vencido</span> sai no primeiro dia. </>}
-          {venc.aReceber > 0 && <><span className="text-warn">{brl(venc.aReceber)} a receber vencido</span> fica fora da linha até entrar.</>}
+          {venc.aReceber > 0 && <><span className="text-warn">{brl(venc.aReceber)} atrasado, cobrar</span>: fica fora da linha até entrar (lista na Rotina da semana).</>}
         </p>
       )}
 
@@ -657,14 +664,7 @@ function ConciliacaoView(props: {
   const [sel, setSel] = useState<Record<string, string>>({});
   // Layout 26/10 (P-24): sem título para casar, cria a partir do próprio movimento e já concilia.
   const [janela, setJanela] = useState<ModoDaJanela | null>(null);
-  const [busy, setBusy] = useState(false);
 
-  const auto = () => {
-    setBusy(true);
-    apiPost<{ conciliados: number; sugestoes: number }>(`/finance/conciliacao/auto${accountId ? `?accountId=${accountId}` : ''}`, {}, token)
-      .then((r) => { onFlash(`✅ ${r.conciliados} conciliado(s) automaticamente · ${r.sugestoes} sugestão(ões) restante(s).`); onChange(); })
-      .catch((e) => onError(e)).finally(() => setBusy(false));
-  };
   const conciliar = (movimentoId: string, tituloId: string) => {
     if (!tituloId) { onError('Escolha um título para conciliar.'); return; }
     apiPost<{ score: number }>('/finance/conciliacao/match', { movimentoId, tituloId }, token)
@@ -688,16 +688,11 @@ function ConciliacaoView(props: {
           {accounts?.items.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
         </select>
         {concil && <span className="text-sm text-muted">{concil.stats.movimentosAbertos} movimento(s) · {concil.stats.titulosAbertos} título(s) em aberto</span>}
-        {canBank && (
-          <button onClick={auto} disabled={busy} className="ml-auto rounded-lg bg-brand px-3 py-2 text-sm font-medium text-ink hover:opacity-90 disabled:opacity-60">
-            {busy ? 'Conciliando…' : 'Auto-conciliar'}
-          </button>
-        )}
       </div>
       <p className="text-[11px] text-muted">
-        Movimentos bancários (OFX/Pluggy) ainda não conciliados. O score combina valor (50%) + data (30%) + tipo (20%);
-        de 0,85 para cima, e com uma palavra do nome em comum (parceiro ou apelido do acordo), concilia automático;
-        o resto a partir de 0,50 fica como sugestão para confirmar.
+        O que vem do Asaas já casou sozinho pelo id da cobrança (recebimento e taxa). Aqui fica o resto: Pix, cartão e
+        movimentos de outro banco. O sistema só sugere, pela nota (valor 50%, data 30%, tipo 20%) e com o nome em comum
+        na frente; quem confirma é você. Valor igual nunca casa nada sozinho.
       </p>
 
       <div className="overflow-x-auto rounded-xl border border-border">

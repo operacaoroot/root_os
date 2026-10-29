@@ -83,6 +83,7 @@ model Org {
   cofreSessoes         CofreSessao[]
   cofreItens           CofreItem[]
   acordosComerciais    AcordoComercial[]
+  acordoParcelas       AcordoParcela[]
   analiseLeituras      AnaliseLeitura[]
   reunioesDeCartao     ReuniaoDoCartao[]
   integrations         IntegrationAccount[]
@@ -6010,10 +6011,40 @@ model AcordoComercial {
   fechadoEm  DateTime? @db.Date
   partnerId  String?
   partner    Partner?  @relation("AcordosDoCliente", fields: [partnerId], references: [id], onDelete: SetNull)
+  parcelas   AcordoParcela[]
   createdAt  DateTime  @default(now())
   updatedAt  DateTime  @updatedAt
 
   @@index([orgId])
+}
+
+/// PARCELAS DO ACORDO (29/10/2026): o que o contrato manda receber, parcela a
+/// parcela. Sem cobrança, a parcela aparece no fluxo como o previsto `parc_<id>`.
+/// Quando a cobrança do Asaas chega, ela VESTE a parcela (`asaasPaymentId`): o
+/// previsto passa a ser o `pay_<id>` do sync, e não nasce uma segunda linha. O
+/// recebimento que vem no extrato com o mesmo id marca a parcela como paga.
+model AcordoParcela {
+  id             String          @id @default(uuid())
+  orgId          String
+  org            Org             @relation(fields: [orgId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  acordoId       String
+  acordo         AcordoComercial @relation(fields: [acordoId], references: [id], onDelete: Cascade)
+  numero         Int
+  valor          Decimal         @db.Decimal(14, 2)
+  vencimento     DateTime        @db.Date
+  /// A cobrança do Asaas que veste esta parcela. Nulo = cobrança ainda não gerada.
+  asaasPaymentId String?
+  /// Quando o dinheiro entrou. `recebimentoId` é o lançamento do extrato, quando há.
+  pagaEm         DateTime?       @db.Date
+  recebimentoId  String?
+  /// Número da nota fiscal de serviço desta parcela. Nulo = NF ainda não emitida.
+  notaFiscal     String?
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+
+  @@unique([acordoId, numero])
+  @@unique([orgId, asaasPaymentId])
+  @@index([orgId, vencimento])
 }
 
 // Leitura da IA guardada por dia: abrir a aba de novo no mesmo dia, com os

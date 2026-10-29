@@ -8,9 +8,9 @@ import { travarFinanceiro, travarLancamentoFinanceiro, exigirNaoExercicio } from
 
 // Conciliação bancária por SCORE (enxerto do FinOps5.0 — executar_conciliacao_auto).
 // Movimento = lançamento de origem bancária (ofx/pluggy/asaas, status realizado, ainda
-// não conciliado). Título = lançamento previsto (conta a pagar/receber). O match casa os
-// dois por valor (50%) + data (30%) + tipo (20%); ≥0.85 e com nome em comum é auto,
-// o resto a partir de 0.50 é sugestão.
+// não conciliado). Título = lançamento previsto (conta a pagar/receber). A nota soma
+// valor (50%) + data (30%) + tipo (20%); a partir de 0.50 vira sugestão, e uma pessoa
+// confirma (29/10/2026: nada casa sozinho por nota; o Asaas casa pelo id no sync).
 // Conciliar passa para o movimento a classificação E o contrato do título: é assim que
 // o pagamento de uma conta recorrente fica preso ao contrato dela.
 const num = (d: Prisma.Decimal | number | null | undefined): number => (d == null ? 0 : Number(d));
@@ -24,7 +24,6 @@ const ORIGENS_DE_MOVIMENTO = ['ofx', 'pluggy', 'asaas'];
 const W_VALOR = 0.5;
 const W_DATA = 0.3;
 const W_TIPO = 0.2;
-const THRESHOLD_AUTO = Number(process.env.CONCIL_THRESHOLD_AUTO ?? 0.85);
 const THRESHOLD_SUGESTAO = Number(process.env.CONCIL_THRESHOLD_SUGESTAO ?? 0.5);
 const JANELA_DIAS = Number(process.env.CONCIL_JANELA_DIAS ?? 7);
 
@@ -43,10 +42,12 @@ function scoreMatch(mov: Mov, tit: Tit): number {
   return W_VALOR * valorScore + W_DATA * dataScore + W_TIPO; // tipo já bate (filtrado)
 }
 
-// Valor e data iguais não bastam para casar sozinho: as taxas do Asaas (R$ 0,55, 0,99,
-// 1,99) têm o valor de muita coisa. Em 29/10/2026 a taxa de um boleto da ProMedical casou
-// sozinha com a assinatura da ZapSign. Sem uma palavra do nome em comum, o par fica
-// como sugestão, e uma pessoa confirma.
+// TESE DO FINANCEIRO (29/10/2026): o que vem do Asaas casa sozinho pelo id da cobrança,
+// no sync (`conciliarPeloId`). O resto o sistema só SUGERE e uma pessoa confirma: valor
+// e data iguais não casam nada sozinhos. As taxas do Asaas (R$ 0,55, 0,99, 1,99) têm o
+// valor de muita coisa, e em 29/10 a taxa de um boleto da ProMedical casou sozinha com
+// a assinatura da ZapSign. Entre as sugestões, a que tem uma palavra do nome em comum
+// vem antes.
 const PALAVRAS_GENERICAS = new Set([
   'transacao', 'chave', 'para', 'cobranca', 'recebida', 'fatura', 'taxa', 'boleto', 'pagamento',
   'conta', 'mensal', 'assinatura', 'contrato', 'ltda', 'eireli', 'servicos', 'brasil', 'instituicao',
@@ -65,7 +66,7 @@ function nomeBate(mov: Mov, tit: Tit): boolean {
   return tit.nomes.some((p) => texto.has(p));
 }
 
-/** O melhor título para o movimento: com nome em comum vem antes; casa sozinho só com nome e score ≥ limiar. */
+/** A sugestão de título para o movimento: com nome em comum vem antes, depois a maior nota. */
 export function melhorTitulo(m: Mov, tits: Tit[], usados?: Set<string>) {
   let best: { tit: Tit; score: number; nome: boolean } | null = null;
   for (const t of tits) {
@@ -75,7 +76,7 @@ export function melhorTitulo(m: Mov, tits: Tit[], usados?: Set<string>) {
     const nome = nomeBate(m, t);
     if (!best || (nome && !best.nome) || (nome === best.nome && score > best.score)) best = { tit: t, score, nome };
   }
-  return best ? { ...best, auto: best.nome && best.score >= THRESHOLD_AUTO } : null;
+  return best;
 }
 
 @Injectable()
@@ -133,7 +134,7 @@ export class ConciliacaoService {
         sugestaoTituloId: best?.tit.id ?? null,
         sugestaoDescricao: best?.tit.description ?? null,
         sugestaoScore: best ? Math.round(best.score * 100) / 100 : 0,
-        sugestaoAuto: best?.auto ?? false,
+        sugestaoAuto: false, // fora do Asaas nada casa sozinho
       };
     });
     return {
@@ -144,23 +145,14 @@ export class ConciliacaoService {
     };
   }
 
-  /** Auto-concilia: casa automaticamente pares com score ≥ limiar. */
-  async auto(orgId: string, accountId: string | undefined, actorId: string): Promise<AutoConciliarResult> {
+  /**
+   * Antes casava sozinho todo par com nota ≥ 0,85. Desde a tese de 29/10/2026 só conta
+   * as sugestões: o que vem do Asaas já casou pelo id no sync, e o resto uma pessoa confirma.
+   */
+  async auto(orgId: string, accountId: string | undefined, _actorId: string): Promise<AutoConciliarResult> {
     const { movs, tits } = await this.loadOpen(orgId, accountId);
-    const usados = new Set<string>();
-    let conciliados = 0;
-    let sugestoes = 0;
-    for (const m of movs) {
-      const best = melhorTitulo(m, tits, usados);
-      if (best?.auto) {
-        await this.applyMatch(orgId, m.id, best.tit.id, best.score, 'automatico', actorId);
-        usados.add(best.tit.id);
-        conciliados += 1;
-      } else if (best) {
-        sugestoes += 1;
-      }
-    }
-    return { conciliados, sugestoes, source: this.meta() };
+    const sugestoes = movs.filter((m) => melhorTitulo(m, tits)).length;
+    return { conciliados: 0, sugestoes, source: this.meta() };
   }
 
   async match(orgId: string, movimentoId: string, tituloId: string, actorId: string) {
@@ -202,6 +194,13 @@ export class ConciliacaoService {
         contractId: mov.contractId ?? tit.contractId,
       } });
       await db.financeTransaction.delete({ where: { id: titId } });
+      // Título que era parcela de acordo "a gerar": o dinheiro entrou por fora do Asaas.
+      if (tit.externalId?.startsWith('parc_')) {
+        await db.acordoParcela.updateMany({
+          where: { orgId, id: tit.externalId.slice('parc_'.length), pagaEm: null },
+          data: { pagaEm: mov.date, recebimentoId: movId },
+        });
+      }
       await this.audit.log({
         orgId, actorId, actorType: 'user', action: 'finance.conciliacao.match',
         entityType: 'finance_transaction', entityId: movId, after: { tituloId: titId, score, tipo },

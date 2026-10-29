@@ -501,6 +501,7 @@ const ALVOS: Alvo[] = [
 
   // comercial e financeiro: o exercício que vira obrigação
   { tabela: 'AcordoComercial', escopo: 'tenant', chaveSql: '"id"', nota: 'Os acordos comerciais da casa: cliente, produto, VALOR e se é pagante, permuta, repasse ou parceria. Ler o da outra é ler quanto cada cliente dela paga e quem não paga; escrever é reescrever a carteira alheia.' },
+  { tabela: 'AcordoParcela', escopo: 'tenant', chaveSql: '"id"', nota: 'As parcelas de cada acordo (29/10/2026): valor, vencimento, a cobrança do Asaas que veste cada uma e quando entrou. Ler a da outra empresa é ler o calendário de recebimento dela; ESCREVER é soltar a cobrança da parcela ou dar como paga a que não entrou. Raiz da empresa: o orgId vem do insert.' },
   { tabela: 'CommercialExerciseProject', escopo: 'tenant', chaveSql: '"id"', nota: 'O projeto que nasce do aceite da proposta: o lead, o evento do aceite, a proposta, os hashes do documento e das condições e a tarefa. É o contrato fechado da outra empresa, em ponteiros.' },
   { tabela: 'CommercialExerciseObligation', escopo: 'tenant', chaveSql: '"id"', nota: 'A obrigação financeira do projeto, presa à transação e ao retrato das condições. Ler a da outra é ver o que ela vai cobrar de quem.' },
   { tabela: 'CommercialExerciseRequest', escopo: 'tenant', chaveSql: '"id"', nota: 'O diário de idempotência da ponte comercial: quem pediu o quê e a RESPOSTA guardada. Linha alheia visível faria o pedido de uma empresa receber, como repetição, a resposta da outra.' },
@@ -2032,9 +2033,15 @@ async function semearEntregasDoMerge(
   reg('WorkArea', await ins(c, 'WorkArea', {
     id: crypto.randomUUID(), orgId, nome: `Área ${rotulo} ${MARCA}`, updatedAt: agora,
   }));
+  const acordoId = crypto.randomUUID();
   reg('AcordoComercial', await ins(c, 'AcordoComercial', {
-    id: crypto.randomUUID(), orgId, cliente: `Cliente ${rotulo} ${MARCA}`, produto: 'operacao',
+    id: acordoId, orgId, cliente: `Cliente ${rotulo} ${MARCA}`, produto: 'operacao',
     valor: rotulo === 'A' ? '1500.00' : '9900.00', tipo: rotulo === 'A' ? 'pagante' : 'permuta', updatedAt: agora,
+  }));
+  // Parcelas do acordo (29/10/2026): raiz da empresa, o orgId vem do insert.
+  reg('AcordoParcela', await ins(c, 'AcordoParcela', {
+    id: crypto.randomUUID(), orgId, acordoId, numero: 1, valor: rotulo === 'A' ? '750.00' : '4950.00',
+    vencimento: '2026-11-20', asaasPaymentId: `pay_${rotulo}_${MARCA}`, updatedAt: agora,
   }));
   reg('AnaliseLeitura', await ins(c, 'AnaliseLeitura', {
     id: crypto.randomUUID(), orgId, dia: '2026-10-19', hash: hex64(`leitura_${suf}`),

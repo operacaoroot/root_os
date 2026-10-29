@@ -16,6 +16,7 @@ import { AprService } from './apr.service';
 import { ConciliacaoService } from './conciliacao.service';
 import { AnaliseController } from './analise.controller';
 import { AnaliseService } from './analise.service';
+import { ParcelasService } from './parcelas.service';
 import { PORTA_DE_COBRANCA } from '../comercial/portas/cobranca.port';
 
 @Module({
@@ -33,6 +34,7 @@ import { PORTA_DE_COBRANCA } from '../comercial/portas/cobranca.port';
     AprService,
     ConciliacaoService,
     AnaliseService,
+    ParcelasService,
     // Cockpit comercial (lane D): a porta de cobrança é o próprio conector do
     // Asaas, entregue por token. O comercial nunca importa o conector.
     { provide: PORTA_DE_COBRANCA, useExisting: AsaasService },

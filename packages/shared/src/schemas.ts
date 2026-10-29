@@ -597,6 +597,8 @@ export const CashflowSchema = z.object({
   openingBalance: z.number(),
   /** Previstos em aberto que venceram antes da janela. O a pagar sai no 1º dia; o a receber fica fora da linha. */
   vencidos: z.object({ aPagar: z.number(), aReceber: z.number() }),
+  /** Vencimentos de contrato recorrente que ainda não viraram previsto: a projeção desenha sem gravar. */
+  contratos: z.array(z.object({ date: z.string(), tipo: FinanceTxTypeSchema, descricao: z.string(), valor: z.number() })),
   days: z.array(
     z.object({
       date: z.string(),

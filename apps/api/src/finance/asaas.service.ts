@@ -61,6 +61,10 @@ export interface AsaasPayment {
   /** Cartão: quando o Asaas repassa o dinheiro (parcela a parcela, ~30 dias depois). */
   estimatedCreditDate?: string | null;
   creditDate?: string | null;
+  /** O vencimento da criação (o `dueDate` muda quando alguém prorroga a cobrança). */
+  originalDueDate?: string | null;
+  clientPaymentDate?: string | null;
+  deleted?: boolean;
 }
 
 export interface AsaasCustomer {
@@ -240,12 +244,29 @@ export class AsaasService implements OnModuleInit, PortaDeCobranca {
     return out;
   }
 
+  /** Uma cobrança pelo id (`pay_…`): o sync pergunta o que houve com a que saiu do aberto. */
+  async getPayment(id: string): Promise<AsaasPayment | null> {
+    try {
+      return await this.req<AsaasPayment>(`/payments/${encodeURIComponent(id)}`);
+    } catch (e) {
+      this.log.warn(`Asaas /payments/${id} falhou: ${(e as Error).message}`);
+      return null;
+    }
+  }
+
   /** Mapa id→nome dos clientes (para nomear o pagador das cobranças). */
   async customerMap(): Promise<Map<string, string>> {
     const map = new Map<string, string>();
+    for (const [id, c] of await this.clientes()) map.set(id, c.nome);
+    return map;
+  }
+
+  /** Mapa id→nome e CPF/CNPJ dos clientes: o CNPJ liga a cobrança à empresa do acordo. */
+  async clientes(): Promise<Map<string, { nome: string; documento: string | null }>> {
+    const map = new Map<string, { nome: string; documento: string | null }>();
     try {
       const customers = await this.paginate<AsaasCustomer>('/customers');
-      for (const c of customers) map.set(c.id, c.name || c.company || c.id);
+      for (const c of customers) map.set(c.id, { nome: c.name || c.company || c.id, documento: c.cpfCnpj ?? null });
     } catch (e) {
       this.log.warn(`Asaas /customers falhou: ${(e as Error).message}`);
     }
@@ -364,6 +385,17 @@ export class AsaasService implements OnModuleInit, PortaDeCobranca {
   }
 
   interpretarWebhook(corpo: unknown): PagamentoNoWebhook | null {
-    return lerWebhookDoAsaas(corpo);
+    const p = lerWebhookDoAsaas(corpo);
+    // Financeiro (29/10/2026): toda cobrança que o webhook traz pede uma passagem do
+    // sync, que veste a parcela, concilia pelo id e atualiza o fluxo na hora. O
+    // comercial só conhece a porta; quem ouve aqui é o FinanceService.
+    if (p) for (const ouvir of this.ouvintesDeCobranca) ouvir();
+    return p;
+  }
+
+  private readonly ouvintesDeCobranca: Array<() => void> = [];
+  /** O FinanceService se inscreve aqui para saber que uma cobrança mudou no Asaas. */
+  aoMudarCobranca(ouvir: () => void): void {
+    this.ouvintesDeCobranca.push(ouvir);
   }
 }

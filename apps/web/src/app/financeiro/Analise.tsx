@@ -1,7 +1,8 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { Fragment, useCallback, useEffect, useState } from 'react';
 import { apiDelete, apiGet, apiPatch, apiPost } from '@/lib/api';
+import { ParcelasDoAcordo } from './ParcelasDoAcordo';
 
 /*
  * Aba "Análise" do financeiro. Abre com a leitura da IA (guardada por dia no
@@ -14,7 +15,7 @@ import { apiDelete, apiGet, apiPatch, apiPost } from '@/lib/api';
 type Tipo = 'pagante' | 'permuta' | 'repasse' | 'parceria';
 type Linha = { id: string; cliente: string; produto: string; tipo: Tipo; valor: number; observacao: string | null; apelidos: string | null; recebido: number; aReceber: number; semRastro: number; partnerId?: string | null; partnerNome?: string | null; fechadoEm?: string | null };
 type Recorrente = {
-  id: string; tipo: 'entrada' | 'saida'; descricao: string; quem: string | null; valor: number; periodicidade: string; dia: number; porMes: number;
+  id: string; tipo: 'entrada' | 'saida'; descricao: string; quem: string | null; valor: number; periodicidade: string; dia: number; ate?: string | null; porMes: number;
   noMes: { pago: number; previsto: number; vence: string | null };
 };
 type Mes = {
@@ -93,6 +94,7 @@ export function AnaliseView({ token, canEdit, onError }: { token: string | null;
   const [mediaMensal, setMediaMensal] = useState(false);
   const [porMes, setPorMes] = useState(false);
   const [tipoFiltro, setTipoFiltro] = useState<Tipo | null>(null);
+  const [parcelasDe, setParcelasDe] = useState<string | null>(null);
   // Integração 26/10: os cadastros de cliente do Financeiro, para ligar cada acordo ao seu.
   const [clientes, setClientes] = useState<{ id: string; nome: string }[]>([]);
   const [partnerDoForm, setPartnerDoForm] = useState('');
@@ -361,7 +363,8 @@ export function AnaliseView({ token, canEdit, onError }: { token: string | null;
             <tbody>
               {r.acordos.linhas.length === 0 && <tr><td colSpan={8} className="py-4 text-center text-muted">Nenhum acordo cadastrado.</td></tr>}
               {r.acordos.linhas.filter((l) => !tipoFiltro || l.tipo === tipoFiltro).map((l) => (
-                <tr key={l.id} className="border-t border-border">
+                <Fragment key={l.id}>
+                <tr className="border-t border-border">
                   <td className="py-2 pr-3">
                     {l.cliente}
                     {/* Integração 26/10: a qual cadastro de cliente este acordo está ligado. */}
@@ -380,19 +383,29 @@ export function AnaliseView({ token, canEdit, onError }: { token: string | null;
                       </label>
                     ) : l.fechadoEm ? <span className="block text-[12px]">fechou em {l.fechadoEm.slice(5, 7)}/{l.fechadoEm.slice(0, 4)}</span> : null}
                   </td>
-                  <td className="py-2 pr-3"><span className="inline-flex items-center gap-1.5"><span className={`h-2 w-2 rounded-full ${COR[l.tipo]}`} />{ROTULO[l.tipo]}</span></td>
+                  <td className="py-2 pr-3">
+                    <span className="inline-flex items-center gap-1.5"><span className={`h-2 w-2 rounded-full ${COR[l.tipo]}`} />{ROTULO[l.tipo]}</span>
+                    <button onClick={() => setParcelasDe(parcelasDe === l.id ? null : l.id)} aria-expanded={parcelasDe === l.id}
+                      className="mt-0.5 block text-[12px] text-brand hover:underline">{parcelasDe === l.id ? 'fechar parcelas' : 'parcelas'}</button>
+                  </td>
                   <td className="py-2 pr-3 text-right tabular-nums">{brl(l.valor)}</td>
                   <td className="py-2 pr-3 text-right tabular-nums">{l.recebido ? brl(l.recebido) : '—'}</td>
                   <td className="py-2 pr-3 text-right tabular-nums">{l.aReceber ? brl(l.aReceber) : '—'}</td>
                   <td className={`py-2 pr-3 text-right tabular-nums ${l.semRastro > 0 ? 'text-warn' : 'text-muted'}`}>{l.semRastro ? brl(l.semRastro) : '—'}</td>
                   {canEdit && <td className="py-2 text-right"><button onClick={() => apagar(l.id)} className="text-[12px] text-muted hover:text-bad">remover</button></td>}
                 </tr>
+                {parcelasDe === l.id && (
+                  <tr><td colSpan={8} className="pb-3">
+                    <ParcelasDoAcordo acordoId={l.id} valorDoAcordo={l.valor} token={token} canEdit={canEdit} onError={onError} onSalvo={carregar} />
+                  </td></tr>
+                )}
+                </Fragment>
               ))}
             </tbody>
           </table>
         </div>
         <p className="mt-2 text-[12px] text-muted">
-          "Entrou" casa o nome do cliente (ou um apelido) com as entradas do extrato. "Sem rastro" é o que um acordo pagante deveria ter trazido e não aparece nem como recebido nem como a receber.
+          Acordo com parcelas: "Entrou" e "A receber" vêm das parcelas, cada uma ligada à sua cobrança no Asaas. Sem parcelas, "Entrou" casa o nome do cliente (ou um apelido) com as entradas do extrato. "Sem rastro" é o que um acordo pagante deveria ter trazido e não aparece nem como recebido nem como a receber.
         </p>
         {canEdit && (
           <div className="mt-3">
@@ -433,7 +446,7 @@ export function AnaliseView({ token, canEdit, onError }: { token: string | null;
               {r.recorrentes.linhas.map((c) => (
                 <li key={c.id} className="flex items-center gap-3 py-2">
                   <span className={`w-14 shrink-0 text-[11px] uppercase ${c.tipo === 'entrada' ? 'text-good' : 'text-muted'}`}>{c.tipo === 'entrada' ? 'entra' : 'sai'}</span>
-                  <span className="min-w-0 flex-1 truncate">{c.descricao}<span className="ml-2 text-muted">dia {c.dia}{c.periodicidade !== 'mensal' ? ` · ${c.periodicidade}` : ''}</span></span>
+                  <span className="min-w-0 flex-1 truncate">{c.descricao}<span className="ml-2 text-muted">dia {c.dia}{c.periodicidade !== 'mensal' ? ` · ${c.periodicidade}` : ''}{c.ate ? ` · até ${nomeDoMes(c.ate)}` : ''}</span></span>
                   <span className={`w-24 shrink-0 text-right text-[12px] ${c.noMes.pago > 0 ? 'text-good' : 'text-muted'}`}
                     title="Situação no mês atual. O pagamento fica preso ao contrato quando é conciliado com o previsto do contrato.">
                     {c.noMes.pago > 0 ? (c.tipo === 'entrada' ? 'recebido' : 'pago') : c.noMes.vence ? `vence ${diaMes(c.noMes.vence)}` : ''}
@@ -441,6 +454,15 @@ export function AnaliseView({ token, canEdit, onError }: { token: string | null;
                   <span className="w-28 shrink-0 text-right tabular-nums">{brl(c.porMes)}<span className="text-[11px] text-muted">/mês</span></span>
                 </li>
               ))}
+              {/* O total do mês: o que sai, o que entra e o líquido das contas que ainda não acabaram (anual entra dividido por 12). */}
+              <li className="flex flex-wrap items-center justify-end gap-x-4 gap-y-1 pt-3 text-[13px]">
+                <span className="text-muted">por mês</span>
+                <span>sai <b className="tabular-nums">{brl(r.recorrentes.custoMensal)}</b></span>
+                <span className="text-good">entra <b className="tabular-nums">{brl(r.recorrentes.receitaMensal)}</b></span>
+                <span className={r.recorrentes.receitaMensal - r.recorrentes.custoMensal >= 0 ? 'text-good' : 'text-bad'}>
+                  líquido <b className="tabular-nums">{brl(r.recorrentes.receitaMensal - r.recorrentes.custoMensal)}</b>
+                </span>
+              </li>
             </ul>
           )}
         </div>
