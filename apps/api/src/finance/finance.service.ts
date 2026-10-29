@@ -460,7 +460,8 @@ export class FinanceService implements OnModuleInit {
   async summary(orgId: string): Promise<FinanceSummary> {
     const now = new Date();
     const monthStart = startOfMonth(now);
-    const [accounts, balances, monthGroup, previstoGroup, previstoVencido, topCats, connections] = await Promise.all([
+    const em30 = new Date(now.getTime() + 30 * 86400_000);
+    const [accounts, balances, monthGroup, previstoGroup, previstoVencido, previsto30, topCats, connections] = await Promise.all([
       this.prisma.financeAccount.findMany({ where: { orgId }, select: { id: true, name: true, openingBalance: true } }),
       this.balancesByAccount(orgId),
       this.prisma.financeTransaction.groupBy({
@@ -471,6 +472,11 @@ export class FinanceService implements OnModuleInit {
       }),
       this.prisma.financeTransaction.groupBy({
         by: ['type'], where: { orgId, status: 'previsto', dueDate: { lt: now } }, _sum: { amount: true },
+      }),
+      // Os próximos 30 dias, a mesma janela do gráfico. O total lançado mistura horizontes:
+      // contrato recorrente gera só 3 meses à frente, e um anual pode estar a um ano.
+      this.prisma.financeTransaction.groupBy({
+        by: ['type'], where: { orgId, status: 'previsto', dueDate: { gte: now, lte: em30 } }, _sum: { amount: true },
       }),
       this.prisma.financeTransaction.groupBy({
         by: ['categoryId', 'type'], where: { orgId, status: { in: EFFECTIVE }, date: { gte: monthStart } }, _sum: { amount: true },
@@ -511,6 +517,8 @@ export class FinanceService implements OnModuleInit {
       aPagar: sumByType(previstoGroup, 'saida'),
       aReceberVencido: sumByType(previstoVencido, 'entrada'),
       aPagarVencido: sumByType(previstoVencido, 'saida'),
+      aReceber30: sumByType(previsto30, 'entrada'),
+      aPagar30: sumByType(previsto30, 'saida'),
       byAccount: accounts.map((a) => ({ id: a.id, name: a.name, balance: num(a.openingBalance) + (balances.get(a.id) ?? 0) })),
       topCategorias,
       bancos: {
@@ -529,7 +537,7 @@ export class FinanceService implements OnModuleInit {
     const to = range.to ? startOfDay(parseDate(range.to)) : startOfDay(new Date(from.getTime() + 30 * 86400_000));
 
     // saldo de abertura da janela = openingBalance das contas + realizados antes de `from`
-    const [accounts, realizedBefore, windowTx] = await Promise.all([
+    const [accounts, realizedBefore, windowTx, vencidosGroup] = await Promise.all([
       this.prisma.financeAccount.aggregate({ where: { orgId }, _sum: { openingBalance: true } }),
       this.prisma.financeTransaction.groupBy({
         by: ['type'], where: { orgId, status: { in: EFFECTIVE }, date: { lt: from } }, _sum: { amount: true },
@@ -545,13 +553,29 @@ export class FinanceService implements OnModuleInit {
         },
         select: { type: true, amount: true, status: true, date: true, dueDate: true },
       }),
+      // Previstos que venceram antes da janela e seguem em aberto.
+      this.prisma.financeTransaction.groupBy({
+        by: ['type'],
+        where: {
+          orgId, status: 'previsto',
+          OR: [{ dueDate: { lt: from } }, { dueDate: null, date: { lt: from } }],
+        },
+        _sum: { amount: true },
+      }),
     ]);
 
     const sumB = (t: FinanceTxType) => num(realizedBefore.find((x) => x.type === t)?._sum.amount);
     const openingBalance = num(accounts._sum.openingBalance) + sumB('entrada') - sumB('saida');
+    const sumV = (t: FinanceTxType) => num(vencidosGroup.find((x) => x.type === t)?._sum.amount);
+    const vencidos = { aPagar: sumV('saida'), aReceber: sumV('entrada') };
 
     // bucket por dia
     const buckets = new Map<string, { entradas: number; saidas: number }>();
+    // Vencido a pagar continua devido: sai no primeiro dia da janela. Vencido a
+    // receber é incerto: fica fora da linha e a tela mostra o valor à parte.
+    if (vencidos.aPagar > 0) {
+      buckets.set(from.toISOString().slice(0, 10), { entradas: 0, saidas: vencidos.aPagar });
+    }
     for (const tx of windowTx) {
       const eff = tx.status === 'previsto' ? (tx.dueDate ?? tx.date) : tx.date;
       const key = startOfDay(eff).toISOString().slice(0, 10);
@@ -575,6 +599,7 @@ export class FinanceService implements OnModuleInit {
     return {
       window: { from: from.toISOString().slice(0, 10), to: to.toISOString().slice(0, 10) },
       openingBalance,
+      vencidos,
       days,
       source: this.meta(),
     };
@@ -698,17 +723,22 @@ export class FinanceService implements OnModuleInit {
         openIds.push(extId);
         const when = new Date(p.dateCreated || p.dueDate || new Date().toISOString());
         const desc = p.description || `Cobrança ${p.billingType ?? ''}`.trim();
+        // Cartão já aprovado: o cliente pagou e falta o Asaas repassar. O caixa recebe o
+        // líquido (sem a taxa do cartão) na data de crédito, não no vencimento da parcela.
+        const cartaoAprovado = p.billingType === 'CREDIT_CARD' && p.status === 'CONFIRMED';
+        const caiEm = (cartaoAprovado ? p.estimatedCreditDate || p.creditDate : null) || p.dueDate;
+        const valor = cartaoAprovado && p.netValue != null ? p.netValue : p.value;
         await this.prisma.financeTransaction.upsert({
           where: { orgId_accountId_externalId: { orgId, accountId: account.id, externalId: extId } },
           update: {
-            amount: new Prisma.Decimal(p.value), description: desc,
-            dueDate: p.dueDate ? new Date(p.dueDate) : null,
+            amount: new Prisma.Decimal(valor), description: desc,
+            dueDate: caiEm ? new Date(caiEm) : null,
             counterparty: p.customer ? custMap.get(p.customer) ?? p.customer : null,
           },
           create: {
             orgId, accountId: account.id, type: 'entrada', status: 'previsto',
-            description: desc, amount: new Prisma.Decimal(p.value), date: when,
-            dueDate: p.dueDate ? new Date(p.dueDate) : null,
+            description: desc, amount: new Prisma.Decimal(valor), date: when,
+            dueDate: caiEm ? new Date(caiEm) : null,
             counterparty: p.customer ? custMap.get(p.customer) ?? p.customer : null,
             documentNumber: p.invoiceNumber ?? null,
             source: 'asaas', externalId: extId,

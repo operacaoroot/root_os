@@ -581,6 +581,9 @@ export const FinanceSummarySchema = z.object({
   aPagar: z.number(),
   aReceberVencido: z.number(),
   aPagarVencido: z.number(),
+  /** Previstos que vencem nos próximos 30 dias (a mesma janela do fluxo projetado). */
+  aReceber30: z.number(),
+  aPagar30: z.number(),
   byAccount: z.array(z.object({ id: z.string(), name: z.string(), balance: z.number() })),
   topCategorias: z.array(z.object({ name: z.string(), kind: z.string(), total: z.number() })),
   bancos: z.object({ conexoes: z.number().int(), conectados: z.number().int(), pluggyConfigurado: z.boolean(), asaasConfigurado: z.boolean() }),
@@ -592,6 +595,8 @@ export type FinanceSummary = z.infer<typeof FinanceSummarySchema>;
 export const CashflowSchema = z.object({
   window: z.object({ from: z.string(), to: z.string() }),
   openingBalance: z.number(),
+  /** Previstos em aberto que venceram antes da janela. O a pagar sai no 1º dia; o a receber fica fora da linha. */
+  vencidos: z.object({ aPagar: z.number(), aReceber: z.number() }),
   days: z.array(
     z.object({
       date: z.string(),
@@ -898,7 +903,7 @@ export type PayableRow = z.infer<typeof PayableRowSchema>;
 export const PayablesSchema = z.object({
   items: z.array(PayableRowSchema),
   total: z.number().int(),
-  totals: z.object({ aPagar: z.number(), aReceber: z.number(), vencidoPagar: z.number(), vencidoReceber: z.number(), aguardandoAprovacao: z.number().int() }),
+  totals: z.object({ aPagar: z.number(), aReceber: z.number(), vencidoPagar: z.number(), vencidoReceber: z.number(), aPagar30: z.number(), aReceber30: z.number(), aguardandoAprovacao: z.number().int() }),
   approvalLimit: z.number(),
   source: SourceMetaSchema,
 });

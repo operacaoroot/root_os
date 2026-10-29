@@ -58,6 +58,9 @@ export interface AsaasPayment {
   billingType?: string; // BOLETO | PIX | CREDIT_CARD ...
   description?: string | null;
   invoiceNumber?: string | null;
+  /** Cartão: quando o Asaas repassa o dinheiro (parcela a parcela, ~30 dias depois). */
+  estimatedCreditDate?: string | null;
+  creditDate?: string | null;
 }
 
 export interface AsaasCustomer {
