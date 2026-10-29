@@ -240,6 +240,8 @@ describe('a transcrição e a vetorização dos serviços passam pelo medidor', 
     expect(gasto.lancamentos[0]).toMatchObject({ funcao: FUNCAO_DA_TRANSCRICAO, tipo: 'transcricao' });
     expect(custoDoUso('whisper-1', { type: 'duration', seconds: 60 })).toBe(0.006);
     expect(custoDoUso('gpt-4o-transcribe', null)).toBeNull();
+    // O OpenRouter devolve o valor cobrado, sem `type`: ele ganha da tabela.
+    expect(custoDoUso('gpt-4o-transcribe', { input_tokens: 10, output_tokens: 6, cost: 0.000085 })).toBe(0.000085);
   });
 
   it('o embedding da vault e o do acervo reservam no teto em nome da função, com a empresa da chamada', async () => {

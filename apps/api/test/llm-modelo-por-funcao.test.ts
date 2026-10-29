@@ -242,10 +242,12 @@ describe('a ponte respeita o modelo pedido', () => {
 });
 
 describe('o OpenRouter usa o modelo da função só onde há preço conferido', () => {
-  it('Sonnet 5.5 vira anthropic/claude-sonnet-5.5; o resto fica no OPENROUTER_MODEL', () => {
+  it('os 5.5 do cadastro viram o nome do OpenRouter; sem função fica o OPENROUTER_MODEL', () => {
     const r = new OpenRouterProvider();
     expect(r.modeloDaChamada({ funcao: 'CO-04' }).modelo).toBe('anthropic/claude-sonnet-5.5');
-    expect(r.modeloDaChamada({ funcao: 'CO-11' }).modelo).toBe(r.model);
+    // Desde 29/10/2026 o Haiku e o Opus 5.5 têm preço no OpenRouter: a função não cai mais no Sonnet.
+    expect(r.modeloDaChamada({ funcao: 'CO-11' }).modelo).toBe('anthropic/claude-haiku-5.5');
+    expect(r.modeloDaChamada({ funcao: 'CO-03' }).modelo).toBe('anthropic/claude-opus-5.5');
     expect(r.modeloDaChamada({}).modelo).toBe(r.model);
     expect(r.modeloDaChamada({ funcao: 'CO-04', model: 'x/y' }).modelo).toBe('x/y');
   });

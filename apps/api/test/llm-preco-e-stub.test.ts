@@ -56,6 +56,20 @@ describe('a tabela de preço dos modelos 5.5', () => {
   });
 });
 
+describe('os 5.5 no OpenRouter (29/10/2026)', () => {
+  it('Opus, Sonnet e Haiku 5.5 têm preço com o nome do OpenRouter', () => {
+    expect(precoDe('anthropic/claude-opus-5.5')).toEqual({ entrada: 4, saida: 20, cacheLeitura: 0.2, cacheEscrita: 5 });
+    expect(precoDe('anthropic/claude-sonnet-5.5')).toEqual({ entrada: 2, saida: 10, cacheLeitura: 0.1, cacheEscrita: 2.5 });
+    expect(precoDe('anthropic/claude-haiku-5.5', 100_000)).toMatchObject({ entrada: 0.1, saida: 0.5 });
+    expect(precoDe('anthropic/claude-haiku-5.5', 100_001)).toEqual({ entrada: 0.5, saida: 2.5, cacheLeitura: 0.05, cacheEscrita: 0.625 });
+  });
+
+  it('o Sonnet 4.5 cobra a faixa longa acima de 200 mil tokens', () => {
+    expect(precoDe('anthropic/claude-sonnet-4.5', 200_000)).toMatchObject({ entrada: 3, saida: 15 });
+    expect(precoDe('anthropic/claude-sonnet-4.5', 200_001)).toEqual({ entrada: 6, saida: 22.5, cacheLeitura: 0.6, cacheEscrita: 7.5 });
+  });
+});
+
 describe('o stub aceita a função como marca', () => {
   const pasta = mkdtempSync(path.join(tmpdir(), 'stub-funcao-'));
   writeFileSync(path.join(pasta, 'CO-11.json'), JSON.stringify({ padrao: 'resumo do vigia' }));

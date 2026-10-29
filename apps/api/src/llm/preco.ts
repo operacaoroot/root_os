@@ -25,12 +25,38 @@ export const PRECO_USD_MTOK: Record<string, PrecoModelo> = {
   // https://openrouter.ai/api/v1/models/anthropic/claude-sonnet-4.5/endpoints
   // Tarifa base; contexto longo e roteamento regional podem custar mais.
   // OpenRouterProvider prioriza usage.cost (valor real) sobre esta estimativa.
-  'anthropic/claude-sonnet-4.5': { entrada: 3, saida: 15, cacheLeitura: 0.3, cacheEscrita: 3.75 },
-  // OpenRouter, 30/09/2026: cinco endpoints da rota Standard em US$ 2/10
-  // por milhão, cache 0,20/2,50. Três endpoints fora dela cobram 2,20/11;
-  // cache de escrita de 1h custa 4 e não tem faixa própria nesta tabela.
-  // https://openrouter.ai/api/v1/models/anthropic/claude-sonnet-5.5/endpoints
-  'anthropic/claude-sonnet-5.5': { entrada: 2, saida: 10, cacheLeitura: 0.2, cacheEscrita: 2.5 },
+  // Desde 29/10/2026 com a segunda faixa que o OpenRouter publica acima de 200 mil tokens.
+  'anthropic/claude-sonnet-4.5': {
+    entrada: 3,
+    saida: 15,
+    cacheLeitura: 0.3,
+    cacheEscrita: 3.75,
+    pedidoLongo: {
+      acimaDe: 200_000,
+      preco: { entrada: 6, saida: 22.5, cacheLeitura: 0.6, cacheEscrita: 7.5 },
+    },
+  },
+  /*
+   * OS 5.5 NO OPENROUTER (29/10/2026), pelo `pricing` de
+   * https://openrouter.ai/api/v1/models, lido nesse dia. É o que vale desde que o
+   * OS inteiro roda pelo OpenRouter (LLM_PROVIDER=openrouter): sem estas linhas,
+   * o Opus e o Haiku do cadastro caíam no `OPENROUTER_MODEL` (Sonnet), porque o
+   * teto recusa modelo sem preço. O Sonnet 5.5 tinha leitura de cache 0,20 em
+   * 30/09; a tabela de 29/10 diz 0,10. Escrita de cache de 1 h (Opus 8, Sonnet 4,
+   * Haiku 0,20) segue sem faixa própria, como acima.
+   */
+  'anthropic/claude-opus-5.5': { entrada: 4, saida: 20, cacheLeitura: 0.2, cacheEscrita: 5 },
+  'anthropic/claude-sonnet-5.5': { entrada: 2, saida: 10, cacheLeitura: 0.1, cacheEscrita: 2.5 },
+  'anthropic/claude-haiku-5.5': {
+    entrada: 0.1,
+    saida: 0.5,
+    cacheLeitura: 0.01,
+    cacheEscrita: 0.125,
+    pedidoLongo: {
+      acimaDe: 100_000,
+      preco: { entrada: 0.5, saida: 2.5, cacheLeitura: 0.05, cacheEscrita: 0.625 },
+    },
+  },
   /*
    * OS MODELOS 5.5 (rodada dos agentes, 21/10/2026), pela tabela da Anthropic
    * (skill `claude-api`, cache de 06/10/2026). Escrita de cache é a de 5 min

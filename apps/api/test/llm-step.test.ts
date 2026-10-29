@@ -12,11 +12,11 @@ describe('preço', () => {
 
   it('precifica o identificador exato Sonnet 5.5, inclusive cache, pela rota Standard do OpenRouter', () => {
     expect(precoDe('anthropic/claude-sonnet-5.5')).toEqual({
-      entrada: 2, saida: 10, cacheLeitura: 0.2, cacheEscrita: 2.5,
+      entrada: 2, saida: 10, cacheLeitura: 0.1, cacheEscrita: 2.5,
     });
     expect(custoUsd('anthropic/claude-sonnet-5.5', {
       entrada: 1000, saida: 200, cacheLeitura: 500, cacheEscrita: 100,
-    })).toEqual({ custoUsd: 0.00435, custoEstimado: true });
+    })).toEqual({ custoUsd: 0.0043, custoEstimado: true });
     expect(precoDe('anthropic/claude-sonnet-5.55')).toBeNull();
   });
 

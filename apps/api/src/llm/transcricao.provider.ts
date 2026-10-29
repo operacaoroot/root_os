@@ -62,6 +62,8 @@ export const FUNCAO_DA_TRANSCRICAO = 'IM-06';
 
 /**
  * O custo que a própria resposta permite medir, ou `null`:
+ *  · `usage.cost` (OpenRouter, desde 29/10/2026): o valor cobrado, que ganha da
+ *    tabela pelo mesmo motivo do `OpenRouterProvider`;
  *  · `usage.type === 'tokens'` (gpt-4o-transcribe): áudio de entrada e texto de
  *    saída pelo preço de `preco.ts`;
  *  · `usage.type === 'duration'` (whisper-1): os segundos pelo minuto.
@@ -69,10 +71,11 @@ export const FUNCAO_DA_TRANSCRICAO = 'IM-06';
  */
 export function custoDoUso(modelo: string, usage: unknown): number | null {
   const u = usage as
-    | { type?: string; input_tokens?: number; output_tokens?: number; seconds?: number }
+    | { type?: string; input_tokens?: number; output_tokens?: number; seconds?: number; cost?: number }
     | null
     | undefined;
   if (!u || typeof u !== 'object') return null;
+  if (typeof u.cost === 'number' && Number.isFinite(u.cost) && u.cost >= 0) return Number(u.cost.toFixed(6));
   if (u.type === 'tokens' && Number.isFinite(u.input_tokens) && Number.isFinite(u.output_tokens)) {
     const c = custoUsd(modelo, { entrada: Number(u.input_tokens), saida: Number(u.output_tokens) });
     return c.custoEstimado ? c.custoUsd : null;

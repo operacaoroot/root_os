@@ -9,9 +9,8 @@ import { precoDe } from './preco';
  * faz sentido: o cadastro fala em `claude-sonnet-5-5`, e o OpenRouter chama o
  * mesmo modelo de `anthropic/claude-sonnet-5.5`. A troca só vale para o nome que
  * tem PREÇO conferido em `preco.ts` (com o teto ligado, modelo sem preço é
- * recusado). Opus 5.5 e Haiku 5.5 no OpenRouter ainda não têm preço conferido na
- * tabela: a função cai no `OPENROUTER_MODEL` de sempre. [a decidir] conferir os
- * dois preços no OpenRouter e acrescentar aqui.
+ * recusado). Desde 29/10/2026 os três 5.5 têm preço lá, e a função vai para o
+ * modelo do cadastro; nome sem preço ainda cai no `OPENROUTER_MODEL`.
  */
 const NOME_NO_OPENROUTER: Readonly<Record<string, string>> = {
   'claude-sonnet-5-5': 'anthropic/claude-sonnet-5.5',
