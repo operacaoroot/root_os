@@ -71,6 +71,8 @@ import { TriagemDoWhatsappService } from './triagem-do-whatsapp/triagem-do-whats
 // Leva 5 (L4, 27/10/2026): a ficha geral e as pendências do painel do lead.
 import { FichaGeralController } from './ficha-geral.controller';
 import { FichaGeralService } from './ficha-geral.service';
+// 29/10/2026: o lead que já existe, no "+ lead" (parecidos e venda nova ligada ao mesmo cadastro).
+import { LeadRepetidoService } from './lead-repetido.service';
 
 /*
  * O COCKPIT DO LEAD — módulo comercial (13/10/2026).
@@ -109,6 +111,7 @@ import { FichaGeralService } from './ficha-geral.service';
     SoGenteGuard,
     // --- leva 5 (L4): a ficha geral e as pendências do painel do lead ---
     FichaGeralService,
+    LeadRepetidoService,
     // --- rodada do trabalho T7 ("pedir de novo" a vencida em /atendimento, pelo caminho de cada pedido) ---
     RepedidosDoComercial,
     // --- lane B (sala, WhatsApp por porta, simulador) ---
