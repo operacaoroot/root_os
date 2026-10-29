@@ -589,15 +589,15 @@
 .estudio .producao-col-comunidade .card-art span{text-transform:none}
 
 /* Memória: destino da nota (29/10/2026). Vistas Para decidir / Ideias / Referências e o bloco "Para onde vai isso?". */
-.estudio .memoria-vistas{display:flex;gap:4px;padding:3px;background:#e4e8da;border-radius:10px;margin-bottom:6px;overflow-x:auto}
-.estudio .memoria-vista{flex:1;white-space:nowrap;font-size:12px;padding:7px 10px;border:0;border-radius:8px;background:transparent;color:var(--muted);font-weight:600}
+.estudio .memoria-vistas{display:flex;flex-wrap:wrap;gap:4px;padding:3px;background:#e4e8da;border-radius:10px;margin-bottom:6px;max-width:720px}
+.estudio .memoria-vista{flex:1 1 auto;white-space:nowrap;font-size:12px;padding:7px 10px;border:0;border-radius:8px;background:transparent;color:var(--muted);font-weight:600}
 .estudio .memoria-vista:hover{background:#eef1e6}.estudio .memoria-vista.on{background:white;color:var(--ink);box-shadow:0 1px 3px #23281e14}
 .estudio .memoria-vista span{font-size:10px;color:var(--muted);margin-left:2px}
 .estudio .memoria-vista-dica{margin:4px 0 12px}
 .estudio .memoria-destino{border:1px solid #c9d7b5;background:#f6f9ef;border-radius:10px;padding:14px 16px;margin:12px 0 4px}
 .estudio .memoria-destino h3{font-size:14px;margin-bottom:10px}
 .estudio .memoria-destino-assunto{display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-bottom:12px}
-.estudio .memoria-destino-opcoes{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
+.estudio .memoria-destino-opcoes{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:8px}
 .estudio .memoria-destino-opcoes button{display:grid;gap:4px;text-align:left;padding:11px 12px;font-weight:400;align-content:start}
 .estudio .memoria-destino-opcoes button strong{font-size:13px;font-weight:650}
 .estudio .memoria-destino-opcoes button span{font-size:11px;color:var(--muted);line-height:1.4}
@@ -606,4 +606,4 @@
 .estudio .memoria-destino .row{margin-top:10px;gap:4px}
 .estudio .memoria-destino.feito{display:flex;gap:8px;align-items:center;flex-wrap:wrap;padding:9px 12px;background:#f3f6ec;border-color:var(--line)}
 .estudio .memoria-destino.feito strong{font-size:12px}.estudio .memoria-destino.feito button{margin-left:auto}
-@media(max-width:760px){.estudio .memoria-destino-opcoes{grid-template-columns:1fr}.estudio .memoria-vista{flex:none}}
+@media(max-width:760px){.estudio .memoria-destino-opcoes{grid-template-columns:1fr}}

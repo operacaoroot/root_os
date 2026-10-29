@@ -400,7 +400,7 @@ export class MemoriaDoMarketingService implements OnModuleInit {
         }
         const a = await this.analisar<AnaliseDeVideo>(orgId, SYSTEM_VIDEO,
           `${marca}\n\nLink: ${n.url}\nAutor: ${autor}\nLegenda do post: ${legenda}\nComentário de quem guardou: ${comentario}\nTranscrição: ${(transcricao || '(sem transcrição)').slice(0, 12000)}`,
-          () => ({ title: legenda.split('\n')[0].slice(0, 70) || 'Vídeo guardado', summary: 'Vídeo curto guardado para referência.', hook: 'Abre com a cena antes da fala.', structure: ['Cena de abertura', 'Comentário', 'Pergunta'], format: 'Vertical, legenda queimada.', cta: 'Pergunta nos comentários.', why_works: 'A cena prova o ponto antes da opinião.', adapt: ['Usar um clipe de operação real e comentar em seguida.'], tags: ['reels'] }));
+          () => ({ title: legenda.split('\n')[0].slice(0, 70) || 'Vídeo guardado', summary: 'Vídeo curto guardado para referência.', hook: 'Abre com a cena antes da fala.', structure: ['Cena de abertura', 'Comentário', 'Pergunta'], format: 'Vertical, legenda queimada.', cta: 'Pergunta nos comentários.', why_works: 'A cena prova o ponto antes da opinião.', adapt: ['Usar um clipe de operação real e comentar em seguida.'], tags: ['reels'], subject: 'conteudo' }));
         await this.prisma.marketingNota.update({
           where: { id },
           data: {
@@ -417,7 +417,7 @@ export class MemoriaDoMarketingService implements OnModuleInit {
         const m = await lerMetaDoLink(n.url);
         const a = await this.analisar<AnaliseDeLink>(orgId, SYSTEM_LINK,
           `${marca}\n\nLink: ${n.url}\nTítulo da página: ${m.titulo}\nDescrição: ${m.descricao}\nAutor: ${m.autor ?? ''}\nComentário de quem guardou: ${comentario}`,
-          () => ({ title: m.titulo || n.titulo, summary: m.descricao || 'Página guardada para consulta.', key_points: ['Ponto principal da página'], adapt: ['Virar um post comentando o ponto principal.'], tags: ['referencia'] }));
+          () => ({ title: m.titulo || n.titulo, summary: m.descricao || 'Página guardada para consulta.', key_points: ['Ponto principal da página'], adapt: ['Virar um post comentando o ponto principal.'], tags: ['referencia'], subject: 'negocio' }));
         await this.prisma.marketingNota.update({
           where: { id },
           data: {

@@ -286,137 +286,139 @@ function AbaNotas(props: {
     return i < 0 ? null : (painel.notas[i + 1]?.id ?? painel.notas[i - 1]?.id ?? null);
   };
   return (
-    <div className="memoria-grade">
-      <div className="memoria-lista">
-        <div className="memoria-vistas" role="tablist" aria-label="Destino das notas">
-          {VISTAS.map(([k, l]) => (
-            <button
-              key={k || 'todas'}
-              role="tab"
-              aria-selected={props.destino === k}
-              className={`memoria-vista ${props.destino === k ? 'on' : ''}`}
-              onClick={() => {
-                props.setDestino(k);
-                props.setAssunto('');
-                props.setPasta('');
-              }}
-            >
-              {l} {nDaVista(k) !== undefined && <span>{nDaVista(k)}</span>}
-            </button>
-          ))}
-        </div>
-        <p className="memoria-dica memoria-vista-dica">{vista[2]}</p>
-        <div className="memoria-busca">
-          <input type="search" value={props.busca} onChange={(e) => props.setBusca(e.target.value)} placeholder="Buscar nas notas" aria-label="Buscar nas notas" />
-          {props.editavel && <button onClick={() => setNova(true)}>+ Nota</button>}
-        </div>
-        {painel.assuntos.some((a) => a.n > 0) && (
-          <div className="memoria-chips">
-            {painel.assuntos.map((a) => (
-              <button key={a.assunto} className={`memoria-chip ${props.assunto === a.assunto ? 'on' : ''}`} onClick={() => props.setAssunto(props.assunto === a.assunto ? '' : a.assunto)}>
-                {NOME_DO_ASSUNTO[a.assunto]} <span>{a.n}</span>
-              </button>
-            ))}
-          </div>
-        )}
-        <div className="memoria-chips">
-          <button className={`memoria-chip ${props.pasta ? '' : 'on'}`} onClick={() => props.setPasta('')}>
-            Todos os tipos <span>{painel.total}</span>
+    <>
+      <div className="memoria-vistas" role="tablist" aria-label="Destino das notas">
+        {VISTAS.map(([k, l]) => (
+          <button
+            key={k || 'todas'}
+            role="tab"
+            aria-selected={props.destino === k}
+            className={`memoria-vista ${props.destino === k ? 'on' : ''}`}
+            onClick={() => {
+              props.setDestino(k);
+              props.setAssunto('');
+              props.setPasta('');
+            }}
+          >
+            {l} {nDaVista(k) !== undefined && <span>{nDaVista(k)}</span>}
           </button>
-          {painel.pastas.map((p) => (
-            <button key={p.nome} className={`memoria-chip ${props.pasta === p.nome ? 'on' : ''}`} onClick={() => props.setPasta(p.nome)}>
-              {p.nome} <span>{p.n}</span>
-            </button>
-          ))}
-        </div>
-        {painel.tags.length > 0 && (
-          <div className="memoria-chips memoria-tags">
-            {painel.tags.slice(0, 30).map((t) => (
-              <button key={t.t} className={`memoria-chip tag ${props.tag === t.t ? 'on' : ''}`} onClick={() => props.setTag(props.tag === t.t ? '' : t.t)}>
-                #{t.t} <span>{t.n}</span>
-              </button>
-            ))}
+        ))}
+      </div>
+      <p className="memoria-dica memoria-vista-dica">{vista[2]}</p>
+      <div className="memoria-grade">
+        <div className="memoria-lista">
+          <div className="memoria-busca">
+            <input type="search" value={props.busca} onChange={(e) => props.setBusca(e.target.value)} placeholder="Buscar nas notas" aria-label="Buscar nas notas" />
+            {props.editavel && <button onClick={() => setNova(true)}>+ Nota</button>}
           </div>
-        )}
-        <div id="memoria-itens">
-          {painel.notas.length === 0 && (
-            <div className="memoria-vazio">
-              {filtrando
-                ? 'Nada com esse filtro.'
-                : props.destino === 'entrada'
-                  ? 'Nada para decidir. Tudo que chegou já tem destino.'
-                  : props.destino
-                    ? 'Nenhuma nota aqui ainda.'
-                    : 'Sua Memória está vazia. Cole um link, um Reel ou uma ideia aí em cima.'}
+          {painel.assuntos.some((a) => a.n > 0) && (
+            <div className="memoria-chips">
+              {painel.assuntos.map((a) => (
+                <button key={a.assunto} className={`memoria-chip ${props.assunto === a.assunto ? 'on' : ''}`} onClick={() => props.setAssunto(props.assunto === a.assunto ? '' : a.assunto)}>
+                  {NOME_DO_ASSUNTO[a.assunto]} <span>{a.n}</span>
+                </button>
+              ))}
             </div>
           )}
-          {painel.notas.map((n) => (
-            <button key={n.id} className={`memoria-item ${props.aberta === n.id ? 'on' : ''}`} onClick={() => props.setAberta(n.id)}>
-              <span className="memoria-item-t">
-                {ICONE[n.tipo] ?? '📝'} {n.titulo} <Badge s={n.status} />
-              </span>
-              <span className="memoria-item-m">
-                {n.via === 'whatsapp' && (
-                  <>
-                    <span className="memoria-wa">WhatsApp</span>{' '}
-                  </>
-                )}
-                {n.pasta} · {quando(n.atualizadaEm)}
-                {n.assunto && ` · ${NOME_DO_ASSUNTO[n.assunto]}`}
-                {!props.destino && n.destino !== 'entrada' && ` · ${NOME_DO_DESTINO[n.destino]}`}
-                {n.tags.length > 0 && ` · ${n.tags.slice(0, 3).map((t) => `#${t}`).join(' ')}`}
-              </span>
+          <div className="memoria-chips">
+            <button className={`memoria-chip ${props.pasta ? '' : 'on'}`} onClick={() => props.setPasta('')}>
+              Todos os tipos <span>{painel.total}</span>
             </button>
-          ))}
+            {painel.pastas.map((p) => (
+              <button key={p.nome} className={`memoria-chip ${props.pasta === p.nome ? 'on' : ''}`} onClick={() => props.setPasta(p.nome)}>
+                {p.nome} <span>{p.n}</span>
+              </button>
+            ))}
+          </div>
+          {painel.tags.length > 0 && (
+            <div className="memoria-chips memoria-tags">
+              {painel.tags.slice(0, 30).map((t) => (
+                <button key={t.t} className={`memoria-chip tag ${props.tag === t.t ? 'on' : ''}`} onClick={() => props.setTag(props.tag === t.t ? '' : t.t)}>
+                  #{t.t} <span>{t.n}</span>
+                </button>
+              ))}
+            </div>
+          )}
+          <div id="memoria-itens">
+            {painel.notas.length === 0 && (
+              <div className="memoria-vazio">
+                {filtrando
+                  ? 'Nada com esse filtro.'
+                  : props.destino === 'entrada'
+                    ? 'Nada para decidir. Tudo que chegou já tem destino.'
+                    : props.destino
+                      ? 'Nenhuma nota aqui ainda.'
+                      : 'Sua Memória está vazia. Cole um link, um Reel ou uma ideia aí em cima.'}
+              </div>
+            )}
+            {painel.notas.map((n) => (
+              <button key={n.id} className={`memoria-item ${props.aberta === n.id ? 'on' : ''}`} onClick={() => props.setAberta(n.id)}>
+                <span className="memoria-item-t">
+                  {ICONE[n.tipo] ?? '📝'} {n.titulo} <Badge s={n.status} />
+                </span>
+                <span className="memoria-item-m">
+                  {n.via === 'whatsapp' && (
+                    <>
+                      <span className="memoria-wa">WhatsApp</span>{' '}
+                    </>
+                  )}
+                  {n.pasta} · {quando(n.atualizadaEm)}
+                  {n.assunto && ` · ${NOME_DO_ASSUNTO[n.assunto]}`}
+                  {!props.destino && n.destino !== 'entrada' && ` · ${NOME_DO_DESTINO[n.destino]}`}
+                  {n.tags.length > 0 && ` · ${n.tags.slice(0, 3).map((t) => `#${t}`).join(' ')}`}
+                </span>
+              </button>
+            ))}
+          </div>
         </div>
-      </div>
-      <div className="memoria-leitor" id="memoria-leitor">
-        {props.aberta ? (
-          <Leitor
-            key={props.aberta}
-            id={props.aberta}
+        <div className="memoria-leitor" id="memoria-leitor">
+          {props.aberta ? (
+            <Leitor
+              key={props.aberta}
+              id={props.aberta}
+              token={props.token}
+              editavel={props.editavel}
+              onAbrir={props.setAberta}
+              onTag={(t) => {
+                props.setTag(t);
+                props.setAberta(null);
+              }}
+              onDecidida={(destino, comIa) => {
+                const semIa = comIa === false ? ' A IA não respondeu: o card saiu do resumo da nota.' : '';
+                props.setAviso(
+                  destino === 'entrada'
+                    ? 'A nota voltou para Para decidir.'
+                    : destino === 'referencia'
+                      ? 'Guardada como referência externa.'
+                      : destino === 'conteudo'
+                        ? `Mandada para Ideias de conteúdo.${semIa}`
+                        : `Mandada para Ideias e guardada como referência.${semIa}`,
+                );
+                if (props.destino === 'entrada' && destino !== 'entrada' && props.aberta) props.setAberta(depoisDe(props.aberta));
+                props.mudou();
+              }}
+              mudou={props.mudou}
+              setErro={props.setErro}
+              setAviso={props.setAviso}
+            />
+          ) : (
+            <div className="memoria-vazio">Escolha uma nota.</div>
+          )}
+        </div>
+        {nova && (
+          <NovaNota
             token={props.token}
-            editavel={props.editavel}
-            onAbrir={props.setAberta}
-            onTag={(t) => {
-              props.setTag(t);
-              props.setAberta(null);
-            }}
-            onDecidida={(destino, comIa) => {
-              const semIa = comIa === false ? ' A IA não respondeu: o card saiu do resumo da nota.' : '';
-              props.setAviso(
-                destino === 'entrada'
-                  ? 'A nota voltou para Para decidir.'
-                  : destino === 'referencia'
-                    ? 'Guardada como referência externa.'
-                    : destino === 'conteudo'
-                      ? `Mandada para Ideias de conteúdo.${semIa}`
-                      : `Mandada para Ideias e guardada como referência.${semIa}`,
-              );
-              if (props.destino === 'entrada' && destino !== 'entrada' && props.aberta) props.setAberta(depoisDe(props.aberta));
+            onFechar={() => setNova(false)}
+            onCriada={(id) => {
+              setNova(false);
+              props.setAberta(id);
               props.mudou();
             }}
-            mudou={props.mudou}
             setErro={props.setErro}
-            setAviso={props.setAviso}
           />
-        ) : (
-          <div className="memoria-vazio">Escolha uma nota.</div>
         )}
       </div>
-      {nova && (
-        <NovaNota
-          token={props.token}
-          onFechar={() => setNova(false)}
-          onCriada={(id) => {
-            setNova(false);
-            props.setAberta(id);
-            props.mudou();
-          }}
-          setErro={props.setErro}
-        />
-      )}
-    </div>
+    </>
   );
 }
 

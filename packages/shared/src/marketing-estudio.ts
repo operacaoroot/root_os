@@ -53,7 +53,7 @@ export const MemoriaDestinoSchema = z.object({
 export type MemoriaDestinoInput = z.infer<typeof MemoriaDestinoSchema>;
 
 /** Parâmetros que só rastreiam quem compartilhou: saem da chave do link. */
-const RASTREIO = /^(utm_\w+|igsh|igshid|fbclid|gclid|si|exln|dlrf|feature|ref|ref_src|s|t|_r|share_id|is_from_webapp|sender_device)$/i;
+const RASTREIO = /^(utm_\w+|igsh|igshid|rpxt|fbclid|gclid|si|exln|dlrf|feature|ref|ref_src|s|t|_r|share_id|is_from_webapp|sender_device)$/i;
 
 /**
  * A chave que diz se dois links são o mesmo material. Post do Instagram vale pelo
