@@ -656,11 +656,12 @@ export class FinanceService implements OnModuleInit {
 
   /**
    * ESTIMATIVA DE GASTO VARIÁVEL (29/10/2026). A projeção só conhece o que está
-   * lançado; o gasto do dia a dia (Pix, reembolso, taxa, compra pequena) não. A
-   * estimativa é a média dos últimos 90 dias de saídas que aconteceram e que NÃO são
-   * conta fixa (contrato ou conta de natureza fixa), eventual, investimento, imposto
-   * nem pagamento anual. Saída sem plano de contas entra (e vai para "classificar").
-   * Recalcula sozinha a cada leitura e fica separada do que está lançado.
+   * lançado; o gasto do dia a dia (Pix, reembolso, taxa, compra pequena, despesa de
+   * pessoal e de marketing) não. A estimativa é a média dos últimos 90 dias de saídas
+   * que aconteceram e que NÃO são conta fixa (contrato ou conta de natureza fixa),
+   * pontual (4.1.14 Estrutura da sala, pagamento anual), investimento nem imposto.
+   * Saída sem plano de contas entra (e vai para "classificar"). Recalcula sozinha a
+   * cada leitura e fica separada do que está lançado.
    */
   async estimativaDeVariaveis(orgId: string): Promise<Cashflow['estimativaVariavel']> {
     const ate = startOfDay(new Date());
@@ -676,8 +677,10 @@ export class FinanceService implements OnModuleInit {
     let total = 0, lancamentos = 0, semPlano = 0;
     for (const t of saidas) {
       if ((t.mesesDeUso ?? 1) > 1 || t.temRateio) continue;
+      const codigo = t.chartAccountId ? plano.get(t.chartAccountId)?.codigo ?? '' : '';
+      if (codigo === '4.1.14' || codigo.startsWith('4.1.14.')) continue; // montagem da sala: pontual
       const grupo = t.chartAccountId ? grupoDaSaida(plano, t.chartAccountId, false) : null;
-      if (grupo && !['custoVariavel', 'despesaVariavel', 'retirada'].includes(grupo)) continue;
+      if (grupo && !['custoVariavel', 'despesaVariavel', 'despesaEventual', 'retirada'].includes(grupo)) continue;
       total += num(t.amount);
       lancamentos += 1;
       if (!t.chartAccountId) semPlano += 1;

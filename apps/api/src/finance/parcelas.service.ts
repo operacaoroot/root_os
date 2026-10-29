@@ -404,7 +404,8 @@ export class ParcelasService {
       this.prisma.acordoParcela.findMany({
         where: {
           orgId, notaFiscal: null,
-          OR: [{ pagaEm: { gte: ha60 } }, { pagaEm: null, asaasPaymentId: { not: null } }, { pagaEm: null, vencimento: { lte: em15 } }],
+          // A NF sai mês a mês: só o que foi pago há pouco ou vence nos próximos 15 dias.
+          OR: [{ pagaEm: { gte: ha60 } }, { pagaEm: null, vencimento: { lte: em15 } }],
         },
         orderBy: { vencimento: 'asc' },
         include: { acordo: { select: { id: true, cliente: true, produto: true } } },

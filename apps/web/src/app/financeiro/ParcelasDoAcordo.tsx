@@ -106,7 +106,7 @@ export function ParcelasDoAcordo({ acordoId, valorDoAcordo, token, canEdit, onEr
                 {p.estado === 'cobranca_gerada' && p.caiEm && p.liquido != null && (p.caiEm !== p.vencimento || p.liquido !== p.valor) && (
                   <span className="block text-[11px] text-muted">cai em {dataBR(p.caiEm)}, {brl(p.liquido)} líquido</span>
                 )}
-                {canEdit && p.estado !== 'paga' && (
+                {canEdit && p.estado === 'a_gerar' && (
                   <label className="ml-2 text-[11px] text-muted">entrou por fora em{' '}
                     <input aria-label={`Paga em (parcela ${p.numero})`} className={`${cls} py-0`} type="date" value={p.pagaEm ?? ''} onChange={(e) => mudar(i, { pagaEm: e.target.value || null })} />
                   </label>
