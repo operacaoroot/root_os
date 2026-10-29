@@ -599,6 +599,11 @@ export const CashflowSchema = z.object({
   vencidos: z.object({ aPagar: z.number(), aReceber: z.number() }),
   /** Vencimentos de contrato recorrente que ainda não viraram previsto: a projeção desenha sem gravar. */
   contratos: z.array(z.object({ date: z.string(), tipo: FinanceTxTypeSchema, descricao: z.string(), valor: z.number() })),
+  /** Média dos últimos 90 dias de saídas variáveis (29/10/2026): estimativa, fora do que está lançado. */
+  estimativaVariavel: z.object({
+    de: z.string(), ate: z.string(), total: z.number(), porMes: z.number(), porDia: z.number(),
+    lancamentos: z.number().int(), semPlano: z.number().int(),
+  }),
   days: z.array(
     z.object({
       date: z.string(),
@@ -606,11 +611,25 @@ export const CashflowSchema = z.object({
       saidas: z.number(),
       resultado: z.number(),
       acumulado: z.number(),
+      /** A parte da estimativa de variáveis que cai neste dia, e o saldo descontando-a. */
+      estimativa: z.number(),
+      acumuladoComEstimativa: z.number(),
     }),
   ),
   source: SourceMetaSchema,
 });
 export type Cashflow = z.infer<typeof CashflowSchema>;
+
+// Entrada × saída num período (29/10/2026): realizado e previsto lado a lado, estimativa à parte.
+export const PeriodoFinanceiroSchema = z.object({
+  de: z.string(), ate: z.string(),
+  realizado: z.object({ entrou: z.number(), saiu: z.number(), resultado: z.number(), lancamentos: z.number().int() }),
+  previsto: z.object({ entra: z.number(), sai: z.number(), resultado: z.number() }),
+  vencidoEmAberto: z.object({ aReceber: z.number(), aPagar: z.number() }),
+  estimativaVariavel: z.object({ valor: z.number(), porMes: z.number(), dias: z.number().int() }),
+  total: z.object({ entra: z.number(), sai: z.number(), resultado: z.number(), resultadoComEstimativa: z.number() }),
+});
+export type PeriodoFinanceiro = z.infer<typeof PeriodoFinanceiroSchema>;
 
 export const BankConnectionSchema = z.object({
   id: z.string(),

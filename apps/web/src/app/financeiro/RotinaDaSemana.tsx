@@ -14,7 +14,8 @@ type AGerar = { id: string; acordoId: string; descricao: string; valor: number; 
 type Atrasado = { id: string; descricao: string; quem: string | null; valor: number; vencimento: string; diasDeAtraso: number; origem: 'asaas' | 'acordo' | 'manual' };
 type NfPendente = { id: string; acordoId: string; descricao: string; valor: number; vencimento: string; pagaEm: string | null; cobrancaGerada: boolean };
 type ContaQueMudou = { id: string; descricao: string; tipo: 'entrada' | 'saida'; valorDoContrato: number; ultimoValor: number; ultimoEm: string };
-type Rotina = { aGerar: AGerar[]; atrasados: Atrasado[]; nfPendente: NfPendente[]; contasQueMudaram: ContaQueMudou[] };
+type SemPlano = { id: string; data: string; tipo: 'entrada' | 'saida'; descricao: string; quem: string | null; valor: number };
+type Rotina = { aGerar: AGerar[]; atrasados: Atrasado[]; nfPendente: NfPendente[]; contasQueMudaram: ContaQueMudou[]; semPlano?: SemPlano[] };
 
 const brl = (n: number) => n.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 const dataBR = (d: string) => `${d.slice(8, 10)}/${d.slice(5, 7)}/${d.slice(0, 4)}`;
@@ -97,6 +98,17 @@ export function RotinaDaSemana({ token, onError, irParaAcordos }: { token: strin
           ))}
         </Bloco>
       </div>
+      <Bloco titulo="Classificar (sem plano de contas, últimos 90 dias)" vazio="Tudo o que aconteceu está classificado." total={soma(r.semPlano ?? [])}>
+        {(r.semPlano ?? []).map((t) => (
+          <li key={t.id} className="flex items-center gap-3 py-2">
+            <span className={`w-12 shrink-0 text-[11px] uppercase ${t.tipo === 'entrada' ? 'text-good' : 'text-bad'}`}>{t.tipo === 'entrada' ? 'entrou' : 'saiu'}</span>
+            <span className="min-w-0 flex-1 truncate">{t.descricao}{t.quem && <span className="ml-2 text-muted">{t.quem}</span>}</span>
+            <span className="shrink-0 text-[12px] text-muted">{dataBR(t.data)}</span>
+            <span className="w-28 shrink-0 text-right tabular-nums">{brl(t.valor)}</span>
+          </li>
+        ))}
+      </Bloco>
+      <p className="text-[11px] text-muted">Para classificar, abra Lançamentos e escolha a conta do plano em cada um. Sem plano, a saída conta na estimativa de variáveis do fluxo.</p>
     </div>
   );
 }

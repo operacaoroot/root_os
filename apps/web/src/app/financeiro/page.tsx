@@ -32,6 +32,7 @@ import { KpiCard } from '@/components/KpiCard';
 import { NovaInscricaoFinanceira } from './inscricoes/NovaInscricaoFinanceira';
 import { JanelaDeTitulo, type ModoDaJanela } from './JanelaDeTitulo';
 import { FluxoSeisMeses } from './FluxoSeisMeses';
+import { EntradaSaidaPeriodo } from './EntradaSaidaPeriodo';
 
 const brl = (n: number) =>
   n.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
@@ -357,15 +358,20 @@ function CashflowChart({ cashflow, txs, payables }: {
   if (!cashflow || cashflow.days.length === 0) return null;
   const days = cashflow.days;
   const vals = days.map((d) => d.acumulado);
-  const min = Math.min(0, ...vals);
-  const max = Math.max(0, ...vals);
+  // A estimativa de variáveis (média dos últimos 90 dias) vai numa linha à parte, tracejada.
+  const est = cashflow.estimativaVariavel;
+  const valsEst = days.map((d) => d.acumuladoComEstimativa ?? d.acumulado);
+  const min = Math.min(0, ...vals, ...valsEst);
+  const max = Math.max(0, ...vals, ...valsEst);
   const range = max - min || 1;
   const W = 100, H = 34;
   const x = (i: number) => (i / Math.max(days.length - 1, 1)) * W;
   const y = (v: number) => H - ((v - min) / range) * H;
   const pts = days.map((d, i) => `${x(i).toFixed(2)},${y(d.acumulado).toFixed(2)}`).join(' ');
+  const ptsEst = valsEst.map((v, i) => `${x(i).toFixed(2)},${y(v).toFixed(2)}`).join(' ');
   const zeroY = y(0);
   const last = vals[vals.length - 1];
+  const lastEst = valsEst[valsEst.length - 1];
   const passo = Math.max(1, Math.round(days.length / 6));
   const marcas = days.map((d, i) => ({ d, i })).filter(({ i }) => i % passo === 0 || i === days.length - 1);
   const atual = foco !== null ? days[foco] : null;
@@ -401,7 +407,10 @@ function CashflowChart({ cashflow, txs, payables }: {
     <div className="rounded-xl border border-border bg-surface p-4">
       <div className="mb-1 flex items-center justify-between">
         <h2 className="font-os-mono text-[10px] uppercase tracking-[0.16em] font-medium text-muted">Fluxo de caixa projetado (30 dias)</h2>
-        <span className={`text-sm font-semibold ${last >= 0 ? 'text-good' : 'text-bad'}`}>{brl(last)} em {diaCurto(cashflow.window.to)}</span>
+        <span className="text-right">
+          <span className={`text-sm font-semibold ${last >= 0 ? 'text-good' : 'text-bad'}`}>{brl(last)} em {diaCurto(cashflow.window.to)}</span>
+          {est && est.porMes > 0 && <span className="block text-[11px] text-muted">{brl(lastEst)} com a estimativa de variáveis</span>}
+        </span>
       </div>
       <div className="mb-2 h-5 text-[12px] text-muted">
         {atual ? (
@@ -424,6 +433,9 @@ function CashflowChart({ cashflow, txs, payables }: {
           {days.map((d, i) => (d.entradas > 0 || d.saidas > 0) && (
             <line key={d.date} x1={x(i)} x2={x(i)} y1={H} y2={H - 2.5} stroke="currentColor" className={d.saidas > d.entradas ? 'text-bad' : 'text-good'} strokeWidth="1.5" vectorEffect="non-scaling-stroke" />
           ))}
+          {est && est.porMes > 0 && (
+            <polyline points={ptsEst} fill="none" stroke="currentColor" strokeWidth="1.2" strokeDasharray="4 3" className="text-muted" vectorEffect="non-scaling-stroke" />
+          )}
           <polyline points={pts} fill="none" stroke="currentColor" strokeWidth="1.5" className={last >= 0 ? 'text-good' : 'text-bad'} vectorEffect="non-scaling-stroke" />
           {foco !== null && (
             <line x1={x(foco)} x2={x(foco)} y1="0" y2={H} stroke="currentColor" strokeWidth="1" className="text-muted" vectorEffect="non-scaling-stroke" />
@@ -438,6 +450,13 @@ function CashflowChart({ cashflow, txs, payables }: {
           <span key={d.date} className="absolute -translate-x-1/2 whitespace-nowrap first:translate-x-0 last:-translate-x-full" style={{ left: `${x(i)}%` }}>{diaCurto(d.date)}</span>
         ))}
       </div>
+      {est && est.porMes > 0 && (
+        <p className="mt-2 text-[11px] text-muted">
+          Linha tracejada: o mesmo saldo descontando a <b className="text-text">estimativa de variáveis, {brl(est.porMes)}/mês</b>{' '}
+          (média dos últimos 90 dias de Pix, reembolsos, taxas e compras do dia a dia; {est.lancamentos} lançamentos
+          {est.semPlano > 0 ? `, ${est.semPlano} sem plano de contas` : ''}). Não é lançamento: recalcula sozinha.
+        </p>
+      )}
       {(venc.aPagar > 0 || venc.aReceber > 0) && (
         <p className="mt-2 text-[11px] text-muted">
           {venc.aPagar > 0 && <><span className="text-warn">{brl(venc.aPagar)} a pagar vencido</span> sai no primeiro dia. </>}
@@ -491,6 +510,8 @@ function Visao({ summary, kpis, cashflow, txs, payables, ir }: {
           <CashflowChart cashflow={cashflow} txs={txs} payables={payables} />
           {/* Layout 26/10 (P-25): a projeção de 6 meses em barras, por mês. */}
           <FluxoSeisMeses />
+          {/* 29/10: entrada × saída no período escolhido, realizado e previsto lado a lado. */}
+          <EntradaSaidaPeriodo />
         </>
       )}
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">

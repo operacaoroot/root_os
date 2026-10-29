@@ -303,7 +303,8 @@ export interface ParcelaSemCobranca {
 export interface Atrasado { id: string; descricao: string; quem: string | null; valor: number; vencimento: string; diasDeAtraso: number; origem: 'asaas' | 'acordo' | 'manual' }
 export interface NfPendente { id: string; acordoId: string; descricao: string; valor: number; vencimento: string; pagaEm: string | null; cobrancaGerada: boolean }
 export interface ContaQueMudou { id: string; descricao: string; tipo: 'entrada' | 'saida'; valorDoContrato: number; ultimoValor: number; ultimoEm: string }
-export interface Rotina { aGerar: ParcelaSemCobranca[]; atrasados: Atrasado[]; nfPendente: NfPendente[]; contasQueMudaram: ContaQueMudou[] }
+export interface SemPlano { id: string; data: string; tipo: 'entrada' | 'saida'; descricao: string; quem: string | null; valor: number }
+export interface Rotina { aGerar: ParcelaSemCobranca[]; atrasados: Atrasado[]; nfPendente: NfPendente[]; contasQueMudaram: ContaQueMudou[]; semPlano: SemPlano[] }
 
 const iso = (d: Date) => d.toISOString().slice(0, 10);
 const hoje = () => dia(new Date(Date.now() - 3 * 3600_000).toISOString()); // dia em Brasília
@@ -392,7 +393,8 @@ export class ParcelasService {
     const h = hoje();
     const em15 = new Date(h.getTime() + 15 * 86400_000);
     const ha60 = new Date(h.getTime() - 60 * 86400_000);
-    const [aGerar, vencidos, semNf, contratos] = await Promise.all([
+    const ha90 = new Date(h.getTime() - 90 * 86400_000);
+    const [aGerar, vencidos, semNf, contratos, semPlano] = await Promise.all([
       this.semCobranca(orgId),
       this.prisma.financeTransaction.findMany({
         where: { orgId, status: 'previsto', type: 'entrada', OR: [{ dueDate: { lt: h } }, { dueDate: null, date: { lt: h } }] },
@@ -413,6 +415,12 @@ export class ParcelasService {
           id: true, descricao: true, tipo: true, valor: true,
           transactions: { where: { status: { in: ['realizado', 'conciliado'] } }, orderBy: { date: 'desc' }, take: 1, select: { amount: true, date: true } },
         },
+      }),
+      // O que aconteceu nos últimos 90 dias sem plano de contas: não entra na DRE certa e pesa na estimativa.
+      this.prisma.financeTransaction.findMany({
+        where: { orgId, status: { in: ['realizado', 'conciliado'] }, chartAccountId: null, temRateio: false, date: { gte: ha90 } },
+        orderBy: { date: 'desc' }, take: 100,
+        select: { id: true, date: true, type: true, description: true, counterparty: true, amount: true, partner: { select: { razaoSocial: true } } },
       }),
     ]);
     const ordem = await this.ordem(orgId);
@@ -438,6 +446,9 @@ export class ParcelasService {
         if (Math.abs(ultimo - contrato) <= Math.max(1, contrato * 0.01)) return [];
         return [{ id: c.id, descricao: c.descricao, tipo: c.tipo, valorDoContrato: contrato, ultimoValor: ultimo, ultimoEm: iso(u.date) }];
       }),
+      semPlano: semPlano.map((t) => ({
+        id: t.id, data: iso(t.date), tipo: t.type, descricao: t.description, quem: t.partner?.razaoSocial ?? t.counterparty, valor: num(t.amount),
+      })),
     };
   }
 

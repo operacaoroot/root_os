@@ -106,6 +106,14 @@ const ABSORVIDOS = [
   { id: 'c77fe5a1-2b1c-46a1-a4a6-c5cb9acc6a3e', motivo: 'Hostinger: virou conta fixa anual' },
 ];
 
+/** Saída que já aconteceu e é de uma conta fixa: ligada ao contrato, não pesa na estimativa de variáveis. */
+const LIGAR_AO_CONTRATO = [
+  {
+    data: '2026-10-22', valor: 1000, texto: 'LUCAS FERNANDES', motivo: 'parcela 2 do celular (o contrato começa na 3)',
+    contractId: 'b7c2c835-2ee1-4c7b-88ec-4adfa4e4d922', chartAccountId: '3c8c5b54-c566-463e-8442-f172b8f56885',
+  },
+];
+
 const HOSTINGER = {
   descricao: 'Hostinger — VPS (plano anual)', valor: 599.88, diaVencimento: 15, periodicidade: 'anual',
   partnerId: '218928ac-2da5-43f3-989c-a850cc18c72d', accountId: '1fd67d05-69a7-47ee-8263-9457e3079640',
@@ -194,6 +202,19 @@ async function main() {
     if (!t) continue;
     fala(`- previsto manual "${t.description}" (R$ ${brl(Number(t.amount))}): ${x.motivo}`);
     if (APLICAR) await prisma.financeTransaction.delete({ where: { id: x.id } });
+  }
+
+  for (const l of LIGAR_AO_CONTRATO) {
+    const t = await prisma.financeTransaction.findFirst({
+      where: {
+        orgId, type: 'saida', status: { in: ['realizado', 'conciliado'] }, amount: new Prisma.Decimal(l.valor),
+        date: { gte: dia(l.data), lt: new Date(dia(l.data).getTime() + 86400_000) }, description: { contains: l.texto, mode: 'insensitive' },
+      },
+      select: { id: true, contractId: true, chartAccountId: true, description: true },
+    });
+    if (!t || t.contractId) continue;
+    fala(`~ saída de ${l.data} (R$ ${brl(l.valor)}, "${t.description}"): ligada à conta fixa, ${l.motivo}`);
+    if (APLICAR) await prisma.financeTransaction.update({ where: { id: t.id }, data: { contractId: l.contractId, chartAccountId: t.chartAccountId ?? l.chartAccountId } });
   }
 
   if (APLICAR) {
