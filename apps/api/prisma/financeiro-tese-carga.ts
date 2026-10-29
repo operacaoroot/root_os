@@ -167,7 +167,10 @@ async function main() {
       }
     }
     const noAsaas = atuais.filter((x) => x.asaasPaymentId).length;
-    fala(`  = ${a.cliente}: ${a.parcelas.length} parcela(s) desta carga (R$ ${brl(soma)}); ${noAsaas} já ligada(s) ao Asaas; o resto do acordo (R$ ${brl(a.valor)}) vem das cobranças abertas no próximo sync`);
+    const falta = a.valor - soma;
+    fala(`  = ${a.cliente}: acordo de R$ ${brl(a.valor)}; ${a.parcelas.length} parcela(s) nesta carga (R$ ${brl(soma)})` +
+      (noAsaas ? `; ${noAsaas} já ligada(s) ao Asaas` : '') +
+      (falta > 0.05 ? `; os R$ ${brl(falta)} que faltam vêm das cobranças abertas no Asaas, no próximo sync` : ''));
   }
 
   // Conta fixa anual da Hostinger.

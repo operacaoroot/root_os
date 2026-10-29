@@ -65,6 +65,8 @@ export interface AsaasPayment {
   originalDueDate?: string | null;
   clientPaymentDate?: string | null;
   deleted?: boolean;
+  /** Cobrança gerada por uma assinatura do Asaas (mensalidade): é conta recorrente, não parcela de acordo. */
+  subscription?: string | null;
 }
 
 export interface AsaasCustomer {

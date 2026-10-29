@@ -5,7 +5,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
 import type { AsaasFinancialTransaction, AsaasPayment } from './asaas.service';
 import {
-  acordoDaCobranca, chavesDoAcordo, documentoComoChave, escolherParcela, ordemDasParcelas, parcelaMaisPerto,
+  acordoDaCobranca, chavesDoAcordo, documentoComoChave, escolherParcela, nomeCasa, ordemDasParcelas, parcelaMaisPerto,
   type AcordoCandidato, type ParcelaCandidata,
 } from './parcelas';
 
@@ -42,6 +42,8 @@ export interface Vestir {
   /** Acordos pagantes: a cobrança que é de um deles e não acha parcela cria a sua. */
   acordos: AcordoParaVestir[];
   previstosDeContrato: PrevistoDeContrato[];
+  /** Contratos recorrentes de entrada: a mensalidade deles é conta fixa, nunca parcela de acordo. */
+  contratosDeEntrada: Array<{ id: string; valor: number; chaves: string[]; partnerId: string | null }>;
 }
 
 /** Uma vez por passagem do sync: as parcelas livres e os previstos de contrato que uma cobrança pode vestir. */
@@ -77,16 +79,23 @@ export async function prepararVestir(db: Db, orgId: string): Promise<Vestir> {
       partner: { select: { razaoSocial: true, nomeFantasia: true, cnpjCpf: true, acordos: { select: { cliente: true, apelidos: true } } } },
     },
   });
+  type Parceiro = { razaoSocial: string; nomeFantasia: string | null; cnpjCpf: string | null; acordos: Array<{ cliente: string; apelidos: string | null }> } | null;
+  const chavesDoParceiro = (pa: Parceiro) => [
+    // "Curral (Marcelo Alves Meroto)": o nome entre parênteses é quem paga no Asaas.
+    ...chavesDoAcordo({ cliente: pa?.razaoSocial ?? '', apelidos: [pa?.nomeFantasia, /\(([^)]+)\)/.exec(pa?.razaoSocial ?? '')?.[1]].filter(Boolean).join(',') }),
+    ...(pa?.acordos ?? []).flatMap(chavesDoAcordo),
+    ...documentoComoChave(pa?.cnpjCpf),
+  ];
   const previstosDeContrato = doContrato.map((t) => ({
     id: t.id, valor: num(t.amount), vencimento: t.dueDate ?? t.date, contractId: t.contractId!, partnerId: t.partnerId,
-    chaves: [
-      // "Curral (Marcelo Alves Meroto)": o nome entre parênteses é quem paga no Asaas.
-      ...chavesDoAcordo({ cliente: t.partner?.razaoSocial ?? '', apelidos: [t.partner?.nomeFantasia, /\(([^)]+)\)/.exec(t.partner?.razaoSocial ?? '')?.[1]].filter(Boolean).join(',') }),
-      ...(t.partner?.acordos ?? []).flatMap(chavesDoAcordo),
-      ...documentoComoChave(t.partner?.cnpjCpf),
-    ],
+    chaves: chavesDoParceiro(t.partner),
   }));
-  return { porPagamento, livres, acordos, previstosDeContrato };
+  const contratos = await db.contract.findMany({
+    where: { orgId, tipo: 'entrada', status: 'ativo' },
+    select: { id: true, valor: true, partnerId: true, partner: { select: { razaoSocial: true, nomeFantasia: true, cnpjCpf: true, acordos: { select: { cliente: true, apelidos: true } } } } },
+  });
+  const contratosDeEntrada = contratos.map((c) => ({ id: c.id, valor: num(c.valor), partnerId: c.partnerId, chaves: chavesDoParceiro(c.partner) }));
+  return { porPagamento, livres, acordos, previstosDeContrato, contratosDeEntrada };
 }
 
 export interface Vestimenta { parcelaId: string | null; contractId: string | null; partnerId: string | null }
@@ -114,11 +123,23 @@ export async function vestirCobranca(db: Db, orgId: string, v: Vestir, p: AsaasP
   }
   const texto = `${textoDoPagador ?? ''} ${p.description ?? ''}`;
   const cobranca = { valor: p.value, vence, texto };
-  // 1) a parcela livre de mesmo valor e nome; 2) a do acordo dela com o vencimento mais
-  // perto (o valor pode ter mudado); 3) nenhuma: a cobrança cria a parcela no acordo.
+  // A parcela livre de mesmo valor e nome vem primeiro.
+  let parcela = escolherParcela(cobranca, v.livres);
+  // Mensalidade (assinatura do Asaas, ou o valor de um contrato de entrada do mesmo
+  // cliente) é conta fixa: veste o previsto do contrato e nunca cria parcela de acordo.
+  const doContrato = parcela ? null : escolherParcela(cobranca, v.previstosDeContrato);
+  if (doContrato) {
+    await db.financeTransaction.deleteMany({ where: { orgId, id: doContrato.id, status: 'previsto' } });
+    v.previstosDeContrato.splice(v.previstosDeContrato.indexOf(doContrato), 1);
+    return { parcelaId: null, contractId: doContrato.contractId, partnerId: doContrato.partnerId };
+  }
+  const contrato = parcela ? null : v.contratosDeEntrada.find((c) => Math.abs(c.valor - p.value) < 0.01 && nomeCasa(c.chaves, texto));
+  if (contrato) return { parcelaId: null, contractId: contrato.id, partnerId: contrato.partnerId };
+  if (!parcela && p.subscription) return { parcelaId: null, contractId: null, partnerId: null };
+  // Depois, a parcela do acordo com o vencimento mais perto (o valor pode ter mudado no
+  // Asaas); e, sem nenhuma, a cobrança cria a parcela no acordo.
   const acordo = acordoDaCobranca(texto, v.acordos);
-  const parcela = escolherParcela(cobranca, v.livres)
-    ?? (acordo ? parcelaMaisPerto(vence, v.livres.filter((l) => l.acordoId === acordo.id)) : null);
+  parcela ??= acordo ? parcelaMaisPerto(vence, v.livres.filter((l) => l.acordoId === acordo.id)) : null;
   if (parcela) {
     await db.acordoParcela.update({ where: { id: parcela.id }, data: { asaasPaymentId: p.id, valor, vencimento: vence } });
     await db.financeTransaction.deleteMany({ where: { orgId, externalId: `${PREFIXO}${parcela.id}`, status: 'previsto' } });
@@ -132,12 +153,6 @@ export async function vestirCobranca(db: Db, orgId: string, v: Vestir, p: AsaasP
     });
     v.porPagamento.set(p.id, { id: nova.id, partnerId: acordo.partnerId, pagaEm: null });
     return { parcelaId: nova.id, contractId: null, partnerId: acordo.partnerId };
-  }
-  const doContrato = escolherParcela(cobranca, v.previstosDeContrato);
-  if (doContrato) {
-    await db.financeTransaction.deleteMany({ where: { orgId, id: doContrato.id, status: 'previsto' } });
-    v.previstosDeContrato.splice(v.previstosDeContrato.indexOf(doContrato), 1);
-    return { parcelaId: null, contractId: doContrato.contractId, partnerId: doContrato.partnerId };
   }
   return { parcelaId: null, contractId: null, partnerId: null };
 }
