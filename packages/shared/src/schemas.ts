@@ -581,6 +581,9 @@ export const FinanceSummarySchema = z.object({
   aPagar: z.number(),
   aReceberVencido: z.number(),
   aPagarVencido: z.number(),
+  /** Previstos que vencem nos próximos 30 dias (a mesma janela do fluxo projetado). */
+  aReceber30: z.number(),
+  aPagar30: z.number(),
   byAccount: z.array(z.object({ id: z.string(), name: z.string(), balance: z.number() })),
   topCategorias: z.array(z.object({ name: z.string(), kind: z.string(), total: z.number() })),
   bancos: z.object({ conexoes: z.number().int(), conectados: z.number().int(), pluggyConfigurado: z.boolean(), asaasConfigurado: z.boolean() }),
@@ -592,6 +595,15 @@ export type FinanceSummary = z.infer<typeof FinanceSummarySchema>;
 export const CashflowSchema = z.object({
   window: z.object({ from: z.string(), to: z.string() }),
   openingBalance: z.number(),
+  /** Previstos em aberto que venceram antes da janela. O a pagar sai no 1º dia; o a receber fica fora da linha. */
+  vencidos: z.object({ aPagar: z.number(), aReceber: z.number() }),
+  /** Vencimentos de contrato recorrente que ainda não viraram previsto: a projeção desenha sem gravar. */
+  contratos: z.array(z.object({ date: z.string(), tipo: FinanceTxTypeSchema, descricao: z.string(), valor: z.number() })),
+  /** Média dos últimos 90 dias de saídas variáveis (29/10/2026): estimativa, fora do que está lançado. */
+  estimativaVariavel: z.object({
+    de: z.string(), ate: z.string(), total: z.number(), porMes: z.number(), porDia: z.number(),
+    lancamentos: z.number().int(), semPlano: z.number().int(),
+  }),
   days: z.array(
     z.object({
       date: z.string(),
@@ -599,11 +611,25 @@ export const CashflowSchema = z.object({
       saidas: z.number(),
       resultado: z.number(),
       acumulado: z.number(),
+      /** A parte da estimativa de variáveis que cai neste dia, e o saldo descontando-a. */
+      estimativa: z.number(),
+      acumuladoComEstimativa: z.number(),
     }),
   ),
   source: SourceMetaSchema,
 });
 export type Cashflow = z.infer<typeof CashflowSchema>;
+
+// Entrada × saída num período (29/10/2026): realizado e previsto lado a lado, estimativa à parte.
+export const PeriodoFinanceiroSchema = z.object({
+  de: z.string(), ate: z.string(),
+  realizado: z.object({ entrou: z.number(), saiu: z.number(), resultado: z.number(), lancamentos: z.number().int() }),
+  previsto: z.object({ entra: z.number(), sai: z.number(), resultado: z.number() }),
+  vencidoEmAberto: z.object({ aReceber: z.number(), aPagar: z.number() }),
+  estimativaVariavel: z.object({ valor: z.number(), porMes: z.number(), dias: z.number().int() }),
+  total: z.object({ entra: z.number(), sai: z.number(), resultado: z.number(), resultadoComEstimativa: z.number() }),
+});
+export type PeriodoFinanceiro = z.infer<typeof PeriodoFinanceiroSchema>;
 
 export const BankConnectionSchema = z.object({
   id: z.string(),
@@ -892,13 +918,15 @@ export const PayableRowSchema = z.object({
   vencido: z.boolean(),
   diasAtraso: z.number().int(),
   exercicioFinanceiro: z.boolean().optional(),
+  /** De onde vem: o que vem do Asaas e a parcela do acordo não se editam aqui (29/10/2026). */
+  origem: z.enum(['asaas', 'acordo', 'contrato', 'manual']).optional(),
 });
 export type PayableRow = z.infer<typeof PayableRowSchema>;
 
 export const PayablesSchema = z.object({
   items: z.array(PayableRowSchema),
   total: z.number().int(),
-  totals: z.object({ aPagar: z.number(), aReceber: z.number(), vencidoPagar: z.number(), vencidoReceber: z.number(), aguardandoAprovacao: z.number().int() }),
+  totals: z.object({ aPagar: z.number(), aReceber: z.number(), vencidoPagar: z.number(), vencidoReceber: z.number(), aPagar30: z.number(), aReceber30: z.number(), aguardandoAprovacao: z.number().int() }),
   approvalLimit: z.number(),
   source: SourceMetaSchema,
 });

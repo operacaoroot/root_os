@@ -6,6 +6,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
 import { LLM_PROVIDER, type LlmProvider } from '../llm/llm.provider';
 import { FinanceService } from './finance.service';
+import { materializarParcelas } from './parcelas.service';
 import { ehReceita, grupoDaSaida, mesAMes, mesDe, mesesAte, naturezaDaConta, naturezaEmUso, partesDaSaida, partesDoMes, type ContaDoPlano, type Movimento } from './mes-a-mes';
 
 /*
@@ -106,6 +107,8 @@ export class AnaliseService {
     const antes = await this.prisma.acordoComercial.findFirst({ where: { id, orgId } });
     if (!antes) throw new NotFoundException('Acordo não encontrado');
     await this.prisma.acordoComercial.delete({ where: { id } });
+    // As parcelas saem junto (cascata); o previsto "a gerar" de cada uma sai do fluxo.
+    await materializarParcelas(this.prisma, orgId);
     await this.audit.log({ orgId, actorId, action: 'finance.acordo.delete', entityType: 'acordo_comercial', entityId: id, before: { cliente: antes.cliente, tipo: antes.tipo, valor: num(antes.valor) } });
     return { ok: true };
   }
@@ -123,7 +126,8 @@ export class AnaliseService {
         where: { orgId, type: 'entrada' },
         select: { amount: true, status: true, counterparty: true, description: true, date: true, dueDate: true, chartAccountId: true },
       }),
-      this.prisma.contract.findMany({ where: { orgId, status: 'ativo' }, select: { id: true, tipo: true, descricao: true, valor: true, periodicidade: true, diaVencimento: true, partner: { select: { razaoSocial: true } } } }),
+      // Conta que já acabou (data de fim no passado) não entra, mesmo com o status ativo.
+      this.prisma.contract.findMany({ where: { orgId, status: 'ativo', OR: [{ dataFim: null }, { dataFim: { gte: new Date(agora - 86400_000) } }] }, select: { id: true, tipo: true, descricao: true, valor: true, periodicidade: true, diaVencimento: true, dataFim: true, partner: { select: { razaoSocial: true } } } }),
       this.prisma.financeTransaction.count({ where: { orgId, status: { not: 'previsto' }, chartAccountId: null, temRateio: false } }),
       this.prisma.chartAccount.findMany({ where: { orgId }, select: { id: true, codigo: true, nome: true, parentId: true, custoFixo: true, natureza: true } }),
       this.prisma.financeTransaction.findMany({
@@ -144,6 +148,8 @@ export class AnaliseService {
       where: { orgId, status: 'previsto' },
       select: { type: true, amount: true, dueDate: true, date: true },
     });
+    // Acordo com parcelas (29/10/2026): o recebido e o a receber vêm delas, não do nome no extrato.
+    const parcelas = await this.prisma.acordoParcela.findMany({ where: { orgId }, select: { acordoId: true, valor: true, pagaEm: true } });
 
     // acordos × extrato
     const efetivo = (s: string) => s === 'realizado' || s === 'conciliado';
@@ -153,9 +159,14 @@ export class AnaliseService {
         const alvo = `${t.counterparty ?? ''} ${t.description}`.toLowerCase();
         return chaves.some((c) => alvo.includes(c));
       };
-      const doAcordo = entradas.filter(casa);
-      const recebido = r2(doAcordo.filter((t) => efetivo(t.status)).reduce((s, t) => s + num(t.amount), 0));
-      const aReceber = r2(doAcordo.filter((t) => t.status === 'previsto').reduce((s, t) => s + num(t.amount), 0));
+      const suas = parcelas.filter((p) => p.acordoId === a.id);
+      const doAcordo: typeof entradas = suas.length ? [] : entradas.filter(casa);
+      const recebido = suas.length
+        ? r2(suas.filter((p) => p.pagaEm).reduce((s, p) => s + num(p.valor), 0))
+        : r2(doAcordo.filter((t) => efetivo(t.status)).reduce((s, t) => s + num(t.amount), 0));
+      const aReceber = suas.length
+        ? r2(suas.filter((p) => !p.pagaEm).reduce((s, p) => s + num(p.valor), 0))
+        : r2(doAcordo.filter((t) => t.status === 'previsto').reduce((s, t) => s + num(t.amount), 0));
       const valor = num(a.valor);
       const esperaCaixa = a.tipo === 'pagante';
       return {
@@ -184,7 +195,7 @@ export class AnaliseService {
         .sort((a, b) => (a.dueDate ?? a.date).getTime() - (b.dueDate ?? b.date).getTime())[0];
       return { pago, previsto: aberto ? num(aberto.amount) : 0, vence: aberto ? (aberto.dueDate ?? aberto.date).toISOString().slice(0, 10) : null };
     };
-    const recorrentes = contratos.map((c) => ({ id: c.id, tipo: c.tipo, descricao: c.descricao, quem: c.partner?.razaoSocial ?? null, valor: num(c.valor), periodicidade: c.periodicidade, dia: c.diaVencimento, porMes: mensal(c), noMes: noMes(c.id) }));
+    const recorrentes = contratos.map((c) => ({ id: c.id, tipo: c.tipo, descricao: c.descricao, quem: c.partner?.razaoSocial ?? null, valor: num(c.valor), periodicidade: c.periodicidade, dia: c.diaVencimento, ate: c.dataFim ? c.dataFim.toISOString().slice(0, 10) : null, porMes: mensal(c), noMes: noMes(c.id) }));
     const custoMensal = r2(recorrentes.filter((c) => c.tipo === 'saida').reduce((s, c) => s + c.porMes, 0));
     const receitaMensal = r2(recorrentes.filter((c) => c.tipo === 'entrada').reduce((s, c) => s + c.porMes, 0));
 

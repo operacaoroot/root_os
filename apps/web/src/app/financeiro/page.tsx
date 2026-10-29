@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { Fragment, useCallback, useEffect, useRef, useState } from 'react';
 import type {
   FinanceSummary,
   FinanceAccountList,
@@ -16,6 +16,7 @@ import type {
   ContractList,
   GerarContratoResposta,
   Payables,
+  PayableRow,
   PontePayableRef,
   Conciliacao,
   Kpis,
@@ -24,12 +25,14 @@ import type {
 import { apiGet, apiPost, apiPatch, ErroDaApi } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 import { AnaliseView } from './Analise';
+import { RotinaDaSemana } from './RotinaDaSemana';
 // O cartão local que existia aqui sombreava o compartilhado e deixava a tela
 // financeira com o visual antigo ao lado do novo. Mesmas props, um só cartão.
 import { KpiCard } from '@/components/KpiCard';
 import { NovaInscricaoFinanceira } from './inscricoes/NovaInscricaoFinanceira';
 import { JanelaDeTitulo, type ModoDaJanela } from './JanelaDeTitulo';
 import { FluxoSeisMeses } from './FluxoSeisMeses';
+import { EntradaSaidaPeriodo } from './EntradaSaidaPeriodo';
 
 const brl = (n: number) =>
   n.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
@@ -52,6 +55,7 @@ const ACCOUNT_TYPES = [
 
 const TABS = [
   { key: 'visao', label: 'Visão geral' },
+  { key: 'rotina', label: 'Rotina da semana' },
   { key: 'analise', label: 'Análise' },
   { key: 'dre', label: 'DRE' },
   { key: 'apar', label: 'A Pagar/Receber' },
@@ -64,7 +68,7 @@ const TABS = [
 type TabKey = (typeof TABS)[number]['key'];
 
 type TxFiltro = { status?: string; type?: string; accountId?: string; from?: string; to?: string };
-type AparFiltro = { tipo?: 'entrada' | 'saida'; vencido?: boolean };
+type AparFiltro = { tipo?: 'entrada' | 'saida'; vencido?: boolean; em30?: boolean };
 const mesAtual = () => {
   const d = new Date();
   const ini = new Date(Date.UTC(d.getFullYear(), d.getMonth(), 1));
@@ -240,6 +244,7 @@ function FinanceiroSessao() {
       {error && <div className="rounded-lg border border-bad/30 bg-bad/10 px-4 py-2 text-sm text-bad">{error}</div>}
       {msg && <div className="rounded-lg border border-good/30 bg-good/10 px-4 py-2 text-sm text-good">{msg}</div>}
 
+      {tab === 'rotina' && <RotinaDaSemana token={token} onError={onMutationError} irParaAcordos={() => setTab('analise')} />}
       {tab === 'analise' && <AnaliseView token={token} canEdit={canEdit} onError={onMutationError} />}
       {tab === 'visao' && <Visao summary={summary} kpis={kpis} cashflow={cashflow} txs={txs} payables={payables} ir={ir} />}
       {tab === 'dre' && <DreView dre={dre} month={dreMonth} setMonth={setDreMonth} />}
@@ -302,8 +307,8 @@ function FinanceiroSessao() {
 }
 
 // ---------------- Visão geral ----------------
-function Card({ label, value, tone, onClick, ativo }: {
-  label: string; value: string; tone?: 'good' | 'bad' | 'warn'; onClick?: () => void; ativo?: boolean;
+function Card({ label, value, tone, onClick, ativo, hint }: {
+  label: string; value: string; tone?: 'good' | 'bad' | 'warn'; onClick?: () => void; ativo?: boolean; hint?: string;
 }) {
   const cls = tone === 'good' ? 'text-good' : tone === 'bad' ? 'text-bad' : tone === 'warn' ? 'text-warn' : 'text-text';
   const corpo = (
@@ -313,6 +318,7 @@ function Card({ label, value, tone, onClick, ativo }: {
         {onClick && <span aria-hidden className="text-[11px] text-muted transition-colors group-hover:text-brand">ver →</span>}
       </div>
       <div className={`mt-1 text-xl font-semibold ${cls}`}>{value}</div>
+      {hint && <div className="mt-0.5 text-[11px] text-muted">{hint}</div>}
     </>
   );
   if (!onClick) return <div className="rounded-xl border border-border bg-surface p-4">{corpo}</div>;
@@ -352,15 +358,20 @@ function CashflowChart({ cashflow, txs, payables }: {
   if (!cashflow || cashflow.days.length === 0) return null;
   const days = cashflow.days;
   const vals = days.map((d) => d.acumulado);
-  const min = Math.min(0, ...vals);
-  const max = Math.max(0, ...vals);
+  // A estimativa de variáveis (média dos últimos 90 dias) vai numa linha à parte, tracejada.
+  const est = cashflow.estimativaVariavel;
+  const valsEst = days.map((d) => d.acumuladoComEstimativa ?? d.acumulado);
+  const min = Math.min(0, ...vals, ...valsEst);
+  const max = Math.max(0, ...vals, ...valsEst);
   const range = max - min || 1;
   const W = 100, H = 34;
   const x = (i: number) => (i / Math.max(days.length - 1, 1)) * W;
   const y = (v: number) => H - ((v - min) / range) * H;
   const pts = days.map((d, i) => `${x(i).toFixed(2)},${y(d.acumulado).toFixed(2)}`).join(' ');
+  const ptsEst = valsEst.map((v, i) => `${x(i).toFixed(2)},${y(v).toFixed(2)}`).join(' ');
   const zeroY = y(0);
   const last = vals[vals.length - 1];
+  const lastEst = valsEst[valsEst.length - 1];
   const passo = Math.max(1, Math.round(days.length / 6));
   const marcas = days.map((d, i) => ({ d, i })).filter(({ i }) => i % passo === 0 || i === days.length - 1);
   const atual = foco !== null ? days[foco] : null;
@@ -371,13 +382,23 @@ function CashflowChart({ cashflow, txs, payables }: {
     return Math.round(t * (days.length - 1));
   };
 
+  // Vencido a pagar entra no 1º dia da janela (a API soma lá); vencido a receber fica fora da linha.
+  const venc = cashflow.vencidos ?? { aPagar: 0, aReceber: 0 };
+  const inicio = cashflow.window.from;
   const doDia = (d: string) => [
     ...(txs?.items ?? [])
       .filter((t) => t.status !== 'previsto' && t.date.slice(0, 10) === d)
-      .map((t) => ({ id: t.id, tipo: t.type, desc: t.description, quem: t.counterparty, valor: t.amount, previsto: false })),
+      .map((t) => ({ id: t.id, tipo: t.type, desc: t.description, quem: t.counterparty, valor: t.amount, previsto: false, vencido: false })),
     ...(payables?.items ?? [])
-      .filter((p) => p.dueDate?.slice(0, 10) === d)
-      .map((p) => ({ id: p.id, tipo: p.tipo, desc: p.description, quem: p.partnerName, valor: p.amount, previsto: true })),
+      .filter((p) => {
+        const venceEm = p.dueDate?.slice(0, 10);
+        return venceEm === d || (d === inicio && p.tipo === 'saida' && !!venceEm && venceEm < inicio);
+      })
+      .map((p) => ({ id: p.id, tipo: p.tipo, desc: p.description, quem: p.partnerName, valor: p.amount, previsto: true, vencido: (p.dueDate?.slice(0, 10) ?? d) < inicio })),
+    // Conta fixa que ainda não virou previsto: a projeção desenha a partir do contrato.
+    ...(cashflow.contratos ?? [])
+      .filter((c) => c.date === d)
+      .map((c, k) => ({ id: `contrato-${d}-${k}`, tipo: c.tipo, desc: c.descricao, quem: 'conta fixa', valor: c.valor, previsto: true, vencido: false })),
   ];
   const itens = dia ? doDia(dia) : [];
   const diaSel = dia ? days.find((d) => d.date === dia) : null;
@@ -386,7 +407,10 @@ function CashflowChart({ cashflow, txs, payables }: {
     <div className="rounded-xl border border-border bg-surface p-4">
       <div className="mb-1 flex items-center justify-between">
         <h2 className="font-os-mono text-[10px] uppercase tracking-[0.16em] font-medium text-muted">Fluxo de caixa projetado (30 dias)</h2>
-        <span className={`text-sm font-semibold ${last >= 0 ? 'text-good' : 'text-bad'}`}>{brl(last)} em {diaCurto(cashflow.window.to)}</span>
+        <span className="text-right">
+          <span className={`text-sm font-semibold ${last >= 0 ? 'text-good' : 'text-bad'}`}>{brl(last)} em {diaCurto(cashflow.window.to)}</span>
+          {est && est.porMes > 0 && <span className="block text-[11px] text-muted">{brl(lastEst)} com a estimativa de variáveis</span>}
+        </span>
       </div>
       <div className="mb-2 h-5 text-[12px] text-muted">
         {atual ? (
@@ -409,6 +433,9 @@ function CashflowChart({ cashflow, txs, payables }: {
           {days.map((d, i) => (d.entradas > 0 || d.saidas > 0) && (
             <line key={d.date} x1={x(i)} x2={x(i)} y1={H} y2={H - 2.5} stroke="currentColor" className={d.saidas > d.entradas ? 'text-bad' : 'text-good'} strokeWidth="1.5" vectorEffect="non-scaling-stroke" />
           ))}
+          {est && est.porMes > 0 && (
+            <polyline points={ptsEst} fill="none" stroke="currentColor" strokeWidth="1.2" strokeDasharray="4 3" className="text-muted" vectorEffect="non-scaling-stroke" />
+          )}
           <polyline points={pts} fill="none" stroke="currentColor" strokeWidth="1.5" className={last >= 0 ? 'text-good' : 'text-bad'} vectorEffect="non-scaling-stroke" />
           {foco !== null && (
             <line x1={x(foco)} x2={x(foco)} y1="0" y2={H} stroke="currentColor" strokeWidth="1" className="text-muted" vectorEffect="non-scaling-stroke" />
@@ -423,6 +450,19 @@ function CashflowChart({ cashflow, txs, payables }: {
           <span key={d.date} className="absolute -translate-x-1/2 whitespace-nowrap first:translate-x-0 last:-translate-x-full" style={{ left: `${x(i)}%` }}>{diaCurto(d.date)}</span>
         ))}
       </div>
+      {est && est.porMes > 0 && (
+        <p className="mt-2 text-[11px] text-muted">
+          Linha tracejada: o mesmo saldo descontando a <b className="text-text">estimativa de variáveis, {brl(est.porMes)}/mês</b>{' '}
+          (média dos últimos 90 dias de Pix, reembolsos, taxas e compras do dia a dia; {est.lancamentos} lançamentos
+          {est.semPlano > 0 ? `, ${est.semPlano} sem plano de contas` : ''}). Não é lançamento: recalcula sozinha.
+        </p>
+      )}
+      {(venc.aPagar > 0 || venc.aReceber > 0) && (
+        <p className="mt-2 text-[11px] text-muted">
+          {venc.aPagar > 0 && <><span className="text-warn">{brl(venc.aPagar)} a pagar vencido</span> sai no primeiro dia. </>}
+          {venc.aReceber > 0 && <><span className="text-warn">{brl(venc.aReceber)} atrasado, cobrar</span>: fica fora da linha até entrar (lista na Rotina da semana).</>}
+        </p>
+      )}
 
       {dia && (
         <div className="mt-4 border-t border-border pt-3">
@@ -438,7 +478,7 @@ function CashflowChart({ cashflow, txs, payables }: {
                 <li key={m.id} className="flex items-center gap-3 py-2">
                   <span className={`w-14 shrink-0 text-[11px] uppercase ${m.tipo === 'entrada' ? 'text-good' : 'text-bad'}`}>{m.tipo === 'entrada' ? 'entra' : 'sai'}</span>
                   <span className="min-w-0 flex-1 truncate">{m.desc}{m.quem && <span className="ml-2 text-muted">{m.quem}</span>}</span>
-                  {m.previsto && <span className="shrink-0 rounded bg-surface-2 px-1.5 py-0.5 text-[11px] text-muted">previsto</span>}
+                  {m.previsto && <span className={`shrink-0 rounded bg-surface-2 px-1.5 py-0.5 text-[11px] ${m.vencido ? 'text-warn' : 'text-muted'}`}>{m.vencido ? 'vencido' : 'previsto'}</span>}
                   <span className="w-28 shrink-0 text-right tabular-nums">{brl(m.valor)}</span>
                 </li>
               ))}
@@ -470,6 +510,8 @@ function Visao({ summary, kpis, cashflow, txs, payables, ir }: {
           <CashflowChart cashflow={cashflow} txs={txs} payables={payables} />
           {/* Layout 26/10 (P-25): a projeção de 6 meses em barras, por mês. */}
           <FluxoSeisMeses />
+          {/* 29/10: entrada × saída no período escolhido, realizado e previsto lado a lado. */}
+          <EntradaSaidaPeriodo />
         </>
       )}
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
@@ -477,8 +519,8 @@ function Visao({ summary, kpis, cashflow, txs, payables, ir }: {
         <Card label="Entradas do mês" value={brl(summary.mes.entradas)} tone="good" onClick={() => ir('lancamentos', { tx: { type: 'entrada', ...mesAtual() } })} />
         <Card label="Saídas do mês" value={brl(summary.mes.saidas)} tone="bad" onClick={() => ir('lancamentos', { tx: { type: 'saida', ...mesAtual() } })} />
         <Card label="Contas" value={String(summary.contas)} onClick={() => ir('contas')} />
-        <Card label="A receber" value={brl(summary.aReceber)} tone="good" onClick={() => ir('apar', { apar: { tipo: 'entrada' } })} />
-        <Card label="A pagar" value={brl(summary.aPagar)} tone="bad" onClick={() => ir('apar', { apar: { tipo: 'saida' } })} />
+        <Card label="A receber em 30 dias" value={brl(summary.aReceber30 ?? 0)} hint={`${brl(summary.aReceber)} lançado no total`} tone="good" onClick={() => ir('apar', { apar: { tipo: 'entrada', em30: true } })} />
+        <Card label="A pagar em 30 dias" value={brl(summary.aPagar30 ?? 0)} hint={`${brl(summary.aPagar)} lançado no total`} tone="bad" onClick={() => ir('apar', { apar: { tipo: 'saida', em30: true } })} />
         <Card label="Receber vencido" value={brl(summary.aReceberVencido)} tone={summary.aReceberVencido > 0 ? 'warn' : undefined} onClick={() => ir('apar', { apar: { tipo: 'entrada', vencido: true } })} />
         <Card label="Pagar vencido" value={brl(summary.aPagarVencido)} tone={summary.aPagarVencido > 0 ? 'warn' : undefined} onClick={() => ir('apar', { apar: { tipo: 'saida', vencido: true } })} />
       </div>
@@ -643,14 +685,7 @@ function ConciliacaoView(props: {
   const [sel, setSel] = useState<Record<string, string>>({});
   // Layout 26/10 (P-24): sem título para casar, cria a partir do próprio movimento e já concilia.
   const [janela, setJanela] = useState<ModoDaJanela | null>(null);
-  const [busy, setBusy] = useState(false);
 
-  const auto = () => {
-    setBusy(true);
-    apiPost<{ conciliados: number; sugestoes: number }>(`/finance/conciliacao/auto${accountId ? `?accountId=${accountId}` : ''}`, {}, token)
-      .then((r) => { onFlash(`✅ ${r.conciliados} conciliado(s) automaticamente · ${r.sugestoes} sugestão(ões) restante(s).`); onChange(); })
-      .catch((e) => onError(e)).finally(() => setBusy(false));
-  };
   const conciliar = (movimentoId: string, tituloId: string) => {
     if (!tituloId) { onError('Escolha um título para conciliar.'); return; }
     apiPost<{ score: number }>('/finance/conciliacao/match', { movimentoId, tituloId }, token)
@@ -674,15 +709,11 @@ function ConciliacaoView(props: {
           {accounts?.items.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
         </select>
         {concil && <span className="text-sm text-muted">{concil.stats.movimentosAbertos} movimento(s) · {concil.stats.titulosAbertos} título(s) em aberto</span>}
-        {canBank && (
-          <button onClick={auto} disabled={busy} className="ml-auto rounded-lg bg-brand px-3 py-2 text-sm font-medium text-ink hover:opacity-90 disabled:opacity-60">
-            {busy ? 'Conciliando…' : 'Auto-conciliar'}
-          </button>
-        )}
       </div>
       <p className="text-[11px] text-muted">
-        Movimentos bancários (OFX/Pluggy) ainda não conciliados. O score combina valor (50%) + data (30%) + tipo (20%);
-        ≥0,85 concilia automático, 0,50–0,84 fica como sugestão para confirmar.
+        O que vem do Asaas já casou sozinho pelo id da cobrança (recebimento e taxa). Aqui fica o resto: Pix, cartão e
+        movimentos de outro banco. O sistema só sugere, pela nota (valor 50%, data 30%, tipo 20%) e com o nome em comum
+        na frente; quem confirma é você. Valor igual nunca casa nada sozinho.
       </p>
 
       <div className="overflow-x-auto rounded-xl border border-border">
@@ -804,13 +835,27 @@ function ApAr(props: {
   };
 
   const t = payables?.totals;
+  // Os próximos 30 dias: a mesma janela do fluxo projetado, sem os vencidos.
+  const limite30 = new Date(Date.now() + 30 * 86400_000).toISOString();
   const linhas = (payables?.items ?? []).filter((r) =>
-    (!filtro.tipo || r.tipo === filtro.tipo) && (!filtro.vencido || r.vencido));
+    (!filtro.tipo || r.tipo === filtro.tipo) && (!filtro.vencido || r.vencido) &&
+    (!filtro.em30 || (!r.vencido && !!r.dueDate && r.dueDate <= limite30)));
+  // A lista vem por vencimento: os vencidos primeiro, depois um bloco por mês com o subtotal.
+  const blocoDe = (r: PayableRow) => (r.vencido ? 'vencido' : (r.dueDate ?? '').slice(0, 7));
+  const subtotais = new Map<string, { pagar: number; receber: number; itens: number }>();
+  for (const r of linhas) {
+    const s = subtotais.get(blocoDe(r)) ?? { pagar: 0, receber: 0, itens: 0 };
+    if (r.tipo === 'saida') s.pagar += r.amount; else s.receber += r.amount;
+    s.itens += 1;
+    subtotais.set(blocoDe(r), s);
+  }
+  const nomeDoBloco = (b: string) => (b === 'vencido' ? 'Vencidos'
+    : b ? new Date(`${b}-15T12:00:00Z`).toLocaleDateString('pt-BR', { month: 'long', year: 'numeric', timeZone: 'UTC' }) : 'Sem vencimento');
   return (
     <div className="space-y-6">
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
-        <Card label="A pagar" value={brl(t?.aPagar ?? 0)} tone="bad" ativo={filtro.tipo === 'saida' && !filtro.vencido} onClick={() => setFiltro({ tipo: 'saida' })} />
-        <Card label="A receber" value={brl(t?.aReceber ?? 0)} tone="good" ativo={filtro.tipo === 'entrada' && !filtro.vencido} onClick={() => setFiltro({ tipo: 'entrada' })} />
+        <Card label="A pagar em 30 dias" value={brl(t?.aPagar30 ?? 0)} hint={`${brl(t?.aPagar ?? 0)} lançado no total`} tone="bad" ativo={filtro.tipo === 'saida' && !!filtro.em30} onClick={() => setFiltro({ tipo: 'saida', em30: true })} />
+        <Card label="A receber em 30 dias" value={brl(t?.aReceber30 ?? 0)} hint={`${brl(t?.aReceber ?? 0)} lançado no total`} tone="good" ativo={filtro.tipo === 'entrada' && !!filtro.em30} onClick={() => setFiltro({ tipo: 'entrada', em30: true })} />
         <Card label="Vencido a pagar" value={brl(t?.vencidoPagar ?? 0)} tone={t && t.vencidoPagar > 0 ? 'warn' : undefined} ativo={filtro.tipo === 'saida' && !!filtro.vencido} onClick={() => setFiltro({ tipo: 'saida', vencido: true })} />
         <Card label="Vencido a receber" value={brl(t?.vencidoReceber ?? 0)} tone={t && t.vencidoReceber > 0 ? 'warn' : undefined} ativo={filtro.tipo === 'entrada' && !!filtro.vencido} onClick={() => setFiltro({ tipo: 'entrada', vencido: true })} />
         <Card label="Aguardando aprovação" value={String(t?.aguardandoAprovacao ?? 0)} tone={t && t.aguardandoAprovacao > 0 ? 'warn' : undefined} />
@@ -821,9 +866,10 @@ function ApAr(props: {
           ['Tudo', {}],
           ['A receber', { tipo: 'entrada' }],
           ['A pagar', { tipo: 'saida' }],
+          ['Próximos 30 dias', { em30: true }],
           ['Vencidos', { vencido: true }],
         ] as [string, AparFiltro][]).map(([rotulo, f]) => {
-          const on = filtro.tipo === f.tipo && !!filtro.vencido === !!f.vencido;
+          const on = filtro.tipo === f.tipo && !!filtro.vencido === !!f.vencido && !!filtro.em30 === !!f.em30;
           return (
             <button key={rotulo} type="button" onClick={() => setFiltro(f)} aria-pressed={on}
               className={`rounded-full border px-3 py-1 ${on ? 'border-brand bg-brand/10 text-brand' : 'border-border text-muted hover:text-text'}`}>
@@ -865,10 +911,24 @@ function ApAr(props: {
           </thead>
           <tbody>
             {payables && linhas.length === 0 && <tr><td colSpan={7} className="px-3 py-6 text-center text-muted">Nada previsto. Crie lançamentos “previstos” ou gere de um contrato.</td></tr>}
-            {linhas.map((row) => {
+            {linhas.map((row, i) => {
               const r = row as typeof row & Partial<PontePayableRef>;
+              const bloco = blocoDe(r);
+              const sub = subtotais.get(bloco);
+              const abreBloco = i === 0 || blocoDe(linhas[i - 1]) !== bloco;
               return (
-              <tr key={r.id} className="border-t border-border">
+              <Fragment key={r.id}>
+              {abreBloco && sub && (
+                <tr className="border-t border-border bg-surface-2/60">
+                  <td colSpan={7} className="px-3 py-1.5 text-[11px] text-muted">
+                    <span className={`font-medium uppercase tracking-wide ${bloco === 'vencido' ? 'text-warn' : 'text-text'}`}>{nomeDoBloco(bloco)}</span>
+                    {sub.pagar > 0 && <span className="ml-3 text-bad">a pagar {brl(sub.pagar)}</span>}
+                    {sub.receber > 0 && <span className="ml-3 text-good">a receber {brl(sub.receber)}</span>}
+                    <span className="ml-3">{sub.itens} {sub.itens === 1 ? 'item' : 'itens'}</span>
+                  </td>
+                </tr>
+              )}
+              <tr className="border-t border-border">
                 <td className="px-3 py-2"><span className={r.tipo === 'saida' ? 'text-bad' : 'text-good'}>{r.tipo === 'saida' ? 'pagar' : 'receber'}</span></td>
                 <td className="px-3 py-2">{r.description}{r.chartCodigo && <span className="ml-1 text-[10px] text-muted">[{r.chartCodigo}]</span>}</td>
                 <td className="px-3 py-2 text-muted">{r.partnerName ?? '—'}</td>
@@ -888,6 +948,12 @@ function ApAr(props: {
                         <button onClick={() => doApprove(r.id, true)} className="rounded border border-border px-2 py-0.5 text-[11px] text-good hover:bg-surface-2">Aprovar</button>
                         <button onClick={() => doApprove(r.id, false)} className="ml-1 rounded border border-border px-2 py-0.5 text-[11px] text-bad hover:bg-surface-2">Rejeitar</button>
                       </>
+                    ) : r.origem === 'asaas' ? (
+                      // O Asaas manda: valor e data acompanham a cobrança, e a baixa vem do extrato.
+                      <span className="text-[11px] text-muted" title="Valor e data acompanham a cobrança no Asaas; a baixa vem do extrato, pelo id.">vem do Asaas</span>
+                    ) : r.origem === 'acordo' ? (
+                      // Parcela do acordo sem cobrança: valor e data se acertam no acordo; aqui só a baixa do que entrou por fora.
+                      <button onClick={() => setJanela({ tipo: 'baixar', id: r.id, descricao: r.description, valor: r.amount })} title="Valor e data se acertam em Análise → Acordos → parcelas." className="rounded border border-border px-2 py-0.5 text-[11px] hover:bg-surface-2">Baixar</button>
                     ) : r.approvalStatus !== 'rejeitado' ? (
                       <>
                         <button onClick={() => setJanela({ tipo: 'editar', id: r.id, lado: r.tipo, descricao: r.description, valor: r.amount, vencimento: r.dueDate, parceiro: r.partnerName })} className="rounded border border-border px-2 py-0.5 text-[11px] hover:bg-surface-2">Editar</button>
@@ -898,6 +964,7 @@ function ApAr(props: {
                 )}
                 {!canEdit && r.exercicioFinanceiro !== true && r.exercicioComercial !== true && <td />}
               </tr>
+              </Fragment>
             );})}
           </tbody>
         </table>

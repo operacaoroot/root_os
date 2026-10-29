@@ -308,26 +308,29 @@ export class AprService {
     const inscritos = await this.prisma.financeExerciseObligation.findMany({ where: { orgId, transactionId: { in: rows.map(r => r.id) } }, select: { transactionId: true } });
     const exercicios = new Set(inscritos.map(o => o.transactionId));
     const comerciais = new Set((await this.prisma.commercialExerciseObligation.findMany({ where: { orgId, transactionId: { in: rows.map(r => r.id) } }, select: { transactionId: true } })).map(o => o.transactionId));
-    let aPagar = 0, aReceber = 0, vencidoPagar = 0, vencidoReceber = 0, aguardando = 0;
+    let aPagar = 0, aReceber = 0, vencidoPagar = 0, vencidoReceber = 0, aPagar30 = 0, aReceber30 = 0, aguardando = 0;
+    const em30 = new Date(now.getTime() + 30 * 86400_000);
     const items: PayableRow[] = rows.map((r) => {
       const v = num(r.amount);
       const due = r.dueDate ?? r.date;
       const vencido = due < now;
       const dias = vencido ? daysBetween(now, due) : 0;
-      if (r.type === 'saida') { aPagar += v; if (vencido) vencidoPagar += v; }
-      else { aReceber += v; if (vencido) vencidoReceber += v; }
+      const nos30 = !vencido && due <= em30;
+      if (r.type === 'saida') { aPagar += v; if (vencido) vencidoPagar += v; if (nos30) aPagar30 += v; }
+      else { aReceber += v; if (vencido) vencidoReceber += v; if (nos30) aReceber30 += v; }
       if (r.approvalStatus === 'aguardando') aguardando += 1;
       return {
         id: r.id, tipo: r.type, description: r.description, partnerName: r.partner?.razaoSocial ?? null,
         chartCodigo: r.chartAccount?.codigo ?? null, amount: v, dueDate: due.toISOString(),
         status: r.status, approvalStatus: r.approvalStatus, exercicioFinanceiro: exercicios.has(r.id),
+        origem: r.source === 'asaas' ? 'asaas' as const : r.source === 'acordo' ? 'acordo' as const : r.contractId ? 'contrato' as const : 'manual' as const,
         ...{ exercicioComercial: comerciais.has(r.id), exercicioComercialHref: comerciais.has(r.id) ? `/finance/exercicio/comercial/obrigacoes/${r.id}` : null }, vencido, diasAtraso: dias,
       };
     });
     if (actorId) await exigirAcessoAtual(this.prisma, orgId, actorId, ['financeiro.ver']);
     return {
       items, total: rows.length,
-      totals: { aPagar, aReceber, vencidoPagar, vencidoReceber, aguardandoAprovacao: aguardando },
+      totals: { aPagar, aReceber, vencidoPagar, vencidoReceber, aPagar30, aReceber30, aguardandoAprovacao: aguardando },
       approvalLimit: APPROVAL_LIMIT(),
       source: this.meta(),
     };

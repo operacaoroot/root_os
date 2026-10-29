@@ -19,7 +19,10 @@ import { PluggyService } from './pluggy.service';
 import { AsaasService } from './asaas.service';
 import type { BankConnection as BankConnectionRow } from '@prisma/client';
 import { parseOfx } from './ofx';
-import { APPROVAL_LIMIT, conferirReferencias } from './apr.service';
+import { APPROVAL_LIMIT, conferirReferencias, proximoVencimentoDoContrato } from './apr.service';
+import { ocorrenciasDoContrato } from './parcelas';
+import { grupoDaSaida, type ContaDoPlano } from './mes-a-mes';
+import { prepararVestir, vestirCobranca, conciliarPeloId, fecharParcelasQueSairam, materializarParcelas } from './parcelas.service';
 import { exigirAcessoAtual } from '../memory/acesso-memoria';
 import { travarFinanceiro, travarLancamentoFinanceiro, exigirNaoExercicio } from './financeiro-exercicio.service';
 import { comContexto, novaCorrelacao } from '../common/contexto-execucao';
@@ -45,6 +48,16 @@ function iso(d: Date | null): string | null {
   return d ? d.toISOString() : null;
 }
 
+let pedirSync: (() => void) | null = null;
+
+/**
+ * O webhook do Asaas chama isto (29/10/2026): uma passagem do sync logo, em vez de
+ * esperar o intervalo. Sem o Asaas configurado, não faz nada.
+ */
+export function pedirSyncDoAsaas(): void {
+  pedirSync?.();
+}
+
 @Injectable()
 export class FinanceService implements OnModuleInit {
   private readonly log = new Logger('FinanceService');
@@ -66,26 +79,35 @@ export class FinanceService implements OnModuleInit {
   onModuleInit(): void {
     if (!this.pluggy.configured && !this.asaas.configured) return;
     const min = Number(process.env.PLUGGY_SYNC_INTERVAL_MIN ?? process.env.ASAAS_SYNC_INTERVAL_MIN ?? 360);
-    if (!(min > 0)) return;
+    // O webhook do Asaas (29/10/2026) pede uma passagem logo, e o intervalo fica como
+    // rede de segurança. Os avisos de poucos segundos juntam-se numa passagem só.
+    if (this.asaas.configured) {
+      let marcado: ReturnType<typeof setTimeout> | null = null;
+      pedirSync = () => {
+        if (marcado) return;
+        marcado = setTimeout(() => { marcado = null; void run('webhook'); }, 15_000);
+      };
+      this.asaas.aoMudarCobranca(pedirSyncDoAsaas);
+    }
     // O "Rodar agora" da tela /rotinas roda a mesma passagem (executor `casa.conciliacao`).
     inscreverTarefaDaCasa(TIPO_CASA_CONCILIACAO, (orgId) => this.passagemDaConciliacao(orgId), 'FinanceService');
-    const run = async () => {
+    const run = async (origem: 'cron' | 'webhook' = 'cron') => {
       try {
         const conns = await this.prisma.bankConnection.findMany({
-          where: { provider: { in: ['pluggy', 'asaas'] }, status: { in: ['connected', 'error'] }, externalId: { not: null } },
+          where: { provider: { in: origem === 'webhook' ? ['asaas'] : ['pluggy', 'asaas'] }, status: { in: ['connected', 'error'] }, externalId: { not: null } },
           select: { orgId: true },
         });
         for (const orgId of [...new Set(conns.map((c) => c.orgId))]) {
           try {
             // O contexto da empresa (não o de plataforma): a passagem roda como uma rota dela.
             const r = await comContexto(
-              { orgId, actorType: 'system', correlationId: novaCorrelacao('cron'), origem: 'cron' },
+              { orgId, actorType: 'system', correlationId: novaCorrelacao(origem), origem: 'cron' },
               () =>
                 registrarPassagemDeFundo(
                   this.prisma,
                   { orgId, tipo: TIPO_CASA_CONCILIACAO },
                   () => this.passagemDaConciliacao(orgId),
-                  { criar: 'sempre', intervaloMin: min },
+                  { criar: 'sempre', intervaloMin: min > 0 ? min : 360 },
                 ),
             );
             this.log.log(`sync bancário da empresa ${orgId}: ${r.status} (${r.resumo})`);
@@ -97,8 +119,9 @@ export class FinanceService implements OnModuleInit {
         this.log.warn(`Auto-sync bancário falhou: ${(e as Error).message}`);
       }
     };
-    setTimeout(run, 30_000);
-    setInterval(run, min * 60_000);
+    if (!(min > 0)) return;
+    setTimeout(() => void run(), 30_000);
+    setInterval(() => void run(), min * 60_000);
     this.log.log(`Sync bancário agendado a cada ${min} min (pluggy=${this.pluggy.configured} asaas=${this.asaas.configured})`);
   }
 
@@ -460,7 +483,8 @@ export class FinanceService implements OnModuleInit {
   async summary(orgId: string): Promise<FinanceSummary> {
     const now = new Date();
     const monthStart = startOfMonth(now);
-    const [accounts, balances, monthGroup, previstoGroup, previstoVencido, topCats, connections] = await Promise.all([
+    const em30 = new Date(now.getTime() + 30 * 86400_000);
+    const [accounts, balances, monthGroup, previstoGroup, previstoVencido, previsto30, topCats, connections] = await Promise.all([
       this.prisma.financeAccount.findMany({ where: { orgId }, select: { id: true, name: true, openingBalance: true } }),
       this.balancesByAccount(orgId),
       this.prisma.financeTransaction.groupBy({
@@ -471,6 +495,11 @@ export class FinanceService implements OnModuleInit {
       }),
       this.prisma.financeTransaction.groupBy({
         by: ['type'], where: { orgId, status: 'previsto', dueDate: { lt: now } }, _sum: { amount: true },
+      }),
+      // Os próximos 30 dias, a mesma janela do gráfico. O total lançado mistura horizontes:
+      // contrato recorrente gera só 3 meses à frente, e um anual pode estar a um ano.
+      this.prisma.financeTransaction.groupBy({
+        by: ['type'], where: { orgId, status: 'previsto', dueDate: { gte: now, lte: em30 } }, _sum: { amount: true },
       }),
       this.prisma.financeTransaction.groupBy({
         by: ['categoryId', 'type'], where: { orgId, status: { in: EFFECTIVE }, date: { gte: monthStart } }, _sum: { amount: true },
@@ -511,6 +540,8 @@ export class FinanceService implements OnModuleInit {
       aPagar: sumByType(previstoGroup, 'saida'),
       aReceberVencido: sumByType(previstoVencido, 'entrada'),
       aPagarVencido: sumByType(previstoVencido, 'saida'),
+      aReceber30: sumByType(previsto30, 'entrada'),
+      aPagar30: sumByType(previsto30, 'saida'),
       byAccount: accounts.map((a) => ({ id: a.id, name: a.name, balance: num(a.openingBalance) + (balances.get(a.id) ?? 0) })),
       topCategorias,
       bancos: {
@@ -529,7 +560,7 @@ export class FinanceService implements OnModuleInit {
     const to = range.to ? startOfDay(parseDate(range.to)) : startOfDay(new Date(from.getTime() + 30 * 86400_000));
 
     // saldo de abertura da janela = openingBalance das contas + realizados antes de `from`
-    const [accounts, realizedBefore, windowTx] = await Promise.all([
+    const [accounts, realizedBefore, windowTx, vencidosGroup, contratosAtivos] = await Promise.all([
       this.prisma.financeAccount.aggregate({ where: { orgId }, _sum: { openingBalance: true } }),
       this.prisma.financeTransaction.groupBy({
         by: ['type'], where: { orgId, status: { in: EFFECTIVE }, date: { lt: from } }, _sum: { amount: true },
@@ -545,13 +576,33 @@ export class FinanceService implements OnModuleInit {
         },
         select: { type: true, amount: true, status: true, date: true, dueDate: true },
       }),
+      // Previstos que venceram antes da janela e seguem em aberto.
+      this.prisma.financeTransaction.groupBy({
+        by: ['type'],
+        where: {
+          orgId, status: 'previsto',
+          OR: [{ dueDate: { lt: from } }, { dueDate: null, date: { lt: from } }],
+        },
+        _sum: { amount: true },
+      }),
+      this.prisma.contract.findMany({
+        where: { orgId, status: 'ativo' },
+        select: { tipo: true, descricao: true, valor: true, periodicidade: true, proximoVencimento: true, dataFim: true },
+      }),
     ]);
 
     const sumB = (t: FinanceTxType) => num(realizedBefore.find((x) => x.type === t)?._sum.amount);
     const openingBalance = num(accounts._sum.openingBalance) + sumB('entrada') - sumB('saida');
+    const sumV = (t: FinanceTxType) => num(vencidosGroup.find((x) => x.type === t)?._sum.amount);
+    const vencidos = { aPagar: sumV('saida'), aReceber: sumV('entrada') };
 
     // bucket por dia
     const buckets = new Map<string, { entradas: number; saidas: number }>();
+    // Vencido a pagar continua devido: sai no primeiro dia da janela. Vencido a
+    // receber é incerto: fica fora da linha e a tela mostra o valor à parte.
+    if (vencidos.aPagar > 0) {
+      buckets.set(from.toISOString().slice(0, 10), { entradas: 0, saidas: vencidos.aPagar });
+    }
     for (const tx of windowTx) {
       const eff = tx.status === 'previsto' ? (tx.dueDate ?? tx.date) : tx.date;
       const key = startOfDay(eff).toISOString().slice(0, 10);
@@ -562,21 +613,131 @@ export class FinanceService implements OnModuleInit {
       buckets.set(key, b);
     }
 
+    // Contrato recorrente gera previsto só 3 meses à frente. Daí em diante a projeção
+    // desenha cada vencimento que falta, sem gravar, até a data de fim do contrato.
+    const contratos: Cashflow['contratos'] = [];
+    for (const c of contratosAtivos) {
+      for (const d of ocorrenciasDoContrato(c, from, to, proximoVencimentoDoContrato)) {
+        const key = startOfDay(d).toISOString().slice(0, 10);
+        const b = buckets.get(key) ?? { entradas: 0, saidas: 0 };
+        if (c.tipo === 'entrada') b.entradas += num(c.valor);
+        else b.saidas += num(c.valor);
+        buckets.set(key, b);
+        contratos.push({ date: key, tipo: c.tipo, descricao: c.descricao, valor: num(c.valor) });
+      }
+    }
+
+    // A estimativa de variáveis corre ao lado, dia a dia, só do dia de hoje em diante.
+    const estimativa = await this.estimativaDeVariaveis(orgId);
+    const hoje = startOfDay(new Date());
     const days: Cashflow['days'] = [];
     let acumulado = openingBalance;
+    let comEstimativa = openingBalance;
     for (let d = new Date(from); d <= to; d = new Date(d.getTime() + 86400_000)) {
       const key = d.toISOString().slice(0, 10);
       const b = buckets.get(key) ?? { entradas: 0, saidas: 0 };
       const resultado = b.entradas - b.saidas;
+      const est = d >= hoje ? estimativa.porDia : 0;
       acumulado += resultado;
-      days.push({ date: key, entradas: b.entradas, saidas: b.saidas, resultado, acumulado });
+      comEstimativa += resultado - est;
+      days.push({ date: key, entradas: b.entradas, saidas: b.saidas, resultado, acumulado, estimativa: est, acumuladoComEstimativa: comEstimativa });
     }
 
     return {
       window: { from: from.toISOString().slice(0, 10), to: to.toISOString().slice(0, 10) },
       openingBalance,
+      vencidos,
+      contratos,
+      estimativaVariavel: estimativa,
       days,
       source: this.meta(),
+    };
+  }
+
+  /**
+   * ESTIMATIVA DE GASTO VARIÁVEL (29/10/2026). A projeção só conhece o que está
+   * lançado; o gasto do dia a dia (Pix, reembolso, taxa, compra pequena, despesa de
+   * pessoal e de marketing) não. A estimativa é a média dos últimos 90 dias de saídas
+   * que aconteceram e que NÃO são conta fixa (contrato ou conta de natureza fixa),
+   * pontual (4.1.14 Estrutura da sala, pagamento anual), investimento nem imposto.
+   * Saída sem plano de contas entra (e vai para "classificar"). Recalcula sozinha a
+   * cada leitura e fica separada do que está lançado.
+   */
+  async estimativaDeVariaveis(orgId: string): Promise<Cashflow['estimativaVariavel']> {
+    const ate = startOfDay(new Date());
+    const de = new Date(ate.getTime() - 90 * 86400_000);
+    const [contas, saidas] = await Promise.all([
+      this.prisma.chartAccount.findMany({ where: { orgId }, select: { id: true, codigo: true, parentId: true, custoFixo: true, natureza: true } }),
+      this.prisma.financeTransaction.findMany({
+        where: { orgId, type: 'saida', status: { in: EFFECTIVE }, date: { gte: de, lt: ate }, contractId: null },
+        select: { amount: true, chartAccountId: true, mesesDeUso: true, temRateio: true },
+      }),
+    ]);
+    const plano = new Map<string, ContaDoPlano>(contas.map((c) => [c.id, c]));
+    let total = 0, lancamentos = 0, semPlano = 0;
+    for (const t of saidas) {
+      if ((t.mesesDeUso ?? 1) > 1 || t.temRateio) continue;
+      const codigo = t.chartAccountId ? plano.get(t.chartAccountId)?.codigo ?? '' : '';
+      if (codigo === '4.1.14' || codigo.startsWith('4.1.14.')) continue; // montagem da sala: pontual
+      const grupo = t.chartAccountId ? grupoDaSaida(plano, t.chartAccountId, false) : null;
+      if (grupo && !['custoVariavel', 'despesaVariavel', 'despesaEventual', 'retirada'].includes(grupo)) continue;
+      total += num(t.amount);
+      lancamentos += 1;
+      if (!t.chartAccountId) semPlano += 1;
+    }
+    const r2 = (n: number) => Math.round(n * 100) / 100;
+    return {
+      de: de.toISOString().slice(0, 10), ate: new Date(ate.getTime() - 86400_000).toISOString().slice(0, 10),
+      total: r2(total), porMes: r2(total / 3), porDia: total / 90, lancamentos, semPlano,
+    };
+  }
+
+  /**
+   * ENTRADA × SAÍDA NO PERÍODO (29/10/2026): o que entrou e saiu (realizado), o que
+   * está previsto (lançado, parcela a gerar e conta fixa projetada) e, à parte, a
+   * estimativa de variáveis para os dias que ainda vêm.
+   */
+  async periodo(orgId: string, deStr: string, ateStr: string) {
+    const de = startOfDay(parseDate(deStr));
+    const ate = startOfDay(parseDate(ateStr));
+    if (ate < de) throw new BadRequestException('O fim do período vem antes do começo.');
+    if (ate.getTime() - de.getTime() > 732 * 86400_000) throw new BadRequestException('Período de no máximo dois anos.');
+    const hoje = startOfDay(new Date());
+    const doFuturo = de > hoje ? de : hoje;
+    const [realizado, previstos, vencidos, contratosAtivos, estimativa] = await Promise.all([
+      this.prisma.financeTransaction.groupBy({ by: ['type'], where: { orgId, status: { in: EFFECTIVE }, date: { gte: de, lte: ate } }, _sum: { amount: true }, _count: true }),
+      ate >= doFuturo
+        ? this.prisma.financeTransaction.findMany({
+            where: { orgId, status: 'previsto', OR: [{ dueDate: { gte: doFuturo, lte: ate } }, { dueDate: null, date: { gte: doFuturo, lte: ate } }] },
+            select: { type: true, amount: true },
+          })
+        : Promise.resolve([]),
+      this.prisma.financeTransaction.groupBy({
+        by: ['type'], where: { orgId, status: 'previsto', OR: [{ dueDate: { gte: de, lt: hoje } }, { dueDate: null, date: { gte: de, lt: hoje } }] }, _sum: { amount: true },
+      }),
+      this.prisma.contract.findMany({ where: { orgId, status: 'ativo' }, select: { tipo: true, valor: true, periodicidade: true, proximoVencimento: true, dataFim: true } }),
+      this.estimativaDeVariaveis(orgId),
+    ]);
+    const soma = (g: Array<{ type: FinanceTxType; _sum: { amount: Prisma.Decimal | null } }>, t: FinanceTxType) => num(g.find((x) => x.type === t)?._sum.amount);
+    let entra = previstos.filter((t) => t.type === 'entrada').reduce((s, t) => s + num(t.amount), 0);
+    let sai = previstos.filter((t) => t.type === 'saida').reduce((s, t) => s + num(t.amount), 0);
+    if (ate >= doFuturo) {
+      for (const c of contratosAtivos) {
+        const n = ocorrenciasDoContrato(c, doFuturo, ate, proximoVencimentoDoContrato).length;
+        if (c.tipo === 'entrada') entra += n * num(c.valor); else sai += n * num(c.valor);
+      }
+    }
+    const diasFuturos = ate >= doFuturo ? Math.round((ate.getTime() - doFuturo.getTime()) / 86400_000) + 1 : 0;
+    const r2 = (n: number) => Math.round(n * 100) / 100;
+    const entrou = soma(realizado, 'entrada'), saiu = soma(realizado, 'saida');
+    const variaveis = r2(estimativa.porDia * diasFuturos);
+    return {
+      de: de.toISOString().slice(0, 10), ate: ate.toISOString().slice(0, 10),
+      realizado: { entrou: r2(entrou), saiu: r2(saiu), resultado: r2(entrou - saiu), lancamentos: realizado.reduce((s, g) => s + g._count, 0) },
+      previsto: { entra: r2(entra), sai: r2(sai), resultado: r2(entra - sai) },
+      vencidoEmAberto: { aReceber: r2(soma(vencidos, 'entrada')), aPagar: r2(soma(vencidos, 'saida')) },
+      estimativaVariavel: { valor: variaveis, porMes: estimativa.porMes, dias: diasFuturos },
+      total: { entra: r2(entrou + entra), sai: r2(saiu + sai), resultado: r2(entrou + entra - saiu - sai), resultadoComEstimativa: r2(entrou + entra - saiu - sai - variaveis) },
     };
   }
 
@@ -672,11 +833,13 @@ export class FinanceService implements OnModuleInit {
       // 1) Extrato financeiro (movimento de caixa real) → lançamentos realizados.
       const since = new Date(Date.now() - 365 * 86400_000).toISOString();
       const fin = await this.asaas.listFinancialTransactions(since);
+      // As parcelas dos acordos e os previstos de contrato que as cobranças vestem (29/10/2026).
+      const vest = await prepararVestir(this.prisma, orgId);
       let txCount = 0;
       for (const t of fin) {
         const type: FinanceTxType = t.value < 0 ? 'saida' : 'entrada';
         const desc = t.description || t.type || 'Lançamento Asaas';
-        await this.prisma.financeTransaction.upsert({
+        const linha = await this.prisma.financeTransaction.upsert({
           where: { orgId_accountId_externalId: { orgId, accountId: account.id, externalId: `fin_${t.id}` } },
           update: { amount: new Prisma.Decimal(Math.abs(t.value)), description: desc, date: new Date(t.date) },
           create: {
@@ -684,13 +847,18 @@ export class FinanceService implements OnModuleInit {
             description: desc, amount: new Prisma.Decimal(Math.abs(t.value)),
             date: new Date(t.date), source: 'asaas', externalId: `fin_${t.id}`,
           },
+          select: { id: true, partnerId: true, contractId: true, status: true, matchType: true },
         });
+        // Conciliação pelo id da cobrança: recebimento e taxa de cobrança conhecida não passam pela pontuação.
+        await conciliarPeloId(this.prisma, orgId, vest, t, linha);
         txCount++;
       }
 
       // 2) Cobranças em aberto → contas a receber (previsto entrada).
-      const custMap = await this.asaas.customerMap();
-      const open = await this.asaas.listOpenPayments();
+      const clientes = await this.asaas.clientes();
+      // Pela data: a parcela que a cobrança cria no acordo nasce na ordem do contrato.
+      const open = (await this.asaas.listOpenPayments())
+        .sort((a, b) => (a.originalDueDate || a.dueDate || '').localeCompare(b.originalDueDate || b.dueDate || ''));
       const openIds: string[] = [];
       let recvCount = 0;
       for (const p of open) {
@@ -698,20 +866,36 @@ export class FinanceService implements OnModuleInit {
         openIds.push(extId);
         const when = new Date(p.dateCreated || p.dueDate || new Date().toISOString());
         const desc = p.description || `Cobrança ${p.billingType ?? ''}`.trim();
+        // Cartão já aprovado: o cliente pagou e falta o Asaas repassar. O caixa recebe o
+        // líquido (sem a taxa do cartão) na data de crédito, não no vencimento da parcela.
+        const cartaoAprovado = p.billingType === 'CREDIT_CARD' && p.status === 'CONFIRMED';
+        const caiEm = (cartaoAprovado ? p.estimatedCreditDate || p.creditDate : null) || p.dueDate;
+        const valor = cartaoAprovado && p.netValue != null ? p.netValue : p.value;
+        const cliente = p.customer ? clientes.get(p.customer) : undefined;
+        const pagador = p.customer ? cliente?.nome ?? p.customer : null;
+        // A cobrança veste a parcela do acordo (ou o previsto do contrato) em vez de virar outra
+        // linha. O CNPJ do cliente no Asaas casa com o da empresa do acordo, mesmo quando o nome é o da pessoa.
+        const veste = await vestirCobranca(this.prisma, orgId, vest, p, [pagador, cliente?.documento].filter(Boolean).join(' '));
+        const herda = {
+          ...(veste.partnerId ? { partnerId: veste.partnerId } : {}),
+          ...(veste.contractId ? { contractId: veste.contractId } : {}),
+        };
         await this.prisma.financeTransaction.upsert({
           where: { orgId_accountId_externalId: { orgId, accountId: account.id, externalId: extId } },
           update: {
-            amount: new Prisma.Decimal(p.value), description: desc,
-            dueDate: p.dueDate ? new Date(p.dueDate) : null,
-            counterparty: p.customer ? custMap.get(p.customer) ?? p.customer : null,
+            amount: new Prisma.Decimal(valor), description: desc,
+            dueDate: caiEm ? new Date(caiEm) : null,
+            counterparty: pagador,
+            ...herda,
           },
           create: {
             orgId, accountId: account.id, type: 'entrada', status: 'previsto',
-            description: desc, amount: new Prisma.Decimal(p.value), date: when,
-            dueDate: p.dueDate ? new Date(p.dueDate) : null,
-            counterparty: p.customer ? custMap.get(p.customer) ?? p.customer : null,
+            description: desc, amount: new Prisma.Decimal(valor), date: when,
+            dueDate: caiEm ? new Date(caiEm) : null,
+            counterparty: pagador,
             documentNumber: p.invoiceNumber ?? null,
             source: 'asaas', externalId: extId,
+            ...herda,
           },
         });
         recvCount++;
@@ -719,12 +903,17 @@ export class FinanceService implements OnModuleInit {
 
       // 3) Reconcilia: cobranças que saíram do "aberto" já foram pagas (aparecem no
       //    extrato como realizado) → removemos o previsto p/ não contar em dobro.
+      //    A parcela vestida por uma delas fica paga, ou volta a "cobrança a gerar"
+      //    se a cobrança foi apagada ou estornada.
+      await fecharParcelasQueSairam(this.prisma, orgId, vest, new Set(open.map((p) => p.id)), (id) => this.asaas.getPayment(id));
       await this.prisma.financeTransaction.deleteMany({
         where: {
           orgId, accountId: account.id, source: 'asaas', status: 'previsto',
           externalId: { startsWith: 'pay_', notIn: openIds.length ? openIds : ['__none__'] },
         },
       });
+      // A parcela que ficou sem cobrança e sem pagamento volta ao fluxo como previsto próprio.
+      await materializarParcelas(this.prisma, orgId);
 
       // 4) Casa o saldo exibido com o saldo real do Asaas (independe da janela do extrato).
       const bal = await this.asaas.balance();

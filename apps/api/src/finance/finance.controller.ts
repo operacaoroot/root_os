@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, Param, Patch, Post, Query, UseGuards } from '@nestjs/common';
+import { BadRequestException, Body, Controller, Delete, Get, Param, Patch, Post, Query, UseGuards } from '@nestjs/common';
 import {
   CreateFinanceAccountSchema,
   CreateFinanceCategorySchema,
@@ -182,6 +182,14 @@ export class FinanceController {
   @RequirePermissions('financeiro.ver')
   cashflow(@CurrentUser() user: JwtUser, @Query('from') from?: string, @Query('to') to?: string) {
     return this.svc.cashflow(user.orgId, { from, to });
+  }
+
+  // Entrada × saída num período (29/10/2026): realizado e previsto lado a lado, estimativa à parte.
+  @Get('periodo')
+  @RequirePermissions('financeiro.ver')
+  periodo(@CurrentUser() user: JwtUser, @Query('de') de: string, @Query('ate') ate: string) {
+    if (!de || !ate) throw new BadRequestException('Informe o começo (de) e o fim (ate) do período.');
+    return this.svc.periodo(user.orgId, de, ate);
   }
 
   // --- Contas ---
