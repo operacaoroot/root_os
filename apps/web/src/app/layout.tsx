@@ -33,9 +33,19 @@ const inter = Inter({
   display: 'swap',
 });
 
+// Ícone da aba (29/10/2026, escolha do Lucas): quadrado verde-limão com o R preto do logo oficial.
+// Arquivos em public/ (o /favicon.ico fica fora do middleware); gerados por deploy/marca/gerar-icone-da-aba.py.
 export const metadata: Metadata = {
   title: 'ROOT OS',
   description: 'A central de contexto da operação — painel único, ferramentas e conexões.',
+  icons: {
+    icon: [
+      { url: '/favicon.ico', sizes: '16x16 32x32 48x48' },
+      { url: '/marca/icone-32.png', sizes: '32x32', type: 'image/png' },
+      { url: '/marca/icone-192.png', sizes: '192x192', type: 'image/png' },
+    ],
+    apple: { url: '/marca/apple-touch-icon.png', sizes: '180x180' },
+  },
 };
 
 /*
