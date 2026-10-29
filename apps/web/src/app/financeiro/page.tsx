@@ -696,7 +696,8 @@ function ConciliacaoView(props: {
       </div>
       <p className="text-[11px] text-muted">
         Movimentos bancários (OFX/Pluggy) ainda não conciliados. O score combina valor (50%) + data (30%) + tipo (20%);
-        ≥0,85 concilia automático, 0,50–0,84 fica como sugestão para confirmar.
+        de 0,85 para cima, e com uma palavra do nome em comum (parceiro ou apelido do acordo), concilia automático;
+        o resto a partir de 0,50 fica como sugestão para confirmar.
       </p>
 
       <div className="overflow-x-auto rounded-xl border border-border">
