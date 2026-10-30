@@ -16,12 +16,16 @@
  * As cinco rotinas da casa (ClickUp, vault, conciliação, bio, metas) continuam
  * virando registro `Agent` (tipo `conector`) para terem dono na Equipe; cada
  * passagem delas vai ao histórico de rotinas (`src/routines/rotinas-da-casa.ts`).
+ *
+ * O que o complemento marca `soNaCasa` (a Rootinha, CE-07) só nasce na empresa
+ * da casa (`root`): ela opera o WhatsApp, a agenda e a caixa da própria ROOT.
  */
 import { PrismaClient } from '@prisma/client';
 import { funcoesDaSemente } from '@mktos/shared';
 
 import { agenteDaFuncao } from '../src/agents/roster/complementos';
 import { capacidadesDaEmpresa } from '../src/agents/roster/capacidades-da-empresa';
+import { SLUG_DA_PLATAFORMA } from '../src/tenants/provisionar';
 
 const prisma = new PrismaClient();
 
@@ -38,6 +42,8 @@ async function main() {
     let criados = 0;
     let mantidos = 0;
     for (const s of TRIPULACAO) {
+      // 30/10/2026: o agente da própria ROOT (a Rootinha) não nasce em empresa de cliente.
+      if (s.soNaCasa && org.slug !== SLUG_DA_PLATAFORMA) continue;
       const capacidades = capacidadesDaEmpresa(s.capacidades, org.modulos ?? []);
       const existe = await prisma.agent.findUnique({
         where: { orgId_slug: { orgId: org.id, slug: s.slug } },
