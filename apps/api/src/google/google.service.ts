@@ -654,7 +654,7 @@ export class GoogleService implements OnModuleInit, DriveDoCliente {
    * que é exatamente o que o corte de dentro existe para evitar.
    */
   private async sondarEmail(accessToken: string, prazoMs: number): Promise<string | null> {
-    const r = await fetch('https://www.googleapis.com/oauth2/v2/userinfo', {
+    const r = await fetch(urlDoGoogle('https://www.googleapis.com/oauth2/v2/userinfo', this.duble, ORIGENS_DO_GOOGLE), {
       headers: { Authorization: `Bearer ${accessToken}` },
       signal: AbortSignal.timeout(Math.max(250, prazoMs)),
     });
