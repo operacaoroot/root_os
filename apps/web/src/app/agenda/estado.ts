@@ -54,7 +54,7 @@ export function lerEstadoV2(busca: string, hoje: string, estreito: boolean): Est
 /** O endereço com o estado novo, preservando o resto da query (e tirando a `visao` antiga). */
 export function urlDoEstadoV2(atual: string, e: EstadoDaAgendaV2): string {
   const u = new URL(atual, 'http://x');
-  u.searchParams.delete('visao');
+  for (const k of ['visao', 'aba', 'dia', 'dias', 'quem']) u.searchParams.delete(k);
   u.searchParams.set('aba', e.aba);
   u.searchParams.set('dia', e.dia);
   u.searchParams.set('dias', String(e.dias));
