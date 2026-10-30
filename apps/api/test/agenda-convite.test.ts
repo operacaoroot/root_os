@@ -3,7 +3,7 @@ import { ConflictException, HttpException, NotFoundException } from '@nestjs/com
 import { PrismaClient } from '@prisma/client';
 import type { DiaLivre, PedidoDeEscrita, ResultadoDaEscrita } from '@mktos/shared';
 
-import { AUDITORIA_PEDIDO_CAIU, ConviteDaAgendaService } from '../src/agenda/convite/convite.service';
+import { AUDITORIA_CONVITE_CRIADO, AUDITORIA_CONVITE_REVOGADO, AUDITORIA_PEDIDO_CAIU, ConviteDaAgendaService } from '../src/agenda/convite/convite.service';
 import { AgendarController, TETO_DE_CONFIRMACAO_POR_HORA } from '../src/agenda/convite/agendar.controller';
 import {
   TOKEN_DO_CONVITE,
@@ -212,6 +212,23 @@ describe.skipIf(!URL)('o link de escolha, com banco', () => {
     const lista = await svc.listar(ORG_A, AGORA);
     expect(JSON.stringify(lista)).not.toContain(token.split('.')[1]);
     expect(JSON.stringify(lista)).not.toContain(linha!.tokenHash);
+  });
+
+  it('M3: criar e revogar ficam na auditoria, com quem, sócio e validade, sem o token nem o hash', async () => {
+    const c = await novo(ORG_A, { socio: 'Pedro' });
+    const token = tokenDe(c.url);
+    const linha = await prisma.agendaConvite.findUniqueOrThrow({ where: { id: c.id } });
+    await svc.revogar(ORG_A, c.id, AGORA, 'quem-revogou');
+    const audit = await prisma.auditLog.findMany({ where: { orgId: ORG_A, entityId: c.id }, orderBy: { createdAt: 'asc' } });
+    expect(audit.map((a) => a.action)).toEqual([AUDITORIA_CONVITE_CRIADO, AUDITORIA_CONVITE_REVOGADO]);
+    expect(audit[0]).toMatchObject({ actorType: 'user', actorId: 'quem-criou', entityType: 'agenda_convite', after: expect.objectContaining({ socio: 'Pedro', validoAte: c.validoAte }) });
+    expect(audit[1]).toMatchObject({ actorType: 'user', actorId: 'quem-revogou', metadata: expect.objectContaining({ socio: 'Pedro', criadoPorId: 'quem-criou' }) });
+    const tudo = JSON.stringify(audit);
+    expect(tudo).not.toContain(token.split('.')[1]);
+    expect(tudo).not.toContain(linha.tokenHash);
+    // Revogar de novo não audita outra vez.
+    await expect(svc.revogar(ORG_A, c.id, AGORA, 'quem-revogou')).rejects.toBeInstanceOf(ConflictException);
+    expect(await prisma.auditLog.count({ where: { orgId: ORG_A, entityId: c.id } })).toBe(2);
   });
 
   it('a página vê só horários: nada de título, nome de outro cliente ou id de evento', async () => {

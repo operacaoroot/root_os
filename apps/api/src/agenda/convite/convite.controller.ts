@@ -57,6 +57,6 @@ export class ConviteDaAgendaController {
   @UseGuards(SoGenteNaAgendaGuard)
   @RequirePermissions('agenda.editar')
   revogar(@CurrentUser() user: JwtUser, @Param('id') id: string) {
-    return this.convites.revogar(user.orgId, id);
+    return this.convites.revogar(user.orgId, id, new Date(), user.sub);
   }
 }

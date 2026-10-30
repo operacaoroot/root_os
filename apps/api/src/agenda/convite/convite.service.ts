@@ -88,6 +88,9 @@ export interface ConviteDaLista {
   estado: 'aberto' | 'escolhido' | 'pedido_vencido' | 'vencido' | 'revogado';
 }
 
+/** As ações de auditoria do convite (M3). Nenhuma leva o token nem o hash. */
+export const AUDITORIA_CONVITE_CRIADO = 'agenda.convite.criar';
+export const AUDITORIA_CONVITE_REVOGADO = 'agenda.convite.revogar';
 /** A ação de auditoria de quando o pedido do link cai e o convite volta a aceitar escolha. */
 export const AUDITORIA_PEDIDO_CAIU = 'agenda.convite.pedido_caiu';
 
@@ -132,21 +135,45 @@ export class ConviteDaAgendaService {
     }
     const { token, hash } = gerarTokenDoConvite(orgId);
     const validoAte = validadeDoConvite(agora, c.validadeDias);
-    const criado = await this.prisma.agendaConvite.create({
-      data: {
-        orgId,
-        tokenHash: hash,
-        socio: c.socio,
-        tipo: c.tipo,
-        modalidade: c.modalidade,
-        duracaoMin: c.duracaoMin,
-        leadId: c.leadId ?? null,
-        clienteId: c.clienteId ?? null,
-        nome,
-        validoAte,
-        criadoPorId,
-      },
-      select: { id: true },
+    // O convite e a auditoria na mesma transação (M3). Nem o token nem o hash entram na auditoria.
+    const criado = await this.prisma.$transaction(async (tx) => {
+      const linha = await tx.agendaConvite.create({
+        data: {
+          orgId,
+          tokenHash: hash,
+          socio: c.socio,
+          tipo: c.tipo,
+          modalidade: c.modalidade,
+          duracaoMin: c.duracaoMin,
+          leadId: c.leadId ?? null,
+          clienteId: c.clienteId ?? null,
+          nome,
+          validoAte,
+          criadoPorId,
+        },
+        select: { id: true },
+      });
+      await tx.auditLog.create({
+        data: {
+          orgId,
+          actorType: ActorType.user,
+          actorId: criadoPorId,
+          action: AUDITORIA_CONVITE_CRIADO,
+          entityType: 'agenda_convite',
+          entityId: linha.id,
+          after: {
+            socio: c.socio,
+            tipo: c.tipo,
+            modalidade: c.modalidade,
+            duracaoMin: c.duracaoMin,
+            leadId: c.leadId ?? null,
+            clienteId: c.clienteId ?? null,
+            validoAte: validoAte.toISOString(),
+          },
+          metadata: { origem: 'agenda.convite' },
+        },
+      });
+      return linha;
     });
     // O token cru sai SÓ nesta resposta: o banco guarda o hash.
     return { id: criado.id, url: `${baseDoLinkDeEscolha()}/agendar/${token}`, validoAte: validoAte.toISOString() };
@@ -183,13 +210,31 @@ export class ConviteDaAgendaService {
     }));
   }
 
-  /** Revoga um convite ainda sem escolha. O link passa a responder 404. */
-  async revogar(orgId: string, id: string, agora = new Date()): Promise<{ ok: true }> {
-    const r = await this.prisma.agendaConvite.updateMany({
-      where: { id, orgId, revogadoEm: null, usadoEm: null },
-      data: { revogadoEm: agora },
+  /** Revoga um convite ainda sem escolha. O link passa a responder 404. Auditado com quem revogou (M3). */
+  async revogar(orgId: string, id: string, agora = new Date(), revogadoPorId: string | null = null): Promise<{ ok: true }> {
+    const ok = await this.prisma.$transaction(async (tx) => {
+      const r = await tx.agendaConvite.updateMany({
+        where: { id, orgId, revogadoEm: null, usadoEm: null },
+        data: { revogadoEm: agora },
+      });
+      if (r.count === 0) return false;
+      const c = await tx.agendaConvite.findFirst({ where: { id, orgId }, select: { socio: true, validoAte: true, criadoPorId: true } });
+      await tx.auditLog.create({
+        data: {
+          orgId,
+          actorType: ActorType.user,
+          actorId: revogadoPorId,
+          action: AUDITORIA_CONVITE_REVOGADO,
+          entityType: 'agenda_convite',
+          entityId: id,
+          before: { revogadoEm: null },
+          after: { revogadoEm: agora.toISOString() },
+          metadata: { origem: 'agenda.convite', socio: c?.socio ?? null, validoAte: c?.validoAte.toISOString() ?? null, criadoPorId: c?.criadoPorId ?? null },
+        },
+      });
+      return true;
     });
-    if (r.count === 0) throw new ConflictException('Esse convite já foi usado, revogado ou não existe.');
+    if (!ok) throw new ConflictException('Esse convite já foi usado, revogado ou não existe.');
     return { ok: true };
   }
 
