@@ -233,6 +233,15 @@ export class PolicyService implements OnModuleInit {
     delta: unknown;
     autorId?: string | null;
     motivo?: string | null;
+    /**
+     * AGENDA V2 (29/10/2026, decisão 2): a aprovação configurável de R2 desta
+     * empresa. Ausente = a versão nova HERDA a da versão ativa (uma sobrescrita
+     * qualquer não religa nem desliga a aprovação por tabela). `false` é
+     * AFROUXAMENTO: entra na trava do RF-P-06 como seção, e sem autor e motivo a
+     * sobrescrita inteira cai. A porta só lê este valor para gente na tela
+     * (`ExecCtx.naTela`); agente, rotina e link público seguem com R2 retido.
+     */
+    aprovacaoR2Ligada?: boolean;
   }): Promise<{
     versao: number;
     diffDaBase: DiffDePolitica;
@@ -309,11 +318,15 @@ export class PolicyService implements OnModuleInit {
          * JSONB, com as chaves em outra ordem — e `canonico` ignora chave com
          * valor indefinido, que é o que o banco descarta ao gravar.
          */
-        const naoMudaNada = atual
+        // A aprovação de R2 de antes e a de depois: a versão nova herda quando
+        // quem chama não diz nada (padrão do banco: ligada).
+        const r2Antes = atual?.aprovacaoR2Ligada ?? true;
+        const r2Depois = input.aprovacaoR2Ligada ?? r2Antes;
+        const naoMudaNada = r2Antes === r2Depois && (atual
           ? canonico(atual.documento) === canonico(resolvida)
           : diffDaBase.capacidades.length === 0 &&
             diffDaBase.limites.length === 0 &&
-            diffDaBase.secoes.length === 0;
+            diffDaBase.secoes.length === 0);
         if (naoMudaNada) {
           return { atual, diffDaVersaoAnterior: null, versao: atual?.versao ?? 0, criada: false };
         }
@@ -345,9 +358,23 @@ export class PolicyService implements OnModuleInit {
           }
         }
 
+        /*
+         * DESLIGAR A APROVAÇÃO DE R2 É AFROUXAR (agenda v2, decisão 2): o que
+         * antes esperava uma pessoa passa a sair no clique de quem pediu. Entra
+         * na MESMA trava, como seção, e exige autor e motivo como um nível que
+         * desce. Religar aperta: não pede assinatura.
+         */
+        const doR2: Afrouxamento[] = r2Antes && !r2Depois
+          ? [{
+              tipo: 'secao',
+              alvo: 'aprovacaoR2Ligada',
+              texto: 'aprovação de R2 desligada: o R2 pedido por gente na tela sai no clique (agente, rotina e link público seguem retidos)',
+            }]
+          : [];
         const afrouxamentos = uniaoDosAfrouxamentos(
           afrouxamentosDoDiff(diffDaBase),
           afrouxamentosDaAnterior,
+          doR2,
         );
         const recusas = recusasDaSobrescrita(afrouxamentos, {
           autorId: input.autorId,
@@ -372,6 +399,7 @@ export class PolicyService implements OnModuleInit {
             motivo: input.motivo?.trim() || 'sobrescrita de política da empresa',
             autorId: input.autorId ?? null,
             ativaDe: agora,
+            aprovacaoR2Ligada: r2Depois,
           },
         });
         return { atual, diffDaVersaoAnterior, versao, criada: true };
@@ -469,6 +497,65 @@ export class PolicyService implements OnModuleInit {
         criadoEm: true,
       },
     });
+  }
+
+  /**
+   * A APROVAÇÃO DE R2 DESTA EMPRESA (agenda v2, 29/10/2026, decisão 2).
+   *
+   * Lida da versão ATIVA da empresa a cada chamada, sem cache: o valor muda por
+   * sobrescrita assinada e um cache por processo seria a segunda verdade (e o
+   * jeito de uma empresa herdar a resposta de outra). Empresa sem versão própria
+   * = ligada, a regra de sempre. Quem pergunta é a porta, e só para gente na
+   * tela; falha de leitura responde LIGADA (falha fechada: R2 volta à fila).
+   */
+  async aprovacaoR2Ligada(orgId: string): Promise<boolean> {
+    const id = exigirTenant(orgId, 'PolicyService.aprovacaoR2Ligada');
+    try {
+      const v = await comContextoDaEmpresaResolvida(id, () => this.prisma.policyVersion.findFirst({
+        where: { orgId: id, ativaAte: null },
+        orderBy: { versao: 'desc' },
+        select: { aprovacaoR2Ligada: true },
+      }));
+      return v?.aprovacaoR2Ligada ?? true;
+    } catch (e) {
+      this.log.error(`empresa ${id}: não deu para ler a aprovação de R2 (${(e as Error).message}); vale ligada`);
+      return true;
+    }
+  }
+
+  /**
+   * O que a tela de Configurações mostra (só leitura): a aprovação de R2 está
+   * ligada? Desde quando vale o estado de hoje, quem assinou e com que motivo.
+   * "Desde" é a versão MAIS ANTIGA da sequência ininterrupta com o valor atual.
+   */
+  async estadoDaAprovacaoR2(orgId: string): Promise<{
+    ligada: boolean;
+    desde: string | null;
+    versao: number | null;
+    autorId: string | null;
+    motivo: string | null;
+  }> {
+    const id = exigirTenant(orgId, 'PolicyService.estadoDaAprovacaoR2');
+    const versoes = await comContextoDaEmpresaResolvida(id, () => this.prisma.policyVersion.findMany({
+      where: { orgId: id },
+      orderBy: { versao: 'desc' },
+      take: 50,
+      select: { versao: true, aprovacaoR2Ligada: true, autorId: true, motivo: true, ativaDe: true, ativaAte: true },
+    }));
+    const ativa = versoes.find((v) => v.ativaAte === null) ?? null;
+    if (!ativa) return { ligada: true, desde: null, versao: null, autorId: null, motivo: null };
+    let origem = ativa;
+    for (const v of versoes.filter((x) => x.versao < ativa.versao)) {
+      if (v.aprovacaoR2Ligada !== ativa.aprovacaoR2Ligada) break;
+      origem = v;
+    }
+    return {
+      ligada: ativa.aprovacaoR2Ligada,
+      desde: origem.ativaDe.toISOString(),
+      versao: origem.versao,
+      autorId: origem.autorId,
+      motivo: origem.motivo,
+    };
   }
 
   /** Nulo = capacidade sem classificação. avaliar(null) devolve R5 bloqueado. */

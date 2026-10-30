@@ -252,30 +252,11 @@ export class GoogleService implements OnModuleInit, DriveDoCliente {
           ctx.actorId ?? undefined,
         ),
       /*
-       * MARCAR REUNIÃO — irmã de `agenda.evento.criar` e, na prática, a que a
-       * casa usa. A outra segue viva para o que não é reunião (bloqueio de
-       * agenda, viagem), onde o título é livre; esta não tem título nenhum nos
-       * argumentos, e é por isso que nem um agente consegue fugir do padrão.
+       * MARCAR REUNIÃO: o efeito mudou de casa na agenda v2 (29/10/2026) e mora em
+       * `agenda-escrita.google.ts` (inscrito no fim deste registro), com a chave do
+       * pedido, os tipos novos e as propriedades do OS no evento. A rota antiga
+       * `POST /google/calendar/reuniao` continua chegando lá pela porta.
        */
-      'agenda.reuniao.marcar': (a, org, ctx: ContextoDoEfeito) =>
-        this.marcarReuniao(
-          org,
-          {
-            tipo: texto(a.tipo) === 'interna' ? 'interna' : 'cliente',
-            modalidade: texto(a.modalidade) === 'presencial' ? 'presencial' : 'online',
-            ...(texto(a.cliente) ? { cliente: texto(a.cliente) } : {}),
-            responsavel: texto(a.responsavel),
-            inicio: texto(a.inicio),
-            ...(texto(a.fim) ? { fim: texto(a.fim) } : {}),
-            ...(Number.isFinite(Number(a.duracaoMinutos))
-              ? { duracaoMinutos: Math.trunc(Number(a.duracaoMinutos)) }
-              : {}),
-            ...(texto(a.pauta) ? { pauta: texto(a.pauta) } : {}),
-            ...(texto(a.local) ? { local: texto(a.local) } : {}),
-            ...(Array.isArray(a.convidados) ? { convidados: (a.convidados as string[]).map(texto) } : {}),
-          },
-          ctx.actorId ?? undefined,
-        ),
       'documento.criar': (a, org, ctx: ContextoDoEfeito) =>
         this.createDoc(
           org,

@@ -260,6 +260,12 @@ export const PROPRIEDADES_DO_OS = {
   clienteId: 'mktosClienteId',
   /** O tipo que o OS escreveu (`cliente`, `interna`, `bloqueio`, `pessoal`, `fora`). */
   tipo: 'mktosTipo',
+  /**
+   * A chave do ÚLTIMO pedido que o OS aplicou no evento (lane G4): o mesmo pedido
+   * repetido (alterar, cancelar, desmarcar, reabrir) devolve o que já saiu em vez
+   * de recusar por "o evento mudou".
+   */
+  ultimaEscrita: 'mktosUltimaChave',
 } as const;
 
 /** O limite de atraso do espelho antes de a tela cair na leitura direta. */
@@ -551,6 +557,8 @@ export interface ResultadoDaEscrita {
   desfazer: PedidoDeEscrita | null;
   /** A régua deu vermelho e não veio `forcado`: nada foi enviado. */
   regua?: ResultadoDaRegua;
+  /** Responsáveis sem e-mail na Equipe: o convite saiu sem eles (lane G4). */
+  responsaveisSemEmail?: SocioDaAgenda[];
 }
 
 /** Uma linha do histórico (`GET /agenda/historico`), lida do RASTRO da porta. */
