@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<title>Celular · Lista do dia</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700;800&amp;family=Space+Grotesk:wght@400;500;600;700&amp;display=swap">
+<style>
+body{margin:0;background:#070A08}
+.mono{font-family:'JetBrains Mono',monospace}
+.it{display:flex;gap:12px;padding:12px 0;border-top:1px solid #142016}
+.h{font-family:'JetBrains Mono',monospace;font-size:12px;color:#A9BCAD;width:46px;flex-shrink:0}
+.t{font-size:14px;font-weight:500;line-height:1.3}
+.s{font-size:12px;color:#A9BCAD;margin-top:3px}
+.btn{font-family:'Space Grotesk',sans-serif;font-size:14px;border-radius:3px;border:1px solid #1C3010;background:#0C120D;color:#DFFFE8;padding:10px 14px;min-height:44px;cursor:pointer}
+</style>
+</helmet>
+<div style="width:390px;height:844px;box-sizing:border-box;background:#070A08;color:#DFFFE8;font-family:'Space Grotesk',sans-serif;display:flex;flex-direction:column">
+<header style="padding:18px 16px 10px;border-bottom:1px solid #1C3010">
+<div style="display:flex;justify-content:space-between;align-items:center">
+<img src="/_blob/61760f6eb8abd8745a1fa0d8273affe7" alt="ROOT" style="height:60px;width:auto;margin:-14px 0 -14px -14px">
+<span class="mono" style="font-size:11px;color:#1FFFA8">● sincronizado</span>
+</div>
+<div style="display:flex;justify-content:space-between;align-items:baseline;margin-top:10px">
+<div><div class="mono" style="font-size:10px;letter-spacing:2px;color:#A9BCAD">HOJE</div><div style="font-size:22px;font-weight:700;letter-spacing:-.5px">Quinta, 29/10</div></div>
+<span class="mono" style="font-size:12px;color:#A9BCAD">Rodrigo ▾</span>
+</div>
+<div style="display:flex;gap:6px;margin-top:10px">
+<button class="btn" style="flex:1;border-color:#9BDB1F;background:rgba(155,219,31,.12)">Lista</button>
+<button class="btn" style="flex:1">Dia</button>
+<button class="btn" style="flex:1">Mês</button>
+</div>
+</header>
+
+<div style="flex:1;overflow:hidden;padding:4px 16px">
+<div class="it" style="border-top:none"><span class="h">08:00</span><div><div class="t" style="color:#A9BCAD">Fechado Rodrigo</div><div class="s">agenda pessoal · até 13:00</div></div></div>
+<div class="it"><span class="h">13:30</span><div><div class="t">Reunião Online - Affari - Pedro</div><div class="s">Pedro · Meet</div></div></div>
+<div style="display:flex;align-items:center;gap:8px;padding:4px 0"><span class="mono" style="font-size:11px;color:#FF1F6B">14:20</span><span style="flex:1;border-top:1px solid #FF1F6B"></span><span class="mono" style="font-size:10px;color:#FF1F6B">AGORA</span></div>
+<div class="it"><span class="h">15:00</span><div><div class="t">Reunião Online - Papeleira Santa Rita - Rodrigo</div><div class="s">em 40 min · <span style="color:#9BDB1F">entrar no Meet</span></div></div></div>
+<div class="it"><span class="h">16:30</span><div><div class="t">Reunião Presencial - Custeio - Lucas</div><div class="s">trajeto 30 min antes</div></div></div>
+<div class="it"><span class="h">19:30</span><div><div class="t">Reunião Interna - Todos</div><div class="s">rito da quinta · pauta fixa</div></div></div>
+<div class="it"><span class="h"></span><div class="s">amanhã: 3 compromissos · 1 conflito</div></div>
+</div>
+
+<footer style="padding:12px 16px 20px;border-top:1px solid #1C3010;display:flex;gap:8px">
+<button class="btn" style="flex:1;background:#9BDB1F;border-color:#9BDB1F;color:#070A08;font-weight:600">+ Marcar</button>
+<button class="btn" style="flex:1">Conflitos 6</button>
+</footer>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":390,"height":844}}'>
+class Component extends DCLogic {
+renderVals() { return {}; }
+}
+</script>
+</body>
+</html>
