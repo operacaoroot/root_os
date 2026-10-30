@@ -1,6 +1,6 @@
 import { Injectable, Logger, OnModuleInit, Optional, ServiceUnavailableException } from '@nestjs/common';
 import type { Rotina } from '@prisma/client';
-import { quandoDoCron, type FluxoDasIdeias, type FluxoEtapa } from '@mktos/shared';
+import { IDEIAS_POR_DIA, quandoDoCron, type FluxoDasIdeias, type FluxoEtapa } from '@mktos/shared';
 
 import { PrismaService } from '../prisma/prisma.service';
 import { ExecutoresDeRotinaRegistry } from '../routines/executores.registry';
@@ -12,7 +12,7 @@ import { SLUG_DA_IA_DAS_IDEIAS, TIPO_DA_IA_DAS_IDEIAS, garantirRotinaDasIdeias }
 
 /** Quantos itens a IA lê por passagem (lotes de 4). */
 const POR_PASSAGEM = 200;
-const POSTS_POR_PERFIL = Number(process.env.APIFY_POSTS_POR_PERFIL ?? 6);
+const POSTS_POR_PERFIL = Number(process.env.APIFY_POSTS_POR_PERFIL ?? 3);
 
 /**
  * O FLUXO DAS IDEIAS (30/10/2026, pedido do Lucas: "saber quantas vão ser, como, que
@@ -46,6 +46,7 @@ export class FluxoDeIdeiasService implements OnModuleInit {
       if (!novas.lidos && !relidas.lidos) return { status: 'ok', resumo: 'Nada novo para ler.' };
       const partes = [
         `${novas.cards} ${novas.cards === 1 ? 'ideia nova' : 'ideias novas'} para avaliar`,
+        novas.reserva ? `${novas.reserva} na Reserva (passaram das ${IDEIAS_POR_DIA} do dia)` : '',
         novas.descartados ? `${novas.descartados} fora do tema` : '',
         relidas.relidos ? `${relidas.relidos} relidas` : '',
         falharam ? `${falharam} falharam` : '',
@@ -102,6 +103,7 @@ export class FluxoDeIdeiasService implements OnModuleInit {
         semLeitura: painel.semLeitura,
         aprovadasSemana,
         descartadasIa: conta('descartada_ia'),
+        reserva: conta('reserva'),
       },
       iaConfigurada: painel.ia,
     };

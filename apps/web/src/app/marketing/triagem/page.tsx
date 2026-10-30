@@ -35,6 +35,7 @@ const dataCurta = (s: string | null) => {
 
 const FILTROS: [TriagemStatus, string][] = [
   ['nova', 'Para avaliar'],
+  ['reserva', 'Reserva'],
   ['aprovada', 'Aprovadas'],
   ['recusada', 'Recusadas'],
   ['descartada_ia', 'Descartadas pela IA'],
@@ -158,8 +159,8 @@ export default function TriagemPage() {
     setMontando(true);
     setAviso(null);
     try {
-      const r = await apiPost<{ lidos: number; cards: number; descartados: number; falharam: number }>('/marketing/estudio/triagem/montar', { quantas: 12 }, token);
-      setAviso(r.lidos === 0 ? 'Nada novo para ler.' : `${r.cards} ideias novas${r.descartados ? ` (${r.descartados} fora do tema)` : ''}${r.falharam ? `, ${r.falharam} falharam` : ''}.`);
+      const r = await apiPost<{ lidos: number; cards: number; descartados: number; falharam: number; reserva: number }>('/marketing/estudio/triagem/montar', { quantas: 12 }, token);
+      setAviso(r.lidos === 0 ? 'Nada novo para ler.' : `${r.cards} ideias novas${r.reserva ? `, ${r.reserva} na Reserva` : ''}${r.descartados ? ` (${r.descartados} fora do tema)` : ''}${r.falharam ? `, ${r.falharam} falharam` : ''}.`);
       await carregar();
     } catch (e) {
       setErro((e as Error).message);
@@ -187,6 +188,19 @@ export default function TriagemPage() {
       setErro((e as Error).message);
     } finally {
       setRelendo(null);
+    }
+  };
+
+  const puxar = async (c: TriagemCard) => {
+    setOcupado(true);
+    try {
+      await apiPost(`/marketing/estudio/triagem/${c.id}/puxar`, {}, token);
+      setAviso('Está em Para avaliar.');
+      await Promise.all([carregar(), carregarTodas()]);
+    } catch (e) {
+      setErro((e as Error).message);
+    } finally {
+      setOcupado(false);
     }
   };
 
@@ -375,6 +389,18 @@ export default function TriagemPage() {
                         </a>
                       )}
                     </div>
+                    {editavel && (c.status === 'reserva' || c.status === 'descartada_ia') && (
+                      <div className="ideias-mini-acoes">
+                        <button className="small ghost" disabled={ocupado} onClick={() => void puxar(c)} title="Volta para Para avaliar e fica lá, fora do corte do dia">
+                          ↑ Trazer para avaliar
+                        </button>
+                        {c.status === 'reserva' && (
+                          <button className="small primary" disabled={ocupado} onClick={() => void decidir(c, 'aprovada')}>
+                            ✓ Aprovar
+                          </button>
+                        )}
+                      </div>
+                    )}
                     {editavel && c.status === 'nova' && (
                       <div className="ideias-mini-acoes">
                         <button className="small ideias-no" disabled={ocupado} onClick={() => void decidir(c, 'recusada')}>

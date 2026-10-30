@@ -336,7 +336,15 @@ export function grafoDasNotas(notas: { id: string; titulo: string; tipo: Memoria
 
 // ---------- Triagem de ideias (um card por vez) ----------
 
-export const TRIAGEM_STATUS = ['nova', 'aprovada', 'recusada', 'descartada_ia'] as const;
+/** reserva = passou do corte do dia (IDEIAS_POR_DIA): fica guardada e dá para aprovar ou trazer para avaliar. */
+export const TRIAGEM_STATUS = ['nova', 'aprovada', 'recusada', 'descartada_ia', 'reserva'] as const;
+/**
+ * A curadoria (30/10/2026, decisão do Lucas): das fontes, chegam a Para avaliar as 10 ideias
+ * de maior relevância de cada dia; a de 90 ou mais entra mesmo passando de 10. O resto vai
+ * para a Reserva. Nota que a equipe mandou da Memória não conta no corte.
+ */
+export const IDEIAS_POR_DIA = 10;
+export const RELEVANCIA_QUE_FURA_O_CORTE = 90;
 export type TriagemStatus = (typeof TRIAGEM_STATUS)[number];
 export const MOTIVOS_RAPIDOS = ['Fora do tema', 'Já vi isso', 'Fonte fraca'] as const;
 
@@ -403,7 +411,7 @@ export interface FluxoDasIdeias {
   ia: FluxoEtapa;
   fontes: { ligadas: number; perfis: number; gratis: number; postsPorPerfil: number; itensPorDiaPerfis: number };
   apify: { usadoUsd: number; tetoUsd: number; voltaEm: string | null; custoPorColeta: number | null; diasQueDa: number | null } | null;
-  agora: { esperandoIa: number; paraAvaliar: number; semLeitura: number; aprovadasSemana: number; descartadasIa: number };
+  agora: { esperandoIa: number; paraAvaliar: number; semLeitura: number; aprovadasSemana: number; descartadasIa: number; reserva: number };
   iaConfigurada: boolean;
 }
 

@@ -2,6 +2,8 @@ import { ConflictException, Inject, Injectable, Logger, NotFoundException, Optio
 import type { MarketingIdeiaCard, MarketingNota, PautaCaptura, Prisma } from '@prisma/client';
 import {
   FORMATOS_COM_REGUA,
+  IDEIAS_POR_DIA,
+  RELEVANCIA_QUE_FURA_O_CORTE,
   TRIAGEM_STATUS,
   cardDaNotaSemIa,
   duasFrases,
@@ -227,7 +229,7 @@ export class TriagemService {
     const [cards, grupos] = await Promise.all([
       this.prisma.marketingIdeiaCard.findMany({
         where: { orgId, status: st },
-        orderBy: st === 'nova' || st === 'descartada_ia' ? [{ score: 'desc' }, { criadaEm: 'desc' }] : [{ decididaEm: 'desc' }],
+        orderBy: st === 'nova' || st === 'descartada_ia' || st === 'reserva' ? [{ score: 'desc' }, { criadaEm: 'desc' }] : [{ decididaEm: 'desc' }],
         take: 500,
       }),
       this.prisma.marketingIdeiaCard.groupBy({ by: ['status'], where: { orgId }, _count: { _all: true } }),
@@ -236,7 +238,7 @@ export class TriagemService {
   }
 
   /** Lê até `quantas` itens ainda sem card e escreve os cards. */
-  montar(orgId: string, quantas: number): Promise<{ lidos: number; cards: number; descartados: number; falharam: number }> {
+  montar(orgId: string, quantas: number): Promise<{ lidos: number; cards: number; descartados: number; falharam: number; reserva: number }> {
     return this.naVez(orgId, () => this.montarAgora(orgId, quantas));
   }
 
@@ -301,7 +303,8 @@ export class TriagemService {
     const r = await this.prisma.$transaction(async (tx) => {
       const c = await tx.marketingIdeiaCard.findFirst({ where: { id, orgId } });
       if (!c) throw new NotFoundException('Card não encontrado.');
-      if (c.status !== 'nova') throw new ConflictException('Esse card já foi decidido. Recarregue a página.');
+      // A da Reserva também se decide direto: é o "e se for muito bom?" do corte do dia.
+      if (c.status !== 'nova' && c.status !== 'reserva') throw new ConflictException('Esse card já foi decidido. Recarregue a página.');
       const data: Prisma.MarketingIdeiaCardUpdateInput = { status: entrada.decisao, decididaEm: new Date(), decididaPor: por, comentario: entrada.comentario || null };
       let postId: string | null = null;
       if (entrada.decisao === 'recusada') data.motivo = entrada.motivo || null;
@@ -348,6 +351,39 @@ export class TriagemService {
     const cards = todos.map((c) => paraTela(c, null));
     const contagem = { fonte: cards.filter((c) => c.origem === 'fonte').length, salvo: cards.filter((c) => c.origem === 'salvo').length };
     return { cards: origem === 'fonte' || origem === 'salvo' ? cards.filter((c) => c.origem === origem) : cards, contagem };
+  }
+
+  /** Traz da Reserva (ou das descartadas pela IA) para Para avaliar. O corte do dia não a devolve mais. */
+  async puxar(orgId: string, id: string): Promise<{ ok: true }> {
+    const c = await this.prisma.marketingIdeiaCard.findFirst({ where: { id, orgId } });
+    if (!c) throw new NotFoundException('Card não encontrado.');
+    if (c.status !== 'reserva' && c.status !== 'descartada_ia') throw new ConflictException('Esse card não está na Reserva nem nas descartadas.');
+    const como = (c.como && typeof c.como === 'object' ? c.como : {}) as Record<string, unknown>;
+    await this.prisma.marketingIdeiaCard.update({ where: { id }, data: { status: 'nova', como: { ...como, puxada: true } as Prisma.InputJsonValue } });
+    return { ok: true };
+  }
+
+  /**
+   * O corte do dia: das fontes, ficam em "nova" as IDEIAS_POR_DIA de maior relevância criadas
+   * hoje; a de RELEVANCIA_QUE_FURA_O_CORTE ou mais fica sempre. O resto vai para a Reserva.
+   * Nota da Memória (a equipe mandou) e card puxado à mão não entram na conta. Só rebaixa:
+   * card bom que chega depois toma a vaga do pior do dia. Devolve quantos foram para a Reserva.
+   */
+  private async aplicarCorte(orgId: string): Promise<number> {
+    // O dia de São Paulo (UTC-3; o Brasil não tem horário de verão desde 2019).
+    const tresHoras = 3 * 3_600_000;
+    const inicio = new Date(Math.floor((Date.now() - tresHoras) / 86_400_000) * 86_400_000 + tresHoras);
+    const doDia = (
+      await this.prisma.marketingIdeiaCard.findMany({
+        where: { orgId, status: 'nova', notaId: null, criadaEm: { gte: inicio } },
+        orderBy: [{ relevancia: 'desc' }, { score: 'desc' }],
+        select: { id: true, relevancia: true, como: true },
+      })
+    ).filter((c) => !(c.como && typeof c.como === 'object' && (c.como as Record<string, unknown>).puxada));
+    const sobram = doDia.slice(IDEIAS_POR_DIA).filter((c) => c.relevancia < RELEVANCIA_QUE_FURA_O_CORTE);
+    if (!sobram.length) return 0;
+    const r = await this.prisma.marketingIdeiaCard.updateMany({ where: { orgId, id: { in: sobram.map((c) => c.id) }, status: 'nova' }, data: { status: 'reserva' } });
+    return r.count;
   }
 
   /** Desfaz a última decisão. O post criado vai para Arquivado (a Máquina não apaga post). */
@@ -504,7 +540,7 @@ export class TriagemService {
     }
     const lista = await this.materia(orgId, quantas);
     const pesos = await this.pesos(orgId);
-    const resultado = { lidos: lista.length, cards: 0, descartados: 0, falharam: 0 };
+    const resultado = { lidos: lista.length, cards: 0, descartados: 0, falharam: 0, reserva: 0 };
     if (!lista.length) return resultado;
     const ctx = await this.contexto(orgId);
     for (let i = 0; i < lista.length; i += LOTE) {
@@ -531,6 +567,9 @@ export class TriagemService {
         else resultado.descartados++;
       }
     }
+    // A curadoria: o que passou das 10 do dia vai para a Reserva.
+    resultado.reserva = await this.aplicarCorte(orgId);
+    resultado.cards = Math.max(0, resultado.cards - resultado.reserva);
     return resultado;
   }
 

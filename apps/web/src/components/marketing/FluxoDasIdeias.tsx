@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { useCallback, useEffect, useState } from 'react';
-import type { FluxoDasIdeias as Fluxo, FluxoEtapa } from '@mktos/shared';
+import { IDEIAS_POR_DIA, RELEVANCIA_QUE_FURA_O_CORTE, type FluxoDasIdeias as Fluxo, type FluxoEtapa } from '@mktos/shared';
 import { apiGet, apiPatch, apiPost } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 
@@ -142,7 +142,10 @@ export function FluxoDasIdeias() {
           </div>
           <h3>{ia.quando}</h3>
           <p>
-            Lê o que a coleta e a Memória trouxeram, até 200 itens por noite, com a marca, as réguas e o que vocês aprovaram e recusaram. Escreve título, gancho, formato e por que tem a ver. O que está fora do tema vai para <em>Descartadas pela IA</em>; nota da Memória nunca é descartada.
+            Lê o que a coleta e a Memória trouxeram, até 200 itens por noite, com a marca, as réguas e o que vocês aprovaram e recusaram. Escreve título, gancho, formato e por que tem a ver. O que está fora do tema vai para <em>Descartadas pela IA</em>.
+          </p>
+          <p>
+            <strong>Curadoria:</strong> das fontes, só as {IDEIAS_POR_DIA} de maior relevância do dia chegam para avaliar. A que a IA dá {RELEVANCIA_QUE_FURA_O_CORTE} ou mais entra mesmo passando de {IDEIAS_POR_DIA}. O resto fica na <em>Reserva</em>, de onde dá para aprovar ou trazer. Nota que vocês mandam da Memória não entra no corte.
           </p>
           <p className="fluxo-agora">
             <strong>{agora.esperandoIa}</strong> esperando a IA{agora.semLeitura ? ` · ${agora.semLeitura} cards sem leitura` : ''}
@@ -159,7 +162,7 @@ export function FluxoDasIdeias() {
           <h3>Em Para aprovar</h3>
           <p>Aprovar manda a ideia para o Banco da Produção; recusar ensina a IA (o peso da fonte desce).</p>
           <p className="fluxo-agora">
-            <strong>{agora.paraAvaliar}</strong> para avaliar · {agora.aprovadasSemana} aprovadas nos últimos 7 dias · {agora.descartadasIa} descartadas pela IA
+            <strong>{agora.paraAvaliar}</strong> para avaliar · {agora.reserva} na Reserva · {agora.aprovadasSemana} aprovadas nos últimos 7 dias · {agora.descartadasIa} descartadas pela IA
           </p>
         </li>
       </ol>

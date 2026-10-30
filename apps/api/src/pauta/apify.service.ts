@@ -102,7 +102,8 @@ const PARAR_EM = Number(process.env.APIFY_PARAR_EM ?? 0.9);
 const TETO_DO_MES_SEM_LEITURA = Number(process.env.APIFY_TETO_MES_USD ?? 5);
 const TETO_POR_RUN_USD = Number(process.env.APIFY_TETO_RUN_USD ?? 0.05);
 const TETO_POR_RUN_DE_PERFIL_USD = Number(process.env.APIFY_TETO_RUN_PERFIL_USD ?? 0.15);
-const POSTS_POR_PERFIL = Number(process.env.APIFY_POSTS_POR_PERFIL ?? 6);
+// 3 por perfil (30/10/2026): com a coleta diária, ninguém posta mais que isso por dia, e gasta metade do Apify.
+const POSTS_POR_PERFIL = Number(process.env.APIFY_POSTS_POR_PERFIL ?? 3);
 const GUARDA_O_USO_MS = 5 * 60_000;
 
 export class CreditoDoApifyEsgotadoError extends ServiceUnavailableException {}

@@ -185,6 +185,14 @@ export class MarketingEstudioController {
     return this.triagem.decidir(u.orgId, id, u.name ?? u.sub, TriagemDecisaoSchema.parse(body));
   }
 
+  // Traz da Reserva (ou das descartadas pela IA) para Para avaliar.
+  @Post('triagem/:id/puxar')
+  @HttpCode(200)
+  @RequirePermissions('pauta.editar')
+  puxar(@CurrentUser() u: JwtUser, @Param('id', ParseUUIDPipe) id: string) {
+    return this.triagem.puxar(u.orgId, id);
+  }
+
   @Post('triagem/:id/desfazer')
   @HttpCode(200)
   @RequirePermissions('pauta.editar')
