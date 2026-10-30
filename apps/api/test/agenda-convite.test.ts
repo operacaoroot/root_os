@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest';
 import { ConflictException, HttpException, NotFoundException } from '@nestjs/common';
 import { PrismaClient } from '@prisma/client';
-import type { DiaLivre, PedidoDeEscrita, ResultadoDaEscrita } from '@mktos/shared';
+import { lerCompromisso, montarTituloDeCompromisso, type DiaLivre, type PedidoDeEscrita, type ResultadoDaEscrita } from '@mktos/shared';
 
 import { AUDITORIA_CONVITE_CRIADO, AUDITORIA_CONVITE_REVOGADO, AUDITORIA_PEDIDO_CAIU, ConviteDaAgendaService } from '../src/agenda/convite/convite.service';
 import { AgendarController, TETO_DE_CONFIRMACAO_POR_HORA } from '../src/agenda/convite/agendar.controller';
@@ -13,6 +13,8 @@ import {
   hashDoConvite,
   icsDoConvite,
   instanteEmSaoPaulo,
+  NOME_DIGITADO_MAX,
+  nomeDigitadoParaTitulo,
   pedidoDoConviteCaiu,
   semHorariosReservados,
 } from '../src/agenda/convite/convite-puro';
@@ -78,6 +80,23 @@ describe('o token e o convite, sem banco', () => {
     expect(semHorariosReservados(dias, reservas, 60)).toEqual([{ dia: '2026-11-03', manha: ['10:30', '11:00'], tarde: ['15:30'] }]);
     expect(semHorariosReservados(dias, reservas, 30)).toEqual([{ dia: '2026-11-03', manha: ['10:30', '11:00'], tarde: ['14:00', '15:30'] }]);
     expect(semHorariosReservados(dias, [], 60)).toEqual(dias);
+  });
+
+  it('M4: o nome digitado perde os separadores da gramática e o excesso; o título lê o cliente e o sócio certos', () => {
+    expect(nomeDigitadoParaTitulo('X - Lucas')).toBe('X Lucas');
+    expect(nomeDigitadoParaTitulo('Loja Ficticia – Pedro — Lucas')).toBe('Loja Ficticia Pedro Lucas');
+    expect(nomeDigitadoParaTitulo('- Lucas')).toBe('Lucas');
+    expect(nomeDigitadoParaTitulo('Lucas -')).toBe('Lucas');
+    expect(nomeDigitadoParaTitulo('A · B | C')).toBe('A B C');
+    expect(nomeDigitadoParaTitulo('Ana-Maria Exemplo')).toBe('Ana-Maria Exemplo');
+    expect(nomeDigitadoParaTitulo('   ')).toBeNull();
+    expect(nomeDigitadoParaTitulo('x'.repeat(200))).toHaveLength(NOME_DIGITADO_MAX);
+    const cliente = nomeDigitadoParaTitulo('X - Lucas') as string;
+    const titulo = montarTituloDeCompromisso({ tipo: 'cliente', modalidade: 'online', cliente, responsaveis: ['Rodrigo'] });
+    expect(lerCompromisso(titulo)).toMatchObject({ tipo: 'cliente', cliente: 'X Lucas', responsaveis: ['Rodrigo'] });
+    // Sem o conserto, o mesmo nome cru faria a leitura achar outro cliente ou outro sócio.
+    const cru = montarTituloDeCompromisso({ tipo: 'cliente', modalidade: 'online', cliente: 'X - Lucas', responsaveis: ['Rodrigo'] });
+    expect(lerCompromisso(cru)).not.toMatchObject({ cliente: 'X - Lucas', responsaveis: ['Rodrigo'] });
   });
 
   it('dia e hora de São Paulo viram o instante certo (-03:00)', () => {
@@ -307,6 +326,14 @@ describe.skipIf(!URL)('o link de escolha, com banco', () => {
     const ics = await svc.ics(token, AGORA);
     expect(ics).toContain('DTSTART:20261103T183000Z');
     expect(ics).not.toContain('Marcos');
+  });
+
+  it('M4: sem lead nem cliente, o nome digitado entra no título sem separador', async () => {
+    const c = await novo();
+    await svc.confirmar(tokenDe(c.url), { dia: '2026-11-03', hora: '10:30', email: 'x@cliente.invalid', nome: 'X - Lucas' }, AGORA);
+    expect(escritas).toHaveLength(1);
+    const p = escritas[0].pedido;
+    expect(p.acao === 'marcar' ? p.compromisso.cliente : null).toBe('X Lucas');
   });
 
   it('a escrita recusada (o horário foi tomado na régua) devolve o uso: dá para escolher outro', async () => {

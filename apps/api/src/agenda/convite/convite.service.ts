@@ -23,6 +23,7 @@ import {
   icsDoConvite,
   instanteEmSaoPaulo,
   horarioReservado,
+  nomeDigitadoParaTitulo,
   pedidoDoConviteCaiu,
   primeiroNome,
   semHorariosReservados,
@@ -542,7 +543,7 @@ export class ConviteDaAgendaService {
       const n = p?.nomeFantasia?.trim() || p?.razaoSocial?.trim();
       if (n) return n.slice(0, 120);
     }
-    const n = digitado?.replace(/\s+/g, ' ').trim();
-    return n ? n.slice(0, 120) : 'Convidado pelo link';
+    // O digitado não mexe na gramática do título (M4): sem separador, com teto de tamanho.
+    return nomeDigitadoParaTitulo(digitado) ?? 'Convidado pelo link';
   }
 }
