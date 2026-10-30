@@ -126,12 +126,12 @@ describe('janela de trabalho', () => {
 });
 
 describe('intervalo mínimo', () => {
-  const antes = [ev('a', 'Reunião Online - Promedical - Rodrigo', '2026-11-04', '09:00', '10:00')];
+  const antes = [ev('a', 'Reunião Online - Clinimodelo - Rodrigo', '2026-11-04', '09:00', '10:00')];
 
   it('colado na reunião anterior: atenção', () => {
     const r = avaliar(proposta('2026-11-04', '10:05', '11:00'), antes);
     expect(r.cor).toBe('amarelo');
-    expect(r.itens.find((i) => i.regra === 'intervalo')?.frase).toBe('Sem os 15 min de intervalo depois de Reunião Online - Promedical - Rodrigo.');
+    expect(r.itens.find((i) => i.regra === 'intervalo')?.frase).toBe('Sem os 15 min de intervalo depois de Reunião Online - Clinimodelo - Rodrigo.');
   });
 
   it('com os 15 min: verde', () => {
@@ -151,14 +151,14 @@ describe('intervalo mínimo', () => {
 });
 
 describe('trajeto antes de presencial', () => {
-  const antes = [ev('a', 'Reunião Online - Promedical - Rodrigo', '2026-11-04', '09:00', '10:00')];
+  const antes = [ev('a', 'Reunião Online - Clinimodelo - Rodrigo', '2026-11-04', '09:00', '10:00')];
 
   it('presencial 15 min depois de outra reunião: falta o trajeto', () => {
     const r = avaliar(proposta('2026-11-04', '10:15', '11:00', { modalidade: 'presencial' }), antes);
     expect(r.cor).toBe('amarelo');
     expect(regrasDe(r, 'atencao')).toEqual(['trajeto']);
     expect(r.itens.find((i) => i.regra === 'trajeto')?.frase).toBe(
-      'Falta o trajeto de 30 min antes da presencial (depois de Reunião Online - Promedical - Rodrigo).',
+      'Falta o trajeto de 30 min antes da presencial (depois de Reunião Online - Clinimodelo - Rodrigo).',
     );
   });
 
@@ -167,10 +167,10 @@ describe('trajeto antes de presencial', () => {
   });
 
   it('online colada ANTES de uma presencial também tira o trajeto dela', () => {
-    const depois = [ev('b', 'Reunião Presencial - Custeio - Rodrigo', '2026-11-04', '11:00', '12:00')];
+    const depois = [ev('b', 'Reunião Presencial - Exemplaria - Rodrigo', '2026-11-04', '11:00', '12:00')];
     const r = avaliar(proposta('2026-11-04', '10:00', '10:45'), depois);
     expect(r.itens.find((i) => i.regra === 'trajeto')?.frase).toBe(
-      'Falta o trajeto de 30 min antes de Reunião Presencial - Custeio - Rodrigo (presencial).',
+      'Falta o trajeto de 30 min antes de Reunião Presencial - Exemplaria - Rodrigo (presencial).',
     );
   });
 });
@@ -353,28 +353,28 @@ describe('ritos protegidos', () => {
 });
 
 describe('a mesma pessoa em dois lugares', () => {
-  const promedical = ev('pm', 'Reunião Online - Promedical - Rodrigo', '2026-11-04', '09:00', '10:00');
+  const clinimodelo = ev('pm', 'Reunião Online - Clinimodelo - Rodrigo', '2026-11-04', '09:00', '10:00');
 
   it('choque é bloqueio', () => {
-    const r = avaliar(proposta('2026-11-04', '09:30', '10:30'), [promedical]);
+    const r = avaliar(proposta('2026-11-04', '09:30', '10:30'), [clinimodelo]);
     expect(r.cor).toBe('vermelho');
     expect(r.itens[0]).toMatchObject({
       nivel: 'bloqueio', regra: 'choque', pessoa: 'Rodrigo', eventoId: 'pm',
-      frase: 'Rodrigo já tem Reunião Online - Promedical - Rodrigo das 09:00 às 10:00.',
+      frase: 'Rodrigo já tem Reunião Online - Clinimodelo - Rodrigo das 09:00 às 10:00.',
     });
     expect(regrasDe(r)).not.toContain('livre');
   });
 
   it('o próprio evento fica fora da conta (editar, arrastar, esticar)', () => {
-    expect(avaliar(proposta('2026-11-04', '09:30', '10:30', { ignorarEventoId: 'pm' }), [promedical]).cor).toBe('verde');
+    expect(avaliar(proposta('2026-11-04', '09:30', '10:30', { ignorarEventoId: 'pm' }), [clinimodelo]).cor).toBe('verde');
   });
 
   it('cancelado não conta', () => {
-    expect(avaliar(proposta('2026-11-04', '09:30', '10:30'), [{ ...promedical, status: 'cancelado' }]).cor).toBe('verde');
+    expect(avaliar(proposta('2026-11-04', '09:30', '10:30'), [{ ...clinimodelo, status: 'cancelado' }]).cor).toBe('verde');
   });
 
   it('outro sócio no mesmo horário não é choque', () => {
-    expect(avaliar(proposta('2026-11-04', '09:30', '10:30', { responsaveis: ['Lucas'] }), [promedical]).cor).toBe('verde');
+    expect(avaliar(proposta('2026-11-04', '09:30', '10:30', { responsaveis: ['Lucas'] }), [clinimodelo]).cor).toBe('verde');
   });
 
   it('a interna de Todos ocupa os três', () => {
@@ -392,7 +392,7 @@ describe('a mesma pessoa em dois lugares', () => {
   });
 
   it('dois sócios: um livre e outro em choque, o livre aparece', () => {
-    const r = avaliar(proposta('2026-11-04', '09:30', '10:30', { responsaveis: ['Rodrigo', 'Lucas'] }), [promedical]);
+    const r = avaliar(proposta('2026-11-04', '09:30', '10:30', { responsaveis: ['Rodrigo', 'Lucas'] }), [clinimodelo]);
     expect(r.cor).toBe('vermelho');
     expect(r.itens.find((i) => i.regra === 'livre')?.frase).toBe('Lucas livre das 09:30 às 10:30');
   });

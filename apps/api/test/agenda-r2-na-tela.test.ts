@@ -98,13 +98,13 @@ const ARGS_MARCAR = {
   chave: 'abcdefghij0123456789',
   tipo: 'cliente',
   modalidade: 'online',
-  cliente: 'Papeleira Ficticia',
+  cliente: 'Papelaria Ficticia',
   responsavel: 'Rodrigo',
   responsaveis: ['Rodrigo'],
   inicio: '2026-09-02T15:00:00-03:00',
   fim: '2026-09-02T16:00:00-03:00',
 };
-const ARGS_REABRIR = { chave: 'abcdefghij0123456780', eventoId: 'evento-ficticio-1', tituloAtual: 'Reunião Online - Papeleira Ficticia - Rodrigo' };
+const ARGS_REABRIR = { chave: 'abcdefghij0123456780', eventoId: 'evento-ficticio-1', tituloAtual: 'Reunião Online - Papelaria Ficticia - Rodrigo' };
 
 describe.skipIf(!URL)('agenda v2, decisão 2: R2 no clique só para gente na tela', () => {
   let prisma: PrismaClient;
@@ -160,7 +160,7 @@ describe.skipIf(!URL)('agenda v2, decisão 2: R2 no clique só para gente na tel
     const registro = new EfeitosRegistry();
     const falso = (capacidade: string) => async (_a: Record<string, unknown>, _o: string, ctx: { actorId?: string | null }) => {
       chamadas.push({ capacidade, ator: ctx.actorId ?? null });
-      return { ok: true, id: 'evento-ficticio-1', titulo: 'Reunião Online - Papeleira Ficticia - Rodrigo' };
+      return { ok: true, id: 'evento-ficticio-1', titulo: 'Reunião Online - Papelaria Ficticia - Rodrigo' };
     };
     registro.registrar(Object.fromEntries(Object.values(CAPACIDADES_DA_AGENDA).map((c) => [c, falso(c)])), 'teste');
     const interruptores = new InterruptoresRegistry();

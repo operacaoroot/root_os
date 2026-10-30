@@ -170,7 +170,7 @@ describe('o evento do Google desmontado para o espelho (puro)', () => {
       {
         id: 'ev1',
         status: 'confirmed',
-        summary: 'Reunião Online - Andrade Peças - Pedro',
+        summary: 'Reunião Online - Fictícia Peças - Pedro',
         start: { dateTime: '2026-11-03T10:00:00-03:00' },
         end: { dateTime: '2026-11-03T11:00:00-03:00' },
         attendees: [
@@ -196,7 +196,7 @@ describe('o evento do Google desmontado para o espelho (puro)', () => {
       serieId: 'serie1',
       criadoPeloOs: true,
       leituraTipo: 'cliente',
-      leituraCliente: 'Andrade Peças',
+      leituraCliente: 'Fictícia Peças',
       leituraResponsaveis: ['Pedro'],
       leituraModalidade: 'online',
       diaInteiro: false,
@@ -206,7 +206,7 @@ describe('o evento do Google desmontado para o espelho (puro)', () => {
       { email: 'operacao.root@exemplo.invalid', nome: null, organizador: true, resposta: 'pendente' },
     ]);
     const e = eventoDaLinha({ ...d.linha, descricao: null });
-    expect(e).toMatchObject({ id: 'ev1', origem: 'google', inicio: '2026-11-03T13:00:00.000Z', leitura: { tipo: 'cliente', cliente: 'Andrade Peças' } });
+    expect(e).toMatchObject({ id: 'ev1', origem: 'google', inicio: '2026-11-03T13:00:00.000Z', leitura: { tipo: 'cliente', cliente: 'Fictícia Peças' } });
     expect('descricao' in e).toBe(false);
   });
 
@@ -368,7 +368,7 @@ describe.skipIf(!comBanco)('o espelho da agenda pela porta (banco de teste)', ()
       ],
     });
 
-    g.por({ id: 'r1', summary: 'Reunião Online - Andrade Peças - Pedro', start: { dateTime: em(24) }, end: { dateTime: em(25) }, hangoutLink: 'https://meet.exemplo.invalid/r1' });
+    g.por({ id: 'r1', summary: 'Reunião Online - Fictícia Peças - Pedro', start: { dateTime: em(24) }, end: { dateTime: em(25) }, hangoutLink: 'https://meet.exemplo.invalid/r1' });
     g.por({ id: 'r2', summary: 'Reunião Interna - Todos', start: { dateTime: em(48) }, end: { dateTime: em(49) } });
     g.por({ id: 'r3', summary: 'Rodrigo Fora - curso', start: { dateTime: em(72) }, end: { dateTime: em(80) } });
     g.por({ id: 'longe', summary: 'Fora da janela', start: { dateTime: em(24 * 400) }, end: { dateTime: em(24 * 400 + 1) } });
@@ -444,10 +444,10 @@ describe.skipIf(!comBanco)('o espelho da agenda pela porta (banco de teste)', ()
     const r = await naEmpresa(() => espelho.passagem(ORG, AGORA));
     expect(r.status).toBe('ok');
     expect(r.resumo).toMatch(/janela completa/);
-    expect(r.resumo).not.toMatch(/Andrade/);
+    expect(r.resumo).not.toMatch(/Fictícia/);
     const janela = g.pedidos.filter((c) => c.includes('timeMin'));
     expect(janela.length).toBeGreaterThanOrEqual(2);
-    expect(await linha('r1')).toMatchObject({ titulo: 'Reunião Online - Andrade Peças - Pedro', leituraTipo: 'cliente', leituraCliente: 'Andrade Peças', meet: 'https://meet.exemplo.invalid/r1', status: 'confirmado' });
+    expect(await linha('r1')).toMatchObject({ titulo: 'Reunião Online - Fictícia Peças - Pedro', leituraTipo: 'cliente', leituraCliente: 'Fictícia Peças', meet: 'https://meet.exemplo.invalid/r1', status: 'confirmado' });
     expect(await linha('r3')).toMatchObject({ leituraTipo: 'fora', leituraMotivo: 'curso' });
     expect(await linha('longe')).toBeNull();
     const sinc = await prisma.agendaSincronia.findUniqueOrThrow({ where: { orgId_agenda: { orgId: ORG, agenda: 'primary' } } });
@@ -485,7 +485,7 @@ describe.skipIf(!comBanco)('o espelho da agenda pela porta (banco de teste)', ()
     const novos = g.pedidos.slice(antes).filter((c) => c.includes('/events'));
     expect(novos.every((c) => c.includes('syncToken=') && !c.includes('timeMin'))).toBe(true);
     expect((await linha('r2'))?.inicio.toISOString()).toBe(new Date(em(50)).toISOString());
-    expect(await linha('r1')).toMatchObject({ status: 'cancelado', titulo: 'Reunião Online - Andrade Peças - Pedro' });
+    expect(await linha('r1')).toMatchObject({ status: 'cancelado', titulo: 'Reunião Online - Fictícia Peças - Pedro' });
     expect(await linha('r4')).toMatchObject({ leituraTipo: 'fechado', leituraResponsaveis: ['Lucas'] });
     const vista = await naEmpresa(() => espelho.periodo(ORG, AGORA, new Date(AGORA.getTime() + 7 * DIA), { agora: depois }));
     expect(vista.eventos.map((e) => e.id)).not.toContain('r1');

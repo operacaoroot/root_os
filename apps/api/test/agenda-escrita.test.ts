@@ -93,12 +93,12 @@ const ARGS_DO_MARCAR = (extra: Record<string, unknown> = {}) => ({
   chave: 'abcdefghij0123456789',
   tipo: 'cliente',
   modalidade: 'online',
-  cliente: 'Papeleira Ficticia',
+  cliente: 'Papelaria Ficticia',
   responsavel: 'Rodrigo',
   responsaveis: ['Rodrigo'],
   inicio: '2026-11-03T15:00:00-03:00',
   fim: '2026-11-03T16:00:00-03:00',
-  convidados: ['cliente@papeleira.invalid', 'rodrigo@root.invalid'],
+  convidados: ['cliente@papelaria.invalid', 'rodrigo@root.invalid'],
   ...extra,
 });
 
@@ -133,10 +133,10 @@ describe('os efeitos no Google', () => {
     expect(p.metodo).toBe('POST');
     expect(p.caminho).toContain('sendUpdates=all');
     expect(p.caminho).toContain('conferenceDataVersion=1');
-    expect(p.corpo?.summary).toBe('Reunião Online - Papeleira Ficticia - Rodrigo');
+    expect(p.corpo?.summary).toBe('Reunião Online - Papelaria Ficticia - Rodrigo');
     expect(p.corpo?.id).toBe(eventoIdDaChave(ORG, 'abcdefghij0123456789'));
     expect((p.corpo?.conferenceData as { createRequest: { requestId: string } }).createRequest.requestId).toBe('mktos-abcdefghij0123456789');
-    expect(p.corpo?.attendees).toEqual([{ email: 'cliente@papeleira.invalid' }, { email: 'rodrigo@root.invalid' }]);
+    expect(p.corpo?.attendees).toEqual([{ email: 'cliente@papelaria.invalid' }, { email: 'rodrigo@root.invalid' }]);
     const prop = (p.corpo?.extendedProperties as { private: Record<string, string> }).private;
     expect(prop).toMatchObject({
       [P.criadoPeloOs]: '1',
@@ -146,7 +146,7 @@ describe('os efeitos no Google', () => {
       [P.leadId]: 'lead-1',
       [P.forcado]: 'cliente só pode nesse horário',
     });
-    expect(r).toMatchObject({ ok: true, titulo: 'Reunião Online - Papeleira Ficticia - Rodrigo', reaproveitado: false });
+    expect(r).toMatchObject({ ok: true, titulo: 'Reunião Online - Papelaria Ficticia - Rodrigo', reaproveitado: false });
     expect(r.meet).toBeTruthy();
     expect((r.evento as EventoDoGoogle).id).toBe(r.id);
   });
@@ -210,10 +210,10 @@ describe('os efeitos no Google', () => {
     const [p] = g.escritas();
     expect(p.metodo).toBe('PATCH');
     expect(p.caminho).toContain('sendUpdates=all');
-    expect(p.corpo?.summary).toBe('Reunião Online - Papeleira Ficticia - Lucas');
+    expect(p.corpo?.summary).toBe('Reunião Online - Papelaria Ficticia - Lucas');
     expect((p.corpo?.start as { dateTime: string }).dateTime).toBe(new Date('2026-11-03T17:00:00-03:00').toISOString());
-    expect((r.anterior as { titulo: string }).titulo).toBe('Reunião Online - Papeleira Ficticia - Rodrigo');
-    expect((r.depois as { titulo: string }).titulo).toBe('Reunião Online - Papeleira Ficticia - Lucas');
+    expect((r.anterior as { titulo: string }).titulo).toBe('Reunião Online - Papelaria Ficticia - Rodrigo');
+    expect((r.depois as { titulo: string }).titulo).toBe('Reunião Online - Papelaria Ficticia - Lucas');
 
     // O mesmo pedido de novo (mesma chave): devolve o que já saiu, sem escrever.
     g.pedidos.length = 0;
@@ -310,16 +310,16 @@ describe('o desfazer de cada escrita', () => {
   const marcar: PedidoDeEscrita = {
     acao: 'marcar',
     chave: 'abcdefghij0123456789',
-    compromisso: { tipo: 'cliente', modalidade: 'online', cliente: 'Papeleira Ficticia', responsaveis: ['Rodrigo'], inicio: '2026-11-03T15:00:00-03:00', fim: '2026-11-03T16:00:00-03:00' },
+    compromisso: { tipo: 'cliente', modalidade: 'online', cliente: 'Papelaria Ficticia', responsaveis: ['Rodrigo'], inicio: '2026-11-03T15:00:00-03:00', fim: '2026-11-03T16:00:00-03:00' },
   };
 
   it('marcar → desmarcar o evento da chave', () => {
     const d = desfazerDaEscrita(marcar, null, ORG, 'chavedavolta0000');
-    expect(d).toEqual({ acao: 'desmarcar', chave: 'chavedavolta0000', eventoId: eventoIdDaChave(ORG, marcar.chave), tituloAtual: 'Reunião Online - Papeleira Ficticia - Rodrigo' });
+    expect(d).toEqual({ acao: 'desmarcar', chave: 'chavedavolta0000', eventoId: eventoIdDaChave(ORG, marcar.chave), tituloAtual: 'Reunião Online - Papelaria Ficticia - Rodrigo' });
   });
 
   it('alterar → alterar com antes e depois trocados (título de volta pela gramática)', () => {
-    const antes = { titulo: 'Reunião Online - Papeleira Ficticia - Rodrigo', inicio: '2026-11-03T15:00:00-03:00', fim: '2026-11-03T16:00:00-03:00', local: null, meet: true };
+    const antes = { titulo: 'Reunião Online - Papelaria Ficticia - Rodrigo', inicio: '2026-11-03T15:00:00-03:00', fim: '2026-11-03T16:00:00-03:00', local: null, meet: true };
     const d = desfazerDaEscrita(
       { acao: 'alterar', chave: 'abcdefghij0123456780', eventoId: 'ev1', antes, depois: { inicio: '2026-11-03T17:00:00-03:00', fim: '2026-11-03T18:00:00-03:00', responsaveis: ['Lucas'] } },
       null,
@@ -330,8 +330,8 @@ describe('o desfazer de cada escrita', () => {
       acao: 'alterar',
       chave: 'chavedavolta0001',
       eventoId: 'ev1',
-      antes: { titulo: 'Reunião Online - Papeleira Ficticia - Lucas', inicio: '2026-11-03T17:00:00-03:00', fim: '2026-11-03T18:00:00-03:00', local: null, meet: true },
-      depois: { inicio: antes.inicio, fim: antes.fim, tipo: 'cliente', responsaveis: ['Rodrigo'], modalidade: 'online', cliente: 'Papeleira Ficticia' },
+      antes: { titulo: 'Reunião Online - Papelaria Ficticia - Lucas', inicio: '2026-11-03T17:00:00-03:00', fim: '2026-11-03T18:00:00-03:00', local: null, meet: true },
+      depois: { inicio: antes.inicio, fim: antes.fim, tipo: 'cliente', responsaveis: ['Rodrigo'], modalidade: 'online', cliente: 'Papelaria Ficticia' },
     });
   });
 
@@ -364,12 +364,12 @@ describe('o histórico, lido do registro da porta', () => {
       capabilityId: CAPACIDADES_DA_AGENDA.marcar,
       actorId: 'u1',
       agentSlug: null,
-      args: { chave: 'abcdefghij0123456789', tipo: 'cliente', modalidade: 'online', cliente: 'Papeleira Ficticia', responsavel: 'Rodrigo', responsaveis: ['Rodrigo'], inicio: '2026-11-03T15:00:00-03:00', fim: '2026-11-03T16:00:00-03:00', forcado: { motivo: 'cliente pediu' } },
+      args: { chave: 'abcdefghij0123456789', tipo: 'cliente', modalidade: 'online', cliente: 'Papelaria Ficticia', responsavel: 'Rodrigo', responsaveis: ['Rodrigo'], inicio: '2026-11-03T15:00:00-03:00', fim: '2026-11-03T16:00:00-03:00', forcado: { motivo: 'cliente pediu' } },
       resultado: null,
     };
     const nome = (id: string | null) => (id === 'u1' ? 'Rodrigo' : null);
     const feita = linhaDoHistorico({ ...base, id: 't1', status: 'executado' }, ORG, nome)!;
-    expect(feita).toMatchObject({ verbo: 'marcou', quem: 'Rodrigo', titulo: 'Reunião Online - Papeleira Ficticia - Rodrigo', eventoId: eventoIdDaChave(ORG, 'abcdefghij0123456789'), forcado: { motivo: 'cliente pediu' } });
+    expect(feita).toMatchObject({ verbo: 'marcou', quem: 'Rodrigo', titulo: 'Reunião Online - Papelaria Ficticia - Rodrigo', eventoId: eventoIdDaChave(ORG, 'abcdefghij0123456789'), forcado: { motivo: 'cliente pediu' } });
     expect(feita.desfazer?.acao).toBe('desmarcar');
     const retida = linhaDoHistorico({ ...base, id: 't2', status: 'aguardando_aprovacao' }, ORG, nome)!;
     expect(retida.desfazer).toBeNull();
@@ -382,7 +382,7 @@ describe('o serviço da escrita, com dublês da porta e da régua', () => {
   const pedido: PedidoDeEscrita = {
     acao: 'marcar',
     chave: 'abcdefghij0123456789',
-    compromisso: { tipo: 'cliente', modalidade: 'online', cliente: 'Papeleira Ficticia', responsaveis: ['Rodrigo'], inicio: '2026-11-03T15:00:00-03:00', fim: '2026-11-03T16:00:00-03:00', convidados: ['cliente@papeleira.invalid'] },
+    compromisso: { tipo: 'cliente', modalidade: 'online', cliente: 'Papelaria Ficticia', responsaveis: ['Rodrigo'], inicio: '2026-11-03T15:00:00-03:00', fim: '2026-11-03T16:00:00-03:00', convidados: ['cliente@papelaria.invalid'] },
   };
 
   function montar(cor: ResultadoDaRegua, resposta: unknown = { ok: true, id: 'ev1', titulo: 'T', evento: { id: 'ev1' } }) {
@@ -420,7 +420,7 @@ describe('o serviço da escrita, com dublês da porta e da régua', () => {
     expect((portaChamadas[0].args as Record<string, unknown>).forcado).toEqual({ motivo: 'o cliente só pode agora' });
     expect(portaChamadas[0].naTela).toBe(true);
     // O e-mail do responsável vem da Equipe (a conta de máquina de mesmo nome não conta).
-    expect((portaChamadas[0].args as Record<string, unknown>).convidados).toEqual(['cliente@papeleira.invalid', 'rodrigo@root.invalid']);
+    expect((portaChamadas[0].args as Record<string, unknown>).convidados).toEqual(['cliente@papelaria.invalid', 'rodrigo@root.invalid']);
     expect(refletidos).toEqual([{ id: 'ev1' }]);
     expect(r.desfazer?.acao).toBe('desmarcar');
   });

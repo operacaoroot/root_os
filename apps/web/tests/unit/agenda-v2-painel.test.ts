@@ -54,7 +54,7 @@ function painel(extra: Record<string, unknown> = {}) {
     eventos: [],
     regras: null,
     hoje: HOJE,
-    clientesConhecidos: ['Andrade Peças', 'Custeio'],
+    clientesConhecidos: ['Fictícia Peças', 'Exemplaria'],
     token: 'tok',
     podeMarcar: true,
     aoFechar,
@@ -84,8 +84,8 @@ afterEach(cleanup);
 describe('a conta do painel', () => {
   it('a frase sobre a base: só o que disse muda; apagar volta ao que era', () => {
     const base = { ...BASE, local: 'Sala 2', duracaoMin: 45 };
-    const r = aplicarFrase(base, interpretarFrase('online com andrade sexta 15h rodrigo', { hoje: HOJE, clientes: ['Andrade Peças'] }));
-    expect(r).toMatchObject({ tipo: 'cliente', cliente: 'Andrade Peças', dia: '2026-10-30', hora: '15:00', responsaveis: ['Rodrigo'], duracaoMin: 45, local: 'Sala 2' });
+    const r = aplicarFrase(base, interpretarFrase('online com ficticia sexta 15h rodrigo', { hoje: HOJE, clientes: ['Fictícia Peças'] }));
+    expect(r).toMatchObject({ tipo: 'cliente', cliente: 'Fictícia Peças', dia: '2026-10-30', hora: '15:00', responsaveis: ['Rodrigo'], duracaoMin: 45, local: 'Sala 2' });
     expect(aplicarFrase(base, interpretarFrase('', { hoje: HOJE }))).toEqual(base);
   });
   it('duração de 5 min até o fim do dia', () => {
@@ -94,23 +94,23 @@ describe('a conta do painel', () => {
     expect(duracoesAte('23:50')).toEqual([5, 10]);
   });
   it('o título é o do servidor; o que falta vira a frase', () => {
-    expect(tituloDoRascunho({ ...BASE, cliente: 'Custeio', responsaveis: ['Lucas'], modalidade: 'presencial' }).titulo).toBe('Reunião Presencial - Custeio - Lucas');
+    expect(tituloDoRascunho({ ...BASE, cliente: 'Exemplaria', responsaveis: ['Lucas'], modalidade: 'presencial' }).titulo).toBe('Reunião Presencial - Exemplaria - Lucas');
     expect(tituloDoRascunho({ ...BASE, tipo: 'interna', responsaveis: ['Rodrigo', 'Lucas', 'Pedro'] }).titulo).toBe('Reunião Interna - Todos');
     expect(tituloDoRascunho({ ...BASE, tipo: 'bloqueio', responsaveis: ['Pedro'] }).titulo).toBe('Fechado Pedro');
     expect(tituloDoRascunho({ ...BASE, tipo: 'fora', responsaveis: ['Pedro'] }).falta).toMatch(/motivo do Fora/);
     expect(tituloDoRascunho(BASE).falta).toMatch(/Escolha quem vai/);
   });
   it('o pedido de marcar: instantes de São Paulo, cliente e convidados; e-mail torto recusa', () => {
-    const p = pedidoDeMarcar({ ...BASE, cliente: 'Custeio', responsaveis: ['Lucas'], convidados: 'a@cliente.exemplo', pauta: 'proposta' }, 'k');
+    const p = pedidoDeMarcar({ ...BASE, cliente: 'Exemplaria', responsaveis: ['Lucas'], convidados: 'a@cliente.exemplo', pauta: 'proposta' }, 'k');
     expect(p).toEqual({
       acao: 'marcar',
       chave: 'k',
       compromisso: {
-        tipo: 'cliente', modalidade: 'online', responsaveis: ['Lucas'], cliente: 'Custeio',
+        tipo: 'cliente', modalidade: 'online', responsaveis: ['Lucas'], cliente: 'Exemplaria',
         inicio: '2026-11-02T12:00:00.000Z', fim: '2026-11-02T13:00:00.000Z', pauta: 'proposta', convidados: ['a@cliente.exemplo'],
       },
     });
-    expect(() => pedidoDeMarcar({ ...BASE, cliente: 'Custeio', responsaveis: ['Lucas'], convidados: 'nao-e-email' }, 'k')).toThrow(/não parece um e-mail/);
+    expect(() => pedidoDeMarcar({ ...BASE, cliente: 'Exemplaria', responsaveis: ['Lucas'], convidados: 'nao-e-email' }, 'k')).toThrow(/não parece um e-mail/);
     const fora = pedidoDeMarcar({ ...BASE, tipo: 'fora', responsaveis: ['Pedro'], motivo: 'viagem' }, 'k', { motivo: 'feriado, mas preciso' });
     expect(fora).toMatchObject({ compromisso: { tipo: 'fora', motivo: 'viagem' }, forcado: { motivo: 'feriado, mas preciso' } });
   });
@@ -135,8 +135,8 @@ describe('a conta do painel', () => {
 describe('o painel na tela', () => {
   it('a frase do desenho preenche os campos e o título', () => {
     painel();
-    escrever('online com andrade sexta 15h 1h rodrigo');
-    expect(titulo()).toBe('Reunião Online - Andrade Peças - Rodrigo');
+    escrever('online com ficticia sexta 15h 1h rodrigo');
+    expect(titulo()).toBe('Reunião Online - Fictícia Peças - Rodrigo');
     expect((screen.getByLabelText('Quando') as HTMLInputElement).value).toBe('2026-10-30');
     expect((screen.getByLabelText('Hora') as HTMLInputElement).value).toBe('15:00');
     expect((screen.getByLabelText('Duração') as HTMLSelectElement).value).toBe('60');
@@ -148,7 +148,7 @@ describe('o painel na tela', () => {
 
   it('o semáforo é o da régua, com a proposta certa e o próprio evento fora na edição', () => {
     respostaDaRegua = { cor: 'amarelo', itens: [{ nivel: 'atencao', regra: 'teto', frase: '4ª reunião do Rodrigo no dia (limite 5)' }] };
-    painel({ inicial: { ...BASE, cliente: 'Custeio', responsaveis: ['Rodrigo'] } });
+    painel({ inicial: { ...BASE, cliente: 'Exemplaria', responsaveis: ['Rodrigo'] } });
     const s = document.querySelector('[data-semaforo]') as HTMLElement;
     expect(s.getAttribute('data-semaforo')).toBe('amarelo');
     expect(within(s).getByText('ATENÇÃO')).toBeTruthy();
@@ -158,16 +158,16 @@ describe('o painel na tela', () => {
   });
 
   it('Marcar sai no clique: manda o pedido, mostra "desfazer", e o desfazer vai à mesma rota', async () => {
-    const desfazer = { acao: 'desmarcar' as const, chave: 'antiga', eventoId: 'novo1', tituloAtual: 'Reunião Online - Custeio - Lucas' };
+    const desfazer = { acao: 'desmarcar' as const, chave: 'antiga', eventoId: 'novo1', tituloAtual: 'Reunião Online - Exemplaria - Lucas' };
     apiPost.mockResolvedValueOnce(resultado({ mensagem: 'Marcado no Google.', desfazer }));
-    const { aoEscrever } = painel({ inicial: { ...BASE, cliente: 'Custeio', responsaveis: ['Lucas'] } });
+    const { aoEscrever } = painel({ inicial: { ...BASE, cliente: 'Exemplaria', responsaveis: ['Lucas'] } });
     expect(screen.getByText('nível R2 · sai no clique · fica no histórico com desfazer')).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: 'Marcar' }));
     await screen.findByText('Marcado no Google.');
     const [rota, corpo, token] = apiPost.mock.calls[0];
     expect(rota).toBe('/agenda/escritas');
     expect(token).toBe('tok');
-    expect(corpo).toMatchObject({ acao: 'marcar', compromisso: { tipo: 'cliente', cliente: 'Custeio', responsaveis: ['Lucas'] } });
+    expect(corpo).toMatchObject({ acao: 'marcar', compromisso: { tipo: 'cliente', cliente: 'Exemplaria', responsaveis: ['Lucas'] } });
     expect(typeof corpo.chave).toBe('string');
     expect(aoEscrever).toHaveBeenCalled();
     expect(sessionStorage.getItem(CHAVE_DO_RASCUNHO)).toBeNull();
@@ -180,7 +180,7 @@ describe('o painel na tela', () => {
 
   it('o corpo é o PedidoDeEscrita cru; convite sem e-mail de sócio vira aviso', async () => {
     apiPost.mockResolvedValueOnce({ ...resultado({ mensagem: 'Marcado no Google.' }), responsaveisSemEmail: ['Lucas', 'Pedro'] });
-    painel({ inicial: { ...BASE, cliente: 'Custeio', responsaveis: ['Lucas', 'Pedro'] } });
+    painel({ inicial: { ...BASE, cliente: 'Exemplaria', responsaveis: ['Lucas', 'Pedro'] } });
     fireEvent.click(screen.getByRole('button', { name: 'Marcar' }));
     await screen.findByText(/convite saiu sem o e-mail de Lucas e Pedro/);
     const corpo = apiPost.mock.calls[0][1];
@@ -190,7 +190,7 @@ describe('o painel na tela', () => {
 
   it('foi para a fila: diz, leva a /atendimento e troca a linha do nível', async () => {
     apiPost.mockResolvedValueOnce(resultado({ status: 'aguardando_aprovacao', approvalId: 'a1', precisaDeOutraPessoa: true }));
-    painel({ inicial: { ...BASE, cliente: 'Custeio', responsaveis: ['Lucas'] } });
+    painel({ inicial: { ...BASE, cliente: 'Exemplaria', responsaveis: ['Lucas'] } });
     fireEvent.click(screen.getByRole('button', { name: 'Marcar' }));
     await screen.findByText(/Foi para a fila de aprovação/);
     expect(screen.getByRole('link', { name: 'ir para a fila' }).getAttribute('href')).toBe('/atendimento');
@@ -199,7 +199,7 @@ describe('o painel na tela', () => {
 
   it('o vermelho do servidor: nada saiu; "Marcar assim mesmo" pede o motivo e reenvia com forcado', async () => {
     apiPost.mockResolvedValueOnce(resultado({ status: 'recusado', mensagem: 'A régua deu vermelho.', regua: { cor: 'vermelho', itens: [{ nivel: 'bloqueio', regra: 'feriado', frase: 'Finados: a agenda fecha' }] } }));
-    painel({ inicial: { ...BASE, cliente: 'Custeio', responsaveis: ['Lucas'] } });
+    painel({ inicial: { ...BASE, cliente: 'Exemplaria', responsaveis: ['Lucas'] } });
     fireEvent.click(screen.getByRole('button', { name: 'Marcar' }));
     await screen.findByText('Finados: a agenda fecha');
     expect((screen.getByRole('button', { name: 'Marcar' }) as HTMLButtonElement).disabled).toBe(true);
@@ -214,7 +214,7 @@ describe('o painel na tela', () => {
 
   it('o vermelho da régua da tela também segura o Marcar', () => {
     respostaDaRegua = { cor: 'vermelho', itens: [{ nivel: 'bloqueio', regra: 'choque', frase: 'Rodrigo já tem reunião às 09:00' }] };
-    painel({ inicial: { ...BASE, cliente: 'Custeio', responsaveis: ['Rodrigo'] } });
+    painel({ inicial: { ...BASE, cliente: 'Exemplaria', responsaveis: ['Rodrigo'] } });
     expect((screen.getByRole('button', { name: 'Marcar' }) as HTMLButtonElement).disabled).toBe(true);
     expect(screen.getByText('BLOQUEIO')).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Marcar assim mesmo' })).toBeTruthy();
@@ -222,7 +222,7 @@ describe('o painel na tela', () => {
 
   it('recusado: a mensagem; erro de rede: a mensagem também', async () => {
     apiPost.mockResolvedValueOnce(resultado({ status: 'recusado', mensagem: 'O Google Agenda está desligado em Conexões.' }));
-    painel({ inicial: { ...BASE, cliente: 'Custeio', responsaveis: ['Lucas'] } });
+    painel({ inicial: { ...BASE, cliente: 'Exemplaria', responsaveis: ['Lucas'] } });
     fireEvent.click(screen.getByRole('button', { name: 'Marcar' }));
     await screen.findByText('O Google Agenda está desligado em Conexões.');
     apiPost.mockRejectedValueOnce(new Error('Escrita da agenda: lane G4.'));
@@ -232,8 +232,8 @@ describe('o painel na tela', () => {
 
   it('a busca do cliente mostra a ficha (etapa, contato, vezes na agenda) e liga o lead', async () => {
     const achado: ClienteDaBuscaDaAgenda = {
-      id: 'lead-1', tipo: 'lead', nome: 'Andrade Peças', etapa: 'Proposta',
-      contato: { nome: 'Marcos Exemplo', email: 'marcos@andrade.exemplo' },
+      id: 'lead-1', tipo: 'lead', nome: 'Fictícia Peças', etapa: 'Proposta',
+      contato: { nome: 'Marcos Exemplo', email: 'marcos@ficticia.exemplo' },
       naAgenda: { vezes: 2, ultima: '2026-10-21T13:00:00.000Z', com: ['Rodrigo'] },
     };
     apiGet.mockImplementation((rota: string) => Promise.resolve(rota.startsWith('/agenda/clientes') ? [achado] : []));
@@ -246,18 +246,18 @@ describe('o painel na tela', () => {
     fireEvent.click(within(opcao).getByRole('button'));
     const ficha = document.querySelector('[data-ficha-do-cliente]') as HTMLElement;
     expect(ficha.textContent).toContain('lead · Proposta');
-    expect(ficha.textContent).toContain('contato: Marcos Exemplo · marcos@andrade.exemplo');
+    expect(ficha.textContent).toContain('contato: Marcos Exemplo · marcos@ficticia.exemplo');
     expect(ficha.textContent).toContain('já esteve na agenda 2x · última 21/10 com Rodrigo');
-    expect(titulo()).toBe('Reunião Online - Andrade Peças - Rodrigo');
+    expect(titulo()).toBe('Reunião Online - Fictícia Peças - Rodrigo');
     apiPost.mockResolvedValueOnce(resultado({ mensagem: 'ok' }));
     fireEvent.click(screen.getByRole('button', { name: 'Marcar' }));
     await screen.findByText('ok');
-    expect(apiPost.mock.calls[0][1].compromisso).toMatchObject({ leadId: 'lead-1', convidados: ['marcos@andrade.exemplo'] });
+    expect(apiPost.mock.calls[0][1].compromisso).toMatchObject({ leadId: 'lead-1', convidados: ['marcos@ficticia.exemplo'] });
   });
 
   it('Mandar link de escolha: pede o convite e mostra o link para copiar', async () => {
     apiPost.mockResolvedValueOnce({ id: 'conv-1', url: 'https://os.exemplo/agendar/tokenficticio', validoAte: '2026-11-05T15:00:00.000Z' });
-    painel({ inicial: { ...BASE, cliente: 'Custeio', responsaveis: ['Pedro'], leadId: 'lead-9', duracaoMin: 45 } });
+    painel({ inicial: { ...BASE, cliente: 'Exemplaria', responsaveis: ['Pedro'], leadId: 'lead-9', duracaoMin: 45 } });
     fireEvent.click(screen.getByRole('button', { name: 'Mandar link de escolha' }));
     await screen.findByText('https://os.exemplo/agendar/tokenficticio');
     expect(apiPost).toHaveBeenCalledWith('/agenda/convites', { socio: 'Pedro', tipo: 'cliente', modalidade: 'online', duracaoMin: 45, leadId: 'lead-9' }, 'tok');
@@ -275,7 +275,7 @@ describe('o painel na tela', () => {
     const e: EventoV2 = {
       id: 'ev-cru', agenda: 'primary', origem: 'google', titulo: 'call com cliente novo',
       inicio: '2026-11-04T18:00:00.000Z', fim: '2026-11-04T19:00:00.000Z', diaInteiro: false, local: null, meet: null,
-      convidados: [], organizador: 'operacao.root@gmail.com', organizadorEhAgenda: true, status: 'confirmado',
+      convidados: [], organizador: 'agenda.casa@exemplo.invalid', organizadorEhAgenda: true, status: 'confirmado',
       atualizadoNoGoogle: null, serieId: null, criadoPeloOs: false, link: null, leitura: lerCompromisso('call com cliente novo'),
     };
     const { rascunhoDoEvento } = await import('@/app/agenda/painel');
@@ -298,17 +298,17 @@ describe('o painel na tela', () => {
 
   it('editar evento no padrão: o mesmo painel, a régua sem o próprio evento, e só o que mudou vai no pedido', async () => {
     const e: EventoV2 = {
-      id: 'ev-ok', agenda: 'primary', origem: 'google', titulo: 'Reunião Online - Custeio - Pedro',
+      id: 'ev-ok', agenda: 'primary', origem: 'google', titulo: 'Reunião Online - Exemplaria - Pedro',
       inicio: '2026-11-04T16:00:00.000Z', fim: '2026-11-04T17:00:00.000Z', diaInteiro: false, local: null, meet: 'https://meet.google.com/x',
-      convidados: [], organizador: 'operacao.root@gmail.com', organizadorEhAgenda: true, status: 'confirmado',
-      atualizadoNoGoogle: null, serieId: null, criadoPeloOs: true, link: null, leitura: lerCompromisso('Reunião Online - Custeio - Pedro'),
+      convidados: [], organizador: 'agenda.casa@exemplo.invalid', organizadorEhAgenda: true, status: 'confirmado',
+      atualizadoNoGoogle: null, serieId: null, criadoPeloOs: true, link: null, leitura: lerCompromisso('Reunião Online - Exemplaria - Pedro'),
     };
     const { rascunhoDoEvento } = await import('@/app/agenda/painel');
     painel({ edicao: e, inicial: rascunhoDoEvento(e) });
-    expect(titulo()).toBe('Reunião Online - Custeio - Pedro');
+    expect(titulo()).toBe('Reunião Online - Exemplaria - Pedro');
     expect(avaliar.mock.calls.at(-1)?.[0].proposta.ignorarEventoId).toBe('ev-ok');
     fireEvent.click(screen.getByRole('button', { name: 'Lucas' }));
-    expect(titulo()).toBe('Reunião Online - Custeio - Lucas');
+    expect(titulo()).toBe('Reunião Online - Exemplaria - Lucas');
     apiPost.mockResolvedValueOnce(resultado({ mensagem: 'Alterado.' }));
     fireEvent.click(screen.getByRole('button', { name: 'Salvar' }));
     await screen.findByText('Alterado.');

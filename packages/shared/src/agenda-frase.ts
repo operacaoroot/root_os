@@ -1,7 +1,7 @@
 /*
  * O ATALHO POR FRASE DO PAINEL DE MARCAR (rodada da Agenda v2, 29/10/2026, lane G3).
  *
- * "Andrade online sexta 15h com Rodrigo 1h" → os campos do painel. Sem IA: um
+ * "Fictícia online sexta 15h com Rodrigo 1h" → os campos do painel. Sem IA: um
  * intérprete puro que preenche SÓ o que a frase disse (o resto fica como está
  * no painel). "14h 30 min" = 14:00 por 30 min.
  *

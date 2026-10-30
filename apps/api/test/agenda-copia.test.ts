@@ -21,7 +21,7 @@ const evento = (over: Partial<EventoDaAgenda>): EventoDaAgenda => ({
   id: 'ev1',
   agenda: 'primary',
   origem: 'google',
-  titulo: 'Reunião Online - Andrade Peças, filial; Centro - Pedro',
+  titulo: 'Reunião Online - Fictícia Peças, filial; Centro - Pedro',
   inicio: '2026-11-03T13:00:00.000Z',
   fim: '2026-11-03T14:00:00.000Z',
   diaInteiro: false,
@@ -35,7 +35,7 @@ const evento = (over: Partial<EventoDaAgenda>): EventoDaAgenda => ({
   serieId: null,
   criadoPeloOs: false,
   link: null,
-  leitura: { tipo: 'cliente', modalidade: 'online', cliente: 'Andrade Peças', responsaveis: ['Pedro'], motivo: null, feriado: null },
+  leitura: { tipo: 'cliente', modalidade: 'online', cliente: 'Fictícia Peças', responsaveis: ['Pedro'], motivo: null, feriado: null },
   ...over,
 });
 
@@ -63,7 +63,7 @@ describe('a cópia em arquivo (puro)', () => {
     expect(ics.startsWith('BEGIN:VCALENDAR\r\nVERSION:2.0\r\n')).toBe(true);
     expect(ics.endsWith('END:VCALENDAR\r\n')).toBe(true);
     expect(ics.split('BEGIN:VEVENT')).toHaveLength(5);
-    expect(ics).toContain('SUMMARY:Reunião Online - Andrade Peças\\, filial\\; Centro - Pedro');
+    expect(ics).toContain('SUMMARY:Reunião Online - Fictícia Peças\\, filial\\; Centro - Pedro');
     expect(ics).toContain('DTSTART:20261103T130000Z');
     expect(ics).toContain('DTSTART;VALUE=DATE:20261102\r\nDTEND;VALUE=DATE:20261103');
     expect(ics).toContain('SUMMARY:Fechado Rodrigo');
@@ -129,7 +129,7 @@ describe('a rotina agenda.copia (dublês do espelho e do armazém)', () => {
     const r = await svc.copiar('org-copia', AGORA);
     expect(r.status).toBe('ok');
     expect(r.resumo).toMatch(/4 compromisso/);
-    expect(r.resumo).not.toMatch(/Andrade/);
+    expect(r.resumo).not.toMatch(/Fictícia/);
     expect(gravados.get('agenda/copia/2026-10-30.json')?.tipo).toMatch(/application\/json/);
     expect(gravados.get('agenda/copia/2026-10-30.ics')?.corpo).toContain('BEGIN:VCALENDAR');
     expect(removidos).toEqual(['agenda/copia/2026-09-01.json']);

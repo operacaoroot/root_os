@@ -205,7 +205,7 @@ describe('a régua no servidor (regras, semente, escrita auditada, avaliar, livr
   });
 
   it('avaliar lê o espelho em volta do compromisso e chama o mesmo motor', async () => {
-    eventosDoEspelho = [ev('pm', 'Reunião Online - Promedical - Rodrigo', '2026-11-04', '09:00', '10:00')];
+    eventosDoEspelho = [ev('pm', 'Reunião Online - Clinimodelo - Rodrigo', '2026-11-04', '09:00', '10:00')];
     pedidos.length = 0;
     const p = { tipo: 'cliente' as const, modalidade: 'online' as const, responsaveis: ['Rodrigo' as const], inicio: sp('2026-11-04', '09:30'), fim: sp('2026-11-04', '10:30') };
     const r = await regua.avaliar(CASA, p, new Date(sp('2026-11-01', '10:00')));

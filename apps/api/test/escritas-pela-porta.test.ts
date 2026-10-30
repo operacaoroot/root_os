@@ -104,7 +104,7 @@ const ESCRITAS: EscritaMigrada[] = [
     args: {
       tipo: 'cliente',
       modalidade: 'online',
-      cliente: 'Andrade Peças',
+      cliente: 'Fictícia Peças',
       responsavel: 'Pedro',
       inicio: '2026-09-25T14:00:00-03:00',
     },
@@ -112,10 +112,10 @@ const ESCRITAS: EscritaMigrada[] = [
     argsInvalidos: {
       tipo: 'cliente',
       modalidade: 'online',
-      cliente: 'Andrade Peças',
+      cliente: 'Fictícia Peças',
       responsavel: 'Pedro',
       inicio: '2026-09-25T14:00:00-03:00',
-      titulo: 'Reunião c/ Andrade',
+      titulo: 'Reunião c/ Fictícia',
     },
   },
   {

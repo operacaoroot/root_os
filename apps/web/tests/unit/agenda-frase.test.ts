@@ -7,15 +7,15 @@ import { interpretarFrase } from '@mktos/shared';
  */
 
 const HOJE = '2026-10-29'; // quinta
-const CLIENTES = ['Andrade Peças', 'Papeleira Santa Rita', 'Custeio', 'Santa Clara Móveis', 'Juma'];
+const CLIENTES = ['Fictícia Peças', 'Papelaria Santa Modelo', 'Exemplaria', 'Santa Clara Móveis', 'Fictus'];
 const ler = (frase: string) => interpretarFrase(frase, { hoje: HOJE, clientes: CLIENTES });
 
 describe('a frase do desenho', () => {
-  it('"online com andrade sexta 15h 1h rodrigo" preenche tudo', () => {
-    expect(ler('online com andrade sexta 15h 1h rodrigo')).toEqual({
+  it('"online com ficticia sexta 15h 1h rodrigo" preenche tudo', () => {
+    expect(ler('online com ficticia sexta 15h 1h rodrigo')).toEqual({
       tipo: 'cliente',
       modalidade: 'online',
-      cliente: 'Andrade Peças',
+      cliente: 'Fictícia Peças',
       responsaveis: ['Rodrigo'],
       dia: '2026-10-30',
       hora: '15:00',
@@ -23,8 +23,8 @@ describe('a frase do desenho', () => {
     });
   });
 
-  it('"Andrade online sexta 15h com Rodrigo 1h" dá o mesmo, em outra ordem', () => {
-    expect(ler('Andrade online sexta 15h com Rodrigo 1h')).toEqual(ler('online com andrade sexta 15h 1h rodrigo'));
+  it('"Fictícia online sexta 15h com Rodrigo 1h" dá o mesmo, em outra ordem', () => {
+    expect(ler('Fictícia online sexta 15h com Rodrigo 1h')).toEqual(ler('online com ficticia sexta 15h 1h rodrigo'));
   });
 });
 
@@ -156,12 +156,12 @@ describe('modalidade, tipo e sócios', () => {
 
 describe('o cliente', () => {
   it('pelo nome inteiro, com acento ou sem', () => {
-    expect(ler('papeleira santa rita').cliente).toBe('Papeleira Santa Rita');
-    expect(ler('andrade pecas').cliente).toBe('Andrade Peças');
+    expect(ler('papelaria santa modelo').cliente).toBe('Papelaria Santa Modelo');
+    expect(ler('ficticia pecas').cliente).toBe('Fictícia Peças');
   });
   it('por uma palavra que só um cliente tem', () => {
-    expect(ler('custeio presencial').cliente).toBe('Custeio');
-    expect(ler('juma').cliente).toBe('Juma');
+    expect(ler('exemplaria presencial').cliente).toBe('Exemplaria');
+    expect(ler('fictus').cliente).toBe('Fictus');
   });
   it('palavra de dois clientes não escolhe nenhum', () => {
     expect(ler('santa amanhã').cliente).toBeUndefined();
@@ -171,11 +171,11 @@ describe('o cliente', () => {
     expect(ler('online com fulano sexta').tipo).toBeUndefined();
   });
   it('sem lista de clientes, nenhum cliente', () => {
-    expect(interpretarFrase('andrade sexta', { hoje: HOJE })).toEqual({ dia: '2026-10-30' });
+    expect(interpretarFrase('ficticia sexta', { hoje: HOJE })).toEqual({ dia: '2026-10-30' });
   });
   it('cliente reconhecido marca o tipo cliente, mas o tipo dito vence', () => {
-    expect(ler('andrade').tipo).toBe('cliente');
-    expect(ler('interna andrade').tipo).toBe('interna');
+    expect(ler('ficticia').tipo).toBe('cliente');
+    expect(ler('interna ficticia').tipo).toBe('interna');
   });
 });
 

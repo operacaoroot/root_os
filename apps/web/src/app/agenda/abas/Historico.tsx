@@ -39,7 +39,7 @@ const SITUACAO: Record<LinhaDoHistorico['status'], { rotulo: string; tom: 'good'
   erro: { rotulo: 'erro', tom: 'bad' },
 };
 
-/** "14:02 Rodrigo marcou Papeleira Santa Rita". */
+/** "14:02 Rodrigo marcou Papelaria Santa Modelo". */
 export function fraseDaLinha(l: LinhaDoHistorico): string {
   const quem = l.quem ?? 'Alguém';
   return `${quem} ${l.verbo}${l.titulo ? ` ${l.titulo}` : ''}`;

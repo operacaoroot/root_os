@@ -23,7 +23,7 @@ cumprido por quem marca por aqui.
 
 | Caso | Forma | Exemplo |
 | --- | --- | --- |
-| Reunião de cliente | `Reunião <Online\|Presencial> - <Cliente> - <Responsável>` | `Reunião Online - Andrade Peças - Pedro` |
+| Reunião de cliente | `Reunião <Online\|Presencial> - <Cliente> - <Responsável>` | `Reunião Online - Fictícia Peças - Pedro` |
 | Reunião interna | `Reunião Interna - <Sócio ou Todos>` | `Reunião Interna - Todos` |
 
 - **A interna não declara modalidade no título.** Ela existe no formulário (é

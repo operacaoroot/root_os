@@ -4,7 +4,7 @@
  * Quem marca escreve duas letras e vê o lead do Funil ou o cliente, com a etapa,
  * o contato e quantas vezes o nome já esteve na agenda. A comparação é sem
  * acento e sem caixa (`normalizarParaAgenda`, a mesma da gramática), porque
- * "andrade pecas" tem de achar "Andrade Peças". A ordem: começa pelo que foi
+ * "ficticia pecas" tem de achar "Fictícia Peças". A ordem: começa pelo que foi
  * digitado, depois uma palavra que começa por ele, depois o que só contém; no
  * empate, cliente antes de lead e depois o nome.
  */
