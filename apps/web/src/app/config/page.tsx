@@ -5,6 +5,7 @@ import { Building2, User, Plug, KeyRound } from 'lucide-react';
 import type { ConfigOverview } from '@mktos/shared';
 import { apiGet, apiPost } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
+import { CartaoDaAgendaR2 } from './CartaoDaAgendaR2';
 
 const STATUS_CLS: Record<string, string> = {
   connected: 'bg-good/15 text-good',
@@ -58,6 +59,9 @@ export default function ConfigPage() {
           <ChangePassword token={token} />
         </section>
       </div>
+
+      {/* Agenda v2 (decisão 2): a aprovação de R2 da casa, só leitura */}
+      <CartaoDaAgendaR2 token={token} />
 
       {/* Integrações */}
       <section className="rounded-xl border border-border bg-surface p-5">
