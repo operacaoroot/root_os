@@ -18,6 +18,10 @@ import { EscritaDaAgendaService } from '../src/agenda/escrita/escrita.service';
 import { PedidoDeEscritaSchema } from '../src/agenda/escrita/escrita-pura';
 import type { ReguaService } from '../src/agenda/regua/regua.service';
 import type { EspelhoService } from '../src/agenda/espelho/espelho.service';
+import { analisarAprovacaoR2, deltaDaAprovacaoR2 } from '../src/agenda/sobrescrita-r2-da-agenda';
+import { lerDelta, lerPolitica, resolverPolitica } from '@mktos/policy';
+import politicaRoot from '@mktos/policy/politica-root.json';
+import politicaMktos from '@mktos/policy/politica-marketing-os.json';
 import { exigirBancoDescartavel } from './banco-de-teste';
 import type { PrismaService } from '../src/prisma/prisma.service';
 
@@ -39,6 +43,28 @@ import type { PrismaService } from '../src/prisma/prisma.service';
  *   5. R3 (`agenda.reuniao.reabrir`) nunca sai no clique;
  *   6. `naTela` não entra pelo corpo do pedido (esquema estrito).
  */
+
+describe('a análise da sobrescrita (o que o comando mostra), sem banco', () => {
+  const BASE = resolverPolitica(lerPolitica(politicaRoot, 'politica-root.json'), lerDelta(politicaMktos, 'politica-marketing-os.json'));
+
+  it('desligar muda só as quatro R2 da agenda, só na tela; reabrir (R3) e fora da tela seguem na fila', () => {
+    const linhas = analisarAprovacaoR2(BASE, deltaDaAprovacaoR2(null, '2026-10-30'), true, false);
+    expect(linhas).toEqual([
+      { capacidade: CAPACIDADES_DA_AGENDA.marcar, nivel: 'R2', hojeNaTela: 'fila', depoisNaTela: 'clique', foraDaTela: 'fila' },
+      { capacidade: CAPACIDADES_DA_AGENDA.alterar, nivel: 'R2', hojeNaTela: 'fila', depoisNaTela: 'clique', foraDaTela: 'fila' },
+      { capacidade: CAPACIDADES_DA_AGENDA.cancelar, nivel: 'R2', hojeNaTela: 'fila', depoisNaTela: 'clique', foraDaTela: 'fila' },
+      { capacidade: CAPACIDADES_DA_AGENDA.desmarcar, nivel: 'R2', hojeNaTela: 'fila', depoisNaTela: 'clique', foraDaTela: 'fila' },
+      { capacidade: CAPACIDADES_DA_AGENDA.reabrir, nivel: 'R3', hojeNaTela: 'fila', depoisNaTela: 'fila', foraDaTela: 'fila' },
+    ]);
+  });
+
+  it('o delta preserva o que a empresa já tem (a sobrescrita substitui o delta inteiro)', () => {
+    const outra = { ...BASE.capacidades.find((c) => c.id === 'email.enviar')!, nivel: 'R4' as const };
+    const d = deltaDaAprovacaoR2({ versao: '1.2.0', atualizadoEm: '2026-10-01', origem: 'x', descricao: 'y', estende: 'politica-marketing-os.json', capacidades: [outra] }, '2026-10-30');
+    expect(d.capacidades.map((c) => c.id)).toEqual(['email.enviar']);
+    expect(d.versao).toBe('1.2.0');
+  });
+});
 
 const URL = process.env.TEST_DATABASE_URL;
 if (URL) exigirBancoDescartavel(URL, 'escreve política, propostas, aprovações e RASTRO');
