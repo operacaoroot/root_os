@@ -8,6 +8,7 @@ import {
   instanteDaAgenda,
   lerCompromisso,
   noFusoDaAgenda,
+  normalizarParaAgenda,
   pessoasDoEvento,
   proximoDiaUtil,
   ritosDoDia,
@@ -493,6 +494,7 @@ function doVigia(ctx: Contexto, item: ItemDoVigiaNosConflitos, porId: Map<string
  */
 function agruparSeries(cartoes: CartaoDeConflito[]): CartaoDeConflito[] {
   const grupos = new Map<string, CartaoDeConflito>();
+  const juntados = new Map<CartaoDeConflito, number>();
   const out: CartaoDeConflito[] = [];
   for (const c of [...cartoes].sort((a, b) => a.quando.localeCompare(b.quando))) {
     if (!c.serieId) {
@@ -504,16 +506,26 @@ function agruparSeries(cartoes: CartaoDeConflito[]): CartaoDeConflito[] {
     if (!g) {
       const novo = { ...c, eventos: [...c.eventos] };
       grupos.set(chave, novo);
+      juntados.set(novo, 1);
       out.push(novo);
       continue;
     }
+    juntados.set(g, (juntados.get(g) ?? 1) + 1);
     for (const e of c.eventos) if (!g.eventos.some((x) => x.id === e.id)) g.eventos.push(e);
   }
-  for (const g of grupos.values()) {
-    const n = new Set(g.eventos.map((e) => e.id)).size;
-    if (n > (g.tipo === 'choque' ? 2 : 1)) g.frase = `${g.frase} Repete na série: ${n} ocorrências.`;
-  }
+  for (const [g, n] of juntados) if (n > 1) g.frase = `${g.frase} Repete na série: ${n} ocorrências.`;
   return out;
+}
+
+/** O evento é a ocorrência de um rito ligado (o mesmo título, no horário do rito)? */
+function ehOcorrenciaDeRito(ev: EventoDaAgenda, ritos: RegrasDaAgenda['ritos']): boolean {
+  if (!ev.titulo) return false;
+  const titulo = normalizarParaAgenda(ev.titulo);
+  const i = new Date(ev.inicio).getTime();
+  const f = new Date(ev.fim).getTime();
+  return diasDoEvento(ev).some((dia) =>
+    ritosDoDia(dia, ritos).some((o) => normalizarParaAgenda(o.rito.titulo) === titulo && i < o.intervalo[1] && o.intervalo[0] < f),
+  );
 }
 
 /** Os cartões dos próximos `dias`, ordenados por urgência. */
@@ -530,6 +542,8 @@ export function montarConflitos(e: EntradaDosConflitos): CartaoDeConflito[] {
 
   for (const ev of e.eventos) {
     if (!ehReuniao(ev) || !noHorizonte(ev)) continue;
+    // O evento do próprio rito é protegido, não conflito: quem falta a ele sai em "rito sem gente".
+    if (ehOcorrenciaDeRito(ev, e.regras.ritos)) continue;
     daReuniao(ctx, ev, porId);
     semMeet(ctx, ev, doVigiaIds);
   }
