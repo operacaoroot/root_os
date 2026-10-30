@@ -76,6 +76,13 @@ export const PERMISSIONS = [
   'gmail.ver',
   'gmail.responder',
   'agenda.editar',
+  /*
+   * Agenda v2 (29/10/2026): editar as regras da agenda (janela, intervalo,
+   * trajeto, teto, ritos, feriados, regras em frase). Só sócio: nasce no
+   * Admin Master pela migration 20261029230000_agenda_v2 (não pelo
+   * db:sync-permissions). Ver as regras continua com `dashboard.ver`.
+   */
+  'agenda.regras',
   'whatsapp.enviar',
   'whatsapp.configurar',
   /*

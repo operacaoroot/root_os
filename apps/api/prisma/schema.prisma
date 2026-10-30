@@ -281,6 +281,13 @@ model Org {
   gastosDeIaPorFuncao GastoDeIaPorFuncao[]
   /// O que o vigia da agenda (AG-01) concluiu de cada reunião fora do padrão (rodada dos agentes, A5).
   agendaConferencias  AgendaConferencia[]
+  agendaEventos       AgendaEvento[]
+  agendaSincronias    AgendaSincronia[]
+  agendaRegrasPessoa  AgendaRegraPessoa[]
+  agendaRitos         AgendaRito[]
+  feriados            Feriado[]
+  agendaRegrasTexto   AgendaRegraTexto[]
+  agendaConvites      AgendaConvite[]
   /// A7 (rodada dos agentes): o dono trocado na Equipe das funções sem registro `Agent`.
   donosDeFuncao       DonoDaFuncao[]
   /// Produção 22B (I6): as fotos de perfil das pessoas.
@@ -2762,6 +2769,13 @@ model PolicyVersion {
   /// — e a que o histórico precisa responder é "o que esta pessoa mudou,
   /// quando mudou".
   diffDaVersaoAnterior Json?
+  /// AGENDA V2 (29/10/2026, decisão 2): a aprovação configurável de R2 desta empresa, lida
+  /// pelo `ToolGateway` SÓ para gente na tela (`ExecCtx.naTela`, posto pelo controlador depois
+  /// de conferir no banco que quem pediu é pessoa, não conta de máquina). Agente, rotina,
+  /// WhatsApp e link público nunca a leem: para eles R2 continua retido. Padrão `true` (a regra
+  /// de sempre). Gravado SÓ pela sobrescrita assinada (`PolicyService.sobrescrever`, com autor e
+  /// motivo), nunca por rota de tela. Migration `20261029230000_agenda_v2`.
+  aprovacaoR2Ligada    Boolean   @default(true)
   /// Obrigatório quando um nível DESCE ou a aprovação de R2 é desligada:
   /// "descer nível nunca é automático" é invariante da escada. Quem cobra é
   /// `recusasDaSobrescrita()` em @mktos/policy, chamada pelo PolicyService.
@@ -6760,4 +6774,187 @@ model MarketingRegua {
   atualizadaEm DateTime @updatedAt
 
   @@id([orgId, formato])
+}
+
+/// AGENDA V2 · O ESPELHO (rodada da Agenda v2, 29/10/2026, decisão 1). Cópia SÓ DE LEITURA
+/// da agenda do Google da conta da casa, atualizada pela rotina `agenda.sincronizar` (syncToken).
+/// O Google continua sendo A agenda: ninguém edita esta tabela pela tela, e toda escrita vai ao
+/// Google pela porta e volta pela sincronia. Também guarda o "Fechado" da agenda pessoal de cada
+/// sócio (`origem = livre_ocupado`, sem título: o OS só vê livre/ocupado). Tenant, RLS FORCE.
+/// Migration `20261029230000_agenda_v2`.
+model AgendaEvento {
+  id                  String    @id @default(uuid())
+  orgId               String
+  org                 Org       @relation(fields: [orgId], references: [id])
+  /// `primary` (a agenda da casa) ou o e-mail da agenda pessoal.
+  agenda              String
+  /// google · livre_ocupado (CHECK na migration).
+  origem              String    @default("google")
+  /// O id do evento no Google; no livre/ocupado, uma chave estável do intervalo.
+  googleId            String
+  titulo              String?
+  /// A descrição como o Google a devolveu (até 8 mil caracteres): o vigia AG-01 lê daqui.
+  descricao           String?
+  inicio              DateTime
+  fim                 DateTime
+  diaInteiro          Boolean   @default(false)
+  local               String?
+  meet                String?
+  /// [{email, nome?, organizador?, opcional?, resposta}]
+  convidados          Json      @default("[]")
+  organizador         String?
+  organizadorEhAgenda Boolean   @default(false)
+  /// confirmado · provisorio · cancelado (CHECK na migration).
+  status              String    @default("confirmado")
+  atualizadoNoGoogle  DateTime?
+  serieId             String?
+  criadoPeloOs        Boolean   @default(false)
+  link                String?
+  /// O título lido pela gramática (`lerCompromisso`, packages/shared/src/agenda-v2.ts).
+  leituraTipo         String    @default("outro")
+  leituraCliente      String?
+  leituraResponsaveis String[]  @default([])
+  leituraModalidade   String?
+  leituraMotivo       String?
+  /// Propriedades privadas do evento que o OS lê (chave da escrita, "confirmado com o cliente", "marcado assim mesmo").
+  propriedades        Json      @default("{}")
+  sincronizadoEm      DateTime  @default(now())
+  criadoEm            DateTime  @default(now())
+  atualizadoEm        DateTime  @updatedAt
+
+  @@unique([orgId, agenda, googleId])
+  @@index([orgId, inicio])
+}
+
+/// AGENDA V2 · O ESTADO DA SINCRONIA, uma linha por agenda lida (a da casa e cada pessoal).
+model AgendaSincronia {
+  id             String    @id @default(uuid())
+  orgId          String
+  org            Org       @relation(fields: [orgId], references: [id])
+  agenda         String
+  /// O `nextSyncToken` do Google. Nulo = a próxima passagem refaz a janela inteira.
+  syncToken      String?
+  janelaDe       DateTime?
+  janelaAte      DateTime?
+  ultimaPassagem DateTime?
+  ultimaCompleta DateTime?
+  erro           String?
+  criadoEm       DateTime  @default(now())
+  atualizadoEm   DateTime  @updatedAt
+
+  @@unique([orgId, agenda])
+}
+
+/// AGENDA V2 · A RÉGUA DE CADA SÓCIO (decisão 2 e desenho `Regras`). Escrita só com `agenda.regras`.
+model AgendaRegraPessoa {
+  id             String   @id @default(uuid())
+  orgId          String
+  org            Org      @relation(fields: [orgId], references: [id])
+  /// Rodrigo · Lucas · Pedro (o nome que a gramática escreve).
+  nome           String
+  area           String?
+  userId         String?
+  janelaInicio   String   @default("08:00")
+  janelaFim      String   @default("18:00")
+  intervaloMin   Int      @default(15)
+  trajetoMin     Int      @default(30)
+  tetoPorDia     Int      @default(5)
+  /// [{diaDaSemana, inicio, fim?}]
+  bloqueiosFixos Json     @default("[]")
+  /// A agenda pessoal lida como livre/ocupado (decisão 3). Opcional.
+  emailPessoal   String?
+  fechadoLigado  Boolean  @default(false)
+  substituto     String?
+  ordem          Int      @default(0)
+  criadoEm       DateTime @default(now())
+  atualizadoEm   DateTime @updatedAt
+
+  @@unique([orgId, nome])
+}
+
+/// AGENDA V2 · OS RITOS DA CASA (reunião de terça, estrutura de quinta, sábado da Root).
+model AgendaRito {
+  id           String   @id @default(uuid())
+  orgId        String
+  org          Org      @relation(fields: [orgId], references: [id])
+  nome         String
+  titulo       String
+  diaDaSemana  Int
+  ordinalNoMes Int?
+  /// `HH:MM`; nulo = dia inteiro.
+  inicio       String?
+  duracaoMin   Int      @default(60)
+  quem         String   @default("Todos")
+  /// pergunta · bloqueia (CHECK na migration).
+  politica     String   @default("pergunta")
+  ligado       Boolean  @default(true)
+  aDecidir     Boolean  @default(false)
+  ordem        Int      @default(0)
+  criadoEm     DateTime @default(now())
+  atualizadoEm DateTime @updatedAt
+
+  @@unique([orgId, nome])
+}
+
+/// AGENDA V2 · FERIADOS (nacionais semeados de 2026 e 2027; facultativos desligados; municipais cadastráveis).
+model Feriado {
+  id           String   @id @default(uuid())
+  orgId        String
+  org          Org      @relation(fields: [orgId], references: [id])
+  /// `AAAA-MM-DD`.
+  data         String
+  nome         String
+  /// nacional · facultativo · municipal (CHECK na migration).
+  tipo         String
+  cidade       String?
+  ligado       Boolean  @default(true)
+  criadoEm     DateTime @default(now())
+  atualizadoEm DateTime @updatedAt
+
+  @@unique([orgId, data, nome])
+}
+
+/// AGENDA V2 · REGRAS EM FRASE (o vigia AG-01 lê; o motor da régua NÃO interpreta texto livre).
+model AgendaRegraTexto {
+  id           String   @id @default(uuid())
+  orgId        String
+  org          Org      @relation(fields: [orgId], references: [id])
+  frase        String
+  ligada       Boolean  @default(true)
+  ordem        Int      @default(0)
+  criadoEm     DateTime @default(now())
+  atualizadoEm DateTime @updatedAt
+}
+
+/// AGENDA V2 · O LINK DE ESCOLHA (G6). Só o HASH do token no banco; uso único; validade.
+/// A página pública (`/agendar/<token>`) só vê horários livres da régua.
+model AgendaConvite {
+  id              String    @id @default(uuid())
+  orgId           String
+  org             Org       @relation(fields: [orgId], references: [id])
+  tokenHash       String    @unique
+  socio           String
+  /// cliente · interna
+  tipo            String    @default("cliente")
+  /// online · presencial
+  modalidade      String    @default("online")
+  duracaoMin      Int       @default(60)
+  leadId          String?
+  clienteId       String?
+  /// O primeiro nome que a página mostra (copiado do lead na criação).
+  nome            String?
+  validoAte       DateTime
+  usadoEm         DateTime?
+  escolhidoInicio DateTime?
+  escolhidoFim    DateTime?
+  /// O e-mail que o convidado informou (vai ao convite do Google).
+  emailInformado  String?
+  approvalId      String?
+  eventoId        String?
+  revogadoEm      DateTime?
+  criadoPorId     String
+  criadoEm        DateTime  @default(now())
+  atualizadoEm    DateTime  @updatedAt
+
+  @@index([orgId, criadoEm])
 }

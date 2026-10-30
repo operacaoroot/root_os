@@ -118,6 +118,21 @@ export const TIPO_PAUTA_RELATORIO = 'pauta.relatorio';
 export const TIPO_AGENDA_VIGIA = 'agenda.vigia';
 
 /**
+ * O espelho da agenda (agenda v2, 29/10/2026, lane G1): a cada 2 minutos lê pela
+ * porta (R0) o que mudou na agenda da casa (`syncToken`) e o livre/ocupado das
+ * agendas pessoais dos sócios. Semeada só na empresa da casa, LIGADA só se o
+ * Google Agenda estiver conectado. Ver `agenda/espelho/`.
+ */
+export const TIPO_AGENDA_SINCRONIZAR = 'agenda.sincronizar';
+
+/**
+ * A cópia diária da agenda (agenda v2, 29/10/2026, lane G7): às 03:00, o espelho
+ * de -30 a +180 dias em JSON e ICS no armazém de arquivos da empresa, 30 dias
+ * guardados. Só na empresa da casa.
+ */
+export const TIPO_AGENDA_COPIA = 'agenda.copia';
+
+/**
  * A sincronização do WhatsApp da empresa (produção 22C, W1, 22/10/2026): a cada
  * 5 minutos lê pela porta `LEITURA_DA_EVOLUTION` (só leitura) os chats, os
  * grupos e as mensagens que o webhook perdeu. Ver

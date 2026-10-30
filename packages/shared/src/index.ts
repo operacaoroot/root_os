@@ -11,6 +11,11 @@ export * from './horas-devolvidas.js';
 // Responsável`). Mora no shared porque a tela monta, a API escreve e a leitura
 // desmonta o MESMO título — ver o cabeçalho de `agenda.ts`.
 export * from './agenda.js';
+// A agenda v2 (29/10/2026): o contrato do espelho, das regras, da escrita e do link,
+// a régua pura e o intérprete de frase do painel de marcar.
+export * from './agenda-v2.js';
+export * from './agenda-regua.js';
+export * from './agenda-frase.js';
 
 // A regra do valor monetário do Trabalho mora aqui porque a tela, a API e o
 // importador do ClickUp convertem e conferem o MESMO texto canônico — ver o

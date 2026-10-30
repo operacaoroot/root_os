@@ -3,10 +3,18 @@
 > Decidido em 24/09/2026. Tela `/agenda`, conta `operacao.root@gmail.com`.
 
 A agenda da Root **é** o Google Calendar da conta `operacao.root@gmail.com` — o
-mesmo que toca o celular dos sócios e manda o convite para o cliente. O OS não
-guarda reunião nenhuma em banco: não existe tabela de evento, e isso é decisão,
-não pendência. Uma cópia local seria uma segunda verdade, pronta para divergir
-no primeiro evento que alguém mexer pelo telefone.
+mesmo que toca o celular dos sócios e manda o convite para o cliente.
+
+> **Revisto em 29/10/2026 (agenda v2, decisão 1 do Rodrigo).** Até aqui o OS não
+> guardava reunião nenhuma em banco ("uma cópia local seria uma segunda verdade").
+> Agora ele guarda um **espelho só de leitura** (`AgendaEvento`), atualizado pela
+> rotina `agenda.sincronizar` a cada 2 minutos por sincronia incremental
+> (`syncToken`). O Google continua sendo A agenda: **ninguém edita o espelho**,
+> toda escrita vai ao Google pela porta e o espelho reflete. O porquê: a régua, os
+> Conflitos e o link público do cliente precisam ler a semana inteira (60 dias, os
+> três sócios, as agendas pessoais) a cada clique, e bater no Google a cada clique
+> é lento e caro. Se o espelho atrasar mais de 10 minutos, a tela avisa e lê direto
+> do Google, como antes. Ver "A agenda v2", no fim deste documento.
 
 O que o OS acrescenta é o **padrão de nomenclatura** e a garantia de que ele é
 cumprido por quem marca por aqui.
@@ -268,3 +276,57 @@ precisa de uma pessoa só.
   Sem o seed, a porta trata a capacidade como sem classificação (R5) e recusa.
 - Nenhuma variável nova, nenhuma permissão nova (`dashboard.ver` para ver,
   `agenda.editar` para pedir a correção).
+
+## A agenda v2 (29/10/2026)
+
+Pedido do Rodrigo: levar para a agenda do OS os mecanismos da agenda interna de
+outro sistema dele (seis rodadas de uso real), na identidade da Root. Roteiro em
+`docs/comercial/RODADA-AGENDA-V2-20261029.md`, desenho em `docs/agenda-v2/desenho/`,
+resultado em `homolog/RESULTADO-AGENDA-V2.md`.
+
+### As quatro decisões (Rodrigo, 29/10/2026, "pode executar")
+
+1. **Cópia local da agenda, como cache.** O espelho `AgendaEvento` (acima). Só de
+   leitura, por empresa, com isolamento por linha; a sincronia nunca apaga nada do
+   Google (o que some do Google some do espelho, nunca o contrário).
+2. **Marcar pela tela sai no clique, pelo caminho honesto** que a seção "A fricção
+   conhecida" descreve: `agenda.reuniao.marcar` ganhou um desfazer implementado
+   (`agenda.reuniao.desmarcar`, que cancela o evento que o OS criou e avisa os
+   convidados) e declara reversibilidade automática, então a escada a calcula
+   **R2**. A porta passou a ler `aprovacaoR2Ligada` por empresa (coluna nova de
+   `PolicyVersion`, gravada só pela sobrescrita assinada, RF-P-06), e **só para
+   gente na tela**: agente, rotina, WhatsApp e link público continuam com a
+   aprovação de hoje. Alterar (arrastar, esticar), cancelar e desmarcar seguem a
+   mesma lógica, cada um com o seu desfazer (`agenda.reuniao.alterar` desfaz a si
+   mesma; cancelar e desmarcar se desfazem por `agenda.reuniao.reabrir`, que é
+   R3 e fecha a cadeia). Nenhum nível foi escrito mais baixo no JSON: cada R2 sai
+   do efeito declarado com um desfazer que tem rota.
+3. **A agenda pessoal de cada sócio entra como "Fechado".** Sem OAuth novo: cada
+   sócio compartilha a agenda pessoal com a `operacao.root@` como "ver só
+   livre/ocupado"; o OS lê pelo `freeBusy` os e-mails cadastrados em Regras (um
+   por sócio, opcional) e desenha `Fechado <Nome>` sem título. Fechado conta na
+   régua; Fechado contra Fechado não é choque.
+4. **Ondas 1, 2 e 3 nesta rodada.** A onda 4 (WhatsApp do grupo marcando e as
+   ferramentas MCP `agenda_livre`/`agenda_marcar`) fica fora; o motor fica pronto
+   para ela (funções puras no `shared`: `agenda-v2.ts`, `agenda-regua.ts`,
+   `agenda-frase.ts`).
+
+### O contrato
+
+- Gramática nova em `packages/shared/src/agenda-v2.ts`: `Fechado <Nome>`,
+  `<Nome> Fora - <motivo>`, `Pessoal - <Nome>` e o feriado pelo nome exato
+  (`lerCompromisso`, `montarTituloDeCompromisso`). A de reunião continua em
+  `agenda.ts`, intocada.
+- Tabelas (migration `20261029230000_agenda_v2`, aditiva, RLS FORCE nas sete):
+  `AgendaEvento`, `AgendaSincronia`, `AgendaRegraPessoa`, `AgendaRito`, `Feriado`,
+  `AgendaRegraTexto`, `AgendaConvite`; coluna `PolicyVersion.aprovacaoR2Ligada`
+  (padrão `true`); permissão `agenda.regras` (Admin Master).
+- Política 1.13.0: `comunicacao.agenda.sincronizar` e
+  `comunicacao.agenda.livre_ocupado` (R0), `agenda.reuniao.alterar`,
+  `agenda.reuniao.cancelar` e `agenda.reuniao.desmarcar` (R2),
+  `agenda.reuniao.reabrir` (R3) e `agenda.reuniao.marcar` agora R2 com desfazer.
+- O Google é chamado só por `GoogleService.chamarAgenda` (destino fixo, caminho
+  `/calendar/v3/…`), a partir de dois arquivos com nome:
+  `google/agenda-espelho.google.ts` (leitura) e `google/agenda-escrita.google.ts`
+  (escritas). Na homologação, `GOOGLE_API_DUBLE_URL` aponta para o dublê
+  (`homolog/mocks/google`); só aceita loopback ou nome sem ponto.
