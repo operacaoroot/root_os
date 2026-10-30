@@ -89,8 +89,8 @@ describe('P2 · a conta da semana no fuso de São Paulo', () => {
   });
 });
 
-describe('P2 · a tela da Agenda', () => {
-  it('semana no computador: grade de 07h a 22h, dia inteiro no topo, intervalo da semana', async () => {
+describe('P2 · a tela da Agenda (desde a agenda v2, 29/10/2026: abas, 1/3/5 dias úteis, painel à direita)', () => {
+  it('semana no computador: grade de dias úteis, dia inteiro no topo, intervalo da semana útil', async () => {
     window.history.replaceState({}, '', '/agenda?visao=semana&dia=2026-10-21');
     render(<AgendaPage />);
     const grade = await waitFor(() => {
@@ -99,44 +99,46 @@ describe('P2 · a tela da Agenda', () => {
       return g as HTMLElement;
     });
     await waitFor(() => expect(grade.querySelector('[data-evento="A"]')).toBeTruthy());
+    // Sem espelho (o mock não devolve a forma dele), a tela lê direto do Google, segunda a sexta.
     expect(chamadasDoPeriodo().at(-1)).toBe(
-      `/google/calendar/periodo?de=${encodeURIComponent('2026-10-18T03:00:00.000Z')}&ate=${encodeURIComponent('2026-10-25T03:00:00.000Z')}`,
+      `/google/calendar/periodo?de=${encodeURIComponent('2026-10-19T03:00:00.000Z')}&ate=${encodeURIComponent('2026-10-24T03:00:00.000Z')}`,
     );
-    // 09:00 em São Paulo: duas horas abaixo das 07h, 48 px por hora.
+    expect(screen.getByText(/sem espelho: lendo direto do Google/)).toBeTruthy();
+    // 09:00 em São Paulo: uma hora abaixo das 08h, 48 px por hora (altura automática sem medida).
     const a = grade.querySelector('[data-evento="A"]') as HTMLElement;
-    expect(a.style.top).toBe('96px');
+    expect(a.style.top).toBe('48px');
     expect(a.textContent).toContain('09:00');
     // O das 22:30 de São Paulo fica na coluna do dia 21.
     expect(grade.querySelector('[data-coluna-do-dia="2026-10-21"] [data-evento="B"]')).toBeTruthy();
     // Dia inteiro na faixa do topo; a grade rola na vertical, não de lado.
-    expect(within(grade.querySelector('[data-faixa-dia-inteiro]') as HTMLElement).getByText('Cliente C')).toBeTruthy();
+    expect(within(grade.querySelector('[data-faixa-dia-inteiro]') as HTMLElement).getByText('Reunião Online - Cliente C - Pedro')).toBeTruthy();
     const rolagem = grade.querySelector('[data-rolagem-da-grade]') as HTMLElement;
     expect(rolagem.className).toContain('overflow-y-auto');
     expect(rolagem.className).toContain('overflow-x-hidden');
-    expect(screen.getByText('18/10 a 24/10')).toBeTruthy();
+    expect(screen.getByText(/19\/10 a 23\/10/)).toBeTruthy();
   });
 
-  it('troca Mês · Semana · Dia, setas e Hoje mudam o endereço e o intervalo buscado', async () => {
+  it('abas, setas, Hoje e 1/3/5 dias mudam o endereço e o intervalo buscado', async () => {
     window.history.replaceState({}, '', '/agenda?visao=semana&dia=2026-10-21');
     render(<AgendaPage />);
     await waitFor(() => expect(document.querySelector('[data-visao-da-agenda="grade"]')).toBeTruthy());
 
     fireEvent.click(screen.getByTitle('Próxima'));
-    await waitFor(() => expect(screen.getByText('25/10 a 31/10')).toBeTruthy());
-    expect(window.location.search).toBe('?visao=semana&dia=2026-10-28');
-    await waitFor(() => expect(chamadasDoPeriodo().at(-1)).toContain(encodeURIComponent('2026-10-25T03:00:00.000Z')));
+    await waitFor(() => expect(screen.getByText(/26\/10 a 30\/10/)).toBeTruthy());
+    expect(window.location.search).toBe('?aba=semana&dia=2026-10-28&dias=5');
+    await waitFor(() => expect(chamadasDoPeriodo().at(-1)).toContain(encodeURIComponent('2026-10-26T03:00:00.000Z')));
 
     fireEvent.click(screen.getByRole('button', { name: 'Hoje' }));
-    expect(window.location.search).toBe('?visao=semana&dia=2026-10-21');
+    expect(window.location.search).toBe('?aba=semana&dia=2026-10-21&dias=5');
 
-    fireEvent.click(screen.getByRole('button', { name: 'Mês' }));
-    expect(window.location.search).toBe('?visao=mes&dia=2026-10-21');
-    await waitFor(() => expect(document.querySelector('[data-visao-da-agenda]')).toBeNull());
-    expect(screen.getByText(/outubro de 2026/i)).toBeTruthy();
-    expect(screen.getByRole('button', { name: 'Mês' }).getAttribute('aria-pressed')).toBe('true');
+    fireEvent.click(screen.getByRole('tab', { name: 'Mês' }));
+    expect(window.location.search).toBe('?aba=mes&dia=2026-10-21&dias=5');
+    await waitFor(() => expect(document.querySelector('[data-visao-da-agenda="mes"]')).toBeTruthy());
+    expect(screen.getByRole('tab', { name: 'Mês' }).getAttribute('aria-selected')).toBe('true');
 
-    fireEvent.click(screen.getByRole('button', { name: 'Dia' }));
-    expect(window.location.search).toBe('?visao=dia&dia=2026-10-21');
+    fireEvent.click(screen.getByRole('tab', { name: 'Semana e dia' }));
+    fireEvent.click(screen.getByRole('button', { name: '1' }));
+    expect(window.location.search).toBe('?aba=semana&dia=2026-10-21&dias=1');
     await waitFor(() => expect(document.querySelectorAll('[data-coluna-do-dia]').length).toBe(1));
     await waitFor(() =>
       expect(chamadasDoPeriodo().at(-1)).toBe(
@@ -144,21 +146,27 @@ describe('P2 · a tela da Agenda', () => {
       ),
     );
     fireEvent.click(screen.getByTitle('Anterior'));
-    expect(window.location.search).toBe('?visao=dia&dia=2026-10-20');
+    expect(window.location.search).toBe('?aba=semana&dia=2026-10-20&dias=1');
+    fireEvent.click(screen.getByRole('button', { name: '3' }));
+    await waitFor(() => expect(document.querySelectorAll('[data-coluna-do-dia]').length).toBe(3));
   });
 
-  it('clicar num evento da semana abre o dia por extenso no cartão de baixo', async () => {
-    window.history.replaceState({}, '', '/agenda?visao=semana&dia=2026-10-18');
+  it('clicar num evento da semana abre o detalhe dele ao lado', async () => {
+    window.history.replaceState({}, '', '/agenda?visao=semana&dia=2026-10-19');
     render(<AgendaPage />);
     await waitFor(() => expect(document.querySelector('[data-evento="A"]')).toBeTruthy());
     fireEvent.click(document.querySelector('[data-evento="A"]') as HTMLElement);
-    expect(window.location.search).toBe('?visao=semana&dia=2026-10-21');
-    expect(await screen.findByText('09:00–10:00')).toBeTruthy();
+    const detalhe = await waitFor(() => {
+      const d = document.querySelector('[data-detalhe-do-compromisso="A"]');
+      expect(d).toBeTruthy();
+      return d as HTMLElement;
+    });
+    expect(within(detalhe).getByText(/09:00–10:00/)).toBeTruthy();
   });
 
-  it('no celular a semana vira lista por dia, sem grade e sem rolagem lateral', async () => {
+  it('no celular o padrão é a Lista do dia, sem grade e sem rolagem lateral', async () => {
     comMatchMedia(true);
-    window.history.replaceState({}, '', '/agenda?visao=semana&dia=2026-10-21');
+    window.history.replaceState({}, '', '/agenda?dia=2026-10-21');
     render(<AgendaPage />);
     const lista = await waitFor(() => {
       const l = document.querySelector('[data-visao-da-agenda="lista"]');
@@ -166,11 +174,9 @@ describe('P2 · a tela da Agenda', () => {
       return l as HTMLElement;
     });
     expect(document.querySelector('[data-visao-da-agenda="grade"]')).toBeNull();
-    expect(lista.querySelectorAll(':scope > li').length).toBe(7);
-    await waitFor(() => expect(within(lista).getByText('Cliente A')).toBeTruthy());
-    expect(within(lista).getByText('09:00–10:00')).toBeTruthy();
-    expect(within(lista).getByText('22:30–23:00')).toBeTruthy();
-    expect(within(lista).getByText(/dia inteiro · Cliente C/)).toBeTruthy();
+    await waitFor(() => expect(within(lista).getByText('Reunião Online - Cliente A - Pedro')).toBeTruthy());
+    expect(within(lista).getByText('09:00')).toBeTruthy();
+    expect(within(lista).getByText('22:30')).toBeTruthy();
     expect(lista.className).not.toContain('overflow-x-auto');
   });
 });
