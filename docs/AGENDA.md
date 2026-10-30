@@ -330,3 +330,37 @@ resultado em `homolog/RESULTADO-AGENDA-V2.md`.
   `google/agenda-espelho.google.ts` (leitura) e `google/agenda-escrita.google.ts`
   (escritas). Na homologação, `GOOGLE_API_DUBLE_URL` aponta para o dublê
   (`homolog/mocks/google`); só aceita loopback ou nome sem ponto.
+
+### Marcar sai no clique: o que vale e o que ainda retém (30/10/2026)
+
+O texto da seção "O vigia age sozinho?" acima dizia que a porta não lia
+`aprovacaoR2Ligada`. **Desde a agenda v2 ela lê**, e só num caso: ator `user`,
+`ExecCtx.naTela` posto pelo controlador de `POST /agenda/escritas` (depois de
+reler no banco que é gente da empresa, ativa e sem papel de máquina) e a versão
+ativa da política da empresa com a aprovação de R2 desligada. Em qualquer outro
+caminho (agente, rotina, WhatsApp, link público, conta de máquina, a rota antiga
+`POST /google/calendar/reuniao`) nada é passado e R2 continua retido.
+
+A sobrescrita que desliga a aprovação de R2 da casa (assinada, RF-P-06):
+
+```bash
+# dentro do container da API (roda compilado):
+node dist/agenda/sobrescrita-r2-da-agenda.cli.js --org root          # simula
+node dist/agenda/sobrescrita-r2-da-agenda.cli.js --org root --valer \
+  --como <e-mail do Rodrigo no OS> \
+  --motivo "AAAA-MM-DD: agenda v2, decisão 2 do Rodrigo (29/10): marcar, alterar, cancelar e desmarcar pela tela saem no clique para gente da casa, cada um com desfazer no OS; agente, rotinas, WhatsApp e link de escolha seguem na fila; reabrir (R3) segue pedindo outra pessoa"
+node dist/agenda/sobrescrita-r2-da-agenda.cli.js --org root --religar --valer --como <e-mail> --motivo "..."   # volta a reter
+```
+
+Mesmo com a sobrescrita, a régua continua acendendo sinais, e qualquer sinal sobe
+um degrau (R2 vira R3, que vai para a fila):
+
+- **`fora_da_janela`**: fora da janela da política da empresa (`limitesPadrao.janelaHoraria`,
+  lida no fuso `POLITICA_FUSO_HORARIO`, hoje 08h às 20h de São Paulo), marcar pela
+  tela vai para a fila. É o comportamento de toda escrita do OS; a agenda não abre
+  exceção.
+- **`volume_atipico`**: mais do que o triplo da média por hora daquela capacidade
+  na última hora. Com pouco uso acumulado, uma rajada de marcações pode cair na fila.
+
+Os dois são decisão de política, não de código (ver `homolog/RESULTADO-AGENDA-V2.md`,
+"O que fica para o Rodrigo").
