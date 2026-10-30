@@ -300,7 +300,7 @@ export default function TriagemPage() {
                 </button>
               ))}
             </div>
-            <div className="row">
+            <div className="row ideias-busca">
               <input type="search" className="search ideias-search" placeholder="Buscar nas ideias" value={busca} onChange={(e) => setBusca(e.target.value)} aria-label="Buscar nas ideias" />
               <select className="ideias-ordem" value={ordem} onChange={(e) => setOrdem(e.target.value as 'relevancia' | 'recentes')} aria-label="Ordem">
                 <option value="relevancia">Mais relevantes</option>
@@ -316,16 +316,16 @@ export default function TriagemPage() {
               <p>{filtro === 'nova' ? 'Guarde links e Reels na Memória ou cadastre fontes de tema.' : 'As ideias aparecem aqui conforme vocês decidem.'}</p>
             </div>
           ) : (
-            <div className="cards ideias-grade">
+            <div className="ideias-lista">
               {lista.map((c) => (
-                <article key={c.id} className="content-card ideias-mini">
-                  {c.imagemUrl && /^https?:\/\//.test(c.imagemUrl) ? (
-                    <div className="ideias-mini-img">
-                      {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img src={c.imagemUrl} alt="" referrerPolicy="no-referrer" loading="lazy" onError={(e) => (e.currentTarget.parentElement!.style.display = 'none')} />
-                    </div>
-                  ) : null}
-                  <div className="card-body">
+                <article key={c.id} className="ideias-linha">
+                  <div className="ideias-linha-img">
+                    {c.imagemUrl && /^https?:\/\//.test(c.imagemUrl) && (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img src={c.imagemUrl} alt="" referrerPolicy="no-referrer" loading="lazy" onError={(e) => (e.currentTarget.style.display = 'none')} />
+                    )}
+                  </div>
+                  <div className="ideias-linha-texto">
                     <div className="ideias-source">
                       <span className={`ideias-origin ideias-origin-${c.origem}`}>{c.origem === 'salvo' ? 'Salvo' : (c.fonte?.nome ?? 'Da fonte')}</span>
                       <span className="badge">{c.como.formato || c.formatoSugerido}</span>
@@ -340,8 +340,7 @@ export default function TriagemPage() {
                         c.titulo
                       )}
                     </h3>
-                    {c.resumo && c.resumo !== c.titulo && <p>{c.resumo}</p>}
-                    {c.como.gancho && <p className="ideias-mini-gancho">{c.como.gancho}</p>}
+                    {c.como.gancho ? <p className="ideias-mini-gancho">{c.como.gancho}</p> : c.resumo && c.resumo !== c.titulo && <p className="ideias-linha-resumo">{c.resumo}</p>}
                     {c.porque && (
                       <details className="ideias-mini-mais">
                         <summary>Por que tem a ver</summary>
@@ -361,7 +360,9 @@ export default function TriagemPage() {
                         {c.comentario}
                       </blockquote>
                     )}
-                    <div className="card-meta">
+                  </div>
+                  <div className="ideias-linha-lado">
+                    <div className="ideias-linha-meta">
                       <span>{c.decididaEm ? `${c.status === 'aprovada' ? 'Aprovada' : c.status === 'recusada' ? 'Recusada' : ''} em ${dataCurta(c.decididaEm)}` : dataCurta(c.publicadoEm)}</span>
                       {c.url && /^https?:\/\//.test(c.url) && (
                         <a href={c.url} target="_blank" rel="noopener noreferrer">
