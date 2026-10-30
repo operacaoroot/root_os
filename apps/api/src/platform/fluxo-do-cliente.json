@@ -1,0 +1,731 @@
+{
+  "nome": "Fluxo do cliente",
+  "versao": "v6",
+  "data": "2026-10-30",
+  "fonte": "Reunião de sócios sobre o fluxo do cliente (ata de 29/10/2026) e anotações em papel",
+  "total_tarefas": 56,
+  "area_do_cliente": [
+    {
+      "item": "Cronograma",
+      "origem": "papel e transcrição",
+      "tarefa": "09"
+    },
+    {
+      "item": "Instruções de acesso e de uso",
+      "origem": "papel e transcrição",
+      "tarefa": "11"
+    },
+    {
+      "item": "Contrato",
+      "origem": "papel e transcrição",
+      "tarefa": "01"
+    },
+    {
+      "item": "Escopo (a proposta)",
+      "origem": "papel e transcrição",
+      "tarefa": "01"
+    },
+    {
+      "item": "Linha de execução: o que está sendo feito e onde está",
+      "origem": "papel e transcrição",
+      "tarefa": "10"
+    },
+    {
+      "item": "Atas",
+      "origem": "papel e transcrição",
+      "tarefa": "18"
+    },
+    {
+      "item": "Agenda das reuniões, feitas e próximas",
+      "origem": "papel",
+      "tarefa": "14"
+    },
+    {
+      "item": "PRD",
+      "origem": "papel e transcrição",
+      "tarefa": "21"
+    },
+    {
+      "item": "Documento de arquitetura e tecnologia",
+      "origem": "papel e transcrição",
+      "tarefa": "21"
+    },
+    {
+      "item": "Cofre de acessos, que funciona no celular",
+      "origem": "transcrição",
+      "tarefa": "20"
+    },
+    {
+      "item": "Central: glossário e dúvidas comuns, com como o cliente chama as coisas na empresa",
+      "origem": "papel e transcrição",
+      "tarefa": "12"
+    },
+    {
+      "item": "Vídeos de treinamento",
+      "origem": "transcrição",
+      "tarefa": "22"
+    },
+    {
+      "item": "Instruções de manutenção, para depois da entrega",
+      "origem": "transcrição",
+      "tarefa": null
+    },
+    {
+      "item": "Atualizações e novidades da Root",
+      "origem": "transcrição",
+      "tarefa": null
+    },
+    {
+      "item": "Caminho para tirar dúvida: Rotinha no grupo e, se continuar, a Root",
+      "origem": "transcrição",
+      "tarefa": "22"
+    }
+  ],
+  "fases": [
+    {
+      "id": "fase-1",
+      "nome": "Fechamento",
+      "etapas": [
+        {
+          "tipo": "marco",
+          "texto": "Proposta aceita"
+        },
+        {
+          "tipo": "tarefa",
+          "numero": "01",
+          "chave": "contrato",
+          "responsavel": "COMERCIAL",
+          "titulo": "Montar o contrato a partir da proposta",
+          "feito_quando": "Contrato padrão só com os campos-chave alterados, a proposta anexa como escopo e o custo de implantação do cliente (VPS, domínio, licenças) escrito",
+          "notas": [
+            "Tudo o que roda sozinho tem caminho manual: se o agente travar, alguém faz na mão."
+          ]
+        },
+        {
+          "tipo": "tarefa",
+          "numero": "02",
+          "chave": "link",
+          "responsavel": "COMERCIAL",
+          "titulo": "Mandar o link de fechamento",
+          "feito_quando": "Link enviado com os 4 passos: dados, contrato pré-preenchido, assinatura e pagamento pelo Asaas"
+        },
+        {
+          "tipo": "decisao",
+          "chave": "pagou",
+          "pergunta": "Assinou e pagou?",
+          "segue_se": "sim",
+          "ramos": [
+            {
+              "tipo": "tarefa_lateral",
+              "numero": "03",
+              "chave": "cobrafech",
+              "responsavel": "COMERCIAL",
+              "titulo": "Cobrar o fechamento",
+              "feito_quando": "Lembrete enviado e anotado. A 1ª reunião só é marcada com a entrada compensada"
+            }
+          ]
+        },
+        {
+          "tipo": "tarefa",
+          "numero": "04",
+          "chave": "nf",
+          "responsavel": "FINANCEIRO",
+          "titulo": "Emitir a nota fiscal da entrada",
+          "feito_quando": "Nota emitida quando o pagamento entra e enviada ao cliente",
+          "em_paralelo": [
+            {
+              "trilho": "CORRE ATÉ A ÚLTIMA PARCELA",
+              "tarefas": [
+                {
+                  "numero": "05",
+                  "chave": "parcelas",
+                  "responsavel": "FINANCEIRO · TODO MÊS",
+                  "titulo": "Cobrar as parcelas",
+                  "feito_quando": "Parcela do mês com baixa. Se atrasar, cobrança feita e anotada"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "tipo": "tarefa",
+          "numero": "06",
+          "chave": "confirma",
+          "responsavel": "FINANCEIRO",
+          "titulo": "Confirmar o pagamento",
+          "feito_quando": "Confirmação enviada ao cliente e próximas parcelas agendadas no Asaas"
+        }
+      ]
+    },
+    {
+      "id": "fase-2",
+      "nome": "Abertura",
+      "etapas": [
+        {
+          "tipo": "tarefa",
+          "numero": "07",
+          "chave": "grupo",
+          "responsavel": "DONO DA CONTA",
+          "titulo": "Criar o grupo do WhatsApp",
+          "feito_quando": "Grupo \"ROOT | Cliente\" com capa, os três sócios e o decisor dentro"
+        },
+        {
+          "tipo": "tarefa",
+          "numero": "08",
+          "chave": "nomes",
+          "responsavel": "DONO DA CONTA",
+          "titulo": "Nomear o dono da conta e o operador do cliente",
+          "feito_quando": "Os dois nomes registrados e apresentados no grupo"
+        },
+        {
+          "tipo": "tarefa",
+          "numero": "09",
+          "chave": "crono",
+          "responsavel": "DONO DA CONTA",
+          "titulo": "Definir o cronograma do cliente",
+          "feito_quando": "Cronograma com data em cada fase definido com o cliente e enviado no grupo"
+        },
+        {
+          "tipo": "tarefa",
+          "numero": "10",
+          "chave": "painel",
+          "responsavel": "QUEM IMPLANTA",
+          "titulo": "Montar o painel do cliente",
+          "feito_quando": "Painel com cronograma, linha de execução, agenda das reuniões, contrato, escopo, cofre e espaço para o PRD, o documento de arquitetura e as atas"
+        },
+        {
+          "tipo": "tarefa",
+          "numero": "11",
+          "chave": "boasvindas",
+          "responsavel": "DONO DA CONTA",
+          "titulo": "Mensagem de boas-vindas com o acesso ao painel",
+          "feito_quando": "Mensagem com as instruções do painel enviada e o cliente entrou nele"
+        },
+        {
+          "tipo": "tarefa",
+          "numero": "12",
+          "chave": "acomp",
+          "responsavel": "QUEM IMPLANTA",
+          "titulo": "Envio do material de acompanhamento",
+          "feito_quando": "Material e glossário na descrição do grupo",
+          "em_aberto": [
+            "revisar a central (glossário e dúvidas comuns) para ela entrar nesse envio."
+          ]
+        },
+        {
+          "tipo": "tarefa",
+          "numero": "13",
+          "chave": "person",
+          "responsavel": "QUEM IMPLANTA",
+          "titulo": "Envio do material personalizado",
+          "feito_quando": "Front do que vamos entregar, feito para as demandas dele no padrão da construção, enviado ao cliente",
+          "em_aberto": [
+            "mandar o material personalizado junto com o link de pagamento ou só depois que o cliente paga."
+          ]
+        },
+        {
+          "tipo": "tarefa",
+          "numero": "14",
+          "chave": "agenda",
+          "responsavel": "DONO DA CONTA",
+          "titulo": "Agendar as reuniões dos primeiros 30 dias",
+          "feito_quando": "A 1ª e a 2ª na mesma semana e as semanais seguintes marcadas pelo link de agenda da Root"
+        },
+        {
+          "tipo": "tarefa",
+          "numero": "15",
+          "chave": "d1",
+          "responsavel": "QUEM IMPLANTA · D-1",
+          "titulo": "Confirmar a 1ª reunião",
+          "feito_quando": "Horário e participantes confirmados e a máquina do cliente liberada para instalar o kit"
+        }
+      ]
+    },
+    {
+      "id": "fase-3",
+      "nome": "Primeira semana",
+      "etapas": [
+        {
+          "tipo": "tarefa",
+          "numero": "16",
+          "chave": "r1",
+          "responsavel": "QUEM IMPLANTA · ATÉ 1H30",
+          "titulo": "1ª reunião: kit local e preparação da VPS",
+          "feito_quando": "Kit rodando na máquina do cliente, sistemas, APIs e bancos colhidos, licenças e acessos combinados e cronograma aprovado. A explicação fica para a 2ª",
+          "em_paralelo": [
+            {
+              "trilho": "CORRE A REUNIÃO INTEIRA",
+              "tarefas": [
+                {
+                  "numero": "17",
+                  "chave": "captura",
+                  "responsavel": "2º SÓCIO",
+                  "titulo": "Captura ao vivo de dúvidas, objeções e desejos",
+                  "feito_quando": "Registro escrito, feito por quem tem só essa função na reunião"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "tipo": "tarefa",
+          "numero": "18",
+          "chave": "ata1",
+          "responsavel": "QUEM IMPLANTA · MESMO DIA",
+          "titulo": "Resumo, áudio e ata da reunião",
+          "feito_quando": "Resumo em HTML enviado, áudio transcrito e ata no painel"
+        },
+        {
+          "tipo": "tarefa",
+          "numero": "19",
+          "chave": "licencas",
+          "responsavel": "QUEM IMPLANTA",
+          "titulo": "Contratar VPS, domínio e licenças",
+          "feito_quando": "Tudo no nome do cliente, como combinado na 1ª reunião e dentro do custo escrito no contrato"
+        },
+        {
+          "tipo": "tarefa",
+          "numero": "20",
+          "chave": "vps",
+          "responsavel": "QUEM IMPLANTA",
+          "titulo": "Criar a VPS, o e-mail do domínio e os logins",
+          "feito_quando": "VPS no ar com o pacote de skills, logins criados pela Root e guardados no cofre e convite da VPS enviado ao cliente",
+          "notas": [
+            "Fora do fluxo do cliente: o pacote de skills e os prompts do Obsidian são da plataforma, feitos uma vez só."
+          ]
+        },
+        {
+          "tipo": "tarefa",
+          "numero": "21",
+          "chave": "prd",
+          "responsavel": "QUEM IMPLANTA",
+          "titulo": "Escrever o PRD e o documento de arquitetura",
+          "feito_quando": "Os dois no modelo padrão e publicados no painel"
+        },
+        {
+          "tipo": "tarefa",
+          "numero": "22",
+          "chave": "r2",
+          "responsavel": "DONO DA CONTA · 40 MIN",
+          "titulo": "2ª reunião: alinhamento e educação",
+          "feito_quando": "Apresentação com slides e vídeos curtos sobre o que é e como funciona. O cliente sabe falar com a Root (grupo, Rotinha e painel), o que fica fora do escopo e que o combinado é mais ensinar do que fazer",
+          "notas": [
+            "Toda reunião tem pauta e roteiro para caber em 1 hora. Na 2ª, o cliente é orientado a mandar tudo no grupo."
+          ]
+        },
+        {
+          "tipo": "tarefa",
+          "numero": "23",
+          "chave": "aprova",
+          "responsavel": "DONO DA CONTA",
+          "titulo": "Aprovar os documentos técnicos",
+          "feito_quando": "O cliente aprovou por escrito o PRD e o documento de arquitetura",
+          "em_aberto": [
+            "o papel da reunião não cita a aprovação dos documentos técnicos. Confirmar se ela fica aqui."
+          ]
+        },
+        {
+          "tipo": "tarefa",
+          "numero": "24",
+          "chave": "over",
+          "responsavel": "QUEM IMPLANTA",
+          "titulo": "Definir e entregar o overdelivery",
+          "feito_quando": "Uma entrega não prometida, entregue sem cobrar"
+        },
+        {
+          "tipo": "tarefa",
+          "numero": "25",
+          "chave": "gloss",
+          "responsavel": "QUEM IMPLANTA",
+          "titulo": "Glossário atualizado com as dúvidas reais",
+          "feito_quando": "O cliente tem o glossário revisado e o padrão ficou melhor"
+        },
+        {
+          "tipo": "tarefa",
+          "numero": "26",
+          "chave": "retro1",
+          "responsavel": "DONO DA CONTA",
+          "titulo": "Retrospectiva interna do onboarding",
+          "feito_quando": "As melhorias viraram tarefa"
+        },
+        {
+          "tipo": "decisao",
+          "chave": "produto",
+          "pergunta": "Qual o produto?",
+          "segue_se": "Implantação ou Operação ROOT"
+        }
+      ]
+    },
+    {
+      "id": "fase-4",
+      "nome": "Construção, 30 dias",
+      "etapas": [
+        {
+          "tipo": "tarefa",
+          "numero": "27",
+          "chave": "r15",
+          "responsavel": "QUEM IMPLANTA · DIA 15",
+          "titulo": "Reunião do dia 15: SSH, OS, Claude e APIs",
+          "feito_quando": "Ponte SSH com a VPS, primeira versão do OS liberada, Claude rodando na VPS e APIs conectadas (conectores padrão do Google e do Instagram), com retrospectiva e realinhamento de urgências",
+          "em_paralelo": [
+            {
+              "trilho": "CORRE JUNTO NOS 30 DIAS",
+              "tarefas": [
+                {
+                  "numero": "28",
+                  "chave": "semanal",
+                  "responsavel": "QUEM IMPLANTA · TODA SEMANA",
+                  "titulo": "Reunião semanal",
+                  "feito_quando": "Uma hora, com pauta e roteiro, e ata no painel"
+                },
+                {
+                  "numero": "30",
+                  "chave": "sexta",
+                  "responsavel": "DONO DA CONTA · TODA SEXTA",
+                  "titulo": "Status de sexta no grupo",
+                  "feito_quando": "Pronto, semana que vem e o que precisamos de vocês, enviado até o fim da sexta"
+                },
+                {
+                  "numero": "32",
+                  "chave": "pulso",
+                  "responsavel": "DONO DA CONTA · A CADA 15 DIAS",
+                  "titulo": "Pulso",
+                  "feito_quando": "Resposta a \"De 0 a 10, como está o projeto até aqui?\" registrada"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "tipo": "tarefa",
+          "numero": "29",
+          "chave": "hard",
+          "responsavel": "QUEM IMPLANTA",
+          "titulo": "Endurecer o servidor e ligar o backup",
+          "feito_quando": "Saúde do sistema respondendo e restauração do backup testada"
+        },
+        {
+          "tipo": "tarefa",
+          "numero": "31",
+          "chave": "frota",
+          "responsavel": "QUEM IMPLANTA",
+          "titulo": "Ligar o monitoramento na Frota",
+          "feito_quando": "A VPS aparece com sinal verde na Frota, sem verificação pendente"
+        },
+        {
+          "tipo": "tarefa",
+          "numero": "33",
+          "chave": "dados",
+          "responsavel": "QUEM IMPLANTA E TI DO CLIENTE",
+          "titulo": "Carregar os dados do sistema do cliente",
+          "feito_quando": "A carga roda 3 dias seguidos sem ninguém mexer"
+        },
+        {
+          "tipo": "tarefa",
+          "numero": "34",
+          "chave": "pacote",
+          "responsavel": "QUEM IMPLANTA",
+          "titulo": "Entregar o pacote",
+          "feito_quando": "O cliente rodou o pacote e confirmou no grupo",
+          "em_aberto": [
+            "a entrega da execução depois da VPS ainda não tem padrão. E a verificação do kit não chega na Frota."
+          ]
+        },
+        {
+          "tipo": "decisao",
+          "chave": "faltapac",
+          "pergunta": "Falta pacote?",
+          "segue_se": "não"
+        },
+        {
+          "tipo": "tarefa",
+          "numero": "35",
+          "chave": "aceite",
+          "responsavel": "QUEM IMPLANTA",
+          "titulo": "Aceite",
+          "feito_quando": "O operador fez a tarefa principal sozinho e o cliente confirmou por escrito, contra o escopo da proposta"
+        },
+        {
+          "tipo": "decisao",
+          "chave": "aceiteok",
+          "pergunta": "Aceite confirmado?",
+          "segue_se": "sim",
+          "ramos": [
+            {
+              "tipo": "tarefa_lateral",
+              "numero": "36",
+              "chave": "ajusta",
+              "responsavel": "QUEM IMPLANTA",
+              "titulo": "Ajustar contra o escopo",
+              "feito_quando": "Ajuste combinado com data"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "fase-5",
+      "nome": "Acompanhamento, a cada 15 dias",
+      "etapas": [
+        {
+          "tipo": "tarefa",
+          "numero": "37",
+          "chave": "impar",
+          "responsavel": "QUEM IMPLANTA · REUNIÕES ÍMPARES",
+          "titulo": "Fechar a entrega do mês e definir a próxima",
+          "feito_quando": "Entrega do mês aceita e o entregável do mês seguinte escrito no painel",
+          "em_paralelo": [
+            {
+              "trilho": "CORRE JUNTO NO ACOMPANHAMENTO",
+              "tarefas": [
+                {
+                  "numero": "38",
+                  "chave": "ativo",
+                  "responsavel": "DONO DA CONTA · 7 DIAS DE SILÊNCIO",
+                  "titulo": "Contato ativo",
+                  "feito_quando": "Contato feito em até 1 dia útil"
+                },
+                {
+                  "numero": "40",
+                  "chave": "duvida",
+                  "responsavel": "QUEM RESPONDE · SEMPRE",
+                  "titulo": "Dúvida que vira trabalho vira tarefa",
+                  "feito_quando": "Nenhuma pendência que só existe no chat"
+                },
+                {
+                  "numero": "42",
+                  "chave": "corrige",
+                  "responsavel": "QUEM IMPLANTA · QUANDO APARECER",
+                  "titulo": "Ajustar e corrigir o sistema do cliente",
+                  "feito_quando": "Correção publicada e avisada no grupo"
+                }
+              ]
+            }
+          ],
+          "em_aberto": [
+            "contato semanal de CX, no privado ou no grupo, e quantas horas isso cabe na agenda."
+          ]
+        },
+        {
+          "tipo": "tarefa",
+          "numero": "39",
+          "chave": "constroi",
+          "responsavel": "QUEM IMPLANTA",
+          "titulo": "Construir o entregável do mês",
+          "feito_quando": "Entregável rodando na VPS do cliente"
+        },
+        {
+          "tipo": "tarefa",
+          "numero": "41",
+          "chave": "par",
+          "responsavel": "QUEM IMPLANTA · REUNIÕES PARES",
+          "titulo": "Validar o que foi entregue",
+          "feito_quando": "O cliente confirmou que está rodando e o que ele pediu na VPS funciona"
+        },
+        {
+          "tipo": "decisao",
+          "chave": "seis",
+          "pergunta": "Já foram as 6 reuniões?",
+          "segue_se": "sim"
+        }
+      ]
+    },
+    {
+      "id": "fase-6",
+      "nome": "Satisfação e indicação",
+      "etapas": [
+        {
+          "tipo": "tarefa",
+          "numero": "43",
+          "chave": "nota",
+          "responsavel": "DONO DA CONTA · FIM DO ACOMPANHAMENTO",
+          "titulo": "Pedir a nota, no privado do decisor",
+          "feito_quando": "\"De 0 a 10, quanto você indicaria a Root para outro empresário? O que faria essa nota subir?\" Nota e motivo registrados"
+        },
+        {
+          "tipo": "decisao",
+          "chave": "qualnota",
+          "pergunta": "Qual a nota?",
+          "segue_se": "9 ou 10",
+          "ramos": [
+            {
+              "tipo": "tarefa_lateral",
+              "numero": "44",
+              "chave": "n78",
+              "responsavel": "NOTA 7 OU 8 · DONO DA CONTA",
+              "titulo": "Combinar o ajuste",
+              "feito_quando": "Ajuste com data registrado"
+            },
+            {
+              "tipo": "tarefa_lateral",
+              "numero": "46",
+              "chave": "n06",
+              "responsavel": "NOTA DE 0 A 6 · DONO DA CONTA E 2º SÓCIO · EM ATÉ 48 H",
+              "titulo": "Recuperar o cliente",
+              "feito_quando": "Ligação feita, plano escrito e assunto na reunião de quinta"
+            }
+          ]
+        },
+        {
+          "tipo": "tarefa",
+          "numero": "45",
+          "chave": "depo",
+          "responsavel": "DONO DA CONTA",
+          "titulo": "Pedir depoimento curto",
+          "feito_quando": "Áudio ou vídeo guardado na pasta do cliente"
+        },
+        {
+          "tipo": "tarefa",
+          "numero": "47",
+          "chave": "indic",
+          "responsavel": "DONO DA CONTA",
+          "titulo": "Pedir 2 indicações",
+          "feito_quando": "Nome e telefone passados ao comercial"
+        },
+        {
+          "tipo": "tarefa",
+          "numero": "48",
+          "chave": "caso",
+          "responsavel": "MARKETING",
+          "titulo": "Escrever o caso",
+          "feito_quando": "Antes e depois, dizendo se é relato ou medido, com autorização para usar o nome"
+        }
+      ]
+    },
+    {
+      "id": "fase-7",
+      "nome": "Continuidade ou fim",
+      "etapas": [
+        {
+          "tipo": "tarefa",
+          "numero": "49",
+          "chave": "avisa",
+          "responsavel": "DONO DA CONTA · 15 DIAS ANTES",
+          "titulo": "Avisar o fim do acompanhamento incluso",
+          "feito_quando": "Mensagem com a data de fim enviada"
+        },
+        {
+          "tipo": "tarefa",
+          "numero": "50",
+          "chave": "aditivo",
+          "responsavel": "COMERCIAL",
+          "titulo": "Mandar o aditivo de continuidade",
+          "feito_quando": "Manutenção, sob demanda ou próximo projeto, em aditivo ao contrato. Aditivo enviado"
+        },
+        {
+          "tipo": "decisao",
+          "chave": "escolha",
+          "pergunta": "O que o cliente escolheu?",
+          "segue_se": "encerrar",
+          "ramos": [
+            {
+              "tipo": "tarefa_lateral",
+              "numero": "51",
+              "chave": "mensal",
+              "responsavel": "DONO DA CONTA · TODO MÊS",
+              "titulo": "Relatório mensal",
+              "feito_quando": "Enviado no dia combinado, com o que foi entregue no mês"
+            },
+            {
+              "tipo": "tarefa_lateral",
+              "numero": "53",
+              "chave": "trimestral",
+              "responsavel": "DONO DA CONTA · A CADA 3 MESES",
+              "titulo": "Nota de 0 a 10",
+              "feito_quando": "Mesma pergunta e mesma régua do 43"
+            }
+          ],
+          "notas": [
+            "Novo projeto: volta ao 01"
+          ]
+        },
+        {
+          "tipo": "tarefa",
+          "numero": "52",
+          "chave": "carta",
+          "responsavel": "DONO DA CONTA",
+          "titulo": "Carta de encerramento",
+          "feito_quando": "O que foi entregue, o que fica com a empresa e como chamar a Root depois"
+        },
+        {
+          "tipo": "tarefa",
+          "numero": "54",
+          "chave": "passa",
+          "responsavel": "QUEM IMPLANTA",
+          "titulo": "Passar a operação ao cliente",
+          "feito_quando": "Senhas entregues e o cliente opera o servidor sem a Root"
+        },
+        {
+          "tipo": "tarefa",
+          "numero": "55",
+          "chave": "revoga",
+          "responsavel": "QUEM IMPLANTA",
+          "titulo": "Revogar os acessos da Root",
+          "feito_quando": "Servidor, senhas e repositório sem acesso da Root"
+        },
+        {
+          "tipo": "tarefa",
+          "numero": "56",
+          "chave": "final",
+          "responsavel": "DONO DA CONTA",
+          "titulo": "Nota final e retrospectiva do projeto",
+          "feito_quando": "Nota registrada pela régua do 43 e melhorias viradas tarefa"
+        },
+        {
+          "tipo": "marco",
+          "texto": "Fim"
+        }
+      ]
+    }
+  ],
+  "desvios": [
+    {
+      "de": "pagou",
+      "resposta": "não",
+      "para": "cobrafech",
+      "depois_volta_a": "link"
+    },
+    {
+      "de": "produto",
+      "resposta": "Imersão",
+      "pula_para": "impar"
+    },
+    {
+      "de": "faltapac",
+      "resposta": "sim",
+      "volta_a": "pacote"
+    },
+    {
+      "de": "aceiteok",
+      "resposta": "não",
+      "para": "ajusta",
+      "depois_volta_a": "aceite"
+    },
+    {
+      "de": "seis",
+      "resposta": "não",
+      "volta_a": "impar"
+    },
+    {
+      "de": "qualnota",
+      "resposta": "7 ou 8",
+      "para": "n78",
+      "depois_volta_a": "nota",
+      "prazo": "nova nota em 15 dias"
+    },
+    {
+      "de": "qualnota",
+      "resposta": "0 a 6",
+      "para": "n06",
+      "depois_volta_a": "nota",
+      "prazo": "nova nota em 15 dias"
+    },
+    {
+      "de": "escolha",
+      "resposta": "recorrente",
+      "para": "mensal",
+      "depois": "trimestral",
+      "repete": true
+    }
+  ]
+}

@@ -55,9 +55,20 @@ export const FROTA: NavItem = {
   permission: 'dashboard.ver', secao: 'frota',
 };
 
+/**
+ * O fluxo do cliente (30/10/2026): o caminho da proposta aceita até a continuidade ou o
+ * fim, com dono e "feito quando" em cada tarefa (reunião de sócios de 29/10). É o
+ * contexto da operação da ROOT, ao lado da Marca. Tela da ROOT: a API recusa as outras.
+ */
+export const FLUXO_DO_CLIENTE: NavItem = {
+  key: 'fluxo-do-cliente', label: 'Fluxo do cliente', href: '/contexto/fluxo-do-cliente', icon: 'Route',
+  permission: 'dashboard.ver', secao: 'empresa', pai: 'contexto',
+};
+
 export const ITENS_DA_ROOT: readonly (NavItem & { depoisDe?: string })[] = [
   { ...RODADA_DA_SEMANA, depoisDe: 'comercial-contratos' },
   FROTA,
+  { ...FLUXO_DO_CLIENTE, depoisDe: 'marca' },
 ];
 
 export function rotuloDoDestino(item: NavItem): string {
