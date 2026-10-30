@@ -227,6 +227,8 @@ export interface EventoDaAgenda {
   criadoPeloOs: boolean;
   /** O `htmlLink` do Google. */
   link: string | null;
+  /** A descrição do evento (até 8 mil caracteres), quando quem leu pediu (o vigia AG-01, o detalhe). Nulo no Fechado. */
+  descricao?: string | null;
   leitura: LeituraDoCompromisso;
 }
 
