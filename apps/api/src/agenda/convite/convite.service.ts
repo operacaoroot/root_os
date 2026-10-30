@@ -7,7 +7,7 @@ import {
   type NovoConviteDeAgenda,
   type SocioDaAgenda,
 } from '@mktos/shared';
-import type { AgendaConvite } from '@prisma/client';
+import { ActorType, type AgendaConvite } from '@prisma/client';
 
 import { comTenantPublico } from '../../common/tenant-publico';
 import { PrismaService } from '../../prisma/prisma.service';
@@ -22,6 +22,7 @@ import {
   hashDoConvite,
   icsDoConvite,
   instanteEmSaoPaulo,
+  pedidoDoConviteCaiu,
   primeiroNome,
   somarDias,
   validadeDoConvite,
@@ -80,8 +81,12 @@ export interface ConviteDaLista {
   approvalId: string | null;
   eventoId: string | null;
   revogadoEm: string | null;
-  estado: 'aberto' | 'escolhido' | 'vencido' | 'revogado';
+  /** `pedido_vencido`: escolhido, mas a aprovação do `marcar` venceu, foi recusada ou sumiu (A1); o link volta a aceitar escolha. */
+  estado: 'aberto' | 'escolhido' | 'pedido_vencido' | 'vencido' | 'revogado';
 }
+
+/** A ação de auditoria de quando o pedido do link cai e o convite volta a aceitar escolha. */
+export const AUDITORIA_PEDIDO_CAIU = 'agenda.convite.pedido_caiu';
 
 export interface RespostaDaConfirmacao extends EstadoDoConvitePublico {
   mensagem: string;
@@ -146,6 +151,7 @@ export class ConviteDaAgendaService {
 
   async listar(orgId: string, agora = new Date()): Promise<ConviteDaLista[]> {
     const linhas = await this.prisma.agendaConvite.findMany({ where: { orgId }, orderBy: { criadoEm: 'desc' }, take: 100 });
+    const caidos = await this.pedidosCaidos(orgId, linhas, agora);
     return linhas.map((c) => ({
       id: c.id,
       socio: c.socio,
@@ -162,7 +168,15 @@ export class ConviteDaAgendaService {
       approvalId: c.approvalId,
       eventoId: c.eventoId,
       revogadoEm: c.revogadoEm?.toISOString() ?? null,
-      estado: c.revogadoEm ? 'revogado' : c.escolhidoInicio ? 'escolhido' : c.validoAte <= agora ? 'vencido' : 'aberto',
+      estado: c.revogadoEm
+        ? 'revogado'
+        : caidos.has(c.id)
+          ? 'pedido_vencido'
+          : c.escolhidoInicio
+            ? 'escolhido'
+            : c.validoAte <= agora
+              ? 'vencido'
+              : 'aberto',
     }));
   }
 
@@ -221,29 +235,122 @@ export class ConviteDaAgendaService {
     };
   }
 
+  /* -------------------------------------------------------------------------
+   * O pedido que caiu (A1)
+   * ----------------------------------------------------------------------- */
+
+  /**
+   * Os convites (desta lista) cujo pedido caiu: escolhidos, com `approvalId`,
+   * a aprovação recusada, expirada, sumida ou vencida sem execução, e o evento
+   * que não nasceu no espelho. Só lê.
+   */
+  private async pedidosCaidos(orgId: string, convites: AgendaConvite[], agora: Date): Promise<Set<string>> {
+    const candidatos = convites.filter((c) => !c.revogadoEm && c.usadoEm && c.escolhidoInicio && c.approvalId);
+    if (!candidatos.length) return new Set();
+    const [aprovacoes, eventos] = await Promise.all([
+      this.prisma.approval.findMany({
+        where: { orgId, id: { in: candidatos.map((c) => c.approvalId as string) } },
+        select: { id: true, status: true, expiraEm: true, capabilityId: true },
+      }),
+      this.prisma.agendaEvento.findMany({
+        where: { orgId, googleId: { in: candidatos.map((c) => c.eventoId).filter((x): x is string => !!x) } },
+        select: { googleId: true },
+      }),
+    ]);
+    const porId = new Map(aprovacoes.map((a) => [a.id, a]));
+    const nascidos = new Set(eventos.map((e) => e.googleId));
+    return new Set(
+      candidatos
+        .filter((c) => !(c.eventoId && nascidos.has(c.eventoId)))
+        .filter((c) => pedidoDoConviteCaiu(c, porId.get(c.approvalId as string) ?? null, agora))
+        .map((c) => c.id),
+    );
+  }
+
+  /**
+   * Se o pedido do convite caiu, devolve o convite a "aberto" numa escrita
+   * condicionada ao estado lido (duas abas ao mesmo tempo = uma reabertura) e
+   * grava a auditoria na mesma transação. Roda dentro da empresa.
+   */
+  private async reabrirSeCaiu(orgId: string, c: AgendaConvite, agora: Date): Promise<{ convite: AgendaConvite; reaberto: boolean }> {
+    const caidos = await this.pedidosCaidos(orgId, [c], agora);
+    if (!caidos.has(c.id)) return { convite: c, reaberto: false };
+    const reaberto = await this.prisma.$transaction(async (tx) => {
+      const r = await tx.agendaConvite.updateMany({
+        where: { id: c.id, orgId, revogadoEm: null, usadoEm: c.usadoEm, approvalId: c.approvalId, eventoId: c.eventoId },
+        data: { usadoEm: null, escolhidoInicio: null, escolhidoFim: null, emailInformado: null, approvalId: null, eventoId: null },
+      });
+      if (r.count === 0) return false;
+      await tx.auditLog.create({
+        data: {
+          orgId,
+          actorType: ActorType.system,
+          actorId: AGENTE_DO_LINK,
+          action: AUDITORIA_PEDIDO_CAIU,
+          entityType: 'agenda_convite',
+          entityId: c.id,
+          before: {
+            usadoEm: c.usadoEm?.toISOString() ?? null,
+            escolhidoInicio: c.escolhidoInicio?.toISOString() ?? null,
+            escolhidoFim: c.escolhidoFim?.toISOString() ?? null,
+            approvalId: c.approvalId,
+            eventoId: c.eventoId,
+          },
+          after: { estado: 'aberto' },
+          metadata: { origem: 'agenda.convite', socio: c.socio, motivo: 'a aprovação do pedido venceu, foi recusada ou sumiu, e o evento não nasceu' },
+        },
+      });
+      return true;
+    });
+    if (!reaberto) {
+      const relido = await this.prisma.agendaConvite.findFirst({ where: { id: c.id, orgId } });
+      return { convite: relido ?? c, reaberto: false };
+    }
+    this.log.warn(`link de escolha ${c.id}: o pedido não foi confirmado a tempo; o link volta a aceitar escolha`);
+    return { convite: { ...c, usadoEm: null, escolhidoInicio: null, escolhidoFim: null, emailInformado: null, approvalId: null, eventoId: null }, reaberto: true };
+  }
+
+  /** O convite aberto já teve um pedido que caiu? (a página avisa "escolha de novo"). */
+  private async teveConvitePedidoCaido(orgId: string, c: AgendaConvite): Promise<boolean> {
+    // Barato: só convite aberto que já foi mexido depois de criado.
+    if (c.usadoEm || c.atualizadoEm.getTime() <= c.criadoEm.getTime()) return false;
+    const linha = await this.prisma.auditLog.findFirst({
+      where: { orgId, action: AUDITORIA_PEDIDO_CAIU, entityType: 'agenda_convite', entityId: c.id, createdAt: { gte: c.criadoEm } },
+      select: { id: true },
+    });
+    return !!linha;
+  }
+
   async estadoPublico(token: string, agora = new Date()): Promise<EstadoDoConvitePublico> {
-    const { orgId, convite } = await this.resolver(token, agora);
+    const lido = await this.resolver(token, agora);
+    const { orgId } = lido;
     return comTenantPublico(orgId, async () => {
+      const { convite, reaberto } = await this.reabrirSeCaiu(orgId, lido.convite, agora);
       // Já escolhido: a página mostra o horário, e nenhum outro.
       const dias = convite.escolhidoInicio ? [] : await this.diasLivres(orgId, convite, agora);
-      return this.estadoDe(convite, dias);
+      const caiu = reaberto || (await this.teveConvitePedidoCaido(orgId, convite));
+      return { ...this.estadoDe(convite, dias), ...(caiu ? { pedidoAnteriorCaiu: true } : {}) };
     });
   }
 
   async confirmar(token: string, corpo: ConfirmacaoDoConvite | unknown, agora = new Date()): Promise<RespostaDaConfirmacao> {
-    const { orgId, convite } = await this.resolver(token, agora);
+    const resolvido = await this.resolver(token, agora);
+    const { orgId } = resolvido;
     const lido = ConfirmacaoSchema.safeParse(corpo);
     if (!lido.success) throw new BadRequestException('Escolha o dia e o horário.');
     const pedido = lido.data;
-    if (convite.usadoEm) throw new ConflictException('Este link já foi usado. Se precisar mudar o horário, fale com a Root.');
-    if (convite.modalidade !== 'presencial' && !pedido.email) {
+    if (resolvido.convite.modalidade !== 'presencial' && !pedido.email) {
       throw new BadRequestException('Diga o seu e-mail: o convite com o link do Meet vai para ele.');
     }
     const inicio = instanteEmSaoPaulo(pedido.dia, pedido.hora);
     if (!inicio) throw new BadRequestException('Escolha o dia e o horário.');
-    const fim = new Date(inicio.getTime() + convite.duracaoMin * 60_000);
+    const fim = new Date(inicio.getTime() + resolvido.convite.duracaoMin * 60_000);
 
     return comTenantPublico(orgId, async () => {
+      // O pedido anterior caiu na fila (A1)? O convite volta a aceitar escolha antes de conferir o uso.
+      const { convite } = await this.reabrirSeCaiu(orgId, resolvido.convite, agora);
+      if (convite.usadoEm) throw new ConflictException('Este link já foi usado. Se precisar mudar o horário, fale com a Root.');
+
       // O horário ainda é verde? (pode ter sido tomado entre abrir a página e confirmar)
       const dias = await this.diasLivres(orgId, convite, agora);
       const dia = dias.find((d) => d.dia === pedido.dia);

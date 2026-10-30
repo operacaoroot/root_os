@@ -629,6 +629,8 @@ export interface EstadoDoConvitePublico {
   validoAte: string;
   /** Já usado: a página mostra o que foi escolhido. */
   escolhido: { inicio: string; fim: string } | null;
+  /** O pedido anterior não foi confirmado a tempo (ou foi recusado): o link voltou a aceitar escolha. Só aparece quando é verdade. */
+  pedidoAnteriorCaiu?: true;
 }
 
 /** `POST /api/agendar/:token/confirmar` */

@@ -70,6 +70,56 @@ export function conviteAbre(c: ConviteLido | null, agora: Date): boolean {
   return true;
 }
 
+/** O que o convite precisa saber da aprovação do seu `marcar` (a linha de `Approval`, ou nada). */
+export interface AprovacaoDoPedido {
+  status: 'pendente' | 'confirmada' | 'consumida' | 'rejeitada' | 'expirada';
+  expiraEm: Date;
+  capabilityId: string | null;
+}
+
+/**
+ * O pedido do link CAIU? (A1 da revisão adversarial.) O `marcar` do link fica
+ * R2 na fila, e a aprovação R2 vale 15 min: se ninguém confirmar a tempo, se
+ * alguém recusar ou se a linha sumir, o evento nunca nasce e o convite ficaria
+ * "escolhido" para sempre. Caiu = havia pedido (`approvalId`) e a aprovação está
+ * recusada, expirada, sumiu ou passou do prazo sem execução (a mesma regra de
+ * "vencida" da fila). Consumida ou confirmada pela porta (executando) não caiu.
+ * Quem chama confere também que o evento não está no espelho.
+ */
+export function pedidoDoConviteCaiu(
+  c: { usadoEm: Date | null; escolhidoInicio: Date | null; approvalId: string | null },
+  aprovacao: AprovacaoDoPedido | null,
+  agora: Date,
+): boolean {
+  if (!c.usadoEm || !c.escolhidoInicio || !c.approvalId) return false;
+  if (!aprovacao) return true;
+  if (aprovacao.status === 'rejeitada' || aprovacao.status === 'expirada') return true;
+  if (aprovacao.status === 'consumida') return false;
+  if (aprovacao.expiraEm.getTime() > agora.getTime()) return false;
+  return aprovacao.status === 'pendente' || (aprovacao.status === 'confirmada' && !aprovacao.capabilityId);
+}
+
+/**
+ * O nome que a pessoa digitou no link, pronto para entrar no título (M4). A
+ * gramática do título separa as partes com ` - ` (e lê também ` – `, ` — `):
+ * um nome como `X - Lucas` faria a leitura achar outro cliente ou outro
+ * responsável. Separadores cercados de espaço, `·` e `|` viram espaço; o tamanho
+ * é limitado. Vazio = nulo.
+ */
+export const NOME_DIGITADO_MAX = 60;
+export function nomeDigitadoParaTitulo(digitado: string | null | undefined): string | null {
+  const n = String(digitado ?? '')
+    .replace(/[\u0000-\u001f\u007f]/g, ' ')
+    .replace(/\s[-‐-―−]+(?=\s)/g, ' ')
+    .replace(/^[-‐-―−]+\s|\s[-‐-―−]+$/g, ' ')
+    .replace(/[·|]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, NOME_DIGITADO_MAX)
+    .trim();
+  return n || null;
+}
+
 /** `AAAA-MM-DD` de hoje em São Paulo. */
 export function diaEmSaoPaulo(agora: Date): string {
   return new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Sao_Paulo', year: 'numeric', month: '2-digit', day: '2-digit' }).format(agora);

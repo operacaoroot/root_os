@@ -183,6 +183,12 @@ export default function AgendarPage() {
           <>
             <Topo estado={estado} />
 
+            {estado.pedidoAnteriorCaiu && !estado.escolhido && (
+              <p role="status" className="rounded-[3px] border px-3 py-2.5 text-[13.5px]" style={{ borderColor: COR.magenta, color: COR.texto }}>
+                O pedido anterior não foi confirmado a tempo. Escolha de novo.
+              </p>
+            )}
+
             {estado.escolhido ? (
               <Escolhido estado={estado} token={token} mensagem={estado.mensagem} />
             ) : dias.length === 0 ? (

@@ -3,7 +3,7 @@ import { ConflictException, HttpException, NotFoundException } from '@nestjs/com
 import { PrismaClient } from '@prisma/client';
 import type { DiaLivre, PedidoDeEscrita, ResultadoDaEscrita } from '@mktos/shared';
 
-import { ConviteDaAgendaService } from '../src/agenda/convite/convite.service';
+import { AUDITORIA_PEDIDO_CAIU, ConviteDaAgendaService } from '../src/agenda/convite/convite.service';
 import { AgendarController, TETO_DE_CONFIRMACAO_POR_HORA } from '../src/agenda/convite/agendar.controller';
 import {
   TOKEN_DO_CONVITE,
@@ -13,6 +13,7 @@ import {
   hashDoConvite,
   icsDoConvite,
   instanteEmSaoPaulo,
+  pedidoDoConviteCaiu,
 } from '../src/agenda/convite/convite-puro';
 import type { EscritaDaAgendaService, QuemPedeAEscrita } from '../src/agenda/escrita/escrita.service';
 import type { ReguaService } from '../src/agenda/regua/regua.service';
@@ -45,6 +46,28 @@ describe('o token e o convite, sem banco', () => {
     expect(conviteAbre({ ...vivo, revogadoEm: agora }, agora)).toBe(false);
     expect(conviteAbre({ ...vivo, usadoEm: agora }, agora)).toBe(false);
     expect(conviteAbre({ ...vivo, usadoEm: agora, escolhidoInicio: agora }, agora)).toBe(true);
+  });
+
+  it('A1: o pedido caiu quando a aprovação venceu, foi recusada ou sumiu; viva, consumida ou executando não', () => {
+    const agora = new Date('2026-11-02T12:00:00Z');
+    const depois = new Date(agora.getTime() + 60_000);
+    const antes = new Date(agora.getTime() - 60_000);
+    const usado = { usadoEm: antes, escolhidoInicio: agora, approvalId: 'ap' };
+    const ap = (status: 'pendente' | 'confirmada' | 'consumida' | 'rejeitada' | 'expirada', expiraEm: Date, capabilityId: string | null = 'agenda.reuniao.marcar') => ({ status, expiraEm, capabilityId });
+    expect(pedidoDoConviteCaiu(usado, ap('pendente', depois), agora)).toBe(false);
+    expect(pedidoDoConviteCaiu(usado, ap('pendente', antes), agora)).toBe(true);
+    expect(pedidoDoConviteCaiu(usado, ap('pendente', agora), agora)).toBe(true);
+    expect(pedidoDoConviteCaiu(usado, ap('rejeitada', depois), agora)).toBe(true);
+    expect(pedidoDoConviteCaiu(usado, ap('expirada', depois), agora)).toBe(true);
+    expect(pedidoDoConviteCaiu(usado, null, agora)).toBe(true);
+    expect(pedidoDoConviteCaiu(usado, ap('consumida', antes), agora)).toBe(false);
+    // Confirmada pela porta (com capacidade): está executando, não caiu.
+    expect(pedidoDoConviteCaiu(usado, ap('confirmada', antes), agora)).toBe(false);
+    expect(pedidoDoConviteCaiu(usado, ap('confirmada', antes, null), agora)).toBe(true);
+    // Sem pedido gravado, ou sem escolha: nada a reabrir.
+    expect(pedidoDoConviteCaiu({ ...usado, approvalId: null }, null, agora)).toBe(false);
+    expect(pedidoDoConviteCaiu({ ...usado, escolhidoInicio: null }, null, agora)).toBe(false);
+    expect(pedidoDoConviteCaiu({ ...usado, usadoEm: null }, null, agora)).toBe(false);
   });
 
   it('dia e hora de São Paulo viram o instante certo (-03:00)', () => {
@@ -127,16 +150,36 @@ describe.skipIf(!URL)('o link de escolha, com banco', () => {
 
   afterAll(async () => {
     await prisma.agendaConvite.deleteMany({ where: { orgId: { in: [ORG_A, ORG_B] } } });
+    await prisma.auditLog.deleteMany({ where: { orgId: { in: [ORG_A, ORG_B] } } });
+    await prisma.agendaEvento.deleteMany({ where: { orgId: { in: [ORG_A, ORG_B] } } });
+    await prisma.approval.deleteMany({ where: { orgId: { in: [ORG_A, ORG_B] } } });
     await prisma.lead.deleteMany({ where: { orgId: { in: [ORG_A, ORG_B] } } });
     await prisma.org.deleteMany({ where: { id: { in: [ORG_A, ORG_B] } } });
     await prisma.$disconnect();
   });
 
-  beforeEach(() => {
+  let nAprovacao = 0;
+  /** Uma aprovação de verdade na fila (a do `marcar` do link), com o prazo e o estado pedidos. */
+  const aprovacao = async (
+    status: 'pendente' | 'confirmada' | 'consumida' | 'rejeitada' | 'expirada' = 'pendente',
+    expiraEm = new Date(AGORA.getTime() + 15 * 60_000),
+  ): Promise<string> => {
+    nAprovacao += 1;
+    const id = `aprovacao-convite-${nAprovacao}-${Date.now()}`;
+    await prisma.approval.create({
+      data: {
+        id, orgId: ORG_A, propostoPorId: 'link-de-escolha', propostoPorTipo: 'system', resourceType: 'agenda.reuniao.marcar',
+        resourceId: id, contentHash: 'h', resumo: 'marcar pelo link', status, nivelExigido: 'R2', tokenHash: `tk-${id}`, expiraEm,
+      },
+    });
+    return id;
+  };
+
+  beforeEach(async () => {
     livres = DIAS;
     escritas = [];
     respostaDaEscrita = {
-      status: 'aguardando_aprovacao', nivel: 'R2', eventoId: 'osevento', approvalId: 'aprovacao-1',
+      status: 'aguardando_aprovacao', nivel: 'R2', eventoId: 'osevento', approvalId: await aprovacao(),
       precisaDeOutraPessoa: false, mensagem: 'fila', desfazer: null,
     };
   });
@@ -225,7 +268,7 @@ describe.skipIf(!URL)('o link de escolha, com banco', () => {
     expect(res.escolhido).toEqual({ inicio: '2026-11-03T18:30:00.000Z', fim: '2026-11-03T19:30:00.000Z' });
     expect(res.dias).toEqual([]);
     const linha = await prisma.agendaConvite.findUnique({ where: { id: c.id } });
-    expect(linha).toMatchObject({ approvalId: 'aprovacao-1', eventoId: 'osevento', emailInformado: 'marcos@cliente.invalid' });
+    expect(linha).toMatchObject({ approvalId: respostaDaEscrita.approvalId, eventoId: 'osevento', emailInformado: 'marcos@cliente.invalid' });
 
     // Depois de usado: a página mostra o escolhido, e confirmar de novo é recusado.
     const e = await svc.estadoPublico(token, AGORA);
@@ -249,6 +292,82 @@ describe.skipIf(!URL)('o link de escolha, com banco', () => {
   it('o .ics só existe depois da escolha (antes, o mesmo 404)', async () => {
     const c = await novo();
     await expect(svc.ics(tokenDe(c.url), AGORA)).rejects.toBeInstanceOf(NotFoundException);
+  });
+
+  /** Um convite escolhido com o pedido na fila, com a aprovação dada. */
+  let nEvento = 0;
+  const escolhidoComPedido = async (approvalId: string) => {
+    nEvento += 1;
+    const eventoId = `osevconvite${nEvento}${Date.now()}`;
+    const c = await novo();
+    await prisma.agendaConvite.update({
+      where: { id: c.id },
+      data: {
+        usadoEm: new Date(AGORA.getTime() - 20 * 60_000), escolhidoInicio: new Date('2026-11-03T18:30:00Z'), escolhidoFim: new Date('2026-11-03T19:30:00Z'),
+        emailInformado: 'x@cliente.invalid', approvalId, eventoId,
+      },
+    });
+    return { ...c, token: tokenDe(c.url), eventoId };
+  };
+  const auditoriasDe = (id: string) => prisma.auditLog.findMany({ where: { orgId: ORG_A, entityId: id, action: AUDITORIA_PEDIDO_CAIU } });
+
+  it('A1: com a aprovação viva, o convite segue escolhido e nada é auditado', async () => {
+    const c = await escolhidoComPedido(await aprovacao('pendente'));
+    const e = await svc.estadoPublico(c.token, AGORA);
+    expect(e.escolhido).toEqual({ inicio: '2026-11-03T18:30:00.000Z', fim: '2026-11-03T19:30:00.000Z' });
+    expect(e.pedidoAnteriorCaiu).toBeUndefined();
+    expect((await svc.listar(ORG_A, AGORA)).find((x) => x.id === c.id)?.estado).toBe('escolhido');
+    expect(await auditoriasDe(c.id)).toHaveLength(0);
+  });
+
+  it('A1: aprovação vencida na fila: a casa vê "pedido vencido", a página reabre a escolha, avisa e audita UMA vez', async () => {
+    const c = await escolhidoComPedido(await aprovacao('pendente', new Date(AGORA.getTime() - 60_000)));
+    expect((await svc.listar(ORG_A, AGORA)).find((x) => x.id === c.id)?.estado).toBe('pedido_vencido');
+    // Duas abas ao mesmo tempo: uma reabertura, uma linha de auditoria.
+    const [e1, e2] = await Promise.all([svc.estadoPublico(c.token, AGORA), svc.estadoPublico(c.token, AGORA)]);
+    for (const e of [e1, e2]) {
+      expect(e.escolhido).toBeNull();
+      expect(e.dias).toEqual(DIAS);
+    }
+    expect([e1, e2].some((e) => e.pedidoAnteriorCaiu === true)).toBe(true);
+    const audit = await auditoriasDe(c.id);
+    expect(audit).toHaveLength(1);
+    expect(audit[0]).toMatchObject({ actorType: 'system', actorId: 'link-de-escolha', entityType: 'agenda_convite' });
+    expect(JSON.stringify(audit[0])).not.toContain(c.token.split('.')[1]);
+    const linha = await prisma.agendaConvite.findUnique({ where: { id: c.id } });
+    expect(linha).toMatchObject({ usadoEm: null, escolhidoInicio: null, approvalId: null, eventoId: null, emailInformado: null });
+    // A leitura seguinte continua avisando; a lista mostra aberto.
+    expect((await svc.estadoPublico(c.token, AGORA)).pedidoAnteriorCaiu).toBe(true);
+    expect((await svc.listar(ORG_A, AGORA)).find((x) => x.id === c.id)?.estado).toBe('aberto');
+    // E dá para escolher de novo: um pedido novo vai à porta.
+    const r = await svc.confirmar(c.token, { dia: '2026-11-04', hora: '16:30', email: 'x@cliente.invalid' }, AGORA);
+    expect(r.escolhido).toEqual({ inicio: '2026-11-04T19:30:00.000Z', fim: '2026-11-04T20:30:00.000Z' });
+    expect(escritas).toHaveLength(1);
+  });
+
+  it('A1: aprovação recusada ou sumida: confirmar direto reabre e aceita o novo horário', async () => {
+    for (const ap of [await aprovacao('rejeitada'), 'aprovacao-que-sumiu']) {
+      escritas = [];
+      const c = await escolhidoComPedido(ap);
+      const r = await svc.confirmar(c.token, { dia: '2026-11-03', hora: '10:30', email: 'x@cliente.invalid' }, AGORA);
+      expect(r.escolhido?.inicio).toBe('2026-11-03T13:30:00.000Z');
+      expect(escritas).toHaveLength(1);
+      expect(await auditoriasDe(c.id)).toHaveLength(1);
+    }
+  });
+
+  it('A1: o evento que já nasceu no espelho não reabre, mesmo com a aprovação vencida', async () => {
+    const c = await escolhidoComPedido(await aprovacao('expirada'));
+    await prisma.agendaEvento.create({
+      data: {
+        orgId: ORG_A, agenda: 'primary', googleId: c.eventoId, inicio: new Date('2026-11-03T18:30:00Z'), fim: new Date('2026-11-03T19:30:00Z'),
+        titulo: 'Reunião Online - Cliente Exemplo A - Rodrigo',
+      },
+    });
+    const e = await svc.estadoPublico(c.token, AGORA);
+    expect(e.escolhido).not.toBeNull();
+    await expect(svc.confirmar(c.token, { dia: '2026-11-03', hora: '10:30', email: 'x@cliente.invalid' }, AGORA)).rejects.toBeInstanceOf(ConflictException);
+    expect(await auditoriasDe(c.id)).toHaveLength(0);
   });
 
   it('isolamento: o token de A com a empresa trocada para B não abre, e B não lista os convites de A', async () => {
