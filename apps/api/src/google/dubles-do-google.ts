@@ -21,8 +21,10 @@ export function origemDoDuble(env: NodeJS.ProcessEnv = process.env): string | nu
   } catch {
     throw new Error(`GOOGLE_API_DUBLE_URL não é um endereço: "${bruto}".`);
   }
-  const host = u.hostname.replace(/^\[|\]$/g, '');
-  const deDentro = host === 'localhost' || host === '127.0.0.1' || host === '::1' || !host.includes('.');
+  const host = u.hostname.replace(/^\[|\]$/g, '').toLowerCase();
+  // Loopback, ou nome sem ponto e sem dois-pontos (o serviço na rede Docker). Um IPv6 literal
+  // que não seja `::1` tem dois-pontos e cai fora (B1): `[2606:4700::1111]` não tem ponto.
+  const deDentro = host === 'localhost' || host === '127.0.0.1' || host === '::1' || (!!host && !host.includes('.') && !host.includes(':'));
   if (!deDentro || !/^https?:$/.test(u.protocol)) {
     throw new Error(
       'GOOGLE_API_DUBLE_URL só aceita loopback ou nome sem ponto (o dublê na rede Docker): ' +

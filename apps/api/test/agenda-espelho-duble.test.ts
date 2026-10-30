@@ -3,7 +3,7 @@ import { join } from 'node:path';
 
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
-import { ErroDoGoogle } from '../src/google/dubles-do-google';
+import { ErroDoGoogle, origemDoDuble } from '../src/google/dubles-do-google';
 import { lerLivreOcupado, listarPaginaDaAgenda, type ChamadorDaAgenda } from '../src/google/agenda-espelho.google';
 import { linhaDoEvento } from '../src/agenda/espelho/espelho-do-google';
 
@@ -59,6 +59,33 @@ async function tudo(args: { syncToken?: string; de?: string; ate?: string }) {
     pagina = p.nextPageToken;
   }
 }
+
+describe('GOOGLE_API_DUBLE_URL só aceita endereço de dentro (B1)', () => {
+  const com = (v: string) => origemDoDuble({ GOOGLE_API_DUBLE_URL: v } as NodeJS.ProcessEnv);
+
+  it('loopback e nome sem ponto (o serviço na rede Docker) valem', () => {
+    expect(com('')).toBeNull();
+    expect(com('http://localhost:4010')).toBe('http://localhost:4010');
+    expect(com('http://127.0.0.1:4010/x')).toBe('http://127.0.0.1:4010');
+    expect(com('http://[::1]:4010')).toBe('http://[::1]:4010');
+    expect(com('http://google-duble:4010')).toBe('http://google-duble:4010');
+  });
+
+  it('IPv6 literal que não seja ::1, IPv4 de fora, domínio e outro esquema são recusados', () => {
+    for (const v of [
+      'http://[2606:4700::1111]',
+      'http://[::ffff:808:808]',
+      'http://[::ffff:127.0.0.1]',
+      'http://[fe80::1]:4010',
+      'http://8.8.8.8',
+      'http://134744072',
+      'https://duble.exemplo.invalid',
+      'ftp://localhost',
+    ]) {
+      expect(() => com(v), v).toThrow(/só aceita loopback/);
+    }
+  });
+});
 
 describe('o dublê do Google responde ao que o espelho pede', () => {
   let proc: ChildProcess;
