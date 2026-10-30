@@ -1,5 +1,5 @@
 import { ConflictException, Inject, Injectable, Logger, NotFoundException, Optional, ServiceUnavailableException } from '@nestjs/common';
-import type { MarketingIdeiaCard, MarketingNota, Prisma } from '@prisma/client';
+import type { MarketingIdeiaCard, MarketingNota, PautaCaptura, Prisma } from '@prisma/client';
 import {
   FORMATOS_COM_REGUA,
   TRIAGEM_STATUS,
@@ -14,6 +14,7 @@ import {
   type TriagemDecisaoInput,
   type TriagemPainel,
   type TriagemStatus,
+  type TriagemTodas,
 } from '@mktos/shared';
 import { PrismaService } from '../prisma/prisma.service';
 import { LLM_PROVIDER, type LlmProvider } from '../llm/llm.provider';
@@ -37,9 +38,15 @@ import { REGRAS_DE_PARTIDA, SYSTEM_TRIAGEM } from './prompts';
  * na hora em `cardDaNota`, e a IA não pode descartar o que foi escolhido à mão.
  *
  * Nada aqui mexe na captura nem na nota: o card só aponta para elas.
+ *
+ * Card que nasceu com a IA fora do ar (como.semIa, ou sem "por que" e sem gancho) é
+ * relido sozinho quando a IA volta: a tela abre, o painel vê que falta ler e chama
+ * `reler` em segundo plano (30/10/2026, as 77 notas do grupo Claudinho).
  */
 
 const LOTE = 4;
+/** Releitura automática no máximo a cada 5 min por empresa: se a IA falhar, não insiste a cada clique. */
+const INTERVALO_DA_RELEITURA = 5 * 60_000;
 const FONTE_DA_MEMORIA = 'memoria';
 const simulada = () => process.env.MARKETING_IA_SIMULADA === '1';
 const lim = (v: unknown, max: number) => (typeof v === 'string' ? v.replace(/\s+/g, ' ').trim().slice(0, max) : '');
@@ -91,6 +98,34 @@ function materiaDaNota(n: Pick<MarketingNota, 'id' | 'titulo' | 'resumo' | 'corp
   };
 }
 
+type CapturaLida = Pick<PautaCaptura, 'id' | 'titulo' | 'nota' | 'url' | 'capturadoEm' | 'fonteId' | 'bruto'> & { fonte: { nome: string } | null };
+
+function materiaDaCaptura(c: CapturaLida): Materia {
+  const bruto = (b: unknown, k: string) => (b && typeof b === 'object' ? String((b as Record<string, unknown>)[k] ?? '') : '');
+  return {
+    capturaId: c.id,
+    notaId: null,
+    fonteId: c.fonteId ?? '',
+    fonteNome: c.fonte?.nome ?? 'Captura',
+    titulo: textoLimpo(c.titulo ?? '') || c.url || 'Sem título',
+    texto: [c.nota, bruto(c.bruto, 'descricao'), bruto(c.bruto, 'description'), bruto(c.bruto, 'resumo'), bruto(c.bruto, 'texto')].filter(Boolean).map((t) => textoLimpo(t as string)).join('\n').slice(0, 1200),
+    url: c.url,
+    imagemUrl: ['imagem', 'image', 'displayUrl', 'thumbnailUrl', 'imageUrl', 'coverUrl'].map((k) => bruto(c.bruto, k)).find((u) => /^https?:\/\//.test(u)) || null,
+    publicadoEm: (() => {
+      const p = bruto(c.bruto, 'publicadoEm') || bruto(c.bruto, 'isoDate') || bruto(c.bruto, 'pubDate');
+      const d = p ? new Date(p) : c.capturadoEm;
+      return Number.isNaN(d.getTime()) ? c.capturadoEm : d;
+    })(),
+  };
+}
+
+/** O card foi escrito sem a IA: marcado na criação (como.semIa) ou, nos antigos, sem "por que" e sem gancho. */
+function semLeitura(c: Pick<MarketingIdeiaCard, 'porque' | 'como'>): boolean {
+  const como = (c.como && typeof c.como === 'object' ? c.como : {}) as Record<string, unknown>;
+  if (como.semIa === true) return true;
+  return !String(c.porque ?? '').trim() && !String(como.gancho ?? '').trim();
+}
+
 function paraTela(c: MarketingIdeiaCard, peso: number | null): TriagemCard {
   const como = (c.como && typeof c.como === 'object' ? c.como : {}) as Record<string, unknown>;
   return {
@@ -116,6 +151,7 @@ function paraTela(c: MarketingIdeiaCard, peso: number | null): TriagemCard {
     motivo: c.motivo,
     comentario: c.comentario,
     decididaEm: c.decididaEm?.toISOString() ?? null,
+    lida: !semLeitura(c),
   };
 }
 
@@ -124,6 +160,8 @@ export class TriagemService {
   private readonly log = new Logger('TriagemDoMarketing');
   /** Uma montagem por empresa de cada vez: dois cliques não fazem card repetido. */
   private readonly travas = new Map<string, Promise<unknown>>();
+  /** Quando a releitura automática começou pela última vez, por empresa. */
+  private readonly relidaEm = new Map<string, number>();
 
   constructor(
     private readonly prisma: PrismaService,
@@ -140,26 +178,72 @@ export class TriagemService {
       this.prisma.marketingIdeiaCard.groupBy({ by: ['status'], where: { orgId }, _count: { _all: true } }),
       this.ultimaDesfazivel(orgId),
     ]);
-    const contagem = Object.fromEntries(TRIAGEM_STATUS.map((s) => [s, 0])) as Record<TriagemStatus, number>;
-    for (const g of grupos) contagem[g.status as TriagemStatus] = g._count._all;
+    const contagem = this.contar(grupos);
+    const ia = simulada() || this.llm.configured;
+    const faltaLer = (await this.cardsSemLeitura(orgId)).length;
+    // A IA voltou e há card que nasceu sem ela: lê em segundo plano; a tela acompanha pelo `lendo`.
+    if (ia && faltaLer && !this.travas.has(orgId) && Date.now() - (this.relidaEm.get(orgId) ?? 0) > INTERVALO_DA_RELEITURA) {
+      this.relidaEm.set(orgId, Date.now());
+      void this.reler(orgId).then(
+        (r) => this.log.log(`releitura automática: ${r.relidos} de ${r.lidos} cards${r.falharam ? `, ${r.falharam} falharam` : ''}`),
+        (e) => this.log.warn(`releitura automática: ${e instanceof Error ? e.message : e}`),
+      );
+    }
     return {
       cards: cards.map((c) => paraTela(c, pesos[c.fonteId ?? ''] ?? null)),
       contagem,
       pendentes: (await this.materia(orgId, 500)).length,
       ultima: ultima ? { id: ultima.id, titulo: ultima.titulo, status: ultima.status as TriagemStatus } : null,
-      ia: simulada() || this.llm.configured,
+      ia,
+      semLeitura: faltaLer,
+      lendo: this.travas.has(orgId),
     };
+  }
+
+  /** Ver todas: os cards de um status, do mais relevante para o menos (até 500). */
+  async todas(orgId: string, status: string): Promise<TriagemTodas> {
+    const st = (TRIAGEM_STATUS as readonly string[]).includes(status) ? (status as TriagemStatus) : 'nova';
+    const pesos = await this.pesos(orgId);
+    const [cards, grupos] = await Promise.all([
+      this.prisma.marketingIdeiaCard.findMany({
+        where: { orgId, status: st },
+        orderBy: st === 'nova' || st === 'descartada_ia' ? [{ score: 'desc' }, { criadaEm: 'desc' }] : [{ decididaEm: 'desc' }],
+        take: 500,
+      }),
+      this.prisma.marketingIdeiaCard.groupBy({ by: ['status'], where: { orgId }, _count: { _all: true } }),
+    ]);
+    return { cards: cards.map((c) => paraTela(c, pesos[c.fonteId ?? ''] ?? null)), contagem: this.contar(grupos) };
   }
 
   /** Lê até `quantas` itens ainda sem card e escreve os cards. */
   montar(orgId: string, quantas: number): Promise<{ lidos: number; cards: number; descartados: number; falharam: number }> {
+    return this.naVez(orgId, () => this.montarAgora(orgId, quantas));
+  }
+
+  /**
+   * Reler com a IA: reescreve os cards pedidos (ou todos os que nasceram sem leitura) no
+   * lugar, com a marca, as réguas e o algoritmo. Não muda o status: o que está para avaliar
+   * continua para avaliar, e nota da Memória continua com relevância de pelo menos 80.
+   */
+  reler(orgId: string, ids?: string[]): Promise<{ lidos: number; relidos: number; falharam: number }> {
+    return this.naVez(orgId, () => this.relerAgora(orgId, ids));
+  }
+
+  /** Uma leitura da IA por empresa de cada vez (montar e reler entram na mesma fila). */
+  private naVez<T>(orgId: string, fazer: () => Promise<T>): Promise<T> {
     const anterior = this.travas.get(orgId) ?? Promise.resolve();
-    const vez = anterior.catch(() => undefined).then(() => this.montarAgora(orgId, quantas));
+    const vez = anterior.catch(() => undefined).then(fazer);
     this.travas.set(orgId, vez);
     void vez.finally(() => {
       if (this.travas.get(orgId) === vez) this.travas.delete(orgId);
     }).catch(() => undefined);
     return vez;
+  }
+
+  private contar(grupos: { status: string; _count: { _all: number } }[]): Record<TriagemStatus, number> {
+    const contagem = Object.fromEntries(TRIAGEM_STATUS.map((s) => [s, 0])) as Record<TriagemStatus, number>;
+    for (const g of grupos) contagem[g.status as TriagemStatus] = g._count._all;
+    return contagem;
   }
 
   /**
@@ -187,7 +271,7 @@ export class TriagemService {
       }
     }
     const pesos = await this.pesos(orgId);
-    const c = await this.gravarCard(orgId, m, o ?? { ...cardDaNotaSemIa(n), relevance: 80 }, pesos[FONTE_DA_MEMORIA] ?? 1, true);
+    const c = await this.gravarCard(orgId, m, o ?? { ...cardDaNotaSemIa(n), relevance: 80 }, pesos[FONTE_DA_MEMORIA] ?? 1, true, !o);
     const final = c ?? (await this.prisma.marketingIdeiaCard.findFirst({ where: { orgId, notaId } }));
     if (!final) throw new ConflictException('Não deu para criar o card em Ideias. Tente de novo.');
     return { id: final.id, status: final.status as TriagemStatus, comIa: !!o && !!c };
@@ -325,25 +409,73 @@ export class TriagemService {
     ]);
     const usadasC = new Set(comCard.map((c) => c.capturaId).filter(Boolean));
     const usadasN = new Set(comCard.map((c) => c.notaId).filter(Boolean));
-    const bruto = (b: unknown, k: string) => (b && typeof b === 'object' ? String((b as Record<string, unknown>)[k] ?? '') : '');
-    const deCapturas: Materia[] = capturas.filter((c) => !usadasC.has(c.id)).map((c) => ({
-      capturaId: c.id,
-      notaId: null,
-      fonteId: c.fonteId ?? '',
-      fonteNome: c.fonte?.nome ?? 'Captura',
-      titulo: textoLimpo(c.titulo ?? '') || c.url || 'Sem título',
-      texto: [c.nota, bruto(c.bruto, 'descricao'), bruto(c.bruto, 'description'), bruto(c.bruto, 'resumo'), bruto(c.bruto, 'texto')].filter(Boolean).map((t) => textoLimpo(t as string)).join('\n').slice(0, 1200),
-      url: c.url,
-      imagemUrl: ['imagem', 'image', 'displayUrl', 'thumbnailUrl', 'imageUrl', 'coverUrl'].map((k) => bruto(c.bruto, k)).find((u) => /^https?:\/\//.test(u)) || null,
-      publicadoEm: (() => {
-        const p = bruto(c.bruto, 'publicadoEm') || bruto(c.bruto, 'isoDate') || bruto(c.bruto, 'pubDate');
-        const d = p ? new Date(p) : c.capturadoEm;
-        return Number.isNaN(d.getTime()) ? c.capturadoEm : d;
-      })(),
-    }));
+    const deCapturas: Materia[] = capturas.filter((c) => !usadasC.has(c.id)).map(materiaDaCaptura);
     const deNotas: Materia[] = notas.filter((n) => !usadasN.has(n.id)).map(materiaDaNota);
     // O que a equipe guardou na Memória vem antes do que o robô coletou.
     return [...deNotas, ...deCapturas].slice(0, teto);
+  }
+
+  /** Cards para avaliar que nasceram sem a IA (até 200 por vez). */
+  private async cardsSemLeitura(orgId: string): Promise<MarketingIdeiaCard[]> {
+    const novas = await this.prisma.marketingIdeiaCard.findMany({ where: { orgId, status: 'nova' }, orderBy: [{ score: 'desc' }, { criadaEm: 'desc' }], take: 1000 });
+    return novas.filter(semLeitura).slice(0, 200);
+  }
+
+  /** A matéria de um card que já existe: a nota ou a captura de onde ele veio; sem elas, o próprio card. */
+  private async materiaDoCard(orgId: string, c: MarketingIdeiaCard): Promise<Materia> {
+    if (c.notaId) {
+      const n = await this.prisma.marketingNota.findFirst({ where: { id: c.notaId, orgId }, select: { id: true, titulo: true, resumo: true, corpo: true, url: true, criadaEm: true } });
+      if (n) return { ...materiaDaNota(n), imagemUrl: c.imagemUrl };
+    }
+    if (c.capturaId) {
+      const cap = await this.prisma.pautaCaptura.findFirst({
+        where: { id: c.capturaId, orgId },
+        select: { id: true, titulo: true, nota: true, url: true, capturadoEm: true, fonteId: true, bruto: true, fonte: { select: { nome: true } } },
+      });
+      if (cap) {
+        const m = materiaDaCaptura(cap);
+        return { ...m, imagemUrl: m.imagemUrl ?? c.imagemUrl };
+      }
+    }
+    return { capturaId: c.capturaId, notaId: c.notaId, fonteId: c.fonteId ?? '', fonteNome: c.fonteNome || 'Fonte', titulo: c.titulo, texto: c.resumo, url: c.url, imagemUrl: c.imagemUrl, publicadoEm: c.publicadoEm };
+  }
+
+  private async relerAgora(orgId: string, ids?: string[]) {
+    if (!simulada() && !this.llm.configured) {
+      throw new ServiceUnavailableException(`IA não configurada: falta a credencial do provider "${this.llm.name}".`);
+    }
+    const lista = ids?.length
+      ? await this.prisma.marketingIdeiaCard.findMany({ where: { orgId, id: { in: ids }, status: { in: ['nova', 'descartada_ia'] } } })
+      : await this.cardsSemLeitura(orgId);
+    const resultado = { lidos: lista.length, relidos: 0, falharam: 0 };
+    if (!lista.length) return resultado;
+    const pesos = await this.pesos(orgId);
+    const ctx = await this.contexto(orgId);
+    for (let i = 0; i < lista.length; i += LOTE) {
+      const lote = lista.slice(i, i + LOTE);
+      const materias = await Promise.all(lote.map((c) => this.materiaDoCard(orgId, c)));
+      await Promise.all(materias.map((m) => this.completarComAPagina(m)));
+      let itens: SaidaDoCard[];
+      try {
+        itens = simulada() ? this.simular(materias) : await this.perguntar(orgId, ctx, materias);
+      } catch (e) {
+        this.log.warn(`releitura: ${e instanceof Error ? e.message : e}`);
+        resultado.falharam += lote.length;
+        continue;
+      }
+      for (const [idx, c] of lote.entries()) {
+        const o = itens.find((x) => Number(x?.idx) === idx) ?? itens[idx];
+        if (!o) {
+          resultado.falharam++;
+          continue;
+        }
+        const dados = { ...this.dadosDoCard(materias[idx], o, pesos[materias[idx].fonteId] ?? 1, !!c.notaId, false), status: c.status };
+        // O card pode ter sido decidido enquanto a IA lia: só reescreve o que segue sem decisão.
+        const r = await this.prisma.marketingIdeiaCard.updateMany({ where: { id: c.id, orgId, status: c.status }, data: dados });
+        if (r.count) resultado.relidos++;
+      }
+    }
+    return resultado;
   }
 
   private async montarAgora(orgId: string, quantas: number) {
@@ -382,13 +514,37 @@ export class TriagemService {
     return resultado;
   }
 
-  /** Grava o card da saída da IA. `escolhida` = a equipe mandou: não descarta e relevância mínima 80. Null se já existia. */
-  private async gravarCard(orgId: string, m: Materia, o: SaidaDoCard, peso: number, escolhida: boolean): Promise<MarketingIdeiaCard | null> {
+  /**
+   * Os campos do card a partir da saída da IA. `escolhida` = a equipe mandou: não descarta e
+   * relevância mínima 80. `semIa` = a saída veio do resumo da nota, não da IA (falta ler).
+   */
+  private dadosDoCard(m: Materia, o: SaidaDoCard, peso: number, escolhida: boolean, semIa: boolean) {
     const formato = FORMATOS.includes(String(o.how?.format)) ? String(o.how?.format) : 'Carrossel';
     const daIa = Math.max(0, Math.min(100, Math.round(Number(o.relevance) || 0)));
     const relevancia = escolhida ? Math.max(daIa, 80) : daIa;
     const manter = escolhida || (o.keep !== false && o.keep !== 'false');
     const clipe = formato === 'Reel' && o.how?.opening_clip ? lim(typeof o.how.opening_clip === 'string' ? o.how.opening_clip : JSON.stringify(o.how.opening_clip), 400) : null;
+    return {
+      titulo: semTravessao(lim(o.title, 160) || lim(m.titulo, 160) || 'Sem título'),
+      resumo: semTravessao(duasFrases(o.summary) || duasFrases(m.texto)),
+      porque: semTravessao(lim(o.why, 400)),
+      como: {
+        formato,
+        gancho: semTravessao(lim(o.how?.hook, 300)),
+        clipe,
+        pontos: (Array.isArray(o.key_points) ? o.key_points : []).map((p) => semTravessao(lim(p, 240))).filter(Boolean).slice(0, 5),
+        ...(semIa ? { semIa: true } : {}),
+      },
+      formatoSugerido: formato,
+      imagemUrl: m.imagemUrl,
+      relevancia,
+      score: scoreDaIdeia(relevancia, peso, m.publicadoEm),
+      status: manter ? 'nova' : 'descartada_ia',
+    };
+  }
+
+  /** Grava o card da saída da IA (ver `dadosDoCard`). Null se já existia. */
+  private async gravarCard(orgId: string, m: Materia, o: SaidaDoCard, peso: number, escolhida: boolean, semIa = false): Promise<MarketingIdeiaCard | null> {
     try {
       return await this.prisma.marketingIdeiaCard.create({
         data: {
@@ -397,17 +553,9 @@ export class TriagemService {
           notaId: m.notaId,
           fonteId: m.fonteId || null,
           fonteNome: m.fonteNome,
-          titulo: semTravessao(lim(o.title, 160) || lim(m.titulo, 160) || 'Sem título'),
-          resumo: semTravessao(duasFrases(o.summary) || duasFrases(m.texto)),
-          porque: semTravessao(lim(o.why, 400)),
-          como: { formato, gancho: semTravessao(lim(o.how?.hook, 300)), clipe, pontos: (Array.isArray(o.key_points) ? o.key_points : []).map((p) => semTravessao(lim(p, 240))).filter(Boolean).slice(0, 5) },
-          formatoSugerido: formato,
           url: m.url,
-          imagemUrl: m.imagemUrl,
           publicadoEm: m.publicadoEm,
-          relevancia,
-          score: scoreDaIdeia(relevancia, peso, m.publicadoEm),
-          status: manter ? 'nova' : 'descartada_ia',
+          ...this.dadosDoCard(m, o, peso, escolhida, semIa),
         },
       });
     } catch (e) {

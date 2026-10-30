@@ -9,6 +9,7 @@ import {
   ReguaSalvarSchema,
   TriagemDecisaoSchema,
   TriagemMontarSchema,
+  TriagemRelerSchema,
   vaiParaIdeias,
   type MemoriaNota,
 } from '@mktos/shared';
@@ -151,6 +152,21 @@ export class MarketingEstudioController {
   @RequirePermissions('pauta.editar')
   montar(@CurrentUser() u: JwtUser, @Body() body: unknown) {
     return this.triagem.montar(u.orgId, TriagemMontarSchema.parse(body ?? {}).quantas);
+  }
+
+  // Ver todas: os cards de um status (nova, aprovada, recusada, descartada_ia), sem a ordem de um por vez.
+  @Get('triagem/todas')
+  @RequirePermissions('pauta.ver')
+  todas(@CurrentUser() u: JwtUser, @Query('status') status?: string) {
+    return this.triagem.todas(u.orgId, status ?? 'nova');
+  }
+
+  // Reler com a IA: os cards pedidos ou, sem ids, todos os que nasceram com a IA fora do ar.
+  @Post('triagem/reler')
+  @HttpCode(200)
+  @RequirePermissions('pauta.editar')
+  reler(@CurrentUser() u: JwtUser, @Body() body: unknown) {
+    return this.triagem.reler(u.orgId, TriagemRelerSchema.parse(body ?? {}).ids);
   }
 
   @Post('triagem/:id/decisao')

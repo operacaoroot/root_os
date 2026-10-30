@@ -607,3 +607,25 @@
 .estudio .memoria-destino.feito{display:flex;gap:8px;align-items:center;flex-wrap:wrap;padding:9px 12px;background:#f3f6ec;border-color:var(--line)}
 .estudio .memoria-destino.feito strong{font-size:12px}.estudio .memoria-destino.feito button{margin-left:auto}
 @media(max-width:760px){.estudio .memoria-destino-opcoes{grid-template-columns:1fr}}
+/* Para aprovar › Ver todas (30/10/2026): grade com todas as ideias de um status, e a IA relendo o que nasceu sem ela. */
+.estudio .ideias-topo{margin:0 0 14px;gap:10px}
+.estudio .ideias-modo{background:var(--paper);border:1px solid var(--line);border-radius:20px;padding:3px}
+.estudio .ideias-lendo{display:flex;align-items:center;gap:14px}
+.estudio .ideias-lendo .ideias-progress{flex:0 0 120px;margin:0}
+.estudio .ideias-todas{display:grid;gap:14px}
+.estudio .ideias-ordem{width:auto;font-size:12px;padding:8px 10px}
+.estudio .ideias-grade{align-items:start}
+.estudio .ideias-mini-img{height:140px;background:#e9eeda;overflow:hidden}
+.estudio .ideias-mini-img img{width:100%;height:100%;object-fit:cover;display:block}
+.estudio .ideias-mini .card-body{gap:10px}
+.estudio .ideias-mini .ideias-source{gap:6px}
+.estudio .ideias-mini-titulo{all:unset;cursor:pointer;font:inherit;color:inherit;overflow-wrap:anywhere}
+.estudio .ideias-mini-titulo:hover{text-decoration:underline;text-decoration-color:var(--green)}
+.estudio .ideias-mini .card-body p.ideias-mini-gancho{color:var(--ink);font-size:13px;-webkit-line-clamp:3;border-left:3px solid var(--lime);padding-left:10px}
+.estudio .ideias-mini-mais summary{padding:2px 0;font-size:12px;color:var(--green)}
+.estudio .ideias-mini-mais p,.estudio .ideias-mini-mais ul{font-size:12px;color:var(--muted);-webkit-line-clamp:unset;display:block;margin:4px 0 0}
+.estudio .ideias-mini-mais ul{padding-left:16px}
+.estudio .ideias-mini .card-meta a{font-size:11px;font-weight:600;text-decoration:none}
+.estudio .ideias-mini-acoes{display:flex;gap:8px;justify-content:space-between;border-top:1px solid var(--line);padding-top:10px}
+.estudio .ideias-mini-acoes .primary{margin-left:auto}
+.estudio .ideias-reler{padding:4px 8px}

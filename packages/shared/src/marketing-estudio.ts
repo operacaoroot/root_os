@@ -359,6 +359,8 @@ export interface TriagemCard {
   motivo: string | null;
   comentario: string | null;
   decididaEm: string | null;
+  /** A IA escreveu o card. false = nasceu do resumo da nota, com a IA fora do ar (falta ler). */
+  lida: boolean;
 }
 
 export interface TriagemBase {
@@ -373,6 +375,16 @@ export interface TriagemPainel {
   pendentes: number;
   ultima: { id: string; titulo: string; status: TriagemStatus } | null;
   ia: boolean;
+  /** Cards para avaliar que a IA ainda não leu (nasceram com ela fora do ar). */
+  semLeitura: number;
+  /** A IA está lendo agora (montando cards novos ou relendo os que nasceram sem ela). */
+  lendo: boolean;
+}
+
+/** Ver todas: os cards de um status, sem a ordem de um por vez. */
+export interface TriagemTodas {
+  cards: TriagemCard[];
+  contagem: Record<TriagemStatus, number>;
 }
 
 export const TriagemDecisaoSchema = z.object({
@@ -387,6 +399,8 @@ export const TriagemDecisaoSchema = z.object({
 });
 export type TriagemDecisaoInput = z.infer<typeof TriagemDecisaoSchema>;
 export const TriagemMontarSchema = z.object({ quantas: z.number().int().min(1).max(40).default(12) });
+/** Reler com a IA: os cards pedidos ou, sem `ids`, todos os que nasceram sem leitura. */
+export const TriagemRelerSchema = z.object({ ids: z.array(z.string().uuid()).max(40).optional() });
 
 const limitar = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
 /** Peso da fonte pelas decisões: 2 × (aprovadas+2)/(decididas+4), entre 0,3 e 2. Sem decisões = 1. */
