@@ -7,6 +7,7 @@ import { AgentesExternosController } from './agentes-externos.controller';
 import { CorpoExternoController } from './corpo-externo.controller';
 import { CorpoExternoService } from './corpo-externo.service';
 import { CorpoOuSessaoGuard } from './corpo-ou-sessao.guard';
+import { CatalogoExternoService } from './catalogo-externo.service';
 import { EfeitosDaCentralService } from './efeitos-da-central.service';
 import { ExecucaoExternaService } from './execucao-externa.service';
 import { RespostaNaConversaService } from './resposta-na-conversa.service';
@@ -29,6 +30,8 @@ import { RespostaNaConversaService } from './resposta-na-conversa.service';
  *     guarda que aceita o token nas rotas do próprio agente
  *     (`corpo-ou-sessao.guard.ts`); as leituras declaradas passam pelo
  *     `JwtAuthGuard` de sempre (`auth/corpo-externo.ts`);
+ *   · o CATÁLOGO e a DEFINIÇÃO do agente (A3), de onde o MCP do modo catálogo
+ *     gera as ferramentas e o corpo tira missão, procedimento e voz;
  *
  * Quem o importa é só o `AppModule`. Ele importa `AgentsModule` (o
  * `AgentRuntime`, para `agente.invocar`), `WorkModule` (tarefas e comentários)
@@ -39,7 +42,7 @@ import { RespostaNaConversaService } from './resposta-na-conversa.service';
 @Module({
   imports: [AgentsModule, WorkModule, MemoryModule],
   controllers: [CorpoExternoController, AgentesExternosController],
-  providers: [EfeitosDaCentralService, RespostaNaConversaService, ExecucaoExternaService, CorpoExternoService, CorpoOuSessaoGuard],
+  providers: [EfeitosDaCentralService, RespostaNaConversaService, ExecucaoExternaService, CorpoExternoService, CorpoOuSessaoGuard, CatalogoExternoService],
   exports: [EfeitosDaCentralService],
 })
 export class AgentesExternosModule {}

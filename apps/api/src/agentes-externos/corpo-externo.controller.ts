@@ -1,8 +1,9 @@
-import { Body, Controller, HttpCode, Param, Post, Req, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, HttpCode, NotFoundException, Param, Post, Req, UseGuards } from '@nestjs/common';
 
 import { RequirePermissions } from '../auth/permissions.decorator';
 import { CorpoOuSessaoGuard, type RequisicaoDoCorpo } from './corpo-ou-sessao.guard';
 import { ExecucaoExternaService, type ChamadorExterno } from './execucao-externa.service';
+import { CatalogoExternoService } from './catalogo-externo.service';
 
 /*
  * Quem pode, PELO CONSOLE, fazer um agente executar UMA capacidade em nome de si:
@@ -27,12 +28,33 @@ export function chamadorDe(req: RequisicaoDoCorpo): ChamadorExterno {
 }
 
 /*
- * AS ROTAS DO PRÓPRIO AGENTE, que o corpo dele alcança com o token (A2 + A4).
+ * AS ROTAS DO PRÓPRIO AGENTE, que o corpo dele alcança com o token (A2, A3, A4).
  */
 @UseGuards(CorpoOuSessaoGuard)
 @Controller()
 export class CorpoExternoController {
-  constructor(private readonly execucao: ExecucaoExternaService) {}
+  constructor(
+    private readonly execucao: ExecucaoExternaService,
+    private readonly catalogo: CatalogoExternoService,
+  ) {}
+
+  /** A3 — as capacidades declaradas, como o MCP do modo catálogo as transforma em ferramentas. */
+  @Get('agents/:slug/catalogo-externo')
+  @RequirePermissions('mcp.ver')
+  catalogoExterno(@Req() req: RequisicaoDoCorpo, @Param('slug') slug: string) {
+    const c = chamadorDe(req);
+    if (c.corpo && c.corpo.agentSlug !== slug) throw new NotFoundException('Agente não encontrado.');
+    return this.catalogo.catalogo(c.orgId, slug);
+  }
+
+  /** A3 — missão, procedimento e voz: o que o corpo de fora põe no prompt do agente. */
+  @Get('agents/:slug/definicao')
+  @RequirePermissions('mcp.ver')
+  definicao(@Req() req: RequisicaoDoCorpo, @Param('slug') slug: string) {
+    const c = chamadorDe(req);
+    if (c.corpo && c.corpo.agentSlug !== slug) throw new NotFoundException('Agente não encontrado.');
+    return this.catalogo.definicao(c.orgId, slug, c.solicitantePadraoId);
+  }
 
   /**
    * A2 — UMA capacidade, pela porta, por conta de um agente que roda fora do OS.
