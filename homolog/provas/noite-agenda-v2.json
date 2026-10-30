@@ -1,0 +1,204 @@
+{
+  "inicio": "2026-10-30T04:14:47.135Z",
+  "web": "http://127.0.0.1:3031",
+  "passos": [
+    {
+      "n": 1,
+      "nome": "00 · o Google da root aponta para o dublê; a sobrescrita assinada da decisão 2 aplicada pelo CLI",
+      "ok": true,
+      "ms": 1509,
+      "detalhe": {
+        "org": "4798178d",
+        "cli": "Fora da janela, ou com outro sinal aceso, R2 sobe para R3 e vai para a fila de qualquer jeito. | Nada muda: a aprovação de R2 já está desligada."
+      }
+    },
+    {
+      "n": 2,
+      "nome": "01 · a sincronia traz a semana semeada para o espelho; o Fechado da agenda pessoal entra sem título",
+      "ok": true,
+      "ms": 422,
+      "detalhe": {
+        "resultado": "pulada",
+        "eventos": 6
+      }
+    },
+    {
+      "n": 3,
+      "nome": "02 · a frase preenche o painel e o título sai da gramática (tela)",
+      "ok": true,
+      "ms": 2069,
+      "detalhe": {
+        "titulo": "Reunião Interna - Rodrigo"
+      }
+    },
+    {
+      "n": 4,
+      "nome": "03 · marcar pela tela: dentro da janela sai no clique; fora dela, fila com fora_da_janela",
+      "ok": true,
+      "ms": 120,
+      "detalhe": {
+        "desfecho": "fila",
+        "inserts": 0
+      }
+    },
+    {
+      "n": 5,
+      "nome": "03b · marcar cliente online pela mesma rota da tela: Meet, convidado, propriedades do OS",
+      "ok": true,
+      "ms": 57,
+      "detalhe": {
+        "status": "aguardando_aprovacao",
+        "nivel": "R3",
+        "desfazer": null
+      }
+    },
+    {
+      "n": 6,
+      "nome": "04 · a mesma ação fora da tela cai na fila: a rota antiga (sem naTela)",
+      "ok": true,
+      "ms": 53,
+      "detalhe": {
+        "rotaAntiga": "aguardando_aprovacao",
+        "nivel": "R3",
+        "maquina": "coberto por agenda-r2-na-tela.test.ts"
+      }
+    },
+    {
+      "n": 7,
+      "nome": "05 · o choque aparece em Conflitos e o botão \"empurrar\" resolve",
+      "ok": true,
+      "ms": 65,
+      "detalhe": {
+        "empurrar": "aguardando_aprovacao",
+        "foraDoPadrao": true,
+        "semMeet": false,
+        "contagem": {
+          "choque": 1,
+          "padrao": 2,
+          "sem_meet": 0,
+          "rito": 1,
+          "feriado": 0,
+          "janela": 0,
+          "fora": 0,
+          "teto": 0,
+          "tudo": 4
+        }
+      }
+    },
+    {
+      "n": 8,
+      "nome": "06 · feriado nacional bloqueia",
+      "ok": true,
+      "ms": 185,
+      "detalhe": {
+        "feriado": "Finados",
+        "cor": "vermelho"
+      }
+    },
+    {
+      "n": 9,
+      "nome": "07 · Fora fecha o dia da pessoa",
+      "ok": true,
+      "ms": 9,
+      "detalhe": {
+        "cor": "vermelho"
+      }
+    },
+    {
+      "n": 10,
+      "nome": "08 · Fechado da agenda pessoal conta",
+      "ok": true,
+      "ms": 15,
+      "detalhe": {
+        "cor": "vermelho"
+      }
+    },
+    {
+      "n": 11,
+      "nome": "09 · arrastar respeita a régua (o próprio evento fora da conta)",
+      "ok": true,
+      "ms": 14,
+      "detalhe": {
+        "sobreOutro": "vermelho",
+        "ondeEsta": "verde"
+      }
+    },
+    {
+      "n": 12,
+      "nome": "10 · link público: só livres, confirma, vai à fila do link, uma pessoa libera e o convite sai; .ics; não reaproveita",
+      "ok": true,
+      "ms": 621,
+      "detalhe": {
+        "horarios": 10,
+        "escolhido": "2026-10-30 13:30",
+        "liberado": "liberado por mesa (R3)"
+      }
+    },
+    {
+      "n": 13,
+      "nome": "11 · desfazer volta: o desmarcar cancela o que o OS criou",
+      "ok": true,
+      "ms": 1,
+      "detalhe": {
+        "pulado": true
+      }
+    },
+    {
+      "n": 14,
+      "nome": "12 · o histórico mostra o que o OS gravou, com desfazer",
+      "ok": true,
+      "ms": 14,
+      "detalhe": {
+        "linhas": 9,
+        "verbos": "marcou,alterou"
+      }
+    },
+    {
+      "n": 15,
+      "nome": "13 · as capturas de cada aba (escuro, claro e 390 px), sem rolagem lateral",
+      "ok": true,
+      "ms": 27686,
+      "detalhe": {
+        "fotos": 23
+      }
+    }
+  ],
+  "screenshots": [
+    "noite-agenda-v2-painel-frase-escuro.png",
+    "noite-agenda-v2-marcar-no-clique-escuro.png",
+    "noite-agenda-v2-link-antes-escuro.png",
+    "noite-agenda-v2-semana-escuro.png",
+    "noite-agenda-v2-semana-claro.png",
+    "noite-agenda-v2-semana-390.png",
+    "noite-agenda-v2-lista-escuro.png",
+    "noite-agenda-v2-lista-claro.png",
+    "noite-agenda-v2-lista-390.png",
+    "noite-agenda-v2-mes-escuro.png",
+    "noite-agenda-v2-mes-claro.png",
+    "noite-agenda-v2-mes-390.png",
+    "noite-agenda-v2-conflitos-escuro.png",
+    "noite-agenda-v2-conflitos-claro.png",
+    "noite-agenda-v2-conflitos-390.png",
+    "noite-agenda-v2-relatorios-escuro.png",
+    "noite-agenda-v2-relatorios-claro.png",
+    "noite-agenda-v2-relatorios-390.png",
+    "noite-agenda-v2-regras-escuro.png",
+    "noite-agenda-v2-regras-claro.png",
+    "noite-agenda-v2-regras-390.png",
+    "noite-agenda-v2-link-publico-390.png",
+    "noite-agenda-v2-link-publico-escuro.png"
+  ],
+  "avisos": [
+    "03 rodou fora da janela da política (noite em SP): a régua acendeu fora_da_janela e o marcar subiu a R3. Rode de novo entre 08h e 20h para a prova do clique.",
+    "11 pulado: o marcar não saiu no clique (fora da janela)"
+  ],
+  "ok": true,
+  "carimbo": "mvugkqrc",
+  "janelaDaPolitica": "fora (noite em SP: a régua acende fora_da_janela)",
+  "marcarCliente": {
+    "status": "aguardando_aprovacao",
+    "nivel": "R3"
+  },
+  "fim": "2026-10-30T04:15:22.320Z",
+  "duracaoMs": 35185
+}
