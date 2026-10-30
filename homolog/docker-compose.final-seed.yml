@@ -117,8 +117,22 @@ services:
       - "127.0.0.1:${EVOLUTION_DUBLE_PORT:-4034}:8080"
     networks: [rootos-final-seed-net]
 
+  # Agenda v2 (29/10/2026): dublê do Google Calendar (homolog/mocks/google), nome sem ponto
+  # de propósito (GOOGLE_API_DUBLE_URL só aceita loopback ou nome sem ponto). Porta 4035 só em
+  # 127.0.0.1: o e2e semeia eventos e lê o que o dublê recebeu pela porta de controle /_duble.
+  google_duble:
+    build: ./mocks/google
+    image: rootos-final-seed-google-duble:latest
+    container_name: rootos_final_seed_google
+    restart: unless-stopped
+    environment:
+      PORT: "4021"
+    ports:
+      - "127.0.0.1:${GOOGLE_DUBLE_PORT:-4035}:4021"
+    networks: [rootos-final-seed-net]
+
   api:
-    image: rootos-final-app:producao22c
+    image: rootos-final-app:agenda-v2
     container_name: rootos_final_seed_api
     restart: unless-stopped
     working_dir: /app/apps/api
@@ -154,6 +168,11 @@ services:
       EVOLUTION_URL: http://evolution_duble:8080
       EVOLUTION_API_KEY: ${EVOLUTION_DUBLE_CHAVE:-chave-do-duble-evolution}
       EVOLUTION_INSTANCIA: ${EVOLUTION_DUBLE_INSTANCIA:-rootos}
+      # Agenda v2: o Google Calendar é o dublê (nada sai para o Google de verdade); cliente e
+      # segredo fictícios só para o conector se dizer configurado.
+      GOOGLE_API_DUBLE_URL: http://google_duble:4021
+      GOOGLE_CLIENT_ID: duble-agenda-v2.apps.invalid
+      GOOGLE_CLIENT_SECRET: duble-agenda-v2
       YOUTUBE_AUDITORIA: pendente
       QUADRO_DE_CUSTOS_EXEMPLO: /app/homolog/fixtures/quadro-de-custos-exemplo.json
       ASAAS_API_KEY: $$aact_hmlg_dublê
@@ -195,7 +214,7 @@ services:
       retries: 10
 
   web:
-    image: rootos-final-app:producao22c
+    image: rootos-final-app:agenda-v2
     container_name: rootos_final_seed_web
     restart: unless-stopped
     working_dir: /app/apps/web

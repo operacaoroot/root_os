@@ -61,7 +61,14 @@ beforeEach(() => {
   apiPost.mockReset();
   apiGet.mockImplementation((rota: string) => {
     if (rota.startsWith('/agenda/espelho')) return espelho instanceof Error ? Promise.reject(espelho) : Promise.resolve(espelho);
-    if (rota.startsWith('/agenda/conflitos')) return Promise.resolve({ cartoes: [{ confirmado: false }, { confirmado: false }, { confirmado: true }], vigiaPassouEm: null, contagem: {} });
+    if (rota.startsWith('/agenda/conflitos')) {
+      // O cartão na forma de RespostaDosConflitos: a aba real (lane B) lê eventos, ações e pessoas.
+      const cartao = (id: string, confirmado: boolean) => ({
+        id, tipo: 'choque', urgencia: 1, quando: '2026-11-04T12:00:00.000Z', pessoas: ['Rodrigo'], titulo: 'Rodrigo em dois lugares',
+        frase: 'Rodrigo está em dois lugares ao mesmo tempo', eventos: [], acoes: [], serieId: null, confirmado,
+      });
+      return Promise.resolve({ cartoes: [cartao('c1', false), cartao('c2', false), cartao('c3', true)], vigiaPassouEm: null, contagem: { tudo: 3, choque: 3 } });
+    }
     if (rota.startsWith('/agenda/regras')) return Promise.reject(new Error('501'));
     if (rota.startsWith('/google/calendar/periodo')) return Promise.resolve([]);
     if (rota === '/agenda/fora-do-padrao') return Promise.resolve({ total: 0, itens: [], ultimaPassagemEm: null, rotina: null });
@@ -107,7 +114,8 @@ describe('as abas', () => {
     const abas = screen.getAllByRole('tab').map((t) => t.textContent);
     expect(abas).toEqual(['Semana e dia', 'Lista', 'Mês', 'Conflitos2', 'Relatórios', 'Regras']);
     fireEvent.click(screen.getByRole('tab', { name: /Conflitos/ }));
-    expect(await screen.findByText(/Conflitos/, { selector: 'p' })).toBeTruthy();
+    // A aba de verdade (lane B) monta no lugar do marcador da lane 0.
+    await waitFor(() => expect(document.querySelector('[data-aba-conflitos]')).toBeTruthy());
     cleanup();
     permissoes = ['agenda.editar'];
     abrir('/agenda?aba=semana&dia=2026-11-03');

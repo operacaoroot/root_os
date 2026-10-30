@@ -4,7 +4,7 @@ import { PrismaClient } from '@prisma/client';
 import type { DiaLivre, PedidoDeEscrita, ResultadoDaEscrita } from '@mktos/shared';
 
 import { ConviteDaAgendaService } from '../src/agenda/convite/convite.service';
-import { AgendarController, TETO_DE_CONFIRMACAO_POR_HORA } from '../src/agenda/convite/convite.controller';
+import { AgendarController, TETO_DE_CONFIRMACAO_POR_HORA } from '../src/agenda/convite/agendar.controller';
 import {
   TOKEN_DO_CONVITE,
   TetoPorOrigem,
