@@ -638,4 +638,23 @@
 .estudio .ideias-linha-meta a{font-weight:600;text-decoration:none}
 .estudio .ideias-mini-acoes{display:flex;gap:6px}
 .estudio .ideias-reler{padding:4px 8px}
+/* Fontes › Como as ideias chegam (30/10/2026): coleta, IA das ideias e aprovação, com interruptor. */
+.estudio .fluxo{display:grid;gap:14px;margin-bottom:18px}
+.estudio .fluxo h2{font-size:18px}
+.estudio .fluxo .notice{margin:0}
+.estudio .fluxo-etapas{list-style:none;margin:0;padding:0;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}
+.estudio .fluxo-etapa{border:1px solid var(--line);border-radius:12px;padding:14px 16px;display:grid;gap:8px;align-content:start;background:#fafbf6}
+.estudio .fluxo-etapa .eyebrow{margin:0;color:var(--green)}
+.estudio .fluxo-etapa h3{font-size:17px}
+.estudio .fluxo-etapa p{font-size:13px;color:#4c5444}
+.estudio .fluxo-etapa button{justify-self:start}
+.estudio .fluxo-off{background:#f4f2ec;opacity:.8}
+.estudio .fluxo-off h3{text-decoration:line-through;text-decoration-color:var(--muted)}
+.estudio .fluxo-liga{display:flex;gap:6px;align-items:center;margin:0;font-size:12px}
+.estudio .fluxo-custo{font-size:12px!important;color:var(--muted)!important}
+.estudio .fluxo-agora strong{font-size:16px;color:var(--ink)}
+.estudio .fluxo-rodape{border-top:1px solid var(--line);padding-top:8px;display:grid;gap:2px}
+.estudio .fluxo-rodape p{font-size:12px;color:var(--muted)}
+.estudio .fluxo-rodape strong{color:var(--ink);font-weight:600}
+@media(max-width:1000px){.estudio .fluxo-etapas{grid-template-columns:1fr}}
 @media(max-width:760px){.estudio .ideias-linha{grid-template-columns:48px minmax(0,1fr)}.estudio .ideias-linha-img{width:48px;height:48px}.estudio .ideias-linha-lado{grid-column:1/-1;justify-items:stretch}.estudio .ideias-mini-acoes{justify-content:space-between}.estudio .ideias-busca{flex-wrap:wrap}.estudio .ideias-busca .ideias-search{width:100%}}

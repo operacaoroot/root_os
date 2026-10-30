@@ -21,6 +21,7 @@ import { MemoriaDoMarketingService } from './memoria-do-marketing.service';
 import { TriagemService } from './triagem.service';
 import { ReguasService } from './reguas.service';
 import { ImportacaoDaComunidadeService } from './importacao-da-comunidade.service';
+import { FluxoDeIdeiasService } from './fluxo-de-ideias.service';
 import { detectarFonte } from './deteccao-de-fonte';
 
 // Marketing no jeito do ROOT Estúdio (26/10/2026): Memória, Triagem de ideias e Formatos.
@@ -33,6 +34,7 @@ export class MarketingEstudioController {
     private readonly triagem: TriagemService,
     private readonly reguas: ReguasService,
     private readonly importacao: ImportacaoDaComunidadeService,
+    private readonly fluxoDeIdeias: FluxoDeIdeiasService,
   ) {}
 
   // ---------- Memória ----------
@@ -152,6 +154,13 @@ export class MarketingEstudioController {
   @RequirePermissions('pauta.editar')
   montar(@CurrentUser() u: JwtUser, @Body() body: unknown) {
     return this.triagem.montar(u.orgId, TriagemMontarSchema.parse(body ?? {}).quantas);
+  }
+
+  // O fluxo das ideias (Fontes): coleta e IA das ideias, com horário, números, custo e interruptor.
+  @Get('fluxo')
+  @RequirePermissions('pauta.ver')
+  fluxo(@CurrentUser() u: JwtUser) {
+    return this.fluxoDeIdeias.fluxo(u.orgId);
   }
 
   // Ver todas: os cards de um status (nova, aprovada, recusada, descartada_ia), sem a ordem de um por vez.

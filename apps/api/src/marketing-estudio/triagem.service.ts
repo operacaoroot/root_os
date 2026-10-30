@@ -23,6 +23,7 @@ import { MemoriaService } from '../memory/memoria.service';
 import { GoogleService } from '../google/google.service';
 import { jsonDaIa, lerMetaDoLink, textoLimpo } from './leitura-de-link';
 import { REGRAS_DE_PARTIDA, SYSTEM_TRIAGEM } from './prompts';
+import { garantirRotinaDasIdeias } from './rotina-das-ideias';
 
 /*
  * IDEIAS › TRIAGEM, a do ROOT Estúdio (26/10/2026): um card por vez.
@@ -182,9 +183,10 @@ export class TriagemService {
     ]);
     const contagem = this.contar(grupos);
     const ia = simulada() || this.llm.configured;
-    const faltaLer = (await this.cardsSemLeitura(orgId)).length;
-    const pendentes = (await this.materia(orgId, 500)).length;
-    const podeLer = ia && !this.travas.has(orgId) && Date.now() - (this.relidaEm.get(orgId) ?? 0) > INTERVALO_DA_RELEITURA;
+    const { semLeitura: faltaLer, pendentes } = await this.resumoDoPainel(orgId);
+    // Só lê sozinha com a rotina "IA das ideias" ligada (o interruptor do fluxo, em Fontes e em /rotinas).
+    const ligada = await garantirRotinaDasIdeias(this.prisma, orgId);
+    const podeLer = ia && ligada && !this.travas.has(orgId) && Date.now() - (this.relidaEm.get(orgId) ?? 0) > INTERVALO_DA_RELEITURA;
     // A IA voltou e há card que nasceu sem ela: lê em segundo plano; a tela acompanha pelo `lendo`.
     if (podeLer && faltaLer) {
       this.relidaEm.set(orgId, Date.now());
@@ -208,7 +210,14 @@ export class TriagemService {
       ia,
       semLeitura: faltaLer,
       lendo: this.travas.has(orgId),
+      iaLigada: ligada,
     };
+  }
+
+  /** O que espera a IA: itens da coleta e da Memória sem card, e cards que nasceram sem leitura. */
+  async resumoDoPainel(orgId: string): Promise<{ pendentes: number; semLeitura: number; ia: boolean }> {
+    const [pendentes, semLer] = await Promise.all([this.materia(orgId, 500), this.cardsSemLeitura(orgId)]);
+    return { pendentes: pendentes.length, semLeitura: semLer.length, ia: simulada() || this.llm.configured };
   }
 
   /** Ver todas: os cards de um status, do mais relevante para o menos (até 500). */

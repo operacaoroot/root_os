@@ -284,6 +284,11 @@ export default function TriagemPage() {
           A IA está lendo as ideias{semLeitura ? `: faltam ${semLeitura} ${semLeitura === 1 ? 'card' : 'cards'} que chegaram com ela fora do ar` : ''}. A tela se atualiza sozinha.
         </div>
       )}
+      {painel && painel.ia && !painel.iaLigada && (
+        <div className="notice warn">
+          A IA das ideias está desligada: o que a coleta traz fica esperando. Ligue em <Link href="/marketing/fontes">Fontes › Como as ideias chegam</Link>.
+        </div>
+      )}
       {!painel?.lendo && painel && !painel.ia && semLeitura > 0 && (
         <div className="notice warn">A IA está fora do ar: {semLeitura} ideias estão só com o resumo da nota. Quando ela voltar, a leitura começa sozinha.</div>
       )}

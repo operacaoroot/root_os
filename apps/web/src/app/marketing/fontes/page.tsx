@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { apiDelete, apiGet, apiPatch, apiPost } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 import { UsoDoApify } from '@/components/marketing/UsoDoApify';
+import { FluxoDasIdeias } from '@/components/marketing/FluxoDasIdeias';
 
 /*
  * Marketing › IDEIAS DE CONTEÚDO › Fontes. Cópia da tela Fontes do ROOT Estúdio
@@ -100,6 +101,7 @@ export default function FontesPage() {
     <div className="estudio">
       {aviso && <div className="notice">{aviso}</div>}
       {erro && <div className="notice warn">{erro}</div>}
+      <FluxoDasIdeias />
       <section className="panel fontes-list">
         <div className="row between fontes-list-head">
           <div>

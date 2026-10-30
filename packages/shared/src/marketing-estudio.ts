@@ -379,6 +379,44 @@ export interface TriagemPainel {
   semLeitura: number;
   /** A IA está lendo agora (montando cards novos ou relendo os que nasceram sem ela). */
   lendo: boolean;
+  /** A rotina "IA das ideias" está ligada (o interruptor do fluxo, em Fontes). */
+  iaLigada: boolean;
+}
+
+/** Uma etapa do fluxo das ideias que roda sozinha: uma rotina do OS, com interruptor. */
+export interface FluxoEtapa {
+  rotinaId: string | null;
+  nome: string;
+  cron: string;
+  /** "todo dia às 22:00" */
+  quando: string;
+  ativo: boolean;
+  ultimaEm: string | null;
+  ultimoStatus: string | null;
+  ultimoResumo: string | null;
+  proximaEm: string | null;
+}
+
+/** Marketing › Ideias de conteúdo › Fontes: de onde as ideias vêm, quantas, quando e quanto custa. */
+export interface FluxoDasIdeias {
+  coleta: FluxoEtapa | null;
+  ia: FluxoEtapa;
+  fontes: { ligadas: number; perfis: number; gratis: number; postsPorPerfil: number; itensPorDiaPerfis: number };
+  apify: { usadoUsd: number; tetoUsd: number; voltaEm: string | null; custoPorColeta: number | null; diasQueDa: number | null } | null;
+  agora: { esperandoIa: number; paraAvaliar: number; semLeitura: number; aprovadasSemana: number; descartadasIa: number };
+  iaConfigurada: boolean;
+}
+
+const DIAS_DO_CRON = ['todo domingo', 'toda segunda', 'toda terça', 'toda quarta', 'toda quinta', 'toda sexta', 'todo sábado'];
+/** O cron em português ("todo dia às 22:00", "toda quinta às 22:00"). Fora do comum, devolve o próprio cron. */
+export function quandoDoCron(cron: string): string {
+  const [m, h, dia, mes, semana] = cron.trim().split(/\s+/);
+  if (!/^\d+$/.test(m ?? '') || !/^\d+$/.test(h ?? '') || dia !== '*' || mes !== '*') return `cron ${cron}`;
+  const hora = `${h.padStart(2, '0')}:${m.padStart(2, '0')}`;
+  if (semana === '*') return `todo dia às ${hora}`;
+  if (semana === '1-5') return `de segunda a sexta às ${hora}`;
+  if (/^[0-7]$/.test(semana)) return `${DIAS_DO_CRON[Number(semana) % 7]} às ${hora}`;
+  return `cron ${cron}`;
 }
 
 /** Ver todas: os cards de um status, sem a ordem de um por vez. */
