@@ -127,7 +127,7 @@ export default function AgendaPage() {
 
   // O relógio da tela (linha do agora, selo da sincronia, "em N min").
   useEffect(() => {
-    const t = setInterval(() => setAgora(new Date()), 30_000);
+    const t = setInterval(() => setAgora(new Date()), 15_000);
     return () => clearInterval(t);
   }, []);
 
