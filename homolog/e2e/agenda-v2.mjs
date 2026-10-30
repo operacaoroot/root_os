@@ -16,8 +16,8 @@
  *   02 a frase preenche o painel (tela) e o título sai da gramática;
  *   03 marcar pela tela: dentro da janela da política (08h a 20h de SP) sai no clique;
  *      fora dela a régua acende `fora_da_janela` e o pedido vai à fila (a prova diz qual);
- *   04 a mesma ação fora da tela (a rota antiga, sem `naTela`) e pela conta de máquina
- *      cai na fila;
+ *   04 a mesma ação fora da tela (a rota antiga, sem `naTela`) cai na fila (a conta de
+ *      máquina, na suíte `agenda-r2-na-tela`);
  *   05 o choque aparece em Conflitos e o botão "empurrar" resolve;
  *   06 feriado bloqueia; 07 Fora fecha o dia; 08 Fechado conta; 09 arrastar respeita a
  *      régua (o próprio evento fora da conta);
@@ -349,20 +349,14 @@ async function main() {
   });
 
   // ---------------- 04 ----------------
-  await passo('04 · a mesma ação fora da tela cai na fila: a rota antiga (sem naTela) e a conta de máquina', async () => {
+  await passo('04 · a mesma ação fora da tela cai na fila: a rota antiga (sem naTela)', async () => {
     const antiga = await api('POST', '/google/calendar/reuniao', {
       tipo: 'interna', modalidade: 'online', responsavel: 'Lucas', inicio: instante(S.dias.ter, '17:00').toISOString(), duracaoMinutos: 30,
     }, tok);
     conferir(antiga.status === 'aguardando_aprovacao', `a rota antiga saiu sem fila: ${JSON.stringify(antiga).slice(0, 160)}`);
-    let maquina = 'sem senha da conta de máquina nesta stack';
-    if (ENV.MCP_SERVICE_PASSWORD) {
-      const s = await api('POST', '/auth/login', { email: 'mcp@marketing-os.local', password: ENV.MCP_SERVICE_PASSWORD }).catch(() => null);
-      if (s?.token ?? s?.accessToken) {
-        const r = await http('POST', `${API}/agenda/escritas`, { acao: 'marcar', chave: chave('mq'), compromisso: { tipo: 'interna', modalidade: 'online', responsaveis: ['Pedro'], inicio: instante(S.dias.ter, '17:30').toISOString(), fim: instante(S.dias.ter, '18:00').toISOString() } }, s.token ?? s.accessToken);
-        conferir(r.status >= 400 || r.json?.status !== 'executado', 'a conta de máquina saiu no clique');
-        maquina = `HTTP ${r.status} ${r.json?.status ?? ''}`;
-      }
-    }
+    // A conta de máquina (MCP) ir para a fila é prova da suíte `apps/api/test/agenda-r2-na-tela.test.ts`:
+    // a senha dela só mora nas casas dela (catraca de arquitetura), e o e2e não a lê.
+    const maquina = 'coberto por agenda-r2-na-tela.test.ts';
     return { detalhe: { rotaAntiga: antiga.status, nivel: antiga.nivel, maquina } };
   });
 
