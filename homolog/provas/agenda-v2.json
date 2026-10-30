@@ -1,12 +1,12 @@
 {
-  "inicio": "2026-10-30T11:07:55.384Z",
+  "inicio": "2026-10-30T12:10:07.487Z",
   "web": "http://127.0.0.1:3031",
   "passos": [
     {
       "n": 1,
       "nome": "00 · o Google da root aponta para o dublê; a sobrescrita assinada da decisão 2 aplicada pelo CLI",
       "ok": true,
-      "ms": 1625,
+      "ms": 1735,
       "detalhe": {
         "org": "4798178d",
         "cli": "Fora da janela, ou com outro sinal aceso, R2 sobe para R3 e vai para a fila de qualquer jeito. | Nada muda: a aprovação de R2 já está desligada."
@@ -16,7 +16,7 @@
       "n": 2,
       "nome": "01 · a sincronia traz a semana semeada para o espelho; o Fechado da agenda pessoal entra sem título",
       "ok": true,
-      "ms": 389,
+      "ms": 420,
       "detalhe": {
         "resultado": "ok",
         "eventos": 6
@@ -26,7 +26,7 @@
       "n": 3,
       "nome": "02 · a frase preenche o painel e o título sai da gramática (tela)",
       "ok": true,
-      "ms": 1081,
+      "ms": 1780,
       "detalhe": {
         "titulo": "Reunião Interna - Rodrigo"
       }
@@ -34,15 +34,19 @@
     {
       "n": 4,
       "nome": "03 · marcar pela tela: dentro da janela sai no clique; fora dela, fila com fora_da_janela",
-      "ok": false,
-      "ms": 12687,
-      "erro": "dentro da janela o marcar pela tela não saiu no clique (régua: R3 volume_atipico aprovacao=true)"
+      "ok": true,
+      "ms": 803,
+      "detalhe": {
+        "desfecho": "executado",
+        "inserts": 1,
+        "regua": "R2  aprovacao=false"
+      }
     },
     {
       "n": 5,
       "nome": "03b · marcar cliente online pela mesma rota da tela: Meet, convidado, propriedades do OS",
       "ok": true,
-      "ms": 211,
+      "ms": 221,
       "detalhe": {
         "status": "aguardando_aprovacao",
         "nivel": "R3",
@@ -53,7 +57,7 @@
       "n": 6,
       "nome": "04 · a mesma ação fora da tela cai na fila: a rota antiga (sem naTela)",
       "ok": true,
-      "ms": 30,
+      "ms": 29,
       "detalhe": {
         "rotaAntiga": "aguardando_aprovacao",
         "nivel": "R3",
@@ -63,15 +67,30 @@
     {
       "n": 7,
       "nome": "05 · o choque aparece em Conflitos e o botão \"empurrar\" resolve",
-      "ok": false,
-      "ms": 65,
-      "erro": "o empurrar não saiu: aguardando_aprovacao Esta ação é R3 e não sai no clique: ela foi para a fila de aprovações e precisa da confirmação de OUTRA pessoa com alçada suficiente — quem propõe não pode aprovar. Nada foi enviado ainda."
+      "ok": true,
+      "ms": 201,
+      "detalhe": {
+        "empurrar": "executado",
+        "foraDoPadrao": true,
+        "semMeet": false,
+        "contagem": {
+          "choque": 1,
+          "padrao": 2,
+          "sem_meet": 0,
+          "rito": 1,
+          "feriado": 0,
+          "janela": 0,
+          "fora": 0,
+          "teto": 0,
+          "tudo": 4
+        }
+      }
     },
     {
       "n": 8,
       "nome": "06 · feriado nacional bloqueia",
       "ok": true,
-      "ms": 192,
+      "ms": 182,
       "detalhe": {
         "feriado": "Finados",
         "cor": "vermelho"
@@ -81,7 +100,7 @@
       "n": 9,
       "nome": "07 · Fora fecha o dia da pessoa",
       "ok": true,
-      "ms": 20,
+      "ms": 18,
       "detalhe": {
         "cor": "vermelho"
       }
@@ -90,7 +109,7 @@
       "n": 10,
       "nome": "08 · Fechado da agenda pessoal conta",
       "ok": true,
-      "ms": 14,
+      "ms": 17,
       "detalhe": {
         "cor": "vermelho"
       }
@@ -99,7 +118,7 @@
       "n": 11,
       "nome": "09 · arrastar respeita a régua (o próprio evento fora da conta)",
       "ok": true,
-      "ms": 30,
+      "ms": 27,
       "detalhe": {
         "sobreOutro": "vermelho",
         "ondeEsta": "verde"
@@ -109,7 +128,7 @@
       "n": 12,
       "nome": "10 · link público: só livres, confirma, vai à fila do link, uma pessoa libera e o convite sai; .ics; não reaproveita",
       "ok": true,
-      "ms": 548,
+      "ms": 510,
       "detalhe": {
         "horarios": 10,
         "escolhido": "2026-10-30 12:00",
@@ -120,26 +139,27 @@
       "n": 13,
       "nome": "11 · desfazer volta: o desmarcar cancela o que o OS criou",
       "ok": true,
-      "ms": 1,
+      "ms": 79,
       "detalhe": {
-        "pulado": true
+        "desfazer": "desmarcar",
+        "proximo": "reabrir"
       }
     },
     {
       "n": 14,
       "nome": "12 · o histórico mostra o que o OS gravou, com desfazer",
       "ok": true,
-      "ms": 16,
+      "ms": 21,
       "detalhe": {
-        "linhas": 23,
-        "verbos": "marcou,alterou,padronizou"
+        "linhas": 29,
+        "verbos": "desmarcou,marcou,alterou,padronizou"
       }
     },
     {
       "n": 15,
       "nome": "13 · as capturas de cada aba (escuro, claro e 390 px), sem rolagem lateral",
       "ok": true,
-      "ms": 27415,
+      "ms": 27385,
       "detalhe": {
         "fotos": 23
       }
@@ -171,17 +191,16 @@
     "agenda-v2-link-publico-escuro.png"
   ],
   "avisos": [
-    "03b: a régua acendeu volume_atipico (a rajada do e2e passou do triplo da média por hora deixada pelas rodadas anteriores nesta stack) e o marcar subiu a R3: foi para a fila. É a régua de toda escrita; a prova do clique é a 03.",
-    "11 pulado: o marcar não saiu no clique (fora da janela)"
+    "03b: a régua acendeu volume_atipico (a rajada do e2e passou do triplo da média por hora deixada pelas rodadas anteriores nesta stack) e o marcar subiu a R3: foi para a fila. É a régua de toda escrita; a prova do clique é a 03."
   ],
-  "ok": false,
-  "carimbo": "mvuvc009",
+  "ok": true,
+  "carimbo": "mvuxk1ej",
   "janelaDaPolitica": "dentro (08h a 20h de SP)",
-  "decisaoDoMarcarNaTela": "R3 volume_atipico aprovacao=true",
+  "decisaoDoMarcarNaTela": "R2  aprovacao=false",
   "marcarCliente": {
     "status": "aguardando_aprovacao",
     "nivel": "R3"
   },
-  "fim": "2026-10-30T11:08:40.127Z",
-  "duracaoMs": 44743
+  "fim": "2026-10-30T12:10:43.614Z",
+  "duracaoMs": 36121
 }
