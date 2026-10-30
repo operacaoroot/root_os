@@ -107,7 +107,7 @@ describe('projeção do NAV em módulos', () => {
     expect(deCliente?.itens.some((item) => item.key === 'comercial-rodada')).toBe(false);
     // Nem com todas as permissões do NAV, nem só com a de plataforma sem módulo leads.
     expect(modulosDeNavegacao(permissoes, ['trabalho'], true).flatMap((a) => a.itens).some((i) => i.key === 'comercial-rodada')).toBe(false);
-    expect(ITENS_DA_ROOT.map((item) => item.key)).toEqual(['comercial-rodada', 'frota', 'fluxo-do-cliente']);
+    expect(ITENS_DA_ROOT.map((item) => item.key)).toEqual(['comercial-rodada', 'frota', 'fluxo-do-cliente', 'area-do-cliente']);
     expect(NAV.some((item) => item.key === 'comercial-rodada' || item.href === '/comercial/rodada')).toBe(false);
     // A rota: na plataforma é a Rodada; fora dela cai no Comercial pelo prefixo, sem item próprio.
     expect(destinoDaRota('/comercial/rodada', true)?.key).toBe('comercial-rodada');
@@ -134,6 +134,16 @@ describe('projeção do NAV em módulos', () => {
     expect(comPlataforma.indexOf('fluxo-do-cliente')).toBe(comPlataforma.indexOf('marca') + 1);
     expect(destinoDaRota('/contexto/fluxo-do-cliente', true)?.key).toBe('fluxo-do-cliente');
     expect(destinoDaRota('/contexto/fluxo-do-cliente', false)?.key).toBe('contexto');
+  });
+
+  it('a Área do cliente fica no Contexto, logo depois do Fluxo do cliente, só para a plataforma (30/10/2026)', () => {
+    const contexto = (ehPlataforma: boolean) =>
+      modulosDeNavegacao(permissoes, undefined, ehPlataforma).find((area) => area.key === 'empresa')?.itens.map((item) => item.key) ?? [];
+    expect(contexto(false)).not.toContain('area-do-cliente');
+    const comPlataforma = contexto(true);
+    expect(comPlataforma.indexOf('area-do-cliente')).toBe(comPlataforma.indexOf('fluxo-do-cliente') + 1);
+    expect(destinoDaRota('/contexto/area-do-cliente', true)?.key).toBe('area-do-cliente');
+    expect(destinoDaRota('/contexto/area-do-cliente', false)?.key).toBe('contexto');
   });
 
   it('Comercial abre no Painel geral', () => {
