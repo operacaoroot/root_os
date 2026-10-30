@@ -237,7 +237,15 @@ export class EspelhoService {
       `Espelho (${conta.modo === 'completa' ? 'janela completa' : 'incremental'}): ${conta.lidos} evento(s) lido(s), ` +
       `${conta.cancelados} dado(s) por cancelado(s); Fechado: ${conta.fechadoNovos} novo(s), ${conta.fechadoSaidos} saído(s)` +
       (conta.agendasComErro ? `, ${conta.agendasComErro} agenda(s) pessoal(is) com erro.` : '.');
-    if (!mudou && conta.agendasComErro === 0) return { status: 'pulada', resumo: 'Nada mudou na agenda desde a última passagem.' };
+    // A agenda pessoal que segue sem compartilhar não faz de cada passagem uma linha de histórico:
+    // o erro dela fica na `AgendaSincronia` daquela agenda.
+    if (!mudou) {
+      return {
+        status: 'pulada',
+        resumo: 'Nada mudou na agenda desde a última passagem' +
+          (conta.agendasComErro ? ` (${conta.agendasComErro} agenda(s) pessoal(is) com erro).` : '.'),
+      };
+    }
     return { status: 'ok', resumo };
   }
 
