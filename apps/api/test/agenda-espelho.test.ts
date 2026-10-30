@@ -433,7 +433,7 @@ describe.skipIf(!comBanco)('o espelho da agenda pela porta (banco de teste)', ()
     expect(r.sincronia).toMatchObject({ ultimaPassagem: null, atrasada: true });
     expect(r.eventos.map((e) => e.id)).toEqual(['direto1']);
     expect(leiturasDiretas).toHaveLength(1);
-    // Sem Google: lista vazia com o motivo, sem lançar.
+    // Sem Google e sem espelho ainda: lista vazia com o motivo, sem lançar.
     googleConectado = false;
     const sem = await naEmpresa(() => espelho.periodo(ORG, AGORA, new Date(AGORA.getTime() + DIA), { agora: AGORA }));
     googleConectado = true;
@@ -497,6 +497,23 @@ describe.skipIf(!comBanco)('o espelho da agenda pela porta (banco de teste)', ()
     const quando = new Date(AGORA.getTime() + 4 * 60_000);
     expect(await naEmpresa(() => espelho.passagem(ORG, quando))).toMatchObject({ status: 'pulada' });
     expect((await naEmpresa(() => espelho.estado(ORG, quando))).ultimaPassagem).toBe(quando.toISOString());
+  });
+
+  it('M1: espelho atrasado e Google desconectado: devolve o espelho velho, marcado atrasado e com o motivo, nunca a lista vazia', async () => {
+    const tarde = new Date(AGORA.getTime() + 30 * 60_000);
+    const n = leiturasDiretas.length;
+    googleConectado = false;
+    let r;
+    try {
+      r = await naEmpresa(() => espelho.periodo(ORG, AGORA, new Date(AGORA.getTime() + 7 * DIA), { agora: tarde }));
+    } finally {
+      googleConectado = true;
+    }
+    expect(r.fonte).toBe('espelho');
+    expect(r.sincronia).toMatchObject({ atrasada: true, erro: expect.stringMatching(/não conectado/) });
+    expect(r.eventos.length).toBeGreaterThan(0);
+    expect(r.eventos.map((e) => e.id)).toContain('r2');
+    expect(leiturasDiretas.length).toBe(n);
   });
 
   it('o Fechado é trocado a cada passagem: intervalo novo entra, o que saiu do Google sai do espelho; Fechado desligado leva as linhas', async () => {

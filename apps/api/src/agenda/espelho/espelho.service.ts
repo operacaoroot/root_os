@@ -621,7 +621,15 @@ export class EspelhoService {
       return { eventos: await this.doEspelho(orgId, de, ate, opcoes), sincronia, fonte: 'espelho' };
     }
     const motivo = await this.motivoParaNaoLer(orgId, CAPACIDADE_DA_LEITURA_DIRETA).catch((e: Error) => e.message);
-    if (motivo) return { eventos: [], sincronia: { ...sincronia, erro: motivo }, fonte: 'espelho' };
+    // Sem Google (desligado, desconectado, sonda em erro): o espelho velho, marcado atrasado, e
+    // nunca a lista vazia (M1): vazia deixaria a régua e o link público toda verde.
+    if (motivo) {
+      return {
+        eventos: await this.doEspelho(orgId, de, ate, opcoes),
+        sincronia: { ...sincronia, atrasada: true, erro: String(motivo).slice(0, 300) },
+        fonte: 'espelho',
+      };
+    }
     try {
       const r = await this.porta.executar({
         orgId,
