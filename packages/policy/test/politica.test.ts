@@ -455,8 +455,10 @@ describe('catálogo do marketing-os', () => {
     // do Drive para o banco de atas, também é R0 sem ferramenta: quem lê é gente
     // na tela de Atas, e o texto volta sigiloso ao registro.
     const semFerramenta = ['instagram.comentario.ler', 'instagram.regra_de_resposta.pausar', 'contexto.arquivo.ler'];
+    // 1.13.0 (30/10/2026, a Rootinha): três leituras novas COM ferramenta —
+    // `caixa.pendencia.listar`, `aprovacao.listar` e `briefing.ler` —, e o número foi a 39.
     const leituras = DELTA.capacidades.filter((c) => c.nivel === 'R0' && !semFerramenta.includes(c.id));
-    expect(leituras).toHaveLength(36);
+    expect(leituras).toHaveLength(39);
     for (const id of semFerramenta) expect(DELTA.capacidades.find((c) => c.id === id)?.ferramenta, id).toBeUndefined();
     for (const c of leituras) {
       expect(c.ferramenta, `${c.id} sem nome de ferramenta`).toBeTruthy();
@@ -939,8 +941,8 @@ describe('capacidades da rodada dos agentes (21/10/2026)', () => {
     }
   });
 
-  it('o delta subiu para 1.11.0 (e segue: 1.12.0 na produção 22)', () => {
-    expect(['1.11.0', '1.12.0']).toContain(json('politica-marketing-os.json').versao);
+  it('o delta subiu para 1.11.0 (e segue: 1.12.0 na produção 22, 1.13.0 com a Rootinha)', () => {
+    expect(['1.11.0', '1.12.0', '1.13.0']).toContain(json('politica-marketing-os.json').versao);
   });
 
   it('os esquemas são fechados e exigem o que a aprovação assina', () => {
@@ -988,8 +990,8 @@ describe('capacidades da rodada dos agentes (21/10/2026)', () => {
  * a ponta terminal da cadeia que a sobrescrita do vigia aponta.
  */
 describe('agenda.evento.restaurar (produção 22, 22/10/2026)', () => {
-  it('o delta está em 1.12.0', () => {
-    expect(json('politica-marketing-os.json').versao).toBe('1.12.0');
+  it('o delta está em 1.12.0 ou depois (1.13.0 com a Rootinha)', () => {
+    expect(['1.12.0', '1.13.0']).toContain(json('politica-marketing-os.json').versao);
   });
 
   it('é R3 pela escada, com rota, sem ferramenta e sem desfazer', () => {
@@ -1005,5 +1007,65 @@ describe('agenda.evento.restaurar (produção 22, 22/10/2026)', () => {
     expect(s.additionalProperties).toBe(false);
     expect([...s.required].sort()).toEqual(['eventoId', 'tituloAtual', 'tituloOriginal']);
     expect(Object.keys(s.properties).sort()).toEqual(['eventoId', 'tituloAtual', 'tituloOriginal']);
+  });
+});
+
+/*
+ * 1.13.0 (30/10/2026): as capacidades que deixam a Rootinha (o agente externo,
+ * no Hermes) operar o OS só pelas portas dele. Oito cabem no desenho como foram
+ * pedidas; a nona, responder no WhatsApp, foi pedida como R1 e a escada não
+ * deixa: sair da casa sem volta é R3 (o caso "a escrita que sai para fora sem
+ * volta nunca é menos que R3", acima). Ela entra no nível que a escada calcula,
+ * e fica retida para aprovação até alguém decidir mexer na régua.
+ */
+describe('1.13.0: as capacidades da Rootinha (30/10/2026)', () => {
+  const NIVEL: Record<string, string> = {
+    'operacao.tarefa.criar': 'R1',
+    'operacao.tarefa.comentar': 'R1',
+    'caixa.pendencia.listar': 'R0',
+    'caixa.pendencia.criar': 'R1',
+    'aprovacao.listar': 'R0',
+    'agente.invocar': 'R1',
+    'briefing.ler': 'R0',
+    'contexto.memoria.sugerir': 'R1',
+    'whatsapp.conversa.responder': 'R3',
+  };
+
+  it('o delta está em 1.13.0', () => {
+    expect(json('politica-marketing-os.json').versao).toBe('1.13.0');
+  });
+
+  it('cada uma está no delta com o nível que a escada calcula, com ferramenta e rota', () => {
+    for (const [id, nivel] of Object.entries(NIVEL)) {
+      const c = DELTA.capacidades.find((x) => x.id === id);
+      expect(c, id).toBeTruthy();
+      expect(c!.nivel, id).toBe(nivel);
+      expect(classificar(c!.efeito), id).toBe(nivel);
+      expect(c!.ferramenta, id).toMatch(/^[a-z_]+$/);
+      expect(c!.rota, id).toMatch(nivel === 'R0' ? /^GET \// : /^POST \/agents\/:slug\/capacidades\/:id\/executar$/);
+    }
+  });
+
+  it('os esquemas são fechados', () => {
+    for (const id of Object.keys(NIVEL)) {
+      const s = DELTA.capacidades.find((x) => x.id === id)!.argsSchema as { type: string; additionalProperties: boolean };
+      expect(s.type, id).toBe('object');
+      expect(s.additionalProperties, id).toBe(false);
+    }
+  });
+
+  it('responder no WhatsApp não escolhe destino: só a mensagem que pediu e o texto', () => {
+    const s = DELTA.capacidades.find((x) => x.id === 'whatsapp.conversa.responder')!.argsSchema as { required: string[]; properties: Record<string, unknown> };
+    expect([...s.required].sort()).toEqual(['mensagemId', 'texto']);
+    expect(Object.keys(s.properties).sort()).toEqual(['mensagemId', 'texto']);
+  });
+
+  it('nenhuma delas mexe com dinheiro, apaga ou assume obrigação', () => {
+    for (const id of Object.keys(NIVEL)) {
+      const e = DELTA.capacidades.find((x) => x.id === id)!.efeito;
+      expect(e.impactoFinanceiro, id).toBe('nenhum');
+      expect(e.destruicao, id).toBe(false);
+      expect(e.obrigacaoLegal, id).toBe(false);
+    }
   });
 });

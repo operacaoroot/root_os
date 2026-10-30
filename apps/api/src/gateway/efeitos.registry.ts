@@ -28,6 +28,22 @@ export interface ContextoDoEfeito {
    * escreve; o efeito lê daqui que a saída foi autorizada pelo lote.
    */
   loteItemId?: string | null;
+  /**
+   * A PESSOA que pediu ao agente, quando ela é diferente do ator (30/10/2026,
+   * a Rootinha). No caminho do agente externo o ator é o AGENTE — é ele quem
+   * propõe, e é isso que deixa qualquer sócio confirmar o que ele propôs —, e o
+   * efeito que escreve em nome de gente (a tarefa, o comentário) precisa saber
+   * de quem é o nome. Não se herda do ambiente: só quem montou o pedido sabe.
+   */
+  solicitanteId?: string | null;
+  /**
+   * O pedido veio de texto de terceiro (RF-G-07), dito por quem montou o pedido —
+   * o booleano da marca `ExecCtx.procedenciaExterna`, com outro nome porque a
+   * porta entrega o próprio `ExecCtx` como contexto do efeito. A porta já usou a marca para subir o degrau; o efeito só a lê quando ele
+   * mesmo abre outra passagem (invocar um agente) e a marca precisa ir junto.
+   * Mão única como a da porta: ausente quer dizer "ninguém marcou".
+   */
+  pedidoDeFora?: boolean | null;
 }
 
 /**
@@ -189,6 +205,8 @@ export class EfeitosRegistry {
       correlationId: bruto.correlationId ?? herdado?.correlationId ?? null,
       ...(bruto.approvalId ? { approvalId: bruto.approvalId } : {}),
       ...(bruto.loteItemId ? { loteItemId: bruto.loteItemId } : {}),
+      ...(bruto.solicitanteId ? { solicitanteId: bruto.solicitanteId } : {}),
+      ...(bruto.pedidoDeFora ? { pedidoDeFora: true } : {}),
     };
   }
 }

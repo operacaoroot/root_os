@@ -1,6 +1,6 @@
 {
-  "versao": "1.12.0",
-  "atualizadoEm": "2026-10-22",
+  "versao": "1.13.0",
+  "atualizadoEm": "2026-10-30",
   "origem": "o código real deste repositório",
   "descricao": "Capacidades do marketing-os. É um DELTA sobre politica-root.json: herda níveis, gatilhos, escalonamento, invariantes e limites, e declara só o que existe em código aqui. Capacidade sem rota é declarada e não implementada — entra classificada, e a porta recusa antes de qualquer efeito.",
   "estende": "politica-root.json",
@@ -2233,6 +2233,406 @@
         "exposicaoExterna": false,
         "impactoFinanceiro": "nenhum",
         "sensibilidade": "interna",
+        "destruicao": false,
+        "obrigacaoLegal": false
+      }
+    },
+    {
+      "id": "operacao.tarefa.criar",
+      "rota": "POST /agents/:slug/capacidades/:id/executar",
+      "ferramenta": "tarefa_criar",
+      "descricao": "Cria UMA tarefa no Dia a dia pelo mesmo serviço que o agente de tarefas do grupo usa (TR-12, TarefasDoDiaService): tarefa igual e aberta não nasce, parecida ou com cara de lead/post volta como aviso e só nasce com `confirmar`. Age em nome de quem pediu, que precisa ter tarefas.editar. Escreve só dentro do OS.",
+      "nivel": "R1",
+      "argsSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "titulo"
+        ],
+        "properties": {
+          "titulo": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 300,
+            "description": "o que precisa ser feito, como vai aparecer no Dia a dia"
+          },
+          "area": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 120,
+            "description": "o nome da área (Operação, Comercial...); sem ela, Operação"
+          },
+          "pessoa": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 120,
+            "description": "o nome de quem faz, como está na equipe; \"eu\" é quem pediu"
+          },
+          "prazo": {
+            "type": "string",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+            "description": "AAAA-MM-DD"
+          },
+          "clienteId": {
+            "type": "string",
+            "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
+            "description": "o cliente da tarefa, quando houver"
+          },
+          "confirmar": {
+            "type": "boolean",
+            "description": "true só depois de quem pediu ver o aviso de parecida e dizer que cria assim mesmo"
+          }
+        }
+      },
+      "efeito": {
+        "escreveForaDoOS": false,
+        "produzArtefato": true,
+        "reversibilidade": "automatica",
+        "exposicaoExterna": false,
+        "impactoFinanceiro": "nenhum",
+        "sensibilidade": "interna",
+        "destruicao": false,
+        "obrigacaoLegal": false
+      }
+    },
+    {
+      "id": "operacao.tarefa.comentar",
+      "rota": "POST /agents/:slug/capacidades/:id/executar",
+      "ferramenta": "tarefa_comentar",
+      "descricao": "Escreve UM comentário numa tarefa do Trabalho, pelo WorkService (o mesmo da tela), em nome de quem pediu, que precisa ter tarefas.editar. Não muda status, prazo nem responsável. Escreve só dentro do OS.",
+      "nivel": "R1",
+      "argsSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "tarefaId",
+          "texto"
+        ],
+        "properties": {
+          "tarefaId": {
+            "type": "string",
+            "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
+            "description": "o id interno da tarefa"
+          },
+          "texto": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 4000,
+            "description": "o comentário"
+          }
+        }
+      },
+      "efeito": {
+        "escreveForaDoOS": false,
+        "produzArtefato": true,
+        "reversibilidade": "automatica",
+        "exposicaoExterna": false,
+        "impactoFinanceiro": "nenhum",
+        "sensibilidade": "interna",
+        "destruicao": false,
+        "obrigacaoLegal": false
+      }
+    },
+    {
+      "id": "caixa.pendencia.listar",
+      "rota": "GET /pendencias",
+      "ferramenta": "pendencia_listar",
+      "descricao": "Lista as pendências que agentes e rotinas deixaram para gente (a caixa): as de quem pediu e as sem destinatário, ou todas. Só leitura.",
+      "nivel": "R0",
+      "argsSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [],
+        "properties": {
+          "estado": {
+            "type": "string",
+            "enum": [
+              "aberta",
+              "resolvida",
+              "descartada"
+            ],
+            "description": "padrão: aberta"
+          },
+          "de": {
+            "type": "string",
+            "enum": [
+              "minhas",
+              "todas"
+            ],
+            "description": "padrão: minhas (as de quem pediu e as sem destinatário)"
+          }
+        }
+      },
+      "efeito": {
+        "escreveForaDoOS": false,
+        "produzArtefato": false,
+        "reversibilidade": "automatica",
+        "exposicaoExterna": false,
+        "impactoFinanceiro": "nenhum",
+        "sensibilidade": "interna",
+        "destruicao": false,
+        "obrigacaoLegal": false
+      }
+    },
+    {
+      "id": "caixa.pendencia.criar",
+      "rota": "POST /agents/:slug/capacidades/:id/executar",
+      "ferramenta": "pendencia_criar",
+      "descricao": "Abre UMA pendência na caixa para uma pessoa decidir (ou para qualquer pessoa da empresa), com a função do agente que pediu. Idempotente pela chave: a mesma pendência aberta de novo atualiza o texto; decidida, fica como está. Não age sobre nada: só deixa a pergunta para gente. Escreve só dentro do OS.",
+      "nivel": "R1",
+      "argsSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "titulo"
+        ],
+        "properties": {
+          "titulo": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 300,
+            "description": "a pergunta ou o pedido, em uma linha"
+          },
+          "contexto": {
+            "type": "string",
+            "maxLength": 4000,
+            "description": "o que a pessoa precisa saber para decidir"
+          },
+          "para": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 120,
+            "description": "o nome de quem decide, como está na equipe; sem ele, qualquer pessoa da empresa"
+          },
+          "opcoes": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 6,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "chave",
+                "rotulo"
+              ],
+              "properties": {
+                "chave": {
+                  "type": "string",
+                  "pattern": "^[a-z0-9_-]{1,40}$"
+                },
+                "rotulo": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 80
+                }
+              }
+            },
+            "description": "as respostas possíveis; sem elas, só \"Feito\""
+          },
+          "chave": {
+            "type": "string",
+            "pattern": "^[a-z0-9][a-z0-9._-]{0,80}$",
+            "description": "a idempotência: a mesma chave cai na mesma pendência"
+          }
+        }
+      },
+      "efeito": {
+        "escreveForaDoOS": false,
+        "produzArtefato": true,
+        "reversibilidade": "automatica",
+        "exposicaoExterna": false,
+        "impactoFinanceiro": "nenhum",
+        "sensibilidade": "interna",
+        "destruicao": false,
+        "obrigacaoLegal": false
+      }
+    },
+    {
+      "id": "aprovacao.listar",
+      "rota": "GET /approvals",
+      "ferramenta": "aprovacao_listar",
+      "descricao": "Lê a fila de aprovações (/atendimento): o resumo, o nível, a capacidade, a alçada exigida e o prazo de cada pedido. Não traz os argumentos gravados nem o token, e não aprova nem rejeita nada: decidir é de gente, na fila ou no canal.",
+      "nivel": "R0",
+      "argsSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [],
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "pendente",
+              "confirmada",
+              "consumida",
+              "rejeitada",
+              "expirada"
+            ],
+            "description": "padrão: pendente"
+          }
+        }
+      },
+      "efeito": {
+        "escreveForaDoOS": false,
+        "produzArtefato": false,
+        "reversibilidade": "automatica",
+        "exposicaoExterna": false,
+        "impactoFinanceiro": "nenhum",
+        "sensibilidade": "confidencial",
+        "destruicao": false,
+        "obrigacaoLegal": false
+      }
+    },
+    {
+      "id": "agente.invocar",
+      "rota": "POST /agents/:slug/capacidades/:id/executar",
+      "ferramenta": "agente_invocar",
+      "descricao": "Acorda OUTRO agente do OS pelo slug, uma passagem (o mesmo \"Invocar\" da tela, `AgentRuntime.invocar`), com um recado curto. O agente chamado roda com as capacidades DELE, pela porta, e cada ação dele é classificada e registrada como sempre. Nunca o próprio agente que pede, nem agente que também invoca agente.",
+      "nivel": "R1",
+      "argsSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "agente"
+        ],
+        "properties": {
+          "agente": {
+            "type": "string",
+            "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$",
+            "maxLength": 80,
+            "description": "o slug do agente (ex.: briefing-diario)"
+          },
+          "nota": {
+            "type": "string",
+            "maxLength": 300,
+            "description": "o recado curto de quem pediu (\"olhe o cliente X\")"
+          }
+        }
+      },
+      "efeito": {
+        "escreveForaDoOS": false,
+        "produzArtefato": true,
+        "reversibilidade": "automatica",
+        "exposicaoExterna": false,
+        "impactoFinanceiro": "nenhum",
+        "sensibilidade": "interna",
+        "destruicao": false,
+        "obrigacaoLegal": false
+      }
+    },
+    {
+      "id": "briefing.ler",
+      "rota": "GET /agents/briefing-diario/ultima-passagem",
+      "ferramenta": "briefing_ler",
+      "descricao": "Lê a última passagem respondida do Briefing diário (CE-02, agente briefing-diario): o texto, quando foi e a sessão de onde saiu. Só leitura.",
+      "nivel": "R0",
+      "argsSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [],
+        "properties": {}
+      },
+      "efeito": {
+        "escreveForaDoOS": false,
+        "produzArtefato": false,
+        "reversibilidade": "automatica",
+        "exposicaoExterna": false,
+        "impactoFinanceiro": "nenhum",
+        "sensibilidade": "interna",
+        "destruicao": false,
+        "obrigacaoLegal": false
+      }
+    },
+    {
+      "id": "contexto.memoria.sugerir",
+      "rota": "POST /agents/:slug/capacidades/:id/executar",
+      "ferramenta": "memoria_sugerir",
+      "descricao": "Sugere UMA nota para a memória da empresa. Não grava memória: abre uma pendência na caixa com o texto exato, e a nota só nasce (procedência promoção, pelo MemoriaService) quando uma pessoa com obsidian.editar responde \"Gravar na memória\". Escreve só dentro do OS.",
+      "nivel": "R1",
+      "argsSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "titulo",
+          "corpo"
+        ],
+        "properties": {
+          "titulo": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 400
+          },
+          "corpo": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 20000,
+            "description": "o texto da nota, em markdown"
+          },
+          "chave": {
+            "type": "string",
+            "pattern": "^[a-z0-9][a-z0-9._/-]{0,120}$",
+            "description": "a chave estável da nota; sem ela, nasce uma em sugestao/"
+          },
+          "tags": {
+            "type": "array",
+            "maxItems": 20,
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 60
+            }
+          },
+          "motivo": {
+            "type": "string",
+            "maxLength": 2000,
+            "description": "por que isto deve virar memória"
+          }
+        }
+      },
+      "efeito": {
+        "escreveForaDoOS": false,
+        "produzArtefato": true,
+        "reversibilidade": "automatica",
+        "exposicaoExterna": false,
+        "impactoFinanceiro": "nenhum",
+        "sensibilidade": "interna",
+        "destruicao": false,
+        "obrigacaoLegal": false
+      }
+    },
+    {
+      "id": "whatsapp.conversa.responder",
+      "rota": "POST /agents/:slug/capacidades/:id/executar",
+      "ferramenta": "whatsapp_conversa_responder",
+      "descricao": "Responde na MESMA conversa de WhatsApp de onde veio o pedido, pela Evolution da empresa: o destino sai da mensagem gravada (mensagemId), nunca de quem propõe, e só vale até 24 h depois dela. Começar conversa nova continua sendo whatsapp.mensagem.enviar ou comercial.whatsapp.enviar. Não existe desenviar.",
+      "nivel": "R3",
+      "argsSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "mensagemId",
+          "texto"
+        ],
+        "properties": {
+          "mensagemId": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9_:.-]{1,200}$",
+            "description": "o id (da Evolution) da mensagem que fez o pedido"
+          },
+          "texto": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 4000,
+            "description": "a resposta"
+          }
+        }
+      },
+      "efeito": {
+        "escreveForaDoOS": true,
+        "produzArtefato": false,
+        "reversibilidade": "nenhuma",
+        "exposicaoExterna": true,
+        "impactoFinanceiro": "nenhum",
+        "sensibilidade": "confidencial",
         "destruicao": false,
         "obrigacaoLegal": false
       }
