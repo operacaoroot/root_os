@@ -63,10 +63,10 @@ const ev = (id: string, titulo: string, dia: string, de: string, ate: string, ov
 
 const EVENTOS: EventoDaAgenda[] = [
   // Choque: o Rodrigo em dois lugares na quarta 04/11 às 09:00.
-  ev('a-promedical', 'Reunião Online - Promedical - Rodrigo', '2026-11-04', '09:00', '10:00'),
-  ev('b-campobom', 'Reunião Online - Campo Bom - Rodrigo', '2026-11-04', '09:00', '10:00'),
+  ev('a-clinimodelo', 'Reunião Online - Clinimodelo - Rodrigo', '2026-11-04', '09:00', '10:00'),
+  ev('b-campomodelo', 'Reunião Online - Campo Modelo - Rodrigo', '2026-11-04', '09:00', '10:00'),
   // Sem Meet: a online de cliente sem link.
-  ev('c-cultural', 'Reunião Online - Cultural Clube - Lucas', '2026-11-05', '10:00', '11:00', { meet: null }),
+  ev('c-cultural', 'Reunião Online - Clube Modelo - Lucas', '2026-11-05', '10:00', '11:00', { meet: null }),
   // Rito sem gente: o Pedro Fora na quinta do rito, e a ocorrência do rito na agenda.
   { ...ev('d-fora', 'Pedro Fora - viagem', '2026-11-05', '00:00', '00:00', { meet: null }), inicio: '2026-11-05', fim: '2026-11-06', diaInteiro: true },
   ev('e-rito', 'Reunião Interna - Todos', '2026-11-05', '19:30', '21:00', { serieId: 'serie-quinta' }),
@@ -74,7 +74,7 @@ const EVENTOS: EventoDaAgenda[] = [
   ev('f-finados', 'Reunião Online - Acme - Pedro', '2026-11-02', '10:00', '11:00'),
   // Trajeto: presencial do Lucas colada na anterior.
   ev('g-anterior', 'Reunião Online - Alfa - Lucas', '2026-11-03', '15:00', '16:00'),
-  ev('h-custeio', 'Reunião Presencial - Custeio - Lucas', '2026-11-03', '16:00', '17:00', { meet: null }),
+  ev('h-exemplaria', 'Reunião Presencial - Exemplaria - Lucas', '2026-11-03', '16:00', '17:00', { meet: null }),
 ];
 
 const entrada = (over: Partial<EntradaDosConflitos> = {}): EntradaDosConflitos => ({
@@ -90,17 +90,17 @@ describe('os conflitos (parte pura)', () => {
     const [c] = doTipo(cartoes, 'choque');
     expect(doTipo(cartoes, 'choque')).toHaveLength(1);
     expect(c.titulo).toBe('Rodrigo está em dois lugares ao mesmo tempo');
-    expect(c.eventos.map((e) => e.id).sort()).toEqual(['a-promedical', 'b-campobom']);
+    expect(c.eventos.map((e) => e.id).sort()).toEqual(['a-clinimodelo', 'b-campomodelo']);
     expect(c.acoes.map((a) => a.rotulo)).toEqual([
-      'Empurrar Campo Bom para 10:30',
-      'Passar Campo Bom para o Lucas (livre)',
+      'Empurrar Campo Modelo para 10:30',
+      'Passar Campo Modelo para o Lucas (livre)',
       'Remarcar…',
       'Marcar como confirmado com o cliente',
     ]);
     const empurrar = c.acoes[0].pedido!;
     expect(empurrar).toMatchObject({
-      acao: 'alterar', eventoId: 'b-campobom',
-      antes: { titulo: 'Reunião Online - Campo Bom - Rodrigo', inicio: sp('2026-11-04', '09:00'), meet: true },
+      acao: 'alterar', eventoId: 'b-campomodelo',
+      antes: { titulo: 'Reunião Online - Campo Modelo - Rodrigo', inicio: sp('2026-11-04', '09:00'), meet: true },
       depois: { inicio: sp('2026-11-04', '10:30'), fim: sp('2026-11-04', '11:30') },
     });
     expect(c.acoes[1].pedido).toMatchObject({ acao: 'alterar', depois: { responsaveis: ['Lucas'] } });
@@ -152,10 +152,10 @@ describe('os conflitos (parte pura)', () => {
 
   it('trajeto: um cartão só, na presencial, com empurrar e trocar para online', () => {
     const js = doTipo(cartoes, 'janela');
-    const c = js.find((x) => x.eventos[0].id === 'h-custeio')!;
+    const c = js.find((x) => x.eventos[0].id === 'h-exemplaria')!;
     expect(js.some((x) => x.eventos[0].id === 'g-anterior')).toBe(false);
     expect(c.frase).toContain('Falta o trajeto de 30 min antes da presencial');
-    expect(c.acoes.map((a) => a.rotulo)).toEqual(['Empurrar Custeio para 16:30', 'Trocar para online', 'Remarcar…', 'Deixar assim']);
+    expect(c.acoes.map((a) => a.rotulo)).toEqual(['Empurrar Exemplaria para 16:30', 'Trocar para online', 'Remarcar…', 'Deixar assim']);
     expect(c.acoes[1].pedido).toMatchObject({ depois: { modalidade: 'online', criarMeet: true } });
   });
 
@@ -169,7 +169,7 @@ describe('os conflitos (parte pura)', () => {
   });
 
   it('confirmado com o cliente: continua na lista, sem alarme e no fim', () => {
-    const props = new Map([['b-campobom', { [PROPRIEDADES_DO_OS.confirmadoComCliente]: '1' }]]);
+    const props = new Map([['b-campomodelo', { [PROPRIEDADES_DO_OS.confirmadoComCliente]: '1' }]]);
     const cs = montarConflitos(entrada({ propriedades: props }));
     const c = doTipo(cs, 'choque')[0];
     expect(c.confirmado).toBe(true);
@@ -203,7 +203,7 @@ describe('os conflitos (parte pura)', () => {
         vigia: [
           {
             eventoId: 'c-cultural', tituloAtual: 'call com cliente novo', inicio: sp('2026-11-05', '10:00'), estado: 'proposta',
-            problemas: ['o título não está no padrão'], tituloProposto: 'Reunião Online - Juma - Lucas', adicionarMeet: true,
+            problemas: ['o título não está no padrão'], tituloProposto: 'Reunião Online - Fictus - Lucas', adicionarMeet: true,
             pendenciaId: 'pend-1', opcaoNaoEReuniao: OPCAO_NAO_E_REUNIAO,
           },
         ],
@@ -211,7 +211,7 @@ describe('os conflitos (parte pura)', () => {
     );
     const c = doTipo(cs, 'padrao')[0];
     expect(c.titulo).toBe('"call com cliente novo"');
-    expect(c.frase).toContain('proposta: Reunião Online - Juma - Lucas + link do Meet');
+    expect(c.frase).toContain('proposta: Reunião Online - Fictus - Lucas + link do Meet');
     expect(c.pessoas).toEqual(['Lucas']);
     expect(c.acoes[0]).toMatchObject({ tipo: 'aplicar_titulo', pedido: null, rota: { metodo: 'POST', caminho: '/agenda/padronizar/c-cultural' } });
     expect(c.acoes[1]).toMatchObject({ tipo: 'nao_e_reuniao', rota: { caminho: '/pendencias/pend-1/responder', corpo: { escolha: 'nao-e-reuniao' } } });
@@ -272,7 +272,7 @@ describe.skipIf(!comBanco)('o serviço dos conflitos (banco de teste, dublê do 
     const pend = await prisma.pendencia.create({
       data: {
         orgId: CASA, funcao: 'AG-01', tipo: 'agenda.padrao', chave: `agenda:${MARCA}`, titulo: 'qual é o cliente?',
-        opcoes: [{ chave: 'c1', rotulo: 'Juma' }, { chave: OPCAO_NAO_E_REUNIAO, rotulo: 'Não é reunião' }],
+        opcoes: [{ chave: 'c1', rotulo: 'Fictus' }, { chave: OPCAO_NAO_E_REUNIAO, rotulo: 'Não é reunião' }],
       },
     });
     await prisma.agendaConferencia.create({
@@ -290,7 +290,7 @@ describe.skipIf(!comBanco)('o serviço dos conflitos (banco de teste, dublê do 
     // O "confirmado com o cliente" só na coluna do espelho (o evento não trouxe as propriedades).
     await prisma.agendaEvento.create({
       data: {
-        orgId: CASA, agenda: 'primary', googleId: 'b-campobom', titulo: 'Reunião Online - Campo Bom - Rodrigo',
+        orgId: CASA, agenda: 'primary', googleId: 'b-campomodelo', titulo: 'Reunião Online - Campo Modelo - Rodrigo',
         inicio: new Date(sp('2026-11-04', '09:00')), fim: new Date(sp('2026-11-04', '10:00')),
         propriedades: { [PROPRIEDADES_DO_OS.confirmadoComCliente]: '1' },
       },

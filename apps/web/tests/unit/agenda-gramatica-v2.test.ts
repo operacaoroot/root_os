@@ -86,8 +86,8 @@ describe('feriado', () => {
 
 describe('o resto continua com a gramática de reunião', () => {
   it('cliente e interna', () => {
-    expect(lerCompromisso('Reunião Online - Andrade Peças - Rodrigo')).toMatchObject({
-      tipo: 'cliente', modalidade: 'online', cliente: 'Andrade Peças', responsaveis: ['Rodrigo'],
+    expect(lerCompromisso('Reunião Online - Fictícia Peças - Rodrigo')).toMatchObject({
+      tipo: 'cliente', modalidade: 'online', cliente: 'Fictícia Peças', responsaveis: ['Rodrigo'],
     });
     expect(lerCompromisso('Reunião Interna - Todos')).toMatchObject({ tipo: 'interna', responsaveis: ['Rodrigo', 'Lucas', 'Pedro'] });
   });

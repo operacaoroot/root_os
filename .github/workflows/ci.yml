@@ -2483,7 +2483,14 @@ jobs:
           # nova. O caso "o catálogo de permissões aceita as chaves REAIS"
           # pegou a permissão de três segmentos (virou
           # `pauta.enviar_ao_youtube`). O piso fica.
-          PISO_CASOS_ISOLAMENTO: '281'
+          #
+          # AGENDA V2 (30/10/2026): **554 casos** medidos no banco descartável
+          # da lane E. As sete tabelas da agenda v2 (`AgendaEvento`,
+          # `AgendaSincronia`, `AgendaRegraPessoa`, `AgendaRito`, `Feriado`,
+          # `AgendaRegraTexto`, `AgendaConvite`) entraram no registro de alvos
+          # como `tenant`, com semente nas duas empresas: +14 casos. O piso
+          # sobe 12, para 293.
+          PISO_CASOS_ISOLAMENTO: '293'
         run: |
           pnpm --filter @mktos/api exec vitest run \
             --reporter=default --reporter=json \

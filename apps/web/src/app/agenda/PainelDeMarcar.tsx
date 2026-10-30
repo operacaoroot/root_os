@@ -288,7 +288,7 @@ export function PainelDeMarcar(props: Props) {
             className={`${campo} mt-1.5 font-os-mono text-xs`}
             value={frase}
             onChange={(e) => escreverFrase(e.target.value)}
-            placeholder="online com andrade sexta 15h 1h rodrigo"
+            placeholder="online com cliente sexta 15h 1h rodrigo"
             autoComplete="off"
           />
           <div className="mt-1 text-[11.5px] text-muted">a frase preenche os campos abaixo; não usa IA</div>

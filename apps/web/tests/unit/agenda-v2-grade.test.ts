@@ -45,7 +45,7 @@ function ev(dia: string, ini: string, fim: string, titulo: string | null, extra:
     local: null,
     meet: 'https://meet.google.com/abc-defg-hij',
     convidados: [],
-    organizador: 'operacao.root@gmail.com',
+    organizador: 'agenda.casa@exemplo.invalid',
     organizadorEhAgenda: true,
     status: 'confirmado',
     atualizadoNoGoogle: null,
@@ -88,7 +88,7 @@ describe('os dias da grade', () => {
 
 describe('terços e "+N"', () => {
   it('dois ao mesmo tempo: metades', () => {
-    const d = layoutDoDia([ev('2026-11-03', '10:00', '11:00', 'Reunião Online - Papeleira - Rodrigo'), ev('2026-11-03', '10:30', '11:30', 'Reunião Online - Affari - Pedro')], '2026-11-03', JANELA);
+    const d = layoutDoDia([ev('2026-11-03', '10:00', '11:00', 'Reunião Online - Papelaria - Rodrigo'), ev('2026-11-03', '10:30', '11:30', 'Reunião Online - Exemplum - Pedro')], '2026-11-03', JANELA);
     expect(d.blocos.map((b) => [b.coluna, b.colunas])).toEqual([[0, 2], [1, 2]]);
     expect(d.mais).toEqual([]);
   });
@@ -132,24 +132,24 @@ describe('terços e "+N"', () => {
 
 describe('o que cada compromisso é', () => {
   it('choque: dois do mesmo sócio ao mesmo tempo; Fechado contra Fechado não é', () => {
-    const a = ev('2026-11-04', '09:00', '10:00', 'Reunião Online - Promedical - Rodrigo', { id: 'a' });
-    const b = ev('2026-11-04', '09:00', '10:00', 'Reunião Online - Campo Bom - Rodrigo', { id: 'b' });
+    const a = ev('2026-11-04', '09:00', '10:00', 'Reunião Online - Clinimodelo - Rodrigo', { id: 'a' });
+    const b = ev('2026-11-04', '09:00', '10:00', 'Reunião Online - Campo Modelo - Rodrigo', { id: 'b' });
     const c = ev('2026-11-04', '09:00', '10:00', 'Reunião Online - Outro - Lucas', { id: 'c' });
     const f1 = ev('2026-11-04', '14:00', '15:00', 'Fechado Rodrigo', { id: 'f1' });
     const f2 = ev('2026-11-04', '14:30', '15:30', null, { id: 'f2', origem: 'livre_ocupado', leitura: { ...lerCompromisso('Fechado Rodrigo') } });
     expect([...choquesDe([a, b, c, f1, f2])].sort()).toEqual(['a', 'b']);
   });
   it('aparência com a palavra: cliente, Fechado da agenda pessoal, fora do padrão, sem Meet', () => {
-    expect(aparenciaDo(ev('2026-11-03', '10:00', '11:00', 'Reunião Online - Custeio - Pedro')).tom).toBe('cliente');
+    expect(aparenciaDo(ev('2026-11-03', '10:00', '11:00', 'Reunião Online - Exemplaria - Pedro')).tom).toBe('cliente');
     const fechado = aparenciaDo(ev('2026-11-03', '14:00', '15:00', null, { origem: 'livre_ocupado', leitura: lerCompromisso('Fechado Rodrigo') }));
     expect(fechado).toMatchObject({ tom: 'fechado', titulo: 'Fechado Rodrigo', etiqueta: 'agenda pessoal · só ocupado' });
     const fdp = aparenciaDo(ev('2026-11-04', '15:00', '16:00', 'call com cliente novo', { convidados: [{ email: 'x@cliente.exemplo', resposta: 'pendente' }] }));
     expect(fdp).toMatchObject({ tom: 'foraDoPadrao', etiqueta: 'fora do padrão' });
-    const semMeet = aparenciaDo(ev('2026-11-05', '10:00', '11:00', 'Reunião Online - Cultural Clube - Lucas', { meet: null }));
+    const semMeet = aparenciaDo(ev('2026-11-05', '10:00', '11:00', 'Reunião Online - Clube Modelo - Lucas', { meet: null }));
     expect(semMeet).toMatchObject({ tom: 'cliente', etiqueta: 'sem Meet', semMeet: true });
   });
   it('Quem: pelos responsáveis do título ou pelo e-mail do sócio entre os convidados', () => {
-    const e = ev('2026-11-03', '10:00', '11:00', 'Reunião Online - Custeio - Pedro');
+    const e = ev('2026-11-03', '10:00', '11:00', 'Reunião Online - Exemplaria - Pedro');
     expect(ehDoSocio(e, 'Todos')).toBe(true);
     expect(ehDoSocio(e, 'Pedro')).toBe(true);
     expect(ehDoSocio(e, 'Lucas')).toBe(false);
@@ -173,10 +173,10 @@ describe('o que cada compromisso é', () => {
 describe('fonte, altura, selo e endereço', () => {
   it('a leitura direta vira o formato do espelho com a mesma gramática', () => {
     const v2 = doGoogleParaV2({
-      id: 'g1', title: 'Reunião Presencial - Custeio - Lucas', reuniao: null, start: '2026-11-03T19:00:00.000Z', end: '2026-11-03T20:00:00.000Z',
+      id: 'g1', title: 'Reunião Presencial - Exemplaria - Lucas', reuniao: null, start: '2026-11-03T19:00:00.000Z', end: '2026-11-03T20:00:00.000Z',
       diaInteiro: false, location: 'Av. Exemplo', description: null, link: null, meet: null, status: 'confirmed', organizador: null, attendees: ['a@b.exemplo'],
     });
-    expect(v2.leitura).toMatchObject({ tipo: 'cliente', cliente: 'Custeio', responsaveis: ['Lucas'], modalidade: 'presencial' });
+    expect(v2.leitura).toMatchObject({ tipo: 'cliente', cliente: 'Exemplaria', responsaveis: ['Lucas'], modalidade: 'presencial' });
     expect(v2.convidados).toEqual([{ email: 'a@b.exemplo', resposta: 'pendente' }]);
     expect(v2.organizadorEhAgenda).toBe(false);
     expect(ehRespostaDoEspelho({ eventos: [], sincronia: { ultimaPassagem: null, erro: null, atrasada: false }, fonte: 'espelho' })).toBe(true);
@@ -219,7 +219,7 @@ describe('a grade desenhada', () => {
   };
 
   it('terços com o título e "+N" que abre a lista daquele horário', () => {
-    const quatro = ['Promedical', 'Juma', 'Andrade Peças', 'Custeio'].map((x, i) => ev('2026-11-05', '14:00', '15:00', `Reunião Online - ${x} - Rodrigo`, { id: `q${i}` }));
+    const quatro = ['Clinimodelo', 'Fictus', 'Fictícia Peças', 'Exemplaria'].map((x, i) => ev('2026-11-05', '14:00', '15:00', `Reunião Online - ${x} - Rodrigo`, { id: `q${i}` }));
     const aoClicarEvento = vi.fn();
     render(createElement(GradeDeHoras, { ...base, aoClicarEvento, dias: ['2026-11-05'], eventos: quatro }));
     const blocos = document.querySelectorAll('[data-evento]');
@@ -230,19 +230,19 @@ describe('a grade desenhada', () => {
     fireEvent.click(mais);
     const lista = screen.getByRole('dialog', { name: 'Neste horário' });
     expect(within(lista).getAllByRole('button').filter((b) => /Reunião Online/.test(b.textContent ?? ''))).toHaveLength(4);
-    fireEvent.click(within(lista).getByText('Reunião Online - Custeio - Rodrigo'));
+    fireEvent.click(within(lista).getByText('Reunião Online - Exemplaria - Rodrigo'));
     expect(aoClicarEvento).toHaveBeenCalledWith(quatro[3]);
   });
 
   it('choque em magenta com a palavra; a linha do agora no dia de hoje; o compromisso novo tracejado', () => {
-    const a = ev('2026-11-03', '09:00', '10:00', 'Reunião Online - Promedical - Rodrigo', { id: 'a' });
-    const b = ev('2026-11-03', '09:00', '10:00', 'Reunião Online - Campo Bom - Rodrigo', { id: 'b' });
+    const a = ev('2026-11-03', '09:00', '10:00', 'Reunião Online - Clinimodelo - Rodrigo', { id: 'a' });
+    const b = ev('2026-11-03', '09:00', '10:00', 'Reunião Online - Campo Modelo - Rodrigo', { id: 'b' });
     render(createElement(GradeDeHoras, {
       ...base,
       dias: ['2026-11-03'],
       eventos: [a, b],
       choques: choquesDe([a, b]),
-      novo: { dia: '2026-11-03', inicio: 15 * 60, fim: 16 * 60, titulo: 'Reunião Online - Andrade Peças - Rodrigo' },
+      novo: { dia: '2026-11-03', inicio: 15 * 60, fim: 16 * 60, titulo: 'Reunião Online - Fictícia Peças - Rodrigo' },
     }));
     const bloco = document.querySelector('[data-evento="a"]') as HTMLElement;
     expect(bloco.getAttribute('data-tom')).toBe('choque');
@@ -252,7 +252,7 @@ describe('a grade desenhada', () => {
     expect(agora.style.top).toBe('304px');
     const novo = document.querySelector('[data-compromisso-novo]') as HTMLElement;
     expect(novo.textContent).toContain('novo');
-    expect(novo.textContent).toContain('Reunião Online - Andrade Peças - Rodrigo');
+    expect(novo.textContent).toContain('Reunião Online - Fictícia Peças - Rodrigo');
     expect(novo.className).toContain('border-dashed');
   });
 

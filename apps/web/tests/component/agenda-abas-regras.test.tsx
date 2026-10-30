@@ -146,7 +146,7 @@ const RELATORIO: RelatorioDaAgenda = {
     { socio: 'Pedro', total: 1, porTipo: { interna: 1 } },
   ],
   porTipo: { cliente: 4, interna: 1 },
-  semMeet: [{ id: 'x', titulo: 'Reunião Online - Cultural Clube - Lucas', inicio: '2026-11-05T13:00:00.000Z' }],
+  semMeet: [{ id: 'x', titulo: 'Reunião Online - Clube Modelo - Lucas', inicio: '2026-11-05T13:00:00.000Z' }],
   responsavelSemEmail: ['Pedro'],
   marcadosAssimMesmo: [{ eventoId: 'z', titulo: 'Reunião Online - Zeta - Rodrigo', inicio: '2026-10-21T12:00:00.000Z', motivo: 'cliente só podia nesse horário', quem: 'Rodrigo Teste', quando: '2026-10-20T12:00:00.000Z' }],
   criadosDiretoNoGoogle: 3,
@@ -157,7 +157,7 @@ describe('a aba Relatórios', () => {
     render(<AbaRelatorios />);
     expect(await screen.findByText('cliente só podia nesse horário')).toBeInTheDocument();
     expect(apiGet).toHaveBeenCalledWith('/agenda/relatorios', 'tok');
-    expect(screen.getByText('Reunião Online - Cultural Clube - Lucas')).toBeInTheDocument();
+    expect(screen.getByText('Reunião Online - Clube Modelo - Lucas')).toBeInTheDocument();
     expect(screen.getByText(/Pedro: sem e-mail na Equipe/)).toBeInTheDocument();
     expect(screen.getByText('Rodrigo Teste')).toBeInTheDocument();
     const tipo = document.querySelector('[data-por-tipo]') as HTMLElement;

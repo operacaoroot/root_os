@@ -8,6 +8,8 @@ import {
 } from '@mktos/policy';
 import { CAPACIDADES_DA_AGENDA } from '@mktos/shared';
 
+import { temPapelDeMaquina } from '../approvals/alcada';
+
 /* ==========================================================================
  * "MARCAR PELA TELA SAI NO CLIQUE": A SOBRESCRITA ASSINADA DA APROVAÇÃO DE R2
  * (agenda v2, 29/10/2026, decisão 2) — a parte pura
@@ -32,6 +34,41 @@ import { CAPACIDADES_DA_AGENDA } from '@mktos/shared';
  * que muda para cada capacidade da agenda. Quem aplica é o comando em
  * `sobrescrita-r2-da-agenda.cli.ts`.
  */
+
+/**
+ * Quem assina a sobrescrita tem de ser GENTE (B2): usuário da empresa, ativo e
+ * sem papel de máquina (`ia_servico`, `ia_acao`). Afrouxar a régua da empresa
+ * inteira em nome de uma conta de serviço seria assinatura de ninguém. Nulo =
+ * pode assinar; senão, a frase da recusa.
+ */
+export function recusaDoAutorDaSobrescrita(
+  autor: { isActive: boolean; papeis: readonly string[] } | null,
+  como: string,
+  empresa: string,
+): string | null {
+  if (!autor) return `não achei o usuário "${como}" na empresa ${empresa}.`;
+  if (!autor.isActive) return `o usuário "${como}" está desativado na empresa ${empresa}.`;
+  if (temPapelDeMaquina(autor.papeis)) return `"${como}" é conta de máquina: a sobrescrita exige uma pessoa (RF-P-06).`;
+  return null;
+}
+
+/**
+ * Fecha o app com prazo (B2): o Nest pode deixar temporizador ou conexão viva
+ * (o agendador de rotinas, com `ROTINAS_CRON=on`), e o comando ficaria
+ * pendurado depois de imprimir. Passado o prazo, segue sem esperar.
+ */
+export async function fecharComPrazo(fechar: () => Promise<unknown>, prazoMs = 5000): Promise<'fechado' | 'prazo'> {
+  let relogio: NodeJS.Timeout | undefined;
+  const prazo = new Promise<'prazo'>((r) => {
+    relogio = setTimeout(() => r('prazo'), prazoMs);
+    relogio.unref?.();
+  });
+  try {
+    return await Promise.race([fechar().then(() => 'fechado' as const, () => 'fechado' as const), prazo]);
+  } finally {
+    if (relogio) clearTimeout(relogio);
+  }
+}
 
 /** O motivo escrito da assinatura (RF-P-06) precisa dizer alguma coisa. */
 export const MOTIVO_MINIMO_R2 = 20;

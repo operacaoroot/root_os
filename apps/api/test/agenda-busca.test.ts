@@ -27,13 +27,13 @@ const ORG2 = 'org-teste-agenda-busca-g3-b';
 describe('a ordem da busca (pura)', () => {
   const c = (nome: string, tipo: 'lead' | 'cliente' = 'lead', outros: string[] = []) => ({ id: nome, tipo, nome, outros });
   it('começa > palavra começa > contém; nada casa = nulo', () => {
-    expect(notaDaBusca('and', c('Andrade Peças'))).toBe(0);
-    expect(notaDaBusca('pec', c('Andrade Peças'))).toBe(1);
-    expect(notaDaBusca('eca', c('Andrade Peças'))).toBe(2);
-    expect(notaDaBusca('xyz', c('Andrade Peças'))).toBeNull();
+    expect(notaDaBusca('fic', c('Fictícia Peças'))).toBe(0);
+    expect(notaDaBusca('pec', c('Fictícia Peças'))).toBe(1);
+    expect(notaDaBusca('eca', c('Fictícia Peças'))).toBe(2);
+    expect(notaDaBusca('xyz', c('Fictícia Peças'))).toBeNull();
   });
   it('sem acento e sem caixa, também pelos outros nomes', () => {
-    expect(notaDaBusca('PECAS', c('Andrade Peças'))).toBe(1);
+    expect(notaDaBusca('PECAS', c('Fictícia Peças'))).toBe(1);
     expect(notaDaBusca('joao', c('Ferragens Ficticias', 'lead', ['João Exemplo']))).toBe(0);
   });
   it('no empate, cliente antes de lead; até o limite', () => {
@@ -88,22 +88,22 @@ describe.skipIf(!URL)('GET /agenda/clientes contra o Postgres', () => {
     await limpar();
 
     // Empresa A
-    const andrade = await prisma.lead.create({ data: { orgId: ORG, name: 'Marcos Exemplo', email: 'marcos@andrade.exemplo' }, select: { id: true } });
-    await prisma.comercialFicha.create({ data: { leadId: andrade.id, empresa: 'Andrade Peças', etapa: 'proposta' } });
+    const ficticia = await prisma.lead.create({ data: { orgId: ORG, name: 'Marcos Exemplo', email: 'marcos@ficticia.exemplo' }, select: { id: true } });
+    await prisma.comercialFicha.create({ data: { leadId: ficticia.id, empresa: 'Fictícia Peças', etapa: 'proposta' } });
     await prisma.lead.create({ data: { orgId: ORG, name: 'João Ficticio' } });
-    await prisma.partner.create({ data: { orgId: ORG, isCliente: true, razaoSocial: 'Custeio Serviços Ltda', nomeFantasia: 'Custeio', email: 'contato@custeio.exemplo' } });
-    await prisma.partner.create({ data: { orgId: ORG, isCliente: false, isFornecedor: true, razaoSocial: 'Andrade Fornecedor' } });
+    await prisma.partner.create({ data: { orgId: ORG, isCliente: true, razaoSocial: 'Exemplaria Serviços Ltda', nomeFantasia: 'Exemplaria', email: 'contato@exemplaria.invalid' } });
+    await prisma.partner.create({ data: { orgId: ORG, isCliente: false, isFornecedor: true, razaoSocial: 'Fictícia Fornecedor' } });
     for (let i = 0; i < 10; i++) await prisma.lead.create({ data: { orgId: ORG, name: `Abelha ${i} Exemplo` } });
-    await evento(ORG, 'Andrade Peças', '2026-10-15T13:00:00.000Z', ['Pedro']);
-    await evento(ORG, 'Andrade Pecas', '2026-10-21T13:00:00.000Z', ['Rodrigo']);
-    await evento(ORG, 'Andrade Peças', '2026-10-25T13:00:00.000Z', ['Lucas'], 'cancelado');
-    await evento(ORG, 'Andrade Peças', '2026-11-06T18:00:00.000Z', ['Rodrigo']);
+    await evento(ORG, 'Fictícia Peças', '2026-10-15T13:00:00.000Z', ['Pedro']);
+    await evento(ORG, 'Ficticia Pecas', '2026-10-21T13:00:00.000Z', ['Rodrigo']);
+    await evento(ORG, 'Fictícia Peças', '2026-10-25T13:00:00.000Z', ['Lucas'], 'cancelado');
+    await evento(ORG, 'Fictícia Peças', '2026-11-06T18:00:00.000Z', ['Rodrigo']);
 
     // Empresa B: o mesmo nome, que nunca pode aparecer nem contar na A.
     const deB = await prisma.lead.create({ data: { orgId: ORG2, name: 'Pessoa de Outra Empresa', email: 'b@outra.exemplo' }, select: { id: true } });
-    await prisma.comercialFicha.create({ data: { leadId: deB.id, empresa: 'Andrade Peças Filial', etapa: 'contrato' } });
-    await evento(ORG2, 'Andrade Peças', '2026-10-20T13:00:00.000Z', ['Lucas']);
-    await evento(ORG2, 'Andrade Peças', '2026-10-22T13:00:00.000Z', ['Lucas']);
+    await prisma.comercialFicha.create({ data: { leadId: deB.id, empresa: 'Fictícia Peças Filial', etapa: 'contrato' } });
+    await evento(ORG2, 'Fictícia Peças', '2026-10-20T13:00:00.000Z', ['Lucas']);
+    await evento(ORG2, 'Fictícia Peças', '2026-10-22T13:00:00.000Z', ['Lucas']);
 
     svc = new BuscaDaAgendaService(prisma as unknown as PrismaService);
   }, 60_000);
@@ -116,24 +116,24 @@ describe.skipIf(!URL)('GET /agenda/clientes contra o Postgres', () => {
   });
 
   it('acha o lead pela empresa da ficha, sem acento, com etapa, contato e a agenda', async () => {
-    const r = await svc.buscar(ORG, 'andrade pecas', AGORA);
+    const r = await svc.buscar(ORG, 'ficticia pecas', AGORA);
     expect(r).toHaveLength(1);
     expect(r[0]).toMatchObject({
       tipo: 'lead',
-      nome: 'Andrade Peças',
+      nome: 'Fictícia Peças',
       etapa: 'Proposta',
-      contato: { nome: 'Marcos Exemplo', email: 'marcos@andrade.exemplo' },
+      contato: { nome: 'Marcos Exemplo', email: 'marcos@ficticia.exemplo' },
     });
     // Duas vezes no passado (o cancelado e o futuro não contam), a última em 21/10 com o Rodrigo.
     expect(r[0].naAgenda).toEqual({ vezes: 2, ultima: '2026-10-21T13:00:00.000Z', com: ['Rodrigo'] });
   });
 
   it('acha o cliente (Partner) pelo nome fantasia e pela razão social; fornecedor não entra', async () => {
-    const porFantasia = await svc.buscar(ORG, 'CUSTEIO', AGORA);
-    expect(porFantasia.map((x) => [x.tipo, x.nome])).toEqual([['cliente', 'Custeio']]);
-    expect(porFantasia[0].contato).toEqual({ nome: null, email: 'contato@custeio.exemplo' });
-    expect((await svc.buscar(ORG, 'servicos', AGORA)).map((x) => x.nome)).toEqual(['Custeio']);
-    expect((await svc.buscar(ORG, 'andrade', AGORA)).map((x) => x.nome)).toEqual(['Andrade Peças']);
+    const porFantasia = await svc.buscar(ORG, 'EXEMPLARIA', AGORA);
+    expect(porFantasia.map((x) => [x.tipo, x.nome])).toEqual([['cliente', 'Exemplaria']]);
+    expect(porFantasia[0].contato).toEqual({ nome: null, email: 'contato@exemplaria.invalid' });
+    expect((await svc.buscar(ORG, 'servicos', AGORA)).map((x) => x.nome)).toEqual(['Exemplaria']);
+    expect((await svc.buscar(ORG, 'ficticia', AGORA)).map((x) => x.nome)).toEqual(['Fictícia Peças']);
   });
 
   it('acha o lead pelo nome da pessoa, sem acento', async () => {
@@ -143,10 +143,10 @@ describe.skipIf(!URL)('GET /agenda/clientes contra o Postgres', () => {
   });
 
   it('nunca atravessa empresa: nem o lead, nem a contagem da outra', async () => {
-    const naB = await svc.buscar(ORG2, 'andrade', AGORA);
+    const naB = await svc.buscar(ORG2, 'ficticia', AGORA);
     expect(naB).toHaveLength(1);
-    expect(naB[0]).toMatchObject({ nome: 'Andrade Peças Filial', etapa: 'Contrato' });
-    // O nome é outro: os dois eventos de "Andrade Peças" da B não somam ao da filial, nem aos da A.
+    expect(naB[0]).toMatchObject({ nome: 'Fictícia Peças Filial', etapa: 'Contrato' });
+    // O nome é outro: os dois eventos de "Fictícia Peças" da B não somam ao da filial, nem aos da A.
     expect(naB[0].naAgenda.vezes).toBe(0);
     const naA = await svc.buscar(ORG, 'filial', AGORA);
     expect(naA).toEqual([]);

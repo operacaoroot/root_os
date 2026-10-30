@@ -21,25 +21,25 @@ vi.mock('@/app/agenda/abas/Historico', () => ({ Historico: () => <div data-histo
 
 import { AbaConflitos } from '@/app/agenda/abas/AbaConflitos';
 
-const antes = { titulo: 'Reunião Online - Campo Bom - Rodrigo', inicio: '2026-11-04T12:00:00.000Z', fim: '2026-11-04T13:00:00.000Z', local: null, meet: true };
+const antes = { titulo: 'Reunião Online - Campo Modelo - Rodrigo', inicio: '2026-11-04T12:00:00.000Z', fim: '2026-11-04T13:00:00.000Z', local: null, meet: true };
 
 const CHOQUE: CartaoDeConflito = {
   id: 'choque:a+b:Rodrigo', tipo: 'choque', urgencia: 8000, quando: '2026-11-04T12:00:00.000Z', pessoas: ['Rodrigo'],
-  titulo: 'Rodrigo está em dois lugares ao mesmo tempo', frase: 'Rodrigo já tem Reunião Online - Promedical - Rodrigo das 09:00 às 10:00.',
+  titulo: 'Rodrigo está em dois lugares ao mesmo tempo', frase: 'Rodrigo já tem Reunião Online - Clinimodelo - Rodrigo das 09:00 às 10:00.',
   eventos: [
-    { id: 'a', titulo: 'Reunião Online - Promedical - Rodrigo', inicio: '2026-11-04T12:00:00.000Z', fim: '2026-11-04T13:00:00.000Z' },
-    { id: 'b', titulo: 'Reunião Online - Campo Bom - Rodrigo', inicio: '2026-11-04T12:00:00.000Z', fim: '2026-11-04T13:00:00.000Z' },
+    { id: 'a', titulo: 'Reunião Online - Clinimodelo - Rodrigo', inicio: '2026-11-04T12:00:00.000Z', fim: '2026-11-04T13:00:00.000Z' },
+    { id: 'b', titulo: 'Reunião Online - Campo Modelo - Rodrigo', inicio: '2026-11-04T12:00:00.000Z', fim: '2026-11-04T13:00:00.000Z' },
   ],
   acoes: [
-    { tipo: 'empurrar', rotulo: 'Empurrar Campo Bom para 10:30', pedido: { acao: 'alterar', chave: 'k0000000000aa', eventoId: 'b', antes, depois: { inicio: '2026-11-04T13:30:00.000Z', fim: '2026-11-04T14:30:00.000Z' } } },
-    { tipo: 'passar', rotulo: 'Passar Campo Bom para o Lucas (livre)', pedido: { acao: 'alterar', chave: 'k0000000000bb', eventoId: 'b', antes, depois: { responsaveis: ['Lucas'] } } },
+    { tipo: 'empurrar', rotulo: 'Empurrar Campo Modelo para 10:30', pedido: { acao: 'alterar', chave: 'k0000000000aa', eventoId: 'b', antes, depois: { inicio: '2026-11-04T13:30:00.000Z', fim: '2026-11-04T14:30:00.000Z' } } },
+    { tipo: 'passar', rotulo: 'Passar Campo Modelo para o Lucas (livre)', pedido: { acao: 'alterar', chave: 'k0000000000bb', eventoId: 'b', antes, depois: { responsaveis: ['Lucas'] } } },
     { tipo: 'remarcar', rotulo: 'Remarcar…', pedido: null },
   ],
   serieId: null, confirmado: false,
 };
 const PADRAO: CartaoDeConflito = {
   id: 'padrao:v', tipo: 'padrao', urgencia: 9000, quando: '2026-11-04T18:00:00.000Z', pessoas: ['Lucas'], titulo: '"call com cliente novo"',
-  frase: 'Fora do padrão. proposta: Reunião Online - Juma - Lucas + link do Meet', eventos: [{ id: 'v', titulo: 'call com cliente novo', inicio: '2026-11-04T18:00:00.000Z', fim: '2026-11-04T19:00:00.000Z' }],
+  frase: 'Fora do padrão. proposta: Reunião Online - Fictus - Lucas + link do Meet', eventos: [{ id: 'v', titulo: 'call com cliente novo', inicio: '2026-11-04T18:00:00.000Z', fim: '2026-11-04T19:00:00.000Z' }],
   acoes: [
     { tipo: 'aplicar_titulo', rotulo: 'Aplicar título', pedido: null, rota: { metodo: 'POST', caminho: '/agenda/padronizar/v' } },
     { tipo: 'nao_e_reuniao', rotulo: 'Não é reunião', pedido: null, rota: { metodo: 'POST', caminho: '/pendencias/p1/responder', corpo: { escolha: 'nao-e-reuniao' } } },
@@ -47,8 +47,8 @@ const PADRAO: CartaoDeConflito = {
   serieId: null, confirmado: false,
 };
 const JANELA: CartaoDeConflito = {
-  id: 'janela:h', tipo: 'janela', urgencia: 7000, quando: '2026-11-03T19:00:00.000Z', pessoas: ['Lucas'], titulo: 'Custeio',
-  frase: 'Falta o trajeto de 30 min antes da presencial.', eventos: [{ id: 'h', titulo: 'Reunião Presencial - Custeio - Lucas', inicio: '2026-11-03T19:00:00.000Z', fim: '2026-11-03T20:00:00.000Z' }],
+  id: 'janela:h', tipo: 'janela', urgencia: 7000, quando: '2026-11-03T19:00:00.000Z', pessoas: ['Lucas'], titulo: 'Exemplaria',
+  frase: 'Falta o trajeto de 30 min antes da presencial.', eventos: [{ id: 'h', titulo: 'Reunião Presencial - Exemplaria - Lucas', inicio: '2026-11-03T19:00:00.000Z', fim: '2026-11-03T20:00:00.000Z' }],
   acoes: [{ tipo: 'manter', rotulo: 'Deixar assim', pedido: null }], serieId: null, confirmado: false,
 };
 const FERIADO: CartaoDeConflito = {
@@ -101,7 +101,7 @@ describe('a aba Conflitos', () => {
     apiPost.mockResolvedValue({ status: 'executado', nivel: 'R2', eventoId: 'b', approvalId: null, precisaDeOutraPessoa: false, mensagem: '', desfazer: null });
     const aoMudar = vi.fn();
     render(<AbaConflitos aoMudar={aoMudar} />);
-    fireEvent.click(await screen.findByText('Empurrar Campo Bom para 10:30'));
+    fireEvent.click(await screen.findByText('Empurrar Campo Modelo para 10:30'));
     await waitFor(() => expect(apiPost).toHaveBeenCalledWith('/agenda/escritas', CHOQUE.acoes[0].pedido, 'tok'));
     expect(await screen.findByText('Saiu: gravado no Google e no histórico.')).toBeInTheDocument();
     expect(aoMudar).toHaveBeenCalled();
@@ -110,7 +110,7 @@ describe('a aba Conflitos', () => {
   it('retido, diz que foi para a fila de aprovação', async () => {
     apiPost.mockResolvedValue({ status: 'aguardando_aprovacao', nivel: 'R3', eventoId: null, approvalId: 'ap1', precisaDeOutraPessoa: true, mensagem: '', desfazer: null });
     render(<AbaConflitos />);
-    fireEvent.click(await screen.findByText('Passar Campo Bom para o Lucas (livre)'));
+    fireEvent.click(await screen.findByText('Passar Campo Modelo para o Lucas (livre)'));
     expect(await screen.findByText(/Foi para a fila de aprovação/)).toBeInTheDocument();
   });
 

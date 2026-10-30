@@ -18,7 +18,7 @@ import { EscritaDaAgendaService } from '../src/agenda/escrita/escrita.service';
 import { PedidoDeEscritaSchema } from '../src/agenda/escrita/escrita-pura';
 import type { ReguaService } from '../src/agenda/regua/regua.service';
 import type { EspelhoService } from '../src/agenda/espelho/espelho.service';
-import { analisarAprovacaoR2, deltaDaAprovacaoR2 } from '../src/agenda/sobrescrita-r2-da-agenda';
+import { analisarAprovacaoR2, deltaDaAprovacaoR2, fecharComPrazo, recusaDoAutorDaSobrescrita } from '../src/agenda/sobrescrita-r2-da-agenda';
 import { lerDelta, lerPolitica, resolverPolitica } from '@mktos/policy';
 import politicaRoot from '@mktos/policy/politica-root.json';
 import politicaMktos from '@mktos/policy/politica-marketing-os.json';
@@ -43,6 +43,23 @@ import type { PrismaService } from '../src/prisma/prisma.service';
  *   5. R3 (`agenda.reuniao.reabrir`) nunca sai no clique;
  *   6. `naTela` não entra pelo corpo do pedido (esquema estrito).
  */
+
+describe('B2: quem assina a sobrescrita e o comando que termina, sem banco', () => {
+  it('só gente assina: ativo e sem papel de máquina', () => {
+    expect(recusaDoAutorDaSobrescrita({ isActive: true, papeis: ['admin_master'] }, 'socio@exemplo.invalid', 'casa')).toBeNull();
+    expect(recusaDoAutorDaSobrescrita({ isActive: true, papeis: ['analista'] }, 'p@exemplo.invalid', 'casa')).toBeNull();
+    expect(recusaDoAutorDaSobrescrita(null, 'ninguem@exemplo.invalid', 'casa')).toMatch(/não achei/);
+    expect(recusaDoAutorDaSobrescrita({ isActive: false, papeis: ['admin_master'] }, 'saiu@exemplo.invalid', 'casa')).toMatch(/desativado/);
+    expect(recusaDoAutorDaSobrescrita({ isActive: true, papeis: ['ia_servico'] }, 'ia@exemplo.invalid', 'casa')).toMatch(/conta de máquina/);
+    expect(recusaDoAutorDaSobrescrita({ isActive: true, papeis: ['admin_master', 'ia_acao'] }, 'misto@exemplo.invalid', 'casa')).toMatch(/conta de máquina/);
+  });
+
+  it('fechar o app tem prazo: um close que nunca termina não segura o comando', async () => {
+    expect(await fecharComPrazo(async () => undefined, 1000)).toBe('fechado');
+    expect(await fecharComPrazo(() => new Promise(() => undefined), 20)).toBe('prazo');
+    expect(await fecharComPrazo(async () => { throw new Error('x'); }, 1000)).toBe('fechado');
+  });
+});
 
 describe('a análise da sobrescrita (o que o comando mostra), sem banco', () => {
   const BASE = resolverPolitica(lerPolitica(politicaRoot, 'politica-root.json'), lerDelta(politicaMktos, 'politica-marketing-os.json'));
@@ -81,13 +98,13 @@ const ARGS_MARCAR = {
   chave: 'abcdefghij0123456789',
   tipo: 'cliente',
   modalidade: 'online',
-  cliente: 'Papeleira Ficticia',
+  cliente: 'Papelaria Ficticia',
   responsavel: 'Rodrigo',
   responsaveis: ['Rodrigo'],
   inicio: '2026-09-02T15:00:00-03:00',
   fim: '2026-09-02T16:00:00-03:00',
 };
-const ARGS_REABRIR = { chave: 'abcdefghij0123456780', eventoId: 'evento-ficticio-1', tituloAtual: 'Reunião Online - Papeleira Ficticia - Rodrigo' };
+const ARGS_REABRIR = { chave: 'abcdefghij0123456780', eventoId: 'evento-ficticio-1', tituloAtual: 'Reunião Online - Papelaria Ficticia - Rodrigo' };
 
 describe.skipIf(!URL)('agenda v2, decisão 2: R2 no clique só para gente na tela', () => {
   let prisma: PrismaClient;
@@ -143,7 +160,7 @@ describe.skipIf(!URL)('agenda v2, decisão 2: R2 no clique só para gente na tel
     const registro = new EfeitosRegistry();
     const falso = (capacidade: string) => async (_a: Record<string, unknown>, _o: string, ctx: { actorId?: string | null }) => {
       chamadas.push({ capacidade, ator: ctx.actorId ?? null });
-      return { ok: true, id: 'evento-ficticio-1', titulo: 'Reunião Online - Papeleira Ficticia - Rodrigo' };
+      return { ok: true, id: 'evento-ficticio-1', titulo: 'Reunião Online - Papelaria Ficticia - Rodrigo' };
     };
     registro.registrar(Object.fromEntries(Object.values(CAPACIDADES_DA_AGENDA).map((c) => [c, falso(c)])), 'teste');
     const interruptores = new InterruptoresRegistry();

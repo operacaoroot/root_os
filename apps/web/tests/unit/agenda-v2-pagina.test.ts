@@ -31,15 +31,15 @@ function ev(id: string, dia: string, ini: string, fim: string, titulo: string, e
   return {
     id, agenda: 'primary', origem: 'google', titulo,
     inicio: new Date(`${dia}T${ini}:00-03:00`).toISOString(), fim: new Date(`${dia}T${fim}:00-03:00`).toISOString(),
-    diaInteiro: false, local: null, meet: null, convidados: [], organizador: 'operacao.root@gmail.com', organizadorEhAgenda: true,
+    diaInteiro: false, local: null, meet: null, convidados: [], organizador: 'agenda.casa@exemplo.invalid', organizadorEhAgenda: true,
     status: 'confirmado', atualizadoNoGoogle: null, serieId: null, criadoPeloOs: false, link: null, leitura: lerCompromisso(titulo), ...extra,
   };
 }
 
 const EVENTOS: EventoV2[] = [
-  ev('affari', '2026-11-03', '13:30', '14:30', 'Reunião Online - Affari - Pedro', { meet: 'https://meet.google.com/aaa-bbbb-ccc' }),
-  ev('papeleira', '2026-11-03', '15:00', '16:00', 'Reunião Online - Papeleira Santa Rita - Rodrigo', { meet: 'https://meet.google.com/ddd-eeee-fff' }),
-  ev('custeio', '2026-11-03', '16:30', '17:30', 'Reunião Presencial - Custeio - Lucas', { local: 'Av. Exemplo, 100' }),
+  ev('exemplum', '2026-11-03', '13:30', '14:30', 'Reunião Online - Exemplum - Pedro', { meet: 'https://meet.google.com/aaa-bbbb-ccc' }),
+  ev('papelaria', '2026-11-03', '15:00', '16:00', 'Reunião Online - Papelaria Santa Modelo - Rodrigo', { meet: 'https://meet.google.com/ddd-eeee-fff' }),
+  ev('exemplaria', '2026-11-03', '16:30', '17:30', 'Reunião Presencial - Exemplaria - Lucas', { local: 'Av. Exemplo, 100' }),
   ev('fechado', '2026-11-04', '08:00', '13:00', 'Fechado Rodrigo', { origem: 'livre_ocupado', titulo: null, leitura: lerCompromisso('Fechado Rodrigo') }),
 ];
 
@@ -92,7 +92,7 @@ describe('a fonte e o selo', () => {
   it('lê do espelho e não bate no Google; o selo diz há quanto sincronizou', async () => {
     abrir('/agenda?aba=semana&dia=2026-11-03');
     const g = await grade();
-    await waitFor(() => expect(g.querySelector('[data-evento="papeleira"]')).toBeTruthy());
+    await waitFor(() => expect(g.querySelector('[data-evento="papelaria"]')).toBeTruthy());
     expect(apiGet.mock.calls.some(([r]) => String(r).startsWith('/google/calendar/periodo'))).toBe(false);
     expect(apiGet.mock.calls.find(([r]) => String(r).startsWith('/agenda/espelho'))?.[0]).toBe(
       `/agenda/espelho?de=${encodeURIComponent('2026-11-02T03:00:00.000Z')}&ate=${encodeURIComponent('2026-11-07T03:00:00.000Z')}`,
@@ -127,11 +127,11 @@ describe('Semana e dia', () => {
   it('Quem: com Lucas, só o que é do Lucas', async () => {
     abrir('/agenda?aba=semana&dia=2026-11-03');
     const g = await grade();
-    await waitFor(() => expect(g.querySelector('[data-evento="affari"]')).toBeTruthy());
+    await waitFor(() => expect(g.querySelector('[data-evento="exemplum"]')).toBeTruthy());
     fireEvent.click(within(screen.getByRole('group', { name: 'Quem' })).getByRole('button', { name: 'Lucas' }));
     expect(window.location.search).toContain('quem=Lucas');
-    await waitFor(() => expect(g.querySelector('[data-evento="affari"]')).toBeNull());
-    expect(g.querySelector('[data-evento="custeio"]')).toBeTruthy();
+    await waitFor(() => expect(g.querySelector('[data-evento="exemplum"]')).toBeNull());
+    expect(g.querySelector('[data-evento="exemplaria"]')).toBeTruthy();
   });
 
   it('o Fechado da agenda pessoal aparece tracejado, sem título, com "agenda pessoal · só ocupado"', async () => {
@@ -158,7 +158,7 @@ describe('Semana e dia', () => {
   it('detalhe: Editar abre o mesmo painel; Cancelar pede motivo, pergunta se avisa, e vai à rota de escritas', async () => {
     abrir('/agenda?aba=semana&dia=2026-11-03');
     const g = await grade();
-    const bloco = await waitFor(() => { const x = g.querySelector('[data-evento="custeio"]'); expect(x).toBeTruthy(); return x as HTMLElement; });
+    const bloco = await waitFor(() => { const x = g.querySelector('[data-evento="exemplaria"]'); expect(x).toBeTruthy(); return x as HTMLElement; });
     fireEvent.click(bloco);
     const detalhe = await screen.findByRole('complementary', { name: 'Compromisso' });
     expect(within(detalhe).getByText('Av. Exemplo, 100')).toBeTruthy();
@@ -166,17 +166,17 @@ describe('Semana e dia', () => {
     const botao = within(detalhe).getByRole('button', { name: 'Cancelar o compromisso' }) as HTMLButtonElement;
     expect(botao.disabled).toBe(true);
     fireEvent.change(within(detalhe).getByLabelText('Motivo do cancelamento'), { target: { value: 'o cliente pediu para remarcar' } });
-    apiPost.mockResolvedValueOnce({ status: 'executado', nivel: 'R2', eventoId: 'custeio', approvalId: null, precisaDeOutraPessoa: false, mensagem: 'Cancelado no Google.', desfazer: { acao: 'reabrir', chave: 'r', eventoId: 'custeio', tituloAtual: 'x' } });
+    apiPost.mockResolvedValueOnce({ status: 'executado', nivel: 'R2', eventoId: 'exemplaria', approvalId: null, precisaDeOutraPessoa: false, mensagem: 'Cancelado no Google.', desfazer: { acao: 'reabrir', chave: 'r', eventoId: 'exemplaria', tituloAtual: 'x' } });
     fireEvent.click(botao);
     await within(detalhe).findByText('Cancelado no Google.');
     expect(apiPost.mock.calls[0][0]).toBe('/agenda/escritas');
-    expect(apiPost.mock.calls[0][1]).toMatchObject({ acao: 'cancelar', eventoId: 'custeio', tituloAtual: 'Reunião Presencial - Custeio - Lucas', motivo: 'o cliente pediu para remarcar', avisar: false });
+    expect(apiPost.mock.calls[0][1]).toMatchObject({ acao: 'cancelar', eventoId: 'exemplaria', tituloAtual: 'Reunião Presencial - Exemplaria - Lucas', motivo: 'o cliente pediu para remarcar', avisar: false });
     expect(within(detalhe).getByRole('button', { name: 'desfazer' })).toBeTruthy();
 
     fireEvent.click(within(detalhe).getByRole('button', { name: 'Editar' }));
     const editar = await screen.findByRole('complementary', { name: 'Editar compromisso' });
     expect((within(editar).getByLabelText('Hora') as HTMLInputElement).value).toBe('16:30');
-    expect(within(editar).getByText('Reunião Presencial - Custeio - Lucas')).toBeTruthy();
+    expect(within(editar).getByText('Reunião Presencial - Exemplaria - Lucas')).toBeTruthy();
   });
 
   it('a altura das horas fica guardada no navegador', async () => {
@@ -193,16 +193,16 @@ describe('a Lista e o celular', () => {
   it('a Lista do dia: a linha do AGORA entre o que passou e o que vem, e "entrar no Meet" quando falta pouco', async () => {
     abrir('/agenda?aba=lista&dia=2026-11-03');
     const lista = await waitFor(() => { const l = document.querySelector('[data-visao-da-agenda="lista"]'); expect(l).toBeTruthy(); return l as HTMLElement; });
-    await within(lista).findByText('Reunião Online - Papeleira Santa Rita - Rodrigo');
+    await within(lista).findByText('Reunião Online - Papelaria Santa Modelo - Rodrigo');
     const itens = [...lista.querySelectorAll('ol > li')];
     const agora = itens.findIndex((li) => li.hasAttribute('data-linha-do-agora'));
-    expect(itens[agora - 1].getAttribute('data-evento')).toBe('affari');
-    expect(itens[agora + 1].getAttribute('data-evento')).toBe('papeleira');
-    const papeleira = itens[agora + 1] as HTMLElement;
-    expect(papeleira.textContent).toContain('em 40 min');
-    expect(within(papeleira).getByRole('link', { name: 'entrar no Meet' }).getAttribute('href')).toBe('https://meet.google.com/ddd-eeee-fff');
-    expect((itens.find((li) => li.getAttribute('data-evento') === 'affari') as HTMLElement).textContent).toContain('acontecendo agora');
-    expect((itens.find((li) => li.getAttribute('data-evento') === 'custeio') as HTMLElement).textContent).not.toContain('entrar no Meet');
+    expect(itens[agora - 1].getAttribute('data-evento')).toBe('exemplum');
+    expect(itens[agora + 1].getAttribute('data-evento')).toBe('papelaria');
+    const papelaria = itens[agora + 1] as HTMLElement;
+    expect(papelaria.textContent).toContain('em 40 min');
+    expect(within(papelaria).getByRole('link', { name: 'entrar no Meet' }).getAttribute('href')).toBe('https://meet.google.com/ddd-eeee-fff');
+    expect((itens.find((li) => li.getAttribute('data-evento') === 'exemplum') as HTMLElement).textContent).toContain('acontecendo agora');
+    expect((itens.find((li) => li.getAttribute('data-evento') === 'exemplaria') as HTMLElement).textContent).not.toContain('entrar no Meet');
     expect(within(lista).getByRole('button', { name: /Conflitos/ }).textContent).toContain('2');
   });
 

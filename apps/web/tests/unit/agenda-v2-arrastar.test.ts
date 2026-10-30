@@ -20,7 +20,7 @@ function ev(id: string, ini: string, fim: string, titulo: string, extra: Partial
     id, agenda: 'primary', origem: 'google', titulo,
     inicio: new Date(`2026-11-03T${ini}:00-03:00`).toISOString(),
     fim: new Date(`2026-11-03T${fim}:00-03:00`).toISOString(),
-    diaInteiro: false, local: null, meet: 'https://meet.google.com/x', convidados: [], organizador: 'operacao.root@gmail.com',
+    diaInteiro: false, local: null, meet: 'https://meet.google.com/x', convidados: [], organizador: 'agenda.casa@exemplo.invalid',
     organizadorEhAgenda: true, status: 'confirmado', atualizadoNoGoogle: null, serieId: null, criadoPeloOs: true, link: null,
     leitura: lerCompromisso(titulo), ...extra,
   };
@@ -38,7 +38,7 @@ if (typeof (window as { PointerEvent?: unknown }).PointerEvent === 'undefined') 
   (window as unknown as { PointerEvent: unknown }).PointerEvent = PointerEventDeTeste;
 }
 
-const EV = ev('mov', '10:00', '11:00', 'Reunião Online - Andrade Peças - Rodrigo');
+const EV = ev('mov', '10:00', '11:00', 'Reunião Online - Fictícia Peças - Rodrigo');
 
 function montar(extra: Record<string, unknown> = {}) {
   const aoSoltar = vi.fn();
