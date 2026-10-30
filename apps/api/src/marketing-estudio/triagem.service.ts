@@ -47,6 +47,8 @@ import { REGRAS_DE_PARTIDA, SYSTEM_TRIAGEM } from './prompts';
 const LOTE = 4;
 /** Releitura automática no máximo a cada 5 min por empresa: se a IA falhar, não insiste a cada clique. */
 const INTERVALO_DA_RELEITURA = 5 * 60_000;
+/** Quantos itens da coleta a tela manda a IA ler sozinha de cada vez (10 lotes). */
+const MONTAGEM_AUTOMATICA = 40;
 const FONTE_DA_MEMORIA = 'memoria';
 const simulada = () => process.env.MARKETING_IA_SIMULADA === '1';
 const lim = (v: unknown, max: number) => (typeof v === 'string' ? v.replace(/\s+/g, ' ').trim().slice(0, max) : '');
@@ -181,18 +183,27 @@ export class TriagemService {
     const contagem = this.contar(grupos);
     const ia = simulada() || this.llm.configured;
     const faltaLer = (await this.cardsSemLeitura(orgId)).length;
+    const pendentes = (await this.materia(orgId, 500)).length;
+    const podeLer = ia && !this.travas.has(orgId) && Date.now() - (this.relidaEm.get(orgId) ?? 0) > INTERVALO_DA_RELEITURA;
     // A IA voltou e há card que nasceu sem ela: lê em segundo plano; a tela acompanha pelo `lendo`.
-    if (ia && faltaLer && !this.travas.has(orgId) && Date.now() - (this.relidaEm.get(orgId) ?? 0) > INTERVALO_DA_RELEITURA) {
+    if (podeLer && faltaLer) {
       this.relidaEm.set(orgId, Date.now());
       void this.reler(orgId).then(
         (r) => this.log.log(`releitura automática: ${r.relidos} de ${r.lidos} cards${r.falharam ? `, ${r.falharam} falharam` : ''}`),
         (e) => this.log.warn(`releitura automática: ${e instanceof Error ? e.message : e}`),
       );
+    } else if (podeLer && pendentes) {
+      // O que a coleta trouxe vira card sozinho (30/10/2026: coleta diária), até 40 por vez.
+      this.relidaEm.set(orgId, Date.now());
+      void this.montar(orgId, MONTAGEM_AUTOMATICA).then(
+        (r) => this.log.log(`montagem automática: ${r.cards} cards de ${r.lidos}${r.descartados ? `, ${r.descartados} fora do tema` : ''}${r.falharam ? `, ${r.falharam} falharam` : ''}`),
+        (e) => this.log.warn(`montagem automática: ${e instanceof Error ? e.message : e}`),
+      );
     }
     return {
       cards: cards.map((c) => paraTela(c, pesos[c.fonteId ?? ''] ?? null)),
       contagem,
-      pendentes: (await this.materia(orgId, 500)).length,
+      pendentes,
       ultima: ultima ? { id: ultima.id, titulo: ultima.titulo, status: ultima.status as TriagemStatus } : null,
       ia,
       semLeitura: faltaLer,

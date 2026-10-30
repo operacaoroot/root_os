@@ -607,25 +607,35 @@
 .estudio .memoria-destino.feito{display:flex;gap:8px;align-items:center;flex-wrap:wrap;padding:9px 12px;background:#f3f6ec;border-color:var(--line)}
 .estudio .memoria-destino.feito strong{font-size:12px}.estudio .memoria-destino.feito button{margin-left:auto}
 @media(max-width:760px){.estudio .memoria-destino-opcoes{grid-template-columns:1fr}}
-/* Para aprovar › Ver todas (30/10/2026): grade com todas as ideias de um status, e a IA relendo o que nasceu sem ela. */
+/* Para aprovar › Ver todas (30/10/2026): lista compacta com todas as ideias de um status, e a IA relendo o que nasceu sem ela. */
 .estudio .ideias-topo{margin:0 0 14px;gap:10px}
 .estudio .ideias-modo{background:var(--paper);border:1px solid var(--line);border-radius:20px;padding:3px}
 .estudio .ideias-lendo{display:flex;align-items:center;gap:14px}
 .estudio .ideias-lendo .ideias-progress{flex:0 0 120px;margin:0}
-.estudio .ideias-todas{display:grid;gap:14px}
+.estudio .ideias-todas{display:grid;gap:12px}
+.estudio .ideias-busca{flex-wrap:nowrap;gap:8px}
+.estudio .ideias-busca .ideias-search{width:260px}
 .estudio .ideias-ordem{width:auto;font-size:12px;padding:8px 10px}
-.estudio .ideias-grade{align-items:start}
-.estudio .ideias-mini-img{height:140px;background:#e9eeda;overflow:hidden}
-.estudio .ideias-mini-img img{width:100%;height:100%;object-fit:cover;display:block}
-.estudio .ideias-mini .card-body{gap:10px}
-.estudio .ideias-mini .ideias-source{gap:6px}
+.estudio .ideias-lista{background:var(--paper);border:1px solid var(--line);border-radius:12px;overflow:hidden}
+.estudio .ideias-linha{display:grid;grid-template-columns:64px minmax(0,1fr) auto;gap:14px;align-items:start;padding:12px 16px;border-bottom:1px solid var(--line)}
+.estudio .ideias-linha:last-child{border-bottom:0}
+.estudio .ideias-linha:hover{background:#fafbf6}
+.estudio .ideias-linha-img{width:64px;height:64px;border-radius:8px;background:#e9eeda;overflow:hidden}
+.estudio .ideias-linha-img img{width:100%;height:100%;object-fit:cover;display:block}
+.estudio .ideias-linha-texto{display:grid;gap:4px;min-width:0}
+.estudio .ideias-linha-texto .ideias-source{gap:6px}
+.estudio .ideias-linha-texto h3{font-size:15px;font-weight:650;line-height:1.35}
 .estudio .ideias-mini-titulo{all:unset;cursor:pointer;font:inherit;color:inherit;overflow-wrap:anywhere}
 .estudio .ideias-mini-titulo:hover{text-decoration:underline;text-decoration-color:var(--green)}
-.estudio .ideias-mini .card-body p.ideias-mini-gancho{color:var(--ink);font-size:13px;-webkit-line-clamp:3;border-left:3px solid var(--lime);padding-left:10px}
-.estudio .ideias-mini-mais summary{padding:2px 0;font-size:12px;color:var(--green)}
-.estudio .ideias-mini-mais p,.estudio .ideias-mini-mais ul{font-size:12px;color:var(--muted);-webkit-line-clamp:unset;display:block;margin:4px 0 0}
+.estudio .ideias-mini-gancho,.estudio .ideias-linha-resumo{font-size:13px;color:#4c5444;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.estudio .ideias-mini-gancho{border-left:3px solid var(--lime);padding-left:8px;color:var(--ink)}
+.estudio .ideias-mini-mais summary{padding:0;font-size:12px;color:var(--green);font-weight:600}
+.estudio .ideias-mini-mais p,.estudio .ideias-mini-mais ul{font-size:12px;color:var(--muted);margin:4px 0 0}
 .estudio .ideias-mini-mais ul{padding-left:16px}
-.estudio .ideias-mini .card-meta a{font-size:11px;font-weight:600;text-decoration:none}
-.estudio .ideias-mini-acoes{display:flex;gap:8px;justify-content:space-between;border-top:1px solid var(--line);padding-top:10px}
-.estudio .ideias-mini-acoes .primary{margin-left:auto}
+.estudio .ideias-linha .ideias-note{margin:4px 0 0}
+.estudio .ideias-linha-lado{display:grid;gap:8px;justify-items:end}
+.estudio .ideias-linha-meta{display:flex;gap:10px;font-size:11px;color:var(--muted);white-space:nowrap}
+.estudio .ideias-linha-meta a{font-weight:600;text-decoration:none}
+.estudio .ideias-mini-acoes{display:flex;gap:6px}
 .estudio .ideias-reler{padding:4px 8px}
+@media(max-width:760px){.estudio .ideias-linha{grid-template-columns:48px minmax(0,1fr)}.estudio .ideias-linha-img{width:48px;height:48px}.estudio .ideias-linha-lado{grid-column:1/-1;justify-items:stretch}.estudio .ideias-mini-acoes{justify-content:space-between}.estudio .ideias-busca{flex-wrap:wrap}.estudio .ideias-busca .ideias-search{width:100%}}
