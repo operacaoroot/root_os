@@ -273,6 +273,8 @@ export interface LinhaGravada {
   leituraResponsaveis: string[];
   leituraModalidade: string | null;
   leituraMotivo: string | null;
+  /** As propriedades privadas que o OS gravou no evento (`PROPRIEDADES_DO_OS`). */
+  propriedades?: unknown;
 }
 
 /** A linha do espelho como a tela a recebe. */
@@ -297,6 +299,14 @@ export function eventoDaLinha(l: LinhaGravada, opcoes: { comDescricao?: boolean 
     criadoPeloOs: l.criadoPeloOs,
     link: l.link,
     ...(opcoes.comDescricao ? { descricao: l.descricao ?? null } : {}),
+    // Integração da agenda v2: os Conflitos e os Relatórios leem o "assim mesmo" e o "confirmado" daqui.
+    ...(l.propriedades && typeof l.propriedades === 'object' && !Array.isArray(l.propriedades)
+      ? {
+          propriedades: Object.fromEntries(
+            Object.entries(l.propriedades as Record<string, unknown>).filter((par): par is [string, string] => typeof par[1] === 'string'),
+          ),
+        }
+      : {}),
     leitura: {
       tipo,
       modalidade: (l.leituraModalidade as LeituraDoCompromisso['modalidade']) ?? null,
