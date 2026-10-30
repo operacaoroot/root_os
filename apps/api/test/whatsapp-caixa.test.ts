@@ -103,14 +103,31 @@ describe('caixa de WhatsApp: só a caixa responde como pessoa', () => {
   };
   andar(path.join(RAIZ, 'src'));
 
-  it('só src/whatsapp/caixa.service.ts chama .responderComoPessoa(', () => {
+  /*
+   * A SEGUNDA CASA (30/10/2026, política 1.13.0): o EFEITO de
+   * `whatsapp.conversa.responder`. Não é um segundo caminho de gente: é uma
+   * capacidade R3 inscrita no registro de efeitos, então só dispara pela PORTA e
+   * só depois de uma pessoa com alçada aprovar; e o destino sai da mensagem
+   * gravada que pediu, nunca de quem propõe. O caso abaixo confere as duas
+   * coisas no arquivo, para a exceção não virar porta dos fundos.
+   */
+  const EFEITO_DA_RESPOSTA = 'src/agentes-externos/resposta-na-conversa.service.ts';
+
+  it('só src/whatsapp/caixa.service.ts (e o efeito de whatsapp.conversa.responder) chama .responderComoPessoa(', () => {
     const chamam = fontes.filter((f) => /\.responderComoPessoa\s*\(/.test(f.texto)).map((f) => f.arquivo).sort();
-    expect(chamam).toEqual(['src/whatsapp/caixa.service.ts']);
+    expect(chamam).toEqual([EFEITO_DA_RESPOSTA, 'src/whatsapp/caixa.service.ts']);
   });
 
-  it('o símbolo da porta só mora na porta, no módulo dos canais e na caixa', () => {
+  it('o símbolo da porta só mora na porta, no módulo dos canais, na caixa e no efeito da resposta', () => {
     const usam = fontes.filter((f) => f.texto.includes('RESPOSTA_DE_GENTE_PELA_EVOLUTION')).map((f) => f.arquivo).sort();
-    expect(usam).toEqual(['src/gateway/canais/canais.module.ts', 'src/gateway/canais/evolution.port.ts', 'src/whatsapp/caixa.service.ts']);
+    expect(usam).toEqual([EFEITO_DA_RESPOSTA, 'src/gateway/canais/canais.module.ts', 'src/gateway/canais/evolution.port.ts', 'src/whatsapp/caixa.service.ts']);
+  });
+
+  it('o efeito da resposta só existe inscrito no registro de efeitos, com o destino da mensagem gravada', () => {
+    const f = fontes.find((x) => x.arquivo === EFEITO_DA_RESPOSTA)!;
+    expect(f.texto).toMatch(/this\.registro\.registrar\(\s*\{\s*'whatsapp\.conversa\.responder'/);
+    expect(f.texto).toMatch(/whatsAppMensagem\.findFirst/);
+    expect(f.texto).toMatch(/responderComoPessoa\(orgId, origem\.chatJid,/);
   });
 
   it('a caixa não importa o conector da Evolution', () => {
