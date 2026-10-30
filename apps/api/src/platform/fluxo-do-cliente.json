@@ -1,9 +1,86 @@
 {
   "nome": "Fluxo do cliente",
-  "versao": "v5",
+  "versao": "v6",
   "data": "2026-10-30",
-  "fonte": "Reunião de sócios sobre o fluxo do cliente (ata de 29/10/2026)",
+  "fonte": "Reunião de sócios sobre o fluxo do cliente (ata de 29/10/2026) e anotações em papel",
   "total_tarefas": 56,
+  "area_do_cliente": [
+    {
+      "item": "Cronograma",
+      "origem": "papel e transcrição",
+      "tarefa": "09"
+    },
+    {
+      "item": "Instruções de acesso e de uso",
+      "origem": "papel e transcrição",
+      "tarefa": "11"
+    },
+    {
+      "item": "Contrato",
+      "origem": "papel e transcrição",
+      "tarefa": "01"
+    },
+    {
+      "item": "Escopo (a proposta)",
+      "origem": "papel e transcrição",
+      "tarefa": "01"
+    },
+    {
+      "item": "Linha de execução: o que está sendo feito e onde está",
+      "origem": "papel e transcrição",
+      "tarefa": "10"
+    },
+    {
+      "item": "Atas",
+      "origem": "papel e transcrição",
+      "tarefa": "18"
+    },
+    {
+      "item": "Agenda das reuniões, feitas e próximas",
+      "origem": "papel",
+      "tarefa": "14"
+    },
+    {
+      "item": "PRD",
+      "origem": "papel e transcrição",
+      "tarefa": "21"
+    },
+    {
+      "item": "Documento de arquitetura e tecnologia",
+      "origem": "papel e transcrição",
+      "tarefa": "21"
+    },
+    {
+      "item": "Cofre de acessos, que funciona no celular",
+      "origem": "transcrição",
+      "tarefa": "20"
+    },
+    {
+      "item": "Central: glossário e dúvidas comuns, com como o cliente chama as coisas na empresa",
+      "origem": "papel e transcrição",
+      "tarefa": "12"
+    },
+    {
+      "item": "Vídeos de treinamento",
+      "origem": "transcrição",
+      "tarefa": "22"
+    },
+    {
+      "item": "Instruções de manutenção, para depois da entrega",
+      "origem": "transcrição",
+      "tarefa": null
+    },
+    {
+      "item": "Atualizações e novidades da Root",
+      "origem": "transcrição",
+      "tarefa": null
+    },
+    {
+      "item": "Caminho para tirar dúvida: Rotinha no grupo e, se continuar, a Root",
+      "origem": "transcrição",
+      "tarefa": "22"
+    }
+  ],
   "fases": [
     {
       "id": "fase-1",
@@ -114,7 +191,7 @@
           "chave": "painel",
           "responsavel": "QUEM IMPLANTA",
           "titulo": "Montar o painel do cliente",
-          "feito_quando": "Painel com cronograma, contrato, escopo e espaço para o PRD, o documento de arquitetura e as atas"
+          "feito_quando": "Painel com cronograma, linha de execução, agenda das reuniões, contrato, escopo, cofre e espaço para o PRD, o documento de arquitetura e as atas"
         },
         {
           "tipo": "tarefa",
@@ -173,8 +250,8 @@
           "numero": "16",
           "chave": "r1",
           "responsavel": "QUEM IMPLANTA · ATÉ 1H30",
-          "titulo": "1ª reunião: colher e instalar o kit local",
-          "feito_quando": "Kit rodando na máquina do cliente e lista de sistemas, APIs e bancos colhida. A explicação fica para a 2ª",
+          "titulo": "1ª reunião: kit local e preparação da VPS",
+          "feito_quando": "Kit rodando na máquina do cliente, sistemas, APIs e bancos colhidos, licenças e acessos combinados e cronograma aprovado. A explicação fica para a 2ª",
           "em_paralelo": [
             {
               "trilho": "CORRE A REUNIÃO INTEIRA",
@@ -204,7 +281,7 @@
           "chave": "licencas",
           "responsavel": "QUEM IMPLANTA",
           "titulo": "Contratar VPS, domínio e licenças",
-          "feito_quando": "Tudo no nome do cliente, dentro do custo escrito no contrato"
+          "feito_quando": "Tudo no nome do cliente, como combinado na 1ª reunião e dentro do custo escrito no contrato"
         },
         {
           "tipo": "tarefa",
@@ -230,8 +307,8 @@
           "numero": "22",
           "chave": "r2",
           "responsavel": "DONO DA CONTA · 40 MIN",
-          "titulo": "2ª reunião: alinhamento",
-          "feito_quando": "O cliente sabe falar com a Root (grupo, Rotinha e painel), o que entra e o que fica fora do escopo e que o combinado é mais ensinar do que fazer",
+          "titulo": "2ª reunião: alinhamento e educação",
+          "feito_quando": "Apresentação com slides e vídeos curtos sobre o que é e como funciona. O cliente sabe falar com a Root (grupo, Rotinha e painel), o que fica fora do escopo e que o combinado é mais ensinar do que fazer",
           "notas": [
             "Toda reunião tem pauta e roteiro para caber em 1 hora. Na 2ª, o cliente é orientado a mandar tudo no grupo."
           ]
@@ -241,8 +318,11 @@
           "numero": "23",
           "chave": "aprova",
           "responsavel": "DONO DA CONTA",
-          "titulo": "Aprovar o cronograma e os documentos técnicos",
-          "feito_quando": "O cliente aprovou por escrito o cronograma, o PRD e o documento de arquitetura"
+          "titulo": "Aprovar os documentos técnicos",
+          "feito_quando": "O cliente aprovou por escrito o PRD e o documento de arquitetura",
+          "em_aberto": [
+            "o papel da reunião não cita a aprovação dos documentos técnicos. Confirmar se ela fica aqui."
+          ]
         },
         {
           "tipo": "tarefa",
@@ -285,8 +365,8 @@
           "numero": "27",
           "chave": "r15",
           "responsavel": "QUEM IMPLANTA · DIA 15",
-          "titulo": "Reunião do dia 15: SSH, OS e Claude na VPS",
-          "feito_quando": "Ponte SSH entre a máquina do cliente e a VPS, primeira versão do OS liberada e Claude rodando na VPS",
+          "titulo": "Reunião do dia 15: SSH, OS, Claude e APIs",
+          "feito_quando": "Ponte SSH com a VPS, primeira versão do OS liberada, Claude rodando na VPS e APIs conectadas (conectores padrão do Google e do Instagram), com retrospectiva e realinhamento de urgências",
           "em_paralelo": [
             {
               "trilho": "CORRE JUNTO NOS 30 DIAS",

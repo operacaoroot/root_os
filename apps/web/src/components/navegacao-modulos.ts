@@ -57,7 +57,7 @@ export const FROTA: NavItem = {
 
 /**
  * O fluxo do cliente (30/10/2026): o caminho da proposta aceita até a continuidade ou o
- * fim, com dono e "feito quando" em cada tarefa (v5, reunião de sócios de 29/10). É o
+ * fim, com dono e "feito quando" em cada tarefa (reunião de sócios de 29/10). É o
  * contexto da operação da ROOT, ao lado da Marca. Tela da ROOT: a API recusa as outras.
  */
 export const FLUXO_DO_CLIENTE: NavItem = {

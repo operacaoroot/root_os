@@ -9,8 +9,9 @@ import { useAuth } from '@/lib/auth';
  * FLUXO DO CLIENTE — o caminho da proposta aceita até a continuidade ou o fim
  * ============================================================================
  *
- * Contexto da operação da ROOT (30/10/2026, v5 da reunião de sócios de 29/10):
- * 56 tarefas em 7 fases, cada uma com dono e "feito quando". Tela da ROOT, como
+ * Contexto da operação da ROOT (30/10/2026, da reunião de sócios de 29/10): 56
+ * tarefas em 7 fases, cada uma com dono e "feito quando", e o que precisa estar
+ * na área do cliente (o painel). Tela da ROOT, como
  * a Rodada da semana: a API recusa qualquer outra sessão com 403 e esta tela
  * explica em vez de quebrar. Só leitura. A fonte é um arquivo só,
  * `apps/api/src/platform/fluxo-do-cliente.json`; nova versão do fluxo = trocar
@@ -55,6 +56,8 @@ type Fluxo = {
   data: string;
   fonte: string;
   total_tarefas: number;
+  /** O que precisa estar no painel do cliente, com a tarefa que alimenta cada item (v6). */
+  area_do_cliente?: { item: string; origem: string; tarefa: string | null }[];
   fases: { id: string; nome: string; etapas: Etapa[] }[];
   desvios: Desvio[];
 };
@@ -338,6 +341,11 @@ export default function FluxoDoClientePage() {
               <span className="font-os-mono text-brand">{i + 1}</span> {f.nome}
             </button>
           ))}
+          {!!fluxo.area_do_cliente?.length && (
+            <button type="button" onClick={() => irPara('area-do-cliente')} className={`rounded border border-border px-2.5 py-1 text-[12px] text-muted hover:border-brand hover:text-text ${FOCO}`}>
+              Área do cliente
+            </button>
+          )}
           <button type="button" onClick={() => irPara('desvios')} className={`rounded border border-border px-2.5 py-1 text-[12px] text-muted hover:border-brand hover:text-text ${FOCO}`}>
             Desvios e voltas
           </button>
@@ -373,6 +381,30 @@ export default function FluxoDoClientePage() {
           </section>
         );
       })}
+
+      {!!fluxo.area_do_cliente?.length && (
+        <section id="area-do-cliente" className="scroll-mt-20 rounded border border-border bg-surface p-4">
+          <h2 className={`${ROTULO} mb-1`}>Área do cliente (painel)</h2>
+          <p className="mb-3 text-[12.5px] text-muted">O que precisa estar no painel do cliente e a tarefa do fluxo que alimenta cada item.</p>
+          <ul className="grid gap-x-6 gap-y-2 sm:grid-cols-2">
+            {fluxo.area_do_cliente.map((a) => {
+              const t = a.tarefa ? todas.find((x) => x.numero === a.tarefa) : undefined;
+              return (
+                <li key={a.item} className="flex items-baseline gap-2 border-b border-border pb-2 text-[12.5px] leading-[1.5] text-text">
+                  <span className="flex-1">{a.item}</span>
+                  {t ? (
+                    <button type="button" onClick={() => irPara(`t-${t.numero}`)} title={t.titulo} className={`shrink-0 font-os-mono text-[11px] text-brand underline-offset-2 hover:underline ${FOCO}`}>
+                      {t.numero}
+                    </button>
+                  ) : (
+                    <span className="shrink-0 text-[11px] text-muted">sem tarefa</span>
+                  )}
+                </li>
+              );
+            })}
+          </ul>
+        </section>
+      )}
 
       <section id="desvios" className="scroll-mt-20 rounded border border-border bg-surface p-4">
         <h2 className={`${ROTULO} mb-3`}>Desvios e voltas</h2>
