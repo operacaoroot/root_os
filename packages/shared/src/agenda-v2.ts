@@ -239,6 +239,29 @@ export interface EstadoDaSincronia {
   atrasada: boolean;
 }
 
+/**
+ * As propriedades PRIVADAS (`extendedProperties.private`) que o OS grava no evento
+ * do Google quando escreve, e que a sincronia copia para `AgendaEvento.propriedades`.
+ * É por elas que a tela, os Conflitos e os Relatórios sabem o que o OS criou, o que
+ * foi "marcado assim mesmo" (e por quê) e o que foi "confirmado com o cliente".
+ */
+export const PROPRIEDADES_DO_OS = {
+  /** `'1'` = o OS criou o evento (o `desmarcar` só cancela estes). */
+  criadoPeloOs: 'mktos',
+  /** A chave do pedido que criou o evento (idempotência). */
+  chave: 'mktosChave',
+  /** O motivo do "marcar assim mesmo" (a régua deu vermelho). */
+  forcado: 'mktosForcado',
+  /** Quem pediu (id do usuário no OS), para o histórico e o relatório. */
+  pedidoPor: 'mktosPedidoPor',
+  /** `'1'` = choque conhecido, "confirmado com o cliente" nos Conflitos. */
+  confirmadoComCliente: 'mktosConfirmado',
+  leadId: 'mktosLeadId',
+  clienteId: 'mktosClienteId',
+  /** O tipo que o OS escreveu (`cliente`, `interna`, `bloqueio`, `pessoal`, `fora`). */
+  tipo: 'mktosTipo',
+} as const;
+
 /** O limite de atraso do espelho antes de a tela cair na leitura direta. */
 export const AGENDA_ESPELHO_ATRASO_MAXIMO_MS = 10 * 60_000;
 /** A janela que a sincronia completa refaz (dias antes e depois de hoje). */
