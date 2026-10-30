@@ -151,6 +151,9 @@ export function pendenciasDaCasa(r: Relato | null, etapa: string, acessos: { est
   if (semDono) out.push({ n: 'at', t: `${semDono} chave(s) SSH sem comentário no authorized_keys. Identificar o dono ou revogar.`, b: 'política 02' });
   if ((r.maquina.discoUsoPct ?? 0) >= 85) out.push({ n: 'at', t: `Disco em ${r.maquina.discoUsoPct}%.`, b: 'máquina' });
   if (r.maquina.reboot) out.push({ n: 'ne', t: 'O sistema pede reboot (kernel ou libc atualizados). Agendar com o cliente.', b: 'manual · nota 22' });
-  for (const a of r.verificar.filter((v) => v.n === 'av' && !/RESTIC_REMOTO|cópia fora|ALERTA_URL/i.test(v.t))) out.push({ n: 'ne', t: a.t, b: 'kit-verificar' });
+  for (const a of r.verificar.filter((v) => v.n === 'av' && !/RESTIC_REMOTO|cópia fora|ALERTA_URL|jornada:/i.test(v.t))) out.push({ n: 'ne', t: a.t, b: 'kit-verificar' });
+  for (const i of r.jornada?.itens.filter((x) => x.situacao === 'regrediu') ?? []) {
+    out.push({ n: 'at', t: `Jornada ${i.id} regrediu: ${i.item}${i.autoTexto ? ` (${i.autoTexto})` : ''}`, b: 'kit-jornada' });
+  }
   return out;
 }

@@ -10,6 +10,26 @@ export interface Container { nome: string; imagem: string; estado: string; saude
 export interface Timer { unidade: string; proxima?: string; ultima?: string; ativo?: boolean }
 export interface LinhaDoVerificar { n: 'ok' | 'av' | 'fa'; t: string }
 
+export type Situacao = 'afazer' | 'andamento' | 'esperando' | 'feito' | 'na' | 'regrediu';
+export interface ItemDaJornada {
+  id: string; fase: number; item: string; quem: string | null; situacao: Situacao;
+  espera: string | null; quando: string | null; nota: string | null; autoTexto: string | null; projeto: boolean;
+}
+export interface FaseDaJornada { n: number; nome: string; conta: number; feito: number; esperando: number; andamento: number; regrediu: number }
+export interface JornadaResumo {
+  pct: number; feitos: number; validos: number; faseAtual: number | null; faseNome: string | null; temNota: boolean; geradoEm: string | null;
+  fases: FaseDaJornada[]; esperando: number; porQuem: { cliente: number; root: number; terceiro: number }; andamento: number;
+  regrediu: ItemDaJornada[]; proximo: ItemDaJornada[];
+}
+/** A jornada inteira, como a casa relata (kit-jornada json). */
+export interface JornadaCompleta {
+  pct: number; faseAtual: number | null; arquivo: boolean; kit?: string; geradoEm?: string;
+  fases: { n: number; nome: string; total: number; feito: number; na: number }[];
+  itens: (Omit<ItemDaJornada, 'quem' | 'espera' | 'quando' | 'nota' | 'autoTexto'> & { quem?: string; espera?: string; quando?: string; nota?: string; autoTexto?: string; auto?: 'ok' | 'falha' | 'na'; marcada?: Situacao })[];
+}
+export type LinhaDoQuadro = ItemDaJornada & { casaId: string; casa: string; trava: 'cliente' | 'root' | 'terceiro' | null };
+export interface QuadroDaJornada { regrediu: LinhaDoQuadro[]; cliente: LinhaDoQuadro[]; root: LinhaDoQuadro[]; terceiro: LinhaDoQuadro[]; andamento: LinhaDoQuadro[] }
+
 export interface CasaResumo {
   id: string;
   casa: string;
@@ -48,6 +68,7 @@ export interface CasaResumo {
   pendencias: Pendencia[];
   politicas: { ok: number; at: number; er: number };
   observacoes: string | null;
+  jornada: JornadaResumo | null;
 }
 
 export interface Acesso {
@@ -94,6 +115,7 @@ export interface PoliticaAvaliada { cod: string; nome: string; texto: string; ba
 
 export interface CasaDetalhe extends CasaResumo {
   relato: unknown;
+  jornadaCompleta: JornadaCompleta | null;
   ficha: Record<string, string>;
   lgpd: Record<string, string>;
   arquivadaEm: string | null;
@@ -114,6 +136,7 @@ export interface Resumo {
   totalDeAcoes: number;
   casas: CasaResumo[];
   eventos: Evento[];
+  jornada: QuadroDaJornada;
 }
 
 export interface Politicas {

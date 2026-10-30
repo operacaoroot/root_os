@@ -6,6 +6,7 @@ import { useAuth } from '@/lib/auth';
 import { KpiCard } from '@/components/KpiCard';
 import { Botao, Card, Chip, inputCls } from '../referencias/ui';
 import { Gaveta } from './Gaveta';
+import { JornadaCurta, JornadaView } from './jornada';
 import { Aba, Barra, Estado, Mono, Rotulo, Vazio } from './ui';
 import {
   ETAPA, ROTULO, TIPO_DE_EVENTO, dh, haQuanto,
@@ -27,11 +28,11 @@ import {
  * rodar verificar, pedir backup) que a casa puxa no relato seguinte.
  */
 
-type Vista = 'visao' | 'servidores' | 'acessos' | 'politicas' | 'registro' | 'instalar';
-type AbaDaGaveta = 'resumo' | 'apps' | 'registro' | 'acessos' | 'pendencias' | 'ficha' | 'verificar' | 'ordens';
+type Vista = 'visao' | 'jornada' | 'servidores' | 'acessos' | 'politicas' | 'registro' | 'instalar';
+type AbaDaGaveta = 'resumo' | 'jornada' | 'apps' | 'registro' | 'acessos' | 'pendencias' | 'ficha' | 'verificar' | 'ordens';
 
 const VISTAS: [Vista, string][] = [
-  ['visao', 'Visão geral'], ['servidores', 'Servidores'], ['acessos', 'Acessos'], ['politicas', 'Políticas e LGPD'], ['registro', 'Registro'], ['instalar', 'Instalar o relator'],
+  ['visao', 'Visão geral'], ['jornada', 'Jornada'], ['servidores', 'Servidores'], ['acessos', 'Acessos'], ['politicas', 'Políticas e LGPD'], ['registro', 'Registro'], ['instalar', 'Instalar o relator'],
 ];
 
 export default function Frota() {
@@ -103,11 +104,12 @@ export default function Frota() {
 
       <div className="flex gap-0.5 overflow-x-auto border-b border-border" role="tablist">
         {VISTAS.map(([k, n]) => (
-          <Aba key={k} ativa={vista === k} onClick={() => setVista(k)} contagem={k === 'visao' ? t.precisaDeGente : undefined} tom="warn">{n}</Aba>
+          <Aba key={k} ativa={vista === k} onClick={() => setVista(k)} contagem={k === 'visao' ? t.precisaDeGente : k === 'jornada' ? (resumo.jornada?.regrediu.length ?? 0) + (resumo.jornada?.root.length ?? 0) : undefined} tom="warn">{n}</Aba>
         ))}
       </div>
 
       {vista === 'visao' && <VisaoGeral resumo={resumo} abrir={abrir} />}
+      {vista === 'jornada' && <JornadaView resumo={resumo} abrir={(id) => abrir(id, 'jornada')} />}
       {vista === 'servidores' && <Servidores casas={resumo.casas} abrir={abrir} />}
       {vista === 'acessos' && token && <Acessos casas={resumo.casas} token={token} podeAgir={podeAgir} abrir={abrir} onRevogar={(acesso, casa) => setRevogando({ acesso, casa })} />}
       {vista === 'politicas' && token && <PoliticasView token={token} abrir={abrir} />}
@@ -220,6 +222,7 @@ function CartaoDaCasa({ c, onClick }: { c: CasaResumo; onClick: () => void }) {
             {fato('backup', c.backup?.ultimoOk ? `${dh(c.backup.ultimoOk)} · ${c.backup.remoto ? 'local + fora' : 'só local'}` : 'nunca', c.backup?.remoto ? undefined : 'text-warn')}
             {fato('pessoas', `${c.chaves} com chave`)}
           </div>
+          <div><Rotulo>jornada</Rotulo><JornadaCurta c={c} /></div>
           <div className="flex items-end gap-3 border-t border-border pt-2">
             <div className="flex-1"><Rotulo>cpu {c.cpuPct !== null ? `${c.cpuPct}%` : ''}</Rotulo><Barra pct={c.cpuPct} /></div>
             <div className="w-[110px]"><Rotulo>disco {c.disco !== null ? `${c.disco}%` : ''}</Rotulo><Barra pct={c.disco} tom={discoTom} /></div>
@@ -254,9 +257,9 @@ function Servidores({ casas, abrir }: { casas: CasaResumo[]; abrir: (id: string)
         <input className={`${inputCls} ml-auto w-[220px]`} placeholder="casa, cliente, host…" value={busca} onChange={(e) => setBusca(e.target.value)} aria-label="Buscar servidor" />
       </div>
       <div className="overflow-x-auto rounded-root border border-border bg-surface">
-        <table className="w-full min-w-[980px] text-[12px]">
+        <table className="w-full min-w-[1140px] text-[12px]">
           <thead className="text-left text-[10px] uppercase tracking-wide text-muted">
-            <tr>{['casa', 'cliente', 'estado', 'servidor', 'kit', 'acesso', 'apps', 'relato', 'backup', 'disco', 'chaves', 'políticas'].map((h) => <th key={h} className="px-3 py-2">{h}</th>)}</tr>
+            <tr>{['casa', 'cliente', 'estado', 'jornada', 'servidor', 'kit', 'acesso', 'apps', 'relato', 'backup', 'disco', 'chaves', 'políticas'].map((h) => <th key={h} className="px-3 py-2">{h}</th>)}</tr>
           </thead>
           <tbody>
             {lista.map((c) => (
@@ -264,6 +267,7 @@ function Servidores({ casas, abrir }: { casas: CasaResumo[]; abrir: (id: string)
                 <td className="px-3 py-2"><Mono className="font-bold">{c.casa}</Mono></td>
                 <td className="px-3 py-2 text-text">{c.cliente}<span className="block font-os-mono text-[10px] text-muted">{c.responsavel ?? ''}</span></td>
                 <td className="px-3 py-2"><Estado estado={c.estado} /><span className="block font-os-mono text-[10px] text-muted">{c.estadoTexto}</span></td>
+                <td className="px-3 py-2"><JornadaCurta c={c} /></td>
                 <td className="px-3 py-2"><Mono>{c.hostname ?? '—'}</Mono><span className="block font-os-mono text-[10px] text-muted">{c.sistema ?? ''}{c.maquina ? ` · ${c.maquina}` : ''}</span></td>
                 <td className="px-3 py-2"><Mono className={c.kitVersao ? '' : 'text-warn'}>{c.kitVersao ?? 'sem kit'}</Mono></td>
                 <td className="px-3 py-2"><Mono>{c.acesso}</Mono></td>
@@ -275,7 +279,7 @@ function Servidores({ casas, abrir }: { casas: CasaResumo[]; abrir: (id: string)
                 <td className="px-3 py-2"><Mono><span className="text-good">{c.politicas.ok}</span> · <span className="text-warn">{c.politicas.at}</span> · <span className="text-bad">{c.politicas.er}</span></Mono></td>
               </tr>
             ))}
-            {!lista.length && <tr><td colSpan={12} className="px-3 py-4 text-muted">Nenhum servidor com esse filtro.</td></tr>}
+            {!lista.length && <tr><td colSpan={13} className="px-3 py-4 text-muted">Nenhum servidor com esse filtro.</td></tr>}
           </tbody>
         </table>
       </div>
