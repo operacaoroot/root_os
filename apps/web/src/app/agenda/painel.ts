@@ -276,13 +276,30 @@ export type DesfechoDaEscrita =
   | { tipo: 'regua'; texto: string }
   | { tipo: 'recusado'; texto: string };
 
+/**
+ * O que `POST /agenda/escritas` devolve (o corpo do pedido é o `PedidoDeEscrita`
+ * cru). A lane G4 acrescenta `responsaveisSemEmail` quando o convite saiu sem o
+ * e-mail de algum sócio (sem e-mail na Equipe).
+ */
+export type ResultadoDaEscritaNaTela = ResultadoDaEscrita & { responsaveisSemEmail?: SocioDaAgenda[] };
+
+/** "convite saiu sem o e-mail de Lucas e Pedro", ou nulo. */
+export function avisoSemEmail(r: ResultadoDaEscritaNaTela): string | null {
+  const s = Array.isArray(r.responsaveisSemEmail) ? r.responsaveisSemEmail.filter(Boolean) : [];
+  if (!s.length) return null;
+  const nomes = s.length === 1 ? s[0] : `${s.slice(0, -1).join(', ')} e ${s[s.length - 1]}`;
+  return `convite saiu sem o e-mail de ${nomes}`;
+}
+
 /** O que a tela diz depois de `POST /agenda/escritas`. */
-export function desfechoDa(r: ResultadoDaEscrita): DesfechoDaEscrita {
+export function desfechoDa(r: ResultadoDaEscritaNaTela): DesfechoDaEscrita {
   if (r.regua && r.status !== 'executado') {
     return { tipo: 'regua', texto: r.mensagem || 'A régua deu vermelho: nada foi enviado ao Google.' };
   }
   if (r.status === 'executado') {
-    return { tipo: 'saiu', texto: r.mensagem || 'Feito no Google.', desfazer: r.desfazer ?? null, eventoId: r.eventoId };
+    const aviso = avisoSemEmail(r);
+    const texto = r.mensagem || 'Feito no Google.';
+    return { tipo: 'saiu', texto: aviso ? `${texto} Atenção: ${aviso}.` : texto, desfazer: r.desfazer ?? null, eventoId: r.eventoId };
   }
   if (r.status === 'aguardando_aprovacao') {
     const quem = r.precisaDeOutraPessoa ? ' Quem confirma é outra pessoa.' : '';

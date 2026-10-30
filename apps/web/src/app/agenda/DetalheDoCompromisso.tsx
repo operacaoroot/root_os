@@ -1,11 +1,11 @@
 'use client';
 
 import { useState } from 'react';
-import type { PedidoDeEscrita, ResultadoDaEscrita } from '@mktos/shared';
+import type { PedidoDeEscrita } from '@mktos/shared';
 import { apiPost } from '@/lib/api';
 
 import { Historico } from './abas/Historico';
-import { desfechoDa, novaChave, pedidoDeCancelar, type DesfechoDaEscrita } from './painel';
+import { desfechoDa, novaChave, type ResultadoDaEscritaNaTela, pedidoDeCancelar, type DesfechoDaEscrita } from './painel';
 import { horaNoFuso, rotulosDoDia } from './semana';
 import { aparenciaDo, corDaEtiqueta, diaDoEventoV2, type EventoV2 } from './v2';
 
@@ -55,7 +55,7 @@ export function DetalheDoCompromisso({ evento: e, modo, token, podeEditar, choqu
     setEnviando(true);
     setErro(null);
     try {
-      const d = desfechoDa(await apiPost<ResultadoDaEscrita>('/agenda/escritas', { pedido }, token));
+      const d = desfechoDa(await apiPost<ResultadoDaEscritaNaTela>('/agenda/escritas', pedido, token));
       setDesfecho(d);
       if (d.tipo === 'saiu' || d.tipo === 'fila') { setCancelando(false); aoEscrever(); }
     } catch (err) {

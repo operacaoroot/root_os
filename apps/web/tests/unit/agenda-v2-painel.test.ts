@@ -167,15 +167,25 @@ describe('o painel na tela', () => {
     const [rota, corpo, token] = apiPost.mock.calls[0];
     expect(rota).toBe('/agenda/escritas');
     expect(token).toBe('tok');
-    expect(corpo.pedido).toMatchObject({ acao: 'marcar', compromisso: { tipo: 'cliente', cliente: 'Custeio', responsaveis: ['Lucas'] } });
-    expect(typeof corpo.pedido.chave).toBe('string');
+    expect(corpo).toMatchObject({ acao: 'marcar', compromisso: { tipo: 'cliente', cliente: 'Custeio', responsaveis: ['Lucas'] } });
+    expect(typeof corpo.chave).toBe('string');
     expect(aoEscrever).toHaveBeenCalled();
     expect(sessionStorage.getItem(CHAVE_DO_RASCUNHO)).toBeNull();
     apiPost.mockResolvedValueOnce(resultado({ mensagem: 'Desmarcado.' }));
     fireEvent.click(screen.getByRole('button', { name: 'desfazer' }));
     await screen.findByText('Desmarcado.');
-    expect(apiPost.mock.calls[1][1].pedido).toMatchObject({ acao: 'desmarcar', eventoId: 'novo1' });
-    expect(apiPost.mock.calls[1][1].pedido.chave).not.toBe('antiga');
+    expect(apiPost.mock.calls[1][1]).toMatchObject({ acao: 'desmarcar', eventoId: 'novo1' });
+    expect(apiPost.mock.calls[1][1].chave).not.toBe('antiga');
+  });
+
+  it('o corpo é o PedidoDeEscrita cru; convite sem e-mail de sócio vira aviso', async () => {
+    apiPost.mockResolvedValueOnce({ ...resultado({ mensagem: 'Marcado no Google.' }), responsaveisSemEmail: ['Lucas', 'Pedro'] });
+    painel({ inicial: { ...BASE, cliente: 'Custeio', responsaveis: ['Lucas', 'Pedro'] } });
+    fireEvent.click(screen.getByRole('button', { name: 'Marcar' }));
+    await screen.findByText(/convite saiu sem o e-mail de Lucas e Pedro/);
+    const corpo = apiPost.mock.calls[0][1];
+    expect(corpo.acao).toBe('marcar');
+    expect(corpo).not.toHaveProperty('pedido');
   });
 
   it('foi para a fila: diz, leva a /atendimento e troca a linha do nível', async () => {
@@ -199,7 +209,7 @@ describe('o painel na tela', () => {
     apiPost.mockResolvedValueOnce(resultado({ mensagem: 'Marcado assim mesmo.' }));
     fireEvent.click(forcar);
     await screen.findByText('Marcado assim mesmo.');
-    expect(apiPost.mock.calls[1][1].pedido.forcado).toEqual({ motivo: 'o cliente só pode nesse dia' });
+    expect(apiPost.mock.calls[1][1].forcado).toEqual({ motivo: 'o cliente só pode nesse dia' });
   });
 
   it('o vermelho da régua da tela também segura o Marcar', () => {
@@ -242,11 +252,11 @@ describe('o painel na tela', () => {
     apiPost.mockResolvedValueOnce(resultado({ mensagem: 'ok' }));
     fireEvent.click(screen.getByRole('button', { name: 'Marcar' }));
     await screen.findByText('ok');
-    expect(apiPost.mock.calls[0][1].pedido.compromisso).toMatchObject({ leadId: 'lead-1', convidados: ['marcos@andrade.exemplo'] });
+    expect(apiPost.mock.calls[0][1].compromisso).toMatchObject({ leadId: 'lead-1', convidados: ['marcos@andrade.exemplo'] });
   });
 
   it('Mandar link de escolha: pede o convite e mostra o link para copiar', async () => {
-    apiPost.mockResolvedValueOnce({ url: 'https://os.exemplo/agendar/tokenficticio', validoAte: '2026-11-05T15:00:00.000Z' });
+    apiPost.mockResolvedValueOnce({ id: 'conv-1', url: 'https://os.exemplo/agendar/tokenficticio', validoAte: '2026-11-05T15:00:00.000Z' });
     painel({ inicial: { ...BASE, cliente: 'Custeio', responsaveis: ['Pedro'], leadId: 'lead-9', duracaoMin: 45 } });
     fireEvent.click(screen.getByRole('button', { name: 'Mandar link de escolha' }));
     await screen.findByText('https://os.exemplo/agendar/tokenficticio');
@@ -276,7 +286,7 @@ describe('o painel na tela', () => {
     apiPost.mockResolvedValueOnce(resultado({ mensagem: 'Movido.' }));
     fireEvent.click(screen.getByRole('button', { name: 'Salvar' }));
     await screen.findByText('Movido.');
-    expect(apiPost.mock.calls[0][1].pedido).toEqual({
+    expect(apiPost.mock.calls[0][1]).toEqual({
       acao: 'alterar',
       chave: expect.any(String),
       eventoId: 'ev-cru',
@@ -302,7 +312,7 @@ describe('o painel na tela', () => {
     apiPost.mockResolvedValueOnce(resultado({ mensagem: 'Alterado.' }));
     fireEvent.click(screen.getByRole('button', { name: 'Salvar' }));
     await screen.findByText('Alterado.');
-    expect(apiPost.mock.calls[0][1].pedido.depois).toEqual({ responsaveis: ['Lucas', 'Pedro'] });
+    expect(apiPost.mock.calls[0][1].depois).toEqual({ responsaveis: ['Lucas', 'Pedro'] });
   });
 
   it('sem permissão de editar a agenda: sem botão de marcar', () => {

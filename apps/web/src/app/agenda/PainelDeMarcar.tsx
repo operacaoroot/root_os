@@ -9,7 +9,6 @@ import {
   type NovoConviteDeAgenda,
   type PedidoDeEscrita,
   type RegrasDaAgenda,
-  type ResultadoDaEscrita,
   type ResultadoDaRegua,
   type SocioDaAgenda,
 } from '@mktos/shared';
@@ -22,6 +21,7 @@ import {
   aplicarFrase,
   comCliente,
   desfechoDa,
+  type ResultadoDaEscritaNaTela,
   duracoesAte,
   intervaloDoRascunho,
   lerConvidados,
@@ -128,7 +128,7 @@ export function PainelDeMarcar(props: Props) {
   const [reguaDoServidor, setReguaDoServidor] = useState<ResultadoDaRegua | null>(null);
   const [erro, setErro] = useState<string | null>(null);
   const [motivoForcado, setMotivoForcado] = useState('');
-  const [link, setLink] = useState<{ url: string; validoAte: string } | null>(null);
+  const [link, setLink] = useState<{ id?: string; url: string; validoAte: string } | null>(null);
   const [copiado, setCopiado] = useState(false);
   const apenasHorario = !!edicao && tipoDoPainel(edicao) === null;
 
@@ -199,7 +199,7 @@ export function PainelDeMarcar(props: Props) {
     setEnviando(true);
     setErro(null);
     try {
-      const res = await apiPost<ResultadoDaEscrita>('/agenda/escritas', { pedido }, token);
+      const res = await apiPost<ResultadoDaEscritaNaTela>('/agenda/escritas', pedido, token);
       const d = desfechoDa(res);
       setDesfecho(d);
       if (d.tipo === 'regua') setReguaDoServidor(res.regua ?? null);
@@ -249,7 +249,7 @@ export function PainelDeMarcar(props: Props) {
       ...(r.clienteId ? { clienteId: r.clienteId } : {}),
     };
     try {
-      setLink(await apiPost<{ url: string; validoAte: string }>('/agenda/convites', corpo, token));
+      setLink(await apiPost<{ id: string; url: string; validoAte: string }>('/agenda/convites', corpo, token));
       setCopiado(false);
     } catch (e) {
       setErro((e as Error).message);

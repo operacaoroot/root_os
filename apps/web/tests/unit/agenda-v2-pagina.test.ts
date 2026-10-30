@@ -162,7 +162,7 @@ describe('Semana e dia', () => {
     fireEvent.click(botao);
     await within(detalhe).findByText('Cancelado no Google.');
     expect(apiPost.mock.calls[0][0]).toBe('/agenda/escritas');
-    expect(apiPost.mock.calls[0][1].pedido).toMatchObject({ acao: 'cancelar', eventoId: 'custeio', tituloAtual: 'Reunião Presencial - Custeio - Lucas', motivo: 'o cliente pediu para remarcar', avisar: false });
+    expect(apiPost.mock.calls[0][1]).toMatchObject({ acao: 'cancelar', eventoId: 'custeio', tituloAtual: 'Reunião Presencial - Custeio - Lucas', motivo: 'o cliente pediu para remarcar', avisar: false });
     expect(within(detalhe).getByRole('button', { name: 'desfazer' })).toBeTruthy();
 
     fireEvent.click(within(detalhe).getByRole('button', { name: 'Editar' }));

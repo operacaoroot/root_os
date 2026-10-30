@@ -98,7 +98,12 @@ export function GradeDeHoras(props: Props) {
   const acabouDeArrastar = useRef(false);
   const [listaDoMais, setListaDoMais] = useState<{ dia: string; mais: MaisNaGrade } | null>(null);
 
-  const janela = useMemo(() => janelaDeHoras(eventos), [eventos]);
+  // A janela cabe também o compromisso novo (marcar às 07h ou às 22h alarga a grade).
+  const janela = useMemo(() => {
+    const j = janelaDeHoras(eventos);
+    if (!novo) return j;
+    return { inicio: Math.min(j.inicio, Math.floor(novo.inicio / 60) * 60), fim: Math.max(j.fim, Math.min(24 * 60, Math.ceil(novo.fim / 60) * 60)) };
+  }, [eventos, novo]);
   const porDia = useMemo(() => dias.map((d) => layoutDoDia(eventos, d, janela)), [dias, eventos, janela]);
   const px = alturaEfetiva(altura, disponivel, janela);
   const pxPorMin = px / 60;
