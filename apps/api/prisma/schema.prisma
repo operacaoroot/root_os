@@ -285,6 +285,8 @@ model Org {
   donosDeFuncao       DonoDaFuncao[]
   /// Produção 22B (I6): as fotos de perfil das pessoas.
   fotosDePerfil       FotoDePerfil[]
+  /// 30/10/2026: os corpos de agente externo (o Hermes da Rootinha) e o token de cada um.
+  corposExternos      CorpoExterno[]
 }
 
 model User {
@@ -6760,4 +6762,42 @@ model MarketingRegua {
   atualizadaEm DateTime @updatedAt
 
   @@id([orgId, formato])
+}
+
+// =============================================================================
+// O CORPO DE UM AGENTE EXTERNO (30/10/2026, A4)
+//
+// A Rootinha roda FORA do OS, no Hermes Agent. O "corpo" é o processo de fora
+// que fala com o OS por ela, e ele se identifica com UM token, só dele. O token
+// é vinculado a três coisas, as três fixas desde a criação: a EMPRESA, o AGENTE
+// que o corpo encarna (o token só abre as rotas deste agente) e a PESSOA que vale
+// quando o pedido não diz quem pediu.
+//
+// Como a Frota (`FrotaCasa.tokenHash`): só o sha256 do token fica aqui; o token
+// em claro aparece uma vez, ao criar. Revogar é marcar `revogadoEm` — a linha
+// fica, com quem revogou e por quê, porque "quem deu acesso a este corpo e
+// quando" é pergunta de auditoria. Raiz da empresa, isolamento por linha.
+// =============================================================================
+model CorpoExterno {
+  id              String    @id @default(uuid())
+  orgId           String
+  org             Org       @relation(fields: [orgId], references: [id])
+  /// Nome curto do corpo (a-z, 0-9, hífen): `hermes`.
+  corpo           String
+  /// O slug do `Agent` que o corpo encarna. O token só abre as rotas dele.
+  agentSlug       String
+  /// A pessoa (User.id) que vale quando o pedido não diz quem pediu.
+  solicitanteId   String
+  /// sha256 (hex) do token inteiro. O token em claro só aparece ao criar.
+  tokenHash       String    @unique
+  /// O começo do segredo, para a tela reconhecer o token sem guardá-lo.
+  prefixo         String
+  criadoPorId     String
+  criadoEm        DateTime  @default(now())
+  ultimoUsoEm     DateTime?
+  revogadoEm      DateTime?
+  revogadoPorId   String?
+  motivoRevogacao String?
+
+  @@index([orgId, agentSlug])
 }

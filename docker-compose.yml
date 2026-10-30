@@ -203,6 +203,12 @@ services:
       # A empresa dona do grupo (o id da org). O JID é global e o webhook tem
       # uma URL por empresa: sem ela, o grupo fica desligado.
       EVOLUTION_LINKS_ORG_ID: ${EVOLUTION_LINKS_ORG_ID:-}
+      # A Rootinha (30/10/2026, A9): a cópia das mensagens do WhatsApp da empresa que são dela
+      # (conversa direta de pessoa da equipe; grupo ou cliente só citando "Rootinha") vai ao
+      # Hermes por POST assinado (HMAC-SHA256 em x-rootos-assinatura). As DUAS, ou nenhuma:
+      # vazio = desligado. O segredo precisa de 32+ caracteres.
+      ROOTINHA_WEBHOOK_URL: ${ROOTINHA_WEBHOOK_URL:-}
+      ROOTINHA_WEBHOOK_SEGREDO: ${ROOTINHA_WEBHOOK_SEGREDO:-}
       # Grupo "Memória ROOT" (Marketing › Memória, 26/10/2026): link ou Reel mandado lá vira nota
       # (lido, transcrito e destrinchado). Mesmo webhook do canal. Vazio = desligado.
       MEMORIA_GRUPO_JID: ${MEMORIA_GRUPO_JID:-}

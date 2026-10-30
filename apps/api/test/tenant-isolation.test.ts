@@ -458,6 +458,7 @@ const ALVOS: Alvo[] = [
   { tabela: 'FrotaAcesso', escopo: 'tenant', chaveSql: '"id"', nota: 'Frota: quem tem chave SSH em cada servidor (pessoa, impressão digital, último login). Ler o da outra empresa é saber quem entra nos servidores dela; escrever é marcar revogado quem não foi. O orgId vem do insert, com a casa conferida pela chave estrangeira.' },
   { tabela: 'FrotaEvento', escopo: 'tenant', chaveSql: '"id"', nota: 'Frota: o registro do que aconteceu em cada servidor (login, chave, deploy, sonda, ordem do painel). Só recebe linha nova pela API. Ler o da outra empresa é ler o diário da operação dela. O orgId vem do insert.' },
   { tabela: 'FrotaOrdem', escopo: 'tenant', chaveSql: '"id"', nota: 'Frota: a ordem que a casa puxa (revogar chave, desligar automação, rodar verificar, pedir backup). Escrever na da outra empresa é mandar o servidor dela revogar uma chave. O orgId vem do insert.' },
+  { tabela: 'CorpoExterno', escopo: 'tenant', chaveSql: '"id"', nota: 'O corpo de agente externo (30/10/2026, A4): o processo de fora (o Hermes da Rootinha), o agente que ele encarna, a pessoa padrão e o hash do token. Ler o da outra empresa é saber quem opera os agentes dela; ESCREVER é trocar o hash e entrar como o agente dela. Raiz da empresa: o orgId vem do insert.' },
   { tabela: 'Pendencia', escopo: 'tenant', chaveSql: '"id"', nota: 'A pendência que um agente ou rotina deixa para uma pessoa (rodada dos agentes, 21/10/2026): o arquivo de cliente sem subpasta, a tarefa vencida, a mensagem de WhatsApp sem dono, a reunião fora do padrão. Ler a da outra empresa é ler o que chegou para ela e de quem; ESCREVER é decidir por ela. Raiz da empresa: o refId aponta para tabelas diferentes, sem FK.' },
   { tabela: 'ArquivoDoCliente', escopo: 'tenant', chaveSql: '"id"', nota: 'O arquivo que chegou para um cliente e o que o arquivista fez com ele (rodada dos agentes, TR-05): nome original, hash, a subpasta, a aprovação e o link no Drive. Ler o da outra empresa é ler quais documentos os clientes dela mandaram e onde estão; ESCREVER é mudar a subpasta, o nome ou o cliente de destino de um arquivo alheio, que é o que o efeito do Drive confere. Raiz da empresa: o arquivo pode chegar antes do cliente, só com o lead.' },
   { tabela: 'WorkAnexo', escopo: 'filho', chaveSql: '"id"', nota: 'O anexo da tarefa (rodada dos agentes, TR-06): o nome, o hash e a chave do binário no storage. Ler o da outra empresa é saber o que ela anexou e baixar pela chave; o gatilho deriva a empresa da tarefa.' },
@@ -1373,6 +1374,12 @@ async function semear(c: PoolClient, rotulo: 'A' | 'B', vec: string): Promise<vo
   reg('FrotaOrdem', await ins(c, 'FrotaOrdem', {
     id: crypto.randomUUID(), orgId, casaId: frotaCasaId, tipo: 'rodar_verificar', estado: 'pendente', criadaPor: `pessoa@${rotulo.toLowerCase()}`,
     updatedAt: new Date(),
+  }));
+
+  // O corpo de agente externo (30/10/2026, A4): raiz da empresa, orgId do insert.
+  reg('CorpoExterno', await ins(c, 'CorpoExterno', {
+    id: crypto.randomUUID(), orgId, corpo: `hermes-${rotulo.toLowerCase()}`, agentSlug: 'rootinha', solicitanteId: crypto.randomUUID(),
+    tokenHash: hex64(`corpo_${rotulo}_${MARCA}_${crypto.randomUUID()}`), prefixo: 'rcx', criadoPorId: crypto.randomUUID(),
   }));
 
   // O delegador (TR-09, rodada dos agentes, 21/10/2026): a subtarefa proposta, à espera de gente.

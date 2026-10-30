@@ -323,6 +323,21 @@ export const CONECTOR_DA_CAPACIDADE: Readonly<Record<string, string | null>> = {
   'pauta.semana.aprovar': null,
   // O CRM deste produto é tabela do próprio OS — mesmo caso de `crm.lead.alterar`.
   'crm.lead.criar': null,
+
+  // --- 1.13.0 (30/10/2026): as capacidades da central, para a Rootinha ---
+  // Tarefa, comentário, caixa, fila, outro agente, briefing e a sugestão de
+  // memória são tabelas do próprio OS: não saem da casa.
+  'operacao.tarefa.criar': null,
+  'operacao.tarefa.comentar': null,
+  'caixa.pendencia.listar': null,
+  'caixa.pendencia.criar': null,
+  'aprovacao.listar': null,
+  'agente.invocar': null,
+  'briefing.ler': null,
+  'contexto.memoria.sugerir': null,
+  // Responder na mesma conversa sai pela Evolution da empresa: desligar o
+  // WhatsApp para a empresa cala a Rootinha também.
+  'whatsapp.conversa.responder': 'whatsapp',
 };
 
 /**

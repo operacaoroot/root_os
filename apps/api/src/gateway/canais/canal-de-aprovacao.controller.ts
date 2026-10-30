@@ -16,6 +16,7 @@ import { CanalDeAprovacaoService } from './canal-de-aprovacao.service';
 import { EntradaDeGrupoRegistry } from './entrada-de-grupo.registry';
 import { EntradaDiretaRegistry } from './entrada-direta.registry';
 import { GravacaoDoWhatsappRegistry } from './gravacao-do-whatsapp.registry';
+import { RepasseDoWhatsappRegistry } from './repasse.registry';
 
 /*
  * ============================================================================
@@ -153,6 +154,12 @@ export class CanalDeAprovacaoController {
     @Optional() private readonly prisma?: PrismaService,
     /** Produção 22C (W1): sem o registro (as suítes que montam à mão), nada é gravado e o webhook é o de antes. */
     @Optional() private readonly gravacao?: GravacaoDoWhatsappRegistry,
+    /*
+     * 30/10/2026 (A9): a CÓPIA para fora (a Rootinha). Não consome: roda ao lado
+     * da cadeia de sempre, e a cadeia não espera por ela. Sem o registro (as
+     * suítes que montam à mão) ou sem inscrito, nada muda.
+     */
+    @Optional() private readonly repasses?: RepasseDoWhatsappRegistry,
   ) {}
 
   @Post('whatsapp/:orgId')
@@ -194,11 +201,20 @@ export class CanalDeAprovacaoController {
       // Produção 22C (W1): grava PRIMEIRO, e nunca barra os leitores (o registro não lança).
       const gravada = await this.gravacao?.gravar(orgId, corpo);
       if (gravada) this.log.debug(`webhook do canal (${orgId}): gravação ${gravada}`);
-      const doGrupo = await this.grupos?.despachar(orgId, corpo);
-      if (doGrupo != null) return { desfecho: `grupo:${doGrupo}` };
-      const doLead = await this.diretas?.despachar(orgId, corpo);
-      if (doLead != null) return { desfecho: `direta:${doLead}` };
-      return this.canal.receber(orgId, corpo);
+      // A9: a cópia sai DEPOIS da gravação (o corpo de fora responde citando a
+      // mensagem gravada) e AO LADO da cadeia, que não espera por ela.
+      const repasse = this.repasses?.quantos
+        ? this.repasses.repassar(orgId, corpo).catch(() => [] as string[])
+        : Promise.resolve([] as string[]);
+      const desfecho = await (async () => {
+        const doGrupo = await this.grupos?.despachar(orgId, corpo);
+        if (doGrupo != null) return { desfecho: `grupo:${doGrupo}` };
+        const doLead = await this.diretas?.despachar(orgId, corpo);
+        if (doLead != null) return { desfecho: `direta:${doLead}` };
+        return this.canal.receber(orgId, corpo);
+      })();
+      const repassada = await repasse;
+      return repassada.length ? { desfecho: `${desfecho.desfecho} · repasse:${repassada.join(',')}` } : desfecho;
     })
       .then(({ desfecho }) => {
         // O desfecho vai para o log do servidor, nunca para a resposta.

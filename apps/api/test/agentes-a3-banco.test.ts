@@ -17,7 +17,8 @@ import { gravarReuniaoDoGranola, levarReuniaoDiretaParaFicha, reuniaoDoGranolaNa
 import { EfeitosRegistry } from '../src/gateway/efeitos.registry';
 import { EventLogService } from '../src/gateway/event-log.service';
 import { ToolGateway } from '../src/gateway/tool-gateway.service';
-import type { ChamadaParaTeto, LlmMessage, LlmProvider, LlmStepInput, LlmStepOutput } from '../src/llm/llm.provider';
+import { TETO_MAXIMO_DE_SAIDA_DA_RESPOSTA } from '../src/llm/llm.provider';
+import type { ChamadaParaTeto, LlmMessage, LlmProvider, LlmStepInput, LlmStepOutput, LlmStopReason } from '../src/llm/llm.provider';
 import { StubProvider } from '../src/llm/stub.provider';
 import { MemoriaService } from '../src/memory/memoria.service';
 import { KitDoTrilhoService } from '../src/onboarding/trilho/kit/kit.service';
@@ -83,6 +84,8 @@ class ModeloDuble implements LlmProvider {
   buscaNaWeb = true;
   chamadas: LlmStepInput[] = [];
   respostas: Record<string, string> = {};
+  /** Por função: como o passo terminou (padrão `end_turn`). */
+  paradas: Record<string, LlmStopReason> = {};
   async complete(_m: LlmMessage): Promise<string> {
     return '{}';
   }
@@ -92,7 +95,7 @@ class ModeloDuble implements LlmProvider {
     return {
       text: texto,
       toolCalls: [],
-      stopReason: 'end_turn',
+      stopReason: this.paradas[input.funcao ?? ''] ?? 'end_turn',
       usage: { inputTokens: 10, outputTokens: 10, cacheReadTokens: 0, cacheWriteTokens: 0, custoUsd: 0.001, custoEstimado: true, modeloServido: 'claude-sonnet-5-5' },
       raw: [],
     };
@@ -574,6 +577,18 @@ describe.skipIf(!URL)('lane A3+TR contra o Postgres', () => {
       const terceira = outra.sugestoes.find((s) => s.estado === 'rascunho')!;
       await naEmpresa(() => delegador.descartar(ORG, gente, terceira.id));
       await expect(naEmpresa(() => delegador.aceitar(ORG, gente, terceira.id, {}))).rejects.toBeInstanceOf(ConflictException);
+    });
+
+    it('pede 16 mil tokens de saída; resposta cortada vira aviso claro e não grava sugestão', async () => {
+      const t = await novoCard('Tarefa que estoura o limite', { clienteId, agenteId: pesquisadorId, agenteEm: new Date() });
+      modelo.paradas['TR-09'] = 'max_tokens';
+      try {
+        await expect(naEmpresa(() => delegador.propor(ORG, gente, t.id))).rejects.toThrow(/veio cortada/);
+        expect(modelo.chamadas.at(-1)!.maxTokens).toBe(TETO_MAXIMO_DE_SAIDA_DA_RESPOSTA);
+        expect(await prisma.delegacaoSugestao.count({ where: { orgId: ORG, taskId: t.id } })).toBe(0);
+      } finally {
+        delete modelo.paradas['TR-09'];
+      }
     });
   });
 });

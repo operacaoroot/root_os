@@ -56,6 +56,7 @@ import { AnexosDaTarefaModule } from './work/anexos/anexos.module';
 import { AgendaModule } from './agenda/agenda.module';
 import { CobrancaDeTarefasModule } from './work/cobranca/cobranca.module';
 import { AgenteDeTarefasModule } from './work/agente-de-tarefas/agente-de-tarefas.module';
+import { AgentesExternosModule } from './agentes-externos/agentes-externos.module';
 import { DelegadorModule } from './work/delegador/delegador.module';
 import { ImplantacaoModule } from './implantacao/implantacao.module';
 import { WhatsappModule } from './whatsapp/whatsapp.module';
@@ -228,6 +229,10 @@ import { WhatsappModule } from './whatsapp/whatsapp.module';
     // Produção 22C: o WhatsApp da empresa por dentro do OS (gravação do webhook, sincronização,
     // caixa, vínculo, resumo). Sem a linha, o webhook não grava e `/api/whatsapp/*` responde 404.
     WhatsappModule,
+    // 30/10/2026: o OS operado por um agente que roda fora dele (a Rootinha, no Hermes). Os
+    // efeitos das capacidades da central (política 1.13.0). Sem a linha, as nove capacidades
+    // ficam classificadas e sem efeito: a porta responde "sem efeito ligado nesta versão".
+    AgentesExternosModule,
   ],
   controllers: [HealthController],
 })

@@ -16,7 +16,7 @@ import {
   variavelDoModelo,
 } from '@mktos/shared';
 
-import { ROSTER_DE_ENTRADA, ROSTER_DO_ONBOARDING } from '../src/agents/roster';
+import { COMPLEMENTOS_DOS_AGENTES, ROSTER_DE_ENTRADA, ROSTER_DO_ONBOARDING, agenteDaFuncao } from '../src/agents/roster';
 
 /*
  * O cadastro único (rodada dos agentes, 21/10/2026, Lane 0). É o contrato de que
@@ -57,7 +57,8 @@ describe('cadastro único de agentes', () => {
     const ids = CADASTRO_DE_FUNCOES.map((f) => f.id);
     // AG-01 é o vigia da agenda (a ata pede); TR-11 é a segunda leitura do arquivista (a lane do Drive pediu).
     // CT-20 a CT-22: Memória, Triagem e Redator pela régua da aba Marketing no jeito do Estúdio (26/10/2026).
-    expect(ids).toEqual([...levantamento, 'AG-01', 'TR-11', 'TR-12', 'CT-20', 'CT-21', 'CT-22']);
+    // CE-07: a Rootinha, o agente que roda fora do OS, no Hermes (30/10/2026).
+    expect(ids).toEqual([...levantamento, 'AG-01', 'TR-11', 'TR-12', 'CT-20', 'CT-21', 'CT-22', 'CE-07']);
   });
 
   it('id e slug são únicos, e o slug é minúsculo com hífen', () => {
@@ -155,5 +156,73 @@ describe('modelo por função', () => {
     expect(escolherModelo(undefined, PADRAO).origem).toBe('padrao');
     expect(escolherModelo('XX-99', PADRAO).origem).toBe('padrao');
     expect(escolherModelo('RO-04', PADRAO)).toEqual({ ...PADRAO, origem: 'padrao' });
+  });
+});
+
+/*
+ * A ROOTINHA (CE-07, 30/10/2026): o agente que roda fora do OS, no Hermes, e
+ * opera só pelas portas dele. O que ela pode é o que este caso trava: as
+ * leituras de contexto, números, tarefas, agenda, e-mail, leads e conteúdo, as
+ * nove capacidades da central (política 1.13.0), mudar status de tarefa e
+ * rascunhar e-mail — e, RETIDAS para aprovação, as quatro que saem da casa ou
+ * criam lead. Nada de dinheiro, exclusão, permissão ou credencial.
+ */
+describe('a Rootinha (CE-07)', () => {
+  const f = funcaoPorSlug('rootinha')!;
+  const porId = new Map(
+    [
+      ...json<{ capacidades: Array<{ id: string; nivel: string; efeito: Record<string, unknown> }> }>('packages/policy/politica-root.json').capacidades,
+      ...json<{ capacidades: Array<{ id: string; nivel: string; efeito: Record<string, unknown> }> }>('packages/policy/politica-marketing-os.json').capacidades,
+    ].map((c) => [c.id, c]),
+  );
+
+  it('está no cadastro como agente externo da central, do Pedro, semeado na tripulação', () => {
+    expect(f).toMatchObject({ id: 'CE-07', area: 'Central e contexto', tipo: 'agente', dono: 'pedro', modelo: null });
+    expect(f.modeloExterno).toMatch(/hermes/i);
+    expect(f.semente).toEqual(['tripulacao']);
+  });
+
+  it('nasce pausada, com teto R2, só na empresa da casa, com procedimento e voz', () => {
+    const a = agenteDaFuncao(f);
+    expect(a.estado).toBe('pausado');
+    expect(a.autonomiaAte).toBe('R2');
+    expect(a.soNaCasa).toBe(true);
+    expect(a.sop?.passos.length).toBeGreaterThan(2);
+    expect(COMPLEMENTOS_DOS_AGENTES.rootinha.voz).toBeTruthy();
+  });
+
+  it('declara as nove da central, alterar tarefa e rascunhar e-mail', () => {
+    for (const c of [
+      'operacao.tarefa.criar', 'operacao.tarefa.comentar', 'caixa.pendencia.listar', 'caixa.pendencia.criar',
+      'aprovacao.listar', 'agente.invocar', 'briefing.ler', 'contexto.memoria.sugerir', 'whatsapp.conversa.responder',
+      'operacao.tarefa.alterar', 'email.rascunhar',
+    ]) {
+      expect(f.capacidades, c).toContain(c);
+    }
+  });
+
+  it('as leituras são de contexto, números, tarefas, agenda, e-mail, leads e conteúdo — nenhuma do financeiro', () => {
+    const r0 = f.capacidades.filter((c) => porId.get(c)?.nivel === 'R0');
+    for (const c of r0) expect(c, c).toMatch(/^(contexto|numeros|operacao|comunicacao|crm|pecas|caixa|aprovacao|briefing)\./);
+    for (const c of ['contexto.memoria.buscar', 'numeros.painel.ler', 'operacao.tarefa.listar', 'comunicacao.agenda.listar', 'comunicacao.email.buscar', 'crm.lead.buscar', 'pecas.conteudo.listar']) {
+      expect(r0, c).toContain(c);
+    }
+  });
+
+  it('o que sai da casa fica retido: as R3 declaradas são exatamente estas', () => {
+    const r3 = f.capacidades.filter((c) => ['R3', 'R4', 'R5'].includes(porId.get(c)?.nivel ?? 'R5'));
+    expect(r3.sort()).toEqual(['agenda.reuniao.marcar', 'email.enviar', 'whatsapp.conversa.responder', 'whatsapp.mensagem.enviar']);
+    // comercial.lead.criar é R1 no catálogo: declarada, mas a porta NÃO a retém sozinha (ver o relatório da rodada).
+    expect(f.capacidades).toContain('comercial.lead.criar');
+    expect(porId.get('comercial.lead.criar')?.nivel).toBe('R1');
+  });
+
+  it('nada de dinheiro, exclusão, permissão ou credencial', () => {
+    for (const c of f.capacidades) {
+      const e = porId.get(c)!.efeito;
+      expect(e.impactoFinanceiro, c).toBe('nenhum');
+      expect(e.destruicao, c).toBe(false);
+      expect(c, c).not.toMatch(/^(financeiro|usuario\.permissao|credencial|conector)\./);
+    }
   });
 });

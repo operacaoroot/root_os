@@ -9,8 +9,9 @@ Servidor **MCP (Model Context Protocol)** que expõe ferramentas padronizadas pa
 - **Todas as tools são `read_only`** (menor privilégio). O cliente (`src/client.ts`) exporta uma
   única função de acesso, `apiGet`, e o único `POST` que ele faz é o login da conta de serviço:
   não existe caminho de escrita neste pacote.
-- Quando a escrita entrar, entra pelo **Tool Gateway** (ADR-004), com a régua R0–R5 de
-  `packages/policy` — nunca por um caminho paralelo aqui dentro.
+- A escrita entra pelo **Tool Gateway** (ADR-004), com a régua R0–R5 de `packages/policy` —
+  nunca por um caminho paralelo aqui dentro. Desde 30/10/2026 ela existe só no **modo catálogo**
+  (abaixo), e só pela rota de execução do agente, que passa pela porta.
 - Toda resposta inclui o campo `source` da API → a IA **cita a fonte** e não inventa.
 
 ## Ferramentas
@@ -25,6 +26,25 @@ O número é contável a partir do código, e o código é que manda:
 ```bash
 grep -c 'registerTool(' packages/mcp/src/server.ts
 ```
+
+## Modo catálogo (`MCP_MODO=catalogo`, 30/10/2026)
+
+O modo de sempre (as 35 acima, `MCP_MODO=leitura`, o padrão) fica intacto. O modo catálogo serve
+a um **agente externo** (a Rootinha, no Hermes Agent): as ferramentas são as capacidades que o
+agente do token declarou, geradas no arranque de `GET /agents/:slug/catalogo-externo` — nome = id da
+capacidade, esquema = o `argsSchema` que a porta valida. R0 com rota GET sai pela rota de sempre;
+o resto, por `POST /agents/:slug/capacidades/:id/executar` (a porta devolve executado, aguardando
+aprovação ou recusado). Mais `<slug>_definicao` (ferramenta e recurso `rootos://agentes/<slug>/definicao`):
+missão, procedimento e voz. A origem do pedido (mensagem de WhatsApp, quem pediu, texto de terceiro)
+vai no `_meta` da chamada, em `root/origem`, e não nos argumentos.
+
+| Variável | Observação |
+|---|---|
+| `MCP_MODO` | `catalogo` |
+| `MCP_CORPO_TOKEN` | o token do corpo (`rcx.<empresa>.<segredo>`), criado em `POST /agents/:slug/corpos` por quem tem `admin.usuarios`; não usa a conta de serviço |
+| `MCP_AGENTE` | o slug do agente (padrão `rootinha`) |
+
+Prova: `pnpm --filter @mktos/mcp build && node packages/mcp/test/catalogo.mjs`.
 
 ## Rodar
 ```bash
