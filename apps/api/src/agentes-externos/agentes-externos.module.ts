@@ -5,6 +5,7 @@ import { MemoryModule } from '../memory/memoria.module';
 import { WorkModule } from '../work/work.module';
 import { AgentesExternosController } from './agentes-externos.controller';
 import { EfeitosDaCentralService } from './efeitos-da-central.service';
+import { ExecucaoExternaService } from './execucao-externa.service';
 import { RespostaNaConversaService } from './resposta-na-conversa.service';
 
 /*
@@ -18,6 +19,8 @@ import { RespostaNaConversaService } from './resposta-na-conversa.service';
  *
  *   · os EFEITOS das capacidades da central (política 1.13.0) — cada um chama o
  *     mesmo serviço que a tela chama;
+ *   · a ROTA DE EXECUÇÃO (A2): uma capacidade por vez, pela porta, com o
+ *     `ExecCtx` que o laço do agente montaria (`execucao-externa.service.ts`);
  *
  * Quem o importa é só o `AppModule`. Ele importa `AgentsModule` (o
  * `AgentRuntime`, para `agente.invocar`), `WorkModule` (tarefas e comentários)
@@ -28,7 +31,7 @@ import { RespostaNaConversaService } from './resposta-na-conversa.service';
 @Module({
   imports: [AgentsModule, WorkModule, MemoryModule],
   controllers: [AgentesExternosController],
-  providers: [EfeitosDaCentralService, RespostaNaConversaService],
+  providers: [EfeitosDaCentralService, RespostaNaConversaService, ExecucaoExternaService],
   exports: [EfeitosDaCentralService],
 })
 export class AgentesExternosModule {}
