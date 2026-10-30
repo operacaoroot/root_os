@@ -203,10 +203,10 @@ function semana() {
   return {
     dias: { seg, ter, qua, qui },
     eventos: [
-      ev('agv2choquea01', 'Reunião Online - Promedical - Rodrigo', qua, '09:00', '10:00', { ...meet('aaa'), ...cliente('promedical@exemplo.invalid') }),
-      ev('agv2choqueb01', 'Reunião Online - Campo Bom - Rodrigo', qua, '09:00', '10:00', { ...meet('bbb'), ...cliente('campobom@exemplo.invalid') }),
-      ev('agv2semmeet01', 'Reunião Online - Cultural Clube - Lucas', qui, '10:00', '11:00', cliente('cultural@exemplo.invalid')),
-      ev('agv2foradop01', 'call com cliente novo', qua, '15:00', '16:00', cliente('contato@juma.invalid')),
+      ev('agv2choquea01', 'Reunião Online - Clinica Exemplo - Rodrigo', qua, '09:00', '10:00', { ...meet('aaa'), ...cliente('clinica@exemplo.invalid') }),
+      ev('agv2choqueb01', 'Reunião Online - Fazenda Exemplo - Rodrigo', qua, '09:00', '10:00', { ...meet('bbb'), ...cliente('fazenda@exemplo.invalid') }),
+      ev('agv2semmeet01', 'Reunião Online - Clube Exemplo - Lucas', qui, '10:00', '11:00', cliente('clube@exemplo.invalid')),
+      ev('agv2foradop01', 'call com cliente novo', qua, '15:00', '16:00', cliente('contato@novo.invalid')),
       { id: 'agv2pedrofora1', status: 'confirmed', summary: 'Pedro Fora - viagem', organizer: org, start: { date: qui }, end: { date: somar(qui, 1) } },
     ],
   };
@@ -246,8 +246,9 @@ async function main() {
        VALUES (gen_random_uuid()::text,'${orgId}','${CONTA_GOOGLE}','duble-acesso','duble-renovacao','Bearer','https://www.googleapis.com/auth/calendar', now() + interval '30 days', now(), now())
        ON CONFLICT ("orgId") DO UPDATE SET "email"=EXCLUDED."email","accessToken"='duble-acesso',"refreshToken"='duble-renovacao',"expiresAt"=now() + interval '30 days',"updatedAt"=now()`,
     );
-    const saida = execFileSync('docker', ['exec', CONT_API, 'node', 'dist/agenda/sobrescrita-r2-da-agenda.cli.js', '--org', 'root', '--valer', '--como', EMAIL, '--motivo',
-      '2026-10-30: homologação da agenda v2, decisão 2 do Rodrigo (29/10): marcar, alterar, cancelar e desmarcar pela tela saem no clique para gente da casa; agente, rotinas, WhatsApp e link seguem na fila'], { encoding: 'utf8' });
+    // O CLI sobe o Nest inteiro: com o relógio das rotinas desligado e com prazo.
+    const saida = execFileSync('docker', ['exec', '-e', 'ROTINAS_CRON=off', CONT_API, 'node', 'dist/agenda/sobrescrita-r2-da-agenda.cli.js', '--org', 'root', '--valer', '--como', EMAIL, '--motivo',
+      '2026-10-30: homologação da agenda v2, decisão 2 do Rodrigo (29/10): marcar, alterar, cancelar e desmarcar pela tela saem no clique para gente da casa; agente, rotinas, WhatsApp e link seguem na fila'], { encoding: 'utf8', timeout: 180_000 });
     const r2 = await api('GET', '/agenda/aprovacao-r2', undefined, tok);
     conferir(JSON.stringify(r2).includes('false') || r2.ligada === false || r2.aprovacaoR2Ligada === false, `a sobrescrita não desligou a aprovação de R2: ${JSON.stringify(r2).slice(0, 200)}`);
     return { detalhe: { org: orgId.slice(0, 8), cli: saida.split('\n').filter(Boolean).slice(-2).join(' | ').slice(0, 200) } };
@@ -321,7 +322,7 @@ async function main() {
     await duble('DELETE', '/_duble/pedidos');
     const r = await api('POST', '/agenda/escritas', {
       acao: 'marcar', chave: chave('m1'),
-      compromisso: { tipo: 'cliente', modalidade: 'online', cliente: 'Andrade Peças', responsaveis: ['Rodrigo'], inicio: instante(S.dias.ter, '15:00').toISOString(), fim: instante(S.dias.ter, '16:00').toISOString(), convidados: [CLIENTE_EMAIL] },
+      compromisso: { tipo: 'cliente', modalidade: 'online', cliente: 'Loja Exemplo', responsaveis: ['Rodrigo'], inicio: instante(S.dias.ter, '15:00').toISOString(), fim: instante(S.dias.ter, '16:00').toISOString(), convidados: [CLIENTE_EMAIL] },
     }, tok);
     prova.marcarCliente = { status: r.status, nivel: r.nivel };
     if (dentroDaJanela()) {
@@ -329,7 +330,7 @@ async function main() {
       const pedidos = await duble('GET', '/_duble/pedidos');
       const lista = pedidos.pedidos ?? pedidos;
       const ins = lista.find((x) => x.metodo === 'POST' && /\/events$/.test(x.caminho));
-      conferir(ins?.corpo?.summary === 'Reunião Online - Andrade Peças - Rodrigo', `título errado no Google: ${ins?.corpo?.summary}`);
+      conferir(ins?.corpo?.summary === 'Reunião Online - Loja Exemplo - Rodrigo', `título errado no Google: ${ins?.corpo?.summary}`);
       conferir(JSON.stringify(ins?.corpo?.attendees ?? []).includes(CLIENTE_EMAIL), 'o cliente não foi convidado');
       conferir(ins?.corpo?.conferenceData?.createRequest, 'a online não pediu o Meet');
       conferir(ins?.corpo?.extendedProperties?.private?.mktos === '1', 'sem a marca de criado pelo OS');
@@ -415,7 +416,7 @@ async function main() {
     const pub = await http('GET', `${API}/agendar/${encodeURIComponent(token)}`);
     conferir(pub.status === 200, `GET público ${pub.status}`);
     const texto = JSON.stringify(pub.json);
-    conferir(!/Promedical|Campo Bom|Cultural|juma|Reunião/i.test(texto), 'a página pública vazou título ou cliente da agenda');
+    conferir(!/Clinica Exemplo|Fazenda Exemplo|Cultural|novo|Reunião/i.test(texto), 'a página pública vazou título ou cliente da agenda');
     const dia = pub.json.dias.find((d) => d.manha.length || d.tarde.length);
     conferir(dia, 'a página pública não mostrou nenhum horário livre');
     const hora = dia.tarde[0] ?? dia.manha[0];

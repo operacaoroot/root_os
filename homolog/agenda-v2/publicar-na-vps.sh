@@ -106,7 +106,14 @@ docker exec "$DB_CONT" psql -U "$DB_USER" -d postgres -c "DROP DATABASE IF EXIST
 docker exec -i "$DB_CONT" pg_restore -U "$DB_USER" -d "$ENSAIO" --no-owner < "$REL/banco-antes.dump" || true
 DBPASS=$(docker exec "$DB_CONT" printenv POSTGRES_PASSWORD)
 URL_ENSAIO="postgresql://$DB_USER:$DBPASS@$DB_CONT:5432/$ENSAIO"
-rodar() { docker run --rm --network "$REDE" -e DATABASE_URL="$1" -w /app/apps/api "$IMG" sh -c "$2"; }
+# A URL do banco (com a senha) vai por arquivo de ambiente com 600, nunca na linha de comando (`ps`).
+rodar() {
+  local env_tmp; env_tmp=$(mktemp); chmod 600 "$env_tmp"
+  echo "DATABASE_URL=$1" > "$env_tmp"
+  local rc=0
+  docker run --rm --network "$REDE" --env-file "$env_tmp" -w /app/apps/api "$IMG" sh -c "$2" || rc=$?
+  rm -f "$env_tmp"; return $rc
+}
 rodar "$URL_ENSAIO" "pnpm exec prisma migrate deploy" | tee "$REL/ensaio-migration.txt"
 rodar "$URL_ENSAIO" "POLITICA_CAPACIDADE_NOVA_AUTOR='$AUTOR' POLITICA_CAPACIDADE_NOVA_MOTIVO='agenda v2 29/10/2026: espelho (sincronizar, livre_ocupado), alterar, cancelar, desmarcar, reabrir' POLITICA_REBAIXAMENTO_AUTOR='$AUTOR' POLITICA_REBAIXAMENTO_MOTIVO='agenda v2 29/10/2026, decisão 2: marcar ganha o desfazer implementado agenda.reuniao.desmarcar e a escada o calcula R2; o esquema do marcar aceita bloqueio, pessoal, fora, responsaveis, chave e forcado' pnpm db:seed:politica" | tee "$REL/ensaio-politica.txt"
 docker exec "$DB_CONT" psql -U "$DB_USER" -d "$ENSAIO" -Atc "SELECT count(*) FROM \"_prisma_migrations\" WHERE migration_name='20261029230000_agenda_v2' AND finished_at IS NOT NULL" | tee "$REL/ensaio-conferencia.txt"
