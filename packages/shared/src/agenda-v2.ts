@@ -228,6 +228,12 @@ export interface EventoDaAgenda {
   /** O `htmlLink` do Google. */
   link: string | null;
   leitura: LeituraDoCompromisso;
+  /**
+   * As propriedades privadas que o OS grava (`PROPRIEDADES_DO_OS`), copiadas de
+   * `AgendaEvento.propriedades`. Opcional (lane B, 29/10): sem ela, quem precisa
+   * (Conflitos, Relatórios) lê a coluna do espelho pelo id.
+   */
+  propriedades?: Record<string, string>;
 }
 
 export interface EstadoDaSincronia {
@@ -440,6 +446,12 @@ export interface AcaoDoConflito {
     | 'levar_para_dia_util'
     | 'pular_ocorrencia'
     | 'manter';
+  /**
+   * As ações que não são escrita na agenda (`aplicar_titulo` e `nao_e_reuniao`,
+   * do vigia AG-01): a rota que o botão chama, com o corpo pronto. Opcional
+   * (lane B, 29/10). `pedido` e `rota` nunca vêm juntos.
+   */
+  rota?: { metodo: 'POST'; caminho: string; corpo?: Record<string, unknown> } | null;
 }
 
 export interface CartaoDeConflito {

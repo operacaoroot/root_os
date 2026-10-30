@@ -195,7 +195,7 @@ const naturezaDoEvento = (ev: EventoDaAgenda): NaturezaDaOcupacao | null => {
 };
 
 /** Quem um evento ocupa: o título lido, o e-mail do sócio entre os convidados, a agenda pessoal. */
-function pessoasDoEvento(ev: EventoDaAgenda, pessoas: readonly RegraDaPessoa[]): Set<SocioDaAgenda> {
+export function pessoasDoEvento(ev: EventoDaAgenda, pessoas: readonly RegraDaPessoa[]): Set<SocioDaAgenda> {
   const s = new Set<SocioDaAgenda>(ev.leitura?.responsaveis ?? []);
   const email = (v: string | null | undefined) => (v ?? '').trim().toLowerCase();
   for (const p of pessoas) {
