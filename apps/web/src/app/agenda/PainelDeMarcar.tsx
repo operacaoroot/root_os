@@ -192,7 +192,8 @@ export function PainelDeMarcar(props: Props) {
   const { emails } = lerConvidados(r.convidados);
   const reuniao = r.tipo === 'cliente' || r.tipo === 'interna';
   const informativos: string[] = [];
-  if (reuniao && r.modalidade === 'online') informativos.push('Meet nasce junto');
+  // O motor da régua já diz "Meet nasce junto" na online (integração da agenda v2): repetir aqui duplicava a linha.
+  if (reuniao && r.modalidade === 'online' && !regua?.itens.some((i) => i.regra === 'meet')) informativos.push('Meet nasce junto');
   if (reuniao && emails.length) informativos.push(`convite a ${ficha?.contato?.nome && emails.includes(ficha.contato.email ?? '') ? ficha.contato.nome : emails.join(', ')} por e-mail`);
 
   const escrever = async (pedido: PedidoDeEscrita) => {

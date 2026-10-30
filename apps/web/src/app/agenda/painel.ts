@@ -165,9 +165,14 @@ export function lerConvidados(texto: string): { emails: string[]; invalido: stri
 
 /** Uma chave nova por pedido (a escrita é idempotente por ela). */
 export function novaChave(): string {
-  const c = (globalThis as { crypto?: { randomUUID?: () => string } }).crypto;
-  if (c?.randomUUID) return c.randomUUID();
-  return `ag-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+  // A API só aceita base32hex minúsculo (`[a-v0-9]{10,64}`): a chave vira o id do evento no
+  // Google. Hexadecimal cabe nesse alfabeto. O UUID de antes (com hífen) era recusado como
+  // "Pedido de escrita inválido" (achado na integração da agenda v2, 30/10/2026).
+  const c = (globalThis as { crypto?: { getRandomValues?: (a: Uint8Array) => Uint8Array } }).crypto;
+  const bytes = new Uint8Array(16);
+  if (c?.getRandomValues) c.getRandomValues(bytes);
+  else for (let i = 0; i < bytes.length; i++) bytes[i] = Math.floor(Math.random() * 256);
+  return Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('');
 }
 
 /** O pedido de MARCAR. Lança com a frase do que falta. */

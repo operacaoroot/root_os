@@ -247,8 +247,14 @@ async function main() {
        ON CONFLICT ("orgId") DO UPDATE SET "email"=EXCLUDED."email","accessToken"='duble-acesso',"refreshToken"='duble-renovacao',"expiresAt"=now() + interval '30 days',"updatedAt"=now()`,
     );
     // O CLI sobe o Nest inteiro: com o relógio das rotinas desligado e com prazo.
-    const saida = execFileSync('docker', ['exec', '-e', 'ROTINAS_CRON=off', CONT_API, 'node', 'dist/agenda/sobrescrita-r2-da-agenda.cli.js', '--org', 'root', '--valer', '--como', EMAIL, '--motivo',
+    let saida = '';
+    try {
+      saida = execFileSync('docker', ['exec', '-e', 'ROTINAS_CRON=off', CONT_API, 'node', 'dist/agenda/sobrescrita-r2-da-agenda.cli.js', '--org', 'root', '--valer', '--como', EMAIL, '--motivo',
       '2026-10-30: homologação da agenda v2, decisão 2 do Rodrigo (29/10): marcar, alterar, cancelar e desmarcar pela tela saem no clique para gente da casa; agente, rotinas, WhatsApp e link seguem na fila'], { encoding: 'utf8', timeout: 180_000 });
+    } catch (e) {
+      // O estado gravado é o que vale (lido abaixo pela rota); a saída do CLI é só registro.
+      aviso(`00: o CLI da sobrescrita não terminou limpo (${String(e?.code ?? e?.message ?? e).slice(0, 80)}); conferindo o estado gravado`);
+    }
     const r2 = await api('GET', '/agenda/aprovacao-r2', undefined, tok);
     conferir(JSON.stringify(r2).includes('false') || r2.ligada === false || r2.aprovacaoR2Ligada === false, `a sobrescrita não desligou a aprovação de R2: ${JSON.stringify(r2).slice(0, 200)}`);
     return { detalhe: { org: orgId.slice(0, 8), cli: saida.split('\n').filter(Boolean).slice(-2).join(' | ').slice(0, 200) } };
@@ -282,7 +288,7 @@ async function main() {
     }
     await atalho.fill(`interna ${['domingo', 'segunda', 'terça', 'quarta', 'quinta', 'sexta', 'sábado'][diaDaSemana(S.dias.ter)]} 16h 30 min rodrigo`);
     const titulo = await esperar(async () => {
-      const t = await p.locator('text=Reunião Interna - Rodrigo').first().isVisible();
+      const t = await p.getByText('Reunião Interna - Rodrigo', { exact: true }).last().isVisible();
       return t ? 'Reunião Interna - Rodrigo' : null;
     });
     conferir(titulo, 'o título "Reunião Interna - Rodrigo" não apareceu no painel');
