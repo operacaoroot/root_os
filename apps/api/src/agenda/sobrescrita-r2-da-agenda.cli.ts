@@ -24,7 +24,13 @@ import { AppModule } from '../app.module';
 import { comContexto } from '../common/contexto-execucao';
 import { PolicyService } from '../policy/policy.service';
 import { PrismaService } from '../prisma/prisma.service';
-import { MOTIVO_MINIMO_R2, analisarAprovacaoR2, deltaDaAprovacaoR2 } from './sobrescrita-r2-da-agenda';
+import {
+  MOTIVO_MINIMO_R2,
+  analisarAprovacaoR2,
+  deltaDaAprovacaoR2,
+  fecharComPrazo,
+  recusaDoAutorDaSobrescrita,
+} from './sobrescrita-r2-da-agenda';
 
 function opcao(args: string[], nome: string): string | undefined {
   const i = args.indexOf(`--${nome}`);
@@ -44,6 +50,8 @@ async function main(): Promise<void> {
   const motivo = opcao(args, 'motivo')?.trim();
   if (!alvo) throw new Error('falta --org <slug ou id da empresa>.');
 
+  // O comando não precisa do relógio das rotinas: com ele de pé, o processo não terminava (B2).
+  process.env.ROTINAS_CRON = 'off';
   const app = await NestFactory.createApplicationContext(AppModule, { logger: ['error', 'warn'] });
   try {
     const prisma = app.get(PrismaService);
@@ -78,19 +86,33 @@ async function main(): Promise<void> {
       }
       if (!como) throw new Error('falta --como <e-mail>: a sobrescrita exige responsável identificado (RF-P-06).');
       if (!motivo || motivo.length < MOTIVO_MINIMO_R2) throw new Error(`falta --motivo com pelo menos ${MOTIVO_MINIMO_R2} caracteres (RF-P-06).`);
-      const autor = await prisma.user.findFirst({ where: { orgId: org.id, isActive: true, OR: [{ email: como }, { id: como }] }, select: { id: true } });
-      if (!autor) throw new Error(`não achei usuário ativo "${como}" na empresa ${org.slug}.`);
+      // O autor é GENTE: ativo e sem papel de máquina (B2).
+      const lido = await prisma.user.findFirst({
+        where: { orgId: org.id, OR: [{ email: como }, { id: como }] },
+        select: { id: true, isActive: true, roles: { select: { key: true } } },
+      });
+      const autor = lido ? { id: lido.id, isActive: lido.isActive, papeis: lido.roles.map((r) => r.key) } : null;
+      const recusa = recusaDoAutorDaSobrescrita(autor, como, org.slug);
+      if (recusa || !autor) throw new Error(recusa ?? `não achei o usuário "${como}".`);
 
       const r = await policy.sobrescrever({ orgId: org.id, delta, autorId: autor.id, motivo, aprovacaoR2Ligada: ligadaDepois });
       console.log(r.criada ? `\nPolítica da empresa v${r.versao} em vigor (assinada).` : '\nNada mudou: a política da empresa já era esta.');
       console.log('A porta lê a aprovação de R2 do banco a cada pedido: vale já, em todas as réplicas.\n');
     });
   } finally {
-    await app.close();
+    await fecharComPrazo(() => app.close());
   }
 }
 
-main().catch((e) => {
-  console.error(`\nErro: ${(e as Error).message}\n`);
-  process.exit(1);
-});
+/** Sai de verdade depois de a saída ser escrita (ver `scripts/criar-pastas-dos-clientes.ts`). */
+function sairCom(codigo: number): void {
+  process.stdout.write('', () => process.exit(codigo));
+}
+
+main().then(
+  () => sairCom(0),
+  (e) => {
+    console.error(`\nErro: ${(e as Error).message}\n`);
+    sairCom(1);
+  },
+);
