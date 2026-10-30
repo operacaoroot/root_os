@@ -268,6 +268,9 @@ async function main() {
     conferir(rodrigo, 'sem a regra do Rodrigo (a semente da casa não rodou)');
     await api('PUT', `/agenda/regras/pessoa/${rodrigo.id}`, { emailPessoal: PESSOAL_RODRIGO, fechadoLigado: true }, tok);
     await duble('POST', '/_duble/livre-ocupado', { [PESSOAL_RODRIGO]: [{ start: instante(S.dias.ter, '08:00').toISOString(), end: instante(S.dias.ter, '13:00').toISOString() }] });
+    // O dublê foi zerado: o token de sincronia guardado no espelho é de outro calendário. Sem token, a
+    // passagem refaz a janela inteira (o que sumiu vira cancelado), como depois de um 410 do Google.
+    sql(`UPDATE "AgendaSincronia" SET "syncToken" = NULL WHERE "orgId"='${orgId}'`);
     const r = await api('POST', '/agenda/sincronia/agora', {}, tok);
     const esp = await api('GET', `/agenda/espelho?de=${instante(S.dias.seg, '00:00').toISOString()}&ate=${instante(somar(S.dias.seg, 5), '00:00').toISOString()}`, undefined, tok);
     conferir(esp.fonte === 'espelho', `a tela não leu do espelho: fonte ${esp.fonte} (${JSON.stringify(esp.sincronia)})`);
@@ -301,26 +304,27 @@ async function main() {
     await duble('DELETE', '/_duble/pedidos');
     const botao = p.getByRole('button', { name: /^Marcar$/ }).first();
     await botao.click();
-    const desfecho = await esperar(async () => {
-      const txt = await p.locator('body').innerText();
-      if (/saiu|marcad[oa]/i.test(txt) && /desfazer/i.test(txt)) return 'executado';
-      if (/fila de aprova/i.test(txt)) return 'fila';
-      return null;
-    }, 15000);
+    // O desfecho é o que o Google (o dublê) recebeu e o que a régua decidiu, não o texto da tela,
+    // que passa por "Enviando…" antes de dizer o resultado.
+    const inserts = async () => ((await duble('GET', '/_duble/pedidos')).pedidos ?? []).filter((x) => x.metodo === 'POST' && /\/events$/.test(x.caminho));
+    const chegou = await esperar(async () => ((await inserts()).length ? true : null), 12000);
+    await esperar(async () => ((await p.locator('body').innerText()).includes('Enviando') ? null : true), 10000);
     await foto(p, 'marcar-no-clique-escuro');
-    const pedidos = await duble('GET', '/_duble/pedidos');
-    const insert = (pedidos.pedidos ?? pedidos).filter?.((x) => x.metodo === 'POST' && /\/events$/.test(x.caminho)) ?? [];
+    const insert = await inserts();
+    const desfecho = chegou ? 'executado' : 'fila';
+    prova.decisaoDoMarcarNaTela = sql(`SELECT d.nivel || ' ' || array_to_string(d.sinais, ',') || ' aprovacao=' || d."exigeAprovacao" FROM "PolicyDecision" d WHERE d."orgId"='${orgId}' AND d."capabilityId"='agenda.reuniao.marcar' ORDER BY d."criadoEm" DESC LIMIT 1`);
     if (dentroDaJanela()) {
-      conferir(desfecho === 'executado', `dentro da janela o marcar pela tela não saiu no clique (viu: ${desfecho})`);
+      conferir(desfecho === 'executado', `dentro da janela o marcar pela tela não saiu no clique (régua: ${prova.decisaoDoMarcarNaTela})`);
       conferir(insert.length === 1, `o dublê recebeu ${insert.length} insert(s)`);
       conferir(insert[0].sendUpdates === 'all' || /sendUpdates=all/.test(JSON.stringify(insert[0].query ?? '')), 'o insert não foi com sendUpdates=all');
-      marcado = insert[0].corpo?.id ?? null;
+      const ev = insert[0].corpo ?? {};
+      marcado = { eventoId: ev.id, desfazer: { acao: 'desmarcar', chave: chave('d1'), eventoId: ev.id, tituloAtual: ev.summary } };
     } else {
       conferir(desfecho === 'fila', `fora da janela esperava a fila (viu: ${desfecho})`);
       conferir(insert.length === 0, 'fora da janela o dublê recebeu escrita sem aprovação');
       aviso('03 rodou fora da janela da política (noite em SP): a régua acendeu fora_da_janela e o marcar subiu a R3. Rode de novo entre 08h e 20h para a prova do clique.');
     }
-    return { detalhe: { desfecho, inserts: insert.length } };
+    return { detalhe: { desfecho, inserts: insert.length, regua: prova.decisaoDoMarcarNaTela } };
   });
 
   // ---------------- 03b (API, cliente com convidado) ----------------
@@ -331,6 +335,11 @@ async function main() {
       compromisso: { tipo: 'cliente', modalidade: 'online', cliente: 'Loja Exemplo', responsaveis: ['Rodrigo'], inicio: instante(S.dias.ter, '15:00').toISOString(), fim: instante(S.dias.ter, '16:00').toISOString(), convidados: [CLIENTE_EMAIL] },
     }, tok);
     prova.marcarCliente = { status: r.status, nivel: r.nivel };
+    const sinais = sql(`SELECT array_to_string(d.sinais, ',') FROM "PolicyDecision" d WHERE d."orgId"='${orgId}' AND d."capabilityId"='agenda.reuniao.marcar' ORDER BY d."criadoEm" DESC LIMIT 1`);
+    if (dentroDaJanela() && r.status === 'aguardando_aprovacao' && /volume_atipico/.test(sinais)) {
+      aviso(`03b: a régua acendeu volume_atipico (a rajada do e2e passou do triplo da média por hora deixada pelas rodadas anteriores nesta stack) e o marcar subiu a R3: foi para a fila. É a régua de toda escrita; a prova do clique é a 03.`);
+      return { detalhe: { status: r.status, nivel: r.nivel, sinais } };
+    }
     if (dentroDaJanela()) {
       conferir(r.status === 'executado', `não saiu no clique: ${r.status} ${r.mensagem}`);
       const pedidos = await duble('GET', '/_duble/pedidos');
@@ -340,7 +349,7 @@ async function main() {
       conferir(JSON.stringify(ins?.corpo?.attendees ?? []).includes(CLIENTE_EMAIL), 'o cliente não foi convidado');
       conferir(ins?.corpo?.conferenceData?.createRequest, 'a online não pediu o Meet');
       conferir(ins?.corpo?.extendedProperties?.private?.mktos === '1', 'sem a marca de criado pelo OS');
-      marcado = r;
+      if (!marcado?.desfazer) marcado = r;
     } else {
       conferir(r.status === 'aguardando_aprovacao', `fora da janela esperava a fila: ${r.status}`);
       marcado = r;
