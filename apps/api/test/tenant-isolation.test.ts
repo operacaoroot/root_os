@@ -435,6 +435,7 @@ const ALVOS: Alvo[] = [
   { tabela: 'ComercialDocumento', escopo: 'filho', chaveSql: '"id"', nota: 'Espelho do contrato no provedor de assinatura, com os links de assinar. LER a da outra entrega o link que assina o contrato alheio.' },
   { tabela: 'LeadReacao', escopo: 'filho', chaveSql: '"id"', nota: 'O que o cliente leu na proposta e o que anotou nela (rodada da implantação I4): seção, tempo por visita, "faz sentido", dúvida e ideia com o texto dele. LER a da outra é ler como o cliente alheio reagiu à proposta e o que ele pensa dela; ESCREVER é pôr palavra na boca do cliente de outra casa ou apagar o termômetro dela. A rota anônima escreve aqui só DEPOIS de achar a empresa pelo hash na sala, então a leitura NÃO aceita a sentinela pública.' },
   { tabela: 'SalaVersao', escopo: 'filho', chaveSql: '"id"', nota: 'A sala do cliente publicada por versão (rodada da implantação I3): o rascunho da bancada e cada versão que o cliente leu, com próximos passos, o combinado e quem cuida da conta. LER a da outra é ver o plano de implantação e o que a casa vizinha combinou com o cliente dela; ESCREVER é trocar o que o cliente alheio lê no link ou publicar por ela. A rota anônima lê aqui só DEPOIS de achar a empresa pelo hash na sala, então a leitura NÃO aceita a sentinela pública.' },
+  { tabela: 'SalaLeitura', escopo: 'filho', chaveSql: '"id"', nota: 'A leitura de um item da área do cliente (leva A, 30/10/2026): o cliente abriu a versão N do item X, uma linha por (sala, item, versão). LER a da outra é saber o que o cliente alheio já abriu e quando; ESCREVER é apagar o "novo" do cliente de outra casa ou marcar como lido o que ele nunca viu. A rota anônima grava aqui só DEPOIS de achar a empresa pelo hash na sala, então a leitura NÃO aceita a sentinela pública.' },
   { tabela: 'WhatsAppConversa', escopo: 'tenant', chaveSql: '"id"', nota: 'A conversa do número da empresa no WhatsApp (produção 22C, W1): o chat 1:1 ou o grupo, o nome do contato ou o assunto do grupo, a lista de participantes com os números, as não lidas e o vínculo com lead ou cliente. Ler a da outra empresa é ler com quem ela conversa e em que grupos está; ESCREVER é ligar a conversa dela ao lead errado ou zerar as não lidas. Raiz da empresa: o orgId vem do insert (o gravador do webhook, depois da instância conferida).' },
   { tabela: 'WhatsAppMensagem', escopo: 'filho', chaveSql: '"id"', nota: 'Toda mensagem que passou pelo número da empresa (produção 22C, W1), entrada e saída, 1:1 e grupo: o texto, quem escreveu (número e nome), a mídia só com metadados. LER a da outra é ler a conversa inteira dela com leads e clientes; ESCREVER é pôr palavra na boca do cliente alheio. O gatilho deriva a empresa da conversa.' },
   { tabela: 'OperacaoRodada', escopo: 'tenant', chaveSql: '"id"', nota: 'O painel semanal da operação da ROOT: clientes, o que cada um deve, o que falta cobrar e as decisões em aberto. Em produção só a empresa da plataforma tem linha (o script que grava recusa org de cliente), mas a policy não sabe disso — se ela falhar, um cliente lê a carteira da ROOT com o valor que cada outro cliente paga. ESCREVER é reescrever o painel de outra empresa; apagar não é caminho da aplicação (sem GRANT de DELETE).' },
@@ -1452,10 +1453,12 @@ async function semear(c: PoolClient, rotulo: 'A' | 'B', vec: string): Promise<vo
     contexto: 'pediu 8% de desconto', opcoes: JSON.stringify([{ chave: 'manter', rotulo: 'manter o preço' }]), padrao: 'manter',
     expiraEm: new Date(agora.getTime() + 3_600_000),
   }, { opcoes: 'jsonb' }));
-  reg('SalaDoCliente', await ins(c, 'SalaDoCliente', {
+  const salaId = await ins(c, 'SalaDoCliente', {
     id: crypto.randomUUID(), orgId, leadId, slug: `sala-${rotulo.toLowerCase()}-${suf}`, tokenHash: `sala_${rotulo}_${suf}`,
     validoAte: new Date(agora.getTime() + 86_400_000), dados: JSON.stringify({ horariosOferecidos: [] }), atualizadoEm: agora,
-  }, { dados: 'jsonb' }));
+  }, { dados: 'jsonb' });
+  reg('SalaDoCliente', salaId);
+  s.ref.salaId = salaId;
   reg('ComercialMensagem', await ins(c, 'ComercialMensagem', {
     id: crypto.randomUUID(), orgId, leadId, direcao: 'saida', provedor: 'simulado', template: 'M1',
     texto: `Mensagem privada da org ${rotulo}`, estado: 'rascunho',
@@ -1484,6 +1487,10 @@ async function semear(c: PoolClient, rotulo: 'A' | 'B', vec: string): Promise<vo
   reg('SalaVersao', await ins(c, 'SalaVersao', {
     id: crypto.randomUUID(), orgId, leadId, numero: 1, estado: 'publicada', publicadaEm: agora,
     conteudo: JSON.stringify({ nome: `Sala privada da org ${rotulo}` }), hash: 'a'.repeat(64), atualizadoEm: agora,
+  }));
+  // A leitura de um item da área do cliente (leva A, 30/10/2026): o que o cliente alheio já abriu.
+  reg('SalaLeitura', await ins(c, 'SalaLeitura', {
+    id: crypto.randomUUID(), orgId, salaId, item: 'atas', versao: 1,
   }));
   // O WhatsApp da empresa (produção 22C, W1): a conversa (raiz) e a mensagem (filha), com texto que não pode vazar.
   const conversaId = await ins(c, 'WhatsAppConversa', {
@@ -3862,6 +3869,10 @@ const LINHA_DE_FILHO: Record<string, (c: PoolClient) => Promise<Record<string, u
     id: crypto.randomUUID(), leadId: sementes.A.ref.leadId, numero: 900 + Math.floor(Math.random() * 1000), estado: 'substituida', publicadaEm: new Date(),
     conteudo: JSON.stringify({}), hash: 'b'.repeat(64), atualizadoEm: new Date(),
   }),
+  // A área do cliente (leva A, 30/10/2026): a leitura é filha da sala, não do lead.
+  SalaLeitura: async () => ({
+    id: crypto.randomUUID(), salaId: sementes.A.ref.salaId, item: 'cronograma', versao: 900 + Math.floor(Math.random() * 1000),
+  }),
   // O WhatsApp da empresa (produção 22C, W1): a mensagem é filha da conversa.
   WhatsAppMensagem: async () => ({
     id: crypto.randomUUID(), conversaId: sementes.A.ref.whatsAppConversaId, instancia: 'inst-a', chatJid: '5532900000071@s.whatsapp.net',
@@ -4015,9 +4026,10 @@ describe('orgId em todo filho de tenant (RF-T-01)', () => {
     // + `LeadReacao` (rodada da implantação I4, 18/10/2026)
     // + `SalaVersao` (rodada da implantação I3, 18/10/2026)
     // + `WorkAnexo` (rodada dos agentes, 21/10/2026, TR-06)
-    // + `WhatsAppMensagem` (produção 22C, W1, 22/10/2026).
+    // + `WhatsAppMensagem` (produção 22C, W1, 22/10/2026)
+    // + `SalaLeitura` (área do cliente, leva A, 30/10/2026).
     // Filho novo sobe este número no mesmo commit.
-    expect(declarados.length).toBe(33);
+    expect(declarados.length).toBe(34);
   });
 
   it.each(FILHOS_COM_ORGID_REDUNDANTE.map((f) => [f.modelo, f] as const))(

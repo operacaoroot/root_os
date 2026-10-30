@@ -256,7 +256,7 @@ export class ImportadorCrmService {
       this.prisma.comercialCobranca.count({ where: { orgId } }),
       this.prisma.comercialDocumento.count({ where: { orgId } }),
       this.prisma.salaDoCliente.count({ where: { orgId } }),
-      this.prisma.salaVersao.count({ where: { orgId, estado: 'publicada' } }),
+      this.prisma.salaVersao.count({ where: { orgId, item: null, estado: 'publicada' } }),
       this.prisma.contract.count({ where: { orgId } }),
       this.prisma.comercialReacao.count({ where: { orgId } }),
       this.prisma.comercialDecisao.count({ where: { orgId } }),

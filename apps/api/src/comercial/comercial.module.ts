@@ -33,6 +33,8 @@ import { SalaService } from './sala.service';
 import { ReacoesDaPropostaService } from './reacoes-da-proposta.service';
 import { LeituraEReacaoService } from './leitura-e-reacao.service';
 import { SalaVersaoService } from './sala-versao.service';
+// A área do cliente (leva A, 30/10/2026): a bancada dos quinze itens.
+import { AreaDoClienteService } from './area-do-cliente.service';
 // Produção 21 (P9): quando a sala entra (o estado na aba Sala e "Copiar link da sala").
 import { SalaEstadoController } from './sala-estado.controller';
 import { SalaEstadoService, SoGenteNaSalaGuard } from './sala-estado.service';
@@ -123,6 +125,7 @@ import { LeadRepetidoService } from './lead-repetido.service';
     ReacoesDaPropostaService,
     // --- rodada da implantação I3 (a sala publicada por versão) e I5 (o relatório de leitura e reação) ---
     SalaVersaoService,
+    AreaDoClienteService,
     LeituraEReacaoService,
     SalaEstadoService,
     SoGenteNaSalaGuard,

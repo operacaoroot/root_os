@@ -13,6 +13,7 @@ import { LeadRepetidoService } from './lead-repetido.service';
 import { MoverService, PEDIDO_DE_MOVER_APOSENTADO, SoGenteGuard } from './mover.service';
 import { LeituraEReacaoService } from './leitura-e-reacao.service';
 import { ReacoesDaPropostaService } from './reacoes-da-proposta.service';
+import { AreaDoClienteService } from './area-do-cliente.service';
 import { SalaVersaoService } from './sala-versao.service';
 import { RelogioDaEspinha } from './relogio-da-espinha';
 
@@ -40,6 +41,7 @@ export class ComercialController {
     private readonly moverSvc: MoverService,
     private readonly reacoesSvc: ReacoesDaPropostaService,
     private readonly salaVersoes: SalaVersaoService,
+    private readonly areaDoCliente: AreaDoClienteService,
     private readonly leitura: LeituraEReacaoService,
     private readonly leadRepetido: LeadRepetidoService,
   ) {}
@@ -127,6 +129,42 @@ export class ComercialController {
     const n = Number(versao);
     if (!Number.isInteger(n) || n < 1) throw new BadRequestException('versão inválida');
     return this.salaVersoes.conteudoParaLiberar(user.orgId, id, n, typeof hash === 'string' && hash ? hash : null);
+  }
+
+  /*
+   * A ÁREA DO CLIENTE (leva A, 30/10/2026): a bancada. Os quinze slots com o
+   * estado de cada um (vazio, derivado, rascunho, na porta, no ar, lido), e a
+   * versão por item: ler o rascunho, gravar, pedir a publicação. Publicar um
+   * item é a MESMA capacidade da sala (`comercial.sala.publicar`, R3): outra
+   * pessoa libera em /atendimento lendo a versão pela rota de conteúdo acima,
+   * que agora diz de que item ela é. Item derivado (o OS monta sozinho) é
+   * recusado com o motivo nas duas escritas.
+   */
+  @Get('lead/:id/area')
+  @RequirePermissions('leads.ver')
+  areaDoClienteNaBancada(@CurrentUser() user: JwtUser, @Param('id') id: string) {
+    return this.areaDoCliente.bancada(user.orgId, id);
+  }
+
+  @Get('lead/:id/area/:item/versoes')
+  @RequirePermissions('leads.ver')
+  versoesDoItemDaArea(@CurrentUser() user: JwtUser, @Param('id') id: string, @Param('item') item: string) {
+    return this.salaVersoes.versoesDoItem(user.orgId, id, item);
+  }
+
+  @Put('lead/:id/area/:item/rascunho')
+  @RequirePermissions('leads.editar')
+  @UseGuards(SoGenteGuard)
+  rascunhoDoItemDaArea(@CurrentUser() user: JwtUser, @Param('id') id: string, @Param('item') item: string, @Body() body: unknown) {
+    return this.salaVersoes.salvarRascunhoDoItem(user.orgId, id, item, body, { id: user.sub });
+  }
+
+  @Post('lead/:id/area/:item/publicar')
+  @HttpCode(200)
+  @RequirePermissions('leads.editar')
+  @UseGuards(SoGenteGuard)
+  publicarItemDaArea(@CurrentUser() user: JwtUser, @Param('id') id: string, @Param('item') item: string) {
+    return this.salaVersoes.publicarItem(user.orgId, id, item, { id: user.sub });
   }
 
   /*

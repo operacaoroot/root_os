@@ -1,6 +1,6 @@
 'use client';
 
-import type { EstadoDaSala } from '@mktos/shared';
+import type { AreaDoClienteParaOCliente, EstadoDaSala } from '@mktos/shared';
 
 import { dataCurta, rotuloDoHorario } from '@/lib/sala-do-cliente';
 
@@ -53,8 +53,16 @@ export interface AcompanhamentoDaSala {
   contato: { whatsapp: string | null; rotulo: string };
 }
 
-/** O estado da sala como a API o devolve desde a leva 5: o de sempre mais o acompanhamento. */
-export type EstadoDaSalaComAcompanhamento = EstadoDaSala & { acompanhamento?: AcompanhamentoDaSala | null };
+/**
+ * O estado da sala como a API o devolve desde a leva 5: o de sempre mais o
+ * acompanhamento. Desde a leva A da área do cliente (30/10/2026), também o
+ * `modo` do link e a área montada (só no modo área).
+ */
+export type EstadoDaSalaComAcompanhamento = EstadoDaSala & {
+  acompanhamento?: AcompanhamentoDaSala | null;
+  modo?: 'sala' | 'area';
+  area?: AreaDoClienteParaOCliente | null;
+};
 
 const FOCO = 'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-offset-2 focus-visible:ring-offset-bg';
 const CARTAO = 'rounded-xl border border-border bg-surface p-4';

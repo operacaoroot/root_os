@@ -147,7 +147,7 @@ describe('painel do lead', () => {
     expect(window.location.search).toBe('?filtro=parados&lead=l1&aba=decisoes');
     expect(window.history.length).toBe(antes + 1);
     // A aba antiga (Decisões) aberta por link fica no fim da fila; a Geral é a primeira.
-    expect(within(dialogo).getAllByRole('tab').map((t) => t.textContent)).toEqual(['Geral', 'Pendências e sugestões', 'Sala', 'WhatsApp', 'Decisões1']);
+    expect(within(dialogo).getAllByRole('tab').map((t) => t.textContent)).toEqual(['Geral', 'Pendências e sugestões', 'Sala', 'Área do cliente', 'WhatsApp', 'Decisões1']);
     await u.click(within(dialogo).getByRole('tab', { name: 'Pendências e sugestões' }));
     expect(window.location.search).toBe('?filtro=parados&lead=l1&aba=pendencias');
     expect(window.history.length).toBe(antes + 1);

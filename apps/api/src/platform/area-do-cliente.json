@@ -37,12 +37,42 @@
     "no_ar": "publicado em produção"
   },
   "estados_do_item_para_o_cliente": [
-    { "id": "vazio", "rotulo": "ainda não chegou", "quem_ve": "cliente e bancada", "descricao": "o slot diz em que fase do fluxo esse item chega" },
-    { "id": "derivado", "rotulo": "o OS montou sozinho", "quem_ve": "bancada", "descricao": "veio do fio, do trilho, da Frota ou da agenda; espera a bancada publicar" },
-    { "id": "rascunho", "rotulo": "rascunho", "quem_ve": "bancada", "descricao": "a bancada escreveu, ainda não pediu para publicar" },
-    { "id": "na_porta", "rotulo": "aguardando liberação", "quem_ve": "bancada", "descricao": "pedido na fila de /atendimento, esperando a segunda pessoa" },
-    { "id": "publicado", "rotulo": "no ar", "quem_ve": "cliente e bancada", "descricao": "versão N publicada; o cliente vê o selo 'novo' até abrir" },
-    { "id": "lido", "rotulo": "lido", "quem_ve": "bancada", "descricao": "o cliente abriu; a bancada vê a data" }
+    {
+      "id": "vazio",
+      "rotulo": "ainda não chegou",
+      "quem_ve": "cliente e bancada",
+      "descricao": "o slot diz em que fase do fluxo esse item chega"
+    },
+    {
+      "id": "derivado",
+      "rotulo": "o OS montou sozinho",
+      "quem_ve": "bancada",
+      "descricao": "veio do fio, do trilho, da Frota ou da agenda; espera a bancada publicar"
+    },
+    {
+      "id": "rascunho",
+      "rotulo": "rascunho",
+      "quem_ve": "bancada",
+      "descricao": "a bancada escreveu, ainda não pediu para publicar"
+    },
+    {
+      "id": "na_porta",
+      "rotulo": "aguardando liberação",
+      "quem_ve": "bancada",
+      "descricao": "pedido na fila de /atendimento, esperando a segunda pessoa"
+    },
+    {
+      "id": "publicado",
+      "rotulo": "no ar",
+      "quem_ve": "cliente e bancada",
+      "descricao": "versão N publicada; o cliente vê o selo 'novo' até abrir"
+    },
+    {
+      "id": "lido",
+      "rotulo": "lido",
+      "quem_ve": "bancada",
+      "descricao": "o cliente abriu; a bancada vê a data"
+    }
   ],
   "itens": [
     {
@@ -55,13 +85,20 @@
       "como_chega": "misto",
       "fonte_no_os": {
         "hoje": "As cinco fases do trilho (OnboardingTrilho) e os próximos passos da Sala (SalaVersao.proximosPassos). As datas de cada fase são definidas com o cliente na tarefa 09 e escritas pela bancada.",
-        "codigo": ["apps/api/src/onboarding/trilho/fases.ts", "apps/api/src/comercial/sala-versao.service.ts", "packages/shared/src/sala-versao.ts"]
+        "codigo": [
+          "apps/api/src/onboarding/trilho/fases.ts",
+          "apps/api/src/comercial/sala-versao.service.ts",
+          "packages/shared/src/sala-versao.ts"
+        ]
       },
       "o_que_o_cliente_ve": "As fases do fluxo (Abertura, Primeira semana, Construção, Acompanhamento) com a data combinada em cada uma, marcando feita, atual e futura. Data só quando existe.",
       "feito_quando": "Cronograma publicado com data em cada fase. Data que muda vira versão nova, com o que mudou escrito.",
       "leva": "B",
       "estado": "backlog",
-      "depende_de": ["m1-modo-area", "m2-publicar-por-item"]
+      "depende_de": [
+        "m1-modo-area",
+        "m2-publicar-por-item"
+      ]
     },
     {
       "id": "instrucoes-de-acesso",
@@ -73,13 +110,19 @@
       "como_chega": "escrito pela Root",
       "fonte_no_os": {
         "hoje": "Não existe. Proposta: texto padrão por kit numa nota da memória da Root (area.instrucoes.<kit>), personalizado por cliente na bancada e publicado como item da área.",
-        "codigo": ["apps/api/src/memory/", "apps/api/src/comercial/sala-versao.service.ts"]
+        "codigo": [
+          "apps/api/src/memory/",
+          "apps/api/src/comercial/sala-versao.service.ts"
+        ]
       },
       "o_que_o_cliente_ve": "Como entrar, o que cada bloco mostra, onde fica cada coisa e como pedir ajuda. Em frases curtas, com o nome das coisas como o cliente as chama.",
       "feito_quando": "A mensagem de boas-vindas (11) leva o link e o cliente entrou: a primeira visita fica registrada e a bancada vê.",
       "leva": "C",
       "estado": "backlog",
-      "depende_de": ["m2-publicar-por-item", "m3-leitura"]
+      "depende_de": [
+        "m2-publicar-por-item",
+        "m3-leitura"
+      ]
     },
     {
       "id": "contrato",
@@ -91,13 +134,20 @@
       "como_chega": "derivado",
       "fonte_no_os": {
         "hoje": "Já chega à sala: o fio do lead (fatos contrato.*) e o documento de assinatura (ComercialDocumento, ZapSign ou anexo) aparecem em 'Documentos trocados'. Falta o bloco O combinado, o PDF assinado guardado e os aditivos (50) como versões.",
-        "codigo": ["apps/api/src/comercial/sala-projecao.ts", "apps/api/src/comercial/contratos/", "apps/api/prisma/schema.prisma (ComercialDocumento, ArquivoDoCliente)"]
+        "codigo": [
+          "apps/api/src/comercial/sala-projecao.ts",
+          "apps/api/src/comercial/contratos/",
+          "apps/api/prisma/schema.prisma (ComercialDocumento, ArquivoDoCliente)"
+        ]
       },
       "o_que_o_cliente_ve": "O contrato assinado, com a data e o PDF. Aditivo de continuidade (50) entra como versão nova, com o que mudou.",
       "feito_quando": "Contrato assinado aparece com data e abre o PDF guardado pela Root. Aditivo publicado vira versão 2.",
       "leva": "B",
       "estado": "em_construcao",
-      "depende_de": ["m1-modo-area"]
+      "depende_de": [
+        "m1-modo-area"
+      ],
+      "na_branch": "derivado na leva A do que a projeção da sala já tem (contrato assinado, proposta aceita, WhatsApp da Root, próximos passos); a leva B completa a fonte"
     },
     {
       "id": "escopo",
@@ -109,13 +159,19 @@
       "como_chega": "derivado",
       "fonte_no_os": {
         "hoje": "Já chega à sala: a proposta publicada (PropostaDoLead, fato proposta.publicada) abre em /s/<token>/proposta. Falta marcá-la como 'vale como escopo' depois do aceite e ligar o aditivo.",
-        "codigo": ["apps/api/src/comercial/proposta-do-lead.service.ts", "apps/web/src/app/s/[token]/proposta/"]
+        "codigo": [
+          "apps/api/src/comercial/proposta-do-lead.service.ts",
+          "apps/web/src/app/s/[token]/proposta/"
+        ]
       },
       "o_que_o_cliente_ve": "A proposta aceita como escopo do projeto: o que será construído, o que fica fora, a versão vigente.",
       "feito_quando": "Depois do aceite, a proposta aparece no bloco O combinado com o selo 'escopo vigente'. Aditivo (50) muda a versão.",
       "leva": "B",
       "estado": "em_construcao",
-      "depende_de": ["m1-modo-area"]
+      "depende_de": [
+        "m1-modo-area"
+      ],
+      "na_branch": "derivado na leva A do que a projeção da sala já tem (contrato assinado, proposta aceita, WhatsApp da Root, próximos passos); a leva B completa a fonte"
     },
     {
       "id": "linha-de-execucao",
@@ -127,14 +183,23 @@
       "como_chega": "derivado",
       "fonte_no_os": {
         "hoje": "Três fontes que já existem: o card do cliente na lista Onboarding de cliente (WorkTask, etapa e idade), a casa do cliente na Frota (FrotaCasa.estado e a jornada do kit) e a fase do trilho. Nada é digitado.",
-        "codigo": ["apps/api/src/implantacao/", "apps/api/src/frota/", "packages/shared/src/implantacao-do-cartao.ts"]
+        "codigo": [
+          "apps/api/src/implantacao/",
+          "apps/api/src/frota/",
+          "packages/shared/src/implantacao-do-cartao.ts"
+        ]
       },
       "o_que_o_cliente_ve": "Três linhas em palavras de cliente: a etapa do fluxo (fase e tarefa atual), o servidor (sinal da Frota com palavra, nunca só cor) e o próximo marco com data.",
       "feito_quando": "Muda sozinho quando o card anda, a Frota relata ou o trilho avança. Dúvida que virou tarefa (40) aparece aqui.",
       "leva": "B",
-      "estado": "backlog",
-      "depende_de": ["m1-modo-area"],
-      "em_aberto": ["A verificação do kit ainda não chega na Frota (tarefa 34): até lá o sinal do servidor é só o do relator."]
+      "estado": "em_construcao",
+      "depende_de": [
+        "m1-modo-area"
+      ],
+      "em_aberto": [
+        "A verificação do kit ainda não chega na Frota (tarefa 34): até lá o sinal do servidor é só o do relator."
+      ],
+      "na_branch": "derivado na leva A do que a projeção da sala já tem (contrato assinado, proposta aceita, WhatsApp da Root, próximos passos); a leva B completa a fonte"
     },
     {
       "id": "atas",
@@ -146,14 +211,22 @@
       "como_chega": "misto",
       "fonte_no_os": {
         "hoje": "A transcrição chega pelo Banco de atas (/trabalho/atas: Granola, Drive, vault) e a ata se liga ao cliente (AtaLigacao.clienteId). A bancada redige o resumo em palavras de cliente (tarefa 18) e publica pela porta.",
-        "codigo": ["apps/api/src/work/atas/", "apps/api/prisma/schema.prisma (AtaLigacao, ReuniaoDoCartao)"]
+        "codigo": [
+          "apps/api/src/work/atas/",
+          "apps/api/prisma/schema.prisma (AtaLigacao, ReuniaoDoCartao)"
+        ]
       },
       "o_que_o_cliente_ve": "Uma ata por reunião: data, resumo, o que ficou combinado e os próximos passos com dono e data. Selo 'novo' até abrir.",
       "feito_quando": "Ata publicada no mesmo dia da reunião (18) e o cliente a abriu: a bancada vê 'lida em'.",
       "leva": "B",
       "estado": "backlog",
-      "depende_de": ["m2-publicar-por-item", "m3-leitura"],
-      "em_aberto": ["O cliente recebe o resumo redigido ou a ata inteira? Decisão da mesa (D3)."]
+      "depende_de": [
+        "m2-publicar-por-item",
+        "m3-leitura"
+      ],
+      "em_aberto": [
+        "O cliente recebe o resumo redigido ou a ata inteira? Decisão da mesa (D3)."
+      ]
     },
     {
       "id": "agenda",
@@ -165,13 +238,19 @@
       "como_chega": "derivado",
       "fonte_no_os": {
         "hoje": "A agenda da Root lida pela porta (comunicacao.agenda.periodo) e casada com o cliente pelo e-mail do contato ou pelo nome no título (proxima-reuniao.ts). As feitas vêm das reuniões do card e das atas.",
-        "codigo": ["apps/api/src/implantacao/proxima-reuniao.ts", "apps/api/src/implantacao/agenda-da-implantacao.service.ts", "apps/api/src/agenda/"]
+        "codigo": [
+          "apps/api/src/implantacao/proxima-reuniao.ts",
+          "apps/api/src/implantacao/agenda-da-implantacao.service.ts",
+          "apps/api/src/agenda/"
+        ]
       },
       "o_que_o_cliente_ve": "Próximas reuniões com data, hora e link do Meet; as feitas com link para a ata.",
       "feito_quando": "As reuniões dos primeiros 30 dias (14) aparecem com link. Remarcação reflete em até 5 minutos, sem ninguém digitar.",
       "leva": "B",
       "estado": "backlog",
-      "depende_de": ["m1-modo-area"]
+      "depende_de": [
+        "m1-modo-area"
+      ]
     },
     {
       "id": "prd",
@@ -183,14 +262,23 @@
       "como_chega": "escrito pela Root",
       "fonte_no_os": {
         "hoje": "Não existe tipo de documento para isso. Proposta: ArquivoDoCliente do tipo prd (modelo padrão), publicado como item; a aprovação por escrito do cliente (23) vira um botão 'aprovo' na área, que grava o fato documento.aprovado_pelo_cliente no fio.",
-        "codigo": ["apps/api/prisma/schema.prisma (ArquivoDoCliente)", "apps/api/src/clientes/", "apps/api/src/comercial/sala.controller.ts"]
+        "codigo": [
+          "apps/api/prisma/schema.prisma (ArquivoDoCliente)",
+          "apps/api/src/clientes/",
+          "apps/api/src/comercial/sala.controller.ts"
+        ]
       },
       "o_que_o_cliente_ve": "O PRD vigente, a versão, o estado (em revisão, aprovado em dd/mm) e o botão para aprovar.",
       "feito_quando": "PRD publicado no modelo padrão e aprovado pelo cliente pela própria área, com data e nome de quem aprovou.",
       "leva": "C",
       "estado": "backlog",
-      "depende_de": ["m2-publicar-por-item", "m6-acesso"],
-      "em_aberto": ["O papel da reunião não cita a aprovação dos documentos técnicos (tarefa 23). Confirmar se ela fica na área."]
+      "depende_de": [
+        "m2-publicar-por-item",
+        "m6-acesso"
+      ],
+      "em_aberto": [
+        "O papel da reunião não cita a aprovação dos documentos técnicos (tarefa 23). Confirmar se ela fica na área."
+      ]
     },
     {
       "id": "arquitetura",
@@ -202,13 +290,18 @@
       "como_chega": "escrito pela Root",
       "fonte_no_os": {
         "hoje": "Mesmo caminho do PRD: ArquivoDoCliente do tipo arquitetura, modelo padrão, aprovação pela área.",
-        "codigo": ["apps/api/prisma/schema.prisma (ArquivoDoCliente)", "apps/api/src/clientes/"]
+        "codigo": [
+          "apps/api/prisma/schema.prisma (ArquivoDoCliente)",
+          "apps/api/src/clientes/"
+        ]
       },
       "o_que_o_cliente_ve": "O documento de arquitetura e tecnologia: o que roda onde, quais serviços, quais licenças, quem acessa o quê.",
       "feito_quando": "Documento publicado e aprovado pelo cliente pela área.",
       "leva": "C",
       "estado": "backlog",
-      "depende_de": ["prd"]
+      "depende_de": [
+        "prd"
+      ]
     },
     {
       "id": "cofre",
@@ -220,14 +313,21 @@
       "como_chega": "misto",
       "fonte_no_os": {
         "hoje": "O cofre da Root existe (CofreItem, módulo cofre, cifra por empresa). Falta a partilha com o cliente: quais itens ele vê, revelar por item no celular e o registro de cada revelação.",
-        "codigo": ["apps/api/src/cofre/", "apps/web/src/app/cofre/"]
+        "codigo": [
+          "apps/api/src/cofre/",
+          "apps/web/src/app/cofre/"
+        ]
       },
       "o_que_o_cliente_ve": "A lista dos acessos dele (onde, usuário) e um botão 'revelar' por item, no celular. Cada revelação fica registrada.",
       "feito_quando": "O cliente abre o cofre no celular e revela um acesso; a revelação aparece no registro da bancada.",
       "leva": "C",
       "estado": "backlog",
-      "depende_de": ["m6-acesso"],
-      "em_aberto": ["Revelar senha só com o link na mão é pouco. Exige a decisão D1 (código pelo WhatsApp ou PIN)."]
+      "depende_de": [
+        "m6-acesso"
+      ],
+      "em_aberto": [
+        "Revelar senha só com o link na mão é pouco. Exige a decisão D1 (código pelo WhatsApp ou PIN)."
+      ]
     },
     {
       "id": "central-glossario",
@@ -239,14 +339,21 @@
       "como_chega": "misto",
       "fonte_no_os": {
         "hoje": "Glossário padrão da Root numa nota da memória (area.glossario.padrao) e os termos do cliente (como ele chama as coisas, da captura 17 e da revisão 25) na memória do cliente (cliente.glossario). Dúvidas comuns na mesma estrutura.",
-        "codigo": ["apps/api/src/memory/", "apps/api/src/onboarding/trilho/ (carregarMemoria)"]
+        "codigo": [
+          "apps/api/src/memory/",
+          "apps/api/src/onboarding/trilho/ (carregarMemoria)"
+        ]
       },
       "o_que_o_cliente_ve": "Um glossário pesquisável com os termos no jeito da empresa dele e as dúvidas comuns com resposta curta.",
       "feito_quando": "Glossário publicado no envio do material (12) e atualizado com as dúvidas reais (25); a versão nova sobe sem apagar a anterior.",
       "leva": "C",
       "estado": "backlog",
-      "depende_de": ["m2-publicar-por-item"],
-      "em_aberto": ["Revisar a central (glossário e dúvidas comuns) antes de entrar no envio da 12."]
+      "depende_de": [
+        "m2-publicar-por-item"
+      ],
+      "em_aberto": [
+        "Revisar a central (glossário e dúvidas comuns) antes de entrar no envio da 12."
+      ]
     },
     {
       "id": "videos",
@@ -258,14 +365,21 @@
       "como_chega": "escrito pela Root",
       "fonte_no_os": {
         "hoje": "A Central (/central) já guarda materiais versionados em arquivo. Proposta: trilha de vídeos por kit, ligada ao cliente, com 'assistido' registrado pela leitura.",
-        "codigo": ["apps/web/src/central/data/materiais/", "apps/web/src/app/central/"]
+        "codigo": [
+          "apps/web/src/central/data/materiais/",
+          "apps/web/src/app/central/"
+        ]
       },
       "o_que_o_cliente_ve": "Os vídeos curtos da 2ª reunião (o que é, como funciona, como falar com a Root) e os do kit, com 'assistido'.",
       "feito_quando": "Os vídeos da 22 estão acessíveis na área e a bancada vê quais foram assistidos.",
       "leva": "C",
       "estado": "backlog",
-      "depende_de": ["m3-leitura"],
-      "em_aberto": ["Vídeo por cliente ou catálogo da Central por trilha? Decisão D7."]
+      "depende_de": [
+        "m3-leitura"
+      ],
+      "em_aberto": [
+        "Vídeo por cliente ou catálogo da Central por trilha? Decisão D7."
+      ]
     },
     {
       "id": "manutencao",
@@ -277,14 +391,21 @@
       "como_chega": "escrito pela Root",
       "fonte_no_os": {
         "hoje": "Não existe. Proposta: texto padrão do kit de instalação de VPS (backup, atualização, restauração, quem chamar) numa nota da memória da Root, com a parte específica do cliente escrita pela bancada.",
-        "codigo": ["apps/api/src/memory/", "kit-instalacao-vps (repo operacaoroot)"]
+        "codigo": [
+          "apps/api/src/memory/",
+          "kit-instalacao-vps (repo operacaoroot)"
+        ]
       },
       "o_que_o_cliente_ve": "O que fazer depois da entrega: conferir o backup, atualizar, restaurar, e a quem chamar em cada caso.",
       "feito_quando": "Publicado antes do aceite (35) e lido pelo operador do cliente.",
       "leva": "C",
       "estado": "backlog",
-      "depende_de": ["m2-publicar-por-item"],
-      "em_aberto": ["Não tem tarefa no fluxo v6. Proposta para o v7: entra na 29 (endurecer e backup) ou na 54 (passar a operação). Decisão D5."]
+      "depende_de": [
+        "m2-publicar-por-item"
+      ],
+      "em_aberto": [
+        "Não tem tarefa no fluxo v6. Proposta para o v7: entra na 29 (endurecer e backup) ou na 54 (passar a operação). Decisão D5."
+      ]
     },
     {
       "id": "novidades",
@@ -296,14 +417,22 @@
       "como_chega": "escrito pela Root",
       "fonte_no_os": {
         "hoje": "Não existe. Proposta: um feed da Root (nota root.novidades ou rotina mensal) publicado em todas as áreas de uma vez, com data.",
-        "codigo": ["apps/api/src/memory/", "apps/api/src/routines/"]
+        "codigo": [
+          "apps/api/src/memory/",
+          "apps/api/src/routines/"
+        ]
       },
       "o_que_o_cliente_ve": "As três últimas novidades da plataforma, com data e uma frase do que muda para ele.",
       "feito_quando": "A rotina publica e o cliente vê a novidade com 'novo' até abrir.",
       "leva": "D",
       "estado": "backlog",
-      "depende_de": ["m2-publicar-por-item", "m3-leitura"],
-      "em_aberto": ["Não tem tarefa no fluxo v6. Quem escreve: Marketing ou dono da conta? Decisão D5."]
+      "depende_de": [
+        "m2-publicar-por-item",
+        "m3-leitura"
+      ],
+      "em_aberto": [
+        "Não tem tarefa no fluxo v6. Quem escreve: Marketing ou dono da conta? Decisão D5."
+      ]
     },
     {
       "id": "duvidas",
@@ -315,59 +444,93 @@
       "como_chega": "derivado",
       "fonte_no_os": {
         "hoje": "O grupo do WhatsApp do cliente (ficha.grupoJid, criado na 07), o número da Root (nota comercial.whatsapp.numero, já lida pela sala) e a regra 40 (dúvida que vira trabalho vira tarefa).",
-        "codigo": ["apps/api/src/comercial/sala-projecao.ts (contato)", "apps/api/src/whatsapp/"]
+        "codigo": [
+          "apps/api/src/comercial/sala-projecao.ts (contato)",
+          "apps/api/src/whatsapp/"
+        ]
       },
       "o_que_o_cliente_ve": "'Pergunte no grupo. A Rotinha responde. Se continuar, a Root entra.' Com o botão do grupo e o da Root.",
       "feito_quando": "O botão abre o grupo certo; a dúvida que virou tarefa (40) aparece na linha de execução.",
       "leva": "B",
       "estado": "em_construcao",
-      "depende_de": ["m1-modo-area"]
+      "depende_de": [
+        "m1-modo-area"
+      ],
+      "na_branch": "derivado na leva A do que a projeção da sala já tem (contrato assinado, proposta aceita, WhatsApp da Root, próximos passos); a leva B completa a fonte"
     }
   ],
   "motor": [
     {
       "id": "m1-modo-area",
       "nome": "A área é a sala depois do fechamento",
-      "o_que_e": "O /s/<token> ganha um segundo modo. Enquanto o lead está no comercial, é a Sala de hoje. Quando o negócio fecha (clienteAtivoEm ou card na lista Onboarding de cliente), o mesmo link mostra os quatro blocos com os 15 slots. Slot vazio diz 'chega na fase X'. Celular em uma coluna; o botão do WhatsApp fixo embaixo continua.",
-      "onde": ["apps/web/src/app/s/[token]/page.tsx", "apps/api/src/comercial/sala.service.ts (projetar)", "apps/api/src/comercial/sala-projecao.ts"],
+      "o_que_e": "O /s/<token> ganha um segundo modo. Enquanto o lead está no comercial, é a Sala de hoje. Quando o negócio fecha (clienteAtivoEm ou card na lista Onboarding de cliente), o mesmo link mostra os quatro blocos com os 15 slots. Slot vazio diz 'chega na fase X'. Celular em uma coluna; o botão do WhatsApp fixo embaixo continua. Do mockup entraram a régua das sete fases do fluxo (derivada dos fatos até a leva B trazer as datas combinadas), o selo \"no ar · atualizado em\" e o bloco \"quem cuida da conta\".",
+      "onde": [
+        "apps/web/src/app/s/[token]/page.tsx",
+        "apps/api/src/comercial/sala.service.ts (projetar)",
+        "apps/api/src/comercial/sala-projecao.ts"
+      ],
       "feito_quando": "Lead fechado abre a área; lead em andamento abre a sala de sempre; nenhuma sala publicada perde conteúdo.",
       "leva": "A",
-      "estado": "backlog"
+      "estado": "em_construcao",
+      "na_branch": "area-do-cliente/20261030 (leva A escrita em 30/10/2026; publicar depende do OK do Rodrigo)"
     },
     {
       "id": "m2-publicar-por-item",
       "nome": "Publicar por item, com versão",
       "o_que_e": "Hoje a sala publica quatro tipos (proposta, contrato, roteiro, kit) dentro de uma versão só. Cada um dos 15 itens passa a ter versão própria: o derivado nunca é digitado; o escrito pela Root sai do rascunho para a porta e uma segunda pessoa libera em /atendimento (R3, como hoje). O cliente vê sempre a última versão publicada de cada item.",
-      "onde": ["packages/shared/src/sala-versao.ts (SALA_TIPOS_DE_PUBLICADO)", "apps/api/src/comercial/sala-versao.service.ts", "apps/api/prisma/schema.prisma (SalaVersao, coluna item)"],
+      "onde": [
+        "packages/shared/src/sala-versao.ts (SALA_TIPOS_DE_PUBLICADO)",
+        "apps/api/src/comercial/sala-versao.service.ts",
+        "apps/api/prisma/schema.prisma (SalaVersao, coluna item)"
+      ],
       "feito_quando": "Publicar uma ata não republica o cronograma; o histórico de versões é por item; a política não ganha capacidade nova se der (a de publicar a sala serve).",
       "leva": "A",
-      "estado": "backlog",
-      "em_aberto": ["R3 com segunda pessoa para todo item, ou R2 só do dono da conta para os itens de rotina (ata, status)? Decisão D2."]
+      "estado": "em_construcao",
+      "em_aberto": [
+        "R3 com segunda pessoa para todo item, ou R2 só do dono da conta para os itens de rotina (ata, status)? Decisão D2."
+      ],
+      "na_branch": "area-do-cliente/20261030 (leva A escrita em 30/10/2026; publicar depende do OK do Rodrigo)"
     },
     {
       "id": "m3-leitura",
       "nome": "Lido: o selo 'novo' e a data na bancada",
       "o_que_e": "Tabela SalaLeitura (sala, item, versão, em). O cliente vê 'novo' até abrir; a bancada vê 'lido em'. É o 'marcar como lido' do escritório, sem clique: abrir o item conta.",
-      "onde": ["apps/api/prisma/ (migration aditiva)", "apps/api/src/comercial/sala.controller.ts (POST :token/leitura)", "apps/web/src/app/s/[token]/"],
+      "onde": [
+        "apps/api/prisma/ (migration aditiva)",
+        "apps/api/src/comercial/sala.controller.ts (POST :token/leitura)",
+        "apps/web/src/app/s/[token]/"
+      ],
       "feito_quando": "Ata publicada aparece com 'novo'; aberta, perde o selo e a bancada mostra a data.",
       "leva": "A",
-      "estado": "backlog",
-      "em_aberto": ["O 'lido' aparece para o cliente ou só para a bancada? Decisão D6."]
+      "estado": "em_construcao",
+      "em_aberto": [
+        "O 'lido' aparece para o cliente ou só para a bancada? Decisão D6."
+      ],
+      "na_branch": "area-do-cliente/20261030 (leva A escrita em 30/10/2026; publicar depende do OK do Rodrigo)"
     },
     {
       "id": "m4-bancada",
       "nome": "Bancada: aba 'Área do cliente' no painel",
       "o_que_e": "Ao lado da aba Sala, uma grade com os 15 slots: estado (vazio, derivado, rascunho, na porta, publicado vN, lido em), a fonte no OS, a tarefa do fluxo que alimenta e a ação que resolve (escrever, publicar, abrir a fonte). Nos cards de /clientes, o chip 'área 7/15 no ar'.",
-      "onde": ["apps/web/src/app/comercial/_painel/AbaAreaDoCliente.tsx (nova)", "apps/web/src/app/comercial/_painel/LeadPainel.tsx", "apps/web/src/components/ficha/FichaDoCliente.tsx"],
+      "onde": [
+        "apps/web/src/app/comercial/_painel/AbaAreaDoCliente.tsx (nova)",
+        "apps/web/src/app/comercial/_painel/LeadPainel.tsx",
+        "apps/web/src/components/ficha/FichaDoCliente.tsx"
+      ],
       "feito_quando": "Quem implanta abre o painel do cliente e sabe o que está no ar, o que falta e onde resolve, sem abrir o link do cliente.",
       "leva": "A",
-      "estado": "backlog"
+      "estado": "em_construcao",
+      "na_branch": "area-do-cliente/20261030 (leva A escrita em 30/10/2026; publicar depende do OK do Rodrigo)"
     },
     {
       "id": "m5-mapa",
       "nome": "Mapa e backlog da construção (esta tela)",
       "o_que_e": "Contexto › Área do cliente lê este arquivo e mostra os blocos, os 15 itens com fonte e tarefa, o motor, as levas e as decisões abertas. Nova versão do desenho = trocar o arquivo.",
-      "onde": ["apps/api/src/platform/area-do-cliente.json", "apps/api/src/platform/operacao.controller.ts", "apps/web/src/app/contexto/area-do-cliente/page.tsx"],
+      "onde": [
+        "apps/api/src/platform/area-do-cliente.json",
+        "apps/api/src/platform/operacao.controller.ts",
+        "apps/web/src/app/contexto/area-do-cliente/page.tsx"
+      ],
       "feito_quando": "A tela abre para a sessão da plataforma e recusa as outras com explicação.",
       "leva": "A",
       "estado": "em_construcao"
@@ -376,21 +539,32 @@
       "id": "m6-acesso",
       "nome": "Acesso: o link hoje, o código depois",
       "o_que_e": "Hoje o token do link é a credencial (90 dias, renovável pela bancada). Para cofre e aprovação de documento, um segundo fator: código de seis dígitos pelo WhatsApp do decisor ou PIN combinado na 2ª reunião. O escritório usa senha e código por e-mail; aqui o canal é o WhatsApp.",
-      "onde": ["apps/api/src/comercial/sala-token.ts", "apps/api/src/comercial/sala.controller.ts", "apps/api/src/whatsapp/"],
+      "onde": [
+        "apps/api/src/comercial/sala-token.ts",
+        "apps/api/src/comercial/sala.controller.ts",
+        "apps/api/src/whatsapp/"
+      ],
       "feito_quando": "Revelar um acesso do cofre pede o código; o resto da área continua abrindo só pelo link.",
       "leva": "C",
       "estado": "backlog",
-      "em_aberto": ["Só o link, ou link e código? Decisão D1."]
+      "em_aberto": [
+        "Só o link, ou link e código? Decisão D1."
+      ]
     },
     {
       "id": "m7-dominio",
       "nome": "Domínio próprio",
       "o_que_e": "A rota /s/<token> continua. Um domínio curto para o cliente guardar: sala.operacaoroot.com ou cliente.operacaoroot.com, apontando para o mesmo mktos_web (como a bio).",
-      "onde": ["apps/web/src/middleware.ts", "DNS da Hostinger (API, token só na VPS)"],
+      "onde": [
+        "apps/web/src/middleware.ts",
+        "DNS da Hostinger (API, token só na VPS)"
+      ],
       "feito_quando": "O link curto abre a área; o antigo continua abrindo.",
       "leva": "B",
       "estado": "backlog",
-      "em_aberto": ["Nome do domínio é decisão do Lucas. Decisão D4."]
+      "em_aberto": [
+        "Nome do domínio é decisão do Lucas. Decisão D4."
+      ]
     }
   ],
   "levas": [
@@ -399,7 +573,13 @@
       "nome": "A área em si e a bancada",
       "quando": "primeiro momento (pedido de 30/10/2026)",
       "entrega": "O link do cliente fechado mostra os quatro blocos com os 15 slots (vazios dizendo quando chegam, os derivados já preenchidos), a publicação por item com versão, o 'novo' e o 'lido', e a aba Área do cliente no painel. Esta tela de mapa.",
-      "itens": ["m1-modo-area", "m2-publicar-por-item", "m3-leitura", "m4-bancada", "m5-mapa"],
+      "itens": [
+        "m1-modo-area",
+        "m2-publicar-por-item",
+        "m3-leitura",
+        "m4-bancada",
+        "m5-mapa"
+      ],
       "prova": "e2e: lead fechado abre a área com 15 slots; publicar uma ata não mexe nas outras versões; abrir a ata tira o 'novo' e a bancada mostra a data; lead em andamento abre a sala de sempre."
     },
     {
@@ -407,7 +587,16 @@
       "nome": "O que o OS já sabe",
       "quando": "logo depois da A",
       "entrega": "Sete slots preenchidos sem ninguém digitar nada além do que a tarefa do fluxo já pede: contrato, escopo, agenda, atas, cronograma, linha de execução e o caminho para dúvida. Domínio curto.",
-      "itens": ["contrato", "escopo", "agenda", "atas", "cronograma", "linha-de-execucao", "duvidas", "m7-dominio"],
+      "itens": [
+        "contrato",
+        "escopo",
+        "agenda",
+        "atas",
+        "cronograma",
+        "linha-de-execucao",
+        "duvidas",
+        "m7-dominio"
+      ],
       "prova": "Um cliente real da lista Onboarding com os sete slots no ar e a bancada mostrando 7/15."
     },
     {
@@ -415,7 +604,16 @@
       "nome": "O que ainda não existe no OS",
       "quando": "depois da B, com as decisões D1, D3, D5 e D7 tomadas",
       "entrega": "PRD e arquitetura com aprovação pela área, cofre no celular com segundo fator, glossário e dúvidas, vídeos, instruções de acesso e de manutenção.",
-      "itens": ["m6-acesso", "prd", "arquitetura", "cofre", "central-glossario", "videos", "instrucoes-de-acesso", "manutencao"],
+      "itens": [
+        "m6-acesso",
+        "prd",
+        "arquitetura",
+        "cofre",
+        "central-glossario",
+        "videos",
+        "instrucoes-de-acesso",
+        "manutencao"
+      ],
       "prova": "O operador do cliente revela um acesso no celular com o código; o decisor aprova o PRD pela área e o fato aparece no fio."
     },
     {
@@ -423,17 +621,76 @@
       "nome": "As rotinas do fluxo pela área",
       "quando": "quando o fluxo v7 fechar as tarefas que faltam",
       "entrega": "Novidades da Root, status de sexta (30) publicado na área, pulso (32) e nota (43) respondidos pela área, relatório mensal (51).",
-      "itens": ["novidades"],
+      "itens": [
+        "novidades"
+      ],
       "prova": "O status de sexta sai da rotina para a área sem passar pela bancada; o pulso respondido pela área grava a nota no fio."
     }
   ],
   "decisoes_abertas": [
-    { "id": "D1", "pergunta": "Acesso: só o link (como a sala) ou link e código pelo WhatsApp do decisor?", "recomendacao": "Link para ler; código só para revelar acesso do cofre e para aprovar documento. É o que o escritório faz com senha e código, trocando o e-mail pelo WhatsApp.", "trava": ["cofre", "prd", "arquitetura"] },
-    { "id": "D2", "pergunta": "Publicar item da área: R3 com segunda pessoa (como a sala) ou R2 só do dono da conta?", "recomendacao": "R3 para contrato, escopo, PRD, arquitetura e cronograma. R2 para ata, status e novidades, com desfazer. Uma capacidade nova no catálogo, se preciso.", "trava": ["m2-publicar-por-item"] },
-    { "id": "D3", "pergunta": "Ata para o cliente: o resumo redigido (tarefa 18) ou a ata inteira?", "recomendacao": "O resumo redigido, com o áudio transcrito guardado pela Root. A ata inteira traz o que foi dito de improviso.", "trava": ["atas"] },
-    { "id": "D4", "pergunta": "Domínio: sala.operacaoroot.com ou cliente.operacaoroot.com?", "recomendacao": "Lucas decide. Até lá, /s/<token> em os.operacaoroot.com.", "trava": ["m7-dominio"] },
-    { "id": "D5", "pergunta": "Instruções de manutenção e Novidades da Root não têm tarefa no fluxo v6. Quais tarefas as alimentam?", "recomendacao": "Manutenção entra na 29 ou na 54 (quem implanta). Novidades vira tarefa mensal do Marketing. Ajuste no fluxo v7.", "trava": ["manutencao", "novidades"] },
-    { "id": "D6", "pergunta": "O 'lido' aparece para o cliente ou só para a bancada?", "recomendacao": "Só para a bancada. Para o cliente, só o 'novo'.", "trava": ["m3-leitura"] },
-    { "id": "D7", "pergunta": "Vídeos de treinamento: gravados por cliente ou catálogo da Central por trilha?", "recomendacao": "Catálogo por trilha do kit, com um vídeo curto por cliente quando couber.", "trava": ["videos"] }
-  ]
+    {
+      "id": "D1",
+      "pergunta": "Acesso: só o link (como a sala) ou link e código pelo WhatsApp do decisor?",
+      "recomendacao": "Link para ler; código só para revelar acesso do cofre e para aprovar documento. É o que o escritório faz com senha e código, trocando o e-mail pelo WhatsApp.",
+      "trava": [
+        "cofre",
+        "prd",
+        "arquitetura"
+      ]
+    },
+    {
+      "id": "D2",
+      "pergunta": "Publicar item da área: R3 com segunda pessoa (como a sala) ou R2 só do dono da conta?",
+      "recomendacao": "R3 para contrato, escopo, PRD, arquitetura e cronograma. R2 para ata, status e novidades, com desfazer. Uma capacidade nova no catálogo, se preciso.",
+      "trava": [
+        "m2-publicar-por-item"
+      ]
+    },
+    {
+      "id": "D3",
+      "pergunta": "Ata para o cliente: o resumo redigido (tarefa 18) ou a ata inteira?",
+      "recomendacao": "O resumo redigido, com o áudio transcrito guardado pela Root. A ata inteira traz o que foi dito de improviso.",
+      "trava": [
+        "atas"
+      ]
+    },
+    {
+      "id": "D4",
+      "pergunta": "Domínio: sala.operacaoroot.com ou cliente.operacaoroot.com?",
+      "recomendacao": "Lucas decide. Até lá, /s/<token> em os.operacaoroot.com.",
+      "trava": [
+        "m7-dominio"
+      ]
+    },
+    {
+      "id": "D5",
+      "pergunta": "Instruções de manutenção e Novidades da Root não têm tarefa no fluxo v6. Quais tarefas as alimentam?",
+      "recomendacao": "Manutenção entra na 29 ou na 54 (quem implanta). Novidades vira tarefa mensal do Marketing. Ajuste no fluxo v7.",
+      "trava": [
+        "manutencao",
+        "novidades"
+      ]
+    },
+    {
+      "id": "D6",
+      "pergunta": "O 'lido' aparece para o cliente ou só para a bancada?",
+      "recomendacao": "Só para a bancada. Para o cliente, só o 'novo'.",
+      "trava": [
+        "m3-leitura"
+      ]
+    },
+    {
+      "id": "D7",
+      "pergunta": "Vídeos de treinamento: gravados por cliente ou catálogo da Central por trilha?",
+      "recomendacao": "Catálogo por trilha do kit, com um vídeo curto por cliente quando couber.",
+      "trava": [
+        "videos"
+      ]
+    }
+  ],
+  "mockup": {
+    "o_que_o_cliente_ve": "https://claude.ai/artifact/3v25PGk1PhR58CMEdJNbj4",
+    "desenho_para_os_socios": "https://claude.ai/artifact/3nEFCPN4mSzjGhAqwxjMmC",
+    "nota": "Mockup navegável de 30/10/2026: quatro momentos do projeto (Abertura, Primeira semana, Construção, Acompanhamento), celular e desktop, gaveta por item, cofre com código, aprovação do PRD. Empresa, pessoas, datas e senhas são inventadas. Três elementos dele entraram no motor M1: a régua das sete fases do fluxo no alto, o selo \"no ar · atualizado em\" e o bloco \"quem cuida da conta\"."
+  }
 }

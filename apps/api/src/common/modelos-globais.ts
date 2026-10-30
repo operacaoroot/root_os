@@ -242,6 +242,10 @@ export const FILHOS_COM_ORGID_REDUNDANTE: readonly FilhoComOrgIdRedundante[] = [
   // A sala do cliente publicada por versão (rodada da implantação I3,
   // 18/10/2026): a empresa é a do lead — migration `20261018240000_sala_versao`.
   { modelo: 'SalaVersao', pai: 'Lead', fk: 'leadId' },
+  // A área do cliente (leva A, 30/10/2026): a leitura de um item pelo cliente é filha
+  // da sala (a rota anônima grava depois de achar a empresa pelo hash) — migration
+  // `20261030150000_area_do_cliente`.
+  { modelo: 'SalaLeitura', pai: 'SalaDoCliente', fk: 'salaId' },
   // O anexo da tarefa (rodada dos agentes, 21/10/2026, TR-06): a empresa é a da
   // tarefa — migration `20261021330000_arquivo_do_cliente_e_anexo`.
   { modelo: 'WorkAnexo', pai: 'WorkTask', fk: 'taskId' },

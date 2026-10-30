@@ -1,5 +1,7 @@
 # Área do cliente · leva A (30/10/2026)
 
+> **Estado em 30/10/2026 (tarde):** A0 a A5 feitas nesta branch; A6 parcial (teste puro da API, suítes vizinhas e testes da web rodados no Mac; isolamento, fluxo R3 por item e e2e por rodar com banco). Resultado, provas e a receita de publicação em `homolog/RESULTADO-AREA-DO-CLIENTE.md`. O quadro de pendências consolidado está em `docs/area-do-cliente/DESENHO.md` §10.
+
 Fonte: `docs/area-do-cliente/DESENHO.md` e `apps/api/src/platform/area-do-cliente.json` (o desenho de 30/10/2026 sobre o Fluxo do cliente v6). Pedido do Rodrigo: "a área do cliente em si e a visualização do que vem sendo portado nela pelo ROOT OS".
 Base de código: a produção da hora. Em 30/10 03:00 UTC era `3f1da36d` (`root-precos-openrouter`) com o Fluxo v6 por cima (`de286bfb`); esta branch `area-do-cliente/20261030` parte daí. Antes de começar, conferir a produção viva (`docker inspect mktos_api`, `levas.log`, `git worktree list` no Mac) e trazer o commit de produção por bundle se o GitHub estiver atrás. Trabalhar numa branch `area-do-cliente/<data>`; publicar só com OK do Rodrigo.
 

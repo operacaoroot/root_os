@@ -107,6 +107,7 @@ model Org {
   salasDoCliente       SalaDoCliente[]
   leadReacoes          LeadReacao[]
   salaVersoes          SalaVersao[]
+  salaLeituras         SalaLeitura[]
   marketingPosts       MarketingPost[]
   marketingMaquina     MarketingMaquinaAjuste?
   marketingNotas       MarketingNota[]
@@ -5067,8 +5068,32 @@ model SalaDoCliente {
   dados          Json      @default("{}")
   criadoEm       DateTime  @default(now())
   atualizadoEm   DateTime  @updatedAt
+  /// A área do cliente (leva A, 30/10/2026): o que o cliente abriu, por item e versão.
+  leituras       SalaLeitura[]
 
   @@index([orgId, slug])
+}
+
+/// A LEITURA DE UM ITEM DA ÁREA DO CLIENTE (leva A, 30/10/2026). O cliente abriu
+/// a versão N do item: uma linha por (sala, item, versão), idempotente. É o que
+/// tira o selo "novo" no link e mostra "lido em" na bancada (decisão D6: a data
+/// nunca sai para o cliente). Filha de `SalaDoCliente`: a rota anônima grava
+/// aqui só DEPOIS de achar a empresa pelo hash do token.
+model SalaLeitura {
+  id     String        @id @default(uuid())
+  /// Sentinela + gatilho `SalaLeitura_orgId_do_pai`.
+  orgId  String        @default("")
+  org    Org           @relation(fields: [orgId], references: [id])
+  salaId String
+  sala   SalaDoCliente @relation(fields: [salaId], references: [id], onDelete: Cascade)
+  /// O id do item (`AREA_ITENS` no shared).
+  item   String
+  /// `SalaVersao.numero` da versão lida.
+  versao Int
+  em     DateTime      @default(now())
+
+  @@unique([salaId, item, versao])
+  @@index([orgId, salaId])
 }
 
 /// O WhatsApp por porta: toda mensagem (recebida ou a enviar) fica aqui. No
@@ -5254,6 +5279,10 @@ model SalaVersao {
   leadId       String
   lead         Lead      @relation(fields: [leadId], references: [id], onDelete: Cascade)
   numero       Int
+  /// A área do cliente (leva A, 30/10/2026): o item desta versão (`AREA_ITENS`), ou
+  /// nulo = a versão da sala de sempre. Uma versão aberta por lead (item nulo) e
+  /// uma por (lead, item): índices únicos parciais na migration.
+  item         String?
   /// rascunho · na_porta · publicada · substituida (CHECK no banco).
   estado       String
   conteudo     Json
@@ -5268,6 +5297,7 @@ model SalaVersao {
 
   @@unique([leadId, numero])
   @@index([orgId, estado])
+  @@index([leadId, item, numero])
 }
 
 /// Versão efetivamente usada ao criar uma tarefa. Pedido e citação não se editam.

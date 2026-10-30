@@ -240,8 +240,9 @@ export class SalaEstadoService {
         take: 50,
         select: { id: true, template: true, provedor: true, estado: true, enviadaEm: true, criadoEm: true },
       }),
-      this.prisma.salaVersao.findFirst({ where: { leadId, orgId, estado: 'publicada' }, orderBy: { numero: 'desc' }, select: { numero: true, publicadaEm: true, atualizadoEm: true, publicadaPor: true } }),
-      this.prisma.salaVersao.findFirst({ where: { leadId, orgId, estado: { in: ['rascunho', 'na_porta'] } }, select: { numero: true, estado: true, approvalId: true, atualizadoEm: true } }),
+      // A área do cliente (leva A): os marcos da sala são da versão da SALA (item nulo); as versões por item ficam na aba Área do cliente.
+      this.prisma.salaVersao.findFirst({ where: { leadId, orgId, item: null, estado: 'publicada' }, orderBy: { numero: 'desc' }, select: { numero: true, publicadaEm: true, atualizadoEm: true, publicadaPor: true } }),
+      this.prisma.salaVersao.findFirst({ where: { leadId, orgId, item: null, estado: { in: ['rascunho', 'na_porta'] } }, select: { numero: true, estado: true, approvalId: true, atualizadoEm: true } }),
     ]);
     const chegada = reacao
       ? await this.prisma.leadEvent.findFirst({ where: { id: reacao.eventoId, orgId }, select: { type: true, occurredAt: true } })

@@ -44,6 +44,7 @@ import { AbaSessao } from './AbaSessao';
 import { AbaDinheiro } from './AbaDinheiro';
 import { AbaDecisoes } from './AbaDecisoes';
 import { AbaSala } from './AbaSala';
+import { AbaAreaDoCliente } from './AbaAreaDoCliente';
 import { AbaWhatsapp } from './AbaWhatsapp';
 
 const FOCAVEIS = 'a[href], button:not([disabled]), input:not([disabled]):not([type="hidden"]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
@@ -337,6 +338,7 @@ export function LeadPainel({ estado }: { estado: EstadoDoPainel }) {
             {aba === 'sessao' && <AbaSessao leadId={leadId} aoMudar={aoMudar} irParaDecisoes={() => irParaAba('decisoes')} />}
             {aba === 'dinheiro' && <AbaDinheiro leadId={leadId} ficha={f} aoMudar={aoMudar} />}
             {aba === 'sala' && <AbaSala leadId={leadId} aoMudar={aoMudar} />}
+            {aba === 'area' && <AbaAreaDoCliente leadId={leadId} aoMudar={aoMudar} />}
             {aba === 'whatsapp' && <AbaWhatsapp leadId={leadId} ficha={f} aoMudar={aoMudar} />}
             {aba === 'decisoes' && (
               <AbaDecisoes

@@ -40,6 +40,9 @@ export * from './atas.js';
 // A sala do cliente publicada por versão (rodada da implantação I3, 18/10/2026) — ver o
 // cabeçalho de `sala-versao.ts`.
 export * from './sala-versao.js';
+// A área do cliente: a sala depois do fechamento, com os quatro blocos e os quinze itens
+// do Fluxo v6 (leva A, 30/10/2026) — ver o cabeçalho de `area-do-cliente.ts`.
+export * from './area-do-cliente.js';
 
 // O relatório do comercial, bloco Leitura e reação (rodada da implantação I5, 18/10/2026) — ver o
 // cabeçalho de `leitura-e-reacao.ts`.

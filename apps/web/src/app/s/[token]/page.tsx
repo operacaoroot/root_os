@@ -6,6 +6,7 @@ import type { EstadoDaSala, OfertaNaSala, SalaBlocoDaProposta } from '@mktos/sha
 
 import { apiPost, apiUpload } from '@/lib/api';
 import { Acompanhamento, type EstadoDaSalaComAcompanhamento } from './Acompanhamento';
+import { AreaDoCliente } from './AreaDoCliente';
 import { SalaPublicada } from './SalaPublicada';
 import { abrirSalaMarcando, dataCurta, localSPParaIso, reais, ROTULO_DA_FORMA, rotuloDoHorario, soDigitos } from '@/lib/sala-do-cliente';
 
@@ -119,6 +120,21 @@ export default function SalaPage() {
       {!estado.publicada && <Plano estado={estado} />}
     </div>
   );
+
+  // Leva A (30/10/2026): depois do fechamento (ou do card da implantação) o mesmo link é a ÁREA DO CLIENTE:
+  // os quatro blocos com os quinze itens. O que ainda pede ação do cliente (kickoff, aceite de um lead
+  // iniciado antes do fechamento) continua embaixo, vindo dos mesmos blocos de sempre.
+  if (estado.modo === 'area' && estado.area) {
+    return (
+      <AreaDoCliente area={estado.area} estado={estado} token={token} base={base} marca={<Marca rotulo="área do cliente" />} whatsapp={estado.acompanhamento?.contato.whatsapp ?? null} aoAtualizar={setEstado}>
+        <div className="space-y-4" data-testid="area-acoes">
+          {estado.estagio === 'comeco' && <Comeco estado={estado} agir={agir} ocupado={ocupado} erro={erroDe.kickoff} />}
+          {estado.estagio === 'proposta' && estado.proposta && <Proposta estado={estado} base={base} token={token} agir={agir} ocupado={ocupado} erroDe={erroDe} aoAceitar={() => setQuerAceitar(true)} />}
+          {(aceiteAntes || aceiteDepois) && !estado.aceite?.contrato?.assinadoClienteEm && <Aceite estado={estado} agir={agir} ocupado={ocupado} erroDe={erroDe} />}
+        </div>
+      </AreaDoCliente>
+    );
+  }
 
   // I3: com versão publicada, o cliente lê a sala da versão (onde estamos, passos, publicados, o combinado);
   // o que é ação dele continua logo abaixo. Sem versão, a sala de antes.
@@ -676,7 +692,7 @@ function Casca({ children }: { children: React.ReactNode }) {
   );
 }
 
-function Marca() {
+function Marca({ rotulo = 'sala do cliente' }: { rotulo?: string }) {
   return (
     <div className="mb-5 flex items-center gap-3">
       <span aria-hidden className="grid h-10 w-10 place-items-center rounded-root border border-brand/30 bg-brand/10 text-[20px] font-extrabold italic leading-none tracking-[-0.05em] text-brand" style={{ transform: 'skewX(-10deg)', textShadow: 'var(--os-logo-shadow, none)' }}>
@@ -684,7 +700,7 @@ function Marca() {
       </span>
       <div className="font-os-mono">
         <div className="text-[13px] font-bold">Operação ROOT</div>
-        <div className="text-[10px] uppercase tracking-[0.16em] text-muted">sala do cliente</div>
+        <div className="text-[10px] uppercase tracking-[0.16em] text-muted">{rotulo}</div>
       </div>
     </div>
   );

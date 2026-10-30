@@ -171,7 +171,8 @@ export interface PayloadsComerciais {
   'reuniao.noshow': { horario: string; tipo: 'remarcou' | 'sumiu' | 'cancelou' };
   'sala.aberta': { salaId: string; slug: string; validoAte: string };
   'sala.visitada': { salaId: string; estagio: string };
-  'sala.publicada': { versao: number; hash: string; liberadaPor?: string | null };
+  /** `item`: a versão é de um item da área do cliente (leva A, 30/10/2026); nulo ou ausente = a sala inteira. */
+  'sala.publicada': { versao: number; hash: string; liberadaPor?: string | null; item?: string | null };
   'arquivo.enviado': { nome: string; bytes: number; tipo: string };
   /** `por`: o nome de quem conduziu a sessão e subiu a ata (vira o sócio da conta). Acréscimo da lane A. */
   'ata.chegou': { hash: string; caracteres: number; fonte: string; referencia?: string | null; por?: string | null; porId?: string | null };
