@@ -161,7 +161,7 @@ describe('P2 · a tela da Agenda (desde a agenda v2, 29/10/2026: abas, 1/3/5 dia
       expect(d).toBeTruthy();
       return d as HTMLElement;
     });
-    expect(within(detalhe).getByText(/09:00–10:00/)).toBeTruthy();
+    expect(within(detalhe).getByText(/09:00 a 10:00/)).toBeTruthy();
   });
 
   it('no celular o padrão é a Lista do dia, sem grade e sem rolagem lateral', async () => {

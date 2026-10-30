@@ -66,7 +66,7 @@ describe('arrastar move', () => {
     const { aoSoltar, bloco } = montar();
     fireEvent.pointerDown(bloco, { clientX: 50, clientY: 100, button: 0 });
     fireEvent.pointerMove(window, { clientX: 50, clientY: 148 });
-    expect(document.querySelector('[data-fantasma]')?.textContent).toBe('11:00–12:00');
+    expect(document.querySelector('[data-fantasma]')?.textContent).toBe('11:00 a 12:00');
     fireEvent.pointerUp(window, { clientX: 50, clientY: 148 });
     expect(aoSoltar).toHaveBeenCalledWith(EV, { dia: '2026-11-03', inicio: 11 * 60, fim: 12 * 60 });
   });

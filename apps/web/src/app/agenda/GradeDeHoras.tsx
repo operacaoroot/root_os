@@ -328,7 +328,7 @@ export function GradeDeHoras(props: Props) {
                           if (acabouDeArrastar.current) { acabouDeArrastar.current = false; return; }
                           aoClicarEvento(e);
                         }}
-                        title={`${horaNoFuso(e.inicio)}–${horaNoFuso(e.fim)} · ${ap.titulo}${etiqueta ? ` · ${etiqueta}` : ''}`}
+                        title={`${horaNoFuso(e.inicio)} a ${horaNoFuso(e.fim)} · ${ap.titulo}${etiqueta ? ` · ${etiqueta}` : ''}`}
                         className={`absolute flex flex-col gap-0.5 overflow-hidden rounded-[3px] px-1.5 py-1 text-left ${CLASSE_DO_TOM[tom]} ${movel ? 'cursor-grab touch-none active:cursor-grabbing' : ''} ${sendoArrastado ? 'opacity-40' : ''}`}
                         style={{ top: topo(inicio), height: alturaDoBloco, left: esquerda, width: largura }}
                       >
@@ -384,7 +384,7 @@ export function GradeDeHoras(props: Props) {
                     style={{ top: topo(fantasma.ini), height: Math.max(18, ((fantasma.fim - fantasma.ini) / 60) * px - 2) }}
                     data-fantasma=""
                   >
-                    <span className="font-os-mono text-[10px] text-brand">{horaDeMinutos(fantasma.ini)}–{horaDeMinutos(fantasma.fim)}</span>
+                    <span className="font-os-mono text-[10px] text-brand">{horaDeMinutos(fantasma.ini)} a {horaDeMinutos(fantasma.fim)}</span>
                   </div>
                 )}
 
@@ -413,7 +413,7 @@ export function GradeDeHoras(props: Props) {
               return (
                 <li key={e.id}>
                   <button type="button" onClick={() => { setListaDoMais(null); aoClicarEvento(e); }} className="flex w-full items-baseline gap-2 py-1.5 text-left text-sm hover:text-brand">
-                    <span className="font-os-mono text-xs text-muted">{horaNoFuso(e.inicio)}–{horaNoFuso(e.fim)}</span>
+                    <span className="font-os-mono text-xs text-muted">{horaNoFuso(e.inicio)} a {horaNoFuso(e.fim)}</span>
                     <span className="min-w-0 truncate">{ap.titulo}</span>
                     {(choques.has(e.id) || ap.etiqueta) && (
                       <span className={`ml-auto shrink-0 font-os-mono text-[9.5px] uppercase ${corDaEtiqueta(choques.has(e.id) ? 'choque' : ap.tom, ap.semMeet)}`}>{choques.has(e.id) ? 'choque' : ap.etiqueta}</span>

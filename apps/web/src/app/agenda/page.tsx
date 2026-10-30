@@ -493,7 +493,7 @@ export default function AgendaPage() {
                   const etiqueta = choques.has(e.id) ? 'choque' : ap.etiqueta;
                   return (
                     <li key={e.id} className="flex flex-wrap items-baseline gap-x-3 gap-y-1 py-2">
-                      <span className="font-os-mono text-xs text-muted">{e.diaInteiro ? 'dia inteiro' : `${horaNoFuso(e.inicio)}–${horaNoFuso(e.fim)}`}</span>
+                      <span className="font-os-mono text-xs text-muted">{e.diaInteiro ? 'dia inteiro' : `${horaNoFuso(e.inicio)} a ${horaNoFuso(e.fim)}`}</span>
                       <button type="button" onClick={() => abrirDetalhe(e)} className="min-w-0 text-left text-sm font-medium hover:text-brand">{ap.titulo}</button>
                       {etiqueta && <span className={`font-os-mono text-[9.5px] font-bold uppercase tracking-[0.08em] ${corDaEtiqueta(choques.has(e.id) ? 'choque' : ap.tom, ap.semMeet)}`}>{etiqueta}</span>}
                     </li>

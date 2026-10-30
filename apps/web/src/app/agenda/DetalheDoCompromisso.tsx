@@ -87,7 +87,7 @@ export function DetalheDoCompromisso({ evento: e, modo, token, podeEditar, choqu
 
       <dl className="grid grid-cols-[6rem_1fr] gap-x-2 gap-y-1 text-[13px]">
         <dt className="font-os-mono text-[10px] uppercase tracking-[0.1em] text-muted">quando</dt>
-        <dd className="font-os-mono text-xs">{rot ? `${rot.semana} ${rot.data} · ` : ''}{e.diaInteiro ? 'dia inteiro' : `${horaNoFuso(e.inicio)}–${horaNoFuso(e.fim)}`}</dd>
+        <dd className="font-os-mono text-xs">{rot ? `${rot.semana} ${rot.data} · ` : ''}{e.diaInteiro ? 'dia inteiro' : `${horaNoFuso(e.inicio)} a ${horaNoFuso(e.fim)}`}</dd>
         {e.leitura.responsaveis.length > 0 && (<><dt className="font-os-mono text-[10px] uppercase tracking-[0.1em] text-muted">quem</dt><dd>{e.leitura.responsaveis.join(', ')}</dd></>)}
         {e.leitura.cliente && (<><dt className="font-os-mono text-[10px] uppercase tracking-[0.1em] text-muted">cliente</dt><dd>{e.leitura.cliente}</dd></>)}
         {e.leitura.modalidade && (<><dt className="font-os-mono text-[10px] uppercase tracking-[0.1em] text-muted">como</dt><dd>{e.leitura.modalidade}</dd></>)}
