@@ -4,6 +4,9 @@ import { AgentsModule } from '../agents/agents.module';
 import { MemoryModule } from '../memory/memoria.module';
 import { WorkModule } from '../work/work.module';
 import { AgentesExternosController } from './agentes-externos.controller';
+import { CorpoExternoController } from './corpo-externo.controller';
+import { CorpoExternoService } from './corpo-externo.service';
+import { CorpoOuSessaoGuard } from './corpo-ou-sessao.guard';
 import { EfeitosDaCentralService } from './efeitos-da-central.service';
 import { ExecucaoExternaService } from './execucao-externa.service';
 import { RespostaNaConversaService } from './resposta-na-conversa.service';
@@ -21,6 +24,11 @@ import { RespostaNaConversaService } from './resposta-na-conversa.service';
  *     mesmo serviço que a tela chama;
  *   · a ROTA DE EXECUÇÃO (A2): uma capacidade por vez, pela porta, com o
  *     `ExecCtx` que o laço do agente montaria (`execucao-externa.service.ts`);
+ *   · o CORPO (A4): o token do processo de fora, vinculado a empresa + agente +
+ *     pessoa padrão, só com o hash no banco (`corpo-externo.service.ts`), e o
+ *     guarda que aceita o token nas rotas do próprio agente
+ *     (`corpo-ou-sessao.guard.ts`); as leituras declaradas passam pelo
+ *     `JwtAuthGuard` de sempre (`auth/corpo-externo.ts`);
  *
  * Quem o importa é só o `AppModule`. Ele importa `AgentsModule` (o
  * `AgentRuntime`, para `agente.invocar`), `WorkModule` (tarefas e comentários)
@@ -30,8 +38,8 @@ import { RespostaNaConversaService } from './resposta-na-conversa.service';
  */
 @Module({
   imports: [AgentsModule, WorkModule, MemoryModule],
-  controllers: [AgentesExternosController],
-  providers: [EfeitosDaCentralService, RespostaNaConversaService, ExecucaoExternaService],
+  controllers: [CorpoExternoController, AgentesExternosController],
+  providers: [EfeitosDaCentralService, RespostaNaConversaService, ExecucaoExternaService, CorpoExternoService, CorpoOuSessaoGuard],
   exports: [EfeitosDaCentralService],
 })
 export class AgentesExternosModule {}

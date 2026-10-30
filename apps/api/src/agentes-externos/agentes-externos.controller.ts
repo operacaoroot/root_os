@@ -5,16 +5,13 @@ import { PermissionsGuard } from '../auth/permissions.guard';
 import { RequirePermissions } from '../auth/permissions.decorator';
 import { CurrentUser, JwtUser } from '../auth/current-user.decorator';
 import { EfeitosDaCentralService } from './efeitos-da-central.service';
-import { ExecucaoExternaService } from './execucao-externa.service';
+import { CorpoExternoService } from './corpo-externo.service';
 
 /*
- * Quem pode fazer um agente executar UMA capacidade pela porta, em nome de si:
- * a MESMA interseção de `POST /agents/:slug/executar` (`mcp.executar` e
- * `admin.usuarios`) — a conta de serviço da IA tem `mcp.executar` e não pode
- * acordar agente. É o caminho do console: quem administra testa a Rootinha
- * como se fosse ela, e vira o solicitante.
+ * Criar e revogar o token do corpo de um agente é a chave do freio dos agentes
+ * e dos conectores: `admin.usuarios` sozinha (hoje só o `admin_master`).
  */
-const EXECUTAR_AGENTE = ['mcp.executar', 'admin.usuarios'] as const;
+const COMANDAR_AGENTE = ['admin.usuarios'] as const;
 
 /*
  * AS ROTAS DA CENTRAL PARA QUEM ESTÁ FORA DO LAÇO (política 1.13.0).
@@ -30,23 +27,29 @@ const EXECUTAR_AGENTE = ['mcp.executar', 'admin.usuarios'] as const;
 export class AgentesExternosController {
   constructor(
     private readonly central: EfeitosDaCentralService,
-    private readonly execucao: ExecucaoExternaService,
+    private readonly corpo: CorpoExternoService,
   ) {}
 
-  /**
-   * A2 — UMA capacidade, pela porta, por conta de um agente que roda fora do OS.
-   *
-   * Responde 200 nos três desfechos da porta (`executado`, `aguardando_aprovacao`
-   * com o bilhete, `recusado` com o motivo) e no `erro` do efeito: quem chama é
-   * um modelo, e o desfecho é dado para ele decidir o próximo passo, não falha
-   * de transporte. 404 para agente que não existe nesta empresa; 400 para corpo
-   * malformado ou solicitante que não é gente desta empresa.
-   */
-  @Post('agents/:slug/capacidades/:id/executar')
+  /** A4 — os corpos do agente (sem o hash; o token em claro só sai ao criar). */
+  @Get('agents/:slug/corpos')
+  @RequirePermissions(...COMANDAR_AGENTE)
+  corpos(@CurrentUser() user: JwtUser, @Param('slug') slug: string) {
+    return this.corpo.listar(user.orgId, slug);
+  }
+
+  /** A4 — cria o corpo e devolve o token UMA vez. */
+  @Post('agents/:slug/corpos')
+  @RequirePermissions(...COMANDAR_AGENTE)
+  criarCorpo(@CurrentUser() user: JwtUser, @Param('slug') slug: string, @Body() body: unknown) {
+    return this.corpo.criar(user.orgId, user.sub, slug, body);
+  }
+
+  /** A4 — revoga, com motivo. A linha fica, para a auditoria. */
+  @Post('agents/:slug/corpos/:corpoId/revogar')
   @HttpCode(200)
-  @RequirePermissions(...EXECUTAR_AGENTE)
-  executar(@CurrentUser() user: JwtUser, @Param('slug') slug: string, @Param('id') id: string, @Body() body: unknown) {
-    return this.execucao.executar({ orgId: user.orgId, solicitantePadraoId: user.sub }, slug, id, body);
+  @RequirePermissions(...COMANDAR_AGENTE)
+  revogarCorpo(@CurrentUser() user: JwtUser, @Param('slug') slug: string, @Param('corpoId') corpoId: string, @Body() body: unknown) {
+    return this.corpo.revogar(user.orgId, user.sub, slug, corpoId, body);
   }
 
   @Get('agents/:slug/ultima-passagem')

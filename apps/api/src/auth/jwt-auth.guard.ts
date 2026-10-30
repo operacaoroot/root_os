@@ -10,6 +10,9 @@ import { randomUUID } from 'node:crypto';
 
 import { comContexto } from '../common/contexto-execucao';
 import { PrismaService } from '../prisma/prisma.service';
+import { PolicyService } from '../policy/policy.service';
+import { autenticarCorpo, caminhoSemPrefixo, ehTokenDeCorpo, leituraDeclarada } from './corpo-externo';
+import { temPapelDeMaquina } from '../approvals/alcada';
 
 /*
  * O GUARDA DE SESSÃO — e por que conferir a assinatura não bastava.
@@ -138,6 +141,12 @@ export class JwtAuthGuard implements CanActivate {
      * (ver abaixo), para a releitura nunca sumir em silêncio.
      */
     @Optional() private readonly prisma?: PrismaService,
+    /*
+     * A régua, para UMA pergunta só: a rota GET pedida com token de corpo é a
+     * leitura de uma capacidade R0 que o agente declarou? (A4, 30/10/2026.)
+     * `@Optional()` como o banco: sem ela, token de corpo nenhum passa por aqui.
+     */
+    @Optional() private readonly politica?: PolicyService,
   ) {
     if (!prisma && process.env.NODE_ENV !== 'test') {
       throw new Error('O guarda de sessão precisa do banco para reler se o usuário está ativo (Produção 22, M4).');
@@ -150,6 +159,9 @@ export class JwtAuthGuard implements CanActivate {
     if (!auth || !auth.startsWith('Bearer ')) {
       throw new UnauthorizedException('Sem token');
     }
+
+    // A4 (30/10/2026): o token do corpo de um agente externo só abre as leituras declaradas.
+    if (ehTokenDeCorpo(auth.slice(7))) return this.leituraDoCorpo(req, auth.slice(7));
 
     let claims: ClaimsDeSessao;
     try {
@@ -175,6 +187,77 @@ export class JwtAuthGuard implements CanActivate {
   }
 
   /** Ativo, inativo ou inexistente, pelo cache de 60 s ou pelo banco. */
+  /**
+   * O TOKEN DE CORPO NAS ROTAS DE SEMPRE (A4, 30/10/2026) — só leitura, só a
+   * declarada.
+   *
+   * O corpo de um agente externo (o Hermes da Rootinha) lê pelas rotas que a tela
+   * já usa, e não por uma cópia delas. Este guarda deixa passar o token dele em
+   * UMA situação: GET numa rota que é a `rota` de uma capacidade R0 que o agente
+   * do token DECLAROU, com o agente trabalhando (estado `ativo` e interruptor
+   * ligado). Qualquer outra coisa é 401 — inclusive GET de rota que o agente não
+   * declarou e todo método que não é GET. Escrever é só pela rota de execução,
+   * que passa pela porta.
+   *
+   * Passando, a requisição segue COMO A PESSOA PADRÃO do corpo: `req.user` é ela,
+   * com as permissões dela relidas agora (o `PermissionsGuard` da rota confere
+   * como sempre), e `corpoExterno` diz por onde ela entrou. Pessoa desativada ou
+   * conta de máquina derruba o corpo junto.
+   */
+  private async leituraDoCorpo(
+    req: { method?: string; path?: string; originalUrl?: string; user?: unknown },
+    token: string,
+  ): Promise<boolean> {
+    if (!this.prisma || !this.politica) throw new UnauthorizedException('Token inválido');
+    const prisma = this.prisma;
+    const politica = this.politica;
+    const corpo = await autenticarCorpo(prisma, token);
+    if (!corpo) throw new UnauthorizedException('Token inválido');
+    const caminho = caminhoSemPrefixo(String(req.path ?? req.originalUrl ?? '').split('?')[0]);
+    const metodo = String(req.method ?? 'GET');
+    const usuario = await comContexto(
+      { orgId: corpo.orgId, actorType: 'ai', actorId: corpo.agentSlug, agentSlug: corpo.agentSlug, correlationId: randomUUID(), origem: 'http' },
+      async () => {
+        const agente = await prisma.agent.findFirst({
+          where: { orgId: corpo.orgId, slug: corpo.agentSlug },
+          select: { estado: true, ativo: true, capacidades: true },
+        });
+        if (!agente || agente.estado !== 'ativo' || !agente.ativo) return null;
+        const capacidade = leituraDeclarada(
+          agente.capacidades,
+          (id) => politica.resolverCapacidade(corpo.orgId, id) as { nivel?: string; rota?: string } | null,
+          metodo,
+          caminho,
+        );
+        if (!capacidade) return null;
+        const pessoa = await prisma.user.findFirst({
+          where: { id: corpo.solicitanteId, orgId: corpo.orgId, isActive: true },
+          select: { id: true, email: true, name: true, roles: { select: { key: true, permissions: { select: { key: true } } } } },
+        });
+        if (!pessoa) return null;
+        const papeis = pessoa.roles.map((r) => r.key);
+        if (temPapelDeMaquina(papeis)) return null;
+        return {
+          sub: pessoa.id,
+          orgId: corpo.orgId,
+          email: pessoa.email,
+          name: pessoa.name,
+          roles: papeis,
+          permissions: [...new Set(pessoa.roles.flatMap((r) => r.permissions.map((p) => p.key)))],
+          corpoExterno: { id: corpo.id, corpo: corpo.corpo, agentSlug: corpo.agentSlug, capacidade },
+        };
+      },
+    );
+    if (!usuario) {
+      throw new UnauthorizedException(
+        'O token deste corpo só abre as leituras que o agente declarou (GET), com o agente ativo. ' +
+          'Escrever é pela rota de execução do agente.',
+      );
+    }
+    req.user = usuario;
+    return true;
+  }
+
   async estadoDoUsuario(orgId: string, userId: string): Promise<EstadoDoUsuario> {
     if (!orgId || !userId || !this.prisma) return 'inexistente';
     const chave = `${orgId}|${userId}`;
