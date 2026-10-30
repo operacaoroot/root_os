@@ -15,6 +15,7 @@ import {
   RESPOSTA_DE_GENTE_PELA_EVOLUTION,
 } from './evolution.port';
 import { GravacaoDoWhatsappRegistry } from './gravacao-do-whatsapp.registry';
+import { RepasseDoWhatsappRegistry } from './repasse.registry';
 // Produção 21 (P8): a Evolution da EMPRESA mora no arquivo do conector da Evolution (a catraca de
 // credenciais diz que só ele lê `EVOLUTION_*`); a pasta da porta pode importar conector.
 import { EvolutionDaEmpresaService } from '../../pauta/evolution.service';
@@ -88,6 +89,8 @@ import { EvolutionDaEmpresaService } from '../../pauta/evolution.service';
     { provide: MENSAGEM_DO_AGENTE_NO_GRUPO, useExisting: EvolutionDaEmpresaService },
     // Produção 22C (W1): quem grava TODA mensagem do webhook antes dos leitores de sempre.
     GravacaoDoWhatsappRegistry,
+    // 30/10/2026 (A9): a cópia da mensagem para fora (a Rootinha, no Hermes), sem consumir.
+    RepasseDoWhatsappRegistry,
   ],
   exports: [
     TransporteDeCanalRegistry,
@@ -101,6 +104,8 @@ import { EvolutionDaEmpresaService } from '../../pauta/evolution.service';
     MIDIA_DA_CAIXA_PELA_EVOLUTION,
     MENSAGEM_DO_AGENTE_NO_GRUPO,
     GravacaoDoWhatsappRegistry,
+    // 30/10/2026 (A9): a cópia da mensagem para fora (a Rootinha, no Hermes), sem consumir.
+    RepasseDoWhatsappRegistry,
   ],
 })
 export class CanaisModule {}
