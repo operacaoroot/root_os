@@ -15,6 +15,7 @@ import { SLUG_DA_PLATAFORMA } from '../tenants/provisionar';
 import type { JwtUser } from '../auth/current-user.decorator';
 import { RelatoSchema, type CriarCasaDto, type EditarCasaDto, type Relato } from './frota.schemas';
 import { POLITICAS, avaliarPoliticas, estadoDaCasa, pendenciasDaCasa } from './politicas';
+import { mudancasDaJornada, quadroDaFrota, resumoDaJornada } from './jornada';
 
 /*
  * ============================================================================
@@ -122,6 +123,7 @@ export class FrotaService {
       acoes: acoes.slice(0, 12),
       totalDeAcoes: acoes.length,
       casas: resumos,
+      jornada: quadroDaFrota(casas.map((c) => ({ id: c.id, casa: c.casa, jornada: relatoGuardado(c.relato)?.jornada }))),
       eventos: eventos.map(mapEvento),
     };
   }
@@ -157,6 +159,7 @@ export class FrotaService {
     return {
       ...resumo,
       relato,
+      jornadaCompleta: relato?.jornada ?? null,
       ficha: (c.ficha as Record<string, unknown> | null) ?? {},
       lgpd: (c.lgpd as Record<string, unknown> | null) ?? {},
       observacoes: c.observacoes,
@@ -433,6 +436,9 @@ export class FrotaService {
           if (fAntes !== fAgora) {
             ev({ chave: `verificar:${casa.id}:${r.quando}`, quando: agora, quem: 'kit-verificar', acao: `kit-verificar: ${fAgora} falha(s), antes ${fAntes}.`, origem: 'kit-verificar', tipo: 'kit' });
           }
+          for (const m of mudancasDaJornada(anterior.jornada, r.jornada)) {
+            ev({ chave: `jornada:${casa.id}:${m.id}:${m.para}:${r.quando}`, quando: agora, quem: 'kit-jornada', acao: m.texto, origem: 'kit-jornada', tipo: 'kit' });
+          }
           const bAntes = anterior.backup?.ultimoOk ?? null;
           if (r.backup?.ultimoOk && r.backup.ultimoOk !== bAntes) {
             ev({ chave: `backup:${casa.id}:${r.backup.ultimoOk}`, quando: dataOu(r.backup.ultimoOk, agora), quem: 'kit-backup', acao: `Backup ok${r.backup.remoto ? ' (local e cópia fora)' : ' (só local)'}.`, origem: 'kit-backup', tipo: 'sonda' });
@@ -602,6 +608,7 @@ export class FrotaService {
       pedidos: c.acessos.filter((a) => a.estado === 'pedido').length,
       ordensPendentes: c.ordens.length,
       pendencias: pendenciasDaCasa(relato, c.etapa, c.acessos),
+      jornada: resumoDaJornada(relato?.jornada),
       politicas: {
         ok: politicas.filter((p) => p.estado === 'ok').length,
         at: politicas.filter((p) => p.estado === 'at').length,

@@ -4,11 +4,12 @@ import { useCallback, useEffect, useState } from 'react';
 import { apiGet, apiPatch, apiPost } from '@/lib/api';
 import { Botao, Chip, inputCls } from '../referencias/ui';
 import { Aba, Barra, Estado, Mono, Rotulo, Terminal, Vazio } from './ui';
+import { JornadaDaCasa } from './jornada';
 import { CAMPOS_DA_FICHA, CAMPOS_LGPD, ETAPA, TIPO_DE_EVENTO, dh, haQuanto, type Acesso, type CasaDetalhe, type Ordem } from './tipos';
 
-type AbaDaGaveta = 'resumo' | 'apps' | 'registro' | 'acessos' | 'pendencias' | 'ficha' | 'verificar' | 'ordens';
+type AbaDaGaveta = 'resumo' | 'jornada' | 'apps' | 'registro' | 'acessos' | 'pendencias' | 'ficha' | 'verificar' | 'ordens';
 const ABAS: [AbaDaGaveta, string][] = [
-  ['resumo', 'Resumo'], ['apps', 'Apps'], ['registro', 'Registro'], ['acessos', 'Acessos'], ['pendencias', 'Pendências'], ['ficha', 'Ficha e LGPD'], ['verificar', 'Verificar'], ['ordens', 'Ordens'],
+  ['resumo', 'Resumo'], ['jornada', 'Jornada'], ['apps', 'Apps'], ['registro', 'Registro'], ['acessos', 'Acessos'], ['pendencias', 'Pendências'], ['ficha', 'Ficha e LGPD'], ['verificar', 'Verificar'], ['ordens', 'Ordens'],
 ];
 
 const ORDEM: Record<string, string> = { revogar_chave: 'revogar chave', desligar_automacao: 'desligar automação', rodar_verificar: 'rodar kit-verificar', pedir_backup: 'pedir backup' };
@@ -93,7 +94,7 @@ export function Gaveta({
           )}
           <div className="mt-2 flex gap-0.5 overflow-x-auto" role="tablist">
             {ABAS.map(([k, n]) => (
-              <Aba key={k} ativa={aba === k} onClick={() => setAba(k)} contagem={k === 'pendencias' ? casa?.pendencias.filter((p) => p.n !== 'ne').length : k === 'ordens' ? casa?.ordens.filter((o) => o.estado === 'pendente' || o.estado === 'entregue').length : undefined} tom="warn">{n}</Aba>
+              <Aba key={k} ativa={aba === k} onClick={() => setAba(k)} contagem={k === 'pendencias' ? casa?.pendencias.filter((p) => p.n !== 'ne').length : k === 'jornada' ? casa?.jornada?.regrediu.length : k === 'ordens' ? casa?.ordens.filter((o) => o.estado === 'pendente' || o.estado === 'entregue').length : undefined} tom="warn">{n}</Aba>
             ))}
           </div>
         </header>
@@ -103,6 +104,7 @@ export function Gaveta({
           {!casa ? <p className="text-muted">carregando…</p> : (
             <>
               {aba === 'resumo' && <Resumo casa={casa} />}
+              {aba === 'jornada' && <JornadaDaCasa casa={casa} />}
               {aba === 'apps' && <Apps casa={casa} />}
               {aba === 'registro' && <Registro casa={casa} />}
               {aba === 'acessos' && <Acessos casa={casa} podeAgir={podeAgir} onRevogar={(a) => onRevogar(a, casa)} />}

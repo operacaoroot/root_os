@@ -59,6 +59,60 @@ export const EventosConsultaSchema = z.object({
 
 const dataIso = z.string().max(40);
 
+/*
+ * A jornada da casa (kit-jornada json, kit 2e8ba1d): o backlog do kit com a situação
+ * desta casa em cada item. A fonte é o servidor, que prova o que diz; aqui só se lê.
+ * Situação que o kit não conhecia vira 'afazer' em vez de derrubar o relato inteiro.
+ */
+export const SITUACOES_DA_JORNADA = ['afazer', 'andamento', 'esperando', 'feito', 'na', 'regrediu'] as const;
+const situacao = z.enum(SITUACOES_DA_JORNADA).catch('afazer');
+export const JornadaSchema = z.object({
+  versao: z.literal(1),
+  arquivo: z.boolean().default(false),
+  kit: textoOpc(80),
+  geradoEm: textoOpc(40),
+  pct: z.number().min(0).max(100).default(0),
+  feitos: z.number().int().min(0).max(1000).default(0),
+  validos: z.number().int().min(0).max(1000).default(0),
+  faseAtual: z.number().int().min(0).max(20).nullable().default(null),
+  fases: z
+    .array(
+      z.object({
+        n: z.number().int().min(0).max(20),
+        nome: texto(120),
+        total: z.number().int().min(0).max(500),
+        feito: z.number().int().min(0).max(500).default(0),
+        na: z.number().int().min(0).max(500).default(0),
+        andamento: z.number().int().min(0).max(500).default(0),
+        esperando: z.number().int().min(0).max(500).default(0),
+        regrediu: z.number().int().min(0).max(500).default(0),
+        afazer: z.number().int().min(0).max(500).default(0),
+      }),
+    )
+    .max(20)
+    .default([]),
+  itens: z
+    .array(
+      z.object({
+        id: texto(20),
+        fase: z.number().int().min(0).max(20),
+        item: texto(300),
+        quem: textoOpc(80),
+        projeto: z.boolean().default(false),
+        situacao,
+        marcada: situacao.optional(),
+        espera: textoOpc(80),
+        quando: textoOpc(20),
+        nota: textoOpc(300),
+        auto: z.enum(['ok', 'falha', 'na']).optional().catch(undefined),
+        autoTexto: textoOpc(200),
+      }),
+    )
+    .max(400)
+    .default([]),
+});
+export type Jornada = z.infer<typeof JornadaSchema>;
+
 export const RelatoSchema = z.object({
   versao: z.literal(1),
   casa: z.string().regex(CASA_NOME),
@@ -104,6 +158,8 @@ export const RelatoSchema = z.object({
     .max(50)
     .default([]),
   diario: z.array(z.object({ quando: texto(40), quem: texto(120), texto: texto(600) })).max(60).default([]),
+  // jornada que não passa no esquema não derruba o relato: a casa continua relatando a saúde
+  jornada: JornadaSchema.optional().catch(undefined),
 });
 export type Relato = z.infer<typeof RelatoSchema>;
 
