@@ -266,7 +266,7 @@ export function PainelDeMarcar(props: Props) {
   };
 
   const intervalo = intervaloDoRascunho(r);
-  const pronto = !!intervalo && !!titulo.titulo && !titulo.falta && r.responsaveis.length > 0 || (apenasHorario && !!intervalo);
+  const pronto = (!!intervalo && !!titulo.titulo && !titulo.falta && r.responsaveis.length > 0) || (apenasHorario && !!intervalo);
   const r1 = r.dia ? rotulosDoDia(r.dia) : null;
 
   const corpo = (
@@ -443,7 +443,11 @@ export function PainelDeMarcar(props: Props) {
         {!reguaDoServidor && informativos.map((t) => (
           <div key={t}><span className="font-os-mono text-info">OK</span> {t}</div>
         ))}
-        {!regua && !apenasHorario && <div className="text-muted">a régua avalia quando houver dia, hora e quem vai</div>}
+        {!regua && (
+          <div className="text-muted">
+            {apenasHorario ? 'a régua não sabe de quem é este compromisso: o título não diz' : 'a régua avalia quando houver dia, hora e quem vai'}
+          </div>
+        )}
       </div>
 
       {desfecho && (
