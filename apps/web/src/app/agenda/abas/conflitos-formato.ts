@@ -72,6 +72,12 @@ export function quandoDoCartao(iso: string, agora: Date = new Date()): string {
   return `${diaCurto(d)} · ${hora.format(d)} · ${falta}`;
 }
 
+/** "09:00" de um instante, em São Paulo. */
+export function horaDoCartao(iso: string): string {
+  const d = new Date(iso);
+  return Number.isNaN(d.getTime()) ? '' : hora.format(d);
+}
+
 /** "qua 04/11" de um instante. */
 export function diaDoCartao(iso: string): string {
   const d = new Date(iso);

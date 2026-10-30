@@ -10,7 +10,7 @@ import { Historico } from './Historico';
 import {
   FILTRO_DO_TIPO,
   ORDEM_DOS_TIPOS,
-  diaDoCartao,
+  horaDoCartao,
   mensagemDaEscrita,
   quandoDoCartao,
   rotuloDoCartao,
@@ -301,7 +301,7 @@ function ForaDaTela({ c, token, aoMudar, aoRemarcar }: { c: CartaoDeConflito; to
     <div className="flex flex-col gap-2" data-cartao-de-conflito={c.id} data-tipo={c.tipo}>
       <p className="text-[13px]">
         <span className="font-os-mono text-[10px] font-bold uppercase tracking-[1px] text-warn">feriado</span>{' '}
-        {c.titulo} · {nome} · <span className="font-os-mono text-xs text-muted">{diaDoCartao(c.quando)}</span>
+        {c.titulo} · {nome} · <span className="font-os-mono text-xs text-muted">{horaDoCartao(c.quando)}</span>
       </p>
       <div className="flex flex-wrap gap-2">
         {levar && (
