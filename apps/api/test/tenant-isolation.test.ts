@@ -525,6 +525,14 @@ const ALVOS: Alvo[] = [
   { tabela: 'CofreItem', escopo: 'tenant', chaveSql: '"id"', nota: 'O COFRE da casa: título, onde, usuário, segredo e notas cifrados, e o documento guardado. O valor é cifrado, mas ler já entrega o mapa de que acessos a outra empresa guarda e onde; apagar é sumir com a senha dela.' },
   { tabela: 'CofreSenha', escopo: 'tenant', chaveSql: '"id"', nota: 'O hash da senha-mestra do cofre de cada pessoa, com tentativas e bloqueio. Ler o da outra entrega o hash para ataque fora do sistema; escrever zera o bloqueio ou troca a senha-mestra de alguém de outra casa.' },
   { tabela: 'CofreSessao', escopo: 'tenant', chaveSql: '"id"', nota: 'A sessão aberta do cofre (hash do token e validade). Escrever na da outra estende ou abre a sessão de cofre de alguém de outra casa.' },
+  // ---- a agenda v2 (29/10/2026) -----------------------------------------
+  { tabela: 'AgendaEvento', escopo: 'tenant', chaveSql: '"id"', nota: 'O ESPELHO da agenda da casa (agenda v2): cada evento do Google com título, descrição, convidados com e-mail, local, Meet e a leitura do título (cliente, responsáveis). Ler o da outra empresa é ler com quem ela se reúne, quando e onde; ESCREVER é pôr ou tirar reunião da régua dela. Raiz da empresa: o orgId vem do insert (a sincronia por empresa).' },
+  { tabela: 'AgendaSincronia', escopo: 'tenant', chaveSql: '"id"', nota: 'O estado da sincronia de cada agenda (agenda v2): o syncToken do Google, a janela e a última passagem. ESCREVER na da outra é zerar o token (força a janela completa) ou carimbar passagem falsa (a régua acharia o espelho em dia).' },
+  { tabela: 'AgendaRegraPessoa', escopo: 'tenant', chaveSql: '"id"', nota: 'A régua de cada sócio (agenda v2): janela, intervalo, trajeto, teto por dia, bloqueios fixos e o e-mail pessoal. ESCREVER na da outra é abrir ou fechar a agenda de um sócio dela para o link público.' },
+  { tabela: 'AgendaRito', escopo: 'tenant', chaveSql: '"id"', nota: 'Os ritos fixos da casa (agenda v2): reuniões recorrentes com dia, hora, quem e se bloqueiam. Ler os da outra é ler a rotina interna dela.' },
+  { tabela: 'Feriado', escopo: 'tenant', chaveSql: '"id"', nota: 'Os feriados da empresa (agenda v2), nacionais e da cidade, com o interruptor. ESCREVER na da outra é desligar um feriado e abrir o dia dela para marcação. Apesar do nome, é da empresa, não global.' },
+  { tabela: 'AgendaRegraTexto', escopo: 'tenant', chaveSql: '"id"', nota: 'As regras escritas da agenda (agenda v2), em frase livre. Ler as da outra é ler como ela organiza o tempo dos sócios.' },
+  { tabela: 'AgendaConvite', escopo: 'tenant', chaveSql: '"id"', nota: 'O link de escolha (agenda v2, G6): o HASH do token, o sócio, o horário escolhido e o e-mail que o convidado informou. Não abre leitura pela sentinela pública: a empresa viaja no token e a busca roda dentro dela. Ler o da outra é ler quem ela convidou e quando; ESCREVER é reabrir ou tomar o uso do link dela.' },
   { tabela: 'AgendaConferencia', escopo: 'tenant', chaveSql: '"id"', nota: 'O que o vigia da agenda (AG-01, rodada dos agentes, 21/10/2026) concluiu de uma reunião fora do padrão: o título lido do Google, a proposta e a aprovação ou pendência. Ler a da outra é ler com quem ela se reúne e quando; ESCREVER é pôr título na proposta de correção da agenda dela ou marcar reunião alheia como "não é reunião". Raiz da empresa: approvalId e pendenciaId apontam para outras tabelas, sem FK.' },
   { tabela: 'FotoDePerfil', escopo: 'tenant', chaveSql: '"id"', nota: 'A foto de perfil de uma pessoa (produção 22B, I6), guardada no banco. Ler a da outra empresa é ver o rosto de quem trabalha lá; ESCREVER é trocar a foto de alguém de outra casa. Raiz da empresa, com FK composta (userId, orgId) para User e uma foto em uso por pessoa (índice único parcial).' },
   { tabela: 'DonoDaFuncao', escopo: 'tenant', chaveSql: '"id"', nota: 'O dono trocado na Equipe de uma função do cadastro sem registro Agent (rodada dos agentes, 21/10/2026, A7). Ler o da outra empresa é ver quem responde por cada rotina e automação de lá; ESCREVER é tirar ou dar a função de alguém de outra casa. Raiz da empresa, com FK composta (userId, orgId) para User.' },
@@ -1358,7 +1366,8 @@ async function semear(c: PoolClient, rotulo: 'A' | 'B', vec: string): Promise<vo
   // Frota (27/10/2026): a casa (raiz), a chave, o evento e a ordem, todos com o orgId do insert.
   const frotaCasaId = crypto.randomUUID();
   reg('FrotaCasa', await ins(c, 'FrotaCasa', {
-    id: frotaCasaId, orgId, casa: `casa-${rotulo.toLowerCase()}-${suf}`.slice(0, 40), cliente: `Cliente privado da org ${rotulo}`,
+    // O CHECK de `casa` só aceita [a-z0-9-]: a marca da suíte tem `_` e maiúscula.
+    id: frotaCasaId, orgId, casa: `casa-${rotulo}-${suf}`.toLowerCase().replace(/[^a-z0-9-]/g, '-').slice(0, 40), cliente: `Cliente privado da org ${rotulo}`,
     hostname: `srv-${rotulo.toLowerCase()}`, tokenHash: hex64(`frota_${rotulo}_${MARCA}_${crypto.randomUUID()}`),
     updatedAt: new Date(),
   }));
@@ -1519,6 +1528,37 @@ async function semear(c: PoolClient, rotulo: 'A' | 'B', vec: string): Promise<vo
     gastoEstimadoUsd: 0, reservadoUsd: 0,
     chamadas: rotulo === 'A' ? 3 : 40, chamadasSemPreco: 0, cortes: 0,
     criadoEm: agora, atualizadoEm: agora,
+  }));
+
+  // A agenda v2 (29/10/2026): o espelho, a sincronia, a régua, os ritos, os feriados, as regras escritas e o link.
+  const inicioDaAgenda = new Date(Date.UTC(2026, 10, 3, 13, 0, 0));
+  reg('AgendaEvento', await ins(c, 'AgendaEvento', {
+    id: crypto.randomUUID(), orgId, agenda: 'primary', googleId: `ev_v2_${rotulo}_${MARCA}`,
+    titulo: `Reunião Online - Cliente privado da org ${rotulo} - Rodrigo`, inicio: inicioDaAgenda,
+    fim: new Date(inicioDaAgenda.getTime() + 3_600_000), leituraTipo: 'cliente', leituraCliente: `Cliente privado da org ${rotulo}`,
+    convidados: JSON.stringify([{ email: `convidado@${rotulo.toLowerCase()}.invalid`, resposta: 'aceito' }]), atualizadoEm: agora,
+  }, { convidados: 'jsonb' }));
+  reg('AgendaSincronia', await ins(c, 'AgendaSincronia', {
+    id: crypto.randomUUID(), orgId, agenda: 'primary', syncToken: `token_privado_${rotulo}_${MARCA}`, ultimaPassagem: agora, atualizadoEm: agora,
+  }));
+  reg('AgendaRegraPessoa', await ins(c, 'AgendaRegraPessoa', {
+    id: crypto.randomUUID(), orgId, nome: 'Rodrigo', emailPessoal: `rodrigo@${rotulo.toLowerCase()}.invalid`, atualizadoEm: agora,
+  }));
+  reg('AgendaRito', await ins(c, 'AgendaRito', {
+    id: crypto.randomUUID(), orgId, nome: `Rito privado ${rotulo}`, titulo: `Reunião interna privada da org ${rotulo}`, diaDaSemana: 1,
+    inicio: '09:00', atualizadoEm: agora,
+  }));
+  reg('Feriado', await ins(c, 'Feriado', {
+    id: crypto.randomUUID(), orgId, data: '2026-12-08', nome: `Feriado municipal da org ${rotulo}`, tipo: 'municipal', cidade: `Cidade ${rotulo}`,
+    atualizadoEm: agora,
+  }));
+  reg('AgendaRegraTexto', await ins(c, 'AgendaRegraTexto', {
+    id: crypto.randomUUID(), orgId, frase: `Regra privada da agenda da org ${rotulo}`, atualizadoEm: agora,
+  }));
+  reg('AgendaConvite', await ins(c, 'AgendaConvite', {
+    id: crypto.randomUUID(), orgId, tokenHash: hex64(`convite_${rotulo}_${MARCA}`), socio: 'Rodrigo', nome: `Convidado ${rotulo}`,
+    validoAte: new Date(agora.getTime() + 7 * 86_400_000), emailInformado: `convidado@${rotulo.toLowerCase()}.invalid`,
+    criadoPorId: userId, atualizadoEm: agora,
   }));
 
   // O vigia da agenda (AG-01, rodada dos agentes, 21/10/2026, A5): a conferência de uma reunião.
