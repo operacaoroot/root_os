@@ -99,6 +99,36 @@ export function pedidoDoConviteCaiu(
   return aprovacao.status === 'pendente' || (aprovacao.status === 'confirmada' && !aprovacao.capabilityId);
 }
 
+/** Um horário que outro convite do mesmo sócio já pediu e que ainda espera na fila (M2). */
+export interface ReservaDeConvite {
+  inicio: Date;
+  fim: Date;
+}
+
+/** O horário `[inicio, fim)` encosta em alguma reserva? */
+export function horarioReservado(inicio: Date, fim: Date, reservas: readonly ReservaDeConvite[]): boolean {
+  return reservas.some((r) => inicio.getTime() < r.fim.getTime() && r.inicio.getTime() < fim.getTime());
+}
+
+/**
+ * Tira dos dias verdes os horários que outro convite pendente já pediu (M2):
+ * o `marcar` retido na fila não está no espelho, e sem isto dois links do
+ * mesmo sócio ofereceriam e confirmariam o mesmo horário.
+ */
+export function semHorariosReservados<D extends { dia: string; manha: string[]; tarde: string[] }>(
+  dias: readonly D[],
+  reservas: readonly ReservaDeConvite[],
+  duracaoMin: number,
+): D[] {
+  if (!reservas.length) return [...dias];
+  const livre = (dia: string, hora: string): boolean => {
+    const ini = instanteEmSaoPaulo(dia, hora);
+    if (!ini) return false;
+    return !horarioReservado(ini, new Date(ini.getTime() + duracaoMin * 60_000), reservas);
+  };
+  return dias.map((d) => ({ ...d, manha: d.manha.filter((h) => livre(d.dia, h)), tarde: d.tarde.filter((h) => livre(d.dia, h)) }));
+}
+
 /**
  * O nome que a pessoa digitou no link, pronto para entrar no título (M4). A
  * gramática do título separa as partes com ` - ` (e lê também ` – `, ` — `):

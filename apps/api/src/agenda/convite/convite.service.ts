@@ -22,8 +22,11 @@ import {
   hashDoConvite,
   icsDoConvite,
   instanteEmSaoPaulo,
+  horarioReservado,
   pedidoDoConviteCaiu,
   primeiroNome,
+  semHorariosReservados,
+  type ReservaDeConvite,
   somarDias,
   validadeDoConvite,
 } from './convite-puro';
@@ -208,6 +211,11 @@ export class ConviteDaAgendaService {
 
   private async diasLivres(orgId: string, c: AgendaConvite, agora: Date) {
     const hoje = diaEmSaoPaulo(agora);
+    const [dias, reservas] = await Promise.all([this.diasDaRegua(orgId, c, agora, hoje), this.reservasDeOutros(orgId, c, agora)]);
+    return semHorariosReservados(dias, reservas, c.duracaoMin);
+  }
+
+  private async diasDaRegua(orgId: string, c: AgendaConvite, agora: Date, hoje: string) {
     return this.regua.livres(
       orgId,
       {
@@ -247,24 +255,55 @@ export class ConviteDaAgendaService {
   private async pedidosCaidos(orgId: string, convites: AgendaConvite[], agora: Date): Promise<Set<string>> {
     const candidatos = convites.filter((c) => !c.revogadoEm && c.usadoEm && c.escolhidoInicio && c.approvalId);
     if (!candidatos.length) return new Set();
-    const [aprovacoes, eventos] = await Promise.all([
+    const [aprovacoes, nascidos] = await Promise.all([
       this.prisma.approval.findMany({
         where: { orgId, id: { in: candidatos.map((c) => c.approvalId as string) } },
         select: { id: true, status: true, expiraEm: true, capabilityId: true },
       }),
-      this.prisma.agendaEvento.findMany({
-        where: { orgId, googleId: { in: candidatos.map((c) => c.eventoId).filter((x): x is string => !!x) } },
-        select: { googleId: true },
-      }),
+      this.eventosNascidos(orgId, candidatos),
     ]);
     const porId = new Map(aprovacoes.map((a) => [a.id, a]));
-    const nascidos = new Set(eventos.map((e) => e.googleId));
     return new Set(
       candidatos
         .filter((c) => !(c.eventoId && nascidos.has(c.eventoId)))
         .filter((c) => pedidoDoConviteCaiu(c, porId.get(c.approvalId as string) ?? null, agora))
         .map((c) => c.id),
     );
+  }
+
+  /** Os `eventoId` destes convites que já estão no espelho (o evento nasceu). */
+  private async eventosNascidos(orgId: string, convites: AgendaConvite[]): Promise<Set<string>> {
+    const ids = convites.map((c) => c.eventoId).filter((x): x is string => !!x);
+    if (!ids.length) return new Set();
+    const eventos = await this.prisma.agendaEvento.findMany({ where: { orgId, googleId: { in: ids } }, select: { googleId: true } });
+    return new Set(eventos.map((e) => e.googleId));
+  }
+
+  /**
+   * Os horários que OUTROS convites do mesmo sócio já pediram e que ainda
+   * esperam (M2): escolhidos, não revogados, com o pedido vivo (ou ainda a
+   * caminho da porta) e o evento que ainda não nasceu no espelho. O evento que
+   * nasceu já está na régua; o pedido que caiu não reserva nada.
+   */
+  private async reservasDeOutros(orgId: string, c: AgendaConvite, agora: Date, db: Pick<PrismaService, 'agendaConvite'> = this.prisma): Promise<ReservaDeConvite[]> {
+    const outros = await db.agendaConvite.findMany({
+      where: {
+        orgId,
+        socio: c.socio,
+        id: { not: c.id },
+        revogadoEm: null,
+        usadoEm: { not: null },
+        escolhidoInicio: { not: null },
+        escolhidoFim: { gt: agora },
+      },
+      orderBy: { escolhidoInicio: 'asc' },
+      take: 500,
+    });
+    if (!outros.length) return [];
+    const [caidos, nascidos] = await Promise.all([this.pedidosCaidos(orgId, outros, agora), this.eventosNascidos(orgId, outros)]);
+    return outros
+      .filter((o) => !caidos.has(o.id) && !(o.eventoId && nascidos.has(o.eventoId)))
+      .map((o) => ({ inicio: o.escolhidoInicio as Date, fim: o.escolhidoFim as Date }));
   }
 
   /**
@@ -359,11 +398,20 @@ export class ConviteDaAgendaService {
       }
 
       // UM uso: a escrita condicionada decide quem leva (o segundo clique encontra zero linhas).
-      const tomado = await this.prisma.agendaConvite.updateMany({
-        where: { id: convite.id, orgId, usadoEm: null, revogadoEm: null, validoAte: { gt: agora } },
-        data: { usadoEm: agora, escolhidoInicio: inicio, escolhidoFim: fim, emailInformado: pedido.email ?? null },
+      // E UM convite por horário do sócio (M2): sob o cadeado do sócio, o horário que outro
+      // convite pendente acabou de pedir é recusado, mesmo que os dois tenham visto verde.
+      const tomado = await this.prisma.$transaction(async (tx) => {
+        await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`agenda-convite:${orgId}:${convite.socio}`}))`;
+        const reservas = await this.reservasDeOutros(orgId, convite, agora, tx as unknown as Pick<PrismaService, 'agendaConvite'>);
+        if (horarioReservado(inicio, fim, reservas)) return 'reservado' as const;
+        const r = await tx.agendaConvite.updateMany({
+          where: { id: convite.id, orgId, usadoEm: null, revogadoEm: null, validoAte: { gt: agora } },
+          data: { usadoEm: agora, escolhidoInicio: inicio, escolhidoFim: fim, emailInformado: pedido.email ?? null },
+        });
+        return r.count === 0 ? ('usado' as const) : ('ok' as const);
       });
-      if (tomado.count === 0) throw new ConflictException('Este link já foi usado. Se precisar mudar o horário, fale com a Root.');
+      if (tomado === 'reservado') throw new ConflictException('Esse horário não está mais livre. Escolha outro.');
+      if (tomado === 'usado') throw new ConflictException('Este link já foi usado. Se precisar mudar o horário, fale com a Root.');
 
       const cliente = await this.nomeDoCliente(orgId, convite, pedido.nome);
       const chave = chaveDerivada(`convite:${convite.id}`);

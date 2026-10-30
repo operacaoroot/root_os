@@ -14,6 +14,7 @@ import {
   icsDoConvite,
   instanteEmSaoPaulo,
   pedidoDoConviteCaiu,
+  semHorariosReservados,
 } from '../src/agenda/convite/convite-puro';
 import type { EscritaDaAgendaService, QuemPedeAEscrita } from '../src/agenda/escrita/escrita.service';
 import type { ReguaService } from '../src/agenda/regua/regua.service';
@@ -68,6 +69,15 @@ describe('o token e o convite, sem banco', () => {
     expect(pedidoDoConviteCaiu({ ...usado, approvalId: null }, null, agora)).toBe(false);
     expect(pedidoDoConviteCaiu({ ...usado, escolhidoInicio: null }, null, agora)).toBe(false);
     expect(pedidoDoConviteCaiu({ ...usado, usadoEm: null }, null, agora)).toBe(false);
+  });
+
+  it('M2: o horário que outro convite pendente pediu sai dos verdes (com a duração deste convite)', () => {
+    const dias = [{ dia: '2026-11-03', manha: ['10:30', '11:00'], tarde: ['14:00', '15:30'] }];
+    // Reserva 14:30 a 15:30 (SP): a de 14:00 por 60 min encosta; a de 15:30 não.
+    const reservas = [{ inicio: new Date('2026-11-03T17:30:00Z'), fim: new Date('2026-11-03T18:30:00Z') }];
+    expect(semHorariosReservados(dias, reservas, 60)).toEqual([{ dia: '2026-11-03', manha: ['10:30', '11:00'], tarde: ['15:30'] }]);
+    expect(semHorariosReservados(dias, reservas, 30)).toEqual([{ dia: '2026-11-03', manha: ['10:30', '11:00'], tarde: ['14:00', '15:30'] }]);
+    expect(semHorariosReservados(dias, [], 60)).toEqual(dias);
   });
 
   it('dia e hora de São Paulo viram o instante certo (-03:00)', () => {
@@ -176,6 +186,8 @@ describe.skipIf(!URL)('o link de escolha, com banco', () => {
   };
 
   beforeEach(async () => {
+    // Cada caso começa sem convite pendente dos casos anteriores (eles reservariam horário, M2).
+    await prisma.agendaConvite.updateMany({ where: { orgId: { in: [ORG_A, ORG_B] }, revogadoEm: null }, data: { revogadoEm: AGORA } });
     livres = DIAS;
     escritas = [];
     respostaDaEscrita = {
@@ -346,11 +358,11 @@ describe.skipIf(!URL)('o link de escolha, com banco', () => {
   });
 
   it('A1: aprovação recusada ou sumida: confirmar direto reabre e aceita o novo horário', async () => {
-    for (const ap of [await aprovacao('rejeitada'), 'aprovacao-que-sumiu']) {
+    for (const [ap, hora, iso] of [[await aprovacao('rejeitada'), '10:30', '2026-11-03T13:30:00.000Z'], ['aprovacao-que-sumiu', '15:30', '2026-11-03T18:30:00.000Z']]) {
       escritas = [];
       const c = await escolhidoComPedido(ap);
-      const r = await svc.confirmar(c.token, { dia: '2026-11-03', hora: '10:30', email: 'x@cliente.invalid' }, AGORA);
-      expect(r.escolhido?.inicio).toBe('2026-11-03T13:30:00.000Z');
+      const r = await svc.confirmar(c.token, { dia: '2026-11-03', hora, email: 'x@cliente.invalid' }, AGORA);
+      expect(r.escolhido?.inicio).toBe(iso);
       expect(escritas).toHaveLength(1);
       expect(await auditoriasDe(c.id)).toHaveLength(1);
     }
@@ -368,6 +380,36 @@ describe.skipIf(!URL)('o link de escolha, com banco', () => {
     expect(e.escolhido).not.toBeNull();
     await expect(svc.confirmar(c.token, { dia: '2026-11-03', hora: '10:30', email: 'x@cliente.invalid' }, AGORA)).rejects.toBeInstanceOf(ConflictException);
     expect(await auditoriasDe(c.id)).toHaveLength(0);
+  });
+
+  it('M2: o horário pedido por outro convite do mesmo sócio, ainda na fila, some dos verdes e a confirmação recusa', async () => {
+    const corpo = { dia: '2026-11-04', hora: '16:30', email: 'x@cliente.invalid' };
+    const x = await novo(ORG_A, { socio: 'Lucas' });
+    const y = await novo(ORG_A, { socio: 'Lucas' });
+    const outroSocio = await novo(ORG_A, { socio: 'Pedro' });
+    await svc.confirmar(tokenDe(x.url), corpo, AGORA);
+    const vistoPorY = await svc.estadoPublico(tokenDe(y.url), AGORA);
+    expect(vistoPorY.dias.find((d) => d.dia === '2026-11-04')?.tarde).toEqual([]);
+    expect((await svc.estadoPublico(tokenDe(outroSocio.url), AGORA)).dias.find((d) => d.dia === '2026-11-04')?.tarde).toEqual(['16:30']);
+    await expect(svc.confirmar(tokenDe(y.url), corpo, AGORA)).rejects.toBeInstanceOf(ConflictException);
+    expect((await prisma.agendaConvite.findUnique({ where: { id: y.id } }))?.usadoEm).toBeNull();
+    // O pedido de X vence na fila: o horário volta para Y.
+    const linhaX = await prisma.agendaConvite.findUniqueOrThrow({ where: { id: x.id } });
+    await prisma.approval.update({ where: { id: linhaX.approvalId as string }, data: { status: 'expirada' } });
+    expect((await svc.estadoPublico(tokenDe(y.url), AGORA)).dias.find((d) => d.dia === '2026-11-04')?.tarde).toEqual(['16:30']);
+  });
+
+  it('M2 NA CORRIDA: dois convites do mesmo sócio confirmando o mesmo horário ao mesmo tempo = um leva', async () => {
+    const corpo = { dia: '2026-11-03', hora: '14:00', email: 'x@cliente.invalid' };
+    const a = await novo(ORG_A, { socio: 'Pedro' });
+    const b = await novo(ORG_A, { socio: 'Pedro' });
+    escritas = [];
+    const r = await Promise.allSettled([svc.confirmar(tokenDe(a.url), corpo, AGORA), svc.confirmar(tokenDe(b.url), corpo, AGORA)]);
+    expect(r.filter((x) => x.status === 'fulfilled')).toHaveLength(1);
+    const nao = r.filter((x) => x.status === 'rejected') as PromiseRejectedResult[];
+    expect(nao).toHaveLength(1);
+    expect(nao[0].reason).toBeInstanceOf(ConflictException);
+    expect(escritas).toHaveLength(1);
   });
 
   it('isolamento: o token de A com a empresa trocada para B não abre, e B não lista os convites de A', async () => {
