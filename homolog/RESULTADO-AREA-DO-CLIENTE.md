@@ -55,7 +55,19 @@ NÃO rodado no Mac (sem Postgres local; precisa do banco descartável ou do ambi
 - `comercial-sala-publicada.test.ts` (o fluxo R3 da sala continua igual; os casos do item estão por escrever na mesma suíte, contra o banco).
 - `homolog/e2e/area-do-cliente.mjs` (escrito, contra a cópia do banco da produção na VPS, como o `leva5.mjs`).
 
-## Para publicar (depois do OK do Rodrigo)
+## Publicada (31/10/2026)
+
+OK do Rodrigo em 31/10 ("bora para a leva a"). Produção conferida antes do build: `rootos-official:root-delegador-3f1da36` (a mesma de 30/10), nenhuma outra sessão com build em curso, 30 GB livres.
+
+1. Bundle `3f1da36d..area-do-cliente/20261030` (c946dcb7) levado ao `/srv/rootos/bundles`; imagem `rootos-official:area-cliente-c946dcb7` construída em `/srv/rootos/builds/area-cliente` (`build-area-cliente.sh`, 6 min, 2,75 GB), uma migration nova em relação à produção.
+2. Ambiente de teste `rootos-teste-area` (`criar-teste-area.sh`, cópia do banco da produção, portas 4190/4191 só no IP interno, chaves de cifra diferentes): migration aplicada; `SalaVersao` e `SalaLeitura` com RLS + FORCE e 4 policies; os dois índices parciais. Usuários `teste-area@root.test` e `teste-area-2@root.test` (a segunda pessoa).
+3. E2E `homolog/e2e/area-do-cliente.mjs` pelo túnel: **18 passos, tudo conferido** (A1 modo sala × área e 15 slots; A2 rascunho e publicação retida de um item, liberação pela segunda pessoa — a régua subiu a R4 e ela assinou —, só a ata foi ao ar, a sala não mudou, o cartão de conteúdo diz o item e confere o hash, derivado recusa rascunho; A3 leitura tira o "novo" e a bancada vê a data; A4 aba e chip; escuro, claro e 390 px sem rolagem horizontal). Fotos em `homolog/provas/area-do-cliente-*.png`.
+4. Produção: `publicar-leva-com-migration.sh rootos-official:area-cliente-c946dcb7 area-cliente-c946dcb7-20261031` às 16:00 UTC: backup 131 MB, só a imagem muda na cadeia, migration aplicada, api e web no ar, saudável em 20 s. `REPORT.txt`, `banco-antes.dump` e `cadeia-antes.txt` em `/srv/rootos/releases/area-cliente-c946dcb7-20261031/`.
+5. Smoke na produção: `/api/health` 200; rota nova `GET /api/comercial/lead/:id/area` responde 401 sem sessão (existe); `/s/<token>` abre; sem erro novo no arranque.
+
+O ambiente de teste ficou de pé (`docker compose -p rootos-teste-area down -v && rm -rf /srv/rootos/teste-area` para derrubar).
+
+## Para publicar (como foi feito; vale para a próxima leva)
 
 1. Conferir a produção viva antes do build: `docker inspect mktos_api` (hoje `rootos-official:root-delegador-3f1da36`), `levas.log`, `git worktree list` no Mac. Se a agenda v2 (Predator, branch `agenda-v2/20261029`) ou o Painel de vida R2 tiverem publicado antes, rebasear esta branch sobre a produção da hora e refazer o typecheck.
 2. Imagem nova de api e web a partir do bundle (`build-leva5.sh <sha>` ou o equivalente da hora).
