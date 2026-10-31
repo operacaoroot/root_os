@@ -45,6 +45,7 @@ Rodado no Mac em 30/10/2026:
 
 - `pnpm --filter @mktos/shared build`: OK.
 - `tsc --noEmit` da API (com `NODE_OPTIONS=--max-old-space-size=6144`): OK. Da web: OK.
+- `tsc -p tsconfig.test.json` da API (o typecheck dos arquivos de teste, o mesmo passo da CI): OK.
 - `vitest` API: `area-do-cliente-puro.test.ts` (18 casos: shared × JSON, modo, fase, derivados, novo/lido, edição, bancada, esquemas), `comercial-sala-versao-puro`, `comercial-sala-puro`, `clientes-ativos`: 52 passaram.
 - `vitest` web: `comercial-painel-estado`, `navegacao-modulos`, `sala-do-cliente` passaram; os testes de componente da sala, do painel, de /atendimento e de clientes ativos: ver a linha de resultado no commit. `nav.test.ts` tem 2 falhas que já existiam no commit-base `de286bfb` (contagem de itens ocultos do menu, arquivo `packages/shared/src/nav.ts` não tocado por esta branch).
 
