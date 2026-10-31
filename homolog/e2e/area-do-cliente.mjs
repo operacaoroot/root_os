@@ -36,6 +36,9 @@ const WEB = process.env.UX_WEB ?? 'http://127.0.0.1:4160';
 const PW = process.env.UX_PW ?? join(RAIZ, '../pw-tools');
 const EMAIL = process.env.AREA_EMAIL ?? process.env.LEVA5_EMAIL ?? 'teste-leva5@root.test';
 const SENHA = process.env.AREA_SENHA ?? process.env.LEVA5_SENHA;
+/** A SEGUNDA pessoa, que libera em Aprovações (quem pediu não assina). Sem ela, A3 fica por provar. */
+const EMAIL2 = process.env.AREA_EMAIL2 ?? null;
+const SENHA2 = process.env.AREA_SENHA2 ?? null;
 if (!SENHA) {
   console.error('AREA_SENHA ausente (senha do usuário de teste do ambiente da VPS)');
   process.exit(2);
@@ -78,9 +81,20 @@ async function api(metodo, caminho, corpo, token) {
   if (!r.ok) throw new Error(`${metodo} ${caminho} → ${r.status}: ${typeof json === 'string' ? json.slice(0, 200) : JSON.stringify(json).slice(0, 300)}`);
   return json;
 }
-async function entrar() {
-  const r = await api('POST', '/auth/login', { email: EMAIL, password: SENHA });
+async function entrar(email = EMAIL, senha = SENHA) {
+  const r = await api('POST', '/auth/login', { email, password: senha });
   return { token: r.token ?? r.accessToken, user: r.user };
+}
+
+/** Libera pela MESMA confirmação de /atendimento (a segunda pessoa; R4 pede senha e motivo). */
+async function liberar(approvalId, segunda, porque) {
+  const lista = await api('GET', '/approvals?status=pendente', undefined, segunda.token);
+  const a = (lista.items ?? lista).find((x) => x.id === approvalId);
+  conferir(a, `a aprovação ${approvalId} não está pendente na fila`);
+  const corpo = a.exigeReauth ? { reauth: { senha: SENHA2 }, motivo: `conferi no teste da área: ${porque}` } : {};
+  const r = await api('POST', `/approvals/${approvalId}/confirm`, corpo, segunda.token);
+  conferir(r?.execucao?.status === 'executado', `a liberação de ${a.capacidade} não executou (${JSON.stringify(r?.execucao ?? r).slice(0, 200)})`);
+  return { nivel: a.nivel, capacidade: a.capacidade };
 }
 async function contexto(navegador, sessao, tema, viewport = { width: 1440, height: 900 }) {
   const ctx = await navegador.newContext({ viewport, locale: 'pt-BR', timezoneId: 'America/Sao_Paulo' });
@@ -111,14 +125,19 @@ async function abrir(pagina, caminho) {
   await pagina.goto(`${WEB}${caminho}`, { waitUntil: 'networkidle' });
 }
 
-/** O link em claro da sala (a rota de copiar, auditada), ou nulo quando a chave não abre o token. */
+/**
+ * O link em claro da sala (a rota de copiar, auditada). No ambiente de teste a chave de cifra é
+ * outra, então o token da produção não abre: aí "gerar link novo" (só no teste; o link antigo da
+ * cópia deixa de abrir, e a produção não é tocada) e, sem sala, "criar a sala agora".
+ */
 async function linkDaSala(leadId, token) {
-  try {
-    const r = await api('POST', `/comercial/lead/${leadId}/sala/link`, {}, token);
-    return r.link ?? null;
-  } catch {
-    return null;
-  }
+  const tentar = (caminho) => api('POST', `/comercial/lead/${leadId}/sala/${caminho}`, {}, token).then((r) => r.link ?? null).catch(() => null);
+  const copiado = await tentar('link');
+  if (copiado) return copiado;
+  const renovado = await tentar('renovar');
+  if (renovado) return renovado;
+  await api('POST', `/comercial/lead/${leadId}/sala`, {}, token).catch(() => null);
+  return tentar('renovar');
 }
 
 const navegador = await chromium.launch();
@@ -199,10 +218,28 @@ try {
   conferir(recusou, 'escrever o contrato (derivado) deveria ser 400');
   passo('A2 · item derivado recusa rascunho com o motivo');
 
+  // ---------- A2 · a segunda pessoa libera; o efeito publica SÓ o item ----------
+  if (EMAIL2 && SENHA2) {
+    const segunda = await entrar(EMAIL2, SENHA2);
+    const lib = await liberar(pub.approvalId, segunda, 'ata da prova e2e');
+    const vAta = await api('GET', `/comercial/lead/${leadArea.funil.leadId}/area/atas/versoes`, undefined, sessao.token);
+    conferir(vAta.publicada?.versao === pub.rascunho.versao, `a ata não foi publicada pela liberação (publicada v${vAta.publicada?.versao ?? 'nenhuma'})`);
+    const salaDepois = await api('GET', `/comercial/lead/${leadArea.funil.leadId}/sala/versoes`, undefined, sessao.token);
+    conferir((salaDepois.publicada?.versao ?? null) === (antes.publicada?.versao ?? null), 'a liberação do item mexeu na versão da sala');
+    const bAta = await api('GET', `/comercial/lead/${leadArea.funil.leadId}/area`, undefined, sessao.token);
+    conferir(bAta.itens.find((i) => i.id === 'atas')?.estado === 'publicado', 'a bancada não mostra a ata como publicada (novo)');
+    passo('A2 · a segunda pessoa liberou, a ata foi ao ar e a sala continua igual', { detalhe: `${lib.capacidade} ${lib.nivel} · ata v${vAta.publicada.versao}, ${vAta.publicada.edicao}ª edição` });
+  } else {
+    passo('A2 · sem a segunda pessoa (AREA_EMAIL2/AREA_SENHA2): a liberação fica por provar');
+  }
+
   // ---------- A3 · leitura (só com uma versão publicada de item) ----------
-  const publicados = slots.filter((i) => i.origem === 'publicado');
+  const estadoDepois = await api('GET', `/sala/${tokenArea}`);
+  const slotsDepois = estadoDepois.area.blocos.flatMap((b) => b.itens);
+  const publicados = slotsDepois.filter((i) => i.origem === 'publicado');
   if (publicados.length) {
     const alvo = publicados.find((i) => i.novo) ?? publicados[0];
+    conferir(alvo.novo === true, `o item publicado ${alvo.id} deveria chegar com "novo"`);
     const lido = await api('POST', `/sala/${tokenArea}/area/leitura`, { item: alvo.id, versao: alvo.versao });
     const item = lido.area.blocos.flatMap((b) => b.itens).find((i) => i.id === alvo.id);
     conferir(item && item.novo === false, 'a leitura não tirou o "novo"');
@@ -244,11 +281,15 @@ try {
   await semRolagemHorizontal(pc, 'area-390');
   conferir(await tid(pc, 'area-whatsapp').isVisible(), 'o botão do WhatsApp não está visível no celular');
   await foto(pc, 'link-390');
-  // Abrir um item vazio não faz nada; abrir o escopo (derivado) abre a gaveta.
-  await pc.locator('[data-testid="area-item-escopo"] button').click();
-  conferir((await tid(pc, 'area-item-detalhe-escopo').count()) === 1, 'a gaveta do escopo não abriu');
-  await foto(pc, 'link-390-escopo');
-  passo('A1 · celular: uma coluna, sem rolagem horizontal, WhatsApp fixo, gaveta do item abre');
+  // Um item vazio não abre (botão desligado); o primeiro preenchido abre a gaveta.
+  const preenchido = pc.locator('[data-testid^="area-item-"][data-estado="publicado"]').first();
+  const idPreenchido = (await preenchido.getAttribute('data-testid')).replace('area-item-', '');
+  await preenchido.locator('button').click();
+  conferir((await tid(pc, `area-item-detalhe-${idPreenchido}`).count()) === 1, `a gaveta de ${idPreenchido} não abriu`);
+  await foto(pc, `link-390-${idPreenchido}`);
+  const vazioDesligado = await pc.locator('[data-testid^="area-item-"][data-estado="vazio"] button').first().isDisabled();
+  conferir(vazioDesligado, 'o item vazio deveria estar desligado');
+  passo('A1 · celular: uma coluna, sem rolagem horizontal, WhatsApp fixo, gaveta do item abre, vazio não abre', { detalhe: idPreenchido });
   await celular.close();
 
   prova.ok = true;
