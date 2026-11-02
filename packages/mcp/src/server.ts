@@ -1,6 +1,8 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 import { apiGet, operador, qs, temOperador } from './client.js';
+import { registrarCuradas } from './ferramentas/curadas.js';
+import { registrarGenericas } from './ferramentas/genericas.js';
 
 // Todas as tools desta fase são read_only (menor privilégio; a conta de serviço
 // nem tem permissão de escrita). Retornamos JSON com o campo `source` da API
@@ -805,6 +807,10 @@ export function buildServer(): McpServer {
       }
     },
   );
+
+  // As genéricas alcançam toda rota do inventário; as curadas dão nome e guia às rotas do dia a dia.
+  registrarGenericas(server);
+  registrarCuradas(server);
 
   return server;
 }

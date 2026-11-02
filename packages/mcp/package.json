@@ -13,7 +13,8 @@
     "typecheck": "tsc --noEmit",
     "smoke": "tsx scripts/smoke.ts",
     "chamar": "tsx scripts/chamar.ts",
-    "test": "node --test test/env.test.mjs"
+    "test": "node --test test/env.test.mjs test/rotas.test.mjs",
+    "gerar-rotas": "tsx scripts/gerar-rotas.ts"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.13.0",

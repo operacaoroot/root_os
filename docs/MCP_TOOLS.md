@@ -3,29 +3,31 @@
 > Servidor **MCP (Model Context Protocol)** próprio, em TypeScript, com o `@modelcontextprotocol/sdk`.
 > Exposto para Claude Desktop, Claude Code e qualquer cliente MCP. Como plugar: `packages/mcp/README.md`.
 
-## Estado real (conferido em 02/11/2026, contra `packages/mcp/src/server.ts`)
+## Estado real (conferido em 02/11/2026, contra `packages/mcp/src`)
 
-**São 42 ferramentas:** 35 `read_only` pela conta de serviço (como em 10/09/2026) e **7 em nome do
-operador** (`grep -c 'registerTool(' packages/mcp/src/server.ts` devolve 42). As 7 do operador:
+**São 241 ferramentas**, em quatro famílias (`grep -c 'registerTool(' packages/mcp/src/server.ts` dá 42; as outras 199
+são registradas por tabela em `src/ferramentas/`):
 
-| Ferramenta | Rota da API | Permissão | Escreve? |
+| Família | Quantas | Identidade | Onde |
 |---|---|---|---|
-| `quem_sou` | `GET /auth/me` | sessão | não |
-| `clientes_ativos` | `GET /comercial/clientes-ativos` | `leads.ver` | não |
-| `comercial_lead` | `GET /comercial/lead/:id` | `leads.ver` | não |
-| `area_bancada` | `GET /comercial/lead/:id/area` | `leads.ver` | não |
-| `area_versoes` | `GET /comercial/lead/:id/area/:item/versoes` | `leads.ver` | não |
-| `area_rascunho` | `PUT /comercial/lead/:id/area/:item/rascunho` | `leads.editar` + gente | rascunho (nada chega ao cliente) |
-| `area_publicar` | `POST /comercial/lead/:id/area/:item/publicar` | `leads.editar` + gente | só PEDE: R3, outra pessoa libera em Aprovações |
+| Consulta (as de sempre, `read_only`) | 35 | conta de serviço | `server.ts` |
+| Área do cliente (`quem_sou`, `clientes_ativos`, `comercial_lead`, `area_bancada`, `area_versoes`, `area_rascunho`, `area_publicar`) | 7 | operador | `server.ts` |
+| Genéricas (`os_rotas`, `os_api`, `os_enviar_arquivo`, `os_baixar_arquivo`) | 4 | leitor / operador | `ferramentas/genericas.ts` |
+| Curadas por módulo (comercial 46, trabalho 32, aprovações e porta 14, WhatsApp 10, memória 10, agentes/rotinas/Frota 14, financeiro 11, pauta 27, Google/conexões/cofre 13, empresa/onboarding/plataforma 17) | 195 | leitor / operador | `ferramentas/curadas.ts` (tabela) |
 
-O operador é uma PESSOA do OS (`MCP_OPERADOR_EMAIL`/`MCP_OPERADOR_SENHA`, lidas do ambiente ou de
-`~/.config/root/mcp.env`). As rotas de escrita da área recusam conta de máquina (`SoGenteGuard`), e por
-isso a conta de serviço não serve para elas. A escrita não cria caminho paralelo: é a mesma rota que a
-tela chama, com o mesmo RBAC, a mesma auditoria e a mesma porta (o publicar é a capacidade
-`comercial.sala.publicar`, R3).
+**O inventário** (`src/rotas.gen.ts`, gerado por `scripts/gerar-rotas.ts`): 826 rotas da API, 773 alcançáveis pelo MCP.
+Ficam fora as 51 públicas (sala do cliente por token, link do onboarding, webhooks, callbacks OAuth, saúde) e o login.
+A lista fechada é o que impede `os_api` de inventar rota. O catálogo legível, rota por rota, com a coluna de qual
+ferramenta curada a cobre, está em `docs/mcp/INVENTARIO-ROTAS.md` (gerado junto).
 
-> Este documento já disse "10 tools". Era o número da Fase 2; o servidor cresceu e o texto não.
-> O número acima é contável a partir do código; se ele divergir de novo, o código é que manda.
+**Duas identidades.** A conta de serviço (`ia_servico`) só lê. O operador é uma PESSOA do OS (`MCP_OPERADOR_EMAIL`/
+`MCP_OPERADOR_SENHA`, do ambiente ou de `~/.config/root/mcp.env`): toda escrita sai em nome dele, e a leitura também,
+quando configurado (ele vê o que a pessoa vê). Sem operador, as escritas recusam com a frase do que configurar.
+
+**O que a API continua decidindo** (o MCP não cria caminho paralelo): RBAC por permissão, `SoGenteGuard` (58 rotas só de
+gente), `@SensitiveWrite` (5 rotas que viram aprovação) e a porta (R3/R4 caem em Aprovações e outra pessoa libera).
+`os_api` só acrescenta duas travas próprias: DELETE exige `confirmar: true`, e rota pública ou de login é recusada.
+
 
 ## Como a segurança é aplicada de verdade
 

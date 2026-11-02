@@ -18,7 +18,12 @@ Servidor **MCP (Model Context Protocol)** que expõe ferramentas padronizadas pa
 
 ## Ferramentas
 
-São **42**: 35 `read_only` pela conta de serviço e 7 `[operador]` (5 de leitura, 2 de escrita). O catálogo completo (nome, endpoint, permissão exigida e argumentos)
+São **241** (02/11/2026): 35 `read_only` pela conta de serviço (as de sempre), 7 da área do cliente `[operador]`,
+**4 genéricas** (`os_rotas`, `os_api`, `os_enviar_arquivo`, `os_baixar_arquivo`) e **195 curadas** por módulo (comercial,
+trabalho, aprovações, WhatsApp, memória, agentes, rotinas, Frota, financeiro, pauta, Google, conexões, onboarding,
+plataforma). As genéricas alcançam **qualquer** rota do inventário (`src/rotas.gen.ts`, 826 rotas geradas do código da
+API; 773 alcançáveis, as 51 públicas e as de login ficam fora); as curadas dão nome em português e guia às rotas do dia
+a dia. Leitura pelo operador (ou pela conta de serviço, sem operador); escrita sempre em nome do operador. O catálogo completo (nome, endpoint, permissão exigida e argumentos)
 vive em **`docs/MCP_TOOLS.md`** — é lá que se olha, e não aqui, para não haver duas listas
 divergindo. Este README já trouxe uma tabela de 10 ferramentas por bastante tempo depois de o
 servidor ter 35.
@@ -54,6 +59,17 @@ Gere a senha (`openssl rand -base64 24`), ponha no `.env` e, **só em desenvolvi
 do org, então rodá-lo lá destrói dado real. **Rotacionar a senha em produção** (por vazamento ou por
 prazo) exige um script próprio, que **ainda não existe**: até ele existir, a troca é manual e a
 combinar com quem cuida do banco. Ver `.env.example`.
+
+## Como o "faz tudo" funciona
+
+- `os_rotas busca` pesquisa o inventário (método, rota, permissão, marcas, o que faz).
+- `os_api metodo rota corpo` chama a rota. A lista é fechada: rota fora do inventário é recusada com as parecidas.
+  DELETE exige `confirmar: true`. Rota pública, de login, de upload ou que devolve arquivo é recusada (há ferramenta própria).
+- `os_enviar_arquivo` (multipart) e `os_baixar_arquivo` (grava em `~/root-os-mcp/baixados` ou `MCP_PASTA_DE_ARQUIVOS`).
+- O MCP não ganha poder que a tela não tem: RBAC, `SoGenteGuard`, `@SensitiveWrite` e a porta (R3/R4 caem em Aprovações)
+  continuam na API. As 58 rotas só de gente exigem o operador configurado.
+- Inventário: `pnpm --filter @mktos/mcp gerar-rotas` reescreve `src/rotas.gen.ts` e `docs/mcp/INVENTARIO-ROTAS.md` a partir
+  de `apps/api/src`. Rodar sempre que a API ganhar ou perder rota. O teste `test/rotas.test.mjs` confere o inventário.
 
 ## Chamar uma ferramenta pela linha de comando
 ```bash
