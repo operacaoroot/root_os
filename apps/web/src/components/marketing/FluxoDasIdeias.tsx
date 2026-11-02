@@ -3,14 +3,14 @@
 import Link from 'next/link';
 import { useCallback, useEffect, useState } from 'react';
 import { IDEIAS_POR_DIA, RELEVANCIA_QUE_FURA_O_CORTE, type FluxoDasIdeias as Fluxo, type FluxoEtapa } from '@mktos/shared';
-import { apiGet, apiPatch, apiPost } from '@/lib/api';
+import { apiGet } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 
 /*
  * Marketing › Ideias de conteúdo › Fontes › "Como as ideias chegam" (30/10/2026, pedido do
- * Lucas: quantas vão ser, como, que horas sai, e ligar e desligar o agente). Três passos:
- * a coleta (rotina da pauta), a IA das ideias (rotina do Marketing) e a aprovação. Os
- * interruptores são os mesmos de /rotinas e de Mensagens automáticas.
+ * Lucas: quantas vão ser, como e que horas sai). Três passos: a coleta (rotina da pauta),
+ * a IA das ideias (rotina do Marketing, agente CT-21) e a aprovação. Só leitura: ligar,
+ * desligar e rodar agora ficam num lugar só, IA e automações › Rotinas automáticas (02/11/2026).
  */
 
 const dataHora = (s: string | null) => {
@@ -24,12 +24,9 @@ const dataHora = (s: string | null) => {
 const usd = (v: number) => `US$ ${v.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
 export function FluxoDasIdeias() {
-  const { token, ready, can } = useAuth();
-  const podeMexer = can('automacoes.executar');
+  const { token, ready } = useAuth();
   const [fluxo, setFluxo] = useState<Fluxo | null>(null);
   const [erro, setErro] = useState<string | null>(null);
-  const [ocupado, setOcupado] = useState<string | null>(null);
-  const [aviso, setAviso] = useState<string | null>(null);
 
   const carregar = useCallback(async () => {
     if (!token) return;
@@ -45,44 +42,10 @@ export function FluxoDasIdeias() {
     if (ready) void carregar();
   }, [ready, carregar]);
 
-  const ligar = async (e: FluxoEtapa, ativo: boolean) => {
-    if (!e.rotinaId) return;
-    setOcupado(e.rotinaId);
-    try {
-      await apiPatch(`/rotinas/${e.rotinaId}`, { ativo }, token);
-      await carregar();
-    } catch (err) {
-      setErro((err as Error).message);
-    } finally {
-      setOcupado(null);
-    }
-  };
-
-  // A passagem pode levar minutos (até 200 itens): dispara e não espera; a tela se atualiza sozinha.
-  const rodar = (e: FluxoEtapa) => {
-    if (!e.rotinaId) return;
-    setAviso('A IA começou a ler. As ideias aparecem em Para aprovar conforme ficam prontas.');
-    void apiPost(`/rotinas/${e.rotinaId}/rodar`, {}, token)
-      .then(() => carregar())
-      .catch((err) => setErro((err as Error).message));
-    setTimeout(() => void carregar(), 3000);
-  };
-
-  useEffect(() => {
-    if (!aviso) return;
-    const t = setInterval(() => void carregar(), 15000);
-    return () => clearInterval(t);
-  }, [aviso, carregar]);
-
   if (!fluxo) return erro ? <div className="notice warn">{erro}</div> : null;
   const { coleta, ia, fontes, apify, agora } = fluxo;
 
-  const interruptor = (e: FluxoEtapa) => (
-    <label className="fluxo-liga">
-      <input type="checkbox" checked={e.ativo} disabled={!podeMexer || ocupado === e.rotinaId} onChange={(ev) => void ligar(e, ev.target.checked)} />
-      {e.ativo ? 'Ligada' : 'Desligada'}
-    </label>
-  );
+  const estado = (e: FluxoEtapa) => <span className={`badge${e.ativo ? ' success' : ''}`}>{e.ativo ? 'Ligada' : 'Desligada'}</span>;
   const rodape = (e: FluxoEtapa) => (
     <div className="fluxo-rodape">
       {e.ultimaEm ? (
@@ -104,20 +67,21 @@ export function FluxoDasIdeias() {
       <div className="row between">
         <div>
           <h2>Como as ideias chegam</h2>
-          <span className="muted tiny">Duas etapas rodam sozinhas toda noite. Desligue qualquer uma aqui; a outra segue.</span>
+          <span className="muted tiny">
+            Duas etapas rodam sozinhas toda noite. Para ligar, desligar ou rodar agora: <Link href="/rotinas">IA e automações › Rotinas automáticas</Link>.
+          </span>
         </div>
         <Link className="ideias-link-btn" href="/marketing/triagem?ver=todas">
           Ver as {agora.paraAvaliar} para avaliar
         </Link>
       </div>
-      {aviso && <div className="notice">{aviso}</div>}
       {erro && <div className="notice warn">{erro}</div>}
       {!fluxo.iaConfigurada && <div className="notice warn">A IA está sem chave no servidor: a etapa 2 não monta cards até a chave voltar.</div>}
       <ol className="fluxo-etapas">
         <li className={`fluxo-etapa${coleta?.ativo ? '' : ' fluxo-off'}`}>
           <div className="row between">
             <span className="eyebrow">1 · Coleta</span>
-            {coleta && interruptor(coleta)}
+            {coleta && estado(coleta)}
           </div>
           <h3>{coleta ? coleta.quando : 'Sem rotina de coleta'}</h3>
           <p>
@@ -138,7 +102,7 @@ export function FluxoDasIdeias() {
         <li className={`fluxo-etapa${ia.ativo ? '' : ' fluxo-off'}`}>
           <div className="row between">
             <span className="eyebrow">2 · IA monta as ideias</span>
-            {interruptor(ia)}
+            {estado(ia)}
           </div>
           <h3>{ia.quando}</h3>
           <p>
@@ -151,11 +115,6 @@ export function FluxoDasIdeias() {
             <strong>{agora.esperandoIa}</strong> esperando a IA{agora.semLeitura ? ` · ${agora.semLeitura} cards sem leitura` : ''}
           </p>
           {rodape(ia)}
-          {podeMexer && (
-            <button className="small" disabled={!!ocupado || !ia.ativo || !!aviso} onClick={() => rodar(ia)}>
-              {aviso ? 'Lendo…' : 'Rodar agora'}
-            </button>
-          )}
         </li>
         <li className="fluxo-etapa">
           <span className="eyebrow">3 · Vocês aprovam</span>

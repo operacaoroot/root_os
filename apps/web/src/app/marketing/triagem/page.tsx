@@ -300,7 +300,7 @@ export default function TriagemPage() {
       )}
       {painel && painel.ia && !painel.iaLigada && (
         <div className="notice warn">
-          A IA das ideias está desligada: o que a coleta traz fica esperando. Ligue em <Link href="/marketing/fontes">Fontes › Como as ideias chegam</Link>.
+          A IA das ideias está desligada: o que a coleta traz fica esperando. Ligue em <Link href="/rotinas">IA e automações › Rotinas automáticas</Link>.
         </div>
       )}
       {!painel?.lendo && painel && !painel.ia && semLeitura > 0 && (
