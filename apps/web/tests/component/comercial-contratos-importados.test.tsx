@@ -74,6 +74,8 @@ const PARCELAS = {
 beforeEach(() => {
   chamadas.length = 0;
   podeEditar = true;
+  // Desde a F4 a lista de contratos vivos mora em `?visao=vivos`.
+  window.history.replaceState(null, '', '/comercial/contratos?visao=vivos');
   CONTRATOS = [];
 });
 

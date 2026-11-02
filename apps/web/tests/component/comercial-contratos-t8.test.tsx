@@ -2,7 +2,8 @@
  * CONTRATOS VIVOS (rodada do trabalho T8, 19/10/2026): o painel de contagens,
  * a ordem (ativos primeiro, encerrados por último, como a API devolve), busca
  * por nome e CNPJ, filtros, e encerrar à mão com motivo; parcela em aberto pede
- * a ciência antes de liberar o botão.
+ * a ciência antes de liberar o botão. Desde a F4 (02/11/2026) esta lista mora em
+ * `?visao=vivos`; o quadro é o padrão da tela.
  */
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -38,6 +39,7 @@ function contrato(leadId: string, cliente: string, over: Partial<ContratoVivo> =
 
 beforeEach(() => {
   posts.length = 0;
+  window.history.replaceState(null, '', '/comercial/contratos?visao=vivos');
   CONTRATOS = [
     contrato('a', 'Construtora Alicerce'),
     contrato('b', 'Studio Lume', { situacao: 'em_implantacao', socioDaConta: 'Pedro', cnpj: '98.765.432/0001-10', produto: 'imersao' }),
