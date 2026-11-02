@@ -92,13 +92,13 @@ describe('projeção do NAV em módulos', () => {
 
   /*
    * Rodada da interface (20/10/2026, U1, item 10): a Rodada da semana mora no Comercial,
-   * depois dos Contratos vivos, e só a sessão da plataforma a vê. Permissão comum não a
+   * depois dos Contratos, e só a sessão da plataforma a vê. Permissão comum não a
    * mostra: quem decide é `ehPlataforma` (a API de plataforma), como era na Implantação.
    */
-  it('a Rodada da semana fica no Comercial, depois dos Contratos vivos, só para a plataforma', () => {
+  it('a Rodada da semana fica no Comercial, depois dos Contratos, só para a plataforma', () => {
     const daPlataforma = modulosDeNavegacao(permissoes, undefined, true).find((area) => area.key === 'comercial');
     expect(daPlataforma?.itens.map((item) => item.label)).toEqual([
-      'Painel geral', 'Funil de vendas', 'Propostas', 'Lista de leads', 'Clientes ativos', 'Contratos vivos',
+      'Painel geral', 'Funil de vendas', 'Propostas', 'Lista de leads', 'Clientes ativos', 'Contratos',
       'Rodada da semana', 'Torre das automações', 'Relatório da semana',
     ]);
     expect(daPlataforma?.itens.find((item) => item.key === 'comercial-rodada')?.href).toBe('/comercial/rodada');
