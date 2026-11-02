@@ -37,7 +37,8 @@ HASH=$(git rev-parse HEAD)
 CURTO=${HASH:0:7}
 DATA=$(date +%Y%m%d-%H%M)
 REL=/srv/rootos/releases/agenda-v2-$CURTO-$DATA
-IMG=rootos-official:agenda-v2-$CURTO
+# IMG_PRONTA: imagem já carregada na VPS, compilada fora dela (compilar aqui deu falta de memória em 02/11).
+IMG=${IMG_PRONTA:-rootos-official:agenda-v2-$CURTO}
 mkdir -p "$REL"
 exec > >(tee -a "$REL/REPORT.txt") 2>&1
 echo "== agenda v2 · release $REL · commit $HASH · $(date -Is)"
@@ -94,7 +95,12 @@ sha256sum "$REL/banco-antes.dump" | tee "$REL/banco-antes.sha256"
 ARGS=$(docker image inspect "$IMG_VIVA" -f '{{range .Config.Env}}{{println .}}{{end}}' | grep -E '^(API_PROXY_TARGET|NEXT_PUBLIC_CENTRAL_PIXEL_KEY|NEXT_PUBLIC_RAIZ)=' || true)
 BUILD_ARGS=()
 while IFS= read -r l; do [ -n "$l" ] && BUILD_ARGS+=(--build-arg "$l"); done <<< "$ARGS"
-docker build -t "$IMG" --label "org.opencontainers.image.revision=$HASH" "${BUILD_ARGS[@]}" .
+if [ -n "${IMG_PRONTA:-}" ]; then
+  docker image inspect "$IMG" >/dev/null || { echo "PARE: a imagem $IMG não está na VPS."; exit 2; }
+  echo "imagem pronta, sem compilar aqui: $IMG"
+else
+  docker build -t "$IMG" --label "org.opencontainers.image.revision=$HASH" "${BUILD_ARGS[@]}" .
+fi
 docker image ls "$IMG" --format '{{.Repository}}:{{.Tag}} {{.ID}} {{.CreatedSince}}'
 
 # -----------------------------------------------------------------------------
