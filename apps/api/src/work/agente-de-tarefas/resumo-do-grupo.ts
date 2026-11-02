@@ -15,7 +15,7 @@ import { diaCurto } from './pedido-do-grupo';
 
 export const TIPO_DO_RESUMO_DO_GRUPO = 'tarefas.resumo-do-grupo';
 export const SLUG_DA_ROTINA_DO_RESUMO = 'tarefas-resumo-do-grupo';
-export const CRON_DO_RESUMO = '0 7,18 * * *';
+export const CRON_DO_RESUMO = '0 7,18 * * 1-5';
 export const FUSO_DO_RESUMO = 'America/Sao_Paulo';
 /** Tarefas por pessoa na mensagem; o resto vira "e mais N". */
 export const POR_PESSOA = 8;
