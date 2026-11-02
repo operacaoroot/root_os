@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import { Botao, Card, Chip } from '../referencias/ui';
 import { Mono, Rotulo, Vazio } from './ui';
-import { d, type CasaDetalhe, type CasaResumo, type FaseDaJornada, type JornadaCompleta, type LinhaDoQuadro, type Resumo, type Situacao } from './tipos';
+import { type CasaDetalhe, type CasaResumo, type FaseDaJornada, type JornadaCompleta, type LinhaDoQuadro, type Resumo, type Situacao } from './tipos';
 
 /*
  * JORNADA — em que ponto do backlog do kit cada casa está, o que anda e o que
@@ -15,6 +15,9 @@ import { d, type CasaDetalhe, type CasaResumo, type FaseDaJornada, type JornadaC
 const MARCA: Record<Situacao, string> = { feito: '☑', regrediu: '✗', esperando: '⧗', andamento: '◐', afazer: '☐', na: '⊘' };
 const COR: Record<Situacao, string> = { feito: 'text-good', regrediu: 'text-bad', esperando: 'text-warn', andamento: 'text-brand', afazer: 'text-muted', na: 'text-muted' };
 const NOME: Record<Situacao, string> = { feito: 'feito', regrediu: 'regrediu', esperando: 'esperando', andamento: 'em andamento', afazer: 'a fazer', na: 'não se aplica' };
+
+/** `quando` é o dia que a casa escreveu (AAAA-MM-DD): new Date() o leria em UTC e, aqui, voltaria um dia. */
+const dia = (q: string) => (/^\d{4}-\d{2}-\d{2}$/.test(q) ? q.split('-').reverse().join('/') : q);
 
 /** As dez fases numa faixa: cheia = fase completa, contorno = fase atual, ponto = algo parado ali. */
 export function Trilha({ fases, faseAtual }: { fases: FaseDaJornada[]; faseAtual: number | null }) {
@@ -65,7 +68,7 @@ const COLUNAS: { k: keyof Resumo['jornada']; titulo: string; vazio: string }[] =
 ];
 
 export function JornadaView({ resumo, abrir }: { resumo: Resumo; abrir: (id: string) => void }) {
-  const casas = [...resumo.casas].sort((a, b) => (a.jornada?.pct ?? -1) - (b.jornada?.pct ?? -1));
+  const casas = [...resumo.casas].sort((a, b) => (a.jornada?.pct ?? 101) - (b.jornada?.pct ?? 101));
   const semJornada = casas.filter((c) => !c.jornada && c.etapa !== 'pre').length;
   return (
     <div className="space-y-4">
@@ -135,7 +138,7 @@ function CartaoDoItem({ l, onClick }: { l: LinhaDoQuadro; onClick: () => void })
     <button type="button" onClick={onClick} className="block w-full rounded-root border border-border bg-surface-2 px-2.5 py-2 text-left hover:border-brand/40">
       <span className="block font-os-mono text-[10.5px] text-brand">{l.casa} · {l.id}</span>
       <span className="block text-[12px] leading-[1.45] text-text">{l.item}</span>
-      {(l.espera || l.quando) && <span className="block font-os-mono text-[10px] text-warn">{l.espera ? `por ${l.espera}` : ''}{l.quando ? ` desde ${d(l.quando)}` : ''}</span>}
+      {l.situacao !== 'regrediu' && (l.espera || l.quando) && <span className="block font-os-mono text-[10px] text-warn">{l.espera ? `por ${l.espera}` : ''}{l.quando ? ` desde ${dia(l.quando)}` : ''}</span>}
       {l.autoTexto && <span className="block font-os-mono text-[10px] text-bad">{l.autoTexto}</span>}
       {l.nota && <span className="block text-[11px] text-muted">{l.nota}</span>}
     </button>
@@ -167,7 +170,7 @@ export function JornadaDaCasa({ casa }: { casa: CasaDetalhe }) {
         <Mono className="text-[14px] font-bold text-text">{j.pct}%</Mono>
         <span className="text-muted">feito · fase atual {j.faseAtual ?? '—'}</span>
         {!j.arquivo && <Chip tone="warn">sem notas/BACKLOG.md: só o que o servidor prova</Chip>}
-        <Mono className="ml-auto text-muted">kit {j.kit ?? '?'}</Mono>
+        <Mono className="ml-auto text-muted">kit {j.kit || '?'}</Mono>
       </div>
       <p className="text-[11.5px] leading-[1.6] text-muted">
         Para mudar uma situação, no servidor: <Mono>kit-jornada marcar &lt;ID&gt; feito|andamento|esperando &lt;quem&gt;|nao-se-aplica &quot;nota&quot;</Mono>. Chega aqui no próximo relato.
@@ -192,7 +195,7 @@ export function JornadaDaCasa({ casa }: { casa: CasaDetalhe }) {
                       <span className={`text-[12px] ${i.situacao === 'na' ? 'text-muted line-through' : 'text-text'}`}>{i.item}</span>
                       <span className="block font-os-mono text-[10px] text-muted">
                         {i.quem ?? ''}
-                        {i.situacao === 'esperando' && <span className="text-warn"> · esperando {i.espera ?? '?'}{i.quando ? ` desde ${d(i.quando)}` : ''}</span>}
+                        {i.situacao === 'esperando' && <span className="text-warn"> · esperando {i.espera ?? '?'}{i.quando ? ` desde ${dia(i.quando)}` : ''}</span>}
                         {i.autoTexto && <span className={i.auto === 'falha' ? 'text-bad' : 'text-good'}> · {i.auto === 'falha' ? 'prova falhou: ' : 'provado: '}{i.autoTexto}</span>}
                         {i.projeto && <span> · do projeto</span>}
                       </span>

@@ -73,6 +73,21 @@ describe('jornada da Frota', () => {
     expect(screen.getAllByText(/kit-jornada marcar/).length).toBeGreaterThan(0);
   });
 
+  it('a data do item é o dia que a casa escreveu, sem fuso, e regrediu não diz desde', () => {
+    render(<JornadaView resumo={resumo} abrir={vi.fn()} />);
+    expect(screen.getByText(/por cliente desde 16\/10\/2026/)).toBeTruthy();
+    const q = { ...resumo, jornada: { ...resumo.jornada, regrediu: [{ ...resumo.jornada.regrediu[0], quando: '2026-10-29' }] } } as Resumo;
+    const { container } = render(<JornadaView resumo={q} abrir={vi.fn()} />);
+    expect(container.textContent).not.toContain('desde 29/10/2026');
+  });
+
+  it('casa sem jornada fica depois das que têm', () => {
+    const { container } = render(<JornadaView resumo={{ ...resumo, casas: [semJornada, casa] } as Resumo} abrir={vi.fn()} />);
+    const linhas = [...container.querySelectorAll('tbody tr')].map((l) => l.textContent ?? '');
+    expect(linhas[0]).toContain('casa-a');
+    expect(linhas[1]).toContain('casa-b');
+  });
+
   it('sem jornada diz como ligar', () => {
     render(<JornadaDaCasa casa={{ casa: 'casa-b', jornadaCompleta: null } as unknown as CasaDetalhe} />);
     expect(screen.getByText(/ainda não relata a jornada/)).toBeTruthy();
