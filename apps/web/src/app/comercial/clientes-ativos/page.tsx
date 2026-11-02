@@ -173,6 +173,17 @@ function Parte({ cliente: c, parte, podeCriar, criando, aoCriar }: { cliente: Cl
         <span className="flex flex-col items-start gap-1">
           {falta && <span className={FALTA} title={FALTA_DA_PARTE_DO_CLIENTE.funil}>não fechou</span>}
           <LinkDoLead leadId={c.funil.leadId} className={LINK}>{c.funil.rotulo}</LinkDoLead>
+          {c.area && (
+            <LinkDoLead
+              leadId={c.funil.leadId}
+              aba="area"
+              className={`inline-flex items-center rounded border px-1.5 py-0.5 font-os-mono text-[10.5px] ${c.area.publicados ? 'border-brand/50 text-brand' : 'border-border text-muted'} ${FOCO}`}
+              title="A área do cliente: o que a Root já publicou no link dele, de quinze itens. Os que o OS monta sozinho não entram nesta conta."
+              data-testid={`area-do-cliente-${c.chave}`}
+            >
+              área {c.area.publicados}/{c.area.total}
+            </LinkDoLead>
+          )}
         </span>
       );
     case 'cadastro':

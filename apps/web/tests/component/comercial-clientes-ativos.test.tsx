@@ -31,7 +31,7 @@ vi.mock('@/lib/api', async (original) => {
 import ClientesAtivosPage from '@/app/comercial/clientes-ativos/page';
 
 const cliente = (o: Partial<ClienteAtivo> & Pick<ClienteAtivo, 'chave' | 'nome'>): ClienteAtivo => ({
-  tipo: 'pagante', valor: null, funil: null, cadastro: null, acordos: [], contrato: null, whatsapp: [], implantacao: null, faltam: [], podeCriarCadastro: false, ...o,
+  tipo: 'pagante', valor: null, funil: null, cadastro: null, acordos: [], contrato: null, whatsapp: [], implantacao: null, area: null, faltam: [], podeCriarCadastro: false, ...o,
 });
 
 beforeEach(() => {

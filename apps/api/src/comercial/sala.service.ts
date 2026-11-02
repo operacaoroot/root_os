@@ -11,6 +11,7 @@ import {
 } from '@nestjs/common';
 import { ModuleRef } from '@nestjs/core';
 import {
+  AreaLeituraSchema,
   SalaAceiteDadosSchema,
   SalaAceitePagamentoSchema,
   SalaAgendaSchema,
@@ -19,9 +20,11 @@ import {
   SalaFormSchema,
   SalaKickoffSchema,
   SalaPropostaLidaSchema,
+  type AreaDoClienteParaOCliente,
   type EstadoDaSala,
   type SalaBlocoDaProposta,
   type SalaFormInput,
+  type SalaVersaoPublica,
 } from '@mktos/shared';
 import { Prisma } from '@prisma/client';
 
@@ -34,6 +37,7 @@ import { horarioOferecido, horariosOferecidos } from './agenda-de-homologacao';
 import { hashDoConteudo } from './eventos';
 import { FioService, ReacoesRegistry } from './fio.service';
 import { SO_DOCUMENTOS_DE_ASSINATURA } from './documentos';
+import { areaParaOCliente, edicoesPorVersao, modoDaSala } from './area-do-cliente-projecao';
 import { publicadaDaSala } from './sala-versao.service';
 import { acompanhamentoDaSala, chaveDaDuvida, projetarSala, type AcompanhamentoDaSala, type DadosDaSala, type EventoDaSala } from './sala-projecao';
 import {
@@ -84,8 +88,18 @@ const ATOR_DA_SALA = 'comercial-sala';
 export const NOTA_DO_NUMERO_DA_ROOT = 'comercial.whatsapp.numero';
 const MEMORIA_DO_NUMERO_MS = 60_000;
 
-/** O estado da sala com os blocos derivados do acompanhamento (L6). */
-export type EstadoDaSalaComAcompanhamento = EstadoDaSala & { acompanhamento: AcompanhamentoDaSala };
+/**
+ * O estado da sala com os blocos derivados do acompanhamento (L6) e, desde a
+ * leva A da área do cliente (30/10/2026), o MODO do link (`sala` enquanto o
+ * lead está no comercial; `area` depois do fechamento ou do card da
+ * implantação) e a área montada (`area`, só no modo área).
+ */
+export type EstadoDaSalaComAcompanhamento = EstadoDaSala & {
+  acompanhamento: AcompanhamentoDaSala;
+  publicada: SalaVersaoPublica | null;
+  modo: 'sala' | 'area';
+  area: AreaDoClienteParaOCliente | null;
+};
 const MAX_BYTES_DO_ARQUIVO = 10 * 1024 * 1024;
 const TIPOS_DE_ARQUIVO = new Set([
   'application/pdf',
@@ -282,8 +296,8 @@ export class SalaService implements OnModuleInit {
     return (p.duvidas ?? []).filter((d) => !d.resposta).map((d) => ({ versao: p.versao, pergunta: d.pergunta, em: d.em }));
   }
 
-  /** O estado da sala pelo LEAD (rotas internas e simulador). */
-  async estadoDoLead(orgId: string, leadId: string, agora: Date = new Date()): Promise<EstadoDaSala | null> {
+  /** O estado da sala pelo LEAD (rotas internas, simulador e a bancada da área do cliente). */
+  async estadoDoLead(orgId: string, leadId: string, agora: Date = new Date()): Promise<EstadoDaSalaComAcompanhamento | null> {
     const sala = await this.prisma.salaDoCliente.findFirst({ where: { leadId, orgId } });
     if (!sala) return null;
     return this.projetar(sala.id, leadId, agora);
@@ -527,6 +541,25 @@ export class SalaService implements OnModuleInit {
     });
   }
 
+  /**
+   * A área do cliente (leva A): o cliente abriu a versão N de um item. Uma
+   * linha por (sala, item, versão) em `SalaLeitura`, idempotente pelo índice
+   * único (a segunda abertura não grava nada). Só versão publicada (ou já
+   * substituída: a leitura tardia de uma edição antiga ainda é leitura) conta.
+   */
+  async leituraDaArea(token: string, corpo: unknown): Promise<EstadoDaSala> {
+    const { item, versao } = this.validar(AreaLeituraSchema, corpo);
+    return this.naSala(token, async (r) => {
+      const v = await this.prisma.salaVersao.findFirst({ where: { leadId: r.leadId, numero: versao, item, estado: { in: ['publicada', 'substituida'] } }, select: { id: true } });
+      if (!v) throw new ConflictException('essa versão do item não está publicada nesta sala');
+      try {
+        await this.prisma.salaLeitura.create({ data: { orgId: r.orgId, salaId: r.salaId, item, versao } });
+      } catch (e) {
+        if (!(e instanceof Prisma.PrismaClientKnownRequestError && e.code === 'P2002')) throw e;
+      }
+    });
+  }
+
   // -------------------------------------------------------------------------
   // Internos
   // -------------------------------------------------------------------------
@@ -644,7 +677,62 @@ export class SalaService implements OnModuleInit {
     const estado = projetarSala(entrada);
     // L6: os blocos do acompanhamento são derivados AGORA, do mesmo material; nenhuma versão nova é gravada.
     const acompanhamento = acompanhamentoDaSala({ ...entrada, voltaEm: ficha?.voltaEm ?? null, whatsappDaRoot: await this.numeroDaRoot(sala.orgId, agora) }, estado);
-    return { ...estado, publicada, acompanhamento };
+    // Leva A (30/10/2026): depois do fechamento (ou do card da implantação) o mesmo link vira a área do cliente.
+    const modo = modoDaSala({ ficha: ficha ? { clienteAtivoEm: ficha.clienteAtivoEm, cardId: ficha.cardId } : null, eventos: entrada.eventos });
+    const area = modo === 'area' ? await this.areaDoCliente({ sala, leadId, ficha, eventos: entrada.eventos, estado, acompanhamento, publicada, agora }) : null;
+    return { ...estado, publicada, acompanhamento, modo, area };
+  }
+
+  /**
+   * A área do cliente montada do que está gravado: as versões publicadas por
+   * item e as leituras (o "novo"), a sala publicada (próximos passos e quem
+   * cuida), o trilho (a fase do fluxo) e a projeção de sempre (os derivados).
+   * Roda dentro do contexto da empresa de quem chamou (`comTenantPublico` na
+   * rota anônima; o tenant da sessão na bancada).
+   */
+  private async areaDoCliente(e: {
+    sala: { id: string; orgId: string };
+    leadId: string;
+    ficha: { clienteAtivoEm: Date | null; kickoffEm: Date | null; cardId: string | null; trilhoId: string | null; donoId: string | null; socioDaConta: string | null } | null;
+    eventos: readonly EventoDaSala[];
+    estado: EstadoDaSala;
+    acompanhamento: AcompanhamentoDaSala;
+    publicada: SalaVersaoPublica | null;
+    agora: Date;
+  }): Promise<AreaDoClienteParaOCliente> {
+    const { sala, leadId, ficha, agora } = e;
+    const [versoes, leituras, trilho, dono] = await Promise.all([
+      this.prisma.salaVersao.findMany({
+        where: { leadId, orgId: sala.orgId, item: { not: null } },
+        select: { item: true, numero: true, estado: true, publicadaEm: true, atualizadoEm: true, conteudo: true },
+      }),
+      this.prisma.salaLeitura.findMany({ where: { salaId: sala.id }, select: { item: true, versao: true } }),
+      ficha?.trilhoId
+        ? this.prisma.onboardingTrilho.findFirst({ where: { id: ficha.trilhoId }, select: { fase: true, marcos: { where: { tipo: 'fase.avancou' }, select: { tipo: true, em: true, dados: true } } } })
+        : null,
+      ficha?.donoId ? this.prisma.user.findFirst({ where: { id: ficha.donoId }, select: { name: true } }) : null,
+    ]);
+    const edicoes = edicoesPorVersao(versoes);
+    const publicadas = versoes
+      .filter((v): v is typeof v & { item: string } => v.estado === 'publicada' && typeof v.item === 'string')
+      .map((v) => ({ item: v.item, numero: v.numero, edicao: edicoes.get(v.numero) ?? 1, publicadaEm: v.publicadaEm ?? v.atualizadoEm, conteudo: v.conteudo }));
+    // Quem cuida: o que a sala publicada escreveu; senão o dono da conta pela ficha. Nunca um nome inventado.
+    const quemCuida =
+      e.publicada?.conteudo.quemCuida ??
+      (dono?.name ? { nome: dono.name, papel: 'cuida da sua conta na Root' } : ficha?.socioDaConta ? { nome: ficha.socioDaConta, papel: 'sócio da conta' } : null);
+    return areaParaOCliente({
+      agora,
+      empresa: e.estado.empresa,
+      ficha: ficha ? { clienteAtivoEm: ficha.clienteAtivoEm, kickoffEm: ficha.kickoffEm, cardId: ficha.cardId } : null,
+      eventos: e.eventos,
+      estado: e.estado,
+      acompanhamento: e.acompanhamento,
+      salaPublicada: e.publicada,
+      trilho: trilho ? { fase: trilho.fase, marcos: trilho.marcos } : null,
+      publicadas,
+      leituras,
+      quemCuida,
+    });
   }
 }
 

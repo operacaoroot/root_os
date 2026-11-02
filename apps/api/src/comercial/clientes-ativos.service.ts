@@ -30,7 +30,7 @@ export class ClientesAtivosService {
   ) {}
 
   async lista(orgId: string): Promise<ListaDeClientesAtivos> {
-    const [cadastros, acordos, fichas, vivos, conversas, tarefas] = await Promise.all([
+    const [cadastros, acordos, fichas, vivos, conversas, tarefas, publicadosNaArea] = await Promise.all([
       this.prisma.partner.findMany({
         where: { orgId, interno: false, ativo: true, OR: [{ isCliente: true }, { acordos: { some: {} } }] },
         select: { id: true, razaoSocial: true, nomeFantasia: true, principalId: true, isCliente: true },
@@ -43,7 +43,7 @@ export class ClientesAtivosService {
       }),
       this.prisma.comercialFicha.findMany({
         where: { orgId },
-        select: { leadId: true, empresa: true, etapa: true, partnerId: true, tipoNegocio: true, valorCentavos: true, valorNegociadoCentavos: true, cardId: true, lead: { select: { name: true } } },
+        select: { leadId: true, empresa: true, etapa: true, partnerId: true, tipoNegocio: true, valorCentavos: true, valorNegociadoCentavos: true, cardId: true, clienteAtivoEm: true, lead: { select: { name: true } } },
         take: 5000,
       }),
       this.contratos.lista(orgId),
@@ -57,7 +57,10 @@ export class ClientesAtivosService {
         select: { id: true, clienteId: true, leadId: true, status: { select: { name: true } } },
         take: 2000,
       }),
+      // A área do cliente (leva A): quantos itens a Root publicou por lead (a versão no ar de cada item).
+      this.prisma.salaVersao.groupBy({ by: ['leadId'], where: { orgId, estado: 'publicada', item: { not: null } }, _count: { _all: true } }),
     ]);
+    const publicadosPorLead = new Map(publicadosNaArea.map((g) => [g.leadId, g._count._all]));
     // O card que o fechamento abriu aponta o lead pela ficha (`cardId`), não pela tarefa.
     const leadDoCard = new Map(fichas.filter((f) => f.cardId).map((f) => [f.cardId!, f.leadId]));
     return juntarClientesAtivos({
@@ -70,6 +73,7 @@ export class ClientesAtivosService {
       contratos: vivos.map((c) => ({ leadId: c.leadId, situacao: c.situacao })),
       conversas: conversas.map((c) => ({ id: c.id, nome: (c.nome ?? '').trim() || 'Conversa sem nome', clienteId: c.clienteId, leadId: c.leadId })),
       implantacoes: tarefas.map((t) => ({ taskId: t.id, etapa: t.status.name, clienteId: t.clienteId, leadId: t.leadId ?? leadDoCard.get(t.id) ?? null })),
+      areas: fichas.map((f) => ({ leadId: f.leadId, emArea: Boolean(f.clienteAtivoEm) || Boolean(f.cardId), publicados: publicadosPorLead.get(f.leadId) ?? 0 })),
     });
   }
 
