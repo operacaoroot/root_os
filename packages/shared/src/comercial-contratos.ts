@@ -34,7 +34,7 @@ export type EstadoDoContrato = (typeof ESTADOS_DO_CONTRATO)[number];
 export const ETAPAS_DO_QUADRO = ['a_emitir', 'minuta', 'em_assinatura', 'ativo', 'renovar', 'a_encerrar', 'encerrado'] as const;
 export type EtapaDoQuadro = (typeof ETAPAS_DO_QUADRO)[number];
 
-export const ROTULO_DA_ETAPA: Record<EtapaDoQuadro, string> = {
+export const ROTULO_DA_ETAPA_DO_QUADRO: Record<EtapaDoQuadro, string> = {
   a_emitir: 'A emitir',
   minuta: 'Minuta',
   em_assinatura: 'Em assinatura',
