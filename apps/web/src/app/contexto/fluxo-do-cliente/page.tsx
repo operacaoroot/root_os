@@ -1,7 +1,8 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { ErroDaApi, apiGet } from '@/lib/api';
+import Link from 'next/link';
+import { ErroDaApi, apiGet, apiPost } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 
 /*
@@ -21,9 +22,16 @@ import { useAuth } from '@/lib/auth';
  * decisões, na ordem) e, ao lado de cada passo, o que corre em paralelo, o que
  * sai da decisão, as notas e o que está em aberto. O filtro por responsável
  * apaga o que não é dele em vez de esconder, para a ordem continuar legível.
+ *
+ * NA MEMÓRIA (02/11/2026, P-87). Os agentes não leem esta tela: eles buscam na
+ * Memória. A faixa abaixo do cabeçalho diz se as dez notas que saem do MESMO
+ * arquivo estão lá, e o botão "Levar para a Memória" cria as que faltam e grava a
+ * versão nova das que a carga escreveu antes. Nota editada à mão ou arquivada na
+ * Memória fica como está. Sem permissão de ver a Memória, a faixa não aparece.
  */
 
 const CAMINHO = '/tenants/plataforma/operacao/fluxo-do-cliente';
+const CAMINHO_DA_MEMORIA = `${CAMINHO}/memoria`;
 
 type Tarefa = {
   numero: string;
@@ -60,6 +68,24 @@ type Fluxo = {
   area_do_cliente?: { item: string; origem: string; tarefa: string | null }[];
   fases: { id: string; nome: string; etapas: Etapa[] }[];
   desvios: Desvio[];
+};
+
+/** Cópia do que `GET/POST …/fluxo-do-cliente/memoria` devolve; só os campos que a faixa usa. */
+type SituacaoNaMemoria = 'falta' | 'em_dia' | 'desatualizada' | 'editada' | 'arquivada';
+type FluxoNaMemoria = {
+  versaoDoFluxo: string;
+  notas: { chave: string; titulo: string; situacao: SituacaoNaMemoria; id: string | null; versao: number | null }[];
+  contagem: Record<SituacaoNaMemoria, number>;
+  criadas?: number;
+  atualizadas?: number;
+  falhas?: { chave: string; titulo: string; motivo: string }[];
+};
+const ROTULO_DA_SITUACAO: Record<SituacaoNaMemoria, string> = {
+  falta: 'falta',
+  em_dia: 'em dia',
+  desatualizada: 'versão antiga',
+  editada: 'editada na Memória · fica como está',
+  arquivada: 'arquivada na Memória · fica como está',
 };
 
 const PAPEIS = ['COMERCIAL', 'FINANCEIRO', 'DONO DA CONTA', 'QUEM IMPLANTA', '2º SÓCIO', 'MARKETING', 'TI DO CLIENTE', 'QUEM RESPONDE'] as const;
@@ -102,6 +128,19 @@ export default function FluxoDoClientePage() {
   const [papel, setPapel] = useState<(typeof PAPEIS)[number] | ''>('');
   const [busca, setBusca] = useState('');
   const [soEmAberto, setSoEmAberto] = useState(false);
+  /** `null` = ainda lendo ou sem permissão de ver a Memória (a faixa some). */
+  const [naMemoria, setNaMemoria] = useState<FluxoNaMemoria | null>(null);
+  const [levando, setLevando] = useState(false);
+  const [erroDaMemoria, setErroDaMemoria] = useState<string | null>(null);
+
+  const lerMemoria = useCallback(async () => {
+    if (!token) return;
+    try {
+      setNaMemoria(await apiGet<FluxoNaMemoria>(CAMINHO_DA_MEMORIA, token));
+    } catch {
+      setNaMemoria(null);
+    }
+  }, [token]);
 
   const carregar = useCallback(async () => {
     if (!token) return;
@@ -109,11 +148,25 @@ export default function FluxoDoClientePage() {
     try {
       setFluxo(await apiGet<Fluxo>(CAMINHO, token));
       setAutorizado(true);
+      void lerMemoria();
     } catch (e) {
       if (e instanceof ErroDaApi && e.status === 403) setAutorizado(false);
       else setErro((e as Error).message);
     }
-  }, [token]);
+  }, [token, lerMemoria]);
+
+  const levarParaMemoria = async () => {
+    if (!token) return;
+    setLevando(true);
+    setErroDaMemoria(null);
+    try {
+      setNaMemoria(await apiPost<FluxoNaMemoria>(CAMINHO_DA_MEMORIA, {}, token));
+    } catch (e) {
+      setErroDaMemoria(e instanceof ErroDaApi && e.status === 403 ? 'Levar para a Memória pede a permissão de editar a Memória.' : (e as Error).message);
+    } finally {
+      setLevando(false);
+    }
+  };
 
   useEffect(() => {
     if (ready) void carregar();
@@ -288,6 +341,73 @@ export default function FluxoDoClientePage() {
           {fluxo.versao} · {dataBr(fluxo.data)} · {todas.length} tarefas · {fluxo.fases.length} fases · {emAberto} em aberto
         </p>
       </header>
+
+      {naMemoria && (() => {
+        const { contagem, notas } = naMemoria;
+        const pendentes = contagem.falta + contagem.desatualizada;
+        const ficam = contagem.editada + contagem.arquivada;
+        const situacao =
+          contagem.falta === notas.length
+            ? `Nenhuma das ${notas.length} notas está na Memória. Os agentes do OS ainda não leem este fluxo.`
+            : pendentes
+              ? `${contagem.em_dia} de ${notas.length} notas em dia.${contagem.falta ? ` ${contagem.falta} ${contagem.falta === 1 ? 'falta' : 'faltam'}.` : ''}${contagem.desatualizada ? ` ${contagem.desatualizada} em versão antiga.` : ''}`
+              : `As ${contagem.em_dia} notas do ${naMemoria.versaoDoFluxo} estão em dia. Os agentes do OS leem este fluxo.`;
+        return (
+          <section aria-labelledby="na-memoria" className="space-y-2 rounded border border-border bg-surface p-4">
+            <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+              <div className="min-w-[240px] flex-1 space-y-1">
+                <h2 id="na-memoria" className={ROTULO}>Na Memória</h2>
+                <p className="text-[13px] leading-[1.6] text-text">{situacao}</p>
+                {ficam > 0 && (
+                  <p className="text-[12px] leading-[1.55] text-muted">
+                    {ficam === 1
+                      ? '1 nota foi editada ou arquivada na Memória e fica como está.'
+                      : `${ficam} notas foram editadas ou arquivadas na Memória e ficam como estão.`}
+                  </p>
+                )}
+                {(naMemoria.criadas !== undefined || naMemoria.atualizadas !== undefined) && (
+                  <p className="text-[12px] text-muted">
+                    Agora: <b className="font-os-mono text-text">{naMemoria.criadas ?? 0}</b> criadas e <b className="font-os-mono text-text">{naMemoria.atualizadas ?? 0}</b> atualizadas.
+                  </p>
+                )}
+              </div>
+              {pendentes > 0 && (
+                <button
+                  type="button"
+                  onClick={() => void levarParaMemoria()}
+                  disabled={levando}
+                  className={`rounded-root bg-brand px-3 py-1.5 text-xs font-medium text-ink hover:opacity-90 disabled:opacity-60 ${FOCO}`}
+                >
+                  {levando ? 'Levando…' : 'Levar para a Memória'}
+                </button>
+              )}
+            </div>
+            {erroDaMemoria && <p className="text-[12px] text-bad">{erroDaMemoria}</p>}
+            {!!naMemoria.falhas?.length && (
+              <ul className="space-y-1 text-[12px] text-bad">
+                {naMemoria.falhas.map((f) => <li key={f.chave}>{f.titulo}: {f.motivo}</li>)}
+              </ul>
+            )}
+            <details className="border-t border-border pt-2">
+              <summary className={`cursor-pointer text-[12px] text-muted hover:text-text ${FOCO}`}>Ver as {notas.length} notas</summary>
+              <ul className="mt-2 space-y-1">
+                {notas.map((n) => (
+                  <li key={n.chave} className="flex flex-wrap items-baseline gap-x-2 text-[12.5px] leading-[1.5]">
+                    {n.id ? (
+                      <Link href={`/contexto?nota=${n.id}`} className={`text-text underline decoration-border underline-offset-2 hover:text-brand ${FOCO}`}>{n.titulo}</Link>
+                    ) : (
+                      <span className="text-text">{n.titulo}</span>
+                    )}
+                    <span className={`text-[11.5px] ${n.situacao === 'em_dia' ? 'text-brand' : n.situacao === 'editada' || n.situacao === 'arquivada' ? 'text-warn' : 'text-muted'}`}>
+                      {ROTULO_DA_SITUACAO[n.situacao]}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            </details>
+          </section>
+        );
+      })()}
 
       <div className="space-y-3 rounded border border-border bg-surface p-4">
         <div className="flex flex-wrap gap-1.5">

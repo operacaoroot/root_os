@@ -1,11 +1,13 @@
-import { Controller, Get, Query, UseGuards } from '@nestjs/common';
+import { Controller, Get, Post, Query, UseGuards } from '@nestjs/common';
 import { OperacaoPainelConsultaSchema, type OperacaoPainelResposta } from '@mktos/shared';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { PermissionsGuard } from '../auth/permissions.guard';
 import { RequirePermissions } from '../auth/permissions.decorator';
 import { CurrentUser, JwtUser } from '../auth/current-user.decorator';
+import { AcessoAtualGuard } from '../memory/acesso-atual.guard';
 import { SessaoDaPlataformaGuard } from './sessao-da-plataforma.guard';
 import { OperacaoService } from './operacao.service';
+import { FluxoNaMemoriaService, type EstadoDoFluxoNaMemoria, type ResultadoDaCargaDoFluxo } from './fluxo-na-memoria.service';
 import fluxoDoCliente from './fluxo-do-cliente.json';
 import areaDoCliente from './area-do-cliente.json';
 
@@ -16,7 +18,10 @@ import areaDoCliente from './area-do-cliente.json';
 @UseGuards(JwtAuthGuard, SessaoDaPlataformaGuard, PermissionsGuard)
 @Controller('tenants/plataforma/operacao')
 export class OperacaoController {
-  constructor(private readonly operacao: OperacaoService) {}
+  constructor(
+    private readonly operacao: OperacaoService,
+    private readonly fluxoNaMemoria: FluxoNaMemoriaService,
+  ) {}
 
   @Get('painel')
   @RequirePermissions('dashboard.ver')
@@ -34,6 +39,27 @@ export class OperacaoController {
   @RequirePermissions('dashboard.ver')
   fluxoDoCliente(): typeof fluxoDoCliente {
     return fluxoDoCliente;
+  }
+
+  /*
+   * O mesmo fluxo como contexto da operação (02/11/2026, P-87): dez notas na
+   * Memória da ROOT, que é onde os agentes buscam. A leitura diz a situação de
+   * cada nota diante do arquivo; o POST é o botão "Levar para a Memória". As
+   * permissões são as da Memória (ver e editar), conferidas de novo no banco
+   * pelo `AcessoAtualGuard`, como em `/memoria`.
+   */
+  @Get('fluxo-do-cliente/memoria')
+  @UseGuards(AcessoAtualGuard)
+  @RequirePermissions('dashboard.ver', 'obsidian.ver')
+  fluxoNaMemoriaEstado(@CurrentUser() user: JwtUser): Promise<EstadoDoFluxoNaMemoria> {
+    return this.fluxoNaMemoria.estado(user.orgId, user.sub);
+  }
+
+  @Post('fluxo-do-cliente/memoria')
+  @UseGuards(AcessoAtualGuard)
+  @RequirePermissions('dashboard.ver', 'obsidian.editar')
+  levarFluxoParaMemoria(@CurrentUser() user: JwtUser): Promise<ResultadoDaCargaDoFluxo> {
+    return this.fluxoNaMemoria.levar(user.orgId, user.sub);
   }
 
   /*

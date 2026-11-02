@@ -1,7 +1,9 @@
 import { Module } from '@nestjs/common';
 import { AuthModule } from '../auth/auth.module';
+import { MemoryModule } from '../memory/memoria.module';
 import { AcessoDeSuporteService } from './acesso-de-suporte.service';
 import { ConsoleDaPlataformaService } from './console.service';
+import { FluxoNaMemoriaService } from './fluxo-na-memoria.service';
 import { OperacaoController } from './operacao.controller';
 import { OperacaoService } from './operacao.service';
 import { PlataformaController, SuporteDoClienteController } from './plataforma.controller';
@@ -17,6 +19,10 @@ import { SessaoDaPlataformaGuard } from './sessao-da-plataforma.guard';
  * presença exigida por R4 em `autorizar`. `PrismaService` vem do `PrismaModule`,
  * que é global, e `EventLogService` vem do `GatewayModule`, que também é.
  *
+ * `MemoryModule` entra pelo fluxo do cliente na Memória (P-87): o
+ * `FluxoNaMemoriaService` grava pelo `MemoriaService`, e a rota usa o
+ * `AcessoAtualGuard` que ele exporta.
+ *
  * NÃO EXPORTA NADA, e a ausência é deliberada. `AcessoDeSuporteService` sabe
  * abrir o contexto de OUTRA empresa (é o que o acesso de suporte significa);
  * exportá-lo convidaria qualquer módulo a injetá-lo e a usar essa troca de
@@ -28,7 +34,7 @@ import { SessaoDaPlataformaGuard } from './sessao-da-plataforma.guard';
  * linha existe — foi a edição pontual autorizada nesta correção.
  */
 @Module({
-  imports: [AuthModule],
+  imports: [AuthModule, MemoryModule],
   controllers: [PlataformaController, SuporteDoClienteController, PropostasController, OperacaoController],
   providers: [
     ConsoleDaPlataformaService,
@@ -36,6 +42,7 @@ import { SessaoDaPlataformaGuard } from './sessao-da-plataforma.guard';
     SessaoDaPlataformaGuard,
     PropostasService,
     OperacaoService,
+    FluxoNaMemoriaService,
   ],
 })
 export class PlataformaModule {}
