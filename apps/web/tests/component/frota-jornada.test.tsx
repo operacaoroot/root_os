@@ -7,13 +7,13 @@ import { fireEvent, render, screen } from '@testing-library/react';
  */
 
 import { JornadaDaCasa, JornadaView } from '@/app/frota/jornada';
-import type { CasaDetalhe, CasaResumo, Resumo } from '@/app/frota/tipos';
+import type { CasaDetalhe, CasaResumo, ItemDaJornada, Resumo } from '@/app/frota/tipos';
 
 const fases = [
   { n: 0, nome: 'Decisões antes de contratar', conta: 4, feito: 1, esperando: 2, andamento: 0, regrediu: 0 },
   { n: 2, nome: 'Preparar (as etapas do kit)', conta: 3, feito: 1, esperando: 0, andamento: 1, regrediu: 1 },
 ];
-const item = (id: string, o: Partial<CasaResumo['jornada'] extends infer J ? NonNullable<J>['proximo'][number] : never> = {}) => ({
+const item = (id: string, o: Partial<ItemDaJornada> = {}) => ({
   id, fase: 0, item: `item ${id}`, quem: 'humano', situacao: 'afazer' as const, espera: null, quando: null, nota: null, autoTexto: null, projeto: false, ...o,
 });
 const casa = {
