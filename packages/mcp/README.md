@@ -54,6 +54,12 @@ pnpm --filter @mktos/mcp smoke
 | `MCP_OPERADOR_SENHA` | — | a senha dessa pessoa no OS (login por e-mail e senha, a saída de emergência da tela de login) |
 | `MCP_ENV_FILE` | `~/.config/root/mcp.env` | arquivo `CHAVE=valor` lido no arranque; variável já no ambiente vence o arquivo; só os NOMES das chaves vão ao stderr |
 
+**Identidade do operador na máquina de quem opera:** `scripts/definir-senha-os.sh <e-mail>` define a senha
+da pessoa no OS de produção (roda na `root-vps` pelo ssh, hash bcrypt gerado no container da API, UPDATE de 1 linha
+em `"User"`; a senha é digitada sem eco) e em seguida oferece gravar `MCP_OPERADOR_EMAIL`/`MCP_OPERADOR_SENHA` no
+`mcp.env` e testar o login. `scripts/gravar-operador.sh <e-mail>` só grava (com backup do arquivo ao lado) e testa.
+Nenhum dos dois recebe a senha por argumento nem a escreve na saída.
+
 Gere a senha (`openssl rand -base64 24`), ponha no `.env` e, **só em desenvolvimento**, rode
 `pnpm db:seed` para alinhar a conta — **nunca em produção**: o seed não é idempotente e apaga dados
 do org, então rodá-lo lá destrói dado real. **Rotacionar a senha em produção** (por vazamento ou por
