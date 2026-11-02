@@ -250,12 +250,20 @@ export class FrotaService {
   async editarCasa(orgId: string, user: JwtUser, id: string, dto: EditarCasaDto) {
     const atual = await this.prisma.frotaCasa.findFirst({ where: { orgId, id } });
     if (!atual) throw new NotFoundException('Casa não encontrada.');
-    const { ficha, lgpd, arquivada, ...campos } = dto;
+    const { ficha, lgpd, arquivada, casa: nome, ...campos } = dto;
     const data: Prisma.FrotaCasaUpdateInput = { ...campos };
+    const renomeia = nome !== undefined && nome !== atual.casa;
+    if (renomeia) {
+      if (atual.ultimoRelatoEm) throw new BadRequestException(`A casa ${atual.casa} já relata com esse nome. Agora ele só muda junto com o CASA= do servidor.`);
+      const existe = await this.prisma.frotaCasa.findFirst({ where: { orgId, casa: nome, NOT: { id } }, select: { id: true } });
+      if (existe) throw new ConflictException(`Já existe a casa ${nome}.`);
+      data.casa = nome;
+    }
     if (ficha) data.ficha = { ...((atual.ficha as Record<string, unknown> | null) ?? {}), ...ficha } as Prisma.InputJsonValue;
     if (lgpd) data.lgpd = { ...((atual.lgpd as Record<string, unknown> | null) ?? {}), ...lgpd } as Prisma.InputJsonValue;
     if (arquivada !== undefined) data.arquivadaEm = arquivada ? new Date() : null;
     const casa = await this.prisma.frotaCasa.update({ where: { id }, data, include: { acessos: true, ordens: true } });
+    if (renomeia) await this.registrar(orgId, id, user, `Casa renomeada: ${atual.casa} → ${casa.casa}.`, 'painel');
     const mudou = Object.keys(dto).join(', ');
     await this.registrar(orgId, id, user, `Ficha da casa ${casa.casa} editada (${mudou}).`, 'painel');
     await this.audit.log({ orgId, actorId: user.sub, action: 'frota.casa.editar', entityType: 'FrotaCasa', entityId: id, after: dto as Prisma.InputJsonValue });
@@ -344,7 +352,7 @@ export class FrotaService {
     return comTenantPublico(orgId, async () => {
       const autenticada = await this.casaDoToken(orgId, token);
       const r = RelatoSchema.parse(corpo);
-      if (r.casa !== autenticada.casa) throw new BadRequestException(`O token é da casa ${autenticada.casa}; o relato diz ${r.casa}.`);
+      if (r.casa !== autenticada.casa) throw new BadRequestException(`O token é da casa ${autenticada.casa}; o relato diz ${r.casa}. Nome digitado errado na Nova casa: corrija na Ficha da casa, no painel.`);
       const agora = new Date();
       // Um relato por vez por casa. Na instalação o timer e a mão mandam dois ao mesmo tempo
       // (na affari, 27/10/2026, dois relatos a 21 ms gravaram cada acesso duas vezes): o cadeado

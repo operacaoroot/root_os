@@ -262,12 +262,13 @@ function Ficha({ casa, token, podeAgir, onSalvo }: { casa: CasaDetalhe; token: s
   const [ficha, setFicha] = useState<Record<string, string>>({ ...casa.ficha });
   const [lgpd, setLgpd] = useState<Record<string, string>>({ ...casa.lgpd });
   const [cabecalho, setCabecalho] = useState({ cliente: casa.cliente, dono: casa.dono ?? '', responsavel: casa.responsavel ?? '', etapa: casa.etapa, provedor: casa.provedor ?? '', ip: casa.ip ?? '', observacoes: casa.observacoes ?? '' });
+  const [nome, setNome] = useState(casa.casa);
   const [salvando, setSalvando] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
   const salvar = async () => {
     setSalvando(true); setErro(null);
     try {
-      await apiPatch(`/frota/casas/${casa.id}`, { ...cabecalho, ficha, lgpd }, token);
+      await apiPatch(`/frota/casas/${casa.id}`, { ...cabecalho, ...(nome.trim() !== casa.casa ? { casa: nome.trim() } : {}), ficha, lgpd }, token);
       onSalvo();
     } catch (e) { setErro((e as Error).message); } finally { setSalvando(false); }
   };
@@ -282,6 +283,9 @@ function Ficha({ casa, token, podeAgir, onSalvo }: { casa: CasaDetalhe; token: s
       <div>
         <Rotulo>ficha</Rotulo>
         <div className="mt-1 grid gap-2 sm:grid-cols-2">
+          <label className="block"><span className="mb-0.5 block text-[11px] text-muted">Nome da casa<span className="text-dim"> · {casa.ultimoRelatoEm ? 'fixo: a casa já relata com ele' : 'igual ao CASA= do servidor'}</span></span>
+            <input className={`${inputCls} font-os-mono`} value={nome} onChange={(e) => setNome(e.target.value.toLowerCase())} disabled={!podeAgir || !!casa.ultimoRelatoEm} />
+          </label>
           {campo('Cliente', cabecalho.cliente, (v) => setCabecalho({ ...cabecalho, cliente: v }))}
           {campo('Dono (pessoa)', cabecalho.dono, (v) => setCabecalho({ ...cabecalho, dono: v }))}
           {campo('Responsável na ROOT', cabecalho.responsavel, (v) => setCabecalho({ ...cabecalho, responsavel: v }))}
