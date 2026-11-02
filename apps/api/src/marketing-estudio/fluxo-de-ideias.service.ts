@@ -43,7 +43,7 @@ export class FluxoDeIdeiasService implements OnModuleInit {
       const relidas = await this.triagem.reler(ctx.orgId);
       const novas = await this.triagem.montar(ctx.orgId, POR_PASSAGEM);
       const falharam = relidas.falharam + novas.falharam;
-      if (!novas.lidos && !relidas.lidos) return { status: 'ok', resumo: 'Nada novo para ler.' };
+      if (!novas.lidos && !relidas.lidos && !novas.reserva) return { status: 'ok', resumo: 'Nada novo para ler.' };
       const partes = [
         `${novas.cards} ${novas.cards === 1 ? 'ideia nova' : 'ideias novas'} para avaliar`,
         novas.reserva ? `${novas.reserva} na Reserva (passaram das ${IDEIAS_POR_DIA} do dia)` : '',

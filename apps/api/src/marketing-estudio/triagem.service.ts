@@ -571,7 +571,11 @@ export class TriagemService {
     const lista = await this.materia(orgId, quantas);
     const pesos = await this.pesos(orgId);
     const resultado = { lidos: lista.length, cards: 0, descartados: 0, falharam: 0, reserva: 0 };
-    if (!lista.length) return resultado;
+    // Sem nada novo para ler, o corte do dia roda mesmo assim (o que já entrou hoje pode ter passado de 10).
+    if (!lista.length) {
+      resultado.reserva = await this.aplicarCorte(orgId);
+      return resultado;
+    }
     const ctx = await this.contexto(orgId);
     for (let i = 0; i < lista.length; i += LOTE) {
       const lote = lista.slice(i, i + LOTE);
