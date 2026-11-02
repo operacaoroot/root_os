@@ -375,7 +375,7 @@ export class TriagemService {
     const c = await this.prisma.marketingIdeiaCard.findFirst({ where: { id, orgId } });
     if (!c) throw new NotFoundException('Card não encontrado.');
     if (c.status !== 'descartada_ia') throw new ConflictException('Esse card não está na Reserva nem nas descartadas.');
-    const como = { ...((c.como && typeof c.como === 'object' ? c.como : {}) as Record<string, unknown>), puxada: true };
+    const como: Record<string, unknown> = { ...((c.como && typeof c.como === 'object' ? c.como : {}) as Record<string, unknown>), puxada: true };
     delete como.reserva;
     await this.prisma.marketingIdeiaCard.update({ where: { id }, data: { status: 'nova', como: como as Prisma.InputJsonValue } });
     return { ok: true };
