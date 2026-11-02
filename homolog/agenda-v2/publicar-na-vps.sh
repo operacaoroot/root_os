@@ -51,7 +51,10 @@ echo "== agenda v2 · release $REL · commit $HASH · $(date -Is)"
 IMG_VIVA=$(docker inspect "$API" -f '{{.Config.Image}}')
 echo "imagem viva da api: $IMG_VIVA"
 COMMIT_VIVO=$(docker inspect "$API" -f '{{index .Config.Labels "org.opencontainers.image.revision"}}' 2>/dev/null || true)
-case "$IMG_VIVA" in
+# O container guarda o sha; o nome da imagem (com o hash do commit) está nas etiquetas dela.
+TAGS_VIVAS=$(docker image inspect "$IMG_VIVA" -f '{{.RepoTags}}' 2>/dev/null || true)
+echo "etiquetas da imagem viva: $TAGS_VIVAS"
+case "$IMG_VIVA $TAGS_VIVAS" in
   *c946dcb*) echo "ok: produção em $BASE_ESPERADA" ;;
   *)
     if [ -n "$COMMIT_VIVO" ] && [ "${COMMIT_VIVO:0:8}" = "$BASE_ESPERADA" ]; then
