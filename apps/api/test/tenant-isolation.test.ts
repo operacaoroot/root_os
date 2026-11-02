@@ -433,6 +433,8 @@ const ALVOS: Alvo[] = [
   { tabela: 'ComercialFechamento', escopo: 'filho', chaveSql: '"id"', nota: 'O fechamento com chave fech-<lead>-v<n> e as cinco escritas. ESCREVER estado para concluido na linha alheia faz a conta do mês da outra empresa contar um cliente que não existe.' },
   { tabela: 'ComercialCobranca', escopo: 'filho', chaveSql: '"id"', nota: 'Espelho das parcelas no provedor de cobrança: valor, vencimento, estado, link de pagamento e Pix copia-e-cola. LER a da outra é o extrato a receber dela; ESCREVER estado para paga quita uma parcela que ninguém pagou.' },
   { tabela: 'ComercialDocumento', escopo: 'filho', chaveSql: '"id"', nota: 'Espelho do contrato no provedor de assinatura, com os links de assinar. LER a da outra entrega o link que assina o contrato alheio.' },
+  { tabela: 'ComercialContrato', escopo: 'filho', chaveSql: '"id"', nota: 'O contrato como registro próprio (módulo de contratos, 02/11/2026): valor, vigência, quem fatura e os dados congelados. LER o da outra é a carteira de contratos dela; ESCREVER estado para encerrado derruba o contrato alheio do quadro.' },
+  { tabela: 'ComercialContratoSignatario', escopo: 'filho', chaveSql: '"id"', nota: 'Quem assina cada contrato (módulo de contratos, 02/11/2026): nome, e-mail e o token do signatário no provedor. LER o da outra entrega quem assina por ela e o token; ESCREVER assinadoEm marca como assinado o que ninguém assinou.' },
   { tabela: 'LeadReacao', escopo: 'filho', chaveSql: '"id"', nota: 'O que o cliente leu na proposta e o que anotou nela (rodada da implantação I4): seção, tempo por visita, "faz sentido", dúvida e ideia com o texto dele. LER a da outra é ler como o cliente alheio reagiu à proposta e o que ele pensa dela; ESCREVER é pôr palavra na boca do cliente de outra casa ou apagar o termômetro dela. A rota anônima escreve aqui só DEPOIS de achar a empresa pelo hash na sala, então a leitura NÃO aceita a sentinela pública.' },
   { tabela: 'SalaVersao', escopo: 'filho', chaveSql: '"id"', nota: 'A sala do cliente publicada por versão (rodada da implantação I3): o rascunho da bancada e cada versão que o cliente leu, com próximos passos, o combinado e quem cuida da conta. LER a da outra é ver o plano de implantação e o que a casa vizinha combinou com o cliente dela; ESCREVER é trocar o que o cliente alheio lê no link ou publicar por ela. A rota anônima lê aqui só DEPOIS de achar a empresa pelo hash na sala, então a leitura NÃO aceita a sentinela pública.' },
   { tabela: 'SalaLeitura', escopo: 'filho', chaveSql: '"id"', nota: 'A leitura de um item da área do cliente (leva A, 30/10/2026): o cliente abriu a versão N do item X, uma linha por (sala, item, versão). LER a da outra é saber o que o cliente alheio já abriu e quando; ESCREVER é apagar o "novo" do cliente de outra casa ou marcar como lido o que ele nunca viu. A rota anônima grava aqui só DEPOIS de achar a empresa pelo hash na sala, então a leitura NÃO aceita a sentinela pública.' },
@@ -1483,9 +1485,22 @@ async function semear(c: PoolClient, rotulo: 'A' | 'B', vec: string): Promise<vo
     id: crypto.randomUUID(), orgId, leadId, provedor: 'asaas', externoId: `pay_${rotulo}_${suf}`, parcela: 1, parcelas: 3,
     valorCentavos: 399900, forma: 'pix', vence: agora, estado: 'pendente', atualizadoEm: agora,
   }));
-  reg('ComercialDocumento', await ins(c, 'ComercialDocumento', {
+  const documentoDaSemente = await ins(c, 'ComercialDocumento', {
     id: crypto.randomUUID(), orgId, leadId, provedor: 'zapsign', externoId: `doc_${rotulo}_${suf}`, estado: 'criado',
     hashConteudo: `h_${rotulo}_${suf}`, atualizadoEm: agora,
+  });
+  reg('ComercialDocumento', documentoDaSemente);
+  s.ref.comercialDocumentoId = documentoDaSemente;
+  // O contrato como registro próprio (02/11/2026) e quem assina, com valor e e-mail que não podem vazar.
+  const contratoDaSemente = await ins(c, 'ComercialContrato', {
+    id: crypto.randomUUID(), orgId, leadId, tipo: 'contrato', estado: 'em_assinatura', valorCentavos: 399900,
+    faturaPor: `CNPJ privado da org ${rotulo}`, documentoId: documentoDaSemente, atualizadoEm: agora,
+  });
+  reg('ComercialContrato', contratoDaSemente);
+  s.ref.comercialContratoId = contratoDaSemente;
+  reg('ComercialContratoSignatario', await ins(c, 'ComercialContratoSignatario', {
+    id: crypto.randomUUID(), orgId, contratoId: contratoDaSemente, ordem: 1, papel: 'cliente', nome: `Signatário privado da org ${rotulo}`,
+    email: `signatario-${rotulo.toLowerCase()}@teste.local`, atualizadoEm: agora,
   }));
   // A reação na página da proposta (I4): uma ideia com texto, que é o que não pode vazar.
   reg('LeadReacao', await ins(c, 'LeadReacao', {
@@ -3902,6 +3917,14 @@ const LINHA_DE_FILHO: Record<string, (c: PoolClient) => Promise<Record<string, u
     id: crypto.randomUUID(), leadId: sementes.A.ref.leadId, provedor: 'zapsign', externoId: `doc_gatilho_${crypto.randomUUID()}`,
     hashConteudo: 'gatilho', atualizadoEm: new Date(),
   }),
+  // O contrato como registro próprio (02/11/2026): filho do lead, com três pais conferidos além dele.
+  ComercialContrato: async () => ({
+    id: crypto.randomUUID(), leadId: sementes.A.ref.leadId, tipo: 'contrato', estado: 'a_emitir', atualizadoEm: new Date(),
+  }),
+  ComercialContratoSignatario: async () => ({
+    id: crypto.randomUUID(), contratoId: sementes.A.ref.comercialContratoId, ordem: 900 + Math.floor(Math.random() * 1000), papel: 'root',
+    nome: 'Gatilho', email: 'gatilho@teste.local', atualizadoEm: new Date(),
+  }),
   LeadReacao: async () => ({
     id: crypto.randomUUID(), leadId: sementes.A.ref.leadId, versao: 1, secao: 'montar', tipo: 'faz_sentido', acesso: 1, atualizadoEm: new Date(),
   }),
@@ -4047,6 +4070,8 @@ const REF_DA_SEMENTE: Record<string, string> = {
   PautaPeca: 'pautaPecaId',
   AprovacaoDeLote: 'aprovacaoDeLoteId',
   ComentarioComPalavra: 'comentarioComPalavraId',
+  ComercialContrato: 'comercialContratoId',
+  ComercialDocumento: 'comercialDocumentoId',
 };
 
 describe('orgId em todo filho de tenant (RF-T-01)', () => {
@@ -4067,9 +4092,10 @@ describe('orgId em todo filho de tenant (RF-T-01)', () => {
     // + `SalaVersao` (rodada da implantação I3, 18/10/2026)
     // + `WorkAnexo` (rodada dos agentes, 21/10/2026, TR-06)
     // + `WhatsAppMensagem` (produção 22C, W1, 22/10/2026)
-    // + `SalaLeitura` (área do cliente, leva A, 30/10/2026).
+    // + `SalaLeitura` (área do cliente, leva A, 30/10/2026)
+    // + `ComercialContrato` e `ComercialContratoSignatario` (módulo de contratos, 02/11/2026).
     // Filho novo sobe este número no mesmo commit.
-    expect(declarados.length).toBe(34);
+    expect(declarados.length).toBe(36);
   });
 
   it.each(FILHOS_COM_ORGID_REDUNDANTE.map((f) => [f.modelo, f] as const))(

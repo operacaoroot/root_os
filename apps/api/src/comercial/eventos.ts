@@ -120,6 +120,14 @@ export const FONTE_DO_EVENTO: Record<ComercialEvento, ComercialFonte> = {
   'contrato.importado': 'pessoa',
   'contrato.parcelas_lancadas': 'pessoa',
   'contrato.regua_ligada': 'pessoa',
+  'contrato.registrado': 'pessoa',
+  'contrato.minuta_aprovada': 'pessoa',
+  'contrato.conferido': 'sistema',
+  'contrato.cancelado': 'zapsign',
+  'contrato.reenviado': 'zapsign',
+  'contrato.aditivo': 'pessoa',
+  'contrato.distrato': 'pessoa',
+  'contrato.reaberto': 'pessoa',
   'kickoff.marcado': 'sala',
   'parcela.vence': 'relogio',
   'parcela.paga': 'asaas',
@@ -289,6 +297,18 @@ export interface PayloadsComerciais {
   };
   /** Produção 22 (M2): uma pessoa ligou a régua de cobrança do contrato importado. Uma vez por contrato. */
   'contrato.regua_ligada': { origem: string; versaoDasParcelas: number; parcelasEmAberto: number; vencidas: number; frase: string; nivel: string; por: string | null; porId: string };
+  /** Módulo de contratos (02/11/2026): o registro nasceu ou mudou. `ato` diz o quê; nome e e-mail de signatário não vão ao fio. */
+  'contrato.registrado': { contratoId: string; tipo: string; ato: 'criado' | 'editado' | 'signatarios' | 'minuta' | 'importado_assumido'; campos?: string[]; por: string | null; porId: string | null };
+  /** F2: a minuta aprovada que vai à ZapSign. O hash é do conteúdo, nunca o texto. */
+  'contrato.minuta_aprovada': { contratoId: string; minutaId: string; hash: string; por: string | null };
+  /** A conferência (botão, lote ou relógio) achou algo novo: sem novidade, não vai ao fio. */
+  'contrato.conferido': { contratoId: string; externoId: string; estado: string; feitas: number; total: number; origem: 'botao' | 'lote' | 'relogio'; por: string | null };
+  'contrato.cancelado': { contratoId: string; externoId: string | null; motivo: string; jaNaoExistia: boolean; por: string | null };
+  /** Os links continuam os mesmos e o e-mail não sai (`disable_signer_emails`): o reenvio é a M7, pela fila do WhatsApp. O link nunca vai ao fio. */
+  'contrato.reenviado': { contratoId: string; externoId: string; pendentes: number; mensagemPreparada: boolean; por: string | null };
+  'contrato.aditivo': { contratoId: string; paiId: string; motivo: string; por: string | null; porId: string | null };
+  'contrato.distrato': { contratoId: string; paiId: string; motivo: string; parcelasEmAberto: number; por: string | null; porId: string | null };
+  'contrato.reaberto': { contratoId: string; motivo: string; nivel: string; por: string; porNome: string | null };
   'kickoff.marcado': { horario: string };
   /** `contrato`: a origem do contrato importado quando a parcela é das lançadas à mão (produção 22, M2). */
   'parcela.vence': { parcela: number; vence: string; aviso: 'D-3' | 'D0' | 'D+1' | 'D+5' | 'D+10'; contrato?: string | null };
@@ -297,7 +317,7 @@ export interface PayloadsComerciais {
   /** D-10: estorno ou chargeback no provedor. A parcela volta a não paga; `evento` é o nome cru do provedor. */
   'parcela.estornada': { parcela: number; externoId: string; evento: string; em: string; valorCentavos: number };
   'marco.contrato': { marco: 'dia_15_indicacao' | 'd_30_continuidade' | 'primeiro_valor'; quando: string };
-  'contrato.concluido': { motivo: string; por: string; porNome: string | null; parcelasEmAberto: number; nivel: string };
+  'contrato.concluido': { motivo: string; por: string; porNome: string | null; parcelasEmAberto: number; nivel: string; contratoId?: string };
   'contrato.desativado': { motivo: string; por: string; porNome: string | null; parcelasEmAberto: number; nivel: string };
   'decisao.aberta': { decisaoId: string; tipo: string; padrao: string; expiraEm: string };
   'decisao.tomada': { decisaoId: string; tipo: string; escolha: string; por: string | null; canal: string };
@@ -500,6 +520,24 @@ export function resumoDoEvento(type: string, payload: unknown): { fonte: Comerci
     }
     case 'contrato.regua_ligada':
       return { fonte, resumo: `régua de cobrança do contrato importado ligada${p.por ? ` por ${String(p.por)}` : ''} · ${String(p.parcelasEmAberto)} parcela(s) em aberto` };
+    case 'contrato.registrado': {
+      const atos: Record<string, string> = { criado: 'registrado', editado: 'editado', signatarios: 'com os signatários definidos', minuta: 'com a minuta vinculada', importado_assumido: 'importado assumido como registro' };
+      return { fonte, resumo: `${String(p.tipo ?? 'contrato')} ${atos[String(p.ato)] ?? 'atualizado'}${p.por ? ` por ${String(p.por)}` : ''}` };
+    }
+    case 'contrato.minuta_aprovada':
+      return { fonte, resumo: `minuta do contrato aprovada${p.por ? ` por ${String(p.por)}` : ''}` };
+    case 'contrato.conferido':
+      return { fonte, resumo: `assinaturas conferidas na ZapSign · ${String(p.feitas)} de ${String(p.total)}` };
+    case 'contrato.cancelado':
+      return { fonte, resumo: `contrato cancelado${p.por ? ` por ${String(p.por)}` : ''}: ${curto(p.motivo, 80)}${p.jaNaoExistia ? ' · o documento já não existia na ZapSign' : ''}` };
+    case 'contrato.reenviado':
+      return { fonte, resumo: `link de assinatura reenviado · ${String(p.pendentes)} assinatura(s) pendente(s)${p.mensagemPreparada ? '' : ' · nenhuma mensagem preparada'}` };
+    case 'contrato.aditivo':
+      return { fonte, resumo: `aditivo aberto em rascunho: ${curto(p.motivo, 80)}${p.por ? ` · por ${String(p.por)}` : ''}` };
+    case 'contrato.distrato':
+      return { fonte, resumo: `distrato aberto em rascunho: ${curto(p.motivo, 80)}${Number(p.parcelasEmAberto) > 0 ? ` · ${String(p.parcelasEmAberto)} parcela(s) em aberto, cobrança mantida` : ''}` };
+    case 'contrato.reaberto':
+      return { fonte, resumo: `contrato reaberto por ${String(p.porNome ?? 'alguém da casa')}: ${curto(p.motivo, 80)}` };
     case 'kickoff.marcado':
       return { fonte, resumo: `kickoff marcado · ${horarioLegivel(p.horario)}` };
     case 'parcela.vence':

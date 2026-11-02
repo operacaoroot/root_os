@@ -244,6 +244,8 @@ export const ContratoFilhoSchema = z.object({
   mudancas: z.string().trim().max(4000).optional(),
   vigenciaFim: dataAAAAMMDD.optional(),
   valorCentavos: z.number().int().min(0).optional(),
+  /** Distrato com parcela em aberto: a pessoa viu que a cobrança NÃO é cancelada. */
+  cienteDasParcelas: z.boolean().optional(),
 });
 export type ContratoFilhoInput = z.infer<typeof ContratoFilhoSchema>;
 

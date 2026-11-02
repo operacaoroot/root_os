@@ -425,6 +425,15 @@ export const COMERCIAL_EVENTOS = [
   // (cada lançamento uma versão) e a régua de cobrança ligada por uma pessoa. Fato passado: sem reação.
   'contrato.parcelas_lancadas',
   'contrato.regua_ligada',
+  // O módulo de contratos (02/11/2026): o contrato como registro próprio. `FATOS_DO_CONTRATO` em comercial-contratos.ts.
+  'contrato.registrado',
+  'contrato.minuta_aprovada',
+  'contrato.conferido',
+  'contrato.cancelado',
+  'contrato.reenviado',
+  'contrato.aditivo',
+  'contrato.distrato',
+  'contrato.reaberto',
   'kickoff.marcado',
   'parcela.vence',
   'parcela.paga',
