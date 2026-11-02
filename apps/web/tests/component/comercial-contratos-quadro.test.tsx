@@ -97,7 +97,7 @@ function naFicha(base: ContratoNoQuadro, over: Partial<ContratoNaFicha> = {}): C
 
 function vivo(leadId: string, over: Partial<ContratoVivo> = {}): ContratoVivo {
   return {
-    leadId, cliente: 'x', produto: null, valorCentavos: null, descontoPct: null, parcelas: [], reguaDeCobranca: [], entregas: [], primeiroValorEm: null,
+    leadId, cliente: 'x', produto: null, valorCentavos: 0, descontoPct: null, parcelas: [], reguaDeCobranca: [], entregas: [], primeiroValorEm: null,
     saude: null, faseDaImplantacao: null, marcos: [], aditivos: null, situacao: 'ativo', encerramento: null, cnpj: null, socioDaConta: null, ...over,
   };
 }
