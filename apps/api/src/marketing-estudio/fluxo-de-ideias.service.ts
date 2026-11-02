@@ -12,7 +12,7 @@ import { SLUG_DA_IA_DAS_IDEIAS, TIPO_DA_IA_DAS_IDEIAS, garantirRotinaDasIdeias }
 
 /** Quantos itens a IA lê por passagem (lotes de 4). */
 const POR_PASSAGEM = 200;
-const POSTS_POR_PERFIL = Number(process.env.APIFY_POSTS_POR_PERFIL ?? 3);
+const POSTS_POR_PERFIL = Number(process.env.APIFY_POSTS_POR_PERFIL ?? 6);
 
 /**
  * O FLUXO DAS IDEIAS (30/10/2026, pedido do Lucas: "saber quantas vão ser, como, que
