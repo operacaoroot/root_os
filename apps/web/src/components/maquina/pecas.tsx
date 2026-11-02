@@ -164,7 +164,8 @@ export function useLevar(m: Maquina) {
     if (post.etapa === para) return;
     if (etapaPrecisaDeData(para)) setPedido({ post, para });
     // Tirar de Agendado para A agendar é tirar a data (senão o servidor devolve para Agendado).
-    else void m.mudarEtapa(post.id, para, para === 'a_agendar' ? null : undefined);
+    // Vindo de antes, o dia já planejado fica e o post cai direto em Agendado.
+    else void m.mudarEtapa(post.id, para, post.etapa === 'agendado' && para === 'a_agendar' ? null : undefined);
   };
   const janela = pedido && (
     <EscolherData
@@ -397,16 +398,12 @@ export function PerfisDoPost(props: { valor: MaquinaPerfil[]; onMudar?: (v: Maqu
 
 /**
  * Campo de dia que só grava dia inteiro: o campo nativo devolve "0002-11-05" enquanto o ano é
- * digitado, e isso não pode ir para o servidor. Vazio grava "sem dia".
+ * digitado e "" enquanto uma parte do dia está apagada; nada disso pode ir para o servidor.
+ * Tirar o dia só vale ao sair do campo, com ele vazio de verdade.
  */
 export function CampoDeDia(props: { valor: string | null; desligado?: boolean; onGravar: (v: string | null) => void; className?: string; titulo?: string }) {
   const [v, setV] = useState(props.valor ?? '');
   useEffect(() => setV(props.valor ?? ''), [props.valor]);
-  const gravar = (novo: string) => {
-    if (novo === (props.valor ?? '')) return;
-    if (!novo) props.onGravar(null);
-    else if (/^20\d\d-\d\d-\d\d$/.test(novo)) props.onGravar(novo);
-  };
   return (
     <input
       type="date"
@@ -414,8 +411,13 @@ export function CampoDeDia(props: { valor: string | null; desligado?: boolean; o
       title={props.titulo}
       disabled={props.desligado}
       onChange={(e) => {
-        setV(e.target.value);
-        gravar(e.target.value);
+        const novo = e.target.value;
+        setV(novo);
+        if (novo !== (props.valor ?? '') && /^20\d\d-\d\d-\d\d$/.test(novo)) props.onGravar(novo);
+      }}
+      onBlur={(e) => {
+        if (e.target.validity.badInput) setV(props.valor ?? '');
+        else if (!e.target.value && props.valor) props.onGravar(null);
       }}
       className={props.className ?? campo}
     />
