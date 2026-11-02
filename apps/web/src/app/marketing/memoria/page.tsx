@@ -48,7 +48,7 @@ const OPCOES: [MemoriaDestino, string, string][] = [
   ['conteudo_e_referencia', 'Conteúdo e referência', 'Vira card e também fica guardada como referência.'],
   ['referencia', 'Referência externa', 'Material de fora para consultar. Não entra na memória da empresa.'],
 ];
-const CARD: Record<TriagemStatus, string> = { nova: 'esperando aprovação', aprovada: 'aprovada', recusada: 'recusada', descartada_ia: 'descartada' };
+const CARD: Record<TriagemStatus, string> = { nova: 'esperando aprovação', aprovada: 'aprovada', recusada: 'recusada', descartada_ia: 'descartada', reserva: 'na reserva' };
 const ICONE: Record<string, string> = { video: '🎬', link: '🔗', ideia: '💡', nota: '📝' };
 const ST: Record<string, [string, string]> = { fila: ['running', 'na fila'], processando: ['running', 'processando'], pronto: ['success', 'pronto'], erro: ['error', 'erro'] };
 const quando = (s: string) => {
