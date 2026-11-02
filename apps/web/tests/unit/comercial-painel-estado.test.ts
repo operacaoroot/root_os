@@ -27,10 +27,11 @@ describe('estado do painel na query', () => {
     expect(urlSemPainel('/comercial/funil', '?lead=l1&aba=geral&campo=telefone')).toBe('/comercial/funil');
   });
 
-  it('a fila de abas: as quatro da leva 5, mais a antiga aberta por link (e desfazer = devolver os nomes a ABAS_DO_PAINEL)', () => {
-    expect([...ABAS_DO_PAINEL]).toEqual(['geral', 'pendencias', 'sala', 'whatsapp']);
-    expect(abasNaTela('sala')).toEqual(['geral', 'pendencias', 'sala', 'whatsapp']);
-    expect(abasNaTela('dinheiro')).toEqual(['geral', 'pendencias', 'sala', 'whatsapp', 'dinheiro']);
+  it('a fila de abas: as quatro da leva 5 mais a Área do cliente (leva A, 30/10/2026), e a antiga aberta por link (desfazer = devolver os nomes a ABAS_DO_PAINEL)', () => {
+    expect([...ABAS_DO_PAINEL]).toEqual(['geral', 'pendencias', 'sala', 'area', 'whatsapp']);
+    expect(abasNaTela('sala')).toEqual(['geral', 'pendencias', 'sala', 'area', 'whatsapp']);
+    expect(abasNaTela('area')).toEqual(['geral', 'pendencias', 'sala', 'area', 'whatsapp']);
+    expect(abasNaTela('dinheiro')).toEqual(['geral', 'pendencias', 'sala', 'area', 'whatsapp', 'dinheiro']);
     expect(abaDaUrl('fio')).toBe('geral');
     expect(abaDaUrl('sessao')).toBe('sessao');
     expect(abaDaUrl(null)).toBe('geral');

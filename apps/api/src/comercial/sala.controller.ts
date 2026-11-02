@@ -224,4 +224,18 @@ export class SalaController {
     this.conferirTeto(req);
     return this.svc.kickoff(token, body);
   }
+
+  /**
+   * A área do cliente (leva A, 30/10/2026): o cliente abriu um item publicado.
+   * Grava a leitura daquela versão (idempotente) e devolve o estado: o selo
+   * "novo" some, e a bancada passa a ver "lido em". Mesmo teto por token da
+   * leitura da proposta: a página chama ao ABRIR o item, não ao carregar.
+   */
+  @Post(':token/area/leitura')
+  @Header('Cache-Control', 'no-store')
+  leituraDaArea(@Param('token') token: string, @Body() body: unknown, @Req() req?: RequisicaoComEndereco) {
+    this.conferirTeto(req);
+    this.conferirTetoDoToken(token, 'leitura');
+    return this.svc.leituraDaArea(token, body);
+  }
 }

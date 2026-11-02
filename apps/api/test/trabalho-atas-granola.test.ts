@@ -219,6 +219,8 @@ class StubEspiao implements LlmProvider {
   readonly configured = true;
   readonly supportsTools = false;
   readonly pedidos: string[] = [];
+  /** Simula a resposta que bateu no `max_tokens` (o pensamento comeu o limite). */
+  cortarSaida = false;
   private readonly stub = new StubProvider(PASTA_DO_STUB);
   tetoDeSaida(): number {
     return 1;
@@ -226,9 +228,10 @@ class StubEspiao implements LlmProvider {
   complete(): Promise<string> {
     throw new Error('não usado');
   }
-  step(input: LlmStepInput): Promise<LlmStepOutput> {
+  async step(input: LlmStepInput): Promise<LlmStepOutput> {
     this.pedidos.push(`${input.system}\n${input.turns.map((t) => (t.role === 'user' ? t.text : '')).join('\n')}`);
-    return this.stub.step(input);
+    const saida = await this.stub.step(input);
+    return this.cortarSaida ? { ...saida, stopReason: 'max_tokens' } : saida;
   }
 }
 
@@ -529,6 +532,18 @@ describe.skipIf(!URL_DO_BANCO)('o Granola direto contra o Postgres e o dublê', 
     espiao.pedidos.length = 0;
     await expect(naEmpresa(ORG, () => doGranola.gerarAta(ORG, { id: EU, papeis: ['ia_acao'] }, R1))).rejects.toBeInstanceOf(ForbiddenException);
     expect(espiao.pedidos).toHaveLength(0);
+  });
+
+  it('resposta cortada no limite de saída vira aviso claro e não grava ata nem sugestão', async () => {
+    await conectar();
+    espiao.cortarSaida = true;
+    try {
+      const notas = await prisma.contextItem.count({ where: { orgId: ORG } });
+      await expect(naEmpresa(ORG, () => doGranola.gerarAta(ORG, GENTE, R1))).rejects.toThrow(/veio cortada/);
+      expect(await prisma.contextItem.count({ where: { orgId: ORG } })).toBe(notas);
+    } finally {
+      espiao.cortarSaida = false;
+    }
   });
 
   it('a transcrição longa vem em pedaços, em JSON, e chega inteira (paginação do Granola)', async () => {

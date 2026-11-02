@@ -1,0 +1,129 @@
+{
+  "inicio": "2026-10-31T15:58:27.955Z",
+  "web": "http://127.0.0.1:4190",
+  "passos": [
+    {
+      "n": 1,
+      "nome": "login do usuário de teste",
+      "ms": 1266,
+      "detalhe": "teste-area@root.test"
+    },
+    {
+      "n": 2,
+      "nome": "A4 · clientes ativos trazem `area` para quem está em modo área",
+      "ms": 1739,
+      "detalhe": "8 em área · 4 em sala"
+    },
+    {
+      "n": 3,
+      "nome": "A1 · GET /comercial/lead/:id/area: modo área, 15 slots",
+      "ms": 2204,
+      "detalhe": "2/15 no ar · escopo vazio · contrato vazio"
+    },
+    {
+      "n": 4,
+      "nome": "A1 · lead em andamento continua em modo sala na bancada",
+      "ms": 2478,
+      "detalhe": "4d8a20e1"
+    },
+    {
+      "n": 5,
+      "nome": "A1 · GET /sala/:token em modo área: 15 slots, os vazios dizem a fase",
+      "ms": 2721,
+      "detalhe": "2/15 · fase atual fase-2"
+    },
+    {
+      "n": 6,
+      "nome": "A2 · rascunho da ata gravado e publicação retida (R3), sem tocar na versão da sala",
+      "ms": 3605,
+      "detalhe": "v1 · aprovação 94222c4c"
+    },
+    {
+      "n": 7,
+      "nome": "A2 · a rota de conteúdo da liberação diz o item e confere o hash",
+      "ms": 3795,
+      "detalhe": "Atas · 5daaf715069e"
+    },
+    {
+      "n": 8,
+      "nome": "A2 · item derivado recusa rascunho com o motivo",
+      "ms": 4013
+    },
+    {
+      "n": 9,
+      "nome": "A2 · a segunda pessoa liberou, a ata foi ao ar e a sala continua igual",
+      "ms": 5483,
+      "detalhe": "comercial.sala.publicar R4 · ata v1, 1ª edição"
+    },
+    {
+      "n": 10,
+      "nome": "A3 · abrir um item publicado grava a leitura; o novo some e a bancada vê a data",
+      "ms": 6302,
+      "detalhe": "atas"
+    },
+    {
+      "n": 11,
+      "nome": "A1 · o link do cliente abre a área (dark)",
+      "ms": 9793
+    },
+    {
+      "n": 12,
+      "nome": "A4 · aba Área do cliente no painel (dark)",
+      "ms": 15640,
+      "detalhe": "3/15"
+    },
+    {
+      "n": 13,
+      "nome": "A4 · chip \"área N/15\" em Clientes ativos (dark)",
+      "ms": 19158
+    },
+    {
+      "n": 14,
+      "nome": "A1 · o link do cliente abre a área (light)",
+      "ms": 22537
+    },
+    {
+      "n": 15,
+      "nome": "A4 · aba Área do cliente no painel (light)",
+      "ms": 28174,
+      "detalhe": "3/15"
+    },
+    {
+      "n": 16,
+      "nome": "A4 · chip \"área N/15\" em Clientes ativos (light)",
+      "ms": 31692
+    },
+    {
+      "n": 17,
+      "nome": "A1 · celular: uma coluna, sem rolagem horizontal, WhatsApp fixo, gaveta do item abre, vazio não abre",
+      "ms": 35207,
+      "detalhe": "linha-de-execucao"
+    },
+    {
+      "n": 18,
+      "nome": "fim: tudo conferido",
+      "ms": 35210
+    }
+  ],
+  "screenshots": [
+    "area-do-cliente-link-dark.png",
+    "area-do-cliente-bancada-dark.png",
+    "area-do-cliente-clientes-dark.png",
+    "area-do-cliente-link-light.png",
+    "area-do-cliente-bancada-light.png",
+    "area-do-cliente-clientes-light.png",
+    "area-do-cliente-link-390.png",
+    "area-do-cliente-link-390-linha-de-execucao.png"
+  ],
+  "semRolagemHorizontal": [
+    {
+      "nome": "area-390",
+      "scrollWidth": 390,
+      "clientWidth": 390,
+      "ok": true
+    }
+  ],
+  "ok": true,
+  "fim": "2026-10-31T15:59:03.169Z",
+  "duracaoMs": 35210
+}

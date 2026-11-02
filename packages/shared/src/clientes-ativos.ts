@@ -51,6 +51,13 @@ export interface ClienteAtivo {
   contrato: { leadId: string; situacao: SituacaoDoContrato } | null;
   whatsapp: { conversaId: string; nome: string }[];
   implantacao: { taskId: string; etapa: string } | null;
+  /**
+   * A área do cliente (leva A, 30/10/2026): quantos itens a Root PUBLICOU na área do
+   * lead desta linha, de quinze. Só para o lead em modo área (fechado ou com o card da
+   * implantação); nulo no resto. Os itens que o OS deriva sozinho não entram nesta
+   * conta (a bancada do lead mostra o total com eles).
+   */
+  area: { publicados: number; total: number } | null;
   /** As partes que faltam, na ordem de `PARTES_DO_CLIENTE`. */
   faltam: ParteDoCliente[];
   /** Lead fechado sem cadastro: dá para criar ali mesmo. */

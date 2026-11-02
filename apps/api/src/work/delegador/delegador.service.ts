@@ -5,13 +5,14 @@ import {
   Inject,
   Injectable,
   NotFoundException,
+  ServiceUnavailableException,
 } from '@nestjs/common';
 import { funcaoPorId, type AceitarDelegacao, type DelegacaoDaTarefa, type DelegacaoSugestaoDto } from '@mktos/shared';
 
 import { temPapelDeMaquina } from '../../approvals/alcada';
 import { AuditService } from '../../audit/audit.service';
 import { lerAprovador } from '../../auth/aprovador';
-import { LLM_PROVIDER, type LlmProvider } from '../../llm/llm.provider';
+import { LLM_PROVIDER, TETO_MAXIMO_DE_SAIDA_DA_RESPOSTA, type LlmProvider } from '../../llm/llm.provider';
 import { umaPorVez } from '../../pauta/uma-por-vez';
 import { PrismaService } from '../../prisma/prisma.service';
 import { WorkService } from '../work.service';
@@ -91,7 +92,22 @@ export class DelegadorService {
       agentes,
       hoje,
     });
-    const saida = await this.llm.step({ funcao: 'TR-09', system, turns: [{ role: 'user', text: user }], orgId, maxTokens: 4000 });
+    // 16 mil, e não 4 mil: na Anthropic o `max_tokens` do `step()` cobre o pensamento
+    // adaptativo E a resposta, e o TR-09 roda no Opus com esforço alto (30/10/2026,
+    // mesma causa do corte das atas do Granola).
+    const saida = await this.llm.step({
+      funcao: 'TR-09',
+      system,
+      turns: [{ role: 'user', text: user }],
+      orgId,
+      maxTokens: TETO_MAXIMO_DE_SAIDA_DA_RESPOSTA,
+    });
+    if (saida.stopReason === 'max_tokens') {
+      throw new ServiceUnavailableException(
+        `a proposta do delegador passou do limite de ${TETO_MAXIMO_DE_SAIDA_DA_RESPOSTA} tokens de saída e veio cortada; ` +
+          'nada foi gravado. Tente de novo.',
+      );
+    }
     let lidas;
     try {
       lidas = interpretarDelegacao(saida.text, { pessoas, agentes, hoje, prazoDaTarefa });

@@ -24,7 +24,7 @@ import {
 import { AuditService } from '../../audit/audit.service';
 import { cardsParaCasar, clienteDaReuniao, levarReuniaoDiretaParaFicha, reuniaoDoGranolaNaFicha } from '../../ficha/granola.service';
 import { ConectorDesligadoError } from '../../integrations/conectores.service';
-import { LLM_PROVIDER, type LlmProvider, type LlmStepOutput } from '../../llm/llm.provider';
+import { LLM_PROVIDER, TETO_MAXIMO_DE_SAIDA_DA_RESPOSTA, type LlmProvider, type LlmStepOutput } from '../../llm/llm.provider';
 import { MemoriaService } from '../../memory/memoria.service';
 import { normalizarParaBusca } from '../../onboarding/trilho/leitor-de-ata';
 import { varrerSegredos } from '../../onboarding/trilho/segredos';
@@ -76,7 +76,13 @@ import { interpretarAtaDoGranola, markdownDaAta, promptDaAtaDoGranola, type Leit
  * controller e `exigirGente` pelo banco antes de gastar IA).
  */
 
-const SAIDA_DA_LEITURA = 6000;
+/*
+ * O mesmo teto do `complete()` (16 mil), e não 6 mil: na Anthropic o `max_tokens`
+ * do `step()` cobre o pensamento adaptativo E a resposta. Com 6 mil, a reunião
+ * longa (a de 29/10/2026 tinha 127 mil caracteres) esgotava o limite no meio da
+ * lista de sugestões, e a tela mostrava "não é o JSON combinado" (30/10/2026).
+ */
+const SAIDA_DA_LEITURA = TETO_MAXIMO_DE_SAIDA_DA_RESPOSTA;
 const MIN_CARACTERES_DA_TRANSCRICAO = 50;
 
 const diaEmSaoPaulo = (d: Date): string =>
@@ -327,6 +333,14 @@ export class AtasDoGranolaService {
     } catch (e) {
       if (e instanceof BadRequestException || e instanceof ConflictException || e instanceof ForbiddenException) throw e;
       const msg = `o leitor de reuniões não conseguiu chamar o modelo: ${(e as Error).message}`.slice(0, 300);
+      this.log.warn(`${orgId} ${entrada.fonte}:${granolaId}: ${msg}`);
+      throw new ServiceUnavailableException(msg);
+    }
+
+    if (saida.stopReason === 'max_tokens') {
+      const msg =
+        `a leitura da reunião passou do limite de ${SAIDA_DA_LEITURA} tokens de saída e veio cortada; ` +
+        'nada foi gravado. Tente de novo ou leia a reunião em partes.';
       this.log.warn(`${orgId} ${entrada.fonte}:${granolaId}: ${msg}`);
       throw new ServiceUnavailableException(msg);
     }

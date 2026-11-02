@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import type { ConteudoDaSalaPublicada } from '@mktos/shared';
+import { ehConteudoDeItem, type ConteudoDaSalaPublicada, type ConteudoGuardadoDoItemDaArea } from '@mktos/shared';
 import { apiGet } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 import { diaHoraSP } from '@/lib/cockpit';
@@ -18,12 +18,17 @@ import { diaHoraSP } from '@/lib/cockpit';
 
 export const CAPACIDADE_DA_SALA = 'comercial.sala.publicar';
 
+/** A versão pode ser da sala inteira (`item` nulo) ou de um item da área do cliente (leva A, 30/10/2026). */
+type ConteudoDaVersao = ConteudoDaSalaPublicada | ConteudoGuardadoDoItemDaArea;
+
 interface ConteudoDaSala {
   leadId: string;
   versao: number;
+  item?: string | null;
+  titulo?: string | null;
   estado: string;
-  conteudo: ConteudoDaSalaPublicada;
-  anterior: { versao: number; conteudo: ConteudoDaSalaPublicada } | null;
+  conteudo: ConteudoDaVersao;
+  anterior: { versao: number; conteudo: ConteudoDaVersao } | null;
   hashGravado: string;
   hashDeAgora: string;
   hashAssinado: string | null;
@@ -95,7 +100,10 @@ export function CartaoDaSala({ recursoId, hashAssinado, onPronto }: { recursoId:
   }
   if (!c) return <p className="text-xs text-muted">Carregando a versão da sala…</p>;
 
-  const s = c.conteudo;
+  // Leva A: a versão de UM item da área do cliente lê diferente da sala inteira.
+  if (ehConteudoDeItem(c.conteudo)) return <CartaoDoItemDaArea c={c} conteudo={c.conteudo} />;
+
+  const s = c.conteudo as ConteudoDaSalaPublicada;
   return (
     <section className="space-y-2 rounded-lg border border-border p-3 text-xs" data-testid="cartao-da-sala" aria-label="Versão da sala que vai ao cliente">
       {!c.confere && (
@@ -124,6 +132,51 @@ export function CartaoDaSala({ recursoId, hashAssinado, onPronto }: { recursoId:
         <dd>{s.quemCuida ? `${s.quemCuida.nome}${s.quemCuida.papel ? `, ${s.quemCuida.papel}` : ''}` : 'ninguém escrito'}</dd>
         <dt className="text-muted">WhatsApp</dt>
         <dd>{s.whatsapp.numero ?? s.whatsapp.rotulo}</dd>
+      </dl>
+      <p className="font-mono text-[10px] text-muted">
+        hash de agora {c.hashDeAgora.slice(0, 12)}… · {c.confere ? 'confere com o da aprovação' : 'NÃO confere com o da aprovação'}
+      </p>
+    </section>
+  );
+}
+
+/**
+ * A versão de um item da área do cliente (leva A, 30/10/2026), como quem libera
+ * a lê: o item, o escrito inteiro (resumo, texto, tópicos, data, documento, o
+ * que mudou) e a edição que está no ar hoje, para ver o que muda.
+ */
+function CartaoDoItemDaArea({ c, conteudo: i }: { c: ConteudoDaSala; conteudo: ConteudoGuardadoDoItemDaArea }) {
+  const anterior = c.anterior && ehConteudoDeItem(c.anterior.conteudo) ? c.anterior.conteudo : null;
+  return (
+    <section className="space-y-2 rounded-lg border border-border p-3 text-xs" data-testid="cartao-do-item-da-area" aria-label="Item da área do cliente que vai ao cliente">
+      {!c.confere && (
+        <p className="rounded-lg border border-bad/40 bg-bad/10 px-3 py-2 text-bad" data-testid="sala-divergente">
+          O item mudou depois do pedido: o hash de agora não é o que esta aprovação prende. Ele não sai com esta assinatura.
+        </p>
+      )}
+      <p className="text-sm font-medium">
+        Área do cliente · {c.titulo ?? i.item} · versão {c.versao}
+        {c.anterior ? <span className="text-muted"> (no ar hoje: versão {c.anterior.versao})</span> : <span className="text-muted"> (a primeira edição deste item)</span>}
+      </p>
+      <dl className="grid grid-cols-[130px_minmax(0,1fr)] gap-x-2 gap-y-1">
+        <dt className="text-muted">resumo</dt>
+        <dd>{i.resumo ?? 'sem resumo'}</dd>
+        <dt className="text-muted">texto</dt>
+        <dd className="whitespace-pre-line">{i.texto?.trim() ? i.texto : 'sem texto'}</dd>
+        <dt className="text-muted">tópicos</dt>
+        <dd>{i.topicos?.length ? <ul className="list-disc space-y-0.5 pl-4">{i.topicos.map((t, k) => <li key={k}>{t}</li>)}</ul> : 'nenhum'}</dd>
+        <dt className="text-muted">data</dt>
+        <dd>{i.quando ? diaCurto(i.quando) : 'sem data'}</dd>
+        <dt className="text-muted">documento</dt>
+        <dd>{i.documentoId ? `arquivo do cliente ${i.documentoId.slice(0, 8)}…` : 'nenhum'}</dd>
+        <dt className="text-muted">o que mudou</dt>
+        <dd>{i.oQueMudou ?? (anterior ? 'não escrito' : 'primeira edição')}</dd>
+        {anterior && (
+          <>
+            <dt className="text-muted">no ar hoje</dt>
+            <dd className="text-muted">{anterior.resumo ?? anterior.texto?.slice(0, 160) ?? (anterior.topicos ?? []).join(' · ')}</dd>
+          </>
+        )}
       </dl>
       <p className="font-mono text-[10px] text-muted">
         hash de agora {c.hashDeAgora.slice(0, 12)}… · {c.confere ? 'confere com o da aprovação' : 'NÃO confere com o da aprovação'}

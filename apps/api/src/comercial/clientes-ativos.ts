@@ -1,4 +1,5 @@
 import {
+  AREA_TOTAL_DE_ITENS,
   COMERCIAL_ROTULO_DA_ETAPA,
   COMERCIAL_TIPOS_DE_NEGOCIO,
   PARTES_DO_CLIENTE,
@@ -31,6 +32,8 @@ export interface InsumosDosClientesAtivos {
   contratos: { leadId: string; situacao: SituacaoDoContrato }[];
   conversas: { id: string; nome: string; clienteId: string | null; leadId: string | null }[];
   implantacoes: { taskId: string; etapa: string; clienteId: string | null; leadId: string | null }[];
+  /** A área do cliente (leva A): por lead, se o link já está em modo área e quantos itens a Root publicou. Opcional: a suíte de antes não a passa. */
+  areas?: { leadId: string; emArea: boolean; publicados: number }[];
 }
 
 const nomeDoCadastro = (c: { razaoSocial: string; nomeFantasia: string | null }) => (c.nomeFantasia?.trim() || c.razaoSocial).trim();
@@ -38,7 +41,7 @@ const tipoValido = (t: string | null | undefined): ComercialTipoDeNegocio | null
   t && (COMERCIAL_TIPOS_DE_NEGOCIO as readonly string[]).includes(t) ? (t as ComercialTipoDeNegocio) : null;
 const CONTRATO_ABERTO: readonly SituacaoDoContrato[] = ['ativo', 'em_implantacao'];
 
-type Linha = Omit<ClienteAtivo, 'faltam' | 'podeCriarCadastro' | 'tipo' | 'valor'> & { fichas: InsumosDosClientesAtivos['fichas'] };
+type Linha = Omit<ClienteAtivo, 'faltam' | 'podeCriarCadastro' | 'tipo' | 'valor' | 'area'> & { fichas: InsumosDosClientesAtivos['fichas'] };
 
 export function juntarClientesAtivos(e: InsumosDosClientesAtivos): ListaDeClientesAtivos {
   const cadastroPorId = new Map(e.cadastros.map((c) => [c.id, c]));
@@ -147,10 +150,12 @@ export function juntarClientesAtivos(e: InsumosDosClientesAtivos): ListaDeClient
     if (l && !l.contrato) l.contrato = { leadId: c.leadId, situacao: c.situacao };
   }
 
+  const areaPorLead = new Map((e.areas ?? []).map((a) => [a.leadId, a]));
   const clientes: ClienteAtivo[] = [...linhas.values()].map((l) => {
     // O lead da linha: o fechado antes; senão o que estiver mais adiante no funil.
     const f = l.fichas.find((x) => x.etapa === 'fechado') ?? l.fichas[0] ?? null;
     const funil = f ? { leadId: f.leadId, etapa: f.etapa, rotulo: COMERCIAL_ROTULO_DA_ETAPA[f.etapa as ComercialEtapa] ?? f.etapa } : null;
+    const areaDoLead = f ? areaPorLead.get(f.leadId) : undefined;
     const tipo = tipoValido(f?.tipoNegocio) ?? tipoValido(l.acordos[0]?.tipo) ?? 'pagante';
     const somaAcordos = l.acordos.reduce((s, a) => s + a.valor, 0);
     const daFicha = f ? (f.valorNegociadoCentavos ?? f.valorCentavos) : null;
@@ -169,6 +174,7 @@ export function juntarClientesAtivos(e: InsumosDosClientesAtivos): ListaDeClient
       funil,
       tipo,
       valor,
+      area: areaDoLead?.emArea ? { publicados: areaDoLead.publicados, total: AREA_TOTAL_DE_ITENS } : null,
       faltam: PARTES_DO_CLIENTE.filter((p) => !tem[p]),
       podeCriarCadastro: !l.cadastro && !!funil && (funil.etapa === 'fechado' || funil.etapa === 'contrato'),
     };
