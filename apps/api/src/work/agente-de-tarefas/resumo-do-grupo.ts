@@ -93,3 +93,42 @@ export function montarResumo(
   ].filter(Boolean).join('\n');
   return [cabeca, '', blocos.join('\n\n'), pe ? `\n${pe}` : ''].join('\n').trim();
 }
+
+// ---------------------------------------------------------------- feriados
+
+/**
+ * Domingo de Páscoa (computo gregoriano, algoritmo de Meeus/Jones/Butcher),
+ * AAAA-MM-DD. É dele que sai a Sexta-feira Santa.
+ */
+export function pascoa(ano: number): string {
+  const a = ano % 19, b = Math.floor(ano / 100), c = ano % 100, d = Math.floor(b / 4), e = b % 4;
+  const f = Math.floor((b + 8) / 25), g = Math.floor((b - f + 1) / 3), h = (19 * a + b - d - g + 15) % 30;
+  const i = Math.floor(c / 4), k = c % 4, l = (32 + 2 * e + 2 * i - h - k) % 7, m = Math.floor((a + 11 * h + 22 * l) / 451);
+  const mes = Math.floor((h + l - 7 * m + 114) / 31), dia = ((h + l - 7 * m + 114) % 31) + 1;
+  return `${ano}-${String(mes).padStart(2, '0')}-${String(dia).padStart(2, '0')}`;
+}
+
+/**
+ * Os feriados NACIONAIS de lei (02/11/2026, pedido do Lucas): Lei 662/1949 com a
+ * redação da Lei 10.607/2002, Lei 6.802/1980 (12/10) e Lei 14.759/2023 (20/11),
+ * mais a Sexta-feira da Paixão, que a Lei 9.093/1995 manda guardar. Carnaval e
+ * Corpus Christi são ponto facultativo, não feriado nacional: o resumo sai.
+ */
+export function feriadosNacionais(ano: number): Map<string, string> {
+  const p = new Date(`${pascoa(ano)}T12:00:00Z`);
+  p.setUTCDate(p.getUTCDate() - 2);
+  const fixos: [string, string][] = [
+    ['01-01', 'Confraternização Universal'], ['04-21', 'Tiradentes'], ['05-01', 'Dia do Trabalho'],
+    ['09-07', 'Independência'], ['10-12', 'Nossa Senhora Aparecida'], ['11-02', 'Finados'],
+    ['11-15', 'Proclamação da República'], ['11-20', 'Dia da Consciência Negra'], ['12-25', 'Natal'],
+  ];
+  return new Map<string, string>([
+    ...fixos.map(([md, nome]) => [`${ano}-${md}`, nome] as [string, string]),
+    [p.toISOString().slice(0, 10), 'Sexta-feira da Paixão'],
+  ]);
+}
+
+/** O nome do feriado nacional do dia (AAAA-MM-DD), ou `null`. */
+export function feriadoNacional(dia: string): string | null {
+  return feriadosNacionais(Number(dia.slice(0, 4))).get(dia) ?? null;
+}

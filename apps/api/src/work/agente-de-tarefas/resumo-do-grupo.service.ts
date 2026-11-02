@@ -10,8 +10,11 @@ import { TarefasDoDiaService } from '../tarefas-do-dia.service';
 import { SLUG_DO_AGENTE_DE_TAREFAS } from './agente-de-tarefas.service';
 import { mesmoTelefone, nomeComparavel } from './pedido-do-grupo';
 import {
-  CRON_DO_RESUMO, FUSO_DO_RESUMO, SLUG_DA_ROTINA_DO_RESUMO, TIPO_DO_RESUMO_DO_GRUPO, montarResumo, turnoDe,
+  CRON_DO_RESUMO, FUSO_DO_RESUMO, SLUG_DA_ROTINA_DO_RESUMO, TIPO_DO_RESUMO_DO_GRUPO, feriadoNacional, montarResumo, turnoDe,
 } from './resumo-do-grupo';
+
+/** Primeira tentativa na hora; depois 1, 2 e 3 minutos (6 no total). */
+export const ESPERAS_ENTRE_TENTATIVAS_MS = [0, 60_000, 120_000, 180_000];
 
 /**
  * A rotina do resumo (07h e 18h, São Paulo). Aparece em /rotinas, onde pausa.
@@ -84,16 +87,33 @@ export class ResumoDoGrupoService implements OnModuleInit {
     const agente = await this.prisma.agent.findFirst({ where: { orgId: ctx.orgId, slug: SLUG_DO_AGENTE_DE_TAREFAS }, select: { estado: true } });
     if (agente?.estado !== EstadoDeAgente.ativo) return { status: 'pulada', resumo: 'Agente de tarefas pausado em Agentes: nada foi enviado.' };
     const painel = await this.tarefas.painel(ctx.orgId);
+    // Feriado nacional não tem resumo (02/11/2026). Pedido no grupo continua valendo.
+    const feriado = feriadoNacional(painel.hoje);
+    if (feriado) return { status: 'pulada', resumo: `Feriado nacional (${feriado}): resumo não enviado.` };
     const turno = turnoDe(ctx.agora);
     const pessoas = await this.comMencao(ctx.orgId, painel.pessoas);
     const texto = montarResumo(turno, painel.hoje, pessoas, painel.tarefas);
     const mencoes = pessoas.map((p) => p.mencao).filter((m): m is string => !!m);
-    try {
-      await this.envio.falarNoGrupoDoAgente(ctx.orgId, texto, mencoes);
-    } catch (e) {
-      this.log.warn(`resumo não saiu (${ctx.orgId}): ${(e as Error).message}`);
-      return { status: 'erro', resumo: `O WhatsApp recusou o envio: ${(e as Error).message}`.slice(0, 200) };
+    // 02/11/2026: o WhatsApp caiu e voltou "conectado" com o canal fechado; o das 18h se perdeu
+    // num envio só. Agora tenta de novo por até 6 minutos (o arrendamento da rotina é 15).
+    let ultimo = '';
+    for (const [n, espera] of ESPERAS_ENTRE_TENTATIVAS_MS.entries()) {
+      if (espera) await this.esperar(espera);
+      try {
+        await this.envio.falarNoGrupoDoAgente(ctx.orgId, texto, mencoes);
+        const depois = n ? ` na ${n + 1}ª tentativa` : '';
+        return { status: 'ok', resumo: `Resumo da ${turno === 'manha' ? 'manhã' : 'noite'} enviado ao grupo (${painel.pessoas.length} pessoas)${depois}.` };
+      } catch (e) {
+        ultimo = (e as Error).message;
+        this.log.warn(`resumo não saiu na ${n + 1}ª tentativa (${ctx.orgId}): ${ultimo}`);
+      }
     }
-    return { status: 'ok', resumo: `Resumo da ${turno === 'manha' ? 'manhã' : 'noite'} enviado ao grupo (${painel.pessoas.length} pessoas).` };
+    // Lança para a rotina contar FALHA (só exceção conta; antes ficava "ok" em /rotinas).
+    throw new Error(`O WhatsApp recusou o resumo ${ESPERAS_ENTRE_TENTATIVAS_MS.length} vezes em 6 min: ${ultimo}`.slice(0, 250));
+  }
+
+  /** A suíte troca para não esperar de verdade. */
+  esperar(ms: number): Promise<void> {
+    return new Promise((r) => setTimeout(r, ms));
   }
 }
