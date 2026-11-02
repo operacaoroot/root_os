@@ -40,13 +40,21 @@ import { PrismaService } from '../prisma/prisma.service';
 import { LLM_PROVIDER, type LlmProvider } from '../llm/llm.provider';
 import { TranscricaoService, MAX_BYTES_DE_AUDIO } from '../llm/transcricao.provider';
 import { GoogleService } from '../google/google.service';
-import { ApifyService } from '../pauta/apify.service';
+import { ApifyService, CreditoDoApifyEsgotadoError } from '../pauta/apify.service';
 import { MarcaService } from '../pauta/marca.service';
 import { EntradaDeGrupoRegistry } from '../gateway/canais/entrada-de-grupo.registry';
 import { lerLinksDoGrupo } from '../pauta/links-do-grupo';
 import { comContextoDaEmpresaResolvida } from '../prisma/contexto-de-plataforma';
 import { baixarAte, jsonDaIa, lerMetaDoLink } from './leitura-de-link';
 import { SYSTEM_LINK, SYSTEM_VIDEO } from './prompts';
+
+/** A frase que a importação do grupo Claudinho deixou nas notas ainda não analisadas (27/10/2026). */
+const MARCA_DE_NOTA_SEM_ANALISE = /_?A legenda completa e a transcrição entram quando a IA analisar a nota\._?/;
+
+/** Nota de link ou vídeo que entrou sem a análise e ainda não falhou ao tentar. */
+export function precisaDeAnalise(n: Pick<MarketingNota, 'url' | 'corpo' | 'erro' | 'status'>): boolean {
+  return !!n.url && n.status === 'pronto' && !n.erro && MARCA_DE_NOTA_SEM_ANALISE.test(n.corpo ?? '');
+}
 
 /*
  * MEMÓRIA DO MARKETING (26/10/2026), a do ROOT Estúdio dentro do OS.
@@ -327,6 +335,40 @@ export class MemoriaDoMarketingService implements OnModuleInit {
     await this.prisma.marketingNota.update({ where: { id: n.id }, data: { status: 'fila', erro: null } });
     this.enfileirar(orgId, n.id, '');
     return { ok: true };
+  }
+
+  /**
+   * As notas importadas do grupo Claudinho (27/10/2026) entraram só com link, quem mandou e o
+   * comentário do grupo, à espera da análise. Antes de virar card de ideia, a nota passa pela
+   * análise de verdade (legenda pelo Apify, transcrição do vídeo, gancho e estrutura) e o texto
+   * do grupo vai junto como comentário. 'sem-credito' = o Apify parou no teto do mês: não grava
+   * nada e a nota fica à espera. 'falhou' = post privado ou apagado: a nota volta como estava,
+   * com o motivo em `erro`, e não tenta de novo.
+   */
+  async analisarSePreciso(orgId: string, id: string): Promise<'analisada' | 'nao-precisa' | 'sem-credito' | 'falhou'> {
+    const n = await this.prisma.marketingNota.findFirst({ where: { id, orgId } });
+    if (!n || !precisaDeAnalise(n)) return 'nao-precisa';
+    const doGrupo = n.corpo
+      .replace(MARCA_DE_NOTA_SEM_ANALISE, '')
+      .split('\n')
+      .filter((l) => !/^#\s/.test(l) && !/^_Importado do grupo/.test(l))
+      .join('\n')
+      .trim();
+    const vez = this.fila.then(() =>
+      comContextoDaEmpresaResolvida(orgId, () => this.processar(orgId, id, doGrupo), { origem: 'cron', actorId: 'memoria-do-marketing' }),
+    );
+    this.fila = vez.catch(() => undefined);
+    try {
+      await vez;
+      return 'analisada';
+    } catch (e) {
+      const semCredito = e instanceof CreditoDoApifyEsgotadoError || /Falta o APIFY_TOKEN/.test(String((e as Error)?.message));
+      await this.prisma.marketingNota.update({
+        where: { id },
+        data: { status: 'pronto', titulo: n.titulo, resumo: n.resumo, corpo: n.corpo, erro: semCredito ? null : lim(`Análise não feita: ${(e as Error)?.message ?? e}`, 400) },
+      });
+      return semCredito ? 'sem-credito' : 'falhou';
+    }
   }
 
   /** Manda de novo para o Drive as notas prontas que ainda não estão lá. */

@@ -295,7 +295,7 @@ export default function TriagemPage() {
           <div className="ideias-progress">
             <span />
           </div>
-          A IA está lendo as ideias{semLeitura ? `: faltam ${semLeitura} ${semLeitura === 1 ? 'card' : 'cards'} que chegaram com ela fora do ar` : ''}. A tela se atualiza sozinha.
+          A IA está lendo as ideias{semLeitura ? `: faltam ${semLeitura} ${semLeitura === 1 ? 'card' : 'cards'} (os da Memória passam antes pela análise do vídeo, cerca de 1 minuto cada)` : ''}. A tela se atualiza sozinha.
         </div>
       )}
       {painel && painel.ia && !painel.iaLigada && (

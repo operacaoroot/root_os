@@ -26,6 +26,7 @@ import { GoogleService } from '../google/google.service';
 import { jsonDaIa, lerMetaDoLink, textoLimpo } from './leitura-de-link';
 import { REGRAS_DE_PARTIDA, SYSTEM_TRIAGEM } from './prompts';
 import { garantirRotinaDasIdeias } from './rotina-das-ideias';
+import { MemoriaDoMarketingService, precisaDeAnalise } from './memoria-do-marketing.service';
 
 /*
  * IDEIAS › TRIAGEM, a do ROOT Estúdio (26/10/2026): um card por vez.
@@ -96,7 +97,8 @@ function materiaDaNota(n: Pick<MarketingNota, 'id' | 'titulo' | 'resumo' | 'corp
     fonteId: FONTE_DA_MEMORIA,
     fonteNome: 'Memória',
     titulo: n.titulo,
-    texto: `${n.resumo}\n${n.corpo}`.slice(0, 1200),
+    // A nota inteira (resumo, gancho, estrutura, legenda e a transcrição): antes eram 1.200 caracteres e o card saía pobre.
+    texto: `${n.resumo}\n${n.corpo}`.slice(0, 6000),
     url: n.url,
     imagemUrl: null,
     publicadoEm: n.criadaEm,
@@ -183,6 +185,7 @@ export class TriagemService {
     @Inject(LLM_PROVIDER) private readonly llm: LlmProvider,
     @Optional() private readonly memoria?: MemoriaService,
     @Optional() private readonly google?: GoogleService,
+    @Optional() private readonly memoriaDoMarketing?: MemoriaDoMarketingService,
   ) {}
 
   async painel(orgId: string): Promise<TriagemPainel> {
@@ -497,10 +500,18 @@ export class TriagemService {
     return [...deNotas, ...deCapturas].slice(0, teto);
   }
 
-  /** Cards para avaliar que nasceram sem a IA (até 200 por vez). */
+  /**
+   * Cards para avaliar que precisam da IA de novo (até 200 por vez): os que nasceram sem ela e
+   * os que vieram de nota da Memória que ainda não foi analisada (a IA leu só o link e o comentário).
+   */
   private async cardsSemLeitura(orgId: string): Promise<MarketingIdeiaCard[]> {
     const novas = await this.prisma.marketingIdeiaCard.findMany({ where: { orgId, status: 'nova' }, orderBy: [{ score: 'desc' }, { criadaEm: 'desc' }], take: 1000 });
-    return novas.filter(semLeitura).slice(0, 200);
+    const idsDasNotas = novas.map((c) => c.notaId).filter((id): id is string => !!id);
+    const notas = idsDasNotas.length
+      ? await this.prisma.marketingNota.findMany({ where: { orgId, id: { in: idsDasNotas } }, select: { id: true, url: true, corpo: true, erro: true, status: true } })
+      : [];
+    const faltaAnalise = new Set(notas.filter(precisaDeAnalise).map((n) => n.id));
+    return novas.filter((c) => semLeitura(c) || (!!c.notaId && faltaAnalise.has(c.notaId))).slice(0, 200);
   }
 
   /** A matéria de um card que já existe: a nota ou a captura de onde ele veio; sem elas, o próprio card. */
@@ -529,12 +540,20 @@ export class TriagemService {
     const lista = ids?.length
       ? await this.prisma.marketingIdeiaCard.findMany({ where: { orgId, id: { in: ids }, status: { in: ['nova', 'descartada_ia'] } } })
       : await this.cardsSemLeitura(orgId);
-    const resultado = { lidos: lista.length, relidos: 0, falharam: 0 };
+    const resultado = { lidos: lista.length, relidos: 0, falharam: 0, semCredito: 0 };
     if (!lista.length) return resultado;
     const pesos = await this.pesos(orgId);
     const ctx = await this.contexto(orgId);
     for (let i = 0; i < lista.length; i += LOTE) {
-      const lote = lista.slice(i, i + LOTE);
+      // Nota que entrou sem a análise (as do grupo Claudinho) passa por ela antes: legenda pelo
+      // Apify, transcrição, gancho e estrutura. Sem crédito do Apify, o card espera a próxima vez.
+      const lote: MarketingIdeiaCard[] = [];
+      for (const c of lista.slice(i, i + LOTE)) {
+        const analise = c.notaId && this.memoriaDoMarketing ? await this.memoriaDoMarketing.analisarSePreciso(orgId, c.notaId) : 'nao-precisa';
+        if (analise === 'sem-credito') resultado.semCredito++;
+        else lote.push(c);
+      }
+      if (!lote.length) continue;
       const materias = await Promise.all(lote.map((c) => this.materiaDoCard(orgId, c)));
       await Promise.all(materias.map((m) => this.completarComAPagina(m)));
       let itens: SaidaDoCard[];
@@ -685,7 +704,7 @@ export class TriagemService {
       '## Últimas pautas aprovadas', aprovadas.length ? aprovadas.map((a) => `- ${a.titulo} (${a.formatoSugerido})`).join('\n') : '(nenhuma ainda)',
       '## Últimas pautas recusadas e o motivo', recusadas.length ? recusadas.map((r) => `- ${r.titulo} → motivo: ${r.motivo || 'sem motivo informado'}`).join('\n') : '(nenhuma ainda)',
       `## Itens para avaliar (${lote.length})`,
-      lote.map((m, idx) => [`[${idx}] Fonte: ${m.fonteNome}${m.publicadoEm ? ` · ${m.publicadoEm.toISOString().slice(0, 10)}` : ''}`, `Título: ${lim(m.titulo, 300)}`, m.url && `Link: ${m.url}`, m.texto && `Texto: ${lim(m.texto, 900)}`].filter(Boolean).join('\n')).join('\n\n'),
+      lote.map((m, idx) => [`[${idx}] Fonte: ${m.fonteNome}${m.publicadoEm ? ` · ${m.publicadoEm.toISOString().slice(0, 10)}` : ''}`, `Título: ${lim(m.titulo, 300)}`, m.url && `Link: ${m.url}`, m.texto && `Texto: ${lim(m.texto, 4000)}`].filter(Boolean).join('\n')).join('\n\n'),
     ].filter(Boolean).join('\n\n');
     const saida = await this.llm.complete({ funcao: 'CT-21', system: SYSTEM_TRIAGEM, user, orgId, maxTokens: 6000 });
     const j = jsonDaIa<{ items?: SaidaDoCard[] }>(saida);
