@@ -658,3 +658,32 @@
 .estudio .fluxo-rodape strong{color:var(--ink);font-weight:600}
 @media(max-width:1000px){.estudio .fluxo-etapas{grid-template-columns:1fr}}
 @media(max-width:760px){.estudio .ideias-linha{grid-template-columns:48px minmax(0,1fr)}.estudio .ideias-linha-img{width:48px;height:48px}.estudio .ideias-linha-lado{grid-column:1/-1;justify-items:stretch}.estudio .ideias-mini-acoes{justify-content:space-between}.estudio .ideias-busca{flex-wrap:wrap}.estudio .ideias-busca .ideias-search{width:100%}}
+/* Produção › Lista e Para quem (02/11/2026): grupos por etapa como no ClickUp, datas na linha. */
+.estudio .prod-perfis{align-items:center}
+.estudio .prod-perfis>.tiny{margin-right:4px}
+.estudio .prod-tags{display:flex;flex-wrap:wrap;gap:4px;align-items:center}
+.estudio .prod-tag{display:inline-block;padding:2px 8px;border-radius:20px;border:1px solid #cfd8bd;background:#f4f7ec;color:#3e5321;font-size:10px;font-weight:650;white-space:nowrap}
+.estudio .prod-tag-root{background:var(--dark);border-color:var(--dark);color:var(--lime)}
+.estudio .prod-lista-wrap{display:grid;gap:14px}
+.estudio .prod-resumo strong{color:var(--ink);font-size:13px}
+.estudio .prod-grupo{background:var(--paper);border:1px solid var(--line);border-radius:12px;overflow:hidden}
+.estudio .prod-grupo-cab{display:flex;align-items:center;gap:10px;width:100%;border:0;border-radius:0;background:#f7f8f3;padding:10px 14px;text-align:left}
+.estudio .prod-grupo-cab:hover{background:#eff2e7}
+.estudio .prod-seta{width:12px;color:var(--muted)}
+.estudio .prod-status{display:inline-block;padding:3px 10px;border-radius:6px;font-size:11px;font-weight:700;letter-spacing:.3px;text-transform:uppercase;background:#e8eadf;color:#5a6150}
+.estudio .prod-status-producao{background:#ebe6f0;color:#655371}
+.estudio .prod-status-a_agendar{background:#fff0d5;color:#805c14}
+.estudio .prod-status-agendado{background:#e2e9ec;color:#475d67}
+.estudio .prod-status-publicado{background:var(--lime);color:#1e2b0e}
+.estudio .prod-tabela{display:grid}
+.estudio .prod-linha{display:grid;grid-template-columns:minmax(0,1fr) 170px 140px 140px 150px;gap:12px;align-items:center;padding:8px 14px;border-top:1px solid var(--line)}
+.estudio .prod-linha:hover{background:#fafbf6}
+.estudio .prod-linha-cab{font-size:10px;letter-spacing:1px;text-transform:uppercase;color:var(--muted);font-weight:600;padding-top:6px;padding-bottom:6px}
+.estudio .prod-linha-cab:hover{background:none}
+.estudio .prod-nome{display:grid;gap:2px;border:0;background:none;padding:0;text-align:left;min-width:0;font-weight:400}
+.estudio .prod-nome:hover{background:none}
+.estudio .prod-nome strong{font-size:13px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.estudio .prod-nome:hover strong{color:var(--green)}
+.estudio .prod-dia,.estudio .prod-select{padding:5px 8px;font-size:12px;border-radius:6px}
+.estudio .prod-atraso .prod-dia{border-color:#e0b4ad;background:#fbefed;color:var(--red)}
+@media(max-width:900px){.estudio .prod-linha{grid-template-columns:1fr 1fr}.estudio .prod-linha-cab{display:none}.estudio .prod-nome{grid-column:1/-1}}

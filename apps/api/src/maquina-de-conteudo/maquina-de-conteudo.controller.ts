@@ -6,6 +6,7 @@ import {
   MaquinaEtapaSchema,
   MaquinaMetricasSchema,
   MaquinaOrdemSchema,
+  MaquinaPlanejamentoSchema,
   MaquinaPostSalvarSchema,
 } from '@mktos/shared';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
@@ -61,6 +62,12 @@ export class MaquinaDeConteudoController {
   @RequirePermissions('pauta.editar')
   data(@CurrentUser() u: JwtUser, @Param('id', ParseUUIDPipe) id: string, @Body() body: unknown) {
     return this.svc.mudarData(u.orgId, id, u.name, MaquinaDataSchema.parse(body).data);
+  }
+
+  @Patch('posts/:id/planejamento')
+  @RequirePermissions('pauta.editar')
+  planejar(@CurrentUser() u: JwtUser, @Param('id', ParseUUIDPipe) id: string, @Body() body: unknown) {
+    return this.svc.planejar(u.orgId, id, u.name, MaquinaPlanejamentoSchema.parse(body));
   }
 
   @Post('posts/:id/comentarios')

@@ -105,6 +105,14 @@ export interface MaquinaComentario {
   em: string;
 }
 
+/**
+ * PARA QUEM É O POST (02/11/2026, pedido do Lucas): o perfil onde ele sai. Um post
+ * pode ser de mais de um (collab). A IA que escreve usa isso para a voz.
+ */
+export const MAQUINA_PERFIS = ['root', 'pedro', 'lucas', 'rodrigo'] as const;
+export type MaquinaPerfil = (typeof MAQUINA_PERFIS)[number];
+export const ROTULO_DO_PERFIL: Record<MaquinaPerfil, string> = { root: 'Root', pedro: 'Pedro', lucas: 'Lucas', rodrigo: 'Rodrigo' };
+
 export interface MaquinaPost {
   id: string;
   /** O rótulo livre do post (`ROOT-025`, `Ep 3`). Não é a ordem. */
@@ -130,8 +138,16 @@ export interface MaquinaPost {
   /** Arquivos que vão junto com a peça (Comunidade Wpp: o .md da isca, mandado como documento). */
   arquivos: MaquinaArquivo[];
   etapa: MaquinaEtapa;
-  /** AAAA-MM-DD, no fuso de São Paulo. Agendado = quando vai ao ar; postado = quando foi. */
+  /**
+   * AAAA-MM-DD, no fuso de São Paulo: o dia de postar. Agendado = quando vai ao ar; postado =
+   * quando foi. Desde 02/11 pode ser marcado em qualquer etapa (planejar antes de gravar).
+   */
   data: string | null;
+  /** AAAA-MM-DD: o dia de executar (gravar o vídeo ou fazer a arte). */
+  dataExecucao: string | null;
+  perfis: MaquinaPerfil[];
+  /** O que foi escrito ao aprovar a ideia (Ideias de conteúdo). A IA que escreve o post segue isto. */
+  comentarioDaIdeia: { texto: string; por: string | null; em: string | null } | null;
   linkPublicado: string;
   metricas: Partial<Record<MaquinaMetrica, number>>;
   hist: MaquinaHist[];
@@ -185,8 +201,19 @@ export const MaquinaPostSalvarSchema = z.object({
   /** Só na criação: nasce direto no calendário (agendado/postado) quando vem do "+" do dia. */
   etapa: z.enum(MAQUINA_ETAPAS).optional(),
   data: data.nullish(),
+  /** Só na criação; depois, pelo PATCH de planejamento. */
+  dataExecucao: data.nullish(),
+  perfis: z.array(z.enum(MAQUINA_PERFIS)).max(4).optional(),
 });
 export type MaquinaPostSalvarInput = z.infer<typeof MaquinaPostSalvarSchema>;
+
+/** Datas e perfis do post, sem mexer no conteúdo. Campo ausente = não muda. */
+export const MaquinaPlanejamentoSchema = z.object({
+  data: data.nullable().optional(),
+  dataExecucao: data.nullable().optional(),
+  perfis: z.array(z.enum(MAQUINA_PERFIS)).max(4).optional(),
+});
+export type MaquinaPlanejamentoInput = z.infer<typeof MaquinaPlanejamentoSchema>;
 
 export const MaquinaEtapaSchema = z
   .object({

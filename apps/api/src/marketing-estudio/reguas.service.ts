@@ -4,6 +4,7 @@ import type { Prisma } from '@prisma/client';
 import {
   FORMATOS_COM_REGUA,
   PARAMS_PADRAO,
+  ROTULO_DO_PERFIL,
   lerArquivoDaComunidade,
   problemaDaEnquete,
   semTravessao,
@@ -145,7 +146,19 @@ export class ReguasService {
       };
     } else {
       this.exigirIa();
-      const marca = await this.marcas.bloco(orgId).catch(() => '');
+      // A RETROALIMENTAÇÃO (02/11/2026, pedido do Lucas): quem escreve o post lê, a cada vez, o
+      // comentário de quando esta ideia foi aprovada, a conversa do post e os últimos comentários
+      // da triagem (o "algoritmo"). Antes só a triagem lia; o roteiro saía sem saber o porquê.
+      const [marca, card, algoritmo] = await Promise.all([
+        this.marcas.bloco(orgId).catch(() => ''),
+        p.cardId ? this.prisma.marketingIdeiaCard.findFirst({ where: { id: p.cardId, orgId }, select: { comentario: true } }) : null,
+        this.prisma.marketingIdeiaCard.findMany({ where: { orgId, comentario: { not: null } }, orderBy: { decididaEm: 'desc' }, take: 20, select: { titulo: true, status: true, comentario: true } }),
+      ]);
+      const conversa = (Array.isArray(p.comentarios) ? (p.comentarios as { autor?: string; texto?: string }[]) : [])
+        .filter((c) => c?.texto && !String(c.autor ?? '').includes('(versão antes de gerar)'))
+        .slice(-10)
+        .map((c) => `- ${c.autor ?? ''}: ${String(c.texto).slice(0, 600)}`);
+      const perfis = (Array.isArray(p.perfis) ? (p.perfis as string[]) : []).map((x) => ROTULO_DO_PERFIL[x as keyof typeof ROTULO_DO_PERFIL]).filter(Boolean);
       const anterior = { headline: p.headline, subHeadline: p.subHeadline, roteiro: p.roteiro, slides: p.slides, legenda: p.legenda, cta: p.cta };
       const temAnterior = Object.values(anterior).some((v) => (Array.isArray(v) ? v.length : !!v));
       const saida = await this.llm.complete({
@@ -157,6 +170,12 @@ export class ReguasService {
           subtipo && `## Tipo da mensagem: ${subtipo}`,
           '## O post', `Título: ${p.titulo}`, p.pilar && `Pilar: ${p.pilar}`, p.headline && `Gancho: ${p.headline}`, p.porque && `Por que e de onde veio:\n${p.porque}`,
           (Array.isArray(p.fontes) ? (p.fontes as { nome?: string; link?: string }[]) : []).map((f) => `Fonte: ${f.nome ?? ''} ${f.link ?? ''}`).join('\n'),
+          perfis.length &&
+            `## Onde sai\nPerfil de ${perfis.join(' e ')}. ${perfis.every((x) => x === 'Root') ? 'Voz da marca ROOT.' : 'Escreva na primeira pessoa de quem posta, como sócio da ROOT, sem soar institucional.'}`,
+          card?.comentario && `## O comentário de quem aprovou esta ideia (siga isto acima de tudo)\n${card.comentario}`,
+          conversa.length && `## Conversa da equipe neste post (leve em conta)\n${conversa.join('\n')}`,
+          algoritmo.length &&
+            `## O que a equipe já explicou ao aprovar ou recusar outras ideias (o gosto da casa)\n${algoritmo.map((a) => `- ${a.status === 'aprovada' ? 'APROVOU' : 'RECUSOU'} "${a.titulo}": ${String(a.comentario).slice(0, 400)}`).join('\n')}`,
           temAnterior && `## Versão anterior (JSON)\n${JSON.stringify(anterior)}`,
           instrucao ? `## Ajuste pedido\n${instrucao}\nAplique o ajuste e mantenha o que não foi pedido para mudar.` : temAnterior ? 'Faça uma versão nova, melhor que a anterior, seguindo a régua.' : '',
         ].filter(Boolean).join('\n\n'),

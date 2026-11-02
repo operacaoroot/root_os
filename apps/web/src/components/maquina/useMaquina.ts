@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
-import type { MaquinaEtapa, MaquinaPainel, MaquinaPost, MaquinaPostSalvarInput } from '@mktos/shared';
+import type { MaquinaEtapa, MaquinaPainel, MaquinaPlanejamentoInput, MaquinaPost, MaquinaPostSalvarInput } from '@mktos/shared';
 import { apiGet, apiPatch, apiPost, apiPut } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 
@@ -64,10 +64,13 @@ export function useMaquina() {
       agir(async () => trocar(await apiPost<MaquinaPost>('/marketing/maquina/posts', input, token))),
     salvar: (id: string, input: MaquinaPostSalvarInput) =>
       agir(async () => trocar(await apiPut<MaquinaPost>(`/marketing/maquina/posts/${id}`, input, token))),
+    // Sem `data`, o dia de postar já marcado fica (planejamento); `null` tira.
     mudarEtapa: (id: string, etapa: MaquinaEtapa, data?: string | null, linkPublicado?: string) =>
       agir(async () =>
-        trocar(await apiPatch<MaquinaPost>(`/marketing/maquina/posts/${id}/etapa`, { etapa, data: data ?? null, linkPublicado }, token)),
+        trocar(await apiPatch<MaquinaPost>(`/marketing/maquina/posts/${id}/etapa`, { etapa, data, linkPublicado }, token)),
       ),
+    planejar: (id: string, input: MaquinaPlanejamentoInput) =>
+      agir(async () => trocar(await apiPatch<MaquinaPost>(`/marketing/maquina/posts/${id}/planejamento`, input, token))),
     mudarData: (id: string, data: string | null) =>
       agir(async () => trocar(await apiPatch<MaquinaPost>(`/marketing/maquina/posts/${id}/data`, { data }, token))),
     comentar: (id: string, texto: string) =>

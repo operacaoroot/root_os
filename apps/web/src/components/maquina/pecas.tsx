@@ -6,14 +6,17 @@ import {
   MAQUINA_FORMATOS,
   COMUNIDADE_SUBTIPOS,
   MAQUINA_METRICAS,
+  MAQUINA_PERFIS,
   MAQUINA_PRIORIDADES,
   MAQUINA_TIPOS_DE_FONTE,
   proximoPassoDoPost,
   ROTULO_DA_ETAPA,
+  ROTULO_DO_PERFIL,
   datasLivres,
   etapaPrecisaDeData,
   type MaquinaEtapa,
   type MaquinaFonte,
+  type MaquinaPerfil,
   type MaquinaPost,
   type MaquinaPostSalvarInput,
 } from '@mktos/shared';
@@ -160,7 +163,8 @@ export function useLevar(m: Maquina) {
   const levar = (post: MaquinaPost, para: MaquinaEtapa) => {
     if (post.etapa === para) return;
     if (etapaPrecisaDeData(para)) setPedido({ post, para });
-    else void m.mudarEtapa(post.id, para);
+    // Tirar de Agendado para A agendar é tirar a data (senão o servidor devolve para Agendado).
+    else void m.mudarEtapa(post.id, para, para === 'a_agendar' ? null : undefined);
   };
   const janela = pedido && (
     <EscolherData
@@ -369,6 +373,76 @@ function Bloco({ rotulo, children }: { rotulo: string; children: React.ReactNode
 }
 const texto = (s: string) => <p className="whitespace-pre-wrap text-[0.95rem] leading-relaxed">{s}</p>;
 
+/** Os perfis onde o post sai (Root, Pedro, Lucas, Rodrigo). Sem `onMudar`, só mostra. */
+export function PerfisDoPost(props: { valor: MaquinaPerfil[]; onMudar?: (v: MaquinaPerfil[]) => void }) {
+  return (
+    <div className="flex flex-wrap gap-1.5">
+      {MAQUINA_PERFIS.map((x) => {
+        const ligado = props.valor.includes(x);
+        return (
+          <button
+            key={x}
+            type="button"
+            disabled={!props.onMudar}
+            onClick={() => props.onMudar?.(ligado ? props.valor.filter((y) => y !== x) : [...props.valor, x])}
+            className={`${btn} ${ligado ? 'border-brand bg-brand/15 text-brand' : ''}`}
+          >
+            {ROTULO_DO_PERFIL[x]}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+/**
+ * Campo de dia que só grava dia inteiro: o campo nativo devolve "0002-11-05" enquanto o ano é
+ * digitado, e isso não pode ir para o servidor. Vazio grava "sem dia".
+ */
+export function CampoDeDia(props: { valor: string | null; desligado?: boolean; onGravar: (v: string | null) => void; className?: string; titulo?: string }) {
+  const [v, setV] = useState(props.valor ?? '');
+  useEffect(() => setV(props.valor ?? ''), [props.valor]);
+  const gravar = (novo: string) => {
+    if (novo === (props.valor ?? '')) return;
+    if (!novo) props.onGravar(null);
+    else if (/^20\d\d-\d\d-\d\d$/.test(novo)) props.onGravar(novo);
+  };
+  return (
+    <input
+      type="date"
+      value={v}
+      title={props.titulo}
+      disabled={props.desligado}
+      onChange={(e) => {
+        setV(e.target.value);
+        gravar(e.target.value);
+      }}
+      className={props.className ?? campo}
+    />
+  );
+}
+
+/** Para quem, dia de executar e dia de postar: grava na hora, em qualquer etapa (02/11/2026). */
+function Planejamento({ m, post: p }: { m: Maquina; post: MaquinaPost }) {
+  const pode = m.editavel && p.etapa !== 'arquivado';
+  return (
+    <div className="mt-4 grid gap-3 rounded-md border border-border bg-surface-2 p-3 sm:grid-cols-[1fr_9.5rem_9.5rem]">
+      <div>
+        <span className="com-rotulo mb-1 block">Para quem</span>
+        <PerfisDoPost valor={p.perfis} onMudar={pode ? (v) => void m.planejar(p.id, { perfis: v }) : undefined} />
+      </div>
+      <label className="block">
+        <span className="com-rotulo mb-1 block">Executar em</span>
+        <CampoDeDia valor={p.dataExecucao} desligado={!pode} titulo="Dia de gravar o vídeo ou fazer a arte" onGravar={(v) => void m.planejar(p.id, { dataExecucao: v })} />
+      </label>
+      <label className="block">
+        <span className="com-rotulo mb-1 block">Postar em</span>
+        <CampoDeDia valor={p.data} desligado={!pode} titulo="Dia de ir ao ar" onGravar={(v) => void m.planejar(p.id, { data: v })} />
+      </label>
+    </div>
+  );
+}
+
 /** O post aberto: o conteúdo inteiro, o próximo passo, comentários, números e histórico. */
 export function PostAberto(props: { m: Maquina; post: MaquinaPost; onEditar: () => void; onFechar: () => void }) {
   const { m, post: p } = props;
@@ -395,16 +469,13 @@ export function PostAberto(props: { m: Maquina; post: MaquinaPost; onEditar: () 
         <Etapas etapa={p.etapa === 'arquivado' ? 'ideia' : p.etapa} />
       </div>
 
+      <Planejamento m={m} post={p} />
+
       {m.editavel && (
         <div className="mt-4 flex flex-wrap gap-2">
           {passo && (
             <button className={btnPrimario} onClick={() => levar(p, passo.para)}>
               {passo.rotulo}
-            </button>
-          )}
-          {(p.etapa === 'agendado' || p.etapa === 'a_agendar') && (
-            <button className={btn} onClick={() => levar({ ...p, etapa: 'a_agendar' }, 'agendado')}>
-              {p.data ? 'Mudar data' : 'Escolher data'}
             </button>
           )}
           <button className={btn} onClick={props.onEditar}>
@@ -429,6 +500,17 @@ export function PostAberto(props: { m: Maquina; post: MaquinaPost; onEditar: () 
       )}
 
       <div className="mt-4">
+        {p.comentarioDaIdeia && (
+          <Bloco rotulo="Comentário ao aprovar a ideia">
+            <div className="rounded border border-brand/40 bg-brand/10 px-3 py-2">
+              {texto(p.comentarioDaIdeia.texto)}
+              <div className="mt-1 text-xs text-muted">
+                {[p.comentarioDaIdeia.por, p.comentarioDaIdeia.em && new Date(p.comentarioDaIdeia.em).toLocaleDateString('pt-BR')].filter(Boolean).join(' · ')}
+                {' · '}a IA segue isto ao escrever o roteiro e o texto
+              </div>
+            </div>
+          </Bloco>
+        )}
         {(p.headline || p.subHeadline) && (
           <Bloco rotulo="Headline">
             {p.headline && <p className="text-lg font-semibold leading-snug">{p.headline}</p>}
@@ -695,6 +777,24 @@ export function EditorDePost(props: {
             </select>
           </label>
         </div>
+        {!props.post && (
+          <div className="grid gap-3 sm:grid-cols-[1fr_9.5rem_9.5rem]">
+            <div>
+              {rotulo('Para quem')}
+              <PerfisDoPost valor={f.perfis ?? []} onMudar={(v) => set('perfis', v)} />
+            </div>
+            <label className="block">
+              {rotulo('Executar em')}
+              <CampoDeDia valor={f.dataExecucao ?? null} onGravar={(v) => set('dataExecucao', v)} />
+            </label>
+            {!f.etapa && (
+              <label className="block">
+                {rotulo('Postar em')}
+                <CampoDeDia valor={f.data ?? null} onGravar={(v) => set('data', v)} />
+              </label>
+            )}
+          </div>
+        )}
         <label className="block">
           {rotulo('Headline')}
           <input value={f.headline} onChange={(e) => set('headline', e.target.value)} className={campo} />

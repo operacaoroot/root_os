@@ -6703,6 +6703,10 @@ model MarketingPost {
   subtipo       String    @default("")
   /// O card da triagem que virou este post (Ideias › Triagem), quando veio de lá.
   cardId        String?
+  /// Dia de executar (gravar o vídeo ou fazer a arte). 02/11/2026.
+  dataExecucao  DateTime? @db.Date
+  /// Para quem é o post: root | pedro | lucas | rodrigo (pode ser mais de um). 02/11/2026.
+  perfis        Json      @default("[]")
 
   @@index([orgId, etapa])
   @@index([orgId, data])
