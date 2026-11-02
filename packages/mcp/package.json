@@ -3,13 +3,17 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "bin": { "mktos-mcp": "dist/index.js" },
+  "bin": {
+    "mktos-mcp": "dist/index.js"
+  },
   "scripts": {
     "dev": "tsx src/index.ts",
     "build": "tsc -p tsconfig.json",
     "start": "node dist/index.js",
     "typecheck": "tsc --noEmit",
-    "smoke": "tsx scripts/smoke.ts"
+    "smoke": "tsx scripts/smoke.ts",
+    "chamar": "tsx scripts/chamar.ts",
+    "test": "node --test test/env.test.mjs"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.13.0",
