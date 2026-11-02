@@ -63,16 +63,16 @@ export class FluxoDeIdeiasService implements OnModuleInit {
     await garantirRotinaDasIdeias(this.prisma, orgId);
     const semana = new Date(Date.now() - 7 * 86_400_000);
     const mes = new Date().toISOString().slice(0, 7);
-    const [coleta, ia, fontes, grupos, aprovadasSemana, painel, apify] = await Promise.all([
+    const [coleta, ia, fontes, contagem, aprovadasSemana, painel, apify] = await Promise.all([
       this.prisma.rotina.findFirst({ where: { orgId, tipo: TIPO_PAUTA_COLETA }, orderBy: { criadaEm: 'asc' } }),
       this.prisma.rotina.findUnique({ where: { orgId_slug: { orgId, slug: SLUG_DA_IA_DAS_IDEIAS } } }),
       this.prisma.pautaFonte.findMany({ where: { orgId, ativo: true }, select: { tipo: true, plataforma: true, runsNoMes: true, mesReferente: true } }),
-      this.prisma.marketingIdeiaCard.groupBy({ by: ['status'], where: { orgId }, _count: { _all: true } }),
+      this.triagem.contagem(orgId),
       this.prisma.marketingIdeiaCard.count({ where: { orgId, status: 'aprovada', decididaEm: { gte: semana } } }),
       this.triagem.resumoDoPainel(orgId),
       this.memoria.usoDoApify().catch(() => ({ uso: null, configurado: false })),
     ]);
-    const conta = (s: string) => grupos.find((g) => g.status === s)?._count._all ?? 0;
+    const conta = (s: keyof typeof contagem) => contagem[s];
     const perfis = fontes.filter((f) => f.tipo === 'perfil' || f.tipo === 'busca');
     const coletasDoMes = perfis.reduce((t, f) => t + (f.mesReferente === mes ? f.runsNoMes : 0), 0);
     const uso = apify.uso;

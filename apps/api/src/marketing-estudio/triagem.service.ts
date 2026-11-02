@@ -131,6 +131,15 @@ function semLeitura(c: Pick<MarketingIdeiaCard, 'porque' | 'como'>): boolean {
   return !String(c.porque ?? '').trim() && !String(como.gancho ?? '').trim();
 }
 
+/**
+ * A Reserva não é um status no banco (a trava MarketingIdeiaCard_status_check só aceita os quatro
+ * de 27/10, e a curadoria não muda a estrutura): é "descartada_ia" com como.reserva. Para a tela
+ * ela é o status "reserva", separado das descartadas pela IA.
+ */
+function naReserva(c: Pick<MarketingIdeiaCard, 'status' | 'como'>): boolean {
+  return c.status === 'descartada_ia' && !!c.como && typeof c.como === 'object' && (c.como as Record<string, unknown>).reserva === true;
+}
+
 function paraTela(c: MarketingIdeiaCard, peso: number | null): TriagemCard {
   const como = (c.como && typeof c.como === 'object' ? c.como : {}) as Record<string, unknown>;
   return {
@@ -148,7 +157,7 @@ function paraTela(c: MarketingIdeiaCard, peso: number | null): TriagemCard {
     url: c.url,
     imagemUrl: c.imagemUrl,
     score: c.score,
-    status: c.status as TriagemStatus,
+    status: naReserva(c) ? 'reserva' : (c.status as TriagemStatus),
     fonte: c.fonteId || c.fonteNome ? { id: c.fonteId, nome: c.fonteNome || 'Fonte', peso: peso ?? 1 } : null,
     publicadoEm: c.publicadoEm?.toISOString() ?? null,
     postId: c.postId,
@@ -178,12 +187,11 @@ export class TriagemService {
 
   async painel(orgId: string): Promise<TriagemPainel> {
     const pesos = await this.pesos(orgId);
-    const [cards, grupos, ultima] = await Promise.all([
+    const [cards, contagem, ultima] = await Promise.all([
       this.prisma.marketingIdeiaCard.findMany({ where: { orgId, status: 'nova' }, orderBy: [{ score: 'desc' }, { criadaEm: 'desc' }], take: 20 }),
-      this.prisma.marketingIdeiaCard.groupBy({ by: ['status'], where: { orgId }, _count: { _all: true } }),
+      this.contagem(orgId),
       this.ultimaDesfazivel(orgId),
     ]);
-    const contagem = this.contar(grupos);
     const ia = simulada() || this.llm.configured;
     const { semLeitura: faltaLer, pendentes } = await this.resumoDoPainel(orgId);
     // Só lê sozinha com a rotina "IA das ideias" ligada (o interruptor do fluxo, em Fontes e em /rotinas).
@@ -226,15 +234,17 @@ export class TriagemService {
   async todas(orgId: string, status: string): Promise<TriagemTodas> {
     const st = (TRIAGEM_STATUS as readonly string[]).includes(status) ? (status as TriagemStatus) : 'nova';
     const pesos = await this.pesos(orgId);
-    const [cards, grupos] = await Promise.all([
+    const [lidos, contagem] = await Promise.all([
       this.prisma.marketingIdeiaCard.findMany({
-        where: { orgId, status: st },
+        where: { orgId, status: st === 'reserva' ? 'descartada_ia' : st },
         orderBy: st === 'nova' || st === 'descartada_ia' || st === 'reserva' ? [{ score: 'desc' }, { criadaEm: 'desc' }] : [{ decididaEm: 'desc' }],
-        take: 500,
+        take: 1000,
       }),
-      this.prisma.marketingIdeiaCard.groupBy({ by: ['status'], where: { orgId }, _count: { _all: true } }),
+      this.contagem(orgId),
     ]);
-    return { cards: cards.map((c) => paraTela(c, pesos[c.fonteId ?? ''] ?? null)), contagem: this.contar(grupos) };
+    // Reserva e descartadas moram no mesmo status do banco: separa pela marca (ver naReserva).
+    const cards = st === 'reserva' ? lidos.filter(naReserva) : st === 'descartada_ia' ? lidos.filter((c) => !naReserva(c)) : lidos;
+    return { cards: cards.slice(0, 500).map((c) => paraTela(c, pesos[c.fonteId ?? ''] ?? null)), contagem };
   }
 
   /** Lê até `quantas` itens ainda sem card e escreve os cards. */
@@ -262,9 +272,16 @@ export class TriagemService {
     return vez;
   }
 
-  private contar(grupos: { status: string; _count: { _all: number } }[]): Record<TriagemStatus, number> {
+  /** Quantos cards em cada status da tela (a Reserva separada das descartadas pela IA). */
+  async contagem(orgId: string): Promise<Record<TriagemStatus, number>> {
+    const [grupos, descartadas] = await Promise.all([
+      this.prisma.marketingIdeiaCard.groupBy({ by: ['status'], where: { orgId }, _count: { _all: true } }),
+      this.prisma.marketingIdeiaCard.findMany({ where: { orgId, status: 'descartada_ia' }, select: { status: true, como: true } }),
+    ]);
     const contagem = Object.fromEntries(TRIAGEM_STATUS.map((s) => [s, 0])) as Record<TriagemStatus, number>;
     for (const g of grupos) contagem[g.status as TriagemStatus] = g._count._all;
+    contagem.reserva = descartadas.filter(naReserva).length;
+    contagem.descartada_ia -= contagem.reserva;
     return contagem;
   }
 
@@ -304,7 +321,7 @@ export class TriagemService {
       const c = await tx.marketingIdeiaCard.findFirst({ where: { id, orgId } });
       if (!c) throw new NotFoundException('Card não encontrado.');
       // A da Reserva também se decide direto: é o "e se for muito bom?" do corte do dia.
-      if (c.status !== 'nova' && c.status !== 'reserva') throw new ConflictException('Esse card já foi decidido. Recarregue a página.');
+      if (c.status !== 'nova' && !naReserva(c)) throw new ConflictException('Esse card já foi decidido. Recarregue a página.');
       const data: Prisma.MarketingIdeiaCardUpdateInput = { status: entrada.decisao, decididaEm: new Date(), decididaPor: por, comentario: entrada.comentario || null };
       let postId: string | null = null;
       if (entrada.decisao === 'recusada') data.motivo = entrada.motivo || null;
@@ -357,9 +374,10 @@ export class TriagemService {
   async puxar(orgId: string, id: string): Promise<{ ok: true }> {
     const c = await this.prisma.marketingIdeiaCard.findFirst({ where: { id, orgId } });
     if (!c) throw new NotFoundException('Card não encontrado.');
-    if (c.status !== 'reserva' && c.status !== 'descartada_ia') throw new ConflictException('Esse card não está na Reserva nem nas descartadas.');
-    const como = (c.como && typeof c.como === 'object' ? c.como : {}) as Record<string, unknown>;
-    await this.prisma.marketingIdeiaCard.update({ where: { id }, data: { status: 'nova', como: { ...como, puxada: true } as Prisma.InputJsonValue } });
+    if (c.status !== 'descartada_ia') throw new ConflictException('Esse card não está na Reserva nem nas descartadas.');
+    const como = { ...((c.como && typeof c.como === 'object' ? c.como : {}) as Record<string, unknown>), puxada: true };
+    delete como.reserva;
+    await this.prisma.marketingIdeiaCard.update({ where: { id }, data: { status: 'nova', como: como as Prisma.InputJsonValue } });
     return { ok: true };
   }
 
@@ -382,8 +400,16 @@ export class TriagemService {
     ).filter((c) => !(c.como && typeof c.como === 'object' && (c.como as Record<string, unknown>).puxada));
     const sobram = doDia.slice(IDEIAS_POR_DIA).filter((c) => c.relevancia < RELEVANCIA_QUE_FURA_O_CORTE);
     if (!sobram.length) return 0;
-    const r = await this.prisma.marketingIdeiaCard.updateMany({ where: { orgId, id: { in: sobram.map((c) => c.id) }, status: 'nova' }, data: { status: 'reserva' } });
-    return r.count;
+    // Um update por card: a marca da Reserva entra no "como" de cada um (ver naReserva).
+    const feitos = await this.prisma.$transaction(
+      sobram.map((c) =>
+        this.prisma.marketingIdeiaCard.updateMany({
+          where: { orgId, id: c.id, status: 'nova' },
+          data: { status: 'descartada_ia', como: { ...((c.como && typeof c.como === 'object' ? c.como : {}) as Record<string, unknown>), reserva: true } as Prisma.InputJsonValue },
+        }),
+      ),
+    );
+    return feitos.reduce((t, r) => t + r.count, 0);
   }
 
   /** Desfaz a última decisão. O post criado vai para Arquivado (a Máquina não apaga post). */
@@ -525,7 +551,11 @@ export class TriagemService {
           resultado.falharam++;
           continue;
         }
-        const dados = { ...this.dadosDoCard(materias[idx], o, pesos[materias[idx].fonteId] ?? 1, !!c.notaId, false), status: c.status };
+        const novos = this.dadosDoCard(materias[idx], o, pesos[materias[idx].fonteId] ?? 1, !!c.notaId, false);
+        // A releitura não tira o card da Reserva nem desfaz o "puxado à mão".
+        const antes = (c.como && typeof c.como === 'object' ? c.como : {}) as Record<string, unknown>;
+        const marcas = { ...(antes.reserva === true ? { reserva: true } : {}), ...(antes.puxada === true ? { puxada: true } : {}) };
+        const dados = { ...novos, como: { ...novos.como, ...marcas }, status: c.status };
         // O card pode ter sido decidido enquanto a IA lia: só reescreve o que segue sem decisão.
         const r = await this.prisma.marketingIdeiaCard.updateMany({ where: { id: c.id, orgId, status: c.status }, data: dados });
         if (r.count) resultado.relidos++;

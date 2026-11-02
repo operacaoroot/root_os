@@ -336,7 +336,8 @@ export function grafoDasNotas(notas: { id: string; titulo: string; tipo: Memoria
 
 // ---------- Triagem de ideias (um card por vez) ----------
 
-/** reserva = passou do corte do dia (IDEIAS_POR_DIA): fica guardada e dá para aprovar ou trazer para avaliar. */
+/** reserva = passou do corte do dia (IDEIAS_POR_DIA): fica guardada e dá para aprovar ou trazer para avaliar.
+ *  Só existe na tela: no banco é descartada_ia com como.reserva (sem migration; ver naReserva na Triagem). */
 export const TRIAGEM_STATUS = ['nova', 'aprovada', 'recusada', 'descartada_ia', 'reserva'] as const;
 /**
  * A curadoria (30/10/2026, decisão do Lucas): das fontes, chegam a Para avaliar as 10 ideias
