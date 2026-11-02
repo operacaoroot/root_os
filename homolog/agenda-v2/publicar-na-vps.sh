@@ -25,7 +25,7 @@
 # =============================================================================
 set -euo pipefail
 
-BASE_ESPERADA=16a92871
+BASE_ESPERADA=c946dcb7
 PROJETO=root_marketing-os
 API=mktos_api
 FONTE=${FONTE:?defina FONTE (o clone na VPS, no commit da entrega)}
@@ -45,13 +45,13 @@ echo "== agenda v2 · release $REL · commit $HASH · $(date -Is)"
 # -----------------------------------------------------------------------------
 # 0. A produção ainda está na base desta rodada?
 #    O Lucas publica direto: se a imagem viva não for a de 16a92871, PARE e diga
-#    qual commit juntar antes (a entrega foi feita sobre 16a92871).
+#    qual commit juntar antes (a entrega foi juntada a c946dcb7, a Área do cliente).
 # -----------------------------------------------------------------------------
 IMG_VIVA=$(docker inspect "$API" -f '{{.Config.Image}}')
 echo "imagem viva da api: $IMG_VIVA"
 COMMIT_VIVO=$(docker inspect "$API" -f '{{index .Config.Labels "org.opencontainers.image.revision"}}' 2>/dev/null || true)
 case "$IMG_VIVA" in
-  *16a9287*) echo "ok: produção em $BASE_ESPERADA" ;;
+  *c946dcb*) echo "ok: produção em $BASE_ESPERADA" ;;
   *)
     if [ -n "$COMMIT_VIVO" ] && [ "${COMMIT_VIVO:0:8}" = "$BASE_ESPERADA" ]; then
       echo "ok: produção em $BASE_ESPERADA (pela etiqueta da imagem)"
