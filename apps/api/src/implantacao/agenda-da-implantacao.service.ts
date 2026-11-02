@@ -1,6 +1,7 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, Optional } from '@nestjs/common';
 import { DIAS_DA_AGENDA_DO_CARTAO } from '@mktos/shared';
 
+import { EspelhoService } from '../agenda/espelho/espelho.service';
 import { PortaDoOperador } from '../gateway/porta-do-operador.service';
 import type { EventoDaAgenda } from './proxima-reuniao';
 
@@ -19,6 +20,11 @@ import type { EventoDaAgenda } from './proxima-reuniao';
  * fica 1 minuto guardada, para uma agenda fora do ar não ser chamada a cada clique.
  *
  * O motivo da falha vai ao log, nunca à tela: pode trazer texto do conector.
+ *
+ * AGENDA V2 (29/10/2026, lane G1): com o espelho da agenda EM DIA (última
+ * passagem da sincronia há menos de 10 min), a leitura sai dele, sem chamar o
+ * Google. Espelho atrasado (ou fora: outra empresa que não a casa, falha do
+ * banco) = a leitura de antes, pela porta.
  */
 
 export const CAPACIDADE_DA_AGENDA_DO_CARTAO = 'comunicacao.agenda.periodo';
@@ -44,7 +50,10 @@ export class AgendaDaImplantacaoService {
   /** O relógio, trocável no teste. */
   agora: () => Date = () => new Date();
 
-  constructor(private readonly porta: PortaDoOperador) {}
+  constructor(
+    private readonly porta: PortaDoOperador,
+    @Optional() private readonly espelho?: EspelhoService,
+  ) {}
 
   /** A leitura desta empresa: a guardada, a que já está em curso, ou uma nova. */
   async ler(orgId: string, actorId: string): Promise<LeituraDaAgenda> {
@@ -64,8 +73,39 @@ export class AgendaDaImplantacaoService {
     else this.guardadas.clear();
   }
 
+  /** O espelho em dia, no formato da leitura direta; nulo = leia pela porta. */
+  private async lerDoEspelho(orgId: string, agora: Date): Promise<EventoDaAgenda[] | null> {
+    if (!this.espelho) return null;
+    try {
+      const eventos = await this.espelho.lerSeEmDia(orgId, agora, new Date(agora.getTime() + DIAS_DA_AGENDA_DO_CARTAO * DIA_MS), agora);
+      if (!eventos) return null;
+      return eventos
+        .filter((e) => e.origem === 'google' && e.status !== 'cancelado')
+        .slice(0, TETO_DE_EVENTOS_DO_CARTAO)
+        .map((e) => ({
+          id: e.id,
+          title: e.titulo,
+          start: e.inicio,
+          end: e.fim,
+          diaInteiro: e.diaInteiro,
+          status: e.status === 'provisorio' ? 'tentative' : 'confirmed',
+          attendees: e.convidados.map((c) => c.email),
+          organizador: e.organizador,
+        }));
+    } catch (e) {
+      this.log.warn(`empresa ${orgId}: espelho da agenda indisponível para o quadro; lendo pela porta (${(e as Error).message})`);
+      return null;
+    }
+  }
+
   private async lerDoGoogle(orgId: string, actorId: string, agora: Date): Promise<LeituraDaAgenda> {
     let valor: LeituraDaAgenda;
+    const doEspelho = await this.lerDoEspelho(orgId, agora);
+    if (doEspelho) {
+      valor = { ok: true, eventos: doEspelho, lidaEm: agora };
+      this.guardadas.set(orgId, { valor, expira: agora.getTime() + VALIDADE_DA_LEITURA_MS });
+      return valor;
+    }
     try {
       const r = await this.porta.executar({
         orgId,

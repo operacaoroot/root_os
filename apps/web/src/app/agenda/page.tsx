@@ -1,121 +1,199 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { ChevronLeft, ChevronRight, ExternalLink, Video, MapPin, Users, AlertTriangle } from 'lucide-react';
+import { ChevronLeft, ChevronRight } from 'lucide-react';
+import { type ForaDoPadraoDaAgenda, type RegrasDaAgenda, type SocioDaAgenda, type TrabTarefaResumo } from '@mktos/shared';
 import { apiGet } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 import { useModulos } from '@/components/modulos';
-import { intervaloDaGrade, prazosDeTrabalho, trabalhoHref } from '@/lib/work-projection';
+import { prazosDeTrabalho, trabalhoHref } from '@/lib/work-projection';
 import { abrirAquiNoClique, useTarefaNaUrl } from '@/lib/tarefa-na-url';
 import { TarefaFlutuante } from '@/components/trabalho/TrabalhoView';
-import type { ForaDoPadraoDaAgenda, TrabTarefaResumo } from '@mktos/shared';
-import { Botao, Card, Chip } from '../referencias/ui';
-import { MarcarReuniao } from './MarcarReuniao';
+import { Card } from '../referencias/ui';
+import { AbaConflitos } from './abas/AbaConflitos';
+import { AbaRegras } from './abas/AbaRegras';
+import { AbaRelatorios } from './abas/AbaRelatorios';
+import { Calendario } from './Calendario';
+import { DetalheDoCompromisso, podeEditarEvento } from './DetalheDoCompromisso';
 import { ListaForaDoPadrao, SeloForaDoPadrao } from './ForaDoPadrao';
-import { GradeDaSemana, useEhCelular } from './GradeDaSemana';
+import { GradeDeHoras, type DestinoDoArrasto } from './GradeDeHoras';
+import { ListaDoDia } from './ListaDoDia';
+import { MesDaAgenda, casasDoMesDe } from './MesDaAgenda';
+import { PainelDeMarcar, lerRascunhoGuardado } from './PainelDeMarcar';
+import { lerPeriodo, lerQuantosConflitos, lerRegras, type PeriodoLido } from './dados';
+import { ABAS, ROTULO_DA_ABA, lerEstadoV2, urlDoEstadoV2, type AbaDaAgenda, type EstadoDaAgendaV2 } from './estado';
+import { intervaloDoRascunho, rascunhoDoEvento, rascunhoVazio, tituloDoRascunho, type Rascunho } from './painel';
+import { hojeNoFuso, intervaloDosDias, noFuso, rotulosDoDia, somarDias, horaNoFuso } from './semana';
 import {
-  diaVizinho,
-  diasDaSemana,
-  eventosPorDia,
-  hojeNoFuso,
-  intervaloDosDias,
-  lerEstadoDaAgenda,
-  noFuso,
-  rotulosDoDia,
-  urlDaAgenda,
-  type VisaoDaAgenda,
-} from './semana';
-import {
-  chaveDoDia,
-  diaDoEvento,
-  foraDoPadraoNaTela,
-  horaCurta,
-  rotuloCurto,
-  tomDoEvento,
-  type EventoDaAgenda,
-} from './tipos';
+  ALTURA_PADRAO,
+  OPCOES_DE_DIAS,
+  QUEM,
+  ancoraVizinha,
+  aparenciaDo,
+  choquesDe,
+  corDaEtiqueta,
+  diaDoEventoV2,
+  diasDaJanela,
+  diasDoDiaInteiro,
+  ehDoSocio,
+  faixasDoTopo,
+  horaDeMinutos,
+  lerAlturaGuardada,
+  minutosDoEvento,
+  rotuloDaJanela,
+  seloDaSincronia,
+  type AlturaDaHora,
+  type EventoV2,
+} from './v2';
 
 /*
  * ============================================================================
- * A AGENDA DA ROOT — o Google Calendar de operacao.root@gmail.com, aqui dentro
+ * A AGENDA DA ROOT — v2 (rodada da Agenda v2, 29/10/2026, lane G3)
  * ============================================================================
  *
- * A camada de REUNIÕES não tem banco. Não existe tabela de reunião no OS:
- * a agenda de verdade é a do Google, aquela que toca o celular dos sócios e
- * manda o convite para o cliente. Uma cópia local seria uma segunda verdade para
- * divergir da primeira no primeiro evento que alguém mexer pelo telefone.
+ * O Google Calendar da `operacao.root@` continua sendo A agenda. Desde a v2 o
+ * OS lê um ESPELHO dela (`GET /agenda/espelho`, só de leitura, atualizado pela
+ * sincronia), para a régua, os Conflitos e o link público lerem a semana sem
+ * bater no Google a cada clique. Espelho atrasado ou fora do ar: a tela avisa e
+ * lê direto do Google (`dados.ts`). Toda escrita vai ao Google pela porta
+ * (`POST /agenda/escritas`), e o espelho reflete.
  *
- * O QUE A TELA ACRESCENTA ao calendar.google.com, e que é a razão de ela existir:
+ * AS ABAS (desenho `Main`): Semana e dia · Lista · Mês · Conflitos · Relatórios
+ * · Regras. Semana e dia é a grade (1, 3 ou 5 dias, filtro Quem, Calendário,
+ * altura das horas) com o PAINEL DE MARCAR fixo à direita (folha de baixo
+ * abaixo de 860 px). A Lista é o padrão no celular (desenho `Celular`).
+ * Conflitos, Relatórios e Regras são das lanes G5 e G2; a página só as monta.
  *
- *  1. O PADRÃO DA CASA LIDO EM COLUNAS. `Reunião Online - Andrade Peças - Pedro`
- *     não é só um texto: a API o desmonta (ver `agenda.ts` no shared) e aqui ele
- *     vira cliente, responsável e modalidade — filtráveis, contáveis, coloridos.
- *  2. O QUE FOGE DO PADRÃO APARECE COMO TAL, em âmbar, com o título cru. É o
- *     único jeito de o combinado sobreviver: padrão que ninguém vê ser quebrado
- *     morre em duas semanas.
- *  3. MARCAR JÁ SAI NO PADRÃO, porque o formulário não tem campo de título.
+ * O QUE CONTINUA DE ANTES: o padrão da casa lido em colunas (a gramática do
+ * shared), o fora do padrão em âmbar com a palavra, o vigia AG-01 (selo e
+ * lista), os prazos do Trabalho do dia aberto, e todo dia e hora no relógio de
+ * America/Sao_Paulo (`semana.ts`). Estado no endereço (`estado.ts`).
  *
- * A camada de PRAZOS consulta WorkTask, sem criar evento no Google. FUSO: desde
- * a rodada de produção 1 (21/10/2026, P2) tudo é desenhado no relógio de
- * America/Sao_Paulo (ver `semana.ts`), não no do navegador. Evento de dia
- * inteiro chega como data pura e é tratado como string (ver `diaDoEvento`):
- * convertê-lo jogaria o compromisso para o dia anterior em Brasília.
- *
- * TRÊS VISÕES (P2): Mês, Semana e Dia, com o estado no endereço
- * (`?visao=semana&dia=AAAA-MM-DD`), setas de anterior e próxima e "Hoje". A
- * semana é uma grade de horas das 07h às 22h no computador e uma lista por dia
- * no celular. A fonte é a mesma: `GET /google/calendar/periodo?de=&ate=` com o
- * intervalo da visão, e os prazos do Trabalho no mesmo intervalo.
+ * IDENTIDADE: Space Grotesk no texto (`font-central-sans`), JetBrains Mono em
+ * rótulo e número, cor só onde informa e sempre com a palavra junto. Os tokens
+ * `--os-*` trocam com o tema (escuro, papel, claro).
  */
 
-const DIAS = ['dom', 'seg', 'ter', 'qua', 'qui', 'sex', 'sáb'];
+const CHAVE_DA_ALTURA = 'agenda.v2.alturaDaHora';
+const PASSO_DA_ALTURA = 8;
 
-const primeiroDoMes = (d: Date) => new Date(d.getFullYear(), d.getMonth(), 1);
-
-/** O mês (Date local no dia 1) da chave `AAAA-MM-DD`. */
-const mesDaChave = (dia: string) => {
-  const [a, m] = dia.split('-').map(Number);
-  return new Date(a, m - 1, 1);
-};
-
-const ROTULO_DA_VISAO: Record<VisaoDaAgenda, string> = { mes: 'Mês', semana: 'Semana', dia: 'Dia' };
-
-/** A grade de 6×7 que cobre o mês inteiro, começando no domingo. */
-function gradeDoMes(mes: Date): Date[] {
-  const inicio = primeiroDoMes(mes);
-  const comeco = new Date(inicio);
-  comeco.setDate(1 - inicio.getDay());
-  return Array.from({ length: 42 }, (_, i) => {
-    const d = new Date(comeco);
-    d.setDate(comeco.getDate() + i);
-    return d;
-  });
+/** Abaixo de 860 px: o painel vira folha de baixo e a Lista é o padrão. */
+function useEstreito(): boolean {
+  const [estreito, setEstreito] = useState(false);
+  useEffect(() => {
+    if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return;
+    const mq = window.matchMedia('(max-width: 859px)');
+    const ler = () => setEstreito(mq.matches);
+    ler();
+    mq.addEventListener?.('change', ler);
+    return () => mq.removeEventListener?.('change', ler);
+  }, []);
+  return estreito;
 }
 
-type Filtro = 'tudo' | 'cliente' | 'interna' | 'fora';
+type Lado =
+  | { tipo: 'marcar'; inicial: Rascunho }
+  | { tipo: 'editar'; evento: EventoV2; inicial: Rascunho }
+  | { tipo: 'detalhe'; evento: EventoV2 };
 
 export default function AgendaPage() {
   const { token, ready, can } = useAuth();
   const { modulos } = useModulos();
   const podeVerTrabalho = ready && !!token && can('tarefas.ver') && modulos?.includes('trabalho') === true;
-  // Layout 26/10: o prazo de trabalho abre o pop-up único da tarefa aqui mesmo, sem sair da Agenda.
+  const podeMarcar = can('agenda.editar');
   const popup = useTarefaNaUrl();
-  const celular = useEhCelular();
-  // O estado mora no endereço; até lê-lo (depois de montar), nada é buscado.
-  const [estado, setEstado] = useState<{ visao: VisaoDaAgenda; dia: string; lido: boolean }>(() => ({ visao: 'mes', dia: hojeNoFuso(), lido: false }));
-  const { visao, dia: diaAberto } = estado;
-  const mes = useMemo(() => mesDaChave(diaAberto), [diaAberto]);
-  const [eventos, setEventos] = useState<EventoDaAgenda[] | null>(null);
+  const estreito = useEstreito();
+
+  const [estado, setEstado] = useState<EstadoDaAgendaV2 & { lido: boolean }>(() => ({ aba: 'semana', dia: hojeNoFuso(), dias: 5, quem: 'Todos', lido: false }));
+  const { aba, dia, dias: quantosDias, quem } = estado;
+  const [agora, setAgora] = useState(() => new Date());
+  const hoje = hojeNoFuso(agora);
+
+  const [periodo, setPeriodo] = useState<PeriodoLido | null>(null);
   const [erro, setErro] = useState<string | null>(null);
-  const [filtro, setFiltro] = useState<Filtro>('tudo');
+  const [regras, setRegras] = useState<RegrasDaAgenda | null>(null);
+  const [conflitos, setConflitos] = useState<number | null>(null);
+  const [vigia, setVigia] = useState<ForaDoPadraoDaAgenda | null>(null);
+  const [erroVigia, setErroVigia] = useState<string | null>(null);
   const [trilhos, setTrilhos] = useState<string[]>([]);
   const [prazos, setPrazos] = useState<TrabTarefaResumo[] | null>(null);
   const [erroPrazos, setErroPrazos] = useState<string | null>(null);
-  // Layout 26/10: mudar a tarefa no pop-up relê os prazos (o prazo pode ter mudado de dia).
   const [recargaDosPrazos, setRecargaDosPrazos] = useState(0);
-  // O vigia da agenda (AG-01): o selo "N fora do padrão" e a lista com as propostas.
-  const [vigia, setVigia] = useState<ForaDoPadraoDaAgenda | null>(null);
-  const [erroVigia, setErroVigia] = useState<string | null>(null);
+  const [recarga, setRecarga] = useState(0);
+  const [lado, setLado] = useState<Lado | null>(null);
+  const [rascunhoAtual, setRascunhoAtual] = useState<Rascunho | null>(null);
+  const [extras, setExtras] = useState<{ dia: string; eventos: EventoV2[] } | null>(null);
+  const [altura, setAltura] = useState<AlturaDaHora>('auto');
+
+  // O relógio da tela (linha do agora, selo da sincronia, "em N min").
+  useEffect(() => {
+    const t = setInterval(() => setAgora(new Date()), 15_000);
+    return () => clearInterval(t);
+  }, []);
+
+  useEffect(() => {
+    try { setAltura(lerAlturaGuardada(window.localStorage?.getItem(CHAVE_DA_ALTURA) ?? null)); } catch { /* sem armazenamento */ }
+  }, []);
+  const mudarAltura = useCallback((v: AlturaDaHora) => {
+    setAltura(v);
+    try { window.localStorage?.setItem(CHAVE_DA_ALTURA, String(v)); } catch { /* sem armazenamento */ }
+  }, []);
+  const passoDaAltura = useCallback((sentido: 1 | -1) => {
+    setAltura((atual) => {
+      const base = atual === 'auto' ? ALTURA_PADRAO : atual;
+      const v = lerAlturaGuardada(String(base + sentido * PASSO_DA_ALTURA));
+      try { window.localStorage?.setItem(CHAVE_DA_ALTURA, String(v)); } catch { /* sem armazenamento */ }
+      return v;
+    });
+  }, []);
+
+  // O estado mora no endereço; até lê-lo (depois de montar), nada é buscado.
+  useEffect(() => {
+    const ler = () => setEstado({ ...lerEstadoV2(window.location.search, hojeNoFuso(), window.matchMedia?.('(max-width: 859px)').matches ?? false), lido: true });
+    ler();
+    window.addEventListener('popstate', ler);
+    return () => window.removeEventListener('popstate', ler);
+  }, []);
+
+  const mudar = useCallback((parcial: Partial<EstadoDaAgendaV2>) => {
+    setEstado((atual) => {
+      const proximo = { ...atual, ...parcial, lido: true };
+      window.history.replaceState(null, '', urlDoEstadoV2(`${window.location.pathname}${window.location.search}${window.location.hash}`, proximo));
+      return proximo;
+    });
+  }, []);
+
+  // Os dias da aba aberta.
+  const diasDaGrade = useMemo(() => diasDaJanela(dia, quantosDias), [dia, quantosDias]);
+  const diasLidos = useMemo(() => {
+    if (aba === 'mes') return casasDoMesDe(dia);
+    if (aba === 'lista') return [dia, somarDias(dia, 1)];
+    return diasDaGrade;
+  }, [aba, dia, diasDaGrade]);
+  const intervalo = useMemo(() => intervaloDosDias(diasLidos), [diasLidos]);
+  const nomesDeFeriado = useMemo(() => (regras?.feriados ?? []).map((f) => f.nome), [regras]);
+
+  const recarregar = useCallback(() => setRecarga((n) => n + 1), []);
+
+  useEffect(() => {
+    if (!ready || !token || !estado.lido) return;
+    let vivo = true;
+    setErro(null);
+    lerPeriodo(token, intervalo.de, intervalo.ate, nomesDeFeriado)
+      .then((p) => { if (vivo) setPeriodo(p); })
+      .catch((e) => { if (vivo) { setPeriodo({ eventos: [], sincronia: null, fonte: 'direto' }); setErro((e as Error).message); } });
+    return () => { vivo = false; };
+  }, [ready, token, estado.lido, intervalo, nomesDeFeriado, recarga]);
+
+  useEffect(() => {
+    if (!ready || !token) return;
+    void lerRegras(token).then(setRegras);
+  }, [ready, token]);
+
+  useEffect(() => {
+    if (!ready || !token) return;
+    void lerQuantosConflitos(token).then(setConflitos);
+  }, [ready, token, recarga]);
 
   const carregarVigia = useCallback(() => {
     if (!token) return;
@@ -123,42 +201,14 @@ export default function AgendaPage() {
       .then((d) => { setVigia(d); setErroVigia(null); })
       .catch((e) => { setVigia(null); setErroVigia(e.message); });
   }, [token]);
-
   useEffect(() => { if (ready && token) carregarVigia(); }, [ready, token, carregarVigia]);
 
   useEffect(() => {
-    const ler = () => setEstado({ ...lerEstadoDaAgenda(window.location.search, hojeNoFuso()), lido: true });
-    ler();
-    window.addEventListener('popstate', ler);
-    return () => window.removeEventListener('popstate', ler);
-  }, []);
-
-  const mudar = useCallback((proxima: VisaoDaAgenda, dia: string) => {
-    setEstado({ visao: proxima, dia, lido: true });
-    window.history.replaceState(null, '', urlDaAgenda(`${window.location.pathname}${window.location.search}${window.location.hash}`, proxima, dia));
-  }, []);
-
-  const grade = useMemo(() => gradeDoMes(mes), [mes]);
-  const diasDaVisao = useMemo(
-    () => (visao === 'semana' ? diasDaSemana(diaAberto) : visao === 'dia' ? [diaAberto] : grade.map(chaveDoDia)),
-    [visao, diaAberto, grade],
-  );
-  // O intervalo [de, ate) da visão, em instantes do fuso da agenda.
-  const intervalo = useMemo(() => intervaloDosDias(diasDaVisao), [diasDaVisao]);
-
-  const carregar = useCallback(() => {
-    if (!token || !estado.lido) return;
-    const { de, ate } = intervalo;
-    setErro(null);
-    apiGet<EventoDaAgenda[]>(
-      `/google/calendar/periodo?de=${encodeURIComponent(de.toISOString())}&ate=${encodeURIComponent(ate.toISOString())}`,
-      token,
-    )
-      .then(setEventos)
-      .catch((e) => { setEventos([]); setErro(e.message); });
-  }, [token, intervalo, estado.lido]);
-
-  useEffect(() => { if (ready && token) carregar(); }, [ready, token, carregar]);
+    if (!ready || !token || !can('tarefas.ver')) return;
+    apiGet<Array<{ cliente?: string }>>('/tenants/onboarding/trilhos', token)
+      .then((ts) => setTrilhos(Array.isArray(ts) ? ts.map((t) => t.cliente ?? '').filter(Boolean) : []))
+      .catch(() => {});
+  }, [ready, token, can]);
 
   useEffect(() => {
     if (!podeVerTrabalho || !token) { setPrazos(null); setErroPrazos(null); return; }
@@ -166,290 +216,338 @@ export default function AgendaPage() {
     let ativo = true;
     setPrazos(null);
     setErroPrazos(null);
-    const range = visao === 'mes' ? intervaloDaGrade(grade) : { dueFrom: intervalo.de.toISOString(), dueTo: intervalo.ate.toISOString() };
-    prazosDeTrabalho(token, range)
+    prazosDeTrabalho(token, { dueFrom: intervalo.de.toISOString(), dueTo: intervalo.ate.toISOString() })
       .then((items) => { if (ativo) setPrazos(items); })
       .catch((e) => { if (ativo) setErroPrazos(e.message); });
     return () => { ativo = false; };
-  }, [podeVerTrabalho, token, grade, visao, intervalo, estado.lido, recargaDosPrazos]);
+  }, [podeVerTrabalho, token, intervalo, estado.lido, recargaDosPrazos]);
 
-  // Os nomes de cliente que o OS já conhece, para o datalist do formulário. Sem
-  // permissão de tarefas o pedido nem sai — o campo continua sendo texto livre.
+  // O dia do rascunho fora do que está carregado: a régua precisa dos eventos dele.
+  const diaDoRascunho = lado && lado.tipo !== 'detalhe' ? rascunhoAtual?.dia ?? null : null;
   useEffect(() => {
-    if (!ready || !token || !can('tarefas.ver')) return;
-    apiGet<Array<{ cliente?: string }>>('/tenants/onboarding/trilhos', token)
-      .then((ts) => setTrilhos(ts.map((t) => t.cliente ?? '').filter(Boolean)))
+    if (!token || !diaDoRascunho || diasLidos.includes(diaDoRascunho) || !/^\d{4}-\d{2}-\d{2}$/.test(diaDoRascunho)) return;
+    if (extras?.dia === diaDoRascunho) return;
+    let vivo = true;
+    const { de, ate } = intervaloDosDias([diaDoRascunho]);
+    lerPeriodo(token, de, ate, nomesDeFeriado)
+      .then((p) => { if (vivo) setExtras({ dia: diaDoRascunho, eventos: p.eventos }); })
       .catch(() => {});
-  }, [ready, token, can]);
+    return () => { vivo = false; };
+  }, [token, diaDoRascunho, diasLidos, extras?.dia, nomesDeFeriado]);
 
-  const filtrados = useMemo(
-    () =>
-      (eventos ?? []).filter((e) => {
-        if (filtro === 'cliente' && e.reuniao?.tipo !== 'cliente') return false;
-        if (filtro === 'interna' && e.reuniao?.tipo !== 'interna') return false;
-        if (filtro === 'fora' && !foraDoPadraoNaTela(e)) return false;
-        return true;
-      }),
-    [eventos, filtro],
-  );
-
-  const porDia = useMemo(() => {
-    const m = new Map<string, EventoDaAgenda[]>();
-    for (const e of filtrados) {
-      const dia = diaDoEvento(e);
-      if (!dia) continue;
-      const lista = m.get(dia) ?? [];
-      lista.push(e);
-      m.set(dia, lista);
-    }
+  const eventos = useMemo(() => periodo?.eventos ?? [], [periodo]);
+  const eventosDaRegua = useMemo(() => {
+    if (!extras || diasLidos.includes(extras.dia)) return eventos;
+    const ids = new Set(eventos.map((e) => e.id));
+    return [...eventos, ...extras.eventos.filter((e) => !ids.has(e.id))];
+  }, [eventos, extras, diasLidos]);
+  const emails = useMemo(() => {
+    const m: Partial<Record<SocioDaAgenda, string | null>> = {};
+    for (const p of regras?.pessoas ?? []) m[p.nome] = p.email;
     return m;
-  }, [filtrados]);
-
-  const prazosPorDia = useMemo(() => {
-    const dias = new Map<string, TrabTarefaResumo[]>();
-    for (const tarefa of prazos ?? []) {
-      if (!tarefa.dueDate) continue;
-      const dia = noFuso(new Date(tarefa.dueDate)).dia;
-      dias.set(dia, [...(dias.get(dia) ?? []), tarefa]);
-    }
-    return dias;
-  }, [prazos]);
+  }, [regras]);
+  const filtrados = useMemo(() => eventos.filter((e) => ehDoSocio(e, quem, emails)), [eventos, quem, emails]);
+  const choques = useMemo(() => choquesDe(eventos), [eventos]);
+  const faixas = useMemo(() => faixasDoTopo(eventos, regras?.feriados ?? [], diasLidos), [eventos, regras, diasLidos]);
+  const faixasDaGrade = useMemo(() => faixas.filter((f) => diasDaGrade.includes(f.dia) && (quem === 'Todos' || f.tipo === 'feriado' || f.pessoa === quem)), [faixas, diasDaGrade, quem]);
+  const trajetoDe = useCallback((e: EventoV2) => {
+    if (e.leitura.modalidade !== 'presencial' || e.leitura.tipo !== 'cliente') return 0;
+    const p = regras?.pessoas.find((x) => e.leitura.responsaveis.includes(x.nome));
+    return p?.trajetoMin ?? 0;
+  }, [regras]);
 
   const clientesConhecidos = useMemo(() => {
     const s = new Set<string>(trilhos);
-    for (const e of eventos ?? []) if (e.reuniao?.tipo === 'cliente') s.add(e.reuniao.cliente);
+    for (const e of eventos) if (e.leitura.cliente) s.add(e.leitura.cliente);
     return [...s].sort((a, b) => a.localeCompare(b, 'pt-BR'));
   }, [eventos, trilhos]);
 
-  const responsaveisConhecidos = useMemo(() => {
-    const s = new Set<string>();
-    for (const e of eventos ?? []) if (e.reuniao?.responsavel) s.add(e.reuniao.responsavel);
-    return [...s].sort((a, b) => a.localeCompare(b, 'pt-BR'));
-  }, [eventos]);
-
-  const foraDoPadrao = (eventos ?? []).filter(foraDoPadraoNaTela).length;
-  const doDia = useMemo(() => {
-    if (visao === 'mes') return porDia.get(diaAberto) ?? [];
-    const [d] = eventosPorDia(filtrados, [diaAberto]);
-    return [...d.diaInteiro, ...d.comHora.map((c) => c.evento)];
-  }, [visao, porDia, filtrados, diaAberto]);
-  const hoje = hojeNoFuso();
+  const prazosPorDia = useMemo(() => {
+    const m = new Map<string, TrabTarefaResumo[]>();
+    for (const t of prazos ?? []) {
+      if (!t.dueDate) continue;
+      const d = noFuso(new Date(t.dueDate)).dia;
+      m.set(d, [...(m.get(d) ?? []), t]);
+    }
+    return m;
+  }, [prazos]);
   const contagemDePrazos = useMemo(() => new Map([...prazosPorDia].map(([k, v]) => [k, v.length])), [prazosPorDia]);
-  const titulo =
-    visao === 'mes'
-      ? mes.toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' })
-      : visao === 'semana'
-        ? `${rotulosDoDia(diasDaVisao[0]).data} a ${rotulosDoDia(diasDaVisao[6]).data}`
-        : rotulosDoDia(diaAberto).extenso;
 
-  return (
-    <div className="space-y-6">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <p className="text-sm text-muted">
-            O calendário do <span className="font-medium text-text">operacao.root@gmail.com</span>, desenhado
-            pelo padrão da casa. Marcar por aqui garante o padrão; marcar pelo Google, não.
-          </p>
-          <div className="mt-1"><SeloForaDoPadrao dados={vigia} /></div>
-        </div>
-        {can('agenda.editar') && (
-          <MarcarReuniao clientes={clientesConhecidos} responsaveis={responsaveisConhecidos} aoMarcar={carregar} />
-        )}
+  /* ------------------------------------------------- abrir o painel */
+  const abrirMarcar = useCallback((diaHora?: { dia: string; minuto: number }) => {
+    const guardado = lerRascunhoGuardado();
+    const base = guardado ?? rascunhoVazio(dia, '09:00');
+    setLado({ tipo: 'marcar', inicial: diaHora ? { ...base, dia: diaHora.dia, hora: horaDeMinutos(diaHora.minuto) } : base });
+  }, [dia]);
+  const abrirDetalhe = useCallback((e: EventoV2) => setLado({ tipo: 'detalhe', evento: e }), []);
+  const abrirEditar = useCallback((e: EventoV2, destino?: DestinoDoArrasto) => {
+    const r = rascunhoDoEvento(e);
+    setLado({
+      tipo: 'editar',
+      evento: e,
+      inicial: destino ? { ...r, dia: destino.dia, hora: horaDeMinutos(destino.inicio), duracaoMin: destino.fim - destino.inicio } : r,
+    });
+  }, []);
+  const fecharLado = useCallback(() => { setLado(null); setRascunhoAtual(null); }, []);
+
+  const abrirParaRemarcar = useCallback(async (eventoId: string) => {
+    let e = eventos.find((x) => x.id === eventoId) ?? null;
+    if (!e && token) {
+      const de = new Date(Date.now() - 86_400_000);
+      const ate = new Date(Date.now() + 61 * 86_400_000);
+      try { e = (await lerPeriodo(token, de, ate, nomesDeFeriado)).eventos.find((x) => x.id === eventoId) ?? null; } catch { e = null; }
+    }
+    if (!e) return;
+    const d = diaDoEventoV2(e) ?? dia;
+    mudar({ aba: 'semana', dia: d });
+    abrirEditar(e);
+  }, [eventos, token, nomesDeFeriado, dia, mudar, abrirEditar]);
+
+  const depoisDeEscrever = useCallback(() => {
+    recarregar();
+    carregarVigia();
+  }, [recarregar, carregarVigia]);
+
+  const novoNaGrade = useMemo(() => {
+    if (!lado || lado.tipo === 'detalhe' || !rascunhoAtual) return null;
+    const i = intervaloDoRascunho(rascunhoAtual);
+    if (!i) return null;
+    const m = minutosDoEvento(i);
+    if (!m) return null;
+    const t = tituloDoRascunho(rascunhoAtual);
+    return { dia: m.dia, inicio: m.inicio, fim: m.fim, titulo: t.titulo ?? (lado.tipo === 'editar' ? lado.evento.titulo ?? '' : 'novo compromisso') };
+  }, [lado, rascunhoAtual]);
+
+  // Enquanto marca ou edita, o evento editado sai da grade (fica só o tracejado).
+  const eventosDaGrade = useMemo(() => (lado?.tipo === 'editar' ? filtrados.filter((e) => e.id !== lado.evento.id) : filtrados), [filtrados, lado]);
+
+  const selo = seloDaSincronia(periodo?.sincronia ?? null, periodo ? periodo.fonte : null, agora);
+  const podeVerRegras = can('dashboard.ver');
+  const abas = ABAS.filter((a) => a !== 'regras' || podeVerRegras);
+  const modoDoLado: 'lado' | 'folha' = estreito || aba !== 'semana' ? 'folha' : 'lado';
+  const doDiaAberto = useMemo(
+    () => filtrados
+      .filter((e) => e.status !== 'cancelado' && (e.diaInteiro ? diasDoDiaInteiro(e).includes(dia) : diaDoEventoV2(e) === dia))
+      .sort((a, b) => Number(b.diaInteiro) - Number(a.diaInteiro) || a.inicio.localeCompare(b.inicio)),
+    [filtrados, dia],
+  );
+  const amanha = useMemo(() => {
+    if (aba !== 'lista') return null;
+    const d = somarDias(dia, 1);
+    return filtrados.filter((e) => e.status !== 'cancelado' && !e.diaInteiro && diaDoEventoV2(e) === d).length;
+  }, [aba, filtrados, dia]);
+
+  const ladoAberto = lado && (
+    lado.tipo === 'detalhe' ? (
+      <DetalheDoCompromisso
+        key={`d-${lado.evento.id}`}
+        evento={lado.evento}
+        modo={modoDoLado}
+        token={token}
+        podeEditar={podeMarcar}
+        choque={choques.has(lado.evento.id)}
+        aoEditar={() => abrirEditar(lado.evento)}
+        aoFechar={fecharLado}
+        aoEscrever={depoisDeEscrever}
+      />
+    ) : (
+      <PainelDeMarcar
+        modo={modoDoLado}
+        edicao={lado.tipo === 'editar' ? lado.evento : null}
+        inicial={lado.inicial}
+        eventos={eventosDaRegua}
+        regras={regras}
+        hoje={hoje}
+        clientesConhecidos={clientesConhecidos}
+        token={token}
+        podeMarcar={podeMarcar}
+        aoMudarRascunho={setRascunhoAtual}
+        aoFechar={fecharLado}
+        aoEscrever={depoisDeEscrever}
+      />
+    )
+  );
+
+  const barraDeNavegacao = (comDias: boolean) => (
+    <div className="flex flex-wrap items-center gap-2">
+      <button type="button" title="Anterior" aria-label="Anterior" onClick={() => mudar({ dia: aba === 'mes' ? mesVizinho(dia, -1) : aba === 'lista' ? somarDias(dia, -1) : ancoraVizinha(dia, quantosDias, -1) })} className={botaoBarra}>
+        <ChevronLeft size={15} />
+      </button>
+      <Calendario rotulo={aba === 'mes' ? rotuloDoMes(dia) : aba === 'lista' ? rotuloDaJanela([dia]) : rotuloDaJanela(diasDaGrade)} diaAberto={dia} hoje={hoje} aoEscolher={(d) => mudar({ dia: d })} />
+      <button type="button" title="Próxima" aria-label="Próxima" onClick={() => mudar({ dia: aba === 'mes' ? mesVizinho(dia, 1) : aba === 'lista' ? somarDias(dia, 1) : ancoraVizinha(dia, quantosDias, 1) })} className={botaoBarra}>
+        <ChevronRight size={15} />
+      </button>
+      <button type="button" onClick={() => mudar({ dia: hoje })} className={botaoBarra}>Hoje</button>
+      {comDias && (
+        <>
+          <span className="ml-2 font-os-mono text-[10px] uppercase tracking-[0.1em] text-muted">dias</span>
+          {OPCOES_DE_DIAS.map((n) => (
+            <button key={n} type="button" aria-pressed={quantosDias === n} onClick={() => mudar({ dias: n })} className={`${botaoBarra} font-os-mono ${quantosDias === n ? ligadoBarra : ''}`}>{n}</button>
+          ))}
+        </>
+      )}
+      <span className="ml-2 font-os-mono text-[10px] uppercase tracking-[0.1em] text-muted">quem</span>
+      <div role="group" aria-label="Quem" className="flex flex-wrap gap-1">
+        {QUEM.map((q) => (
+          <button key={q} type="button" aria-pressed={quem === q} onClick={() => mudar({ quem: q })} className={`${botaoBarra} ${quem === q ? ligadoBarra : ''}`}>{q}</button>
+        ))}
       </div>
-
-      {erro && (
-        <div className="rounded-lg border border-bad/30 bg-bad/10 px-4 py-2 text-sm text-bad">
-          {erro} — se a conta do Google não está conectada, ela se conecta em <a className="underline" href="/conexoes">Conexões</a>.
+      <span className="flex-1" />
+      {comDias && (
+        <div className="flex items-center gap-1" role="group" aria-label="Altura das horas">
+          <span className="font-os-mono text-[11px] text-muted">altura</span>
+          <button type="button" aria-label="Diminuir altura" onClick={() => passoDaAltura(-1)} className={`${botaoBarra} font-os-mono`}>−</button>
+          <button type="button" aria-pressed={altura === 'auto'} onClick={() => mudarAltura('auto')} className={`${botaoBarra} font-os-mono ${altura === 'auto' ? ligadoBarra : ''}`}>auto</button>
+          <button type="button" aria-label="Aumentar altura" onClick={() => passoDaAltura(1)} className={`${botaoBarra} font-os-mono`}>+</button>
         </div>
       )}
+      {podeMarcar && (aba === 'semana' || aba === 'mes') && (
+        <button type="button" onClick={() => abrirMarcar()} className="rounded-[3px] border border-brand bg-brand px-3 py-1.5 text-[13px] font-semibold text-ink">+ Marcar</button>
+      )}
+    </div>
+  );
 
-      <ListaForaDoPadrao
-        dados={vigia}
-        erro={erroVigia}
-        token={token}
-        podeEditar={can('agenda.editar')}
-        aoMudar={carregarVigia}
-      />
-
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="flex flex-wrap items-center gap-2">
-          <div role="group" aria-label="Visão da agenda" className="inline-flex overflow-hidden rounded-lg border border-border">
-            {(['mes', 'semana', 'dia'] as const).map((v) => (
-              <button
-                key={v}
-                type="button"
-                aria-pressed={visao === v}
-                onClick={() => mudar(v, diaAberto)}
-                className={`px-2.5 py-1 text-xs ${visao === v ? 'bg-brand/10 text-text' : 'bg-surface-2 text-muted hover:text-text'}`}
-              >
-                {ROTULO_DA_VISAO[v]}
-              </button>
-            ))}
-          </div>
-          <Botao onClick={() => mudar(visao, diaVizinho(visao, diaAberto, -1))} title="Anterior"><ChevronLeft size={15} /></Botao>
-          <span className="min-w-[8rem] text-center text-sm font-medium capitalize" data-titulo-da-agenda="">
-            {titulo}
-          </span>
-          <Botao onClick={() => mudar(visao, diaVizinho(visao, diaAberto, 1))} title="Próxima"><ChevronRight size={15} /></Botao>
-          <Botao onClick={() => mudar(visao, hojeNoFuso())}>Hoje</Botao>
-        </div>
-        <div className="flex flex-wrap items-center gap-1.5">
-          {([
-            ['tudo', 'Tudo'],
-            ['cliente', 'Clientes'],
-            ['interna', 'Internas'],
-            ['fora', `Fora do padrão${foraDoPadrao ? ` (${foraDoPadrao})` : ''}`],
-          ] as const).map(([k, label]) => (
+  return (
+    <div className="flex flex-col gap-3 font-central-sans" data-agenda-v2="">
+      {/* abas e selos */}
+      <div className="flex flex-wrap items-end justify-between gap-x-4 gap-y-2 border-b border-border">
+        <div role="tablist" aria-label="Agenda" className="flex flex-wrap gap-1">
+          {abas.map((a) => (
             <button
-              key={k}
-              onClick={() => setFiltro(k)}
-              className={`rounded-lg border px-2.5 py-1 text-xs ${filtro === k ? 'border-brand-dim bg-brand/10 text-text' : 'border-border bg-surface-2 text-muted hover:text-text'}`}
+              key={a}
+              type="button"
+              role="tab"
+              aria-selected={aba === a}
+              onClick={() => mudar({ aba: a as AbaDaAgenda })}
+              className={`-mb-px border-b-2 px-3.5 py-2 font-os-mono text-xs ${aba === a ? 'border-brand text-text' : 'border-transparent text-muted hover:text-text'}`}
             >
-              {label}
+              {ROTULO_DA_ABA[a]}
+              {a === 'conflitos' && typeof conflitos === 'number' && conflitos > 0 && <span className="ml-1 text-mag">{conflitos}</span>}
             </button>
           ))}
         </div>
-      </div>
-
-      {visao !== 'mes' && (
-        <GradeDaSemana
-          dias={diasDaVisao}
-          eventos={eventos === null ? [] : filtrados}
-          prazosPorDia={contagemDePrazos}
-          mostrarPrazos={podeVerTrabalho}
-          hoje={hoje}
-          diaAberto={diaAberto}
-          aoEscolher={(d) => mudar(visao, d)}
-          comoLista={celular && visao === 'semana'}
-        />
-      )}
-
-      {/* a grade do mês */}
-      {visao === 'mes' && (
-      <div className="overflow-hidden rounded-xl border border-border bg-surface">
-        <div className="grid grid-cols-7 border-b border-border">
-          {DIAS.map((d) => (
-            <div key={d} className="px-2 py-1.5 text-center font-os-mono text-[10px] uppercase tracking-[0.16em] text-muted">{d}</div>
-          ))}
-        </div>
-        <div className="grid grid-cols-7">
-          {grade.map((d) => {
-            const chave = chaveDoDia(d);
-            const doMes = d.getMonth() === mes.getMonth();
-            const lista = porDia.get(chave) ?? [];
-            const quantidadeDePrazos = prazosPorDia.get(chave)?.length ?? 0;
-            return (
-              <button
-                key={chave}
-                onClick={() => mudar('mes', chave)}
-                className={`min-h-[6.5rem] border-b border-r border-border p-1.5 text-left align-top transition-colors last:border-r-0 hover:bg-surface-2 ${doMes ? '' : 'opacity-40'} ${chave === diaAberto ? 'bg-surface-2' : ''}`}
-              >
-                <div className="mb-1 flex items-center justify-between">
-                  <span className={`text-xs ${chave === hoje ? 'rounded bg-brand px-1.5 py-0.5 font-semibold text-bg' : 'text-muted'}`}>
-                    {d.getDate()}
-                  </span>
-                  {lista.length > 2 && <span className="text-[10px] text-muted">+{lista.length - 2}</span>}
-                </div>
-                <div className="space-y-1">
-                  {lista.slice(0, 2).map((e) => {
-                    const tom = tomDoEvento(e);
-                    const cor = tom === 'brand' ? 'bg-brand/15 text-brand'
-                      : tom === 'good' ? 'bg-good/15 text-good'
-                      : tom === 'warn' ? 'bg-warn/15 text-warn'
-                      : 'bg-surface-2 text-muted';
-                    return (
-                      <div key={e.id} className={`truncate rounded px-1 py-0.5 text-[10px] ${cor}`} title={e.title}>
-                        {!e.diaInteiro && <span className="mr-1 opacity-70">{horaCurta(e.start)}</span>}
-                        {rotuloCurto(e)}
-                      </div>
-                    );
-                  })}
-                </div>
-                {podeVerTrabalho && quantidadeDePrazos > 0 && (
-                  <div className="mt-1 truncate rounded bg-brand/10 px-1 py-0.5 text-[10px] text-brand">
-                    {quantidadeDePrazos} prazo{quantidadeDePrazos === 1 ? '' : 's'} de trabalho
-                  </div>
-                )}
-              </button>
-            );
-          })}
+        <div className="flex flex-wrap items-center gap-3 pb-2">
+          <SeloForaDoPadrao dados={vigia} />
+          {selo && (
+            <span className={`font-os-mono text-[11px] ${selo.tom === 'ok' ? 'text-info' : 'text-warn'}`} data-selo-da-sincronia="">
+              ● {selo.texto}
+            </span>
+          )}
         </div>
       </div>
 
+      {erro && (
+        <div role="alert" className="rounded-[3px] border border-bad/40 bg-bad/10 px-4 py-2 text-sm text-bad">
+          {erro}. Se a conta do Google não está conectada, ela se conecta em <a className="underline" href="/conexoes">Conexões</a>.
+        </div>
       )}
 
-      {/* o dia escolhido, por extenso */}
-      <Card titulo={new Date(`${diaAberto}T12:00:00`).toLocaleDateString('pt-BR', { weekday: 'long', day: '2-digit', month: 'long' })}>
-        {eventos === null ? (
-          <p className="text-sm text-muted">Carregando a agenda…</p>
-        ) : doDia.length === 0 ? (
-          <p className="text-sm text-muted">Nada marcado neste dia.</p>
-        ) : (
-          <ul className="divide-y divide-border">
-            {doDia.map((e) => (
-              <li key={e.id} className="flex flex-wrap items-start justify-between gap-3 py-3">
-                <div className="min-w-0 space-y-1">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <span className="font-os-mono text-xs text-muted">
-                      {e.diaInteiro ? 'dia inteiro' : `${horaCurta(e.start)}–${horaCurta(e.end)}`}
-                    </span>
-                    {e.reuniao ? (
-                      <>
-                        <span className="text-sm font-medium">
-                          {e.reuniao.tipo === 'cliente' ? e.reuniao.cliente : 'Interna'}
-                        </span>
-                        {e.reuniao.tipo === 'cliente' && (
-                          <Chip tone={e.reuniao.modalidade === 'online' ? 'brand' : 'good'}>
-                            {e.reuniao.modalidade === 'online' ? 'online' : 'presencial'}
-                          </Chip>
-                        )}
-                        {e.reuniao.responsavel && <Chip>{e.reuniao.responsavel}</Chip>}
-                      </>
-                    ) : (
-                      <span className="text-sm">{e.title}</span>
-                    )}
-                    {foraDoPadraoNaTela(e) && (
-                      <Chip tone="warn">
-                        <span className="inline-flex items-center gap-1"><AlertTriangle size={10} /> fora do padrão</span>
-                      </Chip>
-                    )}
-                  </div>
-                  <div className="flex flex-wrap items-center gap-3 text-[11px] text-muted">
-                    {e.location && <span className="inline-flex items-center gap-1"><MapPin size={11} /> {e.location}</span>}
-                    {e.meet && (
-                      <a href={e.meet} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 hover:text-brand">
-                        <Video size={11} /> Meet
-                      </a>
-                    )}
-                    {e.attendees.length > 0 && (
-                      <span className="inline-flex items-center gap-1" title={e.attendees.join(', ')}>
-                        <Users size={11} /> {e.attendees.length} convidado{e.attendees.length > 1 ? 's' : ''}
-                      </span>
-                    )}
-                  </div>
-                </div>
-                {e.link && (
-                  <a href={e.link} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-xs text-muted hover:text-brand">
-                    abrir no Google <ExternalLink size={12} />
-                  </a>
-                )}
-              </li>
-            ))}
-          </ul>
-        )}
-      </Card>
+      {aba === 'semana' && (
+        <>
+          {barraDeNavegacao(true)}
+          {faixasDaGrade.length > 0 && (
+            <div className="flex flex-wrap gap-2" data-faixas-do-topo="">
+              {faixasDaGrade.map((f) => (
+                <span key={`${f.tipo}-${f.dia}-${f.texto}`} className={`rounded-[3px] border px-2.5 py-1 font-os-mono text-[11px] ${f.tipo === 'fora' ? 'border-warn/50 text-warn' : 'border-border text-muted'}`}>
+                  {f.tipo === 'fora' ? 'FORA' : 'FERIADO'} · {f.texto} · {rotulosDoDia(f.dia).semana} {rotulosDoDia(f.dia).data}
+                  {f.tipo === 'feriado' ? (f.fecha ? ' · agenda fechada' : ' · facultativo, só avisa') : ''}
+                </span>
+              ))}
+            </div>
+          )}
+          <div className={`flex min-h-[28rem] ${modoDoLado === 'lado' && lado ? 'h-[calc(100vh-15rem)]' : 'h-[calc(100vh-15rem)] max-h-[60rem]'} overflow-hidden rounded-[3px]`}>
+            <section className="flex min-w-0 flex-1 flex-col gap-2 pr-0">
+              <GradeDeHoras
+                dias={diasDaGrade}
+                eventos={eventosDaGrade}
+                choques={choques}
+                faixas={faixasDaGrade}
+                hoje={hoje}
+                agora={agora}
+                altura={altura}
+                aoRodar={passoDaAltura}
+                novo={novoNaGrade}
+                podeMover={(e) => podeMarcar && podeEditarEvento(e) && !e.diaInteiro}
+                trajetoDe={trajetoDe}
+                aoClicarEvento={abrirDetalhe}
+                aoClicarVazio={podeMarcar ? (d, m) => abrirMarcar({ dia: d, minuto: m }) : undefined}
+                aoSoltar={(e, destino) => abrirEditar(e, destino)}
+                aoEscolherDia={(d) => mudar({ dia: d })}
+                diaAberto={dia}
+                prazosPorDia={podeVerTrabalho ? contagemDePrazos : undefined}
+              />
+            </section>
+            {modoDoLado === 'lado' && ladoAberto}
+          </div>
+          <Legenda />
+          <ListaForaDoPadrao dados={vigia} erro={erroVigia} token={token} podeEditar={podeMarcar} aoMudar={carregarVigia} />
+          <Card titulo={`o dia · ${rotulosDoDia(dia).extenso}`}>
+            {periodo === null ? (
+              <p className="text-sm text-muted">Carregando a agenda…</p>
+            ) : doDiaAberto.length === 0 ? (
+              <p className="text-sm text-muted">Nada marcado neste dia.</p>
+            ) : (
+              <ul className="divide-y divide-border" data-dia-aberto={dia}>
+                {doDiaAberto.map((e) => {
+                  const ap = aparenciaDo(e);
+                  const etiqueta = choques.has(e.id) ? 'choque' : ap.etiqueta;
+                  return (
+                    <li key={e.id} className="flex flex-wrap items-baseline gap-x-3 gap-y-1 py-2">
+                      <span className="font-os-mono text-xs text-muted">{e.diaInteiro ? 'dia inteiro' : `${horaNoFuso(e.inicio)} a ${horaNoFuso(e.fim)}`}</span>
+                      <button type="button" onClick={() => abrirDetalhe(e)} className="min-w-0 text-left text-sm font-medium hover:text-brand">{ap.titulo}</button>
+                      {etiqueta && <span className={`font-os-mono text-[9.5px] font-bold uppercase tracking-[0.08em] ${corDaEtiqueta(choques.has(e.id) ? 'choque' : ap.tom, ap.semMeet)}`}>{etiqueta}</span>}
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+          </Card>
+        </>
+      )}
 
-      {podeVerTrabalho && (
+      {aba === 'lista' && (
+        <>
+          {barraDeNavegacao(false)}
+          <ListaDoDia
+            dia={dia}
+            hoje={hoje}
+            agora={agora}
+            eventos={filtrados}
+            choques={choques}
+            trajetoDe={trajetoDe}
+            amanha={amanha}
+            conflitos={conflitos}
+            podeMarcar={podeMarcar}
+            aoClicar={abrirDetalhe}
+            aoMarcar={() => abrirMarcar()}
+            aoConflitos={() => mudar({ aba: 'conflitos' })}
+          />
+        </>
+      )}
+
+      {aba === 'mes' && (
+        <>
+          {barraDeNavegacao(false)}
+          <MesDaAgenda dia={dia} hoje={hoje} eventos={filtrados} choques={choques} faixas={faixas} prazosPorDia={podeVerTrabalho ? contagemDePrazos : undefined} aoEscolher={(d) => mudar({ dia: d })} />
+          <Legenda />
+        </>
+      )}
+
+      {aba === 'conflitos' && <AbaConflitos aoRemarcar={(id) => void abrirParaRemarcar(id)} aoMudar={depoisDeEscrever} />}
+      {aba === 'relatorios' && <AbaRelatorios />}
+      {aba === 'regras' && podeVerRegras && <AbaRegras />}
+
+      {modoDoLado === 'folha' && ladoAberto}
+
+      {podeVerTrabalho && (aba === 'semana' || aba === 'lista' || aba === 'mes') && (
         <Card titulo="Prazos de trabalho">
-          <p className="mb-2 text-xs text-muted">Prazos dos cards no Trabalho; não são reuniões nem publicações agendadas.</p>
+          <p className="mb-2 text-xs text-muted">Prazos dos cards no Trabalho do dia aberto; não são reuniões nem publicações agendadas.</p>
           {erroPrazos && <p role="alert" className="text-sm text-bad">Não foi possível carregar os prazos: {erroPrazos}</p>}
           {!prazos && !erroPrazos && <p className="text-sm text-muted">Carregando prazos…</p>}
-          {prazos && (prazosPorDia.get(diaAberto) ?? []).length === 0 && (
-            <p className="text-sm text-muted">Nenhum prazo de trabalho neste dia.</p>
-          )}
+          {prazos && (prazosPorDia.get(dia) ?? []).length === 0 && <p className="text-sm text-muted">Nenhum prazo de trabalho neste dia.</p>}
           {prazos && (
             <ul className="divide-y divide-border">
-              {(prazosPorDia.get(diaAberto) ?? []).map((t) => (
+              {(prazosPorDia.get(dia) ?? []).map((t) => (
                 <li key={t.id} className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1 py-2 text-sm">
                   <a href={trabalhoHref(t.id)} onClick={abrirAquiNoClique(popup.abrir, t.id)} className="min-w-0 font-medium text-brand underline">{t.title}</a>
                   <span className="text-xs text-muted">{t.statusName} · {t.dueDate ? new Date(t.dueDate).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }) : ''}</span>
@@ -459,15 +557,33 @@ export default function AgendaPage() {
           )}
         </Card>
       )}
-
-      <p className="text-[11px] text-muted">
-        Padrão da casa: <span className="font-os-mono">Reunião Online|Presencial - Cliente - Responsável</span> para
-        cliente, <span className="font-os-mono">Reunião Interna - Sócio|Todos</span> para dentro de casa; reunião
-        online sempre com Meet. A reunião que o Google tiver fora disso aparece em âmbar, com o título cru, e o
-        vigia da agenda propõe a correção (que espera a confirmação na fila de aprovações). Compromisso que não é
-        reunião, como bloqueio e lembrete sem convidado, fica neutro.
-      </p>
       {podeVerTrabalho && <TarefaFlutuante tarefa={popup} onMudou={() => setRecargaDosPrazos((n) => n + 1)} />}
+    </div>
+  );
+}
+
+const botaoBarra = 'rounded-[3px] border border-border bg-surface-2 px-2.5 py-1.5 text-[13px] text-text hover:border-brand-dim';
+const ligadoBarra = 'border-brand bg-brand/[0.12]';
+
+const MESES = ['janeiro', 'fevereiro', 'março', 'abril', 'maio', 'junho', 'julho', 'agosto', 'setembro', 'outubro', 'novembro', 'dezembro'];
+const rotuloDoMes = (dia: string) => `${MESES[Number(dia.slice(5, 7)) - 1]} de ${dia.slice(0, 4)}`;
+
+/** O primeiro dia do mês vizinho. */
+function mesVizinho(dia: string, sentido: 1 | -1): string {
+  const [a, m] = dia.split('-').map(Number);
+  return new Date(Date.UTC(a, m - 1 + sentido, 1)).toISOString().slice(0, 10);
+}
+
+/** A legenda do desenho: cada cor com a palavra. */
+function Legenda() {
+  return (
+    <div className="flex flex-wrap gap-x-3.5 gap-y-1 text-[11.5px] text-muted" data-legenda="">
+      <span><span className="font-os-mono text-brand">▪</span> cliente</span>
+      <span><span className="font-os-mono text-muted">▪</span> interna e rito</span>
+      <span><span className="font-os-mono text-muted">┆</span> Fechado (agenda pessoal)</span>
+      <span><span className="font-os-mono text-warn">▪</span> fora do padrão, sem Meet, Fora</span>
+      <span><span className="font-os-mono text-mag">▪</span> choque</span>
+      <span>arrastar move · puxar a borda estica · clique no vazio marca ali</span>
     </div>
   );
 }

@@ -33,6 +33,12 @@ import {
 } from './drive-do-cliente';
 import { planoDaPadronizacao, planoDaRestauracao, type EventoLido } from './padronizar-evento';
 import { tipoMimeValido } from './tipo-mime';
+import { ErroDoGoogle, origemDoDuble, urlDoGoogle } from './dubles-do-google';
+import { efeitosDaLeituraDaAgenda } from './agenda-espelho.google';
+import { efeitosDaEscritaDaAgenda } from './agenda-escrita.google';
+
+/** As origens das APIs do Google que o dublê da homologação pode substituir (`dubles-do-google.ts`). */
+const ORIGENS_DO_GOOGLE = ['https://www.googleapis.com', 'https://oauth2.googleapis.com'] as const;
 import { EfeitosRegistry, type ContextoDoEfeito } from '../gateway/efeitos.registry';
 import { CofreService, SegredoIndisponivelError } from '../cofre/cofre.service';
 import { NOMES_CONHECIDOS } from '../cofre/segredo';
@@ -246,30 +252,11 @@ export class GoogleService implements OnModuleInit, DriveDoCliente {
           ctx.actorId ?? undefined,
         ),
       /*
-       * MARCAR REUNIÃO — irmã de `agenda.evento.criar` e, na prática, a que a
-       * casa usa. A outra segue viva para o que não é reunião (bloqueio de
-       * agenda, viagem), onde o título é livre; esta não tem título nenhum nos
-       * argumentos, e é por isso que nem um agente consegue fugir do padrão.
+       * MARCAR REUNIÃO: o efeito mudou de casa na agenda v2 (29/10/2026) e mora em
+       * `agenda-escrita.google.ts` (inscrito no fim deste registro), com a chave do
+       * pedido, os tipos novos e as propriedades do OS no evento. A rota antiga
+       * `POST /google/calendar/reuniao` continua chegando lá pela porta.
        */
-      'agenda.reuniao.marcar': (a, org, ctx: ContextoDoEfeito) =>
-        this.marcarReuniao(
-          org,
-          {
-            tipo: texto(a.tipo) === 'interna' ? 'interna' : 'cliente',
-            modalidade: texto(a.modalidade) === 'presencial' ? 'presencial' : 'online',
-            ...(texto(a.cliente) ? { cliente: texto(a.cliente) } : {}),
-            responsavel: texto(a.responsavel),
-            inicio: texto(a.inicio),
-            ...(texto(a.fim) ? { fim: texto(a.fim) } : {}),
-            ...(Number.isFinite(Number(a.duracaoMinutos))
-              ? { duracaoMinutos: Math.trunc(Number(a.duracaoMinutos)) }
-              : {}),
-            ...(texto(a.pauta) ? { pauta: texto(a.pauta) } : {}),
-            ...(texto(a.local) ? { local: texto(a.local) } : {}),
-            ...(Array.isArray(a.convidados) ? { convidados: (a.convidados as string[]).map(texto) } : {}),
-          },
-          ctx.actorId ?? undefined,
-        ),
       'documento.criar': (a, org, ctx: ContextoDoEfeito) =>
         this.createDoc(
           org,
@@ -308,6 +295,13 @@ export class GoogleService implements OnModuleInit, DriveDoCliente {
           { eventoId: texto(a.eventoId), tituloAtual: String(a.tituloAtual ?? ''), tituloOriginal: String(a.tituloOriginal ?? '') },
           ctx.actorId ?? undefined,
         ),
+      /*
+       * AGENDA V2 (29/10/2026): os efeitos da leitura do espelho (lane G1) e das
+       * escritas (lane G4) moram nos dois arquivos com nome; o HTTP continua aqui,
+       * em `chamarAgenda`. Vêm por último: a chave repetida (o marcar) vale a de lá.
+       */
+      ...efeitosDaLeituraDaAgenda(this),
+      ...efeitosDaEscritaDaAgenda(this),
     }, 'GoogleService');
   }
 
@@ -641,7 +635,7 @@ export class GoogleService implements OnModuleInit, DriveDoCliente {
    * que é exatamente o que o corte de dentro existe para evitar.
    */
   private async sondarEmail(accessToken: string, prazoMs: number): Promise<string | null> {
-    const r = await fetch('https://www.googleapis.com/oauth2/v2/userinfo', {
+    const r = await fetch(urlDoGoogle('https://www.googleapis.com/oauth2/v2/userinfo', this.duble, ORIGENS_DO_GOOGLE), {
       headers: { Authorization: `Bearer ${accessToken}` },
       signal: AbortSignal.timeout(Math.max(250, prazoMs)),
     });
@@ -778,7 +772,7 @@ export class GoogleService implements OnModuleInit, DriveDoCliente {
     });
     if (!refresh) throw new ServiceUnavailableException('Sessão Google expirada. Reconecte.');
 
-    const res = await fetch('https://oauth2.googleapis.com/token', {
+    const res = await fetch(urlDoGoogle('https://oauth2.googleapis.com/token', this.duble, ORIGENS_DO_GOOGLE), {
       method: 'POST',
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
       body: new URLSearchParams({
@@ -831,7 +825,7 @@ export class GoogleService implements OnModuleInit, DriveDoCliente {
    */
   private async api<T = any>(orgId: string, url: string, init?: RequestInit): Promise<T> {
     const at = await this.token(orgId);
-    const res = await fetch(url, {
+    const res = await fetch(urlDoGoogle(url, this.duble, ORIGENS_DO_GOOGLE), {
       ...init,
       headers: { Authorization: `Bearer ${at}`, 'Content-Type': 'application/json', ...(init?.headers ?? {}) },
     });
@@ -840,6 +834,40 @@ export class GoogleService implements OnModuleInit, DriveDoCliente {
       throw new BadRequestException(`Google ${url.split('?')[0]} → HTTP ${res.status} ${body.slice(0, 160)}`);
     }
     return res.json() as Promise<T>;
+  }
+
+  /** O dublê da homologação (`GOOGLE_API_DUBLE_URL`), conferido no arranque. Nulo em produção. */
+  private readonly duble = origemDoDuble();
+
+  /**
+   * A AGENDA V2 (29/10/2026) fala com a API do Calendar por AQUI, e só por aqui.
+   *
+   * Não é a `api()` de volta à vista: o destino é fixo (`www.googleapis.com`) e o
+   * caminho tem de começar por `/calendar/v3/`, então daqui não sai Gmail, Drive
+   * nem Docs. Quem chama são os dois arquivos com nome da agenda neste diretório
+   * (`agenda-espelho.google.ts`, a leitura do espelho; `agenda-escrita.google.ts`,
+   * as escritas), que montam cada pedido num método com nome e se inscrevem no
+   * registro de efeitos. Resposta fora de 2xx lança `ErroDoGoogle` com o status:
+   * a sincronia precisa distinguir o 410 (syncToken vencido) do resto.
+   */
+  async chamarAgenda<T = unknown>(orgId: string, caminho: string, init?: RequestInit): Promise<T> {
+    // `..` (ou `%2e`) normalizado pelo `fetch` sairia do Calendar: recusado também.
+    if (!/^\/calendar\/v3\/[A-Za-z0-9_@%.\-/?=&:,+]*$/.test(caminho) || /\.\.|%2e/i.test(caminho)) {
+      throw new BadRequestException('Caminho fora da API do Calendar.');
+    }
+    const at = await this.token(orgId);
+    const url = urlDoGoogle(`https://www.googleapis.com${caminho}`, this.duble, ORIGENS_DO_GOOGLE);
+    const res = await fetch(url, {
+      ...init,
+      headers: { Authorization: `Bearer ${at}`, 'Content-Type': 'application/json', ...(init?.headers ?? {}) },
+    });
+    if (!res.ok) {
+      const corpo = await res.text().catch(() => '');
+      throw new ErroDoGoogle(res.status, corpo, caminho.split('?')[0]);
+    }
+    if (res.status === 204) return undefined as T;
+    const texto = await res.text();
+    return (texto ? JSON.parse(texto) : undefined) as T;
   }
 
   async status(orgId: string) {

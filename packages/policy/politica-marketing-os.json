@@ -1,6 +1,6 @@
 {
-  "versao": "1.12.0",
-  "atualizadoEm": "2026-10-22",
+  "versao": "1.13.0",
+  "atualizadoEm": "2026-10-29",
   "origem": "o código real deste repositório",
   "descricao": "Capacidades do marketing-os. É um DELTA sobre politica-root.json: herda níveis, gatilhos, escalonamento, invariantes e limites, e declara só o que existe em código aqui. Capacidade sem rota é declarada e não implementada — entra classificada, e a porta recusa antes de qualquer efeito.",
   "estende": "politica-root.json",
@@ -969,8 +969,8 @@
       "id": "agenda.reuniao.marcar",
       "ferramenta": "agenda_reuniao_marcar",
       "rota": "POST /google/calendar/reuniao",
-      "descricao": "Marca reunião na Agenda da Root no padrão da casa. O título é montado pelo OS (Reunião Online|Presencial - Cliente - Responsável, ou Reunião Interna - Responsável); reunião online nasce com link do Meet.",
-      "nivel": "R3",
+      "descricao": "Marca reunião na Agenda da Root no padrão da casa. O título é montado pelo OS (Reunião Online|Presencial - Cliente - Responsável, ou Reunião Interna - Responsável); reunião online nasce com link do Meet. Agenda v2 (29/10/2026): marca também Bloqueio (Fechado Nome), Pessoal (Pessoal - Nome) e Fora (Nome Fora - motivo), sempre com o título da gramática. Reversível pelo próprio OS: agenda.reuniao.desmarcar cancela o que foi criado e avisa os convidados. A chave do pedido vira o id do evento (repetir não duplica).",
+      "nivel": "R2",
       "argsSchema": {
         "type": "object",
         "additionalProperties": false,
@@ -984,9 +984,12 @@
           "tipo": {
             "enum": [
               "cliente",
-              "interna"
+              "interna",
+              "bloqueio",
+              "pessoal",
+              "fora"
             ],
-            "description": "reunião de cliente ou de dentro de casa"
+            "description": "reunião de cliente, interna, bloqueio, pessoal ou fora"
           },
           "modalidade": {
             "enum": [
@@ -1030,19 +1033,67 @@
               "type": "string"
             },
             "description": "e-mails convidados"
+          },
+          "responsaveis": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 3,
+            "items": {
+              "enum": [
+                "Rodrigo",
+                "Lucas",
+                "Pedro"
+              ]
+            },
+            "description": "os sócios que vão; o título leva o primeiro, ou Todos quando vão os três"
+          },
+          "motivo": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 120,
+            "description": "só no Fora"
+          },
+          "chave": {
+            "type": "string",
+            "pattern": "^[a-v0-9]{10,64}$",
+            "description": "chave do pedido (idempotência): vira o id do evento no Google"
+          },
+          "leadId": {
+            "type": "string",
+            "maxLength": 64
+          },
+          "clienteId": {
+            "type": "string",
+            "maxLength": 64
+          },
+          "forcado": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "motivo"
+            ],
+            "properties": {
+              "motivo": {
+                "type": "string",
+                "minLength": 3,
+                "maxLength": 300
+              }
+            },
+            "description": "marcar assim mesmo: a régua deu vermelho e quem pediu escreveu por quê"
           }
         }
       },
       "efeito": {
         "escreveForaDoOS": true,
         "produzArtefato": false,
-        "reversibilidade": "manual",
+        "reversibilidade": "automatica",
         "exposicaoExterna": false,
         "impactoFinanceiro": "nenhum",
         "sensibilidade": "interna",
         "destruicao": false,
         "obrigacaoLegal": false
-      }
+      },
+      "desfazer": "agenda.reuniao.desmarcar"
     },
     {
       "id": "documento.criar",
@@ -2223,6 +2274,370 @@
             "type": "string",
             "maxLength": 500,
             "description": "o título guardado na linha \"Título original\" (a escrita só vale se a linha ainda disser isto)"
+          }
+        }
+      },
+      "efeito": {
+        "escreveForaDoOS": true,
+        "produzArtefato": false,
+        "reversibilidade": "manual",
+        "exposicaoExterna": false,
+        "impactoFinanceiro": "nenhum",
+        "sensibilidade": "interna",
+        "destruicao": false,
+        "obrigacaoLegal": false
+      }
+    },
+    {
+      "id": "comunicacao.agenda.sincronizar",
+      "rota": "GET /agenda/sincronia",
+      "descricao": "Agenda v2 (29/10/2026): lê a Agenda da Root de forma incremental (events.list com syncToken; 410 refaz a janela de -30 a +180 dias) para o espelho só de leitura do OS. Só lê; nunca escreve nem apaga nada no Google.",
+      "nivel": "R0",
+      "argsSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "syncToken": {
+            "type": "string",
+            "maxLength": 4096
+          },
+          "de": {
+            "type": "string",
+            "description": "ISO 8601, só na sincronia completa"
+          },
+          "ate": {
+            "type": "string",
+            "description": "ISO 8601, só na sincronia completa"
+          },
+          "pagina": {
+            "type": "string",
+            "maxLength": 4096
+          }
+        }
+      },
+      "efeito": {
+        "escreveForaDoOS": false,
+        "produzArtefato": false,
+        "reversibilidade": "automatica",
+        "exposicaoExterna": false,
+        "impactoFinanceiro": "nenhum",
+        "sensibilidade": "interna",
+        "destruicao": false,
+        "obrigacaoLegal": false
+      }
+    },
+    {
+      "id": "comunicacao.agenda.livre_ocupado",
+      "rota": "GET /agenda/livre-ocupado",
+      "descricao": "Agenda v2 (29/10/2026, decisão 3): lê pelo freeBusy do Google os intervalos ocupados das agendas pessoais que cada sócio compartilhou com a conta da Root como livre/ocupado. Sem título, sem descrição: só começo e fim.",
+      "nivel": "R0",
+      "argsSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "agendas",
+          "de",
+          "ate"
+        ],
+        "properties": {
+          "agendas": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 10,
+            "items": {
+              "type": "string",
+              "maxLength": 254
+            }
+          },
+          "de": {
+            "type": "string"
+          },
+          "ate": {
+            "type": "string"
+          }
+        }
+      },
+      "efeito": {
+        "escreveForaDoOS": false,
+        "produzArtefato": false,
+        "reversibilidade": "automatica",
+        "exposicaoExterna": false,
+        "impactoFinanceiro": "nenhum",
+        "sensibilidade": "interna",
+        "destruicao": false,
+        "obrigacaoLegal": false
+      }
+    },
+    {
+      "id": "agenda.reuniao.alterar",
+      "rota": "POST /agenda/escritas",
+      "descricao": "Agenda v2 (29/10/2026): altera UM compromisso da Agenda da Root (horário, duração, modalidade, responsáveis, cliente, local, Meet, 'confirmado com o cliente'). O título sai da gramática da casa, nunca pronto. Só vale se o evento ainda estiver como a pessoa viu (antes); guarda o retrato anterior, e o desfazer é a mesma capacidade com antes e depois trocados. Convidados avisados (sendUpdates=all). Nunca apaga.",
+      "nivel": "R2",
+      "desfazer": "agenda.reuniao.alterar",
+      "argsSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "chave",
+          "eventoId",
+          "antes",
+          "depois"
+        ],
+        "properties": {
+          "chave": {
+            "type": "string",
+            "pattern": "^[a-v0-9]{10,64}$",
+            "description": "chave do pedido (idempotência): vira o id do evento no Google"
+          },
+          "eventoId": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9_@.-]{3,1024}$",
+            "description": "o id do evento no Google Agenda"
+          },
+          "antes": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "titulo",
+              "inicio",
+              "fim",
+              "meet"
+            ],
+            "properties": {
+              "titulo": {
+                "type": "string",
+                "maxLength": 500
+              },
+              "inicio": {
+                "type": "string"
+              },
+              "fim": {
+                "type": "string"
+              },
+              "local": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "meet": {
+                "type": "boolean"
+              }
+            }
+          },
+          "depois": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "inicio": {
+                "type": "string"
+              },
+              "fim": {
+                "type": "string"
+              },
+              "modalidade": {
+                "enum": [
+                  "online",
+                  "presencial"
+                ]
+              },
+              "responsaveis": {
+                "type": "array",
+                "minItems": 1,
+                "maxItems": 3,
+                "items": {
+                  "enum": [
+                    "Rodrigo",
+                    "Lucas",
+                    "Pedro"
+                  ]
+                },
+                "description": "os sócios que vão; o título leva o primeiro, ou Todos quando vão os três"
+              },
+              "tipo": {
+                "enum": [
+                  "cliente",
+                  "interna",
+                  "bloqueio",
+                  "pessoal",
+                  "fora"
+                ]
+              },
+              "cliente": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 120
+              },
+              "local": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "maxLength": 300
+              },
+              "criarMeet": {
+                "type": "boolean"
+              },
+              "confirmadoComCliente": {
+                "type": "boolean"
+              }
+            }
+          },
+          "forcado": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "motivo"
+            ],
+            "properties": {
+              "motivo": {
+                "type": "string",
+                "minLength": 3,
+                "maxLength": 300
+              }
+            },
+            "description": "marcar assim mesmo: a régua deu vermelho e quem pediu escreveu por quê"
+          }
+        }
+      },
+      "efeito": {
+        "escreveForaDoOS": true,
+        "produzArtefato": false,
+        "reversibilidade": "automatica",
+        "exposicaoExterna": false,
+        "impactoFinanceiro": "nenhum",
+        "sensibilidade": "interna",
+        "destruicao": false,
+        "obrigacaoLegal": false
+      }
+    },
+    {
+      "id": "agenda.reuniao.cancelar",
+      "rota": "POST /agenda/escritas",
+      "descricao": "Agenda v2 (29/10/2026): cancela UM compromisso que a própria Agenda da Root organizou, com motivo, avisando ou não os convidados. O Google guarda o evento cancelado, e agenda.reuniao.reabrir o devolve. Recusa se o título de agora não for o que a pessoa viu.",
+      "nivel": "R2",
+      "desfazer": "agenda.reuniao.reabrir",
+      "argsSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "chave",
+          "eventoId",
+          "tituloAtual",
+          "motivo",
+          "avisar"
+        ],
+        "properties": {
+          "chave": {
+            "type": "string",
+            "pattern": "^[a-v0-9]{10,64}$",
+            "description": "chave do pedido (idempotência): vira o id do evento no Google"
+          },
+          "eventoId": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9_@.-]{3,1024}$",
+            "description": "o id do evento no Google Agenda"
+          },
+          "tituloAtual": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 500,
+            "description": "o título lido (a escrita só vale se ele ainda for este)"
+          },
+          "motivo": {
+            "type": "string",
+            "minLength": 3,
+            "maxLength": 300
+          },
+          "avisar": {
+            "type": "boolean"
+          }
+        }
+      },
+      "efeito": {
+        "escreveForaDoOS": true,
+        "produzArtefato": false,
+        "reversibilidade": "automatica",
+        "exposicaoExterna": false,
+        "impactoFinanceiro": "nenhum",
+        "sensibilidade": "interna",
+        "destruicao": false,
+        "obrigacaoLegal": false
+      }
+    },
+    {
+      "id": "agenda.reuniao.desmarcar",
+      "rota": "POST /agenda/escritas",
+      "descricao": "Agenda v2 (29/10/2026): o desfazer de agenda.reuniao.marcar. Cancela o compromisso que o PRÓPRIO OS criou (propriedade privada do evento) e avisa os convidados. Recusa evento que o OS não criou e título diferente do que a pessoa viu. O Google guarda o evento cancelado, e agenda.reuniao.reabrir o devolve.",
+      "nivel": "R2",
+      "desfazer": "agenda.reuniao.reabrir",
+      "argsSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "chave",
+          "eventoId",
+          "tituloAtual"
+        ],
+        "properties": {
+          "chave": {
+            "type": "string",
+            "pattern": "^[a-v0-9]{10,64}$",
+            "description": "chave do pedido (idempotência): vira o id do evento no Google"
+          },
+          "eventoId": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9_@.-]{3,1024}$",
+            "description": "o id do evento no Google Agenda"
+          },
+          "tituloAtual": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 500,
+            "description": "o título lido (a escrita só vale se ele ainda for este)"
+          }
+        }
+      },
+      "efeito": {
+        "escreveForaDoOS": true,
+        "produzArtefato": false,
+        "reversibilidade": "automatica",
+        "exposicaoExterna": false,
+        "impactoFinanceiro": "nenhum",
+        "sensibilidade": "interna",
+        "destruicao": false,
+        "obrigacaoLegal": false
+      }
+    },
+    {
+      "id": "agenda.reuniao.reabrir",
+      "rota": "POST /agenda/escritas",
+      "descricao": "Agenda v2 (29/10/2026): devolve um compromisso cancelado pelo OS (agenda.reuniao.cancelar ou agenda.reuniao.desmarcar) ao estado confirmado e avisa os convidados. Ponta terminal da cadeia de desfazer: voltar atrás de novo é cancelar outra vez.",
+      "nivel": "R3",
+      "argsSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "chave",
+          "eventoId",
+          "tituloAtual"
+        ],
+        "properties": {
+          "chave": {
+            "type": "string",
+            "pattern": "^[a-v0-9]{10,64}$",
+            "description": "chave do pedido (idempotência): vira o id do evento no Google"
+          },
+          "eventoId": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9_@.-]{3,1024}$",
+            "description": "o id do evento no Google Agenda"
+          },
+          "tituloAtual": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 500,
+            "description": "o título lido (a escrita só vale se ele ainda for este)"
           }
         }
       },

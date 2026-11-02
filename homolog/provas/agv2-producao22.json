@@ -1,0 +1,63 @@
+{
+  "inicio": "2026-10-30T06:30:34.293Z",
+  "web": "http://127.0.0.1:3031",
+  "passos": [
+    {
+      "n": 1,
+      "nome": "M1 · Implantação: o cartão mostra o selo da fase quando diverge; o painel diz da agenda e da fase",
+      "ok": true,
+      "ms": 1222,
+      "detalhe": {
+        "cartoes": 10,
+        "selos": 6,
+        "reunioes": 0,
+        "agenda": "ok",
+        "indisponivel": false
+      }
+    },
+    {
+      "n": 2,
+      "nome": "M1 · \"Pedir agora\": cada agente tem o botão (ou a razão), e o link leva à bancada no ponto certo",
+      "ok": true,
+      "ms": 269,
+      "detalhe": {
+        "botoes": 4,
+        "razoes": 0,
+        "href": "/onboarding/7331b112-0f50-4b98-a0b2-971f5c499fbf?foco=ata",
+        "destino": "/onboarding/7331b112-0f50-4b98-a0b2-971f5c499fbf?foco=ata"
+      }
+    },
+    {
+      "n": 3,
+      "nome": "M1 · limite pelo menu da coluna: define, a coluna fica marcada, e tira",
+      "ok": true,
+      "ms": 3294,
+      "detalhe": {
+        "marca": "passou",
+        "pagina390SemRolagem": true
+      }
+    },
+    {
+      "n": 4,
+      "nome": "M1 · Dia a dia › Visão geral: o cartão \"Implantação\" e a linha leva à Implantação com o filtro",
+      "ok": false,
+      "ms": 20684,
+      "erro": "locator.waitFor: Timeout 20000ms exceeded.\nCall log:\n\u001b[2m  - waiting for getByTestId('dia-a-dia-implantacao') to be visible\u001b[22m\n"
+    }
+  ],
+  "screenshots": [
+    "agv2-producao22-implantacao-quadro-escuro.png",
+    "agv2-producao22-implantacao-painel-escuro.png",
+    "agv2-producao22-implantacao-pedir-agora-escuro.png",
+    "agv2-producao22-bancada-pedir-agora-escuro.png",
+    "agv2-producao22-implantacao-limite-menu-escuro.png",
+    "agv2-producao22-implantacao-limite-marcado-escuro.png",
+    "agv2-producao22-implantacao-limite-claro.png",
+    "agv2-producao22-implantacao-390.png"
+  ],
+  "avisos": [],
+  "ok": false,
+  "erro": "locator.waitFor: Timeout 20000ms exceeded.\nCall log:\n\u001b[2m  - waiting for getByTestId('dia-a-dia-implantacao') to be visible\u001b[22m\n",
+  "fim": "2026-10-30T06:31:00.075Z",
+  "duracaoMs": 25782
+}

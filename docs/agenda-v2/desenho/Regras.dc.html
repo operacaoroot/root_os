@@ -1,0 +1,121 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<title>Agenda · Regras</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700;800&amp;family=Space+Grotesk:wght@400;500;600;700&amp;display=swap">
+<style>
+body{margin:0;background:#070A08}
+a{color:#9BDB1F}a:hover{color:#C4FF2E}
+.mono{font-family:'JetBrains Mono',monospace}
+.lbl{font-family:'JetBrains Mono',monospace;font-size:10px;letter-spacing:2px;text-transform:uppercase;color:#A9BCAD}
+.eb{font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:700;letter-spacing:4px;color:#FF1F6B;text-transform:uppercase}
+.card{border:1px solid #1C3010;border-radius:3px;background:#0C120D;padding:16px 18px;display:flex;flex-direction:column;gap:10px}
+.row{display:flex;justify-content:space-between;align-items:center;gap:10px;font-size:13px;border-top:1px solid #142016;padding-top:8px}
+.v{font-family:'JetBrains Mono',monospace;font-size:12px;color:#DFFFE8;border:1px solid #1C3010;border-radius:3px;padding:3px 8px;background:#070A08}
+.sw{font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:700;letter-spacing:1px;border-radius:3px;padding:3px 8px}
+.on{color:#070A08;background:#9BDB1F}
+.off{color:#A9BCAD;border:1px solid #3A4D3C}
+.btn{font-family:'Space Grotesk',sans-serif;font-size:13px;border-radius:3px;border:1px solid #1C3010;background:#070A08;color:#DFFFE8;padding:7px 12px;cursor:pointer}
+table{border-collapse:collapse;width:100%}
+td,th{text-align:left;padding:7px 8px;border-top:1px solid #142016;font-size:12.5px;vertical-align:top}
+th{font-family:'JetBrains Mono',monospace;font-size:10px;letter-spacing:2px;color:#A9BCAD;font-weight:500;text-transform:uppercase;border-top:none}
+</style>
+</helmet>
+<div style="width:1440px;height:1100px;box-sizing:border-box;background:#070A08;color:#DFFFE8;font-family:'Space Grotesk',sans-serif;padding:28px 32px;display:flex;flex-direction:column;gap:20px">
+
+<div>
+<div class="eb">// regras · só sócios editam</div>
+<h1 style="margin:4px 0 0;font-size:28px;font-weight:700;letter-spacing:-1px">A régua que roda <span style="color:#9BDB1F">antes de qualquer marcação.</span></h1>
+<p style="margin:6px 0 0;font-size:14px;color:#A9BCAD;max-width:760px">Vale para a tela, o celular, o link do cliente, o WhatsApp e os agentes. Quem marca vê o semáforo; ninguém precisa decorar regra.</p>
+</div>
+
+<div style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px">
+<section class="card">
+<div style="display:flex;justify-content:space-between;align-items:baseline"><span style="font-size:17px;font-weight:700">Rodrigo</span><span class="mono" style="font-size:11px;color:#A9BCAD">onboarding e contrato</span></div>
+<div class="row"><span>Janela de trabalho</span><span class="v">08:00 a 19:00</span></div>
+<div class="row"><span>Intervalo entre reuniões</span><span class="v">15 min</span></div>
+<div class="row"><span>Trajeto antes de presencial</span><span class="v">30 min</span></div>
+<div class="row"><span>Máximo de reuniões por dia</span><span class="v">5</span></div>
+<div class="row"><span>Agenda pessoal como Fechado</span><span class="sw on">LIGADA</span></div>
+<div class="row"><span>Bloqueio fixo</span><span class="v">qui a partir de 19:00</span></div>
+<div class="row"><span>Substituto quando Fora</span><span class="v">Lucas</span></div>
+</section>
+<section class="card">
+<div style="display:flex;justify-content:space-between;align-items:baseline"><span style="font-size:17px;font-weight:700">Lucas</span><span class="mono" style="font-size:11px;color:#A9BCAD">marca e marketing</span></div>
+<div class="row"><span>Janela de trabalho</span><span class="v">09:00 a 18:00</span></div>
+<div class="row"><span>Intervalo entre reuniões</span><span class="v">15 min</span></div>
+<div class="row"><span>Trajeto antes de presencial</span><span class="v">30 min</span></div>
+<div class="row"><span>Máximo de reuniões por dia</span><span class="v">4</span></div>
+<div class="row"><span>Agenda pessoal como Fechado</span><span class="sw off">A LIGAR</span></div>
+<div class="row"><span>Bloqueio fixo</span><span class="v">nenhum</span></div>
+<div class="row"><span>Substituto quando Fora</span><span class="v">Rodrigo</span></div>
+</section>
+<section class="card">
+<div style="display:flex;justify-content:space-between;align-items:baseline"><span style="font-size:17px;font-weight:700">Pedro</span><span class="mono" style="font-size:11px;color:#A9BCAD">FinOps</span></div>
+<div class="row"><span>Janela de trabalho</span><span class="v">08:30 a 18:00</span></div>
+<div class="row"><span>Intervalo entre reuniões</span><span class="v">10 min</span></div>
+<div class="row"><span>Trajeto antes de presencial</span><span class="v">30 min</span></div>
+<div class="row"><span>Máximo de reuniões por dia</span><span class="v">5</span></div>
+<div class="row"><span>Agenda pessoal como Fechado</span><span class="sw off">A LIGAR</span></div>
+<div class="row"><span>Bloqueio fixo</span><span class="v">nenhum</span></div>
+<div class="row"><span>Substituto quando Fora</span><span class="v">Rodrigo</span></div>
+</section>
+</div>
+
+<div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px">
+<section class="card">
+<span class="lbl">Ritos da casa</span>
+<table>
+<tr><th>Rito</th><th>Quando</th><th>Quem</th><th>Se alguém marca em cima</th></tr>
+<tr><td>Reunião Interna - Todos (pauta da semana)</td><td class="mono">ter 08:00 · 1 h</td><td>Todos</td><td>pergunta antes</td></tr>
+<tr><td>Reunião Interna - Todos (estrutura fixa)</td><td class="mono">qui 19:30 · 1h30</td><td>Todos</td><td>bloqueia</td></tr>
+<tr><td>Sábado da Root</td><td class="mono">1º sáb · dia inteiro</td><td>Todos</td><td>bloqueia</td></tr>
+</table>
+</section>
+
+<section class="card">
+<span class="lbl">Nomenclatura · o título nasce sozinho</span>
+<table>
+<tr><th>Tipo</th><th>Forma</th><th></th></tr>
+<tr><td>Cliente</td><td class="mono">Reunião Online|Presencial - Cliente - Responsável</td><td class="mono" style="color:#A9BCAD">já vale</td></tr>
+<tr><td>Interna</td><td class="mono">Reunião Interna - Sócio ou Todos</td><td class="mono" style="color:#A9BCAD">já vale</td></tr>
+<tr><td>Bloqueio</td><td class="mono">Fechado Nome</td><td class="mono" style="color:#E8B90F">novo</td></tr>
+<tr><td>Ausência</td><td class="mono">Nome Fora - motivo</td><td class="mono" style="color:#E8B90F">novo</td></tr>
+<tr><td>Pessoal</td><td class="mono">Pessoal - Nome</td><td class="mono" style="color:#E8B90F">novo</td></tr>
+</table>
+</section>
+</div>
+
+<div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px">
+<section class="card">
+<span class="lbl">Feriados</span>
+<div class="row" style="border-top:none;padding-top:0"><span>Nacionais</span><span class="sw on">FECHAM A AGENDA</span></div>
+<div class="row"><span>Facultativos (Carnaval, Corpus Christi)</span><span class="sw off">SÓ AVISAM</span></div>
+<div class="row"><span>Municipais</span><span class="v">adicionar cidade…</span></div>
+<div class="row"><span>Próximo</span><span class="mono" style="font-size:12px">02/11 Finados · 15/11 Proclamação · 20/11 Consciência Negra</span></div>
+</section>
+<section class="card">
+<span class="lbl">Regras em frase · o agente lê e a régua aplica</span>
+<div class="row" style="border-top:none;padding-top:0"><span>Cliente novo só depois das 10h na segunda.</span><span class="sw on">LIGADA</span></div>
+<div class="row"><span>Kickoff é presencial quando o cliente é de Juiz de Fora.</span><span class="sw on">LIGADA</span></div>
+<div class="row"><span>Sexta depois das 16h só interna.</span><span class="sw off">DESLIGADA</span></div>
+<button class="btn" style="align-self:flex-start">+ Nova regra</button>
+</section>
+</div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":1100}}'>
+class Component extends DCLogic {
+renderVals() { return {}; }
+}
+</script>
+</body>
+</html>

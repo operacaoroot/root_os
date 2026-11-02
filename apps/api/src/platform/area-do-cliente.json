@@ -143,11 +143,12 @@
       "o_que_o_cliente_ve": "O contrato assinado, com a data e o PDF. Aditivo de continuidade (50) entra como versão nova, com o que mudou.",
       "feito_quando": "Contrato assinado aparece com data e abre o PDF guardado pela Root. Aditivo publicado vira versão 2.",
       "leva": "B",
-      "estado": "em_construcao",
+      "estado": "no_ar",
       "depende_de": [
         "m1-modo-area"
       ],
-      "na_branch": "derivado na leva A do que a projeção da sala já tem (contrato assinado, proposta aceita, WhatsApp da Root, próximos passos); a leva B completa a fonte"
+      "no_ar_desde": "2026-10-31",
+      "nota_do_no_ar": "Derivado da leva A do que a projeção da sala já tem (contrato de assinatura, proposta aceita, WhatsApp da Root, próximos passos). A leva B completa a fonte (PDF guardado, agenda, card e Frota)."
     },
     {
       "id": "escopo",
@@ -167,11 +168,12 @@
       "o_que_o_cliente_ve": "A proposta aceita como escopo do projeto: o que será construído, o que fica fora, a versão vigente.",
       "feito_quando": "Depois do aceite, a proposta aparece no bloco O combinado com o selo 'escopo vigente'. Aditivo (50) muda a versão.",
       "leva": "B",
-      "estado": "em_construcao",
+      "estado": "no_ar",
       "depende_de": [
         "m1-modo-area"
       ],
-      "na_branch": "derivado na leva A do que a projeção da sala já tem (contrato assinado, proposta aceita, WhatsApp da Root, próximos passos); a leva B completa a fonte"
+      "no_ar_desde": "2026-10-31",
+      "nota_do_no_ar": "Derivado da leva A do que a projeção da sala já tem (contrato de assinatura, proposta aceita, WhatsApp da Root, próximos passos). A leva B completa a fonte (PDF guardado, agenda, card e Frota)."
     },
     {
       "id": "linha-de-execucao",
@@ -192,14 +194,15 @@
       "o_que_o_cliente_ve": "Três linhas em palavras de cliente: a etapa do fluxo (fase e tarefa atual), o servidor (sinal da Frota com palavra, nunca só cor) e o próximo marco com data.",
       "feito_quando": "Muda sozinho quando o card anda, a Frota relata ou o trilho avança. Dúvida que virou tarefa (40) aparece aqui.",
       "leva": "B",
-      "estado": "em_construcao",
+      "estado": "no_ar",
       "depende_de": [
         "m1-modo-area"
       ],
       "em_aberto": [
         "A verificação do kit ainda não chega na Frota (tarefa 34): até lá o sinal do servidor é só o do relator."
       ],
-      "na_branch": "derivado na leva A do que a projeção da sala já tem (contrato assinado, proposta aceita, WhatsApp da Root, próximos passos); a leva B completa a fonte"
+      "no_ar_desde": "2026-10-31",
+      "nota_do_no_ar": "Derivado da leva A do que a projeção da sala já tem (contrato de assinatura, proposta aceita, WhatsApp da Root, próximos passos). A leva B completa a fonte (PDF guardado, agenda, card e Frota)."
     },
     {
       "id": "atas",
@@ -452,11 +455,12 @@
       "o_que_o_cliente_ve": "'Pergunte no grupo. A Rotinha responde. Se continuar, a Root entra.' Com o botão do grupo e o da Root.",
       "feito_quando": "O botão abre o grupo certo; a dúvida que virou tarefa (40) aparece na linha de execução.",
       "leva": "B",
-      "estado": "em_construcao",
+      "estado": "no_ar",
       "depende_de": [
         "m1-modo-area"
       ],
-      "na_branch": "derivado na leva A do que a projeção da sala já tem (contrato assinado, proposta aceita, WhatsApp da Root, próximos passos); a leva B completa a fonte"
+      "no_ar_desde": "2026-10-31",
+      "nota_do_no_ar": "Derivado da leva A do que a projeção da sala já tem (contrato de assinatura, proposta aceita, WhatsApp da Root, próximos passos). A leva B completa a fonte (PDF guardado, agenda, card e Frota)."
     }
   ],
   "motor": [
@@ -471,8 +475,8 @@
       ],
       "feito_quando": "Lead fechado abre a área; lead em andamento abre a sala de sempre; nenhuma sala publicada perde conteúdo.",
       "leva": "A",
-      "estado": "em_construcao",
-      "na_branch": "area-do-cliente/20261030 (leva A escrita em 30/10/2026; publicar depende do OK do Rodrigo)"
+      "estado": "no_ar",
+      "no_ar_desde": "2026-10-31"
     },
     {
       "id": "m2-publicar-por-item",
@@ -485,11 +489,11 @@
       ],
       "feito_quando": "Publicar uma ata não republica o cronograma; o histórico de versões é por item; a política não ganha capacidade nova se der (a de publicar a sala serve).",
       "leva": "A",
-      "estado": "em_construcao",
+      "estado": "no_ar",
       "em_aberto": [
         "R3 com segunda pessoa para todo item, ou R2 só do dono da conta para os itens de rotina (ata, status)? Decisão D2."
       ],
-      "na_branch": "area-do-cliente/20261030 (leva A escrita em 30/10/2026; publicar depende do OK do Rodrigo)"
+      "no_ar_desde": "2026-10-31"
     },
     {
       "id": "m3-leitura",
@@ -502,11 +506,11 @@
       ],
       "feito_quando": "Ata publicada aparece com 'novo'; aberta, perde o selo e a bancada mostra a data.",
       "leva": "A",
-      "estado": "em_construcao",
+      "estado": "no_ar",
       "em_aberto": [
         "O 'lido' aparece para o cliente ou só para a bancada? Decisão D6."
       ],
-      "na_branch": "area-do-cliente/20261030 (leva A escrita em 30/10/2026; publicar depende do OK do Rodrigo)"
+      "no_ar_desde": "2026-10-31"
     },
     {
       "id": "m4-bancada",
@@ -519,8 +523,8 @@
       ],
       "feito_quando": "Quem implanta abre o painel do cliente e sabe o que está no ar, o que falta e onde resolve, sem abrir o link do cliente.",
       "leva": "A",
-      "estado": "em_construcao",
-      "na_branch": "area-do-cliente/20261030 (leva A escrita em 30/10/2026; publicar depende do OK do Rodrigo)"
+      "estado": "no_ar",
+      "no_ar_desde": "2026-10-31"
     },
     {
       "id": "m5-mapa",
@@ -533,7 +537,8 @@
       ],
       "feito_quando": "A tela abre para a sessão da plataforma e recusa as outras com explicação.",
       "leva": "A",
-      "estado": "em_construcao"
+      "estado": "no_ar",
+      "no_ar_desde": "2026-10-31"
     },
     {
       "id": "m6-acesso",
@@ -692,5 +697,15 @@
     "o_que_o_cliente_ve": "https://claude.ai/artifact/3v25PGk1PhR58CMEdJNbj4",
     "desenho_para_os_socios": "https://claude.ai/artifact/3nEFCPN4mSzjGhAqwxjMmC",
     "nota": "Mockup navegável de 30/10/2026: quatro momentos do projeto (Abertura, Primeira semana, Construção, Acompanhamento), celular e desktop, gaveta por item, cofre com código, aprovação do PRD. Empresa, pessoas, datas e senhas são inventadas. Três elementos dele entraram no motor M1: a régua das sete fases do fluxo no alto, o selo \"no ar · atualizado em\" e o bloco \"quem cuida da conta\"."
+  },
+  "publicacao": {
+    "leva_a": {
+      "release": "area-cliente-c946dcb7-20261031",
+      "imagem": "rootos-official:area-cliente-c946dcb7",
+      "commit": "c946dcb7",
+      "no_ar_desde": "2026-10-31T16:00:41Z",
+      "migration": "20261030150000_area_do_cliente",
+      "prova": "homolog/e2e/area-do-cliente.mjs no ambiente de teste rootos-teste-area (18 passos) e homolog/provas/area-do-cliente*.png"
+    }
   }
 }

@@ -4,6 +4,11 @@ import { RoutinesModule } from '../routines/routines.module';
 import { AgendaController } from './agenda.controller';
 import { ExecutorDoVigiaDaAgenda } from './vigia-da-agenda.executor';
 import { VigiaDaAgendaService } from './vigia-da-agenda.service';
+import { EspelhoDaAgendaModule } from './espelho/espelho.module';
+import { ReguaDaAgendaModule } from './regua/regua.module';
+import { EscritaDaAgendaModule } from './escrita/escrita.module';
+import { ConviteDaAgendaModule } from './convite/convite.module';
+import { BuscaDaAgendaModule } from './busca/busca.module';
 
 /**
  * A AGENDA DA ROOT NO OS — o vigia (AG-01, rodada dos agentes, 21/10/2026).
@@ -23,7 +28,17 @@ import { VigiaDaAgendaService } from './vigia-da-agenda.service';
  * rotina `agenda.vigia` fica sem executor (a tela de rotinas a marca órfã).
  */
 @Module({
-  imports: [RoutinesModule],
+  // Agenda v2 (29/10/2026): o espelho e a cópia (G1, G7), a régua, os Conflitos e
+  // os Relatórios (G2, G5), a escrita no Google (G4), o link de escolha (G6) e a
+  // busca do cliente do painel (G3).
+  imports: [
+    RoutinesModule,
+    EspelhoDaAgendaModule,
+    ReguaDaAgendaModule,
+    EscritaDaAgendaModule,
+    ConviteDaAgendaModule,
+    BuscaDaAgendaModule,
+  ],
   controllers: [AgendaController],
   providers: [VigiaDaAgendaService, ExecutorDoVigiaDaAgenda],
   exports: [VigiaDaAgendaService],
