@@ -1,0 +1,254 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<title>Agenda · Semana e dia</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700;800&amp;family=Space+Grotesk:wght@400;500;600;700&amp;display=swap">
+<style>
+body{margin:0;background:#070A08}
+a{color:#9BDB1F}a:hover{color:#C4FF2E}
+.mono{font-family:'JetBrains Mono',monospace}
+.ev{position:absolute;box-sizing:border-box;border-radius:3px;padding:5px 7px;overflow:hidden;display:flex;flex-direction:column;gap:2px}
+.ev-t{font-size:11.5px;line-height:1.25;font-weight:500;color:#DFFFE8;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.ev-h{font-family:'JetBrains Mono',monospace;font-size:10px;color:#A9BCAD}
+.cli{background:rgba(155,219,31,.09);border:1px solid rgba(155,219,31,.42)}
+.int{background:#111A13;border:1px solid #2A4018}
+.fec{background:#0C120D;border:1px dashed #3A4D3C}
+.fdp{background:rgba(232,185,15,.08);border:1px solid #E8B90F}
+.chq{background:rgba(255,31,107,.08);border:1px solid #FF1F6B}
+.novo{background:rgba(155,219,31,.05);border:1px dashed #9BDB1F}
+.tag{font-family:'JetBrains Mono',monospace;font-size:9.5px;font-weight:700;letter-spacing:1px;text-transform:uppercase}
+.hr{position:absolute;left:0;right:0;border-top:1px solid #142016}
+.btn{font-family:'Space Grotesk',sans-serif;font-size:13px;border-radius:3px;border:1px solid #1C3010;background:#0C120D;color:#DFFFE8;padding:7px 12px;cursor:pointer}
+.btn-on{background:rgba(155,219,31,.12);border-color:#9BDB1F;color:#DFFFE8}
+.lbl{font-family:'JetBrains Mono',monospace;font-size:10px;letter-spacing:2px;text-transform:uppercase;color:#A9BCAD}
+.campo{box-sizing:border-box;width:100%;background:#070A08;border:1px solid #1C3010;border-radius:3px;color:#DFFFE8;font-family:'Space Grotesk',sans-serif;font-size:13px;padding:8px 10px}
+.side a{display:block;text-decoration:none;color:#A9BCAD;font-family:'JetBrains Mono',monospace;font-size:12.5px;padding:8px 12px 8px 42px}
+</style>
+</helmet>
+<div style="width:1440px;height:1000px;box-sizing:border-box;display:flex;background:#070A08;color:#DFFFE8;font-family:'Space Grotesk',sans-serif;overflow:hidden">
+
+<nav class="side" aria-label="Menu do ROOT OS" style="width:232px;flex-shrink:0;border-right:1px solid #1C3010;display:flex;flex-direction:column;background:#070A08">
+<div style="height:62px;display:flex;align-items:center;padding:0 10px;border-bottom:1px solid #1C3010">
+<img src="/_blob/61760f6eb8abd8745a1fa0d8273affe7" alt="ROOT" style="height:84px;width:auto;margin-left:-16px">
+</div>
+<div class="lbl" style="padding:18px 18px 10px;color:#7E9183">Áreas da empresa</div>
+<div style="margin:0 8px;background:rgba(155,219,31,.10);border-radius:3px;padding:11px 12px;display:flex;justify-content:space-between;align-items:center">
+<span class="mono" style="font-size:13px;font-weight:700;color:#9BDB1F">Dia a dia</span>
+<span class="mono" style="font-size:10px;background:#9BDB1F;color:#070A08;padding:1px 6px;border-radius:3px">3</span>
+</div>
+<a href="#">Visão geral</a>
+<a href="#">Pendências</a>
+<a href="#">Aprovações</a>
+<a href="#" style="color:#9BDB1F">Agenda</a>
+<div style="height:10px"></div>
+<a href="#" style="padding-left:18px">Trabalho</a>
+<a href="#" style="padding-left:18px">Marketing</a>
+<a href="#" style="padding-left:18px">Comercial</a>
+<a href="#" style="padding-left:18px">WhatsApp</a>
+<a href="#" style="padding-left:18px">Financeiro</a>
+<a href="#" style="padding-left:18px">IA e automações</a>
+<a href="#" style="padding-left:18px">Contexto</a>
+<a href="#" style="padding-left:18px">Configurações</a>
+</nav>
+
+<main style="flex:1;min-width:0;display:flex;flex-direction:column">
+<header style="height:46px;border-bottom:1px solid #1C3010;display:flex;align-items:center;padding:0 18px;gap:12px">
+<span class="mono" style="font-size:12px;font-weight:700;letter-spacing:2px">DIA A DIA / AGENDA</span>
+<span class="mono" style="font-size:10px;letter-spacing:2px;color:#A9BCAD">COMPROMISSOS E REUNIÕES</span>
+<span style="flex:1"></span>
+<span class="mono" style="font-size:11px;color:#A9BCAD;border:1px solid #1C3010;border-radius:3px;padding:5px 10px">buscar na agenda… ⌘K</span>
+<span class="mono" style="font-size:11px;color:#1FFFA8">● sincronizado há 40 s</span>
+</header>
+
+<div style="display:flex;gap:4px;padding:12px 18px 0;border-bottom:1px solid #1C3010">
+<span class="mono" style="font-size:12px;padding:8px 14px;border-bottom:2px solid #9BDB1F;color:#DFFFE8">Semana e dia</span>
+<span class="mono" style="font-size:12px;padding:8px 14px;color:#A9BCAD">Lista</span>
+<span class="mono" style="font-size:12px;padding:8px 14px;color:#A9BCAD">Mês</span>
+<span class="mono" style="font-size:12px;padding:8px 14px;color:#A9BCAD">Conflitos <span style="color:#FF1F6B">6</span></span>
+<span class="mono" style="font-size:12px;padding:8px 14px;color:#A9BCAD">Relatórios</span>
+<span class="mono" style="font-size:12px;padding:8px 14px;color:#A9BCAD">Regras</span>
+</div>
+
+<div style="display:flex;flex:1;min-height:0">
+<section style="flex:1;min-width:0;display:flex;flex-direction:column;padding:12px 14px 12px 18px;gap:10px">
+
+<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+<button class="btn" aria-label="Semana anterior">‹</button>
+<button class="btn mono" style="font-size:12px">Calendário ▾ · 02/11 a 06/11</button>
+<button class="btn" aria-label="Próxima semana">›</button>
+<button class="btn">Hoje</button>
+<span style="width:10px"></span>
+<span class="lbl" style="letter-spacing:1px">dias</span>
+<button class="btn mono" style="font-size:12px">1</button>
+<button class="btn mono" style="font-size:12px">3</button>
+<button class="btn btn-on mono" style="font-size:12px">5</button>
+<span style="width:10px"></span>
+<span class="lbl" style="letter-spacing:1px">quem</span>
+<button class="btn btn-on">Todos</button>
+<button class="btn">Rodrigo</button>
+<button class="btn">Lucas</button>
+<button class="btn">Pedro</button>
+<span style="flex:1"></span>
+<span class="mono" style="font-size:11px;color:#A9BCAD">altura</span>
+<button class="btn mono" style="font-size:12px" aria-label="Diminuir altura">−</button>
+<button class="btn mono" style="font-size:12px">auto</button>
+<button class="btn mono" style="font-size:12px" aria-label="Aumentar altura">+</button>
+</div>
+
+<div style="display:flex;gap:8px;flex-wrap:wrap">
+<span class="mono" style="font-size:11px;color:#A9BCAD;border:1px solid #1C3010;border-radius:3px;padding:4px 10px">FORA · Pedro Fora - viagem · qui 05/11</span>
+<span class="mono" style="font-size:11px;color:#A9BCAD;border:1px solid #1C3010;border-radius:3px;padding:4px 10px">FERIADO · Finados · seg 02/11 · agenda fechada</span>
+</div>
+
+<div style="flex:1;min-height:0;border:1px solid #1C3010;border-radius:3px;background:#0A0F0B;display:flex;flex-direction:column">
+<div style="display:flex;border-bottom:1px solid #1C3010">
+<div style="width:44px;flex-shrink:0"></div>
+<div style="flex:1;text-align:center;padding:8px 0"><div class="mono" style="font-size:10px;letter-spacing:2px;color:#A9BCAD">SEG</div><div class="mono" style="font-size:13px;color:#7E9183">02/11</div></div>
+<div style="flex:1;text-align:center;padding:8px 0;border-left:1px solid #1C3010"><div class="mono" style="font-size:10px;letter-spacing:2px;color:#A9BCAD">TER</div><div class="mono" style="font-size:13px">03/11</div></div>
+<div style="flex:1;text-align:center;padding:8px 0;border-left:1px solid #1C3010"><div class="mono" style="font-size:10px;letter-spacing:2px;color:#A9BCAD">QUA</div><div class="mono" style="font-size:13px">04/11</div></div>
+<div style="flex:1;text-align:center;padding:8px 0;border-left:1px solid #1C3010"><div class="mono" style="font-size:10px;letter-spacing:2px;color:#A9BCAD">QUI</div><div class="mono" style="font-size:13px">05/11</div></div>
+<div style="flex:1;text-align:center;padding:8px 0;border-left:1px solid #1C3010"><div class="mono" style="font-size:10px;letter-spacing:2px;color:#A9BCAD">SEX</div><div class="mono" style="font-size:13px">06/11</div></div>
+</div>
+
+<div style="display:flex;position:relative;height:624px">
+<div style="width:44px;flex-shrink:0;position:relative">
+<div class="mono" style="position:absolute;top:2px;right:6px;font-size:10px;color:#7E9183">08h</div>
+<div class="mono" style="position:absolute;top:98px;right:6px;font-size:10px;color:#7E9183">10h</div>
+<div class="mono" style="position:absolute;top:194px;right:6px;font-size:10px;color:#7E9183">12h</div>
+<div class="mono" style="position:absolute;top:290px;right:6px;font-size:10px;color:#7E9183">14h</div>
+<div class="mono" style="position:absolute;top:386px;right:6px;font-size:10px;color:#7E9183">16h</div>
+<div class="mono" style="position:absolute;top:482px;right:6px;font-size:10px;color:#7E9183">18h</div>
+<div class="mono" style="position:absolute;top:578px;right:6px;font-size:10px;color:#7E9183">20h</div>
+</div>
+
+<div style="flex:1;position:relative;background:#0C120D">
+<div style="position:absolute;inset:6px;border:1px dashed #2A3A2C;border-radius:3px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px">
+<span class="tag" style="color:#A9BCAD">Feriado</span>
+<span style="font-size:13px;color:#A9BCAD">Finados</span>
+<span class="mono" style="font-size:10px;color:#7E9183;text-align:center;padding:0 10px">a régua não deixa marcar aqui sem "marcar assim mesmo"</span>
+</div>
+</div>
+
+<div style="flex:1;position:relative;border-left:1px solid #1C3010">
+<div class="hr" style="top:96px"></div><div class="hr" style="top:192px"></div><div class="hr" style="top:288px"></div><div class="hr" style="top:384px"></div><div class="hr" style="top:480px"></div><div class="hr" style="top:576px"></div>
+<div class="ev int" style="top:1px;height:46px;left:3px;right:3px"><span class="ev-t">Reunião Interna - Todos</span><span class="ev-h">08:00 · rito da terça</span></div>
+<div class="ev cli" style="top:97px;height:46px;left:3px;width:calc(50% - 4px)"><span class="ev-t">Reunião Online - Papeleira Santa Rita - Rodrigo</span></div>
+<div class="ev cli" style="top:121px;height:46px;left:calc(50% + 1px);width:calc(50% - 4px)"><span class="ev-t">Reunião Online - Affari - Pedro</span></div>
+<div class="ev fec" style="top:289px;height:46px;left:3px;right:3px"><span class="ev-t" style="color:#A9BCAD">Fechado Rodrigo</span><span class="ev-h">agenda pessoal · só ocupado</span></div>
+<div class="ev" style="top:361px;height:22px;left:3px;right:3px;border-left:2px solid #3A4D3C;padding:2px 7px"><span class="ev-h">trajeto 30 min</span></div>
+<div class="ev cli" style="top:385px;height:46px;left:3px;right:3px"><span class="ev-t">Reunião Presencial - Custeio - Lucas</span><span class="ev-h">16:00 · Av. Rio Branco</span></div>
+</div>
+
+<div style="flex:1;position:relative;border-left:1px solid #1C3010">
+<div class="hr" style="top:96px"></div><div class="hr" style="top:192px"></div><div class="hr" style="top:288px"></div><div class="hr" style="top:384px"></div><div class="hr" style="top:480px"></div><div class="hr" style="top:576px"></div>
+<div class="ev chq" style="top:49px;height:46px;left:3px;width:calc(50% - 4px)"><span class="tag" style="color:#FF1F6B">choque</span><span class="ev-t">Reunião Online - Promedical - Rodrigo</span></div>
+<div class="ev chq" style="top:49px;height:46px;left:calc(50% + 1px);width:calc(50% - 4px)"><span class="tag" style="color:#FF1F6B">choque</span><span class="ev-t">Reunião Online - Campo Bom - Rodrigo</span></div>
+<div class="ev cli" style="top:241px;height:46px;left:3px;right:3px"><span class="ev-t">Reunião Online - Custeio - Pedro</span><span class="ev-h">13:00</span></div>
+<div class="ev fdp" style="top:337px;height:46px;left:3px;right:3px"><span class="tag" style="color:#E8B90F">fora do padrão</span><span class="ev-t">call com cliente novo</span></div>
+</div>
+
+<div style="flex:1;position:relative;border-left:1px solid #1C3010">
+<div class="hr" style="top:96px"></div><div class="hr" style="top:192px"></div><div class="hr" style="top:288px"></div><div class="hr" style="top:384px"></div><div class="hr" style="top:480px"></div><div class="hr" style="top:576px"></div>
+<div class="ev cli" style="top:97px;height:46px;left:3px;right:3px"><span class="ev-t">Reunião Online - Cultural Clube - Lucas</span><span class="tag" style="color:#E8B90F">sem Meet</span></div>
+<div class="ev cli" style="top:289px;height:58px;left:3px;width:calc(33% - 4px)"><span class="ev-t">Reunião Online - Promedical - Rodrigo</span></div>
+<div class="ev cli" style="top:289px;height:58px;left:calc(33% + 1px);width:calc(33% - 3px)"><span class="ev-t">Reunião Online - Juma - Lucas</span></div>
+<div class="ev int" style="top:289px;height:58px;left:calc(66% + 1px);width:calc(34% - 4px);align-items:center;justify-content:center"><span class="mono" style="font-size:13px;font-weight:700;color:#9BDB1F">+2</span></div>
+<div class="ev int" style="top:553px;height:70px;left:3px;right:3px"><span class="ev-t">Reunião Interna - Todos</span><span class="ev-h">19:30 · rito da quinta</span><span class="tag" style="color:#E8B90F">Pedro Fora</span></div>
+</div>
+
+<div style="flex:1;position:relative;border-left:1px solid #1C3010">
+<div class="hr" style="top:96px"></div><div class="hr" style="top:192px"></div><div class="hr" style="top:288px"></div><div class="hr" style="top:384px"></div><div class="hr" style="top:480px"></div><div class="hr" style="top:576px"></div>
+<div class="ev cli" style="top:49px;height:46px;left:3px;right:3px"><span class="ev-t">Reunião Online - EasyDr - Pedro</span><span class="ev-h">09:00</span></div>
+<div class="ev novo" style="top:337px;height:46px;left:3px;right:3px"><span class="tag" style="color:#9BDB1F">novo</span><span class="ev-t">Reunião Online - Andrade Peças - Rodrigo</span></div>
+</div>
+</div>
+</div>
+
+<div style="display:flex;gap:14px;flex-wrap:wrap;font-size:11.5px;color:#A9BCAD">
+<span><span class="mono" style="color:#9BDB1F">▪</span> cliente</span>
+<span><span class="mono" style="color:#A9BCAD">▪</span> interna e rito</span>
+<span><span class="mono" style="color:#A9BCAD">┆</span> Fechado (agenda pessoal)</span>
+<span><span class="mono" style="color:#E8B90F">▪</span> fora do padrão, sem Meet</span>
+<span><span class="mono" style="color:#FF1F6B">▪</span> choque</span>
+<span>arrastar move · puxar a borda estica · clique no vazio marca ali</span>
+</div>
+</section>
+
+<aside aria-label="Marcar" style="width:372px;flex-shrink:0;border-left:1px solid #1C3010;background:#0C120D;padding:16px 18px;display:flex;flex-direction:column;gap:13px;overflow:hidden">
+<div style="display:flex;justify-content:space-between;align-items:baseline">
+<div>
+<div class="mono" style="font-size:10px;font-weight:700;letter-spacing:4px;color:#FF1F6B">// marcar</div>
+<div style="font-size:20px;font-weight:700;letter-spacing:-.5px">Novo compromisso</div>
+</div>
+<button class="btn" aria-label="Fechar painel">×</button>
+</div>
+
+<div>
+<label class="lbl" for="atalho">Atalho</label>
+<input id="atalho" class="campo mono" style="margin-top:6px;font-size:12px" value="online com andrade sexta 15h 1h rodrigo">
+<div style="font-size:11.5px;color:#A9BCAD;margin-top:5px">a frase preenche os campos abaixo; não usa IA</div>
+</div>
+
+<div style="display:flex;gap:6px;flex-wrap:wrap">
+<button class="btn btn-on">Cliente</button><button class="btn">Interna</button><button class="btn">Bloqueio</button><button class="btn">Pessoal</button>
+</div>
+<div style="display:flex;gap:6px">
+<button class="btn btn-on">Online</button><button class="btn">Presencial</button>
+</div>
+
+<div>
+<label class="lbl" for="cli">Cliente</label>
+<input id="cli" class="campo" style="margin-top:6px" value="Andrade Peças">
+<div style="margin-top:6px;border:1px solid #1C3010;border-radius:3px;padding:9px 10px;display:flex;flex-direction:column;gap:4px;background:#070A08">
+<div style="display:flex;justify-content:space-between"><span style="font-size:13px;font-weight:600">Andrade Peças</span><span class="mono" style="font-size:10px;color:#A9BCAD">LEAD · PROPOSTA</span></div>
+<span style="font-size:12px;color:#A9BCAD">contato: Marcos · marcos@andradepecas.com.br</span>
+<span style="font-size:12px;color:#A9BCAD">já esteve na agenda 2x · última 21/10 com Rodrigo</span>
+</div>
+</div>
+
+<div>
+<span class="lbl">Responsáveis</span>
+<div style="display:flex;gap:6px;margin-top:6px"><button class="btn btn-on">Rodrigo</button><button class="btn">Lucas</button><button class="btn">Pedro</button></div>
+</div>
+
+<div style="display:flex;gap:8px">
+<div style="flex:1"><label class="lbl" for="dia">Quando</label><input id="dia" class="campo mono" style="margin-top:6px;font-size:12px" value="sex 06/11 · 15:00"></div>
+<div style="width:96px"><label class="lbl" for="dur">Duração</label><input id="dur" class="campo mono" style="margin-top:6px;font-size:12px" value="1 h"></div>
+</div>
+
+<div style="border:1px solid #1C3010;border-radius:3px;background:#070A08;padding:10px">
+<div class="lbl" style="letter-spacing:1px">Título que vai para o Google</div>
+<div class="mono" style="font-size:12.5px;color:#C4FF2E;margin-top:6px">Reunião Online - Andrade Peças - Rodrigo</div>
+</div>
+
+<div style="display:flex;flex-direction:column;gap:6px;font-size:12.5px">
+<div><span class="mono" style="color:#1FFFA8">OK</span> Rodrigo livre das 15:00 às 16:00</div>
+<div><span class="mono" style="color:#1FFFA8">OK</span> Meet nasce junto · convite ao Marcos por e-mail</div>
+<div><span class="mono" style="color:#E8B90F">ATENÇÃO</span> 4ª reunião do Rodrigo no dia (limite 5)</div>
+</div>
+
+<div style="display:flex;gap:8px;margin-top:auto">
+<button class="btn" style="flex:1;background:#9BDB1F;border-color:#9BDB1F;color:#070A08;font-weight:600">Marcar</button>
+<button class="btn" style="flex:1">Mandar link de escolha</button>
+</div>
+<div class="mono" style="font-size:10.5px;color:#A9BCAD">nível R2 · sai no clique · fica no histórico com desfazer</div>
+</aside>
+</div>
+</main>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":1000}}'>
+class Component extends DCLogic {
+renderVals() { return {}; }
+}
+</script>
+</body>
+</html>

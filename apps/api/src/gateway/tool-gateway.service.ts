@@ -30,6 +30,8 @@ import { EventLogService, semSigilosos, temSigiloso, type ConteudoDoEvento } fro
 import { EfeitosRegistry, type ContextoDoEfeito } from './efeitos.registry';
 import { InterruptoresRegistry } from './interruptores.registry';
 import { mensagemDeErro, validarArgs } from './validacao';
+import { lerAprovador } from '../auth/aprovador';
+import { temPapelDeMaquina } from '../approvals/alcada';
 
 export interface ExecCtx {
   orgId: string;
@@ -92,6 +94,15 @@ export interface ExecCtx {
    * que saiu pelo lote, sem o campo ter entrado no conteúdo assinado.
    */
   loteItemId?: string;
+  /**
+   * GENTE NA TELA (agenda v2, 29/10/2026, decisão 2). Só o controlador da tela
+   * o põe, depois de conferir no banco que quem pediu é pessoa (nunca vem do
+   * corpo HTTP). É o ÚNICO caso em que a porta lê a `aprovacaoR2Ligada` da
+   * empresa: com `actorType: user` E `naTela: true` E a pessoa relida no banco
+   * (ativa, desta empresa, sem papel de máquina). Agente, rotina, link público e
+   * qualquer outro caminho seguem sem o campo, e R2 continua retido.
+   */
+  naTela?: boolean;
 }
 
 /** Posição do degrau na escada. Índice maior = degrau mais alto. */
@@ -510,10 +521,13 @@ export class ToolGateway implements OnModuleInit {
         })
       : [];
 
+    // 3-bis. A aprovação de R2 da empresa: só para gente na tela (decisão 2).
+    const aprovacaoR2Ligada = await this.aprovacaoR2DaTela(ctx);
+
     const { decisao, decisionId } = await this.policy.avaliarERegistrar({
       orgId: ctx.orgId,
       capabilityId: req.capabilityId,
-      ctx: { sinais },
+      ctx: aprovacaoR2Ligada === false ? { sinais, aprovacaoR2Ligada: false } : { sinais },
       modo: this.modo,
     });
 
@@ -1510,6 +1524,30 @@ export class ToolGateway implements OnModuleInit {
   }
 
   /** Segredo nunca vai cru para o registro (RF-R-04). */
+  /*
+   * A APROVAÇÃO DE R2 PARA GENTE NA TELA (agenda v2, 29/10/2026, decisão 2).
+   *
+   * Devolve `false` SÓ quando as quatro coisas valem juntas: `actorType: user`,
+   * `naTela: true`, a pessoa relida AGORA no banco (existe nesta empresa, está
+   * ativa, nenhum papel de máquina) e a versão ativa da política da empresa diz
+   * `aprovacaoR2Ligada: false` (gravada só pela sobrescrita assinada). Em
+   * qualquer outro caso devolve `undefined`, e a régua decide como sempre: R2
+   * retido. A releitura aqui é a segunda tranca: o controlador já conferiu, mas
+   * um chamador novo que esqueça de conferir não ganha o atalho por isso.
+   * Falha de leitura = `undefined` (falha fechada).
+   */
+  private async aprovacaoR2DaTela(ctx: ExecCtx): Promise<false | undefined> {
+    if (ctx.actorType !== ActorType.user || ctx.naTela !== true || !ctx.actorId) return undefined;
+    try {
+      const pessoa = await lerAprovador(this.prisma, ctx.actorId, ctx.orgId);
+      if (!pessoa || !pessoa.ativo || temPapelDeMaquina(pessoa.papeis)) return undefined;
+      return (await this.policy.aprovacaoR2Ligada(ctx.orgId)) ? undefined : false;
+    } catch (e) {
+      this.log.warn(`aprovação de R2 da tela não lida (${(e as Error).message}): R2 segue retido`);
+      return undefined;
+    }
+  }
+
   private redigir(args: unknown, sensibilidade?: string): Prisma.InputJsonValue {
     if (sensibilidade === 'restrita') {
       return { redigido: true, chaves: Object.keys((args as object) ?? {}) };

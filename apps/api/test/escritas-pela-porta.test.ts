@@ -104,7 +104,7 @@ const ESCRITAS: EscritaMigrada[] = [
     args: {
       tipo: 'cliente',
       modalidade: 'online',
-      cliente: 'Andrade Peças',
+      cliente: 'Fictícia Peças',
       responsavel: 'Pedro',
       inicio: '2026-09-25T14:00:00-03:00',
     },
@@ -112,10 +112,10 @@ const ESCRITAS: EscritaMigrada[] = [
     argsInvalidos: {
       tipo: 'cliente',
       modalidade: 'online',
-      cliente: 'Andrade Peças',
+      cliente: 'Fictícia Peças',
       responsavel: 'Pedro',
       inicio: '2026-09-25T14:00:00-03:00',
-      titulo: 'Reunião c/ Andrade',
+      titulo: 'Reunião c/ Fictícia',
     },
   },
   {
@@ -179,7 +179,18 @@ describe('fatia 3.3: o catálogo declara cada escrita migrada', () => {
 
     // R3 é o degrau da RETENÇÃO POR APROVAÇÃO. Rebaixar qualquer uma destas
     // para R2 devolveria o envio ao mesmo estado de antes da fatia: sai sozinho.
-    expect(cap!.nivel, `"${capacidade}" deixou de ser R3`).toBe('R3');
+    //
+    // A EXCEÇÃO DECLARADA (agenda v2, 29/10/2026, decisão 2): `agenda.reuniao.marcar`
+    // é R2 porque ganhou um desfazer IMPLEMENTADO (`agenda.reuniao.desmarcar`), e a
+    // escada calcula R2 do efeito. R2 continua RETIDO (aprovação configurável ligada
+    // por padrão); só a sobrescrita assinada da empresa, e só para gente na tela,
+    // o deixa sair no clique. O caso "é RETIDA" abaixo continua valendo para ela.
+    if (capacidade === 'agenda.reuniao.marcar') {
+      expect(cap!.nivel).toBe('R2');
+      expect((cap as unknown as { desfazer?: string }).desfazer).toBe('agenda.reuniao.desmarcar');
+    } else {
+      expect(cap!.nivel, `"${capacidade}" deixou de ser R3`).toBe('R3');
+    }
     expect(cap!.efeito?.escreveForaDoOS).toBe(true);
     expect(cap!.rota).toBe(rota);
 
@@ -848,7 +859,9 @@ describe.skipIf(!URL)('fatia 3.3: a escrita de quem clica na tela passa pela por
       'aguardando_aprovacao',
     );
     expect(r.approvalId).toBeTruthy();
-    expect(r.nivel).toBe('R3');
+    // O marcar é R2 desde a agenda v2 (decisão 2), e R2 continua RETIDO: a rota
+    // antiga não diz que é gente na tela, então a porta não lê a sobrescrita.
+    expect(r.nivel).toBe(e.capacidade === 'agenda.reuniao.marcar' ? 'R2' : 'R3');
     // A prova de que a fatia funcionou: o efeito NÃO rodou.
     expect(chamadas, 'o efeito rodou sem aprovação nenhuma').toEqual([]);
 

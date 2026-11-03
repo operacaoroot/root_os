@@ -1,0 +1,128 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<title>Agenda · Conflitos</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700;800&amp;family=Space+Grotesk:wght@400;500;600;700&amp;display=swap">
+<style>
+body{margin:0;background:#070A08}
+a{color:#9BDB1F}a:hover{color:#C4FF2E}
+.mono{font-family:'JetBrains Mono',monospace}
+.lbl{font-family:'JetBrains Mono',monospace;font-size:10px;letter-spacing:2px;text-transform:uppercase;color:#A9BCAD}
+.btn{font-family:'Space Grotesk',sans-serif;font-size:13px;border-radius:3px;border:1px solid #1C3010;background:#070A08;color:#DFFFE8;padding:7px 12px;cursor:pointer}
+.btn-p{background:#9BDB1F;border-color:#9BDB1F;color:#070A08;font-weight:600}
+.btn-on{background:rgba(155,219,31,.12);border-color:#9BDB1F}
+.card{border:1px solid #1C3010;border-radius:3px;background:#0C120D;padding:14px 16px;display:flex;flex-direction:column;gap:9px}
+.pill{font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:700;letter-spacing:1px;text-transform:uppercase;border:1px solid;border-radius:3px;padding:2px 7px}
+.ev{font-family:'JetBrains Mono',monospace;font-size:12px;color:#DFFFE8}
+.sub{font-size:13px;color:#A9BCAD;line-height:1.45}
+</style>
+</helmet>
+<div style="width:1440px;height:1000px;box-sizing:border-box;background:#070A08;color:#DFFFE8;font-family:'Space Grotesk',sans-serif;display:flex;flex-direction:column">
+
+<header style="height:46px;border-bottom:1px solid #1C3010;display:flex;align-items:center;padding:0 28px;gap:12px">
+<span class="mono" style="font-size:12px;font-weight:700;letter-spacing:2px">DIA A DIA / AGENDA / CONFLITOS</span>
+<span style="flex:1"></span>
+<span class="mono" style="font-size:11px;color:#1FFFA8">● vigia AG-01 passou às 14:15</span>
+</header>
+
+<div style="display:flex;flex:1;min-height:0;gap:24px;padding:22px 28px">
+<section style="flex:1;min-width:0;display:flex;flex-direction:column;gap:12px">
+<div>
+<div class="mono" style="font-size:10px;font-weight:700;letter-spacing:4px;color:#FF1F6B">// conflitos · próximos 60 dias</div>
+<h1 style="margin:4px 0 0;font-size:28px;font-weight:700;letter-spacing:-1px">Seis coisas pedem <span style="color:#9BDB1F">uma decisão de vocês.</span></h1>
+<p class="sub" style="margin:6px 0 0">Ordem por urgência. Cada cartão traz o conserto pronto; um clique grava no Google e fica no histórico com desfazer.</p>
+</div>
+
+<article class="card" style="border-color:#FF1F6B">
+<div style="display:flex;gap:8px;align-items:center"><span class="pill" style="color:#FF1F6B;border-color:#FF1F6B">choque</span><span class="mono" style="font-size:11px;color:#A9BCAD">qua 04/11 · 09:00 · em 6 dias</span></div>
+<div style="font-size:15px;font-weight:600">Rodrigo está em dois lugares ao mesmo tempo</div>
+<div class="ev">Reunião Online - Promedical - Rodrigo<br>Reunião Online - Campo Bom - Rodrigo</div>
+<div style="display:flex;gap:8px;flex-wrap:wrap">
+<button class="btn btn-p">Empurrar Campo Bom para 10:30</button>
+<button class="btn">Passar Campo Bom para o Lucas (livre)</button>
+<button class="btn">Remarcar…</button>
+<button class="btn">Marcar como confirmado com o cliente</button>
+</div>
+</article>
+
+<article class="card" style="border-color:#E8B90F">
+<div style="display:flex;gap:8px;align-items:center"><span class="pill" style="color:#E8B90F;border-color:#E8B90F">fora do padrão</span><span class="mono" style="font-size:11px;color:#A9BCAD">qua 04/11 · 15:00 · criado pelo celular</span></div>
+<div style="font-size:15px;font-weight:600">"call com cliente novo"</div>
+<div class="sub">O vigia leu o convidado <span class="mono" style="color:#DFFFE8">@juma.com.br</span>, achou o lead Juma no Funil e o Lucas como dono. Certeza alta.</div>
+<div class="ev">proposta → <span style="color:#C4FF2E">Reunião Online - Juma - Lucas</span> + link do Meet</div>
+<div style="display:flex;gap:8px;flex-wrap:wrap">
+<button class="btn btn-p">Aplicar título</button>
+<button class="btn">Outro cliente…</button>
+<button class="btn">Não é reunião</button>
+</div>
+</article>
+
+<article class="card" style="border-color:#E8B90F">
+<div style="display:flex;gap:8px;align-items:center"><span class="pill" style="color:#E8B90F;border-color:#E8B90F">sem Meet</span><span class="mono" style="font-size:11px;color:#A9BCAD">qui 05/11 · 10:00</span></div>
+<div class="ev">Reunião Online - Cultural Clube - Lucas</div>
+<div style="display:flex;gap:8px"><button class="btn btn-p">Criar o Meet e avisar o cliente</button><button class="btn">Trocar para presencial</button></div>
+</article>
+
+<article class="card" style="border-color:#E8B90F">
+<div style="display:flex;gap:8px;align-items:center"><span class="pill" style="color:#E8B90F;border-color:#E8B90F">rito sem gente</span><span class="mono" style="font-size:11px;color:#A9BCAD">qui 05/11 · 19:30</span></div>
+<div style="font-size:15px;font-weight:600">Pedro Fora no dia da reunião de quinta</div>
+<div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn">Manter sem o Pedro</button><button class="btn">Passar a quinta para quarta 19:30</button><button class="btn">Pular esta ocorrência</button></div>
+</article>
+
+<article class="card">
+<div style="display:flex;gap:8px;align-items:center"><span class="pill" style="color:#A9BCAD;border-color:#3A4D3C">janela</span><span class="mono" style="font-size:11px;color:#A9BCAD">ter 03/11 · 16:00</span></div>
+<div class="sub" style="color:#DFFFE8">Presencial do Lucas na Custeio colada na reunião anterior: falta o trajeto de 30 min.</div>
+<div style="display:flex;gap:8px"><button class="btn">Empurrar para 16:30</button><button class="btn">Trocar para online</button><button class="btn">Deixar assim</button></div>
+</article>
+</section>
+
+<aside style="width:360px;flex-shrink:0;display:flex;flex-direction:column;gap:16px">
+<div class="card">
+<span class="lbl">Filtrar</span>
+<div style="display:flex;gap:6px;flex-wrap:wrap">
+<button class="btn btn-on">Tudo 6</button><button class="btn">Choque 1</button><button class="btn">Padrão 2</button><button class="btn">Ritos 1</button><button class="btn">Feriado 1</button><button class="btn">Janela 1</button>
+</div>
+<div style="display:flex;gap:6px;flex-wrap:wrap">
+<button class="btn btn-on">Todos</button><button class="btn">Rodrigo</button><button class="btn">Lucas</button><button class="btn">Pedro</button>
+</div>
+</div>
+
+<div class="card">
+<span class="lbl">Fora da tela</span>
+<div class="sub" style="color:#DFFFE8">1 compromisso marcado no feriado de Finados (seg 02/11)</div>
+<button class="btn" style="align-self:flex-start">Levar para ter 03/11, mesmo horário</button>
+</div>
+
+<div class="card">
+<span class="lbl">Histórico · o que foi gravado no Google</span>
+<div style="display:flex;flex-direction:column;gap:8px;font-size:12.5px">
+<div style="display:flex;justify-content:space-between;gap:8px"><span>14:02 Rodrigo marcou Papeleira Santa Rita</span><a href="#">desfazer</a></div>
+<div style="display:flex;justify-content:space-between;gap:8px"><span>13:40 vigia padronizou "reuniao affari"</span><a href="#">desfazer</a></div>
+<div style="display:flex;justify-content:space-between;gap:8px"><span>11:15 Lucas arrastou Custeio para 16:00</span><a href="#">desfazer</a></div>
+<div style="display:flex;justify-content:space-between;gap:8px"><span>09:03 Pedro registrou Fora (05/11)</span><a href="#">desfazer</a></div>
+</div>
+</div>
+
+<div style="border:1px solid #1C3010;border-radius:3px;background:#0A0F0B;padding:12px 14px;font-family:'JetBrains Mono',monospace;font-size:12px;line-height:1.7">
+<div><span style="color:#FF1F6B">$</span> <span style="color:#1FFFA8">agenda conferir --dias 60</span></div>
+<div style="color:#C4FF2E">6 pontos · 1 choque · cópia de segurança 03:00 ok</div>
+</div>
+</aside>
+</div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":1000}}'>
+class Component extends DCLogic {
+renderVals() { return {}; }
+}
+</script>
+</body>
+</html>

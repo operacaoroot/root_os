@@ -35,6 +35,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { foraDaJanela, minutosNoFuso } from '../policy/limites';
 import { PolicyService } from '../policy/policy.service';
 import { ehEmpresaDaCasa } from '../tenants/empresa-da-casa';
+import { EspelhoService } from './espelho/espelho.service';
 import type { ResultadoDaRotina } from '../routines/rotina.tipos';
 import { TIPO_AGENDA_VIGIA } from '../routines/rotina.tipos';
 import {
@@ -162,6 +163,7 @@ export class VigiaDaAgendaService implements OnModuleInit {
     @Optional() @Inject(LLM_PROVIDER) private readonly llm?: LlmProvider,
     @Optional() private readonly eventos?: EventLogService,
     @Optional() private readonly politica?: PolicyService,
+    @Optional() private readonly espelho?: EspelhoService,
   ) {}
 
   /**
@@ -234,6 +236,42 @@ export class VigiaDaAgendaService implements OnModuleInit {
     }
   }
 
+  /**
+   * A LEITURA PELO ESPELHO (agenda v2, 29/10/2026, lane G1): os eventos do
+   * espelho no formato da leitura direta (`EventoLido`), só se a última
+   * passagem da sincronia tem menos de 10 min; sem cancelados, sem as linhas do
+   * livre/ocupado (Fechado não é reunião e não tem título). Nulo = leia pela
+   * porta, como antes. Falha do espelho também é nulo: o vigia nunca para por ele.
+   */
+  private async lerDoEspelho(orgId: string, de: Date, ate: Date, agora: Date): Promise<EventoLido[] | null> {
+    if (!this.espelho) return null;
+    try {
+      const eventos = await this.espelho.lerSeEmDia(orgId, de, ate, agora, { comDescricao: true });
+      if (!eventos) return null;
+      return eventos
+        .filter((e) => e.origem === 'google' && e.status !== 'cancelado')
+        .slice(0, TETO_DE_EVENTOS)
+        .map((e) => ({
+          id: e.id,
+          title: e.titulo ?? '(sem título)',
+          start: e.inicio,
+          end: e.fim,
+          diaInteiro: e.diaInteiro,
+          location: e.local,
+          description: e.descricao ?? null,
+          link: e.link,
+          meet: e.meet,
+          status: e.status === 'provisorio' ? 'tentative' : 'confirmed',
+          organizador: e.organizador,
+          organizadorEhAgenda: e.organizadorEhAgenda,
+          attendees: e.convidados.map((c) => c.email),
+        }));
+    } catch (e) {
+      this.log.warn(`empresa ${orgId}: o espelho da agenda não respondeu ao vigia; lendo pela porta (${(e as Error).message})`);
+      return null;
+    }
+  }
+
   /** Uma passagem do vigia. Ver o cabeçalho. */
   async passagem(orgIdBruto: string, agora: Date = new Date()): Promise<ResultadoDaRotina> {
     const orgId = exigirTenant(orgIdBruto, 'VigiaDaAgendaService.passagem');
@@ -256,7 +294,9 @@ export class VigiaDaAgendaService implements OnModuleInit {
 
     const de = new Date(agora.getTime() - DIAS_PARA_TRAS * DIA);
     const ate = new Date(agora.getTime() + DIAS_PARA_FRENTE * DIA);
-    const lidos = await this.porta.executar({
+    // AGENDA V2 (29/10/2026): com o espelho em dia, o vigia lê dele; atrasado, pela porta, como antes.
+    const doEspelho = await this.lerDoEspelho(orgId, de, ate, agora);
+    const lidos = doEspelho ?? await this.porta.executar({
       orgId,
       actorId: SLUG_DO_VIGIA,
       actorType: ActorType.system,

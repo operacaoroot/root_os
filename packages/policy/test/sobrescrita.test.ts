@@ -431,7 +431,11 @@ describe('ferramenta e esquema de argumentos têm direção própria', () => {
     //
     // Trinta e três desde a produção 22 (22/10/2026): `agenda.evento.restaurar`,
     // o desfazer da padronização, pedido por gente na rota da agenda.
-    expect(BASE.capacidades.filter((c) => !c.ferramenta)).toHaveLength(33);
+    //
+    // Trinta e nove na agenda v2 (29/10/2026): as duas leituras da rotina do
+    // espelho e as quatro escritas novas (alterar, cancelar, desmarcar, reabrir),
+    // todas pedidas pela tela ou pela rotina, pela porta.
+    expect(BASE.capacidades.filter((c) => !c.ferramenta)).toHaveLength(39);
     for (const id of [
       'comercial.lead.criar',
       'drive.pasta.criar',

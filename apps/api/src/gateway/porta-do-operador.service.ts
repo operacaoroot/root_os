@@ -148,6 +148,12 @@ export class PortaDoOperador {
      * comentário, MD11) marca, e o sinal `fonte_nao_confiavel` sobe um degrau.
      */
     procedenciaExterna?: ProcedenciaExterna;
+    /**
+     * GENTE NA TELA (agenda v2, decisão 2): só o controlador que conferiu no
+     * banco que quem pediu é pessoa o passa. A porta confere de novo e só então
+     * lê a `aprovacaoR2Ligada` da empresa. Nunca vem do corpo HTTP.
+     */
+    naTela?: boolean;
   }): Promise<R | AcaoRetida> {
     const { capabilityId } = entrada;
 
@@ -177,6 +183,7 @@ export class PortaDoOperador {
        */
       correlationId: correlacaoAtual() ?? novaCorrelacao('operador'),
       ...(entrada.procedenciaExterna ? { procedenciaExterna: entrada.procedenciaExterna } : {}),
+      ...(entrada.naTela === true ? { naTela: true } : {}),
       /*
        * `capacidadesDeclaradas` fica de fora DE PROPÓSITO. A declaração é o
        * escopo de um AGENTE (RF-N-03); uma pessoa é limitada pela permissão de

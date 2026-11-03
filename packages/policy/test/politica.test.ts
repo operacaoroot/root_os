@@ -182,17 +182,26 @@ describe('o degrau R2, depois da fatia 2.2', () => {
    * Se um dia entrar um R2 legítimo na base ROOT, este teste fica vermelho e
    * obriga a devolver o caso de decisão de R2 ao politica-root.json.
    */
-  it('a base ROOT não tem R2, e o delta tem três — todas alterações', () => {
+  it('a base ROOT não tem R2, e o delta tem sete — três alterações e as quatro da agenda v2', () => {
     expect(ROOT.capacidades.filter((c) => c.nivel === 'R2').map((c) => c.id)).toEqual([]);
     const r2 = MKTOS.capacidades.filter((c) => c.nivel === 'R2');
+    // Agenda v2 (29/10/2026, decisão 2): marcar, alterar, cancelar e desmarcar
+    // descem a R2 porque cada uma tem um desfazer IMPLEMENTADO (rota), não
+    // porque o nível foi escrito mais baixo: a escada calcula R2 do efeito.
     expect(r2.map((c) => c.id).sort()).toEqual([
+      'agenda.reuniao.alterar',
+      'agenda.reuniao.cancelar',
+      'agenda.reuniao.desmarcar',
+      'agenda.reuniao.marcar',
       'crm.lead.alterar',
       'operacao.tarefa.alterar',
       'pecas.campanha.alterar',
     ]);
-    // A forma do R2 que sobrou: alteração implementada que se desfaz com ela mesma.
+    // A forma do R2: alteração que se desfaz com ela mesma, ou escrita com um
+    // desfazer implementado cuja cadeia aterrissa (o resto é de verificarReversibilidade).
     for (const c of r2) {
-      expect(c.desfazer, `${c.id} não se desfaz com ela mesma`).toBe(c.id);
+      expect(c.desfazer, `${c.id} sem desfazer`).toBeTruthy();
+      if (c.id.endsWith('.alterar')) expect(c.desfazer, `${c.id} não se desfaz com ela mesma`).toBe(c.id);
       expect(c.rota, `${c.id} sem rota`).toBeTruthy();
     }
   });
@@ -454,7 +463,13 @@ describe('catálogo do marketing-os', () => {
     // Produção 21 (P7, 21/10/2026): `contexto.arquivo.ler`, o texto de um arquivo
     // do Drive para o banco de atas, também é R0 sem ferramenta: quem lê é gente
     // na tela de Atas, e o texto volta sigiloso ao registro.
-    const semFerramenta = ['instagram.comentario.ler', 'instagram.regra_de_resposta.pausar', 'contexto.arquivo.ler'];
+    // Agenda v2 (29/10/2026): `comunicacao.agenda.sincronizar` e
+    // `comunicacao.agenda.livre_ocupado` são leituras da ROTINA do espelho, sem
+    // ferramenta: nenhum agente lê a agenda inteira por elas.
+    const semFerramenta = [
+      'instagram.comentario.ler', 'instagram.regra_de_resposta.pausar', 'contexto.arquivo.ler',
+      'comunicacao.agenda.sincronizar', 'comunicacao.agenda.livre_ocupado',
+    ];
     const leituras = DELTA.capacidades.filter((c) => c.nivel === 'R0' && !semFerramenta.includes(c.id));
     expect(leituras).toHaveLength(36);
     for (const id of semFerramenta) expect(DELTA.capacidades.find((c) => c.id === id)?.ferramenta, id).toBeUndefined();
@@ -940,7 +955,7 @@ describe('capacidades da rodada dos agentes (21/10/2026)', () => {
   });
 
   it('o delta subiu para 1.11.0 (e segue: 1.12.0 na produção 22)', () => {
-    expect(['1.11.0', '1.12.0']).toContain(json('politica-marketing-os.json').versao);
+    expect(['1.11.0', '1.12.0', '1.13.0']).toContain(json('politica-marketing-os.json').versao);
   });
 
   it('os esquemas são fechados e exigem o que a aprovação assina', () => {
@@ -988,8 +1003,8 @@ describe('capacidades da rodada dos agentes (21/10/2026)', () => {
  * a ponta terminal da cadeia que a sobrescrita do vigia aponta.
  */
 describe('agenda.evento.restaurar (produção 22, 22/10/2026)', () => {
-  it('o delta está em 1.12.0', () => {
-    expect(json('politica-marketing-os.json').versao).toBe('1.12.0');
+  it('o delta está em 1.12.0 (e segue: 1.13.0 na agenda v2)', () => {
+    expect(['1.12.0', '1.13.0']).toContain(json('politica-marketing-os.json').versao);
   });
 
   it('é R3 pela escada, com rota, sem ferramenta e sem desfazer', () => {
@@ -1005,5 +1020,59 @@ describe('agenda.evento.restaurar (produção 22, 22/10/2026)', () => {
     expect(s.additionalProperties).toBe(false);
     expect([...s.required].sort()).toEqual(['eventoId', 'tituloAtual', 'tituloOriginal']);
     expect(Object.keys(s.properties).sort()).toEqual(['eventoId', 'tituloAtual', 'tituloOriginal']);
+  });
+});
+
+/*
+ * AGENDA V2 (29/10/2026, decisão 2): marcar pela tela sai no clique pelo caminho
+ * honesto. Cada escrita da agenda que desce a R2 tem um desfazer com rota, a
+ * cadeia aterrissa em `agenda.reuniao.reabrir` (R3, manual, terminal) e a escada
+ * calcula o mesmo nível que o JSON declara.
+ */
+describe('agenda v2 (29/10/2026)', () => {
+  const cap = (id: string) => DELTA.capacidades.find((c) => c.id === id)!;
+
+  it('o delta está em 1.13.0 com as seis capacidades novas', () => {
+    expect(json('politica-marketing-os.json').versao).toBe('1.13.0');
+    for (const id of [
+      'comunicacao.agenda.sincronizar', 'comunicacao.agenda.livre_ocupado', 'agenda.reuniao.alterar',
+      'agenda.reuniao.cancelar', 'agenda.reuniao.desmarcar', 'agenda.reuniao.reabrir',
+    ]) expect(cap(id), id).toBeTruthy();
+  });
+
+  it('o nível declarado é o que a escada calcula do efeito', () => {
+    const esperado: Record<string, string> = {
+      'comunicacao.agenda.sincronizar': 'R0',
+      'comunicacao.agenda.livre_ocupado': 'R0',
+      'agenda.reuniao.marcar': 'R2',
+      'agenda.reuniao.alterar': 'R2',
+      'agenda.reuniao.cancelar': 'R2',
+      'agenda.reuniao.desmarcar': 'R2',
+      'agenda.reuniao.reabrir': 'R3',
+    };
+    for (const [id, nivel] of Object.entries(esperado)) {
+      expect(cap(id).nivel, id).toBe(nivel);
+      expect(classificar(cap(id).efeito), id).toBe(nivel);
+    }
+  });
+
+  it('cada desfazer aponta uma capacidade com rota, e a cadeia termina em reabrir', () => {
+    expect(cap('agenda.reuniao.marcar').desfazer).toBe('agenda.reuniao.desmarcar');
+    expect(cap('agenda.reuniao.desmarcar').desfazer).toBe('agenda.reuniao.reabrir');
+    expect(cap('agenda.reuniao.cancelar').desfazer).toBe('agenda.reuniao.reabrir');
+    expect(cap('agenda.reuniao.alterar').desfazer).toBe('agenda.reuniao.alterar');
+    expect(cap('agenda.reuniao.reabrir').desfazer).toBeUndefined();
+    expect(cap('agenda.reuniao.reabrir').efeito.reversibilidade).toBe('manual');
+    for (const id of ['agenda.reuniao.desmarcar', 'agenda.reuniao.reabrir', 'agenda.reuniao.alterar']) {
+      expect(cap(id).rota, id).toBeTruthy();
+    }
+  });
+
+  it('nenhuma escrita da agenda apaga, e nenhuma aceita título pronto', () => {
+    for (const id of ['agenda.reuniao.marcar', 'agenda.reuniao.alterar', 'agenda.reuniao.cancelar', 'agenda.reuniao.desmarcar', 'agenda.reuniao.reabrir']) {
+      expect(cap(id).efeito.destruicao, id).toBe(false);
+      expect((cap(id) as any).argsSchema.additionalProperties, id).toBe(false);
+      expect((cap(id) as any).argsSchema.properties.titulo, id).toBeUndefined();
+    }
   });
 });

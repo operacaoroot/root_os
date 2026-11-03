@@ -228,6 +228,9 @@ export const PREFIXOS_DA_ESPINHA: readonly string[] = [
   'users',
   // o vigia da agenda (AG-01, rodada dos agentes, 21/10/2026): a agenda da Root, como o `google`, não é módulo
   'agenda',
+  // o link de escolha da agenda (agenda v2, 29/10/2026): a página pública `/agendar/<token>`,
+  // anônima; a empresa sai do hash do token, como o link do onboarding
+  'agendar',
   // a frota (27/10/2026): os servidores de cliente que a ROOT opera. Tela da plataforma (a API recusa
   // outra sessão) mais a porta anônima do relator do kit (`frota/relator`, token da casa): não é módulo
   // que uma empresa contrata, é a operação da própria ROOT.

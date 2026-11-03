@@ -268,6 +268,15 @@ export const CONECTOR_DA_CAPACIDADE: Readonly<Record<string, string | null>> = {
   'agenda.evento.padronizar': 'gcal',
   // Produção 22 (22/10/2026): desfazer a padronização também escreve no Google Agenda.
   'agenda.evento.restaurar': 'gcal',
+  // Agenda v2 (29/10/2026): o espelho (leitura incremental e livre/ocupado) e as
+  // escritas novas. Desligar o Google Agenda em Conexões cala a sincronia e barra
+  // marcar, alterar, cancelar, desmarcar e reabrir.
+  'comunicacao.agenda.sincronizar': 'gcal',
+  'comunicacao.agenda.livre_ocupado': 'gcal',
+  'agenda.reuniao.alterar': 'gcal',
+  'agenda.reuniao.cancelar': 'gcal',
+  'agenda.reuniao.desmarcar': 'gcal',
+  'agenda.reuniao.reabrir': 'gcal',
 
   // Daqui para baixo: nada sai da casa.
   'numeros.painel.ler': null,
