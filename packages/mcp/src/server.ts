@@ -1,11 +1,11 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
-import { apiGet, apiPost, qs } from './client.js';
+import { apiGet, leitor, operador, qs, temOperador } from './client.js';
+import { registrarCuradas } from './ferramentas/curadas.js';
+import { registrarGenericas } from './ferramentas/genericas.js';
 
-// As tools são read_only (menor privilégio; a conta de serviço nem tem permissão de
-// escrita), com UMA exceção: `comercial_contrato_propor_envio` cria o pedido R4 pela
-// rota da API e nada mais. Não há ferramenta que envie: quem libera é outra pessoa
-// titular, com a senha, em Aprovações. Retornamos JSON com o campo `source` da API
+// Todas as tools desta fase são read_only (menor privilégio; a conta de serviço
+// nem tem permissão de escrita). Retornamos JSON com o campo `source` da API
 // para que a IA sempre cite a fonte interna dos dados.
 
 function ok(data: unknown) {
@@ -19,6 +19,15 @@ function fail(e: unknown) {
 }
 
 const READ_ONLY = { readOnlyHint: true, openWorldHint: false };
+// Ferramentas que agem EM NOME DO OPERADOR (uma pessoa do OS): leitura da bancada e as duas escritas
+// da área do cliente. Nunca destrutivas: rascunho substitui o próprio rascunho; publicar só PEDE a
+// publicação (R3), e quem libera é outra pessoa em Aprovações. Sem identidade do operador, recusam
+// com a frase do que configurar.
+const OPERADOR_LE = { readOnlyHint: true, openWorldHint: false };
+const OPERADOR_ESCREVE = { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false };
+const ITENS_ESCRITOS_DA_AREA =
+  'cronograma | atas | prd | arquitetura | instrucoes-de-acesso | cofre | central-glossario | videos | manutencao | novidades' +
+  ' (os derivados contrato, escopo, linha-de-execucao, agenda e duvidas o OS monta sozinho e recusa escrita)';
 
 export function buildServer(): McpServer {
   const server = new McpServer({ name: 'marketing-os', version: '0.1.0' });
@@ -655,6 +664,156 @@ export function buildServer(): McpServer {
     },
   );
 
+  // ---------------------------------------------------------------------------
+  // Em nome do operador (gente): comercial e área do cliente
+  // ---------------------------------------------------------------------------
+
+  server.registerTool(
+    'quem_sou',
+    {
+      description:
+        'Confere a identidade do OPERADOR configurada no MCP (e-mail, nome, papéis, empresa), chamando GET /auth/me em nome dele. Use antes de escrever na área do cliente. [operador, read_only]',
+      inputSchema: {},
+      annotations: { title: 'Operador: quem sou', ...OPERADOR_LE },
+    },
+    async () => {
+      try {
+        if (!temOperador()) return ok({ operadorConfigurado: false, oQueFazer: 'defina MCP_OPERADOR_EMAIL e MCP_OPERADOR_SENHA em ~/.config/root/mcp.env' });
+        return ok({ operadorConfigurado: true, ...(await operador().get<Record<string, unknown>>('/auth/me')) });
+      } catch (e) {
+        return fail(e);
+      }
+    },
+  );
+
+  server.registerTool(
+    'clientes_ativos',
+    {
+      description:
+        'Lista os clientes ativos do Comercial (lead fechado ou com card na implantação), com o chip da área do cliente (itens publicados de 15). É por aqui que se acha o leadId de um cliente pelo nome. [operador, read_only]',
+      inputSchema: {},
+      annotations: { title: 'Comercial: clientes ativos', ...OPERADOR_LE },
+    },
+    async () => {
+      try {
+        return ok(await operador().get('/comercial/clientes-ativos'));
+      } catch (e) {
+        return fail(e);
+      }
+    },
+  );
+
+  server.registerTool(
+    'comercial_lead',
+    {
+      description: 'Ficha e estado de um lead do Comercial (etapa, dono, próxima ação, fechamento, sala). [operador, read_only]',
+      inputSchema: { lead_id: z.string().describe('ID do lead') },
+      annotations: { title: 'Comercial: lead', ...OPERADOR_LE },
+    },
+    async ({ lead_id }) => {
+      try {
+        return ok(await operador().get(`/comercial/lead/${encodeURIComponent(lead_id)}`));
+      } catch (e) {
+        return fail(e);
+      }
+    },
+  );
+
+  server.registerTool(
+    'area_bancada',
+    {
+      description:
+        'A bancada da ÁREA DO CLIENTE de um lead: modo (sala ou area), fase do fluxo e os 15 itens com estado (vazio, derivado, rascunho, na_porta, publicado, lido), versão publicada, rascunho aberto e lido pelo cliente. Rota GET /comercial/lead/:id/area. [operador, read_only]',
+      inputSchema: { lead_id: z.string().describe('ID do lead') },
+      annotations: { title: 'Área do cliente: bancada', ...OPERADOR_LE },
+    },
+    async ({ lead_id }) => {
+      try {
+        return ok(await operador().get(`/comercial/lead/${encodeURIComponent(lead_id)}/area`));
+      } catch (e) {
+        return fail(e);
+      }
+    },
+  );
+
+  server.registerTool(
+    'area_versoes',
+    {
+      description: 'Versões de um item da área do cliente (publicada, rascunho aberto, histórico). [operador, read_only]',
+      inputSchema: {
+        lead_id: z.string().describe('ID do lead'),
+        item: z.string().describe(`ID do item: ${ITENS_ESCRITOS_DA_AREA}`),
+      },
+      annotations: { title: 'Área do cliente: versões do item', ...OPERADOR_LE },
+    },
+    async ({ lead_id, item }) => {
+      try {
+        return ok(await operador().get(`/comercial/lead/${encodeURIComponent(lead_id)}/area/${encodeURIComponent(item)}/versoes`));
+      } catch (e) {
+        return fail(e);
+      }
+    },
+  );
+
+  server.registerTool(
+    'area_rascunho',
+    {
+      description:
+        'Salva (ou substitui) o RASCUNHO de um item escrito da área do cliente, em nome do operador. Nada chega ao cliente: só area_publicar leva à porta. Texto para cliente: voz da Root, sem link em claro (anexe o documento ao cliente e referencie por documento_id), sem segredo, com datas absolutas. Rota PUT /comercial/lead/:id/area/:item/rascunho. [operador, write]',
+      inputSchema: {
+        lead_id: z.string().describe('ID do lead'),
+        item: z.string().describe(`ID do item: ${ITENS_ESCRITOS_DA_AREA}`),
+        resumo: z.string().max(400).optional().describe('Uma ou duas frases (até 400 caracteres)'),
+        texto: z.string().max(4000).optional().describe('Texto corrido (até 4000 caracteres)'),
+        topicos: z.array(z.string().max(200)).max(20).optional().describe('Até 20 tópicos de até 200 caracteres'),
+        quando: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable().optional().describe('AAAA-MM-DD: data da ata, da reunião, da entrega'),
+        documento_id: z.string().uuid().nullable().optional().describe('ArquivoDoCliente referenciado (o PDF da ata, do PRD)'),
+        o_que_mudou: z.string().max(300).optional().describe('O que mudou em relação à versão anterior (até 300 caracteres)'),
+      },
+      annotations: { title: 'Área do cliente: salvar rascunho', ...OPERADOR_ESCREVE },
+    },
+    async ({ lead_id, item, resumo, texto, topicos, quando, documento_id, o_que_mudou }) => {
+      try {
+        const corpo: Record<string, unknown> = {};
+        if (resumo !== undefined) corpo.resumo = resumo;
+        if (texto !== undefined) corpo.texto = texto;
+        if (topicos !== undefined) corpo.topicos = topicos;
+        if (quando !== undefined) corpo.quando = quando;
+        if (documento_id !== undefined) corpo.documentoId = documento_id;
+        if (o_que_mudou !== undefined) corpo.oQueMudou = o_que_mudou;
+        return ok(await operador().put(`/comercial/lead/${encodeURIComponent(lead_id)}/area/${encodeURIComponent(item)}/rascunho`, corpo));
+      } catch (e) {
+        return fail(e);
+      }
+    },
+  );
+
+  server.registerTool(
+    'area_publicar',
+    {
+      description:
+        'PEDE a publicação do rascunho aberto de um item da área do cliente, em nome do operador. É R3: o pedido cai em Aprovações (/atendimento) e OUTRA pessoa libera; só então o cliente vê. Devolve estado (na_porta | publicada) e approvalId. Rota POST /comercial/lead/:id/area/:item/publicar. [operador, write]',
+      inputSchema: {
+        lead_id: z.string().describe('ID do lead'),
+        item: z.string().describe(`ID do item: ${ITENS_ESCRITOS_DA_AREA}`),
+      },
+      annotations: { title: 'Área do cliente: pedir publicação', ...OPERADOR_ESCREVE },
+    },
+    async ({ lead_id, item }) => {
+      try {
+        return ok(await operador().post(`/comercial/lead/${encodeURIComponent(lead_id)}/area/${encodeURIComponent(item)}/publicar`));
+      } catch (e) {
+        return fail(e);
+      }
+    },
+  );
+
+  // ---------------------------------------------------------------------------
+  // Contratos do comercial (F5): duas leituras e a proposta de envio.
+  // Não há ferramenta que envie. A proposta sai em nome do OPERADOR, porque a rota é só de gente;
+  // sem operador, ela recusa antes de chamar a API e nunca cai na conta de serviço.
+  // ---------------------------------------------------------------------------
+
   server.registerTool(
     'comercial_contratos_quadro',
     {
@@ -665,7 +824,7 @@ export function buildServer(): McpServer {
     },
     async () => {
       try {
-        return ok(await apiGet('/comercial/contratos/quadro'));
+        return ok(await leitor().get('/comercial/contratos/quadro'));
       } catch (e) {
         return fail(e);
       }
@@ -682,7 +841,7 @@ export function buildServer(): McpServer {
     },
     async ({ contrato_id }) => {
       try {
-        return ok(await apiGet(`/comercial/contratos/registro/${encodeURIComponent(contrato_id)}`));
+        return ok(await leitor().get(`/comercial/contratos/registro/${encodeURIComponent(contrato_id)}`));
       } catch (e) {
         return fail(e);
       }
@@ -693,18 +852,22 @@ export function buildServer(): McpServer {
     'comercial_contrato_propor_envio',
     {
       description:
-        'PROPÕE o envio do contrato para assinatura: recalcula o PDF, congela o hash e cria a pendência R4 em Aprovações, em nome de quem autenticou neste servidor. NÃO envia: nada sai para a ZapSign até outra pessoa titular conferir o conteúdo exato e confirmar com a senha. Faltando algo, a API recusa com a lista em `faltando`. A rota é só de gente: com a conta de serviço deste servidor, a resposta é 403. [propõe, não executa]',
+        'PROPÕE o envio do contrato para assinatura, em nome do OPERADOR (uma pessoa do OS): recalcula o PDF, congela o hash e cria a pendência R4 em Aprovações. NÃO envia: nada sai para a ZapSign até OUTRA pessoa titular conferir o conteúdo exato e confirmar com a senha, e o operador não confirma o próprio pedido. Faltando algo, a API recusa com a lista em `faltando`. Sem operador configurado, recusa com a frase do que configurar. [operador, propõe, não executa]',
       inputSchema: { contrato_id: z.string().min(1).describe('O id do contrato (o registro, não o fantasma nem o importado)') },
       annotations: { title: 'Contratos: propor envio', readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
     },
     async ({ contrato_id }) => {
       try {
-        return ok(await apiPost(`/comercial/contratos/registro/${encodeURIComponent(contrato_id)}/enviar`, {}));
+        return ok(await operador().post(`/comercial/contratos/registro/${encodeURIComponent(contrato_id)}/enviar`, {}));
       } catch (e) {
         return fail(e);
       }
     },
   );
+
+  // As genéricas alcançam toda rota do inventário; as curadas dão nome e guia às rotas do dia a dia.
+  registrarGenericas(server);
+  registrarCuradas(server);
 
   return server;
 }

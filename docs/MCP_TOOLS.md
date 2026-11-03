@@ -3,20 +3,37 @@
 > Servidor **MCP (Model Context Protocol)** próprio, em TypeScript, com o `@modelcontextprotocol/sdk`.
 > Exposto para Claude Desktop, Claude Code e qualquer cliente MCP. Como plugar: `packages/mcp/README.md`.
 
-## Estado real (conferido em 02/11/2026, contra `packages/mcp/src/server.ts`)
+## Estado real (conferido em 02/11/2026, contra `packages/mcp/src`)
 
-**São 38 ferramentas: 37 `read_only` e uma que propõe.** `grep -c 'registerTool(' packages/mcp/src/server.ts`
-devolve 38. A exceção é `comercial_contrato_propor_envio` (módulo de contratos, F5): ela chama a rota
-`POST /comercial/contratos/registro/:id/enviar`, que só cria a retenção R4. **Não há ferramenta que envie.** As outras
-passam por `apiGet`; o `apiPost` do cliente (`packages/mcp/src/client.ts`) existe só para essa.
+**São 244 ferramentas**, em cinco famílias (`grep -c 'registerTool(' packages/mcp/src/server.ts` dá 45; as outras 199
+são registradas por tabela em `src/ferramentas/`):
 
-**A rota é só de gente (`SoGenteGuard`).** Este servidor autentica com a conta de serviço (`mcp@`), que é máquina e
-não tem `leads.editar`: por aqui, hoje, a ferramenta responde 403. Ela vale de verdade quando o servidor autentica como
-uma pessoa, e aí essa pessoa é a proponente (e não pode confirmar o próprio pedido). O servidor separado `~/root-os-mcp`,
-com `MCP_OPERADOR_*`, já alcança a mesma rota pelo `os_api`.
+| Família | Quantas | Identidade | Onde |
+|---|---|---|---|
+| Consulta (as de sempre, `read_only`) | 35 | conta de serviço | `server.ts` |
+| Área do cliente (`quem_sou`, `clientes_ativos`, `comercial_lead`, `area_bancada`, `area_versoes`, `area_rascunho`, `area_publicar`) | 7 | operador | `server.ts` |
+| Contratos (`comercial_contratos_quadro`, `comercial_contrato_ficha`, `comercial_contrato_propor_envio`) | 3 | leitor / operador | `server.ts` |
+| Genéricas (`os_rotas`, `os_api`, `os_enviar_arquivo`, `os_baixar_arquivo`) | 4 | leitor / operador | `ferramentas/genericas.ts` |
+| Curadas por módulo (comercial 46, trabalho 32, aprovações e porta 14, WhatsApp 10, memória 10, agentes/rotinas/Frota 14, financeiro 11, pauta 27, Google/conexões/cofre 13, empresa/onboarding/plataforma 17) | 195 | leitor / operador | `ferramentas/curadas.ts` (tabela) |
 
-> Este documento já disse "10 tools". Era o número da Fase 2; o servidor cresceu e o texto não.
-> O número acima é contável a partir do código; se ele divergir de novo, o código é que manda.
+**Contratos do comercial (F5, 02/11/2026):** `comercial_contratos_quadro` e `comercial_contrato_ficha` leem pelo leitor
+(`leads.ver`); `comercial_contrato_propor_envio` chama `POST /comercial/contratos/registro/:id/enviar` SEMPRE pelo operador,
+porque a rota é só de gente, e sem operador recusa com a frase do que configurar, sem chamar a API. Ela só cria a
+retenção R4: não há ferramenta que envie, e o operador não confirma o próprio pedido.
+
+**O inventário** (`src/rotas.gen.ts`, gerado por `scripts/gerar-rotas.ts`): 867 rotas da API, 811 alcançáveis pelo MCP.
+Ficam fora as 54 públicas (sala do cliente por token, link do onboarding, webhooks, callbacks OAuth, saúde) e o login.
+A lista fechada é o que impede `os_api` de inventar rota. O catálogo legível, rota por rota, com a coluna de qual
+ferramenta curada a cobre, está em `docs/mcp/INVENTARIO-ROTAS.md` (gerado junto).
+
+**Duas identidades.** A conta de serviço (`ia_servico`) só lê. O operador é uma PESSOA do OS (`MCP_OPERADOR_EMAIL`/
+`MCP_OPERADOR_SENHA`, do ambiente ou de `~/.config/root/mcp.env`): toda escrita sai em nome dele, e a leitura também,
+quando configurado (ele vê o que a pessoa vê). Sem operador, as escritas recusam com a frase do que configurar.
+
+**O que a API continua decidindo** (o MCP não cria caminho paralelo): RBAC por permissão, `SoGenteGuard` (58 rotas só de
+gente), `@SensitiveWrite` (5 rotas que viram aprovação) e a porta (R3/R4 caem em Aprovações e outra pessoa libera).
+`os_api` só acrescenta duas travas próprias: DELETE exige `confirmar: true`, e rota pública ou de login é recusada.
+
 
 ## Como a segurança é aplicada de verdade
 
@@ -39,15 +56,15 @@ superfícies separadas, e nunca `@modelcontextprotocol/server-postgres`.
 |---|---|
 | `defineTool({ permission, class, rateLimit, outputSchema })` | A assinatura real é `server.registerTool(nome, { description, inputSchema, annotations }, handler)`. Não há campo de permissão, classe de risco nem rate limit no servidor MCP |
 | "Toda chamada → linha em `ai_tool_calls`" | A tabela **não existe** no `schema.prisma`. O registro que existe hoje é o `AuditLog` da API e o `EventLog` do gateway |
-| Tools `write_safe` / `write_sensitive` / `destructive` (`create_task`, `send_whatsapp_message`, `update_campaign`…) | **Nenhuma foi implementada** (a de propor envio do contrato só cria retenção). A classificação de risco de ação vive em `packages/policy` (escada R0–R5) e é aplicada pelo Tool Gateway, não pelo MCP |
+| Tools `write_safe` / `write_sensitive` / `destructive` (`create_task`, `send_whatsapp_message`, `update_campaign`…) | **Nenhuma foi implementada.** A classificação de risco de ação vive em `packages/policy` (escada R0–R5) e é aplicada pelo Tool Gateway, não pelo MCP |
 
 As classes de risco continuam sendo o desenho alvo para quando a escrita entrar no MCP — mas o
 lugar onde elas já existem em runtime é a régua, não este pacote.
 
-## Catálogo — as 38 ferramentas
+## Catálogo — as 35 ferramentas
 
-Todas são `read_only` (`annotations: { readOnlyHint: true, openWorldHint: false }`), menos a de propor envio do contrato.
-"Permissão" é a exigida pelo endpoint da API que a tool chama.
+Todas são `read_only` (`annotations: { readOnlyHint: true, openWorldHint: false }`). "Permissão" é
+a exigida pelo endpoint da API que a tool chama.
 
 ### Painel e funil
 | Tool | Endpoint | Permissão | Argumentos |
@@ -63,13 +80,6 @@ Todas são `read_only` (`annotations: { readOnlyHint: true, openWorldHint: false
 | `get_lead` | `GET /leads/:id` | `leads.ver` | `lead_id` |
 | `list_campaigns` | `GET /campaigns` | `campanhas.ver` | `status` |
 | `get_campaign` | `GET /campaigns/:id` | `campanhas.ver` | `campaign_id` |
-
-### Contratos do comercial
-| Tool | Endpoint | Permissão | Argumentos |
-|---|---|---|---|
-| `comercial_contratos_quadro` | `GET /comercial/contratos/quadro` | `leads.ver` | — |
-| `comercial_contrato_ficha` | `GET /comercial/contratos/registro/:id` | `leads.ver` | `contrato_id` |
-| `comercial_contrato_propor_envio` (propõe, não é `read_only`) | `POST /comercial/contratos/registro/:id/enviar` | `leads.editar`, só gente | `contrato_id` |
 
 ### Pixel e eventos
 | Tool | Endpoint | Permissão | Argumentos |
@@ -138,8 +148,7 @@ inteiro para o cliente, sem reescrever — o servidor não resume nem interpreta
 
 ## Quando a escrita entrar
 
-A primeira porta já seguiu este caminho: `comercial_contrato_propor_envio` chama uma rota da API que entrega
-`comercial.contrato.enviar` à `PortaDoOperador`. Não pelo MCP direto. O caminho decidido é o Tool Gateway (ADR-004): a capacidade é declarada em
+Não pelo MCP direto. O caminho decidido é o Tool Gateway (ADR-004): a capacidade é declarada em
 `packages/policy`, a régua R0–R5 classifica, o gateway registra no `EventLog` **antes** do efeito e
 decide entre executar, exigir aprovação ou recusar. Uma tool MCP de escrita seria só mais uma
 superfície chamando o gateway — nunca um caminho paralelo.
