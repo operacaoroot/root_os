@@ -818,8 +818,9 @@ function ApAr(props: {
   };
   const addPartner = () => {
     if (!pForm.razaoSocial) { onError('Informe a razão social.'); return; }
-    apiPost('/finance/partners', pForm, token)
-      .then(() => { onFlash('Parceiro criado.'); setPForm({ razaoSocial: '', cnpjCpf: '', isCliente: false, isFornecedor: true }); onChange(); })
+    // Cadastro único (03/11): cliente que já existe volta com `jaExistia` e a frase da API, em vez de nascer outro.
+    apiPost<{ jaExistia?: boolean; mensagem?: string }>('/finance/partners', pForm, token)
+      .then((r) => { onFlash(r?.jaExistia ? r.mensagem || 'Este cliente já existia: usamos o cadastro dele.' : 'Parceiro criado.'); setPForm({ razaoSocial: '', cnpjCpf: '', isCliente: false, isFornecedor: true }); onChange(); })
       .catch((e) => onError(e));
   };
   const addContract = () => {
