@@ -26,6 +26,14 @@ const nextConfig = {
   reactStrictMode: true,
   transpilePackages: ['@mktos/shared'],
   experimental: { proxyTimeout: PRAZO_DO_PROXY_DA_API_MS, middlewareClientMaxBodySize: TETO_DO_CORPO_PELO_MIDDLEWARE },
+  async headers() {
+    return [{ source: '/entregar-acessos', headers: [
+      { key: 'Referrer-Policy', value: 'no-referrer' },
+      { key: 'X-Frame-Options', value: 'DENY' },
+      { key: 'Content-Security-Policy', value: "frame-ancestors 'none'; form-action 'self'; base-uri 'self'" },
+      { key: 'X-Robots-Tag', value: 'noindex, nofollow' },
+    ] }];
+  },
   // Proxy da API pelo próprio Next → o browser fala sempre com a MESMA origem
   // (funciona em localhost, LAN e túnel; sem CORS e sem URL fixa no build).
   async rewrites() {
