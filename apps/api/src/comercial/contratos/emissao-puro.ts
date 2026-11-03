@@ -3,6 +3,7 @@ import { createHash } from 'node:crypto';
 import { A_DECIDIR, TABELA_DE_PRECO, formatarReais, type ApontamentoDoLaudo, type CampoDaEmissao, type ModalidadeDeContrato, type TipoDeContrato } from '@mktos/shared';
 
 import { documentoFormatado } from '../contrato-modelo';
+import { caracteresForaDoWinAnsi } from '../contrato-da-root/fontes-do-pdf';
 import type { PedidoDePdf } from '../contrato-da-root/pdf-do-contrato';
 import { moldeDoContrato } from '../contrato-da-root/moldes-do-contrato';
 import { preencherMolde, type CamposDoContrato, type DadosDoContrato, type MoldePreenchido } from '../contrato-da-root/preencher-molde';
@@ -247,6 +248,22 @@ export function mantemAsClausulas(saida: string, preenchido: string): boolean {
     desde = i + trecho.length;
   }
   return true;
+}
+
+/**
+ * Nome e endereço das partes e quem assina: num contrato, "?" no lugar de uma letra é a identidade errada, e por isso trava o
+ * envio dizendo qual campo. No corpo do texto, o caractere trocado continua sendo só aviso do PDF.
+ */
+export function camposForaDoPdf(e: EntradaDoPreenchimento): string[] {
+  const escritos = { ...(e.camposDoPai ?? {}), ...camposEscritos(e.dados) };
+  const campos = juntarCampos(e.aceite, escritos);
+  const nomes = ['contratante_nome', 'contratante_endereco', 'contratante_representante', 'contratada_nome'];
+  const dos = nomes.flatMap((nome) => (typeof campos[nome] === 'string' ? [{ rotulo: rotuloDoCampo(nome), texto: campos[nome] as string }] : []));
+  const signatarios = e.signatarios.map((s) => ({ rotulo: `O signatário ${s.nome}`, texto: s.nome }));
+  return [...dos, ...signatarios].flatMap(({ rotulo, texto }) => {
+    const fora = caracteresForaDoWinAnsi(texto);
+    return fora.length ? [`${rotulo}: tem caractere que o PDF não imprime (${fora.join(' ')}). Troque antes de enviar.`] : [];
+  });
 }
 
 /** Grave é crítica ou alta. A lacuna aberta já tem linha própria no que falta para enviar. */

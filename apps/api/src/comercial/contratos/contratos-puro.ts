@@ -111,6 +111,18 @@ export function casarAssinaturas(signatarios: readonly SignatarioGravado[], w: P
   return signatarios.filter((s) => !s.assinadoEm && achados.has(s.id)).map((s) => ({ id: s.id, em: achados.get(s.id)! }));
 }
 
+/**
+ * Os hashes que o fechamento aceita vindos do registro: só o do contrato enviado pela emissão, que congelou a versão do
+ * aceite. Registro sem o congelado (backfill, caminho antigo) repete o hash do documento do esqueleto, que pode ser de outra
+ * versão: contá-lo faria o documento velho valer para o aceite novo.
+ */
+export function hashesDoRegistro(registros: readonly { hashDoConteudo: string | null; dadosDoContrato: unknown }[], versao: number): string[] {
+  return registros.flatMap((r) => {
+    const congelado = ((r.dadosDoContrato ?? {}) as { congelado?: { versao?: unknown } }).congelado;
+    return r.hashDoConteudo && congelado && Number(congelado.versao) === versao ? [r.hashDoConteudo] : [];
+  });
+}
+
 /** O contador do cartão. Sem signatário gravado (documento anterior ao módulo), conta os dois papéis no documento. */
 export function assinaturasDoCartao(
   signatarios: readonly { assinadoEm: Date | null }[],
@@ -238,6 +250,8 @@ export function faltaParaEnviar(c: {
   graves?: readonly string[] | null;
   rootsSemAlcada?: readonly string[];
   minutaDesatualizada?: boolean;
+  /** As frases de `camposForaDoPdf`. */
+  foraDoPdf?: readonly string[];
 }): string[] {
   if (!ANTES_DE_ENVIAR.includes(c.estado)) return [];
   const falta: string[] = [];
@@ -246,6 +260,7 @@ export function faltaParaEnviar(c: {
   if (!c.signatarios.some((s) => s.papel === 'cliente')) falta.push('Quem assina pelo cliente.');
   if (!c.signatarios.some((s) => s.papel === 'root')) falta.push('Quem assina pela Root, entre os titulares.');
   for (const email of c.rootsSemAlcada ?? []) falta.push(`${email} não é, agora, gente ativa e titular desta empresa: troque quem assina pela Root.`);
+  falta.push(...(c.foraDoPdf ?? []));
   if (c.temAceite === false) falta.push('A proposta aceita: a aprovação do envio prende a versão aceita, e este contrato não tem nenhuma.');
   if (!c.minutaId || !c.hashDoConteudo) {
     falta.push('A minuta do contrato.');

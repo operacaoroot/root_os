@@ -102,6 +102,13 @@ function dadosComCampos(dados: unknown, novos: NonNullable<ContratoEditarInput['
   return { ...base, campos } as Prisma.InputJsonValue;
 }
 
+/** Link morto não fica guardado: o documento cancelado leva junto os links da Root. */
+function semLinksDaRoot(dados: unknown): { dadosDoContrato?: Prisma.InputJsonValue } {
+  if (!dados || typeof dados !== 'object' || !('linksDaRoot' in dados)) return {};
+  const { linksDaRoot: _fora, ...resto } = dados as Record<string, unknown>;
+  return { dadosDoContrato: resto as Prisma.InputJsonValue };
+}
+
 function dataDoCampo(v: string | null | undefined): Date | null | undefined {
   if (v === undefined) return undefined;
   return v === null ? null : new Date(`${v}T00:00:00.000Z`);
@@ -574,8 +581,8 @@ export class ContratosService implements OnModuleInit {
 
   /**
    * O efeito de cancelar (só a porta chama). Relê o contrato: o estado mudou desde o pedido, nada sai. Pergunta ao
-   * provedor antes de apagar: documento TODO ASSINADO não sai da ZapSign nunca (a assinatura é gravada e o cancelamento,
-   * recusado). Documento parcialmente assinado sai: foi o que a pessoa aprovou. O registro, o hash e o fio ficam no OS.
+   * provedor antes de apagar: documento com QUALQUER assinatura não sai da ZapSign (a assinatura é gravada e o cancelamento,
+   * recusado). Só sai documento sem assinatura nenhuma: é o que faz `destruicao: false` valer. O registro, o hash e o fio ficam no OS.
    */
   private async efeitoDeCancelar(args: Record<string, unknown>, orgId: string, ctx: ContextoDoEfeito): Promise<unknown> {
     const atual = await this.linha(orgId, String(args.contratoId ?? ''));
@@ -591,9 +598,9 @@ export class ContratosService implements OnModuleInit {
         if (!this.assinatura.cancelar) throw new Error(`O conector de assinatura (${this.assinatura.provedor}) não cancela documento: nada foi feito.`);
         externoId = doc.externoId;
         const noProvedor = await this.assinatura.consultarEstado(doc.externoId);
-        if (noProvedor?.estado === 'assinado') {
+        if (noProvedor && (noProvedor.estado === 'assinado' || noProvedor.signatarios.some((s) => s.assinadoEm !== null))) {
           await this.dinheiro.aplicarAssinatura(orgId, atual.leadId, doc.id, assinaturaDoEstado(noProvedor));
-          throw new Error('Todos já assinaram na ZapSign: o documento não foi cancelado, e a assinatura foi gravada. Para terminar, encerre ou abra um distrato.');
+          throw new Error('Alguém já assinou na ZapSign: o documento não foi cancelado, e a assinatura foi gravada. Para terminar, encerre ou abra um distrato.');
         }
         jaNaoExistia = (await this.assinatura.cancelar(doc.externoId)).jaNaoExistia;
         // O link morto não é oferecido a mais ninguém.
@@ -602,7 +609,7 @@ export class ContratosService implements OnModuleInit {
     }
     const por = await this.nomeDoAtor(orgId, ctx);
     const agora = new Date();
-    const n = await this.prisma.comercialContrato.updateMany({ where: { id: atual.id, estado: atual.estado }, data: { estado: 'cancelado', motivoDoFim: motivo, encerradoEm: agora } });
+    const n = await this.prisma.comercialContrato.updateMany({ where: { id: atual.id, estado: atual.estado }, data: { estado: 'cancelado', motivoDoFim: motivo, encerradoEm: agora, ...semLinksDaRoot(atual.dadosDoContrato) } });
     if (!n.count) this.log.warn(`contrato ${atual.id} mudou de estado durante o cancelamento`);
     await this.fio.registrar(orgId, atual.leadId, 'contrato.cancelado', atual.id, { contratoId: atual.id, externoId, motivo, jaNaoExistia, por }, { em: agora });
     await this.prisma.auditLog.create({

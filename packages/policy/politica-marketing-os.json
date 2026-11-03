@@ -2661,7 +2661,7 @@
     {
       "id": "comercial.contrato.cancelar",
       "rota": "POST /comercial/contratos/registro/:id/cancelar",
-      "descricao": "Cancela um contrato que ainda não foi assinado por todos: tira o documento da ZapSign (DELETE /docs/{token}/) e o link de assinatura deixa de valer. Documento todo assinado é recusado no efeito: a assinatura é gravada e nada sai. Sem volta pela API: refazer é enviar outro. O que é único não se perde: o registro, o hash do conteúdo, os signatários e o fio ficam no OS, por isso `destruicao` é falso.",
+      "descricao": "Cancela um contrato em que ninguém assinou: tira o documento da ZapSign (DELETE /docs/{token}/) e o link de assinatura deixa de valer. Documento com qualquer assinatura é recusado no efeito: a assinatura é gravada, nada sai, e terminar é encerrar ou abrir distrato. Sem volta pela API: refazer é enviar outro. O que é único não se perde: o registro, o hash do conteúdo, os signatários e o fio ficam no OS, por isso `destruicao` é falso.",
       "nivel": "R3",
       "argsSchema": {
         "type": "object",

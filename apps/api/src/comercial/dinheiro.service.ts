@@ -213,6 +213,11 @@ export class DinheiroService implements OnModuleInit {
     };
   }
 
+  /** Há `ComercialContrato` do tipo contrato, não cancelado? Enquanto houver, o esqueleto não sai. */
+  private async temContratoRegistrado(orgId: string, leadId: string): Promise<boolean> {
+    return !!(await this.prisma.comercialContrato.findFirst({ where: { orgId, leadId, tipo: 'contrato', estado: { not: 'cancelado' } }, select: { id: true } }));
+  }
+
   /** O aceite para o contrato do registro: o da sala, ou o declarado por quem fechou fora. */
   async aceiteParaContrato(orgId: string, leadId: string): Promise<AceiteDoLead | null> {
     const daSala = await this.aceiteDoLead(orgId, leadId);
@@ -344,8 +349,10 @@ export class DinheiroService implements OnModuleInit {
     let contrato: ResultadoDaProposta;
     const doc = this.contratoDoAceite(a);
     const resDoc = `${leadId}:${doc.hash.slice(0, 16)}`;
+    // O lead já tem contrato registrado: quem vai à assinatura é o registro, nunca o esqueleto ao lado dele.
+    if (await this.temContratoRegistrado(orgId, leadId)) contrato = 'ja_existe';
     // Documento cancelado (módulo de contratos, F3) saiu da ZapSign: não conta como "já existe".
-    if (await this.prisma.comercialDocumento.findFirst({ where: { leadId, orgId, hashConteudo: doc.hash, estado: { not: 'cancelado' } }, select: { id: true } })) contrato = 'ja_existe';
+    else if (await this.prisma.comercialDocumento.findFirst({ where: { leadId, orgId, hashConteudo: doc.hash, estado: { not: 'cancelado' } }, select: { id: true } })) contrato = 'ja_existe';
     else if (await this.aprovacaoViva(orgId, CAP_CONTRATO, resDoc, agora)) contrato = 'na_fila';
     else if (automatico && (await this.travaDaRepeticao(orgId, CAP_CONTRATO, resDoc, agora))) contrato = (await this.travaDaRepeticao(orgId, CAP_CONTRATO, resDoc, agora))!;
     else {
@@ -566,7 +573,15 @@ export class DinheiroService implements OnModuleInit {
       skipDuplicates: true,
     });
     const signatarios: SignatarioDoDocumento[] = doProvedor.map((s) => ({ papel: s.papel, nome: s.nome, email: s.email, ordem: s.ordem, token: s.doc?.token ?? null }));
-    await this.manterORegistro(orgId, leadId, () => garantirContratoDoDocumento(this.prisma, { orgId, leadId, documentoId: id, contratoId, signatarios }));
+    await this.manterORegistro(orgId, leadId, async () => {
+      await garantirContratoDoDocumento(this.prisma, { orgId, leadId, documentoId: id, contratoId, signatarios });
+      // Cada signatário da Root tem o link dele, cifrado e preso ao documento. `linkRoot` segue com o primeiro.
+      const links = segredo ? Object.fromEntries(doProvedor.flatMap((s) => (s.papel === 'root' && s.doc?.link ? [[s.externalId, cifrarLinkDaRoot(s.doc.link, segredo, `${id}:${s.externalId}`)]] : []))) : {};
+      if (Object.keys(links).length) {
+        const dados = (registro.dadosDoContrato ?? {}) as P;
+        await this.prisma.comercialContrato.updateMany({ where: { id: contratoId, documentoId: id }, data: { dadosDoContrato: { ...dados, linksDaRoot: { documentoId: id, links } } as never } });
+      }
+    });
     const quemConfirmou = ctx.actorId ? (await this.prisma.user.findFirst({ where: { id: ctx.actorId, orgId }, select: { name: true } }))?.name ?? null : null;
     await this.fio.registrar(orgId, leadId, 'contrato.minuta_aprovada', `${contratoId}:${hash.slice(0, 16)}`, { contratoId, minutaId: registro.minutaId ?? '', hash, por: quemConfirmou });
     await this.fio.registrar(orgId, leadId, 'contrato.gerado', criado.externoId, { provedor: this.assinatura.provedor, externoId: criado.externoId, hash, contratoId, lacunas: [], assinaPelaRoot: daRoot[0]!.email, assinaPelaRootDecidido: true });
@@ -599,6 +614,9 @@ export class DinheiroService implements OnModuleInit {
       await this.manterORegistro(orgId, leadId, () => garantirContratoDoDocumento(this.prisma, { orgId, leadId, documentoId: ja.id }));
       return { documentoId: ja.id, externoId: ja.externoId, reaproveitado: true };
     }
+
+    // Cobre o esqueleto que já estava na fila quando o registro nasceu: aprová-lo daria dois documentos ao lead.
+    if (await this.temContratoRegistrado(orgId, leadId)) throw new Error('este lead já tem contrato registrado, que vai à assinatura pela emissão: nada foi enviado');
 
     const root = await this.signatarioDaRoot(orgId);
     if (!root) throw new Error('não há usuário titular nesta empresa para assinar pela Root: nada foi enviado');
@@ -677,17 +695,31 @@ export class DinheiroService implements OnModuleInit {
     if (!doBanco || !doBanco.ativo) throw new ForbiddenException('Quem assina pela Root precisa ser um usuário ativo desta empresa.');
     if (!atendeAlcada('titular', alcadaDe(doBanco.papeis))) throw new ForbiddenException('Assinar pela Root pede alçada titular.');
 
-    const doc = await this.prisma.comercialDocumento.findFirst({ where: { leadId, orgId, ...SO_DOCUMENTOS_DE_ASSINATURA }, orderBy: { criadoEm: 'desc' } });
+    const doc = await this.prisma.comercialDocumento.findFirst({ where: { leadId, orgId, estado: { not: 'cancelado' }, ...SO_DOCUMENTOS_DE_ASSINATURA }, orderBy: { criadoEm: 'desc' } });
     if (!doc) throw new NotFoundException('O contrato deste lead ainda não foi gerado.');
     const base = { externoId: doc.externoId, estado: doc.estado, assinadoRootEm: doc.assinadoRootEm?.toISOString() ?? null };
     if (doc.assinadoRootEm) return { ...base, linkAssinatura: null };
 
-    const gerados = await this.prisma.leadEvent.findMany({ where: { leadId, orgId, type: 'contrato.gerado' }, orderBy: { occurredAt: 'desc' }, select: { payload: true } });
-    const gerado = gerados.find((g) => String(((g.payload ?? {}) as P).externoId ?? '') === doc.externoId);
-    const cadastrado = String(((gerado?.payload ?? {}) as P).assinaPelaRoot ?? '').trim().toLowerCase();
     const eu = await this.prisma.user.findFirst({ where: { id: quem.id, orgId }, select: { email: true } });
-    if (!cadastrado || !eu || eu.email.trim().toLowerCase() !== cadastrado) {
-      throw new ForbiddenException('Este contrato foi cadastrado para outra pessoa assinar pela Root: só o signatário cadastrado recebe o link.');
+    const meuEmail = eu?.email.trim().toLowerCase() ?? '';
+    const recusaDeOutro = new ForbiddenException('Este contrato foi cadastrado para outra pessoa assinar pela Root: só o signatário cadastrado recebe o link.');
+    // Documento do registro guarda um link por signatário da Root; documento antigo tem um só, e vale o caminho de sempre.
+    const registro = await this.prisma.comercialContrato.findFirst({ where: { documentoId: doc.id, orgId }, select: { dadosDoContrato: true, signatarios: { select: { papel: true, nome: true, email: true, ordem: true, assinadoEm: true } } } });
+    const guardados = ((registro?.dadosDoContrato ?? {}) as { linksDaRoot?: { documentoId?: string; links?: Record<string, string> } }).linksDaRoot;
+    let cifrado = doc.linkRoot;
+    let aad = doc.id;
+    if (registro && guardados?.documentoId === doc.id && guardados.links) {
+      const lista = signatariosComExternalId(registro.signatarios.map((s) => ({ ...s, papel: s.papel as 'cliente' | 'root' })));
+      const minha = lista.find((s) => s.papel === 'root' && s.email.trim().toLowerCase() === meuEmail);
+      if (!minha) throw recusaDeOutro;
+      if (minha.assinadoEm) return { ...base, linkAssinatura: null };
+      cifrado = guardados.links[minha.externalId] ?? null;
+      aad = `${doc.id}:${minha.externalId}`;
+    } else {
+      const gerados = await this.prisma.leadEvent.findMany({ where: { leadId, orgId, type: 'contrato.gerado' }, orderBy: { occurredAt: 'desc' }, select: { payload: true } });
+      const gerado = gerados.find((g) => String(((g.payload ?? {}) as P).externoId ?? '') === doc.externoId);
+      const cadastrado = String(((gerado?.payload ?? {}) as P).assinaPelaRoot ?? '').trim().toLowerCase();
+      if (!cadastrado || meuEmail !== cadastrado) throw recusaDeOutro;
     }
 
     if (!this.reauth) throw new ForbiddenException('Assinar pela Root exige confirmar a senha, e o verificador não está disponível nesta instância.');
@@ -695,7 +727,7 @@ export class DinheiroService implements OnModuleInit {
     if (!atendeAlcada('titular', alcadaDe(prova.papeis))) throw new ForbiddenException('Assinar pela Root pede alçada titular.');
 
     const segredo = segredoDoAmbiente();
-    const link = doc.linkRoot && segredo ? decifrarLinkDaRoot(doc.linkRoot, segredo, doc.id) : null;
+    const link = cifrado && segredo ? decifrarLinkDaRoot(cifrado, segredo, aad) : null;
     await this.audit?.log({
       orgId,
       actorId: quem.id,

@@ -22,7 +22,7 @@ import { contratosImportados } from '../contrato-vivo.service';
 import { CAP_CONTRATO, hojeEmSP } from '../dinheiro.service';
 import { resumoDoEvento } from '../eventos';
 import { rootsSemAlcada, entradaDoRegistro } from './documento-do-registro';
-import { apontamentosGraves, assinaturaDaEntrada, camposEscritos, camposParaATela, preencherRegistro, type AceiteParaEmissao } from './emissao-puro';
+import { apontamentosGraves, assinaturaDaEntrada, camposEscritos, camposForaDoPdf, camposParaATela, preencherRegistro, type AceiteParaEmissao } from './emissao-puro';
 import { aindaNaoEnviado, PREFIXO_DO_FANTASMA, PREFIXO_DO_IMPORTADO, cartaoDoFantasma, cartaoDoImportado, cartaoDoRegistro, faltaParaEnviar, lerIdDoContrato, montarQuadro, type InsumosDoQuadro, type LeadParaOQuadro, type RegistroParaOQuadro } from './contratos-puro';
 
 /*
@@ -224,7 +224,7 @@ interface MarcaDaMinuta {
 }
 
 /** A seção de emissão e o que ela acusa em `faltaParaEnviar`. O texto e o laudo são os da minuta vinculada, nunca os do lead. */
-async function lerEmissao(prisma: PrismaService, orgId: string, contratoId: string, aceite: AceiteParaEmissao | null, agora: Date): Promise<{ naFicha: EmissaoNaFicha; falta: { temAceite: boolean; lacunas: string[]; graves: string[] | null; rootsSemAlcada: string[]; minutaDesatualizada: boolean } }> {
+async function lerEmissao(prisma: PrismaService, orgId: string, contratoId: string, aceite: AceiteParaEmissao | null, agora: Date): Promise<{ naFicha: EmissaoNaFicha; falta: { temAceite: boolean; lacunas: string[]; graves: string[] | null; rootsSemAlcada: string[]; minutaDesatualizada: boolean; foraDoPdf: string[] } }> {
   const c = await prisma.comercialContrato.findFirstOrThrow({ where: { id: contratoId, orgId }, include: { signatarios: { orderBy: { ordem: 'asc' } } } });
   const entrada = await entradaDoRegistro(prisma, orgId, c, aceite);
   const semMolde = c.tipo === 'contrato' && !c.modalidade;
@@ -267,6 +267,7 @@ async function lerEmissao(prisma: PrismaService, orgId: string, contratoId: stri
       graves: laudo && Array.isArray(laudo.apontamentos) ? apontamentosGraves(laudo.apontamentos).map((a) => a.titulo) : null,
       rootsSemAlcada: await rootsSemAlcada(prisma, orgId, c.signatarios),
       minutaDesatualizada: desatualizada,
+      foraDoPdf: camposForaDoPdf(entrada),
     },
   };
 }

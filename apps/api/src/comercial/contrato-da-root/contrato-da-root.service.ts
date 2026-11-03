@@ -289,7 +289,7 @@ export class ContratoDaRootService {
     };
   }
 
-  /** Só da proposta aceita, da ficha e do que a pessoa escreveu no contrato: é a lista que o construtor pode usar. */
+  /** Só da proposta aceita, da ficha e do que a pessoa escreveu no contrato. O escrito vai como o do cliente: neutralizado e limitado no pedido. */
   private fatosDoRegistro(a: AceiteDoLead | null, escritos: Record<string, string | string[]>): FatoDaMinuta[] {
     const doAceite = a
       ? fatosDaMinuta({
@@ -307,7 +307,7 @@ export class ContratoDaRootService {
           aceitoEm: a.em,
         })
       : [];
-    const doContrato = Object.entries(escritos).flatMap(([chave, v]) => (typeof v === 'string' ? [{ chave, rotulo: chave.replace(/_/g, ' '), valor: v, doCliente: false }] : []));
+    const doContrato = Object.entries(escritos).flatMap(([chave, v]) => (typeof v === 'string' ? [{ chave, rotulo: chave.replace(/_/g, ' '), valor: v, doCliente: true }] : []));
     return [...doAceite, ...doContrato];
   }
 

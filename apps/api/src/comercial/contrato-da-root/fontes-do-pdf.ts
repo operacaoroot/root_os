@@ -80,6 +80,18 @@ export function paraWinAnsi(texto: string, avisos: Set<string>): string {
   return saida;
 }
 
+/** Os caracteres que `paraWinAnsi` trocaria por "?", sem repetir. */
+export function caracteresForaDoWinAnsi(texto: string): string[] {
+  const avisos = new Set<string>();
+  const fora = new Set<string>();
+  for (const ch of String(texto ?? '').normalize('NFC')) {
+    avisos.clear();
+    paraWinAnsi(ch, avisos);
+    if (avisos.size) fora.add(ch);
+  }
+  return [...fora];
+}
+
 /** A largura em pontos de um texto JÁ em WinAnsi. */
 export function larguraDoTexto(winAnsi: string, fonte: FonteDoPdf, corpo: number): number {
   const tabela = LARGURAS[fonte];
