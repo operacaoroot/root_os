@@ -172,6 +172,18 @@ describe('o que recusa cada ato', () => {
     expect(faltaParaEnviar(pronto)).toEqual([]);
     expect(faltaParaEnviar({ ...pronto, signatarios: [{ papel: 'cliente' }] })).toEqual(['Quem assina pela Root, entre os titulares.']);
     expect(faltaParaEnviar({ ...vazio, estado: 'em_assinatura' })).toEqual([]);
+    // O que a ficha passa a dizer de verdade (F2).
+    const falta = faltaParaEnviar({ ...pronto, temAceite: false, lacunas: ['foro'], graves: ['Valor por extenso'], rootsSemAlcada: ['x@y.test'], minutaDesatualizada: true });
+    expect(falta.join(' ')).toMatch(/x@y.test não é/);
+    expect(falta.join(' ')).toMatch(/proposta aceita/);
+    expect(falta.join(' ')).toMatch(/Gerar a minuta de novo/);
+    expect(falta.join(' ')).toMatch(/Preencher a lacuna: foro/);
+    expect(falta.join(' ')).toMatch(/Resolver o apontamento do laudo: Valor por extenso/);
+    expect(faltaParaEnviar({ ...pronto, graves: null })).toEqual(['A revisão da minuta: rode o revisor.']);
+    // Sem minuta, o que diz é "a minuta": lacuna e laudo só depois dela.
+    expect(faltaParaEnviar({ ...pronto, minutaId: null, lacunas: ['foro'], graves: null })).toEqual(['A minuta do contrato.']);
+    // Aditivo de contrato importado não tem modalidade, e não é por isso que trava.
+    expect(faltaParaEnviar({ ...pronto, tipo: 'aditivo', modalidade: null })).toEqual([]);
   });
 });
 

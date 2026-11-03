@@ -1,5 +1,7 @@
 import { z } from 'zod';
 
+import type { LaudoDoContrato } from './comercial-agentes';
+
 /*
  * O MÓDULO DE CONTRATOS DO COMERCIAL (02/11/2026): o contrato como registro próprio.
  *
@@ -188,6 +190,47 @@ export interface ContratoNaFicha extends ContratoNoQuadro {
   ultimaConferenciaEm: string | null;
   /** O que falta para pedir aprovação (lista vazia = pode pedir). */
   faltaParaEnviar: string[];
+  /** A emissão (F2): antes do envio traz o molde e a minuta; depois dele, ou no fantasma e no importado, nulo. */
+  emissao: EmissaoNaFicha | null;
+}
+
+/** De onde vem o valor de um campo do molde: da proposta aceita, escrito no contrato, ou de lugar nenhum (lacuna). */
+export type FonteDoCampoDoMolde = 'aceite' | 'contrato' | 'falta';
+
+/** Um campo que a tela mostra na seção "Dados que entram no molde". */
+export interface CampoDaEmissao {
+  nome: string;
+  rotulo: string;
+  tipo: 'texto' | 'lista' | 'opcional';
+  fonte: FonteDoCampoDoMolde;
+  valor: string | string[] | null;
+}
+
+export interface MinutaDaEmissao {
+  documentoId: string;
+  hash: string;
+  conteudo: string;
+  origem: 'modelo' | 'sistema';
+  /** Molde versionado, nota do Drive, ou o texto simples de aditivo e distrato. */
+  base: 'molde' | 'drive' | 'texto_simples';
+  geradaEm: string | null;
+  lacunas: string[];
+  avisos: string[];
+  laudo: LaudoDoContrato | null;
+  /** Modalidade, CNPJ que fatura ou campos mudaram depois que a minuta foi gerada. */
+  desatualizada: boolean;
+}
+
+export interface EmissaoNaFicha {
+  temAceite: boolean;
+  /** A primeira linha da faixa do timbre e a data do molde. Nulos sem modalidade, e no aditivo e no distrato. */
+  molde: { titulo: string; data: string } | null;
+  campos: CampoDaEmissao[];
+  minuta: MinutaDaEmissao | null;
+  /** Quem pode assinar pela Root: gente ativa e titular desta empresa. */
+  titulares: { nome: string; email: string }[];
+  /** O pedido de envio que está esperando outra pessoa titular, se houver. */
+  envioNaFila: string | null;
 }
 
 export interface ResultadoDaConferencia {
@@ -223,6 +266,14 @@ export const ContratoEditarSchema = z.object({
   vigenciaInicio: dataAAAAMMDD.nullable().optional(),
   vigenciaFim: dataAAAAMMDD.nullable().optional(),
   faturaPor: z.string().trim().max(200).nullable().optional(),
+  /** Os campos do molde escritos à mão. Junta com o que já há; nulo apaga aquele campo. */
+  campos: z
+    .record(
+      z.string().regex(/^[a-z0-9_]{1,60}$/),
+      z.union([z.string().trim().max(4000), z.array(z.string().trim().min(1).max(2000)).max(40), z.null()]),
+    )
+    .refine((v) => Object.keys(v).length <= 60, { message: 'Campos demais de uma vez.' })
+    .optional(),
 });
 export type ContratoEditarInput = z.infer<typeof ContratoEditarSchema>;
 

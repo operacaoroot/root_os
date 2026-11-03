@@ -167,8 +167,8 @@ export function motivoParaNaoMexerNosSignatarios(estado: string): string | null 
 /** Modalidade e CNPJ que fatura entram no documento: depois de enviar, não mudam. Número e vigência valem até o fim. */
 export function motivoParaNaoEditar(estado: string, campos: readonly string[]): string | null {
   if (estado === 'cancelado' || estado === 'encerrado') return 'Este contrato já terminou: reabra antes de editar.';
-  if (!ANTES_DE_ENVIAR.includes(estado) && campos.some((c) => c === 'modalidade' || c === 'faturaPor')) {
-    return 'Modalidade e CNPJ que fatura fazem parte do documento: depois de enviar para assinatura, não mudam.';
+  if (!ANTES_DE_ENVIAR.includes(estado) && campos.some((c) => c === 'modalidade' || c === 'faturaPor' || c === 'campos')) {
+    return 'Modalidade, CNPJ que fatura e os campos do molde fazem parte do documento: depois de enviar para assinatura, não mudam.';
   }
   return null;
 }
@@ -216,22 +216,45 @@ export function fraseDasParcelas(emAberto: number, ato: 'encerrar' | 'distratar'
 // O que falta para enviar
 // ---------------------------------------------------------------------------
 
+/** Antes de ir para assinatura? Depois disso, o que vale é a conferência e o cancelar. */
+export function aindaNaoEnviado(estado: string): boolean {
+  return ANTES_DE_ENVIAR.includes(estado);
+}
+
 export function faltaParaEnviar(c: {
   estado: string;
+  /** Aditivo e distrato herdam do contrato pai e não têm molde: a modalidade não é pedida. */
+  tipo?: string;
   modalidade: string | null;
   faturaPor: string | null;
   hashDoConteudo: string | null;
   minutaId: string | null;
   signatarios: readonly { papel: string }[];
   assinaturaConfigurada: boolean;
+  /** Os quatro abaixo vêm da ficha (F2). Ausentes, não acusam: quem chama sem eles é só o fantasma, que já não tem minuta. */
+  temAceite?: boolean;
+  lacunas?: readonly string[];
+  /** Os títulos dos apontamentos graves do laudo; nulo = a minuta ainda não foi revisada. */
+  graves?: readonly string[] | null;
+  rootsSemAlcada?: readonly string[];
+  minutaDesatualizada?: boolean;
 }): string[] {
   if (!ANTES_DE_ENVIAR.includes(c.estado)) return [];
   const falta: string[] = [];
-  if (!c.modalidade) falta.push('A modalidade do contrato (implantação ou continuidade).');
+  if (!c.modalidade && (c.tipo ?? 'contrato') === 'contrato') falta.push('A modalidade do contrato (implantação ou continuidade).');
   if (!c.faturaPor?.trim()) falta.push('O CNPJ que fatura.');
   if (!c.signatarios.some((s) => s.papel === 'cliente')) falta.push('Quem assina pelo cliente.');
   if (!c.signatarios.some((s) => s.papel === 'root')) falta.push('Quem assina pela Root, entre os titulares.');
-  if (!c.minutaId || !c.hashDoConteudo) falta.push('A minuta do contrato.');
+  for (const email of c.rootsSemAlcada ?? []) falta.push(`${email} não é, agora, gente ativa e titular desta empresa: troque quem assina pela Root.`);
+  if (c.temAceite === false) falta.push('A proposta aceita: a aprovação do envio prende a versão aceita, e este contrato não tem nenhuma.');
+  if (!c.minutaId || !c.hashDoConteudo) {
+    falta.push('A minuta do contrato.');
+  } else {
+    if (c.minutaDesatualizada) falta.push('Gerar a minuta de novo: os dados mudaram depois que ela foi gerada.');
+    for (const l of c.lacunas ?? []) falta.push(`Preencher a lacuna: ${l}.`);
+    if (c.graves === null) falta.push('A revisão da minuta: rode o revisor.');
+    for (const g of c.graves ?? []) falta.push(`Resolver o apontamento do laudo: ${g}.`);
+  }
   if (!c.assinaturaConfigurada) falta.push('O token da ZapSign nesta instância: sem ele, nada sai para assinatura.');
   return falta;
 }

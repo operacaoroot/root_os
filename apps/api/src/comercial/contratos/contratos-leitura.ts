@@ -4,6 +4,10 @@ import {
   type ContratoNaFicha,
   type ContratoNoQuadro,
   type DocumentoDoContrato,
+  type EmissaoNaFicha,
+  type LaudoDoContrato,
+  type MinutaDaEmissao,
+  type ModalidadeDeContrato,
   type EstadoDoContrato,
   type FatoDoContrato,
   type QuadroDeContratos,
@@ -11,10 +15,15 @@ import {
 } from '@mktos/shared';
 
 import type { PrismaService } from '../../prisma/prisma.service';
+import { alcadaDe, atendeAlcada, temPapelDeMaquina } from '../../approvals/alcada';
+import { contarMarcas } from '../contrato-da-root/minuta';
+import { moldeDoContrato } from '../contrato-da-root/moldes-do-contrato';
 import { contratosImportados } from '../contrato-vivo.service';
-import { hojeEmSP } from '../dinheiro.service';
+import { CAP_CONTRATO, hojeEmSP } from '../dinheiro.service';
 import { resumoDoEvento } from '../eventos';
-import { PREFIXO_DO_FANTASMA, PREFIXO_DO_IMPORTADO, cartaoDoFantasma, cartaoDoImportado, cartaoDoRegistro, faltaParaEnviar, lerIdDoContrato, montarQuadro, type InsumosDoQuadro, type LeadParaOQuadro, type RegistroParaOQuadro } from './contratos-puro';
+import { rootsSemAlcada, entradaDoRegistro } from './documento-do-registro';
+import { apontamentosGraves, assinaturaDaEntrada, camposEscritos, camposParaATela, preencherRegistro, type AceiteParaEmissao } from './emissao-puro';
+import { aindaNaoEnviado, PREFIXO_DO_FANTASMA, PREFIXO_DO_IMPORTADO, cartaoDoFantasma, cartaoDoImportado, cartaoDoRegistro, faltaParaEnviar, lerIdDoContrato, montarQuadro, type InsumosDoQuadro, type LeadParaOQuadro, type RegistroParaOQuadro } from './contratos-puro';
 
 /*
  * A LEITURA DO MÓDULO DE CONTRATOS (02/11/2026): o quadro e a ficha. Consultas em lote (sem N+1), e a
@@ -120,7 +129,7 @@ function linkDoPdf(leadId: string, doc: { provedor: string; pdfUrl: string | nul
 }
 
 /** A ficha de um id do quadro: o registro, o importado derivado do fio ou o fantasma. */
-export async function lerFicha(prisma: PrismaService, orgId: string, idBruto: string, assinaturaConfigurada: boolean, agora: Date = new Date()): Promise<ContratoNaFicha> {
+export async function lerFicha(prisma: PrismaService, orgId: string, idBruto: string, assinaturaConfigurada: boolean, lerAceite: (leadId: string) => Promise<AceiteParaEmissao | null>, agora: Date = new Date()): Promise<ContratoNaFicha> {
   const alvo = lerIdDoContrato(idBruto);
   const naoAchou = new NotFoundException('Contrato não encontrado.');
   let leadId: string;
@@ -137,12 +146,12 @@ export async function lerFicha(prisma: PrismaService, orgId: string, idBruto: st
   if (!lead) throw naoAchou;
 
   const historico = await lerHistorico(prisma, orgId, leadId);
-  const base = { tipo: 'contrato' as TipoDeContrato, paiId: null, vigenciaInicio: null, hashDoConteudo: null, minutaId: null, linkPdf: null, faturaPor: null, motivoDoFim: null, signatarios: [], documentos: [] as DocumentoDoContrato[], ultimaConferenciaEm: null, historico };
+  const base = { tipo: 'contrato' as TipoDeContrato, paiId: null, vigenciaInicio: null, hashDoConteudo: null, minutaId: null, linkPdf: null, faturaPor: null, motivoDoFim: null, signatarios: [], documentos: [] as DocumentoDoContrato[], ultimaConferenciaEm: null, historico, emissao: null };
 
   if (alvo.tipo === 'importado') {
     if (!lead.importados.length) throw naoAchou;
     const assumido = insumos.registros.find((r) => r.origemImportada !== null);
-    if (assumido) return lerFicha(prisma, orgId, assumido.id, assinaturaConfigurada, agora);
+    if (assumido) return lerFicha(prisma, orgId, assumido.id, assinaturaConfigurada, lerAceite, agora);
     return { ...cartaoDoImportado(lead, hoje), ...base, linkPdf: linkDoImportado(lead), faltaParaEnviar: [] };
   }
   if (alvo.tipo === 'fantasma') {
@@ -176,6 +185,7 @@ export async function lerFicha(prisma: PrismaService, orgId: string, idBruto: st
       };
     });
   const comSignatarios = await prisma.comercialContratoSignatario.findMany({ where: { orgId, contratoId: linha.id }, orderBy: { ordem: 'asc' }, select: { id: true, ordem: true, papel: true, nome: true, email: true, assinadoEm: true } });
+  const emissao = aindaNaoEnviado(linha.estado) ? await lerEmissao(prisma, orgId, linha.id, await lerAceite(linha.leadId), agora) : null;
   return {
     ...cartao,
     tipo: linha.tipo as TipoDeContrato,
@@ -190,7 +200,74 @@ export async function lerFicha(prisma: PrismaService, orgId: string, idBruto: st
     documentos,
     historico,
     ultimaConferenciaEm: linha.ultimaConferenciaEm?.toISOString() ?? null,
-    faltaParaEnviar: faltaParaEnviar({ estado: linha.estado, modalidade: linha.modalidade, faturaPor: linha.faturaPor, hashDoConteudo: linha.hashDoConteudo, minutaId: linha.minutaId, signatarios: comSignatarios, assinaturaConfigurada }),
+    emissao: emissao?.naFicha ?? null,
+    faltaParaEnviar: faltaParaEnviar({
+      estado: linha.estado,
+      tipo: linha.tipo,
+      modalidade: linha.modalidade,
+      faturaPor: linha.faturaPor,
+      hashDoConteudo: linha.hashDoConteudo,
+      minutaId: linha.minutaId,
+      signatarios: comSignatarios,
+      assinaturaConfigurada,
+      ...(emissao?.falta ?? {}),
+    }),
+  };
+}
+
+interface MarcaDaMinuta {
+  base?: MinutaDaEmissao['base'];
+  origem?: MinutaDaEmissao['origem'];
+  geradaEm?: string;
+  avisos?: string[];
+  entrada?: string;
+}
+
+/** A seção de emissão e o que ela acusa em `faltaParaEnviar`. O texto e o laudo são os da minuta vinculada, nunca os do lead. */
+async function lerEmissao(prisma: PrismaService, orgId: string, contratoId: string, aceite: AceiteParaEmissao | null, agora: Date): Promise<{ naFicha: EmissaoNaFicha; falta: { temAceite: boolean; lacunas: string[]; graves: string[] | null; rootsSemAlcada: string[]; minutaDesatualizada: boolean } }> {
+  const c = await prisma.comercialContrato.findFirstOrThrow({ where: { id: contratoId, orgId }, include: { signatarios: { orderBy: { ordem: 'asc' } } } });
+  const entrada = await entradaDoRegistro(prisma, orgId, c, aceite);
+  const semMolde = c.tipo === 'contrato' && !c.modalidade;
+  const molde = c.tipo === 'contrato' && c.modalidade ? moldeDoContrato(c.modalidade as ModalidadeDeContrato) : null;
+  const campos = semMolde ? [] : camposParaATela(entrada);
+  const preenchido = semMolde ? null : preencherRegistro(entrada);
+  const doc = c.minutaId ? await prisma.comercialDocumento.findFirst({ where: { id: c.minutaId, orgId, leadId: c.leadId }, select: { id: true, hashConteudo: true, conteudo: true, laudo: true } }) : null;
+  const marca = (((c.dadosDoContrato ?? {}) as { minuta?: unknown }).minuta ?? {}) as MarcaDaMinuta;
+  const entradaAgora = assinaturaDaEntrada({ modalidade: c.modalidade, faturaPor: c.faturaPor, campos: camposEscritos(c.dadosDoContrato) });
+  const desatualizada = !!doc && !!marca.entrada && marca.entrada !== entradaAgora;
+  const laudo = (doc?.laudo as LaudoDoContrato | null) ?? null;
+  // O rodapé e o bloco de assinatura também pedem dado: a lacuna ali recusa o PDF tanto quanto a do texto.
+  const lacunas = doc?.conteudo ? [...new Set([...contarMarcas(doc.conteudo).lacunas, ...(preenchido?.lacunas ?? []).filter((l) => !preenchido?.texto.includes(`⟦lacuna: ${l}⟧`))])] : [];
+  const usuarios = await prisma.user.findMany({ where: { orgId, isActive: true }, orderBy: { name: 'asc' }, take: 200, select: { name: true, email: true, roles: { select: { key: true } } } });
+  const titulares = usuarios.filter((u) => { const papeis = u.roles.map((r) => r.key); return !temPapelDeMaquina(papeis) && atendeAlcada('titular', alcadaDe(papeis)); }).map((u) => ({ nome: u.name, email: u.email }));
+  const viva = await prisma.approval.findFirst({
+    where: { orgId, capabilityId: CAP_CONTRATO, resourceId: { startsWith: `${c.id}:` }, OR: [{ status: 'pendente', expiraEm: { gt: agora } }, { status: 'confirmada' }] },
+    orderBy: { criadoEm: 'desc' },
+    select: { id: true },
+  });
+  const minuta: MinutaDaEmissao | null = doc?.conteudo
+    ? {
+        documentoId: doc.id,
+        hash: doc.hashConteudo,
+        conteudo: doc.conteudo,
+        origem: marca.origem === 'modelo' ? 'modelo' : 'sistema',
+        base: marca.base ?? 'molde',
+        geradaEm: marca.geradaEm ?? null,
+        lacunas,
+        avisos: marca.avisos ?? [],
+        laudo,
+        desatualizada,
+      }
+    : null;
+  return {
+    naFicha: { temAceite: !!aceite, molde: molde ? { titulo: molde.titulo, data: molde.data } : null, campos, minuta, titulares, envioNaFila: viva?.id ?? null },
+    falta: {
+      temAceite: !!aceite,
+      lacunas,
+      graves: laudo && Array.isArray(laudo.apontamentos) ? apontamentosGraves(laudo.apontamentos).map((a) => a.titulo) : null,
+      rootsSemAlcada: await rootsSemAlcada(prisma, orgId, c.signatarios),
+      minutaDesatualizada: desatualizada,
+    },
   };
 }
 

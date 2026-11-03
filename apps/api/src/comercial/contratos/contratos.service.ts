@@ -69,9 +69,9 @@ import {
  * CONTRATO IMPORTADO (`importado:<leadId>`) não tem linha: o quadro o lê do fio. O primeiro ato sobre ele
  * cria o registro (`assumirImportado`), com a `origem` do fato.
  *
- * FICA PARA A F2 (minuta vira PDF): `vincularMinuta` abaixo é o ponto de entrada. O envio do registro é
- * `comercial.contrato.enviar` com `contratoId` nos argumentos: `efeitoDeContrato` já liga o documento
- * criado a esse registro (`garantirContratoDoDocumento`). F5 (MCP) lê `quadro` e `ficha` daqui.
+ * F2 (minuta vira PDF) mora em `emissao.service.ts`, que chama `vincularMinuta` daqui. O envio do registro é
+ * `comercial.contrato.enviar` com `contratoId` nos argumentos: `efeitoDeContrato` regera o PDF, confere o hash e liga
+ * o documento criado a esse registro (`garantirContratoDoDocumento`). As ferramentas do MCP leem `quadro` e `ficha` daqui.
  */
 
 export const CAP_CANCELAR = 'comercial.contrato.cancelar';
@@ -91,6 +91,16 @@ type OrigemDaConferencia = 'botao' | 'lote' | 'relogio';
 type LinhaDoContrato = Prisma.ComercialContratoGetPayload<{ include: { signatarios: true } }>;
 
 const RECUSA_DE_MAQUINA = 'Contrato é de gente: conta de serviço (IA) não mexe aqui. O agente propõe o envio pela porta.';
+
+function dadosComCampos(dados: unknown, novos: NonNullable<ContratoEditarInput['campos']>): Prisma.InputJsonValue {
+  const base = dados && typeof dados === 'object' && !Array.isArray(dados) ? (dados as Record<string, unknown>) : {};
+  const campos = { ...((base.campos ?? {}) as Record<string, unknown>) };
+  for (const [k, v] of Object.entries(novos)) {
+    if (v === null || v === '' || (Array.isArray(v) && !v.length)) delete campos[k];
+    else campos[k] = v;
+  }
+  return { ...base, campos } as Prisma.InputJsonValue;
+}
 
 function dataDoCampo(v: string | null | undefined): Date | null | undefined {
   if (v === undefined) return undefined;
@@ -137,7 +147,7 @@ export class ContratosService implements OnModuleInit {
   }
 
   ficha(orgId: string, id: string, agora?: Date): Promise<ContratoNaFicha> {
-    return lerFicha(this.prisma, orgId, id, this.assinatura.configurada(), agora);
+    return lerFicha(this.prisma, orgId, id, this.assinatura.configurada(), (leadId) => this.dinheiro.aceiteParaContrato(orgId, leadId), agora);
   }
 
   // -------------------------------------------------------------------------
@@ -145,7 +155,7 @@ export class ContratosService implements OnModuleInit {
   // -------------------------------------------------------------------------
 
   /** Gente de verdade, relida no banco: ativa, desta empresa, sem papel de máquina e com `leads.editar` agora. */
-  private async exigirGente(orgId: string, quem: QuemNoContrato): Promise<Pessoa> {
+  async exigirGente(orgId: string, quem: QuemNoContrato): Promise<Pessoa> {
     if (!quem.id || temPapelDeMaquina(quem.papeis)) throw new ForbiddenException(RECUSA_DE_MAQUINA);
     const doBanco = await lerAprovador(this.prisma, quem.id, orgId);
     if (!doBanco || !doBanco.ativo) throw new ForbiddenException('Só gente ativa da empresa mexe no contrato.');
@@ -162,11 +172,11 @@ export class ContratosService implements OnModuleInit {
     return nivel;
   }
 
-  private cadeado(tx: Prisma.TransactionClient, orgId: string, leadId: string): Promise<unknown> {
+  cadeado(tx: Prisma.TransactionClient, orgId: string, leadId: string): Promise<unknown> {
     return tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`comercial-contrato:${orgId}:${leadId}`}))`;
   }
 
-  private auditar(tx: Prisma.TransactionClient, orgId: string, atorId: string | null, acao: string, contratoId: string, before: unknown, after: unknown, ator: ActorType = ActorType.user): Promise<unknown> {
+  auditar(tx: Prisma.TransactionClient, orgId: string, atorId: string | null, acao: string, contratoId: string, before: unknown, after: unknown, ator: ActorType = ActorType.user): Promise<unknown> {
     return tx.auditLog.create({
       data: {
         orgId, actorType: ator, actorId: atorId, action: acao, entityType: 'comercial.contrato', entityId: contratoId,
@@ -182,7 +192,7 @@ export class ContratosService implements OnModuleInit {
   }
 
   /** O registro de um id do quadro. Importado: cria o registro. Fantasma: ainda não há contrato. */
-  private async registroParaAgir(orgId: string, id: string, pessoa: Pessoa): Promise<LinhaDoContrato> {
+  async registroParaAgir(orgId: string, id: string, pessoa: Pessoa): Promise<LinhaDoContrato> {
     const alvo = lerIdDoContrato(id);
     if (alvo.tipo === 'fantasma') throw new ConflictException('Este cliente ainda não tem contrato: crie o contrato antes.');
     if (alvo.tipo === 'importado') return this.assumirImportado(orgId, alvo.leadId, pessoa);
@@ -273,6 +283,8 @@ export class ContratosService implements OnModuleInit {
     const fim = input.vigenciaFim === undefined ? atual.vigenciaFim?.toISOString().slice(0, 10) ?? null : input.vigenciaFim;
     if (inicio && fim && fim < inicio) throw new BadRequestException('A vigência termina antes de começar.');
     const antes = { modalidade: atual.modalidade, numero: atual.numero, vigenciaInicio: atual.vigenciaInicio, vigenciaFim: atual.vigenciaFim, faturaPor: atual.faturaPor };
+    // Os campos do molde: junta com o que já há, e nulo apaga. O resto do `dadosDoContrato` (minuta, motivo do aditivo) fica.
+    const dadosNovos = input.campos ? dadosComCampos(atual.dadosDoContrato, input.campos) : undefined;
     const evento = await this.prisma.$transaction(async (tx) => {
       await this.cadeado(tx, orgId, atual.leadId);
       const n = await tx.comercialContrato.updateMany({
@@ -283,6 +295,7 @@ export class ContratosService implements OnModuleInit {
           ...(input.faturaPor !== undefined ? { faturaPor: input.faturaPor?.trim() || null } : {}),
           ...(input.vigenciaInicio !== undefined ? { vigenciaInicio: dataDoCampo(input.vigenciaInicio) } : {}),
           ...(input.vigenciaFim !== undefined ? { vigenciaFim: dataDoCampo(input.vigenciaFim) } : {}),
+          ...(dadosNovos ? { dadosDoContrato: dadosNovos } : {}),
         },
       });
       if (!n.count) throw new ConflictException('O contrato mudou agora há pouco. Recarregue antes de salvar.');
@@ -694,8 +707,8 @@ export class ContratosService implements OnModuleInit {
   // -------------------------------------------------------------------------
 
   /**
-   * A minuta ligada ao registro: o contrato passa a `rascunho`, com o conteúdo congelado e o hash. Quem chama é a F2
-   * (a minuta que vira PDF), sem rota própria ainda. Depois disso, enviar é `comercial.contrato.enviar` com `contratoId`.
+   * A minuta ligada ao registro: o contrato passa a `rascunho`, com o hash da minuta. Quem chama é
+   * `EmissaoDoContratoService.gerarMinuta`. O pedido de envio troca esse hash pelo do PDF (`comercial.contrato.enviar`).
    */
   async vincularMinuta(orgId: string, contratoId: string, minuta: { minutaId: string; hash: string; dados: Prisma.InputJsonValue; por: string | null }, agora: Date = new Date()): Promise<void> {
     const atual = await this.linha(orgId, contratoId);
