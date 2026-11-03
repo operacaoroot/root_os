@@ -3,14 +3,37 @@
 > Servidor **MCP (Model Context Protocol)** próprio, em TypeScript, com o `@modelcontextprotocol/sdk`.
 > Exposto para Claude Desktop, Claude Code e qualquer cliente MCP. Como plugar: `packages/mcp/README.md`.
 
-## Estado real (conferido em 10/09/2026, contra `packages/mcp/src/server.ts`)
+## Estado real (conferido em 02/11/2026, contra `packages/mcp/src`)
 
-**São 35 ferramentas, todas `read_only`.** Não existe nenhuma ferramenta de escrita no servidor MCP:
-`grep -c 'registerTool(' packages/mcp/src/server.ts` devolve 35, e todas passam por `apiGet` — o
-cliente (`packages/mcp/src/client.ts`) só sabe fazer `GET`.
+**São 244 ferramentas**, em cinco famílias (`grep -c 'registerTool(' packages/mcp/src/server.ts` dá 45; as outras 199
+são registradas por tabela em `src/ferramentas/`):
 
-> Este documento já disse "10 tools". Era o número da Fase 2; o servidor cresceu e o texto não.
-> O número acima é contável a partir do código; se ele divergir de novo, o código é que manda.
+| Família | Quantas | Identidade | Onde |
+|---|---|---|---|
+| Consulta (as de sempre, `read_only`) | 35 | conta de serviço | `server.ts` |
+| Área do cliente (`quem_sou`, `clientes_ativos`, `comercial_lead`, `area_bancada`, `area_versoes`, `area_rascunho`, `area_publicar`) | 7 | operador | `server.ts` |
+| Contratos (`comercial_contratos_quadro`, `comercial_contrato_ficha`, `comercial_contrato_propor_envio`) | 3 | leitor / operador | `server.ts` |
+| Genéricas (`os_rotas`, `os_api`, `os_enviar_arquivo`, `os_baixar_arquivo`) | 4 | leitor / operador | `ferramentas/genericas.ts` |
+| Curadas por módulo (comercial 46, trabalho 32, aprovações e porta 14, WhatsApp 10, memória 10, agentes/rotinas/Frota 14, financeiro 11, pauta 27, Google/conexões/cofre 13, empresa/onboarding/plataforma 17) | 195 | leitor / operador | `ferramentas/curadas.ts` (tabela) |
+
+**Contratos do comercial (F5, 02/11/2026):** `comercial_contratos_quadro` e `comercial_contrato_ficha` leem pelo leitor
+(`leads.ver`); `comercial_contrato_propor_envio` chama `POST /comercial/contratos/registro/:id/enviar` SEMPRE pelo operador,
+porque a rota é só de gente, e sem operador recusa com a frase do que configurar, sem chamar a API. Ela só cria a
+retenção R4: não há ferramenta que envie, e o operador não confirma o próprio pedido.
+
+**O inventário** (`src/rotas.gen.ts`, gerado por `scripts/gerar-rotas.ts`): 867 rotas da API, 811 alcançáveis pelo MCP.
+Ficam fora as 54 públicas (sala do cliente por token, link do onboarding, webhooks, callbacks OAuth, saúde) e o login.
+A lista fechada é o que impede `os_api` de inventar rota. O catálogo legível, rota por rota, com a coluna de qual
+ferramenta curada a cobre, está em `docs/mcp/INVENTARIO-ROTAS.md` (gerado junto).
+
+**Duas identidades.** A conta de serviço (`ia_servico`) só lê. O operador é uma PESSOA do OS (`MCP_OPERADOR_EMAIL`/
+`MCP_OPERADOR_SENHA`, do ambiente ou de `~/.config/root/mcp.env`): toda escrita sai em nome dele, e a leitura também,
+quando configurado (ele vê o que a pessoa vê). Sem operador, as escritas recusam com a frase do que configurar.
+
+**O que a API continua decidindo** (o MCP não cria caminho paralelo): RBAC por permissão, `SoGenteGuard` (58 rotas só de
+gente), `@SensitiveWrite` (5 rotas que viram aprovação) e a porta (R3/R4 caem em Aprovações e outra pessoa libera).
+`os_api` só acrescenta duas travas próprias: DELETE exige `confirmar: true`, e rota pública ou de login é recusada.
+
 
 ## Como a segurança é aplicada de verdade
 

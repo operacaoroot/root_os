@@ -9,7 +9,7 @@ import { render, screen, within } from '@testing-library/react';
  *
  * Rodada da interface (20/10/2026, U1, item 10): a Rodada da semana (a tela de
  * `/operacao`) é item do Comercial só para a sessão da plataforma (`ITENS_DA_ROOT`),
- * em `/comercial/rodada`, depois dos Contratos vivos. "Operação da Root" não vira item.
+ * em `/comercial/rodada`, depois dos Contratos. "Operação da Root" não vira item.
  */
 
 let EH_PLATAFORMA = false;
@@ -86,13 +86,13 @@ describe('grupo ROOT do menu', () => {
     expect(screen.queryByRole('button', { name: /Operação da Root/ })).toBeNull();
   });
 
-  it('a plataforma vê a Rodada da semana no Comercial, depois dos Contratos vivos, e na busca', () => {
+  it('a plataforma vê a Rodada da semana no Comercial, depois dos Contratos, e na busca', () => {
     EH_PLATAFORMA = true;
     CAMINHO = '/comercial/rodada';
     render(<><Sidebar /><Paleta aberto fechar={() => {}} /></>);
     const lista = screen.getByRole('list', { name: 'Subseções de Comercial' });
     const nomes = Array.from(lista.querySelectorAll('a')).map((a) => a.textContent);
-    expect(nomes.indexOf('Rodada da semana')).toBe(nomes.indexOf('Contratos vivos') + 1);
+    expect(nomes.indexOf('Rodada da semana')).toBe(nomes.indexOf('Contratos') + 1);
     const rodada = within(lista).getByRole('link', { name: 'Rodada da semana' });
     expect(rodada).toHaveAttribute('href', '/comercial/rodada');
     expect(rodada).toHaveAttribute('aria-current', 'page');

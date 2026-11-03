@@ -2,7 +2,7 @@
  * O ESTADO DO PAINEL DO LEAD NA URL (lane UX, 13/10/2026; abas novas na leva 5, L4, 27/10/2026).
  *
  * O painel não tem rota própria: ele mora na query da tela de fundo,
- * `?lead=<id>&aba=geral|pendencias|sala|area|whatsapp[&campo=<chave>]`. Assim um
+ * `?lead=<id>&aba=geral|pendencias|contrato|sala|area|whatsapp[&campo=<chave>]`. Assim um
  * link para um lead abre a tela com o painel aberto, e fechar devolve a tela
  * como estava. Funções puras: quem mexe no histórico é o provedor.
  *
@@ -16,11 +16,12 @@
  *
  * `campo` é a chave do campo da aba Geral que deve receber o foco ao abrir
  * (o "vincular WhatsApp" do menu do lead, o "um clique leva ao campo" das
- * pendências). Só a Geral o lê; trocar de aba o apaga.
+ * pendências). Na aba Contrato ele é o passo que o gesto do quadro abriu. Trocar
+ * de aba o apaga.
  */
 
 /** As abas na fila do painel, na ordem. */
-export const ABAS_DO_PAINEL = ['geral', 'pendencias', 'sala', 'area', 'whatsapp'] as const;
+export const ABAS_DO_PAINEL = ['geral', 'pendencias', 'contrato', 'sala', 'area', 'whatsapp'] as const;
 /** As abas de antes da leva 5: fora da fila, mas vivas por link direto (`aba=dinheiro`). */
 export const ABAS_FORA_DA_VISTA = ['fio', 'sessao', 'dinheiro', 'decisoes'] as const;
 export const TODAS_AS_ABAS = [...ABAS_DO_PAINEL, ...ABAS_FORA_DA_VISTA] as const;
@@ -31,6 +32,8 @@ export const ROTULO_DA_ABA: Record<AbaDoPainel, string> = {
   // Leva 5 (L4): a ficha no modelo da Sessão Estratégica e o que falta fazer.
   geral: 'Geral',
   pendencias: 'Pendências e sugestões',
+  // Fase F4 do módulo de contratos (02/11/2026): o contrato como registro próprio.
+  contrato: 'Contrato',
   // Rodada da implantação I3: a sala do cliente publicada por versão.
   sala: 'Sala',
   // Leva A da área do cliente (30/10/2026): os quinze itens que o cliente vê depois do fechamento.

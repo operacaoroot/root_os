@@ -77,6 +77,8 @@ export * from './vistas.js';
 export * from './comercial-fechado-fora.js';
 // O contrato importado do CRM antigo: o PDF e as parcelas à mão (produção 22, M2). Ver `comercial-contrato-importado.ts`.
 export * from './comercial-contrato-importado.js';
+// O módulo de contratos do comercial (02/11/2026): ver o cabeçalho de `comercial-contratos.ts`.
+export * from './comercial-contratos.js';
 export * from './comercial-exercicio';
 export * from './fonte-autorizada.js';
 

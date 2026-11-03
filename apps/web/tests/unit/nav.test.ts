@@ -264,14 +264,14 @@ const MENU_FINAL: LinhaDoMenu[] = [
   ['campanhas', 'Campanhas', '/campanhas', 'campanhas.ver', 'conteudo', 'campanhas', null, false],
   ['pixels', 'Eventos do site', '/pixels', 'dashboard.ver', 'conteudo', 'pixels', null, false],
   ['marketing-tarefas', 'Tarefas', '/marketing/tarefas', 'tarefas.ver', 'conteudo', 'trabalho', null, false],
-  // Motor Comercial: Painel geral · Funil vivo · Propostas · Lista de leads · Contratos vivos · Torre · Relatório.
+  // Motor Comercial: Painel geral · Funil vivo · Propostas · Lista de leads · Contratos · Torre · Relatório.
   // O Simulador de WhatsApp virou a área WhatsApp em 20/10/2026: oculto, a rota redireciona.
   ['comercial-painel', 'Painel geral', '/comercial', 'leads.ver', 'comercial', 'leads', null, false],
   ['comercial-funil', 'Funil de vendas', '/comercial/funil', 'leads.ver', 'comercial', 'leads', null, false],
   ['propostas', 'Propostas', '/propostas', 'leads.ver', 'comercial', 'leads', null, false],
   ['leads', 'Lista de leads', '/leads', 'leads.ver', 'comercial', 'leads', null, false],
   ['comercial-clientes-ativos', 'Clientes ativos', '/comercial/clientes-ativos', 'leads.ver', 'comercial', 'leads', null, false],
-  ['comercial-contratos', 'Contratos vivos', '/comercial/contratos', 'leads.ver', 'comercial', 'leads', null, false],
+  ['comercial-contratos', 'Contratos', '/comercial/contratos', 'leads.ver', 'comercial', 'leads', null, false],
   ['comercial-simulador', 'Simulador de WhatsApp', '/comercial/simulador', 'leads.ver', 'comercial', 'leads', null, true],
   ['comercial-torre', 'Torre das automações', '/comercial/torre', 'leads.ver', 'comercial', 'leads', null, false],
   ['comercial-relatorio', 'Relatório da semana', '/comercial/relatorio', 'leads.ver', 'comercial', 'leads', null, false],
@@ -763,13 +763,13 @@ describe('organização da navegação (ROOT-07 e versão final)', () => {
    * fila antiga das decisões mora em `/comercial/decisoes`, oculta, absorvida por
    * Pendências. Clientes e Tarefas saem (duplicados), ocultos e vivos.
    */
-  it('Motor Comercial: Painel geral · Funil vivo · Propostas · Lista de leads · Contratos vivos · Torre · Relatório', () => {
+  it('Motor Comercial: Painel geral · Funil vivo · Propostas · Lista de leads · Contratos · Torre · Relatório', () => {
     const todas = new Set(NAV.map((n) => n.permission));
     const comercial = navEmArvore(todas).find((g) => g.secao.key === 'comercial')!;
-    // A Rodada da semana entra depois dos Contratos vivos só para a plataforma, fora do NAV
+    // A Rodada da semana entra depois dos Contratos só para a plataforma, fora do NAV
     // (navegacao-modulos.test.ts cobra). O Simulador virou a área WhatsApp em 20/10/2026.
     expect(comercial.itens.map((no) => no.item.label)).toEqual([
-      'Painel geral', 'Funil de vendas', 'Propostas', 'Lista de leads', 'Clientes ativos', 'Contratos vivos',
+      'Painel geral', 'Funil de vendas', 'Propostas', 'Lista de leads', 'Clientes ativos', 'Contratos',
       'Torre das automações', 'Relatório da semana',
     ]);
     for (const no of comercial.itens) {

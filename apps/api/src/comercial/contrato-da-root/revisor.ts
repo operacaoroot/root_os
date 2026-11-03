@@ -178,7 +178,8 @@ export function regrasDoRevisor(minuta: string, ficha: FichaParaRevisao): Aponta
     const fimDoParagrafo = iContratante >= 0 ? texto.indexOf('\n\n', iContratante) : -1;
     for (const d of docs) {
       const noParagrafo = iContratante >= 0 && d.i > iContratante && (fimDoParagrafo < 0 || d.i < fimDoParagrafo);
-      if (noParagrafo && d.digitos !== docDaFicha) {
+      // O CPF de quem representa a empresa mora no mesmo parágrafo: só documento do mesmo tipo é divergência.
+      if (noParagrafo && d.digitos.length === docDaFicha.length && d.digitos !== docDaFicha) {
         out.push(ap('critica', 'cnpj_divergente', 'O documento do contratante não é o da ficha', d.cru, `Na qualificação do contratante está ${d.cru}; a ficha traz o documento terminado em ${docDaFicha.slice(-4)}.`));
       }
     }

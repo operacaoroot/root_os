@@ -3,6 +3,9 @@
 // Emula só o que a porta de assinatura usa da API v1 da ZapSign:
 //   POST /api/v1/docs/                cria documento (markdown_text ou base64_pdf) com signatários
 //   GET  /api/v1/docs/:token/         lê documento e estado dos signatários
+//   DELETE /api/v1/docs/:token/       tira o documento (o link deixa de abrir); de novo = 404, como a ZapSign
+// O signatário leva o `external_id` que a API mandou (`cliente:1`, `cliente:2`, `root:1`), e `base64_pdf`
+// só vale sem o prefixo `data:` (a ZapSign recusa com ele).
 // Autenticação: `Authorization: Bearer <token>` (qualquer valor não vazio vale no dublê).
 //
 // Cada signatário ganha um `sign_url` público nesta página (/assinar/:tokenDoSignatario).
@@ -61,7 +64,7 @@ async function lerCorpo(req) {
 }
 
 function publico(doc) {
-  const { conteudo, ...resto } = doc;
+  const { conteudo, pdf, ...resto } = doc;
   return resto;
 }
 
@@ -176,6 +179,10 @@ const servidor = createServer(async (req, res) => {
     if (req.method === 'GET' && m) {
       const d = estado.docs.find((x) => x.token === m[1]);
       if (!d) return json(res, 404, { detail: 'não encontrado' });
+      if (d.pdf) {
+        res.writeHead(200, { 'content-type': 'application/pdf' });
+        return res.end(Buffer.from(d.pdf, 'base64'));
+      }
       res.writeHead(200, { 'content-type': 'text/plain; charset=utf-8' });
       return res.end(d.conteudo ?? '');
     }
@@ -197,6 +204,9 @@ const servidor = createServer(async (req, res) => {
         return json(res, 400, { detail: 'name e signers obrigatórios' });
       }
       if (!b.markdown_text && !b.base64_pdf && !b.url_pdf) return json(res, 400, { detail: 'conteúdo obrigatório (markdown_text, base64_pdf ou url_pdf)' });
+      if (b.base64_pdf && (/^data:/.test(b.base64_pdf) || Buffer.from(b.base64_pdf, 'base64').subarray(0, 5).toString('latin1') !== '%PDF-')) {
+        return json(res, 400, { detail: 'base64_pdf inválido: mande o PDF em base64, sem o prefixo data:' });
+      }
       const token = novoToken();
       const doc = {
         open_id: estado.docs.length + 1,
@@ -208,6 +218,7 @@ const servidor = createServer(async (req, res) => {
         original_file: `${PUBLIC_URL}/documento/${token}`,
         signed_file: null,
         conteudo: b.markdown_text ?? null,
+        pdf: b.base64_pdf ?? null,
         signers: b.signers.map((s) => {
           const t = novoToken();
           return {
@@ -234,6 +245,13 @@ const servidor = createServer(async (req, res) => {
     if (req.method === 'GET' && m) {
       const d = estado.docs.find((x) => x.token === m[1]);
       return d ? json(res, 200, publico(d)) : json(res, 404, { detail: 'não encontrado' });
+    }
+    if (req.method === 'DELETE' && m) {
+      const i = estado.docs.findIndex((x) => x.token === m[1]);
+      if (i < 0) return json(res, 404, { detail: 'não encontrado' });
+      estado.docs.splice(i, 1);
+      salvar();
+      return json(res, 200, { message: 'documento removido' });
     }
 
     return json(res, 404, { detail: `rota não emulada: ${req.method} ${caminho}` });

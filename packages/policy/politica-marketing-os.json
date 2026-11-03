@@ -1,6 +1,6 @@
 {
-  "versao": "1.13.0",
-  "atualizadoEm": "2026-10-29",
+  "versao": "1.14.0",
+  "atualizadoEm": "2026-11-02",
   "origem": "o código real deste repositório",
   "descricao": "Capacidades do marketing-os. É um DELTA sobre politica-root.json: herda níveis, gatilhos, escalonamento, invariantes e limites, e declara só o que existe em código aqui. Capacidade sem rota é declarada e não implementada — entra classificada, e a porta recusa antes de qualquer efeito.",
   "estende": "politica-root.json",
@@ -1903,7 +1903,7 @@
     {
       "id": "comercial.contrato.enviar",
       "rota": "POST /sala/:token/aceite/contrato",
-      "descricao": "Cria o documento do contrato na ZapSign a partir do modelo da Root com os dados do aceite e o envia para o cliente assinar. O conteúdo exato é preso pelo hash. Assinado pelos dois, o contrato obriga o cliente a pagar: obrigação financeira. Cancelar o documento antes da assinatura é à mão.",
+      "descricao": "Cria o documento do contrato na ZapSign a partir do modelo da Root com os dados do aceite e o envia para o cliente assinar. O conteúdo exato é preso pelo hash. Assinado pelos dois, o contrato obriga o cliente a pagar: obrigação financeira. Cancelar o documento antes da assinatura é `comercial.contrato.cancelar`.",
       "nivel": "R4",
       "argsSchema": {
         "type": "object",
@@ -1935,6 +1935,12 @@
             "minLength": 3,
             "maxLength": 254,
             "description": "o e-mail de quem assina pelo cliente"
+          },
+          "contratoId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64,
+            "description": "o registro do contrato (ComercialContrato) a que este documento pertence"
           }
         }
       },
@@ -2648,6 +2654,75 @@
         "exposicaoExterna": false,
         "impactoFinanceiro": "nenhum",
         "sensibilidade": "interna",
+        "destruicao": false,
+        "obrigacaoLegal": false
+      }
+    },
+    {
+      "id": "comercial.contrato.cancelar",
+      "rota": "POST /comercial/contratos/registro/:id/cancelar",
+      "descricao": "Cancela um contrato em que ninguém assinou: tira o documento da ZapSign (DELETE /docs/{token}/) e o link de assinatura deixa de valer. Documento com qualquer assinatura é recusado no efeito: a assinatura é gravada, nada sai, e terminar é encerrar ou abrir distrato. Sem volta pela API: refazer é enviar outro. O que é único não se perde: o registro, o hash do conteúdo, os signatários e o fio ficam no OS, por isso `destruicao` é falso.",
+      "nivel": "R3",
+      "argsSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "contratoId",
+          "motivo"
+        ],
+        "properties": {
+          "contratoId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64,
+            "description": "o registro do contrato (ComercialContrato)"
+          },
+          "motivo": {
+            "type": "string",
+            "minLength": 5,
+            "maxLength": 500,
+            "description": "por que o contrato é cancelado"
+          }
+        }
+      },
+      "efeito": {
+        "escreveForaDoOS": true,
+        "produzArtefato": false,
+        "reversibilidade": "nenhuma",
+        "exposicaoExterna": true,
+        "impactoFinanceiro": "nenhum",
+        "sensibilidade": "confidencial",
+        "destruicao": false,
+        "obrigacaoLegal": false
+      }
+    },
+    {
+      "id": "comercial.contrato.reenviar",
+      "rota": "POST /comercial/contratos/registro/:id/reenviar",
+      "descricao": "Entrega de novo o link de assinatura a quem do cliente ainda não assinou. A ZapSign não reenvia e-mail (o documento nasce com disable_signer_emails): o efeito lê os links atuais e prepara a M7, que é outra capacidade (comercial.whatsapp.enviar) e vai à fila como toda mensagem. Mandar de novo não se desfaz.",
+      "nivel": "R3",
+      "argsSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "contratoId"
+        ],
+        "properties": {
+          "contratoId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64,
+            "description": "o registro do contrato (ComercialContrato)"
+          }
+        }
+      },
+      "efeito": {
+        "escreveForaDoOS": true,
+        "produzArtefato": false,
+        "reversibilidade": "nenhuma",
+        "exposicaoExterna": true,
+        "impactoFinanceiro": "nenhum",
+        "sensibilidade": "confidencial",
         "destruicao": false,
         "obrigacaoLegal": false
       }

@@ -955,7 +955,7 @@ describe('capacidades da rodada dos agentes (21/10/2026)', () => {
   });
 
   it('o delta subiu para 1.11.0 (e segue: 1.12.0 na produção 22)', () => {
-    expect(['1.11.0', '1.12.0', '1.13.0']).toContain(json('politica-marketing-os.json').versao);
+    expect(['1.11.0', '1.12.0', '1.13.0', '1.14.0']).toContain(json('politica-marketing-os.json').versao);
   });
 
   it('os esquemas são fechados e exigem o que a aprovação assina', () => {
@@ -1004,7 +1004,7 @@ describe('capacidades da rodada dos agentes (21/10/2026)', () => {
  */
 describe('agenda.evento.restaurar (produção 22, 22/10/2026)', () => {
   it('o delta está em 1.12.0 (e segue: 1.13.0 na agenda v2)', () => {
-    expect(['1.12.0', '1.13.0']).toContain(json('politica-marketing-os.json').versao);
+    expect(['1.12.0', '1.13.0', '1.14.0']).toContain(json('politica-marketing-os.json').versao);
   });
 
   it('é R3 pela escada, com rota, sem ferramenta e sem desfazer', () => {
@@ -1032,8 +1032,8 @@ describe('agenda.evento.restaurar (produção 22, 22/10/2026)', () => {
 describe('agenda v2 (29/10/2026)', () => {
   const cap = (id: string) => DELTA.capacidades.find((c) => c.id === id)!;
 
-  it('o delta está em 1.13.0 com as seis capacidades novas', () => {
-    expect(json('politica-marketing-os.json').versao).toBe('1.13.0');
+  it('o delta está em 1.13.0 (e segue: 1.14.0 no módulo de contratos) com as seis capacidades novas', () => {
+    expect(['1.13.0', '1.14.0']).toContain(json('politica-marketing-os.json').versao);
     for (const id of [
       'comunicacao.agenda.sincronizar', 'comunicacao.agenda.livre_ocupado', 'agenda.reuniao.alterar',
       'agenda.reuniao.cancelar', 'agenda.reuniao.desmarcar', 'agenda.reuniao.reabrir',
@@ -1074,5 +1074,41 @@ describe('agenda v2 (29/10/2026)', () => {
       expect((cap(id) as any).argsSchema.additionalProperties, id).toBe(false);
       expect((cap(id) as any).argsSchema.properties.titulo, id).toBeUndefined();
     }
+  });
+});
+
+/*
+ * O módulo de contratos (02/11/2026, F3): cancelar e reenviar. O nível é o que a escada calcula do efeito.
+ * `destruicao` é falso no cancelar, de propósito: o que sai é o documento pendente na ZapSign, e o efeito
+ * recusa o documento todo assinado. Virar `true` leva a capacidade a R5, em que a porta recusa e o botão não vale.
+ */
+describe('módulo de contratos (02/11/2026)', () => {
+  const cap = (id: string) => DELTA.capacidades.find((c) => c.id === id)!;
+
+  it('o delta está em 1.14.0 com as duas capacidades novas', () => {
+    expect(json('politica-marketing-os.json').versao).toBe('1.14.0');
+    for (const id of ['comercial.contrato.cancelar', 'comercial.contrato.reenviar']) expect(cap(id), id).toBeTruthy();
+  });
+
+  it('o nível declarado é o que a escada calcula do efeito', () => {
+    for (const id of ['comercial.contrato.cancelar', 'comercial.contrato.reenviar']) {
+      expect(cap(id).nivel, id).toBe('R3');
+      expect(classificar(cap(id).efeito), id).toBe('R3');
+      expect(cap(id).efeito.escreveForaDoOS, id).toBe(true);
+      expect(cap(id).efeito.reversibilidade, id).toBe('nenhuma');
+    }
+  });
+
+  it('enviar passa a aceitar contratoId (opcional), sem sair de R4', () => {
+    const enviar = cap('comercial.contrato.enviar') as any;
+    expect(enviar.nivel).toBe('R4');
+    expect(enviar.argsSchema.properties.contratoId).toBeTruthy();
+    expect(enviar.argsSchema.required).not.toContain('contratoId');
+  });
+
+  it('os argumentos são fechados: nada além do registro e do motivo vai à aprovação', () => {
+    expect((cap('comercial.contrato.cancelar') as any).argsSchema.additionalProperties).toBe(false);
+    expect((cap('comercial.contrato.reenviar') as any).argsSchema.additionalProperties).toBe(false);
+    expect((cap('comercial.contrato.cancelar') as any).argsSchema.required).toEqual(['contratoId', 'motivo']);
   });
 });

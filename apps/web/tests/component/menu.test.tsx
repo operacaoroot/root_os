@@ -220,7 +220,7 @@ describe('a barra lateral', () => {
     expect(area('Comercial')).toHaveAttribute('href', '/comercial');
     const lista = subsecoes('Comercial');
     expect(lista.getAllByRole('link').map((el) => el.textContent)).toEqual([
-      'Painel geral', 'Funil de vendas', 'Propostas', 'Lista de leads', 'Contratos vivos',
+      'Painel geral', 'Funil de vendas', 'Propostas', 'Lista de leads', 'Contratos',
       'Torre das automações', 'Relatório da semana',
     ]);
     expect(lista.getByRole('link', { name: 'Painel geral' })).toHaveAttribute('aria-current', 'page');

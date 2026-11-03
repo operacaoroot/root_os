@@ -51,6 +51,10 @@ import { FechadoForaService } from './fechado-fora.service';
 // Produção 22 (M2): o contrato importado do CRM antigo (o PDF, as parcelas à mão e a régua).
 import { ContratoImportadoController } from './contrato-importado.controller';
 import { ContratoImportadoService } from './contrato-importado.service';
+// O módulo de contratos (02/11/2026): o contrato como registro próprio, o quadro e a conferência.
+import { ContratosController } from './contratos/contratos.controller';
+import { ContratosService } from './contratos/contratos.service';
+import { EmissaoDoContratoService } from './contratos/emissao.service';
 import { PropostaDoLeadController } from './proposta-do-lead.controller';
 import { PropostaDoLeadService } from './proposta-do-lead.service';
 import { FechamentoService } from './fechamento.service';
@@ -95,7 +99,8 @@ import { LeadRepetidoService } from './lead-repetido.service';
  */
 @Module({
   imports: [TenantsModule, AuthModule, LeadsModule, OnboardingModule, FinanceModule, RoutinesModule, ZapsignModule, MemoryModule, WorkModule],
-  controllers: [ComercialController, SalaController, SimuladorController, MensagensController, DinheiroController, WebhooksDoDinheiroController, InteligenciaController, FechadoForaController, ContratoImportadoController, PropostaDoLeadController, OnboardingAntecipadoController, IntegracaoDaEvolutionController, SalaEstadoController, TarefasDoComercialController, ContratoDaRootController, FormularioDoSiteController, FichaGeralController, ClientesAtivosController],
+  // `ContratosController` antes do `DinheiroController`: `GET contratos/quadro` tem o formato de `GET contratos/:leadId`.
+  controllers: [ComercialController, SalaController, SimuladorController, MensagensController, ContratosController, DinheiroController, WebhooksDoDinheiroController, InteligenciaController, FechadoForaController, ContratoImportadoController, PropostaDoLeadController, OnboardingAntecipadoController, IntegracaoDaEvolutionController, SalaEstadoController, TarefasDoComercialController, ContratoDaRootController, FormularioDoSiteController, FichaGeralController, ClientesAtivosController],
   providers: [
     // --- orquestrador: o fio (único caminho de escrita de fato) e o registro de reações ---
     ReacoesRegistry,
@@ -141,6 +146,9 @@ import { LeadRepetidoService } from './lead-repetido.service';
     FechadoForaService,
     // --- produção 22, M2 (o contrato importado: o PDF, as parcelas à mão e a régua, fato passado) ---
     ContratoImportadoService,
+    // --- módulo de contratos, F1 e F3 (o registro, o quadro, conferir, cancelar, reenviar, lote) ---
+    ContratosService,
+    EmissaoDoContratoService,
     PropostaDoLeadService,
     // --- ajustes da versão final A2 (iniciar o onboarding antes do negócio fechado: o mesmo card do fechamento) ---
     OnboardingAntecipadoService,
@@ -167,6 +175,6 @@ import { LeadRepetidoService } from './lead-repetido.service';
     LeadCriarService,
     TriagemDoWhatsappService,
   ],
-  exports: [FioService, ReacoesRegistry, RelogioComercialRegistry, FichaService, DecisoesService, DecisoesRegistry, ConfigComercialService, SalaService, WhatsappComercialService, DinheiroService, FechamentoService, ContratoVivoService],
+  exports: [FioService, ReacoesRegistry, RelogioComercialRegistry, FichaService, DecisoesService, DecisoesRegistry, ConfigComercialService, SalaService, WhatsappComercialService, DinheiroService, FechamentoService, ContratoVivoService, ContratosService],
 })
 export class ComercialModule {}

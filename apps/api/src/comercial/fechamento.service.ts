@@ -10,9 +10,11 @@ import { TrilhoService } from '../onboarding/trilho/trilho.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { ConfigComercialService } from './config.service';
 import { DecisoesRegistry, DecisoesService, type DecisaoResolvida } from './decisoes.service';
+import { hashesDoRegistro } from './contratos/contratos-puro';
 import { DinheiroService, hojeEmSP, venceComoData, type AceiteDoLead } from './dinheiro.service';
 import { AUTOR_DO_FECHAMENTO, abrirCardDaImplantacao, travarImplantacaoDoLead } from './card-da-implantacao';
 import { eventoIdComercial, uuidDe } from './eventos';
+import { garantirContratoDoDocumento } from './contratos/registro-do-documento';
 import { SO_DOCUMENTOS_DE_ASSINATURA } from './documentos';
 import { aceiteDaDeclaracao, chaveDoAnexo, parcelasDoContratoFora } from './fechado-fora';
 import { FioService, ReacoesRegistry } from './fio.service';
@@ -289,6 +291,9 @@ export class FechamentoService implements OnModuleInit {
     const hashes = [this.dinheiro.contratoDoAceite(a).hash];
     const aprovado = cobrancaDaVersao ? await this.dinheiro.aceiteDaCobrancaAprovada(orgId, leadId, a) : null;
     if (aprovado) hashes.push(this.dinheiro.contratoDoAceite(aprovado).hash);
+    // O contrato enviado pelo registro: o documento guarda o hash do PDF, não o do esqueleto.
+    const registros = await this.prisma.comercialContrato.findMany({ where: { leadId, orgId, tipo: 'contrato', documentoId: { not: null }, estado: { not: 'cancelado' } }, select: { hashDoConteudo: true, dadosDoContrato: true } });
+    hashes.push(...hashesDoRegistro(registros, a.versao));
     const falta = faltaDaVersao({ versao: a.versao, hashesDoContrato: hashes, documentos, cobrancaDaVersao, haCobranca: haCobranca > 0 });
     return { pronto: falta.length === 0, falta };
   }
@@ -822,6 +827,12 @@ export class FechamentoService implements OnModuleInit {
       ],
       skipDuplicates: true,
     });
+    // O registro do contrato (módulo de contratos). É projeção: falhar não derruba a escrita do fechamento.
+    try {
+      await garantirContratoDoDocumento(this.prisma, { orgId, leadId, documentoId: uuidDe([orgId, 'comercial-documento', 'anexo', leadId, sha256]) });
+    } catch (e) {
+      this.log.error(`registro do contrato anexado do lead ${leadId}: ${(e as Error).message}`);
+    }
   }
 
   /** O manifesto do kit: o que o comercial sabe, copiado (nada redigitado). */
