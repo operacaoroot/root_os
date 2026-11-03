@@ -307,8 +307,8 @@ export interface PayloadsComerciais {
   /** Os links continuam os mesmos e o e-mail não sai (`disable_signer_emails`): o reenvio é a M7, pela fila do WhatsApp. O link nunca vai ao fio. */
   'contrato.reenviado': { contratoId: string; externoId: string; pendentes: number; mensagemPreparada: boolean; por: string | null };
   'contrato.aditivo': { contratoId: string; paiId: string; motivo: string; por: string | null; porId: string | null };
-  'contrato.distrato': { contratoId: string; paiId: string; motivo: string; parcelasEmAberto: number; por: string | null; porId: string | null };
-  'contrato.reaberto': { contratoId: string; motivo: string; nivel: string; por: string; porNome: string | null };
+  'contrato.distrato': { contratoId: string; paiId: string; motivo: string; parcelasEmAberto: number; cienteDasParcelas: boolean; por: string | null; porId: string | null };
+  'contrato.reaberto': { contratoId: string; motivo: string | null; nivel: string; por: string; porNome: string | null };
   'kickoff.marcado': { horario: string };
   /** `contrato`: a origem do contrato importado quando a parcela é das lançadas à mão (produção 22, M2). */
   'parcela.vence': { parcela: number; vence: string; aviso: 'D-3' | 'D0' | 'D+1' | 'D+5' | 'D+10'; contrato?: string | null };
@@ -537,7 +537,7 @@ export function resumoDoEvento(type: string, payload: unknown): { fonte: Comerci
     case 'contrato.distrato':
       return { fonte, resumo: `distrato aberto em rascunho: ${curto(p.motivo, 80)}${Number(p.parcelasEmAberto) > 0 ? ` · ${String(p.parcelasEmAberto)} parcela(s) em aberto, cobrança mantida` : ''}` };
     case 'contrato.reaberto':
-      return { fonte, resumo: `contrato reaberto por ${String(p.porNome ?? 'alguém da casa')}: ${curto(p.motivo, 80)}` };
+      return { fonte, resumo: `contrato reaberto por ${String(p.porNome ?? 'alguém da casa')}${p.motivo ? `: ${curto(p.motivo, 80)}` : ''}` };
     case 'kickoff.marcado':
       return { fonte, resumo: `kickoff marcado · ${horarioLegivel(p.horario)}` };
     case 'parcela.vence':

@@ -11,13 +11,14 @@ import { EfeitosRegistry, type ContextoDoEfeito } from '../gateway/efeitos.regis
 import { PortaDoOperador } from '../gateway/porta-do-operador.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { hashDoContrato, lacunasDoContrato, montarContrato } from './contrato-modelo';
+import { garantirContratoDoDocumento, refletirAssinaturas, type ReflexoDaAssinatura, type SignatarioDoDocumento } from './contratos/registro-do-documento';
 import { SO_DOCUMENTOS_DE_ASSINATURA } from './documentos';
 import { uuidDe, type PayloadDe } from './eventos';
 import type { DeclaracaoDoFechadoFora } from './fechado-fora';
 import { FioService, ReacoesRegistry } from './fio.service';
 import { cifrarLinkDaRoot, decifrarLinkDaRoot } from './link-da-root';
 import { parcelasDoValor } from './proposta-construtor';
-import { PORTA_DE_ASSINATURA, type PortaDeAssinatura } from './portas/assinatura.port';
+import { PORTA_DE_ASSINATURA, signatariosComExternalId, type AssinaturaNoWebhook, type PortaDeAssinatura } from './portas/assinatura.port';
 import { PORTA_DE_COBRANCA, type FormaDeCobranca, type PagamentoNoWebhook, type PortaDeCobranca } from './portas/cobranca.port';
 import { segredoDoAmbiente } from './sala-token';
 import { WhatsappComercialService } from './whatsapp.service';
@@ -333,7 +334,8 @@ export class DinheiroService implements OnModuleInit {
     let contrato: ResultadoDaProposta;
     const doc = this.contratoDoAceite(a);
     const resDoc = `${leadId}:${doc.hash.slice(0, 16)}`;
-    if (await this.prisma.comercialDocumento.findFirst({ where: { leadId, orgId, hashConteudo: doc.hash }, select: { id: true } })) contrato = 'ja_existe';
+    // Documento cancelado (módulo de contratos, F3) saiu da ZapSign: não conta como "já existe".
+    if (await this.prisma.comercialDocumento.findFirst({ where: { leadId, orgId, hashConteudo: doc.hash, estado: { not: 'cancelado' } }, select: { id: true } })) contrato = 'ja_existe';
     else if (await this.aprovacaoViva(orgId, CAP_CONTRATO, resDoc, agora)) contrato = 'na_fila';
     else if (automatico && (await this.travaDaRepeticao(orgId, CAP_CONTRATO, resDoc, agora))) contrato = (await this.travaDaRepeticao(orgId, CAP_CONTRATO, resDoc, agora))!;
     else {
@@ -500,19 +502,24 @@ export class DinheiroService implements OnModuleInit {
     if (doc.hash !== String(args.hash)) throw new Error('o conteúdo do contrato mudou depois do pedido: nada foi enviado');
     if (a.dados.email.toLowerCase() !== String(args.signatarioEmail ?? '').toLowerCase()) throw new Error('o signatário mudou depois do pedido: nada foi enviado');
 
-    const ja = await this.prisma.comercialDocumento.findFirst({ where: { leadId, orgId, hashConteudo: doc.hash } });
-    if (ja) return { documentoId: ja.id, externoId: ja.externoId, reaproveitado: true };
+    const contratoId = typeof args.contratoId === 'string' && args.contratoId ? args.contratoId : null;
+    const ja = await this.prisma.comercialDocumento.findFirst({ where: { leadId, orgId, hashConteudo: doc.hash, estado: { not: 'cancelado' } } });
+    if (ja) {
+      await this.manterORegistro(orgId, leadId, () => garantirContratoDoDocumento(this.prisma, { orgId, leadId, documentoId: ja.id, contratoId }));
+      return { documentoId: ja.id, externoId: ja.externoId, reaproveitado: true };
+    }
 
     const root = await this.signatarioDaRoot(orgId);
     if (!root) throw new Error('não há usuário titular nesta empresa para assinar pela Root: nada foi enviado');
+    const lista = [
+      { papel: 'cliente' as const, nome: a.dados.quemAssina, email: a.dados.email, ordem: 1 },
+      { papel: 'root' as const, nome: root.nome, email: root.email, ordem: 2 },
+    ];
     const criado = await this.assinatura.criarDocumento({
       nome: `Contrato · ${a.dados.razaoSocial} · proposta v${a.versao}`,
       markdown: doc.markdown,
       referenciaExterna: `ctr-${leadId}-${doc.hash.slice(0, 12)}`,
-      signatarios: [
-        { papel: 'cliente', nome: a.dados.quemAssina, email: a.dados.email },
-        { papel: 'root', nome: root.nome, email: root.email },
-      ],
+      signatarios: lista,
     });
     const linkCliente = criado.signatarios.find((s) => s.papel === 'cliente')?.link ?? null;
     const linkRoot = criado.signatarios.find((s) => s.papel === 'root')?.link ?? null;
@@ -524,6 +531,15 @@ export class DinheiroService implements OnModuleInit {
       data: [{ id, leadId, provedor: this.assinatura.provedor, externoId: criado.externoId, estado: 'enviado', hashConteudo: doc.hash, linkCliente, linkRoot: linkRootGuardado }],
       skipDuplicates: true,
     });
+    // O registro do contrato (módulo de contratos): o documento continua sendo a parte "na ZapSign".
+    const signatarios: SignatarioDoDocumento[] = signatariosComExternalId(lista).map((s) => ({
+      papel: s.papel,
+      nome: s.nome,
+      email: s.email,
+      ordem: s.ordem,
+      token: (criado.signatarios.find((c) => c.externalId === s.externalId) ?? criado.signatarios.find((c) => c.papel === s.papel))?.token ?? null,
+    }));
+    await this.manterORegistro(orgId, leadId, () => garantirContratoDoDocumento(this.prisma, { orgId, leadId, documentoId: id, contratoId, signatarios }));
     const payload = {
       provedor: this.assinatura.provedor,
       externoId: criado.externoId,
@@ -667,36 +683,64 @@ export class DinheiroService implements OnModuleInit {
     const r = await resolverTenantDoDocumento(this.prisma as never, this.assinatura.provedor, w.externoId);
     if (!r) return { ok: true, gravados: 0, ignorado: 'documento desconhecido' };
     return comTenantPublico(r.orgId, async () => {
-      let gravados = 0;
-      for (const s of w.assinados) {
-        const em = s.em ? new Date(s.em) : new Date();
-        const quando = Number.isNaN(em.getTime()) ? new Date() : em;
-        if (s.papel === 'cliente') {
-          await this.prisma.comercialDocumento.updateMany({ where: { id: r.documentoId, assinadoClienteEm: null }, data: { assinadoClienteEm: quando } });
-          const e = await this.fio.registrar(r.orgId, r.leadId, 'contrato.assinado_cliente', w.externoId, { provedor: this.assinatura.provedor, externoId: w.externoId, em: quando.toISOString() }, { em: quando });
-          if (e.novo) gravados++;
-        } else {
-          await this.prisma.comercialDocumento.updateMany({ where: { id: r.documentoId, assinadoRootEm: null }, data: { assinadoRootEm: quando } });
-          const e = await this.fio.registrar(r.orgId, r.leadId, 'contrato.assinado_root', w.externoId, { provedor: this.assinatura.provedor, externoId: w.externoId, em: quando.toISOString(), por: null }, { em: quando });
-          if (e.novo) gravados++;
-        }
-      }
-      if (w.todosAssinaram) {
-        await this.prisma.comercialDocumento.updateMany({ where: { id: r.documentoId }, data: { estado: 'assinado', ...(w.pdfUrl ? { pdfUrl: w.pdfUrl } : {}) } });
-        // CO-08 (rodada dos agentes): o documento inteiro assinado vira fato; a reação do assinador copia o PDF
-        // para `02-contrato` da pasta do cliente (`assinado-na-pasta.service.ts`). A URL do provedor fica no documento.
-        const doc = await this.prisma.comercialDocumento.findFirst({ where: { id: r.documentoId, orgId: r.orgId }, select: { pdfUrl: true } });
-        // Não conta em `gravados`: a resposta do webhook continua contando só as assinaturas.
-        await this.fio.registrar(r.orgId, r.leadId, 'contrato.assinado', w.externoId, {
-          provedor: this.assinatura.provedor,
-          externoId: w.externoId,
-          documentoId: r.documentoId,
-          temPdf: Boolean(doc?.pdfUrl),
-        });
-      } else if (w.assinados.length) {
-        await this.prisma.comercialDocumento.updateMany({ where: { id: r.documentoId, estado: { not: 'assinado' } }, data: { estado: 'assinado_parcial' } });
-      }
+      const { gravados } = await this.aplicarAssinatura(r.orgId, r.leadId, r.documentoId, w);
       return { ok: true as const, gravados };
     });
+  }
+
+  /**
+   * O que o provedor disse sobre as assinaturas de um documento, gravado UM caminho só: o webhook e a
+   * conferência (botão, lote e relógio do módulo de contratos) passam por aqui. A chave de cada fato é
+   * o id do documento: a reentrega do webhook e a consulta depois dele não duplicam, e a consulta que
+   * acha assinatura sem webhook grava os mesmos fatos e dispara a mesma cópia do PDF.
+   */
+  async aplicarAssinatura(orgId: string, leadId: string, documentoId: string, w: AssinaturaNoWebhook): Promise<{ gravados: number; registro: ReflexoDaAssinatura | null }> {
+    let gravados = 0;
+    for (const s of w.assinados) {
+      const em = s.em ? new Date(s.em) : new Date();
+      const quando = Number.isNaN(em.getTime()) ? new Date() : em;
+      if (s.papel === 'cliente') {
+        await this.prisma.comercialDocumento.updateMany({ where: { id: documentoId, assinadoClienteEm: null }, data: { assinadoClienteEm: quando } });
+        const e = await this.fio.registrar(orgId, leadId, 'contrato.assinado_cliente', w.externoId, { provedor: this.assinatura.provedor, externoId: w.externoId, em: quando.toISOString() }, { em: quando });
+        if (e.novo) gravados++;
+      } else {
+        await this.prisma.comercialDocumento.updateMany({ where: { id: documentoId, assinadoRootEm: null }, data: { assinadoRootEm: quando } });
+        const e = await this.fio.registrar(orgId, leadId, 'contrato.assinado_root', w.externoId, { provedor: this.assinatura.provedor, externoId: w.externoId, em: quando.toISOString(), por: null }, { em: quando });
+        if (e.novo) gravados++;
+      }
+    }
+    if (w.todosAssinaram) {
+      await this.prisma.comercialDocumento.updateMany({ where: { id: documentoId }, data: { estado: 'assinado', ...(w.pdfUrl ? { pdfUrl: w.pdfUrl } : {}) } });
+    } else if (w.assinados.length || w.assinaturas?.length) {
+      await this.prisma.comercialDocumento.updateMany({ where: { id: documentoId, estado: { not: 'assinado' } }, data: { estado: 'assinado_parcial' } });
+    }
+    // O registro antes do fato final: a reação de `contrato.assinado` já lê o contrato como assinado.
+    const registro = await this.manterORegistro(orgId, leadId, () => refletirAssinaturas(this.prisma, { orgId, leadId, documentoId, assinatura: w }));
+    if (w.todosAssinaram) {
+      // CO-08 (rodada dos agentes): o documento inteiro assinado vira fato; a reação do assinador copia o PDF
+      // para `02-contrato` da pasta do cliente (`assinado-na-pasta.service.ts`). A URL do provedor fica no documento.
+      const doc = await this.prisma.comercialDocumento.findFirst({ where: { id: documentoId, orgId }, select: { pdfUrl: true } });
+      // Não conta em `gravados`: a resposta do webhook continua contando só as assinaturas.
+      await this.fio.registrar(orgId, leadId, 'contrato.assinado', w.externoId, {
+        provedor: this.assinatura.provedor,
+        externoId: w.externoId,
+        documentoId,
+        temPdf: Boolean(doc?.pdfUrl),
+      });
+    }
+    return { gravados, registro };
+  }
+
+  /**
+   * O registro do contrato é projeção do documento e do fio: falhar aqui não pode derrubar o webhook nem o
+   * efeito, que já escreveram no provedor. Fica no log, e a próxima conferência refaz.
+   */
+  private async manterORegistro<T>(orgId: string, leadId: string, fn: () => Promise<T>): Promise<T | null> {
+    try {
+      return await fn();
+    } catch (e) {
+      this.log.error(`registro do contrato do lead ${leadId} (empresa ${orgId}) não foi atualizado: ${(e as Error).message}`);
+      return null;
+    }
   }
 }

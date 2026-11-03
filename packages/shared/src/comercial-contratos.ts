@@ -255,6 +255,10 @@ export const ContratoFimSchema = z.object({
 });
 export type ContratoFimInput = z.infer<typeof ContratoFimSchema>;
 
+/** Reabrir: o motivo é opcional, na ficha e no lote. O fim já tem o motivo dele no fio. */
+export const ContratoReabrirSchema = z.object({ motivo: z.string().trim().min(5).max(500).optional() });
+export type ContratoReabrirInput = z.infer<typeof ContratoReabrirSchema>;
+
 export const ContratoCancelarSchema = z.object({ motivo: z.string().trim().min(5).max(500) });
 export type ContratoCancelarInput = z.infer<typeof ContratoCancelarSchema>;
 
@@ -268,6 +272,8 @@ export type ContratoLoteInput = z.infer<typeof ContratoLoteSchema>;
 export interface ResultadoDoLote {
   ok: string[];
   recusados: { id: string; motivo: string }[];
+  /** O que a política reteve, à espera de aprovação: nem feito, nem recusado. */
+  retidos?: { id: string; approvalId: string | null }[];
 }
 
 /** Os fatos do fio deste módulo (o histórico continua sendo gravado: a entidade não o substitui). */
