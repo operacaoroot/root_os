@@ -773,6 +773,108 @@ describe('o backfill: assumir os importados', () => {
     expect(c.de('auditLog')).toHaveLength(1);
   });
 
+  /*
+   * O importado sem cobrança nem parcelas lançadas (decisão do dono, 03/11): o dinheiro já mora no
+   * Financeiro. Assume o registro e SÓ LIGA o que existe: o acordo (mesmos degraus, sem criar) e o
+   * contrato do Financeiro, se for o único ativo do cliente e o acordo tiver parcelas.
+   */
+  function cenarioSoLigar() {
+    const c = cenario();
+    const imp = (x: string) => {
+      c.de('partner').push({ id: `p-${x}`, orgId: CASA, razaoSocial: `Cliente ${x.toUpperCase()} Ltda`, nomeFantasia: null, principalId: null });
+      c.de('lead').push({ id: `lead-${x}`, orgId: CASA });
+      c.de('leadEvent').push(
+        { id: `e-${x}`, orgId: CASA, leadId: `lead-${x}`, type: 'cliente.ativo', payload: { chave: 'k', partnerId: `p-${x}`, contractId: null, importado: true, origem: `cartao:${x}` }, occurredAt: dia('2026-09-03') },
+        importadoDe(`lead-${x}`, `cartao:${x}`, 190000),
+      );
+      c.de('comercialFicha').push({ id: `f-${x}`, orgId: CASA, leadId: `lead-${x}`, partnerId: `p-${x}`, contractId: null, produto: null, valorCentavos: null, valorNegociadoCentavos: null });
+    };
+    const parcela = (acordoId: string, numero: number) => ({ id: `ap-${acordoId}-${numero}`, orgId: CASA, acordoId, numero, valor: new Prisma.Decimal('190.00'), vencimento: dia(`2026-1${numero}-05`), pagaEm: dia(`2026-1${numero}-05`), asaasPaymentId: null });
+    const contrato = (id: string, partnerId: string) => ({ id, orgId: CASA, tipo: 'entrada', status: 'ativo', partnerId, comercialContratoId: null });
+    const acordo = (id: string, partnerId: string) => ({ id, orgId: CASA, cliente: id, tipo: 'pagante', partnerId, comercialContratoId: null });
+    // k: o acordo está no cadastro repetido do cliente, tem parcelas, e o cliente tem um contrato só no Financeiro.
+    imp('k');
+    c.de('partner').push({ id: 'p-k2', orgId: CASA, razaoSocial: 'Cliente K (Ana)', nomeFantasia: null, principalId: 'p-k' });
+    c.de('acordoComercial').push(acordo('ac-k', 'p-k2'));
+    c.de('acordoParcela').push(parcela('ac-k', 1), parcela('ac-k', 2));
+    c.de('contract').push(contrato('k-k', 'p-k'));
+    // l: o acordo não tem parcelas: o contrato do Financeiro fica solto (ligado, o dinheiro sumiria do fluxo).
+    imp('l');
+    c.de('acordoComercial').push(acordo('ac-l', 'p-l'));
+    c.de('contract').push(contrato('k-l', 'p-l'));
+    // m: dois contratos ativos no Financeiro: essa parte é ambígua, o acordo liga mesmo assim.
+    imp('m');
+    c.de('acordoComercial').push(acordo('ac-m', 'p-m'));
+    c.de('acordoParcela').push(parcela('ac-m', 1));
+    c.de('contract').push(contrato('k-m1', 'p-m'), contrato('k-m2', 'p-m'));
+    // n: dois acordos pagantes: AMBÍGUO, não assume nem liga.
+    imp('n');
+    c.de('acordoComercial').push(acordo('ac-n1', 'p-n'), acordo('ac-n2', 'p-n'));
+    // o: nenhum acordo do cliente: nada a ligar (e nada nasce).
+    imp('o');
+    return c;
+  }
+
+  it('só ligar: o importado sem cobrança nem parcelas adota o acordo sem criar parcela; o contrato só com parcelas e sendo o único', async () => {
+    const c = cenarioSoLigar();
+    const linhas = await planejarBackfill(c.db, CASA, '2026-11-03', { assumirImportados: true });
+    expect(c.escritas).toHaveLength(0);
+    const por = new Map(linhas.map((l) => [l.leadId, l]));
+
+    const k = por.get('lead-k')!;
+    expect(k.fora).toBeNull();
+    expect(k.plano!.acordo).toMatchObject({ acao: 'adotar', id: 'ac-k' });
+    expect(k.plano!.criar).toHaveLength(0);
+    expect(k.plano!.existentes).toBe(2);
+    expect(k.contractId).toBe('k-k');
+    expect(aplicavel(k) && temTrabalho(k)).toBe(true);
+
+    const l = por.get('lead-l')!;
+    expect(l.plano!.acordo).toMatchObject({ acao: 'adotar', id: 'ac-l' });
+    expect(l.contractId).toBeNull();
+    expect(l.avisos).toEqual(['contrato do Financeiro k-l fica solto: o acordo não tem parcelas']);
+
+    const m = por.get('lead-m')!;
+    expect(m.plano!.acordo).toMatchObject({ acao: 'adotar', id: 'ac-m' });
+    expect(m.contractId).toBeNull();
+    expect(m.avisos[0]).toMatch(/AMBÍGUO no contrato do Financeiro: o cliente tem 2 ativos/);
+    expect(aplicavel(m)).toBe(true);
+
+    const n = por.get('lead-n')!;
+    expect(n.plano!.ambiguo[0]).toMatch(/2 acordos pagantes/);
+    expect(aplicavel(n)).toBe(false);
+
+    expect(por.get('lead-o')!.fora).toMatch(/sem acordo pagante do cliente no Financeiro/);
+    expect(por.get('lead-o')!.plano!.acordo).toBeNull();
+
+    const tabela = tabelaDoEnsaio(linhas);
+    expect(tabela).toContain(`| lead-k | assumir ${idDoImportado('lead-k').slice(0, 8)} (ativo) | k-k → ligar | adotar ac-k | existentes: 2 | aplicar |`);
+    expect(tabela).toContain('| existentes: 0 | aplicar (contrato do Financeiro k-l fica solto: o acordo não tem parcelas) |');
+    expect(tabela).toMatch(/lead-n .*AMBÍGUO: o cliente tem 2 acordos pagantes/);
+
+    const parcelasAntes = c.de('acordoParcela').length;
+    const r = await aplicarBackfill(c.db, CASA, '2026-11-03', { assumirComo: { id: 'u-ana', nome: 'Ana' }, agora: new Date('2026-11-03T15:00:00Z') });
+    expect(r.assumidos).toBe(4); // i, k, l, m (n é ambíguo, o não tem o que ligar)
+    expect(c.de('acordoParcela')).toHaveLength(parcelasAntes + 4); // só as 2 do lead-a (cobranças) e as 2 do lead-i (lançadas à mão)
+    expect(c.de('acordoComercial').filter((a) => String(a.id).startsWith('ac-')).map((a) => [a.id, a.comercialContratoId])).toEqual([
+      ['ac-k', idDoImportado('lead-k')], ['ac-l', idDoImportado('lead-l')], ['ac-m', idDoImportado('lead-m')], ['ac-n1', null], ['ac-n2', null],
+    ]);
+    expect(c.de('acordoComercial').some((a) => a.partnerId === 'p-o')).toBe(false);
+    expect(c.de('contract').map((x) => [x.id, x.comercialContratoId])).toEqual([['k-k', idDoImportado('lead-k')], ['k-l', null], ['k-m1', null], ['k-m2', null]]);
+    expect(c.de('comercialContrato').some((x) => x.leadId === 'lead-n' || x.leadId === 'lead-o')).toBe(false);
+    expect(c.diario).toEqual(expect.arrayContaining([
+      expect.objectContaining({ tabela: 'AcordoComercial', linha: 'ac-k', coluna: 'comercialContratoId', antes: null }),
+      expect.objectContaining({ tabela: 'Contract', linha: 'k-k', coluna: 'comercialContratoId', antes: null }),
+    ]));
+
+    // A segunda passagem não tem o que fazer; o desfazer devolve tudo.
+    expect((await planejarBackfill(c.db, CASA, '2026-11-03', { assumirImportados: true })).filter(temTrabalho)).toHaveLength(0);
+    await desfazerBackfill(c.db, CASA);
+    expect(c.de('acordoComercial').every((a) => a.comercialContratoId === null)).toBe(true);
+    expect(c.de('contract').every((x) => x.comercialContratoId === null)).toBe(true);
+    expect(c.de('acordoParcela')).toHaveLength(parcelasAntes);
+  });
+
   it('catracas: a tela passa pela mesma função; nenhuma reação escuta `contrato.registrado` (o script não roda `reagir`)', () => {
     const servico = readFileSync(join(__dirname, '..', 'src', 'comercial', 'contratos', 'contratos.service.ts'), 'utf8');
     const assumir = servico.slice(servico.indexOf('private async assumirImportado'), servico.indexOf('// Criar, editar, signatários'));

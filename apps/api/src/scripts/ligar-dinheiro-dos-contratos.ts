@@ -29,7 +29,10 @@
  * simulado em memória. No `--aplicar`, só assume quem vai ser ligado sem ambiguidade; a linha e o fato
  * nascidos aqui vão ao diário, e o `--desfazer` apaga só esses (a auditoria fica: é o rastro).
  * As parcelas do importado vêm das cobranças ou, sem elas, da versão mais nova das parcelas lançadas
- * à mão (`contrato.parcelas_lancadas`). Nenhuma reação escuta `contrato.registrado` (catraca na suíte):
+ * à mão (`contrato.parcelas_lancadas`). Sem nenhuma das duas (decisão do dono, 03/11), o dinheiro já
+ * mora no Financeiro e o backfill SÓ LIGA, sem criar parcela: o acordo que já existe (os mesmos degraus,
+ * sem o "criar"; mais de um é ambíguo) e o contrato do Financeiro do cliente, se for o único ativo e o
+ * acordo tiver parcelas (o contrato ligado sai do fluxo; sem parcelas, o dinheiro sumiria). Nenhuma reação escuta `contrato.registrado` (catraca na suíte):
  * o script não perde nada por não rodar `fio.reagir`.
  *
  * NUNCA reescreve o que uma pessoa digitou: só as colunas de ligação
@@ -58,7 +61,7 @@ import {
   type PessoaNoContrato, type RegistroDoImportado,
 } from '../comercial/contratos/importado-assumido';
 import {
-  aplicarDinheiro, cadeadoDoContrato, planejarDinheiro, resumoDoPlano,
+  aplicarDinheiro, cadeadoDoContrato, doMesmoCliente, planejarDinheiro, resumoDoPlano,
   type AnotacaoDoDinheiro, type EntradaDoDinheiro, type ParcelaDoDinheiro, type PlanoDoDinheiro,
 } from '../comercial/dinheiro-do-contrato';
 import { hojeEmSP, venceComoData } from '../comercial/dinheiro.service';
@@ -87,6 +90,8 @@ export interface LinhaDoDinheiro {
   fora: string | null;
   /** Ambíguo além do plano (o contrato do Financeiro). Junto com `plano.ambiguo`. */
   ambiguo: string[];
+  /** Só ligar: a parte que fica de fora sem barrar o resto (o contrato do Financeiro solto ou ambíguo). */
+  avisos: string[];
   /** `--assumir-importados`: o registro que `assumirImportado` criaria (ainda não existe). */
   assumir: RegistroDoImportado | null;
 }
@@ -132,7 +137,7 @@ export async function planejarBackfill(db: Banco, orgId: string, hoje: string = 
     const partnerId = (typeof p.partnerId === 'string' && p.partnerId) || ficha?.partnerId || null;
     const contractId = (typeof p.contractId === 'string' && p.contractId) || ficha?.contractId || null;
     const parceiro = partnerId ? await db.partner.findFirst({ where: { id: partnerId, orgId }, select: { razaoSocial: true } }) : null;
-    const linha: LinhaDoDinheiro = { leadId, cliente: parceiro?.razaoSocial ?? ficha?.empresa ?? '', partnerId, contractId, contractJaLigado: false, entrada: null, plano: null, fora: null, ambiguo: [], assumir: null };
+    const linha: LinhaDoDinheiro = { leadId, cliente: parceiro?.razaoSocial ?? ficha?.empresa ?? '', partnerId, contractId, contractJaLigado: false, entrada: null, plano: null, fora: null, ambiguo: [], avisos: [], assumir: null };
     linhas.push(linha);
     // Importado do CRM antigo: com registro (alguém já agiu nele na tela) segue o caminho de todos;
     // sem registro, só com `--assumir-importados`, e o plano corre sobre o registro que nasceria.
@@ -183,12 +188,21 @@ export async function planejarBackfill(db: Banco, orgId: string, hoje: string = 
       }
     }
     if (doImportado && !produto) produto = produtoDoImportado;
-    if (!parcelas.length) { linha.fora = doImportado ? 'importado sem cobrança nem parcelas lançadas à mão' : 'sem cobrança nem parcelas declaradas'; continue; }
+    if (!parcelas.length && !doImportado) { linha.fora = 'sem cobrança nem parcelas declaradas'; continue; }
+    // O importado sem cobrança nem parcelas lançadas: o dinheiro já mora no Financeiro, só liga (nada nasce).
+    const soLigar = !parcelas.length;
     linha.entrada = {
       orgId, leadId, partnerId, cliente: parceiro.razaoSocial, produto: TABELA_DE_PRECO[produto as keyof typeof TABELA_DE_PRECO]?.rotulo ?? produto,
       valorCentavos: valorDoRegistro ?? ficha?.valorNegociadoCentavos ?? ficha?.valorCentavos ?? valorCentavos, fechadoEm: ativo.occurredAt, parcelas,
+      ...(soLigar ? { soLigar: true } : {}),
     };
     linha.plano = await planejarDinheiro(linha.assumir ? comRegistroSimulado(db, linha.assumir) : db, linha.entrada);
+    if (soLigar) {
+      const pl = linha.plano;
+      if (!pl.acordo && !pl.ambiguo.length && !pl.semRegistro) linha.fora = 'importado sem cobrança, sem parcelas lançadas e sem acordo pagante do cliente no Financeiro (nada a ligar)';
+      else if (pl.acordo && !pl.ambiguo.length) await contratoDoFinanceiroDoCliente(db, orgId, linha);
+      continue;
+    }
 
     if (contractId) {
       const c = await db.contract.findFirst({ where: { id: contractId, orgId }, select: { id: true, comercialContratoId: true } });
@@ -203,6 +217,34 @@ export async function planejarBackfill(db: Banco, orgId: string, hoje: string = 
     }
   }
   return linhas;
+}
+
+/**
+ * Só ligar: o contrato do Financeiro (a receber, ativo) do cliente, do principal ou de um repetido vai ao
+ * registro se for o único e o acordo tiver parcelas: o contrato ligado sai do fluxo, da Análise e dos
+ * previstos, e o dinheiro passa a vir das parcelas do acordo. Fora disso fica solto, com o motivo nos avisos.
+ */
+async function contratoDoFinanceiroDoCliente(db: Banco, orgId: string, l: LinhaDoDinheiro): Promise<void> {
+  const pl = l.plano!;
+  const { ids } = await doMesmoCliente(db, orgId, l.partnerId!);
+  const ativos = await db.contract.findMany({ where: { orgId, tipo: 'entrada', status: 'ativo', partnerId: { in: ids } }, select: { id: true, comercialContratoId: true } });
+  const doRegistro = ativos.find((c) => c.comercialContratoId === pl.contrato!.id);
+  if (doRegistro) {
+    l.contractId = doRegistro.id;
+    l.contractJaLigado = true;
+    return;
+  }
+  if (!ativos.length) return;
+  if (ativos.length > 1) {
+    l.avisos.push(`AMBÍGUO no contrato do Financeiro: o cliente tem ${ativos.length} ativos (${ativos.map((c) => curto(c.id)).join(', ')}), nenhum é ligado`);
+    return;
+  }
+  const c = ativos[0]!;
+  if (c.comercialContratoId) return void l.avisos.push(`contrato do Financeiro ${curto(c.id)} fica solto: já aponta outro registro`);
+  if (!pl.existentes) return void l.avisos.push(`contrato do Financeiro ${curto(c.id)} fica solto: o acordo não tem parcelas`);
+  const previstos = await db.financeTransaction.count({ where: { orgId, contractId: c.id, status: 'previsto' } });
+  if (previstos) return void l.avisos.push(`contrato do Financeiro ${curto(c.id)} fica solto: já gerou ${previstos} lançamento(s) previsto(s)`);
+  l.contractId = c.id;
 }
 
 /** Entra no `--aplicar`: tem plano com contrato e acordo, e nada ambíguo. */
@@ -222,7 +264,7 @@ function situacao(l: LinhaDoDinheiro): string {
   const motivos = [...(l.plano?.ambiguo ?? []), ...l.ambiguo];
   if (motivos.length) return `AMBÍGUO: ${motivos.join('; ')}`;
   if (l.plano?.semRegistro) return `sem registro: ${l.plano.semRegistro}`;
-  return temTrabalho(l) ? 'aplicar' : 'nada a fazer';
+  return `${temTrabalho(l) ? 'aplicar' : 'nada a fazer'}${l.avisos.length ? ` (${l.avisos.join('; ')})` : ''}`;
 }
 
 const reais = (c: number | null) => (c === null ? 'sem valor' : `R$ ${(c / 100).toFixed(2).replace('.', ',')}`);
@@ -243,7 +285,7 @@ export function tabelaDoEnsaio(linhas: readonly LinhaDoDinheiro[], comNome = fal
     const registro = pl?.contrato ? `${l.assumir ? 'assumir ' : ''}${curto(pl.contrato.id)} (${pl.contrato.estado})` : l.assumir ? `assumir ${curto(l.assumir.id)} (${l.assumir.data.estado})` : '-';
     const financeiro = l.contractId ? `${curto(l.contractId)}${l.contractJaLigado ? ' (já ligado)' : ' → ligar'}` : '-';
     const acordo = pl?.acordo ? `${pl.acordo.acao === 'criar' ? 'criar' : `${pl.acordo.acao} ${curto(pl.acordo.id)}`}` : pl?.candidatos.length ? `? ${pl.candidatos.map(curto).join(', ')}` : '-';
-    const parcelas = pl?.acordo ? `criar ${pl.criar.length} · adotar ${pl.adotar.length} · ligar cobrança ${pl.vestir.length}` : '-';
+    const parcelas = pl?.acordo && l.entrada?.soLigar ? `existentes: ${pl.existentes}` : pl?.acordo ? `criar ${pl.criar.length} · adotar ${pl.adotar.length} · ligar cobrança ${pl.vestir.length}` : '-';
     return [curto(l.leadId), ...(comNome ? [celula(l.cliente)] : []), registro, financeiro, acordo, parcelas, celula(situacao(l))];
   });
   const linha = (c: string[]) => `| ${c.join(' | ')} |`;

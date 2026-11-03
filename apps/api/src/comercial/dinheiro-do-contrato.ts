@@ -29,6 +29,10 @@ import { uuidDe } from './eventos';
  * das colunas de ligação: `comercialContratoId`, o `partnerId` vazio do acordo e o
  * `asaasPaymentId` vazio da parcela.
  *
+ * SÓ LIGAR (`soLigar`, o backfill do importado sem cobrança nem parcelas lançadas, 03/11): o
+ * dinheiro já mora no Financeiro. Os degraus são os mesmos, mas o 4 não cria acordo e nenhuma
+ * parcela nasce: só o acordo que já existe ganha o `comercialContratoId`.
+ *
  * Funções soltas, sem Nest, como `registro-do-documento.ts`: o fechamento chama sob
  * o cadeado do contrato do lead, e o script `ligar-dinheiro-dos-contratos` usa as
  * mesmas (o ensaio só planeja).
@@ -60,6 +64,8 @@ export interface EntradaDoDinheiro {
   valorCentavos: number;
   fechadoEm: Date;
   parcelas: readonly ParcelaDoDinheiro[];
+  /** Só liga o acordo que já existe: não cria acordo nem parcela (o importado sem cobrança). */
+  soLigar?: boolean;
 }
 
 export interface PlanoDoDinheiro {
@@ -68,6 +74,8 @@ export interface PlanoDoDinheiro {
   criar: ParcelaDoDinheiro[];
   vestir: Array<{ id: string; numero: number; asaasPaymentId: string }>;
   adotar: Array<{ id: string; numero: number }>;
+  /** Quantas parcelas o acordo escolhido já tem (o que o `soLigar` liga sem criar). */
+  existentes: number;
   /** Os motivos de não ligar. Com algum, nada é escrito. */
   ambiguo: string[];
   /** Os acordos (ou registros) que podiam ser: vão no aviso, para quem concilia. */
@@ -104,9 +112,16 @@ export function diaDoDinheiro(d: Date): Date {
 
 const reais = (centavos: number) => new Prisma.Decimal((centavos / 100).toFixed(2));
 
+/** Cadastro único (03/11): o cliente, o principal dele e os repetidos do cliente são o mesmo cliente. */
+export async function doMesmoCliente(db: Pick<Banco, 'partner'>, orgId: string, partnerId: string) {
+  const cliente = await db.partner.findFirst({ where: { id: partnerId, orgId }, select: { id: true, principalId: true, razaoSocial: true, nomeFantasia: true } });
+  const repetidos = await db.partner.findMany({ where: { orgId, principalId: partnerId }, select: { id: true } });
+  return { cliente, ids: [...new Set([partnerId, cliente?.principalId, ...repetidos.map((r) => r.id)].filter((x): x is string => !!x))] };
+}
+
 /** Só lê: o que ligar, adotar e criar para o dinheiro deste contrato (ou por que não). */
 export async function planejarDinheiro(db: Banco, e: EntradaDoDinheiro): Promise<PlanoDoDinheiro> {
-  const plano: PlanoDoDinheiro = { contrato: null, acordo: null, criar: [], vestir: [], adotar: [], ambiguo: [], candidatos: [], semRegistro: null };
+  const plano: PlanoDoDinheiro = { contrato: null, acordo: null, criar: [], vestir: [], adotar: [], existentes: 0, ambiguo: [], candidatos: [], semRegistro: null };
   const { orgId, leadId } = e;
   const selecao = { id: true, estado: true, partnerId: true } as const;
   const registros = e.contratoId
@@ -146,10 +161,7 @@ export async function planejarDinheiro(db: Banco, e: EntradaDoDinheiro): Promise
         plano.acordo = { acao: 'adotar', id: a.id, por: 'a cobrança do Asaas já vestia uma parcela dele' };
       }
     } else {
-      const cliente = await db.partner.findFirst({ where: { id: e.partnerId, orgId }, select: { id: true, principalId: true, razaoSocial: true, nomeFantasia: true } });
-      // Cadastro único (03/11): o principal e os repetidos dele são o mesmo cliente.
-      const repetidos = await db.partner.findMany({ where: { orgId, principalId: e.partnerId }, select: { id: true } });
-      const doCliente = [...new Set([e.partnerId, cliente?.principalId, ...repetidos.map((r) => r.id)].filter((x): x is string => !!x))];
+      const { cliente, ids: doCliente } = await doMesmoCliente(db, orgId, e.partnerId);
       const pagantes = await db.acordoComercial.findMany({ where: { orgId, tipo: 'pagante', comercialContratoId: null, partnerId: { in: doCliente } }, select: { id: true } });
       if (pagantes.length > 1) {
         plano.ambiguo.push(`o cliente tem ${pagantes.length} acordos pagantes sem contrato`);
@@ -163,7 +175,7 @@ export async function planejarDinheiro(db: Banco, e: EntradaDoDinheiro): Promise
         if (mesmoNome.length) {
           plano.ambiguo.push(`há ${mesmoNome.length} acordo(s) com o nome do cliente e sem cliente ligado`);
           plano.candidatos = mesmoNome.map((a) => a.id);
-        } else {
+        } else if (!e.soLigar) {
           plano.acordo = { acao: 'criar', id: idDoAcordoDoContrato(orgId, contrato.id), por: 'nenhum acordo do cliente' };
         }
       }
@@ -175,6 +187,7 @@ export async function planejarDinheiro(db: Banco, e: EntradaDoDinheiro): Promise
   const existentes = plano.acordo.acao === 'criar'
     ? []
     : await db.acordoParcela.findMany({ where: { orgId, acordoId }, select: { id: true, numero: true, asaasPaymentId: true } });
+  plano.existentes = existentes.length;
   for (const p of e.parcelas) {
     const peloId = p.asaasPaymentId ? existentes.find((x) => x.asaasPaymentId === p.asaasPaymentId) : undefined;
     if (peloId) {
