@@ -205,7 +205,7 @@ export interface PayloadsComerciais {
   /** D-10: a 1ª parcela paga por boleto ou cartão tem o nome da forma; o payload é o do Pix. */
   'boleto.pago': { provedor: string; externoId: string; parcela: number; valorCentavos: number; pagoEm: string };
   'cartao.pago': { provedor: string; externoId: string; parcela: number; valorCentavos: number; pagoEm: string };
-  'contrato.gerado': { provedor: string; externoId: string; hash: string };
+  'contrato.gerado': { provedor: string; externoId: string; hash: string; contratoId?: string; assinaPelaRoot?: string; assinaPelaRootDecidido?: boolean; lacunas?: string[] };
   'contrato.assinado_cliente': { provedor: string; externoId: string; em: string };
   'contrato.assinado_root': { provedor: string; externoId: string; em: string; por?: string | null };
   /**

@@ -11,10 +11,12 @@ import { EfeitosRegistry, type ContextoDoEfeito } from '../gateway/efeitos.regis
 import { PortaDoOperador } from '../gateway/porta-do-operador.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { hashDoContrato, lacunasDoContrato, montarContrato } from './contrato-modelo';
+import { PdfComLacunaError } from './contrato-da-root/pdf-do-contrato';
+import { montarPdfDoRegistro, rootsSemAlcada, SemMinutaError } from './contratos/documento-do-registro';
 import { garantirContratoDoDocumento, refletirAssinaturas, type ReflexoDaAssinatura, type SignatarioDoDocumento } from './contratos/registro-do-documento';
 import { SO_DOCUMENTOS_DE_ASSINATURA } from './documentos';
 import { uuidDe, type PayloadDe } from './eventos';
-import type { DeclaracaoDoFechadoFora } from './fechado-fora';
+import { aceiteDaDeclaracao, type DeclaracaoDoFechadoFora } from './fechado-fora';
 import { FioService, ReacoesRegistry } from './fio.service';
 import { cifrarLinkDaRoot, decifrarLinkDaRoot } from './link-da-root';
 import { parcelasDoValor } from './proposta-construtor';
@@ -209,6 +211,14 @@ export class DinheiroService implements OnModuleInit {
         email: String(d.email ?? ''),
       },
     };
+  }
+
+  /** O aceite para o contrato do registro: o da sala, ou o declarado por quem fechou fora. */
+  async aceiteParaContrato(orgId: string, leadId: string): Promise<AceiteDoLead | null> {
+    const daSala = await this.aceiteDoLead(orgId, leadId);
+    if (daSala) return daSala;
+    const d = await this.prisma.leadEvent.findFirst({ where: { leadId, orgId, type: 'aceite.declarado' }, orderBy: { occurredAt: 'desc' }, select: { payload: true, occurredAt: true } });
+    return d ? aceiteDaDeclaracao(d.payload, d.occurredAt) : null;
   }
 
   /**
@@ -495,17 +505,98 @@ export class DinheiroService implements OnModuleInit {
     return u ? { nome: u.name, email: u.email } : null;
   }
 
-  private async efeitoDeContrato(args: P, orgId: string, _ctx: ContextoDoEfeito): Promise<unknown> {
+  /**
+   * O envio do REGISTRO (F2, `contratoId` nos argumentos). Relê tudo e REGERA o PDF do que está gravado agora: o hash
+   * tem de ser o que a titular assinou, senão nada sai. Os signatários são os da lista, e quem assina pela Root é relido
+   * no banco. Sem `contratoId`, segue o caminho antigo do aceite, abaixo: ver o roteiro, "o fim do esqueleto".
+   */
+  private async efeitoDoRegistro(args: P, orgId: string, contratoId: string, ctx: ContextoDoEfeito): Promise<unknown> {
+    const leadId = String(args.leadId ?? '');
+    const hash = String(args.hash ?? '');
+    const registro = await this.prisma.comercialContrato.findFirst({ where: { id: contratoId, orgId, leadId }, include: { signatarios: { orderBy: { ordem: 'asc' } } } });
+    if (!registro) throw new Error('o contrato do pedido não existe mais: nada foi enviado');
+    if (registro.documentoId) {
+      const doc = await this.prisma.comercialDocumento.findFirst({ where: { id: registro.documentoId, orgId }, select: { id: true, externoId: true, hashConteudo: true } });
+      if (doc?.hashConteudo === hash) return { documentoId: doc.id, externoId: doc.externoId, contratoId, reaproveitado: true };
+      throw new Error('este contrato já tem outro documento na ZapSign: nada foi enviado');
+    }
+    if (registro.estado !== 'a_emitir' && registro.estado !== 'rascunho') throw new Error(`o contrato passou a ${registro.estado} depois do pedido: nada foi enviado`);
+    const a = await this.aceiteParaContrato(orgId, leadId);
+    if (!a) throw new Error('o lead não tem aceite com dados: nada foi enviado');
+    if (a.versao !== Number(args.versao)) throw new Error('a versão aceita mudou depois do pedido: nada foi enviado');
+
+    let montado: Awaited<ReturnType<typeof montarPdfDoRegistro>>;
+    try {
+      montado = await montarPdfDoRegistro(this.prisma, orgId, contratoId, a);
+    } catch (e) {
+      if (e instanceof PdfComLacunaError || e instanceof SemMinutaError) throw new Error(`${e.message}: nada foi enviado`);
+      throw e;
+    }
+    if (montado.pdf.hash !== hash) throw new Error('o PDF de agora não é o que a titular aprovou (a minuta, um signatário ou um dado mudou): nada foi enviado');
+
+    const lista = registro.signatarios.map((s) => ({ papel: s.papel as 'cliente' | 'root', nome: s.nome, email: s.email, ordem: s.ordem }));
+    const doCliente = lista.filter((s) => s.papel === 'cliente');
+    const daRoot = lista.filter((s) => s.papel === 'root');
+    if (!doCliente.length || !daRoot.length) throw new Error('o contrato precisa de quem assine pelos dois lados: nada foi enviado');
+    if (doCliente[0]!.email.toLowerCase() !== String(args.signatarioEmail ?? '').toLowerCase()) throw new Error('o signatário mudou depois do pedido: nada foi enviado');
+    const semAlcada = await rootsSemAlcada(this.prisma, orgId, lista);
+    if (semAlcada.length) throw new Error(`quem assina pela Root não é mais titular ativo (${semAlcada.join(', ')}): nada foi enviado`);
+
+    const ja = await this.prisma.comercialDocumento.findFirst({ where: { leadId, orgId, hashConteudo: hash, estado: { not: 'cancelado' }, ...SO_DOCUMENTOS_DE_ASSINATURA } });
+    if (ja) {
+      await this.manterORegistro(orgId, leadId, () => garantirContratoDoDocumento(this.prisma, { orgId, leadId, documentoId: ja.id, contratoId }));
+      return { documentoId: ja.id, externoId: ja.externoId, contratoId, reaproveitado: true };
+    }
+
+    const rotulo = registro.tipo === 'contrato' ? 'Contrato' : registro.tipo === 'aditivo' ? 'Aditivo' : 'Distrato';
+    const criado = await this.assinatura.criarDocumento({
+      nome: `${rotulo} · ${a.dados.razaoSocial} · proposta v${a.versao}`,
+      pdfBase64: montado.pdf.pdf.toString('base64'),
+      referenciaExterna: `ctr-${contratoId}-${hash.slice(0, 12)}`,
+      signatarios: lista,
+    });
+    const doProvedor = signatariosComExternalId(lista).map((s) => ({ ...s, doc: criado.signatarios.find((c) => c.externalId === s.externalId) ?? criado.signatarios.find((c) => c.papel === s.papel) }));
+    const linkCliente = doProvedor.find((s) => s.papel === 'cliente')?.doc?.link ?? null;
+    const linkRoot = doProvedor.find((s) => s.papel === 'root')?.doc?.link ?? null;
+    const id = uuidDe([orgId, 'comercial-documento', this.assinatura.provedor, criado.externoId]);
+    const segredo = segredoDoAmbiente();
+    const linkRootGuardado = linkRoot && segredo ? cifrarLinkDaRoot(linkRoot, segredo, id) : null;
+    await this.prisma.comercialDocumento.createMany({
+      data: [{ id, leadId, provedor: this.assinatura.provedor, externoId: criado.externoId, estado: 'enviado', hashConteudo: hash, linkCliente, linkRoot: linkRootGuardado }],
+      skipDuplicates: true,
+    });
+    const signatarios: SignatarioDoDocumento[] = doProvedor.map((s) => ({ papel: s.papel, nome: s.nome, email: s.email, ordem: s.ordem, token: s.doc?.token ?? null }));
+    await this.manterORegistro(orgId, leadId, () => garantirContratoDoDocumento(this.prisma, { orgId, leadId, documentoId: id, contratoId, signatarios }));
+    const quemConfirmou = ctx.actorId ? (await this.prisma.user.findFirst({ where: { id: ctx.actorId, orgId }, select: { name: true } }))?.name ?? null : null;
+    await this.fio.registrar(orgId, leadId, 'contrato.minuta_aprovada', `${contratoId}:${hash.slice(0, 16)}`, { contratoId, minutaId: registro.minutaId ?? '', hash, por: quemConfirmou });
+    await this.fio.registrar(orgId, leadId, 'contrato.gerado', criado.externoId, { provedor: this.assinatura.provedor, externoId: criado.externoId, hash, contratoId, lacunas: [], assinaPelaRoot: daRoot[0]!.email, assinaPelaRootDecidido: true });
+
+    // M7: o link de cada signatário do cliente, pelo WhatsApp da Root. É outra capacidade (R3): vai à fila como toda mensagem.
+    let mensagens = 0;
+    if (this.whats) {
+      for (const s of doProvedor.filter((x) => x.papel === 'cliente' && x.doc?.link)) {
+        try {
+          await this.whats.prepararTemplate(orgId, leadId, 'M7', { linkAssinatura: s.doc!.link!, quemAssina: s.nome }, { chave: `${criado.externoId}:${s.externalId}` });
+          mensagens++;
+        } catch (e) {
+          this.log.warn(`M7 de ${leadId}: ${(e as Error).message}`);
+        }
+      }
+    }
+    return { documentoId: id, externoId: criado.externoId, contratoId, reaproveitado: false, signatarios: lista.length, mensagens };
+  }
+
+  private async efeitoDeContrato(args: P, orgId: string, ctx: ContextoDoEfeito): Promise<unknown> {
+    if (typeof args.contratoId === 'string' && args.contratoId) return this.efeitoDoRegistro(args, orgId, args.contratoId, ctx);
     const leadId = String(args.leadId ?? '');
     const a = await this.aceiteConferido(orgId, args, []);
     const doc = this.contratoDoAceite(a);
     if (doc.hash !== String(args.hash)) throw new Error('o conteúdo do contrato mudou depois do pedido: nada foi enviado');
     if (a.dados.email.toLowerCase() !== String(args.signatarioEmail ?? '').toLowerCase()) throw new Error('o signatário mudou depois do pedido: nada foi enviado');
 
-    const contratoId = typeof args.contratoId === 'string' && args.contratoId ? args.contratoId : null;
     const ja = await this.prisma.comercialDocumento.findFirst({ where: { leadId, orgId, hashConteudo: doc.hash, estado: { not: 'cancelado' } } });
     if (ja) {
-      await this.manterORegistro(orgId, leadId, () => garantirContratoDoDocumento(this.prisma, { orgId, leadId, documentoId: ja.id, contratoId }));
+      await this.manterORegistro(orgId, leadId, () => garantirContratoDoDocumento(this.prisma, { orgId, leadId, documentoId: ja.id }));
       return { documentoId: ja.id, externoId: ja.externoId, reaproveitado: true };
     }
 
@@ -539,7 +630,7 @@ export class DinheiroService implements OnModuleInit {
       ordem: s.ordem,
       token: (criado.signatarios.find((c) => c.externalId === s.externalId) ?? criado.signatarios.find((c) => c.papel === s.papel))?.token ?? null,
     }));
-    await this.manterORegistro(orgId, leadId, () => garantirContratoDoDocumento(this.prisma, { orgId, leadId, documentoId: id, contratoId, signatarios }));
+    await this.manterORegistro(orgId, leadId, () => garantirContratoDoDocumento(this.prisma, { orgId, leadId, documentoId: id, signatarios }));
     const payload = {
       provedor: this.assinatura.provedor,
       externoId: criado.externoId,

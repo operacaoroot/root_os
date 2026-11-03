@@ -54,6 +54,7 @@ import { ContratoImportadoService } from './contrato-importado.service';
 // O módulo de contratos (02/11/2026): o contrato como registro próprio, o quadro e a conferência.
 import { ContratosController } from './contratos/contratos.controller';
 import { ContratosService } from './contratos/contratos.service';
+import { EmissaoDoContratoService } from './contratos/emissao.service';
 import { PropostaDoLeadController } from './proposta-do-lead.controller';
 import { PropostaDoLeadService } from './proposta-do-lead.service';
 import { FechamentoService } from './fechamento.service';
@@ -147,6 +148,7 @@ import { LeadRepetidoService } from './lead-repetido.service';
     ContratoImportadoService,
     // --- módulo de contratos, F1 e F3 (o registro, o quadro, conferir, cancelar, reenviar, lote) ---
     ContratosService,
+    EmissaoDoContratoService,
     PropostaDoLeadService,
     // --- ajustes da versão final A2 (iniciar o onboarding antes do negócio fechado: o mesmo card do fechamento) ---
     OnboardingAntecipadoService,

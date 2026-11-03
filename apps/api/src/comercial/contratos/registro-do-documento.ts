@@ -46,7 +46,8 @@ export async function garantirContratoDoDocumento(
   let id = (await prisma.comercialContrato.findUnique({ where: { documentoId }, select: { id: true } }))?.id ?? null;
   if (!id) {
     const aberto = await prisma.comercialContrato.findFirst({
-      where: { orgId, leadId, tipo: 'contrato', documentoId: null, ...(entrada.contratoId ? { id: entrada.contratoId } : { estado: { in: ['a_emitir', 'rascunho'] } }) },
+      // Com `contratoId` (F2) o registro pedido pode ser aditivo ou distrato; sem ele, só o contrato do lead ainda aberto.
+      where: { orgId, leadId, documentoId: null, ...(entrada.contratoId ? { id: entrada.contratoId } : { tipo: 'contrato', estado: { in: ['a_emitir', 'rascunho'] } }) },
       orderBy: { criadoEm: 'desc' },
       select: { id: true },
     });

@@ -1,4 +1,5 @@
-import { Body, Controller, Get, HttpCode, Param, Patch, Post, Put, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, HttpCode, Param, Patch, Post, Put, Res, UseGuards } from '@nestjs/common';
+import type { Response } from 'express';
 import {
   ContratoCancelarSchema,
   ContratoCriarSchema,
@@ -16,6 +17,7 @@ import { RequirePermissions } from '../../auth/permissions.decorator';
 import { PermissionsGuard } from '../../auth/permissions.guard';
 import { SoGenteGuard } from '../mover.service';
 import { ContratosService, type QuemNoContrato } from './contratos.service';
+import { EmissaoDoContratoService } from './emissao.service';
 
 /*
  * O MÓDULO DE CONTRATOS (02/11/2026): o quadro, a ficha e os atos sobre o registro.
@@ -28,7 +30,10 @@ import { ContratosService, type QuemNoContrato } from './contratos.service';
 @UseGuards(JwtAuthGuard, PermissionsGuard)
 @Controller('comercial/contratos')
 export class ContratosController {
-  constructor(private readonly svc: ContratosService) {}
+  constructor(
+    private readonly svc: ContratosService,
+    private readonly emissao: EmissaoDoContratoService,
+  ) {}
 
   private quem(user: JwtUser): QuemNoContrato {
     return { id: user.sub, nome: user.name ?? null, papeis: user.roles ?? [] };
@@ -116,6 +121,49 @@ export class ContratosController {
   @UseGuards(SoGenteGuard)
   reenviar(@CurrentUser() user: JwtUser, @Param('id') id: string) {
     return this.svc.proporReenviar(user.orgId, id, this.quem(user));
+  }
+
+  /** Gera a minuta pelo molde da modalidade (ou pela nota do Drive) e a vincula ao registro. Devolve a ficha. */
+  @Post('registro/:id/minuta')
+  @HttpCode(200)
+  @RequirePermissions('leads.editar')
+  @UseGuards(SoGenteGuard)
+  minuta(@CurrentUser() user: JwtUser, @Param('id') id: string) {
+    return this.emissao.gerarMinuta(user.orgId, id, this.quem(user));
+  }
+
+  /** Roda o revisor de novo sobre a minuta vinculada. Devolve a ficha. */
+  @Post('registro/:id/revisar')
+  @HttpCode(200)
+  @RequirePermissions('leads.editar')
+  @UseGuards(SoGenteGuard)
+  revisar(@CurrentUser() user: JwtUser, @Param('id') id: string) {
+    return this.emissao.revisar(user.orgId, id, this.quem(user));
+  }
+
+  /** O PDF de agora, sem guardar nada e sem cache. Lacuna é 409 com a lista em `faltando`. */
+  @Get('registro/:id/previa.pdf')
+  @RequirePermissions('leads.ver')
+  async previa(@CurrentUser() user: JwtUser, @Param('id') id: string, @Res() res: Response) {
+    const { pdf, paginas } = await this.emissao.previa(user.orgId, id);
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Length', pdf.length);
+    res.setHeader('Content-Disposition', 'inline; filename="previa-do-contrato.pdf"');
+    res.setHeader('Cache-Control', 'no-store');
+    res.setHeader('X-Paginas', String(paginas));
+    res.end(pdf);
+  }
+
+  /**
+   * Recalcula tudo, congela o estado com o hash do PDF e propõe à porta (R4). Retida, responde 200 com
+   * `status: 'aguardando_aprovacao'`: outra pessoa titular confirma com a senha. Faltando algo, 409 com `faltando`.
+   */
+  @Post('registro/:id/enviar')
+  @HttpCode(200)
+  @RequirePermissions('leads.editar')
+  @UseGuards(SoGenteGuard)
+  enviar(@CurrentUser() user: JwtUser, @Param('id') id: string) {
+    return this.emissao.proporEnvio(user.orgId, id, this.quem(user));
   }
 
   @Post('lote')
