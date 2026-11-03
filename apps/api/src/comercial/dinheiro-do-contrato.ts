@@ -78,7 +78,7 @@ export interface PlanoDoDinheiro {
 
 /** Uma linha do diário do backfill: o que mudou, para desfazer. */
 export interface AnotacaoDoDinheiro {
-  tabela: 'ComercialContrato' | 'AcordoComercial' | 'AcordoParcela' | 'Contract';
+  tabela: 'ComercialContrato' | 'AcordoComercial' | 'AcordoParcela' | 'Contract' | 'LeadEvent';
   linha: string;
   /** `*` = a linha nasceu aqui (desfazer apaga). */
   coluna: string;

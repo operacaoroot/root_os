@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { readFileSync } from 'node:fs';
+import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { Prisma } from '@prisma/client';
 
@@ -13,7 +13,10 @@ import { FechamentoService } from '../src/comercial/fechamento.service';
 import { RelogioComercialRegistry } from '../src/comercial/relogio.registry';
 import { AprService, CONTRATO_DO_FECHAMENTO } from '../src/finance/apr.service';
 import { prepararVestir, vestirCobranca } from '../src/finance/parcelas.service';
-import { planejarBackfill, sqlDoDesfazer, tabelaDoEnsaio, temTrabalho } from '../src/scripts/ligar-dinheiro-dos-contratos';
+import {
+  DIARIO, aplicarBackfill, aplicavel, desfazerBackfill, fraseDoAssumir, planejarBackfill, sqlDoDesfazer, tabelaDoEnsaio, temTrabalho,
+} from '../src/scripts/ligar-dinheiro-dos-contratos';
+import { RECUSA_DE_MAQUINA, exigirGenteNoContrato, lerImportadoParaAssumir, registroDoImportado } from '../src/comercial/contratos/importado-assumido';
 import type { AsaasPayment } from '../src/finance/asaas.service';
 
 /*
@@ -575,5 +578,209 @@ describe('o backfill: ensaio numa base de mentira', () => {
       `DELETE FROM "_diario_dinheiro_20261103" WHERE "orgId" = 'org-casa';`,
       'COMMIT;',
     ]);
+  });
+});
+
+/*
+ * `--assumir-importados --pessoa`: o cliente importado do CRM antigo ganha o registro pelo caminho do
+ * módulo de contratos (`importado-assumido.ts`, o mesmo de `assumirImportado`), e o dinheiro se liga
+ * sobre ele. O diário anota a linha e o fato nascidos aqui; o desfazer apaga só esses.
+ */
+describe('o backfill: assumir os importados', () => {
+  const ORIGEM = 'cartao:iota';
+  const idDoImportado = (leadId: string) => uuidDe([CASA, 'comercial-contrato', 'importado', leadId]);
+  const lancadas = (leadId: string, origem: string, versao: number, linhas: Linha[]) => ({
+    id: `e-parc-${leadId}-${origem}-${versao}`, orgId: CASA, leadId, type: 'contrato.parcelas_lancadas', occurredAt: dia(`2026-10-0${versao}`),
+    payload: { origem, versao, linhas, somaCentavos: linhas.reduce((s, l) => s + Number(l.valorCentavos), 0), por: 'Ana', porId: 'u-ana' },
+  });
+  const importadoDe = (leadId: string, origem: string, valorCentavos: number) => ({
+    id: `e-imp-${leadId}-${origem}`, orgId: CASA, leadId, type: 'contrato.importado', occurredAt: dia('2026-09-01'),
+    payload: { origem, cartaoDoCliente: 'c', titulo: 'Contrato antigo', produto: null, produtoRotulo: 'Operação', valorCentavos, fechadoEm: '2026-09-01', semDocumento: true, parcelas: '', por: null, porId: 'x', marca: 'm' },
+  });
+
+  function cenario() {
+    const b = banco({
+      partner: [
+        { id: 'p-a', orgId: CASA, razaoSocial: 'Alfa Ltda', nomeFantasia: null, principalId: null },
+        { id: 'p-i', orgId: CASA, razaoSocial: 'Iota Ltda', nomeFantasia: null, principalId: null },
+        { id: 'p-j', orgId: CASA, razaoSocial: 'Jota ME', nomeFantasia: null, principalId: null },
+      ],
+      lead: [{ id: 'lead-a', orgId: CASA }, { id: 'lead-i', orgId: CASA }, { id: 'lead-j', orgId: CASA }],
+      user: [
+        { id: 'u-ana', orgId: CASA, isActive: true, name: 'Ana', passwordHash: 'h', roles: [{ key: 'diretor', permissions: [{ key: 'leads.editar' }] }] },
+        { id: 'u-ia', orgId: CASA, isActive: true, name: 'Agente', passwordHash: 'h', roles: [{ key: 'ia_servico', permissions: [{ key: 'leads.editar' }] }] },
+      ],
+      leadEvent: [
+        { id: 'e-a', orgId: CASA, leadId: 'lead-a', type: 'cliente.ativo', payload: { chave: 'k', partnerId: 'p-a', contractId: null }, occurredAt: dia('2026-10-10') },
+        { id: 'e-i', orgId: CASA, leadId: 'lead-i', type: 'cliente.ativo', payload: { chave: 'k', partnerId: 'p-i', contractId: null, importado: true, origem: ORIGEM }, occurredAt: dia('2026-09-01') },
+        { id: 'e-j', orgId: CASA, leadId: 'lead-j', type: 'cliente.ativo', payload: { chave: 'k', partnerId: 'p-j', contractId: null, importado: true, origem: 'cartao:j1' }, occurredAt: dia('2026-09-02') },
+        importadoDe('lead-i', ORIGEM, 600000),
+        // A versão mais nova das parcelas lançadas vale (a 1 ficou para trás).
+        lancadas('lead-i', ORIGEM, 1, [{ n: 1, valorCentavos: 600000, vence: '2026-10-05', pagaEm: null }]),
+        lancadas('lead-i', ORIGEM, 2, [{ n: 1, valorCentavos: 300000, vence: '2026-10-05', pagaEm: '2026-10-04' }, { n: 2, valorCentavos: 300000, vence: '2026-11-05', pagaEm: null }]),
+        // Dois importados no mesmo lead, os dois com parcelas: o registro é um só, os números se repetem.
+        importadoDe('lead-j', 'cartao:j1', 100000),
+        importadoDe('lead-j', 'cartao:j2', 200000),
+        lancadas('lead-j', 'cartao:j1', 1, [{ n: 1, valorCentavos: 100000, vence: '2026-10-05', pagaEm: null }]),
+        lancadas('lead-j', 'cartao:j2', 1, [{ n: 1, valorCentavos: 200000, vence: '2026-10-05', pagaEm: null }]),
+      ],
+      comercialFicha: [
+        { id: 'f-a', orgId: CASA, leadId: 'lead-a', partnerId: 'p-a', contractId: null, produto: 'imersao', valorCentavos: 297000 },
+        { id: 'f-i', orgId: CASA, leadId: 'lead-i', partnerId: 'p-i', contractId: null, produto: null, valorCentavos: null, valorNegociadoCentavos: null },
+        { id: 'f-j', orgId: CASA, leadId: 'lead-j', partnerId: 'p-j', contractId: null, produto: null, valorCentavos: null, valorNegociadoCentavos: null },
+      ],
+      // O registro de um cliente de sempre: não nasceu do script, o desfazer não o apaga.
+      comercialContrato: [{ id: 'cc-a', orgId: CASA, leadId: 'lead-a', tipo: 'contrato', estado: 'ativo', partnerId: null, criadoEm: dia('2026-10-01') }],
+      comercialCobranca: [1, 2].map((n) => ({
+        id: `cob-a-${n}`, orgId: CASA, leadId: 'lead-a', provedor: 'asaas', externoId: `pay_a${n}`, parcela: n, parcelas: 2, valorCentavos: 148500, vence: meioDia(`2026-1${n}-05`), pagaEm: null,
+      })),
+    });
+    // O diário em memória: o SQL do script (o mesmo do banco), lido por padrão.
+    const diario: Linha[] = [];
+    const modelo: Record<string, string> = { ComercialContrato: 'comercialContrato', LeadEvent: 'leadEvent', AcordoComercial: 'acordoComercial', AcordoParcela: 'acordoParcela', Contract: 'contract' };
+    const exec = async (sql: string, ...v: unknown[]) => {
+      if (sql.startsWith('CREATE TABLE')) return 0;
+      if (sql.startsWith(`INSERT INTO "${DIARIO}"`)) {
+        const [orgId, tabela, linha, coluna, antes, depois] = v;
+        diario.push({ seq: diario.length + 1, orgId, tabela, linha, coluna, antes, depois });
+        return 1;
+      }
+      if (sql.startsWith(`DELETE FROM "${DIARIO}"`)) return diario.splice(0, diario.length).length;
+      const apagar = /^DELETE FROM "(\w+)" WHERE "id" = \$1$/.exec(sql);
+      if (apagar) {
+        const nome = modelo[apagar[1]!]!;
+        const antes = b.de(nome).length;
+        b.t[nome] = b.de(nome).filter((l) => l.id !== v[0]);
+        return antes - b.t[nome]!.length;
+      }
+      const voltar = /^UPDATE "(\w+)" SET "(\w+)" = \$1 WHERE "id" = \$2 AND "\w+" IS NOT DISTINCT FROM \$3$/.exec(sql);
+      if (voltar) {
+        const col = voltar[2]!;
+        const l = b.de(modelo[voltar[1]!]!).find((x) => x.id === v[1] && (x[col] ?? null) === v[2]);
+        if (l) l[col] = v[0];
+        return l ? 1 : 0;
+      }
+      throw new Error(`SQL inesperado: ${sql}`);
+    };
+    const consulta = async (sql: string, ...v: unknown[]) => {
+      if (sql.includes('to_regclass')) return [{ ok: true }];
+      if (sql.startsWith('SELECT "tabela"')) return diario.filter((d) => d.orgId === v[0]).sort((x, y) => Number(y.seq) - Number(x.seq));
+      throw new Error(`SQL inesperado: ${sql}`);
+    };
+    const original = b.db as unknown as Record<string, unknown>;
+    const db: Record<string, unknown> = new Proxy({}, {
+      get(_alvo, prop: string) {
+        if (prop === 'then') return undefined;
+        if (prop === '$executeRawUnsafe') return exec;
+        if (prop === '$queryRawUnsafe') return consulta;
+        if (prop === '$transaction') return async (fn: unknown) => (fn as (tx: unknown) => unknown)(db);
+        return original[prop];
+      },
+    });
+    return { ...b, db: db as never, diario };
+  }
+
+  it('ensaio sem a opção: o importado fica fora, e diz como entrar', async () => {
+    const c = cenario();
+    const linhas = await planejarBackfill(c.db, CASA, '2026-11-03');
+    const i = linhas.find((l) => l.leadId === 'lead-i')!;
+    expect(i.fora).toMatch(/importado do CRM antigo .*--assumir-importados/);
+    expect(i.assumir).toBeNull();
+  });
+
+  it('ensaio com a opção: o registro que nasceria (o mesmo de `assumirImportado`) e o dinheiro sobre ele, sem escrever', async () => {
+    const c = cenario();
+    const linhas = await planejarBackfill(c.db, CASA, '2026-11-03', { assumirImportados: true });
+    expect(c.escritas).toHaveLength(0);
+    expect(c.de('comercialContrato').map((r) => r.id)).toEqual(['cc-a']);
+
+    const i = linhas.find((l) => l.leadId === 'lead-i')!;
+    const esperado = registroDoImportado(CASA, 'lead-i', (await lerImportadoParaAssumir(c.db, CASA, 'lead-i'))!);
+    expect(i.assumir).toEqual(esperado);
+    expect(i.assumir!.data).toMatchObject({ id: idDoImportado('lead-i'), estado: 'ativo', valorCentavos: 600000, origemImportada: ORIGEM, partnerId: 'p-i' });
+    expect('vigenciaInicio' in i.assumir!.data).toBe(false);
+    expect(i.plano!.contrato).toEqual({ id: idDoImportado('lead-i'), estado: 'ativo', partnerId: 'p-i' });
+    expect(i.plano!.acordo).toMatchObject({ acao: 'criar', id: idDoAcordoDoContrato(CASA, idDoImportado('lead-i')) });
+    expect(i.plano!.criar.map((p) => [p.numero, p.valorCentavos, p.asaasPaymentId])).toEqual([[1, 300000, null], [2, 300000, null]]);
+    expect(i.entrada).toMatchObject({ valorCentavos: 600000, produto: 'Operação' });
+    expect(aplicavel(i) && temTrabalho(i)).toBe(true);
+    expect(fraseDoAssumir(i.assumir!)).toBe(`assumir o importado: registro ${idDoImportado('lead-i').slice(0, 8)} ativo, R$ 6000,00, sem vigência (o importado não traz), origem ${ORIGEM}`);
+
+    // Dois importados com parcelas no mesmo lead: ambíguo, não assume.
+    const j = linhas.find((l) => l.leadId === 'lead-j')!;
+    expect(j.ambiguo[0]).toMatch(/2 contratos importados com parcelas lançadas/);
+    expect(aplicavel(j)).toBe(false);
+
+    const tabela = tabelaDoEnsaio(linhas);
+    expect(tabela).toContain(`| ${'lead-i'} | assumir ${idDoImportado('lead-i').slice(0, 8)} (ativo) | - | criar | criar 2 · adotar 0 · ligar cobrança 0 | aplicar |`);
+    expect(tabela).toMatch(/lead-j .*AMBÍGUO: 2 contratos importados/);
+    expect(tabela).toContain('3 cliente(s) ativo(s) · 2 a aplicar · 1 ambíguo(s)');
+  });
+
+  it('a pessoa é gente de verdade: conta de serviço (IA) é recusada como no módulo', async () => {
+    const c = cenario();
+    await expect(exigirGenteNoContrato(c.db, CASA, { id: 'u-ia', nome: null, papeis: [] })).rejects.toThrow(RECUSA_DE_MAQUINA);
+    await expect(exigirGenteNoContrato(c.db, CASA, { id: 'u-ninguem', nome: null, papeis: [] })).rejects.toThrow(/gente ativa/);
+    expect(await exigirGenteNoContrato(c.db, CASA, { id: 'u-ana', nome: null, papeis: [] })).toEqual({ id: 'u-ana', nome: 'Ana' });
+  });
+
+  it('aplicar: cria o registro pela função do módulo (linha, fato e auditoria), liga o dinheiro e anota no diário', async () => {
+    const c = cenario();
+    const agora = new Date('2026-11-03T15:00:00Z');
+    const esperado = registroDoImportado(CASA, 'lead-i', (await lerImportadoParaAssumir(c.db, CASA, 'lead-i'))!);
+    const r = await aplicarBackfill(c.db, CASA, '2026-11-03', { assumirComo: { id: 'u-ana', nome: 'Ana' }, agora });
+    expect(r).toMatchObject({ aplicados: 2, assumidos: 1 });
+
+    const id = idDoImportado('lead-i');
+    const registros = c.de('comercialContrato');
+    expect(registros.map((x) => x.id).sort()).toEqual(['cc-a', id].sort());
+    expect(registros.find((x) => x.id === id)).toMatchObject({ ...esperado.data, orgId: CASA, dadosDoContrato: { origens: [ORIGEM] } });
+    // O lead ambíguo não ganhou registro.
+    expect(registros.some((x) => x.leadId === 'lead-j')).toBe(false);
+
+    const fatoId = eventoIdComercial(CASA, 'lead-i', 'contrato.registrado', `${id}:importado`);
+    expect(c.de('leadEvent').find((e) => e.id === fatoId)).toMatchObject({ type: 'contrato.registrado', occurredAt: agora, payload: { contratoId: id, ato: 'importado_assumido', por: 'Ana', porId: 'u-ana' } });
+    expect(c.de('auditLog')).toEqual([expect.objectContaining({ action: 'comercial.contrato.importado_assumido', entityId: id, actorId: 'u-ana', after: { leadId: 'lead-i', origens: [ORIGEM], eventoId: fatoId } })]);
+    expect(c.cadeados).toContain(`comercial-contrato:${CASA}:lead-i`);
+
+    const acordo = c.de('acordoComercial').find((a) => a.comercialContratoId === id)!;
+    expect(acordo).toMatchObject({ id: idDoAcordoDoContrato(CASA, id), partnerId: 'p-i', tipo: 'pagante', produto: 'Operação' });
+    expect(c.de('acordoParcela').filter((p) => p.acordoId === acordo.id)).toHaveLength(2);
+
+    expect(c.diario.slice(0, 2)).toEqual([
+      expect.objectContaining({ tabela: 'ComercialContrato', linha: id, coluna: '*' }),
+      expect.objectContaining({ tabela: 'LeadEvent', linha: fatoId, coluna: '*' }),
+    ]);
+    // A segunda passagem do ensaio dá "nada a fazer" fora o ambíguo; aplicar de novo não assume outra vez.
+    const depois = await planejarBackfill(c.db, CASA, '2026-11-03', { assumirImportados: true });
+    expect(depois.filter(temTrabalho)).toHaveLength(0);
+    expect(depois.find((l) => l.leadId === 'lead-i')!.assumir).toBeNull();
+    expect((await aplicarBackfill(c.db, CASA, '2026-11-03', { assumirComo: { id: 'u-ana', nome: 'Ana' }, agora })).assumidos).toBe(0);
+  });
+
+  it('desfazer: apaga só o registro e o fato que o script criou, e devolve as ligações', async () => {
+    const c = cenario();
+    await aplicarBackfill(c.db, CASA, '2026-11-03', { assumirComo: { id: 'u-ana', nome: 'Ana' }, agora: new Date('2026-11-03T15:00:00Z') });
+    expect(c.de('comercialContrato').find((x) => x.id === 'cc-a')!.partnerId).toBe('p-a');
+    const passos = await desfazerBackfill(c.db, CASA);
+    expect(passos).toBeGreaterThan(0);
+    expect(c.de('comercialContrato')).toEqual([expect.objectContaining({ id: 'cc-a', partnerId: null })]);
+    expect(c.de('leadEvent').some((e) => e.type === 'contrato.registrado')).toBe(false);
+    expect(c.de('acordoComercial')).toHaveLength(0);
+    expect(c.de('acordoParcela')).toHaveLength(0);
+    expect(c.diario).toHaveLength(0);
+    // A auditoria fica: é o rastro de que alguém assumiu e o script desfez.
+    expect(c.de('auditLog')).toHaveLength(1);
+  });
+
+  it('catracas: a tela passa pela mesma função; nenhuma reação escuta `contrato.registrado` (o script não roda `reagir`)', () => {
+    const servico = readFileSync(join(__dirname, '..', 'src', 'comercial', 'contratos', 'contratos.service.ts'), 'utf8');
+    const assumir = servico.slice(servico.indexOf('private async assumirImportado'), servico.indexOf('// Criar, editar, signatários'));
+    expect(assumir).toContain('gravarImportadoAssumido(tx, orgId, leadId, registro, pessoa, agora, this.fio)');
+    expect(assumir).toContain('registroDoImportado(orgId, leadId, base)');
+    expect(assumir).not.toContain('comercialContrato.create');
+    const arquivos = (dir: string): string[] => readdirSync(dir).flatMap((n) => (statSync(join(dir, n)).isDirectory() ? arquivos(join(dir, n)) : n.endsWith('.ts') ? [join(dir, n)] : []));
+    const escutam = arquivos(join(__dirname, '..', 'src')).filter((a) => /inscrever\(\s*['"]contrato\.registrado['"]/.test(readFileSync(a, 'utf8')));
+    expect(escutam).toEqual([]);
   });
 });

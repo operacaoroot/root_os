@@ -6,6 +6,7 @@
  *   node dist/scripts/ligar-dinheiro-dos-contratos.js --org <apelido|id> [--ensaio] [--detalhe <arquivo fora do git>]
  *   node dist/scripts/ligar-dinheiro-dos-contratos.js --org <apelido|id> --aplicar
  *   node dist/scripts/ligar-dinheiro-dos-contratos.js --org <apelido|id> --desfazer
+ *   (o ensaio e o aplicar aceitam --assumir-importados --pessoa <userId>, ver abaixo)
  *
  * Padrão `--ensaio`: só lê. Para cada cliente ativo (fato `cliente.ativo`) diz o
  * que o fechamento de hoje faria com o dinheiro dele (`dinheiro-do-contrato.ts`):
@@ -19,6 +20,17 @@
  * (tabela, linha, coluna, antes, depois). No fim imprime o SQL que desfaz; o
  * `--desfazer` roda esse mesmo desfazer a partir do diário. Ambíguo fica de fora
  * (o dono decide à mão) e cliente importado do CRM antigo também (não há registro).
+ *
+ * `--assumir-importados --pessoa <userId>` (opt-in): o cliente importado sem registro ganha o registro
+ * pelo caminho do módulo de contratos (`importado-assumido.ts`, o mesmo de `ContratosService.assumirImportado`):
+ * a linha, o fato `contrato.registrado` (ato `importado_assumido`) e a auditoria, em nome da pessoa
+ * (gente de verdade relida no banco; conta de serviço ou IA é recusada, como na tela). No ensaio,
+ * mostra o registro que nasceria (estado, valor, vigência, origem) e o plano do dinheiro sobre ele,
+ * simulado em memória. No `--aplicar`, só assume quem vai ser ligado sem ambiguidade; a linha e o fato
+ * nascidos aqui vão ao diário, e o `--desfazer` apaga só esses (a auditoria fica: é o rastro).
+ * As parcelas do importado vêm das cobranças ou, sem elas, da versão mais nova das parcelas lançadas
+ * à mão (`contrato.parcelas_lancadas`). Nenhuma reação escuta `contrato.registrado` (catraca na suíte):
+ * o script não perde nada por não rodar `fio.reagir`.
  *
  * NUNCA reescreve o que uma pessoa digitou: só as colunas de ligação
  * (`comercialContratoId` do acordo e do contrato do Financeiro, o `partnerId` do
@@ -39,14 +51,22 @@ import { ActorType, PrismaClient } from '@prisma/client';
 import { TABELA_DE_PRECO } from '@mktos/shared';
 
 import { comContexto } from '../common/contexto-execucao';
+import { estadoDoImportado } from '../comercial/contrato-importado';
+import { contratosImportados } from '../comercial/contrato-vivo.service';
+import {
+  exigirGenteNoContrato, gravarImportadoAssumido, lerImportadoParaAssumir, registroDoImportado,
+  type PessoaNoContrato, type RegistroDoImportado,
+} from '../comercial/contratos/importado-assumido';
 import {
   aplicarDinheiro, cadeadoDoContrato, planejarDinheiro, resumoDoPlano,
   type AnotacaoDoDinheiro, type EntradaDoDinheiro, type ParcelaDoDinheiro, type PlanoDoDinheiro,
 } from '../comercial/dinheiro-do-contrato';
 import { hojeEmSP, venceComoData } from '../comercial/dinheiro.service';
 import { aceiteDaDeclaracao, parcelasDoContratoFora } from '../comercial/fechado-fora';
+import { FioService, ReacoesRegistry } from '../comercial/fio.service';
 import { dentroDeGit } from '../comercial/importador-crm/detalhe';
 import { materializarParcelas } from '../finance/parcelas.service';
+import type { PrismaService } from '../prisma/prisma.service';
 import { comTenantNaSessao } from '../prisma/sessao-de-banco';
 
 export const DIARIO = '_diario_dinheiro_20261103';
@@ -67,12 +87,41 @@ export interface LinhaDoDinheiro {
   fora: string | null;
   /** Ambíguo além do plano (o contrato do Financeiro). Junto com `plano.ambiguo`. */
   ambiguo: string[];
+  /** `--assumir-importados`: o registro que `assumirImportado` criaria (ainda não existe). */
+  assumir: RegistroDoImportado | null;
 }
 
 const curto = (id: string | null | undefined) => (id ? id.slice(0, 8) : '-');
 
+type BancoDoPlano = Parameters<typeof planejarDinheiro>[0];
+
+/**
+ * O banco do planejador com o registro que `assumirImportado` criaria, só em memória: a busca pelo
+ * registro do lead devolve também ele, se casar com o filtro. O resto é o banco de verdade, só lido.
+ */
+export function comRegistroSimulado(db: BancoDoPlano, r: RegistroDoImportado): BancoDoPlano {
+  const linha = { id: r.id, estado: r.data.estado, partnerId: r.data.partnerId };
+  const casa = (w: P = {}) => {
+    const estado = w.estado as string | { in?: string[] } | undefined;
+    return (w.id === undefined || w.id === r.id) && (w.leadId === undefined || w.leadId === r.data.leadId) && (w.tipo === undefined || w.tipo === 'contrato')
+      && (estado === undefined || (typeof estado === 'string' ? estado === r.data.estado : !!estado.in?.includes(r.data.estado)));
+  };
+  const comercialContrato = {
+    findMany: async (a: { where?: P }) => {
+      const reais = (await db.comercialContrato.findMany(a as never)) as Array<{ id: string }>;
+      return reais.some((x) => x.id === r.id) || !casa(a.where) ? reais : [...reais, linha];
+    },
+  };
+  return { comercialContrato, acordoComercial: db.acordoComercial, acordoParcela: db.acordoParcela, partner: db.partner } as unknown as BancoDoPlano;
+}
+
+export interface OpcoesDoPlano {
+  /** `--assumir-importados`: o importado sem registro entra com o registro que nasceria. */
+  assumirImportados?: boolean;
+}
+
 /** Só lê: o plano de cada cliente ativo da empresa. */
-export async function planejarBackfill(db: Banco, orgId: string, hoje: string = hojeEmSP()): Promise<LinhaDoDinheiro[]> {
+export async function planejarBackfill(db: Banco, orgId: string, hoje: string = hojeEmSP(), opcoes: OpcoesDoPlano = {}): Promise<LinhaDoDinheiro[]> {
   const ativos = await db.leadEvent.findMany({ where: { type: 'cliente.ativo', lead: { orgId } }, orderBy: { occurredAt: 'asc' }, select: { leadId: true, payload: true, occurredAt: true } });
   const primeiro = new Map<string, (typeof ativos)[number]>();
   for (const a of ativos) if (!primeiro.has(a.leadId)) primeiro.set(a.leadId, a);
@@ -83,9 +132,26 @@ export async function planejarBackfill(db: Banco, orgId: string, hoje: string = 
     const partnerId = (typeof p.partnerId === 'string' && p.partnerId) || ficha?.partnerId || null;
     const contractId = (typeof p.contractId === 'string' && p.contractId) || ficha?.contractId || null;
     const parceiro = partnerId ? await db.partner.findFirst({ where: { id: partnerId, orgId }, select: { razaoSocial: true } }) : null;
-    const linha: LinhaDoDinheiro = { leadId, cliente: parceiro?.razaoSocial ?? ficha?.empresa ?? '', partnerId, contractId, contractJaLigado: false, entrada: null, plano: null, fora: null, ambiguo: [] };
+    const linha: LinhaDoDinheiro = { leadId, cliente: parceiro?.razaoSocial ?? ficha?.empresa ?? '', partnerId, contractId, contractJaLigado: false, entrada: null, plano: null, fora: null, ambiguo: [], assumir: null };
     linhas.push(linha);
-    if (p.importado === true) { linha.fora = 'importado do CRM antigo (sem registro do contrato)'; continue; }
+    // Importado do CRM antigo: com registro (alguém já agiu nele na tela) segue o caminho de todos;
+    // sem registro, só com `--assumir-importados`, e o plano corre sobre o registro que nasceria.
+    let doImportado: RegistroDoImportado | null = null;
+    let produtoDoImportado = '';
+    let valorDoRegistro: number | null = null;
+    if (p.importado === true) {
+      const assumido = await db.comercialContrato.findFirst({ where: { orgId, leadId, origemImportada: { not: null } }, select: { id: true, valorCentavos: true } });
+      if (!assumido && !opcoes.assumirImportados) { linha.fora = 'importado do CRM antigo (sem registro do contrato; --assumir-importados o cria)'; continue; }
+      const baseDoImportado = await lerImportadoParaAssumir(db, orgId, leadId);
+      if (!baseDoImportado) { linha.fora = 'importado do CRM antigo sem o fato contrato.importado (nada de onde nascer o registro)'; continue; }
+      doImportado = registroDoImportado(orgId, leadId, baseDoImportado);
+      produtoDoImportado = contratosImportados(baseDoImportado.fatos)[0]?.produtoRotulo ?? '';
+      if (!assumido) {
+        if (doImportado.data.estado !== 'ativo') { linha.fora = `importado do CRM antigo já ${doImportado.data.estado} (o registro nasceria sem dinheiro a ligar)`; continue; }
+        linha.assumir = doImportado;
+      }
+      valorDoRegistro = assumido ? assumido.valorCentavos : doImportado.data.valorCentavos;
+    }
     if (!partnerId || !parceiro) { linha.fora = 'sem cliente no fechamento'; continue; }
 
     const cobrancas = await db.comercialCobranca.findMany({ where: { leadId, orgId }, orderBy: { parcela: 'asc' } });
@@ -103,12 +169,26 @@ export async function planejarBackfill(db: Banco, orgId: string, hoje: string = 
         produto = a.produto;
       }
     }
-    if (!parcelas.length) { linha.fora = 'sem cobrança nem parcelas declaradas'; continue; }
+    if (!parcelas.length && doImportado) {
+      // O importado sem cobrança: a versão mais nova das parcelas lançadas à mão (a mesma leitura da tela).
+      const fatos = await db.leadEvent.findMany({ where: { orgId, leadId, type: 'contrato.parcelas_lancadas' }, select: { type: true, payload: true, occurredAt: true } });
+      const lancadas = doImportado.origens.map((o) => estadoDoImportado(o, fatos, hoje).parcelasManuais).filter((m) => !!m?.linhas.length);
+      if (lancadas.length > 1) {
+        linha.ambiguo.push(`${lancadas.length} contratos importados com parcelas lançadas: o registro é um só e os números das parcelas se repetiriam`);
+        continue;
+      }
+      if (lancadas.length === 1) {
+        parcelas = lancadas[0]!.linhas.map((l) => ({ numero: l.n, valorCentavos: l.valorCentavos, vence: venceComoData(l.vence), pagaEm: l.pagaEm ? venceComoData(l.pagaEm) : null, asaasPaymentId: null }));
+        valorCentavos = lancadas[0]!.somaCentavos;
+      }
+    }
+    if (doImportado && !produto) produto = produtoDoImportado;
+    if (!parcelas.length) { linha.fora = doImportado ? 'importado sem cobrança nem parcelas lançadas à mão' : 'sem cobrança nem parcelas declaradas'; continue; }
     linha.entrada = {
       orgId, leadId, partnerId, cliente: parceiro.razaoSocial, produto: TABELA_DE_PRECO[produto as keyof typeof TABELA_DE_PRECO]?.rotulo ?? produto,
-      valorCentavos: ficha?.valorNegociadoCentavos ?? ficha?.valorCentavos ?? valorCentavos, fechadoEm: ativo.occurredAt, parcelas,
+      valorCentavos: valorDoRegistro ?? ficha?.valorNegociadoCentavos ?? ficha?.valorCentavos ?? valorCentavos, fechadoEm: ativo.occurredAt, parcelas,
     };
-    linha.plano = await planejarDinheiro(db, linha.entrada);
+    linha.plano = await planejarDinheiro(linha.assumir ? comRegistroSimulado(db, linha.assumir) : db, linha.entrada);
 
     if (contractId) {
       const c = await db.contract.findFirst({ where: { id: contractId, orgId }, select: { id: true, comercialContratoId: true } });
@@ -145,6 +225,14 @@ function situacao(l: LinhaDoDinheiro): string {
   return temTrabalho(l) ? 'aplicar' : 'nada a fazer';
 }
 
+const reais = (c: number | null) => (c === null ? 'sem valor' : `R$ ${(c / 100).toFixed(2).replace('.', ',')}`);
+
+/** O registro que `assumirImportado` criaria: estado, valor, vigência e origem. */
+export function fraseDoAssumir(r: RegistroDoImportado): string {
+  const mais = r.origens.length > 1 ? ` (+${r.origens.length - 1} origem(ns) somada(s))` : '';
+  return `assumir o importado: registro ${curto(r.id)} ${r.data.estado}, ${reais(r.data.valorCentavos)}, sem vigência (o importado não traz), origem ${r.data.origemImportada}${mais}`;
+}
+
 const celula = (s: string) => String(s ?? '').replace(/\|/g, '/').replace(/\s+/g, ' ').trim();
 
 /** A tabela do ensaio. Sem `comNome`, só ids curtos (é o que vai ao console). */
@@ -152,7 +240,7 @@ export function tabelaDoEnsaio(linhas: readonly LinhaDoDinheiro[], comNome = fal
   const cab = ['lead', ...(comNome ? ['cliente'] : []), 'registro (estado)', 'contrato do Financeiro', 'acordo', 'parcelas', 'situação'];
   const rows = linhas.map((l) => {
     const pl = l.plano;
-    const registro = pl?.contrato ? `${curto(pl.contrato.id)} (${pl.contrato.estado})` : '-';
+    const registro = pl?.contrato ? `${l.assumir ? 'assumir ' : ''}${curto(pl.contrato.id)} (${pl.contrato.estado})` : l.assumir ? `assumir ${curto(l.assumir.id)} (${l.assumir.data.estado})` : '-';
     const financeiro = l.contractId ? `${curto(l.contractId)}${l.contractJaLigado ? ' (já ligado)' : ' → ligar'}` : '-';
     const acordo = pl?.acordo ? `${pl.acordo.acao === 'criar' ? 'criar' : `${pl.acordo.acao} ${curto(pl.acordo.id)}`}` : pl?.candidatos.length ? `? ${pl.candidatos.map(curto).join(', ')}` : '-';
     const parcelas = pl?.acordo ? `criar ${pl.criar.length} · adotar ${pl.adotar.length} · ligar cobrança ${pl.vestir.length}` : '-';
@@ -194,10 +282,21 @@ const CRIAR_DIARIO = `CREATE TABLE IF NOT EXISTS "${DIARIO}" (
   "tabela" TEXT NOT NULL, "linha" TEXT NOT NULL, "coluna" TEXT NOT NULL, "antes" TEXT, "depois" TEXT
 )`;
 
+export interface OpcoesDoAplicar {
+  /** `--assumir-importados --pessoa`: quem assume os importados (já conferida por `exigirGenteNoContrato`). */
+  assumirComo?: PessoaNoContrato;
+  agora?: Date;
+}
+
 /** Uma transação só: o que não é ambíguo, sob o cadeado de cada lead, anotado no diário. */
-export async function aplicarBackfill(db: Banco, orgId: string, hoje: string = hojeEmSP()): Promise<{ aplicados: number; anotacoes: AnotacaoDoDinheiro[] }> {
+export async function aplicarBackfill(db: Banco, orgId: string, hoje: string = hojeEmSP(), opcoes: OpcoesDoAplicar = {}): Promise<{ aplicados: number; assumidos: number; anotacoes: AnotacaoDoDinheiro[] }> {
   const anotacoes: AnotacaoDoDinheiro[] = [];
   let aplicados = 0;
+  let assumidos = 0;
+  const pessoa = opcoes.assumirComo ?? null;
+  const agora = opcoes.agora ?? new Date();
+  // Só o `gravarNaTransacao` do fio (não lê o banco do serviço nem roda reação).
+  const fio = new FioService(db as unknown as PrismaService, new ReacoesRegistry());
   await db.$transaction(
     async (tx) => {
       await tx.$executeRawUnsafe(CRIAR_DIARIO);
@@ -206,9 +305,18 @@ export async function aplicarBackfill(db: Banco, orgId: string, hoje: string = h
         await tx.$executeRawUnsafe(`INSERT INTO "${DIARIO}" ("orgId", "tabela", "linha", "coluna", "antes", "depois") VALUES ($1, $2, $3, $4, $5, $6)`, orgId, a.tabela, a.linha, a.coluna, a.antes, a.depois);
       };
       // Replaneja dentro da transação: o ensaio pode ter ficado velho.
-      for (const l of await planejarBackfill(tx as unknown as Banco, orgId, hoje)) {
+      for (const l of await planejarBackfill(tx as unknown as Banco, orgId, hoje, { assumirImportados: !!pessoa })) {
         if (!temTrabalho(l)) continue;
         await cadeadoDoContrato(tx, orgId, l.leadId);
+        if (l.assumir && pessoa) {
+          // O caminho da tela (`assumirImportado`), dentro desta transação; o que nasceu vai ao diário.
+          const g = await gravarImportadoAssumido(tx, orgId, l.leadId, l.assumir, pessoa, agora, fio);
+          if (g.criado) {
+            assumidos++;
+            await anotar({ tabela: 'ComercialContrato', linha: l.assumir.id, coluna: '*', antes: null, depois: 'criado' });
+          }
+          if (g.evento) await anotar({ tabela: 'LeadEvent', linha: g.evento.eventoId, coluna: '*', antes: null, depois: 'criado' });
+        }
         const plano = await planejarDinheiro(tx, l.entrada!);
         if (!plano.contrato || !plano.acordo || plano.ambiguo.length) continue;
         const feito = await aplicarDinheiro(tx, l.entrada!, plano, anotar);
@@ -223,7 +331,7 @@ export async function aplicarBackfill(db: Banco, orgId: string, hoje: string = h
     },
     { timeout: 120_000, maxWait: 10_000 },
   );
-  return { aplicados, anotacoes };
+  return { aplicados, assumidos, anotacoes };
 }
 
 /** Roda o desfazer do diário desta empresa (a mesma conta de `sqlDoDesfazer`). */
@@ -259,7 +367,12 @@ async function main(): Promise<void> {
   const modo = modos[0] ?? '--ensaio';
   const org = opcao(args, 'org');
   const detalhe = opcao(args, 'detalhe');
+  const assumirImportados = args.includes('--assumir-importados');
+  const pessoaId = opcao(args, 'pessoa');
   if (!org) throw new Error('falta --org <apelido|id>: o comando nunca escolhe a empresa sozinho.');
+  if (assumirImportados && !pessoaId) throw new Error('--assumir-importados pede --pessoa <userId>: o registro nasce em nome de gente de verdade.');
+  if (pessoaId && !assumirImportados) throw new Error('--pessoa só vale com --assumir-importados.');
+  if (assumirImportados && modo === '--desfazer') throw new Error('--desfazer não assume nada: rode sem --assumir-importados.');
   if (detalhe && dentroDeGit(detalhe)) throw new Error('o arquivo de --detalhe tem nome de cliente: grave fora de repositório git.');
   if (!process.env.DATABASE_URL) throw new Error('DATABASE_URL vazia. Nunca passe a URL na linha de comando.');
 
@@ -270,26 +383,29 @@ async function main(): Promise<void> {
     if (!empresa) throw new Error('a empresa de --org não existe neste banco.');
     const orgId = empresa.id;
     await comContexto({ orgId, actorType: ActorType.system, actorId: null, correlationId: `terminal-ligar-dinheiro-${orgId}-${Date.now()}`, origem: 'script' }, async () => {
+      // A mesma régua da tela: ativa, desta empresa, sem papel de máquina (RECUSA_DE_MAQUINA) e com `leads.editar`.
+      const pessoa = pessoaId ? await exigirGenteNoContrato(prisma as unknown as PrismaService, orgId, { id: pessoaId, nome: null, papeis: [] }) : null;
       if (modo === '--desfazer') {
         const n = await desfazerBackfill(prisma, orgId);
         console.log(n ? `${n} passo(s) do diário desfeito(s). O diário desta empresa foi esvaziado.` : 'Diário vazio: nada a desfazer.');
         return;
       }
       if (modo === '--aplicar') {
-        const r = await aplicarBackfill(prisma, orgId);
-        console.log(`${r.aplicados} cliente(s) ligado(s), ${r.anotacoes.length} mudança(s) no diário "${DIARIO}".`);
+        const r = await aplicarBackfill(prisma, orgId, hojeEmSP(), { assumirComo: pessoa ?? undefined });
+        console.log(`${r.aplicados} cliente(s) ligado(s)${pessoa ? `, ${r.assumidos} importado(s) assumido(s)` : ''}, ${r.anotacoes.length} mudança(s) no diário "${DIARIO}".`);
         console.log('\nPara desfazer (ou rode --desfazer):\n');
         console.log(sqlDoDesfazer(r.anotacoes, orgId));
         return;
       }
-      const linhas = await planejarBackfill(prisma, orgId);
+      const linhas = await planejarBackfill(prisma, orgId, hojeEmSP(), { assumirImportados });
       if (detalhe) {
         mkdirSync(path.dirname(path.resolve(detalhe)), { recursive: true });
         writeFileSync(detalhe, [`# Dinheiro dos contratos · ensaio · ${new Date().toISOString()}`, '', 'Fora do git: tem nome de cliente.', '', tabelaDoEnsaio(linhas, true), ''].join('\n'), { encoding: 'utf8', mode: 0o600 });
       }
       console.log(tabelaDoEnsaio(linhas));
-      for (const l of linhas.filter(aplicavel)) console.log(`  ${curto(l.leadId)}: ${resumoDoPlano(l.plano!)}`);
-      console.log('\nNada foi escrito. Depois de conferir, rode com --aplicar.');
+      for (const l of linhas.filter(aplicavel)) console.log(`  ${curto(l.leadId)}: ${l.assumir ? `${fraseDoAssumir(l.assumir)}; depois, ` : ''}${resumoDoPlano(l.plano!)}`);
+      for (const l of linhas.filter((x) => x.assumir && !aplicavel(x))) console.log(`  ${curto(l.leadId)}: não assume (${situacao(l)}): o registro só nasce para quem é ligado sem ambiguidade.`);
+      console.log(`\nNada foi escrito. Depois de conferir, rode com --aplicar${assumirImportados ? ` --assumir-importados --pessoa ${pessoaId}` : ''}.`);
     });
   } finally {
     await base.$disconnect();
