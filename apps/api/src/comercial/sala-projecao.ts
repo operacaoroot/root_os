@@ -66,7 +66,12 @@ export interface DocumentoParaSala {
   criadoEm: Date;
   /** L6 (leva 5): `zapsign`, `anexo`... A minuta (`minuta`) nunca chega aqui (o filtro é na consulta), mas a lista confere de novo. */
   provedor?: string;
+  /** Módulo de contratos: o tipo do registro deste documento. Ausente (documento anterior, anexo sem registro) vale contrato. */
+  tipoDoContrato?: string;
 }
+
+/** O título do documento para o cliente: aditivo e distrato não são "o contrato". */
+const TITULO_DO_DOCUMENTO: Record<string, string> = { aditivo: 'Aditivo ao contrato', distrato: 'Distrato do contrato' };
 
 export interface DadosDaSala {
   horariosOferecidos?: string[];
@@ -279,7 +284,8 @@ export function projetarSala(e: EntradaDaProjecao): EstadoDaSala {
       const d = dados ? ((dados.payload ?? {}) as P) : null;
       const cobrancas = [...e.cobrancas].sort((x, y) => x.parcela - y.parcela);
       const primeira = cobrancas[0] ?? null;
-      const doc = [...e.documentos].sort((x, y) => y.criadoEm.getTime() - x.criadoEm.getTime())[0] ?? null;
+      // O contrato do aceite: documento cancelado saiu da ZapSign, e aditivo ou distrato não é este contrato.
+      const doc = [...e.documentos].filter((d) => d.estado !== 'cancelado' && (d.tipoDoContrato ?? 'contrato') === 'contrato').sort((x, y) => y.criadoEm.getTime() - x.criadoEm.getTime())[0] ?? null;
       aceite = {
         produto: base.produto,
         valorCentavos: num(base.valorCentavos) ?? 0,
@@ -540,13 +546,13 @@ export function documentosParaOCliente(e: Pick<EntradaDaProjecao, 'eventos' | 'd
     }
   }
   for (const d of e.documentos) {
-    if (d.provedor === 'minuta') continue;
+    if (d.provedor === 'minuta' || d.estado === 'cancelado') continue;
     const assinadoPorVoce = Boolean(d.assinadoClienteEm);
     const assinadoPelaRoot = Boolean(d.assinadoRootEm);
     const anexo = d.provedor === 'anexo';
     out.push({
       tipo: 'contrato',
-      titulo: 'Contrato',
+      titulo: TITULO_DO_DOCUMENTO[d.tipoDoContrato ?? ''] ?? 'Contrato',
       estado: anexo
         ? 'assinado, guardado pela Root'
         : assinadoPorVoce && assinadoPelaRoot

@@ -4,7 +4,7 @@ import { SALA_TOKEN_RE, SalaFormSchema } from '@mktos/shared';
 import { horarioOferecido, horariosOferecidos, rotuloDoHorario } from '../src/comercial/agenda-de-homologacao';
 import { MENSAGENS } from '../src/comercial/mensagens';
 import { TetoPorOrigem } from '../src/comercial/sala.controller';
-import { estagioDaSala, projetarSala, type EntradaDaProjecao, type EventoDaSala } from '../src/comercial/sala-projecao';
+import { documentosParaOCliente, estagioDaSala, projetarSala, type EntradaDaProjecao, type EventoDaSala } from '../src/comercial/sala-projecao';
 import {
   cifrarTokenDaSala,
   decifrarTokenDaSala,
@@ -175,6 +175,26 @@ describe('a sala como projeção do fio', () => {
     delete p.alternativa;
     const s = projetarSala(base([form, { ...pub, payload: p }]));
     expect(s.proposta?.alternativa).toBeNull();
+  });
+
+  it('documento cancelado sai da sala, e aditivo não vira "Contrato" nem o link do aceite', () => {
+    const dados = ev('aceite.dados', { cnpj: '12345678000199', razaoSocial: 'Construtora Alicerce Ltda', endereco: 'Rua A, 1', quemAssina: 'Marina Duarte', email: 'm@a.com' }, 3100);
+    const aceita = ev('proposta.aceita', { versao: 1, produto: 'operacao', valorCentavos: 1_199_700, parcelas: 3, forma: 'pix', hash: 'h1' }, 3101);
+    const doc = (over: object) => ({ estado: 'enviado', linkCliente: 'http://assine', assinadoClienteEm: null, assinadoRootEm: null, criadoEm: t0, ...over });
+    const e = base([form, pub, dados, aceita]);
+    const comDocs = { ...e, documentos: [
+      doc({ linkCliente: 'http://contrato', tipoDoContrato: 'contrato' }),
+      doc({ estado: 'cancelado', linkCliente: 'http://morto', criadoEm: new Date(t0.getTime() + 1000) }),
+      doc({ linkCliente: 'http://aditivo', tipoDoContrato: 'aditivo', criadoEm: new Date(t0.getTime() + 2000) }),
+      doc({ linkCliente: 'http://distrato', tipoDoContrato: 'distrato', criadoEm: new Date(t0.getTime() + 3000) }),
+    ] };
+    const s = projetarSala(comDocs);
+    expect(s.aceite?.contrato?.linkAssinatura).toBe('http://contrato');
+    const lista = documentosParaOCliente(comDocs, s);
+    const titulos = lista.filter((d) => d.link).map((d) => [d.titulo, d.link]);
+    expect(titulos).toEqual(expect.arrayContaining([['Contrato', 'http://contrato'], ['Aditivo ao contrato', 'http://aditivo'], ['Distrato do contrato', 'http://distrato']]));
+    expect(JSON.stringify(lista)).not.toContain('http://morto');
+    expect(projetarSala({ ...e, documentos: [doc({ estado: 'cancelado' })] }).aceite?.contrato).toBeNull();
   });
 
   it('aceite: contrato, com a cobrança e o documento quando existirem; cliente ativo abre o começo', () => {
