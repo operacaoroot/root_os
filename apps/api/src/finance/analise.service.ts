@@ -127,7 +127,8 @@ export class AnaliseService {
         select: { amount: true, status: true, counterparty: true, description: true, date: true, dueDate: true, chartAccountId: true },
       }),
       // Conta que já acabou (data de fim no passado) não entra, mesmo com o status ativo.
-      this.prisma.contract.findMany({ where: { orgId, status: 'ativo', OR: [{ dataFim: null }, { dataFim: { gte: new Date(agora - 86400_000) } }] }, select: { id: true, tipo: true, descricao: true, valor: true, periodicidade: true, diaVencimento: true, dataFim: true, partner: { select: { razaoSocial: true } } } }),
+      // Etapa 4: nem o contrato do fechamento (com registro comercial): o dinheiro dele está no acordo.
+      this.prisma.contract.findMany({ where: { orgId, status: 'ativo', comercialContratoId: null, OR: [{ dataFim: null }, { dataFim: { gte: new Date(agora - 86400_000) } }] }, select: { id: true, tipo: true, descricao: true, valor: true, periodicidade: true, diaVencimento: true, dataFim: true, partner: { select: { razaoSocial: true } } } }),
       this.prisma.financeTransaction.count({ where: { orgId, status: { not: 'previsto' }, chartAccountId: null, temRateio: false } }),
       this.prisma.chartAccount.findMany({ where: { orgId }, select: { id: true, codigo: true, nome: true, parentId: true, custoFixo: true, natureza: true } }),
       this.prisma.financeTransaction.findMany({

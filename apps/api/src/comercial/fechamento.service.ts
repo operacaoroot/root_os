@@ -3,6 +3,7 @@ import { COMERCIAL_FATOS_DA_PRIMEIRA_PAGA, TABELA_DE_PRECO, formatarReais, type 
 import { ActorType, FinanceTxType, Prisma } from '@prisma/client';
 
 import { PASTA_DO_CLIENTE, type PastaDoClientePort } from '../clientes/portas';
+import { materializarParcelas } from '../finance/parcelas.service';
 import { EfeitosRegistry, type ContextoDoEfeito } from '../gateway/efeitos.registry';
 import { InterruptoresRegistry } from '../gateway/interruptores.registry';
 import { PortaDoOperador } from '../gateway/porta-do-operador.service';
@@ -12,6 +13,7 @@ import { ConfigComercialService } from './config.service';
 import { DecisoesRegistry, DecisoesService, type DecisaoResolvida } from './decisoes.service';
 import { hashesDoRegistro } from './contratos/contratos-puro';
 import { DinheiroService, hojeEmSP, venceComoData, type AceiteDoLead } from './dinheiro.service';
+import { aplicarDinheiro, cadeadoDoContrato, contaEPlanoDoFechamento, planejarDinheiro, resumoDoPlano, type EntradaDoDinheiro, type ParcelaDoDinheiro } from './dinheiro-do-contrato';
 import { AUTOR_DO_FECHAMENTO, abrirCardDaImplantacao, travarImplantacaoDoLead } from './card-da-implantacao';
 import { acharOuCriarClienteDoFechamento } from './cliente-do-lead';
 import { eventoIdComercial, uuidDe } from './eventos';
@@ -211,6 +213,8 @@ export class FechamentoService implements OnModuleInit {
     this.reacoes.inscrever('kickoff.marcado', 'fechamento.m8', (ev) => this.boasVindas(ev.orgId, ev.leadId, String((ev.payload as P).horario ?? '')));
     this.decisoesRegistry.aoDecidir('veto_de_fechamento', (d) => this.aoDecidirVeto(d), 'fechamento.veto');
     this.relogio?.inscrever('dinheiro.repropor', (orgId, agora) => this.repropor(orgId, agora));
+    // Etapa 4 (F-05): a parcela que o Financeiro viu paga avisa o Comercial (o mesmo fato do webhook).
+    this.relogio?.inscrever('dinheiro.pagas_no_financeiro', (orgId, agora) => this.dinheiro.pagasNoFinanceiro(orgId, agora));
   }
 
   /**
@@ -552,17 +556,40 @@ export class FechamentoService implements OnModuleInit {
     });
 
     // 3. contrato no Financeiro: id derivado da chave.
+    // Etapa 4 (F-03/F-04): o dinheiro do contrato vai às parcelas de um acordo ligado ao registro do
+    // contrato (`dinheiro-do-contrato.ts`), ANTES do "reaproveitado" (rodar de novo liga o que faltou).
+    // O contrato do Financeiro aponta o mesmo registro, com a conta do Asaas e "Serviços Prestados".
     await rodar('contrato', async () => {
       const id = uuidDe([orgId, 'comercial-contract', linha.chave]);
-      const ja = await this.prisma.contract.findUnique({ where: { id }, select: { id: true } });
-      if (ja) return { estado: 'reaproveitado', detalhe: 'contrato já registrado no Financeiro', ref: id };
+      const ja = await this.prisma.contract.findUnique({ where: { id }, select: { id: true, comercialContratoId: true } });
       const partnerId = refs.cliente ?? null;
-      if (!partnerId) throw new Error('sem cliente: o contrato do Financeiro espera a escrita do cliente');
+      if (!ja && !partnerId) throw new Error('sem cliente: o contrato do Financeiro espera a escrita do cliente');
       // T1b: o contrato já veio assinado; o PDF anexado é o documento assinado (nada vai à ZapSign).
-      if (fora) await this.documentoAnexado(orgId, leadId, fora.arquivoSha256, fora.assinadoEm);
-      if (fora && !fora.criarCobranca) {
-        const p = parcelasDoContratoFora(a.valorCentavos, a.parcelas, fora.primeiroVencimento, hojeEmSP());
-        const rotulo = TABELA_DE_PRECO[a.produto]?.rotulo ?? a.produto;
+      const registroDoAnexo = fora ? await this.documentoAnexado(orgId, leadId, fora.arquivoSha256, fora.assinadoEm) : null;
+      const rotulo = TABELA_DE_PRECO[a.produto]?.rotulo ?? a.produto;
+      const parcelas = await this.prisma.comercialCobranca.findMany({ where: { leadId, orgId }, orderBy: { parcela: 'asc' } });
+      const semCobranca = fora && !fora.criarCobranca ? parcelasDoContratoFora(a.valorCentavos, a.parcelas, fora.primeiroVencimento, hojeEmSP()) : null;
+      const doDinheiro: ParcelaDoDinheiro[] = parcelas.length
+        ? parcelas.map((c) => ({ numero: c.parcela, valorCentavos: c.valorCentavos, vence: c.vence, pagaEm: c.pagaEm, asaasPaymentId: c.externoId }))
+        : (semCobranca?.vencimentos ?? []).map((v, i, todas) => ({
+            numero: i + 1, valorCentavos: i === todas.length - 1 ? semCobranca!.ultimaParcelaCentavos : semCobranca!.parcelaCentavos, vence: venceComoData(v), pagaEm: null, asaasPaymentId: null,
+          }));
+      const dinheiro = partnerId && doDinheiro.length
+        ? await this.dinheiroDoContrato(orgId, leadId, linha.chave, {
+            orgId, leadId, partnerId, contratoId: registroDoAnexo, cliente: a.dados.razaoSocial || lead.name, produto: rotulo,
+            valorCentavos: a.valorCentavos, fechadoEm: new Date(), parcelas: doDinheiro,
+          })
+        : null;
+      const comDinheiro = (t: string) => (dinheiro ? `${t} · ${dinheiro.detalhe}` : t).slice(0, 400);
+      if (ja) {
+        if (dinheiro?.contratoId && !ja.comercialContratoId) {
+          await this.prisma.contract.updateMany({ where: { id, orgId, comercialContratoId: null }, data: { comercialContratoId: dinheiro.contratoId } });
+        }
+        return { estado: 'reaproveitado', detalhe: comDinheiro('contrato já registrado no Financeiro'), ref: id };
+      }
+      const financeiro = { comercialContratoId: dinheiro?.contratoId ?? null, ...(await contaEPlanoDoFechamento(this.prisma, orgId)) };
+      if (semCobranca) {
+        const p = semCobranca;
         const aUltima = p.ultimaParcelaCentavos !== p.parcelaCentavos ? ` (a última de ${formatarReais(p.ultimaParcelaCentavos)})` : '';
         await this.prisma.contract.create({
           data: {
@@ -572,22 +599,21 @@ export class FechamentoService implements OnModuleInit {
             partnerId,
             descricao: `${rotulo} · ${a.dados.razaoSocial} · ${a.parcelas}× ${formatarReais(p.parcelaCentavos)}${aUltima} · ${linha.chave} · assinado fora do sistema, sem cobrança no Asaas`,
             valor: new Prisma.Decimal((p.parcelaCentavos / 100).toFixed(2)),
-            diaVencimento: Number(fora.primeiroVencimento.slice(8, 10)),
+            diaVencimento: Number(fora!.primeiroVencimento.slice(8, 10)),
             periodicidade: 'mensal',
             dataInicio: venceComoData(p.vencimentos[0]),
             dataFim: venceComoData(p.vencimentos[p.vencimentos.length - 1]),
             proximoVencimento: venceComoData(p.proximo),
+            ...financeiro,
           },
         });
         await this.prisma.comercialFicha.updateMany({ where: { leadId, orgId }, data: { contractId: id } });
-        return { estado: 'criado', detalhe: `${a.parcelas}× ${formatarReais(p.parcelaCentavos)}${aUltima}, mensal, desde ${fora.primeiroVencimento} · contrato assinado fora, PDF anexado`, ref: id };
+        return { estado: 'criado', detalhe: comDinheiro(`${a.parcelas}× ${formatarReais(p.parcelaCentavos)}${aUltima}, mensal, desde ${fora!.primeiroVencimento} · contrato assinado fora, PDF anexado`), ref: id };
       }
-      const parcelas = await this.prisma.comercialCobranca.findMany({ where: { leadId, orgId }, orderBy: { parcela: 'asc' } });
       if (!parcelas.length) throw new Error('sem parcelas: o contrato do Financeiro espera a cobrança');
       const primeira = parcelas[0];
       const ultima = parcelas[parcelas.length - 1];
       const proxima = parcelas.find((p) => !p.pagaEm) ?? ultima;
-      const rotulo = TABELA_DE_PRECO[a.produto]?.rotulo ?? a.produto;
       // D-11: a última parcela que absorve a diferença aparece no contrato do Financeiro.
       const aUltima = ultima.valorCentavos !== primeira.valorCentavos ? ` (a última de ${formatarReais(ultima.valorCentavos)})` : '';
       await this.prisma.contract.create({
@@ -603,10 +629,11 @@ export class FechamentoService implements OnModuleInit {
           dataInicio: primeira.vence,
           dataFim: ultima.vence,
           proximoVencimento: proxima.vence,
+          ...financeiro,
         },
       });
       await this.prisma.comercialFicha.updateMany({ where: { leadId, orgId }, data: { contractId: id } });
-      return { estado: 'criado', detalhe: `${a.parcelas}× ${formatarReais(primeira.valorCentavos)}${aUltima}, mensal`, ref: id };
+      return { estado: 'criado', detalhe: comDinheiro(`${a.parcelas}× ${formatarReais(primeira.valorCentavos)}${aUltima}, mensal`), ref: id };
     });
 
     // 4. kit e trilho: o trilho de implantação com os dados copiados.
@@ -806,7 +833,7 @@ export class FechamentoService implements OnModuleInit {
    * data que a pessoa declarou, para quem lê o documento saber que o contrato está assinado e por onde veio.
    * O id e o `externoId` derivam do lead e do arquivo: rodar de novo não cria outro.
    */
-  private async documentoAnexado(orgId: string, leadId: string, sha256: string, assinadoEm: string): Promise<void> {
+  private async documentoAnexado(orgId: string, leadId: string, sha256: string, assinadoEm: string): Promise<string | null> {
     const quando = venceComoData(assinadoEm);
     await this.prisma.comercialDocumento.createMany({
       data: [
@@ -825,10 +852,53 @@ export class FechamentoService implements OnModuleInit {
       skipDuplicates: true,
     });
     // O registro do contrato (módulo de contratos). É projeção: falhar não derruba a escrita do fechamento.
+    // Etapa 4: o id do registro volta para o dinheiro do contrato (nulo se falhou: o dinheiro segue no Financeiro).
     try {
-      await garantirContratoDoDocumento(this.prisma, { orgId, leadId, documentoId: uuidDe([orgId, 'comercial-documento', 'anexo', leadId, sha256]) });
+      return await garantirContratoDoDocumento(this.prisma, { orgId, leadId, documentoId: uuidDe([orgId, 'comercial-documento', 'anexo', leadId, sha256]) });
     } catch (e) {
       this.log.error(`registro do contrato anexado do lead ${leadId}: ${(e as Error).message}`);
+      return null;
+    }
+  }
+
+  /**
+   * Etapa 4 (F-03): o dinheiro do contrato no acordo, sob o cadeado do contrato do lead, numa transação
+   * (acordo e parcelas entram juntos ou nada entra). Devolve o registro ligado, ou nulo quando não ligou:
+   * sem registro com dinheiro, ambíguo (o aviso `dinheiro.a_conciliar` vai ao fio) ou erro (no log). Sem
+   * ligação, o contrato do Financeiro nasce como sempre e segue projetado: o dinheiro não some.
+   */
+  private async dinheiroDoContrato(orgId: string, leadId: string, chave: string, e: EntradaDoDinheiro): Promise<{ contratoId: string | null; detalhe: string }> {
+    try {
+      const r = await this.prisma.$transaction(
+        async (tx) => {
+          await cadeadoDoContrato(tx, orgId, leadId);
+          const plano = await planejarDinheiro(tx, e);
+          // O registro ganha o cliente do fechamento mesmo quando o acordo fica a conciliar.
+          if (plano.contrato && plano.contrato.partnerId !== e.partnerId) {
+            await tx.comercialContrato.updateMany({ where: { id: plano.contrato.id, orgId }, data: { partnerId: e.partnerId } });
+            plano.contrato = { ...plano.contrato, partnerId: e.partnerId };
+          }
+          const feito = plano.contrato && plano.acordo && !plano.ambiguo.length ? await aplicarDinheiro(tx, e, plano) : null;
+          return { plano, feito };
+        },
+        { timeout: 30_000, maxWait: 10_000 },
+      );
+      const { plano, feito } = r;
+      if (plano.ambiguo.length) {
+        const contratoId = plano.contrato?.id ?? null;
+        await this.fio.registrar(orgId, leadId, 'dinheiro.a_conciliar', `${chave}:${contratoId ?? 'varios'}`, { chave, contratoId, motivo: plano.ambiguo.join('; ').slice(0, 400), acordos: plano.candidatos.slice(0, 20) });
+      }
+      if (!feito) return { contratoId: null, detalhe: resumoDoPlano(plano) };
+      // As parcelas sem cobrança viram o previsto `parc_<id>` (a mesma conta das telas e do sync).
+      try {
+        await materializarParcelas(this.prisma, orgId);
+      } catch (erro) {
+        this.log.warn(`previstos das parcelas do lead ${leadId}: ${(erro as Error).message}`);
+      }
+      return { contratoId: feito.contratoId, detalhe: resumoDoPlano(plano) };
+    } catch (erro) {
+      this.log.error(`dinheiro do contrato do lead ${leadId}: ${(erro as Error).message}`);
+      return { contratoId: null, detalhe: `o dinheiro não foi ao acordo (${(erro as Error).message.slice(0, 160)}): segue no contrato do Financeiro` };
     }
   }
 

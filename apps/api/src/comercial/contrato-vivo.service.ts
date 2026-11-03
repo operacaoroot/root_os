@@ -361,14 +361,10 @@ export class ContratoVivoService implements OnModuleInit {
     const somaImportada = importados.length && importados.every((c) => c.valorCentavos !== null)
       ? importados.reduce((s, c) => s + (c.valorCentavos ?? 0), 0)
       : null;
-    const valorCentavos = somaImportada ?? ficha?.valorCentavos ?? cobrancas.reduce((s, c) => s + c.valorCentavos, 0);
-    return {
-      leadId,
-      cliente: ficha?.empresa ?? lead.name,
-      produto: (ficha?.produto && ficha.produto in TABELA_DE_PRECO ? ficha.produto : null) as ComercialProduto | null,
-      valorCentavos,
-      descontoPct: ficha?.descontoPct != null ? Number(ficha.descontoPct) : null,
-      parcelas: cobrancas.map((c) => ({
+    // Etapa 4 (F-05): sem cobrança no lead (quem fechou fora sem Asaas), as parcelas são as do acordo
+    // ligado ao contrato do registro, que o Financeiro marca pagas.
+    const parcelas = cobrancas.length
+      ? cobrancas.map((c) => ({
         n: c.parcela,
         total: c.parcelas,
         valorCentavos: c.valorCentavos,
@@ -376,7 +372,16 @@ export class ContratoVivoService implements OnModuleInit {
         estado: estadoDaParcela(diaSP(c.vence), c.pagaEm, hoje),
         pagaEm: c.pagaEm?.toISOString() ?? null,
         aviso: c.ultimoAviso,
-      })),
+      }))
+      : await this.parcelasDoAcordo(orgId, leadId, hoje);
+    const valorCentavos = somaImportada ?? ficha?.valorCentavos ?? parcelas.reduce((s, c) => s + c.valorCentavos, 0);
+    return {
+      leadId,
+      cliente: ficha?.empresa ?? lead.name,
+      produto: (ficha?.produto && ficha.produto in TABELA_DE_PRECO ? ficha.produto : null) as ComercialProduto | null,
+      valorCentavos,
+      descontoPct: ficha?.descontoPct != null ? Number(ficha.descontoPct) : null,
+      parcelas,
       reguaDeCobranca: TEXTO_DA_REGUA,
       entregas: [
         { texto: 'trilho de implantação aberto', feito: !!ficha?.trilhoId },
@@ -397,6 +402,26 @@ export class ContratoVivoService implements OnModuleInit {
       socioDaConta: ficha?.socioDaConta ?? null,
       importados,
     };
+  }
+
+  /** Etapa 4: as parcelas do acordo ligado ao contrato mais novo do lead no registro (a coluna `date` já é o dia). */
+  private async parcelasDoAcordo(orgId: string, leadId: string, hoje: string): Promise<ContratoVivo['parcelas']> {
+    const registros = await this.prisma.comercialContrato.findMany({ where: { leadId, orgId, tipo: 'contrato' }, orderBy: { criadoEm: 'desc' }, select: { id: true } });
+    if (!registros.length) return [];
+    const acordos = await this.prisma.acordoComercial.findMany({ where: { orgId, comercialContratoId: { in: registros.map((r) => r.id) } }, select: { id: true, comercialContratoId: true } });
+    const acordo = registros.map((r) => acordos.find((a) => a.comercialContratoId === r.id)).find(Boolean);
+    if (!acordo) return [];
+    const ps = await this.prisma.acordoParcela.findMany({ where: { orgId, acordoId: acordo.id }, orderBy: [{ vencimento: 'asc' }, { numero: 'asc' }] });
+    const dia = (d: Date) => d.toISOString().slice(0, 10);
+    return ps.map((p, i) => ({
+      n: i + 1,
+      total: ps.length,
+      valorCentavos: Math.round(Number(p.valor) * 100),
+      vence: dia(p.vencimento),
+      estado: estadoDaParcela(dia(p.vencimento), p.pagaEm, hoje),
+      pagaEm: p.pagaEm?.toISOString() ?? null,
+      aviso: null,
+    }));
   }
 
   async lista(orgId: string, agora: Date = new Date()): Promise<ContratoVivo[]> {

@@ -416,6 +416,9 @@ export const COMERCIAL_EVENTOS = [
   // Revisão adversarial A2: o cliente ligado ao lead antes do fechamento não confere com o CNPJ do
   // aceite; o fechamento seguiu pela regra do CNPJ e deixou o aviso para uma pessoa conciliar.
   'cliente.a_conciliar',
+  // Etapa 4 (03/11/2026): o fechamento achou mais de um acordo (ou parcela) que podia ser o dinheiro
+  // deste contrato; não ligou nenhum e deixou o aviso para uma pessoa conciliar.
+  'dinheiro.a_conciliar',
   // Rodada de produção 1 (21/10/2026): o CRM antigo (listas `cadastro` do Trabalho) importado para o
   // Comercial por uma pessoa, pelo script `importar-crm`. Fato passado registrado, não ato comercial novo:
   // nenhum dos dois roda reação (nada sai para fora).

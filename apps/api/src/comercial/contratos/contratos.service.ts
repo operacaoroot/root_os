@@ -27,6 +27,7 @@ import { exigirAcessoAtual } from '../../memory/acesso-memoria';
 import { PrismaService } from '../../prisma/prisma.service';
 import { contratosImportados, EFEITO_DE_ENCERRAR_CONTRATO } from '../contrato-vivo.service';
 import { DinheiroService } from '../dinheiro.service';
+import { cadeadoDoContrato } from '../dinheiro-do-contrato';
 import { canonico, hashDoConteudo, uuidDe, type PayloadDe } from '../eventos';
 import { FioService, ReacoesRegistry } from '../fio.service';
 import { assinaturaDoEstado, PORTA_DE_ASSINATURA, type PortaDeAssinatura } from '../portas/assinatura.port';
@@ -180,7 +181,8 @@ export class ContratosService implements OnModuleInit {
   }
 
   cadeado(tx: Prisma.TransactionClient, orgId: string, leadId: string): Promise<unknown> {
-    return tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`comercial-contrato:${orgId}:${leadId}`}))`;
+    // Etapa 4: o mesmo cadeado vale para o dinheiro do contrato no fechamento (`dinheiro-do-contrato.ts`).
+    return cadeadoDoContrato(tx, orgId, leadId);
   }
 
   auditar(tx: Prisma.TransactionClient, orgId: string, atorId: string | null, acao: string, contratoId: string, before: unknown, after: unknown, ator: ActorType = ActorType.user): Promise<unknown> {

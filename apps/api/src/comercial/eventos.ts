@@ -116,6 +116,7 @@ export const FONTE_DO_EVENTO: Record<ComercialEvento, ComercialFonte> = {
   'implantacao.iniciada_antes_do_fechamento': 'pessoa',
   'implantacao.fechamento_registrado': 'sistema',
   'cliente.a_conciliar': 'sistema',
+  'dinheiro.a_conciliar': 'sistema',
   'lead.importado': 'pessoa',
   'contrato.importado': 'pessoa',
   'contrato.parcelas_lancadas': 'pessoa',
@@ -250,6 +251,8 @@ export interface PayloadsComerciais {
   'implantacao.fechamento_registrado': { chave: string; cardId: string };
   /** Revisão A2: o Partner da ficha não conferia com o CNPJ do aceite; o fechamento ficou com outro e avisa. */
   'cliente.a_conciliar': { chave: string; partnerDaFicha: string; partnerDoFechamento: string; motivo: string };
+  /** Etapa 4 (03/11/2026): mais de um acordo podia ser o dinheiro do contrato; nada foi ligado. Os ids vão para quem concilia. */
+  'dinheiro.a_conciliar': { chave: string; contratoId: string | null; motivo: string; acordos: string[] };
   /**
    * Rodada de produção 1 (21/10/2026): o cartão do CRM antigo virou (ou reaproveitou) este lead.
    * `origem` é `cartao:<id>`; os campos são os do cartão, nada inventado. Gravado sem reação.
@@ -510,6 +513,8 @@ export function resumoDoEvento(type: string, payload: unknown): { fonte: Comerci
       return { fonte, resumo: 'fechamento registrado no card da implantação iniciado antes' };
     case 'cliente.a_conciliar':
       return { fonte, resumo: `cliente a conciliar: ${curto(p.motivo, 120)}` };
+    case 'dinheiro.a_conciliar':
+      return { fonte, resumo: `dinheiro do contrato a conciliar: ${curto(p.motivo, 120)}` };
     case 'lead.importado':
       return { fonte, resumo: `importado do CRM antigo${p.por ? ` por ${String(p.por)}` : ''}${p.status ? ` · status do cartão: ${curto(p.status, 40)}` : ''}` };
     case 'contrato.importado':
