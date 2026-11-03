@@ -7,6 +7,8 @@ export interface PropostaNaLista {
   chave: string;
   titulo: string;
   estado: string;
+  /** Página de proposta ou link de escopo (o serviço diz; sem isso, o título começando por "Escopo"). */
+  tipo?: TipoDePagina;
   /** 0 não abriu · 1 abriu · 2 leu o investimento · 3 clicou em pagar */
   etapa: number;
   aberturas: number;
@@ -26,6 +28,16 @@ export interface AparelhoDaEquipe {
 export interface ListaDePropostas {
   propostas: PropostaNaLista[];
   aparelhosDaEquipe: AparelhoDaEquipe[];
+  /** Abrir no aparelho e tocar no nome tira as visitas dele da contagem. */
+  linkDoCadastroDeAparelho?: string | null;
+  /** Redes (IP) de onde a equipe abre propostas em vários dias: também ficam fora. */
+  redesDaEquipe?: number;
+}
+
+export type TipoDePagina = 'proposta' | 'escopo';
+
+export function tipoDaPagina(p: { tipo?: TipoDePagina; titulo: string }): TipoDePagina {
+  return p.tipo ?? (/^escopo/i.test(p.titulo.trim()) ? 'escopo' : 'proposta');
 }
 
 export interface DetalheDaProposta {
@@ -51,8 +63,13 @@ export interface DetalheDaProposta {
     leuAte: string;
     plays: number;
     clicouEmPagar: boolean;
+    /** Tempo desta visita em cada parte, pelo id da parte (0 = não chegou). */
+    partes?: Record<string, number>;
   }[];
   visitasDaEquipeIgnoradas: number;
+  /** Das ignoradas, as que saíram só pela rede da equipe (aparelho não cadastrado). */
+  visitasIgnoradasPeloIp?: number;
+  tipo?: TipoDePagina;
 }
 
 /** As etapas do leitor do serviço de propostas. Na sala, a última é o aceite. */
