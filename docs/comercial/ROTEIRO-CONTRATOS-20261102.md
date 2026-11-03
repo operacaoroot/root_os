@@ -32,6 +32,15 @@ Branch `contratos/20261102`, a partir de `origin/main` b890e221. Contrato compar
 
 F1 registro e signatários · F2 minuta vira PDF · F3 conferir, cancelar, reenviar · F4 quadro, aditivo, distrato · F5 ferramentas MCP.
 
+## Backend F1 e F3 (02/11/2026): decisões que ficaram no código
+
+- `comercial.contrato.cancelar` e `comercial.contrato.reenviar` são R3 pela escada. No cancelar, `destruicao` é falso porque só sai o documento pendente: o efeito recusa documento todo assinado, e registro, hash, signatários e fio ficam no OS. Com `destruicao: true` a escada daria R5 e a porta recusaria o botão. O DELETE da ZapSign não foi testado no sandbox (só no dublê): a spec pede confirmar se ele cancela ou apaga antes de ligar em produção.
+- Reenviar não dispara e-mail da ZapSign (`disable_signer_emails`). Ele prepara a M7 para quem do cliente falta, e a M7 é `comercial.whatsapp.enviar`: são duas aprovações, a do reenvio e a da mensagem.
+- `external_id` novo em todo documento (`cliente:1`, `cliente:2`, `root:1`). Os signatários vão em paralelo: a ordem não vira sequência obrigatória na ZapSign. O papel só conta como assinado quando todos daquele papel assinaram.
+- "Um contrato vivo por lead" é regra do serviço, sob cadeado: índice único derrubaria o backfill, porque há lead com dois documentos.
+- Encerrar pelo registro grava o mesmo `contrato.concluido` da rota antiga, e a rota antiga fecha o registro. `contrato.desativado` não fecha: é a coluna "A encerrar". Reabrir (`contrato.reaberto`) anula o fim na lista de contratos vivos e na régua dos importados.
+- Para publicar: `db:seed:politica` ANTES da subida, com as duas assinaturas, `POLITICA_CAPACIDADE_NOVA_*` (as duas capacidades) e `POLITICA_REBAIXAMENTO_*` (`contratoId` no esquema de `comercial.contrato.enviar`).
+
 ## O que continua sendo dos sócios
 
 Plano de API e tokens da ZapSign, webhook cadastrado, quem assina pela Root, CNPJ que fatura, provedor de IA em produção.
