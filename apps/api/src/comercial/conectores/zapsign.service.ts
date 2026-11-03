@@ -14,10 +14,13 @@ import {
 } from '../../integrations/contrato-de-conector';
 import {
   MAX_BYTES_DO_PDF_ASSINADO,
+  base64DoPdf,
   documentoDaZapsign,
   lerWebhookDaZapsign,
   pareceSerPdf,
+  signatariosComExternalId,
   type AssinaturaNoWebhook,
+  type DocumentoCancelado,
   type DocumentoNoProvedor,
   type NovoDocumento,
   type PdfAssinado,
@@ -97,7 +100,7 @@ export class ZapsignService implements OnModuleInit, PortaDeAssinatura {
     }
   }
 
-  private async chamar<T>(metodo: 'GET' | 'POST', path: string, corpo?: unknown, prazoMs = 20_000): Promise<{ status: number; corpo: T | null }> {
+  private async chamar<T>(metodo: 'GET' | 'POST' | 'DELETE', path: string, corpo?: unknown, prazoMs = 20_000): Promise<{ status: number; corpo: T | null }> {
     this.exigirConfigurada();
     const res = await fetch(`${this.base}${path}`, {
       method: metodo,
@@ -117,13 +120,15 @@ export class ZapsignService implements OnModuleInit, PortaDeAssinatura {
   }
 
   async criarDocumento(d: NovoDocumento): Promise<DocumentoNoProvedor> {
+    // O conteúdo vai como UM dos dois: `base64_pdf` (o PDF gerado pelo OS, sem o prefixo `data:`) ou `markdown_text`.
+    const conteudo = d.pdfBase64 !== undefined ? { base64_pdf: base64DoPdf(d.pdfBase64) } : { markdown_text: d.markdown };
     const r = await this.chamar<Record<string, unknown>>('POST', '/docs/', {
       name: d.nome,
-      markdown_text: d.markdown,
+      ...conteudo,
       external_id: d.referenciaExterna,
       lang: 'pt-br',
       disable_signer_emails: true,
-      signers: d.signatarios.map((s) => ({ name: s.nome, email: s.email, external_id: s.papel, send_automatic_email: false })),
+      signers: signatariosComExternalId(d.signatarios).map((s) => ({ name: s.nome, email: s.email, external_id: s.externalId, send_automatic_email: false })),
     });
     if (r.status === 404 || !r.corpo) throw new Error('ZapSign não devolveu o documento criado.');
     return documentoDaZapsign(r.corpo);
@@ -135,6 +140,21 @@ export class ZapsignService implements OnModuleInit, PortaDeAssinatura {
   }
 
   async enviarParaAssinar(externoId: string): Promise<DocumentoNoProvedor | null> {
+    return this.consultarEstado(externoId);
+  }
+
+  /** `DELETE /docs/{token}/`. O 404 é o mesmo resultado: o documento já não está lá. */
+  async cancelar(externoId: string): Promise<DocumentoCancelado> {
+    const r = await this.chamar('DELETE', `/docs/${encodeURIComponent(externoId)}/`);
+    return { externoId, jaNaoExistia: r.status === 404 };
+  }
+
+  /**
+   * Os links atuais de cada signatário. A ZapSign NÃO reenvia e-mail: todo documento nasce com
+   * `disable_signer_emails: true` e `send_automatic_email: false`, porque quem fala com o cliente é o
+   * WhatsApp da Root (M7). Reenviar, aqui, é ler o link de novo para quem chama entregar pela fila.
+   */
+  async reenviar(externoId: string): Promise<DocumentoNoProvedor | null> {
     return this.consultarEstado(externoId);
   }
 
