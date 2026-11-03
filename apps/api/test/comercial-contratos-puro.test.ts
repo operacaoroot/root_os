@@ -528,10 +528,12 @@ describe('a rota do quadro não cai em GET contratos/:leadId', () => {
 describe('o lote e o que a política retém', () => {
   /** Só o lote de verdade: os atos são dublês, para medir o que ele faz com cada resposta. */
   function comAtos(atos: { conferir?: unknown; encerrar?: unknown; reabrir?: unknown }) {
-    const svc = Object.create(ContratosService.prototype) as ContratosService & Record<string, unknown>;
-    svc.exigirGente = async () => ({ id: 'u', nome: 'Mesa' });
-    svc.ehImportado = async (_o: string, id: string) => id.startsWith('importado:');
-    for (const [k, v] of Object.entries(atos)) svc[k] = v;
+    const svc = Object.create(ContratosService.prototype) as ContratosService;
+    Object.assign(svc, {
+      exigirGente: async () => ({ id: 'u', nome: 'Mesa' }),
+      ehImportado: async (_o: string, id: string) => id.startsWith('importado:'),
+      ...atos,
+    });
     return svc;
   }
   const quem = { id: 'u', nome: 'Mesa', papeis: [] };
