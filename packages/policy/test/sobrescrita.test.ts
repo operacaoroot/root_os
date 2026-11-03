@@ -435,7 +435,8 @@ describe('ferramenta e esquema de argumentos têm direção própria', () => {
     // Trinta e nove na agenda v2 (29/10/2026): as duas leituras da rotina do
     // espelho e as quatro escritas novas (alterar, cancelar, desmarcar, reabrir),
     // todas pedidas pela tela ou pela rotina, pela porta.
-    expect(BASE.capacidades.filter((c) => !c.ferramenta)).toHaveLength(39);
+    // O módulo de contratos (02/11/2026) soma duas: `comercial.contrato.cancelar` e `_reenviar`, pedidas pela tela, pela porta.
+    expect(BASE.capacidades.filter((c) => !c.ferramenta)).toHaveLength(41);
     for (const id of [
       'comercial.lead.criar',
       'drive.pasta.criar',

@@ -126,7 +126,7 @@ describe('a aba Geral (variante A)', () => {
   it('é a primeira aba; três cartões com rótulo em cima e valor embaixo; a etapa como faixa; o vazio diz "preencher"', async () => {
     render(<ProvedorDoPainel><Fundo /></ProvedorDoPainel>);
     const dialogo = await screen.findByRole('dialog', { name: 'Construtora Alicerce' });
-    expect(within(dialogo).getAllByRole('tab').map((t) => t.textContent)).toEqual(['Geral', 'Pendências e sugestões', 'Sala', 'WhatsApp']);
+    expect(within(dialogo).getAllByRole('tab').map((t) => t.textContent)).toEqual(['Geral', 'Pendências e sugestões', 'Contrato', 'Sala', 'Área do cliente', 'WhatsApp']);
     expect(within(dialogo).getByRole('tab', { name: 'Geral' })).toHaveAttribute('aria-selected', 'true');
     const geral = await within(dialogo).findByTestId('ficha-geral');
     expect(geral).toHaveAttribute('data-variante', 'A');

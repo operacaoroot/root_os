@@ -1,6 +1,6 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
-import { apiGet, operador, qs, temOperador } from './client.js';
+import { apiGet, leitor, operador, qs, temOperador } from './client.js';
 import { registrarCuradas } from './ferramentas/curadas.js';
 import { registrarGenericas } from './ferramentas/genericas.js';
 
@@ -802,6 +802,63 @@ export function buildServer(): McpServer {
     async ({ lead_id, item }) => {
       try {
         return ok(await operador().post(`/comercial/lead/${encodeURIComponent(lead_id)}/area/${encodeURIComponent(item)}/publicar`));
+      } catch (e) {
+        return fail(e);
+      }
+    },
+  );
+
+  // ---------------------------------------------------------------------------
+  // Contratos do comercial (F5): duas leituras e a proposta de envio.
+  // Não há ferramenta que envie. A proposta sai em nome do OPERADOR, porque a rota é só de gente;
+  // sem operador, ela recusa antes de chamar a API e nunca cai na conta de serviço.
+  // ---------------------------------------------------------------------------
+
+  server.registerTool(
+    'comercial_contratos_quadro',
+    {
+      description:
+        'Quadro de contratos do comercial: um cartão por contrato com etapa (a_emitir, minuta, em_assinatura, ativo, renovar, a_encerrar, encerrado), modalidade, valor, vigência, assinaturas e lacunas; totais por etapa; e se a ZapSign está configurada nesta instância. Cartão com `fantasma: true` é cliente sem contrato registrado. [read_only]',
+      inputSchema: {},
+      annotations: { title: 'Contratos: quadro', ...READ_ONLY },
+    },
+    async () => {
+      try {
+        return ok(await leitor().get('/comercial/contratos/quadro'));
+      } catch (e) {
+        return fail(e);
+      }
+    },
+  );
+
+  server.registerTool(
+    'comercial_contrato_ficha',
+    {
+      description:
+        'Ficha de um contrato: estado, signatários e quem já assinou (o que a ZapSign disse na última conferência), documentos, histórico, a minuta com o laudo, e `faltaParaEnviar`, a lista do que ainda trava o pedido de aprovação. [read_only]',
+      inputSchema: { contrato_id: z.string().min(1).describe('O id do cartão no quadro (id do contrato, importado:<lead> ou sem-contrato:<lead>)') },
+      annotations: { title: 'Contratos: ficha', ...READ_ONLY },
+    },
+    async ({ contrato_id }) => {
+      try {
+        return ok(await leitor().get(`/comercial/contratos/registro/${encodeURIComponent(contrato_id)}`));
+      } catch (e) {
+        return fail(e);
+      }
+    },
+  );
+
+  server.registerTool(
+    'comercial_contrato_propor_envio',
+    {
+      description:
+        'PROPÕE o envio do contrato para assinatura, em nome do OPERADOR (uma pessoa do OS): recalcula o PDF, congela o hash e cria a pendência R4 em Aprovações. NÃO envia: nada sai para a ZapSign até OUTRA pessoa titular conferir o conteúdo exato e confirmar com a senha, e o operador não confirma o próprio pedido. Faltando algo, a API recusa com a lista em `faltando`. Sem operador configurado, recusa com a frase do que configurar. [operador, propõe, não executa]',
+      inputSchema: { contrato_id: z.string().min(1).describe('O id do contrato (o registro, não o fantasma nem o importado)') },
+      annotations: { title: 'Contratos: propor envio', readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+    },
+    async ({ contrato_id }) => {
+      try {
+        return ok(await operador().post(`/comercial/contratos/registro/${encodeURIComponent(contrato_id)}/enviar`, {}));
       } catch (e) {
         return fail(e);
       }

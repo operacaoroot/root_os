@@ -805,7 +805,7 @@ export class FichaService {
     const [eventos, sala, documento, cobranca, decisoes] = await Promise.all([
       this.prisma.leadEvent.findMany({ where: { leadId, orgId }, orderBy: { occurredAt: 'asc' }, take: 500 }),
       this.prisma.salaDoCliente.findFirst({ where: { leadId, orgId }, select: { slug: true } }),
-      this.prisma.comercialDocumento.findFirst({ where: { leadId, orgId, ...SO_DOCUMENTOS_DE_ASSINATURA }, orderBy: { criadoEm: 'desc' }, select: { externoId: true } }),
+      this.prisma.comercialDocumento.findFirst({ where: { leadId, orgId, estado: { not: 'cancelado' }, ...SO_DOCUMENTOS_DE_ASSINATURA }, orderBy: { criadoEm: 'desc' }, select: { externoId: true } }),
       this.prisma.comercialCobranca.findFirst({ where: { leadId, orgId }, orderBy: { criadoEm: 'desc' }, select: { externoId: true } }),
       this.prisma.comercialDecisao.findMany({ where: { leadId, orgId, estado: 'aberta' }, select: { titulo: true, expiraEm: true, padrao: true } }),
     ]);

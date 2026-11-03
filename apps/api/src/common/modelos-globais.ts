@@ -236,6 +236,20 @@ export const FILHOS_COM_ORGID_REDUNDANTE: readonly FilhoComOrgIdRedundante[] = [
   { modelo: 'ComercialFechamento', pai: 'Lead', fk: 'leadId' },
   { modelo: 'ComercialCobranca', pai: 'Lead', fk: 'leadId' },
   { modelo: 'ComercialDocumento', pai: 'Lead', fk: 'leadId' },
+  // O contrato como registro próprio (módulo de contratos, 02/11/2026): a empresa é a do lead, e o
+  // contrato pai (aditivo e distrato), o documento na ZapSign e a minuta têm de ser da mesma empresa.
+  // Os signatários são filhos do contrato — migration `20261102120000_comercial_contrato`.
+  {
+    modelo: 'ComercialContrato',
+    pai: 'Lead',
+    fk: 'leadId',
+    paisConferidos: [
+      { modelo: 'ComercialContrato', fk: 'paiId' },
+      { modelo: 'ComercialDocumento', fk: 'documentoId' },
+      { modelo: 'ComercialDocumento', fk: 'minutaId' },
+    ],
+  },
+  { modelo: 'ComercialContratoSignatario', pai: 'ComercialContrato', fk: 'contratoId' },
   // A leitura e a reação na página da proposta (rodada da implantação I4,
   // 18/10/2026): a empresa é a do lead — migration `20261018230000_lead_reacao`.
   { modelo: 'LeadReacao', pai: 'Lead', fk: 'leadId' },

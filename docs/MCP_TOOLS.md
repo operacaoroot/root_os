@@ -5,17 +5,23 @@
 
 ## Estado real (conferido em 02/11/2026, contra `packages/mcp/src`)
 
-**São 241 ferramentas**, em quatro famílias (`grep -c 'registerTool(' packages/mcp/src/server.ts` dá 42; as outras 199
+**São 244 ferramentas**, em cinco famílias (`grep -c 'registerTool(' packages/mcp/src/server.ts` dá 45; as outras 199
 são registradas por tabela em `src/ferramentas/`):
 
 | Família | Quantas | Identidade | Onde |
 |---|---|---|---|
 | Consulta (as de sempre, `read_only`) | 35 | conta de serviço | `server.ts` |
 | Área do cliente (`quem_sou`, `clientes_ativos`, `comercial_lead`, `area_bancada`, `area_versoes`, `area_rascunho`, `area_publicar`) | 7 | operador | `server.ts` |
+| Contratos (`comercial_contratos_quadro`, `comercial_contrato_ficha`, `comercial_contrato_propor_envio`) | 3 | leitor / operador | `server.ts` |
 | Genéricas (`os_rotas`, `os_api`, `os_enviar_arquivo`, `os_baixar_arquivo`) | 4 | leitor / operador | `ferramentas/genericas.ts` |
 | Curadas por módulo (comercial 46, trabalho 32, aprovações e porta 14, WhatsApp 10, memória 10, agentes/rotinas/Frota 14, financeiro 11, pauta 27, Google/conexões/cofre 13, empresa/onboarding/plataforma 17) | 195 | leitor / operador | `ferramentas/curadas.ts` (tabela) |
 
-**O inventário** (`src/rotas.gen.ts`, gerado por `scripts/gerar-rotas.ts`): 826 rotas da API, 773 alcançáveis pelo MCP.
+**Contratos do comercial (F5, 02/11/2026):** `comercial_contratos_quadro` e `comercial_contrato_ficha` leem pelo leitor
+(`leads.ver`); `comercial_contrato_propor_envio` chama `POST /comercial/contratos/registro/:id/enviar` SEMPRE pelo operador,
+porque a rota é só de gente, e sem operador recusa com a frase do que configurar, sem chamar a API. Ela só cria a
+retenção R4: não há ferramenta que envie, e o operador não confirma o próprio pedido.
+
+**O inventário** (`src/rotas.gen.ts`, gerado por `scripts/gerar-rotas.ts`): 867 rotas da API, 811 alcançáveis pelo MCP.
 Ficam fora as 54 públicas (sala do cliente por token, link do onboarding, webhooks, callbacks OAuth, saúde) e o login.
 A lista fechada é o que impede `os_api` de inventar rota. O catálogo legível, rota por rota, com a coluna de qual
 ferramenta curada a cobre, está em `docs/mcp/INVENTARIO-ROTAS.md` (gerado junto).

@@ -104,6 +104,8 @@ model Org {
   comercialFechamentos ComercialFechamento[]
   comercialCobrancas   ComercialCobranca[]
   comercialDocumentos  ComercialDocumento[]
+  comercialContratos   ComercialContrato[]
+  comercialContratoSignatarios ComercialContratoSignatario[]
   salasDoCliente       SalaDoCliente[]
   leadReacoes          LeadReacao[]
   salaVersoes          SalaVersao[]
@@ -496,6 +498,7 @@ model Lead {
   fechamentos         ComercialFechamento[]
   cobrancas           ComercialCobranca[]
   documentos          ComercialDocumento[]
+  contratos           ComercialContrato[]
   // Rodada da implantação I4: leitura e reação na página da proposta.
   reacoesDaProposta   LeadReacao[]
   // Rodada da implantação I3: a sala do cliente publicada por versão.
@@ -5241,9 +5244,88 @@ model ComercialDocumento {
   conteudo          String?
   /// Rodada dos agentes (CO-14): o laudo do revisor da minuta, ranqueado por gravidade.
   laudo             Json?
+  /// Módulo de contratos (02/11/2026): o registro cuja versão "na ZapSign" é este documento.
+  contratosAssinados ComercialContrato[] @relation("ContratoDocumento")
+  /// Módulo de contratos (02/11/2026): o registro cuja minuta é este documento (provedor `minuta`).
+  contratosDaMinuta  ComercialContrato[] @relation("ContratoMinuta")
 
   @@unique([provedor, externoId])
   @@index([orgId, leadId])
+}
+
+/// O contrato como registro próprio (módulo de contratos, 02/11/2026): `contrato`, `aditivo` ou
+/// `distrato` (estes dois apontam `paiId`). `ComercialDocumento` continua sendo a parte "na ZapSign";
+/// o fio continua sendo o histórico. Filha de Lead no molde de `ComercialDocumento`: sentinela + gatilho.
+/// "Um contrato vivo por lead" é regra do serviço, sob cadeado, e NÃO índice único: o backfill cria um
+/// registro por documento, e há lead com dois documentos de assinatura.
+model ComercialContrato {
+  id                  String    @id @default(uuid())
+  /// Sentinela + gatilhos `ComercialContrato_orgId_do_pai*` (lead, pai, documento e minuta).
+  orgId               String    @default("")
+  org                 Org       @relation(fields: [orgId], references: [id])
+  leadId              String
+  lead                Lead      @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  /// O cliente no Financeiro, copiado da ficha quando existe. Sem chave estrangeira, como em `ComercialFicha`.
+  partnerId           String?
+  paiId               String?
+  pai                 ComercialContrato?  @relation("ContratoFilhos", fields: [paiId], references: [id], onDelete: Cascade)
+  filhos              ComercialContrato[] @relation("ContratoFilhos")
+  /// contrato | aditivo | distrato (CHECK na migration; `TIPOS_DE_CONTRATO` no shared).
+  tipo                String    @default("contrato")
+  /// implantacao | continuidade. Nulo no backfill: o documento antigo não diz.
+  modalidade          String?
+  /// rascunho | a_emitir | em_assinatura | assinado | ativo | encerrado | cancelado (CHECK na migration).
+  estado              String    @default("a_emitir")
+  numero              String?
+  valorCentavos       Int?
+  vigenciaInicio      DateTime? @db.Date
+  vigenciaFim         DateTime? @db.Date
+  /// O CNPJ que fatura (decisão D6 do roteiro): vazio recusa o envio.
+  faturaPor           String?
+  dadosDoContrato     Json?
+  hashDoConteudo      String?
+  documentoId         String?   @unique
+  documento           ComercialDocumento? @relation("ContratoDocumento", fields: [documentoId], references: [id], onDelete: SetNull)
+  minutaId            String?
+  minuta              ComercialDocumento? @relation("ContratoMinuta", fields: [minutaId], references: [id], onDelete: SetNull)
+  /// A `origem` do fato `contrato.importado`, quando alguém agiu num contrato importado do CRM antigo.
+  origemImportada     String?
+  motivoDoFim         String?
+  encerradoEm         DateTime?
+  ultimaConferenciaEm DateTime?
+  criadoEm            DateTime  @default(now())
+  atualizadoEm        DateTime  @updatedAt
+  signatarios         ComercialContratoSignatario[]
+
+  @@unique([leadId, origemImportada])
+  @@index([orgId, leadId])
+  @@index([orgId, tipo, estado])
+  @@index([orgId, estado, ultimaConferenciaEm])
+  @@index([paiId])
+  @@index([minutaId])
+}
+
+/// Quem assina (módulo de contratos, 02/11/2026). Filha de `ComercialContrato`: a empresa vem do gatilho.
+/// `ordem` é a posição na lista inteira; o `external_id` na ZapSign é `<papel>:<n>`, n contado dentro do papel.
+model ComercialContratoSignatario {
+  id              String            @id @default(uuid())
+  /// Sentinela + gatilho `ComercialContratoSignatario_orgId_do_pai`.
+  orgId           String            @default("")
+  org             Org               @relation(fields: [orgId], references: [id])
+  contratoId      String
+  contrato        ComercialContrato @relation(fields: [contratoId], references: [id], onDelete: Cascade)
+  ordem           Int
+  papel           String
+  nome            String
+  email           String
+  assinadoEm      DateTime?
+  /// O token do signatário na ZapSign. Nunca sai pela API.
+  tokenNoProvedor String?
+  criadoEm        DateTime          @default(now())
+  atualizadoEm    DateTime          @updatedAt
+
+  @@unique([contratoId, ordem])
+  @@index([orgId, contratoId])
 }
 
 /// A reação do cliente na página da proposta (rodada da implantação I4). Filha

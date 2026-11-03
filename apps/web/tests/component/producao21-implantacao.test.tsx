@@ -48,6 +48,8 @@ function contrato(leadId: string, cliente: string, over: Partial<ContratoVivo> =
 beforeEach(() => {
   CONTRATOS = [];
   QUEM = null;
+  // Desde a F4 a lista de contratos vivos mora em `?visao=vivos`.
+  window.history.replaceState(null, '', '/comercial/contratos?visao=vivos');
 });
 
 describe('Contratos vivos: o contrato importado do CRM antigo', () => {

@@ -24,6 +24,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { ARMAZEM_DO_ANEXO, armazemDisponivel, conferirPdfRecebido, nomeDoPdf, sha256DoArquivo, type ArmazemDoAnexo, type ArquivoRecebido } from './anexo-do-contrato';
 import { chaveDasParcelas, chaveDoAnexoImportado, linhasDoFato } from './contrato-importado';
 import { ContratoVivoService } from './contrato-vivo.service';
+import { fimVigente } from './contratos/contratos-puro';
 import { hojeEmSP } from './dinheiro.service';
 import { canonico, eventoIdComercial } from './eventos';
 import { chaveDoAnexo } from './fechado-fora';
@@ -277,8 +278,8 @@ export class ContratoImportadoService {
     const nivel = this.nivel();
     const pessoa = await this.exigirGente(orgId, quem);
     await this.exigirContrato(orgId, leadId, input.origem);
-    const encerrado = await this.prisma.leadEvent.findFirst({ where: { leadId, type: { in: ['contrato.concluido', 'contrato.desativado'] } }, select: { id: true } });
-    if (encerrado) throw new ConflictException('Este contrato já foi encerrado: a régua não liga.');
+    const fatosDoFim = await this.prisma.leadEvent.findMany({ where: { leadId, type: { in: ['contrato.concluido', 'contrato.desativado', 'contrato.reaberto'] } }, select: { type: true, payload: true, occurredAt: true } });
+    if (fimVigente(fatosDoFim)) throw new ConflictException('Este contrato já foi encerrado: a régua não liga.');
     const hoje = hojeEmSP(agora);
 
     const r = await this.prisma.$transaction(async (tx) => {

@@ -217,9 +217,9 @@ export const NAV: NavItem[] = [
   { key: 'marketing-tarefas', label: 'Tarefas', href: '/marketing/tarefas', icon: 'CheckSquare', permission: 'tarefas.ver', secao: 'conteudo', modulo: 'trabalho' },
 
   // Versão final (19/10/2026, roteiro F2): Painel geral · Funil vivo · Propostas ·
-  // Lista de leads · Contratos vivos · Torre das automações · Relatório da semana (o
+  // Lista de leads · Contratos · Torre das automações · Relatório da semana (o
   // Simulador de WhatsApp virou a área WhatsApp em 20/10/2026, e a Rodada da semana entra
-  // depois dos Contratos vivos só para a sessão da plataforma, fora do NAV). O Painel geral é o dash do Lucas (layout dele) lendo os
+  // depois dos Contratos só para a sessão da plataforma, fora do NAV). O Painel geral é o dash do Lucas (layout dele) lendo os
   // dados do cockpit; Propostas lê as do serviço da ROOT e as publicadas pela sala;
   // a Lista de leads lê a tabela `Lead`. Saem do Comercial (ocultos, vivos): o funil
   // antigo, Clientes e Tarefas (duplicados do Funil vivo, da Implantação e do Trabalho).
@@ -229,7 +229,7 @@ export const NAV: NavItem[] = [
   { key: 'leads', label: 'Lista de leads', href: '/leads', icon: 'UserPlus', permission: 'leads.ver', secao: 'comercial', modulo: 'leads' },
   // P-84 (27/10/2026): os clientes ativos numa lista só, com o que falta em cada um.
   { key: 'comercial-clientes-ativos', label: 'Clientes ativos', href: '/comercial/clientes-ativos', icon: 'Users', permission: 'leads.ver', secao: 'comercial', modulo: 'leads' },
-  { key: 'comercial-contratos', label: 'Contratos vivos', href: '/comercial/contratos', icon: 'FileSignature', permission: 'leads.ver', secao: 'comercial', modulo: 'leads' },
+  { key: 'comercial-contratos', label: 'Contratos', href: '/comercial/contratos', icon: 'FileSignature', permission: 'leads.ver', secao: 'comercial', modulo: 'leads' },
   // Cockpit do lead (lane B, 13/10/2026): os celulares simulados do lead e da mesa, provedor `simulado`.
   // 20/10/2026 (rodada da interface, U1, item 18 da ata): a tela mudou para a área
   // WhatsApp (`/whatsapp`). O item fica oculto e a rota redireciona, preservando a query.

@@ -255,6 +255,9 @@ export const CONECTOR_DA_CAPACIDADE: Readonly<Record<string, string | null>> = {
   'comercial.whatsapp.enviar': 'whatsapp',
   'comercial.cobranca.criar': 'asaas',
   'comercial.contrato.enviar': 'zapsign',
+  // Módulo de contratos (F3): desligar a ZapSign em /conexoes segura o cancelamento e o reenvio.
+  'comercial.contrato.cancelar': 'zapsign',
+  'comercial.contrato.reenviar': 'zapsign',
   'comercial.fechamento.executar': 'asaas',
   'comercial.proposta.publicar': null,
   // Rodada da implantação I3 (18/10/2026): publicar a versão da sala é escrita no link do próprio OS, como a proposta.

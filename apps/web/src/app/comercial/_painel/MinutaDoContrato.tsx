@@ -51,7 +51,7 @@ export function LaudoDaMinuta({ laudo }: { laudo: LaudoDoContrato }) {
         Laudo de {quandoCurtoSP(laudo.geradoEm)} · regras{laudo.porModelo ? ' e modelo' : ' (o modelo não foi ouvido)'} · {laudo.apontamentos.length} apontamento(s)
       </p>
       {laudo.apontamentos.length === 0 ? (
-        <p className="text-[12.5px] text-good">Nenhum defeito apontado.</p>
+        <p className="text-[12.5px] text-muted">Nenhum defeito apontado.</p>
       ) : (
         <ol className="space-y-1.5">
           {laudo.apontamentos.map((a, i) => (

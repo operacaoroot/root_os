@@ -123,7 +123,7 @@ export async function apiGet<T = unknown>(path: string): Promise<T> {
 
 export const RECUSA_SEM_OPERADOR =
   'Identidade do operador ausente: defina MCP_OPERADOR_EMAIL e MCP_OPERADOR_SENHA (no ambiente ou em ~/.config/root/mcp.env). ' +
-  'As ferramentas da área do cliente escrevem em nome de uma PESSOA do ROOT OS, nunca da conta de serviço.';
+  'As ferramentas que escrevem ou propõem (área do cliente, proposta de envio do contrato) saem em nome de uma PESSOA do ROOT OS, nunca da conta de serviço.';
 
 let operadorCache: ClienteDaApi | null = null;
 /** O cliente em nome do operador (gente). Lança com a frase do que configurar quando não há identidade. */

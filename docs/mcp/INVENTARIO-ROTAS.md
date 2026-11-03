@@ -1,6 +1,6 @@
 # Inventário das rotas da API do ROOT OS
 
-> Gerado em 2026-11-03 por `packages/mcp/scripts/gerar-rotas.ts` a partir de `apps/api/src`. **851 rotas**: 353 de leitura e 498 de escrita; 54 sem sessão (sala do cliente por token, link do onboarding, webhooks, callbacks, login, saúde), que o MCP não alcança. As demais estão todas ao alcance de `os_api`; a coluna Curada diz quais têm ferramenta própria.
+> Gerado em 2026-11-03 por `packages/mcp/scripts/gerar-rotas.ts` a partir de `apps/api/src`. **867 rotas**: 356 de leitura e 511 de escrita; 54 sem sessão (sala do cliente por token, link do onboarding, webhooks, callbacks, login, saúde), que o MCP não alcança. As demais estão todas ao alcance de `os_api`; a coluna Curada diz quais têm ferramenta própria.
 
 Marcas: `gente` recusa conta de máquina · `upload` recebe arquivo · `arquivo` devolve arquivo · `sens` escrita sensível (vira aprovação) · `pub` sem sessão.
 
@@ -214,6 +214,22 @@ Marcas: `gente` recusa conta de máquina · `upload` recebe arquivo · `arquivo`
 | POST | `/api/comercial/contratos/:leadId/importados/anexo` | leads.editar | gente upload |  |  |
 | PUT | `/api/comercial/contratos/:leadId/importados/parcelas` | leads.editar | gente |  |  |
 | POST | `/api/comercial/contratos/:leadId/importados/regua` | leads.editar | gente |  |  |
+| POST | `/api/comercial/contratos/lote` | leads.editar | gente |  |  |
+| GET | `/api/comercial/contratos/quadro` | leads.ver |  |  |  |
+| POST | `/api/comercial/contratos/registro` | leads.editar | gente |  |  |
+| GET | `/api/comercial/contratos/registro/:id` | leads.ver |  |  |  |
+| PATCH | `/api/comercial/contratos/registro/:id` | leads.editar | gente |  |  |
+| POST | `/api/comercial/contratos/registro/:id/cancelar` | leads.editar | gente | Propõe à porta (R3). Retida, responde 200 com `status: 'aguardando_aprovacao'`: quem clicou não confirma o próprio pedido. |  |
+| POST | `/api/comercial/contratos/registro/:id/conferir` | leads.editar | gente |  |  |
+| POST | `/api/comercial/contratos/registro/:id/encerrar` | leads.editar | gente |  |  |
+| POST | `/api/comercial/contratos/registro/:id/enviar` | leads.editar | gente | Recalcula tudo, congela o estado com o hash do PDF e propõe à porta (R4). Retida, responde 200 com `status: 'aguardando_aprovacao'`: outra pessoa titular confir |  |
+| POST | `/api/comercial/contratos/registro/:id/filhos` | leads.editar | gente |  |  |
+| POST | `/api/comercial/contratos/registro/:id/minuta` | leads.editar | gente | Gera a minuta pelo molde da modalidade (ou pela nota do Drive) e a vincula ao registro. Devolve a ficha. |  |
+| GET | `/api/comercial/contratos/registro/:id/previa.pdf` | leads.ver | arquivo | O PDF de agora, sem guardar nada e sem cache. Lacuna é 409 com a lista em `faltando`. |  |
+| POST | `/api/comercial/contratos/registro/:id/reabrir` | leads.editar | gente |  |  |
+| POST | `/api/comercial/contratos/registro/:id/reenviar` | leads.editar | gente | Propõe à porta (R3), com a mesma resposta de retida. A ZapSign não reenvia e-mail: ver o efeito. |  |
+| POST | `/api/comercial/contratos/registro/:id/revisar` | leads.editar | gente | Roda o revisor de novo sobre a minuta vinculada. Devolve a ficha. |  |
+| PUT | `/api/comercial/contratos/registro/:id/signatarios` | leads.editar | gente |  |  |
 | GET | `/api/comercial/decisoes` | leads.ver |  | A fila de decisões (abertas, tomadas, expiradas). | `comercial_decisoes` |
 | POST | `/api/comercial/decisoes/:id/responder` | leads.editar, aprovacoes.decidir |  | Um toque: responde a decisão pela tela. |  |
 | POST | `/api/comercial/entrada/whats` | leads.editar |  | E1: o lead entra pelo WhatsApp (simulador ou provedor). Idempotente pelo telefone e pela mensagem. |  |

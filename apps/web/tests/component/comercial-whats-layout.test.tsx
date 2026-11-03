@@ -235,6 +235,7 @@ describe('texto longo não vaza', () => {
   });
 
   it('contratos: o cliente comprido corta com o nome no title, e a grade tem trilho que encolhe', async () => {
+    window.history.replaceState(null, '', '/comercial/contratos?visao=vivos');
     RESPOSTAS['/comercial/contratos'] = [
       { leadId: 'c1', cliente: NOME, produto: null, valorCentavos: 100, descontoPct: null, parcelas: [], saude: null, faseDaImplantacao: null } as unknown as ContratoVivo,
     ];

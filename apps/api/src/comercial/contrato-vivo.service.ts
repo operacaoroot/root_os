@@ -7,6 +7,7 @@ import {
 
 import { PrismaService } from '../prisma/prisma.service';
 import { chaveDoAvisoImportado, estadoDoImportado, linhasDoFato, type FatoDoFio } from './contrato-importado';
+import { chaveDoEncerramento, fimVigente } from './contratos/contratos-puro';
 import { DecisoesService } from './decisoes.service';
 import { hojeEmSP } from './dinheiro.service';
 import { FioService } from './fio.service';
@@ -229,9 +230,10 @@ export class ContratoVivoService implements OnModuleInit {
     const leads = [...new Set(ligadas.map((e) => e.leadId))];
     const [lancamentos, encerrados] = await Promise.all([
       this.prisma.leadEvent.findMany({ where: { leadId: { in: leads }, type: 'contrato.parcelas_lancadas', lead: { orgId } }, select: { leadId: true, payload: true } }),
-      this.prisma.leadEvent.findMany({ where: { leadId: { in: leads }, type: { in: ['contrato.concluido', 'contrato.desativado'] }, lead: { orgId } }, select: { leadId: true } }),
+      this.prisma.leadEvent.findMany({ where: { leadId: { in: leads }, type: { in: ['contrato.concluido', 'contrato.desativado', 'contrato.reaberto'] }, lead: { orgId } }, select: { leadId: true, type: true, payload: true, occurredAt: true } }),
     ]);
-    const fora = new Set(encerrados.map((e) => e.leadId));
+    // O módulo de contratos pode reabrir: vale o fim vigente, não qualquer fim que já existiu.
+    const fora = new Set(leads.filter((l) => fimVigente(encerrados.filter((e) => e.leadId === l))));
     const campo = (payload: unknown, k: string): unknown => ((payload ?? {}) as Record<string, unknown>)[k];
     let avisos = 0;
     let decisoes = 0;
@@ -321,16 +323,18 @@ export class ContratoVivoService implements OnModuleInit {
   async doLead(orgId: string, leadId: string, agora: Date = new Date()): Promise<ContratoVivo> {
     const lead = await this.prisma.lead.findFirst({ where: { id: leadId, orgId }, select: { name: true } });
     if (!lead) throw new NotFoundException('Lead não encontrado.');
-    const [ficha, cobrancas, marcoValor, fim, doCrm, ativoFato, doImportado] = await Promise.all([
+    const [ficha, cobrancas, marcoValor, fatosDoFim, doCrm, ativoFato, doImportado] = await Promise.all([
       this.prisma.comercialFicha.findUnique({ where: { leadId } }),
       this.prisma.comercialCobranca.findMany({ where: { leadId }, orderBy: { parcela: 'asc' } }),
       this.prisma.leadEvent.findFirst({ where: { leadId, type: 'marco.contrato', payload: { path: ['marco'], equals: 'primeiro_valor' } }, select: { occurredAt: true } }),
-      this.prisma.leadEvent.findFirst({ where: { leadId, type: { in: ['contrato.concluido', 'contrato.desativado'] } }, orderBy: { occurredAt: 'desc' }, select: { type: true, payload: true, occurredAt: true } }),
+      this.prisma.leadEvent.findMany({ where: { leadId, type: { in: ['contrato.concluido', 'contrato.desativado', 'contrato.reaberto'] } }, select: { type: true, payload: true, occurredAt: true } }),
       this.prisma.leadEvent.findMany({ where: { leadId, type: 'contrato.importado' }, select: { payload: true } }),
       this.prisma.leadEvent.findFirst({ where: { leadId, type: 'cliente.ativo' }, orderBy: { occurredAt: 'asc' }, select: { occurredAt: true, payload: true } }),
       // Produção 22 (M2): o PDF, as parcelas lançadas à mão, a régua e os avisos dos contratos importados.
       this.prisma.leadEvent.findMany({ where: { leadId, type: { in: ['contrato.anexado', 'contrato.parcelas_lancadas', 'contrato.regua_ligada', 'parcela.vence'] } }, select: { type: true, payload: true, occurredAt: true } }),
     ]);
+    // O módulo de contratos pode reabrir: vale o fim vigente, não qualquer fim que já existiu.
+    const fim = fimVigente(fatosDoFim);
     const importados = doCrm.length ? contratosImportados(doCrm, doImportado, diaSP(agora)) : [];
     const clienteImportado = ehClienteImportado(ativoFato?.payload);
     // "Em implantação" (só informativo): ativo com o card da implantação aberto (não arquivado, etapa não fechada).
@@ -425,7 +429,8 @@ export class ContratoVivoService implements OnModuleInit {
       throw new BadRequestException(`Há ${emAberto} parcela(s) em aberto no Asaas. Encerrar não cancela a cobrança (isso é decisão da mesa). Confirme que viu para seguir.`);
     }
     const tipo = input.situacao === 'concluido' ? 'contrato.concluido' : 'contrato.desativado';
-    const r = await this.fio.registrar(orgId, leadId, tipo, 'encerramento', {
+    const reaberturas = await this.prisma.leadEvent.count({ where: { leadId, type: 'contrato.reaberto', lead: { orgId } } });
+    const r = await this.fio.registrar(orgId, leadId, tipo, chaveDoEncerramento(reaberturas), {
       motivo: input.motivo, por: pessoa.id, porNome: pessoa.name, parcelasEmAberto: emAberto, nivel,
     }, { em: agora });
     if (!r.novo) throw new ConflictException('Este contrato já foi encerrado.');
