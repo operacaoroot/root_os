@@ -1,6 +1,6 @@
 # Inventário das rotas da API do ROOT OS
 
-> Gerado em 2026-11-02 por `packages/mcp/scripts/gerar-rotas.ts` a partir de `apps/api/src`. **826 rotas**: 340 de leitura e 486 de escrita; 51 sem sessão (sala do cliente por token, link do onboarding, webhooks, callbacks, login, saúde), que o MCP não alcança. As demais estão todas ao alcance de `os_api`; a coluna Curada diz quais têm ferramenta própria.
+> Gerado em 2026-11-03 por `packages/mcp/scripts/gerar-rotas.ts` a partir de `apps/api/src`. **851 rotas**: 353 de leitura e 498 de escrita; 54 sem sessão (sala do cliente por token, link do onboarding, webhooks, callbacks, login, saúde), que o MCP não alcança. As demais estão todas ao alcance de `os_api`; a coluna Curada diz quais têm ferramenta própria.
 
 Marcas: `gente` recusa conta de máquina · `upload` recebe arquivo · `arquivo` devolve arquivo · `sens` escrita sensível (vira aprovação) · `pub` sem sessão.
 
@@ -8,9 +8,38 @@ Marcas: `gente` recusa conta de máquina · `upload` recebe arquivo · `arquivo`
 
 | Método | Rota | Permissão | Marcas | O que faz | Curada |
 |---|---|---|---|---|---|
+| GET | `/api/agenda/aprovacao-r2` | dashboard.ver |  |  |  |
+| GET | `/api/agenda/clientes` | dashboard.ver |  |  |  |
+| GET | `/api/agenda/conflitos` | dashboard.ver |  |  |  |
+| GET | `/api/agenda/convites` | dashboard.ver |  |  |  |
+| POST | `/api/agenda/convites` | agenda.editar | gente |  |  |
+| POST | `/api/agenda/convites/:id/revogar` | agenda.editar | gente |  |  |
+| POST | `/api/agenda/escritas` | agenda.editar | gente |  |  |
+| GET | `/api/agenda/espelho` | dashboard.ver |  |  |  |
+| POST | `/api/agenda/feriados` | agenda.regras |  |  |  |
+| PUT | `/api/agenda/feriados/:id` | agenda.regras |  |  |  |
 | GET | `/api/agenda/fora-do-padrao` | dashboard.ver |  |  | `agenda_fora_do_padrao` |
+| GET | `/api/agenda/historico` | dashboard.ver |  |  |  |
+| GET | `/api/agenda/livre-ocupado` | dashboard.ver |  |  |  |
+| GET | `/api/agenda/livres` | dashboard.ver |  |  |  |
 | POST | `/api/agenda/padronizar/:eventoId` | agenda.editar |  |  |  |
+| GET | `/api/agenda/regras` | dashboard.ver |  |  |  |
+| POST | `/api/agenda/regras-texto` | agenda.regras |  |  |  |
+| PUT | `/api/agenda/regras-texto/:id` | agenda.regras |  |  |  |
+| PUT | `/api/agenda/regras/pessoa/:id` | agenda.regras |  |  |  |
+| POST | `/api/agenda/regua/avaliar` | dashboard.ver |  |  |  |
+| GET | `/api/agenda/relatorios` | dashboard.ver |  |  |  |
 | POST | `/api/agenda/restaurar/:eventoId` | agenda.editar |  |  |  |
+| PUT | `/api/agenda/ritos/:id` | agenda.regras |  |  |  |
+| GET | `/api/agenda/sincronia` | dashboard.ver |  |  |  |
+| POST | `/api/agenda/sincronia/agora` | agenda.editar |  |  |  |
+## `agendar`
+
+| Método | Rota | Permissão | Marcas | O que faz | Curada |
+|---|---|---|---|---|---|
+| GET | `/api/agendar/:token` | pública | pub |  |  |
+| POST | `/api/agendar/:token/confirmar` | pública | pub |  |  |
+| GET | `/api/agendar/:token/ics` | pública | pub |  |  |
 ## `agents`
 
 | Método | Rota | Permissão | Marcas | O que faz | Curada |

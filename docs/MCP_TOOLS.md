@@ -16,7 +16,7 @@ são registradas por tabela em `src/ferramentas/`):
 | Curadas por módulo (comercial 46, trabalho 32, aprovações e porta 14, WhatsApp 10, memória 10, agentes/rotinas/Frota 14, financeiro 11, pauta 27, Google/conexões/cofre 13, empresa/onboarding/plataforma 17) | 195 | leitor / operador | `ferramentas/curadas.ts` (tabela) |
 
 **O inventário** (`src/rotas.gen.ts`, gerado por `scripts/gerar-rotas.ts`): 826 rotas da API, 773 alcançáveis pelo MCP.
-Ficam fora as 51 públicas (sala do cliente por token, link do onboarding, webhooks, callbacks OAuth, saúde) e o login.
+Ficam fora as 54 públicas (sala do cliente por token, link do onboarding, webhooks, callbacks OAuth, saúde) e o login.
 A lista fechada é o que impede `os_api` de inventar rota. O catálogo legível, rota por rota, com a coluna de qual
 ferramenta curada a cobre, está em `docs/mcp/INVENTARIO-ROTAS.md` (gerado junto).
 

@@ -22,7 +22,7 @@ São **241** (02/11/2026): 35 `read_only` pela conta de serviço (as de sempre),
 **4 genéricas** (`os_rotas`, `os_api`, `os_enviar_arquivo`, `os_baixar_arquivo`) e **195 curadas** por módulo (comercial,
 trabalho, aprovações, WhatsApp, memória, agentes, rotinas, Frota, financeiro, pauta, Google, conexões, onboarding,
 plataforma). As genéricas alcançam **qualquer** rota do inventário (`src/rotas.gen.ts`, 826 rotas geradas do código da
-API; 773 alcançáveis, as 51 públicas e as de login ficam fora); as curadas dão nome em português e guia às rotas do dia
+API; 795 alcançáveis, as 54 públicas e as de login ficam fora); as curadas dão nome em português e guia às rotas do dia
 a dia. Leitura pelo operador (ou pela conta de serviço, sem operador); escrita sempre em nome do operador. O catálogo completo (nome, endpoint, permissão exigida e argumentos)
 vive em **`docs/MCP_TOOLS.md`** — é lá que se olha, e não aqui, para não haver duas listas
 divergindo. Este README já trouxe uma tabela de 10 ferramentas por bastante tempo depois de o
