@@ -95,20 +95,37 @@ export function nomeDeClienteNormalizado(nome: string | null | undefined): strin
  * O cliente desta empresa com esse nome (razão social ou nome fantasia, na régua
  * normalizada), ou nulo. Só `Partner` cliente e fora o da casa: fornecedor de nome
  * parecido NÃO vira cliente por aqui (revisão final, achado 1.2 — só o CNPJ promove).
- * Ativo antes de inativo; o mais antigo antes.
+ * O principal antes do repetido; ativo antes de inativo; o mais antigo antes.
+ * Cadastro único (03/11): o repetido achado (`principalId`) devolve o PRINCIPAL,
+ * se ele também for cliente desta empresa; senão, o próprio repetido.
  */
 export async function acharClientePorNome(db: Db, orgId: string, nome: string): Promise<{ id: string; nome: string } | null> {
   const alvo = nomeDeClienteNormalizado(nome);
   if (!alvo) return null;
   const rows = await db.partner.findMany({
     where: { orgId, isCliente: true, interno: false },
-    select: { id: true, razaoSocial: true, nomeFantasia: true, ativo: true },
+    select: { id: true, razaoSocial: true, nomeFantasia: true, ativo: true, principalId: true },
     orderBy: [{ createdAt: 'asc' }],
   });
   const casa = rows
     .filter((p) => nomeDeClienteNormalizado(p.razaoSocial) === alvo || nomeDeClienteNormalizado(p.nomeFantasia) === alvo)
-    .sort((a, b) => Number(b.ativo) - Number(a.ativo))[0];
-  return casa ? { id: casa.id, nome: nomeDoPartner(casa) } : null;
+    .sort((a, b) => Number(!!a.principalId) - Number(!!b.principalId) || Number(b.ativo) - Number(a.ativo))[0];
+  if (!casa) return null;
+  // `rows` já é só cliente desta empresa e fora o da casa: achar o principal ali é a conferência.
+  const principal = casa.principalId ? rows.find((p) => p.id === casa.principalId) : undefined;
+  const fica = principal ?? casa;
+  return { id: fica.id, nome: nomeDoPartner(fica) };
+}
+
+/**
+ * O cadastro PRINCIPAL de um cliente achado (cadastro único, 03/11): o repetido
+ * (`principalId`, a integração de 26/10) vira o principal, se ele for cliente desta
+ * empresa e fora o da casa; senão fica o próprio. A mesma régua de `acharClientePorNome`.
+ */
+export async function principalDoCliente(db: Db, orgId: string, p: { id: string; principalId: string | null }): Promise<string> {
+  if (!p.principalId || p.principalId === p.id) return p.id;
+  const principal = await db.partner.findFirst({ where: { id: p.principalId, orgId, isCliente: true, interno: false }, select: { id: true } });
+  return principal?.id ?? p.id;
 }
 
 /**

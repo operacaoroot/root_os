@@ -1,6 +1,6 @@
 import { Prisma } from '@prisma/client';
 
-import { acharClientePorNome, nomeDeClienteNormalizado } from '../work/clientes-da-casa';
+import { acharClientePorNome, nomeDeClienteNormalizado, principalDoCliente } from '../work/clientes-da-casa';
 
 /*
  * O CLIENTE DO LEAD QUE AINDA NÃO FECHOU (ajustes da versão final A2, 19/10/2026).
@@ -18,6 +18,10 @@ import { acharClientePorNome, nomeDeClienteNormalizado } from '../work/clientes-
  * TELEFONE E E-MAIL NÃO LIGAM SOZINHOS (revisão adversarial A2, achado 1): o contador que atende
  * dez clientes manda o mesmo e-mail por todos, e a empresa nova viraria o cadastro de outra. O
  * contato vai para o cliente novo, nunca serve de chave.
+ *
+ * CADASTRO ÚNICO (03/11/2026): o achado é sempre o PRINCIPAL. O repetido que a integração
+ * apontou (`Partner.principalId`, Curral × "Curral (Marcelo Alves Meroto)") devolve o
+ * principal, se ele for cliente desta empresa; senão, o próprio achado.
  *
  * Roda dentro da transação de quem chama, sob o MESMO cadeado do "Novo cliente"
  * (`cliente-por-nome:<empresa>:<nome normalizado>`): dois cliques, ou o "Novo
@@ -43,14 +47,14 @@ export async function acharOuCriarClienteDoLead(tx: Tx, orgId: string, d: DadosD
   if (alvo) await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`cliente-por-nome:${orgId}:${alvo}`}))`;
 
   if (d.partnerIdDaFicha) {
-    const p = await tx.partner.findFirst({ where: { id: d.partnerIdDaFicha, orgId, isCliente: true, interno: false }, select: { id: true } });
-    if (p) return { id: p.id, como: 'ficha' };
+    const p = await tx.partner.findFirst({ where: { id: d.partnerIdDaFicha, orgId, isCliente: true, interno: false }, select: { id: true, principalId: true } });
+    if (p) return { id: await principalDoCliente(tx, orgId, p), como: 'ficha' };
   }
 
   const doc = (d.cnpj ?? '').replace(/\D/g, '');
   if (doc.length >= 11) {
-    const p = await tx.partner.findFirst({ where: { orgId, cnpjCpf: doc, isCliente: true, interno: false }, orderBy: { createdAt: 'asc' }, select: { id: true } });
-    if (p) return { id: p.id, como: 'cnpj' };
+    const p = await tx.partner.findFirst({ where: { orgId, cnpjCpf: doc, isCliente: true, interno: false }, orderBy: { createdAt: 'asc' }, select: { id: true, principalId: true } });
+    if (p) return { id: await principalDoCliente(tx, orgId, p), como: 'cnpj' };
   }
 
   if (alvo) {
@@ -70,4 +74,62 @@ export async function acharOuCriarClienteDoLead(tx: Tx, orgId: string, d: DadosD
     select: { id: true },
   });
   return { id: criado.id, como: 'criado' };
+}
+
+/*
+ * O CLIENTE DO FECHAMENTO, depois do cliente da ficha (cadastro único, 03/11/2026).
+ *
+ * O fechamento só reaproveitava pelo CNPJ: sem CNPJ no cadastro do Financeiro, nascia
+ * o segundo `Partner` (Curral, ProMedical, Custeio). Agora, a mesma régua de cima:
+ *
+ *   1. o CNPJ do aceite, só entre clientes (D-12), resolvido para o principal;
+ *   2. sem cliente com esse CNPJ, o nome (`acharClientePorNome`, já no principal), sob o
+ *      cadeado do "Novo cliente": ganha só o CNPJ e o e-mail VAZIOS. O de nome igual com
+ *      OUTRO CNPJ não é o mesmo cliente: segue para o 3 (o CNPJ do aceite não troca o dele);
+ *   3. sem nada disso, nasce o cliente, como antes.
+ *
+ * A ficha passa a apontar o reaproveitado quando não tinha cliente ou o dela não valeu
+ * (`apontarFicha`, o aviso "a conciliar" de quem chama); o criado, sempre.
+ */
+
+export interface DadosDoClienteDoFechamento {
+  /** O CNPJ do aceite, só dígitos ('' = sem CNPJ). */
+  doc: string;
+  razaoSocial: string;
+  email: string | null;
+  telefone: string | null;
+  apontarFicha: boolean;
+}
+
+export async function acharOuCriarClienteDoFechamento(
+  tx: Tx, orgId: string, leadId: string, d: DadosDoClienteDoFechamento,
+): Promise<{ estado: 'reaproveitado' | 'criado'; detalhe: string; ref: string }> {
+  const ja = d.doc ? await tx.partner.findFirst({ where: { orgId, cnpjCpf: d.doc, isCliente: true }, orderBy: { createdAt: 'asc' }, select: { id: true, principalId: true } }) : null;
+  if (ja) {
+    const id = await principalDoCliente(tx, orgId, ja);
+    if (d.apontarFicha) await tx.comercialFicha.updateMany({ where: { leadId, orgId }, data: { partnerId: id } });
+    return { estado: 'reaproveitado', detalhe: 'cliente já existia com este CNPJ', ref: id };
+  }
+
+  const alvo = nomeDeClienteNormalizado(d.razaoSocial);
+  if (alvo) {
+    await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`cliente-por-nome:${orgId}:${alvo}`}))`;
+    const achado = await acharClientePorNome(tx, orgId, d.razaoSocial);
+    const p = achado ? await tx.partner.findFirst({ where: { id: achado.id, orgId }, select: { id: true, cnpjCpf: true, email: true } }) : null;
+    const docDele = (p?.cnpjCpf ?? '').replace(/\D/g, '');
+    if (p && !(d.doc && docDele && docDele !== d.doc)) {
+      const vazios: { cnpjCpf?: string; email?: string } = {};
+      if (!docDele && d.doc) vazios.cnpjCpf = d.doc;
+      if (!p.email && d.email) vazios.email = d.email;
+      if (Object.keys(vazios).length) await tx.partner.updateMany({ where: { id: p.id, orgId }, data: vazios });
+      if (d.apontarFicha) await tx.comercialFicha.updateMany({ where: { leadId, orgId }, data: { partnerId: p.id } });
+      return { estado: 'reaproveitado', detalhe: 'cliente já existia com este nome', ref: p.id };
+    }
+  }
+
+  const p = await tx.partner.create({
+    data: { orgId, isCliente: true, razaoSocial: d.razaoSocial, cnpjCpf: d.doc, email: d.email || null, phone: d.telefone ?? null },
+  });
+  await tx.comercialFicha.updateMany({ where: { leadId, orgId }, data: { partnerId: p.id } });
+  return { estado: 'criado', detalhe: d.razaoSocial, ref: p.id };
 }

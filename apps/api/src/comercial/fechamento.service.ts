@@ -13,6 +13,7 @@ import { DecisoesRegistry, DecisoesService, type DecisaoResolvida } from './deci
 import { hashesDoRegistro } from './contratos/contratos-puro';
 import { DinheiroService, hojeEmSP, venceComoData, type AceiteDoLead } from './dinheiro.service';
 import { AUTOR_DO_FECHAMENTO, abrirCardDaImplantacao, travarImplantacaoDoLead } from './card-da-implantacao';
+import { acharOuCriarClienteDoFechamento } from './cliente-do-lead';
 import { eventoIdComercial, uuidDe } from './eventos';
 import { garantirContratoDoDocumento } from './contratos/registro-do-documento';
 import { SO_DOCUMENTOS_DE_ASSINATURA } from './documentos';
@@ -480,7 +481,8 @@ export class FechamentoService implements OnModuleInit {
       await this.fio.registrar(orgId, leadId, 'fechamento.escrita', `${linha.chave}:${escrita}:${e.estado}:${e.ref ?? ''}`, { chave: linha.chave, escrita, estado: e.estado, ref: e.ref, ms: e.ms });
     };
 
-    // 1. cliente: Partner, reaproveitado pelo da ficha (quando confere) e, sem ele, pelo CNPJ.
+    // 1. cliente: Partner, reaproveitado pelo da ficha (quando confere) e, sem ele, pelo CNPJ e pelo nome
+    // (`acharOuCriarClienteDoFechamento`, cadastro único de 03/11).
     // D-12: só se reaproveita um Partner que já é CLIENTE. O CNPJ vem da sala, que o cliente preenche sem
     // conferência: o fornecedor com o mesmo CNPJ não vira o cliente deste contrato nem é tocado; nasce outro.
     // A2 e a revisão adversarial (achados 1 e 2): o lead pode já ter um cliente na ficha (onboarding
@@ -521,16 +523,11 @@ export class FechamentoService implements OnModuleInit {
             };
           }
           const comAviso = (t: string) => (aviso ? `${t}. A conciliar: ${aviso.motivo}` : t).slice(0, 400);
-          const ja = doc ? await tx.partner.findFirst({ where: { orgId, cnpjCpf: doc, isCliente: true }, orderBy: { createdAt: 'asc' }, select: { id: true } }) : null;
-          if (ja) {
-            if (!fichaAgora?.partnerId || aviso) await tx.comercialFicha.updateMany({ where: { leadId, orgId }, data: { partnerId: ja.id } });
-            return { estado: 'reaproveitado' as const, detalhe: comAviso('cliente já existia com este CNPJ'), ref: ja.id, aviso };
-          }
-          const p = await tx.partner.create({
-            data: { orgId, isCliente: true, razaoSocial: a.dados.razaoSocial, cnpjCpf: doc, email: a.dados.email || null, phone: lead.phone ?? null },
+          // Cadastro único (03/11): CNPJ, depois o nome, sempre no principal; só sem os dois nasce outro.
+          const c = await acharOuCriarClienteDoFechamento(tx, orgId, leadId, {
+            doc, razaoSocial: a.dados.razaoSocial, email: a.dados.email, telefone: lead.phone, apontarFicha: !fichaAgora?.partnerId || !!aviso,
           });
-          await tx.comercialFicha.updateMany({ where: { leadId, orgId }, data: { partnerId: p.id } });
-          return { estado: 'criado' as const, detalhe: comAviso(a.dados.razaoSocial), ref: p.id, aviso };
+          return { estado: c.estado, detalhe: comAviso(c.detalhe), ref: c.ref, aviso };
         },
         { timeout: 30_000, maxWait: 10_000 },
       );

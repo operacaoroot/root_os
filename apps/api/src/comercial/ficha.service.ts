@@ -47,6 +47,7 @@ import { decisaoSemPrazo } from './decisoes.service';
 import { SO_DOCUMENTOS_DE_ASSINATURA } from './documentos';
 import { proximaAcaoDoLead, saudeDoLead, type DecisaoParaProximaAcao } from './proxima-acao';
 import { tarefaDeListaVisivel, tarefaViva } from '../work/arquivadas';
+import { nomeDeClienteNormalizado, principalDoCliente } from '../work/clientes-da-casa';
 import { diaEmSP, tarefasDosCartoes } from './tarefas/tarefa-do-cartao';
 import { avancar, avancarDepoisDaSessao, pendenciasDasEtapas, pendenciasDoMover, pendenciasQueRestam, podeSair, portoesDaEtapa, type EstadoParaPortao, type Veredicto } from './portoes';
 
@@ -663,6 +664,10 @@ export class FichaService {
    * (`ComercialFicha.empresa`). Grava o fato `identidade.editada` no fio, com o
    * antes e quem fez, SEM reação: não projeta, não move etapa, não dispara
    * automação. Nome e empresa mudam na mesma transação do fato.
+   *
+   * Cadastro único (03/11): com cliente na ficha, a empresa nova vira o `nomeFantasia`
+   * do cadastro (o principal). A razão social e o `AcordoComercial.cliente` não mudam
+   * (o extrato casa por eles); o nome antigo entra nos `apelidos` do acordo, uma vez.
    */
   async editarIdentidade(orgId: string, leadId: string, corpo: unknown, por: QuemFez | null, agora = new Date()): Promise<FichaDoLead> {
     const c = (corpo ?? {}) as { nome?: unknown; empresa?: unknown };
@@ -679,7 +684,10 @@ export class FichaService {
     if (novoNome === lead.name && novaEmpresa === ficha.empresa) return this.projecao(orgId, leadId);
     await this.prisma.$transaction(async (tx) => {
       if (novoNome !== lead.name) await tx.lead.updateMany({ where: { id: leadId, orgId }, data: { name: novoNome } });
-      if (novaEmpresa !== ficha.empresa) await tx.comercialFicha.update({ where: { id: ficha.id }, data: { empresa: novaEmpresa } });
+      if (novaEmpresa !== ficha.empresa) {
+        await tx.comercialFicha.update({ where: { id: ficha.id }, data: { empresa: novaEmpresa } });
+        if (novaEmpresa && ficha.partnerId) await this.empresaNoCadastro(tx, orgId, ficha.partnerId, ficha.empresa, novaEmpresa);
+      }
       await this.fio.gravarNaTransacao(tx, orgId, leadId, 'identidade.editada', `${agora.getTime()}`, {
         nome: novoNome !== lead.name ? novoNome : null,
         empresa: novaEmpresa,
@@ -689,6 +697,22 @@ export class FichaService {
       }, agora);
     });
     return this.projecao(orgId, leadId);
+  }
+
+  /** O nome da empresa no cadastro do cliente da ficha (cadastro único, 03/11), dentro da transação de quem chama. */
+  private async empresaNoCadastro(tx: Prisma.TransactionClient, orgId: string, partnerId: string, empresaAntes: string | null, empresaNova: string): Promise<void> {
+    const p = await tx.partner.findFirst({ where: { id: partnerId, orgId, isCliente: true, interno: false }, select: { id: true, principalId: true } });
+    if (!p) return;
+    const id = await principalDoCliente(tx, orgId, p);
+    await tx.partner.updateMany({ where: { id, orgId }, data: { nomeFantasia: empresaNova } });
+    const antes = (empresaAntes ?? '').trim();
+    const k = nomeDeClienteNormalizado(antes);
+    if (!k || k === nomeDeClienteNormalizado(empresaNova)) return;
+    const acordos = await tx.acordoComercial.findMany({ where: { orgId, partnerId: { in: [...new Set([p.id, id])] } }, select: { id: true, cliente: true, apelidos: true } });
+    for (const a of acordos) {
+      if ([a.cliente, ...(a.apelidos ?? '').split(',')].some((n) => nomeDeClienteNormalizado(n) === k)) continue;
+      await tx.acordoComercial.updateMany({ where: { id: a.id, orgId }, data: { apelidos: [a.apelidos?.trim(), antes].filter(Boolean).join(', ') } });
+    }
   }
 
   /**

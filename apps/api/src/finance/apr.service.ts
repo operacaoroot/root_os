@@ -8,6 +8,7 @@ import type {
 } from '@mktos/shared';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
+import { acharClientePorNome, nomeDeClienteNormalizado, principalDoCliente } from '../work/clientes-da-casa';
 import { exigirAcessoAtual } from '../memory/acesso-memoria';
 import { exigirPessoaFinanceiraAtual, travarFinanceiro, travarLancamentoFinanceiro, exigirNaoExercicio } from './financeiro-exercicio.service';
 
@@ -151,15 +152,60 @@ export class AprService {
   }
 
   async createPartner(orgId: string, input: CreatePartnerInput, actorId: string) {
-    const p = await this.prisma.partner.create({
-      data: {
-        orgId, razaoSocial: input.razaoSocial, nomeFantasia: input.nomeFantasia ?? null,
-        cnpjCpf: input.cnpjCpf ?? null, email: input.email ?? null, phone: input.phone ?? null,
-        isCliente: input.isCliente ?? false, isFornecedor: input.isFornecedor ?? false,
-      },
-    });
-    await this.audit.log({ orgId, actorId, action: 'finance.partner.create', entityType: 'partner', entityId: p.id, after: { razaoSocial: p.razaoSocial } });
-    return { ok: true, id: p.id };
+    const criar = async (db: Prisma.TransactionClient | PrismaService) => {
+      const p = await db.partner.create({
+        data: {
+          orgId, razaoSocial: input.razaoSocial, nomeFantasia: input.nomeFantasia ?? null,
+          cnpjCpf: input.cnpjCpf ?? null, email: input.email ?? null, phone: input.phone ?? null,
+          isCliente: input.isCliente ?? false, isFornecedor: input.isFornecedor ?? false,
+        },
+      });
+      await this.audit.log({ orgId, actorId, action: 'finance.partner.create', entityType: 'partner', entityId: p.id, after: { razaoSocial: p.razaoSocial } }, db);
+      return { ok: true, id: p.id };
+    };
+    if (!input.isCliente) return criar(this.prisma);
+    // Cliente: achar e criar na MESMA transação, sob o cadeado do nome.
+    return this.prisma.$transaction(async (tx) => (await this.clienteQueJaExiste(tx, orgId, input, actorId)) ?? criar(tx));
+  }
+
+  /**
+   * Cadastro único (03/11): o cliente que já existe (o CNPJ entre clientes, depois o nome
+   * na régua do Trabalho, sempre no principal) não ganha um segundo `Partner`. Ganha só o
+   * que estava VAZIO (documento, e-mail, telefone) e o papel de fornecedor, se pedido.
+   * O de nome igual com OUTRO documento não é o mesmo: nasce o novo, como antes.
+   * Sob o cadeado do "Novo cliente" (`cliente-por-nome:<empresa>:<nome normalizado>`), na transação de quem chama.
+   */
+  private async clienteQueJaExiste(tx: Prisma.TransactionClient, orgId: string, input: CreatePartnerInput, actorId: string) {
+    const doc = (input.cnpjCpf ?? '').replace(/\D/g, '');
+    const alvo = nomeDeClienteNormalizado(input.razaoSocial);
+    if (alvo) await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`cliente-por-nome:${orgId}:${alvo}`}))`;
+    let achado: { id: string; como: 'cnpj' | 'nome' } | null = null;
+    if (doc.length >= 11) {
+      // O Financeiro grava o documento como foi digitado (com ou sem máscara): compara só os dígitos.
+      const comDoc = await tx.partner.findMany({ where: { orgId, isCliente: true, interno: false, cnpjCpf: { not: null } }, select: { id: true, cnpjCpf: true, principalId: true }, orderBy: { createdAt: 'asc' } });
+      const p = comDoc.find((x) => (x.cnpjCpf ?? '').replace(/\D/g, '') === doc);
+      if (p) achado = { id: await principalDoCliente(tx, orgId, p), como: 'cnpj' };
+    }
+    if (!achado) {
+      const p = await acharClientePorNome(tx, orgId, input.razaoSocial);
+      if (p) achado = { id: p.id, como: 'nome' };
+    }
+    if (!achado) return null;
+    const ja = await tx.partner.findFirst({ where: { id: achado.id, orgId }, select: { id: true, razaoSocial: true, cnpjCpf: true, email: true, phone: true, isFornecedor: true } });
+    if (!ja) return null;
+    const docDele = (ja.cnpjCpf ?? '').replace(/\D/g, '');
+    if (achado.como === 'nome' && doc && docDele && docDele !== doc) return null;
+    const vazios: { cnpjCpf?: string; email?: string; phone?: string; isFornecedor?: boolean } = {};
+    if (!docDele && input.cnpjCpf) vazios.cnpjCpf = input.cnpjCpf;
+    if (!ja.email && input.email) vazios.email = input.email;
+    if (!ja.phone && input.phone) vazios.phone = input.phone;
+    if (!ja.isFornecedor && input.isFornecedor) vazios.isFornecedor = true;
+    if (Object.keys(vazios).length) await tx.partner.updateMany({ where: { id: ja.id, orgId }, data: vazios });
+    await this.audit.log({ orgId, actorId, action: 'finance.partner.reaproveitado', entityType: 'partner', entityId: ja.id, after: { razaoSocial: input.razaoSocial, como: achado.como, preencheu: Object.keys(vazios) } }, tx);
+    const mensagem = achado.como === 'cnpj'
+      ? `Este cliente já existia com este documento (${ja.razaoSocial}): nenhum cadastro novo.`
+      : `Este cliente já existia com este nome (${ja.razaoSocial}): nenhum cadastro novo.`;
+    return { ok: true, id: ja.id, jaExistia: true, como: achado.como, mensagem };
   }
 
   /** Layout 26/10: renomear o cadastro (razão social e/ou nome fantasia). Só o nome muda; o antes fica na auditoria. */
