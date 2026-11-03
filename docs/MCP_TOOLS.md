@@ -3,11 +3,17 @@
 > Servidor **MCP (Model Context Protocol)** próprio, em TypeScript, com o `@modelcontextprotocol/sdk`.
 > Exposto para Claude Desktop, Claude Code e qualquer cliente MCP. Como plugar: `packages/mcp/README.md`.
 
-## Estado real (conferido em 10/09/2026, contra `packages/mcp/src/server.ts`)
+## Estado real (conferido em 02/11/2026, contra `packages/mcp/src/server.ts`)
 
-**São 35 ferramentas, todas `read_only`.** Não existe nenhuma ferramenta de escrita no servidor MCP:
-`grep -c 'registerTool(' packages/mcp/src/server.ts` devolve 35, e todas passam por `apiGet` — o
-cliente (`packages/mcp/src/client.ts`) só sabe fazer `GET`.
+**São 38 ferramentas: 37 `read_only` e uma que propõe.** `grep -c 'registerTool(' packages/mcp/src/server.ts`
+devolve 38. A exceção é `comercial_contrato_propor_envio` (módulo de contratos, F5): ela chama a rota
+`POST /comercial/contratos/registro/:id/enviar`, que só cria a retenção R4. **Não há ferramenta que envie.** As outras
+passam por `apiGet`; o `apiPost` do cliente (`packages/mcp/src/client.ts`) existe só para essa.
+
+**A rota é só de gente (`SoGenteGuard`).** Este servidor autentica com a conta de serviço (`mcp@`), que é máquina e
+não tem `leads.editar`: por aqui, hoje, a ferramenta responde 403. Ela vale de verdade quando o servidor autentica como
+uma pessoa, e aí essa pessoa é a proponente (e não pode confirmar o próprio pedido). O servidor separado `~/root-os-mcp`,
+com `MCP_OPERADOR_*`, já alcança a mesma rota pelo `os_api`.
 
 > Este documento já disse "10 tools". Era o número da Fase 2; o servidor cresceu e o texto não.
 > O número acima é contável a partir do código; se ele divergir de novo, o código é que manda.
@@ -33,15 +39,15 @@ superfícies separadas, e nunca `@modelcontextprotocol/server-postgres`.
 |---|---|
 | `defineTool({ permission, class, rateLimit, outputSchema })` | A assinatura real é `server.registerTool(nome, { description, inputSchema, annotations }, handler)`. Não há campo de permissão, classe de risco nem rate limit no servidor MCP |
 | "Toda chamada → linha em `ai_tool_calls`" | A tabela **não existe** no `schema.prisma`. O registro que existe hoje é o `AuditLog` da API e o `EventLog` do gateway |
-| Tools `write_safe` / `write_sensitive` / `destructive` (`create_task`, `send_whatsapp_message`, `update_campaign`…) | **Nenhuma foi implementada.** A classificação de risco de ação vive em `packages/policy` (escada R0–R5) e é aplicada pelo Tool Gateway, não pelo MCP |
+| Tools `write_safe` / `write_sensitive` / `destructive` (`create_task`, `send_whatsapp_message`, `update_campaign`…) | **Nenhuma foi implementada** (a de propor envio do contrato só cria retenção). A classificação de risco de ação vive em `packages/policy` (escada R0–R5) e é aplicada pelo Tool Gateway, não pelo MCP |
 
 As classes de risco continuam sendo o desenho alvo para quando a escrita entrar no MCP — mas o
 lugar onde elas já existem em runtime é a régua, não este pacote.
 
-## Catálogo — as 35 ferramentas
+## Catálogo — as 38 ferramentas
 
-Todas são `read_only` (`annotations: { readOnlyHint: true, openWorldHint: false }`). "Permissão" é
-a exigida pelo endpoint da API que a tool chama.
+Todas são `read_only` (`annotations: { readOnlyHint: true, openWorldHint: false }`), menos a de propor envio do contrato.
+"Permissão" é a exigida pelo endpoint da API que a tool chama.
 
 ### Painel e funil
 | Tool | Endpoint | Permissão | Argumentos |
@@ -57,6 +63,13 @@ a exigida pelo endpoint da API que a tool chama.
 | `get_lead` | `GET /leads/:id` | `leads.ver` | `lead_id` |
 | `list_campaigns` | `GET /campaigns` | `campanhas.ver` | `status` |
 | `get_campaign` | `GET /campaigns/:id` | `campanhas.ver` | `campaign_id` |
+
+### Contratos do comercial
+| Tool | Endpoint | Permissão | Argumentos |
+|---|---|---|---|
+| `comercial_contratos_quadro` | `GET /comercial/contratos/quadro` | `leads.ver` | — |
+| `comercial_contrato_ficha` | `GET /comercial/contratos/registro/:id` | `leads.ver` | `contrato_id` |
+| `comercial_contrato_propor_envio` (propõe, não é `read_only`) | `POST /comercial/contratos/registro/:id/enviar` | `leads.editar`, só gente | `contrato_id` |
 
 ### Pixel e eventos
 | Tool | Endpoint | Permissão | Argumentos |
@@ -125,7 +138,8 @@ inteiro para o cliente, sem reescrever — o servidor não resume nem interpreta
 
 ## Quando a escrita entrar
 
-Não pelo MCP direto. O caminho decidido é o Tool Gateway (ADR-004): a capacidade é declarada em
+A primeira porta já seguiu este caminho: `comercial_contrato_propor_envio` chama uma rota da API que entrega
+`comercial.contrato.enviar` à `PortaDoOperador`. Não pelo MCP direto. O caminho decidido é o Tool Gateway (ADR-004): a capacidade é declarada em
 `packages/policy`, a régua R0–R5 classifica, o gateway registra no `EventLog` **antes** do efeito e
 decide entre executar, exigir aprovação ou recusar. Uma tool MCP de escrita seria só mais uma
 superfície chamando o gateway — nunca um caminho paralelo.

@@ -15,10 +15,10 @@ Servidor **MCP (Model Context Protocol)** que expõe ferramentas padronizadas pa
 
 ## Ferramentas
 
-São **35**, todas `read_only`. O catálogo completo (nome, endpoint, permissão exigida e argumentos)
+São **38**: 37 `read_only` e `comercial_contrato_propor_envio`, que só cria o pedido R4 em Aprovações (nada envia). O catálogo completo (nome, endpoint, permissão exigida e argumentos)
 vive em **`docs/MCP_TOOLS.md`** — é lá que se olha, e não aqui, para não haver duas listas
 divergindo. Este README já trouxe uma tabela de 10 ferramentas por bastante tempo depois de o
-servidor ter 35.
+servidor ter mais de 30.
 
 O número é contável a partir do código, e o código é que manda:
 

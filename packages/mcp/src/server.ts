@@ -1,9 +1,11 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
-import { apiGet, qs } from './client.js';
+import { apiGet, apiPost, qs } from './client.js';
 
-// Todas as tools desta fase são read_only (menor privilégio; a conta de serviço
-// nem tem permissão de escrita). Retornamos JSON com o campo `source` da API
+// As tools são read_only (menor privilégio; a conta de serviço nem tem permissão de
+// escrita), com UMA exceção: `comercial_contrato_propor_envio` cria o pedido R4 pela
+// rota da API e nada mais. Não há ferramenta que envie: quem libera é outra pessoa
+// titular, com a senha, em Aprovações. Retornamos JSON com o campo `source` da API
 // para que a IA sempre cite a fonte interna dos dados.
 
 function ok(data: unknown) {
@@ -647,6 +649,57 @@ export function buildServer(): McpServer {
     async ({ task_id }) => {
       try {
         return ok(await apiGet(`/trabalho/tarefas/${encodeURIComponent(task_id)}`));
+      } catch (e) {
+        return fail(e);
+      }
+    },
+  );
+
+  server.registerTool(
+    'comercial_contratos_quadro',
+    {
+      description:
+        'Quadro de contratos do comercial: um cartão por contrato com etapa (a_emitir, minuta, em_assinatura, ativo, renovar, a_encerrar, encerrado), modalidade, valor, vigência, assinaturas e lacunas; totais por etapa; e se a ZapSign está configurada nesta instância. Cartão com `fantasma: true` é cliente sem contrato registrado. [read_only]',
+      inputSchema: {},
+      annotations: { title: 'Contratos: quadro', ...READ_ONLY },
+    },
+    async () => {
+      try {
+        return ok(await apiGet('/comercial/contratos/quadro'));
+      } catch (e) {
+        return fail(e);
+      }
+    },
+  );
+
+  server.registerTool(
+    'comercial_contrato_ficha',
+    {
+      description:
+        'Ficha de um contrato: estado, signatários e quem já assinou (o que a ZapSign disse na última conferência), documentos, histórico, a minuta com o laudo, e `faltaParaEnviar`, a lista do que ainda trava o pedido de aprovação. [read_only]',
+      inputSchema: { contrato_id: z.string().min(1).describe('O id do cartão no quadro (id do contrato, importado:<lead> ou sem-contrato:<lead>)') },
+      annotations: { title: 'Contratos: ficha', ...READ_ONLY },
+    },
+    async ({ contrato_id }) => {
+      try {
+        return ok(await apiGet(`/comercial/contratos/registro/${encodeURIComponent(contrato_id)}`));
+      } catch (e) {
+        return fail(e);
+      }
+    },
+  );
+
+  server.registerTool(
+    'comercial_contrato_propor_envio',
+    {
+      description:
+        'PROPÕE o envio do contrato para assinatura: recalcula o PDF, congela o hash e cria a pendência R4 em Aprovações, em nome de quem autenticou neste servidor. NÃO envia: nada sai para a ZapSign até outra pessoa titular conferir o conteúdo exato e confirmar com a senha. Faltando algo, a API recusa com a lista em `faltando`. A rota é só de gente: com a conta de serviço deste servidor, a resposta é 403. [propõe, não executa]',
+      inputSchema: { contrato_id: z.string().min(1).describe('O id do contrato (o registro, não o fantasma nem o importado)') },
+      annotations: { title: 'Contratos: propor envio', readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+    },
+    async ({ contrato_id }) => {
+      try {
+        return ok(await apiPost(`/comercial/contratos/registro/${encodeURIComponent(contrato_id)}/enviar`, {}));
       } catch (e) {
         return fail(e);
       }

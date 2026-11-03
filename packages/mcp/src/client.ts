@@ -43,6 +43,29 @@ export async function apiGet<T = unknown>(path: string): Promise<T> {
   return res.json() as Promise<T>;
 }
 
+/**
+ * POST, para a única ferramenta que propõe (`comercial_contrato_propor_envio`). A API decide tudo: quem não pode ouve
+ * o erro dela. Esta função não ganha outro uso sem a régua cobrir a rota: a ferramenta só cria retenção, nunca efeito.
+ */
+export async function apiPost<T = unknown>(path: string, corpo: unknown): Promise<T> {
+  if (!token) await login();
+  const pedir = () => fetch(`${API_URL}${path}`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify(corpo),
+  });
+  let res = await pedir();
+  if (res.status === 401) {
+    await login();
+    res = await pedir();
+  }
+  if (!res.ok) {
+    const body = await res.text().catch(() => '');
+    throw new Error(`API ${path} → HTTP ${res.status} ${body}`);
+  }
+  return res.json() as Promise<T>;
+}
+
 export function qs(params: Record<string, string | number | boolean | undefined>): string {
   const p = new URLSearchParams();
   for (const [k, v] of Object.entries(params)) {
