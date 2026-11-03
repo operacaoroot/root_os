@@ -16,28 +16,26 @@ import { reaisOuAusente } from '@/lib/cockpit';
 import { BOTAO, BOTAO_PRIMARIO, Chip, ErroDaAcao, FOCO, INPUT, ROTULO } from '../_ui';
 import { LinkDoLead } from '../_painel/provedor';
 import { FaixaRetida } from './acao';
-import { CAMINHO_DO_LOTE, dataCompleta, foiParaAprovacoes } from './regras';
-
-export type RespostaDoLote = ResultadoDoLote | { status: 'aguardando_aprovacao' };
+import { CAMINHO_DO_LOTE, dataCompleta } from './regras';
 
 /** Confere o pedido na tela antes de ir à API: a frase é da casa, não a do esquema. */
-export async function enviarLote(corpo: ContratoLoteInput, token: string | null | undefined): Promise<RespostaDoLote> {
+export async function enviarLote(corpo: ContratoLoteInput, token: string | null | undefined): Promise<ResultadoDoLote> {
   const conferido = ContratoLoteSchema.safeParse(corpo);
   if (!conferido.success) {
     const ids = conferido.error.issues.some((i) => i.path[0] === 'ids');
     throw new Error(ids ? 'O lote aceita de 1 a 100 contratos por vez.' : 'Escreva o motivo (de 5 a 500 caracteres).');
   }
-  return apiPost<RespostaDoLote>(CAMINHO_DO_LOTE, conferido.data, token);
+  return apiPost<ResultadoDoLote>(CAMINHO_DO_LOTE, conferido.data, token);
 }
 
-/** O que voltou do lote: quantos valeram e cada recusado com o motivo da API. */
-export function ResultadoDoLoteNaTela({ resposta, itens }: { resposta: RespostaDoLote; itens: readonly ContratoNoQuadro[] }) {
-  if (foiParaAprovacoes(resposta)) return <FaixaRetida testId="lote-retido" />;
-  const r = resposta as ResultadoDoLote;
+/** O que voltou do lote: quantos valeram, quantos ficaram retidos e cada recusado com o motivo da API. */
+export function ResultadoDoLoteNaTela({ resposta: r, itens }: { resposta: ResultadoDoLote; itens: readonly ContratoNoQuadro[] }) {
+  const retidos = r.retidos ?? [];
   const nome = (id: string) => itens.find((c) => c.id === id)?.cliente ?? id;
   return (
     <div role="status" data-testid="lote-resultado" className="space-y-1 rounded border border-border bg-surface-2 px-3 py-2 text-[12.5px]">
-      <p>{r.ok.length === 1 ? '1 contrato feito.' : `${r.ok.length} contratos feitos.`} {r.recusados.length === 1 ? '1 recusado.' : `${r.recusados.length} recusados.`}</p>
+      {retidos.length > 0 && <FaixaRetida testId="lote-retido" />}
+      <p>{r.ok.length === 1 ? '1 contrato feito.' : `${r.ok.length} contratos feitos.`} {r.recusados.length === 1 ? '1 recusado.' : `${r.recusados.length} recusados.`}{retidos.length > 0 ? ` ${retidos.length} em Aprovações.` : ''}</p>
       {r.recusados.length > 0 && (
         <ul className="list-disc pl-5" data-testid="lote-recusados">
           {r.recusados.map((x) => <li key={x.id}><strong>{nome(x.id)}</strong>: {x.motivo}</li>)}
@@ -58,7 +56,7 @@ export function ListaDeContratos({ itens, podeAgir, aoMudar }: {
   const [motivo, setMotivo] = useState('');
   const [ocupado, setOcupado] = useState(false);
   const [erro, setErro] = useState<unknown>(null);
-  const [resposta, setResposta] = useState<RespostaDoLote | null>(null);
+  const [resposta, setResposta] = useState<ResultadoDoLote | null>(null);
 
   // Só conta o que está na tela: filtro que esconde a linha tira ela do lote.
   const visiveis = new Set(itens.map((c) => c.id));
@@ -77,10 +75,8 @@ export function ListaDeContratos({ itens, podeAgir, aoMudar }: {
     try {
       const r = await enviarLote({ acao, ids, ...(acao === 'encerrar' || motivo.trim() ? { motivo: motivo.trim() } : {}) }, token);
       setResposta(r);
-      if (!foiParaAprovacoes(r)) {
-        const feitos = new Set((r as ResultadoDoLote).ok);
-        setMarcadas((m) => new Set([...m].filter((id) => !feitos.has(id))));
-      }
+      const feitos = new Set(r.ok);
+      setMarcadas((m) => new Set([...m].filter((id) => !feitos.has(id))));
       setConfirmando(null);
       setMotivo('');
       await aoMudar();

@@ -9,13 +9,31 @@
 import { useCallback, useState } from 'react';
 import Link from 'next/link';
 
+import { apiBlob } from '@/lib/api';
+
 import { ErroDaAcao, FOCO } from '../_ui';
 import { FRASE_RETIDA, foiParaAprovacoes } from './regras';
 
-export function FaixaRetida({ testId = 'contrato-retido' }: { testId?: string }) {
+/**
+ * Abre um PDF que a API só entrega com o token. A aba abre antes de esperar a resposta: depois do `await` o navegador já
+ * não considera clique e bloqueia. Falhou, a aba fecha e o erro volta para a tela (o 409 da prévia traz a lista).
+ */
+export async function abrirPdfDaApi(caminho: string, token: string | null | undefined): Promise<void> {
+  const aba = window.open('', '_blank');
+  try {
+    const url = URL.createObjectURL(await apiBlob(caminho, token));
+    if (aba) aba.location.href = url;
+    else window.location.assign(url);
+  } catch (e) {
+    aba?.close();
+    throw e;
+  }
+}
+
+export function FaixaRetida({ testId = 'contrato-retido', frase = FRASE_RETIDA }: { testId?: string; frase?: string }) {
   return (
     <div role="status" data-testid={testId} className="flex flex-wrap items-center gap-2 rounded border border-warn/50 bg-warn/10 px-3 py-2 text-[13px]">
-      <span>{FRASE_RETIDA}</span>
+      <span>{frase}</span>
       <Link href="/atendimento" className={`ml-auto underline decoration-brand underline-offset-2 ${FOCO}`}>abrir Aprovações</Link>
     </div>
   );

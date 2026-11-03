@@ -12,23 +12,38 @@ import { apiPost } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 import { reaisOuAusente } from '@/lib/cockpit';
 
-import { BOTAO, BOTAO_PRIMARIO, CARTAO, Chip, FOCO, INPUT, ROTULO, Rotulo } from '../_ui';
-import { RetornoDaAcao, useAcaoDoContrato } from './acao';
+import { BOTAO, BOTAO_PRIMARIO, CARTAO, Carregando, Chip, Erro, ErroDaAcao, FOCO, INPUT, ROTULO, Rotulo, useCarregar } from '../_ui';
+import { RetornoDaAcao, abrirPdfDaApi, useAcaoDoContrato } from './acao';
+import { EmitirContrato } from './EmitirContrato';
 import { AvisoDeParcelas, useParcelasDoLead } from './parcelas';
-import { CAMINHO_DO_REGISTRO, dataCompleta } from './regras';
+import { CAMINHO_DO_REGISTRO, dataCompleta, linkSeguro, pdfDaApi } from './regras';
 
 const ROTULO_DO_TIPO: Record<TipoDeContrato, string> = { contrato: 'Contrato', aditivo: 'Aditivo', distrato: 'Distrato' };
 const ROTULO_DO_ESTADO: Record<EstadoDoContrato, string> = {
   rascunho: 'minuta', a_emitir: 'a emitir', em_assinatura: 'em assinatura', assinado: 'assinado', ativo: 'ativo', encerrado: 'encerrado', cancelado: 'cancelado',
 };
 
-/** Link de PDF só se for endereço da web ou da própria casa: nada de `javascript:` vindo de dado. */
-function linkSeguro(link: string | null): string | null {
-  return link && (/^https?:\/\//i.test(link) || link.startsWith('/')) ? link : null;
+/** O aditivo ou o distrato em rascunho: a mesma emissão do contrato, sobre a ficha dele. */
+function EmissaoDoFilho({ id, assinaturaConfigurada, podeEditar, aoMudar }: { id: string; assinaturaConfigurada: boolean; podeEditar: boolean; aoMudar: () => Promise<void> }) {
+  const filho = useCarregar<ContratoNaFicha>(`${CAMINHO_DO_REGISTRO}/${encodeURIComponent(id)}`, 30_000);
+  const recarregar = filho.recarregar;
+  if (!filho.dados) return filho.erro ? <Erro erro={filho.erro} aoTentar={() => void recarregar()} /> : <Carregando linhas={2} altura="h-16" />;
+  return <EmitirContrato c={filho.dados} passo="minuta" assinaturaConfigurada={assinaturaConfigurada} podeEditar={podeEditar} aoMudar={async () => { await Promise.all([recarregar(), aoMudar()]); }} />;
 }
 
-export function DocumentosDoContrato({ c, leadId, podeEditar, aoMudar }: { c: ContratoNaFicha; leadId: string; podeEditar: boolean; aoMudar: () => Promise<void> }) {
+export function DocumentosDoContrato({ c, leadId, assinaturaConfigurada, podeEditar, aoMudar }: { c: ContratoNaFicha; leadId: string; assinaturaConfigurada: boolean; podeEditar: boolean; aoMudar: () => Promise<void> }) {
+  const { token } = useAuth();
   const [novo, setNovo] = useState<'aditivo' | 'distrato' | null>(null);
+  const [emitindo, setEmitindo] = useState<string | null>(null);
+  const [erroDoPdf, setErroDoPdf] = useState<unknown>(null);
+  const abrirPdf = async (caminho: string) => {
+    setErroDoPdf(null);
+    try {
+      await abrirPdfDaApi(caminho, token);
+    } catch (e) {
+      setErroDoPdf(e);
+    }
+  };
   const vigente = c.estado === 'assinado' || c.estado === 'ativo';
   const pdf = linkSeguro(c.linkPdf);
   return (
@@ -54,11 +69,17 @@ export function DocumentosDoContrato({ c, leadId, podeEditar, aoMudar }: { c: Co
               </span>
               <Chip>{ROTULO_DO_ESTADO[d.estado]}</Chip>
               <Chip tom={d.temPdf ? 'neutro' : 'alerta'}>{d.temPdf ? 'com PDF' : 'sem PDF'}</Chip>
-              {d.id === c.id && pdf && <a href={pdf} target="_blank" rel="noreferrer" className={BOTAO}>Abrir</a>}
+              {d.id === c.id && pdf && !pdfDaApi(pdf) && <a href={pdf} target="_blank" rel="noreferrer" className={BOTAO}>Abrir</a>}
+              {d.id === c.id && pdf && pdfDaApi(pdf) && <button type="button" data-testid="contrato-abrir-pdf" className={BOTAO} onClick={() => void abrirPdf(pdf)}>Abrir</button>}
+              {d.tipo !== 'contrato' && d.estado === 'rascunho' && podeEditar && (
+                <button type="button" data-testid={`documento-emitir-${d.id}`} aria-expanded={emitindo === d.id} className={BOTAO} onClick={() => setEmitindo(emitindo === d.id ? null : d.id)}>Emitir</button>
+              )}
             </li>
           ))}
         </ul>
       )}
+      <ErroDaAcao erro={erroDoPdf} />
+      {emitindo && <EmissaoDoFilho key={emitindo} id={emitindo} assinaturaConfigurada={assinaturaConfigurada} podeEditar={podeEditar} aoMudar={aoMudar} />}
       {novo && (
         <FormularioDoFilho key={novo} c={c} leadId={leadId} tipoInicial={novo} aoFechar={() => setNovo(null)} aoMudar={aoMudar} />
       )}
@@ -92,7 +113,7 @@ function FormularioDoFilho({ c, leadId, tipoInicial, aoFechar, aoMudar }: {
     ? (c.valorCentavos == null ? 'sem valor' : reaisOuAusente(c.valorCentavos))
     : campo === 'vigencia' ? (dataCompleta(c.vigenciaFim) || 'não lançada') : 'como está no contrato';
 
-  const corpo = montarCorpo({ tipo, campo, novoValor, valeDe, ultimaData, motivo });
+  const corpo = montarCorpo({ tipo, campo, novoValor, valeDe, ultimaData, motivo, ciente });
   const parcelasOk = tipo === 'aditivo' || parcelas.emAberto === 0 || ciente;
   const pronto = corpo !== null && ContratoFilhoSchema.safeParse(corpo).success && parcelasOk;
 
@@ -164,10 +185,11 @@ function FormularioDoFilho({ c, leadId, tipoInicial, aoFechar, aoMudar }: {
 }
 
 /** O corpo de `POST .../filhos`. Nulo enquanto falta o essencial do formulário. */
-function montarCorpo(f: { tipo: 'aditivo' | 'distrato'; campo: CampoDoAditivo; novoValor: string; valeDe: string; ultimaData: string; motivo: string }): ContratoFilhoInput | null {
+function montarCorpo(f: { tipo: 'aditivo' | 'distrato'; campo: CampoDoAditivo; novoValor: string; valeDe: string; ultimaData: string; motivo: string; ciente: boolean }): ContratoFilhoInput | null {
   const motivo = f.motivo.trim();
   if (f.tipo === 'distrato') {
-    return f.ultimaData ? { tipo: 'distrato', motivo, vigenciaFim: f.ultimaData } : null;
+    // A API recusa distrato com parcela em aberto sem a ciência: ela vai no corpo, só quando a pessoa marcou.
+    return f.ultimaData ? { tipo: 'distrato', motivo, vigenciaFim: f.ultimaData, ...(f.ciente ? { cienteDasParcelas: true } : {}) } : null;
   }
   const novo = f.novoValor.trim();
   if (!novo) return null;

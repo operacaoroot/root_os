@@ -1,28 +1,27 @@
 'use client';
 
 /*
- * A FICHA DO CONTRATO (fase F4, 02/11/2026): etapas no topo, a faixa de ação, quem
- * assina, os dados, os documentos, o histórico e o bloco da minuta. Lê sempre
+ * A FICHA DO CONTRATO (fases F4 e F2, 02/11/2026): etapas no topo, a faixa de ação, a
+ * emissão (antes do envio), quem assina, os dados, os documentos e o histórico. Lê sempre
  * `GET /comercial/contratos/registro/:id`.
  */
-import { useCallback, useState } from 'react';
-import { ROTULO_DA_ETAPA_DO_QUADRO, ROTULO_DA_MODALIDADE, type ContratoNaFicha, type FichaDoLead } from '@mktos/shared';
+import { useCallback } from 'react';
+import { ROTULO_DA_ETAPA_DO_QUADRO, ROTULO_DA_MODALIDADE, type ContratoNaFicha } from '@mktos/shared';
 
 import { useAuth } from '@/lib/auth';
 import { horaSP } from '@/lib/cockpit';
 
-import { BOTAO, CARTAO, Carregando, Chip, Erro, Rotulo, useCarregar } from '../_ui';
-import { MinutaDoContrato } from '../_painel/MinutaDoContrato';
+import { CARTAO, Carregando, Chip, Erro, Rotulo, useCarregar } from '../_ui';
 import { DadosDoContrato } from './DadosDoContrato';
 import { DocumentosDoContrato } from './DocumentosDoContrato';
+import { EmitirContrato } from './EmitirContrato';
 import { FaixaDeAcao } from './FaixaDeAcao';
 import { SignatariosDoContrato } from './SignatariosDoContrato';
 import { CAMINHO_DO_REGISTRO, ETAPAS_DA_FICHA, dataCompleta, degrauDaFicha, type PassoDoContrato } from './regras';
 
-export function FichaDoContrato({ contratoId, leadId, ficha, passo, assinaturaConfigurada, aoMudar }: {
+export function FichaDoContrato({ contratoId, leadId, passo, assinaturaConfigurada, aoMudar }: {
   contratoId: string;
   leadId: string;
-  ficha: FichaDoLead | null;
   passo: PassoDoContrato | null;
   assinaturaConfigurada: boolean;
   aoMudar: () => Promise<void>;
@@ -40,7 +39,6 @@ export function FichaDoContrato({ contratoId, leadId, ficha, passo, assinaturaCo
     return contrato.erro ? <Erro erro={contrato.erro} aoTentar={() => void contrato.recarregar()} /> : <Carregando linhas={3} altura="h-20" />;
   }
   const podeEditar = can('leads.editar');
-  const temAceite = (ficha?.fio ?? []).some((l) => l.type === 'proposta.aceita' || l.type === 'aceite.declarado');
 
   return (
     <div className="space-y-3" data-testid="ficha-contrato" data-estado={c.estado}>
@@ -57,12 +55,14 @@ export function FichaDoContrato({ contratoId, leadId, ficha, passo, assinaturaCo
       <EtapasDaFicha c={c} />
       <FaixaDeAcao c={c} leadId={leadId} passo={passo} assinaturaConfigurada={assinaturaConfigurada} podeEditar={podeEditar} aoMudar={mudou} />
 
+      <EmitirContrato c={c} passo={passo} assinaturaConfigurada={assinaturaConfigurada} podeEditar={podeEditar} aoMudar={mudou} />
+
       <div className="grid gap-3 lg:grid-cols-[repeat(2,minmax(0,1fr))]">
-        <SignatariosDoContrato c={c} podeEditar={podeEditar} aoMudar={mudou} />
+        {!c.emissao && <SignatariosDoContrato c={c} podeEditar={podeEditar} aoMudar={mudou} />}
         <DadosDoContrato c={c} podeEditar={podeEditar} aoMudar={mudou} />
       </div>
 
-      <DocumentosDoContrato c={c} leadId={leadId} podeEditar={podeEditar} aoMudar={mudou} />
+      <DocumentosDoContrato c={c} leadId={leadId} assinaturaConfigurada={assinaturaConfigurada} podeEditar={podeEditar} aoMudar={mudou} />
 
       <section className={`${CARTAO} space-y-2`} aria-label="histórico do contrato" data-testid="contrato-historico">
         <Rotulo>histórico</Rotulo>
@@ -79,8 +79,6 @@ export function FichaDoContrato({ contratoId, leadId, ficha, passo, assinaturaCo
           </ul>
         )}
       </section>
-
-      <BlocoDaMinuta leadId={leadId} temAceite={temAceite} aberto={passo === 'minuta' || !!c.minutaId} />
     </div>
   );
 }
@@ -103,22 +101,5 @@ function EtapasDaFicha({ c }: { c: ContratoNaFicha }) {
         );
       })}
     </ol>
-  );
-}
-
-/** "Gerar minuta" abre o `MinutaDoContrato` de sempre: ele fala com a API só depois de aberto. */
-function BlocoDaMinuta({ leadId, temAceite, aberto }: { leadId: string; temAceite: boolean; aberto: boolean }) {
-  const [mostrar, setMostrar] = useState(aberto);
-  return (
-    <section className={`${CARTAO} space-y-2`} aria-label="minuta do contrato da Root" data-testid="contrato-minuta">
-      {mostrar ? (
-        <MinutaDoContrato leadId={leadId} temAceite={temAceite} />
-      ) : (
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <Rotulo>minuta do contrato da Root</Rotulo>
-          <button type="button" data-testid="contrato-abrir-minuta" className={BOTAO} onClick={() => setMostrar(true)}>Gerar minuta</button>
-        </div>
-      )}
-    </section>
   );
 }

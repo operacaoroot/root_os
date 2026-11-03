@@ -23,6 +23,7 @@ export const CAMINHO_DO_LOTE = '/comercial/contratos/lote';
 
 export const FRASE_SEM_ZAPSIGN = 'A ZapSign não está configurada nesta instância: nenhum contrato sai para assinatura.';
 export const FRASE_RETIDA = 'Foi para Aprovações: outra pessoa precisa confirmar.';
+export const FRASE_RETIDA_DO_ENVIO = 'Foi para Aprovações: outra pessoa titular precisa confirmar com a senha.';
 
 export const VISOES_DOS_CONTRATOS = ['quadro', 'lista', 'vivos'] as const;
 export type VisaoDosContratos = (typeof VISOES_DOS_CONTRATOS)[number];
@@ -59,7 +60,10 @@ export const ROTULO_DA_ACAO: Record<AcaoDoMovimento, string> = {
   reabrir: 'abre a reabertura',
 };
 
+/** O `campo` pode vir com o nome do passo ou com o da ação do arrasto (`gerar_minuta`, `pedir_aprovacao`). */
 export function passoDoCampo(campo: string | null | undefined): PassoDoContrato | null {
+  if (campo === 'gerar_minuta') return 'minuta';
+  if (campo === 'pedir_aprovacao') return 'envio';
   return campo === 'minuta' || campo === 'envio' || campo === 'encerrar' || campo === 'reabrir' ? campo : null;
 }
 
@@ -114,6 +118,16 @@ export function dataCompleta(data: string | null | undefined): string {
   const d = new Date(data);
   if (Number.isNaN(d.getTime())) return '';
   return new Intl.DateTimeFormat('pt-BR', { timeZone: 'America/Sao_Paulo', day: '2-digit', month: '2-digit', year: 'numeric' }).format(d);
+}
+
+/** Para onde vai o PDF: endereço da web abre direto; caminho da API (anexo guardado no OS) precisa do token. */
+export function pdfDaApi(link: string | null): boolean {
+  return !!link && link.startsWith('/');
+}
+
+/** Link de PDF só se for endereço da web ou da própria API: nada de `javascript:` vindo de dado. */
+export function linkSeguro(link: string | null): string | null {
+  return link && (/^https?:\/\//i.test(link) || link.startsWith('/')) ? link : null;
 }
 
 /** A resposta foi retida pela política? Aí não houve efeito nenhum, e a tela nunca diz que deu certo. */

@@ -3,7 +3,8 @@
 /*
  * OS DADOS DO CONTRATO: modalidade, vigência, número e o CNPJ que fatura como texto
  * (a decisão D6: vazio recusa o envio; o código não adivinha). `PATCH` só com o que
- * mudou. Encerrado, vira só leitura.
+ * mudou. Encerrado, vira só leitura. Antes do envio, modalidade e CNPJ moram na seção
+ * Emitir (entram no documento): aqui ficam número e vigência.
  */
 import { useState } from 'react';
 import { ContratoEditarSchema, MODALIDADES_DE_CONTRATO, ROTULO_DA_MODALIDADE, type ContratoEditarInput, type ContratoNaFicha, type ModalidadeDeContrato } from '@mktos/shared';
@@ -55,6 +56,7 @@ export function DadosDoContrato({ c, podeEditar, aoMudar }: { c: ContratoNaFicha
   const sujo = Object.keys(mudou).length > 0;
   const conferido = ContratoEditarSchema.safeParse(mudou);
   const ignorar = sujo ? {} : { 'data-painel-ignorar': '' };
+  const naEmissao = !!c.emissao;
   const mudar = (parte: Partial<Campos>) => setEditados({ ...campos, ...parte });
 
   const salvar = async () => {
@@ -72,13 +74,13 @@ export function DadosDoContrato({ c, podeEditar, aoMudar }: { c: ContratoNaFicha
       </dl>
       {editavel ? (
         <div className="grid grid-cols-2 gap-2">
-          <label className="flex flex-col gap-1">
+          {!naEmissao && <label className="flex flex-col gap-1">
             <span className={ROTULO}>Modalidade</span>
             <select data-testid="contrato-modalidade" className={`${INPUT} max-md:min-h-[44px]`} value={campos.modalidade} onChange={(e) => mudar({ modalidade: e.target.value as ModalidadeDeContrato })}>
               {!campos.modalidade && <option value="">a definir</option>}
               {MODALIDADES_DE_CONTRATO.map((m) => <option key={m} value={m}>{ROTULO_DA_MODALIDADE[m]}</option>)}
             </select>
-          </label>
+          </label>}
           <label className="flex flex-col gap-1">
             <span className={ROTULO}>Número</span>
             <input data-testid="contrato-numero" className={`${INPUT} font-os-mono max-md:min-h-[44px]`} maxLength={60} value={campos.numero} onChange={(e) => mudar({ numero: e.target.value })} {...ignorar} />
@@ -91,10 +93,10 @@ export function DadosDoContrato({ c, podeEditar, aoMudar }: { c: ContratoNaFicha
             <span className={ROTULO}>Vigência: fim</span>
             <input data-testid="contrato-vigencia-fim" type="date" className={`${INPUT} max-md:min-h-[44px]`} value={campos.vigenciaFim} onChange={(e) => mudar({ vigenciaFim: e.target.value })} />
           </label>
-          <label className="col-span-2 flex flex-col gap-1">
+          {!naEmissao && <label className="col-span-2 flex flex-col gap-1">
             <span className={ROTULO}>CNPJ que fatura</span>
             <input data-testid="contrato-fatura-por" className={`${INPUT} max-md:min-h-[44px]`} maxLength={200} placeholder="a decidir: sem ele o envio é recusado" value={campos.faturaPor} onChange={(e) => mudar({ faturaPor: e.target.value })} {...ignorar} />
-          </label>
+          </label>}
           <div className="col-span-2">
             <button type="button" data-testid="contrato-dados-salvar" className={BOTAO_PRIMARIO} disabled={!sujo || !conferido.success || acao.ocupado !== null} onClick={() => void salvar()}>Salvar dados</button>
           </div>

@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { ETAPAS_DO_QUADRO, ROTULO_DA_ETAPA_DO_QUADRO, type ContratoNoQuadro, type ContratoVivo, type EtapaDoQuadro, type QuadroDeContratos } from '@mktos/shared';
+import { ETAPAS_DO_QUADRO, ROTULO_DA_ETAPA_DO_QUADRO, type ContratoNoQuadro, type ContratoVivo, type EtapaDoQuadro, type QuadroDeContratos, type ResultadoDoLote } from '@mktos/shared';
 
 import { useAuth } from '@/lib/auth';
 import { diaDeHojeSP, reaisOuAusente } from '@/lib/cockpit';
@@ -9,7 +9,8 @@ import { diaDeHojeSP, reaisOuAusente } from '@/lib/cockpit';
 import { BOTAO, CARTAO, Carregando, Erro, ErroDaAcao, FOCO, INPUT, ROTULO, useCarregar } from '../_ui';
 import { useMudouNoPainel, usePainel } from '../_painel/provedor';
 import { ContratosVivos } from '../_contratos/ContratosVivos';
-import { ListaDeContratos, ResultadoDoLoteNaTela, enviarLote, type RespostaDoLote } from '../_contratos/ListaDeContratos';
+import { ListaDeContratos, ResultadoDoLoteNaTela, enviarLote } from '../_contratos/ListaDeContratos';
+import { NovoContrato } from '../_contratos/NovoContrato';
 import { QuadroDeContratosView } from '../_contratos/QuadroDeContratosView';
 import { CAMINHO_DO_QUADRO, FRASE_SEM_ZAPSIGN, PASSO_DA_ACAO, acaoNaTela, dataCompleta, filtrarContratos, urlComVisao, visaoDaUrl, type VisaoDosContratos } from '../_contratos/regras';
 
@@ -62,7 +63,7 @@ export default function ContratosPage() {
   const emAssinatura = visiveis.filter((c) => c.etapa === 'em_assinatura' && !c.fantasma);
   const [conferindo, setConferindo] = useState(false);
   const [erroDaConferencia, setErroDaConferencia] = useState<unknown>(null);
-  const [respostaDaConferencia, setRespostaDaConferencia] = useState<RespostaDoLote | null>(null);
+  const [respostaDaConferencia, setRespostaDaConferencia] = useState<ResultadoDoLote | null>(null);
   const conferirTodas = async () => {
     setConferindo(true);
     setErroDaConferencia(null);
@@ -117,6 +118,7 @@ export default function ContratosPage() {
           </>
         )}
         <div className="flex flex-wrap items-center gap-2 min-[820px]:ml-auto">
+          {visao !== 'vivos' && editar && <NovoContrato itens={itens} aoCriar={async (leadId) => { await quadro.recarregar(); painel.abrir(leadId, 'contrato', null, 'minuta'); }} />}
           {visao !== 'vivos' && editar && (
             <button type="button" data-testid="contratos-conferir-todas" className={BOTAO} disabled={conferindo || emAssinatura.length === 0} onClick={() => void conferirTodas()}>
               {conferindo ? 'Conferindo…' : 'Conferir assinaturas'}

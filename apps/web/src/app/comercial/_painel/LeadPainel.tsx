@@ -335,7 +335,7 @@ export function LeadPainel({ estado }: { estado: EstadoDoPainel }) {
             {aba === 'pendencias' && (
               <AbaPendencias leadId={leadId} ficha={f} extra={extra.dados} aoMudar={aoMudar} irParaAba={irParaAba} />
             )}
-            {aba === 'contrato' && <AbaContrato leadId={leadId} ficha={f} campo={campo ?? null} aoMudar={aoMudar} />}
+            {aba === 'contrato' && <AbaContrato leadId={leadId} campo={campo ?? null} aoMudar={aoMudar} />}
             {aba === 'fio' && <AbaFio leadId={leadId} ficha={f} carregando={ficha.carregando && !f} aoMudar={aoMudar} />}
             {aba === 'sessao' && <AbaSessao leadId={leadId} aoMudar={aoMudar} irParaDecisoes={() => irParaAba('decisoes')} />}
             {aba === 'dinheiro' && <AbaDinheiro leadId={leadId} ficha={f} aoMudar={aoMudar} />}

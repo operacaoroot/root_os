@@ -91,7 +91,7 @@ function quadro(itens: ContratoNoQuadro[], assinaturaConfigurada = true): Quadro
 function naFicha(base: ContratoNoQuadro, over: Partial<ContratoNaFicha> = {}): ContratoNaFicha {
   return {
     ...base, tipo: 'contrato', paiId: null, vigenciaInicio: null, hashDoConteudo: null, minutaId: null, linkPdf: null, faturaPor: null, motivoDoFim: null,
-    signatarios: [], documentos: [], historico: [], ultimaConferenciaEm: null, faltaParaEnviar: [], ...over,
+    signatarios: [], documentos: [], historico: [], ultimaConferenciaEm: null, faltaParaEnviar: [], emissao: null, ...over,
   };
 }
 
@@ -275,13 +275,15 @@ describe('a lista e o lote', () => {
   });
 
   it('conferir vai direto; lote retido diz Aprovações e não dá sucesso', async () => {
-    RESPOSTA_DA_ESCRITA = () => ({ status: 'aguardando_aprovacao' });
+    RESPOSTA_DA_ESCRITA = () => ({ ok: [], recusados: [], retidos: [{ id: 'c2', approvalId: 'a1' }] });
     render(<ContratosPage />);
     fireEvent.click(await screen.findByTestId('contrato-marcar-c2'));
     fireEvent.click(screen.getByTestId('lote-conferir'));
     expect(await screen.findByTestId('lote-retido')).toHaveTextContent('Foi para Aprovações: outra pessoa precisa confirmar.');
     expect(chamadas[0].corpo).toEqual({ acao: 'conferir', ids: ['c2'] });
-    expect(screen.queryByTestId('lote-resultado')).toBeNull();
+    expect(screen.getByTestId('lote-resultado')).toHaveTextContent('0 contratos feitos. 0 recusados. 1 em Aprovações.');
+    // O retido não saiu da lista: continua marcado.
+    expect(screen.getByTestId('contrato-marcar-c2')).toBeChecked();
   });
 
   it('erro da API fica ao lado da barra e os marcados continuam', async () => {
@@ -307,7 +309,7 @@ describe('o encerramento antigo continua alcançável', () => {
 
 describe('a aba Contrato', () => {
   const aoMudar = vi.fn(async () => {});
-  const montar = (leadId: string, campo: string | null = null) => render(<AbaContrato leadId={leadId} ficha={null} campo={campo} aoMudar={aoMudar} />);
+  const montar = (leadId: string, campo: string | null = null) => render(<AbaContrato leadId={leadId} campo={campo} aoMudar={aoMudar} />);
 
   it('lead sem contrato registrado: "Criar contrato" com a modalidade', async () => {
     montar('l1');
@@ -399,7 +401,7 @@ describe('a aba Contrato', () => {
   it('antes do envio: lista o que falta e edita quem assina, com assinatura conjunta', async () => {
     const minuta = cartao('c7', 'l7', 'Cliente Na Minuta', { etapa: 'minuta', estado: 'rascunho' });
     RESPOSTAS['/comercial/contratos/quadro'] = quadro([minuta]);
-    RESPOSTAS['/comercial/contratos/registro/c7'] = naFicha(minuta, { faltaParaEnviar: ['Falta o CNPJ que fatura.'] });
+    RESPOSTAS['/comercial/contratos/registro/c7'] = naFicha(minuta, { faltaParaEnviar: ['Falta o CNPJ que fatura.'], emissao: { temAceite: true, molde: null, campos: [], minuta: null, titulares: [], envioNaFila: null } });
     montar('l7', 'envio');
     expect(await screen.findByTestId('contrato-falta-para-enviar')).toHaveTextContent('Falta o CNPJ que fatura.');
     expect(screen.getByTestId('signatarios-vazio')).toBeInTheDocument();
@@ -478,7 +480,7 @@ describe('a aba Contrato', () => {
     await waitFor(() => expect(chamadas[0]).toEqual({
       metodo: 'post',
       caminho: '/comercial/contratos/registro/c3/filhos',
-      corpo: { tipo: 'distrato', motivo: 'Cliente não segue com a segunda fase.', vigenciaFim: '2026-11-30' },
+      corpo: { tipo: 'distrato', motivo: 'Cliente não segue com a segunda fase.', vigenciaFim: '2026-11-30', cienteDasParcelas: true },
     }));
   });
 
@@ -492,13 +494,6 @@ describe('a aba Contrato', () => {
     fireEvent.click(screen.getByTestId('filho-criar'));
     expect(await screen.findByTestId('filho-retido')).toBeInTheDocument();
     expect(screen.getByTestId('contrato-filho-form')).toBeInTheDocument();
-  });
-
-  it('"Gerar minuta" abre o bloco que já existe só no clique', async () => {
-    RESPOSTAS['/comercial/contratos/registro/c3'] = naFicha(ativo);
-    montar('l3');
-    fireEvent.click(await screen.findByTestId('contrato-abrir-minuta'));
-    expect(await screen.findByText(/A minuta parte da proposta aceita/)).toBeInTheDocument();
   });
 
   it('contrato importado mostra o que sempre mostrou e encerra pela rota antiga', async () => {

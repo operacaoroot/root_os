@@ -17,13 +17,13 @@ import { CAMINHO_DO_REGISTRO, dataCompleta } from './regras';
 
 const ROTULO_DO_PAPEL = { cliente: 'cliente', root: 'pela Root' } as const;
 
-export function SignatariosDoContrato({ c, podeEditar, aoMudar }: { c: ContratoNaFicha; podeEditar: boolean; aoMudar: () => Promise<void> }) {
+export function SignatariosDoContrato({ c, passo, podeEditar, aoMudar }: { c: ContratoNaFicha; passo?: number; podeEditar: boolean; aoMudar: () => Promise<void> }) {
   const [editando, setEditando] = useState(false);
   const antesDoEnvio = c.estado === 'a_emitir' || c.estado === 'rascunho';
   return (
     <section className={`${CARTAO} space-y-2`} aria-label="quem assina" data-testid="contrato-signatarios">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <Rotulo>quem assina</Rotulo>
+        <Rotulo>{passo ? `passo ${passo} · quem assina` : 'quem assina'}</Rotulo>
         {podeEditar && antesDoEnvio && !editando && (
           <button type="button" data-testid="signatarios-editar" className={BOTAO} onClick={() => setEditando(true)}>Editar</button>
         )}
@@ -58,6 +58,7 @@ function fraseDoErro(issue: { message: string; path: (string | number)[] }): str
 
 function EditorDeSignatarios({ c, aoFechar, aoMudar }: { c: ContratoNaFicha; aoFechar: () => void; aoMudar: () => Promise<void> }) {
   const { token } = useAuth();
+  const titulares = c.emissao?.titulares ?? [];
   const inicial: SignatarioNovoDoContrato[] = c.signatarios.length > 0
     ? [...c.signatarios].sort((a, b) => a.ordem - b.ordem).map((s) => ({ papel: s.papel, nome: s.nome, email: s.email }))
     : [{ papel: 'cliente', nome: '', email: '' }, { papel: 'root', nome: '', email: '' }];
@@ -91,6 +92,21 @@ function EditorDeSignatarios({ c, aoFechar, aoMudar }: { c: ContratoNaFicha; aoF
             <input aria-label={`Nome do signatário ${i + 1}`} data-testid={`signatario-nome-${i}`} placeholder="Nome" maxLength={200} className={`${INPUT} max-md:min-h-[44px]`} value={s.nome} onChange={(e) => mudar(i, { nome: e.target.value })} {...ignorar} />
             <input aria-label={`E-mail do signatário ${i + 1}`} data-testid={`signatario-email-${i}`} type="email" placeholder="E-mail" maxLength={254} className={`${INPUT} max-md:min-h-[44px]`} value={s.email} onChange={(e) => mudar(i, { email: e.target.value })} {...ignorar} />
             <button type="button" aria-label={`Tirar o signatário ${i + 1}`} className={BOTAO} onClick={() => { setSujo(true); setLinhas((l) => l.filter((_, j) => j !== i)); }}>Tirar</button>
+            {s.papel === 'root' && titulares.length > 0 && (
+              <select
+                aria-label={`Escolher quem assina pela Root na linha ${i + 1}`}
+                data-testid={`signatario-titular-${i}`}
+                className={`${INPUT} sm:col-span-4 max-md:min-h-[44px]`}
+                value={titulares.some((t) => t.email === s.email) ? s.email : ''}
+                onChange={(e) => {
+                  const t = titulares.find((x) => x.email === e.target.value);
+                  if (t) mudar(i, { nome: t.nome, email: t.email });
+                }}
+              >
+                <option value="">Escolher entre os titulares</option>
+                {titulares.map((t) => <option key={t.email} value={t.email}>{t.nome} · {t.email}</option>)}
+              </select>
+            )}
           </li>
         ))}
       </ul>

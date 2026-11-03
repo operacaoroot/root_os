@@ -3,8 +3,8 @@
 /*
  * A FAIXA DE AÇÃO DA FICHA: o que dá para fazer com o contrato no estado em que ele
  * está. Em assinatura: conferir, reenviar, cancelar o envio com motivo. Vigente:
- * encerrar com motivo e ciência das parcelas. Encerrado: reabrir. Antes do envio: o que
- * falta. Nada aqui marca assinado: quem assina é o cliente, e o estado só muda pelo que
+ * encerrar com motivo e ciência das parcelas. Encerrado: reabrir (cancelado não reabre:
+ * a API recusa). Antes do envio: cancelar; o que falta está em "Emitir". Nada aqui marca assinado: quem assina é o cliente, e o estado só muda pelo que
  * a ZapSign responde.
  */
 import { useState } from 'react';
@@ -37,8 +37,11 @@ export function FaixaDeAcao({ c, leadId, passo, assinaturaConfigurada, podeEdita
   const base = `${CAMINHO_DO_REGISTRO}/${encodeURIComponent(c.id)}`;
   const vigente = c.estado === 'assinado' || c.estado === 'ativo';
   const terminou = c.estado === 'encerrado' || c.estado === 'cancelado';
+  const podeReabrir = c.estado === 'encerrado';
   const antesDoEnvio = c.estado === 'a_emitir' || c.estado === 'rascunho';
   const motivoOk = motivo.trim().length >= 5;
+  // Reabrir: o motivo é opcional na API; escrito, tem de ter ao menos 5 letras.
+  const motivoDaReaberturaOk = !motivo.trim() || motivoOk;
   const parcelasOk = parcelas.emAberto === 0 || ciente;
 
   const fechar = () => { setAberto(null); setMotivo(''); setCiente(false); };
@@ -50,11 +53,11 @@ export function FaixaDeAcao({ c, leadId, passo, assinaturaConfigurada, podeEdita
   return (
     <section className={`${CARTAO} space-y-2 ${c.estado === 'em_assinatura' ? 'border-warn/50' : ''}`} aria-label="o que fazer com o contrato" data-testid="contrato-faixa">
       {c.estado === 'em_assinatura' && <TextoDaAssinatura c={c} />}
-      {antesDoEnvio && <TextoAntesDoEnvio c={c} destacar={passo === 'envio'} />}
+      {antesDoEnvio && <p className="text-[13px]" data-testid="contrato-antes-do-envio"><strong>Ainda não foi para assinatura.</strong> <span className="text-muted">O que falta está em Emitir, logo abaixo.</span></p>}
       {vigente && <p className="text-[13px]"><strong>Contrato vigente.</strong> <span className="text-muted">{c.vigenciaFim ? `Vigência até ${dataCompleta(c.vigenciaFim)}.` : 'Vigência não lançada.'}</span></p>}
       {terminou && (
         <p className="text-[13px]" data-testid="contrato-fim">
-          <strong>{c.estado === 'cancelado' ? 'Envio cancelado.' : 'Contrato encerrado.'}</strong>{' '}
+          <strong>{c.estado === 'cancelado' ? 'Contrato cancelado.' : 'Contrato encerrado.'}</strong>{' '}
           <span className="text-muted">{c.motivoDoFim ?? 'Motivo não registrado.'}</span>
         </p>
       )}
@@ -85,13 +88,14 @@ export function FaixaDeAcao({ c, leadId, passo, assinaturaConfigurada, podeEdita
             </>
           )}
           {vigente && <button type="button" data-testid="contrato-encerrar" className={BOTAO} disabled={acao.ocupado !== null} onClick={() => setAberto('encerrar')}>Encerrar</button>}
-          {terminou && <button type="button" data-testid="contrato-reabrir" className={BOTAO} disabled={acao.ocupado !== null} onClick={() => setAberto('reabrir')}>Reabrir</button>}
+          {antesDoEnvio && <button type="button" data-testid="contrato-cancelar" className={BOTAO} disabled={acao.ocupado !== null} onClick={() => setAberto('cancelar')}>Cancelar contrato</button>}
+          {podeReabrir && <button type="button" data-testid="contrato-reabrir" className={BOTAO} disabled={acao.ocupado !== null} onClick={() => setAberto('reabrir')}>Reabrir</button>}
         </div>
       )}
 
-      {podeEditar && aberto === 'cancelar' && c.estado === 'em_assinatura' && (
-        <FormularioDeMotivo rotulo="Por que cancelar o envio" motivo={motivo} aoMudar={setMotivo} aoVoltar={fechar}>
-          <button type="button" data-testid="contrato-cancelar-confirmar" className={BOTAO_PRIMARIO} disabled={!motivoOk || acao.ocupado !== null} onClick={() => void comMotivo('cancelar', { motivo: motivo.trim() }, 'Envio cancelado.')}>Cancelar envio</button>
+      {podeEditar && aberto === 'cancelar' && (c.estado === 'em_assinatura' || antesDoEnvio) && (
+        <FormularioDeMotivo rotulo={antesDoEnvio ? 'Por que cancelar o contrato' : 'Por que cancelar o envio'} motivo={motivo} aoMudar={setMotivo} aoVoltar={fechar}>
+          <button type="button" data-testid="contrato-cancelar-confirmar" className={BOTAO_PRIMARIO} disabled={!motivoOk || acao.ocupado !== null} onClick={() => void comMotivo('cancelar', { motivo: motivo.trim() }, 'Contrato cancelado.')}>{antesDoEnvio ? 'Cancelar contrato' : 'Cancelar envio'}</button>
         </FormularioDeMotivo>
       )}
       {podeEditar && aberto === 'encerrar' && vigente && (
@@ -108,9 +112,9 @@ export function FaixaDeAcao({ c, leadId, passo, assinaturaConfigurada, podeEdita
           </button>
         </FormularioDeMotivo>
       )}
-      {podeEditar && aberto === 'reabrir' && terminou && (
-        <FormularioDeMotivo rotulo="Por que reabrir" motivo={motivo} aoMudar={setMotivo} aoVoltar={fechar}>
-          <button type="button" data-testid="contrato-reabrir-confirmar" className={BOTAO_PRIMARIO} disabled={!motivoOk || acao.ocupado !== null} onClick={() => void comMotivo('reabrir', { motivo: motivo.trim() }, 'Contrato reaberto.')}>Reabrir contrato</button>
+      {podeEditar && aberto === 'reabrir' && podeReabrir && (
+        <FormularioDeMotivo rotulo="Por que reabrir (opcional)" motivo={motivo} aoMudar={setMotivo} aoVoltar={fechar}>
+          <button type="button" data-testid="contrato-reabrir-confirmar" className={BOTAO_PRIMARIO} disabled={!motivoDaReaberturaOk || acao.ocupado !== null} onClick={() => void comMotivo('reabrir', motivo.trim() ? { motivo: motivo.trim() } : {}, 'Contrato reaberto.')}>Reabrir contrato</button>
         </FormularioDeMotivo>
       )}
       <RetornoDaAcao acao={acao} />
@@ -125,23 +129,6 @@ function TextoDaAssinatura({ c }: { c: ContratoNaFicha }) {
       <strong>{falta === 0 ? 'Todos assinaram: falta a ZapSign confirmar.' : falta === 1 ? 'Falta 1 assinatura.' : `Faltam ${falta} assinaturas.`}</strong>{' '}
       <span className="text-muted">{c.ultimaConferenciaEm ? `Última conferência na ZapSign em ${dataCompleta(c.ultimaConferenciaEm)} às ${horaSP(c.ultimaConferenciaEm)}.` : 'Ainda sem conferência na ZapSign.'}</span>
     </p>
-  );
-}
-
-function TextoAntesDoEnvio({ c, destacar }: { c: ContratoNaFicha; destacar: boolean }) {
-  return (
-    <div className={`text-[13px] ${destacar ? 'rounded border border-brand p-2' : ''}`} data-testid="contrato-falta-para-enviar">
-      {c.faltaParaEnviar.length > 0 ? (
-        <>
-          <p><strong>Falta para pedir aprovação:</strong></p>
-          <ul className="mt-1 list-disc pl-5 text-[12.5px] text-muted">
-            {c.faltaParaEnviar.map((f) => <li key={f}>{f}</li>)}
-          </ul>
-        </>
-      ) : (
-        <p><strong>Nada falta para pedir aprovação.</strong> <span className="text-muted">O envio à ZapSign ainda não tem tela: nada saiu para assinatura.</span></p>
-      )}
-    </div>
   );
 }
 

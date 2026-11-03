@@ -9,7 +9,7 @@
  * registrado, a ficha inteira. `campo` traz o passo que o gesto do quadro abriu.
  */
 import { useCallback, useState } from 'react';
-import { MODALIDADES_DE_CONTRATO, ROTULO_DA_MODALIDADE, type ContratoNoQuadro, type ContratoVivo, type FichaDoLead, type ModalidadeDeContrato, type QuadroDeContratos } from '@mktos/shared';
+import { MODALIDADES_DE_CONTRATO, ROTULO_DA_MODALIDADE, type ContratoNoQuadro, type ContratoVivo, type ModalidadeDeContrato, type QuadroDeContratos } from '@mktos/shared';
 
 import { apiPost } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
@@ -21,9 +21,8 @@ import { FichaDoContrato } from '../_contratos/FichaDoContrato';
 import { CAMINHO_DO_QUADRO, CAMINHO_DO_REGISTRO, FRASE_SEM_ZAPSIGN, contratoDoPasso, dataCompleta, passoDoCampo, type PassoDoContrato } from '../_contratos/regras';
 import { ContratosImportados } from './ContratosImportados';
 
-export function AbaContrato({ leadId, ficha, campo, aoMudar }: {
+export function AbaContrato({ leadId, campo, aoMudar }: {
   leadId: string;
-  ficha: FichaDoLead | null;
   campo: string | null;
   aoMudar: () => Promise<void>;
 }) {
@@ -61,7 +60,6 @@ export function AbaContrato({ leadId, ficha, campo, aoMudar }: {
           key={atual.id}
           contratoId={atual.id}
           leadId={leadId}
-          ficha={ficha}
           passo={passo}
           assinaturaConfigurada={quadro.dados.assinaturaConfigurada}
           aoMudar={mudou}
