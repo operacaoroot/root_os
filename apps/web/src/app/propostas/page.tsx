@@ -2,7 +2,6 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
 import { NovoLead } from '@/app/comercial/_funil/NovoLead';
 import type {
   DetalheDaPropostaDaSala,
@@ -25,6 +24,8 @@ import {
   type DetalheDaProposta,
   type ListaDePropostas,
   type PropostaNaLista,
+  type TipoDePagina,
+  tipoDaPagina,
 } from './tipos';
 import { leadsDaBusca, semAcento } from './lead-da-proposta';
 import { BotaoDoMenuDoLead, alvoDoMenuDoLead, useMenuDoLeadProprio } from '@/app/comercial/_funil/MenuDoLead';
@@ -78,6 +79,7 @@ interface Linha {
   pessoas: number | null;
   ultimaAtividade: string | null;
   reacoes: PropostaDaSalaNaLista['reacoes'] | null;
+  tipo: TipoDePagina;
   sala?: PropostaDaSalaNaLista;
   servico?: PropostaNaLista;
 }
@@ -140,6 +142,7 @@ function daSala(p: PropostaDaSalaNaLista): Linha {
     pessoas: null,
     ultimaAtividade: p.ultimaAtividade,
     reacoes: p.reacoes,
+    tipo: 'proposta',
     sala: p,
   };
 }
@@ -157,13 +160,13 @@ function doServico(p: PropostaNaLista): Linha {
     pessoas: p.pessoas,
     ultimaAtividade: p.ultimaAtividade,
     reacoes: null,
+    tipo: tipoDaPagina(p),
     servico: p,
   };
 }
 
 export default function Propostas() {
   const { token, ready, can } = useAuth();
-  const router = useRouter();
   const verSala = can('leads.ver');
   const editar = can('leads.editar');
   const [sala, setSala] = useState<PropostasDaSala | null>(null);
@@ -181,6 +184,7 @@ export default function Propostas() {
   const [vinculando, setVinculando] = useState<string | null>(null);
   /** Filtro do funil: só as propostas que chegaram até esta etapa. */
   const [chegou, setChegou] = useState<number | null>(null);
+  const [aba, setAba] = useState<TipoDePagina>('proposta');
   // L2: o menu do lead na linha da proposta; mover pelo menu relê o painel (a etapa do negócio).
   const { menu: menuDoLead, elemento: elementoDoMenuDoLead } = useMenuDoLeadProprio({ onMudou: () => void carregar() });
 
@@ -222,10 +226,13 @@ export default function Propostas() {
     if (ready) void carregar();
   }, [ready, carregar]);
 
-  const linhas = useMemo(() => {
+  const todasAsLinhas = useMemo(() => {
     const todas = [...(sala?.propostas ?? []).map(daSala), ...(servico?.propostas ?? []).map(doServico)];
     return todas.sort((a, b) => (b.ultimaAtividade ?? '').localeCompare(a.ultimaAtividade ?? ''));
   }, [sala, servico]);
+  // Proposta e escopo em abas separadas, com os mesmos números e o mesmo detalhe.
+  const linhas = useMemo(() => todasAsLinhas.filter((l) => l.tipo === aba), [todasAsLinhas, aba]);
+  const quantasPorAba = { proposta: todasAsLinhas.filter((l) => l.tipo === 'proposta').length, escopo: todasAsLinhas.filter((l) => l.tipo === 'escopo').length };
   const negocios = useMemo(() => crm?.negocios ?? [], [crm]);
   const leadDe = (l: Linha) => leadDaLinha(l, negocios, vinculos);
 
@@ -290,14 +297,56 @@ export default function Propostas() {
         </div>
       )}
 
+      <div role="tablist" aria-label="Tipo de página" className="flex gap-1 border-b border-border" data-testid="propostas-abas">
+        {(['proposta', 'escopo'] as const).map((t) => (
+          <button
+            key={t}
+            type="button"
+            role="tab"
+            aria-selected={aba === t}
+            onClick={() => {
+              setAba(t);
+              setChegou(null);
+              setSelecionada(null);
+            }}
+            className={`-mb-px border-b-2 px-4 py-2 text-sm ${aba === t ? 'border-brand font-medium text-text' : 'border-transparent text-muted hover:text-text'}`}
+            data-testid={`propostas-aba-${t}`}
+          >
+            {t === 'proposta' ? 'Propostas' : 'Escopos'} <span className="com-num text-muted">{quantasPorAba[t]}</span>
+          </button>
+        ))}
+      </div>
+
       <Funil linhas={linhas} chegou={chegou} filtrar={setChegou} emJogo={emJogo} fechadas={fechadas.length} valorFechado={valorFechado} comCrm={!!crm} />
 
       {/* I5: os aparelhos da equipe sobem para entre o painel e a lista. */}
       {servico && (
         <details className="rounded-md border border-border bg-surface px-5 py-3" data-testid="propostas-aparelhos">
-          <summary className="cursor-pointer text-sm text-muted">
-            Aparelhos da equipe ({servico.aparelhosDaEquipe.length}) · as visitas deles não contam no serviço de propostas
+          <summary className="flex cursor-pointer flex-wrap items-center justify-between gap-3 text-sm text-muted">
+            <span>
+              Aparelhos da equipe ({servico.aparelhosDaEquipe.length})
+              {servico.redesDaEquipe ? ` e ${servico.redesDaEquipe} rede(s) da equipe` : ''} · as visitas deles não contam
+            </span>
+            {servico.linkDoCadastroDeAparelho && (
+              <a
+                href={servico.linkDoCadastroDeAparelho}
+                target="_blank"
+                rel="noopener noreferrer"
+                onClick={(e) => e.stopPropagation()}
+                className="rounded-md border border-border px-3 py-1 text-sm text-text hover:border-brand"
+                data-testid="propostas-cadastrar-aparelho"
+                title="Abra este link em cada celular e computador da equipe e toque no seu nome"
+              >
+                cadastrar aparelho da equipe
+              </a>
+            )}
           </summary>
+          {servico.linkDoCadastroDeAparelho && (
+            <p className="mt-2 text-sm text-muted">
+              Abra o botão acima (ou este link) em cada celular e computador de vocês e toque no seu nome:{' '}
+              <span className="select-all break-all text-text">{servico.linkDoCadastroDeAparelho}</span>
+            </p>
+          )}
           {servico.aparelhosDaEquipe.length === 0 ? (
             <p className="mt-2 text-sm text-muted">Nenhum aparelho cadastrado ainda.</p>
           ) : (
@@ -315,8 +364,8 @@ export default function Propostas() {
       )}
 
       <Quadro
-        titulo={chegou == null ? 'Propostas' : `Propostas que chegaram em "${NOMES_DO_FUNIL[chegou]}"`}
-        nota={`${visiveis.length} de ${linhas.length} · clique na linha para abrir o lead; "leitura" abre o detalhe da proposta`}
+        titulo={`${aba === 'escopo' ? 'Escopos' : 'Propostas'}${chegou == null ? '' : ` que chegaram em "${NOMES_DO_FUNIL[chegou]}"`}`}
+        nota={`${visiveis.length} de ${linhas.length} · clique na linha para ver até onde leu e quanto tempo ficou em cada parte; o nome abre o lead`}
         acao={
           <div className="flex items-center gap-4">
             {chegou != null && (
@@ -357,8 +406,7 @@ export default function Propostas() {
                       data-origem={l.origem}
                       onClick={(e) => {
                         if ((e.target as HTMLElement).closest('a, button, input, [role="dialog"]')) return;
-                        if (lead) router.push(`/comercial/lead/${lead.id}`);
-                        else setSelecionada(l);
+                        setSelecionada(l);
                       }}
                       {...(leadParaOMenu ? alvoDoMenuDoLead(menuDoLead, leadParaOMenu) : {})}
                       className={`cursor-pointer align-top ${ativa ? 'bg-brand/10' : 'hover:bg-surface-2'}`}
@@ -831,7 +879,7 @@ function DetalheServico({ proposta, token, lead, fechar }: { proposta: PropostaN
     <section className="rounded-md border border-border bg-surface px-5 py-4">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <div className="com-rotulo">Proposta do serviço de propostas</div>
+          <div className="com-rotulo">{tipoDaPagina(proposta) === 'escopo' ? 'Escopo do projeto' : 'Proposta do serviço de propostas'}</div>
           <h2 className="mt-1 text-[1.4rem] font-bold leading-tight">{proposta.titulo}</h2>
           <p className="text-sm text-muted">{proposta.link.replace(/^https?:\/\//, '')}</p>
         </div>
@@ -842,7 +890,7 @@ function DetalheServico({ proposta, token, lead, fechar }: { proposta: PropostaN
             </Link>
           )}
           <button onClick={copiar} className={botao}>{copiado ? 'link copiado' : 'copiar link'}</button>
-          <a href={`${proposta.link}?equipe=1`} target="_blank" rel="noopener noreferrer" className={botao}>abrir proposta</a>
+          <a href={`${proposta.link}?equipe=1`} target="_blank" rel="noopener noreferrer" className={botao}>{tipoDaPagina(proposta) === 'escopo' ? 'abrir escopo' : 'abrir proposta'}</a>
           <BotaoFechar fechar={fechar} />
         </div>
       </div>
@@ -877,6 +925,16 @@ function DetalheServico({ proposta, token, lead, fechar }: { proposta: PropostaN
                   }))}
                 />
               </div>
+              <ul className="mt-3 grid gap-x-6 gap-y-1 text-sm sm:grid-cols-2" data-testid="proposta-alcance">
+                {detalhe.tempoPorParte.map((t) => (
+                  <li key={t.id} className="flex justify-between gap-3 border-b border-border py-1">
+                    <span className={t.aberturasQueViram ? 'text-text' : 'text-muted'}>{t.nome}</span>
+                    <span className="com-num whitespace-nowrap text-muted">
+                      {t.aberturasQueViram ? `${tempo(t.ms)} · ${t.aberturasQueViram} de ${detalhe.aberturas} chegaram` : 'ninguém chegou'}
+                    </span>
+                  </li>
+                ))}
+              </ul>
             </div>
           )}
 
@@ -893,7 +951,7 @@ function DetalheServico({ proposta, token, lead, fechar }: { proposta: PropostaN
               <p className="mt-2 text-sm text-muted">Ainda não abriu.</p>
             ) : (
               <div className="mt-2 overflow-x-auto">
-                <table className="w-full min-w-[560px] text-sm">
+                <table className="w-full min-w-[560px] text-sm" data-testid="proposta-visitas">
                   <thead>
                     <tr className="text-left">
                       <th className="com-rotulo pb-2 font-normal">Quando</th>
@@ -902,6 +960,11 @@ function DetalheServico({ proposta, token, lead, fechar }: { proposta: PropostaN
                       <th className="com-rotulo pb-2 text-right font-normal">Tempo</th>
                       <th className="com-rotulo pb-2 pl-6 font-normal">Leu até</th>
                       <th className="com-rotulo pb-2 font-normal">Pagar</th>
+                      {/* Uma coluna por parte: quanto esta visita ficou em cada uma; "·" é onde ela não chegou. */}
+                      {detalhe.visitas.some((v) => v.partes) &&
+                        detalhe.tempoPorParte.map((t) => (
+                          <th key={t.id} className="com-rotulo whitespace-nowrap pb-2 pl-3 text-right font-normal">{t.nome}</th>
+                        ))}
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-border text-muted">
@@ -909,10 +972,19 @@ function DetalheServico({ proposta, token, lead, fechar }: { proposta: PropostaN
                       <tr key={`${v.quando}-${i}`}>
                         <td className="whitespace-nowrap py-2">{quando(v.quando)}</td>
                         <td className="whitespace-nowrap text-text">pessoa {v.pessoa}</td>
-                        <td>{v.aparelho}</td>
+                        <td className="whitespace-nowrap">{v.aparelho}{v.descricao ? ` · ${v.descricao}` : ''}</td>
                         <td className="com-num whitespace-nowrap text-right">{tempo(v.tempoMs)}</td>
                         <td className="pl-6">{v.leuAte}</td>
                         <td className={v.clicouEmPagar ? 'font-medium text-brand' : ''}>{v.clicouEmPagar ? 'clicou' : '–'}</td>
+                        {v.partes &&
+                          detalhe.tempoPorParte.map((t) => {
+                            const ms = v.partes?.[t.id] ?? 0;
+                            return (
+                              <td key={t.id} className={`com-num whitespace-nowrap pl-3 text-right ${ms >= 2000 ? 'text-text' : ''}`}>
+                                {ms > 0 ? tempo(ms) : '·'}
+                              </td>
+                            );
+                          })}
                       </tr>
                     ))}
                   </tbody>
@@ -921,7 +993,8 @@ function DetalheServico({ proposta, token, lead, fechar }: { proposta: PropostaN
             )}
             <p className="mt-3 text-xs text-muted">
               &quot;Pessoa&quot; é cada navegador diferente. Uma parte conta como vista com 2 s ou mais na tela.
-              {detalhe.visitasDaEquipeIgnoradas > 0 && ` ${detalhe.visitasDaEquipeIgnoradas} abertura(s) da equipe foram ignoradas.`}
+              {detalhe.visitasDaEquipeIgnoradas > 0 &&
+                ` ${detalhe.visitasDaEquipeIgnoradas} abertura(s) da equipe foram ignoradas${detalhe.visitasIgnoradasPeloIp ? `, ${detalhe.visitasIgnoradasPeloIp} delas pela rede (aparelho ainda não cadastrado)` : ''}.`}
             </p>
           </div>
         </>
