@@ -1,3 +1,6 @@
+import { ClienteEscopoService } from '../clientes-escopo/cliente-escopo.service';
+import { ESCOPO_CLIENTE_ADAPTADO, ESCOPO_IDENTIDADE_PROPRIA } from '../clientes-escopo/cliente-escopo.decorator';
+import { ForbiddenException } from '@nestjs/common';
 import {
   CanActivate,
   ExecutionContext,
@@ -138,10 +141,13 @@ export class JwtAuthGuard implements CanActivate {
      * (ver abaixo), para a releitura nunca sumir em silêncio.
      */
     @Optional() private readonly prisma?: PrismaService,
+    @Optional() private readonly escopo?: ClienteEscopoService,
   ) {
     if (!prisma && process.env.NODE_ENV !== 'test') {
       throw new Error('O guarda de sessão precisa do banco para reler se o usuário está ativo (Produção 22, M4).');
     }
+    if (!escopo && process.env.NODE_ENV !== 'test') throw new Error('O guarda de sessão precisa da autorização por cliente.');
+
   }
 
   async canActivate(ctx: ExecutionContext): Promise<boolean> {
@@ -171,6 +177,17 @@ export class JwtAuthGuard implements CanActivate {
     }
 
     req.user = claims;
+    // Antes dos guards seguintes, que podem consumir aprovações ou produzir efeitos.
+    // O interceptor global permanece como defesa para outras autenticações.
+    const handler = this.escopo ? ctx.getHandler() : undefined;
+    if (this.escopo && !Reflect.getMetadata(ESCOPO_IDENTIDADE_PROPRIA, handler!)) {
+      const perfil = await comContexto(
+        {orgId:claims.orgId!, actorType:'user',actorId:claims.sub!,correlationId:randomUUID(),origem:'http'},
+        async () => await this.escopo!.perfil(claims.orgId!,claims.sub!),
+      );
+      if (perfil.modo !== 'ALL' && !Reflect.getMetadata(ESCOPO_CLIENTE_ADAPTADO, handler!))
+        throw new ForbiddenException('Esta área ainda não está disponível para acesso por cliente.');
+    }
     return true;
   }
 

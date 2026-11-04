@@ -70,6 +70,8 @@ model Org {
   /// EXPLICITAMENTE. Confiar no default aqui é nascer com o painel vazio.
   modulos String[] @default([])
 
+  clienteAcessoPerfis   ClienteAcessoPerfil[]
+  clienteAcessoVinculos ClienteAcessoVinculo[]
   users                User[]
   roles                Role[]
   leads                Lead[]
@@ -325,6 +327,7 @@ model User {
   /// A versão do perfil (o `esperado` do salvar); muda só quando o perfil ou a foto mudam.
   perfilAtualizadoEm DateTime  @default(now())
 
+  clienteAcessoPerfil ClienteAcessoPerfil?
   roles                Role[]             @relation("UserRoles")
   fotosDePerfil        FotoDePerfil[]     @relation("FotoDePerfil")
   ownedLeads           Lead[]             @relation("LeadOwner")
@@ -981,6 +984,11 @@ model Partner {
   /// Os acordos comerciais deste cliente (`AcordoComercial.partnerId`).
   acordos           AcordoComercial[]    @relation("AcordosDoCliente")
 
+  cofreItens CofreItem[]
+  cofreDepositos CofreDeposito[]
+  acessosCliente ClienteAcessoVinculo[]
+
+  @@unique([id, orgId])
   @@index([orgId])
 }
 
@@ -6239,6 +6247,10 @@ model CofreDeposito {
   recibos    CofreDepositoRecibo[]
 
   @@unique([id, orgId])
+  clienteId String?
+  clienteCadastro Partner? @relation(fields: [clienteId, orgId], references: [id, orgId], onDelete: Restrict, onUpdate: Restrict)
+
+  @@index([orgId, clienteId])
   @@index([orgId])
 }
 
@@ -6304,6 +6316,10 @@ model CofreItem {
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 
+  clienteId String?
+  clienteCadastro Partner? @relation(fields: [clienteId, orgId], references: [id, orgId], onDelete: Restrict, onUpdate: Restrict)
+
+  @@index([orgId, clienteId])
   @@index([orgId])
 }
 
@@ -7107,4 +7123,34 @@ model AgendaConvite {
   atualizadoEm    DateTime  @updatedAt
 
   @@index([orgId, criadoEm])
+}
+
+
+/// Escopo operacional por usuário. Ausência não concede acesso.
+model ClienteAcessoPerfil {
+  id String @id @default(uuid())
+  orgId String
+  org Org @relation(fields: [orgId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  userId String
+  user User @relation(fields: [userId, orgId], references: [id, orgId], onDelete: Restrict, onUpdate: Restrict)
+  modo String
+  updatedAt DateTime @updatedAt
+  vinculos ClienteAcessoVinculo[]
+
+  @@unique([userId, orgId])
+  @@index([orgId])
+}
+
+model ClienteAcessoVinculo {
+  id String @id @default(uuid())
+  orgId String
+  org Org @relation(fields: [orgId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  userId String
+  perfil ClienteAcessoPerfil @relation(fields: [userId, orgId], references: [userId, orgId], onDelete: Cascade, onUpdate: Restrict)
+  clienteId String
+  cliente Partner @relation(fields: [clienteId, orgId], references: [id, orgId], onDelete: Restrict, onUpdate: Restrict)
+  createdAt DateTime @default(now())
+
+  @@unique([orgId, userId, clienteId])
+  @@index([orgId, clienteId])
 }

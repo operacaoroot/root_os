@@ -1,1 +1,1 @@
-{"extends": "./tsconfig.json", "compilerOptions": {"noEmit": true}, "include": ["test/cofre-deposito.test.ts", "test/cofre-deposito-postgres.test.ts"]}
+{"extends": "./tsconfig.json", "compilerOptions": {"noEmit": true}, "include": ["test/cofre-isolamento.test.ts", "test/cofre-da-empresa.test.ts", "test/cofre-deposito.test.ts", "test/cofre-deposito-postgres.test.ts"]}

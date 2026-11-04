@@ -1,5 +1,6 @@
-import { Body, Controller, ForbiddenException, Header, Headers, HttpException, Injectable, Param, Post, Get, Req, UseGuards } from '@nestjs/common';
+import { Body, Controller, ForbiddenException, Header, Headers, HttpException, Injectable, Param, Post, Get, Query, Req, UseGuards } from '@nestjs/common';
 import type { Request } from 'express';
+import { EscopoClienteAdaptado } from '../clientes-escopo/cliente-escopo.decorator';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { PermissionsGuard } from '../auth/permissions.guard';
 import { AcessoAtualGuard } from '../memory/acesso-atual.guard';
@@ -14,18 +15,21 @@ import { CofreDepositoService, EmitirDepositoSchema, EnvioDepositoSchema, TokenD
 export class CofreDepositoController {
   constructor(private readonly svc: CofreDepositoService, private readonly cofre: CofreDaEmpresaService) {}
   @Post()
+  @EscopoClienteAdaptado()
   @Header('Cache-Control', 'no-store')
   async emitir(@CurrentUser() u: JwtUser, @Headers('x-cofre-sessao') t: string | undefined, @Body() body: unknown) {
     await this.cofre.autorizarGerencia(u.orgId, u.sub, t);
-    return this.svc.emitir(u.orgId, u.sub, EmitirDepositoSchema.parse(body).cliente);
+    return this.svc.emitir(u.orgId, u.sub, EmitirDepositoSchema.parse(body).clienteId);
   }
   @Get()
+  @EscopoClienteAdaptado()
   @Header('Cache-Control', 'no-store')
-  async listar(@CurrentUser() u: JwtUser, @Headers('x-cofre-sessao') t?: string) {
+  async listar(@CurrentUser() u: JwtUser, @Headers('x-cofre-sessao') t?: string, @Query('clienteId') clienteId?: string) {
     await this.cofre.autorizarGerencia(u.orgId, u.sub, t);
-    return this.svc.listar(u.orgId);
+    return this.svc.listar(u.orgId, u.sub, clienteId);
   }
   @Post(':id/revogar')
+  @EscopoClienteAdaptado()
   async revogar(@CurrentUser() u: JwtUser, @Headers('x-cofre-sessao') t: string | undefined, @Param('id') id: string) {
     await this.cofre.autorizarGerencia(u.orgId, u.sub, t);
     return this.svc.revogar(u.orgId, u.sub, id);

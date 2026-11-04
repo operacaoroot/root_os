@@ -527,6 +527,8 @@ const ALVOS: Alvo[] = [
   { tabela: 'AnaliseLeitura', escopo: 'tenant', chaveSql: '"id"', nota: 'O texto da leitura do dia gerada para a empresa. Ler a da outra é ler a análise que ela recebeu sobre o próprio negócio.' },
   { tabela: 'CofreDeposito', escopo: 'tenant', chaveSql: '"id"', nota: 'Links de depósito, hashes, validade e revogação pertencem à empresa que recebe.' },
   { tabela: 'CofreDepositoRecibo', escopo: 'tenant', chaveSql: '"id"', nota: 'Recibos de entrega sem segredos; não podem atravessar empresas.' },
+  { tabela: 'ClienteAcessoPerfil', escopo: 'tenant', chaveSql: '"id"', nota: 'Modo de acesso operacional do usuário à carteira da organização.' },
+  { tabela: 'ClienteAcessoVinculo', escopo: 'tenant', chaveSql: '"id"', nota: 'Concessão de acesso do usuário ao cliente da mesma organização.' },
   { tabela: 'CofreItem', escopo: 'tenant', chaveSql: '"id"', nota: 'O COFRE da casa: título, onde, usuário, segredo e notas cifrados, e o documento guardado. O valor é cifrado, mas ler já entrega o mapa de que acessos a outra empresa guarda e onde; apagar é sumir com a senha dela.' },
   { tabela: 'CofreSenha', escopo: 'tenant', chaveSql: '"id"', nota: 'O hash da senha-mestra do cofre de cada pessoa, com tentativas e bloqueio. Ler o da outra entrega o hash para ataque fora do sistema; escrever zera o bloqueio ou troca a senha-mestra de alguém de outra casa.' },
   { tabela: 'CofreSessao', escopo: 'tenant', chaveSql: '"id"', nota: 'A sessão aberta do cofre (hash do token e validade). Escrever na da outra estende ou abre a sessão de cofre de alguém de outra casa.' },
@@ -1608,7 +1610,7 @@ async function semear(c: PoolClient, rotulo: 'A' | 'B', vec: string): Promise<vo
 
   await semearEntregasDoMerge(c, rotulo, {
     orgId, suf, userId, agentId, sopId, sop, leadId, leadEventId, contextoId, contextoVersaoId,
-    contaId, contratoId, lancId, tarefaId, statusId, conexaoId,
+    contaId, contratoId, lancId, tarefaId, statusId, conexaoId, partnerId,
   });
 }
 
@@ -1642,12 +1644,12 @@ async function semearEntregasDoMerge(
     orgId: string; suf: string; userId: string; agentId: string;
     sopId: string; sop: { proposito: string; gatilho: string; passos: string[]; definicaoDePronto: string; ferramentaLocal: Record<string, unknown> };
     leadId: string; leadEventId: string; contextoId: string; contextoVersaoId: string;
-    contaId: string; contratoId: string; lancId: string; tarefaId: string; statusId: string; conexaoId: string;
+    contaId: string; contratoId: string; lancId: string; tarefaId: string; statusId: string; conexaoId: string; partnerId: string;
   },
 ): Promise<void> {
   const s = sementes[rotulo];
   const reg = (t: string, k: string) => registra(s, t, k);
-  const { orgId, suf, userId, agentId, sopId, sop } = p;
+  const { orgId, suf, userId, agentId, sopId, sop, partnerId } = p;
   const agentSlug = `agente_${suf}`;
   const agora = new Date();
   // Instante fixo, em UTC e sem fuso: as colunas são `timestamp` sem zona e os
@@ -2111,6 +2113,8 @@ async function semearEntregasDoMerge(
     id: crypto.randomUUID(), orgId, dia: '2026-10-19', hash: hex64(`leitura_${suf}`),
     texto: `Leitura privada do dia da org ${rotulo} (${MARCA}).`,
   }));
+  reg('ClienteAcessoPerfil', await ins(c, 'ClienteAcessoPerfil', {id: crypto.randomUUID(),orgId,userId,modo:'SELECTED',updatedAt:agora}));
+  reg('ClienteAcessoVinculo', await ins(c, 'ClienteAcessoVinculo', {id: crypto.randomUUID(),orgId,userId,clienteId:partnerId}));
   reg('CofreItem', await ins(c, 'CofreItem', {
     id: crypto.randomUUID(), orgId, tipo: 'senha', titulo: `Acesso ${rotulo} ${MARCA}`, onde: `https://${suf}.exemplo.com`,
     segredoCifrado: `NAO-E-CRIPTOGRAMA.${rotulo}.${MARCA}`, criadoPor: userId, updatedAt: agora,

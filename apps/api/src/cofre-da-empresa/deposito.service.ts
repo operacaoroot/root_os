@@ -4,13 +4,14 @@ import type { Prisma } from '@prisma/client';
 import { z } from 'zod';
 import { AuditService } from '../audit/audit.service';
 import { PrismaService } from '../prisma/prisma.service';
+import { ClienteEscopoService } from '../clientes-escopo/cliente-escopo.service';
 import { comTenantPublico } from '../common/tenant-publico';
 import { contextoAtual } from '../common/contexto-execucao';
 import { cifrar } from '../common/crypto';
 
 export const DIAS_DO_LINK = 7;
 export const LIMITE_DE_ENVIOS = 100;
-export const EmitirDepositoSchema = z.object({ cliente: z.string().trim().min(1).max(60) }).strict();
+export const EmitirDepositoSchema = z.object({ clienteId: z.string().uuid() }).strict();
 export const TokenDepositoSchema = z.object({ token: z.string().max(100) }).strict();
 export const EnvioDepositoSchema = TokenDepositoSchema.extend({
   envioId: z.string().uuid(),
@@ -22,12 +23,12 @@ export const EnvioDepositoSchema = TokenDepositoSchema.extend({
 const indisponivel = () => new NotFoundException('Link indisponível ou encerrado. Peça um novo link à ROOT.');
 const hash = (token: string) => createHash('sha256').update(token).digest('hex');
 const formato = /^([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\.[A-Za-z0-9_-]{43}$/;
-const metadados = { id: true, cliente: true, expiraEm: true, revogadoEm: true, recebidos: true, createdAt: true } as const;
+const metadados = { id: true, cliente: true, clienteId: true, expiraEm: true, revogadoEm: true, recebidos: true, createdAt: true } as const;
 
 /** Apenas depósito. Nunca chama revelar/listar do cofre nem entrega um segredo. */
 @Injectable()
 export class CofreDepositoService {
-  constructor(private readonly prisma: PrismaService, private readonly audit: AuditService) {}
+  constructor(private readonly prisma: PrismaService, private readonly audit: AuditService, private readonly escopo: ClienteEscopoService) {}
 
   private async podeEmitir(db: Pick<Prisma.TransactionClient, 'user' | 'org'>, orgId: string, userId: string) {
     const [org, user] = await Promise.all([
@@ -39,13 +40,15 @@ export class CofreDepositoService {
   }
 
   /** Usado pela tela com cofre aberto e pelo CLI operacional autenticado no servidor. */
-  async emitir(orgId: string, userId: string, cliente: string) {
-    cliente = EmitirDepositoSchema.parse({ cliente }).cliente;
+  async emitir(orgId: string, userId: string, clienteId: string) {
+    clienteId = EmitirDepositoSchema.parse({ clienteId }).clienteId;
     if (!await this.podeEmitir(this.prisma, orgId, userId)) throw new ForbiddenException('Sem acesso ao cofre.');
     const token = `${orgId}.${randomBytes(32).toString('base64url')}`;
     const expiraEm = new Date(Date.now() + DIAS_DO_LINK * 86_400_000);
     const row = await this.prisma.$transaction(async (tx) => {
-      const d = await tx.cofreDeposito.create({ data: { orgId, cliente, criadoPor: userId, tokenHash: hash(token), expiraEm }, select: metadados });
+      const parceiro = await this.escopo.exigirCliente(orgId, userId, clienteId, tx);
+      const cliente = parceiro!.nomeFantasia || parceiro!.razaoSocial;
+      const d = await tx.cofreDeposito.create({ data: { orgId, clienteId, cliente, criadoPor: userId, tokenHash: hash(token), expiraEm }, select: metadados });
       await this.audit.log({ orgId, actorId: userId, action: 'cofre.deposito.emitir', entityType: 'cofre_deposito', entityId: d.id,
         after: { cliente, expiraEm: expiraEm.toISOString() } }, tx);
       return d;
@@ -54,20 +57,22 @@ export class CofreDepositoService {
     return { ...row, caminho: `/entregar-acessos#${token}` };
   }
 
-  async listar(orgId: string) {
-    return this.prisma.cofreDeposito.findMany({ where: { orgId }, select: metadados, orderBy: { createdAt: 'desc' }, take: 100 });
+  async listar(orgId: string, userId: string, clienteId?: string) {
+    const filtro = await this.escopo.filtro(orgId, userId, clienteId);
+    return this.prisma.cofreDeposito.findMany({ where: filtro, select: metadados, orderBy: { createdAt: 'desc' }, take: 100 });
   }
 
   async revogar(orgId: string, userId: string, id: string) {
     return this.prisma.$transaction(async (tx) => {
       // O UPDATE concorre com a mesma trava de linha usada no recebimento.
-      const r = await tx.cofreDeposito.updateMany({ where: { id, orgId, revogadoEm: null }, data: { revogadoEm: new Date() } });
+      const filtro = await this.escopo.filtro(orgId, userId, undefined, tx);
+      const r = await tx.cofreDeposito.updateMany({ where: { id, ...filtro, revogadoEm: null }, data: { revogadoEm: new Date() } });
       if (r.count) await this.audit.log({ orgId, actorId: userId, action: 'cofre.deposito.revogar', entityType: 'cofre_deposito', entityId: id }, tx);
       return { ok: true };
     });
   }
 
-  private async noLink<T>(token: string, fn: (tx: Prisma.TransactionClient, d: { id: string; orgId: string; cliente: string; expiraEm: Date; recebidos: number }) => Promise<T>): Promise<T> {
+  private async noLink<T>(token: string, fn: (tx: Prisma.TransactionClient, d: { id: string; orgId: string; cliente: string; clienteId: string | null; expiraEm: Date; recebidos: number }) => Promise<T>): Promise<T> {
     const orgId = formato.exec(token)?.[1];
     if (!orgId) throw indisponivel();
     const fora = contextoAtual()?.orgId;
@@ -80,6 +85,7 @@ export class CofreDepositoService {
       if (!rows.length) throw indisponivel();
       const d = await tx.cofreDeposito.findFirst({ where: { id: rows[0].id, orgId } });
       if (!d || d.revogadoEm || d.expiraEm.getTime() <= Date.now() || !await this.podeEmitir(tx, orgId, d.criadoPor)) throw indisponivel();
+      try { await this.escopo.exigirCliente(orgId, d.criadoPor, d.clienteId, tx); } catch { throw indisponivel(); }
       return fn(tx, d);
     }));
   }
@@ -98,7 +104,7 @@ export class CofreDepositoService {
       const id = randomUUID();
       const fechar = (campo: string, valor: string) => valor ? cifrar(valor, { aad: `cofre-da-empresa:${d.orgId}:${id}:${campo}` }) : null;
       await tx.cofreItem.create({ data: {
-        id, orgId: d.orgId, tipo: 'senha', titulo: `${d.cliente} · ${input.titulo}`.slice(0, 120),
+        id, orgId: d.orgId, clienteId: d.clienteId, tipo: 'senha', titulo: `${d.cliente} · ${input.titulo}`.slice(0, 120),
         usuarioCifrado: fechar('usuario', input.usuario), segredoCifrado: fechar('segredo', input.segredo),
         notasCifradas: fechar('notas', input.notas), criadoPor: `deposito:${d.id}`,
       } });

@@ -10,12 +10,14 @@ import { CofreDaEmpresaService, TENTATIVAS_ATE_BLOQUEAR } from '../src/cofre-da-
  * senha errada conta e bloqueia, e a senha do cofre não é a do login.
  */
 
+const CLIENTE = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
 const ORG = 'org-1', EU = 'u-1', OUTRO = 'u-2', LOGIN = 'senha-do-login';
 
 function falsoPrisma() {
   const linhas = { senha: [] as any[], sessao: [] as any[], item: [] as any[] };
   let n = 0;
   const casa = (r: any, where: any) => Object.entries(where ?? {}).every(([k, v]: [string, any]) => {
+    if (k === 'AND') return v.every((w: any) => casa(r, w));
     if (v && typeof v === 'object' && !(v instanceof Date)) {
       if ('lt' in v) return r[k] < v.lt;
       return Object.entries(v).every(([kk, vv]) => r[kk] === vv); // chave composta orgId_userId
@@ -62,7 +64,7 @@ beforeAll(async () => {
 
 function montar() {
   const f = falsoPrisma();
-  const svc = new CofreDaEmpresaService(f.prisma as any, audit as any, storage as any);
+  const svc = new CofreDaEmpresaService(f.prisma as any, audit as any, storage as any, { filtro: async (orgId: string) => ({orgId}), exigirCliente: async () => ({id: CLIENTE}), exigirAmplo: async () => {} } as any);
   return { svc, ...f };
 }
 
@@ -90,14 +92,14 @@ describe('cofre da empresa', () => {
     const { svc } = montar();
     await expect(svc.listar(ORG, EU, undefined)).rejects.toThrow(/trancado/);
     await expect(svc.listar(ORG, EU, 'token-inventado')).rejects.toThrow(/trancado/);
-    await expect(svc.criar(ORG, EU, undefined, { tipo: 'senha', titulo: 'x' })).rejects.toThrow(/trancado/);
+    await expect(svc.criar(ORG, EU, undefined, { clienteId: CLIENTE, tipo: 'senha', titulo: 'x' })).rejects.toThrow(/trancado/);
   });
 
   it('o segredo vai cifrado para o banco e para o registro só vai o título; revelar devolve o original', async () => {
     const { svc, linhas } = montar();
     await svc.definirSenha(ORG, EU, { senhaNova: 'cofre-123', senhaDoLogin: LOGIN });
     const { token } = await svc.destrancar(ORG, EU, 'cofre-123');
-    const { id } = await svc.criar(ORG, EU, token, { tipo: 'senha', titulo: 'Portal NFS-e', usuario: '46601327000110', segredo: 'S3nh@-Real!', notas: 'prefeitura' });
+    const { id } = await svc.criar(ORG, EU, token, { clienteId: CLIENTE, tipo: 'senha', titulo: 'Portal NFS-e', usuario: '46601327000110', segredo: 'S3nh@-Real!', notas: 'prefeitura' });
     const bruto = JSON.stringify(linhas.item);
     expect(bruto).not.toContain('S3nh@-Real!');
     expect(bruto).not.toContain('46601327000110');
@@ -136,7 +138,7 @@ describe('cofre da empresa', () => {
     const { svc } = montar();
     await svc.definirSenha(ORG, EU, { senhaNova: 'cofre-123', senhaDoLogin: LOGIN });
     const { token } = await svc.destrancar(ORG, EU, 'cofre-123');
-    const { id } = await svc.criar(ORG, EU, token, { tipo: 'documento', titulo: 'Contrato social' });
+    const { id } = await svc.criar(ORG, EU, token, { clienteId: CLIENTE, tipo: 'documento', titulo: 'Contrato social' });
     const pdf = Buffer.from('%PDF-1.4 contrato social da ROOT');
     await svc.guardarArquivo(ORG, EU, token, id, { nome: 'contrato.pdf', tipo: 'application/pdf', corpo: Readable.from([pdf]), tamanhoDeclarado: pdf.length });
     expect([...guardados.values()].some((b) => b.toString('utf8').includes('contrato social'))).toBe(false);

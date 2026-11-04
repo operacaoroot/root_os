@@ -1,18 +1,26 @@
 'use client';
 import { useEffect, useState } from 'react';
 type Link = { id: string; cliente: string; expiraEm: string; revogadoEm: string | null; recebidos: number };
-export function Depositos({ chamar }: { chamar: <T>(path: string, init?: RequestInit) => Promise<T> }) {
+export function Depositos({ chamar, consulta, cliente }: {
+  chamar: <T>(path: string, init?: RequestInit) => Promise<T>;
+  consulta: string;
+  cliente?: { id: string; nome: string };
+}) {
   const [lista, setLista] = useState<Link[]>([]);
-  const [cliente, setCliente] = useState('');
   const [novo, setNovo] = useState('');
   const [erro, setErro] = useState('');
   const [ocupado, setOcupado] = useState(false);
-  useEffect(() => { chamar<Link[]>('/depositos').then(setLista).catch((e) => setErro(e.message)); }, [chamar]);
+  useEffect(() => {
+    chamar<Link[]>(`/depositos${consulta}`).then(setLista).catch((e) => {
+      if (e.name !== 'AbortError') setErro(e.message);
+    });
+  }, [chamar, consulta]);
   async function emitir() {
+    if (!cliente) return;
     setOcupado(true); setErro(''); setNovo('');
     try {
-      const r = await chamar<Link & { caminho: string }>('/depositos', { method: 'POST', body: JSON.stringify({ cliente }) });
-      setNovo(`${window.location.origin}${r.caminho}`); setLista((l) => [r, ...l]); setCliente('');
+      const r = await chamar<Link & { caminho: string }>('/depositos', { method: 'POST', body: JSON.stringify({ clienteId: cliente.id }) });
+      setNovo(`${window.location.origin}${r.caminho}`); setLista((l) => [r, ...l]);
     } catch (e) { setErro((e as Error).message); } finally { setOcupado(false); }
   }
   async function revogar(id: string) {
@@ -27,8 +35,8 @@ export function Depositos({ chamar }: { chamar: <T>(path: string, init?: Request
     <summary className="cursor-pointer font-medium">Receber acessos de um cliente</summary>
     <p className="mt-3 text-sm text-muted">O link aceita envios por 7 dias. O cliente não consulta o cofre. Encerrar o link preserva os itens recebidos.</p>
     <div className="mt-3 flex flex-wrap gap-2">
-      <input aria-label="Cliente do link" maxLength={60} placeholder="Nome do cliente" className="rounded-lg border border-border bg-surface-2 px-3 py-2 text-sm" value={cliente} onChange={(e) => setCliente(e.target.value)} />
-      <button disabled={ocupado || !cliente.trim()} onClick={emitir} className="rounded-lg bg-brand px-3 py-2 text-sm text-ink disabled:opacity-50">Gerar link de 7 dias</button>
+      {cliente && <span className="self-center text-sm font-medium">{cliente.nome}</span>}
+      <button disabled={ocupado || !cliente} onClick={emitir} className="rounded-lg bg-brand px-3 py-2 text-sm text-ink disabled:opacity-50">Gerar link de 7 dias</button>
     </div>
     {erro && <p role="alert" className="mt-2 text-sm text-bad">{erro}</p>}
     {novo && <div className="mt-3 rounded-lg border border-brand/30 p-3 text-sm">
