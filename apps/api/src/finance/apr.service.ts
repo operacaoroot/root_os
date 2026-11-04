@@ -92,6 +92,12 @@ export function idDoLancamentoDeContrato(orgId: string, contractId: string, venc
   return `${h.slice(0, 8)}-${h.slice(8, 12)}-${h.slice(12, 16)}-${h.slice(16, 20)}-${h.slice(20)}`;
 }
 
+/**
+ * Etapa 4 (03/11/2026): o contrato que o fechamento comercial escreveu aponta o registro do contrato, e o
+ * dinheiro dele mora nas parcelas do acordo do cliente. Gerar lançamento por aqui contaria duas vezes.
+ */
+export const CONTRATO_DO_FECHAMENTO = 'Este contrato veio do fechamento comercial: as parcelas dele estão no acordo comercial do cliente e entram no fluxo por lá. Gerar o lançamento aqui contaria o mesmo dinheiro duas vezes.';
+
 export function proximoVencimentoDoContrato(vencimento: Date, periodicidade: string): Date {
   return addMonths(vencimento, PERIOD_MONTHS[periodicidade] ?? 1);
 }
@@ -100,6 +106,7 @@ export function proximoVencimentoDoContrato(vencimento: Date, periodicidade: str
 export async function gerarPrevistoDeContratoNoTx(db: Prisma.TransactionClient, orgId: string, c: Contract,
   vencimento: Date, actorId: string, approvalStatus: ApprovalStatus): Promise<boolean> {
   if (c.orgId !== orgId) throw new NotFoundException('Contrato não encontrado');
+  if (c.comercialContratoId) throw new BadRequestException(CONTRATO_DO_FECHAMENTO);
   const transactionId = idDoLancamentoDeContrato(orgId, c.id, vencimento);
   const avancou = await db.contract.updateMany({
     where: { id: c.id, orgId, status: 'ativo', proximoVencimento: c.proximoVencimento, updatedAt: c.updatedAt },
@@ -313,6 +320,7 @@ export class AprService {
     // Antes das conferências de status e conta: o lançamento gravado continua
     // valendo mesmo que o contrato tenha sido pausado depois.
     if (await this.jaGerado(orgId, transactionId)) return { ...resposta, replayed: true };
+    if (c.comercialContratoId) throw new BadRequestException(CONTRATO_DO_FECHAMENTO);
     if (venc.getTime() !== c.proximoVencimento.getTime()) throw new ConflictException(VENCIMENTO_NAO_E_O_PROXIMO);
     if (c.status !== 'ativo') throw new BadRequestException('Contrato não está ativo');
     if (!c.accountId) throw new BadRequestException('Contrato sem conta bancária definida');

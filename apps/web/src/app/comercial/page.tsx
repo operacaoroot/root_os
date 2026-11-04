@@ -14,6 +14,7 @@ import {
   type PainelComercialGrupo,
   type PainelComercialMes,
   type PainelComercialNegocio,
+  type QuadroDeContratos,
   type ResultadoDaEtapa,
 } from '@mktos/shared';
 import { apiGet } from '@/lib/api';
@@ -265,6 +266,8 @@ function Painel({ p, abrir, tudo = false }: { p: PainelComercial; abrir: (f: Fil
  * negociação (lima claro) lado a lado, na proporção do valor; somados são o
  * potencial do ano. Cada parte abre os negócios dela.
  */
+const CORRENDO: readonly string[] = ['ativo', 'renovar', 'a_encerrar'];
+
 function Destaque({ p, abrir, tudo = false }: { p: PainelComercial; abrir: (f: Filtro) => void; tudo?: boolean }) {
   // P-84 (27/10/2026): o número "Clientes ativos" é o da lista única (Comercial › Clientes ativos).
   const { token } = useAuth();
@@ -273,6 +276,14 @@ function Destaque({ p, abrir, tudo = false }: { p: PainelComercial; abrir: (f: F
     if (!token) return;
     apiGet<ListaDeClientesAtivos>('/comercial/clientes-ativos', token).then(setAtivos).catch(() => setAtivos(null));
   }, [token]);
+  // Etapa 5 (F-08): "Contratos vivos" conta o mesmo quadro que abre (o registro do contrato): os que
+  // estão correndo (ativo, renovar, a encerrar). Sem o quadro, fica a conta antiga do Painel.
+  const [quadro, setQuadro] = useState<QuadroDeContratos | null>(null);
+  useEffect(() => {
+    if (!token) return;
+    apiGet<QuadroDeContratos>('/comercial/contratos/quadro', token).then(setQuadro).catch(() => setQuadro(null));
+  }, [token]);
+  const vivos = quadro ? quadro.itens.filter((c) => !c.fantasma && CORRENDO.includes(c.etapa)).length : p.totais.contratosVivos;
   const ano = String(p.ano);
   const fechado = p.totais.valorGanhoNoAno;
   const aberto = p.totais.emNegociacao;
@@ -334,7 +345,7 @@ function Destaque({ p, abrir, tudo = false }: { p: PainelComercial; abrir: (f: F
           )}
           <Link href="/comercial/contratos" className="group self-start rounded-md p-1 hover:bg-surface-2">
             <div className="com-rotulo">Contratos vivos</div>
-            <div className="com-num mt-1.5 text-[1.5rem] font-bold leading-none">{p.totais.contratosVivos}</div>
+            <div className="com-num mt-1.5 text-[1.5rem] font-bold leading-none">{vivos}</div>
             <div className="mt-1.5 text-sm text-muted">em acompanhamento<span className="opacity-0 transition group-hover:opacity-100"> · ver →</span></div>
           </Link>
           <Numero rotulo="Na geladeira" valor={String(p.totais.naGeladeira)} nota="voltam com data" tamanho="medio" onClick={() => abrir({ situacao: 'pausa' })} />

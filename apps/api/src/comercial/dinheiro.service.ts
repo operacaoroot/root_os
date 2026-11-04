@@ -15,7 +15,8 @@ import { PdfComLacunaError } from './contrato-da-root/pdf-do-contrato';
 import { montarPdfDoRegistro, rootsSemAlcada, SemMinutaError } from './contratos/documento-do-registro';
 import { garantirContratoDoDocumento, refletirAssinaturas, type ReflexoDaAssinatura, type SignatarioDoDocumento } from './contratos/registro-do-documento';
 import { SO_DOCUMENTOS_DE_ASSINATURA } from './documentos';
-import { uuidDe, type PayloadDe } from './eventos';
+import { parcelasPagasDosContratos } from './dinheiro-do-contrato';
+import { eventoIdComercial, uuidDe, type PayloadDe } from './eventos';
 import { aceiteDaDeclaracao, type DeclaracaoDoFechadoFora } from './fechado-fora';
 import { FioService, ReacoesRegistry } from './fio.service';
 import { cifrarLinkDaRoot, decifrarLinkDaRoot } from './link-da-root';
@@ -769,8 +770,9 @@ export class DinheiroService implements OnModuleInit {
    * só para Pix). Paga de novo depois de um estorno, os fatos ganham outra
    * chave (o id do evento do provedor): a chave de antes já está no fio, e sem
    * um fato novo o estorno ficaria por último para sempre.
+   * Etapa 4 (F-05): não é mais só do webhook; a parcela que o Financeiro viu paga passa por aqui também.
    */
-  private async pagamentoDaParcela(orgId: string, c: CobrancaDoWebhook, p: PagamentoNoWebhook): Promise<number> {
+  async pagamentoDaParcela(orgId: string, c: CobrancaDoWebhook, p: PagamentoNoWebhook): Promise<number> {
     const pagoEm = p.pagoEm ? venceComoData(p.pagoEm) : new Date();
     const depoisDoEstorno = c.estado === 'estornada';
     await this.prisma.comercialCobranca.updateMany({ where: { id: c.id, pagaEm: null }, data: { estado: 'paga', pagaEm: pagoEm } });
@@ -784,6 +786,50 @@ export class DinheiroService implements OnModuleInit {
       if (b.novo) gravados++;
     }
     return gravados;
+  }
+
+  /**
+   * Etapa 4 (F-05), tarefa do relógio `dinheiro.pagas_no_financeiro`: a parcela que o FINANCEIRO viu paga
+   * (sync do Asaas, extrato ou baixa à mão), num acordo ligado a um contrato do registro, avisa o Comercial
+   * com o mesmo fato do webhook.
+   *   · Com a cobrança do lead (`asaasPaymentId` = `externoId`) ainda sem `pagaEm`: a mesma rotina do
+   *     webhook, com a mesma chave (o id da cobrança). Cobrança estornada fica: depois do estorno, quem
+   *     manda é o webhook do Asaas (senão o relógio a pagaria de novo a cada minuto).
+   *   · Sem cobrança do lead (baixa à mão, ou cobrança que o Comercial não criou): `parcela.paga` com a
+   *     chave do id da parcela.
+   * Idempotente: a cobrança pelo `pagaEm`, a parcela à mão pelo id do fato, conferido antes de gravar. A
+   * 1ª parcela segue a régua de sempre: o fato chega à reação do fechamento, que vai à assinatura da titular.
+   */
+  async pagasNoFinanceiro(orgId: string, _agora: Date = new Date()): Promise<{ daCobranca: number; aMao: number }> {
+    const pagas = await parcelasPagasDosContratos(this.prisma, orgId);
+    if (!pagas.length) return { daCobranca: 0, aMao: 0 };
+    const ids = [...new Set(pagas.map((p) => p.asaasPaymentId).filter((x): x is string => !!x))];
+    const cobrancas = ids.length ? await this.prisma.comercialCobranca.findMany({ where: { orgId, externoId: { in: ids } } }) : [];
+    const dia = (d: Date) => d.toISOString().slice(0, 10);
+    let daCobranca = 0;
+    let aMao = 0;
+    const semCobranca: typeof pagas = [];
+    for (const p of pagas) {
+      const c = p.asaasPaymentId ? cobrancas.find((x) => x.externoId === p.asaasPaymentId && x.leadId === p.leadId) : undefined;
+      if (!c) {
+        semCobranca.push(p);
+        continue;
+      }
+      if (c.pagaEm || c.estado === 'estornada') continue;
+      daCobranca += await this.pagamentoDaParcela(orgId, c, { eventoId: null, tipo: 'paga', evento: 'financeiro', externoId: c.externoId, valorCentavos: 0, pagoEm: dia(p.pagaEm) });
+    }
+    if (semCobranca.length) {
+      const jaNoFio = new Set(
+        (await this.prisma.leadEvent.findMany({ where: { id: { in: semCobranca.map((p) => eventoIdComercial(orgId, p.leadId, 'parcela.paga', p.parcelaId)) } }, select: { id: true } })).map((e) => e.id),
+      );
+      for (const p of semCobranca) {
+        if (jaNoFio.has(eventoIdComercial(orgId, p.leadId, 'parcela.paga', p.parcelaId))) continue;
+        const pagoEm = venceComoData(dia(p.pagaEm));
+        const r = await this.fio.registrar(orgId, p.leadId, 'parcela.paga', p.parcelaId, { parcela: p.numero, pagoEm: pagoEm.toISOString(), valorCentavos: p.valorCentavos }, { em: pagoEm });
+        if (r.novo) aMao++;
+      }
+    }
+    return { daCobranca, aMao };
   }
 
   /**

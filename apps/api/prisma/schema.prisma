@@ -1041,6 +1041,12 @@ model Contract {
   dataFim           DateTime?
   proximoVencimento DateTime
   status            ContractStatus  @default(ativo)
+  /// O DINHEIRO DO CONTRATO (etapa 4, 03/11/2026): o contrato do registro comercial que o
+  /// fechamento escreveu aqui. Com ele, o dinheiro mora nas parcelas do acordo (`AcordoParcela`)
+  /// e este contrato não é projetado no fluxo, na Análise nem na rotina. Gatilho
+  /// `Contract_orgId_do_pai_contrato_comercial` (a empresa é a do registro).
+  comercialContratoId String?
+  comercialContrato   ComercialContrato? @relation("ContratoDoFinanceiro", fields: [comercialContratoId], references: [id], onDelete: SetNull)
   createdAt         DateTime        @default(now())
   updatedAt         DateTime        @updatedAt
 
@@ -1048,6 +1054,7 @@ model Contract {
 
   @@unique([id, orgId])
   @@index([orgId, status])
+  @@index([comercialContratoId])
 }
 
 // Rateio de um lançamento (lancamento_rateios): divide o valor por conta/dep/projeto.
@@ -5306,6 +5313,10 @@ model ComercialContrato {
   criadoEm            DateTime  @default(now())
   atualizadoEm        DateTime  @updatedAt
   signatarios         ComercialContratoSignatario[]
+  /// Etapa 4 (03/11/2026): o acordo que guarda o dinheiro deste contrato (no máximo um: índice
+  /// único parcial na migration) e o contrato do Financeiro que o fechamento escreveu.
+  acordos             AcordoComercial[] @relation("AcordoDoContrato")
+  contratosDoFinanceiro Contract[]      @relation("ContratoDoFinanceiro")
 
   @@unique([leadId, origemImportada])
   @@index([orgId, leadId])
@@ -6147,6 +6158,13 @@ model AcordoComercial {
   fechadoEm  DateTime? @db.Date
   partnerId  String?
   partner    Partner?  @relation("AcordosDoCliente", fields: [partnerId], references: [id], onDelete: SetNull)
+  /// O DINHEIRO DO CONTRATO (etapa 4, 03/11/2026): o contrato do registro comercial cujo dinheiro
+  /// este acordo guarda. Um acordo por contrato: índice único parcial
+  /// `AcordoComercial_comercialContratoId_unico` ("comercialContratoId") WHERE
+  /// "comercialContratoId" IS NOT NULL (só na migration 20261103230000; o Prisma não descreve
+  /// índice parcial). Gatilho `AcordoComercial_orgId_do_pai_contrato`. Nulo = acordo à mão.
+  comercialContratoId String?
+  comercialContrato   ComercialContrato? @relation("AcordoDoContrato", fields: [comercialContratoId], references: [id], onDelete: SetNull)
   parcelas   AcordoParcela[]
   createdAt  DateTime  @default(now())
   updatedAt  DateTime  @updatedAt

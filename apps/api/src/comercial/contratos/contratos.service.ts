@@ -23,10 +23,10 @@ import { EfeitosRegistry, type ContextoDoEfeito } from '../../gateway/efeitos.re
 import { FILA_DE_APROVACAO } from '../../gateway/fila-de-aprovacao';
 import { InterruptoresRegistry } from '../../gateway/interruptores.registry';
 import { PortaDoOperador } from '../../gateway/porta-do-operador.service';
-import { exigirAcessoAtual } from '../../memory/acesso-memoria';
 import { PrismaService } from '../../prisma/prisma.service';
-import { contratosImportados, EFEITO_DE_ENCERRAR_CONTRATO } from '../contrato-vivo.service';
+import { EFEITO_DE_ENCERRAR_CONTRATO } from '../contrato-vivo.service';
 import { DinheiroService } from '../dinheiro.service';
+import { cadeadoDoContrato } from '../dinheiro-do-contrato';
 import { canonico, hashDoConteudo, uuidDe, type PayloadDe } from '../eventos';
 import { FioService, ReacoesRegistry } from '../fio.service';
 import { assinaturaDoEstado, PORTA_DE_ASSINATURA, type PortaDeAssinatura } from '../portas/assinatura.port';
@@ -37,7 +37,6 @@ import {
   FRASE_DO_IMPORTADO_NO_LOTE,
   chaveDoEncerramento,
   ehEstadoVivo,
-  fimVigente,
   fraseDasParcelas,
   lerIdDoContrato,
   motivoParaNaoAbrirFilho,
@@ -48,6 +47,15 @@ import {
   motivoParaNaoReabrir,
   motivoParaNaoReenviar,
 } from './contratos-puro';
+import {
+  auditarContrato,
+  exigirGenteNoContrato,
+  gravarImportadoAssumido,
+  lerImportadoParaAssumir,
+  registroDoImportado,
+  type PessoaNoContrato,
+  type QuemNoContrato,
+} from './importado-assumido';
 
 /*
  * O CONTRATO COMO REGISTRO PRÓPRIO (módulo de contratos, 02/11/2026, fases F1 e F3).
@@ -80,17 +88,11 @@ export const CAP_REENVIAR = 'comercial.contrato.reenviar';
 /** Quantos contratos o relógio confere por passagem, em cada empresa. */
 export const TETO_DA_CONFERENCIA_POR_PASSAGEM = 20;
 
-export interface QuemNoContrato {
-  id: string;
-  nome: string | null;
-  papeis: readonly string[];
-}
+export type { QuemNoContrato } from './importado-assumido';
 
-type Pessoa = { id: string; nome: string | null };
+type Pessoa = PessoaNoContrato;
 type OrigemDaConferencia = 'botao' | 'lote' | 'relogio';
 type LinhaDoContrato = Prisma.ComercialContratoGetPayload<{ include: { signatarios: true } }>;
-
-const RECUSA_DE_MAQUINA = 'Contrato é de gente: conta de serviço (IA) não mexe aqui. O agente propõe o envio pela porta.';
 
 function dadosComCampos(dados: unknown, novos: NonNullable<ContratoEditarInput['campos']>): Prisma.InputJsonValue {
   const base = dados && typeof dados === 'object' && !Array.isArray(dados) ? (dados as Record<string, unknown>) : {};
@@ -162,14 +164,9 @@ export class ContratosService implements OnModuleInit {
   // -------------------------------------------------------------------------
 
   /** Gente de verdade, relida no banco: ativa, desta empresa, sem papel de máquina e com `leads.editar` agora. */
-  async exigirGente(orgId: string, quem: QuemNoContrato): Promise<Pessoa> {
-    if (!quem.id || temPapelDeMaquina(quem.papeis)) throw new ForbiddenException(RECUSA_DE_MAQUINA);
-    const doBanco = await lerAprovador(this.prisma, quem.id, orgId);
-    if (!doBanco || !doBanco.ativo) throw new ForbiddenException('Só gente ativa da empresa mexe no contrato.');
-    if (temPapelDeMaquina(doBanco.papeis)) throw new ForbiddenException(RECUSA_DE_MAQUINA);
-    await exigirAcessoAtual(this.prisma, orgId, quem.id, ['leads.editar']);
-    const u = await this.prisma.user.findFirst({ where: { id: quem.id, orgId }, select: { name: true } });
-    return { id: quem.id, nome: u?.name ?? quem.nome };
+  exigirGente(orgId: string, quem: QuemNoContrato): Promise<Pessoa> {
+    // A mesma regra que o backfill do dinheiro usa com `--pessoa` (`importado-assumido.ts`).
+    return exigirGenteNoContrato(this.prisma, orgId, quem);
   }
 
   /** O nível dos atos internos sai do efeito pela escada. Mudou o efeito, a conta sobe e a rota recusa. */
@@ -180,16 +177,12 @@ export class ContratosService implements OnModuleInit {
   }
 
   cadeado(tx: Prisma.TransactionClient, orgId: string, leadId: string): Promise<unknown> {
-    return tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`comercial-contrato:${orgId}:${leadId}`}))`;
+    // Etapa 4: o mesmo cadeado vale para o dinheiro do contrato no fechamento (`dinheiro-do-contrato.ts`).
+    return cadeadoDoContrato(tx, orgId, leadId);
   }
 
   auditar(tx: Prisma.TransactionClient, orgId: string, atorId: string | null, acao: string, contratoId: string, before: unknown, after: unknown, ator: ActorType = ActorType.user): Promise<unknown> {
-    return tx.auditLog.create({
-      data: {
-        orgId, actorType: ator, actorId: atorId, action: acao, entityType: 'comercial.contrato', entityId: contratoId,
-        before: (before ?? Prisma.JsonNull) as Prisma.InputJsonValue, after: after as Prisma.InputJsonValue,
-      },
-    });
+    return auditarContrato(tx, orgId, atorId, acao, contratoId, before, after, ator);
   }
 
   private async linha(orgId: string, id: string): Promise<LinhaDoContrato> {
@@ -209,36 +202,14 @@ export class ContratosService implements OnModuleInit {
   /**
    * O primeiro ato sobre um contrato importado cria o registro. Mais de um importado no lead continua sendo UM
    * contrato (o cartão soma): a primeira origem vai em `origemImportada`, todas em `dadosDoContrato.origens`.
+   * Leitura, linha e escrita moram em `importado-assumido.ts`: o backfill do dinheiro (`--assumir-importados`)
+   * passa pelo mesmo código.
    */
   private async assumirImportado(orgId: string, leadId: string, pessoa: Pessoa, agora: Date = new Date()): Promise<LinhaDoContrato> {
-    const fatos = await this.prisma.leadEvent.findMany({ where: { orgId, leadId, type: 'contrato.importado' }, select: { payload: true } });
-    if (!fatos.length) throw new NotFoundException('Contrato importado não encontrado.');
-    const importados = contratosImportados(fatos);
-    const principal = importados[0]!;
-    const soma = importados.every((c) => c.valorCentavos !== null) ? importados.reduce((s, c) => s + (c.valorCentavos ?? 0), 0) : null;
-    const [ficha, fins] = await Promise.all([
-      this.prisma.comercialFicha.findFirst({ where: { orgId, leadId }, select: { partnerId: true, valorCentavos: true, valorNegociadoCentavos: true } }),
-      this.prisma.leadEvent.findMany({ where: { orgId, leadId, type: { in: ['contrato.concluido', 'contrato.desativado', 'contrato.reaberto'] } }, select: { type: true, payload: true, occurredAt: true } }),
-    ]);
-    const fim = fimVigente(fins);
-    const concluido = fim?.type === 'contrato.concluido' ? fim : null;
-    const id = uuidDe([orgId, 'comercial-contrato', 'importado', leadId]);
-    const evento = await this.prisma.$transaction(async (tx) => {
-      await this.cadeado(tx, orgId, leadId);
-      const ja = await tx.comercialContrato.findFirst({ where: { orgId, leadId, origemImportada: { not: null } }, select: { id: true } });
-      if (ja) return null;
-      await tx.comercialContrato.create({
-        data: {
-          id, leadId, partnerId: ficha?.partnerId ?? null, tipo: 'contrato', estado: concluido ? 'encerrado' : 'ativo',
-          valorCentavos: soma ?? ficha?.valorNegociadoCentavos ?? ficha?.valorCentavos ?? null, origemImportada: principal.origem,
-          dadosDoContrato: { origens: importados.map((c) => c.origem) },
-          motivoDoFim: concluido ? String(((concluido.payload ?? {}) as Record<string, unknown>).motivo ?? '') : null, encerradoEm: concluido?.occurredAt ?? null,
-        },
-      });
-      const g = await this.fio.gravarNaTransacao(tx, orgId, leadId, 'contrato.registrado', `${id}:importado`, { contratoId: id, tipo: 'contrato', ato: 'importado_assumido', por: pessoa.nome, porId: pessoa.id }, agora);
-      await this.auditar(tx, orgId, pessoa.id, 'comercial.contrato.importado_assumido', id, null, { leadId, origens: importados.map((c) => c.origem), eventoId: g.evento.eventoId });
-      return g.novo ? g.evento : null;
-    });
+    const base = await lerImportadoParaAssumir(this.prisma, orgId, leadId);
+    if (!base) throw new NotFoundException('Contrato importado não encontrado.');
+    const registro = registroDoImportado(orgId, leadId, base);
+    const { evento } = await this.prisma.$transaction((tx) => gravarImportadoAssumido(tx, orgId, leadId, registro, pessoa, agora, this.fio));
     if (evento) await this.fio.reagir(evento);
     return this.linha(orgId, (await this.prisma.comercialContrato.findFirstOrThrow({ where: { orgId, leadId, origemImportada: { not: null } }, select: { id: true } })).id);
   }

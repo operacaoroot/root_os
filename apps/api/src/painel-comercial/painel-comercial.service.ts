@@ -289,6 +289,21 @@ export class PainelComercialService {
       return { id: e, nome: COMERCIAL_ROTULO_DA_ETAPA[e], cor: COR_DO_RESULTADO[resultado], resultado, qtd: cs.length, valor: soma(cs) };
     });
 
+    const fechadosPorMes = await this.fechadosPorMes(orgId, ano, tudo, porMes(
+      meses(12, `${ano}-12`),
+      cards.filter((c) => c.fechouEm).map((c) => ({ mes: mesDe(c.fechouEm!), valor: c.valor })),
+    ));
+    // Etapa 5 (F-08): quando o gráfico do mês lê os acordos, o total do ano é a soma dele (o mesmo número
+    // nos dois lugares e no Dashboard). Sem acordo com data, segue a conta do funil.
+    const pelosAcordos = fechadosPorMes.some((m) => m.valorSemCaixa !== undefined);
+    const doGrafico = pelosAcordos
+      ? {
+        qtd: fechadosPorMes.reduce((s, m) => s + m.qtd, 0),
+        valor: fechadosPorMes.reduce((s, m) => s + m.valor, 0),
+        semCaixa: fechadosPorMes.reduce((s, m) => s + (m.valorSemCaixa ?? 0), 0),
+      }
+      : null;
+
     return {
       ano,
       geradoEm: agora.toISOString(),
@@ -298,10 +313,10 @@ export class PainelComercialService {
         emNegociacaoPagante: soma(abertos.filter((c) => c.tipoNegocio === 'pagante')),
         emNegociacaoSemCaixa: soma(todosOsCards.filter((c) => c.resultado === 'aberta' && c.tipoNegocio !== 'pagante')),
         abertos: abertos.length,
-        ganhosNoAno: ganhosAno.length,
-        valorGanhoNoAno,
+        ganhosNoAno: doGrafico?.qtd ?? ganhosAno.length,
+        valorGanhoNoAno: doGrafico?.valor ?? valorGanhoNoAno,
         ganhosPagantesNoAno: ganhosPagantesAno.length,
-        valorGanhoPaganteNoAno: soma(ganhosPagantesAno),
+        valorGanhoPaganteNoAno: doGrafico ? doGrafico.valor - doGrafico.semCaixa : soma(ganhosPagantesAno),
         perdidosNoAno: perdidosAno.length,
         naGeladeira: cards.filter((c) => c.resultado === 'pausa').length,
         conversao: fechamentos ? Math.round((ganhosAno.length / fechamentos) * 100) : null,
@@ -312,10 +327,7 @@ export class PainelComercialService {
         clientesPorAcordo: await this.clientesPorAcordo(orgId, tudo),
       },
       etapas,
-      fechadosPorMes: await this.fechadosPorMes(orgId, ano, tudo, porMes(
-        meses(12, `${ano}-12`),
-        cards.filter((c) => c.fechouEm).map((c) => ({ mes: mesDe(c.fechouEm!), valor: c.valor })),
-      )),
+      fechadosPorMes,
       entradasPorMes: porMes(meses(12, mesDe(agora)), cards.map((c) => ({ mes: c.entrada, valor: c.valor }))),
       canais: agrupar((c) => c.canal),
       vendedores: agrupar((c) => c.vendedor),
