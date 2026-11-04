@@ -1,4 +1,4 @@
-import { ConflictException, ForbiddenException, Injectable } from '@nestjs/common';
+import { ConflictException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { ContextKind, ContextSource, type Prisma } from '@prisma/client';
 import type { z } from 'zod';
 import {
@@ -12,6 +12,7 @@ import { contextoAtual } from '../common/contexto-execucao';
 import { exigirAcessoAtual } from '../memory/acesso-memoria';
 import { ESCRITA_DO_BRANDBOOK, BrandbookEnvelopeSchema } from '../memory/brandbook-escrita';
 import { conferirLogo, conferirUrlDaMarca, hashDoBrandbook, pendenciasDaMarca, validarDocumento } from './brandbook-documento';
+import { ehEmpresaDaCasa } from '../tenants/empresa-da-casa';
 import referenciaRoot from './assets/brandbook-root.json';
 
 type Envelope = z.infer<typeof BrandbookEnvelopeSchema>;
@@ -149,7 +150,8 @@ export class BrandbookService {
     if (!l.documento.ativo) return this.resposta(l);
     return this.gravar(orgId, l, { ...l.documento, ativo: null }, versao, 'marca desativada; notas legadas preservadas');
   }
-  referenciaRoot(): BrandbookReferenciaRoot {
+  async referenciaRoot(orgId: string): Promise<BrandbookReferenciaRoot> {
+    if (!await ehEmpresaDaCasa(this.prisma, orgId)) throw new NotFoundException('Não encontrado');
     return { documento: validarDocumento(referenciaRoot.documento), fonte: { ...referenciaRoot.fonte } };
   }
 }

@@ -331,6 +331,7 @@ export function prismaDeRotinas(estado: EstadoDoBancoFalso): PrismaService {
     },
     pautaRotina: tabela(() => estado.pautaRotinas as unknown as Record<string, unknown>[]),
     org: {
+      findMany: async () => [...new Set([...estado.rotinas.map(r=>r.orgId),...estado.pautaRotinas.map(r=>r.orgId)])].map(id=>({id})),
       findUnique: async (args: { where: { id: string } }) => ({
         modulos: estado.modulos?.[args.where.id] ?? [...MODULOS],
       }),

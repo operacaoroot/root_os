@@ -93,7 +93,11 @@ function driveFalso() {
 }
 
 function montar(decisoes: Decisao[], opcoes: { drive?: ReturnType<typeof driveFalso> | null; ia?: boolean } = {}) {
-  const prisma = { marketingIdeiaCard: { findMany: async () => decisoes } } as unknown as PrismaService;
+  const prisma = {
+    org: { findFirst: async ({ where }: { where: { id: string; slug: string } }) =>
+      where.id === 'org' && where.slug === 'root' ? { id: 'org' } : null },
+    marketingIdeiaCard: { findMany: async () => decisoes },
+  } as unknown as PrismaService;
   const pedidos: { funcao?: string; user: string }[] = [];
   const llm = {
     configured: opcoes.ia !== false,

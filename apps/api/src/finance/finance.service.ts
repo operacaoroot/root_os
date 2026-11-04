@@ -25,7 +25,8 @@ import { grupoDaSaida, type ContaDoPlano } from './mes-a-mes';
 import { prepararVestir, vestirCobranca, conciliarPeloId, fecharParcelasQueSairam, materializarParcelas } from './parcelas.service';
 import { exigirAcessoAtual } from '../memory/acesso-memoria';
 import { travarFinanceiro, travarLancamentoFinanceiro, exigirNaoExercicio } from './financeiro-exercicio.service';
-import { comContexto, novaCorrelacao } from '../common/contexto-execucao';
+import { novaCorrelacao } from '../common/contexto-execucao';
+import { comContextoDePlataforma, comContextoDaEmpresaResolvida } from '../prisma/contexto-de-plataforma';
 import { TIPO_CASA_CONCILIACAO, inscreverTarefaDaCasa, registrarPassagemDeFundo } from '../routines/rotinas-da-casa';
 import type { ResultadoDaRotina } from '../routines/rotina.tipos';
 
@@ -75,7 +76,7 @@ export class FinanceService implements OnModuleInit {
   //
   // DESDE A RODADA DOS AGENTES (21/10/2026, A1): cada passagem, por empresa, vai ao
   // histórico de rotinas como `casa.conciliacao` (FI-02), com duração e desfecho,
-  // dentro do contexto da empresa. A descoberta das conexões continua a de sempre.
+  // dentro do contexto da empresa. A plataforma enumera apenas ids de empresas.
   onModuleInit(): void {
     if (!this.pluggy.configured && !this.asaas.configured) return;
     const min = Number(process.env.PLUGGY_SYNC_INTERVAL_MIN ?? process.env.ASAAS_SYNC_INTERVAL_MIN ?? 360);
@@ -93,24 +94,20 @@ export class FinanceService implements OnModuleInit {
     inscreverTarefaDaCasa(TIPO_CASA_CONCILIACAO, (orgId) => this.passagemDaConciliacao(orgId), 'FinanceService');
     const run = async (origem: 'cron' | 'webhook' = 'cron') => {
       try {
-        const conns = await this.prisma.bankConnection.findMany({
-          where: { provider: { in: origem === 'webhook' ? ['asaas'] : ['pluggy', 'asaas'] }, status: { in: ['connected', 'error'] }, externalId: { not: null } },
-          select: { orgId: true },
-        });
-        for (const orgId of [...new Set(conns.map((c) => c.orgId))]) {
+        const empresas = await comContextoDePlataforma(() => this.prisma.org.findMany({select:{id:true}}));
+        for (const {id:orgId} of empresas) {
           try {
-            // O contexto da empresa (não o de plataforma): a passagem roda como uma rota dela.
-            const r = await comContexto(
-              { orgId, actorType: 'system', correlationId: novaCorrelacao(origem), origem: 'cron' },
-              () =>
-                registrarPassagemDeFundo(
+            const r = await comContextoDaEmpresaResolvida(orgId, async () => {
+              const conns=await this.prisma.bankConnection.findMany({where:{orgId,provider:{in:origem==='webhook'?['asaas']:['pluggy','asaas']},status:{in:['connected','error']},externalId:{not:null}},select:{id:true}});
+              if(!conns.length) return null;
+              return registrarPassagemDeFundo(
                   this.prisma,
                   { orgId, tipo: TIPO_CASA_CONCILIACAO },
                   () => this.passagemDaConciliacao(orgId),
                   { criar: 'sempre', intervaloMin: min > 0 ? min : 360 },
-                ),
-            );
-            this.log.log(`sync bancário da empresa ${orgId}: ${r.status} (${r.resumo})`);
+                );
+            },{actorType:'system',actorId:null,correlationId:novaCorrelacao(origem),origem:'cron'});
+            if(r) this.log.log(`sync bancário da empresa ${orgId}: ${r.status} (${r.resumo})`);
           } catch (e) {
             this.log.warn(`sync bancário da empresa ${orgId} falhou: ${(e as Error).message}`);
           }
@@ -932,7 +929,7 @@ export class FinanceService implements OnModuleInit {
       await this.prisma.bankConnection.update({
         where: { id: conn.id }, data: { status: 'connected', lastSyncAt: new Date(), lastError: null },
       });
-      await this.markHealth('asaas', 'Asaas', 'ok', null);
+      await this.markHealth(orgId, 'asaas', 'Asaas', 'ok', null);
       await this.audit.log({
         orgId, actorId, actorType: actorId ? 'user' : 'system', action: 'finance.bank.sync',
         entityType: 'bank_connection', entityId: conn.id, after: { provider: 'asaas', transactions: txCount, receivables: recvCount },
@@ -942,7 +939,7 @@ export class FinanceService implements OnModuleInit {
       await this.prisma.bankConnection.update({
         where: { id: conn.id }, data: { status: 'error', lastError: (e as Error).message },
       }).catch(() => {});
-      await this.markHealth('asaas', 'Asaas', 'down', (e as Error).message).catch(() => {});
+      await this.markHealth(orgId, 'asaas', 'Asaas', 'down', (e as Error).message).catch(() => {});
       throw e;
     }
   }
@@ -978,7 +975,7 @@ export class FinanceService implements OnModuleInit {
       await this.prisma.bankConnection.update({
         where: { id: conn.id }, data: { status: 'connected', lastSyncAt: new Date(), lastError: null },
       });
-      await this.markHealth('pluggy', 'Bancos (Pluggy)', 'ok', null);
+      await this.markHealth(orgId, 'pluggy', 'Bancos (Pluggy)', 'ok', null);
       await this.audit.log({
         orgId, actorId, actorType: actorId ? 'user' : 'system', action: 'finance.bank.sync',
         entityType: 'bank_connection', entityId: conn.id, after: { accounts: pgAccounts.length, transactions: txCount },
@@ -988,7 +985,7 @@ export class FinanceService implements OnModuleInit {
       await this.prisma.bankConnection.update({
         where: { id: conn.id }, data: { status: 'error', lastError: (e as Error).message },
       }).catch(() => {});
-      await this.markHealth('pluggy', 'Bancos (Pluggy)', 'down', (e as Error).message).catch(() => {});
+      await this.markHealth(orgId, 'pluggy', 'Bancos (Pluggy)', 'down', (e as Error).message).catch(() => {});
       throw e;
     }
   }
@@ -1016,18 +1013,18 @@ export class FinanceService implements OnModuleInit {
     });
   }
 
-  private async markHealth(key: string, label: string, health: 'ok' | 'down', lastError: string | null) {
-    const org = await this.prisma.org.findFirst({ where: { slug: 'root' } });
-    if (!org) return;
+  private async markHealth(orgId:string,key: string, label: string, health: 'ok' | 'down', lastError: string | null) {
+    return comContextoDaEmpresaResolvida(orgId,async()=>{
     const status = health === 'ok' ? 'connected' : 'error';
-    const acc = await this.prisma.integrationAccount.findFirst({ where: { orgId: org.id, key } });
+    const acc = await this.prisma.integrationAccount.findFirst({ where: { orgId, key } });
     const account = acc
       ? await this.prisma.integrationAccount.update({ where: { id: acc.id }, data: { status, connectedAt: health === 'ok' ? new Date() : acc.connectedAt } })
-      : await this.prisma.integrationAccount.create({ data: { orgId: org.id, key, label, status, connectedAt: new Date() } });
+      : await this.prisma.integrationAccount.create({ data: { orgId, key, label, status, connectedAt: new Date() } });
     await this.prisma.integrationHealth.upsert({
       where: { accountId: account.id },
       update: { status: health, lastSyncAt: new Date(), lastError },
       create: { accountId: account.id, status: health, lastSyncAt: new Date(), lastError },
+    });
     });
   }
 

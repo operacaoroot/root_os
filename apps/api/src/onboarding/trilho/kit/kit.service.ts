@@ -2,7 +2,6 @@ import { BadRequestException, Inject, Injectable, Logger, Optional } from '@nest
 import { ETAPA_DO_KIT, MARCO_DO_KIT, type EstadoDaCopiaDoKit, type KitEPastaDoCard, type KitNaTela } from '@mktos/shared';
 
 import { ARQUIVISTA_DO_CLIENTE, type ArquivistaDoClientePort } from '../../../clientes/portas';
-import { comContexto, contextoAtual, novaCorrelacao } from '../../../common/contexto-execucao';
 import { LLM_PROVIDER, type LlmProvider } from '../../../llm/llm.provider';
 import { umaPorVez } from '../../../pauta/uma-por-vez';
 import { PrismaService } from '../../../prisma/prisma.service';
@@ -148,23 +147,14 @@ export class KitDoTrilhoService {
       corpo: varrerSegredos(Array.from(n.corpo).slice(0, CORPO_MAX).join('')).texto,
     });
     if (t.empresaId) {
-      const empresaId = t.empresaId;
       try {
-        const notas = await comContexto(
-          {
-            orgId: empresaId,
-            actorType: 'system',
-            actorId: null,
-            correlationId: contextoAtual()?.correlationId ?? novaCorrelacao('onboarding'),
-            origem: contextoAtual()?.origem ?? 'http',
-          },
-          () =>
-            this.prisma.contextItem.findMany({
-              where: { orgId: empresaId, arquivadoEm: null, acessoRestrito: false, chave: { startsWith: 'onboarding:' } },
-              orderBy: { atualizadoEm: 'desc' },
-              take: MAX_NOTAS,
-              select: { title: true, body: true },
-            }),
+        const notas = await this.trilhos.naEmpresaDoTrilho(t, (empresaId) =>
+          this.prisma.contextItem.findMany({
+            where: { orgId: empresaId, arquivadoEm: null, acessoRestrito: false, chave: { startsWith: 'onboarding:' } },
+            orderBy: { atualizadoEm: 'desc' },
+            take: MAX_NOTAS,
+            select: { title: true, body: true },
+          }),
         );
         if (notas.length) return notas.map((n) => limpar({ titulo: n.title, corpo: n.body }));
       } catch (e) {

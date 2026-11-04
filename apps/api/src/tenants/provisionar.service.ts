@@ -1,4 +1,6 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { ForbiddenException, Injectable, Logger } from '@nestjs/common';
+import { comContextoDePlataforma } from '../prisma/contexto-de-plataforma';
+import { temPapelDeMaquina } from '../approvals/alcada';
 import type { ActorType, Prisma } from '@prisma/client';
 
 import { AuditService } from '../audit/audit.service';
@@ -107,6 +109,8 @@ export class ProvisionamentoService {
     const fora = contextoAtual();
     const ator = { tipo: quem.tipo, id: quem.id ?? fora?.actorId ?? null };
     const correlacao = fora?.correlationId ?? novaCorrelacao('prov');
+    await this.exigirFronteira(entrada, quem);
+    const origem = fora?.origem ?? quem.origem ?? 'script';
     const ordenante = await this.ordenante(fora?.orgId ?? null);
 
     /*
@@ -127,12 +131,18 @@ export class ProvisionamentoService {
           actorType: ator.tipo,
           actorId: ator.id,
           correlationId: correlacao,
-          origem: quem.origem ?? fora?.origem ?? 'script',
+          origem,
         },
         fn,
       );
 
     const resultado = await provisionarTenant(this.prisma, entrada, {
+      // Apenas esta consulta pode sair da org ordenante. Cada escrita continua em naEmpresa.
+      resolverOrg: (slug) => comContexto({ ...fora, orgId: null, actorType: ator.tipo, actorId: ator.id,
+        correlationId: correlacao, origem }, async () =>
+        await comContextoDePlataforma(() => this.prisma.org.findUnique({
+          where: { slug }, select: { id: true, name: true, modulos: true, isActive: true },
+        }))),
       emContexto: naEmpresa,
       ordenante,
       correlacao,
@@ -172,7 +182,7 @@ export class ProvisionamentoService {
             metadata: {
               ...linha.metadata,
               correlationId: correlacao,
-              origem: quem.origem ?? fora?.origem ?? 'script',
+              origem,
             } as Prisma.InputJsonValue,
           }),
         ),
@@ -193,6 +203,29 @@ export class ProvisionamentoService {
     return resultado;
   }
 
+  private async exigirFronteira(entrada: EntradaDeProvisionamento, quem: { tipo: ActorType; id?: string | null; origem?: OrigemDoContexto }) {
+    const fora = contextoAtual();
+    const negar = () => new ForbiddenException('Provisionar empresa exige uma origem autorizada da plataforma.');
+    if (fora?.origem && quem.origem && fora.origem !== quem.origem) throw negar();
+    const origem = fora?.origem ?? quem.origem ?? 'script';
+    if (origem !== 'script' && (entrada.modo === 'reconfigurar' || entrada.reativar)) throw negar();
+    if (fora?.orgId) {
+      const org = await this.prisma.org.findUnique({where:{id:fora.orgId},select:{slug:true,isActive:true}});
+      if (org?.slug !== SLUG_DA_PLATAFORMA || !org.isActive) throw negar();
+      // Uma sessão humana não pode ganhar a identidade system para cruzar a fronteira.
+      if (quem.tipo !== 'user' || !quem.id || fora.actorType !== 'user'
+        || (origem === 'http' ? fora.actorId !== quem.id : (fora.actorId && fora.actorId !== quem.id))) throw negar();
+      const pessoa = await this.prisma.user.findFirst({where:{id:quem.id,orgId:fora.orgId,isActive:true},
+        select:{roles:{where:{orgId:fora.orgId},select:{key:true,permissions:{select:{key:true}}}}}});
+      if (!pessoa || temPapelDeMaquina(pessoa.roles.map(r=>r.key))) throw negar();
+      const permissoes = new Set(pessoa.roles.flatMap(r=>r.permissions.map(p=>p.key)));
+      if (!permissoes.has('admin.permissoes') && !(permissoes.has('tarefas.editar') && permissoes.has('admin.usuarios'))) throw negar();
+    } else {
+      // Bootstrap público e CLI são produtores internos conhecidos, sem sessão humana substituída.
+      if (quem.tipo !== 'system' || (fora?.actorType && fora.actorType !== 'system') || !['http','script'].includes(origem)) throw negar();
+    }
+  }
+
   /**
    * A empresa onde o evento de INTENÇÃO cabe.
    *
@@ -205,10 +238,10 @@ export class ProvisionamentoService {
   private async ordenante(doContexto: string | null): Promise<string | null> {
     if (doContexto) return doContexto;
     try {
-      const plataforma = await this.prisma.org.findUnique({
+      const plataforma = await comContextoDePlataforma(() => this.prisma.org.findUnique({
         where: { slug: SLUG_DA_PLATAFORMA },
         select: { id: true },
-      });
+      }));
       return plataforma?.id ?? null;
     } catch (e) {
       /*

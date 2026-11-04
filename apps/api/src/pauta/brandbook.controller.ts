@@ -16,7 +16,7 @@ export class BrandbookController {
   painel(@CurrentUser() user: JwtUser) { return this.livros.painel(user.orgId); }
   @Get('referencia-root')
   @RequirePermissions('pauta.ver')
-  referencia() { return this.livros.referenciaRoot(); }
+  referencia(@CurrentUser() user: JwtUser) { return this.livros.referenciaRoot(user.orgId); }
   @Put('rascunho')
   @RequirePermissions('pauta.editar', 'obsidian.ver')
   salvar(@CurrentUser() user: JwtUser, @Body() body: unknown) { return this.livros.salvar(user.orgId, BrandbookSalvarSchema.parse(body)); }

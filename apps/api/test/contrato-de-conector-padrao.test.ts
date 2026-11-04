@@ -1,3 +1,4 @@
+import { bancoApifyDaCasa, naCasaApify, ORG_APIFY_TESTE } from './apify-fixture';
 /**
  * INTEGRAÇÕES NUM PADRÃO SÓ — rodada dos agentes, lane A6 (21/10/2026).
  *
@@ -29,7 +30,7 @@ import { ApifyService } from '../src/pauta/apify.service';
 import { ZapsignService } from '../src/comercial/conectores/zapsign.service';
 import { conectorPendurado, conectorSaudavel } from './conector-ficticio';
 
-const ORG = 'org-a6-padrao';
+const ORG = ORG_APIFY_TESTE;
 
 /** As variáveis que cada conector lê no construtor. */
 const AMBIENTE: Record<string, Record<string, string>> = {
@@ -67,7 +68,7 @@ function montar(chave: string): { reg: RegistroDeConectores; conector: ConectorD
     chave === 'asaas' ? new AsaasService(configurados, reg)
     : chave === 'pluggy' ? new PluggyService(configurados, reg)
     : chave === 'ofx' ? new OfxConector(reg)
-    : chave === 'apify' ? new ApifyService(reg)
+    : chave === 'apify' ? new ApifyService(reg, bancoApifyDaCasa)
     : new ZapsignService(configurados, reg);
   (servico as { onModuleInit(): void }).onModuleInit();
   return { reg, conector: reg.exigir(chave) };
@@ -143,7 +144,7 @@ describe.each(DE_FORA)('o conector de fora %s', (chave) => {
     semAmbiente();
     const f = fetchQueResponde();
     const { reg } = montar(chave);
-    const r = await reg.sondar({ orgId: ORG, chave, semMemoria: true });
+    const r = await naCasaApify(() => reg.sondar({ orgId: ORG, chave, semMemoria: true }));
     expect(r.estado).toBe('nao_configurado');
     expect(r.latenciaMs).toBeNull();
     expect(f).not.toHaveBeenCalled();
@@ -153,7 +154,7 @@ describe.each(DE_FORA)('o conector de fora %s', (chave) => {
     comAmbiente(chave);
     const f = fetchQueResponde({ apiKey: 'k', balance: 1, data: [] });
     const { reg } = montar(chave);
-    const r = await reg.sondar({ orgId: ORG, chave, semMemoria: true });
+    const r = await naCasaApify(() => reg.sondar({ orgId: ORG, chave, semMemoria: true }));
     expect(r.estado).toBe('conectado');
     expect(r.apuracao).toBe('tentativa');
     expect(typeof r.latenciaMs).toBe('number');
@@ -164,7 +165,7 @@ describe.each(DE_FORA)('o conector de fora %s', (chave) => {
     comAmbiente(chave);
     vi.stubGlobal('fetch', vi.fn(async () => new Response('negado', { status: 401 })));
     const { reg } = montar(chave);
-    const r = await reg.sondar({ orgId: ORG, chave, semMemoria: true });
+    const r = await naCasaApify(() => reg.sondar({ orgId: ORG, chave, semMemoria: true }));
     expect(r.estado).toBe('erro');
     expect(r.mensagem).toMatch(/401/);
   });
@@ -194,10 +195,10 @@ describe('degradação: um conector novo pendurado não segura os outros', () =>
     const { reg } = montar('apify');
     reg.registrar(conectorPendurado('pendurado'), 'teste');
     const comecou = Date.now();
-    const r = await reg.sondarVarios([
+    const r = await naCasaApify(() => reg.sondarVarios([
       { orgId: ORG, chave: 'apify', prazoMs: 200, semMemoria: true },
       { orgId: ORG, chave: 'pendurado', prazoMs: 200, semMemoria: true },
-    ]);
+    ]));
     expect(Date.now() - comecou).toBeLessThan(2_000);
     expect(r.get('apify')?.estado).toBe('conectado');
     expect(r.get('pendurado')?.estado).toBe('erro');

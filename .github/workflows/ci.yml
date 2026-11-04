@@ -2550,7 +2550,8 @@ jobs:
           # `AgendaRegraTexto`, `AgendaConvite`) entraram no registro de alvos
           # como `tenant`, com semente nas duas empresas: +14 casos. O piso
           # sobe 12, para 293.
-          PISO_CASOS_ISOLAMENTO: '293'
+          # Papel restrito e registro das sentinelas, 04/11/2026: 593 casos medidos.
+          PISO_CASOS_ISOLAMENTO: '570'
         run: |
           pnpm --filter @mktos/api exec vitest run \
             --reporter=default --reporter=json \
@@ -2736,6 +2737,62 @@ jobs:
             throw new Error('A prova nomeada de sessão sob RLS não executou e passou integralmente.');
           }
           console.log('Sessão sob RLS: caso obrigatório executado e aprovado.');
+          JS
+
+      - name: Marketing por HTTP com papel restrito
+        env:
+          MKTOS_CONJUNTO_DE_TESTES: marketing-rls
+          RESUMO_MARKETING_RLS: ${{ runner.temp }}/marketing-rls.json
+        run: |
+          pnpm --filter @mktos/api exec vitest run --maxWorkers=1 \
+            --reporter=default --reporter=json --outputFile.json="$RESUMO_MARKETING_RLS"
+          node <<'JS'
+          const fs = require('node:fs');
+          const r = JSON.parse(fs.readFileSync(process.env.RESUMO_MARKETING_RLS, 'utf8'));
+          const arquivos = r.testResults.filter(a => a.name.endsWith('/test/marketing-rls-http.test.ts'));
+          if (r.success !== true || r.numFailedTests !== 0 || r.numPendingTests !== 0 ||
+              r.numPassedTests !== r.numTotalTests || arquivos.length !== 1 ||
+              arquivos[0].assertionResults.length < 10 || arquivos[0].assertionResults.some(c => c.status !== 'passed')) {
+            throw new Error('As dez provas HTTP de Marketing com RLS precisam executar sem pulos.');
+          }
+          console.log(`Marketing RLS: ${r.numPassedTests} testes aprovados.`);
+          JS
+
+      - name: Automações, provisionamento, trilho e Bio com papel restrito
+        env:
+          MKTOS_CONJUNTO_DE_TESTES: padrao
+          MKTOS_TESTAR_TRILHO_RLS: '1'
+          RESUMO_PAPEL: ${{ runner.temp }}/papel-restrito.json
+        run: |
+          pnpm --filter @mktos/api exec vitest run --maxWorkers=1 \
+            test/bio-oauth-papel-restrito.test.ts test/provisionamento-papel-restrito.test.ts \
+            test/papel-restrito-catalogo.test.ts test/papel-restrito-boot.test.ts \
+            test/rls-automacoes-contexto.test.ts test/rls-automacoes-postgres.test.ts test/trilho-provisionamento-escopo.test.ts \
+            --reporter=default --reporter=json --outputFile.json="$RESUMO_PAPEL"
+          node <<'JS'
+          const fs = require('node:fs');
+          const r = JSON.parse(fs.readFileSync(process.env.RESUMO_PAPEL, 'utf8'));
+          const pisos = {
+            'bio-oauth-papel-restrito.test.ts': 7,
+            'provisionamento-papel-restrito.test.ts': 7,
+            'papel-restrito-catalogo.test.ts': 2,
+            'papel-restrito-boot.test.ts': 10,
+            'rls-automacoes-contexto.test.ts': 9,
+            'rls-automacoes-postgres.test.ts': 5,
+            'trilho-provisionamento-escopo.test.ts': 5,
+          };
+          if (r.success !== true || r.numFailedTests !== 0 || r.numPendingTests !== 0 ||
+              r.numPassedTests !== r.numTotalTests || r.numTotalTests < 45) {
+            throw new Error('As provas do papel restrito precisam passar integralmente.');
+          }
+          for (const [nome, piso] of Object.entries(pisos)) {
+            const arquivos = r.testResults.filter(a => a.name.endsWith('/test/' + nome));
+            if (arquivos.length !== 1 || arquivos[0].assertionResults.length < piso ||
+                arquivos[0].assertionResults.some(c => c.status !== 'passed')) {
+              throw new Error(`A prova ${nome} precisa executar ao menos ${piso} casos sem pulos.`);
+            }
+          }
+          console.log(`Papel restrito: ${r.numPassedTests} testes aprovados em ${Object.keys(pisos).length} arquivos.`);
           JS
 
   # ---------------------------------------------------------------------------

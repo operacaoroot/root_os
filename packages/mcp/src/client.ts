@@ -1,5 +1,5 @@
 // Cliente da API do ROOT OS para o MCP, com DUAS identidades:
-//  - a conta de SERVIÇO (`ia_servico`, só leitura): as 35 ferramentas de consulta, como sempre;
+//  - a conta de SERVIÇO (`ia_servico`, só leitura): usada apenas quando não há operador;
 //  - o OPERADOR (uma pessoa, com e-mail e senha do OS): as ferramentas que escrevem em nome de gente,
 //    como a bancada da área do cliente, cujas rotas recusam conta de máquina (`SoGenteGuard`).
 // As duas passam pela API (RBAC, porta, auditoria). A IA nunca toca o banco direto.
@@ -13,7 +13,12 @@ const API_URL = process.env.MCP_API_URL ?? 'http://localhost:4001/api';
 const EMAIL = process.env.MCP_SERVICE_EMAIL ?? 'mcp@marketing-os.local';
 // Sem senha default (constituição): falha claro se a env não vier.
 const PASSWORD = process.env.MCP_SERVICE_PASSWORD;
-if (!PASSWORD) {
+const OPERADOR_EMAIL = process.env.MCP_OPERADOR_EMAIL;
+const OPERADOR_SENHA = process.env.MCP_OPERADOR_SENHA;
+if (Boolean(OPERADOR_EMAIL) !== Boolean(OPERADOR_SENHA)) {
+  throw new Error('Identidade do operador incompleta: informe MCP_OPERADOR_EMAIL e MCP_OPERADOR_SENHA juntos.');
+}
+if (!PASSWORD && !OPERADOR_EMAIL) {
   throw new Error('MCP_SERVICE_PASSWORD ausente — defina a senha da conta de serviço do MCP (sem default no código).');
 }
 
@@ -114,11 +119,11 @@ function tipoPeloNome(nome: string): string {
   return ({ pdf: 'application/pdf', png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', webp: 'image/webp', gif: 'image/gif', mp4: 'video/mp4', mp3: 'audio/mpeg', m4a: 'audio/mp4', ogg: 'audio/ogg', txt: 'text/plain', md: 'text/markdown', json: 'application/json', csv: 'text/csv', docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' } as Record<string, string>)[ext] ?? 'application/octet-stream';
 }
 
-const servico = criarCliente('conta de serviço', EMAIL, PASSWORD);
+const servico = PASSWORD ? criarCliente('conta de serviço', EMAIL, PASSWORD) : null;
 
-/** Leitura com a conta de serviço (as 35 ferramentas de consulta). */
+/** As ferramentas antigas usam a mesma identidade das leituras genéricas. */
 export async function apiGet<T = unknown>(path: string): Promise<T> {
-  return servico.get<T>(path);
+  return leitor().get<T>(path);
 }
 
 export const RECUSA_SEM_OPERADOR =
@@ -129,8 +134,8 @@ let operadorCache: ClienteDaApi | null = null;
 /** O cliente em nome do operador (gente). Lança com a frase do que configurar quando não há identidade. */
 export function operador(): ClienteDaApi {
   if (operadorCache) return operadorCache;
-  const email = process.env.MCP_OPERADOR_EMAIL;
-  const senha = process.env.MCP_OPERADOR_SENHA;
+  const email = OPERADOR_EMAIL;
+  const senha = OPERADOR_SENHA;
   if (!email || !senha) throw new Error(RECUSA_SEM_OPERADOR);
   operadorCache = criarCliente(`operador ${email}`, email, senha);
   return operadorCache;
@@ -138,11 +143,13 @@ export function operador(): ClienteDaApi {
 
 /** Quem LÊ: o operador quando configurado (vê o que a pessoa vê), senão a conta de serviço. */
 export function leitor(): ClienteDaApi {
-  return temOperador() ? operador() : servico;
+  if (temOperador()) return operador();
+  if (!servico) throw new Error('Identidade de leitura do MCP ausente.');
+  return servico;
 }
 
 export function temOperador(): boolean {
-  return Boolean(process.env.MCP_OPERADOR_EMAIL && process.env.MCP_OPERADOR_SENHA);
+  return Boolean(OPERADOR_EMAIL && OPERADOR_SENHA);
 }
 
 export function qs(params: Record<string, string | number | boolean | undefined>): string {

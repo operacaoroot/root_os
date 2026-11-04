@@ -18,6 +18,7 @@ import { LinkPublicoService } from '../src/onboarding/trilho/link-publico.servic
 import { SLUG_DA_ROTINA_DO_RELOGIO, TIPO_DA_ROTINA_DO_RELOGIO, TrilhoService } from '../src/onboarding/trilho/trilho.service';
 import type { PrismaService } from '../src/prisma/prisma.service';
 import { ModulosService } from '../src/tenants/modulos.service';
+import { provisionarTenant } from '../src/tenants/provisionar';
 import { ProvisionamentoService } from '../src/tenants/provisionar.service';
 import { exigirBancoDescartavel } from './banco-de-teste';
 
@@ -147,7 +148,12 @@ describe.skipIf(!URL)('o trilho de onboarding, de ponta a ponta', () => {
     const memoria = new MemoriaService(p, eventos);
     const provisionamento = new ProvisionamentoService(p, eventos, auditoria, new ModulosService(p));
     modelo = new ModeloDuble();
-    trilhos = new TrilhoService(p, memoria, eventos, provisionamento);
+    // O banco é compartilhado entre suites. Esta origem sintética não toma o slug root.
+    // O teste de fronteira do provisionamento cobre a sessão ROOT com o papel restrito.
+    const provisionamentoDaBancada: Pick<ProvisionamentoService, 'provisionar'> = {
+      provisionar: (entrada) => provisionarTenant(prisma, entrada),
+    };
+    trilhos = new TrilhoService(p, memoria, eventos, provisionamentoDaBancada as ProvisionamentoService);
     leitura = new LeituraDaAtaService(modelo, trilhos, p);
     link = new LinkPublicoService(p, trilhos, transcricaoDuble as never);
 

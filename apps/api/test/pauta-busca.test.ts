@@ -1,3 +1,4 @@
+import { bancoApifyDaCasa, naCasaApify } from './apify-fixture';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { BadRequestException } from '@nestjs/common';
 import { ActorType, Prisma, type PautaFonte } from '@prisma/client';
@@ -304,7 +305,7 @@ describe('busca da pauta: o actor do Google no Apify', () => {
       });
     });
 
-    const r = await new ApifyService().buscarNoGoogle('ia\npequenas   empresas', { resultados: 500, dias: 7 });
+    const r = await naCasaApify(() => new ApifyService(undefined, bancoApifyDaCasa).buscarNoGoogle('ia\npequenas   empresas', { resultados: 500, dias: 7 }));
 
     expect(pedidos[0].url).toContain('/acts/apify~google-search-scraper/run-sync-get-dataset-items');
     expect(pedidos[0].corpo).toEqual({
@@ -323,7 +324,7 @@ describe('busca da pauta: o actor do Google no Apify', () => {
     delete process.env.APIFY_TOKEN;
     const fetchFalso = vi.fn();
     vi.stubGlobal('fetch', fetchFalso);
-    await expect(new ApifyService().buscarNoGoogle('ia', { resultados: 10, dias: 7 })).rejects.toThrow(/APIFY_TOKEN ausente/);
+    await expect(naCasaApify(() => new ApifyService(undefined, bancoApifyDaCasa).buscarNoGoogle('ia', { resultados: 10, dias: 7 }))).rejects.toThrow(/APIFY_TOKEN ausente/);
     expect(fetchFalso).not.toHaveBeenCalled();
   });
 });

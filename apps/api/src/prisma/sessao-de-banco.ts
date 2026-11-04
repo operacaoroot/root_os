@@ -418,12 +418,8 @@ export class CoberturaDePlataformaIncompletaError extends Error {
         'Sob a policy essas consultas não lançam: devolvem ZERO LINHA, em silêncio. Na prática o ' +
         'login vira "credenciais inválidas" para todo mundo e nada aparece no log.\n\n' +
         faltando.map((c) => `  · ${c.arquivo}\n      ${c.porQue}`).join('\n') +
-        '\n\nDois caminhos, e o primeiro é o certo:\n' +
-        '  1. declare o contexto nesses arquivos e acrescente cada um a ' +
-        '`CHAMADORES_DE_PLATAFORMA`;\n' +
-        '  2. para voltar ao estado anterior AGORA, tire `DB_APP_USER`/`DB_APP_PASSWORD` (ou ' +
-        '`APP_DATABASE_URL`) e recrie o container: a aplicação volta a conectar como dona e o ' +
-        'isolamento fica inerte, exatamente como antes.',
+        '\n\nDeclare e teste os caminhos antes de publicar. A recuperação deve manter ' +
+        'mktos_app e TENANT_MODO=impor; não restaure uma conexão privilegiada.',
     );
     this.name = 'CoberturaDePlataformaIncompletaError';
   }
@@ -500,69 +496,56 @@ export async function anunciarPapel(
   registrar: (mensagem: string) => void,
   avisar: (mensagem: string) => void = registrar,
 ): Promise<void> {
-  let inerte: boolean | null = null;
-
+  type Papel = {
+    papel: string; bypassa: boolean; superusuario: boolean; dono: string;
+    herdaPrivilegio: boolean; possuiTabela: boolean; tabelasSemRls: string[];
+    criaNoSchema: boolean; podeTruncar: boolean;
+  };
+  let papel: Papel | undefined;
   try {
-    const [r] = await base.$queryRawUnsafe<
-      Array<{ papel: string; bypassa: boolean; superusuario: boolean; dono: string }>
-    >(
-      `SELECT current_user::text                                   AS papel,
-              COALESCE(r.rolbypassrls, false)                      AS bypassa,
-              COALESCE(r.rolsuper, false)                          AS superusuario,
-              COALESCE(pg_get_userbyid(c.relowner)::text, '?')     AS dono
-         FROM (SELECT 1) _
-         LEFT JOIN pg_roles r ON r.rolname = current_user
-         LEFT JOIN pg_class c ON c.relname = 'Org' AND c.relkind = 'r'`,
-    );
-
-    if (r) {
-      const ehDono = r.papel === r.dono;
-      /*
-       * QUEM DE FATO IGNORA POLICY é só `rolsuper` ou `rolbypassrls`. Ser DONO
-       * NÃO basta: as tabelas nascem com FORCE ROW LEVEL SECURITY, e FORCE vale
-       * para o dono também — foi o defeito que a fatia do COFRE provou em
-       * `cofre/rotacao.service.ts` e que esta onda consertou também no expurgo
-       * do rastro (`audit/expurgo.service.ts`).
-       *
-       * `inerte` CONTINUA somando `ehDono` de propósito, e a decisão é de
-       * direção: `inerte` só afrouxa (`conferirCoberturaDePlataforma` deixa
-       * subir com caminho de plataforma em aberto). Tirar o dono daqui faria a
-       * API RECUSAR SUBIR em qualquer ambiente cujo dono não seja superusuário —
-       * troca de um risco anotado por uma queda presente, e num arquivo de outra
-       * onda. Fica anotado; a MENSAGEM é que não pode mentir sobre o motivo, e
-       * por isso o motivo real vem primeiro.
-       */
-      inerte = ehDono || r.bypassa || r.superusuario;
-      const porque = r.superusuario
-        ? 'o papel é SUPERUSER'
-        : r.bypassa
-          ? 'o papel tem BYPASSRLS'
-          : 'o papel é DONO das tabelas — e ATENÇÃO: dono sozinho NÃO ignora policy sob ' +
-            'FORCE ROW LEVEL SECURITY; consulta de plataforma feita por este papel pode voltar vazia';
-      registrar(
-        `[tenant] conectado como "${r.papel}" (dono das tabelas: "${r.dono}") · modo=${modo} · ` +
-          `GUC=${GUC_TENANT} · ` +
-          (inerte
-            ? `ISOLAMENTO POR LINHA INERTE: ${porque}. ` +
-              `Provisione ${PAPEL_DE_APLICACAO} (DB_APP_USER/DB_APP_PASSWORD).`
-            : 'papel restrito — a policy de linha vale para esta conexão.'),
-      );
-    }
-  } catch (e) {
-    // Diagnóstico nunca derruba o boot.
-    registrar(`[tenant] não deu para descobrir o papel da conexão: ${(e as Error).message}`);
+    [papel] = await base.$queryRawUnsafe<Papel[]>(`
+      SELECT current_user::text AS papel, r.rolbypassrls AS bypassa,
+             r.rolsuper AS superusuario,
+             (SELECT pg_get_userbyid(relowner)::text FROM pg_class
+                WHERE oid = 'public."Org"'::regclass) AS dono,
+             (r.rolcreaterole OR r.rolcreatedb OR r.rolreplication OR EXISTS (
+               SELECT 1 FROM pg_roles outro WHERE outro.oid <> r.oid
+                 AND pg_has_role(current_user, outro.oid, 'MEMBER')
+             )) AS "herdaPrivilegio",
+             EXISTS (SELECT 1 FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace
+               WHERE n.nspname='public' AND c.relkind IN ('r','p')
+                 AND c.relowner=r.oid) AS "possuiTabela",
+             (has_schema_privilege(current_user,'public','CREATE') OR
+               has_database_privilege(current_user,current_database(),'CREATE')) AS "criaNoSchema",
+             EXISTS (SELECT 1 FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace
+               WHERE n.nspname='public' AND c.relkind IN ('r','p')
+                 AND has_table_privilege(current_user,c.oid,'TRUNCATE')) AS "podeTruncar",
+             ARRAY(SELECT c.relname::text FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace
+               WHERE n.nspname='public' AND c.relkind IN ('r','p')
+                 AND (NOT c.relrowsecurity OR NOT c.relforcerowsecurity)
+                 AND has_table_privilege(current_user,c.oid,'SELECT,INSERT,UPDATE,DELETE,TRUNCATE')
+               ORDER BY c.relname) AS "tabelasSemRls"
+        FROM pg_roles r WHERE r.rolname=current_user
+    `);
+  } catch {
+    // Erros de drivers podem conter a URL. Não registrar credenciais no diagnóstico.
+    if (modo === 'impor') throw new Error('Papel restrito não comprovado: consulta ao catálogo falhou.');
+    avisar('[tenant] não foi possível conferir o papel da conexão.');
   }
 
-  // Não deu para descobrir o papel: sem base para recusar nem para absolver.
-  // Grita se houver dívida e deixa o boot seguir — recusar aqui derrubaria a API
-  // por uma consulta de catálogo que falhou, que é justamente o que o `catch`
-  // acima existe para evitar.
-  if (inerte === null) {
-    const { faltando } = conferirCoberturaDePlataforma(true);
-    if (faltando.length > 0) avisar(avisoDeCoberturaPendente(faltando));
-    return;
+  const restrito = papel?.papel === PAPEL_DE_APLICACAO &&
+    papel.bypassa === false && papel.superusuario === false &&
+    papel.dono !== papel.papel && papel.herdaPrivilegio === false &&
+    papel.possuiTabela === false && papel.criaNoSchema === false && papel.podeTruncar === false && Array.isArray(papel.tabelasSemRls) &&
+    papel.tabelasSemRls.length === 0;
+  if (modo === 'impor' && !restrito) {
+    throw new Error('Papel restrito não comprovado: exige mktos_app sem privilégios elevados, ' +
+      'sem memberships, DDL, TRUNCATE ou tabelas próprias e sem acesso a tabelas sem RLS/FORCE.');
   }
-
+  const inerte = !papel || papel.superusuario || papel.bypassa || papel.dono === papel.papel;
+  if (papel) registrar(`[tenant] conectado como "${papel.papel}" · modo=${modo} · GUC=${GUC_TENANT} · ` +
+    (restrito ? 'papel restrito verificado; RLS/FORCE nas tabelas acessíveis.' :
+      'papel restrito não comprovado; diagnóstico de desenvolvimento.'));
   const { faltando, recusar } = conferirCoberturaDePlataforma(inerte);
   if (recusar) throw new CoberturaDePlataformaIncompletaError(faltando);
   if (faltando.length > 0) avisar(avisoDeCoberturaPendente(faltando));

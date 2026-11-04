@@ -37,8 +37,8 @@ import {
  *   · a SONDA DE SAÚDE, que faz `SELECT 1` e não toca tabela nenhuma
  *     (`src/health/health.controller.ts`).
  *
- * Os chamadores ligados estão registrados abaixo. Financeiro e callback Bio
- * continuam pendentes, e a lista de caminhos exigidos permanece completa.
+ * Os chamadores estão registrados abaixo. O callback Bio usa resolução pública
+ * estreita; os demais declaram o contexto de plataforma antes da descoberta.
  * A falta de contexto sob papel restrito pode devolver zero linha em vez de
  * lançar erro. Por isso as duas listas
  * abaixo (`CHAMADORES_DE_PLATAFORMA`, o que já declara;
@@ -147,6 +147,11 @@ export const CHAMADORES_DE_PLATAFORMA: readonly ChamadorDePlataforma[] = [
   { arquivo: 'src/health/health.controller.ts', porQue: 'SELECT 1 declara contexto sem acessar tabela de cliente.' },
   { arquivo: 'src/bio/bio-sync.service.ts', porQue: 'o cron enumera somente Org.id; conexões e desafios são processados por empresa.' },
   { arquivo: 'src/marketing-estudio/memoria-do-marketing.service.ts', porQue: 'a fila de memória e sua retomada executam comContextoDaEmpresaResolvida usando a organização já identificada; não abrem a sentinela nem consultam notas de outras empresas.' },
+  { arquivo: 'src/finance/finance.service.ts', porQue: 'o cron descobre Org.id e consulta conexões e saúde somente dentro da empresa.' },
+  { arquivo: 'src/bio/bio-bridge.service.ts', porQue: 'a ponte de metas descobre Org.id e processa desafios dentro da empresa.' },
+  { arquivo: 'src/routines/rotinas.scheduler.ts', porQue: 'o tique enumera Org.id antes de procurar rotinas dentro de cada empresa.' },
+  { arquivo: 'src/llm/teto-diario.service.ts', porQue: 'a expiração de reservas enumera Org.id e atualiza gastos dentro de cada empresa.' },
+  { arquivo: 'src/tenants/provisionar.service.ts', porQue: 'a operação autorizada resolve a organização ordenante antes do registro de intenção.' },
 ] as const;
 
 /**
@@ -240,7 +245,16 @@ export const CAMINHOS_DE_PLATAFORMA_EXIGIDOS: readonly ChamadorDePlataforma[] = 
       'basta (a policy dela não abre `BioOauthState`): precisa de uma resolução declarada do ' +
       'state, como a das rotas públicas.',
   },
+  { arquivo: 'src/bio/bio-bridge.service.ts', porQue: 'a ponte de metas descobre Org.id e processa desafios dentro da empresa.' },
+  { arquivo: 'src/routines/rotinas.scheduler.ts', porQue: 'o tique enumera Org.id antes de procurar rotinas dentro de cada empresa.' },
+  { arquivo: 'src/llm/teto-diario.service.ts', porQue: 'a expiração de reservas enumera Org.id e atualiza gastos dentro de cada empresa.' },
+  { arquivo: 'src/tenants/provisionar.service.ts', porQue: 'a operação autorizada resolve a organização ordenante antes do registro de intenção.' },
 ] as const;
+
+/** Resolução pública estreita, sem conceder a sentinela geral de plataforma. */
+export const CHAMADORES_DE_RESOLUCAO_PUBLICA: readonly ChamadorDePlataforma[] = [
+  { arquivo: 'src/bio/bio-oauth.controller.ts', porQue: 'resolve state por função limitada e consome uma vez dentro da empresa encontrada.' },
+];
 
 /**
  * O que ainda falta declarar. Vazio = a virada para o papel restrito está
@@ -249,7 +263,7 @@ export const CAMINHOS_DE_PLATAFORMA_EXIGIDOS: readonly ChamadorDePlataforma[] = 
  * Compara por caminho de arquivo, que é a chave das duas listas.
  */
 export function caminhosDePlataformaFaltando(
-  declarados: readonly ChamadorDePlataforma[] = CHAMADORES_DE_PLATAFORMA,
+  declarados: readonly ChamadorDePlataforma[] = [...CHAMADORES_DE_PLATAFORMA, ...CHAMADORES_DE_RESOLUCAO_PUBLICA],
   exigidos: readonly ChamadorDePlataforma[] = CAMINHOS_DE_PLATAFORMA_EXIGIDOS,
 ): ChamadorDePlataforma[] {
   const jaDeclarados = new Set(declarados.map((c) => c.arquivo));

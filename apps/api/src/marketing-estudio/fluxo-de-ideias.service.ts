@@ -77,7 +77,7 @@ export class FluxoDeIdeiasService implements OnModuleInit {
       this.triagem.contagem(orgId),
       this.prisma.marketingIdeiaCard.count({ where: { orgId, status: 'aprovada', decididaEm: { gte: semana } } }),
       this.triagem.resumoDoPainel(orgId),
-      this.memoria.usoDoApify().catch(() => ({ uso: null, configurado: false })),
+      this.memoria.usoDoApify(orgId).catch(() => ({ uso: null, configurado: false })),
     ]);
     const conta = (s: keyof typeof contagem) => contagem[s];
     const perfis = fontes.filter((f) => f.tipo === 'perfil' || f.tipo === 'busca');

@@ -464,3 +464,13 @@ export async function resolverTenantDoDocumento(
   );
   return d && d.orgId ? { documentoId: d.id, leadId: d.leadId, orgId: d.orgId } : null;
 }
+
+/** Descobre só o endereço do state OAuth. Conteúdo e consumo exigem a empresa resolvida. */
+export async function resolverTenantDoEstadoBio(
+  prisma: PrismaClient, estado: string,
+): Promise<{ id: string; orgId: string } | null> {
+  const linhas = await sobASentinela(() => prisma.$queryRaw<Array<{ id: string; orgId: string }>>`
+    SELECT id, "orgId" FROM public.app_resolver_bio_oauth(${estado})
+  `);
+  return linhas[0] ?? null;
+}

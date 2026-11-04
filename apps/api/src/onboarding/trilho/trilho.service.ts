@@ -25,6 +25,7 @@ import { MemoriaService } from '../../memory/memoria.service';
 import { proximaOcorrencia } from '../../pauta/cron';
 import { PrismaService } from '../../prisma/prisma.service';
 import { LIVRE } from '../../routines/rotina.tipos';
+import { SLUG_DA_PLATAFORMA } from '../../tenants/provisionar';
 import { ProvisionamentoService } from '../../tenants/provisionar.service';
 import { comSufixo, slugDaEmpresa } from '../cadastro';
 import { espelharNoIndice } from '../indice';
@@ -1028,7 +1029,10 @@ export class TrilhoService {
 
   async provisionarEmpresa(orgId: string, trilhoId: string, quem: Quem): Promise<TrilhoCompleto> {
     const t = await this.exigirTrilho(orgId, trilhoId);
-    if (t.empresaId) return this.obter(orgId, trilhoId);
+    if (t.empresaId) {
+      await this.naEmpresaDoTrilho(t, async () => undefined);
+      return this.obter(orgId, trilhoId);
+    }
     const resultado = await this.provisionamento.provisionar(
       {
         slug: t.slug,
@@ -1039,16 +1043,85 @@ export class TrilhoService {
       },
       { tipo: 'user', id: quem.id, origem: 'http' },
     );
-    await this.prisma.onboardingTrilho.update({ where: { id: trilhoId }, data: { empresaId: resultado.orgId } });
-    await this.marco(
-      orgId,
-      trilhoId,
-      'empresa.provisionada',
-      `${t.cliente} existe no OS (${resultado.slug})${resultado.criada ? '' : ' — já existia'}.`,
-      { empresaId: resultado.orgId, criada: resultado.criada },
-      quem,
-    );
+    const tipo = 'empresa.provisionada';
+    const texto = `${t.cliente} existe no OS (${t.slug}).`;
+    const dados = { empresaId: resultado.orgId, criada: true };
+    if (resultado.criada && resultado.orgId !== orgId && resultado.slug === t.slug && t.slug !== SLUG_DA_PLATAFORMA) {
+      const marcoId = await this.prisma.$transaction(async (tx) => {
+        const vinculo = await tx.onboardingTrilho.updateMany({
+          where: { id: trilhoId, orgId, slug: t.slug, empresaId: null },
+          data: { empresaId: resultado.orgId },
+        });
+        if (!vinculo.count) return null;
+        const marco = await tx.onboardingMarco.create({
+          data: { orgId, trilhoId, tipo, texto, dados, quem: quem.nome },
+          select: { id: true },
+        });
+        return marco.id;
+      });
+      if (marcoId) {
+        const eventoId = await this.registrarEventoDoMarco(orgId, trilhoId, tipo, texto, dados, quem);
+        if (eventoId) await this.prisma.onboardingMarco.update({ where: { id: marcoId }, data: { eventoId } });
+        return this.obter(orgId, trilhoId);
+      }
+    }
+
+    // Um pedido concorrente pode ter gravado o vínculo e a prova juntos.
+    const atual = await this.exigirTrilho(orgId, trilhoId);
+    if (!atual.empresaId) {
+      throw new ConflictException('Não foi possível vincular uma nova empresa a este trilho. Confira se o identificador já está em uso.');
+    }
+    await this.naEmpresaDoTrilho(atual, async () => undefined);
     return this.obter(orgId, trilhoId);
+  }
+
+  /**
+   * Só a criação registrada no próprio trilho autoriza a passagem para o
+   * contexto do cliente. Coincidência de slug e vínculos antigos sem essa
+   * prova não autorizam consulta nem escrita.
+   */
+  async naEmpresaDoTrilho<T>(
+    t: Pick<OnboardingTrilho, 'id' | 'orgId' | 'slug' | 'empresaId'>,
+    executar: (empresaId: string) => Promise<T>,
+  ): Promise<T> {
+    const { id, orgId, slug, empresaId } = t;
+    const contexto = contextoAtual();
+    const semVinculo = () => new ConflictException('O vínculo deste trilho com a empresa do cliente precisa ser conferido.');
+    if (!contexto || contexto.orgId !== orgId || !empresaId || empresaId === orgId || slug === SLUG_DA_PLATAFORMA) {
+      throw semVinculo();
+    }
+    const prova = await this.prisma.onboardingMarco.findFirst({
+      where: {
+        orgId,
+        trilhoId: id,
+        tipo: 'empresa.provisionada',
+        trilho: { orgId, empresaId, slug },
+        AND: [
+          { dados: { path: ['empresaId'], equals: empresaId } },
+          { dados: { path: ['criada'], equals: true } },
+        ],
+      },
+      select: { id: true },
+    });
+    if (!prova) throw semVinculo();
+
+    return comContexto(
+      {
+        orgId: empresaId,
+        actorType: 'system',
+        actorId: null,
+        correlationId: contexto.correlationId,
+        origem: contexto.origem ?? 'http',
+      },
+      async () => {
+        const empresa = await this.prisma.org.findUnique({
+          where: { id: empresaId },
+          select: { slug: true, isActive: true },
+        });
+        if (!empresa?.isActive || empresa.slug !== slug) throw semVinculo();
+        return executar(empresaId);
+      },
+    );
   }
 
   /**
@@ -1083,20 +1156,14 @@ export class TrilhoService {
      * escrita depois, de volta no contexto de quem chamou.
      */
     // As notas que nasceram da conversa (marco `ata.notas`, o mais recente) também entram.
-    const marcoDaAta = await this.prisma.onboardingMarco.findFirst({ where: { trilhoId, tipo: 'ata.notas' }, orderBy: { em: 'desc' } });
+    const marcoDaAta = await this.prisma.onboardingMarco.findFirst({ where: { orgId, trilhoId, tipo: 'ata.notas' }, orderBy: { em: 'desc' } });
     const notasDaConversa = marcoDaAta ? notasDaConversaDe(marcoDaAta.dados) : [];
 
     const gravadas: { itemId: string; notaId: string }[] = [];
     let daConversa = 0;
-    await comContexto(
-      {
-        orgId: empresaId,
-        actorType: 'system',
-        actorId: null,
-        correlationId: contextoAtual()?.correlationId ?? novaCorrelacao('onboarding'),
-        origem: contextoAtual()?.origem ?? 'http',
-      },
-      async () => {
+    await this.naEmpresaDoTrilho(
+      t,
+      async (empresaId) => {
         for (const i of paraCarregar) {
           const tema = temaDaEspinha(i.temaId);
           if (!tema) continue;
@@ -1353,22 +1420,7 @@ export class TrilhoService {
     dados: Record<string, unknown>,
     quem: Quem,
   ): Promise<void> {
-    let eventoId: string | null = null;
-    try {
-      const linha = await this.eventos.registrar({
-        orgId,
-        tipo: `onboarding.${tipo}`,
-        actorType: quem.id ? 'user' : 'system',
-        actorId: quem.id,
-        nivel: RiskLevel.R1,
-        correlationId: contextoAtual()?.correlationId ?? null,
-        conteudo: { argumentos: { trilhoId, texto: textoDoMarco, ...dados } },
-        sensibilidade: 'interna',
-      });
-      eventoId = linha.id;
-    } catch (e) {
-      this.log.warn(`marco "${tipo}" do trilho ${trilhoId} ficou sem evento no RASTRO: ${(e as Error).message}`);
-    }
+    const eventoId = await this.registrarEventoDoMarco(orgId, trilhoId, tipo, textoDoMarco, dados, quem);
     await this.prisma.onboardingMarco.create({
       data: {
         orgId,
@@ -1380,6 +1432,32 @@ export class TrilhoService {
         eventoId,
       },
     });
+  }
+
+  private async registrarEventoDoMarco(
+    orgId: string,
+    trilhoId: string,
+    tipo: string,
+    texto: string,
+    dados: Record<string, unknown>,
+    quem: Quem,
+  ): Promise<string | null> {
+    try {
+      const linha = await this.eventos.registrar({
+        orgId,
+        tipo: `onboarding.${tipo}`,
+        actorType: quem.id ? 'user' : 'system',
+        actorId: quem.id,
+        nivel: RiskLevel.R1,
+        correlationId: contextoAtual()?.correlationId ?? null,
+        conteudo: { argumentos: { trilhoId, texto, ...dados } },
+        sensibilidade: 'interna',
+      });
+      return linha.id;
+    } catch (e) {
+      this.log.warn(`marco "${tipo}" do trilho ${trilhoId} ficou sem evento no RASTRO: ${(e as Error).message}`);
+      return null;
+    }
   }
 
   // ==========================================================================
