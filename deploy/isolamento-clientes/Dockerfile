@@ -12,6 +12,7 @@ COPY apps/api/src/auth/auth.controller.ts apps/api/src/auth/jwt-auth.guard.ts ap
 COPY apps/api/src/tenants/modulos.ts apps/api/src/tenants/modulos.ts
 COPY apps/api/src/scripts/cofre-deposito.ts apps/api/src/scripts/cofre-classificar-deposito.ts apps/api/src/scripts/
 COPY apps/web/src/app/cofre/ apps/web/src/app/cofre/
+COPY apps/api/test/ apps/api/test/
 RUN export NODE_OPTIONS=--max-old-space-size=4096 \
  && pnpm --filter @mktos/api db:generate \
  && pnpm --filter @mktos/api build \
