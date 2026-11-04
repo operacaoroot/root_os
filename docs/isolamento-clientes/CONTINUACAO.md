@@ -34,4 +34,4 @@ Produção permanece com papel superusuário e `TENANT_MODO=observar`. Estes lot
 
 ## Estado
 
-Em desenvolvimento e validação. Nenhuma publicação destes lotes foi declarada neste documento. O resultado final será registrado após os testes e a conferência do runtime.
+Recortes dos lotes 2 e 3 publicados em 04/11/2026 às 13h50 (BRT), revisão funcional `6fea2fdb1477b00686ad4ea00d25265e1b429c1c`. API e web conferidas; cofre e depósito JUMA preservados. Resultado, testes, recuperação e limites do CI em `VALIDACAO-LOTES-2-3.md`. Os métodos ainda contidos e as dependências seguintes permanecem pendentes conforme descrito acima.
