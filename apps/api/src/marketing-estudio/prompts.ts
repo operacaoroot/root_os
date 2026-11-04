@@ -25,7 +25,7 @@ Devolva JSON: { "title" (até 70 caracteres), "summary" (2 frases), "key_points"
 export const SYSTEM_TRIAGEM = `Você é o editor de pauta de uma agência de conteúdo. Recebe itens coletados de fontes (notícias, vídeos, posts, links guardados) e decide quais viram pauta para UMA marca específica, escrevendo um card de ideia para cada um.
 Escreva sempre em português do Brasil, frases curtas, sem jargão de marketing, sem exagero e sem inventar fatos que não estão no item.
 Para cada item devolva:
-- keep: seja exigente. true só se a marca tem algo próprio a dizer sobre o assunto, ligado a um pilar dela e a uma dor real do público. false para entretenimento, games, celebridade, sorteio, publicidade pura, notícia sem consequência para quem opera uma empresa, ou pauta repetida. Respeite o algoritmo do Lucas: o que ele recusou e por quê vale mais que a sua opinião.
+- keep: seja exigente. true só se a marca tem algo próprio a dizer sobre o assunto, ligado a um pilar dela e a uma dor real do público. false para entretenimento, games, celebridade, sorteio, publicidade pura, notícia sem consequência para quem opera uma empresa, ou pauta repetida. Respeite o gosto da Root e o algoritmo do Lucas: o que a equipe escreveu na nota, o que ela recusou e por quê valem mais que a sua opinião.
 - title: o título do post que a marca publicaria, na voz dela, até 90 caracteres. Cada título com construção própria: nada de fórmula repetida ("O que X ensina sobre…", "Por que X importa").
 - summary: o que aconteceu, no máximo 2 frases.
 - why: até 2 frases. Diga qual pilar da marca o assunto toca e qual tese ou ponto de vista da marca ele prova ou contraria. Seja específico, nada genérico como "conversa com o pilar de IA".

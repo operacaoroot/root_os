@@ -9,6 +9,7 @@ import { proximaOcorrencia } from '../pauta/cron';
 import { MemoriaDoMarketingService } from './memoria-do-marketing.service';
 import { TriagemService } from './triagem.service';
 import { SLUG_DA_IA_DAS_IDEIAS, TIPO_DA_IA_DAS_IDEIAS, garantirRotinaDasIdeias } from './rotina-das-ideias';
+import { GostoDaRootService } from './gosto-da-root.service';
 
 /** Quantos itens a IA lê por passagem (lotes de 4). */
 const POR_PASSAGEM = 200;
@@ -32,6 +33,7 @@ export class FluxoDeIdeiasService implements OnModuleInit {
     private readonly triagem: TriagemService,
     private readonly memoria: MemoriaDoMarketingService,
     @Optional() private readonly executores?: ExecutoresDeRotinaRegistry,
+    @Optional() private readonly gosto?: GostoDaRootService,
   ) {}
 
   onModuleInit(): void {
@@ -40,16 +42,21 @@ export class FluxoDeIdeiasService implements OnModuleInit {
 
   async passagem(ctx: Pick<ContextoDaRotina, 'orgId'>): Promise<ResultadoDaRotina> {
     try {
+      // 04/11/2026: antes de ler, o "Gosto da Root" do Obsidian é refeito se houve decisão nova
+      // (a IA lê a nota já com o resumo de todas as decisões). Nunca derruba a passagem.
+      const gosto = this.gosto ? await this.gosto.atualizarResumo(ctx.orgId) : 'sem-drive';
+      const doGosto = gosto === 'resumido' ? 'Gosto da Root atualizado' : gosto === 'falhou' ? 'o resumo do Gosto da Root falhou' : '';
       const relidas = await this.triagem.reler(ctx.orgId);
       const novas = await this.triagem.montar(ctx.orgId, POR_PASSAGEM);
       const falharam = relidas.falharam + novas.falharam;
-      if (!novas.lidos && !relidas.lidos && !novas.reserva) return { status: 'ok', resumo: 'Nada novo para ler.' };
+      if (!novas.lidos && !relidas.lidos && !novas.reserva) return { status: 'ok', resumo: doGosto ? `Nada novo para ler; ${doGosto}.` : 'Nada novo para ler.' };
       const partes = [
         `${novas.cards} ${novas.cards === 1 ? 'ideia nova' : 'ideias novas'} para avaliar`,
         novas.reserva ? `${novas.reserva} na Reserva (passaram das ${IDEIAS_POR_DIA} do dia)` : '',
         novas.descartados ? `${novas.descartados} fora do tema` : '',
         relidas.relidos ? `${relidas.relidos} relidas` : '',
         falharam ? `${falharam} falharam` : '',
+        doGosto,
       ].filter(Boolean);
       return { status: falharam && !novas.cards && !relidas.relidos ? 'erro' : 'ok', resumo: `${partes.join(', ')}.` };
     } catch (e) {
