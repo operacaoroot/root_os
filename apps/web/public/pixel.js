@@ -108,10 +108,28 @@
   }
 
   // --- envio ---------------------------------------------------------------
+  // Etapa 8 (#12): aparelho da equipe não conta. Abrir o site uma vez com ?mktos_equipe=1 marca este
+  // aparelho (fica no navegador); ?mktos_equipe=0 desmarca. Marcado, nenhum evento sai daqui.
+  var EQUIPE = (function () {
+    try {
+      var q = new URLSearchParams(window.location.search).get('mktos_equipe');
+      if (q === '1') window.localStorage.setItem('mktos_equipe', '1');
+      if (q === '0') window.localStorage.removeItem('mktos_equipe');
+      return window.localStorage.getItem('mktos_equipe') === '1';
+    } catch (e) { return false; }
+  })();
+
+  // De outro domínio (o site da empresa), o envio vai por fetch com CORS: o sendBeacon com JSON
+  // não passa pela conferência de origem do navegador. Na mesma origem, segue o sendBeacon.
+  var OUTRA_ORIGEM = (function () {
+    try { return new URL(ENDPOINT, window.location.href).origin !== window.location.origin; } catch (e) { return false; }
+  })();
+
   function send(payload) {
+    if (EQUIPE) return;
     var body = JSON.stringify(payload);
     try {
-      if (navigator.sendBeacon) {
+      if (navigator.sendBeacon && !OUTRA_ORIGEM) {
         var blob = new Blob([body], { type: 'application/json' });
         if (navigator.sendBeacon(ENDPOINT, blob)) return;
       }

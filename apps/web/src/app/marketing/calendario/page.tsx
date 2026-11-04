@@ -169,6 +169,7 @@ export default function CalendarioPage() {
                                 p.etapa === 'publicado' ? 'border-brand bg-brand/20' : 'border-brand bg-surface-2'
                               }`}
                             >
+                              {p.hora && <span className="font-os-mono text-[0.6rem] text-muted">{p.hora} </span>}
                               {p.numero && <span className="font-os-mono text-[0.6rem] text-muted">{p.numero} </span>}
                               {p.titulo}
                             </button>

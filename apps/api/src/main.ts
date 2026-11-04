@@ -14,6 +14,7 @@ import { instalarCorpoDaMidia } from './common/corpo-da-midia';
 import { ehTokenDeSessao } from './auth/jwt-auth.guard';
 // Rodada dos agentes (21/10/2026, CO-15): o CORS próprio do formulário do site.
 import { corsDoFormularioDoSite } from './comercial/formulario-do-site/cors';
+import { corsDoPixel } from './events/cors-do-pixel';
 
 // Credenciais PRÓPRIAS do root (isolamento): ficam em ~/.config/root/*.env,
 // nunca no repo. Carregadas AQUI sem sobrescrever o .env local da API.
@@ -66,6 +67,8 @@ async function bootstrap() {
   // Rodada dos agentes (CO-15): `/api/publico` (o formulário do site) tem CORS só para operacaoroot.com e o
   // teto do corpo, ANTES do CORS geral, que responderia o preflight sozinho. O resto da API não muda.
   app.use(`/${prefixo}/publico`, corsDoFormularioDoSite());
+  // Etapa 8 (#12): o pixel do OS no site da empresa (operacaoroot.com) envia para cá.
+  app.use(`/${prefixo}/events/track`, corsDoPixel());
   app.enableCors({
     origin: (process.env.WEB_ORIGIN ?? 'http://localhost:4000').split(','),
     credentials: true,

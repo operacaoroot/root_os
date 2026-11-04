@@ -19,7 +19,13 @@ import {
   type MaquinaPerfil,
   type MaquinaPost,
   type MaquinaPostSalvarInput,
+  horaSugerida,
 } from '@mktos/shared';
+
+/** Etapa 8 (#9): o começo do corpo do criativo, para o card mostrar o que o post diz. */
+export function previaDoPost(p: Pick<MaquinaPost, 'headline' | 'roteiro' | 'slides' | 'legenda'>): string {
+  return (p.headline || p.roteiro || p.slides[0] || p.legenda || '').replace(/\s+/g, ' ').trim();
+}
 import type { Maquina } from './useMaquina';
 import { GerarComRegua } from './GerarComRegua';
 
@@ -114,11 +120,14 @@ export function EscolherData(props: {
   titulo: string;
   inicial?: string | null;
   comLink?: boolean;
-  onEscolher: (data: string, link?: string) => void;
+  /** Etapa 8 (#6): o horário que o post já tem; sem ele, a sugestão. */
+  horaInicial?: string;
+  onEscolher: (data: string, link?: string, hora?: string) => void;
   onFechar: () => void;
 }) {
   const [data, setData] = useState(props.inicial ?? '');
   const [link, setLink] = useState('');
+  const [hora, setHora] = useState(() => props.horaInicial || horaSugerida(props.m.painel?.posts ?? []));
   const livres = useMemo(
     () => (props.m.painel ? datasLivres(props.m.painel.posts, props.m.painel.cadencia, hojeSP()) : []),
     [props.m.painel],
@@ -139,6 +148,9 @@ export function EscolherData(props: {
       )}
       <label className="com-rotulo mt-4 block">{props.comLink ? 'Dia em que foi ao ar' : 'Ou escolha o dia'}</label>
       <input type="date" value={data} onChange={(e) => setData(e.target.value)} className={`${campo} mt-1`} />
+      <label className="com-rotulo mt-3 block">{props.comLink ? 'Horário em que foi ao ar' : 'Horário'}</label>
+      <input type="time" value={hora} onChange={(e) => setHora(e.target.value)} className={`${campo} mt-1`} />
+      {!props.comLink && <p className="mt-1 text-xs text-muted">Sugestão: o horário mais usado nos posts ({horaSugerida(props.m.painel?.posts ?? [])}).</p>}
       {props.comLink && (
         <>
           <label className="com-rotulo mt-3 block">Link do post (opcional)</label>
@@ -149,7 +161,7 @@ export function EscolherData(props: {
         <button className={btn} onClick={props.onFechar}>
           Cancelar
         </button>
-        <button className={btnPrimario} disabled={!data} onClick={() => props.onEscolher(data, link || undefined)}>
+        <button className={btnPrimario} disabled={!data} onClick={() => props.onEscolher(data, link || undefined, hora)}>
           Confirmar
         </button>
       </div>
@@ -173,9 +185,10 @@ export function useLevar(m: Maquina) {
       titulo={pedido.para === 'publicado' ? `Postado: ${pedido.post.titulo}` : `Agendar: ${pedido.post.titulo}`}
       inicial={pedido.post.data ?? (pedido.para === 'publicado' ? hojeSP() : null)}
       comLink={pedido.para === 'publicado'}
+      horaInicial={pedido.post.hora}
       onFechar={() => setPedido(null)}
-      onEscolher={async (data, link) => {
-        await m.mudarEtapa(pedido.post.id, pedido.para, data, link);
+      onEscolher={async (data, link, hora) => {
+        await m.mudarEtapa(pedido.post.id, pedido.para, data, link, hora);
         setPedido(null);
       }}
     />
@@ -214,11 +227,12 @@ export function PostLinha(props: {
       <span className="w-16 shrink-0 font-os-mono text-xs text-muted">{p.numero || '—'}</span>
       <button onClick={props.onAbrir} className="min-w-0 flex-1 text-left">
         <div className="truncate font-medium hover:text-brand">{p.titulo}</div>
+        {previaDoPost(p) && <div className="mt-0.5 line-clamp-2 text-[13px] text-muted">{previaDoPost(p)}</div>}
         <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted">
           {!props.semEtapa && <EtapaChip etapa={p.etapa} />}
           <span>{p.formato}{p.subtipo ? ` · ${p.subtipo}` : ''}</span>
           {props.pilar && <span>· {props.pilar}</span>}
-          {p.data && <span className="font-os-mono">· {dataCurta(p.data)}</span>}
+          {p.data && <span className="font-os-mono">· {dataCurta(p.data)}{p.hora ? ` ${p.hora}` : ''}</span>}
           {p.prioridade === 'alta' && <span className="font-os-mono text-warn">· prioridade alta</span>}
         </div>
       </button>
@@ -314,9 +328,10 @@ export function Kanban(props: {
                 >
                   {p.numero && <div className="font-os-mono text-[0.65rem] text-muted">{p.numero}</div>}
                   <div className="font-medium leading-snug">{p.titulo}</div>
+                  {previaDoPost(p) && <div className="mt-1 line-clamp-3 text-xs text-muted">{previaDoPost(p)}</div>}
                   <div className="mt-1 text-xs text-muted">
                     {p.formato}
-                    {p.data && <span className="font-os-mono"> · {dataCurta(p.data)}</span>}
+                    {p.data && <span className="font-os-mono"> · {dataCurta(p.data)}{p.hora ? ` ${p.hora}` : ''}</span>}
                   </div>
                 </button>
               ))}
@@ -428,7 +443,7 @@ export function CampoDeDia(props: { valor: string | null; desligado?: boolean; o
 function Planejamento({ m, post: p }: { m: Maquina; post: MaquinaPost }) {
   const pode = m.editavel && p.etapa !== 'arquivado';
   return (
-    <div className="mt-4 grid gap-3 rounded-md border border-border bg-surface-2 p-3 sm:grid-cols-[1fr_9.5rem_9.5rem]">
+    <div className="mt-4 grid gap-3 rounded-md border border-border bg-surface-2 p-3 sm:grid-cols-[1fr_9.5rem_9.5rem_6.5rem]">
       <div>
         <span className="com-rotulo mb-1 block">Para quem</span>
         <PerfisDoPost valor={p.perfis} onMudar={pode ? (v) => void m.planejar(p.id, { perfis: v }) : undefined} />
@@ -440,6 +455,20 @@ function Planejamento({ m, post: p }: { m: Maquina; post: MaquinaPost }) {
       <label className="block">
         <span className="com-rotulo mb-1 block">Postar em</span>
         <CampoDeDia valor={p.data} desligado={!pode} titulo="Dia de ir ao ar" onGravar={(v) => void m.planejar(p.id, { data: v })} />
+      </label>
+      {/* Etapa 8 (#6): o horário de postar, com a sugestão quando ainda não tem. */}
+      <label className="block">
+        <span className="com-rotulo mb-1 block">Horário</span>
+        <input
+          type="time"
+          defaultValue={p.hora}
+          key={p.hora}
+          placeholder={horaSugerida(m.painel?.posts ?? [])}
+          title={p.hora ? 'Horário de ir ao ar' : `Sugestão: ${horaSugerida(m.painel?.posts ?? [])}`}
+          disabled={!pode}
+          onBlur={(e) => { if (e.target.value !== p.hora) void m.planejar(p.id, { hora: e.target.value }); }}
+          className={campo}
+        />
       </label>
     </div>
   );
