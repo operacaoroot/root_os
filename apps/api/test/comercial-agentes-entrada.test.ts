@@ -304,14 +304,20 @@ describe.skipIf(!URL)('a entrada de leads dos agentes do comercial, contra o Pos
     expect(await prisma.lead.count({ where: { orgId: ORG, phone: '5532977770001' } })).toBe(0);
   });
 
+  const mensagemIdDoLeadNovo = randomUUID();
+  const triagensDoLead = async (leadId: string) =>
+    (await prisma.leadEvent.findMany({
+      where: { orgId: ORG, leadId, type: 'whats.triada' }, select: { payload: true },
+    })).map((evento) => evento.payload);
+
   it('CO-16 lead novo: o número desconhecido vira lead pela porta (origem whatsapp), com a classe no fio', async () => {
     notas['comercial.whatsapp.triagem'] = 'ligada\nnota de teste';
-    const r = await naEmpresa(() => entrada.processar(ORG, evolucao('5532977770002', { conversation: 'Oi, quanto custa a imersão?' }), '5532977770002'));
+    const r = await naEmpresa(() => entrada.processar(ORG, evolucao('5532977770002', { conversation: 'Oi, quanto custa a imersão?' }, 'conversation', mensagemIdDoLeadNovo), '5532977770002'));
     expect(r).toBe('triagem: lead_novo');
     const lead = await prisma.lead.findFirstOrThrow({ where: { orgId: ORG, phone: '5532977770002' }, select: { id: true, name: true } });
     expect(lead.name).toBe('Contato Exemplo');
     const triada = await prisma.leadEvent.findFirstOrThrow({ where: { leadId: lead.id, type: 'whats.triada' } });
-    expect(triada.payload).toMatchObject({ classe: 'lead_novo', origem: 'modelo', destino: 'lead novo no funil' });
+    expect(triada.payload).toMatchObject({ classe: 'lead_novo', origem: 'modelo', destino: 'lead novo no funil', mensagemId: mensagemIdDoLeadNovo });
     const chamada = await prisma.toolCall.findFirstOrThrow({ where: { orgId: ORG, capabilityId: 'comercial.lead.criar', actorId: 'triagem-do-whatsapp' } });
     expect(chamada.status).toBe('executado');
     // Nada foi RESPONDIDO ao contato: a M1 do funil espera uma pessoa (R3), nada saiu.
@@ -319,17 +325,26 @@ describe.skipIf(!URL)('a entrada de leads dos agentes do comercial, contra o Pos
   });
 
   it('CO-16 dúvida de lead e cliente ativo: a mensagem do lead segue o caminho de sempre e ganha a classe no fio', async () => {
-    const duvida = await naEmpresa(() => entrada.processar(ORG, evolucao('5532977770002', { conversation: 'Sobre o boleto da proposta, vence quando?' }), '5532977770002'));
+    const mensagemDeDuvida = evolucao('5532977770002', { conversation: 'Sobre o boleto da proposta, vence quando?' });
+    const duvida = await naEmpresa(() => entrada.processar(ORG, mensagemDeDuvida, '5532977770002'));
     expect(duvida).toBe('mensagem de lead');
     const lead = await prisma.lead.findFirstOrThrow({ where: { orgId: ORG, phone: '5532977770002' }, select: { id: true } });
-    const classes = async (leadId: string) => (await prisma.leadEvent.findMany({ where: { leadId, type: 'whats.triada' }, orderBy: { occurredAt: 'asc' }, select: { payload: true } })).map((e) => (e.payload as { classe: string }).classe);
-    expect(await classes(lead.id)).toEqual(['lead_novo', 'duvida_de_lead']);
+    const triagens = await triagensDoLead(lead.id);
+    // O relógio fixo dá a mesma data aos dois eventos. Confira a classe pelo ID da mensagem.
+    expect(triagens).toHaveLength(2);
+    expect(triagens).toEqual(expect.arrayContaining([
+      expect.objectContaining({ mensagemId: mensagemIdDoLeadNovo, classe: 'lead_novo' }),
+      expect.objectContaining({ mensagemId: mensagemDeDuvida.data.key.id, classe: 'duvida_de_lead' }),
+    ]));
 
     const cliente = await prisma.lead.create({ data: { orgId: ORG, name: 'Cliente Exemplo', phone: '5532977770003' }, select: { id: true } });
     await prisma.comercialFicha.create({ data: { leadId: cliente.id, etapa: 'fechado', clienteAtivoEm: new Date() } });
-    const ativo = await naEmpresa(() => entrada.processar(ORG, evolucao('5532977770003', { conversation: 'A conciliação do mês ficou pronta?' }), '5532977770003'));
+    const mensagemDeCliente = evolucao('5532977770003', { conversation: 'A conciliação do mês ficou pronta?' });
+    const ativo = await naEmpresa(() => entrada.processar(ORG, mensagemDeCliente, '5532977770003'));
     expect(ativo).toBe('mensagem de lead');
-    expect(await classes(cliente.id)).toEqual(['cliente_ativo']);
+    expect(await triagensDoLead(cliente.id)).toEqual([
+      expect.objectContaining({ mensagemId: mensagemDeCliente.data.key.id, classe: 'cliente_ativo' }),
+    ]);
   });
 
   it('CO-16 documento: o arquivo vai ao arquivista (origem whatsapp, sem cliente = partnerId nulo); sem o binário, o motivo fica', async () => {
