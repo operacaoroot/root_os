@@ -226,3 +226,4 @@ export class RelatorioDaSemanaService implements OnModuleInit {
     return this.numeros(orgId, periodoDias, agora);
   }
 }
+
