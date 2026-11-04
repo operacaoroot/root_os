@@ -6,6 +6,7 @@ import type { LinhaDoTempoFiltros, LinhaDoTempoItem, LinhaDoTempoResposta } from
 import { apiGet } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 import { agruparPorDia, atorLegivel } from './dias';
+import { DasAreas } from './DasAreas';
 
 /*
  * ==========================================================================
@@ -114,6 +115,8 @@ export default function LinhaDoTempoPage() {
 
   return (
     <div className="space-y-5">
+      {/* Etapa 9 (F-26): o que aconteceu nas áreas vem primeiro; o histórico técnico segue abaixo. */}
+      <DasAreas />
       {/* ---------------------------------------------------------- cabeçalho */}
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div className="space-y-1">

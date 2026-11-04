@@ -1,65 +1,23 @@
 'use client';
 
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import type { MaquinaPainel, MemoriaPainel, TriagemPainel } from '@mktos/shared';
 import { apiGet } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
+import { Numero, Quadro } from '@/components/painel';
+import { dataCurta, hojeSP } from '@/components/maquina/pecas';
 
 /*
- * Marketing › INÍCIO. Cópia da Home do ROOT Estúdio (public/pages/home.js): a faixa
- * escura com "Bora <palavra>" e os quatro cartões vivos que levam para cada parte.
- * Os números vêm da Triagem, da Máquina (Banco e esteira) e da Memória.
+ * Marketing › INÍCIO (etapa 9, decisão do Lucas em 04/11/2026): o mesmo painel das outras áreas
+ * (Quadro e Numero, como o Comercial). Os números são os de antes, da Triagem, da Máquina (Banco e
+ * esteira) e da Memória; cada um abre a tela de onde vem. Nada novo é calculado no servidor.
  */
 
-const PALAVRAS = ['aprovar', 'gravar', 'revisar', 'publicar'];
-const plural = (n: number, um: string, varios: string) => `${n} ${n === 1 ? um : varios}`;
-const Seta = () => (
-  <svg className="icon" viewBox="0 0 24 24" aria-hidden="true">
-    <path d="M5 12h14M13 6l6 6-6 6" />
-  </svg>
-);
-
-function useDigitando(palavras: string[]) {
-  const [texto, setTexto] = useState(palavras[0]);
-  useEffect(() => {
-    if (typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
-    let wi = 0;
-    let ci = palavras[0].length;
-    let apagando = true;
-    let t: ReturnType<typeof setTimeout>;
-    const passo = () => {
-      const w = palavras[wi];
-      if (!apagando) {
-        ci++;
-        setTexto(w.slice(0, ci));
-        if (ci === w.length) {
-          apagando = true;
-          t = setTimeout(passo, 1600);
-          return;
-        }
-        t = setTimeout(passo, 70 + Math.random() * 60);
-      } else {
-        ci--;
-        setTexto(w.slice(0, ci));
-        if (ci === 0) {
-          apagando = false;
-          wi = (wi + 1) % palavras.length;
-          t = setTimeout(passo, 350);
-          return;
-        }
-        t = setTimeout(passo, 36);
-      }
-    };
-    t = setTimeout(passo, 1600);
-    return () => clearTimeout(t);
-  }, [palavras]);
-  return texto;
-}
-
 export default function MarketingInicioPage() {
-  const { user, token, ready, can } = useAuth();
-  const palavra = useDigitando(PALAVRAS);
+  const { token, ready, can } = useAuth();
+  const router = useRouter();
   const [triagem, setTriagem] = useState<TriagemPainel | null>(null);
   const [maquina, setMaquina] = useState<MaquinaPainel | null>(null);
   const [memoria, setMemoria] = useState<MemoriaPainel | null>(null);
@@ -71,118 +29,54 @@ export default function MarketingInicioPage() {
     void apiGet<MemoriaPainel>('/marketing/estudio/memoria', token).then(setMemoria).catch(() => undefined);
   }, [ready, token]);
 
-  if (ready && !can('pauta.ver')) return <div className="estudio"><p className="muted">Acesso insuficiente para Marketing.</p></div>;
+  if (ready && !can('pauta.ver')) return <p className="text-sm text-muted">Acesso insuficiente para Marketing.</p>;
 
-  const primeiroNome = String(user?.name ?? '').split(/\s+/)[0];
-  const paraAprovar = triagem?.contagem.nova ?? 0;
+  const hoje = hojeSP();
+  const mes = hoje.slice(0, 7);
   const posts = maquina?.posts ?? [];
-  const noBanco = posts.filter((p) => p.etapa === 'ideia').length;
-  const emProducao = posts.filter((p) => p.etapa === 'producao' || p.etapa === 'a_agendar').length;
-  const agendados = posts.filter((p) => p.etapa === 'agendado').length;
-  const hoje = new Date().toISOString().slice(0, 10);
+  const conta = (etapas: string[]) => posts.filter((p) => etapas.includes(p.etapa)).length;
+  const publicadosNoMes = posts.filter((p) => p.etapa === 'publicado' && p.data?.startsWith(mes)).length;
+  const agendadosNoMes = posts.filter((p) => p.etapa === 'agendado' && p.data?.startsWith(mes)).length;
+  const meta = maquina?.metaDoMes ?? 0;
+  const proximos = posts
+    .filter((p) => p.etapa === 'agendado' && p.data && p.data >= hoje)
+    .sort((a, b) => `${a.data}${a.hora}`.localeCompare(`${b.data}${b.hora}`))
+    .slice(0, 6);
   const notasHoje = (memoria?.notas ?? []).filter((n) => n.criadaEm.slice(0, 10) === hoje).length;
-  const resumo = [
-    paraAprovar ? (
-      <span key="a">
-        <b>{plural(paraAprovar, 'ideia', 'ideias')}</b> para aprovar
-      </span>
-    ) : (
-      <span key="a">nenhuma ideia esperando</span>
-    ),
-    emProducao ? (
-      <span key="p">
-        <b>{plural(emProducao, 'peça', 'peças')}</b> em produção
-      </span>
-    ) : (
-      <span key="p">nada em produção</span>
-    ),
-    <span key="b">
-      <b>{plural(noBanco, 'ideia', 'ideias')}</b> no Banco
-    </span>,
-  ];
-  const cta = paraAprovar ? { href: '/marketing/triagem', label: 'Aprovar ideias' } : { href: '/marketing/memoria', label: 'Abrir a Memória' };
+  const n = (v: number | null | undefined, carregado: unknown) => (carregado ? String(v ?? 0) : '…');
 
   return (
-    <div className="estudio">
-      <section className="home-hero" style={{ marginTop: 14 }}>
-        <div className="home-grid-bg" aria-hidden="true" />
-        <p className="home-eyebrow">ROOT · Marketing</p>
-        <p className="home-hello">Bem-vindo de volta{primeiroNome ? `, ${primeiroNome}` : ''}</p>
-        <h1 className="home-title">
-          Bora{' '}
-          <span className="home-tw" aria-hidden="true">
-            {palavra}
-          </span>
-          <span className="home-cur" aria-hidden="true" />
-          <span className="sr-only">criar conteúdo</span>
-        </h1>
-        <p className="home-sub">
-          Hoje você tem{' '}
-          {resumo.map((r, i) => (
-            <span key={i}>
-              {r}
-              {i < resumo.length - 1 ? ', ' : ''}
-            </span>
-          ))}
-          .
-        </p>
-        <div className="row home-hero-actions">
-          <Link className="home-btn" href={cta.href}>
-            {cta.label} <Seta />
-          </Link>
-          {notasHoje > 0 && <span className="home-today-pill">{plural(notasHoje, 'nota chegou', 'notas chegaram')} hoje na Memória</span>}
+    <div className="space-y-4">
+      <Quadro titulo="Marketing" nota="o que está esperando você e como vai o mês · clique num número para abrir">
+        <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
+          <Numero rotulo="Ideias para aprovar" valor={n(triagem?.contagem.nova, triagem)} nota={triagem ? `${triagem.contagem.aprovada} aprovadas até hoje` : undefined} onClick={() => router.push('/marketing/triagem')} />
+          <Numero rotulo="No Banco de ideias" valor={n(conta(['ideia']), maquina)} nota="antes de virar post" onClick={() => router.push('/marketing/banco')} />
+          <Numero rotulo="Em produção" valor={n(conta(['producao', 'a_agendar']), maquina)} nota="gravar, fazer a arte, agendar" onClick={() => router.push('/marketing/producao')} />
+          <Numero rotulo="Notas na Memória hoje" valor={n(notasHoje, memoria)} nota="o que a equipe registrou" onClick={() => router.push('/marketing/memoria')} />
         </div>
-      </section>
-      <div className="home-cards">
-        <Link className="home-card" href="/marketing/triagem">
-          <span className="home-k">Ideias para aprovar</span>
-          <span className="home-v">{paraAprovar}</span>
-          <span className="home-d">{triagem ? `${triagem.contagem.aprovada} aprovadas até hoje` : '…'}</span>
-          <span className="home-go">
-            Aprovar ideias <Seta />
-          </span>
-        </Link>
-        <Link className="home-card" href="/marketing/banco">
-          <span className="home-k">Ideias de conteúdo</span>
-          <span className="home-v">{noBanco}</span>
-          <span className="home-d">no Banco, esperando formato</span>
-          <span className="home-go">
-            Ver o Banco <Seta />
-          </span>
-        </Link>
-        <Link className="home-card" href="/marketing/producao">
-          <span className="home-k">Em produção</span>
-          <span className="home-v">{emProducao}</span>
-          <span className="home-d">{agendados ? `${plural(agendados, 'post agendado', 'posts agendados')}` : 'Aprove uma ideia para começar uma peça.'}</span>
-          <span className="home-go">
-            Produção <Seta />
-          </span>
-        </Link>
-        <Link className="home-card" href="/marketing/memoria">
-          <span className="home-k">Memória</span>
-          <span className="home-v">{memoria?.total ?? 0}</span>
-          <span className="home-d">{memoria ? `${memoria.pastas.find((p) => p.nome === 'Vídeos')?.n ?? 0} vídeos · ${memoria.pastas.find((p) => p.nome === 'Links')?.n ?? 0} links` : '…'}</span>
-          <span className="home-go">
-            Abrir a Memória <Seta />
-          </span>
-        </Link>
-      </div>
-      <div className="home-shortcuts">
-        <Link className="home-shortcut" href="/marketing/formatos">
-          <div className="grow">
-            <span className="home-k">Formatos</span>
-            <p>A régua de cada formato, que a IA segue ao escrever os posts.</p>
-          </div>
-          <Seta />
-        </Link>
-        <Link className="home-shortcut" href="/contexto/marca">
-          <div className="grow">
-            <span className="home-k">Marca</span>
-            <p>Cores, fontes, voz e pilares que a IA usa nas peças.</p>
-          </div>
-          <Seta />
-        </Link>
-      </div>
+        <div className="mt-5 grid grid-cols-2 gap-4 border-t border-border pt-4 sm:grid-cols-3">
+          <Numero tamanho="medio" rotulo="Publicados no mês" valor={n(publicadosNoMes, maquina)} nota={meta ? `de ${meta} da cadência` : 'sem cadência definida'} onClick={() => router.push('/marketing/calendario')} />
+          <Numero tamanho="medio" rotulo="Agendados no mês" valor={n(agendadosNoMes, maquina)} nota="ainda vão ao ar" onClick={() => router.push('/marketing/calendario')} />
+          <Numero tamanho="medio" rotulo="Faltam para a meta" valor={maquina ? String(Math.max(0, meta - publicadosNoMes - agendadosNoMes)) : '…'} nota="contando os agendados" onClick={() => router.push('/marketing/agendar')} />
+        </div>
+      </Quadro>
+      <Quadro titulo="Próximos posts" nota="agendados, por dia e horário" acao={<Link href="/marketing/calendario" className="text-sm text-muted underline hover:text-brand">Calendário</Link>}>
+        {!maquina ? (
+          <p className="text-sm text-muted">Carregando…</p>
+        ) : proximos.length === 0 ? (
+          <p className="text-sm text-muted">Nada agendado daqui para frente.</p>
+        ) : (
+          <ul className="divide-y divide-border">
+            {proximos.map((p) => (
+              <li key={p.id} className="flex items-baseline gap-3 py-2 text-sm">
+                <span className="w-24 shrink-0 font-os-mono text-xs text-muted">{dataCurta(p.data)}{p.hora ? ` ${p.hora}` : ''}</span>
+                <span className="min-w-0 flex-1 truncate">{p.titulo}</span>
+                <span className="text-xs text-muted">{p.formato}</span>
+              </li>
+            ))}
+          </ul>
+        )}
+      </Quadro>
     </div>
   );
 }
