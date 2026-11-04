@@ -5,11 +5,11 @@ import { EfeitoClienteEscopoService } from '../src/clientes-escopo/efeito-client
 
 function cenario() {
   const args={leadId:'lead',chave:'fech-lead-v2',propostaHash:'hash'};
-  const ap={id:'r4',toolCallId:'chamada',nivelExigido:'R4',propostoPorTipo:ActorType.user,propostoPorId:'original',aprovadoPorId:'aprovador',resourceId:args.chave,contentHash:canonicalHash('comercial.fechamento',args,[])};
-  const chamada={approvalId:'r4',actorType:ActorType.user,actorId:'original',args};
+  const ap={id:'r4',toolCallId:'chamada',nivelExigido:'R4',propostoPorTipo:ActorType.user as ActorType,propostoPorId:'original',aprovadoPorId:'aprovador',resourceId:args.chave,contentHash:canonicalHash('comercial.fechamento',args,[])};
+  const chamada={approvalId:'r4',actorType:ActorType.user as ActorType,actorId:'original',args};
   const ficha={partnerId:'cliente',propostaVersao:2,propostaHash:'hash'};
   const prisma={approval:{findFirst:vi.fn(async({where}:any)=>where.id ? ap : null)},toolCall:{findFirst:vi.fn(async()=>chamada)},comercialFechamento:{findFirst:vi.fn(async()=>({chave:args.chave,versao:2}))},comercialFicha:{findFirst:vi.fn(async()=>ficha)},leadEvent:{findFirst:vi.fn(async()=>({payload:{hash:'hash',versao:2}}))},user:{findFirst:vi.fn(async()=>({id:'pessoa'}))}};
-  const escopo={exigirAmplo:vi.fn(async()=>{}),exigirCliente:vi.fn(async()=>{})};
+  const escopo={exigirAmplo:vi.fn(async(_org:string,_id:string)=>{}),exigirCliente:vi.fn(async()=>{})};
   const svc=new EfeitoClienteEscopoService(prisma as never,escopo as never,{} as never,{resolverCapacidade:()=>({hashKeys:[]})} as never);
   return {svc,ap,chamada,ficha,escopo,prisma};
 }

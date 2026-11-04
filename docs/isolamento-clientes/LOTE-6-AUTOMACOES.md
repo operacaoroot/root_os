@@ -30,6 +30,8 @@ Os testes de integração usam PostgreSQL real, guardas e Porta reais, com Drive
 
 Validação local final: 304 testes em 17 arquivos; checagem de tipos dos novos testes e código transitivo; build da API; boot do Nest compilado com seis rotas respondendo 401; migrations aplicadas do zero e comparação com schema sem diferenças. Evidências em `/tmp/root-clientes-lote6/`: `focal-final.log`, `parent-types.log`, `api-build-final.log`, `api-boot.log` e `migration-diff.log`. A revisão estática independente não identificou bloqueio restante após as correções de R4, transporte do token e veto.
 
+O primeiro CI encontrou três erros de tipagem na fixture de `pasta-fechamento-escopo`: mock sem argumentos e inferência restrita a `user`. Após corrigir as assinaturas da fixture, a checagem conjunta dos 13 arquivos de teste alterados passou, assim como seus três casos focais (`all-changed-types.log`, `pasta-types-green.log`). A correção não muda o runtime.
+
 ## Migration e publicação futura
 
 A migration é aditiva: cria a tabela de recibos com RLS e acrescenta a origem da emissão ao documento. Não preenche registros legados com identidade presumida. Documentos antigos sem origem continuam impedidos de cópia automática até um procedimento explícito de recuperação.
