@@ -5,6 +5,7 @@ import { createServer as criarNet } from 'node:net';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 
+import type { EstadoDaSala } from '@mktos/shared';
 import { JwtService } from '@nestjs/jwt';
 import { PrismaClient } from '@prisma/client';
 import bcrypt from 'bcryptjs';
@@ -48,6 +49,8 @@ import { SinaisService } from '../src/policy/sinais.service';
 import type { PrismaService } from '../src/prisma/prisma.service';
 import { ExecutoresDeRotinaRegistry } from '../src/routines/executores.registry';
 import { exigirBancoDescartavel } from './banco-de-teste';
+import { ClienteEscopoService } from '../src/clientes-escopo/cliente-escopo.service';
+import { EfeitoComercialEscopoService } from '../src/clientes-escopo/efeito-comercial-escopo.service';
 
 /*
  * A JORNADA DO COCKPIT DE PONTA A PONTA, EM PROCESSO (lane Jornada, 13/10/2026).
@@ -275,16 +278,22 @@ describe.skipIf(!URL)('a jornada do cockpit de ponta a ponta, contando os toques
     await pessoa(socio, admin, 'socio');
     await pessoa(titular, diretor, 'titular');
     await pessoa(mesa, gestor, 'mesa');
+    for(const key of ['leads.editar','aprovacoes.decidir']) {
+      const permissao=await prisma.permission.upsert({where:{key},create:{key},update:{}});
+      for(const id of [admin,diretor,gestor]) await prisma.role.update({where:{id},data:{permissions:{connect:{id:permissao.id}}}});
+    }
+    for(const userId of [socio.id,titular.id,mesa.id]) await prisma.clienteAcessoPerfil.create({data:{orgId:ORG,userId,modo:'ALL'}});
 
     const audit = new AuditService(p);
     const policy = new PolicyService(p);
     await policy.onModuleInit();
+    const escopo=new EfeitoComercialEscopoService(p,new ClienteEscopoService(p,audit),policy);
     approvals = new ApprovalsService(p, audit, new ReauthService(p, new JwtService({ secret: `segredo-${MARCA}` }), audit));
     const log = new EventLogService(p);
     const efeitos = new EfeitosRegistry();
     const interruptores = new InterruptoresRegistry();
     new ConectoresService(p, audit, log, interruptores).onModuleInit();
-    const gateway = new ToolGateway(p, policy, new SinaisService(p, policy), approvals, log, undefined, interruptores, efeitos);
+    const gateway = new ToolGateway(p, policy, new SinaisService(p, policy), approvals, log, undefined, interruptores, efeitos,undefined,undefined,escopo);
     acoes = new AcoesService(p, gateway, log, interruptores, policy);
     const porta = new PortaDoOperador(gateway, efeitos);
 
@@ -309,7 +318,7 @@ describe.skipIf(!URL)('a jornada do cockpit de ponta a ponta, contando os toques
     propostas = new PropostaService(p, fio, reacoes, decisoes, aoDecidir, config, efeitos, porta, relogioComercial, llm);
     propostas.inscrever();
     new AssistenteService(p, reacoes, sala, llm, decisoes, aoDecidir).inscrever();
-    dinheiro = new DinheiroService(p, fio, reacoes, efeitos, porta, new AsaasService(new ConectoresConfiguradosRegistry()), new ZapsignService(), whats);
+    dinheiro = new DinheiroService(p, fio, reacoes, efeitos, porta, new AsaasService(new ConectoresConfiguradosRegistry()), new ZapsignService(), whats,undefined,undefined,escopo);
     dinheiro.onModuleInit();
     const trilhos = new TrilhoService(p, undefined as never, log, undefined as never);
     fechamento = new FechamentoService(p, fio, reacoes, efeitos, porta, dinheiro, config, decisoes, aoDecidir, trilhos, whats, relogioComercial);
@@ -364,6 +373,7 @@ describe.skipIf(!URL)('a jornada do cockpit de ponta a ponta, contando os toques
       await prisma.toolCall.deleteMany({ where: { orgId: ORG } });
       await prisma.policyDecision.deleteMany({ where: { orgId: ORG } });
       await prisma.auditLog.deleteMany({ where: { orgId: ORG } });
+      await prisma.clienteAcessoPerfil.deleteMany({where:{orgId:ORG}});
       await prisma.user.deleteMany({ where: { orgId: ORG } });
       await prisma.role.deleteMany({ where: { orgId: ORG } });
       await prisma.acordoParcela.deleteMany({ where: { orgId: ORG } });
@@ -446,7 +456,7 @@ describe.skipIf(!URL)('a jornada do cockpit de ponta a ponta, contando os toques
 
   it('6 · o cliente lê por bloco; o pedido de ajuste cai na fila e a decisão de um toque mantém o preço', async () => {
     aos('2026-10-14T15:00:00-03:00');
-    let e = await sala.estado(token);
+    let e: EstadoDaSala = await sala.estado(token);
     expect(e.estagio).toBe('proposta');
     for (const bloco of ['ouvimos', 'recomendada', 'alternativa', 'custos', 'validade'] as const) e = await sala.propostaLida(token, { bloco, versao: 1 });
     doCliente.push('lê os cinco blocos da proposta');

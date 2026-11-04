@@ -5457,6 +5457,8 @@ model SalaVersao {
   /// rascunho · na_porta · publicada · substituida (CHECK no banco).
   estado       String
   conteudo     Json
+  /// Proveniência privada do rascunho revisado; null identifica legado não revalidado.
+  origemCliente Json?
   hash         String
   approvalId   String?
   criadoPor    String?

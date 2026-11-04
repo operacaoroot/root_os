@@ -39,6 +39,8 @@ import { PolicyService } from '../src/policy/policy.service';
 import { SinaisService } from '../src/policy/sinais.service';
 import type { PrismaService } from '../src/prisma/prisma.service';
 import { exigirBancoDescartavel } from './banco-de-teste';
+import { ClienteEscopoService } from '../src/clientes-escopo/cliente-escopo.service';
+import { EfeitoComercialEscopoService } from '../src/clientes-escopo/efeito-comercial-escopo.service';
 
 /*
  * O DINHEIRO DO COCKPIT CONTRA A RÉGUA E OS DUBLÊS (lane D, 13/10/2026).
@@ -196,18 +198,24 @@ describe('do aceite ao cliente ativo, pela porta e pelos dublês', { timeout: 30
         select: { id: true },
       })
     ).id;
+    for(const key of ['leads.editar','aprovacoes.decidir']) {
+      const permissao=await prisma.permission.upsert({where:{key},create:{key},update:{}});
+      for(const id of [admin.id,gestor.id]) await prisma.role.update({where:{id},data:{permissions:{connect:{id:permissao.id}}}});
+    }
+    for(const userId of [titularId,gestorId,outroTitularId]) await prisma.clienteAcessoPerfil.create({data:{orgId:ORG,userId,modo:'ALL'}});
 
     const p = prisma as unknown as PrismaService;
     const audit = new AuditService(p);
     const policy = new PolicyService(p);
     await policy.onModuleInit();
+    const escopo=new EfeitoComercialEscopoService(p,new ClienteEscopoService(p,audit),policy);
     const reauth = new ReauthService(p, new JwtService({ secret: `segredo-${MARCA}` }), audit);
     approvals = new ApprovalsService(p, audit, reauth);
     const eventos = new EventLogService(p);
     const efeitos = new EfeitosRegistry();
     const interruptores = new InterruptoresRegistry();
     new ConectoresService(p, audit, eventos, interruptores).onModuleInit();
-    const gateway = new ToolGateway(p, policy, new SinaisService(p, policy), approvals, eventos, undefined, interruptores, efeitos);
+    const gateway = new ToolGateway(p, policy, new SinaisService(p, policy), approvals, eventos, undefined, interruptores, efeitos,undefined,undefined,escopo);
     acoes = new AcoesService(p, gateway, eventos, interruptores, policy);
     const porta = new PortaDoOperador(gateway, efeitos);
 
@@ -224,7 +232,7 @@ describe('do aceite ao cliente ativo, pela porta e pelos dublês', { timeout: 30
     decisoesSvc = decisoes;
     const asaas = new AsaasService(new ConectoresConfiguradosRegistry());
     const zapsign = new ZapsignService();
-    dinheiro = new DinheiroService(p, fio, reacoes, efeitos, porta, asaas, zapsign, whats, reauth, audit);
+    dinheiro = new DinheiroService(p, fio, reacoes, efeitos, porta, asaas, zapsign, whats, reauth, audit,escopo);
     dinheiro.onModuleInit();
     const trilhos = new TrilhoService(p, undefined as never, eventos, undefined as never);
     fechamento = new FechamentoService(p, fio, reacoes, efeitos, porta, dinheiro, config, decisoes, registroDeDecisoes, trilhos, whats, relogio);
@@ -274,6 +282,7 @@ describe('do aceite ao cliente ativo, pela porta e pelos dublês', { timeout: 30
     await prisma.toolCall.deleteMany({ where: { orgId: ORG } });
     await prisma.policyDecision.deleteMany({ where: { orgId: ORG } });
     await prisma.auditLog.deleteMany({ where: { orgId: ORG } });
+    await prisma.clienteAcessoPerfil.deleteMany({where:{orgId:ORG}});
     await prisma.user.deleteMany({ where: { orgId: ORG } });
     await prisma.role.deleteMany({ where: { orgId: ORG } });
     await prisma.acordoParcela.deleteMany({ where: { orgId: ORG } });
@@ -364,9 +373,8 @@ describe('do aceite ao cliente ativo, pela porta e pelos dublês', { timeout: 30
     expect(doc.linkRoot).not.toContain('/assinar/');
     const tipos = (await prisma.leadEvent.findMany({ where: { leadId }, select: { type: true } })).map((e) => e.type);
     expect(tipos).toEqual(expect.arrayContaining(['cobranca.criada', 'contrato.gerado']));
-    // A M7 (link de assinatura) foi preparada e espera a fila do WhatsApp (R3).
-    const m7 = await prisma.comercialMensagem.findFirstOrThrow({ where: { leadId, template: 'M7' } });
-    expect(m7.texto).toContain(doc.linkCliente!);
+    // A M7 fica pendente até existir proveniência própria para a mensagem.
+    expect(await prisma.comercialMensagem.findFirst({ where: { leadId, template: 'M7' } })).toBeNull();
 
     // A sala mostra o link de pagamento, o Pix e o link de assinatura do cliente.
     const e = await sala.estado(token);
@@ -565,6 +573,7 @@ describe('do aceite ao cliente ativo, pela porta e pelos dublês', { timeout: 30
     const tel = `+55328${Date.now().toString().slice(-8)}`;
     const r = await naEmpresa(() => whats.receberEntrada(ORG, { telefone: tel, texto: 'Oi', nome, mensagemId: `${MARCA}-${nome}` }));
     const id = r.leadId;
+    await prisma.comercialFicha.create({data:{orgId:ORG,leadId:id}});
     const hash = hashDoConteudo({ lead: id, v: 1 });
     await naEmpresa(async () => {
       await fio.registrar(ORG, id, 'aceite.dados', 'dados', { cnpj, razaoSocial: `${nome} Ltda`, endereco: 'Rua B, 2', quemAssina: nome, email: `${cnpj}@cliente.test` });
@@ -620,6 +629,7 @@ describe('do aceite ao cliente ativo, pela porta e pelos dublês', { timeout: 30
     // Um lead que só aceitou (sem documento nem cobrança): o contrato dele também vence sem assinatura.
     const tel = `+55327${Date.now().toString().slice(-8)}`;
     const so = (await naEmpresa(() => whats.receberEntrada(ORG, { telefone: tel, texto: 'Oi', nome: 'Otica Aceite', mensagemId: `${MARCA}-otica-aceite` }))).leadId;
+    await prisma.comercialFicha.create({data:{orgId:ORG,leadId:so}});
     await naEmpresa(async () => {
       await fio.registrar(ORG, so, 'aceite.dados', 'dados', { cnpj: `5${Date.now().toString().slice(-13)}`, razaoSocial: 'Otica Aceite Ltda', endereco: 'Rua C, 3', quemAssina: 'Otica', email: 'otica@cliente.test' });
       await fio.registrar(ORG, so, 'proposta.aceita', 'v1', { versao: 1, produto: 'imersao', valorCentavos: 297_000, parcelas: 10, forma: 'cartao', hash: hashDoConteudo({ lead: so, v: 1 }) });

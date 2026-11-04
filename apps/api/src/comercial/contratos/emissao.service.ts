@@ -1,4 +1,4 @@
-import { ConflictException, Inject, Injectable, NotFoundException, ServiceUnavailableException } from '@nestjs/common';
+import { ConflictException, ForbiddenException, Inject, Injectable, NotFoundException, Optional, ServiceUnavailableException } from '@nestjs/common';
 import { ActorType, Prisma } from '@prisma/client';
 import type { ContratoNaFicha } from '@mktos/shared';
 
@@ -13,6 +13,7 @@ import { ContratosService, type QuemNoContrato } from './contratos.service';
 import { aindaNaoEnviado, lerIdDoContrato } from './contratos-puro';
 import { entradaDoRegistro, montarPdfDoRegistro, SemMinutaError } from './documento-do-registro';
 import { assinaturaDaEntrada, camposEscritos, preencherRegistro } from './emissao-puro';
+import { EfeitoComercialEscopoService } from '../../clientes-escopo/efeito-comercial-escopo.service';
 
 /*
  * A EMISSÃO DO CONTRATO (Contratos, F2, 02/11/2026): minuta aprovada → PDF → pedido de envio pela porta.
@@ -35,6 +36,7 @@ export class EmissaoDoContratoService {
     private readonly dinheiro: DinheiroService,
     private readonly operador: PortaDoOperador,
     @Inject(PORTA_DE_ASSINATURA) private readonly assinatura: PortaDeAssinatura,
+    @Optional() private readonly escopo?: EfeitoComercialEscopoService,
   ) {}
 
   private registro(orgId: string, id: string) {
@@ -115,6 +117,14 @@ export class EmissaoDoContratoService {
     if (!this.assinatura.configurada()) throw new ServiceUnavailableException('A ZapSign não tem token nesta instância: nada sai para assinatura. Quem contrata o plano de API são os sócios.');
     const c = await this.registro(orgId, alvo.id);
     if (!c) throw new NotFoundException('Contrato não encontrado.');
+    if(!this.escopo) throw new ForbiddenException('A autorização da emissão está indisponível.');
+    const clienteId=await this.escopo.clienteDoLead(orgId,c.leadId);
+    if(c.partnerId!==clienteId) throw new ConflictException('O cliente do contrato mudou.');
+    const conferir=async()=>{
+      if(await this.escopo!.clienteDoLead(orgId,c.leadId)!==clienteId) throw new ConflictException('O cliente do contrato mudou.');
+      await this.escopo!.exigirPessoa(orgId,pessoa.id,clienteId);
+    };
+    await conferir();
     if (!aindaNaoEnviado(c.estado)) throw new ConflictException('Este contrato já foi para assinatura ou terminou: não há o que enviar.');
 
     const ficha = await this.contratos.ficha(orgId, c.id, agora);
@@ -126,10 +136,19 @@ export class EmissaoDoContratoService {
     if (!cliente) throw new ConflictException('Falta quem assina pelo cliente.');
 
     const { hash, paginas } = await this.pdfDeAgora(orgId, c.id, c.leadId);
+    await conferir();
     const recurso = `${c.id}:${hash.slice(0, 16)}`;
     const viva = await this.dinheiro.aprovacaoViva(orgId, CAP_CONTRATO, recurso, agora);
     // O segundo clique responde como o primeiro. Conteúdo diferente é outro recurso: o pedido velho cai no hash do efeito.
-    if (viva) return { status: 'aguardando_aprovacao', approvalId: viva.id, jaNaFila: true, precisaDeOutraPessoa: true, fila: FILA_DE_APROVACAO, mensagem: 'Este pedido já está na fila, esperando outra pessoa titular.' };
+    if (viva) {
+      const ap=await this.prisma.approval.findFirst({where:{id:viva.id,orgId,propostoPorId:pessoa.id,propostoPorTipo:ActorType.user},select:{toolCallId:true}});
+      const tc=ap?.toolCallId ? await this.prisma.toolCall.findFirst({where:{id:ap.toolCallId,orgId,approvalId:viva.id},select:{args:true}}) : null;
+      const a=tc?.args as Record<string,unknown>|null;
+      const origem=a?.origemCliente as Record<string,unknown>|null;
+      if(!a || a.clienteId!==clienteId || !origem || origem.versao!==1 || origem.clienteId!==clienteId) throw new ConflictException('Já há outra proposta de envio para este contrato.');
+      await conferir();
+      return { status: 'aguardando_aprovacao', approvalId: viva.id, jaNaFila: true, precisaDeOutraPessoa: true, fila: FILA_DE_APROVACAO, mensagem: 'Este pedido já está na fila, esperando outra pessoa titular.' };
+    }
 
     const dados = c.dadosDoContrato && typeof c.dadosDoContrato === 'object' && !Array.isArray(c.dadosDoContrato) ? (c.dadosDoContrato as Record<string, unknown>) : {};
     const congelado = {
@@ -145,19 +164,22 @@ export class EmissaoDoContratoService {
     };
     await this.prisma.$transaction(async (tx) => {
       await this.contratos.cadeado(tx, orgId, c.leadId);
+      if(await this.escopo!.clienteDoLead(orgId,c.leadId,tx)!==clienteId) throw new ConflictException('O cliente do contrato mudou.');
+      await conferir();
       const n = await tx.comercialContrato.updateMany({
-        where: { id: c.id, estado: c.estado, documentoId: null },
+        where: { id: c.id,orgId,partnerId:clienteId,estado: c.estado, documentoId: null,atualizadoEm:c.atualizadoEm },
         data: { hashDoConteudo: hash, dadosDoContrato: { ...dados, congelado } as Prisma.InputJsonValue },
       });
       if (!n.count) throw new ConflictException('O contrato mudou agora há pouco. Recarregue antes de pedir.');
       await this.contratos.auditar(tx, orgId, pessoa.id, 'comercial.contrato.envio_pedido', c.id, { hashDoConteudo: c.hashDoConteudo }, { hashDoPdf: hash, versao: aceite.versao, paginas, signatarios: c.signatarios.length });
     });
+    await conferir();
     return this.operador.executar({
       orgId,
       actorId: pessoa.id,
       actorType: ActorType.user,
       capabilityId: CAP_CONTRATO,
-      args: { leadId: c.leadId, versao: aceite.versao, hash, signatarioEmail: cliente.email, contratoId: c.id },
+      args: { leadId: c.leadId, clienteId, origemCliente:{versao:1,clienteId}, versao: aceite.versao, hash, signatarioEmail: cliente.email, contratoId: c.id },
       resource: { type: 'comercial.contrato', id: recurso },
     });
   }

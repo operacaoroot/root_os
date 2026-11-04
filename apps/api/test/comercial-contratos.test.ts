@@ -35,6 +35,8 @@ import { PolicyService } from '../src/policy/policy.service';
 import { SinaisService } from '../src/policy/sinais.service';
 import type { PrismaService } from '../src/prisma/prisma.service';
 import { exigirBancoDescartavel } from './banco-de-teste';
+import { ClienteEscopoService } from '../src/clientes-escopo/cliente-escopo.service';
+import { EfeitoComercialEscopoService } from '../src/clientes-escopo/efeito-comercial-escopo.service';
 
 /*
  * O MÓDULO DE CONTRATOS CONTRA O BANCO, A RÉGUA E O DUBLÊ (02/11/2026, F1 e F3).
@@ -162,8 +164,8 @@ describe.skipIf(!URL)('o módulo de contratos, ponta a ponta', { timeout: 40_000
     process.env.ZAPSIGN_WEBHOOK_TOKEN = SEGREDO_ZAP;
 
     for (const org of [ORG, OUTRA]) await prisma.org.create({ data: { id: org, name: org, slug: org } });
-    await prisma.permission.upsert({ where: { key: 'leads.editar' }, update: {}, create: { key: 'leads.editar' } });
-    const comPermissao = { permissions: { connect: [{ key: 'leads.editar' }] } };
+    for(const key of ['leads.editar','aprovacoes.decidir']) await prisma.permission.upsert({where:{key},update:{},create:{key}});
+    const comPermissao = { permissions: { connect: [{ key: 'leads.editar' },{key:'aprovacoes.decidir'}] } };
     const admin = await prisma.role.create({ data: { orgId: ORG, key: 'admin_master', name: 'Admin', ...comPermissao }, select: { id: true } });
     const papelGestor = await prisma.role.create({ data: { orgId: ORG, key: 'gestor_marketing', name: 'Gestor', ...comPermissao }, select: { id: true } });
     const papelMaquina = await prisma.role.create({ data: { orgId: ORG, key: 'ia_acao', name: 'Máquina', ...comPermissao }, select: { id: true } });
@@ -173,18 +175,20 @@ describe.skipIf(!URL)('o módulo de contratos, ponta a ponta', { timeout: 40_000
     titular2Id = await pessoa('titular2', 'Outra Titular', admin.id);
     gestorId = await pessoa('gestor', 'Mesa', papelGestor.id);
     maquinaId = await pessoa('maquina', 'Conta de IA', papelMaquina.id);
+    for(const userId of [titularId,titular2Id,gestorId,maquinaId]) await prisma.clienteAcessoPerfil.create({data:{orgId:ORG,userId,modo:'ALL'}});
 
     const p = prisma as unknown as PrismaService;
     const audit = new AuditService(p);
     const policy = new PolicyService(p);
     await policy.onModuleInit();
+    const escopo=new EfeitoComercialEscopoService(p,new ClienteEscopoService(p,audit),policy);
     const reauth = new ReauthService(p, new JwtService({ secret: `segredo-${MARCA}` }), audit);
     approvals = new ApprovalsService(p, audit, reauth);
     const eventos = new EventLogService(p);
     const efeitos = new EfeitosRegistry();
     const interruptores = new InterruptoresRegistry();
     new ConectoresService(p, audit, eventos, interruptores).onModuleInit();
-    const gateway = new ToolGateway(p, policy, new SinaisService(p, policy), approvals, eventos, undefined, interruptores, efeitos);
+    const gateway = new ToolGateway(p, policy, new SinaisService(p, policy), approvals, eventos, undefined, interruptores, efeitos,undefined,undefined,escopo);
     acoes = new AcoesService(p, gateway, eventos, interruptores, policy);
     const porta = new PortaDoOperador(gateway, efeitos);
     const reacoes = new ReacoesRegistry();
@@ -193,7 +197,7 @@ describe.skipIf(!URL)('o módulo de contratos, ponta a ponta', { timeout: 40_000
     zapsign = new ZapsignService();
     const naoCobra = new Proxy({} as never, { get: (_a, chave) => (chave === 'provedor' ? 'asaas' : chave === 'configurada' ? () => true : () => { throw new Error('a cobrança não deveria ser chamada'); }) });
     const whats = { prepararTemplate: vi.fn(async (_o: string, leadId: string, _t: string, v: Record<string, unknown>, op: { chave?: string }) => { m7.push({ leadId, quemAssina: v.quemAssina, chave: op.chave }); return {} as never; }) } as unknown as WhatsappComercialService;
-    dinheiro = new DinheiroService(p, fio, reacoes, efeitos, porta, naoCobra, zapsign, whats, reauth, audit);
+    dinheiro = new DinheiroService(p, fio, reacoes, efeitos, porta, naoCobra, zapsign, whats, reauth, audit,escopo);
     dinheiro.onModuleInit();
     contratoVivo = new ContratoVivoService(p, fio, relogio, {} as DecisoesService);
     contratoVivo.onModuleInit();
@@ -219,6 +223,7 @@ describe.skipIf(!URL)('o módulo de contratos, ponta a ponta', { timeout: 40_000
     await prisma.toolCall.deleteMany({ where: { orgId: ORG } });
     await prisma.policyDecision.deleteMany({ where: { orgId: ORG } });
     await prisma.auditLog.deleteMany({ where: { orgId: ORG } });
+    await prisma.clienteAcessoPerfil.deleteMany({where:{orgId:ORG}});
     await prisma.user.deleteMany({ where: { orgId: ORG } });
     await prisma.role.deleteMany({ where: { orgId: ORG } });
     await prisma.org.deleteMany({ where: { id: { in: [ORG, OUTRA] } } });
@@ -279,6 +284,27 @@ describe.skipIf(!URL)('o módulo de contratos, ponta a ponta', { timeout: 40_000
     expect((noDuble.signers as unknown as { external_id: string }[]).map((s) => s.external_id)).toEqual(['cliente:1', 'root:1']);
     // Depois de enviado, a lista não muda mais.
     await expect(naEmpresa(() => contratos.definirSignatarios(ORG, contrato.id, gestor(), { signatarios: [{ papel: 'cliente', nome: 'Outra', email: 'x@c.test' }, { papel: 'root', nome: 'T', email: 'y@c.test' }] }))).rejects.toBeInstanceOf(ConflictException);
+  });
+
+  it('retry do esqueleto só reaproveita documento da mesma aprovação consumida',async()=>{
+    const {leadId,documento}=await contratoEnviado('Retry do esqueleto');
+    const approvalId=documento.origemApprovalId!;
+    const ap=await prisma.approval.findUniqueOrThrow({where:{id:approvalId}});
+    const chamada=await prisma.toolCall.findUniqueOrThrow({where:{id:ap.toolCallId!}});
+    const args=chamada.args as Record<string,unknown>;
+    const efeito=(dinheiro as unknown as {efeitoDeContrato:(a:unknown,o:string,c:unknown)=>Promise<{reaproveitado:boolean}>}).efeitoDeContrato.bind(dinheiro);
+    const ctx={orgId:ORG,actorType:'user',actorId:titularId,approvalId};
+    const provedor=vi.spyOn(zapsign,'criarDocumento');
+    try {
+      expect(await naEmpresa(()=>efeito(args,ORG,ctx))).toMatchObject({reaproveitado:true,documentoId:documento.id});
+      expect(provedor).not.toHaveBeenCalled();
+      const tc2=await prisma.toolCall.create({data:{orgId:ORG,capabilityId:CAP_CONTRATO,actorType:ap.propostoPorTipo,actorId:ap.propostoPorId,status:'aguardando_aprovacao',args:args as never}});
+      const ap2=await prisma.approval.create({data:{orgId:ORG,toolCallId:tc2.id,capabilityId:CAP_CONTRATO,propostoPorTipo:ap.propostoPorTipo,propostoPorId:ap.propostoPorId,resourceType:ap.resourceType,resourceId:ap.resourceId,contentHash:ap.contentHash,resumo:'Outra aprovação de teste',status:'consumida',nivelExigido:'R4',tokenHash:crypto.randomUUID(),aprovadoPorId:titularId,aprovadoEm:new Date(),consumidoEm:new Date(),expiraEm:new Date(Date.now()+600000)}});
+      await prisma.toolCall.update({where:{id:tc2.id},data:{approvalId:ap2.id}});
+      await expect(naEmpresa(()=>efeito(args,ORG,{...ctx,approvalId:ap2.id}))).rejects.toThrow();
+      expect(provedor).not.toHaveBeenCalled();
+      expect(await prisma.comercialDocumento.count({where:{orgId:ORG,leadId,provedor:'zapsign'}})).toBe(1);
+    } finally {provedor.mockRestore();}
   });
 
   it('a consulta acha a assinatura sem webhook, e a reentrega do webhook não duplica nada', async () => {
