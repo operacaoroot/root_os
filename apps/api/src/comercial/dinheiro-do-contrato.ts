@@ -66,6 +66,8 @@ export interface EntradaDoDinheiro {
   parcelas: readonly ParcelaDoDinheiro[];
   /** Só liga o acordo que já existe: não cria acordo nem parcela (o importado sem cobrança). */
   soLigar?: boolean;
+  /** O acordo que o dono escolheu para este contrato (`--par` do backfill): desempata vários pagantes do cliente. */
+  acordoId?: string;
 }
 
 export interface PlanoDoDinheiro {
@@ -162,8 +164,14 @@ export async function planejarDinheiro(db: Banco, e: EntradaDoDinheiro): Promise
       }
     } else {
       const { cliente, ids: doCliente } = await doMesmoCliente(db, orgId, e.partnerId);
-      const pagantes = await db.acordoComercial.findMany({ where: { orgId, tipo: 'pagante', comercialContratoId: null, partnerId: { in: doCliente } }, select: { id: true } });
-      if (pagantes.length > 1) {
+      const todos = await db.acordoComercial.findMany({ where: { orgId, tipo: 'pagante', comercialContratoId: null, partnerId: { in: doCliente } }, select: { id: true } });
+      const pagantes = e.acordoId ? todos.filter((a) => a.id === e.acordoId) : todos;
+      if (e.acordoId && !pagantes.length) {
+        plano.ambiguo.push('o acordo escolhido não é um acordo pagante sem contrato deste cliente');
+        plano.candidatos = todos.map((a) => a.id);
+      } else if (e.acordoId) {
+        plano.acordo = { acao: 'adotar', id: e.acordoId, por: 'o acordo que o dono escolheu para este contrato' };
+      } else if (pagantes.length > 1) {
         plano.ambiguo.push(`o cliente tem ${pagantes.length} acordos pagantes sem contrato`);
         plano.candidatos = pagantes.map((a) => a.id);
       } else if (pagantes.length === 1) {

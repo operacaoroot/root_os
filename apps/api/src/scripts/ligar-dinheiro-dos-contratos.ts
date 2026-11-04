@@ -48,6 +48,7 @@
  * Códigos de saída: 0 ok; 1 falhou.
  */
 import { mkdirSync, writeFileSync } from 'node:fs';
+import { randomUUID } from 'node:crypto';
 import path from 'node:path';
 
 import { ActorType, PrismaClient } from '@prisma/client';
@@ -94,6 +95,14 @@ export interface LinhaDoDinheiro {
   avisos: string[];
   /** `--assumir-importados`: o registro que `assumirImportado` criaria (ainda não existe). */
   assumir: RegistroDoImportado | null;
+  /** `--par` sem registro no lead: o registro que nasce para o acordo escolhido (ainda não existe). */
+  registrar: RegistroDoPar | null;
+}
+
+/** O registro do contrato que o `--par` cria quando o lead fechou sem registro nem importado (o acordo diz valor e data). */
+export interface RegistroDoPar {
+  id: string;
+  data: { id: string; orgId: string; leadId: string; partnerId: string; tipo: 'contrato'; estado: 'ativo'; valorCentavos: number; vigenciaInicio: Date | null; dadosDoContrato: { origem: string; acordoId: string } };
 }
 
 const curto = (id: string | null | undefined) => (id ? id.slice(0, 8) : '-');
@@ -123,6 +132,8 @@ export function comRegistroSimulado(db: BancoDoPlano, r: RegistroDoImportado): B
 export interface OpcoesDoPlano {
   /** `--assumir-importados`: o importado sem registro entra com o registro que nasceria. */
   assumirImportados?: boolean;
+  /** `--par <lead>:<acordo>`: o acordo que o dono escolheu para o contrato do lead (vários pagantes no mesmo cliente). */
+  pares?: ReadonlyMap<string, string>;
 }
 
 /** Só lê: o plano de cada cliente ativo da empresa. */
@@ -130,6 +141,13 @@ export async function planejarBackfill(db: Banco, orgId: string, hoje: string = 
   const ativos = await db.leadEvent.findMany({ where: { type: 'cliente.ativo', lead: { orgId } }, orderBy: { occurredAt: 'asc' }, select: { leadId: true, payload: true, occurredAt: true } });
   const primeiro = new Map<string, (typeof ativos)[number]>();
   for (const a of ativos) if (!primeiro.has(a.leadId)) primeiro.set(a.leadId, a);
+  // O lead do `--par` que nunca virou `cliente.ativo` (a segunda venda do mesmo cliente) entra com a data do acordo.
+  for (const [leadId, acordoId] of opcoes.pares ?? []) {
+    if (primeiro.has(leadId)) continue;
+    const lead = await db.lead.findFirst({ where: { id: leadId, orgId }, select: { id: true } });
+    const acordo = await db.acordoComercial.findFirst({ where: { id: acordoId, orgId }, select: { fechadoEm: true, createdAt: true } });
+    if (lead && acordo) primeiro.set(leadId, { leadId, payload: {}, occurredAt: acordo.fechadoEm ?? acordo.createdAt });
+  }
   const linhas: LinhaDoDinheiro[] = [];
   for (const [leadId, ativo] of primeiro) {
     const p = (ativo.payload ?? {}) as P;
@@ -137,7 +155,7 @@ export async function planejarBackfill(db: Banco, orgId: string, hoje: string = 
     const partnerId = (typeof p.partnerId === 'string' && p.partnerId) || ficha?.partnerId || null;
     const contractId = (typeof p.contractId === 'string' && p.contractId) || ficha?.contractId || null;
     const parceiro = partnerId ? await db.partner.findFirst({ where: { id: partnerId, orgId }, select: { razaoSocial: true } }) : null;
-    const linha: LinhaDoDinheiro = { leadId, cliente: parceiro?.razaoSocial ?? ficha?.empresa ?? '', partnerId, contractId, contractJaLigado: false, entrada: null, plano: null, fora: null, ambiguo: [], avisos: [], assumir: null };
+    const linha: LinhaDoDinheiro = { leadId, cliente: parceiro?.razaoSocial ?? ficha?.empresa ?? '', partnerId, contractId, contractJaLigado: false, entrada: null, plano: null, fora: null, ambiguo: [], avisos: [], assumir: null, registrar: null };
     linhas.push(linha);
     // Importado do CRM antigo: com registro (alguém já agiu nele na tela) segue o caminho de todos;
     // sem registro, só com `--assumir-importados`, e o plano corre sobre o registro que nasceria.
@@ -158,6 +176,15 @@ export async function planejarBackfill(db: Banco, orgId: string, hoje: string = 
       valorDoRegistro = assumido ? assumido.valorCentavos : doImportado.data.valorCentavos;
     }
     if (!partnerId || !parceiro) { linha.fora = 'sem cliente no fechamento'; continue; }
+    const acordoDoPar = opcoes.pares?.get(leadId);
+    if (acordoDoPar && !doImportado) {
+      const tem = await db.comercialContrato.findFirst({ where: { orgId, leadId, tipo: 'contrato' }, select: { id: true } });
+      const acordo = await db.acordoComercial.findFirst({ where: { id: acordoDoPar, orgId }, select: { valor: true, fechadoEm: true } });
+      if (!tem && acordo) {
+        const id = randomUUID();
+        linha.registrar = { id, data: { id, orgId, leadId, partnerId, tipo: 'contrato', estado: 'ativo', valorCentavos: Math.round(Number(acordo.valor) * 100), vigenciaInicio: acordo.fechadoEm, dadosDoContrato: { origem: 'etapa 4: registrado no backfill para o acordo escolhido (--par)', acordoId: acordoDoPar } } };
+      }
+    }
 
     const cobrancas = await db.comercialCobranca.findMany({ where: { leadId, orgId }, orderBy: { parcela: 'asc' } });
     let parcelas: ParcelaDoDinheiro[] = cobrancas.map((c) => ({ numero: c.parcela, valorCentavos: c.valorCentavos, vence: c.vence, pagaEm: c.pagaEm, asaasPaymentId: c.externoId }));
@@ -188,15 +215,17 @@ export async function planejarBackfill(db: Banco, orgId: string, hoje: string = 
       }
     }
     if (doImportado && !produto) produto = produtoDoImportado;
-    if (!parcelas.length && !doImportado) { linha.fora = 'sem cobrança nem parcelas declaradas'; continue; }
+    if (!parcelas.length && !doImportado && !linha.registrar) { linha.fora = 'sem cobrança nem parcelas declaradas'; continue; }
     // O importado sem cobrança nem parcelas lançadas: o dinheiro já mora no Financeiro, só liga (nada nasce).
     const soLigar = !parcelas.length;
     linha.entrada = {
       orgId, leadId, partnerId, cliente: parceiro.razaoSocial, produto: TABELA_DE_PRECO[produto as keyof typeof TABELA_DE_PRECO]?.rotulo ?? produto,
-      valorCentavos: valorDoRegistro ?? ficha?.valorNegociadoCentavos ?? ficha?.valorCentavos ?? valorCentavos, fechadoEm: ativo.occurredAt, parcelas,
+      valorCentavos: valorDoRegistro ?? linha.registrar?.data.valorCentavos ?? ficha?.valorNegociadoCentavos ?? ficha?.valorCentavos ?? valorCentavos, fechadoEm: ativo.occurredAt, parcelas,
       ...(soLigar ? { soLigar: true } : {}),
+      ...(acordoDoPar ? { acordoId: acordoDoPar } : {}),
     };
-    linha.plano = await planejarDinheiro(linha.assumir ? comRegistroSimulado(db, linha.assumir) : db, linha.entrada);
+    const simulado = linha.assumir ?? (linha.registrar as unknown as RegistroDoImportado | null);
+    linha.plano = await planejarDinheiro(simulado ? comRegistroSimulado(db, simulado) : db, linha.entrada);
     if (soLigar) {
       const pl = linha.plano;
       if (!pl.acordo && !pl.ambiguo.length && !pl.semRegistro) linha.fora = 'importado sem cobrança, sem parcelas lançadas e sem acordo pagante do cliente no Financeiro (nada a ligar)';
@@ -327,6 +356,7 @@ const CRIAR_DIARIO = `CREATE TABLE IF NOT EXISTS "${DIARIO}" (
 export interface OpcoesDoAplicar {
   /** `--assumir-importados --pessoa`: quem assume os importados (já conferida por `exigirGenteNoContrato`). */
   assumirComo?: PessoaNoContrato;
+  pares?: ReadonlyMap<string, string>;
   agora?: Date;
 }
 
@@ -347,7 +377,7 @@ export async function aplicarBackfill(db: Banco, orgId: string, hoje: string = h
         await tx.$executeRawUnsafe(`INSERT INTO "${DIARIO}" ("orgId", "tabela", "linha", "coluna", "antes", "depois") VALUES ($1, $2, $3, $4, $5, $6)`, orgId, a.tabela, a.linha, a.coluna, a.antes, a.depois);
       };
       // Replaneja dentro da transação: o ensaio pode ter ficado velho.
-      for (const l of await planejarBackfill(tx as unknown as Banco, orgId, hoje, { assumirImportados: !!pessoa })) {
+      for (const l of await planejarBackfill(tx as unknown as Banco, orgId, hoje, { assumirImportados: !!pessoa, pares: opcoes.pares })) {
         if (!temTrabalho(l)) continue;
         await cadeadoDoContrato(tx, orgId, l.leadId);
         if (l.assumir && pessoa) {
@@ -359,6 +389,13 @@ export async function aplicarBackfill(db: Banco, orgId: string, hoje: string = h
           }
           if (g.evento) await anotar({ tabela: 'LeadEvent', linha: g.evento.eventoId, coluna: '*', antes: null, depois: 'criado' });
         }
+        if (l.registrar && pessoa) {
+          await tx.comercialContrato.create({ data: l.registrar.data as never });
+          assumidos++;
+          await anotar({ tabela: 'ComercialContrato', linha: l.registrar.id, coluna: '*', antes: null, depois: 'criado' });
+          const g = await fio.gravarNaTransacao(tx, orgId, l.leadId, 'contrato.registrado', `${l.registrar.id}:par`, { contratoId: l.registrar.id, tipo: 'contrato', ato: 'criado', por: pessoa.nome, porId: pessoa.id }, agora);
+          if (g.novo) await anotar({ tabela: 'LeadEvent', linha: g.evento.eventoId, coluna: '*', antes: null, depois: 'criado' });
+        } else if (l.registrar) continue;
         const plano = await planejarDinheiro(tx, l.entrada!);
         if (!plano.contrato || !plano.acordo || plano.ambiguo.length) continue;
         const feito = await aplicarDinheiro(tx, l.entrada!, plano, anotar);
@@ -415,6 +452,14 @@ async function main(): Promise<void> {
   if (assumirImportados && !pessoaId) throw new Error('--assumir-importados pede --pessoa <userId>: o registro nasce em nome de gente de verdade.');
   if (pessoaId && !assumirImportados) throw new Error('--pessoa só vale com --assumir-importados.');
   if (assumirImportados && modo === '--desfazer') throw new Error('--desfazer não assume nada: rode sem --assumir-importados.');
+  const pares = new Map<string, string>();
+  args.forEach((a, i) => {
+    if (a !== '--par') return;
+    const [lead, acordo] = (args[i + 1] ?? '').split(':');
+    if (!/^[0-9a-f-]{36}$/.test(lead ?? '') || !/^[0-9a-f-]{36}$/.test(acordo ?? '')) throw new Error('--par pede <leadId>:<acordoId> com os ids inteiros.');
+    pares.set(lead!, acordo!);
+  });
+  if (pares.size && !pessoaId) throw new Error('--par pede --assumir-importados --pessoa <userId>: o registro que faltar nasce em nome de gente de verdade.');
   if (detalhe && dentroDeGit(detalhe)) throw new Error('o arquivo de --detalhe tem nome de cliente: grave fora de repositório git.');
   if (!process.env.DATABASE_URL) throw new Error('DATABASE_URL vazia. Nunca passe a URL na linha de comando.');
 
@@ -433,19 +478,19 @@ async function main(): Promise<void> {
         return;
       }
       if (modo === '--aplicar') {
-        const r = await aplicarBackfill(prisma, orgId, hojeEmSP(), { assumirComo: pessoa ?? undefined });
+        const r = await aplicarBackfill(prisma, orgId, hojeEmSP(), { assumirComo: pessoa ?? undefined, pares });
         console.log(`${r.aplicados} cliente(s) ligado(s)${pessoa ? `, ${r.assumidos} importado(s) assumido(s)` : ''}, ${r.anotacoes.length} mudança(s) no diário "${DIARIO}".`);
         console.log('\nPara desfazer (ou rode --desfazer):\n');
         console.log(sqlDoDesfazer(r.anotacoes, orgId));
         return;
       }
-      const linhas = await planejarBackfill(prisma, orgId, hojeEmSP(), { assumirImportados });
+      const linhas = await planejarBackfill(prisma, orgId, hojeEmSP(), { assumirImportados, pares });
       if (detalhe) {
         mkdirSync(path.dirname(path.resolve(detalhe)), { recursive: true });
         writeFileSync(detalhe, [`# Dinheiro dos contratos · ensaio · ${new Date().toISOString()}`, '', 'Fora do git: tem nome de cliente.', '', tabelaDoEnsaio(linhas, true), ''].join('\n'), { encoding: 'utf8', mode: 0o600 });
       }
       console.log(tabelaDoEnsaio(linhas));
-      for (const l of linhas.filter(aplicavel)) console.log(`  ${curto(l.leadId)}: ${l.assumir ? `${fraseDoAssumir(l.assumir)}; depois, ` : ''}${resumoDoPlano(l.plano!)}`);
+      for (const l of linhas.filter(aplicavel)) console.log(`  ${curto(l.leadId)}: ${l.assumir ? `${fraseDoAssumir(l.assumir)}; depois, ` : ''}${l.registrar ? `registrar o contrato ${curto(l.registrar.id)} ativo, ${reais(l.registrar.data.valorCentavos)}, para o acordo escolhido; depois, ` : ''}${resumoDoPlano(l.plano!)}`);
       for (const l of linhas.filter((x) => x.assumir && !aplicavel(x))) console.log(`  ${curto(l.leadId)}: não assume (${situacao(l)}): o registro só nasce para quem é ligado sem ambiguidade.`);
       console.log(`\nNada foi escrito. Depois de conferir, rode com --aplicar${assumirImportados ? ` --assumir-importados --pessoa ${pessoaId}` : ''}.`);
     });
