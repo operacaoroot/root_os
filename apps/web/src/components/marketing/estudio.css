@@ -707,6 +707,4 @@
 }
 .estudio-area .estudio .stat strong { font-family: var(--os-mono); font-variant-numeric: tabular-nums; letter-spacing: -0.02em; }
 .estudio-area .estudio button, .estudio-area .estudio input, .estudio-area .estudio select, .estudio-area .estudio textarea { border-radius: 6px; border-color: rgb(var(--os-line-strong)); }
-.estudio-area .estudio button.primary { background: rgb(var(--os-ac)); border-color: rgb(var(--os-ac)); color: rgb(var(--os-ac-ink)); }
-.estudio-area .estudio button.primary:hover { background: rgb(var(--os-ac2)); }
 .estudio-area .estudio .filters button.active { background: rgb(var(--os-s3)); color: rgb(var(--os-tx)); }

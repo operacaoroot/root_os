@@ -53,11 +53,12 @@ export function MaquinaPagina(props: {
   const post = aberto ? m.painel?.posts.find((p) => p.id === aberto) : undefined;
 
   return (
-    <div className="com-tema space-y-5">
+    // Etapa 9b (Lucas): a mesma largura e o mesmo cabeçalho discreto das outras áreas (o título da tela já está no topo).
+    <div className="com-tema mx-auto max-w-[1180px] space-y-5">
       {!props.semCabecalho && (
         <div className="flex flex-wrap items-end justify-between gap-3">
           <div>
-            <h1 className="text-2xl font-semibold">{props.titulo}</h1>
+            <h1 className="text-[1.05rem] font-semibold">{props.titulo}</h1>
             {props.nota && <p className="mt-1 text-sm text-muted">{props.nota}</p>}
           </div>
           <div className="flex flex-wrap items-center gap-2">
