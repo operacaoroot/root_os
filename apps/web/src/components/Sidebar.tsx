@@ -318,7 +318,9 @@ export function Sidebar() {
         ].join(' ')}
       >
       {/* marca: a logo oficial, link para a entrada do Dia a dia, e logo à frente o botão de recolher (I1) */}
-      <div className={`flex min-h-[56px] items-center gap-2 border-b border-border pl-[17px] pr-2 ${compacta ? 'min-[820px]:gap-[3px] min-[820px]:pl-[6px] min-[820px]:pr-0' : ''}`}>
+      {/* Etapa 9b: `overflow-hidden`: enquanto a janela muda de tamanho o menu passa um instante estreito, e a
+          palavra ROOT vazava por cima do título da tela (visto nos prints de página inteira, em todas as áreas). */}
+      <div className={`flex min-h-[56px] items-center gap-2 overflow-hidden border-b border-border pl-[17px] pr-2 ${compacta ? 'min-[820px]:gap-[3px] min-[820px]:pl-[6px] min-[820px]:pr-0' : ''}`}>
         <Link
           href={inicio}
           onClick={aoNavegar}
@@ -346,7 +348,7 @@ export function Sidebar() {
       </div>
 
       <nav id="root-os-destinos" aria-label="Destinos" onKeyDownCapture={() => { toque.current = false; }} className="min-h-0 flex-1 overflow-y-auto px-2 py-4">
-        <p className={`px-3 pb-3 font-os-mono text-[10px] uppercase tracking-[0.14em] text-muted ${compacta ? 'min-[820px]:sr-only' : ''}`}>Áreas da empresa</p>
+        <p className={`overflow-hidden whitespace-nowrap px-3 pb-3 font-os-mono text-[10px] uppercase tracking-[0.14em] text-muted ${compacta ? 'min-[820px]:sr-only' : ''}`}>Áreas da empresa</p>
         {areas.map((area) => {
           const Icon = (Icons[area.icon as IconName] ?? Icons.Circle) as React.ElementType;
           const ativo = area.key === areaAtiva;
