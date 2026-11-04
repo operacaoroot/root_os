@@ -27,3 +27,11 @@ Build da API e tipos do frontend e dos novos testes passaram. A suíte de módul
 ## Publicação
 
 Base verificada: `root-os/cadastro-unico`, commit `1ce14f76248c12be9bcbf448ed0411193552e147`, imagem `rootos-official:cadastro-1ce14f7`. O Dockerfile incremental preserva essa versão e compila API/web com a alteração. Se a produção mudar durante o trabalho, revalidar/rebasear antes de publicar. Registrar backup, imagem e cadeia Compose efetiva; acrescentar somente o override da imagem. Aplicar apenas a migration nova após conferir o estado atual. Rollback volta à imagem anterior e mantém as tabelas adicionadas, preservando eventuais depósitos.
+
+## Estado publicado
+
+Publicado em 03/11/2026 às 20h40 (Brasília), imagem `rootos-official:cofre-deposito-eda5696`, revisão funcional `eda5696d7c36c1bae8d23fd339c065b1c4b00452`. API e web usam a mesma imagem. Backup de 158.446.694 bytes conferido; migration aplicada. `/api/health` confirmou API/banco e a página pública respondeu HTTP 200 com os cabeçalhos definidos. Registro operacional e retorno em `/srv/rootos/releases/cofre-deposito-eda5696-20261103/` na VPS ROOT.
+
+O link JUMA foi emitido em 03/11/2026 às 21h01, conferido pela rota pública (sem depósito real) e enviado ao e-mail da operação; expira em 10/11/2026 às 21h01. O link completo não é armazenado neste documento nem no Git.
+
+Limitação herdada da produção: a aplicação ainda conecta ao Postgres com um papel superusuário, que ignora RLS. Os testes com papel restrito comprovaram as policies novas, mas em produção a contenção deste fluxo depende dos filtros explícitos de empresa, da capacidade aleatória, da validade/revogação e das permissões verificadas na aplicação. Esta entrega não alterou o papel de conexão do restante do OS.
