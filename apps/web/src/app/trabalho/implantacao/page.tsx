@@ -1,6 +1,8 @@
 'use client';
 
 import { useEffect } from 'react';
+import { ClienteEscopo } from '@/components/clientes/ClienteEscopo';
+import { TrabalhoForaDaCarteira } from '@/components/trabalho/TrabalhoDaCarteira';
 import { ListasDoComercial } from '@/components/trabalho/ListasDoComercial';
 import { TrabalhoView } from '@/components/trabalho/TrabalhoView';
 import { destinoDaAbaRodada } from '@/lib/rotas-movidas';
@@ -15,6 +17,14 @@ import { destinoDaAbaRodada } from '@/lib/rotas-movidas';
  * com o resto da query; `/operacao` segue viva.
  */
 export default function ImplantacaoPage() {
+  return (
+    <ClienteEscopo restrito={() => <TrabalhoForaDaCarteira />}>
+      <ImplantacaoAmpla />
+    </ClienteEscopo>
+  );
+}
+
+function ImplantacaoAmpla() {
   useEffect(() => {
     const destino = destinoDaAbaRodada(Object.fromEntries(new URLSearchParams(window.location.search)));
     if (destino) window.location.replace(destino);

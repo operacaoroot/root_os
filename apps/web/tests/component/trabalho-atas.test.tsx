@@ -24,7 +24,7 @@ const TODAS = ['tarefas.ver', 'tarefas.editar', 'obsidian.ver', 'obsidian.editar
 let permissions = [...TODAS];
 let vaultVisivel = true;
 vi.mock('@/lib/api', () => ({
-  apiGet: (...a: unknown[]) => get(...a), apiPost: (...a: unknown[]) => post(...a),
+  apiGet: (path: string, ...a: unknown[]) => path === '/clientes-escopo/me' ? Promise.resolve({ amplo: true, clientes: [] }) : get(path, ...a), apiPost: (...a: unknown[]) => post(...a),
   apiPatch: vi.fn(), apiDelete: vi.fn(), apiBlob: vi.fn(),
 }));
 vi.mock('@/lib/auth', () => ({ useAuth: () => ({ token: 'tok', ready: true, user: { id: 'u' }, can: (p: string) => permissions.includes(p) }) }));
@@ -97,7 +97,7 @@ describe('Atas: a lista e a ata aberta', () => {
   it('lista as atas com data, participantes e resumo, e abre a primeira inteira', async () => {
     render(<AtasPage />);
     const lista = await screen.findByTestId('atas-lista');
-    const item = within(lista).getByTestId(`ata-${REF}`);
+    const item = await within(lista).findByTestId(`ata-${REF}`);
     expect(item).toHaveTextContent('Reunião de operação semanal');
     expect(item).toHaveTextContent('16/10/2026');
     expect(item).toHaveTextContent('Marina Alves, Paulo Rocha');

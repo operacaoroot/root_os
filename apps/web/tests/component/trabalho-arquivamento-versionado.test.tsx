@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 const get = vi.fn(), patch = vi.fn(), remove = vi.fn();
 let token = 'qa-sessao-a', pessoa = 'qa-pessoa-a';
 let permissions = ['tarefas.ver', 'tarefas.editar'];
-vi.mock('@/lib/api', () => ({ apiGet: (...a: unknown[]) => get(...a), apiPatch: (...a: unknown[]) => patch(...a),
+vi.mock('@/lib/api', () => ({ apiGet: (path: string, ...a: unknown[]) => path === '/clientes-escopo/me' ? Promise.resolve({ amplo: true, clientes: [] }) : get(path, ...a), apiPatch: (...a: unknown[]) => patch(...a),
   apiDelete: (...a: unknown[]) => remove(...a), apiPost: vi.fn(), apiBlob: vi.fn() }));
 vi.mock('@/lib/auth', () => ({ useAuth: () => ({ token, ready: true, user: { id: pessoa }, can: (p: string) => permissions.includes(p) }) }));
 import TrabalhoPage from '@/app/trabalho/page';

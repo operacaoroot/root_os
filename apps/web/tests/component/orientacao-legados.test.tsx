@@ -6,7 +6,7 @@ const apiPatch = vi.fn();
 
 vi.mock('@/lib/api', async () => {
   const real = await vi.importActual<typeof import('@/lib/api')>('@/lib/api');
-  return { ...real, apiGet: (...a: unknown[]) => apiGet(...a), apiPatch: (...a: unknown[]) => apiPatch(...a) };
+  return { ...real, apiGet: (path: string, ...a: unknown[]) => path === '/clientes-escopo/me' ? Promise.resolve({ amplo: true, clientes: [] }) : apiGet(path, ...a), apiPatch: (...a: unknown[]) => apiPatch(...a) };
 });
 
 let PODE_EDITAR = false;

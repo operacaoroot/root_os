@@ -1,15 +1,26 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Inject, Injectable, NotFoundException } from '@nestjs/common';
 import { createHash } from 'node:crypto';
 import { lstat, readFile, realpath } from 'node:fs/promises';
 import { isAbsolute, relative, resolve, sep } from 'node:path';
 import { PrismaService } from '../prisma/prisma.service';
+import { TarefaEscopoService } from '../clientes-escopo/tarefa-escopo.service';
 
 interface FileEntry { taskId: string; id: string; name: string; path: string; sha256: string; size: number }
 
 /** Private migrated files: a native task and the manifest must both belong to the caller's org. */
 @Injectable()
 export class WorkFilesService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(private readonly prisma: PrismaService, @Inject(TarefaEscopoService) private readonly escopo?: TarefaEscopoService) {}
+
+  async readAutorizado(orgId: string, userId: string, taskId: string, fileId: string) {
+    const task = await this.prisma.workTask.findFirst({ where: { orgId, externalId: taskId }, select: { id: true } });
+    if (!task) throw new NotFoundException();
+    const antes = await this.escopo!.exigir(orgId, userId, task.id);
+    const file = await this.read(orgId, taskId, fileId);
+    const depois = await this.escopo!.exigir(orgId, userId, task.id);
+    if (antes.clienteId !== depois.clienteId) throw new NotFoundException();
+    return file;
+  }
 
   async read(orgId: string, taskId: string, fileId: string) {
     if (![taskId, fileId].every((v) => /^[a-zA-Z0-9._-]+$/.test(v))) throw new NotFoundException();

@@ -5,7 +5,7 @@ import { tarefasDeTrabalho } from '@/lib/work-projection';
 const get = vi.fn(), patch = vi.fn();
 let permissions = ['tarefas.ver', 'tarefas.editar'];
 let token = 'qa-org-a';
-vi.mock('@/lib/api', () => ({ apiGet: (...a: unknown[]) => get(...a), apiPatch: (...a: unknown[]) => patch(...a), apiPost: vi.fn(), apiDelete: vi.fn(), apiBlob: vi.fn() }));
+vi.mock('@/lib/api', () => ({ apiGet: (path: string, ...a: unknown[]) => path === '/clientes-escopo/me' ? Promise.resolve({ amplo: true, clientes: [] }) : get(path, ...a), apiPatch: (...a: unknown[]) => patch(...a), apiPost: vi.fn(), apiDelete: vi.fn(), apiBlob: vi.fn() }));
 vi.mock('@/lib/auth', () => ({ useAuth: () => ({ token, ready: true, user: { id: 'qa-user' }, can: (p: string) => permissions.includes(p) }) }));
 import { TrabalhoView } from '@/components/trabalho/TrabalhoView';
 // /tarefas redireciona para /trabalho?visao=lista desde 18/10/2026 (rodada do painel P2):
