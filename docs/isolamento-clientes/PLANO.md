@@ -52,3 +52,16 @@ Leitura local em `/Users/pedro/Library/Projetos/FinOps5.0`, sem testes ou acesso
 ## Integração com a publicação de 04/11/2026
 
 A produção avançou para `rootos-official:etapa5-7396c26` durante a validação. Foi integrado o commit exato `7396c26f99ab121ee53a78c438438d34e8bf5a65`, preservando Comercial, Financeiro e a migration `20261103230000_dinheiro_do_contrato`. O schema foi mesclado sem conflito. A Etapa 6, encontrada no checkout de integração, não foi incluída porque ainda não era a versão publicada. A imagem de isolamento deve partir da Etapa 5 e o deploy deve recusar mudança de base posterior.
+
+## Modelos de dados por lote
+
+| Lote | Modelos e regras |
+| --- | --- |
+| Núcleo e cofre, implementados | `Org` e `User` mantidos; `Partner` canônico; `ClienteAcessoPerfil` por usuário/org; `ClienteAcessoVinculo` por usuário/org/cliente; `CofreItem.clienteId` e `CofreDeposito.clienteId` com FK composta; recibos preservados |
+| Trabalho e arquivos | `WorkTask.clienteId` como destino; filhos herdam o cliente do pai; pastas, listas e anexos precisam de regra explícita para agrupamentos; `ArquivoDoCliente.partnerId` limitado à carteira |
+| Comercial e Financeiro | `ComercialFicha`, `ComercialContrato`, `AcordoComercial`, `Contract` e `FinanceTransaction` vinculados ao Partner, com validação dos pais e filtro em totais/relatórios; preservar a integração financeira já publicada |
+| Contexto e busca | Definir cliente nos registros de contexto e fazer versões, anexos, índice vetorial e resultados herdarem a autorização; conteúdo sem classificação permanece reservado à visão ampla |
+| Agentes, jobs e MCP | Contexto persistido com organização, cliente e ator; revalidação na execução/retry; chaves de idempotência por cliente; conta de sistema não substitui silenciosamente o operador |
+| Banco restrito | Papel sem superusuário/BYPASSRLS, contexto transacional validado e políticas que combinem organização e carteira; execução com o papel real deve provar leitura e escrita negadas |
+
+O provisionamento do primeiro administrador de uma organização nova cria seu perfil `ALL` explicitamente, na mesma transação. A regra não alcança usuários comuns nem amplia uma carteira `SELECTED` em reconfigurações posteriores. Uma falha ao criar o perfil desfaz também a criação da organização e do usuário.
