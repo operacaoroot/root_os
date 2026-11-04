@@ -29,7 +29,7 @@ Os testes precedem cada alteração de comportamento. Reproduções iniciais: em
 
 Revisão adicional reproduziu políticas que omitiam o cliente do hash, null acrescentado ao legado, revogação durante PDF, alçada rebaixada com permissão mantida e perda de autoridade do signatário Root. Cada correção recebeu teste negativo antes do código.
 
-Validação local final: 422 testes em 23 arquivos e 118 testes de políticas; tipos dos 11 arquivos de teste alterados e dependências transitivas; build da API; boot do AppModule compilado, com a guarda injetada e seis rotas respondendo 401. A migration aplicou no banco descartável existente e do zero; comparação com schema sem diferença. Logs: `focal-final.log`, `policy.log`, `types-final.log`, `build-final.log`, `boot-final.log` e `migration-diff.log`. A revisão independente não encontrou bloqueio restante no diff final. CI e SHA serão registrados no PR. Os testes não comprovam integração real com ZapSign nem publicação em produção.
+Validação local final: 422 testes em 23 arquivos, mais 10 casos da jornada comercial e 118 testes de políticas; tipos dos 12 arquivos de teste alterados e dependências transitivas; build da API; boot do AppModule compilado, com a guarda injetada e seis rotas respondendo 401. A migration aplicou no banco descartável existente e do zero; comparação com schema sem diferença. Logs: `focal-final.log`, `policy.log`, `types-final.log`, `types-jornada-green.log`, `jornada-green.log`, `build-final.log`, `boot-final.log` e `migration-diff.log`. A revisão independente não encontrou bloqueio restante no diff final. CI e SHA serão registrados no PR. Os testes não comprovam integração real com ZapSign nem publicação em produção.
 
 ## Migration
 
