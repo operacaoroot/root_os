@@ -202,15 +202,16 @@
 /* Título da página com a medida exata do Estúdio V1 (36px; 29px no celular),
    a mesma do .estudio h1 do Marketing. Ficam de fora: o título da barra do topo
    (Topbar), os rótulos em mono e os títulos das telas do Estúdio (.estudio), que
-   têm medida própria, como o "Bora publicar" do Início. */
-:root[data-os-theme='estudio'] #root-os-main h1:not([class*='font-os-mono']):not([class*='font-central']):not(.estudio h1) {
+   têm medida própria, como o "Bora publicar" do Início. Etapa 9b: e os títulos dentro de .com-tema
+   (o desenho do Painel geral do Comercial), que seguem a medida das outras áreas. */
+:root[data-os-theme='estudio'] #root-os-main h1:not([class*='font-os-mono']):not([class*='font-central']):not(.estudio h1):not(.com-tema h1) {
   font-size: 36px;
   line-height: 1.14;
   letter-spacing: -1.5px;
   font-weight: 650;
 }
 @media (max-width: 760px) {
-  :root[data-os-theme='estudio'] #root-os-main h1:not([class*='font-os-mono']):not([class*='font-central']):not(.estudio h1) {
+  :root[data-os-theme='estudio'] #root-os-main h1:not([class*='font-os-mono']):not([class*='font-central']):not(.estudio h1):not(.com-tema h1) {
     font-size: 29px;
   }
 }
