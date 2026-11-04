@@ -4,6 +4,7 @@ import { ActorType, ApprovalState, RiskLevel, type Prisma } from '@prisma/client
 import { describe, expect, it, vi } from 'vitest';
 import { ApprovalsService, canonicalHash } from '../src/approvals/approvals.service';
 import type { AuditService } from '../src/audit/audit.service';
+import type { EfeitoComercialEscopoService } from '../src/clientes-escopo/efeito-comercial-escopo.service';
 import type { EfeitoClienteEscopoService } from '../src/clientes-escopo/efeito-cliente-escopo.service';
 import { contextoAtual } from '../src/common/contexto-execucao';
 import { AcoesService } from '../src/gateway/acoes.service';
@@ -82,8 +83,10 @@ function montar(capacidade: CapacidadeDeTeste, op: { semGuarda?: boolean; exigeA
     ctx, atorDoContexto: contextoAtual()?.actorId, tipoDoContexto: contextoAtual()?.actorType,
   }));
   registro.registrar({ [id]: (entrada, _org, ctx) => efeito(entrada, ctx) }, 'Teste sem Drive');
+  const exigirComercial = vi.fn(async (_org:string,_approval:string,_cap:string,_args:Record<string,unknown>,_op:unknown)=>{});
+  const guardaComercial = { exigir: exigirComercial } as unknown as EfeitoComercialEscopoService;
   const gateway = new ToolGateway(
-    prisma, policy, sinais, approvals, eventos, undefined, undefined, registro, undefined, op.semGuarda ? undefined : guarda,
+    prisma, policy, sinais, approvals, eventos, undefined, undefined, registro, undefined, op.semGuarda ? undefined : guarda, op.semGuarda ? undefined : guardaComercial,
   );
   const acoes = new AcoesService(prisma, gateway, eventos, undefined, policy, approvals);
   const ctx: ExecCtx & { approvalId: string } = {
@@ -94,7 +97,7 @@ function montar(capacidade: CapacidadeDeTeste, op: { semGuarda?: boolean; exigeA
     (entrada, contextoDoEfeito) => efeito(entrada, contextoDoEfeito),
   );
 
-  return { ap, acoes, chamar, efeito, ctx, exigirAntesDaAprovacao, updateMany, consumir, propor, criarToolCall };
+  return { ap, acoes, chamar, efeito, ctx, exigirComercial, exigirAntesDaAprovacao, updateMany, consumir, propor, criarToolCall };
 }
 
 describe.each(CAPACIDADES)('aprovação e carteira para $id', (capacidade) => {
@@ -216,7 +219,7 @@ const CAPACIDADES_COM_ORIGEM = [
 
 describe.each(CAPACIDADES_COM_ORIGEM)('origem do R4 por token para $id', (capacidade) => {
   it('só entrega a aprovação que consumiu ao efeito e mantém o ator original na chamada', async () => {
-    const m = montar(capacidade, { nivel: RiskLevel.R4, semGuarda: true });
+    const m = montar(capacidade, { nivel: RiskLevel.R4, semGuarda: capacidade.id !== 'comercial.contrato.enviar' });
     expect(await m.chamar(TOKEN)).toMatchObject({ status: 'executado', decisao: { nivel: RiskLevel.R4 }, resultado: {
       ctx: { orgId: ORG, approvalId: APROVACAO, actorId: APROVADOR, actorType: ActorType.user },
       atorDoContexto: APROVADOR, tipoDoContexto: ActorType.user,
@@ -260,5 +263,32 @@ describe.each(CAPACIDADES_COM_ORIGEM)('origem do R4 por token para $id', (capaci
     expect(m.ap.status).toBe(ApprovalState.confirmada);
     expect(m.consumir).not.toHaveBeenCalled();
     expect(m.efeito).not.toHaveBeenCalled();
+  });
+});
+
+const EFEITOS_COMERCIAIS = [
+  { id:'comercial.sala.publicar', resource:{type:'comercial.sala',id:`${LEAD_COMERCIAL}:v1`}, args:{leadId:LEAD_COMERCIAL,versao:1,hash:HASH_COMERCIAL,clienteId:null}, nivel:RiskLevel.R3 },
+  { ...CAPACIDADES_COM_ORIGEM[0], args:{...CAPACIDADES_COM_ORIGEM[0].args,clienteId:null}, nivel:RiskLevel.R4 },
+];
+describe.each(EFEITOS_COMERCIAIS)('preflight comercial de $id', capacidade => {
+  it('token chama a autorização atual antes de consumir e transporta a aprovação real', async () => {
+    const m=montar(capacidade,{nivel:capacidade.nivel});
+    expect(await m.chamar(TOKEN)).toMatchObject({status:'executado',resultado:{ctx:{approvalId:APROVACAO,actorId:APROVADOR}}});
+    expect(m.exigirComercial).toHaveBeenCalledWith(ORG,APROVACAO,capacidade.id,capacidade.args,{fase:'confirmada'});
+    expect(m.exigirComercial.mock.invocationCallOrder[0]).toBeLessThan(m.updateMany.mock.invocationCallOrder[0]);
+  });
+  it('nega revogação antes de consumir por token',async()=>{
+    const m=montar(capacidade,{nivel:capacidade.nivel});m.exigirComercial.mockRejectedValue(new ForbiddenException('revogado'));
+    expect(await m.chamar(TOKEN)).toMatchObject({status:'recusado'});
+    expect(m.ap.status).toBe(ApprovalState.confirmada);expect(m.efeito).not.toHaveBeenCalled();expect(m.consumir).not.toHaveBeenCalled();
+  });
+  it('nega revogação antes de consumir pelo botão da aprovação',async()=>{
+    const m=montar(capacidade,{nivel:capacidade.nivel});m.exigirComercial.mockRejectedValue(new ForbiddenException('revogado'));
+    await expect(m.acoes.executarAprovada(ORG,APROVACAO,APROVADOR)).rejects.toThrow();
+    expect(m.ap.status).toBe(ApprovalState.confirmada);expect(m.efeito).not.toHaveBeenCalled();expect(m.updateMany).not.toHaveBeenCalled();
+  });
+  it('sem serviço de autorização não executa',async()=>{
+    const m=montar(capacidade,{nivel:capacidade.nivel,semGuarda:true});
+    expect(await m.chamar(TOKEN)).toMatchObject({status:'recusado'});expect(m.ap.status).toBe(ApprovalState.confirmada);expect(m.efeito).not.toHaveBeenCalled();
   });
 });

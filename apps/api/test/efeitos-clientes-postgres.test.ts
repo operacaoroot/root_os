@@ -16,6 +16,7 @@ const alvo = new URL(url);
 if (!['postgres:', 'postgresql:'].includes(alvo.protocol) || !['127.0.0.1', 'localhost'].includes(alvo.hostname)
   || alvo.search || alvo.hash || !((alvo.port === '55583' && alvo.pathname === '/rootos_lote5_test')
     || (alvo.port === '55584' && alvo.pathname === '/rootos_lote6_test')
+    || (alvo.port === '55585' && alvo.pathname === '/rootos_lote7_test')
     || (alvo.port === '5432' && alvo.pathname === '/marketing_os_test'))) {
   throw new Error('A prova exige o banco descartável local ou o banco próprio do CI.');
 }

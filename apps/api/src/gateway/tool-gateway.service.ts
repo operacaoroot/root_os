@@ -9,6 +9,7 @@ import {
 } from '@nestjs/common';
 import { ActorType, ApprovalState, Prisma, RiskLevel, ToolCallStatus } from '@prisma/client';
 import { ORDEM_DOS_NIVEIS, type Capacidade, type Decisao, type Nivel } from '@mktos/policy';
+import { EfeitoComercialEscopoService } from '../clientes-escopo/efeito-comercial-escopo.service';
 import { EfeitoClienteEscopoService } from '../clientes-escopo/efeito-cliente-escopo.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { comContexto } from '../common/contexto-execucao';
@@ -195,8 +196,8 @@ const ROTULO_DA_RECUSA: Record<CausaDeRecusa, string> = {
   aprovacao_exigida: 'recusado na porta: efeito de cliente exige aprovação individual',
 };
 
-export function efeitoExigeEscopoDeCliente(capabilityId: string | null): capabilityId is 'drive.pasta.criar' | 'drive.arquivo.enviar' {
-  return capabilityId === 'drive.pasta.criar' || capabilityId === 'drive.arquivo.enviar';
+export function efeitoExigeEscopoDeCliente(capabilityId: string | null): capabilityId is 'drive.pasta.criar' | 'drive.arquivo.enviar' | 'comercial.sala.publicar' | 'comercial.contrato.enviar' {
+  return capabilityId === 'drive.pasta.criar' || capabilityId === 'drive.arquivo.enviar' || capabilityId === 'comercial.sala.publicar' || capabilityId === 'comercial.contrato.enviar';
 }
 
 /*
@@ -307,6 +308,7 @@ export class ToolGateway implements OnModuleInit {
      */
     @Optional() private readonly lotes?: LotesService,
     @Optional() private readonly efeitoClienteEscopo?: EfeitoClienteEscopoService,
+    @Optional() private readonly efeitoComercialEscopo?: EfeitoComercialEscopoService,
   ) {
     this.log.log(`porta em modo ${this.modo.toUpperCase()}`);
   }
@@ -1134,6 +1136,11 @@ export class ToolGateway implements OnModuleInit {
   }
 
   async exigirEscopoDeEfeitoAprovado(orgId: string, capabilityId: string, approvalId: string, args: Record<string, unknown>): Promise<void> {
+    if (capabilityId === 'comercial.sala.publicar' || capabilityId === 'comercial.contrato.enviar') {
+      if (!this.efeitoComercialEscopo) throw new ForbiddenException('Não foi possível conferir a origem deste pedido comercial.');
+      await this.efeitoComercialEscopo.exigir(orgId, approvalId, capabilityId, args, {fase:'confirmada'});
+      return;
+    }
     if (!this.efeitoClienteEscopo) throw new ForbiddenException('Não foi possível conferir a autorização deste efeito de cliente.');
     await this.efeitoClienteEscopo.exigirAntesDaAprovacao(orgId, capabilityId, approvalId, args);
   }
@@ -1147,7 +1154,7 @@ export class ToolGateway implements OnModuleInit {
         tokenHash: createHash('sha256').update(p.token).digest('hex'),
         status: ApprovalState.confirmada,
         expiraEm: { gt: new Date() },
-        ...(exigeCarteiraAntesDoConsumo ? {} : { nivelExigido: RiskLevel.R4 }),
+        ...(!exigeCarteiraAntesDoConsumo || capabilityId === 'comercial.contrato.enviar' ? { nivelExigido: RiskLevel.R4 } : {}),
       },
       select: { id: true, aprovadoPorId: true, resourceType: true, resourceId: true, contentHash: true },
     });

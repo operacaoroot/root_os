@@ -41,6 +41,7 @@ import { FioService, ReacoesRegistry } from './fio.service';
 import { SO_DOCUMENTOS_DE_ASSINATURA } from './documentos';
 import { areaParaOCliente, edicoesPorVersao, modoDaSala } from './area-do-cliente-projecao';
 import { publicadaDaSala } from './sala-versao.service';
+import { trilhoDaSala } from './sala-trilho-origem';
 import { acompanhamentoDaSala, chaveDaDuvida, projetarSala, type AcompanhamentoDaSala, type DadosDaSala, type EventoDaSala } from './sala-projecao';
 import {
   cifrarTokenDaSala,
@@ -357,7 +358,7 @@ export class SalaService implements OnModuleInit {
    * ou a própria página pedindo o estado de novo não conta visita. A visita é
    * `visita`, que a página chama uma vez ao abrir.
    */
-  async estado(token: string, agora: Date = new Date()): Promise<EstadoDaSala> {
+  async estado(token: string, agora: Date = new Date()): Promise<EstadoDaSalaComAcompanhamento> {
     const r = await this.resolver(token, agora);
     return comTenantPublico(r.orgId, () => this.projetar(r.salaId, r.leadId, agora));
   }
@@ -715,7 +716,7 @@ export class SalaService implements OnModuleInit {
   private async areaDoCliente(e: {
     sala: { id: string; orgId: string };
     leadId: string;
-    ficha: { clienteAtivoEm: Date | null; kickoffEm: Date | null; cardId: string | null; trilhoId: string | null; donoId: string | null; socioDaConta: string | null } | null;
+    ficha: { clienteAtivoEm: Date | null; kickoffEm: Date | null; cardId: string | null; trilhoId: string | null; partnerId: string | null; donoId: string | null; socioDaConta: string | null } | null;
     eventos: readonly EventoDaSala[];
     estado: EstadoDaSala;
     acompanhamento: AcompanhamentoDaSala;
@@ -729,9 +730,10 @@ export class SalaService implements OnModuleInit {
         select: { item: true, numero: true, estado: true, publicadaEm: true, atualizadoEm: true, conteudo: true },
       }),
       this.prisma.salaLeitura.findMany({ where: { salaId: sala.id }, select: { item: true, versao: true } }),
-      ficha?.trilhoId
-        ? this.prisma.onboardingTrilho.findFirst({ where: { id: ficha.trilhoId }, select: { fase: true, marcos: { where: { tipo: 'fase.avancou' }, select: { tipo: true, em: true, dados: true } } } })
-        : null,
+      trilhoDaSala(this.prisma, sala.orgId, leadId, ficha, {
+        fase: true,
+        marcos: { where: { tipo: 'fase.avancou' }, select: { tipo: true, em: true, dados: true } },
+      }),
       ficha?.donoId ? this.prisma.user.findFirst({ where: { id: ficha.donoId }, select: { name: true } }) : null,
     ]);
     const edicoes = edicoesPorVersao(versoes);
