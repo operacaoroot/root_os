@@ -18,6 +18,12 @@ function montar(modo: string | null = 'SELECTED') {
   return {state,db,svc:new ClienteEscopoService(db, {log:vi.fn()} as any)};
 }
 describe('escopo por cliente: contrato de autorização',()=>{
+  it('recusa identidade incompleta antes de consultar com filtros omitidos',async()=>{
+    const {svc,db}=montar('ALL');
+    await expect(svc.perfil(undefined as any,user)).rejects.toThrow();
+    await expect(svc.perfil(org,undefined as any)).rejects.toThrow();
+    expect(db.user.findFirst).not.toHaveBeenCalled();
+  });
   it('não usa o papel de plataforma como carteira implícita',async()=>{
     const {svc,state}=montar(null);state.admin=true;
     await expect(svc.filtro(org,user)).rejects.toThrow();

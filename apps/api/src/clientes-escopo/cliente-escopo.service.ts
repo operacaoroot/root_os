@@ -12,6 +12,7 @@ export class ClienteEscopoService {
   constructor(private readonly prisma:PrismaService, private readonly audit:AuditService) {}
 
   async perfil(orgId:string,userId:string,db:Banco=this.prisma) {
+    if(typeof orgId!=='string' || !orgId.trim() || typeof userId!=='string' || !userId.trim()) throw negado();
     const user=await db.user.findFirst({where:{id:userId,orgId,isActive:true},select:{id:true}});
     if(!user) throw negado();
     const p=await db.clienteAcessoPerfil.findFirst({where:{orgId,userId},select:{modo:true}});
