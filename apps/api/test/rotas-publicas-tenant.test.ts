@@ -222,6 +222,7 @@ describe('a sentinela da resolução pública', () => {
       'resolverTenantDoConvite',
       // O webhook de assinatura do cockpit comercial (lane D): acha a empresa pelo documento no provedor.
       'resolverTenantDoDocumento',
+      'resolverTenantDoEstadoBio',
       'resolverTenantDoHandle',
       'resolverTenantDoLink',
     ]);

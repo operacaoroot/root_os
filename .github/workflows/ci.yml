@@ -1995,6 +1995,61 @@ jobs:
       - name: Compilar os pacotes internos
         run: pnpm --filter @mktos/shared --filter @mktos/policy build
 
+      - name: Compilar e testar o MCP, incluindo identidade
+        working-directory: packages/mcp
+        run: |
+          pnpm build
+          # O teste de identidade importa dist/client.js. O resumo estruturado
+          # exige os quatro arquivos e todos os casos, sem skip, todo ou cancelamento.
+          node <<'JS'
+          const assert = require('node:assert/strict');
+          const { resolve } = require('node:path');
+          const { run } = require('node:test');
+          function conferir(resumo, piso) {
+            const c = resumo?.counts;
+            assert.equal(resumo?.success, true, 'A suíte MCP precisa passar.');
+            for (const chave of ['tests', 'passed', 'failed', 'cancelled', 'skipped', 'todo']) {
+              assert.ok(Number.isInteger(c?.[chave]) && c[chave] >= 0, `Contagem MCP ausente ou inválida: ${chave}`);
+            }
+            assert.ok(c.tests >= piso, `MCP: ${c.tests} casos, piso ${piso}.`);
+            assert.equal(c.passed, c.tests);
+            for (const chave of ['failed', 'cancelled', 'skipped', 'todo']) assert.equal(c[chave], 0, chave);
+          }
+          // Contraprovas da própria trava: resumo incompleto, redução de casos
+          // ou qualquer caso não aprovado precisam reprovar a CI.
+          const counts = { tests: 15, passed: 15, failed: 0, cancelled: 0, skipped: 0, todo: 0 };
+          conferir({ success: true, counts }, 15);
+          const invalidos = [undefined, {}, { success: false, counts }, ...[
+            { tests: 14, passed: 14 }, { skipped: 1 }, { todo: 1 }, { cancelled: 1 },
+            { failed: 1 }, { passed: 14 }, { tests: '15' },
+          ].map(c => ({ success: true, counts: { ...counts, ...c } }))];
+          for (const resumo of invalidos) assert.throws(() => conferir(resumo, 15));
+          const pisos = new Map([
+            ['test/env.test.mjs', 2], ['test/identidade.test.mjs', 6],
+            ['test/rotas.test.mjs', 5], ['test/contratos.test.mjs', 2],
+          ].map(([arquivo, piso]) => [resolve(arquivo), piso]));
+          (async () => {
+            const vistos = new Set();
+            let total;
+            for await (const evento of run({ files: [...pisos.keys()] })) {
+              if (evento.type === 'test:fail' || evento.type === 'test:stderr') console.error(evento.data);
+              if (evento.type !== 'test:summary') continue;
+              const resumo = evento.data;
+              if (resumo.file) {
+                assert.ok(pisos.has(resumo.file) && !vistos.has(resumo.file), 'Resumo MCP inesperado ou duplicado.');
+                conferir(resumo, pisos.get(resumo.file));
+                vistos.add(resumo.file);
+              } else {
+                assert.equal(total, undefined, 'Resumo MCP global duplicado.');
+                total = resumo;
+              }
+            }
+            assert.equal(vistos.size, pisos.size, 'Nem todos os arquivos MCP executaram.');
+            conferir(total, 15);
+            console.log(`MCP: ${total.counts.passed} casos aprovados em ${vistos.size} arquivos, sem pulos.`);
+          })().catch(error => { console.error(error); process.exitCode = 1; });
+          JS
+
       - name: A variável de banco de teste precisa existir
         run: |
           test -n "$TEST_DATABASE_URL" || {
