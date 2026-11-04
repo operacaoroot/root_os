@@ -1,4 +1,4 @@
-ARG BASE_IMAGE=rootos-official:cofre-deposito-eda5696
+ARG BASE_IMAGE=rootos-official:etapa5-7396c26
 FROM ${BASE_IMAGE}
 ARG SOURCE_REVISION
 LABEL org.opencontainers.image.revision=${SOURCE_REVISION}

@@ -48,3 +48,7 @@ Adicionar clienteId nullable, sem classificar pelo título. Vincular depósitos 
 ## Referência FinOps
 
 Leitura local em `/Users/pedro/Library/Projetos/FinOps5.0`, sem testes ou acesso à produção. Referências: `20260918130850_empresa_interna_so_o_email.sql` (ação versus carteira), `20260825210000_guard_multitenant_rpcs.sql` (validar também o recurso), `ACH-018-SEC-vazamento-cross-tenant-user-companies.md` (revogação com resíduo legado), `ACH-024-SEC-residuo-user-companies-no-with-check.md` (INSERT e WITH CHECK). Lacunas identificadas em jobs e identidade MCP não foram copiadas como comportamento desejado.
+
+## Integração com a publicação de 04/11/2026
+
+A produção avançou para `rootos-official:etapa5-7396c26` durante a validação. Foi integrado o commit exato `7396c26f99ab121ee53a78c438438d34e8bf5a65`, preservando Comercial, Financeiro e a migration `20261103230000_dinheiro_do_contrato`. O schema foi mesclado sem conflito. A Etapa 6, encontrada no checkout de integração, não foi incluída porque ainda não era a versão publicada. A imagem de isolamento deve partir da Etapa 5 e o deploy deve recusar mudança de base posterior.
