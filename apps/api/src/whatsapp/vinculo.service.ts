@@ -165,7 +165,16 @@ export class VinculoDoWhatsappService {
     }
 
     let novo: { equipe: boolean; leadId: string | null; clienteId: string | null; sugestao: SugestaoDeVinculo | null };
-    if (c.grupo) {
+    // Etapa 7 (F-19): o grupo que o FECHAMENTO criou se liga pelo id (`ComercialFicha.grupoJid`), não pelo nome:
+    // é o mesmo grupo, sem adivinhação. Um só lead com esse id; o cliente é o cadastro principal da ficha.
+    const doFechamento = c.grupo && c.chatJid
+      ? await this.prisma.comercialFicha.findMany({ where: { orgId, grupoJid: c.chatJid }, select: { leadId: true, partnerId: true }, take: 2 })
+      : [];
+    if (doFechamento.length === 1) {
+      const f = doFechamento[0]!;
+      const p = f.partnerId ? await this.prisma.partner.findFirst({ where: { id: f.partnerId, orgId }, select: { id: true, principalId: true } }) : null;
+      novo = { equipe: false, leadId: f.leadId, clienteId: p ? (p.principalId ?? p.id) : null, sugestao: null };
+    } else if (c.grupo) {
       // Revisão 22C (A3): grupo da equipe ou sem o prefixo da casa não casa com ninguém; não carrega
       // as listas de clientes e leads a cada mensagem dele (a comunidade fala o dia inteiro).
       const precisaDasListas = !ehGrupoDaEquipePeloNome(c.nome) && !!nomeDoGrupoSemPrefixo(c.nome);
