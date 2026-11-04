@@ -37,6 +37,8 @@ let roleId: string, listId: string, statusId: string, nextStatusId: string, tagI
 let otherListId: string, otherStatusId: string;
 let baseUrl: string, jwt: JwtService;
 let baselineIds: string[] = [], baselineHash = '';
+const concorrenteOrg = 'qa-m02-concorrente-' + randomUUID();
+let concorrenteTaskId: string;
 let afterAudit: (() => Promise<void>) | null = null;
 let afterActivityRead: (() => Promise<void>) | null = null;
 let afterActorNamesRead: (() => Promise<void>) | null = null;
@@ -117,8 +119,10 @@ describe.skipIf(!url)('M02 HTTP e Postgres próprios', () => {
   beforeAll(async () => {
     db = new PrismaClient({ datasources: { db: { url: url! } } });
     adversary = new PrismaClient({ datasources: { db: { url: url! } } });
-    baselineIds = (await db.workTask.findMany({ select: { id: true }, orderBy: { id: 'asc' } })).map(t => t.id);
-    baselineHash = hash(await snapshot(baselineIds));
+    await db.org.create({ data: { id: concorrenteOrg, slug: concorrenteOrg, name: 'Simulação de outra suíte' } });
+    const concorrenteLista = await db.workList.create({ data: { orgId: concorrenteOrg, name: 'Lista concorrente' } });
+    const concorrenteStatus = await db.workStatus.create({ data: { orgId: concorrenteOrg, listId: concorrenteLista.id, name: 'Aberta', type: 'open' } });
+    concorrenteTaskId = (await db.workTask.create({ data: { orgId: concorrenteOrg, listId: concorrenteLista.id, statusId: concorrenteStatus.id, title: 'Antes da outra suíte' } })).id;
     for (const id of [orgId, otherOrgId]) await db.org.create({ data: { id, slug: id, name: 'Empresa sintética M02' } });
     const permissions = await db.permission.findMany({ where: { key: { in: ['tarefas.ver', 'tarefas.editar'] } } });
     expect(permissions).toHaveLength(2);
@@ -148,6 +152,20 @@ describe.skipIf(!url)('M02 HTTP e Postgres próprios', () => {
     otherStatusId = (await db.workStatus.create({ data: { orgId: otherOrgId, listId: otherListId, name: 'A fazer', type: 'open' } })).id;
     tagId = (await db.workTag.create({ data: { orgId, name: 'Etiqueta sintética M02' } })).id;
     fieldId = (await db.workField.create({ data: { orgId, listId, name: 'Material sintético M02', type: 'texto' } })).id;
+    // Canário próprio da empresa vizinha: nenhum outro worker é dono destes IDs.
+    const sentinela = await fixture(true);
+    const tagVizinha = await db.workTag.create({ data: { orgId: otherOrgId, name: 'Etiqueta canário' } });
+    const campoVizinho = await db.workField.create({ data: { orgId: otherOrgId, listId: otherListId, name: 'Campo canário', type: 'texto' } });
+    await db.workTask.update({ where: { id: sentinela.id }, data: { tags: { connect: { id: tagVizinha.id } } } });
+    await db.workFieldValue.create({ data: { orgId: otherOrgId, taskId: sentinela.id, fieldId: campoVizinho.id, value: 'Material preservado' } });
+    await db.workComment.create({ data: { orgId: otherOrgId, taskId: sentinela.id, authorId: otherActorId, authorName: 'Canário', text: 'Comentário preservado' } });
+    baselineIds = [sentinela.id];
+    const baseline = await snapshot(baselineIds);
+    expect(baseline).toHaveLength(1);
+    expect(baseline[0].tags).toHaveLength(1);
+    expect(baseline[0].values).toHaveLength(1);
+    expect(baseline[0].comments).toHaveLength(1);
+    baselineHash = hash(baseline);
 
     const actualAudit = new AuditService(prisma());
     const audit = { log: async (input: AuditInput, tx?: any) => {
@@ -225,10 +243,23 @@ describe.skipIf(!url)('M02 HTTP e Postgres próprios', () => {
       if (app) await app.close();
       if (db && baselineHash) expect(hash(await snapshot(baselineIds))).toBe(baselineHash);
     } finally {
+      if (db) {
+        await db.workTask.deleteMany({ where: { orgId: concorrenteOrg } });
+        await db.workStatus.deleteMany({ where: { orgId: concorrenteOrg } });
+        await db.workList.deleteMany({ where: { orgId: concorrenteOrg } });
+        await db.org.deleteMany({ where: { id: concorrenteOrg } });
+      }
       if (adversary) await adversary.$disconnect();
       if (db) await db.$disconnect();
     }
     // Fixtures e histórico próprios permanecem no clone descartável; não há limpeza global.
+  });
+
+  it('outra suíte pode alterar sua própria tarefa sem afetar a verificação desta fixture', async () => {
+    await adversary.workTask.update({ where: { id: concorrenteTaskId }, data: { title: 'Atualizada pela outra suíte' } });
+    expect((await adversary.workTask.findUniqueOrThrow({ where: { id: concorrenteTaskId } })).title).toBe('Atualizada pela outra suíte');
+    expect(baselineIds).not.toContain(concorrenteTaskId);
+    expect(hash(await snapshot(baselineIds))).toBe(baselineHash);
   });
 
   describe('RED legado — fronteiras HTTP antes do reparo', () => {
