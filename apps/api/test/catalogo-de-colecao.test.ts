@@ -1,4 +1,6 @@
 import { describe, expect, it } from 'vitest';
+import { comContexto } from '../src/common/contexto-execucao';
+import { hashDoCorpo } from '../src/memory/procedencia';
 import { blobDoGit } from '../src/obsidian/indice-do-git';
 import { classificarAVault, type ArquivoNoDisco } from '../src/obsidian/pertenca-da-vault';
 import { CatalogoDeColecaoService, prepararCapturaDoCatalogo, type MarcaDoCatalogo } from '../src/obsidian/catalogo-de-colecao.service';
@@ -41,7 +43,31 @@ describe('catálogo de coleção: preparação de fixtures, sem banco nem fornec
 
 // Fixtures de acesso ficam preparadas para a execução escolhida por Pedro.
 describe('catálogo: resposta limitada ao snapshot autorizado', () => {
-  const service = (rows: unknown[]) => new CatalogoDeColecaoService({ $queryRawUnsafe: async () => rows } as never);
+  const service = (rows: unknown[]) => {
+    const body='Corpo sintético';
+    const item={id:'item',orgId:'org',chave:'vault:a.md',versao:1,title:'A',kind:'nota',body,contentHash:hashDoCorpo(body),sourceType:'vault',sourceRef:'a.md',arquivadoEm:null};
+    const versao={...item,id:'versao',itemId:'item'};
+    const tx:any={
+      $executeRawUnsafe:async()=>0,
+      $queryRaw:async (partes:TemplateStringsArray)=>{
+        const q=partes.join('?');
+        if(q.includes('FROM "Org"'))return [{id:'org'}];
+        if(q.includes('FROM "User"'))return [{id:'pessoa'}];
+        if(q.includes('FROM "_UserRoles"'))return [{roleId:'papel'}];
+        if(q.includes('FROM "Role"'))return [{id:'papel'}];
+        if(q.includes('FROM "_RolePermissions"'))return [{permissionId:'permissao'}];
+        if(q.includes('FROM "Permission"'))return [{id:'permissao',key:'obsidian.ver'}];
+        if(q.includes('FROM "ContextItem"'))return [{id:'item'}];
+        throw new Error('Consulta inesperada da fixture');
+      },
+      $queryRawUnsafe:async (sql:string)=>sql.includes('ContextMovementIntent')?[{pendente:false}]:rows,
+      user:{findFirst:async()=>({roles:[{permissions:[{key:'obsidian.ver'}]}]})},
+      contextItem:{findFirst:async()=>item},contextItemVersion:{findFirst:async()=>versao},
+      contextMovementIntent:{findFirst:async()=>null},
+    };
+    const svc=new CatalogoDeColecaoService({$transaction:async(fn:any)=>fn(tx)} as never);
+    return {porItem:(orgId:string,actorId:string,itemId:string)=>comContexto({orgId,actorType:'user',actorId,correlationId:'teste',origem:'http'},()=>svc.porItem(orgId,actorId,itemId))};
+  };
   it('pessoa inativa ou sem permissão atual recebe 403', async () => {
     await expect(service([{ autorizado: false, itemId: null }]).porItem('org', 'pessoa', 'item')).rejects.toMatchObject({ status: 403 });
   });
@@ -51,6 +77,6 @@ describe('catálogo: resposta limitada ao snapshot autorizado', () => {
   it('falha mais recente aparece sem inventar pertencimento ou corpo', async () => {
     const ultima = { id: 'tentativa-falhou', geracao: '2', registradaEm: '2026-10-08T00:00:00Z', estado: 'falhou' };
     expect(await service([{ autorizado: true, itemId: 'item', selecao: null, ultima, interno: null }]).porItem('org', 'pessoa', 'item'))
-      .toEqual({ itemId: 'item', capturaExternaAgora: false, movimentoDisponivel: false, selecaoVerificada: null, ultimaCaptura: ultima });
+      .toMatchObject({ escopo:{orgId:'org',actorId:'pessoa'}, itemId: 'item', capturaExternaAgora: false, movimentoDisponivel: false, selecaoVerificada: null, ultimaCaptura: ultima });
   });
 });

@@ -313,19 +313,23 @@ describe('F08: entrada pela lista financeira', () => {
     render(<FinanceiroPage />); const user = userEvent.setup();
     await user.click(screen.getByRole('button', { name: 'A Pagar/Receber' }));
     await screen.findByText(row.description);
-    const contractRow = (await screen.findByText(new RegExp(contractName))).closest('li')!;
+    const gerar = await screen.findByRole('button', { name: 'Gerar lançamento' });
+    const contractRow = gerar.closest('li')!;
+    expect(within(contractRow).getByText(new RegExp(contractName))).toBeInTheDocument();
+    expect(screen.getByRole('option', { name: contractName })).toBeInTheDocument();
     await user.type(screen.getByPlaceholderText('Razão social'), 'Rascunho QA preservado');
-    await user.click(within(contractRow).getByRole('button', { name: 'Gerar lançamento' }));
+    await user.click(gerar);
     await screen.findByText('Geração recusada QA.');
     expect(apiPost).toHaveBeenCalledOnce();
     if (status === 409) {
       expect(screen.getByText(row.description)).toBeInTheDocument();
-      expect(screen.getByText(new RegExp(contractName))).toBeInTheDocument();
+      expect(within(contractRow).getByText(new RegExp(contractName))).toBeInTheDocument();
+      expect(screen.getByRole('option', { name: contractName })).toBeInTheDocument();
       expect(screen.getByPlaceholderText('Razão social')).toHaveValue('Rascunho QA preservado');
       await waitFor(() => expect(within(contractRow).getByRole('button', { name: 'Gerar lançamento' })).toBeEnabled());
     } else {
       expect(screen.queryByText(row.description)).not.toBeInTheDocument();
-      expect(screen.queryByText(new RegExp(contractName))).not.toBeInTheDocument();
+      expect(screen.queryAllByText(new RegExp(contractName))).toHaveLength(0);
       expect(screen.queryByRole('link', { name: 'Conferir obrigação' })).not.toBeInTheDocument();
       expect(screen.queryByPlaceholderText('Razão social')).not.toBeInTheDocument();
     }

@@ -109,7 +109,7 @@ describe('o dublê do Google responde ao que o espelho pede', () => {
 
   it('token e a sonda (userinfo)', async () => {
     const t = await fetch(`${BASE}/token`, { method: 'POST', body: new URLSearchParams({ grant_type: 'refresh_token', refresh_token: 'x' }) });
-    expect((await t.json()).access_token).toMatch(/^duble-/);
+    expect(await t.json()).toHaveProperty('access_token', expect.stringMatching(/^duble-/));
     const u = await fetch(`${BASE}/oauth2/v2/userinfo`, { headers: { Authorization: 'Bearer x' } });
     expect(await u.json()).toMatchObject({ email: 'operacao.root@exemplo.invalid', verified_email: true });
     expect((await fetch(`${BASE}/oauth2/v2/userinfo`)).status).toBe(401);

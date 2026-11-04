@@ -264,6 +264,8 @@ describe.skipIf(!URL)('registrar cliente já fechado, pela porta e contra o Post
     await prisma.auditLog.deleteMany({ where: { orgId: ORG } });
     await prisma.user.deleteMany({ where: { orgId: ORG } });
     await prisma.role.deleteMany({ where: { orgId: ORG } });
+    await prisma.acordoParcela.deleteMany({ where: { orgId: ORG } });
+    await prisma.acordoComercial.deleteMany({ where: { orgId: ORG } });
     await prisma.org.deleteMany({ where: { id: ORG } });
     await prisma.$disconnect();
   }, 60_000);
@@ -357,9 +359,14 @@ describe.skipIf(!URL)('registrar cliente já fechado, pela porta e contra o Post
   });
 
   it('aparece em Contratos vivos; rodar de novo não duplica; outro registro do cliente ativo é 409', async () => {
-    const lista = await naEmpresa(() => contratoVivo.lista(ORG));
+    const lista = await naEmpresa(() => contratoVivo.lista(ORG, new Date('2026-11-04T12:00:00Z')));
     const meu = lista.find((c) => c.leadId === leadId);
-    expect(meu).toMatchObject({ cliente: 'Padaria Trigo Bom Ltda', produto: 'operacao', valorCentavos: 1_199_700, parcelas: [], cnpj: CNPJ });
+    expect(meu).toMatchObject({ cliente: 'Padaria Trigo Bom Ltda', produto: 'operacao', valorCentavos: 1_199_700, cnpj: CNPJ });
+    expect(meu?.parcelas).toEqual([
+      { n: 1, total: 3, valorCentavos: 399900, vence: '2026-09-10', estado: 'atrasada', pagaEm: null, aviso: null },
+      { n: 2, total: 3, valorCentavos: 399900, vence: '2026-10-10', estado: 'atrasada', pagaEm: null, aviso: null },
+      { n: 3, total: 3, valorCentavos: 399900, vence: '2026-11-10', estado: 'pendente', pagaEm: null, aviso: null },
+    ]);
     expect(['ativo', 'em_implantacao']).toContain(meu?.situacao);
 
     const a = await naEmpresa(() => fechamento.aceiteParaFechar(ORG, leadId));

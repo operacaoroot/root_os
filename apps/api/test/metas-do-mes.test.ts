@@ -941,6 +941,7 @@ describe('o catálogo e a fiação', () => {
       'leads.por_campanha',
       'bio.cliques',
       'pauta.publicadas',
+      'comercial.fechados',
       'instagram.visualizacoes',
     ]);
   });

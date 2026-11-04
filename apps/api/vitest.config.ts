@@ -37,10 +37,15 @@ import { defineConfig } from 'vitest/config';
 const CONJUNTOS = {
   padrao: {
     include: ['test/**/*.test.ts'],
-    exclude: ['**/node_modules/**', 'test/tenant-isolation.test.ts'],
+    exclude: ['**/node_modules/**', 'test/tenant-isolation.test.ts', 'test/procedimento-local-nativo.test.ts'],
   },
   isolamento: {
     include: ['test/tenant-isolation.test.ts'],
+    exclude: ['**/node_modules/**'],
+  },
+  // Exige servidor llama.cpp real e clone autorizado; nenhuma inferência é simulada.
+  nativo: {
+    include: ['test/procedimento-local-nativo.test.ts'],
     exclude: ['**/node_modules/**'],
   },
 } as const;

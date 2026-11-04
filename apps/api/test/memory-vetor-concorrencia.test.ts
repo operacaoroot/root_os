@@ -89,7 +89,7 @@ describe.skipIf(!URL)('V1: o vetor acompanha o corpo, com Postgres e duas empres
 
   const naEmpresa = <T>(orgId: string, fn: () => Promise<T>) =>
     comContexto(
-      { orgId, actorType: ActorType.user, actorId: 'operador-teste', correlationId: `r05c-${MARCA}`, origem: 'script' },
+      { orgId, actorType: ActorType.user, actorId: `operador-${orgId}`, correlationId: `r05c-${MARCA}`, origem: 'script' },
       fn,
     );
 
@@ -125,7 +125,15 @@ describe.skipIf(!URL)('V1: o vetor acompanha o corpo, com Postgres e duas empres
     prisma.contextItem.findUnique({ where: { id }, select: { body: true, versao: true, contentHash: true } });
 
   async function limpar() {
-    await prisma.contextItem.deleteMany({ where: { orgId: { in: [A, B] } } });
+    const where={orgId:{in:[A,B]}};
+    await prisma.$transaction(async tx=>{
+      await tx.$executeRaw`SET LOCAL session_replication_role = replica`;
+      await tx.contextMovementReceipt.deleteMany({where}); await tx.contextAlias.deleteMany({where});
+      await tx.contextMovementCandidate.deleteMany({where}); await tx.contextMovementIntent.deleteMany({where});
+      await tx.contextKeyClaim.deleteMany({where}); await tx.contextCollectionMember.deleteMany({where});
+      await tx.contextCollectionSelection.deleteMany({where}); await tx.contextItemVersion.deleteMany({where});
+      await tx.contextItem.deleteMany({where});
+    });
   }
 
   beforeAll(async () => {
@@ -133,6 +141,10 @@ describe.skipIf(!URL)('V1: o vetor acompanha o corpo, com Postgres e duas empres
     await prisma.$connect();
     for (const [id, slug] of [[A, `r05c-a-${MARCA}`], [B, `r05c-b-${MARCA}`]] as const) {
       await prisma.org.upsert({ where: { id }, create: { id, name: `Empresa ${slug}`, slug }, update: {} });
+      const perms = await Promise.all(['obsidian.ver','obsidian.editar'].map(key => prisma.permission.upsert({where:{key},create:{key},update:{}})));
+      const papel = await prisma.role.upsert({where:{orgId_key:{orgId:id,key:'vetor_teste'}},create:{orgId:id,key:'vetor_teste',name:'Vetor QA',permissions:{connect:perms.map(p=>({id:p.id}))}},update:{}});
+      const userId=`operador-${id}`;
+      await prisma.user.upsert({where:{id:userId},create:{id:userId,orgId:id,name:'Vetor QA',email:`${userId}@qa.invalid`,passwordHash:'x',roles:{connect:{id:papel.id}}},update:{}});
     }
     memoria = novaMemoria(prisma);
   }, TEMPO);

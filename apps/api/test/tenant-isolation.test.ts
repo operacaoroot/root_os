@@ -513,6 +513,11 @@ const ALVOS: Alvo[] = [
   { tabela: 'FinanceExerciseDecision', escopo: 'tenant', chaveSql: '"id"', nota: 'A decisão do exercício financeiro (aprovar ou recusar, motivo, alçada). Inserir com o orgId alheio seria aprovar despesa de outra empresa.' },
 
   // editorial e marketing
+  { tabela: 'MarketingPost', escopo: 'tenant', chaveSql: '"id"', nota: 'Roteiro, legenda e agenda de publicação privados da empresa.' },
+  { tabela: 'MarketingNota', escopo: 'tenant', chaveSql: '"id"', nota: 'Conteúdo capturado e analisado para a memória da empresa.' },
+  { tabela: 'MarketingIdeiaCard', escopo: 'tenant', chaveSql: '"id"', nota: 'Triagem e decisões editoriais da empresa.' },
+  { tabela: 'MarketingMaquinaAjuste', escopo: 'tenant', chaveSql: '"orgId"', nota: 'Cadência de publicação da empresa; a chave é o próprio orgId.' },
+  { tabela: 'MarketingRegua', escopo: 'tenant', chaveSql: `"orgId" || '|' || "formato"`, nota: 'Regras e referências por formato; chave composta por empresa.' },
   { tabela: 'EditorialMaterial', escopo: 'tenant', chaveSql: '"id"', nota: 'O material editorial preso a uma tarefa, com a etapa de liberação e a versão escolhida. Ler o da outra é ver o que ela está produzindo.' },
   { tabela: 'EditorialVersion', escopo: 'tenant', chaveSql: '"id"', nota: 'Cada versão do texto editorial: título, corpo e arquivos. É o conteúdo da outra empresa ANTES de sair, que é o que mais dói vazar.' },
   { tabela: 'EditorialDecision', escopo: 'tenant', chaveSql: '"id"', nota: 'A aprovação ou recusa editorial de uma versão, com o motivo e a alçada. Escrever na da outra é aprovar texto alheio para publicação.' },
@@ -2053,6 +2058,19 @@ async function semearEntregasDoMerge(
   }));
 
   // --- editorial e marketing ------------------------------------------------
+  reg('MarketingPost', await ins(c, 'MarketingPost', {
+    id: crypto.randomUUID(), orgId, titulo: `Post privado ${suf}`, roteiro: `Roteiro confidencial ${rotulo}`, atualizadoEm: agora,
+  }));
+  reg('MarketingNota', await ins(c, 'MarketingNota', {
+    id: crypto.randomUUID(), orgId, titulo: `Nota privada ${suf}`, corpo: `Memória confidencial ${rotulo}`, atualizadaEm: agora,
+  }));
+  reg('MarketingIdeiaCard', await ins(c, 'MarketingIdeiaCard', {
+    id: crypto.randomUUID(), orgId, titulo: `Ideia privada ${suf}`, resumo: `Decisão confidencial ${rotulo}`,
+  }));
+  await c.query('INSERT INTO "MarketingMaquinaAjuste" ("orgId", "atualizadoEm") VALUES ($1, $2)', [orgId, agora]);
+  reg('MarketingMaquinaAjuste', orgId);
+  await c.query('INSERT INTO "MarketingRegua" ("orgId", "formato", "regras", "atualizadaEm") VALUES ($1, $2, $3, $4)', [orgId, 'Reel', `Regra privada ${suf}`, agora]);
+  reg('MarketingRegua', `${orgId}|Reel`);
   const materialId = await ins(c, 'EditorialMaterial', {
     id: crypto.randomUUID(), orgId, taskId: p.tarefaId, title: `Material ${rotulo} ${MARCA}`, releaseStatusId: p.statusId,
     requestId: crypto.randomUUID(), actorId: userId, fingerprint: hex64(`material_${suf}`),
@@ -2482,7 +2500,11 @@ afterAll(async () => {
         await c.query('SET LOCAL session_replication_role = origin');
         continue;
       }
-      if (tabela.startsWith('_')) {
+      if (tabela === 'MarketingMaquinaAjuste') {
+        await c.query('DELETE FROM "MarketingMaquinaAjuste" WHERE "orgId" = ANY($1::text[])', [chaves]);
+      } else if (tabela === 'MarketingRegua') {
+        await c.query('DELETE FROM "MarketingRegua" WHERE ("orgId" || \'|\' || "formato") = ANY($1::text[])', [chaves]);
+      } else if (tabela.startsWith('_')) {
         for (const k of chaves) {
           const [a, b] = k.split('|');
           await c.query(`DELETE FROM "${tabela}" WHERE "A" = $1 AND "B" = $2`, [a, b]);

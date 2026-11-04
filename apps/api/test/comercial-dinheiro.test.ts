@@ -276,6 +276,8 @@ describe('do aceite ao cliente ativo, pela porta e pelos dublês', { timeout: 30
     await prisma.auditLog.deleteMany({ where: { orgId: ORG } });
     await prisma.user.deleteMany({ where: { orgId: ORG } });
     await prisma.role.deleteMany({ where: { orgId: ORG } });
+    await prisma.acordoParcela.deleteMany({ where: { orgId: ORG } });
+    await prisma.acordoComercial.deleteMany({ where: { orgId: ORG } });
     await prisma.org.deleteMany({ where: { id: ORG } });
     await prisma.$disconnect();
   }, 60_000);

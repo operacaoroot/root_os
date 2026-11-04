@@ -6,6 +6,8 @@ import { AcessoAtualGuard } from '../memory/acesso-atual.guard';
 import { FinanceiroExercicioController } from './financeiro-exercicio.controller';
 import { FinanceiroExercicioService } from './financeiro-exercicio.service';
 import { FinanceController } from './finance.controller';
+import { FinanceCarteiraController } from './finance-carteira.controller';
+import { FinanceCarteiraService } from './finance-carteira.service';
 import { FinanceService } from './finance.service';
 import { PluggyService } from './pluggy.service';
 import { AsaasService } from './asaas.service';
@@ -21,12 +23,13 @@ import { PORTA_DE_COBRANCA } from '../comercial/portas/cobranca.port';
 
 @Module({
   imports: [ComercialPonteExercicioModule],
-  controllers: [FinanceController, AnaliseController, FinanceiroExercicioController, FinanceiroExercicioInscricaoController],
+  controllers: [FinanceCarteiraController, FinanceController, AnaliseController, FinanceiroExercicioController, FinanceiroExercicioInscricaoController],
   providers: [
     FinanceiroExercicioInscricaoService,
     AcessoAtualGuard,
     FinanceiroExercicioService,
     FinanceService,
+    FinanceCarteiraService,
     PluggyService,
     AsaasService,
     OfxConector,

@@ -1,9 +1,10 @@
 import { createHash, randomUUID } from 'node:crypto';
-import { beforeAll, afterAll, describe, expect, it } from 'vitest';
+import { beforeAll, afterAll, beforeEach, afterEach, describe, expect, it, vi } from 'vitest';
 import { PrismaClient, Prisma } from '@prisma/client';
 import { HttpException } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { AcessoAtualGuard } from '../src/memory/acesso-atual.guard';
+import { isWorkActivityTestDatabase } from './work-atividade-database-guard';
 import { FinanceController } from '../src/finance/finance.controller';
 import { FinanceiroExercicioService } from '../src/finance/financeiro-exercicio.service';
 import { FinopsService } from '../src/finance/finops.service';
@@ -14,12 +15,8 @@ import { ConciliacaoService } from '../src/finance/conciliacao.service';
 import type { PrismaService } from '../src/prisma/prisma.service';
 
 const url = process.env.TEST_DATABASE_URL;
-if (url) {
-  const u = new URL(url);
-  if (!['127.0.0.1', 'localhost'].includes(u.hostname) || u.port !== '55582' ||
-      !/rootos_.*(write|test|dev|local)/.test(u.pathname)) {
-    throw new Error('F08 exige clone descartável próprio e porta local autorizada.');
-  }
+if (url && !isWorkActivityTestDatabase(url, process.env)) {
+  throw new Error('F08 exige clone descartável próprio ou banco do runner hospedado.');
 }
 const db = new PrismaClient({ datasources: { db: { url: url ?? '' } } });
 const org = 'qa-f08-' + randomUUID();
@@ -96,10 +93,12 @@ async function fixture(exercise = false) {
 }
 
 describe.skipIf(!url)('F08 PG próprio', () => {
+  beforeEach(() => vi.stubEnv('ROOTOS_QA_PREVIEW', '1'));
+  afterEach(() => vi.unstubAllEnvs());
   beforeAll(async () => {
     await db.org.create({ data: { id: org, slug: org, name: 'QA F08 própria' } });
     await db.org.create({ data: { id: otherOrg, slug: otherOrg, name: 'QA F08 vizinha própria' } });
-    const perms = await db.permission.findMany({ where: { key: { in: ['financeiro.ver', 'financeiro.editar', 'financeiro.conciliar'] } } });
+    const perms = await Promise.all(['financeiro.ver', 'financeiro.editar', 'financeiro.conciliar'].map(key => db.permission.upsert({ where: { key }, create: { key }, update: {} })));
     expect(perms).toHaveLength(3);
     const responsible = await db.role.create({ data: {
       orgId: org, key: 'financeiro', name: 'QA F08 responsável',
@@ -180,6 +179,11 @@ describe.skipIf(!url)('F08 PG próprio', () => {
   });
 
   describe('Exercício versionado', () => {
+    it('QA desligado não expõe obrigação nem permite decisão', async () => {
+      const f = await fixture(true);
+      vi.stubEnv('ROOTOS_QA_PREVIEW', '0');
+      expect(await statusOf(svc.detalhe(a(), f.tx.id))).toBe(404);
+    });
     const svc = new FinanceiroExercicioService(prisma, audit);
     const a = () => ({ orgId: org, sub: actor });
     async function pedido(f: Awaited<ReturnType<typeof fixture>>, aprovar = true) {
@@ -359,7 +363,7 @@ describe.skipIf(!url)('F08 PG próprio', () => {
       const f = await fixture(true), p = await pedido(f);
       const wrap = new Proxy(prisma, { get(target, key) {
         if (key === '$transaction') return (fn: (t: Prisma.TransactionClient) => unknown, options: unknown) =>
-          target.$transaction(tx => fn(new Proxy(tx, { get(t, k) {
+          target.$transaction(async tx => fn(new Proxy(tx, { get(t, k) {
             if (k === 'financeExerciseDecision') return new Proxy(t.financeExerciseDecision, { get(m, op) {
               if (op === 'create') return async () => { throw new Error('Receipt QA falhou'); };
               const value = Reflect.get(m, op); return typeof value === 'function' ? value.bind(m) : value;

@@ -59,6 +59,7 @@ import { Sidebar, CHAVE_MENU } from '@/components/Sidebar';
 import { Paleta } from '@/components/Paleta';
 // eslint-disable-next-line import/first
 import { Topbar } from '@/components/Topbar';
+import { AbasDoMarketing } from '@/components/marketing/AbasDoMarketing';
 // eslint-disable-next-line import/first
 import { NAV } from '@mktos/shared';
 import { modulosDeNavegacao, rotuloDoDestino } from '@/components/navegacao-modulos';
@@ -220,7 +221,7 @@ describe('a barra lateral', () => {
     expect(area('Comercial')).toHaveAttribute('href', '/comercial');
     const lista = subsecoes('Comercial');
     expect(lista.getAllByRole('link').map((el) => el.textContent)).toEqual([
-      'Painel geral', 'Funil de vendas', 'Propostas', 'Lista de leads', 'Contratos',
+      'Painel geral', 'Funil de vendas', 'Propostas', 'Lista de leads', 'Clientes ativos', 'Contratos',
       'Torre das automações', 'Relatório da semana',
     ]);
     expect(lista.getByRole('link', { name: 'Painel geral' })).toHaveAttribute('aria-current', 'page');
@@ -232,14 +233,18 @@ describe('a barra lateral', () => {
     expect(link('/funil')).toBeNull();
   });
 
-  it('Banco de ideias e Estratégia do mês ficam no Marketing', () => {
+  it('a rota Ideias da pauta mantém Ideias de conteúdo ativa com as abas atuais', () => {
     PERMISSOES = TODAS_DO_NAV;
     CAMINHO = '/marketing/ideias';
-    render(<Sidebar />);
+    render(<><Sidebar /><AbasDoMarketing /></>);
     expect(area('Marketing')).toHaveAttribute('aria-current', 'true');
     const lista = subsecoes('Marketing');
-    expect(lista.getByRole('link', { name: 'Banco de ideias' })).toHaveAttribute('aria-current', 'page');
-    expect(lista.getByRole('link', { name: 'Estratégia do mês' })).toHaveAttribute('href', '/marketing/estrategia');
+    expect(lista.getByRole('link', { name: 'Ideias de conteúdo' })).toHaveAttribute('href', '/marketing/triagem');
+    expect(lista.queryByRole('link', { name: 'Ideias da pauta' })).not.toBeInTheDocument();
+    const abas = within(screen.getByRole('navigation', { name: 'Abas da seção' }));
+    expect(abas.getByRole('link', { name: 'Para aprovar' })).toHaveAttribute('href', '/marketing/triagem');
+    expect(abas.getByRole('link', { name: 'Fontes' })).toHaveAttribute('href', '/marketing/fontes');
+    expect(abas.queryByRole('link', { name: 'Estratégia do mês' })).not.toBeInTheDocument();
   });
 
   it('Marca é uma subseção de Contexto e seleciona a área, preservando URL', () => {
@@ -415,7 +420,7 @@ describe('a barra lateral', () => {
     PERMISSOES = TODAS_DO_NAV;
     CAMINHO = '/marketing/ideias';
     render(<Topbar />);
-    expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent('Banco de ideias');
+    expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent('Ideias da pauta');
     expect(document.body.textContent).toContain('ideias da casa antes de virar peça');
   });
 

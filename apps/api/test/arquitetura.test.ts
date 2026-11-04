@@ -472,6 +472,12 @@ interface Excecao {
  * A catraca `toda exceção diz qual fatia a remove` recusa fatia já executada.
  */
 const EXCECOES: Excecao[] = [
+  {
+    arquivo: 'src/obsidian/contexto-movimento-explicito.service.ts',
+    conector: 'src/obsidian/obsidian.service.ts',
+    motivo: 'O protocolo de movimento lê a captura física local dentro da transação autorizada. Usa somente capturarDaPastaParaMovimento; não sincroniza, escreve na vault nem chama fornecedor. O teste abaixo confina essa dependência ao método de captura.',
+    fatia: 'porta local de captura do contexto explícito — separar do conector completo',
+  },
   // --- marketing no jeito do ROOT Estúdio (26/10/2026): o mesmo desenho do espelho e da coleta da pauta
   {
     arquivo: 'src/marketing-estudio/memoria-do-marketing.service.ts',
@@ -853,6 +859,14 @@ describe('varredor: separa código, comentário e texto', () => {
 // ---------------------------------------------------------------------------
 
 describe('catraca de arquitetura: conector só pela porta', () => {
+  it('movimento explícito só usa a captura local autorizada do conector', () => {
+    const fonte = FONTES.find(f => f.arquivo === 'src/obsidian/contexto-movimento-explicito.service.ts')!;
+    const metodos = [...fonte.semTexto.matchAll(/this\.obsidian\.([A-Za-z0-9_]+)/g)].map(m => m[1]);
+    expect(metodos.length).toBeGreaterThan(0);
+    expect([...new Set(metodos)]).toEqual(['capturarDaPastaParaMovimento']);
+    expect(fonte.semTexto).not.toMatch(/this\.obsidian\s*\[/);
+  });
+
   const importsDeConector = REFS.filter((r) => r.tipo === 'import' && CONECTORES[r.alvo] !== undefined);
   const violacoes = importsDeConector
     .filter((r) => !importadorPermitido(r.arquivo, r.alvo))

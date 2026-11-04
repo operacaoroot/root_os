@@ -412,7 +412,7 @@ describe.skipIf(!URL)('caixa de WhatsApp contra o Postgres', () => {
     const id = ids[jid];
     const texto = 'Resposta ficticia digitada pela pessoa';
     const r = await svc.responder(ORG, id, { texto: `  ${texto}\r\n` }, gente);
-    expect(enviados).toEqual([{ orgId: ORG, chatJid: jid, texto }]);
+    expect(enviados).toEqual([{ orgId: ORG, chatJid: jid, texto: `*Pessoa Ficticia da Casa*\n${texto}` }]);
     expect(r.mensagem).toMatchObject({ deMim: true, texto, tipo: 'conversation', enviadaPor: { id: gente.id, nome: 'Pessoa Ficticia da Casa' } });
 
     const m = await prisma.whatsAppMensagem.findUniqueOrThrow({ where: { id: r.mensagem.id } });

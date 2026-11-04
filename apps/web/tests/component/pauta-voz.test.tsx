@@ -1,6 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { PAUTA_CHAVE_DA_CHAVE_DA_VOZ, type PautaVozHumanoPainel } from '@mktos/shared';
+import { ErroDaApi } from '@/lib/api';
+import { ATOR_PAUTA, NOTA_PAUTA, destinoAusentePauta, destinoPauta, envelopePauta, pedidoPauta, reciboPauta } from '../fixtures/pauta-edicao-humana';
 
 /*
  * A ABA VOZ — MC10.
@@ -30,7 +33,7 @@ vi.mock('@/lib/auth', () => ({
   useAuth: () => ({
     token: 'tok',
     ready: true,
-    user: { id: 'u1', name: 'Pedro', email: 'p@x.com', roles: [], permissions: permissoes },
+    user: { id: ATOR_PAUTA, name: 'Pedro', email: 'p@x.com', roles: [], permissions: permissoes },
     can: (p: string) => permissoes.includes(p),
   }),
 }));
@@ -42,12 +45,16 @@ import PautaPage from '@/app/pauta/page';
 
 const PERFIL = '## Ritmo\nFala em blocos curtos e repete o número.\n\n## Nunca diz\n- "alavancar"';
 
-function painel(over: Record<string, unknown> = {}) {
+const EPISODIO_3 = '55555555-5555-4555-8555-555555555555';
+const EPISODIO_4 = '66666666-6666-4666-8666-666666666666';
+type PainelVoz = PautaVozHumanoPainel['painel'];
+
+function painel(over: Partial<PainelVoz> = {}): PainelVoz {
   return {
     chave: 'voz.pedro',
     origemDaChave: 'padrao',
     perfil: {
-      id: 'n1',
+      id: NOTA_PAUTA,
       corpo: PERFIL,
       versao: 2,
       procedencia: 'promocao:pauta.voz · episódios ep-03',
@@ -62,11 +69,24 @@ function painel(over: Record<string, unknown> = {}) {
     ],
     regrasDaMarca: ['Nunca usar: "alavancar", "sinergia" — nem as variações.', 'Sem emoji.'],
     episodios: [
-      { id: 'e3', apelido: 'ep-03', titulo: 'Semana 39', caracteres: 12000 },
-      { id: 'e4', apelido: 'ep-04', titulo: 'Semana 40', caracteres: 9000 },
+      { id: EPISODIO_3, apelido: 'ep-03', titulo: 'Semana 39', caracteres: 12000 },
+      { id: EPISODIO_4, apelido: 'ep-04', titulo: 'Semana 40', caracteres: 9000 },
     ],
     iaConfigurada: true,
     ...over,
+  };
+}
+
+function vozHumana(atual = painel()): PautaVozHumanoPainel {
+  const perfil = atual.perfil;
+  return {
+    ...envelopePauta,
+    painel: atual,
+    destinos: {
+      perfil: perfil ? destinoPauta(atual.chave, perfil.versao, perfil.corpo, perfil.id) : destinoAusentePauta(atual.chave),
+      configuracao: destinoAusentePauta(PAUTA_CHAVE_DA_CHAVE_DA_VOZ),
+    },
+    configuracao: { chaveEfetiva: atual.chave, origemEfetiva: atual.origemDaChave },
   };
 }
 
@@ -79,9 +99,9 @@ function renderAba(over: Partial<{ editavel: boolean; podeGastarIa: boolean }> =
 const TEXTO = 'Bom, deixa eu te mostrar uma coisa. '.repeat(8);
 
 beforeEach(() => {
-  vi.clearAllMocks();
+  vi.resetAllMocks();
   permissoes = ['pauta.ver', 'pauta.editar', 'automacoes.executar'];
-  apiGet.mockResolvedValue(painel());
+  apiGet.mockResolvedValue(vozHumana());
 });
 
 describe('a aba Voz', () => {
@@ -98,14 +118,14 @@ describe('a aba Voz', () => {
   });
 
   it('sem perfil diz que o roteiro e as peças saem no tom da casa', async () => {
-    apiGet.mockResolvedValue(painel({ perfil: null, historico: [] }));
+    apiGet.mockResolvedValue(vozHumana(painel({ perfil: null, historico: [] })));
     renderAba();
     expect(await screen.findByText(/saem no tom da casa/)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Escrever à mão' })).toBeEnabled();
   });
 
   it('aprende dos episódios marcados e do texto colado, e mostra a versão nova', async () => {
-    apiPost.mockResolvedValue({ ...painel({ perfil: { ...painel().perfil, versao: 3 } }), material: { fontes: 2, caracteres: 12288, cortado: false } });
+    apiPost.mockResolvedValue({ ...painel({ perfil: { ...painel().perfil!, versao: 3 } }), material: { fontes: 2, caracteres: 12288, cortado: false } });
     renderAba();
     const botao = await screen.findByRole('button', { name: 'Aprender a voz' });
     expect(botao).toBeDisabled();
@@ -113,8 +133,8 @@ describe('a aba Voz', () => {
     await userEvent.click(screen.getByLabelText('Texto colado 1'));
     await userEvent.paste(TEXTO);
     await userEvent.click(botao);
-    expect(apiPost).toHaveBeenCalledWith('/pauta/voz/aprender', { episodios: ['e3'], textos: [{ texto: TEXTO.trim() }] }, 'tok');
-    expect(await screen.findByText(/Perfil novo \(versão 3\) aprendido de 2 fonte\(s\), 12\.288 caracteres/)).toBeInTheDocument();
+    expect(apiPost).toHaveBeenCalledWith('/pauta/voz/aprender', { episodios: [EPISODIO_3], textos: [{ texto: TEXTO.trim() }] }, 'tok');
+    expect(await screen.findByText(/O aprendizado respondeu com perfil versão 3\. O texto manual foi conservado/)).toBeInTheDocument();
   });
 
   it('texto colado abaixo do mínimo não deixa aprender e diz o mínimo', async () => {
@@ -133,23 +153,26 @@ describe('a aba Voz', () => {
   });
 
   it('editar à mão salva com a versão lida e avisa quando o texto cita palavra proibida', async () => {
-    apiPut.mockResolvedValue(painel({ perfil: { ...painel().perfil, versao: 3, sourceType: 'operador' } }));
+    const perfil = `Frases curtas, sem enrolar. Nada de sinergia nem de discurso de palco. ${'x'.repeat(40)}`;
+    const antes = destinoPauta('voz.pedro', 2, PERFIL);
+    apiPut.mockResolvedValueOnce(reciboPauta('salvar_voz', antes, destinoPauta('voz.pedro', 3, perfil)));
     renderAba();
     await userEvent.click(await screen.findByRole('button', { name: 'Editar à mão' }));
     const editor = screen.getByLabelText('Editar o perfil');
     await userEvent.clear(editor);
     await userEvent.click(editor);
-    await userEvent.paste(`Frases curtas, sem enrolar. Nada de sinergia nem de discurso de palco. ${'x'.repeat(40)}`);
+    await userEvent.paste(perfil);
     expect(screen.getByRole('status')).toHaveTextContent('“sinergia”');
     await userEvent.click(screen.getByRole('button', { name: 'Salvar versão' }));
     await waitFor(() =>
       expect(apiPut).toHaveBeenCalledWith(
         '/pauta/voz',
-        { perfil: expect.stringContaining('Frases curtas'), versao: 2, chave: 'voz.pedro' },
+        { ...pedidoPauta(antes), perfil, chaveVozEsperada: 'voz.pedro' },
         'tok',
       ),
     );
-    expect(await screen.findByLabelText('Texto do perfil')).toBeInTheDocument();
+    expect(await screen.findByText(/Nota salva: versão 3/)).toBeInTheDocument();
+    expect(editor).toHaveValue(perfil);
   });
 
   it('abrir a edição de um perfil com a palavra proibida só no "Nunca diz" não avisa nada', async () => {
@@ -159,8 +182,8 @@ describe('a aba Voz', () => {
     expect(screen.queryByText(/a marca proíbe/)).not.toBeInTheDocument();
   });
 
-  it('com a edição aberta, aprender e trocar a chave param; o salvar leva a versão e a chave de onde o rascunho partiu', async () => {
-    apiPut.mockResolvedValue(painel({ perfil: { ...painel().perfil, versao: 4 } }));
+  it('conserva o rascunho e exige nova base quando outro operador altera o perfil', async () => {
+
     const onErro = vi.fn();
     const props = { token: 'tok', editavel: true, podeGastarIa: true, onErro };
     const { rerender } = render(<AbaVoz {...props} bump={0} />);
@@ -174,11 +197,20 @@ describe('a aba Voz', () => {
     expect(screen.getByRole('button', { name: 'Usar esta chave' })).toBeDisabled();
 
     // Outra aba aprendeu no meio (v3): o painel recarrega, o rascunho continua da v2.
-    apiGet.mockResolvedValue(painel({ perfil: { ...painel().perfil, versao: 3 } }));
+    apiGet.mockResolvedValue(vozHumana(painel({ perfil: { ...painel().perfil!, versao: 3 } })));
     rerender(<AbaVoz {...props} bump={1} />);
     expect(await screen.findByText(/Versão 3/)).toBeInTheDocument();
     await userEvent.click(screen.getByRole('button', { name: 'Salvar versão' }));
-    await waitFor(() => expect(apiPut).toHaveBeenCalledWith('/pauta/voz', { perfil: `${PERFIL}\n- promessa sem número`, versao: 2, chave: 'voz.pedro' }, 'tok'));
+    const divergencia = await screen.findByText(/O destino mudou desde a base escolhida/);
+    expect(apiPut).not.toHaveBeenCalled();
+    const perfil = `${PERFIL}\n- promessa sem número`;
+    expect(screen.getByLabelText('Editar o perfil')).toHaveValue(perfil);
+    await userEvent.click(within(divergencia.parentElement!).getByRole('button', { name: 'Retomar com esta base e meu texto' }));
+    const antes = destinoPauta('voz.pedro', 3, PERFIL);
+    apiPut.mockResolvedValueOnce(reciboPauta('salvar_voz', antes, destinoPauta('voz.pedro', 4, perfil)));
+    await userEvent.click(screen.getByRole('button', { name: 'Salvar versão' }));
+    expect(await screen.findByText(/Nota salva: versão 4/)).toBeInTheDocument();
+    expect(apiPut).toHaveBeenCalledWith('/pauta/voz', { ...pedidoPauta(antes), perfil, chaveVozEsperada: 'voz.pedro' }, 'tok');
   });
 
   it('os textos colados somados têm teto: passou, o botão para e diz quanto', async () => {
@@ -206,9 +238,9 @@ describe('a aba Voz', () => {
     expect(screen.getByRole('button', { name: 'Usar esta chave' })).toBeDisabled();
   });
 
-  it('troca a chave só sob voz., e a recusa da API vai para a caixa da página', async () => {
-    apiPut.mockRejectedValueOnce(new Error('Permissão insuficiente'));
-    const { onErro } = renderAba();
+  it('só aceita chaves sob voz. e retira o painel se a API negar o acesso', async () => {
+    apiPut.mockRejectedValueOnce(new ErroDaApi('Permissão insuficiente', 403));
+    renderAba();
     const campo = await screen.findByLabelText('Chave da voz');
     await userEvent.clear(campo);
     await userEvent.type(campo, 'regra-desconto');
@@ -217,13 +249,16 @@ describe('a aba Voz', () => {
     await userEvent.clear(campo);
     await userEvent.type(campo, 'voz.ana');
     await userEvent.click(screen.getByRole('button', { name: 'Usar esta chave' }));
-    expect(apiPut).toHaveBeenCalledWith('/pauta/voz/chave', { chave: 'voz.ana' }, 'tok');
-    await waitFor(() => expect(onErro).toHaveBeenLastCalledWith('Permissão insuficiente'));
+    expect(await screen.findByText(/A leitura atual foi recusada/)).toBeInTheDocument();
+    expect(apiPut).toHaveBeenCalledWith('/pauta/voz/chave', {
+      ...pedidoPauta(destinoAusentePauta(PAUTA_CHAVE_DA_CHAVE_DA_VOZ)), chave: 'voz.ana', chaveEfetivaEsperada: 'voz.pedro',
+    }, 'tok');
+    expect(screen.queryByLabelText('Texto do perfil')).not.toBeInTheDocument();
   });
 
   it('a página tem a aba Voz, e ela abre o perfil', async () => {
     apiGet.mockImplementation(async (path: string) => {
-      if (path === '/pauta/voz') return painel();
+      if (path === '/pauta/voz') return vozHumana();
       return { items: [] };
     });
     render(<PautaPage />);

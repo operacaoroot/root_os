@@ -137,6 +137,14 @@ describe('o vigia da agenda (AG-01) acha, propõe pela porta e não repete', () 
     const audit = new AuditService(p);
     policy = new PolicyService(p);
     await policy.onModuleInit();
+    // Histórico sintético: este cenário mede o fluxo R3 habitual. Sem histórico,
+    // a segunda chamada supera a média mensal e a régua sobe legitimamente a R4.
+    // As linhas ficam fora da última hora; o cálculo de sinais continua real.
+    await prisma.toolCall.createMany({ data: Array.from({ length: 7200 }, (_, i) => ({
+      orgId: ORG, capabilityId: CAPACIDADE_DE_PADRONIZAR, actorType: ActorType.system,
+      status: 'executado' as const, correlationId: 'qa-baseline-agenda',
+      criadoEm: new Date(DIA_UTIL.getTime() - 2 * 3600000 - i * 300000),
+    })) });
     approvals = new ApprovalsService(p, audit);
     const eventos = new EventLogService(p);
     interruptores.registrar(async (e) =>
@@ -287,7 +295,7 @@ describe('o vigia da agenda (AG-01) acha, propõe pela porta e não repete', () 
       expect(a.propostoPorTipo).toBe(ActorType.system);
       expect(a.propostoPorId).toBe('vigia-da-agenda');
     }
-    const chamadas = await prisma.toolCall.findMany({ where: { orgId: ORG, capabilityId: CAPACIDADE_DE_PADRONIZAR } });
+    const chamadas = await prisma.toolCall.findMany({ where: { orgId: ORG, capabilityId: CAPACIDADE_DE_PADRONIZAR, criadoEm: { gte: DIA_UTIL } } });
     expect(chamadas).toHaveLength(2);
     for (const c of chamadas) {
       expect(c.status).toBe('aguardando_aprovacao');

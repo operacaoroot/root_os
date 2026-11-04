@@ -299,6 +299,16 @@ model Org {
   donosDeFuncao       DonoDaFuncao[]
   /// Produção 22B (I6): as fotos de perfil das pessoas.
   fotosDePerfil       FotoDePerfil[]
+
+  // Relações já impostas pelas migrations; preservar FKs e ações no diff do Prisma.
+  CommercialExerciseDecision CommercialExerciseDecision[]
+  CommercialExerciseObligation CommercialExerciseObligation[]
+  CommercialExerciseProject CommercialExerciseProject[]
+  CommercialExerciseRequest CommercialExerciseRequest[]
+  EditorialMaterial EditorialMaterial[]
+  FinanceExerciseDecision FinanceExerciseDecision[]
+  FinanceExerciseObligation FinanceExerciseObligation[]
+  MarketingAccountConfig MarketingAccountConfig[]
 }
 
 model User {
@@ -349,6 +359,22 @@ model User {
 
   @@unique([id, orgId])
   @@index([orgId])
+
+  // Relações já impostas pelas migrations; preservar FKs e ações no diff do Prisma.
+  CommercialExerciseDecision CommercialExerciseDecision[]
+  CommercialExerciseObligation CommercialExerciseObligation[]
+  CommercialExerciseProject CommercialExerciseProject[]
+  CommercialExerciseRequest CommercialExerciseRequest[]
+  EditorialDecision_EditorialDecision_actorId_orgIdToUser EditorialDecision[]            @relation("EditorialDecision_actorId_orgIdToUser")
+  EditorialDecision_EditorialDecision_revokedBy_orgIdToUser EditorialDecision[]            @relation("EditorialDecision_revokedBy_orgIdToUser")
+  EditorialMaterial EditorialMaterial[]
+  EditorialProduction EditorialProduction[]
+  EditorialVersion EditorialVersion[]
+  FinanceExerciseDecision FinanceExerciseDecision[]
+  FinanceExerciseObligation FinanceExerciseObligation[]
+  MarketingAccountConfig_MarketingAccountConfig_actorId_orgIdToUser MarketingAccountConfig[]       @relation("MarketingAccountConfig_actorId_orgIdToUser")
+  MarketingAccountConfig_MarketingAccountConfig_ownerId_orgIdToUser MarketingAccountConfig[]       @relation("MarketingAccountConfig_ownerId_orgIdToUser")
+  MarketingPreparation MarketingPreparation[]
 }
 
 model Role {
@@ -520,6 +546,9 @@ model Lead {
   @@index([orgId, enteredAt])
   @@index([orgId, campaignId])
   @@index([anonymousId])
+
+  // Relações já impostas pelas migrations; preservar FKs e ações no diff do Prisma.
+  CommercialExerciseProject CommercialExerciseProject[]
 }
 
 model LeadEvent {
@@ -536,6 +565,10 @@ model LeadEvent {
   @@unique([id, orgId])
   @@index([leadId])
   @@index([orgId, occurredAt])
+
+  // Relações já impostas pelas migrations; preservar FKs e ações no diff do Prisma.
+  CommercialExerciseProject_CommercialExerciseProject_aceiteId_orgIdToLeadEvent CommercialExerciseProject[]  @relation("CommercialExerciseProject_aceiteId_orgIdToLeadEvent")
+  CommercialExerciseProject_CommercialExerciseProject_propostaId_orgIdToLeadEvent CommercialExerciseProject[] @relation("CommercialExerciseProject_propostaId_orgIdToLeadEvent")
 }
 
 // ---------- Campanhas ----------
@@ -714,8 +747,8 @@ model KnowledgeNote {
   canonicalSourceType  ContextSource?
   canonicalSourceRef   String?
   canonicalContentHash String?
-  canonicalItem        ContextItem?        @relation("EspelhoOnboardingItem", fields: [canonicalItemId, orgId], references: [id, orgId], onDelete: Restrict, onUpdate: Restrict)
-  canonicalSnapshot    ContextItemVersion? @relation("EspelhoOnboardingVersao", fields: [canonicalVersionId, orgId, canonicalItemId, canonicalVersion], references: [id, orgId, itemId, versao], onDelete: Restrict, onUpdate: Restrict)
+  canonicalItem        ContextItem?        @relation("EspelhoOnboardingItem", fields: [canonicalItemId, orgId], references: [id, orgId], onDelete: Restrict, onUpdate: Restrict, map: "KnowledgeNote_canonicalItem_fkey")
+  canonicalSnapshot    ContextItemVersion? @relation("EspelhoOnboardingVersao", fields: [canonicalVersionId, orgId, canonicalItemId, canonicalVersion], references: [id, orgId, itemId, versao], onDelete: Restrict, onUpdate: Restrict, map: "KnowledgeNote_canonicalVersion_fkey")
 
   @@unique([orgId, path])
   @@unique([orgId, canonicalItemId])
@@ -923,6 +956,10 @@ model FinanceTransaction {
   @@index([accountId])
   @@index([chartAccountId])
   @@index([partnerId])
+
+  // Relações já impostas pelas migrations; preservar FKs e ações no diff do Prisma.
+  CommercialExerciseObligation CommercialExerciseObligation[]
+  FinanceExerciseObligation FinanceExerciseObligation[]
 }
 
 // ---------- FinOps AP/AR: fornecedores/clientes, rateio, contratos, aprovação ----------
@@ -990,6 +1027,8 @@ model Partner {
 
   @@unique([id, orgId])
   @@index([orgId])
+
+  @@index([principalId])
 }
 
 // Dimensões de rateio / corte do DRE.
@@ -1055,6 +1094,9 @@ model Contract {
   @@unique([id, orgId])
   @@index([orgId, status])
   @@index([comercialContratoId])
+
+  // Relações já impostas pelas migrations; preservar FKs e ações no diff do Prisma.
+  FinanceExerciseObligation FinanceExerciseObligation[]
 }
 
 // Rateio de um lançamento (lancamento_rateios): divide o valor por conta/dep/projeto.
@@ -2230,6 +2272,9 @@ model WorkStatus {
 
   @@unique([listId, name])
   @@index([orgId])
+
+  // Relações já impostas pelas migrations; preservar FKs e ações no diff do Prisma.
+  EditorialMaterial EditorialMaterial[]
 }
 
 model WorkTag {
@@ -2417,6 +2462,12 @@ model WorkTask {
   @@index([orgId, serieId])
   @@index([orgId, leadId])
   @@index([orgId, excluidaEm])
+
+  // Relações já impostas pelas migrations; preservar FKs e ações no diff do Prisma.
+  CommercialExerciseProject CommercialExerciseProject[]
+  EditorialMaterial EditorialMaterial[]
+  EditorialProduction EditorialProduction[]
+  MarketingPreparation MarketingPreparation[]
 }
 
 /// As áreas da empresa para separar tarefas (Comercial, Marketing, Operação…).
@@ -5422,11 +5473,11 @@ model WorkContextSource {
   id          String             @id @default(uuid())
   orgId       String
   taskId      String             @unique
-  task        WorkTask           @relation(fields: [taskId, orgId], references: [id, orgId], onDelete: Restrict, onUpdate: Restrict)
+  task        WorkTask           @relation(fields: [taskId, orgId], references: [id, orgId], onDelete: Restrict, onUpdate: Restrict, map: "WorkContextSource_task_fkey")
   itemId      String
-  item        ContextItem        @relation(fields: [itemId, orgId], references: [id, orgId], onDelete: Restrict, onUpdate: Restrict)
+  item        ContextItem        @relation(fields: [itemId, orgId], references: [id, orgId], onDelete: Restrict, onUpdate: Restrict, map: "WorkContextSource_item_fkey")
   versionId   String
-  version     ContextItemVersion @relation(fields: [versionId, orgId, itemId], references: [id, orgId, itemId], onDelete: Restrict, onUpdate: Restrict)
+  version     ContextItemVersion @relation(fields: [versionId, orgId, itemId], references: [id, orgId, itemId], onDelete: Restrict, onUpdate: Restrict, map: "WorkContextSource_version_fkey")
   requestId   String
   fingerprint String
   actorId     String
@@ -5459,6 +5510,15 @@ model EditorialMaterial {
   @@unique([id, orgId])
   @@unique([orgId, taskId])
   @@unique([orgId, requestId])
+
+  // Relações já impostas pelas migrations; preservar FKs e ações no diff do Prisma.
+  User User                  @relation(fields: [actorId, orgId], references: [id, orgId], onUpdate: NoAction)
+  Org Org                   @relation(fields: [orgId], references: [id], onUpdate: NoAction)
+  WorkStatus WorkStatus            @relation(fields: [releaseStatusId], references: [id], onUpdate: NoAction)
+  EditorialVersion_EditorialMaterial_selectedVersionId_orgIdToEditorialVersion EditorialVersion?     @relation("EditorialMaterial_selectedVersionId_orgIdToEditorialVersion", fields: [selectedVersionId, orgId], references: [id, orgId], onUpdate: NoAction, map: "EditorialMaterial_selectedVersion_fkey")
+  WorkTask WorkTask              @relation(fields: [taskId, orgId], references: [id, orgId], onUpdate: NoAction)
+  EditorialProduction EditorialProduction[]
+  EditorialVersion_EditorialVersion_materialId_orgIdToEditorialMaterial EditorialVersion[]    @relation("EditorialVersion_materialId_orgIdToEditorialMaterial")
 }
 
 model EditorialVersion {
@@ -5479,6 +5539,14 @@ model EditorialVersion {
   @@unique([id, orgId])
   @@unique([orgId, materialId, number])
   @@unique([orgId, requestId])
+
+  // Relações já impostas pelas migrations; preservar FKs e ações no diff do Prisma.
+  EditorialDecision EditorialDecision[]
+  EditorialMaterial_EditorialMaterial_selectedVersionId_orgIdToEditorialVersion EditorialMaterial[]    @relation("EditorialMaterial_selectedVersionId_orgIdToEditorialVersion")
+  EditorialProduction EditorialProduction[]
+  User User                   @relation(fields: [actorId, orgId], references: [id, orgId], onUpdate: NoAction)
+  EditorialMaterial_EditorialVersion_materialId_orgIdToEditorialMaterial EditorialMaterial      @relation("EditorialVersion_materialId_orgIdToEditorialMaterial", fields: [materialId, orgId], references: [id, orgId], onUpdate: NoAction)
+  MarketingPreparation MarketingPreparation[]
 }
 
 model EditorialDecision {
@@ -5500,6 +5568,13 @@ model EditorialDecision {
   @@unique([id, orgId])
   @@unique([orgId, requestId])
   @@unique([orgId, versionId])
+
+  // Relações já impostas pelas migrations; preservar FKs e ações no diff do Prisma.
+  User_EditorialDecision_actorId_orgIdToUser User                   @relation("EditorialDecision_actorId_orgIdToUser", fields: [actorId, orgId], references: [id, orgId], onUpdate: NoAction)
+  User_EditorialDecision_revokedBy_orgIdToUser User?                  @relation("EditorialDecision_revokedBy_orgIdToUser", fields: [revokedBy, orgId], references: [id, orgId], onUpdate: NoAction)
+  EditorialVersion EditorialVersion       @relation(fields: [versionId, orgId], references: [id, orgId], onUpdate: NoAction)
+  EditorialProduction EditorialProduction[]
+  MarketingPreparation MarketingPreparation[]
 }
 
 model EditorialProduction {
@@ -5522,6 +5597,13 @@ model EditorialProduction {
   @@unique([id, orgId])
   @@unique([orgId, requestId])
   @@index([orgId, taskId])
+
+  // Relações já impostas pelas migrations; preservar FKs e ações no diff do Prisma.
+  User User              @relation(fields: [actorId, orgId], references: [id, orgId], onUpdate: NoAction)
+  EditorialDecision EditorialDecision @relation(fields: [decisionId, orgId], references: [id, orgId], onUpdate: NoAction)
+  EditorialMaterial EditorialMaterial @relation(fields: [materialId, orgId], references: [id, orgId], onUpdate: NoAction)
+  WorkTask WorkTask          @relation(fields: [taskId, orgId], references: [id, orgId], onUpdate: NoAction)
+  EditorialVersion EditorialVersion  @relation(fields: [versionId, orgId], references: [id, orgId], onUpdate: NoAction)
 }
 
 model MarketingAccountConfig {
@@ -5542,6 +5624,12 @@ model MarketingAccountConfig {
   @@unique([id, orgId])
   @@unique([orgId, connectionId])
   @@unique([orgId, requestId])
+
+  // Relações já impostas pelas migrations; preservar FKs e ações no diff do Prisma.
+  User_MarketingAccountConfig_actorId_orgIdToUser User                   @relation("MarketingAccountConfig_actorId_orgIdToUser", fields: [actorId, orgId], references: [id, orgId], onUpdate: NoAction)
+  Org Org                    @relation(fields: [orgId], references: [id], onUpdate: NoAction)
+  User_MarketingAccountConfig_ownerId_orgIdToUser User                   @relation("MarketingAccountConfig_ownerId_orgIdToUser", fields: [ownerId, orgId], references: [id, orgId], onUpdate: NoAction)
+  MarketingPreparation MarketingPreparation[]
 }
 
 model MarketingPreparation {
@@ -5567,6 +5655,13 @@ model MarketingPreparation {
   @@unique([id, orgId])
   @@unique([orgId, requestId])
   @@index([orgId, accountId])
+
+  // Relações já impostas pelas migrations; preservar FKs e ações no diff do Prisma.
+  MarketingAccountConfig MarketingAccountConfig @relation(fields: [accountId, orgId], references: [id, orgId], onUpdate: NoAction)
+  User User                   @relation(fields: [actorId, orgId], references: [id, orgId], onUpdate: NoAction)
+  EditorialDecision EditorialDecision      @relation(fields: [decisionId, orgId], references: [id, orgId], onUpdate: NoAction)
+  WorkTask WorkTask               @relation(fields: [taskId, orgId], references: [id, orgId], onUpdate: NoAction)
+  EditorialVersion EditorialVersion       @relation(fields: [versionId, orgId], references: [id, orgId], onUpdate: NoAction)
 }
 
 // Exercício local: inscrição explícita e histórico imutável.
@@ -5590,6 +5685,13 @@ model FinanceExerciseObligation {
   @@unique([orgId, versionId])
   @@unique([orgId, requestId])
   @@unique([id, orgId, versionId, contentHash])
+
+  // Relações já impostas pelas migrations; preservar FKs e ações no diff do Prisma.
+  FinanceExerciseDecision FinanceExerciseDecision[]
+  Contract Contract                 @relation(fields: [contractId, orgId], references: [id, orgId], onUpdate: NoAction)
+  User User                     @relation(fields: [createdById, orgId], references: [id, orgId], onUpdate: NoAction)
+  Org Org                      @relation(fields: [orgId], references: [id], onUpdate: NoAction)
+  FinanceTransaction FinanceTransaction       @relation(fields: [transactionId, orgId], references: [id, orgId], onUpdate: NoAction)
 }
 
 model FinanceExerciseDecision {
@@ -5611,6 +5713,11 @@ model FinanceExerciseDecision {
   @@unique([id, orgId])
   @@unique([orgId, requestId])
   @@unique([orgId, obligationId])
+
+  // Relações já impostas pelas migrations; preservar FKs e ações no diff do Prisma.
+  User User                      @relation(fields: [actorId, orgId], references: [id, orgId], onUpdate: NoAction)
+  FinanceExerciseObligation FinanceExerciseObligation @relation(fields: [obligationId, orgId, versionId, contentHash], references: [id, orgId, versionId, contentHash], onUpdate: NoAction)
+  Org Org                       @relation(fields: [orgId], references: [id], onUpdate: NoAction)
 }
 
 // Ponte local QA: projeto operacional, obrigação manual e decisões imutáveis.
@@ -5632,6 +5739,16 @@ model CommercialExerciseProject {
   @@unique([id, orgId])
   @@unique([orgId, aceiteId])
   @@unique([orgId, taskId])
+
+  // Relações já impostas pelas migrations; preservar FKs e ações no diff do Prisma.
+  CommercialExerciseObligation CommercialExerciseObligation[]
+  LeadEvent_CommercialExerciseProject_aceiteId_orgIdToLeadEvent LeadEvent                     @relation("CommercialExerciseProject_aceiteId_orgIdToLeadEvent", fields: [aceiteId, orgId], references: [id, orgId], onUpdate: NoAction)
+  User User                          @relation(fields: [createdById, orgId], references: [id, orgId], onUpdate: NoAction)
+  Lead Lead                          @relation(fields: [leadId, orgId], references: [id, orgId], onUpdate: NoAction)
+  Org Org                           @relation(fields: [orgId], references: [id], onUpdate: NoAction)
+  LeadEvent_CommercialExerciseProject_propostaId_orgIdToLeadEvent LeadEvent                     @relation("CommercialExerciseProject_propostaId_orgIdToLeadEvent", fields: [propostaId, orgId], references: [id, orgId], onUpdate: NoAction)
+  WorkTask WorkTask                      @relation(fields: [taskId, orgId], references: [id, orgId], onUpdate: NoAction)
+  CommercialExerciseRequest CommercialExerciseRequest[]
 }
 
 model CommercialExerciseObligation {
@@ -5651,6 +5768,13 @@ model CommercialExerciseObligation {
   @@unique([orgId, transactionId])
   @@unique([orgId, versionId])
   @@unique([id, orgId, versionId, contentHash])
+
+  // Relações já impostas pelas migrations; preservar FKs e ações no diff do Prisma.
+  CommercialExerciseDecision CommercialExerciseDecision[]
+  User User                        @relation(fields: [createdById, orgId], references: [id, orgId], onUpdate: NoAction)
+  Org Org                         @relation(fields: [orgId], references: [id], onUpdate: NoAction)
+  CommercialExerciseProject CommercialExerciseProject   @relation(fields: [projectId, orgId], references: [id, orgId], onUpdate: NoAction)
+  FinanceTransaction FinanceTransaction          @relation(fields: [transactionId, orgId], references: [id, orgId], onUpdate: NoAction)
 }
 
 model CommercialExerciseRequest {
@@ -5666,6 +5790,11 @@ model CommercialExerciseRequest {
 
   @@unique([id, orgId])
   @@unique([orgId, requestId])
+
+  // Relações já impostas pelas migrations; preservar FKs e ações no diff do Prisma.
+  User User                      @relation(fields: [actorId, orgId], references: [id, orgId], onUpdate: NoAction)
+  CommercialExerciseProject CommercialExerciseProject @relation(fields: [entityId, orgId], references: [id, orgId], onUpdate: NoAction)
+  Org Org                       @relation(fields: [orgId], references: [id], onUpdate: NoAction)
 }
 
 model CommercialExerciseDecision {
@@ -5687,13 +5816,18 @@ model CommercialExerciseDecision {
   @@unique([id, orgId])
   @@unique([orgId, requestId])
   @@unique([orgId, obligationId])
+
+  // Relações já impostas pelas migrations; preservar FKs e ações no diff do Prisma.
+  User User                         @relation(fields: [actorId, orgId], references: [id, orgId], onUpdate: NoAction)
+  CommercialExerciseObligation CommercialExerciseObligation @relation(fields: [obligationId, orgId, versionId, contentHash], references: [id, orgId, versionId, contentHash], onUpdate: NoAction)
+  Org Org                          @relation(fields: [orgId], references: [id], onUpdate: NoAction)
 }
 
 // Catálogo da seleção produzida pelo integrador Obsidian. Não autoriza movimento.
 model ContextCollectionSelection {
   id                          String                     @id @default(uuid())
   orgId                       String
-  org                         Org                        @relation(fields: [orgId], references: [id], onDelete: Restrict)
+  org                         Org                        @relation(fields: [orgId], references: [id], onDelete: Restrict, onUpdate: NoAction)
   collectionId                String
   sourceKind                  String                     @default("vault_pasta")
   generation                  BigInt
@@ -5701,14 +5835,15 @@ model ContextCollectionSelection {
   marcaDepois                 Json?
   membershipDigest            String?
   estado                      String
-  criadoEm                    DateTime                   @default(dbgenerated("(CURRENT_TIMESTAMP AT TIME ZONE 'UTC')"))
+
+  criadoEm DateTime                  @default(dbgenerated("(CURRENT_TIMESTAMP AT TIME ZONE 'UTC'::text)"))
   verificadaEm                DateTime?
   membros                     ContextCollectionMember[]
   demoInstallations           DemoInstallation[]
   movementIntentId            String?
   backIntent_old_selection_fk ContextMovementIntent[]    @relation("Intent_old_selection_fk")
   backCandidate_selection_fk  ContextMovementCandidate[] @relation("Candidate_selection_fk")
-  linkSelection_intent_fk     ContextMovementIntent?     @relation("Selection_intent_fk", fields: [movementIntentId, orgId], references: [id, orgId], onDelete: NoAction, onUpdate: NoAction)
+  linkSelection_intent_fk     ContextMovementIntent?     @relation("Selection_intent_fk", fields: [movementIntentId, orgId], references: [id, orgId], onDelete: NoAction, onUpdate: NoAction, map: "Selection_intent_fk")
 
   @@unique([id, orgId])
   @@unique([orgId, collectionId, generation])
@@ -5718,7 +5853,7 @@ model ContextCollectionSelection {
 model ContextCollectionMember {
   id                                String                     @id @default(uuid())
   orgId                             String
-  org                               Org                        @relation(fields: [orgId], references: [id], onDelete: Restrict)
+  org                               Org                        @relation(fields: [orgId], references: [id], onDelete: Restrict, onUpdate: NoAction)
   selectionId                       String
   selection                         ContextCollectionSelection @relation(fields: [selectionId, orgId], references: [id, orgId], onDelete: Restrict, onUpdate: Restrict)
   chave                             String
@@ -5752,7 +5887,7 @@ model DemoInstallation {
   orgId                    String
   org                      Org                        @relation(fields: [orgId], references: [id], onDelete: Restrict, onUpdate: Restrict)
   actorId                  String
-  actor                    User                       @relation(fields: [actorId, orgId], references: [id, orgId], onDelete: Restrict, onUpdate: Restrict)
+  actor                    User                       @relation(fields: [actorId, orgId], references: [id, orgId], onDelete: Restrict, onUpdate: Restrict, map: "DemoInstallation_actor_tenant_fkey")
   dataset                  String
   requestId                String
   manifestHash             String
@@ -5760,7 +5895,7 @@ model DemoInstallation {
   inputFingerprint         String
   destinationSignatureHash String
   selectionId              String
-  selection                ContextCollectionSelection @relation(fields: [selectionId, orgId], references: [id, orgId], onDelete: Restrict, onUpdate: Restrict)
+  selection                ContextCollectionSelection @relation(fields: [selectionId, orgId], references: [id, orgId], onDelete: Restrict, onUpdate: Restrict, map: "DemoInstallation_selection_tenant_fkey")
   receipt                  Json
   receiptHash              String
   createdAt                DateTime                   @default(now())
@@ -5803,16 +5938,17 @@ model ContextMovementIntent {
   estado                           String
   revision                         Int
   terminalReceiptId                String?
-  criadoEm                         DateTime                     @default(now())
+
+  criadoEm DateTime                     @default(dbgenerated("(CURRENT_TIMESTAMP AT TIME ZONE 'UTC'::text)"))
   encerradoEm                      DateTime?
-  linkContextMovementIntent_org_fk Org                          @relation("ContextMovementIntent_org_fk", fields: [orgId], references: [id], onDelete: NoAction, onUpdate: NoAction)
-  linkIntent_actor_fk              User                         @relation("Intent_actor_fk", fields: [actorId, orgId], references: [id, orgId], onDelete: NoAction, onUpdate: NoAction)
-  linkIntent_item_fk               ContextItem                  @relation("Intent_item_fk", fields: [itemId, orgId], references: [id, orgId], onDelete: NoAction, onUpdate: NoAction)
-  linkIntent_current_version_fk    ContextItemVersion           @relation("Intent_current_version_fk", fields: [currentVersionId, orgId, itemId, currentVersionNo], references: [id, orgId, itemId, versao], onDelete: NoAction, onUpdate: NoAction)
-  linkIntent_selected_version_fk   ContextItemVersion           @relation("Intent_selected_version_fk", fields: [selectedVersionId, orgId, itemId, selectedVersionNo], references: [id, orgId, itemId, versao], onDelete: NoAction, onUpdate: NoAction)
-  linkIntent_old_selection_fk      ContextCollectionSelection   @relation("Intent_old_selection_fk", fields: [oldSelectionId, orgId], references: [id, orgId], onDelete: NoAction, onUpdate: NoAction)
-  linkIntent_old_member_version_fk ContextCollectionMember      @relation("Intent_old_member_version_fk", fields: [oldMemberId, orgId, oldSelectionId, itemId, currentVersionId, currentVersionNo], references: [id, orgId, selectionId, itemId, versionId, versao], onDelete: NoAction, onUpdate: NoAction)
-  linkIntent_terminal_receipt_fk   ContextMovementReceipt?      @relation("Intent_terminal_receipt_fk", fields: [terminalReceiptId, orgId, id, actorId, itemId, requestId, estado], references: [id, orgId, intentId, actorId, itemId, requestId, tipo], onDelete: NoAction, onUpdate: NoAction)
+  linkContextMovementIntent_org_fk Org                          @relation("ContextMovementIntent_org_fk", fields: [orgId], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "ContextMovementIntent_org_fk")
+  linkIntent_actor_fk              User                         @relation("Intent_actor_fk", fields: [actorId, orgId], references: [id, orgId], onDelete: NoAction, onUpdate: NoAction, map: "Intent_actor_fk")
+  linkIntent_item_fk               ContextItem                  @relation("Intent_item_fk", fields: [itemId, orgId], references: [id, orgId], onDelete: NoAction, onUpdate: NoAction, map: "Intent_item_fk")
+  linkIntent_current_version_fk    ContextItemVersion           @relation("Intent_current_version_fk", fields: [currentVersionId, orgId, itemId, currentVersionNo], references: [id, orgId, itemId, versao], onDelete: NoAction, onUpdate: NoAction, map: "Intent_current_version_fk")
+  linkIntent_selected_version_fk   ContextItemVersion           @relation("Intent_selected_version_fk", fields: [selectedVersionId, orgId, itemId, selectedVersionNo], references: [id, orgId, itemId, versao], onDelete: NoAction, onUpdate: NoAction, map: "Intent_selected_version_fk")
+  linkIntent_old_selection_fk      ContextCollectionSelection   @relation("Intent_old_selection_fk", fields: [oldSelectionId, orgId], references: [id, orgId], onDelete: NoAction, onUpdate: NoAction, map: "Intent_old_selection_fk")
+  linkIntent_old_member_version_fk ContextCollectionMember      @relation("Intent_old_member_version_fk", fields: [oldMemberId, orgId, oldSelectionId, itemId, currentVersionId, currentVersionNo], references: [id, orgId, selectionId, itemId, versionId, versao], onDelete: NoAction, onUpdate: NoAction, map: "Intent_old_member_version_fk")
+  linkIntent_terminal_receipt_fk   ContextMovementReceipt?      @relation("Intent_terminal_receipt_fk", fields: [terminalReceiptId, orgId, id, actorId, itemId, requestId, estado], references: [id, orgId, intentId, actorId, itemId, requestId, tipo], onDelete: NoAction, onUpdate: NoAction, map: "Intent_terminal_receipt_fk")
   backClaim_intent_fk              ContextKeyClaim[]            @relation("Claim_intent_fk")
   backCandidate_scope_fk           ContextMovementCandidate[]   @relation("Candidate_scope_fk")
   backAlias_intent_fk              ContextAlias[]               @relation("Alias_intent_fk")
@@ -5832,10 +5968,11 @@ model ContextKeyClaim {
   itemId                     String
   tipo                       String
   intentId                   String?
-  criadoEm                   DateTime               @default(now())
-  linkContextKeyClaim_org_fk Org                    @relation("ContextKeyClaim_org_fk", fields: [orgId], references: [id], onDelete: NoAction, onUpdate: NoAction)
-  linkClaim_item_fk          ContextItem            @relation("Claim_item_fk", fields: [itemId, orgId], references: [id, orgId], onDelete: NoAction, onUpdate: NoAction)
-  linkClaim_intent_fk        ContextMovementIntent? @relation("Claim_intent_fk", fields: [intentId, orgId], references: [id, orgId], onDelete: NoAction, onUpdate: NoAction)
+
+  criadoEm DateTime               @default(dbgenerated("(CURRENT_TIMESTAMP AT TIME ZONE 'UTC'::text)"))
+  linkContextKeyClaim_org_fk Org                    @relation("ContextKeyClaim_org_fk", fields: [orgId], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "ContextKeyClaim_org_fk")
+  linkClaim_item_fk          ContextItem            @relation("Claim_item_fk", fields: [itemId, orgId], references: [id, orgId], onDelete: NoAction, onUpdate: NoAction, map: "Claim_item_fk")
+  linkClaim_intent_fk        ContextMovementIntent? @relation("Claim_intent_fk", fields: [intentId, orgId], references: [id, orgId], onDelete: NoAction, onUpdate: NoAction, map: "Claim_intent_fk")
   backAlias_claim_fk         ContextAlias[]         @relation("Alias_claim_fk")
 
   @@unique([id, orgId], map: "ContextKeyClaim_u0")
@@ -5857,10 +5994,11 @@ model ContextMovementCandidate {
   membershipDigest                    String
   marca                               Json
   auditIds                            String[]
-  criadoEm                            DateTime                   @default(now())
-  linkContextMovementCandidate_org_fk Org                        @relation("ContextMovementCandidate_org_fk", fields: [orgId], references: [id], onDelete: NoAction, onUpdate: NoAction)
-  linkCandidate_scope_fk              ContextMovementIntent      @relation("Candidate_scope_fk", fields: [intentId, orgId, actorId, itemId, collectionId], references: [id, orgId, actorId, itemId, collectionId], onDelete: NoAction, onUpdate: NoAction)
-  linkCandidate_selection_fk          ContextCollectionSelection @relation("Candidate_selection_fk", fields: [selectionId, orgId, collectionId, intentId], references: [id, orgId, collectionId, movementIntentId], onDelete: NoAction, onUpdate: NoAction)
+
+  criadoEm DateTime                   @default(dbgenerated("(CURRENT_TIMESTAMP AT TIME ZONE 'UTC'::text)"))
+  linkContextMovementCandidate_org_fk Org                        @relation("ContextMovementCandidate_org_fk", fields: [orgId], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "ContextMovementCandidate_org_fk")
+  linkCandidate_scope_fk              ContextMovementIntent      @relation("Candidate_scope_fk", fields: [intentId, orgId, actorId, itemId, collectionId], references: [id, orgId, actorId, itemId, collectionId], onDelete: NoAction, onUpdate: NoAction, map: "Candidate_scope_fk")
+  linkCandidate_selection_fk          ContextCollectionSelection @relation("Candidate_selection_fk", fields: [selectionId, orgId, collectionId, intentId], references: [id, orgId, collectionId, movementIntentId], onDelete: NoAction, onUpdate: NoAction, map: "Candidate_selection_fk")
   backReceipt_candidate_fk            ContextMovementReceipt[]   @relation("Receipt_candidate_fk")
   backReceipt_cancel_candidate_fk     ContextMovementReceipt[]   @relation("Receipt_cancel_candidate_fk")
 
@@ -5879,11 +6017,12 @@ model ContextAlias {
   itemId                  String
   claimId                 String
   intentId                String
-  criadoEm                DateTime                 @default(now())
-  linkContextAlias_org_fk Org                      @relation("ContextAlias_org_fk", fields: [orgId], references: [id], onDelete: NoAction, onUpdate: NoAction)
-  linkAlias_item_fk       ContextItem              @relation("Alias_item_fk", fields: [itemId, orgId], references: [id, orgId], onDelete: NoAction, onUpdate: NoAction)
-  linkAlias_intent_fk     ContextMovementIntent    @relation("Alias_intent_fk", fields: [intentId, orgId], references: [id, orgId], onDelete: NoAction, onUpdate: NoAction)
-  linkAlias_claim_fk      ContextKeyClaim          @relation("Alias_claim_fk", fields: [claimId, orgId, aliasKey, itemId], references: [id, orgId, key, itemId], onDelete: NoAction, onUpdate: NoAction)
+
+  criadoEm DateTime                 @default(dbgenerated("(CURRENT_TIMESTAMP AT TIME ZONE 'UTC'::text)"))
+  linkContextAlias_org_fk Org                      @relation("ContextAlias_org_fk", fields: [orgId], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "ContextAlias_org_fk")
+  linkAlias_item_fk       ContextItem              @relation("Alias_item_fk", fields: [itemId, orgId], references: [id, orgId], onDelete: NoAction, onUpdate: NoAction, map: "Alias_item_fk")
+  linkAlias_intent_fk     ContextMovementIntent    @relation("Alias_intent_fk", fields: [intentId, orgId], references: [id, orgId], onDelete: NoAction, onUpdate: NoAction, map: "Alias_intent_fk")
+  linkAlias_claim_fk      ContextKeyClaim          @relation("Alias_claim_fk", fields: [claimId, orgId, aliasKey, itemId], references: [id, orgId, key, itemId], onDelete: NoAction, onUpdate: NoAction, map: "Alias_claim_fk")
   backReceipt_alias_fk    ContextMovementReceipt[] @relation("Receipt_alias_fk")
 
   @@unique([id, orgId], map: "ContextAlias_u0")
@@ -5917,16 +6056,17 @@ model ContextMovementReceipt {
   auditIds                          String[]
   receipt                           Json
   receiptHash                       String
-  criadoEm                          DateTime                  @default(now())
-  linkContextMovementReceipt_org_fk Org                       @relation("ContextMovementReceipt_org_fk", fields: [orgId], references: [id], onDelete: NoAction, onUpdate: NoAction)
-  linkReceipt_intent_scope_fk       ContextMovementIntent     @relation("Receipt_intent_scope_fk", fields: [intentId, orgId, actorId, itemId, requestId], references: [id, orgId, actorId, itemId, requestId], onDelete: NoAction, onUpdate: NoAction)
-  linkReceipt_candidate_fk          ContextMovementCandidate? @relation("Receipt_candidate_fk", fields: [candidateId, orgId, intentId, newSelectionId], references: [id, orgId, intentId, selectionId], onDelete: NoAction, onUpdate: NoAction)
-  linkReceipt_cancel_candidate_fk   ContextMovementCandidate? @relation("Receipt_cancel_candidate_fk", fields: [candidateId, orgId, intentId, cancelSelectionId], references: [id, orgId, intentId, selectionId], onDelete: NoAction, onUpdate: NoAction)
-  linkReceipt_new_version_fk        ContextItemVersion?       @relation("Receipt_new_version_fk", fields: [newVersionId, orgId, itemId, newVersionNo], references: [id, orgId, itemId, versao], onDelete: NoAction, onUpdate: NoAction)
-  linkReceipt_new_member_version_fk ContextCollectionMember?  @relation("Receipt_new_member_version_fk", fields: [newMemberId, orgId, newSelectionId, itemId, newVersionId, newVersionNo], references: [id, orgId, selectionId, itemId, versionId, versao], onDelete: NoAction, onUpdate: NoAction)
-  linkReceipt_cancel_member_fk      ContextCollectionMember?  @relation("Receipt_cancel_member_fk", fields: [cancelMemberId, orgId, cancelSelectionId, itemId, cancelVersionId, cancelVersionNo], references: [id, orgId, selectionId, itemId, versionId, versao], onDelete: NoAction, onUpdate: NoAction)
-  linkReceipt_cancel_version_fk     ContextItemVersion?       @relation("Receipt_cancel_version_fk", fields: [cancelVersionId, orgId, itemId, cancelVersionNo], references: [id, orgId, itemId, versao], onDelete: NoAction, onUpdate: NoAction)
-  linkReceipt_alias_fk              ContextAlias?             @relation("Receipt_alias_fk", fields: [aliasId, orgId], references: [id, orgId], onDelete: NoAction, onUpdate: NoAction)
+
+  criadoEm DateTime                  @default(dbgenerated("(CURRENT_TIMESTAMP AT TIME ZONE 'UTC'::text)"))
+  linkContextMovementReceipt_org_fk Org                       @relation("ContextMovementReceipt_org_fk", fields: [orgId], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "ContextMovementReceipt_org_fk")
+  linkReceipt_intent_scope_fk       ContextMovementIntent     @relation("Receipt_intent_scope_fk", fields: [intentId, orgId, actorId, itemId, requestId], references: [id, orgId, actorId, itemId, requestId], onDelete: NoAction, onUpdate: NoAction, map: "Receipt_intent_scope_fk")
+  linkReceipt_candidate_fk          ContextMovementCandidate? @relation("Receipt_candidate_fk", fields: [candidateId, orgId, intentId, newSelectionId], references: [id, orgId, intentId, selectionId], onDelete: NoAction, onUpdate: NoAction, map: "Receipt_candidate_fk")
+  linkReceipt_cancel_candidate_fk   ContextMovementCandidate? @relation("Receipt_cancel_candidate_fk", fields: [candidateId, orgId, intentId, cancelSelectionId], references: [id, orgId, intentId, selectionId], onDelete: NoAction, onUpdate: NoAction, map: "Receipt_cancel_candidate_fk")
+  linkReceipt_new_version_fk        ContextItemVersion?       @relation("Receipt_new_version_fk", fields: [newVersionId, orgId, itemId, newVersionNo], references: [id, orgId, itemId, versao], onDelete: NoAction, onUpdate: NoAction, map: "Receipt_new_version_fk")
+  linkReceipt_new_member_version_fk ContextCollectionMember?  @relation("Receipt_new_member_version_fk", fields: [newMemberId, orgId, newSelectionId, itemId, newVersionId, newVersionNo], references: [id, orgId, selectionId, itemId, versionId, versao], onDelete: NoAction, onUpdate: NoAction, map: "Receipt_new_member_version_fk")
+  linkReceipt_cancel_member_fk      ContextCollectionMember?  @relation("Receipt_cancel_member_fk", fields: [cancelMemberId, orgId, cancelSelectionId, itemId, cancelVersionId, cancelVersionNo], references: [id, orgId, selectionId, itemId, versionId, versao], onDelete: NoAction, onUpdate: NoAction, map: "Receipt_cancel_member_fk")
+  linkReceipt_cancel_version_fk     ContextItemVersion?       @relation("Receipt_cancel_version_fk", fields: [cancelVersionId, orgId, itemId, cancelVersionNo], references: [id, orgId, itemId, versao], onDelete: NoAction, onUpdate: NoAction, map: "Receipt_cancel_version_fk")
+  linkReceipt_alias_fk              ContextAlias?             @relation("Receipt_alias_fk", fields: [aliasId, orgId], references: [id, orgId], onDelete: NoAction, onUpdate: NoAction, map: "Receipt_alias_fk")
   backIntent_terminal_receipt_fk    ContextMovementIntent[]   @relation("Intent_terminal_receipt_fk")
 
   @@unique([id, orgId], map: "ContextMovementReceipt_u0")
@@ -6170,6 +6310,8 @@ model AcordoComercial {
   updatedAt  DateTime  @updatedAt
 
   @@index([orgId])
+
+  @@index([partnerId])
 }
 
 /// PARCELAS DO ACORDO (29/10/2026): o que o contrato manda receber, parcela a
@@ -6491,6 +6633,8 @@ model AgendaConferencia {
   atualizadoEm   DateTime  @updatedAt
 
   @@unique([orgId, eventoId])
+
+  @@index([orgId, estado])
 }
 
 /// TR-09 · O DELEGADOR (rodada dos agentes, 21/10/2026). Numa tarefa atribuída a um agente,
@@ -7154,7 +7298,8 @@ model ClienteAcessoPerfil {
   userId String
   user User @relation(fields: [userId, orgId], references: [id, orgId], onDelete: Restrict, onUpdate: Restrict)
   modo String
-  updatedAt DateTime @updatedAt
+
+  updatedAt DateTime               @default(now()) @updatedAt
   vinculos ClienteAcessoVinculo[]
 
   @@unique([userId, orgId])

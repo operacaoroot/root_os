@@ -332,16 +332,19 @@ describe.skipIf(!URL)('as tarefas do comercial no banco', { timeout: 60_000 }, (
     expect(fichaDepois).toEqual(fichaAntes);
   });
 
-  it('a lista do comercial fica fora da árvore do Trabalho e de Todas', async () => {
+  it('a lista comercial sem pasta fica no catálogo próprio; suas tarefas contam em Todas pela regra da Etapa 6', async () => {
     const lista = await prisma.workList.findFirstOrThrow({ where: { orgId: ORG, externalId: LISTA_DO_COMERCIAL } });
-    const arvore = JSON.stringify(await work.estrutura(ORG));
-    expect(arvore).not.toContain(lista.id);
-    expect(arvore).toContain('Rotina');
+    const estrutura = await work.estrutura(ORG);
+    expect(estrutura.folders.flatMap((p) => p.lists).map((l) => l.id)).not.toContain(lista.id);
+    expect(estrutura.listasSoltas.map((l) => l.id)).not.toContain(lista.id);
+    if (!estrutura.listasDoComercial) throw new Error('O catálogo de listas comerciais deve estar presente.');
+    expect(estrutura.listasDoComercial.map((l) => l.id)).toContain(lista.id);
+    expect(estrutura.listasSoltas.map((l) => l.name)).toContain('Rotina');
     const todas = await work.tarefas(ORG, { todas: true });
     const ids = todas.items.map((t) => t.id);
     expect(ids).toContain(tarefaDoTrabalho);
-    expect(ids).not.toContain(doLead.id);
-    expect(ids).not.toContain(semLead.id);
+    expect(ids).toContain(doLead.id);
+    expect(ids).toContain(semLead.id);
   });
 
   it('M3: "+ tarefa" recusa título repetido aberto do mesmo lead com a frase do Dia a dia; outro lead e concluída passam', async () => {

@@ -8,6 +8,8 @@ import { OnboardingModule } from '../onboarding/onboarding.module';
 import { RoutinesModule } from '../routines/routines.module';
 import { TenantsModule } from '../tenants/tenants.module';
 import { ComercialController } from './comercial.controller';
+import { ComercialCarteiraController } from './comercial-carteira.controller';
+import { ComercialCarteiraService } from './comercial-carteira.service';
 import { FioService, ReacoesRegistry } from './fio.service';
 import { RelogioComercialRegistry } from './relogio.registry';
 import { ConfigComercialService } from './config.service';
@@ -100,7 +102,7 @@ import { LeadRepetidoService } from './lead-repetido.service';
 @Module({
   imports: [TenantsModule, AuthModule, LeadsModule, OnboardingModule, FinanceModule, RoutinesModule, ZapsignModule, MemoryModule, WorkModule],
   // `ContratosController` antes do `DinheiroController`: `GET contratos/quadro` tem o formato de `GET contratos/:leadId`.
-  controllers: [ComercialController, SalaController, SimuladorController, MensagensController, ContratosController, DinheiroController, WebhooksDoDinheiroController, InteligenciaController, FechadoForaController, ContratoImportadoController, PropostaDoLeadController, OnboardingAntecipadoController, IntegracaoDaEvolutionController, SalaEstadoController, TarefasDoComercialController, ContratoDaRootController, FormularioDoSiteController, FichaGeralController, ClientesAtivosController],
+  controllers: [ComercialCarteiraController, ComercialController, SalaController, SimuladorController, MensagensController, ContratosController, DinheiroController, WebhooksDoDinheiroController, InteligenciaController, FechadoForaController, ContratoImportadoController, PropostaDoLeadController, OnboardingAntecipadoController, IntegracaoDaEvolutionController, SalaEstadoController, TarefasDoComercialController, ContratoDaRootController, FormularioDoSiteController, FichaGeralController, ClientesAtivosController],
   providers: [
     // --- orquestrador: o fio (único caminho de escrita de fato) e o registro de reações ---
     ReacoesRegistry,
@@ -111,6 +113,7 @@ import { LeadRepetidoService } from './lead-repetido.service';
     DecisoesRegistry,
     DecisoesService,
     FichaService,
+    ComercialCarteiraService,
     RelogioDaEspinha,
     ReacoesDaEspinha,
     // --- mover o cartão pela tela (P5, 18/10; sem limitação e sem aprovação desde a U4, 20/10) ---

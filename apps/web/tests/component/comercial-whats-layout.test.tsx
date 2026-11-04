@@ -30,6 +30,7 @@ vi.mock('next/link', () => ({
 vi.mock('@/lib/api', async (original) => {
   const real = await original<typeof import('@/lib/api')>();
   const achar = (caminho: string) => {
+    if (caminho === '/clientes-escopo/me') return { amplo: true, clientes: [] };
     const chave = Object.keys(RESPOSTAS)
       .sort((a, b) => b.length - a.length)
       .find((k) => caminho.startsWith(k));
@@ -223,12 +224,13 @@ describe('texto longo não vaza', () => {
     expect(horario.className).toContain('max-w-full');
   });
 
-  it('a raiz do comercial herda a quebra em qualquer ponto', () => {
+  it('a raiz do comercial herda a quebra em qualquer ponto', async () => {
     const { container } = render(
       <LayoutDoComercial>
         <p>{PALAVRA}</p>
       </LayoutDoComercial>,
     );
+    await screen.findByText(PALAVRA);
     const raiz = container.querySelector('[data-comercial-raiz]');
     expect(raiz?.className).toContain('[overflow-wrap:anywhere]');
     expect(raiz?.className).toContain('min-w-0');

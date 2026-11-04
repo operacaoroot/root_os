@@ -1,6 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import type { AgendaLocalRecuperacao, AgentEstadoHumanoPainel, AgentEstadoHumano } from '@mktos/shared';
+import { ErroDaApi } from '@/lib/api';
 
 /*
  * ==========================================================================
@@ -39,13 +41,22 @@ vi.mock('@/lib/api', async () => {
   };
 });
 
+const PESSOA = '11111111-1111-4111-8111-111111111111';
+const ORG = '22222222-2222-4222-8222-222222222222';
+const AGENTE = '33333333-3333-4333-8333-333333333333';
+const RECIBO = '44444444-4444-4444-8444-444444444444';
+const AUDITORIA = '55555555-5555-4555-8555-555555555555';
+const EVENTO = '66666666-6666-4666-8666-666666666666';
+const EM = '2026-09-10T13:00:00.000Z';
+const MARCA = 'a'.repeat(64);
+
 let PERMISSOES: string[] = ['mcp.ver', 'mcp.executar', 'admin.usuarios', 'automacoes.executar'];
 
 vi.mock('@/lib/auth', () => ({
   useAuth: () => ({
     token: 'tok',
     ready: true,
-    user: { id: 'u-eu', name: 'Pedro', email: 'p@x.com', roles: [], permissions: PERMISSOES },
+    user: { id: PESSOA, name: 'Pedro', email: 'p@x.com', roles: [], permissions: PERMISSOES },
     can: (p: string) => PERMISSOES.includes(p),
   }),
 }));
@@ -62,7 +73,7 @@ function agente(over: Record<string, unknown> = {}) {
     iniciais: 'AC',
     missao: 'responder com fonte',
     pilar: 'Contexto',
-    dono: { id: 'u-eu', nome: 'Pedro' },
+    dono: { id: PESSOA, nome: 'Pedro' },
     tipo: 'llm',
     estado: 'ativo',
     situacao: 'ocioso',
@@ -123,10 +134,49 @@ function roster(itens: Record<string, unknown>[], kpis: Record<string, unknown> 
   };
 }
 
+function estadoHumano(a: ReturnType<typeof agente>): AgentEstadoHumanoPainel {
+  const estado = a.estado as AgentEstadoHumanoPainel['base']['estado'];
+  return {
+    escopo: { orgId: ORG, actorId: PESSOA, agentId: AGENTE, agentSlug: a.slug },
+    base: { estado, ativo: estado === 'ativo', donoId: PESSOA, estadoPorId: a.estadoPor ? PESSOA : null,
+      estadoEm: a.estadoEm as string | null, estadoMotivo: a.estadoMotivo as string | null, atualizadoEm: EM },
+    marca: MARCA,
+    autoridade: { comandar: true, verificadaEm: EM },
+    transicoes: a.transicoes as AgentEstadoHumanoPainel['transicoes'],
+  };
+}
+
+function servir(elenco: ReturnType<typeof roster>) {
+  apiGet.mockImplementation(async (rota: string) => {
+    const slug = rota.match(/^\/agents\/([^/]+)\/estado-humano$/)?.[1];
+    if (slug) {
+      const alvo = elenco.items.find((a) => a.slug === slug);
+      if (alvo) return estadoHumano(alvo as ReturnType<typeof agente>);
+    }
+    if (rota === '/agents') return elenco;
+    if (rota === '/agents/cadastro') throw new ErroDaApi('Catálogo indisponível no teste', 404);
+    throw new Error(`GET inesperado: ${rota}`);
+  });
+}
+
+function reciboDeEstado(entrada: AgentEstadoHumano, estado: 'pausado' | 'encerrado'): AgendaLocalRecuperacao {
+  const { escopo, base, marca } = estadoHumano(agente());
+  const posterior = { escopo, marca: 'b'.repeat(64), base: { ...base, estado, ativo: false, estadoPorId: PESSOA,
+    estadoEm: EM, estadoMotivo: entrada.motivo } };
+  return {
+    estado: 'confirmado', tipo: 'agente_estado', requestId: entrada.requestId, escopo,
+    recibo: { tipo: 'agente_estado', schemaVersion: 1, escopo, requestId: entrada.requestId, operationId: RECIBO,
+      confirmadoEm: EM, auditIds: [AUDITORIA], eventSnapshot: [{ id: EVENTO, seq: '1', hash: 'c'.repeat(64), tipo: 'agente_estado', ocorreuEm: EM }],
+      anterior: { escopo, base, marca }, posterior, marcaAnterior: marca, marcaNova: posterior.marca, tarefasSoltas: [] },
+    disponibilidadeAtual: { verificadaEm: EM, agente: posterior.base, agenda: null, fonte: null, modelo: null, automatico: false },
+  };
+}
+
 const card = (nome: string) => screen.getByText(nome).closest('div.rounded-root') as HTMLElement;
 
 beforeEach(() => {
-  vi.clearAllMocks();
+  vi.resetAllMocks();
+  localStorage.clear();
   PERMISSOES = ['mcp.ver', 'mcp.executar', 'admin.usuarios', 'automacoes.executar'];
 });
 
@@ -134,7 +184,7 @@ beforeEach(() => {
 
 describe('A2: os dois selos', () => {
   it('mostra o estado declarado E a situação medida', async () => {
-    apiGet.mockResolvedValue(roster([agente({ estado: 'ativo', situacao: 'ocioso' })]));
+    servir(roster([agente({ estado: 'ativo', situacao: 'ocioso' })]));
     render(<AgentesPage />);
 
     await waitFor(() => expect(screen.getByText('ativo')).toBeInTheDocument());
@@ -142,7 +192,7 @@ describe('A2: os dois selos', () => {
   });
 
   it('"erro na última passagem" aparece sem apagar o "ativo"', async () => {
-    apiGet.mockResolvedValue(roster([agente({ estado: 'ativo', situacao: 'erro' })]));
+    servir(roster([agente({ estado: 'ativo', situacao: 'erro' })]));
     render(<AgentesPage />);
 
     await waitFor(() => expect(screen.getByText('ativo')).toBeInTheDocument());
@@ -150,7 +200,7 @@ describe('A2: os dois selos', () => {
   });
 
   it('não repete a palavra quando os dois eixos dizem o mesmo', async () => {
-    apiGet.mockResolvedValue(
+    servir(
       roster([agente({ estado: 'pausado', situacao: 'pausado', transicoes: ['ativo', 'encerrado'] })]),
     );
     render(<AgentesPage />);
@@ -159,7 +209,7 @@ describe('A2: os dois selos', () => {
   });
 
   it('quem pausou, quando e por quê — a decisão tem procedência na tela', async () => {
-    apiGet.mockResolvedValue(
+    servir(
       roster([
         agente({
           estado: 'pausado',
@@ -174,13 +224,13 @@ describe('A2: os dois selos', () => {
     render(<AgentesPage />);
 
     await waitFor(() => expect(screen.getByText(/por Lucas Fernandes/)).toBeInTheDocument());
-    expect(screen.getByText(/motivo: mandou mensagem errada no grupo/)).toBeInTheDocument();
+    expect(screen.getByText(/Motivo registrado: mandou mensagem errada no grupo/)).toBeInTheDocument();
   });
 });
 
 describe('A2: os botões vêm das transições que o servidor mandou', () => {
   it('agente ativo: Pausar e Encerrar, nunca Retomar', async () => {
-    apiGet.mockResolvedValue(roster([agente({ transicoes: ['pausado', 'encerrado'] })]));
+    servir(roster([agente({ transicoes: ['pausado', 'encerrado'] })]));
     render(<AgentesPage />);
 
     await waitFor(() => expect(screen.getByRole('button', { name: 'Pausar' })).toBeInTheDocument());
@@ -189,7 +239,7 @@ describe('A2: os botões vêm das transições que o servidor mandou', () => {
   });
 
   it('agente pausado: Retomar e Encerrar, nunca Pausar de novo', async () => {
-    apiGet.mockResolvedValue(
+    servir(
       roster([agente({ estado: 'pausado', situacao: 'pausado', transicoes: ['ativo', 'encerrado'] })]),
     );
     render(<AgentesPage />);
@@ -199,7 +249,7 @@ describe('A2: os botões vêm das transições que o servidor mandou', () => {
   });
 
   it('AGENTE ENCERRADO NÃO GANHA BOTÃO — e a tela diz por quê', async () => {
-    apiGet.mockResolvedValue(
+    servir(
       roster([agente({ estado: 'encerrado', situacao: 'encerrado', transicoes: [] })]),
     );
     render(<AgentesPage />);
@@ -213,7 +263,7 @@ describe('A2: os botões vêm das transições que o servidor mandou', () => {
 
   it('sem `admin.usuarios` não aparece botão de estado nenhum', async () => {
     PERMISSOES = ['mcp.ver'];
-    apiGet.mockResolvedValue(roster([agente()]));
+    servir(roster([agente()]));
     render(<AgentesPage />);
 
     await waitFor(() => expect(screen.getByText('ativo')).toBeInTheDocument());
@@ -223,22 +273,23 @@ describe('A2: os botões vêm das transições que o servidor mandou', () => {
   });
 
   it('pausar vai direto para a rota de pausar — freio não pede redação', async () => {
-    apiGet.mockResolvedValue(roster([agente()]));
-    apiPost.mockResolvedValue({ ok: true, estado: 'pausado', transicoes: [], desde: null });
+    servir(roster([agente()]));
+    apiPost.mockImplementationOnce(async (_rota: string, entrada: AgentEstadoHumano) => reciboDeEstado(entrada, 'pausado'));
     render(<AgentesPage />);
 
     await waitFor(() => expect(screen.getByRole('button', { name: 'Pausar' })).toBeInTheDocument());
     await userEvent.click(screen.getByRole('button', { name: 'Pausar' }));
 
     await waitFor(() =>
-      expect(apiPost).toHaveBeenCalledWith('/agents/assistente/pausar', { motivo: undefined }, 'tok'),
+      expect(apiPost).toHaveBeenCalledWith('/agents/assistente/pausar', { requestId: expect.any(String), marcaEsperada: MARCA, motivo: null }, 'tok'),
     );
+    expect(await screen.findByText('Estado registrado: ativo → pausado.')).toBeInTheDocument();
   });
 });
 
 describe('A2: encerrar é definitivo, e a tela cobra o motivo antes do clique', () => {
   it('o botão de confirmar fica desabilitado até alguém escrever o motivo', async () => {
-    apiGet.mockResolvedValue(roster([agente()]));
+    servir(roster([agente()]));
     render(<AgentesPage />);
 
     await waitFor(() => expect(screen.getByRole('button', { name: 'Encerrar' })).toBeInTheDocument());
@@ -246,37 +297,38 @@ describe('A2: encerrar é definitivo, e a tela cobra o motivo antes do clique', 
 
     // A frase do que vai acontecer aparece JUNTO com o pedido de motivo.
     expect(screen.getByText(/NÃO VOLTA/)).toBeInTheDocument();
-    const confirmar = screen.getByRole('button', { name: /Encerrar de vez/ });
+    const confirmar = screen.getByRole('button', { name: 'Confirmar encerramento' });
     expect(confirmar).toBeDisabled();
     expect(apiPost).not.toHaveBeenCalled();
 
     await userEvent.type(screen.getByLabelText(/Motivo/), 'trabalho virou rotina');
-    expect(screen.getByRole('button', { name: /Encerrar de vez/ })).toBeEnabled();
+    expect(screen.getByRole('button', { name: 'Confirmar encerramento' })).toBeEnabled();
   });
 
   it('o motivo escrito vai no corpo da chamada', async () => {
-    apiGet.mockResolvedValue(roster([agente()]));
-    apiPost.mockResolvedValue({ ok: true, estado: 'encerrado', transicoes: [], desde: null });
+    servir(roster([agente()]));
+    apiPost.mockImplementationOnce(async (_rota: string, entrada: AgentEstadoHumano) => reciboDeEstado(entrada, 'encerrado'));
     render(<AgentesPage />);
 
     await waitFor(() => expect(screen.getByRole('button', { name: 'Encerrar' })).toBeInTheDocument());
     await userEvent.click(screen.getByRole('button', { name: 'Encerrar' }));
     await userEvent.type(screen.getByLabelText(/Motivo/), 'trabalho virou rotina');
-    await userEvent.click(screen.getByRole('button', { name: /Encerrar de vez/ }));
+    await userEvent.click(screen.getByRole('button', { name: 'Confirmar encerramento' }));
 
     await waitFor(() =>
       expect(apiPost).toHaveBeenCalledWith(
         '/agents/assistente/encerrar',
-        { motivo: 'trabalho virou rotina' },
+        { requestId: expect.any(String), marcaEsperada: MARCA, motivo: 'trabalho virou rotina' },
         'tok',
       ),
     );
+    expect(await screen.findByText('Estado registrado: ativo → encerrado.')).toBeInTheDocument();
   });
 });
 
 describe('A2: "Invocar" diz o que vai acontecer ANTES do clique', () => {
   it('avisa que o que passar da autonomia fica retido e precisa de outra pessoa', async () => {
-    apiGet.mockResolvedValue(roster([agente()]));
+    servir(roster([agente()]));
     render(<AgentesPage />);
 
     await waitFor(() => expect(screen.getByRole('button', { name: 'Invocar' })).toBeInTheDocument());
@@ -286,7 +338,7 @@ describe('A2: "Invocar" diz o que vai acontecer ANTES do clique', () => {
   });
 
   it('não oferece Invocar para agente pausado — a API recusaria', async () => {
-    apiGet.mockResolvedValue(
+    servir(
       roster([agente({ estado: 'pausado', situacao: 'pausado', transicoes: ['ativo', 'encerrado'] })]),
     );
     render(<AgentesPage />);
@@ -296,7 +348,7 @@ describe('A2: "Invocar" diz o que vai acontecer ANTES do clique', () => {
   });
 
   it('MOSTRA O DESFECHO QUE A API DEVOLVEU, não um sucesso inventado', async () => {
-    apiGet.mockResolvedValue(roster([agente()]));
+    servir(roster([agente()]));
     apiPost.mockResolvedValue({
       sessionId: 's1',
       status: 'retida',
@@ -308,26 +360,26 @@ describe('A2: "Invocar" diz o que vai acontecer ANTES do clique', () => {
     await waitFor(() => expect(screen.getByRole('button', { name: 'Invocar' })).toBeInTheDocument());
     await userEvent.click(screen.getByRole('button', { name: 'Invocar' }));
 
-    await waitFor(() => expect(screen.getByText(/passagem:/)).toBeInTheDocument());
-    expect(screen.getByText(/retida/)).toBeInTheDocument();
+    await waitFor(() => expect(screen.getByText(/Passagem geral:/)).toBeInTheDocument());
+    expect(screen.getByText('retida')).toBeInTheDocument();
     expect(screen.getByText(/aguardando aprovação de outra pessoa/)).toBeInTheDocument();
   });
 
   it('a recusa da API aparece na tela, e não em silêncio', async () => {
-    apiGet.mockResolvedValue(roster([agente()]));
-    apiPost.mockRejectedValue(new Error('Agente pausado pelo dono.'));
+    servir(roster([agente()]));
+    apiPost.mockRejectedValue(new ErroDaApi('Agente pausado pelo dono.', 409));
     render(<AgentesPage />);
 
     await waitFor(() => expect(screen.getByRole('button', { name: 'Invocar' })).toBeInTheDocument());
     await userEvent.click(screen.getByRole('button', { name: 'Invocar' }));
 
-    await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent('Agente pausado'));
+    await waitFor(() => expect(within(card('Assistente da central')).getByRole('alert')).toHaveTextContent('A escolha ou o pedido mudou'));
   });
 });
 
 describe('A2: os dois KPIs não se confundem', () => {
   it('"Em operação" é decisão e "Rodando agora" é medição', async () => {
-    apiGet.mockResolvedValue(
+    servir(
       roster([agente(), agente({ slug: 'curador', nome: 'Curador' })], {
         ativos: 2,
         rodandoAgora: 1,

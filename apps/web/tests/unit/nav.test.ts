@@ -331,6 +331,7 @@ const OCULTOS_E_DESTINO: Record<string, string | null> = {
   // 26/10/2026 (aba Marketing no jeito do ROOT Estúdio): abas das seções Ideias, Produção e
   // Performance. Não são absorvidas: cada uma segue sendo a dona da rota, aberta pela aba.
   'maquina-banco': null,
+  'maquina-aprovacao-video': null,
   'marketing-base': null,
   'marketing-fontes': null,
   'marketing-estrategia': null,
@@ -884,7 +885,8 @@ describe('organização da navegação (ROOT-07 e versão final)', () => {
     expect(NAV.filter((n) => !n.oculto)).toHaveLength(44);
     // 13 desde a produção 22B: o Perfil (I6) e a Lixeira (I2) entraram ocultos (a entrada é a engrenagem do topo).
     // Layout 26/10: 12 e 11, `/conteudo` (Temas do ClickUp) aposentado, com redirect para o Marketing.
-    expect(NAV.filter((n) => n.oculto)).toHaveLength(26);
+    // Aprovação de vídeo entrou como aba oculta de Produção.
+    expect(NAV.filter((n) => n.oculto)).toHaveLength(27);
     expect(ROTAS_ABSORVIDAS).toHaveLength(12);
   });
 

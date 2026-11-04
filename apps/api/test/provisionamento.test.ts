@@ -4,7 +4,7 @@ import { PrismaClient } from '@prisma/client';
 import { PERMISSIONS, ROLES } from '@mktos/shared';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 
-import { comContexto, novaCorrelacao } from '../src/common/contexto-execucao';
+import { comContexto, novaCorrelacao, SemTenantError } from '../src/common/contexto-execucao';
 import { comTenantNaSessao, esquecerAvisos } from '../src/prisma/sessao-de-banco';
 import {
   PAPEL_INICIAL,
@@ -207,9 +207,10 @@ describe.skipIf(!URL)('provisionar empresa (RF-T-07)', () => {
       }
     });
 
-    it('o contexto nasce vazio', async () => {
+    it('não declara conteúdo vazio sem leitor identificado', async () => {
       const r = await nascer({ slug: slug('contexto') });
-      expect(r.contexto).toEqual({ notas: 0, vazio: true });
+      expect(r.contexto).toEqual({ estado: 'nao_conferido', notas: null, vazio: null, motivo: 'leitor_do_tenant_nao_identificado' });
+      expect(await prisma.contextItem.count({ where: { orgId: r.orgId } })).toBe(0);
     });
   });
 
@@ -723,13 +724,13 @@ describe.skipIf(!URL)('provisionar empresa (RF-T-07)', () => {
   });
 
   describe('sob a sessão de banco com empresa declarada', () => {
-    it('sem empresa resolvida, a busca pelo slug falha com nome próprio', async () => {
+    it('sem contexto da empresa resolvida, o plano recusa antes de criar dados', async () => {
       esquecerAvisos();
       const restrito = comTenantNaSessao(prisma, { modo: 'impor', avisar: () => undefined });
 
       await expect(
         provisionarTenant(restrito, { slug: slug('impor') }),
-      ).rejects.toBeInstanceOf(ProvisionamentoSemPlataformaError);
+      ).rejects.toBeInstanceOf(SemTenantError);
     });
 
     it('com contexto de plataforma por fora, o trabalho roda no contexto da empresa nova', async () => {

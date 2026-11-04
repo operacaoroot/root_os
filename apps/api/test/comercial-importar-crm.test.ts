@@ -1,3 +1,7 @@
+import { execFileSync } from 'node:child_process';
+import { mkdtempSync, mkdirSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { JwtService } from '@nestjs/jwt';
 import { PrismaClient, type WorkFieldType, type WorkStatusType } from '@prisma/client';
 import bcrypt from 'bcryptjs';
@@ -204,7 +208,14 @@ describe('importador do CRM: a parte pura', () => {
   it('o selo do card importado e a trava do arquivo de detalhe', () => {
     expect(seloDoCard({ leadId: 'l', criadoEm: new Date('2026-10-21T15:00:00Z'), etapa: 'fechado', motivoSaida: null, antecipado: false, fechadoEm: null, importado: true }))
       .toEqual({ tipo: 'fechamento', leadId: 'l', rotulo: 'importado do CRM antigo · 21/10/2026' });
-    expect(dentroDeGit(`${process.cwd()}/qualquer.md`)).toBe(true);
+    const pasta = mkdtempSync(join(tmpdir(), 'crm-git-'));
+    try {
+      const repo = join(pasta, 'repo');
+      mkdirSync(repo);
+      execFileSync('git', ['init', '--quiet', repo]);
+      expect(dentroDeGit(join(repo, 'qualquer.md'))).toBe(true);
+      expect(dentroDeGit(join(pasta, 'fora.md'))).toBe(false);
+    } finally { rmSync(pasta, { recursive: true, force: true }); }
     expect(normalizar('Gestão de Leads')).toBe('gestao de leads');
   });
 

@@ -18,8 +18,8 @@ Perfil explícito `ALL` permite visão ampla; `SELECTED` exige vínculo ativo ao
 | Cofre e depósitos | GPT-6.1 Terra, high | Testes negativos antes do código; CRUD, anexos, emissão, revogação, recebimento e CLI |
 | Interface | GPT-6.1 Sol, high | Testes antes do código; seleção do cliente, criação vinculada e descarte de respostas antigas |
 | Revisão e aceite técnico | GPT-6 Astra + coordenador | Revisão independente, Postgres descartável, build, verificação HTTP e publicação recuperável |
-| Trabalho e arquivos | GPT-6.1 Terra + revisão Astra | Próximo lote: tarefa/subtarefa, pasta, anexos, busca, totais e URLs de download; depende do núcleo validado |
-| Comercial e financeiro | GPT-6.1 Terra + revisão Astra | Próximo lote: ficha/lead, contratos, transações, relatórios e relações herdadas |
+| Trabalho e arquivos | GPT-6.1 Terra, Sol e coordenador + revisão Astra | Lotes 2/3: tarefas, subtarefas, comentários, leitura de pastas e downloads por carteira; limites e validação em CONTINUACAO.md |
+| Comercial e financeiro | GPT-6.1 Terra (API/TDD), Sol (UI/TDD), Astra (revisão), coordenador (integração/CI) | Lote 4: oito consultas por carteira e UI; leads, contratos, recebíveis e acordos com relações e totais coerentes. Mutação, despesas, saldos e relatórios gerais seguem para lotes posteriores. |
 | Contexto, agentes e integrações | GPT-6 Astra (desenho), Terra (código) | Próximo lote: ator e cliente em jobs, revalidação no retry, busca vetorial, MCP e ferramentas |
 | Papel restrito do banco | GPT-6 Astra + coordenador | Cobrir caminhos de plataforma pendentes, testar papel efetivo e ativar restrição; não creditar RLS antes disso |
 
@@ -51,14 +51,14 @@ Leitura local em `/Users/pedro/Library/Projetos/FinOps5.0`, sem testes ou acesso
 
 ## Integração com a publicação de 04/11/2026
 
-A produção avançou para `rootos-official:etapa5-7396c26` durante a validação. Foi integrado o commit exato `7396c26f99ab121ee53a78c438438d34e8bf5a65`, preservando Comercial, Financeiro e a migration `20261103230000_dinheiro_do_contrato`. O schema foi mesclado sem conflito. A Etapa 6, encontrada no checkout de integração, não foi incluída porque ainda não era a versão publicada. A imagem de isolamento deve partir da Etapa 5 e o deploy deve recusar mudança de base posterior.
+A produção avançou para `rootos-official:etapa5-7396c26` durante a validação. Foi integrado o commit exato `7396c26f99ab121ee53a78c438438d34e8bf5a65`, preservando Comercial, Financeiro e a migration `20261103230000_dinheiro_do_contrato`. O schema foi mesclado sem conflito. A Etapa 6, encontrada no checkout de integração, não foi incluída porque ainda não era a versão publicada. Essa foi a base do primeiro lote. Na continuação, a base exata publicada `2c45bf44` foi incorporada (Etapas 6–8 e Bio); o deploy continua recusando mudanças de produção ocorridas depois dessa conferência. Ver CONTINUACAO.md.
 
 ## Modelos de dados por lote
 
 | Lote | Modelos e regras |
 | --- | --- |
 | Núcleo e cofre, implementados | `Org` e `User` mantidos; `Partner` canônico; `ClienteAcessoPerfil` por usuário/org; `ClienteAcessoVinculo` por usuário/org/cliente; `CofreItem.clienteId` e `CofreDeposito.clienteId` com FK composta; recibos preservados |
-| Trabalho e arquivos | `WorkTask.clienteId` como destino; filhos herdam o cliente do pai; pastas, listas e anexos precisam de regra explícita para agrupamentos; `ArquivoDoCliente.partnerId` limitado à carteira |
+| Trabalho e arquivos | `WorkTask.clienteId` existente como destino; criação restrita herda o cliente do pai; cadeias divergentes são ocultas; listas continuam organizacionais e suas mutações seguem contidas; `ArquivoDoCliente.partnerId` limita metadados de cópias e contagens de pastas |
 | Comercial e Financeiro | `ComercialFicha`, `ComercialContrato`, `AcordoComercial`, `Contract` e `FinanceTransaction` vinculados ao Partner, com validação dos pais e filtro em totais/relatórios; preservar a integração financeira já publicada |
 | Contexto e busca | Definir cliente nos registros de contexto e fazer versões, anexos, índice vetorial e resultados herdarem a autorização; conteúdo sem classificação permanece reservado à visão ampla |
 | Agentes, jobs e MCP | Contexto persistido com organização, cliente e ator; revalidação na execução/retry; chaves de idempotência por cliente; conta de sistema não substitui silenciosamente o operador |

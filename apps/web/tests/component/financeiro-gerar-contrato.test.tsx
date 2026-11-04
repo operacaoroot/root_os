@@ -87,7 +87,11 @@ async function abrirContratos() {
   const user = userEvent.setup();
   render(<FinanceiroPage />);
   await user.click(screen.getByRole('button', { name: 'A Pagar/Receber' }));
-  const linha = (texto: string) => within(screen.getByText(new RegExp(texto)).closest('li') as HTMLElement).getByRole('button');
+  const lista = screen.getByRole('heading', { name: 'Contratos recorrentes' }).parentElement!;
+  const linha = (texto: string) => {
+    const item = within(lista).getByText(new RegExp(texto)).closest('li')!;
+    return within(item).getByRole('button');
+  };
   await waitFor(() => expect(linha('Aluguel')).toBeInTheDocument());
   return { user, aluguel: () => linha('Aluguel'), internet: () => linha('Internet') };
 }

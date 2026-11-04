@@ -62,10 +62,10 @@ import { exigirBancoDescartavel } from './banco-de-teste';
 
 const URL = process.env.TEST_DATABASE_URL;
 const URL_RESTRITA = process.env.TENANT_DATABASE_URL;
-const CASA = 'org-teste-financeiro-casa';
-const VIZINHA = 'org-teste-financeiro-vizinha';
+const CASA = `org-teste-financeiro-casa-${randomUUID()}`;
+const VIZINHA = `org-teste-financeiro-vizinha-${randomUUID()}`;
 const EMPRESAS = [CASA, VIZINHA];
-const EU = 'u-financeiro-casa';
+const EU = randomUUID();
 
 exigirBancoDescartavel(
   URL ?? '',
@@ -401,6 +401,9 @@ describe.skipIf(!URL)('financeiro: gerar lançamento de contrato e referências 
       await prisma.org.upsert({ where: { id: orgId }, create: { id: orgId, name: orgId, slug: orgId }, update: {} });
     }
     await limparTudo();
+    const permission = await prisma.permission.upsert({ where: { key: 'financeiro.editar' }, create: { key: 'financeiro.editar' }, update: {} });
+    const role = await prisma.role.create({ data: { orgId: CASA, key: 'financeiro_fixture', name: 'Financeiro de teste', permissions: { connect: { id: permission.id } } } });
+    await prisma.user.create({ data: { id: EU, orgId: CASA, name: 'Pessoa financeira', email: `${EU}@qa.invalid`, passwordHash: 'sem-login', roles: { connect: { id: role.id } } } });
     casa = await semear(CASA, 'casa');
     vizinha = await semear(VIZINHA, 'vizinha');
   });
@@ -408,6 +411,8 @@ describe.skipIf(!URL)('financeiro: gerar lançamento de contrato e referências 
   afterAll(async () => {
     if (prisma) {
       await limparTudo();
+      await prisma.user.deleteMany({ where: { orgId: { in: EMPRESAS } } });
+      await prisma.role.deleteMany({ where: { orgId: { in: EMPRESAS } } });
       await prisma.org.deleteMany({ where: { id: { in: EMPRESAS } } });
       await prisma.$disconnect();
     }

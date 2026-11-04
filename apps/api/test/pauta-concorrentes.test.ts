@@ -1,3 +1,4 @@
+import { ServiceUnavailableException } from '@nestjs/common';
 import { describe, expect, it } from 'vitest';
 import {
   PAUTA_INDICE_ESTOUROU,
@@ -19,6 +20,7 @@ import {
 import { ConcorrentesService, chaveDoDossie } from '../src/pauta/concorrentes.service';
 import type { PrismaService } from '../src/prisma/prisma.service';
 import type { AuditService } from '../src/audit/audit.service';
+import { atuarNaPauta, derivacaoDaPauta, prismaDaDerivacao } from './pauta-derivacao-dubles';
 import type { MemoriaService } from '../src/memory/memoria.service';
 import type { LlmProvider } from '../src/llm/llm.provider';
 
@@ -315,11 +317,11 @@ describe('o serviço gera o dossiê com dublê de LLM e o guarda na memória', (
         perfil: { plataforma: 'instagram', handle: 'concorrente', texto: `A legenda do post ${n}.` },
       },
     }));
-    const prisma = {
-      pautaFonte: { findFirst: async () => ({ id: FONTE, handle: '@concorrente', plataforma: 'instagram' }) },
+    const repositorios = {
+      pautaFonte: { findFirst: async () => ({ id: FONTE, handle: '@concorrente', plataforma: 'instagram', criadaEm: new Date('2026-09-20T12:00:00Z') }) },
       pautaCaptura: { findMany: async () => capturas },
       auditLog: { create: async () => ({}) },
-    } as unknown as PrismaService;
+    };
 
     const notas = new Map<string, { id: string; chave: string; body: string; arquivadoEm: null }>();
     const memoria = {
@@ -334,9 +336,12 @@ describe('o serviço gera o dossiê com dublê de LLM e o guarda na memória', (
         n.body = String(e.body);
         return n;
       },
-    } as unknown as MemoriaService;
+    };
+    const derivacao = derivacaoDaPauta(notas, memoria);
+    const prisma = prismaDaDerivacao({ ...derivacao, ...repositorios }) as unknown as PrismaService;
+    const memoriaComDerivacao = { ...memoria, ...derivacao } as unknown as MemoriaService;
     const audit = { log: async () => ({}) } as unknown as AuditService;
-    return { chamadas, notas, svc: new ConcorrentesService(prisma, audit, llm, memoria) };
+    return { chamadas, notas, svc: new ConcorrentesService(prisma, audit, llm, memoriaComDerivacao) };
   }
 
   const SAIDA = JSON.stringify({
@@ -349,7 +354,7 @@ describe('o serviço gera o dossiê com dublê de LLM e o guarda na memória', (
 
   it('a análise chega ao modelo com a cerca e o índice, e o gasto leva o orgId', async () => {
     const { svc, chamadas } = montar(SAIDA);
-    const d = await svc.gerarDossie(ORG, PESSOA, FONTE);
+    const d = await atuarNaPauta(ORG, PESSOA, () => svc.gerarDossie(ORG, PESSOA, FONTE));
     expect(d.oQueRende).toBe('Abrem com o número na tela.');
     expect(chamadas).toHaveLength(1);
     expect(chamadas[0].orgId).toBe(ORG);
@@ -360,7 +365,7 @@ describe('o serviço gera o dossiê com dublê de LLM e o guarda na memória', (
 
   it('o dossiê fica gravado na nota do perfil e volta na leitura', async () => {
     const { svc, notas } = montar(SAIDA);
-    await svc.gerarDossie(ORG, PESSOA, FONTE);
+    await atuarNaPauta(ORG, PESSOA, () => svc.gerarDossie(ORG, PESSOA, FONTE));
     expect([...notas.keys()]).toEqual([chaveDoDossie(FONTE)]);
     const lido = await svc.dossie(ORG, FONTE);
     expect(lido?.oQueRende).toBe('Abrem com o número na tela.');
@@ -368,7 +373,7 @@ describe('o serviço gera o dossiê com dublê de LLM e o guarda na memória', (
 
   it('resposta fora do formato vira 503 e não grava nota nenhuma', async () => {
     const { svc, notas } = montar('isto não é json');
-    await expect(svc.gerarDossie(ORG, PESSOA, FONTE)).rejects.toThrow();
+    await expect(atuarNaPauta(ORG, PESSOA, () => svc.gerarDossie(ORG, PESSOA, FONTE))).rejects.toBeInstanceOf(ServiceUnavailableException);
     expect(notas.size).toBe(0);
   });
 

@@ -1,3 +1,6 @@
+import { PAUTA_CHAVE_DA_GRADE } from '@mktos/shared';
+import { ErroDaApi } from '@/lib/api';
+import { ATOR_PAUTA, destinoPauta, envelopePauta, pedidoPauta, reciboPauta } from '../fixtures/pauta-edicao-humana';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
@@ -32,7 +35,7 @@ vi.mock('@/lib/auth', () => ({
   useAuth: () => ({
     token: 'tok',
     ready: true,
-    user: { id: 'u1', name: 'Pedro', email: 'p@x.com', roles: [], permissions: permissoes },
+    user: { id: ATOR_PAUTA, name: 'Pedro', email: 'p@x.com', roles: [], permissions: permissoes },
     can: (p: string) => permissoes.includes(p),
   }),
 }));
@@ -111,6 +114,7 @@ const aPeca = (rotulo: string) => screen.getByLabelText(rotulo);
 
 beforeEach(() => {
   vi.clearAllMocks();
+  apiPut.mockReset();
   permissoes = ['pauta.ver', 'pauta.editar', 'pauta.publicar'];
   apiGet.mockResolvedValue(agenda());
 });
@@ -288,7 +292,7 @@ describe('a aba Semana', () => {
       renderAba();
       await waitFor(() => expect(rolou).toEqual(['Qua 30/09']));
       await userEvent.click(screen.getByRole('button', { name: /Próxima/ }));
-      await waitFor(() => expect(apiGet).toHaveBeenCalledTimes(2));
+      await waitFor(() => expect(apiGet.mock.calls.filter(([rota]) => /^\/pauta\/agenda(?:\?|$)/.test(rota))).toHaveLength(2));
       expect(rolou).toEqual(['Qua 30/09']);
     } finally {
       Element.prototype.scrollIntoView = original;
@@ -392,7 +396,7 @@ describe('a aba Semana', () => {
     fireEvent.change(campo, { target: { value: '2026-09-29T19:30' } });
     await userEvent.click(within(car).getByRole('button', { name: 'Salvar' }));
     expect(apiPut).toHaveBeenCalledWith('/pauta/pecas/p1/agenda', { agendadaPara: '2026-09-29T22:30:00.000Z' }, 'tok');
-    await waitFor(() => expect(apiGet).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(apiGet.mock.calls.filter(([rota]) => /^\/pauta\/agenda(?:\?|$)/.test(rota))).toHaveLength(2));
 
     await userEvent.click(within(aPeca('Carrossel de ep-04')).getByRole('button', { name: 'Reagendar' }));
     await userEvent.click(within(aPeca('Carrossel de ep-04')).getByRole('button', { name: 'Tirar da agenda' }));
@@ -549,26 +553,32 @@ describe('a aba Semana', () => {
     expect(apiPost).toHaveBeenLastCalledWith('/pauta/episodios/e5/agenda/distribuir', { aPartirDe: '2026-10-05' }, 'tok');
   });
 
-  it('edita a grade como texto, com a versão lida; a recusa da API vai para a tela', async () => {
-    apiGet.mockImplementation(async (path: string) =>
-      path === '/pauta/agenda/grade'
-        ? { texto: 'carrossel: seg 12:00\n', origem: 'empresa', versao: 3, avisos: [], grade: { slots: [], feriados: [] } }
-        : agenda(),
-    );
-    apiPut.mockRejectedValueOnce(new Error('Linha 2: "reels" não é formato da semana (carrossel, story ou corte).'));
-    apiPut.mockResolvedValueOnce({ texto: 'carrossel: seg, qua 12:00\n', origem: 'empresa', versao: 4, avisos: [], grade: { slots: [], feriados: [] } });
-    const { onErro } = renderAba();
+  it('edita a grade com a base conferida e conserva o texto quando a API recusa', async () => {
+    const textoInicial = 'carrossel: seg 12:00\n';
+    const destino = destinoPauta(PAUTA_CHAVE_DA_GRADE, 3, textoInicial);
+    const grade = { ...envelopePauta, painel: { texto: textoInicial, origem: 'empresa', versao: 3,
+      avisos: [], grade: { slots: [], feriados: [] } }, destinos: { grade: destino } };
+    apiGet.mockImplementation(async (path: string) => path === '/pauta/agenda/grade' ? grade : agenda());
+    apiPut.mockRejectedValueOnce(new ErroDaApi('Linha 2: "reels" não é formato da semana.', 400));
+    apiPut.mockResolvedValueOnce(reciboPauta('salvar_grade', destino, destinoPauta(PAUTA_CHAVE_DA_GRADE, 4, 'carrossel: seg, qua 12:00\n')));
+    renderAba();
     await userEvent.click(await screen.findByRole('button', { name: 'Grade da semana' }));
-    const texto = (await screen.findByLabelText('Texto da grade')) as HTMLTextAreaElement;
-    expect(texto.value).toBe('carrossel: seg 12:00\n');
-    expect(screen.getByRole('region', { name: 'Grade da semana' })).toHaveTextContent('Nota da empresa, versão 3.');
-    fireEvent.change(texto, { target: { value: 'carrossel: seg 12:00\nreels: ter 9h' } });
-    await userEvent.click(screen.getByRole('button', { name: 'Salvar grade' }));
-    expect(apiPut).toHaveBeenCalledWith('/pauta/agenda/grade', { texto: 'carrossel: seg 12:00\nreels: ter 9h', versao: 3 }, 'tok');
-    await waitFor(() => expect(onErro).toHaveBeenLastCalledWith(expect.stringMatching(/Linha 2/)));
+    const secao = within(screen.getByRole('region', { name: 'Grade da semana' }));
+    const texto = await secao.findByLabelText('Texto da grade');
+    expect(texto).toHaveValue(textoInicial);
+    expect(secao.getByText('Grade em uso: versão 3.')).toBeInTheDocument();
+    const invalido = 'carrossel: seg 12:00\nreels: ter 9h';
+    fireEvent.change(texto, { target: { value: invalido } });
+    await userEvent.click(secao.getByRole('button', { name: 'Salvar grade' }));
+    expect(apiPut).toHaveBeenCalledWith('/pauta/agenda/grade', { ...pedidoPauta(destino), texto: invalido }, 'tok');
+    expect(await secao.findByText(/A edição foi recusada: Linha 2/)).toBeInTheDocument();
+    expect(texto).toHaveValue(invalido);
+    expect(secao.getByRole('button', { name: 'Salvar grade' })).toBeDisabled();
+    await userEvent.click(secao.getByRole('button', { name: 'Conferir estado atual' }));
+    await userEvent.click(secao.getByRole('button', { name: 'Retomar com esta base e meu texto' }));
     fireEvent.change(texto, { target: { value: 'carrossel: seg, qua 12h' } });
-    await userEvent.click(screen.getByRole('button', { name: 'Salvar grade' }));
-    await waitFor(() => expect((screen.getByLabelText('Texto da grade') as HTMLTextAreaElement).value).toBe('carrossel: seg, qua 12:00\n'));
+    await userEvent.click(secao.getByRole('button', { name: 'Salvar grade' }));
+    expect(await secao.findByText(/Nota salva: versão 4/)).toBeInTheDocument();
   });
 
   it('sem pauta.editar não reagenda, não distribui nem edita a grade; sem pauta.publicar não marca postada', async () => {

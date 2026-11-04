@@ -76,9 +76,20 @@ function paraOBanco(coluna: ColunaProjetada, v: unknown): unknown {
 
 export async function semearDemonstracao(prisma: PrismaClient, o: OpcoesDaSemente): Promise<RelatorioDaSemente> {
   const agora = o.agora ?? new Date();
-  const roteiros = montarRoteiros({ orgId: o.orgId, agora, dono: o.dono, decisaoExpiraHoras: o.decisaoExpiraHoras, validadePropostaDias: o.validadePropostaDias });
+  const montar = (dataBase: Date) => montarRoteiros({ orgId: o.orgId, agora: dataBase, dono: o.dono, decisaoExpiraHoras: o.decisaoExpiraHoras, validadePropostaDias: o.validadePropostaDias });
+  let roteiros = montar(agora);
   const segredo = o.segredo === undefined ? segredoDoAmbiente() : o.segredo;
   const base = o.baseDoLink ?? baseDoLink();
+
+  // O primeiro lead fixa o relógio desta demonstração, inclusive se uma execução
+  // parou antes de gravar o fio. Releia o valor persistido após createMany: outra
+  // chamada pode ter criado a mesma âncora. Mudar o relógio gerava novos hashes
+  // de proposta e decisões, embora a proposta v1 continuasse sendo a original.
+  const ancora = roteiros[0];
+  await gravarLead(prisma, o.orgId, ancora);
+  const existente = await prisma.lead.findFirstOrThrow({ where: { id: ancora.leadId, orgId: o.orgId }, select: { enteredAt: true } });
+  const deslocamento = existente.enteredAt.getTime() - ancora.entrada.getTime();
+  if (deslocamento !== 0) roteiros = montar(new Date(agora.getTime() + deslocamento));
 
   const leads: LeadSemeado[] = [];
   const salas: SalaSemeada[] = [];

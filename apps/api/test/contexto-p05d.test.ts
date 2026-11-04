@@ -17,6 +17,7 @@ afterEach(() => vi.restoreAllMocks());
 function bancada() {
   const itens = new Map<string, NotaDeContexto & { orgId: string }>();
   const prisma = {
+    $queryRawUnsafe: vi.fn(async (sql: string) => { if (!sql.includes('ContextMovementIntent')) throw new Error('consulta inesperada'); return [{ pendente: false }]; }),
     contextItem: { findMany: vi.fn(async ({ where }) => [...itens.values()].filter((i) =>
       i.orgId === where.orgId && (!where.chave || where.chave.in.includes(i.chave)))), },
   } as unknown as PrismaService;

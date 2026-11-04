@@ -157,7 +157,7 @@ describe('contenção por cliente em HTTP real', () => {
     state.modo = null;
     const me = await pedir('/auth/me');
     expect(me.status).toBe(200);
-    expect((await me.json()).id).toBe(userId);
+    expect(await me.json()).toMatchObject({ id: userId });
     expect((await pedir('/clientes-escopo/me')).status).toBe(403);
     expect((await pedir('/prova/adaptada')).status).toBe(403);
   });
@@ -170,7 +170,7 @@ describe('contenção por cliente em HTTP real', () => {
     expect(contextos.every(id => id === orgId)).toBe(true);
     const clientes = await pedir('/clientes-escopo/me');
     expect(clientes.status).toBe(200);
-    expect((await clientes.json()).amplo).toBe(false);
+    expect(await clientes.json()).toMatchObject({ amplo: false });
   });
   it('APP_INTERCEPTOR real contém outras autenticações e preserva o formulário público', async () => {
     expect((await pedir('/outra-autenticacao')).status).toBe(403);
