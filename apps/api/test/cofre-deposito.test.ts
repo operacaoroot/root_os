@@ -8,8 +8,9 @@ import { decifrar } from '../src/common/crypto';
 const ORG = '11111111-1111-4111-8111-111111111111';
 const OUTRA = '22222222-2222-4222-8222-222222222222';
 const USER = 'pessoa';
+const CLIENTE = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
 function montar() {
-  const dados = { links: [] as any[], itens: [] as any[], recibos: [] as any[], audit: [] as any[], ativo: true };
+  const dados = { links: [] as any[], itens: [] as any[], recibos: [] as any[], audit: [] as any[], ativo: true, clientePermitido: true, amplo: false };
   const casa = (r: any, w: any) => Object.entries(w ?? {}).every(([k, v]) => r[k] === v);
   const db: any = {
     org: { findFirst: async () => dados.ativo ? { id: ORG } : null },
@@ -29,12 +30,12 @@ function montar() {
     $queryRaw: async (_sql: any, orgId: string, tokenHash: string) => dados.links.filter((d) => d.orgId === orgId && d.tokenHash === tokenHash).map((d) => ({ id: d.id })),
     $transaction: async (fn: any) => fn(db),
   };
-  const svc = new CofreDepositoService(db, { log: async (r: any) => { dados.audit.push(r); } } as any);
+  const svc = new CofreDepositoService(db, { log: async (r: any) => { dados.audit.push(r); } } as any, { filtro: async (orgId: string) => ({orgId}), exigirCliente: async (_o: string, _u: string, id: string | null) => { if (!dados.clientePermitido || (id !== CLIENTE && !(id === null && dados.amplo))) throw new Error('sem acesso'); return {id: CLIENTE, nomeFantasia: 'JUMA', razaoSocial: 'JUMA'}; } } as any);
   return { svc, dados };
 }
 async function preparar() {
   const f = montar();
-  const emitido = await f.svc.emitir(ORG, USER, 'JUMA');
+  const emitido = await f.svc.emitir(ORG, USER, CLIENTE);
   const token = emitido.caminho.split('#')[1];
   const envio = { token, envioId: randomUUID(), titulo: 'Sistema de teste', usuario: 'login-sintetico', segredo: 'segredo-sintetico', notas: 'nota-sintetica' };
   return { ...f, emitido, token, envio };
@@ -50,14 +51,20 @@ describe('depósito de senhas', () => {
   });
   it('recusa emissor sem permissão atual ou de outra empresa', async () => {
     const { svc } = montar();
-    await expect(svc.emitir(ORG, 'intruso', 'JUMA')).rejects.toThrow('Sem acesso');
-    await expect(svc.emitir(OUTRA, USER, 'JUMA')).rejects.toThrow('Sem acesso');
+    await expect(svc.emitir(ORG, 'intruso', CLIENTE)).rejects.toThrow('Sem acesso');
+    await expect(svc.emitir(OUTRA, USER, CLIENTE)).rejects.toThrow('Sem acesso');
+  });
+  it('não emite link para cliente fora do escopo', async () => {
+    const {svc, dados} = montar();
+    await expect(svc.emitir(ORG, USER, 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb')).rejects.toThrow();
+    expect(dados.links).toHaveLength(0);
   });
   it('recebe cifrado e só responde com recibo; estado não revela itens', async () => {
     const { svc, dados, envio, token } = await preparar();
     const r = await svc.receber(envio);
     expect(Object.keys(r).sort()).toEqual(['ok', 'recibo']);
     const item = dados.itens[0];
+    expect(item.clienteId).toBe(CLIENTE);
     expect(item.titulo).toBe('JUMA · Sistema de teste');
     expect(decifrar(item.segredoCifrado, { aad: `cofre-da-empresa:${ORG}:${item.id}:segredo` })).toBe(envio.segredo);
     expect(JSON.stringify(dados)).not.toContain(envio.segredo);
@@ -92,6 +99,24 @@ describe('depósito de senhas', () => {
     await svc.revogar(ORG, USER, emitido.id); await expect(svc.estado(token)).rejects.toThrow('indisponível');
     expect(dados.itens).toHaveLength(1);
   });
+  it('link legado sem cliente permanece utilizável apenas pelo emissor amplo', async () => {
+    const { svc, dados, envio, token } = await preparar();
+    dados.links[0].clienteId = null;
+    await expect(svc.receber(envio)).rejects.toThrow('indisponível');
+    dados.amplo = true;
+    await expect(svc.receber(envio)).resolves.toMatchObject({ok:true});
+    expect(dados.itens[0].clienteId).toBeNull();
+    expect(dados.links[0].tokenHash).toBeTruthy();
+    await expect(svc.estado(token)).resolves.toMatchObject({cliente:'JUMA'});
+  });
+  it('revogar acesso ao cliente invalida link já emitido antes de gravar ou repetir recibo', async () => {
+    const { svc, dados, envio } = await preparar();
+    await svc.receber(envio);
+    dados.clientePermitido = false;
+    await expect(svc.receber(envio)).rejects.toThrow('indisponível');
+    await expect(svc.receber({ ...envio, envioId: randomUUID() })).rejects.toThrow('indisponível');
+    expect(dados.itens).toHaveLength(1);
+  });
   it('desativar emissor ou empresa encerra a capacidade de depósito', async () => {
     const { svc, dados, envio } = await preparar(); dados.ativo = false;
     await expect(svc.receber(envio)).rejects.toThrow('indisponível');
@@ -100,6 +125,7 @@ describe('depósito de senhas', () => {
     const { svc, dados, envio } = await preparar(); dados.links[0].recebidos = 100;
     await expect(svc.receber(envio)).rejects.toThrow('Limite de envios');
     expect(EnvioDepositoSchema.safeParse({ ...envio, orgId: OUTRA }).success).toBe(false);
+    expect(EnvioDepositoSchema.safeParse({ ...envio, clienteId: CLIENTE }).success).toBe(false);
     expect(EnvioDepositoSchema.safeParse({ ...envio, segredo: '' }).success).toBe(false);
     expect(EnvioDepositoSchema.safeParse({ ...envio, segredo: 'x'.repeat(5001) }).success).toBe(false);
   });

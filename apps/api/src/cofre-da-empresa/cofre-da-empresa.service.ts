@@ -6,6 +6,7 @@ import {
 import bcrypt from 'bcryptjs';
 import { z } from 'zod';
 import { PrismaService } from '../prisma/prisma.service';
+import { ClienteEscopoService } from '../clientes-escopo/cliente-escopo.service';
 import { AuditService } from '../audit/audit.service';
 import { StorageService } from '../storage/storage.service';
 import { cifrar, decifrar } from '../common/crypto';
@@ -45,6 +46,7 @@ export const DefinirSenhaSchema = z.object({
 });
 export const DestrancarSchema = z.object({ senha: z.string().min(1).max(200) });
 export const ItemSchema = z.object({
+  clienteId: z.string().uuid(),
   tipo: z.enum(TIPOS),
   titulo: z.string().trim().min(1).max(120),
   onde: z.string().trim().max(300).nullable().optional(),
@@ -73,7 +75,12 @@ export class CofreDaEmpresaService {
     private readonly prisma: PrismaService,
     private readonly audit: AuditService,
     private readonly storage: StorageService,
+    private readonly escopo: ClienteEscopoService,
   ) {}
+
+  async clientes(orgId: string, userId: string) {
+    return this.escopo.listar(orgId, userId);
+  }
 
   // ---------------- senha e sessão ----------------
   async estado(orgId: string, userId: string, token?: string) {
@@ -184,6 +191,7 @@ export class CofreDaEmpresaService {
    */
   async zerarSenhaDeOutro(orgId: string, userId: string, token: string | undefined, alvoId: string) {
     await this.exigirAberto(orgId, userId, token);
+    await this.escopo.exigirAmplo(orgId, userId);
     if (alvoId === userId) throw new BadRequestException('Para trocar a sua, use "Trocar senha do cofre".');
     const alvo = await this.prisma.user.findFirst({ where: { id: alvoId, orgId }, select: { id: true, name: true } });
     if (!alvo) throw new NotFoundException('Pessoa não encontrada');
@@ -196,6 +204,7 @@ export class CofreDaEmpresaService {
   /** Quem da empresa já tem senha do cofre (para o sócio poder zerar a de outro). */
   async pessoas(orgId: string, userId: string, token: string | undefined) {
     await this.exigirAberto(orgId, userId, token);
+    await this.escopo.exigirAmplo(orgId, userId);
     const [users, senhas] = await Promise.all([
       this.prisma.user.findMany({ where: { orgId, roles: { some: { permissions: { some: { key: 'cofre.ver' } } } } }, select: { id: true, name: true, email: true } }),
       this.prisma.cofreSenha.findMany({ where: { orgId }, select: { userId: true } }),
@@ -205,11 +214,12 @@ export class CofreDaEmpresaService {
   }
 
   // ---------------- itens ----------------
-  async listar(orgId: string, userId: string, token?: string) {
+  async listar(orgId: string, userId: string, token?: string, clienteId?: string) {
     await this.exigirAberto(orgId, userId, token);
-    const itens = await this.prisma.cofreItem.findMany({ where: { orgId }, orderBy: [{ tipo: 'asc' }, { titulo: 'asc' }] });
+    const filtro = await this.escopo.filtro(orgId, userId, clienteId);
+    const itens = await this.prisma.cofreItem.findMany({ where: filtro, orderBy: [{ tipo: 'asc' }, { titulo: 'asc' }] });
     return itens.map((i) => ({
-      id: i.id, tipo: i.tipo, titulo: i.titulo, onde: i.onde,
+      id: i.id, clienteId: i.clienteId, tipo: i.tipo, titulo: i.titulo, onde: i.onde,
       temUsuario: !!i.usuarioCifrado, temSegredo: !!i.segredoCifrado, temNotas: !!i.notasCifradas,
       arquivo: i.arquivoChave ? { nome: i.arquivoNome, tipo: i.arquivoTipo, tamanho: i.arquivoTamanho } : null,
       atualizadoEm: i.updatedAt.toISOString(),
@@ -218,7 +228,7 @@ export class CofreDaEmpresaService {
 
   async revelar(orgId: string, userId: string, token: string | undefined, id: string) {
     await this.exigirAberto(orgId, userId, token);
-    const i = await this.prisma.cofreItem.findFirst({ where: { id, orgId } });
+    const i = await this.prisma.cofreItem.findFirst({ where: { id, ...(await this.escopo.filtro(orgId, userId)) } });
     if (!i) throw new NotFoundException('Item não encontrado');
     await this.audit.log({ orgId, actorId: userId, action: 'cofre.item.revelar', entityType: 'cofre_item', entityId: id, after: { titulo: i.titulo } });
     return {
@@ -231,10 +241,11 @@ export class CofreDaEmpresaService {
 
   async criar(orgId: string, userId: string, token: string | undefined, input: z.infer<typeof ItemSchema>) {
     await this.exigirAberto(orgId, userId, token);
+    await this.escopo.exigirCliente(orgId, userId, input.clienteId);
     const id = randomUUID();
     await this.prisma.cofreItem.create({
       data: {
-        id, orgId, tipo: input.tipo, titulo: input.titulo, onde: input.onde ?? null, criadoPor: userId,
+        id, orgId, clienteId: input.clienteId, tipo: input.tipo, titulo: input.titulo, onde: input.onde ?? null, criadoPor: userId,
         usuarioCifrado: fechar(orgId, id, 'usuario', input.usuario),
         segredoCifrado: fechar(orgId, id, 'segredo', input.segredo),
         notasCifradas: fechar(orgId, id, 'notas', input.notas),
@@ -246,11 +257,16 @@ export class CofreDaEmpresaService {
 
   async alterar(orgId: string, userId: string, token: string | undefined, id: string, input: z.infer<typeof ItemUpdateSchema>) {
     await this.exigirAberto(orgId, userId, token);
-    const antes = await this.prisma.cofreItem.findFirst({ where: { id, orgId } });
+    const antes = await this.prisma.cofreItem.findFirst({ where: { id, ...(await this.escopo.filtro(orgId, userId)) } });
     if (!antes) throw new NotFoundException('Item não encontrado');
+    if (input.clienteId !== undefined) {
+      if (antes.clienteId === null) await this.escopo.exigirAmplo(orgId, userId);
+      await this.escopo.exigirCliente(orgId, userId, input.clienteId);
+    }
     await this.prisma.cofreItem.update({
-      where: { id },
+      where: { ...(await this.escopo.filtro(orgId, userId)), id, AND: [{ clienteId: antes.clienteId }] },
       data: {
+        ...(input.clienteId !== undefined ? { clienteId: input.clienteId } : {}),
         ...(input.tipo !== undefined ? { tipo: input.tipo } : {}),
         ...(input.titulo !== undefined ? { titulo: input.titulo } : {}),
         ...(input.onde !== undefined ? { onde: input.onde } : {}),
@@ -267,10 +283,10 @@ export class CofreDaEmpresaService {
 
   async apagar(orgId: string, userId: string, token: string | undefined, id: string) {
     await this.exigirAberto(orgId, userId, token);
-    const antes = await this.prisma.cofreItem.findFirst({ where: { id, orgId } });
+    const antes = await this.prisma.cofreItem.findFirst({ where: { id, ...(await this.escopo.filtro(orgId, userId)) } });
     if (!antes) throw new NotFoundException('Item não encontrado');
+    await this.prisma.cofreItem.delete({ where: { ...(await this.escopo.filtro(orgId, userId)), id, AND: [{ clienteId: antes.clienteId }] } });
     if (antes.arquivoChave) await this.storage.remover(antes.arquivoChave).catch(() => undefined);
-    await this.prisma.cofreItem.delete({ where: { id } });
     await this.audit.log({ orgId, actorId: userId, action: 'cofre.item.apagar', entityType: 'cofre_item', entityId: id, before: { tipo: antes.tipo, titulo: antes.titulo } });
     return { ok: true };
   }
@@ -281,7 +297,7 @@ export class CofreDaEmpresaService {
     arquivo: { nome: string; tipo: string; corpo: Readable; tamanhoDeclarado: number },
   ) {
     await this.exigirAberto(orgId, userId, token);
-    const item = await this.prisma.cofreItem.findFirst({ where: { id, orgId } });
+    const item = await this.prisma.cofreItem.findFirst({ where: { id, ...(await this.escopo.filtro(orgId, userId)) } });
     if (!item) throw new NotFoundException('Item não encontrado');
     if (!(arquivo.tamanhoDeclarado > 0) || arquivo.tamanhoDeclarado > TETO_DO_ARQUIVO) {
       throw new HttpException(`O arquivo precisa ter até ${TETO_DO_ARQUIVO / 1024 / 1024} MB.`, HttpStatus.PAYLOAD_TOO_LARGE);
@@ -294,25 +310,38 @@ export class CofreDaEmpresaService {
       partes.push(pedaco as Buffer);
     }
     const bytes = Buffer.concat(partes);
+    const filtroAtual = await this.escopo.filtro(orgId, userId);
+    const aindaAcessivel = await this.prisma.cofreItem.findFirst({ where: { id, ...filtroAtual, AND: [{ clienteId: item.clienteId }] } });
+    if (!aindaAcessivel) throw new NotFoundException('Item não encontrado');
     const pacote = cifrar(bytes.toString('base64'), { aad: aad(orgId, id, 'arquivo') });
     const chave = `cofre-da-empresa/${orgId}/${id}/${randomUUID()}`;
     await this.storage.put(chave, Buffer.from(pacote, 'utf8'), 'application/octet-stream');
+    try {
+      await this.prisma.cofreItem.update({
+        where: { ...(await this.escopo.filtro(orgId, userId)), id, AND: [{ clienteId: item.clienteId }] },
+        data: { arquivoChave: chave, arquivoNome: arquivo.nome.slice(0, 200), arquivoTipo: arquivo.tipo.slice(0, 100), arquivoTamanho: bytes.length },
+      });
+    } catch (e) {
+      await this.storage.remover(chave).catch(() => undefined);
+      throw e;
+    }
     if (item.arquivoChave && item.arquivoChave !== chave) await this.storage.remover(item.arquivoChave).catch(() => undefined);
-    await this.prisma.cofreItem.update({
-      where: { id },
-      data: { arquivoChave: chave, arquivoNome: arquivo.nome.slice(0, 200), arquivoTipo: arquivo.tipo.slice(0, 100), arquivoTamanho: bytes.length },
-    });
     await this.audit.log({ orgId, actorId: userId, action: 'cofre.arquivo.guardar', entityType: 'cofre_item', entityId: id, after: { titulo: item.titulo, tamanho: bytes.length } });
     return { ok: true };
   }
 
   async abrirArquivo(orgId: string, userId: string, token: string | undefined, id: string) {
     await this.exigirAberto(orgId, userId, token);
-    const item = await this.prisma.cofreItem.findFirst({ where: { id, orgId } });
+    const item = await this.prisma.cofreItem.findFirst({ where: { id, ...(await this.escopo.filtro(orgId, userId)) } });
     if (!item?.arquivoChave) throw new NotFoundException('Este item não tem arquivo.');
     const { stream } = await this.storage.get(item.arquivoChave);
     const partes: Buffer[] = [];
     for await (const p of stream) partes.push(p as Buffer);
+    const filtroAtual = await this.escopo.filtro(orgId, userId);
+    const aindaAcessivel = await this.prisma.cofreItem.findFirst({
+      where: { id, ...filtroAtual, arquivoChave: item.arquivoChave, AND: [{ clienteId: item.clienteId }] },
+    });
+    if (!aindaAcessivel) throw new NotFoundException('Este item não tem arquivo.');
     const bytes = Buffer.from(decifrar(Buffer.concat(partes).toString('utf8'), { aad: aad(orgId, id, 'arquivo') }), 'base64');
     await this.audit.log({ orgId, actorId: userId, action: 'cofre.arquivo.abrir', entityType: 'cofre_item', entityId: id, after: { titulo: item.titulo } });
     return { bytes, nome: item.arquivoNome ?? 'arquivo', tipo: item.arquivoTipo ?? 'application/octet-stream' };

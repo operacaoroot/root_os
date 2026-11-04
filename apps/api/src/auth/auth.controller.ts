@@ -1,3 +1,4 @@
+import { IdentidadePropria } from '../clientes-escopo/cliente-escopo.decorator';
 import { Body, Controller, Get, Post, Query, Req, Res, UseGuards } from '@nestjs/common';
 import type { Response } from 'express';
 import { z } from 'zod';
@@ -82,6 +83,7 @@ export class AuthController {
 
   @UseGuards(JwtAuthGuard)
   @Get('me')
+  @IdentidadePropria()
   me(@CurrentUser() user: JwtUser) {
     return {
       id: user.sub,

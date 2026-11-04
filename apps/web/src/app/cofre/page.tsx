@@ -1,23 +1,24 @@
 'use client';
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import * as Icons from 'lucide-react';
 import { API_BASE } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 import { Depositos } from './Depositos';
+import { CarteiraClientes } from './CarteiraClientes';
 
 /*
- * COFRE DA EMPRESA — senhas, dados e documentos dos sócios.
+ * COFRE DA EMPRESA — senhas, dados e documentos por cliente.
  *
  * Abre com a senha do cofre (de cada pessoa, não a do login). A sessão do cofre
  * fica só na memória desta aba: recarregar, fechar ou 15 min sem mexer tranca.
- * Os valores aparecem um item por vez, somem sozinhos em 30 s e cada abertura
+ * Os valores revelados somem em 30 s e cada abertura
  * fica no registro de ações.
  */
 
 type Tipo = 'senha' | 'dado' | 'documento';
 type Item = {
-  id: string; tipo: Tipo; titulo: string; onde: string | null;
+  id: string; clienteId: string | null; tipo: Tipo; titulo: string; onde: string | null;
   temUsuario: boolean; temSegredo: boolean; temNotas: boolean;
   arquivo: { nome: string | null; tipo: string | null; tamanho: number | null } | null;
   atualizadoEm: string;
@@ -31,20 +32,39 @@ const TIPOS: { k: Tipo | 'todos'; rotulo: string }[] = [
 const ICONE: Record<Tipo, keyof typeof Icons> = { senha: 'KeyRound', dado: 'IdCard', documento: 'FileLock' };
 const inputCls = 'w-full rounded-lg border border-border bg-surface-2 px-3 py-2 text-sm outline-none focus:border-brand-dim';
 const SEGUNDOS_VISIVEL = 30;
-const vazio = { tipo: 'senha' as Tipo, titulo: '', onde: '', usuario: '', segredo: '', notas: '' };
+const vazio = { clienteId: null as string | null, tipo: 'senha' as Tipo, titulo: '', onde: '', usuario: '', segredo: '', notas: '' };
+
+type Cliente = { id: string; nome: string; interno: boolean };
+type Acesso = { amplo: boolean; clientes: Cliente[] };
+const nomeCliente = (cliente: Cliente) => cliente.interno ? 'ROOT interno' : cliente.nome;
 
 export default function CofrePage() {
-  const { token, ready, can } = useAuth();
-  const podeEditar = can('cofre.editar');
+  const { user, token, ready, can } = useAuth();
+  if (!ready) return <p className="text-sm text-muted">Carregando…</p>;
+  if (!user || !token) return <p className="text-sm text-muted">Entre no OS para acessar o cofre.</p>;
+  return (
+    <CofreConta key={`${user.id}:${token}`} token={token} podeEditar={can('cofre.editar')}
+      adminId={user.roles.includes('admin_master') ? user.id : undefined} />
+  );
+}
+
+// O cancelamento é síncrono na desmontagem, inclusive na troca de cliente ou conta.
+function useSinalDoCofre() {
+  const controlador = useRef<AbortController | null>(null);
+  useLayoutEffect(() => {
+    const atual = new AbortController();
+    controlador.current = atual;
+    return () => atual.abort();
+  }, []);
+  return useCallback(() => controlador.current!.signal, []);
+}
+
+function CofreConta({ token, podeEditar, adminId }: { token: string; podeEditar: boolean; adminId?: string }) {
+  const obterSinal = useSinalDoCofre();
   const [estado, setEstado] = useState<Estado | null>(null);
   const [sessao, setSessao] = useState<string | null>(null);
-  const [itens, setItens] = useState<Item[]>([]);
-  const [filtro, setFiltro] = useState<Tipo | 'todos'>('todos');
-  const [busca, setBusca] = useState('');
   const [erro, setErro] = useState<string | null>(null);
   const [aviso, setAviso] = useState<string | null>(null);
-  const [revelados, setRevelados] = useState<Record<string, Revelado>>({});
-  const [form, setForm] = useState<(typeof vazio & { id?: string }) | null>(null);
   const [trocando, setTrocando] = useState(false);
   const ultimoUso = useRef(Date.now());
 
@@ -54,36 +74,38 @@ export default function CofrePage() {
     if (token) headers.Authorization = `Bearer ${token}`;
     if (comSessao && sessao) headers['x-cofre-sessao'] = sessao;
     if (init.body && typeof init.body === 'string') headers['Content-Type'] = 'application/json';
-    const res = await fetch(`${API_BASE}/cofre-da-empresa${path}`, { ...init, headers, cache: 'no-store' });
+    const signal = init.signal ?? obterSinal();
+    signal.throwIfAborted();
+    const res = await fetch(`${API_BASE}/cofre-da-empresa${path}`, { ...init, headers, signal, cache: 'no-store' });
+    signal.throwIfAborted();
     if (!res.ok) {
       const body = await res.json().catch(() => ({}));
-      if (res.status === 423) { setSessao(null); setItens([]); setRevelados({}); }
+      signal.throwIfAborted();
+      if (res.status === 423) setSessao((atual) => atual === sessao ? null : atual);
+      if (res.status === 403) throw new Error('Você não tem permissão para acessar este conteúdo do cofre.');
       // A validação do OS devolve `issues` (campo + motivo) e nenhuma `message`: mostrar o campo, não "Erro 400".
       const issues = Array.isArray(body.issues) ? (body.issues as { path: string; message: string }[]) : [];
-      const CAMPO: Record<string, string> = { titulo: 'Título', onde: 'Onde', usuario: 'Usuário', segredo: 'Senha/dado', notas: 'Notas', senhaNova: 'Senha nova', senha: 'Senha', tipo: 'Tipo' };
+      const CAMPO: Record<string, string> = { titulo: 'Título', onde: 'Onde', usuario: 'Usuário', segredo: 'Senha/dado', notas: 'Notas', senhaNova: 'Senha nova', senha: 'Senha', tipo: 'Tipo', clienteId: 'Cliente' };
       const doCampo = issues.map((i) => `${CAMPO[i.path] ?? i.path}: ${i.message}`).join(' · ');
       throw new Error(doCampo || (typeof body.message === 'string' ? body.message : Array.isArray(body.message) ? body.message.join(' ') : `Erro ${res.status}`));
     }
     const tipo = res.headers.get('content-type') ?? '';
-    return (tipo.includes('application/json') ? res.json() : res.blob()) as Promise<T>;
-  }, [token, sessao]);
+    const corpo = await (tipo.includes('application/json') ? res.json() : res.blob());
+    signal.throwIfAborted();
+    return corpo as T;
+  }, [token, sessao, obterSinal]);
 
   const carregarEstado = useCallback(() => {
-    if (!token) return;
-    chamar<Estado>('/estado', {}, false).then(setEstado).catch((e) => setErro(e.message));
-  }, [token, chamar]);
+    chamar<Estado>('/estado', {}, false).then(setEstado).catch((e) => {
+      if (e.name !== 'AbortError') setErro(e.message);
+    });
+  }, [chamar]);
 
-  const carregarItens = useCallback(() => {
-    if (!sessao) return;
-    chamar<Item[]>('/itens').then(setItens).catch((e) => setErro(e.message));
-  }, [sessao, chamar]);
-
-  useEffect(() => { if (ready) carregarEstado(); }, [ready, carregarEstado]);
-  useEffect(() => { carregarItens(); }, [carregarItens]);
+  useEffect(() => { carregarEstado(); }, [carregarEstado]);
 
   const trancar = useCallback(() => {
     if (sessao) chamar('/trancar', { method: 'POST' }).catch(() => undefined);
-    setSessao(null); setItens([]); setRevelados({}); setForm(null);
+    setSessao(null); setTrocando(false);
     carregarEstado();
   }, [sessao, chamar, carregarEstado]);
 
@@ -100,55 +122,6 @@ export default function CofrePage() {
 
   const flash = (m: string) => { setAviso(m); setErro(null); window.setTimeout(() => setAviso(null), 3500); };
 
-  const revelar = (id: string) => {
-    chamar<Revelado>(`/itens/${id}/revelar`, { method: 'POST' })
-      .then((r) => {
-        setRevelados((x) => ({ ...x, [id]: r }));
-        window.setTimeout(() => setRevelados((x) => { const y = { ...x }; delete y[id]; return y; }), SEGUNDOS_VISIVEL * 1000);
-      })
-      .catch((e) => setErro(e.message));
-  };
-  const copiar = (texto: string, oque: string) => {
-    navigator.clipboard.writeText(texto).then(() => flash(`${oque} copiado.`)).catch(() => setErro('Não consegui copiar.'));
-  };
-  const salvar = async () => {
-    if (!form || !form.titulo.trim()) { setErro('Dê um título ao item.'); return; }
-    const corpo = {
-      tipo: form.tipo, titulo: form.titulo.trim(), onde: form.onde.trim() || null,
-      usuario: form.usuario || null, segredo: form.segredo || null, notas: form.notas || null,
-    };
-    try {
-      if (form.id) await chamar(`/itens/${form.id}`, { method: 'PATCH', body: JSON.stringify(corpo) });
-      else await chamar('/itens', { method: 'POST', body: JSON.stringify(corpo) });
-      setForm(null); flash('Guardado no cofre.'); carregarItens();
-    } catch (e) { setErro((e as Error).message); }
-  };
-  const editar = async (i: Item) => {
-    try {
-      const r = await chamar<Revelado>(`/itens/${i.id}/revelar`, { method: 'POST' });
-      setForm({ id: i.id, tipo: i.tipo, titulo: i.titulo, onde: i.onde ?? '', usuario: r.usuario ?? '', segredo: r.segredo ?? '', notas: r.notas ?? '' });
-    } catch (e) { setErro((e as Error).message); }
-  };
-  const apagar = (i: Item) => {
-    if (!window.confirm(`Apagar "${i.titulo}" do cofre? Não dá para desfazer.`)) return;
-    chamar(`/itens/${i.id}`, { method: 'DELETE' }).then(() => { flash('Apagado.'); carregarItens(); }).catch((e) => setErro(e.message));
-  };
-  const enviarArquivo = (i: Item, arquivo: File) => {
-    chamar(`/itens/${i.id}/arquivo`, {
-      method: 'POST', body: arquivo,
-      headers: { 'Content-Type': arquivo.type || 'application/octet-stream', 'x-nome-arquivo': encodeURIComponent(arquivo.name) },
-    }).then(() => { flash('Arquivo guardado.'); carregarItens(); }).catch((e) => setErro(e.message));
-  };
-  const baixarArquivo = (i: Item) => {
-    chamar<Blob>(`/itens/${i.id}/arquivo`).then((blob) => {
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url; a.download = i.arquivo?.nome ?? 'arquivo'; a.click();
-      window.setTimeout(() => URL.revokeObjectURL(url), 10_000);
-    }).catch((e) => setErro(e.message));
-  };
-
-  if (!ready) return <p className="text-sm text-muted">Carregando…</p>;
   if (!estado) {
     if (!erro) return <p className="text-sm text-muted">Carregando…</p>;
     // 403 logo depois de a permissão entrar: o login carrega as permissões; quem já estava logado precisa entrar de novo.
@@ -168,7 +141,7 @@ export default function CofrePage() {
         <div>
           <div className="font-os-mono text-[10px] uppercase tracking-[0.16em] text-muted">Cofre da empresa</div>
           <h1 className="mt-1 text-2xl font-bold tracking-tight">Senhas, dados e documentos</h1>
-          <p className="mt-1 text-sm text-muted">Só os sócios entram. Cada item abre um por vez, some em {SEGUNDOS_VISIVEL} s e fica registrado quem viu. A IA do OS não lê o cofre.</p>
+          <p className="mt-1 text-sm text-muted">Os valores revelados somem em {SEGUNDOS_VISIVEL} s. O cofre registra quem consultou cada item. A IA do OS não lê esses dados.</p>
         </div>
         {sessao && (
           <div className="flex items-center gap-2">
@@ -190,96 +163,247 @@ export default function CofrePage() {
           onAbrir={async (senha) => {
             try {
               const r = await chamar<{ token: string }>('/destrancar', { method: 'POST', body: JSON.stringify({ senha }) }, false);
-              setErro(null); setSessao(r.token);
+              setErro(null); setTrocando(false); setSessao(r.token);
             } catch (e) { setErro((e as Error).message); carregarEstado(); }
           }}
         />
       )}
       {sessao && trocando && <TrocarSenha chamar={chamar} onPronto={() => { setTrocando(false); flash('Senha do cofre trocada. Entre de novo.'); setSessao(null); carregarEstado(); }} onErro={setErro} />}
 
-      {sessao && (
-        <>
-          {podeEditar && <Depositos chamar={chamar} />}
-          <div className="flex flex-wrap items-center gap-2">
-            {TIPOS.map((t) => (
-              <button key={t.k} onClick={() => setFiltro(t.k)} aria-pressed={filtro === t.k}
-                className={`rounded-full border px-3 py-1 text-sm ${filtro === t.k ? 'border-brand bg-brand/10 text-brand' : 'border-border text-muted hover:text-text'}`}>
-                {t.rotulo}
-              </button>
-            ))}
-            <input value={busca} onChange={(e) => setBusca(e.target.value)} placeholder="Buscar pelo título ou onde" className="ml-auto w-56 rounded-lg border border-border bg-surface-2 px-3 py-1.5 text-sm outline-none" />
-            {podeEditar && !form && (
-              <button onClick={() => setForm({ ...vazio, tipo: filtro === 'todos' ? 'senha' : filtro })} className="rounded-lg bg-brand px-3 py-1.5 text-sm font-medium text-ink hover:opacity-90">+ Novo item</button>
-            )}
-          </div>
-
-          {form && (
-            <div className="grid gap-2 rounded-xl border border-brand/30 bg-surface p-4 sm:grid-cols-2">
-              <select className={inputCls} value={form.tipo} onChange={(e) => setForm({ ...form, tipo: e.target.value as Tipo })}>
-                <option value="senha">Senha</option><option value="dado">Dado</option><option value="documento">Documento</option>
-              </select>
-              <input className={inputCls} placeholder="Título (ex.: Portal da NFS-e)" value={form.titulo} onChange={(e) => setForm({ ...form, titulo: e.target.value })} />
-              <input className={inputCls} placeholder="Onde (site, sistema ou local)" value={form.onde} onChange={(e) => setForm({ ...form, onde: e.target.value })} />
-              {form.tipo !== 'documento' && <input className={inputCls} placeholder="Usuário / login" autoComplete="off" value={form.usuario} onChange={(e) => setForm({ ...form, usuario: e.target.value })} />}
-              {form.tipo === 'senha' && <input className={inputCls} type="password" placeholder="Senha" autoComplete="new-password" value={form.segredo} onChange={(e) => setForm({ ...form, segredo: e.target.value })} />}
-              {form.tipo === 'dado' && <textarea className={`${inputCls} sm:col-span-2`} rows={3} placeholder="O dado (ex.: agência e conta, CNPJ, chave Pix)" value={form.segredo} onChange={(e) => setForm({ ...form, segredo: e.target.value })} />}
-              <textarea className={`${inputCls} sm:col-span-2`} rows={2} placeholder="Notas (opcional)" value={form.notas} onChange={(e) => setForm({ ...form, notas: e.target.value })} />
-              {form.tipo === 'documento' && <p className="text-[12px] text-muted sm:col-span-2">Salve o item e depois envie o arquivo pelo botão "Enviar arquivo" (até 10 MB).</p>}
-              <div className="flex gap-2 sm:col-span-2">
-                <button onClick={salvar} className="rounded-lg bg-brand px-3 py-2 text-sm font-medium text-ink hover:opacity-90">Guardar</button>
-                <button onClick={() => setForm(null)} className="rounded-lg border border-border px-3 py-2 text-sm">Cancelar</button>
-              </div>
-            </div>
-          )}
-
-          <ul className="space-y-2">
-            {itens.filter((i) => (filtro === 'todos' || i.tipo === filtro) && `${i.titulo} ${i.onde ?? ''}`.toLowerCase().includes(busca.toLowerCase())).map((i) => {
-              const Icon = Icons[ICONE[i.tipo]] as React.ElementType;
-              const r = revelados[i.id];
-              return (
-                <li key={i.id} className="rounded-xl border border-border bg-surface p-4">
-                  <div className="flex flex-wrap items-center gap-3">
-                    <Icon size={18} className="shrink-0 text-muted" aria-hidden />
-                    <div className="min-w-0 flex-1">
-                      <div className="font-medium">{i.titulo}</div>
-                      {i.onde && <div className="truncate text-[12px] text-muted">{i.onde}</div>}
-                    </div>
-                    {(i.temUsuario || i.temSegredo || i.temNotas) && (
-                      <button onClick={() => (r ? setRevelados((x) => { const y = { ...x }; delete y[i.id]; return y; }) : revelar(i.id))} className="inline-flex items-center gap-1 rounded border border-border px-2 py-1 text-[12px] hover:bg-surface-2">
-                        {r ? <><Icons.EyeOff size={13} aria-hidden /> Esconder</> : <><Icons.Eye size={13} aria-hidden /> Mostrar</>}
-                      </button>
-                    )}
-                    {i.arquivo && <button onClick={() => baixarArquivo(i)} className="inline-flex items-center gap-1 rounded border border-border px-2 py-1 text-[12px] hover:bg-surface-2"><Icons.Download size={13} aria-hidden /> {i.arquivo.nome}</button>}
-                    {podeEditar && i.tipo === 'documento' && (
-                      <label className="inline-flex cursor-pointer items-center gap-1 rounded border border-border px-2 py-1 text-[12px] hover:bg-surface-2">
-                        <Icons.Upload size={13} aria-hidden /> {i.arquivo ? 'Trocar arquivo' : 'Enviar arquivo'}
-                        <input type="file" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) enviarArquivo(i, f); e.target.value = ''; }} />
-                      </label>
-                    )}
-                    {podeEditar && (
-                      <>
-                        <button onClick={() => editar(i)} className="text-[12px] text-muted hover:text-text">editar</button>
-                        <button onClick={() => apagar(i)} className="text-[12px] text-muted hover:text-bad">apagar</button>
-                      </>
-                    )}
-                  </div>
-                  {r && (
-                    <dl className="mt-3 space-y-1.5 border-t border-border pt-3 text-sm">
-                      {r.usuario && <Campo rotulo="Usuário" valor={r.usuario} onCopiar={() => copiar(r.usuario!, 'Usuário')} />}
-                      {r.segredo && <Campo rotulo={i.tipo === 'senha' ? 'Senha' : 'Dado'} valor={r.segredo} mono onCopiar={() => copiar(r.segredo!, i.tipo === 'senha' ? 'Senha' : 'Dado')} />}
-                      {r.notas && <Campo rotulo="Notas" valor={r.notas} />}
-                      <p className="text-[11px] text-muted">Some sozinho em {SEGUNDOS_VISIVEL} s.</p>
-                    </dl>
-                  )}
-                </li>
-              );
-            })}
-            {itens.length === 0 && <li className="rounded-xl border border-dashed border-border p-6 text-center text-sm text-muted">O cofre está vazio. Comece pelas senhas que hoje vivem no WhatsApp.</li>}
-          </ul>
-          {podeEditar && <Socios chamar={chamar} onAviso={flash} onErro={setErro} />}
-        </>
-      )}
+      {sessao && <CofreAberto key={sessao} chamar={chamar} podeEditar={podeEditar}
+        administrador={adminId ? { usuarioId: adminId, token } : undefined}
+        aoTrocarCliente={() => setTrocando(false)} />}
     </div>
+  );
+}
+
+type Administrador = { usuarioId: string; token: string };
+
+function CofreAberto({ chamar, podeEditar, aoTrocarCliente, administrador }: {
+  chamar: Chamar; podeEditar: boolean; aoTrocarCliente: () => void; administrador?: Administrador;
+}) {
+  const [acesso, setAcesso] = useState<Acesso | null>(null);
+  const [escopo, setEscopo] = useState('');
+  const [erro, setErro] = useState<string | null>(null);
+  const obterSinal = useSinalDoCofre();
+
+  useEffect(() => {
+    const signal = obterSinal();
+    chamar<Acesso>('/clientes', { signal }).then(setAcesso).catch((e) => {
+      if (!signal.aborted) setErro(e.message);
+    });
+  }, [chamar, obterSinal]);
+
+  if (erro) return <p role="alert" className="text-sm text-bad">{erro}</p>;
+  if (!acesso) return <p className="text-sm text-muted">Carregando clientes…</p>;
+  if (!acesso.amplo && acesso.clientes.length === 0) return <p className="text-sm text-muted">Nenhum cliente disponível no cofre.</p>;
+  return (
+    <>
+      <label className="block max-w-sm text-sm">
+        <span className="mb-1 block text-muted">Cliente do cofre</span>
+        <select className={inputCls} value={escopo} onChange={(e) => { aoTrocarCliente(); setEscopo(e.target.value); }}>
+          <option value="">{acesso.amplo ? 'Todos os clientes' : 'Clientes disponíveis'}</option>
+          {acesso.clientes.map((cliente) => <option key={cliente.id} value={cliente.id}>{nomeCliente(cliente)}</option>)}
+          {acesso.amplo && <option value="sem">Sem classificação</option>}
+        </select>
+      </label>
+      <CofreCliente key={escopo} escopo={escopo} acesso={acesso} chamarSessao={chamar} podeEditar={podeEditar} administrador={administrador} />
+    </>
+  );
+}
+
+function CofreCliente({ escopo, acesso, chamarSessao, podeEditar, administrador }: {
+  escopo: string; acesso: Acesso; chamarSessao: Chamar; podeEditar: boolean; administrador?: Administrador;
+}) {
+  const cliente = acesso.clientes.find((c) => c.id === escopo);
+  const consulta = escopo ? `?clienteId=${encodeURIComponent(escopo)}` : '';
+  const obterSinal = useSinalDoCofre();
+  const [itens, setItens] = useState<Item[] | null>(null);
+  const [filtro, setFiltro] = useState<Tipo | 'todos'>('todos');
+  const [busca, setBusca] = useState('');
+  const [erro, setErro] = useState<string | null>(null);
+  const [aviso, setAviso] = useState<string | null>(null);
+  const [revelados, setRevelados] = useState<Record<string, Revelado>>({});
+  const [form, setForm] = useState<(typeof vazio & { original?: Item }) | null>(null);
+  const tempos = useRef(new Map<string, number>());
+
+  const registrarErro = useCallback((e: Error) => {
+    if (e.name !== 'AbortError') setErro(e.message);
+  }, []);
+
+  const chamar = useCallback<Chamar>((path, init = {}) => chamarSessao(path, { ...init, signal: obterSinal() }), [chamarSessao, obterSinal]);
+  const carregarItens = useCallback(() => {
+    chamar<Item[]>(`/itens${consulta}`).then(setItens).catch(registrarErro);
+  }, [chamar, consulta, registrarErro]);
+
+  useEffect(() => { carregarItens(); }, [carregarItens]);
+  useLayoutEffect(() => {
+    const timers = tempos.current;
+    return () => timers.forEach((timer) => window.clearTimeout(timer));
+  }, []);
+
+  const flash = (m: string) => { setAviso(m); setErro(null); window.setTimeout(() => setAviso(null), 3500); };
+
+  const esconder = (id: string) => {
+    window.clearTimeout(tempos.current.get(id));
+    tempos.current.delete(id);
+    setRevelados(({ [id]: removido, ...resto }) => resto);
+  };
+  const revelar = (id: string) => {
+    const signal = obterSinal();
+    chamar<Revelado>(`/itens/${id}/revelar`, { method: 'POST' })
+      .then((r) => {
+        if (signal.aborted) return;
+        setRevelados((x) => ({ ...x, [id]: r }));
+        window.clearTimeout(tempos.current.get(id));
+        tempos.current.set(id, window.setTimeout(() => esconder(id), SEGUNDOS_VISIVEL * 1000));
+      })
+      .catch(registrarErro);
+  };
+  const copiar = (texto: string, oque: string) => {
+    navigator.clipboard.writeText(texto).then(() => flash(`${oque} copiado.`)).catch(() => setErro('Não consegui copiar.'));
+  };
+  const salvar = async () => {
+    if (!form || !form.titulo.trim()) { setErro('Dê um título ao item.'); return; }
+    const clienteId = form.original ? form.clienteId : cliente?.id;
+    if (!form.original && !clienteId) return;
+    const corpo = {
+      ...(clienteId && clienteId !== form.original?.clienteId ? { clienteId } : {}),
+      tipo: form.tipo, titulo: form.titulo.trim(), onde: form.onde.trim() || null,
+      usuario: form.usuario || null, segredo: form.segredo || null, notas: form.notas || null,
+    };
+    try {
+      if (form.original) await chamar(`/itens/${form.original.id}`, { method: 'PATCH', body: JSON.stringify(corpo) });
+      else await chamar('/itens', { method: 'POST', body: JSON.stringify(corpo) });
+      setForm(null); flash('Guardado no cofre.'); carregarItens();
+    } catch (e) { registrarErro(e as Error); }
+  };
+  const editar = async (i: Item) => {
+    try {
+      const r = await chamar<Revelado>(`/itens/${i.id}/revelar`, { method: 'POST' });
+      setForm({ original: i, clienteId: i.clienteId, tipo: i.tipo, titulo: i.titulo, onde: i.onde ?? '', usuario: r.usuario ?? '', segredo: r.segredo ?? '', notas: r.notas ?? '' });
+    } catch (e) { registrarErro(e as Error); }
+  };
+  const apagar = (i: Item) => {
+    if (!window.confirm(`Apagar "${i.titulo}" do cofre? Não dá para desfazer.`)) return;
+    chamar(`/itens/${i.id}`, { method: 'DELETE' }).then(() => { flash('Apagado.'); carregarItens(); }).catch(registrarErro);
+  };
+  const enviarArquivo = (i: Item, arquivo: File) => {
+    chamar(`/itens/${i.id}/arquivo`, {
+      method: 'POST', body: arquivo,
+      headers: { 'Content-Type': arquivo.type || 'application/octet-stream', 'x-nome-arquivo': encodeURIComponent(arquivo.name) },
+    }).then(() => { flash('Arquivo guardado.'); carregarItens(); }).catch(registrarErro);
+  };
+  const baixarArquivo = (i: Item) => {
+    const signal = obterSinal();
+    chamar<Blob>(`/itens/${i.id}/arquivo`).then((blob) => {
+      if (signal.aborted) return;
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url; a.download = i.arquivo?.nome ?? 'arquivo'; a.click();
+      window.setTimeout(() => URL.revokeObjectURL(url), 10_000);
+    }).catch(registrarErro);
+  };
+
+  return (
+    <>
+      {erro && <p role="alert" className="rounded-lg border border-bad/30 bg-bad/10 px-4 py-2 text-sm text-bad">{erro}</p>}
+      {aviso && <p role="status" className="rounded-lg border border-good/30 bg-good/10 px-4 py-2 text-sm text-good">{aviso}</p>}
+      {podeEditar && <Depositos chamar={chamar} consulta={consulta} cliente={cliente && { id: cliente.id, nome: nomeCliente(cliente) }} />}
+      <div className="flex flex-wrap items-center gap-2">
+        {TIPOS.map((t) => (
+          <button key={t.k} onClick={() => setFiltro(t.k)} aria-pressed={filtro === t.k}
+            className={`rounded-full border px-3 py-1 text-sm ${filtro === t.k ? 'border-brand bg-brand/10 text-brand' : 'border-border text-muted hover:text-text'}`}>
+            {t.rotulo}
+          </button>
+        ))}
+        <input value={busca} onChange={(e) => setBusca(e.target.value)} placeholder="Buscar pelo título ou onde" className="ml-auto w-56 rounded-lg border border-border bg-surface-2 px-3 py-1.5 text-sm outline-none" />
+        {podeEditar && !form && (
+          <button disabled={!cliente} onClick={() => setForm({ ...vazio, tipo: filtro === 'todos' ? 'senha' : filtro })} className="rounded-lg bg-brand px-3 py-1.5 text-sm font-medium text-ink hover:opacity-90 disabled:opacity-50">+ Novo item</button>
+        )}
+      </div>
+
+      {podeEditar && !cliente && <p className="text-sm text-muted">Selecione um cliente para criar itens ou links.</p>}
+      {form && (
+        <div className="grid gap-2 rounded-xl border border-brand/30 bg-surface p-4 sm:grid-cols-2">
+          {form.original && (
+            <label className="text-sm">
+              <span className="mb-1 block text-muted">Cliente do item</span>
+              <select className={inputCls} value={form.clienteId ?? ''} onChange={(e) => setForm({ ...form, clienteId: e.target.value })}>
+                {form.clienteId === null && <option value="" disabled>Sem classificação</option>}
+                {acesso.clientes.map((c) => <option key={c.id} value={c.id}>{nomeCliente(c)}</option>)}
+              </select>
+            </label>
+          )}
+          <select className={inputCls} value={form.tipo} onChange={(e) => setForm({ ...form, tipo: e.target.value as Tipo })}>
+            <option value="senha">Senha</option><option value="dado">Dado</option><option value="documento">Documento</option>
+          </select>
+          <input className={inputCls} placeholder="Título (ex.: Portal da NFS-e)" value={form.titulo} onChange={(e) => setForm({ ...form, titulo: e.target.value })} />
+          <input className={inputCls} placeholder="Onde (site, sistema ou local)" value={form.onde} onChange={(e) => setForm({ ...form, onde: e.target.value })} />
+          {form.tipo !== 'documento' && <input className={inputCls} placeholder="Usuário / login" autoComplete="off" value={form.usuario} onChange={(e) => setForm({ ...form, usuario: e.target.value })} />}
+          {form.tipo === 'senha' && <input className={inputCls} type="password" placeholder="Senha" autoComplete="new-password" value={form.segredo} onChange={(e) => setForm({ ...form, segredo: e.target.value })} />}
+          {form.tipo === 'dado' && <textarea className={`${inputCls} sm:col-span-2`} rows={3} placeholder="O dado (ex.: agência e conta, CNPJ, chave Pix)" value={form.segredo} onChange={(e) => setForm({ ...form, segredo: e.target.value })} />}
+          <textarea className={`${inputCls} sm:col-span-2`} rows={2} placeholder="Notas (opcional)" value={form.notas} onChange={(e) => setForm({ ...form, notas: e.target.value })} />
+          {form.tipo === 'documento' && <p className="text-[12px] text-muted sm:col-span-2">Salve o item e depois envie o arquivo pelo botão "Enviar arquivo" (até 10 MB).</p>}
+          <div className="flex gap-2 sm:col-span-2">
+            <button onClick={salvar} className="rounded-lg bg-brand px-3 py-2 text-sm font-medium text-ink hover:opacity-90">Guardar</button>
+            <button onClick={() => setForm(null)} className="rounded-lg border border-border px-3 py-2 text-sm">Cancelar</button>
+          </div>
+        </div>
+      )}
+
+      <ul className="space-y-2">
+        {itens?.filter((i) => (filtro === 'todos' || i.tipo === filtro) && `${i.titulo} ${i.onde ?? ''}`.toLowerCase().includes(busca.toLowerCase())).map((i) => {
+          const Icon = Icons[ICONE[i.tipo]] as React.ElementType;
+          const r = revelados[i.id];
+          const dono = acesso.clientes.find((c) => c.id === i.clienteId);
+          const rotuloCliente = dono ? nomeCliente(dono) : i.clienteId === null ? 'Sem classificação' : null;
+          return (
+            <li key={i.id} className="rounded-xl border border-border bg-surface p-4">
+              <div className="flex flex-wrap items-center gap-3">
+                <Icon size={18} className="shrink-0 text-muted" aria-hidden />
+                <div className="min-w-0 flex-1">
+                  <div className="font-medium">{i.titulo}</div>
+                  {!cliente && rotuloCliente && <div className="text-[12px] text-muted">{rotuloCliente}</div>}
+                  {i.onde && <div className="truncate text-[12px] text-muted">{i.onde}</div>}
+                </div>
+                {(i.temUsuario || i.temSegredo || i.temNotas) && (
+                  <button onClick={() => (r ? esconder(i.id) : revelar(i.id))} className="inline-flex items-center gap-1 rounded border border-border px-2 py-1 text-[12px] hover:bg-surface-2">
+                    {r ? <><Icons.EyeOff size={13} aria-hidden /> Esconder</> : <><Icons.Eye size={13} aria-hidden /> Mostrar</>}
+                  </button>
+                )}
+                {i.arquivo && <button onClick={() => baixarArquivo(i)} className="inline-flex items-center gap-1 rounded border border-border px-2 py-1 text-[12px] hover:bg-surface-2"><Icons.Download size={13} aria-hidden /> {i.arquivo.nome}</button>}
+                {podeEditar && i.tipo === 'documento' && (
+                  <label className="inline-flex cursor-pointer items-center gap-1 rounded border border-border px-2 py-1 text-[12px] hover:bg-surface-2">
+                    <Icons.Upload size={13} aria-hidden /> {i.arquivo ? 'Trocar arquivo' : 'Enviar arquivo'}
+                    <input type="file" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) enviarArquivo(i, f); e.target.value = ''; }} />
+                  </label>
+                )}
+                {podeEditar && (
+                  <>
+                    <button onClick={() => editar(i)} className="text-[12px] text-muted hover:text-text">editar</button>
+                    <button onClick={() => apagar(i)} className="text-[12px] text-muted hover:text-bad">apagar</button>
+                  </>
+                )}
+              </div>
+              {r && (
+                <dl className="mt-3 space-y-1.5 border-t border-border pt-3 text-sm">
+                  {r.usuario && <Campo rotulo="Usuário" valor={r.usuario} onCopiar={() => copiar(r.usuario!, 'Usuário')} />}
+                  {r.segredo && <Campo rotulo={i.tipo === 'senha' ? 'Senha' : 'Dado'} valor={r.segredo} mono onCopiar={() => copiar(r.segredo!, i.tipo === 'senha' ? 'Senha' : 'Dado')} />}
+                  {r.notas && <Campo rotulo="Notas" valor={r.notas} />}
+                  <p className="text-[11px] text-muted">Some sozinho em {SEGUNDOS_VISIVEL} s.</p>
+                </dl>
+              )}
+            </li>
+          );
+        })}
+        {itens === null && !erro && <li className="text-sm text-muted">Carregando itens…</li>}
+        {itens?.length === 0 && <li className="rounded-xl border border-dashed border-border p-6 text-center text-sm text-muted">Nenhum item neste escopo.</li>}
+      </ul>
+      {administrador && acesso.amplo && <CarteiraClientes {...administrador} obterSinal={obterSinal}
+        clientes={acesso.clientes.map((c) => ({ id: c.id, nome: nomeCliente(c) }))} />}
+      {podeEditar && acesso.amplo && <Socios chamar={chamar} onAviso={flash} onErro={setErro} />}
+    </>
   );
 }
 
