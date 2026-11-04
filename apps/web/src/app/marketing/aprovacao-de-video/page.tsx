@@ -45,7 +45,7 @@ export default function AprovacaoDeVideoPage() {
     <div className="aprov" ref={raiz}>
       <style>{CSS}</style>
       <div className="topo">
-        <input type="file" id="file" accept="video/*" />
+        <input type="file" id="file" accept="video/*" aria-label="Arquivo de vídeo" />
         <label className="hint">
           Grade{' '}
           <select id="gs" defaultValue="6x4">
@@ -74,7 +74,7 @@ export default function AprovacaoDeVideoPage() {
           </div>
         </section>
         <aside>
-          <select id="kind">
+          <select id="kind" aria-label="Tipo de ajuste">
             <option>Alterar</option>
             <option>Adicionar</option>
             <option>Remover</option>

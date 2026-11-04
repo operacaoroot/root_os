@@ -227,7 +227,8 @@ function FinanceiroSessao() {
         )}
       </div>
 
-      <div className="flex gap-1 border-b border-border">
+      {/* Etapa 10 (pente de UX): no celular as abas rolam dentro da linha, sem quebrar nem alargar a tela. */}
+      <div className="flex gap-1 overflow-x-auto whitespace-nowrap border-b border-border [&>*]:shrink-0">
         {TABS.map((t) => (
           <button
             key={t.key}

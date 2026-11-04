@@ -39,7 +39,7 @@ export function BioPageView({
         )}
         <h1
           className="mb-2 text-[25px] font-extrabold leading-tight tracking-[-0.02em]"
-          style={{ fontFamily: 'var(--fonte-mono), monospace' }}
+          style={{ fontFamily: 'var(--fonte-mono), monospace', color: 'rgb(223, 255, 232)' }}
         >
           {dados.titulo}
         </h1>

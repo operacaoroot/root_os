@@ -152,6 +152,7 @@ export function Topbar({ titulo, subtitulo }: { titulo?: string; subtitulo?: str
           onFocus={() => setPaleta(true)}
           onClick={() => setPaleta(true)}
           placeholder="ir para…"
+          aria-label="Ir para uma tela (atalho Ctrl+K)"
           title="Atalho: ⌘K / Ctrl+K"
           className="w-full border border-border bg-surface py-[5px] pl-[28px] pr-[34px] font-os-mono text-[10.5px] text-muted outline-none transition-colors placeholder:text-dim hover:border-brand/40 focus:border-brand/40 disabled:cursor-not-allowed"
         />

@@ -564,6 +564,11 @@ function LinhaDoTempo({ fio, abrirHistorico }: { fio: LinhaDoFio[]; abrirHistori
     </aside>
   );
 }
+/** Etapa 10: de onde veio o dado que a ficha não tem. */
+const DO_CADASTRO = 'do cadastro do cliente';
+const DO_FINANCEIRO = 'do acordo no Financeiro';
+const DO_CONTRATO = 'do contrato registrado';
+
 
 export function AbaGeral({
   leadId,
@@ -604,6 +609,8 @@ export function AbaGeral({
   const opcoesDeCanal: { valor: string; rotulo: string }[] = COMO_CONHECEU.map((c) => ({ valor: c, rotulo: ROTULO_DO_COMO_CONHECEU[c] }));
   if (f.canal && !opcoesDeCanal.some((o) => o.valor === f.canal)) opcoesDeCanal.unshift({ valor: f.canal, rotulo: rotuloDoCanal(f.canal) ?? f.canal });
   const negocioTravado = !!extra?.negocioTravado;
+  // Etapa 10 (pente de UX, item 4): o que já existe no cadastro, no contrato e no Financeiro aparece aqui.
+  const ja = extra?.jaExiste ?? null;
   const avisoDoNegocio = negocioTravado ? 'Depois do aceite, produto, parcelas e 1ª parcela são do contrato (aba Dinheiro).' : null;
   const moeda = (cru: string) => {
     const n = lerReais(cru);
@@ -631,8 +638,8 @@ export function AbaGeral({
         formatar={(c) => ROTULO_DO_TIPO_DE_PESSOA[c as 'PJ' | 'PF'] ?? c}
         aoSalvar={(v) => patch({ tipoDePessoa: v })}
       />
-      <CampoDoWhatsapp leadId={leadId} telefone={f.telefone} podeEditar={pode} focar={foco('telefone') || foco('whatsapp')} aoMudar={aoMudar} />
-      <Campo chave="email" rotulo="E-mail" valor={f.email} editor={{ tipo: 'texto', placeholder: 'nome@empresa.com.br', inputMode: 'email', maxLength: 200 }} podeEditar={pode} focar={foco('email')} aoSalvar={(v) => patch({ email: v })} />
+      <CampoDoWhatsapp leadId={leadId} telefone={f.telefone ?? ja?.telefone ?? null} podeEditar={pode} focar={foco('telefone') || foco('whatsapp')} aoMudar={aoMudar} />
+      <Campo chave="email" rotulo="E-mail" valor={f.email ?? ja?.email ?? null} apoio={!f.email && ja?.email ? DO_CADASTRO : null} editor={{ tipo: 'texto', placeholder: 'nome@empresa.com.br', inputMode: 'email', maxLength: 200 }} podeEditar={pode} focar={foco('email')} aoSalvar={(v) => patch({ email: v })} />
       <Campo
         chave="preferenciasDeAtendimento"
         rotulo="Preferências de atendimento"
@@ -697,20 +704,20 @@ export function AbaGeral({
       <Campo
         chave="produto"
         rotulo="Produto"
-        valor={f.produto ? ROTULO_DO_PRODUTO[f.produto] ?? f.produto : null}
+        valor={f.produto ? ROTULO_DO_PRODUTO[f.produto] ?? f.produto : ja?.produto ?? null}
         valorParaEditar={f.produto ?? ''}
         editor={{ tipo: 'opcoes', opcoes: COMERCIAL_PRODUTOS.map((p) => ({ valor: p, rotulo: ROTULO_DO_PRODUTO[p] })) }}
         podeEditar={pode && !negocioTravado}
         focar={foco('produto')}
         formatar={(c) => ROTULO_DO_PRODUTO[c as (typeof COMERCIAL_PRODUTOS)[number]] ?? c}
-        apoio={avisoDoNegocio}
+        apoio={avisoDoNegocio ?? (!f.produto && ja?.produto ? DO_FINANCEIRO : null)}
         aoSalvar={(v) => patch({ produto: v })}
       />
       <Campo
         chave="tipoNegocio"
         rotulo="Tipo do negócio"
-        valor={ROTULO_DO_TIPO_DE_NEGOCIO[f.tipoNegocio ?? 'pagante']}
-        valorParaEditar={f.tipoNegocio ?? 'pagante'}
+        valor={ROTULO_DO_TIPO_DE_NEGOCIO[(f.tipoNegocio ?? ja?.tipoNegocio ?? 'pagante') as (typeof COMERCIAL_TIPOS_DE_NEGOCIO)[number]] ?? ja?.tipoNegocio ?? null}
+        valorParaEditar={f.tipoNegocio ?? ja?.tipoNegocio ?? 'pagante'}
         editor={{ tipo: 'opcoes', opcoes: COMERCIAL_TIPOS_DE_NEGOCIO.map((t) => ({ valor: t, rotulo: ROTULO_DO_TIPO_DE_NEGOCIO[t] })), vazio: 'pagante' }}
         podeEditar={pode}
         focar={foco('tipoNegocio')}
@@ -721,25 +728,25 @@ export function AbaGeral({
       <Campo
         chave="valorNegociado"
         rotulo="Valor negociado"
-        valor={f.valorNegociadoCentavos != null ? reaisOuAusente(f.valorNegociadoCentavos) : null}
-        valorParaEditar={reaisParaEditar(f.valorNegociadoCentavos ?? null)}
+        valor={(f.valorNegociadoCentavos ?? ja?.valorCentavos) != null ? reaisOuAusente((f.valorNegociadoCentavos ?? ja?.valorCentavos)!) : null}
+        valorParaEditar={reaisParaEditar(f.valorNegociadoCentavos ?? ja?.valorCentavos ?? null)}
         editor={{ tipo: 'texto', placeholder: 'R$', inputMode: 'decimal', maxLength: 20 }}
         podeEditar={pode}
         focar={foco('valorNegociado')}
         formatar={moeda}
-        apoio={f.valorCentavos != null && f.valorCentavos !== f.valorNegociadoCentavos ? `proposta: ${reaisOuAusente(f.valorCentavos)}` : null}
+        apoio={f.valorNegociadoCentavos == null && ja?.valorCentavos != null ? DO_CONTRATO : f.valorCentavos != null && f.valorCentavos !== f.valorNegociadoCentavos ? `proposta: ${reaisOuAusente(f.valorCentavos)}` : null}
         aoSalvar={(v) => patch({ valorNegociado: reaisOuErro(v) })}
       />
       <Campo
         chave="parcelas"
         rotulo="Quantidade de parcelas"
-        valor={f.parcelas != null ? `${f.parcelas}×` : null}
+        valor={(f.parcelas ?? ja?.parcelas) != null ? `${f.parcelas ?? ja?.parcelas}×` : null}
         valorParaEditar={f.parcelas != null ? String(f.parcelas) : ''}
         editor={{ tipo: 'texto', placeholder: 'ex.: 10', inputMode: 'numeric', maxLength: 3 }}
         podeEditar={pode && !negocioTravado}
         focar={foco('parcelas')}
         formatar={(c) => `${c}×`}
-        apoio={avisoDoNegocio}
+        apoio={avisoDoNegocio ?? (f.parcelas == null && ja?.parcelas ? DO_FINANCEIRO : null)}
         aoSalvar={(v) => {
           if (v == null) return patch({ parcelas: null });
           const n = Number(v);
@@ -750,13 +757,13 @@ export function AbaGeral({
       <Campo
         chave="parcela"
         rotulo="1ª parcela"
-        valor={extra?.parcelaCentavos != null ? reaisOuAusente(extra.parcelaCentavos) : null}
+        valor={(extra?.parcelaCentavos ?? ja?.parcelaCentavos) != null ? reaisOuAusente((extra?.parcelaCentavos ?? ja?.parcelaCentavos)!) : null}
         valorParaEditar={reaisParaEditar(extra?.parcelaCentavos ?? null)}
         editor={{ tipo: 'texto', placeholder: 'R$', inputMode: 'decimal', maxLength: 20 }}
         podeEditar={pode && !negocioTravado}
         focar={foco('parcela')}
         formatar={moeda}
-        apoio={avisoDoNegocio}
+        apoio={avisoDoNegocio ?? (extra?.parcelaCentavos == null && ja?.parcelaCentavos != null ? DO_FINANCEIRO : null)}
         aoSalvar={(v) => patch({ parcela: reaisOuErro(v) })}
       />
       <CampoDoLinkDaProposta leadId={leadId} extra={extra} podeEditar={pode} focar={foco('linkDaProposta')} aoSalvar={(v) => patch({ linkDaProposta: v })} />

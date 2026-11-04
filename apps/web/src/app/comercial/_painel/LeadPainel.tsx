@@ -238,10 +238,13 @@ export function LeadPainel({ estado }: { estado: EstadoDoPainel }) {
             {f ? (
               <>
                 <Chip tom={ehSaida(f.etapa) ? 'alerta' : f.etapa === 'fechado' ? 'bom' : 'brand'}>{COMERCIAL_ROTULO_DA_ETAPA[f.etapa]}</Chip>
-                <span className="flex w-28 flex-col">
-                  <BarraDaSaude saude={f.saude} />
-                  <span className="mt-0.5 text-[11px] text-dim">saúde {numeroOuAusente(f.saude)}</span>
-                </span>
+                {/* Etapa 10 (pente de UX): sem nota de saúde não há o que mostrar; "saúde ausente" só confundia. */}
+                {f.saude != null && (
+                  <span className="flex w-28 flex-col">
+                    <BarraDaSaude saude={f.saude} />
+                    <span className="mt-0.5 text-[11px] text-dim">saúde {numeroOuAusente(f.saude)}</span>
+                  </span>
+                )}
                 <span className="text-muted">dono: <span className="text-text">{f.dono?.nome ?? AUSENTE}</span></span>
                 {/* CO-10 (rodada dos agentes): a pasta do cliente no Drive, ou "Criar pasta" (de novo, se falhou). */}
                 {f.pasta?.partnerId && <PastaDoCliente partnerId={f.pasta.partnerId} url={f.pasta.url} erro={f.pasta.erro} compacto />}
@@ -267,15 +270,15 @@ export function LeadPainel({ estado }: { estado: EstadoDoPainel }) {
                   title={variante === 'A' ? 'A: três cartões lado a lado. Clique para ver a B (cartões e linha do tempo).' : 'B: cartões à esquerda e linha do tempo à direita. Clique para ver a A.'}
                   className={`rounded border border-border px-1.5 font-os-mono text-[10px] text-muted hover:border-brand hover:text-text max-md:min-h-[44px] ${FOCO}`}
                 >
-                  Variante {variante}
+                  {variante === 'A' ? 'Ver com a linha do tempo' : 'Ver em três cartões'}
                 </button>
               )}
               {sala ? (
                 <a href={sala} target="_blank" rel="noreferrer" className={BOTAO}>abrir sala</a>
               ) : f?.ligadoA.sala ? (
-                <span className={`${BOTAO} cursor-default opacity-60`} title="o link da sala só é reescrito pelo simulador nesta versão">sala aberta, link indisponível</span>
+                <span className={`${BOTAO} cursor-default opacity-60`} title="A sala do cliente existe; o link dela é enviado pelo WhatsApp.">Sala criada</span>
               ) : (
-                <span className={`${BOTAO} cursor-default opacity-50`} title="a sala ainda não existe">sala ausente</span>
+                <span className={`${BOTAO} cursor-default opacity-50`} title="A sala nasce quando o lead entra.">Sem sala ainda</span>
               )}
               {whats && whats.startsWith('/') ? (
                 <Link href={whats} className={BOTAO}>WhatsApp</Link>

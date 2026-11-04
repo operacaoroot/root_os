@@ -147,9 +147,11 @@
   --os-line: 223 227 215;
   --os-line-strong: 207 213 199;
   --os-tx: 35 40 30;
-  --os-tx2: 105 112 97;
+  /* Etapa 10 (pente de UX): era 105 112 97, 4,15:1 sobre o fundo (abaixo do AA). Agora 5,0:1. */
+  --os-tx2: 92 99 84;
   --os-tx3: 92 98 80;
-  --os-ac: 70 101 31;
+  /* Etapa 10: era 70 101 31, 4,4:1 sobre o selo verde claro. Agora 5,4:1. */
+  --os-ac: 60 87 25;
   --os-ac2: 50 74 5;
   --os-ac-dim: 143 173 96;
   --os-ac-ink: 30 43 14;
@@ -204,15 +206,38 @@
    (Topbar), os rótulos em mono e os títulos das telas do Estúdio (.estudio), que
    têm medida própria, como o "Bora publicar" do Início. Etapa 9b: e os títulos dentro de .com-tema
    (o desenho do Painel geral do Comercial), que seguem a medida das outras áreas. */
-:root[data-os-theme='estudio'] #root-os-main h1:not([class*='font-os-mono']):not([class*='font-central']):not(.estudio h1):not(.com-tema h1) {
+:root[data-os-theme='estudio'] #root-os-main h1:not([class*='font-os-mono']):not([class*='font-central']):not(.estudio h1):not(.com-tema h1):not([class*='text-[25px]']) {
   font-size: 36px;
   line-height: 1.14;
   letter-spacing: -1.5px;
   font-weight: 650;
 }
 @media (max-width: 760px) {
-  :root[data-os-theme='estudio'] #root-os-main h1:not([class*='font-os-mono']):not([class*='font-central']):not(.estudio h1):not(.com-tema h1) {
+  :root[data-os-theme='estudio'] #root-os-main h1:not([class*='font-os-mono']):not([class*='font-central']):not(.estudio h1):not(.com-tema h1):not([class*='text-[25px]']) {
     font-size: 29px;
+  }
+}
+/* Etapa 10 (pente de UX): no tema Estúdio o verde da marca é claro; texto em cima dele é escuro, não a cor do fundo (1,35:1). */
+:root[data-os-theme='estudio'] .bg-brand.text-bg {
+  color: rgb(var(--os-tx));
+}
+/* Etapa 10 (pente de UX, celular): nenhuma tela rola para o lado. O que é largo (tabela, abas) rola
+   dentro de si; item de grade e de linha pode encolher; e o conteúdo deixa espaço para o botão do Chat. */
+@media (max-width: 819px) {
+  #root-os-main {
+    overflow-x: clip;
+    padding-bottom: 5.5rem;
+  }
+  #root-os-main :is(.grid, .flex) > * {
+    min-width: 0;
+  }
+  #root-os-main table {
+    display: block;
+    max-width: 100%;
+    overflow-x: auto;
+  }
+  #root-os-main :is(p, h2, h3, code) {
+    overflow-wrap: anywhere;
   }
 }
 /* A letra do Marketing é a mesma do resto. O CSS do Estúdio pede "Inter" pelo nome,

@@ -69,6 +69,7 @@ export default function BioPage() {
         <div className="flex flex-wrap items-center gap-2">
           {pages && pages.length > 1 && (
             <select
+              aria-label="Página de links"
               className={`${inputCls} w-auto`}
               value={pageId ?? ''}
               onChange={(e) => {

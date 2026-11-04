@@ -469,6 +469,7 @@ function Linha({
 
         <div className="flex flex-wrap items-center gap-2">
           <select
+            aria-label="Estado da rotina"
             className={`${inputCls} w-auto py-1 text-xs`}
             value={r.estado}
             onChange={(e) => onEstado(e.target.value as EstadoDaRotina)}

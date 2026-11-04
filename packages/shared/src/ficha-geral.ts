@@ -98,6 +98,22 @@ export interface FichaGeralExtra {
   proposta: PropostaNaFichaGeral;
   /** Depois do aceite, produto, parcelas e valor são do contrato: a ficha não os edita mais. */
   negocioTravado: boolean;
+  /**
+   * Etapa 10 (pente de UX, item 4): o que já existe em outro lugar (cadastro do cliente, registro do
+   * contrato, acordo do Financeiro). A aba Geral mostra quando a ficha está vazia, com "do cadastro" ou
+   * "do Financeiro" embaixo: cliente fechado não aparece como "preencher". Nada é gravado na ficha.
+   */
+  jaExiste?: DadosQueJaExistem | null;
+}
+
+export interface DadosQueJaExistem {
+  telefone: string | null;
+  email: string | null;
+  produto: string | null;
+  tipoNegocio: string | null;
+  valorCentavos: number | null;
+  parcelas: number | null;
+  parcelaCentavos: number | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -175,18 +191,18 @@ export function valoresDaFichaGeral(f: FichaParaOsCampos, extra: FichaGeralExtra
     empresa: texto(f.empresa),
     nome: texto(f.nome),
     tipoDePessoa: extra?.tipoDePessoa ?? null,
-    telefone: texto(f.telefone),
-    email: texto(f.email),
+    telefone: texto(f.telefone) ?? texto(extra?.jaExiste?.telefone),
+    email: texto(f.email) ?? texto(extra?.jaExiste?.email),
     preferenciasDeAtendimento: texto(extra?.preferenciasDeAtendimento),
     canal: texto(f.canal),
     origemIndicacao: texto(f.origemIndicacao),
     vendedorId: f.vendedor?.id ?? null,
     socioDaConta: texto(f.socioDaConta?.nome),
-    produto: texto(f.produto),
-    tipoNegocio: f.tipoNegocio ?? 'pagante',
-    valorNegociado: f.valorNegociadoCentavos ?? null,
-    parcelas: f.parcelas ?? null,
-    parcela: extra?.parcelaCentavos ?? null,
+    produto: texto(f.produto) ?? texto(extra?.jaExiste?.produto),
+    tipoNegocio: f.tipoNegocio ?? extra?.jaExiste?.tipoNegocio ?? 'pagante',
+    valorNegociado: f.valorNegociadoCentavos ?? extra?.jaExiste?.valorCentavos ?? null,
+    parcelas: f.parcelas ?? extra?.jaExiste?.parcelas ?? null,
+    parcela: extra?.parcelaCentavos ?? extra?.jaExiste?.parcelaCentavos ?? null,
     linkDaProposta,
     etapa: f.etapa,
   };

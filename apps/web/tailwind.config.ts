@@ -39,7 +39,7 @@ const config: Config = {
         'bio-accent': '#ff1f6b',
         'bio-text': '#dfffe8',
         'bio-soft': 'rgba(223,255,232,0.62)',
-        'bio-weak': 'rgba(223,255,232,0.38)',
+        'bio-weak': 'rgba(223,255,232,0.62)',
         'bio-line': 'rgba(155,219,31,0.22)',
         'bio-border': 'rgba(223,255,232,0.14)',
         // Identidade ROOT na Central (/central/*). Mesma paleta da bio, mas

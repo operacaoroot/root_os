@@ -368,13 +368,13 @@ function BarraDeSelecao({ p, equipe, visiveis, sel, trabalhando, areaFixa, marca
         <button onClick={() => marcarVarias(visiveis.map((t) => t.id))} className="text-sm text-muted hover:text-brand">todas ({visiveis.length})</button>
       )}
       <span className="mx-1 h-5 w-px bg-border" />
-      <select disabled={trabalhando} value="" className={campo} onChange={(e) => e.target.value && editar({ pessoaId: e.target.value === SEM ? null : e.target.value }, 'Responsável trocado')}>
+      <select aria-label="Responsável das tarefas marcadas" disabled={trabalhando} value="" className={campo} onChange={(e) => e.target.value && editar({ pessoaId: e.target.value === SEM ? null : e.target.value }, 'Responsável trocado')}>
         <option value="">Responsável…</option>
         {equipe.map((pe) => <option key={pe.id} value={pe.id}>{pe.nome}</option>)}
         <option value={SEM}>— ninguém —</option>
       </select>
       {!areaFixa && (
-        <select disabled={trabalhando} value="" className={campo} onChange={(e) => e.target.value && editar({ areaId: e.target.value }, 'Área trocada')}>
+        <select aria-label="Área das tarefas marcadas" disabled={trabalhando} value="" className={campo} onChange={(e) => e.target.value && editar({ areaId: e.target.value }, 'Área trocada')}>
           <option value="">Área…</option>
           {p.areas.map((a) => <option key={a.id} value={a.id}>{a.nome}</option>)}
         </select>
@@ -542,13 +542,13 @@ function Filtros({ p, filtro, mudar, areaFixa }: { p: PainelDeTarefas; filtro: F
         placeholder="Buscar tarefa ou cliente"
         className={`${sel} w-56`}
       />
-      <select value={filtro.pessoa ?? ''} onChange={(e) => set('pessoa', e.target.value)} className={sel}>
+      <select aria-label="Filtrar por pessoa" value={filtro.pessoa ?? ''} onChange={(e) => set('pessoa', e.target.value)} className={sel}>
         <option value="">Todas as pessoas</option>
         {p.pessoas.map((pe) => <option key={pe.id} value={pe.id}>{pe.nome}</option>)}
         <option value={SEM}>Sem responsável</option>
       </select>
       {!areaFixa && (
-        <select value={filtro.area ?? ''} onChange={(e) => set('area', e.target.value)} className={sel}>
+        <select aria-label="Filtrar por área" value={filtro.area ?? ''} onChange={(e) => set('area', e.target.value)} className={sel}>
           <option value="">Todas as áreas</option>
           {p.areas.map((a) => <option key={a.id} value={a.id}>{a.nome}</option>)}
           <option value={SEM}>Sem área</option>
@@ -565,7 +565,7 @@ function Filtros({ p, filtro, mudar, areaFixa }: { p: PainelDeTarefas; filtro: F
           .map((s) => <option key={s} value={s}>{s === 'feita' ? 'Só concluídas' : nomeDaSituacao(s, p.hoje)}</option>)}
       </select>
       {p.clientes.length > 0 && (
-        <select value={filtro.cliente ?? ''} onChange={(e) => set('cliente', e.target.value)} className={sel}>
+        <select aria-label="Filtrar por cliente ou lead" value={filtro.cliente ?? ''} onChange={(e) => set('cliente', e.target.value)} className={sel}>
           <option value="">Todos os clientes e leads</option>
           <OpcoesDeCliente clientes={p.clientes} />
         </select>

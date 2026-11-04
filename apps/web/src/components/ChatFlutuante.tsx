@@ -201,10 +201,12 @@ export function ChatFlutuante() {
           type="button"
           onClick={() => setAberto(true)}
           title="Chat: a central e as conversas do WhatsApp"
-          className="fixed bottom-5 right-5 z-40 flex h-11 items-center gap-2 rounded-root border border-brand/30 bg-brand px-4 font-os-mono text-[11px] uppercase tracking-[0.14em] text-ink shadow-lg transition-transform hover:scale-[1.02]"
+          aria-label="Abrir o chat"
+          className="fixed bottom-5 right-5 z-40 flex h-11 items-center gap-2 rounded-root border border-brand/30 bg-brand px-3 min-[820px]:px-4 font-os-mono text-[11px] uppercase tracking-[0.14em] text-ink shadow-lg transition-transform hover:scale-[1.02]"
         >
           <MessageSquare size={15} />
-          chat
+          {/* Etapa 10 (pente de UX): no celular só o ícone, para cobrir menos a tela. */}
+          <span className="hidden min-[820px]:inline">chat</span>
           {seloVermelho('absolute -right-2 -top-2 shadow')}
         </button>
       )}

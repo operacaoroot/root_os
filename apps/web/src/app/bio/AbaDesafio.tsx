@@ -153,6 +153,7 @@ export function AbaDesafio({
         {editavel && desafio && (
           <div className="mt-4 grid gap-2 border-t border-border pt-4 sm:grid-cols-[150px_1fr_auto]">
             <select
+              aria-label="Plataforma"
               className={inputCls}
               value={plataforma}
               onChange={(e) => setPlataforma(e.target.value as 'instagram' | 'tiktok')}

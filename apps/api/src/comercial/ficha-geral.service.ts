@@ -4,6 +4,7 @@ import {
   CANAIS_ACEITOS_NA_FICHA,
   FichaGeralPatchSchema,
   NotaManualSchema,
+  type DadosQueJaExistem,
   type FichaDoLead,
   type FichaGeralExtra,
   type FichaGeralPatch,
@@ -16,6 +17,7 @@ import { lerAprovador } from '../auth/aprovador';
 import { exigirAcessoAtual } from '../memory/acesso-memoria';
 import { PrismaService } from '../prisma/prisma.service';
 import { decisaoSemPrazo } from './decisoes.service';
+import { doMesmoCliente } from './dinheiro-do-contrato';
 import { FichaService } from './ficha.service';
 import { FioService } from './fio.service';
 import { passosDoLead, type FatoParaOsPassos } from './pendencias-do-lead';
@@ -94,6 +96,40 @@ export class FichaGeralService {
       parcelaCentavos: ficha.parcelaCentavos ?? null,
       proposta: await this.propostaDaFicha(orgId, leadId, ficha),
       negocioTravado: !!ficha.propostaAceitaEm,
+      jaExiste: await this.oQueJaExiste(orgId, leadId, ficha.partnerId),
+    };
+  }
+
+  /**
+   * Etapa 10 (pente de UX, item 4): o que o cadastro, o registro do contrato e o acordo do Financeiro
+   * já sabem deste lead. O acordo é o ligado ao contrato do lead; sem ele, o único acordo solto do
+   * cliente (dois soltos: não adivinha). Só lê.
+   */
+  private async oQueJaExiste(orgId: string, leadId: string, partnerId: string | null): Promise<DadosQueJaExistem | null> {
+    const cliente = partnerId ? await doMesmoCliente(this.prisma, orgId, partnerId) : null;
+    const cadastros = cliente ? await this.prisma.partner.findMany({ where: { orgId, id: { in: cliente.ids } }, select: { phone: true, email: true } }) : [];
+    const registro = await this.prisma.comercialContrato.findFirst({
+      where: { orgId, leadId, tipo: 'contrato', estado: { notIn: ['cancelado', 'rascunho'] } },
+      orderBy: { criadoEm: 'desc' },
+      select: { id: true, valorCentavos: true },
+    });
+    const selecao = { id: true, produto: true, valor: true, tipo: true } as const;
+    let acordo = registro ? await this.prisma.acordoComercial.findFirst({ where: { orgId, comercialContratoId: registro.id }, select: selecao }) : null;
+    if (!acordo && cliente && !registro) {
+      const soltos = await this.prisma.acordoComercial.findMany({ where: { orgId, partnerId: { in: cliente.ids }, comercialContratoId: null }, select: selecao, take: 2 });
+      if (soltos.length === 1) acordo = soltos[0]!;
+    }
+    const parcelas = acordo ? await this.prisma.acordoParcela.findMany({ where: { orgId, acordoId: acordo.id }, orderBy: { numero: 'asc' }, select: { valor: true } }) : [];
+    if (!cadastros.length && !registro && !acordo) return null;
+    const centavos = (v: Prisma.Decimal | number | null | undefined) => (v == null ? null : Math.round(Number(v) * 100));
+    return {
+      telefone: cadastros.find((c) => c.phone)?.phone ?? null,
+      email: cadastros.find((c) => c.email)?.email ?? null,
+      produto: acordo?.produto ?? null,
+      tipoNegocio: acordo?.tipo ?? null,
+      valorCentavos: registro?.valorCentavos ?? centavos(acordo?.valor),
+      parcelas: parcelas.length || null,
+      parcelaCentavos: centavos(parcelas[0]?.valor),
     };
   }
 

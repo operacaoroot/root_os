@@ -118,6 +118,7 @@ export function Paleta({ aberto, fechar }: { aberto: boolean; fechar: () => void
             if (e.key === 'Enter' && filtrados[i]) escolher(filtrados[i]);
           }}
           placeholder="ir para…"
+          aria-label="Ir para uma tela"
           className="w-full border-b border-border bg-transparent px-4 py-3 font-os-mono text-[13px] text-text outline-none placeholder:text-dim"
         />
         <ul className="max-h-[52vh] overflow-y-auto py-1">

@@ -207,6 +207,7 @@ function LeadActions({
         <div>
           <label className="mb-1 block text-xs text-muted">Etapa</label>
           <select
+            aria-label="Etapa"
             value={status}
             onChange={(e) => { setStatus(e.target.value); setSaved(false); }}
             className="w-full rounded-lg border border-border bg-surface-2 px-3 py-2 text-sm capitalize outline-none focus:border-brand-dim"

@@ -212,6 +212,7 @@ export function AbaPagina({
           {editavel && (
             <div className="mt-4 grid gap-2 border-t border-border pt-4 sm:grid-cols-[130px_1fr_1fr_auto]">
               <select
+                aria-label="Tipo do link"
                 className={inputCls}
                 value={novoTipo}
                 onChange={(e) => setNovoTipo(e.target.value as 'url' | 'whatsapp' | 'email')}
