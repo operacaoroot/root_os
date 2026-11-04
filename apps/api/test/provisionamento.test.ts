@@ -133,6 +133,8 @@ describe.skipIf(!URL)('provisionar empresa (RF-T-07)', () => {
      */
     for (const orgId of criadas) {
       await prisma.auditLog.deleteMany({ where: { orgId } });
+      await prisma.clienteAcessoVinculo.deleteMany({ where: { orgId } });
+      await prisma.clienteAcessoPerfil.deleteMany({ where: { orgId } });
       await prisma.user.deleteMany({ where: { orgId } });
       await prisma.role.deleteMany({ where: { orgId } });
       await prisma.org.deleteMany({ where: { id: orgId } });
@@ -770,7 +772,8 @@ describe.skipIf(!URL)('provisionar empresa (RF-T-07)', () => {
       expect(t.chaves.User).toEqual([t.provisionamento.admin!.userId]);
       expect(t.adminUserId).toBe(t.provisionamento.admin!.userId);
       expect(t.papelInicialId).toBe(t.provisionamento.papelInicial.id);
-      expect(t.ordemDeLimpeza).toEqual(['Org', 'Role', 'User']);
+      expect(t.chaves.ClienteAcessoPerfil).toHaveLength(1);
+      expect(t.ordemDeLimpeza).toEqual(['Org', 'Role', 'User', 'ClienteAcessoPerfil']);
 
       // Sem RASTRO nem auditoria: o EventLog é append-only e as chaves da
       // auditoria não passariam pelo registro de limpeza da suíte.

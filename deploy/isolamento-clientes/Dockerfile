@@ -9,7 +9,7 @@ COPY apps/api/src/clientes-escopo/ apps/api/src/clientes-escopo/
 COPY apps/api/src/cofre-da-empresa/ apps/api/src/cofre-da-empresa/
 COPY apps/api/src/app.module.ts apps/api/src/app.module.ts
 COPY apps/api/src/auth/auth.controller.ts apps/api/src/auth/jwt-auth.guard.ts apps/api/src/auth/
-COPY apps/api/src/tenants/modulos.ts apps/api/src/tenants/modulos.ts
+COPY apps/api/src/tenants/modulos.ts apps/api/src/tenants/provisionar.ts apps/api/src/tenants/
 COPY apps/api/src/scripts/cofre-deposito.ts apps/api/src/scripts/cofre-classificar-deposito.ts apps/api/src/scripts/
 COPY apps/web/src/app/cofre/ apps/web/src/app/cofre/
 COPY apps/api/test/ apps/api/test/

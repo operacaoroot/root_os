@@ -1085,6 +1085,10 @@ async function umaRodada(
                 hashInutilizavel,
               )
             : undefined;
+          // Só o primeiro administrador de uma empresa nova recebe acesso amplo.
+          if (!jaExistia && admin?.userId) {
+            await tx.clienteAcessoPerfil.create({ data: { orgId, userId: admin.userId, modo: 'ALL' } });
+          }
           const donos = await tx.user.count({
             where: { orgId, roles: { some: { id: papeis.inicial.id } } },
           });

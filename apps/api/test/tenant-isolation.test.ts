@@ -2113,7 +2113,10 @@ async function semearEntregasDoMerge(
     id: crypto.randomUUID(), orgId, dia: '2026-10-19', hash: hex64(`leitura_${suf}`),
     texto: `Leitura privada do dia da org ${rotulo} (${MARCA}).`,
   }));
-  reg('ClienteAcessoPerfil', await ins(c, 'ClienteAcessoPerfil', {id: crypto.randomUUID(),orgId,userId,modo:'SELECTED',updatedAt:agora}));
+  const perfilExistente = await c.query<{id:string}>('SELECT id FROM "ClienteAcessoPerfil" WHERE "orgId"=$1 AND "userId"=$2', [orgId,userId]);
+  const perfilId = perfilExistente.rows[0]?.id ?? await ins(c, 'ClienteAcessoPerfil', {id:crypto.randomUUID(),orgId,userId,modo:'SELECTED',updatedAt:agora});
+  await c.query('UPDATE "ClienteAcessoPerfil" SET modo=$1 WHERE id=$2', ['SELECTED',perfilId]);
+  reg('ClienteAcessoPerfil', perfilId);
   reg('ClienteAcessoVinculo', await ins(c, 'ClienteAcessoVinculo', {id: crypto.randomUUID(),orgId,userId,clienteId:partnerId}));
   reg('CofreItem', await ins(c, 'CofreItem', {
     id: crypto.randomUUID(), orgId, tipo: 'senha', titulo: `Acesso ${rotulo} ${MARCA}`, onde: `https://${suf}.exemplo.com`,
