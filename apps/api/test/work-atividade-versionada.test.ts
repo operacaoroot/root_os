@@ -19,6 +19,8 @@ import { ContextoInterceptor } from '../src/common/contexto.interceptor';
 import { AuditService } from '../src/audit/audit.service';
 import type { AuditInput } from '../src/audit/audit.service';
 import { PrismaService } from '../src/prisma/prisma.service';
+import { ClienteEscopoService } from '../src/clientes-escopo/cliente-escopo.service';
+import { TarefaEscopoService } from '../src/clientes-escopo/tarefa-escopo.service';
 
 const url = process.env.TEST_DATABASE_URL;
 if (url) {
@@ -135,6 +137,10 @@ describe.skipIf(!url)('M02 HTTP e Postgres próprios', () => {
     peerId = await user(orgId, role.id, 'Pessoa M02 histórica');
     readerId = await user(orgId, readerRole.id, 'Pessoa M02 leitora');
     otherActorId = await user(otherOrgId, foreignRole.id, 'NOME_PRIVADO_OUTRA_EMPRESA_M02');
+    await db.clienteAcessoPerfil.createMany({ data: [
+      ...[actorId, peerId, readerId].map(userId => ({orgId, userId, modo:'ALL' as const})),
+      {orgId:otherOrgId, userId:otherActorId, modo:'ALL' as const},
+    ] });
     listId = (await db.workList.create({ data: { orgId, name: 'Lista sintética M02' } })).id;
     statusId = (await db.workStatus.create({ data: { orgId, listId, name: 'A fazer', type: 'open' } })).id;
     nextStatusId = (await db.workStatus.create({ data: { orgId, listId, name: 'Em andamento', type: 'custom', order: 1 } })).id;
@@ -169,10 +175,31 @@ describe.skipIf(!url)('M02 HTTP e Postgres próprios', () => {
     const serviceDb = new Proxy(db, { get(target, key) {
       if (key === 'user') return userDelegate;
       if (key === 'auditLog') return activityDelegate;
+      if (key === '$transaction') return (callback: any, options?: any) => db.$transaction(async raw => {
+        const wrapFindMany = (delegate: any, hook: () => (() => Promise<void>) | null) => new Proxy(delegate, { get(d, prop) {
+          const value = Reflect.get(d, prop);
+          if (prop === 'findMany') return async (...args: unknown[]) => {
+            const result = await value.apply(d, args);
+            const fn = hook();
+            if (fn) await fn();
+            return result;
+          };
+          return typeof value === 'function' ? value.bind(d) : value;
+        } });
+        const proxied = new Proxy(raw, { get(t, prop) {
+          if (prop === 'user') return wrapFindMany(t.user, () => afterActorNamesRead);
+          if (prop === 'auditLog') return wrapFindMany(t.auditLog, () => afterActivityRead);
+          const value = Reflect.get(t, prop);
+          return typeof value === 'function' ? value.bind(t) : value;
+        } });
+        return callback(proxied);
+      }, options);
       const value = Reflect.get(target, key);
       return typeof value === 'function' ? value.bind(target) : value;
     } }) as unknown as PrismaService;
-    svc = new WorkService(serviceDb, audit, { agentesParaEscolher: async () => [] } as unknown as CheckoutDeTarefaService);
+    const escopo = new ClienteEscopoService(serviceDb, actualAudit);
+    const tarefaEscopo = new TarefaEscopoService(serviceDb, escopo);
+    svc = new WorkService(serviceDb, audit, { agentesParaEscolher: async () => [] } as unknown as CheckoutDeTarefaService, escopo, tarefaEscopo);
     // Vitest transpila decorators sem design:paramtypes; declarar a DI do controller real no harness.
     Reflect.defineMetadata('design:paramtypes', [WorkService, ContextoTrabalhoService, CheckoutDeTarefaService], WorkController);
     jwt = new JwtService({ secret: randomUUID() + randomUUID(), signOptions: { expiresIn: '15m' } });
@@ -183,7 +210,7 @@ describe.skipIf(!url)('M02 HTTP e Postgres próprios', () => {
       { provide: CheckoutDeTarefaService, useValue: {} },
       { provide: PrismaService, useValue: prisma() },
       { provide: JwtService, useValue: jwt }, Reflector,
-    ] }).overrideGuard(JwtAuthGuard).useValue(new JwtAuthGuard(jwt))
+    ] }).overrideGuard(JwtAuthGuard).useValue(new JwtAuthGuard(jwt, undefined, escopo))
       .overrideGuard(PermissionsGuard).useValue(new PermissionsGuard(reflector))
       .overrideGuard(AcessoAtualGuard).useValue(new AcessoAtualGuard(prisma(), reflector)).compile();
     app = module.createNestApplication({ logger: false });
@@ -460,9 +487,11 @@ describe.skipIf(!url)('M02 HTTP e Postgres próprios', () => {
       } finally { afterActorNamesRead = null; await restoreRole(); }
     });
     it('N23 detalhe HTTP não revela recorte após revogação durante leitura', async () => {
-      const f = await fixture(); await seedActivity(f.id, 2); afterActorNamesRead = removeRole;
+      const f = await fixture(); await seedActivity(f.id, 2); let hookExecutado = false;
+      afterActorNamesRead = async () => { hookExecutado = true; await removeRole(); };
       try {
         const result = await request('GET', taskPath(f.id));
+        expect(hookExecutado).toBe(true);
         expect(result.status).toBe(403); expect(result.body).not.toHaveProperty('atividade');
       } finally { afterActorNamesRead = null; await restoreRole(); }
     });

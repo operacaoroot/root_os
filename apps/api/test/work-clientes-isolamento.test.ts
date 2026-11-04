@@ -30,6 +30,7 @@ describe('consultas de Trabalho por carteira', () => {
       findMany: vi.fn().mockResolvedValueOnce([{id:'a',parentId:null,clienteId:'A'},{id:'b',parentId:null,clienteId:'B'}]).mockResolvedValueOnce([]),
       count: vi.fn().mockResolvedValue(0),
     }};
+    db.user = {findFirst:vi.fn().mockResolvedValue({roles:[{permissions:[{key:'tarefas.ver'}]}]})};
     db.$transaction = vi.fn(async (fn: any) => fn(db));
     const scope: any = { perfil: vi.fn().mockResolvedValue({modo:'SELECTED'}), filtro: vi.fn().mockResolvedValue({orgId:'org',clienteId:{in:['A']}}) };
     const svc = new WorkService(db, {} as any, {} as any, scope);
@@ -60,6 +61,7 @@ describe('revogação e filtros da carteira', () => {
     const db: any = { workTask: {
       findMany: vi.fn().mockResolvedValue([]), count: vi.fn().mockResolvedValue(0),
     }};
+    db.user = {findFirst:vi.fn().mockResolvedValue({roles:[{permissions:[{key:'tarefas.ver'}]}]})};
     db.$transaction = vi.fn(async (fn: any) => fn(db));
     let liberado = true;
     const scope: any = {
@@ -81,7 +83,7 @@ describe('revogação e filtros da carteira', () => {
 describe('fotografia coerente da carteira e tarefas', () => {
   it('executa listagem inteira no mesmo snapshot', async () => {
     const tx: any = { workTask: { findMany: vi.fn().mockResolvedValue([]), count: vi.fn().mockResolvedValue(0) } };
-    const db: any = { ...tx, $transaction: vi.fn(async (fn: any) => fn(tx)) };
+    const db: any = { ...tx, user:{findFirst:vi.fn().mockResolvedValue({roles:[{permissions:[{key:'tarefas.ver'}]}]})}, $transaction: vi.fn(async (fn: any) => fn(tx)) };
     const scope: any = { perfil: vi.fn().mockResolvedValue({modo:'SELECTED'}), filtro: vi.fn().mockResolvedValue({orgId:'org',clienteId:{in:[]}}) };
     const svc = new WorkService(db, {} as any, {} as any, scope);
     await svc.tarefas('org', {listId:'l'}, 'user');
@@ -181,5 +183,16 @@ describe('cadeia na gravação de comentário', () => {
     await expect(svc.comentarHttp('org','user','t','olá')).resolves.toEqual({id:'c',createdAt:'2026-01-01T00:00:00.000Z'});
     expect(escopo.exigir).toHaveBeenCalledTimes(2);
     expect(audit.log).toHaveBeenCalledWith(expect.objectContaining({action:'work.comment.create'}),tx);
+  });
+});
+
+describe('revogação durante a leitura em snapshot', () => {
+  it('não devolve uma lista obtida antes da troca de carteira', async () => {
+    let alterou = false;
+    const tx:any={workTask:{findMany:vi.fn().mockResolvedValue([]),count:vi.fn().mockResolvedValue(0)}};
+    const db:any={...tx,user:{findFirst:vi.fn().mockResolvedValue({roles:[{permissions:[{key:'tarefas.ver'}]}]})},$transaction:vi.fn(async (fn:any)=>{const v=await fn(tx);alterou=true;return v;})};
+    const scope:any={perfil:vi.fn().mockResolvedValue({modo:'SELECTED'}),filtro:vi.fn(async()=>({orgId:'org',clienteId:{in:alterou?[]:['A']}}))};
+    const svc=new WorkService(db,{} as any,{} as any,scope);
+    await expect(svc.tarefas('org',{listId:'l'},'user')).rejects.toThrow();
   });
 });

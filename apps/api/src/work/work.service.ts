@@ -144,6 +144,11 @@ export class WorkService {
     @Optional() private readonly tarefaEscopo?: TarefaEscopoService,
   ) {}
 
+  private impressaoDaCarteira(filtro: { orgId: string; clienteId?: string | null | { in: string[] } }): string {
+    const valor = filtro.clienteId;
+    return JSON.stringify(typeof valor === 'object' && valor !== null ? { in: [...valor.in].sort() } : valor ?? null);
+  }
+
   private async idsVisiveis(orgId: string, actorId: string, cliente?: string, db: Prisma.TransactionClient = this.prisma): Promise<string[] | null> {
     if (!this.escopo) throw new ForbiddenException();
     const filtro = await this.escopo.filtro(orgId, actorId, cliente, db);
@@ -1274,9 +1279,16 @@ export class WorkService {
     actorId?: string,
     tx?: Prisma.TransactionClient,
   ): Promise<TrabTarefaLista> {
-    if (actorId !== undefined && !tx) return this.prisma.$transaction(
-      db => this.tarefas(orgId, f, actorId, db), { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead },
-    );
+    if (actorId !== undefined && !tx) {
+      if (!this.escopo) throw new ForbiddenException();
+      const { resposta, carteira } = await this.prisma.$transaction(async db => ({
+        carteira: this.impressaoDaCarteira(await this.escopo!.filtro(orgId, actorId, undefined, db)),
+        resposta: await this.tarefas(orgId, f, actorId, db),
+      }), { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead });
+      await exigirAcessoAtual(this.prisma, orgId, actorId, ['tarefas.ver']);
+      if (carteira !== this.impressaoDaCarteira(await this.escopo.filtro(orgId, actorId))) throw new ForbiddenException('A carteira mudou. Atualize a tela.');
+      return resposta;
+    }
     const db = tx ?? this.prisma;
     const visiveis = actorId === undefined ? null : await this.idsVisiveis(orgId, actorId, f.cliente, db);
     const page = f.page ?? 1;
@@ -1382,9 +1394,19 @@ export class WorkService {
   }
 
   async tarefa(orgId: string, id: string, solicitanteId?: string, tx?: Prisma.TransactionClient): Promise<TrabTarefaDetalhe> {
-    if (solicitanteId !== undefined && !tx) return this.prisma.$transaction(
-      db => this.tarefa(orgId, id, solicitanteId, db), { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead },
-    );
+    if (solicitanteId !== undefined && !tx) {
+      if (!this.escopo || !this.tarefaEscopo) throw new ForbiddenException();
+      const { resposta, carteira, tarefa } = await this.prisma.$transaction(async db => ({
+        carteira: this.impressaoDaCarteira(await this.escopo!.filtro(orgId, solicitanteId, undefined, db)),
+        tarefa: await this.tarefaEscopo!.exigir(orgId, solicitanteId, id, db),
+        resposta: await this.tarefa(orgId, id, solicitanteId, db),
+      }), { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead });
+      await exigirAcessoAtual(this.prisma, orgId, solicitanteId, ['tarefas.ver']);
+      if (carteira !== this.impressaoDaCarteira(await this.escopo.filtro(orgId, solicitanteId))) throw new ForbiddenException('A carteira mudou. Atualize a tela.');
+      const atual = await this.tarefaEscopo.exigir(orgId, solicitanteId, id);
+      if (atual.clienteId !== tarefa.clienteId || atual.parentId !== tarefa.parentId) throw new ConflictException('A tarefa mudou. Atualize a tela.');
+      return resposta;
+    }
     const db = tx ?? this.prisma;
     if (solicitanteId !== undefined) await exigirAcessoAtual(db, orgId, solicitanteId, ['tarefas.ver']);
     const visiveis = solicitanteId === undefined ? null : await this.idsVisiveis(orgId, solicitanteId, undefined, db);

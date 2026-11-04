@@ -131,7 +131,8 @@ function TarefaDoCliente({ id, clienteId, token, abrir, fechar, revisao, aoMudar
     { modo: 'nova', rotulo: 'Nova tarefa nesta lista', habilitada: carteira?.podeCriar === true },
     { modo: 'subtarefa', rotulo: 'Nova subtarefa', habilitada: carteira?.podeCriarSubtarefa === true },
   ];
-  const disponiveis = acoes.filter((acao) => acao.habilitada);
+  const disponiveis = can('tarefas.editar') ? acoes.filter((acao) => acao.habilitada) : [];
+  const modoAtivo = disponiveis.some((acao) => acao.modo === formulario) ? formulario : null;
 
   return (
     <section ref={painel} tabIndex={-1} aria-label="Detalhes da tarefa" className="space-y-3 rounded-root border border-border bg-surface p-4 text-sm">
@@ -143,14 +144,14 @@ function TarefaDoCliente({ id, clienteId, token, abrir, fechar, revisao, aoMudar
         <>
           <h2 className="text-base font-semibold">{tarefa.title}</h2>
           <p className="text-muted">{tarefa.statusName}</p>
-          {formulario !== 'editar' && tarefa.description && (
+          {modoAtivo !== 'editar' && tarefa.description && (
             <p className="whitespace-pre-wrap break-words">{tarefa.description}</p>
           )}
-          {can('tarefas.editar') && disponiveis.length > 0 && (
-            formulario && disponiveis.some((acao) => acao.modo === formulario)
-              ? <FormularioDaTarefa modo={formulario} tarefa={tarefa} clienteId={clienteId} token={token}
+          {disponiveis.length > 0 && (
+            modoAtivo
+              ? <FormularioDaTarefa modo={modoAtivo} tarefa={tarefa} clienteId={clienteId} token={token}
                   cancelar={() => setFormulario(null)} aoSalvar={() => {
-                    setAviso(formulario === 'editar' ? 'Tarefa atualizada.' : 'Tarefa criada.');
+                    setAviso(modoAtivo === 'editar' ? 'Tarefa atualizada.' : 'Tarefa criada.');
                     setFormulario(null);
                     aoMudar();
                   }} />

@@ -138,3 +138,9 @@ Os casos cobrem lista/total/paginação, filhos divergentes, lead/histórico ocu
 A prova de concorrência usa duas transações reais. Uma segura o row lock; o pedido HTTP de comentário chega a esperar esse lock, confirmado em `pg_stat_activity`. A primeira transação reclassifica A para B e libera a linha; o comentário recebe 409 e nenhuma linha de comentário é gravada.
 
 Na primeira execução de nove casos, um GET ALL retornou 500 depois de aproximadamente 14 s, sem diagnóstico capturado pela configuração inicial de logger. A segunda execução passou os nove casos; a execução final passou os doze. A causa da primeira ocorrência não foi confirmada. Este é aceite local do recorte, não prova de publicação ou de RLS pelo papel produtivo.
+
+### Rechecagem após o snapshot
+
+Revisão pontual do patch posterior a `1fce2a2`: a regressão N23 mostrou que revogar o papel durante a leitura não era visível dentro do `RepeatableRead`. Lista e detalhe agora conferem `tarefas.ver` novamente fora da transação e comparam a carteira atual com a do snapshot antes de entregar a resposta. A impressão da carteira diferencia ALL de SELECTED, inclusive carteira vazia. O detalhe também reautoriza tarefa e cadeia e recusa mudança do cliente ou pai. O teste N23 confirma que o hook de revogação foi executado, evitando um verde sem exercitar a corrida.
+
+Sem achado pendente nessa revisão pontual. O revisor repetiu o aceite HTTP/Postgres acima após o patch: **12/12 passaram, nenhum pulado**, duração total 9,07 s (testes 4,72 s). `git diff --check` também passou. Nenhuma publicação foi feita pelo revisor.

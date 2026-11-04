@@ -97,7 +97,7 @@ describe('Atas: a lista e a ata aberta', () => {
   it('lista as atas com data, participantes e resumo, e abre a primeira inteira', async () => {
     render(<AtasPage />);
     const lista = await screen.findByTestId('atas-lista');
-    const item = within(lista).getByTestId(`ata-${REF}`);
+    const item = await within(lista).findByTestId(`ata-${REF}`);
     expect(item).toHaveTextContent('Reunião de operação semanal');
     expect(item).toHaveTextContent('16/10/2026');
     expect(item).toHaveTextContent('Marina Alves, Paulo Rocha');
