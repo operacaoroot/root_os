@@ -173,6 +173,10 @@ export class CofreDaEmpresaService {
     if (!(await this.sessaoValida(orgId, userId, token))) throw new CofreTrancadoException();
   }
 
+  async autorizarGerencia(orgId: string, userId: string, token: string | undefined) {
+    await this.exigirAberto(orgId, userId, token);
+  }
+
   /**
    * Esqueceu a senha do cofre: outro sócio, com o próprio cofre aberto, zera a
    * senha dele. Os itens continuam (são da empresa); a pessoa cria uma senha nova

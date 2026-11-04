@@ -525,6 +525,8 @@ const ALVOS: Alvo[] = [
   { tabela: 'WorkContextSource', escopo: 'tenant', chaveSql: '"id"', nota: 'A nota da memória ligada a uma tarefa como fonte (chave, versão, hash, título). Ler a da outra é ler que contexto ela deu para cada tarefa.' },
   { tabela: 'ReuniaoDoCartao', escopo: 'tenant', chaveSql: '"id"', nota: 'A reunião anexada ao cartão: título, data, fonte e a TRANSCRIÇÃO inteira (até 2 MB de fala). É a conversa da outra empresa com o cliente dela. O orgId vem do insert e o gatilho `ReuniaoDoCartao_orgId_do_cartao` confere que o cartão é da mesma empresa.' },
   { tabela: 'AnaliseLeitura', escopo: 'tenant', chaveSql: '"id"', nota: 'O texto da leitura do dia gerada para a empresa. Ler a da outra é ler a análise que ela recebeu sobre o próprio negócio.' },
+  { tabela: 'CofreDeposito', escopo: 'tenant', chaveSql: '"id"', nota: 'Links de depósito, hashes, validade e revogação pertencem à empresa que recebe.' },
+  { tabela: 'CofreDepositoRecibo', escopo: 'tenant', chaveSql: '"id"', nota: 'Recibos de entrega sem segredos; não podem atravessar empresas.' },
   { tabela: 'CofreItem', escopo: 'tenant', chaveSql: '"id"', nota: 'O COFRE da casa: título, onde, usuário, segredo e notas cifrados, e o documento guardado. O valor é cifrado, mas ler já entrega o mapa de que acessos a outra empresa guarda e onde; apagar é sumir com a senha dela.' },
   { tabela: 'CofreSenha', escopo: 'tenant', chaveSql: '"id"', nota: 'O hash da senha-mestra do cofre de cada pessoa, com tentativas e bloqueio. Ler o da outra entrega o hash para ataque fora do sistema; escrever zera o bloqueio ou troca a senha-mestra de alguém de outra casa.' },
   { tabela: 'CofreSessao', escopo: 'tenant', chaveSql: '"id"', nota: 'A sessão aberta do cofre (hash do token e validade). Escrever na da outra estende ou abre a sessão de cofre de alguém de outra casa.' },
@@ -2118,6 +2120,13 @@ async function semearEntregasDoMerge(
   }));
   reg('CofreSessao', await ins(c, 'CofreSessao', {
     id: crypto.randomUUID(), orgId, userId, tokenHash: hex64(`sessao_cofre_${suf}`), expiraEm: new Date(Date.now() + 3_600_000),
+  }));
+  const depositoId = crypto.randomUUID();
+  reg('CofreDeposito', await ins(c, 'CofreDeposito', {
+    id: depositoId, orgId, criadoPor: userId, cliente: `Cliente ${suf}`, tokenHash: hex64(`deposito_${suf}`), expiraEm: new Date(Date.now() + 3_600_000),
+  }));
+  reg('CofreDepositoRecibo', await ins(c, 'CofreDepositoRecibo', {
+    id: crypto.randomUUID(), orgId, depositoId, envioId: crypto.randomUUID(), itemId: crypto.randomUUID(),
   }));
 }
 

@@ -82,6 +82,8 @@ model Org {
   cofreSenhas          CofreSenha[]
   cofreSessoes         CofreSessao[]
   cofreItens           CofreItem[]
+  cofreDepositos       CofreDeposito[]
+  cofreDepositoRecibos CofreDepositoRecibo[]
   acordosComerciais    AcordoComercial[]
   acordoParcelas       AcordoParcela[]
   analiseLeituras      AnaliseLeitura[]
@@ -6241,6 +6243,38 @@ model ReuniaoDoCartao {
 // tela só abre depois da senha do cofre, que é de cada sócio e não é a do login.
 
 /// A senha do cofre de cada usuário (hash bcrypt) e o bloqueio por tentativas.
+model CofreDeposito {
+  id         String   @id @default(uuid())
+  orgId      String
+  org        Org      @relation(fields: [orgId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  cliente    String
+  tokenHash  String   @unique
+  criadoPor  String
+  expiraEm   DateTime
+  revogadoEm DateTime?
+  recebidos  Int      @default(0)
+  createdAt  DateTime @default(now())
+  recibos    CofreDepositoRecibo[]
+
+  @@unique([id, orgId])
+  @@index([orgId])
+}
+
+// Recibo sem conteúdo: conserva a idempotência mesmo se o item for apagado do cofre.
+model CofreDepositoRecibo {
+  id         String @id @default(uuid())
+  orgId      String
+  org        Org @relation(fields: [orgId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  depositoId String
+  deposito   CofreDeposito @relation(fields: [depositoId, orgId], references: [id, orgId], onDelete: Restrict, onUpdate: Restrict)
+  envioId    String
+  itemId     String
+  createdAt  DateTime @default(now())
+
+  @@unique([depositoId, envioId])
+  @@index([orgId])
+}
+
 model CofreSenha {
   id           String    @id @default(uuid())
   orgId        String
