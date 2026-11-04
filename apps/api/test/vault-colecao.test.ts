@@ -716,7 +716,10 @@ function casosContraOBanco(modoRls: boolean) {
     const { svc } = montar();
     await volta(svc);
     const daBase = (await item('da-base.md'))!;
-    const rota = new MemoriaController(memoria);
+    const trabalhoNaoUsado = new Proxy({} as ConstructorParameters<typeof MemoriaController>[1], {
+      get() { throw new Error('Contexto de trabalho não pertence a esta prova da memória'); },
+    });
+    const rota = new MemoriaController(memoria, trabalhoNaoUsado);
     const quem: JwtUser = {
       sub: pessoa,
       orgId: CASA,

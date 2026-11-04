@@ -6,6 +6,7 @@ import { Reflector } from '@nestjs/core';
 import { JwtService } from '@nestjs/jwt';
 import { PrismaClient } from '@prisma/client';
 import { randomUUID } from 'node:crypto';
+import { z } from 'zod';
 import { Readable } from 'node:stream';
 import { PrismaService } from '../src/prisma/prisma.service';
 import { AuditService } from '../src/audit/audit.service';
@@ -61,6 +62,12 @@ describe.skipIf(!databaseUrl)('Trabalho por cliente: HTTP e Postgres descartáve
     expect(r.status, JSON.stringify(body)).toBe(init.method === 'POST' ? 201 : 200);
     return body;
   };
+
+  const listaSchema = z.object({ total: z.number(), items: z.array(z.unknown()) });
+  const detalheSchema = z.object({ clienteId: z.string().nullable(), subtasks: z.number(), filhos: z.array(z.object({ id: z.string() })), lead: z.unknown(), atividade: z.unknown() });
+  const idsSchema = z.array(z.object({ id: z.string() }));
+  const criadaSchema = z.object({ id: z.string(), clienteId: z.string().nullable() });
+  const edicaoSchema = z.object({ title: z.string(), updatedAt: z.string() });
 
   beforeAll(async () => {
     const urlComNome = new URL(databaseUrl!);
@@ -172,17 +179,17 @@ describe.skipIf(!databaseUrl)('Trabalho por cliente: HTTP e Postgres descartáve
   });
 
   it('filtra lista, total, paginação e filhos; não inclui lead ou histórico de B', async () => {
-    const r = await json(`/trabalho/tarefas?listId=${lista}&limit=1`);
+    const r = listaSchema.parse(await json(`/trabalho/tarefas?listId=${lista}&limit=1`));
     expect(r.total).toBe(2);
     expect(r.items).toHaveLength(1);
-    const d = await json(`/trabalho/tarefas/${tarefas.A}`);
+    const d = detalheSchema.parse(await json(`/trabalho/tarefas/${tarefas.A}`));
     expect(d.clienteId).toBe(clienteA);
     expect(d.subtasks).toBe(1);
     expect(d.filhos.map((f: { id: string }) => f.id)).toEqual([tarefas['filha-A']]);
     expect(d.lead).toBeNull();
     expect(d.atividade).toEqual([]);
     expect(JSON.stringify(d)).not.toContain('secreto');
-    const busca = await json(`/trabalho/tarefas?q=B&listId=${lista}`);
+    const busca = listaSchema.parse(await json(`/trabalho/tarefas?q=B&listId=${lista}`));
     expect(busca.total).toBe(0);
   });
 
@@ -192,7 +199,7 @@ describe.skipIf(!databaseUrl)('Trabalho por cliente: HTTP e Postgres descartáve
     }
     expect((await pedir(`/trabalho/tarefas?cliente=${clienteB}`)).status).toBe(403);
     expect((await pedir('/trabalho/tarefas?cliente=sem')).status).toBe(403);
-    const clientes = await json('/trabalho/clientes');
+    const clientes = idsSchema.parse(await json('/trabalho/clientes'));
     expect(clientes.map((c: { id: string }) => c.id)).toEqual([clienteA]);
   });
 
@@ -212,7 +219,7 @@ describe.skipIf(!databaseUrl)('Trabalho por cliente: HTTP e Postgres descartáve
   });
 
   it('arquivo A entrega bytes; IDs B não chegam ao storage ou ao leitor migrado', async () => {
-    const listaDeAnexos = await json(`/trabalho/tarefas/${tarefas.A}/anexos`);
+    const listaDeAnexos = idsSchema.parse(await json(`/trabalho/tarefas/${tarefas.A}/anexos`));
     expect(listaDeAnexos.map((a: { id: string }) => a.id)).toEqual([anexos.A]);
     const a = await pedir(`/trabalho/tarefas/${tarefas.A}/anexos/${anexos.A}/arquivo`);
     expect(a.status).toBe(200);
@@ -239,11 +246,11 @@ describe.skipIf(!databaseUrl)('Trabalho por cliente: HTTP e Postgres descartáve
     const criar = (body: object) => pedir('/trabalho/tarefas', { method: 'POST', body: JSON.stringify(body) });
     const r = await criar({ listId: lista, clienteId: clienteA, title: 'Criada pelo HTTP' });
     expect(r.status, await r.clone().text()).toBe(201);
-    const nova = await r.json();
+    const nova = criadaSchema.parse(await r.json());
     expect(nova.clienteId).toBe(clienteA);
     const filha = await criar({ listId: lista, parentId: nova.id, title: 'Filha criada pelo HTTP' });
     expect(filha.status, await filha.clone().text()).toBe(201);
-    expect((await filha.json()).clienteId).toBe(clienteA);
+    expect(criadaSchema.parse(await filha.json()).clienteId).toBe(clienteA);
     const antes = await db.workTask.count({ where: { orgId } });
     for (const body of [
       { listId: lista, clienteId: clienteB, title: 'nega B' },
@@ -258,7 +265,7 @@ describe.skipIf(!databaseUrl)('Trabalho por cliente: HTTP e Postgres descartáve
   it('edita conteúdo de A com versão; recusa relações e tarefa B', async () => {
     const task = await db.workTask.findUniqueOrThrow({ where: { id: tarefas.A } });
     const body = { expectedUpdatedAt: task.updatedAt.toISOString(), title: 'A editada pelo HTTP' };
-    const d = await json(`/trabalho/tarefas/${tarefas.A}`, { method: 'PATCH', body: JSON.stringify(body) });
+    const d = edicaoSchema.parse(await json(`/trabalho/tarefas/${tarefas.A}`, { method: 'PATCH', body: JSON.stringify(body) }));
     expect(d.title).toBe(body.title);
     expect((await pedir(`/trabalho/tarefas/${tarefas.A}`, { method: 'PATCH', body: JSON.stringify(body) })).status).toBe(409);
     for (const relacao of [{ clienteId: clienteB }, { parentId: tarefas.B }, { listId: listaB }]) {
@@ -332,7 +339,7 @@ describe.skipIf(!databaseUrl)('Trabalho por cliente: HTTP e Postgres descartáve
     await gestor.configurar(orgId, adminId, userId, { modo: 'SELECTED', clienteIds: [] });
     try {
       expect((await pedir(`/trabalho/tarefas/${tarefas.A}`)).status).toBe(404);
-      expect((await json('/trabalho/tarefas')).total).toBe(0);
+      expect(listaSchema.parse(await json('/trabalho/tarefas')).total).toBe(0);
       expect((await pedir(`/trabalho/tarefas/${tarefas.A}/comentarios`, { method: 'POST', body: JSON.stringify({ text: 'revogado' }) })).status).toBe(404);
       expect((await pedir(`/trabalho/tarefas/${tarefas.A}/anexos/${anexos.A}/arquivo`)).status).toBe(404);
       expect(storageGet).not.toHaveBeenCalled();

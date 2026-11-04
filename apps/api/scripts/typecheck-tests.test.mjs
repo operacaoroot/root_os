@@ -16,6 +16,7 @@ test('every configured file is checked, including declarations and non-test root
 
 test('a type error in the last batch fails the command; temporary configs are removed', () => {
   const dir = mkdtempSync(join(tmpdir(), 'root-typecheck-'));
+  const tempBefore = readdirSync(tmpdir()).filter(f => f.startsWith('rootos-typecheck-')).sort();
   try {
     writeFileSync(join(dir, 'tsconfig.json'), JSON.stringify({compilerOptions:{noEmit:true,strict:true,skipLibCheck:true,types:[]}}));
     const good = join(dir, 'good.ts'), bad = join(dir, 'bad.ts');
@@ -26,6 +27,7 @@ test('a type error in the last batch fails the command; temporary configs are re
     writeFileSync(bad, 'export const bad: string = "fixed";');
     assert.equal(runChecks([[good], [bad]], join(dir, 'tsconfig.json'), {stdio:'pipe'}), 0);
     assert.equal(readdirSync(dir).filter(f => f.startsWith('.typecheck-tests-')).length, 0);
+    assert.deepEqual(readdirSync(tmpdir()).filter(f => f.startsWith('rootos-typecheck-')).sort(), tempBefore);
   } finally { rmSync(dir, {recursive:true, force:true}); }
 });
 

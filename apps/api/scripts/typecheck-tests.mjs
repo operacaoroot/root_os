@@ -5,6 +5,7 @@ import { createRequire } from 'node:module';
 import { dirname, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { randomUUID } from 'node:crypto';
+import { tmpdir } from 'node:os';
 
 const require = createRequire(import.meta.url);
 
@@ -38,7 +39,8 @@ export function planChecks(files, root, batchSize = 40) {
 }
 
 export function runChecks(checks, config, {stdio = 'inherit'} = {}) {
-  const temp = join(dirname(config), `.typecheck-tests-${randomUUID()}.json`);
+  // Keep generated root lists outside the source tree and its architecture scans.
+  const temp = join(tmpdir(), `rootos-typecheck-${randomUUID()}.json`);
   let exitCode = 0;
   try {
     for (const [i, files] of checks.entries()) {
