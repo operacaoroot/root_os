@@ -2,6 +2,7 @@ import { BadRequestException, Inject, Injectable, Logger, OnModuleInit } from '@
 import { ActorType, ApprovalState, Prisma } from '@prisma/client';
 import { PASTA_MODELO_DO_CLIENTE, linkDaPastaDoDrive } from '@mktos/shared';
 
+import { EfeitoClienteEscopoService } from '../../clientes-escopo/efeito-cliente-escopo.service';
 import { AuditService } from '../../audit/audit.service';
 import { comContexto, contextoAtual, novaCorrelacao } from '../../common/contexto-execucao';
 import { EfeitosRegistry, type ContextoDoEfeito } from '../../gateway/efeitos.registry';
@@ -84,6 +85,7 @@ export class PastaDoClienteService implements PastaDoClientePort, OnModuleInit {
     private readonly efeitos: EfeitosRegistry,
     private readonly audit: AuditService,
     @Inject(DRIVE_DO_CLIENTE) private readonly drive: DriveDoCliente,
+    private readonly efeitoClienteEscopo: EfeitoClienteEscopoService,
   ) {}
 
   onModuleInit(): void {
@@ -100,11 +102,15 @@ export class PastaDoClienteService implements PastaDoClientePort, OnModuleInit {
   }
 
   async garantir(pedido: PedidoDePasta): Promise<ResultadoDaPasta> {
+    const contexto = contextoAtual();
+    if (contexto?.actorType === ActorType.user && (!pedido.atorId || contexto.actorId !== pedido.atorId)) throw new BadRequestException('Origem humana do pedido não identificada.');
     return naEmpresa(pedido.orgId, pedido.atorId ?? null, () => this.garantirNaEmpresa(pedido));
   }
 
   private async garantirNaEmpresa(pedido: PedidoDePasta): Promise<ResultadoDaPasta> {
     const { orgId, partnerId } = pedido;
+    if (pedido.atorId) await this.efeitoClienteEscopo.exigirPessoa(orgId,pedido.atorId,partnerId,['tarefas.editar','leads.editar']);
+    else if (contextoAtual()?.actorType !== ActorType.system || contextoAtual()?.actorId !== ATOR_DA_PASTA) throw new BadRequestException('Origem do pedido não identificada.');
     const partner = await this.prisma.partner.findFirst({
       where: { id: partnerId, orgId },
       select: { id: true, isCliente: true, interno: true, razaoSocial: true, nomeFantasia: true, pastaDriveId: true, pastaDriveUrl: true },
@@ -175,6 +181,8 @@ export class PastaDoClienteService implements PastaDoClientePort, OnModuleInit {
   async efeitoCriarPasta(args: Record<string, unknown>, orgId: string, ctx: ContextoDoEfeito): Promise<ResultadoDoEfeito> {
     const clienteId = String(args.clienteId ?? '');
     const nomePedido = String(args.nome ?? '');
+    const conferir = () => this.efeitoClienteEscopo.exigir({orgId,clienteId,capabilityId:'drive.pasta.criar',resourceType:'cliente',resourceId:clienteId,args,ctx});
+    await conferir();
     try {
       const partner = await this.prisma.partner.findFirst({
         where: { id: clienteId, orgId, isCliente: true },
@@ -224,7 +232,9 @@ export class PastaDoClienteService implements PastaDoClientePort, OnModuleInit {
         if (!(await this.drive.dentroDaRaiz(orgId, modelo.id, raiz.id))) {
           throw new BadRequestException('o modelo de pasta está fora da raiz dos clientes: nada foi criado.');
         }
+        await conferir();
         pasta = await this.drive.criarPasta(orgId, raiz.id, nomePedido);
+        await conferir();
         const r = await this.drive.copiarEstrutura(orgId, modelo.id, pasta.id);
         copia = { pastasCriadas: r.pastasCriadas, arquivosCopiados: r.arquivosCopiados };
         ligada = false;
@@ -235,6 +245,7 @@ export class PastaDoClienteService implements PastaDoClientePort, OnModuleInit {
       const url = pasta.url ?? linkDaPastaDoDrive(pasta.id);
       // (a) Conferido de novo logo antes de gravar; a corrida que passar daqui o índice único barra.
       await this.exigirPastaLivre(orgId, partner.id, pasta.id);
+      await conferir();
       const gravou = await this.prisma.partner
         .updateMany({
           where: { id: partner.id, orgId, pastaDriveId: null },
