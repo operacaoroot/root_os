@@ -26,11 +26,11 @@
   --os-ac2: 50 74 5;
   --os-ac-dim: 143 173 96;
   --os-ac-ink: 255 255 255;
-  --os-mag: 163 53 53;
+  --os-mag: 150 44 44;
   --os-cy: 0 100 82;
   --os-ok: 0 100 82;
   --os-warn: 122 84 0;
-  --os-err: 163 53 53;
+  --os-err: 150 44 44;
   --os-grid: transparent;
   /* Fundo, tinta e fonte vêm do tema global (P-77). Os tokens acima seguram o Marketing no claro
      quando alguém escolhe o tema escuro, para as telas do OS e as do .estudio não se misturarem. */

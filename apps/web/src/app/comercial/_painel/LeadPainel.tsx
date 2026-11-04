@@ -226,7 +226,7 @@ export function LeadPainel({ estado }: { estado: EstadoDoPainel }) {
                 {nome}
               </h2>
               <p className="mt-0.5 truncate text-[12.5px] text-muted">
-                {f ? (f.empresa && f.empresa !== f.nome ? f.nome : f.telefone ?? 'telefone ausente') : ' '}
+                {f ? (f.empresa && f.empresa !== f.nome ? f.nome : f.telefone ?? 'sem telefone') : ' '}
               </p>
             </div>
             <button type="button" onClick={fecharComCuidado} aria-label="fechar o painel do lead" className={`${BOTAO} shrink-0 max-md:min-w-[44px]`}>
@@ -285,7 +285,7 @@ export function LeadPainel({ estado }: { estado: EstadoDoPainel }) {
               ) : whats ? (
                 <a href={whats} target="_blank" rel="noreferrer" className={BOTAO}>WhatsApp</a>
               ) : (
-                <span className={`${BOTAO} cursor-default opacity-50`} title="telefone ausente">WhatsApp</span>
+                <span className={`${BOTAO} cursor-default opacity-50`} title="Este lead ainda não tem telefone.">WhatsApp</span>
               )}
             </span>
           </div>

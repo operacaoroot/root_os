@@ -211,14 +211,14 @@ function FinanceiroSessao() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-end justify-between gap-4">
-        <div>
+      <div className="flex flex-wrap items-end justify-between gap-4">
+        <div className="min-w-[14rem] flex-1">
           <p className="text-sm text-muted">
             Contas, lançamentos, fluxo de caixa e integração bancária (Open Finance / OFX).
           </p>
         </div>
         {summary && (
-          <div className="text-right">
+          <div className="shrink-0 min-[820px]:text-right">
             <div className="text-[11px] uppercase tracking-wide text-muted">Saldo total</div>
             <div className={`text-2xl font-semibold ${summary.saldoTotal >= 0 ? 'text-good' : 'text-bad'}`}>
               {brl(summary.saldoTotal)}

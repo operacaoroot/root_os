@@ -737,7 +737,7 @@ function QuadroDeTarefas(props: {
 
   return (
     <div className="space-y-3">
-      <div className="flex items-center gap-2 text-sm">
+      <div className="flex flex-wrap items-center gap-2 text-sm">
         <span className="text-muted">Colunas por</span>
         {(['pessoa', 'area', 'situacao'] as Agrupar[]).filter((g) => !areaFixa || g !== 'area').map((g) => (
           <button

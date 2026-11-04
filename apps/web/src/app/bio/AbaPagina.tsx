@@ -271,12 +271,12 @@ function LinhaDoLink({
 }) {
   return (
     <div
-      className={`flex items-center gap-3 rounded-lg border border-border bg-surface-2 px-3 py-2 ${
+      className={`flex flex-wrap items-center gap-3 rounded-lg border border-border bg-surface-2 px-3 py-2 ${
         link.ativo ? '' : 'opacity-50'
       }`}
     >
       <div className="min-w-0 flex-1">
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <span className="truncate text-sm">{link.rotulo}</span>
           {link.destaque && <Chip tone="brand">destaque</Chip>}
           <Chip>{link.tipo}</Chip>

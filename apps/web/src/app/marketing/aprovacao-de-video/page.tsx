@@ -17,7 +17,7 @@ const CSS = `
 .aprov *{box-sizing:border-box}
 .aprov .topo{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:12px}
 .aprov button,.aprov select,.aprov input[type=file]{font:inherit;color:rgb(var(--os-tx));background:rgb(var(--os-s2));border:1px solid var(--ln);border-radius:6px;padding:6px 10px;cursor:pointer}
-.aprov button.pri{background:var(--ac);border-color:var(--ac);color:rgb(var(--os-ac-ink))}
+.aprov button.pri{background:var(--ac);border-color:var(--ac);color:#fff}
 .aprov main{display:grid;grid-template-columns:minmax(0,1fr) 340px;gap:16px}
 @media(max-width:900px){.aprov main{grid-template-columns:1fr}}
 .aprov #stage{position:relative;background:#000;border-radius:8px;overflow:hidden;align-self:start}
