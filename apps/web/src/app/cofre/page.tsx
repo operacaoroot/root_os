@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import * as Icons from 'lucide-react';
 import { API_BASE } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
+import { Depositos } from './Depositos';
 
 /*
  * COFRE DA EMPRESA — senhas, dados e documentos dos sócios.
@@ -198,6 +199,7 @@ export default function CofrePage() {
 
       {sessao && (
         <>
+          {podeEditar && <Depositos chamar={chamar} />}
           <div className="flex flex-wrap items-center gap-2">
             {TIPOS.map((t) => (
               <button key={t.k} onClick={() => setFiltro(t.k)} aria-pressed={filtro === t.k}
