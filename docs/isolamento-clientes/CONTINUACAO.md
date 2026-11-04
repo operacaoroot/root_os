@@ -49,4 +49,4 @@ A inferência com servidor llama.cpp real ganhou comando separado `test:nativo`,
 
 Foram encontrados dois defeitos reais além das fixtures: o seed comercial variava eventos conforme o relógio, e a migração legada de memória tentava inserir novamente uma identidade protegida. Os reparos têm regressões de idempotência, concorrência e integridade do corpo. A reversão destrutiva da migração foi substituída por prévia e recusa explícita de execução; nenhuma dessas rotinas foi executada em produção.
 
-Estado deste registro: implementação e focais concluídos; regressões integrais, CI do GitHub e publicação ainda em validação. Atualizar com commit, resultados e prova de runtime antes de declarar o lote publicado.
+As provas finais são vinculadas ao SHA no PR #47 e no relatório da release `clientes-comercial-financeiro-20261104`. O deploy exige build, testes do artefato, prova HTTP e CI aprovados, preserva a cadeia Compose e cria backup e rollback antes de trocar as imagens. Este documento descreve o recorte e os gates; sozinho não comprova publicação.

@@ -16,7 +16,6 @@ test('every configured file is checked, including declarations and non-test root
 
 test('a type error in the last batch fails the command; temporary configs are removed', () => {
   const dir = mkdtempSync(join(tmpdir(), 'root-typecheck-'));
-  const tempBefore = readdirSync(tmpdir()).filter(f => f.startsWith('rootos-typecheck-')).sort();
   try {
     writeFileSync(join(dir, 'tsconfig.json'), JSON.stringify({compilerOptions:{noEmit:true,strict:true,skipLibCheck:true,types:[]}}));
     const good = join(dir, 'good.ts'), bad = join(dir, 'bad.ts');
@@ -27,7 +26,7 @@ test('a type error in the last batch fails the command; temporary configs are re
     writeFileSync(bad, 'export const bad: string = "fixed";');
     assert.equal(runChecks([[good], [bad]], join(dir, 'tsconfig.json'), {stdio:'pipe'}), 0);
     assert.equal(readdirSync(dir).filter(f => f.startsWith('.typecheck-tests-')).length, 0);
-    assert.deepEqual(readdirSync(tmpdir()).filter(f => f.startsWith('rootos-typecheck-')).sort(), tempBefore);
+    assert.deepEqual(readdirSync(join(dir, 'node_modules/.cache')).filter(f => f.startsWith('rootos-typecheck-')), []);
   } finally { rmSync(dir, {recursive:true, force:true}); }
 });
 
@@ -41,5 +40,17 @@ test('global augmentations in different batches are checked together', () => {
     writeFileSync(a, 'export {}; declare global { interface RootGlobal { id: string } }');
     writeFileSync(b, 'export {}; declare global { interface RootGlobal { id: number } }');
     assert.equal(runChecks(planChecks([a,b], dir, 1), config, {stdio:'pipe'}), 2);
+  } finally { rmSync(dir, {recursive:true,force:true}); }
+});
+
+test('implicit type packages are resolved from the original project', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'root-type-roots-'));
+  try {
+    mkdirSync(join(dir, 'node_modules/@types/qa-ambient'), {recursive:true});
+    writeFileSync(join(dir, 'node_modules/@types/qa-ambient/index.d.ts'), 'interface QaAmbient { id: string }');
+    const config = join(dir, 'tsconfig.json'), file = join(dir, 'case.ts');
+    writeFileSync(config, JSON.stringify({compilerOptions:{noEmit:true,strict:true,skipLibCheck:true}}));
+    writeFileSync(file, 'export const value: QaAmbient = { id: "ok" };');
+    assert.equal(runChecks([[file]], config, {stdio:'pipe'}), 0);
   } finally { rmSync(dir, {recursive:true,force:true}); }
 });

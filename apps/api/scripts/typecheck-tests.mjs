@@ -1,11 +1,10 @@
 import ts from 'typescript';
 import { spawnSync } from 'node:child_process';
-import { writeFileSync, unlinkSync, readFileSync, existsSync } from 'node:fs';
+import { writeFileSync, unlinkSync, readFileSync, existsSync, mkdirSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { dirname, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { randomUUID } from 'node:crypto';
-import { tmpdir } from 'node:os';
 
 const require = createRequire(import.meta.url);
 
@@ -39,8 +38,11 @@ export function planChecks(files, root, batchSize = 40) {
 }
 
 export function runChecks(checks, config, {stdio = 'inherit'} = {}) {
-  // Keep generated root lists outside the source tree and its architecture scans.
-  const temp = join(tmpdir(), `rootos-typecheck-${randomUUID()}.json`);
+  // node_modules is excluded from source scans. Keeping this under the project
+  // also preserves TypeScript's implicit @types resolution from its ancestors.
+  const cache = join(dirname(config), 'node_modules/.cache');
+  mkdirSync(cache, {recursive:true});
+  const temp = join(cache, `rootos-typecheck-${randomUUID()}.json`);
   let exitCode = 0;
   try {
     for (const [i, files] of checks.entries()) {

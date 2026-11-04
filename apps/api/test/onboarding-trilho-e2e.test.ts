@@ -175,6 +175,8 @@ describe.skipIf(!URL)('o trilho de onboarding, de ponta a ponta', () => {
         prisma.eventLog.deleteMany({ where: { orgId } }),
         prisma.$executeRawUnsafe('ALTER TABLE "EventLog" ENABLE RULE eventlog_sem_delete'),
       ]);
+      await prisma.clienteAcessoVinculo.deleteMany({ where: { orgId } });
+      await prisma.clienteAcessoPerfil.deleteMany({ where: { orgId } });
       await prisma.user.deleteMany({ where: { orgId } });
       await prisma.role.deleteMany({ where: { orgId } });
       await prisma.org.deleteMany({ where: { id: orgId } });
