@@ -374,7 +374,14 @@ export class ContratoVivoService implements OnModuleInit {
         aviso: c.ultimoAviso,
       }))
       : await this.parcelasDoAcordo(orgId, leadId, hoje);
-    const valorCentavos = somaImportada ?? ficha?.valorCentavos ?? parcelas.reduce((s, c) => s + c.valorCentavos, 0);
+    // Etapa 5 (F-09): uma regra só para o valor do negócio. O registro do contrato (a verdade desde a
+    // etapa 4); sem ele, o valor negociado; sem ele, a soma do importado ou a proposta; por fim, as parcelas.
+    const registro = await this.prisma.comercialContrato.findFirst({
+      where: { orgId, leadId, tipo: 'contrato', valorCentavos: { not: null }, estado: { notIn: ['cancelado', 'rascunho'] } },
+      orderBy: { criadoEm: 'desc' },
+      select: { valorCentavos: true },
+    });
+    const valorCentavos = registro?.valorCentavos ?? ficha?.valorNegociadoCentavos ?? somaImportada ?? ficha?.valorCentavos ?? parcelas.reduce((s, c) => s + c.valorCentavos, 0);
     return {
       leadId,
       cliente: ficha?.empresa ?? lead.name,
