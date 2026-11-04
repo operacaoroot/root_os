@@ -45,6 +45,16 @@ const MARCA = `e2${Date.now().toString(36).slice(-6)}`;
 const SUFIXO = Date.now().toString().slice(-8);
 const DIA = 86_400_000;
 
+/** Dependências fora deste recorte falham se o controller passar a usá-las. */
+function dependenciaNaoExercida<T extends object>(nome: string): T {
+  return new Proxy({} as T, {
+    get(_target, propriedade) {
+      throw new Error(`${nome}.${String(propriedade)} não faz parte do teste de inteligência comercial.`);
+    },
+  });
+}
+type DependenciasDoController = ConstructorParameters<typeof ComercialController>;
+
 /** A memória em memória: porChave, criar, alterar, restaurar (o que as notas do comercial usam). */
 function memoriaDeTeste() {
   const notas = new Map<string, { id: string; chave: string; body: string; versao: number; arquivadoEm: null }>();
@@ -133,7 +143,15 @@ describe.skipIf(!URL)('a inteligência do cockpit, fase 2, contra o banco', { ti
     relatorios = new RelatorioDaSemanaService(p, mem, tarefas, llm);
     relatorios.inscrever();
     torre = new TorreService(p, config, vigia, undefined, llm, relatorios);
-    controller = new ComercialController(fichas, decisoes, config, relogio, undefined as never, undefined as never, undefined as never, undefined as never); // P5, I4, I3 e I5: o mover, as reações, a sala por versão e a leitura não são exercidos aqui
+    controller = new ComercialController(
+      fichas, decisoes, config, relogio,
+      dependenciaNaoExercida<DependenciasDoController[4]>('MoverService'),
+      dependenciaNaoExercida<DependenciasDoController[5]>('ReacoesDaPropostaService'),
+      dependenciaNaoExercida<DependenciasDoController[6]>('SalaVersaoService'),
+      dependenciaNaoExercida<DependenciasDoController[7]>('AreaDoClienteService'),
+      dependenciaNaoExercida<DependenciasDoController[8]>('LeituraEReacaoService'),
+      dependenciaNaoExercida<DependenciasDoController[9]>('LeadRepetidoService'),
+    );
   });
 
   afterAll(async () => {

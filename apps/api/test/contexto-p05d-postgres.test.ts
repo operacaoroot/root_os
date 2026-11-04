@@ -62,7 +62,7 @@ describe.skipIf(!ownerUrl || !appUrl).sequential('P-05d: persistência real e pa
   const envKeys = ['OPENAI_API_KEY', 'OPENAI_BASE_URL', 'OBSIDIAN_FONTE', 'OBSIDIAN_DRIVE_FOLDER_ID', 'OBSIDIAN_VAULT_PATH'] as const;
   const savedEnv = new Map<string, string | undefined>();
   const na = <T>(orgId: string, fn: () => Promise<T>) => comContexto({ orgId, actorType: ActorType.user,
-    actorId: 'operador-sintetico', correlationId: marca, origem: 'script' }, async () => await fn());
+    actorId: `operador-${orgId}`, correlationId: marca, origem: 'script' }, async () => await fn());
   const row = (id: string) => owner.contextItem.findUniqueOrThrow({ where: { id } });
   const history = (id: string) => owner.contextItemVersion.findMany({ where: { itemId: id }, orderBy: { versao: 'asc' } });
   const itemEvents = () => owner.eventLog.findMany({ where: { orgId: A, tipo: { startsWith: 'memoria.item.' } }, orderBy: { seq: 'asc' } });
@@ -92,6 +92,11 @@ describe.skipIf(!ownerUrl || !appUrl).sequential('P-05d: persistência real e pa
     }
     await owner.org.create({ data: { id: A, name: 'Organização sintética A', slug: 'root' } });
     await owner.org.create({ data: { id: B, name: 'Organização sintética B', slug: B } });
+    const permissoes = await Promise.all(['obsidian.ver','obsidian.editar'].map(key=>owner.permission.upsert({where:{key},create:{key},update:{}})));
+    for (const orgId of [A,B]) {
+      const papel=await owner.role.create({data:{orgId,key:`operador-${marca}`,name:'Operador sintético',permissions:{connect:permissoes.map(p=>({id:p.id}))}}});
+      await owner.user.create({data:{id:`operador-${orgId}`,orgId,name:'Operador sintético',email:`${orgId}@qa.invalid`,passwordHash:'x',roles:{connect:{id:papel.id}}}});
+    }
     eventos = new EventLogService(app as unknown as PrismaService);
     memoria = new MemoriaService(app as unknown as PrismaService, eventos);
     obsidian = new ObsidianService(app as unknown as PrismaService, new ConectoresConfiguradosRegistry(),
@@ -232,8 +237,10 @@ describe.skipIf(!ownerUrl || !appUrl).sequential('P-05d: persistência real e pa
     expect(await na(A, () => memoria.obter(A, b.id))).toBeNull();
     await expect(na(A, () => memoria.alterar(A, b.id, { body: 'tentativa cruzada' }))).rejects.toThrow('Nota não encontrada');
     expect(await na(A, () => app.$executeRawUnsafe('UPDATE "ContextItem" SET title=$1 WHERE id=$2', 'tentativa cruzada', b.id))).toBe(0);
+    const antesDaTentativa = await owner.contextItem.findMany({where:{orgId:A},orderBy:{id:'asc'}});
     await expect(na(A, () => app.$executeRawUnsafe('UPDATE "ContextItem" SET "orgId"=$1 WHERE "orgId"=$2', B, A)))
-      .rejects.toThrow(/row-level security/);
+      .rejects.toThrow(/row-level security|Context identity cannot be reassigned/);
+    expect(await owner.contextItem.findMany({where:{orgId:A},orderBy:{id:'asc'}})).toEqual(antesDaTentativa);
     const result = await na(A, () => memoria.projetarDaVault(A, [{ caminho: 'sem-alvo-a.md', title: 'Sem alvo A',
       body: 'Nota sintética A', tags: [], cabecalho: { kind: ContextKind.nota, validFrom: null, validUntil: null, substitui: 'somente-b.md' } }],
     { vistos: files.map((f) => f.caminho) }));

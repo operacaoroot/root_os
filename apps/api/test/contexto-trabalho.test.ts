@@ -59,8 +59,15 @@ describe.skipIf(!URL)('Contexto e tarefa no Postgres descartável', () => {
   async function limpar() {
     await db.workContextSource.deleteMany({ where: { orgId: org } });
     await db.workTask.deleteMany({ where: { orgId: org } }); await db.auditLog.deleteMany({ where: { orgId: org } });
-    await db.contextItemVersion.deleteMany({ where: { orgId: org } }); await db.contextItem.deleteMany({ where: { orgId: org } });
     await db.knowledgeNote.deleteMany({ where: { orgId: org } });
+    // Exclusão apenas das fixtures desta suíte no banco descartável validado acima.
+    await db.$transaction(async (tx) => {
+      await tx.$executeRawUnsafe('SET LOCAL session_replication_role = replica');
+      await tx.contextKeyClaim.deleteMany({ where: { orgId: org } });
+      await tx.contextItemVersion.deleteMany({ where: { orgId: org } });
+      await tx.contextItem.deleteMany({ where: { orgId: org } });
+      await tx.$executeRawUnsafe('SET LOCAL session_replication_role = origin');
+    });
   }
   beforeAll(async () => {
     db = new PrismaClient({ datasources: { db: { url: URL } } });
@@ -126,20 +133,20 @@ describe.skipIf(!URL)('Contexto e tarefa no Postgres descartável', () => {
     expect(await memoria.obter(org, noteId)).toBeNull();
     expect(await contexto(() => memoria.obter(org, noteId))).not.toBeNull();
     await db.role.update({ where: { id: roleId }, data: { permissions: { disconnect: { key: 'obsidian.ver' } } } });
-    expect(await contexto(() => memoria.obter(org, noteId))).toBeNull();
+    expect(await contexto(() => status(memoria.obter(org, noteId)))).toBe(403);
     await db.role.update({ where: { id: roleId }, data: { permissions: { connect: { key: 'obsidian.ver' } } } });
     await db.user.update({ where: { id: pessoa }, data: { isActive: false } });
-    expect((await contexto(() => memoria.buscar(org, 'Material'))).itens).toEqual([]);
+    expect(await contexto(() => status(memoria.buscar(org, 'Material')))).toBe(403);
   });
   it('índice Knowledge respeita restrição pela chave/path, inclusive leitor ausente', async () => {
     const path = 'qa-contexto/' + noteId + '.md'; await db.contextItem.update({ where: { id: noteId }, data: { chave: 'vault:' + path } });
-    const kn = await db.knowledgeNote.create({ data: { orgId: org, path, title: 'Material QA', content: 'Material sintético original', fileTime: new Date(), wordCount: 3 } });
-    expect(await knowledge.get(org, kn.id)).toBeNull();
-    expect((await knowledge.search(org, 'Material')).items).toEqual([]);
-    expect((await knowledge.list(org)).total).toBe(0);
-    expect(await knowledge.get(org, kn.id, pessoa)).not.toBeNull();
+    const kn = await db.knowledgeNote.create({ data: { orgId: org, path, title: 'Material QA', content: 'Material sintético original', fileTime: new Date(), wordCount: 3, tags: [], links: [] } });
+    await expect(knowledge.get(org, kn.id, '')).rejects.toThrow();
+    await expect(knowledge.search(org, 'Material', 8, '')).rejects.toThrow();
+    await expect(knowledge.list(org, '')).rejects.toThrow();
+    expect(await contexto(() => knowledge.get(org, kn.id, pessoa))).not.toBeNull();
     await db.contextItem.update({ where: { id: noteId }, data: { leitores: [] } });
-    expect(await knowledge.get(org, kn.id, pessoa)).toBeNull();
+    expect(await contexto(() => knowledge.get(org, kn.id, pessoa))).toBeNull();
   });
   it('documentação sem pessoa não exporta corpo ou título de fonte restrita', async () => {
     await db.contextItem.update({ where: { id: noteId }, data: { kind: 'definicao' } });
@@ -169,8 +176,10 @@ describe.skipIf(!URL)('Contexto e tarefa no Postgres descartável', () => {
     expect(old.fontes[0]).toMatchObject({ versionId, versao: 1, body: 'Material sintético original', sourceRef: 'QA local', versaoAtual: 2 });
     expect((await svc.criar(org, pessoa, noteId, p)).taskId).toBe(a.taskId);
     expect(await status(svc.criar(org, pessoa, noteId, req()))).toBe(409);
-    const selected = await svc.criar(org, pessoa, noteId, { ...req(), expectedItemVersion: 2 });
-    expect(selected.fonte).toMatchObject({ versionId, versao: 1, versaoAtual: 2 });
+    expect(await status(svc.criar(org, pessoa, noteId, { ...req(), expectedItemVersion: 2 }))).toBe(409);
+    const atual = await db.contextItemVersion.findFirstOrThrow({ where: { itemId: noteId, versao: 2 } });
+    const selected = await svc.criar(org, pessoa, noteId, { ...req(), versionId: atual.id, contentHash: atual.contentHash, expectedItemVersion: 2 });
+    expect(selected.fonte).toMatchObject({ versionId: atual.id, versao: 2, versaoAtual: 2, sourceRef: 'Origem atualizada' });
   });
   it('versão de outro item, lista ou responsável de outra empresa não causa efeito', async () => {
     const f = await fonte('Outra fonte');

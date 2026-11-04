@@ -3,7 +3,7 @@ import { randomUUID } from 'node:crypto';
 import os from 'node:os';
 import path from 'node:path';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
-import { ActorType, ContextSource, PautaFamilia, PautaObjetivo, PrismaClient } from '@prisma/client';
+import { ActorType, ContextSource, PautaFamilia, PautaObjetivo, Prisma, PrismaClient } from '@prisma/client';
 import { bytesUtf8 } from '@mktos/shared';
 import { comContexto } from '../src/common/contexto-execucao';
 import { EventLogService } from '../src/gateway/event-log.service';
@@ -48,8 +48,8 @@ import { versionarVault } from './vault-com-git';
  */
 
 const CHAVE = 'sk-teste-nao-e-chave';
-const ORG = 'org-da-casa';
-const VIZINHA = 'org-vizinha';
+const ORG: string = randomUUID();
+const VIZINHA: string = randomUUID();
 const MTIME = new Date('2026-09-30T12:00:00Z');
 const VARIAVEIS = ['OPENAI_BASE_URL', 'OPENAI_API_KEY', 'OBSIDIAN_FONTE', 'OBSIDIAN_VAULT_PATH'] as const;
 const LIMITE_DOCUMENTADO = { entradas: 2_048, porEntrada: 8_192, porPedido: 300_000 };
@@ -224,6 +224,12 @@ function indiceEmMemoria() {
   let linhas: Linha[] = [];
   let seq = 0;
   const prisma = {
+    $transaction: async (fn: (tx: unknown) => Promise<unknown>) => fn(prisma),
+    $executeRaw: async () => 0,
+    $queryRawUnsafe: async (sql: string, orgId: string) => {
+      if (sql.includes('"ContextMovementIntent"') && orgId === ORG) return [{ pendente: false }];
+      throw new Error('Consulta inesperada no índice sintético');
+    },
     // Desde a ROOT-05c só a empresa da casa (slug `root`) reindexa; ORG faz esse papel aqui.
     org: {
       findFirst: async ({ where }: { where: { id: string; slug: string } }) =>
@@ -617,28 +623,41 @@ interface NotaDoIndice {
 
 /** O índice como a busca o lê: KNN só sobre linha com vetor; ILIKE sobre título e conteúdo. */
 function indiceParaBusca(notas: NotaDoIndice[]) {
-  const linha = (n: NotaDoIndice, score: number) => ({
-    id: n.id, path: `${n.id}.md`, folder: null, title: n.title, tags: [], links: [], wordCount: 3,
-    fileTime: MTIME, content: n.content, score,
+  const linha = (n: NotaDoIndice) => ({
+    id:n.id, orgId:n.orgId, path:`${n.id}.md`, folder:null, title:n.title, tags:[], links:[], wordCount:3,
+    fileTime:MTIME, indexedAt:MTIME, content:n.content, comVetor:n.vetor, mirrorOrigin:null,
+    canonicalItemId:null, canonicalVersionId:null, canonicalVersion:null, canonicalKey:null,
+    canonicalSourceType:null, canonicalSourceRef:null, canonicalContentHash:null,
   });
-  return {
-    $queryRawUnsafe: async (sql: string, ...params: unknown[]) => {
-      const daEmpresa = notas.filter((n) => n.orgId === params[1]);
-      const limite = Number(params[2]);
-      if (sql.includes('ORDER BY embedding <=>')) {
-        return daEmpresa.filter((n) => n.vetor).slice(0, limite).map((n) => linha(n, 0.9));
-      }
-      const termo = String(params[0]).replace(/^%|%$/g, '').toLowerCase();
-      const soSemVetor = sql.includes('embedding IS NULL');
-      return daEmpresa
-        .filter((n) => `${n.title}\n${n.content}`.toLowerCase().includes(termo) && (!soSemVetor || !n.vetor))
-        .slice(0, limite)
-        .map((n) => linha(n, 0));
+  const db = {
+    contextItem:{findMany:async()=>[]},
+    $executeRaw:async()=>0,
+    $queryRaw:async(strings:TemplateStringsArray,...values:unknown[])=>{
+      const q=Prisma.sql(strings,...values), sql=q.text, params=q.values;
+      if(sql.includes('FROM "Org"')) return [ORG,VIZINHA].includes(String(params[0]))?[{id:params[0]}]:[];
+      if(sql.includes('FROM "KnowledgeNote" kn')) return notas.filter(n=>n.orgId===params[0]).map(linha);
+      const sem=sql.includes('ORDER BY embedding<=>');
+      const orgId=params[sem?1:0], take=Number(params.at(-1));
+      const ids=new Set(params.filter(v=>typeof v==='string'));
+      const termo=String(params.find(v=>typeof v==='string'&&v.startsWith('%'))??'').replace(/^%|%$/g,'').toLowerCase();
+      return notas.filter(n=>n.orgId===orgId&&ids.has(n.id))
+        .filter(n=>sem?n.vetor:(!sql.includes('embedding IS NULL')||!n.vetor)&&`${n.title}\n${n.content}`.toLowerCase().includes(termo))
+        .slice(0,take).map(n=>({id:n.id,score:sem?0.9:0}));
     },
+    $transaction:async<T>(fn:(tx:unknown)=>Promise<T>):Promise<T>=>fn(db),
   };
+  return db;
+}
+async function buscarIndice(svc:ObsidianService, orgId:string, query:string, limit=8) {
+  return comContexto({orgId,actorType:ActorType.system,correlationId:randomUUID(),origem:'script'}, async()=>{
+    const r=await svc.buscarIndiceInternoSemSolicitante(orgId,query,limit);
+    expect(r.natureza).toBe('indice_interno_sem_solicitante');
+    expect(r.alcanceOnboarding.estado).toBe('nao_conferida');
+    return r;
+  });
 }
 
-describe('a busca da vault (índice) com cobertura de vetor zero, parcial e total', () => {
+describe('a busca interna da vault com cobertura de vetor zero, parcial e total', () => {
   const comFrase = (id: string, orgId: string, vetor: boolean): NotaDoIndice => ({
     id, orgId, title: 'Cobrança', content: `A ${FRASE} começa em D+3.`, vetor,
   });
@@ -650,7 +669,7 @@ describe('a busca da vault (índice) com cobertura de vetor zero, parcial e tota
     vi.stubGlobal('fetch', dubleDoFornecedor().buscar);
     const svc = montarObsidian({}, indiceParaBusca([qualquer('n1', false), comFrase('n2', ORG, false), qualquer('n3', false)]));
 
-    const r = await svc.search(ORG, FRASE, 8);
+    const r = await buscarIndice(svc, ORG, FRASE, 8);
 
     expect({ mode: r.mode, ids: r.items.map((i) => i.id) }).toEqual({ mode: 'keyword', ids: ['n2'] });
   });
@@ -662,7 +681,7 @@ describe('a busca da vault (índice) com cobertura de vetor zero, parcial e tota
       indiceParaBusca([qualquer('n1', true), qualquer('n2', true), qualquer('n3', true), comFrase('n4', ORG, false)]),
     );
 
-    const r = await svc.search(ORG, FRASE, 8);
+    const r = await buscarIndice(svc, ORG, FRASE, 8);
 
     expect({ mode: r.mode, ids: r.items.map((i) => i.id), scores: r.items.map((i) => i.score) }).toEqual({
       mode: 'semantic',
@@ -675,7 +694,7 @@ describe('a busca da vault (índice) com cobertura de vetor zero, parcial e tota
     vi.stubGlobal('fetch', dubleDoFornecedor().buscar);
     const svc = montarObsidian({}, indiceParaBusca([qualquer('n1', true), comFrase('n2', ORG, true)]));
 
-    const r = await svc.search(ORG, FRASE, 8);
+    const r = await buscarIndice(svc, ORG, FRASE, 8);
 
     expect({ mode: r.mode, ids: r.items.map((i) => i.id) }).toEqual({ mode: 'semantic', ids: ['n1', 'n2'] });
   });
@@ -685,7 +704,7 @@ describe('a busca da vault (índice) com cobertura de vetor zero, parcial e tota
     const svc = montarObsidian({}, indiceParaBusca([qualquer('n1', true), comFrase('n2', ORG, false)]));
     avisosDe(svc);
 
-    const r = await svc.search(ORG, FRASE, 8);
+    const r = await buscarIndice(svc, ORG, FRASE, 8);
 
     expect({ mode: r.mode, ids: r.items.map((i) => i.id) }).toEqual({ mode: 'keyword', ids: ['n2'] });
   });
@@ -699,7 +718,7 @@ describe('a busca da vault (índice) com cobertura de vetor zero, parcial e tota
     vi.stubGlobal('fetch', async () => {
       throw new DOMException('The operation was aborted due to timeout', 'TimeoutError');
     });
-    const r = await svc.search(ORG, FRASE, 8);
+    const r = await buscarIndice(svc, ORG, FRASE, 8);
     expect({ mode: r.mode, ids: r.items.map((i) => i.id) }).toEqual({ mode: 'keyword', ids: ['n2'] });
   }, 3_000);
 
@@ -708,8 +727,8 @@ describe('a busca da vault (índice) com cobertura de vetor zero, parcial e tota
     const notas = [qualquer('n1', true), comFrase('v1', VIZINHA, false), comFrase('v2', VIZINHA, true)];
     const svc = montarObsidian({}, indiceParaBusca(notas));
 
-    const parcial = await svc.search(ORG, FRASE, 8);
-    const zero = await montarObsidian({}, indiceParaBusca(notas.filter((n) => n.id !== 'n1'))).search(ORG, FRASE, 8);
+    const parcial = await buscarIndice(svc, ORG, FRASE, 8);
+    const zero = await buscarIndice(montarObsidian({}, indiceParaBusca(notas.filter((n) => n.id !== 'n1'))), ORG, FRASE, 8);
 
     expect(parcial.items.map((i) => i.id)).toEqual(['n1']);
     expect(zero.items).toEqual([]);
@@ -734,6 +753,11 @@ function memoriaParaBusca(itens: ItemDaMemoria[]) {
   });
   return {
     $queryRawUnsafe: async (sql: string, ...params: unknown[]) => {
+      if (sql.includes('WITH acesso AS')) {
+        const daEmpresa = itens.filter(i=>i.orgId===params[0]);
+        const ids = params[2] as string[];
+        return [{autorizado:params[1]===null, ids:daEmpresa.filter(i=>ids.includes(i.id)).map(i=>i.id),comVetor:BigInt(daEmpresa.filter(i=>i.vetor).length)}];
+      }
       const daEmpresa = itens.filter((i) => i.orgId === params[1]);
       const limite = Number(params[2]);
       if (sql.includes('ORDER BY embedding <=>')) {
@@ -934,8 +958,8 @@ exigirBancoDescartavel(URL ?? '', 'ESCREVE nele (empresas, índice da vault, mem
 
 describe.skipIf(!URL)('com Postgres e pgvector: busca híbrida, filtros, empresa e versões', () => {
   const MARCA = `res_${randomUUID().slice(0, 8)}`;
-  const A = `org-res-a-${MARCA}`;
-  const B = `org-res-b-${MARCA}`;
+  const A = randomUUID();
+  const B = randomUUID();
   const DIM = 1536;
   let prisma: PrismaClient;
   let memoria: MemoriaService;
@@ -949,8 +973,14 @@ describe.skipIf(!URL)('com Postgres e pgvector: busca híbrida, filtros, empresa
 
   async function limpar() {
     const orgId = { in: [A, B] };
-    await prisma.contextItem.deleteMany({ where: { orgId } });
     await prisma.knowledgeNote.deleteMany({ where: { orgId } });
+    await prisma.$transaction(async (tx) => {
+      await tx.$executeRawUnsafe('SET LOCAL session_replication_role = replica');
+      await tx.contextKeyClaim.deleteMany({ where: { orgId } });
+      await tx.contextItemVersion.deleteMany({ where: { orgId } });
+      await tx.contextItem.deleteMany({ where: { orgId } });
+      await tx.$executeRawUnsafe('SET LOCAL session_replication_role = origin');
+    });
     await prisma.pautaReferencia.deleteMany({ where: { orgId } });
   }
 
@@ -969,6 +999,7 @@ describe.skipIf(!URL)('com Postgres e pgvector: busca híbrida, filtros, empresa
   afterAll(async () => {
     if (!prisma) return;
     await limpar();
+    expect(await prisma.contextKeyClaim.count({ where: { orgId: { in: [A, B] } } })).toBe(0);
     await prisma.$disconnect();
   });
 
@@ -995,9 +1026,9 @@ describe.skipIf(!URL)('com Postgres e pgvector: busca híbrida, filtros, empresa
     const b2 = await notaNoIndice(B, 'perto-b', 'texto qualquer', vetorDoTexto(FRASE, DIM));
     const svc = montarObsidian({}, prisma);
 
-    const parcial = await svc.search(A, FRASE, 8);
+    const parcial = await buscarIndice(svc, A, FRASE, 8);
     await prisma.$executeRawUnsafe('UPDATE "KnowledgeNote" SET embedding = NULL WHERE "orgId" = $1', A);
-    const zero = await svc.search(A, FRASE, 8);
+    const zero = await buscarIndice(svc, A, FRASE, 8);
 
     expect({ mode: parcial.mode, semanticas: new Set(parcial.items.slice(0, 2).map((i) => i.id)), resto: parcial.items.slice(2).map((i) => i.id) })
       .toEqual({ mode: 'semantic', semanticas: new Set([a1, a2]), resto: [a3] });

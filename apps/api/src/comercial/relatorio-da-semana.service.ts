@@ -5,6 +5,8 @@ import { LLM_PROVIDER, type LlmProvider } from '../llm/llm.provider';
 import { MemoriaService } from '../memory/memoria.service';
 import { fusoDaPolitica, minutosNoFuso } from '../policy/limites';
 import { PrismaService } from '../prisma/prisma.service';
+import { entraramNaSemana, fechadosDaSemana } from './rodada/fechados-da-semana';
+import { semanaDaRodada } from './rodada/rodada-da-semana';
 import { chaveDoRelatorio, chavesDoRelatorio, corpoComDado, dadoDaNota, gravarNota } from './notas-do-comercial';
 import {
   DIAS_PADRAO_DO_RELATORIO,
@@ -81,7 +83,10 @@ export class RelatorioDaSemanaService implements OnModuleInit {
   /** Só os números do banco, sem narrativa. */
   async numeros(orgId: string, diasPedidos?: unknown, agora: Date = new Date()): Promise<RelatorioDaSemana> {
     const periodoDias = diasDoPedido(diasPedidos);
-    const desde = new Date(agora.getTime() - periodoDias * DIA_MS);
+    // Etapa 9 (F-25): a semana é a da Rodada (segunda a domingo, São Paulo), com a mesma conta de
+    // entraram e fechados; 30 e 90 dias seguem contados para trás a partir de agora.
+    const semana = periodoDias === 7 ? semanaDaRodada(undefined, agora) : null;
+    const desde = semana ? semana.inicio : new Date(agora.getTime() - periodoDias * DIA_MS);
     const noPeriodo = { gte: desde, lte: agora };
 
     const entraram = await this.prisma.comercialFicha.findMany({
@@ -96,8 +101,9 @@ export class RelatorioDaSemanaService implements OnModuleInit {
     for (const m of mudancas) destinos.set(m.leadId, [...(destinos.get(m.leadId) ?? []), String(((m.payload ?? {}) as { para?: unknown }).para ?? '')]);
     const funil = funilCumulativo(entraram.map((f) => alcanceDoLead(f.etapa, f.etapaAntesDaSaida, destinos.get(f.leadId) ?? [])));
 
-    const ativos = await this.prisma.leadEvent.findMany({ where: { lead: { orgId }, type: 'cliente.ativo', occurredAt: noPeriodo }, select: { leadId: true } });
-    const fechados = new Set(ativos.map((a) => a.leadId)).size;
+    const ativos = semana ? [] : await this.prisma.leadEvent.findMany({ where: { lead: { orgId }, type: 'cliente.ativo', occurredAt: noPeriodo }, select: { leadId: true } });
+    const fechados = semana ? (await fechadosDaSemana(this.prisma, orgId, semana)).size : new Set(ativos.map((a) => a.leadId)).size;
+    const leadsDoPeriodo = semana ? await entraramNaSemana(this.prisma, orgId, semana) : entraram.length;
 
     // Mediana do 1º oi ao Pix: o PRIMEIRO pagamento da 1ª parcela de cada lead, se caiu no período.
     // D-10: o fato tem o nome da forma (pix.pago, boleto.pago, cartao.pago); os três contam, como contavam
@@ -138,7 +144,7 @@ export class RelatorioDaSemanaService implements OnModuleInit {
 
     return {
       periodoDias,
-      leads: entraram.length,
+      leads: leadsDoPeriodo,
       fechados,
       medianaDiasDoOiAoPix: med == null ? null : Math.round(med * 10) / 10,
       acoes,
@@ -220,3 +226,4 @@ export class RelatorioDaSemanaService implements OnModuleInit {
     return this.numeros(orgId, periodoDias, agora);
   }
 }
+

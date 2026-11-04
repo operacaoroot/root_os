@@ -222,7 +222,7 @@ describe('F-01: o "criar parceiro" do Financeiro não duplica cliente', () => {
     const b = bancoEmMemoria({ partners: [partner('p-curral', 'Curral'), partner('p-curral-2', 'Curral (Marcelo)', { cnpjCpf: '12.345.678/0001-90', principalId: 'p-curral' })] });
     const r = await new AprService(b.db as unknown as PrismaService, audit(b)).createPartner(CASA, { razaoSocial: 'Curral Ltda', cnpjCpf: '12345678000190', isCliente: true }, 'u-1');
     expect(r).toMatchObject({ ok: true, id: 'p-curral', jaExistia: true, como: 'cnpj' });
-    expect((r as { mensagem: string }).mensagem).toMatch(/já existia com este documento/);
+    expect(r).toHaveProperty('mensagem', expect.stringMatching(/já existia com este documento/));
     expect(b.t.partner).toHaveLength(2);
   });
 

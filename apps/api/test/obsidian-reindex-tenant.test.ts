@@ -16,6 +16,7 @@ import { ObsidianService } from '../src/obsidian/obsidian.service';
 import type { PrismaService } from '../src/prisma/prisma.service';
 import { exigirBancoDescartavel, travarACasa } from './banco-de-teste';
 import { versionarVault } from './vault-com-git';
+import { espelharVersoesEscolhidasNoIndice } from '../src/onboarding/indice-protegido';
 
 /*
  * ROOT-05c — A REINDEXAÇÃO DA VAULT, PONTA A PONTA, COM A EMPRESA DA CASA DE VERDADE.
@@ -61,7 +62,12 @@ const DIM = 1536;
  */
 const TEMPO = 60_000;
 const MARCA = `${PREFIXO}${randomUUID().slice(0, 8)}`;
-const B = `org-reindex-b-${MARCA}`;
+const B = randomUUID();
+const pessoas = new Map<string, string>();
+const pessoaIdDaEmpresa = (orgId: string) => {
+  if (!pessoas.has(orgId)) pessoas.set(orgId, randomUUID());
+  return pessoas.get(orgId)!;
+};
 const T0 = new Date('2026-09-30T12:00:00Z');
 const T1 = new Date('2026-10-01T12:00:00Z');
 const VARIAVEIS = ['OPENAI_BASE_URL', 'OPENAI_API_KEY', 'OBSIDIAN_FONTE', 'OBSIDIAN_VAULT_PATH'] as const;
@@ -152,7 +158,7 @@ describe.skipIf(!URL)('reindexar a vault: só a casa, uma vez por texto, vetor d
 
   const naEmpresa = <T>(orgId: string, fn: () => Promise<T>) =>
     comContexto(
-      { orgId, actorType: ActorType.user, actorId: `pessoa-${orgId}`, correlationId: `r05c-${MARCA}`, origem: 'script' },
+      { orgId, actorType: ActorType.user, actorId: pessoaIdDaEmpresa(orgId), correlationId: `r05c-${MARCA}`, origem: 'script' },
       fn,
     );
 
@@ -178,7 +184,7 @@ describe.skipIf(!URL)('reindexar a vault: só a casa, uma vez por texto, vetor d
     );
     const rota = new ObsidianController(svc);
     const pessoa = (orgId: string): JwtUser => ({
-      sub: `pessoa-${orgId}`,
+      sub: pessoaIdDaEmpresa(orgId),
       orgId,
       email: `admin@${orgId}.local`,
       name: 'Admin',
@@ -188,7 +194,7 @@ describe.skipIf(!URL)('reindexar a vault: só a casa, uma vez por texto, vetor d
     const portas = {
       knowledge: (orgId: string) => naEmpresa(orgId, () => rota.reindex(pessoa(orgId))),
       sincronizacao: (orgId: string) =>
-        naEmpresa(orgId, () => integracoes.sincronizar(orgId, 'obsidian', `pessoa-${orgId}`, pessoa(orgId).permissions)),
+        naEmpresa(orgId, () => integracoes.sincronizar(orgId, 'obsidian', pessoaIdDaEmpresa(orgId), pessoa(orgId).permissions)),
     };
     return { svc, portas };
   }
@@ -216,27 +222,30 @@ describe.skipIf(!URL)('reindexar a vault: só a casa, uma vez por texto, vetor d
 
   async function limpar() {
     await prisma.knowledgeNote.deleteMany({ where: { orgId: CASA, path: { startsWith: PREFIXO } } });
-    await prisma.contextItem.deleteMany({
-      where: { orgId: CASA, OR: [{ chave: { startsWith: `vault:${PREFIXO}` } }, { chave: { startsWith: PREFIXO } }] },
-    });
+    // Identidades da vault são permanentes; a limpeza respeita o trigger de namespace.
+    await prisma.contextItem.updateMany({ where: { orgId: CASA, chave: { startsWith: `vault:${PREFIXO}` } }, data: { arquivadoEm: new Date() } });
+    await prisma.contextItem.deleteMany({ where: { orgId: CASA, chave: { startsWith: PREFIXO } } });
     await prisma.knowledgeNote.deleteMany({ where: { orgId: B } });
-    await prisma.contextItem.deleteMany({ where: { orgId: B } });
+    await prisma.contextItem.updateMany({ where: { orgId: B, chave: { startsWith: 'vault:' } }, data: { arquivadoEm: new Date() } });
+    await prisma.contextItem.deleteMany({ where: { orgId: B, NOT: { chave: { startsWith: 'vault:' } } } });
   }
 
   /** O que B já tinha antes de qualquer reindexação: o espelho do onboarding, no índice e na memória. */
   async function espelhoDoOnboardingEmB() {
-    await prisma.knowledgeNote.create({
-      data: {
-        orgId: B, path: 'onboarding/tema-1.md', folder: 'onboarding', title: 'Tema 1', tags: [],
-        content: 'ritual de fechamento do cliente', links: [], wordCount: 5, fileTime: T0,
-      },
-    });
     await naEmpresa(B, () =>
       memoria.criar(B, {
         chave: `onboarding:${MARCA}`, title: 'Tema 1', body: 'ritual de fechamento do cliente',
         sourceType: ContextSource.operador, sourceRef: 'onboarding',
       }),
     );
+    const item = await prisma.contextItem.findUniqueOrThrow({ where: { orgId_chave: { orgId: B, chave: `onboarding:${MARCA}` } } });
+    const version = await prisma.contextItemVersion.findUniqueOrThrow({ where: { itemId_versao: { itemId: item.id, versao: item.versao } } });
+    await naEmpresa(B, () => espelharVersoesEscolhidasNoIndice(prisma, B, pessoaIdDaEmpresa(B), [{
+      orgId: B, itemId: item.id, versionId: version.id, versao: version.versao, chave: item.chave,
+      kind: item.kind, title: item.title, body: item.body, tags: item.tags, sourceType: item.sourceType,
+      sourceRef: item.sourceRef, contentHash: item.contentHash,
+    }]));
+    return { path: `onboarding/itens/${item.id}.md` };
   }
 
   /** A casa que existe, ou uma nova. Outra suíte pode criá-la no mesmo instante, e aí vale a dela. */
@@ -272,6 +281,15 @@ describe.skipIf(!URL)('reindexar a vault: só a casa, uma vez por texto, vetor d
       );
     }
     await prisma.org.upsert({ where: { id: B }, create: { id: B, name: `Cliente ${MARCA}`, slug: `cliente-${MARCA}` }, update: {} });
+    const permissions = await Promise.all(['obsidian.ver', 'obsidian.editar', 'admin.usuarios'].map(key =>
+      prisma.permission.upsert({ where: { key }, create: { key }, update: {} })));
+    for (const orgId of [B, CASA]) {
+      const role = await prisma.role.create({ data: { orgId, key: MARCA, name: 'Leitor sintético do índice',
+        permissions: { connect: permissions.map(({ id }) => ({ id })) } } });
+      await prisma.user.create({ data: {
+        id: pessoaIdDaEmpresa(orgId), orgId, name: 'Pessoa sintética do índice', email: `${orgId}-${MARCA}@qa.invalid`,
+        passwordHash: 'sem-login', roles: { connect: { id: role.id } } } });
+    }
     memoria = new MemoriaService(prisma as unknown as PrismaService, new EventLogService(prisma as never));
     // A espera pela trava da casa é a duração da outra suíte, não desta.
   }, 10 * TEMPO);
@@ -308,7 +326,7 @@ describe.skipIf(!URL)('reindexar a vault: só a casa, uma vez por texto, vetor d
         { nome: 'regra-da-casa.md', texto: '# Regra da casa\n\nritual de fechamento da casa' },
         { nome: 'preco.md', texto: '# Preço\n\nmargem mínima da casa' },
       ]);
-      await espelhoDoOnboardingEmB();
+      const espelho = await espelhoDoOnboardingEmB();
       const antes = await retratoDeB();
       const dublê = fornecedor(cenario.plano);
       vi.stubGlobal('fetch', dublê.buscar);
@@ -322,7 +340,7 @@ describe.skipIf(!URL)('reindexar a vault: só a casa, uma vez por texto, vetor d
       };
       const pedidosDaVault = dublê.pedidos.length;
       const textoDeB = await naEmpresa(B, () => memoria.buscar(B, 'ritual de fechamento'));
-      const indiceDeB = await naEmpresa(B, () => svc.search(B, 'ritual de fechamento', 8));
+      const indiceDeB = await naEmpresa(B, () => svc.search(B, 'ritual de fechamento', 8, pessoaIdDaEmpresa(B)));
 
       expect({
         status: Object.values(respostas).map((r) => ('erro' in r ? r.status : 'passou')),
@@ -339,7 +357,7 @@ describe.skipIf(!URL)('reindexar a vault: só a casa, uma vez por texto, vetor d
         notasDaCasaNoIndiceDeB: 0,
         itensDaVaultEmB: 0,
         memoriaDeBPorTexto: ['ritual de fechamento do cliente'],
-        indiceDeBPorTexto: ['onboarding/tema-1.md'],
+        indiceDeBPorTexto: [espelho.path],
       });
       expect(respostas.knowledge).toMatchObject({ erro: expect.stringMatching(/empresa da casa, e só ela reindexa/) });
     }, TEMPO);
@@ -410,7 +428,7 @@ describe.skipIf(!URL)('reindexar a vault: só a casa, uma vez por texto, vetor d
     const vezes = new Map<string, number>();
     for (const t of pagos) vezes.set(t, (vezes.get(t) ?? 0) + 1);
     const daVault = await prisma.contextItem.findMany({
-      where: { orgId: CASA, chave: { startsWith: `vault:${MARCA}` } },
+      where: { orgId: CASA, chave: { startsWith: `vault:${MARCA}` }, arquivadoEm: null },
       select: { id: true },
     });
     const vaultComVetor = (await Promise.all(daVault.map((i) => vetorNoBanco('ContextItem', i.id)))).filter(Boolean).length;

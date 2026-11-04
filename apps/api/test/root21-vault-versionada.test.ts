@@ -6,6 +6,8 @@ import { VaultVersionadaService } from '../src/agents/vault-versionada.service';
 import type { PrismaService } from '../src/prisma/prisma.service';
 import { hashDoCorpo } from '../src/memory/procedencia';
 import type { ObsidianService } from '../src/obsidian/obsidian.service';
+import { comContexto } from '../src/common/contexto-execucao';
+import { ForbiddenException } from '@nestjs/common';
 
 const body = readFileSync(`${__dirname}/fixtures/root21/primeiro-artefato.md`, 'utf8');
 const hash = hashDoCorpo(body);
@@ -52,8 +54,13 @@ function bancada() {
     }) },
   };
   const leitor = new VaultVersionadaService(prisma as unknown as PrismaService);
-  const builder = new ContextBuilder({ search: vi.fn(() => { throw new Error('índice legado não deve ser chamado'); }) } as unknown as ObsidianService, leitor);
-  const montar = (solicitanteId: string | null = pedido.solicitanteId) => builder.montarVaultVersionada(pedido.orgId, '17', agent, solicitanteId);
+  const builder = new ContextBuilder({
+    search: vi.fn(() => { throw new Error('índice legado não deve ser chamado'); }),
+    conferirPessoaDaLeituraAtual: async () => { if (!estado.permissao || !estado.ativo) throw new ForbiddenException('Acesso insuficiente.'); },
+  } as unknown as ObsidianService, leitor);
+  const montar = (solicitanteId: string | null = pedido.solicitanteId) => solicitanteId
+    ? comContexto({orgId:pedido.orgId,actorType:'user',actorId:solicitanteId,correlationId:'root21-fixture',origem:'http'},()=>builder.montarVaultVersionada(pedido.orgId, '17', agent, solicitanteId))
+    : builder.montarVaultVersionada(pedido.orgId, '17', agent, solicitanteId);
   return { estado, item, versao, prisma, leitor, montar };
 }
 
@@ -78,11 +85,10 @@ describe('ROOT-21: primeiro artefato sintético, leitor explícito', () => {
     b.estado[campo] = campo === 'desligado';
     const busca = await b.leitor.search(pedido, '17');
     const direto = await b.leitor.get(pedido, b.item.id);
-    const contexto = await b.montar();
+    await expect(b.montar()).rejects.toMatchObject({ status: 403 });
     expect(busca.items).toEqual([]);
     expect(direto).toBeNull();
-    expect(contexto.fontes).toEqual([]);
-    expect(contexto.ausencia?.motivo).toBe('acesso_negado');
+    const contexto = { recusado: true };
     for (const segredo of [body.trim(), b.item.id, b.versao.id, b.item.chave, hash, '17 unidades']) {
       expect(JSON.stringify({ busca, direto, contexto })).not.toContain(segredo);
     }
@@ -90,7 +96,7 @@ describe('ROOT-21: primeiro artefato sintético, leitor explícito', () => {
 
   it('nega sem solicitante e para outra empresa antes de consultar conteúdo', async () => {
     const b = bancada();
-    expect((await b.montar(null)).fontes).toEqual([]);
+    await expect(b.montar(null)).rejects.toMatchObject({ status: 403 });
     expect(await b.leitor.get({ ...pedido, solicitanteId: null }, b.item.id)).toBeNull();
     expect(await b.leitor.search({ ...pedido, orgId: 'cliente-sintetico' }, '17')).toMatchObject({ items: [] });
     expect(await b.leitor.get({ ...pedido, orgId: 'cliente-sintetico' }, b.item.id)).toBeNull();

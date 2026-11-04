@@ -131,6 +131,9 @@ interface Dados {
   campanhas?: Linha[];
   bio?: Linha[];
   pecas?: Linha[];
+  /** Etapa 8 (F-23): posts da Produção e acordos do Financeiro. */
+  posts?: Linha[];
+  acordos?: Linha[];
 }
 
 function banco(d: Dados = {}) {
@@ -140,6 +143,8 @@ function banco(d: Dados = {}) {
     campaign: tabela(d.campanhas ?? [], chamadas, 'campaign'),
     bioEvent: tabela(d.bio ?? [], chamadas, 'bioEvent'),
     pautaPeca: tabela(d.pecas ?? [], chamadas, 'pautaPeca'),
+    marketingPost: tabela(d.posts ?? [], chamadas, 'marketingPost'),
+    acordoComercial: tabela(d.acordos ?? [], chamadas, 'acordoComercial'),
   } as unknown as PrismaService;
   return { prisma, chamadas };
 }
@@ -936,6 +941,7 @@ describe('o catálogo e a fiação', () => {
       'leads.por_campanha',
       'bio.cliques',
       'pauta.publicadas',
+      'comercial.fechados',
       'instagram.visualizacoes',
     ]);
   });

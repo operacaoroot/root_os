@@ -19,14 +19,16 @@ import { ContextoInterceptor } from '../src/common/contexto.interceptor';
 import { AuditService } from '../src/audit/audit.service';
 import type { AuditInput } from '../src/audit/audit.service';
 import { PrismaService } from '../src/prisma/prisma.service';
+import { ClienteEscopoService } from '../src/clientes-escopo/cliente-escopo.service';
+import { TarefaEscopoService } from '../src/clientes-escopo/tarefa-escopo.service';
+import { isWorkActivityTestDatabase } from './work-atividade-database-guard';
 
 const url = process.env.TEST_DATABASE_URL;
-if (url) {
-  const target = new URL(url);
-  if (!['127.0.0.1', 'localhost'].includes(target.hostname) || target.port !== '55582' ||
-      !/^\/rootos_.*(?:write|test|dev|local)/.test(target.pathname)) {
-    throw new Error('M02 exige o clone QA local autorizado na porta 55582.');
-  }
+if (url && !isWorkActivityTestDatabase(url, {
+  GITHUB_ACTIONS: process.env.GITHUB_ACTIONS,
+  RUNNER_ENVIRONMENT: process.env.RUNNER_ENVIRONMENT,
+})) {
+  throw new Error('M02 exige o clone QA local autorizado ou o banco descartável explícito do GitHub Actions.');
 }
 const orgId = 'qa-m02-' + randomUUID(), otherOrgId = 'qa-m02-vizinha-' + randomUUID();
 let db: PrismaClient, adversary: PrismaClient, svc: WorkService, app: INestApplication;
@@ -35,6 +37,8 @@ let roleId: string, listId: string, statusId: string, nextStatusId: string, tagI
 let otherListId: string, otherStatusId: string;
 let baseUrl: string, jwt: JwtService;
 let baselineIds: string[] = [], baselineHash = '';
+const concorrenteOrg = 'qa-m02-concorrente-' + randomUUID();
+let concorrenteTaskId: string;
 let afterAudit: (() => Promise<void>) | null = null;
 let afterActivityRead: (() => Promise<void>) | null = null;
 let afterActorNamesRead: (() => Promise<void>) | null = null;
@@ -115,8 +119,10 @@ describe.skipIf(!url)('M02 HTTP e Postgres próprios', () => {
   beforeAll(async () => {
     db = new PrismaClient({ datasources: { db: { url: url! } } });
     adversary = new PrismaClient({ datasources: { db: { url: url! } } });
-    baselineIds = (await db.workTask.findMany({ select: { id: true }, orderBy: { id: 'asc' } })).map(t => t.id);
-    baselineHash = hash(await snapshot(baselineIds));
+    await db.org.create({ data: { id: concorrenteOrg, slug: concorrenteOrg, name: 'Simulação de outra suíte' } });
+    const concorrenteLista = await db.workList.create({ data: { orgId: concorrenteOrg, name: 'Lista concorrente' } });
+    const concorrenteStatus = await db.workStatus.create({ data: { orgId: concorrenteOrg, listId: concorrenteLista.id, name: 'Aberta', type: 'open' } });
+    concorrenteTaskId = (await db.workTask.create({ data: { orgId: concorrenteOrg, listId: concorrenteLista.id, statusId: concorrenteStatus.id, title: 'Antes da outra suíte' } })).id;
     for (const id of [orgId, otherOrgId]) await db.org.create({ data: { id, slug: id, name: 'Empresa sintética M02' } });
     const permissions = await db.permission.findMany({ where: { key: { in: ['tarefas.ver', 'tarefas.editar'] } } });
     expect(permissions).toHaveLength(2);
@@ -135,6 +141,10 @@ describe.skipIf(!url)('M02 HTTP e Postgres próprios', () => {
     peerId = await user(orgId, role.id, 'Pessoa M02 histórica');
     readerId = await user(orgId, readerRole.id, 'Pessoa M02 leitora');
     otherActorId = await user(otherOrgId, foreignRole.id, 'NOME_PRIVADO_OUTRA_EMPRESA_M02');
+    await db.clienteAcessoPerfil.createMany({ data: [
+      ...[actorId, peerId, readerId].map(userId => ({orgId, userId, modo:'ALL' as const})),
+      {orgId:otherOrgId, userId:otherActorId, modo:'ALL' as const},
+    ] });
     listId = (await db.workList.create({ data: { orgId, name: 'Lista sintética M02' } })).id;
     statusId = (await db.workStatus.create({ data: { orgId, listId, name: 'A fazer', type: 'open' } })).id;
     nextStatusId = (await db.workStatus.create({ data: { orgId, listId, name: 'Em andamento', type: 'custom', order: 1 } })).id;
@@ -142,6 +152,20 @@ describe.skipIf(!url)('M02 HTTP e Postgres próprios', () => {
     otherStatusId = (await db.workStatus.create({ data: { orgId: otherOrgId, listId: otherListId, name: 'A fazer', type: 'open' } })).id;
     tagId = (await db.workTag.create({ data: { orgId, name: 'Etiqueta sintética M02' } })).id;
     fieldId = (await db.workField.create({ data: { orgId, listId, name: 'Material sintético M02', type: 'texto' } })).id;
+    // Canário próprio da empresa vizinha: nenhum outro worker é dono destes IDs.
+    const sentinela = await fixture(true);
+    const tagVizinha = await db.workTag.create({ data: { orgId: otherOrgId, name: 'Etiqueta canário' } });
+    const campoVizinho = await db.workField.create({ data: { orgId: otherOrgId, listId: otherListId, name: 'Campo canário', type: 'texto' } });
+    await db.workTask.update({ where: { id: sentinela.id }, data: { tags: { connect: { id: tagVizinha.id } } } });
+    await db.workFieldValue.create({ data: { orgId: otherOrgId, taskId: sentinela.id, fieldId: campoVizinho.id, value: 'Material preservado' } });
+    await db.workComment.create({ data: { orgId: otherOrgId, taskId: sentinela.id, authorId: otherActorId, authorName: 'Canário', text: 'Comentário preservado' } });
+    baselineIds = [sentinela.id];
+    const baseline = await snapshot(baselineIds);
+    expect(baseline).toHaveLength(1);
+    expect(baseline[0].tags).toHaveLength(1);
+    expect(baseline[0].values).toHaveLength(1);
+    expect(baseline[0].comments).toHaveLength(1);
+    baselineHash = hash(baseline);
 
     const actualAudit = new AuditService(prisma());
     const audit = { log: async (input: AuditInput, tx?: any) => {
@@ -169,10 +193,31 @@ describe.skipIf(!url)('M02 HTTP e Postgres próprios', () => {
     const serviceDb = new Proxy(db, { get(target, key) {
       if (key === 'user') return userDelegate;
       if (key === 'auditLog') return activityDelegate;
+      if (key === '$transaction') return (callback: any, options?: any) => db.$transaction(async raw => {
+        const wrapFindMany = (delegate: any, hook: () => (() => Promise<void>) | null) => new Proxy(delegate, { get(d, prop) {
+          const value = Reflect.get(d, prop);
+          if (prop === 'findMany') return async (...args: unknown[]) => {
+            const result = await value.apply(d, args);
+            const fn = hook();
+            if (fn) await fn();
+            return result;
+          };
+          return typeof value === 'function' ? value.bind(d) : value;
+        } });
+        const proxied = new Proxy(raw, { get(t, prop) {
+          if (prop === 'user') return wrapFindMany(t.user, () => afterActorNamesRead);
+          if (prop === 'auditLog') return wrapFindMany(t.auditLog, () => afterActivityRead);
+          const value = Reflect.get(t, prop);
+          return typeof value === 'function' ? value.bind(t) : value;
+        } });
+        return callback(proxied);
+      }, options);
       const value = Reflect.get(target, key);
       return typeof value === 'function' ? value.bind(target) : value;
     } }) as unknown as PrismaService;
-    svc = new WorkService(serviceDb, audit, { agentesParaEscolher: async () => [] } as unknown as CheckoutDeTarefaService);
+    const escopo = new ClienteEscopoService(serviceDb, actualAudit);
+    const tarefaEscopo = new TarefaEscopoService(serviceDb, escopo);
+    svc = new WorkService(serviceDb, audit, { agentesParaEscolher: async () => [] } as unknown as CheckoutDeTarefaService, escopo, tarefaEscopo);
     // Vitest transpila decorators sem design:paramtypes; declarar a DI do controller real no harness.
     Reflect.defineMetadata('design:paramtypes', [WorkService, ContextoTrabalhoService, CheckoutDeTarefaService], WorkController);
     jwt = new JwtService({ secret: randomUUID() + randomUUID(), signOptions: { expiresIn: '15m' } });
@@ -183,7 +228,7 @@ describe.skipIf(!url)('M02 HTTP e Postgres próprios', () => {
       { provide: CheckoutDeTarefaService, useValue: {} },
       { provide: PrismaService, useValue: prisma() },
       { provide: JwtService, useValue: jwt }, Reflector,
-    ] }).overrideGuard(JwtAuthGuard).useValue(new JwtAuthGuard(jwt))
+    ] }).overrideGuard(JwtAuthGuard).useValue(new JwtAuthGuard(jwt, undefined, escopo))
       .overrideGuard(PermissionsGuard).useValue(new PermissionsGuard(reflector))
       .overrideGuard(AcessoAtualGuard).useValue(new AcessoAtualGuard(prisma(), reflector)).compile();
     app = module.createNestApplication({ logger: false });
@@ -198,10 +243,23 @@ describe.skipIf(!url)('M02 HTTP e Postgres próprios', () => {
       if (app) await app.close();
       if (db && baselineHash) expect(hash(await snapshot(baselineIds))).toBe(baselineHash);
     } finally {
+      if (db) {
+        await db.workTask.deleteMany({ where: { orgId: concorrenteOrg } });
+        await db.workStatus.deleteMany({ where: { orgId: concorrenteOrg } });
+        await db.workList.deleteMany({ where: { orgId: concorrenteOrg } });
+        await db.org.deleteMany({ where: { id: concorrenteOrg } });
+      }
       if (adversary) await adversary.$disconnect();
       if (db) await db.$disconnect();
     }
     // Fixtures e histórico próprios permanecem no clone descartável; não há limpeza global.
+  });
+
+  it('outra suíte pode alterar sua própria tarefa sem afetar a verificação desta fixture', async () => {
+    await adversary.workTask.update({ where: { id: concorrenteTaskId }, data: { title: 'Atualizada pela outra suíte' } });
+    expect((await adversary.workTask.findUniqueOrThrow({ where: { id: concorrenteTaskId } })).title).toBe('Atualizada pela outra suíte');
+    expect(baselineIds).not.toContain(concorrenteTaskId);
+    expect(hash(await snapshot(baselineIds))).toBe(baselineHash);
   });
 
   describe('RED legado — fronteiras HTTP antes do reparo', () => {
@@ -460,9 +518,11 @@ describe.skipIf(!url)('M02 HTTP e Postgres próprios', () => {
       } finally { afterActorNamesRead = null; await restoreRole(); }
     });
     it('N23 detalhe HTTP não revela recorte após revogação durante leitura', async () => {
-      const f = await fixture(); await seedActivity(f.id, 2); afterActorNamesRead = removeRole;
+      const f = await fixture(); await seedActivity(f.id, 2); let hookExecutado = false;
+      afterActorNamesRead = async () => { hookExecutado = true; await removeRole(); };
       try {
         const result = await request('GET', taskPath(f.id));
+        expect(hookExecutado).toBe(true);
         expect(result.status).toBe(403); expect(result.body).not.toHaveProperty('atividade');
       } finally { afterActorNamesRead = null; await restoreRole(); }
     });

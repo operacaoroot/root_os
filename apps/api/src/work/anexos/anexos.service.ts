@@ -12,6 +12,7 @@ import { AuditService } from '../../audit/audit.service';
 import { ARQUIVISTA_DO_CLIENTE, type ArquivistaDoClientePort } from '../../clientes/portas';
 import { PrismaService } from '../../prisma/prisma.service';
 import { StorageService } from '../../storage/storage.service';
+import { TarefaEscopoService } from '../../clientes-escopo/tarefa-escopo.service';
 
 /*
  * TR-06 · O ANEXO NA TAREFA (rodada dos agentes, 21/10/2026, lane A4).
@@ -55,7 +56,29 @@ export class AnexosDaTarefaService {
     private readonly audit: AuditService,
     @Inject(ARQUIVISTA_DO_CLIENTE) private readonly arquivista: ArquivistaDoClientePort,
     @Optional() private readonly storage?: StorageService,
+    @Inject(TarefaEscopoService) private readonly escopo?: TarefaEscopoService,
   ) {}
+
+  async listarAutorizado(orgId: string, userId: string, taskId: string) {
+    const antes = await this.escopo!.exigir(orgId, userId, taskId);
+    const anexos = await this.listar(orgId, taskId);
+    const depois = await this.escopo!.exigir(orgId, userId, taskId);
+    if (antes.clienteId !== depois.clienteId) throw new NotFoundException('Tarefa não encontrada.');
+    return anexos;
+  }
+
+  async baixarAutorizado(orgId: string, userId: string, taskId: string, anexoId: string) {
+    const antes = await this.escopo!.exigir(orgId, userId, taskId);
+    const arquivo = await this.baixar(orgId, taskId, anexoId);
+    try {
+      const depois = await this.escopo!.exigir(orgId, userId, taskId);
+      if (antes.clienteId !== depois.clienteId) throw new NotFoundException('Tarefa não encontrada.');
+      return arquivo;
+    } catch (erro) {
+      (arquivo.stream as { destroy?: () => void }).destroy?.();
+      throw erro;
+    }
+  }
 
   /** A suíte troca o storage por um dublê. */
   usarArmazem(a: ArmazemDoAnexo): void {
@@ -80,7 +103,7 @@ export class AnexosDaTarefaService {
     const anexos = await this.prisma.workAnexo.findMany({ where: { orgId, taskId }, orderBy: { criadoEm: 'desc' }, take: 200 });
     if (!anexos.length) return [];
     const copias = await this.prisma.arquivoDoCliente.findMany({
-      where: { orgId, refTipo: 'WorkAnexo', refId: { in: anexos.map((a) => a.id) } },
+      where: { orgId, partnerId: t.clienteId, refTipo: 'WorkAnexo', refId: { in: anexos.map((a) => a.id) } },
       orderBy: { criadoEm: 'desc' },
     });
     const porAnexo = new Map<string, (typeof copias)[number]>();

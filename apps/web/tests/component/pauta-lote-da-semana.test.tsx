@@ -1,6 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { PAUTA_CHAVE_DA_AUTOMACAO, type PautaAutomacao } from '@mktos/shared';
+import { ATOR_PAUTA, destinoAusentePauta, destinoPauta, envelopePauta, pedidoPauta, reciboPauta } from '../fixtures/pauta-edicao-humana';
 
 /*
  * MD8 — APROVAR A SEMANA NUM PONTO SÓ, o lado da tela.
@@ -33,7 +35,7 @@ vi.mock('@/lib/auth', () => ({
   useAuth: () => ({
     token: 'tok',
     ready: true,
-    user: { id: 'u-eu', name: 'Lucas', email: 'l@x.com', roles: [], permissions: permissoes },
+    user: { id: ATOR_PAUTA, name: 'Lucas', email: 'l@x.com', roles: [], permissions: permissoes },
     can: (p: string) => permissoes.includes(p),
   }),
 }));
@@ -80,8 +82,26 @@ function estado(over: Record<string, unknown> = {}) {
   };
 }
 
-function rotas(e: unknown, a: unknown) {
-  apiGet.mockImplementation(async (url: string) => (url.startsWith('/pauta/agenda') ? a : e));
+function rotas(e: unknown, a: ReturnType<typeof agenda> & {
+  dmAutomatica?: boolean;
+  dmPodeLigar?: boolean;
+  rotinaDePublicacao?: unknown;
+}) {
+  apiGet.mockImplementation(async (url: string) => {
+    if (url.startsWith('/pauta/agenda')) return a;
+    if (!url.startsWith('/pauta/automacao/')) return e;
+    const qual = url.split('/').at(-1) as PautaAutomacao;
+    const ligada = qual === 'publicacao' ? a.publicacaoAutomatica : a.dmAutomatica ?? false;
+    const podeLigar = qual === 'publicacao' || a.dmPodeLigar !== false;
+    const chave = PAUTA_CHAVE_DA_AUTOMACAO[qual];
+    return {
+      ...envelopePauta,
+      qual,
+      destino: ligada ? destinoPauta(chave, 1, 'ligada') : destinoAusentePauta(chave),
+      operacao: { ligada, origem: ligada ? 'nota' : 'padrao', rotina: a.rotinaDePublicacao ?? null,
+        podeLigar, impedimentos: podeLigar ? [] : ['Só liga depois do App Review.'] },
+    };
+  });
 }
 
 const renderAba = () => render(<AbaSemana token="tok" editavel podePostar onErro={vi.fn()} bump={0} />);
@@ -96,7 +116,7 @@ describe('MD8: "Aprovar a semana" na aba Semana', () => {
     rotas(estado(), agenda([peca()]));
     renderAba();
     const secao = await screen.findByRole('region', { name: 'Aprovar a semana' });
-    expect(secao).toHaveTextContent('publicação automática desligada');
+    expect(await within(secao).findByText('publicação automática desligada')).toBeInTheDocument();
     expect(secao).toHaveTextContent('ep-04');
     // A linha do tempo também está no slot da agenda.
     expect(screen.getAllByLabelText('Etapa: proposto').length).toBeGreaterThan(0);
@@ -156,7 +176,7 @@ describe('MD8: "Aprovar a semana" na aba Semana', () => {
     expect(slot).toHaveTextContent('Sai pelo OS no horário, pela semana assinada');
 
     const secao = screen.getByRole('region', { name: 'Aprovar a semana' });
-    expect(secao).toHaveTextContent('publicação automática ligada');
+    expect(await within(secao).findByText('publicação automática ligada')).toBeInTheDocument();
     await userEvent.click(within(secao).getByRole('button', { name: 'Aprovar a semana' }));
     const lote = await screen.findByLabelText('Lote abc123def456');
     expect(lote).toHaveTextContent('1 de 1 post(s) valendo');
@@ -172,20 +192,22 @@ describe('MD8: "Aprovar a semana" na aba Semana', () => {
 
   it('D-MD1: a publicação automática liga pela tela, com confirmação e motivo; a DM não oferece ligar antes do App Review', async () => {
     rotas(estado(), agenda([peca()], { dmAutomatica: false, dmPodeLigar: false }));
-    apiPut.mockResolvedValue({ qual: 'publicacao', ligada: true, versao: 1 });
+    const chave = PAUTA_CHAVE_DA_AUTOMACAO.publicacao;
+    const destino = destinoAusentePauta(chave);
+    apiPut.mockResolvedValueOnce(reciboPauta('mudar_interruptor', destino, destinoPauta(chave, 1, 'ligada')));
     renderAba();
     const pub = await screen.findByLabelText('Interruptor da publicação automática');
-    expect(pub).toHaveTextContent('publicação automática desligada');
-    await userEvent.click(within(pub).getByRole('button', { name: 'Ligar' }));
-    const confirmar = within(pub).getByRole('button', { name: 'Confirmar: ligar a publicação automática' });
+    expect(await within(pub).findByText('publicação automática desligada')).toBeInTheDocument();
+    await userEvent.click(await within(pub).findByRole('button', { name: 'Ligar' }));
+    const confirmar = within(pub).getByRole('button', { name: 'Confirmar configuração' });
     expect(confirmar).toBeDisabled();
-    expect(pub).toHaveTextContent('sai sozinha no horário');
+    expect(pub).toHaveTextContent('A configuração não comprova execução da rotina.');
     await userEvent.type(within(pub).getByRole('textbox'), 'seed assinado e titular criada');
     await userEvent.click(confirmar);
-    await waitFor(() => expect(apiPut).toHaveBeenCalledWith('/pauta/automacao/publicacao', { ligada: true, motivo: 'seed assinado e titular criada' }, 'tok'));
+    await waitFor(() => expect(apiPut).toHaveBeenCalledWith('/pauta/automacao/publicacao', { ...pedidoPauta(destino), qualEsperado: 'publicacao', ligada: true, motivo: 'seed assinado e titular criada' }, 'tok'));
 
     const dm = screen.getByLabelText('Interruptor da DM automática');
-    expect(dm).toHaveTextContent('DM automática desligada');
+    expect(await within(dm).findByText('DM automática desligada')).toBeInTheDocument();
     expect(within(dm).queryByRole('button', { name: 'Ligar' })).toBeNull();
     expect(dm).toHaveTextContent('Só liga depois do App Review');
   });
@@ -200,8 +222,8 @@ describe('MD8: "Aprovar a semana" na aba Semana', () => {
     );
     renderAba();
     const interruptor = await screen.findByLabelText('Interruptor da publicação automática');
-    expect(interruptor).toHaveTextContent('publicação automática ligada, mas sem a rotina "Publicação da semana" em /rotinas');
-    expect(within(interruptor).getByRole('link', { name: 'abrir /rotinas' })).toHaveAttribute('href', '/rotinas');
+    expect(await within(interruptor).findByText('publicação automática ligada, mas sem a rotina "Publicação da semana" em /rotinas: nada sai no horário')).toBeInTheDocument();
+    expect(within(interruptor).getByRole('link', { name: 'Abrir rotinas' })).toHaveAttribute('href', '/rotinas');
     const slot = screen.getByLabelText('Carrossel de ep-04');
     expect(slot).toHaveTextContent('Assinada, mas não sai no horário: sem a rotina');
     expect(slot).not.toHaveTextContent('Sai pelo OS no horário');
@@ -252,14 +274,14 @@ const LOTE_NA_FILA = {
   decididoPor: null,
   decididoEm: null,
   motivo: null,
-  aprovadores: [{ id: 'u-eu', nome: 'Lucas', email: 'l@x.com', alcada: 'titular' }],
+  aprovadores: [{ id: ATOR_PAUTA, nome: 'Lucas', email: 'l@x.com', alcada: 'titular' }],
   euPossoAprovar: true,
   porQueNao: null,
 };
 
 const FILA = {
   agora: '2026-09-28T12:01:00.000Z',
-  eu: { id: 'u-eu', alcada: 'titular', decide: true, decideNestaSessao: true, veConteudo: true },
+  eu: { id: ATOR_PAUTA, alcada: 'titular', decide: true, decideNestaSessao: true, veConteudo: true },
   censo: { pessoasQueDecidem: 2, porAlcada: { titular: 2, responsavel: 0, operador: 0 }, pessoasLidas: 2, pessoasAtivas: 2, truncado: false },
   itens: [LOTE_NA_FILA],
   total: 1,

@@ -25,7 +25,7 @@ vi.mock('@/lib/api', async () => {
   const real = await vi.importActual<typeof import('@/lib/api')>('@/lib/api');
   return {
     ...real,
-    apiGet: (...a: unknown[]) => apiGet(...a),
+    apiGet: (path: string, ...a: unknown[]) => path === '/clientes-escopo/me' ? Promise.resolve({ amplo: true, clientes: [] }) : apiGet(path, ...a),
     apiPost: (...a: unknown[]) => apiPost(...a),
     apiPatch: (...a: unknown[]) => apiPatch(...a),
     apiDelete: (...a: unknown[]) => apiDelete(...a),

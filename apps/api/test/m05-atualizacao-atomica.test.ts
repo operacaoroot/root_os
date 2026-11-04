@@ -1,3 +1,4 @@
+import { isWorkActivityTestDatabase } from './work-atividade-database-guard';
 import { randomUUID } from 'node:crypto';
 import { mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -9,8 +10,8 @@ import { ConectoresConfiguradosRegistry } from '../src/gateway/conectores-config
 import { RegistroDeConectores } from '../src/integrations/conectores.registry';
 import { versionarVault } from './vault-com-git';
 const url = process.env.TEST_DATABASE_URL ?? '';
-if (new URL(url).hostname !== '127.0.0.1' || new URL(url).pathname !== '/rootos_dia_m05_test_20261008') throw new Error('M05 author destination required');
-const db = new PrismaClient(); let orgId: string;
+if (!isWorkActivityTestDatabase(url, process.env)) throw new Error('M05 requires an explicit disposable database destination');
+const db = new PrismaClient({ datasources: { db: { url } } }); let orgId: string;
 async function snapshot() { return db.$queryRawUnsafe('SELECT row_to_json(n)::text AS row FROM "KnowledgeNote" n WHERE "orgId"=$1 ORDER BY id', orgId); }
 describe('M05 own PG atomic index rollback', () => {
   beforeAll(async () => { await db.$connect(); orgId = (await db.org.upsert({ where: { slug: 'root' }, create: { name: 'M05 synthetic vault', slug: 'root' }, update: {} })).id; });

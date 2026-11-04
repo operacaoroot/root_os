@@ -192,11 +192,27 @@ function casosContraOBanco(modoRls: boolean) {
   const daExecucao = { contains: MARCA, mode: 'insensitive' as const };
 
   async function limpar() {
-    await admin.knowledgeNote.deleteMany({ where: { orgId: CASA, path: daExecucao } });
-    await admin.contextItem.updateMany({ where: { orgId: CASA, chave: daExecucao }, data: { supersedesId: null } });
-    await admin.contextItem.deleteMany({ where: { orgId: CASA, chave: daExecucao } });
-    await admin.knowledgeNote.deleteMany({ where: { orgId: B } });
-    await admin.contextItem.deleteMany({ where: { orgId: B } });
+    // A marca isola esta fixture mesmo na empresa da casa, compartilhada por testes.
+    const orgOnde = { OR: [{ orgId: CASA, chave: daExecucao }, { orgId: B }] };
+    const ids = (await admin.contextItem.findMany({ where: orgOnde, select: { id: true } })).map(x => x.id);
+    const selections = (await admin.contextCollectionMember.findMany({
+      where: { OR: [{ orgId: CASA, chave: daExecucao }, { orgId: B }] }, select: { selectionId: true },
+    })).map(x => x.selectionId);
+    await admin.$transaction(async tx => {
+      // Apenas limpeza das linhas sintéticas após/between casos: a proteção está ativa nos testes.
+      await tx.$executeRaw`SET LOCAL session_replication_role = replica`;
+      const itens = { itemId: { in: ids } };
+      await tx.contextMovementReceipt.deleteMany({ where: itens });
+      await tx.contextAlias.deleteMany({ where: itens });
+      await tx.contextMovementCandidate.deleteMany({ where: itens });
+      await tx.contextMovementIntent.deleteMany({ where: itens });
+      await tx.contextKeyClaim.deleteMany({ where: itens });
+      await tx.contextCollectionMember.deleteMany({ where: { selectionId: { in: selections } } });
+      await tx.contextCollectionSelection.deleteMany({ where: { id: { in: selections } } });
+      await tx.contextItemVersion.deleteMany({ where: itens });
+      await tx.contextItem.deleteMany({ where: { id: { in: ids } } });
+      await tx.knowledgeNote.deleteMany({ where: { OR: [{ orgId: CASA, path: daExecucao }, { orgId: B }] } });
+    });
   }
 
   async function acharOuCriarACasa(): Promise<string> {
@@ -230,10 +246,10 @@ function casosContraOBanco(modoRls: boolean) {
       );
     }
     await admin.org.upsert({ where: { id: B }, create: { id: B, name: `Cliente ${MARCA}`, slug: `cliente-${MARCA}` }, update: {} });
-    const permissao = await admin.permission.upsert({ where: { key: 'obsidian.editar' }, create: { key: 'obsidian.editar' }, update: {} });
+    const permissoes = await Promise.all(['obsidian.ver', 'obsidian.editar', 'admin.usuarios'].map(key => admin.permission.upsert({ where: { key }, create: { key }, update: {} })));
     papel = (
       await admin.role.create({
-        data: { orgId: CASA, key: `liberador-${MARCA}`, name: 'Liberador da suíte', permissions: { connect: { id: permissao.id } } },
+        data: { orgId: CASA, key: `liberador-${MARCA}`, name: 'Liberador da suíte', permissions: { connect: permissoes.map(p => ({ id: p.id })) } },
       })
     ).id;
     pessoa = (
@@ -394,69 +410,37 @@ function casosContraOBanco(modoRls: boolean) {
   // E-20.4 — movimento sem perder o itemId (C19-04, R-4, R-6)
   // -------------------------------------------------------------------------
 
-  it('E-20.4 (a): mover sem editar mantém o itemId, com uma versão `alteracao` e o evento de vault:A para vault:B', async () => {
+  it('E-20.4 (a): renomeação não reatribui a identidade anterior', async () => {
     const v = criarVault({ 'x/nota.md': nota('a-mover', { kind: 'fato', de: '2026-09-15' }) });
     const { svc } = montar();
     await volta(svc);
     const antes = (await item('x/nota.md'))!;
-    v.mover('x/nota.md', 'y/nota.md');
-    v.commit();
+    v.mover('x/nota.md', 'y/nota.md'); v.commit();
     const v2 = await volta(svc);
-    const depois = (await item('y/nota.md'))!;
-    const historico = await versoes(depois.id);
-    const evento = await admin.eventLog.findFirst({
-      where: { orgId: CASA, tipo: 'memoria.item.alterado', correlationId: v2.correlacao },
-    });
-    const ev = evento!.payload as Record<string, any>;
-    expect({
-      mesmoItem: depois.id === antes.id,
-      origemSumiu: await item('x/nota.md'),
-      versoes: historico.map((h) => [h.versao, h.mudanca, h.sourceRef?.slice(MARCA.length + 1)]),
-      motivo: historico[1].motivo,
-      kind: depois.kind,
-      projecao: { movidas: v2.payload?.recibo.projecao.movidas, criadas: v2.payload?.recibo.projecao.criadas, arquivadas: v2.payload?.recibo.projecao.arquivadas },
-      estado: [ev.estadoAnterior.procedencia, ev.estadoNovo.procedencia],
-      pares: v2.payload?.recibo.projecao.pares,
-    }).toEqual({
-      mesmoItem: true,
-      origemSumiu: null,
-      versoes: [
-        [1, 'criacao', 'x/nota.md'],
-        [2, 'alteracao', 'y/nota.md'],
-      ],
-      motivo: `o arquivo foi movido na vault (${MARCA}/x/nota.md → ${MARCA}/y/nota.md, corpo idêntico)`,
-      kind: ContextKind.fato,
-      projecao: { movidas: 1, criadas: 0, arquivadas: 0 },
-      estado: [`vault:${MARCA}/x/nota.md`, `vault:${MARCA}/y/nota.md`],
-      pares: [{ de: expect.objectContaining({ sigiloso: true }), para: expect.objectContaining({ sigiloso: true }), situacao: 'movido' }],
-    });
+    const origem = (await item('x/nota.md'))!, destino = (await item('y/nota.md'))!;
+    const evento = await admin.eventLog.findFirst({where:{orgId:CASA,tipo:'memoria.item.arquivado',correlationId:v2.correlacao}});
+    expect({origemId:origem.id,origemArquivada:!!origem.arquivadoEm,destinoNovo:destino.id!==antes.id,
+      destinoVivo:!destino.arquivadoEm,versoesOrigem:(await versoes(origem.id)).map(v=>v.mudanca),
+      versoesDestino:(await versoes(destino.id)).map(v=>v.mudanca),evento:!!evento,
+      projecao:{movidas:v2.payload?.recibo.projecao.movidas,criadas:v2.payload?.recibo.projecao.criadas,arquivadas:v2.payload?.recibo.projecao.arquivadas},
+    }).toEqual({origemId:antes.id,origemArquivada:true,destinoNovo:true,destinoVivo:true,
+      versoesOrigem:['criacao','arquivamento'],versoesDestino:['criacao'],evento:true,
+      projecao:{movidas:0,criadas:1,arquivadas:1}});
   }, TEMPO);
 
-  it('E-20.4 (a2): mover e trocar só o cabeçalho na mesma volta: o movimento e depois a alteração comum', async () => {
+  it('E-20.4 (a2): renomeação com cabeçalho alterado cria identidade distinta sem reatribuir a origem', async () => {
     const v = criarVault({ 'x/nota.md': nota('a-mover', { kind: 'nota', de: '2026-09-15' }) });
-    const { svc } = montar();
-    await volta(svc);
+    const { svc } = montar(); await volta(svc);
     const antes = (await item('x/nota.md'))!;
     v.mover('x/nota.md', 'y/nota.md');
     v.escrever('y/nota.md', nota('a-mover', { kind: 'decisao', de: '2026-09-15', ate: '2026-12-31' }));
-    v.commit();
-    await volta(svc);
-    const depois = (await item('y/nota.md'))!;
-    expect({
-      mesmoItem: depois.id === antes.id,
-      kind: depois.kind,
-      validUntil: depois.validUntil?.toISOString(),
-      versoes: (await versoes(depois.id)).map((h) => [h.mudanca, h.motivo?.split(' ').slice(0, 4).join(' ')]),
-    }).toEqual({
-      mesmoItem: true,
-      kind: ContextKind.decisao,
-      validUntil: '2026-12-31T00:00:00.000Z',
-      versoes: [
-        ['criacao', 'indexação da vault do'],
-        ['alteracao', 'o arquivo foi movido'],
-        ['alteracao', 'o cabeçalho do arquivo'],
-      ],
-    });
+    v.commit(); await volta(svc);
+    const origem=(await item('x/nota.md'))!, destino=(await item('y/nota.md'))!;
+    expect({origemId:origem.id,origemArquivada:!!origem.arquivadoEm,destinoNovo:destino.id!==antes.id,
+      kind:destino.kind,validUntil:destino.validUntil?.toISOString(),
+      versoesOrigem:(await versoes(origem.id)).map(v=>v.mudanca),versoesDestino:(await versoes(destino.id)).map(v=>v.mudanca),
+    }).toEqual({origemId:antes.id,origemArquivada:true,destinoNovo:true,kind:ContextKind.decisao,
+      validUntil:'2026-12-31T00:00:00.000Z',versoesOrigem:['criacao','arquivamento'],versoesDestino:['criacao']});
   }, TEMPO);
 
   it('E-20.4 (b), (c) e (d): corpo repetido, destino que já existe arquivado e mover-e-editar caem no comportamento de antes', async () => {
@@ -500,7 +484,7 @@ function casosContraOBanco(modoRls: boolean) {
       d: [Boolean((await item('d/r.md'))!.arquivadoEm), Boolean(await item('d/s.md'))],
     }).toEqual({
       movidas: 0,
-      descartados: { ambiguos: 2, curtos: 0 },
+      descartados: { ambiguos: 0, curtos: 0 },
       b: [
         ['b/dois.md', true],
         ['b/um.md', true],
@@ -513,105 +497,58 @@ function casosContraOBanco(modoRls: boolean) {
     });
   }, TEMPO);
 
-  it('E-20.4 (e) e R-6: movimentos acima do teto ficam segurados por inteiro; a liberação por gente move na volta seguinte', async () => {
-    // Seis notas e seis movimentos: o teto é max(5, 20% de 6) = 5.
-    const arquivos: Record<string, string> = {};
-    for (let i = 0; i < 6; i++) arquivos[`origem/n${i}.md`] = nota(`teto-${i}`);
-    const v = criarVault(arquivos);
-    const { svc } = montar();
-    await volta(svc);
-    const ids = new Map((await itens()).map((i) => [i.chave.split('/').pop(), i.id]));
-    for (let i = 0; i < 6; i++) v.mover(`origem/n${i}.md`, `destino/n${i}.md`);
-    v.commit();
-    const segura = await volta(svc);
-    const pr = segura.payload?.recibo.projecao;
-    expect({
-      resultado: segura.payload?.resultado,
-      movimentosRecusados: pr.movimentosRecusados,
-      criadas: pr.criadas,
-      arquivadas: pr.arquivadas,
-      vivos: (await itens()).filter((i) => !i.arquivadoEm).length,
-      destinos: (await itens()).filter((i) => i.chave.includes('/destino/')).length,
-      conjunto: typeof pr.guardas.movimentos.conjunto,
-    }).toEqual({ resultado: 'parcial', movimentosRecusados: 6, criadas: 0, arquivadas: 0, vivos: 6, destinos: 0, conjunto: 'string' });
-
-    // Sem liberação, a volta seguinte segura de novo — e não grava recibo novo: nada mudou.
-    const deNovo = await volta(svc);
-    expect({ recibo: deNovo.recibo, destinos: (await itens()).filter((i) => i.chave.includes('/destino/')).length }).toEqual({
-      recibo: null,
-      destinos: 0,
-    });
-
-    // A pessoa libera pelo comando; o motivo e o autor vão ao RASTRO.
-    const linhas: string[] = [];
-    const lib = await liberarAGuarda(
-      admin,
-      { como: `pessoa.${MARCA}@casa.teste`, motivo: 'reorganização de pastas combinada com o Rodrigo' },
-      (l) => linhas.push(l),
-    );
-    expect(lib.movimentos).toEqual({ conjunto: pr.guardas.movimentos.conjunto, quantidade: 6 });
-    const evento = await admin.eventLog.findUniqueOrThrow({ where: { id: lib.eventoId! } });
-    expect({ tipo: evento.tipo, ator: [evento.actorType, evento.actorId], motivo: (evento.payload as any).motivo }).toEqual({
-      tipo: TIPO_DA_LIBERACAO,
-      ator: [ActorType.user, pessoa],
-      motivo: 'reorganização de pastas combinada com o Rodrigo',
-    });
-
-    const move = await volta(svc);
-    const depois = await itens();
-    expect({
-      movidas: move.payload?.recibo.projecao.movidas,
-      liberacaoUsada: move.payload?.liberacaoUsada,
-      mesmosIds: [0, 1, 2, 3, 4, 5].every((i) => depois.find((x) => x.chave.endsWith(`/destino/n${i}.md`))?.id === ids.get(`n${i}.md`)),
-      arquivadas: depois.filter((i) => i.arquivadoEm).length,
-    }).toEqual({ movidas: 6, liberacaoUsada: lib.eventoId, mesmosIds: true, arquivadas: 0 });
-    // Consumida, a liberação não vale de novo.
-    expect(await naEmpresa(CASA, () => memoria.liberacaoDaVault(CASA))).toBeNull();
+  it('E-20.4 (e) e R-6: renomeações não reatribuem IDs e a guarda segura arquivamento em massa', async () => {
+    const arquivos: Record<string,string> = {};
+    for (let i=0;i<6;i++) arquivos[`origem/n${i}.md`]=nota(`teto-${i}`);
+    const v=criarVault(arquivos), {svc}=montar(); await volta(svc);
+    const anteriores=new Map((await itens()).map(i=>[i.chave.split('/').pop(),i.id]));
+    for(let i=0;i<6;i++) v.mover(`origem/n${i}.md`,`destino/n${i}.md`);
+    v.commit(); const segura=await volta(svc), pr=segura.payload?.recibo.projecao;
+    const primeira=await itens();
+    expect({resultado:segura.payload?.resultado,movidas:pr.movidas,criadas:pr.criadas,
+      recusado:pr.arquivamentoRecusado,vivos:primeira.filter(i=>!i.arquivadoEm).length,
+      novos:primeira.filter(i=>i.chave.includes('/destino/')).every(i=>i.id!==anteriores.get(i.chave.split('/').pop()))
+    }).toEqual({resultado:'parcial',movidas:0,criadas:6,recusado:6,vivos:12,novos:true});
+    const liberacao=await liberarAGuarda(admin,{como:pessoa,motivo:'reorganização de pastas conferida'},()=>undefined);
+    expect(liberacao.movimentos).toBeNull();
+    expect(liberacao.arquivamento?.quantidade).toBe(6);
+    const evento=await admin.eventLog.findUniqueOrThrow({where:{id:liberacao.eventoId!}});
+    expect([evento.tipo,evento.actorType,evento.actorId]).toEqual([TIPO_DA_LIBERACAO,ActorType.user,pessoa]);
+    const depois=await volta(svc), finais=await itens();
+    expect({arquivadas:depois.payload?.recibo.projecao.arquivadas,movidas:depois.payload?.recibo.projecao.movidas,
+      anterioresPreservadas:finais.filter(i=>i.chave.includes('/origem/')).every(i=>i.id===anteriores.get(i.chave.split('/').pop()) && !!i.arquivadoEm),
+      destinosVivos:finais.filter(i=>i.chave.includes('/destino/')).every(i=>!i.arquivadoEm),
+    }).toEqual({arquivadas:6,movidas:0,anterioresPreservadas:true,destinosVivos:true});
   }, TEMPO);
 
-  it('R-6: a liberação vale só para o conjunto exato do recibo — a vault que mudou de novo segue segurada', async () => {
-    const arquivos: Record<string, string> = {};
-    for (let i = 0; i < 7; i++) arquivos[`origem/n${i}.md`] = nota(`exato-${i}`);
-    const v = criarVault(arquivos);
-    const { svc } = montar();
-    await volta(svc);
-    for (let i = 0; i < 6; i++) v.mover(`origem/n${i}.md`, `destino/n${i}.md`);
-    v.commit();
-    await volta(svc);
-    const lib = await liberarAGuarda(admin, { como: pessoa, motivo: 'reorganização combinada, seis notas' }, () => undefined);
-    expect(lib.movimentos?.quantidade).toBe(6);
-    // Entre a liberação e a volta, mais um arquivo muda de pasta: o conjunto já não é o liberado.
-    v.mover('origem/n6.md', 'destino/n6.md');
-    v.commit();
-    const outra = await volta(svc);
-    expect({
-      movidas: outra.payload?.recibo.projecao.movidas,
-      segurados: outra.payload?.recibo.projecao.movimentosRecusados,
-      liberacaoUsada: outra.payload?.liberacaoUsada,
-    }).toEqual({ movidas: 0, segurados: 7, liberacaoUsada: null });
-    // A liberação de antes continua não consumida, e não serve para o conjunto novo.
-    expect((await naEmpresa(CASA, () => memoria.liberacaoDaVault(CASA)))?.eventoId).toBe(lib.eventoId);
+  it('R-6: autorização para seis arquivamentos não libera conjunto alterado de sete', async () => {
+    const arquivos:Record<string,string>={}; for(let i=0;i<7;i++) arquivos[`origem/n${i}.md`]=nota(`exato-${i}`);
+    const v=criarVault(arquivos),{svc}=montar(); await volta(svc);
+    const anteriores=new Map((await itens()).map(i=>[i.chave.split('/').pop(),i.id]));
+    for(let i=0;i<6;i++) v.mover(`origem/n${i}.md`,`destino/n${i}.md`);
+    v.commit(); await volta(svc);
+    const lib=await liberarAGuarda(admin,{como:pessoa,motivo:'reorganização de seis notas'},()=>undefined);
+    expect(lib.arquivamento?.quantidade).toBe(6); expect(lib.movimentos).toBeNull();
+    v.mover('origem/n6.md','destino/n6.md'); v.commit(); const outra=await volta(svc), finais=await itens();
+    expect({movidas:outra.payload?.recibo.projecao.movidas,segurados:outra.payload?.recibo.projecao.arquivamentoRecusado,
+      liberacaoUsada:outra.payload?.liberacaoUsada,
+      originais:finais.filter(i=>i.chave.includes('/origem/')).every(i=>i.id===anteriores.get(i.chave.split('/').pop())&&!i.arquivadoEm),
+      distintas:finais.filter(i=>i.chave.includes('/destino/')).every(i=>i.id!==anteriores.get(i.chave.split('/').pop())),
+    }).toEqual({movidas:0,segurados:7,liberacaoUsada:null,originais:true,distintas:true});
+    expect((await naEmpresa(CASA,()=>memoria.liberacaoDaVault(CASA)))?.eventoId).toBe(lib.eventoId);
   }, TEMPO);
 
-  it('E-20.4 (f): reorganização com movimentos e uma exclusão real — a guarda conta só a exclusão', async () => {
-    // Sete notas: o teto é 5; mover 4 e apagar 2 somaria 6 sumidas, e só 2 não têm par.
-    const arquivos: Record<string, string> = {};
-    for (let i = 0; i < 7; i++) arquivos[`pasta/n${i}.md`] = nota(`reorg-${i}`);
-    const v = criarVault(arquivos);
-    const { svc } = montar();
-    await volta(svc);
-    for (let i = 0; i < 4; i++) v.mover(`pasta/n${i}.md`, `nova/n${i}.md`);
-    git(v.raiz, 'rm', '-q', `${MARCA}/pasta/n5.md`, `${MARCA}/pasta/n6.md`);
-    v.commit();
-    // 6 sumiram: acima do teto de 5 se contasse tudo; 2 sem par, abaixo dele.
-    const r = await volta(svc);
-    const pr = r.payload?.recibo.projecao;
-    expect({ movidas: pr.movidas, arquivadas: pr.arquivadas, recusado: pr.arquivamentoRecusado, resultado: r.payload?.resultado }).toEqual({
-      movidas: 4,
-      arquivadas: 2,
-      recusado: 0,
-      resultado: 'ok',
-    });
+  it('E-20.4 (f): quatro renomeações e duas exclusões acionam a guarda sobre seis identidades ausentes', async () => {
+    const arquivos:Record<string,string>={}; for(let i=0;i<7;i++) arquivos[`pasta/n${i}.md`]=nota(`reorg-${i}`);
+    const v=criarVault(arquivos),{svc}=montar(); await volta(svc);
+    const anteriores=new Map((await itens()).map(i=>[i.chave.split('/').pop(),i.id]));
+    for(let i=0;i<4;i++) v.mover(`pasta/n${i}.md`,`nova/n${i}.md`);
+    git(v.raiz,'rm','-q',`${MARCA}/pasta/n5.md`,`${MARCA}/pasta/n6.md`); v.commit();
+    const r=await volta(svc), pr=r.payload?.recibo.projecao, finais=await itens();
+    expect({movidas:pr.movidas,criadas:pr.criadas,arquivadas:pr.arquivadas,recusado:pr.arquivamentoRecusado,resultado:r.payload?.resultado,
+      originais:finais.filter(i=>i.chave.includes('/pasta/')).every(i=>i.id===anteriores.get(i.chave.split('/').pop())&&!i.arquivadoEm),
+      distintas:finais.filter(i=>i.chave.includes('/nova/')).every(i=>i.id!==anteriores.get(i.chave.split('/').pop())),
+    }).toEqual({movidas:0,criadas:4,arquivadas:0,recusado:6,resultado:'parcial',originais:true,distintas:true});
   }, TEMPO);
 
   it('R-6: arquivamento acima do teto fica segurado e a frase aponta o comando; liberado, a volta seguinte arquiva', async () => {
@@ -779,7 +716,10 @@ function casosContraOBanco(modoRls: boolean) {
     const { svc } = montar();
     await volta(svc);
     const daBase = (await item('da-base.md'))!;
-    const rota = new MemoriaController(memoria);
+    const trabalhoNaoUsado = new Proxy({} as ConstructorParameters<typeof MemoriaController>[1], {
+      get() { throw new Error('Contexto de trabalho não pertence a esta prova da memória'); },
+    });
+    const rota = new MemoriaController(memoria, trabalhoNaoUsado);
     const quem: JwtUser = {
       sub: pessoa,
       orgId: CASA,
@@ -803,8 +743,8 @@ function casosContraOBanco(modoRls: boolean) {
 
     const recusas = {
       alterar: await comoPessoa(() => rota.alterar(quem, daBase.id, { body: 'editado na tela', versaoEsperada: daBase.versao })),
-      arquivar: await comoPessoa(() => rota.arquivar(quem, daBase.id, {})),
-      restaurar: await comoPessoa(() => rota.restaurar(quem, daBase.id, {})),
+      arquivar: await comoPessoa(() => rota.arquivar(quem, daBase.id, { versaoEsperada: daBase.versao })),
+      restaurar: await comoPessoa(() => rota.restaurar(quem, daBase.id, { versaoEsperada: daBase.versao })),
       criarComPrefixo: await comoPessoa(() => rota.criar(quem, { chave: ` Vault:${MARCA}/x.md`, title: 'x', body: 'x', sourceType: 'operador' })),
       criarComOrigem: await comoPessoa(() => rota.criar(quem, { chave: `${MARCA}/y`, title: 'y', body: 'y', sourceType: 'vault' })),
       promoverComPrefixo: await comoPessoa(() => rota.promover(quem, { chave: `vault:${MARCA}/z.md`, title: 'z', body: 'z' })),
@@ -826,11 +766,12 @@ function casosContraOBanco(modoRls: boolean) {
       }),
     }).toEqual({ inalteradas: 'sem recibo: nada mudou', versao: 1, criadosPelaTela: 0 });
 
-    const comum = {
-      alterar: await comoPessoa(() => rota.alterar(quem, daTela.id, { body: 'nota digitada e corrigida', versaoEsperada: daTela.versao })),
-      arquivar: await comoPessoa(() => rota.arquivar(quem, daTela.id, {})),
-      restaurar: await comoPessoa(() => rota.restaurar(quem, daTela.id, {})),
-    };
+    const alterar = await comoPessoa(() => rota.alterar(quem, daTela.id, { body: 'nota digitada e corrigida', versaoEsperada: daTela.versao }));
+    const versaoDepoisDaEdicao = (await admin.contextItem.findUniqueOrThrow({ where: { id: daTela.id } })).versao;
+    const arquivar = await comoPessoa(() => rota.arquivar(quem, daTela.id, { versaoEsperada: versaoDepoisDaEdicao }));
+    const versaoDepoisDoArquivo = (await admin.contextItem.findUniqueOrThrow({ where: { id: daTela.id } })).versao;
+    const restaurar = await comoPessoa(() => rota.restaurar(quem, daTela.id, { versaoEsperada: versaoDepoisDoArquivo }));
+    const comum = { alterar, arquivar, restaurar };
     expect(comum).toEqual({ alterar: 'passou', arquivar: 'passou', restaurar: 'passou' });
   }, TEMPO);
 
@@ -950,9 +891,10 @@ function casosContraOBanco(modoRls: boolean) {
       espelho: 'ritual de fechamento da casa',
       daBaseNoIndice: 0,
       foraDaColecao: { onboarding: 1 },
-      espelhoPreservado: expect.any(Number),
+      espelhoPreservado: null,
     });
-    expect(r.payload?.recibo.indexacao.espelhoDoOnboardingPreservado).toBeGreaterThanOrEqual(1);
+    // A sonda não divulga contagem de onboarding sem solicitante autorizado.
+    expect(r.payload?.recibo.indexacao.espelhoDoOnboardingPreservado).toBeNull();
   }, TEMPO);
 
   // -------------------------------------------------------------------------
@@ -1093,8 +1035,8 @@ function casosContraOBanco(modoRls: boolean) {
       commit: c.seguinte.payload?.recibo.montante.commit,
       resultado: c.seguinte.payload?.resultado,
       escritas: escritas(c.seguinte.payload),
-      origem: c.depois.origem,
-      destino: c.depois.destino && [c.depois.destino.id, c.depois.destino.arquivadoEm],
+      origem: c.depois.origem && [c.depois.origem.id, !!c.depois.origem.arquivadoEm],
+      destino: c.depois.destino && [c.depois.destino.id === c.origem.id, c.depois.destino.arquivadoEm],
       versoes: c.depois.versoes,
       indice: c.depois.indice,
     },
@@ -1103,18 +1045,15 @@ function casosContraOBanco(modoRls: boolean) {
       mudouNoMeio: false,
       commit: c.headDepois,
       resultado: 'ok',
-      escritas: { criadas: 0, alteradas: 0, arquivadas: 0, movidas: 1 },
-      origem: null,
-      destino: [c.origem.id, null],
-      versoes: [
-        [1, 'criacao', 'b.md'],
-        [2, 'alteracao', 'c.md'],
-      ],
+      escritas: { criadas: 1, alteradas: 0, arquivadas: 1, movidas: 0 },
+      origem: [c.origem.id, true],
+      destino: [false, null],
+      versoes: [[1, 'criacao', 'c.md']],
       indice: ['a.md', 'c.md'],
     },
   });
 
-  it('R-2 (C-1): pull com movimento logo DEPOIS do passeio — a volta sai marcada, com o commit que leu, sem arquivar a origem; a seguinte move com o mesmo itemId', async () => {
+  it('R-2 (C-1): pull com movimento logo DEPOIS do passeio — a volta sai marcada, com o commit que leu, sem arquivar a origem; a seguinte mantém a origem e cria identidade distinta', async () => {
     const c = await moverNoMeio('depois');
     const seguinte = seguinteDoMovimento(c);
     expect({
@@ -1148,7 +1087,7 @@ function casosContraOBanco(modoRls: boolean) {
     });
   }, TEMPO);
 
-  it('R-2 (C-1): pull com movimento entre a leitura do .git e o passeio — a origem fica como vista e no índice; a seguinte move com o mesmo itemId', async () => {
+  it('R-2 (C-1): pull com movimento entre a leitura do .git e o passeio — a origem fica como vista e no índice; a seguinte mantém a origem e cria identidade distinta', async () => {
     const c = await moverNoMeio('antes');
     const seguinte = seguinteDoMovimento(c);
     expect({

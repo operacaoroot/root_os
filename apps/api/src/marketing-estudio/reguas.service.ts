@@ -17,6 +17,7 @@ import { GoogleService } from '../google/google.service';
 import { MarcaService } from '../pauta/marca.service';
 import { jsonDaIa, lerMetaDoLink } from './leitura-de-link';
 import { REGRAS_DE_PARTIDA, SYSTEM_REGUA, sistemaDoFormato } from './prompts';
+import { GostoDaRootService } from './gosto-da-root.service';
 
 /*
  * PRODUÇÃO › FORMATOS, as réguas do ROOT Estúdio (26/10/2026). Cada formato tem
@@ -49,6 +50,7 @@ export class ReguasService {
     private readonly marcas: MarcaService,
     @Inject(LLM_PROVIDER) private readonly llm: LlmProvider,
     @Optional() private readonly google?: GoogleService,
+    @Optional() private readonly gosto?: GostoDaRootService,
   ) {}
 
   async listar(orgId: string): Promise<ReguaDoFormato[]> {
@@ -149,10 +151,12 @@ export class ReguasService {
       // A RETROALIMENTAÇÃO (02/11/2026, pedido do Lucas): quem escreve o post lê, a cada vez, o
       // comentário de quando esta ideia foi aprovada, a conversa do post e os últimos comentários
       // da triagem (o "algoritmo"). Antes só a triagem lia; o roteiro saía sem saber o porquê.
-      const [marca, card, algoritmo] = await Promise.all([
+      // 04/11/2026: também a nota "Gosto da Root" do Obsidian (o que a equipe escreveu + o resumo de todas as decisões).
+      const [marca, card, algoritmo, gosto] = await Promise.all([
         this.marcas.bloco(orgId).catch(() => ''),
         p.cardId ? this.prisma.marketingIdeiaCard.findFirst({ where: { id: p.cardId, orgId }, select: { comentario: true } }) : null,
         this.prisma.marketingIdeiaCard.findMany({ where: { orgId, comentario: { not: null } }, orderBy: { decididaEm: 'desc' }, take: 20, select: { titulo: true, status: true, comentario: true } }),
+        this.gosto ? this.gosto.paraAIa(orgId) : Promise.resolve(''),
       ]);
       const conversa = (Array.isArray(p.comentarios) ? (p.comentarios as { autor?: string; texto?: string }[]) : [])
         .filter((c) => c?.texto && !String(c.autor ?? '').includes('(versão antes de gerar)'))
@@ -174,6 +178,7 @@ export class ReguasService {
             `## Onde sai\nPerfil de ${perfis.join(' e ')}. ${perfis.every((x) => x === 'Root') ? 'Voz da marca ROOT.' : 'Escreva na primeira pessoa de quem posta, como sócio da ROOT, sem soar institucional.'}`,
           card?.comentario && `## O comentário de quem aprovou esta ideia (siga isto acima de tudo)\n${card.comentario}`,
           conversa.length && `## Conversa da equipe neste post (leve em conta)\n${conversa.join('\n')}`,
+          gosto && `## O gosto da Root (a nota do Obsidian: o que a equipe escreveu e o resumo de todas as decisões)\n${gosto.slice(0, 6000)}`,
           algoritmo.length &&
             `## O que a equipe já explicou ao aprovar ou recusar outras ideias (o gosto da casa)\n${algoritmo.map((a) => `- ${a.status === 'aprovada' ? 'APROVOU' : 'RECUSOU'} "${a.titulo}": ${String(a.comentario).slice(0, 400)}`).join('\n')}`,
           temAnterior && `## Versão anterior (JSON)\n${JSON.stringify(anterior)}`,

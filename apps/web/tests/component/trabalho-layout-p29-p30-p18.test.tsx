@@ -13,7 +13,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 const get = vi.fn(), patch = vi.fn(), post = vi.fn();
 let permissions = ['tarefas.ver', 'tarefas.editar'];
 vi.mock('@/lib/api', () => ({
-  apiGet: (...args: unknown[]) => get(...args), apiPatch: (...args: unknown[]) => patch(...args),
+  apiGet: (path: string, ...args: unknown[]) => path === '/clientes-escopo/me' ? Promise.resolve({ amplo: true, clientes: [] }) : get(path, ...args), apiPatch: (...args: unknown[]) => patch(...args),
   apiPost: (...args: unknown[]) => post(...args), apiDelete: vi.fn(), apiBlob: vi.fn(),
 }));
 vi.mock('@/lib/auth', () => ({ useAuth: () => ({ token: 'qa-token', ready: true, user: { id: 'qa-eu' }, can: (p: string) => permissions.includes(p) }) }));

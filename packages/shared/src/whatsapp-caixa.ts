@@ -353,7 +353,8 @@ export function normalizarNomeDeVinculo(nome: string | null | undefined): string
  * separador). Sem o prefixo, `null`.
  */
 export function nomeDoGrupoSemPrefixo(assunto: string | null | undefined): string | null {
-  const m = /^\s*root\s*[|\-–—:]\s*(.+?)\s*$/i.exec(String(assunto ?? ''));
+  // Etapa 7 (F-19): o ponto do meio (·, •) também, que é o nome que o fechamento dá ao grupo ("Root · empresa").
+  const m = /^\s*root\s*[|\-–—:·•]\s*(.+?)\s*$/i.exec(String(assunto ?? ''));
   return m && m[1].trim() ? m[1].trim() : null;
 }
 
@@ -379,7 +380,7 @@ export function ehGrupoDaEquipePeloNome(assunto: string | null | undefined): boo
 
 /** Iniciais para o avatar sem foto: "Café Serra" → "CS"; número → os 2 últimos dígitos. */
 export function iniciaisDaConversa(nome: string): string {
-  const limpo = nome.replace(/^\s*root\s*[|\-–—:]\s*/i, '').trim();
+  const limpo = nome.replace(/^\s*root\s*[|\-–—:·•]\s*/i, '').trim();
   const palavras = limpo.split(/\s+/).filter((p) => /[\p{L}\p{N}]/u.test(p));
   if (!palavras.length) return '?';
   if (/^\+?[\d\s()-]+$/.test(limpo)) return limpo.replace(/\D/g, '').slice(-2) || '?';

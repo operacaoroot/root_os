@@ -1,3 +1,4 @@
+import { ServiceUnavailableException } from '@nestjs/common';
 import { describe, expect, it } from 'vitest';
 import {
   PAUTA_SECOES_DO_RELATORIO,
@@ -16,6 +17,8 @@ import { RelatorioService, SEM_PERFORMANCE, mesSeguinte } from '../src/pauta/rel
 import { ExecutorDoRelatorioDaPauta, mesAFechar } from '../src/routines/executores/pauta-relatorio.executor';
 import type { PrismaService } from '../src/prisma/prisma.service';
 import type { AuditService } from '../src/audit/audit.service';
+import { comContexto } from '../src/common/contexto-execucao';
+import { atuarNaPauta, derivacaoDaPauta, prismaDaDerivacao } from './pauta-derivacao-dubles';
 import type { MemoriaService } from '../src/memory/memoria.service';
 import type { LlmProvider } from '../src/llm/llm.provider';
 import type { ExecutoresDeRotinaRegistry } from '../src/routines/executores.registry';
@@ -197,20 +200,23 @@ function montar(saida: string, opts: { comRelatorio?: boolean; modulos?: string[
       n.versao += 1;
       return n;
     },
-  } as unknown as MemoriaService;
+  };
+  const derivacao = derivacaoDaPauta(notas, memoria);
+  const memoriaComDerivacao = { ...memoria, ...derivacao } as unknown as MemoriaService;
 
   const auditadas: Array<Record<string, unknown>> = [];
-  const prisma = {
+  const prisma = prismaDaDerivacao({
+      ...derivacao,
     pautaPeca: {
       findMany: async () =>
-        PECAS.map((p) => ({ ...p, publicadaEm: p.publicadaEm ? new Date(p.publicadaEm) : null })),
+        PECAS.map((p, i) => ({ ...p, id: `p${i + 1}`, publicadaEm: p.publicadaEm ? new Date(p.publicadaEm) : null })),
     },
     org: { findUnique: async () => ({ modulos: opts.modulos ?? ['pauta'] }) },
     auditLog: { create: async () => ({}) },
-  } as unknown as PrismaService;
+  }) as unknown as PrismaService;
   const audit = { log: async (i: Record<string, unknown>) => void auditadas.push(i) } as unknown as AuditService;
 
-  const svc = new RelatorioService(prisma, audit, llm, memoria);
+  const svc = new RelatorioService(prisma, audit, llm, memoriaComDerivacao);
   const registro = { registrar: () => {} } as unknown as ExecutoresDeRotinaRegistry;
   return { chamadas, notas, auditadas, svc, executor: new ExecutorDoRelatorioDaPauta(prisma, svc, registro) };
 }
@@ -218,7 +224,7 @@ function montar(saida: string, opts: { comRelatorio?: boolean; modulos?: string[
 describe('o serviço: fechar o mês, salvar e reler', () => {
   it('gera o relatório com o dublê e grava a nota do mês', async () => {
     const { svc, chamadas, notas } = montar(RESPOSTA);
-    const p = await svc.gerar(ORG, PESSOA, MES);
+    const p = await atuarNaPauta(ORG, PESSOA, () => svc.gerar(ORG, PESSOA, MES));
     expect(chamadas).toHaveLength(1);
     expect(chamadas[0].orgId).toBe(ORG);
     expect(p.documento).toContain('2 peça(s) publicada(s).');
@@ -235,7 +241,7 @@ describe('o serviço: fechar o mês, salvar e reler', () => {
 
   it('editar à mão substitui o documento e muda a origem', async () => {
     const { svc } = montar(RESPOSTA);
-    await svc.gerar(ORG, PESSOA, MES);
+    await atuarNaPauta(ORG, PESSOA, () => svc.gerar(ORG, PESSOA, MES));
     const p = await svc.salvar(ORG, PESSOA, MES, { documento: '# Relatório de 2026-09\n\nA minha versão.' });
     expect(p.documento).toContain('A minha versão.');
     expect(p.origem).toBe('operador');
@@ -243,7 +249,7 @@ describe('o serviço: fechar o mês, salvar e reler', () => {
 
   it('resposta fora do formato vira 503 e não grava relatório', async () => {
     const { svc, notas } = montar('isto não é json');
-    await expect(svc.gerar(ORG, PESSOA, MES)).rejects.toThrow();
+    await expect(atuarNaPauta(ORG, PESSOA, () => svc.gerar(ORG, PESSOA, MES))).rejects.toBeInstanceOf(ServiceUnavailableException);
     expect(notas.has(chaveDoRelatorio(MES))).toBe(false);
   });
 });
@@ -261,9 +267,13 @@ describe('a rotina mensal', () => {
       agora: new Date(agora),
     }) as ContextoDaRotina;
 
+  const executar = (executor: ExecutorDoRelatorioDaPauta, contexto: ContextoDaRotina) =>
+    comContexto({ orgId: contexto.orgId, actorType: 'system', actorId: null,
+      origem: 'cron', correlationId: contexto.correlationId }, () => executor.executar(contexto));
+
   it('fecha o mês anterior ao do tique', async () => {
     const { executor, notas } = montar(RESPOSTA);
-    const r = await executor.executar(ctx('2026-10-01T03:00:00.000Z'));
+    const r = await executar(executor, ctx('2026-10-01T03:00:00.000Z'));
     expect(r.status).toBe('ok');
     expect(r.resumo).toContain('relatório de 2026-09 gerado');
     expect(notas.has(chaveDoRelatorio(MES))).toBe(true);
@@ -271,7 +281,7 @@ describe('a rotina mensal', () => {
 
   it('NÃO refaz relatório que já existe: a edição à mão não é apagada por rotina', async () => {
     const { executor, chamadas, notas } = montar(RESPOSTA, { comRelatorio: true });
-    const r = await executor.executar(ctx('2026-10-01T03:00:00.000Z'));
+    const r = await executar(executor, ctx('2026-10-01T03:00:00.000Z'));
     expect(r.status).toBe('pulada');
     expect(r.resumo).toContain('refazer é pelo botão');
     expect(chamadas).toHaveLength(0);
@@ -280,7 +290,7 @@ describe('a rotina mensal', () => {
 
   it('empresa sem o módulo pauta não paga IA pela rotina que ficou', async () => {
     const { executor, chamadas } = montar(RESPOSTA, { modulos: [] });
-    const r = await executor.executar(ctx('2026-10-01T03:00:00.000Z'));
+    const r = await executar(executor, ctx('2026-10-01T03:00:00.000Z'));
     expect(r.status).toBe('pulada');
     expect(r.resumo).toContain('módulo pauta desligado');
     expect(chamadas).toHaveLength(0);
@@ -288,14 +298,14 @@ describe('a rotina mensal', () => {
 
   it('a rotina assina como sistema, não como a pessoa que clicou', async () => {
     const { executor, auditadas } = montar(RESPOSTA);
-    await executor.executar(ctx('2026-10-01T03:00:00.000Z'));
+    await executar(executor, ctx('2026-10-01T03:00:00.000Z'));
     const gerado = auditadas.find((a) => a.action === 'pauta.relatorio_gerado');
     expect(gerado?.actorType).toBe('system');
   });
 
   it('o mês na config refaz um mês antigo sem esperar a virada', async () => {
     const { executor } = montar(RESPOSTA);
-    const r = await executor.executar(ctx('2026-12-01T03:00:00.000Z', { mes: MES }));
+    const r = await executar(executor, ctx('2026-12-01T03:00:00.000Z', { mes: MES }));
     expect(r.resumo).toContain('relatório de 2026-09');
   });
 });

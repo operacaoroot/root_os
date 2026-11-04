@@ -1,11 +1,12 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useLayoutEffect, useState } from 'react';
 import type { ClienteComPasta } from '@mktos/shared';
 
 import { apiGet } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 import { PastaDoCliente } from './PastaDoCliente';
+import type { ClienteDaCarteira } from './ClienteEscopo';
 
 /*
  * AS PASTAS DOS CLIENTES NO DRIVE (rodada dos agentes, 21/10/2026, lane A4, TR-04).
@@ -15,46 +16,49 @@ import { PastaDoCliente } from './PastaDoCliente';
  * pedido na fila de aprovação e os arquivos que esperam a pasta nascer. Lê
  * `GET /clientes/pastas` (quem vê tarefas ou leads). Recolhida por padrão.
  */
-export function PastasDosClientes() {
+export function PastasDosClientes({ carteira }: { carteira?: ClienteDaCarteira[] }) {
   const { token, ready, can } = useAuth();
   const [aberta, setAberta] = useState(false);
   const [clientes, setClientes] = useState<ClienteComPasta[] | null>(null);
   const [erro, setErro] = useState<string | null>(null);
   const pode = can('tarefas.ver') || can('leads.ver');
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (!aberta || !ready || !token || !pode) return;
-    let vivo = true;
+    const controle = new AbortController();
     setErro(null);
-    apiGet<ClienteComPasta[]>('/clientes/pastas', token)
-      .then((r) => vivo && setClientes(r))
-      .catch((e) => vivo && setErro((e as Error).message));
-    return () => {
-      vivo = false;
-    };
+    apiGet<ClienteComPasta[]>('/clientes/pastas', token, controle.signal)
+      .then((r) => { if (!controle.signal.aborted) setClientes(r); })
+      .catch((e: Error) => { if (!controle.signal.aborted) setErro(e.message); });
+    return () => controle.abort();
   }, [aberta, ready, token, pode]);
 
   if (!ready || !pode) return null;
-  const sem = clientes?.filter((c) => !c.pastaDriveUrl).length ?? 0;
+  const visiveis = carteira ? clientes?.filter((c) => carteira.some((autorizado) => autorizado.id === c.id)) : clientes;
+  const sem = visiveis?.filter((c) => !c.pastaDriveUrl).length ?? 0;
   return (
     <section aria-label="Pastas dos clientes no Drive" className="rounded-root border border-border p-3 text-sm">
       <button type="button" onClick={() => setAberta((a) => !a)} aria-expanded={aberta} className="font-medium text-text hover:underline">
-        Pastas dos clientes no Drive{clientes ? ` · ${clientes.length - sem} com pasta · ${sem} sem` : ''}
+        Pastas dos clientes no Drive{visiveis ? ` · ${visiveis.length - sem} com pasta · ${sem} sem` : ''}
       </button>
       {aberta && (
         <div className="mt-3 space-y-2">
           {erro && <p role="alert" className="text-xs text-muted">Não conseguimos ler as pastas: {erro}</p>}
           {!erro && clientes === null && <p className="text-xs text-muted">Carregando…</p>}
-          {clientes?.length === 0 && <p className="text-xs text-muted">Nenhum cliente ativo.</p>}
+          {visiveis?.length === 0 && <p className="text-xs text-muted">Nenhum cliente ativo.</p>}
           <ul className="divide-y divide-border">
-            {clientes?.map((c) => (
+            {visiveis?.map((c) => (
               <li key={c.id} className="flex flex-wrap items-center justify-between gap-2 py-2">
                 <span className="min-w-0 truncate">{c.nome}</span>
                 <span className="flex flex-wrap items-center gap-3">
                   {c.arquivosNaFila > 0 && (
                     <span className="text-xs text-muted">{c.arquivosNaFila} arquivo(s) esperando a pasta</span>
                   )}
-                  <PastaDoCliente partnerId={c.id} url={c.pastaDriveUrl} erro={c.pastaDriveErro} aguardando={c.aguardandoAprovacao} compacto />
+                  {carteira
+                    ? <span className="text-xs text-muted">
+                        {c.pastaDriveUrl ? 'Pasta criada' : c.aguardandoAprovacao ? 'Aguardando aprovação' : 'Sem pasta'}
+                      </span>
+                    : <PastaDoCliente partnerId={c.id} url={c.pastaDriveUrl} erro={c.pastaDriveErro} aguardando={c.aguardandoAprovacao} compacto />}
                 </span>
               </li>
             ))}

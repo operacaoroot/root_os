@@ -586,7 +586,8 @@ export class FinanceService implements OnModuleInit {
         _sum: { amount: true },
       }),
       this.prisma.contract.findMany({
-        where: { orgId, status: 'ativo' },
+        // Etapa 4: o contrato do fechamento (com registro comercial) tem o dinheiro nas parcelas do acordo.
+        where: { orgId, status: 'ativo', comercialContratoId: null },
         select: { tipo: true, descricao: true, valor: true, periodicidade: true, proximoVencimento: true, dataFim: true },
       }),
     ]);
@@ -715,7 +716,7 @@ export class FinanceService implements OnModuleInit {
       this.prisma.financeTransaction.groupBy({
         by: ['type'], where: { orgId, status: 'previsto', OR: [{ dueDate: { gte: de, lt: hoje } }, { dueDate: null, date: { gte: de, lt: hoje } }] }, _sum: { amount: true },
       }),
-      this.prisma.contract.findMany({ where: { orgId, status: 'ativo' }, select: { tipo: true, valor: true, periodicidade: true, proximoVencimento: true, dataFim: true } }),
+      this.prisma.contract.findMany({ where: { orgId, status: 'ativo', comercialContratoId: null }, select: { tipo: true, valor: true, periodicidade: true, proximoVencimento: true, dataFim: true } }),
       this.estimativaDeVariaveis(orgId),
     ]);
     const soma = (g: Array<{ type: FinanceTxType; _sum: { amount: Prisma.Decimal | null } }>, t: FinanceTxType) => num(g.find((x) => x.type === t)?._sum.amount);

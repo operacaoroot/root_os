@@ -590,7 +590,13 @@ class LeitorDeFontes {
         orderBy: { publicadaEm: 'asc' },
         select: { publicadaEm: true },
       });
-      primeiro = r?.publicadaEm ?? null;
+      // Etapa 8 (F-23): o primeiro post publicado da Produção também conta.
+      const post = await this.prisma.marketingPost.findFirst({ where: { orgId, etapa: 'publicado', data: { not: null } }, orderBy: { data: 'asc' }, select: { data: true } });
+      const datas = [r?.publicadaEm, post?.data].filter((d): d is Date => !!d);
+      primeiro = datas.length ? new Date(Math.min(...datas.map((d) => d.getTime()))) : null;
+    } else if (fonte === 'comercial') {
+      const r = await this.prisma.acordoComercial.findFirst({ where: { orgId, tipo: 'pagante', fechadoEm: { not: null } }, orderBy: { fechadoEm: 'asc' }, select: { fechadoEm: true } });
+      primeiro = r?.fechadoEm ?? null;
     }
     this.primeiros.set(fonte, primeiro);
     return primeiro;
@@ -606,8 +612,16 @@ class LeitorDeFontes {
         });
       case 'bio':
         return this.prisma.bioEvent.count({ where: { orgId, nome: { in: BIO_NOMES_DE_CLIQUE }, ocorridoEm: janela } });
-      case 'pauta':
-        return this.prisma.pautaPeca.count({ where: { orgId, status: 'publicada', publicadaEm: janela } });
+      case 'pauta': {
+        // Etapa 8 (F-23): Produção (o post tem só o dia) + Pauta antiga.
+        const [pecas, posts] = await Promise.all([
+          this.prisma.pautaPeca.count({ where: { orgId, status: 'publicada', publicadaEm: janela } }),
+          this.prisma.marketingPost.count({ where: { orgId, etapa: 'publicado', data: janela } }),
+        ]);
+        return pecas + posts;
+      }
+      case 'comercial':
+        return this.prisma.acordoComercial.count({ where: { orgId, tipo: 'pagante', fechadoEm: janela } });
       default:
         throw new Error(`fonte sem contagem: ${ind.fonte}`);
     }

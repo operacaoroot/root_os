@@ -146,6 +146,7 @@ export const CHAMADORES_DE_PLATAFORMA: readonly ChamadorDePlataforma[] = [
   { arquivo: 'src/policy/policy.service.ts', porQue: 'lê a base e enumera orgId de versões ativas; cada versão própria é carregada na org.' },
   { arquivo: 'src/health/health.controller.ts', porQue: 'SELECT 1 declara contexto sem acessar tabela de cliente.' },
   { arquivo: 'src/bio/bio-sync.service.ts', porQue: 'o cron enumera somente Org.id; conexões e desafios são processados por empresa.' },
+  { arquivo: 'src/marketing-estudio/memoria-do-marketing.service.ts', porQue: 'a fila de memória e sua retomada executam comContextoDaEmpresaResolvida usando a organização já identificada; não abrem a sentinela nem consultam notas de outras empresas.' },
 ] as const;
 
 /**

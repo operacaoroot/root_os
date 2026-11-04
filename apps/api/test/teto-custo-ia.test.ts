@@ -1408,6 +1408,9 @@ describe.skipIf(!URL)('o laço do agente, quando o teto estoura no meio', () => 
       {} as never,
       runtime,
       sessoes as unknown as SessionService,
+      new Proxy({} as ConstructorParameters<typeof AgentsController>[3], { get() { throw new Error('Procedimento não pertence à rota de runtime'); } }),
+      new Proxy({} as ConstructorParameters<typeof AgentsController>[4], { get() { throw new Error('Agenda não pertence à rota de runtime'); } }),
+      new Proxy({} as ConstructorParameters<typeof AgentsController>[5], { get() { throw new Error('Ferramenta local não pertence à rota de runtime'); } }),
     );
     const erro = await controlador
       .executar(

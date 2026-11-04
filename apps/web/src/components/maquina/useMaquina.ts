@@ -65,9 +65,10 @@ export function useMaquina() {
     salvar: (id: string, input: MaquinaPostSalvarInput) =>
       agir(async () => trocar(await apiPut<MaquinaPost>(`/marketing/maquina/posts/${id}`, input, token))),
     // Sem `data`, o dia de postar já marcado fica (planejamento); `null` tira.
-    mudarEtapa: (id: string, etapa: MaquinaEtapa, data?: string | null, linkPublicado?: string) =>
+    // Etapa 8 (#6): `hora` (HH:MM) vai junto quando a janela de agendar a pede.
+    mudarEtapa: (id: string, etapa: MaquinaEtapa, data?: string | null, linkPublicado?: string, hora?: string) =>
       agir(async () =>
-        trocar(await apiPatch<MaquinaPost>(`/marketing/maquina/posts/${id}/etapa`, { etapa, data, linkPublicado }, token)),
+        trocar(await apiPatch<MaquinaPost>(`/marketing/maquina/posts/${id}/etapa`, { etapa, data, linkPublicado, hora }, token)),
       ),
     planejar: (id: string, input: MaquinaPlanejamentoInput) =>
       agir(async () => trocar(await apiPatch<MaquinaPost>(`/marketing/maquina/posts/${id}/planejamento`, input, token))),

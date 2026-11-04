@@ -77,6 +77,7 @@ export async function provisionarTenantDeTeste(
 
   const papeis = await prisma.role.findMany({ where: { orgId }, select: { id: true, key: true } });
   const usuarios = await prisma.user.findMany({ where: { orgId }, select: { id: true } });
+  const perfis = await prisma.clienteAcessoPerfil.findMany({ where: { orgId }, select: { id: true } });
 
   const papelInicialId = papeis.find((p) => p.key === PAPEL_INICIAL)?.id;
   if (!papelInicialId) {
@@ -92,6 +93,7 @@ export async function provisionarTenantDeTeste(
     Org: [orgId],
     Role: papeis.map((r) => r.id),
     User: usuarios.map((u) => u.id),
+    ClienteAcessoPerfil: perfis.map((p) => p.id),
   };
 
   /*
@@ -105,6 +107,6 @@ export async function provisionarTenantDeTeste(
     papelInicialId,
     adminUserId: provisionamento.admin?.userId ?? null,
     chaves,
-    ordemDeLimpeza: ['Org', 'Role', 'User'],
+    ordemDeLimpeza: ['Org', 'Role', 'User', 'ClienteAcessoPerfil'],
   };
 }

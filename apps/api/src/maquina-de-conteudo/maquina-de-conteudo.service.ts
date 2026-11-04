@@ -75,6 +75,7 @@ function paraTela(p: MarketingPost, comentarioDaIdeia: ComentarioDaIdeia = null)
     arquivos: arquivosDe(p.recursos),
     etapa: ((MAQUINA_ETAPAS as readonly string[]).includes(p.etapa) ? p.etapa : 'ideia') as MaquinaEtapa,
     data: dia(p.data),
+    hora: p.hora ?? '',
     dataExecucao: dia(p.dataExecucao),
     perfis: perfisDe(p.perfis),
     comentarioDaIdeia,
@@ -181,6 +182,7 @@ export class MaquinaDeConteudoService {
         data,
         hist: hist as unknown as Prisma.InputJsonValue,
         ...(input.linkPublicado !== undefined ? { linkPublicado: input.linkPublicado } : {}),
+        ...(input.hora !== undefined ? { hora: input.hora } : {}),
       },
     });
     return this.tela(p);
@@ -209,6 +211,7 @@ export class MaquinaDeConteudoService {
     const campos: Prisma.MarketingPostUpdateInput = {};
     if (input.dataExecucao !== undefined) campos.dataExecucao = paraDia(input.dataExecucao);
     if (input.perfis !== undefined) campos.perfis = [...new Set(input.perfis)];
+    if (input.hora !== undefined) campos.hora = input.hora;
     if (input.data !== undefined) {
       if (!input.data && atual.etapa === 'publicado') throw new BadRequestException('Post postado precisa de data.');
       campos.data = paraDia(input.data);

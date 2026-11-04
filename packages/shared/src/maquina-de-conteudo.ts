@@ -143,6 +143,8 @@ export interface MaquinaPost {
    * quando foi. Desde 02/11 pode ser marcado em qualquer etapa (planejar antes de gravar).
    */
   data: string | null;
+  /** Horário de postar (HH:MM); vazio = sem horário. Etapa 8 (#6). */
+  hora: string;
   /** AAAA-MM-DD: o dia de executar (gravar o vídeo ou fazer a arte). */
   dataExecucao: string | null;
   perfis: MaquinaPerfil[];
@@ -168,6 +170,7 @@ export interface MaquinaPainel {
 
 const texto = (max: number) => z.string().trim().max(max).default('');
 const data = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Data no formato AAAA-MM-DD.');
+const hora = z.string().regex(/^(([01]\d|2[0-3]):[0-5]\d)?$/, 'Horário no formato HH:MM.');
 
 export const MaquinaPostSalvarSchema = z.object({
   numero: texto(40),
@@ -210,6 +213,7 @@ export type MaquinaPostSalvarInput = z.infer<typeof MaquinaPostSalvarSchema>;
 /** Datas e perfis do post, sem mexer no conteúdo. Campo ausente = não muda. */
 export const MaquinaPlanejamentoSchema = z.object({
   data: data.nullable().optional(),
+  hora: hora.optional(),
   dataExecucao: data.nullable().optional(),
   perfis: z.array(z.enum(MAQUINA_PERFIS)).max(4).optional(),
 });
@@ -219,6 +223,7 @@ export const MaquinaEtapaSchema = z
   .object({
     etapa: z.enum(MAQUINA_ETAPAS),
     data: data.nullish(),
+    hora: hora.optional(),
     linkPublicado: z.string().trim().max(500).optional(),
   })
   .refine((v) => !etapaPrecisaDeData(v.etapa) || !!v.data, { message: 'Escolha a data.', path: ['data'] });
@@ -236,6 +241,17 @@ export const MaquinaMetricasSchema = z.object({
 });
 
 export const MaquinaCadenciaSchema = z.object({ dias: z.array(z.number().int().min(0).max(6)).max(7) });
+
+/**
+ * O horário sugerido (etapa 8, #6): o mais usado nos posts que já têm horário; empate fica com o mais
+ * cedo; sem nenhum, meio-dia. É só sugestão: a pessoa troca no campo.
+ */
+export function horaSugerida(posts: Pick<MaquinaPost, 'hora'>[]): string {
+  const conta = new Map<string, number>();
+  for (const p of posts) if (p.hora) conta.set(p.hora, (conta.get(p.hora) ?? 0) + 1);
+  const [melhor] = [...conta.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
+  return melhor?.[0] ?? '12:00';
+}
 
 /** Dias livres (sem post agendado/postado) a partir de `desde`, nos dias da cadência. */
 export function datasLivres(posts: Pick<MaquinaPost, 'etapa' | 'data'>[], cadencia: number[], desde: string, quantas = 6): string[] {

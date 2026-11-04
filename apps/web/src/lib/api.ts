@@ -125,10 +125,11 @@ async function handle<T>(res: Response, path: string, token?: string | null): Pr
   return res.json();
 }
 
-export function apiGet<T>(path: string, token?: string | null): Promise<T> {
+export function apiGet<T>(path: string, token?: string | null, signal?: AbortSignal): Promise<T> {
   return fetch(`${API_BASE}${path}`, {
     headers: token ? { Authorization: `Bearer ${token}` } : {},
     cache: 'no-store',
+    signal,
   }).then((r) => handle<T>(r, path, token));
 }
 
@@ -150,10 +151,11 @@ export async function apiTexto(path: string, token?: string | null): Promise<str
 }
 
 /** GET que responde binário (a imagem de uma thumb), com o token no cabeçalho. */
-export async function apiBlob(path: string, token?: string | null): Promise<Blob> {
+export async function apiBlob(path: string, token?: string | null, signal?: AbortSignal): Promise<Blob> {
   const res = await fetch(`${API_BASE}${path}`, {
     headers: token ? { Authorization: `Bearer ${token}` } : {},
     cache: 'no-store',
+    signal,
   });
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
@@ -167,9 +169,11 @@ export function apiPost<T>(
   path: string,
   body: unknown,
   token?: string | null,
+  signal?: AbortSignal,
 ): Promise<T> {
   return fetch(`${API_BASE}${path}`, {
     method: 'POST',
+    signal,
     headers: {
       'Content-Type': 'application/json',
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
@@ -213,9 +217,11 @@ export function apiPatch<T>(
   path: string,
   body: unknown,
   token?: string | null,
+  signal?: AbortSignal,
 ): Promise<T> {
   return fetch(`${API_BASE}${path}`, {
     method: 'PATCH',
+    signal,
     headers: {
       'Content-Type': 'application/json',
       ...(token ? { Authorization: `Bearer ${token}` } : {}),

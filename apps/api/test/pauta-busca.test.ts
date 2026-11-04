@@ -289,6 +289,11 @@ describe('busca da pauta: o actor do Google no Apify', () => {
     process.env.APIFY_TOKEN = 'token-de-teste';
     const pedidos: Array<{ url: string; corpo: unknown }> = [];
     vi.stubGlobal('fetch', async (url: string, init?: RequestInit) => {
+      // A leitura de crédito precede o actor; fixture explícita evita confundir
+      // a resposta do dataset com a autorização de gasto.
+      if (url.includes('/users/me/limits')) return new Response(JSON.stringify({ data: {
+        limits: { maxMonthlyUsageUsd: 5 }, current: { monthlyUsageUsd: 0 },
+      } }), { status: 200 });
       pedidos.push({ url, corpo: init?.body ? JSON.parse(String(init.body)) : null });
       if (url.includes('/actor-runs/')) {
         return new Response(JSON.stringify({ data: { usageTotalUsd: 0.0042 } }), { status: 200 });

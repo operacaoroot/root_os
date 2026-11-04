@@ -45,6 +45,12 @@ describe('P2: colisão NFC na reindexação', () => {
     const anterior = { path: NFC, folder: 'Decisões', title: 'Aprovação', tags: ['anterior'], content: 'Texto sintético anterior.', links: [], wordCount: 3, fileTime };
     let rows = [{ ...anterior }];
     const prisma = {
+      $transaction: async (fn: (tx: unknown) => Promise<unknown>) => fn(prisma),
+      $executeRaw: async () => 0,
+      $queryRawUnsafe: async (sql: string, org: string) => {
+        if (sql.includes('"ContextMovementIntent"') && org === 'synthetic-org') return [{ pendente: false }];
+        throw new Error('Consulta inesperada na fixture');
+      },
       knowledgeNote: {
         findMany: vi.fn(async () => rows.map((r) => ({ ...r }))),
         deleteMany: vi.fn(async () => { rows = []; }),

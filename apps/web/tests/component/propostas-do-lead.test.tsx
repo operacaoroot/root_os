@@ -3,7 +3,7 @@
  *
  * A primeira coluna é o lead (a empresa, com o contato no balão), o título da
  * proposta vira texto de apoio, a origem e as colunas do funil saíram, a
- * situação fica, e clicar na linha abre o lead. A proposta do serviço sem lead
+ * situação fica, clicar na linha abre a leitura, e o nome abre o lead. A proposta do serviço sem lead
  * diz "sem lead" e oferece "Vincular a um lead" e "Criar lead"; o vínculo
  * gravado vale mais que o casamento pelo nome. "Aparelhos da equipe" fica entre
  * o painel e a lista.
@@ -14,16 +14,16 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { PainelComercialNegocio, PropostaDaSalaNaLista } from '@mktos/shared';
 
 import { leadsDaBusca } from '@/app/propostas/lead-da-proposta';
+import type { DetalheDaProposta } from '@/app/propostas/tipos';
 
 let RESPOSTAS: Record<string, unknown> = {};
 let ERROS: Record<string, Error> = {};
 const posts: { caminho: string; corpo: unknown }[] = [];
 let RESPOSTA_DO_POST: (caminho: string, corpo: unknown) => unknown = () => ({});
 let PERMISSOES: string[] = ['leads.ver', 'leads.editar'];
-const push = vi.fn();
 
 vi.mock('@/lib/auth', () => ({ useAuth: () => ({ token: 'tok', ready: true, user: { id: 'eu' }, can: (p: string) => PERMISSOES.includes(p) }) }));
-vi.mock('next/navigation', () => ({ useParams: () => ({}), usePathname: () => '/propostas', useRouter: () => ({ push }), useSearchParams: () => new URLSearchParams() }));
+vi.mock('next/navigation', () => ({ useParams: () => ({}), usePathname: () => '/propostas', useRouter: () => ({ push: vi.fn() }), useSearchParams: () => new URLSearchParams() }));
 vi.mock('next/link', () => ({
   __esModule: true,
   default: ({ href, children, ...resto }: { href: string; children: React.ReactNode }) => <a href={href} {...resto}>{children}</a>,
@@ -64,6 +64,11 @@ const doServico = (cliente: string, chave: string, titulo: string, ultima = '202
   cliente, chave, titulo, estado: 'Enviada', etapa: 0, aberturas: 0, pessoas: 0, ultimaAtividade: ultima, criadaEm: '2026-10-01T12:00:00.000Z', link: `https://proposta.exemplo/${cliente}/${chave}`,
 });
 
+const detalheDoServico = (cliente: string, chave: string, titulo: string): DetalheDaProposta => ({
+  ...doServico(cliente, chave, titulo),
+  tempoTotalMs: 0, maisVista: null, tempoPorParte: [], audios: [], visitas: [], visitasDaEquipeIgnoradas: 0,
+});
+
 beforeEach(() => {
   RESPOSTAS = {
     '/comercial/propostas': { propostas: [daSala('lead-sala', 'Construtora Alicerce')], foraDoTeto: 0 },
@@ -86,7 +91,6 @@ beforeEach(() => {
   posts.length = 0;
   RESPOSTA_DO_POST = () => ({});
   PERMISSOES = ['leads.ver', 'leads.editar'];
-  push.mockReset();
 });
 afterEach(() => cleanup());
 
@@ -116,13 +120,20 @@ describe('as propostas pelo lead', () => {
     expect(tabela).not.toHaveTextContent('Serviço de propostas');
   });
 
-  it('o vínculo gravado dá o lead da proposta do serviço; clicar na linha abre o lead', async () => {
+  it('a linha abre a leitura e o vínculo gravado aponta para o lead correto', async () => {
+    RESPOSTAS['/tenants/plataforma/propostas/cliente-beta/escopo-1'] = detalheDoServico(
+      'cliente-beta', 'escopo-1', 'Operação ROOT · Escopo da Beta',
+    );
     render(<Propostas />);
     const beta = await screen.findByTestId('proposta-lead-servico:cliente-beta/escopo-1');
     expect(beta).toHaveTextContent('Beta Comércio');
+    expect(beta).toHaveAttribute('href', '/comercial/lead/lead-beta');
     const u = userEvent.setup();
     await u.click(within(screen.getByTestId('proposta-servico:cliente-beta/escopo-1')).getByText('Enviada'));
-    expect(push).toHaveBeenCalledWith('/comercial/lead/lead-beta');
+    const detalhe = await screen.findByRole('dialog', { name: 'Detalhe da proposta' });
+    expect(within(detalhe).getByRole('heading', { name: 'Operação ROOT · Escopo da Beta' })).toBeInTheDocument();
+    expect(within(detalhe).getByRole('link', { name: 'painel do lead' })).toHaveAttribute('href', '/comercial/lead/lead-beta');
+    expect(await within(detalhe).findByRole('heading', { name: 'Visitas' })).toBeInTheDocument();
   });
 
   it('sem lead: a linha diz e oferece vincular (busca entre os leads) e criar; vincular grava e a linha passa a ser do lead', async () => {
@@ -172,10 +183,9 @@ describe('as propostas pelo lead', () => {
 
   it('sem leads.editar, a linha sem lead só diz "sem lead"; clicar abre o detalhe da proposta', async () => {
     PERMISSOES = ['leads.ver'];
-    RESPOSTAS['/tenants/plataforma/propostas/cliente-novo/escopo-2'] = {
-      ...doServico('cliente-novo', 'escopo-2', 'Operação ROOT · Escopo do Cliente Novo'),
-      tempoTotalMs: 0, maisVista: null, tempoPorParte: [], audios: [], visitas: [], visitasDaEquipeIgnoradas: 0,
-    };
+    RESPOSTAS['/tenants/plataforma/propostas/cliente-novo/escopo-2'] = detalheDoServico(
+      'cliente-novo', 'escopo-2', 'Operação ROOT · Escopo do Cliente Novo',
+    );
     render(<Propostas />);
     const chave = 'servico:cliente-novo/escopo-2';
     await screen.findByTestId(`proposta-sem-lead-${chave}`);
@@ -183,8 +193,8 @@ describe('as propostas pelo lead', () => {
     expect(screen.queryByTestId(`proposta-criar-lead-${chave}`)).toBeNull();
     const u = userEvent.setup();
     await u.click(screen.getByTestId(`proposta-sem-lead-${chave}`));
-    expect(push).not.toHaveBeenCalled();
-    expect(await screen.findByRole('dialog', { name: 'Detalhe da proposta' })).toBeInTheDocument();
+    const detalhe = await screen.findByRole('dialog', { name: 'Detalhe da proposta' });
+    expect(within(detalhe).queryByRole('link', { name: 'painel do lead' })).not.toBeInTheDocument();
   });
 
   it('"Aparelhos da equipe" fica entre o painel e a lista', async () => {

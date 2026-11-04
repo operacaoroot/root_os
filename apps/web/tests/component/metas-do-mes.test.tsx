@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { METAS_CATALOGO, type MetaMedida, type MetasDoMesPainel } from '@mktos/shared';
@@ -90,10 +90,13 @@ async function abrir(p: MetasDoMesPainel) {
 }
 
 beforeEach(() => {
+  vi.useFakeTimers({ toFake: ['Date'], now: new Date('2026-10-12T12:00:00Z') });
   apiGet.mockReset();
   apiPut.mockReset();
   permissoes = ['dashboard.ver', 'relatorios.gerar', 'leads.ver', 'bio.ver', 'pauta.ver'];
 });
+
+afterEach(() => vi.useRealTimers());
 
 describe('a medição na tela', () => {
   it('mostra o número, o alvo, o percentual e cada semana', async () => {
@@ -196,7 +199,7 @@ describe('a medição na tela', () => {
 describe('o mês de abertura (N5)', () => {
   it('é o mês de São Paulo, não o do relógio do navegador', async () => {
     // 01/11 02:00 em UTC ainda é 31/10 23:00 em São Paulo.
-    vi.useFakeTimers({ toFake: ['Date'], now: new Date('2026-11-01T02:00:00.000Z') });
+    vi.setSystemTime(new Date('2026-11-01T02:00:00.000Z'));
     try {
       servir(painel());
       render(<MetasDoMes />);
@@ -365,7 +368,7 @@ describe('isolamento de respostas por mês', () => {
   }
 
   it.each(['inversa', 'direta'])('preserva setembro ao resolver os GETs na ordem %s e salva alvo 200', async (ordem) => {
-    vi.useFakeTimers({ toFake: ['Date'], now: new Date('2026-10-07T12:00:00Z') });
+    vi.setSystemTime(new Date('2026-10-07T12:00:00Z'));
     try {
       const outubro = pendente<MetasDoMesPainel>();
       const setembro = pendente<MetasDoMesPainel>();
@@ -404,7 +407,7 @@ describe('isolamento de respostas por mês', () => {
   });
 
   it.each(['sucesso', 'erro'])('preserva a revisão atual quando o PUT anterior termina com %s', async (resultado) => {
-    vi.useFakeTimers({ toFake: ['Date'], now: new Date('2026-10-07T12:00:00Z') });
+    vi.setSystemTime(new Date('2026-10-07T12:00:00Z'));
     try {
       const gravacao = pendente<MetasDoMesPainel>();
       apiPut.mockReturnValueOnce(gravacao.promise);

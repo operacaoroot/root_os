@@ -1,9 +1,12 @@
+import { createHash, randomUUID } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
-import { EstadoDeAgente, RiskLevel, SessionCanal, SessionStatus } from '@prisma/client';
+import { ActorType, EstadoDeAgente, RiskLevel, SessionCanal, SessionStatus, type Prisma } from '@prisma/client';
 import { AgentRuntime } from '../src/agents/agent-runtime.service';
 import { AgentsService } from '../src/agents/agents.service';
+import { AgendaLocalService } from '../src/agents/agenda-local.service';
+import { comContexto } from '../src/common/contexto-execucao';
 import { CheckoutDeTarefaService } from '../src/work/checkout-de-tarefa.service';
 import { ProcedenciaExterna } from '../src/policy/sinais.service';
 import { EfeitosRegistry } from '../src/gateway/efeitos.registry';
@@ -466,97 +469,139 @@ describe('A2: "Invocar" é o gatilho manual, e não uma porta dos fundos', () =>
  * 5. Pausar, retomar e encerrar — a decisão tem procedência
  * ========================================================================== */
 
-/**
- * A bancada do serviço de estado.
- *
- * `tarefasPresas` existe por causa da fatia A4: `definirEstado` solta as
- * tarefas que o agente tem na mão, na MESMA transação da mudança de estado. O
- * dublê de `workTask` abaixo é o que faz esta suíte continuar medindo a A2 sem
- * cegar a A4 — construir o serviço com um checkout falso deixaria a soltura
- * acontecer só em produção.
- */
+const ORG_ESTADO = '11111111-1111-4111-8111-111111111111';
+const ORG_VIZINHA = '11111111-1111-4111-8111-111111111112';
+const AUTOR_ESTADO = '22222222-2222-4222-8222-222222222221';
+const AUTOR_ANTERIOR = '22222222-2222-4222-8222-222222222222';
+const AUTOR_VIZINHO = '22222222-2222-4222-8222-222222222223';
+const AGENTE_ESTADO = '33333333-3333-4333-8333-333333333333';
+const TAREFA_UM = '44444444-4444-4444-8444-444444444441';
+const TAREFA_DOIS = '44444444-4444-4444-8444-444444444442';
+
+/** Executa a agenda e o checkout reais sobre armazenamento em memória. */
 function bancadaDoServico(
-  linha: ReturnType<typeof linhaDeAgente>,
+  inicial: ReturnType<typeof linhaDeAgente>,
   tarefasPresas: Array<{ id: string; title: string; agenteEm: Date | null }> = [],
 ) {
+  const linha = { ...inicial, id: AGENTE_ESTADO, orgId: ORG_ESTADO, atualizadoEm: AGORA };
   const eventos: EventoGravado[] = [];
   const auditados: { action: string; before?: unknown; after?: unknown }[] = [];
   const soltas: string[] = [];
+  const operacoes = new Map<string, Prisma.AgentLocalOperationUncheckedCreateInput>();
+  const autorDaOrg = (orgId: string) => orgId === ORG_ESTADO ? AUTOR_ESTADO : AUTOR_VIZINHO;
 
   const prisma = {
-    /*
-     * A transação do dublê é PASS-THROUGH: ela executa o corpo com o mesmo
-     * `prisma` de dentro. O que esta suíte mede não é o isolamento da transação
-     * (isso pede banco de verdade, e está em `checkout-de-tarefa.test.ts`) — é
-     * que a mudança de estado CHAMA a soltura, e com que causa.
-     */
     $transaction: async <T>(fn: (tx: unknown) => Promise<T>): Promise<T> => fn(prisma),
+    $executeRaw: async () => 1,
+    $queryRaw: async (partes: TemplateStringsArray, ...params: unknown[]) => {
+      const sql = partes.join('?');
+      if (sql.includes('app_json_canonico')) {
+        return [{ hash: createHash('sha256').update(String(params[0])).digest('hex') }];
+      }
+      if (sql.includes('jsonb_array_elements_text')) {
+        const valores: string[] = JSON.parse(String(params[0]));
+        return valores.map((value) => ({ value, bytes: Buffer.byteLength(JSON.stringify(value)) }));
+      }
+      if (sql.includes('octet_length')) return [{ bytes: Buffer.byteLength(String(params[0])) }];
+      if (sql.includes('"_UserRoles"')) return [{ roleId: 'role-admin-qa' }];
+      if (sql.includes('"_RolePermissions"')) return [{ permissionId: 'perm-admin-qa' }];
+      if (sql.includes('"Permission"')) return [{ id: 'perm-admin-qa', key: 'admin.usuarios' }];
+      if (sql.includes('"Role"')) return [{ id: 'role-admin-qa' }];
+      if (sql.includes('"Org"') || sql.includes('"User"')) return [{ id: params[0] }];
+      return [];
+    },
+    user: {
+      findFirst: async ({ where }: { where: { orgId: string; id: string } }) =>
+        where.id === autorDaOrg(where.orgId) ? { roles: [{ permissions: [{ key: 'admin.usuarios' }] }] } : null,
+    },
+    agentLocalToolReceipt: { findFirst: async () => null },
+    agentLocalOperation: {
+      findFirst: async ({ where }: { where: { orgId: string; requestId: string } }) =>
+        operacoes.get(`${where.orgId}:${where.requestId}`) ?? null,
+      create: async ({ data }: { data: Prisma.AgentLocalOperationUncheckedCreateInput }) => {
+        operacoes.set(`${data.orgId}:${data.requestId}`, data);
+        return data;
+      },
+    },
     workTask: {
-      findMany: async ({ where }: { where: { agenteId?: string } }) =>
-        where.agenteId === linha.id ? tarefasPresas.map((t) => ({ ...t })) : [],
-      updateMany: async ({ where }: { where: { agenteId?: string } }) => {
-        if (where.agenteId !== linha.id) return { count: 0 };
-        for (const t of tarefasPresas) soltas.push(t.id);
-        tarefasPresas.length = 0;
-        return { count: soltas.length };
+      findMany: async ({ where }: { where: { orgId: string; agenteId: string } }) =>
+        where.orgId === linha.orgId && where.agenteId === linha.id ? tarefasPresas.map((t) => ({ ...t })) : [],
+      updateMany: async ({ where }: { where: { orgId: string; agenteId: string; id: { in: string[] } } }) => {
+        if (where.orgId !== linha.orgId || where.agenteId !== linha.id) return { count: 0 };
+        const lote = tarefasPresas.filter((t) => where.id.in.includes(t.id));
+        for (const t of lote) tarefasPresas.splice(tarefasPresas.indexOf(t), 1);
+        soltas.push(...lote.map((t) => t.id));
+        return { count: lote.length };
       },
     },
     agent: {
-      /*
-       * DEVOLVE UMA CÓPIA, como o Prisma de verdade devolve.
-       *
-       * A primeira versão deste dublê devolvia a própria `linha`, e o caso
-       * "pausar registra de → para" reprovou com `de: 'pausado'`: a escrita
-       * mutava o mesmo objeto que o serviço tinha lido. Era defeito do dublê,
-       * mas apontou para código frágil de verdade — o serviço passou a copiar o
-       * estado anterior para uma constante antes do `update`. Dublê que
-       * compartilha referência esconde exatamente essa classe de bug.
-       */
-      findFirst: async ({ where }: { where: { orgId: string; slug: string } }) =>
-        where.orgId === linha.orgId && where.slug === linha.slug ? { ...linha } : null,
-      update: async ({ data }: { data: Record<string, unknown> }) => {
-        Object.assign(linha, data);
-        return { ...linha };
+      findFirst: async ({ where }: { where: { orgId: string; slug?: string; id?: string } }) =>
+        where.orgId === linha.orgId && (!where.slug || where.slug === linha.slug) && (!where.id || where.id === linha.id)
+          ? { ...linha } : null,
+      updateMany: async ({ where, data }: {
+        where: { id: string; orgId: string; slug: string; estado: EstadoDeAgente }; data: Record<string, unknown>;
+      }) => {
+        if (where.id !== linha.id || where.orgId !== linha.orgId || where.slug !== linha.slug || where.estado !== linha.estado)
+          return { count: 0 };
+        Object.assign(linha, data, { atualizadoEm: new Date() });
+        return { count: 1 };
       },
     },
     session: { findMany: async () => [] },
   } as unknown as PrismaService;
 
   const audit = {
-    log: async (e: { action: string; before?: unknown; after?: unknown }) => {
+    logComRecibo: async (e: { action: string; before?: unknown; after?: unknown }) => {
       auditados.push(e);
+      return { id: randomUUID() };
     },
   } as unknown as AuditService;
   const rastro = {
-    registrar: async (e: EventoGravado) => {
+    prepararContextoParaTx: async () => ({}),
+    registrarNoTx: async (_tx: unknown, e: EventoGravado) => {
       eventos.push(e);
-      return { id: 'ev', seq: 1n, hash: 'h' };
+      return { id: randomUUID(), seq: BigInt(eventos.length), hash: 'a'.repeat(64), ocorreuEm: AGORA };
     },
   } as unknown as EventLogService;
 
-  /*
-   * O CHECKOUT É O DE VERDADE, sobre o dublê de banco — não um `vi.fn()`. É a
-   * diferença entre provar que a soltura acontece e provar que alguém a chamou.
-   */
-  const servico = new AgentsService(
-    prisma,
-    audit,
-    new CheckoutDeTarefaService(prisma, audit, rastro),
-    rastro,
-  );
+  const servico = new AgentsService(prisma, audit, new CheckoutDeTarefaService(prisma, audit, rastro), rastro,
+    new AgendaLocalService(prisma, audit, rastro));
 
-  return { servico, linha, eventos, auditados, soltas };
+  function emContexto<T>(orgId: string, requestId: string, fn: () => T) {
+    return comContexto({ orgId, actorId: autorDaOrg(orgId), actorType: ActorType.user, correlationId: requestId, origem: 'http' }, fn);
+  }
+  function painel() {
+    return emContexto(ORG_ESTADO, randomUUID(), () => servico.estadoHumano(ORG_ESTADO, AUTOR_ESTADO, linha.slug));
+  }
+  async function definir(destino: EstadoDeAgente, motivo: string | null = null, orgId = ORG_ESTADO) {
+    const requestId = randomUUID();
+    const marcaEsperada = orgId === ORG_ESTADO ? (await painel()).marca : '0'.repeat(64);
+    return emContexto(orgId, requestId, () => servico.definirEstado(orgId, linha.slug, destino, {
+      userId: autorDaOrg(orgId), requestId, marcaEsperada, motivo,
+    }));
+  }
+
+  return { definir, painel, linha, eventos, auditados, soltas };
+}
+
+function reciboDoEstado(r: Awaited<ReturnType<AgentsService['definirEstado']>>) {
+  if (r.estado !== 'confirmado' || r.tipo !== 'agente_estado' || r.recibo.tipo !== 'agente_estado')
+    throw new Error('A operação deve devolver um recibo confirmado de estado.');
+  return r.recibo;
 }
 
 describe('A2: pausar, retomar e encerrar pela mão do dono', () => {
   it('pausar grava estado, DESLIGA o interruptor e registra quem, quando e por quê', async () => {
     const b = bancadaDoServico(linhaDeAgente());
-    const r = await b.servico.definirEstado('org-a2', 'assistente', EstadoDeAgente.pausado, {
-      userId: 'u-pedro',
-      motivo: 'está mandando mensagem errada',
-    });
+    const anterior = await b.painel();
+    const r = await b.definir(EstadoDeAgente.pausado, 'está mandando mensagem errada');
+    const recibo = reciboDoEstado(r);
 
-    expect(r.estado).toBe(EstadoDeAgente.pausado);
+    expect(recibo.escopo).toEqual(anterior.escopo);
+    expect(recibo.requestId).toBe(r.requestId);
+    expect(recibo.marcaAnterior).toBe(anterior.marca);
+    expect(recibo.marcaNova).not.toBe(anterior.marca);
+    expect(recibo.posterior.base.estado).toBe(EstadoDeAgente.pausado);
     expect(b.linha.estado).toBe(EstadoDeAgente.pausado);
     /*
      * O ESTADO E O INTERRUPTOR ANDAM JUNTOS. Se `ativo` ficar `true`, o
@@ -564,7 +609,7 @@ describe('A2: pausar, retomar e encerrar pela mão do dono', () => {
      * passagem: barulho no rastro sem efeito nenhum.
      */
     expect(b.linha.ativo).toBe(false);
-    expect(b.linha.estadoPorId).toBe('u-pedro');
+    expect(b.linha.estadoPorId).toBe(AUTOR_ESTADO);
     expect(b.linha.estadoEm).toBeInstanceOf(Date);
     expect(b.linha.estadoMotivo).toBe('está mandando mensagem errada');
 
@@ -580,53 +625,44 @@ describe('A2: pausar, retomar e encerrar pela mão do dono', () => {
         estado: EstadoDeAgente.pausado,
         ativo: false,
         estadoEm: desde,
-        estadoPorId: 'u-lucas',
+        estadoPorId: AUTOR_ANTERIOR,
       }),
     );
 
     await expect(
-      b.servico.definirEstado('org-a2', 'assistente', EstadoDeAgente.pausado, {
-        userId: 'u-pedro',
-      }),
-    ).rejects.toThrow(/já está pausado/);
+      b.definir(EstadoDeAgente.pausado),
+    ).rejects.toThrow(/já está nesse estado/);
 
     // É esta data que responde "desde quando este agente está parado?".
     expect(b.linha.estadoEm).toBe(desde);
-    expect(b.linha.estadoPorId).toBe('u-lucas');
+    expect(b.linha.estadoPorId).toBe(AUTOR_ANTERIOR);
     expect(b.eventos).toHaveLength(0);
   });
 
   it('retomar religa o interruptor e deixa a marca de quem religou', async () => {
     const b = bancadaDoServico(
-      linhaDeAgente({ estado: EstadoDeAgente.pausado, ativo: false, estadoPorId: 'u-lucas' }),
+      linhaDeAgente({ estado: EstadoDeAgente.pausado, ativo: false, estadoPorId: AUTOR_ANTERIOR }),
     );
-    const r = await b.servico.definirEstado('org-a2', 'assistente', EstadoDeAgente.ativo, {
-      userId: 'u-pedro',
-    });
+    const r = await b.definir(EstadoDeAgente.ativo);
 
-    expect(r.estado).toBe(EstadoDeAgente.ativo);
+    expect(reciboDoEstado(r).posterior.base.estado).toBe(EstadoDeAgente.ativo);
     expect(b.linha.ativo).toBe(true);
-    expect(b.linha.estadoPorId).toBe('u-pedro');
+    expect(b.linha.estadoPorId).toBe(AUTOR_ESTADO);
     expect(b.eventos.some((e) => e.tipo === 'agente.retomado')).toBe(true);
   });
 
   it('ENCERRAR SEM MOTIVO É RECUSADO — decisão definitiva pede razão escrita', async () => {
     const b = bancadaDoServico(linhaDeAgente());
     await expect(
-      b.servico.definirEstado('org-a2', 'assistente', EstadoDeAgente.encerrado, {
-        userId: 'u-pedro',
-      }),
-    ).rejects.toThrow(/Escreva o motivo/);
+      b.definir(EstadoDeAgente.encerrado),
+    ).rejects.toThrow(/Informe o motivo/);
     expect(b.linha.estado).toBe(EstadoDeAgente.ativo);
     expect(b.eventos).toHaveLength(0);
   });
 
   it('encerrar tira de circulação e o rastro diz que não tem volta', async () => {
     const b = bancadaDoServico(linhaDeAgente());
-    await b.servico.definirEstado('org-a2', 'assistente', EstadoDeAgente.encerrado, {
-      userId: 'u-pedro',
-      motivo: 'trabalho absorvido pela rotina de pauta',
-    });
+    await b.definir(EstadoDeAgente.encerrado, 'trabalho absorvido pela rotina de pauta');
 
     expect(b.linha.estado).toBe(EstadoDeAgente.encerrado);
     expect(b.linha.ativo).toBe(false);
@@ -641,11 +677,8 @@ describe('A2: pausar, retomar e encerrar pela mão do dono', () => {
 
     for (const destino of [EstadoDeAgente.ativo, EstadoDeAgente.pausado]) {
       await expect(
-        b.servico.definirEstado('org-a2', 'assistente', destino, {
-          userId: 'u-pedro',
-          motivo: 'mudei de ideia',
-        }),
-      ).rejects.toThrow(/encerrado não volta/);
+        b.definir(destino, 'mudei de ideia'),
+      ).rejects.toThrow(/transição não é permitida/);
     }
     expect(b.linha.estado).toBe(EstadoDeAgente.encerrado);
     expect(b.eventos).toHaveLength(0);
@@ -654,27 +687,25 @@ describe('A2: pausar, retomar e encerrar pela mão do dono', () => {
   it('agente de outra empresa não é encontrado — o escopo é por empresa', async () => {
     const b = bancadaDoServico(linhaDeAgente());
     await expect(
-      b.servico.definirEstado('org-vizinha', 'assistente', EstadoDeAgente.pausado, {
-        userId: 'u-pedro',
-      }),
-    ).rejects.toThrow(/não existe/);
+      b.definir(EstadoDeAgente.pausado, null, ORG_VIZINHA),
+    ).rejects.toThrow(/Agente indisponível/);
     expect(b.linha.estado).toBe(EstadoDeAgente.ativo);
   });
 
-  it('a resposta já diz para onde dá para ir daqui — a tela não deduz a regra', async () => {
+  it('o painel de estado devolve as transições permitidas depois da decisão', async () => {
     const b = bancadaDoServico(linhaDeAgente());
-    const r = await b.servico.definirEstado('org-a2', 'assistente', EstadoDeAgente.pausado, {
-      userId: 'u-pedro',
-    });
-    expect(r.transicoes).toEqual([...TRANSICOES.pausado]);
+    const r = await b.definir(EstadoDeAgente.pausado);
+    const painel = await b.painel();
+    expect(painel.transicoes).toEqual([...TRANSICOES.pausado]);
+    expect(painel.marca).toBe(reciboDoEstado(r).marcaNova);
   });
 
-  it('motivo comprido é cortado, não recusado — freio não trava por redação', async () => {
+  it('preserva 500 caracteres de motivo e recusa excesso antes de alterar o agente', async () => {
     const b = bancadaDoServico(linhaDeAgente());
-    await b.servico.definirEstado('org-a2', 'assistente', EstadoDeAgente.encerrado, {
-      userId: 'u-pedro',
-      motivo: 'x'.repeat(900),
-    });
+    await expect(b.definir(EstadoDeAgente.encerrado, 'x'.repeat(501))).rejects.toThrow(/500/);
+    expect(b.linha.estado).toBe(EstadoDeAgente.ativo);
+    expect(b.eventos).toHaveLength(0);
+    await b.definir(EstadoDeAgente.encerrado, 'x'.repeat(500));
     expect(b.linha.estadoMotivo).toHaveLength(500);
   });
 
@@ -682,28 +713,23 @@ describe('A2: pausar, retomar e encerrar pela mão do dono', () => {
 
   it('PAUSAR SOLTA as tarefas que o agente tem na mão, e a resposta diz quais', async () => {
     const b = bancadaDoServico(linhaDeAgente(), [
-      { id: 't-1', title: 'Fechar o mês', agenteEm: new Date('2026-09-14T10:00:00Z') },
-      { id: 't-2', title: 'Conciliar cartão', agenteEm: null },
+      { id: TAREFA_UM, title: 'Fechar o mês', agenteEm: new Date('2026-09-14T10:00:00Z') },
+      { id: TAREFA_DOIS, title: 'Conciliar cartão', agenteEm: null },
     ]);
-    const r = await b.servico.definirEstado('org-a2', 'assistente', EstadoDeAgente.pausado, {
-      userId: 'u-pedro',
-    });
-    expect(b.soltas).toEqual(['t-1', 't-2']);
-    expect(r.tarefasSoltas.map((t) => t.titulo)).toEqual(['Fechar o mês', 'Conciliar cartão']);
+    const r = await b.definir(EstadoDeAgente.pausado);
+    expect(b.soltas).toEqual([TAREFA_UM, TAREFA_DOIS]);
+    expect(reciboDoEstado(r).tarefasSoltas.map((t) => t.titulo)).toEqual(['Fechar o mês', 'Conciliar cartão']);
   });
 
   it('a soltura entra no RASTRO uma vez POR TAREFA, com a causa do estado', async () => {
     const b = bancadaDoServico(linhaDeAgente(), [
-      { id: 't-1', title: 'Fechar o mês', agenteEm: null },
-      { id: 't-2', title: 'Conciliar cartão', agenteEm: null },
+      { id: TAREFA_UM, title: 'Fechar o mês', agenteEm: null },
+      { id: TAREFA_DOIS, title: 'Conciliar cartão', agenteEm: null },
     ]);
-    await b.servico.definirEstado('org-a2', 'assistente', EstadoDeAgente.encerrado, {
-      userId: 'u-pedro',
-      motivo: 'não serve mais',
-    });
+    await b.definir(EstadoDeAgente.encerrado, 'não serve mais');
     const soltadas = b.eventos.filter((e) => e.tipo === 'tarefa.soltada');
     expect(soltadas).toHaveLength(2);
-    expect(soltadas.map((e) => e.payload?.taskId)).toEqual(['t-1', 't-2']);
+    expect(soltadas.map((e) => e.payload?.taskId)).toEqual([TAREFA_UM, TAREFA_DOIS]);
     /*
      * A causa distingue "alguém devolveu" de "o agente saiu de circulação", e é
      * ela que responde, meses depois, por que a tarefa voltou para a fila.
@@ -715,22 +741,18 @@ describe('A2: pausar, retomar e encerrar pela mão do dono', () => {
 
   it('RETOMAR não solta nem devolve tarefa — quem voltou escolhe de novo', async () => {
     const b = bancadaDoServico(linhaDeAgente({ estado: EstadoDeAgente.pausado, ativo: false }), [
-      { id: 't-1', title: 'Tarefa de outro agente agora', agenteEm: null },
+      { id: TAREFA_UM, title: 'Tarefa de outro agente agora', agenteEm: null },
     ]);
-    const r = await b.servico.definirEstado('org-a2', 'assistente', EstadoDeAgente.ativo, {
-      userId: 'u-pedro',
-    });
+    const r = await b.definir(EstadoDeAgente.ativo);
     expect(b.soltas).toEqual([]);
-    expect(r.tarefasSoltas).toEqual([]);
+    expect(reciboDoEstado(r).tarefasSoltas).toEqual([]);
     expect(b.eventos.some((e) => e.tipo === 'tarefa.soltada')).toBe(false);
   });
 
   it('pausar agente SEM tarefa na mão não registra soltura nenhuma', async () => {
     const b = bancadaDoServico(linhaDeAgente());
-    const r = await b.servico.definirEstado('org-a2', 'assistente', EstadoDeAgente.pausado, {
-      userId: 'u-pedro',
-    });
-    expect(r.tarefasSoltas).toEqual([]);
+    const r = await b.definir(EstadoDeAgente.pausado);
+    expect(reciboDoEstado(r).tarefasSoltas).toEqual([]);
     expect(b.eventos.some((e) => e.tipo === 'tarefa.soltada')).toBe(false);
   });
 });

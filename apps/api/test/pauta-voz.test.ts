@@ -19,7 +19,7 @@ import {
   PautaVozChaveSchema,
   PautaVozSalvarSchema,
   palavrasProibidasEm,
-  type PautaItemCurado,
+  type PautaItemCurado, type PautaVozAprenderInput,
 } from '@mktos/shared';
 
 import {
@@ -54,6 +54,7 @@ import type { PrismaService } from '../src/prisma/prisma.service';
 import { exigirBancoDescartavel } from './banco-de-teste';
 import { SAIDA_DA_GERACAO_LONGA } from '../src/pauta/saida-da-geracao';
 import { semMarca } from './marca-de-teste';
+import { atuarNaPauta, derivacaoDaPauta, PERMISSOES_DERIVACAO_PAUTA, prismaDaDerivacao } from './pauta-derivacao-dubles';
 
 /*
  * A VOZ DO AUTOR — MC10.
@@ -465,9 +466,9 @@ function memoriaFalsa(opts: { falha?: Error } = {}) {
         .filter((v) => v.itemId === id)
         .reverse()
         .map((v) => ({ ...v, criadoEm: '2026-09-24T12:00:00.000Z' })),
-  } as unknown as MemoriaService;
-
-  return { memoria, notas, versoes, escritas };
+  };
+  const derivacao = derivacaoDaPauta(notas, memoria);
+  return { memoria: { ...memoria, ...derivacao } as unknown as MemoriaService, derivacao, notas, versoes, escritas };
 }
 
 interface EpFalso {
@@ -503,7 +504,8 @@ function servicoDeVoz(opts: {
     },
     ...opts.llm,
   } as unknown as LlmProvider;
-  const prisma = {
+  const prisma = prismaDaDerivacao({
+    ...m.derivacao,
     pautaEpisodio: {
       findMany: async ({ where }: { where: { orgId: string; id: { in: string[] } } }) =>
         eps.filter((e) => e.orgId === where.orgId && where.id.in.includes(e.id)).sort((a, b) => a.numero - b.numero),
@@ -518,14 +520,17 @@ function servicoDeVoz(opts: {
         return data;
       },
     },
-  } as unknown as PrismaService;
-  return { vozes: new VozService(prisma, new AuditService(prisma), llm, m.memoria), ...m, chamadas, auditoria, llm, prisma };
+  }) as unknown as PrismaService;
+  const vozes = new VozService(prisma, new AuditService(prisma), llm, m.memoria);
+  return { vozes, ...m, chamadas, auditoria, llm, prisma,
+    aprender: (entrada: PautaVozAprenderInput) => atuarNaPauta(ORG, PESSOA, () => vozes.aprender(ORG, PESSOA, entrada)),
+  };
 }
 
 describe('voz: aprender', () => {
   it('a primeira vez cria a nota voz.pedro (definicao), pela memória, com a procedência e a empresa pagando', async () => {
     const s = servicoDeVoz();
-    const r = await s.vozes.aprender(ORG, PESSOA, PautaVozAprenderSchema.parse({ episodios: [EP1], textos: [{ titulo: 'Post do LinkedIn', texto: 'Texto colado '.repeat(20) }] }));
+    const r = await s.aprender(PautaVozAprenderSchema.parse({ episodios: [EP1], textos: [{ titulo: 'Post do LinkedIn', texto: 'Texto colado '.repeat(20) }] }));
 
     expect(s.chamadas).toHaveLength(1);
     expect(s.chamadas[0].orgId).toBe(ORG);
@@ -559,10 +564,8 @@ describe('voz: aprender', () => {
 
   it('de novo: grava a versão 2 da mesma nota, e a primeira fica no histórico', async () => {
     const s = servicoDeVoz();
-    await s.vozes.aprender(ORG, PESSOA, PautaVozAprenderSchema.parse({ episodios: [EP1] }));
-    const r = await s.vozes.aprender(
-      ORG,
-      PESSOA,
+    await s.aprender(PautaVozAprenderSchema.parse({ episodios: [EP1] }));
+    const r = await s.aprender(
       PautaVozAprenderSchema.parse({ textos: [{ texto: 'Outro jeito de falar. '.repeat(15) }] }),
     );
     expect(s.escritas).toEqual(['criar', 'alterar']);
@@ -578,7 +581,7 @@ describe('voz: aprender', () => {
     const m = memoriaFalsa();
     await m.memoria.criar(ORG, { chave: PAUTA_CHAVE_DA_CHAVE_DA_VOZ, kind: 'definicao', title: 'c', body: 'voz.ana', sourceType: 'operador' } as never);
     const s = servicoDeVoz({ memoria: m });
-    const r = await s.vozes.aprender(ORG, PESSOA, PautaVozAprenderSchema.parse({ episodios: [EP1] }));
+    const r = await s.aprender(PautaVozAprenderSchema.parse({ episodios: [EP1] }));
     expect(r.chave).toBe('voz.ana');
     expect(r.origemDaChave).toBe('empresa');
     expect(s.notas.has('voz.ana')).toBe(true);
@@ -587,24 +590,24 @@ describe('voz: aprender', () => {
 
   it('episódio sem transcrição é 400, de outra empresa ou inexistente é 404 — antes de gastar IA', async () => {
     const s = servicoDeVoz();
-    await expect(s.vozes.aprender(ORG, PESSOA, PautaVozAprenderSchema.parse({ episodios: [EP2] }))).rejects.toThrow(
+    await expect(s.aprender(PautaVozAprenderSchema.parse({ episodios: [EP2] }))).rejects.toThrow(
       /ep-04 ainda não tem transcrição/,
     );
-    await expect(s.vozes.aprender(ORG, PESSOA, PautaVozAprenderSchema.parse({ episodios: [EP3] }))).rejects.toBeInstanceOf(NotFoundException);
-    await expect(s.vozes.aprender(ORG, PESSOA, PautaVozAprenderSchema.parse({ episodios: [EP1, EP3] }))).rejects.toBeInstanceOf(NotFoundException);
+    await expect(s.aprender(PautaVozAprenderSchema.parse({ episodios: [EP3] }))).rejects.toBeInstanceOf(NotFoundException);
+    await expect(s.aprender(PautaVozAprenderSchema.parse({ episodios: [EP1, EP3] }))).rejects.toBeInstanceOf(NotFoundException);
     expect(s.chamadas).toHaveLength(0);
     expect(s.escritas).toEqual([]);
   });
 
   it('IA não configurada é 503 sem chamar; resposta fora do formato é 503 sem gravar', async () => {
     const semIa = servicoDeVoz({ llm: { configured: false } });
-    await expect(semIa.vozes.aprender(ORG, PESSOA, PautaVozAprenderSchema.parse({ episodios: [EP1] }))).rejects.toBeInstanceOf(
+    await expect(semIa.aprender(PautaVozAprenderSchema.parse({ episodios: [EP1] }))).rejects.toBeInstanceOf(
       ServiceUnavailableException,
     );
     expect(semIa.chamadas).toHaveLength(0);
 
     const ruim = servicoDeVoz({ saida: 'Ele fala de um jeito direto.' });
-    await expect(ruim.vozes.aprender(ORG, PESSOA, PautaVozAprenderSchema.parse({ episodios: [EP1] }))).rejects.toBeInstanceOf(
+    await expect(ruim.aprender(PautaVozAprenderSchema.parse({ episodios: [EP1] }))).rejects.toBeInstanceOf(
       ServiceUnavailableException,
     );
     expect(ruim.chamadas).toHaveLength(1);
@@ -612,15 +615,16 @@ describe('voz: aprender', () => {
     expect(ruim.auditoria).toEqual([]);
   });
 
-  it('a nota arquivada volta a valer com o perfil novo', async () => {
+  it('aprender grava outra versão e preserva o arquivamento explícito', async () => {
     const s = servicoDeVoz();
-    await s.vozes.aprender(ORG, PESSOA, PautaVozAprenderSchema.parse({ episodios: [EP1] }));
+    await s.aprender(PautaVozAprenderSchema.parse({ episodios: [EP1] }));
     s.notas.get('voz.pedro')!.arquivadoEm = '2026-09-24T13:00:00.000Z';
     expect(await s.vozes.perfil(ORG)).toBeNull();
     expect(await s.vozes.bloco(ORG)).toBe(TOM_DA_CASA);
-    await s.vozes.aprender(ORG, PESSOA, PautaVozAprenderSchema.parse({ episodios: [EP1] }));
-    expect(s.escritas).toEqual(['criar', 'alterar', 'restaurar']);
-    expect(await s.vozes.perfil(ORG)).toContain('## Ritmo');
+    const r = await s.aprender(PautaVozAprenderSchema.parse({ episodios: [EP1] }));
+    expect(s.escritas).toEqual(['criar', 'alterar']);
+    expect(r.perfil).toMatchObject({ versao: 2, arquivado: true });
+    expect(await s.vozes.perfil(ORG)).toBeNull();
   });
 });
 
@@ -629,7 +633,7 @@ describe('voz: editar à mão e trocar a chave', () => {
 
   it('a edição vira versão nova, com procedência de operador e a versão lida conferida', async () => {
     const s = servicoDeVoz();
-    await s.vozes.aprender(ORG, PESSOA, PautaVozAprenderSchema.parse({ episodios: [EP1] }));
+    await s.aprender(PautaVozAprenderSchema.parse({ episodios: [EP1] }));
     const r = await s.vozes.salvar(ORG, PESSOA, PautaVozSalvarSchema.parse({ perfil: `${PERFIL}\r\n`, versao: 1 }));
     expect(r.perfil?.versao).toBe(2);
     expect(r.perfil?.corpo).toBe(PERFIL);
@@ -702,7 +706,7 @@ describe('voz: editar à mão e trocar a chave', () => {
     const fora = servicoDeVoz({ memoria: memoriaFalsa({ falha: new Error('banco caiu') }) });
     await expect(fora.vozes.salvar(ORG, PESSOA, PautaVozSalvarSchema.parse({ perfil: PERFIL }))).rejects.toThrow('banco caiu');
     await expect(fora.vozes.definirChave(ORG, PESSOA, 'voz.ana')).rejects.toThrow('banco caiu');
-    await expect(fora.vozes.aprender(ORG, PESSOA, PautaVozAprenderSchema.parse({ episodios: [EP1] }))).rejects.toThrow('banco caiu');
+    await expect(fora.aprender(PautaVozAprenderSchema.parse({ episodios: [EP1] }))).rejects.toThrow('banco caiu');
     expect(fora.chamadas).toEqual([]);
     expect(fora.escritas).toEqual([]);
   });
@@ -868,13 +872,19 @@ describe('voz: o controller', () => {
     const { c, chamadas } = controller();
     await c.painel(usuario);
     await c.aprender(usuario, { episodios: [EP1] });
-    await c.salvar(usuario, { perfil: `  ${'p'.repeat(80)} `, versao: 2 });
-    await c.chave(usuario, { chave: 'voz.ana' });
+    const escopoEsperado = { orgId: ORG, actorId: PESSOA };
+    const base = { estado: 'ausente', tipo: 'nota_memoria', itemId: null, kind: null, arquivada: null, origem: null };
+    const paraSalvar = { escopoEsperado, baseEsperada: { ...base, chave: PAUTA_CHAVE_DA_VOZ_PADRAO },
+      versaoEsperada: null, reativar: false, chaveVozEsperada: PAUTA_CHAVE_DA_VOZ_PADRAO };
+    const paraTrocar = { escopoEsperado, baseEsperada: { ...base, chave: PAUTA_CHAVE_DA_CHAVE_DA_VOZ },
+      versaoEsperada: null, reativar: false, chaveEfetivaEsperada: PAUTA_CHAVE_DA_VOZ_PADRAO, chave: 'voz.ana' };
+    await c.salvar(usuario, { ...paraSalvar, perfil: `  ${'p'.repeat(80)} ` });
+    await c.chave(usuario, paraTrocar);
     expect(chamadas).toEqual([
-      { metodo: 'painel', args: [ORG] },
+      { metodo: 'painelHumano', args: [ORG, PESSOA] },
       { metodo: 'aprender', args: [ORG, PESSOA, { episodios: [EP1], textos: [] }] },
-      { metodo: 'salvar', args: [ORG, PESSOA, { perfil: 'p'.repeat(80), versao: 2 }] },
-      { metodo: 'definirChave', args: [ORG, PESSOA, 'voz.ana'] },
+      { metodo: 'salvarHumano', args: [ORG, PESSOA, { ...paraSalvar, perfil: 'p'.repeat(80) }] },
+      { metodo: 'definirChaveHumana', args: [ORG, PESSOA, paraTrocar] },
     ]);
   });
 
@@ -891,10 +901,10 @@ describe('voz: o controller', () => {
     expect(Reflect.getMetadata('path', VozController)).toBe('pauta/voz');
     const proto = VozController.prototype as unknown as Record<string, object>;
     const esperado: Array<[string, string, string[]]> = [
-      ['painel', '/', ['pauta.ver']],
+      ['painel', '/', ['pauta.ver', 'obsidian.ver']],
       ['aprender', 'aprender', ['pauta.editar', 'automacoes.executar']],
-      ['salvar', '/', ['pauta.editar']],
-      ['chave', 'chave', ['pauta.editar']],
+      ['salvar', '/', ['pauta.editar', 'obsidian.ver']],
+      ['chave', 'chave', ['pauta.editar', 'obsidian.ver']],
     ];
     for (const [metodo, caminho, perms] of esperado) {
       expect(Reflect.getMetadata('path', proto[metodo]), metodo).toBe(caminho);
@@ -918,9 +928,10 @@ describe.skipIf(!URL)('voz com banco: a nota pelo caminho da ADR-011, pela sess�
   let vozes: VozService;
   let episodios: EpisodioService;
   let orgId = '';
+  let pessoaId = '';
 
   const na = <T>(fn: () => Promise<T>) =>
-    comContexto({ orgId, actorType: 'user', actorId: null, correlationId: `teste-${MARCA}`, origem: 'http' }, fn);
+    comContexto({ orgId, actorType: 'user', actorId: pessoaId, correlationId: `teste-${MARCA}`, origem: 'http' }, fn);
 
   beforeAll(async () => {
     admin = new PrismaClient({ datasources: { db: { url: URL } } });
@@ -938,6 +949,13 @@ describe.skipIf(!URL)('voz com banco: a nota pelo caminho da ADR-011, pela sess�
     episodios = new EpisodioService(app, new AuditService(app));
     const o = await admin.org.create({ data: { name: `Voz ${MARCA}`, slug: `vz-${MARCA}`, modulos: ['pauta'] } });
     orgId = o.id;
+    const permissoes = await Promise.all(PERMISSOES_DERIVACAO_PAUTA.map(key =>
+      admin.permission.upsert({ where: { key }, create: { key }, update: {} })));
+    const papel = await admin.role.create({ data: { orgId, key: 'editor_pauta_qa', name: 'Editor da Pauta QA',
+      permissions: { connect: permissoes.map(({ id }) => ({ id })) } } });
+    const pessoa = await admin.user.create({ data: { orgId, name: 'Editor QA', email: `voz-${MARCA}@teste.invalid`,
+      passwordHash: 'sem-senha-util', roles: { connect: { id: papel.id } } } });
+    pessoaId = pessoa.id;
   }, 60_000);
 
   afterAll(async () => {
@@ -953,6 +971,8 @@ describe.skipIf(!URL)('voz com banco: a nota pelo caminho da ADR-011, pela sess�
         admin.eventLog.deleteMany({ where: { orgId } }),
         admin.$executeRawUnsafe('ALTER TABLE "EventLog" ENABLE RULE eventlog_sem_delete'),
       ]);
+      await admin.user.deleteMany({ where: { orgId } });
+      await admin.role.deleteMany({ where: { orgId } });
       await admin.org.deleteMany({ where: { id: orgId } });
     }
     await admin?.$disconnect();
@@ -963,7 +983,7 @@ describe.skipIf(!URL)('voz com banco: a nota pelo caminho da ADR-011, pela sess�
     const rodada = await admin.pautaRodada.create({
       data: { orgId, status: 'curada', titulo: `Semana ${MARCA}`, janelaIni: new Date(), janelaFim: new Date(), itens: [{ titulo: 'Um', url: 'https://um.exemplo' }] },
     });
-    const e = await na(() => episodios.criar(orgId, 'pessoa', { rodadaId: rodada.id }));
+    const e = await na(() => episodios.criar(orgId, pessoaId, { rodadaId: rodada.id }));
     await admin.pautaEpisodio.update({ where: { id: e.id }, data: { transcricaoTexto: FALA } });
 
     const painel0 = await na(() => vozes.painel(orgId));
@@ -971,15 +991,15 @@ describe.skipIf(!URL)('voz com banco: a nota pelo caminho da ADR-011, pela sess�
     expect(painel0.episodios).toEqual([{ id: e.id, apelido: e.apelido, titulo: e.titulo, caracteres: FALA.length }]);
     expect(await na(() => vozes.bloco(orgId))).toBe(TOM_DA_CASA);
 
-    const v1 = await na(() => vozes.aprender(orgId, 'pessoa', PautaVozAprenderSchema.parse({ episodios: [e.id] })));
+    const v1 = await na(() => vozes.aprender(orgId, pessoaId, PautaVozAprenderSchema.parse({ episodios: [e.id] })));
     expect(v1.perfil?.versao).toBe(1);
-    const v2 = await na(() => vozes.aprender(orgId, 'pessoa', PautaVozAprenderSchema.parse({ episodios: [e.id] })));
+    const v2 = await na(() => vozes.aprender(orgId, pessoaId, PautaVozAprenderSchema.parse({ episodios: [e.id] })));
     expect(v2.perfil?.versao).toBe(2);
 
     await expect(
-      na(() => vozes.salvar(orgId, 'pessoa', PautaVozSalvarSchema.parse({ perfil: PERFIL_GRAVADO, versao: 1 }))),
+      na(() => vozes.salvar(orgId, pessoaId, PautaVozSalvarSchema.parse({ perfil: PERFIL_GRAVADO, versao: 1 }))),
     ).rejects.toBeInstanceOf(ConflictException);
-    const v3 = await na(() => vozes.salvar(orgId, 'pessoa', PautaVozSalvarSchema.parse({ perfil: PERFIL_GRAVADO, versao: 2 })));
+    const v3 = await na(() => vozes.salvar(orgId, pessoaId, PautaVozSalvarSchema.parse({ perfil: PERFIL_GRAVADO, versao: 2 })));
     expect(v3.perfil?.versao).toBe(3);
     expect(v3.historico.map((h) => h.mudanca)).toEqual(['alteracao', 'alteracao', 'criacao']);
 

@@ -67,12 +67,28 @@ const MARCA = `mem_${randomUUID().slice(0, 8)}`;
 const ORG_A = `org-memoria-a-${MARCA}`;
 const ORG_B = `org-memoria-b-${MARCA}`;
 
+// O ator de cada empresa é uma conta ativa real com as permissões atuais da memória.
+let bancoDaIdentidade: PrismaClient | undefined;
+beforeAll(async () => {
+  if (!URL) return;
+  bancoDaIdentidade = new PrismaClient({ datasources: { db: { url: URL } } });
+  const p = bancoDaIdentidade;
+  const permissoes = await Promise.all(['obsidian.ver', 'obsidian.editar'].map(key => p.permission.upsert({where:{key},update:{},create:{key}})));
+  for (const [id, slug] of [[ORG_A, `memoria-a-${MARCA}`], [ORG_B, `memoria-b-${MARCA}`]] as const) {
+    await p.org.upsert({where:{id},create:{id,name:`Empresa ${slug}`,slug},update:{}});
+    const papel = await p.role.upsert({where:{orgId_key:{orgId:id,key:'operador_memoria_teste'}},create:{orgId:id,key:'operador_memoria_teste',name:'Operador sintético',permissions:{connect:permissoes.map(x=>({id:x.id}))}},update:{permissions:{set:permissoes.map(x=>({id:x.id}))}}});
+    const userId = `operador-${id}`;
+    await p.user.upsert({where:{id:userId},create:{id:userId,orgId:id,name:'Operador sintético',email:`${userId}@qa.invalid`,passwordHash:'x',roles:{connect:{id:papel.id}}},update:{isActive:true,roles:{connect:{id:papel.id}}}});
+  }
+});
+afterAll(async () => { if (bancoDaIdentidade) await bancoDaIdentidade.$disconnect(); });
+
 function naEmpresa<T>(orgId: string, fn: () => Promise<T>): Promise<T> {
   return comContexto(
     {
       orgId,
       actorType: ActorType.user,
-      actorId: 'operador-teste',
+      actorId: `operador-${orgId}`,
       correlationId: `teste-memoria-${MARCA}`,
       origem: 'script',
     },
@@ -193,7 +209,7 @@ describe.skipIf(!URL)('a memória versiona, guarda procedência e registra no ra
   });
 
   beforeEach(async () => {
-    await prisma.contextItem.deleteMany({ where: { orgId: { in: [ORG_A, ORG_B] } } });
+    await limparItens(prisma, [ORG_A, ORG_B]);
     await prisma.knowledgeNote.deleteMany({ where: { orgId: { in: [ORG_A, ORG_B] } } });
   });
 
@@ -523,7 +539,7 @@ describe.skipIf(!URL)('duas alterações concorrentes não perdem a do meio', ()
   });
 
   afterAll(async () => {
-    await prismaA.contextItem.deleteMany({ where: { orgId: ORG_A } });
+    await limparItens(prismaA, [ORG_A]);
     await Promise.all([prismaA.$disconnect(), prismaB.$disconnect()]);
   });
 
@@ -713,7 +729,7 @@ describe.skipIf(!URL)('migrar o acervo da vault sem perder os vetores', () => {
   });
 
   beforeEach(async () => {
-    await prisma.contextItem.deleteMany({ where: { orgId: { in: [ORG_A, ORG_B] } } });
+    await limparItens(prisma, [ORG_A, ORG_B]);
     await prisma.knowledgeNote.deleteMany({ where: { orgId: { in: [ORG_A, ORG_B] } } });
   });
 
@@ -818,6 +834,38 @@ describe.skipIf(!URL)('migrar o acervo da vault sem perder os vetores', () => {
     expect(await prisma.contextItemVersion.count({ where: { orgId: ORG_A } })).toBe(6);
   });
 
+  it('a repetição recusa conteúdo divergente sem sobrescrever histórico', async () => {
+    await semearAcervo();
+    await migrarConhecimentoParaAMemoria(prisma, { orgId: ORG_A, actorId: 'suite' });
+    const antes = await prisma.contextItem.findMany({where:{orgId:ORG_A},orderBy:{id:'asc'}});
+    await prisma.knowledgeNote.updateMany({where:{orgId:ORG_A,path:`${MARCA}/nota-0.md`},data:{content:'fonte mudou'}});
+    await expect(migrarConhecimentoParaAMemoria(prisma, {orgId:ORG_A,actorId:'suite'})).rejects.toThrow(/diverge da origem/);
+    expect(await prisma.contextItem.findMany({where:{orgId:ORG_A},orderBy:{id:'asc'}})).toEqual(antes);
+  });
+
+  it('a repetição recusa corpo divergente mesmo se o hash armazenado foi mantido', async () => {
+    await semearAcervo();
+    await migrarConhecimentoParaAMemoria(prisma, {orgId:ORG_A,actorId:'suite'});
+    await prisma.contextItem.updateMany({where:{orgId:ORG_A,chave:chaveDaVault(`${MARCA}/nota-0.md`)},data:{body:'corpo adulterado'}});
+    const antes=await prisma.contextItem.findMany({where:{orgId:ORG_A},orderBy:{id:'asc'}});
+    await expect(migrarConhecimentoParaAMemoria(prisma,{orgId:ORG_A,actorId:'suite'})).rejects.toThrow(/diverge da origem/);
+    expect(await prisma.contextItem.findMany({where:{orgId:ORG_A},orderBy:{id:'asc'}})).toEqual(antes);
+  });
+
+  it('duas migrações concorrentes preservam uma identidade e versão por nota', async () => {
+    await semearAcervo();
+    const outra = new PrismaClient({datasources:{db:{url:URL}}});
+    try {
+      const resultados = await Promise.all([
+        migrarConhecimentoParaAMemoria(prisma,{orgId:ORG_A,actorId:'suite'}),
+        migrarConhecimentoParaAMemoria(outra,{orgId:ORG_A,actorId:'suite'}),
+      ]);
+      expect(resultados.map(r=>r.copiadas).sort((a,b)=>a-b)).toEqual([0,6]);
+      expect(await prisma.contextItem.count({where:{orgId:ORG_A}})).toBe(6);
+      expect(await prisma.contextItemVersion.count({where:{orgId:ORG_A}})).toBe(6);
+    } finally { await outra.$disconnect(); }
+  }, 30000);
+
   it('PERDA DE VETOR aborta e DESFAZ a transação inteira', async () => {
     /*
      * O caso que dá sentido à conferência: uma nota do acervo cuja chave JÁ
@@ -835,8 +883,9 @@ describe.skipIf(!URL)('migrar o acervo da vault sem perder os vetores', () => {
       memoria.criar(ORG_A, {
         chave: chaveDaVault(bloqueada.path),
         title: 'já estava aqui, sem vetor',
-        body: 'corpo diferente',
-        sourceType: ContextSource.operador,
+        body: bloqueada.content,
+        sourceType: ContextSource.vault,
+        sourceRef: bloqueada.path,
       }),
     );
     const antes = await prisma.contextItem.count({ where: { orgId: ORG_A } });
@@ -850,60 +899,35 @@ describe.skipIf(!URL)('migrar o acervo da vault sem perder os vetores', () => {
     expect(await contarVetores(prisma, ORG_A).then((c) => c.destino)).toBe(0);
   });
 
-  it('desfazer apaga o que veio da vault e NÃO encosta no resto', async () => {
+  it('desfazer apresenta prévia e recusa excluir identidades canônicas', async () => {
     await semearAcervo();
     await migrarConhecimentoParaAMemoria(prisma, { orgId: ORG_A, actorId: 'suite' });
-    const daTela = await naEmpresa(ORG_A, () =>
-      memoria.criar(ORG_A, {
-        chave: 'digitada/na-tela',
-        title: 'digitada na tela',
-        body: 'não veio da vault',
-        sourceType: ContextSource.operador,
-      }),
-    );
-
-    const r = await desfazerMigracao(prisma, { orgId: ORG_A });
-    expect(r.apagados).toBe(6);
-    expect(r.preservados).toBe(0);
-
-    const sobrou = await prisma.contextItem.findMany({ where: { orgId: ORG_A } });
-    expect(sobrou.map((n) => n.id)).toEqual([daTela.id]);
-    // A ORIGEM NUNCA FOI TOCADA — desfazer é grátis, e os vetores continuam lá.
-    expect(await contarVetores(prisma, ORG_A).then((c) => c.origem)).toBe(4);
+    const daTela = await naEmpresa(ORG_A, () => memoria.criar(ORG_A, {
+      chave: 'digitada/na-tela', title: 'digitada na tela', body: 'não veio da vault', sourceType: ContextSource.operador,
+    }));
+    const antes = await prisma.contextItem.findMany({where:{orgId:ORG_A},orderBy:{id:'asc'}});
+    const versoes = await prisma.contextItemVersion.count({where:{orgId:ORG_A}});
+    const simulacao = await desfazerMigracao(prisma, { orgId: ORG_A, simular: true });
+    expect(simulacao).toMatchObject({simulado:true,candidatos:6,preservados:0});
+    await expect(desfazerMigracao(prisma, { orgId: ORG_A })).rejects.toThrow(/não disponível|não apaga/i);
+    expect(await prisma.contextItem.findMany({where:{orgId:ORG_A},orderBy:{id:'asc'}})).toEqual(antes);
+    expect(await prisma.contextItemVersion.count({where:{orgId:ORG_A}})).toBe(versoes);
+    expect(antes.some(n => n.id===daTela.id)).toBe(true);
+    expect(await contarVetores(prisma, ORG_A).then(c=>c.origem)).toBe(4);
   });
 
-  it('desfazer PRESERVA a nota migrada que a operação tocou depois', async () => {
-    /*
-     * O CRITÉRIO ANTIGO era só "origem `vault` e chave com o prefixo" — e isso
-     * NÃO é "o que a migração trouxe". Nota da vault editada depois (na tela ou
-     * pela reindexação) caía nele, e apagá-la levava o HISTÓRICO junto pela
-     * cascata, contra a regra do próprio ADR-011: não se apaga, arquiva-se.
-     * Pior: o evento daquela edição ficava apontando para uma linha de versão
-     * que deixou de existir.
-     */
+  it('prévia distingue migradas intocadas da nota posteriormente alterada, sem apagar nenhuma', async () => {
     await semearAcervo();
     await migrarConhecimentoParaAMemoria(prisma, { orgId: ORG_A, actorId: 'suite' });
-
-    const tocada = await naEmpresa(ORG_A, () =>
-      memoria.porChave(ORG_A, chaveDaVault(`${MARCA}/nota-0.md`)),
-    );
-    await naEmpresa(ORG_A, () =>
-      memoria.alterar(ORG_A, tocada!.id, { body: 'corrigido na tela', motivo: 'revisão' }),
-    );
-
+    const tocada = await naEmpresa(ORG_A, () => memoria.porChave(ORG_A, chaveDaVault(`${MARCA}/nota-0.md`)));
+    await naEmpresa(ORG_A, () => memoria.alterar(ORG_A, tocada!.id, { body: 'corrigido na tela', motivo: 'revisão' }));
+    const antes = await prisma.contextItem.findMany({where:{orgId:ORG_A},orderBy:{id:'asc'}});
     const simulacao = await desfazerMigracao(prisma, { orgId: ORG_A, simular: true });
-    expect(simulacao.apagados).toBe(5);
-    expect(simulacao.preservados).toBe(1);
-
-    const r = await desfazerMigracao(prisma, { orgId: ORG_A });
-    expect(r.apagados).toBe(5);
-    expect(r.preservados).toBe(1);
-
-    const sobrou = await prisma.contextItem.findMany({ where: { orgId: ORG_A } });
-    expect(sobrou.map((n) => n.id)).toEqual([tocada!.id]);
-    // E o histórico dela ficou INTEIRO — inclusive a versão 1, da migração.
+    expect(simulacao).toMatchObject({simulado:true,candidatos:5,preservados:1});
+    await expect(desfazerMigracao(prisma, { orgId: ORG_A })).rejects.toThrow(/não disponível|não apaga/i);
+    expect(await prisma.contextItem.findMany({where:{orgId:ORG_A},orderBy:{id:'asc'}})).toEqual(antes);
     const historico = await naEmpresa(ORG_A, () => memoria.historico(ORG_A, tocada!.id));
-    expect(historico.map((v) => v.versao)).toEqual([2, 1]);
+    expect(historico.map(v=>v.versao)).toEqual([2,1]);
     expect(historico[1].semEventoPorque).toBe(SEM_EVENTO.migracao);
     expect(historico[0].eventoId).toBeTruthy();
   });
@@ -998,7 +1022,7 @@ describe.skipIf(!URL)('a integridade da memória é conferível, não declarada'
   });
 
   beforeEach(async () => {
-    await prisma.contextItem.deleteMany({ where: { orgId: ORG_A } });
+    await limparItens(prisma, [ORG_A]);
   });
 
   const umaNota = (chave: string) =>
@@ -1179,7 +1203,7 @@ describe.skipIf(!URL)('vault vazia ou montada no lugar errado não arquiva a mem
   });
 
   beforeEach(async () => {
-    await prisma.contextItem.deleteMany({ where: { orgId: ORG_A } });
+    await limparItens(prisma, [ORG_A]);
   });
 
   /** `n` arquivos "no disco", com corpos estáveis. */
@@ -1320,8 +1344,24 @@ describe('o controlador da memória está pendurado no grafo de módulos', () =>
  * produto (02-CONSTRAINTS proíbe apagar evento do RASTRO). As linhas ficam
  * marcadas pela empresa desta rodada, que é descartável.
  */
+/** Exclusivamente para as duas empresas sintéticas desta suíte; a guarda vale durante os casos. */
+async function limparItens(prisma: PrismaClient, ids: string[]): Promise<void> {
+  if (ids.some(id => ![ORG_A, ORG_B].includes(id))) throw new Error('Limpeza fora da fixture.');
+  const where = { orgId: { in: ids } };
+  await prisma.$transaction(async tx => {
+    await tx.$executeRaw`SET LOCAL session_replication_role = replica`;
+    await tx.contextMovementReceipt.deleteMany({ where });
+    await tx.contextAlias.deleteMany({ where });
+    await tx.contextMovementCandidate.deleteMany({ where });
+    await tx.contextMovementIntent.deleteMany({ where });
+    await tx.contextKeyClaim.deleteMany({ where });
+    await tx.contextCollectionMember.deleteMany({ where });
+    await tx.contextCollectionSelection.deleteMany({ where });
+    await tx.contextItemVersion.deleteMany({ where });
+    await tx.contextItem.deleteMany({ where });
+    await tx.knowledgeNote.deleteMany({ where });
+  });
+}
 async function limpar(prisma: PrismaClient): Promise<void> {
-  const orgs = { in: [ORG_A, ORG_B] };
-  await prisma.contextItem.deleteMany({ where: { orgId: orgs } });
-  await prisma.knowledgeNote.deleteMany({ where: { orgId: orgs } });
+  await limparItens(prisma, [ORG_A, ORG_B]);
 }

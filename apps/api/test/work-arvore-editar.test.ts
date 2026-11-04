@@ -76,15 +76,15 @@ describe('árvore: as regras sem banco', () => {
 
   it('Layout 26/10: ligar a tarefa a um lead pelo Trabalho pede leads.ver; sem lead, não', async () => {
     const id = '11111111-1111-4111-8111-111111111111';
-    const svcFalso = { criarTarefa: vi.fn(async () => 'criada'), editarTarefaHttp: vi.fn(async () => 'editada') };
+    const svcFalso = { criarTarefaEscopadaHttp: vi.fn(async () => 'criada'), editarTarefaEscopadaHttp: vi.fn(async () => 'editada') };
     const ctl = new WorkController(svcFalso as never, {} as never, {} as never, {} as never);
     const quem = (permissions: string[]) => ({ sub: 'u', orgId: 'o', permissions }) as never;
     expect(() => ctl.criarTarefa(quem(['tarefas.editar']), { listId: id, title: 'Ligar', leadId: id })).toThrow('leads.ver');
     expect(() => ctl.editarTarefa(quem(['tarefas.editar']), id, { expectedUpdatedAt: '2026-10-26T10:00:00.000Z', leadId: null })).toThrow('leads.ver');
     await ctl.criarTarefa(quem(['tarefas.editar']), { listId: id, title: 'Sem lead' });
     await ctl.criarTarefa(quem(['tarefas.editar', 'leads.ver']), { listId: id, title: 'Com lead', leadId: id });
-    expect(svcFalso.criarTarefa).toHaveBeenLastCalledWith('o', 'u', expect.objectContaining({ leadId: id }), { exigirCliente: true });
-    expect(svcFalso.criarTarefa).toHaveBeenCalledTimes(2);
+    expect(svcFalso.criarTarefaEscopadaHttp).toHaveBeenLastCalledWith('o', 'u', expect.objectContaining({ leadId: id }));
+    expect(svcFalso.criarTarefaEscopadaHttp).toHaveBeenCalledTimes(2);
   });
 
   it('apagar pasta com destino e mover tarefas são de gente: o guarda está na rota', () => {

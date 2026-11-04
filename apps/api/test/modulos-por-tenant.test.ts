@@ -700,15 +700,16 @@ describe('schema e migration', () => {
     expect(doSql.length).toBe(MODULOS.length);
   });
 
-  it('a cronologia das migrations é única e a nossa é a mais nova das duas conhecidas', () => {
+  it('a ordem usa o nome completo e registra a colisão já aplicada em outubro', () => {
     const pastas = readdirSync(path.join(RAIZ, 'prisma', 'migrations'), { withFileTypes: true })
       .filter((d) => d.isDirectory())
       .map((d) => d.name);
     const carimbos = pastas.map((p) => p.slice(0, 14));
-    // Duas migrations com o mesmo carimbo tornam a ordem de aplicação
-    // indefinida entre bancos — e `prisma migrate deploy` roda no `command` do
-    // container: ordem errada derruba a API, não uma tela.
-    expect(new Set(carimbos).size).toBe(carimbos.length);
+    // Prisma ordena pelo nome completo. Não renomear migrations já aplicadas:
+    // esta colisão histórica tem ordem determinística pelo sufixo.
+    expect(new Set(pastas).size).toBe(pastas.length);
+    const repetidos = pastas.filter((p, i) => carimbos.indexOf(carimbos[i]) !== carimbos.lastIndexOf(carimbos[i])).sort();
+    expect(repetidos).toEqual(['20261027010000_arquivo_do_clickup', '20261027010000_marketing_comentario_da_triagem']);
     expect(pastas).toContain(PASTA_DA_MIGRATION);
     expect(PASTA_DA_MIGRATION > '20260910120000_orgid_em_todo_filho').toBe(true);
   });

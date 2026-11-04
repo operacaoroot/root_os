@@ -1,5 +1,6 @@
-import { Body, Controller, Delete, Get, Headers, Param, Patch, Post, Req, Res, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Headers, Param, Patch, Post, Query, Req, Res, UseGuards } from '@nestjs/common';
 import type { Request, Response } from 'express';
+import { EscopoClienteAdaptado } from '../clientes-escopo/cliente-escopo.decorator';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { PermissionsGuard } from '../auth/permissions.guard';
 import { AcessoAtualGuard } from '../memory/acesso-atual.guard';
@@ -17,67 +18,83 @@ const CABECALHO = 'x-cofre-sessao';
 export class CofreDaEmpresaController {
   constructor(private readonly svc: CofreDaEmpresaService) {}
 
+  @Get('clientes')
+  @EscopoClienteAdaptado()
+  @RequirePermissions('cofre.ver')
+  clientes(@CurrentUser() u: JwtUser) { return this.svc.clientes(u.orgId, u.sub); }
+
   @Get('estado')
+  @EscopoClienteAdaptado()
   @RequirePermissions('cofre.ver')
   estado(@CurrentUser() u: JwtUser, @Headers(CABECALHO) t?: string) {
     return this.svc.estado(u.orgId, u.sub, t);
   }
 
   @Post('senha')
+  @EscopoClienteAdaptado()
   @RequirePermissions('cofre.ver')
   senha(@CurrentUser() u: JwtUser & { iat?: number }, @Body() body: unknown) {
     return this.svc.definirSenha(u.orgId, u.sub, DefinirSenhaSchema.parse(body), u.iat);
   }
 
   @Post('destrancar')
+  @EscopoClienteAdaptado()
   @RequirePermissions('cofre.ver')
   destrancar(@CurrentUser() u: JwtUser, @Body() body: unknown) {
     return this.svc.destrancar(u.orgId, u.sub, DestrancarSchema.parse(body).senha);
   }
 
   @Post('trancar')
+  @EscopoClienteAdaptado()
   @RequirePermissions('cofre.ver')
   trancar(@CurrentUser() u: JwtUser, @Headers(CABECALHO) t?: string) {
     return this.svc.trancar(u.orgId, u.sub, t);
   }
 
   @Get('pessoas')
+  @EscopoClienteAdaptado()
   @RequirePermissions('cofre.editar')
   pessoas(@CurrentUser() u: JwtUser, @Headers(CABECALHO) t?: string) {
     return this.svc.pessoas(u.orgId, u.sub, t);
   }
 
   @Delete('senha/:userId')
+  @EscopoClienteAdaptado()
   @RequirePermissions('cofre.editar')
   zerar(@CurrentUser() u: JwtUser, @Headers(CABECALHO) t: string | undefined, @Param('userId') alvo: string) {
     return this.svc.zerarSenhaDeOutro(u.orgId, u.sub, t, alvo);
   }
 
   @Get('itens')
+  @EscopoClienteAdaptado()
   @RequirePermissions('cofre.ver')
-  listar(@CurrentUser() u: JwtUser, @Headers(CABECALHO) t?: string) {
-    return this.svc.listar(u.orgId, u.sub, t);
+  listar(@CurrentUser() u: JwtUser, @Headers(CABECALHO) t?: string, @Query('clienteId') clienteId?: string) {
+    return this.svc.listar(u.orgId, u.sub, t, clienteId);
   }
 
   @Post('itens/:id/revelar')
+  @EscopoClienteAdaptado()
   @RequirePermissions('cofre.ver')
   revelar(@CurrentUser() u: JwtUser, @Headers(CABECALHO) t: string | undefined, @Param('id') id: string) {
     return this.svc.revelar(u.orgId, u.sub, t, id);
   }
 
   @Post('itens')
+  @EscopoClienteAdaptado()
   @RequirePermissions('cofre.editar')
   criar(@CurrentUser() u: JwtUser, @Headers(CABECALHO) t: string | undefined, @Body() body: unknown) {
     return this.svc.criar(u.orgId, u.sub, t, ItemSchema.parse(body));
   }
 
   @Patch('itens/:id')
+  @EscopoClienteAdaptado()
   @RequirePermissions('cofre.editar')
   alterar(@CurrentUser() u: JwtUser, @Headers(CABECALHO) t: string | undefined, @Param('id') id: string, @Body() body: unknown) {
     return this.svc.alterar(u.orgId, u.sub, t, id, ItemUpdateSchema.parse(body));
   }
 
   @Delete('itens/:id')
+  @EscopoClienteAdaptado()
   @RequirePermissions('cofre.editar')
   apagar(@CurrentUser() u: JwtUser, @Headers(CABECALHO) t: string | undefined, @Param('id') id: string) {
     return this.svc.apagar(u.orgId, u.sub, t, id);
@@ -85,6 +102,7 @@ export class CofreDaEmpresaController {
 
   /** O arquivo cru no corpo (application/octet-stream); nome no cabeçalho x-nome-arquivo (URI-encoded). */
   @Post('itens/:id/arquivo')
+  @EscopoClienteAdaptado()
   @RequirePermissions('cofre.editar')
   async guardarArquivo(
     @CurrentUser() u: JwtUser, @Headers(CABECALHO) t: string | undefined, @Param('id') id: string,
@@ -104,6 +122,7 @@ export class CofreDaEmpresaController {
   }
 
   @Get('itens/:id/arquivo')
+  @EscopoClienteAdaptado()
   @RequirePermissions('cofre.ver')
   async abrirArquivo(@CurrentUser() u: JwtUser, @Headers(CABECALHO) t: string | undefined, @Param('id') id: string, @Res() res: Response) {
     const { bytes, nome, tipo } = await this.svc.abrirArquivo(u.orgId, u.sub, t, id);

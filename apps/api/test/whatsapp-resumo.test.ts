@@ -139,6 +139,7 @@ describe.skipIf(!URL)('GET /whatsapp/resumo', () => {
     const real = prisma.whatsAppConversa.aggregate.bind(prisma.whatsAppConversa);
     const contado = {
       whatsAppConversa: {
+        count: prisma.whatsAppConversa.count.bind(prisma.whatsAppConversa),
         aggregate: (...args: Parameters<typeof real>) => {
           medicoes += 1;
           return real(...args);
@@ -149,7 +150,7 @@ describe.skipIf(!URL)('GET /whatsapp/resumo', () => {
     s.agora = () => relogio;
     const [x, y] = await Promise.all([s.doResumo(ORG), s.doResumo(ORG)]);
     expect(x).toEqual(y);
-    expect(medicoes).toBe(4); // uma medição = quatro agregações, e nenhuma linha trazida
+    expect(medicoes).toBe(5); // Cinco faixas, incluindo comunidade; nenhuma conversa materializada.
   });
 
   it('medição que falha não fica guardada', async () => {
@@ -157,6 +158,7 @@ describe.skipIf(!URL)('GET /whatsapp/resumo', () => {
     const real = prisma.whatsAppConversa.aggregate.bind(prisma.whatsAppConversa);
     const instavel = {
       whatsAppConversa: {
+        count: prisma.whatsAppConversa.count.bind(prisma.whatsAppConversa),
         aggregate: (...args: Parameters<typeof real>) => (falhar ? Promise.reject(new Error('banco fora')) : real(...args)),
       },
     };

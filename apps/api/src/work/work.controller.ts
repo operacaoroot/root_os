@@ -1,3 +1,4 @@
+import { EscopoClienteAdaptado } from '../clientes-escopo/cliente-escopo.decorator';
 import { AcessoAtualGuard } from '../memory/acesso-atual.guard';
 import { SoGenteNoTrabalhoGuard } from './so-gente-no-trabalho.guard';
 import { ContextoTrabalhoService } from '../memory/contexto-trabalho.service';
@@ -25,6 +26,11 @@ import { parseWorkTaskQuery } from './work-task-query';
  * Layout 26/10: ligar ou desligar o lead da tarefa pelo Trabalho pede também ver os leads
  * (`leads.ver`), a mesma régua da busca de lead (`/trabalho/atas/alvos?tipo=lead`).
  */
+function exigirAtor(u: JwtUser): string {
+  if (!u?.sub || !u.orgId) throw new ForbiddenException('Acesso insuficiente.');
+  return u.sub;
+}
+
 function exigirVerLeads(u: JwtUser, mexeNoLead: boolean): void {
   if (!mexeNoLead) return;
   if (!(u.permissions ?? []).includes('leads.ver')) throw new ForbiddenException('Ligar a tarefa a um lead pede a permissão de ver os leads (leads.ver).');
@@ -49,10 +55,11 @@ export class WorkController {
    * mais o cliente da casa. Só nome e CNPJ: o resto do cadastro é do Financeiro.
    */
   @Get('clientes')
+  @EscopoClienteAdaptado()
   @RequirePermissions('tarefas.ver')
   clientes(@CurrentUser() u: JwtUser, @Query('q') q?: string) {
     if (q !== undefined && (typeof q !== 'string' || q.length > 120)) throw new BadRequestException('q deve ser texto de até 120 caracteres');
-    return this.svc.clientes(u.orgId, q);
+    return this.svc.clientes(u.orgId, q, exigirAtor(u));
   }
 
   /*
@@ -332,12 +339,13 @@ export class WorkController {
 
   // ---- tarefas ----
   @Get('tarefas')
+  @EscopoClienteAdaptado()
   @RequirePermissions('tarefas.ver')
   tarefas(
     @CurrentUser() u: JwtUser,
     @Query() query?: Record<string, unknown>,
   ) {
-    return this.svc.tarefas(u.orgId, parseWorkTaskQuery(query ?? {}));
+    return this.svc.tarefas(u.orgId, parseWorkTaskQuery(query ?? {}), exigirAtor(u));
   }
 
   @Get('tarefas/:id/fontes')
@@ -355,19 +363,21 @@ export class WorkController {
   }
 
   @Get('tarefas/:id')
+  @EscopoClienteAdaptado()
   @UseGuards(AcessoAtualGuard)
   @RequirePermissions('tarefas.ver')
   tarefa(@CurrentUser() u: JwtUser, @Param('id') id: string) {
-    return this.svc.tarefa(u.orgId, id, u.sub);
+    return this.svc.tarefa(u.orgId, id, exigirAtor(u));
   }
 
   @Post('tarefas')
+  @EscopoClienteAdaptado()
   @RequirePermissions('tarefas.editar')
   criarTarefa(@CurrentUser() u: JwtUser, @Body() body: unknown) {
     // T4: a tarefa criada pela tela sempre tem cliente (subtarefa herda o da mãe).
     const input = TrabTarefaCreateSchema.parse(body);
     exigirVerLeads(u, !!input.leadId);
-    return this.svc.criarTarefa(u.orgId, u.sub, input, { exigirCliente: true });
+    return this.svc.criarTarefaEscopadaHttp(u.orgId, exigirAtor(u), input);
   }
 
   /** Ordem manual (versão final, F4): arrastar na lista ou na coluna grava `order`, com versão. */
@@ -379,12 +389,13 @@ export class WorkController {
   }
 
   @Patch('tarefas/:id')
+  @EscopoClienteAdaptado()
   @UseGuards(AcessoAtualGuard)
   @RequirePermissions('tarefas.editar')
   editarTarefa(@CurrentUser() u: JwtUser, @Param('id') id: string, @Body() body: unknown) {
     const input = TrabTarefaUpdateHttpSchema.parse(body);
     exigirVerLeads(u, input.leadId !== undefined);
-    return this.svc.editarTarefaHttp(u.orgId, u.sub, id, input);
+    return this.svc.editarTarefaEscopadaHttp(u.orgId, exigirAtor(u), id, input);
   }
 
   // "apagar" = arquivar (nada some de verdade; auditoria fica)
@@ -426,9 +437,10 @@ export class WorkController {
   }
 
   @Post('tarefas/:id/comentarios')
+  @EscopoClienteAdaptado()
   @RequirePermissions('tarefas.editar')
   comentar(@CurrentUser() u: JwtUser, @Param('id') id: string, @Body() body: unknown) {
-    return this.svc.comentar(u.orgId, u.sub, id, TrabComentarioSchema.parse(body).text);
+    return this.svc.comentarHttp(u.orgId, exigirAtor(u), id, TrabComentarioSchema.parse(body).text);
   }
 
   /* ---- horas apontadas (esteira de clientes) ----

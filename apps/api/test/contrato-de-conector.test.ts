@@ -429,6 +429,7 @@ interface Fakes {
   contrato: RegistroDeConectores;
   desligados: Map<string, { motivo: string | null; desligadoPor: string | null; desligadoEm: Date }>;
   exigidos: string[];
+  permissoesAtuais: string[];
 }
 
 function montarCatalogo(): Fakes {
@@ -438,9 +439,13 @@ function montarCatalogo(): Fakes {
     { motivo: string | null; desligadoPor: string | null; desligadoEm: Date }
   >();
   const exigidos: string[] = [];
+  const permissoesAtuais = ['admin.usuarios', 'tarefas.editar'];
 
   const prisma = {
     integrationAccount: { findMany: async () => [] },
+    user: { findFirst: async ({ where }: { where: { id: string; orgId: string; isActive: boolean } }) =>
+      where.id === 'pedro' && where.orgId === EMPRESA && where.isActive
+        ? { roles: [{ permissions: permissoesAtuais.map(key => ({ key })) }] } : null },
   } as unknown as PrismaService;
   const audit = { log: async () => {} } as unknown as AuditService;
   const conectores = {
@@ -460,7 +465,7 @@ function montarCatalogo(): Fakes {
     new ConectoresConfiguradosRegistry(),
     contrato,
   );
-  return { svc, contrato, desligados, exigidos };
+  return { svc, contrato, desligados, exigidos, permissoesAtuais };
 }
 
 describe('catálogo de conexões: o contrato na tela', () => {
@@ -983,6 +988,15 @@ describe('sincronizar exige a permissão que o conector declara', () => {
     expect(r.tipo).toBe('feito');
   });
 
+  it('revogação atual da permissão específica impede a chamada mesmo com claims antigos', async () => {
+    const { svc, contrato, permissoesAtuais } = montarCatalogo();
+    const chamadas: Record<string, number> = {};
+    contrato.registrar({ ...conectorFicticio({ chamadas }), permissaoParaSincronizar: 'tarefas.editar' }, 'Ficticio');
+    permissoesAtuais.splice(permissoesAtuais.indexOf('tarefas.editar'), 1);
+    await expect(svc.sincronizar(EMPRESA, CHAVE_FICTICIA, 'pedro', ['admin.usuarios', 'tarefas.editar'])).rejects.toThrow();
+    expect(chamadas.sincronizar ?? 0).toBe(0);
+  });
+
   it('conector sem exigência declarada não ganha trava nova', async () => {
     const { svc, contrato } = montarCatalogo();
     contrato.registrar(conectorFicticio(), 'Ficticio');
@@ -1050,27 +1064,23 @@ describe('Obsidian: verde só com índice desta empresa', () => {
 
   afterEach(() => rmSync(vault, { recursive: true, force: true }));
 
-  it('pasta legível + ZERO nota indexada = não configurado (não verde)', async () => {
+  it('pasta legível não declara cobertura do índice, mesmo sem notas indexadas', async () => {
     const { contrato } = montarObsidian(vault, 0);
     const s = await contrato.sondar({ orgId: EMPRESA, chave: 'obsidian', prazoMs: 2_000 });
-
-    /*
-     * Este era o parágrafo que contradizia o próprio código: ele argumentava que
-     * responder "a pasta abre" seria verde verdadeiro sobre a pergunta errada —
-     * e devolvia verde com zero nota, mudando só a mensagem.
-     */
-    expect(s.estado).toBe('nao_configurado');
-    expect(s.estado).not.toBe('conectado');
-    expect(s.mensagem).toMatch(/NENHUMA nota/);
-    expect(s.mensagem).toMatch(/sincronizar/);
+    expect(s.estado).toBe('conectado');
+    expect(s.apuracao).toBe('tentativa');
+    expect(s.mensagem).toMatch(/Vault legível/);
+    expect(s.mensagem).toMatch(/acesso ao contexto e as contagens do onboarding não foram conferidos/);
   });
 
-  it('pasta legível + notas indexadas = verde, com a medição do registro', async () => {
+  it('pasta legível mede a raiz sem publicar contagem de notas protegidas', async () => {
     const { contrato } = montarObsidian(vault, 432);
     const s = await contrato.sondar({ orgId: EMPRESA, chave: 'obsidian', prazoMs: 2_000 });
     expect(s.estado).toBe('conectado');
     expect(s.apuracao).toBe('tentativa');
-    expect(s.mensagem).toContain('432');
+    expect(s.mensagem).toMatch(/2 entrada\(s\) na raiz/);
+    expect(s.mensagem).not.toContain('432');
+    expect(s.mensagem).toMatch(/não foram conferidos/);
   });
 
   it('pasta que não abre = erro com a causa real', async () => {

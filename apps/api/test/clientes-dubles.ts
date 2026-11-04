@@ -37,7 +37,7 @@ export class DriveEmMemoria implements DriveDoCliente {
     this.nos.set(id, { id, nome, mimeType: MIME_DA_PASTA, pais: pai ? [pai] : [] });
     return id;
   }
-  arquivo(nome: string, pai: string, conteudo = Buffer.from('x'), id = idDoDrive('a')): string {
+  arquivo(nome: string, pai: string, conteudo: Buffer = Buffer.from('x'), id = idDoDrive('a')): string {
     this.nos.set(id, { id, nome, mimeType: nome.endsWith('.md') ? 'text/markdown' : 'application/octet-stream', pais: [pai], conteudo });
     return id;
   }

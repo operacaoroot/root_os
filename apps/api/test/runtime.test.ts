@@ -36,6 +36,8 @@ import type { ObsidianService } from '../src/obsidian/obsidian.service';
  */
 const URL = process.env.TEST_DATABASE_URL;
 const ORG = 'org-runtime';
+const ATOR = 'qa-runtime-actor';
+const PAPEL = 'qa-runtime-role';
 
 /** Devolve os passos na ordem em que forem pedidos. */
 class ModeloRoteirizado implements LlmProvider {
@@ -131,6 +133,9 @@ describe.skipIf(!URL)('o laço do agente', () => {
       update: {},
     });
 
+    await prisma.permission.upsert({where:{key:'mcp.ver'},create:{key:'mcp.ver'},update:{}});
+    await prisma.role.upsert({where:{id:PAPEL},create:{id:PAPEL,orgId:ORG,key:'qa-runtime',name:'QA runtime',permissions:{connect:{key:'mcp.ver'}}},update:{}});
+    await prisma.user.upsert({where:{id:ATOR},create:{id:ATOR,orgId:ORG,name:'QA runtime',email:'runtime@qa.invalid',passwordHash:'synthetic',roles:{connect:{id:PAPEL}}},update:{}});
     const p = prisma as unknown as PrismaService;
     const audit = new AuditService(p);
     policy = new PolicyService(p);
@@ -188,6 +193,8 @@ describe.skipIf(!URL)('o laço do agente', () => {
     await prisma.toolCall.deleteMany({ where: { orgId: ORG } });
     await prisma.policyDecision.deleteMany({ where: { orgId: ORG } });
     await prisma.auditLog.deleteMany({ where: { orgId: ORG } });
+    await prisma.user.deleteMany({where:{orgId:ORG}});
+    await prisma.role.deleteMany({where:{orgId:ORG}});
     await prisma.org.deleteMany({ where: { id: ORG } });
     await prisma.$disconnect();
   });
@@ -222,12 +229,13 @@ describe.skipIf(!URL)('o laço do agente', () => {
     // duas chamadas de modelo × 0,0075 — o custo é somado dos passos, não chutado
     expect(r.custoUsd).toBeCloseTo(0.015, 6);
 
-    const traco = await sessoes.traco(ORG, r.sessionId);
+    const traco = await sessoes.traco(ORG, ATOR, r.sessionId);
     expect(traco).not.toBeNull();
     // 01 o pedido
-    expect(traco!.blocos.pedido).toBe('quanto entrou hoje?');
+    expect(traco!.blocos.pedido).toBeNull();
+    expect((await prisma.session.findUniqueOrThrow({where:{id:r.sessionId}})).pedido).toBe('quanto entrou hoje?');
     // 02 o contexto que entrou junto
-    expect(traco!.blocos.contexto.texto).toContain('filial 3');
+    expect(traco!.blocos.contexto.texto).toBeNull();
     // 03 as ferramentas chamadas
     expect(traco!.blocos.ferramentas).toHaveLength(1);
     expect(traco!.blocos.ferramentas[0]).toMatchObject({
@@ -238,7 +246,8 @@ describe.skipIf(!URL)('o laço do agente', () => {
     // 04 a régua decidiu
     expect(traco!.blocos.regua.nivelMax).toBe('R0');
     // 05 o que saiu
-    expect(traco!.blocos.resposta.texto).toContain('48.000');
+    expect(traco!.blocos.resposta.texto).toBeNull();
+    expect((await prisma.session.findUniqueOrThrow({where:{id:r.sessionId}})).resposta).toContain('48.000');
     // 06 o que ficou registrado
     expect(traco!.blocos.registro.toolCalls).toHaveLength(1);
   });
@@ -384,7 +393,7 @@ describe.skipIf(!URL)('o laço do agente', () => {
     );
     expect(b.sessionId).toBe(a.sessionId);
 
-    const traco = await sessoes.traco(ORG, a.sessionId);
+    const traco = await sessoes.traco(ORG, ATOR, a.sessionId);
     // o segundo pedido virou passo da MESMA sessão
     expect(traco!.blocos.registro.passos).toBeGreaterThan(3);
   });

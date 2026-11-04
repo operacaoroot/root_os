@@ -113,14 +113,14 @@ function agenteFalso(contextoFixo: string[] = []): Agent {
 /** Um `ObsidianService` que devolve exatamente o que se manda. */
 function obsidianFalso(items: unknown[]): ObsidianService {
   return {
-    search: async () => ({ query: 'q', mode: 'semantic', items, source: {} }),
+    buscarIndiceInternoSemSolicitante: async (orgId: string, query: string) => ({ natureza: 'indice_interno_sem_solicitante', orgId, query, mode: 'semantic', items: items.map((n: any) => ({ ...n, snippet: n.snippet ?? '' })), source: {} }),
   } as unknown as ObsidianService;
 }
 
 /** Um `ObsidianService` que cai — a base indisponível, que não é base vazia. */
 function obsidianQueCai(mensagem: string): ObsidianService {
   return {
-    search: async () => {
+    buscarIndiceInternoSemSolicitante: async () => {
       throw new Error(mensagem);
     },
   } as unknown as ObsidianService;
@@ -163,8 +163,8 @@ describe('sem dado na base, o contexto DECLARA a ausência', () => {
   it('busca vazia: o bloco de ausência entra, e diz para NÃO preencher', async () => {
     const { blocos, ausencia } = await montar([]);
 
-    expect(ausencia).toEqual({ motivo: 'nada_na_base', detalhe: expect.any(String) });
-    expect(blocos).toContain('SEM DADO NA BASE:');
+    expect(ausencia).toEqual({ motivo: 'busca_indisponivel', detalhe: expect.stringContaining('onboarding não foi conferido') });
+    expect(blocos).toContain('SEM TRECHO NESTA LEITURA:');
     expect(blocos).toContain('DECLARE A AUSÊNCIA');
     expect(blocos).toContain('Não estime, não arredonde, não complete de memória');
   });
@@ -191,36 +191,26 @@ describe('sem dado na base, o contexto DECLARA a ausência', () => {
     expect(fontes).toHaveLength(1);
     expect(fontes[0].tipo).toBe('regra');
     expect(temFonteDeDado(fontes)).toBe(false);
-    expect(ausencia?.motivo).toBe('nada_na_base');
-    expect(blocos).toContain('faturamento exclui a filial 3'); // a regra continua valendo
-    expect(blocos).toContain('SEM DADO NA BASE:');
-  });
-
-  it('título sem corpo é ausência, e o traço diz que foi isso', async () => {
-    // A busca devolve `snippet`; uma nota sem `snippet` nem `content` é título e
-    // nada mais — foi exatamente o que o bloco 02 inteiro era antes da fatia 3.8.
-    const { blocos, ausencia } = await montar([{ id: 'x', path: 'x.md', title: 'x', score: 0.9 }]);
-
-    expect(ausencia?.motivo).toBe('notas_sem_corpo');
-    expect(ausencia?.detalhe).toContain('nenhuma trouxe corpo');
-    expect(blocos).toContain('SEM DADO NA BASE:');
-  });
-
-  it('"não deu para olhar" é dito como outra coisa que "não existe"', async () => {
-    const builder = new ContextBuilder(obsidianQueCai('pgvector fora do ar'));
-    const { blocos, ausencia } = await builder.montar(ORG, 'quanto faturamos?', agenteFalso());
-
     expect(ausencia?.motivo).toBe('busca_indisponivel');
-    expect(blocos).toContain('INDISPONÍVEL');
-    expect(blocos).toContain('não deu para olhar');
-    // e a mensagem do erro fica no traço, FORA do prompt: ela é texto de fora.
-    expect(ausencia?.detalhe).toContain('pgvector fora do ar');
-    expect(blocos).not.toContain('pgvector fora do ar');
+    expect(blocos).toContain('faturamento exclui a filial 3'); // a regra continua valendo
+    expect(blocos).toContain('SEM TRECHO NESTA LEITURA:');
   });
 
-  it('a busca que cai não derruba a sessão — ela devolve contexto, não exceção', async () => {
+  it('título sem corpo não confirma ausência no onboarding', async () => {
+    const { blocos, ausencia } = await montar([{ id: 'x', path: 'x.md', title: 'x', score: 0.9 }]);
+    expect(ausencia?.motivo).toBe('busca_indisponivel');
+    expect(ausencia?.detalhe).toContain('onboarding não foi conferido');
+    expect(blocos).toContain('SEM TRECHO NESTA LEITURA:');
+  });
+
+  it('falha real da busca é propagada, não declarada como base vazia', async () => {
     const builder = new ContextBuilder(obsidianQueCai('pgvector fora do ar'));
-    await expect(builder.montar(ORG, 'x', agenteFalso())).resolves.toBeTruthy();
+    await expect(builder.montar(ORG, 'quanto faturamos?', agenteFalso())).rejects.toThrow('pgvector fora do ar');
+  });
+
+  it('falha da busca não devolve contexto parcial', async () => {
+    const builder = new ContextBuilder(obsidianQueCai('pgvector fora do ar'));
+    await expect(builder.montar(ORG, 'x', agenteFalso())).rejects.toThrow();
   });
 
   it('CONTROLE NEGATIVO da marca: ausência NÃO eleva nível nenhum', async () => {
@@ -900,7 +890,8 @@ describe.skipIf(!URL)('do contexto vazio ao sinal no rastro', () => {
     // (a) A DECLARAÇÃO CHEGOU AO MODELO. `blocos` vira o turno do usuário no
     //     runtime — é o elo que faz a metade de produto desta fatia existir.
     const turno = modelo.recebidos[0].turns.find((t) => t.role === 'user');
-    expect(turno && 'text' in turno ? turno.text : '').toContain('SEM DADO NA BASE:');
+    expect(turno && 'text' in turno ? turno.text : '').toContain('SEM TRECHO NESTA LEITURA:');
+    expect(turno && 'text' in turno ? turno.text : '').toContain('onboarding não foi conferido');
     expect(turno && 'text' in turno ? turno.text : '').toContain('DECLARE A AUSÊNCIA');
 
     // (b) A SESSÃO FECHOU MARCADA, no caminho real, sem duplo de teste nenhum.

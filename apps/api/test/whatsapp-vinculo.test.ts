@@ -33,6 +33,8 @@ describe('o nome do grupo', () => {
     expect(nomeDoGrupoSemPrefixo('Root | Padaria Aurora')).toBe('Padaria Aurora');
     expect(nomeDoGrupoSemPrefixo('ROOT - Padaria Aurora')).toBe('Padaria Aurora');
     expect(nomeDoGrupoSemPrefixo('  root|Padaria Aurora  ')).toBe('Padaria Aurora');
+    // Etapa 7 (F-19): o nome que o fechamento dá ao grupo.
+    expect(nomeDoGrupoSemPrefixo('Root · Padaria Aurora')).toBe('Padaria Aurora');
     expect(nomeDoGrupoSemPrefixo('Padaria Aurora')).toBeNull();
     expect(nomeDoGrupoSemPrefixo('ROOT | ')).toBeNull();
   });

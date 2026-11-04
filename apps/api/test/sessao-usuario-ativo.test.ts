@@ -13,7 +13,7 @@ import {
   TIPO_DA_SESSAO,
   esquecerUsuarioAtivo,
 } from '../src/auth/jwt-auth.guard';
-import { contextoAtual } from '../src/common/contexto-execucao';
+import { comContexto, contextoAtual } from '../src/common/contexto-execucao';
 import type { PrismaService } from '../src/prisma/prisma.service';
 import { comTenantNaSessao } from '../src/prisma/sessao-de-banco';
 import { exigirBancoDescartavel } from './banco-de-teste';
@@ -166,23 +166,34 @@ describe.skipIf(!URL)('o guarda contra o banco de verdade', { timeout: 30_000 },
    * acha o usuário; um token com a empresa trocada não enxerga o usuário de
    * outra empresa e é recusado.
    */
-  it.skipIf(!(process.env.RLS_NO_TESTE === '1' && process.env.TENANT_DATABASE_URL))(
-    'sob o papel restrito: a releitura acha o usuário na empresa do token, e não em outra',
-    async () => {
-      const restrito = comTenantNaSessao(new PrismaClient({ datasourceUrl: process.env.TENANT_DATABASE_URL }), { modo: 'impor' });
-      try {
-        esquecerUsuarioAtivo();
-        const guarda = new JwtAuthGuard(jwt, restrito as unknown as PrismaService);
-        await expect(guarda.canActivate(contextoCom(sessao(USUARIO, ORG)).ctx)).resolves.toBe(true);
-        const OUTRA = (await prisma.org.create({ data: { name: `Outra ${MARCA}`, slug: `sessao-outra-${MARCA}` } })).id;
+  // O job isolamento exige este caso pelo nome no JSON; qualidade não altera RLS global.
+  if (process.env.RLS_NO_TESTE === '1') {
+    if (!process.env.TENANT_DATABASE_URL) throw new Error('A prova de sessão sob RLS exige TENANT_DATABASE_URL.');
+    it(
+      'sob o papel restrito: a releitura acha o usuário na empresa do token, e não em outra',
+      async () => {
+        const restrito = comTenantNaSessao(new PrismaClient({ datasourceUrl: process.env.TENANT_DATABASE_URL }), { modo: 'impor' });
         try {
-          await expect(guarda.canActivate(contextoCom(sessao(USUARIO, OUTRA)).ctx)).rejects.toThrow(FRASE_DO_USUARIO_DESATIVADO);
+          const papeis = await comContexto({ orgId: ORG, correlationId: 'suite-sessao-rls' }, async () =>
+            await restrito.$queryRaw<Array<{ rolsuper: boolean; rolbypassrls: boolean }>>`
+              SELECT rolsuper, rolbypassrls FROM pg_roles WHERE rolname = current_user`);
+          expect(papeis).toEqual([{ rolsuper: false, rolbypassrls: false }]);
+          const tabelas = await prisma.$queryRaw<Array<{ relrowsecurity: boolean; relforcerowsecurity: boolean }>>`
+            SELECT relrowsecurity, relforcerowsecurity FROM pg_class WHERE oid = 'public."User"'::regclass`;
+          expect(tabelas).toEqual([{ relrowsecurity: true, relforcerowsecurity: true }]);
+          esquecerUsuarioAtivo();
+          const guarda = new JwtAuthGuard(jwt, restrito as unknown as PrismaService);
+          await expect(guarda.canActivate(contextoCom(sessao(USUARIO, ORG)).ctx)).resolves.toBe(true);
+          const OUTRA = (await prisma.org.create({ data: { name: `Outra ${MARCA}`, slug: `sessao-outra-${MARCA}` } })).id;
+          try {
+            await expect(guarda.canActivate(contextoCom(sessao(USUARIO, OUTRA)).ctx)).rejects.toThrow(FRASE_DO_USUARIO_DESATIVADO);
+          } finally {
+            await prisma.org.deleteMany({ where: { id: OUTRA } });
+          }
         } finally {
-          await prisma.org.deleteMany({ where: { id: OUTRA } });
+          await restrito.$disconnect();
         }
-      } finally {
-        await restrito.$disconnect();
-      }
-    },
-  );
+      },
+    );
+  }
 });

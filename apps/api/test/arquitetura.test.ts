@@ -472,6 +472,12 @@ interface Excecao {
  * A catraca `toda exceção diz qual fatia a remove` recusa fatia já executada.
  */
 const EXCECOES: Excecao[] = [
+  {
+    arquivo: 'src/obsidian/contexto-movimento-explicito.service.ts',
+    conector: 'src/obsidian/obsidian.service.ts',
+    motivo: 'O protocolo de movimento lê a captura física local dentro da transação autorizada. Usa somente capturarDaPastaParaMovimento; não sincroniza, escreve na vault nem chama fornecedor. O teste abaixo confina essa dependência ao método de captura.',
+    fatia: 'porta local de captura do contexto explícito — separar do conector completo',
+  },
   // --- marketing no jeito do ROOT Estúdio (26/10/2026): o mesmo desenho do espelho e da coleta da pauta
   {
     arquivo: 'src/marketing-estudio/memoria-do-marketing.service.ts',
@@ -495,10 +501,11 @@ const EXCECOES: Excecao[] = [
     fatia: 'onda 8 — resto da 3.3: passa-tudo já fechado; o import só sai com capacidade NOVA no catálogo',
   },
   {
-    arquivo: 'src/marketing-estudio/triagem.service.ts',
+    // 04/11/2026: a escrita de Decisões da triagem.md saiu da triagem para o Gosto da Root (mesma exceção, outro arquivo).
+    arquivo: 'src/marketing-estudio/gosto-da-root.service.ts',
     conector: 'src/google/google.service.ts',
     motivo:
-      'Mesmo caso do espelho da pauta: regrava o .md Memória/Algoritmo/Decisões da triagem.md no Drive DELE a partir do banco, a cada decisão comentada (gravarArquivoNoDrive), destino e método fixos.',
+      'Mesmo caso do espelho da pauta: o OS lê e regrava, no Drive DELE, as notas Memória/Algoritmo/Decisões da triagem.md e Gosto da Root.md (filhosDaPasta, criarPasta, gravarArquivoNoDrive, baixarTextoDoDrive), a partir do banco, a cada decisão e na rotina das 23h. Destino e método fixos; a parte "Escrito pela equipe" nunca é regravada. Não é ação proposta por agente.',
     fatia: 'onda 8 — resto da 3.3: passa-tudo já fechado; o import só sai com capacidade NOVA no catálogo',
   },
   /*
@@ -852,6 +859,14 @@ describe('varredor: separa código, comentário e texto', () => {
 // ---------------------------------------------------------------------------
 
 describe('catraca de arquitetura: conector só pela porta', () => {
+  it('movimento explícito só usa a captura local autorizada do conector', () => {
+    const fonte = FONTES.find(f => f.arquivo === 'src/obsidian/contexto-movimento-explicito.service.ts')!;
+    const metodos = [...fonte.semTexto.matchAll(/this\.obsidian\.([A-Za-z0-9_]+)/g)].map(m => m[1]);
+    expect(metodos.length).toBeGreaterThan(0);
+    expect([...new Set(metodos)]).toEqual(['capturarDaPastaParaMovimento']);
+    expect(fonte.semTexto).not.toMatch(/this\.obsidian\s*\[/);
+  });
+
   const importsDeConector = REFS.filter((r) => r.tipo === 'import' && CONECTORES[r.alvo] !== undefined);
   const violacoes = importsDeConector
     .filter((r) => !importadorPermitido(r.arquivo, r.alvo))

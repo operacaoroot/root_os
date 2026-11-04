@@ -248,12 +248,15 @@ describe('a reindexação da vault com OPENAI_BASE_URL vazia', () => {
         },
       },
       $queryRaw: async () => [],
+      $executeRaw: async () => 0,
+      $queryRawUnsafe: async (sql: string) => { if (!sql.includes('ContextMovementIntent')) throw new Error('consulta inesperada'); return [{ pendente: false }]; },
       $executeRawUnsafe: async (_sql: string, _vetor: string, id: string) => {
         vetorizadas.push(id);
         return 1;
       },
     };
-    return { prisma, vetorizadas, caminhos: () => linhas.map((l) => l.path).sort() };
+    const comTransacao = Object.assign(prisma, { $transaction: async (fn: (tx: typeof prisma) => Promise<unknown>) => fn(prisma) });
+    return { prisma: comTransacao, vetorizadas, caminhos: () => linhas.map((l) => l.path).sort() };
   }
 
   function memoriaQueGrava() {
@@ -291,8 +294,8 @@ describe('a reindexação da vault com OPENAI_BASE_URL vazia', () => {
     );
 
     // O índice é refeito com ou sem a correção; a diferença é o que vem depois dele.
-    expect(banco.caminhos()).toEqual(['antiga.md', 'pasta/nova.md']);
     expect(erro).toBeNull();
+    expect(banco.caminhos()).toEqual(['antiga.md', 'pasta/nova.md']);
     expect(transporte.pedidos.map((p) => [p.url, p.textos.length])).toEqual([[PADRAO, 2]]);
     expect(banco.vetorizadas).toHaveLength(2);
     expect(memoria.projecoes).toEqual([

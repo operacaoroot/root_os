@@ -1,3 +1,4 @@
+import { ClienteEscopoModule } from './clientes-escopo/cliente-escopo.module';
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { ContextoModule } from './common/contexto.module';
@@ -75,6 +76,7 @@ import { WhatsappModule } from './whatsapp/whatsapp.module';
     // para esta empresa.
     TenantsModule,
     AuditModule,
+    ClienteEscopoModule,
     FrotaModule,
     // A régua carrega antes da porta, e a porta antes de qualquer módulo de
     // domínio: ADR-004 — nenhum agente alcança conector sem passar por ela.

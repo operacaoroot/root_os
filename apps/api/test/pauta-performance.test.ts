@@ -10,6 +10,7 @@ import { PerformanceService } from '../src/pauta/performance.service';
 import type { GraphDeInsights } from '../src/pauta/graph-de-insights';
 import type { PrismaService } from '../src/prisma/prisma.service';
 import type { AuditService } from '../src/audit/audit.service';
+import { atuarNaPauta, derivacaoDaPauta, prismaDaDerivacao } from './pauta-derivacao-dubles';
 import type { MemoriaService } from '../src/memory/memoria.service';
 import type { EfeitosRegistry } from '../src/gateway/efeitos.registry';
 import type { PortaDoOperador } from '../src/gateway/porta-do-operador.service';
@@ -142,21 +143,12 @@ function montar(opts: { conectado?: boolean; leitura?: unknown; retida?: boolean
     id: `p${n}`,
     titulo: `Post ${n}`,
     formato: 'carrossel',
+    status: 'publicada',
+    criadaEm: COLETADO,
     publicadaEm: new Date(`2026-09-0${n}T12:00:00.000Z`),
     urlPublicada: `https://instagram.com/p/${n}`,
     externalId: `ig-${n}`,
   }));
-
-  const prisma = {
-    pautaPeca: { findMany: async () => pecas },
-    bioConexao: {
-      findFirst: async () =>
-        opts.conectado === false
-          ? null
-          : { externalId: 'ig-conta', handle: '@root', escopos: 'instagram_business_basic', status: 'ativa', tokenCifrado: 'x.y.z' },
-    },
-    auditLog: { create: async () => ({}) },
-  } as unknown as PrismaService;
 
   const memoria = {
     porChave: async (_o: string, c: string) => notas.get(c) ?? null,
@@ -171,7 +163,22 @@ function montar(opts: { conectado?: boolean; leitura?: unknown; retida?: boolean
       n.body = String(e.body);
       return n;
     },
-  } as unknown as MemoriaService;
+  };
+  const derivacao = derivacaoDaPauta(notas, memoria);
+  const memoriaComDerivacao = { ...memoria, ...derivacao } as unknown as MemoriaService;
+
+  const prisma = prismaDaDerivacao({
+      ...derivacao,
+    pautaPeca: { findMany: async () => pecas },
+    bioConexao: {
+      findFirst: async () =>
+        opts.conectado === false
+          ? null
+          : { id: 'conta-1', externalId: 'ig-conta', handle: '@root', escopos: 'instagram_business_basic',
+              status: 'ativa', tokenCifrado: 'x.y.z', refreshCifrado: null, conectadaEm: COLETADO, atualizadaEm: COLETADO },
+    },
+    auditLog: { create: async () => ({}) },
+  }) as unknown as PrismaService;
 
   const efeitosInscritos: string[] = [];
   const efeitos = {
@@ -214,7 +221,7 @@ function montar(opts: { conectado?: boolean; leitura?: unknown; retida?: boolean
     efeitosInscritos,
     chamadasGraph,
     graph,
-    svc: new PerformanceService(prisma, audit, memoria, efeitos, porta, graph),
+    svc: new PerformanceService(prisma, audit, memoriaComDerivacao, efeitos, porta, graph),
   };
 }
 
@@ -227,7 +234,7 @@ describe('o serviço: coletar com dublê da Meta', () => {
 
   it('a leitura vai PELA PORTA, com a capacidade e os ids dos posts', async () => {
     const { svc, pedidos } = montar();
-    await svc.coletar(ORG, PESSOA, MES);
+    await atuarNaPauta(ORG, PESSOA, () => svc.coletar(ORG, PESSOA, MES));
     expect(pedidos).toHaveLength(1);
     expect(pedidos[0].capabilityId).toBe('social.instagram.midia');
     expect(pedidos[0].orgId).toBe(ORG);
@@ -236,7 +243,7 @@ describe('o serviço: coletar com dublê da Meta', () => {
 
   it('o snapshot fica gravado na nota do mês e volta no painel', async () => {
     const { svc, notas } = montar();
-    const p = await svc.coletar(ORG, PESSOA, MES);
+    const p = await atuarNaPauta(ORG, PESSOA, () => svc.coletar(ORG, PESSOA, MES));
     expect([...notas.keys()]).toEqual([chaveDaPerformance(MES)]);
     expect(p.snapshot?.medidos).toBe(6);
     expect(p.snapshot?.seguidores).toBe(4200);
@@ -246,7 +253,7 @@ describe('o serviço: coletar com dublê da Meta', () => {
 
   it('um post que a Graph recusa não derruba o mês', async () => {
     const { svc } = montar({ falhaNoPost: true });
-    const p = await svc.coletar(ORG, PESSOA, MES);
+    const p = await atuarNaPauta(ORG, PESSOA, () => svc.coletar(ORG, PESSOA, MES));
     expect(p.snapshot?.publicados).toBe(6);
     expect(p.snapshot?.medidos).toBe(5);
     expect(p.snapshot?.posts.some((x) => x.semNumero?.includes('recusou'))).toBe(true);
@@ -254,7 +261,7 @@ describe('o serviço: coletar com dublê da Meta', () => {
 
   it('sem conta conectada, coletar recusa com a instrução — e o painel também', async () => {
     const { svc, pedidos } = montar({ conectado: false });
-    await expect(svc.coletar(ORG, PESSOA, MES)).rejects.toThrow(/não está conectado/);
+    await expect(atuarNaPauta(ORG, PESSOA, () => svc.coletar(ORG, PESSOA, MES))).rejects.toThrow(/não está conectada/);
     expect(pedidos).toHaveLength(0);
     const p = await svc.painel(ORG, MES);
     expect(p.conectado).toBe(false);
@@ -264,7 +271,7 @@ describe('o serviço: coletar com dublê da Meta', () => {
 
   it('porta que retém a leitura não grava snapshot pela metade', async () => {
     const { svc, notas } = montar({ retida: true });
-    await expect(svc.coletar(ORG, PESSOA, MES)).rejects.toThrow(/reteve/);
+    await expect(atuarNaPauta(ORG, PESSOA, () => svc.coletar(ORG, PESSOA, MES))).rejects.toThrow(/reteve/);
     expect(notas.size).toBe(0);
   });
 });

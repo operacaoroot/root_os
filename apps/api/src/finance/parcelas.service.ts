@@ -3,7 +3,7 @@ import { Prisma } from '@prisma/client';
 import { z } from 'zod';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
-import type { AsaasFinancialTransaction, AsaasPayment } from './asaas.service';
+import type { AsaasFinancialTransaction, AsaasPayment } from './asaas.tipos';
 import {
   acordoDaCobranca, chavesDoAcordo, documentoComoChave, escolherParcela, nomeCasa, ordemDasParcelas, parcelaMaisPerto,
   type AcordoCandidato, type ParcelaCandidata,
@@ -72,8 +72,9 @@ export async function prepararVestir(db: Db, orgId: string): Promise<Vestir> {
   }
   // O previsto que um contrato recorrente de ENTRADA gerou também é vestido pela cobrança
   // (Curral: o contrato gera no dia 6, o Asaas cobra no dia 10; é a mesma mensalidade).
+  // Etapa 4: o contrato do fechamento (com registro comercial) fica fora: a cobrança dele veste a parcela do acordo.
   const doContrato = await db.financeTransaction.findMany({
-    where: { orgId, status: 'previsto', type: 'entrada', contractId: { not: null }, source: { not: 'asaas' } },
+    where: { orgId, status: 'previsto', type: 'entrada', contractId: { not: null }, source: { not: 'asaas' }, contract: { comercialContratoId: null } },
     select: {
       id: true, amount: true, dueDate: true, date: true, contractId: true, partnerId: true,
       partner: { select: { razaoSocial: true, nomeFantasia: true, cnpjCpf: true, acordos: { select: { cliente: true, apelidos: true } } } },
@@ -91,7 +92,7 @@ export async function prepararVestir(db: Db, orgId: string): Promise<Vestir> {
     chaves: chavesDoParceiro(t.partner),
   }));
   const contratos = await db.contract.findMany({
-    where: { orgId, tipo: 'entrada', status: 'ativo' },
+    where: { orgId, tipo: 'entrada', status: 'ativo', comercialContratoId: null },
     select: { id: true, valor: true, partnerId: true, partner: { select: { razaoSocial: true, nomeFantasia: true, cnpjCpf: true, acordos: { select: { cliente: true, apelidos: true } } } } },
   });
   const contratosDeEntrada = contratos.map((c) => ({ id: c.id, valor: num(c.valor), partnerId: c.partnerId, chaves: chavesDoParceiro(c.partner) }));
@@ -411,7 +412,7 @@ export class ParcelasService {
         include: { acordo: { select: { id: true, cliente: true, produto: true } } },
       }),
       this.prisma.contract.findMany({
-        where: { orgId, status: 'ativo' },
+        where: { orgId, status: 'ativo', comercialContratoId: null },
         select: {
           id: true, descricao: true, tipo: true, valor: true,
           transactions: { where: { status: { in: ['realizado', 'conciliado'] } }, orderBy: { date: 'desc' }, take: 1, select: { amount: true, date: true } },
