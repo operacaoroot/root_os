@@ -69,8 +69,8 @@ const SUBTITULOS: Record<string, string> = {
   ferramentas: 'capacidades disponíveis nesta empresa',
   conexoes: 'conectores e estado das integrações',
   regua: 'níveis de risco e quem pode autorizar',
-  rastro: 'eventos registrados e verificação',
-  'linha-do-tempo': 'eventos em ordem cronológica',
+  rastro: 'histórico técnico: cada ação do sistema e dos agentes, com verificação',
+  'linha-do-tempo': 'o que aconteceu no dia a dia: Comercial, WhatsApp, implantação e o sistema',
   assinatura: 'situação do plano',
   config: 'organização, perfil e integrações',
 };

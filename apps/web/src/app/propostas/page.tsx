@@ -165,6 +165,9 @@ function doServico(p: PropostaNaLista): Linha {
   };
 }
 
+/** Etapa 9b (#21): as etapas do funil em que o lead já recebeu a proposta. */
+const ETAPAS_COM_PROPOSTA: readonly string[] = ['proposta', 'follow_up', 'contrato'];
+
 export default function Propostas() {
   const { token, ready, can } = useAuth();
   const verSala = can('leads.ver');
@@ -282,7 +285,12 @@ export default function Propostas() {
   const visiveis = chegou == null ? linhas : linhas.filter((l) => l.etapa >= chegou);
   // Um lead por cliente: duas propostas do mesmo lead contam uma vez só.
   const leads = [...new Map(linhas.map((l) => leadDe(l)?.negocio).filter((x): x is PainelComercialNegocio => !!x).map((x) => [x.id, x])).values()];
-  const emJogo = leads.reduce((s, x) => s + (x.resultado === 'aberta' ? x.valor ?? 0 : 0), 0);
+  // Etapa 9b (#21): a conta é pelo LEAD (id), não pelo nome da proposta. Entra todo negócio aberto que já
+  // está na Proposta, no Follow-up ou no Contrato no funil, mais os abertos ligados a uma proposta desta aba.
+  const comProposta = new Map<string, PainelComercialNegocio>();
+  for (const x of crm?.negocios ?? []) if (x.resultado === 'aberta' && ETAPAS_COM_PROPOSTA.includes(x.etapaChave)) comProposta.set(x.id, x);
+  for (const x of leads) if (x.resultado === 'aberta') comProposta.set(x.id, x);
+  const emJogo = [...comProposta.values()].reduce((s, x) => s + (x.valor ?? 0), 0);
   const fechadas = leads.filter((x) => x.resultado === 'ganho');
   const valorFechado = fechadas.reduce((s, x) => s + (x.valor ?? 0), 0);
 

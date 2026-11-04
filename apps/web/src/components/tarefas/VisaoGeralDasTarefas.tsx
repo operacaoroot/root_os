@@ -221,14 +221,10 @@ export function VisaoGeralDasTarefas({ meio }: { meio?: ReactNode } = {}) {
         </Quadro>
       </div>
 
-      <div className="grid gap-5 lg:grid-cols-2">
-        <Quadro className="min-w-0" titulo="Tarefas por pasta" nota="abertas em cada pasta do Trabalho · clique numa coluna">
-          {porPasta.length ? <Barras itens={porPasta} /> : <p className="text-sm text-muted">Nenhuma tarefa aberta.</p>}
-        </Quadro>
-        <Quadro className="min-w-0" titulo="Tarefas por lista" nota="abertas em cada lista · clique numa coluna">
-          {porLista.length ? <Barras itens={porLista} /> : <p className="text-sm text-muted">Nenhuma tarefa aberta.</p>}
-        </Quadro>
-      </div>
+      {/* Etapa 9b (#1, Lucas): "por pasta" e "por lista" contavam a mesma coisa; fica uma visão só, por pasta. */}
+      <Quadro className="min-w-0" titulo="Tarefas por pasta" nota="abertas em cada pasta do Trabalho · clique numa coluna">
+        {porPasta.length ? <Barras itens={porPasta} /> : <p className="text-sm text-muted">Nenhuma tarefa aberta.</p>}
+      </Quadro>
 
       <Quadro className="min-w-0 overflow-x-auto" titulo="Cada pessoa" nota="o que está atrasado, em dia e sem prazo · clique num número">
         <div className="overflow-x-auto">

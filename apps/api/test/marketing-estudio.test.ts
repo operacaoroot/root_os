@@ -206,7 +206,7 @@ describe('Abas do Marketing', () => {
     expect(abasDoMarketing('/bio', todas)).toEqual([]);
   });
   it('04/11/2026: Ideias de conteúdo sem a aba "Ideias da pauta", e a rota antiga segue com as abas da seção', () => {
-    expect(abasDoMarketing('/marketing/triagem', todas, ['pauta']).map((x) => x.key)).toEqual(['marketing-triagem', 'marketing-base', 'marketing-fontes', 'referencias']);
+    expect(abasDoMarketing('/marketing/triagem', todas, ['pauta']).map((x) => x.key)).toEqual(['marketing-triagem', 'marketing-fontes', 'referencias']);
     const antiga = abasDoMarketing('/marketing/ideias', todas, ['pauta']);
     expect(antiga.map((x) => x.key)).not.toContain('marketing-ideias');
     expect(antiga.some((x) => x.ativa)).toBe(false);

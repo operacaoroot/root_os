@@ -489,13 +489,35 @@ export function PostAberto(props: { m: Maquina; post: MaquinaPost; onEditar: () 
   }, [p]);
 
   return (
-    <Janela titulo={rotuloDoPost(p)} onFechar={props.onFechar}>
+    <Janela titulo={rotuloDoPost(p)} onFechar={props.onFechar} largura="max-w-4xl">
       <div className="flex flex-wrap items-center gap-2 text-sm text-muted">
         <EtapaChip etapa={p.etapa} />
         <span>{p.formato}{p.subtipo ? ` · ${p.subtipo}` : ''}</span>
         {pilar && <span>· {pilar}</span>}
-        <span className="font-os-mono">· {dataCurta(p.data)}</span>
+        <span className="font-os-mono">· {dataCurta(p.data)}{p.hora ? ` ${p.hora}` : ''}</span>
       </div>
+      {/* Etapa 9b (#8, Lucas): o card completo, no jeito do ClickUp: as propriedades do post numa grade. */}
+      <dl className="mt-3 grid grid-cols-2 gap-x-6 gap-y-2 rounded-md border border-border bg-surface-2 p-3 text-sm sm:grid-cols-4">
+        {([
+          ['Número', p.numero || '—'],
+          ['Etapa', ROTULO_DA_ETAPA[p.etapa]],
+          ['Postar em', p.data ? `${dataCurta(p.data)}${p.hora ? ` · ${p.hora}` : ''}` : 'sem dia'],
+          ['Executar em', p.dataExecucao ? dataCurta(p.dataExecucao) : 'sem dia'],
+          ['Formato', `${p.formato}${p.subtipo ? ` · ${p.subtipo}` : ''}`],
+          ['Pilar', pilar || '—'],
+          ['Prioridade', p.prioridade === 'alta' ? 'Alta' : p.prioridade === 'baixa' ? 'Baixa' : 'Média'],
+          ['Para quem', p.perfis.length ? p.perfis.join(', ') : '—'],
+          ['Criado em', new Date(p.criadoEm).toLocaleDateString('pt-BR')],
+          ['Atualizado em', new Date(p.atualizadoEm).toLocaleDateString('pt-BR')],
+          ['Link', p.linkPublicado ? 'publicado' : '—'],
+          ['Comentários', String(p.comentarios.length)],
+        ] as const).map(([k, v]) => (
+          <div key={k} className="min-w-0">
+            <dt className="com-rotulo">{k}</dt>
+            <dd className="truncate">{v}</dd>
+          </div>
+        ))}
+      </dl>
       <div className="mt-3">
         <Etapas etapa={p.etapa === 'arquivado' ? 'ideia' : p.etapa} />
       </div>
@@ -548,7 +570,7 @@ export function PostAberto(props: { m: Maquina; post: MaquinaPost; onEditar: () 
             {p.subHeadline && <p className="mt-1 text-muted">{p.subHeadline}</p>}
           </Bloco>
         )}
-        {p.tipoCard === 'arte' && p.slides.length > 0 && (
+        {p.slides.length > 0 && (
           <Bloco rotulo={`Slides (${p.slides.length})`}>
             <ol className="space-y-1.5">
               {p.slides.map((s, i) => (
@@ -560,7 +582,7 @@ export function PostAberto(props: { m: Maquina; post: MaquinaPost; onEditar: () 
             </ol>
           </Bloco>
         )}
-        {p.tipoCard === 'arte' && p.design && <Bloco rotulo="Orientação de design">{texto(p.design)}</Bloco>}
+        {p.design && <Bloco rotulo="Orientação de design">{texto(p.design)}</Bloco>}
         {p.roteiro && <Bloco rotulo="Roteiro">{texto(p.roteiro)}</Bloco>}
         {p.legenda && <Bloco rotulo="Legenda">{texto(p.legenda)}</Bloco>}
         {(p.cta || p.arquivos.length > 0) && (

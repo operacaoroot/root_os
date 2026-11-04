@@ -59,6 +59,11 @@ export default function RodadaDaSemanaPage() {
 
   return (
     <div className="com-tema mx-auto max-w-[1180px] space-y-6 text-text">
+      {/* Etapa 9b (#25): para que a Rodada serve, numa linha. */}
+      <p className="rounded-md border border-border bg-surface px-4 py-3 text-sm">
+        <b className="font-medium">Para que serve:</b> é a pauta da reunião de quinta. Mostra o que mudou no Comercial de segunda a domingo (quem entrou, quem andou no funil, quem fechou, as propostas e as tarefas atrasadas) para a equipe decidir o próximo passo de cada um. A análise da semana fica no{' '}
+        <a href="/comercial/relatorio" className="text-brand hover:underline">Relatório comercial</a>, com os mesmos números.
+      </p>
       <header className="flex flex-wrap items-end justify-between gap-3">
         {/* Layout 26/10: o título da tela já está na barra do topo; aqui, só a semana e de onde vêm os números. */}
         <div>

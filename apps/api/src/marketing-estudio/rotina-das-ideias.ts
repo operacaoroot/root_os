@@ -11,7 +11,8 @@ import { proximaOcorrencia } from '../pauta/cron';
  */
 export const TIPO_DA_IA_DAS_IDEIAS = 'marketing.ideias.montar';
 export const SLUG_DA_IA_DAS_IDEIAS = 'marketing-ideias-ia';
-export const CRON_DA_IA_DAS_IDEIAS = '0 23 * * *';
+// Etapa 9b (#3, Lucas): as ideias chegam de manhã cedo. A coleta roda às 5h e a IA às 6h (antes: 22h e 23h).
+export const CRON_DA_IA_DAS_IDEIAS = '0 6 * * *';
 const FUSO = 'America/Sao_Paulo';
 
 /** Cria a rotina se ainda não existe (ligada) e diz se está ligada. A que existe não é tocada. */

@@ -99,6 +99,8 @@ export const PORTOES_DA_ETAPA: Record<ComercialEtapaAtiva, readonly Portao[]> = 
     { chave: 'sistema', rotulo: 'sistema ou ERP em uso', cumprido: (e) => !vazio(e.sistemaErp) },
     { chave: 'base', rotulo: 'base de dados: sim ou não', cumprido: (e) => typeof e.baseDados === 'boolean' },
     { chave: 'produto_alvo', rotulo: 'produto-alvo proposto', cumprido: (e) => !vazio(e.produto) },
+    // Etapa 9b (#16, Lucas): o canal é pedido de novo na qualificação, para o lead que passou do E1 sem ele.
+    { chave: 'canal_confirmado', rotulo: 'canal de aquisição (como conheceu: BNI, indicação, Instagram, site…)', cumprido: (e) => !vazio(e.canal) },
   ],
   reuniao_agendada: [
     { chave: 'reuniao', rotulo: 'evento na agenda com data e hora', cumprido: (e) => !vazio(e.reuniaoEm) },

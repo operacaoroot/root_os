@@ -8,6 +8,7 @@ import {
   COMERCIAL_ROTULO_DA_ETAPA,
   ROTULO_DO_TIPO_DE_NEGOCIO,
   SEM_INFORMACAO,
+  estaEmNegociacao,
   type ComercialEtapa,
   type ListaDeClientesAtivos,
   type PainelComercial,
@@ -87,6 +88,8 @@ function passa(n: PainelComercialNegocio, f: Filtro) {
   if (f.canal && (n.canal ?? SEM_INFORMACAO) !== f.canal) return false;
   if (f.vendedor && (n.vendedor ?? SEM_INFORMACAO) !== f.vendedor) return false;
   if (f.situacao && n.resultado !== f.situacao) return false;
+  // Etapa 9b (#17/#18): "Em negociação" só da Sessão estratégica em diante, como o número do Painel.
+  if (f.situacao === 'aberta' && !estaEmNegociacao(n.etapaChave)) return false;
   if (f.fechado && !n.mesesFechados.some((m) => m.startsWith(f.fechado!)) && !(n.mesFechado ?? '').startsWith(f.fechado)) return false;
   if (f.entrada && !n.mesEntrada.startsWith(f.entrada)) return false;
   return true;
@@ -255,7 +258,7 @@ function Painel({ p, abrir, tudo = false }: { p: PainelComercial; abrir: (f: Fil
       </div>
 
       <Quadro titulo="Em negociação agora" nota="do maior valor para o menor · clique para abrir o lead">
-        <ListaDeNegocios itens={p.negocios.filter((n) => n.resultado === 'aberta')} vazio="Nenhum negócio aberto." />
+        <ListaDeNegocios itens={p.negocios.filter((n) => n.resultado === 'aberta' && estaEmNegociacao(n.etapaChave))} vazio="Nenhum negócio em negociação (da Sessão estratégica em diante)." />
       </Quadro>
     </>
   );

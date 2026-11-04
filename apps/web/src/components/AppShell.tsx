@@ -113,7 +113,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           <Sidebar />
           <div className="flex min-w-0 flex-1 flex-col">
             <Topbar />
-            <main id="root-os-main" tabIndex={-1} className={`flex-1 min-w-0 p-4 min-[820px]:p-6${ehAreaDoMarketing(pathname) ? ' estudio-area min-[820px]:px-10' : ''}`}>
+            <main id="root-os-main" tabIndex={-1} className={`flex-1 min-w-0 p-4 min-[820px]:p-6${ehAreaDoMarketing(pathname) ? ' estudio-area' : ''}`}>
               <PortaDaAssinatura>
                 {/* As subseções de cada área moram só no menu lateral desde 20/10/2026
                     (rodada da interface, U1): o campo principal é todo da tela. */}

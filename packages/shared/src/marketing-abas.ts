@@ -10,8 +10,9 @@ export const ABAS_DO_MARKETING: Record<string, readonly string[]> = {
   // 04/11/2026, pedido do Lucas: sem a aba "Ideias da pauta" (/marketing/ideias). Ela é o fluxo antigo
   // da Pauta (curadoria de rodada) e nunca gerou ideia; as ideias saem da rotina das 23h em "Para aprovar".
   // A rota segue viva para quem tiver o link.
-  'marketing-triagem': ['marketing-triagem', 'marketing-base', 'marketing-fontes', 'referencias'], // Etapa 9 (Lucas, 04/11): Estratégia do mês sai das abas; a tela continua em /marketing/estrategia.
-  'maquina-producao': ['maquina-producao', 'maquina-banco', 'maquina-agendar', 'maquina-calendario', 'maquina-aprovacao-video', 'pauta'], // Etapa 9: Formatos sai das abas (a tela continua em /marketing/formatos).
+  // Etapa 9b (#7): a base das ideias é o Banco de ideias (Produção); "Base" sai das abas e a rota leva para lá.
+  'marketing-triagem': ['marketing-triagem', 'marketing-fontes', 'referencias'], // Etapa 9 (Lucas, 04/11): Estratégia do mês sai das abas; a tela continua em /marketing/estrategia.
+  'maquina-producao': ['maquina-producao', 'maquina-banco', 'maquina-agendar', 'maquina-calendario', 'maquina-aprovacao-video'], // Etapa 9b (#11): "Pauta (episódios)" sai das abas; a rota segue viva. // Etapa 9: Formatos sai das abas (a tela continua em /marketing/formatos).
   'marketing-performance': ['marketing-performance', 'maquina-analise', 'marketing-relatorio', 'instagram'],
 };
 

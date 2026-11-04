@@ -36,7 +36,7 @@ export function itensDaEngrenagem(
   return [
     { chave: 'perfil', rotulo: 'Perfil', href: '/perfil' },
     ...(tem('tarefas.editar') && trabalhoLigado ? [{ chave: 'lixeira', rotulo: 'Lixeira', href: '/lixeira' }] : []),
-    ...(tem('auditoria.ver') ? [{ chave: 'rastro', rotulo: 'Registro de ações', href: '/rastro' }] : []),
+    ...(tem('auditoria.ver') ? [{ chave: 'rastro', rotulo: 'Histórico técnico', href: '/rastro' }] : []),
     ...(entradaDasConfiguracoes ? [{ chave: 'configuracoes', rotulo: 'Configurações', href: entradaDasConfiguracoes }] : []),
   ];
 }

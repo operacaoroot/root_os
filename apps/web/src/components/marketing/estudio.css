@@ -687,3 +687,26 @@
 .estudio .prod-dia,.estudio .prod-select{padding:5px 8px;font-size:12px;border-radius:6px}
 .estudio .prod-atraso .prod-dia{border-color:#e0b4ad;background:#fbefed;color:var(--red)}
 @media(max-width:900px){.estudio .prod-linha{grid-template-columns:1fr 1fr}.estudio .prod-linha-cab{display:none}.estudio .prod-nome{grid-column:1/-1}}
+
+/*
+ * ETAPA 9b (04/11/2026, Lucas: "o Marketing não está nada parecido com o restante do OS"). As telas
+ * portadas do Estúdio passam a ter o desenho do Painel geral do Comercial: mesma largura (1180 px,
+ * centrada), texto de 15 px, títulos sem o tamanho de cartaz, rótulos em mono como `com-rotulo`,
+ * cartões com o raio, a borda e o fundo de superfície do OS, botões principais no verde do OS.
+ * Só regras de aparência: nada de marcação, comportamento ou dado muda.
+ */
+.estudio-area .estudio { max-width: 1180px; margin-left: auto; margin-right: auto; font-size: 15px; line-height: 1.55; color: rgb(var(--os-tx)); }
+.estudio-area .estudio .pagehead { margin: 4px 0 18px; }
+.estudio-area .estudio h1 { font-size: 1.35rem; line-height: 1.3; letter-spacing: -0.01em; font-weight: 600; }
+.estudio-area .estudio h2 { font-size: 1.05rem; letter-spacing: 0; font-weight: 600; }
+.estudio-area .estudio h3 { font-size: 0.95rem; font-weight: 600; }
+.estudio-area .estudio .pagehead p, .estudio-area .estudio .muted, .estudio-area .estudio p.lead { color: rgb(var(--os-tx2)); font-size: 0.875rem; }
+.estudio-area .estudio .eyebrow { font-family: var(--os-mono); font-size: 0.66rem; letter-spacing: 0.16em; text-transform: uppercase; font-weight: 500; color: rgb(var(--os-tx3)); }
+.estudio-area .estudio .panel, .estudio-area .estudio .stat, .estudio-area .estudio .content-card, .estudio-area .estudio .hero, .estudio-area .estudio .empty {
+  border-radius: 6px; border-color: rgb(var(--os-line)); background: rgb(var(--os-s1)); box-shadow: none;
+}
+.estudio-area .estudio .stat strong { font-family: var(--os-mono); font-variant-numeric: tabular-nums; letter-spacing: -0.02em; }
+.estudio-area .estudio button, .estudio-area .estudio input, .estudio-area .estudio select, .estudio-area .estudio textarea { border-radius: 6px; border-color: rgb(var(--os-line-strong)); }
+.estudio-area .estudio button.primary { background: rgb(var(--os-ac)); border-color: rgb(var(--os-ac)); color: rgb(var(--os-ac-ink)); }
+.estudio-area .estudio button.primary:hover { background: rgb(var(--os-ac2)); }
+.estudio-area .estudio .filters button.active { background: rgb(var(--os-s3)); color: rgb(var(--os-tx)); }

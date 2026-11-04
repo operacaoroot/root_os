@@ -268,7 +268,7 @@ export const NAV: NavItem[] = [
   { key: 'cofre', label: 'Cofre', href: '/cofre', icon: 'LockKeyhole', permission: 'cofre.ver', secao: 'controle' },
   { key: 'assinatura', label: 'Plano e assinatura', href: '/assinatura', icon: 'CreditCard', permission: 'dashboard.ver', secao: 'controle', oculto: true },
 
-  { key: 'rastro', label: 'Registro de ações', href: '/rastro', icon: 'Footprints', permission: 'auditoria.ver', secao: 'registros' },
+  { key: 'rastro', label: 'Histórico técnico', href: '/rastro', icon: 'Footprints', permission: 'auditoria.ver', secao: 'registros' },
   { key: 'linha-do-tempo', label: 'Atividade', href: '/linha-do-tempo', icon: 'History', permission: 'auditoria.ver', secao: 'registros', pai: 'rastro' },
 
   { key: 'config', label: 'Configurações da conta', href: '/config', icon: 'Settings', permission: 'dashboard.ver', secao: 'conta' },

@@ -6,6 +6,7 @@ import {
   ROTULO_DO_CANAL_DE_ENTRADA,
   SEM_INFORMACAO,
   TABELA_DE_PRECO,
+  estaEmNegociacao,
   resultadoDaEtapaDoCockpit,
   type ComercialEtapa,
   type ComercialProduto,
@@ -226,7 +227,8 @@ export class PainelComercialService {
 
     const doAno = (d: Date | null) => !!d && mesDe(d).startsWith(`${ano}-`);
     const soma = (xs: { valor: number | null }[]) => xs.reduce((s, x) => s + (x.valor ?? 0), 0);
-    const abertos = cards.filter((c) => c.resultado === 'aberta');
+    // Etapa 9b (#17/#18): em negociação = aberto e da Sessão estratégica em diante.
+    const abertos = cards.filter((c) => c.resultado === 'aberta' && estaEmNegociacao(c.etapa));
     const ganhosAno = cards.filter((c) => c.resultado === 'ganho' && doAno(c.fechouEm));
     const perdidosAno = cards.filter((c) => c.resultado === 'perdido' && doAno(c.perdidoEm));
     const ganhosComValor = ganhosAno.filter((c) => c.valor != null);
@@ -249,7 +251,7 @@ export class PainelComercialService {
       }
       return [...grupos.entries()]
         .map(([nome, cs]) => {
-          const ab = cs.filter((c) => c.resultado === 'aberta');
+          const ab = cs.filter((c) => c.resultado === 'aberta' && estaEmNegociacao(c.etapa));
           const gs = cs.filter((c) => c.resultado === 'ganho');
           return { nome, cor: null, leads: cs.length, abertos: ab.length, emNegociacao: soma(ab), ganhos: gs.length, valorGanho: soma(gs) };
         })
@@ -311,7 +313,7 @@ export class PainelComercialService {
         emNegociacao: soma(abertos),
         // Layout 26/10: a negociação separada entre o que gera caixa (pagante) e o que não gera.
         emNegociacaoPagante: soma(abertos.filter((c) => c.tipoNegocio === 'pagante')),
-        emNegociacaoSemCaixa: soma(todosOsCards.filter((c) => c.resultado === 'aberta' && c.tipoNegocio !== 'pagante')),
+        emNegociacaoSemCaixa: soma(todosOsCards.filter((c) => c.resultado === 'aberta' && estaEmNegociacao(c.etapa) && c.tipoNegocio !== 'pagante')),
         abertos: abertos.length,
         ganhosNoAno: doGrafico?.qtd ?? ganhosAno.length,
         valorGanhoNoAno: doGrafico?.valor ?? valorGanhoNoAno,

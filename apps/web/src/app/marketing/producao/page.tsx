@@ -170,10 +170,10 @@ function Quadro({ m, painel, abrir, novo, levar, token, gerando, setGerando }: C
                               <div className="producao-formats">
                                 <button
                                   className="small primary"
-                                  onClick={() => (passou ? levar(p, 'agendado') : void m.mudarEtapa(p.id, 'agendado', dia))}
+                                  onClick={() => levar(passou ? p : { ...p, data: dia ?? p.data }, 'agendado')}
                                   title="Agenda a peça. O envio da comunidade manda às 08h do dia."
                                 >
-                                  {passou ? 'Aprovar e escolher o dia' : `Aprovar para ${diaPorExtenso(dia!)}`}
+                                  {passou ? 'Aprovar e escolher o dia' : `Aprovar para ${diaPorExtenso(dia!)}…`}
                                 </button>
                                 <button className="small" onClick={() => void m.mudarEtapa(p.id, 'arquivado')}>
                                   Arquivar

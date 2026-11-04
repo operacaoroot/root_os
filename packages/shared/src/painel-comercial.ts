@@ -11,7 +11,7 @@
  * Dado que não existe (lead sem canal, sem dono, sem valor) aparece como
  * ausente, nunca como zero inventado.
  */
-import type { ComercialEtapa } from './comercial.js';
+import { COMERCIAL_ETAPAS, type ComercialEtapa } from './comercial.js';
 
 /**
  * O que a etapa quer dizer para o painel: em negociação (E1 a E8), ganho (E9),
@@ -139,6 +139,17 @@ export const ROTULO_DO_CANAL_DE_ENTRADA: Record<string, string> = {
   comunidade: 'Comunidade',
   site: 'Site',
 };
+
+/**
+ * ONDE A NEGOCIAÇÃO COMEÇA (etapa 9b, #17/#18, decisão do Lucas em 04/11/2026): "Em negociação" e o
+ * valor em negociação só contam a partir da Sessão estratégica (E4, `sessao`). Novo lead, qualificação
+ * e reunião agendada são negócio aberto, mas ainda não estão em negociação.
+ */
+export const INICIO_DA_NEGOCIACAO: ComercialEtapa = 'sessao';
+export function estaEmNegociacao(etapa: ComercialEtapa | string): boolean {
+  const i = (COMERCIAL_ETAPAS as readonly string[]).indexOf(etapa);
+  return i >= (COMERCIAL_ETAPAS as readonly string[]).indexOf(INICIO_DA_NEGOCIACAO) && resultadoDaEtapaDoCockpit(etapa as ComercialEtapa) === 'aberta';
+}
 
 /** O resultado de cada etapa do cockpit no painel. */
 export function resultadoDaEtapaDoCockpit(etapa: ComercialEtapa): ResultadoDaEtapa {

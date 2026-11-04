@@ -296,7 +296,7 @@ describe('a barra lateral', () => {
     CAMINHO = '/config';
     render(<Sidebar />);
     const lista = subsecoes('Configurações');
-    for (const nome of ['Equipe', 'Integrações', 'Regras e permissões', 'Registro de ações', 'Atividade', 'Configurações da conta']) {
+    for (const nome of ['Equipe', 'Integrações', 'Regras e permissões', 'Histórico técnico', 'Atividade', 'Configurações da conta']) {
       expect(lista.getByRole('link', { name: nome })).toBeInTheDocument();
     }
     expect(link('/assinatura')).toBeNull();
@@ -307,7 +307,7 @@ describe('a barra lateral', () => {
     CAMINHO = '/rastro';
     render(<Sidebar />);
     expect(area('Configurações')).toHaveAttribute('href', '/rastro');
-    expect(subsecoes('Configurações').getByRole('link', { name: 'Registro de ações' })).toHaveAttribute('aria-current', 'page');
+    expect(subsecoes('Configurações').getByRole('link', { name: 'Histórico técnico' })).toHaveAttribute('aria-current', 'page');
   });
 
   it('as preferências antigas não escondem áreas nem causam erro', () => {

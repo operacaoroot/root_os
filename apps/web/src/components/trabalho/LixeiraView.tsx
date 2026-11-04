@@ -34,7 +34,7 @@ const plural = (n: number, um: string, varios: string) => `${n} ${n === 1 ? um :
 function LinkDoRastro({ id }: { id: string }) {
   return (
     <Link href={`/rastro?entidade=${encodeURIComponent(id)}`} className="text-[11px] text-muted underline hover:text-brand" data-testid={`lixeira-rastro-${id}`}>
-      ver no Registro de ações
+      ver no Histórico técnico
     </Link>
   );
 }

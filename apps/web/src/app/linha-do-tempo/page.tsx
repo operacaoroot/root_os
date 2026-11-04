@@ -116,16 +116,17 @@ export default function LinhaDoTempoPage() {
   return (
     <div className="space-y-5">
       {/* Etapa 9 (F-26): o que aconteceu nas áreas vem primeiro; o histórico técnico segue abaixo. */}
+      {/* Etapa 9b (#35): a Atividade é a visão do dia a dia; o Histórico técnico é outra tela. */}
+      <p className="text-sm text-muted">
+        A Atividade é a visão do dia a dia: o que aconteceu no Comercial, no WhatsApp, na implantação e nos agentes. Para auditoria, cada ação com quem fez e a verificação, use o{' '}
+        <Link href="/rastro" className="text-brand hover:underline">Histórico técnico</Link>.
+      </p>
       <DasAreas />
       {/* ---------------------------------------------------------- cabeçalho */}
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div className="space-y-1">
           <p className="text-sm text-muted">
-            A mesma fonte do{' '}
-            <Link href="/rastro" className="text-brand hover:underline">
-              Rastro
-            </Link>
-            , contada em ordem. {itens.length} evento(s) carregado(s)
+            Os eventos dos agentes e do sistema, em ordem. {itens.length} evento(s) carregado(s)
             {cursor ? ' — há mais' : ''}.
           </p>
           {retencaoDias !== null && (

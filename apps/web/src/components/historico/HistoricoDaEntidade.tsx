@@ -202,7 +202,7 @@ export function HistoricoDaEntidade({ entityId, entityType, titulo, aberto, onFe
               {linhas.map((r) => <Linha key={r.id} r={r} />)}
             </ul>
           )}
-          {cortado && <p className="py-2 text-[11px] text-muted">Mostrando as {linhas.length} ações mais recentes de {dados!.total}. O Registro de ações tem o resto.</p>}
+          {cortado && <p className="py-2 text-[11px] text-muted">Mostrando as {linhas.length} ações mais recentes de {dados!.total}. O Histórico técnico tem o resto.</p>}
         </div>
         <footer className="border-t border-border px-4 py-2 text-[11px] text-muted">
           Só leitura. Toda ação do OS sobre este item fica aqui: quem, quando, antes e depois.

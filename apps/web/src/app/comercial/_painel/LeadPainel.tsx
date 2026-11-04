@@ -34,6 +34,7 @@ import { AUSENTE, numeroOuAusente } from '@/lib/cockpit';
 import { BarraDaSaude, BOTAO, Chip, Erro, FOCO, NivelDoRotulo, useCarregar } from '../_ui';
 import { ROTULO_DA_ABA, abasNaTela, linkDoWhatsApp, type AbaDoPainel, type EstadoDoPainel } from './estado';
 import { ListaDeAvisos, usePainel } from './provedor';
+import { NotasDoLead } from './NotasDoLead';
 import { podeSairSemPerder } from './texto-nao-salvo';
 import { HistoricoDaEntidade, TIPO_DA_ENTIDADE_DO_LEAD } from './historico';
 import { useVarianteDoPainel } from './variante';
@@ -332,6 +333,8 @@ export function LeadPainel({ estado }: { estado: EstadoDoPainel }) {
                 abrirHistorico={() => setHistoricoAberto(true)}
               />
             )}
+            {/* Etapa 9b (#19): notas e comentários, e as outras abas do lead a um clique. */}
+            {aba === 'geral' && <NotasDoLead leadId={leadId} irParaAba={irParaAba} />}
             {aba === 'pendencias' && (
               <AbaPendencias leadId={leadId} ficha={f} extra={extra.dados} aoMudar={aoMudar} irParaAba={irParaAba} />
             )}
