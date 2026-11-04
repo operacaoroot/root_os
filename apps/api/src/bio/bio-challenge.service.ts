@@ -109,7 +109,8 @@ export class BioChallengeService {
       progresso: Math.min(100, Math.round((contagem / Math.max(1, desafio.metaPosts)) * 1000) / 10),
       esperado,
       saldo: contagem - esperado,
-      porDia: diasRestantes > 0 ? Math.ceil(faltam / diasRestantes) : faltam,
+      // Uma casa decimal, arredondada pra cima: 805 em 254 dias é 3,2/dia, não 4.
+      porDia: diasRestantes > 0 ? Math.ceil((faltam / diasRestantes) * 10) / 10 : faltam,
       encerrado,
       contas,
     };

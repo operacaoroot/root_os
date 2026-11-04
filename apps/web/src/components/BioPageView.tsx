@@ -80,16 +80,7 @@ export function BioPageView({
 
           {desafio.diaAtual < desafio.totalDias && (
             <p className="m-0 mt-3 text-[12px] leading-[1.5] text-bio-weak">
-              {desafio.saldo >= 0 ? (
-                <>
-                  <span className="text-bio-primary">{desafio.saldo} adiantado</span> no ritmo
-                </>
-              ) : (
-                <>
-                  <span className="text-bio-accent">{Math.abs(desafio.saldo)} atrás</span> do ritmo
-                </>
-              )}
-              {` · ${desafio.ritmoNecessario}/dia pra fechar`}
+              {`${desafio.ritmoNecessario.toLocaleString('pt-BR')}/dia pra fechar`}
             </p>
           )}
         </section>
