@@ -18,7 +18,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 const get = vi.fn(), post = vi.fn(), put = vi.fn();
 let permissions = ['tarefas.ver', 'tarefas.editar', 'obsidian.ver', 'obsidian.editar', 'drive.ver'];
 vi.mock('@/lib/api', () => ({
-  apiGet: (...a: unknown[]) => get(...a), apiPost: (...a: unknown[]) => post(...a), apiPut: (...a: unknown[]) => put(...a),
+  apiGet: (path: string, ...a: unknown[]) => path === '/clientes-escopo/me' ? Promise.resolve({ amplo: true, clientes: [] }) : get(path, ...a), apiPost: (...a: unknown[]) => post(...a), apiPut: (...a: unknown[]) => put(...a),
   apiPatch: vi.fn(), apiDelete: vi.fn(), apiBlob: vi.fn(),
 }));
 vi.mock('@/lib/auth', () => ({ useAuth: () => ({ token: 'tok', ready: true, user: { id: 'u' }, can: (p: string) => permissions.includes(p) }) }));
@@ -76,7 +76,7 @@ describe('Atas: as fontes e o tipo', () => {
   it('cada item diz se é ata ou transcrição e a fonte', async () => {
     render(<AtasPage />);
     const lista = await screen.findByTestId('atas-lista');
-    expect(within(lista).getByTestId(`ata-tipo-drive:${ARQ_TRANS}`)).toHaveTextContent('transcrição');
+    expect(await within(lista).findByTestId(`ata-tipo-drive:${ARQ_TRANS}`)).toHaveTextContent('transcrição');
     expect(within(lista).getByTestId(`ata-drive:${ARQ_TRANS}`)).toHaveTextContent('Drive');
     expect(within(lista).getByTestId(`ata-tipo-granola:${R1}`)).toHaveTextContent('transcrição');
     expect(within(lista).getByTestId(`ata-granola:${R1}`)).toHaveTextContent('Granola');
@@ -163,7 +163,7 @@ describe('Atas: as duas colunas', () => {
     await screen.findByTestId('atas-lista');
     expect(screen.queryByTestId('atas-coluna-detalhe')).toBeNull();
     expect(screen.getByTestId('atas-tela').style.overflow).toBe('');
-    fireEvent.click(screen.getByTestId('ata-vault:n1'));
+    fireEvent.click(await screen.findByTestId('ata-vault:n1'));
     expect(await screen.findByRole('article', { name: 'A ata inteira' })).toHaveTextContent('Texto da ata.');
     expect(screen.queryByTestId('atas-coluna-lista')).toBeNull();
     expect(new URLSearchParams(window.location.search).get('ata')).toBe('vault:n1');

@@ -12,7 +12,7 @@ import { afterEach } from 'vitest';
 const apiGet = vi.fn();
 vi.mock('@/lib/api', async () => {
   const real = await vi.importActual<typeof import('@/lib/api')>('@/lib/api');
-  return { ...real, apiGet: (...a: unknown[]) => apiGet(...a), apiPost: vi.fn(), apiPatch: vi.fn(), apiDelete: vi.fn(), apiBlob: vi.fn() };
+  return { ...real, apiGet: (path: string, ...a: unknown[]) => path === '/clientes-escopo/me' ? Promise.resolve({ amplo: true, clientes: [] }) : apiGet(path, ...a), apiPost: vi.fn(), apiPatch: vi.fn(), apiDelete: vi.fn(), apiBlob: vi.fn() };
 });
 vi.mock('@/lib/auth', () => ({
   useAuth: () => ({ token: 'tok', ready: true, user: { id: 'u-eu', name: 'Rodrigo' }, can: (p: string) => ['tarefas.ver', 'tarefas.editar'].includes(p) }),

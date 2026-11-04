@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useLayoutEffect, useRef, useState } from 'react';
 import { ANEXO_MAX_BYTES, motivoParaRecusarAnexo, type AnexoDaTarefa } from '@mktos/shared';
 
 import { apiBlob, apiGet, apiUpload } from '@/lib/api';
@@ -27,28 +27,41 @@ const ROTULO: Record<AnexoDaTarefa['estado'], string> = {
 
 const tamanho = (b: number) => (b >= 1048576 ? `${(b / 1048576).toFixed(1)} MB` : `${Math.max(1, Math.round(b / 1024))} KB`);
 
-export function AnexosDaTarefa({ taskId }: { taskId: string }) {
-  const { token, ready, can } = useAuth();
+export function AnexosDaTarefa({ taskId, restrito = false }: { taskId: string; restrito?: boolean }) {
+  const { token, ready, can, user } = useAuth();
   if (!ready || !token || !can('tarefas.ver')) return null;
-  return <Anexos key={taskId} taskId={taskId} token={token} podeEnviar={can('tarefas.editar')} />;
+  return (
+    <Anexos key={JSON.stringify([user?.id, token, taskId, restrito])} taskId={taskId} token={token}
+      restrito={restrito} podeEnviar={!restrito && can('tarefas.editar')} />
+  );
 }
 
-function Anexos({ taskId, token, podeEnviar }: { taskId: string; token: string; podeEnviar: boolean }) {
+function Anexos({ taskId, token, restrito, podeEnviar }: {
+  taskId: string; token: string; restrito: boolean; podeEnviar: boolean;
+}) {
   const [anexos, setAnexos] = useState<AnexoDaTarefa[] | null>(null);
   const [erro, setErro] = useState<string | null>(null);
   const [enviando, setEnviando] = useState(false);
   const entrada = useRef<HTMLInputElement>(null);
+  const ciclo = useRef<AbortController | null>(null);
   const base = `/trabalho/tarefas/${encodeURIComponent(taskId)}/anexos`;
 
-  const carregar = useCallback(() => {
-    apiGet<AnexoDaTarefa[]>(base, token)
-      .then((r) => setAnexos(r))
-      .catch((e) => setErro((e as Error).message));
+  const carregar = useCallback((signal: AbortSignal) => {
+    apiGet<AnexoDaTarefa[]>(base, token, signal)
+      .then((r) => { if (!signal.aborted) setAnexos(r); })
+      .catch((e: Error) => { if (!signal.aborted) setErro(e.message); });
   }, [base, token]);
-  useEffect(carregar, [carregar]);
+
+  useLayoutEffect(() => {
+    const controle = new AbortController();
+    ciclo.current = controle;
+    carregar(controle.signal);
+    return () => controle.abort();
+  }, [carregar]);
 
   const enviar = async (arquivo: File | undefined) => {
-    if (!arquivo) return;
+    const signal = ciclo.current?.signal;
+    if (!arquivo || !podeEnviar || !signal || signal.aborted) return;
     const recusa = motivoParaRecusarAnexo(arquivo.name, arquivo.type || 'application/octet-stream', arquivo.size);
     if (recusa) {
       setErro(`Não enviado: ${recusa}`);
@@ -58,18 +71,23 @@ function Anexos({ taskId, token, podeEnviar }: { taskId: string; token: string; 
     setErro(null);
     try {
       await apiUpload<AnexoDaTarefa>(base, arquivo, token);
-      carregar();
+      if (!signal.aborted) carregar(signal);
     } catch (e) {
-      setErro(`Não enviado: ${(e as Error).message}`);
+      if (!signal.aborted) setErro(`Não enviado: ${(e as Error).message}`);
     } finally {
-      setEnviando(false);
-      if (entrada.current) entrada.current.value = '';
+      if (!signal.aborted) {
+        setEnviando(false);
+        if (entrada.current) entrada.current.value = '';
+      }
     }
   };
 
   const baixar = async (a: AnexoDaTarefa) => {
+    const signal = ciclo.current?.signal;
+    if (!signal || signal.aborted) return;
     try {
-      const blob = await apiBlob(`${base}/${encodeURIComponent(a.id)}/arquivo`, token);
+      const blob = await apiBlob(`${base}/${encodeURIComponent(a.id)}/arquivo`, token, signal);
+      if (signal.aborted) return;
       const url = URL.createObjectURL(blob);
       const link = document.createElement('a');
       link.href = url;
@@ -77,7 +95,7 @@ function Anexos({ taskId, token, podeEnviar }: { taskId: string; token: string; 
       link.click();
       setTimeout(() => URL.revokeObjectURL(url), 1000);
     } catch (e) {
-      setErro(`Não baixou: ${(e as Error).message}`);
+      if (!signal.aborted) setErro(`Não baixou: ${(e as Error).message}`);
     }
   };
 
@@ -99,7 +117,7 @@ function Anexos({ taskId, token, podeEnviar }: { taskId: string; token: string; 
           </label>
         )}
       </div>
-      <p className="text-muted">Até {Math.round(ANEXO_MAX_BYTES / 1048576)} MB: PDF, documento, planilha, apresentação, imagem ou texto.</p>
+      {!restrito && <p className="text-muted">Até {Math.round(ANEXO_MAX_BYTES / 1048576)} MB: PDF, documento, planilha, apresentação, imagem ou texto.</p>}
       {erro && <p role="alert" className="text-muted">{erro}</p>}
       {anexos === null && !erro && <p className="text-muted">Carregando anexos…</p>}
       {anexos?.length === 0 && <p className="text-muted">Nenhum anexo.</p>}
@@ -108,12 +126,12 @@ function Anexos({ taskId, token, podeEnviar }: { taskId: string; token: string; 
           {anexos.map((a) => (
             <li key={a.id} className="space-y-0.5">
               <div className="flex flex-wrap items-center gap-2">
-                <button type="button" className="break-all text-left text-brand underline" onClick={() => void baixar(a)}>
+                <button type="button" className={`break-all text-left text-brand underline${restrito ? ' min-h-11' : ''}`} onClick={() => void baixar(a)}>
                   {a.nome}
                 </button>
                 <span className="text-muted">{tamanho(a.bytes)} · {a.autorNome}</span>
               </div>
-              <div className="flex flex-wrap items-center gap-2 text-muted">
+              {!restrito && <div className="flex flex-wrap items-center gap-2 text-muted">
                 <span>{ROTULO[a.estado]}{a.subpasta && a.estado !== 'so_no_os' ? ` · ${a.subpasta}` : ''}</span>
                 {a.estado === 'enviado' && a.driveUrl && (
                   <a href={a.driveUrl} target="_blank" rel="noreferrer noopener" className="text-brand underline">
@@ -126,7 +144,7 @@ function Anexos({ taskId, token, podeEnviar }: { taskId: string; token: string; 
                   </a>
                 )}
                 {a.motivo && (a.estado === 'erro' || a.estado === 'so_no_os') && <span>({a.motivo})</span>}
-              </div>
+              </div>}
             </li>
           ))}
         </ul>

@@ -1,6 +1,6 @@
-import { EstadoDeAgente } from '@prisma/client';
+import { EstadoDeAgente, type Prisma } from '@prisma/client';
 
-import { PrismaService } from '../prisma/prisma.service';
+type BancoDeAgentes = Pick<Prisma.TransactionClient, 'agent'>;
 
 /* ========================================================================== *
  * O AGENTE DE UMA TAREFA, CONFERIDO CONTRA A EMPRESA — um lugar só
@@ -40,7 +40,7 @@ export interface AgenteDaCasa {
 
 /** Mapa id -> agente, só com agentes DESTA empresa. Ids que não são daqui somem. */
 export async function agentesDaCasa(
-  prisma: PrismaService,
+  prisma: BancoDeAgentes,
   orgId: string,
   ids: (string | null)[],
 ): Promise<Map<string, AgenteDaCasa>> {
@@ -62,7 +62,7 @@ export async function agentesDaCasa(
  * API parou de mandar".
  */
 export async function agenteDaCasa(
-  prisma: PrismaService,
+  prisma: BancoDeAgentes,
   orgId: string,
   agenteId: string | null,
 ): Promise<AgenteDaCasa | null> {

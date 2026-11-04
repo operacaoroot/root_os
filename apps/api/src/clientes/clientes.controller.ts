@@ -1,4 +1,4 @@
-import { Controller, ForbiddenException, Get, HttpCode, Param, Post, UseGuards } from '@nestjs/common';
+import { Controller, ForbiddenException, Get, HttpCode, Inject, Param, Post, UseGuards } from '@nestjs/common';
 import { ApprovalState } from '@prisma/client';
 import type { ClienteComPasta } from '@mktos/shared';
 
@@ -11,6 +11,8 @@ import { PrismaService } from '../prisma/prisma.service';
 import { nomeDoCliente } from './pasta-do-cliente/nome-da-pasta';
 import { PastaDoClienteService } from './pasta-do-cliente/pasta-do-cliente.service';
 import type { ResultadoDaPasta } from './portas';
+import { ClienteEscopoService } from '../clientes-escopo/cliente-escopo.service';
+import { EscopoClienteAdaptado } from '../clientes-escopo/cliente-escopo.decorator';
 
 /*
  * `POST /api/clientes/:id/pasta` e `GET /api/clientes/pastas` (rodada dos agentes, lane A4, TR-04).
@@ -30,6 +32,7 @@ export class ClientesController {
   constructor(
     private readonly pastas: PastaDoClienteService,
     private readonly prisma: PrismaService,
+    @Inject(ClienteEscopoService) private readonly escopo?: ClienteEscopoService,
   ) {}
 
   @Post(':id/pasta')
@@ -42,12 +45,15 @@ export class ClientesController {
   }
 
   @Get('pastas')
+  @EscopoClienteAdaptado()
   @RequirePermissions('dashboard.ver')
   async pastasDosClientes(@CurrentUser() user: JwtUser): Promise<ClienteComPasta[]> {
     exigirAlguma(user, ['tarefas.ver', 'leads.ver']);
     const orgId = user.orgId;
+    const filtro = await this.escopo!.filtro(orgId, user.sub);
     const clientes = await this.prisma.partner.findMany({
-      where: { orgId, isCliente: true, ativo: true, interno: false },
+      where: { orgId, isCliente: true, ativo: true, interno: false, principalId: null,
+        ...(filtro.clienteId !== undefined ? { id: filtro.clienteId as string | { in: string[] } } : {}) },
       select: { id: true, razaoSocial: true, nomeFantasia: true, pastaDriveUrl: true, pastaDriveErro: true },
       orderBy: { razaoSocial: 'asc' },
       take: 500,

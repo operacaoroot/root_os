@@ -20,7 +20,7 @@ import {
 
 const get = vi.fn(), post = vi.fn(), patch = vi.fn(), del = vi.fn();
 vi.mock('@/lib/api', () => ({
-  apiGet: (...a: unknown[]) => get(...a), apiPost: (...a: unknown[]) => post(...a),
+  apiGet: (path: string, ...a: unknown[]) => path === '/clientes-escopo/me' ? Promise.resolve({ amplo: true, clientes: [] }) : get(path, ...a), apiPost: (...a: unknown[]) => post(...a),
   apiPatch: (...a: unknown[]) => patch(...a), apiDelete: (...a: unknown[]) => del(...a), apiBlob: vi.fn(),
 }));
 let permissoes = ['tarefas.ver', 'tarefas.editar'];

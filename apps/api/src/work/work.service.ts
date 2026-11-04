@@ -1,4 +1,4 @@
-import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException, Optional } from '@nestjs/common';
 import { temPapelDeMaquina } from '../approvals/alcada';
 import { lerAprovador } from '../auth/aprovador';
 import { RECUSA_DE_MAQUINA_NO_TRABALHO } from './so-gente-no-trabalho.guard';
@@ -24,6 +24,9 @@ import type {
 } from '@mktos/shared';
 import { Prisma, WorkFieldType, WorkListaNatureza, WorkPriority, WorkStatusType } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
+import { ClienteEscopoService } from '../clientes-escopo/cliente-escopo.service';
+import { TarefaEscopoService } from '../clientes-escopo/tarefa-escopo.service';
+import { capacidadesDaCarteira, idsDeTarefasCoerentes } from './work-clientes-isolamento';
 import { AuditService } from '../audit/audit.service';
 import { CheckoutDeTarefaService } from './checkout-de-tarefa.service';
 import { agentesDaCasa, type AgenteDaCasa } from './agentes-da-casa';
@@ -137,7 +140,20 @@ export class WorkService {
     private readonly prisma: PrismaService,
     private readonly audit: AuditService,
     private readonly checkout: CheckoutDeTarefaService,
+    @Optional() private readonly escopo?: ClienteEscopoService,
+    @Optional() private readonly tarefaEscopo?: TarefaEscopoService,
   ) {}
+
+  private async idsVisiveis(orgId: string, actorId: string, cliente?: string, db: Prisma.TransactionClient = this.prisma): Promise<string[] | null> {
+    if (!this.escopo) throw new ForbiddenException();
+    const filtro = await this.escopo.filtro(orgId, actorId, cliente, db);
+    // ALL preserva inclusive tarefas antigas sem cliente. Filtro explícito já foi validado.
+    const perfil = await this.escopo.perfil(orgId, actorId, db);
+    if (perfil.modo === 'ALL') return null;
+    const ids = typeof filtro.clienteId === 'string' ? [filtro.clienteId] : filtro.clienteId && typeof filtro.clienteId === 'object' ? filtro.clienteId.in : [];
+    const rows = await db.workTask.findMany({ where: { orgId, clienteId: { in: ids } }, select: { id: true, parentId: true, clienteId: true } });
+    return idsDeTarefasCoerentes(rows, new Set(ids));
+  }
 
   // ---------- estrutura (árvore + catálogos) ----------
 
@@ -1255,7 +1271,14 @@ export class WorkService {
   async tarefas(
     orgId: string,
     f: WorkTaskQuery,
+    actorId?: string,
+    tx?: Prisma.TransactionClient,
   ): Promise<TrabTarefaLista> {
+    if (actorId !== undefined && !tx) return this.prisma.$transaction(
+      db => this.tarefas(orgId, f, actorId, db), { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead },
+    );
+    const db = tx ?? this.prisma;
+    const visiveis = actorId === undefined ? null : await this.idsVisiveis(orgId, actorId, f.cliente, db);
     const page = f.page ?? 1;
     const limit = f.limit ?? 500;
     const where: Prisma.WorkTaskWhereInput = { orgId, archived: f.arquivadas ? undefined : false };
@@ -1290,7 +1313,7 @@ export class WorkService {
       if (f.segmentoId === SEGMENTO_SEM_PASTA) {
         where.list = { ...(where.list as Prisma.WorkListWhereInput), folderId: null };
       } else if (f.segmentoId) {
-        const pastas = await this.prisma.workFolder.findMany({ where: { orgId }, select: { id: true, parentId: true } });
+        const pastas = await db.workFolder.findMany({ where: { orgId }, select: { id: true, parentId: true } });
         where.list = { ...(where.list as Prisma.WorkListWhereInput), folderId: { in: [...pastaComSubpastas(pastas, f.segmentoId)] } };
       }
     } else {
@@ -1311,15 +1334,17 @@ export class WorkService {
       ...(f.dueFrom ? { gte: f.dueFrom } : {}),
       ...(f.dueTo ? { lt: f.dueTo } : {}),
     };
+    if (visiveis) where.id = { in: visiveis };
+    const include = visiveis ? { ...TASK_INCLUDE, _count: { select: { subtasks: { where: { id: { in: visiveis } } }, comments: true } } } : TASK_INCLUDE;
     const [rows, total] = await Promise.all([
-      this.prisma.workTask.findMany({
+      db.workTask.findMany({
         where,
-        include: TASK_INCLUDE,
+        include,
         orderBy: [{ order: 'asc' }, { createdAt: 'asc' }, { id: 'asc' }],
         skip: (page - 1) * limit,
         take: limit,
       }),
-      this.prisma.workTask.count({ where }),
+      db.workTask.count({ where }),
     ]);
     const now = new Date();
     /*
@@ -1327,11 +1352,11 @@ export class WorkService {
      * `agentesDaCasa` já deduplica os ids, então o custo é fixo no número de
      * agentes travando trabalho, não no de tarefas.
      */
-    const agentes = await agentesDaCasa(this.prisma, orgId, rows.map((t) => t.agenteId));
-    const minutos = await this.minutosPorTarefa(orgId, rows.map((t) => t.id));
-    const clientes = await nomesDosClientes(this.prisma, orgId, rows.map((t) => t.clienteId));
+    const agentes = await agentesDaCasa(db, orgId, rows.map((t) => t.agenteId));
+    const minutos = await this.minutosPorTarefa(orgId, rows.map((t) => t.id), db);
+    const clientes = await nomesDosClientes(db, orgId, rows.map((t) => t.clienteId));
     return {
-      items: rows.map((t) => this.mapTask(t, now, agentes, minutos, clientes)),
+      items: rows.map((t) => ({ ...this.mapTask(t, now, agentes, minutos, clientes), ...(visiveis ? { listName: 'Tarefas do cliente', listIcone: null, listCor: null } : {}) })),
       total,
       source: { tool: 'trabalho-interno', generatedAt: now.toISOString() },
     };
@@ -1356,29 +1381,38 @@ export class WorkService {
       nextCursor: hasMore && anchor ? activityCursor(scope, query.limit, anchor, activityPoint(page[page.length - 1])) : null };
   }
 
-  async tarefa(orgId: string, id: string, solicitanteId?: string): Promise<TrabTarefaDetalhe> {
-    if (solicitanteId !== undefined) await exigirAcessoAtual(this.prisma, orgId, solicitanteId, ['tarefas.ver']);
-    const t = await this.prisma.workTask.findFirst({
+  async tarefa(orgId: string, id: string, solicitanteId?: string, tx?: Prisma.TransactionClient): Promise<TrabTarefaDetalhe> {
+    if (solicitanteId !== undefined && !tx) return this.prisma.$transaction(
+      db => this.tarefa(orgId, id, solicitanteId, db), { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead },
+    );
+    const db = tx ?? this.prisma;
+    if (solicitanteId !== undefined) await exigirAcessoAtual(db, orgId, solicitanteId, ['tarefas.ver']);
+    const visiveis = solicitanteId === undefined ? null : await this.idsVisiveis(orgId, solicitanteId, undefined, db);
+    if (visiveis && !visiveis.includes(id)) throw new NotFoundException('Tarefa não encontrada');
+    const t = await db.workTask.findFirst({
       where: { id, orgId },
       include: {
         ...TASK_INCLUDE,
+        ...(visiveis ? { _count: { select: { subtasks: { where: { id: { in: visiveis } } }, comments: true } } } : {}),
         list: true,
         comments: { orderBy: { createdAt: 'desc' } },
-        subtasks: { where: { excluidaEm: null }, include: { status: true } },
+        subtasks: { where: { excluidaEm: null, ...(visiveis ? { id: { in: visiveis } } : {}) }, include: { status: true } },
       },
     });
     if (!t) throw new NotFoundException('Tarefa não encontrada');
-    const atividade = await this.prisma.auditLog.findMany({
+    // Auditoria antiga pode conter nomes ou IDs de outro cliente antes de uma
+    // reclassificação; permanece disponível apenas na visão ampla neste lote.
+    const atividade = visiveis ? [] : await db.auditLog.findMany({
       where: { orgId, entityType: 'work_task', entityId: id },
       orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
       take: 50,
     });
-    const nomePorAtor = await activityNames(this.prisma, orgId, atividade);
+    const nomePorAtor = await activityNames(db, orgId, atividade);
     const now = new Date();
     const [agentes, clientes, apontamentos, porEtapa, lead] = await Promise.all([
-      agentesDaCasa(this.prisma, orgId, [t.agenteId]),
-      nomesDosClientes(this.prisma, orgId, [t.clienteId]),
-      this.prisma.workApontamento.findMany({
+      agentesDaCasa(db, orgId, [t.agenteId]),
+      nomesDosClientes(db, orgId, [t.clienteId]),
+      db.workApontamento.findMany({
         where: { orgId, taskId: id },
         orderBy: [{ dia: 'desc' }, { createdAt: 'desc' }],
         take: 200,
@@ -1388,22 +1422,36 @@ export class WorkService {
        * lançamentos que isso teria a conta cortada em silêncio. A ordem é a da
        * primeira hora gasta em cada etapa, que é a ordem em que o cliente andou.
        */
-      this.prisma.workApontamento.groupBy({
+      db.workApontamento.groupBy({
         by: ['etapa'],
         where: { orgId, taskId: id },
         _sum: { minutos: true },
         _min: { createdAt: true },
       }),
       // Layout 26/10: o lead da tarefa, lido escopado por empresa (ponteiro atravessado = sem lead).
-      t.leadId
-        ? this.prisma.lead.findFirst({ where: { id: t.leadId, orgId }, select: { id: true, name: true, ficha: { select: { empresa: true } } } })
+      t.leadId && !visiveis
+        ? db.lead.findFirst({ where: { id: t.leadId, orgId }, select: { id: true, name: true, ficha: { select: { empresa: true } } } })
         : Promise.resolve(null),
     ]);
     const minutosDaTarefa = porEtapa.reduce((soma, g) => soma + (g._sum.minutos ?? 0), 0);
-    if (solicitanteId !== undefined) await exigirAcessoAtual(this.prisma, orgId, solicitanteId, ['tarefas.ver']);
+    let carteira: ReturnType<typeof capacidadesDaCarteira> | undefined;
+    if (visiveis && solicitanteId) {
+      const [pessoa, tarefaVisivel, temStatus, pasta] = await Promise.all([
+        db.user.findFirst({where:{id:solicitanteId,orgId,isActive:true},select:{roles:{where:{orgId},select:{permissions:{select:{key:true}}}}}}),
+        db.workTask.findFirst({where:{orgId,id,AND:[tarefaDeListaVisivel(),tarefaViva()]},select:{id:true}}),
+        db.workStatus.findFirst({where:{orgId,listId:t.listId},select:{id:true}}),
+        t.list.folderId ? db.workFolder.findFirst({where:{orgId,id:t.list.folderId},select:{id:true,name:true,parentId:true}}) : Promise.resolve(null),
+      ]);
+      const podeEditar = pessoa?.roles.some(r => r.permissions.some(p => p.key === 'tarefas.editar')) ?? false;
+      const implantacao = !!pasta && !!listaDaImplantacao([{...pasta,lists:[{id:t.list.id,name:t.list.name}]}]);
+      carteira = capacidadesDaCarteira({podeEditar,tarefaViva:!t.excluidaEm,listaVisivel:!!tarefaVisivel,temStatus:!!temStatus,comercial:ehListaDoComercial(t.list),implantacao});
+    }
+    if (solicitanteId !== undefined) await exigirAcessoAtual(db, orgId, solicitanteId, ['tarefas.ver']);
     return {
+      ...(carteira ? { carteira } : {}),
       ...this.mapTask(t, now, agentes, new Map([[t.id, minutosDaTarefa]]), clientes),
-      description: t.description, listName: t.list.name,
+      description: t.description, listName: visiveis ? 'Tarefas do cliente' : t.list.name,
+      ...(visiveis ? { listIcone: null, listCor: null } : {}),
       createdAt: t.createdAt.toISOString(), updatedAt: t.updatedAt.toISOString(),
       comentarios: t.comments.map((c) => ({
         id: c.id, authorId: c.authorId, authorName: c.authorName, text: c.text,
@@ -1436,14 +1484,67 @@ export class WorkService {
     return gente.map((g) => ({ id: g.id, nome: g.name }));
   }
 
-  clientes(orgId: string, q?: string) {
-    return listarClientes(this.prisma, orgId, q);
+  async clientes(orgId: string, q?: string, actorId?: string) {
+    if (actorId === undefined) return listarClientes(this.prisma, orgId, q);
+    if (!this.escopo) throw new ForbiddenException();
+    const carteira = await this.escopo.listar(orgId, actorId);
+    if (carteira.amplo) return listarClientes(this.prisma, orgId, q);
+    const busca = q?.trim().toLocaleLowerCase('pt-BR');
+    return carteira.clientes.filter(c => !busca || c.nome.toLocaleLowerCase('pt-BR').includes(busca)).map(c => ({ ...c, cnpj: null }));
   }
 
-  async criarTarefa(orgId: string, actorId: string, input: TrabTarefaCreateInput, opcoes: { exigirCliente?: boolean } = {}) {
+  async criarTarefaEscopadaHttp(orgId: string, actorId: string, input: TrabTarefaCreateInput) {
+    if (!this.escopo || !this.tarefaEscopo) throw new ForbiddenException();
+    if ((await this.escopo.perfil(orgId, actorId)).modo === 'ALL') return this.criarTarefa(orgId, actorId, input, { exigirCliente: true, exigirAmplo: true });
+    const aceitos = new Set(['title', 'description', 'priority', 'dueDate', 'startDate', 'listId', 'statusId', 'clienteId', 'parentId']);
+    if (Object.keys(input).some(k => !aceitos.has(k))) throw new BadRequestException('Esta operação ainda não aceita essas relações para uma carteira restrita.');
+    const criada = await this.prisma.$transaction(async tx => {
+      await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtextextended(${orgId}, 219))::text`;
+      await exigirAcessoAtual(tx, orgId, actorId, ['tarefas.editar']);
+      const ids = await this.idsVisiveis(orgId, actorId, undefined, tx);
+      if (!ids) throw new ConflictException('A carteira mudou. Atualize a tela e tente novamente.');
+      const referencia = await tx.workTask.findFirst({ where: { orgId, listId: input.listId, id: { in: ids }, AND: [tarefaDeListaVisivel(), tarefaViva()] }, select: { id: true } });
+      if (!referencia) throw new NotFoundException('Lista indisponível para esta carteira.');
+      await this.travarCadeia(tx, orgId, actorId, referencia.id);
+      const referenciaAtual = await tx.workTask.findFirst({ where: { orgId, id: referencia.id, listId: input.listId }, select: { id: true } });
+      if (!referenciaAtual) throw new ConflictException('A lista mudou. Atualize a tela e tente novamente.');
+      let clienteId = input.clienteId ?? null;
+      if (input.parentId) {
+        await this.travarCadeia(tx, orgId, actorId, input.parentId);
+        const pai = await tx.workTask.findFirst({ where: { orgId, id: input.parentId }, select: { clienteId:true, listId:true, excluidaEm:true } });
+        if (!pai || pai.excluidaEm || pai.listId !== input.listId || !pai.clienteId) throw new BadRequestException('A tarefa pai não está disponível nesta lista.');
+        if (clienteId && clienteId !== pai.clienteId) throw new BadRequestException('A subtarefa deve pertencer ao cliente da tarefa pai.');
+        clienteId = pai.clienteId;
+      }
+      if (!clienteId || clienteId === 'interno') throw new BadRequestException('Escolha um cliente da sua carteira.');
+      await this.escopo!.exigirCliente(orgId, actorId, clienteId, tx);
+      await tx.$queryRaw`SELECT id FROM "WorkList" WHERE "orgId" = ${orgId} AND id = ${input.listId} FOR UPDATE`;
+      const lista = await tx.workList.findFirst({ where: { orgId, id:input.listId }, select:{id:true,name:true,folderId:true,externalId:true,arquivadaEm:true} });
+      if (!lista || lista.arquivadaEm || ehListaDoComercial(lista)) throw new BadRequestException('Esta lista não está disponível para criação nesta carteira.');
+      if (!input.parentId && lista.folderId) {
+        const pasta = await tx.workFolder.findFirst({where:{orgId,id:lista.folderId},select:{id:true,name:true,parentId:true}});
+        if (pasta && listaDaImplantacao([{...pasta,lists:[{id:lista.id,name:lista.name}]}])) throw new BadRequestException(PORTA_DA_IMPLANTACAO);
+      }
+      const status = await tx.workStatus.findFirst({ where: { orgId, listId: input.listId, ...(input.statusId ? {id:input.statusId} : {}) }, orderBy: {order:'asc'}, select:{id:true} });
+      if (!status) throw new BadRequestException('Status não pertence à lista da tarefa.');
+      const tarefa = await this.gravarTarefaPreparada(tx, { orgId, listId:input.listId, statusId:status.id, clienteId, campos:[], input });
+      await this.audit.log({orgId, actorId, action:'work.task.create', entityType:'work_task', entityId:tarefa.id}, tx);
+      return tarefa;
+    });
+    return this.tarefa(orgId, criada.id, actorId);
+  }
+
+  async criarTarefa(orgId: string, actorId: string, input: TrabTarefaCreateInput, opcoes: { exigirCliente?: boolean; exigirAmplo?: boolean } = {}) {
     const preparo = await this.prepararCriacaoDeTarefa(orgId, input, opcoes);
     return this.logado(orgId, actorId, 'work.task.create', 'work_task', null, async () => {
-      const task = await this.prisma.$transaction((tx) => this.gravarTarefaPreparada(tx, preparo));
+      const task = await this.prisma.$transaction(async tx => {
+        if (opcoes.exigirAmplo) {
+          if (!this.escopo) throw new ForbiddenException();
+          await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtextextended(${orgId}, 219))::text`;
+          await this.escopo.exigirAmplo(orgId, actorId, tx);
+        }
+        return this.gravarTarefaPreparada(tx, preparo);
+      });
       return this.tarefa(orgId, task.id);
     });
   }
@@ -1549,6 +1650,31 @@ export class WorkService {
     return this.aplicarEdicaoTarefa(orgId, actorId, id, input, false);
   }
 
+  async editarTarefaEscopadaHttp(orgId: string, actorId: string, id: string, input: TrabTarefaUpdateHttpInput) {
+    if (!this.escopo || !this.tarefaEscopo) throw new ForbiddenException();
+    if ((await this.escopo.perfil(orgId, actorId)).modo === 'ALL') return this.editarTarefaHttp(orgId, actorId, id, input);
+    const permitidos = new Set(['expectedUpdatedAt','title','description','priority','dueDate','startDate','statusId']);
+    if (Object.keys(input).some(k => !permitidos.has(k))) throw new BadRequestException('Esta operação ainda não permite alterar relações da tarefa.');
+    await this.prisma.$transaction(async tx => {
+      await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtextextended(${orgId}, 219))::text`;
+      await exigirAcessoAtual(tx, orgId, actorId, ['tarefas.editar']);
+      await this.travarCadeia(tx, orgId, actorId, id);
+      const antes = await tx.workTask.findFirst({where:{orgId,id},select:{id:true,updatedAt:true,excluidaEm:true,listId:true,statusId:true,recorrencia:true,title:true,description:true,priority:true,dueDate:true,startDate:true}});
+      if (!antes) throw new NotFoundException('Tarefa não encontrada');
+      if (antes.excluidaEm) throw new ConflictException(TRAB_NA_LIXEIRA);
+      if (new Date(input.expectedUpdatedAt).getTime() !== antes.updatedAt.getTime()) throw new ConflictException({error:'work_task_conflict',code:'work_task_conflict',message:'A tarefa mudou. Confira a versão atual antes de salvar.'});
+      if (input.statusId) {
+        if (antes.recorrencia) throw new BadRequestException('A mudança de etapa de tarefas recorrentes ainda não está disponível nesta carteira.');
+        if (!await tx.workStatus.findFirst({where:{id:input.statusId,orgId,listId:antes.listId},select:{id:true}})) throw new BadRequestException('Status não pertence à lista da tarefa.');
+      }
+      const updatedAt = new Date(Math.max(Date.now(), antes.updatedAt.getTime()+1));
+      const claim = await tx.workTask.updateMany({where:{orgId,id,updatedAt:antes.updatedAt},data:{title:input.title,description:input.description,priority:input.priority as WorkPriority | undefined,statusId:input.statusId,dueDate:input.dueDate === undefined ? undefined : input.dueDate ? new Date(input.dueDate) : null,startDate:input.startDate === undefined ? undefined : input.startDate ? new Date(input.startDate) : null,updatedAt}});
+      if (claim.count !== 1) throw new ConflictException({error:'work_task_conflict',code:'work_task_conflict',message:'A tarefa mudou. Confira a versão atual antes de salvar.'});
+      await this.audit.log({orgId,actorId,action:'work.task.update',entityType:'work_task',entityId:id,before:{title:antes.title,description:antes.description,priority:antes.priority,statusId:antes.statusId,dueDate:antes.dueDate?.toISOString()??null,startDate:antes.startDate?.toISOString()??null},after:{title:input.title??antes.title,description:input.description===undefined?antes.description:input.description,priority:input.priority??antes.priority,statusId:input.statusId??antes.statusId,dueDate:input.dueDate===undefined?antes.dueDate?.toISOString()??null:input.dueDate,startDate:input.startDate===undefined?antes.startDate?.toISOString()??null:input.startDate}},tx);
+    });
+    return this.tarefa(orgId, id, actorId);
+  }
+
   async editarTarefaHttp(orgId: string, actorId: string, id: string, input: TrabTarefaUpdateHttpInput) {
     await exigirAcessoAtual(this.prisma, orgId, actorId, ['tarefas.editar']);
     const validado = TrabTarefaUpdateHttpSchema.parse(input);
@@ -1612,7 +1738,10 @@ export class WorkService {
     const updatedAt = new Date(Math.max(Date.now(), antes.updatedAt.getTime() + 1));
 
     await this.prisma.$transaction(async (tx) => {
-      if (acessoHttp) await exigirAcessoAtual(tx, orgId, actorId, ['tarefas.editar']);
+      if (acessoHttp) {
+        await exigirAcessoAtual(tx, orgId, actorId, ['tarefas.editar']);
+        if (this.escopo) await this.escopo.exigirAmplo(orgId, actorId, tx);
+      }
       // A instrução condicional trava a linha antes de etiquetas, campos e auditoria.
       const claim = await tx.workTask.updateMany({
         where: { id, orgId, updatedAt: antes.updatedAt },
@@ -1879,6 +2008,50 @@ export class WorkService {
     }));
   }
 
+  private async travarCadeia(tx: Prisma.TransactionClient, orgId: string, actorId: string, taskId: string): Promise<void> {
+    await this.tarefaEscopo!.exigir(orgId, actorId, taskId, tx);
+    // Bloqueia apenas a tarefa e seus ancestrais, em ordem estável. Se a
+    // cadeia mudou enquanto aguardava os locks, a operação é recusada.
+    const cadeia = async () => {
+      const nos: { id: string; parentId: string | null; clienteId: string | null }[] = [];
+      const vistos = new Set<string>();
+      let id: string | null = taskId;
+      while (id) {
+        if (vistos.has(id) || vistos.size >= 100) throw new NotFoundException('Tarefa não encontrada');
+        vistos.add(id);
+        const no: { id: string; parentId: string | null; clienteId: string | null } | null = await tx.workTask.findFirst({ where: { orgId, id }, select: { id: true, parentId: true, clienteId: true } });
+        if (!no) throw new NotFoundException('Tarefa não encontrada');
+        nos.push(no);
+        id = no.parentId;
+      }
+      return nos;
+    };
+    const antes = await cadeia();
+    const ids = antes.map(no => no.id).sort();
+    const travados = await tx.$queryRaw<{ id: string }[]>(Prisma.sql`SELECT id FROM "WorkTask" WHERE "orgId" = ${orgId} AND id IN (${Prisma.join(ids)}) ORDER BY id FOR UPDATE`);
+    if (travados.length !== ids.length) throw new ConflictException('A tarefa mudou. Tente novamente.');
+    const depois = await cadeia();
+    if (JSON.stringify(antes) !== JSON.stringify(depois)) throw new ConflictException('A tarefa mudou. Tente novamente.');
+    await this.tarefaEscopo!.exigir(orgId, actorId, taskId, tx);
+  }
+
+  async comentarHttp(orgId: string, actorId: string, taskId: string, text: string) {
+    if (!this.tarefaEscopo) throw new ForbiddenException();
+    return this.prisma.$transaction(async tx => {
+      // Mesmo cadeado do gestor de carteiras; a leitura ocorre depois dele.
+      await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtextextended(${orgId}, 219))::text`;
+      await exigirAcessoAtual(tx, orgId, actorId, ['tarefas.editar']);
+      await this.travarCadeia(tx, orgId, actorId, taskId);
+      const t = await tx.workTask.findFirst({ where: { id: taskId, orgId }, select: { excluidaEm: true } });
+      if (!t) throw new NotFoundException('Tarefa não encontrada');
+      if (t.excluidaEm) throw new ConflictException(TRAB_NA_LIXEIRA);
+      const autor = await tx.user.findFirst({ where: { id: actorId, orgId, isActive: true }, select: { name: true } });
+      const c = await tx.workComment.create({ data: { taskId, authorId: actorId, authorName: autor?.name ?? 'sistema', text } });
+      await this.audit.log({ orgId, actorId, action: 'work.comment.create', entityType: 'work_task', entityId: taskId, after: { comment: text.slice(0, 200) } }, tx);
+      return { id: c.id, createdAt: c.createdAt.toISOString() };
+    });
+  }
+
   async comentar(orgId: string, actorId: string, taskId: string, text: string) {
     const t = await this.prisma.workTask.findFirst({ where: { id: taskId, orgId } });
     if (t?.excluidaEm) throw new ConflictException(TRAB_NA_LIXEIRA);
@@ -1955,9 +2128,9 @@ export class WorkService {
   }
 
   /** Soma de minutos por tarefa, numa consulta só (a lista tem até 500 tarefas). */
-  private async minutosPorTarefa(orgId: string, taskIds: string[]): Promise<Map<string, number>> {
+  private async minutosPorTarefa(orgId: string, taskIds: string[], db: Prisma.TransactionClient = this.prisma): Promise<Map<string, number>> {
     if (taskIds.length === 0) return new Map();
-    const grupos = await this.prisma.workApontamento.groupBy({
+    const grupos = await db.workApontamento.groupBy({
       by: ['taskId'],
       where: { orgId, taskId: { in: taskIds } },
       _sum: { minutos: true },

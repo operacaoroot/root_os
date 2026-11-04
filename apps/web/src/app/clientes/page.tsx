@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import type { FaseDoCliente } from '@mktos/shared';
 import { VisoesDaLista } from '@/components/ficha/VisoesDaLista';
+import { ClienteEscopo } from '@/components/clientes/ClienteEscopo';
 import { PastasDosClientes } from '@/components/clientes/PastasDosClientes';
 
 /*
@@ -17,6 +18,16 @@ const ABAS: { fase: Exclude<FaseDoCliente, 'comercial'>; nome: string; valor: st
 ];
 
 export default function ClientesPage() {
+  return (
+    <ClienteEscopo restrito={(clientes) => clientes.length
+      ? <PastasDosClientes carteira={clientes} />
+      : <p className="text-sm text-muted">Nenhum cliente disponível.</p>}>
+      <ClientesAmplo />
+    </ClienteEscopo>
+  );
+}
+
+function ClientesAmplo() {
   const [aba, setAba] = useState<(typeof ABAS)[number]['fase']>('onboarding');
 
   useEffect(() => {

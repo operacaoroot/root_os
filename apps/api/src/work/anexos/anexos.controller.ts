@@ -9,6 +9,7 @@ import { RequirePermissions } from '../../auth/permissions.decorator';
 import { PermissionsGuard } from '../../auth/permissions.guard';
 import { entregarArquivo } from '../../common/entregar-arquivo';
 import { AnexosDaTarefaService } from './anexos.service';
+import { EscopoClienteAdaptado } from '../../clientes-escopo/cliente-escopo.decorator';
 
 /*
  * Os anexos da tarefa (rodada dos agentes, 21/10/2026, TR-06):
@@ -25,9 +26,10 @@ export class AnexosDaTarefaController {
   constructor(private readonly anexos: AnexosDaTarefaService) {}
 
   @Get()
+  @EscopoClienteAdaptado()
   @RequirePermissions('tarefas.ver')
   listar(@CurrentUser() user: JwtUser, @Param('id') id: string): Promise<AnexoDaTarefa[]> {
-    return this.anexos.listar(user.orgId, id);
+    return this.anexos.listarAutorizado(user.orgId, user.sub, id);
   }
 
   @Post()
@@ -39,9 +41,10 @@ export class AnexosDaTarefaController {
   }
 
   @Get(':anexoId/arquivo')
+  @EscopoClienteAdaptado()
   @RequirePermissions('tarefas.ver')
   async baixar(@CurrentUser() user: JwtUser, @Param('id') id: string, @Param('anexoId') anexoId: string, @Res() res: Response) {
-    const a = await this.anexos.baixar(user.orgId, id, anexoId);
+    const a = await this.anexos.baixarAutorizado(user.orgId, user.sub, id, anexoId);
     // Sempre como anexo, nunca exibido: o navegador não interpreta o arquivo do cliente.
     res.setHeader('Content-Type', 'application/octet-stream');
     res.setHeader('Content-Length', a.bytes);

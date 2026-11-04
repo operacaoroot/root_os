@@ -16,7 +16,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 const get = vi.fn(), post = vi.fn(), patch = vi.fn();
 let permissions = ['tarefas.ver', 'tarefas.editar'];
 vi.mock('@/lib/api', () => ({
-  apiGet: (...a: unknown[]) => get(...a), apiPost: (...a: unknown[]) => post(...a),
+  apiGet: (path: string, ...a: unknown[]) => path === '/clientes-escopo/me' ? Promise.resolve({ amplo: true, clientes: [] }) : get(path, ...a), apiPost: (...a: unknown[]) => post(...a),
   apiPatch: (...a: unknown[]) => patch(...a), apiDelete: vi.fn(), apiBlob: vi.fn(),
 }));
 vi.mock('@/lib/auth', () => ({ useAuth: () => ({ token: 'tok', ready: true, user: { id: 'u' }, can: (p: string) => permissions.includes(p) }) }));
