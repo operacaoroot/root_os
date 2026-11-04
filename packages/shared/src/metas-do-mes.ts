@@ -35,7 +35,7 @@ export const METAS_TAMANHO_MAXIMO_DA_NOTA = 64_000;
 
 // ---------- O catálogo ----------
 
-export const METAS_FONTES = ['leads', 'bio', 'pauta', 'instagram'] as const;
+export const METAS_FONTES = ['leads', 'bio', 'pauta', 'instagram', 'comercial'] as const;
 export type MetasFonte = (typeof METAS_FONTES)[number];
 
 export interface IndicadorDeMeta {
@@ -94,8 +94,20 @@ export const METAS_CATALOGO: readonly IndicadorDeMeta[] = [
     rotulo: 'Peças publicadas',
     unidade: 'peças',
     fonte: 'pauta',
-    calculo: 'Peças da Pauta com status publicada, por data de publicação.',
+    // Etapa 8 (F-23): os posts da Produção contam junto com as peças da Pauta antiga.
+    calculo: 'Posts da Produção publicados (pela data do post) e peças da Pauta antiga com status publicada, por data de publicação.',
     permissoes: ['pauta.ver'],
+    periodicidade: 'semanal',
+    exigeCampanha: false,
+  },
+  {
+    // Etapa 8 (F-23): as vendas das metas leem os fechamentos, não a projeção.
+    chave: 'comercial.fechados',
+    rotulo: 'Contratos fechados',
+    unidade: 'contratos',
+    fonte: 'comercial',
+    calculo: 'Acordos pagantes do Financeiro pelo dia em que fecharam (o mesmo número do valor da Root no Comercial).',
+    permissoes: ['leads.ver'],
     periodicidade: 'semanal',
     exigeCampanha: false,
   },

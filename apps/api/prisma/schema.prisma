@@ -6857,6 +6857,8 @@ model MarketingPost {
   dataExecucao  DateTime? @db.Date
   /// Para quem é o post: root | pedro | lucas | rodrigo (pode ser mais de um). 02/11/2026.
   perfis        Json      @default("[]")
+  /// Horário de postar (HH:MM), junto do `data`. Vazio = sem horário. Etapa 8 (#6), 04/11/2026.
+  hora          String    @default("")
 
   @@index([orgId, etapa])
   @@index([orgId, data])

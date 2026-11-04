@@ -22,11 +22,11 @@ import { PrismaService } from '../prisma/prisma.service';
 import { LLM_PROVIDER, type LlmProvider } from '../llm/llm.provider';
 import { MarcaService } from '../pauta/marca.service';
 import { MemoriaService } from '../memory/memoria.service';
-import { GoogleService } from '../google/google.service';
 import { jsonDaIa, lerMetaDoLink, textoLimpo } from './leitura-de-link';
 import { REGRAS_DE_PARTIDA, SYSTEM_TRIAGEM } from './prompts';
 import { garantirRotinaDasIdeias } from './rotina-das-ideias';
 import { MemoriaDoMarketingService, precisaDeAnalise } from './memoria-do-marketing.service';
+import { GostoDaRootService } from './gosto-da-root.service';
 
 /*
  * IDEIAS › TRIAGEM, a do ROOT Estúdio (26/10/2026): um card por vez.
@@ -88,6 +88,8 @@ interface Contexto {
   aprovadas: { titulo: string; formatoSugerido: string }[];
   recusadas: { titulo: string; motivo: string | null }[];
   algoritmo: { titulo: string; status: string; motivo: string | null; comentario: string | null }[];
+  /** A nota "Gosto da Root" do Obsidian: o que a equipe escreveu e o resumo de todas as decisões. */
+  gosto: string;
 }
 
 function materiaDaNota(n: Pick<MarketingNota, 'id' | 'titulo' | 'resumo' | 'corpo' | 'url' | 'criadaEm'>): Materia {
@@ -184,8 +186,8 @@ export class TriagemService {
     private readonly marcas: MarcaService,
     @Inject(LLM_PROVIDER) private readonly llm: LlmProvider,
     @Optional() private readonly memoria?: MemoriaService,
-    @Optional() private readonly google?: GoogleService,
     @Optional() private readonly memoriaDoMarketing?: MemoriaDoMarketingService,
+    @Optional() private readonly gosto?: GostoDaRootService,
   ) {}
 
   async painel(orgId: string): Promise<TriagemPainel> {
@@ -357,8 +359,9 @@ export class TriagemService {
       const salvo = await tx.marketingIdeiaCard.update({ where: { id }, data });
       return { card: paraTela(salvo, null), postId };
     });
-    // O algoritmo no Obsidian: regravado a cada decisão comentada (ou recusada com motivo).
-    if (entrada.comentario || entrada.motivo) void this.gravarAlgoritmo(orgId);
+    // O histórico no Obsidian (Decisões da triagem.md): regravado a cada decisão, com ou sem
+    // comentário (04/11/2026; antes só as comentadas). Ver gosto-da-root.service.ts.
+    void this.gosto?.gravarDecisoes(orgId);
     return r;
   }
 
@@ -431,6 +434,7 @@ export class TriagemService {
       }
       await tx.marketingIdeiaCard.update({ where: { id }, data: { status: 'nova', motivo: null, comentario: null, decididaEm: null, decididaPor: null, postId: null } });
     });
+    void this.gosto?.gravarDecisoes(orgId);
     return { ok: true };
   }
 
@@ -677,26 +681,30 @@ export class TriagemService {
     }
   }
 
-  /** O que a IA lê antes de escrever cards: marca, estratégia do mês, réguas e o algoritmo do Lucas. */
+  /** O que a IA lê antes de escrever cards: marca, estratégia do mês, réguas, o gosto da Root e o algoritmo do Lucas. */
   private async contexto(orgId: string): Promise<Contexto> {
-    const [marca, estrategia, algoritmo, reguas, aprovadas, recusadas] = await Promise.all([
+    const [marca, estrategia, algoritmo, reguas, aprovadas, recusadas, gosto] = await Promise.all([
       this.marcas.bloco(orgId).catch(() => ''),
       this.estrategiaDoMes(orgId),
       this.prisma.marketingIdeiaCard.findMany({ where: { orgId, comentario: { not: null } }, orderBy: { decididaEm: 'desc' }, take: 40, select: { titulo: true, status: true, motivo: true, comentario: true } }),
       this.prisma.marketingRegua.findMany({ where: { orgId }, select: { formato: true, regras: true } }),
       this.prisma.marketingIdeiaCard.findMany({ where: { orgId, status: 'aprovada' }, orderBy: { decididaEm: 'desc' }, take: 20, select: { titulo: true, formatoSugerido: true } }),
       this.prisma.marketingIdeiaCard.findMany({ where: { orgId, status: 'recusada' }, orderBy: { decididaEm: 'desc' }, take: 20, select: { titulo: true, motivo: true } }),
+      this.gosto ? this.gosto.paraAIa(orgId) : Promise.resolve(''),
     ]);
     const regras = FORMATOS.map((f) => `${f}: ${(reguas.find((r) => r.formato === f)?.regras || REGRAS_DE_PARTIDA[f] || '').slice(0, 700)}`).join('\n');
-    return { marca, estrategia, regras, aprovadas, recusadas, algoritmo };
+    return { marca, estrategia, regras, aprovadas, recusadas, algoritmo, gosto };
   }
 
   private async perguntar(orgId: string, ctx: Contexto, lote: Materia[]): Promise<SaidaDoCard[]> {
-    const { marca, estrategia, regras, aprovadas, recusadas, algoritmo } = ctx;
+    const { marca, estrategia, regras, aprovadas, recusadas, algoritmo, gosto } = ctx;
     const user = [
       '## A ROOT (brandbook e pilares aprovados)', marca || '(marca ainda sem descrição)',
       estrategia ? '## Estratégia do mês' : '', estrategia ? estrategia.slice(0, 3000) : '',
-      '## O algoritmo do Lucas: o que ele explicou ao aprovar ou recusar (siga isto acima de tudo)',
+      // 04/11/2026: a nota "Gosto da Root" do Obsidian (o que a equipe escreveu + o resumo de TODAS as decisões).
+      gosto ? '## O gosto da Root: a nota do Obsidian, com o que a equipe escreveu e o resumo de todas as decisões (siga isto acima de tudo)' : '',
+      gosto,
+      '## O algoritmo do Lucas: os comentários mais recentes ao aprovar ou recusar (siga isto acima de tudo)',
       algoritmo.length
         ? algoritmo.map((a) => `- ${a.status === 'aprovada' ? 'APROVOU' : 'RECUSOU'} "${a.titulo}"${a.motivo ? ` (${a.motivo})` : ''}: ${a.comentario}`).join('\n')
         : '(sem comentários ainda)',
@@ -732,42 +740,6 @@ export class TriagemService {
       if (m.texto.length < 120 && meta.descricao) m.texto = `${m.texto}\n${textoLimpo(meta.descricao)}`.trim().slice(0, 1200);
     } catch {
       /* página fora do ar: segue com o que tem */
-    }
-  }
-
-  /**
-   * O ALGORITMO NO OBSIDIAN: cada decisão comentada (ou recusada com motivo) vira uma linha em
-   * 40-marca-e-conteudo/Memória/Algoritmo/Decisões da triagem.md, no Drive Root. O arquivo é
-   * regravado inteiro a partir do banco, mais recente primeiro. É o que a IA lê nas próximas
-   * triagens e o que a equipe usa para ajustar os prompts e as réguas.
-   */
-  private async gravarAlgoritmo(orgId: string): Promise<void> {
-    if (!this.google || process.env.MEMORIA_DRIVE_DESLIGADO === '1') return;
-    try {
-      const linhas = await this.prisma.marketingIdeiaCard.findMany({
-        where: { orgId, OR: [{ comentario: { not: null } }, { motivo: { not: null } }] },
-        orderBy: { decididaEm: 'desc' },
-        take: 500,
-        select: { titulo: true, status: true, motivo: true, comentario: true, decididaEm: true, fonteNome: true, url: true },
-      });
-      const corpo = [
-        '---', 'titulo: "Decisões da triagem"', 'tipo: nota', 'pasta: Algoritmo', 'tags: ["algoritmo", "triagem"]', `atualizado_em: ${new Date().toISOString()}`, '---', '',
-        '# Decisões da triagem', '',
-        'O que foi aprovado ou recusado em Marketing › Ideias de conteúdo, e por quê. A IA lê esta lista antes de montar os próximos cards.', '',
-        ...linhas.map((l) => [
-          `- **${l.status === 'aprovada' ? 'Aprovou' : 'Recusou'}** · ${l.decididaEm?.toISOString().slice(0, 10) ?? ''} · ${l.titulo}${l.motivo ? ` · motivo: ${l.motivo}` : ''}`,
-          l.comentario ? `  - ${l.comentario.replace(/\s*\n+\s*/g, ' ')}` : '',
-          l.url ? `  - fonte: ${l.fonteNome} ${l.url}` : '',
-        ].filter(Boolean).join('\n')),
-      ].join('\n') + '\n';
-      let pai = (process.env.MEMORIA_DRIVE_RAIZ_ID || '1WqCqI0gOxvVEhTPUQktATvj1lH1pOPSt').trim();
-      for (const nome of ['40-marca-e-conteudo', 'Memória', 'Algoritmo']) {
-        const achada = (await this.google.filhosDaPasta(orgId, pai, { nome, soPastas: true }))[0];
-        pai = achada?.id ?? (await this.google.criarPasta(orgId, pai, nome)).id;
-      }
-      await this.google.gravarArquivoNoDrive(orgId, { folderId: pai, nome: 'Decisões da triagem.md', conteudo: corpo, mimeType: 'text/markdown' });
-    } catch (e) {
-      this.log.warn(`algoritmo no Drive: ${e instanceof Error ? e.message : e}`);
     }
   }
 

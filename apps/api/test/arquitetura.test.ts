@@ -495,10 +495,11 @@ const EXCECOES: Excecao[] = [
     fatia: 'onda 8 — resto da 3.3: passa-tudo já fechado; o import só sai com capacidade NOVA no catálogo',
   },
   {
-    arquivo: 'src/marketing-estudio/triagem.service.ts',
+    // 04/11/2026: a escrita de Decisões da triagem.md saiu da triagem para o Gosto da Root (mesma exceção, outro arquivo).
+    arquivo: 'src/marketing-estudio/gosto-da-root.service.ts',
     conector: 'src/google/google.service.ts',
     motivo:
-      'Mesmo caso do espelho da pauta: regrava o .md Memória/Algoritmo/Decisões da triagem.md no Drive DELE a partir do banco, a cada decisão comentada (gravarArquivoNoDrive), destino e método fixos.',
+      'Mesmo caso do espelho da pauta: o OS lê e regrava, no Drive DELE, as notas Memória/Algoritmo/Decisões da triagem.md e Gosto da Root.md (filhosDaPasta, criarPasta, gravarArquivoNoDrive, baixarTextoDoDrive), a partir do banco, a cada decisão e na rotina das 23h. Destino e método fixos; a parte "Escrito pela equipe" nunca é regravada. Não é ação proposta por agente.',
     fatia: 'onda 8 — resto da 3.3: passa-tudo já fechado; o import só sai com capacidade NOVA no catálogo',
   },
   /*

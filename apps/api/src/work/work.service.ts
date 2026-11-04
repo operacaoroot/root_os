@@ -33,6 +33,7 @@ import { SEGMENTO_SEM_PASTA, pastaComSubpastas, type WorkTaskQuery } from './wor
 import { exigirAcessoAtual } from '../memory/acesso-memoria';
 import { ehDoArquivoDoClickUp, idsDasPastasDoArquivoDoClickUp, listaVisivel, pastasEscondidas, tarefaDeListaVisivel, tarefaForaDoArquivoDoClickUp, tarefaViva } from './arquivadas';
 import { ehListaDoComercial, foraDaArvore } from './lista-do-comercial';
+import { listaDeTarefas, tarefaQueConta } from './tarefa-que-conta';
 import { PASTA_DO_TRABALHO, ehDoComercial, idsDasPastasDoComercial, listaForaDoComercial, recusarPastaDoComercial, tarefaForaDoComercial } from './pasta-do-comercial';
 import { aparenciaDoNo, mudancaDeAparencia } from './aparencia-do-trabalho';
 import { activityCursor, activityDto, activityNames, activityPoint, activityWhere, parseActivityQuery } from './work-activity-page';
@@ -1277,19 +1278,10 @@ export class WorkService {
      * Granola não entra. O `externalId` nulo tem ramo próprio (NULL NOT IN é desconhecido).
      */
     if (f.todas) {
-      where.list = { ...(where.list as Prisma.WorkListWhereInput | undefined), natureza: 'tarefas' };
-      where.AND = [
-        { OR: [{ parentId: null }, { parent: { list: { natureza: 'cadastro' } } }] },
-        { OR: [{ externalId: null }, { externalId: { notIn: [...CARTOES_QUE_NAO_SAO_TAREFA] } }] },
-        visivel,
-        // Tarefa na Lixeira não aparece nem com o filtro de arquivadas (I2, 22/10/2026).
-        tarefaViva(),
-        // Layout 26/10 (Lucas): "Todas" tem TODAS as tarefas do OS, o mesmo recorte do Dia a dia. As do comercial
-        // entram (seguem também no Funil); só a pasta Clientes (cards da Implantação) fica fora, como no Dia a dia.
-        tarefaForaDoComercial(),
-        // Leva 5, L1: as listas do Arquivo do ClickUp ficam fora de "Todas" (com ou sem segmento), como no Dia a dia.
-        tarefaForaDoArquivoDoClickUp(),
-      ];
+      where.list = { ...(where.list as Prisma.WorkListWhereInput | undefined), ...listaDeTarefas() };
+      // Etapa 6 (F-15): a regra única de "o que é tarefa", a mesma do Dia a dia (`tarefa-que-conta.ts`).
+      // A Lixeira fica fora mesmo com o filtro de arquivadas (I2, 22/10/2026).
+      where.AND = tarefaQueConta();
       /*
        * O SEGMENTO (rodada da interface U3): "Todas" recortada por uma pasta de topo,
        * com as subpastas dentro, ou só as listas soltas. A árvore é lida da EMPRESA
@@ -1303,9 +1295,12 @@ export class WorkService {
       }
     } else {
       where.AND = [visivel, tarefaViva()];
-      // A pessoa em todas as listas não vê as listas do Comercial (I3) nem as do Arquivo do ClickUp (L1);
-      // o quadro de uma lista pedida pelo id, sim.
-      if (!f.listId && !f.listIds && !f.listExternalIds) where.AND.push(tarefaForaDoComercial(), tarefaForaDoArquivoDoClickUp());
+      // Sem lista pedida (Minhas tarefas, Agenda): a regra única do Dia a dia e de Todas (etapa 6, F-15).
+      // O quadro de uma lista pedida pelo id mostra tudo dela.
+      if (!f.listId && !f.listIds && !f.listExternalIds) {
+        where.list = { ...(where.list as Prisma.WorkListWhereInput | undefined), ...listaDeTarefas() };
+        where.AND = tarefaQueConta();
+      }
     }
     if (f.tagId) where.tags = { some: { id: f.tagId } };
     if (f.q) where.title = { contains: f.q, mode: 'insensitive' };

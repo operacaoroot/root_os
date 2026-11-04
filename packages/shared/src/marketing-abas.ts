@@ -7,7 +7,10 @@ import { NAV } from './nav.js';
  * permissão e o módulo continuam os do item, e a aba some para quem não pode vê-la.
  */
 export const ABAS_DO_MARKETING: Record<string, readonly string[]> = {
-  'marketing-triagem': ['marketing-triagem', 'marketing-base', 'marketing-fontes', 'referencias', 'marketing-estrategia', 'marketing-ideias'],
+  // 04/11/2026, pedido do Lucas: sem a aba "Ideias da pauta" (/marketing/ideias). Ela é o fluxo antigo
+  // da Pauta (curadoria de rodada) e nunca gerou ideia; as ideias saem da rotina das 23h em "Para aprovar".
+  // A rota segue viva para quem tiver o link.
+  'marketing-triagem': ['marketing-triagem', 'marketing-base', 'marketing-fontes', 'referencias', 'marketing-estrategia'],
   'maquina-producao': ['maquina-producao', 'maquina-banco', 'maquina-agendar', 'maquina-calendario', 'marketing-formatos', 'maquina-aprovacao-video', 'pauta'],
   'marketing-performance': ['marketing-performance', 'maquina-analise', 'marketing-relatorio', 'instagram'],
 };

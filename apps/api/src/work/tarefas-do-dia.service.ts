@@ -11,6 +11,7 @@ import { AuditService } from '../audit/audit.service';
 import { WorkService, hojeEmBrasilia } from './work.service';
 import { acharOuCriarClientePorNome } from './clientes-da-casa';
 import { tarefaForaDoComercial } from './pasta-do-comercial';
+import { listaDeTarefas, tarefaQueConta } from './tarefa-que-conta';
 import { tarefaDeListaVisivel, tarefaForaDoArquivoDoClickUp, tarefaViva } from './arquivadas';
 
 /*
@@ -115,19 +116,9 @@ export class TarefasDoDiaService {
   private ondeSaoTarefas(orgId: string): Prisma.WorkTaskWhereInput {
     return {
       orgId, archived: false,
-      list: { natureza: WorkListaNatureza.tarefas },
-      AND: [
-        { OR: [{ parentId: null }, { parent: { list: { natureza: WorkListaNatureza.cadastro } } }] },
-        // externalId nulo precisa de ramo próprio: em SQL, NULL NOT IN (...) é desconhecido e a linha some.
-        { OR: [{ externalId: null }, { externalId: { notIn: [...CARTOES_QUE_NAO_SAO_TAREFA] } }] },
-        // Lista ou pasta arquivada sai do Dia a dia inteiro: painel, contadores e criação (21/10/2026).
-        tarefaDeListaVisivel(),
-        // A pasta Clientes é do Comercial (I3, 22/10/2026): os cards da implantação ficam na Implantação.
-        tarefaForaDoComercial(),
-        // O Arquivo do ClickUp (leva 5, L1): as listas importadas saem do Dia a dia inteiro, como de Todas.
-        tarefaForaDoArquivoDoClickUp(),
-        tarefaViva(),
-      ],
+      list: listaDeTarefas(),
+      // Etapa 6 (F-15): a mesma regra de Todas, Minhas tarefas e Agenda (`tarefa-que-conta.ts`).
+      AND: tarefaQueConta(),
     };
   }
 

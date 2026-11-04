@@ -69,7 +69,7 @@ export function AbaDesafio({
           <Kpi
             label={desafio.saldo >= 0 ? 'Adiantado' : 'Atrás do ritmo'}
             valor={Math.abs(desafio.saldo)}
-            sufixo={desafio.diasRestantes > 0 ? ` · ${desafio.porDia}/dia` : undefined}
+            sufixo={desafio.diasRestantes > 0 ? ` · ${desafio.porDia.toLocaleString('pt-BR')}/dia` : undefined}
           />
         </div>
       )}

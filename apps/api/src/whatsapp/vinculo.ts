@@ -23,7 +23,9 @@ import {
  *   2. GRUPO NUNCA LIGA SOZINHO. O nome sem o prefixo da casa (`ROOT | `,
  *      `Root | `, `ROOT - `), normalizado, IGUAL ao de UM cliente (e, sem
  *      cliente, de UM lead) vira SUGESTÃO, que espera um clique. Parecido não
- *      sugere: aparece só na busca. Empate não sugere.
+ *      sugere: aparece só na busca. Empate não sugere. A exceção (etapa 7, F-19)
+ *      é o grupo que o fechamento criou: liga pelo id gravado na ficha
+ *      (`grupoJid`), em `vinculo.service.ts`, porque não há o que adivinhar.
  *   3. O que a pessoa decidiu (`vinculadoPorId` preenchido: ligou, desligou ou
  *      marcou como equipe) nunca é refeito pelo casamento automático.
  *      Layout 26/10: a conversa marcada como comunidade também (é sempre decisão de pessoa).

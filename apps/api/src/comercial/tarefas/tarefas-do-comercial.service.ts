@@ -123,8 +123,11 @@ export class TarefasDoComercialService {
     else if (filtro.semLead) e.push({ leadId: null });
     const pessoa = (filtro.pessoa ?? '').trim();
     if (pessoa === 'sem') e.push({ assigneeUserId: null });
-    else if (pessoa === 'eu') e.push({ assigneeUserId: { in: this.contasDaPessoa(equipe, quemPergunta) } });
-    else if (pessoa) e.push({ assigneeUserId: { in: this.contasDaPessoa(equipe, pessoa) } });
+    // Etapa 6 (F-15): como em Todas e no Dia a dia, a pessoa é a principal OU uma das demais responsáveis.
+    else if (pessoa) {
+      const contas = this.contasDaPessoa(equipe, pessoa === 'eu' ? quemPergunta : pessoa);
+      e.push({ OR: [{ assigneeUserId: { in: contas } }, { outrosResponsaveisIds: { hasSome: contas } }] });
+    }
     const [abertas, concluidas] = await Promise.all([
       this.prisma.workTask.findMany({
         where: { AND: [...e, { status: { type: { not: WorkStatusType.closed } } }] },
