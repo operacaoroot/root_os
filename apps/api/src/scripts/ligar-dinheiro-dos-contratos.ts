@@ -169,6 +169,20 @@ export async function planejarBackfill(db: Banco, orgId: string, hoje: string = 
       if (!baseDoImportado) { linha.fora = 'importado do CRM antigo sem o fato contrato.importado (nada de onde nascer o registro)'; continue; }
       doImportado = registroDoImportado(orgId, leadId, baseDoImportado);
       produtoDoImportado = contratosImportados(baseDoImportado.fatos)[0]?.produtoRotulo ?? '';
+      // `--par` num cartão que somou duas vendas: o registro fica só com a origem do valor do acordo escolhido.
+      const parDoImportado = opcoes.pares?.get(leadId);
+      if (parDoImportado && doImportado.origens.length > 1) {
+        const acordo = await db.acordoComercial.findFirst({ where: { id: parDoImportado, orgId }, select: { valor: true } });
+        const centavos = acordo ? Math.round(Number(acordo.valor) * 100) : null;
+        const doValor = contratosImportados(baseDoImportado.fatos).filter((c) => c.valorCentavos === centavos);
+        if (doValor.length !== 1) {
+          linha.ambiguo.push(`${doValor.length} origem(ns) do importado com o valor do acordo escolhido (precisa ser uma)`);
+          continue;
+        }
+        const o = doValor[0]!;
+        doImportado = { ...doImportado, origens: [o.origem], data: { ...doImportado.data, valorCentavos: o.valorCentavos, origemImportada: o.origem, dadosDoContrato: { origens: [o.origem] } } };
+        produtoDoImportado = o.produtoRotulo ?? produtoDoImportado;
+      }
       if (!assumido) {
         if (doImportado.data.estado !== 'ativo') { linha.fora = `importado do CRM antigo já ${doImportado.data.estado} (o registro nasceria sem dinheiro a ligar)`; continue; }
         linha.assumir = doImportado;
