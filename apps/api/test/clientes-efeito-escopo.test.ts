@@ -12,7 +12,7 @@ function montar(ativo:boolean) {
     user:{findFirst:vi.fn(async()=>ativo?{id:'proponente'}:null)},
     partner:{findFirst:vi.fn(async()=>({pastaDriveId:'pasta',interno:false}))},
     approval:{findFirst:vi.fn(async()=>null)},
-    arquivoDoCliente:{findFirst:vi.fn(async()=>linha),update:vi.fn(async()=>({...linha,estado:'na_fila'})),updateMany:vi.fn(async()=>({count:1}))},
+    arquivoDoCliente:{findFirst:vi.fn(async()=>linha),findFirstOrThrow:vi.fn(async()=>({...linha,estado:'na_fila'})),update:vi.fn(async()=>({...linha,estado:'na_fila'})),updateMany:vi.fn(async()=>({count:1}))},
   };
   const escopo={exigirPessoa:vi.fn(async()=>{if(!ativo) throw new Error('pessoa inativa');}),exigir:vi.fn()};
   const service=new ArquivistaService(prisma as never,{executar} as never,{} as never,{} as never,{} as never,{} as never,{} as never,{} as never,{} as never,{} as never,escopo as never);
@@ -50,7 +50,7 @@ describe('vínculo persistido de aprovação com efeito',()=>{
   function cenario() {
     const args={clienteId:'cliente',nome:'Cliente',origem:'manual'};
     const ap={id:'ap',orgId:'org',status:ApprovalState.consumida,capabilityId:'drive.pasta.criar',resourceType:'cliente',resourceId:'cliente',toolCallId:'tool',aprovadoPorId:'aprovador',propostoPorId:'proponente',propostoPorTipo:ActorType.user as ActorType,contentHash:canonicalHash('cliente',args,[])};
-    const chamada={actorType:ActorType.user as ActorType,actorId:'proponente',args};
+    const chamada={approvalId:'ap',actorType:ActorType.user as ActorType,actorId:'proponente',args};
     const prisma={approval:{findFirst:vi.fn(async()=>ap)},toolCall:{findFirst:vi.fn(async()=>chamada)},user:{findFirst:vi.fn(async()=>({id:'pessoa'}))}};
     const escopo={exigirAmplo:vi.fn(async(_org:string,_id:string)=>{}),exigirCliente:vi.fn(async()=>{})};
     const policy={resolverCapacidade:vi.fn(()=>({hashKeys:[]}))};
@@ -76,6 +76,12 @@ describe('vínculo persistido de aprovação com efeito',()=>{
     const c=cenario(); c.ap.propostoPorTipo=ActorType.system;c.ap.propostoPorId='desconhecido';c.chamada.actorType=ActorType.system;c.chamada.actorId='desconhecido';
     await expect(c.svc.exigir(c.pedido)).rejects.toThrow();
   });
+  it('recusa o slug de sistema conhecido quando não há cadeia persistida de origem',async()=>{
+    const c=cenario();
+    c.ap.propostoPorTipo=ActorType.system;c.ap.propostoPorId='criador-da-pasta-do-cliente';
+    c.chamada.actorType=ActorType.system;c.chamada.actorId='criador-da-pasta-do-cliente';
+    await expect(c.svc.exigir(c.pedido)).rejects.toThrow();
+  });
 });
 
 describe('revogação durante o storage',()=>{
@@ -88,6 +94,26 @@ describe('revogação durante o storage',()=>{
     svc.usarArmazem({put:vi.fn(async()=>{ativo=false;}),get:vi.fn() as never});
     await svc.arquivar({orgId:'org',partnerId:'cliente',atorId:'proponente',origem:'manual',nomeOriginal:'x.txt',tipoMime:'text/plain',conteudo:{buffer:Buffer.from('texto privado')},texto:'texto privado'});
     expect(complete).not.toHaveBeenCalled();
+  });
+});
+
+describe('cadeia persistida do arquivo recebido',()=>{
+  it('recusa origem inválida antes do storage, modelo e idempotência',async()=>{
+    const put=vi.fn(), complete=vi.fn(), buscar=vi.fn();
+    const prisma={partner:{findFirst:vi.fn(async()=>({id:'cliente',isCliente:true,interno:false,pastaDriveId:'pasta'}))},arquivoDoCliente:{findFirst:buscar}};
+    const escopo={exigirOrigemRecebida:vi.fn(async()=>{throw new Error('origem inválida');}),exigirPessoa:vi.fn()};
+    const svc=new ArquivistaService(prisma as never,{} as never,{} as never,{} as never,{} as never,{} as never,{} as never,{} as never,{} as never,{complete} as never,escopo as never);
+    svc.usarArmazem({put,get:vi.fn() as never});
+    const r=await svc.arquivar({orgId:'org',partnerId:'cliente',leadId:'lead',origem:'manual',origemRecebidaId:'recibo',nomeOriginal:'x.txt',tipoMime:'text/plain',conteudo:{buffer:Buffer.from('texto')}});
+    expect(r.estado).toBe('erro'); expect(put).not.toHaveBeenCalled(); expect(complete).not.toHaveBeenCalled(); expect(buscar).not.toHaveBeenCalled();
+  });
+  it('não aceita substituir o originador humano da prova pelo aprovador',async()=>{
+    const buscar=vi.fn();
+    const prisma={partner:{findFirst:vi.fn(async()=>({id:'cliente',isCliente:true,interno:false,pastaDriveId:'pasta'}))},arquivoDoCliente:{findFirst:buscar}};
+    const escopo={exigirOrigemRecebida:vi.fn(async()=>({atorId:'original'})),exigirPessoa:vi.fn()};
+    const svc=new ArquivistaService(prisma as never,{} as never,{} as never,{} as never,{} as never,{} as never,{} as never,{} as never,{} as never,{} as never,escopo as never);
+    const r=await svc.arquivar({orgId:'org',partnerId:'cliente',leadId:'lead',origem:'manual',origemRecebidaId:'recibo',atorId:'aprovador',nomeOriginal:'x.txt',tipoMime:'text/plain',conteudo:{buffer:Buffer.from('texto')}});
+    expect(r.estado).toBe('erro'); expect(buscar).not.toHaveBeenCalled();
   });
 });
 

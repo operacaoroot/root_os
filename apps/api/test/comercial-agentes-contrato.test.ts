@@ -1,24 +1,26 @@
-import { createHash } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { resolve } from 'node:path';
 
 import { BadRequestException, ConflictException, NotFoundException } from '@nestjs/common';
-import { PrismaClient } from '@prisma/client';
+import { ActorType, ApprovalState, PrismaClient, RiskLevel, ToolCallStatus } from '@prisma/client';
 import bcrypt from 'bcryptjs';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { ClienteFechadoForaSchema, RECUSA_SEM_MODELO_DE_CONTRATO, type ComercialEtapa } from '@mktos/shared';
 
-import { ApprovalsService } from '../src/approvals/approvals.service';
+import { ApprovalsService, canonicalHash } from '../src/approvals/approvals.service';
 import { AuditService } from '../src/audit/audit.service';
 import type { ArquivistaDoClientePort, PastaDoClientePort, PedidoDeArquivo, PedidoDePasta, ResultadoDaPasta, ResultadoDoArquivo } from '../src/clientes/portas';
+import { ClienteEscopoService } from '../src/clientes-escopo/cliente-escopo.service';
+import { OrigemArquivoClienteService } from '../src/clientes-escopo/origem-arquivo-cliente.service';
 import { comContexto } from '../src/common/contexto-execucao';
 import { AssinadoNaPastaService } from '../src/comercial/assinado-na-pasta.service';
 import { SimuladoProvider } from '../src/comercial/canais/simulado.provider';
 import { ConfigComercialService } from '../src/comercial/config.service';
 import { ContratoDaRootService } from '../src/comercial/contrato-da-root/contrato-da-root.service';
 import { DecisoesRegistry, DecisoesService } from '../src/comercial/decisoes.service';
-import { DinheiroService } from '../src/comercial/dinheiro.service';
+import { CAP_CONTRATO, DinheiroService, type AceiteDoLead } from '../src/comercial/dinheiro.service';
 import { camposDaDeclaracao, payloadDaDeclaracao } from '../src/comercial/fechado-fora';
-import { FechamentoService } from '../src/comercial/fechamento.service';
+import { CAP_FECHAMENTO, FechamentoService, chaveDoFechamento } from '../src/comercial/fechamento.service';
 import { FichaService } from '../src/comercial/ficha.service';
 import { FioService, ReacoesRegistry } from '../src/comercial/fio.service';
 import { OnboardingAntecipadoService } from '../src/comercial/onboarding-antecipado.service';
@@ -28,6 +30,7 @@ import { RelogioComercialRegistry } from '../src/comercial/relogio.registry';
 import { SalaService } from '../src/comercial/sala.service';
 import { VigiaService } from '../src/comercial/vigia.service';
 import { WhatsappComercialService } from '../src/comercial/whatsapp.service';
+import { AcoesService } from '../src/gateway/acoes.service';
 import { EfeitosRegistry } from '../src/gateway/efeitos.registry';
 import { EventLogService } from '../src/gateway/event-log.service';
 import { InterruptoresRegistry } from '../src/gateway/interruptores.registry';
@@ -95,10 +98,13 @@ describe.skipIf(!URL)('o contrato e a pasta do cliente dos agentes do comercial,
   let prisma: PrismaClient;
   let fio: FioService;
   let fechamento: FechamentoService;
+  let acoes: AcoesService;
+  let policy: PolicyService;
   let dinheiro: DinheiroService;
   let antecipado: OnboardingAntecipadoService;
   let contrato: ContratoDaRootService;
   let euId = '';
+  let aprovadoraId = '';
   const notas: Record<string, string> = {};
   const pedidosDePasta: PedidoDePasta[] = [];
   let respostaDaPasta: (p: PedidoDePasta) => Promise<ResultadoDaPasta> = async () => ({ estado: 'erro', motivo: 'não configurado' });
@@ -131,6 +137,52 @@ describe.skipIf(!URL)('o contrato e a pasta do cliente dos agentes do comercial,
     return (await naEmpresa(() => fechamento.aceiteParaFechar(ORG, leadId)))!;
   }
 
+  async function gravarAprovacaoR4(pedido: {
+    capabilityId: string;
+    resourceType: string;
+    resourceId: string;
+    args: Record<string, string | number>;
+    resultado?: { documentoId: string; externoId: string };
+  }) {
+    const { capabilityId, resourceType, resourceId, args, resultado } = pedido;
+    const approvalId = randomUUID();
+    const cap = policy.resolverCapacidade(ORG, capabilityId) as { hashKeys?: string[] } | null;
+    if (!cap) throw new Error(`A capacidade ${capabilityId} não está na política de teste.`);
+    const decisao = await prisma.policyDecision.create({
+      data: { orgId: ORG, capabilityId, nivelBase: RiskLevel.R4, nivel: RiskLevel.R4,
+        permitido: true, exigeAprovacao: true, sinais: [], motivo: 'Aprovação de teste' },
+    });
+    const chamada = await prisma.toolCall.create({
+      data: { orgId: ORG, capabilityId, decisionId: decisao.id, actorId: euId, actorType: ActorType.user,
+        status: resultado ? ToolCallStatus.executado : ToolCallStatus.aguardando_aprovacao,
+        args, resultado, nivel: RiskLevel.R4, approvalId, correlationId: `a2c-${MARCA}` },
+    });
+    const agora = new Date();
+    await prisma.approval.create({
+      data: { id: approvalId, orgId: ORG, capabilityId, decisionId: decisao.id, toolCallId: chamada.id,
+        propostoPorId: euId, propostoPorTipo: ActorType.user, resourceType, resourceId,
+        contentHash: canonicalHash(resourceType, args, cap.hashKeys ?? []), resumo: 'Aprovação de teste',
+        status: resultado ? ApprovalState.consumida : ApprovalState.confirmada, nivelExigido: RiskLevel.R4, alcadaMinima: 'titular',
+        exigeReauth: true, motivo: 'Aceite e contrato conferidos', aprovadoPorId: aprovadoraId,
+        aprovadoEm: agora, reautenticadoEm: agora, consumidoEm: resultado ? agora : null,
+        expiraEm: new Date(agora.getTime() + 60_000), tokenHash: createHash('sha256').update(approvalId).digest('hex') },
+    });
+    return approvalId;
+  }
+
+  /** A Porta real consome a aprovação para disparar o fechamento. */
+  async function fecharComOrigem(leadId: string, aceite: AceiteDoLead) {
+    const chave = chaveDoFechamento(leadId, aceite.versao);
+    const approvalId = await gravarAprovacaoR4({
+      capabilityId: CAP_FECHAMENTO, resourceType: 'comercial.fechamento', resourceId: chave,
+      args: { leadId, chave, propostaHash: aceite.hash },
+    });
+    const r = await naEmpresa(() => acoes.executarAprovada(ORG, approvalId, aprovadoraId));
+    if (r.status !== 'executado') throw new Error(`Fechamento de teste não executado: ${r.status}`);
+    const tela = r.resultado as Awaited<ReturnType<FechamentoService['executar']>>;
+    return { tela, approvalId };
+  }
+
   const cnpjNovo = () => `8${(Date.now() + ++seq).toString().slice(-13)}`;
   const escrita = (tela: { escritas: { escrita: string; estado: string; detalhe: string; ref: string | null }[] }, qual: string) => tela.escritas.find((e) => e.escrita === qual)!;
 
@@ -138,12 +190,19 @@ describe.skipIf(!URL)('o contrato e a pasta do cliente dos agentes do comercial,
     prisma = new PrismaClient({ datasources: { db: { url: URL } } });
     const p = prisma as unknown as PrismaService;
     await prisma.org.create({ data: { id: ORG, name: `Agentes A2 contrato ${MARCA}`, slug: `a2-contrato-${MARCA}` } });
-    for (const key of ['leads.editar', 'tarefas.editar']) await prisma.permission.upsert({ where: { key }, update: {}, create: { key } });
-    const admin = await prisma.role.create({ data: { orgId: ORG, key: 'admin_master', name: 'Admin', permissions: { connect: [{ key: 'leads.editar' }, { key: 'tarefas.editar' }] } }, select: { id: true } });
+    for (const key of ['leads.editar', 'tarefas.editar', 'aprovacoes.decidir']) await prisma.permission.upsert({ where: { key }, update: {}, create: { key } });
+    const admin = await prisma.role.create({ data: { orgId: ORG, key: 'admin_master', name: 'Admin', permissions: { connect: [{ key: 'leads.editar' }, { key: 'tarefas.editar' }, { key: 'aprovacoes.decidir' }] } }, select: { id: true } });
     euId = (await prisma.user.create({ data: { orgId: ORG, email: `rodrigo-${MARCA}@a2.teste`, name: 'Rodrigo Exemplo', passwordHash: await bcrypt.hash('x', 4), roles: { connect: { id: admin.id } } }, select: { id: true } })).id;
 
+    aprovadoraId = (await prisma.user.create({
+      data: { orgId: ORG, email: `aprovadora-${MARCA}@a2.teste`, name: 'Aprovadora Exemplo',
+        passwordHash: await bcrypt.hash('x', 4), roles: { connect: { id: admin.id } } },
+      select: { id: true },
+    })).id;
+    await prisma.clienteAcessoPerfil.createMany({ data: [euId, aprovadoraId].map(userId => ({ orgId: ORG, userId, modo: 'ALL' })) });
+
     const audit = new AuditService(p);
-    const policy = new PolicyService(p);
+    policy = new PolicyService(p);
     await policy.onModuleInit();
     const approvals = new ApprovalsService(p, audit);
     const eventos = new EventLogService(p);
@@ -152,6 +211,7 @@ describe.skipIf(!URL)('o contrato e a pasta do cliente dos agentes do comercial,
     new ConectoresService(p, audit, eventos, interruptores).onModuleInit();
     const gateway = new ToolGateway(p, policy, new SinaisService(p, policy), approvals, eventos, undefined, interruptores, efeitos);
     const porta = new PortaDoOperador(gateway, efeitos);
+    acoes = new AcoesService(p, gateway, eventos, interruptores, policy, approvals);
     // O Drive da Root, dublê dos dois efeitos R0 que o construtor usa (o Google de verdade não está aqui).
     efeitos.registrar(
       {
@@ -203,7 +263,8 @@ describe.skipIf(!URL)('o contrato e a pasta do cliente dos agentes do comercial,
         return respostaDoArquivista(pedido);
       },
     };
-    new AssinadoNaPastaService(p, fio, reacoes, assinatura, arquivista).onModuleInit();
+    const origens = new OrigemArquivoClienteService(p, new ClienteEscopoService(p, audit), policy);
+    new AssinadoNaPastaService(p, fio, reacoes, assinatura, arquivista, origens).onModuleInit();
     const memoria = { porChave: async (_org: string, chave: string) => (notas[chave] ? { body: notas[chave] } : null) } as unknown as MemoriaService;
     contrato = new ContratoDaRootService(p, fio, memoria, porta, fechamento, new StubProvider(PASTA_DO_STUB), arquivista);
   }, 60_000);
@@ -227,6 +288,7 @@ describe.skipIf(!URL)('o contrato e a pasta do cliente dos agentes do comercial,
     await prisma.contract.deleteMany({ where: { orgId: ORG } });
     await prisma.comercialFechamento.deleteMany({ where: { leadId: { in: ids } } });
     await prisma.comercialCobranca.deleteMany({ where: { leadId: { in: ids } } });
+    await prisma.origemArquivoCliente.deleteMany({ where: { orgId: ORG } });
     await prisma.comercialDocumento.deleteMany({ where: { leadId: { in: ids } } });
     await prisma.comercialDecisao.deleteMany({ where: { leadId: { in: ids } } });
     await prisma.comercialMensagem.deleteMany({ where: { leadId: { in: ids } } });
@@ -240,6 +302,7 @@ describe.skipIf(!URL)('o contrato e a pasta do cliente dos agentes do comercial,
     await prisma.toolCall.deleteMany({ where: { orgId: ORG } });
     await prisma.policyDecision.deleteMany({ where: { orgId: ORG } });
     await prisma.auditLog.deleteMany({ where: { orgId: ORG } });
+    await prisma.clienteAcessoPerfil.deleteMany({ where: { orgId: ORG } });
     await prisma.user.deleteMany({ where: { orgId: ORG } });
     await prisma.role.deleteMany({ where: { orgId: ORG } });
     await prisma.acordoParcela.deleteMany({ where: { orgId: ORG } });
@@ -260,13 +323,13 @@ describe.skipIf(!URL)('o contrato e a pasta do cliente dos agentes do comercial,
       return { estado: 'pronta', pastaId: `pasta-${p.partnerId.slice(0, 8)}`, url: `https://drive.example/${p.partnerId.slice(0, 8)}`, ligada: false };
     };
     const antes = pedidosDePasta.length;
-    const tela = await naEmpresa(() => fechamento.executar(ORG, leadId, a));
+    const { tela, approvalId } = await fecharComOrigem(leadId, a);
     expect(tela.estado).toBe('concluido');
     expect(tela.escritas.map((e) => e.escrita)).toEqual(['cliente', 'contrato', 'cobranca', 'kit_e_trilho', 'card', 'grupo', 'pasta']);
     expect(escrita(tela, 'pasta')).toMatchObject({ estado: 'criado', onde: 'Google Drive' });
     expect(pedidosDePasta.slice(antes)).toHaveLength(1);
     const ficha = await prisma.comercialFicha.findUniqueOrThrow({ where: { leadId } });
-    expect(pedidosDePasta.at(-1)).toEqual({ orgId: ORG, partnerId: ficha.partnerId, origem: 'fechado-fora', leadId });
+    expect(pedidosDePasta.at(-1)).toEqual({ orgId: ORG, partnerId: ficha.partnerId, origem: 'fechado-fora', leadId, fechamentoApprovalId: approvalId });
 
     await prisma.comercialFechamento.updateMany({ where: { leadId }, data: { estado: 'erro', escritas: [] } });
     const segunda = await naEmpresa(() => fechamento.executar(ORG, leadId, a));
@@ -281,7 +344,7 @@ describe.skipIf(!URL)('o contrato e a pasta do cliente dos agentes do comercial,
     const leadId = await lead('Mercado Aguardando');
     const a = await declararAceite(leadId, 'Mercado Aguardando Ltda', cnpjNovo());
     respostaDaPasta = async () => ({ estado: 'aguardando_aprovacao', approvalId: 'ap-pasta-1' });
-    const tela = await naEmpresa(() => fechamento.executar(ORG, leadId, a));
+    const { tela } = await fecharComOrigem(leadId, a);
     expect(tela.estado).toBe('concluido');
     expect(escrita(tela, 'pasta')).toMatchObject({ estado: 'aguardando_aprovacao', ref: 'ap-pasta-1' });
     expect(await prisma.leadEvent.count({ where: { leadId, type: 'cliente.ativo' } })).toBe(1);
@@ -291,7 +354,7 @@ describe.skipIf(!URL)('o contrato e a pasta do cliente dos agentes do comercial,
     const leadId = await lead('Ótica Drive Fora');
     const a = await declararAceite(leadId, 'Ótica Drive Fora Ltda', cnpjNovo());
     respostaDaPasta = async () => ({ estado: 'erro', motivo: 'o Drive respondeu 500' });
-    const tela = await naEmpresa(() => fechamento.executar(ORG, leadId, a));
+    const { tela } = await fecharComOrigem(leadId, a);
     expect(tela.estado).toBe('concluido');
     expect(escrita(tela, 'pasta')).toMatchObject({ estado: 'erro', detalhe: 'o Drive respondeu 500' });
     expect(['cliente', 'contrato', 'card'].map((k) => escrita(tela, k).estado).every((e) => e !== 'erro')).toBe(true);
@@ -304,7 +367,7 @@ describe.skipIf(!URL)('o contrato e a pasta do cliente dos agentes do comercial,
     const leadId = await lead('Pet Sem Raiz');
     const a = await declararAceite(leadId, 'Pet Sem Raiz Ltda', cnpjNovo());
     respostaDaPasta = async () => ({ estado: 'sem_raiz', motivo: 'a nota clientes.pasta.raiz não existe' });
-    const tela = await naEmpresa(() => fechamento.executar(ORG, leadId, a));
+    const { tela } = await fecharComOrigem(leadId, a);
     expect(escrita(tela, 'pasta')).toMatchObject({ estado: 'pulado', detalhe: 'sem a raiz dos clientes no Drive: a nota clientes.pasta.raiz não existe' });
   });
 
@@ -324,7 +387,16 @@ describe.skipIf(!URL)('o contrato e a pasta do cliente dos agentes do comercial,
   // -------------------------------------------------------------------------
 
   async function documentoNaZapsign(leadId: string, externoId: string) {
-    await prisma.comercialDocumento.create({ data: { leadId, provedor: 'zapsign', externoId, estado: 'enviado', hashConteudo: `h-${externoId}` } });
+    const id = randomUUID();
+    const hash = createHash('sha256').update(externoId).digest('hex');
+    const origemApprovalId = await gravarAprovacaoR4({
+      capabilityId: CAP_CONTRATO, resourceType: 'comercial.contrato', resourceId: `${leadId}:${hash.slice(0, 16)}`,
+      args: { leadId, versao: 1, hash, signatarioEmail: 'assinante@exemplo.test' },
+      resultado: { documentoId: id, externoId },
+    });
+    await prisma.comercialDocumento.create({
+      data: { id, leadId, provedor: 'zapsign', externoId, estado: 'enviado', hashConteudo: hash, origemApprovalId },
+    });
   }
   const webhook = (externoId: string) => ({
     token: externoId,
@@ -348,7 +420,14 @@ describe.skipIf(!URL)('o contrato e a pasta do cliente dos agentes do comercial,
     expect([doc.estado, doc.pdfUrl]).toEqual(['assinado', 'https://zapsign.example/assinado.pdf']);
     expect(await prisma.leadEvent.count({ where: { leadId, type: 'contrato.assinado' } })).toBe(1);
     expect(arquivados.slice(antes)).toHaveLength(1);
-    expect(arquivados.at(-1)).toMatchObject({ orgId: ORG, leadId, partnerId: null, origem: 'contrato-assinado', subpasta: '02-contrato', tipoMime: 'application/pdf' });
+    const recibo = await prisma.origemArquivoCliente.findFirstOrThrow({
+      where: { orgId: ORG, tipo: 'contrato-assinado', fonteId: doc.id },
+    });
+    expect(arquivados.at(-1)).toMatchObject({
+      orgId: ORG, leadId, partnerId: null, atorId: euId, origem: 'contrato-assinado',
+      origemRecebidaId: recibo.id, ref: { tipo: 'OrigemArquivoCliente', id: recibo.id },
+      subpasta: '02-contrato', tipoMime: 'application/pdf',
+    });
     const fato = await prisma.leadEvent.findFirstOrThrow({ where: { leadId, type: 'documento.na_pasta' } });
     expect(fato.payload).toMatchObject({ origem: 'contrato-assinado', estado: 'enviado', subpasta: '02-contrato' });
     // A reentrega do webhook não copia de novo.

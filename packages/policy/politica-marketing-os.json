@@ -2074,6 +2074,16 @@
           "nome"
         ],
         "properties": {
+          "fechamentoApprovalId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "leadId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
           "clienteId": {
             "type": "string",
             "minLength": 1,
@@ -2128,6 +2138,11 @@
           "bytes"
         ],
         "properties": {
+          "origemRecebidaId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
           "clienteId": {
             "type": "string",
             "minLength": 1,

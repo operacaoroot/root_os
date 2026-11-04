@@ -1,3 +1,5 @@
+import { createHash } from 'node:crypto';
+
 import { Inject, Injectable, Logger, OnModuleInit, Optional } from '@nestjs/common';
 import {
   NOTA_DA_TRIAGEM_DO_WHATSAPP,
@@ -8,6 +10,7 @@ import {
 } from '@mktos/shared';
 import { ActorType, type Prisma } from '@prisma/client';
 
+import { OrigemArquivoClienteService } from '../../clientes-escopo/origem-arquivo-cliente.service';
 import { ARQUIVISTA_DO_CLIENTE, type ArquivistaDoClientePort } from '../../clientes/portas';
 import { PortaDoOperador } from '../../gateway/porta-do-operador.service';
 import { LLM_PROVIDER, type LlmProvider } from '../../llm/llm.provider';
@@ -87,6 +90,7 @@ export interface DocumentoDoWhatsapp {
   nome: string;
   mime: string;
   base64: string | null;
+  instancia?: string | null;
 }
 
 export interface MensagemParaTriar {
@@ -136,6 +140,7 @@ export class TriagemDoWhatsappService implements OnModuleInit {
     private readonly registroDePendencias: PendenciasRegistry,
     @Optional() @Inject(LLM_PROVIDER) private readonly llm?: LlmProvider,
     @Optional() @Inject(ARQUIVISTA_DO_CLIENTE) private readonly arquivista?: ArquivistaDoClientePort,
+    @Optional() private readonly origens?: OrigemArquivoClienteService,
   ) {}
 
   onModuleInit(): void {
@@ -177,12 +182,12 @@ export class TriagemDoWhatsappService implements OnModuleInit {
   }
 
   private async triarNaVez(orgId: string, m: MensagemParaTriar): Promise<string> {
+    if (m.documento && !m.mensagemId) return 'triagem: documento (sem ID externo da mensagem)';
     const mensagemId = idDaMensagem(m);
     // Produção 22, M4: a segunda entrega da mesma mensagem para aqui, antes do modelo.
     if (await this.jaVista(orgId, m, mensagemId)) return 'triagem: repetida (ignorada)';
+    if (m.documento) return this.documento(orgId, m, mensagemId);
     const ctx = await this.contexto(orgId, m);
-
-    if (m.documento) return this.documento(orgId, m, ctx.partnerId, mensagemId);
 
     if (m.texto && this.passouDoTeto(orgId, m.telefone)) {
       const semModelo = { ...decidirTriagem(null, ctx), motivo: RAZAO_DO_TETO_DA_TRIAGEM };
@@ -368,32 +373,39 @@ export class TriagemDoWhatsappService implements OnModuleInit {
     throw new Error('a pendência do teto mudou três vezes seguidas; a reentrega tenta de novo');
   }
 
-  /** Documento: o arquivista do cliente. Sem o binário no corpo (webhook base64 desligado), o motivo fica. */
-  private async documento(orgId: string, m: MensagemParaTriar, partnerId: string | null, mensagemId: string): Promise<string> {
+  /** Só a mensagem persistida pode identificar o lead e o cliente do arquivo. */
+  private async documento(orgId: string, m: MensagemParaTriar, mensagemId: string): Promise<string> {
     const doc = m.documento!;
-    const d: DecisaoDaTriagem = { classe: 'documento', confianca: 1, motivo: 'a mensagem é um arquivo', origem: 'regra', paraPessoa: false };
-    let destino: string;
-    if (!doc.base64) destino = 'sem o arquivo: ligue o webhook base64 na instância da Evolution';
-    else if (!this.arquivista) destino = 'arquivista indisponível nesta instância';
-    else {
-      const buffer = Buffer.from(doc.base64, 'base64');
-      if (!buffer.length) destino = 'arquivo vazio';
-      else if (buffer.length > MAX_BYTES_DO_DOCUMENTO_DO_WHATSAPP) destino = 'arquivo acima de 20 MB: não arquivado';
-      else {
-        const r = await this.arquivista.arquivar({
-          orgId,
-          partnerId,
-          leadId: m.leadId,
-          origem: 'whatsapp',
-          nomeOriginal: doc.nome.slice(0, 200) || 'documento-do-whatsapp',
-          tipoMime: doc.mime || 'application/octet-stream',
-          conteudo: { buffer },
-        });
-        destino = `arquivista: ${r.estado}`;
-      }
+    const falhou = (motivo: string) => {
+      this.vistas.delete(`${orgId}|${mensagemId}`);
+      return `triagem: documento (${motivo})`;
+    };
+    if (!doc.instancia) return falhou('sem instância da Evolution');
+    if (!doc.base64) return falhou('sem o arquivo: ligue o webhook base64 na instância da Evolution');
+    if (!this.arquivista || !this.origens) return falhou('arquivista ou origem indisponível nesta instância');
+
+    const buffer = Buffer.from(doc.base64, 'base64');
+    if (!buffer.length) return falhou('arquivo vazio');
+    if (buffer.length > MAX_BYTES_DO_DOCUMENTO_DO_WHATSAPP) return falhou('arquivo acima de 20 MB: não arquivado');
+
+    const sha256 = createHash('sha256').update(buffer).digest('hex');
+    const tipoMime = doc.mime || 'application/octet-stream';
+    const conteudo = { chave: `clientes/arquivos/${orgId}/${sha256}`, sha256, bytes: buffer.length, tipoMime };
+    const recibo = await this.origens.registrarWhatsapp({
+      orgId, instancia: doc.instancia, mensagemExternaId: mensagemId, remetenteNumero: normalizarTelefone(m.telefone), conteudo,
+    });
+    const r = await this.arquivista.arquivar({
+      orgId, partnerId: recibo.partnerId, leadId: recibo.leadId, atorId: recibo.atorId, origem: 'whatsapp',
+      nomeOriginal: doc.nome.slice(0, 200) || 'documento-do-whatsapp', tipoMime, conteudo: { buffer },
+      origemRecebidaId: recibo.id, ref: { tipo: 'OrigemArquivoCliente', id: recibo.id },
+    });
+    const destino = `arquivista: ${r.estado}`;
+    if (r.estado === 'erro') return falhou(destino);
+    if (recibo.leadId) {
+      const d: DecisaoDaTriagem = { classe: 'documento', confianca: 1, motivo: 'a mensagem é um arquivo', origem: 'regra', paraPessoa: false };
+      await this.registrar(orgId, recibo.leadId, d, destino, mensagemId);
     }
-    if (m.leadId) await this.registrar(orgId, m.leadId, d, destino, mensagemId);
-    return `triagem: documento (${destino.slice(0, 60)})`;
+    return `triagem: documento (${destino})`;
   }
 
   /** O tratador da pendência: faz o que a pessoa escolheu. Lead novo vai pela porta, em nome dela. */

@@ -4,6 +4,7 @@ import { Inject, Injectable, Logger, OnModuleInit, Optional } from '@nestjs/comm
 import { SUBPASTA_DO_CONTRATO } from '@mktos/shared';
 
 import { ARQUIVISTA_DO_CLIENTE, type ArquivistaDoClientePort, type ResultadoDoArquivo } from '../clientes/portas';
+import { OrigemArquivoClienteService } from '../clientes-escopo/origem-arquivo-cliente.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { FioService, ReacoesRegistry } from './fio.service';
 import { PORTA_DE_ASSINATURA, type PortaDeAssinatura } from './portas/assinatura.port';
@@ -66,6 +67,7 @@ export class AssinadoNaPastaService implements OnModuleInit {
     private readonly reacoes: ReacoesRegistry,
     @Inject(PORTA_DE_ASSINATURA) private readonly assinatura: PortaDeAssinatura,
     @Optional() @Inject(ARQUIVISTA_DO_CLIENTE) private readonly arquivista?: ArquivistaDoClientePort,
+    @Optional() private readonly origens?: OrigemArquivoClienteService,
   ) {}
 
   onModuleInit(): void {
@@ -74,16 +76,17 @@ export class AssinadoNaPastaService implements OnModuleInit {
 
   /** Copia o PDF assinado para `02-contrato` e grava o fato com o estado. Nunca lança. */
   async copiar(orgId: string, leadId: string, documentoId: string, externoId: string): Promise<CopiaDoAssinado> {
-    const doc = await this.prisma.comercialDocumento.findFirst({ where: { id: documentoId, orgId, leadId }, select: { externoId: true, assinadoRootEm: true, assinadoClienteEm: true } });
+    const doc = await this.prisma.comercialDocumento.findFirst({ where: { id: documentoId, orgId, leadId }, select: { externoId: true, provedor: true, estado: true, assinadoRootEm: true, assinadoClienteEm: true } });
     let copia: CopiaDoAssinado;
-    if (!doc) {
-      copia = { estado: 'erro', motivo: 'o documento assinado não é deste lead nesta empresa', subpasta: null, nome: null, approvalId: null, url: null, sha256: null };
+    if (!doc || doc.externoId !== externoId || doc.provedor !== this.assinatura.provedor || doc.estado !== 'assinado'
+      || !doc.assinadoRootEm || !doc.assinadoClienteEm) {
+      copia = { estado: 'erro', motivo: 'A origem do documento assinado não pôde ser conferida.', subpasta: null, nome: null, approvalId: null, url: null, sha256: null };
     } else if (!this.arquivista) {
       copia = { estado: 'so_no_os', motivo: 'o arquivista do cliente não está disponível nesta instância: fica a URL do provedor', subpasta: null, nome: null, approvalId: null, url: null, sha256: null };
     } else if (!this.assinatura.baixarAssinado) {
       copia = { estado: 'erro', motivo: `o conector de assinatura (${this.assinatura.provedor}) não baixa o PDF assinado`, subpasta: null, nome: null, approvalId: null, url: null, sha256: null };
     } else {
-      copia = await this.baixarEArquivar(orgId, leadId, externoId, doc.assinadoRootEm ?? doc.assinadoClienteEm ?? new Date());
+      copia = await this.baixarEArquivar(orgId, leadId, documentoId, doc.externoId, doc.assinadoRootEm);
     }
     await this.fio
       .registrar(orgId, leadId, 'documento.na_pasta', `contrato-assinado:${externoId}:${copia.estado}`, {
@@ -101,18 +104,26 @@ export class AssinadoNaPastaService implements OnModuleInit {
     return copia;
   }
 
-  private async baixarEArquivar(orgId: string, leadId: string, externoId: string, assinadoEm: Date): Promise<CopiaDoAssinado> {
+  private async baixarEArquivar(orgId: string, leadId: string, documentoId: string, externoId: string, assinadoEm: Date): Promise<CopiaDoAssinado> {
     try {
+      if (!this.origens) throw new Error('A origem do documento assinado não pôde ser conferida.');
+      const provedor = this.assinatura.provedor;
+      await this.origens.exigirContrato(orgId, leadId, documentoId, externoId, provedor);
       const pdf = await this.assinatura.baixarAssinado!(externoId);
       if (!pdf) return { estado: 'erro', motivo: 'o provedor não devolveu o PDF assinado (documento sem arquivo final)', subpasta: null, nome: null, approvalId: null, url: null, sha256: null };
       const sha256 = createHash('sha256').update(pdf.buffer).digest('hex');
-      const ficha = await this.prisma.comercialFicha.findFirst({ where: { leadId, orgId }, select: { partnerId: true, empresa: true } });
+      const conteudo = { chave: `clientes/arquivos/${orgId}/${sha256}`, sha256, bytes: pdf.buffer.length, tipoMime: pdf.tipoMime };
+      const recibo = await this.origens.registrarContrato({ orgId, leadId, documentoId, externoId, provedor, conteudo });
+      const ficha = await this.prisma.comercialFicha.findFirst({ where: { leadId, orgId }, select: { empresa: true } });
       const lead = await this.prisma.lead.findFirst({ where: { id: leadId, orgId }, select: { name: true } });
       const r = await this.arquivista!.arquivar({
         orgId,
-        partnerId: ficha?.partnerId ?? null,
-        leadId,
+        partnerId: recibo.partnerId,
+        leadId: recibo.leadId,
+        atorId: recibo.atorId,
         origem: 'contrato-assinado',
+        origemRecebidaId: recibo.id,
+        ref: { tipo: 'OrigemArquivoCliente', id: recibo.id },
         nomeOriginal: `contrato-assinado-${externoId.slice(0, 12)}.pdf`,
         tipoMime: pdf.tipoMime,
         conteudo: { buffer: pdf.buffer },
