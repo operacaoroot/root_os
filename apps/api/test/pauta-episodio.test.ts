@@ -212,7 +212,7 @@ describe('episódio: contratos', () => {
 
   it('MD2: statusDesde nasce com o episódio e quem carimba a troca é o gatilho do banco, não um serviço', () => {
     const modelo = schema.match(/model PautaEpisodio \{([\s\S]*?)\n\}/)?.[1] ?? '';
-    expect(modelo).toMatch(/statusDesde DateTime @default\(now\(\)\)/);
+    expect(modelo).toMatch(/statusDesde\s+DateTime\s+@default\(now\(\)\)/);
     const pasta = join(__dirname, '../prisma/migrations/20260924190735_pauta_episodio_status_desde/migration.sql');
     const sql = readFileSync(pasta, 'utf8');
     expect(sql).toMatch(/CREATE TRIGGER "PautaEpisodio_statusDesde"\s+BEFORE UPDATE ON "PautaEpisodio"/);

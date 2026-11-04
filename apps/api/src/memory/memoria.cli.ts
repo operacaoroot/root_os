@@ -8,7 +8,7 @@
  *   node dist/memory/memoria.cli.js migrar
  *   node dist/memory/memoria.cli.js migrar --empresa org_abc
  *   node dist/memory/memoria.cli.js desfazer-migracao --simular
- *   node dist/memory/memoria.cli.js desfazer-migracao
+ *   # A execução sem --simular é recusada; nenhuma identidade é apagada.
  *
  * O ROTEIRO, na ordem, e a ordem importa:
  *
@@ -124,27 +124,15 @@ async function main(): Promise<void> {
       console.log(
         r.simulado
           ? '\n  Nada foi gravado. `migrar` sem --simular faz a cópia.\n'
-          : '\n  NADA foi apagado da origem: desfazer é `desfazer-migracao`.\n',
+          : '\n  Nada foi apagado da origem. A reversão de identidades vault está indisponível; use `desfazer-migracao --simular` para prévia.\n',
       );
       return;
     }
 
     if (comando === 'desfazer-migracao') {
       const r = await desfazerMigracao(prisma, { simular, orgId: empresa });
-      console.log(
-        `\n${r.simulado ? 'SERIAM apagadas' : 'Apagadas'} ${r.apagados} nota(s) que NASCERAM ` +
-          'nesta migração e que ninguém encostou desde então (as versões vão junto pela ' +
-          'cascata; `KnowledgeNote` nunca foi tocada, então os vetores continuam lá).\n',
-      );
-      if (r.preservados > 0) {
-        console.log(
-          `  PRESERVADAS: ${r.preservados} nota(s) de origem "vault" ficaram. Elas têm versão ` +
-            'nova, histórico com mais de uma linha ou evento no RASTRO — ou seja, a operação ' +
-            'agiu sobre elas depois da cópia. Apagá-las levaria o histórico junto e deixaria ' +
-            'evento apontando para linha que não existe. Para tirar da memória sem perder o ' +
-            'histórico, ARQUIVE na tela.\n',
-        );
-      }
+      console.log(`\nPrévia dos itens cujas origens seguem no índice: ${r.candidatos} cópia(s) sem alteração posterior; ${r.preservados} com histórico adicional.\n`);
+      console.log('Nenhuma nota ou versão foi apagada. A reversão está indisponível até existir compensação versionada e auditada.\n');
       return;
     }
 

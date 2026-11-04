@@ -63,7 +63,7 @@ describe('arquivo na caixa: rotas, catraca e regras puras', () => {
   });
 
   it('o multer acima de 100 MB responde 413 em português', () => {
-    const json = vi.fn();
+    const json = vi.fn<(corpo: { message: string }) => void>();
     const status = vi.fn(() => ({ json }));
     const host = { switchToHttp: () => ({ getResponse: () => ({ status }) }) } as unknown as ArgumentsHost;
     new ArquivoGrandeDemaisFilter().catch(new PayloadTooLargeException('File too large'), host);
@@ -246,7 +246,7 @@ function montar() {
 
   const enviados: Array<{ orgId: string; chatJid: string; midia: MidiaParaEnviarPelaEvolution }> = [];
   const porta = {
-    baixar: vi.fn(async (): Promise<{ base64: string; mime: string | null; nome: string | null }> => ({
+    baixar: vi.fn<MidiaDaCaixaPelaEvolution['baixarMidia']>(async () => ({
       base64: Buffer.from('%PDF-1.4 ficticio').toString('base64'),
       mime: 'application/pdf',
       nome: 'veio-da-evolution.pdf',
@@ -254,7 +254,7 @@ function montar() {
     falharEnvio: null as Error | null,
   };
   const midiaPelaEvolution: MidiaDaCaixaPelaEvolution = {
-    baixarMidia: (...a) => porta.baixar(...(a as [])),
+    baixarMidia: porta.baixar,
     async responderMidiaComoPessoa(orgId, chatJid, midia) {
       if (porta.falharEnvio) throw porta.falharEnvio;
       enviados.push({ orgId, chatJid, midia });
@@ -373,7 +373,7 @@ describe('arquivo na caixa: abrir', () => {
 
   it('a rota responde com o tipo, o tamanho e o nome (inline para PDF)', async () => {
     const cabecalhos: Record<string, unknown> = {};
-    const res = { setHeader: (k: string, v: unknown) => (cabecalhos[k] = v), end: vi.fn() };
+    const res = { setHeader: (k: string, v: unknown) => (cabecalhos[k] = v), end: vi.fn<(corpo: Buffer) => void>() };
     const c = new MidiaDoWhatsappController(d.svc);
     await c.midia({ orgId: ORG, sub: 'u-gente' } as never, 'm-doc', res as never);
     expect(cabecalhos['Content-Type']).toBe('application/pdf');

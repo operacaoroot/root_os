@@ -89,7 +89,7 @@ describe('limites do contexto de plataforma — sem banco', () => {
   });
   it('mantém dez caminhos exigidos e recusa cobertura restrita incompleta', () => {
     expect(CAMINHOS_DE_PLATAFORMA_EXIGIDOS).toHaveLength(10);
-    expect(CHAMADORES_DE_PLATAFORMA).toHaveLength(8);
+    expect(CHAMADORES_DE_PLATAFORMA).toHaveLength(9);
     const cobertura = conferirCoberturaDePlataforma(false);
     expect(cobertura.recusar).toBe(true);
     expect(cobertura.faltando.map((c) => c.arquivo).sort()).toEqual([

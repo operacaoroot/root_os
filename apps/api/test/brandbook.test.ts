@@ -19,7 +19,11 @@ function exemplo() {
 }
 const documento = () => { const d = BrandbookDocumentoSchema.parse(referencia.documento); d.pilares = d.pilares.map(p => ({ ...p, cor: p.cor || '#123456' })); return d; };
 describe('BrandbookService: rascunho, aprovação e leitura', () => {
-  it('mantém explícitas as pendências da referência original antes de ativar', () => { expect(pendenciasDaMarca(BrandbookDocumentoSchema.parse(referencia.documento))).toContain('Cada pilar precisa de nome em uma linha e cor declarada.'); });
+  it('declara a pendência quando um pilar não tem cor', () => {
+    const d = BrandbookDocumentoSchema.parse(referencia.documento);
+    d.pilares[0].cor = '';
+    expect(pendenciasDaMarca(d)).toContain('Cada pilar precisa de nome em uma linha e cor declarada.');
+  });
   it('salva, relê, confere e ativa a versão exata; outro rascunho preserva o ativo', async () => {
     const { service } = exemplo(); const d = documento(); expect(pendenciasDaMarca(d)).toEqual([]);
     const salvo = await service.salvar('org-qa', { documento: d, versaoEsperada: null }); expect(salvo.estado).toBe('rascunho'); expect((await service.painel('org-qa')).rascunho).toEqual(d);

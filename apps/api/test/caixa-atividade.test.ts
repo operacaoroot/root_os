@@ -386,6 +386,7 @@ describe.skipIf(!URL_DO_BANCO)('P1: a caixa de entrada contra o Postgres', () =>
   let leitura: CaixaAtividadeService;
   let visto: CaixaVistoService;
   const tarefa: Record<string, string> = {};
+  const vencimentoFuturo = new Date(Date.now() + 2 * 86400000).toISOString();
   const status: Record<string, string> = {};
 
   const sessao = (usuarioId: string, orgId = ORG) => ({
@@ -474,7 +475,7 @@ describe.skipIf(!URL_DO_BANCO)('P1: a caixa de entrada contra o Postgres', () =>
     await work.editarTarefa(ORG, OUTRO, tarefa.minha, {
       expectedUpdatedAt: minha.updatedAt,
       statusId: status[`${ORG}:feito`],
-      dueDate: '2026-10-25T12:00:00.000Z',
+      dueDate: vencimentoFuturo,
     });
     await work.comentar(ORG, TERCEIRO, tarefa.minha, 'Ana passando: precisa do anexo');
     await work.comentar(ORG, EU, tarefa.minha, 'meu próprio comentário');
@@ -509,7 +510,7 @@ describe.skipIf(!URL_DO_BANCO)('P1: a caixa de entrada contra o Postgres', () =>
     expect(edicao?.quem).toBe('Lucas Caixa');
     expect(edicao?.mudancas).toEqual([
       { campo: 'status', de: 'A fazer', para: 'Feito' },
-      { campo: 'vencimento', de: null, para: '2026-10-25T12:00:00.000Z' },
+      { campo: 'vencimento', de: null, para: vencimentoFuturo },
     ]);
     const comentario = r.itens.find((i) => i.tipo === 'comentario');
     expect(comentario?.quem).toBe('Ana Caixa');

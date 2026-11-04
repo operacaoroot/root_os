@@ -298,7 +298,7 @@ describe('ROOT-49: os pedidos (schema)', () => {
   });
 
   it('aceite sem evidência vira 400 pelo filtro de validação da API', () => {
-    const controller = new LeadsController({} as LeadsService);
+    const controller = new LeadsController({} as LeadsService, new Proxy({} as ConstructorParameters<typeof LeadsController>[1], { get() { throw new Error('Exercício não deve ser chamado na validação da proposta'); } }));
     let status = 0;
     let corpo: { issues: { path: string }[] } | null = null;
     const res = { status: (s: number) => ((status = s), { json: (b: typeof corpo) => (corpo = b) }) };

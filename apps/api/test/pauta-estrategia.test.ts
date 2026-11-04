@@ -1,3 +1,4 @@
+import { ServiceUnavailableException } from '@nestjs/common';
 import { describe, expect, it } from 'vitest';
 import {
   PAUTA_SECOES_DA_ESTRATEGIA,
@@ -15,6 +16,7 @@ import {
 import { EstrategiaService, janelaDoMes, mesAnterior } from '../src/pauta/estrategia.service';
 import type { PrismaService } from '../src/prisma/prisma.service';
 import type { AuditService } from '../src/audit/audit.service';
+import { atuarNaPauta, derivacaoDaPauta, prismaDaDerivacao } from './pauta-derivacao-dubles';
 import type { MemoriaService } from '../src/memory/memoria.service';
 import type { MarcaService } from '../src/pauta/marca.service';
 import type { ConcorrentesService } from '../src/pauta/concorrentes.service';
@@ -183,20 +185,26 @@ describe('o serviço: propor, salvar e reler', () => {
         n.versao += 1;
         return n;
       },
-    } as unknown as MemoriaService;
+    };
+    const derivacao = derivacaoDaPauta(notas, memoria);
+    const memoriaComDerivacao = { ...memoria, ...derivacao } as unknown as MemoriaService;
 
-    const prisma = {
+    const prisma = prismaDaDerivacao({
+      ...derivacao,
+      pautaFonte: { findMany: async () => [] },
       pautaPeca: {
         findMany: async () => [
-          { titulo: 'O corte da semana', formato: 'corte', publicadaEm: new Date('2026-08-12T00:00:00.000Z') },
+          { id: 'p1', titulo: 'O corte da semana', formato: 'corte', publicadaEm: new Date('2026-08-12T00:00:00.000Z') },
         ],
       },
       auditLog: { create: async () => ({}) },
-    } as unknown as PrismaService;
+    }) as unknown as PrismaService;
 
     const marcas = {
       bloco: async () => 'A marca de quem publica.\nA Root monta sistema.',
       pilares: async () => opts.pilares ?? PILARES,
+      paraGeracaoNoTx: async () => ({ bloco: 'A marca de quem publica.', pilares: opts.pilares ?? PILARES,
+        origem: 'legado', descritores: { versao: 1 } }),
     } as unknown as MarcaService;
 
     const concorrentes = {
@@ -208,13 +216,13 @@ describe('o serviço: propor, salvar e reler', () => {
     return {
       chamadas,
       notas,
-      svc: new EstrategiaService(prisma, audit, llm, memoria, marcas, concorrentes),
+      svc: new EstrategiaService(prisma, audit, llm, memoriaComDerivacao, marcas, concorrentes),
     };
   }
 
   it('propõe o mês, grava o documento e o painel o devolve', async () => {
     const { svc, chamadas, notas } = montar(RESPOSTA);
-    const p = await svc.gerar(ORG, PESSOA, MES);
+    const p = await atuarNaPauta(ORG, PESSOA, () => svc.gerar(ORG, PESSOA, MES));
     expect(chamadas).toHaveLength(1);
     expect(chamadas[0].orgId).toBe(ORG);
     expect(chamadas[0].user).toContain('O corte da semana');
@@ -226,7 +234,7 @@ describe('o serviço: propor, salvar e reler', () => {
 
   it('editar à mão substitui o documento e passa a origem para quem escreveu', async () => {
     const { svc } = montar(RESPOSTA);
-    await svc.gerar(ORG, PESSOA, MES);
+    await atuarNaPauta(ORG, PESSOA, () => svc.gerar(ORG, PESSOA, MES));
     const p = await svc.salvar(ORG, PESSOA, MES, { documento: '# Estratégia de 2026-09\n\nA minha versão.' });
     expect(p.documento).toContain('A minha versão.');
     expect(p.origem).toBe('operador');
@@ -235,7 +243,7 @@ describe('o serviço: propor, salvar e reler', () => {
 
   it('sem pilar cadastrado, a IA não é chamada: não há o que priorizar', async () => {
     const { svc, chamadas } = montar(RESPOSTA, { pilares: [] });
-    await expect(svc.gerar(ORG, PESSOA, MES)).rejects.toThrow(/pilar/i);
+    await expect(atuarNaPauta(ORG, PESSOA, () => svc.gerar(ORG, PESSOA, MES))).rejects.toThrow(/pilar/i);
     expect(chamadas).toHaveLength(0);
   });
 
@@ -249,7 +257,7 @@ describe('o serviço: propor, salvar e reler', () => {
 
   it('resposta fora do formato vira 503 e não grava nota nenhuma', async () => {
     const { svc, notas } = montar('isto não é json');
-    await expect(svc.gerar(ORG, PESSOA, MES)).rejects.toThrow();
+    await expect(atuarNaPauta(ORG, PESSOA, () => svc.gerar(ORG, PESSOA, MES))).rejects.toBeInstanceOf(ServiceUnavailableException);
     expect(notas.size).toBe(0);
   });
 });

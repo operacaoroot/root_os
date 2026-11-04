@@ -35,3 +35,18 @@ Produção permanece com papel superusuário e `TENANT_MODO=observar`. Estes lot
 ## Estado
 
 Recortes dos lotes 2 e 3 publicados em 04/11/2026 às 13h50 (BRT), revisão funcional `6fea2fdb1477b00686ad4ea00d25265e1b429c1c`. API e web conferidas; cofre e depósito JUMA preservados. Resultado, testes, recuperação e limites do CI em `VALIDACAO-LOTES-2-3.md`. Os métodos ainda contidos e as dependências seguintes permanecem pendentes conforme descrito acima.
+
+
+## Lote 4: Comercial e Financeiro — 04/11/2026
+
+Base publicada integrada: Etapa 9 `1422e903d7df064912796f7867ff71c13f0b3086`; merge local `bd35af7`. O recorte adiciona oito GETs por carteira e quatro pontos de entrada da UI (Comercial, Financeiro e aliases Leads/Propostas). Autoridade deriva da ficha canônica e das relações financeiras, com revalidação atual e totais do conjunto autorizado. Nenhuma migration nova, concessão real ou escrituração financeira faz parte deste lote.
+
+Coordenação executada: Terra high escreveu testes negativos antes da API; Sol high escreveu testes antes da UI e fez QA sintético em desktop/celular; Astra high revisou autorização, coerência das relações e paridade Prisma; o coordenador integrou a base publicada e reproduziu as falhas de CI. Evidências focais e limites estão em `REVISAO-COMERCIAL-FINANCEIRO.md`.
+
+O CI tinha falhas de memória no TypeScript, paridade Prisma e fixtures anteriores aos contratos atuais de permissão, identidade e recibos. A checagem de tipos foi dividida em nove programas sequenciais, cobrindo todas as raízes configuradas e compartilhando raízes ambientais entre os lotes. Testes do runner comprovam reprovação por erros em lotes diferentes e por declarações globais incompatíveis. O prazo do job passou a 60 minutos para acomodar esse trabalho. Nenhum gate de falha ou piso de cobertura foi removido.
+
+A inferência com servidor llama.cpp real ganhou comando separado `test:nativo`, que exige configuração explícita e recusa execução sem ela. Não foi validada uma inferência nativa nesta rodada. O conjunto padrão mantém os testes de autorização, recuperação e execução com fixtures; o teste de seleção de conjuntos impede que o caso nativo desapareça sem comando próprio.
+
+Foram encontrados dois defeitos reais além das fixtures: o seed comercial variava eventos conforme o relógio, e a migração legada de memória tentava inserir novamente uma identidade protegida. Os reparos têm regressões de idempotência, concorrência e integridade do corpo. A reversão destrutiva da migração foi substituída por prévia e recusa explícita de execução; nenhuma dessas rotinas foi executada em produção.
+
+Estado deste registro: implementação e focais concluídos; regressões integrais, CI do GitHub e publicação ainda em validação. Atualizar com commit, resultados e prova de runtime antes de declarar o lote publicado.

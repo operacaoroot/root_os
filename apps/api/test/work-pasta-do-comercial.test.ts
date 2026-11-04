@@ -93,7 +93,7 @@ describe('I1 e I3: as regras sem banco', () => {
     expect(listaDaImplantacao(e.folders)).toBeNull();
     expect(listaDaImplantacao(pastasComAsDoComercial(e))).toEqual({ pastaId: 'c', listaId: 'l' });
     expect(listasComAsDoComercial(e).map((l) => l.id)).toEqual(['g1', 'l', 's']);
-    expect(listasComAsDoComercial({ folders: e.folders, listasSoltas: [] }).map((l) => l.id)).toEqual(['g1']);
+    expect(listasComAsDoComercial({ folders: e.folders, listasSoltas: [] as typeof e.listasSoltas }).map((l) => l.id)).toEqual(['g1']);
   });
 });
 

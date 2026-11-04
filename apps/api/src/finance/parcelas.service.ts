@@ -3,7 +3,7 @@ import { Prisma } from '@prisma/client';
 import { z } from 'zod';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
-import type { AsaasFinancialTransaction, AsaasPayment } from './asaas.service';
+import type { AsaasFinancialTransaction, AsaasPayment } from './asaas.tipos';
 import {
   acordoDaCobranca, chavesDoAcordo, documentoComoChave, escolherParcela, nomeCasa, ordemDasParcelas, parcelaMaisPerto,
   type AcordoCandidato, type ParcelaCandidata,

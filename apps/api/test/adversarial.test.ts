@@ -398,7 +398,7 @@ function agenteFalso(contextoFixo: string[] = []): Agent {
  */
 function obsidianFalso(items: unknown[]): ObsidianService {
   return {
-    search: async () => ({ query: PERGUNTA, mode: 'semantic', items, source: {} }),
+    buscarIndiceInternoSemSolicitante: async (orgId: string, query: string) => ({ natureza: 'indice_interno_sem_solicitante', orgId, query, mode: 'semantic', items, source: {}, alcanceOnboarding: { estado: 'nao_conferida', total: null, comVetor: null, motivo: 'solicitante_nao_identificado', observadoEm: new Date().toISOString() } }),
   } as unknown as ObsidianService;
 }
 
@@ -955,11 +955,12 @@ describe('família 1 — documento com instrução escondida entra no contexto',
 
   it('o operador é AVISADO — nota envenenada não passa em silêncio', async () => {
     avisos.length = 0;
-    await montar();
+    const { procedencia } = await montar();
     const sobreAlfa = avisos.filter((a) => a.includes('clientes/alfa.md'));
     expect(sobreAlfa).toHaveLength(1);
-    expect(sobreAlfa[0]).toContain('comentário de HTML removido');
-    expect(sobreAlfa[0]).toContain('sobe um degrau na régua');
+    expect(sobreAlfa[0]).toContain('conteúdo oculto neutralizado');
+    expect(sobreAlfa[0]).not.toContain(CARGA_COMENTARIO);
+    expect(procedencia.eExterna).toBe(true);
   });
 
   it('ONDE A CAMADA PÁRA: ordem VISÍVEL não é removida, e isso é de propósito', () => {

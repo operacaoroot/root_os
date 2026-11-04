@@ -102,7 +102,9 @@ jobs:
   qualidade:
     name: Tipos e testes (policy, web, api)
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    # A checagem completa de tipos roda em lotes sequenciais para caber na RAM.
+    # Mantém todas as raízes e testes; o orçamento inclui os nove programas TS.
+    timeout-minutes: 60
 
     services:
       db:
@@ -2042,11 +2044,13 @@ jobs:
       # fora de src/ desloca a saída para dist/src/ e o Dockerfile não acha
       # dist/main.js). Este é o tsconfig que cobre os tipos dos testes.
       - name: Typecheck das suítes da api
-        # A frente MC levou a api a 74 arquivos de teste, e o tsc passou do heap
-        # padrão do Node no runner (OOM em 28/09/2026). 5 GB cabe nos 7 GB da máquina.
+        # As suítes são verificadas em lotes sequenciais. Todos os arquivos do
+        # tsconfig entram; cada programa libera a memória antes do seguinte.
         env:
           NODE_OPTIONS: --max-old-space-size=5120
-        run: pnpm --filter @mktos/api typecheck:test
+        run: |
+          node --test apps/api/scripts/typecheck-tests.test.mjs
+          pnpm --filter @mktos/api typecheck:test
 
       # A trava de cobertura, escrita fora do repositório: é infraestrutura de
       # CI, não código de produto. Um único script serve as três suítes.

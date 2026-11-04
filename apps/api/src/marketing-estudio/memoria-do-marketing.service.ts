@@ -362,7 +362,7 @@ export class MemoriaDoMarketingService implements OnModuleInit {
       await vez;
       return 'analisada';
     } catch (e) {
-      const semCredito = e instanceof CreditoDoApifyEsgotadoError || /Falta o APIFY_TOKEN/.test(String((e as Error)?.message));
+      const semCredito = e instanceof CreditoDoApifyEsgotadoError || String((e as Error)?.message).includes('Falta o APIFY_TOKEN');
       await this.prisma.marketingNota.update({
         where: { id },
         data: { status: 'pronto', titulo: n.titulo, resumo: n.resumo, corpo: n.corpo, erro: semCredito ? null : lim(`Análise não feita: ${(e as Error)?.message ?? e}`, 400) },

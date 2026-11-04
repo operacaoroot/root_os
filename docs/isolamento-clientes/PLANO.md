@@ -19,7 +19,7 @@ Perfil explícito `ALL` permite visão ampla; `SELECTED` exige vínculo ativo ao
 | Interface | GPT-6.1 Sol, high | Testes antes do código; seleção do cliente, criação vinculada e descarte de respostas antigas |
 | Revisão e aceite técnico | GPT-6 Astra + coordenador | Revisão independente, Postgres descartável, build, verificação HTTP e publicação recuperável |
 | Trabalho e arquivos | GPT-6.1 Terra, Sol e coordenador + revisão Astra | Lotes 2/3: tarefas, subtarefas, comentários, leitura de pastas e downloads por carteira; limites e validação em CONTINUACAO.md |
-| Comercial e financeiro | GPT-6.1 Terra + revisão Astra | Próximo lote: ficha/lead, contratos, transações, relatórios e relações herdadas |
+| Comercial e financeiro | GPT-6.1 Terra (API/TDD), Sol (UI/TDD), Astra (revisão), coordenador (integração/CI) | Lote 4: oito consultas por carteira e UI; leads, contratos, recebíveis e acordos com relações e totais coerentes. Mutação, despesas, saldos e relatórios gerais seguem para lotes posteriores. |
 | Contexto, agentes e integrações | GPT-6 Astra (desenho), Terra (código) | Próximo lote: ator e cliente em jobs, revalidação no retry, busca vetorial, MCP e ferramentas |
 | Papel restrito do banco | GPT-6 Astra + coordenador | Cobrir caminhos de plataforma pendentes, testar papel efetivo e ativar restrição; não creditar RLS antes disso |
 

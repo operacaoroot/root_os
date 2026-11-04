@@ -1,3 +1,6 @@
+'use client';
+
+import { ComercialEscopo } from './ComercialDaCarteira';
 import { ProvedorDoPainel } from './_painel/provedor';
 
 /*
@@ -13,7 +16,7 @@ import { ProvedorDoPainel } from './_painel/provedor';
 export default function LayoutDoComercial({ children }: { children: React.ReactNode }) {
   return (
     <div data-comercial-raiz className="min-w-0 [overflow-wrap:anywhere]">
-      <ProvedorDoPainel>{children}</ProvedorDoPainel>
+      <ComercialEscopo><ProvedorDoPainel>{children}</ProvedorDoPainel></ComercialEscopo>
     </div>
   );
 }

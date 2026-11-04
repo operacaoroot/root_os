@@ -53,6 +53,7 @@ describe.skipIf(!URL)('rotina Comercial em Postgres isolado',() => {
     await db.workTask.deleteMany({ where: { orgId: org } }); await db.auditLog.deleteMany({ where: { orgId: org } });
   }
   beforeAll(async () => {
+    vi.stubEnv('ROOTOS_QA_PREVIEW', '1');
     db = new PrismaClient({ datasources: { db: { url: URL } } });
     audit = new AuditService(db as unknown as PrismaService); svc = new ComercialExercicioService(db as unknown as PrismaService,audit,modulos);
     legacy = new LeadsService(db as unknown as PrismaService,audit,modulos);
@@ -75,6 +76,7 @@ describe.skipIf(!URL)('rotina Comercial em Postgres isolado',() => {
     leadId = (await svc.entrada(a,{ requestId: uid(),origemRef: uid(),nome: 'Oportunidade sintética' })).leadId;
   });
   afterAll(async () => {
+    vi.unstubAllEnvs();
     if (!db) return; await limpar();
     await db.workList.deleteMany({ where: { id: { in: [listId,foreignList] } } });
     await db.user.deleteMany({ where: { id: { in: [editor,aprovador,segundo,externo] } } });

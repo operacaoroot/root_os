@@ -78,6 +78,11 @@ describe.skipIf(!URL)('a semente das empresas de demonstração, contra o banco'
   let leadIds: string[] = [];
   let primeira: RelatorioDaSemente;
   let segunda: RelatorioDaSemente;
+  const historico = async () => ({
+    eventos: await prisma.leadEvent.findMany({ where: { leadId: { in: leadIds } }, orderBy: { id: 'asc' } }),
+    decisoes: await prisma.comercialDecisao.findMany({ where: { leadId: { in: leadIds } }, orderBy: { id: 'asc' } }),
+  });
+  let historicoOriginal: Awaited<ReturnType<typeof historico>>;
   const agora1 = new Date(Date.now() - 2 * H);
   const agora2 = new Date(agora1.getTime() + 3 * H);
   const opcoes = () => ({ orgId: ORG, dono, decisaoExpiraHoras: 4, validadePropostaDias: 8, segredo: SEGREDO, baseDoLink: BASE });
@@ -92,6 +97,7 @@ describe.skipIf(!URL)('a semente das empresas de demonstração, contra o banco'
 
     expect(await contar(prisma, leadIds)).toEqual({ leads: 0, eventos: 0, fichas: 0, salas: 0, decisoes: 0, cobrancas: 0, documentos: 0 });
     primeira = await semearDemonstracao(prisma, { ...opcoes(), agora: agora1 });
+    historicoOriginal = await historico();
     segunda = await semearDemonstracao(prisma, { ...opcoes(), agora: agora2 });
   });
 
@@ -120,6 +126,13 @@ describe.skipIf(!URL)('a semente das empresas de demonstração, contra o banco'
     expect(await contar(prisma, leadIds)).toEqual(primeira.contagens);
     expect(primeira.salas.every((s) => s.nova)).toBe(true);
     expect(segunda.salas.every((s) => !s.nova)).toBe(true);
+  });
+
+  it('repetição em outro dia preserva os hashes, decisões e eventos já gravados', async () => {
+    expect(await historico()).toEqual(historicoOriginal);
+    const terceira = await semearDemonstracao(prisma, { ...opcoes(), agora: new Date(agora1.getTime() + 7 * 24 * H) });
+    expect(terceira.contagens).toEqual(primeira.contagens);
+    expect(await historico()).toEqual(historicoOriginal);
   });
 
   it('cada ficha gravada é a projeção dos eventos do lead, e a etapa é a da tela 04', async () => {

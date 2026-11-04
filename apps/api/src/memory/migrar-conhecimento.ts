@@ -8,7 +8,7 @@ function indiceNativo(alias = ''): string {
 }
 
 import { randomUUID } from 'node:crypto';
-import type { PrismaClient } from '@prisma/client';
+import type { Prisma, PrismaClient } from '@prisma/client';
 import { chaveDaVault, hashDoCorpo, PREFIXO_DA_VAULT, SEM_EVENTO } from './procedencia';
 
 /**
@@ -167,7 +167,7 @@ interface NotaDaOrigem {
  * duplica nada e não regrava versão — o que já está lá já está lá.
  *
  * NADA É APAGADO DA ORIGEM. `KnowledgeNote` continua exatamente como estava, e é
- * isso que torna `desfazerMigracao` gratuito.
+ * a origem continua disponível após a cópia.
  */
 export async function migrarConhecimentoParaAMemoria(
   prisma: PrismaClient,
@@ -213,6 +213,8 @@ export async function migrarConhecimentoParaAMemoria(
     async (tx) => {
       for (const nota of notas) {
         const chave = chaveDaVault(nota.path);
+        await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`memoria:${nota.orgId}`}))`;
+        if (await existenteCorrespondente(tx, nota)) { jaEstavam++; continue; }
         const itemId = randomUUID();
         const contentHash = hashDoCorpo(nota.content);
 
@@ -331,48 +333,19 @@ export async function migrarConhecimentoParaAMemoria(
 }
 
 /**
- * DESFAZER — apaga SÓ O QUE A MIGRAÇÃO TROUXE E NINGUÉM ENCOSTOU DESDE ENTÃO.
- *
- * ----------------------------------------------------------------------------
- * O QUE ESTE COMANDO FAZIA DE ERRADO, escrito porque é o tipo de erro que volta
- * ----------------------------------------------------------------------------
- * O critério era "origem `vault` E chave começando em `vault:`" — e isso NÃO é
- * "o que a migração trouxe". Nota da vault que ganhou versões novas depois
- * (alguém corrigiu o texto na tela, a reindexação registrou uma alteração), e
- * nota criada pela PROJEÇÃO da vault — que nunca passou por este comando — caem
- * as duas nesse critério. Apagá-las levava o histórico junto pela cascata, o que
- * é o contrário da regra do próprio ADR-011: não se apaga, arquiva-se.
- *
- * ----------------------------------------------------------------------------
- * O CRITÉRIO AGORA — quatro condições, e as quatro têm de valer
- * ----------------------------------------------------------------------------
- *  1. origem `vault` e chave com o prefixo (o de antes, que continua valendo);
- *  2. a nota está na VERSÃO 1: nada aconteceu com ela depois da cópia;
- *  3. o histórico dela tem UMA linha só, e essa linha está marcada
- *     `semEventoPorque = 'migracao'` — ou seja, ela nasceu aqui;
- *  4. nenhuma versão dela tem elo com o RASTRO (`eventoId`/`eventoSeq`). Se tem,
- *     a aplicação agiu sobre ela e há evento apontando para uma linha que este
- *     DELETE apagaria — o ponteiro pendurado que a fatia acabou de fechar.
- *
- * O que não passa nas quatro é PRESERVADO e CONTADO: quem roda o comando vê o
- * número e sabe que sobrou coisa, em vez de descobrir depois que sumiu coisa.
- *
- * `KnowledgeNote` nunca foi tocada, então desfazer não perde nada — inclusive
- * os vetores continuam lá, exatamente onde estavam.
+ * Prévia de itens migrados sem alteração posterior. A identidade da vault é
+ * permanente: a execução é recusada até existir compensação versionada e
+ * auditada. O comando não altera KnowledgeNote nem ContextItem.
  */
 export async function desfazerMigracao(
   prisma: PrismaClient,
   opcoes: { simular?: boolean; orgId?: string } = {},
-): Promise<{ simulado: boolean; apagados: number; preservados: number }> {
+): Promise<{ simulado: true; candidatos: number; preservados: number }> {
   await conferirQueAtravessaOIsolamento(prisma);
   const filtro = opcoes.orgId ? ' AND ci."orgId" = $1' : '';
   const args = opcoes.orgId ? [opcoes.orgId] : [];
 
-  /*
-   * A MESMA condição serve à simulação, à contagem do que fica e ao DELETE. Uma
-   * cópia por caminho é como o "simular" passa a dizer um número e o comando a
-   * apagar outro.
-   */
+  // A prévia distingue cópias intocadas dos itens que ganharam histórico.
   const nasceuNaMigracao = `
       ci."sourceType" = 'vault'
       AND EXISTS (SELECT 1 FROM "KnowledgeNote" kn WHERE kn."orgId"=ci."orgId" AND kn.path=ci."sourceRef" AND ${indiceNativo('kn')})
@@ -402,26 +375,32 @@ export async function desfazerMigracao(
   ]);
   const preservados = Number(total[0]?.n ?? 0) - Number(alvo[0]?.n ?? 0);
 
-  if (opcoes.simular) {
-    return { simulado: true, apagados: Number(alvo[0]?.n ?? 0), preservados };
-  }
-
-  const apagados = await prisma.$executeRawUnsafe(
-    `DELETE FROM "ContextItem" ci WHERE ${nasceuNaMigracao}`,
-    ...args,
+  if (!opcoes.simular) throw new MigracaoIndisponivelError(
+    'Desfazer não está disponível: a identidade da vault é permanente e este comando não apaga versões. Use --simular para a prévia.',
   );
-  return { simulado: false, apagados, preservados };
+  return { simulado: true, candidatos: Number(alvo[0]?.n ?? 0), preservados };
+}
+
+async function existenteCorrespondente(db: Pick<Prisma.TransactionClient, 'contextItem' | 'contextKeyClaim'>, nota: NotaDaOrigem): Promise<boolean> {
+  const chave = chaveDaVault(nota.path);
+  const [item, claim] = await Promise.all([
+    db.contextItem.findFirst({ where: { orgId: nota.orgId, chave }, select: { id: true, sourceType: true, sourceRef: true, contentHash: true, body: true } }),
+    db.contextKeyClaim.findFirst({ where: { orgId: nota.orgId, key: chave }, select: { itemId: true, tipo: true } }),
+  ]);
+  if (!item && !claim) return false;
+  if (!item || !claim || claim.tipo !== 'canonical' || claim.itemId !== item.id || item.sourceType !== 'vault' ||
+      item.sourceRef !== nota.path || item.contentHash !== hashDoCorpo(nota.content) || item.contentHash !== hashDoCorpo(item.body)) {
+    throw new MigracaoIndisponivelError(`A identidade ou conteúdo de "${chave}" diverge da origem; nenhuma cópia foi aplicada.`);
+  }
+  return true;
 }
 
 async function contarJaMigradas(prisma: PrismaClient, notas: NotaDaOrigem[]): Promise<number> {
-  if (notas.length === 0) return 0;
-  const r = await prisma.$queryRawUnsafe<Array<{ n: bigint }>>(
-    `SELECT count(*)::bigint AS n FROM "ContextItem" WHERE ("orgId", chave) IN (${notas
-      .map((_, i) => `($${i * 2 + 1}, $${i * 2 + 2})`)
-      .join(', ')})`,
-    ...notas.flatMap((n) => [n.orgId, chaveDaVault(n.path)]),
-  );
-  return Number(r[0]?.n ?? 0);
+  return prisma.$transaction(async tx => {
+    let total = 0;
+    for (const nota of notas) if (await existenteCorrespondente(tx, nota)) total++;
+    return total;
+  }, { isolationLevel: 'RepeatableRead' });
 }
 
 type Transacao = Pick<PrismaClient, '$queryRawUnsafe' | '$executeRawUnsafe'>;

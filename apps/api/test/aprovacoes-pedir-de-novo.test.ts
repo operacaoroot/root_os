@@ -111,7 +111,7 @@ describe('o comercial pede de novo pelo caminho de cada pedido (dublês)', () =>
   });
 
   it('proposta: relê a versão do recurso e só devolve aprovação quando foi à porta', async () => {
-    const repedirLiberacao = vi.fn(async () => ({ estado: 'na_porta', approvalId: 'np', versao: 2 }));
+    const repedirLiberacao = vi.fn<() => Promise<{ estado: string; approvalId: string | null; versao: number }>>(async () => ({ estado: 'na_porta', approvalId: 'np', versao: 2 }));
     const { r } = montar({ propostas: { repedirLiberacao } });
     const p = { ...base, capabilityId: 'comercial.proposta.publicar', resourceType: 'comercial.proposta', resourceId: 'L1:v2', args: { leadId: 'L1', versao: 2 } };
     expect(await r.propostaDeNovo(p)).toEqual({ approvalId: 'np' });
@@ -310,7 +310,7 @@ describe.skipIf(!URL)('pedir de novo e a limpeza das vencidas, contra o banco', 
     expect(r.anterior).toBe(ids.vencida);
     expect(r.approvalId).toBeTruthy();
     expect(r.approvalId).not.toBe(ids.vencida);
-    expect(r.paraQuemPediu).toHaveProperty('token');
+    expect(r).toHaveProperty('paraQuemPediu.token');
     expect(chamadasDoDominio).toEqual([{ approvalId: ids.vencida, quem: ANA, contentHash: hashDaSuperficieAntiga('lead', { para: 'reuniao_agendada' }) }]);
 
     const velha = await prisma.approval.findUnique({ where: { id: ids.vencida } });

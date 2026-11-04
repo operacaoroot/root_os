@@ -1,3 +1,4 @@
+import { isWorkActivityTestDatabase } from './work-atividade-database-guard';
 import { randomUUID } from 'node:crypto';
 import { beforeAll, afterAll, afterEach, describe, it, expect, vi } from 'vitest';
 import { PrismaClient } from '@prisma/client';
@@ -6,9 +7,9 @@ import { EventLogService } from '../src/gateway/event-log.service';
 import { hashDoCorpo } from '../src/memory/procedencia';
 
 const url = process.env.TEST_DATABASE_URL ?? '';
-if (new URL(url).hostname !== '127.0.0.1' || new URL(url).pathname !== '/rootos_dia_m05_test_20261008') throw new Error('M05 author destination required');
-const db = new PrismaClient();
-const writer = new PrismaClient();
+if (!isWorkActivityTestDatabase(url, process.env)) throw new Error('M05 requires an explicit disposable database destination');
+const db = new PrismaClient({ datasources: { db: { url } } });
+const writer = new PrismaClient({ datasources: { db: { url } } });
 let barrier: { action: () => Promise<void>; filter: (sql: string) => boolean } | null = null;
 const originalRaw = db.$queryRawUnsafe.bind(db);
 const facade = new Proxy(db, { get(target, key) {

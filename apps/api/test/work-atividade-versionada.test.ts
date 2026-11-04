@@ -21,14 +21,14 @@ import type { AuditInput } from '../src/audit/audit.service';
 import { PrismaService } from '../src/prisma/prisma.service';
 import { ClienteEscopoService } from '../src/clientes-escopo/cliente-escopo.service';
 import { TarefaEscopoService } from '../src/clientes-escopo/tarefa-escopo.service';
+import { isWorkActivityTestDatabase } from './work-atividade-database-guard';
 
 const url = process.env.TEST_DATABASE_URL;
-if (url) {
-  const target = new URL(url);
-  if (!['127.0.0.1', 'localhost'].includes(target.hostname) || target.port !== '55582' ||
-      !/^\/rootos_.*(?:write|test|dev|local)/.test(target.pathname)) {
-    throw new Error('M02 exige o clone QA local autorizado na porta 55582.');
-  }
+if (url && !isWorkActivityTestDatabase(url, {
+  GITHUB_ACTIONS: process.env.GITHUB_ACTIONS,
+  RUNNER_ENVIRONMENT: process.env.RUNNER_ENVIRONMENT,
+})) {
+  throw new Error('M02 exige o clone QA local autorizado ou o banco descartável explícito do GitHub Actions.');
 }
 const orgId = 'qa-m02-' + randomUUID(), otherOrgId = 'qa-m02-vizinha-' + randomUUID();
 let db: PrismaClient, adversary: PrismaClient, svc: WorkService, app: INestApplication;

@@ -54,13 +54,13 @@ beforeAll(async () => {
   LUCAS = (await prisma.user.create({ data: { orgId: ORG, name: 'Lucas Teste', email: `lucas-${MARCA}@painel.teste`, passwordHash: 'x' } })).id;
 
   // Em negociação, com valor, canal e dono.
-  L.aberto = await lead(ORG, 'Ana', { etapa: 'proposta', valorCentavos: 1199700, produto: 'operacao', canal: 'indicacao', donoId: LUCAS, empresa: 'Alicerce' });
+  L.aberto = await lead(ORG, 'Ana', { etapa: 'proposta', valorCentavos: 1199700, produto: 'operacao', canal: 'indicacao', donoId: LUCAS, vendedorId: LUCAS, empresa: 'Alicerce' });
   // Em negociação sem valor nem canal nem dono: entra na contagem, fora da soma.
   L.semValor = await lead(ORG, 'Bruno', { etapa: 'qualificacao' });
-  // Lead sem ficha: está em E1.
-  L.semFicha = await lead(ORG, 'Carla', null);
-  // Fechou em setembro pelo fato `cliente.ativo`, com o dono do LEAD (sem dono na ficha).
-  L.ganho = await lead(ORG, 'Davi', { etapa: 'fechado', valorCentavos: 297000, produto: 'imersao', canal: 'evento', empresa: 'Studio Lume' }, { ownerId: LUCAS });
+  // Lead sem ficha, com dono mas sem vendedor: está em E1 e não entra no grupo de vendas do dono.
+  L.semFicha = await lead(ORG, 'Carla', null, { ownerId: LUCAS });
+  // Fechou em setembro pelo fato `cliente.ativo`, com vendedor explícito e dono do LEAD (sem dono na ficha).
+  L.ganho = await lead(ORG, 'Davi', { etapa: 'fechado', valorCentavos: 297000, produto: 'imersao', canal: 'evento', vendedorId: LUCAS, empresa: 'Studio Lume' }, { ownerId: LUCAS });
   await fato(L.ganho, 'cliente.ativo', '2026-09-05T12:00:00Z');
   // Fechou e o contrato foi encerrado: ganho no ano, não é cliente ativo.
   L.encerrado = await lead(ORG, 'Eva', { etapa: 'fechado', valorCentavos: 297000, produto: 'imersao' });
@@ -175,7 +175,7 @@ describe('Lista de leads lendo a tabela Lead do cockpit', () => {
     expect(r.foraDoTeto).toBe(0);
     const ana = r.leads.find((x) => x.id === L.aberto)!;
     expect(ana).toMatchObject({ contato: 'Ana', empresa: 'Alicerce', etapaChave: 'proposta', etapa: 'E6 · Proposta', canal: 'Indicação', dono: 'Lucas Teste' });
-    expect(r.leads.find((x) => x.id === L.semFicha)).toMatchObject({ etapaChave: 'novo_lead', empresa: null, canal: null, dono: null });
+    expect(r.leads.find((x) => x.id === L.semFicha)).toMatchObject({ etapaChave: 'novo_lead', empresa: null, canal: null, dono: 'Lucas Teste' });
     const datas = r.leads.map((x) => x.ultimaAtividade);
     expect([...datas].sort().reverse()).toEqual(datas);
   });

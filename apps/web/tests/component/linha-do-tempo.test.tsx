@@ -31,7 +31,11 @@ const apiGet = vi.fn();
 
 vi.mock('@/lib/api', async () => {
   const real = await vi.importActual<typeof import('@/lib/api')>('@/lib/api');
-  return { ...real, apiGet: (...a: unknown[]) => apiGet(...a) };
+  return {
+    ...real,
+    apiGet: (rota: string, ...args: unknown[]) =>
+      rota === '/linha-do-tempo/areas?dias=7' ? Promise.resolve([]) : apiGet(rota, ...args),
+  };
 });
 
 vi.mock('@/lib/auth', () => ({

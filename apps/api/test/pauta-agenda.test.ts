@@ -845,12 +845,13 @@ describe('agenda: o controller', () => {
     const proto = AgendaController.prototype as unknown as Record<string, object>;
     const rotas: Array<[string, string, string[]]> = [
       ['semana', 'agenda', ['pauta.ver']],
-      ['grade', 'agenda/grade', ['pauta.ver']],
-      ['salvarGrade', 'agenda/grade', ['pauta.editar']],
+      ['grade', 'agenda/grade', ['pauta.ver', 'obsidian.ver']],
+      ['salvarGrade', 'agenda/grade', ['pauta.editar', 'obsidian.ver']],
       ['distribuir', 'episodios/:id/agenda/distribuir', ['pauta.editar']],
       ['reagendar', 'pecas/:id/agenda', ['pauta.editar']],
       ['postada', 'pecas/:id/postada', ['pauta.publicar']],
-      ['ligarAutomacao', 'automacao/:qual', ['pauta.publicar']],
+      ['automacao', 'automacao/:qual', ['pauta.ver', 'obsidian.ver']],
+      ['ligarAutomacao', 'automacao/:qual', ['pauta.publicar', 'obsidian.ver']],
     ];
     for (const [metodo, caminho, perms] of rotas) {
       expect(Reflect.getMetadata('path', proto[metodo]), metodo).toBe(caminho);

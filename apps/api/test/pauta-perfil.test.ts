@@ -266,6 +266,11 @@ describe('perfil da pauta: o actor de cada plataforma no Apify', () => {
     process.env.APIFY_TOKEN = 'token-de-teste';
     const pedidos: Array<{ url: string; corpo: unknown }> = [];
     vi.stubGlobal('fetch', async (url: string, init?: RequestInit) => {
+      // A leitura de crédito precede o actor; fixture explícita evita confundir
+      // a resposta do dataset com a autorização de gasto.
+      if (url.includes('/users/me/limits')) return new Response(JSON.stringify({ data: {
+        limits: { maxMonthlyUsageUsd: 5 }, current: { monthlyUsageUsd: 0 },
+      } }), { status: 200 });
       pedidos.push({ url, corpo: init?.body ? JSON.parse(String(init.body)) : null });
       if (url.includes('/actor-runs/')) return new Response(JSON.stringify({ data: { usageTotalUsd: 0.01 } }), { status: 200 });
       return new Response('[]', { status: 200, headers: { 'x-apify-run-id': 'run-perfil' } });
@@ -277,18 +282,18 @@ describe('perfil da pauta: o actor de cada plataforma no Apify', () => {
     const pedidos = pedidosDoApify();
     const r = await new ApifyService().scrapePerfil('@sama', 12, 'x');
     expect(pedidos[0].url).toContain('/acts/apidojo~tweet-scraper/run-sync-get-dataset-items');
-    expect(pedidos[0].corpo).toEqual({ twitterHandles: ['sama'], maxItems: 12, sort: 'Latest' });
+    expect(pedidos[0].corpo).toEqual({ twitterHandles: ['sama'], maxItems: 6, sort: 'Latest' });
     expect(r).toMatchObject({ runId: 'run-perfil', custoUsd: 0.01 });
   });
 
-  it('YouTube roda o youtube-scraper na aba de vídeos do canal, sem shorts nem lives, no teto de 50', async () => {
+  it('YouTube roda o youtube-scraper na aba de vídeos do canal, sem shorts nem lives, no teto de 6', async () => {
     const pedidos = pedidosDoApify();
     await new ApifyService().scrapePerfil('canaldoia', 500, 'youtube');
     await new ApifyService().scrapePerfil('UC_x5XG1OV2P6uZZ5FSM9Ttw', 5, 'youtube');
     expect(pedidos[0].url).toContain('/acts/streamers~youtube-scraper/');
     expect(pedidos[0].corpo).toEqual({
       startUrls: [{ url: 'https://www.youtube.com/@canaldoia/videos' }],
-      maxResults: 50,
+      maxResults: 6,
       maxResultsShorts: 0,
       maxResultStreams: 0,
     });
@@ -306,7 +311,7 @@ describe('perfil da pauta: o actor de cada plataforma no Apify', () => {
     expect(pedidos[0].corpo).toEqual({
       directUrls: ['https://www.instagram.com/blank.school/'],
       resultsType: 'posts',
-      resultsLimit: 12,
+      resultsLimit: 6,
       addParentData: false,
     });
     expect(pedidos[2].url).toContain('/acts/clockworks~tiktok-scraper/');

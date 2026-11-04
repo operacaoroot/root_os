@@ -1044,6 +1044,8 @@ describe.skipIf(!URL)('o caminho de entrada, de ponta a ponta, pelo serviço de 
         prisma.eventLog.deleteMany({ where: { orgId } }),
         prisma.$executeRawUnsafe('ALTER TABLE "EventLog" ENABLE RULE eventlog_sem_delete'),
       ]);
+      await prisma.clienteAcessoVinculo.deleteMany({ where: { orgId } });
+      await prisma.clienteAcessoPerfil.deleteMany({ where: { orgId } });
       await prisma.user.deleteMany({ where: { orgId } });
       await prisma.role.deleteMany({ where: { orgId } });
       await prisma.org.deleteMany({ where: { id: orgId } });
@@ -1319,8 +1321,8 @@ describe.skipIf(!URL)('o caminho de entrada, de ponta a ponta, pelo serviço de 
     expect(nota).not.toBeNull();
 
     await comContexto(
-      { orgId, actorType: 'user', actorId: 'quem-arquivou', correlationId: `teste-${MARCA}`, origem: 'script' },
-      () => memoria.arquivar(orgId, nota!.id, 'arquivada na tela de Memória'),
+      { orgId, actorType: 'user', actorId: cadastro.adminUserId!, correlationId: `teste-${MARCA}`, origem: 'script' },
+      () => memoria.arquivarHumano(orgId, cadastro.adminUserId!, nota!.id, { versaoEsperada: nota!.versao, motivo: 'arquivada na tela de Memória' }),
     );
 
     // O tema saiu do estado e o OS volta a perguntá-lo — este é o começo do laço.
@@ -1359,87 +1361,34 @@ describe.skipIf(!URL)('o caminho de entrada, de ponta a ponta, pelo serviço de 
     ).toBe(1);
   });
 
-  it('a nota da carga entra no ÍNDICE de busca, e a busca por palavra a acha', async () => {
+  it('nota da carga fica canônica e não entra no índice sem pessoa e versão autorizadas', async () => {
     const cadastro = await nascer(`Indice ${MARCA}`, `indice.${MARCA}@entrada.local`);
     await svc.responder(cadastro.orgId, 'vocabulario', RESPOSTAS.vocabulario);
-
-    const caminho = caminhoDaNota('onboarding:vocabulario');
     const noIndice = await prisma.knowledgeNote.findUnique({
-      where: { orgId_path: { orgId: cadastro.orgId, path: caminho } },
+      where: { orgId_path: { orgId: cadastro.orgId, path: caminhoDaNota('onboarding:vocabulario') } },
     });
-    expect(noIndice).not.toBeNull();
-
-    /*
-     * O MESMO SQL do ramo de palavra-chave de `ObsidianService.search` — é ele
-     * que o `ContextBuilder` usa quando não há chave da OpenAI, e é por ele que
-     * a primeira resposta do assistente encontraria a nota.
-     */
+    expect(noIndice).toBeNull();
+    const canonica = await prisma.contextItem.findFirst({
+      where: { orgId: cadastro.orgId, chave: 'onboarding:vocabulario', arquivadoEm: null },
+    });
+    expect(canonica).not.toBeNull();
     const porPalavra = await prisma.$queryRawUnsafe<Array<{ id: string }>>(
-      `SELECT id FROM "KnowledgeNote"
-        WHERE "orgId" = $2 AND (title ILIKE $1 OR content ILIKE $1) LIMIT 5`,
-      '%parada%',
-      cadastro.orgId,
+      `SELECT id FROM "KnowledgeNote" WHERE "orgId" = $2 AND (title ILIKE $1 OR content ILIKE $1) LIMIT 5`,
+      '%parada%', cadastro.orgId,
     );
-    expect(porPalavra.length).toBeGreaterThan(0);
-
-    /*
-     * CONTROLE NEGATIVO — A LIMITAÇÃO, MEDIDA EM VEZ DE SUPOSTA.
-     *
-     * `ObsidianService.search` roda em modo SEMÂNTICO sempre que
-     * `OPENAI_API_KEY` existe, e aquele SQL filtra `embedding IS NOT NULL`. O
-     * embedding de `KnowledgeNote` só é gerado dentro de `reindex`, que roda
-     * para a empresa da CASA e mais nenhuma — então, com a chave presente, a
-     * busca NÃO acha esta nota.
-     *
-     * É por isso que a primeira resposta do produto é CONSTRUÍDA (`retrato.ts`)
-     * e não pedida ao modelo. O dia em que existir provedor de embeddings em
-     * `src/llm/` (dívida já declarada em `test/arquitetura.test.ts`), este
-     * número deixa de ser zero e ESTE CASO FICA VERMELHO — que é o lembrete de
-     * apagar o rodeio.
-     */
-    const comVetor = await prisma.$queryRawUnsafe<Array<{ n: bigint }>>(
-      `SELECT count(*)::bigint AS n FROM "KnowledgeNote"
-        WHERE "orgId" = $1 AND embedding IS NOT NULL`,
-      cadastro.orgId,
-    );
-    expect(
-      Number(comVetor[0]?.n ?? 0),
-      'a nota da carga ganhou vetor: o rodeio do retrato pode sair — ver retrato.ts',
-    ).toBe(0);
+    expect(porPalavra).toHaveLength(0);
   });
 
-  it('o espelho APAGADO pela reindexação volta no fecho da carga', async () => {
-    /*
-     * O SEGUNDO ESTADO DERIVADO ERRADO. `ObsidianService.reindex`
-     * (`POST /api/knowledge/reindex`, permissão `obsidian.editar` — A MESMA que
-     * esta carga usa) faz `knowledgeNote.deleteMany({ where: { orgId } })` e
-     * repovoa a partir do vault ÚNICO do ambiente: uma volta numa empresa
-     * cliente some com o espelho da carga e enche o índice dela com as notas da
-     * casa.
-     *
-     * A linha abaixo é LITERALMENTE o que aquele método faz. O que se mede é o
-     * conserto: o fecho da carga reespelha TODAS as notas dos temas, não só o
-     * retrato. Se o laço de reespelho sair de `fechar`, sobra 1 (o retrato) e
-     * este caso fica vermelho.
-     */
+  it('fechar a carga preserva a memória sem replicar notas protegidas sem autorização', async () => {
     const cadastro = await nascer(`Reindex ${MARCA}`, `reindex.${MARCA}@entrada.local`);
     const orgId = cadastro.orgId;
     await carregarTudo(orgId);
-    expect(await prisma.knowledgeNote.count({ where: { orgId } })).toBe(6);
-
-    await prisma.knowledgeNote.deleteMany({ where: { orgId } });
     expect(await prisma.knowledgeNote.count({ where: { orgId } })).toBe(0);
-
     await svc.fechar(orgId);
-    // Os seis temas de volta, mais o retrato.
-    expect(await prisma.knowledgeNote.count({ where: { orgId } })).toBe(7);
-
-    // E a memória canônica nunca dependeu do índice: ela atravessou intacta.
-    expect(
-      await prisma.contextItem.count({
-        where: { orgId, chave: { startsWith: 'onboarding:' }, arquivadoEm: null },
-      }),
-    ).toBe(7);
+    expect(await prisma.knowledgeNote.count({ where: { orgId } })).toBe(0);
+    expect(await prisma.contextItem.count({
+      where: { orgId, chave: { startsWith: 'onboarding:' }, arquivadoEm: null },
+    })).toBe(7);
   });
 
   it('o CONTROLADOR de verdade cria a empresa e devolve a resposta uniforme', async () => {
