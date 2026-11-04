@@ -398,7 +398,17 @@ export class FechamentoService implements OnModuleInit {
     if (!pronto.pronto) return { pulado: `falta: ${pronto.falta.join(', ')}` };
     const viva = await this.dinheiro.aprovacaoViva(orgId, CAP_FECHAMENTO, linha.chave, agora);
     if (viva) return { estado: 'na_fila', approvalId: viva.id, chave: linha.chave };
-    if (linha.vetadoEm && ator.tipo === ActorType.system) return { pulado: 'fechamento vetado: só volta pelo "rodar de novo"' };
+    if (ator.tipo === ActorType.system) {
+      if (linha.vetadoEm) return { pulado: 'fechamento vetado: só volta pelo "rodar de novo"' };
+      const propostaComOutraOrigem = await this.prisma.approval.findFirst({
+        where: {
+          orgId, capabilityId: CAP_FECHAMENTO, resourceType: 'comercial.fechamento', resourceId: linha.chave,
+          OR: [{ propostoPorTipo: { not: ActorType.system } }, { propostoPorId: { not: ATOR } }],
+        },
+        select: { id: true },
+      });
+      if (propostaComOutraOrigem) return { pulado: 'Uma pessoa precisa propor novamente este fechamento.' };
+    }
     if (linha.vetadoEm) await this.prisma.comercialFechamento.update({ where: { id: linha.id }, data: { vetadoEm: null, estado: 'pendente' } });
     const r = await this.operador.executar({
       orgId,
@@ -431,11 +441,12 @@ export class FechamentoService implements OnModuleInit {
     if (chave !== chaveDoFechamento(leadId, a.versao)) throw new Error('a chave do fechamento não é a da versão aceita: nada foi feito');
     const pronto = await this.prontidao(orgId, leadId, a);
     if (!pronto.pronto) throw new Error(`o fechamento ainda não pode rodar (falta: ${pronto.falta.join(', ')}): nada foi feito`);
-    return this.executar(orgId, leadId, a);
+    const fechamentoApprovalId = ctx.actorType === ActorType.user ? ctx.approvalId ?? undefined : undefined;
+    return this.executar(orgId, leadId, a, fechamentoApprovalId);
   }
 
-  /** As cinco escritas. Rodar de novo reaproveita o que ficou pronto e refaz só o que ficou em erro ou pendente. */
-  async executar(orgId: string, leadId: string, aceiteDeAgora: AceiteDoLead): Promise<FechamentoDoLead> {
+  /** As escritas reaproveitam o que ficou pronto. A pasta nova exige a referência da aprovação do fechamento. */
+  async executar(orgId: string, leadId: string, aceiteDeAgora: AceiteDoLead, fechamentoApprovalId?: string): Promise<FechamentoDoLead> {
     const pega = await this.garantirLinha(orgId, leadId, aceiteDeAgora);
     if (pega.estado === 'concluido') return this.projetar(pega);
     // D-7: a linha é TOMADA com escrita condicionada ao estado (pendente ou erro; em curso só se parado).
@@ -770,7 +781,9 @@ export class FechamentoService implements OnModuleInit {
     });
 
     // 7. a pasta do cliente no Drive (CO-10): depois do card, fora de transação, idempotente pelo ponteiro.
-    await rodar('pasta', async () => this.escritaDaPasta(orgId, leadId, refs.cliente ?? null, fora ? 'fechado-fora' : 'fechamento'));
+    await rodar('pasta', () => this.escritaDaPasta(
+      orgId, leadId, refs.cliente ?? null, fora ? 'fechado-fora' : 'fechamento', fechamentoApprovalId,
+    ));
 
     const essenciaisOk = ['cliente', 'contrato', 'cobranca'].every((k) => escritas.find((e) => e.escrita === k)?.estado !== 'erro');
     // CO-10: a pasta em erro fica à vista na escrita e no `erro`, mas não segura o fechamento.
@@ -808,6 +821,7 @@ export class FechamentoService implements OnModuleInit {
     leadId: string,
     clienteDaEscrita: string | null,
     origem: 'fechamento' | 'fechado-fora',
+    fechamentoApprovalId?: string,
   ): Promise<{ estado: 'criado' | 'reaproveitado' | 'pulado' | 'aguardando_aprovacao'; detalhe: string; ref: string | null }> {
     const partnerId = clienteDaEscrita ?? (await this.prisma.comercialFicha.findFirst({ where: { leadId, orgId }, select: { partnerId: true } }))?.partnerId ?? null;
     if (!partnerId) throw new Error('sem cliente: a pasta espera a escrita do cliente');
@@ -815,7 +829,8 @@ export class FechamentoService implements OnModuleInit {
     if (!cliente) throw new Error('o cliente do fechamento não está nesta empresa');
     if (cliente.pastaDriveId) return { estado: 'reaproveitado', detalhe: 'a pasta já estava ligada ao cliente', ref: cliente.pastaDriveId };
     if (!this.pastas) return { estado: 'pulado', detalhe: 'a porta da pasta do cliente não está disponível nesta instância', ref: null };
-    const r = await this.pastas.garantir({ orgId, partnerId, origem, leadId });
+    if (!fechamentoApprovalId) throw new Error('A criação da pasta exige a referência da aprovação do fechamento.');
+    const r = await this.pastas.garantir({ orgId, partnerId, origem, leadId, fechamentoApprovalId });
     switch (r.estado) {
       case 'pronta':
         return { estado: r.ligada ? 'reaproveitado' : 'criado', detalhe: r.ligada ? 'ligada a uma pasta de mesmo nome que já existia' : 'pasta criada a partir do modelo', ref: r.pastaId };

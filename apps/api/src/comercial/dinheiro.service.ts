@@ -570,7 +570,7 @@ export class DinheiroService implements OnModuleInit {
     const segredo = segredoDoAmbiente();
     const linkRootGuardado = linkRoot && segredo ? cifrarLinkDaRoot(linkRoot, segredo, id) : null;
     await this.prisma.comercialDocumento.createMany({
-      data: [{ id, leadId, provedor: this.assinatura.provedor, externoId: criado.externoId, estado: 'enviado', hashConteudo: hash, linkCliente, linkRoot: linkRootGuardado }],
+      data: [{ id, leadId, provedor: this.assinatura.provedor, externoId: criado.externoId, estado: 'enviado', hashConteudo: hash, linkCliente, linkRoot: linkRootGuardado, origemApprovalId: ctx.approvalId ?? null }],
       skipDuplicates: true,
     });
     const signatarios: SignatarioDoDocumento[] = doProvedor.map((s) => ({ papel: s.papel, nome: s.nome, email: s.email, ordem: s.ordem, token: s.doc?.token ?? null }));
@@ -638,7 +638,7 @@ export class DinheiroService implements OnModuleInit {
     const segredo = segredoDoAmbiente();
     const linkRootGuardado = linkRoot && segredo ? cifrarLinkDaRoot(linkRoot, segredo, id) : null;
     await this.prisma.comercialDocumento.createMany({
-      data: [{ id, leadId, provedor: this.assinatura.provedor, externoId: criado.externoId, estado: 'enviado', hashConteudo: doc.hash, linkCliente, linkRoot: linkRootGuardado }],
+      data: [{ id, leadId, provedor: this.assinatura.provedor, externoId: criado.externoId, estado: 'enviado', hashConteudo: doc.hash, linkCliente, linkRoot: linkRootGuardado, origemApprovalId: ctx.approvalId ?? null }],
       skipDuplicates: true,
     });
     // O registro do contrato (módulo de contratos): o documento continua sendo a parte "na ZapSign".

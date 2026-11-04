@@ -139,7 +139,7 @@ export class ArquivistaService implements ArquivistaDoClientePort, OnModuleInit 
 
   async arquivar(pedido: PedidoDeArquivo): Promise<ResultadoDoArquivo> {
     const contexto = contextoAtual();
-    if (contexto?.actorType === ActorType.user && (!pedido.atorId || contexto.actorId !== pedido.atorId)) return {estado:'erro',motivo:'Origem humana do arquivo não identificada.'};
+    if (!pedido.origemRecebidaId && contexto?.actorType === ActorType.user && (!pedido.atorId || contexto.actorId !== pedido.atorId)) return {estado:'erro',motivo:'Origem humana do arquivo não identificada.'};
     return naEmpresa(pedido.orgId, pedido.atorId ?? null, async () => {
       try {
         return await this.arquivarNaEmpresa(pedido);
@@ -152,6 +152,7 @@ export class ArquivistaService implements ArquivistaDoClientePort, OnModuleInit 
 
   private async arquivarNaEmpresa(pedido: PedidoDeArquivo): Promise<ResultadoDoArquivo> {
     const { orgId } = pedido;
+    if (['sala','whatsapp','contrato-assinado'].includes(pedido.origem) && !pedido.origemRecebidaId) throw new ForbiddenException('A origem recebida exige prova persistida.');
     let partnerId = pedido.partnerId ?? null;
     if (!partnerId && pedido.leadId) {
       const ficha = await this.prisma.comercialFicha.findFirst({ where: { orgId, leadId: pedido.leadId }, select: { partnerId: true } });
@@ -160,12 +161,21 @@ export class ArquivistaService implements ArquivistaDoClientePort, OnModuleInit 
     const partner = partnerId
       ? await this.prisma.partner.findFirst({ where: { id: partnerId, orgId }, select: { id: true, isCliente: true, interno: true, pastaDriveId: true } })
       : null;
+    const conteudoOrigem = 'buffer' in pedido.conteudo
+      ? { chave:`clientes/arquivos/${orgId}/${createHash('sha256').update(pedido.conteudo.buffer).digest('hex')}`,sha256:createHash('sha256').update(pedido.conteudo.buffer).digest('hex'),bytes:pedido.conteudo.buffer.length }
+      : pedido.conteudo;
+    if (pedido.origemRecebidaId && pedido.ref && (pedido.ref.tipo!=='OrigemArquivoCliente' || pedido.ref.id!==pedido.origemRecebidaId)) throw new ForbiddenException('Referência da origem divergente.');
+    if (pedido.origemRecebidaId) pedido={...pedido,ref:{tipo:'OrigemArquivoCliente',id:pedido.origemRecebidaId}};
     const conferirProponente = async () => {
+      if (pedido.origemRecebidaId) {
+        const origem=await this.efeitoClienteEscopo.exigirOrigemRecebida(orgId,pedido.origemRecebidaId,{leadId:pedido.leadId ?? null,partnerId,origem:pedido.origem,...conteudoOrigem,tipoMime:tipoMimeOuBinario(pedido.tipoMime).slice(0,120)});
+        if ((pedido.atorId ?? null)!==origem.atorId) throw new ForbiddenException('Originador do arquivo divergente.');
+      }
       if (pedido.atorId) {
         await this.efeitoClienteEscopo.exigirPessoa(orgId,pedido.atorId,partnerId,pedido.ref?.tipo==='WorkAnexo'?['tarefas.editar']:['tarefas.editar','leads.editar']);
         if (pedido.ref?.tipo==='WorkAnexo') { if (!partnerId) throw new ForbiddenException('O anexo exige cliente.'); await this.efeitoClienteEscopo.exigirOrigemAnexo(orgId,pedido.atorId,partnerId,pedido.ref.id); }
       }
-      else if (contextoAtual()?.actorType !== ActorType.system || contextoAtual()?.actorId !== ATOR_DO_ARQUIVISTA) throw new ForbiddenException('Origem do arquivo não identificada.');
+      else if (!pedido.origemRecebidaId) throw new ForbiddenException('Origem do arquivo não identificada.');
     };
     await conferirProponente();
     if (partnerId && (!partner || !partner.isCliente)) return { estado: 'erro', motivo: 'cliente não encontrado nesta empresa.' };
@@ -317,14 +327,15 @@ export class ArquivistaService implements ArquivistaDoClientePort, OnModuleInit 
     if (!(SUBPASTAS_DO_CLIENTE as readonly string[]).includes(r.escolha)) throw new BadRequestException('subpasta desconhecida.');
     const linha = await this.prisma.arquivoDoCliente.findFirst({ where: { id: r.refId, orgId: r.orgId } });
     if (!linha) throw new BadRequestException('o arquivo desta pendência não existe mais.');
-    if (linha.estado === 'enviado') return;
     await this.efeitoClienteEscopo.exigirPessoa(linha.orgId, r.usuarioId, linha.partnerId, ['tarefas.editar']);
-    if (linha.atorId) await this.efeitoClienteEscopo.exigirPessoa(linha.orgId, linha.atorId, linha.partnerId, linha.refTipo==='WorkAnexo'?['tarefas.editar']:['tarefas.editar','leads.editar']);
-    else throw new ForbiddenException('Origem do arquivo não identificada.');
-    const atualizada = await this.prisma.arquivoDoCliente.update({
-      where: { id: linha.id },
+    await this.conferirOrigemLinha(linha);
+    if (linha.estado === 'enviado') return;
+    const gravou=await this.prisma.arquivoDoCliente.updateMany({
+      where: { id: linha.id,orgId:linha.orgId,atorId:linha.atorId,partnerId:linha.partnerId,refTipo:linha.refTipo,refId:linha.refId,estado:linha.estado,atualizadoEm:linha.atualizadoEm },
       data: { subpasta: r.escolha, confianca: 1, estado: 'na_fila', motivo: null, approvalId: null },
     });
+    if(gravou.count!==1) throw new ConflictException('O arquivo mudou durante a classificação.');
+    const atualizada=await this.prisma.arquivoDoCliente.findFirstOrThrow({where:{id:linha.id,orgId:linha.orgId}});
     await this.proporEnvio(atualizada, linha.atorId);
   }
 
@@ -335,10 +346,10 @@ export class ArquivistaService implements ArquivistaDoClientePort, OnModuleInit 
   private async proporEnvio(linha: ArquivoDoCliente, atorId: string | null): Promise<ResultadoDoArquivo> {
     const { orgId } = linha;
     if (linha.atorId !== atorId) throw new ForbiddenException('O proponente original do arquivo não pode ser trocado.');
-    if (atorId) await this.efeitoClienteEscopo.exigirPessoa(orgId, atorId, linha.partnerId, linha.refTipo==='WorkAnexo'?['tarefas.editar']:['tarefas.editar','leads.editar']);
-    else if (contextoAtual()?.actorType !== ActorType.system || contextoAtual()?.actorId !== ATOR_DO_ARQUIVISTA) throw new ForbiddenException('Origem do arquivo não identificada.');
+    await this.conferirOrigemLinha(linha);
     if (!linha.partnerId) return this.marcarNaFila(linha, 'o lead ainda não virou cliente: o arquivo espera a pasta do cliente.');
     const partner = await this.prisma.partner.findFirst({ where: { id: linha.partnerId, orgId }, select: { pastaDriveId: true, interno: true } });
+    await this.conferirOrigemLinha(linha);
     if (!partner) return this.marcarErro(linha, 'cliente não encontrado nesta empresa.');
     if (partner.interno) return this.marcarSoNoOs(linha);
     if (!partner.pastaDriveId) return this.marcarNaFila(linha, 'a pasta do cliente ainda não existe: o arquivo sai quando ela nascer.');
@@ -347,10 +358,11 @@ export class ArquivistaService implements ArquivistaDoClientePort, OnModuleInit 
         where: { id: linha.approvalId, orgId, status: { in: [ApprovalState.pendente, ApprovalState.confirmada] }, expiraEm: { gt: new Date() } },
         select: { id: true },
       });
-      if (viva) return { estado: 'aguardando_aprovacao', approvalId: viva.id, subpasta: linha.subpasta as SubpastaDoCliente, nome: linha.nome ?? '' };
+      if (viva) { await this.conferirOrigemLinha(linha); return { estado: 'aguardando_aprovacao', approvalId: viva.id, subpasta: linha.subpasta as SubpastaDoCliente, nome: linha.nome ?? '' }; }
     }
     const ator = atorId;
     try {
+      await this.conferirOrigemLinha(linha);
       const r = await this.porta.executar<{ arquivoId: string; url: string; nome: string; subpasta: SubpastaDoCliente }>({
         orgId,
         actorId: ator ?? ATOR_DO_ARQUIVISTA,
@@ -365,20 +377,33 @@ export class ArquivistaService implements ArquivistaDoClientePort, OnModuleInit 
           bytes: linha.bytes,
           tipoMime: linha.tipoMime.slice(0, 120),
           origem: linha.origem,
+          ...(linha.refTipo==='OrigemArquivoCliente' ? {origemRecebidaId:linha.refId} : {}),
         },
         resource: { type: 'arquivo-do-cliente', id: linha.id },
       });
       if (ehRetida(r)) {
-        await this.prisma.arquivoDoCliente.updateMany({
-          where: { id: linha.id, orgId, estado: { not: 'enviado' } },
+        const gravou=await this.prisma.arquivoDoCliente.updateMany({
+          where: { id: linha.id, orgId,estado:linha.estado,atorId:linha.atorId,partnerId:linha.partnerId,refTipo:linha.refTipo,refId:linha.refId,atualizadoEm:linha.atualizadoEm },
           data: { estado: 'aguardando_aprovacao', approvalId: r.approvalId, motivo: null },
         });
+        if(gravou.count!==1) throw new ConflictException('O arquivo mudou durante a proposta.');
         return { estado: 'aguardando_aprovacao', approvalId: r.approvalId, subpasta: linha.subpasta as SubpastaDoCliente, nome: linha.nome ?? '' };
       }
       return { estado: 'enviado', subpasta: r.subpasta, nome: r.nome, arquivoId: r.arquivoId, url: r.url };
     } catch (e) {
+      if (e instanceof ConflictException) throw e;
       return this.marcarErro(linha, motivoDe(e));
     }
+  }
+
+  private async conferirOrigemLinha(linha:ArquivoDoCliente) {
+    if(['sala','whatsapp','contrato-assinado'].includes(linha.origem) && linha.refTipo!=='OrigemArquivoCliente') throw new ForbiddenException('A origem recebida exige prova persistida.');
+    if(linha.refTipo==='OrigemArquivoCliente') {
+      if(!linha.refId) throw new ForbiddenException('Origem do arquivo não identificada.');
+      const origem=await this.efeitoClienteEscopo.exigirOrigemRecebida(linha.orgId,linha.refId,{leadId:linha.leadId,partnerId:linha.partnerId,origem:linha.origem,chave:linha.chave,sha256:linha.sha256,bytes:linha.bytes,tipoMime:linha.tipoMime});
+      if(origem.atorId!==linha.atorId) throw new ForbiddenException('Originador do arquivo divergente.');
+    } else if(!linha.atorId) throw new ForbiddenException('Origem do arquivo não identificada.');
+    if(linha.atorId) await this.efeitoClienteEscopo.exigirPessoa(linha.orgId,linha.atorId,linha.partnerId,linha.refTipo==='WorkAnexo'?['tarefas.editar']:['tarefas.editar','leads.editar']);
   }
 
   private async ehPessoaDaEmpresa(orgId: string, id: string): Promise<boolean> {
@@ -435,8 +460,7 @@ export class ArquivistaService implements ArquivistaDoClientePort, OnModuleInit 
     const linhas = await this.prisma.arquivoDoCliente.findMany({ where: onde, orderBy: { criadoEm: 'asc' }, take: 200 });
     let propostos = 0;
     for (const l of linhas) {
-      if (!l.atorId) continue;
-      try { await this.efeitoClienteEscopo.exigirPessoa(orgId,l.atorId,partnerId,l.refTipo==='WorkAnexo'?['tarefas.editar']:['tarefas.editar','leads.editar']); } catch { continue; }
+      try { await this.conferirOrigemLinha({...l,partnerId}); } catch { continue; }
       let ligada = l;
       if (!l.partnerId) {
         const gravou=await this.prisma.arquivoDoCliente.updateMany({where:{id:l.id,orgId,partnerId:null,leadId:l.leadId,atorId:l.atorId,estado:'na_fila',atualizadoEm:l.atualizadoEm},data:{partnerId}});

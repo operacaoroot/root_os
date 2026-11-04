@@ -462,6 +462,7 @@ const ALVOS: Alvo[] = [
   { tabela: 'FrotaEvento', escopo: 'tenant', chaveSql: '"id"', nota: 'Frota: o registro do que aconteceu em cada servidor (login, chave, deploy, sonda, ordem do painel). Só recebe linha nova pela API. Ler o da outra empresa é ler o diário da operação dela. O orgId vem do insert.' },
   { tabela: 'FrotaOrdem', escopo: 'tenant', chaveSql: '"id"', nota: 'Frota: a ordem que a casa puxa (revogar chave, desligar automação, rodar verificar, pedir backup). Escrever na da outra empresa é mandar o servidor dela revogar uma chave. O orgId vem do insert.' },
   { tabela: 'Pendencia', escopo: 'tenant', chaveSql: '"id"', nota: 'A pendência que um agente ou rotina deixa para uma pessoa (rodada dos agentes, 21/10/2026): o arquivo de cliente sem subpasta, a tarefa vencida, a mensagem de WhatsApp sem dono, a reunião fora do padrão. Ler a da outra empresa é ler o que chegou para ela e de quem; ESCREVER é decidir por ela. Raiz da empresa: o refId aponta para tabelas diferentes, sem FK.' },
+  { tabela: 'OrigemArquivoCliente', escopo: 'tenant', chaveSql: '"id"', nota: 'Recibo imutável da fonte e do conteúdo recebido; não pode expor a outra empresa o vínculo de sala, mensagem ou contrato.' },
   { tabela: 'ArquivoDoCliente', escopo: 'tenant', chaveSql: '"id"', nota: 'O arquivo que chegou para um cliente e o que o arquivista fez com ele (rodada dos agentes, TR-05): nome original, hash, a subpasta, a aprovação e o link no Drive. Ler o da outra empresa é ler quais documentos os clientes dela mandaram e onde estão; ESCREVER é mudar a subpasta, o nome ou o cliente de destino de um arquivo alheio, que é o que o efeito do Drive confere. Raiz da empresa: o arquivo pode chegar antes do cliente, só com o lead.' },
   { tabela: 'WorkAnexo', escopo: 'filho', chaveSql: '"id"', nota: 'O anexo da tarefa (rodada dos agentes, TR-06): o nome, o hash e a chave do binário no storage. Ler o da outra empresa é saber o que ela anexou e baixar pela chave; o gatilho deriva a empresa da tarefa.' },
   { tabela: 'DelegacaoSugestao', escopo: 'tenant', chaveSql: '"id"', nota: 'A subtarefa que o Delegador (TR-09, rodada dos agentes, 21/10/2026) propôs para uma tarefa que está com um agente: título, dono sugerido e prazo. Ler a da outra empresa é ler como ela reparte o trabalho e com quem; ESCREVER é pôr subtarefa na fila de aceite dela, ou aceitar por ela. Raiz da empresa: o orgId vem do insert, e a tarefa-mãe entra por chave composta (taskId, orgId).' },
@@ -1411,6 +1412,11 @@ async function semear(c: PoolClient, rotulo: 'A' | 'B', vec: string): Promise<vo
   }, { opcoes: 'jsonb' }));
 
   // O arquivo do cliente e o anexo da tarefa (rodada dos agentes, lane A4).
+  reg('OrigemArquivoCliente', await ins(c, 'OrigemArquivoCliente', {
+    id: crypto.randomUUID(), orgId, tipo: 'sala', fonteId: `sala_${rotulo}_${MARCA}`, chaveDedupe: `recibo_${rotulo}_${MARCA}`,
+    leadId: `lead_${rotulo}_${MARCA}`, prova: JSON.stringify({ v: 1, fonte: `privada_${rotulo}` }),
+    chave: `qa/${orgId}/recibo`, sha256: (rotulo === 'A' ? 'a' : 'b').repeat(64), bytes: 10, tipoMime: 'application/pdf',
+  }, { prova: 'jsonb' }));
   reg('ArquivoDoCliente', await ins(c, 'ArquivoDoCliente', {
     id: crypto.randomUUID(), orgId, leadId: `lead_${rotulo}_${MARCA}`, origem: 'sala', nomeOriginal: `Contrato privado da org ${rotulo}.pdf`,
     tipoMime: 'application/pdf', chave: `clientes/arquivos/${orgId}/x`, sha256: (rotulo === 'A' ? 'a' : 'b').repeat(64), bytes: 10,

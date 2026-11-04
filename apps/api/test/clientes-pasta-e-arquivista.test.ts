@@ -275,7 +275,7 @@ describe.skipIf(!URL)('TR-04 e TR-05 contra o banco, pela porta', { timeout: 60_
   it('R3 RETÉM: nada no Drive antes da segunda pessoa; o confirm cria a pasta com a estrutura e grava o ponteiro; garantir de novo é idempotente', async () => {
     const c = await cliente('Padaria Exemplo Ltda');
     const antes = drive.escritas.length;
-    const r = await na(() => pastas.garantir({ orgId: ORG, partnerId: c.id, origem: 'fechamento', atorId: PEDRO.id }));
+    const r = await na(() => pastas.garantir({ orgId: ORG, partnerId: c.id, origem: 'manual', atorId: PEDRO.id }));
     expect(r.estado).toBe('aguardando_aprovacao');
     expect(drive.escritas.length).toBe(antes);
     // Pedir de novo enquanto espera não abre outro pedido.
@@ -423,7 +423,7 @@ describe.skipIf(!URL)('TR-04 e TR-05 contra o banco, pela porta', { timeout: 60_
   it('na fila sem pasta, e sai quando a pasta nasce; confirmado, vai à subpasta certa com o nome padrão', async () => {
     const c = await cliente('Fila Exemplo Ltda');
     const r = await arquivista.arquivar({
-      orgId: ORG, partnerId: c.id, origem: 'contrato-assinado', nomeOriginal: 'Contrato assinado.pdf', tipoMime: 'application/pdf',
+      orgId: ORG, partnerId: c.id, origem: 'manual', nomeOriginal: 'Contrato assinado.pdf', tipoMime: 'application/pdf',
       conteudo: { buffer: Buffer.from('conteudo do contrato') }, atorId: PEDRO.id, data: new Date('2026-10-21T12:00:00Z'),
     });
     expect(r.estado).toBe('na_fila');
@@ -432,7 +432,7 @@ describe.skipIf(!URL)('TR-04 e TR-05 contra o banco, pela porta', { timeout: 60_
     expect(linha.nome).toBe('2026-10-21 - Contrato - Prestação de serviços.pdf');
     expect(storage.objetos.has(linha.chave)).toBe(true);
 
-    const pedido = (await na(() => pastas.garantir({ orgId: ORG, partnerId: c.id, origem: 'fechamento', atorId: PEDRO.id }))) as { approvalId: string };
+    const pedido = (await na(() => pastas.garantir({ orgId: ORG, partnerId: c.id, origem: 'manual', atorId: PEDRO.id }))) as { approvalId: string };
     await confirmar(pedido.approvalId);
     // A pasta nasceu e a fila andou: o arquivo foi à porta (R3, retido).
     const depois = await prisma.arquivoDoCliente.findUniqueOrThrow({ where: { id: linha.id } });
@@ -455,7 +455,7 @@ describe.skipIf(!URL)('TR-04 e TR-05 contra o banco, pela porta', { timeout: 60_
     const pedido = (await na(() => pastas.garantir({ orgId: ORG, partnerId: c.id, origem: 'manual', atorId: PEDRO.id }))) as { approvalId: string };
     await confirmar(pedido.approvalId);
     const escritas = drive.escritas.length;
-    const r = await arquivista.arquivar({ orgId: ORG, partnerId: c.id, origem: 'whatsapp', nomeOriginal: 'IMG_2231.jpg', tipoMime: 'image/jpeg', conteudo: { buffer: Buffer.from('jpeg') }, atorId: PEDRO.id });
+    const r = await arquivista.arquivar({ orgId: ORG, partnerId: c.id, origem: 'manual', nomeOriginal: 'IMG_2231.jpg', tipoMime: 'image/jpeg', conteudo: { buffer: Buffer.from('jpeg') }, atorId: PEDRO.id });
     expect(r.estado).toBe('classificar_a_mao');
     const pend = await prisma.pendencia.findUniqueOrThrow({ where: { id: (r as { pendenciaId: string }).pendenciaId } });
     expect(pend.funcao).toBe('TR-05');
@@ -513,7 +513,7 @@ describe.skipIf(!URL)('TR-04 e TR-05 contra o banco, pela porta', { timeout: 60_
 
   it('o mesmo arquivo para o mesmo cliente cai no mesmo registro (idempotente)', async () => {
     const c = await cliente('Idem Exemplo');
-    const pedido = { orgId: ORG, partnerId: c.id, origem: 'sala' as const, nomeOriginal: 'Proposta.pdf', tipoMime: 'application/pdf', conteudo: { buffer: Buffer.from('proposta v1') }, atorId: PEDRO.id };
+    const pedido = { orgId: ORG, partnerId: c.id, origem: 'manual' as const, nomeOriginal: 'Proposta.pdf', tipoMime: 'application/pdf', conteudo: { buffer: Buffer.from('proposta v1') }, atorId: PEDRO.id };
     const a = await arquivista.arquivar(pedido);
     const b = await arquivista.arquivar(pedido);
     expect(b).toEqual(a);

@@ -372,11 +372,13 @@ export class ToolGateway implements OnModuleInit {
      */
     const { loteItemId: _loteDoChamador, approvalId: _aprovacaoDoChamador, ...ctxLimpo } = pedido.ctx;
     const capacidadeDeCliente = efeitoExigeEscopoDeCliente(pedido.capabilityId) ? pedido.capabilityId : null;
+    const exigeOrigemComercial = pedido.capabilityId === 'comercial.contrato.enviar' || pedido.capabilityId === 'comercial.fechamento.executar';
+    const capacidadeComOrigem = exigeOrigemComercial ? pedido.capabilityId : capacidadeDeCliente;
     const args = doLote.presente ? doLote.conteudo as A : pedido.args;
     const req: ToolCallRequest<A> = {
       ...pedido,
       ctx: ctxLimpo,
-      args: capacidadeDeCliente ? { ...args } : args,
+      args: capacidadeComOrigem ? { ...args } : args,
     };
     const { ctx } = req;
     const cap = req.capabilityId ? this.policy.resolverCapacidade(ctx.orgId, req.capabilityId) : null;
@@ -689,9 +691,9 @@ export class ToolGateway implements OnModuleInit {
      * cai para o caminho B — um item vencido não vira pedido novo na fila por
      * conta própria.
      */
-    if (capacidadeDeCliente && (!decisao.exigeAprovacao || doLote.loteItemId)) {
+    if (capacidadeComOrigem && (!decisao.exigeAprovacao || doLote.loteItemId || (exigeOrigemComercial && decisao.nivel !== RiskLevel.R4))) {
       return this.recusarDepoisDeRegistrar(req, toolCall.id, decisao, decisionId, 'aprovacao_exigida',
-        'Este efeito de cliente exige uma aprovação individual.', inicio);
+        exigeOrigemComercial ? 'Este efeito comercial exige uma aprovação individual R4.' : 'Este efeito de cliente exige uma aprovação individual.', inicio);
     }
     let consumo: ConsumoDoItem | null = null;
     if (doLote.loteItemId) {
@@ -787,15 +789,15 @@ export class ToolGateway implements OnModuleInit {
           hashKeys: cap ? this.hashKeysDe(cap.id, ctx.orgId) : [],
           actorId: ctx.actorId ?? 'agente',
         };
-        const conferida = capacidadeDeCliente
-          ? await this.conferirTokenDoEfeitoDeCliente(capacidadeDeCliente, pedidoDeConsumo)
+        const conferida = capacidadeComOrigem
+          ? await this.conferirTokenComOrigem(capacidadeComOrigem, pedidoDeConsumo)
           : null;
         aprovacao = await this.approvals.consumir(pedidoDeConsumo);
         if (conferida && (aprovacao.id !== conferida.id || aprovacao.aprovadoPorId !== conferida.aprovadoPorId)) {
           throw new ForbiddenException('A aprovação consumida diverge da autorização conferida.');
         }
       } catch (e) {
-        const motivo = capacidadeDeCliente
+        const motivo = capacidadeComOrigem
           ? 'Não foi possível conferir a autorização deste efeito de cliente.'
           : (e as Error).message;
         await this.prisma.toolCall.update({
@@ -869,12 +871,12 @@ export class ToolGateway implements OnModuleInit {
        * conector, o log. Nenhum parâmetro novo atravessa a cadeia inteira:
        * quem precisar lê de `contextoAtual()`.
        */
-      const aprovacaoDeCliente = capacidadeDeCliente ? aprovacao : null;
-      const ctxDoEfeito: ExecCtx = aprovacaoDeCliente
-        ? { ...ctx, approvalId: aprovacaoDeCliente.id, actorId: aprovacaoDeCliente.aprovadoPorId, actorType: ActorType.user }
+      const aprovacaoDaOrigem = capacidadeComOrigem ? aprovacao : null;
+      const ctxDoEfeito: ExecCtx = aprovacaoDaOrigem
+        ? { ...ctx, approvalId: aprovacaoDaOrigem.id, actorId: aprovacaoDaOrigem.aprovadoPorId, actorType: ActorType.user }
         : consumo ? { ...ctx, loteItemId: consumo.itemId } : ctx;
       const resultado = await comContexto(
-        aprovacaoDeCliente ? { ...ctxDoEfeito, origem: 'aprovacao' } : { ...ctx, origem: 'agente' },
+        aprovacaoDaOrigem ? { ...ctxDoEfeito, origem: 'aprovacao' } : { ...ctx, origem: 'agente' },
         () => efeito(req.args, ctxDoEfeito),
       );
       await this.prisma.toolCall.update({
@@ -1136,7 +1138,8 @@ export class ToolGateway implements OnModuleInit {
     await this.efeitoClienteEscopo.exigirAntesDaAprovacao(orgId, capabilityId, approvalId, args);
   }
 
-  private async conferirTokenDoEfeitoDeCliente(capabilityId: string, p: Parameters<ApprovalsService['consumir']>[0]) {
+  private async conferirTokenComOrigem(capabilityId: string, p: Parameters<ApprovalsService['consumir']>[0]) {
+    const exigeCarteiraAntesDoConsumo = efeitoExigeEscopoDeCliente(capabilityId);
     const ap = await this.prisma.approval.findFirst({
       where: {
         orgId: p.orgId,
@@ -1144,14 +1147,17 @@ export class ToolGateway implements OnModuleInit {
         tokenHash: createHash('sha256').update(p.token).digest('hex'),
         status: ApprovalState.confirmada,
         expiraEm: { gt: new Date() },
+        ...(exigeCarteiraAntesDoConsumo ? {} : { nivelExigido: RiskLevel.R4 }),
       },
       select: { id: true, aprovadoPorId: true, resourceType: true, resourceId: true, contentHash: true },
     });
     if (!ap?.aprovadoPorId || ap.resourceType !== p.resourceType || ap.resourceId !== p.resourceId
       || ap.contentHash !== canonicalHash(p.resourceType, p.args, p.hashKeys)) {
-      throw new ForbiddenException('A aprovação não corresponde a este efeito de cliente.');
+      throw new ForbiddenException('A aprovação não corresponde a este efeito.');
     }
-    await this.exigirEscopoDeEfeitoAprovado(p.orgId, capabilityId, ap.id, p.args);
+    if (exigeCarteiraAntesDoConsumo) {
+      await this.exigirEscopoDeEfeitoAprovado(p.orgId, capabilityId, ap.id, p.args);
+    }
     return ap;
   }
 

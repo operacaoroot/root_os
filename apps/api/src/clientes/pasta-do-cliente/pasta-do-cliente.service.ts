@@ -103,14 +103,25 @@ export class PastaDoClienteService implements PastaDoClientePort, OnModuleInit {
 
   async garantir(pedido: PedidoDePasta): Promise<ResultadoDaPasta> {
     const contexto = contextoAtual();
-    if (contexto?.actorType === ActorType.user && (!pedido.atorId || contexto.actorId !== pedido.atorId)) throw new BadRequestException('Origem humana do pedido não identificada.');
+    if (!pedido.fechamentoApprovalId && contexto?.actorType === ActorType.user && (!pedido.atorId || contexto.actorId !== pedido.atorId)) throw new BadRequestException('Origem humana do pedido não identificada.');
     return naEmpresa(pedido.orgId, pedido.atorId ?? null, () => this.garantirNaEmpresa(pedido));
   }
 
   private async garantirNaEmpresa(pedido: PedidoDePasta): Promise<ResultadoDaPasta> {
     const { orgId, partnerId } = pedido;
+    const conferirFechamento = async () => {
+      if (pedido.origem==='fechamento' || pedido.origem==='fechado-fora') {
+        const origem=await this.efeitoClienteEscopo.exigirFechamento(orgId,partnerId,pedido.leadId ?? '',pedido.fechamentoApprovalId ?? '',pedido.origem);
+        if ((pedido.atorId ?? null)!==origem.atorId) throw new BadRequestException('Originador do fechamento divergente.');
+      }
+    };
+    if (pedido.origem==='fechamento' || pedido.origem==='fechado-fora') {
+      const origem=await this.efeitoClienteEscopo.exigirFechamento(orgId,partnerId,pedido.leadId ?? '',pedido.fechamentoApprovalId ?? '',pedido.origem);
+      if(pedido.atorId && pedido.atorId!==origem.atorId) throw new BadRequestException('Originador do fechamento divergente.');
+      pedido={...pedido,atorId:origem.atorId};
+    } else if (pedido.fechamentoApprovalId) throw new BadRequestException('Origem do fechamento divergente.');
     if (pedido.atorId) await this.efeitoClienteEscopo.exigirPessoa(orgId,pedido.atorId,partnerId,['tarefas.editar','leads.editar']);
-    else if (contextoAtual()?.actorType !== ActorType.system || contextoAtual()?.actorId !== ATOR_DA_PASTA) throw new BadRequestException('Origem do pedido não identificada.');
+    else if (!pedido.fechamentoApprovalId && (contextoAtual()?.actorType !== ActorType.system || contextoAtual()?.actorId !== ATOR_DA_PASTA)) throw new BadRequestException('Origem do pedido não identificada.');
     const partner = await this.prisma.partner.findFirst({
       where: { id: partnerId, orgId },
       select: { id: true, isCliente: true, interno: true, razaoSocial: true, nomeFantasia: true, pastaDriveId: true, pastaDriveUrl: true },
@@ -118,6 +129,7 @@ export class PastaDoClienteService implements PastaDoClientePort, OnModuleInit {
     if (!partner || !partner.isCliente) return { estado: 'erro', motivo: 'cliente não encontrado nesta empresa.' };
     if (partner.interno) return { estado: 'erro', motivo: 'o cliente interno da casa não ganha pasta de cliente.' };
     if (partner.pastaDriveId && partner.pastaDriveUrl) {
+      await conferirFechamento();
       return { estado: 'pronta', pastaId: partner.pastaDriveId, url: partner.pastaDriveUrl, ligada: false };
     }
     const nome = nomeDaPastaDoPartner(partner);
@@ -129,16 +141,18 @@ export class PastaDoClienteService implements PastaDoClientePort, OnModuleInit {
     const google = await this.prisma.googleAccount.findUnique({ where: { orgId }, select: { orgId: true } });
     if (!google) return { estado: 'sem_raiz', motivo: FRASE_SEM_GOOGLE };
 
-    const pendente = await this.pedidoNaFila(orgId, partnerId);
+    await conferirFechamento();
+    const pendente = await this.pedidoNaFila(orgId, partnerId, pedido.atorId ?? ATOR_DA_PASTA, pedido.atorId ? ActorType.user : ActorType.system, nome, pedido.origem, pedido.fechamentoApprovalId);
     if (pendente) return { estado: 'aguardando_aprovacao', approvalId: pendente };
 
     try {
+      await conferirFechamento();
       const r = await this.porta.executar<ResultadoDoEfeito>({
         orgId,
         actorId: pedido.atorId ?? ATOR_DA_PASTA,
         actorType: pedido.atorId ? ActorType.user : ActorType.system,
         capabilityId: 'drive.pasta.criar',
-        args: { clienteId: partnerId, nome, origem: pedido.origem },
+        args: { clienteId: partnerId, nome, origem: pedido.origem, ...(pedido.fechamentoApprovalId ? {fechamentoApprovalId:pedido.fechamentoApprovalId,leadId:pedido.leadId} : {}) },
         resource: { type: 'cliente', id: partnerId },
       });
       if (ehRetida(r)) return { estado: 'aguardando_aprovacao', approvalId: r.approvalId };
@@ -149,19 +163,28 @@ export class PastaDoClienteService implements PastaDoClientePort, OnModuleInit {
   }
 
   /** O pedido de criação desta pasta ainda vivo na fila (pendente ou confirmado e não executado). */
-  private async pedidoNaFila(orgId: string, partnerId: string): Promise<string | null> {
+  private async pedidoNaFila(orgId: string, partnerId: string, atorId:string, atorTipo:ActorType, nome:string, origem:string, fechamentoApprovalId?:string): Promise<string | null> {
     const a = await this.prisma.approval.findFirst({
       where: {
         orgId,
         capabilityId: 'drive.pasta.criar',
         resourceType: 'cliente',
         resourceId: partnerId,
+        propostoPorId: atorId,
+        propostoPorTipo: atorTipo,
         status: { in: [ApprovalState.pendente, ApprovalState.confirmada] },
         expiraEm: { gt: new Date() },
       },
       orderBy: { criadoEm: 'desc' },
-      select: { id: true },
+      select: { id: true, toolCallId: true },
     });
+    if(a) {
+      const chamada=await this.prisma.toolCall.findFirst({where:{id:a.toolCallId ?? '',orgId},select:{args:true}});
+      const args=chamada?.args;
+      if(!args || typeof args!=='object' || Array.isArray(args)) return null;
+      const gravados=args as Record<string,unknown>;
+      if(gravados.clienteId!==partnerId || gravados.nome!==nome || gravados.origem!==origem || (gravados.fechamentoApprovalId ?? undefined)!==fechamentoApprovalId) return null;
+    }
     return a?.id ?? null;
   }
 

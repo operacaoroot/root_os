@@ -25,12 +25,15 @@ const CAPACIDADES = [
   } },
 ];
 
-function montar(capacidade: typeof CAPACIDADES[number], op: { semGuarda?: boolean; exigeAprovacao?: boolean } = {}) {
+type CapacidadeDeTeste = { id: string; resource: { type: string; id: string }; args: Record<string, unknown> };
+
+function montar(capacidade: CapacidadeDeTeste, op: { semGuarda?: boolean; exigeAprovacao?: boolean; nivel?: RiskLevel } = {}) {
   const { id, resource, args } = capacidade;
+  const nivel = op.nivel ?? RiskLevel.R3;
   const ap = {
     id: APROVACAO, orgId: ORG, capabilityId: id, toolCallId: 'chamada-retida',
     aprovadoPorId: APROVADOR, aprovadoEm: new Date(), propostoPorId: 'proponente',
-    resourceType: resource.type, resourceId: resource.id, nivelExigido: RiskLevel.R3,
+    resourceType: resource.type, resourceId: resource.id, nivelExigido: nivel,
     contentHash: canonicalHash(resource.type, args, []), resumo: 'Teste de Drive', motivo: null, canal: 'gdrive',
     status: ApprovalState.confirmada as ApprovalState, expiraEm: new Date(Date.now() + 60_000),
     tokenHash: createHash('sha256').update(TOKEN).digest('hex'),
@@ -38,7 +41,7 @@ function montar(capacidade: typeof CAPACIDADES[number], op: { semGuarda?: boolea
   const ler = async ({ where }: { where: Prisma.ApprovalWhereInput }) => {
     if ((where.id && where.id !== ap.id) || (where.orgId && where.orgId !== ap.orgId)
       || (where.tokenHash && where.tokenHash !== ap.tokenHash) || (where.capabilityId && where.capabilityId !== ap.capabilityId)
-      || (where.status && where.status !== ap.status)) return null;
+      || (where.status && where.status !== ap.status) || (where.nivelExigido && where.nivelExigido !== ap.nivelExigido)) return null;
     return { ...ap };
   };
   const updateMany = vi.fn(async ({ where }: { where: Prisma.ApprovalWhereInput }) => {
@@ -46,16 +49,17 @@ function montar(capacidade: typeof CAPACIDADES[number], op: { semGuarda?: boolea
     ap.status = ApprovalState.consumida;
     return { count: 1 };
   });
+  const criarToolCall = vi.fn(async () => ({ id: 'chamada-atual' }));
   const prisma = {
     approval: { findFirst: vi.fn(ler), findUnique: vi.fn(ler), updateMany },
     policyDecision: { update: async () => ({}) },
     toolCall: {
       findFirst: async () => ({ id: ap.toolCallId, args, capabilityId: id, agentSlug: null, correlationId: 'proposta-qa' }),
-      create: async () => ({ id: 'chamada-atual' }),
+      create: criarToolCall,
       update: async () => ({}),
     },
   } as unknown as PrismaService;
-  const decisao = { permitido: true, exigeAprovacao: op.exigeAprovacao ?? true, nivel: 'R3', motivo: 'Escrita de teste', sinaisAcionados: [] };
+  const decisao = { permitido: true, exigeAprovacao: op.exigeAprovacao ?? true, nivel, motivo: 'Escrita de teste', sinaisAcionados: [] };
   const policy = {
     resolverCapacidade: () => ({ id, argsSchema: { type: 'object' }, efeito: { sensibilidade: 'confidencial' }, hashKeys: [] }),
     simular: () => decisao,
@@ -90,7 +94,7 @@ function montar(capacidade: typeof CAPACIDADES[number], op: { semGuarda?: boolea
     (entrada, contextoDoEfeito) => efeito(entrada, contextoDoEfeito),
   );
 
-  return { ap, acoes, chamar, efeito, ctx, exigirAntesDaAprovacao, updateMany, consumir, propor };
+  return { ap, acoes, chamar, efeito, ctx, exigirAntesDaAprovacao, updateMany, consumir, propor, criarToolCall };
 }
 
 describe.each(CAPACIDADES)('aprovação e carteira para $id', (capacidade) => {
@@ -192,4 +196,69 @@ it('descarta approvalId vindo do contexto sem mudar a execução de outra capaci
   expect(await m.chamar()).toMatchObject({ status: 'executado' });
   expect(m.efeito.mock.calls[0][1]).not.toHaveProperty('approvalId');
   expect(m.exigirAntesDaAprovacao).not.toHaveBeenCalled();
+});
+
+
+const LEAD_COMERCIAL = '00000000-0000-4000-8000-000000000101';
+const HASH_COMERCIAL = 'b'.repeat(64);
+const CAPACIDADES_COM_ORIGEM = [
+  {
+    id: 'comercial.contrato.enviar',
+    resource: { type: 'comercial.contrato', id: `${LEAD_COMERCIAL}:${HASH_COMERCIAL.slice(0, 16)}` },
+    args: { leadId: LEAD_COMERCIAL, versao: 1, hash: HASH_COMERCIAL, signatarioEmail: 'cliente@teste.invalid' },
+  },
+  {
+    id: 'comercial.fechamento.executar',
+    resource: { type: 'comercial.fechamento', id: `fech-${LEAD_COMERCIAL}-v1` },
+    args: { leadId: LEAD_COMERCIAL, chave: `fech-${LEAD_COMERCIAL}-v1`, propostaHash: HASH_COMERCIAL },
+  },
+];
+
+describe.each(CAPACIDADES_COM_ORIGEM)('origem do R4 por token para $id', (capacidade) => {
+  it('só entrega a aprovação que consumiu ao efeito e mantém o ator original na chamada', async () => {
+    const m = montar(capacidade, { nivel: RiskLevel.R4, semGuarda: true });
+    expect(await m.chamar(TOKEN)).toMatchObject({ status: 'executado', decisao: { nivel: RiskLevel.R4 }, resultado: {
+      ctx: { orgId: ORG, approvalId: APROVACAO, actorId: APROVADOR, actorType: ActorType.user },
+      atorDoContexto: APROVADOR, tipoDoContexto: ActorType.user,
+    } });
+    expect(m.criarToolCall).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({ actorId: m.ctx.actorId, actorType: m.ctx.actorType, capabilityId: capacidade.id }),
+    }));
+    expect(m.exigirAntesDaAprovacao).not.toHaveBeenCalled();
+    expect(await m.chamar(TOKEN)).toMatchObject({ status: 'recusado' });
+    expect(m.ap.status).toBe(ApprovalState.consumida);
+    expect(m.updateMany).toHaveBeenCalledTimes(1);
+    expect(m.efeito).toHaveBeenCalledTimes(1);
+  });
+
+  it('retém a proposta quando só há um ID forjado no contexto', async () => {
+    const m = montar(capacidade, { nivel: RiskLevel.R4, semGuarda: true });
+    expect(await m.chamar()).toMatchObject({ status: 'aguardando_aprovacao' });
+    expect(m.consumir).not.toHaveBeenCalled();
+    expect(m.efeito).not.toHaveBeenCalled();
+  });
+
+  it('recusa execução comercial se a configuração atual rebaixou o R4', async () => {
+    const m = montar(capacidade, { nivel: RiskLevel.R3, semGuarda: true });
+    expect(await m.chamar(TOKEN)).toMatchObject({ status: 'recusado' });
+    expect(m.updateMany).not.toHaveBeenCalled();
+    expect(m.efeito).not.toHaveBeenCalled();
+  });
+
+  it('recusa token de aprovação persistida abaixo de R4', async () => {
+    const m = montar(capacidade, { nivel: RiskLevel.R4, semGuarda: true });
+    m.ap.nivelExigido = RiskLevel.R3;
+    expect(await m.chamar(TOKEN)).toMatchObject({ status: 'recusado' });
+    expect(m.updateMany).not.toHaveBeenCalled();
+    expect(m.efeito).not.toHaveBeenCalled();
+  });
+
+  it('recusa antes de consumir token de outra capacidade com o mesmo recurso e argumentos', async () => {
+    const m = montar(capacidade, { nivel: RiskLevel.R4, semGuarda: true });
+    m.ap.capabilityId = 'capacidade-divergente';
+    expect(await m.chamar(TOKEN)).toMatchObject({ status: 'recusado' });
+    expect(m.ap.status).toBe(ApprovalState.confirmada);
+    expect(m.consumir).not.toHaveBeenCalled();
+    expect(m.efeito).not.toHaveBeenCalled();
+  });
 });

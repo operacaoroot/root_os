@@ -15,6 +15,7 @@ if (!url) throw new Error('TEST_DATABASE_URL obrigatório para a prova dos efeit
 const alvo = new URL(url);
 if (!['postgres:', 'postgresql:'].includes(alvo.protocol) || !['127.0.0.1', 'localhost'].includes(alvo.hostname)
   || alvo.search || alvo.hash || !((alvo.port === '55583' && alvo.pathname === '/rootos_lote5_test')
+    || (alvo.port === '55584' && alvo.pathname === '/rootos_lote6_test')
     || (alvo.port === '5432' && alvo.pathname === '/marketing_os_test'))) {
   throw new Error('A prova exige o banco descartável local ou o banco próprio do CI.');
 }
@@ -146,13 +147,13 @@ describe('efeitos por cliente: autoridade persistida no PostgreSQL', () => {
     await db.approval.update({ where: { id: f.ap.id }, data: { status: ApprovalState.confirmada } });
     await expect(guard.exigir(f.pedido)).rejects.toThrow();
   });
-  it('sistema só vale com identidade persistida coerente e sem originador humano no arquivo', async () => {
+  it('sistema sem cadeia persistida é recusado mesmo com slug coerente', async () => {
     const f = await fixture(true), id = 'arquivista-do-cliente';
     await db.approval.update({ where: { id: f.ap.id }, data: { propostoPorTipo: ActorType.system, propostoPorId: id } });
     await db.toolCall.update({ where: { id: f.chamada.id }, data: { actorType: ActorType.system, actorId: id } });
     await expect(guard.exigir(f.pedido)).rejects.toThrow();
     await db.arquivoDoCliente.update({ where: { id: f.linha!.id }, data: { atorId: null } });
-    await expect(guard.exigir({ ...f.pedido, arquivo: { atorId: null, refTipo: null, refId: null } })).resolves.toMatchObject({ proponenteTipo: ActorType.system });
+    await expect(guard.exigir({ ...f.pedido, arquivo: { atorId: null, refTipo: null, refId: null } })).rejects.toThrow();
     await db.toolCall.update({ where: { id: f.chamada.id }, data: { actorId: 'sistema-desconhecido' } });
     await expect(guard.exigir({ ...f.pedido, arquivo: { atorId: null, refTipo: null, refId: null } })).rejects.toThrow();
   });
