@@ -6,6 +6,7 @@ import {
   type TarefaDoCliente,
 } from '@mktos/shared';
 import { PrismaService } from '../prisma/prisma.service';
+import { tarefaDeListaVisivel, tarefaViva } from '../work/arquivadas';
 
 const ETAPAS = [
   { name: 'A fazer', type: 'open' as const, color: '#87909e' },
@@ -39,15 +40,23 @@ export class TarefasDoClienteService {
   }
 
   private async cartao(orgId: string, taskId: string) {
-    const c = await this.prisma.workTask.findFirst({ where: { id: taskId, orgId }, select: { id: true, list: { select: { folderId: true } } } });
+    const c = await this.prisma.workTask.findFirst({ where: { id: taskId, orgId }, select: { id: true, clienteId: true, list: { select: { folderId: true } } } });
     if (!c) throw new NotFoundException('Ficha não encontrada');
     return c;
   }
 
   async listar(orgId: string, taskId: string): Promise<TarefaDoCliente[]> {
-    await this.cartao(orgId, taskId);
+    const c = await this.cartao(orgId, taskId);
+    // Etapa 6 (F-16): além das subtarefas do card, toda tarefa ligada ao cliente (`clienteId`), de qualquer
+    // lista, fora da Lixeira e de lista arquivada. O card em si não entra.
     const ts = await this.prisma.workTask.findMany({
-      where: { orgId, parentId: taskId, archived: false, list: { externalId: LISTA_DE_TAREFAS_DO_CLIENTE } },
+      where: {
+        orgId, archived: false, AND: [tarefaViva(), tarefaDeListaVisivel()],
+        OR: [
+          { parentId: taskId, list: { externalId: LISTA_DE_TAREFAS_DO_CLIENTE } },
+          ...(c.clienteId ? [{ clienteId: c.clienteId, id: { not: taskId } }] : []),
+        ],
+      },
       select: { id: true, title: true, dueDate: true, assignee: true, status: { select: { type: true } } },
     });
     const hoje = hojeSp();
@@ -89,7 +98,8 @@ export class TarefasDoClienteService {
   /** Marca como feita ou reabre. */
   async alternar(orgId: string, id: string): Promise<{ feita: boolean }> {
     const t = await this.prisma.workTask.findFirst({
-      where: { id, orgId, list: { externalId: LISTA_DE_TAREFAS_DO_CLIENTE } },
+      // Etapa 6 (F-16): a ficha também marca a tarefa do cliente que mora em outra lista.
+      where: { id, orgId, OR: [{ list: { externalId: LISTA_DE_TAREFAS_DO_CLIENTE } }, { clienteId: { not: null } }] },
       select: { id: true, status: { select: { type: true } }, list: { select: { statuses: { orderBy: { order: 'asc' } } } } },
     });
     if (!t) throw new NotFoundException('Tarefa não encontrada');
