@@ -5,6 +5,9 @@ import { PrismaClient } from '@prisma/client';
 
 import { ApprovalsService } from '../src/approvals/approvals.service';
 import { AuditService } from '../src/audit/audit.service';
+import { ClienteEscopoService } from '../src/clientes-escopo/cliente-escopo.service';
+import { TarefaEscopoService } from '../src/clientes-escopo/tarefa-escopo.service';
+import { EfeitoClienteEscopoService } from '../src/clientes-escopo/efeito-cliente-escopo.service';
 import { comContexto } from '../src/common/contexto-execucao';
 import { AcoesService } from '../src/gateway/acoes.service';
 import { EfeitosRegistry } from '../src/gateway/efeitos.registry';
@@ -145,7 +148,7 @@ describe.skipIf(!URL)('TR-04 e TR-05 contra o banco, pela porta', { timeout: 60_
       await prisma.org.upsert({ where: { id }, create: { id, name: `A4 ${slug}`, slug }, update: {} });
     }
     // Classificar à mão exige `tarefas.editar` (relida no banco).
-    const comPermissao = { permissions: { connectOrCreate: [{ where: { key: 'tarefas.editar' }, create: { key: 'tarefas.editar' } }] } };
+    const comPermissao = { permissions: { connectOrCreate: ['tarefas.editar','aprovacoes.decidir'].map(key => ({where: {key},create:{key}})) } };
     const papel = await prisma.role.upsert({ where: { orgId_key: { orgId: ORG, key: 'admin_master' } }, create: { orgId: ORG, key: 'admin_master', name: 'Admin', ...comPermissao }, update: comPermissao, select: { id: true } });
     const papelL = await prisma.role.upsert({ where: { orgId_key: { orgId: ORG, key: 'gestor_marketing' } }, create: { orgId: ORG, key: 'gestor_marketing', name: 'Gestor', ...comPermissao }, update: comPermissao, select: { id: true } });
     for (const [u, r] of [[PEDRO, papel.id], [LUCAS, papelL.id]] as const) {
@@ -154,6 +157,7 @@ describe.skipIf(!URL)('TR-04 e TR-05 contra o banco, pela porta', { timeout: 60_
         create: { id: u.id, orgId: ORG, email: `${u.id}@a4.teste`, name: u.id.slice(3, 8), passwordHash: 'x', roles: { connect: { id: r } } },
         update: { isActive: true, roles: { set: [{ id: r }] } },
       });
+      await prisma.clienteAcessoPerfil.upsert({where:{userId_orgId:{userId:u.id,orgId:ORG}},create:{userId:u.id,orgId:ORG,modo:'ALL'},update:{modo:'ALL'}});
     }
     for (const org of [ORG, ORG_B]) {
       await prisma.googleAccount.upsert({
@@ -167,13 +171,15 @@ describe.skipIf(!URL)('TR-04 e TR-05 contra o banco, pela porta', { timeout: 60_
     const audit = new AuditService(p);
     const policy = new PolicyService(p);
     await policy.onModuleInit();
+    const escopo = new ClienteEscopoService(p,audit);
+    const efeitoEscopo = new EfeitoClienteEscopoService(p,escopo,new TarefaEscopoService(p,escopo),policy);
     approvals = new ApprovalsService(p, audit);
     const eventos = new EventLogService(p);
     const registro = new EfeitosRegistry();
     const interruptores = new InterruptoresRegistry();
     conectores = new ConectoresService(p, audit, eventos, interruptores);
     conectores.onModuleInit();
-    const gateway = new ToolGateway(p, policy, new SinaisService(p, policy), approvals, eventos, undefined, interruptores, registro);
+    const gateway = new ToolGateway(p, policy, new SinaisService(p, policy), approvals, eventos, undefined, interruptores, registro, undefined, efeitoEscopo);
     acoes = new AcoesService(p, gateway, eventos, interruptores, policy);
     porta = new PortaDoOperador(gateway, registro);
 
@@ -186,12 +192,12 @@ describe.skipIf(!URL)('TR-04 e TR-05 contra o banco, pela porta', { timeout: 60_
     drive = new DriveEmMemoria();
     raiz = montarRaiz(drive);
     storage = new StorageEmMemoria();
-    pastas = new PastaDoClienteService(p, memoria as never, porta, registro, audit, drive);
+    pastas = new PastaDoClienteService(p, memoria as never, porta, registro, audit, drive, efeitoEscopo);
     pastas.onModuleInit();
     const registroP = new PendenciasRegistry();
     pendencias = new PendenciasService(p, registroP);
     const llm = new StubProvider(path.resolve(__dirname, '../../../homolog/fixtures/stub'));
-    arquivista = new ArquivistaService(p, porta, registro, audit, pendencias, registroP, pastas, memoria as never, drive, llm as never);
+    arquivista = new ArquivistaService(p, porta, registro, audit, pendencias, registroP, pastas, memoria as never, drive, llm as never, efeitoEscopo);
     arquivista.usarArmazem(storage);
     arquivista.onModuleInit();
 
@@ -231,6 +237,8 @@ describe.skipIf(!URL)('TR-04 e TR-05 contra o banco, pela porta', { timeout: 60_
     await prisma.auditLog.deleteMany({ where: { orgId: { in: orgs } } });
     await prisma.integrationAccount.deleteMany({ where: { orgId: { in: orgs } } });
     await prisma.googleAccount.deleteMany({ where: { orgId: { in: orgs } } });
+    await prisma.clienteAcessoVinculo.deleteMany({ where: { orgId: { in: orgs } } });
+    await prisma.clienteAcessoPerfil.deleteMany({ where: { orgId: { in: orgs } } });
     await prisma.partner.deleteMany({ where: { orgId: { in: orgs } } });
     await prisma.user.deleteMany({ where: { orgId: { in: orgs } } });
     await prisma.role.deleteMany({ where: { orgId: { in: orgs } } });
@@ -405,9 +413,9 @@ describe.skipIf(!URL)('TR-04 e TR-05 contra o banco, pela porta', { timeout: 60_
   it('só no OS: cliente interno, ou nem cliente nem lead', async () => {
     const interno =
       (await prisma.partner.findFirst({ where: { orgId: ORG, interno: true } })) ?? (await cliente('Casa (interno)', { interno: true }));
-    const a = await arquivista.arquivar({ orgId: ORG, partnerId: interno.id, origem: 'anexo-da-tarefa', nomeOriginal: 'contrato.pdf', tipoMime: 'application/pdf', conteudo: { buffer: Buffer.from('%PDF-1.4 contrato') } });
+    const a = await arquivista.arquivar({ orgId: ORG, partnerId: interno.id, atorId: PEDRO.id, origem: 'anexo-da-tarefa', nomeOriginal: 'contrato.pdf', tipoMime: 'application/pdf', conteudo: { buffer: Buffer.from('%PDF-1.4 contrato') } });
     expect(a.estado).toBe('so_no_os');
-    const b = await arquivista.arquivar({ orgId: ORG, partnerId: null, origem: 'manual', nomeOriginal: 'x.pdf', tipoMime: 'application/pdf', conteudo: { buffer: Buffer.from('x') } });
+    const b = await arquivista.arquivar({ orgId: ORG, partnerId: null, atorId: PEDRO.id, origem: 'manual', nomeOriginal: 'x.pdf', tipoMime: 'application/pdf', conteudo: { buffer: Buffer.from('x') } });
     expect(b.estado).toBe('so_no_os');
     expect(await prisma.arquivoDoCliente.count({ where: { orgId: ORG, partnerId: interno.id } })).toBe(0);
   });
@@ -472,6 +480,37 @@ describe.skipIf(!URL)('TR-04 e TR-05 contra o banco, pela porta', { timeout: 60_
     expect(drive.nos.get(drive.nos.get(enviado.driveArquivoId!)!.pais[0])!.nome).toBe('07-evidencias');
   });
 
+  it('retry não sobrescreve dono e referência alterados por outra conexão durante storage', async () => {
+    const a = await cliente('Concorrência A Exemplo'), b = await cliente('Concorrência B Exemplo');
+    const pedido = {
+      orgId: ORG, partnerId: a.id, origem: 'manual' as const, nomeOriginal: 'qa-cas.txt', tipoMime: 'text/plain',
+      conteudo: { buffer: Buffer.from('canário da atualização concorrente') }, atorId: PEDRO.id,
+      subpasta: '04-entrega' as const, ref: { tipo: 'QA', id: 'cas-original' },
+    };
+    await arquivista.arquivar(pedido);
+    const linha = await prisma.arquivoDoCliente.findFirstOrThrow({ where: { orgId: ORG, refTipo: 'QA', refId: 'cas-original' } });
+    await prisma.arquivoDoCliente.update({ where: { id: linha.id }, data: { estado: 'erro' } });
+    const concorrente = new PrismaClient({ datasources: { db: { url: URL } } });
+    const put = storage.put.bind(storage);
+    const hook = vi.spyOn(storage, 'put').mockImplementation(async (chave, corpo, tipo) => {
+      await put(chave, corpo, tipo);
+      await concorrente.arquivoDoCliente.update({ where: { id: linha.id }, data: {
+        partnerId: b.id, atorId: LUCAS.id, refId: 'cas-concorrente',
+      } });
+    });
+    try {
+      const escritasAntes = drive.escritas.length;
+      const resultado = await arquivista.arquivar(pedido);
+      expect(hook).toHaveBeenCalledTimes(1);
+      expect(resultado.estado).toBe('erro');
+      expect(await prisma.arquivoDoCliente.findUniqueOrThrow({ where: { id: linha.id } })).toMatchObject({
+        partnerId: b.id, atorId: LUCAS.id, refId: 'cas-concorrente', estado: 'erro',
+      });
+      expect(await prisma.approval.count({ where: { orgId: ORG, resourceId: linha.id } })).toBe(0);
+      expect(drive.escritas).toHaveLength(escritasAntes);
+    } finally { hook.mockRestore(); await concorrente.$disconnect(); }
+  });
+
   it('o mesmo arquivo para o mesmo cliente cai no mesmo registro (idempotente)', async () => {
     const c = await cliente('Idem Exemplo');
     const pedido = { orgId: ORG, partnerId: c.id, origem: 'sala' as const, nomeOriginal: 'Proposta.pdf', tipoMime: 'application/pdf', conteudo: { buffer: Buffer.from('proposta v1') }, atorId: PEDRO.id };
@@ -520,7 +559,8 @@ describe.skipIf(!URL)('TR-04 e TR-05 contra o banco, pela porta', { timeout: 60_
         resource: { type: 'arquivo-do-cliente', id: 'forjado' },
       }),
     )) as AcaoRetida;
-    await expect(confirmar(forjado.approvalId)).rejects.toThrow(/não é deste cliente/);
+    await expect(confirmar(forjado.approvalId)).rejects.toThrow(/autorização original/);
+    expect((await prisma.approval.findUniqueOrThrow({where:{id:forjado.approvalId}})).status).toBe('confirmada');
     expect(naPastaDeB()).toEqual([]);
 
     // E o ponteiro de A adulterado para fora da raiz: o efeito confere antes de escrever.
