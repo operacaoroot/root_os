@@ -5,6 +5,7 @@ import { PermissionsGuard } from '../auth/permissions.guard';
 import { RequirePermissions } from '../auth/permissions.decorator';
 import { CurrentUser, JwtUser } from '../auth/current-user.decorator';
 import { LinhaDoTempoService } from './linha-do-tempo.service';
+import { AtividadeDasAreasService, type ItemDaArea } from './atividade-das-areas.service';
 import {
   CursorInvalidoError,
   FiltroInvalidoError,
@@ -47,7 +48,18 @@ import {
 @UseGuards(JwtAuthGuard, PermissionsGuard)
 @Controller('linha-do-tempo')
 export class LinhaDoTempoController {
-  constructor(private readonly svc: LinhaDoTempoService) {}
+  constructor(
+    private readonly svc: LinhaDoTempoService,
+    private readonly areas: AtividadeDasAreasService,
+  ) {}
+
+  /** Etapa 9 (F-26): o que aconteceu no Comercial, no WhatsApp (só contagem) e na implantação. */
+  @Get('areas')
+  @RequirePermissions('auditoria.ver')
+  async dasAreas(@CurrentUser() user: JwtUser, @Query('dias') dias?: string): Promise<ItemDaArea[]> {
+    const n = Number(dias ?? 7);
+    return this.areas.listar(user.orgId, Number.isFinite(n) ? n : 7);
+  }
 
   /*
    * A VALIDAÇÃO DA ENTRADA RECUSA, NÃO CONSERTA.

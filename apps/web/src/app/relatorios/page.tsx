@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import Link from 'next/link';
 import { Sparkles, RefreshCw } from 'lucide-react';
 import type { DailyReport, ReportList } from '@mktos/shared';
 import { apiGet, apiPost } from '@/lib/api';
@@ -8,6 +9,16 @@ import { SelectedTaskScope } from '@/components/SelectedTaskScope';
 import { useAuth } from '@/lib/auth';
 
 type ScopedReport = DailyReport & { taskScope?: { source: { tool: string }; total?: number; selection?: { listId?: string } } };
+
+/*
+ * Etapa 9 (F-26, decisão do Lucas em 04/11/2026): Resultados › Relatórios reúne os relatórios das
+ * áreas. Cada um continua na tela dele; aqui ficam os atalhos, antes do briefing diário.
+ */
+const RELATORIOS_DAS_AREAS = [
+  { href: '/comercial/relatorio', titulo: 'Relatório comercial', nota: 'a semana do Comercial com a análise; os números são os da Rodada', permissao: 'leads.ver' },
+  { href: '/comercial/rodada', titulo: 'Rodada da semana', nota: 'os números da semana, de segunda a domingo', permissao: 'leads.ver' },
+  { href: '/marketing/relatorio', titulo: 'Relatório de marketing', nota: 'o mês do conteúdo: o que foi ao ar e como foi', permissao: 'pauta.ver' },
+];
 
 export default function RelatoriosPage() {
   const { token, ready, can } = useAuth();
@@ -45,8 +56,19 @@ export default function RelatoriosPage() {
       .finally(() => setGenerating(false));
   };
 
+  const dasAreas = RELATORIOS_DAS_AREAS.filter((r) => can(r.permissao));
   return (
     <div className="space-y-6">
+      {dasAreas.length > 0 && (
+        <section aria-label="Relatórios das áreas" className="grid gap-3 sm:grid-cols-3">
+          {dasAreas.map((r) => (
+            <Link key={r.href} href={r.href} className="group rounded-md border border-border bg-surface p-4 hover:border-brand-dim">
+              <div className="font-medium group-hover:text-brand">{r.titulo} →</div>
+              <div className="mt-1 text-sm text-muted">{r.nota}</div>
+            </Link>
+          ))}
+        </section>
+      )}
       <SelectedTaskScope surface="reports" listId={listId} onSelect={setListId} />
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>

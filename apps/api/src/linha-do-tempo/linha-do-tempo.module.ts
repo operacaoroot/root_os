@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { LinhaDoTempoController } from './linha-do-tempo.controller';
 import { LinhaDoTempoService } from './linha-do-tempo.service';
+import { AtividadeDasAreasService } from './atividade-das-areas.service';
 
 /**
  * A LINHA DO TEMPO — fatia A9.
@@ -24,6 +25,6 @@ import { LinhaDoTempoService } from './linha-do-tempo.service';
  */
 @Module({
   controllers: [LinhaDoTempoController],
-  providers: [LinhaDoTempoService],
+  providers: [LinhaDoTempoService, AtividadeDasAreasService],
 })
 export class LinhaDoTempoModule {}

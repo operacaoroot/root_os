@@ -2,9 +2,9 @@ import { Injectable } from '@nestjs/common';
 
 import { PainelComercialService, rotuloDoCanal, rotuloDoProduto } from '../../painel-comercial/painel-comercial.service';
 import { PrismaService } from '../../prisma/prisma.service';
+import { fechadosDaSemana } from './fechados-da-semana';
 import { TarefasDoComercialService } from '../tarefas/tarefas-do-comercial.service';
 import {
-  fechouEm,
   movimentosDaSemana,
   nomeDoLead,
   propostasDaSemana,
@@ -35,7 +35,7 @@ export class RodadaDaSemanaService {
     const s = semanaDaRodada(semanaPedida, agora);
     const janela = { gte: s.inicio, lt: s.fim };
 
-    const [novos, fatos, fichasFechadasSemFato, painel, tarefas] = await Promise.all([
+    const [novos, fatos, painel, tarefas] = await Promise.all([
       this.prisma.lead.findMany({
         where: { orgId, enteredAt: janela },
         orderBy: { enteredAt: 'desc' },
@@ -56,38 +56,13 @@ export class RodadaDaSemanaService {
         take: 5000,
         select: { leadId: true, type: true, payload: true, occurredAt: true },
       }),
-      // E9 sem o fato `cliente.ativo`: fecha na data do cliente ativo da ficha ou na entrada em E9.
-      this.prisma.comercialFicha.findMany({
-        where: {
-          orgId,
-          etapa: 'fechado',
-          OR: [{ clienteAtivoEm: janela }, { clienteAtivoEm: null, etapaDesde: janela }],
-        },
-        select: { leadId: true, etapa: true, clienteAtivoEm: true, etapaDesde: true },
-      }),
       this.painel.painel(orgId, agora),
       this.tarefas.listar(orgId, quemPergunta),
     ]);
     const fatosDaSemana: FatoDaRodada[] = fatos;
 
-    // Fechados: o primeiro `cliente.ativo` de cada lead, se caiu na semana; ou a ficha em E9 sem o fato.
-    const ativosNaSemana = [...new Set(fatosDaSemana.filter((f) => f.type === 'cliente.ativo').map((f) => f.leadId))];
-    const candidatosDaFicha = fichasFechadasSemFato.map((f) => f.leadId);
-    const comFato = [...new Set([...ativosNaSemana, ...candidatosDaFicha])];
-    const primeiros = comFato.length
-      ? await this.prisma.leadEvent.groupBy({
-          by: ['leadId'],
-          where: { orgId, leadId: { in: comFato }, type: 'cliente.ativo' },
-          _min: { occurredAt: true },
-        })
-      : [];
-    const primeiroAtivo = new Map(primeiros.map((p) => [p.leadId, p._min.occurredAt]));
-    const fichaDe = new Map(fichasFechadasSemFato.map((f) => [f.leadId, f]));
-    const quando = new Map<string, Date>();
-    for (const id of comFato) {
-      const em = fechouEm(primeiroAtivo.get(id) ?? null, fichaDe.get(id) ?? null);
-      if (em && em.getTime() >= s.inicio.getTime() && em.getTime() < s.fim.getTime()) quando.set(id, em);
-    }
+    // Fechados: a conta única da semana (etapa 9, F-25), a mesma que o Relatório comercial usa.
+    const quando = await fechadosDaSemana(this.prisma, orgId, s);
 
     // Os nomes de todo lead citado na semana, numa leitura só (a empresa da sessão no filtro).
     const citados = [...new Set([...fatosDaSemana.map((f) => f.leadId), ...quando.keys()])];
