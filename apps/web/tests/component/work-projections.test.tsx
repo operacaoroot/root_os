@@ -22,11 +22,14 @@ import PautaPage from '@/app/pauta/page';
 
 const ID = '11111111-1111-4111-8111-111111111111';
 const tarefa = () => ({
-  id: ID, title: 'ROOT-001', dueDate: new Date(new Date().getFullYear(), new Date().getMonth(), new Date().getDate(), 12).toISOString(),
+  id: ID, title: 'ROOT-001', dueDate: '2026-11-04T15:00:00.000Z',
   statusName: 'Preparação', statusType: 'custom',
 });
 
 beforeEach(() => {
+  // Em São Paulo ainda é 04/11. Os prazos e a reunião são desse dia.
+  vi.useFakeTimers({ toFake: ['Date'] });
+  vi.setSystemTime(new Date('2026-11-05T00:09:00.000Z'));
   apiGet.mockReset();
   permissoes = ['tarefas.ver', 'pauta.ver'];
   modulos = ['trabalho', 'pauta'];
@@ -37,7 +40,10 @@ beforeEach(() => {
     return Promise.resolve({ items: [] });
   });
 });
-afterEach(() => cleanup());
+afterEach(() => {
+  cleanup();
+  vi.useRealTimers();
+});
 
 describe('projeções do mesmo card Work', () => {
   it('usa limites locais inclusive/exclusivo na virada de dia e de mês', () => {
@@ -129,8 +135,8 @@ describe('projeções do mesmo card Work', () => {
     apiGet.mockImplementation((path: string) => {
       if (path.startsWith('/google/calendar/periodo')) return Promise.resolve([{
         id: 'reuniao-1', title: 'Conversa com cliente', reuniao: null,
-        start: new Date(new Date().getFullYear(), new Date().getMonth(), new Date().getDate(), 10).toISOString(),
-        end: new Date(new Date().getFullYear(), new Date().getMonth(), new Date().getDate(), 11).toISOString(),
+        start: '2026-11-04T13:00:00.000Z',
+        end: '2026-11-04T14:00:00.000Z',
         diaInteiro: false, location: null, description: null, link: null, meet: null,
         status: null, organizador: null, attendees: [],
       }]);

@@ -2159,6 +2159,7 @@ jobs:
       # A trava de cobertura, escrita fora do repositório: é infraestrutura de
       # CI, não código de produto. Um único script serve as três suítes.
       - name: Preparar a trava de cobertura
+        id: preparacao_testes
         run: |
           cat > "$RUNNER_TEMP/conferir-suite.mjs" <<'MJS'
           // Lê o resumo em JSON de uma suíte do vitest e afirma sobre NÚMEROS.
@@ -2311,12 +2312,15 @@ jobs:
             "$PISO_CASOS_WEB" "$PISO_ARQUIVOS_WEB" web
 
       - name: Testes de api
+        id: testes_api
+        if: ${{ !cancelled() && steps.preparacao_testes.outcome == 'success' }}
         run: |
           pnpm --filter @mktos/api test -- --maxWorkers=2 \
             --reporter=default --reporter=json \
             --outputFile.json="$RUNNER_TEMP/resumo-api.json"
 
       - name: A suíte de api rodou inteira
+        if: ${{ !cancelled() && steps.testes_api.outcome == 'success' }}
         run: |
           node "$RUNNER_TEMP/conferir-suite.mjs" "$RUNNER_TEMP/resumo-api.json" \
             "$PISO_CASOS_API" "$PISO_ARQUIVOS_API" api
