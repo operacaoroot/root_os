@@ -21,7 +21,7 @@ Perfil explícito `ALL` permite visão ampla; `SELECTED` exige vínculo ativo ao
 | Trabalho e arquivos | GPT-6.1 Terra, Sol e coordenador + revisão Astra | Lotes 2/3: tarefas, subtarefas, comentários, leitura de pastas e downloads por carteira; limites e validação em CONTINUACAO.md |
 | Comercial e financeiro | GPT-6.1 Terra (API/TDD), Sol (UI/TDD), Astra (revisão), coordenador (integração/CI) | Lote 4: oito consultas por carteira e UI; leads, contratos, recebíveis e acordos com relações e totais coerentes. Mutação, despesas, saldos e relatórios gerais seguem para lotes posteriores. |
 | Contexto, agentes e integrações | GPT-6 Astra (desenho), Terra (código) | Próximo lote: ator e cliente em jobs, revalidação no retry, busca vetorial, MCP e ferramentas |
-| Papel restrito do banco — antecipado antes do lote 7 | Astra (plataforma/MCP), Terra (crons), Sol (HTTP Marketing), coordenador (boot/release) | Execução autorizada em 04/11; critérios e coordenação em PAPEL-RESTRITO.md. Só creditar produção após prova no REPORT. |
+| Papel restrito do banco — antecipado antes do lote 7 | Astra (plataforma/MCP), Terra (crons), Sol (HTTP Marketing), coordenador (boot/release) | Publicado em 04/11/2026 (São Paulo), antes do lote 7. API com mktos_app/impor; prova SQL/HTTP/MCP entre duas empresas aprovada. Critérios em PAPEL-RESTRITO.md; evidências e exclusões em ../../deploy/rls-marketing/REPORT.md. |
 
 ## Aceite do primeiro lote
 
@@ -37,9 +37,9 @@ Perfil explícito `ALL` permite visão ampla; `SELECTED` exige vínculo ativo ao
 
 O primeiro lote protege o cofre e contém acesso restrito ao restante. Não afirma que Trabalho, Financeiro, Comercial, Contexto ou execução de agentes já oferecem operação por carteira. Cada lote posterior só libera seus métodos após testes de filhos, relações, agregações, exportações, buscas e execução em segundo plano.
 
-Produção usa papel superusuário e `TENANT_MODO=observar`: as políticas RLS atuais não limitam esse papel. A API deve impor o escopo mesmo nessa condição. FKs compostas continuam sendo verificadas pelo banco. Não trocar o papel produtivo sem cobrir os caminhos de plataforma pendentes.
+Até a virada de 04/11/2026, produção usava papel superusuário e `TENANT_MODO=observar`, sem restrição efetiva por RLS. O lote antecipado publicou `mktos_app`, sem SUPERUSER/BYPASSRLS, e `TENANT_MODO=impor`. A API mantém a autorização de carteira, e o banco impõe a organização. FKs compostas continuam verificadas. Ver [REPORT da release](../../deploy/rls-marketing/REPORT.md) para provas e limites; isso não encerra os lotes seguintes.
 
-O MCP tem chamadas `apiGet()` pela conta de serviço, independentemente do operador: não distribuir uma conta ampla como acesso de usuário restrito. Contas e execuções de sistema mantêm escopo explicitamente operacional até sua adaptação. Jobs antigos não se tornam restritos apenas porque a entrada HTTP foi bloqueada.
+O MCP compilado nesta release aplica a identidade do operador também a `apiGet()`, sem retorno silencioso ao serviço ROOT quando o operador está incompleto ou falha. Instalações de operadores precisam receber o pacote atualizado; não distribuir uma conta ampla como acesso externo. Os crons cobertos descobrem empresas no contexto de plataforma e processam os dados dentro de cada organização. Outros jobs não se tornam restritos apenas porque a entrada HTTP foi bloqueada.
 
 ## Migração dos dados
 
