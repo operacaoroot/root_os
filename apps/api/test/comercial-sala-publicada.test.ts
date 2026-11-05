@@ -1,19 +1,24 @@
 import { JwtService } from '@nestjs/jwt';
-import { PrismaClient } from '@prisma/client';
+import { Prisma, PrismaClient } from '@prisma/client';
 import bcrypt from 'bcryptjs';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 
-import { ApprovalsService } from '../src/approvals/approvals.service';
+import { ApprovalsService, canonicalHash } from '../src/approvals/approvals.service';
 import { AuditService } from '../src/audit/audit.service';
+import { ClienteEscopoService } from '../src/clientes-escopo/cliente-escopo.service';
+import { EfeitoComercialEscopoService } from '../src/clientes-escopo/efeito-comercial-escopo.service';
 import { ReauthService } from '../src/auth/reauth.service';
 import { comContexto } from '../src/common/contexto-execucao';
+import { cardIdDoLead } from '../src/comercial/card-da-implantacao';
 import { FioService, ReacoesRegistry } from '../src/comercial/fio.service';
+import { RepedidosDoComercial } from '../src/comercial/repedidos-do-comercial';
+import { RepedidosRegistry } from '../src/approvals/repedidos.registry';
 import { LeituraEReacaoService } from '../src/comercial/leitura-e-reacao.service';
 import { RelogioComercialRegistry } from '../src/comercial/relogio.registry';
 import { CAPACIDADE_DA_SALA, SalaVersaoService } from '../src/comercial/sala-versao.service';
 import { SalaService } from '../src/comercial/sala.service';
 import { WhatsappComercialService } from '../src/comercial/whatsapp.service';
-import { uuidDe } from '../src/comercial/eventos';
+import { hashDoConteudo, uuidDe } from '../src/comercial/eventos';
 import { AcoesService } from '../src/gateway/acoes.service';
 import { EfeitosRegistry } from '../src/gateway/efeitos.registry';
 import { EventLogService } from '../src/gateway/event-log.service';
@@ -67,6 +72,7 @@ describe.skipIf(!URL)('a sala publicada por versão e o relatório de leitura', 
   let leitura: LeituraEReacaoService;
   let whats: WhatsappComercialService;
   let approvals: ApprovalsService;
+  let efeitos: EfeitosRegistry;
   let acoes: AcoesService;
   let leadId = '';
   let token = '';
@@ -86,27 +92,34 @@ describe.skipIf(!URL)('a sala publicada por versão e o relatório de leitura', 
     process.env.GATEWAY_MODO = 'impor';
     ORG = (await prisma.org.create({ data: { name: `Sala ${MARCA}`, slug: `sala-${MARCA}` } })).id;
     OUTRA = (await prisma.org.create({ data: { name: `Outra ${MARCA}`, slug: `outra-${MARCA}` } })).id;
-    const admin = await prisma.role.create({ data: { orgId: ORG, key: 'admin_master', name: 'Admin Master' } });
-    const gestor = await prisma.role.create({ data: { orgId: ORG, key: 'gestor_marketing', name: 'Gestor' } });
+    const permissoes = [{ key: 'leads.editar' }, { key: 'aprovacoes.decidir' }];
+    await prisma.permission.createMany({ data: permissoes, skipDuplicates: true });
+    const admin = await prisma.role.create({ data: { orgId: ORG, key: 'admin_master', name: 'Admin Master', permissions: { connect: permissoes } } });
+    const gestor = await prisma.role.create({ data: { orgId: ORG, key: 'gestor_marketing', name: 'Gestor', permissions: { connect: permissoes } } });
     socia = await prisma.user.create({ data: { orgId: ORG, name: 'Sócia', email: `socia.${MARCA}@root.local`, passwordHash: await bcrypt.hash(SENHA_DA_SOCIA, 4), roles: { connect: { id: admin.id } } }, select: { id: true } });
     lucas.id = (await prisma.user.create({ data: { orgId: ORG, name: 'Lucas', email: `lucas.${MARCA}@root.local`, passwordHash: 'x', roles: { connect: { id: gestor.id } } } })).id;
     rodrigo.id = (await prisma.user.create({ data: { orgId: ORG, name: 'Rodrigo', email: `rodrigo.${MARCA}@root.local`, passwordHash: 'x', roles: { connect: { id: gestor.id } } } })).id;
+
+    await prisma.clienteAcessoPerfil.createMany({
+      data: [socia.id, lucas.id, rodrigo.id].map((userId) => ({ orgId: ORG, userId, modo: 'ALL' })),
+    });
 
     const audit = new AuditService(p);
     const policy = new PolicyService(p);
     await policy.onModuleInit();
     approvals = new ApprovalsService(p, audit, new ReauthService(p, new JwtService({ secret: `segredo-${MARCA}` }), audit));
     const log = new EventLogService(p);
-    const efeitos = new EfeitosRegistry();
+    efeitos = new EfeitosRegistry();
     const interruptores = new InterruptoresRegistry();
     new ConectoresService(p, audit, log, interruptores).onModuleInit();
-    const gateway = new ToolGateway(p, policy, new SinaisService(p, policy), approvals, log, undefined, interruptores, efeitos);
+    const escopo = new EfeitoComercialEscopoService(p, new ClienteEscopoService(p, audit), policy);
+    const gateway = new ToolGateway(p, policy, new SinaisService(p, policy), approvals, log, undefined, interruptores, efeitos, undefined, undefined, escopo);
     acoes = new AcoesService(p, gateway, log, interruptores, policy);
     const porta = new PortaDoOperador(gateway, efeitos);
     const reacoes = new ReacoesRegistry();
     fio = new FioService(p, reacoes);
     sala = new SalaService(p, fio, reacoes);
-    versoes = new SalaVersaoService(p, fio, efeitos, porta);
+    versoes = new SalaVersaoService(p, fio, efeitos, porta, escopo);
     versoes.inscrever();
     leitura = new LeituraEReacaoService(p);
     // O M5 vai à fila da régua; aqui só importa que o rascunho nasça (a porta de mentira segura tudo).
@@ -124,6 +137,7 @@ describe.skipIf(!URL)('a sala publicada por versão e o relatório de leitura', 
     for (const org of [ORG, OUTRA].filter(Boolean)) {
       const leads = (await prisma.lead.findMany({ where: { orgId: org }, select: { id: true } })).map((l) => l.id);
       await prisma.workComment.deleteMany({ where: { orgId: org } });
+      await prisma.onboardingTrilho.deleteMany({ where: { orgId: org } });
       await prisma.workTask.deleteMany({ where: { orgId: org } });
       await prisma.workStatus.deleteMany({ where: { orgId: org } });
       await prisma.workList.deleteMany({ where: { orgId: org } });
@@ -142,7 +156,9 @@ describe.skipIf(!URL)('a sala publicada por versão e o relatório de leitura', 
       await prisma.toolCall.deleteMany({ where: { orgId: org } });
       await prisma.eventLog.deleteMany({ where: { orgId: org } });
       await prisma.auditLog.deleteMany({ where: { orgId: org } });
+      await prisma.clienteAcessoPerfil.deleteMany({ where: { orgId: org } });
       await prisma.user.deleteMany({ where: { orgId: org } });
+      await prisma.partner.deleteMany({ where: { orgId: org } });
       await prisma.role.deleteMany({ where: { orgId: org } });
       await prisma.org.deleteMany({ where: { id: org } }).catch(() => undefined);
     }
@@ -183,6 +199,16 @@ describe.skipIf(!URL)('a sala publicada por versão e o relatório de leitura', 
     const linha = await prisma.salaVersao.findFirstOrThrow({ where: { leadId, numero: 1 } });
     expect(linha.estado).toBe('publicada');
     expect([lucas.id, socia.id]).toContain(linha.publicadaPor);
+    const ap = await prisma.approval.findUniqueOrThrow({ where: { id: approvalId } });
+    const chamada = await prisma.toolCall.findUniqueOrThrow({ where: { id: ap.toolCallId! } });
+    const args = chamada.args as Record<string, unknown>;
+    const ctx = { orgId: ORG, actorType: 'user', actorId: linha.publicadaPor! } as const;
+
+    await expect(naEmpresa(() => efeitos.executar(CAPACIDADE_DA_SALA, args, { ...ctx, approvalId: 'forjada' }))).rejects.toThrow();
+    await expect(naEmpresa(() => efeitos.executar(CAPACIDADE_DA_SALA, args, { ...ctx, approvalId, actorId: rodrigo.id }))).rejects.toThrow();
+    await expect(naEmpresa(() => versoes['efeitoDePublicar'](args, ORG, { ...ctx, orgId: OUTRA, approvalId }))).rejects.toThrow();
+    await expect(naEmpresa(() => efeitos.executar(CAPACIDADE_DA_SALA, args, { ...ctx, approvalId }))).resolves.toMatchObject({ jaPublicada: true });
+    expect(await prisma.leadEvent.count({ where: { leadId, type: 'sala.publicada' } })).toBe(1);
   });
 
   it('3 · a v2 pedida não troca a v1; editar na porta derruba o pedido; a v2 liberada substitui a v1', async () => {
@@ -209,6 +235,195 @@ describe.skipIf(!URL)('a sala publicada por versão e o relatório de leitura', 
     expect(tela.historico.map((h) => [h.versao, h.estado])).toEqual([[2, 'publicada'], [1, 'substituida']]);
     // Nada mudou desde a v2: publicar de novo é recusado com a frase, sem pedido novo.
     await expect(naEmpresa(() => versoes.publicar(ORG, leadId, { id: rodrigo.id }))).rejects.toThrow(/Nada mudou desde a versão 2/);
+  });
+
+  const rascunhoDeOrigem = (texto: string) => ({ proximosPassos: [passo(texto)], combinado: [], quemCuida: null });
+
+  async function novaSalaParaPublicacao() {
+    const lead = await prisma.lead.create({ data: { orgId: ORG, name: 'Sala de teste de origem' } });
+    await prisma.comercialFicha.create({ data: { leadId: lead.id, orgId: ORG, empresa: 'Cliente sintético' } });
+    const salaNova = await naEmpresa(() => sala.garantir(ORG, lead.id));
+    return { leadId: lead.id, token: salaNova.link!.split('/s/').pop()! };
+  }
+
+  it('uma aprovação anterior não publica um rascunho regravado com o mesmo hash', async () => {
+    const alvo = await novaSalaParaPublicacao();
+    const corpo = rascunhoDeOrigem('conferir o documento');
+    await naEmpresa(() => versoes.salvarRascunho(ORG, alvo.leadId, corpo, rodrigo));
+    const pedido = await naEmpresa(() => versoes.publicar(ORG, alvo.leadId, rodrigo));
+    const regravado = await naEmpresa(() => versoes.salvarRascunho(ORG, alvo.leadId, corpo, rodrigo));
+    expect(regravado.rascunho).toMatchObject({ hash: pedido.rascunho.hash, approvalId: null, estado: 'rascunho' });
+
+    await expect(liberar(pedido.approvalId!, lucas)).rejects.toThrow();
+    expect((await sala.estado(alvo.token)).publicada).toBeNull();
+    expect(await prisma.leadEvent.count({ where: { leadId: alvo.leadId, type: 'sala.publicada' } })).toBe(0);
+    expect(await prisma.approval.findUnique({ where: { id: pedido.approvalId! }, select: { status: true } }))
+      .toEqual({ status: 'confirmada' });
+  });
+
+  it('revogar o proponente antes da execução deixa a aprovação confirmada e a sala fora do ar', async () => {
+    const alvo = await novaSalaParaPublicacao();
+    await naEmpresa(() => versoes.salvarRascunho(ORG, alvo.leadId, rascunhoDeOrigem('conferir o acesso'), rodrigo));
+    const pedido = await naEmpresa(() => versoes.publicar(ORG, alvo.leadId, rodrigo));
+    await prisma.user.update({ where: { id: rodrigo.id }, data: { isActive: false } });
+    try {
+      await expect(liberar(pedido.approvalId!, lucas)).rejects.toThrow();
+      expect((await sala.estado(alvo.token)).publicada).toBeNull();
+      expect(await prisma.leadEvent.count({ where: { leadId: alvo.leadId, type: 'sala.publicada' } })).toBe(0);
+      expect(await prisma.approval.findUnique({ where: { id: pedido.approvalId! }, select: { status: true } }))
+        .toEqual({ status: 'confirmada' });
+    } finally {
+      await prisma.user.update({ where: { id: rodrigo.id }, data: { isActive: true } });
+    }
+  });
+
+  it('a publicação anterior sem origem assinada exige um rascunho revisado para pedir de novo', async () => {
+    const alvo = await novaSalaParaPublicacao();
+    await naEmpresa(() => versoes.salvarRascunho(ORG, alvo.leadId, rascunhoDeOrigem('passo da publicação antiga'), rodrigo));
+    const primeiro = await naEmpresa(() => versoes.publicar(ORG, alvo.leadId, rodrigo));
+    await liberar(primeiro.approvalId!, lucas);
+
+    const ap = await prisma.approval.findUniqueOrThrow({ where: { id: primeiro.approvalId! } });
+    const argsLegados = { leadId: alvo.leadId, versao: primeiro.rascunho.versao, hash: primeiro.rascunho.hash };
+    await prisma.toolCall.update({ where: { id: ap.toolCallId! }, data: { args: argsLegados } });
+    await prisma.approval.update({ where: { id: ap.id }, data: { contentHash: canonicalHash(ap.resourceType, argsLegados, []) } });
+    const publicada = (await sala.estado(alvo.token)).publicada;
+    await prisma.comercialFicha.update({ where: { leadId: alvo.leadId }, data: { reuniaoEm: new Date('2026-10-16T12:00:00Z') } });
+
+    await expect(naEmpresa(() => versoes.publicar(ORG, alvo.leadId, rodrigo))).rejects.toThrow(/revise e salve um rascunho/i);
+    expect(await prisma.approval.count({ where: { orgId: ORG, resourceId: { startsWith: `${alvo.leadId}:` } } })).toBe(1);
+    expect((await sala.estado(alvo.token)).publicada).toEqual(publicada);
+    expect((await naEmpresa(() => versoes.versoes(ORG, alvo.leadId))).rascunho.estado).toBe('novo');
+
+    await naEmpresa(() => versoes.salvarRascunho(ORG, alvo.leadId, rascunhoDeOrigem('passo revisado'), rodrigo));
+    const novo = await naEmpresa(() => versoes.publicar(ORG, alvo.leadId, rodrigo));
+    await liberar(novo.approvalId!, lucas);
+    expect((await sala.estado(alvo.token)).publicada?.conteudo.proximosPassos).toEqual([passo('passo revisado')]);
+  });
+
+  it.each(['rascunho', 'na_porta'] as const)('uma versão legada em %s exige revisão explícita antes de publicar', async (estado) => {
+    const alvo = await novaSalaParaPublicacao();
+    const conteudo = {
+      ...(await naEmpresa(() => versoes.versoes(ORG, alvo.leadId))).rascunho.conteudo,
+      proximosPassos: [passo('passo de outro cliente já gravado')],
+    };
+    const versao = 1;
+    const resourceId = `${alvo.leadId}:v${versao}`;
+    const hash = hashDoConteudo(conteudo);
+    const antiga = estado === 'na_porta' ? await prisma.approval.create({
+      data: {
+        orgId: ORG, capabilityId: CAPACIDADE_DA_SALA, resourceType: 'comercial.sala', resourceId,
+        propostoPorId: rodrigo.id, propostoPorTipo: 'user',
+        contentHash: canonicalHash('comercial.sala', { leadId: alvo.leadId, versao, hash }, []),
+        resumo: 'Publicação antiga', status: 'expirada', expiraEm: new Date(Date.now() - 1000),
+        tokenHash: hashDoConteudo({ resourceId }),
+      },
+    }) : null;
+    const legada = await prisma.salaVersao.create({
+      data: { orgId: ORG, leadId: alvo.leadId, numero: versao, estado, conteudo: conteudo as unknown as Prisma.InputJsonValue, hash, approvalId: antiga?.id, criadoPor: rodrigo.id },
+    });
+
+    await expect(naEmpresa(() => versoes.publicar(ORG, alvo.leadId, rodrigo))).rejects.toThrow(/revise e salve um rascunho/i);
+    expect(await prisma.salaVersao.findUnique({ where: { id: legada.id } })).toEqual(legada);
+    expect(await prisma.approval.count({ where: { orgId: ORG, resourceId } })).toBe(antiga ? 1 : 0);
+    expect((await sala.estado(alvo.token)).publicada).toBeNull();
+
+    await naEmpresa(() => versoes.salvarRascunho(ORG, alvo.leadId, rascunhoDeOrigem('passo revisado'), rodrigo));
+    expect(await prisma.salaVersao.findUnique({ where: { id: legada.id }, select: { origemCliente: true } }))
+      .toEqual({ origemCliente: { versao: 1, clienteId: null } });
+    const novo = await naEmpresa(() => versoes.publicar(ORG, alvo.leadId, rodrigo));
+    await liberar(novo.approvalId!, lucas);
+    expect((await sala.estado(alvo.token)).publicada?.conteudo.proximosPassos).toEqual([passo('passo revisado')]);
+  });
+
+  it('uma aprovação válida por si só não autoriza consumir a publicação de versão legada', async () => {
+    const alvo = await novaSalaParaPublicacao();
+    await naEmpresa(() => versoes.salvarRascunho(ORG, alvo.leadId, rascunhoDeOrigem('passo sem revisão comprovada'), rodrigo));
+    const pedido = await naEmpresa(() => versoes.publicar(ORG, alvo.leadId, rodrigo));
+    await prisma.salaVersao.update({
+      where: { leadId_numero: { leadId: alvo.leadId, numero: pedido.rascunho.versao } },
+      data: { origemCliente: Prisma.DbNull },
+    });
+
+    await expect(liberar(pedido.approvalId!, lucas)).rejects.toThrow();
+    expect(await prisma.approval.findUnique({ where: { id: pedido.approvalId! }, select: { status: true } }))
+      .toEqual({ status: 'confirmada' });
+    expect((await sala.estado(alvo.token)).publicada).toBeNull();
+    expect(await prisma.leadEvent.count({ where: { leadId: alvo.leadId, type: 'sala.publicada' } })).toBe(0);
+  });
+
+  it('a mudança de cliente impede o consumo da publicação e o novo pedido fixa o cliente atual', async () => {
+    const alvo = await novaSalaParaPublicacao();
+    await naEmpresa(() => versoes.salvarRascunho(ORG, alvo.leadId, rascunhoDeOrigem('passo anterior'), rodrigo));
+    const anterior = await naEmpresa(() => versoes.publicar(ORG, alvo.leadId, rodrigo));
+    const parceiro = await prisma.partner.create({ data: { orgId: ORG, razaoSocial: 'Cliente novo', isCliente: true } });
+    await prisma.comercialFicha.update({ where: { leadId: alvo.leadId }, data: { partnerId: parceiro.id } });
+    await expect(liberar(anterior.approvalId!, lucas)).rejects.toThrow();
+    expect((await sala.estado(alvo.token)).publicada).toBeNull();
+    expect(await prisma.approval.findUnique({ where: { id: anterior.approvalId! }, select: { status: true } }))
+      .toEqual({ status: 'confirmada' });
+
+    await expect(naEmpresa(() => versoes.publicar(ORG, alvo.leadId, rodrigo))).rejects.toThrow(/revise e salve um rascunho/i);
+    await naEmpresa(() => versoes.salvarRascunho(ORG, alvo.leadId, rascunhoDeOrigem('passo revisado para o novo cliente'), rodrigo));
+    const novo = await naEmpresa(() => versoes.publicar(ORG, alvo.leadId, rodrigo));
+    expect(novo.approvalId).not.toBe(anterior.approvalId);
+    const ap = await prisma.approval.findUniqueOrThrow({ where: { id: novo.approvalId! } });
+    const chamada = await prisma.toolCall.findUniqueOrThrow({ where: { id: ap.toolCallId! } });
+    expect(chamada.args).toMatchObject({ clienteId: parceiro.id, origemCliente: { versao: 1, clienteId: parceiro.id } });
+    await liberar(ap.id, lucas);
+    expect((await sala.estado(alvo.token)).publicada).toMatchObject({ versao: novo.rascunho.versao });
+  });
+
+  it('pedir de novo um item expirado conserva o alvo e não pede a sala inteira', async () => {
+    const alvo = await novaSalaParaPublicacao();
+    await naEmpresa(() => versoes.salvarRascunho(ORG, alvo.leadId, rascunhoDeOrigem('versão da sala'), rodrigo));
+    await naEmpresa(() => versoes.salvarRascunhoDoItem(ORG, alvo.leadId, 'atas', { resumo: 'Resumo da ata' }, rodrigo));
+    const pedido = await naEmpresa(() => versoes.publicarItem(ORG, alvo.leadId, 'atas', rodrigo));
+    const anterior = await prisma.approval.update({
+      where: { id: pedido.approvalId! },
+      data: { status: 'expirada', expiraEm: new Date(Date.now() - 1000) },
+    });
+    const chamada = await prisma.toolCall.findUniqueOrThrow({ where: { id: anterior.toolCallId! } });
+    const repedidos = new RepedidosDoComercial(new RepedidosRegistry(), versoes, null as never, null as never, null as never, null as never);
+    const repedir = () => naEmpresa(() => repedidos.salaDeNovo({
+      orgId: ORG, approvalId: anterior.id, capabilityId: anterior.capabilityId,
+      resourceType: anterior.resourceType, resourceId: anterior.resourceId, contentHash: anterior.contentHash,
+      args: chamada.args as Record<string, unknown>, quem: { ...lucas, nome: 'Lucas' },
+    }));
+    const perfil = { userId_orgId: { userId: rodrigo.id, orgId: ORG } };
+    await prisma.clienteAcessoPerfil.update({ where: perfil, data: { modo: 'SELECTED' } });
+    try {
+      await expect(repedir()).rejects.toThrow();
+      expect(await prisma.approval.count({ where: { orgId: ORG, resourceId: anterior.resourceId } })).toBe(1);
+    } finally {
+      await prisma.clienteAcessoPerfil.update({ where: perfil, data: { modo: 'ALL' } });
+    }
+    const novo = await repedir();
+
+    const aprovada = await prisma.approval.findUniqueOrThrow({ where: { id: novo.approvalId! } });
+    expect(aprovada.id).not.toBe(anterior.id);
+    expect(aprovada.resourceId).toBe(anterior.resourceId);
+    expect(aprovada.propostoPorId).toBe(lucas.id);
+    expect((await naEmpresa(() => versoes.versoesDoItem(ORG, alvo.leadId, 'atas'))).rascunho.approvalId).toBe(aprovada.id);
+    expect((await naEmpresa(() => versoes.versoes(ORG, alvo.leadId))).rascunho.approvalId).toBeNull();
+  });
+
+  it('a ficha sozinha não autoriza exibir o próximo passo ou a fase de um trilho alheio', async () => {
+    const alvo = await novaSalaParaPublicacao();
+    const trilho = await prisma.onboardingTrilho.create({
+      data: {
+        orgId: ORG, slug: 'trilho-alheio', cliente: 'Outro cliente', fase: 'encerrado',
+        proximoPasso: 'dado privado do outro cliente', proximoPassoDono: 'Terceiro', proximoPassoEm: new Date(),
+      },
+    });
+    await prisma.comercialFicha.update({
+      where: { leadId: alvo.leadId },
+      data: { trilhoId: trilho.id, clienteAtivoEm: new Date() },
+    });
+    const interno = await naEmpresa(() => versoes.versoes(ORG, alvo.leadId));
+    const publico = await sala.estado(alvo.token);
+    expect.soft(interno.rascunho.conteudo.proximosPassos).toEqual([]);
+    expect.soft(publico.area?.fase.atual).toBe('fase-2');
   });
 
   it('4 · outra empresa não lê as versões nem o conteúdo', async () => {
@@ -278,5 +493,46 @@ describe.skipIf(!URL)('a sala publicada por versão e o relatório de leitura', 
     expect(t.description).toContain('> dá para integrar com o banco Inter?');
     expect((await prisma.leadReacao.findUniqueOrThrow({ where: { id: ideia.id } })).tarefaId).toBe(a.tarefaId);
     expect(await prisma.auditLog.count({ where: { orgId: ORG, action: 'work.task.create', entityId: a.tarefaId } })).toBe(1);
+  });
+
+  it('a versão derivada e a área pública usam um trilho ligado ao cartão canônico do cliente', async () => {
+    const alvo = await novaSalaParaPublicacao();
+    const parceiro = await prisma.partner.create({ data: { orgId: ORG, razaoSocial: 'Cliente sintético', isCliente: true } });
+    const lista = await prisma.workList.create({ data: { orgId: ORG, name: 'Lista sintética' } });
+    const status = await prisma.workStatus.create({ data: { orgId: ORG, listId: lista.id, name: 'Em andamento' } });
+    const card = await prisma.workTask.create({
+      data: { id: cardIdDoLead(ORG, alvo.leadId), orgId: ORG, listId: lista.id, statusId: status.id, title: 'Implantação', clienteId: parceiro.id },
+    });
+    const trilho = await prisma.onboardingTrilho.create({
+      data: {
+        orgId: ORG, slug: 'trilho-canonico', cliente: 'Cliente sintético', fase: 'operacao', cardId: card.id,
+        proximoPasso: 'passo do cliente', proximoPassoDono: 'Marina', proximoPassoEm: new Date('2026-10-21'),
+      },
+    });
+    await prisma.comercialFicha.update({
+      where: { leadId: alvo.leadId },
+      data: { partnerId: parceiro.id, cardId: card.id, trilhoId: trilho.id, clienteAtivoEm: new Date() },
+    });
+
+    expect((await naEmpresa(() => versoes.versoes(ORG, alvo.leadId))).rascunho.conteudo.proximosPassos)
+      .toEqual([passo('passo do cliente')]);
+    expect((await sala.estado(alvo.token)).area?.fase.atual).toBe('fase-5');
+
+    const pedido = await naEmpresa(() => versoes.publicar(ORG, alvo.leadId, rodrigo));
+    expect(await prisma.salaVersao.findUnique({
+      where: { leadId_numero: { leadId: alvo.leadId, numero: pedido.rascunho.versao } },
+      select: { origemCliente: true },
+    })).toEqual({ origemCliente: { versao: 1, clienteId: parceiro.id } });
+    await liberar(pedido.approvalId!, lucas);
+    const publicada = (await sala.estado(alvo.token)).publicada;
+    expect(publicada?.conteudo.proximosPassos).toEqual([passo('passo do cliente')]);
+    expect(publicada).not.toHaveProperty('origemCliente');
+    expect(publicada?.conteudo).not.toHaveProperty('origemCliente');
+
+    await prisma.comercialFicha.update({ where: { leadId: alvo.leadId }, data: { reuniaoEm: new Date('2026-10-16T12:00:00Z') } });
+    const republicacao = await naEmpresa(() => versoes.publicar(ORG, alvo.leadId, rodrigo));
+    expect(republicacao.rascunho.versao).toBe(pedido.rascunho.versao + 1);
+    await liberar(republicacao.approvalId!, lucas);
+    expect((await sala.estado(alvo.token)).publicada?.versao).toBe(republicacao.rascunho.versao);
   });
 });

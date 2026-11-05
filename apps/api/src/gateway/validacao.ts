@@ -31,7 +31,7 @@ export interface ErroDeArgumento {
 }
 
 interface Propriedade {
-  type?: string;
+  type?: string | string[];
   enum?: unknown[];
   minLength?: number;
   pattern?: string;
@@ -57,7 +57,8 @@ const tipoDe = (v: unknown): string => {
   return typeof v;
 };
 
-const casa = (valor: unknown, esperado: string): boolean => {
+const casa = (valor: unknown, esperado: string | string[]): boolean => {
+  if (Array.isArray(esperado)) return esperado.some(tipo => casa(valor, tipo));
   const t = tipoDe(valor);
   if (esperado === 'number') return t === 'number' || t === 'integer';
   if (esperado === 'integer') return t === 'integer';

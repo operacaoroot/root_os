@@ -9,6 +9,8 @@ import { RESPOSTA_DO_FORMULARIO, TIPO_DA_PENDENCIA_DA_TRIAGEM } from '@mktos/sha
 
 import { ApprovalsService } from '../src/approvals/approvals.service';
 import { AuditService } from '../src/audit/audit.service';
+import { ClienteEscopoService } from '../src/clientes-escopo/cliente-escopo.service';
+import { OrigemArquivoClienteService } from '../src/clientes-escopo/origem-arquivo-cliente.service';
 import type { ArquivistaDoClientePort, PedidoDeArquivo } from '../src/clientes/portas';
 import { comContexto } from '../src/common/contexto-execucao';
 import { SimuladoProvider } from '../src/comercial/canais/simulado.provider';
@@ -156,9 +158,10 @@ describe.skipIf(!URL)('a entrada de leads dos agentes do comercial, contra o Pos
         return { estado: 'na_fila', motivo: 'sem pasta do cliente ainda' };
       },
     };
-    triagem = new TriagemDoWhatsappService(p, fio, memoria, porta, pendencias, registroDePendencias, new StubProvider(PASTA_DO_STUB), arquivista);
-    triagem.onModuleInit();
     const evolution = { ligado: async () => true, instanciaDaEmpresa: async () => INSTANCIA };
+    const origens = new OrigemArquivoClienteService(p, new ClienteEscopoService(p, audit), policy, evolution as never);
+    triagem = new TriagemDoWhatsappService(p, fio, memoria, porta, pendencias, registroDePendencias, new StubProvider(PASTA_DO_STUB), arquivista, origens);
+    triagem.onModuleInit();
     entrada = new EvolutionEntradaService(p, whats, sala, evolution as never, undefined, triagem);
   }, 60_000);
 
@@ -177,6 +180,8 @@ describe.skipIf(!URL)('a entrada de leads dos agentes do comercial, contra o Pos
     await prisma.comercialMensagem.deleteMany({ where: { leadId: { in: ids } } });
     await prisma.comercialReacao.deleteMany({ where: { leadId: { in: ids } } });
     await prisma.comercialDecisao.deleteMany({ where: { leadId: { in: ids } } });
+    await prisma.origemArquivoCliente.deleteMany({ where: { orgId: ORG } });
+    await prisma.whatsAppConversa.deleteMany({ where: { orgId: ORG } });
     await prisma.comercialFicha.deleteMany({ where: { leadId: { in: ids } } });
     await prisma.salaDoCliente.deleteMany({ where: { leadId: { in: ids } } });
     await prisma.leadEvent.deleteMany({ where: { leadId: { in: ids } } });
@@ -304,14 +309,20 @@ describe.skipIf(!URL)('a entrada de leads dos agentes do comercial, contra o Pos
     expect(await prisma.lead.count({ where: { orgId: ORG, phone: '5532977770001' } })).toBe(0);
   });
 
+  const mensagemIdDoLeadNovo = randomUUID();
+  const triagensDoLead = async (leadId: string) =>
+    (await prisma.leadEvent.findMany({
+      where: { orgId: ORG, leadId, type: 'whats.triada' }, select: { payload: true },
+    })).map((evento) => evento.payload);
+
   it('CO-16 lead novo: o número desconhecido vira lead pela porta (origem whatsapp), com a classe no fio', async () => {
     notas['comercial.whatsapp.triagem'] = 'ligada\nnota de teste';
-    const r = await naEmpresa(() => entrada.processar(ORG, evolucao('5532977770002', { conversation: 'Oi, quanto custa a imersão?' }), '5532977770002'));
+    const r = await naEmpresa(() => entrada.processar(ORG, evolucao('5532977770002', { conversation: 'Oi, quanto custa a imersão?' }, 'conversation', mensagemIdDoLeadNovo), '5532977770002'));
     expect(r).toBe('triagem: lead_novo');
     const lead = await prisma.lead.findFirstOrThrow({ where: { orgId: ORG, phone: '5532977770002' }, select: { id: true, name: true } });
     expect(lead.name).toBe('Contato Exemplo');
     const triada = await prisma.leadEvent.findFirstOrThrow({ where: { leadId: lead.id, type: 'whats.triada' } });
-    expect(triada.payload).toMatchObject({ classe: 'lead_novo', origem: 'modelo', destino: 'lead novo no funil' });
+    expect(triada.payload).toMatchObject({ classe: 'lead_novo', origem: 'modelo', destino: 'lead novo no funil', mensagemId: mensagemIdDoLeadNovo });
     const chamada = await prisma.toolCall.findFirstOrThrow({ where: { orgId: ORG, capabilityId: 'comercial.lead.criar', actorId: 'triagem-do-whatsapp' } });
     expect(chamada.status).toBe('executado');
     // Nada foi RESPONDIDO ao contato: a M1 do funil espera uma pessoa (R3), nada saiu.
@@ -319,25 +330,54 @@ describe.skipIf(!URL)('a entrada de leads dos agentes do comercial, contra o Pos
   });
 
   it('CO-16 dúvida de lead e cliente ativo: a mensagem do lead segue o caminho de sempre e ganha a classe no fio', async () => {
-    const duvida = await naEmpresa(() => entrada.processar(ORG, evolucao('5532977770002', { conversation: 'Sobre o boleto da proposta, vence quando?' }), '5532977770002'));
+    const mensagemDeDuvida = evolucao('5532977770002', { conversation: 'Sobre o boleto da proposta, vence quando?' });
+    const duvida = await naEmpresa(() => entrada.processar(ORG, mensagemDeDuvida, '5532977770002'));
     expect(duvida).toBe('mensagem de lead');
     const lead = await prisma.lead.findFirstOrThrow({ where: { orgId: ORG, phone: '5532977770002' }, select: { id: true } });
-    const classes = async (leadId: string) => (await prisma.leadEvent.findMany({ where: { leadId, type: 'whats.triada' }, orderBy: { occurredAt: 'asc' }, select: { payload: true } })).map((e) => (e.payload as { classe: string }).classe);
-    expect(await classes(lead.id)).toEqual(['lead_novo', 'duvida_de_lead']);
+    const triagens = await triagensDoLead(lead.id);
+    // O relógio fixo dá a mesma data aos dois eventos. Confira a classe pelo ID da mensagem.
+    expect(triagens).toHaveLength(2);
+    expect(triagens).toEqual(expect.arrayContaining([
+      expect.objectContaining({ mensagemId: mensagemIdDoLeadNovo, classe: 'lead_novo' }),
+      expect.objectContaining({ mensagemId: mensagemDeDuvida.data.key.id, classe: 'duvida_de_lead' }),
+    ]));
 
     const cliente = await prisma.lead.create({ data: { orgId: ORG, name: 'Cliente Exemplo', phone: '5532977770003' }, select: { id: true } });
     await prisma.comercialFicha.create({ data: { leadId: cliente.id, etapa: 'fechado', clienteAtivoEm: new Date() } });
-    const ativo = await naEmpresa(() => entrada.processar(ORG, evolucao('5532977770003', { conversation: 'A conciliação do mês ficou pronta?' }), '5532977770003'));
+    const mensagemDeCliente = evolucao('5532977770003', { conversation: 'A conciliação do mês ficou pronta?' });
+    const ativo = await naEmpresa(() => entrada.processar(ORG, mensagemDeCliente, '5532977770003'));
     expect(ativo).toBe('mensagem de lead');
-    expect(await classes(cliente.id)).toEqual(['cliente_ativo']);
+    expect(await triagensDoLead(cliente.id)).toEqual([
+      expect.objectContaining({ mensagemId: mensagemDeCliente.data.key.id, classe: 'cliente_ativo' }),
+    ]);
   });
 
-  it('CO-16 documento: o arquivo vai ao arquivista (origem whatsapp, sem cliente = partnerId nulo); sem o binário, o motivo fica', async () => {
-    const pdf = Buffer.from('%PDF-1.4 documento de teste').toString('base64');
-    const r = await naEmpresa(() => entrada.processar(ORG, evolucao('5532977770004', { documentMessage: { fileName: 'nota.pdf', mimetype: 'application/pdf' }, base64: pdf }, 'documentMessage'), '5532977770004'));
-    expect(r).toBe('triagem: documento (arquivista: na_fila)');
-    expect(arquivados.at(-1)).toMatchObject({ orgId: ORG, partnerId: null, leadId: null, origem: 'whatsapp', nomeOriginal: 'nota.pdf', tipoMime: 'application/pdf' });
-    const sem = await naEmpresa(() => entrada.processar(ORG, evolucao('5532977770004', { documentMessage: { fileName: 'nota2.pdf', mimetype: 'application/pdf' } }, 'documentMessage'), '5532977770004'));
+  it('CO-16 documento: exige mensagem persistida e permite reentrega após a ingestão', async () => {
+    const telefone = '5532977770004';
+    const chatJid = `${telefone}@s.whatsapp.net`;
+    const lead = await prisma.lead.create({ data: { orgId: ORG, name: 'Lead do documento', phone: telefone } });
+    const conversa = await prisma.whatsAppConversa.create({ data: { orgId: ORG, instancia: INSTANCIA, chatJid, leadId: lead.id } });
+    const pdf = Buffer.from('%PDF-1.4 documento de teste');
+    const mensagemExternaId = randomUUID();
+    const evento = evolucao(telefone, {
+      documentMessage: { fileName: 'nota.pdf', mimetype: 'application/pdf' }, base64: pdf.toString('base64'),
+    }, 'documentMessage', mensagemExternaId);
+
+    expect(await naEmpresa(() => entrada.processar(ORG, evento, telefone))).toBe('triagem: erro');
+    expect(arquivados).toHaveLength(0);
+    await prisma.whatsAppMensagem.create({ data: {
+      orgId: ORG, conversaId: conversa.id, instancia: INSTANCIA, chatJid, remetenteJid: chatJid,
+      remetenteNumero: telefone, leadId: lead.id, origem: 'webhook', direcao: 'entrada', tipo: 'document',
+      midia: { mime: 'application/pdf', tamanho: pdf.length }, mensagemExternaId, timestamp: new Date(),
+    } });
+    expect(await naEmpresa(() => entrada.processar(ORG, evento, telefone))).toBe('triagem: documento (arquivista: na_fila)');
+    const recibo = await prisma.origemArquivoCliente.findFirstOrThrow({ where: { orgId: ORG, tipo: 'whatsapp', leadId: lead.id } });
+    expect(arquivados.at(-1)).toMatchObject({
+      orgId: ORG, partnerId: null, leadId: lead.id, origem: 'whatsapp', nomeOriginal: 'nota.pdf',
+      tipoMime: 'application/pdf', origemRecebidaId: recibo.id, ref: { tipo: 'OrigemArquivoCliente', id: recibo.id },
+    });
+
+    const sem = await naEmpresa(() => entrada.processar(ORG, evolucao(telefone, { documentMessage: { fileName: 'nota2.pdf', mimetype: 'application/pdf' } }, 'documentMessage'), telefone));
     expect(sem).toContain('sem o arquivo: ligue o webhook base64');
     expect(arquivados).toHaveLength(1);
   });

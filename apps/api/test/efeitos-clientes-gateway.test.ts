@@ -1,0 +1,294 @@
+import { createHash } from 'node:crypto';
+import { ForbiddenException } from '@nestjs/common';
+import { ActorType, ApprovalState, RiskLevel, type Prisma } from '@prisma/client';
+import { describe, expect, it, vi } from 'vitest';
+import { ApprovalsService, canonicalHash } from '../src/approvals/approvals.service';
+import type { AuditService } from '../src/audit/audit.service';
+import type { EfeitoComercialEscopoService } from '../src/clientes-escopo/efeito-comercial-escopo.service';
+import type { EfeitoClienteEscopoService } from '../src/clientes-escopo/efeito-cliente-escopo.service';
+import { contextoAtual } from '../src/common/contexto-execucao';
+import { AcoesService } from '../src/gateway/acoes.service';
+import { EfeitosRegistry, type ContextoDoEfeito } from '../src/gateway/efeitos.registry';
+import type { EventLogService } from '../src/gateway/event-log.service';
+import { ToolGateway, type ExecCtx } from '../src/gateway/tool-gateway.service';
+import type { PolicyService } from '../src/policy/policy.service';
+import type { SinaisService } from '../src/policy/sinais.service';
+import type { PrismaService } from '../src/prisma/prisma.service';
+
+const ORG = 'org-qa';
+const TOKEN = 'token-ficticio-apenas-para-teste';
+const APROVACAO = 'aprovacao-persistida';
+const APROVADOR = 'pessoa-que-aprovou';
+const CAPACIDADES = [
+  { id: 'drive.pasta.criar', resource: { type: 'cliente', id: 'cliente-qa' }, args: { clienteId: 'cliente-qa', nome: 'Pasta QA' } },
+  { id: 'drive.arquivo.enviar', resource: { type: 'arquivo-do-cliente', id: 'arquivo-qa' }, args: {
+    clienteId: 'cliente-qa', subpasta: '04-entrega', nome: 'Arquivo QA', chave: 'qa/storage', sha256: 'a'.repeat(64), bytes: 8,
+  } },
+];
+
+type CapacidadeDeTeste = { id: string; resource: { type: string; id: string }; args: Record<string, unknown> };
+
+function montar(capacidade: CapacidadeDeTeste, op: { semGuarda?: boolean; exigeAprovacao?: boolean; nivel?: RiskLevel } = {}) {
+  const { id, resource, args } = capacidade;
+  const nivel = op.nivel ?? RiskLevel.R3;
+  const ap = {
+    id: APROVACAO, orgId: ORG, capabilityId: id, toolCallId: 'chamada-retida',
+    aprovadoPorId: APROVADOR, aprovadoEm: new Date(), propostoPorId: 'proponente',
+    resourceType: resource.type, resourceId: resource.id, nivelExigido: nivel,
+    contentHash: canonicalHash(resource.type, args, []), resumo: 'Teste de Drive', motivo: null, canal: 'gdrive',
+    status: ApprovalState.confirmada as ApprovalState, expiraEm: new Date(Date.now() + 60_000),
+    tokenHash: createHash('sha256').update(TOKEN).digest('hex'),
+  };
+  const ler = async ({ where }: { where: Prisma.ApprovalWhereInput }) => {
+    if ((where.id && where.id !== ap.id) || (where.orgId && where.orgId !== ap.orgId)
+      || (where.tokenHash && where.tokenHash !== ap.tokenHash) || (where.capabilityId && where.capabilityId !== ap.capabilityId)
+      || (where.status && where.status !== ap.status) || (where.nivelExigido && where.nivelExigido !== ap.nivelExigido)) return null;
+    return { ...ap };
+  };
+  const updateMany = vi.fn(async ({ where }: { where: Prisma.ApprovalWhereInput }) => {
+    if (where.status !== ap.status || where.id !== ap.id) return { count: 0 };
+    ap.status = ApprovalState.consumida;
+    return { count: 1 };
+  });
+  const criarToolCall = vi.fn(async () => ({ id: 'chamada-atual' }));
+  const prisma = {
+    approval: { findFirst: vi.fn(ler), findUnique: vi.fn(ler), updateMany },
+    policyDecision: { update: async () => ({}) },
+    toolCall: {
+      findFirst: async () => ({ id: ap.toolCallId, args, capabilityId: id, agentSlug: null, correlationId: 'proposta-qa' }),
+      create: criarToolCall,
+      update: async () => ({}),
+    },
+  } as unknown as PrismaService;
+  const decisao = { permitido: true, exigeAprovacao: op.exigeAprovacao ?? true, nivel, motivo: 'Escrita de teste', sinaisAcionados: [] };
+  const policy = {
+    resolverCapacidade: () => ({ id, argsSchema: { type: 'object' }, efeito: { sensibilidade: 'confidencial' }, hashKeys: [] }),
+    simular: () => decisao,
+    avaliarERegistrar: async () => ({ decisao, decisionId: 'decisao-qa' }),
+  } as unknown as PolicyService;
+  const sinais = { calcular: async () => [] } as unknown as SinaisService;
+  const audit = { log: async () => ({}) } as unknown as AuditService;
+  const eventos = { registrar: async () => ({}) } as unknown as EventLogService;
+  const approvals = new ApprovalsService(prisma, audit);
+  const propor = vi.spyOn(approvals, 'propor').mockResolvedValue({
+    approvalId: 'nova-proposta', resumo: 'Pedido retido', expiraEm: new Date().toISOString(), token: 'novo-token-ficticio',
+  } as Awaited<ReturnType<ApprovalsService['propor']>>);
+  const consumir = vi.spyOn(approvals, 'consumir');
+  const exigirAntesDaAprovacao = vi.fn(async (_orgId: string, _capabilityId: string, _approvalId: string, _args: Record<string, unknown>) => {
+    expect(ap.status).toBe(ApprovalState.confirmada);
+  });
+  const guarda = { exigirAntesDaAprovacao } as unknown as EfeitoClienteEscopoService;
+  const registro = new EfeitosRegistry();
+  const efeito = vi.fn(async (_args: Record<string, unknown>, ctx: ContextoDoEfeito) => ({
+    ctx, atorDoContexto: contextoAtual()?.actorId, tipoDoContexto: contextoAtual()?.actorType,
+  }));
+  registro.registrar({ [id]: (entrada, _org, ctx) => efeito(entrada, ctx) }, 'Teste sem Drive');
+  const exigirComercial = vi.fn(async (_org:string,_approval:string,_cap:string,_args:Record<string,unknown>,_op:unknown)=>{});
+  const guardaComercial = { exigir: exigirComercial } as unknown as EfeitoComercialEscopoService;
+  const gateway = new ToolGateway(
+    prisma, policy, sinais, approvals, eventos, undefined, undefined, registro, undefined, op.semGuarda ? undefined : guarda, op.semGuarda ? undefined : guardaComercial,
+  );
+  const acoes = new AcoesService(prisma, gateway, eventos, undefined, policy, approvals);
+  const ctx: ExecCtx & { approvalId: string } = {
+    orgId: ORG, actorId: 'agente-chamador', actorType: ActorType.ai, correlationId: 'token-qa', approvalId: 'id-injetado',
+  };
+  const chamar = (token?: string, alvo = resource, contexto: ExecCtx = ctx) => gateway.executar(
+    { capabilityId: id, args, ctx: contexto, approvalToken: token, resource: alvo },
+    (entrada, contextoDoEfeito) => efeito(entrada, contextoDoEfeito),
+  );
+
+  return { ap, acoes, chamar, efeito, ctx, exigirComercial, exigirAntesDaAprovacao, updateMany, consumir, propor, criarToolCall };
+}
+
+describe.each(CAPACIDADES)('aprovação e carteira para $id', (capacidade) => {
+  it('usa o ID persistido do token e executa como quem aprovou, com uso único', async () => {
+    const m = montar(capacidade);
+    const primeiro = await m.chamar(TOKEN);
+    expect(primeiro).toMatchObject({ status: 'executado', resultado: {
+      ctx: { orgId: ORG, approvalId: APROVACAO, actorId: APROVADOR, actorType: ActorType.user },
+      atorDoContexto: APROVADOR, tipoDoContexto: ActorType.user,
+    } });
+    expect(m.exigirAntesDaAprovacao).toHaveBeenCalledWith(ORG, capacidade.id, APROVACAO, capacidade.args);
+    expect(await m.chamar(TOKEN)).toMatchObject({ status: 'recusado' });
+    expect(m.ap.status).toBe(ApprovalState.consumida);
+    expect(m.efeito).toHaveBeenCalledTimes(1);
+    expect(m.updateMany).toHaveBeenCalledTimes(1);
+  });
+
+  it('recusa o token antes do consumo se a autorização original mudou', async () => {
+    const m = montar(capacidade);
+    m.exigirAntesDaAprovacao.mockRejectedValueOnce(new ForbiddenException('Autorização revogada.'));
+    expect(await m.chamar(TOKEN)).toMatchObject({ status: 'recusado' });
+    expect(m.ap.status).toBe(ApprovalState.confirmada);
+    expect(m.consumir).not.toHaveBeenCalled();
+    expect(m.updateMany).not.toHaveBeenCalled();
+    expect(m.efeito).not.toHaveBeenCalled();
+  });
+
+  it('devolve uma recusa genérica se a consulta falhar com detalhes internos', async () => {
+    const m = montar(capacidade);
+    m.exigirAntesDaAprovacao.mockRejectedValueOnce(new Error(`Falha interna com tokenHash: ${m.ap.tokenHash}`));
+    const resultado = await m.chamar(TOKEN);
+    expect(resultado).toMatchObject({ status: 'recusado' });
+    expect(JSON.stringify(resultado)).not.toContain(m.ap.tokenHash);
+    expect(m.updateMany).not.toHaveBeenCalled();
+  });
+
+  it('preserva a aprovação quando o token é usado com outro recurso', async () => {
+    const m = montar(capacidade);
+    expect(await m.chamar(TOKEN, { ...capacidade.resource, id: 'recurso-forjado' })).toMatchObject({ status: 'recusado' });
+    expect(m.ap.status).toBe(ApprovalState.confirmada);
+    expect(m.updateMany).not.toHaveBeenCalled();
+    expect(m.efeito).not.toHaveBeenCalled();
+  });
+
+  it('recusa a execução pós-confirmação antes do consumo se a autorização original mudou', async () => {
+    const m = montar(capacidade);
+    m.exigirAntesDaAprovacao.mockRejectedValueOnce(new ForbiddenException('Autorização revogada.'));
+    await expect(m.acoes.executarAprovada(ORG, APROVACAO, APROVADOR)).rejects.toBeInstanceOf(ForbiddenException);
+    expect(m.ap.status).toBe(ApprovalState.confirmada);
+    expect(m.updateMany).not.toHaveBeenCalled();
+    expect(m.efeito).not.toHaveBeenCalled();
+  });
+
+  it('confere a carteira e preserva o uso único na execução pós-confirmação', async () => {
+    const m = montar(capacidade);
+    expect(await m.acoes.executarAprovada(ORG, APROVACAO, APROVADOR)).toMatchObject({
+      status: 'executado', resultado: { ctx: { approvalId: APROVACAO, actorId: APROVADOR, actorType: ActorType.user } },
+    });
+    await expect(m.acoes.executarAprovada(ORG, APROVACAO, APROVADOR)).rejects.toThrow(/uso único/);
+    expect(m.exigirAntesDaAprovacao).toHaveBeenCalledExactlyOnceWith(ORG, capacidade.id, APROVACAO, capacidade.args);
+    expect(m.updateMany).toHaveBeenCalledTimes(1);
+    expect(m.efeito).toHaveBeenCalledTimes(1);
+  });
+
+  it('recusa um ator pós-confirmação diferente do aprovador persistido', async () => {
+    const m = montar(capacidade);
+    await expect(m.acoes.executarAprovada(ORG, APROVACAO, 'outra-pessoa')).rejects.toBeInstanceOf(ForbiddenException);
+    expect(m.updateMany).not.toHaveBeenCalled();
+    expect(m.efeito).not.toHaveBeenCalled();
+  });
+
+  it('falha fechada nos dois caminhos sem o verificador da carteira', async () => {
+    const m = montar(capacidade, { semGuarda: true });
+    expect(await m.chamar(TOKEN)).toMatchObject({ status: 'recusado' });
+    await expect(m.acoes.executarAprovada(ORG, APROVACAO, APROVADOR)).rejects.toBeInstanceOf(ForbiddenException);
+    expect(m.updateMany).not.toHaveBeenCalled();
+    expect(m.efeito).not.toHaveBeenCalled();
+  });
+
+  it('retém uma proposta sem token mesmo com approvalId forjado no contexto', async () => {
+    const m = montar(capacidade);
+    expect(await m.chamar()).toMatchObject({ status: 'aguardando_aprovacao', approvalId: 'nova-proposta' });
+    expect(m.propor).toHaveBeenCalledTimes(1);
+    expect(m.consumir).not.toHaveBeenCalled();
+    expect(m.efeito).not.toHaveBeenCalled();
+  });
+
+  it('recusa Drive se a configuração vigente deixou de exigir aprovação', async () => {
+    const m = montar(capacidade, { exigeAprovacao: false });
+    expect(await m.chamar()).toMatchObject({ status: 'recusado' });
+    expect(await m.chamar(TOKEN)).toMatchObject({ status: 'recusado' });
+    expect(m.updateMany).not.toHaveBeenCalled();
+    expect(m.efeito).not.toHaveBeenCalled();
+  });
+});
+
+it('descarta approvalId vindo do contexto sem mudar a execução de outra capacidade', async () => {
+  const m = montar({ ...CAPACIDADES[0], id: 'contexto.outro' }, { exigeAprovacao: false, semGuarda: true });
+  expect(await m.chamar()).toMatchObject({ status: 'executado' });
+  expect(m.efeito.mock.calls[0][1]).not.toHaveProperty('approvalId');
+  expect(m.exigirAntesDaAprovacao).not.toHaveBeenCalled();
+});
+
+
+const LEAD_COMERCIAL = '00000000-0000-4000-8000-000000000101';
+const HASH_COMERCIAL = 'b'.repeat(64);
+const CAPACIDADES_COM_ORIGEM = [
+  {
+    id: 'comercial.contrato.enviar',
+    resource: { type: 'comercial.contrato', id: `${LEAD_COMERCIAL}:${HASH_COMERCIAL.slice(0, 16)}` },
+    args: { leadId: LEAD_COMERCIAL, versao: 1, hash: HASH_COMERCIAL, signatarioEmail: 'cliente@teste.invalid' },
+  },
+  {
+    id: 'comercial.fechamento.executar',
+    resource: { type: 'comercial.fechamento', id: `fech-${LEAD_COMERCIAL}-v1` },
+    args: { leadId: LEAD_COMERCIAL, chave: `fech-${LEAD_COMERCIAL}-v1`, propostaHash: HASH_COMERCIAL },
+  },
+];
+
+describe.each(CAPACIDADES_COM_ORIGEM)('origem do R4 por token para $id', (capacidade) => {
+  it('só entrega a aprovação que consumiu ao efeito e mantém o ator original na chamada', async () => {
+    const m = montar(capacidade, { nivel: RiskLevel.R4, semGuarda: capacidade.id !== 'comercial.contrato.enviar' });
+    expect(await m.chamar(TOKEN)).toMatchObject({ status: 'executado', decisao: { nivel: RiskLevel.R4 }, resultado: {
+      ctx: { orgId: ORG, approvalId: APROVACAO, actorId: APROVADOR, actorType: ActorType.user },
+      atorDoContexto: APROVADOR, tipoDoContexto: ActorType.user,
+    } });
+    expect(m.criarToolCall).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({ actorId: m.ctx.actorId, actorType: m.ctx.actorType, capabilityId: capacidade.id }),
+    }));
+    expect(m.exigirAntesDaAprovacao).not.toHaveBeenCalled();
+    expect(await m.chamar(TOKEN)).toMatchObject({ status: 'recusado' });
+    expect(m.ap.status).toBe(ApprovalState.consumida);
+    expect(m.updateMany).toHaveBeenCalledTimes(1);
+    expect(m.efeito).toHaveBeenCalledTimes(1);
+  });
+
+  it('retém a proposta quando só há um ID forjado no contexto', async () => {
+    const m = montar(capacidade, { nivel: RiskLevel.R4, semGuarda: true });
+    expect(await m.chamar()).toMatchObject({ status: 'aguardando_aprovacao' });
+    expect(m.consumir).not.toHaveBeenCalled();
+    expect(m.efeito).not.toHaveBeenCalled();
+  });
+
+  it('recusa execução comercial se a configuração atual rebaixou o R4', async () => {
+    const m = montar(capacidade, { nivel: RiskLevel.R3, semGuarda: true });
+    expect(await m.chamar(TOKEN)).toMatchObject({ status: 'recusado' });
+    expect(m.updateMany).not.toHaveBeenCalled();
+    expect(m.efeito).not.toHaveBeenCalled();
+  });
+
+  it('recusa token de aprovação persistida abaixo de R4', async () => {
+    const m = montar(capacidade, { nivel: RiskLevel.R4, semGuarda: true });
+    m.ap.nivelExigido = RiskLevel.R3;
+    expect(await m.chamar(TOKEN)).toMatchObject({ status: 'recusado' });
+    expect(m.updateMany).not.toHaveBeenCalled();
+    expect(m.efeito).not.toHaveBeenCalled();
+  });
+
+  it('recusa antes de consumir token de outra capacidade com o mesmo recurso e argumentos', async () => {
+    const m = montar(capacidade, { nivel: RiskLevel.R4, semGuarda: true });
+    m.ap.capabilityId = 'capacidade-divergente';
+    expect(await m.chamar(TOKEN)).toMatchObject({ status: 'recusado' });
+    expect(m.ap.status).toBe(ApprovalState.confirmada);
+    expect(m.consumir).not.toHaveBeenCalled();
+    expect(m.efeito).not.toHaveBeenCalled();
+  });
+});
+
+const EFEITOS_COMERCIAIS = [
+  { id:'comercial.sala.publicar', resource:{type:'comercial.sala',id:`${LEAD_COMERCIAL}:v1`}, args:{leadId:LEAD_COMERCIAL,versao:1,hash:HASH_COMERCIAL,clienteId:null}, nivel:RiskLevel.R3 },
+  { ...CAPACIDADES_COM_ORIGEM[0], args:{...CAPACIDADES_COM_ORIGEM[0].args,clienteId:null}, nivel:RiskLevel.R4 },
+];
+describe.each(EFEITOS_COMERCIAIS)('preflight comercial de $id', capacidade => {
+  it('token chama a autorização atual antes de consumir e transporta a aprovação real', async () => {
+    const m=montar(capacidade,{nivel:capacidade.nivel});
+    expect(await m.chamar(TOKEN)).toMatchObject({status:'executado',resultado:{ctx:{approvalId:APROVACAO,actorId:APROVADOR}}});
+    expect(m.exigirComercial).toHaveBeenCalledWith(ORG,APROVACAO,capacidade.id,capacidade.args,{fase:'confirmada'});
+    expect(m.exigirComercial.mock.invocationCallOrder[0]).toBeLessThan(m.updateMany.mock.invocationCallOrder[0]);
+  });
+  it('nega revogação antes de consumir por token',async()=>{
+    const m=montar(capacidade,{nivel:capacidade.nivel});m.exigirComercial.mockRejectedValue(new ForbiddenException('revogado'));
+    expect(await m.chamar(TOKEN)).toMatchObject({status:'recusado'});
+    expect(m.ap.status).toBe(ApprovalState.confirmada);expect(m.efeito).not.toHaveBeenCalled();expect(m.consumir).not.toHaveBeenCalled();
+  });
+  it('nega revogação antes de consumir pelo botão da aprovação',async()=>{
+    const m=montar(capacidade,{nivel:capacidade.nivel});m.exigirComercial.mockRejectedValue(new ForbiddenException('revogado'));
+    await expect(m.acoes.executarAprovada(ORG,APROVACAO,APROVADOR)).rejects.toThrow();
+    expect(m.ap.status).toBe(ApprovalState.confirmada);expect(m.efeito).not.toHaveBeenCalled();expect(m.updateMany).not.toHaveBeenCalled();
+  });
+  it('sem serviço de autorização não executa',async()=>{
+    const m=montar(capacidade,{nivel:capacidade.nivel,semGuarda:true});
+    expect(await m.chamar(TOKEN)).toMatchObject({status:'recusado'});expect(m.ap.status).toBe(ApprovalState.confirmada);expect(m.efeito).not.toHaveBeenCalled();
+  });
+});

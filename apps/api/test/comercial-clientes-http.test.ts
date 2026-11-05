@@ -1,6 +1,6 @@
 import 'reflect-metadata';
 import { randomUUID } from 'node:crypto';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { PrismaClient } from '@prisma/client';
 import { Test } from '@nestjs/testing';
 import type { INestApplication } from '@nestjs/common';
@@ -18,6 +18,10 @@ import { FinanceCarteiraService } from '../src/finance/finance-carteira.service'
 import { ComercialController } from '../src/comercial/comercial.controller';
 import { FichaService } from '../src/comercial/ficha.service';
 import { ConfigComercialService } from '../src/comercial/config.service';
+import { ContratosController } from '../src/comercial/contratos/contratos.controller';
+import { ContratosService } from '../src/comercial/contratos/contratos.service';
+import { EmissaoDoContratoService } from '../src/comercial/contratos/emissao.service';
+import { ClienteEscopoInterceptor } from '../src/clientes-escopo/cliente-escopo.interceptor';
 
 const url=process.env.TEST_DATABASE_URL;
 if (!url) throw new Error('TEST_DATABASE_URL é obrigatório para a prova de carteiras.');
@@ -27,7 +31,8 @@ if (!url) throw new Error('TEST_DATABASE_URL é obrigatório para a prova de car
   const bancoCI=(u.port==='5432'||u.port==='') && u.pathname==='/marketing_os_test';
   const cloneQA=u.port==='55582' && /^\/rootos_.*(?:write|test|dev|local)/.test(u.pathname);
   const bancoDoLote=u.port==='55439' && u.pathname==='/comercial_finance_test';
-  if(!loopback||!(bancoCI||cloneQA||bancoDoLote)) throw new Error('Somente bancos locais de teste de carteiras.');
+  const bancoLote7=u.port==='55585' && u.pathname==='/rootos_lote7_test';
+  if(!loopback||!(bancoCI||cloneQA||bancoDoLote||bancoLote7)) throw new Error('Somente bancos locais de teste de carteiras.');
 }
 describe('carteiras comercial e financeira: HTTP e PostgreSQL isolados',()=>{
   let db:PrismaClient, app:INestApplication, jwt:JwtService, base:string, token:string;
@@ -172,6 +177,22 @@ describe('carteiras comercial e financeira: HTTP e PostgreSQL isolados',()=>{
     await db.clienteAcessoPerfil.update({where:{userId_orgId:{userId:actorId,orgId}},data:{modo:'ALL'}});
     try{const r=await get('/comercial/lead/'+leadNull);expect(r.status).toBe(200);expect(r.body.nome).toBe('SEM CLIENTE');}
     finally{await db.clienteAcessoPerfil.update({where:{userId_orgId:{userId:actorId,orgId}},data:{modo:'SELECTED'}});}
+  });
+  it('POST de emissão permanece bloqueado para SELECTED mesmo com vínculo e leads.editar',async()=>{
+    const permission=await db.permission.upsert({where:{key:'leads.editar'},update:{},create:{key:'leads.editar'}});
+    await db.role.update({where:{id:roleId},data:{permissions:{connect:{id:permission.id}}}});
+    const p=db as unknown as PrismaService,escopo=new ClienteEscopoService(p,new AuditService(p)),reflector=new Reflector();
+    const proporEnvio=vi.fn(async()=>({approvalId:'não-deve-existir'}));
+    const module=await Test.createTestingModule({controllers:[ContratosController],providers:[{provide:ContratosService,useValue:{}},{provide:EmissaoDoContratoService,useValue:{proporEnvio}}]})
+      .overrideGuard(JwtAuthGuard).useValue(new JwtAuthGuard(jwt,p,escopo)).overrideGuard(PermissionsGuard).useValue(new PermissionsGuard(reflector)).compile();
+    const teste=module.createNestApplication({logger:['error']});
+    teste.useGlobalInterceptors(new ClienteEscopoInterceptor(reflector,escopo));
+    await teste.listen(0,'127.0.0.1');
+    try {
+      const bearer=await jwt.signAsync({typ:'sessao',sub:actorId,orgId,permissions:['leads.editar'],email:'qa@invalid',name:'QA',roles:['qa_carteira']});
+      const r=await fetch(`${await teste.getUrl()}/comercial/contratos/registro/${contratoA}/enviar`,{method:'POST',headers:{Authorization:'Bearer '+bearer}});
+      expect(r.status).toBe(403);expect(proporEnvio).not.toHaveBeenCalled();
+    } finally {await teste.close();await db.role.update({where:{id:roleId},data:{permissions:{disconnect:{id:permission.id}}}});}
   });
   it('revogação de papel vale com o mesmo JWT para o financeiro',async()=>{
     const perm=await db.permission.findUniqueOrThrow({where:{key:'financeiro.ver'}});

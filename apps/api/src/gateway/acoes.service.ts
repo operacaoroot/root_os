@@ -21,7 +21,7 @@ import {
   vinculoDoConteudo,
 } from '../approvals/vinculo-de-conteudo';
 import { ContextoDoEfeito } from './efeitos.registry';
-import { ToolGateway } from './tool-gateway.service';
+import { efeitoExigeEscopoDeCliente, ToolGateway } from './tool-gateway.service';
 import {
   EventLogService,
   type ConteudoDoEvento,
@@ -261,6 +261,7 @@ export class AcoesService {
     // Cópia local porque o efeito é chamado de dentro de um callback, e o
     // TypeScript esquece o estreitamento de propriedade ao entrar numa função.
     const capabilityId = ap.capabilityId;
+    const exigeEscopoDeCliente = efeitoExigeEscopoDeCliente(capabilityId);
 
     /*
      * A capacidade, só pelos dois campos que o RASTRO precisa dela
@@ -284,6 +285,9 @@ export class AcoesService {
       throw new BadRequestException(`Aprovação está ${ap.status}, não confirmada.`);
     }
     if (ap.expiraEm < new Date()) throw new BadRequestException('Aprovação expirada.');
+    if (exigeEscopoDeCliente && (!ap.aprovadoPorId || ap.aprovadoPorId !== actorId)) {
+      throw new ForbiddenException('A pessoa desta execução não corresponde à aprovação registrada.');
+    }
 
     const chamada = await this.prisma.toolCall.findFirst({
       where: { id: ap.toolCallId, orgId },
@@ -372,16 +376,23 @@ export class AcoesService {
     /*
      * O VÍNCULO AO CONTEÚDO — o ESTRANGULAMENTO. Ver o cabeçalho do arquivo.
      *
-     * Sobre `args`, a MESMA variável que desce para `dispararAprovado` algumas
-     * linhas abaixo, e IMEDIATAMENTE antes de a aprovação virar `consumida`: não
-     * há janela entre conferir e usar.
+     * A conferência usa os mesmos argumentos que seguem ao efeito. Para o
+     * Drive, a carteira também é conferida antes de consumir a aprovação.
      */
     await this.exigirVinculoIntacto(orgId, approvalId, ap, cap, args, actorId, chamada.id);
+    if (exigeEscopoDeCliente) {
+      await this.gateway.exigirEscopoDeEfeitoAprovado(orgId, capabilityId, approvalId, args);
+    }
 
     // Uso único, mesmo aqui: dois cliques no botão de aprovar não podem
     // executar duas vezes. Quem garante é a escrita condicional, não um if.
     const { count } = await this.prisma.approval.updateMany({
-      where: { id: approvalId, orgId, status: ApprovalState.confirmada },
+      where: {
+        id: approvalId,
+        orgId,
+        status: ApprovalState.confirmada,
+        ...(exigeEscopoDeCliente ? { aprovadoPorId: actorId, expiraEm: { gt: new Date() } } : {}),
+      },
       data: { status: ApprovalState.consumida, consumidoEm: new Date() },
     });
     if (count !== 1) throw new BadRequestException('Aprovação já utilizada (uso único).');

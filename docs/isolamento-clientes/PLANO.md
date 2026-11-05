@@ -20,6 +20,7 @@ Perfil explícito `ALL` permite visão ampla; `SELECTED` exige vínculo ativo ao
 | Revisão e aceite técnico | GPT-6 Astra + coordenador | Revisão independente, Postgres descartável, build, verificação HTTP e publicação recuperável |
 | Trabalho e arquivos | GPT-6.1 Terra, Sol e coordenador + revisão Astra | Lotes 2/3: tarefas, subtarefas, comentários, leitura de pastas e downloads por carteira; limites e validação em CONTINUACAO.md |
 | Comercial e financeiro | GPT-6.1 Terra (API/TDD), Sol (UI/TDD), Astra (revisão), coordenador (integração/CI) | Lote 4: oito consultas por carteira e UI; leads, contratos, recebíveis e acordos com relações e totais coerentes. Mutação, despesas, saldos e relatórios gerais seguem para lotes posteriores. |
+| Sala e emissão de contratos | Sol (Sala), Terra (emissão), Astra (revisão), coordenador (guardas/CI) | Lote 7: origem assinada, cliente estável, revogação antes de consumo/efeitos; escritas SELECTED continuam contidas. Ver LOTE-7-PUBLICACAO-EMISSAO.md. |
 | Contexto, agentes e integrações | GPT-6 Astra (desenho), Terra (código) | Próximo lote: ator e cliente em jobs, revalidação no retry, busca vetorial, MCP e ferramentas |
 | Papel restrito do banco — antecipado antes do lote 7 | Astra (plataforma/MCP), Terra (crons), Sol (HTTP Marketing), coordenador (boot/release) | Publicado em 04/11/2026 (São Paulo), antes do lote 7. API com mktos_app/impor; prova SQL/HTTP/MCP entre duas empresas aprovada. Critérios em PAPEL-RESTRITO.md; evidências e exclusões em ../../deploy/rls-marketing/REPORT.md. |
 

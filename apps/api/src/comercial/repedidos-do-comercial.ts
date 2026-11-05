@@ -1,4 +1,4 @@
-import { ConflictException, GoneException, Injectable, OnModuleInit } from '@nestjs/common';
+import { ConflictException, GoneException, Injectable, OnModuleInit, Optional } from '@nestjs/common';
 import { ActorType } from '@prisma/client';
 
 import { destinoDoHash } from '../approvals/destino-do-mover';
@@ -9,6 +9,8 @@ import { PEDIDO_DE_MOVER_APOSENTADO } from './mover.service';
 import { CAPACIDADE_DA_PROPOSTA, PropostaService } from './proposta.service';
 import { CAPACIDADE_DA_SALA, SalaVersaoService } from './sala-versao.service';
 import { CAPACIDADE_DO_WHATSAPP, WhatsappComercialService } from './whatsapp.service';
+import { EmissaoDoContratoService } from './contratos/emissao.service';
+import { EfeitoComercialEscopoService } from '../clientes-escopo/efeito-comercial-escopo.service';
 
 /*
  * "PEDIR DE NOVO" NO COMERCIAL (rodada do trabalho T7, 19/10/2026).
@@ -63,6 +65,8 @@ export class RepedidosDoComercial implements OnModuleInit {
     private readonly whats: WhatsappComercialService,
     private readonly dinheiro: DinheiroService,
     private readonly fechamentos: FechamentoService,
+    @Optional() private readonly emissao?: EmissaoDoContratoService,
+    @Optional() private readonly escopo?: EfeitoComercialEscopoService,
   ) {}
 
   onModuleInit(): void {
@@ -88,9 +92,9 @@ export class RepedidosDoComercial implements OnModuleInit {
   }
 
   async salaDeNovo(p: PedidoVencido): Promise<PedidoRefeito> {
-    const r = await this.salas.publicar(p.orgId, leadDoPedido(p), { id: p.quem.id });
-    if (r.approvalId) return { approvalId: r.approvalId };
-    return { approvalId: null, aviso: r.estado === 'publicada' ? 'A régua de hoje deixou publicar sem assinatura: a sala já está no ar.' : undefined };
+    if (!p.args) throw new ConflictException('Peça a publicação de novo na versão da sala.');
+    const r = await this.salas.repedirPublicacao(p.orgId, p.approvalId, p.args, { id: p.quem.id });
+    return { approvalId: r.approvalId };
   }
 
   async propostaDeNovo(p: PedidoVencido): Promise<PedidoRefeito> {
@@ -111,6 +115,20 @@ export class RepedidosDoComercial implements OnModuleInit {
   }
 
   async aceiteDeNovo(p: PedidoVencido, qual: 'cobranca' | 'contrato'): Promise<PedidoRefeito> {
+    if(qual==='contrato') {
+      if(!this.escopo || !p.args || p.capabilityId!==CAP_CONTRATO) throw new ConflictException('Este contrato exige nova proposta pela origem.');
+      const origem=await this.escopo.exigir(p.orgId,p.approvalId,CAP_CONTRATO,p.args,{fase:'repedido'});
+      await this.escopo.exigirPessoa(p.orgId,p.quem.id,origem.clienteId);
+      if(typeof p.args.contratoId==='string' && p.args.contratoId) {
+        if(!this.emissao) throw new ConflictException('A emissão do contrato está indisponível.');
+        const r=await this.emissao.proporEnvio(p.orgId,p.args.contratoId,{id:p.quem.id,nome:p.quem.nome ?? '',papeis:p.quem.papeis}) as {approvalId?:string};
+        if(!r.approvalId) throw new ConflictException('O contrato não gerou uma nova aprovação.');
+        return {approvalId:r.approvalId};
+      }
+      const r=await this.dinheiro.proporSomenteContrato(p.orgId,leadDoPedido(p),{id:p.quem.id,tipo:ActorType.user});
+      if(!r.approvalId) throw new ConflictException('O contrato não gerou uma nova aprovação.');
+      return {approvalId:r.approvalId};
+    }
     const r = await this.dinheiro.proporAceite(p.orgId, leadDoPedido(p), { id: p.quem.id, tipo: ActorType.user });
     if ('pulado' in r) throw new ConflictException(`Nada foi à fila: ${r.pulado}.`);
     const estado = r[qual];

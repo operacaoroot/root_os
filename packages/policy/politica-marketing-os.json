@@ -1789,6 +1789,20 @@
           "hash"
         ],
         "properties": {
+          "origemCliente": {
+            "type": "object",
+            "description": "Snapshot assinado da origem, inclusive cliente ainda nulo.",
+            "required": ["versao", "clienteId"],
+            "additionalProperties": false,
+            "properties": {
+              "versao": { "type": "integer", "enum": [1] },
+              "clienteId": { "type": ["string", "null"] }
+            }
+          },
+          "clienteId": {
+            "type": ["string", "null"],
+            "description": "Cliente canônico no momento do pedido; null explícito para lead ainda sem cliente. Conferido novamente antes do efeito."
+          },
           "leadId": {
             "type": "string",
             "minLength": 1,
@@ -1915,6 +1929,20 @@
           "signatarioEmail"
         ],
         "properties": {
+          "origemCliente": {
+            "type": "object",
+            "description": "Snapshot assinado da origem, inclusive cliente ainda nulo.",
+            "required": ["versao", "clienteId"],
+            "additionalProperties": false,
+            "properties": {
+              "versao": { "type": "integer", "enum": [1] },
+              "clienteId": { "type": ["string", "null"] }
+            }
+          },
+          "clienteId": {
+            "type": ["string", "null"],
+            "description": "Cliente canônico no momento do pedido; null explícito para lead ainda sem cliente. Conferido novamente antes do efeito."
+          },
           "leadId": {
             "type": "string",
             "minLength": 1,
@@ -2074,6 +2102,16 @@
           "nome"
         ],
         "properties": {
+          "fechamentoApprovalId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "leadId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
           "clienteId": {
             "type": "string",
             "minLength": 1,
@@ -2128,6 +2166,11 @@
           "bytes"
         ],
         "properties": {
+          "origemRecebidaId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
           "clienteId": {
             "type": "string",
             "minLength": 1,
