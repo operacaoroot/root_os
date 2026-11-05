@@ -18,6 +18,8 @@ Data: 04/11/2026, São Paulo. Issue [#53](https://github.com/operacaoroot/root_o
 
 Cada correção teve RED antes do código e GREEN depois. O gate de CI também foi testado contra ausência/duplicação de arquivos, pulos, redução de casos, totais incoerentes e remoção das cinco regressões obrigatórias.
 
+A primeira execução completa do CI (`41949654004`, commit `fb20aacd`) passou isolamento, migrations e tipos, mas revelou uma asserção instável em `work-estrutura-sugerida.test.ts`: os mesmos três IDs chegaram em ordem diferente, pois a consulta não tinha ordenação. O teste agora ordena por ID único e compara todas as colunas das etapas, inclusive a posição, depois de mover a lista e repetir a operação. O arquivo passou 11/11 no PostgreSQL local; não houve mudança no código do produto por essa falha.
+
 ## Provas locais
 
 | Prova | Resultado | Registro em `/tmp/root-clientes-lote7-rls/` |
@@ -25,6 +27,7 @@ Cada correção teve RED antes do código e GREEN depois. O gate de CI também f
 | Sala e emissão com papel real | 23/23, sem pulos; duas empresas, RLS/FORCE, SQL e serviços reais | `lote7-rls-final.log`, `lote7-rls-final.json` |
 | Guardas e automações dependentes | 144/144 em 10 arquivos | `dependencias-regressao.log` |
 | Regressões comerciais finais | 209/209 em 12 arquivos | `comercial-regressao-final.log` |
+| Estrutura sugerida após falha no CI | 11/11; preservação completa das etapas nas duas chamadas | `work-estrutura-sugerida-red-ci.log`, `work-estrutura-sugerida-green.log` |
 | Gate da suíte RLS | 8/8 | `gate-final.log` |
 | Tipos focais e dependências transitivas | exit 0 | `types-final.log` |
 | Build API | exit 0 | `build-final.log` |

@@ -198,18 +198,24 @@ describe.skipIf(!URL)('estrutura sugerida: contra o Postgres', () => {
 
   it('lista SOLTA de mesmo nome vai para a pasta sugerida (mesmo id, mesmas etapas); a segunda passada não mexe', async () => {
     const solta = await svc.criarLista(ORG, EU, { name: 'administrativo' });
-    const etapasAntes = await prisma.workStatus.findMany({ where: { listId: solta.id }, select: { id: true } });
+    const etapasDaLista = () => prisma.workStatus.findMany({
+      where: { listId: solta.id },
+      orderBy: { id: 'asc' },
+    });
+    const etapasAntes = await etapasDaLista();
+    expect(etapasAntes).toHaveLength(ETAPAS_PADRAO_DA_LISTA.length);
     const r = await svc.criarEstruturaSugerida(ORG, EU);
     expect(r.movidas).toEqual({ listas: ['Gestão / administrativo'] });
     expect(r.criadas.listas).not.toContain('Gestão / Administrativo');
     const depois = await prisma.workList.findUniqueOrThrow({ where: { id: solta.id }, include: { folder: true } });
     expect(depois.folder?.name).toBe('Gestão');
     expect(depois.name).toBe('administrativo');
-    expect(await prisma.workStatus.findMany({ where: { listId: solta.id }, select: { id: true } })).toEqual(etapasAntes);
+    expect(await etapasDaLista()).toEqual(etapasAntes);
     expect(await prisma.workList.count({ where: { orgId: ORG, name: { equals: 'administrativo', mode: 'insensitive' } } })).toBe(1);
     const segunda = await svc.criarEstruturaSugerida(ORG, EU);
     expect(segunda.movidas).toEqual({ listas: [] });
     expect(segunda.criadas).toEqual({ pastas: [], listas: [] });
+    expect(await etapasDaLista()).toEqual(etapasAntes);
   });
 
   it('a pasta Administrativa nunca é recriada, e pasta ou lista arquivada não conta', async () => {
