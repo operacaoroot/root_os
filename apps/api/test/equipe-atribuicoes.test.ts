@@ -56,7 +56,8 @@ describe('as peças da leitura', () => {
 });
 
 describe('o dublê do vault', () => {
-  const leitura = lerVault(notasDoDuble());
+  const notas = notasDoDuble();
+  const leitura = lerVault(notas);
 
   it('acha a Governança, os três sócios e as seis funções', () => {
     expect(leitura.temGovernanca).toBe(true);
@@ -69,10 +70,13 @@ describe('o dublê do vault', () => {
     expect(a.conduz).toBe('Comercial e relacionamento');
     expect(a.dona.map((f) => f.nome)).toEqual(['Comercial', 'Governança', 'Implantação']);
     expect(a.substituta.map((f) => f.nome)).toEqual(['Produto']);
-    const comercial = a.dona.find((f) => f.nome === 'Comercial')!;
+    const comercial = a.dona.find((f) => f.nome === 'Comercial');
+    // Localiza a ficha em NFC e confere os valores originais lidos do disco.
+    const ficha = notas.find((n) => n.caminho.normalize('NFC') === '30-Organizacao/Função — Comercial.md');
+    expect(ficha).toBeDefined();
     expect(comercial).toMatchObject({
-      caminho: '30-Organizacao/Função — Comercial.md',
-      notaId: 'nota:30-Organizacao/Função — Comercial.md',
+      caminho: ficha?.caminho,
+      notaId: ficha?.notaId,
       estado: 'ativo',
       agentes: 'Qualificador, Agendador',
     });

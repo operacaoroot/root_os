@@ -55,7 +55,7 @@ beforeAll(async () => {
 
   // Em negociação, com valor, canal e dono.
   L.aberto = await lead(ORG, 'Ana', { etapa: 'proposta', valorCentavos: 1199700, produto: 'operacao', canal: 'indicacao', donoId: LUCAS, vendedorId: LUCAS, empresa: 'Alicerce' });
-  // Em negociação sem valor nem canal nem dono: entra na contagem, fora da soma.
+  // Aberto em E2, sem valor nem canal nem dono: aparece na lista, ainda fora da negociação.
   L.semValor = await lead(ORG, 'Bruno', { etapa: 'qualificacao' });
   // Lead sem ficha, com dono mas sem vendedor: está em E1 e não entra no grupo de vendas do dono.
   L.semFicha = await lead(ORG, 'Carla', null, { ownerId: LUCAS });
@@ -110,8 +110,10 @@ describe('Painel geral do Comercial lendo o cockpit', () => {
     const r = await painel.painel(ORG, AGORA);
     expect(r.ano).toBe(2026);
     expect(r.negocios).toHaveLength(7);
-    // Em negociação: Ana (proposta, R$ 11.997), Bruno (sem valor) e Carla (sem ficha, E1).
-    expect(r.totais.abertos).toBe(3);
+    // Etapa 9b: negociação começa em E4. Ana (E6) conta; Bruno (E2) e Carla (E1) seguem na lista.
+    expect(r.totais.abertos).toBe(1);
+    expect(r.negocios.filter((n) => n.resultado === 'aberta').map((n) => n.id).sort())
+      .toEqual([L.aberto, L.semValor, L.semFicha].sort());
     expect(r.totais.emNegociacao).toBe(11997);
     expect(r.totais.ganhosNoAno).toBe(2);
     expect(r.totais.valorGanhoNoAno).toBe(5940);

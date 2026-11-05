@@ -188,7 +188,7 @@ describe('os portões (C04/C07)', () => {
   });
 
   it('cada etapa ativa tem os portões da C07, e a tela os lê um a um', () => {
-    expect(PORTOES_DA_ETAPA.qualificacao.map((p) => p.chave)).toEqual(['perfil_confirmado', 'sistema', 'base', 'produto_alvo']);
+    expect(PORTOES_DA_ETAPA.qualificacao.map((p) => p.chave)).toEqual(['perfil_confirmado', 'sistema', 'base', 'produto_alvo', 'canal_confirmado']);
     expect(PORTOES_DA_ETAPA.proposta.map((p) => p.chave)).toEqual(['produto', 'valor', 'parcelas', 'quadro_de_custos', 'validade', 'laudo']);
     expect(PORTOES_DA_ETAPA.contrato.map((p) => p.chave)).toEqual(['cnpj', 'endereco', 'quem_assina', 'assinado_cliente', 'assinado_root', 'cobranca']);
     const na = portoesDaEtapa({ etapa: 'qualificacao', perfil: 'P2', sistemaErp: 'Omie', baseDados: false });
@@ -197,8 +197,15 @@ describe('os portões (C04/C07)', () => {
       ['sistema', true],
       ['base', true],
       ['produto_alvo', false],
+      ['canal_confirmado', false],
     ]);
     expect(portoesDaEtapa({ etapa: 'perdido' })).toEqual([]);
+  });
+
+  it('E2 recusa avanço sem canal de aquisição, mesmo com os demais portões cumpridos', () => {
+    const e: EstadoParaPortao = { etapa: 'qualificacao', perfil: 'P2', sistemaErp: 'Omie', baseDados: false, produto: 'operacao' };
+    expect(avancar(e)).toMatchObject({ ok: false, faltando: ['canal de aquisição (como conheceu: BNI, indicação, Instagram, site…)'] });
+    expect(avancar({ ...e, canal: 'site' })).toMatchObject({ ok: true, para: 'reuniao_agendada', faltando: [] });
   });
 
   it('a rota depois da sessão: diagnóstico por padrão, proposta direta pula o diagnóstico de propósito', () => {
