@@ -54,6 +54,8 @@ class ReleaseTest(unittest.TestCase):
   with tempfile.TemporaryDirectory() as d:
    p=pathlib.Path(d);f=p/'ensaio.log';f.write_text('ok');h=hashlib.sha256(b'ok').hexdigest()
    m.validar_evidencias({'evidence_files':{'ensaio.log':h}},p)
+   for sem in [{},{'evidence_files':{}}]:
+    with self.assertRaises(RuntimeError):m.validar_evidencias(sem,p)
    for evidence in [{'../fora':h},{'ensaio.log':'errado'},{'ausente':h}]:
     with self.assertRaises(RuntimeError):m.validar_evidencias({'evidence_files':evidence},p)
    f.write_text('')
@@ -68,14 +70,39 @@ class ReleaseTest(unittest.TestCase):
    p=pathlib.Path(d);dump=p/'pre-publish.dump';dump.write_bytes(b'backup sintetico');digest=m.sha(dump)
    env=['DATABASE_URL=postgresql://mkt:privado@db/marketing_os']
    meta={'image':'sha256:base','compose':'a','workdir':'/a','container':'id','started':'1','runtime_sha256':'h','compose_sha256':{'a':'1'},'inspect':{'Config':{'Env':env},'NetworkSettings':{'Networks':{'net':{}}}}}
+   (p/'evidence.log').write_text('ok');evidence={'evidence.log':m.sha(p/'evidence.log')}
    (p/'expected.json').write_text(json.dumps(m.snapshot(meta)))
    (p/'pre-publish-meta.json').write_text(json.dumps({**m.snapshot(meta),'cluster_id':'42','backup_sha256':digest}))
-   (p/'homolog-approved.json').write_text(json.dumps({'status':'passed','release_id':p.name,'image_id':'sha256:new','exit_codes':{'boot':0,'tests':0},'checks':{'restricted_role':True,'authenticated_http':True,'rls_verified':True}}))
-   (p/'restore-approved.json').write_text(json.dumps({'status':'passed','release_id':p.name,'image_id':'sha256:new','backup_sha256':digest,'exit_codes':{'restore':0,'migrate':0,'checks':0},'checks':{'restore_completed':True,'migrations_applied':True,'integrity_verified':True}}))
+   (p/'homolog-approved.json').write_text(json.dumps({'status':'passed','release_id':p.name,'image_id':'sha256:new','exit_codes':{'boot':0,'tests':0},'checks':{'restricted_role':True,'authenticated_http':True,'rls_verified':True},'evidence_files':evidence}))
+   (p/'restore-approved.json').write_text(json.dumps({'status':'passed','release_id':p.name,'image_id':'sha256:new','backup_sha256':digest,'exit_codes':{'restore':0,'migrate':0,'checks':0},'checks':{'restore_completed':True,'migrations_applied':True,'integrity_verified':True},'evidence_files':evidence}))
    with patch.object(m,'LOCK',str(p/'lock')),patch.object(m,'conferir_publicadores'),patch.object(m,'conferir_config'),patch.object(m,'atual',return_value=meta),patch.object(m,'out',return_value='sha256:new'),patch.object(m,'inspect',return_value={}),patch.object(m,'rede_do_banco',return_value='net'),patch.object(m,'comprovar_cluster',return_value='42'),patch.object(m,'run',side_effect=RuntimeError('migration falhou')):
     with self.assertRaisesRegex(RuntimeError,'migration falhou'):m.publicar(p,'new',p/'expected.json',apply=True)
    self.assertEqual(list(p.glob('migration-*.private.env')),[])
    with patch.object(m,'LOCK',str(p/'lock')),patch.object(m,'conferir_publicadores'),patch.object(m,'conferir_config',side_effect=RuntimeError('compose mudou')),patch.object(m,'atual',return_value=meta),patch.object(m,'out',return_value='sha256:new'),patch.object(m,'inspect',return_value={}),patch.object(m,'rede_do_banco',return_value='net'),patch.object(m,'comprovar_cluster',return_value='42'),patch.object(m,'run') as comandos:
     with self.assertRaisesRegex(RuntimeError,'compose mudou'):m.publicar(p,'new',p/'expected.json',apply=True)
     comandos.assert_not_called()
+ def test_rollback_preserves_active_overlay_and_appends_unique_overlay(self):
+  with tempfile.TemporaryDirectory() as d:
+   p=pathlib.Path(d);base=p/'compose.json';old=p/'runtime-restricted.json'
+   env={'DATABASE_URL':'postgresql://mktos_app:qa@db/marketing_os','APP_DATABASE_URL':'postgresql://mktos_app:qa@db/marketing_os','TENANT_MODO':'impor','SECRET':'sintetico$valor'}
+   base.write_text(json.dumps({'services':{'api':{'image':'base:qa'}}}))
+   old.write_text(json.dumps({'services':{'api':{'image':'old:qa','command':['node','dist/main.js'],'environment':m.escapar_compose(env)}}}))
+   (p/'evidence.log').write_text('ok');evidence={'evidence.log':m.sha(p/'evidence.log')}
+   old_bytes=old.read_bytes(); chain=f'{base},{old}';seen=[];state={'up':False}
+   initial={'image':'old:qa','compose':chain,'workdir':str(p),'container':'id','started':'1','runtime_sha256':'h','compose_sha256':{str(base):m.sha(base),str(old):m.sha(old)}}
+   def atual():
+    snap={**initial,'compose_sha256':{str(base):m.sha(base),str(old):m.sha(old)}}
+    if state['up']:snap['image']='new:qa'
+    return {**snap,'inspect':{'Config':{'Env':[f'{k}={v}' for k,v in env.items()]},'State':{'Running':True},'Mounts':[],'HostConfig':{}}}
+   def run(args,**_kw):
+    overlay=pathlib.Path(args[args.index('-f',args.index('-f')+1)+1]) if args.count('-f')==2 else pathlib.Path(args[max(i for i,x in enumerate(args) if x=='-f')+1])
+    seen.append(overlay);state['up']=True
+   (p/'expected.json').write_text(json.dumps(initial))
+   (p/'homolog-approved.json').write_text(json.dumps({'status':'passed','release_id':p.name,'image_id':'new:qa','exit_codes':{'boot':0,'tests':0},'checks':{'restricted_role':True,'authenticated_http':True,'rls_verified':True},'evidence_files':evidence}))
+   with patch.object(m,'LOCK',str(p/'lock')),patch.object(m,'conferir_publicadores'),patch.object(m,'atual',side_effect=atual),patch.object(m,'out',return_value='new:qa'),patch.object(m,'inspect',return_value={}),patch.object(m,'run',side_effect=run):
+    m.publicar(p,'new:qa',p/'expected.json',rollback=True)
+   self.assertEqual(old.read_bytes(),old_bytes)
+   self.assertEqual(len(seen),1);self.assertNotEqual(seen[0],old)
+   self.assertEqual(json.loads(old.read_text())['services']['api']['image'],'old:qa')
+   self.assertEqual(json.loads(seen[0].read_text())['services']['api']['image'],'new:qa')
 if __name__=='__main__':unittest.main()

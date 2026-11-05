@@ -33,6 +33,17 @@ async function test(){
  assert.equal(await db.marketingNota.count(),0,'Sessão sem empresa não lê notas');checks.push('sql_sem_empresa');
  for(const org of f.orgs){const login=await http('POST','/auth/login',null,{email:org.email,password:org.password});assert.equal(login.status,201);org.token=login.body.token;}
  checks.push('login_duas_empresas');
+ for(const i of [0,1]){
+  const a=f.orgs[i],b=f.orgs[1-i];
+  await db.$transaction(async tx=>{
+   await tx.$executeRawUnsafe("SELECT set_config('app.org_id',$1,true)",a.id);
+   assert(await tx.marketingNota.findUnique({where:{id:a.noteId}}));
+   assert.equal(await tx.marketingNota.findUnique({where:{id:b.noteId}}),null);
+   assert.equal((await tx.marketingNota.updateMany({where:{id:b.noteId},data:{titulo:'Tentativa SQL cruzada'}})).count,0);
+  });
+ }
+ assert.equal(await db.marketingNota.count(),0);checks.push('sql_ids_cruzados_e_reset_pool');
+
  for(const i of [0,1,0]){
   const a=f.orgs[i],b=f.orgs[1-i];
   const list=await http('GET','/marketing/estudio/memoria',a.token);assert.equal(list.status,200);assert(JSON.stringify(list.body).includes(a.noteId));assert(!JSON.stringify(list.body).includes(b.noteId));

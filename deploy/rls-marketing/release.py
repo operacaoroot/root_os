@@ -65,10 +65,19 @@ def escapar_compose(env):
     return {k: v.replace('$', '$$') for k, v in env.items()}
 
 
+def criar_overlay(pasta, image_id, env):
+    # Arquivo permanece na cadeia do container; nunca substituir nem apagar.
+    with tempfile.NamedTemporaryFile(mode='w', dir=pasta, prefix='runtime-restricted-', suffix='.json', delete=False) as f:
+        caminho = pathlib.Path(f.name)
+        json.dump({'services': {'api': {'image': image_id, 'command': ['node', 'dist/main.js'], 'environment': escapar_compose(env)}}}, f)
+    caminho.chmod(0o400)
+    return caminho
+
+
 def validar_evidencias(manifesto, pasta):
     arquivos = manifesto.get('evidence_files', {})
-    if not isinstance(arquivos, dict):
-        raise RuntimeError('Evidências inválidas.')
+    if not isinstance(arquivos, dict) or not arquivos:
+        raise RuntimeError('Evidências ausentes ou inválidas.')
     for nome, esperado in arquivos.items():
         if not isinstance(nome, str) or pathlib.Path(nome).name != nome or not isinstance(esperado, str):
             raise RuntimeError('Evidência fora da rodada ou hash inválido.')
@@ -250,6 +259,7 @@ def publicar(p, image, expected, rollback=False, apply=False):
         validar_evidencias(proof, p)
         if rollback:
             conferir_runtime(env)
+            overlay = criar_overlay(p, image_id, env)
         else:
             conferir_owner(env)
             backup = p / 'pre-publish.dump'
@@ -271,8 +281,7 @@ def publicar(p, image, expected, rollback=False, apply=False):
                 raise RuntimeError('Senha de aplicação inválida.')
             env_restrito = ambiente_restrito(env, password)
             conferir_runtime(env_restrito)
-            overlay = p / 'runtime-restricted.json'
-            overlay.write_text(json.dumps({'services': {'api': {'image': image_id, 'command': ['node', 'dist/main.js'], 'environment': escapar_compose(env_restrito)}}}))
+            overlay = criar_overlay(p, image_id, env_restrito)
             conferir_config(meta, overlay, env_restrito, image_id)
             conferir_publicadores()
             conferir_base(atual(), meta)
@@ -290,8 +299,6 @@ def publicar(p, image, expected, rollback=False, apply=False):
             run(['docker', 'exec', '-i', 'mktos_db', 'psql', '-U', 'mkt', '-d', 'marketing_os', '-X', '-v', 'ON_ERROR_STOP=1'],
                 input=("ALTER ROLE mktos_app LOGIN NOSUPERUSER NOBYPASSRLS NOCREATEDB NOCREATEROLE NOREPLICATION PASSWORD '" + password + "';").encode(), stdout=sp.DEVNULL)
             env = env_restrito
-        overlay = p / 'runtime-restricted.json'
-        overlay.write_text(json.dumps({'services': {'api': {'image': image_id, 'command': ['node', 'dist/main.js'], 'environment': escapar_compose(env)}}}))
         conferir_config(meta, overlay, env, image_id)
         conferir_publicadores()
         conferir_base(atual(), meta)

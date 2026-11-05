@@ -4,8 +4,8 @@ import type { PainelDeTarefas, TarefaDoDia, TrabEstrutura } from '@mktos/shared'
 
 /*
  * DIA A DIA › VISÃO GERAL (versão final, 19/10/2026): o dash das tarefas do
- * Lucas, primeira aba e entrada do Dia a dia, com o "por área" trocado por
- * pasta e lista do Trabalho (decisão 4). Todo número leva ao Trabalho já
+ * Lucas, primeira aba e entrada do Dia a dia, com o gráfico por pasta
+ * do Trabalho. Todo número leva ao Trabalho já
  * filtrado ("Todas"), e só a equipe (não as contas do sistema) aparece como
  * responsável. O Painel geral da empresa (/painel) não repete o dash: mostra a
  * empresa numa linha por motor.
@@ -72,7 +72,7 @@ const ESTRUTURA: TrabEstrutura = {
   agentes: [],
 };
 
-describe('Dia a dia › Visão geral: o dash das tarefas por pasta e lista', () => {
+describe('Dia a dia › Visão geral: o painel das tarefas por pasta', () => {
   const location = window.location;
   beforeEach(() => {
     PERMISSOES = ['dashboard.ver', 'tarefas.ver'];
@@ -115,20 +115,25 @@ describe('Dia a dia › Visão geral: o dash das tarefas por pasta e lista', () 
     expect(within(await screen.findByTestId('visao-geral-recorte')).getByRole('link', { name: 'ver no Trabalho →' }).getAttribute('href')).toBe('/trabalho?pasta=sem-pasta&visao=lista&concluidas=ocultar');
   });
 
-  it('por lista: cada coluna abre a lista na pasta dela', async () => {
+  it('mostra um único gráfico por pasta e abre o recorte da pasta com suas subpastas', async () => {
     render(<VisaoGeralPage />);
-    await screen.findByText('Tarefas por lista');
-    fireEvent.click(screen.getByRole('button', { name: 'Onboarding de cliente: 1' }));
-    // Layout 26/10: o clique abre ali a lista exata; o caminho para o Trabalho fica no rodapé dela.
-    expect(within(await screen.findByTestId('visao-geral-recorte')).getByRole('link', { name: 'ver no Trabalho →' }).getAttribute('href')).toBe('/trabalho?pasta=f-clientes&lista=l-onb&visao=lista&concluidas=ocultar');
+    fireEvent.click(await screen.findByRole('button', { name: 'Clientes: 2' }));
+    expect(screen.queryByText('Tarefas por lista', { exact: true })).toBeNull();
+
+    const recorte = within(await screen.findByRole('dialog', { name: 'Tarefas abertas · Clientes' }));
+    expect(recorte.getAllByRole('listitem')).toHaveLength(2);
+    expect(recorte.getByRole('button', { name: /Tarefa 1 Esteira de clientes/ })).toBeInTheDocument();
+    expect(recorte.getByRole('button', { name: /Tarefa 2 Onboarding de cliente/ })).toBeInTheDocument();
+    expect(recorte.getByRole('link', { name: 'ver no Trabalho →' })).toHaveAttribute('href', '/trabalho?pasta=f-clientes&visao=lista&concluidas=ocultar');
   });
 
-  it('P1 (21/10): carga por prazo, por pasta e por lista sem rolagem lateral na caixa', async () => {
+  it('os quadros de prazo e pasta contêm os gráficos sem rolagem lateral na caixa', async () => {
     render(<VisaoGeralPage />);
-    for (const titulo of ['Carga por prazo', 'Tarefas por pasta', 'Tarefas por lista']) {
-      const quadro = (await screen.findByText(titulo)).closest('section') as HTMLElement;
-      expect(quadro.className, titulo).not.toContain('overflow-x-auto');
-      expect(quadro.querySelector('[data-grafico-caixa]'), titulo).toBeTruthy();
+    for (const titulo of ['Carga por prazo', 'Tarefas por pasta']) {
+      const quadro = (await screen.findByText(titulo)).closest('section');
+      expect(quadro, titulo).toHaveClass('min-w-0');
+      expect(quadro, titulo).not.toHaveClass('overflow-x-auto');
+      expect(quadro?.querySelector('[data-grafico-caixa]'), titulo).toBeInTheDocument();
     }
   });
 
