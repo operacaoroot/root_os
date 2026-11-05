@@ -3,7 +3,8 @@ import { ActorType } from '@prisma/client';
 import { randomUUID } from 'node:crypto';
 import { PrismaService } from '../prisma/prisma.service';
 import { EventLogService } from '../gateway/event-log.service';
-import { comContexto, contextoAtual, novaCorrelacao } from '../common/contexto-execucao';
+import { contextoAtual, novaCorrelacao } from '../common/contexto-execucao';
+import { comContextoDePlataforma, comContextoDaEmpresaResolvida } from '../prisma/contexto-de-plataforma';
 import { ENTRADA_VAZIA, estimarCustoUsd, type EstimativaDeCusto, type TamanhoDaEntrada } from './estimativa';
 import { RecusaDeCustoDeIaError } from './recusa-de-custo';
 
@@ -232,8 +233,6 @@ export class TetoDeCustoIaService implements OnModuleInit, OnModuleDestroy {
    */
   private readonly abertas = new Map<string, number>();
   private varredura?: ReturnType<typeof setInterval>;
-  /** A varredura já reclamou que não enxerga as empresas? (uma vez, não a cada 10 min) */
-  private varreduraAvisada = false;
 
   constructor(
     private readonly prisma: PrismaService,
@@ -526,13 +525,8 @@ export class TetoDeCustoIaService implements OnModuleInit, OnModuleDestroy {
    * nenhuma reserva do anterior pode liquidar. `varredura` solta só o que passou
    * de `RESERVA_EXPIRA_MS` e excede o que este processo tem em voo.
    *
-   * A DESCOBERTA de quais empresas têm reserva aberta roda SEM empresa na sessão
-   * — é a única consulta aqui que não tem como ter — e por isso levanta o aviso
-   * de inventário do gancho de sessão. Sob o papel restrito ela devolve vazio, e
-   * aí quem vale é a liberação sob demanda, que roda dentro do contexto da
-   * empresa quando a recusa acontece. Declarar este arquivo na lista de
-   * chamadores de plataforma resolveria de vez — a lista é de outra fatia e está
-   * em FORA DO ESCOPO no relatório.
+   * Descobre somente identificadores de empresas sob a sentinela e lê as
+   * reservas dentro de cada empresa.
    */
   async liberarReservasPresas(motivo: 'arranque' | 'varredura'): Promise<number> {
     /*
@@ -555,45 +549,25 @@ export class TetoDeCustoIaService implements OnModuleInit, OnModuleDestroy {
      */
     const paradaDesde = new Date(Date.now() - RESERVA_EXPIRA_MS);
     const semIdade = motivo === 'arranque';
-    const linhas = await this.prisma
-      .$queryRaw<{ orgId: string; dia: string }[]>`
-      SELECT "orgId", "dia"
-        FROM "GastoDeIaNoDia"
-       WHERE "reservadoUsd" > 0
-         AND ( ${semIdade}::boolean OR "atualizadoEm" < ${paradaDesde} )
-       ORDER BY "orgId", "dia"`
-      .catch((e: unknown) => {
-        // Sob `TENANT_MODO=impor` esta consulta LANÇA (é o guarda de "consulta
-        // sem empresa"), e sob o papel restrito ela devolveria vazio. Nos dois
-        // casos a varredura é o que se perde, não o teto: quem solta a reserva
-        // presa no regime restrito é a liberação sob demanda, dentro do contexto
-        // da empresa. Avisa uma vez e segue.
-        if (!this.varreduraAvisada) {
-          this.varreduraAvisada = true;
-          this.log.warn(
-            `a varredura de reserva presa não consegue descobrir as empresas (${(e as Error).message}). ` +
-              'A liberação sob demanda continua valendo; para a varredura valer também, este arquivo ' +
-              'precisa entrar na lista de chamadores de plataforma (fora do escopo desta fatia).',
-          );
-        }
-        return [] as { orgId: string; dia: string }[];
-      });
-
+    const empresas = await comContextoDePlataforma(() => this.prisma.org.findMany({select:{id:true}}));
     let total = 0;
-    for (const l of linhas) {
-      // Uma de cada vez, e cada uma no contexto dela: é o que mantém o
-      // isolamento valendo durante a operação e o que faz o evento nascer com o
-      // dono certo (mesmo desenho do expurgo por retenção).
-      total += await comContexto(
-        {
-          orgId: l.orgId,
-          actorType: ActorType.system,
-          actorId: null,
-          correlationId: novaCorrelacao('teto'),
-          origem: 'cron',
-        },
-        () => this.liberarPresasDaLinha(l.orgId, l.dia, motivo),
-      );
+    for (const empresa of empresas) {
+      try {
+        total += await comContextoDaEmpresaResolvida(empresa.id, async () => {
+          const linhas = await this.prisma.$queryRaw<{orgId:string;dia:string}[]>`
+            SELECT "orgId", "dia"
+              FROM "GastoDeIaNoDia"
+             WHERE "orgId" = ${empresa.id}
+               AND "reservadoUsd" > 0
+               AND ( ${semIdade}::boolean OR "atualizadoEm" < ${paradaDesde} )
+             ORDER BY "dia"`;
+          let liberado=0;
+          for (const linha of linhas) liberado += await this.liberarPresasDaLinha(empresa.id,linha.dia,motivo);
+          return liberado;
+        }, {actorType:ActorType.system,actorId:null,correlationId:novaCorrelacao('teto'),origem:'cron'});
+      } catch(e) {
+        this.log.warn(`a varredura de reservas da empresa ${empresa.id} falhou: ${(e as Error).message}`);
+      }
     }
     return arredondar(total);
   }

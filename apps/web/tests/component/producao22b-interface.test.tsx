@@ -6,7 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
  * PRODUÇÃO 22B (22/10/2026), lane A, a tela:
  *
  *  I1 · o botão de recolher logo à frente da logo; o acordeão abre, FECHA e troca;
- *       a engrenagem do topo (Perfil, Lixeira, Registro de ações, Configurações,
+ *       a engrenagem do topo (Perfil, Lixeira, Histórico técnico, Configurações,
  *       só o que a permissão libera; teclado, Esc e clique fora); o "⋯" da árvore
  *       só no hover e no foco (sempre no toque), com o menu por portal sempre
  *       dentro da janela nas três larguras; ícone e cor (gravar, mostrar, apagar).
@@ -110,7 +110,7 @@ describe('I1: a engrenagem do topo', () => {
   it('só os itens que a permissão libera, na ordem', () => {
     expect(itensDaEngrenagem([], null).map((i) => i.rotulo)).toEqual(['Perfil']);
     expect(itensDaEngrenagem(['tarefas.editar', 'auditoria.ver'], '/config').map((i) => [i.rotulo, i.href])).toEqual([
-      ['Perfil', '/perfil'], ['Lixeira', '/lixeira'], ['Registro de ações', '/rastro'], ['Configurações', '/config'],
+      ['Perfil', '/perfil'], ['Lixeira', '/lixeira'], ['Histórico técnico', '/rastro'], ['Configurações', '/config'],
     ]);
     expect(itensDaEngrenagem(['tarefas.ver', 'auditoria.ver'], null).map((i) => i.chave)).toEqual(['perfil', 'rastro']);
     expect(itensDaEngrenagem(['tarefas.editar'], null, false).map((i) => i.chave)).toEqual(['perfil']);
@@ -137,12 +137,12 @@ describe('I1: a engrenagem do topo', () => {
     expect(screen.queryByRole('menu')).toBeNull();
   });
 
-  it('sem tarefas.editar não há Lixeira; com auditoria.ver há o Registro de ações', () => {
+  it('sem tarefas.editar não há Lixeira; com auditoria.ver há o Histórico técnico', () => {
     permissoes = ['tarefas.ver', 'auditoria.ver'];
     render(<EngrenagemDoUsuario />);
     fireEvent.click(screen.getByTestId('engrenagem'));
     expect(screen.queryByTestId('engrenagem-lixeira')).toBeNull();
-    expect(screen.getByTestId('engrenagem-rastro')).toHaveAttribute('href', '/rastro');
+    expect(screen.getByRole('menuitem', { name: /^Histórico técnico$/ })).toHaveAttribute('href', '/rastro');
   });
 });
 

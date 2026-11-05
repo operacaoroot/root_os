@@ -1995,6 +1995,64 @@ jobs:
       - name: Compilar os pacotes internos
         run: pnpm --filter @mktos/shared --filter @mktos/policy build
 
+      - name: Compilar e testar o MCP, incluindo identidade
+        working-directory: packages/mcp
+        run: |
+          pnpm build
+          # O teste de identidade importa dist/client.js. O resumo estruturado
+          # exige os quatro arquivos e todos os casos, sem skip, todo ou cancelamento.
+          node <<'JS'
+          const assert = require('node:assert/strict');
+          const { resolve } = require('node:path');
+          const { run } = require('node:test');
+          function conferir(resumo, piso) {
+            const c = resumo?.counts;
+            assert.equal(resumo?.success, true, 'A suíte MCP precisa passar.');
+            for (const chave of ['tests', 'passed', 'failed', 'cancelled', 'skipped', 'todo']) {
+              assert.ok(Number.isInteger(c?.[chave]) && c[chave] >= 0, `Contagem MCP ausente ou inválida: ${chave}`);
+            }
+            assert.ok(c.tests >= piso, `MCP: ${c.tests} casos, piso ${piso}.`);
+            assert.equal(c.passed, c.tests);
+            for (const chave of ['failed', 'cancelled', 'skipped', 'todo']) assert.equal(c[chave], 0, chave);
+          }
+          // Contraprovas da própria trava: resumo incompleto, redução de casos
+          // ou qualquer caso não aprovado precisam reprovar a CI.
+          const counts = { tests: 15, passed: 15, failed: 0, cancelled: 0, skipped: 0, todo: 0 };
+          conferir({ success: true, counts }, 15);
+          const invalidos = [undefined, {}, { success: false, counts }, ...[
+            { tests: 14, passed: 14 }, { skipped: 1 }, { todo: 1 }, { cancelled: 1 },
+            { failed: 1 }, { passed: 14 }, { tests: '15' },
+          ].map(c => ({ success: true, counts: { ...counts, ...c } }))];
+          for (const resumo of invalidos) assert.throws(() => conferir(resumo, 15));
+          const pisos = new Map([
+            ['test/env.test.mjs', 2], ['test/identidade.test.mjs', 6],
+            ['test/rotas.test.mjs', 5], ['test/contratos.test.mjs', 2],
+          ].map(([arquivo, piso]) => [resolve(arquivo), piso]));
+          (async () => {
+            const vistos = new Set();
+            let total;
+            for await (const evento of run({ files: [...pisos.keys()] })) {
+              if (evento.type === 'test:fail' || evento.type === 'test:stderr') console.error(evento.data);
+              if (evento.type !== 'test:summary') continue;
+              const resumo = evento.data;
+              if (resumo.file) {
+                assert.ok(pisos.has(resumo.file) && !vistos.has(resumo.file), 'Resumo MCP inesperado ou duplicado.');
+                conferir(resumo, pisos.get(resumo.file));
+                vistos.add(resumo.file);
+              } else {
+                assert.equal(total, undefined, 'Resumo MCP global duplicado.');
+                total = resumo;
+              }
+            }
+            assert.equal(vistos.size, pisos.size, 'Nem todos os arquivos MCP executaram.');
+            conferir(total, 15);
+            console.log(`MCP: ${total.counts.passed} casos aprovados em ${vistos.size} arquivos, sem pulos.`);
+          })().catch(error => { console.error(error); process.exitCode = 1; });
+          JS
+
+      - name: Testes do script de publicação restrita
+        run: python3 -m unittest deploy/rls-marketing/test_release.py -v
+
       - name: A variável de banco de teste precisa existir
         run: |
           test -n "$TEST_DATABASE_URL" || {
@@ -2101,6 +2159,7 @@ jobs:
       # A trava de cobertura, escrita fora do repositório: é infraestrutura de
       # CI, não código de produto. Um único script serve as três suítes.
       - name: Preparar a trava de cobertura
+        id: preparacao_testes
         run: |
           cat > "$RUNNER_TEMP/conferir-suite.mjs" <<'MJS'
           // Lê o resumo em JSON de uma suíte do vitest e afirma sobre NÚMEROS.
@@ -2253,12 +2312,15 @@ jobs:
             "$PISO_CASOS_WEB" "$PISO_ARQUIVOS_WEB" web
 
       - name: Testes de api
+        id: testes_api
+        if: ${{ !cancelled() && steps.preparacao_testes.outcome == 'success' }}
         run: |
           pnpm --filter @mktos/api test -- --maxWorkers=2 \
             --reporter=default --reporter=json \
             --outputFile.json="$RUNNER_TEMP/resumo-api.json"
 
       - name: A suíte de api rodou inteira
+        if: ${{ !cancelled() && steps.testes_api.outcome == 'success' }}
         run: |
           node "$RUNNER_TEMP/conferir-suite.mjs" "$RUNNER_TEMP/resumo-api.json" \
             "$PISO_CASOS_API" "$PISO_ARQUIVOS_API" api
@@ -2550,7 +2612,8 @@ jobs:
           # `AgendaRegraTexto`, `AgendaConvite`) entraram no registro de alvos
           # como `tenant`, com semente nas duas empresas: +14 casos. O piso
           # sobe 12, para 293.
-          PISO_CASOS_ISOLAMENTO: '293'
+          # Papel restrito e registro das sentinelas, 04/11/2026: 593 casos medidos.
+          PISO_CASOS_ISOLAMENTO: '570'
         run: |
           pnpm --filter @mktos/api exec vitest run \
             --reporter=default --reporter=json \
@@ -2736,6 +2799,62 @@ jobs:
             throw new Error('A prova nomeada de sessão sob RLS não executou e passou integralmente.');
           }
           console.log('Sessão sob RLS: caso obrigatório executado e aprovado.');
+          JS
+
+      - name: Marketing por HTTP com papel restrito
+        env:
+          MKTOS_CONJUNTO_DE_TESTES: marketing-rls
+          RESUMO_MARKETING_RLS: ${{ runner.temp }}/marketing-rls.json
+        run: |
+          pnpm --filter @mktos/api exec vitest run --maxWorkers=1 \
+            --reporter=default --reporter=json --outputFile.json="$RESUMO_MARKETING_RLS"
+          node <<'JS'
+          const fs = require('node:fs');
+          const r = JSON.parse(fs.readFileSync(process.env.RESUMO_MARKETING_RLS, 'utf8'));
+          const arquivos = r.testResults.filter(a => a.name.endsWith('/test/marketing-rls-http.test.ts'));
+          if (r.success !== true || r.numFailedTests !== 0 || r.numPendingTests !== 0 ||
+              r.numPassedTests !== r.numTotalTests || arquivos.length !== 1 ||
+              arquivos[0].assertionResults.length < 10 || arquivos[0].assertionResults.some(c => c.status !== 'passed')) {
+            throw new Error('As dez provas HTTP de Marketing com RLS precisam executar sem pulos.');
+          }
+          console.log(`Marketing RLS: ${r.numPassedTests} testes aprovados.`);
+          JS
+
+      - name: Automações, provisionamento, trilho e Bio com papel restrito
+        env:
+          MKTOS_CONJUNTO_DE_TESTES: padrao
+          MKTOS_TESTAR_TRILHO_RLS: '1'
+          RESUMO_PAPEL: ${{ runner.temp }}/papel-restrito.json
+        run: |
+          pnpm --filter @mktos/api exec vitest run --maxWorkers=1 \
+            test/bio-oauth-papel-restrito.test.ts test/provisionamento-papel-restrito.test.ts \
+            test/papel-restrito-catalogo.test.ts test/papel-restrito-boot.test.ts \
+            test/rls-automacoes-contexto.test.ts test/rls-automacoes-postgres.test.ts test/trilho-provisionamento-escopo.test.ts \
+            --reporter=default --reporter=json --outputFile.json="$RESUMO_PAPEL"
+          node <<'JS'
+          const fs = require('node:fs');
+          const r = JSON.parse(fs.readFileSync(process.env.RESUMO_PAPEL, 'utf8'));
+          const pisos = {
+            'bio-oauth-papel-restrito.test.ts': 7,
+            'provisionamento-papel-restrito.test.ts': 7,
+            'papel-restrito-catalogo.test.ts': 2,
+            'papel-restrito-boot.test.ts': 10,
+            'rls-automacoes-contexto.test.ts': 9,
+            'rls-automacoes-postgres.test.ts': 5,
+            'trilho-provisionamento-escopo.test.ts': 5,
+          };
+          if (r.success !== true || r.numFailedTests !== 0 || r.numPendingTests !== 0 ||
+              r.numPassedTests !== r.numTotalTests || r.numTotalTests < 45) {
+            throw new Error('As provas do papel restrito precisam passar integralmente.');
+          }
+          for (const [nome, piso] of Object.entries(pisos)) {
+            const arquivos = r.testResults.filter(a => a.name.endsWith('/test/' + nome));
+            if (arquivos.length !== 1 || arquivos[0].assertionResults.length < piso ||
+                arquivos[0].assertionResults.some(c => c.status !== 'passed')) {
+              throw new Error(`A prova ${nome} precisa executar ao menos ${piso} casos sem pulos.`);
+            }
+          }
+          console.log(`Papel restrito: ${r.numPassedTests} testes aprovados em ${Object.keys(pisos).length} arquivos.`);
           JS
 
   # ---------------------------------------------------------------------------

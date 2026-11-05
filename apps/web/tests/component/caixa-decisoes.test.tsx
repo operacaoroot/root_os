@@ -177,13 +177,16 @@ describe('T6: a aba Decisões em Pendências', () => {
 
   it('o botão de um toque chama a MESMA rota da tela antiga, com o mesmo corpo, e a fila relê', async () => {
     window.history.replaceState(null, '', '/caixa?aba=decisoes');
+    apiPost.mockImplementation(async () => {
+      fila = { ...FILA, resumo: { ...FILA.resumo, decisoes: 0 }, decisoes: [] };
+      return { ok: true };
+    });
     const { unmount } = renderCaixa();
     fireEvent.click(await screen.findByRole('button', { name: /Manter o preço/ }));
     await waitFor(() => expect(apiPost).toHaveBeenCalledTimes(1));
     const naCaixa = apiPost.mock.calls[0];
     expect(naCaixa).toEqual(['/comercial/decisoes/d1/responder', { escolha: 'manter' }, 'tok']);
     // Respondida, a fila relê e o aviso diz o que aconteceu.
-    fila = { ...FILA, resumo: { ...FILA.resumo, decisoes: 0 }, decisoes: [] };
     await waitFor(() => expect(screen.getByTestId('caixa-decisoes-aviso').textContent).toMatch(/^Respondido: Manter o preço\./));
     await waitFor(() => expect(screen.getByText(/Nenhuma decisão do comercial esperando agora/)).toBeTruthy());
     await waitFor(() => expect(within(screen.getByTestId('caixa-decisoes')).getByText('0')).toBeTruthy());
@@ -195,6 +198,7 @@ describe('T6: a aba Decisões em Pendências', () => {
     fireEvent.click(await screen.findByRole('button', { name: /Manter o preço/ }));
     await waitFor(() => expect(apiPost).toHaveBeenCalledTimes(1));
     expect(apiPost.mock.calls[0]).toEqual(naCaixa);
+    expect(await screen.findByText(/Nenhuma decisão esperando agora/)).toBeInTheDocument();
   });
 
   it('a regra do cartão vale aqui: sem aprovacoes.decidir não há botão', async () => {

@@ -299,7 +299,7 @@ const MENU_FINAL: LinhaDoMenu[] = [
   ['regua', 'Regras e permissões', '/regua', 'mcp.ver', 'controle', null, null, false],
   ['cofre', 'Cofre', '/cofre', 'cofre.ver', 'controle', null, null, false],
   ['assinatura', 'Plano e assinatura', '/assinatura', 'dashboard.ver', 'controle', null, null, true],
-  ['rastro', 'Registro de ações', '/rastro', 'auditoria.ver', 'registros', null, null, false],
+  ['rastro', 'Histórico técnico', '/rastro', 'auditoria.ver', 'registros', null, null, false],
   ['linha-do-tempo', 'Atividade', '/linha-do-tempo', 'auditoria.ver', 'registros', null, 'rastro', false],
   ['config', 'Configurações da conta', '/config', 'dashboard.ver', 'conta', null, null, false],
   // Produção 22B (I6): o perfil, oculto (a entrada é a engrenagem do topo), dono da rota.

@@ -1,7 +1,8 @@
 import { Injectable, Logger, OnModuleInit, Optional } from '@nestjs/common';
 import { ActorType, AgentEstado, type Rotina } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
-import { comContexto, novaCorrelacao } from '../common/contexto-execucao';
+import { novaCorrelacao } from '../common/contexto-execucao';
+import { comContextoDePlataforma, comContextoDaEmpresaResolvida } from '../prisma/contexto-de-plataforma';
 import { combina, parseCron } from '../pauta/cron';
 import { AssinaturaService } from '../billing/assinatura.service';
 import { LimpezaDasVencidasService } from '../approvals/limpeza-das-vencidas';
@@ -14,8 +15,6 @@ import { anunciarAgendadorDeRotinas } from './sinal-do-agendador';
 /** O tique. Um minuto, como o do agendador da pauta — é o mesmo relógio. */
 const INTERVALO_MS = 60_000;
 
-/** De quanto em quanto tempo vale reperguntar ao catálogo se a vista está cega. */
-const VALIDADE_DO_DIAGNOSTICO_MS = 5 * 60_000;
 
 /**
  * O AGENDADOR ÚNICO DAS ROTINAS — RF-N-04.
@@ -52,9 +51,8 @@ const VALIDADE_DO_DIAGNOSTICO_MS = 5 * 60_000;
  *  · RASTRO — ator, empresa e correlação (RNF-09) acompanham tudo que a rotina
  *    fizer, inclusive o que ela propuser à porta.
  *
- * E NÃO é contexto de plataforma: abrir a sentinela aqui daria alcance de
- * plataforma a um trabalho que sabe exatamente de quem é. A única consulta que
- * roda sem empresa é a DESCOBERTA — a pergunta que decide quais empresas varrer.
+ * A sentinela de plataforma só enumera ids de `Org`. A descoberta de rotinas e
+ * a execução acontecem no contexto de cada empresa.
  *
  * ----------------------------------------------------------------------------
  * DUAS RÉPLICAS, E O QUE ACONTECE QUANDO UMA MORRE NO MEIO
@@ -97,7 +95,6 @@ export class RotinasScheduler implements OnModuleInit {
   private jaAnunciouDescobertaVazia = false;
   /** O último diagnóstico da descoberta, e quando ele foi tirado. */
   private cega = false;
-  private cegaConferidaEm = 0;
   /**
    * As empresas cujo bloqueio por assinatura já foi anunciado.
    *
@@ -195,12 +192,13 @@ export class RotinasScheduler implements OnModuleInit {
     try {
       empresas = await this.empresasComRotina();
     } catch (e) {
+      this.cega = true;
       this.log.warn(`tique não conseguiu descobrir as empresas: ${(e as Error).message}`);
       return;
     }
 
     if (empresas.length === 0) {
-      await this.conferirAlcanceDaDescoberta();
+      this.cega = this.falhaNaDescoberta;
       if (!this.jaAnunciouDescobertaVazia) {
         this.jaAnunciouDescobertaVazia = true;
         if (this.cega) this.log.warn(this.textoDaDescobertaCega());
@@ -209,10 +207,8 @@ export class RotinasScheduler implements OnModuleInit {
       return;
     }
 
-    // Achou empresa: a descoberta ENXERGA. Vale mais do que qualquer diagnóstico
-    // de catálogo, e mantém a tela honesta sem perguntar nada ao banco.
-    this.cega = false;
-    this.cegaConferidaEm = Date.now();
+    // Uma falha parcial permanece visível mesmo quando outra empresa foi encontrada.
+    this.cega = this.falhaNaDescoberta;
     this.jaAnunciouDescobertaVazia = false;
 
     for (const orgId of empresas) {
@@ -220,76 +216,30 @@ export class RotinasScheduler implements OnModuleInit {
     }
   }
 
-  /**
-   * AS EMPRESAS QUE TÊM ROTINA — a única consulta sem empresa na sessão.
-   *
-   * A consulta é, literalmente, o `DISTINCT "orgId"` das duas tabelas de rotina,
-   * SEM FILTRO. Quem a serve é o índice único de `(orgId, slug)`; não há (nem
-   * precisa haver) índice de `(ativo, estado)` para ela.
-   *
-   * NÃO FILTRA POR "QUEM DISPARA", e isso é decisão, não esquecimento: a
-   * varredura de cada empresa também RECONCILIA, e reconciliação alcança
-   * justamente as linhas que não disparam — o espelho pausado que precisa ser
-   * marcado como órfão, a rotina que voltou a existir na tela de Pauta, a que
-   * ficou anunciando horário depois de perder a origem. Uma descoberta que só
-   * enxergasse rotina ligada deixaria essas empresas fora da varredura e o
-   * conserto nunca aconteceria.
-   *
-   * Pergunta às PRÓPRIAS tabelas de rotina em vez de varrer `Org`: varrer `Org`
-   * exigiria o contexto de plataforma, que é uma sentinela com alcance muito
-   * maior do que "quais empresas têm trabalho agendado". `PautaRotina` entra na
-   * união porque uma empresa pode ter rotina de pauta e ainda não ter o espelho
-   * — é a primeira reconciliação, e ela precisa de um primeiro tique que enxergue
-   * a empresa.
-   */
+  /** Descobre apenas ids na plataforma; rotinas e pauta são lidas em cada empresa. */
+  private falhaNaDescoberta = false;
   private async empresasComRotina(): Promise<string[]> {
-    const [deRotina, dePauta] = await Promise.all([
-      this.prisma.rotina.findMany({ select: { orgId: true }, distinct: ['orgId'] }),
-      this.prisma.pautaRotina.findMany({ select: { orgId: true }, distinct: ['orgId'] }),
-    ]);
-    return [...new Set([...deRotina, ...dePauta].map((r) => r.orgId))].sort();
-  }
-
-  /**
-   * ZERO EMPRESA PODE SER VERDADE — OU PODE SER A POLICY.
-   *
-   * Sob o papel restrito e sem empresa na sessão, a consulta de descoberta volta
-   * VAZIA e CALADA: é exatamente o que a policy manda fazer. O agendador ficaria
-   * quieto para sempre com ar de "não há nada agendado". Aqui ele pergunta ao
-   * catálogo se esta conexão atravessa o isolamento e guarda a resposta — que
-   * vira aviso no log UMA vez e, principalmente, VIRA CAMPO NA TELA
-   * (`RotinasList.descobertaCega`). Enquanto isso só saía no log, `/rotinas`
-   * ficava inteiramente verde enquanto nada disparava em lugar nenhum.
-   *
-   * AVISA, NÃO DERRUBA. O expurgo do rastro RECUSA rodar na conexão errada
-   * porque ele é um comando de manutenção com começo e fim; um agendador que
-   * lançasse no arranque levaria a API junto.
-   */
-  private async conferirAlcanceDaDescoberta(): Promise<void> {
-    if (Date.now() - this.cegaConferidaEm < VALIDADE_DO_DIAGNOSTICO_MS) return;
-    this.cegaConferidaEm = Date.now();
-    try {
-      const [l] = await this.prisma.$queryRaw<
-        { atravessa: boolean; papel: string; forcado: boolean }[]
-      >`
-        SELECT COALESCE((SELECT rolsuper OR rolbypassrls FROM pg_roles WHERE rolname = current_user), false) AS atravessa,
-               current_user::text AS papel,
-               COALESCE(c.relforcerowsecurity, false) AS forcado
-          FROM (SELECT 1) _
-          LEFT JOIN pg_class c ON c.relname = 'Rotina' AND c.relkind = 'r'`;
-      this.cega = !!l && !l.atravessa && l.forcado;
-    } catch (e) {
-      this.log.warn(`[rotinas] não deu para conferir o alcance da descoberta: ${(e as Error).message}`);
+    const orgs=await comContextoDePlataforma(()=>this.prisma.org.findMany({select:{id:true}}));
+    const empresas:string[]=[];
+    this.falhaNaDescoberta=false;
+    for(const org of orgs) {
+      try {
+        const tem=await comContextoDaEmpresaResolvida(org.id,async()=>{
+          const [rotinas,pautas]=await Promise.all([
+            this.prisma.rotina.findMany({where:{orgId:org.id},select:{orgId:true},take:1}),
+            this.prisma.pautaRotina.findMany({where:{orgId:org.id},select:{orgId:true},take:1}),
+          ]);
+          return rotinas.length>0 || pautas.length>0;
+        });
+        if(tem) empresas.push(org.id);
+      } catch(e) { this.falhaNaDescoberta=true; this.log.warn(`[rotinas] descoberta falhou na empresa ${org.id}: ${(e as Error).message}`); }
     }
+    return empresas.sort();
   }
 
   private textoDaDescobertaCega(): string {
     return (
-      '[rotinas] nenhuma empresa com rotina — e a conexão desta API NÃO atravessa o isolamento por ' +
-      'linha numa tabela com FORCE ROW LEVEL SECURITY. A descoberta do tique roda sem empresa na ' +
-      'sessão, então ela volta vazia por policy, não por falta de rotina. Enquanto isto valer, ' +
-      'NENHUMA rotina dispara. Conserto: dar BYPASSRLS ao papel da aplicação, ou mover a descoberta ' +
-      'para um comando de manutenção com a conexão dona (é o desenho do expurgo do rastro).'
+      '[rotinas] a descoberta de pelo menos uma empresa falhou; consulte os avisos do agendador.'
     );
   }
 
@@ -308,15 +258,7 @@ export class RotinasScheduler implements OnModuleInit {
    */
   private async varrerEmpresa(orgId: string, agora: Date): Promise<void> {
     try {
-      await comContexto(
-        {
-          orgId,
-          actorType: ActorType.system,
-          actorId: null,
-          agentSlug: null,
-          correlationId: novaCorrelacao('tique'),
-          origem: 'cron',
-        },
+      await comContextoDaEmpresaResolvida(orgId,
         async () => {
           await this.rotinas.reconciliarPauta(orgId);
           await this.limpezaDasVencidas?.garantir(orgId);
@@ -369,7 +311,7 @@ export class RotinasScheduler implements OnModuleInit {
               );
             }
           }
-        },
+        },{actorType:ActorType.system,actorId:null,correlationId:novaCorrelacao('tique'),origem:'cron'},
       );
     } catch (e) {
       this.log.error(
@@ -456,15 +398,8 @@ export class RotinasScheduler implements OnModuleInit {
     }
   }
 
-  /**
-   * O que a tela precisa saber sobre o agendador.
-   *
-   * `descobertaCega` é reavaliada no máximo de cinco em cinco minutos: a resposta
-   * vem do catálogo do PostgreSQL e não muda sozinha, e uma tela aberta não pode
-   * virar uma consulta de catálogo por recarregamento.
-   */
+  /** O diagnóstico reflete a última descoberta executada. */
   async diagnostico(): Promise<EstadoDoAgendador> {
-    await this.conferirAlcanceDaDescoberta();
     return { ativo: this.ativo, pautaDesligada: this.pautaDesligada, descobertaCega: this.cega };
   }
 

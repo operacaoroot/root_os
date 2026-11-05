@@ -1,4 +1,4 @@
-import { Injectable, Logger, OnModuleInit, Optional, ServiceUnavailableException } from '@nestjs/common';
+import { Injectable, Logger, NotFoundException, OnModuleInit, Optional, ServiceUnavailableException } from '@nestjs/common';
 import { PRAZO_DA_CHAMADA_DE_SONDA_MS, RegistroDeConectores } from '../integrations/conectores.registry';
 import {
   type ConectorDoContrato,
@@ -12,6 +12,9 @@ import {
 } from '../integrations/contrato-de-conector';
 import type { PautaPerfilPlataforma } from '@mktos/shared';
 import { postsPedidos } from './perfil-da-pauta';
+import { contextoAtual } from '../common/contexto-execucao';
+import { PrismaService } from '../prisma/prisma.service';
+import { ehEmpresaDaCasa } from '../tenants/empresa-da-casa';
 
 // Conector Apify — só sob demanda (onda 1). Credencial PRÓPRIA do root
 // (APIFY_TOKEN, já declarado no .env.example). Roda o actor de forma síncrona e
@@ -127,7 +130,14 @@ export class ApifyService implements OnModuleInit {
   constructor(
     /** Rodada dos agentes (A6): o Apify implementa o contrato único de conector. */
     @Optional() private readonly contrato?: RegistroDeConectores,
+    private readonly prisma?: PrismaService,
   ) {}
+
+  private async autorizado(orgEsperada?: string): Promise<boolean> {
+    const orgId = contextoAtual()?.orgId;
+    return !!this.prisma && !!orgId && (orgEsperada === undefined || orgId === orgEsperada)
+      && await ehEmpresaDaCasa(this.prisma, orgId);
+  }
 
   onModuleInit(): void {
     this.contrato?.registrar(this.descritorDoContrato(), 'ApifyService');
@@ -156,7 +166,8 @@ export class ApifyService implements OnModuleInit {
         tipo: 'nao_se_aplica',
         motivo: 'Cada run é pago e sai da coleta da Pauta (Radar ou a rodada), com o teto de runs por fonte; não há espelho para trazer.',
       }),
-      saude: async (): Promise<SaudeDeConector> => {
+      saude: async ({ orgId }): Promise<SaudeDeConector> => {
+        if (!await this.autorizado(orgId)) return naoConfigurado('Apify indisponível nesta empresa.');
         if (!this.configured) return naoConfigurado('APIFY_TOKEN ausente no ambiente da API: links do Instagram e do TikTok, perfis e buscas não são coletados.');
         const comecou = Date.now();
         try {
@@ -237,7 +248,11 @@ export class ApifyService implements OnModuleInit {
 
   /** O uso do mês na conta do Apify, guardado por 5 minutos. Nulo quando não deu para ler. */
   async usoDoMes(forcar = false): Promise<UsoDoApify | null> {
-    if (!this.configured) return null;
+    if (!this.configured || !await this.autorizado()) return null;
+    return this.lerUsoDoMes(forcar);
+  }
+
+  private async lerUsoDoMes(forcar = false): Promise<UsoDoApify | null> {
     if (!forcar && this.usoGuardado && Date.now() - this.usoGuardado.lidoEm < GUARDA_O_USO_MS) return this.usoGuardado.uso;
     try {
       const r = await fetch(`${this.base}/users/me/limits`, {
@@ -260,7 +275,7 @@ export class ApifyService implements OnModuleInit {
 
   /** A trava: lança quando o mês passou de 90% do teto, ou quando não dá para saber. */
   private async exigirCredito(): Promise<void> {
-    const uso = await this.usoDoMes();
+    const uso = await this.lerUsoDoMes();
     if (!uso) {
       throw new CreditoDoApifyEsgotadoError('Não consegui ler o uso do Apify agora. Para não gastar sem saber, a coleta não rodou. Tente de novo em alguns minutos.');
     }
@@ -276,6 +291,7 @@ export class ApifyService implements OnModuleInit {
     input: Record<string, unknown>,
     opcoes: { maxItems?: number; maxUsd?: number; timeoutSec?: number } = {},
   ): Promise<ApifyRun> {
+    if (!await this.autorizado()) throw new NotFoundException('A coleta do Apify não está disponível nesta empresa.');
     if (!this.configured) {
       throw new ServiceUnavailableException(
         'APIFY_TOKEN ausente. Defina no .env (ver .env.example) e reinicie a API.',

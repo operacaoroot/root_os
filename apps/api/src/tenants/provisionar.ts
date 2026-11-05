@@ -1,6 +1,6 @@
 import { randomBytes, randomUUID } from 'node:crypto';
 import bcrypt from 'bcryptjs';
-import type { ActorType, Prisma, PrismaClient } from '@prisma/client';
+import { Prisma, type ActorType, type PrismaClient } from '@prisma/client';
 import { MODULOS, PERMISSIONS, ROLES, type ModuloKey, type RoleKey } from '@mktos/shared';
 
 import { comContextoDePlataforma } from '../prisma/contexto-de-plataforma';
@@ -38,11 +38,9 @@ import { ehModulo, modulosConhecidos } from './modulos';
  * ESTA É UMA OPERAÇÃO DE PLATAFORMA, NÃO DE TENANT
  * Ela nasce olhando para uma empresa que ainda não existe: a primeira consulta
  * (achar a `Org` pelo slug) não tem empresa resolvida e, quando o isolamento por
- * linha estiver ligado, vai precisar de uma conexão que enxergue todos os
- * tenants — o papel DONO, nunca o papel da aplicação (07-MODELO-DE-DADOS §3).
- * Enquanto isso não existe, a consulta falha com nome próprio
- * (`ProvisionamentoSemPlataformaError`) em vez de um `SemTenantError` sem
- * endereço.
+ * linha estiver ligado, a casca autoriza a origem antes de resolver o slug
+ * sob contexto de plataforma. Usa o mesmo papel restrito da aplicação; a
+ * escrita roda dentro da empresa encontrada ou do UUID recém-gerado.
  */
 
 /** O papel que a empresa ganha para ter alguém que manda nela desde o dia zero. */
@@ -158,7 +156,7 @@ export class ProvisionamentoConcorrenteError extends Error {
 
 /** Sinal interno da corrida pelo slug. Nunca sai de `provisionarTenant`. */
 class PerdeuACorrida extends Error {
-  constructor(readonly vencedorId: string) {
+  constructor(readonly vencedorId?: string, readonly erroOriginal?: unknown) {
     super('outra rodada criou a empresa primeiro');
   }
 }
@@ -215,6 +213,8 @@ export interface AuditoriaDeProvisionamento {
 }
 
 export interface OpcoesDeProvisionamento {
+  /** Descoberta de plataforma já autorizada pela casca; nunca recebe credencial privilegiada. */
+  resolverOrg?: (slug: string) => Promise<OrgExistente>;
   /**
    * Abre o contexto de execução da empresa em volta do trabalho de banco.
    *
@@ -870,6 +870,12 @@ export async function provisionarTenant(
     return await umaRodada(prisma, entrada, opcoes);
   } catch (e) {
     if (!(e instanceof PerdeuACorrida)) throw e;
+    // Sob RLS o Postgres pode ocultar qual índice gerou P2002. Só repetir se o slug exato existe.
+    if (e.erroOriginal) {
+      const slug = exigirSlug(entrada.slug);
+      const vencedor = await (opcoes.resolverOrg ? opcoes.resolverOrg(slug) : acharOrg(prisma, slug));
+      if (!vencedor) throw e.erroOriginal;
+    }
   }
   try {
     return await umaRodada(prisma, entrada, opcoes);
@@ -931,7 +937,7 @@ async function umaRodada(
   const emailAdmin = validado.email;
   const nomeAdmin = entrada.admin?.nome?.trim() || emailAdmin?.split('@')[0] || '';
 
-  const jaExistia: OrgExistente = await acharOrg(prisma, slug).catch((e) =>
+  const jaExistia: OrgExistente = await (opcoes.resolverOrg ? opcoes.resolverOrg(slug) : acharOrg(prisma, slug)).catch((e) =>
     recusar(e, opcoes.ordenante ?? null),
   );
   const orgId = jaExistia?.id ?? randomUUID();
@@ -1054,23 +1060,25 @@ async function umaRodada(
            * `prisma/sessao-de-banco.ts`), 5s é apertado. É uma operação de
            * algumas vezes por ano, não um caminho quente.
            */
-          const org = await tx.org.upsert({
-            where: { slug },
-            create: { id: orgId, name: nomeEfetivo, slug, modulos: modulos.valor },
-            /*
-             * `upsert` e não `create`, mesmo já sabendo se existe: entre a
-             * leitura e esta linha cabe outra rodada. Quem perde a corrida
-             * ATUALIZA em vez de estourar o índice único — e a comparação de
-             * id logo abaixo é o que impede a rodada perdedora de seguir com
-             * o contexto da empresa errada.
-             */
-            update: {
-              ...(plano.mudaNome ? { name: nomeEfetivo } : {}),
-              ...(modulos.alterados ? { modulos: modulos.valor } : {}),
-              ...(plano.reativa ? { isActive: true } : {}),
-            },
-            select: { id: true, name: true, modulos: true, isActive: true },
-          });
+          const select = { id: true, name: true, modulos: true, isActive: true } as const;
+          // INSERT puro: o índice único detecta o concorrente sem tentar UPDATE invisível sob RLS.
+          const org = jaExistia
+            ? await tx.org.update({
+                where: { id: orgId },
+                data: {
+                  ...(plano.mudaNome ? { name: nomeEfetivo } : {}),
+                  ...(modulos.alterados ? { modulos: modulos.valor } : {}),
+                  ...(plano.reativa ? { isActive: true } : {}),
+                }, select,
+              })
+            : await tx.org.create({
+                data: { id: orgId, name: nomeEfetivo, slug, modulos: modulos.valor }, select,
+              }).catch((erro: unknown) => {
+                if (erro instanceof Prisma.PrismaClientKnownRequestError && erro.code === 'P2002') {
+                  throw new PerdeuACorrida(undefined, erro);
+                }
+                throw erro;
+              });
           if (org.id !== orgId) throw new PerdeuACorrida(org.id);
 
           const permissoes = await garantirPermissoes(tx);

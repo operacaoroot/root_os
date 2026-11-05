@@ -1,6 +1,7 @@
 import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 
 import { PrismaService } from '../prisma/prisma.service';
+import { ehEmpresaDaCasa } from '../tenants/empresa-da-casa';
 import { LLM_PROVIDER, type LlmProvider } from '../llm/llm.provider';
 import { GoogleService } from '../google/google.service';
 import {
@@ -69,8 +70,9 @@ export class GostoDaRootService {
     @Optional() private readonly google?: GoogleService,
   ) {}
 
-  private get drive(): DriveDoGosto | null {
-    return this.google && process.env.MEMORIA_DRIVE_DESLIGADO !== '1' ? this.google : null;
+  private async driveDaEmpresa(orgId: string): Promise<DriveDoGosto | null> {
+    if (!this.google || process.env.MEMORIA_DRIVE_DESLIGADO === '1') return null;
+    return await ehEmpresaDaCasa(this.prisma, orgId) ? this.google : null;
   }
 
   /** A pasta 40-marca-e-conteudo/Memória/Algoritmo do Drive da Root. Só cria o caminho com `criar`. */
@@ -105,9 +107,9 @@ export class GostoDaRootService {
 
   /** Regrava "Decisões da triagem.md" com todas as decisões, com ou sem comentário. Nunca lança. */
   async gravarDecisoes(orgId: string): Promise<boolean> {
-    const drive = this.drive;
-    if (!drive) return false;
     try {
+      const drive = await this.driveDaEmpresa(orgId);
+      if (!drive) return false;
       const pasta = await this.pasta(drive, orgId, true);
       if (!pasta) return false;
       await drive.gravarArquivoNoDrive(orgId, { folderId: pasta, nome: NOME_DAS_DECISOES, conteudo: arquivoDasDecisoes(await this.decisoes(orgId)), mimeType: 'text/markdown' });
@@ -121,11 +123,12 @@ export class GostoDaRootService {
 
   /** A nota "Gosto da Root" do jeito que a IA lê; '' sem Drive, sem nota ou com a nota vazia. Nunca lança. */
   async paraAIa(orgId: string): Promise<string> {
-    const guardada = this.notas.get(orgId);
-    if (guardada && Date.now() - guardada.em < GUARDA_DA_NOTA_MS) return guardada.texto;
-    const drive = this.drive;
-    if (!drive) return '';
+    let guardada: { em: number; texto: string } | undefined;
     try {
+      const drive = await this.driveDaEmpresa(orgId);
+      if (!drive) return '';
+      guardada = this.notas.get(orgId);
+      if (guardada && Date.now() - guardada.em < GUARDA_DA_NOTA_MS) return guardada.texto;
       const pasta = await this.pasta(drive, orgId, false);
       const nota = pasta ? await this.lerNota(drive, orgId, pasta) : null;
       const texto = nota ? textoUtil(notaParaAIa(nota)) : '';
@@ -144,9 +147,9 @@ export class GostoDaRootService {
    * todas as decisões. A parte "Escrito pela equipe" volta como estava. Nunca lança.
    */
   async atualizarResumo(orgId: string): Promise<ResultadoDoGosto> {
-    const drive = this.drive;
-    if (!drive) return 'sem-drive';
     try {
+      const drive = await this.driveDaEmpresa(orgId);
+      if (!drive) return 'sem-drive';
       const decisoes = await this.decisoes(orgId);
       const atual: MarcaDoResumo = { total: decisoes.length, ultima: decisoes[0]?.decididaEm?.toISOString() ?? null };
       const pasta = await this.pasta(drive, orgId, true);

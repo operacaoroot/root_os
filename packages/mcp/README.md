@@ -5,8 +5,9 @@ Servidor **MCP (Model Context Protocol)** que expõe ferramentas padronizadas pa
 
 ## Princípios (ver `docs/MCP_TOOLS.md` e `docs/ISOLATION.md`)
 - A IA **nunca** toca o banco direto. Toda tool chama a **API** do ROOT OS.
-- **Duas identidades** (desde 02/11/2026). A **conta de serviço só-leitura** (`ia_servico`) responde pelas
-  35 ferramentas de consulta, como sempre. O **operador** (uma PESSOA do OS, com e-mail e senha) responde
+- **Uma identidade para todas as leituras.** Com operador configurado, inclusive as 35 ferramentas
+  antigas consultam em nome dessa pessoa. Sem operador, usam a conta de serviço (`ia_servico`).
+  O **operador** (uma PESSOA do OS, com e-mail e senha) responde
   pelas 7 ferramentas marcadas `[operador]`: a bancada da área do cliente e as duas escritas dela
   (`area_rascunho`, `area_publicar`). As rotas dessas escritas recusam conta de máquina (`SoGenteGuard`),
   então elas só existem em nome de gente, e tudo o que a pessoa faria na tela vale igual aqui: RBAC,
@@ -18,7 +19,7 @@ Servidor **MCP (Model Context Protocol)** que expõe ferramentas padronizadas pa
 
 ## Ferramentas
 
-São **244** (02/11/2026): 35 `read_only` pela conta de serviço (as de sempre), 7 da área do cliente `[operador]`,
+São **244** (02/11/2026): 35 `read_only` pela identidade de leitura configurada, 7 da área do cliente `[operador]`,
 3 de contratos (duas leituras e `comercial_contrato_propor_envio`, que só cria o pedido R4, sempre em nome do operador),
 **4 genéricas** (`os_rotas`, `os_api`, `os_enviar_arquivo`, `os_baixar_arquivo`) e **195 curadas** por módulo (comercial,
 trabalho, aprovações, WhatsApp, memória, agentes, rotinas, Frota, financeiro, pauta, Google, conexões, onboarding,
@@ -50,10 +51,13 @@ pnpm --filter @mktos/mcp smoke
 |---|---|---|
 | `MCP_API_URL` | `http://localhost:4001/api` | |
 | `MCP_SERVICE_EMAIL` | `mcp@marketing-os.local` | conta de serviço só-leitura |
-| `MCP_SERVICE_PASSWORD` | — | **obrigatória, sem default no código**: o processo não sobe sem ela |
+| `MCP_SERVICE_PASSWORD` | — | **obrigatória quando não há operador**, sem default no código |
 | `MCP_OPERADOR_EMAIL` | — | e-mail de uma PESSOA do OS; liga as ferramentas `[operador]` |
 | `MCP_OPERADOR_SENHA` | — | a senha dessa pessoa no OS (login por e-mail e senha, a saída de emergência da tela de login) |
 | `MCP_ENV_FILE` | `~/.config/root/mcp.env` | arquivo `CHAVE=valor` lido no arranque; variável já no ambiente vence o arquivo; só os NOMES das chaves vão ao stderr |
+
+Operador parcialmente configurado impede a inicialização. Falha no login do operador não muda
+para a conta de serviço. As credenciais escolhidas são fixadas na inicialização do processo.
 
 **Identidade do operador na máquina de quem opera:** `scripts/definir-senha-os.sh <e-mail>` define a senha
 da pessoa no OS de produção (roda na `root-vps` pelo ssh, hash bcrypt gerado no container da API, UPDATE de 1 linha

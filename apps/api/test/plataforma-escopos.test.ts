@@ -87,15 +87,14 @@ describe('limites do contexto de plataforma — sem banco', () => {
     });
     expect(contextoAtual()).toBeUndefined();
   });
-  it('mantém dez caminhos exigidos e recusa cobertura restrita incompleta', () => {
-    expect(CAMINHOS_DE_PLATAFORMA_EXIGIDOS).toHaveLength(10);
-    expect(CHAMADORES_DE_PLATAFORMA).toHaveLength(9);
-    const cobertura = conferirCoberturaDePlataforma(false);
-    expect(cobertura.recusar).toBe(true);
-    expect(cobertura.faltando.map((c) => c.arquivo).sort()).toEqual([
-      'src/bio/bio-oauth.controller.ts', 'src/finance/finance.service.ts',
-    ]);
-    expect(conferirCoberturaDePlataforma(true).recusar).toBe(false);
+  it('exige crons, provisionamento e resolução pública antes de permitir o papel restrito', () => {
+    const caminhos = CAMINHOS_DE_PLATAFORMA_EXIGIDOS.map((c) => c.arquivo);
+    for (const arquivo of ['src/finance/finance.service.ts', 'src/bio/bio-oauth.controller.ts',
+      'src/bio/bio-bridge.service.ts', 'src/routines/rotinas.scheduler.ts',
+      'src/llm/teto-diario.service.ts', 'src/tenants/provisionar.service.ts']) {
+      expect(caminhos).toContain(arquivo);
+    }
+    expect(conferirCoberturaDePlataforma(false)).toEqual({ faltando: [], recusar: false });
   });
 });
 

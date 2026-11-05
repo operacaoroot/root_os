@@ -1855,6 +1855,11 @@ const CONTA_DE_SERVICO = ['MCP_SERVICE_EMAIL', 'MCP_SERVICE_PASSWORD', 'MCP_API_
  */
 const CASAS_DA_CONTA_DE_SERVICO = ['packages/mcp/src/client.ts', 'apps/api/prisma/seed.ts'];
 
+// O harness do deploy injeta as credenciais da conta sintética A para provar
+// que o MCP usa o operador B. Somente essa atribuição escapa à catraca.
+const HARNESS_DA_IDENTIDADE_MCP = 'deploy/rls-marketing/runtime-qa.cjs';
+const ATRIBUICAO_SINTETICA_DO_MCP = /\bMCP_API_URL:\s*base,\s*MCP_SERVICE_EMAIL:\s*a\.email,\s*MCP_SERVICE_PASSWORD:\s*a\.password\b/;
+
 /**
  * A conta de AÇÃO não tem usuário: ela era do bot de Telegram e de mais ninguém.
  * As variáveis existem aqui como lápide.
@@ -1887,8 +1892,11 @@ describe('catraca de arquitetura: credencial de conta de máquina tem dono', () 
 
   it('só quem usa e quem cria a conta de serviço carregam a credencial dela', () => {
     const fora = FONTES_MONO.filter((f) => !CASAS_DA_CONTA_DE_SERVICO.includes(f.arquivo)).flatMap((f) => {
+      const fonte = f.arquivo === HARNESS_DA_IDENTIDADE_MCP
+        ? { arquivo: f.arquivo, ...limpar(f.codigo.replace(ATRIBUICAO_SINTETICA_DO_MCP, (m) => m.replace(/[^\n]/g, ' '))) }
+        : f;
       for (const v of CONTA_DE_SERVICO) {
-        const linha = leVariavel(f, v);
+        const linha = leVariavel(fonte, v);
         if (linha !== null) return [`${f.arquivo}:${linha} lê ${v}`];
       }
       return [];

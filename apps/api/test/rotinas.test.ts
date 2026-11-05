@@ -1014,21 +1014,12 @@ describe('PAUTA_CRON como apelido de compatibilidade', () => {
 // ---------------------------------------------------------------------------
 
 describe('descoberta cega', () => {
-  it('quando a policy esconde tudo, a tela DIZ — em vez de ficar verde', async () => {
-    /*
-     * Sob um papel que não atravessa o isolamento por linha, a consulta que
-     * descobre quais empresas varrer volta vazia e calada. Nenhuma rotina
-     * dispara, em empresa nenhuma — e a tela mostrava tudo em ordem, com o único
-     * sinal escondido num aviso de log que ninguém lê. A limitação continua
-     * sendo a mesma de antes desta fatia; o que mudou é que agora ela é
-     * ANUNCIADA, e o raio ficou maior (antes só a pauta parava).
-     */
+  it('quando falha a descoberta de empresas, a tela informa', async () => {
     const estado = bancoVazio();
     estado.rotinas.push(rotina({ id: 'r1', orgId: ORG_A, tipo: 't' }));
     const m = montar(estado);
-    (m.prisma as unknown as { $queryRaw: unknown }).$queryRaw = async () => [
-      { atravessa: false, papel: 'mktos_app', forcado: true },
-    ];
+    (m.prisma.org as unknown as {findMany:unknown}).findMany=async()=>{throw new Error('falha na descoberta');};
+    await m.agendador.tick(AGORA);
 
     const d = await m.agendador.diagnostico();
     expect(d.descobertaCega).toBe(true);
@@ -1037,7 +1028,7 @@ describe('descoberta cega', () => {
     expect(lista.descobertaCega).toBe(true);
   });
 
-  it('conexão que atravessa o isolamento não acusa nada', async () => {
+  it('descoberta sem falha não acusa nada', async () => {
     const m = montar(bancoVazio());
     const d = await m.agendador.diagnostico();
     expect(d.descobertaCega).toBe(false);

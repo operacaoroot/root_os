@@ -3198,6 +3198,10 @@ describe('o catálogo do banco (a catraca que alcança tabela nova)', () => {
           'src/obsidian/obsidian.service.ts',
           'src/policy/policy.service.ts',
           'src/tenants/provisionar.ts',
+          'src/tenants/provisionar.service.ts',
+          'src/bio/bio-bridge.service.ts',
+          'src/routines/rotinas.scheduler.ts',
+          'src/llm/teto-diario.service.ts',
         ].sort(),
       );
       // Motivo escrito em toda entrada: lista sem motivo envelhece sem ninguém

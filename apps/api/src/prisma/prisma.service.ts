@@ -53,12 +53,17 @@ export async function criarPrismaService(): Promise<PrismaService> {
   // efeito marcado — ele precisa sair como WARN para aparecer em quem filtra o
   // log por nível. Sem passar o quarto argumento, `anunciarPapel` mandaria os
   // dois para o mesmo lugar e a dívida sairia com cara de informação.
-  await anunciarPapel(
+  try {
+    await anunciarPapel(
     base,
     modo,
     (m) => log.log(m),
     (m) => log.warn(m),
-  );
+    );
+  } catch (error) {
+    await base.$disconnect();
+    throw error;
+  }
 
   return comTenantNaSessao(base, { modo, avisar: (m) => log.warn(m) });
 }

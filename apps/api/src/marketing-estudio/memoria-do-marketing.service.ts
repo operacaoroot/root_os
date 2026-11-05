@@ -40,6 +40,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { LLM_PROVIDER, type LlmProvider } from '../llm/llm.provider';
 import { TranscricaoService, MAX_BYTES_DE_AUDIO } from '../llm/transcricao.provider';
 import { GoogleService } from '../google/google.service';
+import { ehEmpresaDaCasa } from '../tenants/empresa-da-casa';
 import { ApifyService, CreditoDoApifyEsgotadoError } from '../pauta/apify.service';
 import { MarcaService } from '../pauta/marca.service';
 import { EntradaDeGrupoRegistry } from '../gateway/canais/entrada-de-grupo.registry';
@@ -145,8 +146,9 @@ export class MemoriaDoMarketingService implements OnModuleInit {
   // ---------- leitura ----------
 
   /** O uso do mês no Apify (créditos grátis) ou nulo, sem Apify ou sem leitura. */
-  async usoDoApify() {
-    return { uso: this.apify?.configured ? await this.apify.usoDoMes() : null, configurado: !!this.apify?.configured };
+  async usoDoApify(orgId: string) {
+    if (!this.apify?.configured || !await ehEmpresaDaCasa(this.prisma, orgId)) return { uso: null, configurado: false };
+    return { uso: await this.apify.usoDoMes(), configurado: true };
   }
 
   async painel(orgId: string, filtro: { q?: string; tag?: string; pasta?: string; destino?: string; assunto?: string }): Promise<MemoriaPainel> {
@@ -163,6 +165,7 @@ export class MemoriaDoMarketingService implements OnModuleInit {
       this.prisma.marketingNota.findMany({ where: { orgId }, select: { pasta: true, tags: true, destino: true, assunto: true } }),
     ]);
     // Pastas, tags e assuntos contam dentro da vista aberta (Para decidir, Ideias ou Referências).
+    const daCasa = await ehEmpresaDaCasa(this.prisma, orgId);
     const naVista = todas.filter((r) => (filtro.destino === 'entrada' ? r.destino === 'entrada' : filtro.destino === 'conteudo' ? vaiParaIdeias(r.destino) : filtro.destino === 'referencia' ? ficaComoReferencia(r.destino) : true));
     const tags: Record<string, number> = {};
     for (const n of naVista) for (const t of n.tags) tags[t] = (tags[t] ?? 0) + 1;
@@ -178,10 +181,10 @@ export class MemoriaDoMarketingService implements OnModuleInit {
       pastas: MEMORIA_PASTAS.map((nome) => ({ nome, n: naVista.filter((r) => r.pasta === nome).length })),
       tags: Object.entries(tags).sort((a, b) => b[1] - a[1]).map(([t, n]) => ({ t, n })),
       ligacoes: {
-        grupo: this.grupoLigado,
-        drive: !!this.google,
-        transcricao: !!this.transcricao?.configured,
-        apify: !!this.apify?.configured,
+        grupo: this.grupoLigado && this.orgDoGrupo === orgId,
+        drive: daCasa && !!this.google && process.env.MEMORIA_DRIVE_DESLIGADO !== '1',
+        transcricao: daCasa && !!this.transcricao?.configured,
+        apify: daCasa && !!this.apify?.configured,
         ia: simulada() || this.llm.configured,
       },
     };
@@ -373,6 +376,7 @@ export class MemoriaDoMarketingService implements OnModuleInit {
 
   /** Manda de novo para o Drive as notas prontas que ainda não estão lá. */
   async sincronizarDrive(orgId: string): Promise<{ enviadas: number; falharam: number }> {
+    if (!await ehEmpresaDaCasa(this.prisma, orgId)) throw new NotFoundException('Não encontrado');
     const faltam = await this.prisma.marketingNota.findMany({ where: { orgId, status: 'pronto', driveFileId: null }, select: { id: true }, take: 200 });
     let enviadas = 0;
     let falharam = 0;
@@ -429,7 +433,7 @@ export class MemoriaDoMarketingService implements OnModuleInit {
         let transcricao = '';
         let semTranscricao = false;
         if (video === 'instagram' || video === 'tiktok') {
-          const r = await this.videoPeloApify(n.url);
+          const r = await this.videoPeloApify(orgId, n.url);
           legenda = r.legenda;
           autor = r.autor;
           transcricao = r.videoUrl ? await this.transcrever(orgId, r.videoUrl) : '';
@@ -480,8 +484,9 @@ export class MemoriaDoMarketingService implements OnModuleInit {
     }
   }
 
-  private async videoPeloApify(url: string): Promise<{ videoUrl: string; legenda: string; autor: string }> {
+  private async videoPeloApify(orgId: string, url: string): Promise<{ videoUrl: string; legenda: string; autor: string }> {
     if (simulada()) return { videoUrl: '', legenda: 'Legenda simulada do post.', autor: 'perfil_teste' };
+    if (!await ehEmpresaDaCasa(this.prisma, orgId)) throw new Error('A coleta de vídeos não está disponível nesta empresa.');
     if (!this.apify?.configured) throw new Error('Para ler Reels e TikToks a Memória usa o Apify, que é pago. Falta o APIFY_TOKEN no servidor.');
     const r = await this.apify.scrapeUrl(url);
     const it = r.items.find((x) => x && !x.error) as Record<string, unknown> | undefined;
@@ -536,6 +541,7 @@ export class MemoriaDoMarketingService implements OnModuleInit {
   private async espelharNoDrive(orgId: string, id: string): Promise<boolean> {
     if (!this.google || process.env.MEMORIA_DRIVE_DESLIGADO === '1') return false;
     try {
+      if (!await ehEmpresaDaCasa(this.prisma, orgId)) return false;
       const n = await this.prisma.marketingNota.findFirst({ where: { id, orgId } });
       if (!n || n.status !== 'pronto') return false;
       const folderId = await this.pastaNoDrive(orgId, n.pasta);

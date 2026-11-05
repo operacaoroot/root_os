@@ -410,10 +410,12 @@ describe.skipIf(!URL)('lane A3+TR contra o Postgres', () => {
     let modelo: ModeloDuble;
     let cobranca: CobrancaDeTarefasService;
     const agora = new Date('2026-10-21T11:30:00Z');
+    // Os títulos e nomes das listas podem conter números dos UUIDs da fixture.
+    const numeroInventado = '999999999999';
     beforeAll(async () => {
       modelo = new ModeloDuble();
       // O modelo inventa um número: a frase cai na do sistema.
-      modelo.respostas['TR-07'] = '{"frase":"Você tem 99 tarefas atrasadas."}';
+      modelo.respostas['TR-07'] = JSON.stringify({ frase: `Você tem ${numeroInventado} tarefas atrasadas.` });
       const registro = new PendenciasRegistry();
       const rotinas = new ExecutoresDeRotinaRegistry();
       cobranca = new CobrancaDeTarefasService(p, new PendenciasService(p, registro), modelo, memoria, rotinas, registro, audit);
@@ -430,7 +432,7 @@ describe.skipIf(!URL)('lane A3+TR contra o Postgres', () => {
         data: [
           { orgId: ORG, listId: lista.id, statusId: aberto, title: 'Vencida da pessoa', assigneeUserId: EU, assignee: 'Rodrigo', dueDate: new Date('2026-10-18T12:00:00Z') },
           { orgId: ORG, listId: lista.id, statusId: aberto, title: 'Parada da pessoa', assigneeUserId: EU, assignee: 'Rodrigo' },
-          { orgId: ORG, listId: lista.id, statusId: aberto, title: 'Sem dono nenhum' },
+          { orgId: ORG, listId: lista.id, statusId: aberto, title: 'Sem dono nenhum (lote 99)' },
           { orgId: ORG, listId: lista.id, statusId: aberto, title: 'Da conta de máquina', assigneeUserId: MAQUINA, assignee: 'IA', dueDate: new Date('2026-10-01T12:00:00Z') },
           { orgId: ORG, listId: lista.id, statusId: feito, title: 'Encerrada vencida', assigneeUserId: EU, dueDate: new Date('2026-10-01T12:00:00Z') },
         ],
@@ -444,7 +446,7 @@ describe.skipIf(!URL)('lane A3+TR contra o Postgres', () => {
       expect(r.semDono).toBeGreaterThanOrEqual(1);
       const minha = await prisma.pendencia.findFirstOrThrow({ where: { orgId: ORG, chave: `tarefa.cobranca:${EU}:2026-10-21` } });
       expect(minha).toMatchObject({ funcao: 'TR-07', tipo: 'tarefa.cobranca', paraUsuarioId: EU, titulo: '2 tarefas suas pedem atenção hoje' });
-      expect(minha.contexto).not.toContain('99');
+      expect(minha.contexto).not.toContain(numeroInventado);
       expect(minha.contexto).toContain('Bom dia, Rodrigo.');
       expect(minha.contexto).toContain('- Vencida da pessoa');
       expect(minha.contexto).not.toContain('Da conta de máquina');
@@ -452,6 +454,9 @@ describe.skipIf(!URL)('lane A3+TR contra o Postgres', () => {
       expect((minha.dados as { frase: string }).frase).toBe('sistema');
       const semDono = await prisma.pendencia.findFirstOrThrow({ where: { orgId: ORG, chave: 'tarefa.cobranca:sem-dono:2026-10-21' } });
       expect(semDono.paraUsuarioId).toBeNull();
+      expect(semDono.dados).toMatchObject({ frase: 'sistema' });
+      expect(semDono.contexto).toContain('Sem dono nenhum (lote 99)');
+      expect(semDono.contexto).not.toContain(numeroInventado);
       const segunda = await comoSistema(() => cobranca.cobrar(ORG, agora));
       expect(segunda.pendencias.sort()).toEqual(r.pendencias.sort());
       expect(await prisma.pendencia.count({ where: { orgId: ORG, tipo: 'tarefa.cobranca' } })).toBe(2);

@@ -1,3 +1,4 @@
+import { bancoApifyDaCasa, naCasaApify } from './apify-fixture';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { BadRequestException } from '@nestjs/common';
 import { ActorType, Prisma, type PautaFonte } from '@prisma/client';
@@ -280,7 +281,7 @@ describe('perfil da pauta: o actor de cada plataforma no Apify', () => {
 
   it('X roda o tweet-scraper com o @ e os mais recentes', async () => {
     const pedidos = pedidosDoApify();
-    const r = await new ApifyService().scrapePerfil('@sama', 12, 'x');
+    const r = await naCasaApify(() => new ApifyService(undefined, bancoApifyDaCasa).scrapePerfil('@sama', 12, 'x'));
     expect(pedidos[0].url).toContain('/acts/apidojo~tweet-scraper/run-sync-get-dataset-items');
     expect(pedidos[0].corpo).toEqual({ twitterHandles: ['sama'], maxItems: 6, sort: 'Latest' });
     expect(r).toMatchObject({ runId: 'run-perfil', custoUsd: 0.01 });
@@ -288,8 +289,8 @@ describe('perfil da pauta: o actor de cada plataforma no Apify', () => {
 
   it('YouTube roda o youtube-scraper na aba de vídeos do canal, sem shorts nem lives, no teto de 6', async () => {
     const pedidos = pedidosDoApify();
-    await new ApifyService().scrapePerfil('canaldoia', 500, 'youtube');
-    await new ApifyService().scrapePerfil('UC_x5XG1OV2P6uZZ5FSM9Ttw', 5, 'youtube');
+    await naCasaApify(() => new ApifyService(undefined, bancoApifyDaCasa).scrapePerfil('canaldoia', 500, 'youtube'));
+    await naCasaApify(() => new ApifyService(undefined, bancoApifyDaCasa).scrapePerfil('UC_x5XG1OV2P6uZZ5FSM9Ttw', 5, 'youtube'));
     expect(pedidos[0].url).toContain('/acts/streamers~youtube-scraper/');
     expect(pedidos[0].corpo).toEqual({
       startUrls: [{ url: 'https://www.youtube.com/@canaldoia/videos' }],
@@ -305,8 +306,8 @@ describe('perfil da pauta: o actor de cada plataforma no Apify', () => {
 
   it('sem plataforma segue o Instagram de antes; TikTok vai por profiles', async () => {
     const pedidos = pedidosDoApify();
-    await new ApifyService().scrapePerfil('blank.school', 12);
-    await new ApifyService().scrapePerfil('criador', 3, 'tiktok');
+    await naCasaApify(() => new ApifyService(undefined, bancoApifyDaCasa).scrapePerfil('blank.school', 12));
+    await naCasaApify(() => new ApifyService(undefined, bancoApifyDaCasa).scrapePerfil('criador', 3, 'tiktok'));
     expect(pedidos[0].url).toContain('/acts/apify~instagram-scraper/');
     expect(pedidos[0].corpo).toEqual({
       directUrls: ['https://www.instagram.com/blank.school/'],
@@ -320,8 +321,8 @@ describe('perfil da pauta: o actor de cada plataforma no Apify', () => {
 
   it('o link avulso do X ou do YouTube continua no crawler da web, não no actor do perfil', async () => {
     const pedidos = pedidosDoApify();
-    await new ApifyService().scrapeUrl('https://x.com/sama/status/1');
-    await new ApifyService().scrapeUrl('https://youtu.be/abc');
+    await naCasaApify(() => new ApifyService(undefined, bancoApifyDaCasa).scrapeUrl('https://x.com/sama/status/1'));
+    await naCasaApify(() => new ApifyService(undefined, bancoApifyDaCasa).scrapeUrl('https://youtu.be/abc'));
     expect(pedidos[0].url).toContain('/acts/apify~website-content-crawler/');
     expect(pedidos[2].url).toContain('/acts/apify~website-content-crawler/');
     expect(ApifyService.plataformaDaUrl('https://www.youtube.com/watch?v=abc')).toBe('youtube');

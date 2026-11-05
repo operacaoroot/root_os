@@ -250,7 +250,7 @@ function lendoNaBarreira(cliente: PrismaService, barreira: Barreira): PrismaServ
       return new Proxy(valor as object, {
         get(modelo, op) {
           const metodo = Reflect.get(modelo, op);
-          if (op !== 'findUnique' || typeof metodo !== 'function') return metodo;
+          if (op !== 'findFirst' || typeof metodo !== 'function') return metodo;
           return async (...args: unknown[]) => {
             const lido: unknown = await metodo.apply(modelo, args);
             await barreira.chegar();

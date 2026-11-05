@@ -1,3 +1,5 @@
+import { comContextoDaEmpresaResolvida } from '../src/prisma/contexto-de-plataforma';
+import { bancoApifyDaCasa, naCasaApify } from './apify-fixture';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 /*
@@ -24,12 +26,11 @@ function apifyFalso(uso: { usado: number; teto?: number; fim?: string } | 'quebr
 
 async function servico() {
   const { ApifyService } = await import('../src/pauta/apify.service');
-  return new ApifyService();
+  return new ApifyService(undefined, bancoApifyDaCasa);
 }
 
 describe('Apify: só os créditos grátis do mês', () => {
   beforeEach(() => {
-    vi.resetModules();
     process.env.APIFY_TOKEN = 'token-de-teste';
   });
   afterEach(() => {
@@ -41,7 +42,7 @@ describe('Apify: só os créditos grátis do mês', () => {
     const f = apifyFalso({ usado: 0.12 });
     vi.stubGlobal('fetch', f.fetchFalso);
     const a = await servico();
-    const r = await a.scrapeUrl('https://www.instagram.com/reel/abc/');
+    const r = await naCasaApify(() => a.scrapeUrl('https://www.instagram.com/reel/abc/'));
     expect(r.items).toHaveLength(1);
     const run = f.chamadas.find((c) => c.url.includes('run-sync-get-dataset-items'))!;
     expect(run.url).toContain('apify~instagram-scraper');
@@ -55,7 +56,7 @@ describe('Apify: só os créditos grátis do mês', () => {
     const f = apifyFalso({ usado: 4.6, teto: 5, fim: '2026-11-14T00:00:00.000Z' });
     vi.stubGlobal('fetch', f.fetchFalso);
     const a = await servico();
-    await expect(a.scrapeUrl('https://www.instagram.com/reel/abc/')).rejects.toThrow(/créditos grátis do Apify deste mês acabaram \(US\$ 4,60 de 5,00\)\. Volta dia 14\/11/);
+    await expect(naCasaApify(() => a.scrapeUrl('https://www.instagram.com/reel/abc/'))).rejects.toThrow(/créditos grátis do Apify deste mês acabaram \(US\$ 4,60 de 5,00\)\. Volta dia 14\/11/);
     expect(f.chamadas.some((c) => c.url.includes('run-sync'))).toBe(false);
   });
 
@@ -63,7 +64,7 @@ describe('Apify: só os créditos grátis do mês', () => {
     const f = apifyFalso('quebrado');
     vi.stubGlobal('fetch', f.fetchFalso);
     const a = await servico();
-    await expect(a.scrapePerfil('perfil', 12)).rejects.toThrow(/Não consegui ler o uso do Apify/);
+    await expect(naCasaApify(() => a.scrapePerfil('perfil', 12))).rejects.toThrow(/Não consegui ler o uso do Apify/);
     expect(f.chamadas.some((c) => c.url.includes('run-sync'))).toBe(false);
   });
 
@@ -71,11 +72,13 @@ describe('Apify: só os créditos grátis do mês', () => {
     const f = apifyFalso({ usado: 1 });
     vi.stubGlobal('fetch', f.fetchFalso);
     const a = await servico();
-    await a.usoDoMes();
-    await a.usoDoMes();
+    await naCasaApify(() => a.usoDoMes());
+    await naCasaApify(() => a.usoDoMes());
+    expect(await a.usoDoMes()).toBeNull();
+    expect(await comContextoDaEmpresaResolvida('outra-org', () => a.usoDoMes())).toBeNull();
     expect(f.chamadas.filter((c) => c.url.includes('/users/me/limits'))).toHaveLength(1);
-    await a.scrapeUrl('https://www.instagram.com/reel/abc/');
-    await a.usoDoMes();
+    await naCasaApify(() => a.scrapeUrl('https://www.instagram.com/reel/abc/'));
+    await naCasaApify(() => a.usoDoMes());
     expect(f.chamadas.filter((c) => c.url.includes('/users/me/limits'))).toHaveLength(2);
   });
 
@@ -83,7 +86,7 @@ describe('Apify: só os créditos grátis do mês', () => {
     const f = apifyFalso({ usado: 0 });
     vi.stubGlobal('fetch', f.fetchFalso);
     const a = await servico();
-    await a.scrapePerfil('perfil', 12, 'instagram');
+    await naCasaApify(() => a.scrapePerfil('perfil', 12, 'instagram'));
     const run = f.chamadas.find((c) => c.url.includes('run-sync-get-dataset-items'))!;
     expect(run.url).toContain('maxItems=6');
     expect(run.url).toContain('maxTotalChargeUsd=0.15');

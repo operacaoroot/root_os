@@ -357,12 +357,11 @@ describe.skipIf(!URL_DO_BANCO)('bio-oauth com banco: a conexão de publicação 
   beforeAll(async () => {
     process.env.ENCRYPTION_KEY = Buffer.alloc(32, 7).toString('base64');
     admin = new PrismaClient({ datasources: { db: { url: URL_DO_BANCO } } });
-    cru = new PrismaClient({ datasourceUrl: URL_DO_BANCO });
+    cru = new PrismaClient({ datasourceUrl: process.env.TENANT_DATABASE_URL ?? URL_DO_BANCO });
     const app = comTenantNaSessao(cru, { modo: 'impor' }) as unknown as PrismaService;
     bioA = new BioService(app, new AuditService(app), {} as never, new BioCredenciaisService(app));
-    // O callback é público e roda sem empresa no contexto, como em produção hoje: conexão dona.
-    const dono = admin as unknown as PrismaService;
-    callback = new BioOauthController(dono, new BioCredenciaisService(dono), new AuditService(dono));
+    // Callback público resolve o tenant antes de qualquer consulta de negócio.
+    callback = new BioOauthController(app, new BioCredenciaisService(app), new AuditService(app));
     const a = await admin.org.create({ data: { name: `Bio A ${MARCA}`, slug: `bo-a-${MARCA}`, modulos: ['pauta', 'bio'] } });
     const b = await admin.org.create({ data: { name: `Bio B ${MARCA}`, slug: `bo-b-${MARCA}`, modulos: ['pauta', 'bio'] } });
     orgA = a.id;

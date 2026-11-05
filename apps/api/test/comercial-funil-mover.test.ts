@@ -61,6 +61,13 @@ describe('o balão e o destino são conta pura', () => {
     expect(p.atravessadas).toEqual(['novo_lead', 'qualificacao']);
     expect(p.pendencias).toEqual(['sistema ou ERP em uso (E2)', 'base de dados: sim ou não (E2)', 'produto-alvo proposto (E2)']);
   });
+  it.each([undefined, null, '', '   '])('E2 ainda cobra aquisição quando o canal é %j, mesmo com os demais dados completos', (canal) => {
+    const e = { etapa: 'qualificacao' as const, ...base, perfil: 'P1', sistemaErp: 'ERP informado', baseDados: false, produto: 'produto proposto', canal };
+    const pendente = pendenciasDoMover(e, 'qualificacao', 'reuniao_agendada');
+    expect(pendente.atravessadas).toEqual(['qualificacao']);
+    expect(pendente.pendencias).toEqual(['canal de aquisição (como conheceu: BNI, indicação, Instagram, site…) (E2)']);
+    expect(pendenciasDoMover({ ...e, canal: 'conteudo' }, 'qualificacao', 'reuniao_agendada').pendencias).toEqual([]);
+  });
   it('rota de proposta direta não cobra o diagnóstico; saída e fechado não têm balão', () => {
     const e = { etapa: 'sessao' as const, ataHash: 'h', rota: 'proposta_direta' as const, socioDaConta: 'Sócia' };
     expect(pendenciasDoMover(e, 'sessao', 'proposta').atravessadas).toEqual(['sessao']);
@@ -258,6 +265,7 @@ describe.skipIf(!URL)('mover o cartão do funil, contra o banco', () => {
       'sistema ou ERP em uso (E2)',
       'base de dados: sim ou não (E2)',
       'produto-alvo proposto (E2)',
+      'canal de aquisição (como conheceu: BNI, indicação, Instagram, site…) (E2)',
     ];
     const r = await daSocia(comPendencia, { para: 'reuniao_agendada' });
     expect(r).toMatchObject({ ok: true, mudou: true, de: 'novo_lead', para: 'reuniao_agendada', pendencias: esperadas, semConclusoesDe: ['novo_lead', 'qualificacao'] });

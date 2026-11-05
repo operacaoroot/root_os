@@ -11,6 +11,7 @@ import {
   type FormatoComRegua,
   type ReguaDoFormato,
 } from '@mktos/shared';
+import { ehEmpresaDaCasa } from '../tenants/empresa-da-casa';
 import { PrismaService } from '../prisma/prisma.service';
 import { LLM_PROVIDER, type LlmProvider } from '../llm/llm.provider';
 import { GoogleService } from '../google/google.service';
@@ -219,6 +220,7 @@ export class ReguasService {
 
   /** Lê canal-whatsapp/semanas no Drive e cria no Banco o que falta. */
   async importarComunidade(orgId: string, por: string): Promise<{ lidos: number; criados: number; jaExistiam: number; ignorados: number }> {
+    if (!await ehEmpresaDaCasa(this.prisma, orgId)) throw new NotFoundException('Não encontrado');
     if (!this.google) throw new ServiceUnavailableException('O Google Drive não está ligado nesta instalação.');
     let pai = this.raizNoDrive;
     for (const nome of PASTA_DA_COMUNIDADE) {

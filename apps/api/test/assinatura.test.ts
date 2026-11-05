@@ -9,7 +9,7 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } 
 
 import { CredencialEmprestada, contemAlgumSegredo } from '../src/cofre/segredo';
 import { SegredoIndisponivelError } from '../src/cofre/cofre.service';
-import { comContexto } from '../src/common/contexto-execucao';
+import { comContexto, contextoAtual } from '../src/common/contexto-execucao';
 import { EventLogService } from '../src/gateway/event-log.service';
 import {
   CODIGO_ASSINATURA_SUSPENSA,
@@ -32,6 +32,7 @@ import {
 import { AssinaturaService } from '../src/billing/assinatura.service';
 import { SuspensaoInterceptor } from '../src/billing/suspensao.interceptor';
 import { RotinasScheduler } from '../src/routines/rotinas.scheduler';
+import { ORG_PLATAFORMA } from '../src/prisma/contexto-de-plataforma';
 import type { PrismaService } from '../src/prisma/prisma.service';
 import { exigirBancoDescartavel } from './banco-de-teste';
 
@@ -1757,36 +1758,62 @@ describe('empresa suspensa não dispara rotina', () => {
     reservadoAte: new Date(0),
   };
 
-  function agendadorCom(status: EstadoDeAssinatura | null) {
+  const ATE_A_ASSINATURA = [
+    ['descobrir empresas', ORG_PLATAFORMA, null],
+    ['descobrir rotinas', ORG, ORG],
+    ['descobrir pautas', ORG, ORG],
+    ['reconciliar pauta', ORG, ORG],
+    ['ler assinatura', ORG, ORG],
+  ];
+  const COM_EXECUCAO = [...ATE_A_ASSINATURA, ['ler candidatas', ORG, ORG], ['executar', ORG, ORG]];
+
+  function agendadorCom(status: EstadoDeAssinatura | null | Error) {
     const executadas: string[] = [];
+    const passos: Array<[string, string | null | undefined, string | null]> = [];
+    const registrar = (passo: string, consultada: string | null = null) =>
+      passos.push([passo, contextoAtual()?.orgId, consultada]);
+
+    const descobrirEmpresas = vi.fn(async (_args: { select: { id: boolean } }) => {
+      registrar('descobrir empresas');
+      return [{ id: ORG }];
+    });
     const prisma = {
+      org: { findMany: descobrirEmpresas },
       rotina: {
-        async findMany(args: { select?: unknown; where?: unknown }) {
-          return args?.select ? [{ orgId: ORG }] : [ROTINA];
+        async findMany(args: { select?: unknown; where: { orgId: string } }) {
+          registrar(args.select ? 'descobrir rotinas' : 'ler candidatas', args.where.orgId);
+          return args.select ? [{ orgId: ORG }] : [ROTINA];
         },
       },
       pautaRotina: {
-        async findMany() {
+        async findMany(args: { where: { orgId: string } }) {
+          registrar('descobrir pautas', args.where.orgId);
           return [];
         },
       },
     };
     const rotinas = {
-      async reconciliarPauta() {
+      async reconciliarPauta(orgId: string) {
+        registrar('reconciliar pauta', orgId);
         return { criadas: 0, atualizadas: 0, orfas: 0, problemas: [] };
       },
-      async executar(r: { slug: string }) {
+      async executar(r: { orgId: string; slug: string }) {
+        registrar('executar', r.orgId);
         executadas.push(r.slug);
         return { status: 'ok', resumo: '' };
       },
     };
     const assinaturas = {
-      async estadoDeAcesso() {
+      async estadoDeAcesso(orgId: string) {
+        registrar('ler assinatura', orgId);
+        if (status instanceof Error) throw status;
         return status;
       },
     };
     return {
       executadas,
+      passos,
+      descobrirEmpresas,
       agendador: new RotinasScheduler(
         prisma as never,
         rotinas as never,
@@ -1817,13 +1844,18 @@ describe('empresa suspensa não dispara rotina', () => {
     // E o outro lado: com o serviço, sobe. Sem esta linha, a asserção acima
     // passaria até com um construtor que lança sempre.
     const { agendador } = agendadorCom('ativa');
-    expect(() => agendador.onModuleInit()).not.toThrow();
+    vi.useFakeTimers();
+    try {
+      expect(() => agendador.onModuleInit()).not.toThrow();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('CONTROLE NEGATIVO: com a assinatura em dia, a rotina dispara', async () => {
     // Sem este caso, "não disparou" seria indistinguível de "o tique não funciona
     // neste arranjo de mentira".
-    const { agendador, executadas } = agendadorCom('ativa');
+    const { agendador, executadas, passos, descobrirEmpresas } = agendadorCom('ativa');
     const log = capturarLog();
     try {
       await agendador.tick(new Date());
@@ -1831,10 +1863,12 @@ describe('empresa suspensa não dispara rotina', () => {
       log.parar();
     }
     expect(executadas).toEqual(['coleta']);
+    expect(descobrirEmpresas).toHaveBeenCalledExactlyOnceWith({ select: { id: true } });
+    expect(passos).toEqual(COM_EXECUCAO);
   });
 
   it('sem assinatura nenhuma a rotina também dispara — ausência nunca bloqueia', async () => {
-    const { agendador, executadas } = agendadorCom(null);
+    const { agendador, executadas, passos } = agendadorCom(null);
     const log = capturarLog();
     try {
       await agendador.tick(new Date());
@@ -1842,10 +1876,11 @@ describe('empresa suspensa não dispara rotina', () => {
       log.parar();
     }
     expect(executadas).toEqual(['coleta']);
+    expect(passos).toEqual(COM_EXECUCAO);
   });
 
   it('SUSPENSA: nenhuma rotina dispara, e o log diz por quê uma vez só', async () => {
-    const { agendador, executadas } = agendadorCom('suspensa');
+    const { agendador, executadas, passos } = agendadorCom('suspensa');
     const log = capturarLog();
     try {
       await agendador.tick(new Date('2026-09-11T12:00:00.000Z'));
@@ -1854,12 +1889,13 @@ describe('empresa suspensa não dispara rotina', () => {
       log.parar();
     }
     expect(executadas).toEqual([]);
+    expect(passos).toEqual([...ATE_A_ASSINATURA, ...ATE_A_ASSINATURA]);
     const avisos = log.linhas.filter((l) => String(l).includes('nenhuma rotina dela dispara'));
     expect(avisos).toHaveLength(1);
   });
 
   it('CANCELADA também não dispara', async () => {
-    const { agendador, executadas } = agendadorCom('cancelada');
+    const { agendador, executadas, passos } = agendadorCom('cancelada');
     const log = capturarLog();
     try {
       await agendador.tick(new Date());
@@ -1867,35 +1903,11 @@ describe('empresa suspensa não dispara rotina', () => {
       log.parar();
     }
     expect(executadas).toEqual([]);
+    expect(passos).toEqual(ATE_A_ASSINATURA);
   });
 
   it('falhar ao ler o estado DEIXA a rotina rodar — o relógio não para por um soluço', async () => {
-    const executadas: string[] = [];
-    const agendador = new RotinasScheduler(
-      {
-        rotina: {
-          async findMany(args: { select?: unknown }) {
-            return args?.select ? [{ orgId: ORG }] : [ROTINA];
-          },
-        },
-        pautaRotina: { async findMany() { return []; } },
-      } as never,
-      {
-        async reconciliarPauta() {
-          return { criadas: 0, atualizadas: 0, orfas: 0, problemas: [] };
-        },
-        async executar(r: { slug: string }) {
-          executadas.push(r.slug);
-          return null;
-        },
-      } as never,
-      {
-        async estadoDeAcesso() {
-          throw new Error('banco fora');
-        },
-      } as never,
-    );
-
+    const { agendador, executadas, passos } = agendadorCom(new Error('banco fora'));
     const log = capturarLog();
     try {
       await agendador.tick(new Date());
@@ -1903,6 +1915,7 @@ describe('empresa suspensa não dispara rotina', () => {
       log.parar();
     }
     expect(executadas).toEqual(['coleta']);
+    expect(passos).toEqual(COM_EXECUCAO);
     expect(log.linhas.some((l) => String(l).includes('RODAM assim mesmo'))).toBe(true);
   });
 });
