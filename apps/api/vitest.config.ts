@@ -37,7 +37,7 @@ import { defineConfig } from 'vitest/config';
 const CONJUNTOS = {
   padrao: {
     include: ['test/**/*.test.ts'],
-    exclude: ['**/node_modules/**', 'test/tenant-isolation.test.ts', 'test/procedimento-local-nativo.test.ts', 'test/marketing-rls-http.test.ts'],
+    exclude: ['**/node_modules/**', 'test/tenant-isolation.test.ts', 'test/procedimento-local-nativo.test.ts', 'test/marketing-rls-http.test.ts', 'test/lote7-sala-rls.test.ts', 'test/lote7-emissao-rls.test.ts'],
   },
   isolamento: {
     include: ['test/tenant-isolation.test.ts'],
@@ -45,6 +45,10 @@ const CONJUNTOS = {
   },
   'marketing-rls': {
     include: ['test/marketing-rls-http.test.ts'],
+    exclude: ['**/node_modules/**'],
+  },
+  'lote7-rls': {
+    include: ['test/lote7-sala-rls.test.ts', 'test/lote7-emissao-rls.test.ts'],
     exclude: ['**/node_modules/**'],
   },
   // Exige servidor llama.cpp real e clone autorizado; nenhuma inferência é simulada.

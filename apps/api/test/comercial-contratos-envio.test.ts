@@ -39,6 +39,8 @@ import { PolicyService } from '../src/policy/policy.service';
 import { SinaisService } from '../src/policy/sinais.service';
 import type { PrismaService } from '../src/prisma/prisma.service';
 import { exigirBancoDescartavel } from './banco-de-teste';
+import { ClienteEscopoService } from '../src/clientes-escopo/cliente-escopo.service';
+import { EfeitoComercialEscopoService } from '../src/clientes-escopo/efeito-comercial-escopo.service';
 
 /*
  * A EMISSÃO DO CONTRATO CONTRA O BANCO, A RÉGUA E O DUBLÊ (Contratos, F2, 02/11/2026).
@@ -94,6 +96,7 @@ describe.skipIf(!URL)('a emissão do contrato: minuta, PDF e o pedido pela porta
   let approvals: ApprovalsService;
   let acoes: AcoesService;
   let dinheiro: DinheiroService;
+  let escopo:EfeitoComercialEscopoService;
   let fio: FioService;
   let contratos: ContratosService;
   let emissao: EmissaoDoContratoService;
@@ -179,8 +182,8 @@ describe.skipIf(!URL)('a emissão do contrato: minuta, PDF e o pedido pela porta
     process.env.ZAPSIGN_WEBHOOK_TOKEN = `zap-${MARCA}-segredo-de-teste`;
 
     await prisma.org.create({ data: { id: ORG, name: ORG, slug: ORG } });
-    await prisma.permission.upsert({ where: { key: 'leads.editar' }, update: {}, create: { key: 'leads.editar' } });
-    const comPermissao = { permissions: { connect: [{ key: 'leads.editar' }] } };
+    for(const key of ['leads.editar','aprovacoes.decidir']) await prisma.permission.upsert({ where: { key }, update: {}, create: { key } });
+    const comPermissao = { permissions: { connect: [{ key: 'leads.editar' },{key:'aprovacoes.decidir'}] } };
     const admin = await prisma.role.create({ data: { orgId: ORG, key: 'admin_master', name: 'Admin', ...comPermissao }, select: { id: true } });
     const papelGestor = await prisma.role.create({ data: { orgId: ORG, key: 'gestor_marketing', name: 'Gestor', ...comPermissao }, select: { id: true } });
     const pessoa = async (rotulo: string, nome: string, papel: string) => {
@@ -197,18 +200,20 @@ describe.skipIf(!URL)('a emissão do contrato: minuta, PDF e o pedido pela porta
     const g = await pessoa('gestor', 'Mesa', papelGestor.id);
     gestorId = g.id;
     emailDoGestor = g.email;
+    for(const userId of [titularId,titular2Id,gestorId]) await prisma.clienteAcessoPerfil.create({data:{userId,orgId:ORG,modo:'ALL'}});
 
     const p = prisma as unknown as PrismaService;
     const audit = new AuditService(p);
     const policy = new PolicyService(p);
     await policy.onModuleInit();
+    escopo=new EfeitoComercialEscopoService(p,new ClienteEscopoService(p,audit),policy);
     const reauth = new ReauthService(p, new JwtService({ secret: `segredo-${MARCA}` }), audit);
     approvals = new ApprovalsService(p, audit, reauth);
     const eventos = new EventLogService(p);
     const efeitos = new EfeitosRegistry();
     const interruptores = new InterruptoresRegistry();
     new ConectoresService(p, audit, eventos, interruptores).onModuleInit();
-    const gateway = new ToolGateway(p, policy, new SinaisService(p, policy), approvals, eventos, undefined, interruptores, efeitos);
+    const gateway = new ToolGateway(p, policy, new SinaisService(p, policy), approvals, eventos, undefined, interruptores, efeitos,undefined,undefined,escopo);
     acoes = new AcoesService(p, gateway, eventos, interruptores, policy);
     portaOperador = new PortaDoOperador(gateway, efeitos);
     const reacoes = new ReacoesRegistry();
@@ -216,13 +221,13 @@ describe.skipIf(!URL)('a emissão do contrato: minuta, PDF e o pedido pela porta
     zapsign = new ZapsignService();
     const naoCobra = new Proxy({} as never, { get: (_a, chave) => (chave === 'provedor' ? 'asaas' : chave === 'configurada' ? () => true : () => { throw new Error('a cobrança não deveria ser chamada'); }) });
     const whats = { prepararTemplate: vi.fn(async (_o: string, leadId: string, _t: string, v: Record<string, unknown>, op: { chave?: string }) => { m7.push({ leadId, quemAssina: v.quemAssina, chave: op.chave }); return {} as never; }) } as unknown as WhatsappComercialService;
-    dinheiro = new DinheiroService(p, fio, reacoes, efeitos, portaOperador, naoCobra, zapsign, whats, reauth, audit);
+    dinheiro = new DinheiroService(p, fio, reacoes, efeitos, portaOperador, naoCobra, zapsign, whats, reauth, audit,escopo);
     dinheiro.onModuleInit();
     contratos = new ContratosService(p, fio, reacoes, efeitos, new RelogioComercialRegistry(), portaOperador, dinheiro, zapsign, whats, interruptores);
     contratos.onModuleInit();
     const memoria = { porChave: vi.fn(async (_o: string, chave: string) => (notas[chave] ? { body: notas[chave] } : null)) } as unknown as MemoriaService;
     const raiz = new ContratoDaRootService(p, fio, memoria, portaOperador, {} as FechamentoService);
-    emissao = new EmissaoDoContratoService(p, contratos, raiz, dinheiro, portaOperador, zapsign);
+    emissao = new EmissaoDoContratoService(p, contratos, raiz, dinheiro, portaOperador, zapsign,escopo);
     // Só `prontidao` é medida aqui: sem `onModuleInit`, nada do fechamento reage.
     fechamento = new FechamentoService(p, fio, reacoes, efeitos, portaOperador, dinheiro, {} as never, {} as never, {} as never);
   }, 90_000);
@@ -245,6 +250,8 @@ describe.skipIf(!URL)('a emissão do contrato: minuta, PDF e o pedido pela porta
     await prisma.toolCall.deleteMany({ where: { orgId: ORG } });
     await prisma.policyDecision.deleteMany({ where: { orgId: ORG } });
     await prisma.auditLog.deleteMany({ where: { orgId: ORG } });
+    await prisma.clienteAcessoPerfil.deleteMany({where:{orgId:ORG}});
+    await prisma.partner.deleteMany({where:{orgId:ORG}});
     await prisma.user.deleteMany({ where: { orgId: ORG } });
     await prisma.role.deleteMany({ where: { orgId: ORG } });
     await prisma.org.deleteMany({ where: { id: ORG } });
@@ -369,6 +376,39 @@ describe.skipIf(!URL)('a emissão do contrato: minuta, PDF e o pedido pela porta
     expect((await naEmpresa(() => contratos.ficha(ORG, id))).emissao?.envioNaFila).toBe(r.approvalId);
   });
 
+  it('R4 não envia à ZapSign se o proponente perdeu ALL depois de propor', async () => {
+    const { id, leadId } = await pronto('Carteira revogada');
+    const r = await naEmpresa(() => emissao.proporEnvio(ORG, id, gestor())) as { approvalId:string };
+    await prisma.clienteAcessoPerfil.upsert({where:{userId_orgId:{userId:gestorId,orgId:ORG}},create:{userId:gestorId,orgId:ORG,modo:'SELECTED'},update:{modo:'SELECTED'}});
+    const spy=vi.spyOn(zapsign,'criarDocumento');
+    try {
+      await expect(titularLibera(r.approvalId)).rejects.toThrow();
+      expect(spy).not.toHaveBeenCalled();
+      expect(await prisma.comercialDocumento.count({where:{leadId,provedor:{not:'minuta'}}})).toBe(0);
+      expect((await prisma.approval.findUniqueOrThrow({where:{id:r.approvalId}})).status).toBe('confirmada');
+    } finally {
+      spy.mockRestore();
+      await prisma.clienteAcessoPerfil.update({where:{userId_orgId:{userId:gestorId,orgId:ORG}},data:{modo:'ALL'}});
+    }
+  });
+
+  it('R4 prende explicitamente cliente nulo e recusa destino alterado antes da ZapSign', async () => {
+    const { id, leadId }=await pronto('Destino alterado');
+    const r=await naEmpresa(()=>emissao.proporEnvio(ORG,id,gestor())) as {approvalId:string};
+    const ap=await prisma.approval.findUniqueOrThrow({where:{id:r.approvalId}});
+    const tc=await prisma.toolCall.findUniqueOrThrow({where:{id:ap.toolCallId!}});
+    expect(tc.args).toHaveProperty('clienteId',null);
+    expect(tc.args).toHaveProperty('origemCliente',{versao:1,clienteId:null});
+    const cliente=await prisma.partner.create({data:{orgId:ORG,razaoSocial:'Outro destino',isCliente:true}});
+    await prisma.comercialFicha.update({where:{leadId},data:{partnerId:cliente.id}});
+    const spy=vi.spyOn(zapsign,'criarDocumento');
+    try {
+      await expect(titularLibera(r.approvalId)).rejects.toThrow();
+      expect(spy).not.toHaveBeenCalled();
+      expect((await prisma.approval.findUniqueOrThrow({where:{id:r.approvalId}})).status).toBe('confirmada');
+    } finally { spy.mockRestore(); }
+  });
+
   it('idempotência: o segundo clique cai na mesma aprovação; depois de enviado, recusa; o efeito de novo não cria outro documento', async () => {
     const { id, leadId } = await pronto('Dois Cliques');
     const a = await naEmpresa(() => emissao.proporEnvio(ORG, id, gestor())) as { approvalId: string };
@@ -379,9 +419,11 @@ describe.skipIf(!URL)('a emissão do contrato: minuta, PDF e o pedido pela porta
     await conflito(() => naEmpresa(() => emissao.proporEnvio(ORG, id, gestor())));
     const linha = await prisma.comercialContrato.findUniqueOrThrow({ where: { id } });
     const efeito = (dinheiro as unknown as { efeitoDeContrato: (x: unknown, o: string, c: unknown) => Promise<{ reaproveitado: boolean }> }).efeitoDeContrato.bind(dinheiro);
-    const args = { leadId, versao: 1, hash: linha.hashDoConteudo, signatarioEmail: 'marina@cliente.test', contratoId: id };
-    const denovo = await naEmpresa(() => efeito(args, ORG, { actorType: 'user', actorId: titularId }));
+    const args = { leadId, clienteId:null, origemCliente:{versao:1,clienteId:null}, versao: 1, hash: linha.hashDoConteudo, signatarioEmail: 'marina@cliente.test', contratoId: id };
+    const denovo = await naEmpresa(() => efeito(args, ORG, { orgId:ORG,actorType: 'user', actorId: titularId,approvalId:a.approvalId }));
     expect(denovo.reaproveitado).toBe(true);
+    await expect(naEmpresa(()=>efeito(args,ORG,{orgId:'outra-org',actorType:'user',actorId:titularId,approvalId:a.approvalId}))).rejects.toThrow();
+    await expect(naEmpresa(()=>efeito(args,ORG,{orgId:ORG,actorType:'system',actorId:titularId,approvalId:a.approvalId}))).rejects.toThrow();
     expect(await prisma.comercialDocumento.count({ where: { leadId, provedor: { not: 'minuta' } } })).toBe(1);
     expect(await prisma.leadEvent.count({ where: { leadId, type: 'contrato.gerado' } })).toBe(1);
   });
@@ -392,12 +434,28 @@ describe.skipIf(!URL)('a emissão do contrato: minuta, PDF e o pedido pela porta
     // O CNPJ que fatura está no rodapé e no bloco de assinatura: muda o PDF.
     await naEmpresa(() => contratos.editar(ORG, id, gestor(), { faturaPor: '22.222.222/0001-22' }));
     const espiao = vi.spyOn(zapsign, 'criarDocumento');
-    await expect(titularLibera(r.approvalId)).rejects.toThrow(/PDF de agora não é o que a titular aprovou/);
+    await expect(titularLibera(r.approvalId)).rejects.toThrow(/origem ou o conteúdo da emissão mudou/);
     expect(espiao).not.toHaveBeenCalled();
     espiao.mockRestore();
     expect(await prisma.comercialDocumento.count({ where: { leadId, provedor: { not: 'minuta' } } })).toBe(0);
     expect((await prisma.comercialContrato.findUniqueOrThrow({ where: { id } })).estado).toBe('rascunho');
     expect(await prisma.leadEvent.count({ where: { leadId, type: 'contrato.gerado' } })).toBe(0);
+  });
+
+  it('revogação do signatário Root durante última conferência impede chamada à ZapSign',async()=>{
+    const lista=[{papel:'cliente' as const,nome:'Marina',email:'marina@cliente.test'},{papel:'root' as const,nome:'Titular 2',email:emailDaTitular2}];
+    const {id}=await pronto('Titular revogado na conferência',lista);
+    const r=await naEmpresa(()=>emissao.proporEnvio(ORG,id,gestor())) as {approvalId:string};
+    const pessoa=await prisma.user.findUniqueOrThrow({where:{id:titular2Id},include:{roles:true}});
+    const conferir=escopo.exigir.bind(escopo);let consumidas=0;
+    const spy=vi.spyOn(escopo,'exigir').mockImplementation(async(...args)=>{
+      const resultado=await conferir(...args);
+      if(args[4].fase==='consumida' && ++consumidas===2) await prisma.user.update({where:{id:titular2Id},data:{roles:{set:[]}}});
+      return resultado;
+    });
+    const provedor=vi.spyOn(zapsign,'criarDocumento');
+    try {await expect(titularLibera(r.approvalId)).rejects.toThrow();expect(provedor).not.toHaveBeenCalled();}
+    finally {spy.mockRestore();provedor.mockRestore();await prisma.user.update({where:{id:titular2Id},data:{roles:{set:pessoa.roles.map(x=>({id:x.id}))}}});}
   });
 
   it('signatários múltiplos chegam ao provedor, e o PDF em base64 sem prefixo é aceito pelo dublê', async () => {
@@ -430,8 +488,8 @@ describe.skipIf(!URL)('a emissão do contrato: minuta, PDF e o pedido pela porta
     const baixado = await fetch(`http://127.0.0.1:${portaZap}/documento/${linha.documento!.externoId}`);
     expect(baixado.headers.get('content-type')).toBe('application/pdf');
     expect(createHash('sha256').update(Buffer.from(await baixado.arrayBuffer())).digest('hex')).toBe(linha.hashDoConteudo);
-    // A M7 é uma para cada signatário do cliente, e vai à fila como toda mensagem.
-    expect(m7.slice(antesDoM7).map((x) => x.quemAssina)).toEqual(['Marina Duarte', 'Paulo Duarte']);
+    // O M7 aguarda proveniência própria antes de preparar mensagens.
+    expect(m7.slice(antesDoM7)).toEqual([]);
     const gerado = await prisma.leadEvent.findFirstOrThrow({ where: { leadId, type: 'contrato.gerado' } });
     expect(gerado.payload).toMatchObject({ contratoId: id, assinaPelaRoot: emailDaTitular, assinaPelaRootDecidido: true });
     expect(await prisma.leadEvent.count({ where: { leadId, type: 'contrato.minuta_aprovada' } })).toBe(1);

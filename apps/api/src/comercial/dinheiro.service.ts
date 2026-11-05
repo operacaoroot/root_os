@@ -25,6 +25,7 @@ import { PORTA_DE_ASSINATURA, signatariosComExternalId, type AssinaturaNoWebhook
 import { PORTA_DE_COBRANCA, type FormaDeCobranca, type PagamentoNoWebhook, type PortaDeCobranca } from './portas/cobranca.port';
 import { segredoDoAmbiente } from './sala-token';
 import { WhatsappComercialService } from './whatsapp.service';
+import { EfeitoComercialEscopoService } from '../clientes-escopo/efeito-comercial-escopo.service';
 
 /*
  * O DINHEIRO E A ASSINATURA DO ACEITE (lane D, 13/10/2026).
@@ -166,6 +167,7 @@ export class DinheiroService implements OnModuleInit {
     @Optional() private readonly whats?: WhatsappComercialService,
     @Optional() private readonly reauth?: ReauthService,
     @Optional() private readonly audit?: AuditService,
+    @Optional() private readonly escopoComercial?: EfeitoComercialEscopoService,
   ) {}
 
   onModuleInit(): void {
@@ -347,6 +349,26 @@ export class DinheiroService implements OnModuleInit {
       cobranca = ehRetida(r) ? 'proposta' : 'executada';
     }
 
+    const resultadoContrato=await this.proporSomenteContrato(orgId,leadId,ator,agora);
+    const contrato=resultadoContrato.estado;
+    if(resultadoContrato.approvalId) approvalIds.push(resultadoContrato.approvalId);
+    return { cobranca, contrato, approvalIds };
+  }
+
+  /** Repropõe apenas contrato, sem criar cobrança por consequência. */
+  async proporSomenteContrato(orgId:string,leadId:string,ator:{id:string;tipo:ActorType},agora:Date=new Date()):Promise<{estado:ResultadoDaProposta;approvalId?:string}> {
+    if(!this.escopoComercial) throw new ForbiddenException('A autorização da emissão está indisponível.');
+    const ficha=await this.prisma.comercialFicha.findFirst({where:{leadId,orgId},select:{etapa:true}});
+    if(ficha && ehSaida(ficha.etapa as ComercialEtapa)) throw new ForbiddenException('Lead em saída.');
+    const a=await this.aceiteDoLead(orgId,leadId);
+    if(!a) throw new ForbiddenException('O lead não tem aceite atual.');
+    const clienteId=await this.escopoComercial.clienteDoLead(orgId,leadId);
+    const conferir=async()=>{
+      if(await this.escopoComercial!.clienteDoLead(orgId,leadId)!==clienteId) throw new ForbiddenException('O cliente mudou.');
+      if(ator.tipo===ActorType.user) await this.escopoComercial!.exigirPessoa(orgId,ator.id,clienteId);
+      else if(ator.tipo!==ActorType.system || ator.id!==ATOR_DO_DINHEIRO) throw new ForbiddenException('Origem da emissão inválida.');
+    };
+    await conferir();
     let contrato: ResultadoDaProposta;
     const doc = this.contratoDoAceite(a);
     const resDoc = `${leadId}:${doc.hash.slice(0, 16)}`;
@@ -354,21 +376,25 @@ export class DinheiroService implements OnModuleInit {
     if (await this.temContratoRegistrado(orgId, leadId)) contrato = 'ja_existe';
     // Documento cancelado (módulo de contratos, F3) saiu da ZapSign: não conta como "já existe".
     else if (await this.prisma.comercialDocumento.findFirst({ where: { leadId, orgId, hashConteudo: doc.hash, estado: { not: 'cancelado' } }, select: { id: true } })) contrato = 'ja_existe';
+    else if (ator.tipo===ActorType.system && await this.prisma.approval.findFirst({where:{orgId,capabilityId:CAP_CONTRATO,resourceType:'comercial.contrato',resourceId:resDoc,OR:[{propostoPorTipo:{not:ActorType.system}},{propostoPorId:{not:ATOR_DO_DINHEIRO}}]},select:{id:true}})) throw new ForbiddenException('A origem humana anterior exige novo pedido de pessoa.');
     else if (await this.aprovacaoViva(orgId, CAP_CONTRATO, resDoc, agora)) contrato = 'na_fila';
-    else if (automatico && (await this.travaDaRepeticao(orgId, CAP_CONTRATO, resDoc, agora))) contrato = (await this.travaDaRepeticao(orgId, CAP_CONTRATO, resDoc, agora))!;
+    else if (ator.tipo===ActorType.system && (await this.travaDaRepeticao(orgId, CAP_CONTRATO, resDoc, agora))) contrato = (await this.travaDaRepeticao(orgId, CAP_CONTRATO, resDoc, agora))!;
     else {
+      await conferir();
+      const atual=await this.aceiteDoLead(orgId,leadId);
+      if(!atual || atual.versao!==a.versao || this.contratoDoAceite(atual).hash!==doc.hash || atual.dados.email!==a.dados.email) throw new ForbiddenException('O aceite mudou durante a proposta.');
       const r = await this.operador.executar({
         orgId,
         actorId: ator.id,
         actorType: ator.tipo,
         capabilityId: CAP_CONTRATO,
-        args: { leadId, versao: a.versao, hash: doc.hash, signatarioEmail: a.dados.email },
+        args: { leadId, clienteId, origemCliente:{versao:1,clienteId}, versao: a.versao, hash: doc.hash, signatarioEmail: a.dados.email },
         resource: { type: 'comercial.contrato', id: resDoc },
       });
-      if (ehRetida(r)) approvalIds.push(r.approvalId);
-      contrato = ehRetida(r) ? 'proposta' : 'executada';
+      return ehRetida(r) ? {estado:'proposta',approvalId:r.approvalId} : {estado:'executada'};
     }
-    return { cobranca, contrato, approvalIds };
+    await conferir();
+    return {estado:contrato};
   }
 
   // -------------------------------------------------------------------------
@@ -525,7 +551,7 @@ export class DinheiroService implements OnModuleInit {
     if (!registro) throw new Error('o contrato do pedido não existe mais: nada foi enviado');
     if (registro.documentoId) {
       const doc = await this.prisma.comercialDocumento.findFirst({ where: { id: registro.documentoId, orgId }, select: { id: true, externoId: true, hashConteudo: true } });
-      if (doc?.hashConteudo === hash) return { documentoId: doc.id, externoId: doc.externoId, contratoId, reaproveitado: true };
+      if (doc?.hashConteudo === hash) { await this.conferirEmissao(orgId,args,ctx); return { documentoId: doc.id, externoId: doc.externoId, contratoId, reaproveitado: true }; }
       throw new Error('este contrato já tem outro documento na ZapSign: nada foi enviado');
     }
     if (registro.estado !== 'a_emitir' && registro.estado !== 'rascunho') throw new Error(`o contrato passou a ${registro.estado} depois do pedido: nada foi enviado`);
@@ -552,11 +578,15 @@ export class DinheiroService implements OnModuleInit {
 
     const ja = await this.prisma.comercialDocumento.findFirst({ where: { leadId, orgId, hashConteudo: hash, estado: { not: 'cancelado' }, ...SO_DOCUMENTOS_DE_ASSINATURA } });
     if (ja) {
+      if (ja.origemApprovalId !== ctx.approvalId) throw new ForbiddenException('O documento existente pertence a outra aprovação.');
+      await this.conferirEmissao(orgId,args,ctx);
       await this.manterORegistro(orgId, leadId, () => garantirContratoDoDocumento(this.prisma, { orgId, leadId, documentoId: ja.id, contratoId }));
       return { documentoId: ja.id, externoId: ja.externoId, contratoId, reaproveitado: true };
     }
 
     const rotulo = registro.tipo === 'contrato' ? 'Contrato' : registro.tipo === 'aditivo' ? 'Aditivo' : 'Distrato';
+    await this.conferirEmissao(orgId,args,ctx);
+    if((await rootsSemAlcada(this.prisma,orgId,lista)).length) throw new ForbiddenException('Quem assina pela Root não tem mais alçada.');
     const criado = await this.assinatura.criarDocumento({
       nome: `${rotulo} · ${a.dados.razaoSocial} · proposta v${a.versao}`,
       pdfBase64: montado.pdf.pdf.toString('base64'),
@@ -570,7 +600,7 @@ export class DinheiroService implements OnModuleInit {
     const segredo = segredoDoAmbiente();
     const linkRootGuardado = linkRoot && segredo ? cifrarLinkDaRoot(linkRoot, segredo, id) : null;
     await this.prisma.comercialDocumento.createMany({
-      data: [{ id, leadId, provedor: this.assinatura.provedor, externoId: criado.externoId, estado: 'enviado', hashConteudo: hash, linkCliente, linkRoot: linkRootGuardado }],
+      data: [{ id, leadId, provedor: this.assinatura.provedor, externoId: criado.externoId, estado: 'enviado', hashConteudo: hash, linkCliente, linkRoot: linkRootGuardado, origemApprovalId: ctx.approvalId ?? null }],
       skipDuplicates: true,
     });
     const signatarios: SignatarioDoDocumento[] = doProvedor.map((s) => ({ papel: s.papel, nome: s.nome, email: s.email, ordem: s.ordem, token: s.doc?.token ?? null }));
@@ -587,22 +617,12 @@ export class DinheiroService implements OnModuleInit {
     await this.fio.registrar(orgId, leadId, 'contrato.minuta_aprovada', `${contratoId}:${hash.slice(0, 16)}`, { contratoId, minutaId: registro.minutaId ?? '', hash, por: quemConfirmou });
     await this.fio.registrar(orgId, leadId, 'contrato.gerado', criado.externoId, { provedor: this.assinatura.provedor, externoId: criado.externoId, hash, contratoId, lacunas: [], assinaPelaRoot: daRoot[0]!.email, assinaPelaRootDecidido: true });
 
-    // M7: o link de cada signatário do cliente, pelo WhatsApp da Root. É outra capacidade (R3): vai à fila como toda mensagem.
-    let mensagens = 0;
-    if (this.whats) {
-      for (const s of doProvedor.filter((x) => x.papel === 'cliente' && x.doc?.link)) {
-        try {
-          await this.whats.prepararTemplate(orgId, leadId, 'M7', { linkAssinatura: s.doc!.link!, quemAssina: s.nome }, { chave: `${criado.externoId}:${s.externalId}` });
-          mensagens++;
-        } catch (e) {
-          this.log.warn(`M7 de ${leadId}: ${(e as Error).message}`);
-        }
-      }
-    }
-    return { documentoId: id, externoId: criado.externoId, contratoId, reaproveitado: false, signatarios: lista.length, mensagens };
+    // M7 aguarda vínculo próprio com a origem humana da emissão.
+    return { documentoId: id, externoId: criado.externoId, contratoId, reaproveitado: false, signatarios: lista.length, mensagens: 0, aviso:'O envio dos links de assinatura aguarda autorização própria.' };
   }
 
   private async efeitoDeContrato(args: P, orgId: string, ctx: ContextoDoEfeito): Promise<unknown> {
+    await this.conferirEmissao(orgId,args,ctx);
     if (typeof args.contratoId === 'string' && args.contratoId) return this.efeitoDoRegistro(args, orgId, args.contratoId, ctx);
     const leadId = String(args.leadId ?? '');
     const a = await this.aceiteConferido(orgId, args, []);
@@ -612,6 +632,8 @@ export class DinheiroService implements OnModuleInit {
 
     const ja = await this.prisma.comercialDocumento.findFirst({ where: { leadId, orgId, hashConteudo: doc.hash, estado: { not: 'cancelado' } } });
     if (ja) {
+      if(ja.origemApprovalId!==ctx.approvalId) throw new ForbiddenException('O documento existente pertence a outra aprovação.');
+      await this.conferirEmissao(orgId,args,ctx);
       await this.manterORegistro(orgId, leadId, () => garantirContratoDoDocumento(this.prisma, { orgId, leadId, documentoId: ja.id }));
       return { documentoId: ja.id, externoId: ja.externoId, reaproveitado: true };
     }
@@ -625,6 +647,8 @@ export class DinheiroService implements OnModuleInit {
       { papel: 'cliente' as const, nome: a.dados.quemAssina, email: a.dados.email, ordem: 1 },
       { papel: 'root' as const, nome: root.nome, email: root.email, ordem: 2 },
     ];
+    await this.conferirEmissao(orgId,args,ctx);
+    if((await rootsSemAlcada(this.prisma,orgId,lista)).length) throw new ForbiddenException('Quem assina pela Root não tem mais alçada.');
     const criado = await this.assinatura.criarDocumento({
       nome: `Contrato · ${a.dados.razaoSocial} · proposta v${a.versao}`,
       markdown: doc.markdown,
@@ -638,7 +662,7 @@ export class DinheiroService implements OnModuleInit {
     const segredo = segredoDoAmbiente();
     const linkRootGuardado = linkRoot && segredo ? cifrarLinkDaRoot(linkRoot, segredo, id) : null;
     await this.prisma.comercialDocumento.createMany({
-      data: [{ id, leadId, provedor: this.assinatura.provedor, externoId: criado.externoId, estado: 'enviado', hashConteudo: doc.hash, linkCliente, linkRoot: linkRootGuardado }],
+      data: [{ id, leadId, provedor: this.assinatura.provedor, externoId: criado.externoId, estado: 'enviado', hashConteudo: doc.hash, linkCliente, linkRoot: linkRootGuardado, origemApprovalId: ctx.approvalId ?? null }],
       skipDuplicates: true,
     });
     // O registro do contrato (módulo de contratos): o documento continua sendo a parte "na ZapSign".
@@ -661,15 +685,13 @@ export class DinheiroService implements OnModuleInit {
     };
     await this.fio.registrar(orgId, leadId, 'contrato.gerado', criado.externoId, payload as PayloadDe<'contrato.gerado'>);
 
-    // M7: o link de assinatura pelo WhatsApp da Root (C05). É outra capacidade (R3): vai à fila como toda mensagem.
-    if (this.whats && linkCliente) {
-      try {
-        await this.whats.prepararTemplate(orgId, leadId, 'M7', { linkAssinatura: linkCliente, quemAssina: a.dados.quemAssina }, { chave: criado.externoId });
-      } catch (e) {
-        this.log.warn(`M7 de ${leadId}: ${(e as Error).message}`);
-      }
-    }
-    return { documentoId: id, externoId: criado.externoId, reaproveitado: false, lacunas: doc.lacunas.length };
+    // M7 aguarda vínculo próprio com a origem da emissão.
+    return { documentoId: id, externoId: criado.externoId, reaproveitado: false, lacunas: doc.lacunas.length, aviso:'O envio dos links de assinatura aguarda autorização própria.' };
+  }
+
+  private async conferirEmissao(orgId:string,args:P,ctx:ContextoDoEfeito) {
+    if(!this.escopoComercial || ctx.orgId!==orgId || ctx.actorType!==ActorType.user || !ctx.approvalId || !ctx.actorId) throw new ForbiddenException('A autorização da emissão está indisponível.');
+    return this.escopoComercial.exigir(orgId,ctx.approvalId,CAP_CONTRATO,args,{fase:'consumida',atorExecucaoId:ctx.actorId});
   }
 
   // -------------------------------------------------------------------------
@@ -864,25 +886,34 @@ export class DinheiroService implements OnModuleInit {
    * acha assinatura sem webhook grava os mesmos fatos e dispara a mesma cópia do PDF.
    */
   async aplicarAssinatura(orgId: string, leadId: string, documentoId: string, w: AssinaturaNoWebhook): Promise<{ gravados: number; registro: ReflexoDaAssinatura | null }> {
+    const documento=await this.prisma.comercialDocumento.findFirst({where:{id:documentoId,orgId,leadId},select:{id:true,orgId:true,leadId:true,provedor:true,externoId:true,estado:true}});
+    if(!documento || documento.orgId!==orgId || documento.leadId!==leadId || documento.provedor!==this.assinatura.provedor || documento.externoId!==w.externoId || documento.estado==='cancelado') throw new ForbiddenException('A assinatura não corresponde a um documento ativo desta empresa.');
+    const origem={id:documentoId,orgId,leadId,provedor:this.assinatura.provedor,externoId:w.externoId,estado:{not:'cancelado'}};
+    const conferir = async () => {
+      if(!await this.prisma.comercialDocumento.findFirst({where:origem,select:{id:true}})) throw new ForbiddenException('O documento deixou de estar disponível.');
+    };
     let gravados = 0;
     for (const s of w.assinados) {
       const em = s.em ? new Date(s.em) : new Date();
       const quando = Number.isNaN(em.getTime()) ? new Date() : em;
       if (s.papel === 'cliente') {
-        await this.prisma.comercialDocumento.updateMany({ where: { id: documentoId, assinadoClienteEm: null }, data: { assinadoClienteEm: quando } });
+        await this.prisma.comercialDocumento.updateMany({ where: { ...origem, assinadoClienteEm: null }, data: { assinadoClienteEm: quando } });
+        await conferir();
         const e = await this.fio.registrar(orgId, leadId, 'contrato.assinado_cliente', w.externoId, { provedor: this.assinatura.provedor, externoId: w.externoId, em: quando.toISOString() }, { em: quando });
         if (e.novo) gravados++;
       } else {
-        await this.prisma.comercialDocumento.updateMany({ where: { id: documentoId, assinadoRootEm: null }, data: { assinadoRootEm: quando } });
+        await this.prisma.comercialDocumento.updateMany({ where: { ...origem, assinadoRootEm: null }, data: { assinadoRootEm: quando } });
+        await conferir();
         const e = await this.fio.registrar(orgId, leadId, 'contrato.assinado_root', w.externoId, { provedor: this.assinatura.provedor, externoId: w.externoId, em: quando.toISOString(), por: null }, { em: quando });
         if (e.novo) gravados++;
       }
     }
     if (w.todosAssinaram) {
-      await this.prisma.comercialDocumento.updateMany({ where: { id: documentoId }, data: { estado: 'assinado', ...(w.pdfUrl ? { pdfUrl: w.pdfUrl } : {}) } });
+      await this.prisma.comercialDocumento.updateMany({ where: origem, data: { estado: 'assinado', ...(w.pdfUrl ? { pdfUrl: w.pdfUrl } : {}) } });
     } else if (w.assinados.length || w.assinaturas?.length) {
-      await this.prisma.comercialDocumento.updateMany({ where: { id: documentoId, estado: { not: 'assinado' } }, data: { estado: 'assinado_parcial' } });
+      await this.prisma.comercialDocumento.updateMany({ where: { ...origem, estado: { notIn: ['assinado','cancelado'] } }, data: { estado: 'assinado_parcial' } });
     }
+    await conferir();
     // O registro antes do fato final: a reação de `contrato.assinado` já lê o contrato como assinado.
     const registro = await this.manterORegistro(orgId, leadId, () => refletirAssinaturas(this.prisma, { orgId, leadId, documentoId, assinatura: w }));
     if (w.todosAssinaram) {

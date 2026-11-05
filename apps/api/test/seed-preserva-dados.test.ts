@@ -1,6 +1,6 @@
 import { afterAll, describe, expect, it } from 'vitest';
 import { spawnSync } from 'node:child_process';
-import { readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { PrismaClient } from '@prisma/client';
 import { exigirBancoDescartavel } from './banco-de-teste';
@@ -44,13 +44,13 @@ function semear(script: string): void {
   if (r.status !== 0) throw new Error(`seed saiu com ${r.status}: ${r.stderr || r.stdout}`);
 }
 
-function mutanteDaTarefaPorTitulo(): string {
+function mutanteDaTarefaPorTitulo(diretorio: string): string {
   const origem = readFileSync(join(RAIZ_DA_API, 'prisma/seed.ts'), 'utf8');
   const alvo = 'prisma.task.findFirst({ where: signature,';
   if (!origem.includes(alvo)) throw new Error('o seed mudou: ajuste o mutante deste teste');
-  const caminho = 'prisma/.seed-mutante-tarefa-por-titulo.ts';
+  const caminho = join(diretorio, 'seed-mutante-tarefa-por-titulo.ts');
   writeFileSync(
-    join(RAIZ_DA_API, caminho),
+    caminho,
     origem.replace(alvo, 'prisma.task.findFirst({ where: { orgId: org.id, title: t.title },'),
   );
   return caminho;
@@ -58,10 +58,8 @@ function mutanteDaTarefaPorTitulo(): string {
 
 describe.skipIf(!URL_DO_BANCO)('seed: preserva dados existentes', () => {
   const prisma = new PrismaClient({ datasources: { db: { url: URL_DO_BANCO } } });
-  const mutantes: string[] = [];
 
   afterAll(async () => {
-    for (const m of mutantes) rmSync(join(RAIZ_DA_API, m), { force: true });
     await prisma.$disconnect();
   });
 
@@ -195,10 +193,14 @@ describe.skipIf(!URL_DO_BANCO)('seed: preserva dados existentes', () => {
   it.skipIf(SCRIPT !== 'prisma/seed.ts')(
     'detecta um seed que identifica a tarefa só pelo título (mutante)',
     async () => {
-      const mutante = mutanteDaTarefaPorTitulo();
-      mutantes.push(mutante);
-      const falhas = await cenario(mutante);
-      expect(falhas.join(' | ')).toMatch(/tarefas? "Aprovar criativo Black Friday"|Task homônima/);
+      // A varredura de fontes exclui node_modules, e o seed ainda resolve as dependências da API.
+      const diretorio = mkdtempSync(join(RAIZ_DA_API, 'node_modules', '.seed-mutante-'));
+      try {
+        const falhas = await cenario(mutanteDaTarefaPorTitulo(diretorio));
+        expect(falhas.join(' | ')).toMatch(/tarefas? "Aprovar criativo Black Friday"|Task homônima/);
+      } finally {
+        rmSync(diretorio, { recursive: true, force: true });
+      }
     },
     180_000,
   );

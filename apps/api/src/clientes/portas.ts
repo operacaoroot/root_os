@@ -35,6 +35,7 @@ export interface PedidoDePasta {
   leadId?: string | null;
   /** Quem pediu (pessoa), para a porta e o RASTRO; ausente = o sistema. */
   atorId?: string | null;
+  fechamentoApprovalId?: string;
 }
 
 export interface PastaDoClientePort {
@@ -72,6 +73,7 @@ export interface PedidoDeArquivo {
   /** Até as duas primeiras páginas de texto, quando o chamador já leu. */
   texto?: string;
   atorId?: string | null;
+  origemRecebidaId?: string;
   /**
    * De onde o arquivo veio no OS (lane A4): o anexo da tarefa manda
    * `{ tipo: 'WorkAnexo', id }`. É a idempotência do chamador (o mesmo anexo

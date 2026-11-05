@@ -81,6 +81,8 @@ describe('o comercial pede de novo pelo caminho de cada pedido (dublês)', () =>
       (o.whats ?? {}) as never,
       (o.dinheiro ?? {}) as never,
       (o.fechamentos ?? {}) as never,
+      (o.emissao ?? {}) as never,
+      (o.escopo ?? {}) as never,
     );
     r.onModuleInit();
     return { r, registro };
@@ -127,9 +129,24 @@ describe('o comercial pede de novo pelo caminho de cada pedido (dublês)', () =>
     const out = await r.aceiteDeNovo(p, 'cobranca');
     expect(out.approvalId).toBe('c1');
     expect(out.aviso).toMatch(/contrato também/);
-    expect((await r.aceiteDeNovo(p, 'contrato')).approvalId).toBe('k1');
     proporAceite.mockResolvedValueOnce({ cobranca: 'ja_existe', contrato: 'ja_existe', approvalIds: [] });
     await expect(r.aceiteDeNovo(p, 'cobranca')).rejects.toThrow(/já existe/);
+  });
+  it('repedido de contrato usa só emissão do registro e nunca propõe cobrança',async()=>{
+    const proporAceite=vi.fn(async()=>({cobranca:'proposta',contrato:'proposta',approvalIds:['cob','con']}));
+    const proporEnvio=vi.fn(async()=>({approvalId:'novo'}));
+    const exigir=vi.fn(async()=>({clienteId:null})),exigirPessoa=vi.fn(async()=>{});
+    const {r}=montar({dinheiro:{proporAceite},emissao:{proporEnvio},escopo:{exigir,exigirPessoa}});
+    const p={...base,capabilityId:'comercial.contrato.enviar',resourceType:'comercial.contrato',resourceId:'contrato:hash',args:{leadId:'L1',contratoId:'contrato',clienteId:null}};
+    expect(await r.aceiteDeNovo(p,'contrato')).toEqual({approvalId:'novo'});
+    expect(proporAceite).not.toHaveBeenCalled();expect(proporEnvio).toHaveBeenCalled();
+  });
+  it('repedido de contrato não consulta outros serviços se a origem vencida falhou',async()=>{
+    const proporAceite=vi.fn(),proporEnvio=vi.fn();
+    const {r}=montar({dinheiro:{proporAceite},emissao:{proporEnvio},escopo:{exigir:vi.fn(async()=>{throw new Error('origem inválida');})}});
+    const p={...base,capabilityId:'comercial.contrato.enviar',resourceType:'comercial.contrato',resourceId:'contrato:hash',args:{leadId:'L1',contratoId:'contrato',clienteId:null}};
+    await expect(r.aceiteDeNovo(p,'contrato')).rejects.toThrow('origem inválida');
+    expect(proporAceite).not.toHaveBeenCalled();expect(proporEnvio).not.toHaveBeenCalled();
   });
 });
 

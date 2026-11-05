@@ -71,6 +71,7 @@ model Org {
   modulos String[] @default([])
 
   clienteAcessoPerfis   ClienteAcessoPerfil[]
+  origensArquivos      OrigemArquivoCliente[]
   clienteAcessoVinculos ClienteAcessoVinculo[]
   users                User[]
   roles                Role[]
@@ -5301,6 +5302,8 @@ model ComercialDocumento {
   externoId         String
   estado            String    @default("criado")
   hashConteudo      String
+  /// Aprovação exata que originou a emissão. Legado permanece nulo.
+  origemApprovalId  String?
   linkCliente       String?
   linkRoot          String?
   assinadoClienteEm DateTime?
@@ -5454,6 +5457,8 @@ model SalaVersao {
   /// rascunho · na_porta · publicada · substituida (CHECK no banco).
   estado       String
   conteudo     Json
+  /// Proveniência privada do rascunho revisado; null identifica legado não revalidado.
+  origemCliente Json?
   hash         String
   approvalId   String?
   criadoPor    String?
@@ -6536,6 +6541,29 @@ model GastoDeIaPorFuncao {
 /// sem pasta do cliente o arquivo espera aqui em `na_fila` e sai quando a pasta
 /// nascer. Raiz da empresa (o `orgId` vem do insert): o arquivo pode chegar
 /// antes do cliente, só com o lead. `refTipo`/`refId` apontam a origem (o anexo).
+/// Recibo de dados recebidos; não substitui aprovação para envio ao Drive.
+model OrigemArquivoCliente {
+  id          String   @id @default(uuid())
+  orgId       String
+  org         Org      @relation(fields: [orgId], references: [id])
+  tipo        String
+  fonteId     String
+  chaveDedupe String
+  leadId      String?
+  partnerId   String?
+  atorId      String?
+  prova       Json
+  chave       String
+  sha256      String
+  bytes       Int
+  tipoMime    String
+  revogadoEm  DateTime?
+  criadoEm    DateTime @default(now())
+
+  @@unique([orgId, tipo, chaveDedupe])
+  @@index([orgId, fonteId])
+}
+
 model ArquivoDoCliente {
   id             String   @id @default(uuid())
   orgId          String

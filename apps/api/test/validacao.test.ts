@@ -140,3 +140,14 @@ describe('validação de número na porta (MD7)', () => {
     expect(mensagemDeErro(validarArgs(LOTE, { totalDeItens: '999' }))).toBe('argumentos inválidos: totalDeItens esperava integer, veio string');
   });
 });
+
+describe('snapshot de cliente nullable', () => {
+  const schema = {type:'object',additionalProperties:false,properties:{clienteId:{type:['string','null']}}};
+  it('aceita cliente conhecido e null explícito', () => {
+    expect(validarArgs(schema,{clienteId:'cliente-a'})).toEqual([]);
+    expect(validarArgs(schema,{clienteId:null})).toEqual([]);
+  });
+  it('não aceita boolean, número, array ou objeto como cliente', () => {
+    for (const clienteId of [true,1,[],{}]) expect(validarArgs(schema,{clienteId})).toHaveLength(1);
+  });
+});

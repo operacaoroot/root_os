@@ -7,6 +7,7 @@ import {
   Logger,
   NotFoundException,
   OnModuleInit,
+  Optional,
   ServiceUnavailableException,
 } from '@nestjs/common';
 import { ModuleRef } from '@nestjs/core';
@@ -28,17 +29,19 @@ import {
 } from '@mktos/shared';
 import { Prisma } from '@prisma/client';
 
+import { OrigemArquivoClienteService } from '../clientes-escopo/origem-arquivo-cliente.service';
 import { comTenantPublico, resolverTenantDaSala } from '../common/tenant-publico';
 import { MemoriaService } from '../memory/memoria.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { StorageService } from '../storage/storage.service';
-import { ARQUIVISTA_DO_CLIENTE, type ArquivistaDoClientePort } from '../clientes/portas';
+import { ARQUIVISTA_DO_CLIENTE, type ArquivistaDoClientePort, type ResultadoDoArquivo } from '../clientes/portas';
 import { horarioOferecido, horariosOferecidos } from './agenda-de-homologacao';
 import { hashDoConteudo } from './eventos';
 import { FioService, ReacoesRegistry } from './fio.service';
 import { SO_DOCUMENTOS_DE_ASSINATURA } from './documentos';
 import { areaParaOCliente, edicoesPorVersao, modoDaSala } from './area-do-cliente-projecao';
 import { publicadaDaSala } from './sala-versao.service';
+import { trilhoDaSala } from './sala-trilho-origem';
 import { acompanhamentoDaSala, chaveDaDuvida, projetarSala, type AcompanhamentoDaSala, type DadosDaSala, type EventoDaSala } from './sala-projecao';
 import {
   cifrarTokenDaSala,
@@ -146,6 +149,7 @@ export class SalaService implements OnModuleInit {
     private readonly fio: FioService,
     private readonly reacoes: ReacoesRegistry,
     private readonly moduleRef?: ModuleRef,
+    @Optional() private readonly origens?: OrigemArquivoClienteService,
   ) {}
 
   onModuleInit(): void {
@@ -354,7 +358,7 @@ export class SalaService implements OnModuleInit {
    * ou a própria página pedindo o estado de novo não conta visita. A visita é
    * `visita`, que a página chama uma vez ao abrir.
    */
-  async estado(token: string, agora: Date = new Date()): Promise<EstadoDaSala> {
+  async estado(token: string, agora: Date = new Date()): Promise<EstadoDaSalaComAcompanhamento> {
     const r = await this.resolver(token, agora);
     return comTenantPublico(r.orgId, () => this.projetar(r.salaId, r.leadId, agora));
   }
@@ -402,14 +406,32 @@ export class SalaService implements OnModuleInit {
     if (arquivo.size > MAX_BYTES_DO_ARQUIVO) throw new BadRequestException('arquivo acima de 10 MB.');
     if (!TIPOS_DE_ARQUIVO.has(arquivo.mimetype)) throw new BadRequestException('tipo de arquivo não aceito: mande PDF, planilha, CSV ou imagem.');
     const storage = this.storage();
-    if (!storage) throw new ServiceUnavailableException('o envio de arquivo está indisponível agora. Leve o arquivo para a conversa.');
+    const origens = this.origens;
+    if (!storage || !origens) throw new ServiceUnavailableException('o envio de arquivo está indisponível agora. Leve o arquivo para a conversa.');
     return this.naSala(token, async (r) => {
-      const sha = createHash('sha256').update(arquivo.buffer).digest('hex');
+      const sha256 = createHash('sha256').update(arquivo.buffer).digest('hex');
       const nome = arquivo.originalname.replace(/[^\p{L}\p{N}._ -]/gu, '_').slice(0, 120) || 'arquivo';
-      await storage.put(`comercial/sala/${r.salaId}/${sha}`, arquivo.buffer, arquivo.mimetype);
-      await this.fio.registrar(r.orgId, r.leadId, 'arquivo.enviado', sha, { nome, bytes: arquivo.size, tipo: arquivo.mimetype });
-      // TR-05 (lane A4): a cópia vai ao arquivista, que a manda à pasta do cliente pela porta (R3). Nunca derruba o envio.
-      void Promise.resolve().then(() => this.moduleRef?.get<ArquivistaDoClientePort>(ARQUIVISTA_DO_CLIENTE, { strict: false })?.arquivar({ orgId: r.orgId, partnerId: null, leadId: r.leadId, origem: 'sala', nomeOriginal: nome, tipoMime: arquivo.mimetype, conteudo: { chave: `comercial/sala/${r.salaId}/${sha}`, sha256: sha, bytes: arquivo.buffer.length } })).catch(() => undefined);
+      const conteudo = { chave: `comercial/sala/${r.salaId}/${sha256}`, sha256, bytes: arquivo.buffer.length, tipoMime: arquivo.mimetype };
+      const recibo = await origens.registrarSala({ orgId: r.orgId, salaId: r.salaId, tokenHash: hashDoTokenDaSala(token), conteudo });
+      await storage.put(conteudo.chave, arquivo.buffer, conteudo.tipoMime);
+      await this.fio.registrar(r.orgId, r.leadId, 'arquivo.enviado', sha256, { nome, bytes: conteudo.bytes, tipo: conteudo.tipoMime });
+
+      let copia: ResultadoDoArquivo = { estado: 'so_no_os', motivo: 'O arquivista do cliente está indisponível.' };
+      try {
+        await origens.exigir(r.orgId, recibo.id, { leadId: recibo.leadId, partnerId: recibo.partnerId, origem: 'sala', ...conteudo });
+        const arquivista = this.moduleRef?.get<ArquivistaDoClientePort>(ARQUIVISTA_DO_CLIENTE, { strict: false });
+        if (arquivista) copia = await arquivista.arquivar({
+          orgId: r.orgId, leadId: recibo.leadId, partnerId: recibo.partnerId, atorId: recibo.atorId, origem: 'sala',
+          nomeOriginal: nome, tipoMime: conteudo.tipoMime, conteudo,
+          origemRecebidaId: recibo.id, ref: { tipo: 'OrigemArquivoCliente', id: recibo.id },
+        });
+      } catch {
+        copia = { estado: 'erro', motivo: 'A cópia para a pasta do cliente não pôde ser concluída.' };
+      }
+      await this.fio.registrar(r.orgId, r.leadId, 'documento.na_pasta', `sala:${recibo.id}:${copia.estado}`, {
+        origem: 'sala', ref: recibo.id, estado: copia.estado, nome,
+        subpasta: 'subpasta' in copia ? copia.subpasta : null, motivo: 'motivo' in copia ? copia.motivo : null, sha256,
+      });
     });
   }
 
@@ -694,7 +716,7 @@ export class SalaService implements OnModuleInit {
   private async areaDoCliente(e: {
     sala: { id: string; orgId: string };
     leadId: string;
-    ficha: { clienteAtivoEm: Date | null; kickoffEm: Date | null; cardId: string | null; trilhoId: string | null; donoId: string | null; socioDaConta: string | null } | null;
+    ficha: { clienteAtivoEm: Date | null; kickoffEm: Date | null; cardId: string | null; trilhoId: string | null; partnerId: string | null; donoId: string | null; socioDaConta: string | null } | null;
     eventos: readonly EventoDaSala[];
     estado: EstadoDaSala;
     acompanhamento: AcompanhamentoDaSala;
@@ -708,9 +730,10 @@ export class SalaService implements OnModuleInit {
         select: { item: true, numero: true, estado: true, publicadaEm: true, atualizadoEm: true, conteudo: true },
       }),
       this.prisma.salaLeitura.findMany({ where: { salaId: sala.id }, select: { item: true, versao: true } }),
-      ficha?.trilhoId
-        ? this.prisma.onboardingTrilho.findFirst({ where: { id: ficha.trilhoId }, select: { fase: true, marcos: { where: { tipo: 'fase.avancou' }, select: { tipo: true, em: true, dados: true } } } })
-        : null,
+      trilhoDaSala(this.prisma, sala.orgId, leadId, ficha, {
+        fase: true,
+        marcos: { where: { tipo: 'fase.avancou' }, select: { tipo: true, em: true, dados: true } },
+      }),
       ficha?.donoId ? this.prisma.user.findFirst({ where: { id: ficha.donoId }, select: { name: true } }) : null,
     ]);
     const edicoes = edicoesPorVersao(versoes);
