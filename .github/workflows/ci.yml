@@ -2857,6 +2857,18 @@ jobs:
           console.log(`Papel restrito: ${r.numPassedTests} testes aprovados em ${Object.keys(pisos).length} arquivos.`);
           JS
 
+      - name: Sala e emissão do lote 7 com papel restrito
+        env:
+          MKTOS_CONJUNTO_DE_TESTES: lote7-rls
+          RLS_NO_TESTE: '1'
+          TENANT_MODO: impor
+          RESUMO_LOTE7: ${{ runner.temp }}/lote7-rls.json
+        run: |
+          node --test apps/api/scripts/tests/verificar-lote7-rls.test.mjs
+          pnpm --filter @mktos/api exec vitest run --maxWorkers=1 \
+            --reporter=default --reporter=json --outputFile.json="$RESUMO_LOTE7"
+          node apps/api/scripts/verificar-lote7-rls.mjs "$RESUMO_LOTE7"
+
   # ---------------------------------------------------------------------------
   # 3. As migrations aplicam do zero E correspondem ao schema.
   # ---------------------------------------------------------------------------

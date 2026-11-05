@@ -5,6 +5,7 @@ import type { AceiteDoLead } from '../dinheiro.service';
 import { aceiteDaDeclaracao } from '../fechado-fora';
 import type { FormaDeCobranca } from '../portas/cobranca.port';
 import { montarPdfDoRegistro, rootsSemAlcada } from './documento-do-registro';
+import { SO_DOCUMENTOS_DE_ASSINATURA } from '../documentos';
 
 type Banco = Pick<PrismaService, 'comercialContrato'|'comercialDocumento'|'comercialFicha'|'leadEvent'|'user'>;
 type P = Record<string, unknown>;
@@ -31,12 +32,24 @@ export async function exigirOrigemDaEmissao(db:Banco, orgId:string, args:P, appr
     aceite=evento?aceiteDaDeclaracao(evento.payload,evento.occurredAt):null;
   }
   if(!aceite || aceite.versao!==args.versao) throw invalidar();
+  // Sem vínculo, o efeito procura um documento pelo conteúdo. Conferir sua origem
+  // antes do consumo; um documento já vinculado é conferido pelo ID exato abaixo.
+  const conferirDocumentoSemVinculo = async () => {
+    if (!approvalId) return;
+    const existente = await db.comercialDocumento.findFirst({
+      where: { orgId, leadId, hashConteudo: args.hash as string, estado: { not: 'cancelado' }, ...SO_DOCUMENTOS_DE_ASSINATURA },
+      select: { origemApprovalId: true },
+    });
+    if (existente && existente.origemApprovalId !== approvalId) throw invalidar();
+  };
   if(typeof args.contratoId==='string' && args.contratoId) {
     const c=await db.comercialContrato.findFirst({where:{id:args.contratoId,orgId,leadId},include:{signatarios:{orderBy:{ordem:'asc'}}}});
     if(!c || c.partnerId!==args.clienteId || (!['rascunho','a_emitir'].includes(c.estado) && !c.documentoId)) throw invalidar();
     if(c.documentoId) {
-      const documento=await db.comercialDocumento.findFirst({where:{id:c.documentoId,orgId,leadId,estado:{not:'cancelado'}},select:{hashConteudo:true}});
-      if(!documento || documento.hashConteudo!==args.hash) throw invalidar();
+      const documento=await db.comercialDocumento.findFirst({where:{id:c.documentoId,orgId,leadId,estado:{not:'cancelado'}},select:{hashConteudo:true,origemApprovalId:true}});
+      if(!documento || documento.hashConteudo!==args.hash || (approvalId && documento.origemApprovalId!==approvalId)) throw invalidar();
+    } else {
+      await conferirDocumentoSemVinculo();
     }
     if(c.paiId) {
       const pai=await db.comercialContrato.findFirst({where:{id:c.paiId,orgId,leadId,estado:{not:'cancelado'}},select:{id:true,partnerId:true}});
@@ -49,6 +62,7 @@ export async function exigirOrigemDaEmissao(db:Banco, orgId:string, args:P, appr
     const montado=await montarPdfDoRegistro(db,orgId,c.id,aceite);
     if(montado.pdf.hash!==args.hash) throw invalidar();
   } else {
+    await conferirDocumentoSemVinculo();
     if(args.contratoId!==undefined && args.contratoId!==null) throw invalidar();
     if(aceite.dados.email.toLowerCase()!==args.signatarioEmail.toLowerCase()) throw invalidar();
     const markdown=montarContrato({...aceite.dados,produto:aceite.produto,valorCentavos:aceite.valorCentavos,parcelas:aceite.parcelas,forma:aceite.forma,propostaVersao:aceite.versao,propostaHash:aceite.hash,aceitoEm:aceite.em});

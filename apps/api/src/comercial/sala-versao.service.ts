@@ -252,7 +252,7 @@ export class SalaVersaoService implements OnModuleInit {
         resourceId: `${leadId}:v${versao}`, propostoPorTipo: ActorType.user,
         status: { in: [ApprovalState.pendente, ApprovalState.confirmada] }, expiraEm: { gt: new Date() },
       },
-      select: { toolCallId: true, propostoPorId: true },
+      select: { toolCallId: true, propostoPorId: true, status: true },
     });
     if (!viva?.toolCallId) return false;
     const chamada = await this.prisma.toolCall.findFirst({
@@ -265,8 +265,13 @@ export class SalaVersaoService implements OnModuleInit {
     const origem = args.origemCliente;
     if (!origem || typeof origem !== 'object' || Array.isArray(origem) || origem.versao !== 1 || origem.clienteId !== clienteId) return false;
     try {
-      await exigirVersaoDaPublicacao(this.prisma, orgId, approvalId, args);
-      await this.exigirEscopo().exigirPessoa(orgId, viva.propostoPorId, clienteId);
+      const escopo = this.exigirEscopo();
+      if (viva.status === ApprovalState.confirmada) {
+        await escopo.exigir(orgId, approvalId, CAPACIDADE_DA_SALA, args, { fase: 'confirmada' });
+      } else {
+        await exigirVersaoDaPublicacao(this.prisma, orgId, approvalId, args);
+        await escopo.exigirPessoa(orgId, viva.propostoPorId, clienteId);
+      }
       return true;
     } catch (erro) {
       if (erro instanceof ForbiddenException) return false;

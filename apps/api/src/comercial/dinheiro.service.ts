@@ -578,6 +578,7 @@ export class DinheiroService implements OnModuleInit {
 
     const ja = await this.prisma.comercialDocumento.findFirst({ where: { leadId, orgId, hashConteudo: hash, estado: { not: 'cancelado' }, ...SO_DOCUMENTOS_DE_ASSINATURA } });
     if (ja) {
+      if (ja.origemApprovalId !== ctx.approvalId) throw new ForbiddenException('O documento existente pertence a outra aprovação.');
       await this.conferirEmissao(orgId,args,ctx);
       await this.manterORegistro(orgId, leadId, () => garantirContratoDoDocumento(this.prisma, { orgId, leadId, documentoId: ja.id, contratoId }));
       return { documentoId: ja.id, externoId: ja.externoId, contratoId, reaproveitado: true };

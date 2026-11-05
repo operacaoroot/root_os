@@ -86,7 +86,7 @@ export class EfeitoComercialEscopoService {
       if(conflito) throw negar();
     }
     if(capabilityId===SALA) await exigirVersaoDaPublicacao(db,orgId,approvalId,args,op.fase==='consumida');
-    else await exigirOrigemDaEmissao(db,orgId,args,op.fase==='consumida'?ap.id:undefined);
+    else await exigirOrigemDaEmissao(db,orgId,args,op.fase==='repedido'?undefined:ap.id);
     // PDF e leituras do domínio podem ter aguardado I/O: conferir o estado atual, fora do snapshot.
     if (await this.clienteDoLead(orgId,args.leadId)!==clienteId) throw negar();
     if (op.fase!=='repedido') {

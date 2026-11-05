@@ -1,6 +1,14 @@
 # Lote 7 — publicação da Sala e emissão de contratos
 
-Continuação autorizada em 04/11/2026. Base: `85a2d12bb25169328660a75ac9c6f345c1e299b8`, PR #49. Branch `codex/isolamento-clientes-lote7`, checkout `/Users/pedro/Library/Projetos/root-os-clientes-contexto`. Trabalho isolado; integração com Lucas e publicação não fazem parte desta rodada.
+Primeira implementação autorizada em 04/11/2026. Base: `85a2d12bb25169328660a75ac9c6f345c1e299b8`, PR #49. Branch `codex/isolamento-clientes-lote7`, checkout `/Users/pedro/Library/Projetos/root-os-clientes-contexto`. Trabalho isolado; integração com Lucas e publicação não fazem parte desta rodada.
+
+## Retomada sobre o banco restrito
+
+Issue [#53](https://github.com/operacaoroot/root_os/issues/53). Checkout separado `/Users/pedro/Library/Projetos/root-os-lote7-rls`, branch `codex/isolamento-clientes-lote7-rls`. A base é `830e7e41`, que documenta a imagem publicada `d8c0453b`; o merge `d5e150bd` preserva essa base e incorpora a pilha já testada até `81d94068`. Os checkouts anteriores e o de Lucas permanecem intactos.
+
+Os lotes 5/6 são dependências do lote 7: fornecem a guarda comum dos efeitos, proveniência de arquivos e `ComercialDocumento.origemApprovalId`. Não há publicação automática dessa pilha nesta rodada. A entrega é integração isolada, provas com o papel real, revisão e CI. O lote 7 permanece independente da criação de usuários externos e de ações em provedores reais.
+
+Provas novas usam conexão dona apenas para montar/remover dados sintéticos. Sala, aprovação, emissão e callback executam com `mktos_app`, `comTenantNaSessao` em `impor` e políticas RLS/FORCE. A suíte dedicada do CI recusa ausência de arquivos, casos pulados e resumos incoerentes. A migration é ensaiada do zero e também depois das migrations da base restrita publicada; o catálogo é semeado somente nos bancos descartáveis.
 
 ## Tarefas e modelos
 
@@ -29,7 +37,9 @@ Os testes precedem cada alteração de comportamento. Reproduções iniciais: em
 
 Revisão adicional reproduziu políticas que omitiam o cliente do hash, null acrescentado ao legado, revogação durante PDF, alçada rebaixada com permissão mantida e perda de autoridade do signatário Root. Cada correção recebeu teste negativo antes do código.
 
-Validação local final: 422 testes em 23 arquivos, mais 10 casos da jornada comercial e 118 testes de políticas; tipos dos 12 arquivos de teste alterados e dependências transitivas; build da API; boot do AppModule compilado, com a guarda injetada e seis rotas respondendo 401. A migration aplicou no banco descartável existente e do zero; comparação com schema sem diferença. Logs: `focal-final.log`, `policy.log`, `types-final.log`, `types-jornada-green.log`, `jornada-green.log`, `build-final.log`, `boot-final.log` e `migration-diff.log`. A revisão independente não encontrou bloqueio restante no diff final. CI e SHA serão registrados no PR. Os testes não comprovam integração real com ZapSign nem publicação em produção.
+Validação histórica da primeira implementação (não substitui a retomada com RLS): 422 testes em 23 arquivos, mais 10 casos da jornada comercial e 118 testes de políticas; tipos dos 12 arquivos de teste alterados e dependências transitivas; build da API; boot do AppModule compilado, com a guarda injetada e seis rotas respondendo 401. A migration aplicou no banco descartável existente e do zero; comparação com schema sem diferença. Logs: `focal-final.log`, `policy.log`, `types-final.log`, `types-jornada-green.log`, `jornada-green.log`, `build-final.log`, `boot-final.log` e `migration-diff.log`. A revisão independente não encontrou bloqueio restante no diff final. CI e SHA serão registrados no PR. Os testes não comprovam integração real com ZapSign nem publicação em produção.
+
+A retomada com o papel restrito tem provas e limites próprios em [REPORT-LOTE7-RLS.md](REPORT-LOTE7-RLS.md).
 
 ## Migration
 
